@@ -3,7 +3,7 @@ use std::fmt::{self, Display, Formatter};
 
 use crate::indices::quotetype::QuoteType;
 
-#[derive(Serialize, Deserialize, Debug, Hash, PartialEq, Eq, Clone, Copy)]
+#[derive(Serialize, Deserialize, Debug, Hash, PartialEq, Eq, Clone)]
 /// # `InterestRateIndex`
 pub enum MarketIndex {
     /// SOFR Index.
@@ -23,7 +23,7 @@ pub enum MarketIndex {
     /// VIX Index
     VIX,
     /// Other indices.
-    Other(&'static str),
+    Other(String),
 }
 
 impl Display for MarketIndex {
@@ -39,6 +39,30 @@ impl Display for MarketIndex {
             Self::VIX => write!(f, "VIX"),
             Self::Other(s) => write!(f, "{s}"),
         }
+    }
+}
+
+impl MarketIndex {
+    /// Creates a market index from a string identifier.
+    #[must_use]
+    pub fn from_str(identifier: &str) -> Self {
+        match identifier {
+            "SOFR" => Self::SOFR,
+            "SOFRCompounded" => Self::SOFRCompounded,
+            "TermSOFR1m" => Self::TermSOFR1m,
+            "TermSOFR3m" => Self::TermSOFR3m,
+            "TermSOFR6m" => Self::TermSOFR6m,
+            "TermSOFR12m" => Self::TermSOFR12m,
+            "ICP" => Self::ICP,
+            "VIX" => Self::VIX,
+            other => Self::Other(other.to_string()),
+        }
+    }
+}
+
+impl Default for MarketIndex {
+    fn default() -> Self {
+        Self::Other("UNKNOWN".to_string())
     }
 }
 
