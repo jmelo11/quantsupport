@@ -9,7 +9,10 @@ Usage Example
 Contributing
 ------------
 
-Contributions to RustAtlas are welcome! If you have suggestions for improvements or have identified issues, please open an issue or submit a pull request.
+Contributions to RustAtlas are welcome.
+For small fixes, feel free to open a pull request directly.
+For larger changes or design discussions, please open an issue first.
+
 
 License
 -------
