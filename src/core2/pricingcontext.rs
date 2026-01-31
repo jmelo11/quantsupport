@@ -1,10 +1,8 @@
-use serde::{Deserialize, Serialize};
-
-use crate::marketdata::marketdataprovider::MarketDataProvider;
+use crate::marketdata::{fixingprovider::FixingProvider, marketdataprovider::MarketDataProvider};
 
 /// # `PricingContext`
-#[derive(Serialize, Deserialize)]
 pub struct PricingContext {
     market_data_provider: MarketDataProvider,
+    fixings_provider: FixingProvider,
     model_configuration: usize,
 }
