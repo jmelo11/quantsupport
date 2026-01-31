@@ -1,4 +1,4 @@
-pub mod gaussnewton;
+/// Implementation of the Newton-Raphson method.
 pub mod newtonraphson;
-pub mod solver;
+/// Utils for solvers
 pub mod solvers;

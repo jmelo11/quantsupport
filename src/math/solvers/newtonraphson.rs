@@ -1,88 +1,207 @@
-// use crate::{
-//     errors::errors::LibError,
-//     solvers::solver::{Solver, SolverResults, SolverStatus},
-// };
+use crate::math::solvers::solvers::{C1Func, DescentMethod};
 
-// pub struct NewtonRaphson {
-//     f: Box<dyn Fn(f64) -> f64>,
-//     f_prime: Box<dyn Fn(f64) -> f64>,
-//     f_tol: f64,
-//     x0: f64,
-//     max_iter: i16,
-// }
+/// # NewtonRaphson
+///
+/// Simple Newton–Raphson solver for scalar problems (`f64`).
+///
+/// This struct stores solver parameters and provides builder-style setters
+/// for convenience. It implements `DescentMethod` for `f64` when the problem
+/// implements `C1Func<f64>`.
+pub struct NewtonRaphson<P, X> {
+    _p: std::marker::PhantomData<P>,
+    _x: std::marker::PhantomData<X>,
+    ftol: f64,
+    x0: f64,
+    max_iter: i64,
+}
 
-// impl NewtonRaphson {
-//     pub fn new(f: Box<dyn Fn(f64) -> f64>, f_prime: Box<dyn Fn(f64) -> f64>) -> Self {
-//         Self {
-//             f: f,
-//             f_prime: f_prime,
-//             f_tol: 1e-8,
-//             x0: 0.0,
-//             max_iter: 100,
-//         }
-//     }
+impl<P, X> NewtonRaphson<P, X>
+where
+    P: C1Func<X>,
+{
+    /// Create a new `NewtonRaphson` solver with initial guess `x0` and `max_iter`.
+    pub fn new(x0: f64, max_iter: i64) -> Self {
+        Self {
+            _p: std::marker::PhantomData,
+            _x: std::marker::PhantomData,
+            ftol: 1e-16,
+            x0: x0,
+            max_iter: max_iter,
+        }
+    }
 
-//     pub fn with_x0(mut self, x0: f64) -> Self {
-//         self.x0 = x0;
-//         self
-//     }
+    /// Set initial guess.
+    pub fn with_x0(mut self, x0: f64) -> Self {
+        self.x0 = x0;
+        self
+    }
 
-//     pub fn with_max_iter(mut self, max_iter: i16) -> Self {
-//         self.max_iter = max_iter;
-//         self
-//     }
+    /// Set maximum iterations.
+    pub fn with_max_iter(mut self, max_iter: i64) -> Self {
+        self.max_iter = max_iter;
+        self
+    }
 
-//     pub fn f_tol(&self) -> f64 {
-//         self.f_tol
-//     }
-// }
+    /// Set the tolerance on the objective value for convergence.
+    pub fn with_ftol(mut self, ftol: f64) -> Self {
+        self.ftol = ftol;
+        self
+    }
+}
 
-// impl Solver for NewtonRaphson {
-//     fn solve(&self) -> Result<SolverResults, LibError> {
-//         let mut x = self.x0;
-//         let mut fval = (self.f)(x);
+impl<P> DescentMethod<P, f64> for NewtonRaphson<P, f64>
+where
+    P: C1Func<f64>,
+{
+    fn ftol(&self) -> f64 {
+        self.ftol
+    }
 
-//         for i in 0..self.max_iter {
-//             // Condition to stop (example: tolerance on f(x))
-//             let fprime = (self.f_prime)(x);
+    fn max_iter(&self) -> i64 {
+        self.max_iter
+    }
+    fn step(&self, x: &f64, f: &P, fval: f64) -> Result<f64, String> {
+        let g = f.grad(&x)?;
+        if g == 0.0 {
+            return Err("Gradient == 0.".into());
+        }
+        Ok(fval / g)
+    }
 
-//             if fval.abs() < self.f_tol || fprime.abs() < f64::EPSILON {
-//                 return Ok(SolverResults {
-//                     f: fval,
-//                     x: x,
-//                     status: SolverStatus::FoundSolution,
-//                     iters: i,
-//                 });
-//             }
+    fn x0(&self) -> f64 {
+        self.x0
+    }
 
-//             x = x - fval / fprime;
-//             fval = (self.f)(x);
-//         }
+    fn solve(&self, f: &P) -> Result<super::solvers::OptimizerSolution<f64>, String> {
+        let mut x = self.x0();
+        let mut fval = 0.0;
 
-//         Ok(SolverResults {
-//             f: fval,
-//             x: x,
-//             status: SolverStatus::MaxIterReached,
-//             iters: self.max_iter,
-//         })
-//     }
-// }
+        for _ in 0..self.max_iter() {
+            fval = f.call(&x)?;
+            if fval.abs() < self.ftol() {
+                return Ok(super::solvers::OptimizerSolution {
+                    x,
+                    f: fval,
+                    status: super::solvers::SolutionStatus::Converged,
+                });
+            }
+            x = x - self.step(&x, &f, fval)?;
+        }
+        Ok(super::solvers::OptimizerSolution {
+            x,
+            f: fval,
+            status: super::solvers::SolutionStatus::NotConverged,
+        })
+    }
+}
 
-// #[cfg(test)]
-// mod tests {
-//     use crate::{
-//         errors::errors::LibError,
-//         solvers::newtonraphson::{NewtonRaphson, Solver},
-//     };
+#[cfg(test)]
+mod test {
+    use crate::math::solvers::{
+        newtonraphson::NewtonRaphson,
+        solvers::{C1Func, ContFunc, DescentMethod},
+    };
+    use std::f64::consts::PI;
 
-//     #[test]
-//     fn minimze_cuadratic() -> Result<(), LibError> {
-//         let f = Box::new(|x: f64| x * x);
-//         let g = Box::new(|x: f64| 2.0 * x);
-//         let solver = NewtonRaphson::new(f, g).with_x0(5.0).with_max_iter(100);
-//         let result = solver.solve()?;
-//         println!("{result:?}");
-//         assert!(result.f < solver.f_tol());
-//         Ok(())
-//     }
-// }
+    fn norm_pdf(x: f64) -> f64 {
+        (1.0 / (2.0 * PI).sqrt()) * (-0.5 * x * x).exp()
+    }
+
+    fn norm_cdf(x: f64) -> f64 {
+        // Abramowitz and Stegun approximation for the error function
+        let sign = if x < 0.0 { -1.0 } else { 1.0 };
+        let x = x.abs();
+        let t = 1.0 / (1.0 + 0.3275911 * x);
+        let a1 = 0.254829592;
+        let a2 = -0.284496736;
+        let a3 = 1.421413741;
+        let a4 = -1.453152027;
+        let a5 = 1.061405429;
+        let poly = (((a5 * t + a4) * t + a3) * t + a2) * t + a1;
+        let y = 1.0 - poly * t * (-x * x).exp();
+        let erf = sign * y;
+        0.5 * (1.0 + erf)
+    }
+
+    fn bs_price(spot: f64, sigma: f64, tau: f64, strike: f64, r: f64) -> Result<f64, String> {
+        if tau < 0.0 {
+            return Err("Negative tau.".into());
+        }
+        if sigma < 0.0 {
+            return Err("Negative sigma.".into());
+        }
+        if spot < 0.0 || strike < 0.0 {
+            return Err("Negative spot|strike.".into());
+        }
+
+        let d1 = ((spot / strike).ln() + (r + 0.5 * sigma.powf(2.0)) * tau) / (sigma * tau.sqrt());
+        let d2 = d1 - sigma * tau.sqrt();
+        let discount = (-r * tau).exp();
+        Ok(spot * norm_cdf(d1) - strike * discount * norm_cdf(d2))
+    }
+
+    fn bs_vega(spot: f64, sigma: f64, tau: f64, strike: f64, r: f64) -> Result<f64, String> {
+        if tau < 0.0 {
+            return Err("Negative tau.".into());
+        }
+        if sigma < 0.0 {
+            return Err("Negative sigma.".into());
+        }
+        if spot < 0.0 || strike < 0.0 {
+            return Err("Negative spot|strike.".into());
+        }
+        let d1 = ((spot / strike).ln() + (r + 0.5 * sigma.powf(2.0)) * tau) / (sigma * tau.sqrt());
+
+        Ok(spot * norm_pdf(d1) * tau.sqrt())
+    }
+
+    struct ImpliedBlackVol {
+        spot: f64,
+        strike: f64,
+        tau: f64,
+        r: f64,
+        target_price: f64,
+    }
+
+    impl ImpliedBlackVol {
+        pub fn new(spot: f64, strike: f64, tau: f64, r: f64, target_price: f64) -> Self {
+            Self {
+                spot,
+                strike,
+                tau,
+                r,
+                target_price: target_price,
+            }
+        }
+    }
+
+    impl ContFunc<f64> for ImpliedBlackVol {
+        fn call(&self, x: &f64) -> Result<f64, String> {
+            Ok(bs_price(self.spot, *x, self.tau, self.strike, self.r)? - self.target_price)
+        }
+    }
+
+    impl C1Func<f64> for ImpliedBlackVol {
+        fn grad(&self, x: &f64) -> Result<f64, String> {
+            Ok(bs_vega(self.spot, *x, self.tau, self.strike, self.r)?)
+        }
+    }
+
+    #[test]
+    fn example_test() {
+        let x0 = 0.5;
+        let max_iter = 100;
+        let solver = NewtonRaphson::new(x0, max_iter);
+
+        let spot = 100.0;
+        let strike = 100.0;
+        let tau = 1.0;
+        let r = 0.05;
+        let target_sigma = 0.2;
+        let target_price = bs_price(spot, target_sigma, tau, strike, r).unwrap();
+        let problem = ImpliedBlackVol::new(spot, strike, tau, r, target_price);
+
+        let result = solver.solve(&problem);
+        println!("{:?}", result);
+    }
+}
