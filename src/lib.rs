@@ -3,6 +3,8 @@
 //! This library provides tools for working with asset-liability management,
 //! cash flows, financial instruments, interest rates, and related computations.
 
+/// Automatic differentiation
+pub mod ad;
 /// Cash flows module.
 pub mod cashflows;
 /// Core types and utilities.

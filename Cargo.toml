@@ -22,19 +22,6 @@ serde = "1.0.136"
 serde_json = "1.0.68"
 
 
-[dev-dependencies]
-criterion = { version = "0.5.1", features = ["html_reports"] }
-
-[[bench]]
-name = "fixedratepricing"
-harness = false
-
-[[example]]
-name = "fixedratepricing"
-
-[[example]]
-name = "floatingratepricing"
-
 [lints.rust]
 missing_docs = "forbid"
 unreachable_patterns = "forbid"

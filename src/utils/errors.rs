@@ -43,6 +43,18 @@ pub enum AtlasError {
     /// Error that occurs while interpolating values.
     #[error("Interpolation error {0}")]
     InterpolationErr(String),
+    /// A generic node error.
+    #[error("Node error: {0}")]
+    NodeError(String),
+    /// A generic tape error.
+    #[error("Tape error: {0}")]
+    TapeError(String),
+    /// A generic AD number error.
+    #[error("AD Real error: {0}")]
+    ADRealError(String),
+    /// Attempted to access a node that is not recorded on the tape.
+    #[error("Node not indexed in tape")]
+    NodeNotIndexedInTapeErr,
 }
 
 /// A specialized `Result` type for Atlas operations that may fail with an `AtlasError`.
