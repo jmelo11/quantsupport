@@ -10,11 +10,12 @@ use serde_json::Value;
 use crate::{
     indices::marketindex::MarketIndex,
     marketdata::volatility::{VolatilityCube, VolatilitySurface},
-    time::period::Period,
     time::date::Date,
+    time::period::Period,
     utils::errors::{AtlasError, Result},
 };
 
+/// # QuoteLevels
 /// Quote levels associated with an instrument identifier.
 ///
 /// When multiple levels are provided the `mid` is preferred, otherwise `bid/ask`
@@ -70,6 +71,7 @@ impl QuoteLevels {
     }
 }
 
+/// # QuoteRecord
 /// Quote record compatible with serde deserialization.
 ///
 /// This supports JSON rows of the form:
@@ -83,6 +85,7 @@ pub struct QuoteRecord {
     levels: QuoteLevels,
 }
 
+/// # Quote
 /// Quote structure stored by the market data provider.
 #[derive(Clone, Debug)]
 pub struct Quote {
@@ -194,9 +197,7 @@ impl QuoteDetails {
                 }
                 _ => {}
             }
-            details
-                .attributes
-                .insert(key_lower, value.to_string());
+            details.attributes.insert(key_lower, value.to_string());
         }
 
         Ok(details)
@@ -245,6 +246,7 @@ impl QuoteDetails {
     }
 }
 
+/// # ExpandedQuote
 /// Expanded quote that includes parsed instrument metadata.
 #[derive(Clone, Debug)]
 pub struct ExpandedQuote {
@@ -286,6 +288,7 @@ impl ExpandedQuote {
     }
 }
 
+/// # MarketDataProvider
 /// Provider of market data loaded from serialized quotes.
 ///
 /// JSON payloads may be provided as an array of quote records:
@@ -361,8 +364,8 @@ impl MarketDataProvider {
     /// # Errors
     /// Returns an error if the file cannot be read or quotes are invalid.
     pub fn from_json_path(reference_date: Date, path: &str) -> Result<Self> {
-        let file = File::open(path)
-            .map_err(|err| AtlasError::DeserializationErr(err.to_string()))?;
+        let file =
+            File::open(path).map_err(|err| AtlasError::DeserializationErr(err.to_string()))?;
         let reader = BufReader::new(file);
         Self::from_json_reader(reference_date, reader)
     }
@@ -405,8 +408,8 @@ impl MarketDataProvider {
     /// # Errors
     /// Returns an error if the file cannot be read or quotes are invalid.
     pub fn from_csv_path(reference_date: Date, path: &str) -> Result<Self> {
-        let file = File::open(path)
-            .map_err(|err| AtlasError::DeserializationErr(err.to_string()))?;
+        let file =
+            File::open(path).map_err(|err| AtlasError::DeserializationErr(err.to_string()))?;
         let reader = BufReader::new(file);
         Self::from_csv_reader(reference_date, reader)
     }
@@ -444,7 +447,10 @@ impl MarketDataProvider {
 
 fn build_volatility_structures(
     quotes: &[ExpandedQuote],
-) -> Result<(HashMap<MarketIndex, VolatilitySurface>, HashMap<MarketIndex, VolatilityCube>)> {
+) -> Result<(
+    HashMap<MarketIndex, VolatilitySurface>,
+    HashMap<MarketIndex, VolatilityCube>,
+)> {
     let mut surfaces = HashMap::new();
     let mut cubes = HashMap::new();
 
@@ -524,9 +530,8 @@ fn quote_record_from_csv(headers: &[String], values: &[&str]) -> Result<QuoteRec
         map.insert(
             "mid".to_string(),
             Value::Number(
-                serde_json::Number::from_f64(mid).ok_or_else(|| {
-                    AtlasError::InvalidValueErr("Invalid mid value".to_string())
-                })?,
+                serde_json::Number::from_f64(mid)
+                    .ok_or_else(|| AtlasError::InvalidValueErr("Invalid mid value".to_string()))?,
             ),
         );
     }
@@ -534,9 +539,8 @@ fn quote_record_from_csv(headers: &[String], values: &[&str]) -> Result<QuoteRec
         map.insert(
             "bid".to_string(),
             Value::Number(
-                serde_json::Number::from_f64(bid).ok_or_else(|| {
-                    AtlasError::InvalidValueErr("Invalid bid value".to_string())
-                })?,
+                serde_json::Number::from_f64(bid)
+                    .ok_or_else(|| AtlasError::InvalidValueErr("Invalid bid value".to_string()))?,
             ),
         );
     }
@@ -544,9 +548,8 @@ fn quote_record_from_csv(headers: &[String], values: &[&str]) -> Result<QuoteRec
         map.insert(
             "ask".to_string(),
             Value::Number(
-                serde_json::Number::from_f64(ask).ok_or_else(|| {
-                    AtlasError::InvalidValueErr("Invalid ask value".to_string())
-                })?,
+                serde_json::Number::from_f64(ask)
+                    .ok_or_else(|| AtlasError::InvalidValueErr("Invalid ask value".to_string()))?,
             ),
         );
     }
@@ -569,7 +572,10 @@ mod tests {
         assert_eq!(details.instrument(), &MarketIndex::from_str("SPX"));
         assert_eq!(details.strike(), Some(4500.0));
         assert_eq!(details.shift(), Some(0.01));
-        assert_eq!(details.tenor(), Some(Period::new(1, crate::time::enums::TimeUnit::Years)));
+        assert_eq!(
+            details.tenor(),
+            Some(Period::new(1, crate::time::enums::TimeUnit::Years))
+        );
         assert_eq!(details.maturity(), Some(Date::new(2026, 1, 1)));
     }
 
@@ -581,13 +587,11 @@ mod tests {
             "SPX|maturity=2026-01-01|strike=4500|tenor=1Y": { "mid": 0.18 }
         }
         "#;
-        let provider = MarketDataProvider::from_json_str(Date::new(2024, 1, 1), json)
-            .expect("valid provider");
+        let provider =
+            MarketDataProvider::from_json_str(Date::new(2024, 1, 1), json).expect("valid provider");
 
         let spx = MarketIndex::from_str("SPX");
-        let surface = provider
-            .volatility_surface(&spx)
-            .expect("surface exists");
+        let surface = provider.volatility_surface(&spx).expect("surface exists");
         assert_eq!(
             surface.volatility(Date::new(2026, 1, 1), 4500.0).unwrap(),
             0.22
@@ -600,7 +604,7 @@ mod tests {
                 Period::new(1, crate::time::enums::TimeUnit::Years),
                 4500.0
             )
-                .unwrap(),
+            .unwrap(),
             0.18
         );
     }
@@ -608,9 +612,8 @@ mod tests {
     #[test]
     fn csv_reader_loads_quotes() {
         let csv = "instrument,mid,bid,ask\nSPX|maturity=2026-01-01|strike=4500,0.22,,\n";
-        let provider =
-            MarketDataProvider::from_csv_reader(Date::new(2024, 1, 1), Cursor::new(csv))
-                .expect("valid provider");
+        let provider = MarketDataProvider::from_csv_reader(Date::new(2024, 1, 1), Cursor::new(csv))
+            .expect("valid provider");
         assert_eq!(provider.quotes().len(), 1);
         let quote = &provider.quotes()[0];
         assert_eq!(quote.identifier(), "SPX|maturity=2026-01-01|strike=4500");
