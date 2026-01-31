@@ -43,7 +43,7 @@ impl FixingProvider {
     pub fn add_fixing(&mut self, market_index: &MarketIndex, date: Date, value: f64) {
         // ensure an entry exists and insert the fixing
         self.values
-            .entry(*market_index)
+            .entry(market_index.clone())
             .or_insert_with(HashMap::new)
             .insert(date, value);
     }
