@@ -2,6 +2,7 @@ use std::{
     collections::{BTreeMap, HashMap},
     fs::File,
     io::{BufRead, BufReader, Read},
+    str::FromStr,
 };
 
 use serde::{Deserialize, Serialize};
@@ -15,7 +16,7 @@ use crate::{
     utils::errors::{AtlasError, Result},
 };
 
-/// # QuoteLevels
+/// # `QuoteLevels`
 /// Quote levels associated with an instrument identifier.
 ///
 /// When multiple levels are provided the `mid` is preferred, otherwise `bid/ask`
@@ -54,7 +55,7 @@ impl QuoteLevels {
 
     /// Resolves a representative quote value.
     ///
-    /// # Errors
+    /// ## Errors
     /// Returns an error if none of mid, bid, or ask are available.
     pub fn value(&self) -> Result<f64> {
         if let Some(mid) = self.mid {
@@ -71,7 +72,7 @@ impl QuoteLevels {
     }
 }
 
-/// # QuoteRecord
+/// # `QuoteRecord`
 /// Quote record compatible with serde deserialization.
 ///
 /// This supports JSON rows of the form:
@@ -135,7 +136,7 @@ impl QuoteSource {
     }
 }
 
-/// # QuoteDetails
+/// # `QuoteDetails`
 ///
 /// Parsed quote identifier details.
 ///
@@ -156,7 +157,7 @@ pub struct QuoteDetails {
 impl QuoteDetails {
     /// Parses an instrument identifier of the form `INSTRUMENT|key=value|...`.
     ///
-    /// # Errors
+    /// ## Errors
     /// Returns an error if the identifier is malformed.
     pub fn parse(identifier: &str) -> Result<Self> {
         let mut parts = identifier.split('|');
@@ -170,7 +171,11 @@ impl QuoteDetails {
             .to_string();
 
         let mut details = Self {
-            instrument: MarketIndex::from_str(&instrument),
+            instrument: MarketIndex::from_str(&instrument).map_err(|err| {
+                AtlasError::InvalidValueErr(format!(
+                    "Invalid market index in quote identifier: {err}"
+                ))
+            })?,
             ..Self::default()
         };
 
@@ -207,7 +212,7 @@ impl QuoteDetails {
 
     /// Returns the instrument base identifier.
     #[must_use]
-    pub fn instrument(&self) -> &MarketIndex {
+    pub const fn instrument(&self) -> &MarketIndex {
         &self.instrument
     }
 
@@ -248,7 +253,7 @@ impl QuoteDetails {
     }
 }
 
-/// # ExpandedQuote
+/// # `ExpandedQuote`
 /// Expanded quote that includes parsed instrument metadata.
 #[derive(Clone, Debug)]
 pub struct ExpandedQuote {
@@ -260,7 +265,7 @@ pub struct ExpandedQuote {
 impl ExpandedQuote {
     /// Expands a quote by parsing the identifier for metadata.
     ///
-    /// # Errors
+    /// ## Errors
     /// Returns an error if the identifier cannot be parsed.
     pub fn try_from_quote(quote: &Quote) -> Result<Self> {
         let details = QuoteDetails::parse(&quote.identifier)?;
@@ -290,7 +295,7 @@ impl ExpandedQuote {
     }
 }
 
-/// # MarketDataProvider
+/// # `MarketDataProvider`
 /// Provider of market data loaded from serialized quotes.
 ///
 /// JSON payloads may be provided as an array of quote records:
@@ -324,7 +329,7 @@ impl MarketDataProvider {
 
     /// Creates a market data provider from a set of quotes.
     ///
-    /// # Errors
+    /// ## Errors
     /// Returns an error if any quote identifiers are invalid.
     pub fn from_quotes(reference_date: Date, quotes: Vec<Quote>) -> Result<Self> {
         let expanded_quotes = quotes
@@ -343,7 +348,7 @@ impl MarketDataProvider {
 
     /// Loads market data from a JSON string.
     ///
-    /// # Errors
+    /// ## Errors
     /// Returns an error if deserialization fails or quotes are invalid.
     pub fn from_json_str(reference_date: Date, payload: &str) -> Result<Self> {
         let source: QuoteSource = serde_json::from_str(payload)
@@ -353,7 +358,7 @@ impl MarketDataProvider {
 
     /// Loads market data from a JSON reader.
     ///
-    /// # Errors
+    /// ## Errors
     /// Returns an error if deserialization fails or quotes are invalid.
     pub fn from_json_reader<R: Read>(reference_date: Date, reader: R) -> Result<Self> {
         let source: QuoteSource = serde_json::from_reader(reader)
@@ -363,7 +368,7 @@ impl MarketDataProvider {
 
     /// Loads market data from a JSON file path.
     ///
-    /// # Errors
+    /// ## Errors
     /// Returns an error if the file cannot be read or quotes are invalid.
     pub fn from_json_path(reference_date: Date, path: &str) -> Result<Self> {
         let file =
@@ -374,7 +379,7 @@ impl MarketDataProvider {
 
     /// Loads market data from a CSV reader.
     ///
-    /// # Errors
+    /// ## Errors
     /// Returns an error if deserialization fails or quotes are invalid.
     pub fn from_csv_reader<R: Read>(reference_date: Date, reader: R) -> Result<Self> {
         let mut reader = BufReader::new(reader);
@@ -407,7 +412,7 @@ impl MarketDataProvider {
 
     /// Loads market data from a CSV file path.
     ///
-    /// # Errors
+    /// ## Errors
     /// Returns an error if the file cannot be read or quotes are invalid.
     pub fn from_csv_path(reference_date: Date, path: &str) -> Result<Self> {
         let file =
@@ -571,7 +576,7 @@ mod tests {
         let identifier = "SPX|maturity=2026-01-01|strike=4500|shift=0.01|tenor=1Y";
         let details = QuoteDetails::parse(identifier).expect("valid identifier");
 
-        assert_eq!(details.instrument(), &MarketIndex::from_str("SPX"));
+        assert_eq!(details.instrument(), &MarketIndex::from_str("SPX").unwrap());
         assert_eq!(details.strike(), Some(4500.0));
         assert_eq!(details.shift(), Some(0.01));
         assert_eq!(
@@ -592,7 +597,7 @@ mod tests {
         let provider =
             MarketDataProvider::from_json_str(Date::new(2024, 1, 1), json).expect("valid provider");
 
-        let spx = MarketIndex::from_str("SPX");
+        let spx = MarketIndex::from_str("SPX").unwrap();
         let surface = provider.volatility_surface(&spx).expect("surface exists");
         assert_eq!(
             surface.volatility(Date::new(2026, 1, 1), 4500.0).unwrap(),

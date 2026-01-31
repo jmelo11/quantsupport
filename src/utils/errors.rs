@@ -1,6 +1,8 @@
 use chrono::ParseError;
 use thiserror::Error;
 
+/// # `AtlasError`
+///
 /// Represents errors that can occur in the Atlas library.
 #[derive(Debug, Error)]
 pub enum AtlasError {
@@ -34,9 +36,12 @@ pub enum AtlasError {
     /// Error indicating that a provided value is invalid.
     #[error("Invalid value error: {0}")]
     InvalidValueErr(String),
+    /// Error that occurs during solver (Argmin library) operations.
+    #[error("Solver error: {0}")]
+    ArgMinSolverErr(#[from] argmin::core::Error),
     /// Error that occurs during solver operations.
     #[error("Solver error: {0}")]
-    SolverErr(#[from] argmin::core::Error),
+    SolverErr(String),
     /// Error indicating that a feature is not yet implemented.
     #[error("{0}")]
     NotImplementedErr(String),

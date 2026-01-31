@@ -35,7 +35,7 @@ impl Default for TapeNode {
 }
 
 impl TapeNode {
-    #[inline(always)]
+    #[inline]
     /// Propagates this node's adjoint into each child using stored derivatives.
     pub fn propagate_into(&self) {
         debug_assert_eq!(self.childs.len(), self.derivs.len());

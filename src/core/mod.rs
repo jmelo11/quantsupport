@@ -1,12 +1,12 @@
-/// EvaluationResults module.
+/// Evaluation results module.
 pub mod evaluationresults;
 /// Instrument module.
 pub mod instrument;
 /// Pricer module.
 pub mod pricer;
-/// PricingContext module.
+/// Pricing context module.
 pub mod pricingcontext;
-/// PricingRequest module.
+/// Pricing request module.
 pub mod pricingrequest;
 /// Trade module.
 pub mod trade;

@@ -10,7 +10,7 @@ pub struct PricingContext {
 impl PricingContext {
     /// Creates a new pricing context.
     #[must_use]
-    pub fn new(
+    pub const fn new(
         market_data_provider: MarketDataProvider,
         fixings_provider: FixingProvider,
         model_configuration: usize,

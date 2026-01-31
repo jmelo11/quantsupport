@@ -1,12 +1,15 @@
-use crate::math::solvers::solvers::{C1Func, DescentMethod};
+use crate::math::solvers::solvertraits::{
+    C1Func, DescentMethod, OptimizerSolution, SolutionStatus,
+};
+use crate::utils::errors::{AtlasError, Result};
 
-/// # NewtonRaphson
+/// # `NewtonRaphson`
 ///
 /// Simple Newton–Raphson solver for scalar problems (`f64`).
 ///
 /// This struct stores solver parameters and provides builder-style setters
-/// for convenience. It implements `DescentMethod` for `f64` when the problem
-/// implements `C1Func<f64>`.
+/// for convenience. It implements [`DescentMethod`] for `f64` when the problem
+/// implements [`C1Func<f64>`].
 pub struct NewtonRaphson<P, X> {
     _p: std::marker::PhantomData<P>,
     _x: std::marker::PhantomData<X>,
@@ -19,31 +22,35 @@ impl<P, X> NewtonRaphson<P, X>
 where
     P: C1Func<X>,
 {
-    /// Create a new `NewtonRaphson` solver with initial guess `x0` and `max_iter`.
-    pub fn new(x0: f64, max_iter: i64) -> Self {
+    /// Create a new [`NewtonRaphson`] solver with initial guess `x0` and `max_iter`.
+    #[must_use]
+    pub const fn new(x0: f64, max_iter: i64) -> Self {
         Self {
             _p: std::marker::PhantomData,
             _x: std::marker::PhantomData,
             ftol: 1e-16,
-            x0: x0,
-            max_iter: max_iter,
+            x0,
+            max_iter,
         }
     }
 
     /// Set initial guess.
-    pub fn with_x0(mut self, x0: f64) -> Self {
+    #[must_use]
+    pub const fn with_x0(mut self, x0: f64) -> Self {
         self.x0 = x0;
         self
     }
 
     /// Set maximum iterations.
-    pub fn with_max_iter(mut self, max_iter: i64) -> Self {
+    #[must_use]
+    pub const fn with_max_iter(mut self, max_iter: i64) -> Self {
         self.max_iter = max_iter;
         self
     }
 
     /// Set the tolerance on the objective value for convergence.
-    pub fn with_ftol(mut self, ftol: f64) -> Self {
+    #[must_use]
+    pub const fn with_ftol(mut self, ftol: f64) -> Self {
         self.ftol = ftol;
         self
     }
@@ -60,10 +67,10 @@ where
     fn max_iter(&self) -> i64 {
         self.max_iter
     }
-    fn step(&self, x: &f64, f: &P, fval: f64) -> Result<f64, String> {
-        let g = f.grad(&x)?;
+    fn step(&self, x: &f64, f: &P, fval: f64) -> Result<f64> {
+        let g = f.grad(x)?;
         if g == 0.0 {
-            return Err("Gradient == 0.".into());
+            return Err(AtlasError::SolverErr("Gradient == 0.".into()));
         }
         Ok(fval / g)
     }
@@ -72,25 +79,25 @@ where
         self.x0
     }
 
-    fn solve(&self, f: &P) -> Result<super::solvers::OptimizerSolution<f64>, String> {
+    fn solve(&self, f: &P) -> Result<OptimizerSolution<f64>> {
         let mut x = self.x0();
         let mut fval = 0.0;
 
         for _ in 0..self.max_iter() {
             fval = f.call(&x)?;
             if fval.abs() < self.ftol() {
-                return Ok(super::solvers::OptimizerSolution {
+                return Ok(OptimizerSolution {
                     x,
                     f: fval,
-                    status: super::solvers::SolutionStatus::Converged,
+                    status: SolutionStatus::Converged,
                 });
             }
-            x = x - self.step(&x, &f, fval)?;
+            x = x - self.step(&x, f, fval)?;
         }
-        Ok(super::solvers::OptimizerSolution {
+        Ok(OptimizerSolution {
             x,
             f: fval,
-            status: super::solvers::SolutionStatus::NotConverged,
+            status: SolutionStatus::NotConverged,
         })
     }
 }
@@ -99,7 +106,7 @@ where
 mod test {
     use crate::math::solvers::{
         newtonraphson::NewtonRaphson,
-        solvers::{C1Func, ContFunc, DescentMethod},
+        solvertraits::{C1Func, ContFunc, DescentMethod},
     };
     use std::f64::consts::PI;
 
@@ -123,15 +130,27 @@ mod test {
         0.5 * (1.0 + erf)
     }
 
-    fn bs_price(spot: f64, sigma: f64, tau: f64, strike: f64, r: f64) -> Result<f64, String> {
+    fn bs_price(
+        spot: f64,
+        sigma: f64,
+        tau: f64,
+        strike: f64,
+        r: f64,
+    ) -> crate::utils::errors::Result<f64> {
         if tau < 0.0 {
-            return Err("Negative tau.".into());
+            return Err(crate::utils::errors::AtlasError::SolverErr(
+                "Negative tau.".into(),
+            ));
         }
         if sigma < 0.0 {
-            return Err("Negative sigma.".into());
+            return Err(crate::utils::errors::AtlasError::SolverErr(
+                "Negative sigma.".into(),
+            ));
         }
         if spot < 0.0 || strike < 0.0 {
-            return Err("Negative spot|strike.".into());
+            return Err(crate::utils::errors::AtlasError::SolverErr(
+                "Negative spot|strike.".into(),
+            ));
         }
 
         let d1 = ((spot / strike).ln() + (r + 0.5 * sigma.powf(2.0)) * tau) / (sigma * tau.sqrt());
@@ -140,15 +159,27 @@ mod test {
         Ok(spot * norm_cdf(d1) - strike * discount * norm_cdf(d2))
     }
 
-    fn bs_vega(spot: f64, sigma: f64, tau: f64, strike: f64, r: f64) -> Result<f64, String> {
+    fn bs_vega(
+        spot: f64,
+        sigma: f64,
+        tau: f64,
+        strike: f64,
+        r: f64,
+    ) -> crate::utils::errors::Result<f64> {
         if tau < 0.0 {
-            return Err("Negative tau.".into());
+            return Err(crate::utils::errors::AtlasError::SolverErr(
+                "Negative tau.".into(),
+            ));
         }
         if sigma < 0.0 {
-            return Err("Negative sigma.".into());
+            return Err(crate::utils::errors::AtlasError::SolverErr(
+                "Negative sigma.".into(),
+            ));
         }
         if spot < 0.0 || strike < 0.0 {
-            return Err("Negative spot|strike.".into());
+            return Err(crate::utils::errors::AtlasError::SolverErr(
+                "Negative spot|strike.".into(),
+            ));
         }
         let d1 = ((spot / strike).ln() + (r + 0.5 * sigma.powf(2.0)) * tau) / (sigma * tau.sqrt());
 
@@ -176,13 +207,13 @@ mod test {
     }
 
     impl ContFunc<f64> for ImpliedBlackVol {
-        fn call(&self, x: &f64) -> Result<f64, String> {
+        fn call(&self, x: &f64) -> crate::utils::errors::Result<f64> {
             Ok(bs_price(self.spot, *x, self.tau, self.strike, self.r)? - self.target_price)
         }
     }
 
     impl C1Func<f64> for ImpliedBlackVol {
-        fn grad(&self, x: &f64) -> Result<f64, String> {
+        fn grad(&self, x: &f64) -> crate::utils::errors::Result<f64> {
             Ok(bs_vega(self.spot, *x, self.tau, self.strike, self.r)?)
         }
     }

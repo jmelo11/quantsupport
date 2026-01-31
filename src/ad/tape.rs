@@ -10,19 +10,21 @@ use std::{
 use crate::utils::errors::Result;
 use crate::{ad::node::TapeNode, utils::errors::AtlasError};
 
+/// # `Tape`
+///
 /// A tape holding all recorded nodes for reverse-mode differentiation.
 pub struct Tape {
     bump: Bump,
     book: Vec<NonNull<TapeNode>>,
     mark: usize,
-    /// Whether the tape should record new nodes.
-    pub active: bool,
+    active: bool,
 }
 
 impl Tape {
     /// Creates an empty tape with recording disabled.
+    #[must_use]
     pub fn new() -> Self {
-        Tape {
+        Self {
             bump: Bump::new(),
             book: Vec::new(),
             mark: 0,
@@ -30,7 +32,7 @@ impl Tape {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     /// Allocates a node in the bump arena and records it in the tape book.
     fn push(&mut self, n: TapeNode) -> NonNull<TapeNode> {
         let ptr = NonNull::from(self.bump.alloc(n));
@@ -38,7 +40,7 @@ impl Tape {
         ptr
     }
 
-    #[inline(always)]
+    #[inline]
     /// Resets all adjoints on the current thread's tape.
     pub fn reset_adjoints() {
         Self::ensure_thread_tape();
@@ -49,24 +51,12 @@ impl Tape {
         });
     }
 
-    /// Prints the tape contents to stdout for debugging.
-    pub fn debug_print() {
-        Self::ensure_thread_tape();
-        TAPE.with(|tc| {
-            let tape = tc.borrow();
-            for (i, &ptr) in tape.book.iter().enumerate() {
-                let node = unsafe { ptr.as_ref() };
-                println!("{}: {:?}", i, node);
-            }
-        });
-    }
-
     /// Returns the current mark index for this tape.
-    pub fn mark(&self) -> usize {
+    pub const fn mark(&self) -> usize {
         self.mark
     }
 
-    #[inline(always)]
+    #[inline]
     /// Returns the index of a node in the tape book, if it exists.
     ///
     /// This is a linear scan; the cost grows with the number of recorded nodes.
@@ -154,6 +144,7 @@ impl Tape {
 
     #[inline]
     /// Returns whether the thread-local tape is active.
+    #[must_use]
     pub fn is_active() -> bool {
         Self::ensure_thread_tape();
         TAPE.with(|tc| tc.borrow().active)

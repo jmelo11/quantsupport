@@ -1,5 +1,5 @@
 use crate::{
-    currencies::enums::Currency,
+    currencies::currency::Currency,
     indices::marketindex::{MarketIndex, MarketIndexDetails},
     rates::interestrate::RateDefinition,
     time::calendar::Calendar,

@@ -10,13 +10,13 @@ pub enum MarketIndex {
     SOFR,
     /// SOFR Compounded Index.
     SOFRCompounded,
-    /// TermSOFR1m Index.
+    /// Term-SOFR 1m Index.
     TermSOFR1m,
-    /// TermSOFR3m Index.
+    /// Term-SOFR 12m Index.
     TermSOFR3m,
-    /// TermSOFR6m Index.
+    /// Term-SOFR 12m Index.
     TermSOFR6m,
-    /// TermSOFR12m Index.
+    /// Term-SOFR 12m Index.
     TermSOFR12m,
     /// Indice camara promedio Index.
     ICP,
@@ -42,11 +42,11 @@ impl Display for MarketIndex {
     }
 }
 
-impl MarketIndex {
-    /// Creates a market index from a string identifier.
-    #[must_use]
-    pub fn from_str(identifier: &str) -> Self {
-        match identifier {
+impl std::str::FromStr for MarketIndex {
+    type Err = std::convert::Infallible;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let resutls = match s {
             "SOFR" => Self::SOFR,
             "SOFRCompounded" => Self::SOFRCompounded,
             "TermSOFR1m" => Self::TermSOFR1m,
@@ -56,7 +56,8 @@ impl MarketIndex {
             "ICP" => Self::ICP,
             "VIX" => Self::VIX,
             other => Self::Other(other.to_string()),
-        }
+        };
+        Ok(resutls)
     }
 }
 

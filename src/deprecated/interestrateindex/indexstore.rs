@@ -172,10 +172,7 @@ impl IndexStore {
     ///
     /// # Errors
     /// Returns an error if the index cannot be read or the name is not found.
-    pub fn get_index_by_name(
-        &self,
-        name: &str,
-    ) -> Result<Arc<RwLock<dyn InterestRateIndexTrait>>> {
+    pub fn get_index_by_name(&self, name: &str) -> Result<Arc<RwLock<dyn InterestRateIndexTrait>>> {
         for (id, index) in &self.index_map {
             if index.read_index()?.name()? == name {
                 return self.get_index(*id);
@@ -257,9 +254,8 @@ impl IndexStore {
     /// # Errors
     /// Returns an error if the store cannot be advanced to the target date.
     pub fn advance_to_date(&self, date: Date) -> Result<Self> {
-        let days = i32::try_from(date - self.reference_date).map_err(|_| {
-            AtlasError::InvalidValueErr("Day count should fit in i32".to_string())
-        })?;
+        let days = i32::try_from(date - self.reference_date)
+            .map_err(|_| AtlasError::InvalidValueErr("Day count should fit in i32".to_string()))?;
         self.advance_to_period(Period::new(days, TimeUnit::Days))
     }
 
@@ -268,9 +264,10 @@ impl IndexStore {
     /// # Errors
     /// Returns an error if the source index is missing.
     pub fn swap_index_by_id(&mut self, from: usize, to: usize) -> Result<()> {
-        let index = self.index_map.remove(&from).ok_or_else(|| {
-            AtlasError::NotFoundErr(format!("Index with id {from} not found"))
-        })?;
+        let index = self
+            .index_map
+            .remove(&from)
+            .ok_or_else(|| AtlasError::NotFoundErr(format!("Index with id {from} not found")))?;
         self.index_map.insert(to, index);
         Ok(())
     }

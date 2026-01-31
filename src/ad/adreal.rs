@@ -54,9 +54,9 @@ impl IsReal for f64 {
 
 impl IsReal for ADReal {
     #[inline]
-    fn new(v: f64) -> Self {
-        let node = ADReal::TAPE_PTR.with(|t| unsafe { t.get().as_mut().new_leaf() });
-        Self { val: v, node: node }
+    fn new(val: f64) -> Self {
+        let node = Self::TAPE_PTR.with(|t| unsafe { t.get().as_mut().new_leaf() });
+        Self { val, node }
     }
     #[inline]
     fn value(&self) -> f64 {
@@ -64,11 +64,11 @@ impl IsReal for ADReal {
     }
     #[inline]
     fn one() -> Self {
-        ADReal::new(1.0)
+        Self::new(1.0)
     }
     #[inline]
     fn zero() -> Self {
-        ADReal::new(0.0)
+        Self::new(0.0)
     }
 }
 
@@ -106,8 +106,9 @@ impl ADReal {
     }
 
     /// Returns the raw pointer address of the current tape.
+    #[must_use]
     pub fn tape_addr() -> NonNull<Tape> {
-        Self::TAPE_PTR.with(|c| c.get())
+        Self::TAPE_PTR.with(Cell::get)
     }
 
     #[inline]
@@ -137,7 +138,7 @@ impl ADReal {
         Self::TAPE_PTR.with(|t| {
             let tape = unsafe { &mut *t.get().as_ptr() };
             tape.mut_node(root).unwrap().adj = 1.0;
-            tape.propagate_mark_to_start()
+            tape.propagate_mark_to_start();
         });
         Ok(())
     }
@@ -148,7 +149,7 @@ impl ADReal {
         Self::TAPE_PTR.with(|t| {
             let tape = unsafe { &mut *t.get().as_ptr() };
             tape.mut_node(root).unwrap().adj = 1.0;
-            tape.propagate_to_mark()
+            tape.propagate_to_mark();
         });
         Ok(())
     }
@@ -225,21 +226,21 @@ impl From<f32> for Const {
     #[inline]
     /// Converts a `f32` into a constant expression.
     fn from(v: f32) -> Self {
-        Const(v as f64)
+        Const(f64::from(v))
     }
 }
 impl From<i32> for Const {
     #[inline]
     /// Converts an `i32` into a constant expression.
     fn from(v: i32) -> Self {
-        Const(v as f64)
+        Const(f64::from(v))
     }
 }
 impl From<u32> for Const {
     #[inline]
     /// Converts a `u32` into a constant expression.
     fn from(v: u32) -> Self {
-        Const(v as f64)
+        Const(f64::from(v))
     }
 }
 impl From<i64> for Const {
@@ -951,25 +952,25 @@ where
 impl From<f64> for ADReal {
     /// Converts a `f64` into an `ADReal`, recording if the tape is active.
     fn from(v: f64) -> Self {
-        ADReal::new(v)
+        Self::new(v)
     }
 }
 impl From<f32> for ADReal {
     /// Converts a `f32` into an `ADReal`, recording if the tape is active.
     fn from(v: f32) -> Self {
-        ADReal::new(v as f64)
+        Self::new(f64::from(v))
     }
 }
 impl From<i32> for ADReal {
     /// Converts an `i32` into an `ADReal`, recording if the tape is active.
     fn from(v: i32) -> Self {
-        ADReal::new(v as f64)
+        Self::new(f64::from(v))
     }
 }
 impl From<Const> for ADReal {
     /// Converts a `Const` expression into an `ADReal`.
     fn from(v: Const) -> Self {
-        ADReal::new(v.0)
+        Self::new(v.0)
     }
 }
 

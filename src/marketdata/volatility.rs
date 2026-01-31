@@ -48,7 +48,7 @@ pub struct VolatilitySurface {
 impl VolatilitySurface {
     /// Creates an empty volatility surface for the given instrument.
     #[must_use]
-    pub fn new(instrument: MarketIndex) -> Self {
+    pub const fn new(instrument: MarketIndex) -> Self {
         Self {
             instrument,
             points: BTreeMap::new(),
@@ -57,7 +57,7 @@ impl VolatilitySurface {
 
     /// Returns the instrument identifier for this surface.
     #[must_use]
-    pub fn instrument(&self) -> &MarketIndex {
+    pub const fn instrument(&self) -> &MarketIndex {
         &self.instrument
     }
 
@@ -65,7 +65,7 @@ impl VolatilitySurface {
     pub fn insert_point(&mut self, maturity: Date, strike: f64, volatility: f64) {
         self.points
             .entry(maturity)
-            .or_insert_with(BTreeMap::new)
+            .or_default()
             .insert(FloatKey::new(strike), volatility);
     }
 
@@ -84,11 +84,11 @@ impl VolatilitySurface {
             .get(&FloatKey::new(strike))
             .copied()
             .ok_or_else(|| {
-            AtlasError::NotFoundErr(format!(
+                AtlasError::NotFoundErr(format!(
                 "Volatility surface {instrument} missing strike {strike} for maturity {maturity}",
                 instrument = self.instrument
             ))
-        })
+            })
     }
 
     /// Returns all stored points in the surface.
@@ -111,7 +111,7 @@ pub struct VolatilityCube {
 impl VolatilityCube {
     /// Creates an empty volatility cube for the given instrument.
     #[must_use]
-    pub fn new(instrument: MarketIndex) -> Self {
+    pub const fn new(instrument: MarketIndex) -> Self {
         Self {
             instrument,
             points: BTreeMap::new(),
@@ -120,7 +120,7 @@ impl VolatilityCube {
 
     /// Returns the instrument identifier for this cube.
     #[must_use]
-    pub fn instrument(&self) -> &MarketIndex {
+    pub const fn instrument(&self) -> &MarketIndex {
         &self.instrument
     }
 
@@ -128,9 +128,9 @@ impl VolatilityCube {
     pub fn insert_point(&mut self, maturity: Date, tenor: Period, strike: f64, vol: f64) {
         self.points
             .entry(maturity)
-            .or_insert_with(BTreeMap::new)
+            .or_default()
             .entry(tenor)
-            .or_insert_with(BTreeMap::new)
+            .or_default()
             .insert(FloatKey::new(strike), vol);
     }
 

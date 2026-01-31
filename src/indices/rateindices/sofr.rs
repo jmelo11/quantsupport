@@ -1,5 +1,5 @@
 use crate::{
-    currencies::enums::Currency,
+    currencies::currency::Currency,
     indices::{
         marketindex::{MarketIndex, MarketIndexDetails},
         quotetype::QuoteType,
@@ -14,7 +14,9 @@ use crate::{
     },
 };
 
-/// # SOFRIndex
+/// # `SOFRIndex`
+///
+/// Details for the SOFR rate index.
 pub struct SOFRIndex;
 impl MarketIndexDetails for SOFRIndex {
     fn quote_type(&self) -> QuoteType {

@@ -28,9 +28,10 @@
 //! # let _ = solver.solve(&Problem {});
 //! ```
 
+use crate::utils::errors::Result;
 use std::ops::Sub;
 
-/// # SolutionStatus
+/// # `SolutionStatus`
 ///
 /// Status of an optimization/solver run.
 #[derive(Debug)]
@@ -41,7 +42,7 @@ pub enum SolutionStatus {
     NotConverged,
 }
 
-/// # OptimizerSolution
+/// # `OptimizerSolution`
 ///
 /// Solution container returned by solvers.
 #[derive(Debug)]
@@ -54,36 +55,51 @@ pub struct OptimizerSolution<X> {
     pub status: SolutionStatus,
 }
 
-/// # ContFunc
+/// # `ContFunc`
 ///
 /// Trait for a continuous scalar function (or objective) over `X`.
 ///
 /// Implementors should return the function value (or an error string).
 pub trait ContFunc<X> {
     /// Evaluate the function at `x`.
-    fn call(&self, x: &X) -> Result<f64, String>;
+    ///
+    /// ## Errors
+    /// Returns an [`AtlasError`] if the function evaluation fails.
+    fn call(&self, x: &X) -> Result<f64>;
 }
 
-/// # C1Func
+/// # `C1Func`
 ///
 /// First-order function: extends `ContFunc` with a gradient.
+///
+/// ## Errors
+/// Returns an [`AtlasError`] if the gradient computation fails.
 pub trait C1Func<X>: ContFunc<X> {
     /// Return the gradient at `x`.
-    fn grad(&self, x: &X) -> Result<X, String>;
+    ///
+    /// ## Errors
+    /// Returns an [`AtlasError`] if the gradient computation fails.
+    fn grad(&self, x: &X) -> Result<X>;
 }
 
-/// # C2Func
+/// # `C2Func`
 ///
 /// Second-order (or Hessian) interface.
 ///
 /// `inv_hess` returns a type representing the inverse Hessian or an object
 /// useful to compute Newton-like steps. The concrete `H` type is left generic.
+///
+/// ## Errors
+/// Returns an [`AtlasError`] if the inverse Hessian computation fails.
 pub trait C2Func<X, H>: C1Func<X> {
     /// Return the inverse of the Hessian.
-    fn inv_hess(&self, x: &X) -> H;
+    ///
+    /// ## Errors
+    /// Returns an [`AtlasError`] if the inverse Hessian computation fails.
+    fn inv_hess(&self, x: &X) -> Result<H>;
 }
 
-/// # DescentMethod
+/// # `DescentMethod`
 ///
 /// Generic descent-method trait with a default `solve` implementation.
 ///
@@ -106,10 +122,16 @@ where
     fn ftol(&self) -> f64;
 
     /// Compute a step given current `x`, problem `f` and current function value `fval`.
-    fn step(&self, x: &X, f: &P, fval: f64) -> Result<X, String>;
+    ///
+    /// ## Errors
+    /// Returns an [`AtlasError`] if the step computation fails.
+    fn step(&self, x: &X, f: &P, fval: f64) -> Result<X>;
 
     /// Solve the problem using the provided builder methods.
-    fn solve(&self, f: &P) -> Result<OptimizerSolution<X>, String> {
+    ///
+    /// ## Errors
+    /// Returns an [`AtlasError`] if the function evaluation or step computation fails.
+    fn solve(&self, f: &P) -> Result<OptimizerSolution<X>> {
         let mut x = self.x0();
         let mut fval = 0.0;
 
@@ -122,7 +144,7 @@ where
                     status: SolutionStatus::Converged,
                 });
             }
-            x = x - self.step(&x, &f, fval)?;
+            x = x - self.step(&x, f, fval)?;
         }
         Ok(OptimizerSolution {
             x,
@@ -131,4 +153,3 @@ where
         })
     }
 }
-

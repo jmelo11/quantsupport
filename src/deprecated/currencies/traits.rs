@@ -1,5 +1,4 @@
 use crate::{
-    rates::indexstore::IndexStore,
     time::{date::Date, period::Period},
     utils::errors::Result,
 };
