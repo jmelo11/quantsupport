@@ -4,7 +4,7 @@ use core::fmt;
 
 use crate::ad::node::TapeNode;
 use crate::ad::tape::{Tape, TAPE};
-use crate::prelude::*;
+use crate::utils::errors::{AtlasError, Result};
 use std::cell::Cell;
 use std::ptr::NonNull;
 use std::{cmp::Ordering, ops::*};

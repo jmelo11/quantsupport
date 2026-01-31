@@ -1,4 +1,4 @@
-use crate::prelude::AtlasError;
+use crate::utils::errors::AtlasError;
 
 /// # `Interpolation` trait
 /// A trait that defines the interpolation of a function.

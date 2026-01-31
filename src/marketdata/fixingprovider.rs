@@ -5,9 +5,8 @@ use serde::Serialize;
 use crate::{
     indices::marketindex::MarketIndex,
     math::interpolation::interpolator::Interpolator,
-    prelude::AtlasError,
     time::{date::Date, enums::TimeUnit, period::Period},
-    utils::errors::Result,
+    utils::errors::{AtlasError, Result},
 };
 
 /// # `FixingProvider`

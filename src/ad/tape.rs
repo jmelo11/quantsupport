@@ -8,7 +8,7 @@ use std::{
 };
 
 use crate::utils::errors::Result;
-use crate::{ad::node::TapeNode, prelude::AtlasError};
+use crate::{ad::node::TapeNode, utils::errors::AtlasError};
 
 /// A tape holding all recorded nodes for reverse-mode differentiation.
 pub struct Tape {

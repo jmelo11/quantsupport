@@ -4,7 +4,7 @@ use crate::marketdata::{fixingprovider::FixingProvider, marketdataprovider::Mark
 pub struct PricingContext {
     market_data_provider: MarketDataProvider,
     fixings_provider: FixingProvider,
-    model_configuration: usize,
+    model_configuration: usize, // Placeholder for model configuration identifier, WIP
 }
 
 impl PricingContext {

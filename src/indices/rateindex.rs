@@ -1,6 +1,8 @@
 use crate::{
+    currencies::enums::Currency,
     indices::marketindex::{MarketIndex, MarketIndexDetails},
-    prelude::{Calendar, Currency, RateDefinition},
+    rates::interestrate::RateDefinition,
+    time::calendar::Calendar,
 };
 
 /// # `InterestRateIndex`

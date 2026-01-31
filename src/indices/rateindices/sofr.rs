@@ -1,12 +1,16 @@
 use crate::{
+    currencies::enums::Currency,
     indices::{
         marketindex::{MarketIndex, MarketIndexDetails},
         quotetype::QuoteType,
         rateindex::RateIndexDetails,
     },
-    prelude::{
-        Calendar, Compounding, Currency, DayCounter, Frequency, Market, RateDefinition,
-        UnitedStates,
+    rates::{enums::Compounding, interestrate::RateDefinition},
+    time::{
+        calendar::Calendar,
+        calendars::unitedstates::{Market, UnitedStates},
+        daycounter::DayCounter,
+        enums::Frequency,
     },
 };
 
@@ -32,7 +36,7 @@ impl RateIndexDetails for SOFRIndex {
     fn fixing_lag(&self) -> i64 {
         1
     }
-    fn rate_definition(&self) -> Option<crate::prelude::RateDefinition> {
+    fn rate_definition(&self) -> Option<RateDefinition> {
         Some(RateDefinition::new(
             DayCounter::Actual360,
             Compounding::Simple,

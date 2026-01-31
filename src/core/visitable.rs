@@ -1,9 +1,9 @@
 use crate::{
-    core2::{
+    core::{
         evaluationresults::EvaluationResults, pricingcontext::PricingContext,
         pricingrequest::PricingRequest,
     },
-    prelude::AtlasError,
+    utils::errors::AtlasError,
 };
 /// # `Visitor`
 pub trait Visitor {}

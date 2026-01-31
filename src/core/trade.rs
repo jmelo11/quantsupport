@@ -1,4 +1,4 @@
-use crate::core2::instrument::Instrument;
+use crate::core::instrument::Instrument;
 
 /// # `Trade`
 pub trait Trade<I: Instrument>: Send + Sync {

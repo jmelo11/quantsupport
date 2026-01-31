@@ -1,7 +1,7 @@
 use std::cmp::Ordering;
 
 use super::traits::Interpolate;
-use crate::{prelude::AtlasError, utils::errors::Result};
+use crate::utils::errors::{AtlasError, Result};
 
 /// # `Linear Interpolator`
 /// Basic linear interpolator.
