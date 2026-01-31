@@ -4,7 +4,7 @@ use std::{
 };
 
 use crate::{
-    math::interpolation::enums::Interpolator,
+    math::interpolation::interpolator::Interpolator,
     rates::{
         traits::{HasReferenceDate, YieldProvider},
         yieldtermstructure::traits::YieldTermStructureTrait,
@@ -57,9 +57,9 @@ pub trait FixingProvider {
             while current_date <= last_date {
                 if !self.fixings().contains_key(&current_date) {
                     let days = i32::try_from(current_date - first_date)
-                        .unwrap_or_else(|_| panic!("fixing day count should fit in i32"));
+                        .unwrap_or_else(|_| panic!("fixing day count should fit in i32")); // fix this panic!
                     let days = f64::from(days);
-                    let rate = interpolator.interpolate(days, &x, &y, false);
+                    let rate = interpolator.interpolate(days, &x, &y, false).unwrap(); // can this fail?
                     self.add_fixing(current_date, rate);
                 }
                 current_date = current_date + Period::new(1, TimeUnit::Days);

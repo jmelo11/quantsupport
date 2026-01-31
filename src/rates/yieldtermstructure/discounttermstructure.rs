@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use crate::{
-    math::interpolation::enums::Interpolator,
+    math::interpolation::interpolator::Interpolator,
     rates::traits::HasReferenceDate,
     rates::{enums::Compounding, interestrate::InterestRate, traits::YieldProvider},
     time::{
@@ -182,7 +182,7 @@ impl YieldProvider for DiscountTermStructure {
             &self.year_fractions,
             &self.discount_factors,
             self.enable_extrapolation,
-        );
+        )?;
         Ok(discount_factor)
     }
 
@@ -231,10 +231,8 @@ impl AdvanceTermStructureInTime for DiscountTermStructure {
     }
 
     fn advance_to_date(&self, date: Date) -> Result<Arc<dyn YieldTermStructureTrait>> {
-        let days =
-            i32::try_from(date - self.reference_date()).map_err(|_| {
-                AtlasError::InvalidValueErr("Day count should fit in i32".to_string())
-            })?;
+        let days = i32::try_from(date - self.reference_date())
+            .map_err(|_| AtlasError::InvalidValueErr("Day count should fit in i32".to_string()))?;
         if days < 0 {
             return Err(AtlasError::InvalidValueErr(
                 "Date needs to be greater than reference date".to_string(),
@@ -270,9 +268,9 @@ mod tests {
             Interpolator::Linear,
             true,
         )
-        .unwrap_or_else(|e| panic!(
-            "DiscountTermStructure::new should succeed in test_year_fractions: {e}"
-        ));
+        .unwrap_or_else(|e| {
+            panic!("DiscountTermStructure::new should succeed in test_year_fractions: {e}")
+        });
 
         assert_eq!(
             discount_term_structure.dates(),
@@ -305,9 +303,9 @@ mod tests {
             Interpolator::Linear,
             true,
         )
-        .unwrap_or_else(|e| panic!(
-            "DiscountTermStructure::new should succeed in test_discount_dactors: {e}"
-        ));
+        .unwrap_or_else(|e| {
+            panic!("DiscountTermStructure::new should succeed in test_discount_dactors: {e}")
+        });
 
         assert_eq!(
             discount_term_structure.discount_factors(),
@@ -334,9 +332,9 @@ mod tests {
             Interpolator::Linear,
             true,
         )
-        .unwrap_or_else(|e| panic!(
-            "DiscountTermStructure::new should succeed in test_reference_date: {e}"
-        ));
+        .unwrap_or_else(|e| {
+            panic!("DiscountTermStructure::new should succeed in test_reference_date: {e}")
+        });
 
         assert_eq!(
             discount_term_structure.reference_date(),
@@ -363,9 +361,9 @@ mod tests {
             Interpolator::Linear,
             true,
         )
-        .unwrap_or_else(|e| panic!(
-            "DiscountTermStructure::new should succeed in test_interpolation: {e}"
-        ));
+        .unwrap_or_else(|e| {
+            panic!("DiscountTermStructure::new should succeed in test_interpolation: {e}")
+        });
 
         let df = discount_term_structure
             .discount_factor(Date::new(2020, 6, 1))
@@ -393,9 +391,9 @@ mod tests {
             Interpolator::Linear,
             true,
         )
-        .unwrap_or_else(|e| panic!(
-            "DiscountTermStructure::new should succeed in test_forward_rate: {e}"
-        ));
+        .unwrap_or_else(|e| {
+            panic!("DiscountTermStructure::new should succeed in test_forward_rate: {e}")
+        });
 
         let comp = Compounding::Simple;
         let freq = Frequency::Annual;

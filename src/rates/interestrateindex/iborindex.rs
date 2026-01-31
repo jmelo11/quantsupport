@@ -247,7 +247,7 @@ impl AdvanceInterestRateIndexInTime for IborIndex {
 mod tests {
     use super::*;
     use crate::{
-        math::interpolation::enums::Interpolator,
+        math::interpolation::interpolator::Interpolator,
         rates::yieldtermstructure::{
             compositetermstructure::CompositeTermStructure,
             flatforwardtermstructure::FlatForwardTermStructure,

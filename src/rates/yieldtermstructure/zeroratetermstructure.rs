@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use crate::{
-    math::interpolation::enums::Interpolator,
+    math::interpolation::interpolator::Interpolator,
     rates::{
         enums::Compounding,
         interestrate::{InterestRate, RateDefinition},
@@ -157,7 +157,7 @@ impl YieldProvider for ZeroRateTermStructure {
             &self.year_fractions,
             &self.rates,
             self.enable_extrapolation,
-        );
+        )?;
         let rt = InterestRate::from_rate_definition(rate, self.rate_definition());
         let compound = rt.compound_factor_from_yf(year_fraction);
         Ok(1.0 / compound)
@@ -226,9 +226,8 @@ impl AdvanceTermStructureInTime for ZeroRateTermStructure {
     }
 
     fn advance_to_date(&self, date: Date) -> Result<Arc<dyn YieldTermStructureTrait>> {
-        let days = i32::try_from(date - self.reference_date()).map_err(|_| {
-            AtlasError::InvalidValueErr("Day count should fit in i32".to_string())
-        })?;
+        let days = i32::try_from(date - self.reference_date())
+            .map_err(|_| AtlasError::InvalidValueErr("Day count should fit in i32".to_string()))?;
         if days < 0 {
             return Err(AtlasError::InvalidValueErr(format!(
                 "Date {date:?} is before reference date {reference_date:?}",
@@ -268,9 +267,9 @@ mod tests {
             Interpolator::Linear,
             true,
         )
-        .unwrap_or_else(|e| panic!(
-            "ZeroRateTermStructure::new should succeed in test_reference_date: {e}"
-        ));
+        .unwrap_or_else(|e| {
+            panic!("ZeroRateTermStructure::new should succeed in test_reference_date: {e}")
+        });
 
         assert_eq!(zero_rate_curve.reference_date(), reference_date);
         assert_eq!(
@@ -311,9 +310,9 @@ mod tests {
             Interpolator::Linear,
             true,
         )
-        .unwrap_or_else(|e| panic!(
-            "ZeroRateTermStructure::new should succeed in test_forward_rate: {e}"
-        ));
+        .unwrap_or_else(|e| {
+            panic!("ZeroRateTermStructure::new should succeed in test_forward_rate: {e}")
+        });
 
         let fr = zero_rate_curve.forward_rate(
             Date::new(2021, 1, 1),
@@ -322,9 +321,8 @@ mod tests {
             rate_definition.frequency(),
         );
 
-        let fr = fr.unwrap_or_else(|e| panic!(
-            "forward_rate should succeed in test_forward_rate: {e}"
-        ));
+        let fr =
+            fr.unwrap_or_else(|e| panic!("forward_rate should succeed in test_forward_rate: {e}"));
         println!("fr: {fr:?}");
         assert!((fr - 0.02972519115024655).abs() < 0.000000001);
     }

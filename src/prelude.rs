@@ -1,5 +1,4 @@
 pub use crate::{
-    alm::{cashaccount::*, enums::*, positiongenerator::*, rolloversimulationengine::*},
     cashflows::cashflow::Side,
     cashflows::{
         cashflow::*, fixedratecoupon::*, floatingratecoupon::*, simplecashflow::*, traits::*,
@@ -8,11 +7,11 @@ pub use crate::{
     core::{marketstore::MarketStore, traits::*},
     currencies::{enums::*, traits::*},
     instruments::{
-        fixedrateinstrument::*, floatingrateinstrument::*, instrument::*, leg::*, loandepo::*,
+        fixedrateinstrument::*, floatingrateinstrument::*, instrument::*, leg::*,
         makefixedrateinstrument::*, makefixedrateleg::*, makefloatingrateinstrument::*,
         makefloatingrateleg::*, traits::*,
     },
-    math::interpolation::{enums::*, linear::*, loglinear::*, traits::*},
+    math::interpolation::{interpolator::*, linear::*, loglinear::*, traits::*},
     models::{simplemodel::*, traits::*},
     rates::{
         enums::*,
@@ -39,8 +38,8 @@ pub use crate::{
     },
     utils::errors::*,
     visitors::{
-        accruedamountconstvisitor::*, cashflowaggregationvisitor::*,
-        cashflowcompressorconstvisitor::*, fixingvisitor::*, indexingvisitor::*,
-        npvbydateconstvisitor::*, npvconstvisitor::*, parvaluevisitor::*, traits::*,
+        accruedamountconstvisitor::*, cashflowaggregationvisitor::*, fixingvisitor::*,
+        indexingvisitor::*, npvbydateconstvisitor::*, npvconstvisitor::*, parvaluevisitor::*,
+        traits::*,
     },
 };

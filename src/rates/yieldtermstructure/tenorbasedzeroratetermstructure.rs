@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use crate::{
-    math::interpolation::enums::Interpolator,
+    math::interpolation::interpolator::Interpolator,
     rates::{
         enums::Compounding,
         interestrate::{InterestRate, RateDefinition},
@@ -112,7 +112,7 @@ impl YieldProvider for TenorBasedZeroRateTermStructure {
             &self.year_fractions,
             &self.spreads,
             self.enable_extrapolation,
-        );
+        )?;
         let rate = InterestRate::from_rate_definition(spread, self.rate_definition);
         Ok(1.0 / rate.compound_factor(self.reference_date, date))
     }
@@ -157,9 +157,8 @@ impl AdvanceTermStructureInTime for TenorBasedZeroRateTermStructure {
     }
 
     fn advance_to_date(&self, date: Date) -> Result<Arc<dyn YieldTermStructureTrait>> {
-        let days = i32::try_from(date - self.reference_date).map_err(|_| {
-            AtlasError::InvalidValueErr("Day count should fit in i32".to_string())
-        })?;
+        let days = i32::try_from(date - self.reference_date)
+            .map_err(|_| AtlasError::InvalidValueErr("Day count should fit in i32".to_string()))?;
         let period = Period::new(days, TimeUnit::Days);
         self.advance_to_period(period)
     }
@@ -170,7 +169,7 @@ impl YieldTermStructureTrait for TenorBasedZeroRateTermStructure {}
 #[cfg(test)]
 mod tests {
     use crate::{
-        math::interpolation::enums::Interpolator,
+        math::interpolation::interpolator::Interpolator,
         rates::{
             enums::Compounding, interestrate::RateDefinition, traits::YieldProvider,
             yieldtermstructure::tenorbasedzeroratetermstructure::TenorBasedZeroRateTermStructure,

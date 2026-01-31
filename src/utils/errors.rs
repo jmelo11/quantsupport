@@ -40,6 +40,9 @@ pub enum AtlasError {
     /// Error indicating that a feature is not yet implemented.
     #[error("{0}")]
     NotImplementedErr(String),
+    /// Error that occurs while interpolating values.
+    #[error("Interpolation error {0}")]
+    InterpolationErr(String),
 }
 
 /// A specialized `Result` type for Atlas operations that may fail with an `AtlasError`.

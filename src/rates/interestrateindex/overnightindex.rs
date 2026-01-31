@@ -278,7 +278,7 @@ impl InterestRateIndexTrait for OvernightIndex {}
 #[cfg(test)]
 mod tests {
     use crate::{
-        math::interpolation::enums::Interpolator,
+        math::interpolation::interpolator::Interpolator,
         rates::yieldtermstructure::flatforwardtermstructure::FlatForwardTermStructure,
     };
 

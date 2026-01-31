@@ -3,16 +3,20 @@
 //! This library provides tools for working with asset-liability management,
 //! cash flows, financial instruments, interest rates, and related computations.
 
-/// Asset-liability management module.
-pub mod alm;
 /// Cash flows module.
 pub mod cashflows;
 /// Core types and utilities.
 pub mod core;
+/// New Core
+pub mod core2;
 /// Currency-related types and utilities.
 pub mod currencies;
+/// Indices module.
+pub mod indices;
 /// Financial instruments module.
 pub mod instruments;
+/// Market data module.
+pub mod marketdata;
 /// Mathematical functions and utilities.
 pub mod math;
 /// Financial models module.
