@@ -32,16 +32,16 @@ impl Tape {
         }
     }
 
-    #[inline]
     /// Allocates a node in the bump arena and records it in the tape book.
+    #[inline]
     fn push(&mut self, n: TapeNode) -> NonNull<TapeNode> {
         let ptr = NonNull::from(self.bump.alloc(n));
         self.book.push(ptr);
         ptr
     }
 
-    #[inline]
     /// Resets all adjoints on the current thread's tape.
+    #[inline]
     pub fn reset_adjoints() {
         Self::ensure_thread_tape();
         TAPE.with(|tc| {
@@ -56,22 +56,22 @@ impl Tape {
         self.mark
     }
 
-    #[inline]
     /// Returns the index of a node in the tape book, if it exists.
     ///
     /// This is a linear scan; the cost grows with the number of recorded nodes.
+    #[inline]
     fn index_of(&self, p: NonNull<TapeNode>) -> Option<usize> {
         self.book.iter().position(|&q| q == p)
     }
 
-    #[inline]
     /// Allocates and records a leaf node.
+    #[inline]
     pub fn new_leaf(&mut self) -> Option<NonNull<TapeNode>> {
         self.record(TapeNode::default())
     }
 
-    #[inline]
     /// Records a node if recording is active, returning its pointer.
+    #[inline]
     pub fn record(&mut self, n: TapeNode) -> Option<NonNull<TapeNode>> {
         self.active.then(|| self.push(n))
     }
@@ -86,6 +86,9 @@ impl Tape {
     }
 
     /// Propagates adjoints from the given root node back to the start of the tape.
+    ///
+    /// # Errors
+    /// Returns an error if the given node is not indexed in the tape.
     pub fn propagate_from(&mut self, root: NonNull<TapeNode>) -> Result<()> {
         let start = self
             .index_of(root)
@@ -142,8 +145,8 @@ impl Tape {
         TAPE.with(|tc| tc.borrow_mut().active = false);
     }
 
-    #[inline]
     /// Returns whether the thread-local tape is active.
+    #[inline]
     #[must_use]
     pub fn is_active() -> bool {
         Self::ensure_thread_tape();
@@ -203,6 +206,12 @@ impl Tape {
             }
         });
         true
+    }
+}
+
+impl Default for Tape {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

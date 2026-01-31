@@ -47,18 +47,21 @@ use rustatlas::instruments::Swap;
 struct SwapPricer;
 
 impl Pricer<Swap> for SwapPricer {
-    fn price(&self, instrument: &Swap, context: &PricingContext) -> PricingResults {
+    fn evaluate(&self, instrument: &Swap, requests: &[PricingRequest] context: &PricingContext) -> PricingResults {
         let curve = context.discount_curve("USD");
-        let price = instrument.present_value(curve);
-
-        PricingResults::new().with_value("pv", price)
+        let mut results = PricingResults::new():
+        requests.iter().try_for_each(|req| match req {
+          PricingRequest::Price => {
+            let price = self.present_value(curve);
+            results.with_price(price);
+          }
+        })?
+        Ok(results)
     }
 }
 
 fn run_pricer(pricer: &dyn Pricer<Swap>, swap: &Swap, context: &PricingContext) {
-    let results = pricer.price(swap, context);
-    // Results are stored in PricingResults for downstream reporting.
-    context.results_store().record(swap.id(), results);
+    let results = pricer.evaluate(swap, context);
 }
 ```
 
@@ -66,8 +69,10 @@ fn run_pricer(pricer: &dyn Pricer<Swap>, swap: &Swap, context: &PricingContext) 
 > results, and can be run in parallel with other pricers as long as it remains side-effect free.
 
 ## Expected Outcomes
+
 By enforcing clear separation between pricer logic, shared context, and results aggregation,
 this module enables:
+
 - Plug-and-play pricing implementations for different products or models.
 - Consistent data access patterns across the pricing stack.
 - Scalable evaluation pipelines that can run in parallel.

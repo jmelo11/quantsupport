@@ -1,13 +1,14 @@
 //! Automatic differentiation number types and expression building blocks.
 
 use core::fmt;
+use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 
 use crate::ad::node::TapeNode;
 use crate::ad::tape::{Tape, TAPE};
 use crate::utils::errors::{AtlasError, Result};
 use std::cell::Cell;
+use std::cmp::Ordering;
 use std::ptr::NonNull;
-use std::{cmp::Ordering, ops::*};
 
 /// A scalar value tracked on the automatic differentiation tape.
 #[derive(Clone, Copy, Default)]
@@ -120,6 +121,9 @@ impl ADReal {
     }
 
     /// Runs a full backward pass from this node to the start of the tape.
+    ///
+    /// ## Errors
+    /// Returns an error if this node is not indexed in the tape.
     pub fn backward(&self) -> Result<()> {
         let root = self.node.ok_or(AtlasError::NodeNotIndexedInTapeErr)?;
 
