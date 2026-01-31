@@ -1,4 +1,4 @@
-//! `RustAtlas` is a Rust library for financial calculations and analysis.
+//! `QuantSupport` is a Rust library for financial calculations and analysis.
 //!
 //! This library provides tools for working with asset-liability management,
 //! cash flows, financial instruments, interest rates, and related computations.

@@ -1,8 +1,8 @@
 use proc_macro::TokenStream;
 use quote::quote;
 use syn::{
-    Attribute, Block, Expr, ExprLit, Fields, FnArg, Ident, Item, ItemFn, ItemStruct, Lit,
-    ReturnType, fold::Fold, parse_macro_input,
+    fold::Fold, parse_macro_input, Attribute, Block, Expr, ExprLit, Fields, FnArg, Ident, Item,
+    ItemFn, ItemStruct, Lit, ReturnType,
 };
 
 /// # differentiable
@@ -64,7 +64,7 @@ fn expand_struct(diff_name: Ident, item_struct: ItemStruct) -> TokenStream {
         diff_field.attrs = filtered_attrs;
 
         if is_diffvar {
-            diff_field.ty = syn::parse_quote!(::rustatlas::ad::adreal::ADReal);
+            diff_field.ty = syn::parse_quote!(::quantsupport::ad::adreal::ADReal);
         }
 
         original_fields.push(original_field);
@@ -80,7 +80,7 @@ fn expand_struct(diff_name: Ident, item_struct: ItemStruct) -> TokenStream {
             #(#diff_fields,)*
         }
 
-        impl ::rustatlas::ad::Differentiable for #diff_struct_name {}
+        impl ::quantsupport::ad::Differentiable for #diff_struct_name {}
     };
 
     expanded.into()
@@ -125,7 +125,7 @@ fn expand_fn(diff_name: Ident, item_fn: ItemFn) -> TokenStream {
                 diff_pat.attrs = filtered_attrs;
 
                 if is_diffvar {
-                    diff_pat.ty = Box::new(syn::parse_quote!(::rustatlas::ad::adreal::ADReal));
+                    diff_pat.ty = Box::new(syn::parse_quote!(::quantsupport::ad::adreal::ADReal));
                     diff_params.push(DiffParam { const_shadow: None });
                 } else {
                     let const_shadow = match &*original_pat.pat {
@@ -147,7 +147,7 @@ fn expand_fn(diff_name: Ident, item_fn: ItemFn) -> TokenStream {
     let mut diff_sig = item_fn.sig.clone();
     diff_sig.ident = diff_name;
     diff_sig.inputs = diff_inputs;
-    diff_sig.output = syn::parse_quote!(-> ::rustatlas::ad::adreal::ADReal);
+    diff_sig.output = syn::parse_quote!(-> ::quantsupport::ad::adreal::ADReal);
 
     let original_block = item_fn.block;
     let diff_block: Block = {
@@ -164,7 +164,7 @@ fn expand_fn(diff_name: Ident, item_fn: ItemFn) -> TokenStream {
         };
         syn::parse_quote!({
             #(
-                let #const_params = ::rustatlas::ad::adreal::Const::from(#const_params);
+                let #const_params = ::quantsupport::ad::adreal::Const::from(#const_params);
             )*
             (|| #inner_block)().into()
         })
@@ -203,10 +203,10 @@ impl Fold for LiteralToConst {
             Expr::Lit(ExprLit {
                 lit: Lit::Float(lit),
                 ..
-            }) => syn::parse_quote!(::rustatlas::ad::adreal::Const::from(#lit)),
+            }) => syn::parse_quote!(::quantsupport::ad::adreal::Const::from(#lit)),
             Expr::Lit(ExprLit {
                 lit: Lit::Int(lit), ..
-            }) => syn::parse_quote!(::rustatlas::ad::adreal::Const::from(#lit)),
+            }) => syn::parse_quote!(::quantsupport::ad::adreal::Const::from(#lit)),
             other => syn::fold::fold_expr(self, other),
         }
     }

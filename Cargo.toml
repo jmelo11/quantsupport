@@ -1,9 +1,9 @@
 [package]
-name = "rustatlas"
+name = "quantsupport"
 version = "0.1.0"
 edition = "2021"
 
-description = "Rust library for financial calculations, instruments, and risk analytics."
+description = "Rust library for fixed-income, derivative pricing and risk analytics."
 license = "MIT"
 repository = "https://github.com/jmelo11/rustatlas"
 keywords = ["finance", "quant", "risk", "pricing", "derivatives"]
