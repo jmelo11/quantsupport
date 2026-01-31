@@ -135,6 +135,8 @@ impl QuoteSource {
     }
 }
 
+/// # QuoteDetails
+///
 /// Parsed quote identifier details.
 ///
 /// Identifiers are parsed using the `INSTRUMENT|key=value|...` format. Keys are
