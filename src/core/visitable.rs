@@ -11,6 +11,9 @@ pub trait Visitor {}
 /// # `Visitable`
 pub trait Visitable<P: Visitor> {
     /// Accepts a visitor.
+    ///
+    /// ## Errors
+    /// Returns an [`AtlasError`] if the visit operation fails.
     fn accept(
         &self,
         visitor: &P,
