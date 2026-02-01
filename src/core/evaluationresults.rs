@@ -29,7 +29,7 @@ pub struct EvaluationResults {
 impl EvaluationResults {
     /// Creates a new instance of `EvaluationResults`.
     #[must_use]
-    pub fn new(reference_date: Date, id: usize, identifier: &'static str) -> Self {
+    pub const fn new(reference_date: Date, id: usize, identifier: &'static str) -> Self {
         Self {
             reference_date,
             id,
