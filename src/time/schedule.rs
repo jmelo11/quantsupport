@@ -86,37 +86,6 @@ pub struct Schedule {
 }
 
 impl Schedule {
-    /// Creates a new `Schedule` with the specified parameters.
-    #[allow(clippy::missing_const_for_fn)]
-    #[must_use]
-    // allowed: high-arity API; refactor deferred
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        tenor: Period,
-        calendar: Calendar,
-        convention: BusinessDayConvention,
-        termination_date_convention: BusinessDayConvention,
-        rule: DateGenerationRule,
-        end_of_month: bool,
-        first_date: Date,
-        next_to_last_date: Date,
-        dates: Vec<Date>,
-        is_regular: Vec<bool>,
-    ) -> Self {
-        Self {
-            tenor,
-            calendar,
-            convention,
-            termination_date_convention,
-            rule,
-            end_of_month,
-            first_date,
-            next_to_last_date,
-            dates,
-            is_regular,
-        }
-    }
-
     /// Creates an empty `Schedule` with default values.
     #[must_use]
     pub fn empty() -> Self {
@@ -201,7 +170,10 @@ impl Schedule {
 /// ## Example
 ///
 /// ```
-/// use rustatlas::prelude::*;
+/// use quantsupport::time::schedule::MakeSchedule;
+/// use quantsupport::time::date::Date;
+/// use quantsupport::time::period::Period;
+/// use quantsupport::time::enums::TimeUnit;
 ///
 /// let from = Date::new(2022, 1, 1);
 /// let to = Date::new(2022, 6, 1);
@@ -446,8 +418,7 @@ impl MakeSchedule {
                         Some(self.convention),
                         self.end_of_month,
                     );
-                    self.is_regular
-                        .insert(0, temp == self.next_to_last_date);
+                    self.is_regular.insert(0, temp == self.next_to_last_date);
                     seed = self.next_to_last_date;
                 }
 
@@ -586,14 +557,11 @@ impl MakeSchedule {
                         self.end_of_month,
                     );
                     if temp > exit_date {
-                        let last_date =
-                            *self.dates.last().ok_or(AtlasError::MakeScheduleErr(
-                                "Schedule dates are empty".to_string(),
-                            ))?;
+                        let last_date = *self.dates.last().ok_or(AtlasError::MakeScheduleErr(
+                            "Schedule dates are empty".to_string(),
+                        ))?;
                         if self.next_to_last_date != Date::empty()
-                            && (self
-                                .calendar
-                                .adjust(last_date, Some(self.convention))
+                            && (self.calendar.adjust(last_date, Some(self.convention))
                                 != self
                                     .calendar
                                     .adjust(self.next_to_last_date, Some(self.convention)))
@@ -605,13 +573,10 @@ impl MakeSchedule {
                     }
                     // skip dates that would result in duplicates
                     // after adjustment
-                    let last_date =
-                        *self.dates.last().ok_or(AtlasError::MakeScheduleErr(
-                            "Schedule dates are empty".to_string(),
-                        ))?;
-                    if self
-                        .calendar
-                        .adjust(last_date, Some(self.convention))
+                    let last_date = *self.dates.last().ok_or(AtlasError::MakeScheduleErr(
+                        "Schedule dates are empty".to_string(),
+                    ))?;
+                    if self.calendar.adjust(last_date, Some(self.convention))
                         != self.calendar.adjust(temp, Some(self.convention))
                     {
                         self.dates.push(temp);
@@ -623,7 +588,9 @@ impl MakeSchedule {
                 let last_date = *self.dates.last().ok_or(AtlasError::MakeScheduleErr(
                     "Schedule dates are empty".to_string(),
                 ))?;
-                if self.calendar.adjust(last_date, Some(self.termination_date_convention))
+                if self
+                    .calendar
+                    .adjust(last_date, Some(self.termination_date_convention))
                     != self.calendar.adjust(
                         self.termination_date,
                         Some(self.termination_date_convention),
@@ -713,18 +680,18 @@ impl MakeSchedule {
             self.is_regular.remove(0);
         }
 
-        Ok(Schedule::new(
-            self.tenor,
-            self.calendar.clone(),
-            self.convention,
-            self.termination_date_convention,
-            self.rule,
-            self.end_of_month,
-            self.first_date,
-            self.next_to_last_date,
-            self.dates.clone(),
-            self.is_regular.clone(),
-        ))
+        Ok(Schedule {
+            tenor: self.tenor,
+            calendar: self.calendar.clone(),
+            convention: self.convention,
+            termination_date_convention: self.termination_date_convention,
+            rule: self.rule,
+            end_of_month: self.end_of_month,
+            first_date: self.first_date,
+            next_to_last_date: self.next_to_last_date,
+            dates: self.dates.clone(),
+            is_regular: self.is_regular.clone(),
+        })
     }
 }
 
