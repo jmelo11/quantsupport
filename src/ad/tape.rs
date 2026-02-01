@@ -101,25 +101,33 @@ impl Tape {
     }
 
     /// Propagates adjoints from the current mark back to the start.
-    pub fn propagate_mark_to_start(&mut self) {
+    ///
+    /// ## Errors
+    /// Returns an error if the tape is empty.
+    pub fn propagate_mark_to_start(&mut self) -> Result<()> {
         let end = self.mark.saturating_sub(1);
         for i in (0..=end).rev() {
             let node = unsafe { self.book[i].as_ref().clone() };
             node.propagate_into();
         }
+        Ok(())
     }
 
     /// Propagates adjoints from the end of the tape down to the current mark.
-    pub fn propagate_to_mark(&mut self) {
+    ///
+    /// ## Errors
+    /// Returns an error if the tape is empty.
+    pub fn propagate_to_mark(&mut self) -> Result<()> {
         let start = self.mark;
         let end = self.book.len().saturating_sub(1);
         if start > end {
-            return;
+            return Ok(()); // Nothing to propagate
         }
         for i in (start..=end).rev() {
             let node = unsafe { self.book[i].as_ref().clone() };
             node.propagate_into();
         }
+        Ok(())
     }
 
     /// Clears the tape and begins recording nodes in the thread-local tape.
@@ -192,7 +200,9 @@ impl Tape {
 
         let global_epoch = RECORDING_EPOCH.load(Ordering::Acquire);
         TAPE_EPOCH.with(|epoch| {
-            if epoch.get() != global_epoch {
+            if epoch.get() == global_epoch {
+                TAPE.with(|tc| tc.borrow_mut().active = true);
+            } else {
                 TAPE.with(|tc| {
                     let mut t = tc.borrow_mut();
                     t.bump.reset();
@@ -201,8 +211,6 @@ impl Tape {
                     t.active = true;
                 });
                 epoch.set(global_epoch);
-            } else {
-                TAPE.with(|tc| tc.borrow_mut().active = true);
             }
         });
         true
@@ -223,10 +231,7 @@ thread_local! {
         mark:   0,
         active: false,
     });
-}
-
-thread_local! {
-    static TAPE_EPOCH: Cell<usize> = Cell::new(0);
+    static TAPE_EPOCH: Cell<usize> = const {Cell::new(0)};
 }
 
 static RECORDING_ACTIVE: AtomicBool = AtomicBool::new(false);

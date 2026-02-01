@@ -6,7 +6,7 @@ use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssi
 use crate::ad::node::TapeNode;
 use crate::ad::tape::{Tape, TAPE};
 use crate::utils::errors::{AtlasError, Result};
-use std::cell::Cell;
+
 use std::cmp::Ordering;
 use std::ptr::NonNull;
 
@@ -56,7 +56,7 @@ impl IsReal for f64 {
 impl IsReal for ADReal {
     #[inline]
     fn new(val: f64) -> Self {
-        let node = Self::TAPE_PTR.with(|t| unsafe { t.get().as_mut().new_leaf() });
+        let node = TAPE.with_borrow_mut(Tape::new_leaf);
         Self { val, node }
     }
     #[inline]
@@ -97,23 +97,19 @@ unsafe impl Sync for ADReal {}
 unsafe impl Send for ADReal {}
 
 impl ADReal {
-    thread_local! {
-        static TAPE_PTR: Cell<NonNull<Tape>> = Cell::new(TAPE.with(|t| NonNull::new(t.as_ptr()).unwrap()));
-    }
-
     /// Sets the active tape for the current thread.
-    pub fn set_tape(t: NonNull<Tape>) {
-        Self::TAPE_PTR.with(|c| c.set(t));
-    }
-
-    /// Returns the raw pointer address of the current tape.
-    #[must_use]
-    pub fn tape_addr() -> NonNull<Tape> {
-        Self::TAPE_PTR.with(Cell::get)
+    pub fn set_tape(t: Tape) {
+        TAPE.set(t);
     }
 
     #[inline]
     /// Returns the adjoint for this value if it is on the tape.
+    ///
+    /// ## Errors
+    /// Returns an error if this node is not indexed in the tape.
+    ///
+    /// ## Safety
+    /// This function accesses raw pointers from the tape and assumes they are valid.
     pub fn adjoint(&self) -> Result<f64> {
         self.node
             .map(|p| unsafe { p.as_ref().adj })
@@ -123,39 +119,46 @@ impl ADReal {
     /// Runs a full backward pass from this node to the start of the tape.
     ///
     /// ## Errors
-    /// Returns an error if this node is not indexed in the tape.
+    /// Returns an error if this node is not indexed in the tape.    
     pub fn backward(&self) -> Result<()> {
         let root = self.node.ok_or(AtlasError::NodeNotIndexedInTapeErr)?;
 
-        Self::TAPE_PTR.with(|t| {
-            let tape = unsafe { &mut *t.get().as_ptr() };
-            tape.mut_node(root).unwrap().adj = 1.0;
+        TAPE.with_borrow_mut(|tape| {
+            tape.mut_node(root)
+                .ok_or(AtlasError::NodeNotIndexedInTapeErr)?
+                .adj = 1.0;
             tape.propagate_from(root)
-        })?;
-        Ok(())
+        })
     }
 
     /// Runs a backward pass from the current mark down to the start.
+    ///
+    /// ## Errors
+    /// Returns an error if this node is not indexed in the tape.
     pub fn backward_mark_to_start(&self) -> Result<()> {
         let root: NonNull<TapeNode> = self.node.ok_or(AtlasError::NodeNotIndexedInTapeErr)?;
 
-        Self::TAPE_PTR.with(|t| {
-            let tape = unsafe { &mut *t.get().as_ptr() };
-            tape.mut_node(root).unwrap().adj = 1.0;
-            tape.propagate_mark_to_start();
-        });
-        Ok(())
+        TAPE.with_borrow_mut(|tape| {
+            tape.mut_node(root)
+                .ok_or(AtlasError::NodeNotIndexedInTapeErr)?
+                .adj = 1.0;
+            tape.propagate_mark_to_start()
+        })
     }
 
     /// Runs a backward pass from the end of the tape down to the current mark.
+    ///
+    /// ## Errors
+    /// Returns an error if this node is not indexed in the tape.
     pub fn backward_to_mark(&self) -> Result<()> {
         let root: NonNull<TapeNode> = self.node.ok_or(AtlasError::NodeNotIndexedInTapeErr)?;
-        Self::TAPE_PTR.with(|t| {
-            let tape = unsafe { &mut *t.get().as_ptr() };
-            tape.mut_node(root).unwrap().adj = 1.0;
-            tape.propagate_to_mark();
-        });
-        Ok(())
+
+        TAPE.with_borrow_mut(|tape| {
+            tape.mut_node(root)
+                .ok_or(AtlasError::NodeNotIndexedInTapeErr)?
+                .adj = 1.0;
+            tape.propagate_to_mark()
+        })
     }
 
     /// Attaches this value to the current tape if it is not already recorded.
@@ -164,9 +167,8 @@ impl ADReal {
             return; // already on a tape
         }
 
-        Self::TAPE_PTR.with(|t| {
-            let ptr = t.get().as_ptr();
-            let node = unsafe { (*ptr).new_leaf() };
+        TAPE.with_borrow_mut(|tape| {
+            let node = tape.new_leaf();
             self.node = node;
         });
     }
@@ -192,11 +194,7 @@ impl Expr for ADReal {
 fn flatten<E: Expr + Clone>(e: &E) -> ADReal {
     let mut node = TapeNode::default();
     e.push_adj(&mut node, 1.0);
-
-    let ptr_opt = ADReal::TAPE_PTR.with(|t| {
-        let tape_ptr = unsafe { &mut *t.get().as_ptr() };
-        tape_ptr.record(node)
-    });
+    let ptr_opt = TAPE.with_borrow_mut(|tape| tape.record(node));
 
     ADReal {
         val: e.inner_value(),
@@ -223,44 +221,34 @@ impl From<f64> for Const {
     #[inline]
     /// Converts a `f64` into a constant expression.
     fn from(v: f64) -> Self {
-        Const(v)
+        Self(v)
     }
 }
+
 impl From<f32> for Const {
     #[inline]
     /// Converts a `f32` into a constant expression.
     fn from(v: f32) -> Self {
-        Const(f64::from(v))
+        Self(f64::from(v))
     }
 }
+
 impl From<i32> for Const {
     #[inline]
     /// Converts an `i32` into a constant expression.
     fn from(v: i32) -> Self {
-        Const(f64::from(v))
+        Self(f64::from(v))
     }
 }
+
 impl From<u32> for Const {
     #[inline]
     /// Converts a `u32` into a constant expression.
     fn from(v: u32) -> Self {
-        Const(f64::from(v))
+        Self(f64::from(v))
     }
 }
-impl From<i64> for Const {
-    #[inline]
-    /// Converts an `i64` into a constant expression.
-    fn from(v: i64) -> Self {
-        Const(v as f64)
-    }
-}
-impl From<u64> for Const {
-    #[inline]
-    /// Converts a `u64` into a constant expression.
-    fn from(v: u64) -> Self {
-        Const(v as f64)
-    }
-}
+
 impl From<Const> for f64 {
     #[inline]
     /// Extracts the underlying `f64` from a constant expression.
@@ -1150,7 +1138,12 @@ mod tests {
     static TEST_MUTEX: Mutex<()> = Mutex::new(());
 
     fn with_tape_test<F: FnOnce()>(f: F) {
-        let _guard = TEST_MUTEX.lock().expect("test mutex poisoned");
+        // If a previous test panicked while holding the mutex the lock becomes
+        // poisoned; recover by taking the inner guard so subsequent tests can
+        // continue instead of failing with a poison error.
+        let _guard = TEST_MUTEX
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         Tape::stop_recording();
         Tape::rewind_to_init();
         f();
@@ -1185,9 +1178,10 @@ mod tests {
     fn test_late_tape_recording() {
         with_tape_test(|| {
             let mut a = ADReal::new(3.0);
-            println!("a: {:?}", a);
+            // println!("a: {:?}", a);
             Tape::start_recording(); // start recording
             a.put_on_tape();
+            // println!("a: {:?}", a);
             let expr = a * a;
             let out: ADReal = expr.into();
             out.backward().unwrap();
