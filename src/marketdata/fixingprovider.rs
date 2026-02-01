@@ -12,7 +12,7 @@ use crate::{
 /// # `FixingProvider`
 #[derive(Serialize)]
 pub struct FixingProvider {
-    values: HashMap<MarketIndex, HashMap<Date, f64>>,
+    values: HashMap<MarketIndex, BTreeMap<Date, f64>>,
 }
 
 impl FixingProvider {
@@ -33,7 +33,7 @@ impl FixingProvider {
     ///
     /// ## Errors
     /// Returns [`AtlasError`] if the [`MarketIndex`] is not found.
-    pub fn fixings(&self, market_index: &MarketIndex) -> Result<&HashMap<Date, f64>> {
+    pub fn fixings(&self, market_index: &MarketIndex) -> Result<&BTreeMap<Date, f64>> {
         self.values
             .get(market_index)
             .ok_or(AtlasError::NotFoundErr(format!(
@@ -50,64 +50,47 @@ impl FixingProvider {
     }
 
     /// Fill missing fixings using interpolation.
+    ///
+    /// ## Errors
+    /// Returns an error if interpolation fails during the filling process.
+    #[allow(clippy::cast_precision_loss)]
     pub fn fill_missing_fixings(&mut self, interpolator: Interpolator) -> Result<()> {
-        if self.values.is_empty() {
-            return Ok(());
-        }
+        self.values
+            .values_mut()
+            .filter(|fixings| !fixings.is_empty())
+            .try_for_each(|fixings| {
+                // get start and end
+                let mut curr_date: Date = fixings
+                    .keys()
+                    .min()
+                    .copied()
+                    .ok_or(AtlasError::UnexpectedErr(
+                    "An error was found while getting the minimun date for filling missing indices."
+                        .into(),
+                ))?;
+                let last_date: Date = fixings
+                    .keys()
+                    .max()
+                    .copied()
+                    .ok_or(AtlasError::UnexpectedErr(
+                    "An error was found while getting the maximun date for filling missing indices."
+                        .into(),
+                ))?;
 
-        // collect keys to avoid borrowing self while mutating it
-        let index_keys: Vec<MarketIndex> = self.values.keys().cloned().collect();
+                // transform to floats to interpolate
+                let times: Vec<f64> = fixings
+                    .keys()
+                    .map(|date| (*date - curr_date) as f64)
+                    .collect();
+                let values: Vec<f64> = fixings.values().copied().collect();
 
-        for index_key in index_keys {
-            let aux_btreemap: BTreeMap<Date, f64> = match self.values.get(&index_key) {
-                Some(map) => map.iter().map(|(k, v)| (*k, *v)).collect(),
-                None => continue,
-            };
-
-            if aux_btreemap.is_empty() {
-                continue;
-            }
-
-            let first_date = *aux_btreemap.keys().min().unwrap();
-            let last_date = *aux_btreemap.keys().max().unwrap();
-
-            let mut x: Vec<f64> = Vec::with_capacity(aux_btreemap.len());
-            for &d in aux_btreemap.keys() {
-                let Ok(days) = i32::try_from(d - first_date) else {
-                    return Err(AtlasError::InvalidValueErr(
-                        "Fixing day count does not fit in i32".into(),
-                    ));
-                };
-                x.push(f64::from(days));
-            }
-
-            let y = aux_btreemap.values().copied().collect::<Vec<f64>>();
-
-            let mut current_date = first_date;
-
-            while current_date <= last_date {
-                let exists = self
-                    .values
-                    .get(&index_key)
-                    .is_some_and(|m| m.contains_key(&current_date));
-
-                if !exists {
-                    let days = match i32::try_from(current_date - first_date) {
-                        Ok(v) => v,
-                        Err(_) => {
-                            return Err(AtlasError::InvalidValueErr(
-                                "Fixing day count does not fit in i32".into(),
-                            ))
-                        }
-                    };
-                    let days = f64::from(days);
-                    let rate = interpolator.interpolate(days, &x, &y, false)?;
-                    self.add_fixing(&index_key, current_date, rate);
+                while curr_date < last_date {
+                    let time = (last_date - curr_date) as f64;
+                    let interp = interpolator.interpolate(time, &times, &values, false)?;
+                    fixings.entry(curr_date).or_insert(interp);
+                    curr_date = curr_date + Period::new(1, TimeUnit::Days);
                 }
-                current_date = current_date + Period::new(1, TimeUnit::Days);
-            }
-        }
-
-        Ok(())
+                Ok(())
+            })
     }
 }
