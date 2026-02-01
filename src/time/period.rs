@@ -13,7 +13,8 @@ use crate::utils::errors::{AtlasError, Result};
 /// Struct representing a financial period.
 /// # Examples
 /// ```
-/// use rustatlas::prelude::*;
+/// use quantsupport::time::period::Period;
+/// use quantsupport::time::enums::TimeUnit;
 ///
 /// let p = Period::new(5, TimeUnit::Days);
 /// assert_eq!(p.length(), 5);
@@ -34,7 +35,8 @@ impl Period {
     ///
     /// # Examples
     /// ```
-    /// use rustatlas::prelude::*;
+    /// use quantsupport::time::period::Period;
+    /// use quantsupport::time::enums::TimeUnit;
     ///
     /// let p = Period::new(5, TimeUnit::Days);
     /// assert_eq!(p.length(), 5);
@@ -55,7 +57,8 @@ impl Period {
     ///
     /// # Examples
     /// ```
-    /// use rustatlas::prelude::*;
+    /// use quantsupport::time::period::Period;
+    /// use quantsupport::time::enums::{Frequency, TimeUnit};
     ///
     /// let p = Period::from_frequency(Frequency::Annual).unwrap();
     /// assert_eq!(p.length(), 1);
@@ -100,7 +103,8 @@ impl Period {
     ///
     /// # Examples
     /// ```
-    /// use rustatlas::prelude::*;
+    /// use quantsupport::time::period::Period;
+    /// use quantsupport::time::enums::{Frequency, TimeUnit};
     ///
     /// let p = Period::new(1, TimeUnit::Years);
     /// assert_eq!(p.frequency(), Frequency::Annual);
@@ -162,7 +166,8 @@ impl Period {
     ///
     /// # Examples
     /// ```
-    /// use rustatlas::prelude::*;
+    /// use quantsupport::time::period::Period;
+    /// use quantsupport::time::enums::TimeUnit;
     ///
     /// let mut p = Period::new(12, TimeUnit::Months);
     /// p.normalize();
@@ -195,7 +200,8 @@ impl Period {
     ///
     /// # Examples
     /// ```
-    /// use rustatlas::prelude::*;
+    /// use quantsupport::time::period::Period;
+    /// use quantsupport::time::enums::TimeUnit;
     ///
     /// let p = Period::new(5, TimeUnit::Days);
     /// assert_eq!(p.length(), 5);
@@ -209,7 +215,8 @@ impl Period {
     ///
     /// # Examples
     /// ```
-    /// use rustatlas::prelude::*;
+    /// use quantsupport::time::period::Period;
+    /// use quantsupport::time::enums::TimeUnit;
     ///
     /// let p = Period::new(5, TimeUnit::Days);
     /// assert_eq!(p.units(), TimeUnit::Days);
@@ -223,7 +230,8 @@ impl Period {
     ///
     /// # Examples
     /// ```
-    /// use rustatlas::prelude::*;
+    /// use quantsupport::time::period::Period;
+    /// use quantsupport::time::enums::TimeUnit;
     ///
     /// let p = Period::empty();
     /// assert_eq!(p.length(), 0);
@@ -244,7 +252,8 @@ impl Period {
     ///
     /// # Examples
     /// ```
-    /// use rustatlas::prelude::*;
+    /// use quantsupport::time::period::Period;
+    /// use quantsupport::time::enums::TimeUnit;
     ///
     /// let p = Period::from_str("1Y6M").unwrap();
     /// assert_eq!(p.length(), 18);
@@ -310,7 +319,8 @@ impl Period {
     ///
     /// # Examples
     /// ```
-    /// use rustatlas::prelude::*;
+    /// use quantsupport::time::period::Period;
+    /// use quantsupport::time::enums::TimeUnit;
     ///
     /// let p = Period::new(6, TimeUnit::Months);
     /// assert_eq!(p.period_in_year(), 0.5);
@@ -400,7 +410,9 @@ impl Serialize for Period {
 /// Compares two `Period` values.
 /// # Examples
 /// ```
-/// use rustatlas::prelude::*;
+/// use quantsupport::time::period::Period;
+/// use quantsupport::time::enums::TimeUnit;
+///
 /// let p1 = Period::new(5, TimeUnit::Days);
 /// let p2 = Period::new(5, TimeUnit::Days);
 /// assert_eq!(p1, p2);
@@ -419,7 +431,9 @@ impl PartialOrd for Period {
 /// Compares two `Period` values.
 /// # Examples
 /// ```
-/// use rustatlas::prelude::*;
+/// use quantsupport::time::period::Period;
+/// use quantsupport::time::enums::TimeUnit;
+///
 /// let p1 = Period::new(5, TimeUnit::Days);
 /// let p2 = Period::new(5, TimeUnit::Days);
 /// assert_eq!(p1, p2);
@@ -480,7 +494,9 @@ impl Neg for Period {
 /// Adds a Period to another Period.
 /// # Examples
 /// ```
-/// use rustatlas::prelude::*;
+/// use quantsupport::time::period::Period;
+/// use quantsupport::time::enums::TimeUnit;
+///
 /// let p1 = Period::new(5, TimeUnit::Days);
 /// let p2 = Period::new(3, TimeUnit::Days);
 /// let p3 = (p1 + p2).unwrap();
@@ -581,7 +597,8 @@ impl Add for Period {
 /// Subtracts a Period from another Period.
 /// # Examples
 /// ```
-/// use rustatlas::prelude::*;
+/// use quantsupport::time::period::Period;
+/// use quantsupport::time::enums::TimeUnit;
 ///
 /// let p1 = Period::new(5, TimeUnit::Days);
 /// let p2 = Period::new(3, TimeUnit::Days);
@@ -601,8 +618,9 @@ impl Sub for Period {
 /// Multiplies a Period by an integer.
 /// # Examples
 /// ```
-/// use rustatlas::time::enums::TimeUnit;
-/// use rustatlas::time::period::Period;
+/// use quantsupport::time::period::Period;
+/// use quantsupport::time::enums::TimeUnit;
+/// 
 /// let p = Period::new(5, TimeUnit::Days);
 /// let p2 = p * 2;
 /// assert_eq!(p2.length(), 10);
@@ -623,8 +641,9 @@ impl Mul<i32> for Period {
 /// Multiplies a Period by an integer.
 /// # Examples
 /// ```
-/// use rustatlas::time::enums::TimeUnit;
-/// use rustatlas::time::period::Period;
+/// use quantsupport::time::period::Period;
+/// use quantsupport::time::enums::TimeUnit;
+/// 
 /// let mut p = Period::new(5, TimeUnit::Days);
 /// p *= 2;
 /// assert_eq!(p.length(), 10);
