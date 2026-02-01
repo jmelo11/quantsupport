@@ -60,6 +60,12 @@ pub enum AtlasError {
     /// Attempted to access a node that is not recorded on the tape.
     #[error("Node not indexed in tape")]
     NodeNotIndexedInTapeErr,
+    /// An unexpected error.
+    #[error("{0}")]
+    UnexpectedErr(String),
+    /// Quote parsing error.
+    #[error("Quote parsing error: {0}")]
+    QuoteParsingErr(String),
 }
 
 /// A specialized `Result` type for Atlas operations that may fail with an `AtlasError`.
