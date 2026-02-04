@@ -66,6 +66,9 @@ pub enum AtlasError {
     /// Quote parsing error.
     #[error("Quote parsing error: {0}")]
     QuoteParsingErr(String),
+    /// Instrument resolution error.
+    #[error("Instrument resolution error: {0}")]
+    InstrumentResolutionErr(String),
 }
 
 /// A specialized `Result` type for Atlas operations that may fail with an `AtlasError`.

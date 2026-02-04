@@ -1,13 +1,4 @@
-use std::collections::HashMap;
-
-use crate::{
-    indices::marketindex::MarketIndex,
-    marketdata::{
-        quote::Quote,
-        volatility::{VolatilityCube, VolatilitySurface},
-    },
-    time::date::Date,
-};
+use crate::{marketdata::quote::Quote, time::date::Date};
 
 /// # `MarketDataProvider`
 ///
@@ -15,8 +6,8 @@ use crate::{
 pub struct MarketDataProvider {
     reference_date: Date,
     quotes: Vec<Quote>,
-    vol_surfaces: HashMap<MarketIndex, VolatilitySurface>, // this should have a volatility type key
-    vol_cubes: HashMap<MarketIndex, VolatilityCube>,
+    // vol_surfaces: HashMap<MarketIndex, VolatilitySurface>, // this should have a volatility type key
+    // vol_cubes: HashMap<MarketIndex, VolatilityCube>,
 }
 
 impl MarketDataProvider {
@@ -26,8 +17,8 @@ impl MarketDataProvider {
         Self {
             reference_date,
             quotes: Vec::new(),
-            vol_surfaces: HashMap::new(),
-            vol_cubes: HashMap::new(),
+            // vol_surfaces: HashMap::new(),
+            // vol_cubes: HashMap::new(),
         }
     }
 
@@ -43,15 +34,15 @@ impl MarketDataProvider {
         &self.quotes
     }
 
-    /// Returns a volatility surface by instrument identifier.
-    #[must_use]
-    pub fn volatility_surface(&self, instrument: &MarketIndex) -> Option<&VolatilitySurface> {
-        self.vol_surfaces.get(instrument)
-    }
+    // Returns a volatility surface by instrument identifier.
+    // #[must_use]
+    // pub fn volatility_surface(&self, instrument: &MarketIndex) -> Option<&VolatilitySurface> {
+    //     self.vol_surfaces.get(instrument)
+    // }
 
-    /// Returns a volatility cube by instrument identifier.
-    #[must_use]
-    pub fn volatility_cube(&self, instrument: &MarketIndex) -> Option<&VolatilityCube> {
-        self.vol_cubes.get(instrument)
-    }
+    // /// Returns a volatility cube by instrument identifier.
+    // #[must_use]
+    // pub fn volatility_cube(&self, instrument: &MarketIndex) -> Option<&VolatilityCube> {
+    //     self.vol_cubes.get(instrument)
+    // }
 }

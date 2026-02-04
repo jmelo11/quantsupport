@@ -1,24 +1,23 @@
-use super::enums::Compounding;
 use crate::{
+    ad::adreal::IsReal,
+    rates::compounding::Compounding,
     time::{date::Date, enums::Frequency},
     utils::errors::Result,
 };
-
-/// # `HasReferenceDate`
-/// Implement this trait for a struct that has a reference date.
-pub trait HasReferenceDate {
-    /// Returns the reference date for this object.
+/// # `RatesTermStructure`
+///
+/// Base trait for rate term structures.
+pub trait RatesTermStructure<T>
+where
+    T: IsReal,
+{
+    /// Returns the reference date for the given curve.
     fn reference_date(&self) -> Date;
-}
-
-/// # `YieldProvider`
-/// Implement this trait for a struct that provides yield information.
-pub trait YieldProvider: HasReferenceDate {
     /// Calculates the discount factor for the given date.
     ///
     /// # Errors
     /// Returns an error if the discount factor cannot be computed for the date.
-    fn discount_factor(&self, date: Date) -> Result<f64>;
+    fn discount_factor(&self, date: Date) -> Result<T>;
     /// Calculates the forward rate between two dates with the specified compounding and frequency.
     ///
     /// # Errors
@@ -29,5 +28,5 @@ pub trait YieldProvider: HasReferenceDate {
         end_date: Date,
         comp: Compounding,
         freq: Frequency,
-    ) -> Result<f64>;
+    ) -> Result<T>;
 }

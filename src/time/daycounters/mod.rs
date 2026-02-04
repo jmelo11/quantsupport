@@ -6,7 +6,7 @@ pub mod actual365;
 pub mod actualactual;
 /// Business/252 day count convention.
 pub mod business252;
+/// Traits for day count conventions.
+pub mod daycount;
 /// 30/360 day count convention.
 pub mod thirty360;
-/// Traits for day count conventions.
-pub mod traits;

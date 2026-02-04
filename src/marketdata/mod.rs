@@ -4,5 +4,7 @@ pub mod fixingprovider;
 pub mod marketdataprovider;
 /// Module for quote handeling.
 pub mod quote;
+/// Generic surface.
+pub mod surface;
 /// Volatility surface and cube definitions.
-pub mod volatility;
+pub mod volatilitysurface;

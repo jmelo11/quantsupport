@@ -1,33 +1,3 @@
-//! Simple optimization/solver helpers used across the crate.
-//!
-//! This module provides a small, self-contained set of traits and a lightweight
-//! Newton–Raphson implementation used by examples and tests in the repository.
-//! It is intentionally minimal: traits are generic so they can be implemented for
-//! scalar or vector-like types, and `DescentMethod::solve` provides a small
-//! convergence loop that concrete solvers can reuse.
-//!
-//! # Provided items
-//!
-//! - `SolutionStatus` — outcome of a solver run.
-//! - `OptimizerSolution<X>` — solution container with value `x`, objective `f` and `status`.
-//! - `ContFunc`, `C1Func`, `C2Func` — function traits for zeroth/first/second order problems.
-//! - `DescentMethod` — trait defining a generic descent solver with a default `solve`.
-//! - `NewtonRaphson` — a simple scalar Newton–Raphson implementation.
-//!
-//! # Example
-//!
-//! A minimal example (similar to the tests) shows how to implement `C1Func` for
-//! a problem and run `NewtonRaphson` to find a root.
-//!
-//! ```rust
-//! # use rustatlas::math::solvers::solvers::{ContFunc, C1Func, NewtonRaphson};
-//! # struct Problem;
-//! # impl ContFunc<f64> for Problem { fn call(&self, _x: &f64) -> Result<f64, String> { Ok(0.0) } }
-//! # impl C1Func<f64> for Problem { fn grad(&self, _x: &f64) -> Result<f64, String> { Ok(1.0) } }
-//! let solver = NewtonRaphson::new(0.5, 50);
-//! # let _ = solver.solve(&Problem {});
-//! ```
-
 use crate::utils::errors::Result;
 use std::ops::Sub;
 

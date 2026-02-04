@@ -39,7 +39,7 @@ impl Display for MarketIndex {
             Self::TermSOFR12m => write!(f, "TermSOFR12m"),
             Self::ICP => write!(f, "ICP"),
             Self::VIX => write!(f, "VIX"),
-            Self::Equity(s) => write!(f, "{s}"),
+            Self::Equity(name) => write!(f, "{name}"),
             Self::Other(s) => write!(f, "{s}"),
         }
     }

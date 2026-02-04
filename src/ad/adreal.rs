@@ -1,4 +1,7 @@
-//! Automatic differentiation number types and expression building blocks.
+//! `QuantSupport` is a Rust library for pricing and risk analytics.
+//!
+//! Author: Jose Melo
+//! https://github.com/jmelo11/quantsupport
 
 use core::fmt;
 use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign};
@@ -10,17 +13,24 @@ use crate::utils::errors::{AtlasError, Result};
 use std::cmp::Ordering;
 use std::ptr::NonNull;
 
-/// A scalar value tracked on the automatic differentiation tape.
+/// # `ADReal`
+///
+/// Represnets a differnetiable number.
 #[derive(Clone, Copy, Default)]
 pub struct ADReal {
     val: f64,
     node: Option<NonNull<TapeNode>>,
 }
 
+unsafe impl Sync for ADReal {}
+unsafe impl Send for ADReal {}
+
+/// # `IsReal`
+///
 /// Conversion helpers for numeric types used by this crate.
 pub trait IsReal
 where
-    Self: Sized,
+    Self: Sized + Copy + Add + Sub + Mul + Div + PartialEq + PartialOrd,
 {
     /// Creates a new numeric value from the given scalar in f64.
     fn new(v: f64) -> Self;
@@ -73,6 +83,8 @@ impl IsReal for ADReal {
     }
 }
 
+/// # `Expr`
+///
 /// A differentiable expression that can record its contribution to the tape.
 pub trait Expr: Clone {
     /// Returns the scalar value of the expression.
@@ -92,9 +104,6 @@ impl fmt::Display for ADReal {
         write!(f, "ADReal({})", self.val)
     }
 }
-
-unsafe impl Sync for ADReal {}
-unsafe impl Send for ADReal {}
 
 impl ADReal {
     /// Sets the active tape for the current thread.
@@ -213,9 +222,29 @@ impl PartialOrd for ADReal {
     }
 }
 
-#[derive(Clone, Copy)]
+/// # `Const`
+///
 /// A constant expression wrapper for interoperability.
+#[derive(Clone, Copy, PartialEq, PartialOrd)]
 pub struct Const(pub f64);
+
+impl IsReal for Const {
+    fn new(v: f64) -> Self {
+        Self(v)
+    }
+
+    fn one() -> Self {
+        Self(1.0)
+    }
+
+    fn value(&self) -> f64 {
+        self.0
+    }
+
+    fn zero() -> Self {
+        Self(0.0)
+    }
+}
 
 impl From<f64> for Const {
     #[inline]
@@ -268,6 +297,8 @@ impl Expr for Const {
     fn push_adj(&self, _: &mut TapeNode, _: f64) {}
 }
 
+/// # `BinOp`
+///
 /// A binary operation definition for the expression system.
 pub trait BinOp {
     /// Evaluates the operator on the input values.
@@ -279,6 +310,8 @@ pub trait BinOp {
 }
 
 #[derive(Clone, Copy, Debug)]
+/// # `AddOp`
+///
 /// Binary addition operator.
 pub struct AddOp;
 impl BinOp for AddOp {
@@ -299,7 +332,10 @@ impl BinOp for AddOp {
     }
 }
 #[derive(Clone, Copy, Debug)]
-/// Binary subtraction operator.
+
+/// # `SubOp`
+///
+///  Binary subtraction operator.
 pub struct SubOp;
 impl BinOp for SubOp {
     #[inline]
@@ -318,8 +354,11 @@ impl BinOp for SubOp {
         -1.0
     }
 }
-#[derive(Clone, Copy, Debug)]
+
+/// # `MulOp`
+///
 /// Binary multiplication operator.
+#[derive(Clone, Copy, Debug)]
 pub struct MulOp;
 impl BinOp for MulOp {
     #[inline]
@@ -338,8 +377,11 @@ impl BinOp for MulOp {
         l
     }
 }
-#[derive(Clone, Copy, Debug)]
+
+/// # `DivOp`
+///
 /// Binary division operator.
+#[derive(Clone, Copy, Debug)]
 pub struct DivOp;
 impl BinOp for DivOp {
     #[inline]
@@ -358,8 +400,11 @@ impl BinOp for DivOp {
         -l / (r * r)
     }
 }
-#[derive(Clone, Copy, Debug)]
+
+/// # `PowOp`
+///
 /// Binary power operator.
+#[derive(Clone, Copy, Debug)]
 pub struct PowOp;
 impl BinOp for PowOp {
     #[inline]
@@ -379,8 +424,10 @@ impl BinOp for PowOp {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+/// # `MaxOp`
+///
 /// Binary maximum operator.
+#[derive(Clone, Copy, Debug)]
 pub struct MaxOp;
 impl BinOp for MaxOp {
     #[inline]
@@ -407,8 +454,11 @@ impl BinOp for MaxOp {
         }
     }
 }
-#[derive(Clone, Copy, Debug)]
+
+/// # `MinOp`
+///
 /// Binary minimum operator.
+#[derive(Clone, Copy, Debug)]
 pub struct MinOp;
 impl BinOp for MinOp {
     #[inline]
@@ -436,14 +486,17 @@ impl BinOp for MinOp {
     }
 }
 
-#[derive(Clone)]
+/// # `BinExpr`
+///
 /// A binary expression over two child expressions.
+#[derive(Clone)]
 pub struct BinExpr<L, R, O> {
     l: L,
     r: R,
     val: f64,
     _ph: std::marker::PhantomData<O>,
 }
+
 impl<L: Expr, R: Expr, O: BinOp> BinExpr<L, R, O> {
     #[inline]
     /// Constructs a new binary expression and caches its value.
@@ -457,6 +510,7 @@ impl<L: Expr, R: Expr, O: BinOp> BinExpr<L, R, O> {
         }
     }
 }
+
 impl<L: Expr, R: Expr, O: BinOp + Clone> Expr for BinExpr<L, R, O> {
     #[inline]
     /// Returns the cached scalar value of the expression.
@@ -476,6 +530,8 @@ impl<L: Expr, R: Expr, O: BinOp + Clone> Expr for BinExpr<L, R, O> {
     }
 }
 
+/// # `UnOp`
+///
 /// A unary operation definition for the expression system.
 pub trait UnOp {
     /// Evaluates the operator on the input value.
@@ -537,13 +593,16 @@ un_op!(
     |x, _v| if x >= 0.0 { 1.0 } else { -1.0 }
 );
 
-#[derive(Clone)]
+/// # `UnExpr`
+///
 /// A unary expression over a child expression.
+#[derive(Clone)]
 pub struct UnExpr<A, O> {
     a: A,
     val: f64,
     _ph: std::marker::PhantomData<O>,
 }
+
 impl<A: Expr, O: UnOp> UnExpr<A, O> {
     #[inline]
     /// Constructs a new unary expression and caches its value.
@@ -556,6 +615,7 @@ impl<A: Expr, O: UnOp> UnExpr<A, O> {
         }
     }
 }
+
 impl<A: Expr, O: UnOp + Clone> Expr for UnExpr<A, O> {
     #[inline]
     /// Returns the cached scalar value of the expression.
@@ -664,6 +724,7 @@ macro_rules! impl_bin_ops_local {
 }
 
 impl_bin_ops_local!(ADReal);
+
 impl_bin_ops_local!(Const);
 
 macro_rules! impl_bin_ops_expr {
@@ -868,18 +929,20 @@ where
     }
 }
 
-#[inline]
 /// Returns the exponential of an expression.
+#[inline]
 pub fn exp<A: Expr + Clone>(a: A) -> UnExpr<A, ExpOp> {
     UnExpr::new(a)
 }
-#[inline]
+
 /// Returns the natural logarithm of an expression.
+#[inline]
 pub fn log<A: Expr + Clone>(a: A) -> UnExpr<A, LogOp> {
     UnExpr::new(a)
 }
-#[inline]
+
 /// Returns the square root of an expression.
+#[inline]
 pub fn sqrt<A: Expr + Clone>(a: A) -> UnExpr<A, SqrtOp> {
     UnExpr::new(a)
 }
@@ -888,34 +951,39 @@ pub fn sqrt<A: Expr + Clone>(a: A) -> UnExpr<A, SqrtOp> {
 pub fn fabs<A: Expr + Clone>(a: A) -> UnExpr<A, FabsOp> {
     UnExpr::new(a)
 }
-#[inline]
+
 /// Returns the sine of an expression.
+#[inline]
 pub fn sin<A: Expr + Clone>(a: A) -> UnExpr<A, SinOp> {
     UnExpr::new(a)
 }
-#[inline]
+
 /// Returns the cosine of an expression.
+#[inline]
 pub fn cos<A: Expr + Clone>(a: A) -> UnExpr<A, CosOp> {
     UnExpr::new(a)
 }
-#[inline]
+
 /// Returns the absolute value of an expression.
+#[inline]
 pub fn abs<A: Expr + Clone>(a: A) -> UnExpr<A, AbsOp> {
     UnExpr::new(a)
 }
 
-#[inline]
 /// Raises one expression to the power of another.
+#[inline]
 pub fn pow<L: Expr + Clone, R: Expr + Clone>(l: L, r: R) -> BinExpr<L, R, PowOp> {
     BinExpr::new(l, r)
 }
-#[inline]
+
 /// Returns the maximum of two expressions.
+#[inline]
 pub fn max<L: Expr + Clone, R: Expr + Clone>(l: L, r: R) -> BinExpr<L, R, MaxOp> {
     BinExpr::new(l, r)
 }
-#[inline]
+
 /// Returns the minimum of two expressions.
+#[inline]
 pub fn min<L: Expr + Clone, R: Expr + Clone>(l: L, r: R) -> BinExpr<L, R, MinOp> {
     BinExpr::new(l, r)
 }
@@ -1510,18 +1578,18 @@ mod tests {
         with_tape_test(|| {
             Tape::start_recording();
 
-            let a0 = ADReal::new(5.0); // keep an immutable handle to the leaf
+            let a0 = ADReal::new(5.0);
             let b = ADReal::new(3.0);
-            let mut a = a0; // mutable alias
-            a *= b; // 5 * 3 = 15
+            let mut a = a0;
+            a *= b;
             let c = a;
-            assert_eq!(c.value(), 15.0); // value is correct
+            assert_eq!(c.value(), 15.0);
 
             c.backward().unwrap();
 
-            assert_eq!(a0.adjoint().unwrap(), 3.0); // ∂c/∂a0  = b = 3
-            assert_eq!(b.adjoint().unwrap(), 5.0); // ∂c/∂b   = a0 = 5
-            assert_eq!(c.adjoint().unwrap(), 1.0); // seed stays 1
+            assert_eq!(a0.adjoint().unwrap(), 3.0);
+            assert_eq!(b.adjoint().unwrap(), 5.0);
+            assert_eq!(c.adjoint().unwrap(), 1.0);
         });
     }
 
@@ -1543,9 +1611,9 @@ mod tests {
             });
 
             let (dx, dy, dout) = handle.join().unwrap();
-            assert_eq!(dx, 4.0); // d/dx (x*y + x) = y + 1 = 4
-            assert_eq!(dy, 2.0); // d/dy (x*y + x) = x = 2
-            assert_eq!(dout, 1.0); // seed stays 1
+            assert_eq!(dx, 4.0);
+            assert_eq!(dy, 2.0);
+            assert_eq!(dout, 1.0);
         });
     }
 }

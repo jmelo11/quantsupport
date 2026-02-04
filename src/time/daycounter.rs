@@ -1,11 +1,14 @@
 use serde::{Deserialize, Serialize};
 
 use super::daycounters::{
-    actual360::Actual360, actual365::Actual365, actualactual::ActualActual,
-    business252::Business252, thirty360::{Thirty360, Thirty360US}, traits::DayCountProvider,
+    actual360::Actual360,
+    actual365::Actual365,
+    actualactual::ActualActual,
+    business252::Business252,
+    thirty360::{Thirty360, Thirty360US},
 };
 use crate::{
-    time::date::Date,
+    time::{date::Date, daycounters::daycount::DayCount},
     utils::errors::{AtlasError, Result},
 };
 

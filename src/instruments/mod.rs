@@ -1,2 +1,2 @@
 /// Fixed Rate Bond Module
-pub mod bond;
+pub mod fixedincome;

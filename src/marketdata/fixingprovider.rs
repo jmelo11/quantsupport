@@ -4,7 +4,7 @@ use serde::Serialize;
 
 use crate::{
     indices::marketindex::MarketIndex,
-    math::interpolation::interpolator::Interpolator,
+    math::interpolation::interpolator::{Interpolate, Interpolator},
     time::{date::Date, enums::TimeUnit, period::Period},
     utils::errors::{AtlasError, Result},
 };

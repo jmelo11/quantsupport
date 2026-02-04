@@ -10,7 +10,8 @@ use std::ops::{Add, AddAssign, Sub, SubAssign};
 /// Extends the `NaiveDate` struct from the chrono rustatlas.
 /// # Examples
 /// ```
-/// use rustatlas::prelude::*;
+/// use quantsupport::time::date::*;
+/// use quantsupport::time::enums::TimeUnit;
 /// use chrono::NaiveDate;
 ///
 /// let date = NaiveDate::from_ymd_opt(2020, 2, 15).unwrap();
@@ -130,7 +131,9 @@ impl NaiveDateExt for NaiveDate {
 /// # Examples
 /// ```
 /// use chrono::NaiveDate;
-/// use rustatlas::prelude::*;
+/// use quantsupport::time::date::Date;
+/// use quantsupport::time::period::Period;
+/// use quantsupport::time::enums::TimeUnit;
 ///
 /// let date = NaiveDate::from_ymd_opt(2020, 1, 15).unwrap();
 /// let period = Period::new(15, TimeUnit::Days);
@@ -151,7 +154,8 @@ impl Add<Period> for NaiveDate {
 /// # Examples
 /// ```
 /// use chrono::NaiveDate;
-/// use rustatlas::prelude::*;
+/// use quantsupport::time::period::Period;
+/// use quantsupport::time::enums::TimeUnit;
 /// let date = NaiveDate::from_ymd_opt(2020, 1, 15).unwrap();
 /// let period = Period::new(15, TimeUnit::Days);
 /// assert_eq!(date - period, NaiveDate::from_ymd_opt(2019, 12, 31).unwrap());
@@ -170,7 +174,8 @@ impl Sub<Period> for NaiveDate {
 /// Wrapper around the `NaiveDate` struct from the chrono rustatlas.
 /// # Examples
 /// ```
-/// use rustatlas::time::date::Date;
+/// use quantsupport::time::date::Date;
+///
 /// let date = Date::new(2020, 2, 15);
 /// assert_eq!(date.day(), 15);
 /// assert_eq!(date.month(), 2);
@@ -348,7 +353,7 @@ impl Date {
 /// Subtracts two Dates and returns the difference in days.
 /// # Examples
 /// ```
-/// use rustatlas::time::date::Date;
+/// use quantsupport::time::date::Date;
 /// let date1 = Date::new(2020, 2, 15);
 /// let date2 = Date::new(2020, 2, 10);
 /// assert_eq!(date1 - date2, 5);
@@ -367,7 +372,10 @@ impl Sub for Date {
 /// Adds a Period to a Date.
 /// # Examples
 /// ```
-/// use rustatlas::prelude::*;
+/// use quantsupport::time::date::Date;
+/// use quantsupport::time::period::Period;
+/// use quantsupport::time::enums::TimeUnit;
+///
 /// let date = Date::new(2020, 1, 15);
 /// let period = Period::new(15, TimeUnit::Days);
 /// assert_eq!(date + period, Date::new(2020, 1, 30));
@@ -385,7 +393,10 @@ impl Add<Period> for Date {
 /// Subtracts a Period from a Date.
 /// # Examples
 /// ```
-/// use rustatlas::prelude::*;
+/// use quantsupport::time::date::Date;
+/// use quantsupport::time::period::Period;
+/// use quantsupport::time::enums::TimeUnit;
+///
 /// let date = Date::new(2020, 1, 15);
 /// let period = Period::new(15, TimeUnit::Days);
 /// assert_eq!(date - period, Date::new(2019, 12, 31));
@@ -403,7 +414,8 @@ impl Sub<Period> for Date {
 /// Adds an i64 to a Date.
 /// # Examples
 /// ```
-/// use rustatlas::prelude::*;
+/// use quantsupport::time::date::Date;
+///
 /// let date = Date::new(2020, 1, 15);
 /// assert_eq!(date + 15, Date::new(2020, 1, 30));
 /// ```
@@ -421,7 +433,8 @@ impl Add<i64> for Date {
 /// Adds an i64 to a Date.
 /// # Examples
 /// ```
-/// use rustatlas::prelude::*;
+/// use quantsupport::time::date::Date;
+///
 /// let mut date = Date::new(2020, 1, 15);
 /// date += 15;
 /// assert_eq!(date, Date::new(2020, 1, 30));
@@ -437,7 +450,8 @@ impl AddAssign<i64> for Date {
 /// Subtracts an i64 from a Date.
 /// # Examples
 /// ```
-/// use rustatlas::prelude::*;
+/// use quantsupport::time::date::Date;
+///
 /// let date = Date::new(2020, 1, 30);
 /// assert_eq!(date - 15, Date::new(2020, 1, 15));
 /// ```
@@ -455,7 +469,8 @@ impl Sub<i64> for Date {
 /// Subtracts an i64 from a Date.
 /// # Examples
 /// ```
-/// use rustatlas::prelude::*;
+/// use quantsupport::time::date::Date;
+///
 /// let mut date = Date::new(2020, 1, 30);
 /// date -= 15;
 /// assert_eq!(date, Date::new(2020, 1, 15));
@@ -471,7 +486,8 @@ impl SubAssign<i64> for Date {
 /// Formats a Date as a string.
 /// # Examples
 /// ```
-/// use rustatlas::time::date::Date;
+/// use quantsupport::time::date::Date;
+///
 /// let date = Date::new(2020, 1, 15);
 /// assert_eq!(date.to_string(), "2020-01-15");
 /// ```

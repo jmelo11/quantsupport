@@ -4,9 +4,9 @@ pub mod compositetermstructure;
 pub mod discounttermstructure;
 /// Flat forward term structure module.
 pub mod flatforwardtermstructure;
+/// Rates term structure module.
+pub mod ratestermstructure;
 /// Tenor-based zero rate term structure module.
 pub mod tenorbasedzeroratetermstructure;
-/// Traits module.
-pub mod traits;
 /// Zero rate term structure module.
 pub mod zeroratetermstructure;

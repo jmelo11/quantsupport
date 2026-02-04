@@ -5,7 +5,7 @@ use crate::{
         quotetype::QuoteType,
         rateindex::RateIndexDetails,
     },
-    rates::{enums::Compounding, interestrate::RateDefinition},
+    rates::{compounding::Compounding, interestrate::RateDefinition},
     time::{
         calendar::Calendar,
         calendars::unitedstates::{Market, UnitedStates},

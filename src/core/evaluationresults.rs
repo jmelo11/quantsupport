@@ -6,22 +6,22 @@ pub struct CashflowsTable;
 
 /// # `SensitivitiesTable`>
 /// Contains the cashflow structure of the instrument.
-pub struct SensitivitiesTable;
+pub struct SensitivityMap;
 
 /// # `EvaluationResults`
 ///
 /// Holds the results of an instrument evaluation, including price, sensitivities, among others.
 pub struct EvaluationResults {
     /// Reference or as-of date of the results.
-    reference_date: Date,
-    /// Iternal id of the instrument.
-    id: usize,
+    evaluation_date: Date,
     /// Instrument name or identifier.
-    identifier: &'static str,
+    identifier: String,
     /// Price or present value.
     price: Option<f64>,
+    /// Yield to maturity.
+    ytm: Option<f64>,
     /// Sensitivities to market inputs.    
-    sensitivities: Option<SensitivitiesTable>,
+    sensitivities: Option<SensitivityMap>,
     /// Cashflows of the instrument.
     cashflows: Option<CashflowsTable>,
 }
@@ -29,12 +29,12 @@ pub struct EvaluationResults {
 impl EvaluationResults {
     /// Creates a new instance of `EvaluationResults`.
     #[must_use]
-    pub const fn new(reference_date: Date, id: usize, identifier: &'static str) -> Self {
+    pub const fn new(evaluation_date: Date, identifier: String) -> Self {
         Self {
-            reference_date,
-            id,
+            evaluation_date,
             identifier,
             price: None,
+            ytm: None,
             sensitivities: None,
             cashflows: None,
         }
@@ -49,7 +49,7 @@ impl EvaluationResults {
 
     /// Sets the sensitivities to market inputs.
     #[must_use]
-    pub const fn with_sensitivities(mut self, sensitivities: SensitivitiesTable) -> Self {
+    pub const fn with_sensitivities(mut self, sensitivities: SensitivityMap) -> Self {
         self.sensitivities = Some(sensitivities);
         self
     }
@@ -63,22 +63,22 @@ impl EvaluationResults {
 
     /// Sets the reference or as-of date.
     #[must_use]
-    pub const fn with_reference_date(mut self, reference_date: Date) -> Self {
-        self.reference_date = reference_date;
-        self
-    }
-
-    /// Sets the instrument internal id.
-    #[must_use]
-    pub const fn with_id(mut self, id: usize) -> Self {
-        self.id = id;
+    pub const fn with_evaluation_date(mut self, evaluation_date: Date) -> Self {
+        self.evaluation_date = evaluation_date;
         self
     }
 
     /// Sets the instrument name or identifier.
     #[must_use]
-    pub const fn with_identifier(mut self, identifier: &'static str) -> Self {
+    pub fn with_identifier(mut self, identifier: String) -> Self {
         self.identifier = identifier;
+        self
+    }
+
+    /// Sets the yield to maturity.
+    #[must_use]
+    pub const fn with_ytm(mut self, ytm: f64) -> Self {
+        self.ytm = Some(ytm);
         self
     }
 }

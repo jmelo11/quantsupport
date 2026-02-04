@@ -6,5 +6,3 @@ pub mod interpolator;
 pub mod linear;
 /// Log-linear interpolation implementation.
 pub mod loglinear;
-/// Traits for interpolation.
-pub mod traits;

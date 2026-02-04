@@ -1,4 +1,4 @@
-use crate::marketdata::{fixingprovider::FixingProvider, marketdataprovider::MarketDataProvider};
+use crate::{marketdata::{fixingprovider::FixingProvider, marketdataprovider::MarketDataProvider}, time::date::Date};
 
 /// # `PricingContext`
 pub struct PricingContext {
@@ -38,5 +38,11 @@ impl PricingContext {
     #[must_use]
     pub const fn model_configuration(&self) -> usize {
         self.model_configuration
+    }
+
+    /// Returns the current reference date.
+    #[must_use]
+    pub const fn evaluation_date(&self) -> Date {
+        self.market_data_provider.reference_date()
     }
 }

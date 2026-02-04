@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::currencies::currency::Currency;
-use crate::marketdata::volatility::VolatilityType;
+use crate::marketdata::volatilitysurface::VolatilityType;
 use crate::utils::errors::{AtlasError, Result};
 use crate::{
     indices::marketindex::MarketIndex,
@@ -11,6 +11,7 @@ use crate::{
 /// # `Level`
 ///
 /// Quote level enumeration.
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub enum Level {
     /// Mid (average between Bid and Ask) price.
     Mid,
@@ -25,7 +26,7 @@ pub enum Level {
 ///
 /// When multiple levels are provided the `mid` is preferred, otherwise `bid/ask`
 /// are used to compute a fallback representative value.
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize)]
 pub struct QuoteLevels {
     /// Mid price/level.
     #[serde(default)]
@@ -61,7 +62,7 @@ impl QuoteLevels {
     ///
     /// ## Errors
     /// Returns an error if none of mid, bid, or ask are available.
-    pub fn value(&self, level: Level) -> Result<f64> {
+    pub fn value(&self, level: &Level) -> Result<f64> {
         match level {
             Level::Mid => self
                 .mid
@@ -93,6 +94,7 @@ pub struct QuoteRecord {
 /// # `StrikeType`
 ///
 /// Represents if the strike is quotes in absolute or relative values.
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub enum StrikeType {
     /// Absolute strike.
     Absolute,
@@ -103,7 +105,10 @@ pub enum StrikeType {
 /// # `QuoteInstruments`
 ///
 /// Represents the type of instruments that can be handled by the quoting system.
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub enum QuoteInstrument {
+    /// Deposit instrument.
+    Deposit,
     /// Basis swap instrument.
     BasisSwap,
     /// OIS swap instrument.
@@ -135,38 +140,50 @@ pub enum QuoteInstrument {
 /// # `OptionStrategy`
 ///
 /// Represents the strategy for which the volatility quotes.
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub enum OptionStrategy {
     /// Straddle strategy.
     Straddle,
     /// Strangle strategy.
     Strangle,
-    /// Condor strategy.
-    Condor, // ?
+    /// Risk reversal strategy.
+    RiskReversal,
+    /// Butterfly strategy.
+    Butterfly,
 }
 
 /// # `QuoteDetails`
 ///
-/// Parsed quote identifier details.
-///
-/// Identifiers are parsed using the `INSTRUMENT|key=value|...` format. Keys are
-/// case-insensitive and stored in the `attributes` map using lowercase keys.
-/// Standard fields are `strike`, `shift`, `maturity` (aliases: `expiry`, `exp`),
-/// and `tenor` (parsed as a [`Period`] with formats like `1Y` or `6M`).
+/// A `QuoteDetails` contains all details related to a particular price. It a
+/// union of various instrument types and their associated parameters.
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct QuoteDetails {
     market_index: MarketIndex,
     instrument: QuoteInstrument, // BasisSwap, OIS, CapletFloorlet, CapFloor, Swaption
+    #[serde(default)]
     strategy: Option<OptionStrategy>, // Straddle, Strangle
+    #[serde(default)]
     vol_type: Option<VolatilityType>, // Black, Normal
+    #[serde(default)]
     rate: Option<f64>,
+    #[serde(default)]
     price: Option<f64>,
+    #[serde(default)]
     coupon_rate: Option<f64>,
+    #[serde(default)]
     pay_currency: Option<Currency>,
+    #[serde(default)]
     receive_currency: Option<Currency>,
+    #[serde(default)]
     strike: Option<f64>,
+    #[serde(default)]
     strike_type: Option<StrikeType>, // Absolute, relative
-    vol_shift: Option<f64>,
+    #[serde(default)]
     maturity: Option<Date>,
+    #[serde(default)]
     tenor: Option<Period>,
+    #[serde(default)]
+    vol_shift: Option<f64>,
 }
 
 impl QuoteDetails {
@@ -212,11 +229,12 @@ impl QuoteDetails {
     }
 }
 
-/// QuoteDetails should implement "from_str"
+// QuoteDetails should implement "from_str"
 
 /// # `Quote`
 ///
 /// Contains the quote information.
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Quote {
     quote_details: QuoteDetails,
     quote_levels: QuoteLevels,
@@ -224,6 +242,7 @@ pub struct Quote {
 
 impl Quote {
     /// Creates a new quote.
+    #[must_use]
     pub const fn new(quote_details: QuoteDetails, quote_levels: QuoteLevels) -> Self {
         Self {
             quote_details,

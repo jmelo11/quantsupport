@@ -1,8 +1,9 @@
 use crate::time::date::Date;
 
-/// # `DayCountProvider`
+/// # `DayCount`
+/// 
 /// Day count convention trait.
-pub trait DayCountProvider {
+pub trait DayCount {
     /// Calculates the number of days between two dates using the day count convention.
     ///
     /// # Arguments
