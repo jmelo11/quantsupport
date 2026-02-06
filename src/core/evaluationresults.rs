@@ -4,7 +4,7 @@ use crate::time::date::Date;
 /// Contains the cashflow structure of the instrument.
 pub struct CashflowsTable;
 
-/// # `SensitivitiesTable`>
+/// # `SensitivitiesTable`
 /// Contains the cashflow structure of the instrument.
 pub struct SensitivityMap;
 
