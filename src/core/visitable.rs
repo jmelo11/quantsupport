@@ -1,6 +1,6 @@
 use crate::{
     core::{
-        evaluationresults::EvaluationResults, pricingcontext::PricingContext,
+        evaluationresults::EvaluationResults, pricingdata::PricingDataContext,
         pricingrequest::PricingRequest,
     },
     utils::errors::AtlasError,
@@ -18,7 +18,7 @@ pub trait Visitable<P: Visitor> {
         &self,
         visitor: &P,
         requests: &[PricingRequest],
-        ctx: &PricingContext,
+        ctx: &PricingDataContext,
     ) -> Result<EvaluationResults, AtlasError>;
 }
 
@@ -27,7 +27,7 @@ pub trait Visitable<P: Visitor> {
 //         &self,
 //         trade: &ExampleInstrumentTrade,
 //         requests: &[PricingRequest],
-//         ctx: &PricingContext,
+//         ctx: &PricingDataContext,
 //     ) -> Result<RiskMetrics, PricingError>;
 //     // fn visit_bond
 //     // fn visit_option

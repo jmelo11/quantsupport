@@ -3,7 +3,7 @@
 ## Purpose
 
 The **core** module defines how pricing is orchestrated. It provides the abstractions for pricers,
-pricing context, and result aggregation so that products can be priced consistently and
+pricing data context, and result aggregation so that products can be priced consistently and
 extensibly across the system.
 
 ## Pricers
@@ -12,11 +12,11 @@ extensibly across the system.
 - Multiple pricers can exist for the same product type (e.g., analytic vs. numerical, fast vs.
   accurate, or model-specific implementations).
 - Each pricer focuses on *how to price* a product, not how to obtain data; it relies on the
-  pricing context to supply the needed inputs.
+  pricing data context to supply the needed inputs.
 
-## Pricing Context
+## Pricing Data Context
 
-- The **pricing context** is the structured container for all information a pricer needs:
+- The **pricing data context** is the structured container for all information a pricer needs:
   market data, model parameters, valuation settings, and other shared inputs.
 - It acts as the contract between data/model providers and the pricer itself.
 - Pricers should request data through the context rather than directly accessing providers,
@@ -31,23 +31,23 @@ extensibly across the system.
 ## Parallelism and Scalability
 
 - Pricing should be **parallelizable by design**. Each pricer should be able to operate
-  independently given a pricing context and produce its results without side effects.
+  independently given a pricing data context and produce its results without side effects.
 - This enables concurrent evaluation of multiple trades, scenarios, or models and supports
   scaling across cores or distributed systems.
 
 ## Example: Implementing and Running a Pricer
 
-The example below sketches how a pricer could use a pricing context and return results that can
+The example below sketches how a pricer could use a pricing data context and return results that can
 be aggregated alongside other pricers.
 
 ```rust
-use rustatlas::core::{Pricer, PricingContext, PricingResults};
+use rustatlas::core::{Pricer, PricingDataContext, PricingResults};
 use rustatlas::instruments::Swap;
 
 struct SwapPricer;
 
 impl Pricer<Swap> for SwapPricer {
-    fn evaluate(&self, instrument: &Swap, requests: &[PricingRequest] context: &PricingContext) -> PricingResults {
+    fn evaluate(&self, instrument: &Swap, requests: &[PricingRequest] context: &PricingDataContext) -> PricingResults {
         let curve = context.discount_curve("USD");
         let mut results = PricingResults::new():
         requests.iter().try_for_each(|req| match req {
@@ -60,7 +60,7 @@ impl Pricer<Swap> for SwapPricer {
     }
 }
 
-fn run_pricer(pricer: &dyn Pricer<Swap>, swap: &Swap, context: &PricingContext) {
+fn run_pricer(pricer: &dyn Pricer<Swap>, swap: &Swap, context: &PricingDataContext) {
     let results = pricer.evaluate(swap, context);
 }
 ```

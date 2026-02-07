@@ -16,6 +16,14 @@ pub struct FixingProvider {
 }
 
 impl FixingProvider {
+    /// Creates an empty fixing provider.
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            values: HashMap::new(),
+        }
+    }
+
     /// Returns the fixing rate for a given date.
     ///
     /// ## Errors
