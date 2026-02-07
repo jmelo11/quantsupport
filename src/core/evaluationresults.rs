@@ -1,12 +1,45 @@
-use crate::time::date::Date;
+use std::collections::HashMap;
+
+use crate::{indices::marketindex::MarketIndex, time::date::Date};
 
 /// # `CashflowsTable`
 /// Contains the cashflow structure of the instrument.
 pub struct CashflowsTable;
 
-/// # `SensitivitiesTable`
-/// Contains the cashflow structure of the instrument.
-pub struct SensitivityMap;
+/// # `SensitivityKey`
+/// Identifies a sensitivity by market index and curve pillar date.
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+pub struct SensitivityKey {
+    market_index: MarketIndex,
+    pillar_date: Date,
+}
+
+impl SensitivityKey {
+    /// Creates a new sensitivity key.
+    #[must_use]
+    pub const fn new(market_index: MarketIndex, pillar_date: Date) -> Self {
+        Self {
+            market_index,
+            pillar_date,
+        }
+    }
+
+    /// Returns the market index for the sensitivity.
+    #[must_use]
+    pub const fn market_index(&self) -> &MarketIndex {
+        &self.market_index
+    }
+
+    /// Returns the pillar date for the sensitivity.
+    #[must_use]
+    pub const fn pillar_date(&self) -> Date {
+        self.pillar_date
+    }
+}
+
+/// # `SensitivityMap`
+/// Maps sensitivity keys to values.
+pub type SensitivityMap = HashMap<SensitivityKey, f64>;
 
 /// # `EvaluationResults`
 ///
@@ -49,7 +82,7 @@ impl EvaluationResults {
 
     /// Sets the sensitivities to market inputs.
     #[must_use]
-    pub const fn with_sensitivities(mut self, sensitivities: SensitivityMap) -> Self {
+    pub fn with_sensitivities(mut self, sensitivities: SensitivityMap) -> Self {
         self.sensitivities = Some(sensitivities);
         self
     }

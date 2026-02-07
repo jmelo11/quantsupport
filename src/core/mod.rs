@@ -4,8 +4,8 @@ pub mod evaluationresults;
 pub mod instrument;
 /// Pricer module.
 pub mod pricer;
-/// Pricing context module.
-pub mod pricingcontext;
+/// Pricing data context module.
+pub mod pricingdata;
 /// Pricing request module.
 pub mod pricingrequest;
 /// Trade module.

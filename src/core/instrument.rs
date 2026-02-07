@@ -1,4 +1,4 @@
-use crate::{core::pricingcontext::PricingContext, utils::errors::Result};
+use crate::{core::pricingdata::PricingDataContext, utils::errors::Result};
 
 /// # `Instrument`
 ///
@@ -13,5 +13,5 @@ pub trait Instrument: Send + Sync {
     fn is_resolved(&self) -> bool;
 
     /// Resolves the instrument by filling in any missing required fields. This may involve fetching data from external sources or performing calculations.
-    fn resolve(&mut self, ctx: &PricingContext) -> Result<()>;
+    fn resolve(&mut self, ctx: &PricingDataContext) -> Result<()>;
 }

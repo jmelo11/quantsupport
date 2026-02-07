@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    core::{instrument::Instrument, pricingcontext::PricingContext, trade::Trade},
+    core::{instrument::Instrument, pricingdata::PricingDataContext, trade::Trade},
     indices::marketindex::MarketIndex,
     rates::interestrate::InterestRate,
     time::date::Date,
@@ -92,7 +92,7 @@ impl Instrument for Deposit {
         self.is_resolved
     }
 
-    fn resolve(&mut self, _: &PricingContext) -> Result<()> {
+    fn resolve(&mut self, _: &PricingDataContext) -> Result<()> {
         todo!()
     }
 }
@@ -137,6 +137,12 @@ impl DepositTrade {
     #[must_use]
     pub const fn trade_date(&self) -> Date {
         self.trade_date
+    }
+
+    /// Returns the market index associated with the trade.
+    #[must_use]
+    pub const fn market_index(&self) -> &MarketIndex {
+        &self.market_index
     }
 
     /// Returns the notional amount of the trade.

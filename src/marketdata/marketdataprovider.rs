@@ -1,4 +1,9 @@
-use crate::{marketdata::quote::Quote, time::date::Date};
+use crate::{
+    indices::marketindex::MarketIndex,
+    marketdata::quote::{Level, Quote},
+    time::date::Date,
+    utils::errors::{AtlasError, Result},
+};
 
 /// # `MarketDataProvider`
 ///
@@ -32,6 +37,33 @@ impl MarketDataProvider {
     #[must_use]
     pub fn quotes(&self) -> &[Quote] {
         &self.quotes
+    }
+
+    /// Adds a market quote to the provider.
+    pub fn add_quote(&mut self, quote: Quote) {
+        self.quotes.push(quote);
+    }
+
+    /// Returns the quote for a given market index.
+    ///
+    /// ## Errors
+    /// Returns an error if no quote matches the given index.
+    pub fn quote(&self, market_index: &MarketIndex) -> Result<&Quote> {
+        self.quotes
+            .iter()
+            .find(|quote| quote.quote_details().market_index() == market_index)
+            .ok_or(AtlasError::NotFoundErr(format!(
+                "Market quote not found for index {market_index}."
+            )))
+    }
+
+    /// Returns the quote value for a given market index and level.
+    ///
+    /// ## Errors
+    /// Returns an error if the quote or level is unavailable.
+    pub fn quote_value(&self, market_index: &MarketIndex, level: &Level) -> Result<f64> {
+        let quote = self.quote(market_index)?;
+        quote.quote_levels().value(level)
     }
 
     // Returns a volatility surface by instrument identifier.

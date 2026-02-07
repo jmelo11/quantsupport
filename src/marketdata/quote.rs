@@ -40,6 +40,21 @@ pub struct QuoteLevels {
 }
 
 impl QuoteLevels {
+    /// Creates quote levels from optional values.
+    #[must_use]
+    pub const fn new(mid: Option<f64>, bid: Option<f64>, ask: Option<f64>) -> Self {
+        Self { mid, bid, ask }
+    }
+
+    /// Creates quote levels with only a mid value.
+    #[must_use]
+    pub const fn with_mid(mid: f64) -> Self {
+        Self {
+            mid: Some(mid),
+            bid: None,
+            ask: None,
+        }
+    }
     /// Returns the mid quote if available.
     #[must_use]
     pub const fn mid(&self) -> Option<f64> {
@@ -187,6 +202,27 @@ pub struct QuoteDetails {
 }
 
 impl QuoteDetails {
+    /// Creates a new quote details container with required fields.
+    #[must_use]
+    pub fn new(market_index: MarketIndex, instrument: QuoteInstrument) -> Self {
+        Self {
+            market_index,
+            instrument,
+            strategy: None,
+            vol_type: None,
+            rate: None,
+            price: None,
+            coupon_rate: None,
+            pay_currency: None,
+            receive_currency: None,
+            strike: None,
+            strike_type: None,
+            maturity: None,
+            tenor: None,
+            vol_shift: None,
+        }
+    }
+
     /// Parses an instrument identifier of the form `INSTRUMENT|key=value|...`.
     ///
     /// ## Errors
@@ -248,5 +284,17 @@ impl Quote {
             quote_details,
             quote_levels,
         }
+    }
+
+    /// Returns the quote details.
+    #[must_use]
+    pub const fn quote_details(&self) -> &QuoteDetails {
+        &self.quote_details
+    }
+
+    /// Returns the quote levels.
+    #[must_use]
+    pub const fn quote_levels(&self) -> &QuoteLevels {
+        &self.quote_levels
     }
 }
