@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use crate::{indices::marketindex::MarketIndex, time::date::Date};
 
 /// # `CashflowsTable`
@@ -14,32 +12,23 @@ pub struct SensitivityKey {
     pillar_date: Date,
 }
 
-impl SensitivityKey {
-    /// Creates a new sensitivity key.
-    #[must_use]
-    pub const fn new(market_index: MarketIndex, pillar_date: Date) -> Self {
-        Self {
-            market_index,
-            pillar_date,
-        }
-    }
-
-    /// Returns the market index for the sensitivity.
-    #[must_use]
-    pub const fn market_index(&self) -> &MarketIndex {
-        &self.market_index
-    }
-
-    /// Returns the pillar date for the sensitivity.
-    #[must_use]
-    pub const fn pillar_date(&self) -> Date {
-        self.pillar_date
-    }
-}
-
 /// # `SensitivityMap`
 /// Maps sensitivity keys to values.
-pub type SensitivityMap = HashMap<SensitivityKey, f64>;
+#[derive(Default)]
+pub struct SensitivityMap {
+    instrument_key: Vec<String>,
+    exposure: Vec<f64>,
+}
+
+impl SensitivityMap {
+    /// Creates a new sensitifity map
+    pub fn new() -> Self {
+        Self {
+            instrument_key: Vec::new(),
+            exposure: Vec::new(),
+        }
+    }
+}
 
 /// # `EvaluationResults`
 ///

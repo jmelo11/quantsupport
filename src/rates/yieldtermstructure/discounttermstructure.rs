@@ -3,7 +3,7 @@ use crate::{
     math::interpolation::interpolator::{Interpolate, Interpolator},
     rates::{
         compounding::Compounding, interestrate::InterestRate,
-        yieldtermstructure::ratestermstructure::RatesTermStructure,
+        yieldtermstructure::interestratestermstructure::InterestRatesTermStructure,
     },
     time::{date::Date, daycounter::DayCounter, enums::Frequency},
     utils::errors::{AtlasError, Result},
@@ -26,7 +26,7 @@ use crate::{
 /// use quantsupport::rates::yieldtermstructure::discounttermstructure::DiscountTermStructure;
 /// use quantsupport::rates::interestrate::RateDefinition;
 /// use quantsupport::time::daycounter::DayCounter;
-/// use quantsupport::rates::yieldtermstructure::ratestermstructure::RatesTermStructure;
+/// use quantsupport::rates::yieldtermstructure::interestratestermstructure::InterestRatesTermStructure;
 /// use quantsupport::math::interpolation::interpolator::Interpolator;
 ///
 /// let dates = vec![
@@ -220,7 +220,7 @@ impl DiscountTermStructure<ADReal> {
     }
 }
 
-impl RatesTermStructure<f64> for DiscountTermStructure<f64> {
+impl InterestRatesTermStructure<f64> for DiscountTermStructure<f64> {
     fn reference_date(&self) -> Date {
         self.reference_date
     }
@@ -268,7 +268,7 @@ impl RatesTermStructure<f64> for DiscountTermStructure<f64> {
     }
 }
 
-impl RatesTermStructure<ADReal> for DiscountTermStructure<ADReal> {
+impl InterestRatesTermStructure<ADReal> for DiscountTermStructure<ADReal> {
     fn reference_date(&self) -> Date {
         self.reference_date
     }

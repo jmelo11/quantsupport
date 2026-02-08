@@ -1,11 +1,11 @@
+use crate::core::contextmanager::ContextManager;
 use crate::core::evaluationresults::SensitivityMap;
-use crate::core::pricingdata::PricingDataContext;
 use crate::utils::errors::Result;
 
-/// # `PricingRequest`
-pub enum PricingRequest {
+/// # `Request`
+pub enum Request {
     /// Price
-    Price,
+    Value,
     /// Yield to maturity
     YieldToMaturity,
     /// Modified Duration
@@ -16,12 +16,12 @@ pub enum PricingRequest {
     Cashflows,
 }
 
-/// # `HandlePrice`
+/// # `HandleValue`
 ///
-/// The `HandlePrice` trait defines a method for handling price-related operations.
-pub trait HandlePrice<T, S> {
+/// The `HandleValue` trait defines a method for handling price-related operations.
+pub trait HandleValue<T, S> {
     /// Handles price-related operations and returns a floating-point result.
-    fn handle_price(&self, trade: &T, ctx: &PricingDataContext, state: &mut S) -> Result<f64>;
+    fn handle_value(&self, trade: &T, ctx: &ContextManager, state: &mut S) -> Result<f64>;
 }
 
 /// # `HandleYield`
@@ -29,7 +29,7 @@ pub trait HandlePrice<T, S> {
 /// The `HandleYield` trait defines a method for handling yield-related operations.
 pub trait HandleYieldToMaturity<T, S> {
     /// Handles yield-related operations and returns a floating-point result.
-    fn handle_yield(&self, trade: &T, ctx: &PricingDataContext, state: &mut S) -> Result<f64>;
+    fn handle_yield(&self, trade: &T, ctx: &ContextManager, state: &mut S) -> Result<f64>;
 }
 
 /// # `HandleModifiedDuration`
@@ -40,7 +40,7 @@ pub trait HandleModifiedDuration<T, S> {
     fn handle_modified_duration(
         &self,
         trade: &T,
-        ctx: &PricingDataContext,
+        ctx: &ContextManager,
         state: &mut S,
     ) -> Result<f64>;
 }
@@ -52,7 +52,7 @@ pub trait HandleSensitivities<T, S> {
     fn handle_sensitivities(
         &self,
         trade: &T,
-        ctx: &PricingDataContext,
+        ctx: &ContextManager,
         state: &mut S,
     ) -> Result<SensitivityMap>;
 }

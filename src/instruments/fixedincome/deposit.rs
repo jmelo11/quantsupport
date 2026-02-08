@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    core::{instrument::Instrument, pricingdata::PricingDataContext, trade::Trade},
+    core::{contextmanager::ContextManager, instrument::Instrument, trade::Trade},
     indices::marketindex::MarketIndex,
     rates::interestrate::InterestRate,
     time::date::Date,
@@ -17,10 +17,10 @@ pub struct Deposit {
     units: f64,
     rate: InterestRate<f64>,
     maturity_date: Date,
-    is_resolved: bool,
     issuer_name: Option<String>,
     start_date: Option<Date>,
     final_payment: Option<f64>,
+    market_index: MarketIndex,
 }
 
 impl Deposit {
@@ -32,6 +32,7 @@ impl Deposit {
         rate: InterestRate<f64>,
         start_date: Date,
         maturity_date: Date,
+        market_index: MarketIndex,
     ) -> Self {
         Self {
             name,
@@ -39,9 +40,9 @@ impl Deposit {
             rate,
             start_date: Some(start_date),
             maturity_date,
-            is_resolved: true,
             issuer_name: None,
             final_payment: None,
+            market_index: market_index,
         }
     }
 
@@ -81,6 +82,12 @@ impl Deposit {
     pub const fn final_payment(&self) -> Option<f64> {
         self.final_payment
     }
+
+    /// Returns the associated market index.
+    #[must_use]
+    pub fn market_index(&self) -> MarketIndex {
+        self.market_index.clone()
+    }
 }
 
 impl Instrument for Deposit {
@@ -88,11 +95,7 @@ impl Instrument for Deposit {
         self.name.clone()
     }
 
-    fn is_resolved(&self) -> bool {
-        self.is_resolved
-    }
-
-    fn resolve(&mut self, _: &PricingDataContext) -> Result<()> {
+    fn resolve(&self, _: &ContextManager) -> Result<Deposit> {
         todo!()
     }
 }
@@ -103,7 +106,6 @@ impl Instrument for Deposit {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct DepositTrade {
     deposit: Deposit,
-    market_index: MarketIndex,
     trade_date: Date,
     notional: f64,
     trade_price: Option<f64>,
@@ -112,15 +114,9 @@ pub struct DepositTrade {
 impl DepositTrade {
     /// Creates a new `DepositTrade`.
     #[must_use]
-    pub fn new(
-        deposit: Deposit,
-        market_index: MarketIndex,
-        trade_date: Date,
-        notional: f64,
-    ) -> Self {
+    pub fn new(deposit: Deposit, trade_date: Date, notional: f64) -> Self {
         Self {
             deposit,
-            market_index,
             trade_date,
             notional,
             trade_price: None,
@@ -137,12 +133,6 @@ impl DepositTrade {
     #[must_use]
     pub const fn trade_date(&self) -> Date {
         self.trade_date
-    }
-
-    /// Returns the market index associated with the trade.
-    #[must_use]
-    pub const fn market_index(&self) -> &MarketIndex {
-        &self.market_index
     }
 
     /// Returns the notional amount of the trade.

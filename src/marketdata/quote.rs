@@ -173,6 +173,7 @@ pub enum OptionStrategy {
 /// union of various instrument types and their associated parameters.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct QuoteDetails {
+    identifier: String,
     market_index: MarketIndex,
     instrument: QuoteInstrument, // BasisSwap, OIS, CapletFloorlet, CapFloor, Swaption
     #[serde(default)]
@@ -204,8 +205,9 @@ pub struct QuoteDetails {
 impl QuoteDetails {
     /// Creates a new quote details container with required fields.
     #[must_use]
-    pub fn new(market_index: MarketIndex, instrument: QuoteInstrument) -> Self {
+    pub fn new(identifier: String, market_index: MarketIndex, instrument: QuoteInstrument) -> Self {
         Self {
+            identifier,
             market_index,
             instrument,
             strategy: None,
@@ -223,15 +225,16 @@ impl QuoteDetails {
         }
     }
 
-    /// Parses an instrument identifier of the form `INSTRUMENT|key=value|...`.
-    ///
-    /// ## Errors
-    /// Returns an error if the identifier is malformed.
+    /// Returns the quote identifier
+    #[must_use]
+    pub fn identifier(&self) -> String {
+        self.identifier.clone()
+    }
 
     /// Returns the instrument base identifier.
     #[must_use]
-    pub const fn market_index(&self) -> &MarketIndex {
-        &self.market_index
+    pub fn market_index(&self) -> MarketIndex {
+        self.market_index.clone()
     }
 
     /// Returns the instrument base identifier.
@@ -272,29 +275,26 @@ impl QuoteDetails {
 /// Contains the quote information.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Quote {
-    quote_details: QuoteDetails,
-    quote_levels: QuoteLevels,
+    details: QuoteDetails,
+    levels: QuoteLevels,
 }
 
 impl Quote {
     /// Creates a new quote.
     #[must_use]
-    pub const fn new(quote_details: QuoteDetails, quote_levels: QuoteLevels) -> Self {
-        Self {
-            quote_details,
-            quote_levels,
-        }
+    pub const fn new(details: QuoteDetails, levels: QuoteLevels) -> Self {
+        Self { details, levels }
     }
 
     /// Returns the quote details.
     #[must_use]
-    pub const fn quote_details(&self) -> &QuoteDetails {
-        &self.quote_details
+    pub const fn details(&self) -> &QuoteDetails {
+        &self.details
     }
 
     /// Returns the quote levels.
     #[must_use]
-    pub const fn quote_levels(&self) -> &QuoteLevels {
-        &self.quote_levels
+    pub const fn levels(&self) -> &QuoteLevels {
+        &self.levels
     }
 }

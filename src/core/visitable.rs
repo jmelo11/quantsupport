@@ -1,7 +1,6 @@
 use crate::{
     core::{
-        evaluationresults::EvaluationResults, pricingdata::PricingDataContext,
-        pricingrequest::PricingRequest,
+        contextmanager::ContextManager, evaluationresults::EvaluationResults, request::Request,
     },
     utils::errors::AtlasError,
 };
@@ -17,8 +16,8 @@ pub trait Visitable<P: Visitor> {
     fn accept(
         &self,
         visitor: &P,
-        requests: &[PricingRequest],
-        ctx: &PricingDataContext,
+        requests: &[Request],
+        ctx: &ContextManager,
     ) -> Result<EvaluationResults, AtlasError>;
 }
 
@@ -26,8 +25,8 @@ pub trait Visitable<P: Visitor> {
 //     fn visit_example(
 //         &self,
 //         trade: &ExampleInstrumentTrade,
-//         requests: &[PricingRequest],
-//         ctx: &PricingDataContext,
+//         requests: &[Request],
+//         ctx: &ContextManager,
 //     ) -> Result<RiskMetrics, PricingError>;
 //     // fn visit_bond
 //     // fn visit_option

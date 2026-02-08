@@ -1,13 +1,17 @@
+/// Presets module
+pub mod assetpresets;
+/// Asset module
+pub mod assets;
+/// Pricing data context module.
+pub mod contextmanager;
 /// Evaluation results module.
 pub mod evaluationresults;
 /// Instrument module.
 pub mod instrument;
 /// Pricer module.
 pub mod pricer;
-/// Pricing data context module.
-pub mod pricingdata;
 /// Pricing request module.
-pub mod pricingrequest;
+pub mod request;
 /// Trade module.
 pub mod trade;
 /// Visitor pattern module.

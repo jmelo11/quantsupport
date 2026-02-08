@@ -3,7 +3,7 @@ use crate::{
     rates::{
         compounding::Compounding,
         interestrate::{InterestRate, RateDefinition},
-        yieldtermstructure::ratestermstructure::RatesTermStructure,
+        yieldtermstructure::interestratestermstructure::InterestRatesTermStructure,
     },
     time::{date::Date, enums::Frequency},
     utils::errors::{AtlasError, Result},
@@ -16,7 +16,7 @@ use crate::{
 /// use quantsupport::time::date::Date;
 /// use quantsupport::rates::yieldtermstructure::flatforwardtermstructure::FlatForwardTermStructure;
 /// use quantsupport::rates::interestrate::RateDefinition;
-/// use quantsupport::rates::yieldtermstructure::ratestermstructure::RatesTermStructure;
+/// use quantsupport::rates::yieldtermstructure::interestratestermstructure::InterestRatesTermStructure;
 ///
 /// let reference_date = Date::new(2023, 8, 19);
 /// let term_structure = FlatForwardTermStructure::new(reference_date, 0.5, RateDefinition::default());
@@ -64,7 +64,7 @@ where
     }
 }
 
-impl RatesTermStructure<f64> for FlatForwardTermStructure<f64> {
+impl InterestRatesTermStructure<f64> for FlatForwardTermStructure<f64> {
     fn reference_date(&self) -> Date {
         self.reference_date
     }
@@ -93,7 +93,7 @@ impl RatesTermStructure<f64> for FlatForwardTermStructure<f64> {
     }
 }
 
-impl RatesTermStructure<ADReal> for FlatForwardTermStructure<ADReal> {
+impl InterestRatesTermStructure<ADReal> for FlatForwardTermStructure<ADReal> {
     fn reference_date(&self) -> Date {
         self.reference_date
     }

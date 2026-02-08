@@ -1,7 +1,6 @@
 use crate::{
     core::{
-        evaluationresults::EvaluationResults, pricingdata::PricingDataContext,
-        pricingrequest::PricingRequest,
+        contextmanager::ContextManager, evaluationresults::EvaluationResults, request::Request,
     },
     utils::errors::AtlasError,
 };
@@ -13,12 +12,12 @@ pub trait Pricer: Send + Sync {
     /// The associated instrument to be priced.
     type Item;
     ///
-    /// Evaluates the instrument over a [`PricingRequest`] given a [`PricingDataContext`].
+    /// Evaluates the instrument over a [`Request`] given a [`ContextManager`].
     ///
     /// ## Arguments
     /// * `trade`: the associated instrument that this pricer is capable of handeling.
-    /// * `requests`: a slice containing the different [`PricingRequest`] that being required to resolve.
-    /// * `ctx`: a [`PricingDataContext`].
+    /// * `requests`: a slice containing the different [`Request`] that being required to resolve.
+    /// * `ctx`: a [`ContextManager`].
     ///
     /// ## Returns
     /// Returns [`EvaluationResults`] if the evaluation succeded.
@@ -28,7 +27,7 @@ pub trait Pricer: Send + Sync {
     fn evaluate(
         &self,
         trade: &Self::Item,
-        requests: &[PricingRequest],
-        ctx: &PricingDataContext,
+        requests: &[Request],
+        ctx: &ContextManager,
     ) -> Result<EvaluationResults, AtlasError>;
 }

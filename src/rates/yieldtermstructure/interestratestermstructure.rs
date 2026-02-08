@@ -7,7 +7,7 @@ use crate::{
 /// # `RatesTermStructure`
 ///
 /// Base trait for rate term structures.
-pub trait RatesTermStructure<T>
+pub trait InterestRatesTermStructure<T>
 where
     T: IsReal,
 {
