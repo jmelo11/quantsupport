@@ -1,6 +1,7 @@
 use crate::{
     ad::adreal::{ADReal, IsReal},
     core::{
+        assets::AssetType,
         contextmanager::ContextManager,
         evaluationresults::{EvaluationResults, SensitivityMap},
         instrument::Instrument,
@@ -9,6 +10,8 @@ use crate::{
         trade::Trade,
     },
     instruments::fixedincome::deposit::DepositTrade,
+    rates::interest_rate_curve::InterestRateCurveAsset,
+    rates::yieldtermstructure::interestratestermstructure::InterestRatesTermStructure,
     utils::errors::{AtlasError, Result},
 };
 
@@ -33,13 +36,32 @@ impl HandleValue<DepositTrade, DepositPriceEvaluationState> for DiscountDepositP
         ctx: &ContextManager,
         state: &mut DepositPriceEvaluationState,
     ) -> Result<f64> {
-        let deposit = trade.instrument();
+        let deposit = trade.instrument().resolve(ctx)?;
         let amount = deposit.final_payment().ok_or(AtlasError::ValueNotSetErr(
             "Deposit does not have final payment amount. Is the deposit resolved?.".into(),
         ))?;
-        // let assets = ctx.get_assets(deposit.market_index());
-        let df = ADReal::one();
-        let price = (df * amount).into();
+        let asset = ctx
+            .assets()
+            .get(&deposit.market_index())
+            .ok_or(AtlasError::NotFoundErr(format!(
+                "Curve for {} not found.",
+                deposit.market_index()
+            )))?;
+        let AssetType::InterestRateCurve(asset) = asset else {
+            return Err(AtlasError::InvalidValueErr(
+                "Expected interest rate curve asset.".into(),
+            ));
+        };
+        let curve = asset
+            .as_any()
+            .downcast_ref::<InterestRateCurveAsset>()
+            .ok_or(AtlasError::InvalidValueErr(
+                "Invalid curve asset type.".into(),
+            ))?
+            .curve();
+        let df = curve.discount_factor(deposit.maturity_date())?;
+        let price = (df * amount * ADReal::new(trade.notional()) - ADReal::new(trade.notional()))
+            .into();
         state.price = Some(price);
         Ok(price.value())
     }
@@ -48,8 +70,8 @@ impl HandleValue<DepositTrade, DepositPriceEvaluationState> for DiscountDepositP
 impl HandleSensitivities<DepositTrade, DepositPriceEvaluationState> for DiscountDepositPricer {
     fn handle_sensitivities(
         &self,
-        trade: &DepositTrade,
-        ctx: &ContextManager,
+        _trade: &DepositTrade,
+        _ctx: &ContextManager,
         state: &mut DepositPriceEvaluationState,
     ) -> Result<SensitivityMap> {
         match state.price {
