@@ -34,4 +34,10 @@ impl MarketDataProvider {
             .entry(quote.details().identifier())
             .insert_entry(quote);
     }
+
+    /// Returns the quotes for a given market index.
+    #[must_use]
+    pub fn quotes_for_index(&self, market_index: &MarketIndex) -> Option<&HashMap<String, Quote>> {
+        self.quotes.get(market_index)
+    }
 }

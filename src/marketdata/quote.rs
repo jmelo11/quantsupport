@@ -120,7 +120,7 @@ pub enum StrikeType {
 /// # `QuoteInstruments`
 ///
 /// Represents the type of instruments that can be handled by the quoting system.
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub enum QuoteInstrument {
     /// Deposit instrument.
     Deposit,

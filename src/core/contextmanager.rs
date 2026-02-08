@@ -1,8 +1,13 @@
 use crate::{
-    core::{assetpresets::AssetPresets, assets::Assets},
+    core::{
+        assetpresets::AssetPresets,
+        assets::{AssetGenerator, Assets},
+    },
+    currencies::currency::Currency,
     marketdata::{
         fixingprovider::FixingProvider, marketdataprovider::MarketDataProvider, quote::Level,
     },
+    rates::bootstrapping::interest_rate_curve_bootstrapper::InterestRateCurveBootstrapper,
     time::date::Date,
     utils::errors::Result,
 };
@@ -18,6 +23,7 @@ pub struct ContextManager {
     quote_level: Level, // Placeholder to select the type of quote we want to use
     asset_presets: AssetPresets, // or AssetPresets?
     assets: Assets,
+    base_currency: Currency,
 }
 
 impl ContextManager {
@@ -30,6 +36,7 @@ impl ContextManager {
             quote_level: Level::Mid,
             asset_presets: AssetPresets::default(),
             assets: Assets::default(),
+            base_currency: Currency::USD,
         }
     }
 
@@ -58,6 +65,43 @@ impl ContextManager {
         &self.asset_presets
     }
 
+    /// Returns a mutable reference to the asset presets.
+    pub fn asset_presets_mut(&mut self) -> &mut AssetPresets {
+        &mut self.asset_presets
+    }
+
+    /// Sets the asset presets.
+    #[must_use]
+    pub fn with_asset_presets(mut self, asset_presets: AssetPresets) -> Self {
+        self.asset_presets = asset_presets;
+        self
+    }
+
+    /// Returns the quote level preference.
+    #[must_use]
+    pub const fn quote_level(&self) -> Level {
+        self.quote_level
+    }
+
+    /// Returns the assets registry.
+    #[must_use]
+    pub const fn assets(&self) -> &Assets {
+        &self.assets
+    }
+
+    /// Returns the base currency for reporting.
+    #[must_use]
+    pub const fn base_currency(&self) -> Currency {
+        self.base_currency
+    }
+
+    /// Sets the base currency.
+    #[must_use]
+    pub fn with_base_currency(mut self, base_currency: Currency) -> Self {
+        self.base_currency = base_currency;
+        self
+    }
+
     /// Returns the current reference date.
     #[must_use]
     pub const fn evaluation_date(&self) -> Date {
@@ -67,6 +111,38 @@ impl ContextManager {
     /// Generates the assets associated to the given models
     #[must_use]
     pub fn generate_assets(&mut self) -> Result<()> {
+        let mut pending = self.asset_presets.interest_rate_curves().clone();
+        let mut progress = true;
+        while !pending.is_empty() && progress {
+            progress = false;
+            let mut remaining = Vec::new();
+            for preset in pending {
+                let ready = preset
+                    .dependencies()
+                    .iter()
+                    .all(|index| self.assets.contains(index));
+                if ready {
+                    let bootstrapper = InterestRateCurveBootstrapper::new(preset);
+                    let assets = bootstrapper.generate_assets(self);
+                    self.assets.extend(assets);
+                    progress = true;
+                } else {
+                    remaining.push(preset);
+                }
+            }
+            pending = remaining;
+        }
+
+        if !pending.is_empty() {
+            let unresolved = pending
+                .iter()
+                .map(|preset| format!("{:?}", preset.market_index()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            return Err(crate::utils::errors::AtlasError::InvalidValueErr(format!(
+                "Unresolved curve dependencies for: {unresolved}"
+            )));
+        }
         Ok(())
     }
 }

@@ -69,6 +69,12 @@ impl EvaluationResults {
         self
     }
 
+    /// Returns the price or present value.
+    #[must_use]
+    pub const fn price(&self) -> Option<f64> {
+        self.price
+    }
+
     /// Sets the sensitivities to market inputs.
     #[must_use]
     pub fn with_sensitivities(mut self, sensitivities: SensitivityMap) -> Self {
