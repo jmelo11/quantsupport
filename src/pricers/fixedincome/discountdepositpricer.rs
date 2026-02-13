@@ -1,5 +1,8 @@
 use crate::{
-    ad::adreal::{ADReal, IsReal},
+    ad::{
+        adreal::{ADReal, Expr, IsReal},
+        tape::Tape,
+    },
     core::{
         assets::AssetType,
         contextmanager::ContextManager,
@@ -10,8 +13,10 @@ use crate::{
         trade::Trade,
     },
     instruments::fixedincome::deposit::DepositTrade,
-    rates::interest_rate_curve::InterestRateCurveAsset,
-    rates::yieldtermstructure::interestratestermstructure::InterestRatesTermStructure,
+    rates::{
+        interest_rate_curve::InterestRateCurveAsset,
+        yieldtermstructure::interestratestermstructure::InterestRatesTermStructure,
+    },
     utils::errors::{AtlasError, Result},
 };
 
@@ -27,6 +32,7 @@ pub struct DiscountDepositPricer;
 struct DepositPriceEvaluationState {
     /// Price placeholder for perfomance reasons.
     pub price: Option<ADReal>,
+    pub view: Option<MarketView>,
 }
 
 impl HandleValue<DepositTrade, DepositPriceEvaluationState> for DiscountDepositPricer {
@@ -36,34 +42,25 @@ impl HandleValue<DepositTrade, DepositPriceEvaluationState> for DiscountDepositP
         ctx: &ContextManager,
         state: &mut DepositPriceEvaluationState,
     ) -> Result<f64> {
-        let deposit = trade.instrument().resolve(ctx)?;
-        let amount = deposit.final_payment().ok_or(AtlasError::ValueNotSetErr(
-            "Deposit does not have final payment amount. Is the deposit resolved?.".into(),
-        ))?;
-        let asset = ctx
-            .assets()
-            .get(&deposit.market_index())
-            .ok_or(AtlasError::NotFoundErr(format!(
-                "Curve for {} not found.",
-                deposit.market_index()
-            )))?;
-        let AssetType::InterestRateCurve(asset) = asset else {
-            return Err(AtlasError::InvalidValueErr(
-                "Expected interest rate curve asset.".into(),
-            ));
-        };
-        let curve = asset
-            .as_any()
-            .downcast_ref::<InterestRateCurveAsset>()
-            .ok_or(AtlasError::InvalidValueErr(
-                "Invalid curve asset type.".into(),
-            ))?
-            .curve();
-        let df = curve.discount_factor(deposit.maturity_date())?;
-        let price = (df * amount * ADReal::new(trade.notional()) - ADReal::new(trade.notional()))
-            .into();
-        state.price = Some(price);
-        Ok(price.value())
+        let deposit = trade.instrument();
+        let request: ViewRequest = trade.data_request();
+
+        Tape::start_recording();
+        Tape::set_mark();
+
+        let view: MarketView = ctx.handle_request(request);
+        view.inputs().add_to_tape()?;
+
+        let df: ADReal = view.df(); // this could have multiple values, what happens with montecarlo?
+        let fx: ADReal = view.fx();
+        let amount: f64 = trade.notional() * deposit.final_payment().unwrap() / deposit.units();
+        let value = df * fx * amount;
+        state.price = Some(value.into());
+        state.view = Some(view.into());
+
+        Tape::stop_recording();
+        Tape::rewind_to_mark();
+        Ok((value).into())
     }
 }
 
@@ -77,7 +74,16 @@ impl HandleSensitivities<DepositTrade, DepositPriceEvaluationState> for Discount
         match state.price {
             Some(price) => {
                 let _ = price.backward()?;
-                let sensitivities = SensitivityMap::new();
+                let mut ids: Vec<String> = Vec::new();
+                let mut exposures: Vec<f64> = Vec::new();
+                for component in state.view.unwrap() {
+                    ids.push(component.id);
+                    let s: f64 = component.value.adjoint()?;
+                    exposures.push(s);
+                }
+                let sensitivities = SensitivityMap::new()
+                    .with_instrument_keys(ids)
+                    .with_exposure(exposures);
                 Ok(sensitivities)
             }
             None => Err(AtlasError::ValueNotSetErr("Pricing not requested".into())),

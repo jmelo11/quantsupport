@@ -1,4 +1,4 @@
-use crate::core::instrument::Instrument;
+use crate::{core::instrument::Instrument, time::date::Date};
 
 /// # `Trade`
 ///
@@ -6,4 +6,6 @@ use crate::core::instrument::Instrument;
 pub trait Trade<I: Instrument>: Send + Sync {
     /// Returns the associated instrument of the trade.
     fn instrument(&self) -> I;
+    /// Date of execution of the trade.
+    fn trade_date(&self) -> Date;
 }

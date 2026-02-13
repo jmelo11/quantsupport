@@ -116,7 +116,7 @@ impl Instrument for Deposit {
 /// Represents a trade of a deposit instrument.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct DepositTrade {
-    deposit: Deposit,
+    instrument: Deposit,
     trade_date: Date,
     notional: f64,
     trade_price: Option<f64>,
@@ -125,9 +125,9 @@ pub struct DepositTrade {
 impl DepositTrade {
     /// Creates a new `DepositTrade`.
     #[must_use]
-    pub fn new(deposit: Deposit, trade_date: Date, notional: f64) -> Self {
+    pub fn new(instrument: Deposit, trade_date: Date, notional: f64) -> Self {
         Self {
-            deposit,
+            instrument,
             trade_date,
             notional,
             trade_price: None,
@@ -140,12 +140,6 @@ impl DepositTrade {
         self
     }
 
-    /// Returns the trade date.
-    #[must_use]
-    pub const fn trade_date(&self) -> Date {
-        self.trade_date
-    }
-
     /// Returns the notional amount of the trade.
     #[must_use]
     pub const fn notional(&self) -> f64 {
@@ -155,6 +149,10 @@ impl DepositTrade {
 
 impl Trade<Deposit> for DepositTrade {
     fn instrument(&self) -> Deposit {
-        self.deposit.clone()
+        self.instrument.clone()
+    }
+
+    fn trade_date(&self) -> Date {
+        self.trade_date
     }
 }

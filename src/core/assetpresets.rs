@@ -1,11 +1,14 @@
-use crate::{indices::marketindex::MarketIndex, math::interpolation::interpolator::Interpolator};
+use crate::{
+    indices::marketindex::MarketIndex, math::interpolation::interpolator::Interpolator,
+    time::period::Period,
+};
 
 /// InterestRateCurvePresets
 #[derive(Clone)]
 pub struct InterestRateCurvePreset {
     market_index: MarketIndex,
-    instruments: Vec<String>,
-    dependencies: Vec<MarketIndex>,
+    deposit_tenors: Vec<Period>,
+    swap_tenors: Vec<Period>,
     interpolation: Interpolator,
     enable_extrapolation: bool,
 }
@@ -15,15 +18,15 @@ impl InterestRateCurvePreset {
     #[must_use]
     pub fn new(
         market_index: MarketIndex,
-        instruments: Vec<String>,
-        dependencies: Vec<MarketIndex>,
+        deposit_tenors: Vec<Period>,
+        swap_tenors: Vec<Period>,
         interpolation: Interpolator,
         enable_extrapolation: bool,
     ) -> Self {
         Self {
             market_index,
-            instruments,
-            dependencies,
+            deposit_tenors,
+            swap_tenors,
             interpolation,
             enable_extrapolation,
         }
@@ -33,18 +36,6 @@ impl InterestRateCurvePreset {
     #[must_use]
     pub fn market_index(&self) -> MarketIndex {
         self.market_index.clone()
-    }
-
-    /// Returns the quote identifiers to build the curve.
-    #[must_use]
-    pub const fn instruments(&self) -> &Vec<String> {
-        &self.instruments
-    }
-
-    /// Returns dependent curve indices that must be built first.
-    #[must_use]
-    pub const fn dependencies(&self) -> &Vec<MarketIndex> {
-        &self.dependencies
     }
 
     /// Returns the interpolation type.

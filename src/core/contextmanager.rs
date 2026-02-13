@@ -1,15 +1,10 @@
 use crate::{
-    core::{
-        assetpresets::AssetPresets,
-        assets::{AssetGenerator, Assets},
-    },
+    core::{assetpresets::AssetPresets, assets::Assets},
     currencies::currency::Currency,
     marketdata::{
         fixingprovider::FixingProvider, marketdataprovider::MarketDataProvider, quote::Level,
     },
-    rates::bootstrapping::interest_rate_curve_bootstrapper::InterestRateCurveBootstrapper,
     time::date::Date,
-    utils::errors::Result,
 };
 
 /// Placeholder for model configurations
@@ -106,43 +101,5 @@ impl ContextManager {
     #[must_use]
     pub const fn evaluation_date(&self) -> Date {
         self.market_data_provider.reference_date()
-    }
-
-    /// Generates the assets associated to the given models
-    #[must_use]
-    pub fn generate_assets(&mut self) -> Result<()> {
-        let mut pending = self.asset_presets.interest_rate_curves().clone();
-        let mut progress = true;
-        while !pending.is_empty() && progress {
-            progress = false;
-            let mut remaining = Vec::new();
-            for preset in pending {
-                let ready = preset
-                    .dependencies()
-                    .iter()
-                    .all(|index| self.assets.contains(index));
-                if ready {
-                    let bootstrapper = InterestRateCurveBootstrapper::new(preset);
-                    let assets = bootstrapper.generate_assets(self);
-                    self.assets.extend(assets);
-                    progress = true;
-                } else {
-                    remaining.push(preset);
-                }
-            }
-            pending = remaining;
-        }
-
-        if !pending.is_empty() {
-            let unresolved = pending
-                .iter()
-                .map(|preset| format!("{:?}", preset.market_index()))
-                .collect::<Vec<_>>()
-                .join(", ");
-            return Err(crate::utils::errors::AtlasError::InvalidValueErr(format!(
-                "Unresolved curve dependencies for: {unresolved}"
-            )));
-        }
-        Ok(())
     }
 }

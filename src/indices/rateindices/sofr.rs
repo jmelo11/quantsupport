@@ -1,3 +1,5 @@
+use serde::{Deserialize, Serialize};
+
 use crate::{
     currencies::currency::Currency,
     indices::{
@@ -17,6 +19,7 @@ use crate::{
 /// # `SOFRIndex`
 ///
 /// Details for the SOFR rate index.
+#[derive(Copy, Clone, Serialize, Default, Deserialize)]
 pub struct SOFRIndex;
 impl MarketIndexDetails for SOFRIndex {
     fn quote_type(&self) -> QuoteType {

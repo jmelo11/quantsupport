@@ -2,6 +2,8 @@
 pub mod assetpresets;
 /// Asset module
 pub mod assets;
+/// Commands module
+pub mod command;
 /// Pricing data context module.
 pub mod contextmanager;
 /// Evaluation results module.

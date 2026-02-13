@@ -22,7 +22,7 @@ pub enum AssetType {
 /// Generated Assets, like discount curves, stripped vol surfaces, etc.
 #[derive(Default)]
 pub struct Assets {
-    assets: RwLock<HashMap<MarketIndex, AssetType>>, // or HashMap<MarketIndex, RwLock<AssetType>>?
+    assets: RwLock<HashMap<MarketIndex, Vec<AssetType>>>, // or HashMap<MarketIndex, RwLock<AssetType>>?
 }
 
 /// Is an asset
@@ -44,25 +44,9 @@ pub trait AssetGenerator {
 }
 
 impl Assets {
-    /// Inserts an asset into the registry.
-    pub fn insert(&self, market_index: MarketIndex, asset: AssetType) {
-        if let Ok(mut assets) = self.assets.write() {
-            assets.insert(market_index, asset);
-        }
-    }
-
-    /// Extends the registry with multiple assets.
-    pub fn extend(&self, entries: Vec<(MarketIndex, AssetType)>) {
-        if let Ok(mut assets) = self.assets.write() {
-            for (market_index, asset) in entries {
-                assets.insert(market_index, asset);
-            }
-        }
-    }
-
     /// Retrieves an asset by market index.
     #[must_use]
-    pub fn get(&self, market_index: &MarketIndex) -> Option<AssetType> {
+    pub fn get(&self, market_index: &MarketIndex) -> Option<Vec<AssetType>> {
         self.assets
             .read()
             .ok()

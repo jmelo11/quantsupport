@@ -1,5 +1,8 @@
 use crate::{core::contextmanager::ContextManager, utils::errors::Result};
 
+
+
+
 /// # `Instrument`
 ///
 /// The `Instrument` trait catalogs any financial product. Financial product have
