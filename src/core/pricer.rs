@@ -1,6 +1,9 @@
 use crate::{
     core::{
-        contextmanager::ContextManager, evaluationresults::EvaluationResults, request::Request,
+        contextmanager::ContextManager,
+        evaluationresults::EvaluationResults,
+        marketdataprovider::{MarketDataProvider, MarketDataRequest},
+        request::Request,
     },
     utils::errors::AtlasError,
 };
@@ -28,6 +31,8 @@ pub trait Pricer: Send + Sync {
         &self,
         trade: &Self::Item,
         requests: &[Request],
-        ctx: &ContextManager,
+        ctx: &impl MarketDataProvider,
     ) -> Result<EvaluationResults, AtlasError>;
+
+    fn market_data_request(&self, trade: &Self::Item) -> Option<MarketDataRequest>;
 }

@@ -36,9 +36,6 @@ pub enum AtlasError {
     /// Error indicating that a provided value is invalid.
     #[error("Invalid value error: {0}")]
     InvalidValueErr(String),
-    /// Error that occurs during solver (Argmin library) operations.
-    #[error("Solver error: {0}")]
-    ArgMinSolverErr(#[from] argmin::core::Error),
     /// Error that occurs during solver operations.
     #[error("Solver error: {0}")]
     SolverErr(String),

@@ -9,13 +9,13 @@ use crate::{
     utils::errors::{AtlasError, Result},
 };
 
-/// # `FixingProvider`
+/// # `FixingStore`
 #[derive(Serialize)]
-pub struct FixingProvider {
+pub struct FixingStore {
     values: HashMap<MarketIndex, BTreeMap<Date, f64>>,
 }
 
-impl FixingProvider {
+impl FixingStore {
     /// Creates an empty fixing provider.
     #[must_use]
     pub fn new() -> Self {

@@ -1,8 +1,8 @@
 use crate::{
     core::{
-        contextmanager::ContextManager,
         evaluationresults::EvaluationResults,
         instrument::Instrument,
+        marketdataprovider::{MarketDataProvider, MarketDataRequest},
         pricer::Pricer,
         request::{HandleValue, Request},
         trade::Trade,
@@ -19,7 +19,6 @@ impl HandleValue<EquityEuroOptionTrade, EquityOptionState> for BlackClosedFormPr
     fn handle_value(
         &self,
         trade: &EquityEuroOptionTrade,
-        ctx: &ContextManager,
         state: &mut EquityOptionState,
     ) -> Result<f64> {
         Ok(1.0)
@@ -32,7 +31,7 @@ impl Pricer for BlackClosedFormPricer {
         &self,
         trade: &EquityEuroOptionTrade,
         requests: &[Request],
-        ctx: &ContextManager,
+        ctx: &impl MarketDataProvider,
     ) -> Result<EvaluationResults> {
         let eval_date = ctx.evaluation_date();
         let option = trade.instrument();
@@ -44,7 +43,7 @@ impl Pricer for BlackClosedFormPricer {
         for request in requests {
             match request {
                 Request::Value => {
-                    let price = self.handle_value(trade, ctx, &mut state)?;
+                    let price = self.handle_value(trade, &mut state)?;
                     results = results.with_price(price);
                 }
                 _ => {}
@@ -52,5 +51,9 @@ impl Pricer for BlackClosedFormPricer {
         }
 
         Ok(results)
+    }
+
+    fn market_data_request(&self, trade: &Self::Item) -> Option<MarketDataRequest> {
+        todo!()
     }
 }

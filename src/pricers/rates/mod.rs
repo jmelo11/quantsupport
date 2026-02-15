@@ -1,2 +1,2 @@
 /// Discounting pricer for interest rate swaps.
-pub mod discountinterestrateswappricer;
+pub mod swapdiscountedcashflowpricer;

@@ -2,15 +2,15 @@ use std::collections::HashMap;
 
 use crate::{indices::marketindex::MarketIndex, marketdata::quote::Quote, time::date::Date};
 
-/// # `MarketDataProvider`
+/// # `QuoteStore`
 ///
 /// Provider of market data loaded from quotes.
-pub struct MarketDataProvider {
+pub struct QuoteStore {
     reference_date: Date,
     quotes: HashMap<MarketIndex, HashMap<String, Quote>>,
 }
 
-impl MarketDataProvider {
+impl QuoteStore {
     /// Creates an empty market data provider.
     #[must_use]
     pub fn new(reference_date: Date) -> Self {
@@ -19,7 +19,6 @@ impl MarketDataProvider {
             quotes: HashMap::new(),
         }
     }
-
     /// Returns the reference date for the provider.
     #[must_use]
     pub const fn reference_date(&self) -> Date {
@@ -41,3 +40,5 @@ impl MarketDataProvider {
         self.quotes.get(market_index)
     }
 }
+
+

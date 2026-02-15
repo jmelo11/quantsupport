@@ -1,2 +1,2 @@
 /// Deposit pricers.
-pub mod discountdepositpricer;
+pub mod depositdiscountedcashflowpricer;

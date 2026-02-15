@@ -1,17 +1,15 @@
 use crate::{
     ad::adreal::{ADReal, IsReal},
     core::{
-        assets::AssetType,
         contextmanager::ContextManager,
         evaluationresults::{EvaluationResults, SensitivityMap},
         instrument::Instrument,
+        marketdataprovider::{DerivedElementRequest, MarketDataProvider, MarketDataRequest},
         pricer::Pricer,
         request::{HandleSensitivities, HandleValue, Request},
         trade::Trade,
     },
-    instruments::rates::swap::{InterestRateSwapTrade, SwapDirection},
-    rates::interest_rate_curve::InterestRateCurveAsset,
-    rates::yieldtermstructure::interestratestermstructure::InterestRatesTermStructure,
+    instruments::rates::swap::InterestRateSwapTrade,
     utils::errors::{AtlasError, Result},
 };
 
@@ -32,7 +30,6 @@ impl HandleValue<InterestRateSwapTrade, SwapPriceEvaluationState>
     fn handle_value(
         &self,
         trade: &InterestRateSwapTrade,
-        ctx: &ContextManager,
         state: &mut SwapPriceEvaluationState,
     ) -> Result<f64> {
         Ok(1.0)
@@ -44,14 +41,13 @@ impl HandleSensitivities<InterestRateSwapTrade, SwapPriceEvaluationState>
 {
     fn handle_sensitivities(
         &self,
-        _trade: &InterestRateSwapTrade,
-        _ctx: &ContextManager,
+        trade: &InterestRateSwapTrade,
         state: &mut SwapPriceEvaluationState,
     ) -> Result<SensitivityMap> {
         match state.price {
             Some(price) => {
                 let _ = price.backward()?;
-                Ok(SensitivityMap::new())
+                Ok(SensitivityMap::default())
             }
             None => Err(AtlasError::ValueNotSetErr("Pricing not requested".into())),
         }
@@ -65,7 +61,7 @@ impl Pricer for DiscountInterestRateSwapPricer {
         &self,
         trade: &InterestRateSwapTrade,
         requests: &[Request],
-        ctx: &ContextManager,
+        ctx: &impl MarketDataProvider,
     ) -> Result<EvaluationResults> {
         let eval_date = ctx.evaluation_date();
         let swap = trade.instrument();
@@ -77,11 +73,11 @@ impl Pricer for DiscountInterestRateSwapPricer {
         for request in requests {
             match request {
                 Request::Value => {
-                    let price = self.handle_value(trade, ctx, &mut state)?;
+                    let price = self.handle_value(trade, &mut state)?;
                     results = results.with_price(price);
                 }
                 Request::Sensitivities => {
-                    let sensitivities = self.handle_sensitivities(trade, ctx, &mut state)?;
+                    let sensitivities = self.handle_sensitivities(trade, &mut state)?;
                     results = results.with_sensitivities(sensitivities);
                 }
                 _ => {}
@@ -89,5 +85,12 @@ impl Pricer for DiscountInterestRateSwapPricer {
         }
 
         Ok(results)
+    }
+
+    fn market_data_request(&self, trade: &Self::Item) -> Option<MarketDataRequest> {
+        let discount_curve = DerivedElementRequest::DiscountCurve {
+            market_index: trade.instrument().market_index(),
+        };
+        Some(MarketDataRequest::default().with_element_requests(vec![discount_curve]))
     }
 }

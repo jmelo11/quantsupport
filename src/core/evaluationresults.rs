@@ -21,19 +21,13 @@ pub struct SensitivityMap {
 }
 
 impl SensitivityMap {
-    /// Creates a new sensitifity map
-    pub fn new() -> Self {
-        Self {
-            instrument_key: Vec::new(),
-            exposure: Vec::new(),
-        }
-    }
-
+    /// Sets the instrument keys for this sensitivity map.
     pub fn with_instrument_keys(mut self, instrument_keys: Vec<String>) -> Self {
         self.instrument_key = instrument_keys.clone();
         self
     }
 
+    /// Sets the exposure values for this sensitivity map.
     pub fn with_exposure(mut self, exposure: Vec<f64>) -> Self {
         self.exposure = exposure.clone();
         self

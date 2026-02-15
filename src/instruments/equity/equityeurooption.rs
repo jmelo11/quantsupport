@@ -5,25 +5,67 @@ use crate::{
     utils::errors::Result,
 };
 
+/// Represents the type of a European option.
 #[derive(Clone)]
 pub enum EuroOptionType {
+    /// Call option type.
     Call,
+    /// Put option type.
     Put,
 }
 
+/// Represents a European equity option instrument.
 #[derive(Clone)]
 pub struct EquityEuroOption {
+    /// The market index for this option.
     market_index: MarketIndex,
+    /// The expiry date of the option.
     expiry_date: Date,
+    /// The strike price of the option.
     strike: f64,
+    /// The type of the option (Call or Put).
     option_type: EuroOptionType,
+    /// The unique identifier for this option.
     identifier: String,
 }
 
+/// Represents a trade of a European equity option.
 pub struct EquityEuroOptionTrade {
+    /// The underlying instrument.
     instrument: EquityEuroOption,
+    /// The notional amount of the trade.
     notional: f64,
+    /// The date the trade was executed.
     trade_date: Date,
+}
+
+impl EquityEuroOption {
+    /// Returns the market index of this option.
+    pub fn market_index(&self) -> &MarketIndex {
+        &self.market_index
+    }
+
+    /// Returns the expiry date of this option.
+    pub fn expiry_date(&self) -> Date {
+        self.expiry_date
+    }
+
+    /// Returns the strike price of this option.
+    pub fn strike(&self) -> f64 {
+        self.strike
+    }
+
+    /// Returns the type of this option.
+    pub fn option_type(&self) -> &EuroOptionType {
+        &self.option_type
+    }
+}
+
+impl EquityEuroOptionTrade {
+    /// Returns the notional amount of this trade.
+    pub fn notional(&self) -> f64 {
+        self.notional
+    }
 }
 
 impl Instrument for EquityEuroOption {
