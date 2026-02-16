@@ -1,6 +1,6 @@
 use crate::{
     ad::adreal::{ADReal, IsReal},
-    core::pillars::Pillars,
+    core::{marketdataprovider::ADCurveElement, pillars::Pillars},
     rates::{
         compounding::Compounding,
         interestrate::{InterestRate, RateDefinition},
@@ -73,14 +73,19 @@ where
     }
 }
 
-impl<T> Pillars<T> for FlatForwardTermStructure<T>
-where
-    T: IsReal,
-{
-    fn pillars(&self) -> Option<Vec<(String, T)>> {
+impl Pillars<ADReal> for FlatForwardTermStructure<ADReal> {
+    fn pillars(&self) -> Option<Vec<(String, &ADReal)>> {
         self.pillar_label
             .as_ref()
-            .map(|label| vec![(label.clone(), self.rate.rate())])
+            .map(|label| vec![(label.clone(), self.rate.rate_ref())])
+    }
+
+    fn pillar_labels(&self) -> Option<Vec<String>> {
+        self.pillar_label.as_ref().map(|label| vec![label.clone()])
+    }
+
+    fn put_pillars_on_tape(&mut self) {
+        self.rate.rate_mut().put_on_tape();
     }
 }
 
@@ -145,6 +150,8 @@ impl InterestRatesTermStructure<ADReal> for FlatForwardTermStructure<ADReal> {
         .rate())
     }
 }
+
+impl ADCurveElement for FlatForwardTermStructure<ADReal> {}
 
 #[cfg(test)]
 mod tests {

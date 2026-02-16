@@ -48,16 +48,14 @@ impl HandleValue<DepositTrade, DepositPriceEvaluationState> for DiscountedDeposi
             .get_mut(&index)
             .unwrap();
 
-        for (_, pillar) in &mut element.curve.pillars().unwrap() {
-            pillar.put_on_tape();
-        }
+        element.curve_mut()?.put_pillars_on_tape();
 
         let df = element
-            .curve
+            .curve()
             .discount_factor(trade.instrument().maturity_date())?;
         let value = (df * final_amount).into();
         state.value = Some(value);
-        
+
         Tape::stop_recording();
         Ok(value.value())
     }
@@ -91,13 +89,13 @@ impl HandleSensitivities<DepositTrade, DepositPriceEvaluationState> for Discount
             .get(&index)
             .unwrap();
 
-        for (label, pillar) in element.curve.pillars().unwrap().iter() {
-            if pillar.is_on_tape() {
-                ids.push(label.clone());
-                let s = pillar.adjoint()?;
-                exposures.push(s);
+        if let Some(pillars) = element.curve().pillars() {
+            for (label, value) in pillars {
+                ids.push(label);
+                exposures.push(value.adjoint()?);
             }
         }
+
         let sensitivities = SensitivityMap::default()
             .with_instrument_keys(ids)
             .with_exposure(exposures);
@@ -195,7 +193,7 @@ mod tests {
         let resolved = depo.resolve(&ctx_mgr).expect("resolved deposit");
         let trade = DepositTrade::new(resolved, eval, 100.0);
 
-        let curve = Arc::new(
+        let curve = Box::new(
             FlatForwardTermStructure::<ADReal>::new(
                 eval,
                 ADReal::from(0.03),
@@ -204,11 +202,8 @@ mod tests {
             .with_pillar_label("Rate".into()),
         );
 
-        let md = InMemoryMarketDataProvider::new(eval).with_discount_curve(DiscountCurveElement {
-            market_index: index,
-            currency: Currency::USD,
-            curve,
-        });
+        let md = InMemoryMarketDataProvider::new(eval)
+            .with_discount_curve(DiscountCurveElement::new(index, Currency::USD, curve));
 
         let pricer = DiscountedDepositPricer;
         let results = pricer

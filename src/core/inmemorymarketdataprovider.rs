@@ -43,7 +43,7 @@ impl InMemoryMarketDataProvider {
     #[must_use]
     pub fn with_discount_curve(mut self, element: DiscountCurveElement) -> Self {
         self.discount_curves
-            .insert(element.market_index.clone(), element);
+            .insert(element.market_index().clone(), element);
         self
     }
 
@@ -94,14 +94,9 @@ impl MarketDataProvider for InMemoryMarketDataProvider {
                             .ok_or(AtlasError::NotFoundErr(format!(
                                 "Discount curve for {market_index} was requested but is missing"
                             )))?;
-                    response.discount_curves.insert(
-                        market_index.clone(),
-                        DiscountCurveElement {
-                            market_index: curve.market_index.clone(),
-                            currency: curve.currency,
-                            curve: curve.curve.clone(),
-                        },
-                    );
+                    response
+                        .discount_curves
+                        .insert(market_index.clone(), (*curve).clone());
                 }
                 DerivedElementRequest::DividendCurve { market_index } => {
                     let curve =

@@ -1,6 +1,6 @@
 use crate::{
     ad::adreal::{ADReal, Const, FloatExt, IsReal},
-    core::pillars::Pillars,
+    core::{marketdataprovider::ADCurveElement, pillars::Pillars},
     math::interpolation::interpolator::{Interpolate, Interpolator},
     rates::{
         compounding::Compounding, interestrate::InterestRate,
@@ -116,21 +116,6 @@ where
         }
         self.pillar_labels = Some(pillar_labels);
         Ok(self)
-    }
-}
-
-impl<T> Pillars<T> for DiscountTermStructure<T>
-where
-    T: IsReal,
-{
-    fn pillars(&self) -> Option<Vec<(String, T)>> {
-        self.pillar_labels.as_ref().map(|labels| {
-            labels
-                .iter()
-                .cloned()
-                .zip(self.discount_factors.iter().copied())
-                .collect()
-        })
     }
 }
 
@@ -250,6 +235,28 @@ impl DiscountTermStructure<ADReal> {
     }
 }
 
+impl Pillars<ADReal> for DiscountTermStructure<ADReal> {
+    fn pillars(&self) -> Option<Vec<(String, &ADReal)>> {
+        self.pillar_labels.as_ref().map(|labels| {
+            labels
+                .iter()
+                .cloned()
+                .zip(self.discount_factors.iter())
+                .collect()
+        })
+    }
+
+    fn pillar_labels(&self) -> Option<Vec<String>> {
+        self.pillar_labels.clone()
+    }
+
+    fn put_pillars_on_tape(&mut self) {
+        self.discount_factors
+            .iter_mut()
+            .for_each(|df| df.put_on_tape());
+    }
+}
+
 impl InterestRatesTermStructure<f64> for DiscountTermStructure<f64> {
     fn reference_date(&self) -> Date {
         self.reference_date
@@ -356,6 +363,8 @@ impl InterestRatesTermStructure<ADReal> for DiscountTermStructure<ADReal> {
         .rate())
     }
 }
+
+impl ADCurveElement for DiscountTermStructure<ADReal> {}
 
 #[cfg(test)]
 mod tests {

@@ -1,9 +1,13 @@
 use std::{collections::HashMap, sync::Arc};
 
 use crate::{
-    ad::adreal::ADReal, currencies::currency::Currency, indices::marketindex::MarketIndex,
+    ad::adreal::ADReal,
+    core::pillars::Pillars,
+    currencies::currency::Currency,
+    indices::marketindex::MarketIndex,
     rates::yieldtermstructure::interestratestermstructure::InterestRatesTermStructure,
-    time::date::Date, utils::errors::Result,
+    time::date::Date,
+    utils::errors::{AtlasError, Result},
 };
 
 pub enum DerivedElementRequest {
@@ -29,13 +33,50 @@ pub enum DerivedElementRequest {
     },
 }
 
+pub trait ADCurveElement:
+    InterestRatesTermStructure<ADReal> + Pillars<ADReal> + Send + Sync
+{
+}
 
-
-#[derive(Clone)]
 pub struct DiscountCurveElement {
-    pub market_index: MarketIndex,
-    pub currency: Currency,
-    pub curve: Arc<dyn InterestRatesTermStructure<ADReal> + Send + Sync>,
+    market_index: MarketIndex,
+    currency: Currency,
+    curve: Box<dyn ADCurveElement>,
+}
+
+impl DiscountCurveElement {
+    #[must_use]
+    pub fn new(
+        market_index: MarketIndex,
+        currency: Currency,
+        curve: Box<dyn ADCurveElement>,
+    ) -> Self {
+        Self {
+            market_index,
+            currency,
+            curve,
+        }
+    }
+
+    #[must_use]
+    pub fn market_index(&self) -> &MarketIndex {
+        &self.market_index
+    }
+
+    #[must_use]
+    pub fn currency(&self) -> &Currency {
+        &self.currency
+    }
+
+    #[must_use]
+    pub fn curve(&self) -> &dyn ADCurveElement {
+        self.curve.as_ref()
+    }
+
+    #[must_use]
+    pub fn curve_mut(&mut self) -> &mut dyn ADCurveElement {
+        self.curve.as_mut()
+    }
 }
 
 #[derive(Clone)]
