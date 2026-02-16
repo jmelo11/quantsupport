@@ -9,8 +9,14 @@ pub trait PDEPricer {}
 pub trait BackwardEvolutionPricer {}
 
 /// Black-Scholes closed-form pricer.
+#[derive(Clone, Copy, Debug, Default)]
 pub struct BlackClosedFormPricer;
 impl CloseFormPricer for BlackClosedFormPricer {}
+
+/// Black-Scholes Monte Carlo pricer.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct BlackMonteCarloPricer;
+impl MonteCarloPricer for BlackMonteCarloPricer {}
 
 /// Normal (Bachelier) closed-form pricer.
 pub struct NormalClosedFormPricer;
