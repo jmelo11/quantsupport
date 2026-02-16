@@ -48,7 +48,7 @@ impl HandleValue<DepositTrade, DepositPriceEvaluationState> for DiscountedDeposi
             .get_mut(&index)
             .unwrap();
 
-        element.curve_mut()?.put_pillars_on_tape();
+        element.curve_mut().put_pillars_on_tape();
 
         let df = element
             .curve()

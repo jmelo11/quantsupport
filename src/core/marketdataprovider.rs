@@ -7,8 +7,21 @@ use crate::{
     indices::marketindex::MarketIndex,
     rates::yieldtermstructure::interestratestermstructure::InterestRatesTermStructure,
     time::date::Date,
-    utils::errors::{AtlasError, Result},
+    utils::errors::Result,
 };
+
+pub trait ADCurveElementClone {
+    fn clone_box(&self) -> Box<dyn ADCurveElement>;
+}
+
+impl<T> ADCurveElementClone for T
+where
+    T: 'static + ADCurveElement + Clone,
+{
+    fn clone_box(&self) -> Box<dyn ADCurveElement> {
+        Box::new(self.clone())
+    }
+}
 
 pub enum DerivedElementRequest {
     DiscountCurve {
@@ -34,10 +47,17 @@ pub enum DerivedElementRequest {
 }
 
 pub trait ADCurveElement:
-    InterestRatesTermStructure<ADReal> + Pillars<ADReal> + Send + Sync
+    InterestRatesTermStructure<ADReal> + Pillars<ADReal> + Send + Sync + ADCurveElementClone
 {
 }
 
+impl Clone for Box<dyn ADCurveElement> {
+    fn clone(&self) -> Self {
+        self.clone_box()
+    }
+}
+
+#[derive(Clone)]
 pub struct DiscountCurveElement {
     market_index: MarketIndex,
     currency: Currency,
