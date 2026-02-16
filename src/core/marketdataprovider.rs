@@ -1,4 +1,4 @@
-use std::{collections::HashMap, hash::Hash};
+use std::{collections::HashMap, sync::Arc};
 
 use crate::{
     ad::adreal::ADReal, currencies::currency::Currency, indices::marketindex::MarketIndex,
@@ -7,38 +7,60 @@ use crate::{
 };
 
 pub enum DerivedElementRequest {
-    DiscountCurve {
-        market_index: MarketIndex,
-    },
-    DividendCurve {
-        market_index: MarketIndex,
-    },
-    VolatilitySurface {
-        market_index: MarketIndex,
-    },
-    VolatilityCube {
-        market_index: MarketIndex,
-    },
+    DiscountCurve { market_index: MarketIndex },
+    DividendCurve { market_index: MarketIndex },
+    VolatilitySurface { market_index: MarketIndex },
+    VolatilityCube { market_index: MarketIndex },
     VolNode {
         market_index: MarketIndex,
         date: Date,
         axis: f64,
     },
-    Simulation {
-        market_index: MarketIndex,
-    },
+    Simulation { market_index: MarketIndex },
 }
 
+#[derive(Clone)]
 pub struct DiscountCurveElement {
     pub market_index: MarketIndex,
     pub currency: Currency,
     pub pillars: Vec<(String, ADReal)>,
-    pub curve: Box<dyn InterestRatesTermStructure<ADReal>>,
+    pub curve: Arc<dyn InterestRatesTermStructure<ADReal> + Send + Sync>,
+}
+
+#[derive(Clone)]
+pub struct DividendCurveElement {
+    pub market_index: MarketIndex,
+    pub currency: Currency,
+    pub pillars: Vec<(String, ADReal)>,
+    pub curve: Arc<dyn InterestRatesTermStructure<ADReal> + Send + Sync>,
+}
+
+#[derive(Clone)]
+pub struct SimulationElement {
+    pub market_index: MarketIndex,
+    pub draws: Vec<f64>,
 }
 
 pub struct FixingRequest {
     market_index: MarketIndex,
     date: Date,
+}
+
+impl FixingRequest {
+    #[must_use]
+    pub fn new(market_index: MarketIndex, date: Date) -> Self {
+        Self { market_index, date }
+    }
+
+    #[must_use]
+    pub fn market_index(&self) -> &MarketIndex {
+        &self.market_index
+    }
+
+    #[must_use]
+    pub fn date(&self) -> Date {
+        self.date
+    }
 }
 
 pub struct MarketDataRequest {
@@ -56,6 +78,16 @@ impl MarketDataRequest {
         self.fixing_requests = fixing_requests;
         self
     }
+
+    #[must_use]
+    pub fn element_requests(&self) -> &[DerivedElementRequest] {
+        &self.element_requests
+    }
+
+    #[must_use]
+    pub fn fixing_requests(&self) -> &[FixingRequest] {
+        &self.fixing_requests
+    }
 }
 
 impl Default for MarketDataRequest {
@@ -67,8 +99,31 @@ impl Default for MarketDataRequest {
     }
 }
 
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+pub struct VolNodeKey {
+    market_index: MarketIndex,
+    date: Date,
+    axis_bits: u64,
+}
+
+impl VolNodeKey {
+    #[must_use]
+    pub fn new(market_index: MarketIndex, date: Date, axis: f64) -> Self {
+        Self {
+            market_index,
+            date,
+            axis_bits: axis.to_bits(),
+        }
+    }
+}
+
+#[derive(Default)]
 pub struct MarketDataResponse {
     pub discount_curves: HashMap<MarketIndex, DiscountCurveElement>,
+    pub dividend_curves: HashMap<MarketIndex, DividendCurveElement>,
+    pub fixings: HashMap<(MarketIndex, Date), ADReal>,
+    pub vol_nodes: HashMap<VolNodeKey, ADReal>,
+    pub simulations: HashMap<MarketIndex, SimulationElement>,
 }
 
 pub trait MarketDataProvider {

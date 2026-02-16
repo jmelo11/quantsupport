@@ -40,6 +40,24 @@ pub struct EquityEuroOptionTrade {
 }
 
 impl EquityEuroOption {
+    /// Creates a new european equity option.
+    #[must_use]
+    pub fn new(
+        market_index: MarketIndex,
+        expiry_date: Date,
+        strike: f64,
+        option_type: EuroOptionType,
+        identifier: String,
+    ) -> Self {
+        Self {
+            market_index,
+            expiry_date,
+            strike,
+            option_type,
+            identifier,
+        }
+    }
+
     /// Returns the market index of this option.
     pub fn market_index(&self) -> &MarketIndex {
         &self.market_index
@@ -62,6 +80,16 @@ impl EquityEuroOption {
 }
 
 impl EquityEuroOptionTrade {
+    /// Creates a new equity option trade.
+    #[must_use]
+    pub fn new(instrument: EquityEuroOption, notional: f64, trade_date: Date) -> Self {
+        Self {
+            instrument,
+            notional,
+            trade_date,
+        }
+    }
+
     /// Returns the notional amount of this trade.
     pub fn notional(&self) -> f64 {
         self.notional

@@ -21,6 +21,18 @@ pub struct SensitivityMap {
 }
 
 impl SensitivityMap {
+    /// Returns instrument keys.
+    #[must_use]
+    pub fn instrument_keys(&self) -> &[String] {
+        &self.instrument_key
+    }
+
+    /// Returns exposures.
+    #[must_use]
+    pub fn exposure(&self) -> &[f64] {
+        &self.exposure
+    }
+
     /// Sets the instrument keys for this sensitivity map.
     pub fn with_instrument_keys(mut self, instrument_keys: Vec<String>) -> Self {
         self.instrument_key = instrument_keys.clone();
@@ -77,6 +89,12 @@ impl EvaluationResults {
     #[must_use]
     pub const fn price(&self) -> Option<f64> {
         self.price
+    }
+
+    /// Returns sensitivities if available.
+    #[must_use]
+    pub const fn sensitivities(&self) -> Option<&SensitivityMap> {
+        self.sensitivities.as_ref()
     }
 
     /// Sets the sensitivities to market inputs.
