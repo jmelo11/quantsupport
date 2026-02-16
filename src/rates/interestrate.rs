@@ -125,11 +125,13 @@ where
         }
     }
 
+    /// Returns the rate value of this interest rate.
     #[must_use]
     pub const fn rate_ref(&self) -> &T {
         &self.rate
     }
 
+    /// Returns the rate definition of this interest rate.
     #[must_use]
     pub fn rate_mut(&mut self) -> &mut T {
         &mut self.rate

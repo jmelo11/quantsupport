@@ -22,6 +22,7 @@ pub struct InMemoryMarketDataProvider {
 }
 
 impl InMemoryMarketDataProvider {
+    /// Creates a new [`InMemoryMarketDataProvider`] with the specified evaluation date.
     #[must_use]
     pub fn new(evaluation_date: Date) -> Self {
         Self {
@@ -34,12 +35,14 @@ impl InMemoryMarketDataProvider {
         }
     }
 
+    /// Creates a new [`InMemoryMarketDataProvider`] with the specified evaluation date and pre-loaded market data elements.
     #[must_use]
     pub const fn with_evaluation_date(mut self, evaluation_date: Date) -> Self {
         self.evaluation_date = evaluation_date;
         self
     }
 
+    /// Adds a discount curve element to the provider.
     #[must_use]
     pub fn with_discount_curve(mut self, element: DiscountCurveElement) -> Self {
         self.discount_curves
@@ -47,19 +50,22 @@ impl InMemoryMarketDataProvider {
         self
     }
 
+    /// Adds a dividend curve element to the provider.
     #[must_use]
     pub fn with_dividend_curve(mut self, element: DividendCurveElement) -> Self {
         self.dividend_curves
-            .insert(element.market_index.clone(), element);
+            .insert(element.market_index().clone(), element);
         self
     }
 
+    /// Adds a fixing to the provider.
     #[must_use]
     pub fn with_fixing(mut self, market_index: MarketIndex, date: Date, value: ADReal) -> Self {
         self.fixings.insert((market_index, date), value);
         self
     }
 
+    /// Adds a volatility node to the provider.
     #[must_use]
     pub fn with_vol_node(
         mut self,
@@ -73,10 +79,11 @@ impl InMemoryMarketDataProvider {
         self
     }
 
+    /// Adds a simulation element to the provider.
     #[must_use]
     pub fn with_simulation(mut self, simulation: SimulationElement) -> Self {
         self.simulations
-            .insert(simulation.market_index.clone(), simulation);
+            .insert(simulation.market_index().clone(), simulation);
         self
     }
 }
@@ -95,7 +102,7 @@ impl MarketDataProvider for InMemoryMarketDataProvider {
                                 "Discount curve for {market_index} was requested but is missing"
                             )))?;
                     response
-                        .discount_curves
+                        .discount_curves_mut()
                         .insert(market_index.clone(), (*curve).clone());
                 }
                 DerivedElementRequest::DividendCurve { market_index } => {
@@ -105,14 +112,9 @@ impl MarketDataProvider for InMemoryMarketDataProvider {
                             .ok_or(AtlasError::NotFoundErr(format!(
                                 "Dividend curve for {market_index} was requested but is missing"
                             )))?;
-                    response.dividend_curves.insert(
-                        market_index.clone(),
-                        DividendCurveElement {
-                            market_index: curve.market_index.clone(),
-                            currency: curve.currency,
-                            curve: curve.curve.clone(),
-                        },
-                    );
+                    response
+                        .dividend_curves_mut()
+                        .insert(market_index.clone(), (*curve).clone());
                 }
                 DerivedElementRequest::VolNode {
                     market_index,
@@ -123,7 +125,7 @@ impl MarketDataProvider for InMemoryMarketDataProvider {
                     let node = self.vol_nodes.get(&key).ok_or(AtlasError::NotFoundErr(format!(
                         "Vol node for {market_index} at {date} / axis {axis} was requested but is missing"
                     )))?;
-                    response.vol_nodes.insert(key, *node);
+                    response.vol_nodes_mut().insert(key, *node);
                 }
                 DerivedElementRequest::Simulation { market_index } => {
                     let sim = self
@@ -133,7 +135,7 @@ impl MarketDataProvider for InMemoryMarketDataProvider {
                             "Simulation for {market_index} was requested but is missing"
                         )))?;
                     response
-                        .simulations
+                        .simulations_mut()
                         .insert(market_index.clone(), sim.clone());
                 }
                 // Surface/cube data are resolved upstream to VolNode in current pricer flow.
@@ -152,7 +154,7 @@ impl MarketDataProvider for InMemoryMarketDataProvider {
                     fixing.market_index(),
                     fixing.date()
                 )))?;
-            response.fixings.insert(key, *value);
+            response.fixings_mut().insert(key, *value);
         }
 
         Ok(response)

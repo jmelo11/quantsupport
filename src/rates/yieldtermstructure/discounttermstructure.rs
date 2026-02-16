@@ -107,6 +107,7 @@ where
         self.interpolator
     }
 
+    /// Returns the reference date of the term structure.
     #[must_use]
     pub fn with_pillar_labels(mut self, pillar_labels: Vec<String>) -> Result<Self> {
         if pillar_labels.len() != self.discount_factors.len() {

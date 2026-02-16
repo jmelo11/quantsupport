@@ -66,6 +66,7 @@ where
         self.rate.rate_definition()
     }
 
+    /// Sets the pillar label for the term structure and returns a new instance with the updated label.
     #[must_use]
     pub fn with_pillar_label(mut self, label: String) -> Self {
         self.pillar_label = Some(label);

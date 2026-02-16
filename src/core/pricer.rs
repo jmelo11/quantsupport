@@ -33,5 +33,12 @@ pub trait Pricer: Send + Sync {
         ctx: &impl MarketDataProvider,
     ) -> Result<EvaluationResults, AtlasError>;
 
+    /// Returns a [`MarketDataRequest`] containing the market data elements required to evaluate the instrument.
+    ///
+    /// ## Arguments
+    /// * `trade`: the associated instrument that this pricer is capable of handeling.
+    ///
+    /// ## Returns
+    /// Returns a [`MarketDataRequest`] if the pricer requires market data to evaluate the instrument, otherwise returns `None`.
     fn market_data_request(&self, trade: &Self::Item) -> Option<MarketDataRequest>;
 }

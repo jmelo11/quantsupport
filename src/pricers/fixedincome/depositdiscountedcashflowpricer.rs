@@ -1,5 +1,3 @@
-use rayon::str;
-
 use crate::{
     ad::{
         adreal::{ADReal, IsReal},
@@ -18,7 +16,13 @@ use crate::{
     instruments::fixedincome::deposit::DepositTrade,
     utils::errors::{AtlasError, Result},
 };
-
+/// # `DiscountedDepositPricer`
+///
+/// Pricer for deposits that uses discounted cash flow methodology. It calculates the
+/// present value of the deposit's final payment by discounting it using the appropriate
+/// discount factor from the relevant discount curve. The pricer also computes
+/// sensitivities to the discount curve pillars, which can be used for risk
+/// management and hedging purposes.
 pub struct DiscountedDepositPricer;
 
 /// # `DepositPriceEvaluationState`
@@ -28,6 +32,7 @@ pub struct DiscountedDepositPricer;
 struct DepositPriceEvaluationState {
     /// Price placeholder for perfomance reasons.
     pub value: Option<ADReal>,
+    /// Market data response placeholder to avoid multiple calls to the market data provider.
     pub md_response: Option<MarketDataResponse>,
 }
 
@@ -44,7 +49,7 @@ impl HandleValue<DepositTrade, DepositPriceEvaluationState> for DiscountedDeposi
             .md_response
             .as_mut()
             .unwrap()
-            .discount_curves
+            .discount_curves_mut()
             .get_mut(&index)
             .unwrap();
 
@@ -85,7 +90,7 @@ impl HandleSensitivities<DepositTrade, DepositPriceEvaluationState> for Discount
             .md_response
             .as_ref()
             .unwrap()
-            .discount_curves
+            .discount_curves()
             .get(&index)
             .unwrap();
 
@@ -154,7 +159,6 @@ impl Pricer for DiscountedDepositPricer {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
 
     use crate::{
         ad::adreal::ADReal,
