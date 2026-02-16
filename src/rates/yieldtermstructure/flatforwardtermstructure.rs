@@ -1,5 +1,6 @@
 use crate::{
     ad::adreal::{ADReal, IsReal},
+    core::pillars::Pillars,
     rates::{
         compounding::Compounding,
         interestrate::{InterestRate, RateDefinition},
@@ -22,13 +23,14 @@ use crate::{
 /// let term_structure = FlatForwardTermStructure::new(reference_date, 0.5, RateDefinition::default());
 /// assert_eq!(term_structure.reference_date(), reference_date);
 /// ```
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub struct FlatForwardTermStructure<T>
 where
     T: IsReal,
 {
     reference_date: Date,
     rate: InterestRate<T>,
+    pillar_label: Option<String>,
 }
 
 impl<T> FlatForwardTermStructure<T>
@@ -42,6 +44,7 @@ where
         Self {
             reference_date,
             rate,
+            pillar_label: None,
         }
     }
 
@@ -61,6 +64,23 @@ where
     #[must_use]
     pub const fn rate_definition(&self) -> RateDefinition {
         self.rate.rate_definition()
+    }
+
+    #[must_use]
+    pub fn with_pillar_label(mut self, label: String) -> Self {
+        self.pillar_label = Some(label);
+        self
+    }
+}
+
+impl<T> Pillars<T> for FlatForwardTermStructure<T>
+where
+    T: IsReal,
+{
+    fn pillars(&self) -> Option<Vec<(String, T)>> {
+        self.pillar_label
+            .as_ref()
+            .map(|label| vec![(label.clone(), self.rate.rate())])
     }
 }
 
@@ -128,9 +148,8 @@ impl InterestRatesTermStructure<ADReal> for FlatForwardTermStructure<ADReal> {
 
 #[cfg(test)]
 mod tests {
-    use crate::time::{daycounter::DayCounter, enums::TimeUnit, period::Period};
-
     use super::*;
+    use crate::time::{daycounter::DayCounter, enums::TimeUnit, period::Period};
 
     #[test]
     fn test_reference_date() {
@@ -213,4 +232,28 @@ mod tests {
 
         Ok(())
     }
+
+    // #[test]
+    // fn test_ad_forward_rate() -> Result<()> {
+    //     let reference_date = Date::new(2023, 8, 19);
+
+    //     let mut rate = ADReal::from(0.05);
+    //     Tape::start_recording();
+    //     rate.put_on_tape();
+    //     let term_structure =
+    //         FlatForwardTermStructure::new(reference_date, rate, RateDefinition::default());
+    //     let term_structure_2 = term_structure.clone();
+
+    //     // let df = term_structure.discount_factor(reference_date + Period::new(1, TimeUnit::Years));
+    //     let df2 =
+    //         term_structure_2.discount_factor(reference_date + Period::new(1, TimeUnit::Years));
+
+    //     Tape::stop_recording();
+    //     let rate2 = rate.clone();
+    //     // let _ = df?.backward()?;
+    //     // println!("Rate sensitivity: {:?}", rate.adjoint()?);
+    //     let _ = df2?.backward()?;
+    //     println!("Rate sensitivity: {:?}", rate.adjoint()?);
+    //     Ok(())
+    // }
 }

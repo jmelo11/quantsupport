@@ -1,6 +1,5 @@
 use crate::{
     core::{
-        contextmanager::ContextManager,
         evaluationresults::EvaluationResults,
         marketdataprovider::{MarketDataProvider, MarketDataRequest},
         request::Request,

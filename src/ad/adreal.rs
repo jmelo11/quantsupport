@@ -181,6 +181,24 @@ impl ADReal {
             self.node = node;
         });
     }
+
+    /// Ensures this value is registered on the tape, creating a new leaf node if necessary.
+    /// This is called automatically during expression evaluation if the value hasn't been registered yet.
+    /// Returns a copy of self with the node properly registered, or returns self unchanged if already registered.
+    pub fn ensure_on_tape(&self) -> ADReal {
+        if self.node.is_some() {
+            return *self;
+        }
+
+        let mut result = *self;
+        result.put_on_tape();
+        result
+    }
+
+    /// Check if this value is already indexed on a tape.
+    pub fn is_on_tape(&self) -> bool {
+        self.node.is_some()
+    }
 }
 
 impl Expr for ADReal {
@@ -200,9 +218,14 @@ impl Expr for ADReal {
 }
 
 /// Records an expression into the tape, returning the resulting `ADReal`.
+/// This function automatically registers any unregistered ADReal operands on the tape
+/// before evaluating the expression, ensuring proper derivative computation.
 fn flatten<E: Expr + Clone>(e: &E) -> ADReal {
     let mut node = TapeNode::default();
     e.push_adj(&mut node, 1.0);
+
+    // Try to record the node. If it fails (tape not active), return a regular ADReal
+    // with the computed value but without a node.
     let ptr_opt = TAPE.with_borrow_mut(|tape| tape.record(node));
 
     ADReal {

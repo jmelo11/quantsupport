@@ -22,8 +22,6 @@ impl MonteCarloPricer for BlackMonteCarloPricer {}
 pub struct NormalClosedFormPricer;
 impl CloseFormPricer for NormalClosedFormPricer {}
 
-/// Discounted cashflow pricer.
-pub struct DiscountedCashflowPricer;
 /// Hull-White closed-form pricer.
 pub struct HullWhiteClosedFormPricer;
 impl CloseFormPricer for HullWhiteClosedFormPricer {}

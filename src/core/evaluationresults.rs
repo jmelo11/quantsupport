@@ -14,7 +14,7 @@ pub struct SensitivityKey {
 
 /// # `SensitivityMap`
 /// Maps sensitivity keys to values.
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct SensitivityMap {
     instrument_key: Vec<String>,
     exposure: Vec<f64>,

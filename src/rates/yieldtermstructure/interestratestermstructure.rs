@@ -1,5 +1,6 @@
 use crate::{
     ad::adreal::IsReal,
+    core::pillars::Pillars,
     rates::compounding::Compounding,
     time::{date::Date, enums::Frequency},
     utils::errors::Result,
@@ -7,7 +8,7 @@ use crate::{
 /// # `RatesTermStructure`
 ///
 /// Base trait for rate term structures.
-pub trait InterestRatesTermStructure<T>
+pub trait InterestRatesTermStructure<T>: Pillars<T>
 where
     T: IsReal,
 {

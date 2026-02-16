@@ -1,3 +1,5 @@
+use rayon::str;
+
 use crate::{
     ad::{
         adreal::{ADReal, IsReal},
@@ -14,9 +16,10 @@ use crate::{
         trade::Trade,
     },
     instruments::fixedincome::deposit::DepositTrade,
-    pricers::pricers::DiscountedCashflowPricer,
     utils::errors::{AtlasError, Result},
 };
+
+pub struct DiscountedDepositPricer;
 
 /// # `DepositPriceEvaluationState`
 ///
@@ -28,17 +31,16 @@ struct DepositPriceEvaluationState {
     pub md_response: Option<MarketDataResponse>,
 }
 
-impl HandleValue<DepositTrade, DepositPriceEvaluationState> for DiscountedCashflowPricer {
+impl HandleValue<DepositTrade, DepositPriceEvaluationState> for DiscountedDepositPricer {
     fn handle_value(
         &self,
         trade: &DepositTrade,
         state: &mut DepositPriceEvaluationState,
     ) -> Result<f64> {
         Tape::start_recording();
-        Tape::set_mark();
         let index = trade.instrument().market_index();
         let final_amount = trade.instrument().final_payment().unwrap();
-        let discount_curve_element = state
+        let element = state
             .md_response
             .as_mut()
             .unwrap()
@@ -46,21 +48,22 @@ impl HandleValue<DepositTrade, DepositPriceEvaluationState> for DiscountedCashfl
             .get_mut(&index)
             .unwrap();
 
-        for (_, pillar) in &mut discount_curve_element.pillars {
+        for (_, pillar) in &mut element.curve.pillars().unwrap() {
             pillar.put_on_tape();
         }
 
-        let df = discount_curve_element
+        let df = element
             .curve
             .discount_factor(trade.instrument().maturity_date())?;
-        let value: ADReal = (df * final_amount).into();
+        let value = (df * final_amount).into();
         state.value = Some(value);
+        
         Tape::stop_recording();
         Ok(value.value())
     }
 }
 
-impl HandleSensitivities<DepositTrade, DepositPriceEvaluationState> for DiscountedCashflowPricer {
+impl HandleSensitivities<DepositTrade, DepositPriceEvaluationState> for DiscountedDepositPricer {
     fn handle_sensitivities(
         &self,
         trade: &DepositTrade,
@@ -76,11 +79,11 @@ impl HandleSensitivities<DepositTrade, DepositPriceEvaluationState> for Discount
                 price = state.value.unwrap();
             }
         }
-        let _ = price.backward()?;
+        let _ = price.backward_to_mark()?;
         let mut ids = Vec::new();
         let mut exposures = Vec::new();
         let index = trade.instrument().market_index();
-        let discount_curve_element = state
+        let element = state
             .md_response
             .as_ref()
             .unwrap()
@@ -88,10 +91,12 @@ impl HandleSensitivities<DepositTrade, DepositPriceEvaluationState> for Discount
             .get(&index)
             .unwrap();
 
-        for (label, component) in discount_curve_element.pillars.iter() {
-            ids.push(label.clone());
-            let s = component.adjoint()?;
-            exposures.push(s);
+        for (label, pillar) in element.curve.pillars().unwrap().iter() {
+            if pillar.is_on_tape() {
+                ids.push(label.clone());
+                let s = pillar.adjoint()?;
+                exposures.push(s);
+            }
         }
         let sensitivities = SensitivityMap::default()
             .with_instrument_keys(ids)
@@ -100,7 +105,7 @@ impl HandleSensitivities<DepositTrade, DepositPriceEvaluationState> for Discount
     }
 }
 
-impl Pricer for DiscountedCashflowPricer {
+impl Pricer for DiscountedDepositPricer {
     type Item = DepositTrade;
 
     fn evaluate(
@@ -141,14 +146,13 @@ impl Pricer for DiscountedCashflowPricer {
         Ok(results)
     }
 
-    fn market_data_request(&self, trade: &Self::Item) -> Option<MarketDataRequest> {
+    fn market_data_request(&self, trade: &DepositTrade) -> Option<MarketDataRequest> {
         let discount_curve = DerivedElementRequest::DiscountCurve {
             market_index: trade.instrument().market_index(),
         };
         Some(MarketDataRequest::default().with_element_requests(vec![discount_curve]))
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -157,20 +161,17 @@ mod tests {
     use crate::{
         ad::adreal::ADReal,
         core::{
-            contextmanager::ContextManager,
-            inmemorymarketdataprovider::InMemoryMarketDataProvider,
-            instrument::Instrument,
-            marketdataprovider::DiscountCurveElement,
-            pricer::Pricer,
-            request::Request,
+            contextmanager::ContextManager, inmemorymarketdataprovider::InMemoryMarketDataProvider,
+            instrument::Instrument, marketdataprovider::DiscountCurveElement, pricer::Pricer,
+            request::Request, trade::Trade,
         },
         currencies::currency::Currency,
         indices::marketindex::MarketIndex,
         instruments::fixedincome::deposit::{Deposit, DepositTrade},
         marketdata::{fixingstore::FixingStore, quotestore::QuoteStore},
-        pricers::pricers::DiscountedCashflowPricer,
+        pricers::fixedincome::depositdiscountedcashflowpricer::DiscountedDepositPricer,
         rates::{
-            interestrate::RateDefinition,
+            interestrate::{InterestRate, RateDefinition},
             yieldtermstructure::flatforwardtermstructure::FlatForwardTermStructure,
         },
         time::date::Date,
@@ -180,12 +181,12 @@ mod tests {
     fn deposit_value_and_sensitivities() {
         let eval = Date::new(2025, 1, 1);
         let maturity = Date::new(2025, 7, 1);
-        let index = MarketIndex::SOFR;
+        let index = MarketIndex::TermSOFR3m;
 
         let depo = Deposit::new(
-            "D1".to_string(),
+            "TEST".into(),
             100.0,
-            crate::rates::interestrate::InterestRate::from_rate_definition(0.05, RateDefinition::default()),
+            InterestRate::from_rate_definition(0.05, RateDefinition::default()),
             eval,
             maturity,
             index.clone(),
@@ -194,29 +195,31 @@ mod tests {
         let resolved = depo.resolve(&ctx_mgr).expect("resolved deposit");
         let trade = DepositTrade::new(resolved, eval, 100.0);
 
-        let curve = Arc::new(FlatForwardTermStructure::<ADReal>::new(
-            eval,
-            ADReal::from(0.03),
-            RateDefinition::default(),
-        ));
+        let curve = Arc::new(
+            FlatForwardTermStructure::<ADReal>::new(
+                eval,
+                ADReal::from(0.03),
+                RateDefinition::default(),
+            )
+            .with_pillar_label("Rate".into()),
+        );
 
         let md = InMemoryMarketDataProvider::new(eval).with_discount_curve(DiscountCurveElement {
             market_index: index,
             currency: Currency::USD,
-            pillars: vec![
-                ("p0".to_string(), ADReal::from(1.0)),
-                ("p1".to_string(), ADReal::from(0.98)),
-            ],
             curve,
         });
 
-        let pricer = DiscountedCashflowPricer;
+        let pricer = DiscountedDepositPricer;
         let results = pricer
             .evaluate(&trade, &[Request::Value, Request::Sensitivities], &md)
             .expect("pricing works");
 
         assert!(results.price().is_some());
         let sens = results.sensitivities().expect("sensitivities present");
+        println!("Final Payment: {:?}", trade.instrument().final_payment());
+        println!("Price: {:?}", results.price().unwrap());
+        println!("Sensitivities: {:?}", sens);
         assert!(!sens.instrument_keys().is_empty());
         assert_eq!(sens.instrument_keys().len(), sens.exposure().len());
     }

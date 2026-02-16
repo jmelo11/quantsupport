@@ -1,7 +1,6 @@
 use crate::{
-    ad::adreal::{ADReal, IsReal},
+    ad::adreal::ADReal,
     core::{
-        contextmanager::ContextManager,
         evaluationresults::{EvaluationResults, SensitivityMap},
         instrument::Instrument,
         marketdataprovider::{DerivedElementRequest, MarketDataProvider, MarketDataRequest},

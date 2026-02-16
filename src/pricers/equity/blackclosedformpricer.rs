@@ -39,17 +39,21 @@ impl HandleValue<EquityEuroOptionTrade, EquityOptionState> for BlackClosedFormPr
             .year_fraction(trade.trade_date(), option.expiry_date())
             .max(0.0);
 
-        let md_response = state.md_response.as_mut().ok_or(AtlasError::ValueNotSetErr(
-            "Market data response not loaded".into(),
-        ))?;
+        let md_response = state
+            .md_response
+            .as_mut()
+            .ok_or(AtlasError::ValueNotSetErr(
+                "Market data response not loaded".into(),
+            ))?;
 
         let fixing_key = (index.clone(), trade.trade_date());
-        let spot_entry = md_response
-            .fixings
-            .get_mut(&fixing_key)
-            .ok_or(AtlasError::NotFoundErr(
-                "Missing spot fixing for option index/trade date".into(),
-            ))?;
+        let spot_entry =
+            md_response
+                .fixings
+                .get_mut(&fixing_key)
+                .ok_or(AtlasError::NotFoundErr(
+                    "Missing spot fixing for option index/trade date".into(),
+                ))?;
 
         let vol_key = VolNodeKey::new(index.clone(), option.expiry_date(), option.strike());
         let vol_entry = md_response
@@ -59,20 +63,20 @@ impl HandleValue<EquityEuroOptionTrade, EquityOptionState> for BlackClosedFormPr
                 "Missing volatility node for option expiry/strike".into(),
             ))?;
 
-        let discount_curve = md_response
+        let discount_element = md_response
             .discount_curves
             .get_mut(&index)
             .ok_or(AtlasError::NotFoundErr("Missing discount curve".into()))?;
-        let dividend_curve = md_response
+        let dividend_element = md_response
             .dividend_curves
             .get_mut(&index)
             .ok_or(AtlasError::NotFoundErr("Missing dividend curve".into()))?;
 
         Tape::start_recording();
-        for (_, pillar) in &mut discount_curve.pillars {
+        for (_, pillar) in &mut discount_element.curve.pillars().unwrap() {
             pillar.put_on_tape();
         }
-        for (_, pillar) in &mut dividend_curve.pillars {
+        for (_, pillar) in &mut dividend_element.curve.pillars().unwrap() {
             pillar.put_on_tape();
         }
         spot_entry.put_on_tape();
@@ -84,8 +88,12 @@ impl HandleValue<EquityEuroOptionTrade, EquityOptionState> for BlackClosedFormPr
         let sqrt_tau = tau.sqrt();
         let vol_sqrt_tau: ADReal = (vol * sqrt_tau).into();
 
-        let df_r = discount_curve.curve.discount_factor(option.expiry_date())?;
-        let df_q = dividend_curve.curve.discount_factor(option.expiry_date())?;
+        let df_r = discount_element
+            .curve
+            .discount_factor(option.expiry_date())?;
+        let df_q = dividend_element
+            .curve
+            .discount_factor(option.expiry_date())?;
 
         let fwd: ADReal = (spot * df_q / df_r).into();
         let d1: ADReal = (((fwd / strike).ln() + vol * vol * 0.5 * tau) / vol_sqrt_tau).into();
@@ -124,9 +132,12 @@ impl HandleSensitivities<EquityEuroOptionTrade, EquityOptionState> for BlackClos
                 .ok_or(AtlasError::ValueNotSetErr("Pricing not requested".into()))?
         };
 
-        let md_response = state.md_response.as_ref().ok_or(AtlasError::ValueNotSetErr(
-            "Market data response not loaded".into(),
-        ))?;
+        let md_response = state
+            .md_response
+            .as_ref()
+            .ok_or(AtlasError::ValueNotSetErr(
+                "Market data response not loaded".into(),
+            ))?;
 
         value.backward()?;
         let option = trade.instrument();
@@ -135,7 +146,10 @@ impl HandleSensitivities<EquityEuroOptionTrade, EquityOptionState> for BlackClos
         let mut ids = Vec::new();
         let mut exposures = Vec::new();
 
-        if let Some(spot) = md_response.fixings.get(&(index.clone(), trade.trade_date())) {
+        if let Some(spot) = md_response
+            .fixings
+            .get(&(index.clone(), trade.trade_date()))
+        {
             ids.push("spot".to_string());
             exposures.push(spot.adjoint()?);
         }
@@ -147,14 +161,14 @@ impl HandleSensitivities<EquityEuroOptionTrade, EquityOptionState> for BlackClos
         }
 
         if let Some(discount_curve) = md_response.discount_curves.get(index) {
-            for (label, pillar) in &discount_curve.pillars {
+            for (label, pillar) in &discount_curve.curve.pillars().unwrap() {
                 ids.push(format!("discount::{label}"));
                 exposures.push(pillar.adjoint()?);
             }
         }
 
         if let Some(dividend_curve) = md_response.dividend_curves.get(index) {
-            for (label, pillar) in &dividend_curve.pillars {
+            for (label, pillar) in &dividend_curve.curve.pillars().unwrap() {
                 ids.push(format!("dividend::{label}"));
                 exposures.push(pillar.adjoint()?);
             }
@@ -180,7 +194,9 @@ impl Pricer for BlackClosedFormPricer {
 
         let md_request = self
             .market_data_request(trade)
-            .ok_or(AtlasError::InvalidValueErr("Missing market data request".into()))?;
+            .ok_or(AtlasError::InvalidValueErr(
+                "Missing market data request".into(),
+            ))?;
 
         let mut results = EvaluationResults::new(eval_date, identifier);
         let mut state = EquityOptionState {
@@ -230,7 +246,6 @@ impl Pricer for BlackClosedFormPricer {
         )
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -287,13 +302,11 @@ mod tests {
             .with_discount_curve(DiscountCurveElement {
                 market_index: index.clone(),
                 currency: Currency::USD,
-                pillars: vec![("d0".to_string(), ADReal::from(1.0))],
                 curve: disc,
             })
             .with_dividend_curve(DividendCurveElement {
                 market_index: index.clone(),
                 currency: Currency::USD,
-                pillars: vec![("q0".to_string(), ADReal::from(1.0))],
                 curve: div,
             })
             .with_fixing(index.clone(), eval, ADReal::from(102.0))

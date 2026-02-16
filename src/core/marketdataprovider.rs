@@ -7,23 +7,34 @@ use crate::{
 };
 
 pub enum DerivedElementRequest {
-    DiscountCurve { market_index: MarketIndex },
-    DividendCurve { market_index: MarketIndex },
-    VolatilitySurface { market_index: MarketIndex },
-    VolatilityCube { market_index: MarketIndex },
+    DiscountCurve {
+        market_index: MarketIndex,
+    },
+    DividendCurve {
+        market_index: MarketIndex,
+    },
+    VolatilitySurface {
+        market_index: MarketIndex,
+    },
+    VolatilityCube {
+        market_index: MarketIndex,
+    },
     VolNode {
         market_index: MarketIndex,
         date: Date,
         axis: f64,
     },
-    Simulation { market_index: MarketIndex },
+    Simulation {
+        market_index: MarketIndex,
+    },
 }
+
+
 
 #[derive(Clone)]
 pub struct DiscountCurveElement {
     pub market_index: MarketIndex,
     pub currency: Currency,
-    pub pillars: Vec<(String, ADReal)>,
     pub curve: Arc<dyn InterestRatesTermStructure<ADReal> + Send + Sync>,
 }
 
@@ -31,7 +42,6 @@ pub struct DiscountCurveElement {
 pub struct DividendCurveElement {
     pub market_index: MarketIndex,
     pub currency: Currency,
-    pub pillars: Vec<(String, ADReal)>,
     pub curve: Arc<dyn InterestRatesTermStructure<ADReal> + Send + Sync>,
 }
 

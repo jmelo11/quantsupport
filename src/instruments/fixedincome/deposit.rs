@@ -97,12 +97,7 @@ impl Instrument for Deposit {
 
     fn resolve(&self, ctx: &ContextManager) -> Result<Deposit> {
         let start_date = self.start_date.unwrap_or(ctx.evaluation_date());
-        let year_fraction = self
-            .rate
-            .day_counter()
-            .year_fraction(start_date, self.maturity_date);
-        let final_payment = self.units * (1.0 + self.rate.rate() * year_fraction);
-
+        let final_payment = self.units * self.rate.compound_factor(start_date, self.maturity_date);
         Ok(Self {
             final_payment: Some(final_payment),
             start_date: Some(start_date),

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::{
-    ad::adreal::{ADReal, IsReal},
+    ad::adreal::ADReal,
     core::marketdataprovider::{
         DerivedElementRequest, DiscountCurveElement, DividendCurveElement, MarketDataProvider,
         MarketDataRequest, MarketDataResponse, SimulationElement, VolNodeKey,
@@ -81,11 +81,6 @@ impl InMemoryMarketDataProvider {
     }
 }
 
-
-fn detach_ad(value: ADReal) -> ADReal {
-    ADReal::from(value.value())
-}
-
 impl MarketDataProvider for InMemoryMarketDataProvider {
     fn handle_request(&self, request: &MarketDataRequest) -> Result<MarketDataResponse> {
         let mut response = MarketDataResponse::default();
@@ -93,41 +88,33 @@ impl MarketDataProvider for InMemoryMarketDataProvider {
         for element in request.element_requests() {
             match element {
                 DerivedElementRequest::DiscountCurve { market_index } => {
-                    let curve = self.discount_curves.get(market_index).ok_or(
-                        AtlasError::NotFoundErr(format!(
-                            "Discount curve for {market_index} was requested but is missing"
-                        )),
-                    )?;
+                    let curve =
+                        self.discount_curves
+                            .get(market_index)
+                            .ok_or(AtlasError::NotFoundErr(format!(
+                                "Discount curve for {market_index} was requested but is missing"
+                            )))?;
                     response.discount_curves.insert(
                         market_index.clone(),
                         DiscountCurveElement {
                             market_index: curve.market_index.clone(),
                             currency: curve.currency,
-                            pillars: curve
-                                .pillars
-                                .iter()
-                                .map(|(k, v)| (k.clone(), detach_ad(*v)))
-                                .collect(),
                             curve: curve.curve.clone(),
                         },
                     );
                 }
                 DerivedElementRequest::DividendCurve { market_index } => {
-                    let curve = self.dividend_curves.get(market_index).ok_or(
-                        AtlasError::NotFoundErr(format!(
-                            "Dividend curve for {market_index} was requested but is missing"
-                        )),
-                    )?;
+                    let curve =
+                        self.dividend_curves
+                            .get(market_index)
+                            .ok_or(AtlasError::NotFoundErr(format!(
+                                "Dividend curve for {market_index} was requested but is missing"
+                            )))?;
                     response.dividend_curves.insert(
                         market_index.clone(),
                         DividendCurveElement {
                             market_index: curve.market_index.clone(),
                             currency: curve.currency,
-                            pillars: curve
-                                .pillars
-                                .iter()
-                                .map(|(k, v)| (k.clone(), detach_ad(*v)))
-                                .collect(),
                             curve: curve.curve.clone(),
                         },
                     );
@@ -141,14 +128,15 @@ impl MarketDataProvider for InMemoryMarketDataProvider {
                     let node = self.vol_nodes.get(&key).ok_or(AtlasError::NotFoundErr(format!(
                         "Vol node for {market_index} at {date} / axis {axis} was requested but is missing"
                     )))?;
-                    response.vol_nodes.insert(key, detach_ad(*node));
+                    response.vol_nodes.insert(key, *node);
                 }
                 DerivedElementRequest::Simulation { market_index } => {
-                    let sim = self.simulations.get(market_index).ok_or(
-                        AtlasError::NotFoundErr(format!(
+                    let sim = self
+                        .simulations
+                        .get(market_index)
+                        .ok_or(AtlasError::NotFoundErr(format!(
                             "Simulation for {market_index} was requested but is missing"
-                        )),
-                    )?;
+                        )))?;
                     response
                         .simulations
                         .insert(market_index.clone(), sim.clone());
@@ -161,12 +149,15 @@ impl MarketDataProvider for InMemoryMarketDataProvider {
 
         for fixing in request.fixing_requests() {
             let key = (fixing.market_index().clone(), fixing.date());
-            let value = self.fixings.get(&key).ok_or(AtlasError::NotFoundErr(format!(
-                "Fixing for {} at {} was requested but is missing",
-                fixing.market_index(),
-                fixing.date()
-            )))?;
-            response.fixings.insert(key, detach_ad(*value));
+            let value = self
+                .fixings
+                .get(&key)
+                .ok_or(AtlasError::NotFoundErr(format!(
+                    "Fixing for {} at {} was requested but is missing",
+                    fixing.market_index(),
+                    fixing.date()
+                )))?;
+            response.fixings.insert(key, *value);
         }
 
         Ok(response)
@@ -176,7 +167,6 @@ impl MarketDataProvider for InMemoryMarketDataProvider {
         self.evaluation_date
     }
 }
-
 
 impl Default for InMemoryMarketDataProvider {
     fn default() -> Self {

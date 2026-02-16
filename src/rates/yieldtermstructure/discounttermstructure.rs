@@ -1,5 +1,6 @@
 use crate::{
     ad::adreal::{ADReal, Const, FloatExt, IsReal},
+    core::pillars::Pillars,
     math::interpolation::interpolator::{Interpolate, Interpolator},
     rates::{
         compounding::Compounding, interestrate::InterestRate,
@@ -69,6 +70,7 @@ where
     interpolator: Interpolator,
     day_counter: DayCounter,
     enable_extrapolation: bool,
+    pillar_labels: Option<Vec<String>>,
 }
 
 impl<T> DiscountTermStructure<T>
@@ -103,6 +105,32 @@ where
     #[must_use]
     pub const fn interpolator(&self) -> Interpolator {
         self.interpolator
+    }
+
+    #[must_use]
+    pub fn with_pillar_labels(mut self, pillar_labels: Vec<String>) -> Result<Self> {
+        if pillar_labels.len() != self.discount_factors.len() {
+            return Err(AtlasError::InvalidValueErr(
+                "Pillar labels need to have the same size as discount factors".to_string(),
+            ));
+        }
+        self.pillar_labels = Some(pillar_labels);
+        Ok(self)
+    }
+}
+
+impl<T> Pillars<T> for DiscountTermStructure<T>
+where
+    T: IsReal,
+{
+    fn pillars(&self) -> Option<Vec<(String, T)>> {
+        self.pillar_labels.as_ref().map(|labels| {
+            labels
+                .iter()
+                .cloned()
+                .zip(self.discount_factors.iter().copied())
+                .collect()
+        })
     }
 }
 
@@ -159,6 +187,7 @@ impl DiscountTermStructure<f64> {
             interpolator,
             day_counter,
             enable_extrapolation,
+            pillar_labels: None,
         })
     }
 }
@@ -216,6 +245,7 @@ impl DiscountTermStructure<ADReal> {
             interpolator,
             day_counter,
             enable_extrapolation,
+            pillar_labels: None,
         })
     }
 }

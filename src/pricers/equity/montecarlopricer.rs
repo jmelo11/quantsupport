@@ -38,17 +38,21 @@ impl HandleValue<EquityEuroOptionTrade, MonteCarloState> for BlackMonteCarloPric
             .year_fraction(trade.trade_date(), option.expiry_date())
             .max(0.0);
 
-        let md_response = state.md_response.as_mut().ok_or(AtlasError::ValueNotSetErr(
-            "Market data response not loaded".into(),
-        ))?;
+        let md_response = state
+            .md_response
+            .as_mut()
+            .ok_or(AtlasError::ValueNotSetErr(
+                "Market data response not loaded".into(),
+            ))?;
 
         let fixing_key = (index.clone(), trade.trade_date());
-        let spot_entry = md_response
-            .fixings
-            .get_mut(&fixing_key)
-            .ok_or(AtlasError::NotFoundErr(
-                "Missing spot fixing for option index/trade date".into(),
-            ))?;
+        let spot_entry =
+            md_response
+                .fixings
+                .get_mut(&fixing_key)
+                .ok_or(AtlasError::NotFoundErr(
+                    "Missing spot fixing for option index/trade date".into(),
+                ))?;
         let vol_key = VolNodeKey::new(index.clone(), option.expiry_date(), option.strike());
         let vol_entry = md_response
             .vol_nodes
@@ -68,13 +72,15 @@ impl HandleValue<EquityEuroOptionTrade, MonteCarloState> for BlackMonteCarloPric
         let simulation = md_response
             .simulations
             .get(&index)
-            .ok_or(AtlasError::NotFoundErr("Missing pre-generated simulation".into()))?;
+            .ok_or(AtlasError::NotFoundErr(
+                "Missing pre-generated simulation".into(),
+            ))?;
 
         Tape::start_recording();
-        for (_, pillar) in &mut discount_curve.pillars {
+        for (_, pillar) in &mut discount_curve.curve.pillars().unwrap() {
             pillar.put_on_tape();
         }
-        for (_, pillar) in &mut dividend_curve.pillars {
+        for (_, pillar) in &mut dividend_curve.curve.pillars().unwrap() {
             pillar.put_on_tape();
         }
         spot_entry.put_on_tape();
@@ -131,9 +137,12 @@ impl HandleSensitivities<EquityEuroOptionTrade, MonteCarloState> for BlackMonteC
                 .ok_or(AtlasError::ValueNotSetErr("Pricing not requested".into()))?
         };
 
-        let md_response = state.md_response.as_ref().ok_or(AtlasError::ValueNotSetErr(
-            "Market data response not loaded".into(),
-        ))?;
+        let md_response = state
+            .md_response
+            .as_ref()
+            .ok_or(AtlasError::ValueNotSetErr(
+                "Market data response not loaded".into(),
+            ))?;
 
         value.backward()?;
         let option = trade.instrument();
@@ -142,7 +151,10 @@ impl HandleSensitivities<EquityEuroOptionTrade, MonteCarloState> for BlackMonteC
         let mut ids = Vec::new();
         let mut exposures = Vec::new();
 
-        if let Some(spot) = md_response.fixings.get(&(index.clone(), trade.trade_date())) {
+        if let Some(spot) = md_response
+            .fixings
+            .get(&(index.clone(), trade.trade_date()))
+        {
             ids.push("spot".to_string());
             exposures.push(spot.adjoint()?);
         }
@@ -154,14 +166,14 @@ impl HandleSensitivities<EquityEuroOptionTrade, MonteCarloState> for BlackMonteC
         }
 
         if let Some(discount_curve) = md_response.discount_curves.get(index) {
-            for (label, pillar) in &discount_curve.pillars {
+            for (label, pillar) in &discount_curve.curve.pillars().unwrap() {
                 ids.push(format!("discount::{label}"));
                 exposures.push(pillar.adjoint()?);
             }
         }
 
         if let Some(dividend_curve) = md_response.dividend_curves.get(index) {
-            for (label, pillar) in &dividend_curve.pillars {
+            for (label, pillar) in &dividend_curve.curve.pillars().unwrap() {
                 ids.push(format!("dividend::{label}"));
                 exposures.push(pillar.adjoint()?);
             }
@@ -188,7 +200,9 @@ impl Pricer for BlackMonteCarloPricer {
 
         let md_request = self
             .market_data_request(trade)
-            .ok_or(AtlasError::InvalidValueErr("Missing market data request".into()))?;
+            .ok_or(AtlasError::InvalidValueErr(
+                "Missing market data request".into(),
+            ))?;
 
         let mut results = EvaluationResults::new(eval_date, identifier);
         let mut state = MonteCarloState {
@@ -241,7 +255,6 @@ impl Pricer for BlackMonteCarloPricer {
         )
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -298,13 +311,11 @@ mod tests {
             .with_discount_curve(DiscountCurveElement {
                 market_index: index.clone(),
                 currency: Currency::USD,
-                pillars: vec![("d0".to_string(), ADReal::from(1.0))],
                 curve: disc,
             })
             .with_dividend_curve(DividendCurveElement {
                 market_index: index.clone(),
                 currency: Currency::USD,
-                pillars: vec![("q0".to_string(), ADReal::from(1.0))],
                 curve: div,
             })
             .with_fixing(index.clone(), eval, ADReal::from(102.0))
