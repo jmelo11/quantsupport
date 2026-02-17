@@ -28,8 +28,8 @@ impl HandleValue<InterestRateSwapTrade, SwapPriceEvaluationState>
 {
     fn handle_value(
         &self,
-        trade: &InterestRateSwapTrade,
-        state: &mut SwapPriceEvaluationState,
+        _: &InterestRateSwapTrade,
+        _: &mut SwapPriceEvaluationState,
     ) -> Result<f64> {
         Ok(1.0)
     }
@@ -40,12 +40,12 @@ impl HandleSensitivities<InterestRateSwapTrade, SwapPriceEvaluationState>
 {
     fn handle_sensitivities(
         &self,
-        trade: &InterestRateSwapTrade,
+        _: &InterestRateSwapTrade,
         state: &mut SwapPriceEvaluationState,
     ) -> Result<SensitivityMap> {
         match state.price {
             Some(price) => {
-                let _ = price.backward()?;
+                let () = price.backward()?;
                 Ok(SensitivityMap::default())
             }
             None => Err(AtlasError::ValueNotSetErr("Pricing not requested".into())),

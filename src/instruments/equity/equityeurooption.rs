@@ -42,7 +42,7 @@ pub struct EquityEuroOptionTrade {
 impl EquityEuroOption {
     /// Creates a new european equity option.
     #[must_use]
-    pub fn new(
+    pub const fn new(
         market_index: MarketIndex,
         expiry_date: Date,
         strike: f64,
@@ -59,22 +59,26 @@ impl EquityEuroOption {
     }
 
     /// Returns the market index of this option.
-    pub fn market_index(&self) -> &MarketIndex {
+    #[must_use]
+    pub const fn market_index(&self) -> &MarketIndex {
         &self.market_index
     }
 
     /// Returns the expiry date of this option.
-    pub fn expiry_date(&self) -> Date {
+    #[must_use]
+    pub const fn expiry_date(&self) -> Date {
         self.expiry_date
     }
 
     /// Returns the strike price of this option.
-    pub fn strike(&self) -> f64 {
+    #[must_use]
+    pub const fn strike(&self) -> f64 {
         self.strike
     }
 
     /// Returns the type of this option.
-    pub fn option_type(&self) -> &EuroOptionType {
+    #[must_use]
+    pub const fn option_type(&self) -> &EuroOptionType {
         &self.option_type
     }
 }
@@ -82,7 +86,7 @@ impl EquityEuroOption {
 impl EquityEuroOptionTrade {
     /// Creates a new equity option trade.
     #[must_use]
-    pub fn new(instrument: EquityEuroOption, notional: f64, trade_date: Date) -> Self {
+    pub const fn new(instrument: EquityEuroOption, notional: f64, trade_date: Date) -> Self {
         Self {
             instrument,
             notional,
@@ -91,7 +95,8 @@ impl EquityEuroOptionTrade {
     }
 
     /// Returns the notional amount of this trade.
-    pub fn notional(&self) -> f64 {
+    #[must_use]
+    pub const fn notional(&self) -> f64 {
         self.notional
     }
 }

@@ -10,7 +10,7 @@ use crate::{
             DerivedElementRequest, MarketDataProvider, MarketDataRequest, MarketDataResponse,
         },
         pricer::Pricer,
-        request::{HandleSensitivities, HandleValue, Request},
+        request::{HandleSensitivities, HandleValue, PricerState, Request},
         trade::Trade,
     },
     instruments::fixedincome::deposit::DepositTrade,
@@ -36,6 +36,16 @@ struct DepositPriceEvaluationState {
     pub md_response: Option<MarketDataResponse>,
 }
 
+impl PricerState for DepositPriceEvaluationState {
+    fn get_market_data_reponse(&self) -> Option<&MarketDataResponse> {
+        self.md_response.as_ref()
+    }
+
+    fn get_market_data_reponse_mut(&mut self) -> Option<&mut MarketDataResponse> {
+        self.md_response.as_mut()
+    }
+}
+
 impl HandleValue<DepositTrade, DepositPriceEvaluationState> for DiscountedDepositPricer {
     fn handle_value(
         &self,
@@ -44,17 +54,15 @@ impl HandleValue<DepositTrade, DepositPriceEvaluationState> for DiscountedDeposi
     ) -> Result<f64> {
         Tape::start_recording();
         let index = trade.instrument().market_index();
-        let final_amount = trade.instrument().final_payment().unwrap();
-        let element = state
-            .md_response
-            .as_mut()
-            .unwrap()
-            .discount_curves_mut()
-            .get_mut(&index)
-            .unwrap();
+        let final_amount = trade.instrument().final_payment().ok_or_else(|| {
+            AtlasError::InvalidValueErr("Deposit final payment is required for pricing.".into())
+        })?;
 
+        // get the element and put the pillars on tape for sensitivity calculation
+        let element = state.get_discount_curve_element_mut(&index)?;
         element.curve_mut().put_pillars_on_tape();
 
+        // actually computing the price
         let df = element
             .curve()
             .discount_factor(trade.instrument().maturity_date())?;
@@ -72,38 +80,32 @@ impl HandleSensitivities<DepositTrade, DepositPriceEvaluationState> for Discount
         trade: &DepositTrade,
         state: &mut DepositPriceEvaluationState,
     ) -> Result<SensitivityMap> {
-        let price: ADReal;
-        match state.value {
-            Some(p) => {
-                price = p;
-            }
-            None => {
-                let _ = self.handle_value(trade, state)?;
-                price = state.value.unwrap();
-            }
-        }
-        let _ = price.backward_to_mark()?;
-        let mut ids = Vec::new();
-        let mut exposures = Vec::new();
-        let index = trade.instrument().market_index();
-        let element = state
-            .md_response
-            .as_ref()
-            .unwrap()
-            .discount_curves()
-            .get(&index)
-            .unwrap();
+        let price = if let Some(p) = state.value {
+            p
+        } else {
+            let _ = self.handle_value(trade, state)?;
+            state
+                .value
+                .ok_or_else(|| AtlasError::NotFoundErr("Missing state.".into()))?
+        };
 
-        if let Some(pillars) = element.curve().pillars() {
-            for (label, value) in pillars {
-                ids.push(label);
-                exposures.push(value.adjoint()?);
-            }
-        }
+        let () = price.backward_to_mark()?;
+        let index = trade.instrument().market_index();
+        let element = state.get_discount_curve_element(&index)?;
+
+        let (ids, exposures): (Vec<_>, Vec<_>) = element
+            .curve()
+            .pillars()
+            .into_iter()
+            .flat_map(|pillars| pillars.into_iter())
+            .map(|(label, value)| (label, value.adjoint().ok()))
+            .unzip();
+
+        let exposures: Vec<f64> = exposures.into_iter().filter_map(|opt| opt).collect();
 
         let sensitivities = SensitivityMap::default()
-            .with_instrument_keys(ids)
-            .with_exposure(exposures);
+            .with_instrument_keys(&ids)
+            .with_exposure(&exposures);
         Ok(sensitivities)
     }
 }
@@ -123,11 +125,9 @@ impl Pricer for DiscountedDepositPricer {
 
         let mut results = EvaluationResults::new(eval_date, identifier);
         let mut state = DepositPriceEvaluationState::default();
-        let md_request = self
-            .market_data_request(trade)
-            .ok_or(AtlasError::InvalidValueErr(
-                "A market data request should have been returned!".into(),
-            ))?;
+        let md_request = self.market_data_request(trade).ok_or_else(|| {
+            AtlasError::InvalidValueErr("A market data request should have been returned!".into())
+        })?;
 
         state.md_response = Some(ctx.handle_request(&md_request)?);
 
@@ -193,7 +193,7 @@ mod tests {
             maturity,
             index.clone(),
         );
-        let ctx_mgr = ContextManager::new(QuoteStore::new(eval), FixingStore::new());
+        let ctx_mgr = ContextManager::new(QuoteStore::new(eval), FixingStore::default());
         let resolved = depo.resolve(&ctx_mgr).expect("resolved deposit");
         let trade = DepositTrade::new(resolved, eval, 100.0);
 

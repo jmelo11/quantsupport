@@ -27,7 +27,7 @@ pub struct VolatilitySurface<A: Ord> {
 impl<A: Ord> VolatilitySurface<A> {
     /// Creates a new `VolatilitySurface`.
     #[must_use]
-    pub fn new(market_index: MarketIndex, points: BTreeMap<Date, BTreeMap<A, f64>>) -> Self {
+    pub const fn new(market_index: MarketIndex, points: BTreeMap<Date, BTreeMap<A, f64>>) -> Self {
         Self {
             market_index,
             points,

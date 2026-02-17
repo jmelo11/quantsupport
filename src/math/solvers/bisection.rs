@@ -1,6 +1,4 @@
-use crate::math::solvers::solvertraits::{
-    ContFunc, OptimizerSolution, SolutionStatus,
-};
+use crate::math::solvers::solvertraits::{ContFunc, OptimizerSolution, SolutionStatus};
 use crate::utils::errors::{AtlasError, Result};
 
 /// # `Bisection`
@@ -52,6 +50,9 @@ where
     }
 
     /// Solves the problem using bisection.
+    ///
+    /// ## Errors
+    /// Returns an error if the function does not change sign over the interval or if the solver fails to converge within the maximum number of iterations.
     pub fn solve(&self, f: &P) -> Result<OptimizerSolution<f64>> {
         let mut low = self.lower;
         let mut high = self.upper;

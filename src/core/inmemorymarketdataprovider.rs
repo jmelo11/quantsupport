@@ -4,20 +4,22 @@ use crate::{
     ad::adreal::ADReal,
     core::marketdataprovider::{
         DerivedElementRequest, DiscountCurveElement, DividendCurveElement, MarketDataProvider,
-        MarketDataRequest, MarketDataResponse, SimulationElement, VolNodeKey,
+        MarketDataRequest, MarketDataResponse, SimulationElement, VolatilityNode,
     },
     indices::marketindex::MarketIndex,
     time::date::Date,
     utils::errors::{AtlasError, Result},
 };
 
+/// # `InMemoryMarketDataProvider`  
+///
 /// In-memory market-data provider that resolves requests from pre-loaded elements.
 pub struct InMemoryMarketDataProvider {
     evaluation_date: Date,
     discount_curves: HashMap<MarketIndex, DiscountCurveElement>,
     dividend_curves: HashMap<MarketIndex, DividendCurveElement>,
-    fixings: HashMap<(MarketIndex, Date), ADReal>,
-    vol_nodes: HashMap<VolNodeKey, ADReal>,
+    fixings: HashMap<(MarketIndex, Date), f64>,
+    vol_nodes: HashMap<VolatilityNode, ADReal>,
     simulations: HashMap<MarketIndex, SimulationElement>,
 }
 
@@ -60,7 +62,7 @@ impl InMemoryMarketDataProvider {
 
     /// Adds a fixing to the provider.
     #[must_use]
-    pub fn with_fixing(mut self, market_index: MarketIndex, date: Date, value: ADReal) -> Self {
+    pub fn with_fixing(mut self, market_index: MarketIndex, date: Date, value: f64) -> Self {
         self.fixings.insert((market_index, date), value);
         self
     }
@@ -75,7 +77,7 @@ impl InMemoryMarketDataProvider {
         value: ADReal,
     ) -> Self {
         self.vol_nodes
-            .insert(VolNodeKey::new(market_index, date, axis), value);
+            .insert(VolatilityNode::new(market_index, date, axis), value);
         self
     }
 
@@ -95,23 +97,21 @@ impl MarketDataProvider for InMemoryMarketDataProvider {
         for element in request.element_requests() {
             match element {
                 DerivedElementRequest::DiscountCurve { market_index } => {
-                    let curve =
-                        self.discount_curves
-                            .get(market_index)
-                            .ok_or(AtlasError::NotFoundErr(format!(
-                                "Discount curve for {market_index} was requested but is missing"
-                            )))?;
+                    let curve = self.discount_curves.get(market_index).ok_or_else(|| {
+                        AtlasError::NotFoundErr(format!(
+                            "Discount curve for {market_index} was requested but is missing"
+                        ))
+                    })?;
                     response
                         .discount_curves_mut()
                         .insert(market_index.clone(), (*curve).clone());
                 }
                 DerivedElementRequest::DividendCurve { market_index } => {
-                    let curve =
-                        self.dividend_curves
-                            .get(market_index)
-                            .ok_or(AtlasError::NotFoundErr(format!(
-                                "Dividend curve for {market_index} was requested but is missing"
-                            )))?;
+                    let curve = self.dividend_curves.get(market_index).ok_or_else(|| {
+                        AtlasError::NotFoundErr(format!(
+                            "Dividend curve for {market_index} was requested but is missing"
+                        ))
+                    })?;
                     response
                         .dividend_curves_mut()
                         .insert(market_index.clone(), (*curve).clone());
@@ -121,19 +121,20 @@ impl MarketDataProvider for InMemoryMarketDataProvider {
                     date,
                     axis,
                 } => {
-                    let key = VolNodeKey::new(market_index.clone(), *date, *axis);
-                    let node = self.vol_nodes.get(&key).ok_or(AtlasError::NotFoundErr(format!(
+                    let key = VolatilityNode::new(market_index.clone(), *date, *axis);
+                    let node = self.vol_nodes.get(&key).ok_or_else(|| {
+                        AtlasError::NotFoundErr(format!(
                         "Vol node for {market_index} at {date} / axis {axis} was requested but is missing"
-                    )))?;
+                    ))
+                    })?;
                     response.vol_nodes_mut().insert(key, *node);
                 }
                 DerivedElementRequest::Simulation { market_index } => {
-                    let sim = self
-                        .simulations
-                        .get(market_index)
-                        .ok_or(AtlasError::NotFoundErr(format!(
+                    let sim = self.simulations.get(market_index).ok_or_else(|| {
+                        AtlasError::NotFoundErr(format!(
                             "Simulation for {market_index} was requested but is missing"
-                        )))?;
+                        ))
+                    })?;
                     response
                         .simulations_mut()
                         .insert(market_index.clone(), sim.clone());
@@ -146,14 +147,13 @@ impl MarketDataProvider for InMemoryMarketDataProvider {
 
         for fixing in request.fixing_requests() {
             let key = (fixing.market_index().clone(), fixing.date());
-            let value = self
-                .fixings
-                .get(&key)
-                .ok_or(AtlasError::NotFoundErr(format!(
+            let value = self.fixings.get(&key).ok_or_else(|| {
+                AtlasError::NotFoundErr(format!(
                     "Fixing for {} at {} was requested but is missing",
                     fixing.market_index(),
                     fixing.date()
-                )))?;
+                ))
+            })?;
             response.fixings_mut().insert(key, *value);
         }
 

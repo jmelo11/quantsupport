@@ -26,7 +26,7 @@ pub struct Deposit {
 impl Deposit {
     /// Creates a new `Deposit`.
     #[must_use]
-    pub fn new(
+    pub const fn new(
         name: String,
         units: f64,
         rate: InterestRate<f64>,
@@ -42,7 +42,7 @@ impl Deposit {
             maturity_date,
             issuer_name: None,
             final_payment: None,
-            market_index: market_index,
+            market_index,
         }
     }
 
@@ -95,8 +95,8 @@ impl Instrument for Deposit {
         self.name.clone()
     }
 
-    fn resolve(&self, ctx: &ContextManager) -> Result<Deposit> {
-        let start_date = self.start_date.unwrap_or(ctx.evaluation_date());
+    fn resolve(&self, ctx: &ContextManager) -> Result<Self> {
+        let start_date = self.start_date.unwrap_or_else(|| ctx.evaluation_date());
         let final_payment = self.units * self.rate.compound_factor(start_date, self.maturity_date);
         Ok(Self {
             final_payment: Some(final_payment),
@@ -120,7 +120,7 @@ pub struct DepositTrade {
 impl DepositTrade {
     /// Creates a new `DepositTrade`.
     #[must_use]
-    pub fn new(instrument: Deposit, trade_date: Date, notional: f64) -> Self {
+    pub const fn new(instrument: Deposit, trade_date: Date, notional: f64) -> Self {
         Self {
             instrument,
             trade_date,
@@ -130,7 +130,7 @@ impl DepositTrade {
     }
     /// Sets the trade price for the deposit trade.
     #[must_use]
-    pub fn with_trade_price(mut self, trade_price: f64) -> Self {
+    pub const fn with_trade_price(mut self, trade_price: f64) -> Self {
         self.trade_price = Some(trade_price);
         self
     }

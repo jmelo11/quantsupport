@@ -2,8 +2,10 @@ use super::daycount::DayCount;
 use crate::time::date::Date;
 
 /// # `Actual360`
-/// Actual/360 day count convention.
-
+///
+///
+/// Day count convention.
+/// 
 /// ## Example
 /// ```
 /// use quantsupport::time::date::Date;

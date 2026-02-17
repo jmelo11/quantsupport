@@ -31,7 +31,7 @@ pub struct InterestRateSwap {
 impl InterestRateSwap {
     /// Creates a new interest rate swap.
     #[must_use]
-    pub fn new(
+    pub const fn new(
         name: String,
         start_date: Date,
         fixed_leg_frequency: Frequency,
@@ -76,7 +76,7 @@ pub struct InterestRateSwapTrade {
 impl InterestRateSwapTrade {
     /// Creates a new swap trade.
     #[must_use]
-    pub fn new(
+    pub const fn new(
         swap: InterestRateSwap,
         trade_date: Date,
         notional: f64,

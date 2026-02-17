@@ -108,11 +108,13 @@ where
     }
 
     /// Returns the reference date of the term structure.
-    #[must_use]
+    ///
+    /// ## Errors
+    /// Returns an error if the reference date is not set.
     pub fn with_pillar_labels(mut self, pillar_labels: Vec<String>) -> Result<Self> {
         if pillar_labels.len() != self.discount_factors.len() {
             return Err(AtlasError::InvalidValueErr(
-                "Pillar labels need to have the same size as discount factors".to_string(),
+                "Pillar labels need to have the same size as discount factors".into(),
             ));
         }
         self.pillar_labels = Some(pillar_labels);
@@ -254,7 +256,7 @@ impl Pillars<ADReal> for DiscountTermStructure<ADReal> {
     fn put_pillars_on_tape(&mut self) {
         self.discount_factors
             .iter_mut()
-            .for_each(|df| df.put_on_tape());
+            .for_each(ADReal::put_on_tape);
     }
 }
 

@@ -89,7 +89,7 @@ impl Default for RateDefinition {
 /// assert_eq!(rate.frequency(), Frequency::Annual);
 /// assert_eq!(rate.day_counter(), DayCounter::Actual360);
 /// ```
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct InterestRate<T>
 where
     T: IsReal,
@@ -133,7 +133,7 @@ where
 
     /// Returns the rate definition of this interest rate.
     #[must_use]
-    pub fn rate_mut(&mut self) -> &mut T {
+    pub const fn rate_mut(&mut self) -> &mut T {
         &mut self.rate
     }
 
@@ -290,7 +290,7 @@ impl InterestRate<ADReal> {
         comp: Compounding,
         freq: Frequency,
         t: f64,
-    ) -> Result<InterestRate<ADReal>> {
+    ) -> Result<Self> {
         if compound <= 0.0 {
             return Err(AtlasError::InvalidValueErr(
                 "Positive compound factor required".to_string(),
@@ -303,7 +303,7 @@ impl InterestRate<ADReal> {
                     "Non-negative time required".to_string(),
                 ));
             }
-            return Ok(InterestRate::new(ADReal::zero(), comp, freq, result_dc));
+            Ok(Self::new(ADReal::zero(), comp, freq, result_dc))
         } else {
             if t <= 0.0 {
                 return Err(AtlasError::InvalidValueErr(
@@ -313,32 +313,32 @@ impl InterestRate<ADReal> {
             match comp {
                 Compounding::Simple => {
                     let r = (compound - 1.0) / t;
-                    return Ok(InterestRate::new(r.into(), comp, freq, result_dc));
+                    Ok(Self::new(r.into(), comp, freq, result_dc))
                 }
                 Compounding::Compounded => {
                     let r = (compound.pow_expr(Const::one() / (t * f)) - 1.0) * f;
-                    return Ok(InterestRate::new(r.into(), comp, freq, result_dc));
+                    Ok(Self::new(r.into(), comp, freq, result_dc))
                 }
                 Compounding::Continuous => {
                     let r = (compound).ln() / t;
-                    return Ok(InterestRate::new(r.into(), comp, freq, result_dc));
+                    Ok(Self::new(r.into(), comp, freq, result_dc))
                 }
                 Compounding::SimpleThenCompounded => {
                     if t <= 1.0 / f {
                         let r = (compound - 1.0) / t;
-                        return Ok(InterestRate::new(r.into(), comp, freq, result_dc));
+                        Ok(Self::new(r.into(), comp, freq, result_dc))
                     } else {
                         let r = (compound.pow_expr(Const::one() / (t * f)) - 1.0) * f;
-                        return Ok(InterestRate::new(r.into(), comp, freq, result_dc));
+                        Ok(Self::new(r.into(), comp, freq, result_dc))
                     }
                 }
                 Compounding::CompoundedThenSimple => {
                     if t > 1.0 / f {
                         let r = (compound - 1.0) / t;
-                        return Ok(InterestRate::new(r.into(), comp, freq, result_dc));
+                        Ok(Self::new(r.into(), comp, freq, result_dc))
                     } else {
                         let r = (compound.pow_expr(Const::one() / (t * f)) - 1.0) * f;
-                        return Ok(InterestRate::new(r.into(), comp, freq, result_dc));
+                        Ok(Self::new(r.into(), comp, freq, result_dc))
                     }
                 }
             }
@@ -346,7 +346,7 @@ impl InterestRate<ADReal> {
     }
 
     /// Calculates the compound factor between two dates using the day counter.
-    // #[must_use]
+    #[must_use]
     pub fn compound_factor(&self, start: Date, end: Date) -> ADReal {
         let day_counter = self.day_counter();
         let year_fraction = day_counter.year_fraction(start, end); // for now

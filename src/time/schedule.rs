@@ -500,9 +500,9 @@ impl MakeSchedule {
                     self.dates.push(self.effective_date);
                 }
 
-                seed = *self.dates.last().ok_or(AtlasError::MakeScheduleErr(
-                    "Schedule dates are empty".to_string(),
-                ))?;
+                seed = *self.dates.last().ok_or_else(|| {
+                    AtlasError::MakeScheduleErr("Schedule dates are empty".into())
+                })?;
 
                 if self.first_date != Date::empty() {
                     self.dates.push(self.first_date);
@@ -557,9 +557,9 @@ impl MakeSchedule {
                         self.end_of_month,
                     );
                     if temp > exit_date {
-                        let last_date = *self.dates.last().ok_or(AtlasError::MakeScheduleErr(
-                            "Schedule dates are empty".to_string(),
-                        ))?;
+                        let last_date = *self.dates.last().ok_or_else(|| {
+                            AtlasError::MakeScheduleErr("Schedule dates are empty".into())
+                        })?;
                         if self.next_to_last_date != Date::empty()
                             && (self.calendar.adjust(last_date, Some(self.convention))
                                 != self
@@ -573,9 +573,9 @@ impl MakeSchedule {
                     }
                     // skip dates that would result in duplicates
                     // after adjustment
-                    let last_date = *self.dates.last().ok_or(AtlasError::MakeScheduleErr(
-                        "Schedule dates are empty".to_string(),
-                    ))?;
+                    let last_date = *self.dates.last().ok_or_else(|| {
+                        AtlasError::MakeScheduleErr("Schedule dates are empty".into())
+                    })?;
                     if self.calendar.adjust(last_date, Some(self.convention))
                         != self.calendar.adjust(temp, Some(self.convention))
                     {
@@ -585,9 +585,9 @@ impl MakeSchedule {
                     periods += 1;
                 }
 
-                let last_date = *self.dates.last().ok_or(AtlasError::MakeScheduleErr(
-                    "Schedule dates are empty".to_string(),
-                ))?;
+                let last_date = *self.dates.last().ok_or_else(|| {
+                    AtlasError::MakeScheduleErr("Schedule dates are empty".into())
+                })?;
                 if self
                     .calendar
                     .adjust(last_date, Some(self.termination_date_convention))

@@ -1,8 +1,5 @@
 use crate::{core::contextmanager::ContextManager, utils::errors::Result};
 
-
-
-
 /// # `Instrument`
 ///
 /// The `Instrument` trait catalogs any financial product. Financial product have
@@ -13,5 +10,8 @@ pub trait Instrument: Send + Sync + Sized {
     fn identifier(&self) -> String;
 
     /// Resolves the instrument by filling in any missing required fields. This may involve fetching data from external sources or performing calculations.
+    ///
+    /// ## Errors
+    /// Returns an error if the instrument cannot be resolved due to missing data or other issues.
     fn resolve(&self, ctx: &ContextManager) -> Result<Self>;
 }

@@ -81,13 +81,13 @@ impl QuoteLevels {
         match level {
             Level::Mid => self
                 .mid
-                .ok_or(AtlasError::NotFoundErr("No mid quote available".into())),
+                .ok_or_else(|| AtlasError::NotFoundErr("No mid quote available".into())),
             Level::Bid => self
                 .bid
-                .ok_or(AtlasError::NotFoundErr("No bid quote available".into())),
+                .ok_or_else(|| AtlasError::NotFoundErr("No bid quote available".into())),
             Level::Ask => self
                 .ask
-                .ok_or(AtlasError::NotFoundErr("No ask quote available".into())),
+                .ok_or_else(|| AtlasError::NotFoundErr("No ask quote available".into())),
         }
     }
 }
@@ -205,7 +205,11 @@ pub struct QuoteDetails {
 impl QuoteDetails {
     /// Creates a new quote details container with required fields.
     #[must_use]
-    pub fn new(identifier: String, market_index: MarketIndex, instrument: QuoteInstrument) -> Self {
+    pub const fn new(
+        identifier: String,
+        market_index: MarketIndex,
+        instrument: QuoteInstrument,
+    ) -> Self {
         Self {
             identifier,
             market_index,

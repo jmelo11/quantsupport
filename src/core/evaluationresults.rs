@@ -13,6 +13,8 @@ pub struct SensitivityKey {
 }
 
 /// # `SensitivityMap`
+///
+///
 /// Maps sensitivity keys to values.
 #[derive(Default, Debug)]
 pub struct SensitivityMap {
@@ -34,14 +36,16 @@ impl SensitivityMap {
     }
 
     /// Sets the instrument keys for this sensitivity map.
-    pub fn with_instrument_keys(mut self, instrument_keys: Vec<String>) -> Self {
-        self.instrument_key = instrument_keys.clone();
+    #[must_use]
+    pub fn with_instrument_keys(mut self, instrument_keys: &[String]) -> Self {
+        instrument_keys.clone_into(&mut self.instrument_key);
         self
     }
 
     /// Sets the exposure values for this sensitivity map.
-    pub fn with_exposure(mut self, exposure: Vec<f64>) -> Self {
-        self.exposure = exposure.clone();
+    #[must_use]
+    pub fn with_exposure(mut self, exposure: &[f64]) -> Self {
+        exposure.clone_into(&mut self.exposure);
         self
     }
 }

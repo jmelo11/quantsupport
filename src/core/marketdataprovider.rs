@@ -7,11 +7,11 @@ use crate::{
     time::date::Date, utils::errors::Result,
 };
 
-/// `ADCurveElementClone``
+/// `ADCurveElementClone`
 ///
-/// Trait to enable cloning of boxed ADCurveElement objects.
+/// Trait to enable cloning of boxed [`ADCurveElement`] objects.
 pub trait ADCurveElementClone {
-    /// Clones the boxed ADCurveElement.
+    /// Clones the boxed [`ADCurveElement`].
     fn clone_box(&self) -> Box<dyn ADCurveElement>;
 }
 
@@ -27,7 +27,7 @@ where
 /// `DerivedElementRequest`
 ///
 /// Enum representing different types of market data elements that can be
-/// requested from a MarketDataProvider.
+/// requested from a [`MarketDataProvider`].
 pub enum DerivedElementRequest {
     /// Request for a discount curve associated with a specific market index.
     DiscountCurve {
@@ -93,9 +93,9 @@ pub struct DiscountCurveElement {
 }
 
 impl DiscountCurveElement {
-    /// Creates a new `DiscountCurveElement` with the specified market index, currency, and curve.
+    /// Creates a new [`DiscountCurveElement`] with the specified market index, currency, and curve.
     #[must_use]
-    pub fn new(
+    pub const fn new(
         market_index: MarketIndex,
         currency: Currency,
         curve: Box<dyn ADCurveElement>,
@@ -109,13 +109,13 @@ impl DiscountCurveElement {
 
     /// Returns the market index associated with the discount curve element.
     #[must_use]
-    pub fn market_index(&self) -> &MarketIndex {
+    pub const fn market_index(&self) -> &MarketIndex {
         &self.market_index
     }
 
     /// Returns the currency associated with the discount curve element.
     #[must_use]
-    pub fn currency(&self) -> &Currency {
+    pub const fn currency(&self) -> &Currency {
         &self.currency
     }
 
@@ -144,9 +144,9 @@ pub struct DividendCurveElement {
 }
 
 impl DividendCurveElement {
-    /// Creates a new `DividendCurveElement` with the specified market index, currency, and curve.
+    /// Creates a new [`DividendCurveElement`] with the specified market index, currency, and curve.
     #[must_use]
-    pub fn new(
+    pub const fn new(
         market_index: MarketIndex,
         currency: Currency,
         curve: Box<dyn ADCurveElement>,
@@ -160,13 +160,13 @@ impl DividendCurveElement {
 
     /// Returns the market index associated with the dividend curve element.
     #[must_use]
-    pub fn market_index(&self) -> &MarketIndex {
+    pub const fn market_index(&self) -> &MarketIndex {
         &self.market_index
     }
 
     /// Returns the currency associated with the dividend curve element.
     #[must_use]
-    pub fn currency(&self) -> &Currency {
+    pub const fn currency(&self) -> &Currency {
         &self.currency
     }
 
@@ -194,9 +194,9 @@ pub struct SimulationElement {
 }
 
 impl SimulationElement {
-    /// Creates a new `SimulationElement` with the specified market index and simulation draws.
+    /// Creates a new [`SimulationElement`] with the specified market index and simulation draws.
     #[must_use]
-    pub fn new(market_index: MarketIndex, draws: Vec<f64>) -> Self {
+    pub const fn new(market_index: MarketIndex, draws: Vec<f64>) -> Self {
         Self {
             market_index,
             draws,
@@ -205,7 +205,7 @@ impl SimulationElement {
 
     /// Returns the market index associated with the simulation element.
     #[must_use]
-    pub fn market_index(&self) -> &MarketIndex {
+    pub const fn market_index(&self) -> &MarketIndex {
         &self.market_index
     }
     /// Returns a reference to the simulation draws associated with the simulation element.
@@ -226,19 +226,19 @@ pub struct FixingRequest {
 impl FixingRequest {
     /// Creates a new `FixingRequest` with the specified market index and date.
     #[must_use]
-    pub fn new(market_index: MarketIndex, date: Date) -> Self {
+    pub const fn new(market_index: MarketIndex, date: Date) -> Self {
         Self { market_index, date }
     }
 
     /// Returns the market index associated with the fixing request.
     #[must_use]
-    pub fn market_index(&self) -> &MarketIndex {
+    pub const fn market_index(&self) -> &MarketIndex {
         &self.market_index
     }
 
     /// Returns the date associated with the fixing request.
     #[must_use]
-    pub fn date(&self) -> Date {
+    pub const fn date(&self) -> Date {
         self.date
     }
 }
@@ -247,6 +247,7 @@ impl FixingRequest {
 ///
 /// Struct representing a request for market data, which includes
 /// lists of derived element requests and fixing requests.
+#[derive(Default)]
 pub struct MarketDataRequest {
     element_requests: Vec<DerivedElementRequest>,
     fixing_requests: Vec<FixingRequest>,
@@ -280,30 +281,21 @@ impl MarketDataRequest {
     }
 }
 
-impl Default for MarketDataRequest {
-    fn default() -> Self {
-        Self {
-            element_requests: Vec::new(),
-            fixing_requests: Vec::new(),
-        }
-    }
-}
-
 /// `VolNodeKey`
 ///
 /// Struct representing a key for identifying a specific node on a volatility surface,
 /// based on market index, date, and axis value.
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
-pub struct VolNodeKey {
+pub struct VolatilityNode {
     market_index: MarketIndex,
     date: Date,
     axis_bits: u64,
 }
 
-impl VolNodeKey {
+impl VolatilityNode {
     /// Creates a new `VolNodeKey` with the specified market index, date, and axis value.
     #[must_use]
-    pub fn new(market_index: MarketIndex, date: Date, axis: f64) -> Self {
+    pub const fn new(market_index: MarketIndex, date: Date, axis: f64) -> Self {
         Self {
             market_index,
             date,
@@ -321,69 +313,69 @@ impl VolNodeKey {
 pub struct MarketDataResponse {
     discount_curves: HashMap<MarketIndex, DiscountCurveElement>,
     dividend_curves: HashMap<MarketIndex, DividendCurveElement>,
-    fixings: HashMap<(MarketIndex, Date), ADReal>,
-    vol_nodes: HashMap<VolNodeKey, ADReal>,
+    fixings: HashMap<(MarketIndex, Date), f64>,
+    volatility_nodes: HashMap<VolatilityNode, ADReal>,
     simulations: HashMap<MarketIndex, SimulationElement>,
 }
 
 impl MarketDataResponse {
     /// Returns a mutable reference to the discount curves included in the market data response.
     #[must_use]
-    pub fn discount_curves_mut(&mut self) -> &mut HashMap<MarketIndex, DiscountCurveElement> {
+    pub const fn discount_curves_mut(&mut self) -> &mut HashMap<MarketIndex, DiscountCurveElement> {
         &mut self.discount_curves
     }
 
     /// Returns a mutable reference to the dividend curves included in the market data response.
     #[must_use]
-    pub fn dividend_curves_mut(&mut self) -> &mut HashMap<MarketIndex, DividendCurveElement> {
+    pub const fn dividend_curves_mut(&mut self) -> &mut HashMap<MarketIndex, DividendCurveElement> {
         &mut self.dividend_curves
     }
 
     /// Returns a mutable reference to the fixings included in the market data response.
     #[must_use]
-    pub fn fixings_mut(&mut self) -> &mut HashMap<(MarketIndex, Date), ADReal> {
+    pub const fn fixings_mut(&mut self) -> &mut HashMap<(MarketIndex, Date), f64> {
         &mut self.fixings
     }
 
     /// Returns a mutable reference to the volatility nodes included in the market data response.
     #[must_use]
-    pub fn vol_nodes_mut(&mut self) -> &mut HashMap<VolNodeKey, ADReal> {
-        &mut self.vol_nodes
+    pub const fn vol_nodes_mut(&mut self) -> &mut HashMap<VolatilityNode, ADReal> {
+        &mut self.volatility_nodes
     }
 
     /// Returns a mutable reference to the simulations included in the market data response.
     #[must_use]
-    pub fn simulations_mut(&mut self) -> &mut HashMap<MarketIndex, SimulationElement> {
+    pub const fn simulations_mut(&mut self) -> &mut HashMap<MarketIndex, SimulationElement> {
         &mut self.simulations
     }
 
     /// Returns a reference to the discount curves included in the market data response.
     #[must_use]
-    pub fn discount_curves(&self) -> &HashMap<MarketIndex, DiscountCurveElement> {
+    pub const fn discount_curves(&self) -> &HashMap<MarketIndex, DiscountCurveElement> {
         &self.discount_curves
     }
 
     /// Returns a reference to the dividend curves included in the market data response.
     #[must_use]
-    pub fn dividend_curves(&self) -> &HashMap<MarketIndex, DividendCurveElement> {
+    pub const fn dividend_curves(&self) -> &HashMap<MarketIndex, DividendCurveElement> {
         &self.dividend_curves
     }
 
     /// Returns a reference to the fixings included in the market data response.
     #[must_use]
-    pub fn fixings(&self) -> &HashMap<(MarketIndex, Date), ADReal> {
+    pub const fn fixings(&self) -> &HashMap<(MarketIndex, Date), f64> {
         &self.fixings
     }
 
     /// Returns a reference to the volatility nodes included in the market data response.
     #[must_use]
-    pub fn vol_nodes(&self) -> &HashMap<VolNodeKey, ADReal> {
-        &self.vol_nodes
+    pub const fn vol_nodes(&self) -> &HashMap<VolatilityNode, ADReal> {
+        &self.volatility_nodes
     }
 
     /// Returns a reference to the simulations included in the market data response.
     #[must_use]
-    pub fn simulations(&self) -> &HashMap<MarketIndex, SimulationElement> {
+    pub const fn simulations(&self) -> &HashMap<MarketIndex, SimulationElement> {
         &self.simulations
     }
 }
@@ -393,7 +385,11 @@ impl MarketDataResponse {
 /// Trait representing a provider of market data, which can handle requests for various types of market data elements and
 pub trait MarketDataProvider {
     /// Handles a market data request and returns a response containing the requested market data elements.
+    ///
+    /// ## Errors
+    /// Returns an [`AtlasError`] if the market data request cannot be fulfilled or if there is an issue with the provided request parameters.
     fn handle_request(&self, request: &MarketDataRequest) -> Result<MarketDataResponse>;
+
     /// Returns the evaluation date for which the market data is relevant.
     fn evaluation_date(&self) -> Date;
 }

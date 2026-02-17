@@ -87,6 +87,9 @@ pub trait MarketIndexDetails {
 
 impl MarketIndex {
     /// Details
+    ///
+    /// ## Errors
+    /// Returns an error if the index does not contain market details.
     pub fn details(&self) -> Result<impl MarketIndexDetails> {
         match self {
             Self::SOFR => Ok(SOFRIndex),
@@ -96,6 +99,9 @@ impl MarketIndex {
         }
     }
     /// Rate index details.
+    ///
+    /// ## Errors
+    /// Returns an error if the index is not a rate index.
     pub fn rate_index_details(&self) -> Result<impl RateIndexDetails> {
         match self {
             Self::SOFR => Ok(SOFRIndex),

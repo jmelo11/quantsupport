@@ -9,6 +9,8 @@ use crate::{
 pub struct Model;
 
 /// # `ContextManager`
+///
+/// Manages the context for instrument evaluation, including market data access, quote level preferences, and base currency settings.
 pub struct ContextManager {
     quote_store: QuoteStore,
     fixing_store: FixingStore,
@@ -19,7 +21,7 @@ pub struct ContextManager {
 impl ContextManager {
     /// Creates a new pricing data context.
     #[must_use]
-    pub fn new(quote_store: QuoteStore, fixing_store: FixingStore) -> Self {
+    pub const fn new(quote_store: QuoteStore, fixing_store: FixingStore) -> Self {
         Self {
             quote_store,
             fixing_store,
@@ -30,7 +32,7 @@ impl ContextManager {
 
     /// Sets the quote level used for market value extraction.
     #[must_use]
-    pub fn with_quote_level(mut self, quote_level: Level) -> Self {
+    pub const fn with_quote_level(mut self, quote_level: Level) -> Self {
         self.quote_level = quote_level;
         self
     }
@@ -61,7 +63,7 @@ impl ContextManager {
 
     /// Sets the base currency.
     #[must_use]
-    pub fn with_base_currency(mut self, base_currency: Currency) -> Self {
+    pub const fn with_base_currency(mut self, base_currency: Currency) -> Self {
         self.base_currency = base_currency;
         self
     }

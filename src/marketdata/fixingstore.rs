@@ -10,31 +10,22 @@ use crate::{
 };
 
 /// # `FixingStore`
-#[derive(Serialize)]
+#[derive(Serialize, Debug, Default)]
 pub struct FixingStore {
     values: HashMap<MarketIndex, BTreeMap<Date, f64>>,
 }
 
 impl FixingStore {
-    /// Creates an empty fixing provider.
-    #[must_use]
-    pub fn new() -> Self {
-        Self {
-            values: HashMap::new(),
-        }
-    }
-
     /// Returns the fixing rate for a given date.
     ///
     /// ## Errors
     /// Returns an error if the fixing is unavailable for the requested date.
     pub fn fixing(&self, market_index: &MarketIndex, date: Date) -> Result<f64> {
-        let fixing = self
-            .fixings(market_index)?
-            .get(&date)
-            .ok_or(AtlasError::NotFoundErr(format!(
+        let fixing = self.fixings(market_index)?.get(&date).ok_or_else(|| {
+            AtlasError::NotFoundErr(format!(
                 "Fixings of index {market_index} for date {date} not found in fixings data."
-            )))?;
+            ))
+        })?;
         Ok(*fixing)
     }
     /// Returns a reference to the map of all fixings.
@@ -42,11 +33,9 @@ impl FixingStore {
     /// ## Errors
     /// Returns [`AtlasError`] if the [`MarketIndex`] is not found.
     pub fn fixings(&self, market_index: &MarketIndex) -> Result<&BTreeMap<Date, f64>> {
-        self.values
-            .get(market_index)
-            .ok_or(AtlasError::NotFoundErr(format!(
-                "Index {market_index} not found in fixings data."
-            )))
+        self.values.get(market_index).ok_or_else(|| {
+            AtlasError::NotFoundErr(format!("Index {market_index} not found in fixings data."))
+        })
     }
     /// Adds a fixing for a given date and rate.
     pub fn add_fixing(&mut self, market_index: &MarketIndex, date: Date, value: f64) {
@@ -68,22 +57,18 @@ impl FixingStore {
             .filter(|fixings| !fixings.is_empty())
             .try_for_each(|fixings| {
                 // get start and end
-                let mut curr_date: Date = fixings
-                    .keys()
-                    .min()
-                    .copied()
-                    .ok_or(AtlasError::UnexpectedErr(
+                let mut curr_date: Date = fixings.keys().min().copied().ok_or_else(|| {
+                    AtlasError::UnexpectedErr(
                     "An error was found while getting the minimun date for filling missing indices."
                         .into(),
-                ))?;
-                let last_date: Date = fixings
-                    .keys()
-                    .max()
-                    .copied()
-                    .ok_or(AtlasError::UnexpectedErr(
+                )
+                })?;
+                let last_date: Date = fixings.keys().max().copied().ok_or_else(|| {
+                    AtlasError::UnexpectedErr(
                     "An error was found while getting the maximun date for filling missing indices."
                         .into(),
-                ))?;
+                )
+                })?;
 
                 // transform to floats to interpolate
                 let times: Vec<f64> = fixings
