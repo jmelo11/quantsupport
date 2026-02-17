@@ -1,6 +1,6 @@
 use crate::{
     ad::{
-        adreal::{ADReal, FloatExt, IsReal},
+        adreal::{ADReal, IsReal},
         tape::Tape,
     },
     core::{
@@ -8,14 +8,13 @@ use crate::{
         instrument::Instrument,
         marketdataprovider::{
             DerivedElementRequest, FixingRequest, MarketDataProvider, MarketDataRequest,
-            MarketDataResponse, VolNodeKey,
+            MarketDataResponse, VolatilityAxis, VolatilityNodeKey,
         },
         pricer::Pricer,
         request::{HandleSensitivities, HandleValue, PricerState, Request},
         trade::Trade,
     },
     instruments::equity::equityeurooption::{EquityEuroOptionTrade, EuroOptionType},
-    math::probability::norm_cdf::norm_cdf,
     pricers::generalpricers::BlackClosedFormPricer,
     time::daycounter::DayCounter,
     utils::errors::{AtlasError, Result},
@@ -46,66 +45,76 @@ impl HandleValue<EquityEuroOptionTrade, EquityOptionState> for BlackClosedFormPr
     ) -> Result<f64> {
         let option = trade.instrument();
         let index = option.market_index().clone();
-
         let tau = DayCounter::Actual365
             .year_fraction(trade.trade_date(), option.expiry_date())
             .max(0.0);
 
-        let spot = ADReal::new(state.get_fixing(&index, trade.trade_date())?);
+        let spot = state.get_fixing(&index, trade.trade_date())?;
 
-        let vol_key = VolNodeKey::new(index.clone(), option.expiry_date(), option.strike());
-        let vol_entry = md_response
-            .vol_nodes
-            .get_mut(&vol_key)
-            .ok_or(AtlasError::NotFoundErr(
+        let md_response = state.md_response.as_mut().ok_or(AtlasError::ValueNotSetErr(
+            "Market data response not loaded".into(),
+        ))?;
+
+        let volatility_key = VolatilityNodeKey::new(
+            index.clone(),
+            option.expiry_date(),
+            VolatilityAxis::strike(option.strike()),
+        );
+        if !md_response.volatility_nodes().contains_key(&volatility_key) {
+            return Err(AtlasError::NotFoundErr(
                 "Missing volatility node for option expiry/strike".into(),
-            ))?;
-
-        let discount_element = md_response
-            .discount_curves
-            .get_mut(&index)
-            .ok_or(AtlasError::NotFoundErr("Missing discount curve".into()))?;
-        let dividend_element = md_response
-            .dividend_curves
-            .get_mut(&index)
-            .ok_or(AtlasError::NotFoundErr("Missing dividend curve".into()))?;
+            ));
+        }
 
         Tape::start_recording();
-        for (_, pillar) in &mut discount_element.curve.pillars().unwrap() {
-            pillar.put_on_tape();
-        }
-        for (_, pillar) in &mut dividend_element.curve.pillars().unwrap() {
-            pillar.put_on_tape();
-        }
-        spot_entry.put_on_tape();
-        vol_entry.put_on_tape();
-        let spot = *spot_entry;
-        let vol = *vol_entry;
+        md_response
+            .discount_curves_mut()
+            .get_mut(&index)
+            .ok_or(AtlasError::NotFoundErr("Missing discount curve".into()))?
+            .curve_mut()
+            .put_pillars_on_tape();
+        md_response
+            .dividend_curves_mut()
+            .get_mut(&index)
+            .ok_or(AtlasError::NotFoundErr("Missing dividend curve".into()))?
+            .curve_mut()
+            .put_pillars_on_tape();
+        let mut spot_ad = ADReal::new(spot);
+        spot_ad.put_on_tape();
+        state.spot = Some(spot_ad);
+        let volatility = {
+            let volatility_node = md_response
+                .volatility_nodes_mut()
+                .get_mut(&volatility_key)
+                .ok_or(AtlasError::NotFoundErr(
+                    "Missing volatility node for option expiry/strike".into(),
+                ))?;
+            volatility_node.value_mut().put_on_tape();
+            volatility_node.value()
+        };
 
         let strike: ADReal = option.strike().into();
-        let sqrt_tau = tau.sqrt();
-        let vol_sqrt_tau: ADReal = (vol * sqrt_tau).into();
-
-        let df_r = discount_element
-            .curve
+        let df_r = md_response
+            .discount_curves()
+            .get(&index)
+            .ok_or(AtlasError::NotFoundErr("Missing discount curve".into()))?
+            .curve()
             .discount_factor(option.expiry_date())?;
-        let df_q = dividend_element
-            .curve
+        let df_q = md_response
+            .dividend_curves()
+            .get(&index)
+            .ok_or(AtlasError::NotFoundErr("Missing dividend curve".into()))?
+            .curve()
             .discount_factor(option.expiry_date())?;
+        let fwd: ADReal = (spot_ad * df_q / df_r).into();
 
-        let fwd: ADReal = (spot * df_q / df_r).into();
-        let d1: ADReal = (((fwd / strike).ln() + vol * vol * 0.5 * tau) / vol_sqrt_tau).into();
-        let d2: ADReal = (d1 - vol_sqrt_tau).into();
-
-        let nd1 = norm_cdf(d1.value());
-        let nd2 = norm_cdf(d2.value());
-        let nmd1 = norm_cdf(-d1.value());
-        let nmd2 = norm_cdf(-d2.value());
-
-        let undiscounted: ADReal = match option.option_type() {
-            EuroOptionType::Call => (fwd * nd1 - strike * nd2).into(),
-            EuroOptionType::Put => (strike * nmd2 - fwd * nmd1).into(),
-        };
+        let undiscounted = BlackClosedFormPricer::black_forward_price(
+            fwd,
+            strike,
+            volatility,
+            tau,
+            matches!(option.option_type(), EuroOptionType::Call),
+        );
 
         let value: ADReal = (df_r * undiscounted * trade.notional()).into();
         state.value = Some(value);
@@ -130,12 +139,9 @@ impl HandleSensitivities<EquityEuroOptionTrade, EquityOptionState> for BlackClos
                 .ok_or(AtlasError::ValueNotSetErr("Pricing not requested".into()))?
         };
 
-        let md_response = state
-            .md_response
-            .as_ref()
-            .ok_or(AtlasError::ValueNotSetErr(
-                "Market data response not loaded".into(),
-            ))?;
+        let md_response = state.md_response.as_ref().ok_or(AtlasError::ValueNotSetErr(
+            "Market data response not loaded".into(),
+        ))?;
 
         value.backward()?;
         let option = trade.instrument();
@@ -144,37 +150,46 @@ impl HandleSensitivities<EquityEuroOptionTrade, EquityOptionState> for BlackClos
         let mut ids = Vec::new();
         let mut exposures = Vec::new();
 
-        if let Some(spot) = md_response
-            .fixings
-            .get(&(index.clone(), trade.trade_date()))
+        if md_response
+            .fixings()
+            .contains_key(&(index.clone(), trade.trade_date()))
         {
             ids.push("spot".to_string());
-            exposures.push(spot.adjoint()?);
+            exposures.push(
+                state
+                    .spot
+                    .ok_or(AtlasError::ValueNotSetErr("Spot not recorded on state".into()))?
+                    .adjoint()?,
+            );
         }
 
-        let vol_key = VolNodeKey::new(index.clone(), option.expiry_date(), option.strike());
-        if let Some(vol) = md_response.vol_nodes.get(&vol_key) {
+        let volatility_key = VolatilityNodeKey::new(
+            index.clone(),
+            option.expiry_date(),
+            VolatilityAxis::strike(option.strike()),
+        );
+        if let Some(volatility) = md_response.volatility_nodes().get(&volatility_key) {
             ids.push("volatility".to_string());
-            exposures.push(vol.adjoint()?);
+            exposures.push(volatility.value().adjoint()?);
         }
 
-        if let Some(discount_curve) = md_response.discount_curves.get(index) {
-            for (label, pillar) in &discount_curve.curve.pillars().unwrap() {
+        if let Some(discount_curve) = md_response.discount_curves().get(index) {
+            for (label, pillar) in discount_curve.curve().pillars().unwrap_or_default() {
                 ids.push(format!("discount::{label}"));
                 exposures.push(pillar.adjoint()?);
             }
         }
 
-        if let Some(dividend_curve) = md_response.dividend_curves.get(index) {
-            for (label, pillar) in &dividend_curve.curve.pillars().unwrap() {
+        if let Some(dividend_curve) = md_response.dividend_curves().get(index) {
+            for (label, pillar) in dividend_curve.curve().pillars().unwrap_or_default() {
                 ids.push(format!("dividend::{label}"));
                 exposures.push(pillar.adjoint()?);
             }
         }
 
         Ok(SensitivityMap::default()
-            .with_instrument_keys(ids)
-            .with_exposure(exposures))
+            .with_instrument_keys(&ids)
+            .with_exposure(&exposures))
     }
 }
 
@@ -199,6 +214,7 @@ impl Pricer for BlackClosedFormPricer {
         let mut results = EvaluationResults::new(eval_date, identifier);
         let mut state = EquityOptionState {
             value: None,
+            spot: None,
             md_response: Some(ctx.handle_request(&md_request)?),
         };
 
@@ -237,7 +253,7 @@ impl Pricer for BlackClosedFormPricer {
                     DerivedElementRequest::VolNode {
                         market_index: index.clone(),
                         date: option.expiry_date(),
-                        axis: option.strike(),
+                        axis: VolatilityAxis::strike(option.strike()),
                     },
                 ])
                 .with_fixing_requests(vec![FixingRequest::new(index, trade.trade_date())]),
@@ -247,13 +263,16 @@ impl Pricer for BlackClosedFormPricer {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
+    use std::collections::HashMap;
 
     use crate::{
-        ad::adreal::ADReal,
+        ad::adreal::{ADReal, IsReal},
         core::{
             inmemorymarketdataprovider::InMemoryMarketDataProvider,
-            marketdataprovider::{DiscountCurveElement, DividendCurveElement},
+            marketdataprovider::{
+                DiscountCurveElement, DividendCurveElement, VolatilityAxis, VolatilityNodeKey,
+                VolatilitySurfaceElement,
+            },
             pricer::Pricer,
             request::Request,
         },
@@ -262,7 +281,7 @@ mod tests {
         instruments::equity::equityeurooption::{
             EquityEuroOption, EquityEuroOptionTrade, EuroOptionType,
         },
-        pricers::pricers::BlackClosedFormPricer,
+        pricers::generalpricers::BlackClosedFormPricer,
         rates::{
             interestrate::RateDefinition,
             yieldtermstructure::flatforwardtermstructure::FlatForwardTermStructure,
@@ -285,30 +304,28 @@ mod tests {
         );
         let trade = EquityEuroOptionTrade::new(option, 1.0, eval);
 
-        let disc = Arc::new(FlatForwardTermStructure::<ADReal>::new(
+        let disc = Box::new(FlatForwardTermStructure::<ADReal>::new(
             eval,
             ADReal::from(0.03),
             RateDefinition::default(),
         ));
-        let div = Arc::new(FlatForwardTermStructure::<ADReal>::new(
+        let div = Box::new(FlatForwardTermStructure::<ADReal>::new(
             eval,
             ADReal::from(0.01),
             RateDefinition::default(),
         ));
 
+        let mut nodes = HashMap::new();
+        nodes.insert(
+            VolatilityNodeKey::new(index.clone(), expiry, VolatilityAxis::strike(100.0)),
+            ADReal::from(0.2),
+        );
+
         let md = InMemoryMarketDataProvider::new(eval)
-            .with_discount_curve(DiscountCurveElement {
-                market_index: index.clone(),
-                currency: Currency::USD,
-                curve: disc,
-            })
-            .with_dividend_curve(DividendCurveElement {
-                market_index: index.clone(),
-                currency: Currency::USD,
-                curve: div,
-            })
-            .with_fixing(index.clone(), eval, ADReal::from(102.0))
-            .with_vol_node(index.clone(), expiry, 100.0, ADReal::from(0.2));
+            .with_discount_curve(DiscountCurveElement::new(index.clone(), Currency::USD, disc))
+            .with_dividend_curve(DividendCurveElement::new(index.clone(), Currency::USD, div))
+            .with_fixing(index.clone(), eval, 102.0)
+            .with_vol_surface(VolatilitySurfaceElement::new(index.clone(), nodes));
 
         let pricer = BlackClosedFormPricer;
         let results = pricer
@@ -319,5 +336,70 @@ mod tests {
         let sens = results.sensitivities().expect("sensitivities present");
         assert!(!sens.instrument_keys().is_empty());
         assert_eq!(sens.instrument_keys().len(), sens.exposure().len());
+        let spot_pos = sens
+            .instrument_keys()
+            .iter()
+            .position(|key| key == "spot")
+            .expect("spot sensitivity present");
+        assert!(sens.exposure()[spot_pos].abs() > 1e-12);
+    }
+
+    #[test]
+    fn vol_surface_returns_interpolated_node_with_source_keys() {
+        let index = MarketIndex::Equity("SPX".to_string());
+        let date = Date::new(2025, 7, 1);
+        let mut nodes = HashMap::new();
+        nodes.insert(
+            VolatilityNodeKey::new(index.clone(), date, VolatilityAxis::strike(90.0)),
+            ADReal::from(0.22),
+        );
+        nodes.insert(
+            VolatilityNodeKey::new(index.clone(), date, VolatilityAxis::strike(110.0)),
+            ADReal::from(0.18),
+        );
+
+        let surface = VolatilitySurfaceElement::new(index.clone(), nodes);
+        let node = surface
+            .node(date, VolatilityAxis::strike(100.0))
+            .expect("interpolated node");
+
+        assert!((node.value().value() - 0.2).abs() < 1e-12);
+        assert_eq!(node.interpolation_keys().len(), 2);
+    }
+
+    #[test]
+    fn vol_surface_supports_delta_and_moneyness_axes() {
+        let index = MarketIndex::Equity("SPX".to_string());
+        let date = Date::new(2025, 7, 1);
+
+        let mut delta_nodes = HashMap::new();
+        delta_nodes.insert(
+            VolatilityNodeKey::new(index.clone(), date, VolatilityAxis::delta(0.25)),
+            ADReal::from(0.25),
+        );
+        delta_nodes.insert(
+            VolatilityNodeKey::new(index.clone(), date, VolatilityAxis::delta(0.50)),
+            ADReal::from(0.20),
+        );
+        let delta_surface = VolatilitySurfaceElement::new(index.clone(), delta_nodes);
+        let delta_node = delta_surface
+            .node(date, VolatilityAxis::delta(0.40))
+            .expect("delta interpolation");
+        assert!((delta_node.value().value() - 0.22).abs() < 1e-12);
+
+        let mut moneyness_nodes = HashMap::new();
+        moneyness_nodes.insert(
+            VolatilityNodeKey::new(index.clone(), date, VolatilityAxis::log_moneyness(-0.1)),
+            ADReal::from(0.23),
+        );
+        moneyness_nodes.insert(
+            VolatilityNodeKey::new(index, date, VolatilityAxis::log_moneyness(0.1)),
+            ADReal::from(0.19),
+        );
+        let moneyness_surface = VolatilitySurfaceElement::new(MarketIndex::Equity("SPX".to_string()), moneyness_nodes);
+        let moneyness_node = moneyness_surface
+            .node(date, VolatilityAxis::log_moneyness(0.0))
+            .expect("moneyness interpolation");
+        assert!((moneyness_node.value().value() - 0.21).abs() < 1e-12);
     }
 }

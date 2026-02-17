@@ -56,13 +56,65 @@ pub enum DerivedElementRequest {
         /// The date for which the volatility node is requested.
         date: Date,
         /// The axis value for which the volatility node is requested (e.g., strike or tenor).
-        axis: f64,
+        axis: VolatilityAxis,
     },
     /// Request for a simulation element associated with a specific market index.
     Simulation {
         /// The market index for which the simulation element is requested.
         market_index: MarketIndex,
     },
+}
+
+/// Axis used to address volatility surfaces.
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
+pub enum VolatilityAxis {
+    /// Strike axis.
+    Strike(u64),
+    /// Delta axis.
+    Delta(u64),
+    /// Log-moneyness axis.
+    LogMoneyness(u64),
+}
+
+impl VolatilityAxis {
+    /// Creates strike axis.
+    #[must_use]
+    pub const fn strike(value: f64) -> Self {
+        Self::Strike(value.to_bits())
+    }
+
+    /// Creates delta axis.
+    #[must_use]
+    pub const fn delta(value: f64) -> Self {
+        Self::Delta(value.to_bits())
+    }
+
+    /// Creates log-moneyness axis.
+    #[must_use]
+    pub const fn log_moneyness(value: f64) -> Self {
+        Self::LogMoneyness(value.to_bits())
+    }
+
+    #[must_use]
+    const fn axis_type(&self) -> u8 {
+        match self {
+            Self::Strike(_) => 0,
+            Self::Delta(_) => 1,
+            Self::LogMoneyness(_) => 2,
+        }
+    }
+
+    #[must_use]
+    const fn bits(&self) -> u64 {
+        match self {
+            Self::Strike(bits) | Self::Delta(bits) | Self::LogMoneyness(bits) => *bits,
+        }
+    }
+
+    #[must_use]
+    fn value(&self) -> f64 {
+        f64::from_bits(self.bits())
+    }
 }
 
 /// `ADCurveElement`
@@ -286,21 +338,137 @@ impl MarketDataRequest {
 /// Struct representing a key for identifying a specific node on a volatility surface,
 /// based on market index, date, and axis value.
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
-pub struct VolatilityNode {
+pub struct VolatilityNodeKey {
     market_index: MarketIndex,
     date: Date,
-    axis_bits: u64,
+    axis: VolatilityAxis,
 }
 
-impl VolatilityNode {
+impl VolatilityNodeKey {
     /// Creates a new `VolNodeKey` with the specified market index, date, and axis value.
     #[must_use]
-    pub const fn new(market_index: MarketIndex, date: Date, axis: f64) -> Self {
+    pub const fn new(market_index: MarketIndex, date: Date, axis: VolatilityAxis) -> Self {
         Self {
             market_index,
             date,
-            axis_bits: axis.to_bits(),
+            axis,
         }
+    }
+}
+
+/// Resolved volatility node with interpolation provenance.
+#[derive(Clone)]
+pub struct VolatilityNode {
+    value: ADReal,
+    interpolation_keys: Vec<VolatilityNodeKey>,
+}
+
+impl VolatilityNode {
+    /// Creates a new resolved volatility node.
+    #[must_use]
+    pub fn new(value: ADReal, interpolation_keys: Vec<VolatilityNodeKey>) -> Self {
+        Self {
+            value,
+            interpolation_keys,
+        }
+    }
+
+    /// Returns the resolved volatility value.
+    #[must_use]
+    pub const fn value(&self) -> ADReal {
+        self.value
+    }
+
+    /// Returns mutable access to the resolved volatility value.
+    #[must_use]
+    pub fn value_mut(&mut self) -> &mut ADReal {
+        &mut self.value
+    }
+
+    /// Returns the source keys used to produce this node.
+    #[must_use]
+    pub fn interpolation_keys(&self) -> &[VolatilityNodeKey] {
+        &self.interpolation_keys
+    }
+}
+
+/// Represents a volatility surface/cube container for a market index.
+#[derive(Clone, Default)]
+pub struct VolatilitySurfaceElement {
+    market_index: MarketIndex,
+    nodes: HashMap<VolatilityNodeKey, ADReal>,
+}
+
+impl VolatilitySurfaceElement {
+    /// Creates a new volatility surface/cube element.
+    #[must_use]
+    pub fn new(market_index: MarketIndex, nodes: HashMap<VolatilityNodeKey, ADReal>) -> Self {
+        Self {
+            market_index,
+            nodes,
+        }
+    }
+
+    /// Returns an exact or interpolated node at date/axis.
+    pub fn node(&self, date: Date, axis: VolatilityAxis) -> Option<VolatilityNode> {
+        let exact_key = VolatilityNodeKey::new(self.market_index.clone(), date, axis);
+        if let Some(value) = self.nodes.get(&exact_key) {
+            return Some(VolatilityNode::new(*value, vec![exact_key]));
+        }
+
+        let mut points = self
+            .nodes
+            .iter()
+            .filter_map(|(key, value)| {
+                if key.date == date {
+                    Some((key.axis, key.clone(), *value))
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+
+        if points.len() < 2 {
+            return None;
+        }
+
+        points.retain(|point| point.0.axis_type() == axis.axis_type());
+        if points.len() < 2 {
+            return None;
+        }
+
+        points.sort_by(|a, b| a.0.value().total_cmp(&b.0.value()));
+        let upper = points.partition_point(|p| p.0.value() < axis.value());
+        if upper == 0 || upper >= points.len() {
+            return None;
+        }
+
+        let (x0, k0, v0) = points[upper - 1].clone();
+        let (x1, k1, v1) = points[upper].clone();
+        if (x1.value() - x0.value()).abs() < f64::EPSILON {
+            return Some(VolatilityNode::new(v0, vec![k0]));
+        }
+
+        let w = (axis.value() - x0.value()) / (x1.value() - x0.value());
+        Some(VolatilityNode::new((v0 + (v1 - v0) * w).into(), vec![k0, k1]))
+    }
+
+    /// Returns the market index for this surface/cube.
+    #[must_use]
+    pub const fn market_index(&self) -> &MarketIndex {
+        &self.market_index
+    }
+
+    /// Returns all stored raw nodes.
+    #[must_use]
+    pub const fn nodes(&self) -> &HashMap<VolatilityNodeKey, ADReal> {
+        &self.nodes
+    }
+
+    /// Returns mutable access to raw nodes.
+    #[must_use]
+    pub const fn nodes_mut(&mut self) -> &mut HashMap<VolatilityNodeKey, ADReal> {
+        &mut self.nodes
     }
 }
 
@@ -314,7 +482,9 @@ pub struct MarketDataResponse {
     discount_curves: HashMap<MarketIndex, DiscountCurveElement>,
     dividend_curves: HashMap<MarketIndex, DividendCurveElement>,
     fixings: HashMap<(MarketIndex, Date), f64>,
-    volatility_nodes: HashMap<VolatilityNode, ADReal>,
+    volatility_surfaces: HashMap<MarketIndex, VolatilitySurfaceElement>,
+    volatility_cubes: HashMap<MarketIndex, VolatilityCubeElement>,
+    volatility_nodes: HashMap<VolatilityNodeKey, VolatilityNode>,
     simulations: HashMap<MarketIndex, SimulationElement>,
 }
 
@@ -339,8 +509,20 @@ impl MarketDataResponse {
 
     /// Returns a mutable reference to the volatility nodes included in the market data response.
     #[must_use]
-    pub const fn vol_nodes_mut(&mut self) -> &mut HashMap<VolatilityNode, ADReal> {
+    pub const fn volatility_nodes_mut(&mut self) -> &mut HashMap<VolatilityNodeKey, VolatilityNode> {
         &mut self.volatility_nodes
+    }
+
+    /// Returns a mutable reference to volatility surfaces included in this response.
+    #[must_use]
+    pub const fn volatility_surfaces_mut(&mut self) -> &mut HashMap<MarketIndex, VolatilitySurfaceElement> {
+        &mut self.volatility_surfaces
+    }
+
+    /// Returns a mutable reference to volatility cubes included in this response.
+    #[must_use]
+    pub const fn volatility_cubes_mut(&mut self) -> &mut HashMap<MarketIndex, VolatilityCubeElement> {
+        &mut self.volatility_cubes
     }
 
     /// Returns a mutable reference to the simulations included in the market data response.
@@ -369,8 +551,32 @@ impl MarketDataResponse {
 
     /// Returns a reference to the volatility nodes included in the market data response.
     #[must_use]
-    pub const fn vol_nodes(&self) -> &HashMap<VolatilityNode, ADReal> {
+    pub const fn volatility_nodes(&self) -> &HashMap<VolatilityNodeKey, VolatilityNode> {
         &self.volatility_nodes
+    }
+
+    /// Returns the volatility surfaces included in this response.
+    #[must_use]
+    pub const fn volatility_surfaces(&self) -> &HashMap<MarketIndex, VolatilitySurfaceElement> {
+        &self.volatility_surfaces
+    }
+
+    /// Returns the volatility cubes included in this response.
+    #[must_use]
+    pub const fn volatility_cubes(&self) -> &HashMap<MarketIndex, VolatilityCubeElement> {
+        &self.volatility_cubes
+    }
+
+    /// Backward compatible alias for `volatility_nodes_mut`.
+    #[must_use]
+    pub const fn vol_nodes_mut(&mut self) -> &mut HashMap<VolatilityNodeKey, VolatilityNode> {
+        self.volatility_nodes_mut()
+    }
+
+    /// Backward compatible alias for `volatility_nodes`.
+    #[must_use]
+    pub const fn vol_nodes(&self) -> &HashMap<VolatilityNodeKey, VolatilityNode> {
+        self.volatility_nodes()
     }
 
     /// Returns a reference to the simulations included in the market data response.
@@ -392,4 +598,38 @@ pub trait MarketDataProvider {
 
     /// Returns the evaluation date for which the market data is relevant.
     fn evaluation_date(&self) -> Date;
+}
+/// Represents a volatility cube container for a market index.
+#[derive(Clone, Default)]
+pub struct VolatilityCubeElement {
+    market_index: MarketIndex,
+    nodes: HashMap<VolatilityNodeKey, ADReal>,
+}
+
+impl VolatilityCubeElement {
+    /// Creates a new volatility cube element.
+    #[must_use]
+    pub fn new(market_index: MarketIndex, nodes: HashMap<VolatilityNodeKey, ADReal>) -> Self {
+        Self {
+            market_index,
+            nodes,
+        }
+    }
+
+    /// Returns the market index for this cube.
+    #[must_use]
+    pub const fn market_index(&self) -> &MarketIndex {
+        &self.market_index
+    }
+
+    /// Returns mutable access to raw nodes.
+    #[must_use]
+    pub const fn nodes_mut(&mut self) -> &mut HashMap<VolatilityNodeKey, ADReal> {
+        &mut self.nodes
+    }
+
+    /// Returns an exact or interpolated node at date/axis.
+    pub fn node(&self, date: Date, axis: VolatilityAxis) -> Option<VolatilityNode> {
+        VolatilitySurfaceElement::new(self.market_index.clone(), self.nodes.clone()).node(date, axis)
+    }
 }

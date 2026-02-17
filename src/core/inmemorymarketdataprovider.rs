@@ -4,7 +4,8 @@ use crate::{
     ad::adreal::ADReal,
     core::marketdataprovider::{
         DerivedElementRequest, DiscountCurveElement, DividendCurveElement, MarketDataProvider,
-        MarketDataRequest, MarketDataResponse, SimulationElement, VolatilityNode,
+        MarketDataRequest, MarketDataResponse, SimulationElement, VolatilityCubeElement,
+        VolatilityNodeKey, VolatilitySurfaceElement,
     },
     indices::marketindex::MarketIndex,
     time::date::Date,
@@ -19,7 +20,8 @@ pub struct InMemoryMarketDataProvider {
     discount_curves: HashMap<MarketIndex, DiscountCurveElement>,
     dividend_curves: HashMap<MarketIndex, DividendCurveElement>,
     fixings: HashMap<(MarketIndex, Date), f64>,
-    vol_nodes: HashMap<VolatilityNode, ADReal>,
+    volatility_surfaces: HashMap<MarketIndex, VolatilitySurfaceElement>,
+    volatility_cubes: HashMap<MarketIndex, VolatilityCubeElement>,
     simulations: HashMap<MarketIndex, SimulationElement>,
 }
 
@@ -32,7 +34,8 @@ impl InMemoryMarketDataProvider {
             discount_curves: HashMap::new(),
             dividend_curves: HashMap::new(),
             fixings: HashMap::new(),
-            vol_nodes: HashMap::new(),
+            volatility_surfaces: HashMap::new(),
+            volatility_cubes: HashMap::new(),
             simulations: HashMap::new(),
         }
     }
@@ -73,11 +76,30 @@ impl InMemoryMarketDataProvider {
         mut self,
         market_index: MarketIndex,
         date: Date,
-        axis: f64,
+        axis: crate::core::marketdataprovider::VolatilityAxis,
         value: ADReal,
     ) -> Self {
-        self.vol_nodes
-            .insert(VolatilityNode::new(market_index, date, axis), value);
+        self.volatility_surfaces
+            .entry(market_index.clone())
+            .or_insert_with(|| VolatilitySurfaceElement::new(market_index.clone(), HashMap::new()))
+            .nodes_mut()
+            .insert(VolatilityNodeKey::new(market_index.clone(), date, axis), value);
+        self
+    }
+
+    /// Adds a volatility surface.
+    #[must_use]
+    pub fn with_vol_surface(mut self, element: VolatilitySurfaceElement) -> Self {
+        self.volatility_surfaces
+            .insert(element.market_index().clone(), element);
+        self
+    }
+
+    /// Adds a volatility cube.
+    #[must_use]
+    pub fn with_vol_cube(mut self, element: VolatilityCubeElement) -> Self {
+        self.volatility_cubes
+            .insert(element.market_index().clone(), element);
         self
     }
 
@@ -121,13 +143,23 @@ impl MarketDataProvider for InMemoryMarketDataProvider {
                     date,
                     axis,
                 } => {
-                    let key = VolatilityNode::new(market_index.clone(), *date, *axis);
-                    let node = self.vol_nodes.get(&key).ok_or_else(|| {
-                        AtlasError::NotFoundErr(format!(
-                        "Vol node for {market_index} at {date} / axis {axis} was requested but is missing"
-                    ))
-                    })?;
-                    response.vol_nodes_mut().insert(key, *node);
+                    let node = self
+                        .volatility_surfaces
+                        .get(market_index)
+                        .and_then(|surface| surface.node(*date, *axis))
+                        .or_else(|| {
+                            self.volatility_cubes
+                                .get(market_index)
+                                .and_then(|cube| cube.node(*date, *axis))
+                        })
+                        .ok_or_else(|| {
+                            AtlasError::NotFoundErr(format!(
+                                "Volatility node for {market_index} at {date} / axis {axis:?} was requested but is missing"
+                            ))
+                        })?;
+                    response
+                        .volatility_nodes_mut()
+                        .insert(VolatilityNodeKey::new(market_index.clone(), *date, *axis), node);
                 }
                 DerivedElementRequest::Simulation { market_index } => {
                     let sim = self.simulations.get(market_index).ok_or_else(|| {
@@ -139,9 +171,26 @@ impl MarketDataProvider for InMemoryMarketDataProvider {
                         .simulations_mut()
                         .insert(market_index.clone(), sim.clone());
                 }
-                // Surface/cube data are resolved upstream to VolNode in current pricer flow.
-                DerivedElementRequest::VolatilitySurface { .. }
-                | DerivedElementRequest::VolatilityCube { .. } => {}
+                DerivedElementRequest::VolatilitySurface { market_index } => {
+                    let surface = self.volatility_surfaces.get(market_index).ok_or_else(|| {
+                        AtlasError::NotFoundErr(format!(
+                            "Volatility surface for {market_index} was requested but is missing"
+                        ))
+                    })?;
+                    response
+                        .volatility_surfaces_mut()
+                        .insert(market_index.clone(), surface.clone());
+                }
+                DerivedElementRequest::VolatilityCube { market_index } => {
+                    let cube = self.volatility_cubes.get(market_index).ok_or_else(|| {
+                        AtlasError::NotFoundErr(format!(
+                            "Volatility cube for {market_index} was requested but is missing"
+                        ))
+                    })?;
+                    response
+                        .volatility_cubes_mut()
+                        .insert(market_index.clone(), cube.clone());
+                }
             }
         }
 
