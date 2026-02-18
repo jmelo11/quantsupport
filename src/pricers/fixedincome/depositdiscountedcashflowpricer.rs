@@ -6,9 +6,7 @@ use crate::{
     core::{
         evaluationresults::{EvaluationResults, SensitivityMap},
         instrument::Instrument,
-        marketdataprovider::{
-            DerivedElementRequest, MarketDataProvider, MarketDataRequest, MarketDataResponse,
-        },
+        marketdatarequest::derivedelementrequest::MarketDataResponse,
         pricer::Pricer,
         request::{HandleSensitivities, HandleValue, PricerState, Request},
         trade::Trade,
@@ -33,15 +31,15 @@ struct DepositPriceEvaluationState {
     /// Price placeholder for perfomance reasons.
     pub value: Option<ADReal>,
     /// Market data response placeholder to avoid multiple calls to the market data provider.
-    pub md_response: Option<MarketDataResponse>,
+    pub md_response: Option<impl MarketDataResponse>,
 }
 
 impl PricerState for DepositPriceEvaluationState {
-    fn get_market_data_reponse(&self) -> Option<&MarketDataResponse> {
+    fn get_market_data_reponse(&self) -> Option<&impl MarketDataResponse> {
         self.md_response.as_ref()
     }
 
-    fn get_market_data_reponse_mut(&mut self) -> Option<&mut MarketDataResponse> {
+    fn get_market_data_reponse_mut(&mut self) -> Option<&mut impl MarketDataResponse> {
         self.md_response.as_mut()
     }
 }
@@ -162,11 +160,7 @@ mod tests {
 
     use crate::{
         ad::adreal::ADReal,
-        core::{
-            contextmanager::ContextManager, inmemorymarketdataprovider::InMemoryMarketDataProvider,
-            instrument::Instrument, marketdataprovider::DiscountCurveElement, pricer::Pricer,
-            request::Request, trade::Trade,
-        },
+        core::{contextmanager::ContextManager, instrument::Instrument, marketdatarequest::curveelement::DiscountCurveElement, request::Request, trade::Trade},
         currencies::currency::Currency,
         indices::marketindex::MarketIndex,
         instruments::fixedincome::deposit::{Deposit, DepositTrade},

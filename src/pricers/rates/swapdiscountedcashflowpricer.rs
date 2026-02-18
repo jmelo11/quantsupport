@@ -1,12 +1,7 @@
 use crate::{
     ad::adreal::ADReal,
     core::{
-        evaluationresults::{EvaluationResults, SensitivityMap},
-        instrument::Instrument,
-        marketdataprovider::{DerivedElementRequest, MarketDataProvider, MarketDataRequest},
-        pricer::Pricer,
-        request::{HandleSensitivities, HandleValue, Request},
-        trade::Trade,
+        evaluationresults::{EvaluationResults, SensitivityMap}, instrument::Instrument, marketdatarequest::derivedelementrequest::{DerivedElementRequest, MarketDataProvider, MarketDataRequest}, pricer::Pricer, request::{HandleSensitivities, HandleValue, Request}, trade::Trade
     },
     instruments::rates::swap::InterestRateSwapTrade,
     utils::errors::{AtlasError, Result},

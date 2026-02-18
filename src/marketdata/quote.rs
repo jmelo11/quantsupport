@@ -93,10 +93,8 @@ impl QuoteLevels {
 }
 
 /// # `QuoteRecord`
-/// Quote record compatible with serde deserialization.
 ///
-/// This supports JSON rows of the form:
-/// `{ "instrument": "USD-SWAP|maturity=2026-01-01|strike=0.02", "mid": 0.15 }`.
+/// Quote record compatible with serde deserialization.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct QuoteRecord {
     /// Instrument identifier containing embedded metadata.

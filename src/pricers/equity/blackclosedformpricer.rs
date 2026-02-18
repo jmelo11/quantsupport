@@ -6,9 +6,10 @@ use crate::{
     core::{
         evaluationresults::{EvaluationResults, SensitivityMap},
         instrument::Instrument,
-        marketdataprovider::{
-            DerivedElementRequest, FixingRequest, MarketDataProvider, MarketDataRequest,
-            MarketDataResponse, VolatilityAxis, VolatilityNodeKey,
+        marketdatarequest::{
+            derivedelementrequest::{DerivedElementRequest, MarketDataRequest},
+            fixingrequest::FixingRequest,
+            volatilityelements::{VolatilityAxis, VolatilityNodeKey},
         },
         pricer::Pricer,
         request::{HandleSensitivities, HandleValue, PricerState, Request},
@@ -51,9 +52,12 @@ impl HandleValue<EquityEuroOptionTrade, EquityOptionState> for BlackClosedFormPr
 
         let spot = state.get_fixing(&index, trade.trade_date())?;
 
-        let md_response = state.md_response.as_mut().ok_or(AtlasError::ValueNotSetErr(
-            "Market data response not loaded".into(),
-        ))?;
+        let md_response = state
+            .md_response
+            .as_mut()
+            .ok_or(AtlasError::ValueNotSetErr(
+                "Market data response not loaded".into(),
+            ))?;
 
         let volatility_key = VolatilityNodeKey::new(
             index.clone(),
@@ -139,9 +143,12 @@ impl HandleSensitivities<EquityEuroOptionTrade, EquityOptionState> for BlackClos
                 .ok_or(AtlasError::ValueNotSetErr("Pricing not requested".into()))?
         };
 
-        let md_response = state.md_response.as_ref().ok_or(AtlasError::ValueNotSetErr(
-            "Market data response not loaded".into(),
-        ))?;
+        let md_response = state
+            .md_response
+            .as_ref()
+            .ok_or(AtlasError::ValueNotSetErr(
+                "Market data response not loaded".into(),
+            ))?;
 
         value.backward()?;
         let option = trade.instrument();
@@ -158,7 +165,9 @@ impl HandleSensitivities<EquityEuroOptionTrade, EquityOptionState> for BlackClos
             exposures.push(
                 state
                     .spot
-                    .ok_or(AtlasError::ValueNotSetErr("Spot not recorded on state".into()))?
+                    .ok_or(AtlasError::ValueNotSetErr(
+                        "Spot not recorded on state".into(),
+                    ))?
                     .adjoint()?,
             );
         }
@@ -268,11 +277,7 @@ mod tests {
     use crate::{
         ad::adreal::{ADReal, IsReal},
         core::{
-            inmemorymarketdataprovider::InMemoryMarketDataProvider,
-            marketdataprovider::{
-                DiscountCurveElement, DividendCurveElement, VolatilityAxis, VolatilityNodeKey,
-                VolatilitySurfaceElement,
-            },
+            marketdatarequest::volatilityelements::{VolatilityAxis, VolatilityNodeKey},
             pricer::Pricer,
             request::Request,
         },
@@ -322,7 +327,11 @@ mod tests {
         );
 
         let md = InMemoryMarketDataProvider::new(eval)
-            .with_discount_curve(DiscountCurveElement::new(index.clone(), Currency::USD, disc))
+            .with_discount_curve(DiscountCurveElement::new(
+                index.clone(),
+                Currency::USD,
+                disc,
+            ))
             .with_dividend_curve(DividendCurveElement::new(index.clone(), Currency::USD, div))
             .with_fixing(index.clone(), eval, 102.0)
             .with_vol_surface(VolatilitySurfaceElement::new(index.clone(), nodes));
@@ -334,6 +343,7 @@ mod tests {
 
         assert!(results.price().is_some());
         let sens = results.sensitivities().expect("sensitivities present");
+        println!("Sensitivities: {:#?}", sens);
         assert!(!sens.instrument_keys().is_empty());
         assert_eq!(sens.instrument_keys().len(), sens.exposure().len());
         let spot_pos = sens
@@ -396,7 +406,8 @@ mod tests {
             VolatilityNodeKey::new(index, date, VolatilityAxis::log_moneyness(0.1)),
             ADReal::from(0.19),
         );
-        let moneyness_surface = VolatilitySurfaceElement::new(MarketIndex::Equity("SPX".to_string()), moneyness_nodes);
+        let moneyness_surface =
+            VolatilitySurfaceElement::new(MarketIndex::Equity("SPX".to_string()), moneyness_nodes);
         let moneyness_node = moneyness_surface
             .node(date, VolatilityAxis::log_moneyness(0.0))
             .expect("moneyness interpolation");

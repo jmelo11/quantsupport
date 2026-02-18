@@ -3,11 +3,11 @@ pub mod contextmanager;
 /// Evaluation results module.
 pub mod evaluationresults;
 /// In-memory market data provider implementation.
-pub mod inmemorymarketdataprovider;
+pub mod marketdataelementowner;
 /// Instrument module.
 pub mod instrument;
-/// Market data provider module.
-pub mod marketdataprovider;
+/// Derived elements module.
+pub mod marketdatarequest;
 /// Pillars module.
 pub mod pillars;
 /// Pricer module.

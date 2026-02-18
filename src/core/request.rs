@@ -1,8 +1,14 @@
-use crate::core::evaluationresults::SensitivityMap;
-use crate::core::marketdataprovider::{DiscountCurveElement, MarketDataResponse};
-use crate::indices::marketindex::MarketIndex;
-use crate::time::date::Date;
-use crate::utils::errors::{AtlasError, Result};
+use crate::{
+    core::{
+        evaluationresults::SensitivityMap,
+        marketdatarequest::{
+            curveelement::DiscountCurveElement, derivedelementrequest::MarketDataResponse,
+        },
+    },
+    indices::marketindex::MarketIndex,
+    time::date::Date,
+    utils::errors::{AtlasError, Result},
+};
 
 /// # `Request`
 ///
@@ -42,10 +48,10 @@ impl Request {
 /// pricing process.
 pub trait PricerState {
     /// Retrieves the market data response associated with this state, if available.
-    fn get_market_data_reponse(&self) -> Option<&MarketDataResponse>;
+    fn get_market_data_reponse(&self) -> Option<&impl MarketDataResponse>;
 
     /// Retrieves a mutable reference to the market data response associated with this state, if available.
-    fn get_market_data_reponse_mut(&mut self) -> Option<&mut MarketDataResponse>;
+    fn get_market_data_reponse_mut(&mut self) -> Option<&mut impl MarketDataResponse>;
 
     /// Retrieves the discount curve element associated with the given market index, if available.
     fn get_discount_curve_element(&self, index: &MarketIndex) -> Result<&DiscountCurveElement> {
@@ -82,8 +88,6 @@ pub trait PricerState {
             })
             .copied()
     }
-
-    
 }
 
 /// # `HandleValue`

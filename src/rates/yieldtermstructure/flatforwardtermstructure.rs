@@ -1,6 +1,6 @@
 use crate::{
     ad::adreal::{ADReal, IsReal},
-    core::{marketdataprovider::ADCurveElement, pillars::Pillars},
+    core::{marketdatarequest::curveelement::ADCurveElement, pillars::Pillars},
     rates::{
         compounding::Compounding,
         interestrate::{InterestRate, RateDefinition},
