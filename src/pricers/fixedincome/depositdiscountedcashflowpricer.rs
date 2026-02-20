@@ -60,10 +60,11 @@ impl HandleValue<DepositTrade, DepositPriceEvaluationState> for DiscountedDeposi
 
         // get the element and put the pillars on tape for sensitivity calculation
         let element = state.get_discount_curve_element_mut(&index)?;
-        element.curve_mut().put_pillars_on_tape();
+        element.borrow_mut().curve_mut().put_pillars_on_tape();
 
         // actually computing the price
         let df = element
+            .borrow()
             .curve()
             .discount_factor(trade.instrument().maturity_date())?;
         let value = (df * final_amount).into();
@@ -94,6 +95,7 @@ impl HandleSensitivities<DepositTrade, DepositPriceEvaluationState> for Discount
         let element = state.get_discount_curve_element(&index)?;
 
         let (ids, exposures): (Vec<_>, Vec<_>) = element
+            .borrow()
             .curve()
             .pillars()
             .into_iter()

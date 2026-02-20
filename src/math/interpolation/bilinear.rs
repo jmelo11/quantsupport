@@ -1,5 +1,6 @@
 use crate::ad::adreal::ADReal;
 
+/// # `BilinearPoint`
 /// Input point for bilinear interpolation.
 #[derive(Clone)]
 pub struct BilinearPoint<K> {
@@ -13,6 +14,7 @@ pub struct BilinearPoint<K> {
     pub key: K,
 }
 
+/// # `BilinearInterpolationResult`
 /// Result of an interpolation call.
 #[derive(Clone)]
 pub struct BilinearInterpolationResult<K> {
@@ -51,6 +53,7 @@ impl<K> BilinearInterpolationResult<K> {
     }
 }
 
+/// # `BilinearInterpolator`
 /// Bilinear interpolation implementation independent from volatility containers.
 pub struct BilinearInterpolator;
 

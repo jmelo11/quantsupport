@@ -1,33 +1,43 @@
-use std::collections::HashMap;
+use std::{
+    cell::RefCell,
+    collections::HashMap,
+    rc::Rc,
+};
 
 use crate::{
     ad::adreal::ADReal,
     core::marketdatarequest::{
         curveelement::{DiscountCurveElement, DividendCurveElement},
-        derivedelementrequest::{DerivedElementRequest, MarketDataProvider, MarketDataRequest, MarketDataResponse},
+        derivedelementrequest::{
+            DerivedElementRequest, MarketDataProvider, MarketDataRequest, MarketDataResponse,
+            SharedElement,
+        },
         simulationelement::SimulationElement,
-        volatilityelements::{VolatilityAxis, VolatilityCubeElement, VolatilityNodeKey, VolatilitySurfaceElement},
+        volatilityelements::{
+            VolatilityAxis, VolatilityCubeElement, VolatilityNodeKey, VolatilitySurfaceElement,
+        },
     },
     indices::marketindex::MarketIndex,
     time::date::Date,
     utils::errors::{AtlasError, Result},
 };
 
+/// # `MarketDataElementOwner`
 /// In-memory market-data provider that resolves requests from pre-loaded elements.
 pub struct MarketDataElementOwner {
     evaluation_date: Date,
-    discount_curves: HashMap<MarketIndex, DiscountCurveElement>,
-    dividend_curves: HashMap<MarketIndex, DividendCurveElement>,
+    discount_curves: HashMap<MarketIndex, SharedElement<DiscountCurveElement>>,
+    dividend_curves: HashMap<MarketIndex, SharedElement<DividendCurveElement>>,
     fixings: HashMap<(MarketIndex, Date), f64>,
-    volatility_surfaces: HashMap<MarketIndex, VolatilitySurfaceElement>,
-    volatility_cubes: HashMap<MarketIndex, VolatilityCubeElement>,
-    simulations: HashMap<MarketIndex, SimulationElement>,
+    volatility_surfaces: HashMap<MarketIndex, SharedElement<VolatilitySurfaceElement>>,
+    volatility_cubes: HashMap<MarketIndex, SharedElement<VolatilityCubeElement>>,
+    simulations: HashMap<MarketIndex, SharedElement<SimulationElement>>,
 }
 
-
 impl MarketDataElementOwner {
-    #[must_use]
+    /// # `new`
     /// Creates a new provider at an evaluation date.
+    #[must_use]
     pub fn new(evaluation_date: Date) -> Self {
         Self {
             evaluation_date,
@@ -40,36 +50,43 @@ impl MarketDataElementOwner {
         }
     }
 
-    #[must_use]
+    /// # `with_evaluation_date`
     /// Sets evaluation date.
+    #[must_use]
     pub const fn with_evaluation_date(mut self, evaluation_date: Date) -> Self {
         self.evaluation_date = evaluation_date;
         self
     }
 
-    #[must_use]
+    /// # `with_discount_curve`
     /// Adds a discount curve.
+    #[must_use]
     pub fn with_discount_curve(mut self, element: DiscountCurveElement) -> Self {
-        self.discount_curves.insert(element.market_index().clone(), element);
+        self.discount_curves
+            .insert(element.market_index().clone(), Rc::new(RefCell::new(element)));
         self
     }
 
-    #[must_use]
+    /// # `with_dividend_curve`
     /// Adds a dividend curve.
+    #[must_use]
     pub fn with_dividend_curve(mut self, element: DividendCurveElement) -> Self {
-        self.dividend_curves.insert(element.market_index().clone(), element);
+        self.dividend_curves
+            .insert(element.market_index().clone(), Rc::new(RefCell::new(element)));
         self
     }
 
-    #[must_use]
+    /// # `with_fixing`
     /// Adds a fixing observation.
+    #[must_use]
     pub fn with_fixing(mut self, market_index: MarketIndex, date: Date, value: f64) -> Self {
         self.fixings.insert((market_index, date), value);
         self
     }
 
-    #[must_use]
+    /// # `with_vol_node`
     /// Adds a single volatility node to the owned surface map.
+    #[must_use]
     pub fn with_vol_node(
         mut self,
         market_index: MarketIndex,
@@ -79,30 +96,42 @@ impl MarketDataElementOwner {
     ) -> Self {
         self.volatility_surfaces
             .entry(market_index.clone())
-            .or_insert_with(|| VolatilitySurfaceElement::new(market_index.clone(), HashMap::new()))
+            .or_insert_with(|| {
+                Rc::new(RefCell::new(VolatilitySurfaceElement::new(
+                    market_index.clone(),
+                    HashMap::new(),
+                )))
+            })
+            .borrow_mut()
             .nodes_mut()
             .insert(VolatilityNodeKey::new(market_index, date, axis), value);
         self
     }
 
-    #[must_use]
+    /// # `with_vol_surface`
     /// Adds a volatility surface.
+    #[must_use]
     pub fn with_vol_surface(mut self, element: VolatilitySurfaceElement) -> Self {
-        self.volatility_surfaces.insert(element.market_index().clone(), element);
+        self.volatility_surfaces
+            .insert(element.market_index().clone(), Rc::new(RefCell::new(element)));
         self
     }
 
-    #[must_use]
+    /// # `with_vol_cube`
     /// Adds a volatility cube.
+    #[must_use]
     pub fn with_vol_cube(mut self, element: VolatilityCubeElement) -> Self {
-        self.volatility_cubes.insert(element.market_index().clone(), element);
+        self.volatility_cubes
+            .insert(element.market_index().clone(), Rc::new(RefCell::new(element)));
         self
     }
 
-    #[must_use]
+    /// # `with_simulation`
     /// Adds a simulation element.
+    #[must_use]
     pub fn with_simulation(mut self, simulation: SimulationElement) -> Self {
-        self.simulations.insert(simulation.market_index().clone(), simulation);
+        self.simulations
+            .insert(simulation.market_index().clone(), Rc::new(RefCell::new(simulation)));
         self
     }
 }
@@ -117,19 +146,27 @@ impl MarketDataProvider for MarketDataElementOwner {
                     let curve = self.discount_curves.get(market_index).ok_or_else(|| {
                         AtlasError::NotFoundErr(format!("Discount curve for {market_index} missing"))
                     })?;
-                    response.discount_curves_mut().insert(market_index.clone(), curve.clone());
+                    response
+                        .discount_curves_mut()
+                        .insert(market_index.clone(), Rc::clone(curve));
                 }
                 DerivedElementRequest::DividendCurve { market_index } => {
                     let curve = self.dividend_curves.get(market_index).ok_or_else(|| {
                         AtlasError::NotFoundErr(format!("Dividend curve for {market_index} missing"))
                     })?;
-                    response.dividend_curves_mut().insert(market_index.clone(), curve.clone());
+                    response
+                        .dividend_curves_mut()
+                        .insert(market_index.clone(), Rc::clone(curve));
                 }
-                DerivedElementRequest::VolNode { market_index, date, axis } => {
+                DerivedElementRequest::VolNode {
+                    market_index,
+                    date,
+                    axis,
+                } => {
                     let node = self
                         .volatility_surfaces
                         .get(market_index)
-                        .and_then(|surface| surface.node(*date, *axis))
+                        .and_then(|surface| surface.borrow().node(*date, *axis))
                         .ok_or_else(|| {
                             AtlasError::NotFoundErr(format!(
                                 "Volatility node for {market_index} at {date} / axis {axis:?} missing"
@@ -143,19 +180,25 @@ impl MarketDataProvider for MarketDataElementOwner {
                     let sim = self.simulations.get(market_index).ok_or_else(|| {
                         AtlasError::NotFoundErr(format!("Simulation for {market_index} missing"))
                     })?;
-                    response.simulations_mut().insert(market_index.clone(), sim.clone());
+                    response
+                        .simulations_mut()
+                        .insert(market_index.clone(), Rc::clone(sim));
                 }
                 DerivedElementRequest::VolatilitySurface { market_index } => {
                     let surface = self.volatility_surfaces.get(market_index).ok_or_else(|| {
                         AtlasError::NotFoundErr(format!("Volatility surface for {market_index} missing"))
                     })?;
-                    response.volatility_surfaces_mut().insert(market_index.clone(), surface.clone());
+                    response
+                        .volatility_surfaces_mut()
+                        .insert(market_index.clone(), Rc::clone(surface));
                 }
                 DerivedElementRequest::VolatilityCube { market_index } => {
                     let cube = self.volatility_cubes.get(market_index).ok_or_else(|| {
                         AtlasError::NotFoundErr(format!("Volatility cube for {market_index} missing"))
                     })?;
-                    response.volatility_cubes_mut().insert(market_index.clone(), cube.clone());
+                    response
+                        .volatility_cubes_mut()
+                        .insert(market_index.clone(), Rc::clone(cube));
                 }
             }
         }
@@ -163,7 +206,11 @@ impl MarketDataProvider for MarketDataElementOwner {
         for fixing in request.fixing_requests() {
             let key = (fixing.market_index().clone(), fixing.date());
             let value = self.fixings.get(&key).ok_or_else(|| {
-                AtlasError::NotFoundErr(format!("Fixing for {} at {} missing", fixing.market_index(), fixing.date()))
+                AtlasError::NotFoundErr(format!(
+                    "Fixing for {} at {} missing",
+                    fixing.market_index(),
+                    fixing.date()
+                ))
             })?;
             response.fixings_mut().insert(key, *value);
         }
@@ -179,5 +226,53 @@ impl MarketDataProvider for MarketDataElementOwner {
 impl Default for MarketDataElementOwner {
     fn default() -> Self {
         Self::new(Date::empty())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{
+        core::marketdatarequest::{
+            derivedelementrequest::{DerivedElementRequest, MarketDataProvider, MarketDataRequest},
+            simulationelement::SimulationElement,
+        },
+        indices::marketindex::MarketIndex,
+        time::date::Date,
+    };
+
+    use super::MarketDataElementOwner;
+
+    #[test]
+    fn simulation_growth_persists_back_to_owner() {
+        let index = MarketIndex::Equity("SPX".to_string());
+        let owner = MarketDataElementOwner::new(Date::new(2025, 1, 1)).with_simulation(
+            SimulationElement::new(index.clone(), vec![1.0, 2.0]),
+        );
+
+        let request = MarketDataRequest::default().with_element_requests(vec![
+            DerivedElementRequest::Simulation {
+                market_index: index.clone(),
+            },
+        ]);
+
+        let response = owner.handle_request(&request).expect("request must resolve");
+        let simulation = response
+            .simulations()
+            .get(&index)
+            .expect("simulation present");
+        simulation.borrow_mut().draws_mut().extend([3.0, 4.0]);
+
+        let follow_up = owner
+            .handle_request(&request)
+            .expect("follow-up request must resolve");
+        let updated_len = follow_up
+            .simulations()
+            .get(&index)
+            .expect("simulation present")
+            .borrow()
+            .draws()
+            .len();
+
+        assert_eq!(updated_len, 4);
     }
 }

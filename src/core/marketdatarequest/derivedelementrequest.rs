@@ -1,4 +1,8 @@
-use std::collections::HashMap;
+use std::{
+    cell::RefCell,
+    collections::HashMap,
+    rc::Rc,
+};
 
 use crate::{
     core::marketdatarequest::{
@@ -15,6 +19,7 @@ use crate::{
     utils::errors::Result,
 };
 
+/// # `DerivedElementRequest`
 /// Request for a specific derived market-data element.
 pub enum DerivedElementRequest {
     /// Request for discount curve of a market index.
@@ -53,6 +58,7 @@ pub enum DerivedElementRequest {
     },
 }
 
+/// # `MarketDataRequest`
 /// Batch request sent to a market-data provider.
 #[derive(Default)]
 pub struct MarketDataRequest {
@@ -88,40 +94,52 @@ impl MarketDataRequest {
     }
 }
 
+/// Shared pointer to a mutable market-data element.
+pub type SharedElement<T> = Rc<RefCell<T>>;
+
+/// # `MarketDataResponse`
 /// Concrete market-data response with read/write accessors.
 #[derive(Clone, Default)]
 pub struct MarketDataResponse {
-    discount_curves: HashMap<MarketIndex, DiscountCurveElement>,
-    dividend_curves: HashMap<MarketIndex, DividendCurveElement>,
+    discount_curves: HashMap<MarketIndex, SharedElement<DiscountCurveElement>>,
+    dividend_curves: HashMap<MarketIndex, SharedElement<DividendCurveElement>>,
     fixings: HashMap<(MarketIndex, Date), f64>,
     volatility_nodes: HashMap<VolatilityNodeKey, VolatilityNode>,
-    volatility_surfaces: HashMap<MarketIndex, VolatilitySurfaceElement>,
-    volatility_cubes: HashMap<MarketIndex, VolatilityCubeElement>,
-    simulations: HashMap<MarketIndex, SimulationElement>,
+    volatility_surfaces: HashMap<MarketIndex, SharedElement<VolatilitySurfaceElement>>,
+    volatility_cubes: HashMap<MarketIndex, SharedElement<VolatilityCubeElement>>,
+    simulations: HashMap<MarketIndex, SharedElement<SimulationElement>>,
 }
 
 impl MarketDataResponse {
     /// Returns discount curves.
     #[must_use]
-    pub const fn discount_curves(&self) -> &HashMap<MarketIndex, DiscountCurveElement> {
+    pub const fn discount_curves(
+        &self,
+    ) -> &HashMap<MarketIndex, SharedElement<DiscountCurveElement>> {
         &self.discount_curves
     }
 
-    /// Returns mutable discount curves.
+    /// Returns mutable discount curves map.
     #[must_use]
-    pub fn discount_curves_mut(&mut self) -> &mut HashMap<MarketIndex, DiscountCurveElement> {
+    pub fn discount_curves_mut(
+        &mut self,
+    ) -> &mut HashMap<MarketIndex, SharedElement<DiscountCurveElement>> {
         &mut self.discount_curves
     }
 
     /// Returns dividend curves.
     #[must_use]
-    pub const fn dividend_curves(&self) -> &HashMap<MarketIndex, DividendCurveElement> {
+    pub const fn dividend_curves(
+        &self,
+    ) -> &HashMap<MarketIndex, SharedElement<DividendCurveElement>> {
         &self.dividend_curves
     }
 
-    /// Returns mutable dividend curves.
+    /// Returns mutable dividend curves map.
     #[must_use]
-    pub fn dividend_curves_mut(&mut self) -> &mut HashMap<MarketIndex, DividendCurveElement> {
+    pub fn dividend_curves_mut(
+        &mut self,
+    ) -> &mut HashMap<MarketIndex, SharedElement<DividendCurveElement>> {
         &mut self.dividend_curves
     }
 
@@ -131,7 +149,7 @@ impl MarketDataResponse {
         &self.fixings
     }
 
-    /// Returns mutable fixings.
+    /// Returns mutable fixings map.
     #[must_use]
     pub fn fixings_mut(&mut self) -> &mut HashMap<(MarketIndex, Date), f64> {
         &mut self.fixings
@@ -151,67 +169,78 @@ impl MarketDataResponse {
 
     /// Returns volatility surfaces.
     #[must_use]
-    pub const fn volatility_surfaces(&self) -> &HashMap<MarketIndex, VolatilitySurfaceElement> {
+    pub const fn volatility_surfaces(
+        &self,
+    ) -> &HashMap<MarketIndex, SharedElement<VolatilitySurfaceElement>> {
         &self.volatility_surfaces
     }
 
-    /// Returns mutable volatility surfaces.
+    /// Returns mutable volatility surfaces map.
     #[must_use]
     pub fn volatility_surfaces_mut(
         &mut self,
-    ) -> &mut HashMap<MarketIndex, VolatilitySurfaceElement> {
+    ) -> &mut HashMap<MarketIndex, SharedElement<VolatilitySurfaceElement>> {
         &mut self.volatility_surfaces
     }
 
     /// Returns volatility cubes.
     #[must_use]
-    pub const fn volatility_cubes(&self) -> &HashMap<MarketIndex, VolatilityCubeElement> {
+    pub const fn volatility_cubes(
+        &self,
+    ) -> &HashMap<MarketIndex, SharedElement<VolatilityCubeElement>> {
         &self.volatility_cubes
     }
 
-    /// Returns mutable volatility cubes.
+    /// Returns mutable volatility cubes map.
     #[must_use]
-    pub fn volatility_cubes_mut(&mut self) -> &mut HashMap<MarketIndex, VolatilityCubeElement> {
+    pub fn volatility_cubes_mut(
+        &mut self,
+    ) -> &mut HashMap<MarketIndex, SharedElement<VolatilityCubeElement>> {
         &mut self.volatility_cubes
     }
 
     /// Returns simulations.
     #[must_use]
-    pub const fn simulations(&self) -> &HashMap<MarketIndex, SimulationElement> {
+    pub const fn simulations(
+        &self,
+    ) -> &HashMap<MarketIndex, SharedElement<SimulationElement>> {
         &self.simulations
     }
 
-    /// Returns mutable simulations.
+    /// Returns mutable simulations map.
     #[must_use]
-    pub fn simulations_mut(&mut self) -> &mut HashMap<MarketIndex, SimulationElement> {
+    pub fn simulations_mut(
+        &mut self,
+    ) -> &mut HashMap<MarketIndex, SharedElement<SimulationElement>> {
         &mut self.simulations
     }
 
     /// Gets one discount curve by index.
     #[must_use]
-    pub fn discount_curve(&self, index: &MarketIndex) -> Option<&DiscountCurveElement> {
+    pub fn discount_curve(&self, index: &MarketIndex) -> Option<&SharedElement<DiscountCurveElement>> {
         self.discount_curves.get(index)
     }
 
     /// Gets one dividend curve by index.
     #[must_use]
-    pub fn dividend_curve(&self, index: &MarketIndex) -> Option<&DividendCurveElement> {
+    pub fn dividend_curve(&self, index: &MarketIndex) -> Option<&SharedElement<DividendCurveElement>> {
         self.dividend_curves.get(index)
     }
 
     /// Gets one volatility surface by index.
     #[must_use]
-    pub fn volatility_surface(&self, index: &MarketIndex) -> Option<&VolatilitySurfaceElement> {
+    pub fn volatility_surface(&self, index: &MarketIndex) -> Option<&SharedElement<VolatilitySurfaceElement>> {
         self.volatility_surfaces.get(index)
     }
 
     /// Gets one volatility cube by index.
     #[must_use]
-    pub fn volatility_cube(&self, index: &MarketIndex) -> Option<&VolatilityCubeElement> {
+    pub fn volatility_cube(&self, index: &MarketIndex) -> Option<&SharedElement<VolatilityCubeElement>> {
         self.volatility_cubes.get(index)
     }
 }
 
+/// # `MarketDataProvider`
 /// Provider interface for market-data requests.
 pub trait MarketDataProvider {
     /// Handles a market-data request.

@@ -74,15 +74,17 @@ impl HandleValue<EquityEuroOptionTrade, EquityOptionState> for BlackClosedFormPr
 
         Tape::start_recording();
         md_response
-            .discount_curves_mut()
-            .get_mut(&index)
+            .discount_curves()
+            .get(&index)
             .ok_or(AtlasError::NotFoundErr("Missing discount curve".into()))?
+            .borrow_mut()
             .curve_mut()
             .put_pillars_on_tape();
         md_response
-            .dividend_curves_mut()
-            .get_mut(&index)
+            .dividend_curves()
+            .get(&index)
             .ok_or(AtlasError::NotFoundErr("Missing dividend curve".into()))?
+            .borrow_mut()
             .curve_mut()
             .put_pillars_on_tape();
         let mut spot_ad = ADReal::new(spot);
@@ -104,12 +106,14 @@ impl HandleValue<EquityEuroOptionTrade, EquityOptionState> for BlackClosedFormPr
             .discount_curves()
             .get(&index)
             .ok_or(AtlasError::NotFoundErr("Missing discount curve".into()))?
+            .borrow()
             .curve()
             .discount_factor(option.expiry_date())?;
         let df_q = md_response
             .dividend_curves()
             .get(&index)
             .ok_or(AtlasError::NotFoundErr("Missing dividend curve".into()))?
+            .borrow()
             .curve()
             .discount_factor(option.expiry_date())?;
         let fwd: ADReal = (spot_ad * df_q / df_r).into();
@@ -185,14 +189,24 @@ impl HandleSensitivities<EquityEuroOptionTrade, EquityOptionState> for BlackClos
         }
 
         if let Some(discount_curve) = md_response.discount_curves().get(index) {
-            for (label, pillar) in discount_curve.curve().pillars().unwrap_or_default() {
+            for (label, pillar) in discount_curve
+                .borrow()
+                .curve()
+                .pillars()
+                .unwrap_or_default()
+            {
                 ids.push(format!("discount::{label}"));
                 exposures.push(pillar.adjoint()?);
             }
         }
 
         if let Some(dividend_curve) = md_response.dividend_curves().get(index) {
-            for (label, pillar) in dividend_curve.curve().pillars().unwrap_or_default() {
+            for (label, pillar) in dividend_curve
+                .borrow()
+                .curve()
+                .pillars()
+                .unwrap_or_default()
+            {
                 ids.push(format!("dividend::{label}"));
                 exposures.push(pillar.adjoint()?);
             }

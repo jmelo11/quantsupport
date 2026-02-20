@@ -7,6 +7,7 @@ use crate::{
     time::date::Date,
 };
 
+/// # `VolatilityAxis`
 /// Smile axis used in volatility surfaces/cubes.
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum VolatilityAxis {
@@ -60,6 +61,7 @@ impl VolatilityAxis {
     }
 }
 
+/// # `VolatilityNodeKey`
 /// Surface node key made of market index, expiry date, and smile axis.
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct VolatilityNodeKey {
@@ -94,6 +96,7 @@ impl VolatilityNodeKey {
     }
 }
 
+/// # `VolatilityCubeNodeKey`
 /// Cube node key extends surface key with a tenor date.
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct VolatilityCubeNodeKey {
@@ -134,6 +137,7 @@ impl VolatilityCubeNodeKey {
     }
 }
 
+/// # `VolatilityNode`
 /// Resolved volatility node plus interpolation provenance.
 #[derive(Clone)]
 pub struct VolatilityNode {
@@ -178,6 +182,7 @@ impl VolatilityNode {
     }
 }
 
+/// # `VolatilitySurfaceElement`
 /// Volatility surface container.
 #[derive(Clone, Default)]
 pub struct VolatilitySurfaceElement {
@@ -242,6 +247,7 @@ impl VolatilitySurfaceElement {
     }
 }
 
+/// # `VolatilityCubeElement`
 /// Volatility cube container.
 #[derive(Clone, Default)]
 pub struct VolatilityCubeElement {

@@ -1,6 +1,6 @@
 use crate::indices::marketindex::MarketIndex;
 
-/// `SimulationElement`
+/// # `SimulationElement`
 ///
 /// Struct representing a simulation element, which includes the associated market
 /// index and the simulation draws.
@@ -29,5 +29,11 @@ impl SimulationElement {
     #[must_use]
     pub fn draws(&self) -> &[f64] {
         &self.draws
+    }
+
+    /// Returns mutable access to simulation draws.
+    #[must_use]
+    pub fn draws_mut(&mut self) -> &mut Vec<f64> {
+        &mut self.draws
     }
 }
