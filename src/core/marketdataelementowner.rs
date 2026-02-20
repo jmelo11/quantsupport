@@ -94,6 +94,7 @@ impl MarketDataElementOwner {
         axis: VolatilityAxis,
         value: ADReal,
     ) -> Self {
+        let key = VolatilityNodeKey::new(market_index.clone(), date, axis);
         self.volatility_surfaces
             .entry(market_index.clone())
             .or_insert_with(|| {
@@ -104,7 +105,38 @@ impl MarketDataElementOwner {
             })
             .borrow_mut()
             .nodes_mut()
-            .insert(VolatilityNodeKey::new(market_index, date, axis), value);
+            .insert(key, value);
+        self
+    }
+
+    /// # `with_vol_node_with_label`
+    /// Adds a single labeled volatility node to the owned surface map.
+    #[must_use]
+    pub fn with_vol_node_with_label(
+        mut self,
+        market_index: MarketIndex,
+        date: Date,
+        axis: VolatilityAxis,
+        value: ADReal,
+        quote_identifier: String,
+    ) -> Self {
+        let key = VolatilityNodeKey::new(market_index.clone(), date, axis);
+        let surface = self
+            .volatility_surfaces
+            .entry(market_index.clone())
+            .or_insert_with(|| {
+                Rc::new(RefCell::new(VolatilitySurfaceElement::new(
+                    market_index.clone(),
+                    HashMap::new(),
+                )))
+            })
+            .clone();
+
+        {
+            let mut surface_mut = surface.borrow_mut();
+            surface_mut.nodes_mut().insert(key.clone(), value);
+            surface_mut.labels_mut().insert(key, quote_identifier);
+        }
         self
     }
 

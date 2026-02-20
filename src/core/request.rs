@@ -79,6 +79,32 @@ pub trait PricerState {
             .ok_or_else(|| AtlasError::NotFoundErr(format!("Curve for index {index}")))
     }
 
+    /// Retrieves the dividend curve element associated with the given market index, if available.
+    fn get_dividend_curve_element(
+        &self,
+        index: &MarketIndex,
+    ) -> Result<SharedElement<crate::core::marketdatarequest::curveelement::DividendCurveElement>> {
+        self.get_market_data_reponse()
+            .ok_or_else(|| AtlasError::NotFoundErr("MarketDataResponse not available.".into()))?
+            .dividend_curves()
+            .get(index)
+            .cloned()
+            .ok_or_else(|| AtlasError::NotFoundErr(format!("Dividend curve for index {index}")))
+    }
+
+    /// Retrieves a mutable reference to the dividend curve element associated with the given market index, if available.
+    fn get_dividend_curve_element_mut(
+        &mut self,
+        index: &MarketIndex,
+    ) -> Result<SharedElement<crate::core::marketdatarequest::curveelement::DividendCurveElement>> {
+        self.get_market_data_reponse_mut()
+            .ok_or_else(|| AtlasError::NotFoundErr("MarketDataResponse not set.".into()))?
+            .dividend_curves()
+            .get(index)
+            .cloned()
+            .ok_or_else(|| AtlasError::NotFoundErr(format!("Dividend curve for index {index}")))
+    }
+
     /// Retrieves the fixing for a given market index and date, if available.
     fn get_fixing(&self, index: &MarketIndex, date: Date) -> Result<f64> {
         let key = (index.clone(), date);
