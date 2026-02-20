@@ -6,3 +6,6 @@ pub mod interpolator;
 pub mod linear;
 /// Log-linear interpolation implementation.
 pub mod loglinear;
+
+/// Bilinear interpolation implementation.
+pub mod bilinear;
