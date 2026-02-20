@@ -1,34 +1,38 @@
 use std::collections::HashMap;
 
-use crate::{ad::adreal::ADReal, indices::marketindex::MarketIndex, time::date::Date};
+use crate::{
+    ad::adreal::ADReal,
+    indices::marketindex::MarketIndex,
+    math::interpolation::bilinear::{BilinearInterpolator, BilinearPoint},
+    time::date::Date,
+};
 
-/// `VolatilityAxis`
-///
-/// Axis used to address volatility surfaces.
+/// # `VolatilityAxis`
+/// Smile axis used in volatility surfaces/cubes.
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum VolatilityAxis {
-    /// Strike axis.
+    /// Strike axis point.
     Strike(u64),
-    /// Delta axis.
+    /// Delta axis point.
     Delta(u64),
-    /// Log-moneyness axis.
+    /// Log-moneyness axis point.
     LogMoneyness(u64),
 }
 
 impl VolatilityAxis {
-    /// Creates strike axis.
+    /// Creates a strike axis value.
     #[must_use]
     pub const fn strike(value: f64) -> Self {
         Self::Strike(value.to_bits())
     }
 
-    /// Creates delta axis.
+    /// Creates a delta axis value.
     #[must_use]
     pub const fn delta(value: f64) -> Self {
         Self::Delta(value.to_bits())
     }
 
-    /// Creates log-moneyness axis.
+    /// Creates a log-moneyness axis value.
     #[must_use]
     pub const fn log_moneyness(value: f64) -> Self {
         Self::LogMoneyness(value.to_bits())
@@ -50,16 +54,15 @@ impl VolatilityAxis {
         }
     }
 
+    /// Returns the numeric axis value.
     #[must_use]
-    fn value(&self) -> f64 {
+    pub fn value(&self) -> f64 {
         f64::from_bits(self.bits())
     }
 }
 
-/// `VolatilityNodeKey`
-///
-/// Struct representing a key for identifying a specific node on a volatility surface,
-/// based on market index, date, and axis value.
+/// # `VolatilityNodeKey`
+/// Surface node key made of market index, expiry date, and smile axis.
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct VolatilityNodeKey {
     market_index: MarketIndex,
@@ -68,61 +71,119 @@ pub struct VolatilityNodeKey {
 }
 
 impl VolatilityNodeKey {
-    /// Creates a new [`VolatilityNodeKey`] with the specified market index, date, and axis value.
+    /// Creates a new surface node key.
     #[must_use]
     pub const fn new(market_index: MarketIndex, date: Date, axis: VolatilityAxis) -> Self {
-        Self {
-            market_index,
-            date,
-            axis,
-        }
+        Self { market_index, date, axis }
+    }
+
+    /// Returns the market index.
+    #[must_use]
+    pub const fn market_index(&self) -> &MarketIndex {
+        &self.market_index
+    }
+
+    /// Returns the expiry date.
+    #[must_use]
+    pub const fn date(&self) -> Date {
+        self.date
+    }
+
+    /// Returns the smile axis.
+    #[must_use]
+    pub const fn axis(&self) -> VolatilityAxis {
+        self.axis
     }
 }
 
-
-pub trait VolatilityNodeProvider {
-    fn node(&self, date: Date, axis: VolatilityAxis) -> Option<VolatilityNode>;
+/// # `VolatilityCubeNodeKey`
+/// Cube node key extends surface key with a tenor date.
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+pub struct VolatilityCubeNodeKey {
+    market_index: MarketIndex,
+    date: Date,
+    tenor_date: Date,
+    axis: VolatilityAxis,
 }
 
-/// `VolatilityNode`
-///
-/// Resolved volatility node with interpolation provenance.
+impl VolatilityCubeNodeKey {
+    /// Creates a new cube node key.
+    #[must_use]
+    pub const fn new(
+        market_index: MarketIndex,
+        date: Date,
+        tenor_date: Date,
+        axis: VolatilityAxis,
+    ) -> Self {
+        Self { market_index, date, tenor_date, axis }
+    }
+
+    /// Returns expiry date.
+    #[must_use]
+    pub const fn date(&self) -> Date {
+        self.date
+    }
+
+    /// Returns tenor date.
+    #[must_use]
+    pub const fn tenor_date(&self) -> Date {
+        self.tenor_date
+    }
+
+    /// Returns smile axis.
+    #[must_use]
+    pub const fn axis(&self) -> VolatilityAxis {
+        self.axis
+    }
+}
+
+/// # `VolatilityNode`
+/// Resolved volatility node plus interpolation provenance.
 #[derive(Clone)]
 pub struct VolatilityNode {
     value: ADReal,
     interpolation_keys: Vec<VolatilityNodeKey>,
+    colliding_keys: Vec<VolatilityNodeKey>,
 }
 
 impl VolatilityNode {
-    /// Creates a new resolved volatility node.
+    /// Creates a resolved volatility node.
     #[must_use]
-    pub fn new(value: ADReal, interpolation_keys: Vec<VolatilityNodeKey>) -> Self {
-        Self {
-            value,
-            interpolation_keys,
-        }
+    pub fn new(
+        value: ADReal,
+        interpolation_keys: Vec<VolatilityNodeKey>,
+        colliding_keys: Vec<VolatilityNodeKey>,
+    ) -> Self {
+        Self { value, interpolation_keys, colliding_keys }
     }
 
-    /// Returns the resolved volatility value.
+    /// Returns resolved volatility value.
     #[must_use]
     pub const fn value(&self) -> ADReal {
         self.value
     }
 
-    /// Returns mutable access to the resolved volatility value.
+    /// Returns mutable resolved volatility value.
     #[must_use]
     pub fn value_mut(&mut self) -> &mut ADReal {
         &mut self.value
     }
 
-    /// Returns the source keys used to produce this node.
+    /// Returns keys used for interpolation.
     #[must_use]
     pub fn interpolation_keys(&self) -> &[VolatilityNodeKey] {
         &self.interpolation_keys
     }
+
+    /// Returns keys that collide on identical coordinates.
+    #[must_use]
+    pub fn colliding_keys(&self) -> &[VolatilityNodeKey] {
+        &self.colliding_keys
+    }
 }
 
-/// Represents a volatility surface/cube container for a market index.
+/// # `VolatilitySurfaceElement`
+/// Volatility surface container.
 #[derive(Clone, Default)]
 pub struct VolatilitySurfaceElement {
     market_index: MarketIndex,
@@ -130,115 +191,176 @@ pub struct VolatilitySurfaceElement {
 }
 
 impl VolatilitySurfaceElement {
-    /// Creates a new volatility surface/cube element.
+    /// Creates a volatility surface element.
     #[must_use]
     pub fn new(market_index: MarketIndex, nodes: HashMap<VolatilityNodeKey, ADReal>) -> Self {
-        Self {
-            market_index,
-            nodes,
-        }
+        Self { market_index, nodes }
     }
 
-    /// Returns an exact or interpolated node at date/axis.
+    /// Returns exact node or bilinear interpolation in `(date, axis)`.
     pub fn node(&self, date: Date, axis: VolatilityAxis) -> Option<VolatilityNode> {
         let exact_key = VolatilityNodeKey::new(self.market_index.clone(), date, axis);
         if let Some(value) = self.nodes.get(&exact_key) {
-            return Some(VolatilityNode::new(*value, vec![exact_key]));
+            return Some(VolatilityNode::new(*value, vec![exact_key], Vec::new()));
         }
 
-        let mut points = self
+        let points = self
             .nodes
             .iter()
-            .filter_map(|(key, value)| {
-                if key.date == date {
-                    Some((key.axis, key.clone(), *value))
-                } else {
-                    None
-                }
+            .filter(|(key, _)| key.axis.axis_type() == axis.axis_type())
+            .map(|(key, value)| BilinearPoint {
+                x: (key.date - Date::empty()) as f64,
+                y: key.axis.value(),
+                value: *value,
+                key: key.clone(),
             })
             .collect::<Vec<_>>();
 
-        if points.len() < 2 {
-            return None;
-        }
-
-        points.retain(|point| point.0.axis_type() == axis.axis_type());
-        if points.len() < 2 {
-            return None;
-        }
-
-        points.sort_by(|a, b| a.0.value().total_cmp(&b.0.value()));
-        let upper = points.partition_point(|p| p.0.value() < axis.value());
-        if upper == 0 || upper >= points.len() {
-            return None;
-        }
-
-        let (x0, k0, v0) = points[upper - 1].clone();
-        let (x1, k1, v1) = points[upper].clone();
-        if (x1.value() - x0.value()).abs() < f64::EPSILON {
-            return Some(VolatilityNode::new(v0, vec![k0]));
-        }
-
-        let w = (axis.value() - x0.value()) / (x1.value() - x0.value());
+        let out = BilinearInterpolator::interpolate(
+            (date - Date::empty()) as f64,
+            axis.value(),
+            points,
+        )?;
         Some(VolatilityNode::new(
-            (v0 + (v1 - v0) * w).into(),
-            vec![k0, k1],
+            out.value(),
+            out.interpolation_keys().to_vec(),
+            out.colliding_keys().to_vec(),
         ))
     }
 
-    /// Returns the market index for this surface/cube.
+    /// Returns market index.
     #[must_use]
     pub const fn market_index(&self) -> &MarketIndex {
         &self.market_index
     }
 
-    /// Returns all stored raw nodes.
+    /// Returns all nodes.
     #[must_use]
     pub const fn nodes(&self) -> &HashMap<VolatilityNodeKey, ADReal> {
         &self.nodes
     }
 
-    /// Returns mutable access to raw nodes.
+    /// Returns mutable nodes.
     #[must_use]
-    pub const fn nodes_mut(&mut self) -> &mut HashMap<VolatilityNodeKey, ADReal> {
+    pub fn nodes_mut(&mut self) -> &mut HashMap<VolatilityNodeKey, ADReal> {
         &mut self.nodes
     }
 }
 
-/// `VolatilityCubeElement`
-///
-/// Represents a volatility cube container for a market index.
+/// # `VolatilityCubeElement`
+/// Volatility cube container.
 #[derive(Clone, Default)]
 pub struct VolatilityCubeElement {
     market_index: MarketIndex,
-    nodes: HashMap<VolatilityNodeKey, ADReal>,
+    nodes: HashMap<VolatilityCubeNodeKey, ADReal>,
 }
 
 impl VolatilityCubeElement {
-    /// Creates a new volatility cube element.
+    /// Creates a volatility cube element.
     #[must_use]
-    pub fn new(market_index: MarketIndex, nodes: HashMap<VolatilityNodeKey, ADReal>) -> Self {
-        Self {
-            market_index,
-            nodes,
-        }
+    pub fn new(market_index: MarketIndex, nodes: HashMap<VolatilityCubeNodeKey, ADReal>) -> Self {
+        Self { market_index, nodes }
     }
 
-    /// Returns the market index for this cube.
+    /// Returns market index.
     #[must_use]
     pub const fn market_index(&self) -> &MarketIndex {
         &self.market_index
     }
 
-    /// Returns mutable access to raw nodes.
+    /// Returns all cube nodes.
     #[must_use]
-    pub const fn nodes_mut(&mut self) -> &mut HashMap<VolatilityNodeKey, ADReal> {
+    pub const fn nodes(&self) -> &HashMap<VolatilityCubeNodeKey, ADReal> {
+        &self.nodes
+    }
+
+    /// Returns mutable cube nodes.
+    #[must_use]
+    pub fn nodes_mut(&mut self) -> &mut HashMap<VolatilityCubeNodeKey, ADReal> {
         &mut self.nodes
     }
 
-    /// Returns an exact or interpolated node at date/axis.
-    pub fn node(&self, date: Date, axis: VolatilityAxis) -> Option<VolatilityNode> {
-        VolatilitySurfaceElement::new(self.market_index.clone(), self.nodes.clone())
-            .node(date, axis)
+    /// Returns exact node or bilinear interpolation in `(date, axis)` for fixed tenor.
+    pub fn node(&self, date: Date, tenor_date: Date, axis: VolatilityAxis) -> Option<VolatilityNode> {
+        let exact_key = VolatilityCubeNodeKey::new(self.market_index.clone(), date, tenor_date, axis);
+        if let Some(value) = self.nodes.get(&exact_key) {
+            let key = VolatilityNodeKey::new(self.market_index.clone(), date, axis);
+            return Some(VolatilityNode::new(*value, vec![key], Vec::new()));
+        }
+
+        let points = self
+            .nodes
+            .iter()
+            .filter(|(key, _)| key.tenor_date == tenor_date && key.axis.axis_type() == axis.axis_type())
+            .map(|(key, value)| BilinearPoint {
+                x: (key.date - Date::empty()) as f64,
+                y: key.axis.value(),
+                value: *value,
+                key: VolatilityNodeKey::new(self.market_index.clone(), key.date, key.axis),
+            })
+            .collect::<Vec<_>>();
+
+        let out = BilinearInterpolator::interpolate(
+            (date - Date::empty()) as f64,
+            axis.value(),
+            points,
+        )?;
+
+        Some(VolatilityNode::new(
+            out.value(),
+            out.interpolation_keys().to_vec(),
+            out.colliding_keys().to_vec(),
+        ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use crate::{
+        ad::adreal::{ADReal, IsReal},
+        core::marketdatarequest::volatilityelements::{
+            VolatilityAxis, VolatilityCubeElement, VolatilityCubeNodeKey, VolatilityNodeKey,
+            VolatilitySurfaceElement,
+        },
+        indices::marketindex::MarketIndex,
+        time::date::Date,
+    };
+
+    #[test]
+    fn surface_interpolation_reports_used_keys() {
+        let index = MarketIndex::Equity("SPX".to_string());
+        let d0 = Date::new(2025, 6, 1);
+        let d1 = Date::new(2025, 8, 1);
+        let mut nodes = HashMap::new();
+        nodes.insert(VolatilityNodeKey::new(index.clone(), d0, VolatilityAxis::strike(90.0)), ADReal::from(0.24));
+        nodes.insert(VolatilityNodeKey::new(index.clone(), d0, VolatilityAxis::strike(110.0)), ADReal::from(0.20));
+        nodes.insert(VolatilityNodeKey::new(index.clone(), d1, VolatilityAxis::strike(90.0)), ADReal::from(0.22));
+        nodes.insert(VolatilityNodeKey::new(index.clone(), d1, VolatilityAxis::strike(110.0)), ADReal::from(0.18));
+        let surface = VolatilitySurfaceElement::new(index, nodes);
+
+        let node = surface.node(Date::new(2025, 7, 1), VolatilityAxis::strike(100.0)).expect("surface interpolation");
+        assert!(node.value().value() > 0.19 && node.value().value() < 0.23);
+        assert_eq!(node.interpolation_keys().len(), 4);
+        assert!(node.colliding_keys().is_empty());
+    }
+
+    #[test]
+    fn cube_uses_extra_tenor_key_and_interpolates() {
+        let index = MarketIndex::Equity("SPX".to_string());
+        let tenor = Date::new(2026, 1, 1);
+        let d0 = Date::new(2025, 6, 1);
+        let d1 = Date::new(2025, 8, 1);
+        let mut nodes = HashMap::new();
+        nodes.insert(VolatilityCubeNodeKey::new(index.clone(), d0, tenor, VolatilityAxis::strike(90.0)), ADReal::from(0.24));
+        nodes.insert(VolatilityCubeNodeKey::new(index.clone(), d0, tenor, VolatilityAxis::strike(110.0)), ADReal::from(0.20));
+        nodes.insert(VolatilityCubeNodeKey::new(index.clone(), d1, tenor, VolatilityAxis::strike(90.0)), ADReal::from(0.22));
+        nodes.insert(VolatilityCubeNodeKey::new(index.clone(), d1, tenor, VolatilityAxis::strike(110.0)), ADReal::from(0.18));
+        let cube = VolatilityCubeElement::new(index, nodes);
+
+        let node = cube.node(Date::new(2025, 7, 1), tenor, VolatilityAxis::strike(100.0)).expect("cube interpolation");
+        assert!(node.value().value() > 0.19 && node.value().value() < 0.23);
+        assert_eq!(node.interpolation_keys().len(), 4);
     }
 }

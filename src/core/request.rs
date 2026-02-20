@@ -2,7 +2,7 @@ use crate::{
     core::{
         evaluationresults::SensitivityMap,
         marketdatarequest::{
-            curveelement::DiscountCurveElement, derivedelementrequest::MarketDataResponse,
+            derivedelementrequest::{MarketDataResponse, SharedElement},
         },
     },
     indices::marketindex::MarketIndex,
@@ -41,24 +41,28 @@ impl Request {
     }
 }
 
-/// # PricerState
+/// # `PricerState`
 ///
 /// The `PricerState` trait defines the interface for accessing
 /// market data responses, derived elements and finxing values during the
 /// pricing process.
 pub trait PricerState {
     /// Retrieves the market data response associated with this state, if available.
-    fn get_market_data_reponse(&self) -> Option<&impl MarketDataResponse>;
+    fn get_market_data_reponse(&self) -> Option<&MarketDataResponse>;
 
     /// Retrieves a mutable reference to the market data response associated with this state, if available.
-    fn get_market_data_reponse_mut(&mut self) -> Option<&mut impl MarketDataResponse>;
+    fn get_market_data_reponse_mut(&mut self) -> Option<&mut MarketDataResponse>;
 
     /// Retrieves the discount curve element associated with the given market index, if available.
-    fn get_discount_curve_element(&self, index: &MarketIndex) -> Result<&DiscountCurveElement> {
+    fn get_discount_curve_element(
+        &self,
+        index: &MarketIndex,
+    ) -> Result<SharedElement<crate::core::marketdatarequest::curveelement::DiscountCurveElement>> {
         self.get_market_data_reponse()
             .ok_or_else(|| AtlasError::NotFoundErr("MarketDataResponse not available.".into()))?
             .discount_curves()
             .get(index)
+            .cloned()
             .ok_or_else(|| AtlasError::NotFoundErr(format!("Curve for index {index}")))
     }
 
@@ -66,11 +70,12 @@ pub trait PricerState {
     fn get_discount_curve_element_mut(
         &mut self,
         index: &MarketIndex,
-    ) -> Result<&mut DiscountCurveElement> {
+    ) -> Result<SharedElement<crate::core::marketdatarequest::curveelement::DiscountCurveElement>> {
         self.get_market_data_reponse_mut()
             .ok_or_else(|| AtlasError::NotFoundErr("MarketDataResponse not set.".into()))?
-            .discount_curves_mut()
-            .get_mut(&index)
+            .discount_curves()
+            .get(index)
+            .cloned()
             .ok_or_else(|| AtlasError::NotFoundErr(format!("Curve for index {index}")))
     }
 
