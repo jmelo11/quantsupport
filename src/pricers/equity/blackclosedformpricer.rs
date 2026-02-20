@@ -470,6 +470,6 @@ mod tests {
             .iter()
             .position(|key| key == "VOL_SPX_20250701_K100")
             .expect("vol sensitivity present");
-        assert!(sens.exposure()[vol_pos].is_finite());
+        assert!(sens.exposure()[vol_pos].abs() > 1e-12);
     }
 }
