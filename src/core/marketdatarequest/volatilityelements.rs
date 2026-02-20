@@ -153,6 +153,8 @@ pub struct VolatilityNode {
     value: ADReal,
     interpolation_keys: Vec<VolatilityNodeKey>,
     colliding_keys: Vec<VolatilityNodeKey>,
+    interpolation_labels: Vec<String>,
+    colliding_labels: Vec<String>,
 }
 
 impl VolatilityNode {
@@ -162,11 +164,15 @@ impl VolatilityNode {
         value: ADReal,
         interpolation_keys: Vec<VolatilityNodeKey>,
         colliding_keys: Vec<VolatilityNodeKey>,
+        interpolation_labels: Vec<String>,
+        colliding_labels: Vec<String>,
     ) -> Self {
         Self {
             value,
             interpolation_keys,
             colliding_keys,
+            interpolation_labels,
+            colliding_labels,
         }
     }
 
@@ -193,6 +199,18 @@ impl VolatilityNode {
     pub fn colliding_keys(&self) -> &[VolatilityNodeKey] {
         &self.colliding_keys
     }
+
+    /// Returns quote identifiers used by interpolation keys.
+    #[must_use]
+    pub fn interpolation_labels(&self) -> &[String] {
+        &self.interpolation_labels
+    }
+
+    /// Returns quote identifiers for colliding keys.
+    #[must_use]
+    pub fn colliding_labels(&self) -> &[String] {
+        &self.colliding_labels
+    }
 }
 
 /// # `VolatilitySurfaceElement`
@@ -201,6 +219,7 @@ impl VolatilityNode {
 pub struct VolatilitySurfaceElement {
     market_index: MarketIndex,
     nodes: HashMap<VolatilityNodeKey, ADReal>,
+    labels: HashMap<VolatilityNodeKey, String>,
 }
 
 impl VolatilitySurfaceElement {
@@ -210,6 +229,21 @@ impl VolatilitySurfaceElement {
         Self {
             market_index,
             nodes,
+            labels: HashMap::new(),
+        }
+    }
+
+    /// Creates a volatility surface element with quote identifiers for each node.
+    #[must_use]
+    pub fn with_labels(
+        market_index: MarketIndex,
+        nodes: HashMap<VolatilityNodeKey, ADReal>,
+        labels: HashMap<VolatilityNodeKey, String>,
+    ) -> Self {
+        Self {
+            market_index,
+            nodes,
+            labels,
         }
     }
 
@@ -217,7 +251,18 @@ impl VolatilitySurfaceElement {
     pub fn node(&self, date: Date, axis: VolatilityAxis) -> Option<VolatilityNode> {
         let exact_key = VolatilityNodeKey::new(self.market_index.clone(), date, axis);
         if let Some(value) = self.nodes.get(&exact_key) {
-            return Some(VolatilityNode::new(*value, vec![exact_key], Vec::new()));
+            let interpolation_labels = self
+                .labels
+                .get(&exact_key)
+                .cloned()
+                .map_or_else(Vec::new, |label| vec![label]);
+            return Some(VolatilityNode::new(
+                *value,
+                vec![exact_key],
+                Vec::new(),
+                interpolation_labels,
+                Vec::new(),
+            ));
         }
 
         let points = self
@@ -234,10 +279,22 @@ impl VolatilitySurfaceElement {
 
         let out =
             BilinearInterpolator::interpolate((date - Date::empty()) as f64, axis.value(), points)?;
+        let interpolation_labels = out
+            .interpolation_keys()
+            .iter()
+            .filter_map(|key| self.labels.get(key).cloned())
+            .collect::<Vec<_>>();
+        let colliding_labels = out
+            .colliding_keys()
+            .iter()
+            .filter_map(|key| self.labels.get(key).cloned())
+            .collect::<Vec<_>>();
         Some(VolatilityNode::new(
             out.value(),
             out.interpolation_keys().to_vec(),
             out.colliding_keys().to_vec(),
+            interpolation_labels,
+            colliding_labels,
         ))
     }
 
@@ -258,6 +315,18 @@ impl VolatilitySurfaceElement {
     pub fn nodes_mut(&mut self) -> &mut HashMap<VolatilityNodeKey, ADReal> {
         &mut self.nodes
     }
+
+    /// Returns quote identifiers for surface nodes.
+    #[must_use]
+    pub const fn labels(&self) -> &HashMap<VolatilityNodeKey, String> {
+        &self.labels
+    }
+
+    /// Returns mutable quote identifiers for surface nodes.
+    #[must_use]
+    pub fn labels_mut(&mut self) -> &mut HashMap<VolatilityNodeKey, String> {
+        &mut self.labels
+    }
 }
 
 /// # `VolatilityCubeElement`
@@ -266,6 +335,7 @@ impl VolatilitySurfaceElement {
 pub struct VolatilityCubeElement {
     market_index: MarketIndex,
     nodes: HashMap<VolatilityCubeNodeKey, ADReal>,
+    labels: HashMap<VolatilityCubeNodeKey, String>,
 }
 
 impl VolatilityCubeElement {
@@ -275,6 +345,21 @@ impl VolatilityCubeElement {
         Self {
             market_index,
             nodes,
+            labels: HashMap::new(),
+        }
+    }
+
+    /// Creates a volatility cube element with quote identifiers for each cube node.
+    #[must_use]
+    pub fn with_labels(
+        market_index: MarketIndex,
+        nodes: HashMap<VolatilityCubeNodeKey, ADReal>,
+        labels: HashMap<VolatilityCubeNodeKey, String>,
+    ) -> Self {
+        Self {
+            market_index,
+            nodes,
+            labels,
         }
     }
 
@@ -296,6 +381,18 @@ impl VolatilityCubeElement {
         &mut self.nodes
     }
 
+    /// Returns quote identifiers for cube nodes.
+    #[must_use]
+    pub const fn labels(&self) -> &HashMap<VolatilityCubeNodeKey, String> {
+        &self.labels
+    }
+
+    /// Returns mutable quote identifiers for cube nodes.
+    #[must_use]
+    pub fn labels_mut(&mut self) -> &mut HashMap<VolatilityCubeNodeKey, String> {
+        &mut self.labels
+    }
+
     /// Returns exact node or bilinear interpolation in `(date, axis)` for fixed tenor.
     pub fn node(
         &self,
@@ -307,7 +404,18 @@ impl VolatilityCubeElement {
             VolatilityCubeNodeKey::new(self.market_index.clone(), date, tenor_date, axis);
         if let Some(value) = self.nodes.get(&exact_key) {
             let key = VolatilityNodeKey::new(self.market_index.clone(), date, axis);
-            return Some(VolatilityNode::new(*value, vec![key], Vec::new()));
+            let interpolation_labels = self
+                .labels
+                .get(&exact_key)
+                .cloned()
+                .map_or_else(Vec::new, |label| vec![label]);
+            return Some(VolatilityNode::new(
+                *value,
+                vec![key],
+                Vec::new(),
+                interpolation_labels,
+                Vec::new(),
+            ));
         }
 
         let points = self
@@ -320,17 +428,40 @@ impl VolatilityCubeElement {
                 x: (key.date - Date::empty()) as f64,
                 y: key.axis.value(),
                 value: *value,
-                key: VolatilityNodeKey::new(self.market_index.clone(), key.date, key.axis),
+                key: key.clone(),
             })
             .collect::<Vec<_>>();
 
         let out =
             BilinearInterpolator::interpolate((date - Date::empty()) as f64, axis.value(), points)?;
 
+        let interpolation_keys = out
+            .interpolation_keys()
+            .iter()
+            .map(|key| VolatilityNodeKey::new(self.market_index.clone(), key.date, key.axis))
+            .collect::<Vec<_>>();
+        let colliding_keys = out
+            .colliding_keys()
+            .iter()
+            .map(|key| VolatilityNodeKey::new(self.market_index.clone(), key.date, key.axis))
+            .collect::<Vec<_>>();
+        let interpolation_labels = out
+            .interpolation_keys()
+            .iter()
+            .filter_map(|key| self.labels.get(key).cloned())
+            .collect::<Vec<_>>();
+        let colliding_labels = out
+            .colliding_keys()
+            .iter()
+            .filter_map(|key| self.labels.get(key).cloned())
+            .collect::<Vec<_>>();
+
         Some(VolatilityNode::new(
             out.value(),
-            out.interpolation_keys().to_vec(),
-            out.colliding_keys().to_vec(),
+            interpolation_keys,
+            colliding_keys,
+            interpolation_labels,
+            colliding_labels,
         ))
     }
 }
@@ -355,29 +486,47 @@ mod tests {
         let d0 = Date::new(2025, 6, 1);
         let d1 = Date::new(2025, 8, 1);
         let mut nodes = HashMap::new();
+        let mut labels = HashMap::new();
         nodes.insert(
             VolatilityNodeKey::new(index.clone(), d0, VolatilityAxis::strike(90.0)),
             ADReal::from(0.24),
+        );
+        labels.insert(
+            VolatilityNodeKey::new(index.clone(), d0, VolatilityAxis::strike(90.0)),
+            "VOL_1".to_string(),
         );
         nodes.insert(
             VolatilityNodeKey::new(index.clone(), d0, VolatilityAxis::strike(110.0)),
             ADReal::from(0.20),
         );
+        labels.insert(
+            VolatilityNodeKey::new(index.clone(), d0, VolatilityAxis::strike(110.0)),
+            "VOL_2".to_string(),
+        );
         nodes.insert(
             VolatilityNodeKey::new(index.clone(), d1, VolatilityAxis::strike(90.0)),
             ADReal::from(0.22),
+        );
+        labels.insert(
+            VolatilityNodeKey::new(index.clone(), d1, VolatilityAxis::strike(90.0)),
+            "VOL_3".to_string(),
         );
         nodes.insert(
             VolatilityNodeKey::new(index.clone(), d1, VolatilityAxis::strike(110.0)),
             ADReal::from(0.18),
         );
-        let surface = VolatilitySurfaceElement::new(index, nodes);
+        labels.insert(
+            VolatilityNodeKey::new(index.clone(), d1, VolatilityAxis::strike(110.0)),
+            "VOL_4".to_string(),
+        );
+        let surface = VolatilitySurfaceElement::with_labels(index, nodes, labels);
 
         let node = surface
             .node(Date::new(2025, 7, 1), VolatilityAxis::strike(100.0))
             .expect("surface interpolation");
         assert!(node.value().value() > 0.19 && node.value().value() < 0.23);
         assert_eq!(node.interpolation_keys().len(), 4);
+        assert_eq!(node.interpolation_labels().len(), 4);
         assert!(node.colliding_keys().is_empty());
     }
 
@@ -388,29 +537,47 @@ mod tests {
         let d0 = Date::new(2025, 6, 1);
         let d1 = Date::new(2025, 8, 1);
         let mut nodes = HashMap::new();
+        let mut labels = HashMap::new();
         nodes.insert(
             VolatilityCubeNodeKey::new(index.clone(), d0, tenor, VolatilityAxis::strike(90.0)),
             ADReal::from(0.24),
+        );
+        labels.insert(
+            VolatilityCubeNodeKey::new(index.clone(), d0, tenor, VolatilityAxis::strike(90.0)),
+            "CUBE_1".to_string(),
         );
         nodes.insert(
             VolatilityCubeNodeKey::new(index.clone(), d0, tenor, VolatilityAxis::strike(110.0)),
             ADReal::from(0.20),
         );
+        labels.insert(
+            VolatilityCubeNodeKey::new(index.clone(), d0, tenor, VolatilityAxis::strike(110.0)),
+            "CUBE_2".to_string(),
+        );
         nodes.insert(
             VolatilityCubeNodeKey::new(index.clone(), d1, tenor, VolatilityAxis::strike(90.0)),
             ADReal::from(0.22),
+        );
+        labels.insert(
+            VolatilityCubeNodeKey::new(index.clone(), d1, tenor, VolatilityAxis::strike(90.0)),
+            "CUBE_3".to_string(),
         );
         nodes.insert(
             VolatilityCubeNodeKey::new(index.clone(), d1, tenor, VolatilityAxis::strike(110.0)),
             ADReal::from(0.18),
         );
-        let cube = VolatilityCubeElement::new(index, nodes);
+        labels.insert(
+            VolatilityCubeNodeKey::new(index.clone(), d1, tenor, VolatilityAxis::strike(110.0)),
+            "CUBE_4".to_string(),
+        );
+        let cube = VolatilityCubeElement::with_labels(index, nodes, labels);
 
         let node = cube
             .node(Date::new(2025, 7, 1), tenor, VolatilityAxis::strike(100.0))
             .expect("cube interpolation");
         assert!(node.value().value() > 0.19 && node.value().value() < 0.23);
         assert_eq!(node.interpolation_keys().len(), 4);
+        assert_eq!(node.interpolation_labels().len(), 4);
     }
 
     #[test]
