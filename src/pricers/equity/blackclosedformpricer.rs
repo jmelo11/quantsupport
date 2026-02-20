@@ -27,6 +27,9 @@ fn standard_normal_pdf(x: f64) -> f64 {
     (-(x * x) * 0.5).exp() / (2.0 * std::f64::consts::PI).sqrt()
 }
 
+/// # `EquityOptionState`
+///
+/// State struct for storing intermediate values during the pricing of an equity option, including the option value, spot price, and market data response.
 #[derive(Default)]
 struct EquityOptionState {
     value: Option<ADReal>,
@@ -52,6 +55,8 @@ impl HandleValue<EquityEuroOptionTrade, EquityOptionState> for BlackClosedFormPr
     ) -> Result<f64> {
         let option = trade.instrument();
         let index = option.market_index().clone();
+
+        // move to the instrument level
         let tau = DayCounter::Actual365
             .year_fraction(trade.trade_date(), option.expiry_date())
             .max(0.0);
@@ -63,6 +68,8 @@ impl HandleValue<EquityEuroOptionTrade, EquityOptionState> for BlackClosedFormPr
             option.expiry_date(),
             VolatilityAxis::strike(option.strike()),
         );
+
+        // this should interpolate...
         if !state
             .get_market_data_reponse()
             .ok_or(AtlasError::ValueNotSetErr(
@@ -91,6 +98,7 @@ impl HandleValue<EquityEuroOptionTrade, EquityOptionState> for BlackClosedFormPr
         spot_ad.put_on_tape();
         state.spot = Some(spot_ad);
 
+        // this should be simplified and moved to the PriceState impl - we shouldn't have to do this manually in the pricer logic
         let volatility_keys = state
             .get_market_data_reponse()
             .ok_or(AtlasError::ValueNotSetErr(
@@ -124,7 +132,10 @@ impl HandleValue<EquityEuroOptionTrade, EquityOptionState> for BlackClosedFormPr
 
         let repriced_volatility_node = volatility_surface
             .borrow()
-            .node(option.expiry_date(), VolatilityAxis::strike(option.strike()))
+            .node(
+                option.expiry_date(),
+                VolatilityAxis::strike(option.strike()),
+            )
             .ok_or(AtlasError::NotFoundErr(
                 "Missing volatility node for option expiry/strike".into(),
             ))?;
@@ -149,7 +160,10 @@ impl HandleValue<EquityEuroOptionTrade, EquityOptionState> for BlackClosedFormPr
             ))?
             .value();
 
+        // this should be just f64
         let strike: ADReal = option.strike().into();
+
+        // borrowing should be handled by the PriceState impl - we shouldn't have to do this manually in the pricer logic
         let df_r = state
             .get_discount_curve_element(&index)?
             .borrow()
@@ -173,7 +187,6 @@ impl HandleValue<EquityEuroOptionTrade, EquityOptionState> for BlackClosedFormPr
         let value: ADReal = (df_r * undiscounted * trade.notional()).into();
         state.value = Some(value);
         Tape::stop_recording();
-
         Ok(value.value())
     }
 }
@@ -193,6 +206,7 @@ impl HandleSensitivities<EquityEuroOptionTrade, EquityOptionState> for BlackClos
                 .ok_or(AtlasError::ValueNotSetErr("Pricing not requested".into()))?
         };
 
+        // the mark is not being set on the value during pricing
         value.backward_to_mark()?;
         let option = trade.instrument();
         let index = option.market_index();
@@ -200,14 +214,18 @@ impl HandleSensitivities<EquityEuroOptionTrade, EquityOptionState> for BlackClos
         let mut ids = Vec::new();
         let mut exposures = Vec::new();
 
+        // this should be the index name or identifier, not "spot"
         ids.push("spot".to_string());
         exposures.push(
             state
                 .spot
-                .ok_or(AtlasError::ValueNotSetErr("Spot not recorded on state".into()))?
+                .ok_or(AtlasError::ValueNotSetErr(
+                    "Spot not recorded on state".into(),
+                ))?
                 .adjoint()?,
         );
 
+        // this was already done while pricing, we should just be able to read off from the state
         let volatility_key = VolatilityNodeKey::new(
             index.clone(),
             option.expiry_date(),
@@ -223,7 +241,8 @@ impl HandleSensitivities<EquityEuroOptionTrade, EquityOptionState> for BlackClos
             .ok_or(AtlasError::NotFoundErr(
                 "Missing volatility node for option expiry/strike".into(),
             ))?;
-
+        
+        // all this is wrong, we are using AD, we must compute sensitivities using the adjoints, not anything else.
         let tau = DayCounter::Actual365
             .year_fraction(trade.trade_date(), option.expiry_date())
             .max(0.0);
@@ -278,7 +297,10 @@ impl HandleSensitivities<EquityEuroOptionTrade, EquityOptionState> for BlackClos
             .ok_or(AtlasError::NotFoundErr("Missing volatility surface".into()))?
             .clone();
 
-        for (key, label) in sensitivity_keys.into_iter().zip(sensitivity_labels.drain(..)) {
+        for (key, label) in sensitivity_keys
+            .into_iter()
+            .zip(sensitivity_labels.drain(..))
+        {
             let (up, down) = {
                 let mut vol_surface = surface.borrow_mut();
                 let base = vol_surface
@@ -293,7 +315,10 @@ impl HandleSensitivities<EquityEuroOptionTrade, EquityOptionState> for BlackClos
                     .nodes_mut()
                     .insert(key.clone(), ADReal::from(base + eps));
                 let up = vol_surface
-                    .node(option.expiry_date(), VolatilityAxis::strike(option.strike()))
+                    .node(
+                        option.expiry_date(),
+                        VolatilityAxis::strike(option.strike()),
+                    )
                     .ok_or(AtlasError::NotFoundErr(
                         "Missing volatility node for option expiry/strike".into(),
                     ))?
@@ -304,14 +329,19 @@ impl HandleSensitivities<EquityEuroOptionTrade, EquityOptionState> for BlackClos
                     .nodes_mut()
                     .insert(key.clone(), ADReal::from(base - eps));
                 let down = vol_surface
-                    .node(option.expiry_date(), VolatilityAxis::strike(option.strike()))
+                    .node(
+                        option.expiry_date(),
+                        VolatilityAxis::strike(option.strike()),
+                    )
                     .ok_or(AtlasError::NotFoundErr(
                         "Missing volatility node for option expiry/strike".into(),
                     ))?
                     .value()
                     .value();
 
-                vol_surface.nodes_mut().insert(key.clone(), ADReal::from(base));
+                vol_surface
+                    .nodes_mut()
+                    .insert(key.clone(), ADReal::from(base));
                 (up, down)
             };
 
