@@ -2,7 +2,8 @@ use crate::{
     core::{
         evaluationresults::SensitivityMap,
         marketdatarequest::{
-            curveelement::DiscountCurveElement, derivedelementrequest::MarketDataResponse,
+            curveelement::DiscountCurveElement,
+            derivedelementrequest::MarketDataResponse,
         },
     },
     indices::marketindex::MarketIndex,
@@ -48,10 +49,10 @@ impl Request {
 /// pricing process.
 pub trait PricerState {
     /// Retrieves the market data response associated with this state, if available.
-    fn get_market_data_reponse(&self) -> Option<&impl MarketDataResponse>;
+    fn get_market_data_reponse(&self) -> Option<&MarketDataResponse>;
 
     /// Retrieves a mutable reference to the market data response associated with this state, if available.
-    fn get_market_data_reponse_mut(&mut self) -> Option<&mut impl MarketDataResponse>;
+    fn get_market_data_reponse_mut(&mut self) -> Option<&mut MarketDataResponse>;
 
     /// Retrieves the discount curve element associated with the given market index, if available.
     fn get_discount_curve_element(&self, index: &MarketIndex) -> Result<&DiscountCurveElement> {
