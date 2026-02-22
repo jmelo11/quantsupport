@@ -94,6 +94,12 @@ impl EquityEuroOption {
     pub const fn day_counter(&self) -> &DayCounter {
         &self.day_counter
     }
+
+    /// Returns the currency of this option.
+    #[must_use]
+    pub const fn currency(&self) -> &Currency {
+        &self.currency
+    }
 }
 
 impl EquityEuroOptionTrade {
