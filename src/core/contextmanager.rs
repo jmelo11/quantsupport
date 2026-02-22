@@ -1,31 +1,34 @@
+use std::collections::HashMap;
+
 use crate::{
     currencies::currency::Currency,
-    models::GbmModelParameters,
+    models::{ModelKey, ModelParameters, ModelStore},
     quotes::{fixingstore::FixingStore, quote::Level, quotestore::QuoteStore},
     time::date::Date,
 };
 
 /// # `ContextManager`
 ///
-/// Manages the context for instrument evaluation, including market data access, quote level preferences, base currency settings, and model parameters.
+/// Manages the context for instrument evaluation, including market data access, quote level preferences,
+/// base currency settings, and a keyed store of model parameters for multiple model types.
 pub struct ContextManager {
     quote_store: QuoteStore,
     fixing_store: FixingStore,
     quote_level: Level, // Placeholder to select the type of quote we want to use
     base_currency: Currency,
-    gbm_parameters: Option<GbmModelParameters>,
+    models: ModelStore,
 }
 
 impl ContextManager {
     /// Creates a new pricing data context.
     #[must_use]
-    pub const fn new(quote_store: QuoteStore, fixing_store: FixingStore) -> Self {
+    pub fn new(quote_store: QuoteStore, fixing_store: FixingStore) -> Self {
         Self {
             quote_store,
             fixing_store,
             quote_level: Level::Mid,
             base_currency: Currency::USD,
-            gbm_parameters: None,
+            models: HashMap::new(),
         }
     }
 
@@ -73,16 +76,25 @@ impl ContextManager {
         self.quote_store.reference_date()
     }
 
-    /// Sets the GBM model parameters.
+    /// Registers a set of model parameters under the given key.
+    ///
+    /// If a model with the same key already exists it is replaced.
     #[must_use]
-    pub const fn with_gbm_parameters(mut self, params: GbmModelParameters) -> Self {
-        self.gbm_parameters = Some(params);
+    pub fn with_model(mut self, key: ModelKey, params: ModelParameters) -> Self {
+        self.models.insert(key, params);
         self
     }
 
-    /// Returns the GBM model parameters, if set.
+    /// Returns the model parameters stored under `key`, if any.
     #[must_use]
-    pub const fn gbm_parameters(&self) -> Option<&GbmModelParameters> {
-        self.gbm_parameters.as_ref()
+    pub fn model(&self, key: &ModelKey) -> Option<&ModelParameters> {
+        self.models.get(key)
+    }
+
+    /// Returns the full model store.
+    #[must_use]
+    pub const fn models(&self) -> &ModelStore {
+        &self.models
     }
 }
+

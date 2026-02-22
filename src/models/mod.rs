@@ -1,5 +1,36 @@
 use rand::{rngs::StdRng, Rng, SeedableRng};
-use std::f64::consts::PI;
+use std::{collections::HashMap, f64::consts::PI};
+
+/// # `ModelKey`
+///
+/// Identifies a model type in the [`ModelStore`].  New model families should be added here.
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+pub enum ModelKey {
+    /// Geometric Brownian Motion (Black-Scholes) Monte Carlo model.
+    Gbm,
+    /// Hull-White short-rate model.
+    HullWhite,
+}
+
+/// # `ModelParameters`
+///
+/// A tagged union of per-model parameter sets. A [`ModelStore`] maps a [`ModelKey`]
+/// to the corresponding `ModelParameters` variant.
+#[derive(Clone, Debug)]
+pub enum ModelParameters {
+    /// Parameters for the GBM Monte Carlo model.
+    Gbm(GbmModelParameters),
+    /// Placeholder for Hull-White model parameters (to be extended).
+    HullWhite,
+}
+
+/// # `ModelStore`
+///
+/// A keyed store of model parameters. Used in [`crate::core::contextmanager::ContextManager`],
+/// [`crate::core::marketdatahandling::marketdata::MarketDataRequest`], and
+/// [`crate::core::marketdatahandling::marketdata::MarketData`] so that multiple
+/// model configurations can coexist and providers can inspect them at request time.
+pub type ModelStore = HashMap<ModelKey, ModelParameters>;
 
 /// # `GbmModelParameters`
 ///

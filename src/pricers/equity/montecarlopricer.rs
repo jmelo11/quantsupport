@@ -17,6 +17,7 @@ use crate::{
         trade::Trade,
     },
     instruments::equity::equityeurooption::{EquityEuroOptionTrade, EuroOptionType},
+    models::{ModelKey, ModelParameters},
     pricers::generalpricers::BlackMonteCarloPricer,
     utils::errors::{AtlasError, Result},
 };
@@ -240,7 +241,7 @@ impl Pricer for BlackMonteCarloPricer {
                     },
                 ])
                 .with_fixings_request(vec![FixingRequest::new(index, trade.trade_date())])
-                .with_model_parameters(self.model_parameters),
+                .with_model(ModelKey::Gbm, ModelParameters::Gbm(self.model_parameters)),
         )
     }
 }
@@ -272,7 +273,7 @@ mod tests {
         instruments::equity::equityeurooption::{
             EquityEuroOption, EquityEuroOptionTrade, EuroOptionType,
         },
-        models::GbmModelParameters,
+        models::{GbmModelParameters, ModelKey, ModelParameters},
         pricers::generalpricers::BlackMonteCarloPricer,
         rates::{
             interestrate::RateDefinition,

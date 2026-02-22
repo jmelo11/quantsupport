@@ -6,32 +6,32 @@ use crate::{
         constructedelementstore::ConstructedElementStore, fixingrequest::FixingRequest,
     },
     indices::marketindex::MarketIndex,
-    models::GbmModelParameters,
+    models::{ModelKey, ModelParameters, ModelStore},
     time::date::Date,
     utils::errors::Result,
 };
 
 /// # `MarketDataRequest`
 ///
-/// Request for market data, including constructed elements and fixings.
+/// Request for market data, including constructed elements, fixings, and an optional model store.
 #[derive(Default)]
 pub struct MarketDataRequest {
     constructed_elements_request: Option<Vec<ConstructedElementRequest>>,
     fixings_request: Option<Vec<FixingRequest>>,
-    model_parameters: Option<GbmModelParameters>,
+    models: ModelStore,
 }
 
 impl MarketDataRequest {
     /// Creates a new `MarketDataRequest` with the specified constructed elements and fixings requests.
     #[must_use]
-    pub const fn new(
+    pub fn new(
         constructed_elements_request: Option<Vec<ConstructedElementRequest>>,
         fixings_request: Option<Vec<FixingRequest>>,
     ) -> Self {
         Self {
             constructed_elements_request,
             fixings_request,
-            model_parameters: None,
+            models: HashMap::new(),
         }
     }
 
@@ -47,10 +47,16 @@ impl MarketDataRequest {
         self.fixings_request.as_ref()
     }
 
-    /// Returns the model parameters included in this request, if any.
+    /// Returns the model parameters stored under `key`, if any.
     #[must_use]
-    pub const fn model_parameters(&self) -> Option<&GbmModelParameters> {
-        self.model_parameters.as_ref()
+    pub fn model(&self, key: &ModelKey) -> Option<&ModelParameters> {
+        self.models.get(key)
+    }
+
+    /// Returns the full model store attached to this request.
+    #[must_use]
+    pub const fn models(&self) -> &ModelStore {
+        &self.models
     }
 
     /// Builder method to set the constructed elements request.
@@ -70,34 +76,36 @@ impl MarketDataRequest {
         self
     }
 
-    /// Builder method to set the model parameters.
+    /// Registers a set of model parameters under the given key.
+    ///
+    /// If a model with the same key already exists it is replaced.
     #[must_use]
-    pub const fn with_model_parameters(mut self, params: GbmModelParameters) -> Self {
-        self.model_parameters = Some(params);
+    pub fn with_model(mut self, key: ModelKey, params: ModelParameters) -> Self {
+        self.models.insert(key, params);
         self
     }
 }
 
 /// # `MarketData`
 ///
-/// Struct representing market data, including fixings, constructed elements, and optional model parameters.
+/// Struct representing market data, including fixings, constructed elements, and a model store.
 pub struct MarketData {
     fixings: HashMap<MarketIndex, BTreeMap<Date, f64>>,
     constructed_elements: ConstructedElementStore,
-    model_parameters: Option<GbmModelParameters>,
+    models: ModelStore,
 }
 
 impl MarketData {
     /// Creates a new `MarketData` with the specified fixings and constructed elements.
     #[must_use]
-    pub const fn new(
+    pub fn new(
         fixings: HashMap<MarketIndex, BTreeMap<Date, f64>>,
         constructed_elements: ConstructedElementStore,
     ) -> Self {
         Self {
             fixings,
             constructed_elements,
-            model_parameters: None,
+            models: HashMap::new(),
         }
     }
 
@@ -119,16 +127,24 @@ impl MarketData {
         &mut self.constructed_elements
     }
 
-    /// Returns the model parameters, if any.
+    /// Returns the model parameters stored under `key`, if any.
     #[must_use]
-    pub const fn model_parameters(&self) -> Option<&GbmModelParameters> {
-        self.model_parameters.as_ref()
+    pub fn model(&self, key: &ModelKey) -> Option<&ModelParameters> {
+        self.models.get(key)
     }
 
-    /// Builder method to attach model parameters.
+    /// Returns the full model store attached to this market data.
     #[must_use]
-    pub const fn with_model_parameters(mut self, params: GbmModelParameters) -> Self {
-        self.model_parameters = Some(params);
+    pub const fn models(&self) -> &ModelStore {
+        &self.models
+    }
+
+    /// Registers a set of model parameters under the given key.
+    ///
+    /// If a model with the same key already exists it is replaced.
+    #[must_use]
+    pub fn with_model(mut self, key: ModelKey, params: ModelParameters) -> Self {
+        self.models.insert(key, params);
         self
     }
 }
