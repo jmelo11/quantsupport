@@ -1,6 +1,6 @@
 use crate::{
     ad::adreal::{ADReal, IsReal},
-    core::pillars::Pillars,
+    core::{elements::volatilitysurfaceelement::ADVolatilitySurfaceElement, pillars::Pillars},
     indices::marketindex::MarketIndex,
     math::interpolation::bilinear::{BilinearInterpolator, BilinearPoint, BilinearValue},
     time::{date::Date, period::Period},
@@ -116,6 +116,8 @@ impl Pillars<ADReal> for InterpolatedVolatilitySurface<ADReal> {
         }
     }
 }
+
+impl ADVolatilitySurfaceElement for InterpolatedVolatilitySurface<ADReal> {}
 
 #[cfg(test)]
 mod tests {
