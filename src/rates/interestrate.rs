@@ -1,17 +1,23 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    ad::adreal::{ADReal, Const, FloatExt, IsReal},
     time::{date::Date, daycounter::DayCounter, enums::Frequency},
     utils::errors::{AtlasError, Result},
 };
 
-use super::enums::Compounding;
+use super::compounding::Compounding;
 
 /// # `RateDefinition`
+///
 /// Struct that defines a rate.
+///
 /// # Example
 /// ```
-/// use rustatlas::prelude::*;
+/// use quantsupport::time::{date::Date, daycounter::DayCounter, enums::Frequency};
+/// use quantsupport::rates::compounding::Compounding;
+/// use quantsupport::rates::interestrate::RateDefinition;
+///
 /// let rate_definition = RateDefinition::new(DayCounter::Actual360, Compounding::Simple, Frequency::Annual);
 /// assert_eq!(rate_definition.compounding(), Compounding::Simple);
 /// assert_eq!(rate_definition.frequency(), Frequency::Annual);
@@ -73,24 +79,33 @@ impl Default for RateDefinition {
 ///
 /// ## Example
 /// ```
-/// use rustatlas::prelude::*;
+/// use quantsupport::rates::interestrate::InterestRate;
+/// use quantsupport::time::{date::Date, daycounter::DayCounter, enums::Frequency};
+/// use quantsupport::rates::compounding::Compounding;
+///
 /// let rate = InterestRate::new(0.05, Compounding::Simple, Frequency::Annual, DayCounter::Actual360);
 /// assert_eq!(rate.rate(), 0.05);
 /// assert_eq!(rate.compounding(), Compounding::Simple);
 /// assert_eq!(rate.frequency(), Frequency::Annual);
 /// assert_eq!(rate.day_counter(), DayCounter::Actual360);
 /// ```
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
-pub struct InterestRate {
-    rate: f64,
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct InterestRate<T>
+where
+    T: IsReal,
+{
+    rate: T,
     rate_definition: RateDefinition,
 }
 
-impl InterestRate {
+impl<T> InterestRate<T>
+where
+    T: IsReal,
+{
     /// Creates a new `InterestRate` with the specified rate value and rate definition parameters.
     #[must_use]
     pub const fn new(
-        rate: f64,
+        rate: T,
         compounding: Compounding,
         frequency: Frequency,
         day_counter: DayCounter,
@@ -103,7 +118,7 @@ impl InterestRate {
 
     /// Creates a new `InterestRate` from a rate value and a `RateDefinition`.
     #[must_use]
-    pub const fn from_rate_definition(rate: f64, rate_definition: RateDefinition) -> Self {
+    pub const fn from_rate_definition(rate: T, rate_definition: RateDefinition) -> Self {
         Self {
             rate,
             rate_definition,
@@ -112,7 +127,19 @@ impl InterestRate {
 
     /// Returns the rate value of this interest rate.
     #[must_use]
-    pub const fn rate(&self) -> f64 {
+    pub const fn rate_ref(&self) -> &T {
+        &self.rate
+    }
+
+    /// Returns the rate definition of this interest rate.
+    #[must_use]
+    pub const fn rate_mut(&mut self) -> &mut T {
+        &mut self.rate
+    }
+
+    /// Returns the rate value of this interest rate.
+    #[must_use]
+    pub const fn rate(&self) -> T {
         self.rate
     }
 
@@ -139,7 +166,9 @@ impl InterestRate {
     pub const fn day_counter(&self) -> DayCounter {
         self.rate_definition.day_counter()
     }
+}
 
+impl InterestRate<f64> {
     /// Calculates the implied interest rate from a compound factor.
     ///
     /// # Errors
@@ -249,11 +278,132 @@ impl InterestRate {
     }
 }
 
+impl InterestRate<ADReal> {
+    /// Calculates the implied interest rate from a compound factor.
+    ///
+    /// # Errors
+    /// Returns an error if the compound factor or time are invalid for the
+    /// requested compounding convention.
+    pub fn implied_rate(
+        compound: ADReal,
+        result_dc: DayCounter,
+        comp: Compounding,
+        freq: Frequency,
+        t: f64,
+    ) -> Result<Self> {
+        if compound <= 0.0 {
+            return Err(AtlasError::InvalidValueErr(
+                "Positive compound factor required".to_string(),
+            ));
+        }
+        let f = f64::from(freq as i32);
+        if (compound - 1.0).abs() < 1e-12 {
+            if t < 0.0 {
+                return Err(AtlasError::InvalidValueErr(
+                    "Non-negative time required".to_string(),
+                ));
+            }
+            Ok(Self::new(ADReal::zero(), comp, freq, result_dc))
+        } else {
+            if t <= 0.0 {
+                return Err(AtlasError::InvalidValueErr(
+                    "Positive time required".to_string(),
+                ));
+            }
+            match comp {
+                Compounding::Simple => {
+                    let r = (compound - 1.0) / t;
+                    Ok(Self::new(r.into(), comp, freq, result_dc))
+                }
+                Compounding::Compounded => {
+                    let r = (compound.pow_expr(Const::one() / (t * f)) - 1.0) * f;
+                    Ok(Self::new(r.into(), comp, freq, result_dc))
+                }
+                Compounding::Continuous => {
+                    let r = (compound).ln() / t;
+                    Ok(Self::new(r.into(), comp, freq, result_dc))
+                }
+                Compounding::SimpleThenCompounded => {
+                    if t <= 1.0 / f {
+                        let r = (compound - 1.0) / t;
+                        Ok(Self::new(r.into(), comp, freq, result_dc))
+                    } else {
+                        let r = (compound.pow_expr(Const::one() / (t * f)) - 1.0) * f;
+                        Ok(Self::new(r.into(), comp, freq, result_dc))
+                    }
+                }
+                Compounding::CompoundedThenSimple => {
+                    if t > 1.0 / f {
+                        let r = (compound - 1.0) / t;
+                        Ok(Self::new(r.into(), comp, freq, result_dc))
+                    } else {
+                        let r = (compound.pow_expr(Const::one() / (t * f)) - 1.0) * f;
+                        Ok(Self::new(r.into(), comp, freq, result_dc))
+                    }
+                }
+            }
+        }
+    }
+
+    /// Calculates the compound factor between two dates using the day counter.
+    #[must_use]
+    pub fn compound_factor(&self, start: Date, end: Date) -> ADReal {
+        let day_counter = self.day_counter();
+        let year_fraction = day_counter.year_fraction(start, end); // for now
+        self.compound_factor_from_yf(year_fraction)
+    }
+
+    /// Calculates the compound factor from a year fraction.
+    #[must_use]
+    pub fn compound_factor_from_yf(&self, year_fraction: f64) -> ADReal {
+        let rate = self.rate();
+        let compounding = self.compounding();
+        let f = f64::from(self.frequency() as i32);
+        match compounding {
+            Compounding::Simple => (rate * year_fraction + Const::one()).into(),
+            Compounding::Compounded => (Const::one() + rate / f).powf(year_fraction * f).into(),
+            Compounding::Continuous => (rate * year_fraction).exp().into(),
+            Compounding::SimpleThenCompounded => {
+                if year_fraction <= 1.0 / f {
+                    (rate * year_fraction + Const::one()).into()
+                } else {
+                    (Const::one() + rate / f).powf(year_fraction * f).into()
+                }
+            }
+            Compounding::CompoundedThenSimple => {
+                if year_fraction > 1.0 / f {
+                    (rate * year_fraction + Const::one()).into()
+                } else {
+                    (Const::one() + rate / f).powf(year_fraction * f).into()
+                }
+            }
+        }
+    }
+
+    /// Calculates the discount factor between two dates.
+    #[must_use]
+    pub fn discount_factor(&self, start: Date, end: Date) -> ADReal {
+        (Const::one() / self.compound_factor(start, end)).into()
+    }
+
+    /// Calculates the forward rate between two dates with specified compounding and frequency.
+    #[must_use]
+    pub const fn forward_rate(
+        &self,
+        _start_date: Date,
+        _end_date: Date,
+        _comp: Compounding,
+        _freq: Frequency,
+    ) -> ADReal {
+        self.rate
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::{
         rates::{
-            enums::Compounding,
+            compounding::Compounding,
             interestrate::{InterestRate, RateDefinition},
         },
         time::{daycounter::DayCounter, enums::Frequency},
@@ -580,13 +730,13 @@ mod tests {
     fn test_all_cases() {
         let test_cases = test_cases();
         for test_case in test_cases {
-            let rate = InterestRate::new(
+            let rate: InterestRate<f64> = InterestRate::new(
                 test_case.rate,
                 test_case.compounding,
                 test_case.frequency,
                 DayCounter::Actual360,
             );
-            let implied_rate = InterestRate::implied_rate(
+            let implied_rate: InterestRate<f64> = InterestRate::<f64>::implied_rate(
                 rate.compound_factor_from_yf(test_case.time),
                 DayCounter::Actual360,
                 test_case.compounding2,
@@ -659,7 +809,7 @@ mod tests {
     fn test_implied_rate() -> Result<()> {
         // Choose parameters that make sense for your implied_rate function
         // For example:
-        let ir = InterestRate::implied_rate(
+        let ir = InterestRate::<f64>::implied_rate(
             1.05,
             DayCounter::Actual360,
             Compounding::Simple,
@@ -673,7 +823,7 @@ mod tests {
 
     #[test]
     fn test_implied_rate_panic() {
-        let err = InterestRate::implied_rate(
+        let err = InterestRate::<f64>::implied_rate(
             0.0,
             DayCounter::Actual360,
             Compounding::Simple,

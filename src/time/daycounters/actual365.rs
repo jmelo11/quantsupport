@@ -1,16 +1,15 @@
-use super::traits::DayCountProvider;
+use super::daycount::DayCount;
 use crate::time::date::Date;
 
-/// # Actual365 (Fixed)
+/// # `Actual365` (Fixed)
+/// 
 /// Actual/365 day count convention.
-/// Calculates the day count fraction according to the formula:
-/// $$
-/// \frac{ActualDays}{365}
-/// $$
-/// where `ActualDays` is the number of days between the start date and the end date.
-/// # Example
+/// 
+/// ## Example
 /// ```
-/// use rustatlas::prelude::*;
+/// use quantsupport::time::date::Date;
+/// use quantsupport::time::daycounters::actual365::Actual365;
+/// use quantsupport::time::daycounters::daycount::DayCount;
 ///
 /// let start = Date::new(2020, 1, 1);
 /// let end = Date::new(2020, 2, 1);
@@ -19,7 +18,7 @@ use crate::time::date::Date;
 /// ```
 pub struct Actual365;
 
-impl DayCountProvider for Actual365 {
+impl DayCount for Actual365 {
     fn day_count(start: Date, end: Date) -> i64 {
         end - start
     }

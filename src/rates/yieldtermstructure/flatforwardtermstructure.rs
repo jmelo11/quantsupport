@@ -1,57 +1,62 @@
-use std::sync::Arc;
-
 use crate::{
+    ad::adreal::{ADReal, IsReal},
+    core::{elements::curveelement::ADCurveElement, pillars::Pillars},
     rates::{
-        enums::Compounding,
+        compounding::Compounding,
         interestrate::{InterestRate, RateDefinition},
-        traits::{HasReferenceDate, YieldProvider},
+        yieldtermstructure::interestratestermstructure::InterestRatesTermStructure,
     },
-    time::{date::Date, enums::Frequency, period::Period},
+    time::{date::Date, enums::Frequency},
     utils::errors::{AtlasError, Result},
 };
-
-use super::traits::{AdvanceTermStructureInTime, YieldTermStructureTrait};
 
 /// # `FlatForwardTermStructure`
 /// Struct that defines a flat forward term structure.
 /// # Example
 /// ```
-/// use rustatlas::prelude::*;
+/// use quantsupport::time::date::Date;
+/// use quantsupport::rates::yieldtermstructure::flatforwardtermstructure::FlatForwardTermStructure;
+/// use quantsupport::rates::interestrate::RateDefinition;
+/// use quantsupport::rates::yieldtermstructure::interestratestermstructure::InterestRatesTermStructure;
 ///
 /// let reference_date = Date::new(2023, 8, 19);
 /// let term_structure = FlatForwardTermStructure::new(reference_date, 0.5, RateDefinition::default());
 /// assert_eq!(term_structure.reference_date(), reference_date);
 /// ```
-#[derive(Clone, Copy)]
-pub struct FlatForwardTermStructure {
+#[derive(Clone)]
+pub struct FlatForwardTermStructure<T>
+where
+    T: IsReal,
+{
     reference_date: Date,
-    rate: InterestRate,
+    rate: InterestRate<T>,
+    pillar_label: Option<String>,
 }
 
-impl FlatForwardTermStructure {
+impl<T> FlatForwardTermStructure<T>
+where
+    T: IsReal,
+{
     /// Creates a new `FlatForwardTermStructure` with the specified reference date, rate, and rate definition.
     #[must_use]
-    pub const fn new(
-        reference_date: Date,
-        rate: f64,
-        rate_definition: RateDefinition,
-    ) -> Self {
+    pub const fn new(reference_date: Date, rate: T, rate_definition: RateDefinition) -> Self {
         let rate = InterestRate::from_rate_definition(rate, rate_definition);
         Self {
             reference_date,
             rate,
+            pillar_label: None,
         }
     }
 
     /// Returns the underlying interest rate.
     #[must_use]
-    pub const fn rate(&self) -> InterestRate {
+    pub const fn rate(&self) -> InterestRate<T> {
         self.rate
     }
 
     /// Returns the rate value.
     #[must_use]
-    pub const fn value(&self) -> f64 {
+    pub const fn value(&self) -> T {
         self.rate.rate()
     }
 
@@ -60,15 +65,35 @@ impl FlatForwardTermStructure {
     pub const fn rate_definition(&self) -> RateDefinition {
         self.rate.rate_definition()
     }
-}
 
-impl HasReferenceDate for FlatForwardTermStructure {
-    fn reference_date(&self) -> Date {
-        self.reference_date
+    /// Sets the pillar label for the term structure and returns a new instance with the updated label.
+    #[must_use]
+    pub fn with_pillar_label(mut self, label: String) -> Self {
+        self.pillar_label = Some(label);
+        self
     }
 }
 
-impl YieldProvider for FlatForwardTermStructure {
+impl Pillars<ADReal> for FlatForwardTermStructure<ADReal> {
+    fn pillars(&self) -> Option<Vec<(String, &ADReal)>> {
+        self.pillar_label
+            .as_ref()
+            .map(|label| vec![(label.clone(), self.rate.rate_ref())])
+    }
+
+    fn pillar_labels(&self) -> Option<Vec<String>> {
+        self.pillar_label.as_ref().map(|label| vec![label.clone()])
+    }
+
+    fn put_pillars_on_tape(&mut self) {
+        self.rate.rate_mut().put_on_tape();
+    }
+}
+
+impl InterestRatesTermStructure<f64> for FlatForwardTermStructure<f64> {
+    fn reference_date(&self) -> Date {
+        self.reference_date
+    }
     fn discount_factor(&self, date: Date) -> Result<f64> {
         if date < self.reference_date() {
             return Err(AtlasError::InvalidValueErr(format!(
@@ -87,39 +112,52 @@ impl YieldProvider for FlatForwardTermStructure {
     ) -> Result<f64> {
         let comp_factor = self.discount_factor(start_date)? / self.discount_factor(end_date)?;
         let t = self.rate.day_counter().year_fraction(start_date, end_date);
-        Ok(InterestRate::implied_rate(comp_factor, self.rate.day_counter(), comp, freq, t)?.rate())
+        Ok(
+            InterestRate::<f64>::implied_rate(comp_factor, self.rate.day_counter(), comp, freq, t)?
+                .rate(),
+        )
     }
 }
 
-/// # `AdvanceTermStructureInTime` for `FlatForwardTermStructure`
-impl AdvanceTermStructureInTime for FlatForwardTermStructure {
-    fn advance_to_period(&self, period: Period) -> Result<Arc<dyn YieldTermStructureTrait>> {
-        let new_reference_date = self
-            .reference_date()
-            .advance(period.length(), period.units());
-        Ok(Arc::new(Self::new(
-            new_reference_date,
-            self.value(),
-            self.rate_definition(),
-        )))
+impl InterestRatesTermStructure<ADReal> for FlatForwardTermStructure<ADReal> {
+    fn reference_date(&self) -> Date {
+        self.reference_date
     }
-
-    fn advance_to_date(&self, date: Date) -> Result<Arc<dyn YieldTermStructureTrait>> {
-        Ok(Arc::new(Self::new(
-            date,
-            self.value(),
-            self.rate_definition(),
-        )))
+    fn discount_factor(&self, date: Date) -> Result<ADReal> {
+        if date < self.reference_date() {
+            return Err(AtlasError::InvalidValueErr(format!(
+                "Date {date:?} is before reference date {reference_date:?}",
+                reference_date = self.reference_date()
+            )));
+        }
+        Ok(self.rate.discount_factor(self.reference_date(), date))
+    }
+    fn forward_rate(
+        &self,
+        start_date: Date,
+        end_date: Date,
+        comp: Compounding,
+        freq: Frequency,
+    ) -> Result<ADReal> {
+        let comp_factor = self.discount_factor(start_date)? / self.discount_factor(end_date)?;
+        let t = self.rate.day_counter().year_fraction(start_date, end_date);
+        Ok(InterestRate::<ADReal>::implied_rate(
+            comp_factor.into(),
+            self.rate.day_counter(),
+            comp,
+            freq,
+            t,
+        )?
+        .rate())
     }
 }
 
-impl YieldTermStructureTrait for FlatForwardTermStructure {}
+impl ADCurveElement for FlatForwardTermStructure<ADReal> {}
 
 #[cfg(test)]
 mod tests {
-    use crate::time::{daycounter::DayCounter, enums::TimeUnit};
-
     use super::*;
+    use crate::time::{daycounter::DayCounter, enums::TimeUnit, period::Period};
 
     #[test]
     fn test_reference_date() {
@@ -168,7 +206,7 @@ mod tests {
     #[test]
     fn test_forward_rate() -> Result<()> {
         let reference_date = Date::new(2023, 8, 19);
-        let interest_rate: InterestRate = InterestRate::new(
+        let interest_rate = InterestRate::new(
             0.05,
             Compounding::Simple,
             Frequency::Annual,
@@ -188,13 +226,42 @@ mod tests {
             .day_counter()
             .year_fraction(start_date, end_date);
 
-        let expected_forward_rate =
-            InterestRate::implied_rate(comp_factor, interest_rate.day_counter(), comp, freq, t)?
-                .rate();
+        let expected_forward_rate = InterestRate::<f64>::implied_rate(
+            comp_factor,
+            interest_rate.day_counter(),
+            comp,
+            freq,
+            t,
+        )?
+        .rate();
         let actual_forward_rate = term_structure.forward_rate(start_date, end_date, comp, freq)?;
 
         assert!((actual_forward_rate - expected_forward_rate).abs() < 1e-10);
 
         Ok(())
     }
+
+    // #[test]
+    // fn test_ad_forward_rate() -> Result<()> {
+    //     let reference_date = Date::new(2023, 8, 19);
+
+    //     let mut rate = ADReal::from(0.05);
+    //     Tape::start_recording();
+    //     rate.put_on_tape();
+    //     let term_structure =
+    //         FlatForwardTermStructure::new(reference_date, rate, RateDefinition::default());
+    //     let term_structure_2 = term_structure.clone();
+
+    //     // let df = term_structure.discount_factor(reference_date + Period::new(1, TimeUnit::Years));
+    //     let df2 =
+    //         term_structure_2.discount_factor(reference_date + Period::new(1, TimeUnit::Years));
+
+    //     Tape::stop_recording();
+    //     let rate2 = rate.clone();
+    //     // let _ = df?.backward()?;
+    //     // println!("Rate sensitivity: {:?}", rate.adjoint()?);
+    //     let _ = df2?.backward()?;
+    //     println!("Rate sensitivity: {:?}", rate.adjoint()?);
+    //     Ok(())
+    // }
 }

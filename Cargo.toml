@@ -1,9 +1,9 @@
 [package]
-name = "rustatlas"
+name = "quantsupport"
 version = "0.1.0"
 edition = "2021"
 
-description = "Rust library for financial calculations, instruments, and risk analytics."
+description = "Rust library for fixed-income, derivative pricing and risk analytics."
 license = "MIT"
 repository = "https://github.com/jmelo11/rustatlas"
 keywords = ["finance", "quant", "risk", "pricing", "derivatives"]
@@ -16,24 +16,10 @@ chrono = "0.4.37"
 rayon = "1.7.0"
 rand = "0.8.0"
 thiserror = "1.0"
-argmin = { version = "0.8.1" }
 indicatif = "0.17.7"
-serde = "1.0.136"
-serde_json = "1.0.68"
-
-
-[dev-dependencies]
-criterion = { version = "0.5.1", features = ["html_reports"] }
-
-[[bench]]
-name = "fixedratepricing"
-harness = false
-
-[[example]]
-name = "fixedratepricing"
-
-[[example]]
-name = "floatingratepricing"
+bumpalo = "3.19.1"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0.149"
 
 [lints.rust]
 missing_docs = "forbid"
@@ -43,7 +29,6 @@ unused_import_braces = "forbid"
 unconditional_recursion = "forbid"
 unused_macro_rules = "forbid"
 deprecated = "deny"
-unsafe_code = "forbid"
 
 [lints.clippy]
 unreadable_literal = "allow"

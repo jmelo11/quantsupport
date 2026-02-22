@@ -1,14 +1,19 @@
-use super::traits::DayCountProvider;
-use crate::time::date::Date;
+use crate::time::{date::Date, daycounters::daycount::DayCount};
 
-/// # Thirty360 (ISMA)
+/// # `Thirty360` (ISMA)
+/// 
 /// Convention: if the starting date is the 31st of a
 /// month, it becomes equal to the 30th of the same month.
+/// 
 /// If the ending date is the 31st of a month and the starting
 /// date is the 30th or 31th of a month, the ending date
 /// also becomes equal to the 30th of the month.
+/// 
+/// ## Example
 /// ```
-/// use rustatlas::prelude::*;
+/// use quantsupport::time::date::Date;
+/// use quantsupport::time::daycounters::thirty360::Thirty360;
+/// use quantsupport::time::daycounters::daycount::DayCount;
 ///
 /// let start = Date::new(2020, 1, 1);
 /// let end = Date::new(2020, 2, 1);
@@ -17,7 +22,7 @@ use crate::time::date::Date;
 /// ```
 pub struct Thirty360;
 
-impl DayCountProvider for Thirty360 {
+impl DayCount for Thirty360 {
     fn day_count(start: Date, end: Date) -> i64 {
         let d1 = i64::from(start.day());
         let d2 = i64::from(end.day());
@@ -40,6 +45,7 @@ impl DayCountProvider for Thirty360 {
 }
 
 /// # `Thirty360US`
+/// 
 /// convention: if the starting date is the 31st of a month or
 /// the last day of February, it becomes equal to the 30th of the
 /// same month.  If the ending date is the 31st of a month and the
@@ -48,8 +54,12 @@ impl DayCountProvider for Thirty360 {
 /// February and the starting date is also the last of February,
 /// the ending date becomes equal to the 30th.
 /// Also known as "30/360" or "360/360".
+/// 
+/// ## Example
 /// ```
-/// use rustatlas::prelude::*;
+/// use quantsupport::time::date::Date;
+/// use quantsupport::time::daycounters::thirty360::Thirty360US;
+/// use quantsupport::time::daycounters::daycount::DayCount;
 ///
 /// let start = Date::new(2020, 1, 1);
 /// let end = Date::new(2020, 2, 1);
@@ -66,7 +76,7 @@ const fn is_last_of_february(d: i64, m: i64, y: i32) -> bool {
     }
 }
 
-impl DayCountProvider for Thirty360US {
+impl DayCount for Thirty360US {
     fn day_count(start: Date, end: Date) -> i64 {
         let d1 = i64::from(start.day());
         let d2 = i64::from(end.day());

@@ -1,6 +1,4 @@
 /// Currency enumeration types.
-pub mod enums;
-/// Exchange rate storage functionality.
-pub mod exchangeratestore;
+pub mod currency;
 /// Trait definitions for currency operations.
-pub mod traits;
+pub mod currencydetails;

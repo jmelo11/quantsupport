@@ -1,17 +1,17 @@
-use super::traits::DayCountProvider;
+use std::cmp::Ordering;
+
+use super::daycount::DayCount;
 use crate::time::date::Date;
 
 /// # `ActualActual`
+///
 /// Actual/Actual day count convention.
-/// Calculates the day count fraction according to the formula:
-/// $$
-/// \frac{`ActualDays_of_leap_years`}{366} + \frac{`ActualDays_of_non_leap_years`}{365}
-/// $$
-/// where `ActualDays` of leap years is the number of days between the start date and the end date in leap years
-/// and `ActualDays` of non-leap years is the number of days between the start date and the end date in non-leap years.
-/// # Example
+///
+/// ## Example
 /// ```
-/// use rustatlas::prelude::*;
+/// use quantsupport::time::date::Date;
+/// use quantsupport::time::daycounters::actualactual::ActualActual;
+/// use quantsupport::time::daycounters::daycount::DayCount;
 ///
 /// let start = Date::new(2020, 1, 1);
 /// let end = Date::new(2020, 2, 1);
@@ -28,7 +28,7 @@ const fn days_in_year(year: i32) -> i32 {
     }
 }
 
-impl DayCountProvider for ActualActual {
+impl DayCount for ActualActual {
     fn day_count(start: Date, end: Date) -> i64 {
         end - start
     }
@@ -40,12 +40,12 @@ impl DayCountProvider for ActualActual {
         let y2 = end.year();
 
         match y1.cmp(&y2) {
-            std::cmp::Ordering::Equal => {
-                let days = i32::try_from(days)
-                    .unwrap_or_else(|_| panic!("day count should fit in i32"));
+            Ordering::Equal => {
+                let days =
+                    i32::try_from(days).unwrap_or_else(|_| panic!("day count should fit in i32"));
                 f64::from(days) / f64::from(days_in_year(y1))
             }
-            std::cmp::Ordering::Less => {
+            Ordering::Less => {
                 let mut sum = 0.0;
                 let start_days = i32::try_from(Date::new(y1 + 1, 1, 1) - start)
                     .unwrap_or_else(|_| panic!("day count should fit in i32"));
@@ -59,7 +59,7 @@ impl DayCountProvider for ActualActual {
 
                 sum
             }
-            std::cmp::Ordering::Greater => {
+            Ordering::Greater => {
                 let mut sum = 0.0;
                 let end_days = i32::try_from(Date::new(y2 + 1, 1, 1) - end)
                     .unwrap_or_else(|_| panic!("day count should fit in i32"));
@@ -78,12 +78,12 @@ impl DayCountProvider for ActualActual {
 
 #[cfg(test)]
 mod tests {
-    use crate::time::daycounters::traits::DayCountProvider;
+
+    use super::ActualActual;
+    use crate::time::{date::Date, daycounters::daycount::DayCount};
 
     #[test]
     fn test_actualactual_day_count() {
-        use super::ActualActual;
-        use crate::time::date::Date;
         let start = Date::new(2020, 1, 1);
         let end = Date::new(2020, 2, 1);
         assert_eq!(ActualActual::day_count(start, end), 31);
@@ -91,8 +91,6 @@ mod tests {
 
     #[test]
     fn test_actualactual_year_fraction() {
-        use super::ActualActual;
-        use crate::time::date::Date;
         let start = Date::new(2020, 1, 1);
         let end = Date::new(2020, 2, 1);
         let yf = ActualActual::year_fraction(start, end);
@@ -101,8 +99,6 @@ mod tests {
 
     #[test]
     fn test_actualactual_year_fraction2() {
-        use super::ActualActual;
-        use crate::time::date::Date;
         let start = Date::new(2020, 1, 1);
         let end = Date::new(2021, 1, 1);
         let yf = ActualActual::year_fraction(start, end);
@@ -111,8 +107,6 @@ mod tests {
 
     #[test]
     fn test_actualactual_year_fraction3() {
-        use super::ActualActual;
-        use crate::time::date::Date;
         let start = Date::new(2021, 1, 1);
         let end = Date::new(2020, 1, 1);
         let yf = ActualActual::year_fraction(start, end);

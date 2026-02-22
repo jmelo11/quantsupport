@@ -10,7 +10,8 @@ use std::ops::{Add, AddAssign, Sub, SubAssign};
 /// Extends the `NaiveDate` struct from the chrono rustatlas.
 /// # Examples
 /// ```
-/// use rustatlas::prelude::*;
+/// use quantsupport::time::date::*;
+/// use quantsupport::time::enums::TimeUnit;
 /// use chrono::NaiveDate;
 ///
 /// let date = NaiveDate::from_ymd_opt(2020, 2, 15).unwrap();
@@ -69,9 +70,7 @@ impl NaiveDateExt for NaiveDate {
                 .unwrap_or_else(|| panic!("valid date for month start"))
                 .days_in_month();
         }
-        let day_i32 = i32::try_from(self.day()).unwrap_or_else(|_| {
-            panic!("day should fit in i32")
-        });
+        let day_i32 = i32::try_from(self.day()).unwrap_or_else(|_| panic!("day should fit in i32"));
         day + day_i32
     }
 
@@ -88,30 +87,29 @@ impl NaiveDateExt for NaiveDate {
                 date + Duration::try_days(i64::from(n)).unwrap_or_else(|| panic!("valid day count"))
             }
             TimeUnit::Weeks => {
-                date + Duration::try_days(i64::from(7 * n)).unwrap_or_else(|| {
-                    panic!("valid day count")
-                })
+                date + Duration::try_days(i64::from(7 * n))
+                    .unwrap_or_else(|| panic!("valid day count"))
             }
             TimeUnit::Months => {
                 if flag {
-                    date + Months::new(u32::try_from(n).unwrap_or_else(|_| {
-                        panic!("valid month count")
-                    }))
+                    date + Months::new(
+                        u32::try_from(n).unwrap_or_else(|_| panic!("valid month count")),
+                    )
                 } else {
-                    date - Months::new(u32::try_from(-n).unwrap_or_else(|_| {
-                        panic!("valid month count")
-                    }))
+                    date - Months::new(
+                        u32::try_from(-n).unwrap_or_else(|_| panic!("valid month count")),
+                    )
                 }
             }
             TimeUnit::Years => {
                 if flag {
-                    date + Months::new(u32::try_from(12 * n).unwrap_or_else(|_| {
-                        panic!("valid year count")
-                    }))
+                    date + Months::new(
+                        u32::try_from(12 * n).unwrap_or_else(|_| panic!("valid year count")),
+                    )
                 } else {
-                    date - Months::new(u32::try_from(-12 * n).unwrap_or_else(|_| {
-                        panic!("valid year count")
-                    }))
+                    date - Months::new(
+                        u32::try_from(-12 * n).unwrap_or_else(|_| panic!("valid year count")),
+                    )
                 }
             }
         }
@@ -120,10 +118,8 @@ impl NaiveDateExt for NaiveDate {
     fn end_of_month(date: NaiveDate) -> NaiveDate {
         let month = date.month();
         let year = date.year();
-        let mut end_of_month =
-            Self::from_ymd_opt(year, month, 1).unwrap_or_else(|| {
-                panic!("valid date for month start")
-            });
+        let mut end_of_month = Self::from_ymd_opt(year, month, 1)
+            .unwrap_or_else(|| panic!("valid date for month start"));
         end_of_month = end_of_month + Months::new(1);
         end_of_month -= Duration::try_days(1).unwrap_or_else(|| panic!("valid day count"));
         end_of_month
@@ -135,7 +131,9 @@ impl NaiveDateExt for NaiveDate {
 /// # Examples
 /// ```
 /// use chrono::NaiveDate;
-/// use rustatlas::prelude::*;
+/// use quantsupport::time::date::Date;
+/// use quantsupport::time::period::Period;
+/// use quantsupport::time::enums::TimeUnit;
 ///
 /// let date = NaiveDate::from_ymd_opt(2020, 1, 15).unwrap();
 /// let period = Period::new(15, TimeUnit::Days);
@@ -156,7 +154,8 @@ impl Add<Period> for NaiveDate {
 /// # Examples
 /// ```
 /// use chrono::NaiveDate;
-/// use rustatlas::prelude::*;
+/// use quantsupport::time::period::Period;
+/// use quantsupport::time::enums::TimeUnit;
 /// let date = NaiveDate::from_ymd_opt(2020, 1, 15).unwrap();
 /// let period = Period::new(15, TimeUnit::Days);
 /// assert_eq!(date - period, NaiveDate::from_ymd_opt(2019, 12, 31).unwrap());
@@ -175,7 +174,8 @@ impl Sub<Period> for NaiveDate {
 /// Wrapper around the `NaiveDate` struct from the chrono rustatlas.
 /// # Examples
 /// ```
-/// use rustatlas::time::date::Date;
+/// use quantsupport::time::date::Date;
+///
 /// let date = Date::new(2020, 2, 15);
 /// assert_eq!(date.day(), 15);
 /// assert_eq!(date.month(), 2);
@@ -216,10 +216,7 @@ impl Date {
     #[must_use]
     pub fn new(year: i32, month: u32, day: u32) -> Self {
         let base_date = NaiveDate::from_ymd_opt(year, month, day);
-        base_date.map_or_else(
-            || panic!("Invalid date: {year}-{month}-{day}"),
-            Self::from,
-        )
+        base_date.map_or_else(|| panic!("Invalid date: {year}-{month}-{day}"), Self::from)
     }
 
     /// Parses a date string using the specified format.
@@ -356,7 +353,7 @@ impl Date {
 /// Subtracts two Dates and returns the difference in days.
 /// # Examples
 /// ```
-/// use rustatlas::time::date::Date;
+/// use quantsupport::time::date::Date;
 /// let date1 = Date::new(2020, 2, 15);
 /// let date2 = Date::new(2020, 2, 10);
 /// assert_eq!(date1 - date2, 5);
@@ -375,7 +372,10 @@ impl Sub for Date {
 /// Adds a Period to a Date.
 /// # Examples
 /// ```
-/// use rustatlas::prelude::*;
+/// use quantsupport::time::date::Date;
+/// use quantsupport::time::period::Period;
+/// use quantsupport::time::enums::TimeUnit;
+///
 /// let date = Date::new(2020, 1, 15);
 /// let period = Period::new(15, TimeUnit::Days);
 /// assert_eq!(date + period, Date::new(2020, 1, 30));
@@ -393,7 +393,10 @@ impl Add<Period> for Date {
 /// Subtracts a Period from a Date.
 /// # Examples
 /// ```
-/// use rustatlas::prelude::*;
+/// use quantsupport::time::date::Date;
+/// use quantsupport::time::period::Period;
+/// use quantsupport::time::enums::TimeUnit;
+///
 /// let date = Date::new(2020, 1, 15);
 /// let period = Period::new(15, TimeUnit::Days);
 /// assert_eq!(date - period, Date::new(2019, 12, 31));
@@ -411,7 +414,8 @@ impl Sub<Period> for Date {
 /// Adds an i64 to a Date.
 /// # Examples
 /// ```
-/// use rustatlas::prelude::*;
+/// use quantsupport::time::date::Date;
+///
 /// let date = Date::new(2020, 1, 15);
 /// assert_eq!(date + 15, Date::new(2020, 1, 30));
 /// ```
@@ -419,8 +423,8 @@ impl Add<i64> for Date {
     type Output = Self;
 
     fn add(self, rhs: i64) -> Self::Output {
-        let base_date: NaiveDate = self.base_date
-            + Duration::try_days(rhs).unwrap_or_else(|| panic!("valid day count"));
+        let base_date: NaiveDate =
+            self.base_date + Duration::try_days(rhs).unwrap_or_else(|| panic!("valid day count"));
         Self::from(base_date)
     }
 }
@@ -429,15 +433,16 @@ impl Add<i64> for Date {
 /// Adds an i64 to a Date.
 /// # Examples
 /// ```
-/// use rustatlas::prelude::*;
+/// use quantsupport::time::date::Date;
+///
 /// let mut date = Date::new(2020, 1, 15);
 /// date += 15;
 /// assert_eq!(date, Date::new(2020, 1, 30));
 /// ```
 impl AddAssign<i64> for Date {
     fn add_assign(&mut self, rhs: i64) {
-        self.base_date = self.base_date
-            + Duration::try_days(rhs).unwrap_or_else(|| panic!("valid day count"));
+        self.base_date =
+            self.base_date + Duration::try_days(rhs).unwrap_or_else(|| panic!("valid day count"));
     }
 }
 
@@ -445,7 +450,8 @@ impl AddAssign<i64> for Date {
 /// Subtracts an i64 from a Date.
 /// # Examples
 /// ```
-/// use rustatlas::prelude::*;
+/// use quantsupport::time::date::Date;
+///
 /// let date = Date::new(2020, 1, 30);
 /// assert_eq!(date - 15, Date::new(2020, 1, 15));
 /// ```
@@ -453,8 +459,8 @@ impl Sub<i64> for Date {
     type Output = Self;
 
     fn sub(self, rhs: i64) -> Self::Output {
-        let base_date: NaiveDate = self.base_date
-            - Duration::try_days(rhs).unwrap_or_else(|| panic!("valid day count"));
+        let base_date: NaiveDate =
+            self.base_date - Duration::try_days(rhs).unwrap_or_else(|| panic!("valid day count"));
         Self::from(base_date)
     }
 }
@@ -463,15 +469,16 @@ impl Sub<i64> for Date {
 /// Subtracts an i64 from a Date.
 /// # Examples
 /// ```
-/// use rustatlas::prelude::*;
+/// use quantsupport::time::date::Date;
+///
 /// let mut date = Date::new(2020, 1, 30);
 /// date -= 15;
 /// assert_eq!(date, Date::new(2020, 1, 15));
 /// ```
 impl SubAssign<i64> for Date {
     fn sub_assign(&mut self, rhs: i64) {
-        self.base_date = self.base_date
-            - Duration::try_days(rhs).unwrap_or_else(|| panic!("valid day count"));
+        self.base_date =
+            self.base_date - Duration::try_days(rhs).unwrap_or_else(|| panic!("valid day count"));
     }
 }
 
@@ -479,7 +486,8 @@ impl SubAssign<i64> for Date {
 /// Formats a Date as a string.
 /// # Examples
 /// ```
-/// use rustatlas::time::date::Date;
+/// use quantsupport::time::date::Date;
+///
 /// let date = Date::new(2020, 1, 15);
 /// assert_eq!(date.to_string(), "2020-01-15");
 /// ```

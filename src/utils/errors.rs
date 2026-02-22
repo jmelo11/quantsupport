@@ -1,6 +1,8 @@
 use chrono::ParseError;
 use thiserror::Error;
 
+/// # `AtlasError`
+///
 /// Represents errors that can occur in the Atlas library.
 #[derive(Debug, Error)]
 pub enum AtlasError {
@@ -36,10 +38,35 @@ pub enum AtlasError {
     InvalidValueErr(String),
     /// Error that occurs during solver operations.
     #[error("Solver error: {0}")]
-    SolverErr(#[from] argmin::core::Error),
+    SolverErr(String),
     /// Error indicating that a feature is not yet implemented.
     #[error("{0}")]
     NotImplementedErr(String),
+    /// Error that occurs while interpolating values.
+    #[error("Interpolation error {0}")]
+    InterpolationErr(String),
+    /// A generic node error.
+    #[error("Node error: {0}")]
+    NodeError(String),
+    /// A generic tape error.
+    #[error("Tape error: {0}")]
+    TapeError(String),
+    /// A generic AD number error.
+    #[error("AD Real error: {0}")]
+    ADRealError(String),
+    /// Attempted to access a node that is not recorded on the tape.
+    #[error("Node not indexed in tape")]
+    NodeNotIndexedInTapeErr,
+    /// An unexpected error.
+    #[error("{0}")]
+    UnexpectedErr(String),
+    /// Quote parsing error.
+    #[error("Quote parsing error: {0}")]
+    QuoteParsingErr(String),
+    /// Instrument resolution error.
+    #[error("Instrument resolution error: {0}")]
+    InstrumentResolutionErr(String),
+    
 }
 
 /// A specialized `Result` type for Atlas operations that may fail with an `AtlasError`.

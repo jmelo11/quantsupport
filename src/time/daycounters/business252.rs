@@ -1,4 +1,4 @@
-use super::traits::DayCountProvider;
+use super::daycount::DayCount;
 use crate::time::calendars::brazil::Market;
 use crate::time::{
     calendar::Calendar,
@@ -6,12 +6,16 @@ use crate::time::{
     date::Date,
 };
 
-/// # Business252
+/// # `Business252`
+/// 
 /// Business/252 day count convention.
 /// Calculates the number of business days between two dates.
-/// # Example
+/// 
+/// ## Example
 /// ```
-/// use rustatlas::prelude::*;
+/// use quantsupport::time::date::Date;
+/// use quantsupport::time::daycounters::business252::Business252;
+/// use quantsupport::time::daycounters::daycount::DayCount;
 ///
 /// let start = Date::new(2020, 1, 1);
 /// let end = Date::new(2020, 2, 1);
@@ -20,13 +24,17 @@ use crate::time::{
 /// ```
 pub struct Business252;
 
-impl DayCountProvider for Business252 {
+impl DayCount for Business252 {
     fn day_count(start: Date, end: Date) -> i64 {
         let calendar = Calendar::Brazil(Brazil::new(Market::Settlement));
 
         let count = i64::try_from(calendar.business_day_list(start, end).len())
             .unwrap_or_else(|_| panic!("business day count should fit in i64"));
-        if end < start { -count } else { count }
+        if end < start {
+            -count
+        } else {
+            count
+        }
     }
 
     fn year_fraction(start: Date, end: Date) -> f64 {
@@ -38,12 +46,12 @@ impl DayCountProvider for Business252 {
 
 #[cfg(test)]
 mod test {
-    use crate::time::daycounters::traits::DayCountProvider;
+    use crate::time::date::Date;
+    use crate::time::daycounters::business252::Business252;
+    use crate::time::daycounters::daycount::DayCount;
 
     #[test]
     fn test_business252() {
-        use crate::time::date::Date;
-        use crate::time::daycounters::business252::Business252;
         let start = Date::new(2020, 1, 1);
         let end = Date::new(2020, 2, 1);
         assert_eq!(Business252::day_count(start, end), 22);
