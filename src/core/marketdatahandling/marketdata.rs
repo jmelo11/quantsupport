@@ -6,6 +6,7 @@ use crate::{
         constructedelementstore::ConstructedElementStore, fixingrequest::FixingRequest,
     },
     indices::marketindex::MarketIndex,
+    models::GbmModelParameters,
     time::date::Date,
     utils::errors::Result,
 };
@@ -17,6 +18,7 @@ use crate::{
 pub struct MarketDataRequest {
     constructed_elements_request: Option<Vec<ConstructedElementRequest>>,
     fixings_request: Option<Vec<FixingRequest>>,
+    model_parameters: Option<GbmModelParameters>,
 }
 
 impl MarketDataRequest {
@@ -29,6 +31,7 @@ impl MarketDataRequest {
         Self {
             constructed_elements_request,
             fixings_request,
+            model_parameters: None,
         }
     }
 
@@ -42,6 +45,12 @@ impl MarketDataRequest {
     #[must_use]
     pub const fn fixings_request(&self) -> Option<&Vec<FixingRequest>> {
         self.fixings_request.as_ref()
+    }
+
+    /// Returns the model parameters included in this request, if any.
+    #[must_use]
+    pub const fn model_parameters(&self) -> Option<&GbmModelParameters> {
+        self.model_parameters.as_ref()
     }
 
     /// Builder method to set the constructed elements request.
@@ -60,14 +69,22 @@ impl MarketDataRequest {
         self.fixings_request = Some(request);
         self
     }
+
+    /// Builder method to set the model parameters.
+    #[must_use]
+    pub const fn with_model_parameters(mut self, params: GbmModelParameters) -> Self {
+        self.model_parameters = Some(params);
+        self
+    }
 }
 
 /// # `MarketData`
 ///
-/// Struct representing market data, including fixings and constructed elements.
+/// Struct representing market data, including fixings, constructed elements, and optional model parameters.
 pub struct MarketData {
     fixings: HashMap<MarketIndex, BTreeMap<Date, f64>>,
     constructed_elements: ConstructedElementStore,
+    model_parameters: Option<GbmModelParameters>,
 }
 
 impl MarketData {
@@ -80,6 +97,7 @@ impl MarketData {
         Self {
             fixings,
             constructed_elements,
+            model_parameters: None,
         }
     }
 
@@ -99,6 +117,19 @@ impl MarketData {
     #[must_use]
     pub const fn constructed_elements_mut(&mut self) -> &mut ConstructedElementStore {
         &mut self.constructed_elements
+    }
+
+    /// Returns the model parameters, if any.
+    #[must_use]
+    pub const fn model_parameters(&self) -> Option<&GbmModelParameters> {
+        self.model_parameters.as_ref()
+    }
+
+    /// Builder method to attach model parameters.
+    #[must_use]
+    pub const fn with_model_parameters(mut self, params: GbmModelParameters) -> Self {
+        self.model_parameters = Some(params);
+        self
     }
 }
 
