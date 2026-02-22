@@ -20,13 +20,13 @@ pub enum Request {
 impl Request {
     /// Returns the rank of the request, which can be used for ordering or prioritization.
     #[must_use]
-    pub fn rank(&self) -> u8 {
+    pub const fn rank(&self) -> u8 {
         match self {
-            Request::Value => 0,
-            Request::Sensitivities => 1,
-            Request::YieldToMaturity => 2,
-            Request::ModifiedDuration => 3,
-            Request::Cashflows => 4,
+            Self::Value => 0,
+            Self::Sensitivities => 1,
+            Self::YieldToMaturity => 2,
+            Self::ModifiedDuration => 3,
+            Self::Cashflows => 4,
         }
     }
 }

@@ -152,7 +152,7 @@ impl DiscountTermStructure<f64> {
 
         // order dates y discount_factors
         let mut zipped = dates.into_iter().zip(discount_factors).collect::<Vec<_>>();
-        zipped.sort_by(|a, b| a.0.cmp(&b.0));
+        zipped.sort_by_key(|a| a.0);
         let (dates, discount_factors): (Vec<Date>, Vec<f64>) = zipped.into_iter().unzip();
 
         // discount_factors[0] needs to be 1.0
@@ -210,7 +210,7 @@ impl DiscountTermStructure<ADReal> {
 
         // order dates y discount_factors
         let mut zipped = dates.into_iter().zip(discount_factors).collect::<Vec<_>>();
-        zipped.sort_by(|a, b| a.0.cmp(&b.0));
+        zipped.sort_by_key(|a| a.0);
         let (dates, discount_factors): (Vec<Date>, Vec<ADReal>) = zipped.into_iter().unzip();
 
         // discount_factors[0] needs to be 1.0

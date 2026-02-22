@@ -5,8 +5,8 @@ use crate::{
     math::interpolation::bilinear::{BilinearInterpolator, BilinearPoint, BilinearValue},
     time::{date::Date, period::Period},
     utils::errors::{AtlasError, Result},
-    volatility::volatilitysurface::VolatilitySurface,
     volatility::volatilityindexing::F64Key,
+    volatility::volatilitysurface::VolatilitySurface,
 };
 use std::collections::BTreeMap;
 
@@ -69,11 +69,11 @@ impl<T: BilinearValue> VolatilitySurface<T> for InterpolatedVolatilitySurface<T>
             })
             .collect::<Vec<_>>();
 
-        BilinearInterpolator::interpolate(expiry.period_in_year(), key, points).ok_or(
+        BilinearInterpolator::interpolate(expiry.period_in_year(), key, points).ok_or_else(|| {
             AtlasError::InterpolationErr(
                 "Could not bilinearly interpolate volatility for requested expiry/key".into(),
-            ),
-        )
+            )
+        })
     }
 
     fn volatility_type(&self) -> crate::volatility::volatilityindexing::VolatilityType {
@@ -124,13 +124,15 @@ mod tests {
     use std::collections::BTreeMap;
 
     use crate::{
-        ad::{adreal::{ADReal, IsReal}, tape::Tape},
+        ad::{
+            adreal::{ADReal, IsReal},
+            tape::Tape,
+        },
         indices::marketindex::MarketIndex,
         time::{date::Date, enums::TimeUnit, period::Period},
         volatility::{
             interpolatedvolatilitysurface::InterpolatedVolatilitySurface,
-            volatilityindexing::F64Key,
-            volatilitysurface::VolatilitySurface,
+            volatilityindexing::F64Key, volatilitysurface::VolatilitySurface,
         },
     };
 

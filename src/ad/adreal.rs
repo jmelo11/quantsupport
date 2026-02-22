@@ -1238,7 +1238,7 @@ mod tests {
         // continue instead of failing with a poison error.
         let _guard = TEST_MUTEX
             .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         Tape::stop_recording();
         Tape::rewind_to_init();
         f();
@@ -1423,7 +1423,7 @@ mod tests {
             let expr = pow(x, Const(3.0));
             let out: ADReal = expr.into();
             out.backward().unwrap();
-            assert_eq!(x.adjoint().unwrap(), 3.0 * 2.0f64.powf(2.0)); // derivative of x^3 wrt x at x=2
+            assert_eq!(x.adjoint().unwrap(), 3.0 * 2.0f64.powi(2)); // derivative of x^3 wrt x at x=2
             assert_eq!(out.adjoint().unwrap(), 1.0);
         });
     }
@@ -1551,8 +1551,8 @@ mod tests {
             let expr = pow(x, y);
             let out: ADReal = expr.into();
             out.backward().unwrap();
-            assert_eq!(x.adjoint().unwrap(), 3.0 * 2.0f64.powf(2.0));
-            assert!((y.adjoint().unwrap() - (8.0 * 2.0f64.ln())).abs() < 1e-12);
+            assert_eq!(x.adjoint().unwrap(), 3.0 * 2.0f64.powi(2));
+            assert!(8.0f64.mul_add(-2.0f64.ln(), y.adjoint().unwrap()).abs() < 1e-12);
             assert_eq!(out.adjoint().unwrap(), 1.0);
         });
     }

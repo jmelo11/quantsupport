@@ -35,7 +35,7 @@ impl ConstructedElementStore {
 
     /// Returns mutable discount curves map.
     #[must_use]
-    pub fn discount_curves_mut(&mut self) -> &mut HashMap<MarketIndex, DiscountCurveElement> {
+    pub const fn discount_curves_mut(&mut self) -> &mut HashMap<MarketIndex, DiscountCurveElement> {
         &mut self.discount_curves
     }
 
@@ -47,7 +47,7 @@ impl ConstructedElementStore {
 
     /// Returns mutable dividend curves map.
     #[must_use]
-    pub fn dividend_curves_mut(&mut self) -> &mut HashMap<MarketIndex, DividendCurveElement> {
+    pub const fn dividend_curves_mut(&mut self) -> &mut HashMap<MarketIndex, DividendCurveElement> {
         &mut self.dividend_curves
     }
 
@@ -59,7 +59,7 @@ impl ConstructedElementStore {
 
     /// Returns mutable volatility surfaces map.
     #[must_use]
-    pub fn volatility_surfaces_mut(
+    pub const fn volatility_surfaces_mut(
         &mut self,
     ) -> &mut HashMap<MarketIndex, VolatilitySurfaceElement> {
         &mut self.volatility_surfaces
@@ -73,7 +73,7 @@ impl ConstructedElementStore {
 
     /// Returns mutable volatility cubes map.
     #[must_use]
-    pub fn volatility_cubes_mut(&mut self) -> &mut HashMap<MarketIndex, VolatilityCubeElement> {
+    pub const fn volatility_cubes_mut(&mut self) -> &mut HashMap<MarketIndex, VolatilityCubeElement> {
         &mut self.volatility_cubes
     }
 
@@ -85,7 +85,7 @@ impl ConstructedElementStore {
 
     /// Returns mutable simulations map.
     #[must_use]
-    pub fn simulations_mut(&mut self) -> &mut HashMap<MarketIndex, SimulationElement> {
+    pub const fn simulations_mut(&mut self) -> &mut HashMap<MarketIndex, SimulationElement> {
         &mut self.simulations
     }
 

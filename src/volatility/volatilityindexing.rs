@@ -31,17 +31,20 @@ pub struct F64Key(pub f64);
 
 impl F64Key {
     /// Creates a new floating key.
-    pub fn new(value: f64) -> Self {
+    #[must_use] 
+    pub const fn new(value: f64) -> Self {
         Self(value)
     }
 
     /// Returns the wrapped value.
-    pub fn value(&self) -> f64 {
+    #[must_use] 
+    pub const fn value(&self) -> f64 {
         self.0
     }
 
     /// Returns the bit representation used for hashing.
-    pub fn to_key(&self) -> u64 {
+    #[must_use] 
+    pub const fn to_key(&self) -> u64 {
         self.0.to_bits()
     }
 }

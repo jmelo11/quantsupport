@@ -25,6 +25,9 @@ pub trait PricerState {
     fn get_market_data_reponse_mut(&mut self) -> Option<&mut MarketData>;
 
     /// Retrieves the discount curve element associated with the given market index, if available.
+    ///
+    /// ## Errors
+    /// Returns an error if the market data response is not available or if the discount curve for the specified index is not found.
     fn get_discount_curve_element(&self, index: &MarketIndex) -> Result<&DiscountCurveElement> {
         self.get_market_data_reponse()
             .ok_or_else(|| AtlasError::NotFoundErr("MarketDataResponse not available.".into()))?
@@ -35,6 +38,9 @@ pub trait PricerState {
     }
 
     /// Retrieves the mutable discount curve element associated with the given market index, if available.
+    ///
+    /// ## Errors
+    /// Returns an error if the market data response is not available or if the discount curve for the specified index is not found.
     fn get_discount_curve_element_mut(
         &mut self,
         index: &MarketIndex,
@@ -48,6 +54,9 @@ pub trait PricerState {
     }
 
     /// Retrieves the dividend curve element associated with the given market index, if available.
+    ///
+    /// ## Errors
+    /// Returns an error if the market data response is not available or if the dividend curve for the specified index is not found.
     fn get_dividend_curve_element(&self, index: &MarketIndex) -> Result<&DividendCurveElement> {
         self.get_market_data_reponse()
             .ok_or_else(|| AtlasError::NotFoundErr("MarketDataResponse not available.".into()))?
@@ -57,11 +66,14 @@ pub trait PricerState {
             .ok_or_else(|| AtlasError::NotFoundErr(format!("Dividend curve for index {index}")))
     }
     /// Retrieves the fixing for a given market index and date, if available.
+    ///
+    /// ## Errors
+    /// Returns an error if the market data response is not available or if the fixing for the specified index and date is not found.
     fn get_fixing(&self, index: &MarketIndex, date: Date) -> Result<f64> {
         self.get_market_data_reponse()
             .ok_or_else(|| AtlasError::NotFoundErr("MarketDataResponse not available.".into()))?
             .fixings()
-            .get(&index)
+            .get(index)
             .and_then(|date_map| date_map.get(&date).copied())
             .ok_or_else(|| {
                 AtlasError::NotFoundErr(format!(
@@ -71,6 +83,9 @@ pub trait PricerState {
     }
 
     /// Retrieves the volatility surface element associated with the given market index, if available.
+    ///
+    /// ## Errors
+    /// Returns an error if the market data response is not available or if the volatility surface for the specified index is not found.
     fn get_volatility_surface_element(
         &self,
         index: &MarketIndex,
@@ -84,6 +99,9 @@ pub trait PricerState {
     }
 
     /// Retrieves the volatility surface element associated with the given market index, if available.
+    ///
+    /// ## Errors
+    /// Returns an error if the market data response is not available or if the volatility surface for the specified index is not found.
     fn get_volatility_surface_element_mut(
         &mut self,
         index: &MarketIndex,
@@ -97,6 +115,9 @@ pub trait PricerState {
     }
 
     /// Retrieves the volatility cube element associated with the given market index, if available.
+    ///
+    /// ## Errors
+    /// Returns an if the market data response is not available or if the volatility cube for the specified index is not found.
     fn get_volatility_cube_element(&self, index: &MarketIndex) -> Result<&VolatilityCubeElement> {
         self.get_market_data_reponse()
             .ok_or_else(|| AtlasError::NotFoundErr("MarketDataResponse not available.".into()))?
@@ -107,6 +128,9 @@ pub trait PricerState {
     }
 
     /// Puts the pillars into the tape.
+    ///
+    /// ## Errors
+    /// Returns an error if the market data response is not available.
     fn put_pillars_on_tape(&mut self) -> Result<()> {
         if let Some(md_response) = self.get_market_data_reponse_mut() {
             for curve in md_response

@@ -87,7 +87,7 @@ impl HandleValue<EquityEuroOptionTrade, EquityOptionState> for BlackClosedFormPr
 
         let fwd: ADReal = (spot_ad * df_q / df_r).into();
 
-        let undiscounted = BlackClosedFormPricer::black_forward_price(
+        let undiscounted = Self::black_forward_price(
             fwd,
             strike,
             vol,
@@ -112,9 +112,11 @@ impl HandleSensitivities<EquityEuroOptionTrade, EquityOptionState> for BlackClos
             value
         } else {
             let _ = self.handle_value(trade, state)?;
-            state.value.ok_or(AtlasError::UnexpectedErr(
-                "State does not contain price, altough it was requested.".into(),
-            ))?
+            state.value.ok_or_else(|| {
+                AtlasError::UnexpectedErr(
+                    "State does not contain price, altough it was requested.".into(),
+                )
+            })?
         };
 
         // the mark is not being set on the value during pricing
@@ -129,9 +131,7 @@ impl HandleSensitivities<EquityEuroOptionTrade, EquityOptionState> for BlackClos
         exposures.push(
             state
                 .spot
-                .ok_or(AtlasError::UnexpectedErr(
-                    "Spot not recorded on state".into(),
-                ))?
+                .ok_or_else(|| AtlasError::UnexpectedErr("Spot not recorded on state".into()))?
                 .adjoint()?,
         );
 
@@ -182,9 +182,7 @@ impl Pricer for BlackClosedFormPricer {
 
         let md_request = self
             .market_data_request(trade)
-            .ok_or(AtlasError::InvalidValueErr(
-                "Missing market data request".into(),
-            ))?;
+            .ok_or_else(|| AtlasError::InvalidValueErr("Missing market data request".into()))?;
 
         let mut results = EvaluationResults::new(eval_date, identifier);
         let mut state = EquityOptionState {
@@ -431,7 +429,7 @@ mod tests {
 
         // Create the trade
         let option = EquityEuroOption::new(
-            market_index.clone(),
+            market_index,
             expiry_date,
             strike,
             EuroOptionType::Call,
@@ -463,7 +461,7 @@ mod tests {
 
         let fwd = spot * df_q / df_r;
         let vol_sqrt_tau = vol * tau.sqrt();
-        let d1 = ((fwd / strike).ln() + 0.5 * vol * vol * tau) / vol_sqrt_tau;
+        let d1 = (0.5 * vol * vol).mul_add(tau, (fwd / strike).ln()) / vol_sqrt_tau;
 
         let closed_form_delta = notional * df_q * norm_cdf(d1);
         let closed_form_vega = notional
@@ -530,9 +528,7 @@ mod tests {
                         risk_free_rate,
                         dividend_rate,
                     )
-                    .unwrap_or_else(|_| {
-                        panic!("Failed to set up market data for strike {}", strike)
-                    });
+                    .unwrap_or_else(|_| panic!("Failed to set up market data for strike {strike}"));
 
                 let option = EquityEuroOption::new(
                     market_index.clone(),
@@ -541,7 +537,7 @@ mod tests {
                     EuroOptionType::Call,
                     format!("SPX_CALL_{}", strike as i32),
                 );
-                let trade = EquityEuroOptionTrade::new(option.clone(), notional, trade_date);
+                let trade = EquityEuroOptionTrade::new(option, notional, trade_date);
 
                 let provider = SimpleMarketDataProvider {
                     evaluation_date: trade_date,
@@ -562,28 +558,21 @@ mod tests {
             let price = eval_results
                 .price()
                 .ok_or(AtlasError::UnexpectedErr(format!(
-                    "Missing price for strike {}",
-                    strike
+                    "Missing price for strike {strike}"
                 )))?;
             let sensitivities = eval_results
                 .sensitivities()
                 .ok_or(AtlasError::UnexpectedErr(format!(
-                    "Missing sensitivities for strike {}",
-                    strike
+                    "Missing sensitivities for strike {strike}"
                 )))?;
 
             // Verify price is positive for call option
-            assert!(
-                price > 0.0,
-                "Price should be positive for strike {}",
-                strike
-            );
+            assert!(price > 0.0, "Price should be positive for strike {strike}");
 
             // Verify we have sensitivities
             assert!(
                 !sensitivities.instrument_keys().is_empty(),
-                "Should have sensitivities for strike {}",
-                strike
+                "Should have sensitivities for strike {strike}"
             );
 
             // Verify spot sensitivity exists (delta)
@@ -594,16 +583,14 @@ mod tests {
             );
             assert!(
                 delta.is_some(),
-                "Should have spot sensitivity for strike {}",
-                strike
+                "Should have spot sensitivity for strike {strike}"
             );
 
             // Verify the delta is between 0 and 1 for call options
             let delta_val = delta.unwrap();
             assert!(
                 delta_val > 0.0 && delta_val < 1.0,
-                "Delta should be between 0 and 1 for call option with strike {}",
-                strike
+                "Delta should be between 0 and 1 for call option with strike {strike}"
             );
         }
 

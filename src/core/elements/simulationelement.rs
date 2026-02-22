@@ -33,7 +33,7 @@ impl SimulationElement {
 
     /// Returns mutable access to simulation draws.
     #[must_use]
-    pub fn draws_mut(&mut self) -> &mut Vec<f64> {
+    pub const fn draws_mut(&mut self) -> &mut Vec<f64> {
         &mut self.draws
     }
 }

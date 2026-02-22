@@ -301,72 +301,72 @@ impl Quote {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use crate::quotes::quote::Quote;
+// #[cfg(test)]
+// mod tests {
+//     use crate::quotes::quote::Quote;
 
-    fn test_quote_store() {
-        // Example quote strings for testing
-        let quote_str = r#"{
-            "instrument": "OIS|SOFR|USD|1Y",
-            "mid": 0.15
-        }"#;
+//     fn test_quote_store() {
+//         // Example quote strings for testing
+//         let quote_str = r#"{
+//             "instrument": "OIS|SOFR|USD|1Y",
+//             "mid": 0.15
+//         }"#;
 
-        let quote_str = r#"{
-            "instrument": "USD|BasisSwap|SOFR|1Y",
-            "mid": 0.15
-        }"#;
+//         let quote_str = r#"{
+//             "instrument": "USD|BasisSwap|SOFR|1Y",
+//             "mid": 0.15
+//         }"#;
 
-        // let quote_str = r#"{
-        //     "instrument": "Fx|USD|EUR",
-        //     "mid": 1.2
-        // }"#; -> is a fixing
+//         // let quote_str = r#"{
+//         //     "instrument": "Fx|USD|EUR",
+//         //     "mid": 1.2
+//         // }"#; -> is a fixing
 
-        let quote_str = r#"{
-            "instrument": "CapletFloorlet|SOFR|USD|1Y|Relative|0.0|Straddle|0.02",
-            "mid": 0.01
-        }"#;
+//         let quote_str = r#"{
+//             "instrument": "CapletFloorlet|SOFR|USD|1Y|Relative|0.0|Straddle|0.02",
+//             "mid": 0.01
+//         }"#;
 
-        let quote_str = r#"{
-            "instrument": "Swaption|SOFR|USD|1Y|5Y|Absolute|0.03|Straddle|0.02",
-            "mid": 0.01
-        }"#;
+//         let quote_str = r#"{
+//             "instrument": "Swaption|SOFR|USD|1Y|5Y|Absolute|0.03|Straddle|0.02",
+//             "mid": 0.01
+//         }"#;
 
-        let quote_str = r#"{
-            "instrument": "CapFloor|SOFR|USD|1Y|5Y|Absolute|0.03|Straddle|0.02",
-            "mid": 0.01
-        }"#;
+//         let quote_str = r#"{
+//             "instrument": "CapFloor|SOFR|USD|1Y|5Y|Absolute|0.03|Straddle|0.02",
+//             "mid": 0.01
+//         }"#;
 
-        let quote_str = r#"{
-            "instrument": "CrossCurrencySwap|USD|EUR|1Y|Fixed|Floating|SOFR",
-            "mid": 0.15
-        }"#;
+//         let quote_str = r#"{
+//             "instrument": "CrossCurrencySwap|USD|EUR|1Y|Fixed|Floating|SOFR",
+//             "mid": 0.15
+//         }"#;
 
-        let quote_str = r#"{
-            "instrument": "CrossCurrencySwap|USD|EUR|1Y|Floating|ICP|Floating|SOFR",
-            "mid": 0.15
-        }"#;
+//         let quote_str = r#"{
+//             "instrument": "CrossCurrencySwap|USD|EUR|1Y|Floating|ICP|Floating|SOFR",
+//             "mid": 0.15
+//         }"#;
 
-        let quote_str = r#"{
-            "instrument": "Future|SOFR|USD|2024-12",
-            "mid": 0.15
-        }"#;
+//         let quote_str = r#"{
+//             "instrument": "Future|SOFR|USD|2024-12",
+//             "mid": 0.15
+//         }"#;
 
-        let quote_str = r#"{
-            "instrument": "ConvexityAdjustment|SOFR|USD|1Y",
-            "mid": 0.0001
-        }"#;
+//         let quote_str = r#"{
+//             "instrument": "ConvexityAdjustment|SOFR|USD|1Y",
+//             "mid": 0.0001
+//         }"#;
 
-        let quote_str = r#"{
-            "instrument": "DividendYield|SPX|USD",
-            "mid": 0.0001
-        }"#;
+//         let quote_str = r#"{
+//             "instrument": "DividendYield|SPX|USD",
+//             "mid": 0.0001
+//         }"#;
 
-        // let quote_str = r#"{
-        //     "instrument": "DividendYield|SPX|USD|1Y",
-        //     "mid": 0.0001 -> is a fixing?
-        // }"#;
+//         // let quote_str = r#"{
+//         //     "instrument": "DividendYield|SPX|USD|1Y",
+//         //     "mid": 0.0001 -> is a fixing?
+//         // }"#;
 
-        // let quote = Quote::from_str(quote_str).unwrap();
-    }
-}
+//         // let quote = Quote::from_str(quote_str).unwrap();
+//     }
+// }

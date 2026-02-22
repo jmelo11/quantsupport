@@ -2,23 +2,32 @@ use crate::{
     ad::adreal::IsReal,
     indices::marketindex::MarketIndex,
     time::{date::Date, enums::TimeUnit, period::Period},
-    utils::errors::Result,
+    utils::errors::{AtlasError, Result},
     volatility::volatilityindexing::{SmileType, VolatilityType},
 };
 
 /// Trait for volatility surfaces parameterized by numeric type.
 pub trait VolatilitySurface<T: IsReal> {
     /// Returns the volatility for a given expiry and key (e.g., strike, delta, log-moneyness).
-    #[must_use]
+    ///
+    /// ## Errors
+    /// Returns an error if the volatility cannot be computed for the given period and key.
     fn volatility_from_date(&self, expiry: Date, key: f64) -> Result<T> {
         let today = self.reference_date();
         let days = expiry - today;
-        let period = Period::new(days as i32, TimeUnit::Days);
+        let period = Period::new(
+            i32::try_from(days).map_err(|_| {
+                AtlasError::InvalidValueErr("Unable to transform days into i32.".into())
+            })?,
+            TimeUnit::Days,
+        );
         self.volatility_from_period(period, key)
     }
 
     /// Returns the volatility for a given time to expiry and key (e.g., strike, delta, log-moneyness).
-    #[must_use]
+    ///
+    /// ## Errors
+    /// Returns an error if the volatility cannot be computed for the given period and key.
     fn volatility_from_period(&self, expirty: Period, key: f64) -> Result<T>;
 
     /// Returns the volatility type (e.g., Black, Normal).

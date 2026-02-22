@@ -101,11 +101,11 @@ impl HandleSensitivities<DepositTrade, DepositPriceEvaluationState> for Discount
             .curve()
             .pillars()
             .into_iter()
-            .flat_map(|pillars| pillars.into_iter())
+            .flat_map(std::iter::IntoIterator::into_iter)
             .map(|(label, value)| (label, value.adjoint().ok()))
             .unzip();
 
-        let exposures: Vec<f64> = exposures.into_iter().filter_map(|opt| opt).collect();
+        let exposures: Vec<f64> = exposures.into_iter().flatten().collect();
 
         let sensitivities = SensitivityMap::default()
             .with_instrument_keys(&ids)

@@ -73,7 +73,7 @@ pub struct MarketData {
 impl MarketData {
     /// Creates a new `MarketData` with the specified fixings and constructed elements.
     #[must_use]
-    pub fn new(
+    pub const fn new(
         fixings: HashMap<MarketIndex, BTreeMap<Date, f64>>,
         constructed_elements: ConstructedElementStore,
     ) -> Self {
@@ -97,7 +97,7 @@ impl MarketData {
 
     /// Returns mutable reference to the constructed elements.
     #[must_use]
-    pub fn constructed_elements_mut(&mut self) -> &mut ConstructedElementStore {
+    pub const fn constructed_elements_mut(&mut self) -> &mut ConstructedElementStore {
         &mut self.constructed_elements
     }
 }
@@ -106,6 +106,9 @@ impl MarketData {
 /// Provider interface for market-data requests.
 pub trait MarketDataProvider {
     /// Handles a market-data request.
+    ///
+    /// ## Errors
+    /// Returns an error if the market data request cannot be fulfilled.
     fn handle_request(&self, request: &MarketDataRequest) -> Result<MarketData>;
 
     /// Returns provider evaluation date.

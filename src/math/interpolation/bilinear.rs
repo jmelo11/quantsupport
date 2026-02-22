@@ -8,7 +8,7 @@ pub trait BilinearValue: IsReal {
 
 impl BilinearValue for f64 {
     fn lerp(a: Self, b: Self, t: f64) -> Self {
-        a + (b - a) * t
+        (b - a).mul_add(t, a)
     }
 }
 
@@ -49,11 +49,11 @@ impl BilinearInterpolator {
         points.sort_by(|a, b| a.x.total_cmp(&b.x).then_with(|| a.y.total_cmp(&b.y)));
 
         let mut xs = points.iter().map(|p| p.x).collect::<Vec<_>>();
-        xs.sort_by(|a, b| a.total_cmp(b));
+        xs.sort_by(f64::total_cmp);
         xs.dedup_by(|a, b| (*a - *b).abs() < f64::EPSILON);
 
         let mut ys = points.iter().map(|p| p.y).collect::<Vec<_>>();
-        ys.sort_by(|a, b| a.total_cmp(b));
+        ys.sort_by(f64::total_cmp);
         ys.dedup_by(|a, b| (*a - *b).abs() < f64::EPSILON);
 
         if xs.len() < 2 || ys.len() < 2 {
