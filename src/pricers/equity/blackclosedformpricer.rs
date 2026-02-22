@@ -258,6 +258,7 @@ mod tests {
         instruments::equity::equityeurooption::{
             EquityEuroOption, EquityEuroOptionTrade, EuroOptionType,
         },
+        math::probability::norm_cdf::norm_cdf,
         pricers::generalpricers::BlackClosedFormPricer,
         rates::{
             interestrate::RateDefinition,
@@ -267,30 +268,12 @@ mod tests {
             },
         },
         time::{date::Date, enums::TimeUnit, period::Period},
-        utils::errors::Result,
+        utils::errors::{AtlasError, Result},
         volatility::{
             interpolatedvolatilitysurface::InterpolatedVolatilitySurface,
-            volatilityindexing::F64Key,
+            volatilityindexing::F64Key, volatilitysurface::VolatilitySurface,
         },
     };
-
-    struct MockMarketDataProvider {
-        evaluation_date: Date,
-        market_data: MarketData,
-    }
-
-    impl MarketDataProvider for MockMarketDataProvider {
-        fn handle_request(&self, _: &MarketDataRequest) -> Result<MarketData> {
-            Ok(MarketData::new(
-                self.market_data.fixings().clone(),
-                self.market_data.constructed_elements().clone(),
-            ))
-        }
-
-        fn evaluation_date(&self) -> Date {
-            self.evaluation_date
-        }
-    }
 
     fn exposure_for_key(instrument_keys: &[String], exposures: &[f64], key: &str) -> Option<f64> {
         instrument_keys
@@ -300,40 +283,21 @@ mod tests {
             .map(|(_, exposure)| exposure)
     }
 
-    fn norm_cdf_black_approx(x: f64) -> f64 {
-        let l = x.abs();
-        let k = 1.0 / (1.0 + l * 0.231_641_9);
-        let poly = ((((k * 1.330_274_429 - 1.821_255_978) * k + 1.781_477_937) * k
-            - 0.356_563_782)
-            * k
-            + 0.319_381_530)
-            * k;
-        let pdf = (-0.5 * l * l).exp() * 0.398_942_280_401_432_7;
-        let w = 1.0 - pdf * poly;
-        if x < 0.0 { 1.0 - w } else { w }
-    }
-
-    #[test]
-    fn equity_option_sensitivities_match_closed_form_delta_and_vega() -> Result<()> {
-        let trade_date = Date::new(2025, 1, 2);
-        let expiry_date = trade_date + Period::new(6, TimeUnit::Months);
-        let market_index = MarketIndex::Equity("SPX".to_string());
+    /// Helper function to set up market data for equity option testing
+    fn setup_markup_for_equity_option_test(
+        trade_date: Date,
+        expiry_date: Date,
+        market_index: &MarketIndex,
+        spot: f64,
+        risk_free_rate: f64,
+        dividend_rate: f64,
+    ) -> Result<(
+        MarketData,
+        FlatForwardTermStructure<ADReal>,
+        FlatForwardTermStructure<ADReal>,
+        Rc<RefCell<InterpolatedVolatilitySurface<ADReal>>>,
+    )> {
         let six_month_days = expiry_date - trade_date;
-
-        let spot = 100.0;
-        let strike = 90.0;
-        let notional = 3.0;
-        let risk_free_rate = 0.03;
-        let dividend_rate = 0.01;
-
-        let option = EquityEuroOption::new(
-            market_index.clone(),
-            expiry_date,
-            strike,
-            EuroOptionType::Call,
-            "SPX_CALL_90".to_string(),
-        );
-        let trade = EquityEuroOptionTrade::new(option.clone(), notional, trade_date);
 
         let discount_curve = FlatForwardTermStructure::new(
             trade_date,
@@ -341,6 +305,7 @@ mod tests {
             RateDefinition::default(),
         )
         .with_pillar_label("discount_rate".to_string());
+
         let dividend_curve = FlatForwardTermStructure::new(
             trade_date,
             ADReal::from(dividend_rate),
@@ -352,30 +317,48 @@ mod tests {
         surface_points.insert(
             Period::new(six_month_days as i32, TimeUnit::Days),
             BTreeMap::from([
+                (F64Key::new(70.0), ADReal::from(0.28)),
+                (F64Key::new(80.0), ADReal::from(0.24)),
                 (F64Key::new(90.0), ADReal::from(0.22)),
+                (F64Key::new(100.0), ADReal::from(0.23)),
                 (F64Key::new(110.0), ADReal::from(0.24)),
+                (F64Key::new(120.0), ADReal::from(0.26)),
+                (F64Key::new(130.0), ADReal::from(0.28)),
             ]),
         );
         surface_points.insert(
             Period::new(six_month_days as i32 + 365, TimeUnit::Days),
             BTreeMap::from([
+                (F64Key::new(70.0), ADReal::from(0.30)),
+                (F64Key::new(80.0), ADReal::from(0.26)),
                 (F64Key::new(90.0), ADReal::from(0.25)),
+                (F64Key::new(100.0), ADReal::from(0.25)),
                 (F64Key::new(110.0), ADReal::from(0.27)),
+                (F64Key::new(120.0), ADReal::from(0.29)),
+                (F64Key::new(130.0), ADReal::from(0.30)),
             ]),
         );
         let labels = vec![
+            "vol_6m_70".to_string(),
+            "vol_6m_80".to_string(),
             "vol_6m_90".to_string(),
+            "vol_6m_100".to_string(),
             "vol_6m_110".to_string(),
+            "vol_6m_120".to_string(),
+            "vol_6m_130".to_string(),
+            "vol_12m_70".to_string(),
+            "vol_12m_80".to_string(),
             "vol_12m_90".to_string(),
+            "vol_12m_100".to_string(),
             "vol_12m_110".to_string(),
+            "vol_12m_120".to_string(),
+            "vol_12m_130".to_string(),
         ];
 
-        let vol_surface = InterpolatedVolatilitySurface::new(
-            trade_date,
-            market_index.clone(),
-            surface_points,
-        )
-        .with_labels(&labels);
+        let vol_surface = Rc::new(RefCell::new(
+            InterpolatedVolatilitySurface::new(trade_date, market_index.clone(), surface_points)
+                .with_labels(&labels),
+        ));
 
         let mut constructed_elements = ConstructedElementStore::default();
         constructed_elements.discount_curves_mut().insert(
@@ -396,49 +379,107 @@ mod tests {
         );
         constructed_elements.volatility_surfaces_mut().insert(
             market_index.clone(),
-            VolatilitySurfaceElement::new(market_index.clone(), Rc::new(RefCell::new(vol_surface))),
+            VolatilitySurfaceElement::new(market_index.clone(), vol_surface.clone()),
         );
 
-        let fixings = HashMap::from([(
-            market_index.clone(),
-            BTreeMap::from([(trade_date, spot)]),
-        )]);
+        let fixings = HashMap::from([(market_index.clone(), BTreeMap::from([(trade_date, spot)]))]);
         let market_data = MarketData::new(fixings, constructed_elements);
-        let provider = MockMarketDataProvider {
+
+        Ok((market_data, discount_curve, dividend_curve, vol_surface))
+    }
+
+    struct SimpleMarketDataProvider {
+        evaluation_date: Date,
+        market_data: MarketData,
+    }
+
+    impl MarketDataProvider for SimpleMarketDataProvider {
+        fn handle_request(&self, _: &MarketDataRequest) -> Result<MarketData> {
+            Ok(MarketData::new(
+                self.market_data.fixings().clone(),
+                self.market_data.constructed_elements().clone(),
+            ))
+        }
+
+        fn evaluation_date(&self) -> Date {
+            self.evaluation_date
+        }
+    }
+
+    #[test]
+    fn equity_option_sensitivities_match_closed_form_delta_and_vega() -> Result<()> {
+        let trade_date = Date::new(2025, 1, 2);
+        let expiry_date = trade_date + Period::new(6, TimeUnit::Months);
+        let market_index = MarketIndex::Equity("SPX".to_string());
+
+        let spot = 100.0;
+        let strike = 90.0;
+        let notional = 3.0;
+        let risk_free_rate = 0.03;
+        let dividend_rate = 0.01;
+
+        // Set up market data (curves, surfaces, fixings)
+        let (market_data, discount_curve, dividend_curve, vol_surface) =
+            setup_markup_for_equity_option_test(
+                trade_date,
+                expiry_date,
+                &market_index,
+                spot,
+                risk_free_rate,
+                dividend_rate,
+            )?;
+
+        // Create the trade
+        let option = EquityEuroOption::new(
+            market_index.clone(),
+            expiry_date,
+            strike,
+            EuroOptionType::Call,
+            "SPX_CALL_90".to_string(),
+        );
+        let trade = EquityEuroOptionTrade::new(option.clone(), notional, trade_date);
+
+        // Price using the pricer
+        let provider = SimpleMarketDataProvider {
             evaluation_date: trade_date,
             market_data,
         };
 
         let pricer = BlackClosedFormPricer;
-        let results = pricer.evaluate(&trade, &[Request::Value, Request::Sensitivities], &provider)?;
-        let sensitivities = if let Some(sensitivities) = results.sensitivities() {
-            sensitivities
-        } else {
-            return Err(crate::utils::errors::AtlasError::UnexpectedErr(
-                "Missing sensitivities in pricing result".to_string(),
-            ));
-        };
+        let results =
+            pricer.evaluate(&trade, &[Request::Value, Request::Sensitivities], &provider)?;
+        let sensitivities = results.sensitivities().ok_or(AtlasError::UnexpectedErr(
+            "Missing sensitivities in pricing result".to_string(),
+        ))?;
 
+        // Compute closed-form delta and vega for comparison
         let tau = option.day_counter().year_fraction(trade_date, expiry_date);
         let df_r = discount_curve.discount_factor(expiry_date)?.value();
         let df_q = dividend_curve.discount_factor(expiry_date)?.value();
-        let vol = 0.22;
+        let vol = vol_surface
+            .borrow()
+            .volatility_from_date(expiry_date, strike)?
+            .value();
 
         let fwd = spot * df_q / df_r;
         let vol_sqrt_tau = vol * tau.sqrt();
         let d1 = ((fwd / strike).ln() + 0.5 * vol * vol * tau) / vol_sqrt_tau;
 
-        let closed_form_delta = notional * df_q * norm_cdf_black_approx(d1);
-        let closed_form_vega =
-            notional * spot * df_q * (1.0 / (2.0 * std::f64::consts::PI).sqrt()) * (-0.5 * d1 * d1).exp()
-                * tau.sqrt();
+        let closed_form_delta = notional * df_q * norm_cdf(d1);
+        let closed_form_vega = notional
+            * spot
+            * df_q
+            * (1.0 / (2.0 * std::f64::consts::PI).sqrt())
+            * (-0.5 * d1 * d1).exp()
+            * tau.sqrt();
 
+        // Verify AD sensitivities match closed-form
         let ad_delta = exposure_for_key(
             sensitivities.instrument_keys(),
             sensitivities.exposure(),
             "SPX",
         )
-        .ok_or(crate::utils::errors::AtlasError::NotFoundErr(
+        .ok_or(AtlasError::NotFoundErr(
             "Spot sensitivity not found".to_string(),
         ))?;
 
@@ -447,12 +488,124 @@ mod tests {
             sensitivities.exposure(),
             "vol_6m_90",
         )
-        .ok_or(crate::utils::errors::AtlasError::NotFoundErr(
+        .ok_or(AtlasError::NotFoundErr(
             "Vol sensitivity not found".to_string(),
         ))?;
 
+        println!("Closed-form delta: {closed_form_delta}, AD delta: {ad_delta}");
         assert!((ad_delta - closed_form_delta).abs() < 1e-5);
         assert!((ad_vega - closed_form_vega).abs() < 1e-3);
+
+        Ok(())
+    }
+
+    #[test]
+    fn equity_option_pricing_works_with_rayon_parallelism() -> Result<()> {
+        use rayon::prelude::*;
+
+        let trade_date = Date::new(2025, 1, 2);
+        let expiry_date = trade_date + Period::new(6, TimeUnit::Months);
+        let market_index = MarketIndex::Equity("SPX".to_string());
+
+        let spot = 100.0;
+        let notional = 1.0;
+        let risk_free_rate = 0.03;
+        let dividend_rate = 0.01;
+
+        // Create multiple options with different strikes
+        let strikes = vec![80.0, 90.0, 100.0, 110.0, 120.0];
+
+        // Price all options in parallel using rayon
+        // Each thread generates its own copy of market data to avoid Rc<RefCell<>> thread safety issues
+        let results: Vec<_> = strikes
+            .par_iter()
+            .map(|&strike| {
+                // Each thread generates its own market data
+                let (market_data, _discount_curve, _dividend_curve, _vol_surface) =
+                    setup_markup_for_equity_option_test(
+                        trade_date,
+                        expiry_date,
+                        &market_index,
+                        spot,
+                        risk_free_rate,
+                        dividend_rate,
+                    )
+                    .unwrap_or_else(|_| {
+                        panic!("Failed to set up market data for strike {}", strike)
+                    });
+
+                let option = EquityEuroOption::new(
+                    market_index.clone(),
+                    expiry_date,
+                    strike,
+                    EuroOptionType::Call,
+                    format!("SPX_CALL_{}", strike as i32),
+                );
+                let trade = EquityEuroOptionTrade::new(option.clone(), notional, trade_date);
+
+                let provider = SimpleMarketDataProvider {
+                    evaluation_date: trade_date,
+                    market_data,
+                };
+
+                let pricer = BlackClosedFormPricer;
+                let eval_results =
+                    pricer.evaluate(&trade, &[Request::Value, Request::Sensitivities], &provider);
+
+                (strike, eval_results)
+            })
+            .collect();
+
+        // Verify all pricing results are valid
+        for (strike, result) in results {
+            let eval_results = result?;
+            let price = eval_results
+                .price()
+                .ok_or(AtlasError::UnexpectedErr(format!(
+                    "Missing price for strike {}",
+                    strike
+                )))?;
+            let sensitivities = eval_results
+                .sensitivities()
+                .ok_or(AtlasError::UnexpectedErr(format!(
+                    "Missing sensitivities for strike {}",
+                    strike
+                )))?;
+
+            // Verify price is positive for call option
+            assert!(
+                price > 0.0,
+                "Price should be positive for strike {}",
+                strike
+            );
+
+            // Verify we have sensitivities
+            assert!(
+                !sensitivities.instrument_keys().is_empty(),
+                "Should have sensitivities for strike {}",
+                strike
+            );
+
+            // Verify spot sensitivity exists (delta)
+            let delta = exposure_for_key(
+                sensitivities.instrument_keys(),
+                sensitivities.exposure(),
+                "SPX",
+            );
+            assert!(
+                delta.is_some(),
+                "Should have spot sensitivity for strike {}",
+                strike
+            );
+
+            // Verify the delta is between 0 and 1 for call options
+            let delta_val = delta.unwrap();
+            assert!(
+                delta_val > 0.0 && delta_val < 1.0,
+                "Delta should be between 0 and 1 for call option with strike {}",
+                strike
+            );
+        }
 
         Ok(())
     }

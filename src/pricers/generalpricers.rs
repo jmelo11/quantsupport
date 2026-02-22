@@ -1,4 +1,5 @@
-use crate::ad::adreal::{ADReal, FloatExt, IsReal};
+use crate::ad::adreal::{ADReal, FloatExt};
+use crate::math::probability::norm_cdf::norm_cdf;
 
 /// Closed-form pricer trait.
 pub trait CloseFormPricer {}
@@ -16,25 +17,6 @@ pub struct BlackClosedFormPricer;
 impl CloseFormPricer for BlackClosedFormPricer {}
 
 impl BlackClosedFormPricer {
-    fn norm_cdf_ad(x: ADReal) -> ADReal {
-        let one: ADReal = 1.0.into();
-        let l = x.abs();
-        let k: ADReal = (one / (one + l.clone() * 0.231_641_9)).into();
-        let poly: ADReal =
-            (((((k * 1.330_274_429 - 1.821_255_978) * k + 1.781_477_937) * k - 0.356_563_782) * k
-                + 0.319_381_530)
-                * k)
-                .into();
-        let pdf: ADReal = ((-(l.clone() * l) * 0.5).exp() * 0.398_942_280_401_432_7).into();
-        let w: ADReal = (one - pdf * poly).into();
-
-        if x.value() < 0.0 {
-            (one - w).into()
-        } else {
-            w
-        }
-    }
-
     /// Computes d1 and d2 for Black-style formulas.
     #[must_use]
     pub fn d1_d2(fwd: ADReal, strike: f64, vol: ADReal, tau: f64) -> (ADReal, ADReal) {
@@ -55,14 +37,14 @@ impl BlackClosedFormPricer {
         is_call: bool,
     ) -> ADReal {
         let (d1, d2) = Self::d1_d2(fwd, strike, vol, tau);
-        let nd1 = Self::norm_cdf_ad(d1);
-        let nd2 = Self::norm_cdf_ad(d2);
-        let nmd1 = Self::norm_cdf_ad((-d1).into());
-        let nmd2 = Self::norm_cdf_ad((-d2).into());
 
         if is_call {
+            let nd1 = norm_cdf(d1);
+            let nd2 = norm_cdf(d2);
             (fwd * nd1 - nd2 * strike).into()
         } else {
+            let nmd1: ADReal = norm_cdf((-d1).into());
+            let nmd2: ADReal = norm_cdf((-d2).into());
             (nmd2 * strike - fwd * nmd1).into()
         }
     }
@@ -83,7 +65,10 @@ impl CloseFormPricer for HullWhiteClosedFormPricer {}
 
 #[cfg(test)]
 mod tests {
-    use crate::ad::{adreal::{ADReal, IsReal}, tape::Tape};
+    use crate::ad::{
+        adreal::{ADReal, IsReal},
+        tape::Tape,
+    };
 
     use super::BlackClosedFormPricer;
 
