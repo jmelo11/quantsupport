@@ -8,25 +8,38 @@ use crate::{
     utils::errors::Result,
 };
 
-/// Option type for interest rate cap/floor products.
+/// Option type for a single-period caplet/floorlet.
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
-pub enum CapFloorType {
-    /// Cap: a call option on the floating rate (pays if rate > strike).
-    Cap,
-    /// Floor: a put option on the floating rate (pays if rate < strike).
-    Floor,
+pub enum CapletFloorletType {
+    /// Caplet: a call option on the floating rate (pays if rate > strike).
+    Caplet,
+    /// Floorlet: a put option on the floating rate (pays if rate < strike).
+    Floorlet,
 }
 
-/// # `Caplet`
+/// Strike specification for a caplet/floorlet.
 ///
-/// Represents a single caplet (or floorlet) instrument under the Black model.
+/// Use [`Strike::Fixed`] for a fixed strike rate or [`Strike::Atm`] to have
+/// the pricer resolve the strike to the prevailing forward rate at pricing
+/// time (at-the-money).
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+pub enum Strike {
+    /// A fixed strike rate.
+    Fixed(f64),
+    /// At-the-money: the strike is set equal to the forward rate at pricing time.
+    Atm,
+}
+
+/// # `CapletFloorlet`
+///
+/// Represents a single caplet or floorlet instrument under the Black model.
 ///
 /// A caplet covers one period of an interest rate cap. It pays
 /// `max(L(T_start) - K, 0) * α * N` at `T_pay`, where `L` is the floating
 /// rate fixing at `start_date`, `K` is the strike, `α` is the accrual factor
 /// for the period `[start_date, end_date]`, and `N` is the notional.
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct Caplet {
+pub struct CapletFloorlet {
     name: String,
     market_index: MarketIndex,
     /// Fixing / option expiry date.
@@ -35,16 +48,16 @@ pub struct Caplet {
     end_date: Date,
     /// Payment date (defaults to `end_date`).
     payment_date: Date,
-    /// Cap (call) or floor (put) type.
-    option_type: CapFloorType,
-    /// Strike rate.
-    strike: f64,
-    /// Rate definition used to compute the accrual factor.
+    /// Caplet or floorlet direction.
+    option_type: CapletFloorletType,
+    /// Strike specification (fixed rate or ATM).
+    strike: Strike,
+    /// Rate definition used to derive the forward rate and accrual factor.
     rate_definition: RateDefinition,
 }
 
-impl Caplet {
-    /// Creates a new `Caplet`.
+impl CapletFloorlet {
+    /// Creates a new `CapletFloorlet`.
     #[must_use]
     pub const fn new(
         name: String,
@@ -52,8 +65,8 @@ impl Caplet {
         start_date: Date,
         end_date: Date,
         payment_date: Date,
-        option_type: CapFloorType,
-        strike: f64,
+        option_type: CapletFloorletType,
+        strike: Strike,
         rate_definition: RateDefinition,
     ) -> Self {
         Self {
@@ -86,25 +99,25 @@ impl Caplet {
         self.end_date
     }
 
-    /// Returns the payment date of the caplet.
+    /// Returns the payment date of the caplet/floorlet.
     #[must_use]
     pub const fn payment_date(&self) -> Date {
         self.payment_date
     }
 
-    /// Returns the option type (cap or floor).
+    /// Returns the option type (caplet or floorlet).
     #[must_use]
-    pub const fn option_type(&self) -> CapFloorType {
+    pub const fn option_type(&self) -> CapletFloorletType {
         self.option_type
     }
 
-    /// Returns the strike rate.
+    /// Returns the strike specification.
     #[must_use]
-    pub const fn strike(&self) -> f64 {
+    pub const fn strike(&self) -> Strike {
         self.strike
     }
 
-    /// Returns the rate definition used to compute the accrual factor.
+    /// Returns the rate definition used to derive the forward rate and accrual factor.
     #[must_use]
     pub const fn rate_definition(&self) -> RateDefinition {
         self.rate_definition
@@ -119,7 +132,7 @@ impl Caplet {
     }
 }
 
-impl Instrument for Caplet {
+impl Instrument for CapletFloorlet {
     fn identifier(&self) -> String {
         self.name.clone()
     }
@@ -129,20 +142,20 @@ impl Instrument for Caplet {
     }
 }
 
-/// # `CapletTrade`
+/// # `CapletFloorletTrade`
 ///
-/// Represents a trade on a single caplet.
+/// Represents a trade on a single caplet or floorlet.
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct CapletTrade {
-    instrument: Caplet,
+pub struct CapletFloorletTrade {
+    instrument: CapletFloorlet,
     trade_date: Date,
     notional: f64,
 }
 
-impl CapletTrade {
-    /// Creates a new `CapletTrade`.
+impl CapletFloorletTrade {
+    /// Creates a new `CapletFloorletTrade`.
     #[must_use]
-    pub const fn new(instrument: Caplet, trade_date: Date, notional: f64) -> Self {
+    pub const fn new(instrument: CapletFloorlet, trade_date: Date, notional: f64) -> Self {
         Self {
             instrument,
             trade_date,
@@ -157,8 +170,8 @@ impl CapletTrade {
     }
 }
 
-impl Trade<Caplet> for CapletTrade {
-    fn instrument(&self) -> Caplet {
+impl Trade<CapletFloorlet> for CapletFloorletTrade {
+    fn instrument(&self) -> CapletFloorlet {
         self.instrument.clone()
     }
 
