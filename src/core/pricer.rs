@@ -1,7 +1,8 @@
 use crate::{
     core::{
         evaluationresults::EvaluationResults,
-        marketdatarequest::derivedelementrequest::{MarketDataProvider, MarketDataRequest}, request::Request,
+        marketdatahandling::marketdata::{MarketDataProvider, MarketDataRequest},
+        request::Request,
     },
     utils::errors::AtlasError,
 };

@@ -1,17 +1,19 @@
 /// Pricing data context module.
 pub mod contextmanager;
+/// Constructed element module.
+pub mod elements;
 /// Evaluation results module.
 pub mod evaluationresults;
-/// In-memory market data provider implementation.
-pub mod marketdataelementowner;
 /// Instrument module.
 pub mod instrument;
-/// Derived elements module.
-pub mod marketdatarequest;
+/// Market data handling module.
+pub mod marketdatahandling;
 /// Pillars module.
 pub mod pillars;
 /// Pricer module.
 pub mod pricer;
+/// Pricer state module.
+pub mod pricerstate;
 /// Pricing request module.
 pub mod request;
 /// Trade module.

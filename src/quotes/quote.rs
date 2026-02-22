@@ -1,8 +1,8 @@
 use serde::{Deserialize, Serialize};
 
 use crate::currencies::currency::Currency;
-use crate::marketdata::volatilitysurface::VolatilityType;
 use crate::utils::errors::{AtlasError, Result};
+use crate::volatility::volatilityindexing::VolatilityType;
 use crate::{
     indices::marketindex::MarketIndex,
     time::{date::Date, period::Period},
@@ -303,7 +303,7 @@ impl Quote {
 
 #[cfg(test)]
 mod tests {
-    use crate::marketdata::quote::Quote;
+    use crate::quotes::quote::Quote;
 
     fn test_quote_store() {
         // Example quote strings for testing

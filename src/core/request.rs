@@ -1,14 +1,4 @@
-use crate::{
-    core::{
-        evaluationresults::SensitivityMap,
-        marketdatarequest::{
-            derivedelementrequest::{MarketDataResponse, SharedElement},
-        },
-    },
-    indices::marketindex::MarketIndex,
-    time::date::Date,
-    utils::errors::{AtlasError, Result},
-};
+use crate::{core::evaluationresults::SensitivityMap, utils::errors::Result};
 
 /// # `Request`
 ///
@@ -38,86 +28,6 @@ impl Request {
             Request::ModifiedDuration => 3,
             Request::Cashflows => 4,
         }
-    }
-}
-
-/// # `PricerState`
-///
-/// The `PricerState` trait defines the interface for accessing
-/// market data responses, derived elements and finxing values during the
-/// pricing process.
-pub trait PricerState {
-    /// Retrieves the market data response associated with this state, if available.
-    fn get_market_data_reponse(&self) -> Option<&MarketDataResponse>;
-
-    /// Retrieves a mutable reference to the market data response associated with this state, if available.
-    fn get_market_data_reponse_mut(&mut self) -> Option<&mut MarketDataResponse>;
-
-    /// Retrieves the discount curve element associated with the given market index, if available.
-    fn get_discount_curve_element(
-        &self,
-        index: &MarketIndex,
-    ) -> Result<SharedElement<crate::core::marketdatarequest::curveelement::DiscountCurveElement>> {
-        self.get_market_data_reponse()
-            .ok_or_else(|| AtlasError::NotFoundErr("MarketDataResponse not available.".into()))?
-            .discount_curves()
-            .get(index)
-            .cloned()
-            .ok_or_else(|| AtlasError::NotFoundErr(format!("Curve for index {index}")))
-    }
-
-    /// Retrieves a mutable reference to the discount curve element associated with the given market index, if available.
-    fn get_discount_curve_element_mut(
-        &mut self,
-        index: &MarketIndex,
-    ) -> Result<SharedElement<crate::core::marketdatarequest::curveelement::DiscountCurveElement>> {
-        self.get_market_data_reponse_mut()
-            .ok_or_else(|| AtlasError::NotFoundErr("MarketDataResponse not set.".into()))?
-            .discount_curves()
-            .get(index)
-            .cloned()
-            .ok_or_else(|| AtlasError::NotFoundErr(format!("Curve for index {index}")))
-    }
-
-    /// Retrieves the dividend curve element associated with the given market index, if available.
-    fn get_dividend_curve_element(
-        &self,
-        index: &MarketIndex,
-    ) -> Result<SharedElement<crate::core::marketdatarequest::curveelement::DividendCurveElement>> {
-        self.get_market_data_reponse()
-            .ok_or_else(|| AtlasError::NotFoundErr("MarketDataResponse not available.".into()))?
-            .dividend_curves()
-            .get(index)
-            .cloned()
-            .ok_or_else(|| AtlasError::NotFoundErr(format!("Dividend curve for index {index}")))
-    }
-
-    /// Retrieves a mutable reference to the dividend curve element associated with the given market index, if available.
-    fn get_dividend_curve_element_mut(
-        &mut self,
-        index: &MarketIndex,
-    ) -> Result<SharedElement<crate::core::marketdatarequest::curveelement::DividendCurveElement>> {
-        self.get_market_data_reponse_mut()
-            .ok_or_else(|| AtlasError::NotFoundErr("MarketDataResponse not set.".into()))?
-            .dividend_curves()
-            .get(index)
-            .cloned()
-            .ok_or_else(|| AtlasError::NotFoundErr(format!("Dividend curve for index {index}")))
-    }
-
-    /// Retrieves the fixing for a given market index and date, if available.
-    fn get_fixing(&self, index: &MarketIndex, date: Date) -> Result<f64> {
-        let key = (index.clone(), date);
-        self.get_market_data_reponse()
-            .ok_or_else(|| AtlasError::NotFoundErr("MarketDataResponse not available.".into()))?
-            .fixings()
-            .get(&key)
-            .ok_or_else(|| {
-                AtlasError::NotFoundErr(format!(
-                    "Fixing for index {index} on date {date} not found."
-                ))
-            })
-            .copied()
     }
 }
 

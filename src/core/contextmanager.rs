@@ -1,6 +1,6 @@
 use crate::{
     currencies::currency::Currency,
-    marketdata::{fixingstore::FixingStore, quote::Level, quotestore::QuoteStore},
+    quotes::{fixingstore::FixingStore, quote::Level, quotestore::QuoteStore},
     time::date::Date,
 };
 

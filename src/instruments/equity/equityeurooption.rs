@@ -1,7 +1,8 @@
 use crate::{
     core::{contextmanager::ContextManager, instrument::Instrument, trade::Trade},
+    currencies::currency::Currency,
     indices::marketindex::MarketIndex,
-    time::date::Date,
+    time::{date::Date, daycounter::DayCounter},
     utils::errors::Result,
 };
 
@@ -27,6 +28,10 @@ pub struct EquityEuroOption {
     option_type: EuroOptionType,
     /// The unique identifier for this option.
     identifier: String,
+    /// Day count convention for the option (e.g., "ACT/365").
+    day_counter: DayCounter,
+    /// Currency
+    currency: Currency,
 }
 
 /// Represents a trade of a European equity option.
@@ -55,6 +60,8 @@ impl EquityEuroOption {
             strike,
             option_type,
             identifier,
+            day_counter: DayCounter::Actual360,
+            currency: Currency::USD,
         }
     }
 
@@ -80,6 +87,12 @@ impl EquityEuroOption {
     #[must_use]
     pub const fn option_type(&self) -> &EuroOptionType {
         &self.option_type
+    }
+
+    /// Returns the day count convention of this option.
+    #[must_use]
+    pub const fn day_counter(&self) -> &DayCounter {
+        &self.day_counter
     }
 }
 

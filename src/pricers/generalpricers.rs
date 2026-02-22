@@ -1,6 +1,4 @@
-use crate::{
-    ad::adreal::{ADReal, FloatExt, IsReal},
-};
+use crate::ad::adreal::{ADReal, FloatExt, IsReal};
 
 /// Closed-form pricer trait.
 pub trait CloseFormPricer {}
@@ -22,13 +20,12 @@ impl BlackClosedFormPricer {
         let one: ADReal = 1.0.into();
         let l = x.abs();
         let k: ADReal = (one / (one + l.clone() * 0.231_641_9)).into();
-        let poly: ADReal = (((((k * 1.330_274_429 - 1.821_255_978) * k + 1.781_477_937) * k
-            - 0.356_563_782)
-            * k
-            + 0.319_381_530)
-            * k)
-            .into();
-        let pdf: ADReal = (((-(l.clone() * l) * 0.5).exp() * 0.398_942_280_401_432_7)).into();
+        let poly: ADReal =
+            (((((k * 1.330_274_429 - 1.821_255_978) * k + 1.781_477_937) * k - 0.356_563_782) * k
+                + 0.319_381_530)
+                * k)
+                .into();
+        let pdf: ADReal = ((-(l.clone() * l) * 0.5).exp() * 0.398_942_280_401_432_7).into();
         let w: ADReal = (one - pdf * poly).into();
 
         if x.value() < 0.0 {
@@ -40,7 +37,7 @@ impl BlackClosedFormPricer {
 
     /// Computes d1 and d2 for Black-style formulas.
     #[must_use]
-    pub fn d1_d2(fwd: ADReal, strike: ADReal, vol: ADReal, tau: f64) -> (ADReal, ADReal) {
+    pub fn d1_d2(fwd: ADReal, strike: f64, vol: ADReal, tau: f64) -> (ADReal, ADReal) {
         let vol_sqrt_tau = vol * tau.sqrt();
         let d1: ADReal =
             (((fwd / strike).ln() + vol * vol * 0.5 * tau) / vol_sqrt_tau.clone()).into();
@@ -52,7 +49,7 @@ impl BlackClosedFormPricer {
     #[must_use]
     pub fn black_forward_price(
         fwd: ADReal,
-        strike: ADReal,
+        strike: f64,
         vol: ADReal,
         tau: f64,
         is_call: bool,
@@ -64,9 +61,9 @@ impl BlackClosedFormPricer {
         let nmd2 = Self::norm_cdf_ad((-d2).into());
 
         if is_call {
-            (fwd * nd1 - strike * nd2).into()
+            (fwd * nd1 - nd2 * strike).into()
         } else {
-            (strike * nmd2 - fwd * nmd1).into()
+            (nmd2 * strike - fwd * nmd1).into()
         }
     }
 }

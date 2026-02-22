@@ -1,5 +1,9 @@
+use std::cell::{Ref, RefMut};
+
 use crate::{
-    ad::adreal::ADReal, core::pillars::Pillars, currencies::currency::Currency,
+    ad::adreal::ADReal,
+    core::{marketdatahandling::constructedelementstore::SharedElement, pillars::Pillars},
+    currencies::currency::Currency,
     indices::marketindex::MarketIndex,
     rates::yieldtermstructure::interestratestermstructure::InterestRatesTermStructure,
 };
@@ -10,31 +14,8 @@ use crate::{
 /// differentiation contexts. It combines the properties of an interest rates
 /// term structure and pillars, and allows for cloning.
 pub trait ADCurveElement:
-    InterestRatesTermStructure<ADReal> + Pillars<ADReal> + Send + Sync + ADCurveElementClone
+    InterestRatesTermStructure<ADReal> + Pillars<ADReal> + Send + Sync
 {
-}
-
-impl Clone for Box<dyn ADCurveElement> {
-    fn clone(&self) -> Self {
-        self.clone_box()
-    }
-}
-
-/// `ADCurveElementClone`
-///
-/// Trait to enable cloning of boxed [`ADCurveElement`] objects.
-pub trait ADCurveElementClone {
-    /// Clones the boxed [`ADCurveElement`].
-    fn clone_box(&self) -> Box<dyn ADCurveElement>;
-}
-
-impl<T> ADCurveElementClone for T
-where
-    T: 'static + ADCurveElement + Clone,
-{
-    fn clone_box(&self) -> Box<dyn ADCurveElement> {
-        Box::new(self.clone())
-    }
 }
 
 /// `DiscountCurveElement`
@@ -45,7 +26,7 @@ where
 pub struct DiscountCurveElement {
     market_index: MarketIndex,
     currency: Currency,
-    curve: Box<dyn ADCurveElement>,
+    curve: SharedElement<dyn ADCurveElement>,
 }
 
 impl DiscountCurveElement {
@@ -54,7 +35,7 @@ impl DiscountCurveElement {
     pub const fn new(
         market_index: MarketIndex,
         currency: Currency,
-        curve: Box<dyn ADCurveElement>,
+        curve: SharedElement<dyn ADCurveElement>,
     ) -> Self {
         Self {
             market_index,
@@ -77,14 +58,14 @@ impl DiscountCurveElement {
 
     /// Returns a reference to the curve associated with the discount curve element.
     #[must_use]
-    pub fn curve(&self) -> &dyn ADCurveElement {
-        self.curve.as_ref()
+    pub fn curve(&self) -> Ref<'_, dyn ADCurveElement> {
+        self.curve.borrow()
     }
 
     /// Returns a mutable reference to the curve associated with the discount curve element.
     #[must_use]
-    pub fn curve_mut(&mut self) -> &mut dyn ADCurveElement {
-        self.curve.as_mut()
+    pub fn curve_mut(&mut self) -> RefMut<'_, dyn ADCurveElement> {
+        self.curve.borrow_mut()
     }
 }
 
@@ -96,7 +77,7 @@ impl DiscountCurveElement {
 pub struct DividendCurveElement {
     market_index: MarketIndex,
     currency: Currency,
-    curve: Box<dyn ADCurveElement>,
+    curve: SharedElement<dyn ADCurveElement>,
 }
 
 impl DividendCurveElement {
@@ -105,7 +86,7 @@ impl DividendCurveElement {
     pub const fn new(
         market_index: MarketIndex,
         currency: Currency,
-        curve: Box<dyn ADCurveElement>,
+        curve: SharedElement<dyn ADCurveElement>,
     ) -> Self {
         Self {
             market_index,
@@ -128,13 +109,13 @@ impl DividendCurveElement {
 
     /// Returns a reference to the curve associated with the dividend curve element.
     #[must_use]
-    pub fn curve(&self) -> &dyn ADCurveElement {
-        self.curve.as_ref()
+    pub fn curve(&self) -> Ref<'_, dyn ADCurveElement> {
+        self.curve.borrow()
     }
 
     /// Returns a mutable reference to the curve associated with the dividend curve element.
     #[must_use]
-    pub fn curve_mut(&mut self) -> &mut dyn ADCurveElement {
-        self.curve.as_mut()
+    pub fn curve_mut(&mut self) -> RefMut<'_, dyn ADCurveElement> {
+        self.curve.borrow_mut()
     }
 }

@@ -14,7 +14,7 @@ pub mod indices;
 /// Financial instruments module.
 pub mod instruments;
 /// Market data module.
-pub mod marketdata;
+pub mod quotes;
 /// Mathematical functions and utilities.
 pub mod math;
 /// Financial models module.
@@ -29,3 +29,5 @@ pub mod rates;
 pub mod time;
 /// General utilities.
 pub mod utils;
+/// Volatility surface and cube definitions.
+pub mod volatility;

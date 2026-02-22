@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::{indices::marketindex::MarketIndex, marketdata::quote::Quote, time::date::Date};
+use crate::{indices::marketindex::MarketIndex, quotes::quote::Quote, time::date::Date};
 
 /// # `QuoteStore`
 ///
