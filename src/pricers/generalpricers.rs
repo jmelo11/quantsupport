@@ -80,3 +80,78 @@ impl CloseFormPricer for NormalClosedFormPricer {}
 /// Hull-White closed-form pricer.
 pub struct HullWhiteClosedFormPricer;
 impl CloseFormPricer for HullWhiteClosedFormPricer {}
+
+#[cfg(test)]
+mod tests {
+    use crate::ad::{adreal::{ADReal, IsReal}, tape::Tape};
+
+    use super::BlackClosedFormPricer;
+
+    #[test]
+    fn black_option_ad_sensitivities_match_bump_and_reprice() {
+        let fwd = 102.0;
+        let strike = 100.0;
+        let vol = 0.24;
+        let tau = 0.75;
+
+        Tape::start_recording();
+
+        let mut fwd_ad = ADReal::new(fwd);
+        let mut vol_ad = ADReal::new(vol);
+        fwd_ad.put_on_tape();
+        vol_ad.put_on_tape();
+
+        let value = BlackClosedFormPricer::black_forward_price(fwd_ad, strike, vol_ad, tau, true);
+        let bw = value.backward();
+        assert!(bw.is_ok());
+
+        let ad_delta = fwd_ad.adjoint();
+        let ad_vega = vol_ad.adjoint();
+        assert!(ad_delta.is_ok());
+        assert!(ad_vega.is_ok());
+
+        let bump = 1e-5;
+        let pv_up_f = BlackClosedFormPricer::black_forward_price(
+            ADReal::new(fwd + bump),
+            strike,
+            ADReal::new(vol),
+            tau,
+            true,
+        )
+        .value();
+        let pv_dn_f = BlackClosedFormPricer::black_forward_price(
+            ADReal::new(fwd - bump),
+            strike,
+            ADReal::new(vol),
+            tau,
+            true,
+        )
+        .value();
+
+        let pv_up_v = BlackClosedFormPricer::black_forward_price(
+            ADReal::new(fwd),
+            strike,
+            ADReal::new(vol + bump),
+            tau,
+            true,
+        )
+        .value();
+        let pv_dn_v = BlackClosedFormPricer::black_forward_price(
+            ADReal::new(fwd),
+            strike,
+            ADReal::new(vol - bump),
+            tau,
+            true,
+        )
+        .value();
+
+        let fd_delta = (pv_up_f - pv_dn_f) / (2.0 * bump);
+        let fd_vega = (pv_up_v - pv_dn_v) / (2.0 * bump);
+
+        let ad_delta = ad_delta.unwrap_or_default();
+        let ad_vega = ad_vega.unwrap_or_default();
+
+        assert!((ad_delta - fd_delta).abs() < 1e-4);
+        assert!((ad_vega - fd_vega).abs() < 1e-4);
+    }
+}

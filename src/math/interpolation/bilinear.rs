@@ -1,56 +1,33 @@
-use crate::ad::adreal::ADReal;
+use crate::ad::adreal::{ADReal, IsReal};
+
+/// Numeric behavior required for bilinear interpolation.
+pub trait BilinearValue: IsReal {
+    /// Linearly interpolates between `a` and `b` using scalar weight `t`.
+    fn lerp(a: Self, b: Self, t: f64) -> Self;
+}
+
+impl BilinearValue for f64 {
+    fn lerp(a: Self, b: Self, t: f64) -> Self {
+        a + (b - a) * t
+    }
+}
+
+impl BilinearValue for ADReal {
+    fn lerp(a: Self, b: Self, t: f64) -> Self {
+        (a + (b - a) * t).into()
+    }
+}
 
 /// # `BilinearPoint`
 /// Input point for bilinear interpolation.
 #[derive(Clone)]
-pub struct BilinearPoint<K> {
+pub struct BilinearPoint<T: IsReal> {
     /// X coordinate.
     pub x: f64,
     /// Y coordinate.
     pub y: f64,
     /// Point value.
-    pub value: ADReal,
-    /// User key attached to this point.
-    pub key: K,
-}
-
-/// # `BilinearInterpolationResult`
-/// Result of an interpolation call.
-#[derive(Clone)]
-pub struct BilinearInterpolationResult<K> {
-    value: ADReal,
-    interpolation_keys: Vec<K>,
-    colliding_keys: Vec<K>,
-}
-
-impl<K> BilinearInterpolationResult<K> {
-    #[must_use]
-    /// Creates a new interpolation result.
-    pub fn new(value: ADReal, interpolation_keys: Vec<K>, colliding_keys: Vec<K>) -> Self {
-        Self {
-            value,
-            interpolation_keys,
-            colliding_keys,
-        }
-    }
-
-    #[must_use]
-    /// Returns interpolated value.
-    pub const fn value(&self) -> ADReal {
-        self.value
-    }
-
-    #[must_use]
-    /// Returns point keys used by interpolation.
-    pub fn interpolation_keys(&self) -> &[K] {
-        &self.interpolation_keys
-    }
-
-    #[must_use]
-    /// Returns keys that collide on same coordinates.
-    pub fn colliding_keys(&self) -> &[K] {
-        &self.colliding_keys
-    }
+    pub value: T,
 }
 
 /// # `BilinearInterpolator`
@@ -60,22 +37,16 @@ pub struct BilinearInterpolator;
 impl BilinearInterpolator {
     /// Interpolate at (`x`,`y`) from rectangular points.
     #[must_use]
-    pub fn interpolate<K: Clone>(
+    pub fn interpolate<T: BilinearValue>(
         x: f64,
         y: f64,
-        mut points: Vec<BilinearPoint<K>>,
-    ) -> Option<BilinearInterpolationResult<K>> {
+        mut points: Vec<BilinearPoint<T>>,
+    ) -> Option<T> {
         if points.is_empty() {
             return None;
         }
 
         points.sort_by(|a, b| a.x.total_cmp(&b.x).then_with(|| a.y.total_cmp(&b.y)));
-
-        let colliding_keys = points
-            .windows(2)
-            .filter(|w| (w[0].x - w[1].x).abs() < f64::EPSILON && (w[0].y - w[1].y).abs() < f64::EPSILON)
-            .flat_map(|w| [w[0].key.clone(), w[1].key.clone()])
-            .collect::<Vec<_>>();
 
         let mut xs = points.iter().map(|p| p.x).collect::<Vec<_>>();
         xs.sort_by(|a, b| a.total_cmp(b));
@@ -121,15 +92,9 @@ impl BilinearInterpolator {
             (y - y0) / (y1 - y0)
         };
 
-        let v0: ADReal = (p00.value + (p10.value - p00.value) * tx).into();
-        let v1: ADReal = (p01.value + (p11.value - p01.value) * tx).into();
-        let value: ADReal = (v0 + (v1 - v0) * ty).into();
-
-        Some(BilinearInterpolationResult::new(
-            value,
-            vec![p00.key, p10.key, p01.key, p11.key],
-            colliding_keys,
-        ))
+        let v0 = T::lerp(p00.value, p10.value, tx);
+        let v1 = T::lerp(p01.value, p11.value, tx);
+        Some(T::lerp(v0, v1, ty))
     }
 }
 
@@ -143,13 +108,12 @@ mod tests {
     #[test]
     fn bilinear_interpolates_center() {
         let points = vec![
-            BilinearPoint { x: 0.0, y: 0.0, value: ADReal::from(1.0), key: 0 },
-            BilinearPoint { x: 1.0, y: 0.0, value: ADReal::from(3.0), key: 1 },
-            BilinearPoint { x: 0.0, y: 1.0, value: ADReal::from(2.0), key: 2 },
-            BilinearPoint { x: 1.0, y: 1.0, value: ADReal::from(4.0), key: 3 },
+            BilinearPoint { x: 0.0, y: 0.0, value: ADReal::from(1.0) },
+            BilinearPoint { x: 1.0, y: 0.0, value: ADReal::from(3.0) },
+            BilinearPoint { x: 0.0, y: 1.0, value: ADReal::from(2.0) },
+            BilinearPoint { x: 1.0, y: 1.0, value: ADReal::from(4.0) },
         ];
         let out = BilinearInterpolator::interpolate(0.5, 0.5, points).expect("center interpolation");
-        assert!((out.value().value() - 2.5).abs() < 1e-12);
-        assert_eq!(out.interpolation_keys().len(), 4);
+        assert!((out.value() - 2.5).abs() < 1e-12);
     }
 }

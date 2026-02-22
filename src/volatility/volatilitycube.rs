@@ -6,6 +6,7 @@ use crate::{
     volatility::volatilityindexing::{SmileType, VolatilityType},
 };
 
+/// Trait for volatility cubes parameterized by numeric type.
 pub trait VolatilityCube<T: IsReal> {
     /// Returns the volatility for a given expiry and key (e.g., strike, delta, log-moneyness).
     #[must_use]
@@ -32,6 +33,7 @@ pub trait VolatilityCube<T: IsReal> {
     #[must_use]
     fn reference_date(&self) -> Date;
 
+    /// Returns the smile axis convention used by the cube.
     #[must_use]
     fn smile_type(&self) -> SmileType;
 }

@@ -82,7 +82,7 @@ impl HandleValue<EquityEuroOptionTrade, EquityOptionState> for BlackClosedFormPr
         let df_q = if let Ok(curve) = state.get_dividend_curve_element(&index) {
             curve.curve().discount_factor(option.expiry_date())?
         } else {
-            ADReal::zero()
+            ADReal::one()
         };
 
         let fwd: ADReal = (spot_ad * df_q / df_r).into();
@@ -155,14 +155,11 @@ impl HandleSensitivities<EquityEuroOptionTrade, EquityOptionState> for BlackClos
             exposures.push(pillar.adjoint()?);
         }
 
-        for (label, pillar) in state
-            .get_dividend_curve_element(index)?
-            .curve()
-            .pillars()
-            .unwrap_or_default()
-        {
-            ids.push(label);
-            exposures.push(pillar.adjoint()?);
+        if let Ok(curve) = state.get_dividend_curve_element(index) {
+            for (label, pillar) in curve.curve().pillars().unwrap_or_default() {
+                ids.push(label);
+                exposures.push(pillar.adjoint()?);
+            }
         }
 
         Ok(SensitivityMap::default()

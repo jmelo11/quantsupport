@@ -1,8 +1,6 @@
-use std::hash::Hash;
+use std::{cmp::Ordering, hash::Hash};
 
-use serde::{de, Deserialize, Serialize};
-
-use crate::time::date::Date;
+use serde::{Deserialize, Serialize};
 
 /// # `VolatilityType`
 ///
@@ -27,20 +25,38 @@ pub enum SmileType {
     LogMoneyness,
 }
 
+/// Key wrapper around `f64` for map/set usage with total ordering.
 #[derive(Clone, Debug, PartialEq)]
 pub struct F64Key(pub f64);
 
 impl F64Key {
+    /// Creates a new floating key.
     pub fn new(value: f64) -> Self {
         Self(value)
     }
 
+    /// Returns the wrapped value.
     pub fn value(&self) -> f64 {
         self.0
     }
 
+    /// Returns the bit representation used for hashing.
     pub fn to_key(&self) -> u64 {
         self.0.to_bits()
+    }
+}
+
+impl Eq for F64Key {}
+
+impl PartialOrd for F64Key {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for F64Key {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.0.total_cmp(&other.0)
     }
 }
 
