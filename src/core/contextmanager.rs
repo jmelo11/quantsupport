@@ -1,8 +1,6 @@
-use std::collections::HashMap;
-
 use crate::{
     currencies::currency::Currency,
-    models::{ModelKey, ModelParameters, ModelStore},
+    models::ModelParameters,
     quotes::{fixingstore::FixingStore, quote::Level, quotestore::QuoteStore},
     time::date::Date,
 };
@@ -10,25 +8,25 @@ use crate::{
 /// # `ContextManager`
 ///
 /// Manages the context for instrument evaluation, including market data access, quote level preferences,
-/// base currency settings, and a keyed store of model parameters for multiple model types.
+/// base currency settings, and a list of model parameter sets for multiple model types.
 pub struct ContextManager {
     quote_store: QuoteStore,
     fixing_store: FixingStore,
     quote_level: Level, // Placeholder to select the type of quote we want to use
     base_currency: Currency,
-    models: ModelStore,
+    models: Vec<ModelParameters>,
 }
 
 impl ContextManager {
     /// Creates a new pricing data context.
     #[must_use]
-    pub fn new(quote_store: QuoteStore, fixing_store: FixingStore) -> Self {
+    pub const fn new(quote_store: QuoteStore, fixing_store: FixingStore) -> Self {
         Self {
             quote_store,
             fixing_store,
             quote_level: Level::Mid,
             base_currency: Currency::USD,
-            models: HashMap::new(),
+            models: Vec::new(),
         }
     }
 
@@ -76,24 +74,16 @@ impl ContextManager {
         self.quote_store.reference_date()
     }
 
-    /// Registers a set of model parameters under the given key.
-    ///
-    /// If a model with the same key already exists it is replaced.
+    /// Sets the model parameter list, replacing any previously registered models.
     #[must_use]
-    pub fn with_model(mut self, key: ModelKey, params: ModelParameters) -> Self {
-        self.models.insert(key, params);
+    pub fn with_models(mut self, models: Vec<ModelParameters>) -> Self {
+        self.models = models;
         self
     }
 
-    /// Returns the model parameters stored under `key`, if any.
+    /// Returns the full list of model parameters registered in this context.
     #[must_use]
-    pub fn model(&self, key: &ModelKey) -> Option<&ModelParameters> {
-        self.models.get(key)
-    }
-
-    /// Returns the full model store.
-    #[must_use]
-    pub const fn models(&self) -> &ModelStore {
+    pub fn models(&self) -> &[ModelParameters] {
         &self.models
     }
 }

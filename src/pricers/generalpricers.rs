@@ -61,7 +61,7 @@ impl BlackClosedFormPricer {
 #[derive(Clone, Copy, Debug, Default)]
 pub struct BlackMonteCarloPricer {
     /// Parameters controlling path generation (number of paths, random seed).
-    pub(crate) model_parameters: GbmModelParameters,
+    pub model_parameters: GbmModelParameters,
 }
 
 impl BlackMonteCarloPricer {

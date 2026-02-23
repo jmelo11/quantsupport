@@ -4,6 +4,7 @@ use crate::{
         tape::Tape,
     },
     core::{
+        elements::simulationelement::SimulationElement,
         evaluationresults::{EvaluationResults, SensitivityMap},
         instrument::Instrument,
         marketdatahandling::{
@@ -17,7 +18,7 @@ use crate::{
         trade::Trade,
     },
     instruments::equity::equityeurooption::{EquityEuroOptionTrade, EuroOptionType},
-    models::{ModelKey, ModelParameters},
+    models::ModelParameters,
     pricers::generalpricers::BlackMonteCarloPricer,
     utils::errors::{AtlasError, Result},
 };
@@ -55,6 +56,21 @@ impl HandleValue<EquityEuroOptionTrade, MonteCarloState> for BlackMonteCarloPric
         let tau = option
             .day_counter()
             .year_fraction(trade.trade_date(), expiry);
+
+        // Reuse an existing simulation if already present; otherwise generate and cache it.
+        let needs_simulation = state
+            .get_simulation_element(&index)
+            .map_or(true, |s| s.draws().is_empty());
+
+        if needs_simulation {
+            let draws = self.model_parameters.generate_draws();
+            let simulation = SimulationElement::new(index.clone(), draws);
+            if let Some(md) = state.get_market_data_reponse_mut() {
+                md.constructed_elements_mut()
+                    .simulations_mut()
+                    .insert(index.clone(), simulation);
+            }
+        }
 
         let simulation = state.get_simulation_element(&index)?;
         if simulation.draws().is_empty() {
@@ -241,7 +257,7 @@ impl Pricer for BlackMonteCarloPricer {
                     },
                 ])
                 .with_fixings_request(vec![FixingRequest::new(index, trade.trade_date())])
-                .with_model(ModelKey::Gbm, ModelParameters::Gbm(self.model_parameters)),
+                .with_models(vec![ModelParameters::Gbm(self.model_parameters)]),
         )
     }
 }
@@ -258,7 +274,6 @@ mod tests {
         core::{
             elements::{
                 curveelement::{DiscountCurveElement, DividendCurveElement},
-                simulationelement::SimulationElement,
                 volatilitysurfaceelement::VolatilitySurfaceElement,
             },
             marketdatahandling::{
@@ -273,7 +288,7 @@ mod tests {
         instruments::equity::equityeurooption::{
             EquityEuroOption, EquityEuroOptionTrade, EuroOptionType,
         },
-        models::{GbmModelParameters, ModelKey, ModelParameters},
+        models::GbmModelParameters,
         pricers::generalpricers::BlackMonteCarloPricer,
         rates::{
             interestrate::RateDefinition,
@@ -310,7 +325,8 @@ mod tests {
         }
     }
 
-    /// Builds shared market data (curves, vol surface, fixings, simulation) for a test option.
+    /// Builds shared market data (curves, vol surface, fixings) for a test option.
+    /// No simulation is pre-generated here; the pricer will generate it on demand.
     fn setup_market_data(
         trade_date: Date,
         expiry_date: Date,
@@ -319,7 +335,6 @@ mod tests {
         risk_free_rate: f64,
         dividend_rate: f64,
         vol: f64,
-        model_params: &GbmModelParameters,
     ) -> Result<MarketData> {
         let days = expiry_date - trade_date;
 
@@ -365,9 +380,6 @@ mod tests {
                 .with_labels(&labels),
         ));
 
-        let draws = model_params.generate_draws();
-        let simulation = SimulationElement::new(market_index.clone(), draws);
-
         let mut constructed_elements = ConstructedElementStore::default();
         constructed_elements.discount_curves_mut().insert(
             market_index.clone(),
@@ -389,9 +401,6 @@ mod tests {
             market_index.clone(),
             VolatilitySurfaceElement::new(market_index.clone(), vol_surface),
         );
-        constructed_elements
-            .simulations_mut()
-            .insert(market_index.clone(), simulation);
 
         let fixings =
             HashMap::from([(market_index.clone(), BTreeMap::from([(trade_date, spot)]))]);
@@ -413,7 +422,6 @@ mod tests {
             0.03,
             0.01,
             0.20,
-            &model_params,
         )?;
 
         let option = EquityEuroOption::new(
@@ -454,7 +462,6 @@ mod tests {
             0.03,
             0.01,
             0.20,
-            &model_params,
         )?;
 
         let option = EquityEuroOption::new(
@@ -550,7 +557,6 @@ mod tests {
             risk_free_rate,
             dividend_rate,
             vol,
-            &model_params,
         )?;
 
         let option = EquityEuroOption::new(

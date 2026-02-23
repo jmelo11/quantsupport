@@ -6,32 +6,33 @@ use crate::{
         constructedelementstore::ConstructedElementStore, fixingrequest::FixingRequest,
     },
     indices::marketindex::MarketIndex,
-    models::{ModelKey, ModelParameters, ModelStore},
+    models::ModelParameters,
     time::date::Date,
     utils::errors::Result,
 };
 
 /// # `MarketDataRequest`
 ///
-/// Request for market data, including constructed elements, fixings, and an optional model store.
+/// Request for market data, including constructed elements, fixings, and an optional list
+/// of model parameter sets that the provider may inspect when fulfilling the request.
 #[derive(Default)]
 pub struct MarketDataRequest {
     constructed_elements_request: Option<Vec<ConstructedElementRequest>>,
     fixings_request: Option<Vec<FixingRequest>>,
-    models: ModelStore,
+    models: Vec<ModelParameters>,
 }
 
 impl MarketDataRequest {
     /// Creates a new `MarketDataRequest` with the specified constructed elements and fixings requests.
     #[must_use]
-    pub fn new(
+    pub const fn new(
         constructed_elements_request: Option<Vec<ConstructedElementRequest>>,
         fixings_request: Option<Vec<FixingRequest>>,
     ) -> Self {
         Self {
             constructed_elements_request,
             fixings_request,
-            models: HashMap::new(),
+            models: Vec::new(),
         }
     }
 
@@ -47,15 +48,9 @@ impl MarketDataRequest {
         self.fixings_request.as_ref()
     }
 
-    /// Returns the model parameters stored under `key`, if any.
+    /// Returns the list of model parameters attached to this request.
     #[must_use]
-    pub fn model(&self, key: &ModelKey) -> Option<&ModelParameters> {
-        self.models.get(key)
-    }
-
-    /// Returns the full model store attached to this request.
-    #[must_use]
-    pub const fn models(&self) -> &ModelStore {
+    pub fn models(&self) -> &[ModelParameters] {
         &self.models
     }
 
@@ -76,23 +71,22 @@ impl MarketDataRequest {
         self
     }
 
-    /// Registers a set of model parameters under the given key.
-    ///
-    /// If a model with the same key already exists it is replaced.
+    /// Builder method to set the model parameter list, replacing any previously set models.
     #[must_use]
-    pub fn with_model(mut self, key: ModelKey, params: ModelParameters) -> Self {
-        self.models.insert(key, params);
+    pub fn with_models(mut self, models: Vec<ModelParameters>) -> Self {
+        self.models = models;
         self
     }
 }
 
 /// # `MarketData`
 ///
-/// Struct representing market data, including fixings, constructed elements, and a model store.
+/// Struct representing market data, including fixings, constructed elements, and a list of
+/// model parameter sets.
 pub struct MarketData {
     fixings: HashMap<MarketIndex, BTreeMap<Date, f64>>,
     constructed_elements: ConstructedElementStore,
-    models: ModelStore,
+    models: Vec<ModelParameters>,
 }
 
 impl MarketData {
@@ -105,7 +99,7 @@ impl MarketData {
         Self {
             fixings,
             constructed_elements,
-            models: HashMap::new(),
+            models: Vec::new(),
         }
     }
 
@@ -127,24 +121,16 @@ impl MarketData {
         &mut self.constructed_elements
     }
 
-    /// Returns the model parameters stored under `key`, if any.
+    /// Returns the list of model parameters attached to this market data.
     #[must_use]
-    pub fn model(&self, key: &ModelKey) -> Option<&ModelParameters> {
-        self.models.get(key)
-    }
-
-    /// Returns the full model store attached to this market data.
-    #[must_use]
-    pub const fn models(&self) -> &ModelStore {
+    pub fn models(&self) -> &[ModelParameters] {
         &self.models
     }
 
-    /// Registers a set of model parameters under the given key.
-    ///
-    /// If a model with the same key already exists it is replaced.
+    /// Builder method to set the model parameter list, replacing any previously set models.
     #[must_use]
-    pub fn with_model(mut self, key: ModelKey, params: ModelParameters) -> Self {
-        self.models.insert(key, params);
+    pub fn with_models(mut self, models: Vec<ModelParameters>) -> Self {
+        self.models = models;
         self
     }
 }
