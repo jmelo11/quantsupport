@@ -77,7 +77,7 @@ impl ContextManager {
     /// Sets the model parameter list, replacing any previously registered models.
     #[must_use]
     pub fn with_models(mut self, models: &[ModelParameters]) -> Self {
-        self.models = models.to_owned();
+        models.clone_into(&mut self.models);
         self
     }
 

@@ -4,7 +4,7 @@ use std::f64::consts::PI;
 /// # `ModelParameters`
 ///
 /// A tagged union of per-model parameter sets. Stored as a `Vec<ModelParameters>` in
-/// [ContextManager], [MarketDataRequest], and [MarketData] so that multiple model
+/// [`ContextManager`], [`MarketDataRequest`], and [`MarketData`] so that multiple model
 /// configurations can coexist and providers can inspect them at request time.
 #[derive(Clone, Debug)]
 pub enum ModelParameters {

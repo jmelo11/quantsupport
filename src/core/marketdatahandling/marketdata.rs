@@ -74,7 +74,7 @@ impl MarketDataRequest {
     /// Builder method to set the model parameter list, replacing any previously set models.
     #[must_use]
     pub fn with_models(mut self, models: &[ModelParameters]) -> Self {
-        self.models = models.to_owned();
+        models.clone_into(&mut self.models);
         self
     }
 }
@@ -132,7 +132,7 @@ impl MarketData {
     /// Builder method to set the model parameter list, replacing any previously set models.
     #[must_use]
     pub fn with_models(mut self, models: &[ModelParameters]) -> Self {
-        self.models = models.to_owned();
+        models.clone_into(&mut self.models);
         self
     }
 }
