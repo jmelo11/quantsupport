@@ -73,8 +73,8 @@ impl MarketDataRequest {
 
     /// Builder method to set the model parameter list, replacing any previously set models.
     #[must_use]
-    pub fn with_models(mut self, models: Vec<ModelParameters>) -> Self {
-        self.models = models;
+    pub fn with_models(mut self, models: &[ModelParameters]) -> Self {
+        self.models = models.to_owned();
         self
     }
 }
@@ -90,16 +90,18 @@ pub struct MarketData {
 }
 
 impl MarketData {
-    /// Creates a new `MarketData` with the specified fixings and constructed elements.
+    /// Creates a new `MarketData` with the specified fixings, constructed elements, and model
+    /// parameter sets.
     #[must_use]
     pub fn new(
         fixings: HashMap<MarketIndex, BTreeMap<Date, f64>>,
         constructed_elements: ConstructedElementStore,
+        models: &[ModelParameters],
     ) -> Self {
         Self {
             fixings,
             constructed_elements,
-            models: Vec::new(),
+            models: models.to_owned(),
         }
     }
 
@@ -129,8 +131,8 @@ impl MarketData {
 
     /// Builder method to set the model parameter list, replacing any previously set models.
     #[must_use]
-    pub fn with_models(mut self, models: Vec<ModelParameters>) -> Self {
-        self.models = models;
+    pub fn with_models(mut self, models: &[ModelParameters]) -> Self {
+        self.models = models.to_owned();
         self
     }
 }

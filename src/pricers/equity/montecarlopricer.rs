@@ -257,7 +257,7 @@ impl Pricer for BlackMonteCarloPricer {
                     },
                 ])
                 .with_fixings_request(vec![FixingRequest::new(index, trade.trade_date())])
-                .with_models(vec![ModelParameters::Gbm(self.model_parameters)]),
+                .with_models(&[ModelParameters::Gbm(self.model_parameters)]),
         )
     }
 }
@@ -317,6 +317,7 @@ mod tests {
             Ok(MarketData::new(
                 self.market_data.fixings().clone(),
                 self.market_data.constructed_elements().clone(),
+                &[],
             ))
         }
 
@@ -404,7 +405,7 @@ mod tests {
 
         let fixings =
             HashMap::from([(market_index.clone(), BTreeMap::from([(trade_date, spot)]))]);
-        Ok(MarketData::new(fixings, constructed_elements))
+        Ok(MarketData::new(fixings, constructed_elements, &[]))
     }
 
     #[test]
@@ -583,6 +584,112 @@ mod tests {
         assert!(
             (mc_price - bs_price).abs() / bs_price < 0.01,
             "MC price {mc_price:.4} should be within 1% of BS price {bs_price:.4}"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn mc_sensitivities_converge_to_black_scholes() -> Result<()> {
+        use crate::{math::probability::norm_cdf::norm_cdf, time::daycounter::DayCounter};
+        use std::f64::consts::PI;
+
+        let trade_date = Date::new(2025, 1, 2);
+        let expiry_date = trade_date + Period::new(6, TimeUnit::Months);
+        let market_index = MarketIndex::Equity("SPX".to_string());
+
+        let spot = 100.0_f64;
+        let strike = 100.0_f64;
+        let risk_free_rate = 0.05_f64;
+        let dividend_rate = 0.02_f64;
+        let vol = 0.20_f64;
+
+        let tau = DayCounter::Actual360.year_fraction(trade_date, expiry_date);
+
+        // Discount factors from the same curve objects the pricer uses
+        let discount_curve = FlatForwardTermStructure::new(
+            trade_date,
+            ADReal::from(risk_free_rate),
+            RateDefinition::default(),
+        );
+        let dividend_curve = FlatForwardTermStructure::new(
+            trade_date,
+            ADReal::from(dividend_rate),
+            RateDefinition::default(),
+        );
+        let df_r = discount_curve.discount_factor(expiry_date)?.value();
+        let df_q = dividend_curve.discount_factor(expiry_date)?.value();
+        let fwd = spot * df_q / df_r;
+
+        let d1 = ((fwd / strike).ln() + 0.5 * vol * vol * tau) / (vol * tau.sqrt());
+
+        // Closed-form greeks (valid for any compounding convention)
+        let bs_delta = df_q * norm_cdf(ADReal::new(d1)).value();
+        let n_d1 = (-0.5 * d1 * d1).exp() / (2.0 * PI).sqrt();
+        let bs_vega = spot * df_q * tau.sqrt() * n_d1;
+
+        // MC with 400k paths
+        let model_params = GbmModelParameters::new(400_000, 77);
+        let market_data = setup_market_data(
+            trade_date,
+            expiry_date,
+            &market_index,
+            spot,
+            risk_free_rate,
+            dividend_rate,
+            vol,
+        )?;
+
+        let option = EquityEuroOption::new(
+            market_index,
+            expiry_date,
+            strike,
+            EuroOptionType::Call,
+            "SPX_ATM_CALL_SENS".to_string(),
+        );
+        let trade = EquityEuroOptionTrade::new(option, 1.0, trade_date);
+        let provider = SimpleMarketDataProvider {
+            evaluation_date: trade_date,
+            market_data,
+        };
+
+        let pricer = BlackMonteCarloPricer::new(model_params);
+        let results =
+            pricer.evaluate(&trade, &[Request::Value, Request::Sensitivities], &provider)?;
+
+        let sensitivities = results.sensitivities().ok_or(AtlasError::UnexpectedErr(
+            "Missing sensitivities".to_string(),
+        ))?;
+
+        // Spot delta
+        let mc_delta = sensitivities
+            .instrument_keys()
+            .iter()
+            .zip(sensitivities.exposure().iter())
+            .find(|(k, _)| k.as_str() == "SPX")
+            .map(|(_, v)| *v)
+            .ok_or(AtlasError::NotFoundErr("Spot sensitivity not found".to_string()))?;
+
+        // Total vega: sum across all vol pillar sensitivities
+        let mc_vega: f64 = sensitivities
+            .instrument_keys()
+            .iter()
+            .zip(sensitivities.exposure().iter())
+            .filter(|(k, _)| k.starts_with("vol_"))
+            .map(|(_, v)| *v)
+            .sum();
+
+        println!("BS delta: {bs_delta:.6}, MC delta: {mc_delta:.6}");
+        println!("BS vega:  {bs_vega:.6},  MC vega:  {mc_vega:.6}");
+
+        // With 400k paths expect convergence within 2%
+        assert!(
+            (mc_delta - bs_delta).abs() / bs_delta < 0.02,
+            "MC delta {mc_delta:.6} should be within 2% of BS delta {bs_delta:.6}"
+        );
+        assert!(
+            (mc_vega - bs_vega).abs() / bs_vega < 0.02,
+            "MC vega {mc_vega:.6} should be within 2% of BS vega {bs_vega:.6}"
         );
 
         Ok(())

@@ -76,8 +76,8 @@ impl ContextManager {
 
     /// Sets the model parameter list, replacing any previously registered models.
     #[must_use]
-    pub fn with_models(mut self, models: Vec<ModelParameters>) -> Self {
-        self.models = models;
+    pub fn with_models(mut self, models: &[ModelParameters]) -> Self {
+        self.models = models.to_owned();
         self
     }
 

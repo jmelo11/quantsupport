@@ -4,9 +4,7 @@ use std::f64::consts::PI;
 /// # `ModelParameters`
 ///
 /// A tagged union of per-model parameter sets. Stored as a `Vec<ModelParameters>` in
-/// [`crate::core::contextmanager::ContextManager`],
-/// [`crate::core::marketdatahandling::marketdata::MarketDataRequest`], and
-/// [`crate::core::marketdatahandling::marketdata::MarketData`] so that multiple model
+/// `ContextManager`, `MarketDataRequest`, and `MarketData` so that multiple model
 /// configurations can coexist and providers can inspect them at request time.
 #[derive(Clone, Debug)]
 pub enum ModelParameters {
@@ -14,17 +12,6 @@ pub enum ModelParameters {
     Gbm(GbmModelParameters),
     /// Placeholder for Hull-White short-rate model parameters (to be extended).
     HullWhite,
-}
-
-impl ModelParameters {
-    /// Returns the inner [`GbmModelParameters`] if this variant is `Gbm`, otherwise `None`.
-    #[must_use]
-    pub const fn as_gbm(&self) -> Option<&GbmModelParameters> {
-        match self {
-            Self::Gbm(p) => Some(p),
-            _ => None,
-        }
-    }
 }
 
 /// # `GbmModelParameters`
