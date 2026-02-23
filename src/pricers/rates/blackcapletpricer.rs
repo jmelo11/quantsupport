@@ -30,13 +30,13 @@ use crate::{
 ///
 /// The effective strike is resolved from the instrument's [`Strike`] before
 /// querying the volatility surface:
-/// - [`Strike::Fixed(k)`] — `K_eff = k`
+/// - [`Strike::Absolute(k)`] — `K_eff = k`
 /// - [`Strike::Atm`] — `K_eff = F`
 /// - [`Strike::Relative(s)`] — `K_eff = F + s`
 ///
-/// Payment discounting uses the collateral / CSA curve when
-/// `CapletFloorlet::collateral_index` is set, and falls back to the forecast
-/// curve otherwise.
+/// Payment discounting and collateralization conventions are determined at the
+/// context / `MarketDataProvider` level. The pricer always uses the
+/// instrument's `market_index` discount curve for payment discounting.
 pub struct BlackCapletPricer;
 
 /// State for Black caplet/floorlet pricing.
@@ -88,18 +88,15 @@ impl HandleValue<CapletFloorletTrade, BlackCapletState> for BlackCapletPricer {
 
         // Resolve effective strike from the instrument's strike specification
         let effective_strike = match caplet.strike() {
-            Strike::Fixed(k) => k,
+            Strike::Absolute(k) => k,
             Strike::Atm => fwd.value(),
             Strike::Relative(spread) => fwd.value() + spread,
         };
 
-        // Discount the payment using the collateral / CSA curve when specified,
-        // falling back to the forecast curve otherwise.
-        let discount_index = caplet
-            .collateral_index()
-            .unwrap_or(&index);
+        // Payment discounting uses the market_index curve.
+        // Collateralization is a context-level concern handled by the MarketDataProvider.
         let df_pay = state
-            .get_discount_curve_element(discount_index)?
+            .get_discount_curve_element(&index)?
             .curve()
             .discount_factor(payment_date)?;
 
@@ -145,7 +142,7 @@ impl HandleSensitivities<CapletFloorletTrade, BlackCapletState> for BlackCapletP
         let mut ids = Vec::new();
         let mut exposures = Vec::new();
 
-        // Forecast discount curve sensitivities
+        // Discount curve sensitivities
         for (label, pillar) in state
             .get_discount_curve_element(&index)?
             .curve()
@@ -154,21 +151,6 @@ impl HandleSensitivities<CapletFloorletTrade, BlackCapletState> for BlackCapletP
         {
             ids.push(label);
             exposures.push(pillar.adjoint()?);
-        }
-
-        // Collateral curve sensitivities (only when a separate collateral index is set)
-        if let Some(collateral_index) = caplet.collateral_index() {
-            if collateral_index != &index {
-                for (label, pillar) in state
-                    .get_discount_curve_element(collateral_index)?
-                    .curve()
-                    .pillars()
-                    .unwrap_or_default()
-                {
-                    ids.push(label);
-                    exposures.push(pillar.adjoint()?);
-                }
-            }
         }
 
         // Volatility surface sensitivities
@@ -229,28 +211,17 @@ impl Pricer for BlackCapletPricer {
     }
 
     fn market_data_request(&self, trade: &CapletFloorletTrade) -> Option<MarketDataRequest> {
-        let caplet = trade.instrument();
-        let index = caplet.market_index();
-
-        let mut requests = vec![
-            ConstructedElementRequest::DiscountCurve {
-                market_index: index.clone(),
-            },
-            ConstructedElementRequest::VolatilitySurface {
-                market_index: index.clone(),
-            },
-        ];
-
-        // If a separate collateral index is specified, also request its discount curve
-        if let Some(collateral_index) = caplet.collateral_index() {
-            if collateral_index != &index {
-                requests.push(ConstructedElementRequest::DiscountCurve {
-                    market_index: collateral_index.clone(),
-                });
-            }
-        }
-
-        Some(MarketDataRequest::default().with_constructed_elements_request(requests))
+        let index = trade.instrument().market_index();
+        Some(
+            MarketDataRequest::default().with_constructed_elements_request(vec![
+                ConstructedElementRequest::DiscountCurve {
+                    market_index: index.clone(),
+                },
+                ConstructedElementRequest::VolatilitySurface {
+                    market_index: index,
+                },
+            ]),
+        )
     }
 }
 
@@ -432,7 +403,7 @@ mod tests {
             end_date,
             end_date,
             CapletFloorletType::Caplet,
-            Strike::Fixed(strike),
+            Strike::Absolute(strike),
             rate_def,
         );
         let trade = CapletFloorletTrade::new(caplet.clone(), trade_date, notional);
@@ -479,6 +450,176 @@ mod tests {
         Ok(())
     }
 
+    /// Verifies that the AD-computed sensitivities match:
+    ///   - **Vega** (closed-form): `N · α · df_pay · F · φ(d1) · √τ`
+    ///     (sum of all vol-pillar adjoints equals the total Black vega because the
+    ///     bilinear interpolation weights sum to 1 at any interior grid point)
+    ///   - **Rate sensitivity** (bump-and-reprice): finite-difference derivative
+    ///     of the price with respect to the flat discount rate `r`.
+    #[test]
+    fn black_caplet_sensitivities_match_closed_form() -> Result<()> {
+        let trade_date = Date::new(2025, 1, 2);
+        let start_date = trade_date + Period::new(6, TimeUnit::Months);
+        let end_date = start_date + Period::new(3, TimeUnit::Months);
+        let market_index = MarketIndex::TermSOFR3m;
+
+        let notional = 1.0; // unit notional for easy comparison
+        let strike = 0.05;
+        let risk_free_rate = 0.04;
+        let flat_vol = 0.20;
+        let rate_def = RateDefinition::default();
+
+        // Price + AD sensitivities
+        let (market_data, discount_curve, vol_surface) = setup_caplet_market_data(
+            trade_date,
+            start_date,
+            end_date,
+            &market_index,
+            risk_free_rate,
+            flat_vol,
+            strike,
+        )?;
+
+        let caplet = CapletFloorlet::new(
+            "SOFR3M_CAPLET".to_string(),
+            market_index.clone(),
+            start_date,
+            end_date,
+            end_date,
+            CapletFloorletType::Caplet,
+            Strike::Absolute(strike),
+            rate_def,
+        );
+        let trade = CapletFloorletTrade::new(caplet.clone(), trade_date, notional);
+
+        let provider = SimpleMarketDataProvider {
+            evaluation_date: trade_date,
+            market_data,
+        };
+
+        let pricer = BlackCapletPricer;
+        let results =
+            pricer.evaluate(&trade, &[Request::Value, Request::Sensitivities], &provider)?;
+
+        let price = results
+            .price()
+            .ok_or(AtlasError::UnexpectedErr("Missing price".to_string()))?;
+        let sens = results
+            .sensitivities()
+            .ok_or(AtlasError::UnexpectedErr("Missing sensitivities".to_string()))?;
+
+        // ── Closed-form vega ──────────────────────────────────────────────────
+        let tau = rate_def
+            .day_counter()
+            .year_fraction(trade_date, start_date);
+        let alpha = caplet.accrual_factor();
+        let df_pay = discount_curve.discount_factor(end_date)?.value();
+        let fwd = discount_curve
+            .forward_rate(start_date, end_date, Compounding::Simple, rate_def.frequency())?
+            .value();
+        let vol = vol_surface
+            .borrow()
+            .volatility_from_date(start_date, strike)?
+            .value();
+        let vol_sqrt_tau = vol * tau.sqrt();
+        let d1 = ((fwd / strike).ln() + 0.5 * vol * vol * tau) / vol_sqrt_tau;
+
+        // φ(d1) = standard-normal PDF
+        let phi_d1 =
+            (-0.5 * d1 * d1).exp() / (2.0 * std::f64::consts::PI).sqrt();
+        let closed_form_vega = notional * alpha * df_pay * fwd * phi_d1 * tau.sqrt();
+
+        // AD vega = sum over all vol-pillar adjoints
+        // (bilinear weights sum to 1, so the aggregated adjoint equals total vega)
+        let ad_vega_total: f64 = ["vol_t0_lo", "vol_t0_hi", "vol_t1_lo", "vol_t1_hi"]
+            .iter()
+            .filter_map(|&k| {
+                sens.instrument_keys()
+                    .iter()
+                    .zip(sens.exposure().iter().copied())
+                    .find(|(key, _)| key.as_str() == k)
+                    .map(|(_, v)| v)
+            })
+            .sum();
+
+        println!("Closed-form vega: {closed_form_vega:.8}");
+        println!("AD vega (sum):    {ad_vega_total:.8}");
+        assert!(
+            (ad_vega_total - closed_form_vega).abs() < 1e-8,
+            "vega mismatch: ad={ad_vega_total}, cf={closed_form_vega}"
+        );
+
+        // ── Bump-and-reprice rate sensitivity ─────────────────────────────────
+        let bump = 1e-5_f64;
+
+        let (md_up, _, _) = setup_caplet_market_data(
+            trade_date,
+            start_date,
+            end_date,
+            &market_index,
+            risk_free_rate + bump,
+            flat_vol,
+            strike,
+        )?;
+        let (md_dn, _, _) = setup_caplet_market_data(
+            trade_date,
+            start_date,
+            end_date,
+            &market_index,
+            risk_free_rate - bump,
+            flat_vol,
+            strike,
+        )?;
+
+        let price_up = pricer
+            .evaluate(
+                &trade,
+                &[Request::Value],
+                &SimpleMarketDataProvider {
+                    evaluation_date: trade_date,
+                    market_data: md_up,
+                },
+            )?
+            .price()
+            .ok_or(AtlasError::UnexpectedErr("Missing price_up".to_string()))?;
+
+        let price_dn = pricer
+            .evaluate(
+                &trade,
+                &[Request::Value],
+                &SimpleMarketDataProvider {
+                    evaluation_date: trade_date,
+                    market_data: md_dn,
+                },
+            )?
+            .price()
+            .ok_or(AtlasError::UnexpectedErr("Missing price_dn".to_string()))?;
+
+        let fd_rate_sens = (price_up - price_dn) / (2.0 * bump);
+
+        let ad_rate_sens = sens
+            .instrument_keys()
+            .iter()
+            .zip(sens.exposure().iter().copied())
+            .find(|(k, _)| k.as_str() == "discount_rate")
+            .map(|(_, v)| v)
+            .ok_or(AtlasError::NotFoundErr(
+                "discount_rate sensitivity not found".to_string(),
+            ))?;
+
+        println!("FD rate sensitivity: {fd_rate_sens:.8}");
+        println!("AD rate sensitivity: {ad_rate_sens:.8}");
+        assert!(
+            (ad_rate_sens - fd_rate_sens).abs() < 1e-5,
+            "rate sensitivity mismatch: ad={ad_rate_sens}, fd={fd_rate_sens}"
+        );
+
+        // Sanity: price is positive and sensitivities were found
+        assert!(price > 0.0);
+
+        Ok(())
+    }
+
     #[test]
     fn black_caplet_sensitivities_are_non_empty() -> Result<()> {
         let trade_date = Date::new(2025, 1, 2);
@@ -506,7 +647,7 @@ mod tests {
             end_date,
             end_date,
             CapletFloorletType::Caplet,
-            Strike::Fixed(strike),
+            Strike::Absolute(strike),
             RateDefinition::default(),
         );
         let trade = CapletFloorletTrade::new(caplet, trade_date, notional);
@@ -558,7 +699,7 @@ mod tests {
             end_date,
             end_date,
             CapletFloorletType::Floorlet,
-            Strike::Fixed(strike),
+            Strike::Absolute(strike),
             RateDefinition::default(),
         );
         let trade = CapletFloorletTrade::new(caplet, trade_date, notional);
@@ -677,81 +818,6 @@ mod tests {
             .ok_or(AtlasError::UnexpectedErr("Missing price".to_string()))?;
 
         println!("Relative-strike caplet price: {price}");
-        assert!(price > 0.0);
-
-        Ok(())
-    }
-
-    #[test]
-    fn black_caplet_collateral_curve_prices_positive() -> Result<()> {
-        let trade_date = Date::new(2025, 1, 2);
-        let start_date = trade_date + Period::new(6, TimeUnit::Months);
-        let end_date = start_date + Period::new(3, TimeUnit::Months);
-        let forecast_index = MarketIndex::TermSOFR3m;
-        let collateral_index = MarketIndex::SOFR;
-
-        let notional = 1_000_000.0;
-        let strike = 0.05;
-        let risk_free_rate = 0.04;
-        let collateral_rate = 0.038;
-
-        // Build market data including the forecast discount curve and vol surface
-        let (mut market_data, _discount_curve, _vol_surface) = setup_caplet_market_data(
-            trade_date,
-            start_date,
-            end_date,
-            &forecast_index,
-            risk_free_rate,
-            0.20,
-            strike,
-        )?;
-
-        // Insert a separate collateral discount curve for the SOFR index
-        let collateral_curve = FlatForwardTermStructure::new(
-            trade_date,
-            ADReal::from(collateral_rate),
-            RateDefinition::default(),
-        )
-        .with_pillar_label("collateral_rate".to_string());
-
-        market_data
-            .constructed_elements_mut()
-            .discount_curves_mut()
-            .insert(
-                collateral_index.clone(),
-                DiscountCurveElement::new(
-                    collateral_index.clone(),
-                    Currency::USD,
-                    Rc::new(RefCell::new(collateral_curve)),
-                ),
-            );
-
-        let caplet = CapletFloorlet::new(
-            "SOFR3M_CAPLET_CSA".to_string(),
-            forecast_index,
-            start_date,
-            end_date,
-            end_date,
-            CapletFloorletType::Caplet,
-            Strike::Fixed(strike),
-            RateDefinition::default(),
-        )
-        .with_collateral_index(collateral_index);
-
-        let trade = CapletFloorletTrade::new(caplet, trade_date, notional);
-
-        let provider = SimpleMarketDataProvider {
-            evaluation_date: trade_date,
-            market_data,
-        };
-
-        let pricer = BlackCapletPricer;
-        let results = pricer.evaluate(&trade, &[Request::Value], &provider)?;
-        let price = results
-            .price()
-            .ok_or(AtlasError::UnexpectedErr("Missing price".to_string()))?;
-
-        println!("Collateral-discounted caplet price: {price}");
         assert!(price > 0.0);
 
         Ok(())
