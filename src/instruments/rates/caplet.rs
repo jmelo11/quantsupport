@@ -19,15 +19,23 @@ pub enum CapletFloorletType {
 
 /// Strike specification for a caplet/floorlet.
 ///
-/// Use [`Strike::Fixed`] for a fixed strike rate or [`Strike::Atm`] to have
-/// the pricer resolve the strike to the prevailing forward rate at pricing
-/// time (at-the-money).
+/// - [`Strike::Fixed`] — a fixed absolute strike rate.
+/// - [`Strike::Atm`] — at-the-money: the pricer sets the strike equal to the
+///   prevailing forward rate at pricing time.
+/// - [`Strike::Relative`] — a spread (positive or negative) added to the
+///   forward rate at pricing time: `K_eff = F + spread`.
+///
+/// For [`Strike::Atm`] and [`Strike::Relative`], the effective absolute strike
+/// is computed by the pricer from the forward rate before querying the
+/// volatility surface.
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub enum Strike {
-    /// A fixed strike rate.
+    /// A fixed absolute strike rate.
     Fixed(f64),
-    /// At-the-money: the strike is set equal to the forward rate at pricing time.
+    /// At-the-money: the strike equals the forward rate at pricing time.
     Atm,
+    /// A spread over the forward rate: `K_eff = F + spread`.
+    Relative(f64),
 }
 
 /// # `CapletFloorlet`
@@ -38,6 +46,11 @@ pub enum Strike {
 /// `max(L(T_start) - K, 0) * α * N` at `T_pay`, where `L` is the floating
 /// rate fixing at `start_date`, `K` is the strike, `α` is the accrual factor
 /// for the period `[start_date, end_date]`, and `N` is the notional.
+///
+/// An optional `collateral_index` can be set (via [`CapletFloorlet::with_collateral_index`])
+/// to specify the market index whose discount curve is used for payment
+/// discounting (the collateral / CSA curve). When not set the forecast curve
+/// (`market_index`) is used for discounting as well.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CapletFloorlet {
     name: String,
@@ -50,14 +63,17 @@ pub struct CapletFloorlet {
     payment_date: Date,
     /// Caplet or floorlet direction.
     option_type: CapletFloorletType,
-    /// Strike specification (fixed rate or ATM).
+    /// Strike specification (fixed, ATM, or relative to forward).
     strike: Strike,
     /// Rate definition used to derive the forward rate and accrual factor.
     rate_definition: RateDefinition,
+    /// Optional collateral / CSA index whose discount curve is used for
+    /// payment discounting. Falls back to `market_index` when `None`.
+    collateral_index: Option<MarketIndex>,
 }
 
 impl CapletFloorlet {
-    /// Creates a new `CapletFloorlet`.
+    /// Creates a new `CapletFloorlet` without a separate collateral curve.
     #[must_use]
     pub const fn new(
         name: String,
@@ -78,10 +94,19 @@ impl CapletFloorlet {
             option_type,
             strike,
             rate_definition,
+            collateral_index: None,
         }
     }
 
-    /// Returns the market index.
+    /// Sets the collateral / CSA index used for payment discounting and
+    /// returns the updated instrument.
+    #[must_use]
+    pub fn with_collateral_index(mut self, collateral_index: MarketIndex) -> Self {
+        self.collateral_index = Some(collateral_index);
+        self
+    }
+
+    /// Returns the market index (forecast curve).
     #[must_use]
     pub fn market_index(&self) -> MarketIndex {
         self.market_index.clone()
@@ -121,6 +146,15 @@ impl CapletFloorlet {
     #[must_use]
     pub const fn rate_definition(&self) -> RateDefinition {
         self.rate_definition
+    }
+
+    /// Returns the optional collateral / CSA index for payment discounting.
+    ///
+    /// When `None`, the pricer falls back to the forecast `market_index`
+    /// discount curve.
+    #[must_use]
+    pub const fn collateral_index(&self) -> Option<&MarketIndex> {
+        self.collateral_index.as_ref()
     }
 
     /// Computes the accrual factor `α = year_fraction(start_date, end_date)`.

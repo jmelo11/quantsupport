@@ -28,10 +28,15 @@ use crate::{
 /// the conventions specified in the caplet's rate definition:
 /// `F = curve.forward_rate(start_date, end_date, comp, freq)`
 ///
-/// When the strike is [`Strike::Atm`], the effective strike is set equal to
-/// the forward rate at pricing time. The Black formula is then applied with
-/// the volatility obtained from the volatility surface keyed by the effective
-/// strike.
+/// The effective strike is resolved from the instrument's [`Strike`] before
+/// querying the volatility surface:
+/// - [`Strike::Fixed(k)`] — `K_eff = k`
+/// - [`Strike::Atm`] — `K_eff = F`
+/// - [`Strike::Relative(s)`] — `K_eff = F + s`
+///
+/// Payment discounting uses the collateral / CSA curve when
+/// `CapletFloorlet::collateral_index` is set, and falls back to the forecast
+/// curve otherwise.
 pub struct BlackCapletPricer;
 
 /// State for Black caplet/floorlet pricing.
@@ -81,14 +86,20 @@ impl HandleValue<CapletFloorletTrade, BlackCapletState> for BlackCapletPricer {
             .curve()
             .forward_rate(start_date, end_date, rate_def.compounding(), rate_def.frequency())?;
 
-        // Resolve effective strike: ATM is set equal to the current forward rate
+        // Resolve effective strike from the instrument's strike specification
         let effective_strike = match caplet.strike() {
             Strike::Fixed(k) => k,
             Strike::Atm => fwd.value(),
+            Strike::Relative(spread) => fwd.value() + spread,
         };
 
+        // Discount the payment using the collateral / CSA curve when specified,
+        // falling back to the forecast curve otherwise.
+        let discount_index = caplet
+            .collateral_index()
+            .unwrap_or(&index);
         let df_pay = state
-            .get_discount_curve_element(&index)?
+            .get_discount_curve_element(discount_index)?
             .curve()
             .discount_factor(payment_date)?;
 
@@ -134,7 +145,7 @@ impl HandleSensitivities<CapletFloorletTrade, BlackCapletState> for BlackCapletP
         let mut ids = Vec::new();
         let mut exposures = Vec::new();
 
-        // Discount curve sensitivities
+        // Forecast discount curve sensitivities
         for (label, pillar) in state
             .get_discount_curve_element(&index)?
             .curve()
@@ -143,6 +154,21 @@ impl HandleSensitivities<CapletFloorletTrade, BlackCapletState> for BlackCapletP
         {
             ids.push(label);
             exposures.push(pillar.adjoint()?);
+        }
+
+        // Collateral curve sensitivities (only when a separate collateral index is set)
+        if let Some(collateral_index) = caplet.collateral_index() {
+            if collateral_index != &index {
+                for (label, pillar) in state
+                    .get_discount_curve_element(collateral_index)?
+                    .curve()
+                    .pillars()
+                    .unwrap_or_default()
+                {
+                    ids.push(label);
+                    exposures.push(pillar.adjoint()?);
+                }
+            }
         }
 
         // Volatility surface sensitivities
@@ -203,17 +229,28 @@ impl Pricer for BlackCapletPricer {
     }
 
     fn market_data_request(&self, trade: &CapletFloorletTrade) -> Option<MarketDataRequest> {
-        let index = trade.instrument().market_index();
-        Some(
-            MarketDataRequest::default().with_constructed_elements_request(vec![
-                ConstructedElementRequest::DiscountCurve {
-                    market_index: index.clone(),
-                },
-                ConstructedElementRequest::VolatilitySurface {
-                    market_index: index,
-                },
-            ]),
-        )
+        let caplet = trade.instrument();
+        let index = caplet.market_index();
+
+        let mut requests = vec![
+            ConstructedElementRequest::DiscountCurve {
+                market_index: index.clone(),
+            },
+            ConstructedElementRequest::VolatilitySurface {
+                market_index: index.clone(),
+            },
+        ];
+
+        // If a separate collateral index is specified, also request its discount curve
+        if let Some(collateral_index) = caplet.collateral_index() {
+            if collateral_index != &index {
+                requests.push(ConstructedElementRequest::DiscountCurve {
+                    market_index: collateral_index.clone(),
+                });
+            }
+        }
+
+        Some(MarketDataRequest::default().with_constructed_elements_request(requests))
     }
 }
 
@@ -280,10 +317,12 @@ mod tests {
         }
     }
 
-    /// Builds a simple market data context for caplet tests.
+    /// Builds market data for caplet tests.
     ///
-    /// The volatility surface is a 2×2 grid bracketing (start_date, strike)
+    /// The volatility surface is a 2x2 grid bracketing (start_date, anchor_strike)
     /// so that bilinear interpolation succeeds.
+    ///
+    /// Returns `(MarketData, discount_curve, vol_surface)`.
     fn setup_caplet_market_data(
         trade_date: Date,
         start_date: Date,
@@ -291,7 +330,7 @@ mod tests {
         market_index: &MarketIndex,
         risk_free_rate: f64,
         flat_vol: f64,
-        strike: f64,
+        anchor_strike: f64,
     ) -> Result<(
         MarketData,
         FlatForwardTermStructure<ADReal>,
@@ -304,14 +343,12 @@ mod tests {
         )
         .with_pillar_label("discount_rate".to_string());
 
-        // Build a 2-expiry × 2-strike surface that brackets (start_date, strike).
-        // The query at start_date must lie strictly inside the time grid.
         let days_to_start = start_date - trade_date;
-        let days_before_start = days_to_start / 2; // earlier slice
-        let days_after_start = days_to_start + (end_date - start_date); // later slice
+        let days_before_start = days_to_start / 2;
+        let days_after_start = days_to_start + (end_date - start_date);
 
-        let strike_lo = strike * 0.5;
-        let strike_hi = strike * 1.5;
+        let strike_lo = anchor_strike * 0.5;
+        let strike_hi = anchor_strike * 1.5;
 
         let mut surface_points = BTreeMap::new();
         surface_points.insert(
@@ -411,7 +448,7 @@ mod tests {
             .price()
             .ok_or(AtlasError::UnexpectedErr("Missing price".to_string()))?;
 
-        // Compute closed-form Black caplet price using curve.forward_rate with Simple compounding
+        // Compute closed-form Black caplet price using curve.forward_rate
         let tau = rate_def
             .day_counter()
             .year_fraction(trade_date, start_date);
@@ -551,8 +588,6 @@ mod tests {
         let market_index = MarketIndex::TermSOFR3m;
 
         let notional = 1_000_000.0;
-        // Use the forward rate itself as the vol surface anchor so ATM is in-grid.
-        // Forward rate ≈ risk-free rate for simple flat curve; use a bracketing grid.
         let anchor_strike = 0.04; // approximately the forward rate at 4% flat
         let risk_free_rate = 0.04;
 
@@ -590,6 +625,133 @@ mod tests {
             .ok_or(AtlasError::UnexpectedErr("Missing price".to_string()))?;
 
         println!("ATM caplet price: {price}");
+        assert!(price > 0.0);
+
+        Ok(())
+    }
+
+    #[test]
+    fn black_caplet_relative_strike_prices_positive() -> Result<()> {
+        let trade_date = Date::new(2025, 1, 2);
+        let start_date = trade_date + Period::new(6, TimeUnit::Months);
+        let end_date = start_date + Period::new(3, TimeUnit::Months);
+        let market_index = MarketIndex::TermSOFR3m;
+
+        let notional = 1_000_000.0;
+        // Spread over forward: effective strike = F + 0.01
+        // Forward is ~0.04, so effective strike ~0.05 which is in our grid
+        let spread = 0.01_f64;
+        let anchor_strike = 0.05; // centre the vol grid around the expected effective strike
+
+        let (market_data, _discount_curve, _vol_surface) = setup_caplet_market_data(
+            trade_date,
+            start_date,
+            end_date,
+            &market_index,
+            0.04,
+            0.20,
+            anchor_strike,
+        )?;
+
+        let caplet = CapletFloorlet::new(
+            "SOFR3M_CAPLET_REL".to_string(),
+            market_index,
+            start_date,
+            end_date,
+            end_date,
+            CapletFloorletType::Caplet,
+            Strike::Relative(spread),
+            RateDefinition::default(),
+        );
+        let trade = CapletFloorletTrade::new(caplet, trade_date, notional);
+
+        let provider = SimpleMarketDataProvider {
+            evaluation_date: trade_date,
+            market_data,
+        };
+
+        let pricer = BlackCapletPricer;
+        let results = pricer.evaluate(&trade, &[Request::Value], &provider)?;
+        let price = results
+            .price()
+            .ok_or(AtlasError::UnexpectedErr("Missing price".to_string()))?;
+
+        println!("Relative-strike caplet price: {price}");
+        assert!(price > 0.0);
+
+        Ok(())
+    }
+
+    #[test]
+    fn black_caplet_collateral_curve_prices_positive() -> Result<()> {
+        let trade_date = Date::new(2025, 1, 2);
+        let start_date = trade_date + Period::new(6, TimeUnit::Months);
+        let end_date = start_date + Period::new(3, TimeUnit::Months);
+        let forecast_index = MarketIndex::TermSOFR3m;
+        let collateral_index = MarketIndex::SOFR;
+
+        let notional = 1_000_000.0;
+        let strike = 0.05;
+        let risk_free_rate = 0.04;
+        let collateral_rate = 0.038;
+
+        // Build market data including the forecast discount curve and vol surface
+        let (mut market_data, _discount_curve, _vol_surface) = setup_caplet_market_data(
+            trade_date,
+            start_date,
+            end_date,
+            &forecast_index,
+            risk_free_rate,
+            0.20,
+            strike,
+        )?;
+
+        // Insert a separate collateral discount curve for the SOFR index
+        let collateral_curve = FlatForwardTermStructure::new(
+            trade_date,
+            ADReal::from(collateral_rate),
+            RateDefinition::default(),
+        )
+        .with_pillar_label("collateral_rate".to_string());
+
+        market_data
+            .constructed_elements_mut()
+            .discount_curves_mut()
+            .insert(
+                collateral_index.clone(),
+                DiscountCurveElement::new(
+                    collateral_index.clone(),
+                    Currency::USD,
+                    Rc::new(RefCell::new(collateral_curve)),
+                ),
+            );
+
+        let caplet = CapletFloorlet::new(
+            "SOFR3M_CAPLET_CSA".to_string(),
+            forecast_index,
+            start_date,
+            end_date,
+            end_date,
+            CapletFloorletType::Caplet,
+            Strike::Fixed(strike),
+            RateDefinition::default(),
+        )
+        .with_collateral_index(collateral_index);
+
+        let trade = CapletFloorletTrade::new(caplet, trade_date, notional);
+
+        let provider = SimpleMarketDataProvider {
+            evaluation_date: trade_date,
+            market_data,
+        };
+
+        let pricer = BlackCapletPricer;
+        let results = pricer.evaluate(&trade, &[Request::Value], &provider)?;
+        let price = results
+            .price()
+            .ok_or(AtlasError::UnexpectedErr("Missing price".to_string()))?;
+
+        println!("Collateral-discounted caplet price: {price}");
         assert!(price > 0.0);
 
         Ok(())
