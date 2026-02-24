@@ -35,7 +35,7 @@ pub struct EquityEuroOption {
 }
 
 /// Represents a trade of a European equity option.
-pub struct EquityEuroOptionTrade {
+pub struct EquityEuropeanOptionTrade {
     /// The underlying instrument.
     instrument: EquityEuroOption,
     /// The notional amount of the trade.
@@ -102,7 +102,7 @@ impl EquityEuroOption {
     }
 }
 
-impl EquityEuroOptionTrade {
+impl EquityEuropeanOptionTrade {
     /// Creates a new equity option trade.
     #[must_use]
     pub const fn new(instrument: EquityEuroOption, notional: f64, trade_date: Date) -> Self {
@@ -130,7 +130,7 @@ impl Instrument for EquityEuroOption {
     }
 }
 
-impl Trade<EquityEuroOption> for EquityEuroOptionTrade {
+impl Trade<EquityEuroOption> for EquityEuropeanOptionTrade {
     fn instrument(&self) -> EquityEuroOption {
         self.instrument.clone()
     }

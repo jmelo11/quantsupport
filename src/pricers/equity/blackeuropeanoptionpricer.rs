@@ -16,7 +16,7 @@ use crate::{
         request::{HandleSensitivities, HandleValue, Request},
         trade::Trade,
     },
-    instruments::equity::equityeurooption::{EquityEuroOptionTrade, EuroOptionType},
+    instruments::equity::equityeuropeanoption::{EquityEuropeanOptionTrade, EuroOptionType},
     pricers::generalpricers::BlackClosedFormPricer,
     utils::errors::{AtlasError, Result},
 };
@@ -41,10 +41,10 @@ impl PricerState for EquityOptionState {
     }
 }
 
-impl HandleValue<EquityEuroOptionTrade, EquityOptionState> for BlackClosedFormPricer {
+impl HandleValue<EquityEuropeanOptionTrade, EquityOptionState> for BlackClosedFormPricer {
     fn handle_value(
         &self,
-        trade: &EquityEuroOptionTrade,
+        trade: &EquityEuropeanOptionTrade,
         state: &mut EquityOptionState,
     ) -> Result<f64> {
         let option = trade.instrument();
@@ -102,10 +102,10 @@ impl HandleValue<EquityEuroOptionTrade, EquityOptionState> for BlackClosedFormPr
     }
 }
 
-impl HandleSensitivities<EquityEuroOptionTrade, EquityOptionState> for BlackClosedFormPricer {
+impl HandleSensitivities<EquityEuropeanOptionTrade, EquityOptionState> for BlackClosedFormPricer {
     fn handle_sensitivities(
         &self,
-        trade: &EquityEuroOptionTrade,
+        trade: &EquityEuropeanOptionTrade,
         state: &mut EquityOptionState,
     ) -> Result<SensitivityMap> {
         let value = if let Some(value) = state.value {
@@ -169,10 +169,10 @@ impl HandleSensitivities<EquityEuroOptionTrade, EquityOptionState> for BlackClos
 }
 
 impl Pricer for BlackClosedFormPricer {
-    type Item = EquityEuroOptionTrade;
+    type Item = EquityEuropeanOptionTrade;
     fn evaluate(
         &self,
-        trade: &EquityEuroOptionTrade,
+        trade: &EquityEuropeanOptionTrade,
         requests: &[Request],
         ctx: &impl MarketDataProvider,
     ) -> Result<EvaluationResults> {
@@ -253,8 +253,8 @@ mod tests {
         },
         currencies::currency::Currency,
         indices::marketindex::MarketIndex,
-        instruments::equity::equityeurooption::{
-            EquityEuroOption, EquityEuroOptionTrade, EuroOptionType,
+        instruments::equity::equityeuropeanoption::{
+            EquityEuroOption, EquityEuropeanOptionTrade, EuroOptionType,
         },
         math::probability::norm_cdf::norm_cdf,
         pricers::generalpricers::BlackClosedFormPricer,
@@ -436,7 +436,7 @@ mod tests {
             EuroOptionType::Call,
             "SPX_CALL_90".to_string(),
         );
-        let trade = EquityEuroOptionTrade::new(option.clone(), notional, trade_date);
+        let trade = EquityEuropeanOptionTrade::new(option.clone(), notional, trade_date);
 
         // Price using the pricer
         let provider = SimpleMarketDataProvider {
@@ -538,7 +538,7 @@ mod tests {
                     EuroOptionType::Call,
                     format!("SPX_CALL_{}", strike as i32),
                 );
-                let trade = EquityEuroOptionTrade::new(option, notional, trade_date);
+                let trade = EquityEuropeanOptionTrade::new(option, notional, trade_date);
 
                 let provider = SimpleMarketDataProvider {
                     evaluation_date: trade_date,

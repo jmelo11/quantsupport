@@ -84,7 +84,12 @@ impl HandleValue<CapletFloorletTrade, BlackCapletState> for BlackCapletPricer {
         let fwd: ADReal = state
             .get_discount_curve_element(&index)?
             .curve()
-            .forward_rate(start_date, end_date, rate_def.compounding(), rate_def.frequency())?;
+            .forward_rate(
+                start_date,
+                end_date,
+                rate_def.compounding(),
+                rate_def.frequency(),
+            )?;
 
         // Resolve effective strike from the instrument's strike specification
         let effective_strike = match caplet.strike() {
@@ -280,6 +285,7 @@ mod tests {
             Ok(MarketData::new(
                 self.market_data.fixings().clone(),
                 self.market_data.constructed_elements().clone(),
+                &[],
             ))
         }
 
@@ -333,10 +339,7 @@ mod tests {
             ]),
         );
         surface_points.insert(
-            Period::new(
-                i32::try_from(days_after_start).unwrap_or(0),
-                TimeUnit::Days,
-            ),
+            Period::new(i32::try_from(days_after_start).unwrap_or(0), TimeUnit::Days),
             BTreeMap::from([
                 (F64Key::new(strike_lo), ADReal::from(flat_vol)),
                 (F64Key::new(strike_hi), ADReal::from(flat_vol)),
@@ -369,7 +372,7 @@ mod tests {
             VolatilitySurfaceElement::new(market_index.clone(), vol_surface.clone()),
         );
 
-        let market_data = MarketData::new(HashMap::new(), constructed_elements);
+        let market_data = MarketData::new(HashMap::new(), constructed_elements, &[]);
         Ok((market_data, discount_curve, vol_surface))
     }
 
@@ -420,9 +423,7 @@ mod tests {
             .ok_or(AtlasError::UnexpectedErr("Missing price".to_string()))?;
 
         // Compute closed-form Black caplet price using curve.forward_rate
-        let tau = rate_def
-            .day_counter()
-            .year_fraction(trade_date, start_date);
+        let tau = rate_def.day_counter().year_fraction(trade_date, start_date);
         let alpha = caplet.accrual_factor();
         let df_pay = discount_curve.discount_factor(end_date)?.value();
         let fwd = discount_curve
@@ -440,8 +441,7 @@ mod tests {
         let vol_sqrt_tau = vol * tau.sqrt();
         let d1 = ((fwd / strike).ln() + 0.5 * vol * vol * tau) / vol_sqrt_tau;
         let d2 = d1 - vol_sqrt_tau;
-        let closed_form =
-            notional * alpha * df_pay * (fwd * norm_cdf(d1) - strike * norm_cdf(d2));
+        let closed_form = notional * alpha * df_pay * (fwd * norm_cdf(d1) - strike * norm_cdf(d2));
 
         println!("Pricer price: {price}");
         println!("Closed-form price: {closed_form}");
@@ -504,18 +504,21 @@ mod tests {
         let price = results
             .price()
             .ok_or(AtlasError::UnexpectedErr("Missing price".to_string()))?;
-        let sens = results
-            .sensitivities()
-            .ok_or(AtlasError::UnexpectedErr("Missing sensitivities".to_string()))?;
+        let sens = results.sensitivities().ok_or(AtlasError::UnexpectedErr(
+            "Missing sensitivities".to_string(),
+        ))?;
 
         // ── Closed-form vega ──────────────────────────────────────────────────
-        let tau = rate_def
-            .day_counter()
-            .year_fraction(trade_date, start_date);
+        let tau = rate_def.day_counter().year_fraction(trade_date, start_date);
         let alpha = caplet.accrual_factor();
         let df_pay = discount_curve.discount_factor(end_date)?.value();
         let fwd = discount_curve
-            .forward_rate(start_date, end_date, Compounding::Simple, rate_def.frequency())?
+            .forward_rate(
+                start_date,
+                end_date,
+                Compounding::Simple,
+                rate_def.frequency(),
+            )?
             .value();
         let vol = vol_surface
             .borrow()
@@ -525,8 +528,7 @@ mod tests {
         let d1 = ((fwd / strike).ln() + 0.5 * vol * vol * tau) / vol_sqrt_tau;
 
         // φ(d1) = standard-normal PDF
-        let phi_d1 =
-            (-0.5 * d1 * d1).exp() / (2.0 * std::f64::consts::PI).sqrt();
+        let phi_d1 = (-0.5 * d1 * d1).exp() / (2.0 * std::f64::consts::PI).sqrt();
         let closed_form_vega = notional * alpha * df_pay * fwd * phi_d1 * tau.sqrt();
 
         // AD vega = sum over all vol-pillar adjoints
@@ -662,9 +664,9 @@ mod tests {
             pricer.evaluate(&trade, &[Request::Value, Request::Sensitivities], &provider)?;
 
         assert!(results.price().is_some());
-        let sens = results
-            .sensitivities()
-            .ok_or(AtlasError::UnexpectedErr("Missing sensitivities".to_string()))?;
+        let sens = results.sensitivities().ok_or(AtlasError::UnexpectedErr(
+            "Missing sensitivities".to_string(),
+        ))?;
         assert!(!sens.instrument_keys().is_empty());
         assert_eq!(sens.instrument_keys().len(), sens.exposure().len());
 

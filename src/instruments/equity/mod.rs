@@ -1,2 +1,2 @@
 /// Equity european option.
-pub mod equityeurooption;
+pub mod equityeuropeanoption;

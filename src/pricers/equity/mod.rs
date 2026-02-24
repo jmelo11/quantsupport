@@ -1,4 +1,4 @@
 /// Closed-form equity option pricer.
-pub mod blackclosedformpricer;
+pub mod blackeuropeanoptionpricer;
 /// Monte-Carlo equity option pricer.
 pub mod montecarlopricer;

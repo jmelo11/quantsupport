@@ -1,3 +1,5 @@
+/// Cashflow module.
+pub mod cashflows;
 /// Equity instruments module.
 pub mod equity;
 /// Fixed Rate Bond Module

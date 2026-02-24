@@ -17,7 +17,7 @@ use crate::{
         request::{HandleSensitivities, HandleValue, Request},
         trade::Trade,
     },
-    instruments::equity::equityeurooption::{EquityEuroOptionTrade, EuroOptionType},
+    instruments::equity::equityeuropeanoption::{EquityEuropeanOptionTrade, EuroOptionType},
     models::ModelParameters,
     pricers::generalpricers::BlackMonteCarloPricer,
     utils::errors::{AtlasError, Result},
@@ -43,10 +43,10 @@ impl PricerState for MonteCarloState {
     }
 }
 
-impl HandleValue<EquityEuroOptionTrade, MonteCarloState> for BlackMonteCarloPricer {
+impl HandleValue<EquityEuropeanOptionTrade, MonteCarloState> for BlackMonteCarloPricer {
     fn handle_value(
         &self,
-        trade: &EquityEuroOptionTrade,
+        trade: &EquityEuropeanOptionTrade,
         state: &mut MonteCarloState,
     ) -> Result<f64> {
         let option = trade.instrument();
@@ -131,10 +131,10 @@ impl HandleValue<EquityEuroOptionTrade, MonteCarloState> for BlackMonteCarloPric
     }
 }
 
-impl HandleSensitivities<EquityEuroOptionTrade, MonteCarloState> for BlackMonteCarloPricer {
+impl HandleSensitivities<EquityEuropeanOptionTrade, MonteCarloState> for BlackMonteCarloPricer {
     fn handle_sensitivities(
         &self,
-        trade: &EquityEuroOptionTrade,
+        trade: &EquityEuropeanOptionTrade,
         state: &mut MonteCarloState,
     ) -> Result<SensitivityMap> {
         let value = if let Some(value) = state.value {
@@ -197,11 +197,11 @@ impl HandleSensitivities<EquityEuroOptionTrade, MonteCarloState> for BlackMonteC
 }
 
 impl Pricer for BlackMonteCarloPricer {
-    type Item = EquityEuroOptionTrade;
+    type Item = EquityEuropeanOptionTrade;
 
     fn evaluate(
         &self,
-        trade: &EquityEuroOptionTrade,
+        trade: &EquityEuropeanOptionTrade,
         requests: &[Request],
         ctx: &impl MarketDataProvider,
     ) -> Result<EvaluationResults> {
@@ -285,8 +285,8 @@ mod tests {
         },
         currencies::currency::Currency,
         indices::marketindex::MarketIndex,
-        instruments::equity::equityeurooption::{
-            EquityEuroOption, EquityEuroOptionTrade, EuroOptionType,
+        instruments::equity::equityeuropeanoption::{
+            EquityEuroOption, EquityEuropeanOptionTrade, EuroOptionType,
         },
         models::GbmModelParameters,
         pricers::generalpricers::BlackMonteCarloPricer,
@@ -403,8 +403,7 @@ mod tests {
             VolatilitySurfaceElement::new(market_index.clone(), vol_surface),
         );
 
-        let fixings =
-            HashMap::from([(market_index.clone(), BTreeMap::from([(trade_date, spot)]))]);
+        let fixings = HashMap::from([(market_index.clone(), BTreeMap::from([(trade_date, spot)]))]);
         Ok(MarketData::new(fixings, constructed_elements, &[]))
     }
 
@@ -432,7 +431,7 @@ mod tests {
             EuroOptionType::Call,
             "SPX_CALL_100".to_string(),
         );
-        let trade = EquityEuroOptionTrade::new(option, 1.0, trade_date);
+        let trade = EquityEuropeanOptionTrade::new(option, 1.0, trade_date);
         let provider = SimpleMarketDataProvider {
             evaluation_date: trade_date,
             market_data,
@@ -472,7 +471,7 @@ mod tests {
             EuroOptionType::Put,
             "SPX_PUT_90".to_string(),
         );
-        let trade = EquityEuroOptionTrade::new(option, 2.0, trade_date);
+        let trade = EquityEuropeanOptionTrade::new(option, 2.0, trade_date);
         let provider = SimpleMarketDataProvider {
             evaluation_date: trade_date,
             market_data,
@@ -567,7 +566,7 @@ mod tests {
             EuroOptionType::Call,
             "SPX_ATM_CALL".to_string(),
         );
-        let trade = EquityEuroOptionTrade::new(option, 1.0, trade_date);
+        let trade = EquityEuropeanOptionTrade::new(option, 1.0, trade_date);
         let provider = SimpleMarketDataProvider {
             evaluation_date: trade_date,
             market_data,
@@ -647,7 +646,7 @@ mod tests {
             EuroOptionType::Call,
             "SPX_ATM_CALL_SENS".to_string(),
         );
-        let trade = EquityEuroOptionTrade::new(option, 1.0, trade_date);
+        let trade = EquityEuropeanOptionTrade::new(option, 1.0, trade_date);
         let provider = SimpleMarketDataProvider {
             evaluation_date: trade_date,
             market_data,
@@ -668,7 +667,9 @@ mod tests {
             .zip(sensitivities.exposure().iter())
             .find(|(k, _)| k.as_str() == "SPX")
             .map(|(_, v)| *v)
-            .ok_or(AtlasError::NotFoundErr("Spot sensitivity not found".to_string()))?;
+            .ok_or(AtlasError::NotFoundErr(
+                "Spot sensitivity not found".to_string(),
+            ))?;
 
         // Total vega: sum across all vol pillar sensitivities
         let mc_vega: f64 = sensitivities
