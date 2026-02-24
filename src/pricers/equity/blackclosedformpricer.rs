@@ -381,7 +381,7 @@ mod tests {
         );
 
         let fixings = HashMap::from([(market_index.clone(), BTreeMap::from([(trade_date, spot)]))]);
-        let market_data = MarketData::new(fixings, constructed_elements);
+        let market_data = MarketData::new(fixings, constructed_elements, &[]);
 
         Ok((market_data, discount_curve, dividend_curve, vol_surface))
     }
@@ -396,6 +396,7 @@ mod tests {
             Ok(MarketData::new(
                 self.market_data.fixings().clone(),
                 self.market_data.constructed_elements().clone(),
+                &[],
             ))
         }
 

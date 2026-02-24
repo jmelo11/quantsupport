@@ -1,21 +1,20 @@
 use crate::{
     currencies::currency::Currency,
+    models::ModelParameters,
     quotes::{fixingstore::FixingStore, quote::Level, quotestore::QuoteStore},
     time::date::Date,
 };
 
-/// Placeholder for model configurations
-#[derive(Default, Copy, Clone)]
-pub struct Model;
-
 /// # `ContextManager`
 ///
-/// Manages the context for instrument evaluation, including market data access, quote level preferences, and base currency settings.
+/// Manages the context for instrument evaluation, including market data access, quote level preferences,
+/// base currency settings, and a list of model parameter sets for multiple model types.
 pub struct ContextManager {
     quote_store: QuoteStore,
     fixing_store: FixingStore,
     quote_level: Level, // Placeholder to select the type of quote we want to use
     base_currency: Currency,
+    models: Vec<ModelParameters>,
 }
 
 impl ContextManager {
@@ -27,6 +26,7 @@ impl ContextManager {
             fixing_store,
             quote_level: Level::Mid,
             base_currency: Currency::USD,
+            models: Vec::new(),
         }
     }
 
@@ -73,4 +73,18 @@ impl ContextManager {
     pub const fn evaluation_date(&self) -> Date {
         self.quote_store.reference_date()
     }
+
+    /// Sets the model parameter list, replacing any previously registered models.
+    #[must_use]
+    pub fn with_models(mut self, models: &[ModelParameters]) -> Self {
+        models.clone_into(&mut self.models);
+        self
+    }
+
+    /// Returns the full list of model parameters registered in this context.
+    #[must_use]
+    pub fn models(&self) -> &[ModelParameters] {
+        &self.models
+    }
 }
+
