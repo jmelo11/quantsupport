@@ -67,6 +67,12 @@ impl CashflowsTable {
         &self.currencies
     }
 
+    /// Returns the FX parities.
+    #[must_use]
+    pub fn fx_parities(&self) -> &[f64] {
+        &self.fx_parity
+    }
+
     /// Adds a cashflow entry to the table.
     pub fn add_cashflow(
         &mut self,
@@ -147,6 +153,8 @@ pub struct EvaluationResults {
     sensitivities: Option<SensitivityMap>,
     /// Cashflows of the instrument.
     cashflows: Option<CashflowsTable>,
+    /// Fair (par / breakeven) rate.
+    fair_rate: Option<f64>,
 }
 
 impl EvaluationResults {
@@ -160,6 +168,7 @@ impl EvaluationResults {
             ytm: None,
             sensitivities: None,
             cashflows: None,
+            fair_rate: None,
         }
     }
 
@@ -215,5 +224,18 @@ impl EvaluationResults {
     pub const fn with_ytm(mut self, ytm: f64) -> Self {
         self.ytm = Some(ytm);
         self
+    }
+
+    /// Sets the fair (par / breakeven) rate.
+    #[must_use]
+    pub const fn with_fair_rate(mut self, fair_rate: f64) -> Self {
+        self.fair_rate = Some(fair_rate);
+        self
+    }
+
+    /// Returns the fair rate if available.
+    #[must_use]
+    pub const fn fair_rate(&self) -> Option<f64> {
+        self.fair_rate
     }
 }

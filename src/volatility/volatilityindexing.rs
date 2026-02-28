@@ -2,6 +2,8 @@ use std::{cmp::Ordering, hash::Hash};
 
 use serde::{Deserialize, Serialize};
 
+use crate::utils::errors::AtlasError;
+
 /// Strike specification for a caplet/floorlet.
 ///
 /// - [`Strike::Absolute`] — a fixed absolute strike rate.
@@ -30,6 +32,20 @@ pub enum VolatilityType {
     Black,
     /// Normal volatility.
     Normal,
+}
+
+impl std::str::FromStr for VolatilityType {
+    type Err = AtlasError;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        match s {
+            "Black" => Ok(Self::Black),
+            "Normal" => Ok(Self::Normal),
+            _ => Err(AtlasError::InvalidValueErr(format!(
+                "Unknown volatility type: {s}"
+            ))),
+        }
+    }
 }
 
 /// Smile axis used in volatility surfaces/cubes.

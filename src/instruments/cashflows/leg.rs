@@ -14,6 +14,7 @@ pub struct Leg {
     interest_rate: Option<InterestRate<ADReal>>,
     side: Side,
     is_linear: bool,
+    fx_parity: Option<f64>,
 }
 
 impl Leg {
@@ -37,6 +38,7 @@ impl Leg {
             interest_rate,
             side,
             is_linear,
+            fx_parity: None,
         }
     }
 
@@ -86,5 +88,17 @@ impl Leg {
     #[must_use]
     pub fn is_linear(&self) -> bool {
         self.is_linear
+    }
+
+    /// Returns the FX parity (spot exchange rate at valuation date) for this leg, if any.
+    #[must_use]
+    pub fn fx_parity(&self) -> Option<f64> {
+        self.fx_parity
+    }
+
+    /// Sets the FX parity for this leg.
+    pub fn with_fx_parity(mut self, fx_parity: f64) -> Self {
+        self.fx_parity = Some(fx_parity);
+        self
     }
 }

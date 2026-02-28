@@ -4,7 +4,7 @@ use crate::{
         tape::Tape,
     },
     core::{
-        evaluationresults::{CashflowsTable, EvaluationResults, SensitivityMap},
+        evaluationresults::{EvaluationResults, SensitivityMap},
         instrument::Instrument,
         marketdatahandling::{
             constructedelementrequest::ConstructedElementRequest,
@@ -12,11 +12,12 @@ use crate::{
         },
         pricer::Pricer,
         pricerstate::PricerState,
-        request::{HandleCashflows, HandleSensitivities, HandleValue, Request},
+        request::{HandleSensitivities, HandleValue, Request},
         trade::Trade,
     },
     instruments::{
-        cashflows::cashflow::Cashflow, fixedincome::fixedratedeposit::FixedRateDepositTrade,
+        cashflows::{cashflow::Cashflow, cashflowtype::CashflowType},
+        fixedincome::fixedratedeposit::FixedRateDepositTrade,
     },
     utils::errors::{AtlasError, Result},
 };
@@ -57,8 +58,34 @@ impl HandleValue<FixedRateDepositTrade, DepositPricerState> for FixedRateDeposit
         Tape::set_mark();
 
         let index = trade.instrument().market_index();
-        let coupon = trade.instrument().coupon();
-        let redemption = trade.instrument().redemption();
+        let leg = trade.instrument().leg();
+
+        // Extract cashflows from the leg
+        let mut coupon_amount = 0.0;
+        let mut coupon_date = None;
+        let mut redemption_amount = 0.0;
+        let mut redemption_date = None;
+
+        for cashflow in leg.cashflows() {
+            match cashflow {
+                CashflowType::FixedRateCoupon(cf) => {
+                    coupon_amount = cf.amount()?.value();
+                    coupon_date = Some(cf.payment_date());
+                }
+                CashflowType::Redemption(cf) => {
+                    redemption_amount = cf.amount()?;
+                    redemption_date = Some(cf.payment_date());
+                }
+                _ => {}
+            }
+        }
+
+        let coupon_date = coupon_date.ok_or_else(|| {
+            AtlasError::NotFoundErr("Coupon date not found in leg cashflows".into())
+        })?;
+        let redemption_date = redemption_date.ok_or_else(|| {
+            AtlasError::NotFoundErr("Redemption date not found in leg cashflows".into())
+        })?;
 
         // get the element and put the pillars on tape for sensitivity calculation
         state.put_pillars_on_tape()?;
@@ -67,18 +94,18 @@ impl HandleValue<FixedRateDepositTrade, DepositPricerState> for FixedRateDeposit
         let df1 = state
             .get_discount_curve_element(&index)?
             .curve()
-            .discount_factor(coupon.payment_date())?;
+            .discount_factor(coupon_date)?;
 
-        let df2 = if coupon.payment_date() != redemption.payment_date() {
+        let df2 = if coupon_date != redemption_date {
             state
                 .get_discount_curve_element(&index)?
                 .curve()
-                .discount_factor(coupon.payment_date())?
+                .discount_factor(redemption_date)?
         } else {
             df1
         };
 
-        let value = (df1 * coupon.amount()? + df2 * redemption.amount()?).into();
+        let value = (df1 * coupon_amount + df2 * redemption_amount).into();
         state.value = Some(value);
 
         Tape::stop_recording();

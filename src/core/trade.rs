@@ -1,7 +1,7 @@
 use crate::{core::instrument::Instrument, time::date::Date};
 
 /// A [`Side`] representing the direction of the cashflows.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Side {
     /// Paying or shorting a position.
     PayShort,

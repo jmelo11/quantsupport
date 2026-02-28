@@ -69,5 +69,11 @@ pub enum AtlasError {
     
 }
 
+impl From<std::convert::Infallible> for AtlasError {
+    fn from(never: std::convert::Infallible) -> Self {
+        match never {}
+    }
+}
+
 /// A specialized `Result` type for Atlas operations that may fail with an `AtlasError`.
 pub type Result<T> = std::result::Result<T, AtlasError>;

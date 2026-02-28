@@ -1,3 +1,5 @@
+/// Cashflow discounting pricers.
+pub mod cashflows;
 /// Equity pricers
 pub mod equity;
 /// Fixed income pricers.

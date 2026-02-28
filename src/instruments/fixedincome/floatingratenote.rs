@@ -10,8 +10,9 @@ use crate::{
     time::date::Date,
 };
 
-/// A [`FixedRateDeposit`] represents a fixed-rate cash deposit with a single payment at the end (capital plus interest).
-pub struct FixedRateDeposit {
+/// A [`FloatingRateNote`] represents a bond that pays periodic floating-rate coupons
+/// (typically referencing an interest rate index plus a spread) and repays its principal at maturity.
+pub struct FloatingRateNote {
     identifier: String,
     units: f64,
     leg: Leg,
@@ -19,9 +20,8 @@ pub struct FixedRateDeposit {
     currency: Currency,
 }
 
-impl FixedRateDeposit {
-    /// Creates a new [`FixedRateDeposit`].
-
+impl FloatingRateNote {
+    /// Creates a new [`FloatingRateNote`].
     #[must_use]
     pub const fn new(
         identifier: String,
@@ -39,7 +39,7 @@ impl FixedRateDeposit {
         }
     }
 
-    /// Returns the units of the deposit.
+    /// Returns the units of the note.
     #[must_use]
     pub const fn units(&self) -> f64 {
         self.units
@@ -64,7 +64,7 @@ impl FixedRateDeposit {
     }
 }
 
-impl Instrument for FixedRateDeposit {
+impl Instrument for FloatingRateNote {
     fn identifier(&self) -> String {
         self.identifier.clone()
     }
@@ -74,25 +74,25 @@ impl Instrument for FixedRateDeposit {
     }
 }
 
-impl LegsProvider for FixedRateDeposit {
+impl LegsProvider for FloatingRateNote {
     fn legs(&self) -> &[Leg] {
         std::slice::from_ref(&self.leg)
     }
 }
 
-/// Represents a trade of a deposit instrument.
-pub struct FixedRateDepositTrade {
-    instrument: FixedRateDeposit,
+/// Represents a trade of a floating rate note instrument.
+pub struct FloatingRateNoteTrade {
+    instrument: FloatingRateNote,
     trade_date: Date,
     notional: f64,
     side: Side,
 }
 
-impl FixedRateDepositTrade {
-    /// Creates a new `DepositTrade`.
+impl FloatingRateNoteTrade {
+    /// Creates a new [`FloatingRateNoteTrade`].
     #[must_use]
     pub const fn new(
-        instrument: FixedRateDeposit,
+        instrument: FloatingRateNote,
         trade_date: Date,
         notional: f64,
         side: Side,
@@ -112,8 +112,8 @@ impl FixedRateDepositTrade {
     }
 }
 
-impl Trade<FixedRateDeposit> for FixedRateDepositTrade {
-    fn instrument(&self) -> &FixedRateDeposit {
+impl Trade<FloatingRateNote> for FloatingRateNoteTrade {
+    fn instrument(&self) -> &FloatingRateNote {
         &self.instrument
     }
 
@@ -126,7 +126,7 @@ impl Trade<FixedRateDeposit> for FixedRateDepositTrade {
     }
 }
 
-impl LegsProvider for FixedRateDepositTrade {
+impl LegsProvider for FloatingRateNoteTrade {
     fn legs(&self) -> &[Leg] {
         self.instrument.legs()
     }

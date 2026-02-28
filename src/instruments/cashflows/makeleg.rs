@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use crate::{
     ad::adreal::{ADReal, IsReal},
@@ -63,7 +63,6 @@ pub struct MakeLeg {
     redemptions: Option<HashMap<Date, f64>>,
     end_of_month: Option<bool>,
     calendar: Option<Calendar>,
-    additional_coupon_dates: Option<HashSet<Date>>,
     business_day_convention: Option<BusinessDayConvention>,
     date_generation_rule: Option<DateGenerationRule>,
 

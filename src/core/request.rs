@@ -8,7 +8,7 @@ use crate::{
 };
 
 /// A [`Request`] of different types of requests that can be made for instrument evaluation,
-/// including value, yield to maturity, modified duration, sensitivities, and cashflows.
+/// including value, yield to maturity, modified duration, sensitivities, cashflows, and fair rate.
 pub enum Request {
     /// Price
     Value,
@@ -20,6 +20,8 @@ pub enum Request {
     Sensitivities,
     /// Cashflows
     Cashflows,
+    /// Fair rate (par rate / breakeven rate for swaps and similar instruments)
+    FairRate,
 }
 
 impl Request {
@@ -32,6 +34,7 @@ impl Request {
             Self::YieldToMaturity => 2,
             Self::ModifiedDuration => 3,
             Self::Cashflows => 4,
+            Self::FairRate => 5,
         }
     }
 }
@@ -72,6 +75,16 @@ pub trait HandleSensitivities<T, S> {
     fn handle_sensitivities(&self, trade: &T, state: &mut S) -> Result<SensitivityMap>;
 }
 
+/// The [`HandleFairRate`] trait defines a method for computing the fair (par / breakeven) rate
+/// of an instrument — for example, the fixed coupon rate that makes a swap's NPV equal to zero.
+pub trait HandleFairRate<T, S> {
+    /// Computes the fair rate and returns a floating-point result.
+    ///
+    /// ## Errors
+    /// Returns an error if the evaluation fails.
+    fn handle_fair_rate(&self, trade: &T, state: &mut S) -> Result<f64>;
+}
+
 /// The [`LegProvLegsProviderider`] trait defines a method for providing the cashflows of an instrument.
 pub trait LegsProvider {
     /// Provides the cashflows of the instrument.
@@ -93,10 +106,11 @@ pub trait HandleCashflows<T, S: LegsProvider> {
         // Iterate through all legs provided by the state
         for leg in state.legs() {
             let currency = leg.currency().clone();
-            let fx_parity = 1.0; // Default FX parity; can be enhanced with market data
 
             // Process each cashflow in the leg
             for cashflow in leg.cashflows() {
+                let fx_parity = leg.fx_parity().unwrap_or(1.0);
+
                 match cashflow {
                     CashflowType::FixedRateCoupon(coupon) => {
                         let amount = coupon.amount()?.value();
@@ -213,6 +227,7 @@ mod tests {
     use super::*;
     use crate::{
         ad::adreal::ADReal,
+        core::trade::Side,
         currencies::currency::Currency,
         instruments::cashflows::{
             cashflow::SimpleCashflow, fixedratecoupon::FixedRateCoupon, leg::Leg,
@@ -274,7 +289,7 @@ mod tests {
             None,
             None,
             None,
-            crate::core::trade::Side::PayShort,
+            Side::PayShort,
             true,
         );
 
@@ -315,7 +330,7 @@ mod tests {
             None,
             None,
             None,
-            crate::core::trade::Side::PayShort,
+            Side::PayShort,
             true,
         );
 
@@ -345,7 +360,7 @@ mod tests {
             None,
             None,
             None,
-            crate::core::trade::Side::PayShort,
+            Side::PayShort,
             true,
         );
 
@@ -391,7 +406,7 @@ mod tests {
             None,
             None,
             None,
-            crate::core::trade::Side::PayShort,
+            Side::PayShort,
             true,
         );
 
@@ -427,7 +442,7 @@ mod tests {
             None,
             None,
             None,
-            crate::core::trade::Side::PayShort,
+            Side::PayShort,
             true,
         );
 
@@ -440,7 +455,7 @@ mod tests {
             None,
             None,
             None,
-            crate::core::trade::Side::LongRecieve,
+            Side::LongRecieve,
             true,
         );
 
@@ -488,7 +503,7 @@ mod tests {
             None,
             None,
             None,
-            crate::core::trade::Side::PayShort,
+            Side::PayShort,
             true,
         );
 
@@ -519,7 +534,7 @@ mod tests {
             None,
             None,
             None,
-            crate::core::trade::Side::PayShort,
+            Side::PayShort,
             true,
         );
 
@@ -565,7 +580,7 @@ mod tests {
             None,
             None,
             None,
-            crate::core::trade::Side::PayShort,
+            Side::PayShort,
             true,
         );
 
@@ -576,7 +591,7 @@ mod tests {
             None,
             None,
             None,
-            crate::core::trade::Side::PayShort,
+            Side::PayShort,
             true,
         );
 
@@ -592,5 +607,164 @@ mod tests {
         let table = result.unwrap();
         assert_eq!(table.currencies()[0], Currency::USD);
         assert_eq!(table.currencies()[1], Currency::GBP);
+    }
+
+    #[test]
+    fn test_handle_cashflows_default_fx_parity() {
+        let payment_date = Date::new(2024, 1, 1);
+        let redemption = SimpleCashflow::new(100_000.0, payment_date);
+
+        let leg = Leg::new(
+            0,
+            vec![CashflowType::Redemption(redemption)],
+            Currency::USD,
+            None,
+            None,
+            None,
+            Side::PayShort,
+            true,
+        );
+
+        let mut state = MockState { legs: vec![leg] };
+
+        let handler = MockHandler;
+        let result = handler.handle_cashflows(&MockTrade, &mut state);
+
+        assert!(result.is_ok());
+
+        let table = result.unwrap();
+        assert_eq!(
+            table.fx_parities()[0],
+            1.0,
+            "Default FX parity should be 1.0 when not specified"
+        );
+    }
+
+    #[test]
+    fn test_handle_cashflows_custom_fx_parities() {
+        let payment_date = Date::new(2024, 1, 1);
+        let redemption = SimpleCashflow::new(100_000.0, payment_date);
+
+        let leg = Leg::new(
+            0,
+            vec![CashflowType::Redemption(redemption)],
+            Currency::USD,
+            None,
+            None,
+            None,
+            Side::PayShort,
+            true,
+        )
+        .with_fx_parity(1.1);
+
+        let mut state = MockState { legs: vec![leg] };
+
+        let handler = MockHandler;
+        let result = handler.handle_cashflows(&MockTrade, &mut state);
+
+        assert!(result.is_ok());
+
+        let table = result.unwrap();
+        assert_eq!(
+            table.fx_parities()[0],
+            1.1,
+            "FX parity should match the specified value"
+        );
+    }
+
+    #[test]
+    fn test_handle_cashflows_fx_parities_partial() {
+        let date1 = Date::new(2024, 1, 1);
+        let date2 = Date::new(2024, 7, 1);
+
+        let redemption1 = SimpleCashflow::new(50_000.0, date1);
+        let redemption2 = SimpleCashflow::new(50_000.0, date2);
+
+        let leg = Leg::new(
+            0,
+            vec![
+                CashflowType::Redemption(redemption1),
+                CashflowType::Redemption(redemption2),
+            ],
+            Currency::USD,
+            None,
+            None,
+            None,
+            Side::PayShort,
+            true,
+        )
+        .with_fx_parity(1.1);
+
+        let mut state = MockState { legs: vec![leg] };
+
+        let handler = MockHandler;
+        let result = handler.handle_cashflows(&MockTrade, &mut state);
+
+        assert!(result.is_ok());
+
+        let table = result.unwrap();
+        assert_eq!(
+            table.fx_parities()[0],
+            1.1,
+            "First cashflow should use specified parity"
+        );
+        assert_eq!(
+            table.fx_parities()[1],
+            1.1,
+            "Second cashflow should use same leg parity"
+        );
+    }
+
+    #[test]
+    fn test_handle_cashflows_fx_parities_multiple_legs() {
+        let date1 = Date::new(2024, 1, 1);
+        let date2 = Date::new(2024, 7, 1);
+
+        let redemption1 = SimpleCashflow::new(50_000.0, date1);
+        let leg1 = Leg::new(
+            0,
+            vec![CashflowType::Redemption(redemption1)],
+            Currency::USD,
+            None,
+            None,
+            None,
+            Side::PayShort,
+            true,
+        )
+        .with_fx_parity(1.1);
+
+        let redemption2 = SimpleCashflow::new(50_000.0, date2);
+        let leg2 = Leg::new(
+            1,
+            vec![CashflowType::Redemption(redemption2)],
+            Currency::EUR,
+            None,
+            None,
+            None,
+            Side::LongRecieve,
+            true,
+        )
+        .with_fx_parity(1.15);
+
+        let mut state = MockState {
+            legs: vec![leg1, leg2],
+        };
+
+        let handler = MockHandler;
+        let result = handler.handle_cashflows(&MockTrade, &mut state);
+
+        assert!(result.is_ok());
+
+        let table = result.unwrap();
+        assert_eq!(
+            table.fx_parities()[0],
+            1.1,
+            "First leg FX parity should be 1.1"
+        );
+        assert_eq!(
+            table.fx_parities()[1],
+            1.15,
+            "Second leg FX parity should be 1.15"
+        );
     }
 }
