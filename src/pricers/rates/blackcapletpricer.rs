@@ -15,9 +15,10 @@ use crate::{
         request::{HandleSensitivities, HandleValue, Request},
         trade::Trade,
     },
-    instruments::rates::caplet::{CapletFloorletTrade, CapletFloorletType, Strike},
-    pricers::generalpricers::BlackClosedFormPricer,
+    instruments::rates::caplet::{CapletFloorletTrade, CapletFloorletType},
+    pricers::pricerdefinitions::BlackClosedFormPricer,
     utils::errors::{AtlasError, Result},
+    volatility::volatilityindexing::Strike,
 };
 
 /// # `BlackCapletPricer`
@@ -251,12 +252,11 @@ mod tests {
             },
             pricer::Pricer,
             request::Request,
+            trade::Side,
         },
         currencies::currency::Currency,
         indices::marketindex::MarketIndex,
-        instruments::rates::caplet::{
-            CapletFloorlet, CapletFloorletTrade, CapletFloorletType, Strike,
-        },
+        instruments::rates::caplet::{CapletFloorlet, CapletFloorletTrade, CapletFloorletType},
         math::probability::norm_cdf::norm_cdf,
         pricers::rates::blackcapletpricer::BlackCapletPricer,
         rates::{
@@ -271,7 +271,8 @@ mod tests {
         utils::errors::{AtlasError, Result},
         volatility::{
             interpolatedvolatilitysurface::InterpolatedVolatilitySurface,
-            volatilityindexing::F64Key, volatilitysurface::VolatilitySurface,
+            volatilityindexing::{F64Key, Strike},
+            volatilitysurface::VolatilitySurface,
         },
     };
 
@@ -409,7 +410,8 @@ mod tests {
             Strike::Absolute(strike),
             rate_def,
         );
-        let trade = CapletFloorletTrade::new(caplet.clone(), trade_date, notional);
+        let trade =
+            CapletFloorletTrade::new(caplet.clone(), trade_date, notional, Side::LongRecieve);
 
         let provider = SimpleMarketDataProvider {
             evaluation_date: trade_date,
@@ -490,7 +492,8 @@ mod tests {
             Strike::Absolute(strike),
             rate_def,
         );
-        let trade = CapletFloorletTrade::new(caplet.clone(), trade_date, notional);
+        let trade =
+            CapletFloorletTrade::new(caplet.clone(), trade_date, notional, Side::LongRecieve);
 
         let provider = SimpleMarketDataProvider {
             evaluation_date: trade_date,
@@ -652,7 +655,7 @@ mod tests {
             Strike::Absolute(strike),
             RateDefinition::default(),
         );
-        let trade = CapletFloorletTrade::new(caplet, trade_date, notional);
+        let trade = CapletFloorletTrade::new(caplet, trade_date, notional, Side::LongRecieve);
 
         let provider = SimpleMarketDataProvider {
             evaluation_date: trade_date,
@@ -704,7 +707,7 @@ mod tests {
             Strike::Absolute(strike),
             RateDefinition::default(),
         );
-        let trade = CapletFloorletTrade::new(caplet, trade_date, notional);
+        let trade = CapletFloorletTrade::new(caplet, trade_date, notional, Side::LongRecieve);
 
         let provider = SimpleMarketDataProvider {
             evaluation_date: trade_date,
@@ -754,7 +757,7 @@ mod tests {
             Strike::Atm,
             RateDefinition::default(),
         );
-        let trade = CapletFloorletTrade::new(caplet, trade_date, notional);
+        let trade = CapletFloorletTrade::new(caplet, trade_date, notional, Side::LongRecieve);
 
         let provider = SimpleMarketDataProvider {
             evaluation_date: trade_date,
@@ -806,7 +809,7 @@ mod tests {
             Strike::Relative(spread),
             RateDefinition::default(),
         );
-        let trade = CapletFloorletTrade::new(caplet, trade_date, notional);
+        let trade = CapletFloorletTrade::new(caplet, trade_date, notional, Side::LongRecieve);
 
         let provider = SimpleMarketDataProvider {
             evaluation_date: trade_date,

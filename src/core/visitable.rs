@@ -7,7 +7,7 @@ use crate::{
 /// # `Visitor`
 pub trait Visitor {}
 
-/// # `Visitable`
+/// A [`Visitable`] struct.
 pub trait Visitable<P: Visitor> {
     /// Accepts a visitor.
     ///

@@ -2,7 +2,7 @@ use crate::{
     core::{
         elements::{
             curveelement::{DiscountCurveElement, DividendCurveElement},
-            simulationelement::SimulationElement,
+            montecarlosimulationelement::MonteCarloSimulationElement,
             volatilitycubelement::VolatilityCubeElement,
             volatilitysurfaceelement::VolatilitySurfaceElement,
         },
@@ -13,9 +13,7 @@ use crate::{
     utils::errors::{AtlasError, Result},
 };
 
-/// # `PricerState`
-///
-/// The `PricerState` trait defines the interface for accessing
+/// The [`PricerState`] trait defines the interface for accessing
 /// market data responses, derived elements and finxing values during the
 /// pricing process.
 pub trait PricerState {
@@ -132,15 +130,13 @@ pub trait PricerState {
     ///
     /// ## Errors
     /// Returns an error if the market data response is not available or if the simulation element for the specified index is not found.
-    fn get_simulation_element(&self, index: &MarketIndex) -> Result<&SimulationElement> {
+    fn get_simulation_element(&self, index: &MarketIndex) -> Result<&MonteCarloSimulationElement> {
         self.get_market_data_reponse()
             .ok_or_else(|| AtlasError::NotFoundErr("MarketDataResponse not available.".into()))?
             .constructed_elements()
             .simulations()
             .get(index)
-            .ok_or_else(|| {
-                AtlasError::NotFoundErr(format!("Simulation element for index {index}"))
-            })
+            .ok_or_else(|| AtlasError::NotFoundErr(format!("Simulation element for index {index}")))
     }
 
     /// Puts the pillars into the tape.

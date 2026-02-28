@@ -2,7 +2,7 @@
 pub mod equity;
 /// Fixed income pricers.
 pub mod fixedincome;
-/// General pricers
-pub mod generalpricers;
+/// Available pricers
+pub mod pricerdefinitions;
 /// Rates pricers.
 pub mod rates;

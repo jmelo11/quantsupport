@@ -1,6 +1,4 @@
-/// `Pillars`
-///
-/// Trait representing the concept of "pillars" in a financial context, which are key
+/// The [`Pillars<T>`] trait represents the key
 /// reference points used in the construction of curves and surfaces. This
 /// trait provides methods to retrieve the pillars and their labels, as well as a
 /// method to put the pillars on the tape for automatic differentiation purposes.

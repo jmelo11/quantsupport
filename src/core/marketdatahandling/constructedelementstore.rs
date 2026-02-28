@@ -3,7 +3,7 @@ use std::{cell::RefCell, collections::HashMap, rc::Rc};
 use crate::{
     core::elements::{
         curveelement::{DiscountCurveElement, DividendCurveElement},
-        simulationelement::SimulationElement,
+        montecarlosimulationelement::MonteCarloSimulationElement,
         volatilitycubelement::VolatilityCubeElement,
         volatilitysurfaceelement::VolatilitySurfaceElement,
     },
@@ -13,8 +13,6 @@ use crate::{
 /// Type alias for a shared element using reference counting and interior mutability.
 pub type SharedElement<T> = Rc<RefCell<T>>;
 
-/// # `ConstructedElementStore`
-///
 /// Struct representing a store for constructed market data elements, including discount curves, dividend curves,
 /// volatility surfaces, volatility cubes, and simulations.
 #[derive(Clone, Default)]
@@ -23,7 +21,7 @@ pub struct ConstructedElementStore {
     dividend_curves: HashMap<MarketIndex, DividendCurveElement>,
     volatility_surfaces: HashMap<MarketIndex, VolatilitySurfaceElement>,
     volatility_cubes: HashMap<MarketIndex, VolatilityCubeElement>,
-    simulations: HashMap<MarketIndex, SimulationElement>,
+    simulations: HashMap<MarketIndex, MonteCarloSimulationElement>,
 }
 
 impl ConstructedElementStore {
@@ -73,19 +71,23 @@ impl ConstructedElementStore {
 
     /// Returns mutable volatility cubes map.
     #[must_use]
-    pub const fn volatility_cubes_mut(&mut self) -> &mut HashMap<MarketIndex, VolatilityCubeElement> {
+    pub const fn volatility_cubes_mut(
+        &mut self,
+    ) -> &mut HashMap<MarketIndex, VolatilityCubeElement> {
         &mut self.volatility_cubes
     }
 
     /// Returns simulations.
     #[must_use]
-    pub const fn simulations(&self) -> &HashMap<MarketIndex, SimulationElement> {
+    pub const fn simulations(&self) -> &HashMap<MarketIndex, MonteCarloSimulationElement> {
         &self.simulations
     }
 
     /// Returns mutable simulations map.
     #[must_use]
-    pub const fn simulations_mut(&mut self) -> &mut HashMap<MarketIndex, SimulationElement> {
+    pub const fn simulations_mut(
+        &mut self,
+    ) -> &mut HashMap<MarketIndex, MonteCarloSimulationElement> {
         &mut self.simulations
     }
 

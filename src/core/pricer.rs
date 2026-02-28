@@ -7,8 +7,7 @@ use crate::{
     utils::errors::AtlasError,
 };
 
-/// # `Pricer`
-/// The `Pricer` trait should be implemented by any instrument pricing methodology. Implementers
+/// The [`Pricer`] trait should be implemented by any instrument pricing methodology. Implementers
 /// must also implement [`Send`] and [`Sync`].
 pub trait Pricer: Send + Sync {
     /// The associated instrument to be priced.

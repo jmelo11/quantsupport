@@ -11,8 +11,6 @@ use crate::{
     utils::errors::Result,
 };
 
-/// # `MarketDataRequest`
-///
 /// Request for market data, including constructed elements, fixings, and an optional list
 /// of model parameter sets that the provider may inspect when fulfilling the request.
 #[derive(Default)]
@@ -79,8 +77,6 @@ impl MarketDataRequest {
     }
 }
 
-/// # `MarketData`
-///
 /// Struct representing market data, including fixings, constructed elements, and a list of
 /// model parameter sets.
 pub struct MarketData {
@@ -137,7 +133,6 @@ impl MarketData {
     }
 }
 
-/// # `MarketDataProvider`
 /// Provider interface for market-data requests.
 pub trait MarketDataProvider {
     /// Handles a market-data request.

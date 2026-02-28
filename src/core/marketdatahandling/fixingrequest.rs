@@ -1,7 +1,5 @@
 use crate::{indices::marketindex::MarketIndex, time::date::Date};
 
-/// `FixingRequest`
-///
 /// Struct representing a request for a fixing, which includes the market index and date for which the fixing is requested.
 pub struct FixingRequest {
     market_index: MarketIndex,
@@ -9,7 +7,7 @@ pub struct FixingRequest {
 }
 
 impl FixingRequest {
-    /// Creates a new `FixingRequest` with the specified market index and date.
+    /// Creates a new [`FixingRequest`] with the specified market index and date.
     #[must_use]
     pub const fn new(market_index: MarketIndex, date: Date) -> Self {
         Self { market_index, date }

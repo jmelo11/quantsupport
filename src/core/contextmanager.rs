@@ -5,8 +5,6 @@ use crate::{
     time::date::Date,
 };
 
-/// # `ContextManager`
-///
 /// Manages the context for instrument evaluation, including market data access, quote level preferences,
 /// base currency settings, and a list of model parameter sets for multiple model types.
 pub struct ContextManager {
@@ -87,4 +85,3 @@ impl ContextManager {
         &self.models
     }
 }
-

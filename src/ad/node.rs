@@ -1,8 +1,3 @@
-//! `QuantSupport` is a Rust library for pricing and risk analytics.
-//!
-//! Author: Jose Melo
-//! https://github.com/jmelo11/quantsupport
-
 use std::{
     fmt::{Debug, Formatter, Result as fmtResult},
     ptr::NonNull,

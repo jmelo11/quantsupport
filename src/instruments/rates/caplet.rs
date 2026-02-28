@@ -1,11 +1,14 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    core::{contextmanager::ContextManager, instrument::Instrument, trade::Trade},
+    core::{
+        instrument::{AssetClass, Instrument},
+        trade::{Side, Trade},
+    },
     indices::marketindex::MarketIndex,
     rates::interestrate::RateDefinition,
     time::date::Date,
-    utils::errors::Result,
+    volatility::volatilityindexing::Strike,
 };
 
 /// Option type for a single-period caplet/floorlet.
@@ -17,34 +20,11 @@ pub enum CapletFloorletType {
     Floorlet,
 }
 
-/// Strike specification for a caplet/floorlet.
-///
-/// - [`Strike::Absolute`] — a fixed absolute strike rate.
-/// - [`Strike::Atm`] — at-the-money: the pricer sets the strike equal to the
-///   prevailing forward rate at pricing time.
-/// - [`Strike::Relative`] — a spread (positive or negative) added to the
-///   forward rate at pricing time: `K_eff = F + spread`.
-///
-/// For [`Strike::Atm`] and [`Strike::Relative`], the effective absolute strike
-/// is computed by the pricer from the forward rate before querying the
-/// volatility surface.
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
-pub enum Strike {
-    /// A fixed absolute strike rate.
-    Absolute(f64),
-    /// At-the-money: the strike equals the forward rate at pricing time.
-    Atm,
-    /// A spread over the forward rate: `K_eff = F + spread`.
-    Relative(f64),
-}
-
-/// # `CapletFloorlet`
-///
 /// Represents a single caplet or floorlet instrument under the Black model.
 ///
 /// A caplet covers one period of an interest rate cap. It pays
-/// `max(L(T_start) - K, 0) * α * N` at `T_pay`, where `L` is the floating
-/// rate fixing at `start_date`, `K` is the strike, `α` is the accrual factor
+/// $max(L(T_\text{start}) - K, 0) * \alpha * N$ at $T_\text{pay}$, where $L$ is the floating
+/// rate fixing at `start_date`, $K$ is the strike, $\alpha$ is the accrual factor
 /// for the period `[start_date, end_date]`, and `N` is the notional.
 ///
 /// Collateralization and payment discounting conventions are determined at the
@@ -148,29 +128,34 @@ impl Instrument for CapletFloorlet {
         self.name.clone()
     }
 
-    fn resolve(&self, _: &ContextManager) -> Result<Self> {
-        Ok(self.clone())
+    fn asset_class(&self) -> AssetClass {
+        AssetClass::InterestRate
     }
 }
 
-/// # `CapletFloorletTrade`
-///
 /// Represents a trade on a single caplet or floorlet.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone)]
 pub struct CapletFloorletTrade {
     instrument: CapletFloorlet,
     trade_date: Date,
     notional: f64,
+    side: Side,
 }
 
 impl CapletFloorletTrade {
-    /// Creates a new `CapletFloorletTrade`.
+    /// Creates a new [`CapletFloorletTrade`].
     #[must_use]
-    pub const fn new(instrument: CapletFloorlet, trade_date: Date, notional: f64) -> Self {
+    pub const fn new(
+        instrument: CapletFloorlet,
+        trade_date: Date,
+        notional: f64,
+        side: Side,
+    ) -> Self {
         Self {
             instrument,
             trade_date,
             notional,
+            side,
         }
     }
 
@@ -182,11 +167,15 @@ impl CapletFloorletTrade {
 }
 
 impl Trade<CapletFloorlet> for CapletFloorletTrade {
-    fn instrument(&self) -> CapletFloorlet {
-        self.instrument.clone()
+    fn instrument(&self) -> &CapletFloorlet {
+        &self.instrument
     }
 
     fn trade_date(&self) -> Date {
         self.trade_date
+    }
+
+    fn side(&self) -> Side {
+        self.side
     }
 }

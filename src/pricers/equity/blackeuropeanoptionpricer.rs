@@ -17,12 +17,10 @@ use crate::{
         trade::Trade,
     },
     instruments::equity::equityeuropeanoption::{EquityEuropeanOptionTrade, EuroOptionType},
-    pricers::generalpricers::BlackClosedFormPricer,
+    pricers::pricerdefinitions::BlackClosedFormPricer,
     utils::errors::{AtlasError, Result},
 };
 
-/// # `EquityOptionState`
-///
 /// State struct for storing intermediate values during the pricing of an equity option, including the option value, spot price, and market data response.
 #[derive(Default)]
 struct EquityOptionState {
@@ -41,7 +39,12 @@ impl PricerState for EquityOptionState {
     }
 }
 
-impl HandleValue<EquityEuropeanOptionTrade, EquityOptionState> for BlackClosedFormPricer {
+/// A pricer for European equity options using the Black-Scholes model. It calculates
+/// the option price and sensitivities based on the spot price, volatility surface, discount curve,
+/// and dividend curve obtained from the market data.
+pub struct BlackEuropeanOptionPricer;
+
+impl HandleValue<EquityEuropeanOptionTrade, EquityOptionState> for BlackEuropeanOptionPricer {
     fn handle_value(
         &self,
         trade: &EquityEuropeanOptionTrade,
@@ -87,7 +90,7 @@ impl HandleValue<EquityEuropeanOptionTrade, EquityOptionState> for BlackClosedFo
 
         let fwd: ADReal = (spot_ad * df_q / df_r).into();
 
-        let undiscounted = Self::black_forward_price(
+        let undiscounted = BlackClosedFormPricer::black_forward_price(
             fwd,
             strike,
             vol,
@@ -102,7 +105,9 @@ impl HandleValue<EquityEuropeanOptionTrade, EquityOptionState> for BlackClosedFo
     }
 }
 
-impl HandleSensitivities<EquityEuropeanOptionTrade, EquityOptionState> for BlackClosedFormPricer {
+impl HandleSensitivities<EquityEuropeanOptionTrade, EquityOptionState>
+    for BlackEuropeanOptionPricer
+{
     fn handle_sensitivities(
         &self,
         trade: &EquityEuropeanOptionTrade,
@@ -168,7 +173,7 @@ impl HandleSensitivities<EquityEuropeanOptionTrade, EquityOptionState> for Black
     }
 }
 
-impl Pricer for BlackClosedFormPricer {
+impl Pricer for BlackEuropeanOptionPricer {
     type Item = EquityEuropeanOptionTrade;
     fn evaluate(
         &self,
@@ -250,14 +255,15 @@ mod tests {
             },
             pricer::Pricer,
             request::Request,
+            trade::Side,
         },
         currencies::currency::Currency,
         indices::marketindex::MarketIndex,
         instruments::equity::equityeuropeanoption::{
-            EquityEuroOption, EquityEuropeanOptionTrade, EuroOptionType,
+            EquityEuropeanOption, EquityEuropeanOptionTrade, EuroOptionType,
         },
         math::probability::norm_cdf::norm_cdf,
-        pricers::generalpricers::BlackClosedFormPricer,
+        pricers::equity::blackeuropeanoptionpricer::BlackEuropeanOptionPricer,
         rates::{
             interestrate::RateDefinition,
             yieldtermstructure::{
@@ -429,14 +435,15 @@ mod tests {
             )?;
 
         // Create the trade
-        let option = EquityEuroOption::new(
+        let option = EquityEuropeanOption::new(
             market_index,
             expiry_date,
             strike,
             EuroOptionType::Call,
             "SPX_CALL_90".to_string(),
         );
-        let trade = EquityEuropeanOptionTrade::new(option.clone(), notional, trade_date);
+        let trade =
+            EquityEuropeanOptionTrade::new(option.clone(), notional, trade_date, Side::LongRecieve);
 
         // Price using the pricer
         let provider = SimpleMarketDataProvider {
@@ -444,7 +451,7 @@ mod tests {
             market_data,
         };
 
-        let pricer = BlackClosedFormPricer;
+        let pricer = BlackEuropeanOptionPricer;
         let results =
             pricer.evaluate(&trade, &[Request::Value, Request::Sensitivities], &provider)?;
         let sensitivities = results.sensitivities().ok_or(AtlasError::UnexpectedErr(
@@ -531,21 +538,22 @@ mod tests {
                     )
                     .unwrap_or_else(|_| panic!("Failed to set up market data for strike {strike}"));
 
-                let option = EquityEuroOption::new(
+                let option = EquityEuropeanOption::new(
                     market_index.clone(),
                     expiry_date,
                     strike,
                     EuroOptionType::Call,
                     format!("SPX_CALL_{}", strike as i32),
                 );
-                let trade = EquityEuropeanOptionTrade::new(option, notional, trade_date);
+                let trade =
+                    EquityEuropeanOptionTrade::new(option, notional, trade_date, Side::LongRecieve);
 
                 let provider = SimpleMarketDataProvider {
                     evaluation_date: trade_date,
                     market_data,
                 };
 
-                let pricer = BlackClosedFormPricer;
+                let pricer = BlackEuropeanOptionPricer;
                 let eval_results =
                     pricer.evaluate(&trade, &[Request::Value, Request::Sensitivities], &provider);
 

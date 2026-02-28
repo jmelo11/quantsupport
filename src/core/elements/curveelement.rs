@@ -8,8 +8,6 @@ use crate::{
     rates::yieldtermstructure::interestratestermstructure::InterestRatesTermStructure,
 };
 
-/// `ADCurveElement`
-///
 /// Trait representing a curve element that can be used in automatic
 /// differentiation contexts. It combines the properties of an interest rates
 /// term structure and pillars, and allows for cloning.
@@ -18,8 +16,6 @@ pub trait ADCurveElement:
 {
 }
 
-/// `DiscountCurveElement`
-///
 /// Struct representing a discount curve element, which includes
 /// the associated market index, currency, and the curve itself.
 #[derive(Clone)]
@@ -69,8 +65,6 @@ impl DiscountCurveElement {
     }
 }
 
-/// `DividendCurveElement`
-///
 /// Struct representing a dividend curve element, which includes
 /// the associated market index, currency, and the curve itself.
 #[derive(Clone)]

@@ -8,8 +8,6 @@ use crate::{
 
 use super::compounding::Compounding;
 
-/// # `RateDefinition`
-///
 /// Struct that defines a rate.
 ///
 /// # Example
@@ -31,7 +29,7 @@ pub struct RateDefinition {
 }
 
 impl RateDefinition {
-    /// Creates a new `RateDefinition` with the specified day counter, compounding, and frequency.
+    /// Creates a new [`RateDefinition`] with the specified day counter, compounding, and frequency.
     #[must_use]
     pub const fn new(
         day_counter: DayCounter,
@@ -74,7 +72,6 @@ impl Default for RateDefinition {
     }
 }
 
-/// # `InterestRate`
 /// Struct that defines an interest rate.
 ///
 /// ## Example
@@ -102,7 +99,7 @@ impl<T> InterestRate<T>
 where
     T: IsReal,
 {
-    /// Creates a new `InterestRate` with the specified rate value and rate definition parameters.
+    /// Creates a new [`InterestRate<T>`] with the specified rate value and rate definition parameters.
     #[must_use]
     pub const fn new(
         rate: T,
@@ -116,7 +113,7 @@ where
         }
     }
 
-    /// Creates a new `InterestRate` from a rate value and a `RateDefinition`.
+    /// Creates a new [`InterestRate<T>`] from a rate value and a [`RateDefinition`].
     #[must_use]
     pub const fn from_rate_definition(rate: T, rate_definition: RateDefinition) -> Self {
         Self {

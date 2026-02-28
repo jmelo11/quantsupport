@@ -4,7 +4,7 @@ use crate::{
         tape::Tape,
     },
     core::{
-        evaluationresults::{EvaluationResults, SensitivityMap},
+        evaluationresults::{CashflowsTable, EvaluationResults, SensitivityMap},
         instrument::Instrument,
         marketdatahandling::{
             constructedelementrequest::ConstructedElementRequest,
@@ -12,33 +12,32 @@ use crate::{
         },
         pricer::Pricer,
         pricerstate::PricerState,
-        request::{HandleSensitivities, HandleValue, Request},
+        request::{HandleCashflows, HandleSensitivities, HandleValue, Request},
         trade::Trade,
     },
-    instruments::fixedincome::deposit::DepositTrade,
+    instruments::{
+        cashflows::cashflow::Cashflow, fixedincome::fixedratedeposit::FixedRateDepositTrade,
+    },
     utils::errors::{AtlasError, Result},
 };
-/// # `DiscountedDepositPricer`
-///
+
 /// Pricer for deposits that uses discounted cash flow methodology. It calculates the
 /// present value of the deposit's final payment by discounting it using the appropriate
 /// discount factor from the relevant discount curve. The pricer also computes
 /// sensitivities to the discount curve pillars, which can be used for risk
 /// management and hedging purposes.
-pub struct DiscountedDepositPricer;
+pub struct FixedRateDepositDiscountingPricer;
 
-/// # `DepositPriceEvaluationState`
-///
 /// Holds state information for deposit price evaluation.
 #[derive(Default)]
-struct DepositPriceEvaluationState {
+struct DepositPricerState {
     /// Price placeholder for perfomance reasons.
     pub value: Option<ADReal>,
     /// Market data response placeholder to avoid multiple calls to the market data provider.
     pub md_response: Option<MarketData>,
 }
 
-impl PricerState for DepositPriceEvaluationState {
+impl PricerState for DepositPricerState {
     fn get_market_data_reponse(&self) -> Option<&MarketData> {
         self.md_response.as_ref()
     }
@@ -48,29 +47,38 @@ impl PricerState for DepositPriceEvaluationState {
     }
 }
 
-impl HandleValue<DepositTrade, DepositPriceEvaluationState> for DiscountedDepositPricer {
+impl HandleValue<FixedRateDepositTrade, DepositPricerState> for FixedRateDepositDiscountingPricer {
     fn handle_value(
         &self,
-        trade: &DepositTrade,
-        state: &mut DepositPriceEvaluationState,
+        trade: &FixedRateDepositTrade,
+        state: &mut DepositPricerState,
     ) -> Result<f64> {
         Tape::start_recording();
         Tape::set_mark();
 
         let index = trade.instrument().market_index();
-        let final_amount = trade.instrument().final_payment().ok_or_else(|| {
-            AtlasError::InvalidValueErr("Deposit final payment is required for pricing.".into())
-        })?;
+        let coupon = trade.instrument().coupon();
+        let redemption = trade.instrument().redemption();
 
         // get the element and put the pillars on tape for sensitivity calculation
         state.put_pillars_on_tape()?;
 
         // actually computing the price
-        let df = state
+        let df1 = state
             .get_discount_curve_element(&index)?
             .curve()
-            .discount_factor(trade.instrument().maturity_date())?;
-        let value = (df * final_amount).into();
+            .discount_factor(coupon.payment_date())?;
+
+        let df2 = if coupon.payment_date() != redemption.payment_date() {
+            state
+                .get_discount_curve_element(&index)?
+                .curve()
+                .discount_factor(coupon.payment_date())?
+        } else {
+            df1
+        };
+
+        let value = (df1 * coupon.amount()? + df2 * redemption.amount()?).into();
         state.value = Some(value);
 
         Tape::stop_recording();
@@ -78,11 +86,13 @@ impl HandleValue<DepositTrade, DepositPriceEvaluationState> for DiscountedDeposi
     }
 }
 
-impl HandleSensitivities<DepositTrade, DepositPriceEvaluationState> for DiscountedDepositPricer {
+impl HandleSensitivities<FixedRateDepositTrade, DepositPricerState>
+    for FixedRateDepositDiscountingPricer
+{
     fn handle_sensitivities(
         &self,
-        trade: &DepositTrade,
-        state: &mut DepositPriceEvaluationState,
+        trade: &FixedRateDepositTrade,
+        state: &mut DepositPricerState,
     ) -> Result<SensitivityMap> {
         let price = if let Some(p) = state.value {
             p
@@ -114,12 +124,12 @@ impl HandleSensitivities<DepositTrade, DepositPriceEvaluationState> for Discount
     }
 }
 
-impl Pricer for DiscountedDepositPricer {
-    type Item = DepositTrade;
+impl Pricer for FixedRateDepositDiscountingPricer {
+    type Item = FixedRateDepositTrade;
 
     fn evaluate(
         &self,
-        trade: &DepositTrade,
+        trade: &FixedRateDepositTrade,
         requests: &[Request],
         ctx: &impl MarketDataProvider,
     ) -> Result<EvaluationResults> {
@@ -128,7 +138,7 @@ impl Pricer for DiscountedDepositPricer {
         let identifier = depo.identifier();
 
         let mut results = EvaluationResults::new(eval_date, identifier);
-        let mut state = DepositPriceEvaluationState::default();
+        let mut state = DepositPricerState::default();
         let md_request = self.market_data_request(trade).ok_or_else(|| {
             AtlasError::InvalidValueErr("A market data request should have been returned!".into())
         })?;
@@ -153,7 +163,7 @@ impl Pricer for DiscountedDepositPricer {
         Ok(results)
     }
 
-    fn market_data_request(&self, trade: &DepositTrade) -> Option<MarketDataRequest> {
+    fn market_data_request(&self, trade: &FixedRateDepositTrade) -> Option<MarketDataRequest> {
         let discount_curve = ConstructedElementRequest::DiscountCurve {
             market_index: trade.instrument().market_index(),
         };

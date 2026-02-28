@@ -1,20 +1,103 @@
-use crate::{indices::marketindex::MarketIndex, time::date::Date};
+use crate::{currencies::currency::Currency, time::date::Date};
 
-/// # `CashflowsTable`
 /// Contains the cashflow structure of the instrument.
-pub struct CashflowsTable;
-
-/// # `SensitivityKey`
-/// Identifies a sensitivity by market index and curve pillar date.
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
-pub struct SensitivityKey {
-    market_index: MarketIndex,
-    pillar_date: Date,
+#[derive(Clone, Debug)]
+pub struct CashflowsTable {
+    payment_dates: Vec<Date>,
+    cashflow_types: Vec<String>,
+    amount: Vec<f64>,
+    fixing: Vec<Option<f64>>,
+    accrual_periods: Vec<f64>,
+    currencies: Vec<Currency>,
+    fx_parity: Vec<f64>,
+    floorlet_strike: Vec<Option<f64>>,
+    caplet_strike: Vec<Option<f64>>,
 }
 
-/// # `SensitivityMap`
-///
-///
+impl CashflowsTable {
+    /// Creates a new [`CashflowsTable`] with empty vectors.
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            payment_dates: Vec::new(),
+            cashflow_types: Vec::new(),
+            amount: Vec::new(),
+            fixing: Vec::new(),
+            accrual_periods: Vec::new(),
+            currencies: Vec::new(),
+            fx_parity: Vec::new(),
+            floorlet_strike: Vec::new(),
+            caplet_strike: Vec::new(),
+        }
+    }
+
+    /// Returns the payment dates of the cashflows.
+    #[must_use]
+    pub fn payment_dates(&self) -> &[Date] {
+        &self.payment_dates
+    }
+
+    /// Returns the cashflow types.
+    #[must_use]
+    pub fn cashflow_types(&self) -> &[String] {
+        &self.cashflow_types
+    }
+
+    /// Returns the amounts.
+    #[must_use]
+    pub fn amounts(&self) -> &[f64] {
+        &self.amount
+    }
+
+    /// Returns the fixing values.
+    #[must_use]
+    pub fn fixing(&self) -> &[Option<f64>] {
+        &self.fixing
+    }
+
+    /// Returns the accrual periods.
+    #[must_use]
+    pub fn accrual_periods(&self) -> &[f64] {
+        &self.accrual_periods
+    }
+
+    /// Returns the currencies.
+    #[must_use]
+    pub fn currencies(&self) -> &[Currency] {
+        &self.currencies
+    }
+
+    /// Adds a cashflow entry to the table.
+    pub fn add_cashflow(
+        &mut self,
+        payment_date: Date,
+        cashflow_type: String,
+        amount: f64,
+        fixing: Option<f64>,
+        accrual_period: f64,
+        currency: Currency,
+        fx_parity: f64,
+        floorlet_strike: Option<f64>,
+        caplet_strike: Option<f64>,
+    ) {
+        self.payment_dates.push(payment_date);
+        self.cashflow_types.push(cashflow_type);
+        self.amount.push(amount);
+        self.fixing.push(fixing);
+        self.accrual_periods.push(accrual_period);
+        self.currencies.push(currency);
+        self.fx_parity.push(fx_parity);
+        self.floorlet_strike.push(floorlet_strike);
+        self.caplet_strike.push(caplet_strike);
+    }
+}
+
+impl Default for CashflowsTable {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Maps sensitivity keys to values.
 #[derive(Default, Debug)]
 pub struct SensitivityMap {
@@ -50,8 +133,6 @@ impl SensitivityMap {
     }
 }
 
-/// # `EvaluationResults`
-///
 /// Holds the results of an instrument evaluation, including price, sensitivities, among others.
 pub struct EvaluationResults {
     /// Reference or as-of date of the results.
@@ -69,7 +150,7 @@ pub struct EvaluationResults {
 }
 
 impl EvaluationResults {
-    /// Creates a new instance of `EvaluationResults`.
+    /// Creates a new instance of [`EvaluationResults`].
     #[must_use]
     pub const fn new(evaluation_date: Date, identifier: String) -> Self {
         Self {
@@ -110,8 +191,8 @@ impl EvaluationResults {
 
     /// Sets the cashflows of the instrument.
     #[must_use]
-    pub const fn with_cashflows(mut self, cashflows: CashflowsTable) -> Self {
-        self.cashflows = Some(cashflows);
+    pub fn with_cashflows(mut self, cashflows: CashflowsTable) -> Self {
+        self.cashflows = Some(cashflows.clone());
         self
     }
 
