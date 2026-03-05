@@ -48,8 +48,8 @@ impl DiscountCurveElement {
 
     /// Returns the currency associated with the discount curve element.
     #[must_use]
-    pub const fn currency(&self) -> &Currency {
-        &self.currency
+    pub const fn currency(&self) -> Currency {
+        self.currency
     }
 
     /// Returns a reference to the curve associated with the discount curve element.

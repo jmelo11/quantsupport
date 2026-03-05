@@ -1,7 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::fmt::{self, Display, Formatter};
 
-use crate::currencies::currency::Currency;
 use crate::indices::rateindex::RateIndexDetails;
 use crate::indices::{quotetype::QuoteType, rateindices::sofr::SOFRIndex};
 use crate::utils::errors::{AtlasError, Result};
@@ -25,10 +24,8 @@ pub enum MarketIndex {
     ICP,
     /// VIX Index
     VIX,
-    /// Equity index or price.
+    /// Equity index or price. Used to identify volatilities.
     Equity(String),
-    /// Equity index or price.
-    Fx(Currency, Currency),
     /// Other indices.
     Other(String),
 }
@@ -45,7 +42,6 @@ impl Display for MarketIndex {
             Self::ICP => write!(f, "ICP"),
             Self::VIX => write!(f, "VIX"),
             Self::Equity(name) => write!(f, "{name}"),
-            Self::Fx(c1, c2) => write!(f, "{c1}/{c2}"),
             Self::Other(s) => write!(f, "{s}"),
         }
     }

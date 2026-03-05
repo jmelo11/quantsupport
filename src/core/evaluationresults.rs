@@ -9,7 +9,6 @@ pub struct CashflowsTable {
     fixing: Vec<Option<f64>>,
     accrual_periods: Vec<f64>,
     currencies: Vec<Currency>,
-    fx_parity: Vec<f64>,
     floorlet_strike: Vec<Option<f64>>,
     caplet_strike: Vec<Option<f64>>,
 }
@@ -25,7 +24,6 @@ impl CashflowsTable {
             fixing: Vec::new(),
             accrual_periods: Vec::new(),
             currencies: Vec::new(),
-            fx_parity: Vec::new(),
             floorlet_strike: Vec::new(),
             caplet_strike: Vec::new(),
         }
@@ -67,10 +65,16 @@ impl CashflowsTable {
         &self.currencies
     }
 
-    /// Returns the FX parities.
+    /// Returns floorlet strikes.
     #[must_use]
-    pub fn fx_parities(&self) -> &[f64] {
-        &self.fx_parity
+    pub fn floorlet_strikes(&self) -> &[Option<f64>] {
+        &self.floorlet_strike
+    }
+
+    /// Returns caplet strikes.
+    #[must_use]
+    pub fn caplet_strikes(&self) -> &[Option<f64>] {
+        &self.caplet_strike
     }
 
     /// Adds a cashflow entry to the table.
@@ -82,7 +86,6 @@ impl CashflowsTable {
         fixing: Option<f64>,
         accrual_period: f64,
         currency: Currency,
-        fx_parity: f64,
         floorlet_strike: Option<f64>,
         caplet_strike: Option<f64>,
     ) {
@@ -92,7 +95,6 @@ impl CashflowsTable {
         self.fixing.push(fixing);
         self.accrual_periods.push(accrual_period);
         self.currencies.push(currency);
-        self.fx_parity.push(fx_parity);
         self.floorlet_strike.push(floorlet_strike);
         self.caplet_strike.push(caplet_strike);
     }
@@ -203,6 +205,12 @@ impl EvaluationResults {
     pub fn with_cashflows(mut self, cashflows: CashflowsTable) -> Self {
         self.cashflows = Some(cashflows.clone());
         self
+    }
+
+    /// Returns cashflows if available.
+    #[must_use]
+    pub const fn cashflows(&self) -> Option<&CashflowsTable> {
+        self.cashflows.as_ref()
     }
 
     /// Sets the reference or as-of date.

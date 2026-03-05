@@ -27,8 +27,9 @@ impl QuoteStore {
 
     /// Adds a market quote to the provider.
     pub fn add_quote(&mut self, quote: Quote) {
+        let index = quote.details().market_index().cloned().unwrap_or_default();
         self.quotes
-            .entry(quote.details().market_index())
+            .entry(index)
             .or_default()
             .entry(quote.details().identifier())
             .insert_entry(quote);
@@ -40,5 +41,3 @@ impl QuoteStore {
         self.quotes.get(market_index)
     }
 }
-
-

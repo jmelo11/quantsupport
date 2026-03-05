@@ -220,8 +220,9 @@ impl std::str::FromStr for OptionStrategy {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct QuoteDetails {
     identifier: String,
-    market_index: MarketIndex,
     instrument: QuoteInstrument,
+    #[serde(default)]
+    market_index: Option<MarketIndex>,
     #[serde(default)]
     strategy: Option<OptionStrategy>,
     #[serde(default)]
@@ -266,15 +267,11 @@ pub struct QuoteDetails {
 impl QuoteDetails {
     /// Creates a new quote details container with required fields.
     #[must_use]
-    pub const fn new(
-        identifier: String,
-        market_index: MarketIndex,
-        instrument: QuoteInstrument,
-    ) -> Self {
+    pub const fn new(identifier: String, instrument: QuoteInstrument) -> Self {
         Self {
             identifier,
-            market_index,
             instrument,
+            market_index: None,
             strategy: None,
             vol_type: None,
             rate: None,
@@ -307,8 +304,8 @@ impl QuoteDetails {
 
     /// Returns the primary market index.
     #[must_use]
-    pub fn market_index(&self) -> MarketIndex {
-        self.market_index.clone()
+    pub fn market_index(&self) -> Option<&MarketIndex> {
+        self.market_index.as_ref()
     }
 
     /// Returns the instrument type.
@@ -526,6 +523,13 @@ impl QuoteDetails {
         self
     }
 
+    /// Sets the primary market index.
+    #[must_use]
+    pub fn with_market_index(mut self, idx: MarketIndex) -> Self {
+        self.market_index = Some(idx);
+        self
+    }
+
     // -----------------------------------------------------------------------
     // Identifier parsing helpers
     // -----------------------------------------------------------------------
@@ -540,7 +544,7 @@ impl QuoteDetails {
         let currency: Currency = parts[0].parse()?;
         let index = parts[2].parse::<MarketIndex>()?;
         let tenor = Period::from_str(parts[3])?;
-        Ok(Self::new(id.to_string(), index, QuoteInstrument::OIS)
+        Ok(Self::new(id.to_string(), QuoteInstrument::OIS)
             .with_currency(currency)
             .with_tenor(tenor))
     }
@@ -555,11 +559,10 @@ impl QuoteDetails {
         let currency: Currency = parts[0].parse()?;
         let index = parts[2].parse::<MarketIndex>()?;
         let tenor = Period::from_str(parts[3])?;
-        Ok(
-            Self::new(id.to_string(), index, QuoteInstrument::FixedRateDeposit)
-                .with_currency(currency)
-                .with_tenor(tenor),
-        )
+        Ok(Self::new(id.to_string(), QuoteInstrument::FixedRateDeposit)
+            .with_market_index(index)
+            .with_currency(currency)
+            .with_tenor(tenor))
     }
 
     /// `{CCY}_BasisSwap_{PayIndex}_{RecvIndex}_{Tenor}`
@@ -574,12 +577,11 @@ impl QuoteDetails {
         let pay_index = parts[2].parse::<MarketIndex>()?;
         let recv_index = parts[3].parse::<MarketIndex>()?;
         let tenor = Period::from_str(parts[4])?;
-        Ok(
-            Self::new(id.to_string(), pay_index, QuoteInstrument::BasisSwap)
-                .with_currency(currency)
-                .with_secondary_market_index(recv_index)
-                .with_tenor(tenor),
-        )
+        Ok(Self::new(id.to_string(), QuoteInstrument::BasisSwap)
+            .with_market_index(pay_index)
+            .with_currency(currency)
+            .with_secondary_market_index(recv_index)
+            .with_tenor(tenor))
     }
 
     /// `{CCY}_CrossCurrencySwap_{DomIndex}_{ForIndex}_{ForeignCCY}_{Tenor}`
@@ -595,11 +597,8 @@ impl QuoteDetails {
         let for_index = parts[3].parse::<MarketIndex>()?;
         let foreign_currency: Currency = parts[4].parse()?;
         let tenor = Period::from_str(parts[5])?;
-        Ok(Self::new(
-            id.to_string(),
-            dom_index,
-            QuoteInstrument::CrossCurrencySwap,
-        )
+        Ok(Self::new(id.to_string(), QuoteInstrument::CrossCurrencySwap)
+        .with_market_index(dom_index)
         .with_currency(domestic_currency)
         .with_pay_currency(domestic_currency)
         .with_receive_currency(foreign_currency)
@@ -632,7 +631,8 @@ impl QuoteDetails {
             .ok_or_else(|| AtlasError::InvalidValueErr(format!("Missing vol type in: {id}")))?
             .parse()?;
 
-        let mut det = Self::new(id.to_string(), index, QuoteInstrument::CapFloor)
+        let mut det = Self::new(id.to_string(), QuoteInstrument::CapFloor)
+            .with_market_index(index)
             .with_currency(currency)
             .with_tenor(tenor)
             .with_strike_type(strike_type)
@@ -672,7 +672,8 @@ impl QuoteDetails {
             .ok_or_else(|| AtlasError::InvalidValueErr(format!("Missing vol type in: {id}")))?
             .parse()?;
 
-        let mut det = Self::new(id.to_string(), index, QuoteInstrument::CapletFloorlet)
+        let mut det = Self::new(id.to_string(), QuoteInstrument::CapletFloorlet)
+            .with_market_index(index)
             .with_currency(currency)
             .with_index_tenor(index_tenor)
             .with_option_expiry(option_expiry)
@@ -695,7 +696,8 @@ impl QuoteDetails {
         let currency: Currency = parts[0].parse()?;
         let index = parts[2].parse::<MarketIndex>()?;
         let code = parts[3].to_string();
-        Ok(Self::new(id.to_string(), index, QuoteInstrument::Future)
+        Ok(Self::new(id.to_string(), QuoteInstrument::Future)
+            .with_market_index(index)
             .with_currency(currency)
             .with_contract_code(code))
     }
@@ -710,11 +712,10 @@ impl QuoteDetails {
         let currency: Currency = parts[0].parse()?;
         let index = parts[2].parse::<MarketIndex>()?;
         let code = parts[3].to_string();
-        Ok(
-            Self::new(id.to_string(), index, QuoteInstrument::ConvexityAdjustment)
-                .with_currency(currency)
-                .with_contract_code(code),
-        )
+        Ok(Self::new(id.to_string(), QuoteInstrument::ConvexityAdjustment)
+            .with_market_index(index)
+            .with_currency(currency)
+            .with_contract_code(code))
     }
 
     /// `{CCY}_Swaption_{Index}_{Expiry}_{SwapTenor}_{StrikeType}_{VolType}`            (no strike)
@@ -741,7 +742,8 @@ impl QuoteDetails {
             .ok_or_else(|| AtlasError::InvalidValueErr(format!("Missing vol type in: {id}")))?
             .parse()?;
 
-        let mut det = Self::new(id.to_string(), index, QuoteInstrument::Swaption)
+        let mut det = Self::new(id.to_string(), QuoteInstrument::Swaption)
+            .with_market_index(index)
             .with_currency(currency)
             .with_option_expiry(option_expiry)
             .with_tenor(swap_tenor)
@@ -761,14 +763,11 @@ impl QuoteDetails {
             )));
         }
         let (base, quote_ccy) = parse_fx_pair(parts[0])?;
-        let index = MarketIndex::Fx(base, quote_ccy);
         let tenor = Period::from_str(parts[2])?;
-        Ok(
-            Self::new(id.to_string(), index, QuoteInstrument::OutrightForward)
-                .with_pay_currency(base)
-                .with_receive_currency(quote_ccy)
-                .with_tenor(tenor),
-        )
+        Ok(Self::new(id.to_string(), QuoteInstrument::OutrightForward)
+            .with_pay_currency(base)
+            .with_receive_currency(quote_ccy)
+            .with_tenor(tenor))
     }
 
     /// `{CCYPAIR}_ForwardPoints_{Tenor}` — e.g. `EURUSD_ForwardPoints_1M`
@@ -779,14 +778,11 @@ impl QuoteDetails {
             )));
         }
         let (base, quote_ccy) = parse_fx_pair(parts[0])?;
-        let index = MarketIndex::Fx(base, quote_ccy);
         let tenor = Period::from_str(parts[2])?;
-        Ok(
-            Self::new(id.to_string(), index, QuoteInstrument::ForwardPoints)
-                .with_pay_currency(base)
-                .with_receive_currency(quote_ccy)
-                .with_tenor(tenor),
-        )
+        Ok(Self::new(id.to_string(), QuoteInstrument::ForwardPoints)
+            .with_pay_currency(base)
+            .with_receive_currency(quote_ccy)
+            .with_tenor(tenor))
     }
 
     /// `{CCY}_Call_{Index}_{Expiry}_{Strike}` — e.g. `USD_Call_SPX_1Y_5000`
@@ -802,7 +798,8 @@ impl QuoteDetails {
         let strike: f64 = parts[4]
             .parse()
             .map_err(|e| AtlasError::InvalidValueErr(format!("Bad strike in {id}: {e}")))?;
-        Ok(Self::new(id.to_string(), index, QuoteInstrument::Call)
+        Ok(Self::new(id.to_string(), QuoteInstrument::Call)
+            .with_market_index(index)
             .with_currency(currency)
             .with_tenor(tenor)
             .with_strike(strike))
@@ -821,7 +818,8 @@ impl QuoteDetails {
         let strike: f64 = parts[4]
             .parse()
             .map_err(|e| AtlasError::InvalidValueErr(format!("Bad strike in {id}: {e}")))?;
-        Ok(Self::new(id.to_string(), index, QuoteInstrument::Put)
+        Ok(Self::new(id.to_string(), QuoteInstrument::Put)
+            .with_market_index(index)
             .with_currency(currency)
             .with_tenor(tenor)
             .with_strike(strike))
@@ -983,6 +981,13 @@ impl Quote {
             .map_or_else(|_| RateDefinition::default(), |d| d.rate_definition())
     }
 
+    fn required_market_index(details: &QuoteDetails, context: &str) -> Result<MarketIndex> {
+        details
+            .market_index()
+            .cloned()
+            .ok_or_else(|| AtlasError::ValueNotSetErr(format!("Market index on {context}")))
+    }
+
     /// OIS swap — mid value is the fixed rate.
     fn build_ois(&self, rate: f64, reference_date: Date, notional: f64) -> Result<BuiltInstrument> {
         let d = &self.details;
@@ -994,7 +999,8 @@ impl Quote {
             .ok_or_else(|| AtlasError::ValueNotSetErr("Tenor on OIS quote".into()))?;
 
         let maturity = reference_date + tenor;
-        let rd = Self::rate_definition_for(&d.market_index());
+        let market_index = Self::required_market_index(d, "OIS quote")?;
+        let rd = Self::rate_definition_for(&market_index);
 
         let swap = MakeSwap::default()
             .with_identifier(d.identifier())
@@ -1004,7 +1010,7 @@ impl Quote {
             .with_notional(notional)
             .with_rate_definition(rd)
             .with_currency(currency)
-            .with_market_index(d.market_index())
+            .with_market_index(market_index)
             .build()?;
 
         Ok(BuiltInstrument::Swap(swap))
@@ -1026,7 +1032,8 @@ impl Quote {
             .ok_or_else(|| AtlasError::ValueNotSetErr("Tenor on deposit quote".into()))?;
 
         let maturity = reference_date + tenor;
-        let rd = Self::rate_definition_for(&d.market_index());
+        let market_index = Self::required_market_index(d, "deposit quote")?;
+        let rd = Self::rate_definition_for(&market_index);
 
         let deposit = MakeFixedRateDeposit::default()
             .with_identifier(d.identifier())
@@ -1036,7 +1043,7 @@ impl Quote {
             .with_notional(notional)
             .with_rate_definition(rd)
             .with_currency(currency)
-            .with_market_index(d.market_index())
+            .with_market_index(market_index)
             .build()?;
 
         Ok(BuiltInstrument::FixedRateDeposit(deposit))
@@ -1062,6 +1069,7 @@ impl Quote {
                 AtlasError::ValueNotSetErr("Secondary market index on basis swap quote".into())
             })?
             .clone();
+        let pay_index = Self::required_market_index(d, "basis swap quote")?;
 
         let maturity = reference_date + tenor;
 
@@ -1071,7 +1079,7 @@ impl Quote {
             .with_maturity_date(maturity)
             .with_notional(notional)
             .with_currency(currency)
-            .with_pay_market_index(d.market_index())
+            .with_pay_market_index(pay_index)
             .with_receive_market_index(recv_index)
             .with_receive_spread(spread)
             .build()?;
@@ -1088,11 +1096,12 @@ impl Quote {
 
         let start_date = IMM::date(code, reference_date);
         let end_date = IMM::next_date(start_date, true);
-        let rd = Self::rate_definition_for(&d.market_index());
+        let market_index = Self::required_market_index(d, "futures quote")?;
+        let rd = Self::rate_definition_for(&market_index);
 
         let futures = MakeRateFutures::default()
             .with_identifier(d.identifier())
-            .with_market_index(d.market_index())
+            .with_market_index(market_index)
             .with_start_date(start_date)
             .with_end_date(end_date)
             .with_futures_price(price)
@@ -1154,7 +1163,8 @@ impl Quote {
             .ok_or_else(|| AtlasError::ValueNotSetErr("Tenor on xccy swap quote".into()))?;
 
         let maturity = reference_date + tenor;
-        let rd = Self::rate_definition_for(&d.market_index());
+        let domestic_index = Self::required_market_index(d, "xccy swap quote")?;
+        let rd = Self::rate_definition_for(&domestic_index);
 
         let xccy = MakeCrossCurrencySwap::default()
             .with_identifier(d.identifier())
@@ -1166,7 +1176,7 @@ impl Quote {
             .with_rate_definition(rd)
             .with_domestic_currency(domestic_ccy)
             .with_foreign_currency(foreign_ccy)
-            .with_domestic_market_index(d.market_index())
+            .with_domestic_market_index(domestic_index)
             .with_foreign_market_index(foreign_index)
             .build()?;
 
@@ -1184,8 +1194,9 @@ impl Quote {
             .ok_or_else(|| AtlasError::ValueNotSetErr("Tenor on Call quote".into()))?;
         let expiry = reference_date + tenor;
 
+        let market_index = Self::required_market_index(d, "Call quote")?;
         let opt = EquityEuropeanOption::new(
-            d.market_index(),
+            market_index,
             expiry,
             strike,
             EuroOptionType::Call,
@@ -1205,8 +1216,9 @@ impl Quote {
             .ok_or_else(|| AtlasError::ValueNotSetErr("Tenor on Put quote".into()))?;
         let expiry = reference_date + tenor;
 
+        let market_index = Self::required_market_index(d, "Put quote")?;
         let opt = EquityEuropeanOption::new(
-            d.market_index(),
+            market_index,
             expiry,
             strike,
             EuroOptionType::Put,
@@ -1228,7 +1240,8 @@ impl Quote {
             .tenor()
             .ok_or_else(|| AtlasError::ValueNotSetErr("Tenor on CapFloor quote".into()))?;
         let maturity = reference_date + tenor;
-        let rd = Self::rate_definition_for(&d.market_index());
+        let market_index = Self::required_market_index(d, "CapFloor quote")?;
+        let rd = Self::rate_definition_for(&market_index);
 
         // The quote value is treated as the strike. If the details already
         // carry a parsed strike, prefer that.
@@ -1245,7 +1258,7 @@ impl Quote {
                 .with_strike(strike)
                 .with_notional(notional)
                 .with_rate_definition(rd)
-                .with_market_index(d.market_index())
+                .with_market_index(market_index)
                 .with_currency(d.currency().ok_or_else(|| {
                     AtlasError::ValueNotSetErr("Currency on CapFloor quote".into())
                 })?)
@@ -1274,7 +1287,8 @@ impl Quote {
 
         let expiry_date = reference_date + option_expiry_period;
         let swap_maturity = expiry_date + swap_tenor;
-        let rd = Self::rate_definition_for(&d.market_index());
+        let market_index = Self::required_market_index(d, "Swaption quote")?;
+        let rd = Self::rate_definition_for(&market_index);
 
         let strike = d.strike().unwrap_or(value);
 
@@ -1287,7 +1301,7 @@ impl Quote {
                 .with_strike(strike)
                 .with_notional(notional)
                 .with_rate_definition(rd)
-                .with_market_index(d.market_index())
+                .with_market_index(market_index)
                 .with_currency(d.currency().ok_or_else(|| {
                     AtlasError::ValueNotSetErr("Currency on Swaption quote".into())
                 })?)

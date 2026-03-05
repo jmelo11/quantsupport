@@ -88,8 +88,4 @@ impl LinearCoupon<ADReal> for FixedRateCoupon<ADReal> {
     fn notional(&self) -> f64 {
         self.notional
     }
-
-    fn payment_date(&self) -> Date {
-        self.payment_date
-    }
 }

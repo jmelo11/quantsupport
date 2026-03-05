@@ -4,6 +4,7 @@ use crate::{
         tape::Tape,
     },
     core::{
+        collateral::DiscountPolicy,
         evaluationresults::{EvaluationResults, SensitivityMap},
         instrument::Instrument,
         marketdatahandling::{
@@ -16,7 +17,9 @@ use crate::{
         request::{HandleSensitivities, HandleValue, Request},
         trade::Trade,
     },
-    instruments::equity::equityeuropeanoption::{EquityEuropeanOptionTrade, EuroOptionType},
+    instruments::equity::equityeuropeanoption::{
+        EquityEuropeanOption, EquityEuropeanOptionTrade, EuroOptionType,
+    },
     pricers::pricerdefinitions::BlackClosedFormPricer,
     utils::errors::{AtlasError, Result},
 };
@@ -42,7 +45,28 @@ impl PricerState for EquityOptionState {
 /// A pricer for European equity options using the Black-Scholes model. It calculates
 /// the option price and sensitivities based on the spot price, volatility surface, discount curve,
 /// and dividend curve obtained from the market data.
-pub struct BlackEuropeanOptionPricer;
+///
+/// When a [`DiscountPolicy`] is set, the pricer uses the CSA discount curve
+/// for payment discounting instead of the instrument's `market_index` curve.
+pub struct BlackEuropeanOptionPricer {
+    discount_policy: Option<Box<dyn DiscountPolicy<EquityEuropeanOption>>>,
+}
+
+impl BlackEuropeanOptionPricer {
+    /// Creates a new [`BlackEuropeanOptionPricer`].
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            discount_policy: None,
+        }
+    }
+}
+
+impl Default for BlackEuropeanOptionPricer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl HandleValue<EquityEuropeanOptionTrade, EquityOptionState> for BlackEuropeanOptionPricer {
     fn handle_value(
@@ -53,6 +77,11 @@ impl HandleValue<EquityEuropeanOptionTrade, EquityOptionState> for BlackEuropean
         let option = trade.instrument();
         let expiry = option.expiry_date();
         let index = option.market_index().clone();
+        let discount_index = if let Some(policy) = &self.discount_policy {
+            policy.accept(option)?
+        } else {
+            index.clone()
+        };
 
         // move to the instrument level
         let tau = option
@@ -78,7 +107,7 @@ impl HandleValue<EquityEuropeanOptionTrade, EquityOptionState> for BlackEuropean
 
         // this should discount the underyling currency curve
         let df_r = state
-            .get_discount_curve_element(&index)?
+            .get_discount_curve_element(&discount_index)?
             .curve()
             .discount_factor(option.expiry_date())?;
 
@@ -128,6 +157,12 @@ impl HandleSensitivities<EquityEuropeanOptionTrade, EquityOptionState>
         value.backward_to_mark()?;
         let option = trade.instrument();
         let index = option.market_index();
+        let policy_discount_index = if let Some(policy) = &self.discount_policy {
+            Some(policy.accept(option)?)
+        } else {
+            None
+        };
+        let discount_index = policy_discount_index.as_ref().unwrap_or(index);
 
         let mut ids = Vec::new();
         let mut exposures = Vec::new();
@@ -151,7 +186,7 @@ impl HandleSensitivities<EquityEuropeanOptionTrade, EquityOptionState>
         }
 
         for (label, pillar) in state
-            .get_discount_curve_element(index)?
+            .get_discount_curve_element(discount_index)?
             .curve()
             .pillars()
             .unwrap_or_default()
@@ -175,6 +210,7 @@ impl HandleSensitivities<EquityEuropeanOptionTrade, EquityOptionState>
 
 impl Pricer for BlackEuropeanOptionPricer {
     type Item = EquityEuropeanOptionTrade;
+    type Policy = dyn DiscountPolicy<EquityEuropeanOption>;
     fn evaluate(
         &self,
         trade: &EquityEuropeanOptionTrade,
@@ -216,21 +252,43 @@ impl Pricer for BlackEuropeanOptionPricer {
     fn market_data_request(&self, trade: &Self::Item) -> Option<MarketDataRequest> {
         let option = trade.instrument();
         let index = option.market_index().clone();
-        Some(
-            MarketDataRequest::default()
-                .with_constructed_elements_request(vec![
-                    ConstructedElementRequest::DiscountCurve {
-                        market_index: index.clone(),
-                    },
-                    ConstructedElementRequest::DividendCurve {
-                        market_index: index.clone(),
-                    },
-                    ConstructedElementRequest::VolatilitySurface {
-                        market_index: index.clone(),
-                    },
-                ])
-                .with_fixings_request(vec![FixingRequest::new(index, trade.trade_date())]),
-        )
+        let mut elements = vec![
+            ConstructedElementRequest::DiscountCurve {
+                market_index: index.clone(),
+            },
+            ConstructedElementRequest::DividendCurve {
+                market_index: index.clone(),
+            },
+            ConstructedElementRequest::VolatilitySurface {
+                market_index: index.clone(),
+            },
+        ];
+        let fixings = vec![FixingRequest::new(index.clone(), trade.trade_date())];
+
+        if let Some(policy) = &self.discount_policy {
+            let collateral_index = policy.accept(option).ok()?;
+            if collateral_index != index {
+                elements.push(ConstructedElementRequest::DiscountCurve {
+                    market_index: collateral_index,
+                });
+            }
+        }
+
+        let mut request = MarketDataRequest::default()
+            .with_constructed_elements_request(elements)
+            .with_fixings_request(fixings);
+        if self.discount_policy.is_some() {
+            request = request.with_exchange_rates();
+        }
+        Some(request)
+    }
+
+    fn set_discount_policy(&mut self, policy: Box<Self::Policy>) {
+        self.discount_policy = Some(policy);
+    }
+
+    fn discount_policy(&self) -> Option<&Self::Policy> {
+        self.discount_policy.as_deref()
     }
 }
 
@@ -451,7 +509,7 @@ mod tests {
             market_data,
         };
 
-        let pricer = BlackEuropeanOptionPricer;
+        let pricer = BlackEuropeanOptionPricer::new();
         let results =
             pricer.evaluate(&trade, &[Request::Value, Request::Sensitivities], &provider)?;
         let sensitivities = results.sensitivities().ok_or(AtlasError::UnexpectedErr(
@@ -553,7 +611,7 @@ mod tests {
                     market_data,
                 };
 
-                let pricer = BlackEuropeanOptionPricer;
+                let pricer = BlackEuropeanOptionPricer::new();
                 let eval_results =
                     pricer.evaluate(&trade, &[Request::Value, Request::Sensitivities], &provider);
 

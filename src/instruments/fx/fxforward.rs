@@ -4,7 +4,6 @@ use crate::{
         trade::{Side, Trade},
     },
     currencies::currency::Currency,
-    indices::marketindex::MarketIndex,
     time::{date::Date, daycounter::DayCounter},
 };
 
@@ -12,7 +11,6 @@ use crate::{
 /// for another at a pre-agreed forward rate on a specified delivery date.
 pub struct FxForward {
     identifier: String,
-    market_index: MarketIndex,
     delivery_date: Date,
     forward_rate: f64,
     base_currency: Currency,
@@ -25,7 +23,6 @@ impl FxForward {
     #[must_use]
     pub const fn new(
         identifier: String,
-        market_index: MarketIndex,
         delivery_date: Date,
         forward_rate: f64,
         base_currency: Currency,
@@ -34,19 +31,12 @@ impl FxForward {
     ) -> Self {
         Self {
             identifier,
-            market_index,
             delivery_date,
             forward_rate,
             base_currency,
             quote_currency,
             day_counter,
         }
-    }
-
-    /// Returns the market index for the FX pair.
-    #[must_use]
-    pub fn market_index(&self) -> MarketIndex {
-        self.market_index.clone()
     }
 
     /// Returns the delivery date.
@@ -103,12 +93,7 @@ impl FxForwardTrade {
     ///
     /// `notional` is in base-currency terms.
     #[must_use]
-    pub const fn new(
-        instrument: FxForward,
-        trade_date: Date,
-        notional: f64,
-        side: Side,
-    ) -> Self {
+    pub const fn new(instrument: FxForward, trade_date: Date, notional: f64, side: Side) -> Self {
         Self {
             instrument,
             trade_date,

@@ -1,4 +1,5 @@
 use crate::ad::adreal::IsReal;
+use crate::time::daycounter::DayCounter;
 use crate::{
     core::evaluationresults::{CashflowsTable, SensitivityMap},
     instruments::cashflows::{
@@ -103,14 +104,10 @@ pub trait HandleCashflows<T, S: LegsProvider> {
     fn handle_cashflows(&self, _trade: &T, state: &mut S) -> Result<CashflowsTable> {
         let mut cashflows_table = CashflowsTable::new();
 
-        // Iterate through all legs provided by the state
         for leg in state.legs() {
             let currency = leg.currency().clone();
 
-            // Process each cashflow in the leg
             for cashflow in leg.cashflows() {
-                let fx_parity = leg.fx_parity().unwrap_or(1.0);
-
                 match cashflow {
                     CashflowType::FixedRateCoupon(coupon) => {
                         let amount = coupon.amount()?.value();
@@ -129,7 +126,6 @@ pub trait HandleCashflows<T, S: LegsProvider> {
                             None,
                             accrual_period,
                             currency.clone(),
-                            fx_parity,
                             None,
                             None,
                         );
@@ -142,8 +138,6 @@ pub trait HandleCashflows<T, S: LegsProvider> {
                         let accrual_period = coupon
                             .day_counter()
                             .year_fraction(accrual_start, accrual_end);
-
-                        // Extract fixing if available (usually set during evaluation)
                         let fixing = coupon.fixing().map(|f| f.value());
 
                         cashflows_table.add_cashflow(
@@ -153,7 +147,6 @@ pub trait HandleCashflows<T, S: LegsProvider> {
                             fixing,
                             accrual_period,
                             currency.clone(),
-                            fx_parity,
                             None,
                             None,
                         );
@@ -163,11 +156,8 @@ pub trait HandleCashflows<T, S: LegsProvider> {
                         let payment_date = coupon.payment_date();
                         let accrual_start = coupon.accrual_start_date();
                         let accrual_end = coupon.accrual_end_date();
-
-                        // Use Actual360 as default day counter for accrual period calculation
-                        let day_counter = crate::time::daycounter::DayCounter::Actual360;
+                        let day_counter = DayCounter::Actual360;
                         let accrual_period = day_counter.year_fraction(accrual_start, accrual_end);
-
                         let fixing = coupon.fixing().map(|f| f.value());
 
                         cashflows_table.add_cashflow(
@@ -177,7 +167,6 @@ pub trait HandleCashflows<T, S: LegsProvider> {
                             fixing,
                             accrual_period,
                             currency.clone(),
-                            fx_parity,
                             None,
                             None,
                         );
@@ -193,7 +182,6 @@ pub trait HandleCashflows<T, S: LegsProvider> {
                             None,
                             0.0,
                             currency.clone(),
-                            fx_parity,
                             None,
                             None,
                         );
@@ -209,7 +197,6 @@ pub trait HandleCashflows<T, S: LegsProvider> {
                             None,
                             0.0,
                             currency.clone(),
-                            fx_parity,
                             None,
                             None,
                         );
@@ -607,164 +594,5 @@ mod tests {
         let table = result.unwrap();
         assert_eq!(table.currencies()[0], Currency::USD);
         assert_eq!(table.currencies()[1], Currency::GBP);
-    }
-
-    #[test]
-    fn test_handle_cashflows_default_fx_parity() {
-        let payment_date = Date::new(2024, 1, 1);
-        let redemption = SimpleCashflow::new(100_000.0, payment_date);
-
-        let leg = Leg::new(
-            0,
-            vec![CashflowType::Redemption(redemption)],
-            Currency::USD,
-            None,
-            None,
-            None,
-            Side::PayShort,
-            true,
-        );
-
-        let mut state = MockState { legs: vec![leg] };
-
-        let handler = MockHandler;
-        let result = handler.handle_cashflows(&MockTrade, &mut state);
-
-        assert!(result.is_ok());
-
-        let table = result.unwrap();
-        assert_eq!(
-            table.fx_parities()[0],
-            1.0,
-            "Default FX parity should be 1.0 when not specified"
-        );
-    }
-
-    #[test]
-    fn test_handle_cashflows_custom_fx_parities() {
-        let payment_date = Date::new(2024, 1, 1);
-        let redemption = SimpleCashflow::new(100_000.0, payment_date);
-
-        let leg = Leg::new(
-            0,
-            vec![CashflowType::Redemption(redemption)],
-            Currency::USD,
-            None,
-            None,
-            None,
-            Side::PayShort,
-            true,
-        )
-        .with_fx_parity(1.1);
-
-        let mut state = MockState { legs: vec![leg] };
-
-        let handler = MockHandler;
-        let result = handler.handle_cashflows(&MockTrade, &mut state);
-
-        assert!(result.is_ok());
-
-        let table = result.unwrap();
-        assert_eq!(
-            table.fx_parities()[0],
-            1.1,
-            "FX parity should match the specified value"
-        );
-    }
-
-    #[test]
-    fn test_handle_cashflows_fx_parities_partial() {
-        let date1 = Date::new(2024, 1, 1);
-        let date2 = Date::new(2024, 7, 1);
-
-        let redemption1 = SimpleCashflow::new(50_000.0, date1);
-        let redemption2 = SimpleCashflow::new(50_000.0, date2);
-
-        let leg = Leg::new(
-            0,
-            vec![
-                CashflowType::Redemption(redemption1),
-                CashflowType::Redemption(redemption2),
-            ],
-            Currency::USD,
-            None,
-            None,
-            None,
-            Side::PayShort,
-            true,
-        )
-        .with_fx_parity(1.1);
-
-        let mut state = MockState { legs: vec![leg] };
-
-        let handler = MockHandler;
-        let result = handler.handle_cashflows(&MockTrade, &mut state);
-
-        assert!(result.is_ok());
-
-        let table = result.unwrap();
-        assert_eq!(
-            table.fx_parities()[0],
-            1.1,
-            "First cashflow should use specified parity"
-        );
-        assert_eq!(
-            table.fx_parities()[1],
-            1.1,
-            "Second cashflow should use same leg parity"
-        );
-    }
-
-    #[test]
-    fn test_handle_cashflows_fx_parities_multiple_legs() {
-        let date1 = Date::new(2024, 1, 1);
-        let date2 = Date::new(2024, 7, 1);
-
-        let redemption1 = SimpleCashflow::new(50_000.0, date1);
-        let leg1 = Leg::new(
-            0,
-            vec![CashflowType::Redemption(redemption1)],
-            Currency::USD,
-            None,
-            None,
-            None,
-            Side::PayShort,
-            true,
-        )
-        .with_fx_parity(1.1);
-
-        let redemption2 = SimpleCashflow::new(50_000.0, date2);
-        let leg2 = Leg::new(
-            1,
-            vec![CashflowType::Redemption(redemption2)],
-            Currency::EUR,
-            None,
-            None,
-            None,
-            Side::LongRecieve,
-            true,
-        )
-        .with_fx_parity(1.15);
-
-        let mut state = MockState {
-            legs: vec![leg1, leg2],
-        };
-
-        let handler = MockHandler;
-        let result = handler.handle_cashflows(&MockTrade, &mut state);
-
-        assert!(result.is_ok());
-
-        let table = result.unwrap();
-        assert_eq!(
-            table.fx_parities()[0],
-            1.1,
-            "First leg FX parity should be 1.1"
-        );
-        assert_eq!(
-            table.fx_parities()[1],
-            1.15,
-            "Second leg FX parity should be 1.15"
-        );
     }
 }

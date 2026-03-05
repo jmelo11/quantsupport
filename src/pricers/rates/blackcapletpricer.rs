@@ -4,6 +4,7 @@ use crate::{
         tape::Tape,
     },
     core::{
+        collateral::DiscountPolicy,
         evaluationresults::{EvaluationResults, SensitivityMap},
         instrument::Instrument,
         marketdatahandling::{
@@ -15,11 +16,12 @@ use crate::{
         request::{HandleSensitivities, HandleValue, Request},
         trade::Trade,
     },
-    instruments::rates::caplet::{CapletFloorletTrade, CapletFloorletType},
+    instruments::rates::caplet::{CapletFloorlet, CapletFloorletTrade, CapletFloorletType},
     pricers::pricerdefinitions::BlackClosedFormPricer,
     utils::errors::{AtlasError, Result},
     volatility::volatilityindexing::Strike,
 };
+use std::collections::HashSet;
 
 /// # `BlackCapletPricer`
 ///
@@ -35,10 +37,27 @@ use crate::{
 /// - [`Strike::Atm`] — `K_eff = F`
 /// - [`Strike::Relative(s)`] — `K_eff = F + s`
 ///
-/// Payment discounting and collateralization conventions are determined at the
-/// context / `MarketDataProvider` level. The pricer always uses the
-/// instrument's `market_index` discount curve for payment discounting.
-pub struct BlackCapletPricer;
+/// When a [`DiscountPolicy`] is set, the pricer uses the CSA discount curve
+/// for payment discounting instead of the instrument's `market_index` curve.
+pub struct BlackCapletPricer {
+    discount_policy: Option<Box<dyn DiscountPolicy<CapletFloorlet>>>,
+}
+
+impl BlackCapletPricer {
+    /// Creates a new [`BlackCapletPricer`].
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            discount_policy: None,
+        }
+    }
+}
+
+impl Default for BlackCapletPricer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 /// State for Black caplet/floorlet pricing.
 #[derive(Default)]
@@ -65,6 +84,11 @@ impl HandleValue<CapletFloorletTrade, BlackCapletState> for BlackCapletPricer {
     ) -> Result<f64> {
         let caplet = trade.instrument();
         let index = caplet.market_index();
+        let discount_index = if let Some(policy) = &self.discount_policy {
+            policy.accept(caplet)?
+        } else {
+            index.clone()
+        };
         let start_date = caplet.start_date();
         let end_date = caplet.end_date();
         let payment_date = caplet.payment_date();
@@ -99,10 +123,9 @@ impl HandleValue<CapletFloorletTrade, BlackCapletState> for BlackCapletPricer {
             Strike::Relative(spread) => fwd.value() + spread,
         };
 
-        // Payment discounting uses the market_index curve.
-        // Collateralization is a context-level concern handled by the MarketDataProvider.
+        // Payment discounting uses CSA collateral curve when a discount policy is provided.
         let df_pay = state
-            .get_discount_curve_element(&index)?
+            .get_discount_curve_element(&discount_index)?
             .curve()
             .discount_factor(payment_date)?;
 
@@ -144,13 +167,19 @@ impl HandleSensitivities<CapletFloorletTrade, BlackCapletState> for BlackCapletP
 
         let caplet = trade.instrument();
         let index = caplet.market_index();
+        let policy_discount_index = if let Some(policy) = &self.discount_policy {
+            Some(policy.accept(caplet)?)
+        } else {
+            None
+        };
+        let discount_index = policy_discount_index.as_ref().unwrap_or(&index);
 
         let mut ids = Vec::new();
         let mut exposures = Vec::new();
 
         // Discount curve sensitivities
         for (label, pillar) in state
-            .get_discount_curve_element(&index)?
+            .get_discount_curve_element(discount_index)?
             .curve()
             .pillars()
             .unwrap_or_default()
@@ -178,6 +207,7 @@ impl HandleSensitivities<CapletFloorletTrade, BlackCapletState> for BlackCapletP
 
 impl Pricer for BlackCapletPricer {
     type Item = CapletFloorletTrade;
+    type Policy = dyn DiscountPolicy<CapletFloorlet>;
 
     fn evaluate(
         &self,
@@ -218,16 +248,45 @@ impl Pricer for BlackCapletPricer {
 
     fn market_data_request(&self, trade: &CapletFloorletTrade) -> Option<MarketDataRequest> {
         let index = trade.instrument().market_index();
-        Some(
-            MarketDataRequest::default().with_constructed_elements_request(vec![
-                ConstructedElementRequest::DiscountCurve {
-                    market_index: index.clone(),
-                },
-                ConstructedElementRequest::VolatilitySurface {
-                    market_index: index,
-                },
-            ]),
-        )
+        let mut elements = vec![
+            ConstructedElementRequest::DiscountCurve {
+                market_index: index.clone(),
+            },
+            ConstructedElementRequest::VolatilitySurface {
+                market_index: index.clone(),
+            },
+        ];
+        let fixings = Vec::new();
+
+        let mut seen_indices = HashSet::new();
+        seen_indices.insert(index.clone());
+
+        if let Some(policy) = &self.discount_policy {
+            for policy_index in policy.discount_indices() {
+                if seen_indices.insert(policy_index.clone()) {
+                    elements.push(ConstructedElementRequest::DiscountCurve {
+                        market_index: policy_index,
+                    });
+                }
+            }
+        }
+
+        let mut request = MarketDataRequest::default()
+            .with_constructed_elements_request(elements)
+            .with_fixings_request(fixings);
+
+        if self.discount_policy.is_some() {
+            request = request.with_exchange_rates();
+        }
+        Some(request)
+    }
+
+    fn set_discount_policy(&mut self, policy: Box<Self::Policy>) {
+        self.discount_policy = Some(policy);
+    }
+
+    fn discount_policy(&self) -> Option<&Self::Policy> {
+        self.discount_policy.as_deref()
     }
 }
 
@@ -418,7 +477,7 @@ mod tests {
             market_data,
         };
 
-        let pricer = BlackCapletPricer;
+        let pricer = BlackCapletPricer::new();
         let results = pricer.evaluate(&trade, &[Request::Value], &provider)?;
         let price = results
             .price()
@@ -500,7 +559,7 @@ mod tests {
             market_data,
         };
 
-        let pricer = BlackCapletPricer;
+        let pricer = BlackCapletPricer::new();
         let results =
             pricer.evaluate(&trade, &[Request::Value, Request::Sensitivities], &provider)?;
 
@@ -662,7 +721,7 @@ mod tests {
             market_data,
         };
 
-        let pricer = BlackCapletPricer;
+        let pricer = BlackCapletPricer::new();
         let results =
             pricer.evaluate(&trade, &[Request::Value, Request::Sensitivities], &provider)?;
 
@@ -714,7 +773,7 @@ mod tests {
             market_data,
         };
 
-        let pricer = BlackCapletPricer;
+        let pricer = BlackCapletPricer::new();
         let results = pricer.evaluate(&trade, &[Request::Value], &provider)?;
         let price = results
             .price()
@@ -764,7 +823,7 @@ mod tests {
             market_data,
         };
 
-        let pricer = BlackCapletPricer;
+        let pricer = BlackCapletPricer::new();
         let results = pricer.evaluate(&trade, &[Request::Value], &provider)?;
         let price = results
             .price()
@@ -816,7 +875,7 @@ mod tests {
             market_data,
         };
 
-        let pricer = BlackCapletPricer;
+        let pricer = BlackCapletPricer::new();
         let results = pricer.evaluate(&trade, &[Request::Value], &provider)?;
         let price = results
             .price()

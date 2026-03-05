@@ -1,3 +1,5 @@
+use std::sync::RwLock;
+
 use crate::{
     ad::adreal::{ADReal, IsReal},
     indices::marketindex::MarketIndex,
@@ -8,10 +10,14 @@ use crate::{
 
 /// A [`FloatingRateCoupon`] represents a cash flow from a floating-rate bond or loan,
 /// where the interest rate is determined by a market index plus a spread.
+///
+/// The fixing is stored in an [`RwLock`] so that it can be set by the pricer
+/// through a shared (`&self`) reference — the trade itself remains immutable
+/// while still satisfying `Send + Sync`.
 pub struct FloatingRateCoupon<T: IsReal> {
     notional: f64,
     spread: T,
-    fixing: Option<T>,
+    fixing: RwLock<Option<T>>,
     index: MarketIndex,
     start_date: Date,
     end_date: Date,
@@ -35,7 +41,7 @@ where
         Self {
             notional,
             spread,
-            fixing: None,
+            fixing: RwLock::new(None),
             index,
             start_date,
             end_date,
@@ -44,9 +50,12 @@ where
         }
     }
 
-    /// Sets the fixing for the coupon. This should be called before calculating the amount.
-    pub fn set_fixing(&mut self, fixing: T) {
-        self.fixing = Some(fixing);
+    /// Sets the fixing for the coupon.
+    ///
+    /// Uses interior mutability ([`RwLock`]) so that the pricer can resolve
+    /// forward rates without requiring a mutable reference to the trade.
+    pub fn set_fixing(&self, fixing: T) {
+        *self.fixing.write().unwrap() = Some(fixing);
     }
 
     /// Returns the market index associated with this floating rate coupon.
@@ -61,7 +70,7 @@ where
 
     /// Returns the fixing value if set.
     pub fn fixing(&self) -> Option<T> {
-        self.fixing
+        *self.fixing.read().unwrap()
     }
 
     /// Returns the day counter used for year fraction calculations.
@@ -84,6 +93,8 @@ impl Cashflow<ADReal> for FloatingRateCoupon<ADReal> {
     fn amount(&self) -> Result<ADReal> {
         let fixing = self
             .fixing
+            .read()
+            .unwrap()
             .ok_or_else(|| AtlasError::InvalidValueErr("Fixing not set".into()))?;
         let year_fraction = self
             .day_counter
@@ -100,6 +111,8 @@ impl LinearCoupon<ADReal> for FloatingRateCoupon<ADReal> {
     fn accrued_amount(&self, start_date: Date, end_date: Date) -> Result<ADReal> {
         let fixing = self
             .fixing
+            .read()
+            .unwrap()
             .ok_or_else(|| AtlasError::InvalidValueErr("Fixing not set".into()))?;
         let year_fraction = self.day_counter.year_fraction(start_date, end_date);
         Ok(((fixing + self.spread) * year_fraction * self.notional).into())
@@ -115,9 +128,5 @@ impl LinearCoupon<ADReal> for FloatingRateCoupon<ADReal> {
 
     fn notional(&self) -> f64 {
         self.notional
-    }
-
-    fn payment_date(&self) -> Date {
-        self.payment_date
     }
 }

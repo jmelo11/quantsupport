@@ -26,9 +26,6 @@ where
 
     /// Returns the notional amount associated with this coupon.
     fn notional(&self) -> f64;
-
-    /// Returns the payment date of the coupon.
-    fn payment_date(&self) -> Date;
 }
 
 /// [`PayoffOps`] describes the set of possible mathematical operations that can be used to compute the payoff of a [`NonLinearCoupon`].

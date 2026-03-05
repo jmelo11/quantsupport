@@ -4,6 +4,7 @@ use crate::{
         tape::Tape,
     },
     core::{
+        collateral::DiscountPolicy,
         evaluationresults::{EvaluationResults, SensitivityMap},
         instrument::Instrument,
         marketdatahandling::{
@@ -17,7 +18,7 @@ use crate::{
     },
     instruments::{
         cashflows::{cashflow::Cashflow, cashflowtype::CashflowType},
-        fixedincome::fixedratedeposit::FixedRateDepositTrade,
+        fixedincome::fixedratedeposit::{FixedRateDeposit, FixedRateDepositTrade},
     },
     utils::errors::{AtlasError, Result},
 };
@@ -27,7 +28,28 @@ use crate::{
 /// discount factor from the relevant discount curve. The pricer also computes
 /// sensitivities to the discount curve pillars, which can be used for risk
 /// management and hedging purposes.
-pub struct FixedRateDepositDiscountingPricer;
+///
+/// When a [`DiscountPolicy`] is set, the pricer uses the CSA discount curve
+/// for payment discounting instead of the instrument's `market_index` curve.
+pub struct FixedRateDepositDiscountingPricer {
+    discount_policy: Option<Box<dyn DiscountPolicy<FixedRateDeposit>>>,
+}
+
+impl FixedRateDepositDiscountingPricer {
+    /// Creates a new [`FixedRateDepositDiscountingPricer`].
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            discount_policy: None,
+        }
+    }
+}
+
+impl Default for FixedRateDepositDiscountingPricer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 /// Holds state information for deposit price evaluation.
 #[derive(Default)]
@@ -58,6 +80,11 @@ impl HandleValue<FixedRateDepositTrade, DepositPricerState> for FixedRateDeposit
         Tape::set_mark();
 
         let index = trade.instrument().market_index();
+        let discount_index = if let Some(policy) = &self.discount_policy {
+            policy.accept(trade.instrument())?
+        } else {
+            index.clone()
+        };
         let leg = trade.instrument().leg();
 
         // Extract cashflows from the leg
@@ -92,13 +119,13 @@ impl HandleValue<FixedRateDepositTrade, DepositPricerState> for FixedRateDeposit
 
         // actually computing the price
         let df1 = state
-            .get_discount_curve_element(&index)?
+            .get_discount_curve_element(&discount_index)?
             .curve()
             .discount_factor(coupon_date)?;
 
         let df2 = if coupon_date != redemption_date {
             state
-                .get_discount_curve_element(&index)?
+                .get_discount_curve_element(&discount_index)?
                 .curve()
                 .discount_factor(redemption_date)?
         } else {
@@ -132,7 +159,12 @@ impl HandleSensitivities<FixedRateDepositTrade, DepositPricerState>
 
         let () = price.backward_to_mark()?;
         let index = trade.instrument().market_index();
-        let element = state.get_discount_curve_element(&index)?;
+        let discount_index = if let Some(policy) = &self.discount_policy {
+            policy.accept(trade.instrument())?
+        } else {
+            index
+        };
+        let element = state.get_discount_curve_element(&discount_index)?;
 
         let (ids, exposures): (Vec<_>, Vec<_>) = element
             .curve()
@@ -153,6 +185,7 @@ impl HandleSensitivities<FixedRateDepositTrade, DepositPricerState>
 
 impl Pricer for FixedRateDepositDiscountingPricer {
     type Item = FixedRateDepositTrade;
+    type Policy = dyn DiscountPolicy<FixedRateDeposit>;
 
     fn evaluate(
         &self,
@@ -191,9 +224,35 @@ impl Pricer for FixedRateDepositDiscountingPricer {
     }
 
     fn market_data_request(&self, trade: &FixedRateDepositTrade) -> Option<MarketDataRequest> {
-        let discount_curve = ConstructedElementRequest::DiscountCurve {
-            market_index: trade.instrument().market_index(),
-        };
-        Some(MarketDataRequest::default().with_constructed_elements_request(vec![discount_curve]))
+        let instrument_index = trade.instrument().market_index();
+        let mut elements = vec![ConstructedElementRequest::DiscountCurve {
+            market_index: instrument_index.clone(),
+        }];
+        let fixings = Vec::new();
+
+        if let Some(policy) = &self.discount_policy {
+            let policy_index = policy.accept(trade.instrument()).ok()?;
+            if policy_index != instrument_index {
+                elements.push(ConstructedElementRequest::DiscountCurve {
+                    market_index: policy_index,
+                });
+            }
+        }
+
+        let mut request = MarketDataRequest::default()
+            .with_constructed_elements_request(elements)
+            .with_fixings_request(fixings);
+        if self.discount_policy.is_some() {
+            request = request.with_exchange_rates();
+        }
+        Some(request)
+    }
+
+    fn set_discount_policy(&mut self, policy: Box<Self::Policy>) {
+        self.discount_policy = Some(policy);
+    }
+
+    fn discount_policy(&self) -> Option<&Self::Policy> {
+        self.discount_policy.as_deref()
     }
 }

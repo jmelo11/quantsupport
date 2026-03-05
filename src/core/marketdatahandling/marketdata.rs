@@ -5,6 +5,7 @@ use crate::{
         constructedelementrequest::ConstructedElementRequest,
         constructedelementstore::ConstructedElementStore, fixingrequest::FixingRequest,
     },
+    currencies::exchangeratestore::ExchangeRateStore,
     indices::marketindex::MarketIndex,
     models::ModelParameters,
     time::date::Date,
@@ -18,6 +19,8 @@ pub struct MarketDataRequest {
     constructed_elements_request: Option<Vec<ConstructedElementRequest>>,
     fixings_request: Option<Vec<FixingRequest>>,
     models: Vec<ModelParameters>,
+    /// Whether the pricer needs an exchange-rate store for FX conversions.
+    needs_exchange_rates: bool,
 }
 
 impl MarketDataRequest {
@@ -31,6 +34,7 @@ impl MarketDataRequest {
             constructed_elements_request,
             fixings_request,
             models: Vec::new(),
+            needs_exchange_rates: false,
         }
     }
 
@@ -69,6 +73,19 @@ impl MarketDataRequest {
         self
     }
 
+    /// Returns whether the pricer needs an exchange-rate store.
+    #[must_use]
+    pub const fn needs_exchange_rates(&self) -> bool {
+        self.needs_exchange_rates
+    }
+
+    /// Builder method to indicate that an exchange-rate store is required.
+    #[must_use]
+    pub const fn with_exchange_rates(mut self) -> Self {
+        self.needs_exchange_rates = true;
+        self
+    }
+
     /// Builder method to set the model parameter list, replacing any previously set models.
     #[must_use]
     pub fn with_models(mut self, models: &[ModelParameters]) -> Self {
@@ -77,12 +94,13 @@ impl MarketDataRequest {
     }
 }
 
-/// Struct representing market data, including fixings, constructed elements, and a list of
-/// model parameter sets.
+/// Struct representing market data, including fixings, constructed elements, a list of
+/// model parameter sets, and an optional exchange-rate store for FX conversions.
 pub struct MarketData {
     fixings: HashMap<MarketIndex, BTreeMap<Date, f64>>,
     constructed_elements: ConstructedElementStore,
     models: Vec<ModelParameters>,
+    exchange_rate_store: Option<ExchangeRateStore>,
 }
 
 impl MarketData {
@@ -98,6 +116,7 @@ impl MarketData {
             fixings,
             constructed_elements,
             models: models.to_owned(),
+            exchange_rate_store: None,
         }
     }
 
@@ -129,6 +148,25 @@ impl MarketData {
     #[must_use]
     pub fn with_models(mut self, models: &[ModelParameters]) -> Self {
         models.clone_into(&mut self.models);
+        self
+    }
+
+    /// Returns the exchange-rate store, if any.
+    #[must_use]
+    pub const fn exchange_rate_store(&self) -> Option<&ExchangeRateStore> {
+        self.exchange_rate_store.as_ref()
+    }
+
+    /// Returns a mutable reference to the exchange-rate store, if any.
+    #[must_use]
+    pub fn exchange_rate_store_mut(&mut self) -> Option<&mut ExchangeRateStore> {
+        self.exchange_rate_store.as_mut()
+    }
+
+    /// Builder method to set the exchange-rate store.
+    #[must_use]
+    pub fn with_exchange_rate_store(mut self, store: ExchangeRateStore) -> Self {
+        self.exchange_rate_store = Some(store);
         self
     }
 }

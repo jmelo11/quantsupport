@@ -1,7 +1,6 @@
 use crate::{
     core::trade::Side,
     currencies::currency::Currency,
-    indices::marketindex::MarketIndex,
     instruments::fx::fxforward::FxForward,
     time::{date::Date, daycounter::DayCounter},
     utils::errors::{AtlasError, Result},
@@ -91,11 +90,9 @@ impl MakeFxForward {
             .ok_or_else(|| AtlasError::ValueNotSetErr("Quote currency".into()))?;
 
         let day_counter = self.day_counter.unwrap_or(DayCounter::Actual360);
-        let market_index = MarketIndex::Fx(base_currency, quote_currency);
 
         Ok(FxForward::new(
             identifier,
-            market_index,
             delivery_date,
             forward_rate,
             base_currency,
