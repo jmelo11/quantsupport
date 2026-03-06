@@ -15,7 +15,7 @@ use crate::{
         enums::{BusinessDayConvention, DateGenerationRule, Frequency},
         schedule::MakeSchedule,
     },
-    utils::errors::{AtlasError, Result},
+    utils::errors::{QSError, Result},
     volatility::volatilityindexing::Strike,
 };
 
@@ -152,28 +152,28 @@ impl MakeCapFloor {
     pub fn build(self) -> Result<CapFloor> {
         let _notional = self
             .notional
-            .ok_or_else(|| AtlasError::ValueNotSetErr("Notional".into()))?;
+            .ok_or_else(|| QSError::ValueNotSetErr("Notional".into()))?;
         let start_date = self
             .start_date
-            .ok_or_else(|| AtlasError::ValueNotSetErr("Start date".into()))?;
+            .ok_or_else(|| QSError::ValueNotSetErr("Start date".into()))?;
         let maturity_date = self
             .maturity_date
-            .ok_or_else(|| AtlasError::ValueNotSetErr("Maturity date".into()))?;
+            .ok_or_else(|| QSError::ValueNotSetErr("Maturity date".into()))?;
         let strike = self
             .strike
-            .ok_or_else(|| AtlasError::ValueNotSetErr("Strike".into()))?;
+            .ok_or_else(|| QSError::ValueNotSetErr("Strike".into()))?;
         let currency = self
             .currency
-            .ok_or_else(|| AtlasError::ValueNotSetErr("Currency".into()))?;
+            .ok_or_else(|| QSError::ValueNotSetErr("Currency".into()))?;
         let market_index = self
             .market_index
-            .ok_or_else(|| AtlasError::ValueNotSetErr("Market index".into()))?;
+            .ok_or_else(|| QSError::ValueNotSetErr("Market index".into()))?;
         let identifier = self
             .identifier
-            .ok_or_else(|| AtlasError::ValueNotSetErr("Identifier".into()))?;
+            .ok_or_else(|| QSError::ValueNotSetErr("Identifier".into()))?;
         let cap_floor_type = self
             .cap_floor_type
-            .ok_or_else(|| AtlasError::ValueNotSetErr("CapFloorType".into()))?;
+            .ok_or_else(|| QSError::ValueNotSetErr("CapFloorType".into()))?;
 
         let _side = self.side.unwrap_or(Side::LongRecieve);
         let frequency = self.frequency.unwrap_or(Frequency::Quarterly);
@@ -212,7 +212,7 @@ impl MakeCapFloor {
 
         let dates = schedule.dates();
         if dates.len() < 2 {
-            return Err(AtlasError::InvalidValueErr(
+            return Err(QSError::InvalidValueErr(
                 "CapFloor schedule must have at least two dates".into(),
             ));
         }

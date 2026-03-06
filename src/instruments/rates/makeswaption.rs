@@ -11,7 +11,7 @@ use crate::{
         date::Date,
         enums::{BusinessDayConvention, DateGenerationRule, Frequency},
     },
-    utils::errors::{AtlasError, Result},
+    utils::errors::{QSError, Result},
 };
 
 /// A builder for creating a [`Swaption`] instance.
@@ -167,21 +167,21 @@ impl MakeSwaption {
     pub fn build(self) -> Result<Swaption> {
         let strike = self
             .strike
-            .ok_or_else(|| AtlasError::ValueNotSetErr("Strike".into()))?;
+            .ok_or_else(|| QSError::ValueNotSetErr("Strike".into()))?;
         let expiry = self
             .expiry
-            .ok_or_else(|| AtlasError::ValueNotSetErr("Expiry".into()))?;
+            .ok_or_else(|| QSError::ValueNotSetErr("Expiry".into()))?;
         let identifier = self
             .identifier
             .clone()
-            .ok_or_else(|| AtlasError::ValueNotSetErr("Identifier".into()))?;
+            .ok_or_else(|| QSError::ValueNotSetErr("Identifier".into()))?;
         let market_index = self
             .market_index
             .clone()
-            .ok_or_else(|| AtlasError::ValueNotSetErr("Market index".into()))?;
+            .ok_or_else(|| QSError::ValueNotSetErr("Market index".into()))?;
         let currency = self
             .currency
-            .ok_or_else(|| AtlasError::ValueNotSetErr("Currency".into()))?;
+            .ok_or_else(|| QSError::ValueNotSetErr("Currency".into()))?;
         let swaption_type = self.swaption_type.unwrap_or(SwaptionType::Payer);
         let exercise_type = self.exercise_type.unwrap_or(SwaptionExerciseType::European);
 
@@ -189,7 +189,7 @@ impl MakeSwaption {
         let swap_start = self.start_date.unwrap_or(expiry);
         let swap_maturity = self
             .swap_tenor_date
-            .ok_or_else(|| AtlasError::ValueNotSetErr("Swap tenor date".into()))?;
+            .ok_or_else(|| QSError::ValueNotSetErr("Swap tenor date".into()))?;
 
         // Build the underlying swap via MakeSwap.
         let mut swap_builder = MakeSwap::default()
@@ -199,7 +199,7 @@ impl MakeSwaption {
             .with_fixed_rate(strike)
             .with_notional(
                 self.notional
-                    .ok_or_else(|| AtlasError::ValueNotSetErr("Notional".into()))?,
+                    .ok_or_else(|| QSError::ValueNotSetErr("Notional".into()))?,
             )
             .with_market_index(market_index.clone())
             .with_currency(currency);

@@ -4,7 +4,7 @@ use crate::{
     indices::marketindex::MarketIndex,
     instruments::equity::equityforward::EquityForward,
     time::{date::Date, daycounter::DayCounter},
-    utils::errors::{AtlasError, Result},
+    utils::errors::{QSError, Result},
 };
 
 /// A builder for creating an [`EquityForward`] instance.
@@ -76,19 +76,19 @@ impl MakeEquityForward {
     pub fn build(self) -> Result<EquityForward> {
         let identifier = self
             .identifier
-            .ok_or_else(|| AtlasError::ValueNotSetErr("Identifier".into()))?;
+            .ok_or_else(|| QSError::ValueNotSetErr("Identifier".into()))?;
         let market_index = self
             .market_index
-            .ok_or_else(|| AtlasError::ValueNotSetErr("Market index".into()))?;
+            .ok_or_else(|| QSError::ValueNotSetErr("Market index".into()))?;
         let delivery_date = self
             .delivery_date
-            .ok_or_else(|| AtlasError::ValueNotSetErr("Delivery date".into()))?;
+            .ok_or_else(|| QSError::ValueNotSetErr("Delivery date".into()))?;
         let strike = self
             .strike
-            .ok_or_else(|| AtlasError::ValueNotSetErr("Strike".into()))?;
+            .ok_or_else(|| QSError::ValueNotSetErr("Strike".into()))?;
         let currency = self
             .currency
-            .ok_or_else(|| AtlasError::ValueNotSetErr("Currency".into()))?;
+            .ok_or_else(|| QSError::ValueNotSetErr("Currency".into()))?;
 
         let day_counter = self.day_counter.unwrap_or(DayCounter::Actual360);
 

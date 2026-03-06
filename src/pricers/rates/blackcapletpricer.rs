@@ -18,7 +18,7 @@ use crate::{
     },
     instruments::rates::capletfloorlet::{CapletFloorlet, CapletFloorletTrade, CapletFloorletType},
     pricers::pricerdefinitions::BlackClosedFormPricer,
-    utils::errors::{AtlasError, Result},
+    utils::errors::{QSError, Result},
     volatility::volatilityindexing::Strike,
 };
 use std::collections::HashSet;
@@ -157,7 +157,7 @@ impl HandleSensitivities<CapletFloorletTrade, BlackCapletState> for BlackCapletP
         } else {
             let _ = self.handle_value(trade, state)?;
             state.value.ok_or_else(|| {
-                AtlasError::UnexpectedErr(
+                QSError::UnexpectedErr(
                     "State does not contain price after value computation.".into(),
                 )
             })?
@@ -221,7 +221,7 @@ impl Pricer for BlackCapletPricer {
 
         let md_request = self
             .market_data_request(trade)
-            .ok_or_else(|| AtlasError::InvalidValueErr("Missing market data request".into()))?;
+            .ok_or_else(|| QSError::InvalidValueErr("Missing market data request".into()))?;
 
         let mut results = EvaluationResults::new(eval_date, identifier);
         let mut state = BlackCapletState {
@@ -327,7 +327,7 @@ mod tests {
             },
         },
         time::{date::Date, enums::TimeUnit, period::Period},
-        utils::errors::{AtlasError, Result},
+        utils::errors::{QSError, Result},
         volatility::{
             interpolatedvolatilitysurface::InterpolatedVolatilitySurface,
             volatilityindexing::{F64Key, Strike},
@@ -481,7 +481,7 @@ mod tests {
         let results = pricer.evaluate(&trade, &[Request::Value], &provider)?;
         let price = results
             .price()
-            .ok_or(AtlasError::UnexpectedErr("Missing price".to_string()))?;
+            .ok_or(QSError::UnexpectedErr("Missing price".to_string()))?;
 
         // Compute closed-form Black caplet price using curve.forward_rate
         let tau = rate_def.day_counter().year_fraction(trade_date, start_date);
@@ -565,8 +565,8 @@ mod tests {
 
         let price = results
             .price()
-            .ok_or(AtlasError::UnexpectedErr("Missing price".to_string()))?;
-        let sens = results.sensitivities().ok_or(AtlasError::UnexpectedErr(
+            .ok_or(QSError::UnexpectedErr("Missing price".to_string()))?;
+        let sens = results.sensitivities().ok_or(QSError::UnexpectedErr(
             "Missing sensitivities".to_string(),
         ))?;
 
@@ -645,7 +645,7 @@ mod tests {
                 },
             )?
             .price()
-            .ok_or(AtlasError::UnexpectedErr("Missing price_up".to_string()))?;
+            .ok_or(QSError::UnexpectedErr("Missing price_up".to_string()))?;
 
         let price_dn = pricer
             .evaluate(
@@ -657,7 +657,7 @@ mod tests {
                 },
             )?
             .price()
-            .ok_or(AtlasError::UnexpectedErr("Missing price_dn".to_string()))?;
+            .ok_or(QSError::UnexpectedErr("Missing price_dn".to_string()))?;
 
         let fd_rate_sens = (price_up - price_dn) / (2.0 * bump);
 
@@ -667,7 +667,7 @@ mod tests {
             .zip(sens.exposure().iter().copied())
             .find(|(k, _)| k.as_str() == "discount_rate")
             .map(|(_, v)| v)
-            .ok_or(AtlasError::NotFoundErr(
+            .ok_or(QSError::NotFoundErr(
                 "discount_rate sensitivity not found".to_string(),
             ))?;
 
@@ -726,7 +726,7 @@ mod tests {
             pricer.evaluate(&trade, &[Request::Value, Request::Sensitivities], &provider)?;
 
         assert!(results.price().is_some());
-        let sens = results.sensitivities().ok_or(AtlasError::UnexpectedErr(
+        let sens = results.sensitivities().ok_or(QSError::UnexpectedErr(
             "Missing sensitivities".to_string(),
         ))?;
         assert!(!sens.instrument_keys().is_empty());
@@ -777,7 +777,7 @@ mod tests {
         let results = pricer.evaluate(&trade, &[Request::Value], &provider)?;
         let price = results
             .price()
-            .ok_or(AtlasError::UnexpectedErr("Missing price".to_string()))?;
+            .ok_or(QSError::UnexpectedErr("Missing price".to_string()))?;
 
         println!("Floorlet price: {price}");
         assert!(price > 0.0);
@@ -827,7 +827,7 @@ mod tests {
         let results = pricer.evaluate(&trade, &[Request::Value], &provider)?;
         let price = results
             .price()
-            .ok_or(AtlasError::UnexpectedErr("Missing price".to_string()))?;
+            .ok_or(QSError::UnexpectedErr("Missing price".to_string()))?;
 
         println!("ATM caplet price: {price}");
         assert!(price > 0.0);
@@ -879,7 +879,7 @@ mod tests {
         let results = pricer.evaluate(&trade, &[Request::Value], &provider)?;
         let price = results
             .price()
-            .ok_or(AtlasError::UnexpectedErr("Missing price".to_string()))?;
+            .ok_or(QSError::UnexpectedErr("Missing price".to_string()))?;
 
         println!("Relative-strike caplet price: {price}");
         assert!(price > 0.0);

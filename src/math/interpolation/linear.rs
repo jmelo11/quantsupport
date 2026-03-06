@@ -3,7 +3,7 @@ use std::cmp::Ordering;
 use crate::{
     ad::adreal::ADReal,
     math::interpolation::interpolator::StaticInterpolate,
-    utils::errors::{AtlasError, Result},
+    utils::errors::{QSError, Result},
 };
 
 /// # `Linear Interpolator`
@@ -19,13 +19,13 @@ impl StaticInterpolate<f64> for LinearInterpolator {
             };
 
         let (Some(first_x), Some(last_x)) = (x_.first(), x_.last()) else {
-            return Err(AtlasError::InterpolationErr(
+            return Err(QSError::InterpolationErr(
                 "Interpolation data must contain at least one x value.".into(),
             ));
         };
 
         if !enable_extrapolation && (x < *first_x || x > *last_x) {
-            return Err(AtlasError::InterpolationErr(
+            return Err(QSError::InterpolationErr(
                 "Extrapolation is not enabled, and the provided value is outside the range.".into(),
             ));
         }
@@ -60,13 +60,13 @@ impl StaticInterpolate<ADReal> for LinearInterpolator {
             };
 
         let (Some(first_x), Some(last_x)) = (x_.first(), x_.last()) else {
-            return Err(AtlasError::InterpolationErr(
+            return Err(QSError::InterpolationErr(
                 "Interpolation data must contain at least one x value.".into(),
             ));
         };
 
         if !enable_extrapolation && (x < *first_x || x > *last_x) {
-            return Err(AtlasError::InterpolationErr(
+            return Err(QSError::InterpolationErr(
                 "Extrapolation is not enabled, and the provided value is outside the range.".into(),
             ));
         }

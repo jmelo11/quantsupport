@@ -6,7 +6,7 @@ use std::{
 };
 
 use crate::utils::errors::Result;
-use crate::{ad::node::TapeNode, utils::errors::AtlasError};
+use crate::{ad::node::TapeNode, utils::errors::QSError};
 
 /// # `Tape`
 ///
@@ -90,7 +90,7 @@ impl Tape {
     pub fn propagate_from(&mut self, root: NonNull<TapeNode>) -> Result<()> {
         let start = self
             .index_of(root)
-            .ok_or(AtlasError::NodeNotIndexedInTapeErr)?;
+            .ok_or(QSError::NodeNotIndexedInTapeErr)?;
         for i in (0..=start).rev() {
             let node = unsafe { self.book[i].as_ref().clone() };
             node.propagate_into();

@@ -11,7 +11,7 @@ use crate::{
         date::Date,
         enums::{BusinessDayConvention, DateGenerationRule, Frequency},
     },
-    utils::errors::{AtlasError, Result},
+    utils::errors::{QSError, Result},
 };
 
 /// A builder for creating a [`BasisSwap`] instance (floating-vs-floating interest rate swap).
@@ -155,25 +155,25 @@ impl MakeBasisSwap {
     pub fn build(self) -> Result<BasisSwap> {
         let notional = self
             .notional
-            .ok_or_else(|| AtlasError::ValueNotSetErr("Notional".into()))?;
+            .ok_or_else(|| QSError::ValueNotSetErr("Notional".into()))?;
         let start_date = self
             .start_date
-            .ok_or_else(|| AtlasError::ValueNotSetErr("Start date".into()))?;
+            .ok_or_else(|| QSError::ValueNotSetErr("Start date".into()))?;
         let maturity_date = self
             .maturity_date
-            .ok_or_else(|| AtlasError::ValueNotSetErr("Maturity date".into()))?;
+            .ok_or_else(|| QSError::ValueNotSetErr("Maturity date".into()))?;
         let currency = self
             .currency
-            .ok_or_else(|| AtlasError::ValueNotSetErr("Currency".into()))?;
+            .ok_or_else(|| QSError::ValueNotSetErr("Currency".into()))?;
         let pay_market_index = self
             .pay_market_index
-            .ok_or_else(|| AtlasError::ValueNotSetErr("Pay market index".into()))?;
+            .ok_or_else(|| QSError::ValueNotSetErr("Pay market index".into()))?;
         let receive_market_index = self
             .receive_market_index
-            .ok_or_else(|| AtlasError::ValueNotSetErr("Receive market index".into()))?;
+            .ok_or_else(|| QSError::ValueNotSetErr("Receive market index".into()))?;
         let identifier = self
             .identifier
-            .ok_or_else(|| AtlasError::ValueNotSetErr("Identifier".into()))?;
+            .ok_or_else(|| QSError::ValueNotSetErr("Identifier".into()))?;
 
         let pay_spread = self.pay_spread.unwrap_or(0.0);
         let receive_spread = self.receive_spread.unwrap_or(0.0);

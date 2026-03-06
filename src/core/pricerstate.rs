@@ -13,7 +13,7 @@ use crate::{
     currencies::{currency::Currency, exchangeratestore::ExchangeRateStore},
     indices::marketindex::MarketIndex,
     time::date::Date,
-    utils::errors::{AtlasError, Result},
+    utils::errors::{QSError, Result},
 };
 
 /// The [`PricerState`] trait defines the interface for accessing
@@ -33,11 +33,11 @@ pub trait PricerState {
     /// Returns an error if the market data response is not available or if the discount curve for the specified index is not found.
     fn get_discount_curve_element(&self, index: &MarketIndex) -> Result<&DiscountCurveElement> {
         self.get_market_data_reponse()
-            .ok_or_else(|| AtlasError::NotFoundErr("MarketDataResponse not available.".into()))?
+            .ok_or_else(|| QSError::NotFoundErr("MarketDataResponse not available.".into()))?
             .constructed_elements()
             .discount_curves()
             .get(index)
-            .ok_or_else(|| AtlasError::NotFoundErr(format!("Curve for index {index}")))
+            .ok_or_else(|| QSError::NotFoundErr(format!("Curve for index {index}")))
     }
 
     /// Retrieves the mutable discount curve element associated with the given market index, if available.
@@ -50,11 +50,11 @@ pub trait PricerState {
         index: &MarketIndex,
     ) -> Result<&mut DiscountCurveElement> {
         self.get_market_data_reponse_mut()
-            .ok_or_else(|| AtlasError::NotFoundErr("MarketDataResponse not available.".into()))?
+            .ok_or_else(|| QSError::NotFoundErr("MarketDataResponse not available.".into()))?
             .constructed_elements_mut()
             .discount_curves_mut()
             .get_mut(index)
-            .ok_or_else(|| AtlasError::NotFoundErr(format!("Curve for index {index}")))
+            .ok_or_else(|| QSError::NotFoundErr(format!("Curve for index {index}")))
     }
 
     /// Retrieves the dividend curve element associated with the given market index, if available.
@@ -64,11 +64,11 @@ pub trait PricerState {
     /// Returns an error if the market data response is not available or if the dividend curve for the specified index is not found.
     fn get_dividend_curve_element(&self, index: &MarketIndex) -> Result<&DividendCurveElement> {
         self.get_market_data_reponse()
-            .ok_or_else(|| AtlasError::NotFoundErr("MarketDataResponse not available.".into()))?
+            .ok_or_else(|| QSError::NotFoundErr("MarketDataResponse not available.".into()))?
             .constructed_elements()
             .dividend_curves()
             .get(index)
-            .ok_or_else(|| AtlasError::NotFoundErr(format!("Dividend curve for index {index}")))
+            .ok_or_else(|| QSError::NotFoundErr(format!("Dividend curve for index {index}")))
     }
 
     /// Retrieves the exchange rate between two currencies from the exchange-rate store.
@@ -81,9 +81,9 @@ pub trait PricerState {
     /// or if no rate path exists between the two currencies.
     fn get_exchange_rate(&self, base: Currency, quote: Currency) -> Result<ADReal> {
         self.get_market_data_reponse()
-            .ok_or_else(|| AtlasError::NotFoundErr("MarketDataResponse not available.".into()))?
+            .ok_or_else(|| QSError::NotFoundErr("MarketDataResponse not available.".into()))?
             .exchange_rate_store()
-            .ok_or_else(|| AtlasError::NotFoundErr("ExchangeRateStore not available.".into()))?
+            .ok_or_else(|| QSError::NotFoundErr("ExchangeRateStore not available.".into()))?
             .get_exchange_rate(base, quote)
     }
 
@@ -100,12 +100,12 @@ pub trait PricerState {
     /// Returns an error if the market data response is not available or if the fixing for the specified index and date is not found.
     fn get_fixing(&self, index: &MarketIndex, date: Date) -> Result<f64> {
         self.get_market_data_reponse()
-            .ok_or_else(|| AtlasError::NotFoundErr("MarketDataResponse not available.".into()))?
+            .ok_or_else(|| QSError::NotFoundErr("MarketDataResponse not available.".into()))?
             .fixings()
             .get(index)
             .and_then(|date_map| date_map.get(&date).copied())
             .ok_or_else(|| {
-                AtlasError::NotFoundErr(format!(
+                QSError::NotFoundErr(format!(
                     "Fixing for index {index} on date {date} not found."
                 ))
             })
@@ -121,11 +121,11 @@ pub trait PricerState {
         index: &MarketIndex,
     ) -> Result<&VolatilitySurfaceElement> {
         self.get_market_data_reponse()
-            .ok_or_else(|| AtlasError::NotFoundErr("MarketDataResponse not available.".into()))?
+            .ok_or_else(|| QSError::NotFoundErr("MarketDataResponse not available.".into()))?
             .constructed_elements()
             .volatility_surfaces()
             .get(index)
-            .ok_or_else(|| AtlasError::NotFoundErr(format!("Volatility surface for index {index}")))
+            .ok_or_else(|| QSError::NotFoundErr(format!("Volatility surface for index {index}")))
     }
 
     /// Retrieves the volatility surface element associated with the given market index, if available.
@@ -138,11 +138,11 @@ pub trait PricerState {
         index: &MarketIndex,
     ) -> Result<&mut VolatilitySurfaceElement> {
         self.get_market_data_reponse_mut()
-            .ok_or_else(|| AtlasError::NotFoundErr("MarketDataResponse not available.".into()))?
+            .ok_or_else(|| QSError::NotFoundErr("MarketDataResponse not available.".into()))?
             .constructed_elements_mut()
             .volatility_surfaces_mut()
             .get_mut(index)
-            .ok_or_else(|| AtlasError::NotFoundErr(format!("Volatility surface for index {index}")))
+            .ok_or_else(|| QSError::NotFoundErr(format!("Volatility surface for index {index}")))
     }
 
     /// Retrieves the volatility cube element associated with the given market index, if available.
@@ -152,11 +152,11 @@ pub trait PricerState {
     /// Returns an if the market data response is not available or if the volatility cube for the specified index is not found.
     fn get_volatility_cube_element(&self, index: &MarketIndex) -> Result<&VolatilityCubeElement> {
         self.get_market_data_reponse()
-            .ok_or_else(|| AtlasError::NotFoundErr("MarketDataResponse not available.".into()))?
+            .ok_or_else(|| QSError::NotFoundErr("MarketDataResponse not available.".into()))?
             .constructed_elements()
             .volatility_cubes()
             .get(index)
-            .ok_or_else(|| AtlasError::NotFoundErr(format!("Volatility cube for index {index}")))
+            .ok_or_else(|| QSError::NotFoundErr(format!("Volatility cube for index {index}")))
     }
 
     /// Retrieves the simulation element associated with the given market index, if available.
@@ -166,11 +166,11 @@ pub trait PricerState {
     /// Returns an error if the market data response is not available or if the simulation element for the specified index is not found.
     fn get_simulation_element(&self, index: &MarketIndex) -> Result<&MonteCarloSimulationElement> {
         self.get_market_data_reponse()
-            .ok_or_else(|| AtlasError::NotFoundErr("MarketDataResponse not available.".into()))?
+            .ok_or_else(|| QSError::NotFoundErr("MarketDataResponse not available.".into()))?
             .constructed_elements()
             .simulations()
             .get(index)
-            .ok_or_else(|| AtlasError::NotFoundErr(format!("Simulation element for index {index}")))
+            .ok_or_else(|| QSError::NotFoundErr(format!("Simulation element for index {index}")))
     }
 
     /// Puts the pillars into the tape.

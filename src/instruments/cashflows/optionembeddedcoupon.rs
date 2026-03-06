@@ -3,7 +3,7 @@ use crate::{
     indices::{marketindex::MarketIndex, rateindex::RateIndexDetails},
     instruments::cashflows::coupons::{NonLinearCoupon, PayoffOps},
     time::date::Date,
-    utils::errors::{AtlasError, Result},
+    utils::errors::{QSError, Result},
 };
 
 /// An [`OptionEmbeddedCoupon`] represents a cash flow that includes embedded options,
@@ -89,7 +89,7 @@ impl NonLinearCoupon<ADReal> for OptionEmbeddedCoupon<ADReal> {
     fn accrued_amount(&self, start_date: Date, end_date: Date) -> Result<ADReal> {
         let fixing = self
             .fixing
-            .ok_or_else(|| AtlasError::NotFoundErr("Fixing not set".into()))?;
+            .ok_or_else(|| QSError::NotFoundErr("Fixing not set".into()))?;
 
         let year_fraction = self
             .index

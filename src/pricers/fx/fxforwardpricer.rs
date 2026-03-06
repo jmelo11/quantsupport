@@ -17,7 +17,7 @@ use crate::{
     },
     currencies::currency::Currency,
     instruments::fx::fxforward::FxForwardTrade,
-    utils::errors::{AtlasError, Result},
+    utils::errors::{QSError, Result},
 };
 
 /// Pricer for FX forward quotes.
@@ -60,7 +60,7 @@ impl FxForwardState {
     fn resolve_curve_index_for_currency(&self, ccy: Currency) -> Result<crate::indices::marketindex::MarketIndex> {
         let md = self
             .get_market_data_reponse()
-            .ok_or_else(|| AtlasError::NotFoundErr("MarketDataResponse not available.".into()))?;
+            .ok_or_else(|| QSError::NotFoundErr("MarketDataResponse not available.".into()))?;
 
         let mut matches = md
             .constructed_elements()
@@ -70,11 +70,11 @@ impl FxForwardState {
             .map(|(idx, _)| idx.clone());
 
         let first = matches.next().ok_or_else(|| {
-            AtlasError::NotFoundErr(format!("No discount curve found for currency {ccy}"))
+            QSError::NotFoundErr(format!("No discount curve found for currency {ccy}"))
         })?;
 
         if matches.next().is_some() {
-            return Err(AtlasError::InvalidValueErr(format!(
+            return Err(QSError::InvalidValueErr(format!(
                 "Multiple discount curves found for currency {ccy}; cannot disambiguate"
             )));
         }
@@ -126,7 +126,7 @@ impl HandleSensitivities<FxForwardTrade, FxForwardState> for FxForwardPricer {
             let _ = self.handle_value(trade, state)?;
             state
                 .value
-                .ok_or_else(|| AtlasError::UnexpectedErr("Missing value in FX forward state".into()))?
+                .ok_or_else(|| QSError::UnexpectedErr("Missing value in FX forward state".into()))?
         };
 
         value.backward_to_mark()?;
@@ -171,7 +171,7 @@ impl Pricer for FxForwardPricer {
         let eval_date = ctx.evaluation_date();
         let identifier = trade.instrument().identifier();
         let md_request = self.market_data_request(trade).ok_or_else(|| {
-            AtlasError::InvalidValueErr("Missing market-data request for FX forward".into())
+            QSError::InvalidValueErr("Missing market-data request for FX forward".into())
         })?;
 
         let mut state = FxForwardState {

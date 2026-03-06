@@ -5,7 +5,7 @@ use crate::{
     indices::{marketindex::MarketIndex, rateindex::RateIndexDetails},
     instruments::cashflows::{cashflow::Cashflow, coupons::LinearCoupon},
     time::{date::Date, daycounter::DayCounter},
-    utils::errors::{AtlasError, Result},
+    utils::errors::{QSError, Result},
 };
 
 /// A [`FloatingRateCoupon`] represents a cash flow from a floating-rate bond or loan,
@@ -100,7 +100,7 @@ impl Cashflow<ADReal> for FloatingRateCoupon<ADReal> {
             .fixing
             .read()
             .unwrap()
-            .ok_or_else(|| AtlasError::InvalidValueErr("Fixing not set".into()))?;
+            .ok_or_else(|| QSError::InvalidValueErr("Fixing not set".into()))?;
         let year_fraction = self
             .day_counter
             .year_fraction(self.start_date, self.end_date);
@@ -118,7 +118,7 @@ impl LinearCoupon<ADReal> for FloatingRateCoupon<ADReal> {
             .fixing
             .read()
             .unwrap()
-            .ok_or_else(|| AtlasError::InvalidValueErr("Fixing not set".into()))?;
+            .ok_or_else(|| QSError::InvalidValueErr("Fixing not set".into()))?;
         let year_fraction = self.day_counter.year_fraction(start_date, end_date);
         Ok(((fixing + self.spread) * year_fraction * self.notional).into())
     }

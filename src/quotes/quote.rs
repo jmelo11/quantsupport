@@ -19,13 +19,13 @@ use crate::instruments::{
 };
 use crate::rates::interestrate::RateDefinition;
 use crate::time::{date::Date, imm::IMM, period::Period};
-use crate::utils::errors::{AtlasError, Result};
+use crate::utils::errors::{QSError, Result};
 use crate::volatility::volatilityindexing::VolatilityType;
 
 /// Splits a 6-character FX pair string (e.g. `"EURUSD"`) into two currencies.
 fn parse_fx_pair(pair: &str) -> Result<(Currency, Currency)> {
     if pair.len() < 6 {
-        return Err(AtlasError::InvalidValueErr(format!(
+        return Err(QSError::InvalidValueErr(format!(
             "Invalid FX currency pair: {pair}"
         )));
     }
@@ -103,13 +103,13 @@ impl QuoteLevels {
         match level {
             Level::Mid => self
                 .mid
-                .ok_or_else(|| AtlasError::NotFoundErr("No mid quote available".into())),
+                .ok_or_else(|| QSError::NotFoundErr("No mid quote available".into())),
             Level::Bid => self
                 .bid
-                .ok_or_else(|| AtlasError::NotFoundErr("No bid quote available".into())),
+                .ok_or_else(|| QSError::NotFoundErr("No bid quote available".into())),
             Level::Ask => self
                 .ask
-                .ok_or_else(|| AtlasError::NotFoundErr("No ask quote available".into())),
+                .ok_or_else(|| QSError::NotFoundErr("No ask quote available".into())),
         }
     }
 }
@@ -134,13 +134,13 @@ pub enum StrikeType {
 }
 
 impl std::str::FromStr for StrikeType {
-    type Err = AtlasError;
+    type Err = QSError;
 
     fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
         match s {
             "Absolute" => Ok(Self::Absolute),
             "Relative" => Ok(Self::Relative),
-            _ => Err(AtlasError::InvalidValueErr(format!(
+            _ => Err(QSError::InvalidValueErr(format!(
                 "Unknown strike type: {s}"
             ))),
         }
@@ -198,7 +198,7 @@ pub enum OptionStrategy {
 }
 
 impl std::str::FromStr for OptionStrategy {
-    type Err = AtlasError;
+    type Err = QSError;
 
     fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
         match s {
@@ -206,7 +206,7 @@ impl std::str::FromStr for OptionStrategy {
             "Strangle" => Ok(Self::Strangle),
             "RiskReversal" => Ok(Self::RiskReversal),
             "Butterfly" => Ok(Self::Butterfly),
-            _ => Err(AtlasError::InvalidValueErr(format!(
+            _ => Err(QSError::InvalidValueErr(format!(
                 "Unknown option strategy: {s}"
             ))),
         }
@@ -537,7 +537,7 @@ impl QuoteDetails {
     /// `{Instrument}_CCY_{Index}_{Tenor}` — e.g. `OIS_USD_SOFR_1Y`
     pub fn parse_ois(id: &str, parts: &[&str]) -> Result<Self> {
         if parts.len() < 4 {
-            return Err(AtlasError::InvalidValueErr(format!(
+            return Err(QSError::InvalidValueErr(format!(
                 "OIS identifier too short: {id}"
             )));
         }
@@ -553,7 +553,7 @@ impl QuoteDetails {
     /// `{Instrument}_CCY_{Index}_{Tenor}` — e.g. `FixedRateDeposit_USD_SOFR_1Y`
     pub fn parse_fixed_rate_deposit(id: &str, parts: &[&str]) -> Result<Self> {
         if parts.len() < 4 {
-            return Err(AtlasError::InvalidValueErr(format!(
+            return Err(QSError::InvalidValueErr(format!(
                 "FixedRateDeposit identifier too short: {id}"
             )));
         }
@@ -570,7 +570,7 @@ impl QuoteDetails {
     /// e.g. `BasisSwap_USD_SOFR_TermSOFR3m_1Y`
     pub fn parse_basis_swap(id: &str, parts: &[&str]) -> Result<Self> {
         if parts.len() < 5 {
-            return Err(AtlasError::InvalidValueErr(format!(
+            return Err(QSError::InvalidValueErr(format!(
                 "BasisSwap identifier too short: {id}"
             )));
         }
@@ -589,7 +589,7 @@ impl QuoteDetails {
     /// e.g. `CrossCurrencySwap_USD_SOFR_ICP_CLP_1Y`
     pub fn parse_cross_currency_swap(id: &str, parts: &[&str]) -> Result<Self> {
         if parts.len() < 6 {
-            return Err(AtlasError::InvalidValueErr(format!(
+            return Err(QSError::InvalidValueErr(format!(
                 "CrossCurrencySwap identifier too short: {id}"
             )));
         }
@@ -614,7 +614,7 @@ impl QuoteDetails {
     /// e.g. `CapFloor_USD_SOFR_1Y_Absolute_Black`
     pub fn parse_cap_floor(id: &str, parts: &[&str]) -> Result<Self> {
         if parts.len() < 6 {
-            return Err(AtlasError::InvalidValueErr(format!(
+            return Err(QSError::InvalidValueErr(format!(
                 "CapFloor identifier too short: {id}"
             )));
         }
@@ -631,7 +631,7 @@ impl QuoteDetails {
         };
         let vol_type: VolatilityType = parts
             .get(vol_idx)
-            .ok_or_else(|| AtlasError::InvalidValueErr(format!("Missing vol type in: {id}")))?
+            .ok_or_else(|| QSError::InvalidValueErr(format!("Missing vol type in: {id}")))?
             .parse()?;
 
         let mut det = Self::new(id.to_string(), QuoteInstrument::CapFloor)
@@ -651,7 +651,7 @@ impl QuoteDetails {
     /// e.g. `CapletFloorlet_USD_TermSOFR3m_3M_3M_Absolute_0.010_Straddle_Black`
     pub fn parse_caplet_floorlet(id: &str, parts: &[&str]) -> Result<Self> {
         if parts.len() < 8 {
-            return Err(AtlasError::InvalidValueErr(format!(
+            return Err(QSError::InvalidValueErr(format!(
                 "CapletFloorlet identifier too short: {id}"
             )));
         }
@@ -668,11 +668,11 @@ impl QuoteDetails {
 
         let strategy: OptionStrategy = parts
             .get(next_idx)
-            .ok_or_else(|| AtlasError::InvalidValueErr(format!("Missing strategy in: {id}")))?
+            .ok_or_else(|| QSError::InvalidValueErr(format!("Missing strategy in: {id}")))?
             .parse()?;
         let vol_type: VolatilityType = parts
             .get(next_idx + 1)
-            .ok_or_else(|| AtlasError::InvalidValueErr(format!("Missing vol type in: {id}")))?
+            .ok_or_else(|| QSError::InvalidValueErr(format!("Missing vol type in: {id}")))?
             .parse()?;
 
         let mut det = Self::new(id.to_string(), QuoteInstrument::CapletFloorlet)
@@ -692,7 +692,7 @@ impl QuoteDetails {
     /// `{Instrument}_CCY_{Index}_{IMMCode}` — e.g. `Future_USD_SOFR_H6`
     pub fn parse_future(id: &str, parts: &[&str]) -> Result<Self> {
         if parts.len() < 4 {
-            return Err(AtlasError::InvalidValueErr(format!(
+            return Err(QSError::InvalidValueErr(format!(
                 "Future identifier too short: {id}"
             )));
         }
@@ -708,7 +708,7 @@ impl QuoteDetails {
     /// `{Instrument}_CCY_{Index}_{IMMCode}` — e.g. `ConvexityAdjustment_USD_SOFR_H6`
     pub fn parse_convexity_adjustment(id: &str, parts: &[&str]) -> Result<Self> {
         if parts.len() < 4 {
-            return Err(AtlasError::InvalidValueErr(format!(
+            return Err(QSError::InvalidValueErr(format!(
                 "ConvexityAdjustment identifier too short: {id}"
             )));
         }
@@ -728,7 +728,7 @@ impl QuoteDetails {
     /// e.g. `Swaption_USD_SOFR_3M_2Y_Absolute_Black`
     pub fn parse_swaption(id: &str, parts: &[&str]) -> Result<Self> {
         if parts.len() < 7 {
-            return Err(AtlasError::InvalidValueErr(format!(
+            return Err(QSError::InvalidValueErr(format!(
                 "Swaption identifier too short: {id}"
             )));
         }
@@ -744,7 +744,7 @@ impl QuoteDetails {
         };
         let vol_type: VolatilityType = parts
             .get(vol_idx)
-            .ok_or_else(|| AtlasError::InvalidValueErr(format!("Missing vol type in: {id}")))?
+            .ok_or_else(|| QSError::InvalidValueErr(format!("Missing vol type in: {id}")))?
             .parse()?;
 
         let mut det = Self::new(id.to_string(), QuoteInstrument::Swaption)
@@ -763,7 +763,7 @@ impl QuoteDetails {
     /// `{Instrument}_{CCYPAIR}_{Tenor}` — e.g. `FxOutrightForward_EURUSD_1M`
     pub fn parse_outright_forward(id: &str, parts: &[&str]) -> Result<Self> {
         if parts.len() < 3 {
-            return Err(AtlasError::InvalidValueErr(format!(
+            return Err(QSError::InvalidValueErr(format!(
                 "OutrightForward identifier too short: {id}"
             )));
         }
@@ -780,7 +780,7 @@ impl QuoteDetails {
     /// `{Instrument}_{CCYPAIR}_{Tenor}` — e.g. `FxForwardPoints_EURUSD_1M`
     pub fn parse_forward_points(id: &str, parts: &[&str]) -> Result<Self> {
         if parts.len() < 3 {
-            return Err(AtlasError::InvalidValueErr(format!(
+            return Err(QSError::InvalidValueErr(format!(
                 "ForwardPoints identifier too short: {id}"
             )));
         }
@@ -795,7 +795,7 @@ impl QuoteDetails {
     /// `{Instrument}_CCY_{Index}_{Expiry}_{Strike}` — e.g. `EquityCall_USD_SPX_1Y_5000`
     pub fn parse_equity_call(id: &str, parts: &[&str]) -> Result<Self> {
         if parts.len() < 5 {
-            return Err(AtlasError::InvalidValueErr(format!(
+            return Err(QSError::InvalidValueErr(format!(
                 "Call identifier too short: {id}"
             )));
         }
@@ -804,7 +804,7 @@ impl QuoteDetails {
         let tenor = Period::from_str(parts[3])?;
         let strike: f64 = parts[4]
             .parse()
-            .map_err(|e| AtlasError::InvalidValueErr(format!("Bad strike in {id}: {e}")))?;
+            .map_err(|e| QSError::InvalidValueErr(format!("Bad strike in {id}: {e}")))?;
         Ok(Self::new(id.to_string(), QuoteInstrument::EquityCall)
             .with_market_index(index)
             .with_currency(currency)
@@ -815,7 +815,7 @@ impl QuoteDetails {
     /// `{Instrument}_CCY_{Index}_{Expiry}_{Strike}` — e.g. `EquityPut_USD_SPX_1Y_5000`
     pub fn parse_equity_put(id: &str, parts: &[&str]) -> Result<Self> {
         if parts.len() < 5 {
-            return Err(AtlasError::InvalidValueErr(format!(
+            return Err(QSError::InvalidValueErr(format!(
                 "Put identifier too short: {id}"
             )));
         }
@@ -824,7 +824,7 @@ impl QuoteDetails {
         let tenor = Period::from_str(parts[3])?;
         let strike: f64 = parts[4]
             .parse()
-            .map_err(|e| AtlasError::InvalidValueErr(format!("Bad strike in {id}: {e}")))?;
+            .map_err(|e| QSError::InvalidValueErr(format!("Bad strike in {id}: {e}")))?;
         Ok(Self::new(id.to_string(), QuoteInstrument::EquityPut)
             .with_market_index(index)
             .with_currency(currency)
@@ -835,7 +835,7 @@ impl QuoteDetails {
     /// `{Instrument}_{CCYPAIR}_{Expiry}_{Strike}` — e.g. `FxCall_EURUSD_1Y_1.10`
     pub fn parse_fx_call(id: &str, parts: &[&str]) -> Result<Self> {
         if parts.len() < 4 {
-            return Err(AtlasError::InvalidValueErr(format!(
+            return Err(QSError::InvalidValueErr(format!(
                 "FxCall identifier too short: {id}"
             )));
         }
@@ -843,7 +843,7 @@ impl QuoteDetails {
         let tenor = Period::from_str(parts[2])?;
         let strike: f64 = parts[3]
             .parse()
-            .map_err(|e| AtlasError::InvalidValueErr(format!("Bad strike in {id}: {e}")))?;
+            .map_err(|e| QSError::InvalidValueErr(format!("Bad strike in {id}: {e}")))?;
 
         Ok(Self::new(id.to_string(), QuoteInstrument::FxCall)
             .with_pay_currency(base)
@@ -855,7 +855,7 @@ impl QuoteDetails {
     /// `{Instrument}_{CCYPAIR}_{Expiry}_{Strike}` — e.g. `FxPut_EURUSD_1Y_1.10`
     pub fn parse_fx_put(id: &str, parts: &[&str]) -> Result<Self> {
         if parts.len() < 4 {
-            return Err(AtlasError::InvalidValueErr(format!(
+            return Err(QSError::InvalidValueErr(format!(
                 "FxPut identifier too short: {id}"
             )));
         }
@@ -863,7 +863,7 @@ impl QuoteDetails {
         let tenor = Period::from_str(parts[2])?;
         let strike: f64 = parts[3]
             .parse()
-            .map_err(|e| AtlasError::InvalidValueErr(format!("Bad strike in {id}: {e}")))?;
+            .map_err(|e| QSError::InvalidValueErr(format!("Bad strike in {id}: {e}")))?;
 
         Ok(Self::new(id.to_string(), QuoteInstrument::FxPut)
             .with_pay_currency(base)
@@ -879,7 +879,7 @@ impl QuoteDetails {
     pub fn parse(s: &str, separator: char) -> Result<Self> {
         let parts: Vec<&str> = s.split(separator).collect();
         if parts.len() < 3 {
-            return Err(AtlasError::InvalidValueErr(format!(
+            return Err(QSError::InvalidValueErr(format!(
                 "Identifier has fewer than 3 parts: {s}"
             )));
         }
@@ -900,7 +900,7 @@ impl QuoteDetails {
             "EquityPut" | "Put" => Self::parse_equity_put(s, &parts),
             "FxCall" => Self::parse_fx_call(s, &parts),
             "FxPut" => Self::parse_fx_put(s, &parts),
-            other => Err(AtlasError::InvalidValueErr(format!(
+            other => Err(QSError::InvalidValueErr(format!(
                 "Unknown instrument type in identifier: {other}"
             ))),
         }
@@ -912,7 +912,7 @@ impl QuoteDetails {
 // ---------------------------------------------------------------------------
 
 impl std::str::FromStr for QuoteDetails {
-    type Err = AtlasError;
+    type Err = QSError;
 
     /// Parses a quote identifier string (underscore-separated) into [`QuoteDetails`].
     ///
@@ -1030,13 +1030,13 @@ impl Quote {
             QuoteInstrument::EquityPut => self.build_put(self.reference_date),
             QuoteInstrument::CapFloor => self.build_cap_floor(value, self.reference_date, notional),
             QuoteInstrument::Swaption => self.build_swaption(value, self.reference_date, notional),
-            QuoteInstrument::FxForwardPoints => Err(AtlasError::NotImplementedErr(
+            QuoteInstrument::FxForwardPoints => Err(QSError::NotImplementedErr(
                 "FxForwardPoints requires an FX spot context to build an outright forward".into(),
             )),
-            QuoteInstrument::FxCall | QuoteInstrument::FxPut => Err(AtlasError::NotImplementedErr(
+            QuoteInstrument::FxCall | QuoteInstrument::FxPut => Err(QSError::NotImplementedErr(
                 "FX option instrument builders are not implemented yet".into(),
             )),
-            other => Err(AtlasError::NotImplementedErr(format!(
+            other => Err(QSError::NotImplementedErr(format!(
                 "Cannot build instrument for {other:?} — it is a vol / auxiliary quote type"
             ))),
         }
@@ -1054,7 +1054,7 @@ impl Quote {
         details
             .market_index()
             .cloned()
-            .ok_or_else(|| AtlasError::ValueNotSetErr(format!("Market index on {context}")))
+            .ok_or_else(|| QSError::ValueNotSetErr(format!("Market index on {context}")))
     }
 
     /// OIS swap — mid value is the fixed rate.
@@ -1062,10 +1062,10 @@ impl Quote {
         let d = &self.details;
         let currency = d
             .currency()
-            .ok_or_else(|| AtlasError::ValueNotSetErr("Currency on OIS quote".into()))?;
+            .ok_or_else(|| QSError::ValueNotSetErr("Currency on OIS quote".into()))?;
         let tenor = d
             .tenor()
-            .ok_or_else(|| AtlasError::ValueNotSetErr("Tenor on OIS quote".into()))?;
+            .ok_or_else(|| QSError::ValueNotSetErr("Tenor on OIS quote".into()))?;
 
         let maturity = reference_date + tenor;
         let market_index = Self::required_market_index(d, "OIS quote")?;
@@ -1095,10 +1095,10 @@ impl Quote {
         let d = &self.details;
         let currency = d
             .currency()
-            .ok_or_else(|| AtlasError::ValueNotSetErr("Currency on deposit quote".into()))?;
+            .ok_or_else(|| QSError::ValueNotSetErr("Currency on deposit quote".into()))?;
         let tenor = d
             .tenor()
-            .ok_or_else(|| AtlasError::ValueNotSetErr("Tenor on deposit quote".into()))?;
+            .ok_or_else(|| QSError::ValueNotSetErr("Tenor on deposit quote".into()))?;
 
         let maturity = reference_date + tenor;
         let market_index = Self::required_market_index(d, "deposit quote")?;
@@ -1128,14 +1128,14 @@ impl Quote {
         let d = &self.details;
         let currency = d
             .currency()
-            .ok_or_else(|| AtlasError::ValueNotSetErr("Currency on basis swap quote".into()))?;
+            .ok_or_else(|| QSError::ValueNotSetErr("Currency on basis swap quote".into()))?;
         let tenor = d
             .tenor()
-            .ok_or_else(|| AtlasError::ValueNotSetErr("Tenor on basis swap quote".into()))?;
+            .ok_or_else(|| QSError::ValueNotSetErr("Tenor on basis swap quote".into()))?;
         let recv_index = d
             .secondary_market_index()
             .ok_or_else(|| {
-                AtlasError::ValueNotSetErr("Secondary market index on basis swap quote".into())
+                QSError::ValueNotSetErr("Secondary market index on basis swap quote".into())
             })?
             .clone();
         let pay_index = Self::required_market_index(d, "basis swap quote")?;
@@ -1161,7 +1161,7 @@ impl Quote {
         let d = &self.details;
         let code = d
             .contract_code()
-            .ok_or_else(|| AtlasError::ValueNotSetErr("Contract code on futures quote".into()))?;
+            .ok_or_else(|| QSError::ValueNotSetErr("Contract code on futures quote".into()))?;
 
         let start_date = IMM::date(code, reference_date);
         let end_date = IMM::next_date(start_date, true);
@@ -1184,14 +1184,14 @@ impl Quote {
     fn build_fx_forward(&self, forward_rate: f64, reference_date: Date) -> Result<BuiltInstrument> {
         let d = &self.details;
         let base = d.pay_currency().ok_or_else(|| {
-            AtlasError::ValueNotSetErr("Base currency on FX forward quote".into())
+            QSError::ValueNotSetErr("Base currency on FX forward quote".into())
         })?;
         let quote_ccy = d.receive_currency().ok_or_else(|| {
-            AtlasError::ValueNotSetErr("Quote currency on FX forward quote".into())
+            QSError::ValueNotSetErr("Quote currency on FX forward quote".into())
         })?;
         let tenor = d
             .tenor()
-            .ok_or_else(|| AtlasError::ValueNotSetErr("Tenor on FX forward quote".into()))?;
+            .ok_or_else(|| QSError::ValueNotSetErr("Tenor on FX forward quote".into()))?;
 
         let delivery_date = reference_date + tenor;
 
@@ -1216,20 +1216,20 @@ impl Quote {
     ) -> Result<BuiltInstrument> {
         let d = &self.details;
         let domestic_ccy = d.pay_currency().ok_or_else(|| {
-            AtlasError::ValueNotSetErr("Domestic currency on xccy swap quote".into())
+            QSError::ValueNotSetErr("Domestic currency on xccy swap quote".into())
         })?;
         let foreign_ccy = d.receive_currency().ok_or_else(|| {
-            AtlasError::ValueNotSetErr("Foreign currency on xccy swap quote".into())
+            QSError::ValueNotSetErr("Foreign currency on xccy swap quote".into())
         })?;
         let foreign_index = d
             .secondary_market_index()
             .ok_or_else(|| {
-                AtlasError::ValueNotSetErr("Foreign market index on xccy swap quote".into())
+                QSError::ValueNotSetErr("Foreign market index on xccy swap quote".into())
             })?
             .clone();
         let tenor = d
             .tenor()
-            .ok_or_else(|| AtlasError::ValueNotSetErr("Tenor on xccy swap quote".into()))?;
+            .ok_or_else(|| QSError::ValueNotSetErr("Tenor on xccy swap quote".into()))?;
 
         let maturity = reference_date + tenor;
         let domestic_index = Self::required_market_index(d, "xccy swap quote")?;
@@ -1257,10 +1257,10 @@ impl Quote {
         let d = &self.details;
         let strike = d
             .strike()
-            .ok_or_else(|| AtlasError::ValueNotSetErr("Strike on Call quote".into()))?;
+            .ok_or_else(|| QSError::ValueNotSetErr("Strike on Call quote".into()))?;
         let tenor = d
             .tenor()
-            .ok_or_else(|| AtlasError::ValueNotSetErr("Tenor on Call quote".into()))?;
+            .ok_or_else(|| QSError::ValueNotSetErr("Tenor on Call quote".into()))?;
         let expiry = reference_date + tenor;
 
         let market_index = Self::required_market_index(d, "Call quote")?;
@@ -1279,10 +1279,10 @@ impl Quote {
         let d = &self.details;
         let strike = d
             .strike()
-            .ok_or_else(|| AtlasError::ValueNotSetErr("Strike on Put quote".into()))?;
+            .ok_or_else(|| QSError::ValueNotSetErr("Strike on Put quote".into()))?;
         let tenor = d
             .tenor()
-            .ok_or_else(|| AtlasError::ValueNotSetErr("Tenor on Put quote".into()))?;
+            .ok_or_else(|| QSError::ValueNotSetErr("Tenor on Put quote".into()))?;
         let expiry = reference_date + tenor;
 
         let market_index = Self::required_market_index(d, "Put quote")?;
@@ -1307,7 +1307,7 @@ impl Quote {
         let d = &self.details;
         let tenor = d
             .tenor()
-            .ok_or_else(|| AtlasError::ValueNotSetErr("Tenor on CapFloor quote".into()))?;
+            .ok_or_else(|| QSError::ValueNotSetErr("Tenor on CapFloor quote".into()))?;
         let maturity = reference_date + tenor;
         let market_index = Self::required_market_index(d, "CapFloor quote")?;
         let rd = Self::rate_definition_for(&market_index);
@@ -1329,7 +1329,7 @@ impl Quote {
                 .with_rate_definition(rd)
                 .with_market_index(market_index)
                 .with_currency(d.currency().ok_or_else(|| {
-                    AtlasError::ValueNotSetErr("Currency on CapFloor quote".into())
+                    QSError::ValueNotSetErr("Currency on CapFloor quote".into())
                 })?)
                 .with_cap_floor_type(cap_floor_type)
                 .build()?;
@@ -1349,10 +1349,10 @@ impl Quote {
         let d = &self.details;
         let option_expiry_period = d
             .option_expiry()
-            .ok_or_else(|| AtlasError::ValueNotSetErr("Option expiry on Swaption quote".into()))?;
+            .ok_or_else(|| QSError::ValueNotSetErr("Option expiry on Swaption quote".into()))?;
         let swap_tenor = d
             .tenor()
-            .ok_or_else(|| AtlasError::ValueNotSetErr("Swap tenor on Swaption quote".into()))?;
+            .ok_or_else(|| QSError::ValueNotSetErr("Swap tenor on Swaption quote".into()))?;
 
         let expiry_date = reference_date + option_expiry_period;
         let swap_maturity = expiry_date + swap_tenor;
@@ -1372,7 +1372,7 @@ impl Quote {
                 .with_rate_definition(rd)
                 .with_market_index(market_index)
                 .with_currency(d.currency().ok_or_else(|| {
-                    AtlasError::ValueNotSetErr("Currency on Swaption quote".into())
+                    QSError::ValueNotSetErr("Currency on Swaption quote".into())
                 })?)
                 .build()?;
 

@@ -20,7 +20,7 @@ use crate::{
         cashflows::{cashflow::Cashflow, cashflowtype::CashflowType},
         fixedincome::fixedratedeposit::{FixedRateDeposit, FixedRateDepositTrade},
     },
-    utils::errors::{AtlasError, Result},
+    utils::errors::{QSError, Result},
 };
 
 /// Pricer for deposits that uses discounted cash flow methodology. It calculates the
@@ -108,10 +108,10 @@ impl HandleValue<FixedRateDepositTrade, DepositPricerState> for FixedRateDeposit
         }
 
         let coupon_date = coupon_date.ok_or_else(|| {
-            AtlasError::NotFoundErr("Coupon date not found in leg cashflows".into())
+            QSError::NotFoundErr("Coupon date not found in leg cashflows".into())
         })?;
         let redemption_date = redemption_date.ok_or_else(|| {
-            AtlasError::NotFoundErr("Redemption date not found in leg cashflows".into())
+            QSError::NotFoundErr("Redemption date not found in leg cashflows".into())
         })?;
 
         // get the element and put the pillars on tape for sensitivity calculation
@@ -154,7 +154,7 @@ impl HandleSensitivities<FixedRateDepositTrade, DepositPricerState>
             let _ = self.handle_value(trade, state)?;
             state
                 .value
-                .ok_or_else(|| AtlasError::NotFoundErr("Missing state.".into()))?
+                .ok_or_else(|| QSError::NotFoundErr("Missing state.".into()))?
         };
 
         let () = price.backward_to_mark()?;
@@ -200,7 +200,7 @@ impl Pricer for FixedRateDepositDiscountingPricer {
         let mut results = EvaluationResults::new(eval_date, identifier);
         let mut state = DepositPricerState::default();
         let md_request = self.market_data_request(trade).ok_or_else(|| {
-            AtlasError::InvalidValueErr("A market data request should have been returned!".into())
+            QSError::InvalidValueErr("A market data request should have been returned!".into())
         })?;
 
         state.md_response = Some(ctx.handle_request(&md_request)?);

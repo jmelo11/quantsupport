@@ -3,7 +3,7 @@ use std::fmt;
 use serde::{Deserialize, Serialize};
 
 use super::currencydetails::CurrencyDetails;
-use crate::utils::errors::{AtlasError, Result};
+use crate::utils::errors::{QSError, Result};
 
 /// # Self
 /// Enum for currencies supported by the library
@@ -147,7 +147,7 @@ impl fmt::Display for Currency {
 }
 
 impl TryFrom<&str> for Currency {
-    type Error = AtlasError;
+    type Error = QSError;
 
     fn try_from(s: &str) -> Result<Self> {
         // trim white space
@@ -178,7 +178,7 @@ impl TryFrom<&str> for Currency {
             "KRW" => Ok(Self::KRW),
             "DKK" => Ok(Self::DKK),
             "IDR" => Ok(Self::IDR),
-            _ => Err(AtlasError::InvalidValueErr(format!(
+            _ => Err(QSError::InvalidValueErr(format!(
                 "Invalid currency: {s}"
             ))),
         }
@@ -186,14 +186,14 @@ impl TryFrom<&str> for Currency {
 }
 
 impl TryFrom<String> for Currency {
-    type Error = AtlasError;
+    type Error = QSError;
     fn try_from(s: String) -> Result<Self> {
         Self::try_from(s.as_str())
     }
 }
 
 impl std::str::FromStr for Currency {
-    type Err = AtlasError;
+    type Err = QSError;
     fn from_str(s: &str) -> Result<Self> {
         Self::try_from(s)
     }

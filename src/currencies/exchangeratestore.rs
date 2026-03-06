@@ -4,7 +4,7 @@ use crate::{
     ad::adreal::{ADReal, IsReal},
     core::pillars::Pillars,
     currencies::currency::Currency,
-    utils::errors::{AtlasError, Result},
+    utils::errors::{QSError, Result},
 };
 
 /// Stores FX spot rates as [`ADReal`] values so that sensitivities to exchange
@@ -105,7 +105,7 @@ impl ExchangeRateStore {
             }
         }
 
-        Err(AtlasError::NotFoundErr(format!(
+        Err(QSError::NotFoundErr(format!(
             "No exchange rate path between {base:?} and {quote:?}"
         )))
     }

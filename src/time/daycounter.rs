@@ -9,7 +9,7 @@ use super::daycounters::{
 };
 use crate::{
     time::{date::Date, daycounters::daycount::DayCount},
-    utils::errors::{AtlasError, Result},
+    utils::errors::{QSError, Result},
 };
 
 /// # `DayCounter`
@@ -59,7 +59,7 @@ impl DayCounter {
 }
 
 impl TryFrom<String> for DayCounter {
-    type Error = AtlasError;
+    type Error = QSError;
 
     fn try_from(s: String) -> Result<Self> {
         match s.as_str() {
@@ -69,7 +69,7 @@ impl TryFrom<String> for DayCounter {
             "Thirty360US" => Ok(Self::Thirty360US),
             "ActualActual" => Ok(Self::ActualActual),
             "Business252" => Ok(Self::Business252),
-            _ => Err(AtlasError::InvalidValueErr(format!(
+            _ => Err(QSError::InvalidValueErr(format!(
                 "Invalid day counter: {s}"
             ))),
         }

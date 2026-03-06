@@ -2,7 +2,7 @@ use crate::{
     ad::adreal::IsReal,
     indices::marketindex::MarketIndex,
     time::{date::Date, enums::TimeUnit, period::Period},
-    utils::errors::{AtlasError, Result},
+    utils::errors::{QSError, Result},
     volatility::volatilityindexing::{SmileType, VolatilityType},
 };
 
@@ -17,7 +17,7 @@ pub trait VolatilityCube<T: IsReal> {
         let days = expiry - today;
         let period = Period::new(
             i32::try_from(days).map_err(|_| {
-                AtlasError::InvalidValueErr("Unable to transform days into i32.".into())
+                QSError::InvalidValueErr("Unable to transform days into i32.".into())
             })?,
             TimeUnit::Days,
         );

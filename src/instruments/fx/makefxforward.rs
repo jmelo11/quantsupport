@@ -3,7 +3,7 @@ use crate::{
     currencies::currency::Currency,
     instruments::fx::fxforward::FxForward,
     time::{date::Date, daycounter::DayCounter},
-    utils::errors::{AtlasError, Result},
+    utils::errors::{QSError, Result},
 };
 
 /// A builder for creating an [`FxForward`] instance.
@@ -75,19 +75,19 @@ impl MakeFxForward {
     pub fn build(self) -> Result<FxForward> {
         let identifier = self
             .identifier
-            .ok_or_else(|| AtlasError::ValueNotSetErr("Identifier".into()))?;
+            .ok_or_else(|| QSError::ValueNotSetErr("Identifier".into()))?;
         let delivery_date = self
             .delivery_date
-            .ok_or_else(|| AtlasError::ValueNotSetErr("Delivery date".into()))?;
+            .ok_or_else(|| QSError::ValueNotSetErr("Delivery date".into()))?;
         let forward_rate = self
             .forward_rate
-            .ok_or_else(|| AtlasError::ValueNotSetErr("Forward rate".into()))?;
+            .ok_or_else(|| QSError::ValueNotSetErr("Forward rate".into()))?;
         let base_currency = self
             .base_currency
-            .ok_or_else(|| AtlasError::ValueNotSetErr("Base currency".into()))?;
+            .ok_or_else(|| QSError::ValueNotSetErr("Base currency".into()))?;
         let quote_currency = self
             .quote_currency
-            .ok_or_else(|| AtlasError::ValueNotSetErr("Quote currency".into()))?;
+            .ok_or_else(|| QSError::ValueNotSetErr("Quote currency".into()))?;
 
         let day_counter = self.day_counter.unwrap_or(DayCounter::Actual360);
 

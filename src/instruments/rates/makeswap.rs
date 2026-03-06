@@ -13,7 +13,7 @@ use crate::{
         date::Date,
         enums::{BusinessDayConvention, DateGenerationRule, Frequency},
     },
-    utils::errors::{AtlasError, Result},
+    utils::errors::{QSError, Result},
 };
 
 /// A builder for creating a [`Swap`] instance (vanilla fixed-float interest rate swap).
@@ -158,28 +158,28 @@ impl MakeSwap {
     pub fn build(self) -> Result<Swap> {
         let notional = self
             .notional
-            .ok_or_else(|| AtlasError::ValueNotSetErr("Notional".into()))?;
+            .ok_or_else(|| QSError::ValueNotSetErr("Notional".into()))?;
         let start_date = self
             .start_date
-            .ok_or_else(|| AtlasError::ValueNotSetErr("Start date".into()))?;
+            .ok_or_else(|| QSError::ValueNotSetErr("Start date".into()))?;
         let maturity_date = self
             .maturity_date
-            .ok_or_else(|| AtlasError::ValueNotSetErr("Maturity date".into()))?;
+            .ok_or_else(|| QSError::ValueNotSetErr("Maturity date".into()))?;
         let fixed_rate = self
             .fixed_rate
-            .ok_or_else(|| AtlasError::ValueNotSetErr("Fixed rate".into()))?;
+            .ok_or_else(|| QSError::ValueNotSetErr("Fixed rate".into()))?;
         let rate_definition = self
             .rate_definition
-            .ok_or_else(|| AtlasError::ValueNotSetErr("Rate definition".into()))?;
+            .ok_or_else(|| QSError::ValueNotSetErr("Rate definition".into()))?;
         let currency = self
             .currency
-            .ok_or_else(|| AtlasError::ValueNotSetErr("Currency".into()))?;
+            .ok_or_else(|| QSError::ValueNotSetErr("Currency".into()))?;
         let market_index = self
             .market_index
-            .ok_or_else(|| AtlasError::ValueNotSetErr("Market index".into()))?;
+            .ok_or_else(|| QSError::ValueNotSetErr("Market index".into()))?;
         let identifier = self
             .identifier
-            .ok_or_else(|| AtlasError::ValueNotSetErr("Identifier".into()))?;
+            .ok_or_else(|| QSError::ValueNotSetErr("Identifier".into()))?;
 
         let side = self.side.unwrap_or(Side::LongRecieve);
         let spread = self.spread.unwrap_or(0.0);

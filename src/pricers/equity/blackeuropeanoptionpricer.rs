@@ -21,7 +21,7 @@ use crate::{
         EquityEuropeanOption, EquityEuropeanOptionTrade, EuroOptionType,
     },
     pricers::pricerdefinitions::BlackClosedFormPricer,
-    utils::errors::{AtlasError, Result},
+    utils::errors::{QSError, Result},
 };
 
 /// State struct for storing intermediate values during the pricing of an equity option, including the option value, spot price, and market data response.
@@ -147,7 +147,7 @@ impl HandleSensitivities<EquityEuropeanOptionTrade, EquityOptionState>
         } else {
             let _ = self.handle_value(trade, state)?;
             state.value.ok_or_else(|| {
-                AtlasError::UnexpectedErr(
+                QSError::UnexpectedErr(
                     "State does not contain price, altough it was requested.".into(),
                 )
             })?
@@ -171,7 +171,7 @@ impl HandleSensitivities<EquityEuropeanOptionTrade, EquityOptionState>
         exposures.push(
             state
                 .spot
-                .ok_or_else(|| AtlasError::UnexpectedErr("Spot not recorded on state".into()))?
+                .ok_or_else(|| QSError::UnexpectedErr("Spot not recorded on state".into()))?
                 .adjoint()?,
         );
 
@@ -223,7 +223,7 @@ impl Pricer for BlackEuropeanOptionPricer {
 
         let md_request = self
             .market_data_request(trade)
-            .ok_or_else(|| AtlasError::InvalidValueErr("Missing market data request".into()))?;
+            .ok_or_else(|| QSError::InvalidValueErr("Missing market data request".into()))?;
 
         let mut results = EvaluationResults::new(eval_date, identifier);
         let mut state = EquityOptionState {
@@ -330,7 +330,7 @@ mod tests {
             },
         },
         time::{date::Date, enums::TimeUnit, period::Period},
-        utils::errors::{AtlasError, Result},
+        utils::errors::{QSError, Result},
         volatility::{
             interpolatedvolatilitysurface::InterpolatedVolatilitySurface,
             volatilityindexing::F64Key, volatilitysurface::VolatilitySurface,
@@ -512,7 +512,7 @@ mod tests {
         let pricer = BlackEuropeanOptionPricer::new();
         let results =
             pricer.evaluate(&trade, &[Request::Value, Request::Sensitivities], &provider)?;
-        let sensitivities = results.sensitivities().ok_or(AtlasError::UnexpectedErr(
+        let sensitivities = results.sensitivities().ok_or(QSError::UnexpectedErr(
             "Missing sensitivities in pricing result".to_string(),
         ))?;
 
@@ -543,7 +543,7 @@ mod tests {
             sensitivities.exposure(),
             "SPX",
         )
-        .ok_or(AtlasError::NotFoundErr(
+        .ok_or(QSError::NotFoundErr(
             "Spot sensitivity not found".to_string(),
         ))?;
 
@@ -552,7 +552,7 @@ mod tests {
             sensitivities.exposure(),
             "vol_6m_90",
         )
-        .ok_or(AtlasError::NotFoundErr(
+        .ok_or(QSError::NotFoundErr(
             "Vol sensitivity not found".to_string(),
         ))?;
 
@@ -624,12 +624,12 @@ mod tests {
             let eval_results = result?;
             let price = eval_results
                 .price()
-                .ok_or(AtlasError::UnexpectedErr(format!(
+                .ok_or(QSError::UnexpectedErr(format!(
                     "Missing price for strike {strike}"
                 )))?;
             let sensitivities = eval_results
                 .sensitivities()
-                .ok_or(AtlasError::UnexpectedErr(format!(
+                .ok_or(QSError::UnexpectedErr(format!(
                     "Missing sensitivities for strike {strike}"
                 )))?;
 

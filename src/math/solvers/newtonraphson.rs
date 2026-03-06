@@ -1,7 +1,7 @@
-use crate::math::solvers::solvertraits::{
-    C1Func, DescentMethod, OptimizerSolution, SolutionStatus,
+use crate::{
+    math::solvers::solvertraits::{C1Func, DescentMethod, OptimizerSolution, SolutionStatus},
+    utils::errors::{QSError, Result},
 };
-use {AtlasError, Result};
 
 /// # `NewtonRaphson`
 ///
@@ -70,7 +70,7 @@ where
     fn step(&self, x: &f64, f: &P, fval: f64) -> Result<f64> {
         let g = f.grad(x)?;
         if g == 0.0 {
-            return Err(AtlasError::SolverErr("Gradient == 0.".into()));
+            return Err(QSError::SolverErr("Gradient == 0.".into()));
         }
         Ok(fval / g)
     }
@@ -108,7 +108,7 @@ mod test {
         newtonraphson::NewtonRaphson,
         solvertraits::{C1Func, ContFunc, DescentMethod},
     };
-    use crate::utils::errors::{AtlasError, Result};
+    use crate::utils::errors::{QSError, Result};
     use std::f64::consts::PI;
 
     fn norm_pdf(x: f64) -> f64 {
@@ -133,13 +133,13 @@ mod test {
 
     fn bs_price(spot: f64, sigma: f64, tau: f64, strike: f64, r: f64) -> Result<f64> {
         if tau < 0.0 {
-            return Err(AtlasError::SolverErr("Negative tau.".into()));
+            return Err(QSError::SolverErr("Negative tau.".into()));
         }
         if sigma < 0.0 {
-            return Err(AtlasError::SolverErr("Negative sigma.".into()));
+            return Err(QSError::SolverErr("Negative sigma.".into()));
         }
         if spot < 0.0 || strike < 0.0 {
-            return Err(AtlasError::SolverErr("Negative spot|strike.".into()));
+            return Err(QSError::SolverErr("Negative spot|strike.".into()));
         }
 
         let d1 = 0.5f64
@@ -153,13 +153,13 @@ mod test {
 
     fn bs_vega(spot: f64, sigma: f64, tau: f64, strike: f64, r: f64) -> Result<f64> {
         if tau < 0.0 {
-            return Err(AtlasError::SolverErr("Negative tau.".into()));
+            return Err(QSError::SolverErr("Negative tau.".into()));
         }
         if sigma < 0.0 {
-            return Err(AtlasError::SolverErr("Negative sigma.".into()));
+            return Err(QSError::SolverErr("Negative sigma.".into()));
         }
         if spot < 0.0 || strike < 0.0 {
-            return Err(AtlasError::SolverErr("Negative spot|strike.".into()));
+            return Err(QSError::SolverErr("Negative spot|strike.".into()));
         }
         let d1 = 0.5f64
             .mul_add(sigma.powi(2), r)

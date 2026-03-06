@@ -19,7 +19,7 @@ use crate::{
         period::Period,
         schedule::MakeSchedule,
     },
-    utils::errors::{AtlasError, Result},
+    utils::errors::{QSError, Result},
 };
 
 /// Enumeration for the type of rate used in the leg, either fixed or floating.
@@ -294,7 +294,7 @@ impl MakeLeg {
         match self.rate_type {
             Some(RateType::Fixed) => {
                 if self.caplet_strike.is_some() || self.floorlet_strike.is_some() {
-                    Err(AtlasError::InvalidValueErr(
+                    Err(QSError::InvalidValueErr(
                         "Caplet and floorlet strikes should not be set for fixed rate leg".into(),
                     ))
                 } else {
@@ -303,7 +303,7 @@ impl MakeLeg {
             }
             Some(RateType::Floating) => {
                 if self.structure == Some(PaymentStructure::EqualPayments) {
-                    return Err(AtlasError::InvalidValueErr(
+                    return Err(QSError::InvalidValueErr(
                         "Equal payments structure is not compatible with floating rate leg".into(),
                     ));
                 }
@@ -313,7 +313,7 @@ impl MakeLeg {
                     Ok(LegType::FloatingRate)
                 }
             }
-            None => Err(AtlasError::ValueNotSetErr("Rate type".into())),
+            None => Err(QSError::ValueNotSetErr("Rate type".into())),
         }
     }
 
@@ -326,18 +326,18 @@ impl MakeLeg {
         let mut cashflows = Vec::new();
         let structure = self
             .structure
-            .ok_or_else(|| AtlasError::ValueNotSetErr("Structure".into()))?;
+            .ok_or_else(|| QSError::ValueNotSetErr("Structure".into()))?;
 
         let payment_frequency = self
             .payment_frequency
-            .ok_or_else(|| AtlasError::ValueNotSetErr("Payment frequency".into()))?;
+            .ok_or_else(|| QSError::ValueNotSetErr("Payment frequency".into()))?;
 
         let side = self
             .side
-            .ok_or_else(|| AtlasError::ValueNotSetErr("Side".into()))?;
+            .ok_or_else(|| QSError::ValueNotSetErr("Side".into()))?;
         let currency = self
             .currency
-            .ok_or_else(|| AtlasError::ValueNotSetErr("Currency".into()))?;
+            .ok_or_else(|| QSError::ValueNotSetErr("Currency".into()))?;
 
         let leg_id = self.leg_id.unwrap_or(0);
         match structure {
@@ -345,13 +345,13 @@ impl MakeLeg {
                 let leg_type = self.check_leg_type()?;
                 let start_date = self
                     .start_date
-                    .ok_or_else(|| AtlasError::ValueNotSetErr("Start date".into()))?;
+                    .ok_or_else(|| QSError::ValueNotSetErr("Start date".into()))?;
                 let end_date = if let Some(date) = self.end_date {
                     date
                 } else {
                     let tenor = self
                         .tenor
-                        .ok_or_else(|| AtlasError::ValueNotSetErr("Tenor".into()))?;
+                        .ok_or_else(|| QSError::ValueNotSetErr("Tenor".into()))?;
                     start_date + tenor
                 };
 
@@ -375,7 +375,7 @@ impl MakeLeg {
                     if date > start_date {
                         schedule_builder.with_first_date(date).build()?
                     } else {
-                        Err(AtlasError::InvalidValueErr(
+                        Err(QSError::InvalidValueErr(
                             "First coupon date must be after start date".into(),
                         ))?
                     }
@@ -385,17 +385,17 @@ impl MakeLeg {
 
                 let notional = self
                     .notional
-                    .ok_or(AtlasError::ValueNotSetErr("Notional".into()))?;
-                let side = self.side.ok_or(AtlasError::ValueNotSetErr("Side".into()))?;
+                    .ok_or(QSError::ValueNotSetErr("Notional".into()))?;
+                let side = self.side.ok_or(QSError::ValueNotSetErr("Side".into()))?;
 
                 let first_date = vec![*schedule
                     .dates()
                     .first()
-                    .ok_or(AtlasError::ValueNotSetErr("Schedule dates".into()))?];
+                    .ok_or(QSError::ValueNotSetErr("Schedule dates".into()))?];
                 let last_date = vec![*schedule
                     .dates()
                     .last()
-                    .ok_or(AtlasError::ValueNotSetErr("Schedule dates".into()))?];
+                    .ok_or(QSError::ValueNotSetErr("Schedule dates".into()))?];
                 let notionals = notionals_vector(
                     schedule.dates().len() - 1,
                     notional,
@@ -410,7 +410,7 @@ impl MakeLeg {
                         // create coupon cashflows
                         let rate = self
                             .rate
-                            .ok_or_else(|| AtlasError::ValueNotSetErr("Rate".into()))?;
+                            .ok_or_else(|| QSError::ValueNotSetErr("Rate".into()))?;
 
                         build_fixed_rate_coupons_from_notionals(
                             &mut cashflows,
@@ -420,7 +420,7 @@ impl MakeLeg {
                         )?;
                         let market_index = self
                             .market_index
-                            .ok_or_else(|| AtlasError::ValueNotSetErr("Market index".into()))?;
+                            .ok_or_else(|| QSError::ValueNotSetErr("Market index".into()))?;
 
                         let leg = Leg::new(
                             leg_id,
@@ -439,12 +439,12 @@ impl MakeLeg {
                         // create coupon cashflows
                         let spread = self
                             .spread
-                            .ok_or_else(|| AtlasError::ValueNotSetErr("Spread".into()))?;
+                            .ok_or_else(|| QSError::ValueNotSetErr("Spread".into()))?;
 
                         let market_index = self
                             .market_index
                             .clone()
-                            .ok_or_else(|| AtlasError::ValueNotSetErr("Market index".into()))?;
+                            .ok_or_else(|| QSError::ValueNotSetErr("Market index".into()))?;
 
                         build_floating_rate_coupons_from_notionals(
                             &mut cashflows,
@@ -469,12 +469,12 @@ impl MakeLeg {
                     LegType::OptionEmbedded => {
                         let spread = self
                             .spread
-                            .ok_or_else(|| AtlasError::ValueNotSetErr("Spread".into()))?;
+                            .ok_or_else(|| QSError::ValueNotSetErr("Spread".into()))?;
 
                         let market_index = self
                             .market_index
                             .clone()
-                            .ok_or_else(|| AtlasError::ValueNotSetErr("Market index".into()))?;
+                            .ok_or_else(|| QSError::ValueNotSetErr("Market index".into()))?;
 
                         build_embedded_option_coupons_from_notionals(
                             &mut cashflows,
@@ -503,14 +503,14 @@ impl MakeLeg {
             PaymentStructure::Other => {
                 let disbursements = self
                     .disbursements
-                    .ok_or(AtlasError::ValueNotSetErr("Disbursements".into()))?;
+                    .ok_or(QSError::ValueNotSetErr("Disbursements".into()))?;
                 let redemptions = self
                     .redemptions
-                    .ok_or(AtlasError::ValueNotSetErr("Redemptions".into()))?;
+                    .ok_or(QSError::ValueNotSetErr("Redemptions".into()))?;
                 let notional = disbursements.values().fold(0.0, |acc, x| acc + x).abs();
                 let redemption = redemptions.values().fold(0.0, |acc, x| acc + x).abs();
                 if (notional - redemption).abs() > 0.000001 {
-                    return Err(AtlasError::InvalidValueErr(
+                    return Err(QSError::InvalidValueErr(
                         "Notional and redemption must be equal".into(),
                     ));
                 }
@@ -546,13 +546,13 @@ impl MakeLeg {
                 let leg_type = self.check_leg_type()?;
                 let start_date = self
                     .start_date
-                    .ok_or(AtlasError::ValueNotSetErr("Start date".into()))?;
+                    .ok_or(QSError::ValueNotSetErr("Start date".into()))?;
                 let end_date = if let Some(date) = self.end_date {
                     date
                 } else {
                     let tenor = self
                         .tenor
-                        .ok_or(AtlasError::ValueNotSetErr("Tenor".into()))?;
+                        .ok_or(QSError::ValueNotSetErr("Tenor".into()))?;
                     start_date + tenor
                 };
                 let mut schedule_builder = MakeSchedule::new(start_date, end_date)
@@ -575,7 +575,7 @@ impl MakeLeg {
                     if date > start_date {
                         schedule_builder.with_first_date(date).build()?
                     } else {
-                        Err(AtlasError::InvalidValueErr(
+                        Err(QSError::InvalidValueErr(
                             "First coupon date must be after start date".into(),
                         ))?
                     }
@@ -585,12 +585,12 @@ impl MakeLeg {
 
                 let notional = self
                     .notional
-                    .ok_or(AtlasError::ValueNotSetErr("Notional".into()))?;
+                    .ok_or(QSError::ValueNotSetErr("Notional".into()))?;
 
                 let first_date = vec![*schedule
                     .dates()
                     .first()
-                    .ok_or(AtlasError::ValueNotSetErr("Schedule dates".into()))?];
+                    .ok_or(QSError::ValueNotSetErr("Schedule dates".into()))?];
 
                 // Add initial disbursement
                 add_cashflows_to_vec(&mut cashflows, &first_date, &[notional], 1);
@@ -600,18 +600,18 @@ impl MakeLeg {
                     LegType::FixedRate => {
                         let rate = self
                             .rate
-                            .ok_or_else(|| AtlasError::ValueNotSetErr("Rate".into()))?;
+                            .ok_or_else(|| QSError::ValueNotSetErr("Rate".into()))?;
 
                         let redemptions =
                             calculate_equal_payment_redemptions(schedule.dates(), rate, notional)?;
 
                         let mut notionals =
                             redemptions.iter().try_fold(vec![notional], |mut acc, x| {
-                                let last = *acc.last().ok_or(AtlasError::InvalidValueErr(
+                                let last = *acc.last().ok_or(QSError::InvalidValueErr(
                                     "Notional schedule cannot be empty".into(),
                                 ))?;
                                 acc.push(last - x);
-                                Ok::<_, AtlasError>(acc)
+                                Ok::<_, QSError>(acc)
                             })?;
 
                         notionals.pop();
@@ -629,7 +629,7 @@ impl MakeLeg {
 
                         let market_index = self
                             .market_index
-                            .ok_or_else(|| AtlasError::ValueNotSetErr("Market index".into()))?;
+                            .ok_or_else(|| QSError::ValueNotSetErr("Market index".into()))?;
 
                         let leg = Leg::new(
                             leg_id,
@@ -645,7 +645,7 @@ impl MakeLeg {
                         Ok(leg)
                     }
                     LegType::FloatingRate | LegType::OptionEmbedded => {
-                        Err(AtlasError::InvalidValueErr(
+                        Err(QSError::InvalidValueErr(
                             "EqualPayments structure is only supported for fixed rate legs".into(),
                         ))
                     }
@@ -654,13 +654,13 @@ impl MakeLeg {
             PaymentStructure::Zero => {
                 let start_date = self
                     .start_date
-                    .ok_or(AtlasError::ValueNotSetErr("Start date".into()))?;
+                    .ok_or(QSError::ValueNotSetErr("Start date".into()))?;
                 let end_date = if let Some(date) = self.end_date {
                     date
                 } else {
                     let tenor = self
                         .tenor
-                        .ok_or(AtlasError::ValueNotSetErr("Tenor".into()))?;
+                        .ok_or(QSError::ValueNotSetErr("Tenor".into()))?;
                     start_date + tenor
                 };
                 let schedule = MakeSchedule::new(start_date, end_date)
@@ -681,16 +681,16 @@ impl MakeLeg {
 
                 let notional = self
                     .notional
-                    .ok_or(AtlasError::ValueNotSetErr("Notional".into()))?;
+                    .ok_or(QSError::ValueNotSetErr("Notional".into()))?;
 
                 let first_date = vec![*schedule
                     .dates()
                     .first()
-                    .ok_or(AtlasError::ValueNotSetErr("Schedule dates".into()))?];
+                    .ok_or(QSError::ValueNotSetErr("Schedule dates".into()))?];
                 let last_date = vec![*schedule
                     .dates()
                     .last()
-                    .ok_or(AtlasError::ValueNotSetErr("Schedule dates".into()))?];
+                    .ok_or(QSError::ValueNotSetErr("Schedule dates".into()))?];
 
                 // Add initial disbursement
                 add_cashflows_to_vec(&mut cashflows, &first_date, &[notional], 1);
@@ -714,13 +714,13 @@ impl MakeLeg {
                 let leg_type = self.check_leg_type()?;
                 let start_date = self
                     .start_date
-                    .ok_or(AtlasError::ValueNotSetErr("Start date".into()))?;
+                    .ok_or(QSError::ValueNotSetErr("Start date".into()))?;
                 let end_date = if let Some(date) = self.end_date {
                     date
                 } else {
                     let tenor = self
                         .tenor
-                        .ok_or(AtlasError::ValueNotSetErr("Tenor".into()))?;
+                        .ok_or(QSError::ValueNotSetErr("Tenor".into()))?;
                     start_date + tenor
                 };
                 let mut schedule_builder = MakeSchedule::new(start_date, end_date)
@@ -743,7 +743,7 @@ impl MakeLeg {
                     if date > start_date {
                         schedule_builder.with_first_date(date).build()?
                     } else {
-                        Err(AtlasError::InvalidValueErr(
+                        Err(QSError::InvalidValueErr(
                             "First coupon date must be after start date".into(),
                         ))?
                     }
@@ -753,17 +753,17 @@ impl MakeLeg {
 
                 let notional = self
                     .notional
-                    .ok_or(AtlasError::ValueNotSetErr("Notional".into()))?;
+                    .ok_or(QSError::ValueNotSetErr("Notional".into()))?;
 
                 let first_date = vec![*schedule
                     .dates()
                     .first()
-                    .ok_or(AtlasError::ValueNotSetErr("Schedule dates".into()))?];
+                    .ok_or(QSError::ValueNotSetErr("Schedule dates".into()))?];
 
                 let n = schedule.dates().len() - 1;
                 let notionals = notionals_vector(n, notional, PaymentStructure::EqualRedemptions);
                 let n_f64 = f64::from(u32::try_from(n).map_err(|_| {
-                    AtlasError::InvalidValueErr("Redemption count exceeds u32".into())
+                    QSError::InvalidValueErr("Redemption count exceeds u32".into())
                 })?);
                 let redemptions = vec![notional / n_f64; n];
 
@@ -774,7 +774,7 @@ impl MakeLeg {
                     LegType::FixedRate => {
                         let rate = self
                             .rate
-                            .ok_or_else(|| AtlasError::ValueNotSetErr("Rate".into()))?;
+                            .ok_or_else(|| QSError::ValueNotSetErr("Rate".into()))?;
 
                         build_fixed_rate_coupons_from_notionals(
                             &mut cashflows,
@@ -789,7 +789,7 @@ impl MakeLeg {
 
                         let market_index = self
                             .market_index
-                            .ok_or_else(|| AtlasError::ValueNotSetErr("Market index".into()))?;
+                            .ok_or_else(|| QSError::ValueNotSetErr("Market index".into()))?;
 
                         let leg = Leg::new(
                             leg_id,
@@ -807,12 +807,12 @@ impl MakeLeg {
                     LegType::FloatingRate => {
                         let spread = self
                             .spread
-                            .ok_or_else(|| AtlasError::ValueNotSetErr("Spread".into()))?;
+                            .ok_or_else(|| QSError::ValueNotSetErr("Spread".into()))?;
 
                         let market_index = self
                             .market_index
                             .clone()
-                            .ok_or_else(|| AtlasError::ValueNotSetErr("Market index".into()))?;
+                            .ok_or_else(|| QSError::ValueNotSetErr("Market index".into()))?;
 
                         build_floating_rate_coupons_from_notionals(
                             &mut cashflows,
@@ -841,12 +841,12 @@ impl MakeLeg {
                     LegType::OptionEmbedded => {
                         let spread = self
                             .spread
-                            .ok_or_else(|| AtlasError::ValueNotSetErr("Spread".into()))?;
+                            .ok_or_else(|| QSError::ValueNotSetErr("Spread".into()))?;
 
                         let market_index = self
                             .market_index
                             .as_ref()
-                            .ok_or_else(|| AtlasError::ValueNotSetErr("Market index".into()))?
+                            .ok_or_else(|| QSError::ValueNotSetErr("Market index".into()))?
                             .clone();
 
                         build_embedded_option_coupons_from_notionals(
@@ -889,12 +889,12 @@ fn build_fixed_rate_coupons_from_notionals(
     rate: InterestRate<ADReal>,
 ) -> Result<()> {
     if dates.len() - 1 != notionals.len() {
-        Err(AtlasError::InvalidValueErr(
+        Err(QSError::InvalidValueErr(
             "Dates and notionals must have the same length".to_string(),
         ))?;
     }
     if dates.len() < 2 {
-        Err(AtlasError::InvalidValueErr(
+        Err(QSError::InvalidValueErr(
             "Dates must have at least two elements".to_string(),
         ))?;
     }
@@ -916,12 +916,12 @@ fn build_floating_rate_coupons_from_notionals(
     market_index: MarketIndex,
 ) -> Result<()> {
     if dates.len() - 1 != notionals.len() {
-        Err(AtlasError::InvalidValueErr(
+        Err(QSError::InvalidValueErr(
             "Dates and notionals must have the same length".to_string(),
         ))?;
     }
     if dates.len() < 2 {
-        Err(AtlasError::InvalidValueErr(
+        Err(QSError::InvalidValueErr(
             "Dates must have at least two elements".to_string(),
         ))?;
     }
@@ -944,18 +944,18 @@ fn build_embedded_option_coupons_from_notionals(
     caplet_strike: Option<f64>,
 ) -> Result<()> {
     if dates.len() - 1 != notionals.len() {
-        Err(AtlasError::InvalidValueErr(
+        Err(QSError::InvalidValueErr(
             "Dates and notionals must have the same length".to_string(),
         ))?;
     }
     if dates.len() < 2 {
-        Err(AtlasError::InvalidValueErr(
+        Err(QSError::InvalidValueErr(
             "Dates must have at least two elements".to_string(),
         ))?;
     }
 
     if floorlet_strike.is_none() && caplet_strike.is_none() {
-        Err(AtlasError::InvalidValueErr(
+        Err(QSError::InvalidValueErr(
             "At least one of floorlet or caplet strike must be set for option-embedded coupons"
                 .to_string(),
         ))?;

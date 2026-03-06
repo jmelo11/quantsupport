@@ -13,7 +13,7 @@ use crate::{
         date::Date,
         enums::{BusinessDayConvention, DateGenerationRule, Frequency},
     },
-    utils::errors::{AtlasError, Result},
+    utils::errors::{QSError, Result},
 };
 
 /// A builder for creating a [`FixedRateBond`] instance, allowing for a flexible and stepwise construction process.
@@ -165,28 +165,28 @@ impl MakeFixedRateBond {
     pub fn build(self) -> Result<FixedRateBond> {
         let notional = self
             .notional
-            .ok_or_else(|| AtlasError::ValueNotSetErr("Notional".into()))?;
+            .ok_or_else(|| QSError::ValueNotSetErr("Notional".into()))?;
         let start_date = self
             .start_date
-            .ok_or_else(|| AtlasError::ValueNotSetErr("Start date".into()))?;
+            .ok_or_else(|| QSError::ValueNotSetErr("Start date".into()))?;
         let maturity_date = self
             .maturity_date
-            .ok_or_else(|| AtlasError::ValueNotSetErr("Maturity date".into()))?;
+            .ok_or_else(|| QSError::ValueNotSetErr("Maturity date".into()))?;
         let rate = self
             .rate
-            .ok_or_else(|| AtlasError::ValueNotSetErr("Rate".into()))?;
+            .ok_or_else(|| QSError::ValueNotSetErr("Rate".into()))?;
         let rate_definition = self
             .rate_definition
-            .ok_or_else(|| AtlasError::ValueNotSetErr("Rate definition".into()))?;
+            .ok_or_else(|| QSError::ValueNotSetErr("Rate definition".into()))?;
         let currency = self
             .currency
-            .ok_or_else(|| AtlasError::ValueNotSetErr("Currency".into()))?;
+            .ok_or_else(|| QSError::ValueNotSetErr("Currency".into()))?;
         let market_index = self
             .market_index
-            .ok_or_else(|| AtlasError::ValueNotSetErr("Market index".into()))?;
+            .ok_or_else(|| QSError::ValueNotSetErr("Market index".into()))?;
         let identifier = self
             .identifier
-            .ok_or_else(|| AtlasError::ValueNotSetErr("Identifier".into()))?;
+            .ok_or_else(|| QSError::ValueNotSetErr("Identifier".into()))?;
 
         let units = self.units.unwrap_or(100.0);
         let side = self.side.unwrap_or(Side::LongRecieve);

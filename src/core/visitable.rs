@@ -2,7 +2,7 @@ use crate::{
     core::{
         contextmanager::ContextManager, evaluationresults::EvaluationResults, request::Request,
     },
-    utils::errors::AtlasError,
+    utils::errors::QSError,
 };
 /// # `Visitor`
 pub trait Visitor {}
@@ -12,13 +12,13 @@ pub trait Visitable<P: Visitor> {
     /// Accepts a visitor.
     ///
     /// ## Errors
-    /// Returns an [`AtlasError`] if the visit operation fails.
+    /// Returns an [`QSError`] if the visit operation fails.
     fn accept(
         &self,
         visitor: &P,
         requests: &[Request],
         ctx: &ContextManager,
-    ) -> Result<EvaluationResults, AtlasError>;
+    ) -> Result<EvaluationResults, QSError>;
 }
 
 // pub trait VisitExampleTrade: Visitor {

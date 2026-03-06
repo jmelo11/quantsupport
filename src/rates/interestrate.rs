@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     ad::adreal::{ADReal, Const, FloatExt, IsReal},
     time::{date::Date, daycounter::DayCounter, enums::Frequency},
-    utils::errors::{AtlasError, Result},
+    utils::errors::{QSError, Result},
 };
 
 use super::compounding::Compounding;
@@ -179,7 +179,7 @@ impl InterestRate<f64> {
         t: f64,
     ) -> Result<Self> {
         if compound <= 0.0 {
-            return Err(AtlasError::InvalidValueErr(
+            return Err(QSError::InvalidValueErr(
                 "Positive compound factor required".to_string(),
             ));
         }
@@ -187,14 +187,14 @@ impl InterestRate<f64> {
         let f = f64::from(freq as i32);
         if (compound - 1.0).abs() < 1e-12 {
             if t < 0.0 {
-                return Err(AtlasError::InvalidValueErr(
+                return Err(QSError::InvalidValueErr(
                     "Non-negative time required".to_string(),
                 ));
             }
             r = 0.0;
         } else {
             if t <= 0.0 {
-                return Err(AtlasError::InvalidValueErr(
+                return Err(QSError::InvalidValueErr(
                     "Positive time required".to_string(),
                 ));
             }
@@ -289,21 +289,21 @@ impl InterestRate<ADReal> {
         t: f64,
     ) -> Result<Self> {
         if compound <= 0.0 {
-            return Err(AtlasError::InvalidValueErr(
+            return Err(QSError::InvalidValueErr(
                 "Positive compound factor required".to_string(),
             ));
         }
         let f = f64::from(freq as i32);
         if (compound - 1.0).abs() < 1e-12 {
             if t < 0.0 {
-                return Err(AtlasError::InvalidValueErr(
+                return Err(QSError::InvalidValueErr(
                     "Non-negative time required".to_string(),
                 ));
             }
             Ok(Self::new(ADReal::zero(), comp, freq, result_dc))
         } else {
             if t <= 0.0 {
-                return Err(AtlasError::InvalidValueErr(
+                return Err(QSError::InvalidValueErr(
                     "Positive time required".to_string(),
                 ));
             }

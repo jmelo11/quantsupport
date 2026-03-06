@@ -11,7 +11,7 @@ use crate::{
         date::Date,
         enums::{BusinessDayConvention, DateGenerationRule, Frequency},
     },
-    utils::errors::{AtlasError, Result},
+    utils::errors::{QSError, Result},
 };
 
 /// A builder for creating a [`FloatFloatCrossCurrencySwap`] instance
@@ -172,31 +172,31 @@ impl MakeFloatFloatCrossCurrencySwap {
     pub fn build(self) -> Result<FloatFloatCrossCurrencySwap> {
         let start_date = self
             .start_date
-            .ok_or_else(|| AtlasError::ValueNotSetErr("Start date".into()))?;
+            .ok_or_else(|| QSError::ValueNotSetErr("Start date".into()))?;
         let maturity_date = self
             .maturity_date
-            .ok_or_else(|| AtlasError::ValueNotSetErr("Maturity date".into()))?;
+            .ok_or_else(|| QSError::ValueNotSetErr("Maturity date".into()))?;
         let domestic_notional = self
             .domestic_notional
-            .ok_or_else(|| AtlasError::ValueNotSetErr("Domestic notional".into()))?;
+            .ok_or_else(|| QSError::ValueNotSetErr("Domestic notional".into()))?;
         let foreign_notional = self
             .foreign_notional
-            .ok_or_else(|| AtlasError::ValueNotSetErr("Foreign notional".into()))?;
+            .ok_or_else(|| QSError::ValueNotSetErr("Foreign notional".into()))?;
         let domestic_currency = self
             .domestic_currency
-            .ok_or_else(|| AtlasError::ValueNotSetErr("Domestic currency".into()))?;
+            .ok_or_else(|| QSError::ValueNotSetErr("Domestic currency".into()))?;
         let foreign_currency = self
             .foreign_currency
-            .ok_or_else(|| AtlasError::ValueNotSetErr("Foreign currency".into()))?;
+            .ok_or_else(|| QSError::ValueNotSetErr("Foreign currency".into()))?;
         let domestic_market_index = self
             .domestic_market_index
-            .ok_or_else(|| AtlasError::ValueNotSetErr("Domestic market index".into()))?;
+            .ok_or_else(|| QSError::ValueNotSetErr("Domestic market index".into()))?;
         let foreign_market_index = self
             .foreign_market_index
-            .ok_or_else(|| AtlasError::ValueNotSetErr("Foreign market index".into()))?;
+            .ok_or_else(|| QSError::ValueNotSetErr("Foreign market index".into()))?;
         let identifier = self
             .identifier
-            .ok_or_else(|| AtlasError::ValueNotSetErr("Identifier".into()))?;
+            .ok_or_else(|| QSError::ValueNotSetErr("Identifier".into()))?;
 
         let side = self.side.unwrap_or(Side::LongRecieve);
         let domestic_spread = self.domestic_spread.unwrap_or(0.0);

@@ -1,7 +1,7 @@
 use crate::{
     ad::adreal::{ADReal, FloatExt, IsReal},
     math::solvers::solvertraits::{JacobianFunc, Matrix, OptimizerSolution, SolutionStatus},
-    utils::errors::{AtlasError, Result},
+    utils::errors::{QSError, Result},
 };
 
 /// Dense Newton solver for vector systems $F(x)=0$.
@@ -39,7 +39,7 @@ where
         for _ in 0..self.max_iter {
             let r = problem.call(&x)?;
             if r.len() != x.len() {
-                return Err(AtlasError::SolverErr(
+                return Err(QSError::SolverErr(
                     "Vector solver requires residual size == variable size".into(),
                 ));
             }
@@ -85,7 +85,7 @@ where
             }
 
             if !accepted {
-                return Err(AtlasError::SolverErr(
+                return Err(QSError::SolverErr(
                     "Vector Newton step failed to improve residual".into(),
                 ));
             }
@@ -102,7 +102,7 @@ where
     fn solve_linear_system(mut a: Matrix<ADReal>, mut b: Vec<ADReal>) -> Result<Vec<ADReal>> {
         let n = a.len();
         if b.len() != n || a.iter().any(|row| row.len() != n) {
-            return Err(AtlasError::SolverErr(
+            return Err(QSError::SolverErr(
                 "Linear system dimensions are inconsistent".into(),
             ));
         }
@@ -118,7 +118,7 @@ where
             }
 
             if max_val < 1e-14 {
-                return Err(AtlasError::SolverErr("Singular Jacobian".into()));
+                return Err(QSError::SolverErr("Singular Jacobian".into()));
             }
 
             if pivot != i {

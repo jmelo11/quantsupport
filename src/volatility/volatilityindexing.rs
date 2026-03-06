@@ -2,7 +2,7 @@ use std::{cmp::Ordering, hash::Hash};
 
 use serde::{Deserialize, Serialize};
 
-use crate::utils::errors::AtlasError;
+use crate::utils::errors::QSError;
 
 /// Strike specification for a caplet/floorlet.
 ///
@@ -35,13 +35,13 @@ pub enum VolatilityType {
 }
 
 impl std::str::FromStr for VolatilityType {
-    type Err = AtlasError;
+    type Err = QSError;
 
     fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
         match s {
             "Black" => Ok(Self::Black),
             "Normal" => Ok(Self::Normal),
-            _ => Err(AtlasError::InvalidValueErr(format!(
+            _ => Err(QSError::InvalidValueErr(format!(
                 "Unknown volatility type: {s}"
             ))),
         }

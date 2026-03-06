@@ -1,5 +1,5 @@
 use crate::time::calendars::traits::IsCalendar;
-use crate::utils::errors::{AtlasError, Result};
+use crate::utils::errors::{QSError, Result};
 
 use super::calendar::Calendar;
 use super::calendars::nullcalendar::NullCalendar;
@@ -322,7 +322,7 @@ impl MakeSchedule {
     #[allow(clippy::too_many_lines)]
     pub fn build(&mut self) -> Result<Schedule> {
         if self.tenor.length() < 0 {
-            return Err(AtlasError::MakeScheduleErr(format!(
+            return Err(QSError::MakeScheduleErr(format!(
                 "non positive tenor ({tenor_length})",
                 tenor_length = self.tenor.length()
             )));
@@ -337,14 +337,14 @@ impl MakeSchedule {
                     if self.first_date <= self.effective_date
                         || self.first_date > self.termination_date
                     {
-                        return Err(AtlasError::MakeScheduleErr(
+                        return Err(QSError::MakeScheduleErr(
                             "first date out of effective-termination date range".to_string(),
                         ));
                     }
                 }
                 DateGenerationRule::ThirdWednesday => {
                     if !IMM::is_imm_date(self.first_date, false) {
-                        return Err(AtlasError::MakeScheduleErr(
+                        return Err(QSError::MakeScheduleErr(
                             "first date is not an IMM date".to_string(),
                         ));
                     }
@@ -356,7 +356,7 @@ impl MakeSchedule {
                 | DateGenerationRule::CDS
                 | DateGenerationRule::CDS2015
                 | DateGenerationRule::ThirdWednesdayInclusive => {
-                    return Err(AtlasError::MakeScheduleErr(
+                    return Err(QSError::MakeScheduleErr(
                         "first date incompatible with date generation rule".to_string(),
                     ));
                 }
@@ -369,14 +369,14 @@ impl MakeSchedule {
                     if self.next_to_last_date <= self.effective_date
                         || self.next_to_last_date >= self.termination_date
                     {
-                        return Err(AtlasError::MakeScheduleErr(
+                        return Err(QSError::MakeScheduleErr(
                             "next to last date out of effective-termination date range".to_string(),
                         ));
                     }
                 }
                 DateGenerationRule::ThirdWednesday => {
                     if !IMM::is_imm_date(self.next_to_last_date, false) {
-                        return Err(AtlasError::MakeScheduleErr(
+                        return Err(QSError::MakeScheduleErr(
                             "next to last date is not an IMM date".to_string(),
                         ));
                     }
@@ -388,7 +388,7 @@ impl MakeSchedule {
                 | DateGenerationRule::CDS
                 | DateGenerationRule::CDS2015
                 | DateGenerationRule::ThirdWednesdayInclusive => {
-                    return Err(AtlasError::MakeScheduleErr(
+                    return Err(QSError::MakeScheduleErr(
                         "next to last date incompatible with date generation rule".to_string(),
                     ));
                 }
@@ -481,7 +481,7 @@ impl MakeSchedule {
                     // );
                     if self.end_of_month {
                         //panic!("endOfMonth convention incompatible with {:?} date generation rule", self.rule);
-                        return Err(AtlasError::MakeScheduleErr(
+                        return Err(QSError::MakeScheduleErr(
                             "endOfMonth convention incompatible with date generation rule"
                                 .to_string(),
                         ));
@@ -501,7 +501,7 @@ impl MakeSchedule {
                 }
 
                 seed = *self.dates.last().ok_or_else(|| {
-                    AtlasError::MakeScheduleErr("Schedule dates are empty".into())
+                    QSError::MakeScheduleErr("Schedule dates are empty".into())
                 })?;
 
                 if self.first_date != Date::empty() {
@@ -558,7 +558,7 @@ impl MakeSchedule {
                     );
                     if temp > exit_date {
                         let last_date = *self.dates.last().ok_or_else(|| {
-                            AtlasError::MakeScheduleErr("Schedule dates are empty".into())
+                            QSError::MakeScheduleErr("Schedule dates are empty".into())
                         })?;
                         if self.next_to_last_date != Date::empty()
                             && (self.calendar.adjust(last_date, Some(self.convention))
@@ -574,7 +574,7 @@ impl MakeSchedule {
                     // skip dates that would result in duplicates
                     // after adjustment
                     let last_date = *self.dates.last().ok_or_else(|| {
-                        AtlasError::MakeScheduleErr("Schedule dates are empty".into())
+                        QSError::MakeScheduleErr("Schedule dates are empty".into())
                     })?;
                     if self.calendar.adjust(last_date, Some(self.convention))
                         != self.calendar.adjust(temp, Some(self.convention))
@@ -586,7 +586,7 @@ impl MakeSchedule {
                 }
 
                 let last_date = *self.dates.last().ok_or_else(|| {
-                    AtlasError::MakeScheduleErr("Schedule dates are empty".into())
+                    QSError::MakeScheduleErr("Schedule dates are empty".into())
                 })?;
                 if self
                     .calendar

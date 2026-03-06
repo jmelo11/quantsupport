@@ -3,7 +3,7 @@ use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssi
 
 use crate::ad::node::TapeNode;
 use crate::ad::tape::{Tape, TAPE};
-use crate::utils::errors::{AtlasError, Result};
+use crate::utils::errors::{QSError, Result};
 
 use std::cmp::Ordering;
 use std::ptr::NonNull;
@@ -117,7 +117,7 @@ impl ADReal {
     pub fn adjoint(&self) -> Result<f64> {
         self.node
             .map(|p| unsafe { p.as_ref().adj })
-            .ok_or(AtlasError::NodeNotIndexedInTapeErr)
+            .ok_or(QSError::NodeNotIndexedInTapeErr)
     }
 
     /// Runs a full backward pass from this node to the start of the tape.
@@ -125,11 +125,11 @@ impl ADReal {
     /// ## Errors
     /// Returns an error if this node is not indexed in the tape.    
     pub fn backward(&self) -> Result<()> {
-        let root = self.node.ok_or(AtlasError::NodeNotIndexedInTapeErr)?;
+        let root = self.node.ok_or(QSError::NodeNotIndexedInTapeErr)?;
 
         TAPE.with_borrow_mut(|tape| {
             tape.mut_node(root)
-                .ok_or(AtlasError::NodeNotIndexedInTapeErr)?
+                .ok_or(QSError::NodeNotIndexedInTapeErr)?
                 .adj = 1.0;
             tape.propagate_from(root)
         })
@@ -140,11 +140,11 @@ impl ADReal {
     /// ## Errors
     /// Returns an error if this node is not indexed in the tape.
     pub fn backward_mark_to_start(&self) -> Result<()> {
-        let root: NonNull<TapeNode> = self.node.ok_or(AtlasError::NodeNotIndexedInTapeErr)?;
+        let root: NonNull<TapeNode> = self.node.ok_or(QSError::NodeNotIndexedInTapeErr)?;
 
         TAPE.with_borrow_mut(|tape| {
             tape.mut_node(root)
-                .ok_or(AtlasError::NodeNotIndexedInTapeErr)?
+                .ok_or(QSError::NodeNotIndexedInTapeErr)?
                 .adj = 1.0;
             tape.propagate_mark_to_start()
         })
@@ -155,11 +155,11 @@ impl ADReal {
     /// ## Errors
     /// Returns an error if this node is not indexed in the tape.
     pub fn backward_to_mark(&self) -> Result<()> {
-        let root: NonNull<TapeNode> = self.node.ok_or(AtlasError::NodeNotIndexedInTapeErr)?;
+        let root: NonNull<TapeNode> = self.node.ok_or(QSError::NodeNotIndexedInTapeErr)?;
 
         TAPE.with_borrow_mut(|tape| {
             tape.mut_node(root)
-                .ok_or(AtlasError::NodeNotIndexedInTapeErr)?
+                .ok_or(QSError::NodeNotIndexedInTapeErr)?
                 .adj = 1.0;
             tape.propagate_to_mark()
         })

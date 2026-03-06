@@ -1,8 +1,5 @@
-use crate::ad::{
-    adreal::{ADReal, IsReal},
-    tape::Tape,
-};
-use crate::utils::errors::{AtlasError, Result};
+use crate::ad::{adreal::ADReal, tape::Tape};
+use crate::utils::errors::{QSError, Result};
 use std::ops::Sub;
 
 /// Dense matrix alias used by solver interfaces.
@@ -37,19 +34,19 @@ pub trait ContFunc<X: ?Sized, Y = f64> {
     /// Evaluate the function at `x`.
     ///
     /// ## Errors
-    /// Returns an [`AtlasError`] if the function evaluation fails.
+    /// Returns an [`QSError`] if the function evaluation fails.
     fn call(&self, x: &X) -> Result<Y>;
 }
 
 /// First-order function: extends `ContFunc` with a gradient.
 ///
 /// ## Errors
-/// Returns an [`AtlasError`] if the gradient computation fails.
+/// Returns an [`QSError`] if the gradient computation fails.
 pub trait C1Func<X>: ContFunc<X, f64> {
     /// Return the gradient at `x`.
     ///
     /// ## Errors
-    /// Returns an [`AtlasError`] if the gradient computation fails.
+    /// Returns an [`QSError`] if the gradient computation fails.
     fn grad(&self, x: &X) -> Result<X>;
 }
 
@@ -59,12 +56,12 @@ pub trait C1Func<X>: ContFunc<X, f64> {
 /// useful to compute Newton-like steps. The concrete `H` type is left generic.
 ///
 /// ## Errors
-/// Returns an [`AtlasError`] if the inverse Hessian computation fails.
+/// Returns an [`QSError`] if the inverse Hessian computation fails.
 pub trait C2Func<X, H>: C1Func<X> {
     /// Return the inverse of the Hessian.
     ///
     /// ## Errors
-    /// Returns an [`AtlasError`] if the inverse Hessian computation fails.
+    /// Returns an [`QSError`] if the inverse Hessian computation fails.
     fn inv_hess(&self, x: &X) -> Result<H>;
 }
 
@@ -91,13 +88,13 @@ where
     /// Compute a step given current `x`, problem `f` and current function value `fval`.
     ///
     /// ## Errors
-    /// Returns an [`AtlasError`] if the step computation fails.
+    /// Returns an [`QSError`] if the step computation fails.
     fn step(&self, x: &X, f: &P, fval: f64) -> Result<X>;
 
     /// Solve the problem using the provided builder methods.
     ///
     /// ## Errors
-    /// Returns an [`AtlasError`] if the function evaluation or step computation fails.
+    /// Returns an [`QSError`] if the function evaluation or step computation fails.
     fn solve(&self, f: &P) -> Result<OptimizerSolution<X, f64>> {
         let mut x = self.x0();
         let mut fval = 0.0;
@@ -156,14 +153,14 @@ pub trait ADJacobian: VectorFunc<ADReal, ADReal> {
             let n = x.len();
 
             if residual.len() != n {
-                return Err(AtlasError::SolverErr(
+                return Err(QSError::SolverErr(
                     "Vector function must return residual size equal to variable size".into(),
                 ));
             }
 
             for row in 0..n {
                 if !residual[row].is_on_tape() {
-                    return Err(AtlasError::NodeNotIndexedInTapeErr);
+                    return Err(QSError::NodeNotIndexedInTapeErr);
                 }
             }
 

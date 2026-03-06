@@ -16,7 +16,7 @@ use crate::{
         trade::Trade,
     },
     instruments::rates::ratefutures::RateFuturesTrade,
-    utils::errors::{AtlasError, Result},
+    utils::errors::{QSError, Result},
 };
 
 /// Pricer for rate futures quotes.
@@ -92,7 +92,7 @@ impl HandleSensitivities<RateFuturesTrade, RateFuturesState> for RateFuturesPric
             let _ = self.handle_value(trade, state)?;
             state
                 .value
-                .ok_or_else(|| AtlasError::UnexpectedErr("Missing value in futures state".into()))?
+                .ok_or_else(|| QSError::UnexpectedErr("Missing value in futures state".into()))?
         };
 
         value.backward_to_mark()?;
@@ -127,7 +127,7 @@ impl Pricer for RateFuturesPricer {
         let identifier = trade.instrument().identifier();
 
         let md_request = self.market_data_request(trade).ok_or_else(|| {
-            AtlasError::InvalidValueErr("Missing market-data request for rate futures".into())
+            QSError::InvalidValueErr("Missing market-data request for rate futures".into())
         })?;
 
         let mut state = RateFuturesState {

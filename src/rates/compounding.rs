@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::utils::errors::{AtlasError, Result};
+use crate::utils::errors::{QSError, Result};
 
 /// # Compounding
 /// Enumerate the different compounding methods.
@@ -19,7 +19,7 @@ pub enum Compounding {
 }
 
 impl TryFrom<String> for Compounding {
-    type Error = AtlasError;
+    type Error = QSError;
 
     fn try_from(s: String) -> Result<Self> {
         match s.as_str() {
@@ -28,7 +28,7 @@ impl TryFrom<String> for Compounding {
             "Continuous" => Ok(Self::Continuous),
             "SimpleThenCompounded" => Ok(Self::SimpleThenCompounded),
             "CompoundedThenSimple" => Ok(Self::CompoundedThenSimple),
-            _ => Err(AtlasError::InvalidValueErr(format!(
+            _ => Err(QSError::InvalidValueErr(format!(
                 "Invalid compounding: {s}"
             ))),
         }

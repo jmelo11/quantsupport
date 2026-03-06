@@ -7,7 +7,7 @@ use crate::{
         yieldtermstructure::interestratestermstructure::InterestRatesTermStructure,
     },
     time::{date::Date, daycounter::DayCounter, enums::Frequency},
-    utils::errors::{AtlasError, Result},
+    utils::errors::{QSError, Result},
 };
 
 /// # `DiscountTermStructure`
@@ -113,7 +113,7 @@ where
     /// Returns an error if the reference date is not set.
     pub fn with_pillar_labels(mut self, pillar_labels: Vec<String>) -> Result<Self> {
         if pillar_labels.len() != self.discount_factors.len() {
-            return Err(AtlasError::InvalidValueErr(
+            return Err(QSError::InvalidValueErr(
                 "Pillar labels need to have the same size as discount factors".into(),
             ));
         }
@@ -145,7 +145,7 @@ impl DiscountTermStructure<f64> {
     ) -> Result<Self> {
         // check if year_fractions and discount_factors have the same size
         if dates.len() != discount_factors.len() {
-            return Err(AtlasError::InvalidValueErr(
+            return Err(QSError::InvalidValueErr(
                 "Dates and discount_factors need to have the same size".to_string(),
             ));
         }
@@ -157,7 +157,7 @@ impl DiscountTermStructure<f64> {
 
         // discount_factors[0] needs to be 1.0
         if (discount_factors[0] - 1.0).abs() > 1e-12 {
-            return Err(AtlasError::InvalidValueErr(
+            return Err(QSError::InvalidValueErr(
                 "First discount factor needs to be 1.0".to_string(),
             ));
         }
@@ -203,7 +203,7 @@ impl DiscountTermStructure<ADReal> {
     ) -> Result<Self> {
         // check if year_fractions and discount_factors have the same size
         if dates.len() != discount_factors.len() {
-            return Err(AtlasError::InvalidValueErr(
+            return Err(QSError::InvalidValueErr(
                 "Dates and discount_factors need to have the same size".to_string(),
             ));
         }
@@ -215,7 +215,7 @@ impl DiscountTermStructure<ADReal> {
 
         // discount_factors[0] needs to be 1.0
         if (discount_factors[0] - Const::one()).abs() > 1e-12 {
-            return Err(AtlasError::InvalidValueErr(
+            return Err(QSError::InvalidValueErr(
                 "First discount factor needs to be 1.0".to_string(),
             ));
         }
@@ -267,7 +267,7 @@ impl InterestRatesTermStructure<f64> for DiscountTermStructure<f64> {
 
     fn discount_factor(&self, date: Date) -> Result<f64> {
         if date < self.reference_date() {
-            return Err(AtlasError::InvalidValueErr(
+            return Err(QSError::InvalidValueErr(
                 "Date needs to be greater than reference date".to_string(),
             ));
         }
@@ -314,7 +314,7 @@ impl InterestRatesTermStructure<ADReal> for DiscountTermStructure<ADReal> {
     }
     fn discount_factor(&self, date: Date) -> Result<ADReal> {
         if date < self.reference_date() {
-            return Err(AtlasError::InvalidValueErr(
+            return Err(QSError::InvalidValueErr(
                 "Date needs to be greater than reference date".to_string(),
             ));
         }

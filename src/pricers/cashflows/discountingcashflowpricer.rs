@@ -23,7 +23,7 @@ use crate::{
     instruments::cashflows::{cashflow::Cashflow, cashflowtype::CashflowType, leg::Leg},
     rates::compounding::Compounding,
     time::enums::Frequency,
-    utils::errors::{AtlasError, Result},
+    utils::errors::{QSError, Result},
 };
 use std::{collections::HashSet, marker::PhantomData};
 
@@ -99,7 +99,7 @@ where
             let _ = self.handle_value(trade, state)?;
             state
                 .value
-                .ok_or_else(|| AtlasError::NotFoundErr("Missing state.".into()))?
+                .ok_or_else(|| QSError::NotFoundErr("Missing state.".into()))?
         };
 
         let () = price.backward_to_mark()?;
@@ -153,7 +153,7 @@ where
         if let Some(fx_store) = state.get_exchange_rate_store() {
             for (label, value) in fx_store
                 .pillars()
-                .ok_or_else(|| AtlasError::ValueNotSetErr("Pillars".into()))?
+                .ok_or_else(|| QSError::ValueNotSetErr("Pillars".into()))?
             {
                 all_ids.push(label);
                 all_exposures.push(value.adjoint().unwrap_or(0.0));
@@ -176,7 +176,7 @@ where
         // Check that all legs are linear
         for leg in trade.legs() {
             if !leg.is_linear() {
-                return Err(AtlasError::InvalidValueErr(format!(
+                return Err(QSError::InvalidValueErr(format!(
                     "Leg {} is not linear. CashflowDiscountPricer only supports linear payoffs",
                     leg.leg_id()
                 )));
@@ -205,7 +205,7 @@ where
                 let mut matching = state
                     .get_market_data_reponse()
                     .ok_or_else(|| {
-                        AtlasError::NotFoundErr("MarketDataResponse not available.".into())
+                        QSError::NotFoundErr("MarketDataResponse not available.".into())
                     })?
                     .constructed_elements()
                     .discount_curves()
@@ -214,13 +214,13 @@ where
                     .map(|(index, _)| index.clone());
 
                 let first = matching.next().ok_or_else(|| {
-                    AtlasError::NotFoundErr(format!(
+                    QSError::NotFoundErr(format!(
                         "No discount curve found for currency {leg_currency}. For derivative legs without CSA this curve is required as risk-free discounting curve."
                     ))
                 })?;
 
                 if matching.next().is_some() {
-                    return Err(AtlasError::InvalidValueErr(format!(
+                    return Err(QSError::InvalidValueErr(format!(
                         "Multiple discount curves found for currency {leg_currency}. Set a leg market index or a discount policy to disambiguate discounting."
                     )));
                 }
@@ -232,7 +232,7 @@ where
                 let mut matching = state
                     .get_market_data_reponse()
                     .ok_or_else(|| {
-                        AtlasError::NotFoundErr("MarketDataResponse not available.".into())
+                        QSError::NotFoundErr("MarketDataResponse not available.".into())
                     })?
                     .constructed_elements()
                     .discount_curves()
@@ -241,13 +241,13 @@ where
                     .map(|(index, _)| index.clone());
 
                 let first = matching.next().ok_or_else(|| {
-                    AtlasError::NotFoundErr(format!(
+                    QSError::NotFoundErr(format!(
                         "No discount curve found for currency {leg_currency}. Provide a leg market index or load a risk-free curve for this currency."
                     ))
                 })?;
 
                 if matching.next().is_some() {
-                    return Err(AtlasError::InvalidValueErr(format!(
+                    return Err(QSError::InvalidValueErr(format!(
                         "Multiple discount curves found for currency {leg_currency}. Set leg market index to select discount curve explicitly."
                     )));
                 }
@@ -264,7 +264,7 @@ where
                     }
                     CashflowType::FloatingRateCoupon(coupon) => {
                         // Forward / projection curve always comes from the leg's own market index
-                        let forward_index = leg.market_index().ok_or(AtlasError::NotFoundErr(
+                        let forward_index = leg.market_index().ok_or(QSError::NotFoundErr(
                             "A market index must be set to price floating rate coupons."
                                 .to_string(),
                         ))?;
@@ -279,7 +279,7 @@ where
                         (coupon.amount()?, coupon.payment_date())
                     }
                     CashflowType::OptionEmbeddedCoupon(_) => {
-                        return Err(AtlasError::InvalidValueErr(format!(
+                        return Err(QSError::InvalidValueErr(format!(
                             "Option-embedded coupon found in leg {}. CashflowDiscountPricer does not support non-linear payoffs",
                             leg.leg_id()
                         )));
@@ -301,7 +301,7 @@ where
                         .currency();
                     if leg_currency != discount_currency {
                         let leg_curve_index = leg.market_index().ok_or_else(|| {
-                            AtlasError::NotFoundErr(format!(
+                            QSError::NotFoundErr(format!(
                                 "Leg {} requires market index to compute FX parity against discount curve currency {}",
                                 leg.leg_id(),
                                 discount_currency
@@ -348,7 +348,7 @@ where
 
         for leg in trade.legs() {
             // Forward / projection curve always comes from the leg's own market index
-            let forward_index = leg.market_index().ok_or(AtlasError::NotFoundErr(
+            let forward_index = leg.market_index().ok_or(QSError::NotFoundErr(
                 "Market index required for par rate computation".to_string(),
             ))?;
             let forward_curve = state.get_discount_curve_element(forward_index)?.curve();
@@ -431,7 +431,7 @@ where
         }
 
         if annuity.abs() < f64::EPSILON {
-            return Err(AtlasError::InvalidValueErr(
+            return Err(QSError::InvalidValueErr(
                 "Cannot compute par rate: annuity is zero (no fixed coupons found)".into(),
             ));
         }
@@ -459,7 +459,7 @@ where
 
         let md_request = self
             .market_data_request(trade)
-            .ok_or_else(|| AtlasError::InvalidValueErr("Missing market data request".into()))?;
+            .ok_or_else(|| QSError::InvalidValueErr("Missing market data request".into()))?;
 
         let mut results = EvaluationResults::new(eval_date, identifier);
         let mut state = DCFState {

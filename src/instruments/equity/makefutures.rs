@@ -4,7 +4,7 @@ use crate::{
     indices::marketindex::MarketIndex,
     instruments::equity::futures::Futures,
     time::{date::Date, daycounter::DayCounter},
-    utils::errors::{AtlasError, Result},
+    utils::errors::{QSError, Result},
 };
 
 /// A builder for creating a [`Futures`] instance.
@@ -84,16 +84,16 @@ impl MakeFutures {
     pub fn build(self) -> Result<Futures> {
         let identifier = self
             .identifier
-            .ok_or_else(|| AtlasError::ValueNotSetErr("Identifier".into()))?;
+            .ok_or_else(|| QSError::ValueNotSetErr("Identifier".into()))?;
         let market_index = self
             .market_index
-            .ok_or_else(|| AtlasError::ValueNotSetErr("Market index".into()))?;
+            .ok_or_else(|| QSError::ValueNotSetErr("Market index".into()))?;
         let expiry_date = self
             .expiry_date
-            .ok_or_else(|| AtlasError::ValueNotSetErr("Expiry date".into()))?;
+            .ok_or_else(|| QSError::ValueNotSetErr("Expiry date".into()))?;
         let futures_price = self
             .futures_price
-            .ok_or_else(|| AtlasError::ValueNotSetErr("Futures price".into()))?;
+            .ok_or_else(|| QSError::ValueNotSetErr("Futures price".into()))?;
 
         let contract_size = self.contract_size.unwrap_or(1.0);
         let currency = self.currency.unwrap_or(Currency::USD);

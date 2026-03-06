@@ -5,7 +5,7 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
-use crate::utils::errors::{AtlasError, Result};
+use crate::utils::errors::{QSError, Result};
 
 /// # Frequency
 /// Enum representing a financial frequency.
@@ -40,7 +40,7 @@ pub enum Frequency {
 }
 
 impl TryFrom<String> for Frequency {
-    type Error = AtlasError;
+    type Error = QSError;
 
     fn try_from(s: String) -> Result<Self> {
         match s.as_str() {
@@ -57,7 +57,7 @@ impl TryFrom<String> for Frequency {
             "Weekly" => Ok(Self::Weekly),
             "Daily" => Ok(Self::Daily),
             "OtherFrequency" => Ok(Self::OtherFrequency),
-            _ => Err(AtlasError::InvalidValueErr(format!(
+            _ => Err(QSError::InvalidValueErr(format!(
                 "Invalid frequency: {s}"
             ))),
         }
@@ -99,7 +99,7 @@ pub enum TimeUnit {
 }
 
 impl TryFrom<String> for TimeUnit {
-    type Error = AtlasError;
+    type Error = QSError;
 
     fn try_from(s: String) -> Result<Self> {
         match s.as_str() {
@@ -107,7 +107,7 @@ impl TryFrom<String> for TimeUnit {
             "Weeks" => Ok(Self::Weeks),
             "Months" => Ok(Self::Months),
             "Years" => Ok(Self::Years),
-            _ => Err(AtlasError::InvalidValueErr(format!(
+            _ => Err(QSError::InvalidValueErr(format!(
                 "Invalid time unit: {s}"
             ))),
         }
@@ -156,7 +156,7 @@ pub enum Month {
 }
 
 impl TryFrom<String> for Month {
-    type Error = AtlasError;
+    type Error = QSError;
 
     fn try_from(s: String) -> Result<Self> {
         match s.as_str() {
@@ -172,7 +172,7 @@ impl TryFrom<String> for Month {
             "October" => Ok(Self::October),
             "November" => Ok(Self::November),
             "December" => Ok(Self::December),
-            _ => Err(AtlasError::InvalidValueErr(format!("Invalid month: {s}"))),
+            _ => Err(QSError::InvalidValueErr(format!("Invalid month: {s}"))),
         }
     }
 }
@@ -253,7 +253,7 @@ pub enum DateGenerationRule {
 }
 
 impl TryFrom<String> for DateGenerationRule {
-    type Error = AtlasError;
+    type Error = QSError;
 
     fn try_from(s: String) -> Result<Self> {
         match s.as_str() {
@@ -267,7 +267,7 @@ impl TryFrom<String> for DateGenerationRule {
             "OldCDS" => Ok(Self::OldCDS),
             "CDS" => Ok(Self::CDS),
             "CDS2015" => Ok(Self::CDS2015),
-            _ => Err(AtlasError::InvalidValueErr(format!(
+            _ => Err(QSError::InvalidValueErr(format!(
                 "Invalid date generation rule: {s}"
             ))),
         }
@@ -324,7 +324,7 @@ pub enum BusinessDayConvention {
 }
 
 impl TryFrom<String> for BusinessDayConvention {
-    type Error = AtlasError;
+    type Error = QSError;
 
     fn try_from(s: String) -> Result<Self> {
         match s.as_str() {
@@ -335,7 +335,7 @@ impl TryFrom<String> for BusinessDayConvention {
             "Unadjusted" => Ok(Self::Unadjusted),
             "HalfMonthModifiedFollowing" => Ok(Self::HalfMonthModifiedFollowing),
             "Nearest" => Ok(Self::Nearest),
-            _ => Err(AtlasError::InvalidValueErr(format!(
+            _ => Err(QSError::InvalidValueErr(format!(
                 "Invalid business day convention: {s}"
             ))),
         }
@@ -379,7 +379,7 @@ pub enum Weekday {
 }
 
 impl TryFrom<String> for Weekday {
-    type Error = AtlasError;
+    type Error = QSError;
 
     fn try_from(s: String) -> Result<Self> {
         match s.as_str() {
@@ -390,7 +390,7 @@ impl TryFrom<String> for Weekday {
             "Thursday" => Ok(Self::Thursday),
             "Friday" => Ok(Self::Friday),
             "Saturday" => Ok(Self::Saturday),
-            _ => Err(AtlasError::InvalidValueErr(format!("Invalid weekday: {s}"))),
+            _ => Err(QSError::InvalidValueErr(format!("Invalid weekday: {s}"))),
         }
     }
 }

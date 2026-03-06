@@ -6,7 +6,7 @@ use crate::{
     indices::marketindex::MarketIndex,
     math::interpolation::interpolator::{Interpolate, Interpolator},
     time::{date::Date, enums::TimeUnit, period::Period},
-    utils::errors::{AtlasError, Result},
+    utils::errors::{QSError, Result},
 };
 
 /// # `FixingStore`
@@ -22,7 +22,7 @@ impl FixingStore {
     /// Returns an error if the fixing is unavailable for the requested date.
     pub fn fixing(&self, market_index: &MarketIndex, date: Date) -> Result<f64> {
         let fixing = self.fixings(market_index)?.get(&date).ok_or_else(|| {
-            AtlasError::NotFoundErr(format!(
+            QSError::NotFoundErr(format!(
                 "Fixings of index {market_index} for date {date} not found in fixings data."
             ))
         })?;
@@ -31,10 +31,10 @@ impl FixingStore {
     /// Returns a reference to the map of all fixings.
     ///
     /// ## Errors
-    /// Returns [`AtlasError`] if the [`MarketIndex`] is not found.
+    /// Returns [`QSError`] if the [`MarketIndex`] is not found.
     pub fn fixings(&self, market_index: &MarketIndex) -> Result<&BTreeMap<Date, f64>> {
         self.values.get(market_index).ok_or_else(|| {
-            AtlasError::NotFoundErr(format!("Index {market_index} not found in fixings data."))
+            QSError::NotFoundErr(format!("Index {market_index} not found in fixings data."))
         })
     }
     /// Adds a fixing for a given date and rate.
@@ -58,13 +58,13 @@ impl FixingStore {
             .try_for_each(|fixings| {
                 // get start and end
                 let mut curr_date: Date = fixings.keys().min().copied().ok_or_else(|| {
-                    AtlasError::UnexpectedErr(
+                    QSError::UnexpectedErr(
                     "An error was found while getting the minimun date for filling missing indices."
                         .into(),
                 )
                 })?;
                 let last_date: Date = fixings.keys().max().copied().ok_or_else(|| {
-                    AtlasError::UnexpectedErr(
+                    QSError::UnexpectedErr(
                     "An error was found while getting the maximun date for filling missing indices."
                         .into(),
                 )

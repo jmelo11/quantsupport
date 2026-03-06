@@ -7,7 +7,7 @@ use crate::{
         fixedincome::fixedratedeposit::FixedRateDeposit,
         rates::{capletfloorlet::CapletFloorlet, crosscurrencyswap::CrossCurrencySwap},
     },
-    utils::errors::{AtlasError, Result},
+    utils::errors::{QSError, Result},
 };
 
 /// Generic visitor-style discount policy.
@@ -57,7 +57,7 @@ impl DiscountPolicy<FixedRateDeposit> for FixedIncomeDiscountPolicy {
             return Ok(target.market_index());
         }
         self.risk_free_index(target.currency()).ok_or_else(|| {
-            AtlasError::NotFoundErr(format!(
+            QSError::NotFoundErr(format!(
                 "No risk-free discount index configured for currency {}",
                 target.currency()
             ))

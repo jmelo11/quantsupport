@@ -5,7 +5,7 @@ use crate::{
     instruments::rates::ratefutures::RateFutures,
     rates::interestrate::RateDefinition,
     time::date::Date,
-    utils::errors::{AtlasError, Result},
+    utils::errors::{QSError, Result},
 };
 
 /// A builder for creating a [`RateFutures`] instance.
@@ -86,19 +86,19 @@ impl MakeRateFutures {
     pub fn build(self) -> Result<RateFutures> {
         let identifier = self
             .identifier
-            .ok_or_else(|| AtlasError::ValueNotSetErr("Identifier".into()))?;
+            .ok_or_else(|| QSError::ValueNotSetErr("Identifier".into()))?;
         let market_index = self
             .market_index
-            .ok_or_else(|| AtlasError::ValueNotSetErr("Market index".into()))?;
+            .ok_or_else(|| QSError::ValueNotSetErr("Market index".into()))?;
         let start_date = self
             .start_date
-            .ok_or_else(|| AtlasError::ValueNotSetErr("Start date".into()))?;
+            .ok_or_else(|| QSError::ValueNotSetErr("Start date".into()))?;
         let end_date = self
             .end_date
-            .ok_or_else(|| AtlasError::ValueNotSetErr("End date".into()))?;
+            .ok_or_else(|| QSError::ValueNotSetErr("End date".into()))?;
         let futures_price = self
             .futures_price
-            .ok_or_else(|| AtlasError::ValueNotSetErr("Futures price".into()))?;
+            .ok_or_else(|| QSError::ValueNotSetErr("Futures price".into()))?;
 
         let rate_definition = if let Some(rd) = self.rate_definition {
             rd

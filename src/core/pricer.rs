@@ -4,7 +4,7 @@ use crate::{
         marketdatahandling::marketdata::{MarketDataProvider, MarketDataRequest},
         request::Request,
     },
-    utils::errors::AtlasError,
+    utils::errors::QSError,
 };
 
 /// The [`Pricer`] trait should be implemented by any instrument pricing methodology. Implementers
@@ -26,13 +26,13 @@ pub trait Pricer: Send + Sync {
     /// Returns [`EvaluationResults`] if the evaluation succeded.
     ///
     /// ## Errors
-    /// Returns an [`AtlasError`] if the evaluation fails.
+    /// Returns an [`QSError`] if the evaluation fails.
     fn evaluate(
         &self,
         trade: &Self::Item,
         requests: &[Request],
         ctx: &impl MarketDataProvider,
-    ) -> Result<EvaluationResults, AtlasError>;
+    ) -> Result<EvaluationResults, QSError>;
 
     /// Returns a [`MarketDataRequest`] containing the market data elements required to evaluate the instrument.
     ///

@@ -3,7 +3,7 @@ use std::fmt::{self, Display, Formatter};
 
 use crate::indices::rateindex::RateIndexDetails;
 use crate::indices::{quotetype::QuoteType, rateindices::sofr::SOFRIndex};
-use crate::utils::errors::{AtlasError, Result};
+use crate::utils::errors::{QSError, Result};
 
 #[derive(Serialize, Deserialize, Debug, Hash, PartialEq, Eq, Clone)]
 /// # `InterestRateIndex`
@@ -89,7 +89,7 @@ impl MarketIndex {
     pub fn details(&self) -> Result<impl MarketIndexDetails> {
         match self {
             Self::SOFR => Ok(SOFRIndex),
-            _ => Err(AtlasError::InvalidValueErr(
+            _ => Err(QSError::InvalidValueErr(
                 "Index does not contain market details".into(),
             )),
         }
@@ -101,7 +101,7 @@ impl MarketIndex {
     pub fn rate_index_details(&self) -> Result<impl RateIndexDetails> {
         match self {
             Self::SOFR => Ok(SOFRIndex),
-            _ => Err(AtlasError::InvalidValueErr(
+            _ => Err(QSError::InvalidValueErr(
                 "Index is not rate index".into(),
             )),
         }
