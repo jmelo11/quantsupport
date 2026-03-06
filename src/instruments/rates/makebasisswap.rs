@@ -182,7 +182,7 @@ impl MakeBasisSwap {
 
         // Pay leg
         let pay_leg = MakeLeg::default()
-            .set_leg_id(0)
+            .with_leg_id(0)
             .with_notional(notional)
             .with_side(Side::PayShort)
             .with_currency(currency)
@@ -201,7 +201,7 @@ impl MakeBasisSwap {
 
         // Receive leg
         let receive_leg = MakeLeg::default()
-            .set_leg_id(1)
+            .with_leg_id(1)
             .with_notional(notional)
             .with_side(Side::LongRecieve)
             .with_currency(currency)
@@ -226,5 +226,53 @@ impl MakeBasisSwap {
             receive_market_index,
             currency,
         ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::instrument::Instrument;
+
+    fn base_builder() -> MakeBasisSwap {
+        MakeBasisSwap::default()
+            .with_identifier("basis_swap_test".to_string())
+            .with_start_date(Date::new(2024, 1, 1))
+            .with_maturity_date(Date::new(2025, 1, 1))
+            .with_notional(1_000_000.0)
+            .with_pay_market_index(MarketIndex::SOFR)
+            .with_receive_market_index(MarketIndex::TermSOFR3m)
+            .with_currency(Currency::USD)
+    }
+
+    #[test]
+    fn test_build_basis_swap_success() {
+        let result = base_builder().build();
+        assert!(result.is_ok(), "expected basis swap build to succeed");
+
+        let swap = result.unwrap();
+        assert_eq!(swap.identifier(), "basis_swap_test");
+        assert_eq!(swap.currency(), Currency::USD);
+        assert_eq!(swap.pay_market_index(), MarketIndex::SOFR);
+        assert_eq!(swap.receive_market_index(), MarketIndex::TermSOFR3m);
+        assert!(!swap.pay_leg().cashflows().is_empty());
+        assert!(!swap.receive_leg().cashflows().is_empty());
+    }
+
+    #[test]
+    fn test_build_basis_swap_missing_receive_index_fails() {
+        let result = MakeBasisSwap::default()
+            .with_identifier("basis_swap_missing_receive".to_string())
+            .with_start_date(Date::new(2024, 1, 1))
+            .with_maturity_date(Date::new(2025, 1, 1))
+            .with_notional(1_000_000.0)
+            .with_pay_market_index(MarketIndex::SOFR)
+            .with_currency(Currency::USD)
+            .build();
+
+        assert!(
+            result.is_err(),
+            "expected missing receive market index to fail"
+        );
     }
 }

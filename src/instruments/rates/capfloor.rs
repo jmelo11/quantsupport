@@ -3,12 +3,11 @@ use serde::{Deserialize, Serialize};
 use crate::{
     core::{
         instrument::{AssetClass, Instrument},
-        request::LegsProvider,
         trade::{Side, Trade},
     },
     currencies::currency::Currency,
     indices::marketindex::MarketIndex,
-    instruments::cashflows::leg::Leg,
+    instruments::rates::capletfloorlet::CapletFloorlet,
     time::date::Date,
 };
 
@@ -21,11 +20,10 @@ pub enum CapFloorType {
     Floor,
 }
 
-/// A [`CapFloor`] represents a strip of caplets or floorlets, modelled as a
-/// single floating-rate leg whose coupons carry an embedded cap or floor.
+/// A [`CapFloor`] represents a strip of caplets or floorlets.
 pub struct CapFloor {
     identifier: String,
-    leg: Leg,
+    caplet_floorlets: Vec<CapletFloorlet>,
     market_index: MarketIndex,
     currency: Currency,
     strike: f64,
@@ -37,7 +35,7 @@ impl CapFloor {
     #[must_use]
     pub fn new(
         identifier: String,
-        leg: Leg,
+        caplet_floorlets: Vec<CapletFloorlet>,
         market_index: MarketIndex,
         currency: Currency,
         strike: f64,
@@ -45,7 +43,7 @@ impl CapFloor {
     ) -> Self {
         Self {
             identifier,
-            leg,
+            caplet_floorlets,
             market_index,
             currency,
             strike,
@@ -77,10 +75,10 @@ impl CapFloor {
         self.cap_floor_type
     }
 
-    /// Returns a reference to the underlying floating leg.
+    /// Returns the caplet/floorlet strip.
     #[must_use]
-    pub const fn leg(&self) -> &Leg {
-        &self.leg
+    pub fn caplet_floorlets(&self) -> &[CapletFloorlet] {
+        &self.caplet_floorlets
     }
 }
 
@@ -91,12 +89,6 @@ impl Instrument for CapFloor {
 
     fn asset_class(&self) -> AssetClass {
         AssetClass::InterestRate
-    }
-}
-
-impl LegsProvider for CapFloor {
-    fn legs(&self) -> &[Leg] {
-        std::slice::from_ref(&self.leg)
     }
 }
 
@@ -138,11 +130,5 @@ impl Trade<CapFloor> for CapFloorTrade {
 
     fn side(&self) -> Side {
         self.side
-    }
-}
-
-impl LegsProvider for CapFloorTrade {
-    fn legs(&self) -> &[Leg] {
-        self.instrument.legs()
     }
 }

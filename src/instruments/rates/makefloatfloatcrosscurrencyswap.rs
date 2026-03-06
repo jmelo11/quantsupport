@@ -206,7 +206,7 @@ impl MakeFloatFloatCrossCurrencySwap {
 
         // Domestic (floating) leg
         let domestic_leg = MakeLeg::default()
-            .set_leg_id(0)
+            .with_leg_id(0)
             .with_notional(domestic_notional)
             .with_side(side)
             .with_currency(domestic_currency)
@@ -230,7 +230,7 @@ impl MakeFloatFloatCrossCurrencySwap {
         };
 
         let foreign_leg = MakeLeg::default()
-            .set_leg_id(1)
+            .with_leg_id(1)
             .with_notional(foreign_notional)
             .with_side(foreign_side)
             .with_currency(foreign_currency)
@@ -256,5 +256,61 @@ impl MakeFloatFloatCrossCurrencySwap {
             domestic_market_index,
             foreign_market_index,
         ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::instrument::Instrument;
+
+    fn base_builder() -> MakeFloatFloatCrossCurrencySwap {
+        MakeFloatFloatCrossCurrencySwap::default()
+            .with_identifier("ff_xccy_swap_test".to_string())
+            .with_start_date(Date::new(2024, 1, 1))
+            .with_maturity_date(Date::new(2025, 1, 1))
+            .with_domestic_notional(1_000_000.0)
+            .with_foreign_notional(900_000.0)
+            .with_domestic_spread(0.001)
+            .with_foreign_spread(0.002)
+            .with_domestic_currency(Currency::USD)
+            .with_foreign_currency(Currency::EUR)
+            .with_domestic_market_index(MarketIndex::SOFR)
+            .with_foreign_market_index(MarketIndex::TermSOFR3m)
+    }
+
+    #[test]
+    fn test_build_float_float_cross_currency_swap_success() {
+        let result = base_builder().build();
+        assert!(
+            result.is_ok(),
+            "expected float-float cross-currency swap build to succeed"
+        );
+
+        let swap = result.unwrap();
+        assert_eq!(swap.identifier(), "ff_xccy_swap_test");
+        assert_eq!(swap.domestic_currency(), Currency::USD);
+        assert_eq!(swap.foreign_currency(), Currency::EUR);
+        assert_eq!(swap.domestic_market_index(), MarketIndex::SOFR);
+        assert_eq!(swap.foreign_market_index(), MarketIndex::TermSOFR3m);
+    }
+
+    #[test]
+    fn test_build_float_float_cross_currency_swap_missing_foreign_currency_fails() {
+        let result = MakeFloatFloatCrossCurrencySwap::default()
+            .with_identifier("ff_xccy_missing_foreign_ccy".to_string())
+            .with_start_date(Date::new(2024, 1, 1))
+            .with_maturity_date(Date::new(2025, 1, 1))
+            .with_domestic_notional(1_000_000.0)
+            .with_foreign_notional(900_000.0)
+            .with_domestic_currency(Currency::USD)
+            .with_domestic_market_index(MarketIndex::SOFR)
+            .with_foreign_market_index(MarketIndex::TermSOFR3m)
+            .build();
+
+        assert!(
+            result.is_err(),
+            "expected missing foreign currency to fail"
+        );
     }
 }

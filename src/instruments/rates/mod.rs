@@ -3,7 +3,7 @@ pub mod basisswap;
 /// Interest rate cap/floor instruments.
 pub mod capfloor;
 /// Interest rate caplet instruments.
-pub mod caplet;
+pub mod capletfloorlet;
 /// Cross-currency swap instruments (fixed vs float).
 pub mod crosscurrencyswap;
 /// Cross-currency swap instruments (float vs float).

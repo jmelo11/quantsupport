@@ -2,23 +2,24 @@ use crate::{
     core::trade::Side,
     currencies::currency::Currency,
     indices::marketindex::MarketIndex,
-    instruments::{
-        cashflows::makeleg::{MakeLeg, RateType},
-        rates::capfloor::{CapFloor, CapFloorType},
+    indices::rateindex::RateIndexDetails,
+    instruments::rates::{
+        capfloor::{CapFloor, CapFloorType},
+        capletfloorlet::{CapletFloorlet, CapletFloorletType},
     },
     rates::interestrate::RateDefinition,
     time::{
         calendar::Calendar,
+        calendars::nullcalendar::NullCalendar,
         date::Date,
         enums::{BusinessDayConvention, DateGenerationRule, Frequency},
+        schedule::MakeSchedule,
     },
     utils::errors::{AtlasError, Result},
+    volatility::volatilityindexing::Strike,
 };
 
-/// A builder for creating a [`CapFloor`] instance (an interest rate cap or floor).
-///
-/// A cap (floor) is a strip of caplets (floorlets), modelled as a single
-/// floating-rate leg whose coupons carry an embedded option.
+/// A builder for creating a [`CapFloor`] strip.
 #[derive(Default)]
 pub struct MakeCapFloor {
     start_date: Option<Date>,
@@ -74,14 +75,14 @@ impl MakeCapFloor {
         self
     }
 
-    /// Sets the rate definition for the floating leg.
+    /// Sets the rate definition for the caplet/floorlet strip.
     #[must_use]
     pub fn with_rate_definition(mut self, rate_definition: RateDefinition) -> Self {
         self.rate_definition = Some(rate_definition);
         self
     }
 
-    /// Sets the market index for the floating leg.
+    /// Sets the market index for the caplet/floorlet strip.
     #[must_use]
     pub fn with_market_index(mut self, market_index: MarketIndex) -> Self {
         self.market_index = Some(market_index);
@@ -147,10 +148,9 @@ impl MakeCapFloor {
     /// Builds the [`CapFloor`] instance.
     ///
     /// # Errors
-    /// Returns an error when required fields are missing or the underlying
-    /// leg builder fails.
+    /// Returns an error when required fields are missing or the schedule build fails.
     pub fn build(self) -> Result<CapFloor> {
-        let notional = self
+        let _notional = self
             .notional
             .ok_or_else(|| AtlasError::ValueNotSetErr("Notional".into()))?;
         let start_date = self
@@ -175,40 +175,129 @@ impl MakeCapFloor {
             .cap_floor_type
             .ok_or_else(|| AtlasError::ValueNotSetErr("CapFloorType".into()))?;
 
-        let side = self.side.unwrap_or(Side::LongRecieve);
+        let _side = self.side.unwrap_or(Side::LongRecieve);
         let frequency = self.frequency.unwrap_or(Frequency::Quarterly);
-
-        // Build a floating leg with the embedded cap or floor strike.
-        let mut leg_builder = MakeLeg::default()
-            .set_leg_id(0)
-            .with_notional(notional)
-            .with_side(side)
-            .with_currency(currency)
-            .with_market_index(market_index.clone())
-            .with_start_date(start_date)
-            .with_end_date(maturity_date)
-            .with_rate_type(RateType::Floating)
-            .with_payment_frequency(frequency)
-            .bullet()
-            .with_calendar(self.calendar)
-            .with_business_day_convention(self.business_day_convention)
-            .with_date_generation_rule(self.date_generation_rule)
-            .with_end_of_month(self.end_of_month);
-
-        leg_builder = match cap_floor_type {
-            CapFloorType::Cap => leg_builder.with_caplet_strike(Some(strike)),
-            CapFloorType::Floor => leg_builder.with_floorlet_strike(Some(strike)),
+        let rate_definition = if let Some(rd) = self.rate_definition {
+            rd
+        } else {
+            market_index.rate_index_details()?.rate_definition()
         };
 
-        let leg = leg_builder.build()?;
+        let strike_spec = Strike::Absolute(strike);
+        let option_type = match cap_floor_type {
+            CapFloorType::Cap => CapletFloorletType::Caplet,
+            CapFloorType::Floor => CapletFloorletType::Floorlet,
+        };
+
+        let schedule = MakeSchedule::new(start_date, maturity_date)
+            .with_frequency(frequency)
+            .with_calendar(
+                self.calendar
+                    .unwrap_or(Calendar::NullCalendar(NullCalendar::new())),
+            )
+            .with_convention(
+                self.business_day_convention
+                    .unwrap_or(BusinessDayConvention::ModifiedFollowing),
+            )
+            .with_termination_date_convention(
+                self.business_day_convention
+                    .unwrap_or(BusinessDayConvention::ModifiedFollowing),
+            )
+            .with_rule(
+                self.date_generation_rule
+                    .unwrap_or(DateGenerationRule::Backward),
+            )
+            .end_of_month(self.end_of_month.unwrap_or(false))
+            .build()?;
+
+        let dates = schedule.dates();
+        if dates.len() < 2 {
+            return Err(AtlasError::InvalidValueErr(
+                "CapFloor schedule must have at least two dates".into(),
+            ));
+        }
+
+        let mut caplet_floorlets = Vec::with_capacity(dates.len().saturating_sub(1));
+        for window in dates.windows(2) {
+            let period_start = window[0];
+            let period_end = window[1];
+            let payment_date = period_end;
+            let name = format!("{}:{}-{}", identifier, period_start, period_end);
+
+            caplet_floorlets.push(CapletFloorlet::new(
+                name,
+                market_index.clone(),
+                period_start,
+                period_end,
+                payment_date,
+                option_type,
+                strike_spec,
+                rate_definition,
+            ));
+        }
 
         Ok(CapFloor::new(
             identifier,
-            leg,
+            caplet_floorlets,
             market_index,
             currency,
             strike,
             cap_floor_type,
         ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::instrument::Instrument;
+
+    fn base_builder() -> MakeCapFloor {
+        MakeCapFloor::default()
+            .with_identifier("capfloor_test".to_string())
+            .with_start_date(Date::new(2024, 1, 1))
+            .with_maturity_date(Date::new(2025, 1, 1))
+            .with_strike(0.03)
+            .with_notional(1_000_000.0)
+            .with_market_index(MarketIndex::SOFR)
+            .with_currency(Currency::USD)
+            .with_cap_floor_type(CapFloorType::Cap)
+    }
+
+    #[test]
+    fn test_build_capfloor_success() {
+        let result = base_builder().build();
+        assert!(result.is_ok(), "expected cap/floor build to succeed");
+
+        let capfloor = result.unwrap();
+        assert_eq!(capfloor.identifier(), "capfloor_test");
+        assert_eq!(capfloor.currency(), Currency::USD);
+        assert_eq!(capfloor.market_index(), MarketIndex::SOFR);
+        assert_eq!(capfloor.strike(), 0.03);
+        assert!(!capfloor.caplet_floorlets().is_empty());
+
+        let expected_rate_definition = MarketIndex::SOFR
+            .rate_index_details()
+            .unwrap()
+            .rate_definition();
+        assert_eq!(
+            capfloor.caplet_floorlets()[0].rate_definition(),
+            expected_rate_definition
+        );
+    }
+
+    #[test]
+    fn test_build_capfloor_missing_strike_fails() {
+        let result = MakeCapFloor::default()
+            .with_identifier("capfloor_missing_strike".to_string())
+            .with_start_date(Date::new(2024, 1, 1))
+            .with_maturity_date(Date::new(2025, 1, 1))
+            .with_notional(1_000_000.0)
+            .with_market_index(MarketIndex::SOFR)
+            .with_currency(Currency::USD)
+            .with_cap_floor_type(CapFloorType::Cap)
+            .build();
+
+        assert!(result.is_err(), "expected missing strike to fail");
     }
 }

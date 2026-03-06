@@ -191,7 +191,7 @@ impl MakeSwap {
 
         // Fixed leg: receive side matches the swap side
         let fixed_leg = MakeLeg::default()
-            .set_leg_id(0)
+            .with_leg_id(0)
             .with_notional(notional)
             .with_side(side)
             .with_currency(currency)
@@ -215,7 +215,7 @@ impl MakeSwap {
         };
 
         let floating_leg = MakeLeg::default()
-            .set_leg_id(1)
+            .with_leg_id(1)
             .with_notional(notional)
             .with_side(floating_side)
             .with_currency(currency)
@@ -239,5 +239,63 @@ impl MakeSwap {
             market_index,
             currency,
         ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        core::instrument::Instrument,
+        rates::compounding::Compounding,
+        time::{daycounter::DayCounter, enums::Frequency},
+    };
+
+    fn sample_rate_definition() -> RateDefinition {
+        RateDefinition::new(
+            DayCounter::Actual360,
+            Compounding::Simple,
+            Frequency::Semiannual,
+        )
+    }
+
+    fn base_builder() -> MakeSwap {
+        MakeSwap::default()
+            .with_identifier("swap_test".to_string())
+            .with_start_date(Date::new(2024, 1, 1))
+            .with_maturity_date(Date::new(2025, 1, 1))
+            .with_fixed_rate(0.03)
+            .with_notional(1_000_000.0)
+            .with_rate_definition(sample_rate_definition())
+            .with_market_index(MarketIndex::SOFR)
+            .with_currency(Currency::USD)
+    }
+
+    #[test]
+    fn test_build_swap_success() {
+        let result = base_builder().build();
+        assert!(result.is_ok(), "expected swap build to succeed");
+
+        let swap = result.unwrap();
+        assert_eq!(swap.identifier(), "swap_test");
+        assert_eq!(swap.currency(), Currency::USD);
+        assert_eq!(swap.market_index(), MarketIndex::SOFR);
+        assert!(!swap.fixed_leg().cashflows().is_empty());
+        assert!(!swap.floating_leg().cashflows().is_empty());
+    }
+
+    #[test]
+    fn test_build_swap_missing_fixed_rate_fails() {
+        let result = MakeSwap::default()
+            .with_identifier("swap_missing_fixed_rate".to_string())
+            .with_start_date(Date::new(2024, 1, 1))
+            .with_maturity_date(Date::new(2025, 1, 1))
+            .with_notional(1_000_000.0)
+            .with_rate_definition(sample_rate_definition())
+            .with_market_index(MarketIndex::SOFR)
+            .with_currency(Currency::USD)
+            .build();
+
+        assert!(result.is_err(), "expected missing fixed rate to fail");
     }
 }

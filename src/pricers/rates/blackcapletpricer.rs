@@ -16,7 +16,7 @@ use crate::{
         request::{HandleSensitivities, HandleValue, Request},
         trade::Trade,
     },
-    instruments::rates::caplet::{CapletFloorlet, CapletFloorletTrade, CapletFloorletType},
+    instruments::rates::capletfloorlet::{CapletFloorlet, CapletFloorletTrade, CapletFloorletType},
     pricers::pricerdefinitions::BlackClosedFormPricer,
     utils::errors::{AtlasError, Result},
     volatility::volatilityindexing::Strike,
@@ -315,7 +315,7 @@ mod tests {
         },
         currencies::currency::Currency,
         indices::marketindex::MarketIndex,
-        instruments::rates::caplet::{CapletFloorlet, CapletFloorletTrade, CapletFloorletType},
+        instruments::rates::capletfloorlet::{CapletFloorlet, CapletFloorletTrade, CapletFloorletType},
         math::probability::norm_cdf::norm_cdf,
         pricers::rates::blackcapletpricer::BlackCapletPricer,
         rates::{

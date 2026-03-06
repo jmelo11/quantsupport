@@ -226,7 +226,7 @@ impl MakeCrossCurrencySwap {
 
         // Domestic (fixed) leg
         let domestic_leg = MakeLeg::default()
-            .set_leg_id(0)
+            .with_leg_id(0)
             .with_notional(domestic_notional)
             .with_side(side)
             .with_currency(domestic_currency)
@@ -250,7 +250,7 @@ impl MakeCrossCurrencySwap {
         };
 
         let foreign_leg = MakeLeg::default()
-            .set_leg_id(1)
+            .with_leg_id(1)
             .with_notional(foreign_notional)
             .with_side(foreign_side)
             .with_currency(foreign_currency)
@@ -276,5 +276,75 @@ impl MakeCrossCurrencySwap {
             domestic_market_index,
             foreign_market_index,
         ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        core::instrument::Instrument,
+        rates::compounding::Compounding,
+        time::{daycounter::DayCounter, enums::Frequency},
+    };
+
+    fn sample_rate_definition() -> RateDefinition {
+        RateDefinition::new(
+            DayCounter::Actual360,
+            Compounding::Simple,
+            Frequency::Semiannual,
+        )
+    }
+
+    fn base_builder() -> MakeCrossCurrencySwap {
+        MakeCrossCurrencySwap::default()
+            .with_identifier("xccy_swap_test".to_string())
+            .with_start_date(Date::new(2024, 1, 1))
+            .with_maturity_date(Date::new(2025, 1, 1))
+            .with_domestic_notional(1_000_000.0)
+            .with_foreign_notional(900_000.0)
+            .with_fixed_rate(0.03)
+            .with_rate_definition(sample_rate_definition())
+            .with_domestic_currency(Currency::USD)
+            .with_foreign_currency(Currency::EUR)
+            .with_domestic_market_index(MarketIndex::SOFR)
+            .with_foreign_market_index(MarketIndex::TermSOFR3m)
+    }
+
+    #[test]
+    fn test_build_cross_currency_swap_success() {
+        let result = base_builder().build();
+        assert!(
+            result.is_ok(),
+            "expected cross-currency swap build to succeed"
+        );
+
+        let swap = result.unwrap();
+        assert_eq!(swap.identifier(), "xccy_swap_test");
+        assert_eq!(swap.domestic_currency(), Currency::USD);
+        assert_eq!(swap.foreign_currency(), Currency::EUR);
+        assert_eq!(swap.domestic_market_index(), MarketIndex::SOFR);
+        assert_eq!(swap.foreign_market_index(), MarketIndex::TermSOFR3m);
+    }
+
+    #[test]
+    fn test_build_cross_currency_swap_missing_domestic_currency_fails() {
+        let result = MakeCrossCurrencySwap::default()
+            .with_identifier("xccy_missing_dom_ccy".to_string())
+            .with_start_date(Date::new(2024, 1, 1))
+            .with_maturity_date(Date::new(2025, 1, 1))
+            .with_domestic_notional(1_000_000.0)
+            .with_foreign_notional(900_000.0)
+            .with_fixed_rate(0.03)
+            .with_rate_definition(sample_rate_definition())
+            .with_foreign_currency(Currency::EUR)
+            .with_domestic_market_index(MarketIndex::SOFR)
+            .with_foreign_market_index(MarketIndex::TermSOFR3m)
+            .build();
+
+        assert!(
+            result.is_err(),
+            "expected missing domestic currency to fail"
+        );
     }
 }

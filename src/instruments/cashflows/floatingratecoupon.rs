@@ -2,7 +2,7 @@ use std::sync::RwLock;
 
 use crate::{
     ad::adreal::{ADReal, IsReal},
-    indices::marketindex::MarketIndex,
+    indices::{marketindex::MarketIndex, rateindex::RateIndexDetails},
     instruments::cashflows::{cashflow::Cashflow, coupons::LinearCoupon},
     time::{date::Date, daycounter::DayCounter},
     utils::errors::{AtlasError, Result},
@@ -38,6 +38,11 @@ where
         end_date: Date,
         payment_date: Date,
     ) -> Self {
+        let day_counter = index
+            .rate_index_details()
+            .map(|details| details.rate_definition().day_counter())
+            .unwrap_or(DayCounter::Actual360);
+
         Self {
             notional,
             spread,
@@ -46,7 +51,7 @@ where
             start_date,
             end_date,
             payment_date,
-            day_counter: DayCounter::Actual360,
+            day_counter,
         }
     }
 

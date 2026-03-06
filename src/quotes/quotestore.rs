@@ -2,8 +2,6 @@ use std::collections::HashMap;
 
 use crate::{indices::marketindex::MarketIndex, quotes::quote::Quote, time::date::Date};
 
-/// # `QuoteStore`
-///
 /// Provider of market data loaded from quotes.
 pub struct QuoteStore {
     reference_date: Date,

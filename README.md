@@ -1,7 +1,7 @@
 QuantSupport
 =========
 
-**QuantSupport** is a high-performance quantitative finance library written in Rust, designed for precision, speed in financial calculations and ease of deployment in production.
+**QuantSupport** is a high-performance quantitative finance library written in Rust, designed for precision, speed in financial calculations and ease of deployment into production enviroments.
 
 Roadmap to Cargo
 ------------

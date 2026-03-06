@@ -196,7 +196,7 @@ impl MakeFixedRateBond {
         let interest_rate = InterestRate::from_rate_definition(ADReal::new(rate), rate_definition);
 
         let leg = MakeLeg::default()
-            .set_leg_id(0)
+            .with_leg_id(0)
             .with_notional(notional)
             .with_side(side)
             .with_currency(currency)

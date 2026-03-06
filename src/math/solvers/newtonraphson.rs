@@ -1,7 +1,7 @@
 use crate::math::solvers::solvertraits::{
     C1Func, DescentMethod, OptimizerSolution, SolutionStatus,
 };
-use crate::utils::errors::{AtlasError, Result};
+use {AtlasError, Result};
 
 /// # `NewtonRaphson`
 ///
@@ -108,6 +108,7 @@ mod test {
         newtonraphson::NewtonRaphson,
         solvertraits::{C1Func, ContFunc, DescentMethod},
     };
+    use crate::utils::errors::{AtlasError, Result};
     use std::f64::consts::PI;
 
     fn norm_pdf(x: f64) -> f64 {
@@ -130,58 +131,40 @@ mod test {
         0.5 * (1.0 + erf)
     }
 
-    fn bs_price(
-        spot: f64,
-        sigma: f64,
-        tau: f64,
-        strike: f64,
-        r: f64,
-    ) -> crate::utils::errors::Result<f64> {
+    fn bs_price(spot: f64, sigma: f64, tau: f64, strike: f64, r: f64) -> Result<f64> {
         if tau < 0.0 {
-            return Err(crate::utils::errors::AtlasError::SolverErr(
-                "Negative tau.".into(),
-            ));
+            return Err(AtlasError::SolverErr("Negative tau.".into()));
         }
         if sigma < 0.0 {
-            return Err(crate::utils::errors::AtlasError::SolverErr(
-                "Negative sigma.".into(),
-            ));
+            return Err(AtlasError::SolverErr("Negative sigma.".into()));
         }
         if spot < 0.0 || strike < 0.0 {
-            return Err(crate::utils::errors::AtlasError::SolverErr(
-                "Negative spot|strike.".into(),
-            ));
+            return Err(AtlasError::SolverErr("Negative spot|strike.".into()));
         }
 
-        let d1 = 0.5f64.mul_add(sigma.powi(2), r).mul_add(tau, (spot / strike).ln()) / (sigma * tau.sqrt());
+        let d1 = 0.5f64
+            .mul_add(sigma.powi(2), r)
+            .mul_add(tau, (spot / strike).ln())
+            / (sigma * tau.sqrt());
         let d2 = sigma.mul_add(-tau.sqrt(), d1);
         let discount = (-r * tau).exp();
         Ok(spot.mul_add(norm_cdf(d1), -(strike * discount * norm_cdf(d2))))
     }
 
-    fn bs_vega(
-        spot: f64,
-        sigma: f64,
-        tau: f64,
-        strike: f64,
-        r: f64,
-    ) -> crate::utils::errors::Result<f64> {
+    fn bs_vega(spot: f64, sigma: f64, tau: f64, strike: f64, r: f64) -> Result<f64> {
         if tau < 0.0 {
-            return Err(crate::utils::errors::AtlasError::SolverErr(
-                "Negative tau.".into(),
-            ));
+            return Err(AtlasError::SolverErr("Negative tau.".into()));
         }
         if sigma < 0.0 {
-            return Err(crate::utils::errors::AtlasError::SolverErr(
-                "Negative sigma.".into(),
-            ));
+            return Err(AtlasError::SolverErr("Negative sigma.".into()));
         }
         if spot < 0.0 || strike < 0.0 {
-            return Err(crate::utils::errors::AtlasError::SolverErr(
-                "Negative spot|strike.".into(),
-            ));
+            return Err(AtlasError::SolverErr("Negative spot|strike.".into()));
         }
-        let d1 = 0.5f64.mul_add(sigma.powi(2), r).mul_add(tau, (spot / strike).ln()) / (sigma * tau.sqrt());
+        let d1 = 0.5f64
+            .mul_add(sigma.powi(2), r)
+            .mul_add(tau, (spot / strike).ln())
+            / (sigma * tau.sqrt());
 
         Ok(spot * norm_pdf(d1) * tau.sqrt())
     }
@@ -207,13 +190,13 @@ mod test {
     }
 
     impl ContFunc<f64> for ImpliedBlackVol {
-        fn call(&self, x: &f64) -> crate::utils::errors::Result<f64> {
+        fn call(&self, x: &f64) -> Result<f64> {
             Ok(bs_price(self.spot, *x, self.tau, self.strike, self.r)? - self.target_price)
         }
     }
 
     impl C1Func<f64> for ImpliedBlackVol {
-        fn grad(&self, x: &f64) -> crate::utils::errors::Result<f64> {
+        fn grad(&self, x: &f64) -> Result<f64> {
             bs_vega(self.spot, *x, self.tau, self.strike, self.r)
         }
     }

@@ -182,12 +182,8 @@ impl MakeSwaption {
         let currency = self
             .currency
             .ok_or_else(|| AtlasError::ValueNotSetErr("Currency".into()))?;
-        let swaption_type = self
-            .swaption_type
-            .unwrap_or(SwaptionType::Payer);
-        let exercise_type = self
-            .exercise_type
-            .unwrap_or(SwaptionExerciseType::European);
+        let swaption_type = self.swaption_type.unwrap_or(SwaptionType::Payer);
+        let exercise_type = self.exercise_type.unwrap_or(SwaptionExerciseType::European);
 
         // The underlying swap starts at expiry (European swaption).
         let swap_start = self.start_date.unwrap_or(expiry);
@@ -242,5 +238,64 @@ impl MakeSwaption {
             market_index,
             currency,
         ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        core::instrument::Instrument,
+        rates::compounding::Compounding,
+        time::{daycounter::DayCounter, enums::Frequency},
+    };
+
+    fn sample_rate_definition() -> RateDefinition {
+        RateDefinition::new(
+            DayCounter::Actual360,
+            Compounding::Simple,
+            Frequency::Semiannual,
+        )
+    }
+
+    fn base_builder() -> MakeSwaption {
+        MakeSwaption::default()
+            .with_identifier("swaption_test".to_string())
+            .with_expiry(Date::new(2024, 6, 1))
+            .with_swap_tenor_date(Date::new(2026, 6, 1))
+            .with_strike(0.03)
+            .with_notional(1_000_000.0)
+            .with_rate_definition(sample_rate_definition())
+            .with_market_index(MarketIndex::SOFR)
+            .with_currency(Currency::USD)
+            .with_swaption_type(SwaptionType::Payer)
+            .with_exercise_type(SwaptionExerciseType::European)
+    }
+
+    #[test]
+    fn test_build_swaption_success() {
+        let result = base_builder().build();
+        assert!(result.is_ok(), "expected swaption build to succeed");
+
+        let swaption = result.unwrap();
+        assert_eq!(swaption.identifier(), "swaption_test");
+        assert_eq!(swaption.currency(), Currency::USD);
+        assert_eq!(swaption.market_index(), MarketIndex::SOFR);
+        assert_eq!(swaption.strike(), 0.03);
+    }
+
+    #[test]
+    fn test_build_swaption_missing_swap_tenor_fails() {
+        let result = MakeSwaption::default()
+            .with_identifier("swaption_missing_tenor".to_string())
+            .with_expiry(Date::new(2024, 6, 1))
+            .with_strike(0.03)
+            .with_notional(1_000_000.0)
+            .with_rate_definition(sample_rate_definition())
+            .with_market_index(MarketIndex::SOFR)
+            .with_currency(Currency::USD)
+            .build();
+
+        assert!(result.is_err(), "expected missing swap tenor to fail");
     }
 }

@@ -179,7 +179,7 @@ impl MakeFloatingRateNote {
         let structure = self.payment_structure.unwrap_or(PaymentStructure::Bullet);
 
         let leg = MakeLeg::default()
-            .set_leg_id(0)
+            .with_leg_id(0)
             .with_notional(notional)
             .with_side(side)
             .with_currency(currency)

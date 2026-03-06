@@ -5,7 +5,7 @@ use crate::{
     instruments::{
         equity::equityeuropeanoption::EquityEuropeanOption,
         fixedincome::fixedratedeposit::FixedRateDeposit,
-        rates::{caplet::CapletFloorlet, crosscurrencyswap::CrossCurrencySwap},
+        rates::{capletfloorlet::CapletFloorlet, crosscurrencyswap::CrossCurrencySwap},
     },
     utils::errors::{AtlasError, Result},
 };

@@ -93,7 +93,7 @@ impl MakeLeg {
 
     /// Set the leg id.
     #[must_use]
-    pub const fn set_leg_id(mut self, leg_id: usize) -> Self {
+    pub const fn with_leg_id(mut self, leg_id: usize) -> Self {
         self.leg_id = Some(leg_id);
         self
     }
@@ -475,10 +475,6 @@ impl MakeLeg {
                             .market_index
                             .clone()
                             .ok_or_else(|| AtlasError::ValueNotSetErr("Market index".into()))?;
-
-                        let _ = self.payoff_ops.ok_or_else(|| {
-                            AtlasError::ValueNotSetErr("Payoff operations".into())
-                        })?;
 
                         build_embedded_option_coupons_from_notionals(
                             &mut cashflows,
