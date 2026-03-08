@@ -278,6 +278,8 @@ mod tests {
             None,
             Side::PayShort,
             true,
+            Date::new(2024, 1, 1),
+            Date::new(2024, 4, 1),
         );
 
         let mut state = MockState { legs: vec![leg] };
@@ -319,6 +321,8 @@ mod tests {
             None,
             Side::PayShort,
             true,
+            Date::new(2024, 1, 1),
+            Date::new(2024, 4, 1),
         );
 
         let mut state = MockState { legs: vec![leg] };
@@ -349,6 +353,8 @@ mod tests {
             None,
             Side::PayShort,
             true,
+            Date::new(2024, 1, 1),
+            Date::new(2024, 4, 1),
         );
 
         let mut state = MockState { legs: vec![leg] };
@@ -395,6 +401,8 @@ mod tests {
             None,
             Side::PayShort,
             true,
+            Date::new(2024, 1, 1),
+            Date::new(2024, 4, 1),
         );
 
         let mut state = MockState { legs: vec![leg] };
@@ -431,6 +439,8 @@ mod tests {
             None,
             Side::PayShort,
             true,
+            Date::new(2024, 1, 1),
+            Date::new(2024, 4, 1),
         );
 
         // Second leg
@@ -444,6 +454,8 @@ mod tests {
             None,
             Side::LongRecieve,
             true,
+            Date::new(2024, 1, 1),
+            Date::new(2024, 4, 1),
         );
 
         let mut state = MockState {
@@ -492,6 +504,8 @@ mod tests {
             None,
             Side::PayShort,
             true,
+            Date::new(2024, 1, 1),
+            Date::new(2024, 4, 1),
         );
 
         let mut state = MockState { legs: vec![leg] };
@@ -523,6 +537,8 @@ mod tests {
             None,
             Side::PayShort,
             true,
+            Date::new(2024, 1, 1),
+            Date::new(2024, 4, 1),
         );
 
         let mut state = MockState { legs: vec![leg] };
@@ -569,6 +585,8 @@ mod tests {
             None,
             Side::PayShort,
             true,
+            Date::new(2024, 1, 1),
+            Date::new(2024, 4, 1),
         );
 
         let leg2 = Leg::new(
@@ -580,6 +598,8 @@ mod tests {
             None,
             Side::PayShort,
             true,
+            Date::new(2024, 1, 1),
+            Date::new(2024, 4, 1),
         );
 
         let mut state = MockState {

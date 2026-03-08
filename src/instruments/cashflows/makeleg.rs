@@ -431,6 +431,8 @@ impl MakeLeg {
                             self.rate,
                             side,
                             true,
+                            schedule.dates()[1],
+                            last_date[0],
                         );
 
                         Ok(leg)
@@ -463,6 +465,8 @@ impl MakeLeg {
                             None,
                             side,
                             true,
+                            schedule.dates()[1],
+                            last_date[0],
                         );
                         Ok(leg)
                     }
@@ -495,6 +499,8 @@ impl MakeLeg {
                             None,
                             side,
                             true,
+                            schedule.dates()[1],
+                            last_date[0],
                         );
                         Ok(leg)
                     }
@@ -529,6 +535,16 @@ impl MakeLeg {
                     )));
                 }
 
+                // Derive first/last payment dates from the user-supplied date maps.
+                let mut all_dates: Vec<Date> = disbursements
+                    .keys()
+                    .chain(redemptions.keys())
+                    .copied()
+                    .collect();
+                all_dates.sort();
+                let first_pay = all_dates.first().copied().unwrap_or(Date::new(1970, 1, 1));
+                let last_pay = all_dates.last().copied().unwrap_or(Date::new(1970, 1, 1));
+
                 let leg = Leg::new(
                     leg_id,
                     cashflows,
@@ -538,6 +554,8 @@ impl MakeLeg {
                     None,
                     side,
                     true,
+                    first_pay,
+                    last_pay,
                 );
 
                 Ok(leg)
@@ -550,9 +568,7 @@ impl MakeLeg {
                 let end_date = if let Some(date) = self.end_date {
                     date
                 } else {
-                    let tenor = self
-                        .tenor
-                        .ok_or(QSError::ValueNotSetErr("Tenor".into()))?;
+                    let tenor = self.tenor.ok_or(QSError::ValueNotSetErr("Tenor".into()))?;
                     start_date + tenor
                 };
                 let mut schedule_builder = MakeSchedule::new(start_date, end_date)
@@ -640,6 +656,8 @@ impl MakeLeg {
                             self.rate,
                             side,
                             true,
+                            schedule.dates()[1],
+                            *schedule.dates().last().unwrap(),
                         );
 
                         Ok(leg)
@@ -658,9 +676,7 @@ impl MakeLeg {
                 let end_date = if let Some(date) = self.end_date {
                     date
                 } else {
-                    let tenor = self
-                        .tenor
-                        .ok_or(QSError::ValueNotSetErr("Tenor".into()))?;
+                    let tenor = self.tenor.ok_or(QSError::ValueNotSetErr("Tenor".into()))?;
                     start_date + tenor
                 };
                 let schedule = MakeSchedule::new(start_date, end_date)
@@ -706,6 +722,8 @@ impl MakeLeg {
                     None,
                     side,
                     true,
+                    first_date[0],
+                    last_date[0],
                 );
 
                 Ok(leg)
@@ -718,9 +736,7 @@ impl MakeLeg {
                 let end_date = if let Some(date) = self.end_date {
                     date
                 } else {
-                    let tenor = self
-                        .tenor
-                        .ok_or(QSError::ValueNotSetErr("Tenor".into()))?;
+                    let tenor = self.tenor.ok_or(QSError::ValueNotSetErr("Tenor".into()))?;
                     start_date + tenor
                 };
                 let mut schedule_builder = MakeSchedule::new(start_date, end_date)
@@ -800,6 +816,8 @@ impl MakeLeg {
                             self.rate,
                             side,
                             true,
+                            schedule.dates()[1],
+                            *schedule.dates().last().unwrap(),
                         );
 
                         Ok(leg)
@@ -835,6 +853,8 @@ impl MakeLeg {
                             None,
                             side,
                             true,
+                            schedule.dates()[1],
+                            *schedule.dates().last().unwrap(),
                         );
                         Ok(leg)
                     }
@@ -872,6 +892,8 @@ impl MakeLeg {
                             None,
                             side,
                             true,
+                            schedule.dates()[1],
+                            *schedule.dates().last().unwrap(),
                         );
                         Ok(leg)
                     }

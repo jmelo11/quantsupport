@@ -177,6 +177,19 @@ impl Tape {
         });
     }
 
+    /// Resets the mark to the beginning of the tape.
+    ///
+    /// This is useful when a nested operation (e.g. an AD-based Jacobian
+    /// inside a solver) advances the mark so that a subsequent
+    /// `backward_to_mark` would not cover the full tape.  Calling
+    /// `reset_mark` after the outer computation restores full coverage.
+    pub fn reset_mark() {
+        Self::ensure_thread_tape();
+        TAPE.with(|tc| {
+            tc.borrow_mut().mark = 0;
+        });
+    }
+
     /// Clears the tape and resets the mark without changing active state.
     pub fn rewind_to_init() {
         Self::ensure_thread_tape();

@@ -363,6 +363,14 @@ impl From<Period> for String {
     }
 }
 
+/// Display a `Period` as a human-readable string (e.g. `1Y`, `6M`).
+impl fmt::Display for Period {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s: String = (*self).into();
+        f.write_str(&s)
+    }
+}
+
 /// Deserializes a string in the format like 1Y or 1Y6M to a Period.
 impl<'de> serde::Deserialize<'de> for Period {
     fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>

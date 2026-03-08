@@ -1,5 +1,5 @@
 use crate::{
-    ad::adreal::{ADReal, FloatExt, IsReal},
+    ad::adreal::{ADReal, IsReal},
     math::solvers::solvertraits::{JacobianFunc, Matrix, OptimizerSolution, SolutionStatus},
     utils::errors::{QSError, Result},
 };
@@ -16,7 +16,7 @@ pub struct VectorNewton<P> {
 
 impl<P> VectorNewton<P>
 where
-    P: JacobianFunc<ADReal, ADReal, ADReal>,
+    P: JacobianFunc<ADReal, ADReal, f64>,
 {
     /// Creates a new vector Newton solver.
     #[must_use]
@@ -99,7 +99,7 @@ where
         })
     }
 
-    fn solve_linear_system(mut a: Matrix<ADReal>, mut b: Vec<ADReal>) -> Result<Vec<ADReal>> {
+    fn solve_linear_system(mut a: Matrix<f64>, mut b: Vec<ADReal>) -> Result<Vec<ADReal>> {
         let n = a.len();
         if b.len() != n || a.iter().any(|row| row.len() != n) {
             return Err(QSError::SolverErr(
@@ -140,10 +140,11 @@ where
                 if factor == 0.0 {
                     continue;
                 }
+                let bi = b[i];
                 for c in i..n {
                     a[r][c] -= factor * a[i][c];
                 }
-                b[r] -= factor * b[i];
+                b[r] -= bi * factor;
             }
         }
 
@@ -152,5 +153,65 @@ where
 
     fn norm_inf(v: &[ADReal]) -> f64 {
         v.iter().map(|x| x.value().abs()).fold(0.0, f64::max)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Mutex;
+
+    use crate::{
+        ad::{
+            adreal::{ADReal, IsReal},
+            tape::Tape,
+        },
+        math::solvers::{
+            solvertraits::{ADJacobian, ContFunc, VectorFunc},
+            vectornewton::VectorNewton,
+        },
+        utils::errors::Result,
+    };
+
+    static TEST_MUTEX: Mutex<()> = Mutex::new(());
+
+    struct SquareRootProblem {
+        target: ADReal,
+    }
+
+    impl ContFunc<[ADReal], Vec<ADReal>> for SquareRootProblem {
+        fn call(&self, x: &[ADReal]) -> Result<Vec<ADReal>> {
+            Ok(vec![(x[0] * x[0] - self.target).into()])
+        }
+    }
+
+    impl VectorFunc<ADReal, ADReal> for SquareRootProblem {}
+    impl ADJacobian for SquareRootProblem {}
+
+    #[test]
+    fn propagates_through_solver_to_problem_inputs() {
+        let _guard = TEST_MUTEX
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+
+        Tape::stop_recording();
+        Tape::rewind_to_init();
+        Tape::start_recording();
+
+        let target = ADReal::new(4.0);
+        let solver = VectorNewton::<SquareRootProblem>::new(1e-12, 32);
+        let solution = solver
+            .solve(&SquareRootProblem { target }, &[ADReal::new(1.5)])
+            .expect("vector Newton should converge");
+
+        solution.x[0]
+            .backward()
+            .expect("backward pass through solver should succeed");
+
+        let target_adjoint = target.adjoint().expect("target adjoint");
+        assert!((solution.x[0].value() - 2.0).abs() < 1e-10);
+        assert!((target_adjoint - 0.25).abs() < 1e-6);
+
+        Tape::stop_recording();
+        Tape::rewind_to_init();
     }
 }

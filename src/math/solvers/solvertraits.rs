@@ -1,4 +1,7 @@
-use crate::ad::{adreal::ADReal, tape::Tape};
+use crate::ad::{
+    adreal::{ADReal, IsReal},
+    tape::Tape,
+};
 use crate::utils::errors::{QSError, Result};
 use std::ops::Sub;
 
@@ -147,9 +150,20 @@ pub trait ADJacobian: VectorFunc<ADReal, ADReal> {
     /// Returns an error if residual evaluation fails, dimensions mismatch, or
     /// if AD backpropagation fails.
     fn jacobian_ad(&self, x: &[ADReal]) -> Result<Matrix<f64>> {
-        Tape::start_recording();
+        let started_locally = if Tape::is_active() {
+            false
+        } else {
+            Tape::start_recording();
+            true
+        };
+
         let result = (|| {
-            let residual = self.call(&x)?;
+            Tape::set_mark();
+            let local_x = x
+                .iter()
+                .map(|value| ADReal::new(value.value()))
+                .collect::<Vec<_>>();
+            let residual = self.call(&local_x)?;
             let n = x.len();
 
             if residual.len() != n {
@@ -167,15 +181,24 @@ pub trait ADJacobian: VectorFunc<ADReal, ADReal> {
             let mut j = vec![vec![0.0; n]; n];
             for row in 0..n {
                 Tape::reset_adjoints();
-                residual[row].backward()?;
+                residual[row].backward_to_mark()?;
                 for col in 0..n {
-                    j[row][col] = x[col].adjoint()?;
+                    j[row][col] = local_x[col].adjoint()?;
                 }
             }
 
+            Tape::reset_adjoints();
+
             Ok(j)
         })();
-        Tape::stop_recording();
+
+        if started_locally {
+            Tape::stop_recording();
+            Tape::rewind_to_init();
+        } else {
+            Tape::rewind_to_mark();
+        }
+
         result
     }
 }

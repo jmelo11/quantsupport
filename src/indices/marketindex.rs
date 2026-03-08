@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::fmt::{self, Display, Formatter};
 
+use crate::currencies::currency::Currency;
 use crate::indices::rateindex::RateIndexDetails;
 use crate::indices::{quotetype::QuoteType, rateindices::sofr::SOFRIndex};
 use crate::utils::errors::{QSError, Result};
@@ -26,6 +27,11 @@ pub enum MarketIndex {
     VIX,
     /// Equity index or price. Used to identify volatilities.
     Equity(String),
+    /// Collateral discount curve for cashflows in `ccy` posted under `collateral_ccy`.
+    ///
+    /// For example `Collateral(CLP, USD)` represents the CLP discount curve
+    /// under a USD-denominated CSA.
+    Collateral(Currency, Currency),
     /// Other indices.
     Other(String),
 }
@@ -42,6 +48,7 @@ impl Display for MarketIndex {
             Self::ICP => write!(f, "ICP"),
             Self::VIX => write!(f, "VIX"),
             Self::Equity(name) => write!(f, "{name}"),
+            Self::Collateral(ccy, coll) => write!(f, "Collateral({ccy}/{coll})"),
             Self::Other(s) => write!(f, "{s}"),
         }
     }
@@ -60,6 +67,20 @@ impl std::str::FromStr for MarketIndex {
             "TermSOFR12m" => Self::TermSOFR12m,
             "ICP" => Self::ICP,
             "VIX" => Self::VIX,
+            other if other.starts_with("Collateral(") && other.ends_with(')') => {
+                let inner = &other["Collateral(".len()..other.len() - 1];
+                if let Some((a, b)) = inner.split_once('/') {
+                    if let (Ok(c1), Ok(c2)) =
+                        (a.trim().parse::<Currency>(), b.trim().parse::<Currency>())
+                    {
+                        Self::Collateral(c1, c2)
+                    } else {
+                        Self::Other(other.to_string())
+                    }
+                } else {
+                    Self::Other(other.to_string())
+                }
+            }
             other => Self::Other(other.to_string()), // this should handle equity, fx
         };
         Ok(resutls)
@@ -101,9 +122,7 @@ impl MarketIndex {
     pub fn rate_index_details(&self) -> Result<impl RateIndexDetails> {
         match self {
             Self::SOFR => Ok(SOFRIndex),
-            _ => Err(QSError::InvalidValueErr(
-                "Index is not rate index".into(),
-            )),
+            _ => Err(QSError::InvalidValueErr("Index is not rate index".into())),
         }
     }
 }

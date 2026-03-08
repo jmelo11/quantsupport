@@ -1,7 +1,7 @@
 use crate::{
     ad::adreal::ADReal, core::trade::Side, currencies::currency::Currency,
     indices::marketindex::MarketIndex, instruments::cashflows::cashflowtype::CashflowType,
-    rates::interestrate::InterestRate,
+    rates::interestrate::InterestRate, time::date::Date,
 };
 
 /// A [`Leg`] represents a sequence of cashflows associated to a particular instrument.
@@ -16,8 +16,14 @@ pub struct Leg {
     spread: Option<ADReal>,
     /// rate associated with fixed-rate cashflows, if any
     interest_rate: Option<InterestRate<ADReal>>,
+    /// side of the leg (long or short)
     side: Side,
+    /// whether the leg has a linear payoff structure (e.g., fixed payments) or non-linear (e.g., options)
     is_linear: bool,
+    /// optional first and last payment dates for the leg, used for optimization and curve bootstrapping
+    first_payment_date: Date,
+    /// optional last payment date for the leg, used for optimization and curve bootstrapping
+    last_payment_date: Date,
 }
 
 impl Leg {
@@ -31,6 +37,8 @@ impl Leg {
         interest_rate: Option<InterestRate<ADReal>>,
         side: Side,
         is_linear: bool,
+        first_payment_date: Date,
+        last_payment_date: Date,
     ) -> Self {
         Self {
             leg_id,
@@ -41,6 +49,8 @@ impl Leg {
             interest_rate,
             side,
             is_linear,
+            first_payment_date,
+            last_payment_date,
         }
     }
 
@@ -90,5 +100,17 @@ impl Leg {
     #[must_use]
     pub fn is_linear(&self) -> bool {
         self.is_linear
+    }
+
+    /// Returns the first payment date of the leg.
+    #[must_use]
+    pub fn first_payment_date(&self) -> Date {
+        self.first_payment_date
+    }
+
+    /// Returns the last payment date of the leg.
+    #[must_use]
+    pub fn last_payment_date(&self) -> Date {
+        self.last_payment_date
     }
 }
