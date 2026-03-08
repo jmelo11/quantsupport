@@ -2,6 +2,12 @@
 name = "valuation"
 version = "0.1.0"
 edition = "2021"
+description = "Valuation example for quantsupport"
+license = "MIT"
+repository = "https://github.com/jmelo11/quantsupport"
+readme = "../../README.md"
+keywords = ["finance", "quant"]
+categories = ["finance"]
 
 [dependencies]
 quantsupport = { path = "../.." }

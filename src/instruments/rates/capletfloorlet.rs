@@ -50,6 +50,7 @@ pub struct CapletFloorlet {
 impl CapletFloorlet {
     /// Creates a new `CapletFloorlet`.
     #[must_use]
+    #[allow(clippy::too_many_arguments)]
     pub const fn new(
         name: String,
         market_index: MarketIndex,

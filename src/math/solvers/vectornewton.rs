@@ -99,6 +99,7 @@ where
         })
     }
 
+    #[allow(clippy::needless_range_loop)]
     fn solve_linear_system(mut a: Matrix<f64>, mut b: Vec<ADReal>) -> Result<Vec<ADReal>> {
         let n = a.len();
         if b.len() != n || a.iter().any(|row| row.len() != n) {

@@ -61,6 +61,7 @@ where
     ///
     /// Uses interior mutability ([`RwLock`]) so that the pricer can resolve
     /// forward rates without requiring a mutable reference to the trade.
+    #[allow(clippy::unwrap_used)] // RwLock poisoning is unrecoverable
     pub fn set_fixing(&self, fixing: T) {
         *self.fixing.write().unwrap() = Some(fixing);
     }
@@ -76,6 +77,7 @@ where
     }
 
     /// Returns the fixing value if set.
+    #[allow(clippy::unwrap_used)] // RwLock poisoning is unrecoverable
     pub fn fixing(&self) -> Option<T> {
         *self.fixing.read().unwrap()
     }
@@ -96,6 +98,7 @@ where
     }
 }
 
+#[allow(clippy::unwrap_used)] // RwLock poisoning is unrecoverable
 impl Cashflow<ADReal> for FloatingRateCoupon<ADReal> {
     fn amount(&self) -> Result<ADReal> {
         let fixing = self
@@ -114,6 +117,7 @@ impl Cashflow<ADReal> for FloatingRateCoupon<ADReal> {
     }
 }
 
+#[allow(clippy::unwrap_used)] // RwLock poisoning is unrecoverable
 impl LinearCoupon<ADReal> for FloatingRateCoupon<ADReal> {
     fn accrued_amount(&self, start_date: Date, end_date: Date) -> Result<ADReal> {
         let fixing = self

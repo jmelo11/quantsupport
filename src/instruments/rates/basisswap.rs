@@ -10,9 +10,10 @@ use crate::{
     time::date::Date,
 };
 
-/// A [`BasisSwap`] represents a floating-vs-floating interest rate swap where both legs
-/// reference different floating rate indices (e.g., SOFR 3M vs SOFR 1M, or two different
-/// tenor indices). Each leg may carry a different spread.
+/// A [`BasisSwap`] represents a floating-vs-floating interest rate swap.
+///
+/// Both legs reference different floating rate indices (e.g., SOFR 3M vs SOFR 1M,
+/// or two different tenor indices). Each leg may carry a different spread.
 pub struct BasisSwap {
     identifier: String,
     legs: Vec<Leg>,

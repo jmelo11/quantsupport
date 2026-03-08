@@ -14,9 +14,10 @@ pub enum AssetClass {
     Other,
 }
 
-/// The [`Instrument`] trait catalogs any financial product. Financial product have
-/// more charasteristics (i.e. start date, initial spread, strike, etc.) that structs that implement
-/// [`Instrument`] could provide.
+/// Catalogs any financial product.
+///
+/// Financial products have more characteristics (i.e. start date, initial spread, strike, etc.) that
+/// structs that implement [`Instrument`] could provide.
 pub trait Instrument: Send + Sync + Sized {
     /// Market-associated name of the instrument. For example, it could be the name of the stock, CUSIP of a bond, among others.
     fn identifier(&self) -> String;

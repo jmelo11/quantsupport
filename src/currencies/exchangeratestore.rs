@@ -69,6 +69,9 @@ impl ExchangeRateStore {
     ///
     /// Returns `ADReal` so that the dependence on intermediate rates is
     /// tracked on the AD tape.
+    ///
+    /// # Errors
+    /// Returns an error if no path between the two currencies can be found.
     pub fn get_exchange_rate(&self, base: Currency, quote: Currency) -> Result<ADReal> {
         if base == quote {
             return Ok(ADReal::one());

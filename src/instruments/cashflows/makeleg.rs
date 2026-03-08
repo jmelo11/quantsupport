@@ -385,17 +385,19 @@ impl MakeLeg {
 
                 let notional = self
                     .notional
-                    .ok_or(QSError::ValueNotSetErr("Notional".into()))?;
-                let side = self.side.ok_or(QSError::ValueNotSetErr("Side".into()))?;
+                    .ok_or_else(|| QSError::ValueNotSetErr("Notional".into()))?;
+                let side = self
+                    .side
+                    .ok_or_else(|| QSError::ValueNotSetErr("Side".into()))?;
 
                 let first_date = vec![*schedule
                     .dates()
                     .first()
-                    .ok_or(QSError::ValueNotSetErr("Schedule dates".into()))?];
+                    .ok_or_else(|| QSError::ValueNotSetErr("Schedule dates".into()))?];
                 let last_date = vec![*schedule
                     .dates()
                     .last()
-                    .ok_or(QSError::ValueNotSetErr("Schedule dates".into()))?];
+                    .ok_or_else(|| QSError::ValueNotSetErr("Schedule dates".into()))?];
                 let notionals = notionals_vector(
                     schedule.dates().len() - 1,
                     notional,
@@ -445,7 +447,6 @@ impl MakeLeg {
 
                         let market_index = self
                             .market_index
-                            
                             .ok_or_else(|| QSError::ValueNotSetErr("Market index".into()))?;
 
                         build_floating_rate_coupons_from_notionals(
@@ -453,7 +454,7 @@ impl MakeLeg {
                             schedule.dates(),
                             &notionals,
                             ADReal::new(spread),
-                            market_index.clone(),
+                            &market_index,
                         )?;
 
                         let leg = Leg::new(
@@ -485,7 +486,7 @@ impl MakeLeg {
                             schedule.dates(),
                             &notionals,
                             ADReal::new(spread),
-                            market_index.clone(),
+                            &market_index,
                             self.floorlet_strike,
                             self.caplet_strike,
                         )?;
@@ -509,10 +510,10 @@ impl MakeLeg {
             PaymentStructure::Other => {
                 let disbursements = self
                     .disbursements
-                    .ok_or(QSError::ValueNotSetErr("Disbursements".into()))?;
+                    .ok_or_else(|| QSError::ValueNotSetErr("Disbursements".into()))?;
                 let redemptions = self
                     .redemptions
-                    .ok_or(QSError::ValueNotSetErr("Redemptions".into()))?;
+                    .ok_or_else(|| QSError::ValueNotSetErr("Redemptions".into()))?;
                 let notional = disbursements.values().fold(0.0, |acc, x| acc + x).abs();
                 let redemption = redemptions.values().fold(0.0, |acc, x| acc + x).abs();
                 if (notional - redemption).abs() > 0.000001 {
@@ -542,8 +543,14 @@ impl MakeLeg {
                     .copied()
                     .collect();
                 all_dates.sort();
-                let first_pay = all_dates.first().copied().unwrap_or(Date::new(1970, 1, 1));
-                let last_pay = all_dates.last().copied().unwrap_or(Date::new(1970, 1, 1));
+                let first_pay = all_dates
+                    .first()
+                    .copied()
+                    .unwrap_or_else(|| Date::new(1970, 1, 1));
+                let last_pay = all_dates
+                    .last()
+                    .copied()
+                    .unwrap_or_else(|| Date::new(1970, 1, 1));
 
                 let leg = Leg::new(
                     leg_id,
@@ -564,11 +571,13 @@ impl MakeLeg {
                 let leg_type = self.check_leg_type()?;
                 let start_date = self
                     .start_date
-                    .ok_or(QSError::ValueNotSetErr("Start date".into()))?;
+                    .ok_or_else(|| QSError::ValueNotSetErr("Start date".into()))?;
                 let end_date = if let Some(date) = self.end_date {
                     date
                 } else {
-                    let tenor = self.tenor.ok_or(QSError::ValueNotSetErr("Tenor".into()))?;
+                    let tenor = self
+                        .tenor
+                        .ok_or_else(|| QSError::ValueNotSetErr("Tenor".into()))?;
                     start_date + tenor
                 };
                 let mut schedule_builder = MakeSchedule::new(start_date, end_date)
@@ -601,12 +610,12 @@ impl MakeLeg {
 
                 let notional = self
                     .notional
-                    .ok_or(QSError::ValueNotSetErr("Notional".into()))?;
+                    .ok_or_else(|| QSError::ValueNotSetErr("Notional".into()))?;
 
                 let first_date = vec![*schedule
                     .dates()
                     .first()
-                    .ok_or(QSError::ValueNotSetErr("Schedule dates".into()))?];
+                    .ok_or_else(|| QSError::ValueNotSetErr("Schedule dates".into()))?];
 
                 // Add initial disbursement
                 add_cashflows_to_vec(&mut cashflows, &first_date, &[notional], 1);
@@ -619,13 +628,15 @@ impl MakeLeg {
                             .ok_or_else(|| QSError::ValueNotSetErr("Rate".into()))?;
 
                         let redemptions =
-                            calculate_equal_payment_redemptions(schedule.dates(), rate, notional)?;
+                            calculate_equal_payment_redemptions(schedule.dates(), rate, notional);
 
                         let mut notionals =
                             redemptions.iter().try_fold(vec![notional], |mut acc, x| {
-                                let last = *acc.last().ok_or(QSError::InvalidValueErr(
-                                    "Notional schedule cannot be empty".into(),
-                                ))?;
+                                let last = *acc.last().ok_or_else(|| {
+                                    QSError::InvalidValueErr(
+                                        "Notional schedule cannot be empty".into(),
+                                    )
+                                })?;
                                 acc.push(last - x);
                                 Ok::<_, QSError>(acc)
                             })?;
@@ -657,7 +668,10 @@ impl MakeLeg {
                             side,
                             true,
                             schedule.dates()[1],
-                            *schedule.dates().last().unwrap(),
+                            *schedule
+                                .dates()
+                                .last()
+                                .ok_or_else(|| QSError::InvalidValueErr("Empty schedule".into()))?,
                         );
 
                         Ok(leg)
@@ -672,11 +686,13 @@ impl MakeLeg {
             PaymentStructure::Zero => {
                 let start_date = self
                     .start_date
-                    .ok_or(QSError::ValueNotSetErr("Start date".into()))?;
+                    .ok_or_else(|| QSError::ValueNotSetErr("Start date".into()))?;
                 let end_date = if let Some(date) = self.end_date {
                     date
                 } else {
-                    let tenor = self.tenor.ok_or(QSError::ValueNotSetErr("Tenor".into()))?;
+                    let tenor = self
+                        .tenor
+                        .ok_or_else(|| QSError::ValueNotSetErr("Tenor".into()))?;
                     start_date + tenor
                 };
                 let schedule = MakeSchedule::new(start_date, end_date)
@@ -697,16 +713,16 @@ impl MakeLeg {
 
                 let notional = self
                     .notional
-                    .ok_or(QSError::ValueNotSetErr("Notional".into()))?;
+                    .ok_or_else(|| QSError::ValueNotSetErr("Notional".into()))?;
 
                 let first_date = vec![*schedule
                     .dates()
                     .first()
-                    .ok_or(QSError::ValueNotSetErr("Schedule dates".into()))?];
+                    .ok_or_else(|| QSError::ValueNotSetErr("Schedule dates".into()))?];
                 let last_date = vec![*schedule
                     .dates()
                     .last()
-                    .ok_or(QSError::ValueNotSetErr("Schedule dates".into()))?];
+                    .ok_or_else(|| QSError::ValueNotSetErr("Schedule dates".into()))?];
 
                 // Add initial disbursement
                 add_cashflows_to_vec(&mut cashflows, &first_date, &[notional], 1);
@@ -732,11 +748,13 @@ impl MakeLeg {
                 let leg_type = self.check_leg_type()?;
                 let start_date = self
                     .start_date
-                    .ok_or(QSError::ValueNotSetErr("Start date".into()))?;
+                    .ok_or_else(|| QSError::ValueNotSetErr("Start date".into()))?;
                 let end_date = if let Some(date) = self.end_date {
                     date
                 } else {
-                    let tenor = self.tenor.ok_or(QSError::ValueNotSetErr("Tenor".into()))?;
+                    let tenor = self
+                        .tenor
+                        .ok_or_else(|| QSError::ValueNotSetErr("Tenor".into()))?;
                     start_date + tenor
                 };
                 let mut schedule_builder = MakeSchedule::new(start_date, end_date)
@@ -769,12 +787,12 @@ impl MakeLeg {
 
                 let notional = self
                     .notional
-                    .ok_or(QSError::ValueNotSetErr("Notional".into()))?;
+                    .ok_or_else(|| QSError::ValueNotSetErr("Notional".into()))?;
 
                 let first_date = vec![*schedule
                     .dates()
                     .first()
-                    .ok_or(QSError::ValueNotSetErr("Schedule dates".into()))?];
+                    .ok_or_else(|| QSError::ValueNotSetErr("Schedule dates".into()))?];
 
                 let n = schedule.dates().len() - 1;
                 let notionals = notionals_vector(n, notional, PaymentStructure::EqualRedemptions);
@@ -817,7 +835,10 @@ impl MakeLeg {
                             side,
                             true,
                             schedule.dates()[1],
-                            *schedule.dates().last().unwrap(),
+                            *schedule
+                                .dates()
+                                .last()
+                                .ok_or_else(|| QSError::InvalidValueErr("Empty schedule".into()))?,
                         );
 
                         Ok(leg)
@@ -829,7 +850,6 @@ impl MakeLeg {
 
                         let market_index = self
                             .market_index
-                            
                             .ok_or_else(|| QSError::ValueNotSetErr("Market index".into()))?;
 
                         build_floating_rate_coupons_from_notionals(
@@ -837,7 +857,7 @@ impl MakeLeg {
                             schedule.dates(),
                             &notionals,
                             ADReal::new(spread),
-                            market_index.clone(),
+                            &market_index,
                         )?;
 
                         let redemption_dates: Vec<Date> =
@@ -854,7 +874,10 @@ impl MakeLeg {
                             side,
                             true,
                             schedule.dates()[1],
-                            *schedule.dates().last().unwrap(),
+                            *schedule
+                                .dates()
+                                .last()
+                                .ok_or_else(|| QSError::InvalidValueErr("Empty schedule".into()))?,
                         );
                         Ok(leg)
                     }
@@ -874,7 +897,7 @@ impl MakeLeg {
                             schedule.dates(),
                             &notionals,
                             ADReal::new(spread),
-                            market_index.clone(),
+                            &market_index,
                             self.floorlet_strike,
                             self.caplet_strike,
                         )?;
@@ -893,7 +916,10 @@ impl MakeLeg {
                             side,
                             true,
                             schedule.dates()[1],
-                            *schedule.dates().last().unwrap(),
+                            *schedule
+                                .dates()
+                                .last()
+                                .ok_or_else(|| QSError::InvalidValueErr("Empty schedule".into()))?,
                         );
                         Ok(leg)
                     }
@@ -935,7 +961,7 @@ fn build_floating_rate_coupons_from_notionals(
     dates: &[Date],
     notionals: &[f64],
     spread: ADReal,
-    market_index: MarketIndex,
+    market_index: &MarketIndex,
 ) -> Result<()> {
     if dates.len() - 1 != notionals.len() {
         Err(QSError::InvalidValueErr(
@@ -961,7 +987,7 @@ fn build_embedded_option_coupons_from_notionals(
     dates: &[Date],
     notionals: &[f64],
     spread: ADReal,
-    market_index: MarketIndex,
+    market_index: &MarketIndex,
     floorlet_strike: Option<f64>,
     caplet_strike: Option<f64>,
 ) -> Result<()> {
@@ -1066,7 +1092,7 @@ fn calculate_equal_payment_redemptions(
     dates: &[Date],
     rate: InterestRate<ADReal>,
     notional: f64,
-) -> Result<Vec<f64>> {
+) -> Vec<f64> {
     let mut annuity_factor = 0.0;
     for date_pair in dates.windows(2) {
         let d1 = date_pair[0];
@@ -1094,7 +1120,7 @@ fn calculate_equal_payment_redemptions(
         redemptions.push(principal);
     }
 
-    Ok(redemptions)
+    redemptions
 }
 
 #[cfg(test)]

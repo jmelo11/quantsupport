@@ -15,6 +15,9 @@ use crate::{
 /// The generic parameter `T` is the visited type (instrument, leg, etc.).
 pub trait DiscountPolicy<T>: Send + Sync {
     /// Resolves the discount curve index for the visited target.
+    ///
+    /// # Errors
+    /// Returns an error if the discount index cannot be resolved.
     fn accept(&self, target: &T) -> Result<MarketIndex>;
 
     /// Returns all discount curve indices referenced by this policy.

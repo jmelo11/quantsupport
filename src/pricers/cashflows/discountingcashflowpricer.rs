@@ -172,6 +172,7 @@ where
     I: Instrument,
     T: LegsProvider + Trade<I>,
 {
+    #[allow(clippy::too_many_lines)]
     fn handle_value(&self, trade: &T, state: &mut DCFState<'_>) -> Result<f64> {
         // Check that all legs are linear
         for leg in trade.legs() {
@@ -266,7 +267,7 @@ where
                     }
                     CashflowType::FloatingRateCoupon(coupon) => {
                         // Forward / projection curve always comes from the leg's own market index
-                        let forward_index = leg.market_index().ok_or(QSError::NotFoundErr(
+                        let forward_index = leg.market_index().ok_or_else(|| QSError::NotFoundErr(
                             "A market index must be set to price floating rate coupons."
                                 .to_string(),
                         ))?;
@@ -335,7 +336,10 @@ where
         state.value = Some(pv);
 
         Tape::stop_recording();
-        Ok(state.value.unwrap().value())
+        Ok(state
+            .value
+            .ok_or_else(|| QSError::ValueNotSetErr("PV value".into()))?
+            .value())
     }
 }
 
@@ -350,7 +354,7 @@ where
 
         for leg in trade.legs() {
             // Forward / projection curve always comes from the leg's own market index
-            let forward_index = leg.market_index().ok_or(QSError::NotFoundErr(
+            let forward_index = leg.market_index().ok_or_else(|| QSError::NotFoundErr(
                 "Market index required for par rate computation".to_string(),
             ))?;
             let forward_curve = state.get_discount_curve_element(forward_index)?.curve();
@@ -489,9 +493,6 @@ where
 
         for request in requests {
             match request {
-                Request::Value => {
-                    // Already handled above
-                }
                 Request::Sensitivities => {
                     let sensitivities = self.handle_sensitivities(trade, &mut state)?;
                     results = results.with_sensitivities(sensitivities);

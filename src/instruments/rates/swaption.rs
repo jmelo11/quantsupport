@@ -32,6 +32,7 @@ pub enum SwaptionType {
 ///
 /// The holder has the right, but not the obligation, to enter into
 /// the underlying [`Swap`] at expiry.
+#[allow(clippy::struct_field_names)]
 pub struct Swaption {
     identifier: String,
     underlying: Swap,
@@ -46,6 +47,7 @@ pub struct Swaption {
 impl Swaption {
     /// Creates a new [`Swaption`].
     #[must_use]
+    #[allow(clippy::too_many_arguments)]
     pub const fn new(
         identifier: String,
         underlying: Swap,

@@ -535,6 +535,9 @@ impl QuoteDetails {
     // -----------------------------------------------------------------------
 
     /// `{Instrument}_CCY_{Index}_{Tenor}` — e.g. `OIS_USD_SOFR_1Y`
+    ///
+    /// # Errors
+    /// Returns an error if the identifier is too short or fields cannot be parsed.
     pub fn parse_ois(id: &str, parts: &[&str]) -> Result<Self> {
         if parts.len() < 4 {
             return Err(QSError::InvalidValueErr(format!(
@@ -551,6 +554,9 @@ impl QuoteDetails {
     }
 
     /// `{Instrument}_CCY_{Index}_{Tenor}` — e.g. `FixedRateDeposit_USD_SOFR_1Y`
+    ///
+    /// # Errors
+    /// Returns an error if the identifier is too short or fields cannot be parsed.
     pub fn parse_fixed_rate_deposit(id: &str, parts: &[&str]) -> Result<Self> {
         if parts.len() < 4 {
             return Err(QSError::InvalidValueErr(format!(
@@ -568,6 +574,9 @@ impl QuoteDetails {
 
     /// `{Instrument}_CCY_{PayIndex}_{RecvIndex}_{Tenor}`
     /// e.g. `BasisSwap_USD_SOFR_TermSOFR3m_1Y`
+    ///
+    /// # Errors
+    /// Returns an error if the identifier is too short or fields cannot be parsed.
     pub fn parse_basis_swap(id: &str, parts: &[&str]) -> Result<Self> {
         if parts.len() < 5 {
             return Err(QSError::InvalidValueErr(format!(
@@ -587,6 +596,9 @@ impl QuoteDetails {
 
     /// `{Instrument}_DomesticCCY_{DomIndex}_{ForIndex}_{ForeignCCY}_{Tenor}`
     /// e.g. `CrossCurrencySwap_USD_SOFR_ICP_CLP_1Y`
+    ///
+    /// # Errors
+    /// Returns an error if the identifier is too short or fields cannot be parsed.
     pub fn parse_cross_currency_swap(id: &str, parts: &[&str]) -> Result<Self> {
         if parts.len() < 6 {
             return Err(QSError::InvalidValueErr(format!(
@@ -609,9 +621,14 @@ impl QuoteDetails {
         )
     }
 
-    /// `{Instrument}_CCY_{Index}_{Tenor}_{StrikeType}_{VolType}`           (without strike)
-    /// `{Instrument}_CCY_{Index}_{Tenor}_{StrikeType}_{Strike}_{VolType}`  (with strike)
+    /// `{Instrument}_CCY_{Index}_{Tenor}_{StrikeType}_{VolType}` (without strike)
+    ///
+    /// `{Instrument}_CCY_{Index}_{Tenor}_{StrikeType}_{Strike}_{VolType}` (with strike)
+    ///
     /// e.g. `CapFloor_USD_SOFR_1Y_Absolute_Black`
+    ///
+    /// # Errors
+    /// Returns an error if the identifier is too short or fields cannot be parsed.
     pub fn parse_cap_floor(id: &str, parts: &[&str]) -> Result<Self> {
         if parts.len() < 6 {
             return Err(QSError::InvalidValueErr(format!(
@@ -625,10 +642,7 @@ impl QuoteDetails {
 
         // Try parsing parts[5] as f64 (strike value). If it succeeds, the vol
         // type follows at parts[6]; otherwise parts[5] is the vol type.
-        let (strike, vol_idx) = match parts[5].parse::<f64>() {
-            Ok(s) => (Some(s), 6),
-            Err(_) => (None, 5),
-        };
+        let (strike, vol_idx) = parts[5].parse::<f64>().map_or((None, 5), |s| (Some(s), 6));
         let vol_type: VolatilityType = parts
             .get(vol_idx)
             .ok_or_else(|| QSError::InvalidValueErr(format!("Missing vol type in: {id}")))?
@@ -647,8 +661,13 @@ impl QuoteDetails {
     }
 
     /// `{Instrument}_CCY_{Index}_{IdxTenor}_{Expiry}_{StrikeType}_{Strike}_{Strategy}_{VolType}`
-    /// or without explicit strike: `.._{StrikeType}_{Strategy}_{VolType}`
+    ///
+    /// Or without explicit strike: `.._{StrikeType}_{Strategy}_{VolType}`.
+    ///
     /// e.g. `CapletFloorlet_USD_TermSOFR3m_3M_3M_Absolute_0.010_Straddle_Black`
+    ///
+    /// # Errors
+    /// Returns an error if the identifier is too short or fields cannot be parsed.
     pub fn parse_caplet_floorlet(id: &str, parts: &[&str]) -> Result<Self> {
         if parts.len() < 8 {
             return Err(QSError::InvalidValueErr(format!(
@@ -661,10 +680,7 @@ impl QuoteDetails {
         let option_expiry = Period::from_str(parts[4])?;
         let strike_type = parts[5].parse::<StrikeType>()?;
 
-        let (strike, next_idx) = match parts[6].parse::<f64>() {
-            Ok(s) => (Some(s), 7),
-            Err(_) => (None, 6),
-        };
+        let (strike, next_idx) = parts[6].parse::<f64>().map_or((None, 6), |s| (Some(s), 7));
 
         let strategy: OptionStrategy = parts
             .get(next_idx)
@@ -690,6 +706,9 @@ impl QuoteDetails {
     }
 
     /// `{Instrument}_CCY_{Index}_{IMMCode}` — e.g. `Future_USD_SOFR_H6`
+    ///
+    /// # Errors
+    /// Returns an error if the identifier is too short or fields cannot be parsed.
     pub fn parse_future(id: &str, parts: &[&str]) -> Result<Self> {
         if parts.len() < 4 {
             return Err(QSError::InvalidValueErr(format!(
@@ -706,6 +725,9 @@ impl QuoteDetails {
     }
 
     /// `{Instrument}_CCY_{Index}_{IMMCode}` — e.g. `ConvexityAdjustment_USD_SOFR_H6`
+    ///
+    /// # Errors
+    /// Returns an error if the identifier is too short or fields cannot be parsed.
     pub fn parse_convexity_adjustment(id: &str, parts: &[&str]) -> Result<Self> {
         if parts.len() < 4 {
             return Err(QSError::InvalidValueErr(format!(
@@ -723,9 +745,14 @@ impl QuoteDetails {
         )
     }
 
-    /// `{Instrument}_CCY_{Index}_{Expiry}_{SwapTenor}_{StrikeType}_{VolType}`            (no strike)
-    /// `{Instrument}_CCY_{Index}_{Expiry}_{SwapTenor}_{StrikeType}_{Strike}_{VolType}`   (with strike)
+    /// Swaption identifier parser.
+    ///
+    /// `{Instrument}_CCY_{Index}_{Expiry}_{SwapTenor}_{StrikeType}_{VolType}` (no strike)
+    /// `{Instrument}_CCY_{Index}_{Expiry}_{SwapTenor}_{StrikeType}_{Strike}_{VolType}` (with strike)
     /// e.g. `Swaption_USD_SOFR_3M_2Y_Absolute_Black`
+    ///
+    /// # Errors
+    /// Returns an error if the identifier is too short or fields cannot be parsed.
     pub fn parse_swaption(id: &str, parts: &[&str]) -> Result<Self> {
         if parts.len() < 7 {
             return Err(QSError::InvalidValueErr(format!(
@@ -738,10 +765,7 @@ impl QuoteDetails {
         let swap_tenor = Period::from_str(parts[4])?;
         let strike_type = parts[5].parse::<StrikeType>()?;
 
-        let (strike, vol_idx) = match parts[6].parse::<f64>() {
-            Ok(s) => (Some(s), 7),
-            Err(_) => (None, 6),
-        };
+        let (strike, vol_idx) = parts[6].parse::<f64>().map_or((None, 6), |s| (Some(s), 7));
         let vol_type: VolatilityType = parts
             .get(vol_idx)
             .ok_or_else(|| QSError::InvalidValueErr(format!("Missing vol type in: {id}")))?
@@ -761,6 +785,9 @@ impl QuoteDetails {
     }
 
     /// `{Instrument}_{CCYPAIR}_{Tenor}` — e.g. `FxOutrightForward_EURUSD_1M`
+    ///
+    /// # Errors
+    /// Returns an error if the identifier is too short or fields cannot be parsed.
     pub fn parse_outright_forward(id: &str, parts: &[&str]) -> Result<Self> {
         if parts.len() < 3 {
             return Err(QSError::InvalidValueErr(format!(
@@ -778,6 +805,9 @@ impl QuoteDetails {
     }
 
     /// `{Instrument}_{CCYPAIR}_{Tenor}` — e.g. `FxForwardPoints_EURUSD_1M`
+    ///
+    /// # Errors
+    /// Returns an error if the identifier is too short or fields cannot be parsed.
     pub fn parse_forward_points(id: &str, parts: &[&str]) -> Result<Self> {
         if parts.len() < 3 {
             return Err(QSError::InvalidValueErr(format!(
@@ -793,6 +823,9 @@ impl QuoteDetails {
     }
 
     /// `{Instrument}_CCY_{Index}_{Expiry}_{Strike}` — e.g. `EquityCall_USD_SPX_1Y_5000`
+    ///
+    /// # Errors
+    /// Returns an error if the identifier is too short or fields cannot be parsed.
     pub fn parse_equity_call(id: &str, parts: &[&str]) -> Result<Self> {
         if parts.len() < 5 {
             return Err(QSError::InvalidValueErr(format!(
@@ -813,6 +846,9 @@ impl QuoteDetails {
     }
 
     /// `{Instrument}_CCY_{Index}_{Expiry}_{Strike}` — e.g. `EquityPut_USD_SPX_1Y_5000`
+    ///
+    /// # Errors
+    /// Returns an error if the identifier is too short or fields cannot be parsed.
     pub fn parse_equity_put(id: &str, parts: &[&str]) -> Result<Self> {
         if parts.len() < 5 {
             return Err(QSError::InvalidValueErr(format!(
@@ -833,6 +869,9 @@ impl QuoteDetails {
     }
 
     /// `{Instrument}_{CCYPAIR}_{Expiry}_{Strike}` — e.g. `FxCall_EURUSD_1Y_1.10`
+    ///
+    /// # Errors
+    /// Returns an error if the identifier is too short or fields cannot be parsed.
     pub fn parse_fx_call(id: &str, parts: &[&str]) -> Result<Self> {
         if parts.len() < 4 {
             return Err(QSError::InvalidValueErr(format!(
@@ -853,6 +892,9 @@ impl QuoteDetails {
     }
 
     /// `{Instrument}_{CCYPAIR}_{Expiry}_{Strike}` — e.g. `FxPut_EURUSD_1Y_1.10`
+    ///
+    /// # Errors
+    /// Returns an error if the identifier is too short or fields cannot be parsed.
     pub fn parse_fx_put(id: &str, parts: &[&str]) -> Result<Self> {
         if parts.len() < 4 {
             return Err(QSError::InvalidValueErr(format!(
@@ -988,10 +1030,10 @@ impl Quote {
     /// Builds a concrete financial instrument from this quote.
     ///
     /// # Arguments
-    /// * `reference_date` – the as-of / valuation date.  Tenors are rolled
-    ///                      from this date to determine maturity / delivery.
-    /// * `notional`       – the notional amount.
-    /// * `level`          – which price level to extract (`Mid`, `Bid`, `Ask`).
+    /// * `reference_date` – the as-of / valuation date. Tenors are rolled
+    ///   from this date to determine maturity / delivery.
+    /// * `notional` – the notional amount.
+    /// * `level` – which price level to extract (`Mid`, `Bid`, `Ask`).
     ///
     /// # Errors
     /// Returns an error when:

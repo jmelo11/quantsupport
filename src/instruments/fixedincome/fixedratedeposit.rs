@@ -21,7 +21,6 @@ pub struct FixedRateDeposit {
 
 impl FixedRateDeposit {
     /// Creates a new [`FixedRateDeposit`].
-
     #[must_use]
     pub const fn new(
         identifier: String,

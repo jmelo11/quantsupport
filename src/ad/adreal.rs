@@ -8,9 +8,7 @@ use crate::utils::errors::{QSError, Result};
 use std::cmp::Ordering;
 use std::ptr::NonNull;
 
-/// # `ADReal`
-///
-/// Represnets a differnetiable number.
+/// Represents a differnetiable number.
 #[derive(Clone, Copy, Default)]
 pub struct ADReal {
     val: f64,
@@ -20,8 +18,6 @@ pub struct ADReal {
 unsafe impl Sync for ADReal {}
 unsafe impl Send for ADReal {}
 
-/// # `IsReal`
-///
 /// Conversion helpers for numeric types used by this crate.
 pub trait IsReal
 where
@@ -106,7 +102,6 @@ impl ADReal {
         TAPE.set(t);
     }
 
-    #[inline]
     /// Returns the adjoint for this value if it is on the tape.
     ///
     /// ## Errors
@@ -114,6 +109,7 @@ impl ADReal {
     ///
     /// ## Safety
     /// This function accesses raw pointers from the tape and assumes they are valid.
+    #[inline]
     pub fn adjoint(&self) -> Result<f64> {
         self.node
             .map(|p| unsafe { p.as_ref().adj })
@@ -214,8 +210,6 @@ impl Expr for ADReal {
     }
 }
 
-/// # `flatten`
-///
 /// Records an expression into the tape, returning the resulting [`ADReal`].
 /// This function automatically registers any unregistered [`ADReal`] operands on the tape
 /// before evaluating the expression, ensuring proper derivative computation.
@@ -244,8 +238,6 @@ impl PartialOrd for ADReal {
     }
 }
 
-/// # `Const`
-///
 /// A constant expression wrapper for interoperability.
 #[derive(Clone, Copy, PartialEq, PartialOrd)]
 pub struct Const(pub f64);
@@ -319,8 +311,6 @@ impl Expr for Const {
     fn push_adj(&self, _: &mut TapeNode, _: f64) {}
 }
 
-/// # `BinOp`
-///
 /// A binary operation definition for the expression system.
 pub trait BinOp {
     /// Evaluates the operator on the input values.
@@ -331,10 +321,8 @@ pub trait BinOp {
     fn d_right(l: f64, r: f64) -> f64;
 }
 
-#[derive(Clone, Copy, Debug)]
-/// # `AddOp`
-///
 /// Binary addition operator.
+#[derive(Clone, Copy, Debug)]
 pub struct AddOp;
 impl BinOp for AddOp {
     #[inline]
@@ -353,11 +341,9 @@ impl BinOp for AddOp {
         1.0
     }
 }
-#[derive(Clone, Copy, Debug)]
 
-/// # `SubOp`
-///
 ///  Binary subtraction operator.
+#[derive(Clone, Copy, Debug)]
 pub struct SubOp;
 impl BinOp for SubOp {
     #[inline]
@@ -377,8 +363,6 @@ impl BinOp for SubOp {
     }
 }
 
-/// # `MulOp`
-///
 /// Binary multiplication operator.
 #[derive(Clone, Copy, Debug)]
 pub struct MulOp;
@@ -400,8 +384,6 @@ impl BinOp for MulOp {
     }
 }
 
-/// # `DivOp`
-///
 /// Binary division operator.
 #[derive(Clone, Copy, Debug)]
 pub struct DivOp;
@@ -423,8 +405,6 @@ impl BinOp for DivOp {
     }
 }
 
-/// # `PowOp`
-///
 /// Binary power operator.
 #[derive(Clone, Copy, Debug)]
 pub struct PowOp;
@@ -446,8 +426,6 @@ impl BinOp for PowOp {
     }
 }
 
-/// # `MaxOp`
-///
 /// Binary maximum operator.
 #[derive(Clone, Copy, Debug)]
 pub struct MaxOp;
@@ -477,8 +455,6 @@ impl BinOp for MaxOp {
     }
 }
 
-/// # `MinOp`
-///
 /// Binary minimum operator.
 #[derive(Clone, Copy, Debug)]
 pub struct MinOp;
@@ -508,8 +484,6 @@ impl BinOp for MinOp {
     }
 }
 
-/// # `BinExpr`
-///
 /// A binary expression over two child expressions.
 #[derive(Clone)]
 pub struct BinExpr<L, R, O> {
@@ -552,8 +526,6 @@ impl<L: Expr, R: Expr, O: BinOp + Clone> Expr for BinExpr<L, R, O> {
     }
 }
 
-/// # `UnOp`
-///
 /// A unary operation definition for the expression system.
 pub trait UnOp {
     /// Evaluates the operator on the input value.
@@ -615,8 +587,6 @@ un_op!(
     |x, _v| if x >= 0.0 { 1.0 } else { -1.0 }
 );
 
-/// # `UnExpr`
-///
 /// A unary expression over a child expression.
 #[derive(Clone)]
 pub struct UnExpr<A, O> {

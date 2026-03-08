@@ -172,18 +172,18 @@ pub trait ADJacobian: VectorFunc<ADReal, ADReal> {
                 ));
             }
 
-            for row in 0..n {
-                if !residual[row].is_on_tape() {
+            for item in residual.iter().take(n) {
+                if !item.is_on_tape() {
                     return Err(QSError::NodeNotIndexedInTapeErr);
                 }
             }
 
             let mut j = vec![vec![0.0; n]; n];
-            for row in 0..n {
+            for (row, j_row) in j.iter_mut().enumerate().take(n) {
                 Tape::reset_adjoints();
                 residual[row].backward_to_mark()?;
-                for col in 0..n {
-                    j[row][col] = local_x[col].adjoint()?;
+                for (col, j_cell) in j_row.iter_mut().enumerate().take(n) {
+                    *j_cell = local_x[col].adjoint()?;
                 }
             }
 

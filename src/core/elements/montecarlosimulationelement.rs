@@ -5,6 +5,8 @@ use crate::{
     simulations::simulation::MonteCarloSimulation,
 };
 
+/// Simulation element with Monte Carlo draws.
+///
 /// The [`ADMonteCarloSimulationElement`] trait represents a simulation element that includes both the Monte Carlo
 /// simulation draws and the associated market index. This trait is used to define the structure of the simulation
 /// elements that will be stored in the `ConstructedElementStore` and used for pricing and risk calculations.

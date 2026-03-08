@@ -10,9 +10,11 @@ use crate::{
     time::date::Date,
 };
 
-/// A [`FloatFloatCrossCurrencySwap`] represents a cross-currency swap where **both** legs
-/// pay floating rates (each referencing an index in its own currency) plus optional spreads.
-/// Notional exchanges typically occur at inception and maturity at the initial FX spot rate.
+/// A [`FloatFloatCrossCurrencySwap`] is a cross-currency swap with two floating legs.
+///
+/// Both legs pay floating rates (each referencing an index in its own currency) plus
+/// optional spreads. Notional exchanges typically occur at inception and maturity at
+/// the initial FX spot rate.
 pub struct FloatFloatCrossCurrencySwap {
     identifier: String,
     legs: Vec<Leg>,

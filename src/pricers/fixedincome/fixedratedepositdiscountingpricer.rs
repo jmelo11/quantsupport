@@ -23,11 +23,12 @@ use crate::{
     utils::errors::{QSError, Result},
 };
 
-/// Pricer for deposits that uses discounted cash flow methodology. It calculates the
-/// present value of the deposit's final payment by discounting it using the appropriate
-/// discount factor from the relevant discount curve. The pricer also computes
-/// sensitivities to the discount curve pillars, which can be used for risk
-/// management and hedging purposes.
+/// Pricer for deposits that uses discounted cash flow methodology.
+///
+/// It calculates the present value of the deposit's final payment by discounting
+/// it using the appropriate discount factor from the relevant discount curve.
+/// The pricer also computes sensitivities to the discount curve pillars, which
+/// can be used for risk management and hedging purposes.
 ///
 /// When a [`DiscountPolicy`] is set, the pricer uses the CSA discount curve
 /// for payment discounting instead of the instrument's `market_index` curve.

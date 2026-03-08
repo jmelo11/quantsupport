@@ -27,13 +27,15 @@ pub struct ContextManager {
     fixing_store: FixingStore,
     /// The quote level indicates the preferred type of quote (e.g., bid, ask, mid) to be used for market value extraction during pricing.
     quote_level: Level,
-    /// The discount policy defines the approach for discounting cashflows, particularly in the context of collateralized transactions.
+    /// The discount policy defines the approach for discounting cashflows.
+    #[allow(dead_code)]
     discount_policy: Option<CSADiscountPolicy>,
     /// Base currency for reporting results, allowing for consistent presentation of pricing outputs across different instruments and markets.
     base_currency: Currency,
     /// Model parameters for various models that may be used during pricing, allowing for flexible configuration of model inputs and assumptions.
     models: Vec<ModelParameters>,
-    /// Curve specification for curve construction, allowing for detailed configuration of curve building methodologies and inputs.
+    /// Curve specifications for curve construction.
+    #[allow(dead_code)]
     curve_specs: Vec<CurveSpec>,
 
     /// Constructed market data elements, such as discount curves, dividend curves, volatility surfaces, and simulations, that have been built in response to market data requests. This allows for caching and reuse of constructed elements across multiple pricing operations.

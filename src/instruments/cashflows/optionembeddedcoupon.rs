@@ -6,9 +6,11 @@ use crate::{
     utils::errors::{QSError, Result},
 };
 
-/// An [`OptionEmbeddedCoupon`] represents a cash flow that includes embedded options,
-/// where the payoff is determined by a specified payoff function. For example, this could represent a
-/// floored or capped coupon, where the payoff is determined by the underlying index and the specified floor or cap.
+/// An [`OptionEmbeddedCoupon`] represents a cash flow that includes embedded options.
+///
+/// The payoff is determined by a specified payoff function. For example, this could
+/// represent a floored or capped coupon, where the payoff is determined by the
+/// underlying index and the specified floor or cap.
 pub struct OptionEmbeddedCoupon<T: IsReal> {
     notional: f64,
     fixing: Option<T>,
@@ -45,6 +47,7 @@ impl<T: IsReal> OptionEmbeddedCoupon<T> {
     }
 
     /// Sets the fixing for the coupon, which is used to determine the payoff.
+    #[must_use]
     pub const fn with_fixing(mut self, fixing: T) -> Self {
         self.fixing = Some(fixing);
         self
@@ -73,6 +76,10 @@ impl<T: IsReal> OptionEmbeddedCoupon<T> {
 
 impl OptionEmbeddedCoupon<ADReal> {
     /// Returns the amount of the coupon (calculated from accrued amount). Only available for `ADReal`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the accrued amount calculation fails.
     pub fn amount(&self) -> Result<ADReal> {
         self.accrued_amount(self.accrual_start_date, self.accrual_end_date)
     }

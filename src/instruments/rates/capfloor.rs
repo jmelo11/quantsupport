@@ -21,6 +21,7 @@ pub enum CapFloorType {
 }
 
 /// A [`CapFloor`] represents a strip of caplets or floorlets.
+#[allow(clippy::struct_field_names)]
 pub struct CapFloor {
     identifier: String,
     caplet_floorlets: Vec<CapletFloorlet>,

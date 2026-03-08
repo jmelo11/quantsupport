@@ -169,7 +169,7 @@ impl CurveSpec {
 
             let fallback_value = ADReal::new(quote.levels().value(level)?);
             let built = quote.build_instrument(selector.reference_date(), level)?;
-            let pillar_date = self.resolve_pillar_dates(&built)?;
+            let pillar_date = Self::resolve_pillar_dates(&built)?;
 
             // When the tape is recording, the instrument build creates
             // ADReal leaf nodes for its internal rates.  We extract that
@@ -242,18 +242,29 @@ impl CurveSpec {
     }
 
     /// Resolves the pillar date for a given built instrument.
-    fn resolve_pillar_dates(&self, built: &BuiltInstrument) -> Result<Date> {
+    fn resolve_pillar_dates(built: &BuiltInstrument) -> Result<Date> {
         match built {
             BuiltInstrument::FixedRateDeposit(x) => Ok(x.leg().last_payment_date()),
-            BuiltInstrument::Swap(x) => {
-                Ok(x.legs().iter().map(Leg::last_payment_date).max().unwrap())
-            }
-            BuiltInstrument::BasisSwap(x) => {
-                Ok(x.legs().iter().map(Leg::last_payment_date).max().unwrap())
-            }
-            BuiltInstrument::CrossCurrencySwap(x) => {
-                Ok(x.legs().iter().map(Leg::last_payment_date).max().unwrap())
-            }
+            BuiltInstrument::Swap(x) => x
+                .legs()
+                .iter()
+                .map(Leg::last_payment_date)
+                .max()
+                .ok_or_else(|| QSError::InvalidValueErr("Swap has no legs".into())),
+            BuiltInstrument::BasisSwap(x) => x
+                .legs()
+                .iter()
+                .map(Leg::last_payment_date)
+                .max()
+                .ok_or_else(|| QSError::InvalidValueErr("BasisSwap has no legs".into())),
+            BuiltInstrument::CrossCurrencySwap(x) => x
+                .legs()
+                .iter()
+                .map(Leg::last_payment_date)
+                .max()
+                .ok_or_else(|| {
+                    QSError::InvalidValueErr("CrossCurrencySwap has no legs".into())
+                }),
             BuiltInstrument::RateFutures(x) => Ok(x.end_date()),
             BuiltInstrument::FxForward(x) => Ok(x.delivery_date()),
             _ => Err(QSError::InvalidValueErr("Instrument not supported".into())),
@@ -343,14 +354,14 @@ impl BootstrappedCurve {
 
     /// Replaces all discount factors.
     pub fn set_discount_factors(&mut self, discount_factors: &[ADReal]) {
-        self.discount_factors = discount_factors.to_owned();
+        self.discount_factors.clear();
+        self.discount_factors.extend_from_slice(discount_factors);
     }
 
     /// Computes the discount factor at `date` by interpolating the curve.
     ///
     /// # Errors
     /// Returns an error if interpolation fails.
-    #[must_use]
     pub fn discount_factor(&self, date: Date) -> Result<ADReal> {
         let year_fraction = ADReal::new(self.day_counter.year_fraction(self.reference_date, date));
 

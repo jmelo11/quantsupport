@@ -5,6 +5,7 @@ use crate::{
 };
 
 /// A [`Leg`] represents a sequence of cashflows associated to a particular instrument.
+#[allow(clippy::struct_field_names)]
 pub struct Leg {
     leg_id: usize,
     cashflows: Vec<CashflowType>,
@@ -28,7 +29,8 @@ pub struct Leg {
 
 impl Leg {
     /// Creates a new [`Leg`] with the specified parameters.
-    #[must_use] 
+    #[must_use]
+    #[allow(clippy::too_many_arguments)]
     pub const fn new(
         leg_id: usize,
         cashflows: Vec<CashflowType>,

@@ -293,6 +293,7 @@ impl MultiCurveBootstrapper {
 
     /// Solves a dense linear system A x = b using Gaussian elimination with
     /// partial pivoting.  Operates entirely in `f64`.
+    #[allow(clippy::needless_range_loop)]
     fn solve_f64_system(a: &[Vec<f64>], b: &[f64]) -> Result<Vec<f64>> {
         let n = a.len();
         let mut aa: Vec<Vec<f64>> = a.to_vec();
@@ -738,6 +739,7 @@ impl BootstrapProblem<'_> {
     }
 
     /// Computes the amount and payment date for a single cashflow.
+    #[allow(clippy::unused_self)]
     fn cashflow_amount(
         &self,
         cf: &CashflowType,

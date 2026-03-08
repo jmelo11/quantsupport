@@ -78,6 +78,7 @@ impl CashflowsTable {
     }
 
     /// Adds a cashflow entry to the table.
+    #[allow(clippy::too_many_arguments)]
     pub fn add_cashflow(
         &mut self,
         payment_date: Date,

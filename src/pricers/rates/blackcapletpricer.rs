@@ -315,7 +315,9 @@ mod tests {
         },
         currencies::currency::Currency,
         indices::marketindex::MarketIndex,
-        instruments::rates::capletfloorlet::{CapletFloorlet, CapletFloorletTrade, CapletFloorletType},
+        instruments::rates::capletfloorlet::{
+            CapletFloorlet, CapletFloorletTrade, CapletFloorletType,
+        },
         math::probability::norm_cdf::norm_cdf,
         pricers::rates::blackcapletpricer::BlackCapletPricer,
         rates::{
@@ -481,7 +483,7 @@ mod tests {
         let results = pricer.evaluate(&trade, &[Request::Value], &provider)?;
         let price = results
             .price()
-            .ok_or(QSError::UnexpectedErr("Missing price".to_string()))?;
+            .ok_or_else(|| QSError::UnexpectedErr("Missing price".to_string()))?;
 
         // Compute closed-form Black caplet price using curve.forward_rate
         let tau = rate_def.day_counter().year_fraction(trade_date, start_date);
@@ -565,12 +567,10 @@ mod tests {
 
         let price = results
             .price()
-            .ok_or(QSError::UnexpectedErr("Missing price".to_string()))?;
-        let sens = results.sensitivities().ok_or(QSError::UnexpectedErr(
-            "Missing sensitivities".to_string(),
-        ))?;
-
-        // ── Closed-form vega ──────────────────────────────────────────────────
+            .ok_or_else(|| QSError::UnexpectedErr("Missing price".to_string()))?;
+        let sens = results
+            .sensitivities()
+            .ok_or_else(|| QSError::UnexpectedErr("Missing sensitivities".to_string()))?;
         let tau = rate_def.day_counter().year_fraction(trade_date, start_date);
         let alpha = caplet.accrual_factor();
         let df_pay = discount_curve.discount_factor(end_date)?.value();
@@ -645,7 +645,7 @@ mod tests {
                 },
             )?
             .price()
-            .ok_or(QSError::UnexpectedErr("Missing price_up".to_string()))?;
+            .ok_or_else(|| QSError::UnexpectedErr("Missing price_up".to_string()))?;
 
         let price_dn = pricer
             .evaluate(
@@ -657,7 +657,7 @@ mod tests {
                 },
             )?
             .price()
-            .ok_or(QSError::UnexpectedErr("Missing price_dn".to_string()))?;
+            .ok_or_else(|| QSError::UnexpectedErr("Missing price_dn".to_string()))?;
 
         let fd_rate_sens = (price_up - price_dn) / (2.0 * bump);
 
@@ -667,9 +667,9 @@ mod tests {
             .zip(sens.exposure().iter().copied())
             .find(|(k, _)| k.as_str() == "discount_rate")
             .map(|(_, v)| v)
-            .ok_or(QSError::NotFoundErr(
-                "discount_rate sensitivity not found".to_string(),
-            ))?;
+            .ok_or_else(|| {
+                QSError::NotFoundErr("discount_rate sensitivity not found".to_string())
+            })?;
 
         println!("FD rate sensitivity: {fd_rate_sens:.8}");
         println!("AD rate sensitivity: {ad_rate_sens:.8}");
@@ -726,10 +726,9 @@ mod tests {
             pricer.evaluate(&trade, &[Request::Value, Request::Sensitivities], &provider)?;
 
         assert!(results.price().is_some());
-        let sens = results.sensitivities().ok_or(QSError::UnexpectedErr(
-            "Missing sensitivities".to_string(),
-        ))?;
-        assert!(!sens.instrument_keys().is_empty());
+        let sens = results
+            .sensitivities()
+            .ok_or_else(|| QSError::UnexpectedErr("Missing sensitivities".to_string()))?;
         assert_eq!(sens.instrument_keys().len(), sens.exposure().len());
 
         Ok(())
@@ -777,7 +776,7 @@ mod tests {
         let results = pricer.evaluate(&trade, &[Request::Value], &provider)?;
         let price = results
             .price()
-            .ok_or(QSError::UnexpectedErr("Missing price".to_string()))?;
+            .ok_or_else(|| QSError::UnexpectedErr("Missing price".to_string()))?;
 
         println!("Floorlet price: {price}");
         assert!(price > 0.0);
@@ -827,7 +826,7 @@ mod tests {
         let results = pricer.evaluate(&trade, &[Request::Value], &provider)?;
         let price = results
             .price()
-            .ok_or(QSError::UnexpectedErr("Missing price".to_string()))?;
+            .ok_or_else(|| QSError::UnexpectedErr("Missing price".to_string()))?;
 
         println!("ATM caplet price: {price}");
         assert!(price > 0.0);
@@ -879,7 +878,7 @@ mod tests {
         let results = pricer.evaluate(&trade, &[Request::Value], &provider)?;
         let price = results
             .price()
-            .ok_or(QSError::UnexpectedErr("Missing price".to_string()))?;
+            .ok_or_else(|| QSError::UnexpectedErr("Missing price".to_string()))?;
 
         println!("Relative-strike caplet price: {price}");
         assert!(price > 0.0);

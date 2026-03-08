@@ -41,6 +41,7 @@ pub struct FxForward {
 impl FxForward {
     /// Creates a new [`FxForward`].
     #[must_use]
+    #[allow(clippy::too_many_arguments)]
     pub const fn new(
         identifier: String,
         delivery_date: Date,

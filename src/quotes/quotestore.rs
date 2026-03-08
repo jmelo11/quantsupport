@@ -41,7 +41,7 @@ impl QuoteStore {
         let index = quote
             .details()
             .secondary_market_index()
-            .or(quote.details().market_index())
+            .or_else(|| quote.details().market_index())
             .cloned()
             .unwrap_or_default();
         self.quotes

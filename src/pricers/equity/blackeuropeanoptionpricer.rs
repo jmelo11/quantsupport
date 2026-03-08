@@ -42,9 +42,10 @@ impl PricerState for EquityOptionState {
     }
 }
 
-/// A pricer for European equity options using the Black-Scholes model. It calculates
-/// the option price and sensitivities based on the spot price, volatility surface, discount curve,
-/// and dividend curve obtained from the market data.
+/// A pricer for European equity options using the Black-Scholes model.
+///
+/// It calculates the option price and sensitivities based on the spot price,
+/// volatility surface, discount curve, and dividend curve obtained from the market data.
 ///
 /// When a [`DiscountPolicy`] is set, the pricer uses the CSA discount curve
 /// for payment discounting instead of the instrument's `market_index` curve.
@@ -512,7 +513,7 @@ mod tests {
         let pricer = BlackEuropeanOptionPricer::new();
         let results =
             pricer.evaluate(&trade, &[Request::Value, Request::Sensitivities], &provider)?;
-        let sensitivities = results.sensitivities().ok_or(QSError::UnexpectedErr(
+        let sensitivities = results.sensitivities().ok_or_else(|| QSError::UnexpectedErr(
             "Missing sensitivities in pricing result".to_string(),
         ))?;
 
@@ -543,7 +544,7 @@ mod tests {
             sensitivities.exposure(),
             "SPX",
         )
-        .ok_or(QSError::NotFoundErr(
+        .ok_or_else(|| QSError::NotFoundErr(
             "Spot sensitivity not found".to_string(),
         ))?;
 
@@ -552,7 +553,7 @@ mod tests {
             sensitivities.exposure(),
             "vol_6m_90",
         )
-        .ok_or(QSError::NotFoundErr(
+        .ok_or_else(|| QSError::NotFoundErr(
             "Vol sensitivity not found".to_string(),
         ))?;
 
@@ -624,12 +625,12 @@ mod tests {
             let eval_results = result?;
             let price = eval_results
                 .price()
-                .ok_or(QSError::UnexpectedErr(format!(
+                .ok_or_else(|| QSError::UnexpectedErr(format!(
                     "Missing price for strike {strike}"
                 )))?;
             let sensitivities = eval_results
                 .sensitivities()
-                .ok_or(QSError::UnexpectedErr(format!(
+                .ok_or_else(|| QSError::UnexpectedErr(format!(
                     "Missing sensitivities for strike {strike}"
                 )))?;
 

@@ -8,8 +8,9 @@ use crate::{
     time::date::Date,
 };
 
-/// A [`RateFutures`] represents an exchange-traded interest rate futures contract
-/// (e.g., SOFR futures, Euribor futures). The contract price is quoted as
+/// A [`RateFutures`] represents an exchange-traded interest rate futures contract.
+///
+/// Examples include SOFR futures and Euribor futures. The contract price is quoted as
 /// $100 - \text{implied rate}$, so a price of 95.00 implies a 5% rate.
 ///
 /// The contract settles at expiry based on the realised fixing of the reference

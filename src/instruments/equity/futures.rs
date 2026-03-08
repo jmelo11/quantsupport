@@ -8,9 +8,12 @@ use crate::{
     time::{date::Date, daycounter::DayCounter},
 };
 
-/// A [`Futures`] represents an exchange-traded futures contract on an underlying asset
+/// A [`Futures`] represents an exchange-traded futures contract.
+///
+/// It models an exchange-traded futures contract on an underlying asset
 /// (equity index, commodity, interest rate, etc.). Unlike forwards, futures are
 /// marked-to-market daily through the exchange clearing house.
+#[allow(clippy::struct_field_names)]
 pub struct Futures {
     identifier: String,
     market_index: MarketIndex,

@@ -10,8 +10,9 @@ use crate::{
     time::date::Date,
 };
 
-/// A [`CrossCurrencySwap`] represents a swap in which two legs are denominated in different
-/// currencies. Typically one leg pays a fixed (or floating) rate in one currency while the
+/// A [`CrossCurrencySwap`] represents a swap with legs in different currencies.
+///
+/// Typically one leg pays a fixed (or floating) rate in one currency while the
 /// other pays a floating (or fixed) rate in a second currency, with notional exchanges at
 /// inception and maturity.
 pub struct CrossCurrencySwap {

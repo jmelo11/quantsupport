@@ -100,25 +100,16 @@ impl BootstrapDiscountPolicy {
         target_index: &MarketIndex,
     ) -> Result<MarketIndex> {
         match built {
-            // Fixed-income: self-discounted
-            BuiltInstrument::FixedRateDeposit(_) => Ok(target_index.clone()),
+            // Fixed-income / Futures: self-discounted — return the target curve
+            BuiltInstrument::FixedRateDeposit(_) | BuiltInstrument::RateFutures(_) => {
+                Ok(target_index.clone())
+            }
 
-            // Vanilla OIS swap: CSA curve
-            BuiltInstrument::Swap(_) => Ok(self.csa_index.clone()),
-
-            // Basis swap: CSA curve (both legs share the same discount curve)
-            BuiltInstrument::BasisSwap(_) => Ok(self.csa_index.clone()),
-
-            // Futures: not discounted — return a sentinel (the target curve)
-            BuiltInstrument::RateFutures(_) => Ok(target_index.clone()),
-
-            // Cross-currency swaps: per-leg discounting handled in the NPV
-            // loop; here we return the CSA curve as the primary reference.
-            BuiltInstrument::CrossCurrencySwap(_) => Ok(self.csa_index.clone()),
-
-            // FX forward / forward points: per-currency discounting handled
-            // in the NPV computation; return the CSA curve as a reference.
-            BuiltInstrument::FxForward(_) => Ok(self.csa_index.clone()),
+            // All other supported instruments: use CSA curve
+            BuiltInstrument::Swap(_)
+            | BuiltInstrument::BasisSwap(_)
+            | BuiltInstrument::CrossCurrencySwap(_)
+            | BuiltInstrument::FxForward(_) => Ok(self.csa_index.clone()),
 
             _ => Err(QSError::InvalidValueErr(
                 "Unsupported instrument for bootstrap discounting".into(),
@@ -140,9 +131,6 @@ impl BootstrapDiscountPolicy {
         let mut deps = Vec::new();
 
         match built {
-            // Deposits are self-discounted — no external dependencies.
-            BuiltInstrument::FixedRateDeposit(_) => {}
-
             // Vanilla swap: needs the CSA discount curve; the floating-leg
             // projection curve is the target.
             BuiltInstrument::Swap(s) => {
