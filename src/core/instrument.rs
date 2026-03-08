@@ -1,10 +1,23 @@
-use crate::{core::contextmanager::ContextManager, utils::errors::Result};
+/// [`AssetClass`] represents the different asset classes that an instrument can be part of.
+pub enum AssetClass {
+    /// Fixed income products (bonds, deposits and other cash-associated products).
+    FixedIncome,
+    /// Interest rate derivatives (caps, floors, swaps, among others).
+    InterestRate,
+    /// Equity products (options, forwards, etc.).
+    Equity,
+    /// Fx products (fx swaps, forwards, etc.).
+    Fx,
+    /// Credit derivatives (CDS, baskets, etc.).
+    Credit,
+    /// Other instruments not contained in the previous categories.
+    Other,
+}
 
-/// # `Instrument`
+/// Catalogs any financial product.
 ///
-/// The `Instrument` trait catalogs any financial product. Financial product have
-/// more charasteristics (i.e. start date, initial spread, strike, etc.) that structs that implement
-/// `Instrument` could provide.
+/// Financial products have more characteristics (i.e. start date, initial spread, strike, etc.) that
+/// structs that implement [`Instrument`] could provide.
 pub trait Instrument: Send + Sync + Sized {
     /// Market-associated name of the instrument. For example, it could be the name of the stock, CUSIP of a bond, among others.
     fn identifier(&self) -> String;
@@ -13,5 +26,5 @@ pub trait Instrument: Send + Sync + Sized {
     ///
     /// ## Errors
     /// Returns an error if the instrument cannot be resolved due to missing data or other issues.
-    fn resolve(&self, ctx: &ContextManager) -> Result<Self>;
+    fn asset_class(&self) -> AssetClass;
 }

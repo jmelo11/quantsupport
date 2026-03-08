@@ -41,12 +41,12 @@ impl RateIndexDetails for SOFRIndex {
     fn fixing_lag(&self) -> i64 {
         1
     }
-    fn rate_definition(&self) -> Option<RateDefinition> {
-        Some(RateDefinition::new(
+    fn rate_definition(&self) -> RateDefinition {
+        RateDefinition::new(
             DayCounter::Actual360,
             Compounding::Simple,
             Frequency::Annual,
-        ))
+        )
     }
 
     fn market_index(&self) -> MarketIndex {

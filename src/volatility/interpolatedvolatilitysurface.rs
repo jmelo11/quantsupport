@@ -4,7 +4,7 @@ use crate::{
     indices::marketindex::MarketIndex,
     math::interpolation::bilinear::{BilinearInterpolator, BilinearPoint, BilinearValue},
     time::{date::Date, period::Period},
-    utils::errors::{AtlasError, Result},
+    utils::errors::{QSError, Result},
     volatility::volatilityindexing::F64Key,
     volatility::volatilitysurface::VolatilitySurface,
 };
@@ -70,7 +70,7 @@ impl<T: BilinearValue> VolatilitySurface<T> for InterpolatedVolatilitySurface<T>
             .collect::<Vec<_>>();
 
         BilinearInterpolator::interpolate(expiry.period_in_year(), key, points).ok_or_else(|| {
-            AtlasError::InterpolationErr(
+            QSError::InterpolationErr(
                 "Could not bilinearly interpolate volatility for requested expiry/key".into(),
             )
         })

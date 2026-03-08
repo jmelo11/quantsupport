@@ -1,8 +1,3 @@
-//! `QuantSupport` is a Rust library for pricing and risk analytics.
-//!
-//! Author: Jose Melo
-//! https://github.com/jmelo11/quantsupport
-
 use std::{
     fmt::{Debug, Formatter, Result as fmtResult},
     ptr::NonNull,
@@ -42,8 +37,8 @@ impl Default for TapeNode {
 }
 
 impl TapeNode {
-    #[inline]
     /// Propagates this node's adjoint into each child using stored derivatives.
+    #[inline]
     pub fn propagate_into(&self) {
         debug_assert_eq!(self.childs.len(), self.derivs.len());
         let a = self.adj;

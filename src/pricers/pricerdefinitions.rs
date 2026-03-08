@@ -1,5 +1,6 @@
 use crate::ad::adreal::{ADReal, FloatExt};
 use crate::math::probability::norm_cdf::norm_cdf;
+use crate::models::GbmModelParameters;
 
 /// Closed-form pricer trait.
 pub trait CloseFormPricer {}
@@ -50,10 +51,34 @@ impl BlackClosedFormPricer {
     }
 }
 
-/// Black-Scholes Monte Carlo pricer.
+/// # `GbmMonteCarloPricer`
+///
+/// Uses pre-generated standard-normal draws (held in a [`SimulationElement`])
+/// to price European equity options under a GBM dynamics. The [`GbmModelParameters`] field
+/// is serialised into the [`MarketDataRequest`] so
+/// that any [`MarketDataProvider`] implementation
+/// can inspect them when building or validating the simulation element.
 #[derive(Clone, Copy, Debug, Default)]
-pub struct BlackMonteCarloPricer;
-impl MonteCarloPricer for BlackMonteCarloPricer {}
+pub struct GbmMonteCarloPricer {
+    /// Parameters controlling path generation (number of paths, random seed).
+    model_parameters: GbmModelParameters,
+}
+
+impl GbmMonteCarloPricer {
+    /// Creates a new [`BlackMonteCarloPricer`] with the given model parameters.
+    #[must_use]
+    pub const fn new(model_parameters: GbmModelParameters) -> Self {
+        Self { model_parameters }
+    }
+
+    /// Returns the model parameters of this pricer.
+    #[must_use]
+    pub const fn model_parameters(&self) -> &GbmModelParameters {
+        &self.model_parameters
+    }
+}
+
+impl MonteCarloPricer for GbmMonteCarloPricer {}
 
 /// Normal (Bachelier) closed-form pricer.
 pub struct NormalClosedFormPricer;

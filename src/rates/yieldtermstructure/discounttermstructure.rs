@@ -7,7 +7,7 @@ use crate::{
         yieldtermstructure::interestratestermstructure::InterestRatesTermStructure,
     },
     time::{date::Date, daycounter::DayCounter, enums::Frequency},
-    utils::errors::{AtlasError, Result},
+    utils::errors::{QSError, Result},
 };
 
 /// # `DiscountTermStructure`
@@ -71,6 +71,7 @@ where
     day_counter: DayCounter,
     enable_extrapolation: bool,
     pillar_labels: Option<Vec<String>>,
+    pillar_values: Option<Vec<T>>,
 }
 
 impl<T> DiscountTermStructure<T>
@@ -112,12 +113,37 @@ where
     /// ## Errors
     /// Returns an error if the reference date is not set.
     pub fn with_pillar_labels(mut self, pillar_labels: Vec<String>) -> Result<Self> {
-        if pillar_labels.len() != self.discount_factors.len() {
-            return Err(AtlasError::InvalidValueErr(
-                "Pillar labels need to have the same size as discount factors".into(),
+        let expected_len = self
+            .pillar_values
+            .as_ref()
+            .map_or(self.discount_factors.len(), Vec::len);
+        if pillar_labels.len() != expected_len {
+            return Err(QSError::InvalidValueErr(
+                "Pillar labels need to have the same size as the exposed pillar values".into(),
             ));
         }
         self.pillar_labels = Some(pillar_labels);
+        Ok(self)
+    }
+
+    /// Overrides the values exposed through the [`Pillars`] interface.
+    ///
+    /// # Errors
+    /// Returns an error if the provided values do not match the number of curve nodes.
+    pub fn with_pillar_values(mut self, pillar_values: Vec<T>) -> Result<Self> {
+        if let Some(pillar_labels) = &self.pillar_labels {
+            if pillar_values.len() != pillar_labels.len() {
+                return Err(QSError::InvalidValueErr(
+                    "Pillar values need to have the same size as pillar labels".into(),
+                ));
+            }
+        }
+        if pillar_values.is_empty() {
+            return Err(QSError::InvalidValueErr(
+                "Pillar values cannot be empty".into(),
+            ));
+        }
+        self.pillar_values = Some(pillar_values);
         Ok(self)
     }
 }
@@ -145,7 +171,7 @@ impl DiscountTermStructure<f64> {
     ) -> Result<Self> {
         // check if year_fractions and discount_factors have the same size
         if dates.len() != discount_factors.len() {
-            return Err(AtlasError::InvalidValueErr(
+            return Err(QSError::InvalidValueErr(
                 "Dates and discount_factors need to have the same size".to_string(),
             ));
         }
@@ -157,7 +183,7 @@ impl DiscountTermStructure<f64> {
 
         // discount_factors[0] needs to be 1.0
         if (discount_factors[0] - 1.0).abs() > 1e-12 {
-            return Err(AtlasError::InvalidValueErr(
+            return Err(QSError::InvalidValueErr(
                 "First discount factor needs to be 1.0".to_string(),
             ));
         }
@@ -176,6 +202,7 @@ impl DiscountTermStructure<f64> {
             day_counter,
             enable_extrapolation,
             pillar_labels: None,
+            pillar_values: None,
         })
     }
 }
@@ -203,7 +230,7 @@ impl DiscountTermStructure<ADReal> {
     ) -> Result<Self> {
         // check if year_fractions and discount_factors have the same size
         if dates.len() != discount_factors.len() {
-            return Err(AtlasError::InvalidValueErr(
+            return Err(QSError::InvalidValueErr(
                 "Dates and discount_factors need to have the same size".to_string(),
             ));
         }
@@ -215,7 +242,7 @@ impl DiscountTermStructure<ADReal> {
 
         // discount_factors[0] needs to be 1.0
         if (discount_factors[0] - Const::one()).abs() > 1e-12 {
-            return Err(AtlasError::InvalidValueErr(
+            return Err(QSError::InvalidValueErr(
                 "First discount factor needs to be 1.0".to_string(),
             ));
         }
@@ -234,6 +261,7 @@ impl DiscountTermStructure<ADReal> {
             day_counter,
             enable_extrapolation,
             pillar_labels: None,
+            pillar_values: None,
         })
     }
 }
@@ -241,11 +269,11 @@ impl DiscountTermStructure<ADReal> {
 impl Pillars<ADReal> for DiscountTermStructure<ADReal> {
     fn pillars(&self) -> Option<Vec<(String, &ADReal)>> {
         self.pillar_labels.as_ref().map(|labels| {
-            labels
-                .iter()
-                .cloned()
-                .zip(self.discount_factors.iter())
-                .collect()
+            let values = self
+                .pillar_values
+                .as_ref()
+                .unwrap_or(&self.discount_factors);
+            labels.iter().cloned().zip(values.iter()).collect()
         })
     }
 
@@ -254,9 +282,13 @@ impl Pillars<ADReal> for DiscountTermStructure<ADReal> {
     }
 
     fn put_pillars_on_tape(&mut self) {
-        self.discount_factors
-            .iter_mut()
-            .for_each(ADReal::put_on_tape);
+        if let Some(pillar_values) = self.pillar_values.as_mut() {
+            pillar_values.iter_mut().for_each(ADReal::put_on_tape);
+        } else {
+            self.discount_factors
+                .iter_mut()
+                .for_each(ADReal::put_on_tape);
+        }
     }
 }
 
@@ -267,7 +299,7 @@ impl InterestRatesTermStructure<f64> for DiscountTermStructure<f64> {
 
     fn discount_factor(&self, date: Date) -> Result<f64> {
         if date < self.reference_date() {
-            return Err(AtlasError::InvalidValueErr(
+            return Err(QSError::InvalidValueErr(
                 "Date needs to be greater than reference date".to_string(),
             ));
         }
@@ -314,7 +346,7 @@ impl InterestRatesTermStructure<ADReal> for DiscountTermStructure<ADReal> {
     }
     fn discount_factor(&self, date: Date) -> Result<ADReal> {
         if date < self.reference_date() {
-            return Err(AtlasError::InvalidValueErr(
+            return Err(QSError::InvalidValueErr(
                 "Date needs to be greater than reference date".to_string(),
             ));
         }

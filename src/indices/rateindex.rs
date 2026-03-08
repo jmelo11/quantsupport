@@ -12,7 +12,7 @@ pub trait RateIndexDetails: MarketIndexDetails {
     /// Calendar of publication of the index.
     fn calendar(&self) -> Calendar;
     /// Rate convention of the index.
-    fn rate_definition(&self) -> Option<RateDefinition>;
+    fn rate_definition(&self) -> RateDefinition;
     /// Fixing lag (T+Days).
     fn fixing_lag(&self) -> i64;
     /// Enum related to the index.

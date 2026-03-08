@@ -1,11 +1,11 @@
 use chrono::ParseError;
 use thiserror::Error;
 
-/// # `AtlasError`
+/// # `QSError`
 ///
 /// Represents errors that can occur in the Atlas library.
 #[derive(Debug, Error)]
-pub enum AtlasError {
+pub enum QSError {
     /// Error indicating that a requested resource was not found.
     #[error("Not found error: {0}")]
     NotFoundErr(String),
@@ -66,8 +66,13 @@ pub enum AtlasError {
     /// Instrument resolution error.
     #[error("Instrument resolution error: {0}")]
     InstrumentResolutionErr(String),
-    
 }
 
-/// A specialized `Result` type for Atlas operations that may fail with an `AtlasError`.
-pub type Result<T> = std::result::Result<T, AtlasError>;
+impl From<std::convert::Infallible> for QSError {
+    fn from(never: std::convert::Infallible) -> Self {
+        match never {}
+    }
+}
+
+/// A specialized `Result` type for Atlas operations that may fail with an `QSError`.
+pub type Result<T> = std::result::Result<T, QSError>;

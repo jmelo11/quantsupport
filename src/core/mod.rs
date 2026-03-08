@@ -1,3 +1,5 @@
+/// Collateral / CSA discount policy module.
+pub mod collateral;
 /// Pricing data context module.
 pub mod contextmanager;
 /// Constructed element module.

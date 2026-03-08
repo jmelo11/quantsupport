@@ -7,7 +7,7 @@ use std::{
     ops::{Add, Mul, MulAssign, Neg, Sub},
 };
 
-use crate::utils::errors::{AtlasError, Result};
+use crate::utils::errors::{QSError, Result};
 
 /// # Period
 /// Struct representing a financial period.
@@ -299,7 +299,7 @@ impl Period {
             }
         }
         let length = length.parse::<i32>().map_err(|_| {
-            AtlasError::PeriodOperationErr(format!("Invalid period length ({length})"))
+            QSError::PeriodOperationErr(format!("Invalid period length ({length})"))
         })?;
         let units = match units.as_str() {
             "Y" => TimeUnit::Years,
@@ -307,7 +307,7 @@ impl Period {
             "W" => TimeUnit::Weeks,
             "D" => TimeUnit::Days,
             _ => {
-                return Err(AtlasError::PeriodOperationErr(format!(
+                return Err(QSError::PeriodOperationErr(format!(
                     "Invalid time unit ({units})"
                 )))
             }
@@ -337,7 +337,7 @@ impl Period {
 }
 
 impl TryFrom<String> for Period {
-    type Error = AtlasError;
+    type Error = QSError;
 
     fn try_from(s: String) -> Result<Self> {
         Self::from_str(&s)
@@ -345,7 +345,7 @@ impl TryFrom<String> for Period {
 }
 
 impl std::str::FromStr for Period {
-    type Err = AtlasError;
+    type Err = QSError;
 
     fn from_str(s: &str) -> Result<Self> {
         Self::parse_impl(s)
@@ -360,6 +360,14 @@ impl From<Period> for String {
             TimeUnit::Weeks => format!("{}W", period.length),
             TimeUnit::Days => format!("{}D", period.length),
         }
+    }
+}
+
+/// Display a `Period` as a human-readable string (e.g. `1Y`, `6M`).
+impl fmt::Display for Period {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s: String = (*self).into();
+        f.write_str(&s)
     }
 }
 
@@ -527,13 +535,13 @@ impl Add for Period {
                         result.length = result.length * 12 + other.length;
                     }
                     TimeUnit::Weeks | TimeUnit::Days => {
-                        return Err(AtlasError::PeriodOperationErr(format!(
+                        return Err(QSError::PeriodOperationErr(format!(
                             "impossible addition between {result:?} and {other:?}"
                         )));
                     }
 
                     TimeUnit::Years => {
-                        return Err(AtlasError::PeriodOperationErr(format!(
+                        return Err(QSError::PeriodOperationErr(format!(
                             "unknown time unit ({:?})",
                             other.units
                         )))
@@ -545,13 +553,13 @@ impl Add for Period {
                         result.length += other.length * 12;
                     }
                     TimeUnit::Weeks | TimeUnit::Days => {
-                        return Err(AtlasError::PeriodOperationErr(format!(
+                        return Err(QSError::PeriodOperationErr(format!(
                             "impossible addition between {result:?} and {other:?}"
                         )));
                     }
 
                     TimeUnit::Months => {
-                        return Err(AtlasError::PeriodOperationErr(format!(
+                        return Err(QSError::PeriodOperationErr(format!(
                             "unknown time unit ({:?})",
                             other.units
                         )))
@@ -564,13 +572,13 @@ impl Add for Period {
                         result.length = result.length * 7 + other.length;
                     }
                     TimeUnit::Years | TimeUnit::Months => {
-                        return Err(AtlasError::PeriodOperationErr(format!(
+                        return Err(QSError::PeriodOperationErr(format!(
                             "impossible addition between {result:?} and {other:?}"
                         )));
                     }
 
                     TimeUnit::Weeks => {
-                        return Err(AtlasError::PeriodOperationErr(format!(
+                        return Err(QSError::PeriodOperationErr(format!(
                             "unknown time unit ({:?})",
                             other.units
                         )))
@@ -582,13 +590,13 @@ impl Add for Period {
                         result.length += other.length * 7;
                     }
                     TimeUnit::Years | TimeUnit::Months => {
-                        return Err(AtlasError::PeriodOperationErr(format!(
+                        return Err(QSError::PeriodOperationErr(format!(
                             "impossible addition between {result:?} and {other:?}"
                         )));
                     }
 
                     TimeUnit::Days => {
-                        return Err(AtlasError::PeriodOperationErr(format!(
+                        return Err(QSError::PeriodOperationErr(format!(
                             "unknown time unit ({:?})",
                             other.units
                         )))
@@ -818,7 +826,7 @@ mod tests {
         let r = p1 + p2;
         match r {
             Err(_) => Ok(()),
-            Ok(_) => Err(AtlasError::PeriodOperationErr(
+            Ok(_) => Err(QSError::PeriodOperationErr(
                 "impossible addition between 2W and 1Y".to_string(),
             )),
         }
@@ -837,7 +845,7 @@ mod tests {
         let r = p1 + p2;
         match r {
             Err(_) => Ok(()),
-            Ok(_) => Err(AtlasError::PeriodOperationErr(
+            Ok(_) => Err(QSError::PeriodOperationErr(
                 "impossible addition between 5D and 1Y".to_string(),
             )),
         }

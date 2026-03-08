@@ -4,3 +4,5 @@ pub mod bisection;
 pub mod newtonraphson;
 /// Solver traits module
 pub mod solvertraits;
+/// Implementation of a vector Newton solver.
+pub mod vectornewton;

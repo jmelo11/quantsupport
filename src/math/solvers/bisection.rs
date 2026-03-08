@@ -1,5 +1,5 @@
 use crate::math::solvers::solvertraits::{ContFunc, OptimizerSolution, SolutionStatus};
-use crate::utils::errors::{AtlasError, Result};
+use crate::utils::errors::{QSError, Result};
 
 /// # `Bisection`
 ///
@@ -60,7 +60,7 @@ where
         let f_high = f.call(&high)?;
 
         if f_low.signum() == f_high.signum() {
-            return Err(AtlasError::SolverErr(
+            return Err(QSError::SolverErr(
                 "Bisection requires a sign change over the bracket.".into(),
             ));
         }

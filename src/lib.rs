@@ -1,7 +1,6 @@
 //! `QuantSupport` is a Rust library for financial calculations and analysis.
 //!
-//! This library provides tools for working with asset-liability management,
-//! cash flows, financial instruments, interest rates, and related computations.
+//! This library provides tools for computing prices, sensitivities and other metrics of financial products.
 
 /// Automatic differentiation
 pub mod ad;
@@ -13,8 +12,6 @@ pub mod currencies;
 pub mod indices;
 /// Financial instruments module.
 pub mod instruments;
-/// Market data module.
-pub mod quotes;
 /// Mathematical functions and utilities.
 pub mod math;
 /// Financial models module.
@@ -23,8 +20,12 @@ pub mod models;
 pub mod prelude;
 /// Pricer implementations.
 pub mod pricers;
+/// Market data module.
+pub mod quotes;
 /// Interest rates module.
 pub mod rates;
+/// Simulation module.
+pub mod simulations;
 /// Time and date utilities.
 pub mod time;
 /// General utilities.

@@ -4,18 +4,17 @@ use crate::{
     ad::adreal::ADReal,
     core::{marketdatahandling::constructedelementstore::SharedElement, pillars::Pillars},
     indices::marketindex::MarketIndex,
-    volatility::volatilitysurface::VolatilitySurface,
+    volatility::volatilitycube::VolatilityCube,
 };
-/// `ADVolatilitySurfaceElement`
-pub trait ADVolatilitySurfaceElement:
-    VolatilitySurface<ADReal> + Pillars<ADReal> + Send + Sync
-{
-}
-/// `VolatilitySurfaceElement`
+
+/// [`ADVolatilityCubeElement`] is a trait to identify AD-enable volatility cubes.
+pub trait ADVolatilityCubeElement: VolatilityCube<ADReal> + Pillars<ADReal> + Send + Sync {}
+
+/// [`VolatilityCubeElement`] is a handle to a particular [`ADVolatilityCubeElement`].
 #[derive(Clone)]
 pub struct VolatilityCubeElement {
     market_index: MarketIndex,
-    cube: SharedElement<dyn ADVolatilitySurfaceElement>,
+    cube: SharedElement<dyn ADVolatilityCubeElement>,
 }
 
 impl VolatilityCubeElement {
@@ -23,7 +22,7 @@ impl VolatilityCubeElement {
     #[must_use]
     pub fn new(
         market_index: MarketIndex,
-        cube: SharedElement<dyn ADVolatilitySurfaceElement>,
+        cube: SharedElement<dyn ADVolatilityCubeElement>,
     ) -> Self {
         Self { market_index, cube }
     }
@@ -36,12 +35,12 @@ impl VolatilityCubeElement {
 
     /// Returns a reference to the surface associated with the volatility surface element.
     #[must_use]
-    pub fn cube(&self) -> Ref<'_, dyn ADVolatilitySurfaceElement> {
+    pub fn cube(&self) -> Ref<'_, dyn ADVolatilityCubeElement> {
         self.cube.borrow()
     }
 
     /// Returns a mutable reference to the surface associated with the volatility surface element.
-    pub fn cube_mut(&mut self) -> RefMut<'_, dyn ADVolatilitySurfaceElement> {
+    pub fn cube_mut(&mut self) -> RefMut<'_, dyn ADVolatilityCubeElement> {
         self.cube.borrow_mut()
     }
 }

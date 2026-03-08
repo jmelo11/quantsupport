@@ -7,13 +7,13 @@ use crate::{
     volatility::volatilitysurface::VolatilitySurface,
 };
 
-/// `ADVolatilitySurfaceElement`
+/// [`ADVolatilitySurfaceElement`] is a trait to identify AD-enable volatility surfaces.
 pub trait ADVolatilitySurfaceElement:
     VolatilitySurface<ADReal> + Pillars<ADReal> + Send + Sync
 {
 }
 
-/// `VolatilitySurfaceElement`
+/// [`VolatilitySurfaceElement`] is a handle to a particular [`ADVolatilitySurfaceElement`].
 #[derive(Clone)]
 pub struct VolatilitySurfaceElement {
     market_index: MarketIndex,

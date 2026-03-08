@@ -3,13 +3,11 @@ use serde::{Deserialize, Serialize};
 use crate::{
     ad::adreal::{ADReal, Const, FloatExt, IsReal},
     time::{date::Date, daycounter::DayCounter, enums::Frequency},
-    utils::errors::{AtlasError, Result},
+    utils::errors::{QSError, Result},
 };
 
 use super::compounding::Compounding;
 
-/// # `RateDefinition`
-///
 /// Struct that defines a rate.
 ///
 /// # Example
@@ -31,7 +29,7 @@ pub struct RateDefinition {
 }
 
 impl RateDefinition {
-    /// Creates a new `RateDefinition` with the specified day counter, compounding, and frequency.
+    /// Creates a new [`RateDefinition`] with the specified day counter, compounding, and frequency.
     #[must_use]
     pub const fn new(
         day_counter: DayCounter,
@@ -74,7 +72,6 @@ impl Default for RateDefinition {
     }
 }
 
-/// # `InterestRate`
 /// Struct that defines an interest rate.
 ///
 /// ## Example
@@ -102,7 +99,7 @@ impl<T> InterestRate<T>
 where
     T: IsReal,
 {
-    /// Creates a new `InterestRate` with the specified rate value and rate definition parameters.
+    /// Creates a new [`InterestRate<T>`] with the specified rate value and rate definition parameters.
     #[must_use]
     pub const fn new(
         rate: T,
@@ -116,7 +113,7 @@ where
         }
     }
 
-    /// Creates a new `InterestRate` from a rate value and a `RateDefinition`.
+    /// Creates a new [`InterestRate<T>`] from a rate value and a [`RateDefinition`].
     #[must_use]
     pub const fn from_rate_definition(rate: T, rate_definition: RateDefinition) -> Self {
         Self {
@@ -182,7 +179,7 @@ impl InterestRate<f64> {
         t: f64,
     ) -> Result<Self> {
         if compound <= 0.0 {
-            return Err(AtlasError::InvalidValueErr(
+            return Err(QSError::InvalidValueErr(
                 "Positive compound factor required".to_string(),
             ));
         }
@@ -190,14 +187,14 @@ impl InterestRate<f64> {
         let f = f64::from(freq as i32);
         if (compound - 1.0).abs() < 1e-12 {
             if t < 0.0 {
-                return Err(AtlasError::InvalidValueErr(
+                return Err(QSError::InvalidValueErr(
                     "Non-negative time required".to_string(),
                 ));
             }
             r = 0.0;
         } else {
             if t <= 0.0 {
-                return Err(AtlasError::InvalidValueErr(
+                return Err(QSError::InvalidValueErr(
                     "Positive time required".to_string(),
                 ));
             }
@@ -292,54 +289,56 @@ impl InterestRate<ADReal> {
         t: f64,
     ) -> Result<Self> {
         if compound <= 0.0 {
-            return Err(AtlasError::InvalidValueErr(
+            return Err(QSError::InvalidValueErr(
                 "Positive compound factor required".to_string(),
             ));
         }
+        // NOTE: Unlike the f64 version we do NOT short-circuit when
+        // compound ≈ 1.  Returning `ADReal::zero()` would sever the
+        // connection to the AD tape and produce a zero-row Jacobian,
+        // which breaks Newton solvers that rely on AD derivatives
+        // (e.g. multi-curve bootstrapping).  The normal formulas below
+        // evaluate to ≈ 0 with the correct non-zero partial derivatives.
+        if t <= 0.0 {
+            // The only safe early-out: when time is non-positive AND
+            // compound ≈ 1 the rate is mathematically 0.  Otherwise error.
+            if (compound.value() - 1.0).abs() < 1e-12 {
+                return Ok(Self::new(ADReal::zero(), comp, freq, result_dc));
+            }
+            return Err(QSError::InvalidValueErr(
+                "Positive time required".to_string(),
+            ));
+        }
         let f = f64::from(freq as i32);
-        if (compound - 1.0).abs() < 1e-12 {
-            if t < 0.0 {
-                return Err(AtlasError::InvalidValueErr(
-                    "Non-negative time required".to_string(),
-                ));
+        match comp {
+            Compounding::Simple => {
+                let r = (compound - 1.0) / t;
+                Ok(Self::new(r.into(), comp, freq, result_dc))
             }
-            Ok(Self::new(ADReal::zero(), comp, freq, result_dc))
-        } else {
-            if t <= 0.0 {
-                return Err(AtlasError::InvalidValueErr(
-                    "Positive time required".to_string(),
-                ));
+            Compounding::Compounded => {
+                let r = (compound.pow_expr(Const::one() / (t * f)) - 1.0) * f;
+                Ok(Self::new(r.into(), comp, freq, result_dc))
             }
-            match comp {
-                Compounding::Simple => {
+            Compounding::Continuous => {
+                let r = (compound).ln() / t;
+                Ok(Self::new(r.into(), comp, freq, result_dc))
+            }
+            Compounding::SimpleThenCompounded => {
+                if t <= 1.0 / f {
                     let r = (compound - 1.0) / t;
                     Ok(Self::new(r.into(), comp, freq, result_dc))
-                }
-                Compounding::Compounded => {
+                } else {
                     let r = (compound.pow_expr(Const::one() / (t * f)) - 1.0) * f;
                     Ok(Self::new(r.into(), comp, freq, result_dc))
                 }
-                Compounding::Continuous => {
-                    let r = (compound).ln() / t;
+            }
+            Compounding::CompoundedThenSimple => {
+                if t > 1.0 / f {
+                    let r = (compound - 1.0) / t;
                     Ok(Self::new(r.into(), comp, freq, result_dc))
-                }
-                Compounding::SimpleThenCompounded => {
-                    if t <= 1.0 / f {
-                        let r = (compound - 1.0) / t;
-                        Ok(Self::new(r.into(), comp, freq, result_dc))
-                    } else {
-                        let r = (compound.pow_expr(Const::one() / (t * f)) - 1.0) * f;
-                        Ok(Self::new(r.into(), comp, freq, result_dc))
-                    }
-                }
-                Compounding::CompoundedThenSimple => {
-                    if t > 1.0 / f {
-                        let r = (compound - 1.0) / t;
-                        Ok(Self::new(r.into(), comp, freq, result_dc))
-                    } else {
-                        let r = (compound.pow_expr(Const::one() / (t * f)) - 1.0) * f;
-                        Ok(Self::new(r.into(), comp, freq, result_dc))
-                    }
+                } else {
+                    let r = (compound.pow_expr(Const::one() / (t * f)) - 1.0) * f;
+                    Ok(Self::new(r.into(), comp, freq, result_dc))
                 }
             }
         }

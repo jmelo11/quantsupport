@@ -1,9 +1,11 @@
 use crate::{
-    core::{contextmanager::ContextManager, instrument::Instrument, trade::Trade},
+    core::{
+        instrument::{AssetClass, Instrument},
+        trade::{Side, Trade},
+    },
     currencies::currency::Currency,
     indices::marketindex::MarketIndex,
     time::{date::Date, daycounter::DayCounter},
-    utils::errors::Result,
 };
 
 /// Represents the type of a European option.
@@ -15,9 +17,11 @@ pub enum EuroOptionType {
     Put,
 }
 
+/// # `EquityEuropeanOption`
+///
 /// Represents a European equity option instrument.
 #[derive(Clone)]
-pub struct EquityEuroOption {
+pub struct EquityEuropeanOption {
     /// The market index for this option.
     market_index: MarketIndex,
     /// The expiry date of the option.
@@ -35,16 +39,18 @@ pub struct EquityEuroOption {
 }
 
 /// Represents a trade of a European equity option.
-pub struct EquityEuroOptionTrade {
+pub struct EquityEuropeanOptionTrade {
     /// The underlying instrument.
-    instrument: EquityEuroOption,
+    instrument: EquityEuropeanOption,
     /// The notional amount of the trade.
     notional: f64,
     /// The date the trade was executed.
     trade_date: Date,
+    /// Side of the trade
+    side: Side,
 }
 
-impl EquityEuroOption {
+impl EquityEuropeanOption {
     /// Creates a new european equity option.
     #[must_use]
     pub const fn new(
@@ -102,14 +108,20 @@ impl EquityEuroOption {
     }
 }
 
-impl EquityEuroOptionTrade {
+impl EquityEuropeanOptionTrade {
     /// Creates a new equity option trade.
     #[must_use]
-    pub const fn new(instrument: EquityEuroOption, notional: f64, trade_date: Date) -> Self {
+    pub const fn new(
+        instrument: EquityEuropeanOption,
+        notional: f64,
+        trade_date: Date,
+        side: Side,
+    ) -> Self {
         Self {
             instrument,
             notional,
             trade_date,
+            side,
         }
     }
 
@@ -120,22 +132,26 @@ impl EquityEuroOptionTrade {
     }
 }
 
-impl Instrument for EquityEuroOption {
+impl Instrument for EquityEuropeanOption {
     fn identifier(&self) -> String {
         self.identifier.clone()
     }
 
-    fn resolve(&self, _: &ContextManager) -> Result<Self> {
-        Ok(self.clone())
+    fn asset_class(&self) -> AssetClass {
+        AssetClass::Equity
     }
 }
 
-impl Trade<EquityEuroOption> for EquityEuroOptionTrade {
-    fn instrument(&self) -> EquityEuroOption {
-        self.instrument.clone()
+impl Trade<EquityEuropeanOption> for EquityEuropeanOptionTrade {
+    fn instrument(&self) -> &EquityEuropeanOption {
+        &self.instrument
     }
 
     fn trade_date(&self) -> Date {
         self.trade_date
+    }
+
+    fn side(&self) -> Side {
+        self.side
     }
 }

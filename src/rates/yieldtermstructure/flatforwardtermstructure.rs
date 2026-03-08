@@ -7,7 +7,7 @@ use crate::{
         yieldtermstructure::interestratestermstructure::InterestRatesTermStructure,
     },
     time::{date::Date, enums::Frequency},
-    utils::errors::{AtlasError, Result},
+    utils::errors::{QSError, Result},
 };
 
 /// # `FlatForwardTermStructure`
@@ -96,7 +96,7 @@ impl InterestRatesTermStructure<f64> for FlatForwardTermStructure<f64> {
     }
     fn discount_factor(&self, date: Date) -> Result<f64> {
         if date < self.reference_date() {
-            return Err(AtlasError::InvalidValueErr(format!(
+            return Err(QSError::InvalidValueErr(format!(
                 "Date {date:?} is before reference date {reference_date:?}",
                 reference_date = self.reference_date()
             )));
@@ -125,7 +125,7 @@ impl InterestRatesTermStructure<ADReal> for FlatForwardTermStructure<ADReal> {
     }
     fn discount_factor(&self, date: Date) -> Result<ADReal> {
         if date < self.reference_date() {
-            return Err(AtlasError::InvalidValueErr(format!(
+            return Err(QSError::InvalidValueErr(format!(
                 "Date {date:?} is before reference date {reference_date:?}",
                 reference_date = self.reference_date()
             )));

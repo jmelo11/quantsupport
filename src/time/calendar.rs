@@ -11,7 +11,7 @@ use super::calendars::{
 };
 use crate::{
     time::date::Date,
-    utils::errors::{AtlasError, Result},
+    utils::errors::{QSError, Result},
 };
 use std::collections::HashSet;
 
@@ -75,7 +75,7 @@ impl<'de> serde::Deserialize<'de> for Calendar {
 }
 
 impl TryFrom<String> for Calendar {
-    type Error = AtlasError;
+    type Error = QSError;
 
     fn try_from(s: String) -> Result<Self> {
         match s.as_str() {
@@ -85,7 +85,7 @@ impl TryFrom<String> for Calendar {
             "UnitedStates" => Ok(Self::UnitedStates(UnitedStates::default())),
             "Brazil" => Ok(Self::Brazil(Brazil::default())),
             "Chile" => Ok(Self::Chile(Chile::default())),
-            _ => Err(AtlasError::InvalidValueErr(format!(
+            _ => Err(QSError::InvalidValueErr(format!(
                 "Invalid calendar: {s}"
             ))),
         }

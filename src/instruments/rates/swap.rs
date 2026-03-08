@@ -1,114 +1,128 @@
-use serde::{Deserialize, Serialize};
-
 use crate::{
-    core::{contextmanager::ContextManager, instrument::Instrument, trade::Trade},
+    core::{
+        instrument::{AssetClass, Instrument},
+        request::LegsProvider,
+        trade::{Side, Trade},
+    },
+    currencies::currency::Currency,
     indices::marketindex::MarketIndex,
-    rates::interestrate::InterestRate,
-    time::{date::Date, enums::Frequency, period::Period},
-    utils::errors::Result,
+    instruments::cashflows::leg::Leg,
+    time::date::Date,
 };
 
-/// Defines swap direction for fixed leg payments.
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
-pub enum SwapDirection {
-    /// Pay fixed, receive floating.
-    Pay,
-    /// Receive fixed, pay floating.
-    Receive,
-}
-
-/// Simple fixed-float interest rate swap.
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct InterestRateSwap {
-    name: String,
+/// A [`Swap`] represents a vanilla fixed-float interest rate swap with two legs:
+/// a fixed-rate leg and a floating-rate leg.
+pub struct Swap {
+    identifier: String,
+    legs: Vec<Leg>,
     market_index: MarketIndex,
-    fixed_leg_frequency: Frequency,
-    start_date: Date,
-    maturity_date: Option<Date>,
-    tenor: Option<Period>,
+    currency: Currency,
 }
 
-impl InterestRateSwap {
-    /// Creates a new interest rate swap.
+impl Swap {
+    /// Creates a new [`Swap`].
+    ///
+    /// `legs[0]` is the fixed leg; `legs[1]` is the floating leg.
     #[must_use]
-    pub const fn new(
-        name: String,
-        start_date: Date,
-        fixed_leg_frequency: Frequency,
+    pub fn new(
+        identifier: String,
+        fixed_leg: Leg,
+        floating_leg: Leg,
         market_index: MarketIndex,
+        currency: Currency,
     ) -> Self {
         Self {
-            name,
-            start_date,
-            fixed_leg_frequency,
+            identifier,
+            legs: vec![fixed_leg, floating_leg],
             market_index,
-            maturity_date: None,
-            tenor: None,
+            currency,
         }
     }
 
-    /// Returns the market index.
+    /// Returns a reference to the fixed leg (leg 0).
+    #[must_use]
+    pub fn fixed_leg(&self) -> &Leg {
+        &self.legs[0]
+    }
+
+    /// Returns a reference to the floating leg (leg 1).
+    #[must_use]
+    pub fn floating_leg(&self) -> &Leg {
+        &self.legs[1]
+    }
+
+    /// Returns the associated market index.
     #[must_use]
     pub fn market_index(&self) -> MarketIndex {
         self.market_index.clone()
     }
+
+    /// Returns the currency of the swap.
+    #[must_use]
+    pub const fn currency(&self) -> Currency {
+        self.currency
+    }
 }
 
-impl Instrument for InterestRateSwap {
+impl Instrument for Swap {
     fn identifier(&self) -> String {
-        self.name.clone()
+        self.identifier.clone()
     }
 
-    fn resolve(&self, _: &ContextManager) -> Result<Self> {
-        todo!()
+    fn asset_class(&self) -> AssetClass {
+        AssetClass::InterestRate
     }
 }
 
-/// Trade representation for interest rate swaps.
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct InterestRateSwapTrade {
-    swap: InterestRateSwap,
+impl LegsProvider for Swap {
+    fn legs(&self) -> &[Leg] {
+        &self.legs
+    }
+}
+
+/// Represents a trade of an interest rate swap.
+pub struct SwapTrade {
+    instrument: Swap,
     trade_date: Date,
     notional: f64,
-    rate: InterestRate<f64>,
+    side: Side,
 }
 
-impl InterestRateSwapTrade {
-    /// Creates a new swap trade.
+impl SwapTrade {
+    /// Creates a new [`SwapTrade`].
     #[must_use]
-    pub const fn new(
-        swap: InterestRateSwap,
-        trade_date: Date,
-        notional: f64,
-        rate: InterestRate<f64>,
-    ) -> Self {
+    pub const fn new(instrument: Swap, trade_date: Date, notional: f64, side: Side) -> Self {
         Self {
-            swap,
+            instrument,
             trade_date,
             notional,
-            rate,
+            side,
         }
     }
 
-    /// Returns the trade date.
-    #[must_use]
-    pub const fn trade_date(&self) -> Date {
-        self.trade_date
-    }
-
-    /// Returns the trade notional.
+    /// Returns the notional amount of the trade.
     #[must_use]
     pub const fn notional(&self) -> f64 {
         self.notional
     }
 }
 
-impl Trade<InterestRateSwap> for InterestRateSwapTrade {
-    fn instrument(&self) -> InterestRateSwap {
-        self.swap.clone()
+impl Trade<Swap> for SwapTrade {
+    fn instrument(&self) -> &Swap {
+        &self.instrument
     }
 
     fn trade_date(&self) -> Date {
         self.trade_date
+    }
+
+    fn side(&self) -> Side {
+        self.side
+    }
+}
+
+impl LegsProvider for SwapTrade {
+    fn legs(&self) -> &[Leg] {
+        self.instrument.legs()
     }
 }

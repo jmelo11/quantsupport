@@ -1,0 +1,35 @@
+{
+    "curve_specs": [
+        {
+            "market_index": "SOFR",
+            "deposits": [
+                "1D"
+            ],
+            "swaps": [
+                "1Y",
+                "2Y",
+                "3Y",
+                "5Y",
+                "7Y",
+                "10Y",
+                "30Y"
+            ]
+        },
+        {
+            "market_index": "TermSOFR3m",
+            "deposits": [
+                "3M"
+            ],
+            "basis_swaps": [
+                "6M",
+                "1Y",
+                "2Y",
+                "3Y",
+                "5Y",
+                "7Y",
+                "10Y",
+                "30Y"
+            ]
+        }
+    ]
+}

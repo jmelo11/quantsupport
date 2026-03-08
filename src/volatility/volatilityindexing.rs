@@ -2,8 +2,29 @@ use std::{cmp::Ordering, hash::Hash};
 
 use serde::{Deserialize, Serialize};
 
-/// # `VolatilityType`
+use crate::utils::errors::QSError;
+
+/// Strike specification for a caplet/floorlet.
 ///
+/// - [`Strike::Absolute`] — a fixed absolute strike rate.
+/// - [`Strike::Atm`] — at-the-money: the pricer sets the strike equal to the
+///   prevailing forward rate at pricing time.
+/// - [`Strike::Relative`] — a spread (positive or negative) added to the
+///   forward rate at pricing time: `K_eff = F + spread`.
+///
+/// For [`Strike::Atm`] and [`Strike::Relative`], the effective absolute strike
+/// is computed by the pricer from the forward rate before querying the
+/// volatility surface.
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+pub enum Strike {
+    /// A fixed absolute strike rate.
+    Absolute(f64),
+    /// At-the-money: the strike equals the forward rate at pricing time.
+    Atm,
+    /// A spread over the forward rate: `K_eff = F + spread`.
+    Relative(f64),
+}
+
 /// Represents if the volatility is quoted as black (log-normal) or normal volatility.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum VolatilityType {
@@ -13,7 +34,20 @@ pub enum VolatilityType {
     Normal,
 }
 
-/// # `SmileAxis`
+impl std::str::FromStr for VolatilityType {
+    type Err = QSError;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        match s {
+            "Black" => Ok(Self::Black),
+            "Normal" => Ok(Self::Normal),
+            _ => Err(QSError::InvalidValueErr(format!(
+                "Unknown volatility type: {s}"
+            ))),
+        }
+    }
+}
+
 /// Smile axis used in volatility surfaces/cubes.
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum SmileType {
@@ -31,19 +65,19 @@ pub struct F64Key(pub f64);
 
 impl F64Key {
     /// Creates a new floating key.
-    #[must_use] 
+    #[must_use]
     pub const fn new(value: f64) -> Self {
         Self(value)
     }
 
     /// Returns the wrapped value.
-    #[must_use] 
+    #[must_use]
     pub const fn value(&self) -> f64 {
         self.0
     }
 
     /// Returns the bit representation used for hashing.
-    #[must_use] 
+    #[must_use]
     pub const fn to_key(&self) -> u64 {
         self.0.to_bits()
     }
@@ -68,31 +102,3 @@ impl Hash for F64Key {
         self.to_key().hash(state);
     }
 }
-
-// /// # `SurfaceKey`
-// /// Surface node key made of market index, expiry date, and smile axis.
-// #[derive(Clone, Debug, Hash, PartialEq, Eq)]
-// pub struct SurfaceKey {
-//     date: Date,
-//     axis: SmileAxis,
-// }
-
-// impl SurfaceKey {
-//     /// Creates a new surface node key.
-//     #[must_use]
-//     pub const fn new(date: Date, axis: SmileAxis) -> Self {
-//         Self { date, axis }
-//     }
-
-//     /// Returns the expiry date.
-//     #[must_use]
-//     pub const fn date(&self) -> Date {
-//         self.date
-//     }
-
-//     /// Returns the smile axis.
-//     #[must_use]
-//     pub const fn axis(&self) -> SmileAxis {
-//         self.axis
-//     }
-// }
