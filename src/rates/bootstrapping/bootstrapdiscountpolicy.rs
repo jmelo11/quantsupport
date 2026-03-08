@@ -131,6 +131,7 @@ impl BootstrapDiscountPolicy {
     ///
     /// Dependencies that equal `target_index` are **excluded** because they
     /// refer to the curve being solved for.
+    #[must_use]
     pub fn dependencies(
         &self,
         built: &BuiltInstrument,

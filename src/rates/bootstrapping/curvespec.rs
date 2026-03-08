@@ -5,7 +5,7 @@ use crate::{
     core::request::LegsProvider,
     currencies::currency::Currency,
     indices::marketindex::MarketIndex,
-    instruments::cashflows::cashflowtype::CashflowType,
+    instruments::cashflows::{cashflowtype::CashflowType, leg::Leg},
     math::interpolation::interpolator::{Interpolate as _, Interpolator},
     quotes::quote::{BuiltInstrument, Level, Quote},
     rates::{
@@ -53,16 +53,16 @@ pub struct CurveSpec {
     fx_forward_points: Vec<Period>,
 }
 
-fn default_currency() -> Currency {
+const fn default_currency() -> Currency {
     Currency::USD
 }
-fn default_day_counter() -> DayCounter {
+const fn default_day_counter() -> DayCounter {
     DayCounter::Actual360
 }
-fn default_interpolator() -> Interpolator {
+const fn default_interpolator() -> Interpolator {
     Interpolator::LogLinear
 }
-fn default_enable_extrapolation() -> bool {
+const fn default_enable_extrapolation() -> bool {
     true
 }
 
@@ -70,7 +70,7 @@ impl CurveSpec {
     /// Creates a curve specification.
     #[allow(clippy::too_many_arguments)]
     #[must_use]
-    pub fn new(
+    pub const fn new(
         market_index: MarketIndex,
         currency: Currency,
         day_counter: DayCounter,
@@ -102,13 +102,13 @@ impl CurveSpec {
 
     /// Returns the market index for this spec.
     #[must_use]
-    pub fn market_index(&self) -> &MarketIndex {
+    pub const fn market_index(&self) -> &MarketIndex {
         &self.market_index
     }
 
     /// Returns the currency of this spec.
     #[must_use]
-    pub fn currency(&self) -> Currency {
+    pub const fn currency(&self) -> Currency {
         self.currency
     }
 
@@ -133,7 +133,7 @@ impl CurveSpec {
 
         let _pillar_dates = instruments
             .iter()
-            .map(|x| x.pillar_date())
+            .map(ResolvedInstrument::pillar_date)
             .collect::<Vec<Date>>();
 
         // check if repeated pillar dates are present and log a warning if so, as this may lead to issues in the bootstrapping process
@@ -245,24 +245,15 @@ impl CurveSpec {
     fn resolve_pillar_dates(&self, built: &BuiltInstrument) -> Result<Date> {
         match built {
             BuiltInstrument::FixedRateDeposit(x) => Ok(x.leg().last_payment_date()),
-            BuiltInstrument::Swap(x) => Ok(x
-                .legs()
-                .iter()
-                .map(|leg| leg.last_payment_date())
-                .max()
-                .unwrap()),
-            BuiltInstrument::BasisSwap(x) => Ok(x
-                .legs()
-                .iter()
-                .map(|leg| leg.last_payment_date())
-                .max()
-                .unwrap()),
-            BuiltInstrument::CrossCurrencySwap(x) => Ok(x
-                .legs()
-                .iter()
-                .map(|leg| leg.last_payment_date())
-                .max()
-                .unwrap()),
+            BuiltInstrument::Swap(x) => {
+                Ok(x.legs().iter().map(Leg::last_payment_date).max().unwrap())
+            }
+            BuiltInstrument::BasisSwap(x) => {
+                Ok(x.legs().iter().map(Leg::last_payment_date).max().unwrap())
+            }
+            BuiltInstrument::CrossCurrencySwap(x) => {
+                Ok(x.legs().iter().map(Leg::last_payment_date).max().unwrap())
+            }
             BuiltInstrument::RateFutures(x) => Ok(x.end_date()),
             BuiltInstrument::FxForward(x) => Ok(x.delivery_date()),
             _ => Err(QSError::InvalidValueErr("Instrument not supported".into())),
@@ -273,11 +264,11 @@ impl CurveSpec {
 /// Curve state carrying current obtained values during bootstrapping.
 #[derive(Clone)]
 pub struct BootstrappedCurve {
+    reference_date: Date,
     times: Vec<f64>,
     discount_factors: Vec<ADReal>,
     day_counter: DayCounter,
     interpolator: Interpolator,
-    reference_date: Date,
 }
 
 impl BootstrappedCurve {
@@ -328,13 +319,13 @@ impl BootstrappedCurve {
 
     /// Returns the day counter.
     #[must_use]
-    pub fn day_counter(&self) -> DayCounter {
+    pub const fn day_counter(&self) -> DayCounter {
         self.day_counter
     }
 
     /// Returns the interpolator.
     #[must_use]
-    pub fn interpolator(&self) -> Interpolator {
+    pub const fn interpolator(&self) -> Interpolator {
         self.interpolator
     }
 
@@ -359,6 +350,7 @@ impl BootstrappedCurve {
     ///
     /// # Errors
     /// Returns an error if interpolation fails.
+    #[must_use]
     pub fn discount_factor(&self, date: Date) -> Result<ADReal> {
         let year_fraction = ADReal::new(self.day_counter.year_fraction(self.reference_date, date));
 

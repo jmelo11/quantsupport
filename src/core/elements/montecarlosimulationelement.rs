@@ -2,7 +2,7 @@ use crate::{
     ad::adreal::ADReal,
     core::{marketdatahandling::constructedelementstore::SharedElement, pillars::Pillars},
     indices::marketindex::MarketIndex,
-    simulation::simulation::MonteCarloSimulation,
+    simulations::simulation::MonteCarloSimulation,
 };
 
 /// The [`ADMonteCarloSimulationElement`] trait represents a simulation element that includes both the Monte Carlo

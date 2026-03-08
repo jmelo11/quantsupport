@@ -25,7 +25,7 @@ pub mod quotes;
 /// Interest rates module.
 pub mod rates;
 /// Simulation module.
-pub mod simulation;
+pub mod simulations;
 /// Time and date utilities.
 pub mod time;
 /// General utilities.

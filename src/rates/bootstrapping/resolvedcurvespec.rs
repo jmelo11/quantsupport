@@ -29,7 +29,7 @@ pub struct ResolvedInstrument {
 impl ResolvedInstrument {
     /// Creates a resolved calibration instrument.
     #[must_use]
-    pub fn new(
+    pub const fn new(
         quote: Quote,
         level: Level,
         built: BuiltInstrument,
@@ -101,7 +101,7 @@ pub struct ResolvedCurveSpec {
 impl ResolvedCurveSpec {
     /// Creates a resolved curve specification.
     #[must_use]
-    pub fn new(
+    pub const fn new(
         market_index: MarketIndex,
         currency: Currency,
         day_counter: DayCounter,
@@ -165,6 +165,7 @@ impl ResolvedCurveSpec {
 
     /// Collects all external curve dependencies induced by the instruments
     /// in this spec and the given discount policy.
+    #[must_use]
     pub fn dependencies(&self, policy: &BootstrapDiscountPolicy) -> HashSet<MarketIndex> {
         let target = &self.market_index;
         let mut deps = HashSet::new();
@@ -215,13 +216,19 @@ impl ResolvedCurveSpec {
     /// Returns the pillar dates (sorted, one per instrument).
     #[must_use]
     pub fn pillar_dates(&self) -> Vec<Date> {
-        self.instruments.iter().map(|i| i.pillar_date()).collect()
+        self.instruments
+            .iter()
+            .map(ResolvedInstrument::pillar_date)
+            .collect()
     }
 
     /// Returns the pillar labels (one per instrument).
     #[must_use]
     pub fn pillar_labels(&self) -> Vec<String> {
-        self.instruments.iter().map(|i| i.pillar_label()).collect()
+        self.instruments
+            .iter()
+            .map(ResolvedInstrument::pillar_label)
+            .collect()
     }
 
     /// Returns the market par-quote values (one per instrument) as `ADReal`.
