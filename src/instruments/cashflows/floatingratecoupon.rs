@@ -43,8 +43,7 @@ where
     ) -> Self {
         let day_counter = index
             .rate_index_details()
-            .map(|details| details.rate_definition().day_counter())
-            .unwrap_or(DayCounter::Actual360);
+            .map_or(DayCounter::Actual360, |details| details.rate_definition().day_counter());
 
         Self {
             notional,
@@ -67,12 +66,12 @@ where
     }
 
     /// Returns the market index associated with this floating rate coupon.
-    pub fn market_index(&self) -> &MarketIndex {
+    pub const fn market_index(&self) -> &MarketIndex {
         &self.index
     }
 
     /// Returns the spread applied to this coupon.
-    pub fn spread(&self) -> T {
+    pub const fn spread(&self) -> T {
         self.spread
     }
 
@@ -82,17 +81,17 @@ where
     }
 
     /// Returns the day counter used for year fraction calculations.
-    pub fn day_counter(&self) -> DayCounter {
+    pub const fn day_counter(&self) -> DayCounter {
         self.day_counter
     }
 
     /// Returns the accrual start date.
-    pub fn accrual_start_date(&self) -> Date {
+    pub const fn accrual_start_date(&self) -> Date {
         self.start_date
     }
 
     /// Returns the accrual end date.
-    pub fn accrual_end_date(&self) -> Date {
+    pub const fn accrual_end_date(&self) -> Date {
         self.end_date
     }
 }

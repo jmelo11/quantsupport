@@ -46,42 +46,42 @@ pub struct MakeCrossCurrencySwap {
 impl MakeCrossCurrencySwap {
     /// Sets the start date.
     #[must_use]
-    pub fn with_start_date(mut self, date: Date) -> Self {
+    pub const fn with_start_date(mut self, date: Date) -> Self {
         self.start_date = Some(date);
         self
     }
 
     /// Sets the maturity date.
     #[must_use]
-    pub fn with_maturity_date(mut self, date: Date) -> Self {
+    pub const fn with_maturity_date(mut self, date: Date) -> Self {
         self.maturity_date = Some(date);
         self
     }
 
     /// Sets the domestic notional amount.
     #[must_use]
-    pub fn with_domestic_notional(mut self, notional: f64) -> Self {
+    pub const fn with_domestic_notional(mut self, notional: f64) -> Self {
         self.domestic_notional = Some(notional);
         self
     }
 
     /// Sets the foreign notional amount.
     #[must_use]
-    pub fn with_foreign_notional(mut self, notional: f64) -> Self {
+    pub const fn with_foreign_notional(mut self, notional: f64) -> Self {
         self.foreign_notional = Some(notional);
         self
     }
 
     /// Sets the fixed rate for the domestic leg.
     #[must_use]
-    pub fn with_fixed_rate(mut self, rate: f64) -> Self {
+    pub const fn with_fixed_rate(mut self, rate: f64) -> Self {
         self.fixed_rate = Some(rate);
         self
     }
 
     /// Sets the spread on the foreign (floating) leg.
     #[must_use]
-    pub fn with_spread(mut self, spread: f64) -> Self {
+    pub const fn with_spread(mut self, spread: f64) -> Self {
         self.spread = Some(spread);
         self
     }
@@ -95,21 +95,21 @@ impl MakeCrossCurrencySwap {
 
     /// Sets the rate definition for the domestic fixed leg.
     #[must_use]
-    pub fn with_rate_definition(mut self, rd: RateDefinition) -> Self {
+    pub const fn with_rate_definition(mut self, rd: RateDefinition) -> Self {
         self.rate_definition = Some(rd);
         self
     }
 
     /// Sets the domestic currency.
     #[must_use]
-    pub fn with_domestic_currency(mut self, currency: Currency) -> Self {
+    pub const fn with_domestic_currency(mut self, currency: Currency) -> Self {
         self.domestic_currency = Some(currency);
         self
     }
 
     /// Sets the foreign currency.
     #[must_use]
-    pub fn with_foreign_currency(mut self, currency: Currency) -> Self {
+    pub const fn with_foreign_currency(mut self, currency: Currency) -> Self {
         self.foreign_currency = Some(currency);
         self
     }
@@ -130,21 +130,21 @@ impl MakeCrossCurrencySwap {
 
     /// Sets the side (domestic-leg perspective).
     #[must_use]
-    pub fn with_side(mut self, side: Side) -> Self {
+    pub const fn with_side(mut self, side: Side) -> Self {
         self.side = Some(side);
         self
     }
 
     /// Sets the domestic leg payment frequency.
     #[must_use]
-    pub fn with_domestic_leg_frequency(mut self, freq: Frequency) -> Self {
+    pub const fn with_domestic_leg_frequency(mut self, freq: Frequency) -> Self {
         self.domestic_leg_frequency = Some(freq);
         self
     }
 
     /// Sets the foreign leg payment frequency.
     #[must_use]
-    pub fn with_foreign_leg_frequency(mut self, freq: Frequency) -> Self {
+    pub const fn with_foreign_leg_frequency(mut self, freq: Frequency) -> Self {
         self.foreign_leg_frequency = Some(freq);
         self
     }
@@ -158,21 +158,21 @@ impl MakeCrossCurrencySwap {
 
     /// Sets the business day convention.
     #[must_use]
-    pub fn with_business_day_convention(mut self, convention: BusinessDayConvention) -> Self {
+    pub const fn with_business_day_convention(mut self, convention: BusinessDayConvention) -> Self {
         self.business_day_convention = Some(convention);
         self
     }
 
     /// Sets the date generation rule.
     #[must_use]
-    pub fn with_date_generation_rule(mut self, rule: DateGenerationRule) -> Self {
+    pub const fn with_date_generation_rule(mut self, rule: DateGenerationRule) -> Self {
         self.date_generation_rule = Some(rule);
         self
     }
 
     /// Sets the end-of-month flag.
     #[must_use]
-    pub fn with_end_of_month(mut self, eom: bool) -> Self {
+    pub const fn with_end_of_month(mut self, eom: bool) -> Self {
         self.end_of_month = Some(eom);
         self
     }

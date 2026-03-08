@@ -40,35 +40,35 @@ pub struct MakeSwap {
 impl MakeSwap {
     /// Sets the start date.
     #[must_use]
-    pub fn with_start_date(mut self, start_date: Date) -> Self {
+    pub const fn with_start_date(mut self, start_date: Date) -> Self {
         self.start_date = Some(start_date);
         self
     }
 
     /// Sets the maturity date.
     #[must_use]
-    pub fn with_maturity_date(mut self, maturity_date: Date) -> Self {
+    pub const fn with_maturity_date(mut self, maturity_date: Date) -> Self {
         self.maturity_date = Some(maturity_date);
         self
     }
 
     /// Sets the fixed leg coupon rate.
     #[must_use]
-    pub fn with_fixed_rate(mut self, rate: f64) -> Self {
+    pub const fn with_fixed_rate(mut self, rate: f64) -> Self {
         self.fixed_rate = Some(rate);
         self
     }
 
     /// Sets the floating leg spread over the index.
     #[must_use]
-    pub fn with_spread(mut self, spread: f64) -> Self {
+    pub const fn with_spread(mut self, spread: f64) -> Self {
         self.spread = Some(spread);
         self
     }
 
     /// Sets the notional amount.
     #[must_use]
-    pub fn with_notional(mut self, notional: f64) -> Self {
+    pub const fn with_notional(mut self, notional: f64) -> Self {
         self.notional = Some(notional);
         self
     }
@@ -82,7 +82,7 @@ impl MakeSwap {
 
     /// Sets the rate definition for the fixed leg.
     #[must_use]
-    pub fn with_rate_definition(mut self, rate_definition: RateDefinition) -> Self {
+    pub const fn with_rate_definition(mut self, rate_definition: RateDefinition) -> Self {
         self.rate_definition = Some(rate_definition);
         self
     }
@@ -96,7 +96,7 @@ impl MakeSwap {
 
     /// Sets the currency of the swap.
     #[must_use]
-    pub fn with_currency(mut self, currency: Currency) -> Self {
+    pub const fn with_currency(mut self, currency: Currency) -> Self {
         self.currency = Some(currency);
         self
     }
@@ -104,21 +104,21 @@ impl MakeSwap {
     /// Sets the side. `LongRecieve` means receive-fixed / pay-floating;
     /// `PayShort` means pay-fixed / receive-floating.
     #[must_use]
-    pub fn with_side(mut self, side: Side) -> Self {
+    pub const fn with_side(mut self, side: Side) -> Self {
         self.side = Some(side);
         self
     }
 
     /// Sets the fixed leg payment frequency.
     #[must_use]
-    pub fn with_fixed_leg_frequency(mut self, frequency: Frequency) -> Self {
+    pub const fn with_fixed_leg_frequency(mut self, frequency: Frequency) -> Self {
         self.fixed_leg_frequency = Some(frequency);
         self
     }
 
     /// Sets the floating leg payment frequency.
     #[must_use]
-    pub fn with_floating_leg_frequency(mut self, frequency: Frequency) -> Self {
+    pub const fn with_floating_leg_frequency(mut self, frequency: Frequency) -> Self {
         self.floating_leg_frequency = Some(frequency);
         self
     }
@@ -132,21 +132,21 @@ impl MakeSwap {
 
     /// Sets the business day convention.
     #[must_use]
-    pub fn with_business_day_convention(mut self, convention: BusinessDayConvention) -> Self {
+    pub const fn with_business_day_convention(mut self, convention: BusinessDayConvention) -> Self {
         self.business_day_convention = Some(convention);
         self
     }
 
     /// Sets the date generation rule.
     #[must_use]
-    pub fn with_date_generation_rule(mut self, rule: DateGenerationRule) -> Self {
+    pub const fn with_date_generation_rule(mut self, rule: DateGenerationRule) -> Self {
         self.date_generation_rule = Some(rule);
         self
     }
 
     /// Sets the end-of-month flag.
     #[must_use]
-    pub fn with_end_of_month(mut self, eom: bool) -> Self {
+    pub const fn with_end_of_month(mut self, eom: bool) -> Self {
         self.end_of_month = Some(eom);
         self
     }

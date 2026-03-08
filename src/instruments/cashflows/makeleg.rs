@@ -445,7 +445,7 @@ impl MakeLeg {
 
                         let market_index = self
                             .market_index
-                            .clone()
+                            
                             .ok_or_else(|| QSError::ValueNotSetErr("Market index".into()))?;
 
                         build_floating_rate_coupons_from_notionals(
@@ -549,7 +549,7 @@ impl MakeLeg {
                     leg_id,
                     cashflows,
                     currency,
-                    self.market_index.clone(),
+                    self.market_index,
                     None,
                     None,
                     side,
@@ -717,7 +717,7 @@ impl MakeLeg {
                     leg_id,
                     cashflows,
                     currency,
-                    self.market_index.clone(),
+                    self.market_index,
                     None,
                     None,
                     side,
@@ -829,7 +829,7 @@ impl MakeLeg {
 
                         let market_index = self
                             .market_index
-                            .clone()
+                            
                             .ok_or_else(|| QSError::ValueNotSetErr("Market index".into()))?;
 
                         build_floating_rate_coupons_from_notionals(
@@ -1061,7 +1061,7 @@ fn notionals_vector(n: usize, notional: f64, structure: PaymentStructure) -> Vec
 }
 
 /// Closed-form solution for constant amortizing payment
-/// Payment = Notional / Annuity Factor where Annuity Factor = sum(1 / compound_factor_i) for each period
+/// Payment = Notional / Annuity Factor where Annuity Factor = sum(1 / `compound_factor_i`) for each period
 fn calculate_equal_payment_redemptions(
     dates: &[Date],
     rate: InterestRate<ADReal>,

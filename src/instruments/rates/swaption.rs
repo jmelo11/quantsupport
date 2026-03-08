@@ -46,7 +46,7 @@ pub struct Swaption {
 impl Swaption {
     /// Creates a new [`Swaption`].
     #[must_use]
-    pub fn new(
+    pub const fn new(
         identifier: String,
         underlying: Swap,
         expiry: Date,

@@ -20,7 +20,8 @@ pub struct FixedRateCoupon<T: IsReal> {
 
 impl<T: IsReal> FixedRateCoupon<T> {
     /// Creates a new [`FixedRateCoupon`].
-    pub fn new(
+    #[must_use] 
+    pub const fn new(
         notional: f64,
         rate: Box<InterestRate<T>>,
         accrual_start_date: Date,
@@ -37,22 +38,26 @@ impl<T: IsReal> FixedRateCoupon<T> {
     }
 
     /// Returns the interest rate associated with this coupon.
+    #[must_use] 
     pub fn rate(&self) -> &InterestRate<T> {
         &self.rate
     }
 
     /// Returns the accrual start date.
-    pub fn accrual_start_date(&self) -> Date {
+    #[must_use] 
+    pub const fn accrual_start_date(&self) -> Date {
         self.accrual_start_date
     }
 
     /// Returns the accrual end date.
-    pub fn accrual_end_date(&self) -> Date {
+    #[must_use] 
+    pub const fn accrual_end_date(&self) -> Date {
         self.accrual_end_date
     }
 
     /// Returns the notional amount.
-    pub fn notional(&self) -> f64 {
+    #[must_use] 
+    pub const fn notional(&self) -> f64 {
         self.notional
     }
 }

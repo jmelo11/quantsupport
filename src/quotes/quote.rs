@@ -304,7 +304,7 @@ impl QuoteDetails {
 
     /// Returns the primary market index.
     #[must_use]
-    pub fn market_index(&self) -> Option<&MarketIndex> {
+    pub const fn market_index(&self) -> Option<&MarketIndex> {
         self.market_index.as_ref()
     }
 
@@ -322,7 +322,7 @@ impl QuoteDetails {
 
     /// Returns the volatility type, if present.
     #[must_use]
-    pub fn vol_type(&self) -> Option<&VolatilityType> {
+    pub const fn vol_type(&self) -> Option<&VolatilityType> {
         self.vol_type.as_ref()
     }
 
@@ -394,7 +394,7 @@ impl QuoteDetails {
 
     /// Returns the secondary market index (e.g. receive-leg index on a basis swap).
     #[must_use]
-    pub fn secondary_market_index(&self) -> Option<&MarketIndex> {
+    pub const fn secondary_market_index(&self) -> Option<&MarketIndex> {
         self.secondary_market_index.as_ref()
     }
 
@@ -422,79 +422,79 @@ impl QuoteDetails {
 
     /// Sets the option strategy.
     #[must_use]
-    pub fn with_strategy(mut self, s: OptionStrategy) -> Self {
+    pub const fn with_strategy(mut self, s: OptionStrategy) -> Self {
         self.strategy = Some(s);
         self
     }
     /// Sets the volatility type.
     #[must_use]
-    pub fn with_vol_type(mut self, v: VolatilityType) -> Self {
+    pub const fn with_vol_type(mut self, v: VolatilityType) -> Self {
         self.vol_type = Some(v);
         self
     }
     /// Sets the rate.
     #[must_use]
-    pub fn with_rate(mut self, r: f64) -> Self {
+    pub const fn with_rate(mut self, r: f64) -> Self {
         self.rate = Some(r);
         self
     }
     /// Sets the price.
     #[must_use]
-    pub fn with_price(mut self, p: f64) -> Self {
+    pub const fn with_price(mut self, p: f64) -> Self {
         self.price = Some(p);
         self
     }
     /// Sets the coupon rate.
     #[must_use]
-    pub fn with_coupon_rate(mut self, r: f64) -> Self {
+    pub const fn with_coupon_rate(mut self, r: f64) -> Self {
         self.coupon_rate = Some(r);
         self
     }
     /// Sets the pay / base currency.
     #[must_use]
-    pub fn with_pay_currency(mut self, c: Currency) -> Self {
+    pub const fn with_pay_currency(mut self, c: Currency) -> Self {
         self.pay_currency = Some(c);
         self
     }
     /// Sets the receive / quote currency.
     #[must_use]
-    pub fn with_receive_currency(mut self, c: Currency) -> Self {
+    pub const fn with_receive_currency(mut self, c: Currency) -> Self {
         self.receive_currency = Some(c);
         self
     }
     /// Sets the strike.
     #[must_use]
-    pub fn with_strike(mut self, s: f64) -> Self {
+    pub const fn with_strike(mut self, s: f64) -> Self {
         self.strike = Some(s);
         self
     }
     /// Sets the strike type.
     #[must_use]
-    pub fn with_strike_type(mut self, t: StrikeType) -> Self {
+    pub const fn with_strike_type(mut self, t: StrikeType) -> Self {
         self.strike_type = Some(t);
         self
     }
     /// Sets the maturity.
     #[must_use]
-    pub fn with_maturity(mut self, d: Date) -> Self {
+    pub const fn with_maturity(mut self, d: Date) -> Self {
         self.maturity = Some(d);
         self
     }
     /// Sets the tenor.
     #[must_use]
-    pub fn with_tenor(mut self, p: Period) -> Self {
+    pub const fn with_tenor(mut self, p: Period) -> Self {
         self.tenor = Some(p);
         self
     }
     /// Sets the vol shift.
     #[must_use]
-    pub fn with_vol_shift(mut self, s: f64) -> Self {
+    pub const fn with_vol_shift(mut self, s: f64) -> Self {
         self.vol_shift = Some(s);
         self
     }
     /// Sets the primary instrument currency.
     #[must_use]
-    pub fn with_currency(mut self, c: Currency) -> Self {
+    pub const fn with_currency(mut self, c: Currency) -> Self {
         self.currency = Some(c);
         self
     }
@@ -506,7 +506,7 @@ impl QuoteDetails {
     }
     /// Sets the option expiry tenor.
     #[must_use]
-    pub fn with_option_expiry(mut self, p: Period) -> Self {
+    pub const fn with_option_expiry(mut self, p: Period) -> Self {
         self.option_expiry = Some(p);
         self
     }
@@ -518,7 +518,7 @@ impl QuoteDetails {
     }
     /// Sets the underlying index tenor.
     #[must_use]
-    pub fn with_index_tenor(mut self, p: Period) -> Self {
+    pub const fn with_index_tenor(mut self, p: Period) -> Self {
         self.index_tenor = Some(p);
         self
     }

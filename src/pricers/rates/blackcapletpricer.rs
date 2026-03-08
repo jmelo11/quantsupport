@@ -259,7 +259,7 @@ impl Pricer for BlackCapletPricer {
         let fixings = Vec::new();
 
         let mut seen_indices = HashSet::new();
-        seen_indices.insert(index.clone());
+        seen_indices.insert(index);
 
         if let Some(policy) = &self.discount_policy {
             for policy_index in policy.discount_indices() {

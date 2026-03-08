@@ -1,4 +1,4 @@
-/// ADReal module.
+/// `ADReal` module.
 pub mod adreal;
 /// Node module.
 pub mod node;

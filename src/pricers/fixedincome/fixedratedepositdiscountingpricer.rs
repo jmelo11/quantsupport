@@ -83,7 +83,7 @@ impl HandleValue<FixedRateDepositTrade, DepositPricerState> for FixedRateDeposit
         let discount_index = if let Some(policy) = &self.discount_policy {
             policy.accept(trade.instrument())?
         } else {
-            index.clone()
+            index
         };
         let leg = trade.instrument().leg();
 
@@ -123,13 +123,13 @@ impl HandleValue<FixedRateDepositTrade, DepositPricerState> for FixedRateDeposit
             .curve()
             .discount_factor(coupon_date)?;
 
-        let df2 = if coupon_date != redemption_date {
+        let df2 = if coupon_date == redemption_date {
+            df1
+        } else {
             state
                 .get_discount_curve_element(&discount_index)?
                 .curve()
                 .discount_factor(redemption_date)?
-        } else {
-            df1
         };
 
         let value = (df1 * coupon_amount + df2 * redemption_amount).into();

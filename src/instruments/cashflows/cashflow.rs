@@ -30,7 +30,7 @@ where
     T: IsReal,
 {
     /// Creates a new [`SimpleCashflow`] with the given amount and payment date.
-    pub fn new(amount: T, payment_date: Date) -> Self {
+    pub const fn new(amount: T, payment_date: Date) -> Self {
         Self {
             amount,
             payment_date,

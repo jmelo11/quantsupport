@@ -42,35 +42,35 @@ pub struct MakeSwaption {
 impl MakeSwaption {
     /// Sets the start date of the underlying swap (= option expiry for Europeans).
     #[must_use]
-    pub fn with_start_date(mut self, start_date: Date) -> Self {
+    pub const fn with_start_date(mut self, start_date: Date) -> Self {
         self.start_date = Some(start_date);
         self
     }
 
     /// Sets the maturity date of the underlying swap.
     #[must_use]
-    pub fn with_swap_tenor_date(mut self, date: Date) -> Self {
+    pub const fn with_swap_tenor_date(mut self, date: Date) -> Self {
         self.swap_tenor_date = Some(date);
         self
     }
 
     /// Sets the option expiry date.
     #[must_use]
-    pub fn with_expiry(mut self, expiry: Date) -> Self {
+    pub const fn with_expiry(mut self, expiry: Date) -> Self {
         self.expiry = Some(expiry);
         self
     }
 
     /// Sets the strike (fixed rate of the underlying swap).
     #[must_use]
-    pub fn with_strike(mut self, strike: f64) -> Self {
+    pub const fn with_strike(mut self, strike: f64) -> Self {
         self.strike = Some(strike);
         self
     }
 
     /// Sets the notional amount.
     #[must_use]
-    pub fn with_notional(mut self, notional: f64) -> Self {
+    pub const fn with_notional(mut self, notional: f64) -> Self {
         self.notional = Some(notional);
         self
     }
@@ -84,7 +84,7 @@ impl MakeSwaption {
 
     /// Sets the rate definition for the fixed leg.
     #[must_use]
-    pub fn with_rate_definition(mut self, rate_definition: RateDefinition) -> Self {
+    pub const fn with_rate_definition(mut self, rate_definition: RateDefinition) -> Self {
         self.rate_definition = Some(rate_definition);
         self
     }
@@ -98,35 +98,35 @@ impl MakeSwaption {
 
     /// Sets the currency.
     #[must_use]
-    pub fn with_currency(mut self, currency: Currency) -> Self {
+    pub const fn with_currency(mut self, currency: Currency) -> Self {
         self.currency = Some(currency);
         self
     }
 
     /// Sets the swaption type (payer or receiver).
     #[must_use]
-    pub fn with_swaption_type(mut self, swaption_type: SwaptionType) -> Self {
+    pub const fn with_swaption_type(mut self, swaption_type: SwaptionType) -> Self {
         self.swaption_type = Some(swaption_type);
         self
     }
 
     /// Sets the exercise type (european).
     #[must_use]
-    pub fn with_exercise_type(mut self, exercise_type: SwaptionExerciseType) -> Self {
+    pub const fn with_exercise_type(mut self, exercise_type: SwaptionExerciseType) -> Self {
         self.exercise_type = Some(exercise_type);
         self
     }
 
     /// Sets the fixed leg payment frequency.
     #[must_use]
-    pub fn with_fixed_leg_frequency(mut self, frequency: Frequency) -> Self {
+    pub const fn with_fixed_leg_frequency(mut self, frequency: Frequency) -> Self {
         self.fixed_leg_frequency = Some(frequency);
         self
     }
 
     /// Sets the floating leg payment frequency.
     #[must_use]
-    pub fn with_floating_leg_frequency(mut self, frequency: Frequency) -> Self {
+    pub const fn with_floating_leg_frequency(mut self, frequency: Frequency) -> Self {
         self.floating_leg_frequency = Some(frequency);
         self
     }
@@ -140,21 +140,21 @@ impl MakeSwaption {
 
     /// Sets the business day convention.
     #[must_use]
-    pub fn with_business_day_convention(mut self, convention: BusinessDayConvention) -> Self {
+    pub const fn with_business_day_convention(mut self, convention: BusinessDayConvention) -> Self {
         self.business_day_convention = Some(convention);
         self
     }
 
     /// Sets the date generation rule.
     #[must_use]
-    pub fn with_date_generation_rule(mut self, rule: DateGenerationRule) -> Self {
+    pub const fn with_date_generation_rule(mut self, rule: DateGenerationRule) -> Self {
         self.date_generation_rule = Some(rule);
         self
     }
 
     /// Sets the end-of-month flag.
     #[must_use]
-    pub fn with_end_of_month(mut self, eom: bool) -> Self {
+    pub const fn with_end_of_month(mut self, eom: bool) -> Self {
         self.end_of_month = Some(eom);
         self
     }

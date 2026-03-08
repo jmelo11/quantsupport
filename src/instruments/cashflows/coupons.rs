@@ -6,6 +6,7 @@ use crate::{
 };
 
 /// A [`LinearCoupon`] is a type of [`Cashflow`] that represents a periodic payment.
+///
 /// In addition to the amount and payment date, a coupon also has an accrual period defined by a start and end date,
 /// and can calculate the accrued amount for a given period.
 pub trait LinearCoupon<T>: Cashflow<T>
@@ -32,15 +33,15 @@ where
 #[derive(Clone)]
 pub enum PayoffOps {
     /// Max operation.
-    Max(Box<PayoffOps>, Box<PayoffOps>),
+    Max(Box<Self>, Box<Self>),
     /// Min operation.
-    Min(Box<PayoffOps>, Box<PayoffOps>),
+    Min(Box<Self>, Box<Self>),
     /// Multiplication operation.
-    Times(Box<PayoffOps>, Box<PayoffOps>),
+    Times(Box<Self>, Box<Self>),
     /// Addition operation.
-    Plus(Box<PayoffOps>, Box<PayoffOps>),
+    Plus(Box<Self>, Box<Self>),
     /// Substraction operation.
-    Minus(Box<PayoffOps>, Box<PayoffOps>),
+    Minus(Box<Self>, Box<Self>),
     /// Describes a constant value.
     Const(f64),
     /// Describes an index of reference.
@@ -54,25 +55,25 @@ impl PayoffOps {
     /// Returns an error if the payoff cannot be evaluated.
     pub fn evaluate(&self, index_fixing: ADReal) -> Result<ADReal> {
         match self {
-            PayoffOps::Max(left, right) => Ok(left
+            Self::Max(left, right) => Ok(left
                 .evaluate(index_fixing)?
                 .max(right.evaluate(index_fixing)?)
                 .into()),
-            PayoffOps::Min(left, right) => Ok(left
+            Self::Min(left, right) => Ok(left
                 .evaluate(index_fixing)?
                 .min(right.evaluate(index_fixing)?)
                 .into()),
-            PayoffOps::Times(left, right) => {
+            Self::Times(left, right) => {
                 Ok((left.evaluate(index_fixing)? * right.evaluate(index_fixing)?).into())
             }
-            PayoffOps::Plus(left, right) => {
+            Self::Plus(left, right) => {
                 Ok((left.evaluate(index_fixing)? + right.evaluate(index_fixing)?).into())
             }
-            PayoffOps::Minus(left, right) => {
+            Self::Minus(left, right) => {
                 Ok((left.evaluate(index_fixing)? - right.evaluate(index_fixing)?).into())
             }
-            PayoffOps::Const(value) => Ok(ADReal::new(*value)),
-            PayoffOps::Index => Ok(index_fixing),
+            Self::Const(value) => Ok(ADReal::new(*value)),
+            Self::Index => Ok(index_fixing),
         }
     }
 }

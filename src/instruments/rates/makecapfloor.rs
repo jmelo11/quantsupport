@@ -42,28 +42,28 @@ pub struct MakeCapFloor {
 impl MakeCapFloor {
     /// Sets the start date.
     #[must_use]
-    pub fn with_start_date(mut self, start_date: Date) -> Self {
+    pub const fn with_start_date(mut self, start_date: Date) -> Self {
         self.start_date = Some(start_date);
         self
     }
 
     /// Sets the maturity date.
     #[must_use]
-    pub fn with_maturity_date(mut self, maturity_date: Date) -> Self {
+    pub const fn with_maturity_date(mut self, maturity_date: Date) -> Self {
         self.maturity_date = Some(maturity_date);
         self
     }
 
     /// Sets the strike rate.
     #[must_use]
-    pub fn with_strike(mut self, strike: f64) -> Self {
+    pub const fn with_strike(mut self, strike: f64) -> Self {
         self.strike = Some(strike);
         self
     }
 
     /// Sets the notional amount.
     #[must_use]
-    pub fn with_notional(mut self, notional: f64) -> Self {
+    pub const fn with_notional(mut self, notional: f64) -> Self {
         self.notional = Some(notional);
         self
     }
@@ -77,7 +77,7 @@ impl MakeCapFloor {
 
     /// Sets the rate definition for the caplet/floorlet strip.
     #[must_use]
-    pub fn with_rate_definition(mut self, rate_definition: RateDefinition) -> Self {
+    pub const fn with_rate_definition(mut self, rate_definition: RateDefinition) -> Self {
         self.rate_definition = Some(rate_definition);
         self
     }
@@ -91,28 +91,28 @@ impl MakeCapFloor {
 
     /// Sets the currency.
     #[must_use]
-    pub fn with_currency(mut self, currency: Currency) -> Self {
+    pub const fn with_currency(mut self, currency: Currency) -> Self {
         self.currency = Some(currency);
         self
     }
 
     /// Sets the side (buyer or seller of the cap/floor).
     #[must_use]
-    pub fn with_side(mut self, side: Side) -> Self {
+    pub const fn with_side(mut self, side: Side) -> Self {
         self.side = Some(side);
         self
     }
 
     /// Sets the cap/floor type.
     #[must_use]
-    pub fn with_cap_floor_type(mut self, cap_floor_type: CapFloorType) -> Self {
+    pub const fn with_cap_floor_type(mut self, cap_floor_type: CapFloorType) -> Self {
         self.cap_floor_type = Some(cap_floor_type);
         self
     }
 
     /// Sets the payment frequency.
     #[must_use]
-    pub fn with_frequency(mut self, frequency: Frequency) -> Self {
+    pub const fn with_frequency(mut self, frequency: Frequency) -> Self {
         self.frequency = Some(frequency);
         self
     }
@@ -126,21 +126,21 @@ impl MakeCapFloor {
 
     /// Sets the business day convention.
     #[must_use]
-    pub fn with_business_day_convention(mut self, convention: BusinessDayConvention) -> Self {
+    pub const fn with_business_day_convention(mut self, convention: BusinessDayConvention) -> Self {
         self.business_day_convention = Some(convention);
         self
     }
 
     /// Sets the date generation rule.
     #[must_use]
-    pub fn with_date_generation_rule(mut self, rule: DateGenerationRule) -> Self {
+    pub const fn with_date_generation_rule(mut self, rule: DateGenerationRule) -> Self {
         self.date_generation_rule = Some(rule);
         self
     }
 
     /// Sets the end-of-month flag.
     #[must_use]
-    pub fn with_end_of_month(mut self, eom: bool) -> Self {
+    pub const fn with_end_of_month(mut self, eom: bool) -> Self {
         self.end_of_month = Some(eom);
         self
     }
@@ -222,7 +222,7 @@ impl MakeCapFloor {
             let period_start = window[0];
             let period_end = window[1];
             let payment_date = period_end;
-            let name = format!("{}:{}-{}", identifier, period_start, period_end);
+            let name = format!("{identifier}:{period_start}-{period_end}");
 
             caplet_floorlets.push(CapletFloorlet::new(
                 name,

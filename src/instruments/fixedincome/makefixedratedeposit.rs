@@ -30,35 +30,35 @@ pub struct MakeFixedRateDeposit {
 impl MakeFixedRateDeposit {
     /// Sets the start date of the fixed rate deposit.
     #[must_use]
-    pub fn with_start_date(mut self, start_date: Date) -> Self {
+    pub const fn with_start_date(mut self, start_date: Date) -> Self {
         self.start_date = Some(start_date);
         self
     }
 
     /// Sets the end date of the fixed rate deposit.
     #[must_use]
-    pub fn with_maturity_date(mut self, maturity_date: Date) -> Self {
+    pub const fn with_maturity_date(mut self, maturity_date: Date) -> Self {
         self.maturity_date = Some(maturity_date);
         self
     }
 
     /// Sets the interest rate of the fixed rate deposit.
     #[must_use]
-    pub fn with_rate(mut self, rate: f64) -> Self {
+    pub const fn with_rate(mut self, rate: f64) -> Self {
         self.rate = Some(rate);
         self
     }
 
     /// Sets the notional amount of the fixed rate deposit.
     #[must_use]
-    pub fn with_notional(mut self, notional: f64) -> Self {
+    pub const fn with_notional(mut self, notional: f64) -> Self {
         self.notional = Some(notional);
         self
     }
 
     /// Sets the rate definition of the fixed rate deposit.
     #[must_use]
-    pub fn with_rate_definition(mut self, rate_definition: RateDefinition) -> Self {
+    pub const fn with_rate_definition(mut self, rate_definition: RateDefinition) -> Self {
         self.rate_definition = Some(rate_definition);
         self
     }
@@ -72,7 +72,7 @@ impl MakeFixedRateDeposit {
 
     /// Sets the currency of the fixed rate deposit.
     #[must_use]
-    pub fn with_currency(mut self, currency: Currency) -> Self {
+    pub const fn with_currency(mut self, currency: Currency) -> Self {
         self.currency = Some(currency);
         self
     }
@@ -80,7 +80,7 @@ impl MakeFixedRateDeposit {
     /// Sets the units of the fixed rate deposit.
     /// If not set, it defaults to 100.0.
     #[must_use]
-    pub fn with_units(mut self, units: f64) -> Self {
+    pub const fn with_units(mut self, units: f64) -> Self {
         self.units = Some(units);
         self
     }
@@ -92,9 +92,9 @@ impl MakeFixedRateDeposit {
         self
     }
 
-    /// Sets the side of the fixed rate deposit (defaults to LongRecieve if not set).
+    /// Sets the side of the fixed rate deposit (defaults to `LongRecieve` if not set).
     #[must_use]
-    pub fn with_side(mut self, side: Side) -> Self {
+    pub const fn with_side(mut self, side: Side) -> Self {
         self.side = Some(side);
         self
     }

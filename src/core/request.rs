@@ -93,6 +93,7 @@ pub trait LegsProvider {
 }
 
 /// The [`HandleCashflows`] trait defines a method for handling a cashflows request.
+///
 /// The generic type parameter `T` represents the type of trade, and `S` represents the state or context in which the cashflows are evaluated.
 /// As cashflows often depend on current evaluation and market conditions, the mutable state is responsable
 /// for proving the a resolved instance of the legs and underlying cashflows.
@@ -105,7 +106,7 @@ pub trait HandleCashflows<T, S: LegsProvider> {
         let mut cashflows_table = CashflowsTable::new();
 
         for leg in state.legs() {
-            let currency = leg.currency().clone();
+            let currency = leg.currency();
 
             for cashflow in leg.cashflows() {
                 match cashflow {
@@ -125,7 +126,7 @@ pub trait HandleCashflows<T, S: LegsProvider> {
                             amount,
                             None,
                             accrual_period,
-                            currency.clone(),
+                            currency,
                             None,
                             None,
                         );
@@ -146,7 +147,7 @@ pub trait HandleCashflows<T, S: LegsProvider> {
                             amount,
                             fixing,
                             accrual_period,
-                            currency.clone(),
+                            currency,
                             None,
                             None,
                         );
@@ -166,7 +167,7 @@ pub trait HandleCashflows<T, S: LegsProvider> {
                             amount,
                             fixing,
                             accrual_period,
-                            currency.clone(),
+                            currency,
                             None,
                             None,
                         );
@@ -181,7 +182,7 @@ pub trait HandleCashflows<T, S: LegsProvider> {
                             amount,
                             None,
                             0.0,
-                            currency.clone(),
+                            currency,
                             None,
                             None,
                         );
@@ -196,7 +197,7 @@ pub trait HandleCashflows<T, S: LegsProvider> {
                             amount,
                             None,
                             0.0,
-                            currency.clone(),
+                            currency,
                             None,
                             None,
                         );

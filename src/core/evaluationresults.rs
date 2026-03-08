@@ -16,7 +16,7 @@ pub struct CashflowsTable {
 impl CashflowsTable {
     /// Creates a new [`CashflowsTable`] with empty vectors.
     #[must_use]
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             payment_dates: Vec::new(),
             cashflow_types: Vec::new(),
@@ -203,7 +203,7 @@ impl EvaluationResults {
     /// Sets the cashflows of the instrument.
     #[must_use]
     pub fn with_cashflows(mut self, cashflows: CashflowsTable) -> Self {
-        self.cashflows = Some(cashflows.clone());
+        self.cashflows = Some(cashflows);
         self
     }
 

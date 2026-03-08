@@ -37,42 +37,42 @@ impl MakeFutures {
 
     /// Sets the expiry date.
     #[must_use]
-    pub fn with_expiry_date(mut self, date: Date) -> Self {
+    pub const fn with_expiry_date(mut self, date: Date) -> Self {
         self.expiry_date = Some(date);
         self
     }
 
     /// Sets the futures price.
     #[must_use]
-    pub fn with_futures_price(mut self, price: f64) -> Self {
+    pub const fn with_futures_price(mut self, price: f64) -> Self {
         self.futures_price = Some(price);
         self
     }
 
     /// Sets the contract size (multiplier). Defaults to 1.0.
     #[must_use]
-    pub fn with_contract_size(mut self, size: f64) -> Self {
+    pub const fn with_contract_size(mut self, size: f64) -> Self {
         self.contract_size = Some(size);
         self
     }
 
     /// Sets the currency. Defaults to `USD`.
     #[must_use]
-    pub fn with_currency(mut self, currency: Currency) -> Self {
+    pub const fn with_currency(mut self, currency: Currency) -> Self {
         self.currency = Some(currency);
         self
     }
 
     /// Sets the day count convention. Defaults to `Actual360`.
     #[must_use]
-    pub fn with_day_counter(mut self, dc: DayCounter) -> Self {
+    pub const fn with_day_counter(mut self, dc: DayCounter) -> Self {
         self.day_counter = Some(dc);
         self
     }
 
     /// Sets the side (defaults to `LongRecieve`).
     #[must_use]
-    pub fn with_side(mut self, side: Side) -> Self {
+    pub const fn with_side(mut self, side: Side) -> Self {
         self.side = Some(side);
         self
     }

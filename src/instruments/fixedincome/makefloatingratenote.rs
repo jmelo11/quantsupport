@@ -38,28 +38,28 @@ pub struct MakeFloatingRateNote {
 impl MakeFloatingRateNote {
     /// Sets the start date of the note.
     #[must_use]
-    pub fn with_start_date(mut self, start_date: Date) -> Self {
+    pub const fn with_start_date(mut self, start_date: Date) -> Self {
         self.start_date = Some(start_date);
         self
     }
 
     /// Sets the maturity date of the note.
     #[must_use]
-    pub fn with_maturity_date(mut self, maturity_date: Date) -> Self {
+    pub const fn with_maturity_date(mut self, maturity_date: Date) -> Self {
         self.maturity_date = Some(maturity_date);
         self
     }
 
     /// Sets the spread over the floating index rate.
     #[must_use]
-    pub fn with_spread(mut self, spread: f64) -> Self {
+    pub const fn with_spread(mut self, spread: f64) -> Self {
         self.spread = Some(spread);
         self
     }
 
     /// Sets the notional amount of the note.
     #[must_use]
-    pub fn with_notional(mut self, notional: f64) -> Self {
+    pub const fn with_notional(mut self, notional: f64) -> Self {
         self.notional = Some(notional);
         self
     }
@@ -73,14 +73,14 @@ impl MakeFloatingRateNote {
 
     /// Sets the currency of the note.
     #[must_use]
-    pub fn with_currency(mut self, currency: Currency) -> Self {
+    pub const fn with_currency(mut self, currency: Currency) -> Self {
         self.currency = Some(currency);
         self
     }
 
     /// Sets the units of the note. Defaults to 100.0 if not set.
     #[must_use]
-    pub fn with_units(mut self, units: f64) -> Self {
+    pub const fn with_units(mut self, units: f64) -> Self {
         self.units = Some(units);
         self
     }
@@ -94,21 +94,21 @@ impl MakeFloatingRateNote {
 
     /// Sets the side of the note (defaults to `LongRecieve` if not set).
     #[must_use]
-    pub fn with_side(mut self, side: Side) -> Self {
+    pub const fn with_side(mut self, side: Side) -> Self {
         self.side = Some(side);
         self
     }
 
     /// Sets the coupon payment frequency (e.g., `Quarterly`, `Semiannual`).
     #[must_use]
-    pub fn with_payment_frequency(mut self, frequency: Frequency) -> Self {
+    pub const fn with_payment_frequency(mut self, frequency: Frequency) -> Self {
         self.payment_frequency = Some(frequency);
         self
     }
 
     /// Sets the payment structure (e.g., `Bullet`, `EqualRedemptions`). Defaults to `Bullet`.
     #[must_use]
-    pub fn with_payment_structure(mut self, structure: PaymentStructure) -> Self {
+    pub const fn with_payment_structure(mut self, structure: PaymentStructure) -> Self {
         self.payment_structure = Some(structure);
         self
     }
@@ -122,28 +122,28 @@ impl MakeFloatingRateNote {
 
     /// Sets the business day convention.
     #[must_use]
-    pub fn with_business_day_convention(mut self, convention: BusinessDayConvention) -> Self {
+    pub const fn with_business_day_convention(mut self, convention: BusinessDayConvention) -> Self {
         self.business_day_convention = Some(convention);
         self
     }
 
     /// Sets the date generation rule.
     #[must_use]
-    pub fn with_date_generation_rule(mut self, rule: DateGenerationRule) -> Self {
+    pub const fn with_date_generation_rule(mut self, rule: DateGenerationRule) -> Self {
         self.date_generation_rule = Some(rule);
         self
     }
 
     /// Sets the end-of-month flag for schedule generation.
     #[must_use]
-    pub fn with_end_of_month(mut self, eom: bool) -> Self {
+    pub const fn with_end_of_month(mut self, eom: bool) -> Self {
         self.end_of_month = Some(eom);
         self
     }
 
     /// Sets the first coupon date (for long/short first coupon periods).
     #[must_use]
-    pub fn with_first_coupon_date(mut self, date: Date) -> Self {
+    pub const fn with_first_coupon_date(mut self, date: Date) -> Self {
         self.first_coupon_date = Some(date);
         self
     }

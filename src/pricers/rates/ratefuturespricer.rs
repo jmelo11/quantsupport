@@ -137,7 +137,7 @@ impl Pricer for RateFuturesPricer {
             match req {
                 Request::Value => out = out.with_price(self.handle_value(trade, &mut state)?),
                 Request::Sensitivities => {
-                    out = out.with_sensitivities(self.handle_sensitivities(trade, &mut state)?)
+                    out = out.with_sensitivities(self.handle_sensitivities(trade, &mut state)?);
                 }
                 _ => {}
             }

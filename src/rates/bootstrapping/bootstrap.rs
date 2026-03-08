@@ -51,7 +51,7 @@ pub struct MultiCurveBootstrapper {
 impl MultiCurveBootstrapper {
     /// Creates a bootstrapper from a set of curve specifications.
     #[must_use]
-    pub fn new(curve_specs: Vec<CurveSpec>, discount_policy: BootstrapDiscountPolicy) -> Self {
+    pub const fn new(curve_specs: Vec<CurveSpec>, discount_policy: BootstrapDiscountPolicy) -> Self {
         Self {
             curve_specs,
             discount_policy,
@@ -401,7 +401,7 @@ struct BootstrapProblem<'a> {
     discount_policy: &'a BootstrapDiscountPolicy,
 }
 
-impl<'a> BootstrapProblem<'a> {
+impl BootstrapProblem<'_> {
     /// Builds a temporary `BootstrappedCurve` from the trial unknowns.
     fn trial_curve(&self, x: &[ADReal]) -> BootstrappedCurve {
         let mut dfs = Vec::with_capacity(self.times.len());
@@ -568,7 +568,7 @@ impl<'a> BootstrapProblem<'a> {
         Ok(annuity)
     }
 
-    /// Deposit: NPV = Σ(cashflow × DF_target(payment_date)) = 0.
+    /// Deposit: NPV = Σ(cashflow × `DF_target(payment_date)`) = 0.
     fn residual_deposit(
         &self,
         legs: &[crate::instruments::cashflows::leg::Leg],
@@ -587,7 +587,7 @@ impl<'a> BootstrapProblem<'a> {
         Ok(npv)
     }
 
-    /// Legs-based instruments (swaps, basis swaps): NPV = Σ legs (side × PV_leg) = 0.
+    /// Legs-based instruments (swaps, basis swaps): NPV = Σ legs (side × `PV_leg`) = 0.
     fn residual_legs(
         &self,
         legs: &[crate::instruments::cashflows::leg::Leg],
@@ -639,7 +639,7 @@ impl<'a> BootstrapProblem<'a> {
         Ok(npv)
     }
 
-    /// Futures: residual = implied_forward - market_rate.
+    /// Futures: residual = `implied_forward` - `market_rate`.
     ///
     /// The `quote_value` parameter is the AD-enabled market rate so that
     /// the tape connects the residual back to the original quote leaf.
@@ -665,7 +665,7 @@ impl<'a> BootstrapProblem<'a> {
         Ok((implied - *quote_value).into())
     }
 
-    /// FX forward: residual = DF_base(T)/DF_quote(T) - market_fwd / spot.
+    /// FX forward: residual = `DF_base(T)/DF_quote(T)` - `market_fwd` / spot.
     ///
     /// We normalise the residual so that `DF_base(T) - (F/S) × DF_quote(T) = 0`
     /// (the spot cancels when both sides reference the same evaluation date).
@@ -780,7 +780,7 @@ impl<'a> BootstrapProblem<'a> {
 // Solver trait implementations
 // ---------------------------------------------------------------------------
 
-impl<'a> ContFunc<[ADReal], Vec<ADReal>> for BootstrapProblem<'a> {
+impl ContFunc<[ADReal], Vec<ADReal>> for BootstrapProblem<'_> {
     fn call(&self, x: &[ADReal]) -> Result<Vec<ADReal>> {
         let trial = self.trial_curve(x);
 
@@ -792,8 +792,8 @@ impl<'a> ContFunc<[ADReal], Vec<ADReal>> for BootstrapProblem<'a> {
     }
 }
 
-impl<'a> VectorFunc<ADReal, ADReal> for BootstrapProblem<'a> {}
-impl<'a> ADJacobian for BootstrapProblem<'a> {}
+impl VectorFunc<ADReal, ADReal> for BootstrapProblem<'_> {}
+impl ADJacobian for BootstrapProblem<'_> {}
 
 // ===========================================================================
 // Tests

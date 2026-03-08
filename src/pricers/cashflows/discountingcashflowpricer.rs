@@ -74,7 +74,7 @@ impl LegsProvider for DCFState<'_> {
     }
 }
 
-impl<'a, I, T> HandleCashflows<T, DCFState<'a>> for CashflowDiscountPricer<I, T>
+impl<I, T> HandleCashflows<T, DCFState<'_>> for CashflowDiscountPricer<I, T>
 where
     I: Instrument,
     T: LegsProvider + Trade<I>,
@@ -301,7 +301,9 @@ where
                     let discount_currency = state
                         .get_discount_curve_element(&leg_discount_index)?
                         .currency();
-                    if leg_currency != discount_currency {
+                    if leg_currency == discount_currency {
+                        (amount * df_leg).into()
+                    } else {
                         let leg_curve_index = leg.market_index().ok_or_else(|| {
                             QSError::NotFoundErr(format!(
                                 "Leg {} requires market index to compute FX parity against discount curve currency {}",
@@ -317,8 +319,6 @@ where
                         // FX_fwd(t) × DF_coll(t) = FX_spot × DF_leg(t)
                         let fx_fwd: ADReal = (fx_spot * df_leg_ccy / df_leg).into();
                         (amount * fx_fwd * df_leg).into()
-                    } else {
-                        (amount * df_leg).into()
                     }
                 } else {
                     let df = state
@@ -372,19 +372,19 @@ where
                             let discount_currency = state
                                 .get_discount_curve_element(&collateral_index)?
                                 .currency();
-                            if leg.currency() != discount_currency {
+                            if leg.currency() == discount_currency {
+                                df_coll
+                            } else {
                                 let fx_spot = state
                                     .get_exchange_rate(leg.currency(), discount_currency)?
                                     .value();
                                 let df_leg = forward_curve.discount_factor(payment_date)?.value();
                                 // FX_fwd(t) × DF_coll(t) = FX_spot × DF_leg(t)
                                 fx_spot * df_leg
-                            } else {
-                                df_coll
                             }
                         } else {
-                            let df = forward_curve.discount_factor(payment_date)?.value();
-                            df
+                            
+                            forward_curve.discount_factor(payment_date)?.value()
                         };
                         annuity += coupon.notional() * year_fraction * df_fx;
                     }
@@ -409,18 +409,18 @@ where
                             let discount_currency = state
                                 .get_discount_curve_element(&collateral_index)?
                                 .currency();
-                            if leg.currency() != discount_currency {
+                            if leg.currency() == discount_currency {
+                                df_coll
+                            } else {
                                 let fx_spot = state
                                     .get_exchange_rate(leg.currency(), discount_currency)?
                                     .value();
                                 let df_leg = forward_curve.discount_factor(payment_date)?.value();
                                 fx_spot * df_leg
-                            } else {
-                                df_coll
                             }
                         } else {
-                            let df = forward_curve.discount_factor(payment_date)?.value();
-                            df
+                            
+                            forward_curve.discount_factor(payment_date)?.value()
                         };
                         float_pv += amount * df_fx;
                     }

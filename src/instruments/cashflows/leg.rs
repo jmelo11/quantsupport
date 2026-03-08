@@ -28,7 +28,8 @@ pub struct Leg {
 
 impl Leg {
     /// Creates a new [`Leg`] with the specified parameters.
-    pub fn new(
+    #[must_use] 
+    pub const fn new(
         leg_id: usize,
         cashflows: Vec<CashflowType>,
         currency: Currency,
@@ -68,49 +69,49 @@ impl Leg {
 
     /// Returns the currency of the leg.
     #[must_use]
-    pub fn currency(&self) -> Currency {
+    pub const fn currency(&self) -> Currency {
         self.currency
     }
 
     /// Returns the market index associated with the leg, if any.
     #[must_use]
-    pub fn market_index(&self) -> Option<&MarketIndex> {
+    pub const fn market_index(&self) -> Option<&MarketIndex> {
         self.market_index.as_ref()
     }
 
     /// Returns the spread associated with the leg, if any.
     #[must_use]
-    pub fn spread(&self) -> Option<ADReal> {
+    pub const fn spread(&self) -> Option<ADReal> {
         self.spread
     }
 
     /// Returns the interest rate associated with the leg, if any.
     #[must_use]
-    pub fn interest_rate(&self) -> Option<InterestRate<ADReal>> {
+    pub const fn interest_rate(&self) -> Option<InterestRate<ADReal>> {
         self.interest_rate
     }
 
     /// Returns the side of the leg (long or short).
     #[must_use]
-    pub fn side(&self) -> Side {
+    pub const fn side(&self) -> Side {
         self.side
     }
 
     /// Returns whether the leg is linear (i.e., has a linear payoff structure) or non-linear.
     #[must_use]
-    pub fn is_linear(&self) -> bool {
+    pub const fn is_linear(&self) -> bool {
         self.is_linear
     }
 
     /// Returns the first payment date of the leg.
     #[must_use]
-    pub fn first_payment_date(&self) -> Date {
+    pub const fn first_payment_date(&self) -> Date {
         self.first_payment_date
     }
 
     /// Returns the last payment date of the leg.
     #[must_use]
-    pub fn last_payment_date(&self) -> Date {
+    pub const fn last_payment_date(&self) -> Date {
         self.last_payment_date
     }
 }

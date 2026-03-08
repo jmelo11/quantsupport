@@ -60,13 +60,13 @@ impl BootstrapDiscountPolicy {
 
     /// Returns the CSA / primary collateral index.
     #[must_use]
-    pub fn csa_index(&self) -> &MarketIndex {
+    pub const fn csa_index(&self) -> &MarketIndex {
         &self.csa_index
     }
 
     /// Returns the CSA currency.
     #[must_use]
-    pub fn csa_currency(&self) -> Currency {
+    pub const fn csa_currency(&self) -> Currency {
         self.csa_currency
     }
 

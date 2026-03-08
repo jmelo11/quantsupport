@@ -38,35 +38,35 @@ pub struct MakeBasisSwap {
 impl MakeBasisSwap {
     /// Sets the start date.
     #[must_use]
-    pub fn with_start_date(mut self, date: Date) -> Self {
+    pub const fn with_start_date(mut self, date: Date) -> Self {
         self.start_date = Some(date);
         self
     }
 
     /// Sets the maturity date.
     #[must_use]
-    pub fn with_maturity_date(mut self, date: Date) -> Self {
+    pub const fn with_maturity_date(mut self, date: Date) -> Self {
         self.maturity_date = Some(date);
         self
     }
 
     /// Sets the notional amount.
     #[must_use]
-    pub fn with_notional(mut self, notional: f64) -> Self {
+    pub const fn with_notional(mut self, notional: f64) -> Self {
         self.notional = Some(notional);
         self
     }
 
     /// Sets the spread on the pay leg.
     #[must_use]
-    pub fn with_pay_spread(mut self, spread: f64) -> Self {
+    pub const fn with_pay_spread(mut self, spread: f64) -> Self {
         self.pay_spread = Some(spread);
         self
     }
 
     /// Sets the spread on the receive leg.
     #[must_use]
-    pub fn with_receive_spread(mut self, spread: f64) -> Self {
+    pub const fn with_receive_spread(mut self, spread: f64) -> Self {
         self.receive_spread = Some(spread);
         self
     }
@@ -94,28 +94,28 @@ impl MakeBasisSwap {
 
     /// Sets the currency of the swap.
     #[must_use]
-    pub fn with_currency(mut self, currency: Currency) -> Self {
+    pub const fn with_currency(mut self, currency: Currency) -> Self {
         self.currency = Some(currency);
         self
     }
 
     /// Sets the side.
     #[must_use]
-    pub fn with_side(mut self, side: Side) -> Self {
+    pub const fn with_side(mut self, side: Side) -> Self {
         self.side = Some(side);
         self
     }
 
     /// Sets the pay leg payment frequency.
     #[must_use]
-    pub fn with_pay_leg_frequency(mut self, freq: Frequency) -> Self {
+    pub const fn with_pay_leg_frequency(mut self, freq: Frequency) -> Self {
         self.pay_leg_frequency = Some(freq);
         self
     }
 
     /// Sets the receive leg payment frequency.
     #[must_use]
-    pub fn with_receive_leg_frequency(mut self, freq: Frequency) -> Self {
+    pub const fn with_receive_leg_frequency(mut self, freq: Frequency) -> Self {
         self.receive_leg_frequency = Some(freq);
         self
     }
@@ -129,21 +129,21 @@ impl MakeBasisSwap {
 
     /// Sets the business day convention.
     #[must_use]
-    pub fn with_business_day_convention(mut self, convention: BusinessDayConvention) -> Self {
+    pub const fn with_business_day_convention(mut self, convention: BusinessDayConvention) -> Self {
         self.business_day_convention = Some(convention);
         self
     }
 
     /// Sets the date generation rule.
     #[must_use]
-    pub fn with_date_generation_rule(mut self, rule: DateGenerationRule) -> Self {
+    pub const fn with_date_generation_rule(mut self, rule: DateGenerationRule) -> Self {
         self.date_generation_rule = Some(rule);
         self
     }
 
     /// Sets the end-of-month flag.
     #[must_use]
-    pub fn with_end_of_month(mut self, eom: bool) -> Self {
+    pub const fn with_end_of_month(mut self, eom: bool) -> Self {
         self.end_of_month = Some(eom);
         self
     }

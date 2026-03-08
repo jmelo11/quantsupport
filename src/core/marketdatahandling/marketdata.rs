@@ -160,7 +160,7 @@ impl MarketData {
 
     /// Returns a mutable reference to the exchange-rate store, if any.
     #[must_use]
-    pub fn exchange_rate_store_mut(&mut self) -> Option<&mut ExchangeRateStore> {
+    pub const fn exchange_rate_store_mut(&mut self) -> Option<&mut ExchangeRateStore> {
         self.exchange_rate_store.as_mut()
     }
 

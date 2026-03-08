@@ -30,70 +30,70 @@ impl MakeFxForward {
 
     /// Sets the delivery date.
     #[must_use]
-    pub fn with_delivery_date(mut self, date: Date) -> Self {
+    pub const fn with_delivery_date(mut self, date: Date) -> Self {
         self.delivery_date = Some(date);
         self
     }
 
     /// Sets the agreed forward exchange rate.
     #[must_use]
-    pub fn with_forward_rate(mut self, rate: f64) -> Self {
+    pub const fn with_forward_rate(mut self, rate: f64) -> Self {
         self.forward_price = Some(rate);
         self
     }
 
     /// Sets the agreed outright forward price.
     #[must_use]
-    pub fn with_forward_price(mut self, price: f64) -> Self {
+    pub const fn with_forward_price(mut self, price: f64) -> Self {
         self.forward_price = Some(price);
         self
     }
 
     /// Sets the forward points quote.
     #[must_use]
-    pub fn with_forward_points(mut self, points: f64) -> Self {
+    pub const fn with_forward_points(mut self, points: f64) -> Self {
         self.forward_points = Some(points);
         self
     }
 
     /// Sets the base currency (the currency being bought).
     #[must_use]
-    pub fn with_base_currency(mut self, currency: Currency) -> Self {
+    pub const fn with_base_currency(mut self, currency: Currency) -> Self {
         self.base_currency = Some(currency);
         self
     }
 
     /// Sets the quote currency (the currency being sold).
     #[must_use]
-    pub fn with_quote_currency(mut self, currency: Currency) -> Self {
+    pub const fn with_quote_currency(mut self, currency: Currency) -> Self {
         self.quote_currency = Some(currency);
         self
     }
 
     /// Sets the day count convention. Defaults to `Actual360`.
     #[must_use]
-    pub fn with_day_counter(mut self, dc: DayCounter) -> Self {
+    pub const fn with_day_counter(mut self, dc: DayCounter) -> Self {
         self.day_counter = Some(dc);
         self
     }
 
     /// Sets the settlement convention explicitly.
     #[must_use]
-    pub fn with_settlement(mut self, settlement: FxForwardSettlement) -> Self {
+    pub const fn with_settlement(mut self, settlement: FxForwardSettlement) -> Self {
         self.settlement = Some(settlement);
         self
     }
 
     /// Marks the contract as deliverable.
     #[must_use]
-    pub fn as_deliverable(mut self) -> Self {
+    pub const fn as_deliverable(mut self) -> Self {
         self.settlement = Some(FxForwardSettlement::Deliverable);
         self
     }
 
     /// Marks the contract as a non-deliverable forward.
     #[must_use]
-    pub fn as_ndf(mut self, fixing_date: Date, settlement_currency: Currency) -> Self {
+    pub const fn as_ndf(mut self, fixing_date: Date, settlement_currency: Currency) -> Self {
         self.settlement = Some(FxForwardSettlement::NonDeliverable {
             fixing_date,
             settlement_currency,
@@ -103,7 +103,7 @@ impl MakeFxForward {
 
     /// Sets the side (defaults to `LongRecieve` — buying base currency).
     #[must_use]
-    pub fn with_side(mut self, side: Side) -> Self {
+    pub const fn with_side(mut self, side: Side) -> Self {
         self.side = Some(side);
         self
     }

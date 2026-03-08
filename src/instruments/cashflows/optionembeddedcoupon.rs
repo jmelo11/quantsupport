@@ -22,7 +22,8 @@ pub struct OptionEmbeddedCoupon<T: IsReal> {
 
 impl<T: IsReal> OptionEmbeddedCoupon<T> {
     /// Creates a new [`OptionEmbeddedCoupon`].
-    pub fn new(
+    #[must_use] 
+    pub const fn new(
         notional: f64,
         index: MarketIndex,
         spread: ADReal,
@@ -34,7 +35,7 @@ impl<T: IsReal> OptionEmbeddedCoupon<T> {
         Self {
             notional,
             fixing: None,
-            spread: spread,
+            spread,
             index,
             accrual_start_date,
             accrual_end_date,
@@ -44,34 +45,34 @@ impl<T: IsReal> OptionEmbeddedCoupon<T> {
     }
 
     /// Sets the fixing for the coupon, which is used to determine the payoff.
-    pub fn with_fixing(mut self, fixing: T) -> Self {
+    pub const fn with_fixing(mut self, fixing: T) -> Self {
         self.fixing = Some(fixing);
         self
     }
 
     /// Returns the spread applied to this coupon.
-    pub fn spread(&self) -> ADReal {
+    pub const fn spread(&self) -> ADReal {
         self.spread
     }
 
     /// Returns the fixing value if set.
-    pub fn fixing(&self) -> Option<T> {
+    pub const fn fixing(&self) -> Option<T> {
         self.fixing
     }
 
     /// Returns the market index associated with this coupon.
-    pub fn market_index(&self) -> &MarketIndex {
+    pub const fn market_index(&self) -> &MarketIndex {
         &self.index
     }
 
     /// Returns the payoff operations.
-    pub fn payoff_ops(&self) -> &PayoffOps {
+    pub const fn payoff_ops(&self) -> &PayoffOps {
         &self.payoff
     }
 }
 
 impl OptionEmbeddedCoupon<ADReal> {
-    /// Returns the amount of the coupon (calculated from accrued amount). Only available for ADReal.
+    /// Returns the amount of the coupon (calculated from accrued amount). Only available for `ADReal`.
     pub fn amount(&self) -> Result<ADReal> {
         self.accrued_amount(self.accrual_start_date, self.accrual_end_date)
     }

@@ -36,35 +36,35 @@ impl MakeEquityForward {
 
     /// Sets the delivery date.
     #[must_use]
-    pub fn with_delivery_date(mut self, date: Date) -> Self {
+    pub const fn with_delivery_date(mut self, date: Date) -> Self {
         self.delivery_date = Some(date);
         self
     }
 
     /// Sets the forward (strike) price.
     #[must_use]
-    pub fn with_strike(mut self, strike: f64) -> Self {
+    pub const fn with_strike(mut self, strike: f64) -> Self {
         self.strike = Some(strike);
         self
     }
 
     /// Sets the currency.
     #[must_use]
-    pub fn with_currency(mut self, currency: Currency) -> Self {
+    pub const fn with_currency(mut self, currency: Currency) -> Self {
         self.currency = Some(currency);
         self
     }
 
     /// Sets the day count convention. Defaults to `Actual360`.
     #[must_use]
-    pub fn with_day_counter(mut self, dc: DayCounter) -> Self {
+    pub const fn with_day_counter(mut self, dc: DayCounter) -> Self {
         self.day_counter = Some(dc);
         self
     }
 
     /// Sets the side (defaults to `LongRecieve`).
     #[must_use]
-    pub fn with_side(mut self, side: Side) -> Self {
+    pub const fn with_side(mut self, side: Side) -> Self {
         self.side = Some(side);
         self
     }

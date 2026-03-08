@@ -12,7 +12,7 @@ pub enum Side {
 impl Side {
     /// Returns the sign associated with the side, where `PayShort` corresponds to a positive sign and `LongRecieve` corresponds to a negative sign.
     #[must_use]
-    pub fn sign(&self) -> f64 {
+    pub const fn sign(&self) -> f64 {
         match self {
             Self::PayShort => 1.0,
             Self::LongRecieve => -1.0,

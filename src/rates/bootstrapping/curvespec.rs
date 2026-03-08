@@ -138,7 +138,7 @@ impl CurveSpec {
 
         // check if repeated pillar dates are present and log a warning if so, as this may lead to issues in the bootstrapping process
 
-        instruments.sort_by_key(|x| x.pillar_date());
+        instruments.sort_by_key(super::resolvedcurvespec::ResolvedInstrument::pillar_date);
 
         Ok(ResolvedCurveSpec::new(
             self.market_index.clone(),
@@ -295,7 +295,7 @@ impl BootstrappedCurve {
     ///
     /// `times` and `discount_factors` must have the same length.
     #[must_use]
-    pub fn new_with_dfs(
+    pub const fn new_with_dfs(
         reference_date: Date,
         times: Vec<f64>,
         discount_factors: Vec<ADReal>,
@@ -313,7 +313,7 @@ impl BootstrappedCurve {
 
     /// Returns the reference date.
     #[must_use]
-    pub fn reference_date(&self) -> Date {
+    pub const fn reference_date(&self) -> Date {
         self.reference_date
     }
 

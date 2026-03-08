@@ -33,7 +33,7 @@ pub struct CapFloor {
 impl CapFloor {
     /// Creates a new [`CapFloor`].
     #[must_use]
-    pub fn new(
+    pub const fn new(
         identifier: String,
         caplet_floorlets: Vec<CapletFloorlet>,
         market_index: MarketIndex,
