@@ -23,6 +23,7 @@ use crate::{
 ///
 /// The model quote is computed as `100 - 100 * F`, where `F` is the forward
 /// rate implied by the reference discount curve over the contract accrual period.
+#[derive(Debug, Clone, Default)]
 pub struct RateFuturesPricer;
 
 impl RateFuturesPricer {
@@ -30,12 +31,6 @@ impl RateFuturesPricer {
     #[must_use]
     pub const fn new() -> Self {
         Self
-    }
-}
-
-impl Default for RateFuturesPricer {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
@@ -64,7 +59,9 @@ impl HandleValue<RateFuturesTrade, RateFuturesState> for RateFuturesPricer {
         let inst = trade.instrument();
         let rd = inst.rate_definition();
         let quote: ADReal = {
-            let curve = state.get_discount_curve_element(&inst.market_index())?.curve();
+            let curve = state
+                .get_discount_curve_element(&inst.market_index())?
+                .curve();
             let fwd = curve.forward_rate(
                 inst.start_date(),
                 inst.end_date(),
@@ -157,5 +154,13 @@ impl Pricer for RateFuturesPricer {
                 },
             ]),
         )
+    }
+
+    fn set_discount_policy(&mut self, _policy: Box<Self::Policy>) {
+        // No-op: RateFuturesPricer does not use a discount policy.
+    }
+
+    fn discount_policy(&self) -> Option<&Self::Policy> {
+        None
     }
 }

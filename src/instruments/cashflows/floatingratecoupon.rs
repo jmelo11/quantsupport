@@ -1,5 +1,7 @@
 use std::sync::RwLock;
 
+use serde::{Deserialize, Serialize};
+
 use crate::{
     ad::adreal::{ADReal, IsReal},
     indices::{marketindex::MarketIndex, rateindex::RateIndexDetails},
@@ -14,6 +16,7 @@ use crate::{
 /// The fixing is stored in an [`RwLock`] so that it can be set by the pricer
 /// through a shared (`&self`) reference — the trade itself remains immutable
 /// while still satisfying `Send + Sync`.
+#[derive(Debug, Serialize, Deserialize)]
 pub struct FloatingRateCoupon<T: IsReal> {
     notional: f64,
     spread: T,

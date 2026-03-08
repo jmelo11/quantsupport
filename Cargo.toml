@@ -1,3 +1,6 @@
+[workspace]
+members = [".", "examples/bootstrap", "examples/valuation"]
+
 [package]
 name = "quantsupport"
 version = "0.1.0"
@@ -41,4 +44,4 @@ expect_used = "deny"
 pedantic = { level = "deny", priority = -1 }
 cargo = { level = "deny", priority = -1 }
 nursery = { level = "deny", priority = -1 }
-multiple_crate_versions = "allow"
+multiple_crate_versions = "allow" 

@@ -96,6 +96,7 @@ impl MarketDataRequest {
 
 /// Struct representing market data, including fixings, constructed elements, a list of
 /// model parameter sets, and an optional exchange-rate store for FX conversions.
+#[derive(Clone, Default)]
 pub struct MarketData {
     fixings: HashMap<MarketIndex, BTreeMap<Date, f64>>,
     constructed_elements: ConstructedElementStore,

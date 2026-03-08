@@ -1,26 +1,34 @@
 use serde::{Deserialize, Serialize};
 
-use crate::currencies::currency::Currency;
-use crate::indices::marketindex::MarketIndex;
-use crate::indices::rateindex::RateIndexDetails;
-use crate::instruments::rates::capfloor::CapFloorType;
-use crate::instruments::rates::makecapfloor::MakeCapFloor;
-use crate::instruments::rates::makeswaption::MakeSwaption;
-use crate::instruments::{
-    equity::equityeuropeanoption::{EquityEuropeanOption, EuroOptionType},
-    fixedincome::{fixedratedeposit::FixedRateDeposit, makefixedratedeposit::MakeFixedRateDeposit},
-    fx::{fxforward::FxForward, makefxforward::MakeFxForward},
-    rates::{
-        basisswap::BasisSwap, capfloor::CapFloor, crosscurrencyswap::CrossCurrencySwap,
-        makebasisswap::MakeBasisSwap, makecrosscurrencyswap::MakeCrossCurrencySwap,
-        makeratefutures::MakeRateFutures, makeswap::MakeSwap, ratefutures::RateFutures, swap::Swap,
-        swaption::Swaption,
+use crate::{
+    currencies::currency::Currency,
+    indices::{marketindex::MarketIndex, rateindex::RateIndexDetails},
+    instruments::{
+        equity::equityeuropeanoption::{EquityEuropeanOption, EuroOptionType},
+        fixedincome::{
+            fixedratedeposit::FixedRateDeposit, makefixedratedeposit::MakeFixedRateDeposit,
+        },
+        fx::{fxforward::FxForward, makefxforward::MakeFxForward},
+        rates::{
+            basisswap::BasisSwap,
+            capfloor::{CapFloor, CapFloorType},
+            crosscurrencyswap::CrossCurrencySwap,
+            makebasisswap::MakeBasisSwap,
+            makecapfloor::MakeCapFloor,
+            makecrosscurrencyswap::MakeCrossCurrencySwap,
+            makeratefutures::MakeRateFutures,
+            makeswap::MakeSwap,
+            makeswaption::MakeSwaption,
+            ratefutures::RateFutures,
+            swap::Swap,
+            swaption::Swaption,
+        },
     },
+    rates::interestrate::RateDefinition,
+    time::{date::Date, imm::IMM, period::Period},
+    utils::errors::{QSError, Result},
+    volatility::volatilityindexing::VolatilityType,
 };
-use crate::rates::interestrate::RateDefinition;
-use crate::time::{date::Date, imm::IMM, period::Period};
-use crate::utils::errors::{QSError, Result};
-use crate::volatility::volatilityindexing::VolatilityType;
 
 /// Splits a 6-character FX pair string (e.g. `"EURUSD"`) into two currencies.
 fn parse_fx_pair(pair: &str) -> Result<(Currency, Currency)> {
@@ -114,15 +122,7 @@ impl QuoteLevels {
     }
 }
 
-/// Quote record compatible with serde deserialization.
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct QuoteRecord {
-    /// Instrument identifier containing embedded metadata.
-    instrument: String,
-    /// Quote levels for the instrument.
-    #[serde(flatten)]
-    levels: QuoteLevels,
-}
+
 
 /// Represents if the strike is quoted in absolute or relative values.
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
@@ -962,7 +962,6 @@ pub enum BuiltInstrument {
 /// Contains the quote information.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Quote {
-    reference_date: Date,
     details: QuoteDetails,
     levels: QuoteLevels,
 }
@@ -970,18 +969,8 @@ pub struct Quote {
 impl Quote {
     /// Creates a new quote.
     #[must_use]
-    pub const fn new(reference_date: Date, details: QuoteDetails, levels: QuoteLevels) -> Self {
-        Self {
-            reference_date,
-            details,
-            levels,
-        }
-    }
-
-    /// Returns the quote reference date.
-    #[must_use]
-    pub const fn reference_date(&self) -> Date {
-        self.reference_date
+    pub const fn new(details: QuoteDetails, levels: QuoteLevels) -> Self {
+        Self { details, levels }
     }
 
     /// Returns the quote details.
@@ -1010,26 +999,24 @@ impl Quote {
     /// * required detail fields are missing,
     /// * the instrument type is not directly buildable (e.g. vol-only quotes), or
     /// * the underlying maker returns an error.
-    pub fn build_instrument(&self, level: Level) -> Result<BuiltInstrument> {
+    pub fn build_instrument(&self, reference_date: Date, level: Level) -> Result<BuiltInstrument> {
         let value = self.levels.value(level)?;
         let notional = 1.0;
         match self.details.instrument() {
-            QuoteInstrument::OIS => self.build_ois(value, self.reference_date, notional),
+            QuoteInstrument::OIS => self.build_ois(value, reference_date, notional),
             QuoteInstrument::FixedRateDeposit => {
-                self.build_fixed_rate_deposit(value, self.reference_date, notional)
+                self.build_fixed_rate_deposit(value, reference_date, notional)
             }
-            QuoteInstrument::BasisSwap => {
-                self.build_basis_swap(value, self.reference_date, notional)
-            }
-            QuoteInstrument::Future => self.build_rate_futures(value, self.reference_date),
-            QuoteInstrument::FxOutrightForward => self.build_fx_forward(value, self.reference_date),
+            QuoteInstrument::BasisSwap => self.build_basis_swap(value, reference_date, notional),
+            QuoteInstrument::Future => self.build_rate_futures(value, reference_date),
+            QuoteInstrument::FxOutrightForward => self.build_fx_forward(value, reference_date),
             QuoteInstrument::CrossCurrencySwap => {
-                self.build_cross_currency_swap(value, self.reference_date, notional)
+                self.build_cross_currency_swap(value, reference_date, notional)
             }
-            QuoteInstrument::EquityCall => self.build_call(self.reference_date),
-            QuoteInstrument::EquityPut => self.build_put(self.reference_date),
-            QuoteInstrument::CapFloor => self.build_cap_floor(value, self.reference_date, notional),
-            QuoteInstrument::Swaption => self.build_swaption(value, self.reference_date, notional),
+            QuoteInstrument::EquityCall => self.build_call(reference_date),
+            QuoteInstrument::EquityPut => self.build_put(reference_date),
+            QuoteInstrument::CapFloor => self.build_cap_floor(value, reference_date, notional),
+            QuoteInstrument::Swaption => self.build_swaption(value, reference_date, notional),
             QuoteInstrument::FxForwardPoints => Err(QSError::NotImplementedErr(
                 "FxForwardPoints requires an FX spot context to build an outright forward".into(),
             )),
@@ -1183,12 +1170,12 @@ impl Quote {
     /// FX Forward — mid value is the outright forward rate.
     fn build_fx_forward(&self, forward_rate: f64, reference_date: Date) -> Result<BuiltInstrument> {
         let d = &self.details;
-        let base = d.pay_currency().ok_or_else(|| {
-            QSError::ValueNotSetErr("Base currency on FX forward quote".into())
-        })?;
-        let quote_ccy = d.receive_currency().ok_or_else(|| {
-            QSError::ValueNotSetErr("Quote currency on FX forward quote".into())
-        })?;
+        let base = d
+            .pay_currency()
+            .ok_or_else(|| QSError::ValueNotSetErr("Base currency on FX forward quote".into()))?;
+        let quote_ccy = d
+            .receive_currency()
+            .ok_or_else(|| QSError::ValueNotSetErr("Quote currency on FX forward quote".into()))?;
         let tenor = d
             .tenor()
             .ok_or_else(|| QSError::ValueNotSetErr("Tenor on FX forward quote".into()))?;
@@ -1218,9 +1205,9 @@ impl Quote {
         let domestic_ccy = d.pay_currency().ok_or_else(|| {
             QSError::ValueNotSetErr("Domestic currency on xccy swap quote".into())
         })?;
-        let foreign_ccy = d.receive_currency().ok_or_else(|| {
-            QSError::ValueNotSetErr("Foreign currency on xccy swap quote".into())
-        })?;
+        let foreign_ccy = d
+            .receive_currency()
+            .ok_or_else(|| QSError::ValueNotSetErr("Foreign currency on xccy swap quote".into()))?;
         let foreign_index = d
             .secondary_market_index()
             .ok_or_else(|| {
@@ -1319,20 +1306,20 @@ impl Quote {
         // Default to Cap for the quote-driven builder.
         let cap_floor_type = CapFloorType::Cap;
 
-        let cf =
-            MakeCapFloor::default()
-                .with_identifier(d.identifier())
-                .with_start_date(reference_date)
-                .with_maturity_date(maturity)
-                .with_strike(strike)
-                .with_notional(notional)
-                .with_rate_definition(rd)
-                .with_market_index(market_index)
-                .with_currency(d.currency().ok_or_else(|| {
-                    QSError::ValueNotSetErr("Currency on CapFloor quote".into())
-                })?)
-                .with_cap_floor_type(cap_floor_type)
-                .build()?;
+        let cf = MakeCapFloor::default()
+            .with_identifier(d.identifier())
+            .with_start_date(reference_date)
+            .with_maturity_date(maturity)
+            .with_strike(strike)
+            .with_notional(notional)
+            .with_rate_definition(rd)
+            .with_market_index(market_index)
+            .with_currency(
+                d.currency()
+                    .ok_or_else(|| QSError::ValueNotSetErr("Currency on CapFloor quote".into()))?,
+            )
+            .with_cap_floor_type(cap_floor_type)
+            .build()?;
 
         Ok(BuiltInstrument::CapFloor(cf))
     }
@@ -1361,20 +1348,20 @@ impl Quote {
 
         let strike = d.strike().unwrap_or(value);
 
-        let swaption =
-            MakeSwaption::default()
-                .with_identifier(d.identifier())
-                .with_expiry(expiry_date)
-                .with_start_date(expiry_date)
-                .with_swap_tenor_date(swap_maturity)
-                .with_strike(strike)
-                .with_notional(notional)
-                .with_rate_definition(rd)
-                .with_market_index(market_index)
-                .with_currency(d.currency().ok_or_else(|| {
-                    QSError::ValueNotSetErr("Currency on Swaption quote".into())
-                })?)
-                .build()?;
+        let swaption = MakeSwaption::default()
+            .with_identifier(d.identifier())
+            .with_expiry(expiry_date)
+            .with_start_date(expiry_date)
+            .with_swap_tenor_date(swap_maturity)
+            .with_strike(strike)
+            .with_notional(notional)
+            .with_rate_definition(rd)
+            .with_market_index(market_index)
+            .with_currency(
+                d.currency()
+                    .ok_or_else(|| QSError::ValueNotSetErr("Currency on Swaption quote".into()))?,
+            )
+            .build()?;
 
         Ok(BuiltInstrument::Swaption(swaption))
     }
@@ -1510,64 +1497,64 @@ mod tests {
     #[test]
     fn build_ois_swap() {
         let details: QuoteDetails = "OIS_USD_SOFR_1Y".parse().unwrap();
-        let quote = Quote::new(ref_date(), details, QuoteLevels::with_mid(0.0484));
-        let inst = quote.build_instrument(Level::Mid).unwrap();
+        let quote = Quote::new(details, QuoteLevels::with_mid(0.0484));
+        let inst = quote.build_instrument(ref_date(), Level::Mid).unwrap();
         assert!(matches!(inst, BuiltInstrument::Swap(_)));
     }
 
     #[test]
     fn build_deposit() {
         let details: QuoteDetails = "FixedRateDeposit_USD_SOFR_6M".parse().unwrap();
-        let quote = Quote::new(ref_date(), details, QuoteLevels::with_mid(0.05));
-        let inst = quote.build_instrument(Level::Mid).unwrap();
+        let quote = Quote::new(details, QuoteLevels::with_mid(0.05));
+        let inst = quote.build_instrument(ref_date(), Level::Mid).unwrap();
         assert!(matches!(inst, BuiltInstrument::FixedRateDeposit(_)));
     }
 
     #[test]
     fn build_basis_swap() {
         let details: QuoteDetails = "BasisSwap_USD_SOFR_TermSOFR3m_1Y".parse().unwrap();
-        let quote = Quote::new(ref_date(), details, QuoteLevels::with_mid(0.0003));
-        let inst = quote.build_instrument(Level::Mid).unwrap();
+        let quote = Quote::new(details, QuoteLevels::with_mid(0.0003));
+        let inst = quote.build_instrument(ref_date(), Level::Mid).unwrap();
         assert!(matches!(inst, BuiltInstrument::BasisSwap(_)));
     }
 
     #[test]
     fn build_rate_futures() {
         let details: QuoteDetails = "Future_USD_SOFR_H6".parse().unwrap();
-        let quote = Quote::new(ref_date(), details, QuoteLevels::with_mid(94.75));
-        let inst = quote.build_instrument(Level::Mid).unwrap();
+        let quote = Quote::new(details, QuoteLevels::with_mid(94.75));
+        let inst = quote.build_instrument(ref_date(), Level::Mid).unwrap();
         assert!(matches!(inst, BuiltInstrument::RateFutures(_)));
     }
 
     #[test]
     fn build_fx_forward() {
         let details: QuoteDetails = "FxOutrightForward_EURUSD_1M".parse().unwrap();
-        let quote = Quote::new(ref_date(), details, QuoteLevels::with_mid(1.08));
-        let inst = quote.build_instrument(Level::Mid).unwrap();
+        let quote = Quote::new(details, QuoteLevels::with_mid(1.08));
+        let inst = quote.build_instrument(ref_date(), Level::Mid).unwrap();
         assert!(matches!(inst, BuiltInstrument::FxForward(_)));
     }
 
     #[test]
     fn build_cross_currency_swap() {
         let details: QuoteDetails = "CrossCurrencySwap_USD_SOFR_ICP_CLP_1Y".parse().unwrap();
-        let quote = Quote::new(ref_date(), details, QuoteLevels::with_mid(0.05));
-        let inst = quote.build_instrument(Level::Mid).unwrap();
+        let quote = Quote::new(details, QuoteLevels::with_mid(0.05));
+        let inst = quote.build_instrument(ref_date(), Level::Mid).unwrap();
         assert!(matches!(inst, BuiltInstrument::CrossCurrencySwap(_)));
     }
 
     #[test]
     fn build_call_option() {
         let details: QuoteDetails = "EquityCall_USD_SPX_1Y_5000".parse().unwrap();
-        let quote = Quote::new(ref_date(), details, QuoteLevels::with_mid(150.0));
-        let inst = quote.build_instrument(Level::Mid).unwrap();
+        let quote = Quote::new(details, QuoteLevels::with_mid(150.0));
+        let inst = quote.build_instrument(ref_date(), Level::Mid).unwrap();
         assert!(matches!(inst, BuiltInstrument::Call(_)));
     }
 
     #[test]
     fn build_put_option() {
         let details: QuoteDetails = "EquityPut_USD_SPX_1Y_4500".parse().unwrap();
-        let quote = Quote::new(ref_date(), details, QuoteLevels::with_mid(100.0));
-        let inst = quote.build_instrument(Level::Mid).unwrap();
+        let quote = Quote::new(details, QuoteLevels::with_mid(100.0));
+        let inst = quote.build_instrument(ref_date(), Level::Mid).unwrap();
         assert!(matches!(inst, BuiltInstrument::Put(_)));
     }
 
@@ -1576,16 +1563,16 @@ mod tests {
         let details: QuoteDetails = "Swaption_USD_SOFR_3M_2Y_Absolute_0.04_Black"
             .parse()
             .unwrap();
-        let quote = Quote::new(ref_date(), details, QuoteLevels::with_mid(0.33));
-        let inst = quote.build_instrument(Level::Mid).unwrap();
+        let quote = Quote::new(details, QuoteLevels::with_mid(0.33));
+        let inst = quote.build_instrument(ref_date(), Level::Mid).unwrap();
         assert!(matches!(inst, BuiltInstrument::Swaption(_)));
     }
 
     #[test]
     fn build_cap_floor() {
         let details: QuoteDetails = "CapFloor_USD_SOFR_1Y_Absolute_0.03_Black".parse().unwrap();
-        let quote = Quote::new(ref_date(), details, QuoteLevels::with_mid(0.005));
-        let inst = quote.build_instrument(Level::Mid).unwrap();
+        let quote = Quote::new(details, QuoteLevels::with_mid(0.005));
+        let inst = quote.build_instrument(ref_date(), Level::Mid).unwrap();
         assert!(matches!(inst, BuiltInstrument::CapFloor(_)));
     }
 
@@ -1596,8 +1583,8 @@ mod tests {
             "CapletFloorlet_USD_TermSOFR3m_3M_3M_Absolute_0.010_Straddle_Black"
                 .parse()
                 .unwrap();
-        let quote = Quote::new(ref_date(), details, QuoteLevels::with_mid(0.33));
-        let result = quote.build_instrument(Level::Mid);
+        let quote = Quote::new(details, QuoteLevels::with_mid(0.33));
+        let result = quote.build_instrument(ref_date(), Level::Mid);
         assert!(result.is_err());
     }
 }

@@ -6,9 +6,7 @@ use crate::{
     core::{
         evaluationresults::{EvaluationResults, SensitivityMap},
         instrument::Instrument,
-        marketdatahandling::{
-            marketdata::{MarketData, MarketDataProvider, MarketDataRequest},
-        },
+        marketdatahandling::marketdata::{MarketData, MarketDataProvider, MarketDataRequest},
         pillars::Pillars,
         pricer::Pricer,
         pricerstate::PricerState,
@@ -24,6 +22,7 @@ use crate::{
 ///
 /// The model quote is computed as
 /// `F = S * DF_quote(T) / DF_base(T)`.
+#[derive(Debug, Clone, Default)]
 pub struct FxForwardPricer;
 
 impl FxForwardPricer {
@@ -31,12 +30,6 @@ impl FxForwardPricer {
     #[must_use]
     pub const fn new() -> Self {
         Self
-    }
-}
-
-impl Default for FxForwardPricer {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
@@ -57,7 +50,10 @@ impl PricerState for FxForwardState {
 }
 
 impl FxForwardState {
-    fn resolve_curve_index_for_currency(&self, ccy: Currency) -> Result<crate::indices::marketindex::MarketIndex> {
+    fn resolve_curve_index_for_currency(
+        &self,
+        ccy: Currency,
+    ) -> Result<crate::indices::marketindex::MarketIndex> {
         let md = self
             .get_market_data_reponse()
             .ok_or_else(|| QSError::NotFoundErr("MarketDataResponse not available.".into()))?;
@@ -195,5 +191,13 @@ impl Pricer for FxForwardPricer {
 
     fn market_data_request(&self, _trade: &FxForwardTrade) -> Option<MarketDataRequest> {
         Some(MarketDataRequest::default().with_exchange_rates())
+    }
+
+    fn set_discount_policy(&mut self, _policy: Box<Self::Policy>) {
+        // No-op: FxForwardPricer does not use a discount policy.
+    }
+
+    fn discount_policy(&self) -> Option<&Self::Policy> {
+        None
     }
 }

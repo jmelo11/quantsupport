@@ -1,3 +1,5 @@
+use serde::{Deserialize, Serialize};
+
 use crate::{
     ad::adreal::{ADReal, IsReal},
     core::request::LegsProvider,
@@ -19,22 +21,49 @@ use crate::{
 pub trait QuoteSelector {
     /// Returns the quote matching `market_index` and `tenor`.
     fn select(&self, market_index: &MarketIndex, tenor: &Period) -> Option<Quote>;
+    /// Returns the reference (valuation) date used for building instruments.
+    fn reference_date(&self) -> Date;
 }
 
 /// User-defined bootstrap specification for a curve, with instrument and settings to be used in the bootstrapping process.
+#[derive(Debug, Serialize, Deserialize)]
 pub struct CurveSpec {
     market_index: MarketIndex,
+    #[serde(default = "default_currency")]
     currency: Currency,
+    #[serde(default = "default_day_counter")]
     day_counter: DayCounter,
+    #[serde(default = "default_interpolator")]
     interpolator: Interpolator,
+    #[serde(default = "default_enable_extrapolation")]
     enable_extrapolation: bool,
+    #[serde(default)]
     deposits: Vec<Period>,
+    #[serde(default)]
     futures: Vec<Period>,
+    #[serde(default)]
     swaps: Vec<Period>,
+    #[serde(default)]
     basis_swaps: Vec<Period>,
+    #[serde(default)]
     xccy_swaps: Vec<Period>,
+    #[serde(default)]
     fx_forwards: Vec<Period>,
+    #[serde(default)]
     fx_forward_points: Vec<Period>,
+}
+
+fn default_currency() -> Currency {
+    Currency::USD
+}
+fn default_day_counter() -> DayCounter {
+    DayCounter::Actual360
+}
+fn default_interpolator() -> Interpolator {
+    Interpolator::LogLinear
+}
+fn default_enable_extrapolation() -> bool {
+    true
 }
 
 impl CurveSpec {
@@ -117,6 +146,7 @@ impl CurveSpec {
             self.day_counter,
             self.interpolator,
             self.enable_extrapolation,
+            selector.reference_date(),
             instruments,
         ))
     }
@@ -138,7 +168,7 @@ impl CurveSpec {
             };
 
             let fallback_value = ADReal::new(quote.levels().value(level)?);
-            let built = quote.build_instrument(level)?;
+            let built = quote.build_instrument(selector.reference_date(), level)?;
             let pillar_date = self.resolve_pillar_dates(&built)?;
 
             // When the tape is recording, the instrument build creates

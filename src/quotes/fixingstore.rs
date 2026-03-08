@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, HashMap};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     indices::marketindex::MarketIndex,
@@ -9,8 +9,9 @@ use crate::{
     utils::errors::{QSError, Result},
 };
 
-/// # `FixingStore`
-#[derive(Serialize, Debug, Default)]
+/// Fixing store for market indices, providing access to historical fixings and the ability to fill missing
+/// fixings using interpolation.
+#[derive(Serialize, Debug, Default, Deserialize)]
 pub struct FixingStore {
     values: HashMap<MarketIndex, BTreeMap<Date, f64>>,
 }
@@ -19,7 +20,7 @@ impl FixingStore {
     /// Returns the fixing rate for a given date.
     ///
     /// ## Errors
-    /// Returns an error if the fixing is unavailable for the requested date.
+    /// Returns [`QSError`] if the fixing is unavailable for the requested date.
     pub fn fixing(&self, market_index: &MarketIndex, date: Date) -> Result<f64> {
         let fixing = self.fixings(market_index)?.get(&date).ok_or_else(|| {
             QSError::NotFoundErr(format!(

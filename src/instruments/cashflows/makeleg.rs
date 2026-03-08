@@ -79,7 +79,7 @@ pub struct MakeLeg {
     // option-embedded structures
     floorlet_strike: Option<f64>,
     caplet_strike: Option<f64>,
-    payoff_ops: Option<PayoffOps>,
+    // payoff_ops: Option<PayoffOps>, for later
 }
 
 /// New, setters and getters

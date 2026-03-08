@@ -293,50 +293,52 @@ impl InterestRate<ADReal> {
                 "Positive compound factor required".to_string(),
             ));
         }
+        // NOTE: Unlike the f64 version we do NOT short-circuit when
+        // compound ≈ 1.  Returning `ADReal::zero()` would sever the
+        // connection to the AD tape and produce a zero-row Jacobian,
+        // which breaks Newton solvers that rely on AD derivatives
+        // (e.g. multi-curve bootstrapping).  The normal formulas below
+        // evaluate to ≈ 0 with the correct non-zero partial derivatives.
+        if t <= 0.0 {
+            // The only safe early-out: when time is non-positive AND
+            // compound ≈ 1 the rate is mathematically 0.  Otherwise error.
+            if (compound.value() - 1.0).abs() < 1e-12 {
+                return Ok(Self::new(ADReal::zero(), comp, freq, result_dc));
+            }
+            return Err(QSError::InvalidValueErr(
+                "Positive time required".to_string(),
+            ));
+        }
         let f = f64::from(freq as i32);
-        if (compound - 1.0).abs() < 1e-12 {
-            if t < 0.0 {
-                return Err(QSError::InvalidValueErr(
-                    "Non-negative time required".to_string(),
-                ));
+        match comp {
+            Compounding::Simple => {
+                let r = (compound - 1.0) / t;
+                Ok(Self::new(r.into(), comp, freq, result_dc))
             }
-            Ok(Self::new(ADReal::zero(), comp, freq, result_dc))
-        } else {
-            if t <= 0.0 {
-                return Err(QSError::InvalidValueErr(
-                    "Positive time required".to_string(),
-                ));
+            Compounding::Compounded => {
+                let r = (compound.pow_expr(Const::one() / (t * f)) - 1.0) * f;
+                Ok(Self::new(r.into(), comp, freq, result_dc))
             }
-            match comp {
-                Compounding::Simple => {
+            Compounding::Continuous => {
+                let r = (compound).ln() / t;
+                Ok(Self::new(r.into(), comp, freq, result_dc))
+            }
+            Compounding::SimpleThenCompounded => {
+                if t <= 1.0 / f {
                     let r = (compound - 1.0) / t;
                     Ok(Self::new(r.into(), comp, freq, result_dc))
-                }
-                Compounding::Compounded => {
+                } else {
                     let r = (compound.pow_expr(Const::one() / (t * f)) - 1.0) * f;
                     Ok(Self::new(r.into(), comp, freq, result_dc))
                 }
-                Compounding::Continuous => {
-                    let r = (compound).ln() / t;
+            }
+            Compounding::CompoundedThenSimple => {
+                if t > 1.0 / f {
+                    let r = (compound - 1.0) / t;
                     Ok(Self::new(r.into(), comp, freq, result_dc))
-                }
-                Compounding::SimpleThenCompounded => {
-                    if t <= 1.0 / f {
-                        let r = (compound - 1.0) / t;
-                        Ok(Self::new(r.into(), comp, freq, result_dc))
-                    } else {
-                        let r = (compound.pow_expr(Const::one() / (t * f)) - 1.0) * f;
-                        Ok(Self::new(r.into(), comp, freq, result_dc))
-                    }
-                }
-                Compounding::CompoundedThenSimple => {
-                    if t > 1.0 / f {
-                        let r = (compound - 1.0) / t;
-                        Ok(Self::new(r.into(), comp, freq, result_dc))
-                    } else {
-                        let r = (compound.pow_expr(Const::one() / (t * f)) - 1.0) * f;
-                        Ok(Self::new(r.into(), comp, freq, result_dc))
-                    }
+                } else {
+                    let r = (compound.pow_expr(Const::one() / (t * f)) - 1.0) * f;
+                    Ok(Self::new(r.into(), comp, freq, result_dc))
                 }
             }
         }

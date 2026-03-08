@@ -1,4 +1,4 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     ad::adreal::{ADReal, IsReal},
@@ -9,7 +9,7 @@ use crate::{
 };
 
 /// A [`FixedRateCoupon`] represents a cash flow from a fixed-rate bond or loan.
-#[derive(Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FixedRateCoupon<T: IsReal> {
     notional: f64,
     rate: Box<InterestRate<T>>,

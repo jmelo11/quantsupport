@@ -1,0 +1,23 @@
+{
+    "reference_date": "2026-02-24",
+    "quotes": [
+        { "identifier": "FixedRateDeposit_USD_SOFR_1D",              "mid": 0.045 },
+        { "identifier": "OIS_USD_SOFR_1Y",                           "mid": 0.0483664339 },
+        { "identifier": "OIS_USD_SOFR_2Y",                           "mid": 0.0452778478 },
+        { "identifier": "OIS_USD_SOFR_3Y",                           "mid": 0.0426004359 },
+        { "identifier": "OIS_USD_SOFR_5Y",                           "mid": 0.0407677739 },
+        { "identifier": "OIS_USD_SOFR_7Y",                           "mid": 0.0403282175 },
+        { "identifier": "OIS_USD_SOFR_10Y",                          "mid": 0.0389759898 },
+        { "identifier": "OIS_USD_SOFR_30Y",                          "mid": 0.0373842872 },
+
+        { "identifier": "FixedRateDeposit_USD_TermSOFR3m_3M",        "mid": 0.0465 },
+        { "identifier": "BasisSwap_USD_SOFR_TermSOFR3m_6M",          "mid": 0.00035 },
+        { "identifier": "BasisSwap_USD_SOFR_TermSOFR3m_1Y",          "mid": 0.00028 },
+        { "identifier": "BasisSwap_USD_SOFR_TermSOFR3m_2Y",          "mid": 0.00022 }, 
+        { "identifier": "BasisSwap_USD_SOFR_TermSOFR3m_3Y",          "mid": 0.00018 },
+        { "identifier": "BasisSwap_USD_SOFR_TermSOFR3m_5Y",          "mid": 0.00012 },
+        { "identifier": "BasisSwap_USD_SOFR_TermSOFR3m_7Y",          "mid": 0.00010 },
+        { "identifier": "BasisSwap_USD_SOFR_TermSOFR3m_10Y",         "mid": 0.00008 },
+        { "identifier": "BasisSwap_USD_SOFR_TermSOFR3m_30Y",         "mid": 0.00005 }
+    ]
+}

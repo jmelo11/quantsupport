@@ -255,6 +255,8 @@ where
                 first
             };
 
+            let side = leg.side().sign();
+
             // Iterate through cashflows in this leg
             for cashflow in leg.cashflows() {
                 // 1. Extract amount and payment date
@@ -326,7 +328,7 @@ where
                     (amount * df).into()
                 };
 
-                pv = (pv + cf_pv).into();
+                pv = (pv + cf_pv * side).into();
             }
         }
 
@@ -468,18 +470,33 @@ where
             legs: trade.legs(),
         };
 
+        // Pre-compute value if any request needs it (Value, Cashflows, Sensitivities all need the
+        // tape to be set up exactly once).
+        let needs_value = requests.iter().any(|r| {
+            matches!(
+                r,
+                Request::Value | Request::Cashflows | Request::Sensitivities
+            )
+        });
+        let wants_price = requests.iter().any(|r| matches!(r, Request::Value));
+
+        if needs_value {
+            let price = self.handle_value(trade, &mut state)?;
+            if wants_price {
+                results = results.with_price(price);
+            }
+        }
+
         for request in requests {
             match request {
                 Request::Value => {
-                    let price = self.handle_value(trade, &mut state)?;
-                    results = results.with_price(price);
+                    // Already handled above
                 }
                 Request::Sensitivities => {
                     let sensitivities = self.handle_sensitivities(trade, &mut state)?;
                     results = results.with_sensitivities(sensitivities);
                 }
                 Request::Cashflows => {
-                    let _ = self.handle_value(trade, &mut state)?;
                     let cashflows = <Self as HandleCashflows<T, DCFState<'_>>>::handle_cashflows(
                         self, trade, &mut state,
                     )?;

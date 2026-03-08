@@ -94,6 +94,7 @@ pub struct ResolvedCurveSpec {
     day_counter: DayCounter,
     interpolator: Interpolator,
     enable_extrapolation: bool,
+    reference_date: Date,
     instruments: Vec<ResolvedInstrument>,
 }
 
@@ -106,6 +107,7 @@ impl ResolvedCurveSpec {
         day_counter: DayCounter,
         interpolator: Interpolator,
         enable_extrapolation: bool,
+        reference_date: Date,
         instruments: Vec<ResolvedInstrument>,
     ) -> Self {
         Self {
@@ -114,8 +116,15 @@ impl ResolvedCurveSpec {
             day_counter,
             interpolator,
             enable_extrapolation,
+            reference_date,
             instruments,
         }
+    }
+
+    /// Returns the reference (valuation) date for this curve.
+    #[must_use]
+    pub const fn reference_date(&self) -> Date {
+        self.reference_date
     }
 
     /// Returns the target market index.
@@ -152,19 +161,6 @@ impl ResolvedCurveSpec {
     #[must_use]
     pub fn instruments(&self) -> &[ResolvedInstrument] {
         &self.instruments
-    }
-
-    /// Returns the reference date (the earliest instrument date, typically today).
-    ///
-    /// # Panics
-    /// Panics when the spec contains no instruments.
-    #[must_use]
-    pub fn reference_date(&self) -> Date {
-        self.instruments
-            .first()
-            .expect("ResolvedCurveSpec must have at least one instrument")
-            .quote()
-            .reference_date()
     }
 
     /// Collects all external curve dependencies induced by the instruments

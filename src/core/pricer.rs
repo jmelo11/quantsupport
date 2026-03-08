@@ -20,7 +20,7 @@ pub trait Pricer: Send + Sync {
     /// ## Arguments
     /// * `trade`: the associated instrument that this pricer is capable of handeling.
     /// * `requests`: a slice containing the different [`Request`] that being required to resolve.
-    /// * `ctx`: a [`ContextManager`].
+    /// * `ctx`: an implementation of [`MarketDataProvider`] that can be used to resolve market data requests and access constructed market data elements during the evaluation process.
     ///
     /// ## Returns
     /// Returns [`EvaluationResults`] if the evaluation succeded.
@@ -45,10 +45,8 @@ pub trait Pricer: Send + Sync {
 
     /// Attaches a [`DiscountPolicy`] that overrides default discounting and
     /// can define both discount-curve and pricing-currency resolution.
-    fn set_discount_policy(&mut self, _policy: Box<Self::Policy>) {}
+    fn set_discount_policy(&mut self, _policy: Box<Self::Policy>);
 
     /// Returns the currently active [`DiscountPolicy`], if any.
-    fn discount_policy(&self) -> Option<&Self::Policy> {
-        None
-    }
+    fn discount_policy(&self) -> Option<&Self::Policy>;
 }

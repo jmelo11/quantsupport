@@ -1,7 +1,10 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 
 use crate::{
-    ad::adreal::{ADReal, IsReal},
+    ad::{
+        adreal::{ADReal, IsReal},
+        tape::Tape,
+    },
     core::{
         elements::curveelement::{ADCurveElement, DiscountCurveElement},
         marketdatahandling::constructedelementstore::SharedElement,
@@ -31,10 +34,6 @@ use crate::{
 };
 
 use std::{cell::RefCell, rc::Rc};
-
-// ---------------------------------------------------------------------------
-// MultiCurveBootstrapper
-// ---------------------------------------------------------------------------
 
 /// Dependency-aware, lazy multi-curve bootstrapper.
 ///
@@ -192,6 +191,7 @@ impl MultiCurveBootstrapper {
         spec: &ResolvedCurveSpec,
         other_curves: &HashMap<MarketIndex, BootstrappedCurve>,
     ) -> Result<BootstrappedCurve> {
+        Tape::start_recording();
         let reference_date = spec.reference_date();
         let dc = spec.day_counter();
         let interp = spec.interpolator();
@@ -223,9 +223,8 @@ impl MultiCurveBootstrapper {
         // Solve.
         let solver = VectorNewton::new(1e-12, 200);
         let solution = solver.solve(&problem, &x0)?;
-
         // -----------------------------------------------------------------
-        // This will be moved into a separete function  
+        // This will be moved into a separete function
         // IFT post-processing: replace solver DFs with DFs whose AD
         // derivatives w.r.t. quote values are computed via the implicit
         // function theorem, avoiding noise from damped Newton steps.
@@ -732,6 +731,7 @@ impl<'a> BootstrapProblem<'a> {
         for cf in leg.cashflows() {
             let (amount, pay_date) = self.cashflow_amount(cf, proj_curve)?;
             let df = discount_curve.discount_factor(pay_date)?;
+
             pv = (pv + amount * df).into();
         }
         Ok(pv)
@@ -857,12 +857,15 @@ mod tests {
             let (id, rate) = self.quotes.get(&key)?;
 
             let det: QuoteDetails = id.parse().ok()?;
-            let q = Quote::new(self.reference_date, det, QuoteLevels::with_mid(*rate));
-            if q.build_instrument(Level::Mid).is_ok() {
+            let q = Quote::new(det, QuoteLevels::with_mid(*rate));
+            if q.build_instrument(self.reference_date, Level::Mid).is_ok() {
                 Some(q)
             } else {
                 None
             }
+        }
+        fn reference_date(&self) -> Date {
+            Date::new(2024, 1, 2)
         }
     }
 
@@ -1101,6 +1104,7 @@ mod tests {
         );
 
         let policy = BootstrapDiscountPolicy::new(MarketIndex::SOFR, Currency::USD);
+
         let bootstrapper = MultiCurveBootstrapper::new(vec![spec], policy);
         let result = bootstrapper.bootstrap(&selector, Level::Mid);
         assert!(result.is_ok(), "Bootstrap failed: {:?}", result.err());
@@ -1651,8 +1655,8 @@ mod tests {
             if let Some((ccy, rate)) = self.deposits.get(&key) {
                 let id = format!("FixedRateDeposit_{ccy}_{idx_str}_{tenor_str}");
                 if let Ok(det) = id.parse::<QuoteDetails>() {
-                    let q = Quote::new(self.reference_date, det, QuoteLevels::with_mid(*rate));
-                    if q.build_instrument(Level::Mid).is_ok() {
+                    let q = Quote::new(det, QuoteLevels::with_mid(*rate));
+                    if q.build_instrument(self.reference_date, Level::Mid).is_ok() {
                         return Some(q);
                     }
                 }
@@ -1662,14 +1666,18 @@ mod tests {
             if let Some((ccy, rate)) = self.ois.get(&key) {
                 let id = format!("OIS_{ccy}_{idx_str}_{tenor_str}");
                 if let Ok(det) = id.parse::<QuoteDetails>() {
-                    let q = Quote::new(self.reference_date, det, QuoteLevels::with_mid(*rate));
-                    if q.build_instrument(Level::Mid).is_ok() {
+                    let q = Quote::new(det, QuoteLevels::with_mid(*rate));
+                    if q.build_instrument(self.reference_date, Level::Mid).is_ok() {
                         return Some(q);
                     }
                 }
             }
 
             None
+        }
+
+        fn reference_date(&self) -> Date {
+            self.reference_date
         }
     }
 }
