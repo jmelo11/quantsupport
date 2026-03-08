@@ -879,7 +879,6 @@ where
     }
 }
 
-/* BinExpr ≷ BinExpr & f64 */
 impl<L, R, O> PartialEq for BinExpr<L, R, O>
 where
     L: Expr,
