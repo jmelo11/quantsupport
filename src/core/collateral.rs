@@ -2,11 +2,7 @@ use std::collections::HashMap;
 
 use crate::{currencies::currency::Currency, indices::marketindex::MarketIndex};
 use crate::{
-    instruments::{
-        equity::equityeuropeanoption::EquityEuropeanOption,
-        fixedincome::fixedratedeposit::FixedRateDeposit,
-        rates::{capletfloorlet::CapletFloorlet, crosscurrencyswap::CrossCurrencySwap},
-    },
+    instruments::fixedincome::fixedratedeposit::FixedRateDeposit,
     utils::errors::{QSError, Result},
 };
 
@@ -92,7 +88,7 @@ pub struct SingleCurveCSADiscountPolicy {
 impl SingleCurveCSADiscountPolicy {
     /// Creates a new [`SingleCurveCSADiscountPolicy`].
     #[must_use]
-    pub fn new(discount_index: MarketIndex, currency: Currency) -> Self {
+    pub const fn new(discount_index: MarketIndex, currency: Currency) -> Self {
         Self {
             discount_index,
             currency,
@@ -107,10 +103,10 @@ where
     fn accept(&self, target: &T) -> Result<MarketIndex> {
         // we need to check if we have a currency mismatch, if so, we need
         // to check for Collateral() curves, otherwise we return the stored index
-        if target.currency() != self.currency {
-            Ok(MarketIndex::Collateral(target.currency(), self.currency))
-        } else {
+        if target.currency() == self.currency {
             Ok(self.discount_index.clone())
+        } else {
+            Ok(MarketIndex::Collateral(target.currency(), self.currency))
         }
     }
 

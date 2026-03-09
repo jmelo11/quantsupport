@@ -75,8 +75,9 @@ impl IsReal for ADReal {
 }
 
 /// A differentiable expression that can record its contribution to the tape.
-/// This trait is implemented by `ADReal` and can be used to define complex expressions that automatically record their derivatives,
-/// allowing for more efficient memory usage.
+/// 
+/// This trait is implemented by `ADReal` and can be used to define complex expressions 
+/// that automatically record their derivatives, allowing for more efficient memory usage.
 pub trait Expr: Clone {
     /// Returns the scalar value of the expression.
     fn inner_value(&self) -> f64;
