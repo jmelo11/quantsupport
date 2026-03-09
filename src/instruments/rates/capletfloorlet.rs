@@ -2,9 +2,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     core::{
+        collateral::HasCurrency,
         instrument::{AssetClass, Instrument},
         trade::{Side, Trade},
     },
+    currencies::currency::Currency,
     indices::marketindex::MarketIndex,
     rates::interestrate::RateDefinition,
     time::date::Date,
@@ -33,6 +35,8 @@ pub enum CapletFloorletType {
 pub struct CapletFloorlet {
     name: String,
     market_index: MarketIndex,
+    /// Currency of the caplet/floorlet.
+    currency: Currency,
     /// Fixing / option expiry date.
     start_date: Date,
     /// End of the floating period.
@@ -54,6 +58,7 @@ impl CapletFloorlet {
     pub const fn new(
         name: String,
         market_index: MarketIndex,
+        currency: Currency,
         start_date: Date,
         end_date: Date,
         payment_date: Date,
@@ -64,6 +69,7 @@ impl CapletFloorlet {
         Self {
             name,
             market_index,
+            currency,
             start_date,
             end_date,
             payment_date,
@@ -121,6 +127,12 @@ impl CapletFloorlet {
         self.rate_definition
             .day_counter()
             .year_fraction(self.start_date, self.end_date)
+    }
+}
+
+impl HasCurrency for CapletFloorlet {
+    fn currency(&self) -> Currency {
+        self.currency
     }
 }
 

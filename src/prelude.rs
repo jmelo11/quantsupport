@@ -5,7 +5,7 @@ pub use crate::{
         tape::Tape,
     },
     core::{
-        collateral::{CSADiscountPolicy, DiscountPolicy, FixedIncomeDiscountPolicy},
+        collateral::{DiscountPolicy, FixedIncomeDiscountPolicy, SingleCurveCSADiscountPolicy},
         contextmanager::ContextManager,
         elements::{
             curveelement::{ADCurveElement, DiscountCurveElement, DividendCurveElement},

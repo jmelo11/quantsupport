@@ -1,4 +1,3 @@
-/// # `CurrencyDetails`
 /// Trait for currency details
 pub trait CurrencyDetails {
     /// Returns the ISO 4217 currency code

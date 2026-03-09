@@ -4,7 +4,7 @@ use crate::{
         tape::Tape,
     },
     core::{
-        collateral::DiscountPolicy,
+        collateral::{DiscountPolicy, HasCurrency},
         evaluationresults::{EvaluationResults, SensitivityMap},
         instrument::Instrument,
         marketdatahandling::{
@@ -54,7 +54,7 @@ impl PricerState for DCFState<'_> {
 /// - Automatic discount curve requests based on leg currencies/indices
 pub struct CashflowDiscountPricer<I, T> {
     _phantom: PhantomData<fn() -> (I, T)>,
-    discount_policy: Option<Box<dyn DiscountPolicy<I>>>,
+    discount_policy: Option<Box<dyn DiscountPolicy<Leg>>>,
 }
 
 impl<I, T> CashflowDiscountPricer<I, T> {
@@ -130,22 +130,24 @@ where
             }
         }
 
-        // CSA collateral OIS curve
+        // CSA collateral curves (one per leg currency)
         if let Some(policy) = &self.discount_policy {
-            let csa_index = policy.accept(trade.instrument())?;
-            if seen_indices.insert(csa_index.clone()) {
-                let element = state.get_discount_curve_element(&csa_index)?;
-                let (ids, exposures): (Vec<_>, Vec<_>) = element
-                    .curve()
-                    .pillars()
-                    .into_iter()
-                    .flat_map(std::iter::IntoIterator::into_iter)
-                    .map(|(label, value)| (label, value.adjoint().ok()))
-                    .unzip();
+            for leg in trade.legs() {
+                let csa_index = policy.accept(leg)?;
+                if seen_indices.insert(csa_index.clone()) {
+                    let element = state.get_discount_curve_element(&csa_index)?;
+                    let (ids, exposures): (Vec<_>, Vec<_>) = element
+                        .curve()
+                        .pillars()
+                        .into_iter()
+                        .flat_map(std::iter::IntoIterator::into_iter)
+                        .map(|(label, value)| (label, value.adjoint().ok()))
+                        .unzip();
 
-                all_ids.extend(ids);
-                let exposures: Vec<f64> = exposures.into_iter().flatten().collect();
-                all_exposures.extend(exposures);
+                    all_ids.extend(ids);
+                    let exposures: Vec<f64> = exposures.into_iter().flatten().collect();
+                    all_exposures.extend(exposures);
+                }
             }
         }
 
@@ -201,7 +203,7 @@ where
                 .any(|cf| matches!(cf, CashflowType::FloatingRateCoupon(_)));
 
             let leg_discount_index = if let Some(policy) = &self.discount_policy {
-                policy.accept(trade.instrument())?
+                policy.accept(leg)?
             } else if leg_has_floating {
                 let mut matching = state
                     .get_market_data_reponse()
@@ -267,10 +269,12 @@ where
                     }
                     CashflowType::FloatingRateCoupon(coupon) => {
                         // Forward / projection curve always comes from the leg's own market index
-                        let forward_index = leg.market_index().ok_or_else(|| QSError::NotFoundErr(
-                            "A market index must be set to price floating rate coupons."
-                                .to_string(),
-                        ))?;
+                        let forward_index = leg.market_index().ok_or_else(|| {
+                            QSError::NotFoundErr(
+                                "A market index must be set to price floating rate coupons."
+                                    .to_string(),
+                            )
+                        })?;
                         let fwd_curve = state.get_discount_curve_element(forward_index)?.curve();
                         let fwd = fwd_curve.forward_rate(
                             coupon.accrual_start_date(),
@@ -354,9 +358,9 @@ where
 
         for leg in trade.legs() {
             // Forward / projection curve always comes from the leg's own market index
-            let forward_index = leg.market_index().ok_or_else(|| QSError::NotFoundErr(
-                "Market index required for par rate computation".to_string(),
-            ))?;
+            let forward_index = leg.market_index().ok_or_else(|| {
+                QSError::NotFoundErr("Market index required for par rate computation".to_string())
+            })?;
             let forward_curve = state.get_discount_curve_element(forward_index)?.curve();
 
             for cashflow in leg.cashflows() {
@@ -369,7 +373,7 @@ where
                         let payment_date = Cashflow::payment_date(coupon);
 
                         let df_fx = if let Some(policy) = &self.discount_policy {
-                            let collateral_index = policy.accept(trade.instrument())?;
+                            let collateral_index = policy.accept(leg)?;
                             let coll_curve =
                                 state.get_discount_curve_element(&collateral_index)?.curve();
                             let df_coll = coll_curve.discount_factor(payment_date)?.value();
@@ -387,7 +391,6 @@ where
                                 fx_spot * df_leg
                             }
                         } else {
-                            
                             forward_curve.discount_factor(payment_date)?.value()
                         };
                         annuity += coupon.notional() * year_fraction * df_fx;
@@ -406,7 +409,7 @@ where
                         let payment_date = Cashflow::payment_date(coupon);
 
                         let df_fx = if let Some(policy) = &self.discount_policy {
-                            let collateral_index = policy.accept(trade.instrument())?;
+                            let collateral_index = policy.accept(leg)?;
                             let coll_curve =
                                 state.get_discount_curve_element(&collateral_index)?.curve();
                             let df_coll = coll_curve.discount_factor(payment_date)?.value();
@@ -423,7 +426,6 @@ where
                                 fx_spot * df_leg
                             }
                         } else {
-                            
                             forward_curve.discount_factor(payment_date)?.value()
                         };
                         float_pv += amount * df_fx;
@@ -452,7 +454,7 @@ where
     T: LegsProvider + Trade<I> + Send + Sync,
 {
     type Item = T;
-    type Policy = dyn DiscountPolicy<I>;
+    type Policy = dyn DiscountPolicy<Leg>;
 
     fn evaluate(
         &self,
@@ -532,14 +534,17 @@ where
         }
 
         // When a CSA discount policy is set, also request:
-        //  1. The collateral currency's OIS discount curve
+        //  1. The collateral currency's OIS discount curve(s) per leg
         //  2. Exchange rates (via ExchangeRateStore) for forward FX computation
         if let Some(policy) = &self.discount_policy {
-            let csa_index = policy.accept(trade.instrument()).ok()?;
-            if seen_indices.insert(csa_index.clone()) {
-                constructed_elements.push(ConstructedElementRequest::DiscountCurve {
-                    market_index: csa_index,
-                });
+            for leg in legs {
+                if let Ok(csa_index) = policy.accept(leg) {
+                    if seen_indices.insert(csa_index.clone()) {
+                        constructed_elements.push(ConstructedElementRequest::DiscountCurve {
+                            market_index: csa_index,
+                        });
+                    }
+                }
             }
             requires_fx = true;
         }
@@ -570,7 +575,7 @@ mod tests {
 
     use crate::{
         core::{
-            collateral::CSADiscountPolicy,
+            collateral::SingleCurveCSADiscountPolicy,
             elements::curveelement::DiscountCurveElement,
             marketdatahandling::{
                 constructedelementstore::ConstructedElementStore,
@@ -970,6 +975,14 @@ mod tests {
         )
         .with_pillar_label("ESTR_flat".to_string());
 
+        // Collateral curve for USD cashflows under EUR CSA (same underlying rate as ESTR)
+        let collateral_usd_eur_curve = FlatForwardTermStructure::new(
+            trade_date,
+            ADReal::from(estr_rate),
+            RateDefinition::default(),
+        )
+        .with_pillar_label("ESTR_flat".to_string());
+
         let mut constructed_elements = ConstructedElementStore::default();
         constructed_elements.discount_curves_mut().insert(
             MarketIndex::SOFR,
@@ -987,6 +1000,14 @@ mod tests {
                 Rc::new(RefCell::new(estr_curve)),
             ),
         );
+        constructed_elements.discount_curves_mut().insert(
+            MarketIndex::Collateral(Currency::USD, Currency::EUR),
+            DiscountCurveElement::new(
+                MarketIndex::Collateral(Currency::USD, Currency::EUR),
+                Currency::EUR,
+                Rc::new(RefCell::new(collateral_usd_eur_curve)),
+            ),
+        );
 
         // FX spot rate
         let mut fx_store = ExchangeRateStore::new();
@@ -1002,7 +1023,10 @@ mod tests {
 
         // --- 3. Price with CSA ---
         let mut pricer = CashflowDiscountPricer::<CrossCurrencySwap, CrossCurrencySwapTrade>::new();
-        pricer.set_discount_policy(Box::new(CSADiscountPolicy::new(estr_index.clone())));
+        pricer.set_discount_policy(Box::new(SingleCurveCSADiscountPolicy::new(
+            estr_index.clone(),
+            Currency::EUR,
+        )));
         let results = pricer
             .evaluate(&trade, &[Request::Value, Request::Sensitivities], &provider)
             .expect("Pricing with CSA failed");
