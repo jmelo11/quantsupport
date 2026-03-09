@@ -2,7 +2,6 @@ use crate::{
     core::trade::Side,
     currencies::currency::Currency,
     indices::marketindex::MarketIndex,
-    indices::rateindex::RateIndexDetails,
     instruments::rates::{
         capfloor::{CapFloor, CapFloorType},
         capletfloorlet::{CapletFloorlet, CapletFloorletType},

@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     ad::adreal::{ADReal, IsReal},
-    indices::{marketindex::MarketIndex, rateindex::RateIndexDetails},
+    indices::marketindex::MarketIndex,
     instruments::cashflows::{cashflow::Cashflow, coupons::LinearCoupon},
     time::{date::Date, daycounter::DayCounter},
     utils::errors::{QSError, Result},

@@ -1,6 +1,6 @@
 use crate::{
     ad::adreal::{ADReal, IsReal},
-    indices::{marketindex::MarketIndex, rateindex::RateIndexDetails},
+    indices::marketindex::MarketIndex,
     instruments::cashflows::coupons::{NonLinearCoupon, PayoffOps},
     time::date::Date,
     utils::errors::{QSError, Result},

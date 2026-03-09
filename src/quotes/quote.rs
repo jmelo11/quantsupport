@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     currencies::currency::Currency,
-    indices::{marketindex::MarketIndex, rateindex::RateIndexDetails},
+    indices::marketindex::MarketIndex,
     instruments::{
         equity::equityeuropeanoption::{EquityEuropeanOption, EuroOptionType},
         fixedincome::{
@@ -1059,9 +1059,9 @@ impl Quote {
             QuoteInstrument::EquityPut => self.build_put(reference_date),
             QuoteInstrument::CapFloor => self.build_cap_floor(value, reference_date, notional),
             QuoteInstrument::Swaption => self.build_swaption(value, reference_date, notional),
-            QuoteInstrument::FxForwardPoints => Err(QSError::NotImplementedErr(
-                "FxForwardPoints requires an FX spot context to build an outright forward".into(),
-            )),
+            QuoteInstrument::FxForwardPoints => {
+                self.build_fx_forward_points(value, reference_date)
+            },
             QuoteInstrument::FxCall | QuoteInstrument::FxPut => Err(QSError::NotImplementedErr(
                 "FX option instrument builders are not implemented yet".into(),
             )),
@@ -1228,6 +1228,40 @@ impl Quote {
             .with_identifier(d.identifier())
             .with_delivery_date(delivery_date)
             .with_forward_rate(forward_rate)
+            .with_base_currency(base)
+            .with_quote_currency(quote_ccy)
+            .build()?;
+
+        Ok(BuiltInstrument::FxForward(fwd))
+    }
+
+    /// FX Forward Points — mid value is the forward points (absolute).
+    ///
+    /// Builds an [`FxForward`] with `forward_points` set. The bootstrap
+    /// residual combines these with the FX spot (from the discount policy)
+    /// to solve for discount factors via covered interest-rate parity.
+    fn build_fx_forward_points(
+        &self,
+        points: f64,
+        reference_date: Date,
+    ) -> Result<BuiltInstrument> {
+        let d = &self.details;
+        let base = d
+            .pay_currency()
+            .ok_or_else(|| QSError::ValueNotSetErr("Base currency on FX fwd pts quote".into()))?;
+        let quote_ccy = d.receive_currency().ok_or_else(|| {
+            QSError::ValueNotSetErr("Quote currency on FX fwd pts quote".into())
+        })?;
+        let tenor = d
+            .tenor()
+            .ok_or_else(|| QSError::ValueNotSetErr("Tenor on FX fwd pts quote".into()))?;
+
+        let delivery_date = reference_date + tenor;
+
+        let fwd = MakeFxForward::default()
+            .with_identifier(d.identifier())
+            .with_delivery_date(delivery_date)
+            .with_forward_points(points)
             .with_base_currency(base)
             .with_quote_currency(quote_ccy)
             .build()?;

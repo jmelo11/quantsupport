@@ -118,10 +118,21 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     // 3. Bootstrap all curves
     //    The discount policy uses the first curve as the CSA / collateral
     //    curve (typically SOFR for USD).
+    //    CLP cashflows are discounted with the Collateral(CLP, USD) curve,
+    //    which is bootstrapped from cross-currency swaps.
     let csa_index = curve_specs[0].market_index().clone();
     let csa_currency = curve_specs[0].currency();
-    let policy = BootstrapDiscountPolicy::new(csa_index, csa_currency);
-    let bootstrapper = MultiCurveBootstrapper::new(curve_specs, policy);
+    let policy = BootstrapDiscountPolicy::new(csa_index, csa_currency).with_collateral_curve(
+        Currency::CLP,
+        MarketIndex::Collateral(Currency::CLP, Currency::USD),
+    );
+
+    // FX spot from fixings: 1 USD = 935 CLP
+    let mut fx_store = ExchangeRateStore::new();
+    fx_store.add_exchange_rate(Currency::USD, Currency::CLP, ADReal::new(935.0));
+
+    let bootstrapper =
+        MultiCurveBootstrapper::new(curve_specs, policy).with_exchange_rate_store(fx_store);
     let curves = bootstrapper.bootstrap(&quote_store, Level::Mid)?;
 
     // 4. Display results for each bootstrapped curve
