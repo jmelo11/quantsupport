@@ -74,9 +74,10 @@ impl IsReal for ADReal {
     }
 }
 
-/// # `Expr`
-///
 /// A differentiable expression that can record its contribution to the tape.
+/// 
+/// This trait is implemented by `ADReal` and can be used to define complex expressions 
+/// that automatically record their derivatives, allowing for more efficient memory usage.
 pub trait Expr: Clone {
     /// Returns the scalar value of the expression.
     fn inner_value(&self) -> f64;
@@ -262,7 +263,7 @@ impl IsReal for Const {
 
 impl From<f64> for Const {
     #[inline]
-    /// Converts a `f64` into a constant expression.
+    /// Converts a [`f64`] into a constant expression.
     fn from(v: f64) -> Self {
         Self(v)
     }
@@ -270,7 +271,7 @@ impl From<f64> for Const {
 
 impl From<f32> for Const {
     #[inline]
-    /// Converts a `f32` into a constant expression.
+    /// Converts a [`f32`] into a constant expression.
     fn from(v: f32) -> Self {
         Self(f64::from(v))
     }
@@ -278,7 +279,7 @@ impl From<f32> for Const {
 
 impl From<i32> for Const {
     #[inline]
-    /// Converts an `i32` into a constant expression.
+    /// Converts an [`i32`] into a constant expression.
     fn from(v: i32) -> Self {
         Self(f64::from(v))
     }
@@ -286,7 +287,7 @@ impl From<i32> for Const {
 
 impl From<u32> for Const {
     #[inline]
-    /// Converts a `u32` into a constant expression.
+    /// Converts a [`u32`] into a constant expression.
     fn from(v: u32) -> Self {
         Self(f64::from(v))
     }
@@ -294,7 +295,7 @@ impl From<u32> for Const {
 
 impl From<Const> for f64 {
     #[inline]
-    /// Extracts the underlying `f64` from a constant expression.
+    /// Extracts the underlying [`f64`] from a constant expression.
     fn from(c: Const) -> Self {
         c.0
     }
@@ -985,7 +986,7 @@ where
     R: Expr + Clone,
     O: BinOp + Clone,
 {
-    /// Flattens a binary expression into an `ADReal` and records it.
+    /// Flattens a binary expression into an [`ADReal`] and records it.
     fn from(e: BinExpr<L, R, O>) -> Self {
         flatten(&e)
     }
@@ -995,31 +996,31 @@ where
     A: Expr + Clone,
     O: UnOp + Clone,
 {
-    /// Flattens a unary expression into an `ADReal` and records it.
+    /// Flattens a unary expression into an [`ADReal`] and records it.
     fn from(e: UnExpr<A, O>) -> Self {
         flatten(&e)
     }
 }
 impl From<f64> for ADReal {
-    /// Converts a `f64` into an `ADReal`, recording if the tape is active.
+    /// Converts a [`f64`] into an [`ADReal`], recording if the tape is active.
     fn from(v: f64) -> Self {
         Self::new(v)
     }
 }
 impl From<f32> for ADReal {
-    /// Converts a `f32` into an `ADReal`, recording if the tape is active.
+    /// Converts a [`f32`] into an [`ADReal`], recording if the tape is active.
     fn from(v: f32) -> Self {
         Self::new(f64::from(v))
     }
 }
 impl From<i32> for ADReal {
-    /// Converts an `i32` into an `ADReal`, recording if the tape is active.
+    /// Converts an [`i32`] into an [`ADReal`], recording if the tape is active.
     fn from(v: i32) -> Self {
         Self::new(f64::from(v))
     }
 }
 impl From<Const> for ADReal {
-    /// Converts a `Const` expression into an `ADReal`.
+    /// Converts a [`Const`] expression into an [`ADReal`].
     fn from(v: Const) -> Self {
         Self::new(v.0)
     }

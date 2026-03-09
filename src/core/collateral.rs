@@ -2,18 +2,21 @@ use std::collections::HashMap;
 
 use crate::{currencies::currency::Currency, indices::marketindex::MarketIndex};
 use crate::{
-    instruments::{
-        equity::equityeuropeanoption::EquityEuropeanOption,
-        fixedincome::fixedratedeposit::FixedRateDeposit,
-        rates::{capletfloorlet::CapletFloorlet, crosscurrencyswap::CrossCurrencySwap},
-    },
+    instruments::fixedincome::fixedratedeposit::FixedRateDeposit,
     utils::errors::{QSError, Result},
 };
+
+/// Trait for types that have an associated currency.
+pub trait HasCurrency {
+    /// Returns the currency associated with this type.
+    #[must_use]
+    fn currency(&self) -> Currency;
+}
 
 /// Generic visitor-style discount policy.
 ///
 /// The generic parameter `T` is the visited type (instrument, leg, etc.).
-pub trait DiscountPolicy<T>: Send + Sync {
+pub trait DiscountPolicy<T: HasCurrency>: Send + Sync {
     /// Resolves the discount curve index for the visited target.
     ///
     /// # Errors
@@ -72,87 +75,42 @@ impl DiscountPolicy<FixedRateDeposit> for FixedIncomeDiscountPolicy {
     }
 }
 
-/// CSA discount policy.
+/// CSA discount policy that uses a single collateral discount curve.
 ///
-/// Maps cashflow currency into CSA discount curve and supports a default index.
-pub struct CSADiscountPolicy {
-    default_index: MarketIndex,
-    by_currency: HashMap<Currency, MarketIndex>,
+/// For legs in the same currency as the collateral, the stored discount index
+/// is returned. For cross-currency legs, a [`MarketIndex::Collateral`] index
+/// is returned to request a collateral-adjusted discount curve.
+pub struct SingleCurveCSADiscountPolicy {
+    discount_index: MarketIndex,
+    currency: Currency,
 }
 
-impl CSADiscountPolicy {
-    /// Creates a CSA discount policy with a default curve.
+impl SingleCurveCSADiscountPolicy {
+    /// Creates a new [`SingleCurveCSADiscountPolicy`].
     #[must_use]
-    pub fn new(default_index: MarketIndex) -> Self {
+    pub const fn new(discount_index: MarketIndex, currency: Currency) -> Self {
         Self {
-            default_index,
-            by_currency: HashMap::new(),
+            discount_index,
+            currency,
         }
-    }
-
-    /// Adds or replaces a currency-specific CSA discount curve mapping.
-    #[must_use]
-    pub fn with_currency(
-        mut self,
-        cashflow_currency: Currency,
-        discount_index: MarketIndex,
-    ) -> Self {
-        self.by_currency.insert(cashflow_currency, discount_index);
-        self
-    }
-
-    fn resolve_for_currency(&self, cashflow_currency: Currency) -> MarketIndex {
-        self.by_currency
-            .get(&cashflow_currency)
-            .cloned()
-            .unwrap_or_else(|| self.default_index.clone())
     }
 }
 
-impl DiscountPolicy<CrossCurrencySwap> for CSADiscountPolicy {
-    fn accept(&self, _target: &CrossCurrencySwap) -> Result<MarketIndex> {
-        Ok(self.default_index.clone())
+impl<T> DiscountPolicy<T> for SingleCurveCSADiscountPolicy
+where
+    T: HasCurrency,
+{
+    fn accept(&self, target: &T) -> Result<MarketIndex> {
+        // we need to check if we have a currency mismatch, if so, we need
+        // to check for Collateral() curves, otherwise we return the stored index
+        if target.currency() == self.currency {
+            Ok(self.discount_index.clone())
+        } else {
+            Ok(MarketIndex::Collateral(target.currency(), self.currency))
+        }
     }
 
     fn discount_indices(&self) -> Vec<MarketIndex> {
-        let mut unique = vec![self.default_index.clone()];
-        for index in self.by_currency.values() {
-            if !unique.iter().any(|idx| idx == index) {
-                unique.push(index.clone());
-            }
-        }
-        unique
-    }
-}
-
-impl DiscountPolicy<EquityEuropeanOption> for CSADiscountPolicy {
-    fn accept(&self, target: &EquityEuropeanOption) -> Result<MarketIndex> {
-        Ok(self.resolve_for_currency(*target.currency()))
-    }
-
-    fn discount_indices(&self) -> Vec<MarketIndex> {
-        let mut unique = vec![self.default_index.clone()];
-        for index in self.by_currency.values() {
-            if !unique.iter().any(|idx| idx == index) {
-                unique.push(index.clone());
-            }
-        }
-        unique
-    }
-}
-
-impl DiscountPolicy<CapletFloorlet> for CSADiscountPolicy {
-    fn accept(&self, _target: &CapletFloorlet) -> Result<MarketIndex> {
-        Ok(self.default_index.clone())
-    }
-
-    fn discount_indices(&self) -> Vec<MarketIndex> {
-        let mut unique = vec![self.default_index.clone()];
-        for index in self.by_currency.values() {
-            if !unique.iter().any(|idx| idx == index) {
-                unique.push(index.clone());
-            }
-        }
-        unique
+        vec![self.discount_index.clone()]
     }
 }

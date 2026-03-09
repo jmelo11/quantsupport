@@ -1,5 +1,6 @@
 use crate::{
     core::{
+        collateral::HasCurrency,
         instrument::{AssetClass, Instrument},
         request::LegsProvider,
         trade::{Side, Trade},
@@ -55,10 +56,10 @@ impl FixedRateDeposit {
     pub fn market_index(&self) -> MarketIndex {
         self.market_index.clone()
     }
+}
 
-    /// Returns the currency of payment.
-    #[must_use]
-    pub const fn currency(&self) -> Currency {
+impl HasCurrency for FixedRateDeposit {
+    fn currency(&self) -> Currency {
         self.currency
     }
 }
@@ -88,7 +89,7 @@ pub struct FixedRateDepositTrade {
 }
 
 impl FixedRateDepositTrade {
-    /// Creates a new `DepositTrade`.
+    /// Creates a new [`FixedRateDepositTrade`].
     #[must_use]
     pub const fn new(
         instrument: FixedRateDeposit,

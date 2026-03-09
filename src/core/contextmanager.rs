@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, HashMap};
 
 use crate::{
     core::{
-        collateral::CSADiscountPolicy,
+        collateral::SingleCurveCSADiscountPolicy,
         marketdatahandling::{
             constructedelementrequest::ConstructedElementRequest,
             constructedelementstore::ConstructedElementStore,
@@ -29,7 +29,7 @@ pub struct ContextManager {
     quote_level: Level,
     /// The discount policy defines the approach for discounting cashflows.
     #[allow(dead_code)]
-    discount_policy: Option<CSADiscountPolicy>,
+    discount_policy: Option<SingleCurveCSADiscountPolicy>,
     /// Base currency for reporting results, allowing for consistent presentation of pricing outputs across different instruments and markets.
     base_currency: Currency,
     /// Model parameters for various models that may be used during pricing, allowing for flexible configuration of model inputs and assumptions.

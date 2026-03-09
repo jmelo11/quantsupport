@@ -1,7 +1,11 @@
 use crate::{
-    ad::adreal::ADReal, core::trade::Side, currencies::currency::Currency,
-    indices::marketindex::MarketIndex, instruments::cashflows::cashflowtype::CashflowType,
-    rates::interestrate::InterestRate, time::date::Date,
+    ad::adreal::ADReal,
+    core::{collateral::HasCurrency, trade::Side},
+    currencies::currency::Currency,
+    indices::marketindex::MarketIndex,
+    instruments::cashflows::cashflowtype::CashflowType,
+    rates::interestrate::InterestRate,
+    time::date::Date,
 };
 
 /// A [`Leg`] represents a sequence of cashflows associated to a particular instrument.
@@ -69,12 +73,6 @@ impl Leg {
         &self.cashflows
     }
 
-    /// Returns the currency of the leg.
-    #[must_use]
-    pub const fn currency(&self) -> Currency {
-        self.currency
-    }
-
     /// Returns the market index associated with the leg, if any.
     #[must_use]
     pub const fn market_index(&self) -> Option<&MarketIndex> {
@@ -115,5 +113,11 @@ impl Leg {
     #[must_use]
     pub const fn last_payment_date(&self) -> Date {
         self.last_payment_date
+    }
+}
+
+impl HasCurrency for Leg {
+    fn currency(&self) -> Currency {
+        self.currency
     }
 }

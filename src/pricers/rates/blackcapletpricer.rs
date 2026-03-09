@@ -464,6 +464,7 @@ mod tests {
         let caplet = CapletFloorlet::new(
             "SOFR3M_CAPLET".to_string(),
             market_index,
+            Currency::USD,
             start_date,
             end_date,
             end_date,
@@ -546,6 +547,7 @@ mod tests {
         let caplet = CapletFloorlet::new(
             "SOFR3M_CAPLET".to_string(),
             market_index.clone(),
+            Currency::USD,
             start_date,
             end_date,
             end_date,
@@ -707,6 +709,7 @@ mod tests {
         let caplet = CapletFloorlet::new(
             "SOFR3M_CAPLET".to_string(),
             market_index,
+            Currency::USD,
             start_date,
             end_date,
             end_date,
@@ -758,6 +761,7 @@ mod tests {
         let caplet = CapletFloorlet::new(
             "SOFR3M_FLOORLET".to_string(),
             market_index,
+            Currency::USD,
             start_date,
             end_date,
             end_date,
@@ -808,6 +812,7 @@ mod tests {
         let caplet = CapletFloorlet::new(
             "SOFR3M_CAPLET_ATM".to_string(),
             market_index,
+            Currency::USD,
             start_date,
             end_date,
             end_date,
@@ -860,6 +865,7 @@ mod tests {
         let caplet = CapletFloorlet::new(
             "SOFR3M_CAPLET_REL".to_string(),
             market_index,
+            Currency::USD,
             start_date,
             end_date,
             end_date,

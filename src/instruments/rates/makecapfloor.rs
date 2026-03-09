@@ -227,6 +227,7 @@ impl MakeCapFloor {
             caplet_floorlets.push(CapletFloorlet::new(
                 name,
                 market_index.clone(),
+                currency,
                 period_start,
                 period_end,
                 payment_date,

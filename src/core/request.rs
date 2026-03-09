@@ -1,4 +1,5 @@
 use crate::ad::adreal::IsReal;
+use crate::core::collateral::HasCurrency;
 use crate::time::daycounter::DayCounter;
 use crate::{
     core::evaluationresults::{CashflowsTable, SensitivityMap},
