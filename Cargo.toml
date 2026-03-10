@@ -3,7 +3,7 @@ members = [".", "examples/bootstrap", "examples/valuation"]
 
 [package]
 name = "quantsupport"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 
 description = "Rust library for derivative pricing and risk analytics."
