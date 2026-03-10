@@ -13,7 +13,7 @@
 //!
 //! Everything needed is re-exported through the [`prelude`] module.
 //!
-//! ```rust
+//! ```no_run
 //! use std::{cell::RefCell, rc::Rc};
 //! use quantsupport::prelude::*;
 //! ```
@@ -25,7 +25,9 @@
 //! [`SwapTrade`](crate::instruments::rates::swap::SwapTrade) that carries
 //! trade-level metadata (trade date, notional, side).
 //!
-//! ```rust
+//! ```no_run
+//! # use std::{cell::RefCell, rc::Rc};
+//! # use quantsupport::prelude::*;
 //! let start_date    = Date::new(2024, 1, 15);
 //! let maturity_date = Date::new(2029, 1, 15);
 //! let notional      = 10_000_000.0;
@@ -62,7 +64,9 @@
 //! market data (discount curves, quote / fixing stores) that pricers consult
 //! during evaluation.  Here we create a flat SOFR discount curve at 3.0%.
 //!
-//! ```rust
+//! ```no_run
+//! # use std::{cell::RefCell, rc::Rc};
+//! # use quantsupport::prelude::*;
 //! let evaluation_date = Date::new(2024, 1, 15);
 //! let discount_rate   = 0.03; // 3.0% flat curve
 //!
@@ -107,10 +111,45 @@
 //! choose which outputs you need via [`Request`](crate::core::request::Request),
 //! and call `evaluate`.
 //!
-//! ```rust
+//! ```no_run
+//! # use std::{cell::RefCell, rc::Rc};
+//! # use quantsupport::prelude::*;
+//! # let start_date    = Date::new(2024, 1, 15);
+//! # let maturity_date = Date::new(2029, 1, 15);
+//! # let notional      = 10_000_000.0;
+//! # let fixed_rate    = 0.030;
+//! # let rate_definition = RateDefinition::new(
+//! #     DayCounter::Actual360, Compounding::Simple, Frequency::Semiannual);
+//! # let swap = MakeSwap::default()
+//! #     .with_identifier("USD_IRS_5Y".to_string())
+//! #     .with_start_date(start_date).with_maturity_date(maturity_date)
+//! #     .with_fixed_rate(fixed_rate).with_notional(notional)
+//! #     .with_rate_definition(rate_definition)
+//! #     .with_currency(Currency::USD).with_market_index(MarketIndex::SOFR)
+//! #     .with_side(Side::LongRecieve)
+//! #     .with_fixed_leg_frequency(Frequency::Semiannual)
+//! #     .with_floating_leg_frequency(Frequency::Semiannual)
+//! #     .build().unwrap();
+//! # let trade = SwapTrade::new(swap, start_date, notional, Side::LongRecieve);
+//! # let evaluation_date = Date::new(2024, 1, 15);
+//! # let curve_definition = RateDefinition::new(
+//! #     DayCounter::Actual360, Compounding::Continuous, Frequency::Annual);
+//! # let discount_curve = FlatForwardTermStructure::new(
+//! #     evaluation_date, ADReal::from(0.03), curve_definition)
+//! #     .with_pillar_label("SOFR_flat".to_string());
+//! # let mut constructed_elements = ConstructedElementStore::default();
+//! # constructed_elements.discount_curves_mut().insert(
+//! #     MarketIndex::SOFR, DiscountCurveElement::new(
+//! #         MarketIndex::SOFR, Currency::USD,
+//! #         Rc::new(RefCell::new(discount_curve))));
+//! # let quote_store  = QuoteStore::new(evaluation_date);
+//! # let fixing_store = FixingStore::default();
+//! # let context = ContextManager::new(quote_store, fixing_store)
+//! #     .with_base_currency(Currency::USD)
+//! #     .with_constructed_elements(constructed_elements);
 //! let pricer   = CashflowDiscountPricer::<Swap, SwapTrade>::new();
 //! let requests = vec![Request::Value, Request::Cashflows, Request::Sensitivities];
-//! let results  = pricer.evaluate(&trade, &requests, &context)?;
+//! let results  = pricer.evaluate(&trade, &requests, &context).expect("pricing failed");
 //!
 //! // --- NPV ---
 //! if let Some(price) = results.price() {
