@@ -1,7 +1,6 @@
 use crate::{
     core::trade::Side,
     indices::marketindex::MarketIndex,
-    indices::rateindex::RateIndexDetails,
     instruments::rates::ratefutures::RateFutures,
     rates::interestrate::RateDefinition,
     time::date::Date,

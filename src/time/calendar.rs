@@ -15,14 +15,13 @@ use crate::{
 };
 use std::collections::HashSet;
 
-/// # `Calendar`
 /// A calendar.
 ///
 /// ## Enums
-/// * `NullCalendar` - A calendar that considers all days as business days.
-/// * `WeekendsOnly` - A calendar that considers only weekends as business days.
-/// * `TARGET` - A calendar that considers only TARGET business days as business days.
-/// * `UnitedStates` - A calendar for the United States.
+/// * [`Self::NullCalendar`] - A calendar that considers all days as business days.
+/// * [`Self::WeekendsOnly`] - A calendar that considers only weekends as business days.
+/// * [`Self::TARGET`] - A calendar that considers only TARGET business days as business days.
+/// * [`Self::UnitedStates`] - A calendar for the United States.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Calendar {
     /// A null calendar that considers all days as business days.
@@ -85,9 +84,7 @@ impl TryFrom<String> for Calendar {
             "UnitedStates" => Ok(Self::UnitedStates(UnitedStates::default())),
             "Brazil" => Ok(Self::Brazil(Brazil::default())),
             "Chile" => Ok(Self::Chile(Chile::default())),
-            _ => Err(QSError::InvalidValueErr(format!(
-                "Invalid calendar: {s}"
-            ))),
+            _ => Err(QSError::InvalidValueErr(format!("Invalid calendar: {s}"))),
         }
     }
 }

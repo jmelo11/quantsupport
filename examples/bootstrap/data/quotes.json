@@ -18,6 +18,28 @@
         { "identifier": "BasisSwap_USD_SOFR_TermSOFR3m_5Y",          "mid": 0.00012 },
         { "identifier": "BasisSwap_USD_SOFR_TermSOFR3m_7Y",          "mid": 0.00010 },
         { "identifier": "BasisSwap_USD_SOFR_TermSOFR3m_10Y",         "mid": 0.00008 },
-        { "identifier": "BasisSwap_USD_SOFR_TermSOFR3m_30Y",         "mid": 0.00005 }
-    ]
+        { "identifier": "BasisSwap_USD_SOFR_TermSOFR3m_30Y",         "mid": 0.00005 },
+
+        { "identifier": "FxForwardPoints_USDCLP_1M",                   "mid": 1.50 },
+        { "identifier": "FxForwardPoints_USDCLP_3M",                   "mid": 5.30 },
+        { "identifier": "FxForwardPoints_USDCLP_6M",                   "mid": 12.80 },
+
+        { "identifier": "CrossCurrencySwap_CLP_ICP_SOFR_USD_1Y",        "mid": 0.0510 },
+        { "identifier": "CrossCurrencySwap_CLP_ICP_SOFR_USD_2Y",        "mid": 0.0485 },
+        { "identifier": "CrossCurrencySwap_CLP_ICP_SOFR_USD_3Y",        "mid": 0.0465 },
+        { "identifier": "CrossCurrencySwap_CLP_ICP_SOFR_USD_5Y",        "mid": 0.0455 },
+        { "identifier": "CrossCurrencySwap_CLP_ICP_SOFR_USD_7Y",        "mid": 0.0450 },
+        { "identifier": "CrossCurrencySwap_CLP_ICP_SOFR_USD_10Y",       "mid": 0.0440 },
+        { "identifier": "CrossCurrencySwap_CLP_ICP_SOFR_USD_20Y",       "mid": 0.0430 },
+
+        { "identifier": "FixedRateDeposit_CLP_ICP_1D",               "mid": 0.0500 },
+        { "identifier": "FixedRateDeposit_CLP_ICP_3M",               "mid": 0.0498 },
+        { "identifier": "OIS_CLP_ICP_6M",                            "mid": 0.0495 },
+        { "identifier": "OIS_CLP_ICP_1Y",                            "mid": 0.0485 },
+        { "identifier": "OIS_CLP_ICP_2Y",                            "mid": 0.0470 },
+        { "identifier": "OIS_CLP_ICP_3Y",                            "mid": 0.0455 },
+        { "identifier": "OIS_CLP_ICP_5Y",                            "mid": 0.0440 },
+        { "identifier": "OIS_CLP_ICP_7Y",                            "mid": 0.0430 },
+        { "identifier": "OIS_CLP_ICP_10Y",                           "mid": 0.0425 },
+        { "identifier": "OIS_CLP_ICP_20Y",                           "mid": 0.0420 }    ]
 }

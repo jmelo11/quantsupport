@@ -10,25 +10,11 @@ use crate::{
     utils::errors::{QSError, Result},
 };
 
-/// # `DiscountTermStructure`
 /// A discount factors term structure.
 ///
-/// ## Parameters
-/// * `dates` - The dates of the discount factors
-/// * `discount_factors` - The discount factors
-/// * `day_counter` - The day counter of the discount factors
-/// * `interpolator` - The interpolator to use
-/// * `enable_extrapolation` - Enable extrapolation
-///
 /// ## Example
-///
-/// ```
-/// use quantsupport::time::date::Date;
-/// use quantsupport::rates::yieldtermstructure::discounttermstructure::DiscountTermStructure;
-/// use quantsupport::rates::interestrate::RateDefinition;
-/// use quantsupport::time::daycounter::DayCounter;
-/// use quantsupport::rates::yieldtermstructure::interestratestermstructure::InterestRatesTermStructure;
-/// use quantsupport::math::interpolation::interpolator::Interpolator;
+/// ```rust
+/// use quantsupport::prelude::*;
 ///
 /// let dates = vec![
 ///     Date::new(2020, 1, 1),

@@ -12,8 +12,6 @@ use std::collections::BTreeMap;
 
 type SurfaceMap<T> = BTreeMap<Period, BTreeMap<F64Key, T>>;
 
-/// # `InterpolatedVolatilitySurface`
-///
 /// Represents if the volatility surface.
 ///
 /// ## Generics

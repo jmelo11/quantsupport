@@ -4,10 +4,11 @@ use crate::{
     },
     utils::errors::Result,
 };
-/// # `Visitor`
+
+/// A marker trait for visitor types.
 pub trait Visitor {}
 
-/// A [`Visitable`] struct.
+/// A [`Visitable`] struct. This is reserved for later use.
 pub trait Visitable<P: Visitor> {
     /// Accepts a visitor.
     ///

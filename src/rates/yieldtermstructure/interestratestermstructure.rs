@@ -4,9 +4,12 @@ use crate::{
     time::{date::Date, enums::Frequency},
     utils::errors::Result,
 };
-/// # `RatesTermStructure`
-///
 /// Base trait for rate term structures.
+///
+/// This trait defines the common interface for all interest rate term structures, including methods
+/// to get the reference date, calculate discount factors, and
+/// compute forward rates. Specific types of term structures (e.g., flat forward,
+/// zero curve) will implement this trait with their own logic for these calculations.
 pub trait InterestRatesTermStructure<T>
 where
     T: IsReal,

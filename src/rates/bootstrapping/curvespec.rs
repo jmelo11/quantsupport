@@ -13,19 +13,20 @@ use crate::{
         compounding::Compounding,
         interestrate::InterestRate,
     },
-    time::{date::Date, daycounter::DayCounter, enums::Frequency, period::Period},
+    time::{date::Date, daycounter::DayCounter, enums::Frequency},
     utils::errors::{QSError, Result},
 };
 
-/// Selects market quotes for a given curve index and tenor.
+/// Selects market quotes by identifier.
 pub trait QuoteSelector {
-    /// Returns the quote matching `market_index` and `tenor`.
-    fn select(&self, market_index: &MarketIndex, tenor: &Period) -> Option<Quote>;
+    /// Returns the quote with the given identifier.
+    fn select(&self, identifier: &str) -> Option<Quote>;
     /// Returns the reference (valuation) date used for building instruments.
     fn reference_date(&self) -> Date;
 }
 
-/// User-defined bootstrap specification for a curve, with instrument and settings to be used in the bootstrapping process.
+/// User-defined bootstrap specification for a curve, carrying the quote
+/// identifiers that should be used to calibrate it.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CurveSpec {
     market_index: MarketIndex,
@@ -37,20 +38,9 @@ pub struct CurveSpec {
     interpolator: Interpolator,
     #[serde(default = "default_enable_extrapolation")]
     enable_extrapolation: bool,
+    /// Quote identifiers that define the pillars of this curve.
     #[serde(default)]
-    deposits: Vec<Period>,
-    #[serde(default)]
-    futures: Vec<Period>,
-    #[serde(default)]
-    swaps: Vec<Period>,
-    #[serde(default)]
-    basis_swaps: Vec<Period>,
-    #[serde(default)]
-    xccy_swaps: Vec<Period>,
-    #[serde(default)]
-    fx_forwards: Vec<Period>,
-    #[serde(default)]
-    fx_forward_points: Vec<Period>,
+    quotes: Vec<String>,
 }
 
 const fn default_currency() -> Currency {
@@ -68,7 +58,6 @@ const fn default_enable_extrapolation() -> bool {
 
 impl CurveSpec {
     /// Creates a curve specification.
-    #[allow(clippy::too_many_arguments)]
     #[must_use]
     pub const fn new(
         market_index: MarketIndex,
@@ -76,13 +65,7 @@ impl CurveSpec {
         day_counter: DayCounter,
         interpolator: Interpolator,
         enable_extrapolation: bool,
-        deposits: Vec<Period>,
-        futures: Vec<Period>,
-        swaps: Vec<Period>,
-        basis_swaps: Vec<Period>,
-        xccy_swaps: Vec<Period>,
-        fx_forwards: Vec<Period>,
-        fx_forward_points: Vec<Period>,
+        quotes: Vec<String>,
     ) -> Self {
         Self {
             market_index,
@@ -90,13 +73,7 @@ impl CurveSpec {
             day_counter,
             interpolator,
             enable_extrapolation,
-            deposits,
-            futures,
-            swaps,
-            basis_swaps,
-            xccy_swaps,
-            fx_forwards,
-            fx_forward_points,
+            quotes,
         }
     }
 
@@ -112,10 +89,12 @@ impl CurveSpec {
         self.currency
     }
 
-    /// Resolves configured tenors into concrete calibration instruments.
+    /// Resolves configured quote identifiers into concrete calibration
+    /// instruments.
     ///
     /// # Errors
-    /// Returns an error if quote levels are missing or a pillar date cannot be inferred.
+    /// Returns an error if a quote is not found, quote levels are missing,
+    /// or a pillar date cannot be inferred.
     pub fn resolve(
         &self,
         selector: &impl QuoteSelector,
@@ -123,47 +102,8 @@ impl CurveSpec {
     ) -> Result<ResolvedCurveSpec> {
         let mut instruments = Vec::new();
 
-        self.collect_quotes(selector, level, &self.deposits, &mut instruments)?;
-        self.collect_quotes(selector, level, &self.futures, &mut instruments)?;
-        self.collect_quotes(selector, level, &self.swaps, &mut instruments)?;
-        self.collect_quotes(selector, level, &self.basis_swaps, &mut instruments)?;
-        self.collect_quotes(selector, level, &self.xccy_swaps, &mut instruments)?;
-        self.collect_quotes(selector, level, &self.fx_forwards, &mut instruments)?;
-        self.collect_quotes(selector, level, &self.fx_forward_points, &mut instruments)?;
-
-        let _pillar_dates = instruments
-            .iter()
-            .map(ResolvedInstrument::pillar_date)
-            .collect::<Vec<Date>>();
-
-        // check if repeated pillar dates are present and log a warning if so, as this may lead to issues in the bootstrapping process
-
-        instruments.sort_by_key(super::resolvedcurvespec::ResolvedInstrument::pillar_date);
-
-        Ok(ResolvedCurveSpec::new(
-            self.market_index.clone(),
-            self.currency,
-            self.day_counter,
-            self.interpolator,
-            self.enable_extrapolation,
-            selector.reference_date(),
-            instruments,
-        ))
-    }
-
-    /// Collects quotes and builds instruments for a given bucket of tenors and calibration kind.
-    ///
-    /// # Errors
-    /// Returns an error if quote levels are missing or pillar dates cannot be resolved.
-    fn collect_quotes(
-        &self,
-        selector: &impl QuoteSelector,
-        level: Level,
-        tenors: &[Period],
-        out: &mut Vec<ResolvedInstrument>,
-    ) -> Result<()> {
-        for tenor in tenors {
-            let Some(quote) = selector.select(&self.market_index, tenor) else {
+        for id in &self.quotes {
+            let Some(quote) = selector.select(id) else {
                 continue;
             };
 
@@ -178,7 +118,7 @@ impl CurveSpec {
             // end-to-end AD connectivity from quote → solver → DF.
             let quote_value = Self::extract_primary_rate(&built).unwrap_or(fallback_value);
 
-            out.push(ResolvedInstrument::new(
+            instruments.push(ResolvedInstrument::new(
                 quote,
                 level,
                 built,
@@ -186,7 +126,18 @@ impl CurveSpec {
                 pillar_date,
             ));
         }
-        Ok(())
+
+        instruments.sort_by_key(super::resolvedcurvespec::ResolvedInstrument::pillar_date);
+
+        Ok(ResolvedCurveSpec::new(
+            self.market_index.clone(),
+            self.currency,
+            self.day_counter,
+            self.interpolator,
+            self.enable_extrapolation,
+            selector.reference_date(),
+            instruments,
+        ))
     }
 
     /// Extracts the primary AD-enabled rate from a built instrument.

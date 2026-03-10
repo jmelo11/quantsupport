@@ -16,7 +16,7 @@ use crate::{
 // ---------------------------------------------------------------------------
 
 /// A resolved calibration instrument: a quote that has been turned into a
-/// concrete `BuiltInstrument` with a known pillar date and AD-enabled quote
+/// concrete [`BuiltInstrument`] with a known pillar date and AD-enabled quote
 /// value.
 pub struct ResolvedInstrument {
     quote: Quote,

@@ -12,8 +12,17 @@ use crate::{
     utils::errors::{QSError, Result},
 };
 
-/// # `DayCounter`
 /// Day count convention enum.
+///
+/// This enum represents different day count conventions used in financial calculations. Each variant corresponds to a specific
+/// method of calculating the number of days between two dates and the year fraction.
+/// The supported conventions include:
+/// - [`Self::Actual360`]: Counts the actual number of days between two dates and divides by 360.
+/// - [`Self::Actual365`]: Counts the actual number of days between two dates and divides by 365.
+/// - [`Self::Thirty360`]: Assumes each month has 30 days and each year has 360 days.
+/// - [`Self::Thirty360US`]: Similar to Thirty360 but with specific rules for end-of-month dates.
+/// - [`Self::ActualActual`]: Counts the actual number of days between two dates and divides by the actual number of days in the year.
+/// - [`Self::Business252`]: Counts the number of business days between two dates and divides by 252
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum DayCounter {
     /// Actual/360 day count convention

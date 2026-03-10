@@ -10,6 +10,7 @@ use crate::{
         marketdatahandling::constructedelementstore::SharedElement,
         request::LegsProvider,
     },
+    currencies::exchangeratestore::ExchangeRateStore,
     indices::marketindex::MarketIndex,
     instruments::cashflows::{cashflow::Cashflow, cashflowtype::CashflowType},
     math::{
@@ -37,35 +38,114 @@ use std::{cell::RefCell, rc::Rc};
 
 /// Dependency-aware, lazy multi-curve bootstrapper.
 ///
-/// 1. Accepts a set of [`CurveSpec`]s and a [`BootstrapDiscountPolicy`].
-/// 2. On [`bootstrap()`](Self::bootstrap) resolves quotes, determines a
-///    consistent dependency order, and iteratively solves for discount
-///    factors (or forward rates when the discount curve is already known)
-///    using Newton's method with AD Jacobians.
-/// 3. Returns ready-to-use [`DiscountCurveElement`]s keyed by market index.
+/// Accepts a set of [`CurveSpec`]s and a [`BootstrapDiscountPolicy`] that
+/// will determine how to bootstrap each curve. It resolves dependencies between [`CurveSpec`].
+///
+/// ## Parameters
+/// * `curve_specs`: the list of curve specifications to bootstrap. Each spec includes the market index, currency, day count convention, interpolation method, and the list of pillar instruments (identified by their quote IDs).
+/// * `discount_policy`: the discount policy defines how to determine the discount curve for each instrument during bootstrapping, including handling of cross-currency instruments and collateralization. See [`BootstrapDiscountPolicy`] for details.
+///
+/// ## Example
+/// ```
+/// use quantsupport::prelude::*;
+/// use std::collections::HashMap;
+///
+/// // We create a simple QuoteSelector that holds the market quotes in a HashMap.
+/// struct MapSelector {
+///     reference_date: Date,
+///     quotes: HashMap<String, f64>,
+/// }
+///
+/// impl MapSelector {
+///     fn new(reference_date: Date) -> Self {
+///         Self {
+///             reference_date,
+///             quotes: HashMap::new(),
+///         }
+///     }
+///
+///     fn add(&mut self, id: &str, rate: f64) {
+///         self.quotes.insert(id.to_string(), rate);
+///     }
+/// }
+///
+/// impl QuoteSelector for MapSelector {
+///         fn select(&self, identifier: &str) -> Option<Quote> {
+///             let rate = self.quotes.get(identifier)?;
+///             let det: QuoteDetails = identifier.parse().ok()?;
+///             let q = Quote::new(det, QuoteLevels::with_mid(*rate));
+///             if q.build_instrument(self.reference_date, Level::Mid).is_ok() {
+///                 Some(q)
+///             } else {
+///                 None
+///             }
+///         }
+///         fn reference_date(&self) -> Date {
+///             Date::new(2024, 1, 2)
+///         }
+///     }
+///
+/// // We pass the market data to the selector
+/// let rd = Date::new(2024, 6, 1);
+/// let mut selector = MapSelector::new(rd);
+/// selector.add("FixedRateDeposit_USD_SOFR_3M", 0.05);
+/// selector.add("FixedRateDeposit_USD_SOFR_6M", 0.051);
+/// selector.add("OIS_USD_SOFR_1Y", 0.048);
+/// selector.add("OIS_USD_SOFR_2Y", 0.045);
+///
+/// // We configure a single curve for the SOFR index, with 4 pillars.
+/// let spec = CurveSpec::new(
+///     MarketIndex::SOFR,
+///     Currency::USD,
+///     DayCounter::Actual360,
+///     Interpolator::LogLinear,
+///     true,
+///     vec![
+///         "FixedRateDeposit_USD_SOFR_3M".into(),
+///         "FixedRateDeposit_USD_SOFR_6M".into(),
+///         "OIS_USD_SOFR_1Y".into(),
+///         "OIS_USD_SOFR_2Y".into(),
+///     ],
+/// );
+///
+/// // Setup the discount policy and bootstrap.
+/// let policy = BootstrapDiscountPolicy::new(MarketIndex::SOFR, Currency::USD);
+/// let bootstrapper = MultiCurveBootstrapper::new(vec![spec], policy);
+/// let result = bootstrapper.bootstrap(&selector, Level::Mid);
+/// assert!(result.is_ok(), "Bootstrap failed: {:?}", result.err());
+/// ```
 pub struct MultiCurveBootstrapper {
     curve_specs: Vec<CurveSpec>,
     discount_policy: BootstrapDiscountPolicy,
+    exchange_rate_store: ExchangeRateStore,
 }
 
 impl MultiCurveBootstrapper {
     /// Creates a bootstrapper from a set of curve specifications.
     #[must_use]
-    pub const fn new(curve_specs: Vec<CurveSpec>, discount_policy: BootstrapDiscountPolicy) -> Self {
+    pub fn new(curve_specs: Vec<CurveSpec>, discount_policy: BootstrapDiscountPolicy) -> Self {
         Self {
             curve_specs,
             discount_policy,
+            exchange_rate_store: ExchangeRateStore::new(),
         }
     }
 
-    // -----------------------------------------------------------------------
-    // Public entry point
-    // -----------------------------------------------------------------------
+    /// Registers an [`ExchangeRateStore`] for FX spot rates. Required for
+    /// instruments referencing multiple currencies (e.g. cross-currency swaps, FX forwards).
+    #[must_use]
+    pub fn with_exchange_rate_store(mut self, store: ExchangeRateStore) -> Self {
+        self.exchange_rate_store = store;
+        self
+    }
 
     /// Resolves quotes, determines dependency order, and bootstraps every
     /// configured curve.
     ///
-    /// # Errors
+    /// ## Parameters
+    /// * `selector`: the quote selector to resolve market quotes for the pillar instruments. The selector should be able to build the corresponding `BuiltInstrument`s for each quote ID, as these are needed for bootstrapping.
+    ///
+    /// ## Errors
     /// Returns an error if quote resolution fails, a dependency cycle or
     /// missing curve is detected, or if the Newton solver does not converge
     /// for any curve.
@@ -99,6 +179,8 @@ impl MultiCurveBootstrapper {
     // Resolution
     // -----------------------------------------------------------------------
 
+    /// Resolves every [`CurveSpec`] into a [`ResolvedCurveSpec`] by selecting
+    /// and building the quoted instruments through the given selector.
     fn resolve_all(
         &self,
         selector: &impl QuoteSelector,
@@ -116,6 +198,9 @@ impl MultiCurveBootstrapper {
     // Dependency ordering (topological sort)
     // -----------------------------------------------------------------------
 
+    /// Performs a topological sort (Kahn's algorithm) on the curve
+    /// dependency graph, returning an ordering where every curve is
+    /// bootstrapped only after its dependencies.
     fn dependency_order(
         resolved: &HashMap<MarketIndex, ResolvedCurveSpec>,
         policy: &BootstrapDiscountPolicy,
@@ -185,6 +270,10 @@ impl MultiCurveBootstrapper {
     // Single-curve bootstrap
     // -----------------------------------------------------------------------
 
+    /// Bootstraps a single curve by solving for discount factors that
+    /// reprice all its instruments to zero residual. After the Newton
+    /// solver converges, applies the implicit function theorem (IFT) to
+    /// attach exact sensitivities w.r.t. market quotes to the result.
     fn bootstrap_curve(
         &self,
         target_index: &MarketIndex,
@@ -218,6 +307,7 @@ impl MultiCurveBootstrapper {
             instruments: spec.instruments(),
             other_curves,
             discount_policy: &self.discount_policy,
+            exchange_rate_store: &self.exchange_rate_store,
         };
 
         // Solve.
@@ -293,6 +383,7 @@ impl MultiCurveBootstrapper {
 
     /// Solves a dense linear system A x = b using Gaussian elimination with
     /// partial pivoting.  Operates entirely in `f64`.
+    /// TODO: replace with a more efficient and stable linear algebra library if needed.
     #[allow(clippy::needless_range_loop)]
     fn solve_f64_system(a: &[Vec<f64>], b: &[f64]) -> Result<Vec<f64>> {
         let n = a.len();
@@ -341,6 +432,9 @@ impl MultiCurveBootstrapper {
         Ok(bb)
     }
 
+    /// Converts the bootstrapped curves into [`DiscountCurveElement`]s
+    /// that can be stored in a market-data context, preserving pillar
+    /// labels, quote values, and AD links.
     fn build_curve_elements(
         resolved: &HashMap<MarketIndex, ResolvedCurveSpec>,
         bootstrapped: &HashMap<MarketIndex, BootstrappedCurve>,
@@ -400,6 +494,7 @@ struct BootstrapProblem<'a> {
     instruments: &'a [ResolvedInstrument],
     other_curves: &'a HashMap<MarketIndex, BootstrappedCurve>,
     discount_policy: &'a BootstrapDiscountPolicy,
+    exchange_rate_store: &'a ExchangeRateStore,
 }
 
 impl BootstrapProblem<'_> {
@@ -435,6 +530,9 @@ impl BootstrapProblem<'_> {
     // Residual per instrument type
     // -----------------------------------------------------------------------
 
+    /// Dispatches the residual computation for a single instrument based
+    /// on its type (deposit, swap, basis swap, cross-currency swap,
+    /// rate futures, or FX forward).
     fn compute_residual(
         &self,
         instr: &ResolvedInstrument,
@@ -489,7 +587,7 @@ impl BootstrapProblem<'_> {
                 }
                 BuiltInstrument::FxForward(fx) => {
                     // Outright: F = DF_base − q × DF_quote ⇒ ∂F/∂q = −DF_quote
-                    // Forward pts: F = DF_base − DF_quote(1 + q × T) ⇒ ∂F/∂q = −DF_quote × T
+                    // Forward pts: F = DF_base − DF_quote(1 + q/S) ⇒ ∂F/∂q = −DF_quote/S
                     let quote_disc_idx = self
                         .discount_policy
                         .discount_index_for_currency(fx.quote_currency());
@@ -498,10 +596,11 @@ impl BootstrapProblem<'_> {
                     })?;
                     let df_q = q_curve.discount_factor(fx.delivery_date())?.value();
                     if fx.has_forward_points() {
-                        let yf = fx
-                            .day_counter()
-                            .year_fraction(self.reference_date, fx.delivery_date());
-                        -df_q * yf
+                        let spot = self
+                            .exchange_rate_store
+                            .get_exchange_rate(fx.base_currency(), fx.quote_currency())
+                            .map_or(1.0, |r| r.value());
+                        -df_q / spot
                     } else {
                         -df_q
                     }
@@ -569,7 +668,8 @@ impl BootstrapProblem<'_> {
         Ok(annuity)
     }
 
-    /// Deposit: NPV = Σ(cashflow × `DF_target(payment_date)`) = 0.
+    /// Computes the deposit residual: NPV = Σ(cashflow × `DF_target(payment_date)`).
+    /// At the solution this equals zero.
     fn residual_deposit(
         &self,
         legs: &[crate::instruments::cashflows::leg::Leg],
@@ -588,7 +688,8 @@ impl BootstrapProblem<'_> {
         Ok(npv)
     }
 
-    /// Legs-based instruments (swaps, basis swaps): NPV = Σ legs (side × `PV_leg`) = 0.
+    /// Computes the NPV residual for legs-based instruments (swaps, basis swaps)
+    /// by summing each leg's present value weighted by its side.
     fn residual_legs(
         &self,
         legs: &[crate::instruments::cashflows::leg::Leg],
@@ -607,7 +708,8 @@ impl BootstrapProblem<'_> {
         Ok(npv)
     }
 
-    /// Cross-currency swap: each leg discounted with its own currency's curve.
+    /// Computes the cross-currency swap residual, discounting each leg
+    /// with its own currency's discount curve as determined by the policy.
     fn residual_xccy(
         &self,
         xccy: &crate::instruments::rates::crosscurrencyswap::CrossCurrencySwap,
@@ -640,10 +742,8 @@ impl BootstrapProblem<'_> {
         Ok(npv)
     }
 
-    /// Futures: residual = `implied_forward` - `market_rate`.
-    ///
-    /// The `quote_value` parameter is the AD-enabled market rate so that
-    /// the tape connects the residual back to the original quote leaf.
+    /// Computes the rate-futures residual as `implied_forward − market_rate`.
+    /// The AD-enabled `quote_value` keeps the tape connected to the quote leaf.
     fn residual_futures(
         &self,
         f: &crate::instruments::rates::ratefutures::RateFutures,
@@ -666,10 +766,9 @@ impl BootstrapProblem<'_> {
         Ok((implied - *quote_value).into())
     }
 
-    /// FX forward: residual = `DF_base(T)/DF_quote(T)` - `market_fwd` / spot.
-    ///
-    /// We normalise the residual so that `DF_base(T) - (F/S) × DF_quote(T) = 0`
-    /// (the spot cancels when both sides reference the same evaluation date).
+    /// Computes the FX-forward residual normalised as
+    /// `DF_base(T) − (F/S) × DF_quote(T) = 0`. Handles both outright
+    /// forward quotes and forward-points conventions.
     fn residual_fx_forward(
         &self,
         fx: &crate::instruments::fx::fxforward::FxForward,
@@ -695,12 +794,20 @@ impl BootstrapProblem<'_> {
         let df_quote = quote_curve.discount_factor(t)?;
 
         if fx.has_forward_points() {
-            // Forward points: F = S + pts  →  DF_base/DF_quote = (S + pts)/S = 1 + pts/S
-            // We use the swap-points relation:
-            //   DF_quote × (1 + pts × T_dc) − DF_base = 0
+            // Forward points: F = S + pts  →  F/S = 1 + pts/S = DF_base/DF_quote
+            //   DF_base − DF_quote × (1 + pts/S) = 0
             let pts = *quote_value;
-            let yf = fx.day_counter().year_fraction(self.reference_date, t);
-            Ok((df_base - df_quote * (ADReal::one() + pts * yf)).into())
+            let s = self
+                .exchange_rate_store
+                .get_exchange_rate(fx.base_currency(), fx.quote_currency())
+                .map_err(|_| {
+                    QSError::NotFoundErr(format!(
+                        "Missing FX spot for {}/{}",
+                        fx.base_currency(),
+                        fx.quote_currency()
+                    ))
+                })?;
+            Ok((df_base - df_quote * (ADReal::one() + pts / s)).into())
         } else {
             // Outright: F/S = DF_base / DF_quote  →  DF_base - (F/S) × DF_quote = 0
             // quote_value is the outright forward; spot at t₀ cancels.
@@ -826,12 +933,10 @@ mod tests {
     // Test QuoteSelector — HashMap-based
     // -----------------------------------------------------------------------
 
-    /// A simple [`QuoteSelector`] backed by a map keyed on
-    /// `(MarketIndex, tenor_string)`.
+    /// A simple [`QuoteSelector`] backed by a map keyed on identifier.
     struct MapSelector {
         reference_date: Date,
-        /// Maps `(MarketIndex, tenor_string)` → `(full_identifier, rate)`.
-        quotes: HashMap<(MarketIndex, String), (String, f64)>,
+        quotes: HashMap<String, f64>,
     }
 
     impl MapSelector {
@@ -843,22 +948,14 @@ mod tests {
         }
 
         fn add(&mut self, id: &str, rate: f64) {
-            let details: QuoteDetails = id.parse().unwrap();
-            let index = details.market_index().cloned().unwrap();
-            let tenor = details.tenor().map_or_else(
-                || details.contract_code().unwrap_or_default().to_string(),
-                |p| p.to_string(),
-            );
-            self.quotes.insert((index, tenor), (id.to_string(), rate));
+            self.quotes.insert(id.to_string(), rate);
         }
     }
 
     impl QuoteSelector for MapSelector {
-        fn select(&self, market_index: &MarketIndex, tenor: &Period) -> Option<Quote> {
-            let key = (market_index.clone(), tenor.to_string());
-            let (id, rate) = self.quotes.get(&key)?;
-
-            let det: QuoteDetails = id.parse().ok()?;
+        fn select(&self, identifier: &str) -> Option<Quote> {
+            let rate = self.quotes.get(identifier)?;
+            let det: QuoteDetails = identifier.parse().ok()?;
             let q = Quote::new(det, QuoteLevels::with_mid(*rate));
             if q.build_instrument(self.reference_date, Level::Mid).is_ok() {
                 Some(q)
@@ -1028,15 +1125,9 @@ mod tests {
             Interpolator::LogLinear,
             true,
             vec![
-                Period::from_str("3M").unwrap(),
-                Period::from_str("6M").unwrap(),
+                "FixedRateDeposit_USD_SOFR_3M".into(),
+                "FixedRateDeposit_USD_SOFR_6M".into(),
             ],
-            vec![], // futures
-            vec![], // swaps
-            vec![], // basis
-            vec![], // xccy
-            vec![], // fx fwd
-            vec![], // fx pts
         );
 
         let policy = BootstrapDiscountPolicy::new(MarketIndex::SOFR, Currency::USD);
@@ -1091,18 +1182,11 @@ mod tests {
             Interpolator::LogLinear,
             true,
             vec![
-                Period::from_str("3M").unwrap(),
-                Period::from_str("6M").unwrap(),
+                "FixedRateDeposit_USD_SOFR_3M".into(),
+                "FixedRateDeposit_USD_SOFR_6M".into(),
+                "OIS_USD_SOFR_1Y".into(),
+                "OIS_USD_SOFR_2Y".into(),
             ],
-            vec![],
-            vec![
-                Period::from_str("1Y").unwrap(),
-                Period::from_str("2Y").unwrap(),
-            ],
-            vec![],
-            vec![],
-            vec![],
-            vec![],
         );
 
         let policy = BootstrapDiscountPolicy::new(MarketIndex::SOFR, Currency::USD);
@@ -1177,13 +1261,7 @@ mod tests {
             DayCounter::Actual360,
             Interpolator::LogLinear,
             true,
-            vec![Period::from_str("3M").unwrap()],
-            vec![],
-            vec![],
-            vec![],
-            vec![],
-            vec![],
-            vec![],
+            vec!["FixedRateDeposit_CLP_ICP_3M".into()],
         );
 
         // CSA = SOFR (not configured as a CurveSpec), but ICP deposits
@@ -1214,13 +1292,7 @@ mod tests {
             DayCounter::Actual360,
             Interpolator::LogLinear,
             true,
-            vec![Period::from_str("3M").unwrap()],
-            vec![],
-            vec![],
-            vec![],
-            vec![],
-            vec![],
-            vec![],
+            vec!["FixedRateDeposit_USD_SOFR_3M".into()],
         );
 
         let policy = BootstrapDiscountPolicy::new(MarketIndex::SOFR, Currency::USD);
@@ -1245,14 +1317,12 @@ mod tests {
     fn bootstrapper_bootstraps_sofr_icp_and_collateral_curves_together() {
         let rd = ref_date();
 
-        // ---- SOFR quotes (deposits only — self-discounted) ----
-        let mut selector = MultiCurveSelector::new(rd);
-        selector.add_deposit(MarketIndex::SOFR, Currency::USD, "3M", 0.05);
-        selector.add_deposit(MarketIndex::SOFR, Currency::USD, "6M", 0.051);
-
-        // ---- ICP quotes (deposits — self-discounted) ----
-        selector.add_deposit(MarketIndex::ICP, Currency::CLP, "3M", 0.06);
-        selector.add_deposit(MarketIndex::ICP, Currency::CLP, "6M", 0.062);
+        // ---- Quotes ----
+        let mut selector = MapSelector::new(rd);
+        selector.add("FixedRateDeposit_USD_SOFR_3M", 0.05);
+        selector.add("FixedRateDeposit_USD_SOFR_6M", 0.051);
+        selector.add("FixedRateDeposit_CLP_ICP_3M", 0.06);
+        selector.add("FixedRateDeposit_CLP_ICP_6M", 0.062);
 
         // ---- Curve specs ----
         let sofr_spec = CurveSpec::new(
@@ -1262,15 +1332,9 @@ mod tests {
             Interpolator::LogLinear,
             true,
             vec![
-                Period::from_str("3M").unwrap(),
-                Period::from_str("6M").unwrap(),
+                "FixedRateDeposit_USD_SOFR_3M".into(),
+                "FixedRateDeposit_USD_SOFR_6M".into(),
             ],
-            vec![],
-            vec![],
-            vec![],
-            vec![],
-            vec![],
-            vec![],
         );
 
         let icp_spec = CurveSpec::new(
@@ -1280,15 +1344,9 @@ mod tests {
             Interpolator::LogLinear,
             true,
             vec![
-                Period::from_str("3M").unwrap(),
-                Period::from_str("6M").unwrap(),
+                "FixedRateDeposit_CLP_ICP_3M".into(),
+                "FixedRateDeposit_CLP_ICP_6M".into(),
             ],
-            vec![],
-            vec![],
-            vec![],
-            vec![],
-            vec![],
-            vec![],
         );
 
         // Both curves self-discount (CSA irrelevant for deposits).
@@ -1367,28 +1425,23 @@ mod tests {
 
         // Helper closure: build a bootstrapper, bootstrap, return the curve element map.
         let do_bootstrap = |sel: &MapSelector| {
-            let deposit_tenors: Vec<Period> = ["1M", "3M", "6M"]
-                .iter()
-                .map(|s| Period::from_str(s).unwrap())
-                .collect();
-            let swap_tenors: Vec<Period> = ["1Y", "2Y", "3Y", "5Y", "7Y", "10Y"]
-                .iter()
-                .map(|s| Period::from_str(s).unwrap())
-                .collect();
-
             let spec = CurveSpec::new(
                 MarketIndex::SOFR,
                 Currency::USD,
                 DayCounter::Actual360,
                 Interpolator::LogLinear,
                 true,
-                deposit_tenors,
-                vec![],
-                swap_tenors,
-                vec![],
-                vec![],
-                vec![],
-                vec![],
+                vec![
+                    "FixedRateDeposit_USD_SOFR_1M".into(),
+                    "FixedRateDeposit_USD_SOFR_3M".into(),
+                    "FixedRateDeposit_USD_SOFR_6M".into(),
+                    "OIS_USD_SOFR_1Y".into(),
+                    "OIS_USD_SOFR_2Y".into(),
+                    "OIS_USD_SOFR_3Y".into(),
+                    "OIS_USD_SOFR_5Y".into(),
+                    "OIS_USD_SOFR_7Y".into(),
+                    "OIS_USD_SOFR_10Y".into(),
+                ],
             );
             let policy = BootstrapDiscountPolicy::new(MarketIndex::SOFR, Currency::USD);
             let bootstrapper = MultiCurveBootstrapper::new(vec![spec], policy);
@@ -1613,73 +1666,5 @@ mod tests {
         let period = Period::from_str(tenor_str)
             .unwrap_or(Period::new(0, crate::time::enums::TimeUnit::Days));
         reference_date + period
-    }
-
-    // -----------------------------------------------------------------------
-    // MultiCurveSelector — a richer QuoteSelector for multi-index tests
-    // -----------------------------------------------------------------------
-
-    /// A [`QuoteSelector`] that stores quotes per index with explicit
-    /// instrument type discrimination.
-    struct MultiCurveSelector {
-        reference_date: Date,
-        deposits: HashMap<(MarketIndex, String), (Currency, f64)>,
-        ois: HashMap<(MarketIndex, String), (Currency, f64)>,
-    }
-
-    impl MultiCurveSelector {
-        fn new(reference_date: Date) -> Self {
-            Self {
-                reference_date,
-                deposits: HashMap::new(),
-                ois: HashMap::new(),
-            }
-        }
-
-        fn add_deposit(&mut self, index: MarketIndex, ccy: Currency, tenor: &str, rate: f64) {
-            self.deposits
-                .insert((index, tenor.to_string()), (ccy, rate));
-        }
-
-        #[allow(dead_code)]
-        fn add_ois(&mut self, index: MarketIndex, ccy: Currency, tenor: &str, rate: f64) {
-            self.ois.insert((index, tenor.to_string()), (ccy, rate));
-        }
-    }
-
-    impl QuoteSelector for MultiCurveSelector {
-        fn select(&self, market_index: &MarketIndex, tenor: &Period) -> Option<Quote> {
-            let key = (market_index.clone(), tenor.to_string());
-            let idx_str = market_index.to_string();
-            let tenor_str = tenor.to_string();
-
-            // Try deposit first.
-            if let Some((ccy, rate)) = self.deposits.get(&key) {
-                let id = format!("FixedRateDeposit_{ccy}_{idx_str}_{tenor_str}");
-                if let Ok(det) = id.parse::<QuoteDetails>() {
-                    let q = Quote::new(det, QuoteLevels::with_mid(*rate));
-                    if q.build_instrument(self.reference_date, Level::Mid).is_ok() {
-                        return Some(q);
-                    }
-                }
-            }
-
-            // Try OIS.
-            if let Some((ccy, rate)) = self.ois.get(&key) {
-                let id = format!("OIS_{ccy}_{idx_str}_{tenor_str}");
-                if let Ok(det) = id.parse::<QuoteDetails>() {
-                    let q = Quote::new(det, QuoteLevels::with_mid(*rate));
-                    if q.build_instrument(self.reference_date, Level::Mid).is_ok() {
-                        return Some(q);
-                    }
-                }
-            }
-
-            None
-        }
-
-        fn reference_date(&self) -> Date {
-            self.reference_date
-        }
     }
 }

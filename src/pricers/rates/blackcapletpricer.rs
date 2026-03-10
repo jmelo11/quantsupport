@@ -23,8 +23,6 @@ use crate::{
 };
 use std::collections::HashSet;
 
-/// # `BlackCapletPricer`
-///
 /// Prices a caplet or floorlet using the Black (log-normal) model.
 ///
 /// The forward rate for the period is derived from the discount curve using

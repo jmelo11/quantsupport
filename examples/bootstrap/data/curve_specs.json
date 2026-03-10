@@ -2,33 +2,66 @@
     "curve_specs": [
         {
             "market_index": "SOFR",
-            "deposits": [
-                "1D"
-            ],
-            "swaps": [
-                "1Y",
-                "2Y",
-                "3Y",
-                "5Y",
-                "7Y",
-                "10Y",
-                "30Y"
+            "quotes": [
+                "FixedRateDeposit_USD_SOFR_1D",
+                "OIS_USD_SOFR_1Y",
+                "OIS_USD_SOFR_2Y",
+                "OIS_USD_SOFR_3Y",
+                "OIS_USD_SOFR_5Y",
+                "OIS_USD_SOFR_7Y",
+                "OIS_USD_SOFR_10Y",
+                "OIS_USD_SOFR_30Y"
             ]
         },
         {
             "market_index": "TermSOFR3m",
-            "deposits": [
-                "3M"
-            ],
-            "basis_swaps": [
-                "6M",
-                "1Y",
-                "2Y",
-                "3Y",
-                "5Y",
-                "7Y",
-                "10Y",
-                "30Y"
+            "quotes": [
+                "FixedRateDeposit_USD_TermSOFR3m_3M",
+                "BasisSwap_USD_SOFR_TermSOFR3m_6M",
+                "BasisSwap_USD_SOFR_TermSOFR3m_1Y",
+                "BasisSwap_USD_SOFR_TermSOFR3m_2Y",
+                "BasisSwap_USD_SOFR_TermSOFR3m_3Y",
+                "BasisSwap_USD_SOFR_TermSOFR3m_5Y",
+                "BasisSwap_USD_SOFR_TermSOFR3m_7Y",
+                "BasisSwap_USD_SOFR_TermSOFR3m_10Y",
+                "BasisSwap_USD_SOFR_TermSOFR3m_30Y"
+            ]
+        },
+        {
+            "market_index": {
+                "Collateral": [
+                    "CLP",
+                    "USD"
+                ]
+            },
+            "currency": "CLP",
+            "quotes": [
+                "FxForwardPoints_USDCLP_1M",
+                "FxForwardPoints_USDCLP_3M",
+                "FxForwardPoints_USDCLP_6M",
+                "CrossCurrencySwap_CLP_ICP_SOFR_USD_1Y",
+                "CrossCurrencySwap_CLP_ICP_SOFR_USD_2Y",
+                "CrossCurrencySwap_CLP_ICP_SOFR_USD_3Y",
+                "CrossCurrencySwap_CLP_ICP_SOFR_USD_5Y",
+                "CrossCurrencySwap_CLP_ICP_SOFR_USD_7Y",
+                "CrossCurrencySwap_CLP_ICP_SOFR_USD_10Y",
+                "CrossCurrencySwap_CLP_ICP_SOFR_USD_20Y"
+            ]
+        },
+        {
+            "market_index": "ICP",
+            "currency": "CLP",
+            "quotes": [
+                "FixedRateDeposit_CLP_ICP_1D",
+                "FixedRateDeposit_CLP_ICP_3M",
+                "OIS_CLP_ICP_6M",
+                "OIS_CLP_ICP_1Y",
+                "OIS_CLP_ICP_2Y",
+                "OIS_CLP_ICP_3Y",
+                "OIS_CLP_ICP_5Y",
+                "OIS_CLP_ICP_7Y",
+                "OIS_CLP_ICP_10Y",
+                "OIS_CLP_ICP_20Y"
             ]
         }
     ]

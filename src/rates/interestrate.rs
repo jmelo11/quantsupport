@@ -12,9 +12,7 @@ use super::compounding::Compounding;
 ///
 /// # Example
 /// ```
-/// use quantsupport::time::{date::Date, daycounter::DayCounter, enums::Frequency};
-/// use quantsupport::rates::compounding::Compounding;
-/// use quantsupport::rates::interestrate::RateDefinition;
+/// use quantsupport::prelude::*;
 ///
 /// let rate_definition = RateDefinition::new(DayCounter::Actual360, Compounding::Simple, Frequency::Annual);
 /// assert_eq!(rate_definition.compounding(), Compounding::Simple);

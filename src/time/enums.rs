@@ -7,7 +7,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::utils::errors::{QSError, Result};
 
-/// # Frequency
 /// Enum representing a financial frequency.
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone, Copy, PartialOrd, Ord, Hash)]
 pub enum Frequency {
@@ -57,9 +56,7 @@ impl TryFrom<String> for Frequency {
             "Weekly" => Ok(Self::Weekly),
             "Daily" => Ok(Self::Daily),
             "OtherFrequency" => Ok(Self::OtherFrequency),
-            _ => Err(QSError::InvalidValueErr(format!(
-                "Invalid frequency: {s}"
-            ))),
+            _ => Err(QSError::InvalidValueErr(format!("Invalid frequency: {s}"))),
         }
     }
 }
@@ -84,7 +81,6 @@ impl From<Frequency> for String {
     }
 }
 
-/// # `TimeUnit`
 /// Enum representing a time unit.
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone, Copy, PartialOrd, Ord)]
 pub enum TimeUnit {
@@ -107,9 +103,7 @@ impl TryFrom<String> for TimeUnit {
             "Weeks" => Ok(Self::Weeks),
             "Months" => Ok(Self::Months),
             "Years" => Ok(Self::Years),
-            _ => Err(QSError::InvalidValueErr(format!(
-                "Invalid time unit: {s}"
-            ))),
+            _ => Err(QSError::InvalidValueErr(format!("Invalid time unit: {s}"))),
         }
     }
 }
@@ -125,7 +119,6 @@ impl From<TimeUnit> for String {
     }
 }
 
-/// # Month
 /// Enum representing a month.
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone, Copy, PartialOrd, Ord)]
 pub enum Month {
@@ -291,20 +284,17 @@ impl From<DateGenerationRule> for String {
     }
 }
 
-/// # `BusinessDayConvention`
 /// Enum representing a business day convention. Business day conventions are used to
 /// adjust a date in case it is not a business day.
 ///
-/// ## Convention
-/// * `Following` - Choose the first business day after the given holiday.
-/// * `ModifiedFollowing` - Choose the first business day after the given holiday unless
-///   it belongs to a different month, in which case choose the first business day before the given holiday.
-/// * `Preceding` - Choose the first business day before the given holiday.
-/// * `ModifiedPreceding` - Choose the first business day before the given holiday unless
-///   it belongs to a different month, in which case choose the first business day after the given holiday.
-/// * `Unadjusted` - Do not adjust.
-/// * `HalfMonthModifiedFollowing` - Choose the first business day after the given holiday
-///   unless that day falls in the first half of the month, in which case choose the first business day before the given holiday.
+/// The supported business day conventions are:
+/// - [`Self::Following`]: Adjusts to the next business day.
+/// - [`Self::ModifiedFollowing`]: Adjusts to the next business day unless it falls in the next month, in which case it adjusts to the previous business day.
+/// - [`Self::Preceding`]: Adjusts to the previous business day.
+/// - [`Self::ModifiedPreceding`]: Adjusts to the previous business day unless it falls in the previous month, in which case it adjusts to the next business day.
+/// - [`Self::Unadjusted`]: No adjustment is made.
+/// - [`Self::HalfMonthModifiedFollowing`]: Adjusts to the next business day unless the date falls in the second half of the month, in which case it adjusts to the previous business day.
+/// - [`Self::Nearest`]: Adjusts to the nearest business day. If both the following and preceding business days are equidistant, the following business day is used.
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Deserialize, Serialize, Hash)]
 pub enum BusinessDayConvention {
     /// Following convention.
@@ -358,7 +348,6 @@ impl From<BusinessDayConvention> for String {
     }
 }
 
-/// # Weekday
 /// Enum representing a weekday.
 #[derive(Debug, PartialEq, Eq, Clone, Copy, PartialOrd, Ord)]
 pub enum Weekday {
