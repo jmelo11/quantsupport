@@ -16,8 +16,6 @@ use crate::{
     },
 };
 
-/// # `CORRAIndex`
-///
 /// Details for CORRA (Canadian Overnight Repo Rate Average).
 /// Overnight secured rate published by the Bank of Canada.
 #[derive(Copy, Clone, Serialize, Default, Deserialize)]

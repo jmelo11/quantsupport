@@ -181,7 +181,7 @@ where
             if !leg.is_linear() {
                 return Err(QSError::InvalidValueErr(format!(
                     "Leg {} is not linear. CashflowDiscountPricer only supports linear payoffs",
-                    leg.leg_id()
+                    leg.id()
                 )));
             }
         }
@@ -288,7 +288,7 @@ where
                     CashflowType::OptionEmbeddedCoupon(_) => {
                         return Err(QSError::InvalidValueErr(format!(
                             "Option-embedded coupon found in leg {}. CashflowDiscountPricer does not support non-linear payoffs",
-                            leg.leg_id()
+                            leg.id()
                         )));
                     }
                     CashflowType::Redemption(cf) => (ADReal::from(cf.amount()?), cf.payment_date()),
@@ -312,7 +312,7 @@ where
                         let leg_curve_index = leg.market_index().ok_or_else(|| {
                             QSError::NotFoundErr(format!(
                                 "Leg {} requires market index to compute FX parity against discount curve currency {}",
-                                leg.leg_id(),
+                                leg.id(),
                                 discount_currency
                             ))
                         })?;

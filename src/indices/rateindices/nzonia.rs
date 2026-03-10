@@ -16,8 +16,6 @@ use crate::{
     },
 };
 
-/// # `NZONIAIndex`
-///
 /// Details for NZONIA (New Zealand Overnight Index Average).
 /// Overnight unsecured rate based on the RBNZ Official Cash Rate.
 #[derive(Copy, Clone, Serialize, Default, Deserialize)]

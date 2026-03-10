@@ -4,6 +4,11 @@ use std::{
 };
 
 /// A node recorded on the tape, with child links and adjoint values.
+///
+/// The [`TapeNode`] struct represents a single node in the computational graph recorded on the tape. It contains:
+/// - [`Self::childs`]: A vector of non-null pointers to child nodes that receive propagated adjoints during backpropagation.
+/// - [`Self::derivs`]: A vector of local derivatives corresponding to each child, used to compute the contribution to each child's adjoint.
+/// - [`Self::adj`]: The accumulated adjoint value for this node, which is updated during backpropagation and used to propagate gradients to child nodes.
 #[derive(Clone)]
 pub struct TapeNode {
     /// Child nodes that receive propagated adjoints.

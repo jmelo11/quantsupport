@@ -16,8 +16,6 @@ use crate::{
     },
 };
 
-/// # `ESTRIndex`
-///
 /// Details for the €STR (Euro Short-Term Rate) index.
 /// Overnight unsecured rate published by the ECB.
 #[derive(Copy, Clone, Serialize, Default, Deserialize)]

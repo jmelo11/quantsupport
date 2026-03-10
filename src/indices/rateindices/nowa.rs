@@ -16,8 +16,6 @@ use crate::{
     },
 };
 
-/// # `NOWAIndex`
-///
 /// Details for NOWA (Norwegian Overnight Weighted Average).
 /// Overnight unsecured rate published by Norges Bank.
 #[derive(Copy, Clone, Serialize, Default, Deserialize)]

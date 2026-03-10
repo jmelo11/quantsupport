@@ -46,7 +46,37 @@ pub enum PaymentStructure {
     Other,
 }
 
-/// [`MakeLeg`] is a builder for a flegs.
+/// [`MakeLeg`] is a builder for legs.
+///
+/// It supports fixed-rate, floating-rate, and option-embedded coupon legs
+/// across several payment structures (bullet, equal payments, equal
+/// redemptions, zero, or custom).
+///
+/// ## Example
+/// ```rust
+/// use quantsupport::prelude::*;
+///
+/// let rate = InterestRate::from_rate_definition(
+///     ADReal::new(0.05),
+///     RateDefinition::new(DayCounter::Actual360, Compounding::Simple, Frequency::Annual),
+/// );
+///
+/// let leg = MakeLeg::default()
+///     .with_start_date(Date::new(2024, 1, 1))
+///     .with_end_date(Date::new(2025, 1, 1))
+///     .with_notional(100_000.0)
+///     .with_rate(rate)
+///     .with_rate_type(RateType::Fixed)
+///     .with_side(Side::PayShort)
+///     .with_currency(Currency::USD)
+///     .with_payment_frequency(Frequency::Semiannual)
+///     .with_market_index(MarketIndex::SOFR)
+///     .bullet()
+///     .build()
+///     .expect("failed to build leg");
+///
+/// assert!(!leg.cashflows().is_empty());
+/// ```
 #[derive(Clone, Default)]
 pub struct MakeLeg {
     // common fields

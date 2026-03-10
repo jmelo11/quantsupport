@@ -8,7 +8,23 @@ use crate::utils::errors::{QSError, Result};
 use std::cmp::Ordering;
 use std::ptr::NonNull;
 
-/// Represents a differnetiable number.
+/// Represents a number that can be used in differentiable functions.
+/// 
+/// ## Example
+/// ```
+/// use quantsupport::ad::adreal::ADReal;
+/// use quantsupport::ad::adreal::FloatExt;
+/// use quantsupport::ad::adreal::IsReal;
+/// use quantsupport::ad::tape::Tape;
+/// 
+/// Tape::start_recording();
+/// let x = ADReal::new(0.0);
+/// let expr = x.cos();
+/// let out: ADReal = expr.into();
+/// out.backward().unwrap();
+/// assert_eq!(x.adjoint().unwrap(), 0.0); // derivative of cos(x) wrt x = -sin(x) = 0 at x=0
+/// assert_eq!(out.adjoint().unwrap(), 1.0);
+/// ```
 #[derive(Clone, Copy, Default)]
 pub struct ADReal {
     val: f64,

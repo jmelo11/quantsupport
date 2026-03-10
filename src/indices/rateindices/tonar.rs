@@ -9,15 +9,11 @@ use crate::{
     },
     rates::{compounding::Compounding, interestrate::RateDefinition},
     time::{
-        calendar::Calendar,
-        calendars::weekendsonly::WeekendsOnly,
-        daycounter::DayCounter,
+        calendar::Calendar, calendars::weekendsonly::WeekendsOnly, daycounter::DayCounter,
         enums::Frequency,
     },
 };
 
-/// # `TONARIndex`
-///
 /// Details for TONAR (Tokyo Overnight Average Rate).
 /// Overnight unsecured rate published by the Bank of Japan.
 #[derive(Copy, Clone, Serialize, Default, Deserialize)]

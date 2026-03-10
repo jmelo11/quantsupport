@@ -38,12 +38,82 @@ use std::{cell::RefCell, rc::Rc};
 
 /// Dependency-aware, lazy multi-curve bootstrapper.
 ///
-/// 1. Accepts a set of [`CurveSpec`]s and a [`BootstrapDiscountPolicy`].
-/// 2. On [`bootstrap()`](Self::bootstrap) resolves quotes, determines a
-///    consistent dependency order, and iteratively solves for discount
-///    factors (or forward rates when the discount curve is already known)
-///    using Newton's method with AD Jacobians.
-/// 3. Returns ready-to-use [`DiscountCurveElement`]s keyed by market index.
+/// Accepts a set of [`CurveSpec`]s and a [`BootstrapDiscountPolicy`] that
+/// will determine how to bootstrap each curve. It resolves dependencies between [`CurveSpec`].
+///
+/// ## Parameters
+/// * `curve_specs`: the list of curve specifications to bootstrap. Each spec includes the market index, currency, day count convention, interpolation method, and the list of pillar instruments (identified by their quote IDs).
+/// * `discount_policy`: the discount policy defines how to determine the discount curve for each instrument during bootstrapping, including handling of cross-currency instruments and collateralization. See [`BootstrapDiscountPolicy`] for details.
+///
+/// ## Example
+/// ```
+/// use quantsupport::prelude::*;
+/// use std::collections::HashMap;
+///
+/// // We create a simple QuoteSelector that holds the market quotes in a HashMap.
+/// struct MapSelector {
+///     reference_date: Date,
+///     quotes: HashMap<String, f64>,
+/// }
+///
+/// impl MapSelector {
+///     fn new(reference_date: Date) -> Self {
+///         Self {
+///             reference_date,
+///             quotes: HashMap::new(),
+///         }
+///     }
+///
+///     fn add(&mut self, id: &str, rate: f64) {
+///         self.quotes.insert(id.to_string(), rate);
+///     }
+/// }
+///
+/// impl QuoteSelector for MapSelector {
+///         fn select(&self, identifier: &str) -> Option<Quote> {
+///             let rate = self.quotes.get(identifier)?;
+///             let det: QuoteDetails = identifier.parse().ok()?;
+///             let q = Quote::new(det, QuoteLevels::with_mid(*rate));
+///             if q.build_instrument(self.reference_date, Level::Mid).is_ok() {
+///                 Some(q)
+///             } else {
+///                 None
+///             }
+///         }
+///         fn reference_date(&self) -> Date {
+///             Date::new(2024, 1, 2)
+///         }
+///     }
+///
+/// // We pass the market data to the selector
+/// let rd = Date::new(2024, 6, 1);
+/// let mut selector = MapSelector::new(rd);
+/// selector.add("FixedRateDeposit_USD_SOFR_3M", 0.05);
+/// selector.add("FixedRateDeposit_USD_SOFR_6M", 0.051);
+/// selector.add("OIS_USD_SOFR_1Y", 0.048);
+/// selector.add("OIS_USD_SOFR_2Y", 0.045);
+///
+/// // We configure a single curve for the SOFR index, with 4 pillars.
+/// let spec = CurveSpec::new(
+///     MarketIndex::SOFR,
+///     Currency::USD,
+///     DayCounter::Actual360,
+///     Interpolator::LogLinear,
+///     true,
+///     vec![
+///         "FixedRateDeposit_USD_SOFR_3M".into(),
+///         "FixedRateDeposit_USD_SOFR_6M".into(),
+///         "OIS_USD_SOFR_1Y".into(),
+///         "OIS_USD_SOFR_2Y".into(),
+///     ],
+/// );
+///
+/// // Setup the discount policy and bootstrap.
+/// let policy = BootstrapDiscountPolicy::new(MarketIndex::SOFR, Currency::USD);
+/// let bootstrapper = MultiCurveBootstrapper::new(vec![spec], policy);
+/// let result = bootstrapper.bootstrap(&selector, Level::Mid);
+/// assert!(result.is_ok(), "Bootstrap failed: {:?}", result.err());
+/// ```
 pub struct MultiCurveBootstrapper {
     curve_specs: Vec<CurveSpec>,
     discount_policy: BootstrapDiscountPolicy,
@@ -61,24 +131,21 @@ impl MultiCurveBootstrapper {
         }
     }
 
-    /// Registers an [`ExchangeRateStore`] for FX spot rates.
-    ///
-    /// The forward-points bootstrap residual uses this to convert points
-    /// into a ratio: `F/S = 1 + pts/S`.
+    /// Registers an [`ExchangeRateStore`] for FX spot rates. Required for
+    /// instruments referencing multiple currencies (e.g. cross-currency swaps, FX forwards).
     #[must_use]
     pub fn with_exchange_rate_store(mut self, store: ExchangeRateStore) -> Self {
         self.exchange_rate_store = store;
         self
     }
 
-    // -----------------------------------------------------------------------
-    // Public entry point
-    // -----------------------------------------------------------------------
-
     /// Resolves quotes, determines dependency order, and bootstraps every
     /// configured curve.
     ///
-    /// # Errors
+    /// ## Parameters
+    /// * `selector`: the quote selector to resolve market quotes for the pillar instruments. The selector should be able to build the corresponding `BuiltInstrument`s for each quote ID, as these are needed for bootstrapping.
+    ///
+    /// ## Errors
     /// Returns an error if quote resolution fails, a dependency cycle or
     /// missing curve is detected, or if the Newton solver does not converge
     /// for any curve.
@@ -112,6 +179,8 @@ impl MultiCurveBootstrapper {
     // Resolution
     // -----------------------------------------------------------------------
 
+    /// Resolves every [`CurveSpec`] into a [`ResolvedCurveSpec`] by selecting
+    /// and building the quoted instruments through the given selector.
     fn resolve_all(
         &self,
         selector: &impl QuoteSelector,
@@ -129,6 +198,9 @@ impl MultiCurveBootstrapper {
     // Dependency ordering (topological sort)
     // -----------------------------------------------------------------------
 
+    /// Performs a topological sort (Kahn's algorithm) on the curve
+    /// dependency graph, returning an ordering where every curve is
+    /// bootstrapped only after its dependencies.
     fn dependency_order(
         resolved: &HashMap<MarketIndex, ResolvedCurveSpec>,
         policy: &BootstrapDiscountPolicy,
@@ -198,6 +270,10 @@ impl MultiCurveBootstrapper {
     // Single-curve bootstrap
     // -----------------------------------------------------------------------
 
+    /// Bootstraps a single curve by solving for discount factors that
+    /// reprice all its instruments to zero residual. After the Newton
+    /// solver converges, applies the implicit function theorem (IFT) to
+    /// attach exact sensitivities w.r.t. market quotes to the result.
     fn bootstrap_curve(
         &self,
         target_index: &MarketIndex,
@@ -307,6 +383,7 @@ impl MultiCurveBootstrapper {
 
     /// Solves a dense linear system A x = b using Gaussian elimination with
     /// partial pivoting.  Operates entirely in `f64`.
+    /// TODO: replace with a more efficient and stable linear algebra library if needed.
     #[allow(clippy::needless_range_loop)]
     fn solve_f64_system(a: &[Vec<f64>], b: &[f64]) -> Result<Vec<f64>> {
         let n = a.len();
@@ -355,6 +432,9 @@ impl MultiCurveBootstrapper {
         Ok(bb)
     }
 
+    /// Converts the bootstrapped curves into [`DiscountCurveElement`]s
+    /// that can be stored in a market-data context, preserving pillar
+    /// labels, quote values, and AD links.
     fn build_curve_elements(
         resolved: &HashMap<MarketIndex, ResolvedCurveSpec>,
         bootstrapped: &HashMap<MarketIndex, BootstrappedCurve>,
@@ -450,6 +530,9 @@ impl BootstrapProblem<'_> {
     // Residual per instrument type
     // -----------------------------------------------------------------------
 
+    /// Dispatches the residual computation for a single instrument based
+    /// on its type (deposit, swap, basis swap, cross-currency swap,
+    /// rate futures, or FX forward).
     fn compute_residual(
         &self,
         instr: &ResolvedInstrument,
@@ -585,7 +668,8 @@ impl BootstrapProblem<'_> {
         Ok(annuity)
     }
 
-    /// Deposit: NPV = Σ(cashflow × `DF_target(payment_date)`) = 0.
+    /// Computes the deposit residual: NPV = Σ(cashflow × `DF_target(payment_date)`).
+    /// At the solution this equals zero.
     fn residual_deposit(
         &self,
         legs: &[crate::instruments::cashflows::leg::Leg],
@@ -604,7 +688,8 @@ impl BootstrapProblem<'_> {
         Ok(npv)
     }
 
-    /// Legs-based instruments (swaps, basis swaps): NPV = Σ legs (side × `PV_leg`) = 0.
+    /// Computes the NPV residual for legs-based instruments (swaps, basis swaps)
+    /// by summing each leg's present value weighted by its side.
     fn residual_legs(
         &self,
         legs: &[crate::instruments::cashflows::leg::Leg],
@@ -623,7 +708,8 @@ impl BootstrapProblem<'_> {
         Ok(npv)
     }
 
-    /// Cross-currency swap: each leg discounted with its own currency's curve.
+    /// Computes the cross-currency swap residual, discounting each leg
+    /// with its own currency's discount curve as determined by the policy.
     fn residual_xccy(
         &self,
         xccy: &crate::instruments::rates::crosscurrencyswap::CrossCurrencySwap,
@@ -656,10 +742,8 @@ impl BootstrapProblem<'_> {
         Ok(npv)
     }
 
-    /// Futures: residual = `implied_forward` - `market_rate`.
-    ///
-    /// The `quote_value` parameter is the AD-enabled market rate so that
-    /// the tape connects the residual back to the original quote leaf.
+    /// Computes the rate-futures residual as `implied_forward − market_rate`.
+    /// The AD-enabled `quote_value` keeps the tape connected to the quote leaf.
     fn residual_futures(
         &self,
         f: &crate::instruments::rates::ratefutures::RateFutures,
@@ -682,10 +766,9 @@ impl BootstrapProblem<'_> {
         Ok((implied - *quote_value).into())
     }
 
-    /// FX forward: residual = `DF_base(T)/DF_quote(T)` - `market_fwd` / spot.
-    ///
-    /// We normalise the residual so that `DF_base(T) - (F/S) × DF_quote(T) = 0`
-    /// (the spot cancels when both sides reference the same evaluation date).
+    /// Computes the FX-forward residual normalised as
+    /// `DF_base(T) − (F/S) × DF_quote(T) = 0`. Handles both outright
+    /// forward quotes and forward-points conventions.
     fn residual_fx_forward(
         &self,
         fx: &crate::instruments::fx::fxforward::FxForward,

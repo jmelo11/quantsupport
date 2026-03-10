@@ -16,8 +16,7 @@ use crate::{
     },
 };
 
-/// # `AONIAIndex`
-///
+
 /// Details for AONIA (AUD Overnight Index Average).
 /// Overnight unsecured rate published by the Reserve Bank of Australia.
 #[derive(Copy, Clone, Serialize, Default, Deserialize)]

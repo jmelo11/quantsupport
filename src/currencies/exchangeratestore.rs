@@ -67,7 +67,7 @@ impl ExchangeRateStore {
     /// Retrieves the exchange rate `base → quote`, composing via BFS if no
     /// direct rate is stored.
     ///
-    /// Returns `ADReal` so that the dependence on intermediate rates is
+    /// Returns [`ADReal`] so that the dependence on intermediate rates is
     /// tracked on the AD tape.
     ///
     /// # Errors

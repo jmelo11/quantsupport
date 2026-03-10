@@ -56,21 +56,20 @@ fn previous_twentieth(date: Date, rule: DateGenerationRule) -> Date {
     result
 }
 
-/// # `Schedule`
-/// A `Schedule` is a sequence of dates. It is defined by an effective date, a termination date and
+/// A [`Schedule`] is a sequence of dates defined by an effective date, a termination date and
 /// a tenor.
 ///
-/// ## Parameters
-/// * `tenor` - The tenor of the schedule
-/// * `calendar` - The calendar of the schedule
-/// * `convention` - The business day convention of the schedule
-/// * `termination_date_convention` - The business day convention of the termination date
-/// * `rule` - The date generation rule
-/// * `end_of_month` - The end of month flag
+/// ## Fields
+/// * `tenor` - The [`Period`] tenor of the schedule
+/// * `calendar` - The [`Calendar`] used for date adjustments
+/// * `convention` - The [`BusinessDayConvention`] applied to intermediate dates
+/// * `termination_date_convention` - The [`BusinessDayConvention`] applied to the termination date
+/// * `rule` - The [`DateGenerationRule`] controlling how dates are generated
+/// * `end_of_month` - Whether to enforce end-of-month convention
 /// * `first_date` - The first date of the schedule
-/// * `next_to_last_date` - The next to last date of the schedule
-/// * `dates` - The dates of the schedule
-/// * `is_regular` - The regularity of the schedule
+/// * `next_to_last_date` - The next-to-last date of the schedule
+/// * `dates` - The generated [`Date`] sequence
+/// * `is_regular` - Whether each period in the schedule is regular
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Schedule {
     tenor: Period,
@@ -86,7 +85,7 @@ pub struct Schedule {
 }
 
 impl Schedule {
-    /// Creates an empty `Schedule` with default values.
+    /// Creates an empty [`Schedule`] with default values.
     #[must_use]
     pub fn empty() -> Self {
         Self {
@@ -103,7 +102,7 @@ impl Schedule {
         }
     }
 
-    /// Returns a reference to the dates of the schedule.
+    /// Returns a reference to the [`Date`] vector of the schedule.
     #[must_use]
     pub const fn dates(&self) -> &Vec<Date> {
         &self.dates
@@ -115,31 +114,31 @@ impl Schedule {
         &self.is_regular
     }
 
-    /// Returns the tenor of the schedule.
+    /// Returns the [`Period`] tenor of the schedule.
     #[must_use]
     pub const fn tenor(&self) -> Period {
         self.tenor
     }
 
-    /// Returns the calendar of the schedule.
+    /// Returns the [`Calendar`] of the schedule.
     #[must_use]
     pub fn calendar(&self) -> Calendar {
         self.calendar.clone()
     }
 
-    /// Returns the business day convention of the schedule.
+    /// Returns the [`BusinessDayConvention`] of the schedule.
     #[must_use]
     pub const fn convention(&self) -> BusinessDayConvention {
         self.convention
     }
 
-    /// Returns the termination date convention of the schedule.
+    /// Returns the termination date [`BusinessDayConvention`].
     #[must_use]
     pub const fn termination_date_convention(&self) -> BusinessDayConvention {
         self.termination_date_convention
     }
 
-    /// Returns the date generation rule of the schedule.
+    /// Returns the [`DateGenerationRule`] of the schedule.
     #[must_use]
     pub const fn rule(&self) -> DateGenerationRule {
         self.rule
@@ -151,21 +150,23 @@ impl Schedule {
         self.end_of_month
     }
 
-    /// Returns the first date of the schedule.
+    /// Returns the first [`Date`] of the schedule.
     #[must_use]
     pub const fn first_date(&self) -> Date {
         self.first_date
     }
 
-    /// Returns the next to last date of the schedule.
+    /// Returns the next-to-last [`Date`] of the schedule.
     #[must_use]
     pub const fn next_to_last_date(&self) -> Date {
         self.next_to_last_date
     }
 }
 
-/// # `MakeSchedule`
-/// This struct is used to build a schedule.
+/// Builder for a [`Schedule`].
+///
+/// Use the fluent API to configure dates, tenor, calendar and conventions,
+/// then call [`MakeSchedule::build`] to produce a [`Schedule`].
 ///
 /// ## Example
 ///
@@ -207,9 +208,9 @@ pub struct MakeSchedule {
     dates: Vec<Date>,
 }
 
-/// Constructor, setters and getters
+/// Constructor, setters and getters.
 impl MakeSchedule {
-    /// Returns a new instance of `MakeSchedule`.
+    /// Creates a new [`MakeSchedule`] with the given effective and termination [`Date`]s.
     #[allow(clippy::missing_const_for_fn)]
     #[must_use]
     pub fn new(from: Date, to: Date) -> Self {
@@ -229,14 +230,14 @@ impl MakeSchedule {
         }
     }
 
-    /// Sets the tenor.
+    /// Sets the [`Period`] tenor.
     #[must_use]
     pub const fn with_tenor(mut self, tenor: Period) -> Self {
         self.tenor = tenor;
         self
     }
 
-    /// Sets the frequency.
+    /// Sets the tenor from a [`Frequency`].
     #[must_use]
     pub fn with_frequency(mut self, frequency: Frequency) -> Self {
         self.tenor =
@@ -244,21 +245,21 @@ impl MakeSchedule {
         self
     }
 
-    /// Sets the calendar.
+    /// Sets the [`Calendar`] used for date adjustments.
     #[must_use]
     pub fn with_calendar(mut self, calendar: Calendar) -> Self {
         self.calendar = calendar;
         self
     }
 
-    /// Sets the convention. weekday correccions are applied.
+    /// Sets the [`BusinessDayConvention`] for intermediate dates.
     #[must_use]
     pub const fn with_convention(mut self, convention: BusinessDayConvention) -> Self {
         self.convention = convention;
         self
     }
 
-    /// Sets the termination date convention.
+    /// Sets the [`BusinessDayConvention`] for the termination date.
     #[must_use]
     pub const fn with_termination_date_convention(
         mut self,
@@ -268,21 +269,21 @@ impl MakeSchedule {
         self
     }
 
-    /// Sets the rule.
+    /// Sets the [`DateGenerationRule`].
     #[must_use]
     pub const fn with_rule(mut self, rule: DateGenerationRule) -> Self {
         self.rule = rule;
         self
     }
 
-    /// Sets the end of month flag.
+    /// Sets the [`DateGenerationRule`] to [`DateGenerationRule::Forward`].
     #[must_use]
     pub const fn forwards(mut self) -> Self {
         self.rule = DateGenerationRule::Forward;
         self
     }
 
-    /// Sets the date generation rule to backward.
+    /// Sets the [`DateGenerationRule`] to [`DateGenerationRule::Backward`].
     #[must_use]
     pub const fn backwards(mut self) -> Self {
         self.rule = DateGenerationRule::Backward;
@@ -296,14 +297,14 @@ impl MakeSchedule {
         self
     }
 
-    /// Sets the first date.
+    /// Sets the first [`Date`] of the schedule (stub anchor).
     #[must_use]
     pub const fn with_first_date(mut self, first_date: Date) -> Self {
         self.first_date = first_date;
         self
     }
 
-    /// Sets the next to last date.
+    /// Sets the next-to-last [`Date`] of the schedule (stub anchor).
     #[must_use]
     pub const fn with_next_to_last_date(mut self, next_to_last_date: Date) -> Self {
         self.next_to_last_date = next_to_last_date;
@@ -311,9 +312,9 @@ impl MakeSchedule {
     }
 }
 
-/// `MakeSchedule` build method
+/// [`MakeSchedule`] build method.
 impl MakeSchedule {
-    /// Builds and returns a `Schedule` from the current configuration.
+    /// Builds and returns a [`Schedule`] from the current configuration.
     ///
     /// # Errors
     /// Returns an error if the configuration is inconsistent, such as an invalid tenor,
@@ -500,9 +501,10 @@ impl MakeSchedule {
                     self.dates.push(self.effective_date);
                 }
 
-                seed = *self.dates.last().ok_or_else(|| {
-                    QSError::MakeScheduleErr("Schedule dates are empty".into())
-                })?;
+                seed = *self
+                    .dates
+                    .last()
+                    .ok_or_else(|| QSError::MakeScheduleErr("Schedule dates are empty".into()))?;
 
                 if self.first_date != Date::empty() {
                     self.dates.push(self.first_date);
@@ -585,9 +587,10 @@ impl MakeSchedule {
                     periods += 1;
                 }
 
-                let last_date = *self.dates.last().ok_or_else(|| {
-                    QSError::MakeScheduleErr("Schedule dates are empty".into())
-                })?;
+                let last_date = *self
+                    .dates
+                    .last()
+                    .ok_or_else(|| QSError::MakeScheduleErr("Schedule dates are empty".into()))?;
                 if self
                     .calendar
                     .adjust(last_date, Some(self.termination_date_convention))

@@ -9,15 +9,11 @@ use crate::{
     },
     rates::{compounding::Compounding, interestrate::RateDefinition},
     time::{
-        calendar::Calendar,
-        calendars::weekendsonly::WeekendsOnly,
-        daycounter::DayCounter,
+        calendar::Calendar, calendars::weekendsonly::WeekendsOnly, daycounter::DayCounter,
         enums::Frequency,
     },
 };
 
-/// # `SWESTRIndex`
-///
 /// Details for SWESTR (Swedish krona Short-Term Rate).
 /// Overnight unsecured rate published by the Riksbank.
 #[derive(Copy, Clone, Serialize, Default, Deserialize)]

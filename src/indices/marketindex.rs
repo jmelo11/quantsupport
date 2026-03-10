@@ -6,9 +6,21 @@ use crate::indices::rateindex::RateIndexDetails;
 use crate::indices::{
     quotetype::QuoteType,
     rateindices::{
-        aonia::AONIAIndex, corra::CORRAIndex, estr::ESTRIndex, euribor::EuriborIndex,
-        nowa::NOWAIndex, nzonia::NZONIAIndex, saron::SARONIndex, sofr::SOFRIndex,
-        sonia::SONIAIndex, swestr::SWESTRIndex, tibor::TIBORIndex, tonar::TONARIndex,
+        aonia::AONIAIndex,
+        corra::CORRAIndex,
+        estr::ESTRIndex,
+        euribor::{Euribor12mIndex, Euribor1mIndex, Euribor3mIndex, Euribor6mIndex},
+        nowa::NOWAIndex,
+        nzonia::NZONIAIndex,
+        saron::SARONIndex,
+        sofr::{
+            SOFRCompoundedIndex, SOFRIndex, TermSOFR12mIndex, TermSOFR1mIndex, TermSOFR3mIndex,
+            TermSOFR6mIndex,
+        },
+        sonia::SONIAIndex,
+        swestr::SWESTRIndex,
+        tibor::{Tibor3mIndex, Tibor6mIndex},
+        tonar::TONARIndex,
     },
 };
 use crate::utils::errors::{QSError, Result};
@@ -192,7 +204,6 @@ impl Default for MarketIndex {
     }
 }
 
-/// # `MarketIndex`
 /// Base trait for indices that contain market values.
 pub trait MarketIndexDetails {
     /// Name of the index.
@@ -208,19 +219,21 @@ impl MarketIndex {
     /// Returns an error if the index does not contain market details.
     pub fn details(&self) -> Result<Box<dyn MarketIndexDetails>> {
         match self {
-            Self::SOFR
-            | Self::SOFRCompounded
-            | Self::TermSOFR1m
-            | Self::TermSOFR3m
-            | Self::TermSOFR6m
-            | Self::TermSOFR12m => Ok(Box::new(SOFRIndex)),
+            Self::SOFR => Ok(Box::new(SOFRIndex)),
+            Self::SOFRCompounded => Ok(Box::new(SOFRCompoundedIndex)),
+            Self::TermSOFR1m => Ok(Box::new(TermSOFR1mIndex)),
+            Self::TermSOFR3m => Ok(Box::new(TermSOFR3mIndex)),
+            Self::TermSOFR6m => Ok(Box::new(TermSOFR6mIndex)),
+            Self::TermSOFR12m => Ok(Box::new(TermSOFR12mIndex)),
             Self::ESTR => Ok(Box::new(ESTRIndex)),
-            Self::EURIBOR1m | Self::EURIBOR3m | Self::EURIBOR6m | Self::EURIBOR12m => {
-                Ok(Box::new(EuriborIndex))
-            }
+            Self::EURIBOR1m => Ok(Box::new(Euribor1mIndex)),
+            Self::EURIBOR3m => Ok(Box::new(Euribor3mIndex)),
+            Self::EURIBOR6m => Ok(Box::new(Euribor6mIndex)),
+            Self::EURIBOR12m => Ok(Box::new(Euribor12mIndex)),
             Self::SONIA => Ok(Box::new(SONIAIndex)),
             Self::TONAR => Ok(Box::new(TONARIndex)),
-            Self::TIBOR3m | Self::TIBOR6m => Ok(Box::new(TIBORIndex)),
+            Self::TIBOR3m => Ok(Box::new(Tibor3mIndex)),
+            Self::TIBOR6m => Ok(Box::new(Tibor6mIndex)),
             Self::SARON => Ok(Box::new(SARONIndex)),
             Self::CORRA => Ok(Box::new(CORRAIndex)),
             Self::AONIA => Ok(Box::new(AONIAIndex)),
@@ -238,19 +251,21 @@ impl MarketIndex {
     /// Returns an error if the index is not a rate index.
     pub fn rate_index_details(&self) -> Result<Box<dyn RateIndexDetails>> {
         match self {
-            Self::SOFR
-            | Self::SOFRCompounded
-            | Self::TermSOFR1m
-            | Self::TermSOFR3m
-            | Self::TermSOFR6m
-            | Self::TermSOFR12m => Ok(Box::new(SOFRIndex)),
+            Self::SOFR => Ok(Box::new(SOFRIndex)),
+            Self::SOFRCompounded => Ok(Box::new(SOFRCompoundedIndex)),
+            Self::TermSOFR1m => Ok(Box::new(TermSOFR1mIndex)),
+            Self::TermSOFR3m => Ok(Box::new(TermSOFR3mIndex)),
+            Self::TermSOFR6m => Ok(Box::new(TermSOFR6mIndex)),
+            Self::TermSOFR12m => Ok(Box::new(TermSOFR12mIndex)),
             Self::ESTR => Ok(Box::new(ESTRIndex)),
-            Self::EURIBOR1m | Self::EURIBOR3m | Self::EURIBOR6m | Self::EURIBOR12m => {
-                Ok(Box::new(EuriborIndex))
-            }
+            Self::EURIBOR1m => Ok(Box::new(Euribor1mIndex)),
+            Self::EURIBOR3m => Ok(Box::new(Euribor3mIndex)),
+            Self::EURIBOR6m => Ok(Box::new(Euribor6mIndex)),
+            Self::EURIBOR12m => Ok(Box::new(Euribor12mIndex)),
             Self::SONIA => Ok(Box::new(SONIAIndex)),
             Self::TONAR => Ok(Box::new(TONARIndex)),
-            Self::TIBOR3m | Self::TIBOR6m => Ok(Box::new(TIBORIndex)),
+            Self::TIBOR3m => Ok(Box::new(Tibor3mIndex)),
+            Self::TIBOR6m => Ok(Box::new(Tibor6mIndex)),
             Self::SARON => Ok(Box::new(SARONIndex)),
             Self::CORRA => Ok(Box::new(CORRAIndex)),
             Self::AONIA => Ok(Box::new(AONIAIndex)),

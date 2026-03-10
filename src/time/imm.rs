@@ -7,7 +7,7 @@ pub struct IMM {}
 impl IMM {
     /// Checks if a given date is an IMM date (third Wednesday of the month).
     ///
-    /// # Arguments
+    /// ## Parameters
     /// * `date` - The date to check
     /// * `main_cycle` - If true, only checks main cycle months (3, 6, 9, 12)
     #[must_use]
@@ -26,7 +26,7 @@ impl IMM {
 
     /// Validates if a string is a valid IMM code.
     ///
-    /// # Arguments
+    /// # Parameters
     /// * `in_` - The code string to validate (e.g., "F3")
     /// * `main_cycle` - If true, only validates main cycle codes
     #[must_use]
@@ -50,7 +50,7 @@ impl IMM {
 
     /// Returns the IMM code for a given IMM date.
     ///
-    /// # Arguments
+    /// # Parameters
     /// * `imm_date` - An IMM date to convert to code
     ///
     /// # Panics
@@ -81,11 +81,11 @@ impl IMM {
 
     /// Converts an IMM code to the corresponding date using a reference date.
     ///
-    /// # Arguments
+    /// ## Parameters
     /// * `imm_code` - The IMM code to convert (e.g., "F3")
     /// * `reference_date` - A reference date to determine the correct year
     ///
-    /// # Panics
+    /// ## Panics
     /// Panics if the reference date is empty or the code is invalid
     #[must_use]
     pub fn date(imm_code: &str, reference_date: Date) -> Date {

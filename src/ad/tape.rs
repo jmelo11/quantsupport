@@ -5,6 +5,10 @@ use crate::utils::errors::Result;
 use crate::{ad::node::TapeNode, utils::errors::QSError};
 
 /// A tape holding all recorded nodes for reverse-mode differentiation.
+///
+/// The tape is implemented as a bump arena for efficient allocation and deallocation of nodes, and a book
+/// (vector) of pointers to the nodes for indexing and propagation.  The tape supports marking and rewinding to
+/// enable nested operations without interference.
 pub struct Tape {
     bump: Bump,
     book: Vec<NonNull<TapeNode>>,

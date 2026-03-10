@@ -10,14 +10,11 @@ use crate::{
     utils::errors::{QSError, Result},
 };
 
-/// # `FlatForwardTermStructure`
 /// Struct that defines a flat forward term structure.
-/// # Example
+///
+/// ## Example
 /// ```
-/// use quantsupport::time::date::Date;
-/// use quantsupport::rates::yieldtermstructure::flatforwardtermstructure::FlatForwardTermStructure;
-/// use quantsupport::rates::interestrate::RateDefinition;
-/// use quantsupport::rates::yieldtermstructure::interestratestermstructure::InterestRatesTermStructure;
+/// use quantsupport::prelude::*;
 ///
 /// let reference_date = Date::new(2023, 8, 19);
 /// let term_structure = FlatForwardTermStructure::new(reference_date, 0.5, RateDefinition::default());
@@ -37,7 +34,12 @@ impl<T> FlatForwardTermStructure<T>
 where
     T: IsReal,
 {
-    /// Creates a new `FlatForwardTermStructure` with the specified reference date, rate, and rate definition.
+    /// Creates a new [`FlatForwardTermStructure`].
+    ///
+    /// ## Parameters
+    /// * `reference_date`: the reference date for the term structure. All discount factors and forward rates will be calculated relative to this date.
+    /// * `rate`: the flat forward rate for the term structure. This is the constant rate that will be used to calculate discount factors and forward rates.
+    /// * `rate_definition`: the definition of the interest rate, including day count convention, compounding method, and frequency.
     #[must_use]
     pub const fn new(reference_date: Date, rate: T, rate_definition: RateDefinition) -> Self {
         let rate = InterestRate::from_rate_definition(rate, rate_definition);

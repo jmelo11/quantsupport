@@ -9,9 +9,10 @@ use crate::{
 };
 
 /// A [`Leg`] represents a sequence of cashflows associated to a particular instrument.
-#[allow(clippy::struct_field_names)]
 pub struct Leg {
-    leg_id: usize,
+    /// identifier for the leg, used for referencing in pricers and other components
+    id: usize,
+    /// list of cashflows associated with the leg
     cashflows: Vec<CashflowType>,
     /// currency of the cashflows
     currency: Currency,
@@ -36,7 +37,7 @@ impl Leg {
     #[must_use]
     #[allow(clippy::too_many_arguments)]
     pub const fn new(
-        leg_id: usize,
+        id: usize,
         cashflows: Vec<CashflowType>,
         currency: Currency,
         market_index: Option<MarketIndex>,
@@ -48,7 +49,7 @@ impl Leg {
         last_payment_date: Date,
     ) -> Self {
         Self {
-            leg_id,
+            id,
             cashflows,
             currency,
             market_index,
@@ -63,8 +64,8 @@ impl Leg {
 
     /// Returns the identifier of the leg.
     #[must_use]
-    pub const fn leg_id(&self) -> usize {
-        self.leg_id
+    pub const fn id(&self) -> usize {
+        self.id
     }
 
     /// Returns the cashflows associated with the leg.

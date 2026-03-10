@@ -13,9 +13,14 @@ pub trait HasCurrency {
     fn currency(&self) -> Currency;
 }
 
-/// Generic visitor-style discount policy.
+/// Generic visitor-style discount policy. 
+/// 
+/// A discount policy defines how to resolve the discount curve index for a given target 
+/// `T` (instrument, leg, etc.) and provides a list of all referenced discount indices for 
+/// bootstrapping purposes.
 ///
-/// The generic parameter `T` is the visited type (instrument, leg, etc.).
+/// At least, `T` must implement [`HasCurrency`] get the currency of the target to 
+/// determine the appropriate discount curve.
 pub trait DiscountPolicy<T: HasCurrency>: Send + Sync {
     /// Resolves the discount curve index for the visited target.
     ///
@@ -29,7 +34,8 @@ pub trait DiscountPolicy<T: HasCurrency>: Send + Sync {
 
 /// Fixed-income discount policy.
 ///
-/// Can prefer the instrument/leg index when available, or force risk-free by currency.
+/// For fixed-income instruments, we typically want to use risk-free discount curves or issuer-related curves. This policy allows configuring a
+/// mapping of risk-free indices by currency, and optionally preferring the instrument's own index if available.
 pub struct FixedIncomeDiscountPolicy {
     risk_free_by_currency: HashMap<Currency, MarketIndex>,
     prefer_instrument_index: bool,
@@ -75,7 +81,7 @@ impl DiscountPolicy<FixedRateDeposit> for FixedIncomeDiscountPolicy {
     }
 }
 
-/// CSA discount policy that uses a single collateral discount curve.
+/// Single curve CSA discount policy that uses a collateral discount curve.
 ///
 /// For legs in the same currency as the collateral, the stored discount index
 /// is returned. For cross-currency legs, a [`MarketIndex::Collateral`] index

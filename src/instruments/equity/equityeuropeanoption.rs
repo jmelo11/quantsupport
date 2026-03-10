@@ -9,7 +9,7 @@ use crate::{
     time::{date::Date, daycounter::DayCounter},
 };
 
-/// Represents the type of a European option.
+/// Represents the payoff type of an European option.
 #[derive(Clone)]
 pub enum EuroOptionType {
     /// Call option type.
@@ -18,9 +18,7 @@ pub enum EuroOptionType {
     Put,
 }
 
-/// # `EquityEuropeanOption`
-///
-/// Represents a European equity option instrument.
+/// Represents an European option on an equity underlying.
 #[derive(Clone)]
 pub struct EquityEuropeanOption {
     /// The market index for this option.

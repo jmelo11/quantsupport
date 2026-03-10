@@ -16,8 +16,6 @@ use crate::{
     },
 };
 
-/// # `SONIAIndex`
-///
 /// Details for SONIA (Sterling Overnight Index Average).
 /// Overnight unsecured rate administered by the Bank of England.
 #[derive(Copy, Clone, Serialize, Default, Deserialize)]

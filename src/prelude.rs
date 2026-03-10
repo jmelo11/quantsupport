@@ -1,4 +1,3 @@
-// ── Automatic Differentiation ──────────────────────────────────────
 pub use crate::{
     ad::{
         adreal::{ADReal, Const, Expr, IsReal},

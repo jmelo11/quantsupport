@@ -16,8 +16,7 @@ use crate::{
     },
 };
 
-/// # `SARONIndex`
-///
+
 /// Details for SARON (Swiss Average Rate Overnight).
 /// Overnight secured rate published by SIX Swiss Exchange.
 #[derive(Copy, Clone, Serialize, Default, Deserialize)]

@@ -5,7 +5,6 @@ use serde::{Deserialize, Serialize};
 use super::currencydetails::CurrencyDetails;
 use crate::utils::errors::{QSError, Result};
 
-/// # Self
 /// Enum for currencies supported by the library
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Currency {
@@ -178,9 +177,7 @@ impl TryFrom<&str> for Currency {
             "KRW" => Ok(Self::KRW),
             "DKK" => Ok(Self::DKK),
             "IDR" => Ok(Self::IDR),
-            _ => Err(QSError::InvalidValueErr(format!(
-                "Invalid currency: {s}"
-            ))),
+            _ => Err(QSError::InvalidValueErr(format!("Invalid currency: {s}"))),
         }
     }
 }

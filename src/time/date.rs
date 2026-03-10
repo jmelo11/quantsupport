@@ -6,8 +6,7 @@ use serde::{Deserialize, Serialize};
 use std::fmt::Display;
 use std::ops::{Add, AddAssign, Sub, SubAssign};
 
-/// # `NaiveDateExt`
-/// Extends the `NaiveDate` struct from the chrono rustatlas.
+/// Extends the [`NaiveDate`] struct from the chrono rustatlas.
 /// # Examples
 /// ```
 /// use quantsupport::time::date::*;
@@ -126,8 +125,8 @@ impl NaiveDateExt for NaiveDate {
     }
 }
 
-/// # Implementing `Add<Period>` for `NaiveDate`
-/// Adds a `Period` to a `NaiveDate`.
+/// # Implementing [`Add<Period>`] for [`NaiveDate`]
+/// Adds a [`Period`] to a [`NaiveDate`].
 /// # Examples
 /// ```
 /// use chrono::NaiveDate;
@@ -149,8 +148,8 @@ impl Add<Period> for NaiveDate {
     }
 }
 
-/// # Implementing `Sub<Period>` for `NaiveDate`
-/// Subtracts a `Period` from a `NaiveDate`.
+/// # Implementing [`Sub<Period>`] for [`NaiveDate`]
+/// Subtracts a [`Period`] from a [`NaiveDate`].
 /// # Examples
 /// ```
 /// use chrono::NaiveDate;
@@ -170,8 +169,7 @@ impl Sub<Period> for NaiveDate {
     }
 }
 
-/// # Date
-/// Wrapper around the `NaiveDate` struct from the chrono rustatlas.
+/// Wrapper around the [`NaiveDate`] struct from the chrono rustatlas.
 /// # Examples
 /// ```
 /// use quantsupport::time::date::Date;
@@ -212,7 +210,7 @@ impl<'de> Deserialize<'de> for Date {
 }
 
 impl Date {
-    /// Creates a new `Date` from the given year, month, and day.
+    /// Creates a new [`Date`] from the given year, month, and day.
     #[must_use]
     pub fn new(year: i32, month: u32, day: u32) -> Self {
         let base_date = NaiveDate::from_ymd_opt(year, month, day);
@@ -222,7 +220,7 @@ impl Date {
     /// Parses a date string using the specified format.
     ///
     /// # Errors
-    /// Returns an error if the provided string cannot be parsed into a `Date`
+    /// Returns an error if the provided string cannot be parsed into a [`Date`]
     /// using the specified format.
     pub fn from_str(date: &str, fmt: &str) -> Result<Self> {
         let base_date = NaiveDate::parse_from_str(date, fmt)?;
@@ -283,14 +281,14 @@ impl Date {
         year % 4 == 0 && (year % 100 != 0 || year % 400 == 0)
     }
 
-    /// Advances this date by `n` units of the specified `TimeUnit`.
+    /// Advances this date by `n` units of the specified [`TimeUnit`].
     #[must_use]
     pub fn advance(&self, n: i32, units: TimeUnit) -> Self {
         let base_date = self.base_date.advance(n, units);
         Self::from(base_date)
     }
 
-    /// Adds a `Period` to this date.
+    /// Adds a [`Period`] to this date.
     #[must_use]
     pub fn add_period(&self, period: Period) -> Self {
         let base_date = self.base_date + period;
@@ -349,7 +347,7 @@ impl Date {
     }
 }
 
-/// # Sub for Date
+/// # Sub for [`Date`]
 /// Subtracts two Dates and returns the difference in days.
 /// # Examples
 /// ```
@@ -368,8 +366,8 @@ impl Sub for Date {
     }
 }
 
-/// # Add`<Period>` for Date
-/// Adds a Period to a Date.
+/// # [`Add<Period>`] for [`Date`]
+/// Adds a [`Period`] to [`Date`].
 /// # Examples
 /// ```
 /// use quantsupport::time::date::Date;
@@ -389,8 +387,8 @@ impl Add<Period> for Date {
     }
 }
 
-/// # Sub`<Period>` for Date
-/// Subtracts a Period from a Date.
+/// # [`Sub<Period>`] for [`Date`]
+/// Subtracts a [`Period`] from a [`Date`].
 /// # Examples
 /// ```
 /// use quantsupport::time::date::Date;
@@ -410,8 +408,8 @@ impl Sub<Period> for Date {
     }
 }
 
-/// # Add`<i64>` for Date
-/// Adds an i64 to a Date.
+/// # [`Add<i64>`] for [`Date`]
+/// Adds an [`i64`] to a [`Date`].
 /// # Examples
 /// ```
 /// use quantsupport::time::date::Date;
