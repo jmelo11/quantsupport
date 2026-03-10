@@ -6,7 +6,7 @@ name = "quantsupport"
 version = "0.1.0"
 edition = "2021"
 
-description = "Rust library for fixed-income, derivative pricing and risk analytics."
+description = "Rust library for derivative pricing and risk analytics."
 license = "MIT"
 repository = "https://github.com/jmelo11/quantsupport"
 keywords = ["finance", "quant", "risk", "pricing", "derivatives"]

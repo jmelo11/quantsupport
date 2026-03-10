@@ -6,7 +6,7 @@ QuantSupport
 Roadmap to Cargo
 ------------
 
-**QuantSupport** is currently in alpha. Before releasing our first `Cargo` package, we need to implement the following core features:
+**QuantSupport** is currently in alpha.
 
 - **Available Pricers**
   - Implement pricers for fundamental products such as swaps, caps, floors, and swaptions, which are essential for supporting more complex financial processes.
