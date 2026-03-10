@@ -26,14 +26,10 @@ use std::collections::HashSet;
 /// Prices a caplet or floorlet using the Black (log-normal) model.
 ///
 /// The forward rate for the period is derived from the discount curve using
-/// the conventions specified in the caplet's rate definition:
-/// `F = curve.forward_rate(start_date, end_date, comp, freq)`
+/// the conventions specified in the caplet's rate definition.
 ///
 /// The effective strike is resolved from the instrument's [`Strike`] before
-/// querying the volatility surface:
-/// - [`Strike::Absolute(k)`] — `K_eff = k`
-/// - [`Strike::Atm`] — `K_eff = F`
-/// - [`Strike::Relative(s)`] — `K_eff = F + s`
+/// querying the volatility surface.
 ///
 /// When a [`DiscountPolicy`] is set, the pricer uses the CSA discount curve
 /// for payment discounting instead of the instrument's `market_index` curve.

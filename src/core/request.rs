@@ -87,7 +87,7 @@ pub trait HandleFairRate<T, S> {
     fn handle_fair_rate(&self, trade: &T, state: &mut S) -> Result<f64>;
 }
 
-/// The [`LegProvLegsProviderider`] trait defines a method for providing the cashflows of an instrument.
+/// The [`LegsProvider`] trait defines a method for providing the cashflows of an instrument.
 pub trait LegsProvider {
     /// Provides the cashflows of the instrument.
     fn legs(&self) -> &[Leg];

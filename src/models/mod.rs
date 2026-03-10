@@ -1,10 +1,10 @@
 use rand::{rngs::StdRng, Rng, SeedableRng};
 use std::f64::consts::PI;
 
-/// # `ModelParameters`
-///
 /// A tagged union of per-model parameter sets. Stored as a `Vec<ModelParameters>` in
-/// [`ContextManager`], [`MarketDataRequest`], and [`MarketData`] so that multiple model
+/// [`ContextManager`](crate::core::contextmanager::ContextManager),
+/// [`MarketDataRequest`](crate::core::marketdatahandling::marketdata::MarketDataRequest), and
+/// [`MarketData`](crate::core::marketdatahandling::marketdata::MarketData) so that multiple model
 /// configurations can coexist and providers can inspect them at request time.
 #[derive(Clone, Debug)]
 pub enum ModelParameters {
@@ -14,8 +14,6 @@ pub enum ModelParameters {
     HullWhite,
 }
 
-/// # `GbmModelParameters`
-///
 /// Parameters for the Geometric Brownian Motion (GBM) model used in Monte Carlo simulation.
 /// Specifies the number of simulation paths and the random seed for reproducibility.
 #[derive(Clone, Copy, Debug)]

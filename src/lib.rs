@@ -3,7 +3,7 @@
 //! This library provides tools for computing prices, sensitivities and other metrics of financial products.
 //!
 //! # Examples
-//! ```no_run
+//! ```rust
 //! use std::{cell::RefCell, rc::Rc};
 //!
 //! use quantsupport::prelude::*;

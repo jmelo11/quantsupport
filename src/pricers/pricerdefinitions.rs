@@ -51,12 +51,10 @@ impl BlackClosedFormPricer {
     }
 }
 
-/// # `GbmMonteCarloPricer`
-///
-/// Uses pre-generated standard-normal draws (held in a [`SimulationElement`])
+/// Uses pre-generated standard-normal draws (held in a [`crate::core::elements::montecarlosimulationelement::MonteCarloSimulationElement`])
 /// to price European equity options under a GBM dynamics. The [`GbmModelParameters`] field
-/// is serialised into the [`MarketDataRequest`] so
-/// that any [`MarketDataProvider`] implementation
+/// is serialised into the [`crate::core::marketdatahandling::marketdata::MarketDataRequest`] so
+/// that any [`crate::core::marketdatahandling::marketdata::MarketDataProvider`] implementation
 /// can inspect them when building or validating the simulation element.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct GbmMonteCarloPricer {
@@ -65,7 +63,7 @@ pub struct GbmMonteCarloPricer {
 }
 
 impl GbmMonteCarloPricer {
-    /// Creates a new [`BlackMonteCarloPricer`] with the given model parameters.
+    /// Creates a new [`GbmMonteCarloPricer`] with the given model parameters.
     #[must_use]
     pub const fn new(model_parameters: GbmModelParameters) -> Self {
         Self { model_parameters }
