@@ -16,6 +16,30 @@ use crate::{
 
 /// A builder for creating a [`FloatFloatCrossCurrencySwap`] instance
 /// (both legs floating, each in a different currency).
+///
+/// ## Example
+/// ```rust
+/// use quantsupport::prelude::*;
+///
+/// let ff_xccy = MakeFloatFloatCrossCurrencySwap::default()
+///     .with_identifier("FF-XCCY-USDEUR".to_string())
+///     .with_start_date(Date::new(2024, 1, 1))
+///     .with_maturity_date(Date::new(2027, 1, 1))
+///     .with_domestic_notional(10_000_000.0)
+///     .with_foreign_notional(9_200_000.0)
+///     .with_domestic_spread(0.001)
+///     .with_foreign_spread(0.002)
+///     .with_domestic_currency(Currency::USD)
+///     .with_foreign_currency(Currency::EUR)
+///     .with_domestic_market_index(MarketIndex::SOFR)
+///     .with_foreign_market_index(MarketIndex::TermSOFR3m)
+///     .build()
+///     .expect("failed to build float-float cross-currency swap");
+///
+/// assert_eq!(ff_xccy.identifier(), "FF-XCCY-USDEUR");
+/// assert_eq!(ff_xccy.domestic_currency(), Currency::USD);
+/// assert_eq!(ff_xccy.foreign_currency(), Currency::EUR);
+/// ```
 #[derive(Default)]
 pub struct MakeFloatFloatCrossCurrencySwap {
     start_date: Option<Date>,
@@ -308,9 +332,6 @@ mod tests {
             .with_foreign_market_index(MarketIndex::TermSOFR3m)
             .build();
 
-        assert!(
-            result.is_err(),
-            "expected missing foreign currency to fail"
-        );
+        assert!(result.is_err(), "expected missing foreign currency to fail");
     }
 }

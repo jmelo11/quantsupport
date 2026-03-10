@@ -17,6 +17,35 @@ use crate::{
 };
 
 /// A builder for creating a [`Swap`] instance (vanilla fixed-float interest rate swap).
+///
+/// ## Example
+/// ```rust
+/// use quantsupport::prelude::*;
+///
+/// let rate_def = RateDefinition::new(
+///     DayCounter::Actual360,
+///     Compounding::Simple,
+///     Frequency::Semiannual,
+/// );
+///
+/// let swap = MakeSwap::default()
+///     .with_identifier("IRS-5Y".to_string())
+///     .with_start_date(Date::new(2024, 1, 1))
+///     .with_maturity_date(Date::new(2029, 1, 1))
+///     .with_fixed_rate(0.03)
+///     .with_notional(10_000_000.0)
+///     .with_rate_definition(rate_def)
+///     .with_market_index(MarketIndex::SOFR)
+///     .with_currency(Currency::USD)
+///     .with_fixed_leg_frequency(Frequency::Semiannual)
+///     .with_floating_leg_frequency(Frequency::Quarterly)
+///     .build()
+///     .expect("failed to build swap");
+///
+/// assert_eq!(swap.identifier(), "IRS-5Y");
+/// assert!(!swap.fixed_leg().cashflows().is_empty());
+/// assert!(!swap.floating_leg().cashflows().is_empty());
+/// ```
 #[derive(Default)]
 pub struct MakeSwap {
     start_date: Option<Date>,

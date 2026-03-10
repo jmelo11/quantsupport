@@ -32,6 +32,35 @@ use crate::{
 ///
 /// When a [`DiscountPolicy`] is set, the pricer uses the CSA discount curve
 /// for payment discounting instead of the instrument's `market_index` curve.
+///
+/// ## Example
+/// ```rust
+/// use quantsupport::prelude::*;
+///
+/// let pricer = FixedRateDepositDiscountingPricer::new();
+///
+/// // Build the instrument and trade:
+/// let rate_def = RateDefinition::new(
+///     DayCounter::Actual360,
+///     Compounding::Simple,
+///     Frequency::Annual,
+/// );
+/// let deposit = MakeFixedRateDeposit::default()
+///     .with_identifier("DEPO-3M".to_string())
+///     .with_start_date(Date::new(2024, 1, 1))
+///     .with_maturity_date(Date::new(2024, 4, 1))
+///     .with_rate(0.05)
+///     .with_notional(1_000_000.0)
+///     .with_rate_definition(rate_def)
+///     .with_market_index(MarketIndex::SOFR)
+///     .with_currency(Currency::USD)
+///     .build()
+///     .expect("failed to build deposit");
+///
+/// // Wrap in a trade and evaluate with a MarketDataProvider:
+/// //   let trade = FixedRateDepositTrade::new(deposit, Date::new(2024, 1, 1), 1_000_000.0);
+/// //   let results = pricer.evaluate(&trade, &[Request::Value], &ctx);
+/// ```
 pub struct FixedRateDepositDiscountingPricer {
     discount_policy: Option<Box<dyn DiscountPolicy<FixedRateDeposit>>>,
 }

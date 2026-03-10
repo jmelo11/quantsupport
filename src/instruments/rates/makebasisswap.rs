@@ -15,6 +15,28 @@ use crate::{
 };
 
 /// A builder for creating a [`BasisSwap`] instance (floating-vs-floating interest rate swap).
+///
+/// ## Example
+/// ```rust
+/// use quantsupport::prelude::*;
+///
+/// let basis_swap = MakeBasisSwap::default()
+///     .with_identifier("BASIS-3M6M".to_string())
+///     .with_start_date(Date::new(2024, 1, 1))
+///     .with_maturity_date(Date::new(2026, 1, 1))
+///     .with_notional(5_000_000.0)
+///     .with_pay_market_index(MarketIndex::SOFR)
+///     .with_receive_market_index(MarketIndex::TermSOFR3m)
+///     .with_currency(Currency::USD)
+///     .with_pay_spread(0.001)
+///     .with_receive_spread(0.0)
+///     .build()
+///     .expect("failed to build basis swap");
+///
+/// assert_eq!(basis_swap.identifier(), "BASIS-3M6M");
+/// assert!(!basis_swap.pay_leg().cashflows().is_empty());
+/// assert!(!basis_swap.receive_leg().cashflows().is_empty());
+/// ```
 #[derive(Default)]
 pub struct MakeBasisSwap {
     start_date: Option<Date>,

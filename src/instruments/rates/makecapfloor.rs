@@ -19,6 +19,28 @@ use crate::{
 };
 
 /// A builder for creating a [`CapFloor`] strip.
+///
+/// ## Example
+/// ```rust
+/// use quantsupport::prelude::*;
+///
+/// let cap = MakeCapFloor::default()
+///     .with_identifier("CAP-3Y".to_string())
+///     .with_start_date(Date::new(2024, 1, 1))
+///     .with_maturity_date(Date::new(2027, 1, 1))
+///     .with_strike(0.04)
+///     .with_notional(5_000_000.0)
+///     .with_market_index(MarketIndex::TermSOFR3m)
+///     .with_currency(Currency::USD)
+///     .with_cap_floor_type(CapFloorType::Cap)
+///     .with_frequency(Frequency::Quarterly)
+///     .build()
+///     .expect("failed to build cap");
+///
+/// assert_eq!(cap.identifier(), "CAP-3Y");
+/// assert_eq!(cap.strike(), 0.04);
+/// assert!(!cap.caplet_floorlets().is_empty());
+/// ```
 #[derive(Default)]
 pub struct MakeCapFloor {
     start_date: Option<Date>,

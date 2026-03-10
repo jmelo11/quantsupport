@@ -1,3 +1,8 @@
+//! Interest rates, term structures, and bootstrapping.
+//!
+//! Compounding conventions, interest-rate arithmetic, yield term
+//! structures, and multi-curve bootstrapping algorithms.
+
 /// Bootstrapping algorithms for interest rate curves.
 pub mod bootstrapping;
 /// Compounding types for interest rate calculations.

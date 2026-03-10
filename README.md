@@ -3,10 +3,10 @@ QuantSupport
 
 **QuantSupport** is a high-performance quantitative finance library written in Rust, designed for precision, speed in financial calculations and ease of deployment into production enviroments.
 
-Roadmap to Cargo
+Roadmap
 ------------
 
-**QuantSupport** is currently in alpha. Before releasing our first `Cargo` package, we need to implement the following core features:
+**QuantSupport** is currently in alpha.
 
 - **Available Pricers**
   - Implement pricers for fundamental products such as swaps, caps, floors, and swaptions, which are essential for supporting more complex financial processes.

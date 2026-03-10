@@ -18,6 +18,34 @@ use crate::{
 ///
 /// The builder first constructs the underlying swap (via [`MakeSwap`]) and then
 /// wraps it with the option-specific parameters (expiry, type, strike).
+///
+/// ## Example
+/// ```rust
+/// use quantsupport::prelude::*;
+///
+/// let rate_def = RateDefinition::new(
+///     DayCounter::Actual360,
+///     Compounding::Simple,
+///     Frequency::Semiannual,
+/// );
+///
+/// let swaption = MakeSwaption::default()
+///     .with_identifier("SWPTN-5Y10Y".to_string())
+///     .with_expiry(Date::new(2024, 6, 1))
+///     .with_swap_tenor_date(Date::new(2034, 6, 1))
+///     .with_strike(0.03)
+///     .with_notional(10_000_000.0)
+///     .with_rate_definition(rate_def)
+///     .with_market_index(MarketIndex::SOFR)
+///     .with_currency(Currency::USD)
+///     .with_swaption_type(SwaptionType::Payer)
+///     .with_exercise_type(SwaptionExerciseType::European)
+///     .build()
+///     .expect("failed to build swaption");
+///
+/// assert_eq!(swaption.identifier(), "SWPTN-5Y10Y");
+/// assert_eq!(swaption.strike(), 0.03);
+/// ```
 #[derive(Default)]
 pub struct MakeSwaption {
     start_date: Option<Date>,

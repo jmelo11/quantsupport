@@ -13,6 +13,31 @@ use crate::{
 };
 
 /// A builder for creating a [`FixedRateDeposit`] instance, allowing for a flexible and stepwise construction process.
+///
+/// ## Example
+/// ```rust
+/// use quantsupport::prelude::*;
+///
+/// let rate_def = RateDefinition::new(
+///     DayCounter::Actual360,
+///     Compounding::Simple,
+///     Frequency::Annual,
+/// );
+///
+/// let deposit = MakeFixedRateDeposit::default()
+///     .with_identifier("DEPO-3M".to_string())
+///     .with_start_date(Date::new(2024, 1, 1))
+///     .with_maturity_date(Date::new(2024, 4, 1))
+///     .with_rate(0.05)
+///     .with_notional(1_000_000.0)
+///     .with_rate_definition(rate_def)
+///     .with_market_index(MarketIndex::SOFR)
+///     .with_currency(Currency::USD)
+///     .build()
+///     .expect("failed to build fixed rate deposit");
+///
+/// assert_eq!(deposit.identifier(), "DEPO-3M");
+/// ```
 #[derive(Default)]
 pub struct MakeFixedRateDeposit {
     start_date: Option<Date>,

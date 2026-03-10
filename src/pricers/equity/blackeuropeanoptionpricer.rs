@@ -49,6 +49,22 @@ impl PricerState for EquityOptionState {
 ///
 /// When a [`DiscountPolicy`] is set, the pricer uses the CSA discount curve
 /// for payment discounting instead of the instrument's `market_index` curve.
+///
+/// ## Example
+/// ```rust
+/// use quantsupport::prelude::*;
+///
+/// let pricer = BlackEuropeanOptionPricer::new();
+///
+/// // Build an equity European option trade and evaluate:
+/// //   let option = EquityEuropeanOption::new(...);
+/// //   let trade = EquityEuropeanOptionTrade::new(option, eval_date, notional);
+/// //   let results = pricer.evaluate(
+/// //       &trade,
+/// //       &[Request::Value, Request::Sensitivities],
+/// //       &ctx,
+/// //   );
+/// ```
 pub struct BlackEuropeanOptionPricer {
     discount_policy: Option<Box<dyn DiscountPolicy<EquityEuropeanOption>>>,
 }

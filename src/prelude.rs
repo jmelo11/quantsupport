@@ -1,3 +1,8 @@
+//! Prelude module for convenient imports.
+//!
+//! Re-exports the most commonly used types so that
+//! `use quantsupport::prelude::*;` brings everything into scope.
+
 pub use crate::{
     ad::{
         adreal::{ADReal, Const, Expr, IsReal},
@@ -99,10 +104,14 @@ pub use crate::{
     models::{GbmModelParameters, ModelParameters},
     pricers::{
         cashflows::discountingcashflowpricer::CashflowDiscountPricer,
+        equity::blackeuropeanoptionpricer::BlackEuropeanOptionPricer,
+        fixedincome::fixedratedepositdiscountingpricer::FixedRateDepositDiscountingPricer,
+        fx::fxforwardpricer::FxForwardPricer,
         pricerdefinitions::{
             BlackClosedFormPricer, CloseFormPricer, GbmMonteCarloPricer, HullWhiteClosedFormPricer,
             MonteCarloPricer, NormalClosedFormPricer,
         },
+        rates::{blackcapletpricer::BlackCapletPricer, ratefuturespricer::RateFuturesPricer},
     },
     quotes::{
         fixingstore::FixingStore,

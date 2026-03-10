@@ -22,6 +22,28 @@ use crate::{
 ///
 /// The model quote is computed as
 /// `F = S * DF_quote(T) / DF_base(T)`.
+///
+/// ## Example
+/// ```rust
+/// use quantsupport::prelude::*;
+///
+/// let pricer = FxForwardPricer::new();
+///
+/// // Build the instrument:
+/// let fx_fwd = MakeFxForward::default()
+///     .with_identifier("EURUSD-1M".to_string())
+///     .with_delivery_date(Date::new(2024, 7, 1))
+///     .with_forward_price(1.1025)
+///     .with_base_currency(Currency::EUR)
+///     .with_quote_currency(Currency::USD)
+///     .as_deliverable()
+///     .build()
+///     .expect("failed to build fx forward");
+///
+/// // Wrap in a trade and evaluate with a MarketDataProvider:
+/// //   let trade = FxForwardTrade::new(fx_fwd, Date::new(2024, 6, 1), 1_000_000.0);
+/// //   let results = pricer.evaluate(&trade, &[Request::Value], &ctx);
+/// ```
 #[derive(Debug, Clone, Default)]
 pub struct FxForwardPricer;
 

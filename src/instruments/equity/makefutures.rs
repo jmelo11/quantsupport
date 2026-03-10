@@ -8,6 +8,23 @@ use crate::{
 };
 
 /// A builder for creating a [`Futures`] instance.
+///
+/// ## Example
+/// ```rust
+/// use quantsupport::prelude::*;
+///
+/// let futures = MakeFutures::default()
+///     .with_identifier("ES-2024M".to_string())
+///     .with_market_index(MarketIndex::SOFR)
+///     .with_expiry_date(Date::new(2024, 6, 21))
+///     .with_futures_price(5200.0)
+///     .with_contract_size(50.0)
+///     .with_currency(Currency::USD)
+///     .build()
+///     .expect("failed to build futures");
+///
+/// assert_eq!(futures.futures_price(), 5200.0);
+/// ```
 #[derive(Default)]
 pub struct MakeFutures {
     identifier: Option<String>,

@@ -8,6 +8,22 @@ use crate::{
 };
 
 /// A builder for creating an [`EquityForward`] instance.
+///
+/// ## Example
+/// ```rust
+/// use quantsupport::prelude::*;
+///
+/// let forward = MakeEquityForward::default()
+///     .with_identifier("SPX-FWD-6M".to_string())
+///     .with_market_index(MarketIndex::SOFR)
+///     .with_delivery_date(Date::new(2024, 7, 1))
+///     .with_strike(5100.0)
+///     .with_currency(Currency::USD)
+///     .build()
+///     .expect("failed to build equity forward");
+///
+/// assert_eq!(forward.strike(), 5100.0);
+/// ```
 #[derive(Default)]
 pub struct MakeEquityForward {
     identifier: Option<String>,
