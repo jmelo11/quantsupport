@@ -11,6 +11,7 @@ license = "MIT"
 repository = "https://github.com/jmelo11/quantsupport"
 keywords = ["finance", "quant", "risk", "pricing", "derivatives"]
 categories = ["finance", "science"]
+readme = "README.md"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
