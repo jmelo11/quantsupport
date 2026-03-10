@@ -15,6 +15,26 @@ use crate::{
 };
 
 /// A builder for creating a [`FloatingRateNote`] instance, allowing for a flexible and stepwise construction process.
+///
+/// ## Example
+/// ```rust
+/// use quantsupport::prelude::*;
+///
+/// let frn = MakeFloatingRateNote::default()
+///     .with_identifier("FRN-2Y".to_string())
+///     .with_start_date(Date::new(2024, 1, 1))
+///     .with_maturity_date(Date::new(2026, 1, 1))
+///     .with_spread(0.005)
+///     .with_notional(1_000_000.0)
+///     .with_market_index(MarketIndex::TermSOFR3m)
+///     .with_currency(Currency::USD)
+///     .with_payment_frequency(Frequency::Quarterly)
+///     .with_payment_structure(PaymentStructure::Bullet)
+///     .build()
+///     .expect("failed to build floating rate note");
+///
+/// assert_eq!(frn.identifier(), "FRN-2Y");
+/// ```
 #[derive(Default)]
 pub struct MakeFloatingRateNote {
     start_date: Option<Date>,

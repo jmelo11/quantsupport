@@ -23,6 +23,27 @@ use crate::{
 ///
 /// The model quote is computed as `100 - 100 * F`, where `F` is the forward
 /// rate implied by the reference discount curve over the contract accrual period.
+///
+/// ## Example
+/// ```rust
+/// use quantsupport::prelude::*;
+///
+/// let pricer = RateFuturesPricer::new();
+///
+/// // Build the instrument:
+/// let rate_futures = MakeRateFutures::default()
+///     .with_identifier("SR3-M24".to_string())
+///     .with_market_index(MarketIndex::SOFR)
+///     .with_start_date(Date::new(2024, 3, 20))
+///     .with_end_date(Date::new(2024, 6, 20))
+///     .with_futures_price(95.25)
+///     .build()
+///     .expect("failed to build rate futures");
+///
+/// // Wrap in a trade and evaluate with a MarketDataProvider:
+/// //   let trade = RateFuturesTrade::new(rate_futures, Date::new(2024, 1, 1), 1.0);
+/// //   let results = pricer.evaluate(&trade, &[Request::Value], &ctx);
+/// ```
 #[derive(Debug, Clone, Default)]
 pub struct RateFuturesPricer;
 

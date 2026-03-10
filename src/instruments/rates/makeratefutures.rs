@@ -8,6 +8,23 @@ use crate::{
 };
 
 /// A builder for creating a [`RateFutures`] instance.
+///
+/// ## Example
+/// ```rust
+/// use quantsupport::prelude::*;
+///
+/// let rate_futures = MakeRateFutures::default()
+///     .with_identifier("SR3-M24".to_string())
+///     .with_market_index(MarketIndex::SOFR)
+///     .with_start_date(Date::new(2024, 3, 20))
+///     .with_end_date(Date::new(2024, 6, 20))
+///     .with_futures_price(95.25)
+///     .build()
+///     .expect("failed to build rate futures");
+///
+/// assert_eq!(rate_futures.futures_price(), 95.25);
+/// assert_eq!(rate_futures.contract_size(), 2500.0);
+/// ```
 #[derive(Default)]
 pub struct MakeRateFutures {
     identifier: Option<String>,

@@ -20,6 +20,36 @@ use crate::{
 ///
 /// The domestic leg is built as a fixed-rate leg; the foreign leg is built as a floating-rate leg.
 /// Both legs exchange notionals at inception and maturity.
+///
+/// ## Example
+/// ```rust
+/// use quantsupport::prelude::*;
+///
+/// let rate_def = RateDefinition::new(
+///     DayCounter::Actual360,
+///     Compounding::Simple,
+///     Frequency::Semiannual,
+/// );
+///
+/// let xccy = MakeCrossCurrencySwap::default()
+///     .with_identifier("XCCY-USDEUR".to_string())
+///     .with_start_date(Date::new(2024, 1, 1))
+///     .with_maturity_date(Date::new(2029, 1, 1))
+///     .with_domestic_notional(10_000_000.0)
+///     .with_foreign_notional(9_200_000.0)
+///     .with_fixed_rate(0.03)
+///     .with_rate_definition(rate_def)
+///     .with_domestic_currency(Currency::USD)
+///     .with_foreign_currency(Currency::EUR)
+///     .with_domestic_market_index(MarketIndex::SOFR)
+///     .with_foreign_market_index(MarketIndex::TermSOFR3m)
+///     .build()
+///     .expect("failed to build cross-currency swap");
+///
+/// assert_eq!(xccy.identifier(), "XCCY-USDEUR");
+/// assert_eq!(xccy.domestic_currency(), Currency::USD);
+/// assert_eq!(xccy.foreign_currency(), Currency::EUR);
+/// ```
 #[derive(Default)]
 pub struct MakeCrossCurrencySwap {
     start_date: Option<Date>,

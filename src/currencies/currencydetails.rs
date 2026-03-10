@@ -1,7 +1,7 @@
 /// Trait for currency details.
 ///
 /// This trait defines the interface for retrieving details about a currency, such as its ISO code, name, symbol,
-/// precision, and numeric code. It is implemented by the [`crate::currencies::currency::Currency`] enum to provide consistent 
+/// precision, and numeric code. It is implemented by the [`Currency`](crate::currencies::currency::Currency) enum to provide consistent
 /// access to these details across the library.
 pub trait CurrencyDetails {
     /// Returns the ISO 4217 currency code

@@ -13,7 +13,7 @@ pub trait Visitable<P: Visitor> {
     /// Accepts a visitor.
     ///
     /// ## Errors
-    /// Returns an [`crate::utils::errors::QSError`] if the visit operation fails.
+    /// Returns a [`QSError`](crate::utils::errors::QSError) if the visit operation fails.
     fn accept(
         &self,
         visitor: &P,

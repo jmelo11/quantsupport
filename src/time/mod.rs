@@ -1,3 +1,8 @@
+//! Time and date utilities.
+//!
+//! Dates, calendars, day-count conventions, schedules, periods,
+//! and IMM date helpers.
+
 /// Calendar module.
 pub mod calendar;
 /// Calendars module.

@@ -51,11 +51,14 @@ impl BlackClosedFormPricer {
     }
 }
 
-/// Uses pre-generated standard-normal draws (held in a [`crate::core::elements::montecarlosimulationelement::MonteCarloSimulationElement`])
-/// to price European equity options under a GBM dynamics. The [`GbmModelParameters`] field
-/// is serialised into the [`crate::core::marketdatahandling::marketdata::MarketDataRequest`] so
-/// that any [`crate::core::marketdatahandling::marketdata::MarketDataProvider`] implementation
-/// can inspect them when building or validating the simulation element.
+/// GBM Monte Carlo pricer for European equity options.
+///
+/// Uses pre-generated standard-normal draws (held in a
+/// [`MonteCarloSimulationElement`](crate::core::elements::montecarlosimulationelement::MonteCarloSimulationElement))
+/// to price under GBM dynamics. The [`GbmModelParameters`] field is serialised
+/// into the [`MarketDataRequest`](crate::core::marketdatahandling::marketdata::MarketDataRequest)
+/// so that any [`MarketDataProvider`](crate::core::marketdatahandling::marketdata::MarketDataProvider)
+/// implementation can inspect them when building or validating the simulation element.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct GbmMonteCarloPricer {
     /// Parameters controlling path generation (number of paths, random seed).

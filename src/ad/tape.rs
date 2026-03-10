@@ -168,7 +168,7 @@ impl Tape {
     ///
     /// This is useful when a nested operation (e.g. an AD-based Jacobian
     /// inside a solver) advances the mark so that a subsequent
-    /// [`crate::ad::adreal::ADReal::backward_to_mark`] would not cover the full tape.  Calling
+    /// [`ADReal::backward_to_mark`](crate::ad::adreal::ADReal::backward_to_mark) would not cover the full tape.  Calling
     /// [`Self::reset_mark`] after the outer computation restores full coverage.
     pub fn reset_mark() {
         TAPE.with(|tc| {
@@ -194,7 +194,7 @@ impl Default for Tape {
 }
 
 thread_local! {
-    /// Thread-local tape used by default by [`crate::ad::adreal::ADReal`].
+    /// Thread-local tape used by default by [`ADReal`](crate::ad::adreal::ADReal).
     pub static TAPE: RefCell<Tape> = RefCell::new(Tape {
         bump:   Bump::new(),
         book:   Vec::new(),

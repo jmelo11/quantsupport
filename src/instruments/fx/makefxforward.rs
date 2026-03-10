@@ -7,6 +7,24 @@ use crate::{
 };
 
 /// A builder for creating an [`FxForward`] instance.
+///
+/// ## Example
+/// ```rust
+/// use quantsupport::prelude::*;
+///
+/// let fx_fwd = MakeFxForward::default()
+///     .with_identifier("EURUSD-1M".to_string())
+///     .with_delivery_date(Date::new(2024, 7, 1))
+///     .with_forward_price(1.1025)
+///     .with_base_currency(Currency::EUR)
+///     .with_quote_currency(Currency::USD)
+///     .as_deliverable()
+///     .build()
+///     .expect("failed to build fx forward");
+///
+/// assert_eq!(fx_fwd.forward_price(), Some(1.1025));
+/// assert!(fx_fwd.is_deliverable());
+/// ```
 #[derive(Default)]
 pub struct MakeFxForward {
     identifier: Option<String>,

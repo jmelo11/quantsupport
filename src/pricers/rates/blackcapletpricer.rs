@@ -33,6 +33,31 @@ use std::collections::HashSet;
 ///
 /// When a [`DiscountPolicy`] is set, the pricer uses the CSA discount curve
 /// for payment discounting instead of the instrument's `market_index` curve.
+///
+/// ## Example
+/// ```rust
+/// use quantsupport::prelude::*;
+///
+/// let pricer = BlackCapletPricer::new();
+///
+/// // Build a cap/floor strip:
+/// let cap = MakeCapFloor::default()
+///     .with_identifier("CAP-3Y".to_string())
+///     .with_start_date(Date::new(2024, 1, 1))
+///     .with_maturity_date(Date::new(2027, 1, 1))
+///     .with_strike(0.04)
+///     .with_notional(5_000_000.0)
+///     .with_market_index(MarketIndex::SOFR)
+///     .with_currency(Currency::USD)
+///     .with_cap_floor_type(CapFloorType::Cap)
+///     .with_frequency(Frequency::Quarterly)
+///     .build()
+///     .expect("failed to build cap");
+///
+/// // Each caplet in the strip is priced individually:
+/// //   let caplet_trade = CapletFloorletTrade::new(caplet, eval_date, notional);
+/// //   let results = pricer.evaluate(&caplet_trade, &[Request::Value], &ctx);
+/// ```
 pub struct BlackCapletPricer {
     discount_policy: Option<Box<dyn DiscountPolicy<CapletFloorlet>>>,
 }

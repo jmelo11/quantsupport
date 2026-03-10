@@ -52,6 +52,22 @@ impl PricerState for DCFState<'_> {
 /// - Floating rate coupons (forward rates are set via market data resolution)
 /// - Multi-currency trades (uses FX parity from legs at valuation date)
 /// - Automatic discount curve requests based on leg currencies/indices
+///
+/// ## Example
+/// ```rust
+/// use quantsupport::prelude::*;
+///
+/// // Create the pricer for a FixedRateBond/Trade pair
+/// let pricer: CashflowDiscountPricer<FixedRateBond, FixedRateBondTrade> =
+///     CashflowDiscountPricer::new();
+///
+/// // Or use it for a FloatingRateNote:
+/// let frn_pricer: CashflowDiscountPricer<FloatingRateNote, FloatingRateNoteTrade> =
+///     CashflowDiscountPricer::new();
+///
+/// // Evaluation requires a MarketDataProvider. The typical flow is:
+/// //   let results = pricer.evaluate(&trade, &[Request::Value, Request::Sensitivities], &ctx);
+/// ```
 pub struct CashflowDiscountPricer<I, T> {
     _phantom: PhantomData<fn() -> (I, T)>,
     discount_policy: Option<Box<dyn DiscountPolicy<Leg>>>,

@@ -17,6 +17,34 @@ use crate::{
 };
 
 /// A builder for creating a [`FixedRateBond`] instance, allowing for a flexible and stepwise construction process.
+///
+/// ## Example
+/// ```rust
+/// use quantsupport::prelude::*;
+///
+/// let rate_def = RateDefinition::new(
+///     DayCounter::Actual360,
+///     Compounding::Simple,
+///     Frequency::Semiannual,
+/// );
+///
+/// let bond = MakeFixedRateBond::default()
+///     .with_identifier("UST-5Y".to_string())
+///     .with_start_date(Date::new(2024, 1, 1))
+///     .with_maturity_date(Date::new(2029, 1, 1))
+///     .with_rate(0.04)
+///     .with_notional(1_000_000.0)
+///     .with_rate_definition(rate_def)
+///     .with_market_index(MarketIndex::Other("UST".to_string()))
+///     .with_currency(Currency::USD)
+///     .with_payment_frequency(Frequency::Semiannual)
+///     .with_payment_structure(PaymentStructure::Bullet)
+///     .build()
+///     .expect("failed to build fixed rate bond");
+///
+/// assert_eq!(bond.identifier(), "UST-5Y");
+/// assert_eq!(bond.currency(), Currency::USD);
+/// ```
 #[derive(Default)]
 pub struct MakeFixedRateBond {
     start_date: Option<Date>,
