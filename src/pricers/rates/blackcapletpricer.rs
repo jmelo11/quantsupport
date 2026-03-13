@@ -492,7 +492,7 @@ mod tests {
             rate_def,
         );
         let trade =
-            CapletFloorletTrade::new(caplet.clone(), trade_date, notional, Side::LongRecieve);
+            CapletFloorletTrade::new(caplet.clone(), trade_date, notional, Side::LongReceive);
 
         let provider = SimpleMarketDataProvider {
             evaluation_date: trade_date,
@@ -575,7 +575,7 @@ mod tests {
             rate_def,
         );
         let trade =
-            CapletFloorletTrade::new(caplet.clone(), trade_date, notional, Side::LongRecieve);
+            CapletFloorletTrade::new(caplet.clone(), trade_date, notional, Side::LongReceive);
 
         let provider = SimpleMarketDataProvider {
             evaluation_date: trade_date,
@@ -736,7 +736,7 @@ mod tests {
             Strike::Absolute(strike),
             RateDefinition::default(),
         );
-        let trade = CapletFloorletTrade::new(caplet, trade_date, notional, Side::LongRecieve);
+        let trade = CapletFloorletTrade::new(caplet, trade_date, notional, Side::LongReceive);
 
         let provider = SimpleMarketDataProvider {
             evaluation_date: trade_date,
@@ -788,7 +788,7 @@ mod tests {
             Strike::Absolute(strike),
             RateDefinition::default(),
         );
-        let trade = CapletFloorletTrade::new(caplet, trade_date, notional, Side::LongRecieve);
+        let trade = CapletFloorletTrade::new(caplet, trade_date, notional, Side::LongReceive);
 
         let provider = SimpleMarketDataProvider {
             evaluation_date: trade_date,
@@ -839,7 +839,7 @@ mod tests {
             Strike::Atm,
             RateDefinition::default(),
         );
-        let trade = CapletFloorletTrade::new(caplet, trade_date, notional, Side::LongRecieve);
+        let trade = CapletFloorletTrade::new(caplet, trade_date, notional, Side::LongReceive);
 
         let provider = SimpleMarketDataProvider {
             evaluation_date: trade_date,
@@ -892,7 +892,7 @@ mod tests {
             Strike::Relative(spread),
             RateDefinition::default(),
         );
-        let trade = CapletFloorletTrade::new(caplet, trade_date, notional, Side::LongRecieve);
+        let trade = CapletFloorletTrade::new(caplet, trade_date, notional, Side::LongReceive);
 
         let provider = SimpleMarketDataProvider {
             evaluation_date: trade_date,

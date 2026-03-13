@@ -5,17 +5,17 @@ use crate::{core::instrument::Instrument, time::date::Date};
 pub enum Side {
     /// Paying or shorting a position.
     PayShort,
-    /// Recieve or being long a position.
-    LongRecieve,
+    /// Receive or being long a position.
+    LongReceive,
 }
 
 impl Side {
-    /// Returns the sign associated with the side, where `PayShort` corresponds to a positive sign and `LongRecieve` corresponds to a negative sign.
+    /// Returns the sign associated with the side, where `PayShort` corresponds to a positive sign and `LongReceive` corresponds to a negative sign.
     #[must_use]
     pub const fn sign(&self) -> f64 {
         match self {
             Self::PayShort => 1.0,
-            Self::LongRecieve => -1.0,
+            Self::LongReceive => -1.0,
         }
     }
 }

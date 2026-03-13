@@ -454,7 +454,7 @@ mod tests {
             None,
             None,
             None,
-            Side::LongRecieve,
+            Side::LongReceive,
             true,
             Date::new(2024, 1, 1),
             Date::new(2024, 4, 1),

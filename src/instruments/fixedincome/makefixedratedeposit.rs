@@ -117,7 +117,7 @@ impl MakeFixedRateDeposit {
         self
     }
 
-    /// Sets the side of the fixed rate deposit (defaults to `LongRecieve` if not set).
+    /// Sets the side of the fixed rate deposit (defaults to `LongReceive` if not set).
     #[must_use]
     pub const fn with_side(mut self, side: Side) -> Self {
         self.side = Some(side);
@@ -156,7 +156,7 @@ impl MakeFixedRateDeposit {
             .ok_or_else(|| QSError::ValueNotSetErr("Identifier".into()))?;
 
         let units = self.units.unwrap_or(100.0);
-        let side = self.side.unwrap_or(Side::LongRecieve);
+        let side = self.side.unwrap_or(Side::LongReceive);
 
         let interest_rate = InterestRate::from_rate_definition(ADReal::new(rate), rate_definition);
 

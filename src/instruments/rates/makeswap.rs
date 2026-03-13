@@ -130,7 +130,7 @@ impl MakeSwap {
         self
     }
 
-    /// Sets the side. `LongRecieve` means receive-fixed / pay-floating;
+    /// Sets the side. `LongReceive` means receive-fixed / pay-floating;
     /// `PayShort` means pay-fixed / receive-floating.
     #[must_use]
     pub const fn with_side(mut self, side: Side) -> Self {
@@ -210,7 +210,7 @@ impl MakeSwap {
             .identifier
             .ok_or_else(|| QSError::ValueNotSetErr("Identifier".into()))?;
 
-        let side = self.side.unwrap_or(Side::LongRecieve);
+        let side = self.side.unwrap_or(Side::LongReceive);
         let spread = self.spread.unwrap_or(0.0);
         let fixed_leg_frequency = self.fixed_leg_frequency.unwrap_or(Frequency::Semiannual);
         let floating_leg_frequency = self.floating_leg_frequency.unwrap_or(Frequency::Quarterly);
@@ -239,8 +239,8 @@ impl MakeSwap {
 
         // Floating leg: opposite side
         let floating_side = match side {
-            Side::LongRecieve => Side::PayShort,
-            Side::PayShort => Side::LongRecieve,
+            Side::LongReceive => Side::PayShort,
+            Side::PayShort => Side::LongReceive,
         };
 
         let floating_leg = MakeLeg::default()

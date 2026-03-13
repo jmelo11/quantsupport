@@ -119,7 +119,7 @@ impl MakeFxForward {
         self
     }
 
-    /// Sets the side (defaults to `LongRecieve` — buying base currency).
+    /// Sets the side (defaults to `LongReceive` — buying base currency).
     #[must_use]
     pub const fn with_side(mut self, side: Side) -> Self {
         self.side = Some(side);

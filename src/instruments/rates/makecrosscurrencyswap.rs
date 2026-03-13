@@ -246,7 +246,7 @@ impl MakeCrossCurrencySwap {
             .identifier
             .ok_or_else(|| QSError::ValueNotSetErr("Identifier".into()))?;
 
-        let side = self.side.unwrap_or(Side::LongRecieve);
+        let side = self.side.unwrap_or(Side::LongReceive);
         let spread = self.spread.unwrap_or(0.0);
         let domestic_freq = self.domestic_leg_frequency.unwrap_or(Frequency::Semiannual);
         let foreign_freq = self.foreign_leg_frequency.unwrap_or(Frequency::Quarterly);
@@ -275,8 +275,8 @@ impl MakeCrossCurrencySwap {
 
         // Foreign (floating) leg — opposite side
         let foreign_side = match side {
-            Side::LongRecieve => Side::PayShort,
-            Side::PayShort => Side::LongRecieve,
+            Side::LongReceive => Side::PayShort,
+            Side::PayShort => Side::LongReceive,
         };
 
         let foreign_leg = MakeLeg::default()

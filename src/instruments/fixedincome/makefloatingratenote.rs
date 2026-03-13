@@ -112,7 +112,7 @@ impl MakeFloatingRateNote {
         self
     }
 
-    /// Sets the side of the note (defaults to `LongRecieve` if not set).
+    /// Sets the side of the note (defaults to `LongReceive` if not set).
     #[must_use]
     pub const fn with_side(mut self, side: Side) -> Self {
         self.side = Some(side);
@@ -194,7 +194,7 @@ impl MakeFloatingRateNote {
             .ok_or_else(|| QSError::ValueNotSetErr("Identifier".into()))?;
 
         let units = self.units.unwrap_or(100.0);
-        let side = self.side.unwrap_or(Side::LongRecieve);
+        let side = self.side.unwrap_or(Side::LongReceive);
         let payment_frequency = self.payment_frequency.unwrap_or(Frequency::Quarterly);
         let structure = self.payment_structure.unwrap_or(PaymentStructure::Bullet);
 

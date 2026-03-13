@@ -49,13 +49,13 @@
 //!     .with_rate_definition(rate_definition)
 //!     .with_currency(Currency::USD)
 //!     .with_market_index(MarketIndex::SOFR)
-//!     .with_side(Side::LongRecieve)               // receive fixed, pay floating
+//!     .with_side(Side::LongReceive)               // receive fixed, pay floating
 //!     .with_fixed_leg_frequency(Frequency::Semiannual)
 //!     .with_floating_leg_frequency(Frequency::Semiannual)
 //!     .build()
 //!     .expect("Failed to build swap");
 //!
-//! let trade = SwapTrade::new(swap, start_date, notional, Side::LongRecieve);
+//! let trade = SwapTrade::new(swap, start_date, notional, Side::LongReceive);
 //! ```
 //!
 //! ## 3 — Set up the pricing context
@@ -126,11 +126,11 @@
 //! #     .with_fixed_rate(fixed_rate).with_notional(notional)
 //! #     .with_rate_definition(rate_definition)
 //! #     .with_currency(Currency::USD).with_market_index(MarketIndex::SOFR)
-//! #     .with_side(Side::LongRecieve)
+//! #     .with_side(Side::LongReceive)
 //! #     .with_fixed_leg_frequency(Frequency::Semiannual)
 //! #     .with_floating_leg_frequency(Frequency::Semiannual)
 //! #     .build().unwrap();
-//! # let trade = SwapTrade::new(swap, start_date, notional, Side::LongRecieve);
+//! # let trade = SwapTrade::new(swap, start_date, notional, Side::LongReceive);
 //! # let evaluation_date = Date::new(2024, 1, 15);
 //! # let curve_definition = RateDefinition::new(
 //! #     DayCounter::Actual360, Compounding::Continuous, Frequency::Annual);
