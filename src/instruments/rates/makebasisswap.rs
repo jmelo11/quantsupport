@@ -1,4 +1,5 @@
 use crate::{
+    ad::adreal::IsReal,
     core::trade::Side,
     currencies::currency::Currency,
     indices::marketindex::MarketIndex,
@@ -13,6 +14,9 @@ use crate::{
     },
     utils::errors::{QSError, Result},
 };
+#[cfg(test)]
+use crate::ad::adreal::ADReal;
+use std::marker::PhantomData;
 
 /// A builder for creating a [`BasisSwap`] instance (floating-vs-floating interest rate swap).
 ///
@@ -20,7 +24,7 @@ use crate::{
 /// ```rust
 /// use quantsupport::prelude::*;
 ///
-/// let basis_swap = MakeBasisSwap::default()
+/// let basis_swap = MakeBasisSwap::<ADReal>::default()
 ///     .with_identifier("BASIS-3M6M".to_string())
 ///     .with_start_date(Date::new(2024, 1, 1))
 ///     .with_maturity_date(Date::new(2026, 1, 1))
@@ -38,7 +42,7 @@ use crate::{
 /// assert!(!basis_swap.receive_leg().cashflows().is_empty());
 /// ```
 #[derive(Default)]
-pub struct MakeBasisSwap {
+pub struct MakeBasisSwap<T: IsReal> {
     start_date: Option<Date>,
     maturity_date: Option<Date>,
     notional: Option<f64>,
@@ -55,9 +59,13 @@ pub struct MakeBasisSwap {
     business_day_convention: Option<BusinessDayConvention>,
     date_generation_rule: Option<DateGenerationRule>,
     end_of_month: Option<bool>,
+    _marker: PhantomData<T>,
 }
 
-impl MakeBasisSwap {
+impl<T> MakeBasisSwap<T>
+where
+    T: IsReal,
+{
     /// Sets the start date.
     #[must_use]
     pub const fn with_start_date(mut self, date: Date) -> Self {
@@ -174,7 +182,7 @@ impl MakeBasisSwap {
     ///
     /// # Errors
     /// Returns an error if any of the required fields are missing or invalid.
-    pub fn build(self) -> Result<BasisSwap> {
+    pub fn build(self) -> Result<BasisSwap<T>> {
         let notional = self
             .notional
             .ok_or_else(|| QSError::ValueNotSetErr("Notional".into()))?;
@@ -203,7 +211,7 @@ impl MakeBasisSwap {
         let receive_freq = self.receive_leg_frequency.unwrap_or(Frequency::Quarterly);
 
         // Pay leg
-        let pay_leg = MakeLeg::default()
+        let pay_leg = MakeLeg::<T>::default()
             .with_leg_id(0)
             .with_notional(notional)
             .with_side(Side::PayShort)
@@ -222,7 +230,7 @@ impl MakeBasisSwap {
             .build()?;
 
         // Receive leg
-        let receive_leg = MakeLeg::default()
+        let receive_leg = MakeLeg::<T>::default()
             .with_leg_id(1)
             .with_notional(notional)
             .with_side(Side::LongReceive)
@@ -256,8 +264,8 @@ mod tests {
     use super::*;
     use crate::core::instrument::Instrument;
 
-    fn base_builder() -> MakeBasisSwap {
-        MakeBasisSwap::default()
+    fn base_builder() -> MakeBasisSwap<ADReal> {
+        MakeBasisSwap::<ADReal>::default()
             .with_identifier("basis_swap_test".to_string())
             .with_start_date(Date::new(2024, 1, 1))
             .with_maturity_date(Date::new(2025, 1, 1))
@@ -283,7 +291,7 @@ mod tests {
 
     #[test]
     fn test_build_basis_swap_missing_receive_index_fails() {
-        let result = MakeBasisSwap::default()
+        let result = MakeBasisSwap::<ADReal>::default()
             .with_identifier("basis_swap_missing_receive".to_string())
             .with_start_date(Date::new(2024, 1, 1))
             .with_maturity_date(Date::new(2025, 1, 1))

@@ -90,7 +90,7 @@ pub trait HandleFairRate<T, S> {
 /// The [`LegsProvider`] trait defines a method for providing the cashflows of an instrument.
 pub trait LegsProvider {
     /// Provides the cashflows of the instrument.
-    fn legs(&self) -> &[Leg];
+    fn legs(&self) -> &[Leg<crate::ad::adreal::ADReal>];
 }
 
 /// The [`HandleCashflows`] trait defines a method for handling a cashflows request.
@@ -230,11 +230,11 @@ mod tests {
 
     /// Mock state that implements LegsProvider for testing
     struct MockState {
-        legs: Vec<Leg>,
+        legs: Vec<Leg<ADReal>>,
     }
 
     impl LegsProvider for MockState {
-        fn legs(&self) -> &[Leg] {
+        fn legs(&self) -> &[Leg<ADReal>] {
             &self.legs
         }
     }

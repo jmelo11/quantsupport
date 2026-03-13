@@ -87,7 +87,7 @@ impl ResolvedInstrument {
 // ---------------------------------------------------------------------------
 
 /// Resolved calibration payload for one curve: all tenors have been turned
-/// into concrete `ResolvedInstrument`s, sorted by pillar date.
+/// into concrete [`ResolvedInstrument`]s, sorted by pillar date.
 pub struct ResolvedCurveSpec {
     market_index: MarketIndex,
     currency: Currency,

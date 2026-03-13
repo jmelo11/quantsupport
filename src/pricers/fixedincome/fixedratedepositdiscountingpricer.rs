@@ -45,7 +45,7 @@ use crate::{
 ///     Compounding::Simple,
 ///     Frequency::Annual,
 /// );
-/// let deposit = MakeFixedRateDeposit::default()
+/// let deposit = MakeFixedRateDeposit::<ADReal>::default()
 ///     .with_identifier("DEPO-3M".to_string())
 ///     .with_start_date(Date::new(2024, 1, 1))
 ///     .with_maturity_date(Date::new(2024, 4, 1))
@@ -62,7 +62,7 @@ use crate::{
 /// //   let results = pricer.evaluate(&trade, &[Request::Value], &ctx);
 /// ```
 pub struct FixedRateDepositDiscountingPricer {
-    discount_policy: Option<Box<dyn DiscountPolicy<FixedRateDeposit>>>,
+    discount_policy: Option<Box<dyn DiscountPolicy<FixedRateDeposit<ADReal>>>>,
 }
 
 impl FixedRateDepositDiscountingPricer {
@@ -100,10 +100,10 @@ impl PricerState for DepositPricerState {
     }
 }
 
-impl HandleValue<FixedRateDepositTrade, DepositPricerState> for FixedRateDepositDiscountingPricer {
+impl HandleValue<FixedRateDepositTrade<ADReal>, DepositPricerState> for FixedRateDepositDiscountingPricer {
     fn handle_value(
         &self,
-        trade: &FixedRateDepositTrade,
+        trade: &FixedRateDepositTrade<ADReal>,
         state: &mut DepositPricerState,
     ) -> Result<f64> {
         Tape::start_recording();
@@ -170,12 +170,12 @@ impl HandleValue<FixedRateDepositTrade, DepositPricerState> for FixedRateDeposit
     }
 }
 
-impl HandleSensitivities<FixedRateDepositTrade, DepositPricerState>
+impl HandleSensitivities<FixedRateDepositTrade<ADReal>, DepositPricerState>
     for FixedRateDepositDiscountingPricer
 {
     fn handle_sensitivities(
         &self,
-        trade: &FixedRateDepositTrade,
+        trade: &FixedRateDepositTrade<ADReal>,
         state: &mut DepositPricerState,
     ) -> Result<SensitivityMap> {
         let price = if let Some(p) = state.value {
@@ -214,12 +214,12 @@ impl HandleSensitivities<FixedRateDepositTrade, DepositPricerState>
 }
 
 impl Pricer for FixedRateDepositDiscountingPricer {
-    type Item = FixedRateDepositTrade;
-    type Policy = dyn DiscountPolicy<FixedRateDeposit>;
+    type Item = FixedRateDepositTrade<ADReal>;
+    type Policy = dyn DiscountPolicy<FixedRateDeposit<ADReal>>;
 
     fn evaluate(
         &self,
-        trade: &FixedRateDepositTrade,
+        trade: &FixedRateDepositTrade<ADReal>,
         requests: &[Request],
         ctx: &impl MarketDataProvider,
     ) -> Result<EvaluationResults> {
@@ -253,7 +253,7 @@ impl Pricer for FixedRateDepositDiscountingPricer {
         Ok(results)
     }
 
-    fn market_data_request(&self, trade: &FixedRateDepositTrade) -> Option<MarketDataRequest> {
+    fn market_data_request(&self, trade: &FixedRateDepositTrade<ADReal>) -> Option<MarketDataRequest> {
         let instrument_index = trade.instrument().market_index();
         let mut elements = vec![ConstructedElementRequest::DiscountCurve {
             market_index: instrument_index.clone(),

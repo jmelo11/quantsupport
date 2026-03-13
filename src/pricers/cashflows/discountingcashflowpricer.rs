@@ -34,7 +34,7 @@ struct DCFState<'a> {
     /// Market data response for discount curves.
     pub md_response: Option<MarketData>,
     /// Resolved legs used by default cashflows handling.
-    pub legs: &'a [Leg],
+    pub legs: &'a [Leg<ADReal>],
 }
 
 impl PricerState for DCFState<'_> {
@@ -58,11 +58,11 @@ impl PricerState for DCFState<'_> {
 /// use quantsupport::prelude::*;
 ///
 /// // Create the pricer for a FixedRateBond/Trade pair
-/// let pricer: CashflowDiscountPricer<FixedRateBond, FixedRateBondTrade> =
+/// let pricer: CashflowDiscountPricer<FixedRateBond<ADReal>, FixedRateBondTrade<ADReal>> =
 ///     CashflowDiscountPricer::new();
 ///
 /// // Or use it for a FloatingRateNote:
-/// let frn_pricer: CashflowDiscountPricer<FloatingRateNote, FloatingRateNoteTrade> =
+/// let frn_pricer: CashflowDiscountPricer<FloatingRateNote<ADReal>, FloatingRateNoteTrade<ADReal>> =
 ///     CashflowDiscountPricer::new();
 ///
 /// // Evaluation requires a MarketDataProvider. The typical flow is:
@@ -70,7 +70,7 @@ impl PricerState for DCFState<'_> {
 /// ```
 pub struct CashflowDiscountPricer<I, T> {
     _phantom: PhantomData<fn() -> (I, T)>,
-    discount_policy: Option<Box<dyn DiscountPolicy<Leg>>>,
+    discount_policy: Option<Box<dyn DiscountPolicy<Leg<ADReal>>>>,
 }
 
 impl<I, T> CashflowDiscountPricer<I, T> {
@@ -85,7 +85,7 @@ impl<I, T> CashflowDiscountPricer<I, T> {
 }
 
 impl LegsProvider for DCFState<'_> {
-    fn legs(&self) -> &[Leg] {
+    fn legs(&self) -> &[Leg<ADReal>] {
         self.legs
     }
 }
@@ -386,7 +386,7 @@ where
                             .rate()
                             .day_counter()
                             .year_fraction(coupon.accrual_start_date(), coupon.accrual_end_date());
-                        let payment_date = Cashflow::payment_date(coupon);
+                        let payment_date = coupon.payment_date();
 
                         let df_fx = if let Some(policy) = &self.discount_policy {
                             let collateral_index = policy.accept(leg)?;
@@ -422,7 +422,7 @@ where
                             .value();
                         coupon.set_fixing(forward.into());
                         let amount = coupon.amount()?.value();
-                        let payment_date = Cashflow::payment_date(coupon);
+                        let payment_date = coupon.payment_date();
 
                         let df_fx = if let Some(policy) = &self.discount_policy {
                             let collateral_index = policy.accept(leg)?;
@@ -470,7 +470,7 @@ where
     T: LegsProvider + Trade<I> + Send + Sync,
 {
     type Item = T;
-    type Policy = dyn DiscountPolicy<Leg>;
+    type Policy = dyn DiscountPolicy<Leg<ADReal>>;
 
     fn evaluate(
         &self,
@@ -658,7 +658,7 @@ mod tests {
         );
 
         // --- 1. Build the deposit trade ---
-        let deposit = MakeFixedRateDeposit::default()
+        let deposit = MakeFixedRateDeposit::<ADReal>::default()
             .with_identifier("TEST_DEPOSIT".to_string())
             .with_start_date(trade_date)
             .with_maturity_date(maturity_date)
@@ -697,7 +697,8 @@ mod tests {
         };
 
         // --- 3. Price using the Pricer trait ---
-        let pricer = CashflowDiscountPricer::<FixedRateDeposit, FixedRateDepositTrade>::new();
+        let pricer =
+            CashflowDiscountPricer::<FixedRateDeposit<ADReal>, FixedRateDepositTrade<ADReal>>::new();
         let results = pricer
             .evaluate(&trade, &[Request::Value, Request::Sensitivities], &provider)
             .expect("Pricing failed");
@@ -746,7 +747,7 @@ mod tests {
             Frequency::Annual,
         );
 
-        let swap = MakeSwap::default()
+        let swap = MakeSwap::<ADReal>::default()
             .with_identifier("VANILLA_SWAP_CF_TEST".to_string())
             .with_start_date(start_date)
             .with_maturity_date(maturity_date)
@@ -804,7 +805,7 @@ mod tests {
             market_data,
         };
 
-        let pricer = CashflowDiscountPricer::<Swap, SwapTrade>::new();
+        let pricer = CashflowDiscountPricer::<Swap<ADReal>, SwapTrade<ADReal>>::new();
         let results = pricer
             .evaluate(&trade, &[Request::Cashflows], &provider)
             .expect("Vanilla swap cashflows evaluation failed");
@@ -947,7 +948,7 @@ mod tests {
 
         // --- 1. Build the cross-currency swap ---
         // Domestic = EUR (fixed, receive), Foreign = USD (floating SOFR, pay)
-        let xccy_swap = MakeCrossCurrencySwap::default()
+        let xccy_swap = MakeCrossCurrencySwap::<ADReal>::default()
             .with_identifier("XCCY_EUR_USD".to_string())
             .with_start_date(trade_date)
             .with_maturity_date(maturity_date)
@@ -1038,7 +1039,10 @@ mod tests {
         };
 
         // --- 3. Price with CSA ---
-        let mut pricer = CashflowDiscountPricer::<CrossCurrencySwap, CrossCurrencySwapTrade>::new();
+        let mut pricer = CashflowDiscountPricer::<
+            CrossCurrencySwap<ADReal>,
+            CrossCurrencySwapTrade<ADReal>,
+        >::new();
         pricer.set_discount_policy(Box::new(SingleCurveCSADiscountPolicy::new(
             estr_index.clone(),
             Currency::EUR,

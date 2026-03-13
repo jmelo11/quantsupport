@@ -76,6 +76,32 @@ impl PayoffOps {
             Self::Index => Ok(index_fixing),
         }
     }
+
+    /// Evaluates the payoff operation given an `f64` fixing.
+    ///
+    /// ## Errors
+    /// Returns an error if the payoff cannot be evaluated.
+    pub fn evaluate_f64(&self, index_fixing: f64) -> Result<f64> {
+        match self {
+            Self::Max(left, right) => Ok(left
+                .evaluate_f64(index_fixing)?
+                .max(right.evaluate_f64(index_fixing)?)),
+            Self::Min(left, right) => Ok(left
+                .evaluate_f64(index_fixing)?
+                .min(right.evaluate_f64(index_fixing)?)),
+            Self::Times(left, right) => {
+                Ok(left.evaluate_f64(index_fixing)? * right.evaluate_f64(index_fixing)?)
+            }
+            Self::Plus(left, right) => {
+                Ok(left.evaluate_f64(index_fixing)? + right.evaluate_f64(index_fixing)?)
+            }
+            Self::Minus(left, right) => {
+                Ok(left.evaluate_f64(index_fixing)? - right.evaluate_f64(index_fixing)?)
+            }
+            Self::Const(value) => Ok(*value),
+            Self::Index => Ok(index_fixing),
+        }
+    }
 }
 
 /// A [`NonLinearCoupon`] is a coupon that contains some optionality.

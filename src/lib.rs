@@ -40,7 +40,7 @@
 //!     Frequency::Semiannual,
 //! );
 //!
-//! let swap = MakeSwap::default()
+//! let swap = MakeSwap::<ADReal>::default()
 //!     .with_identifier("USD_IRS_5Y".to_string())
 //!     .with_start_date(start_date)
 //!     .with_maturity_date(maturity_date)
@@ -120,7 +120,7 @@
 //! # let fixed_rate    = 0.030;
 //! # let rate_definition = RateDefinition::new(
 //! #     DayCounter::Actual360, Compounding::Simple, Frequency::Semiannual);
-//! # let swap = MakeSwap::default()
+//! # let swap = MakeSwap::<ADReal>::default()
 //! #     .with_identifier("USD_IRS_5Y".to_string())
 //! #     .with_start_date(start_date).with_maturity_date(maturity_date)
 //! #     .with_fixed_rate(fixed_rate).with_notional(notional)
@@ -147,7 +147,7 @@
 //! # let context = ContextManager::new(quote_store, fixing_store)
 //! #     .with_base_currency(Currency::USD)
 //! #     .with_constructed_elements(constructed_elements);
-//! let pricer   = CashflowDiscountPricer::<Swap, SwapTrade>::new();
+//! let pricer   = CashflowDiscountPricer::<Swap<ADReal>, SwapTrade<ADReal>>::new();
 //! let requests = vec![Request::Value, Request::Cashflows, Request::Sensitivities];
 //! let results  = pricer.evaluate(&trade, &requests, &context).expect("pricing failed");
 //!

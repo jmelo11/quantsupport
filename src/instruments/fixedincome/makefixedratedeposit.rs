@@ -1,5 +1,5 @@
 use crate::{
-    ad::adreal::{ADReal, IsReal},
+    ad::adreal::IsReal,
     core::trade::Side,
     currencies::currency::Currency,
     indices::marketindex::MarketIndex,
@@ -11,6 +11,9 @@ use crate::{
     time::{date::Date, enums::Frequency},
     utils::errors::{QSError, Result},
 };
+#[cfg(test)]
+use crate::ad::adreal::ADReal;
+use std::marker::PhantomData;
 
 /// A builder for creating a [`FixedRateDeposit`] instance, allowing for a flexible and stepwise construction process.
 ///
@@ -24,7 +27,7 @@ use crate::{
 ///     Frequency::Annual,
 /// );
 ///
-/// let deposit = MakeFixedRateDeposit::default()
+/// let deposit = MakeFixedRateDeposit::<ADReal>::default()
 ///     .with_identifier("DEPO-3M".to_string())
 ///     .with_start_date(Date::new(2024, 1, 1))
 ///     .with_maturity_date(Date::new(2024, 4, 1))
@@ -39,7 +42,7 @@ use crate::{
 /// assert_eq!(deposit.identifier(), "DEPO-3M");
 /// ```
 #[derive(Default)]
-pub struct MakeFixedRateDeposit {
+pub struct MakeFixedRateDeposit<T: IsReal> {
     start_date: Option<Date>,
     maturity_date: Option<Date>,
     rate: Option<f64>,
@@ -50,9 +53,13 @@ pub struct MakeFixedRateDeposit {
     market_index: Option<MarketIndex>,
     currency: Option<Currency>,
     side: Option<Side>,
+    _marker: PhantomData<T>,
 }
 
-impl MakeFixedRateDeposit {
+impl<T> MakeFixedRateDeposit<T>
+where
+    T: IsReal,
+{
     /// Sets the start date of the fixed rate deposit.
     #[must_use]
     pub const fn with_start_date(mut self, start_date: Date) -> Self {
@@ -128,7 +135,7 @@ impl MakeFixedRateDeposit {
     ///
     /// # Errors
     /// Returns an error if any of the required fields are missing or invalid.
-    pub fn build(self) -> Result<FixedRateDeposit> {
+    pub fn build(self) -> Result<FixedRateDeposit<T>> {
         let notional = self
             .notional
             .ok_or_else(|| QSError::ValueNotSetErr("Notional".into()))?;
@@ -158,9 +165,9 @@ impl MakeFixedRateDeposit {
         let units = self.units.unwrap_or(100.0);
         let side = self.side.unwrap_or(Side::LongReceive);
 
-        let interest_rate = InterestRate::from_rate_definition(ADReal::new(rate), rate_definition);
+        let interest_rate = InterestRate::from_rate_definition(T::new(rate), rate_definition);
 
-        let leg = MakeLeg::default()
+        let leg = MakeLeg::<T>::default()
             .with_leg_id(0)
             .with_notional(notional)
             .with_side(side)

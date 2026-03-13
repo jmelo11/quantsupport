@@ -1,5 +1,5 @@
 use crate::{
-    ad::adreal::{ADReal, IsReal},
+    ad::adreal::IsReal,
     core::trade::Side,
     currencies::currency::Currency,
     indices::marketindex::MarketIndex,
@@ -15,6 +15,9 @@ use crate::{
     },
     utils::errors::{QSError, Result},
 };
+#[cfg(test)]
+use crate::ad::adreal::ADReal;
+use std::marker::PhantomData;
 
 /// A builder for creating a [`Swap`] instance (vanilla fixed-float interest rate swap).
 ///
@@ -28,7 +31,7 @@ use crate::{
 ///     Frequency::Semiannual,
 /// );
 ///
-/// let swap = MakeSwap::default()
+/// let swap = MakeSwap::<ADReal>::default()
 ///     .with_identifier("IRS-5Y".to_string())
 ///     .with_start_date(Date::new(2024, 1, 1))
 ///     .with_maturity_date(Date::new(2029, 1, 1))
@@ -47,7 +50,7 @@ use crate::{
 /// assert!(!swap.floating_leg().cashflows().is_empty());
 /// ```
 #[derive(Default)]
-pub struct MakeSwap {
+pub struct MakeSwap<T: IsReal> {
     start_date: Option<Date>,
     maturity_date: Option<Date>,
     fixed_rate: Option<f64>,
@@ -64,9 +67,13 @@ pub struct MakeSwap {
     business_day_convention: Option<BusinessDayConvention>,
     date_generation_rule: Option<DateGenerationRule>,
     end_of_month: Option<bool>,
+    _marker: PhantomData<T>,
 }
 
-impl MakeSwap {
+impl<T> MakeSwap<T>
+where
+    T: IsReal,
+{
     /// Sets the start date.
     #[must_use]
     pub const fn with_start_date(mut self, start_date: Date) -> Self {
@@ -184,7 +191,7 @@ impl MakeSwap {
     ///
     /// # Errors
     /// Returns an error if any of the required fields are missing or invalid.
-    pub fn build(self) -> Result<Swap> {
+    pub fn build(self) -> Result<Swap<T>> {
         let notional = self
             .notional
             .ok_or_else(|| QSError::ValueNotSetErr("Notional".into()))?;
@@ -215,11 +222,10 @@ impl MakeSwap {
         let fixed_leg_frequency = self.fixed_leg_frequency.unwrap_or(Frequency::Semiannual);
         let floating_leg_frequency = self.floating_leg_frequency.unwrap_or(Frequency::Quarterly);
 
-        let interest_rate =
-            InterestRate::from_rate_definition(ADReal::new(fixed_rate), rate_definition);
+        let interest_rate = InterestRate::from_rate_definition(T::new(fixed_rate), rate_definition);
 
         // Fixed leg: receive side matches the swap side
-        let fixed_leg = MakeLeg::default()
+        let fixed_leg = MakeLeg::<T>::default()
             .with_leg_id(0)
             .with_notional(notional)
             .with_side(side)
@@ -243,7 +249,7 @@ impl MakeSwap {
             Side::PayShort => Side::LongReceive,
         };
 
-        let floating_leg = MakeLeg::default()
+        let floating_leg = MakeLeg::<T>::default()
             .with_leg_id(1)
             .with_notional(notional)
             .with_side(floating_side)
@@ -288,8 +294,8 @@ mod tests {
         )
     }
 
-    fn base_builder() -> MakeSwap {
-        MakeSwap::default()
+    fn base_builder() -> MakeSwap<ADReal> {
+        MakeSwap::<ADReal>::default()
             .with_identifier("swap_test".to_string())
             .with_start_date(Date::new(2024, 1, 1))
             .with_maturity_date(Date::new(2025, 1, 1))
@@ -315,7 +321,7 @@ mod tests {
 
     #[test]
     fn test_build_swap_missing_fixed_rate_fails() {
-        let result = MakeSwap::default()
+        let result = MakeSwap::<ADReal>::default()
             .with_identifier("swap_missing_fixed_rate".to_string())
             .with_start_date(Date::new(2024, 1, 1))
             .with_maturity_date(Date::new(2025, 1, 1))

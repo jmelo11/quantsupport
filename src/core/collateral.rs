@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use crate::ad::adreal::ADReal;
 use crate::{currencies::currency::Currency, indices::marketindex::MarketIndex};
 use crate::{
     instruments::fixedincome::fixedratedeposit::FixedRateDeposit,
@@ -63,8 +64,8 @@ impl FixedIncomeDiscountPolicy {
     }
 }
 
-impl DiscountPolicy<FixedRateDeposit> for FixedIncomeDiscountPolicy {
-    fn accept(&self, target: &FixedRateDeposit) -> Result<MarketIndex> {
+impl DiscountPolicy<FixedRateDeposit<ADReal>> for FixedIncomeDiscountPolicy {
+    fn accept(&self, target: &FixedRateDeposit<ADReal>) -> Result<MarketIndex> {
         if self.prefer_instrument_index {
             return Ok(target.market_index());
         }

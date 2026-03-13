@@ -1,5 +1,5 @@
 use crate::{
-    ad::adreal::ADReal,
+    ad::adreal::{ADReal, IsReal},
     core::{collateral::HasCurrency, trade::Side},
     currencies::currency::Currency,
     indices::marketindex::MarketIndex,
@@ -9,19 +9,19 @@ use crate::{
 };
 
 /// A [`Leg`] represents a sequence of cashflows associated to a particular instrument.
-pub struct Leg {
+pub struct Leg<T: IsReal> {
     /// identifier for the leg, used for referencing in pricers and other components
     id: usize,
     /// list of cashflows associated with the leg
-    cashflows: Vec<CashflowType>,
+    cashflows: Vec<CashflowType<T>>,
     /// currency of the cashflows
     currency: Currency,
     /// forward rate index, if required
     market_index: Option<MarketIndex>,
     /// spread of the floating leg, if any
-    spread: Option<ADReal>,
+    spread: Option<T>,
     /// rate associated with fixed-rate cashflows, if any
-    interest_rate: Option<InterestRate<ADReal>>,
+    interest_rate: Option<InterestRate<T>>,
     /// side of the leg (long or short)
     side: Side,
     /// whether the leg has a linear payoff structure (e.g., fixed payments) or non-linear (e.g., options)
@@ -32,17 +32,20 @@ pub struct Leg {
     last_payment_date: Date,
 }
 
-impl Leg {
+impl<T> Leg<T>
+where
+    T: IsReal,
+{
     /// Creates a new [`Leg`] with the specified parameters.
     #[must_use]
     #[allow(clippy::too_many_arguments)]
     pub const fn new(
         id: usize,
-        cashflows: Vec<CashflowType>,
+        cashflows: Vec<CashflowType<T>>,
         currency: Currency,
         market_index: Option<MarketIndex>,
-        spread: Option<ADReal>,
-        interest_rate: Option<InterestRate<ADReal>>,
+        spread: Option<T>,
+        interest_rate: Option<InterestRate<T>>,
         side: Side,
         is_linear: bool,
         first_payment_date: Date,
@@ -70,7 +73,7 @@ impl Leg {
 
     /// Returns the cashflows associated with the leg.
     #[must_use]
-    pub fn cashflows(&self) -> &[CashflowType] {
+    pub fn cashflows(&self) -> &[CashflowType<T>] {
         &self.cashflows
     }
 
@@ -82,13 +85,13 @@ impl Leg {
 
     /// Returns the spread associated with the leg, if any.
     #[must_use]
-    pub const fn spread(&self) -> Option<ADReal> {
+    pub const fn spread(&self) -> Option<T> {
         self.spread
     }
 
     /// Returns the interest rate associated with the leg, if any.
     #[must_use]
-    pub const fn interest_rate(&self) -> Option<InterestRate<ADReal>> {
+    pub const fn interest_rate(&self) -> Option<InterestRate<T>> {
         self.interest_rate
     }
 
@@ -117,8 +120,45 @@ impl Leg {
     }
 }
 
-impl HasCurrency for Leg {
+impl<T> HasCurrency for Leg<T>
+where
+    T: IsReal,
+{
     fn currency(&self) -> Currency {
         self.currency
+    }
+}
+
+impl From<Leg<f64>> for Leg<ADReal> {
+    fn from(value: Leg<f64>) -> Self {
+        Self::new(
+            value.id,
+            value.cashflows.into_iter().map(Into::into).collect(),
+            value.currency,
+            value.market_index,
+            value.spread.map(ADReal::new),
+            value.interest_rate.map(Into::into),
+            value.side,
+            value.is_linear,
+            value.first_payment_date,
+            value.last_payment_date,
+        )
+    }
+}
+
+impl From<Leg<ADReal>> for Leg<f64> {
+    fn from(value: Leg<ADReal>) -> Self {
+        Self::new(
+            value.id,
+            value.cashflows.into_iter().map(Into::into).collect(),
+            value.currency,
+            value.market_index,
+            value.spread.map(|spread| spread.value()),
+            value.interest_rate.map(Into::into),
+            value.side,
+            value.is_linear,
+            value.first_payment_date,
+            value.last_payment_date,
+        )
     }
 }

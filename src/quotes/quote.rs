@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    ad::adreal::ADReal,
     currencies::currency::Currency,
     indices::marketindex::MarketIndex,
     instruments::{
@@ -976,17 +977,17 @@ impl std::str::FromStr for QuoteDetails {
 /// Wraps every concrete instrument type that can be produced from a [`Quote`].
 pub enum BuiltInstrument {
     /// A vanilla fixed-rate deposit.
-    FixedRateDeposit(FixedRateDeposit),
+    FixedRateDeposit(FixedRateDeposit<ADReal>),
     /// A fixed-vs-floating interest rate swap (e.g. OIS).
-    Swap(Swap),
+    Swap(Swap<ADReal>),
     /// A floating-vs-floating basis swap.
-    BasisSwap(BasisSwap),
+    BasisSwap(BasisSwap<ADReal>),
     /// A rate futures contract.
     RateFutures(RateFutures),
     /// An FX outright forward.
     FxForward(FxForward),
     /// A cross-currency swap (fixed domestic vs floating foreign).
-    CrossCurrencySwap(CrossCurrencySwap),
+    CrossCurrencySwap(CrossCurrencySwap<ADReal>),
     /// A European equity call option.
     Call(EquityEuropeanOption),
     /// A European equity put option.
@@ -994,7 +995,7 @@ pub enum BuiltInstrument {
     /// An interest rate cap or floor.
     CapFloor(CapFloor),
     /// A swaption (option on a swap).
-    Swaption(Swaption),
+    Swaption(Swaption<ADReal>),
 }
 
 // ---------------------------------------------------------------------------
@@ -1100,7 +1101,7 @@ impl Quote {
         let market_index = Self::required_market_index(d, "OIS quote")?;
         let rd = Self::rate_definition_for(&market_index);
 
-        let swap = MakeSwap::default()
+        let swap = MakeSwap::<ADReal>::default()
             .with_identifier(d.identifier())
             .with_start_date(reference_date)
             .with_maturity_date(maturity)
@@ -1133,7 +1134,7 @@ impl Quote {
         let market_index = Self::required_market_index(d, "deposit quote")?;
         let rd = Self::rate_definition_for(&market_index);
 
-        let deposit = MakeFixedRateDeposit::default()
+        let deposit = MakeFixedRateDeposit::<ADReal>::default()
             .with_identifier(d.identifier())
             .with_start_date(reference_date)
             .with_maturity_date(maturity)
@@ -1171,7 +1172,7 @@ impl Quote {
 
         let maturity = reference_date + tenor;
 
-        let basis_swap = MakeBasisSwap::default()
+        let basis_swap = MakeBasisSwap::<ADReal>::default()
             .with_identifier(d.identifier())
             .with_start_date(reference_date)
             .with_maturity_date(maturity)
@@ -1298,7 +1299,7 @@ impl Quote {
         let domestic_index = Self::required_market_index(d, "xccy swap quote")?;
         let rd = Self::rate_definition_for(&domestic_index);
 
-        let xccy = MakeCrossCurrencySwap::default()
+        let xccy = MakeCrossCurrencySwap::<ADReal>::default()
             .with_identifier(d.identifier())
             .with_start_date(reference_date)
             .with_maturity_date(maturity)

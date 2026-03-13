@@ -1,4 +1,5 @@
 use crate::{
+    ad::adreal::{ADReal, IsReal},
     core::{
         collateral::HasCurrency,
         instrument::{AssetClass, Instrument},
@@ -12,21 +13,24 @@ use crate::{
 };
 
 /// A [`FixedRateDeposit`] represents a fixed-rate cash deposit with a single payment at the end (capital plus interest).
-pub struct FixedRateDeposit {
+pub struct FixedRateDeposit<T: IsReal> {
     identifier: String,
     units: f64,
-    leg: Leg,
+    leg: Leg<T>,
     market_index: MarketIndex,
     currency: Currency,
 }
 
-impl FixedRateDeposit {
+impl<T> FixedRateDeposit<T>
+where
+    T: IsReal,
+{
     /// Creates a new [`FixedRateDeposit`].
     #[must_use]
     pub const fn new(
         identifier: String,
         units: f64,
-        leg: Leg,
+        leg: Leg<T>,
         market_index: MarketIndex,
         currency: Currency,
     ) -> Self {
@@ -47,7 +51,7 @@ impl FixedRateDeposit {
 
     /// Returns a reference to the inner leg.
     #[must_use]
-    pub const fn leg(&self) -> &Leg {
+    pub const fn leg(&self) -> &Leg<T> {
         &self.leg
     }
 
@@ -58,13 +62,19 @@ impl FixedRateDeposit {
     }
 }
 
-impl HasCurrency for FixedRateDeposit {
+impl<T> HasCurrency for FixedRateDeposit<T>
+where
+    T: IsReal,
+{
     fn currency(&self) -> Currency {
         self.currency
     }
 }
 
-impl Instrument for FixedRateDeposit {
+impl<T> Instrument for FixedRateDeposit<T>
+where
+    T: IsReal,
+{
     fn identifier(&self) -> String {
         self.identifier.clone()
     }
@@ -74,25 +84,28 @@ impl Instrument for FixedRateDeposit {
     }
 }
 
-impl LegsProvider for FixedRateDeposit {
-    fn legs(&self) -> &[Leg] {
+impl LegsProvider for FixedRateDeposit<ADReal> {
+    fn legs(&self) -> &[Leg<ADReal>] {
         std::slice::from_ref(&self.leg)
     }
 }
 
 /// Represents a trade of a deposit instrument.
-pub struct FixedRateDepositTrade {
-    instrument: FixedRateDeposit,
+pub struct FixedRateDepositTrade<T: IsReal> {
+    instrument: FixedRateDeposit<T>,
     trade_date: Date,
     notional: f64,
     side: Side,
 }
 
-impl FixedRateDepositTrade {
+impl<T> FixedRateDepositTrade<T>
+where
+    T: IsReal,
+{
     /// Creates a new [`FixedRateDepositTrade`].
     #[must_use]
     pub const fn new(
-        instrument: FixedRateDeposit,
+        instrument: FixedRateDeposit<T>,
         trade_date: Date,
         notional: f64,
         side: Side,
@@ -112,8 +125,11 @@ impl FixedRateDepositTrade {
     }
 }
 
-impl Trade<FixedRateDeposit> for FixedRateDepositTrade {
-    fn instrument(&self) -> &FixedRateDeposit {
+impl<T> Trade<FixedRateDeposit<T>> for FixedRateDepositTrade<T>
+where
+    T: IsReal,
+{
+    fn instrument(&self) -> &FixedRateDeposit<T> {
         &self.instrument
     }
 
@@ -126,8 +142,44 @@ impl Trade<FixedRateDeposit> for FixedRateDepositTrade {
     }
 }
 
-impl LegsProvider for FixedRateDepositTrade {
-    fn legs(&self) -> &[Leg] {
+impl LegsProvider for FixedRateDepositTrade<ADReal> {
+    fn legs(&self) -> &[Leg<ADReal>] {
         self.instrument.legs()
+    }
+}
+
+impl From<FixedRateDeposit<f64>> for FixedRateDeposit<ADReal> {
+    fn from(value: FixedRateDeposit<f64>) -> Self {
+        Self::new(
+            value.identifier,
+            value.units,
+            value.leg.into(),
+            value.market_index,
+            value.currency,
+        )
+    }
+}
+
+impl From<FixedRateDeposit<ADReal>> for FixedRateDeposit<f64> {
+    fn from(value: FixedRateDeposit<ADReal>) -> Self {
+        Self::new(
+            value.identifier,
+            value.units,
+            value.leg.into(),
+            value.market_index,
+            value.currency,
+        )
+    }
+}
+
+impl From<FixedRateDepositTrade<f64>> for FixedRateDepositTrade<ADReal> {
+    fn from(value: FixedRateDepositTrade<f64>) -> Self {
+        Self::new(value.instrument.into(), value.trade_date, value.notional, value.side)
+    }
+}
+
+impl From<FixedRateDepositTrade<ADReal>> for FixedRateDepositTrade<f64> {
+    fn from(value: FixedRateDepositTrade<ADReal>) -> Self {
+        Self::new(value.instrument.into(), value.trade_date, value.notional, value.side)
     }
 }

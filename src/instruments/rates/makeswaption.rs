@@ -1,4 +1,5 @@
 use crate::{
+    ad::adreal::ADReal,
     currencies::currency::Currency,
     indices::marketindex::MarketIndex,
     instruments::rates::{
@@ -192,7 +193,7 @@ impl MakeSwaption {
     /// # Errors
     /// Returns an error when required fields are missing or the underlying
     /// swap builder fails.
-    pub fn build(self) -> Result<Swaption> {
+    pub fn build(self) -> Result<Swaption<ADReal>> {
         let strike = self
             .strike
             .ok_or_else(|| QSError::ValueNotSetErr("Strike".into()))?;
@@ -220,7 +221,7 @@ impl MakeSwaption {
             .ok_or_else(|| QSError::ValueNotSetErr("Swap tenor date".into()))?;
 
         // Build the underlying swap via MakeSwap.
-        let mut swap_builder = MakeSwap::default()
+        let mut swap_builder = MakeSwap::<ADReal>::default()
             .with_identifier(format!("{identifier}_underlying"))
             .with_start_date(swap_start)
             .with_maturity_date(swap_maturity)

@@ -1,5 +1,5 @@
 use crate::{
-    ad::adreal::{ADReal, IsReal},
+    ad::adreal::IsReal,
     core::trade::Side,
     currencies::currency::Currency,
     indices::marketindex::MarketIndex,
@@ -15,6 +15,9 @@ use crate::{
     },
     utils::errors::{QSError, Result},
 };
+#[cfg(test)]
+use crate::ad::adreal::ADReal;
+use std::marker::PhantomData;
 
 /// A builder for creating a [`CrossCurrencySwap`] instance.
 ///
@@ -31,7 +34,7 @@ use crate::{
 ///     Frequency::Semiannual,
 /// );
 ///
-/// let xccy = MakeCrossCurrencySwap::default()
+/// let xccy = MakeCrossCurrencySwap::<ADReal>::default()
 ///     .with_identifier("XCCY-USDEUR".to_string())
 ///     .with_start_date(Date::new(2024, 1, 1))
 ///     .with_maturity_date(Date::new(2029, 1, 1))
@@ -51,7 +54,7 @@ use crate::{
 /// assert_eq!(xccy.foreign_currency(), Currency::EUR);
 /// ```
 #[derive(Default)]
-pub struct MakeCrossCurrencySwap {
+pub struct MakeCrossCurrencySwap<T: IsReal> {
     start_date: Option<Date>,
     maturity_date: Option<Date>,
     domestic_notional: Option<f64>,
@@ -71,9 +74,13 @@ pub struct MakeCrossCurrencySwap {
     business_day_convention: Option<BusinessDayConvention>,
     date_generation_rule: Option<DateGenerationRule>,
     end_of_month: Option<bool>,
+    _marker: PhantomData<T>,
 }
 
-impl MakeCrossCurrencySwap {
+impl<T> MakeCrossCurrencySwap<T>
+where
+    T: IsReal,
+{
     /// Sets the start date.
     #[must_use]
     pub const fn with_start_date(mut self, date: Date) -> Self {
@@ -211,7 +218,7 @@ impl MakeCrossCurrencySwap {
     ///
     /// # Errors
     /// Returns an error if any of the required fields are missing or invalid.
-    pub fn build(self) -> Result<CrossCurrencySwap> {
+    pub fn build(self) -> Result<CrossCurrencySwap<T>> {
         let start_date = self
             .start_date
             .ok_or_else(|| QSError::ValueNotSetErr("Start date".into()))?;
@@ -251,11 +258,10 @@ impl MakeCrossCurrencySwap {
         let domestic_freq = self.domestic_leg_frequency.unwrap_or(Frequency::Semiannual);
         let foreign_freq = self.foreign_leg_frequency.unwrap_or(Frequency::Quarterly);
 
-        let interest_rate =
-            InterestRate::from_rate_definition(ADReal::new(fixed_rate), rate_definition);
+        let interest_rate = InterestRate::from_rate_definition(T::new(fixed_rate), rate_definition);
 
         // Domestic (fixed) leg
-        let domestic_leg = MakeLeg::default()
+        let domestic_leg = MakeLeg::<T>::default()
             .with_leg_id(0)
             .with_notional(domestic_notional)
             .with_side(side)
@@ -279,7 +285,7 @@ impl MakeCrossCurrencySwap {
             Side::PayShort => Side::LongReceive,
         };
 
-        let foreign_leg = MakeLeg::default()
+        let foreign_leg = MakeLeg::<T>::default()
             .with_leg_id(1)
             .with_notional(foreign_notional)
             .with_side(foreign_side)
@@ -326,8 +332,8 @@ mod tests {
         )
     }
 
-    fn base_builder() -> MakeCrossCurrencySwap {
-        MakeCrossCurrencySwap::default()
+    fn base_builder() -> MakeCrossCurrencySwap<ADReal> {
+        MakeCrossCurrencySwap::<ADReal>::default()
             .with_identifier("xccy_swap_test".to_string())
             .with_start_date(Date::new(2024, 1, 1))
             .with_maturity_date(Date::new(2025, 1, 1))
@@ -359,7 +365,7 @@ mod tests {
 
     #[test]
     fn test_build_cross_currency_swap_missing_domestic_currency_fails() {
-        let result = MakeCrossCurrencySwap::default()
+        let result = MakeCrossCurrencySwap::<ADReal>::default()
             .with_identifier("xccy_missing_dom_ccy".to_string())
             .with_start_date(Date::new(2024, 1, 1))
             .with_maturity_date(Date::new(2025, 1, 1))

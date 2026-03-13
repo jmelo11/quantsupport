@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    ad::adreal::{ADReal, IsReal},
     core::{
         instrument::{AssetClass, Instrument},
         request::LegsProvider,
@@ -33,9 +34,9 @@ pub enum SwaptionType {
 /// The holder has the right, but not the obligation, to enter into
 /// the underlying [`Swap`] at expiry.
 #[allow(clippy::struct_field_names)]
-pub struct Swaption {
+pub struct Swaption<T: IsReal> {
     identifier: String,
-    underlying: Swap,
+    underlying: Swap<T>,
     expiry: Date,
     swaption_type: SwaptionType,
     exercise_type: SwaptionExerciseType,
@@ -44,13 +45,16 @@ pub struct Swaption {
     currency: Currency,
 }
 
-impl Swaption {
+impl<T> Swaption<T>
+where
+    T: IsReal,
+{
     /// Creates a new [`Swaption`].
     #[must_use]
     #[allow(clippy::too_many_arguments)]
     pub const fn new(
         identifier: String,
-        underlying: Swap,
+        underlying: Swap<T>,
         expiry: Date,
         swaption_type: SwaptionType,
         exercise_type: SwaptionExerciseType,
@@ -72,7 +76,7 @@ impl Swaption {
 
     /// Returns a reference to the underlying swap.
     #[must_use]
-    pub const fn underlying(&self) -> &Swap {
+    pub const fn underlying(&self) -> &Swap<T> {
         &self.underlying
     }
 
@@ -113,7 +117,10 @@ impl Swaption {
     }
 }
 
-impl Instrument for Swaption {
+impl<T> Instrument for Swaption<T>
+where
+    T: IsReal,
+{
     fn identifier(&self) -> String {
         self.identifier.clone()
     }
@@ -123,25 +130,28 @@ impl Instrument for Swaption {
     }
 }
 
-impl LegsProvider for Swaption {
-    fn legs(&self) -> &[Leg] {
+impl LegsProvider for Swaption<ADReal> {
+    fn legs(&self) -> &[Leg<ADReal>] {
         self.underlying.legs()
     }
 }
 
 /// Represents a trade on a swaption.
-pub struct SwaptionTrade {
-    instrument: Swaption,
+pub struct SwaptionTrade<T: IsReal> {
+    instrument: Swaption<T>,
     trade_date: Date,
     notional: f64,
     side: Side,
 }
 
-impl SwaptionTrade {
+impl<T> SwaptionTrade<T>
+where
+    T: IsReal,
+{
     /// Creates a new [`SwaptionTrade`].
     #[must_use]
     pub const fn new(
-        instrument: Swaption,
+        instrument: Swaption<T>,
         trade_date: Date,
         notional: f64,
         side: Side,
@@ -161,8 +171,11 @@ impl SwaptionTrade {
     }
 }
 
-impl Trade<Swaption> for SwaptionTrade {
-    fn instrument(&self) -> &Swaption {
+impl<T> Trade<Swaption<T>> for SwaptionTrade<T>
+where
+    T: IsReal,
+{
+    fn instrument(&self) -> &Swaption<T> {
         &self.instrument
     }
 
@@ -175,8 +188,50 @@ impl Trade<Swaption> for SwaptionTrade {
     }
 }
 
-impl LegsProvider for SwaptionTrade {
-    fn legs(&self) -> &[Leg] {
+impl LegsProvider for SwaptionTrade<ADReal> {
+    fn legs(&self) -> &[Leg<ADReal>] {
         self.instrument.legs()
+    }
+}
+
+impl From<Swaption<f64>> for Swaption<ADReal> {
+    fn from(value: Swaption<f64>) -> Self {
+        Self::new(
+            value.identifier,
+            value.underlying.into(),
+            value.expiry,
+            value.swaption_type,
+            value.exercise_type,
+            value.strike,
+            value.market_index,
+            value.currency,
+        )
+    }
+}
+
+impl From<Swaption<ADReal>> for Swaption<f64> {
+    fn from(value: Swaption<ADReal>) -> Self {
+        Self::new(
+            value.identifier,
+            value.underlying.into(),
+            value.expiry,
+            value.swaption_type,
+            value.exercise_type,
+            value.strike,
+            value.market_index,
+            value.currency,
+        )
+    }
+}
+
+impl From<SwaptionTrade<f64>> for SwaptionTrade<ADReal> {
+    fn from(value: SwaptionTrade<f64>) -> Self {
+        Self::new(value.instrument.into(), value.trade_date, value.notional, value.side)
+    }
+}
+
+impl From<SwaptionTrade<ADReal>> for SwaptionTrade<f64> {
+    fn from(value: SwaptionTrade<ADReal>) -> Self {
+        Self::new(value.instrument.into(), value.trade_date, value.notional, value.side)
     }
 }

@@ -1,4 +1,5 @@
 use crate::{
+    ad::adreal::IsReal,
     core::trade::Side,
     currencies::currency::Currency,
     indices::marketindex::MarketIndex,
@@ -13,6 +14,9 @@ use crate::{
     },
     utils::errors::{QSError, Result},
 };
+#[cfg(test)]
+use crate::ad::adreal::ADReal;
+use std::marker::PhantomData;
 
 /// A builder for creating a [`FloatingRateNote`] instance, allowing for a flexible and stepwise construction process.
 ///
@@ -20,7 +24,7 @@ use crate::{
 /// ```rust
 /// use quantsupport::prelude::*;
 ///
-/// let frn = MakeFloatingRateNote::default()
+/// let frn = MakeFloatingRateNote::<ADReal>::default()
 ///     .with_identifier("FRN-2Y".to_string())
 ///     .with_start_date(Date::new(2024, 1, 1))
 ///     .with_maturity_date(Date::new(2026, 1, 1))
@@ -36,7 +40,7 @@ use crate::{
 /// assert_eq!(frn.identifier(), "FRN-2Y");
 /// ```
 #[derive(Default)]
-pub struct MakeFloatingRateNote {
+pub struct MakeFloatingRateNote<T: IsReal> {
     start_date: Option<Date>,
     maturity_date: Option<Date>,
     spread: Option<f64>,
@@ -53,9 +57,13 @@ pub struct MakeFloatingRateNote {
     date_generation_rule: Option<DateGenerationRule>,
     end_of_month: Option<bool>,
     first_coupon_date: Option<Date>,
+    _marker: PhantomData<T>,
 }
 
-impl MakeFloatingRateNote {
+impl<T> MakeFloatingRateNote<T>
+where
+    T: IsReal,
+{
     /// Sets the start date of the note.
     #[must_use]
     pub const fn with_start_date(mut self, start_date: Date) -> Self {
@@ -172,7 +180,7 @@ impl MakeFloatingRateNote {
     ///
     /// # Errors
     /// Returns an error if any of the required fields are missing or invalid.
-    pub fn build(self) -> Result<FloatingRateNote> {
+    pub fn build(self) -> Result<FloatingRateNote<T>> {
         let notional = self
             .notional
             .ok_or_else(|| QSError::ValueNotSetErr("Notional".into()))?;
@@ -198,7 +206,7 @@ impl MakeFloatingRateNote {
         let payment_frequency = self.payment_frequency.unwrap_or(Frequency::Quarterly);
         let structure = self.payment_structure.unwrap_or(PaymentStructure::Bullet);
 
-        let leg = MakeLeg::default()
+        let leg = MakeLeg::<T>::default()
             .with_leg_id(0)
             .with_notional(notional)
             .with_side(side)

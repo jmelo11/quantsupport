@@ -1,4 +1,8 @@
-use crate::{ad::adreal::IsReal, time::date::Date, utils::errors::Result};
+use crate::{
+    ad::adreal::{ADReal, IsReal},
+    time::date::Date,
+    utils::errors::Result,
+};
 
 /// A [`Cashflow`] represents a single payment that occurs at a specific date. It has an amount and a payment date.
 pub trait Cashflow<T>
@@ -17,7 +21,7 @@ where
 
 /// A [`SimpleCashflow`] is the most basic representation of a payable cashflow.
 #[derive(Clone)]
-pub struct SimpleCashflow<T>
+pub struct SimpleCashflow<T = f64>
 where
     T: IsReal,
 {
@@ -48,5 +52,17 @@ where
 
     fn payment_date(&self) -> Date {
         self.payment_date
+    }
+}
+
+impl From<SimpleCashflow<f64>> for SimpleCashflow<ADReal> {
+    fn from(value: SimpleCashflow<f64>) -> Self {
+        Self::new(ADReal::new(value.amount.value()), value.payment_date)
+    }
+}
+
+impl From<SimpleCashflow<ADReal>> for SimpleCashflow<f64> {
+    fn from(value: SimpleCashflow<ADReal>) -> Self {
+        Self::new(value.amount.value(), value.payment_date)
     }
 }

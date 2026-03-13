@@ -12,7 +12,11 @@ use crate::{
     },
     currencies::exchangeratestore::ExchangeRateStore,
     indices::marketindex::MarketIndex,
-    instruments::cashflows::{cashflow::Cashflow, cashflowtype::CashflowType},
+    instruments::{
+        cashflows::{cashflow::Cashflow, cashflowtype::CashflowType, leg::Leg},
+        fx::fxforward::FxForward,
+        rates::{crosscurrencyswap::CrossCurrencySwap, ratefutures::RateFutures},
+    },
     math::{
         interpolation::interpolator::Interpolator,
         solvers::{
@@ -281,6 +285,8 @@ impl MultiCurveBootstrapper {
         other_curves: &HashMap<MarketIndex, BootstrappedCurve>,
     ) -> Result<BootstrappedCurve> {
         Tape::start_recording();
+        Tape::set_mark();
+
         let reference_date = spec.reference_date();
         let dc = spec.day_counter();
         let interp = spec.interpolator();
@@ -617,11 +623,7 @@ impl BootstrapProblem<'_> {
     }
 
     /// Annuity of the fixed-rate coupons: Σ side × notional × yf × DF(pay).
-    fn annuity_fixed_coupons(
-        &self,
-        legs: &[crate::instruments::cashflows::leg::Leg],
-        trial: &BootstrappedCurve,
-    ) -> Result<f64> {
+    fn annuity_fixed_coupons(&self, legs: &[Leg<ADReal>], trial: &BootstrappedCurve) -> Result<f64> {
         let disc_index = self.discount_policy.csa_index();
         let disc = self.get_curve(disc_index, trial).unwrap_or(trial);
 
@@ -644,11 +646,7 @@ impl BootstrapProblem<'_> {
 
     /// Annuity of the floating-rate coupons (for basis-swap spread):
     /// Σ side × notional × yf × DF(pay).
-    fn annuity_floating_coupons(
-        &self,
-        legs: &[crate::instruments::cashflows::leg::Leg],
-        trial: &BootstrappedCurve,
-    ) -> Result<f64> {
+    fn annuity_floating_coupons(&self, legs: &[Leg<ADReal>], trial: &BootstrappedCurve) -> Result<f64> {
         let disc_index = self.discount_policy.csa_index();
         let disc = self.get_curve(disc_index, trial).unwrap_or(trial);
 
@@ -672,7 +670,7 @@ impl BootstrapProblem<'_> {
     /// At the solution this equals zero.
     fn residual_deposit(
         &self,
-        legs: &[crate::instruments::cashflows::leg::Leg],
+        legs: &[Leg<ADReal>],
         disc_index: &MarketIndex,
         trial: &BootstrappedCurve,
     ) -> Result<ADReal> {
@@ -690,11 +688,7 @@ impl BootstrapProblem<'_> {
 
     /// Computes the NPV residual for legs-based instruments (swaps, basis swaps)
     /// by summing each leg's present value weighted by its side.
-    fn residual_legs(
-        &self,
-        legs: &[crate::instruments::cashflows::leg::Leg],
-        trial: &BootstrappedCurve,
-    ) -> Result<ADReal> {
+    fn residual_legs(&self, legs: &[Leg<ADReal>], trial: &BootstrappedCurve) -> Result<ADReal> {
         let disc_index = self.discount_policy.csa_index();
         let disc_curve = self
             .get_curve(disc_index, trial)
@@ -710,11 +704,7 @@ impl BootstrapProblem<'_> {
 
     /// Computes the cross-currency swap residual, discounting each leg
     /// with its own currency's discount curve as determined by the policy.
-    fn residual_xccy(
-        &self,
-        xccy: &crate::instruments::rates::crosscurrencyswap::CrossCurrencySwap,
-        trial: &BootstrappedCurve,
-    ) -> Result<ADReal> {
+    fn residual_xccy(&self, xccy: &CrossCurrencySwap<ADReal>, trial: &BootstrappedCurve) -> Result<ADReal> {
         let dom_disc_idx = self
             .discount_policy
             .discount_index_for_currency(xccy.domestic_currency());
@@ -746,7 +736,7 @@ impl BootstrapProblem<'_> {
     /// The AD-enabled `quote_value` keeps the tape connected to the quote leaf.
     fn residual_futures(
         &self,
-        f: &crate::instruments::rates::ratefutures::RateFutures,
+        f: &RateFutures,
         quote_value: &ADReal,
         trial: &BootstrappedCurve,
     ) -> Result<ADReal> {
@@ -771,7 +761,7 @@ impl BootstrapProblem<'_> {
     /// forward quotes and forward-points conventions.
     fn residual_fx_forward(
         &self,
-        fx: &crate::instruments::fx::fxforward::FxForward,
+        fx: &FxForward,
         quote_value: &ADReal,
         trial: &BootstrappedCurve,
     ) -> Result<ADReal> {
@@ -826,7 +816,7 @@ impl BootstrapProblem<'_> {
     /// curve (identified by `leg.market_index()` or the target curve).
     fn pv_leg(
         &self,
-        leg: &crate::instruments::cashflows::leg::Leg,
+        leg: &Leg<ADReal>,
         discount_curve: &BootstrappedCurve,
         trial: &BootstrappedCurve,
     ) -> Result<ADReal> {
@@ -849,7 +839,7 @@ impl BootstrapProblem<'_> {
     #[allow(clippy::unused_self)]
     fn cashflow_amount(
         &self,
-        cf: &CashflowType,
+        cf: &CashflowType<ADReal>,
         proj_curve: &BootstrappedCurve,
     ) -> Result<(ADReal, Date)> {
         match cf {

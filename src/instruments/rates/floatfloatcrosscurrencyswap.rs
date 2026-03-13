@@ -1,4 +1,5 @@
 use crate::{
+    ad::adreal::{ADReal, IsReal},
     core::{
         instrument::{AssetClass, Instrument},
         request::LegsProvider,
@@ -15,16 +16,19 @@ use crate::{
 /// Both legs pay floating rates (each referencing an index in its own currency) plus
 /// optional spreads. Notional exchanges typically occur at inception and maturity at
 /// the initial FX spot rate.
-pub struct FloatFloatCrossCurrencySwap {
+pub struct FloatFloatCrossCurrencySwap<T: IsReal> {
     identifier: String,
-    legs: Vec<Leg>,
+    legs: Vec<Leg<T>>,
     domestic_currency: Currency,
     foreign_currency: Currency,
     domestic_market_index: MarketIndex,
     foreign_market_index: MarketIndex,
 }
 
-impl FloatFloatCrossCurrencySwap {
+impl<T> FloatFloatCrossCurrencySwap<T>
+where
+    T: IsReal,
+{
     /// Creates a new [`FloatFloatCrossCurrencySwap`].
     ///
     /// `domestic_leg` is the floating leg in the domestic currency (index 0);
@@ -32,8 +36,8 @@ impl FloatFloatCrossCurrencySwap {
     #[must_use]
     pub fn new(
         identifier: String,
-        domestic_leg: Leg,
-        foreign_leg: Leg,
+        domestic_leg: Leg<T>,
+        foreign_leg: Leg<T>,
         domestic_currency: Currency,
         foreign_currency: Currency,
         domestic_market_index: MarketIndex,
@@ -51,13 +55,13 @@ impl FloatFloatCrossCurrencySwap {
 
     /// Returns a reference to the domestic leg (leg 0).
     #[must_use]
-    pub fn domestic_leg(&self) -> &Leg {
+    pub fn domestic_leg(&self) -> &Leg<T> {
         &self.legs[0]
     }
 
     /// Returns a reference to the foreign leg (leg 1).
     #[must_use]
-    pub fn foreign_leg(&self) -> &Leg {
+    pub fn foreign_leg(&self) -> &Leg<T> {
         &self.legs[1]
     }
 
@@ -86,7 +90,10 @@ impl FloatFloatCrossCurrencySwap {
     }
 }
 
-impl Instrument for FloatFloatCrossCurrencySwap {
+impl<T> Instrument for FloatFloatCrossCurrencySwap<T>
+where
+    T: IsReal,
+{
     fn identifier(&self) -> String {
         self.identifier.clone()
     }
@@ -96,26 +103,29 @@ impl Instrument for FloatFloatCrossCurrencySwap {
     }
 }
 
-impl LegsProvider for FloatFloatCrossCurrencySwap {
-    fn legs(&self) -> &[Leg] {
+impl LegsProvider for FloatFloatCrossCurrencySwap<ADReal> {
+    fn legs(&self) -> &[Leg<ADReal>] {
         &self.legs
     }
 }
 
 /// Represents a trade of a float-vs-float cross-currency swap.
-pub struct FloatFloatCrossCurrencySwapTrade {
-    instrument: FloatFloatCrossCurrencySwap,
+pub struct FloatFloatCrossCurrencySwapTrade<T: IsReal> {
+    instrument: FloatFloatCrossCurrencySwap<T>,
     trade_date: Date,
     domestic_notional: f64,
     foreign_notional: f64,
     side: Side,
 }
 
-impl FloatFloatCrossCurrencySwapTrade {
+impl<T> FloatFloatCrossCurrencySwapTrade<T>
+where
+    T: IsReal,
+{
     /// Creates a new [`FloatFloatCrossCurrencySwapTrade`].
     #[must_use]
     pub const fn new(
-        instrument: FloatFloatCrossCurrencySwap,
+        instrument: FloatFloatCrossCurrencySwap<T>,
         trade_date: Date,
         domestic_notional: f64,
         foreign_notional: f64,
@@ -143,8 +153,11 @@ impl FloatFloatCrossCurrencySwapTrade {
     }
 }
 
-impl Trade<FloatFloatCrossCurrencySwap> for FloatFloatCrossCurrencySwapTrade {
-    fn instrument(&self) -> &FloatFloatCrossCurrencySwap {
+impl<T> Trade<FloatFloatCrossCurrencySwap<T>> for FloatFloatCrossCurrencySwapTrade<T>
+where
+    T: IsReal,
+{
+    fn instrument(&self) -> &FloatFloatCrossCurrencySwap<T> {
         &self.instrument
     }
 
@@ -157,8 +170,62 @@ impl Trade<FloatFloatCrossCurrencySwap> for FloatFloatCrossCurrencySwapTrade {
     }
 }
 
-impl LegsProvider for FloatFloatCrossCurrencySwapTrade {
-    fn legs(&self) -> &[Leg] {
+impl LegsProvider for FloatFloatCrossCurrencySwapTrade<ADReal> {
+    fn legs(&self) -> &[Leg<ADReal>] {
         self.instrument.legs()
+    }
+}
+
+impl From<FloatFloatCrossCurrencySwap<f64>> for FloatFloatCrossCurrencySwap<ADReal> {
+    fn from(value: FloatFloatCrossCurrencySwap<f64>) -> Self {
+        let mut legs = value.legs.into_iter();
+        Self::new(
+            value.identifier,
+            legs.next().expect("domestic leg must exist").into(),
+            legs.next().expect("foreign leg must exist").into(),
+            value.domestic_currency,
+            value.foreign_currency,
+            value.domestic_market_index,
+            value.foreign_market_index,
+        )
+    }
+}
+
+impl From<FloatFloatCrossCurrencySwap<ADReal>> for FloatFloatCrossCurrencySwap<f64> {
+    fn from(value: FloatFloatCrossCurrencySwap<ADReal>) -> Self {
+        let mut legs = value.legs.into_iter();
+        Self::new(
+            value.identifier,
+            legs.next().expect("domestic leg must exist").into(),
+            legs.next().expect("foreign leg must exist").into(),
+            value.domestic_currency,
+            value.foreign_currency,
+            value.domestic_market_index,
+            value.foreign_market_index,
+        )
+    }
+}
+
+impl From<FloatFloatCrossCurrencySwapTrade<f64>> for FloatFloatCrossCurrencySwapTrade<ADReal> {
+    fn from(value: FloatFloatCrossCurrencySwapTrade<f64>) -> Self {
+        Self::new(
+            value.instrument.into(),
+            value.trade_date,
+            value.domestic_notional,
+            value.foreign_notional,
+            value.side,
+        )
+    }
+}
+
+impl From<FloatFloatCrossCurrencySwapTrade<ADReal>> for FloatFloatCrossCurrencySwapTrade<f64> {
+    fn from(value: FloatFloatCrossCurrencySwapTrade<ADReal>) -> Self {
+        Self::new(
+            value.instrument.into(),
+            value.trade_date,
+            value.domestic_notional,
+            value.foreign_notional,
+            value.side,
+        )
     }
 }

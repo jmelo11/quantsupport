@@ -3,7 +3,7 @@ use std::{cell::RefCell, rc::Rc};
 use quantsupport::prelude::*;
 
 /// Build a 5-year receive-fixed / pay-floating vanilla USD swap.
-fn create_swap() -> SwapTrade {
+fn create_swap() -> SwapTrade<ADReal> {
     let start_date = Date::new(2024, 1, 15);
     let maturity_date = Date::new(2029, 1, 15);
     let notional = 10_000_000.0;
@@ -15,7 +15,7 @@ fn create_swap() -> SwapTrade {
         Frequency::Semiannual,
     );
 
-    let swap = MakeSwap::default()
+    let swap = MakeSwap::<ADReal>::default()
         .with_identifier("USD_IRS_5Y".to_string())
         .with_start_date(start_date)
         .with_maturity_date(maturity_date)
@@ -76,7 +76,7 @@ fn main() -> Result<()> {
     let context = create_pricing_context();
 
     // ── 2. Price the swap ─────────────────────────────────────────────
-    let pricer = CashflowDiscountPricer::<Swap, SwapTrade>::new();
+    let pricer = CashflowDiscountPricer::<Swap<ADReal>, SwapTrade<ADReal>>::new();
     let requests = vec![Request::Value, Request::Cashflows, Request::Sensitivities];
     let results = pricer.evaluate(&trade, &requests, &context)?;
 

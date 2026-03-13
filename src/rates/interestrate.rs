@@ -163,6 +163,18 @@ where
     }
 }
 
+impl From<InterestRate<f64>> for InterestRate<ADReal> {
+    fn from(value: InterestRate<f64>) -> Self {
+        Self::from_rate_definition(ADReal::new(value.rate().value()), value.rate_definition())
+    }
+}
+
+impl From<InterestRate<ADReal>> for InterestRate<f64> {
+    fn from(value: InterestRate<ADReal>) -> Self {
+        Self::from_rate_definition(value.rate().value(), value.rate_definition())
+    }
+}
+
 impl InterestRate<f64> {
     /// Calculates the implied interest rate from a compound factor.
     ///

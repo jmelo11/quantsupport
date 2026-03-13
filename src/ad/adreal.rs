@@ -37,7 +37,7 @@ unsafe impl Send for ADReal {}
 /// Conversion helpers for numeric types used by this crate.
 pub trait IsReal
 where
-    Self: Sized + Copy + Add + Sub + Mul + Div + PartialEq + PartialOrd,
+    Self: Sized + Copy + Add + Sub + Mul + Div + PartialEq + PartialOrd + Send + Sync,
 {
     /// Creates a new numeric value from the given scalar in f64.
     fn new(v: f64) -> Self;
