@@ -518,7 +518,7 @@ mod tests {
             "SPX_CALL_90".to_string(),
         );
         let trade =
-            EquityEuropeanOptionTrade::new(option.clone(), notional, trade_date, Side::LongRecieve);
+            EquityEuropeanOptionTrade::new(option.clone(), notional, trade_date, Side::LongReceive);
 
         // Price using the pricer
         let provider = SimpleMarketDataProvider {
@@ -529,9 +529,9 @@ mod tests {
         let pricer = BlackEuropeanOptionPricer::new();
         let results =
             pricer.evaluate(&trade, &[Request::Value, Request::Sensitivities], &provider)?;
-        let sensitivities = results.sensitivities().ok_or_else(|| QSError::UnexpectedErr(
-            "Missing sensitivities in pricing result".to_string(),
-        ))?;
+        let sensitivities = results.sensitivities().ok_or_else(|| {
+            QSError::UnexpectedErr("Missing sensitivities in pricing result".to_string())
+        })?;
 
         // Compute closed-form delta and vega for comparison
         let tau = option.day_counter().year_fraction(trade_date, expiry_date);
@@ -560,18 +560,14 @@ mod tests {
             sensitivities.exposure(),
             "SPX",
         )
-        .ok_or_else(|| QSError::NotFoundErr(
-            "Spot sensitivity not found".to_string(),
-        ))?;
+        .ok_or_else(|| QSError::NotFoundErr("Spot sensitivity not found".to_string()))?;
 
         let ad_vega = exposure_for_key(
             sensitivities.instrument_keys(),
             sensitivities.exposure(),
             "vol_6m_90",
         )
-        .ok_or_else(|| QSError::NotFoundErr(
-            "Vol sensitivity not found".to_string(),
-        ))?;
+        .ok_or_else(|| QSError::NotFoundErr("Vol sensitivity not found".to_string()))?;
 
         println!("Closed-form delta: {closed_form_delta}, AD delta: {ad_delta}");
         assert!((ad_delta - closed_form_delta).abs() < 1e-5);
@@ -621,7 +617,7 @@ mod tests {
                     format!("SPX_CALL_{}", strike as i32),
                 );
                 let trade =
-                    EquityEuropeanOptionTrade::new(option, notional, trade_date, Side::LongRecieve);
+                    EquityEuropeanOptionTrade::new(option, notional, trade_date, Side::LongReceive);
 
                 let provider = SimpleMarketDataProvider {
                     evaluation_date: trade_date,
@@ -639,16 +635,12 @@ mod tests {
         // Verify all pricing results are valid
         for (strike, result) in results {
             let eval_results = result?;
-            let price = eval_results
-                .price()
-                .ok_or_else(|| QSError::UnexpectedErr(format!(
-                    "Missing price for strike {strike}"
-                )))?;
-            let sensitivities = eval_results
-                .sensitivities()
-                .ok_or_else(|| QSError::UnexpectedErr(format!(
-                    "Missing sensitivities for strike {strike}"
-                )))?;
+            let price = eval_results.price().ok_or_else(|| {
+                QSError::UnexpectedErr(format!("Missing price for strike {strike}"))
+            })?;
+            let sensitivities = eval_results.sensitivities().ok_or_else(|| {
+                QSError::UnexpectedErr(format!("Missing sensitivities for strike {strike}"))
+            })?;
 
             // Verify price is positive for call option
             assert!(price > 0.0, "Price should be positive for strike {strike}");

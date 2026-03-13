@@ -47,13 +47,13 @@ fn create_swap() -> SwapTrade {
         .with_rate_definition(rate_definition)
         .with_currency(Currency::USD)
         .with_market_index(MarketIndex::SOFR)
-        .with_side(Side::LongRecieve) // receive fixed, pay floating
+        .with_side(Side::LongReceive) // receive fixed, pay floating
         .with_fixed_leg_frequency(Frequency::Semiannual)
         .with_floating_leg_frequency(Frequency::Semiannual)
         .build()
         .expect("Failed to build swap");
 
-    SwapTrade::new(swap, start_date, notional, Side::LongRecieve)
+    SwapTrade::new(swap, start_date, notional, Side::LongReceive)
 }
 
 /// Build a pricing context backed by a flat SOFR discount curve at 3.0%.

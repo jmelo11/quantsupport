@@ -87,7 +87,7 @@ impl MakeFutures {
         self
     }
 
-    /// Sets the side (defaults to `LongRecieve`).
+    /// Sets the side (defaults to `LongReceive`).
     #[must_use]
     pub const fn with_side(mut self, side: Side) -> Self {
         self.side = Some(side);

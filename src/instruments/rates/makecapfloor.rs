@@ -196,7 +196,7 @@ impl MakeCapFloor {
             .cap_floor_type
             .ok_or_else(|| QSError::ValueNotSetErr("CapFloorType".into()))?;
 
-        let _side = self.side.unwrap_or(Side::LongRecieve);
+        let _side = self.side.unwrap_or(Side::LongReceive);
         let frequency = self.frequency.unwrap_or(Frequency::Quarterly);
         let rate_definition = if let Some(rd) = self.rate_definition {
             rd

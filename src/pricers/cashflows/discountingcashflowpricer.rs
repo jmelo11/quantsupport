@@ -755,13 +755,13 @@ mod tests {
             .with_rate_definition(rate_definition)
             .with_currency(Currency::USD)
             .with_market_index(MarketIndex::SOFR)
-            .with_side(Side::LongRecieve)
+            .with_side(Side::LongReceive)
             .with_fixed_leg_frequency(Frequency::Semiannual)
             .with_floating_leg_frequency(Frequency::Quarterly)
             .build()
             .expect("Failed to build vanilla swap");
 
-        let trade = SwapTrade::new(swap, start_date, notional, Side::LongRecieve);
+        let trade = SwapTrade::new(swap, start_date, notional, Side::LongReceive);
 
         struct VanillaSwapMarketDataProvider {
             evaluation_date: Date,
@@ -960,7 +960,7 @@ mod tests {
             .with_foreign_currency(Currency::USD)
             .with_domestic_market_index(estr_index.clone())
             .with_foreign_market_index(MarketIndex::SOFR)
-            .with_side(Side::LongRecieve) // receive EUR fixed, pay USD floating
+            .with_side(Side::LongReceive) // receive EUR fixed, pay USD floating
             .with_domestic_leg_frequency(Frequency::Semiannual)
             .with_foreign_leg_frequency(Frequency::Quarterly)
             .build()
@@ -971,7 +971,7 @@ mod tests {
             trade_date,
             eur_notional,
             usd_notional,
-            Side::LongRecieve,
+            Side::LongReceive,
         );
 
         // --- 2. Set up market data ---

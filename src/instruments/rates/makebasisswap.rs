@@ -225,7 +225,7 @@ impl MakeBasisSwap {
         let receive_leg = MakeLeg::default()
             .with_leg_id(1)
             .with_notional(notional)
-            .with_side(Side::LongRecieve)
+            .with_side(Side::LongReceive)
             .with_currency(currency)
             .with_market_index(receive_market_index.clone())
             .with_start_date(start_date)
