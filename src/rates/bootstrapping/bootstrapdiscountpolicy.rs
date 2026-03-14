@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use crate::{
+    ad::adreal::IsReal,
     currencies::currency::Currency,
     indices::marketindex::MarketIndex,
     quotes::quote::BuiltInstrument,
@@ -94,9 +95,9 @@ impl BootstrapDiscountPolicy {
     /// # Errors
     /// Returns an error when a required per-currency collateral curve has not
     /// been registered.
-    pub fn discount_index(
+    pub fn discount_index<T: IsReal>(
         &self,
-        built: &BuiltInstrument,
+        built: &BuiltInstrument<T>,
         target_index: &MarketIndex,
     ) -> Result<MarketIndex> {
         match built {
@@ -123,9 +124,9 @@ impl BootstrapDiscountPolicy {
     /// Dependencies that equal `target_index` are **excluded** because they
     /// refer to the curve being solved for.
     #[must_use]
-    pub fn dependencies(
+    pub fn dependencies<T: IsReal>(
         &self,
-        built: &BuiltInstrument,
+        built: &BuiltInstrument<T>,
         target_index: &MarketIndex,
     ) -> Vec<MarketIndex> {
         let mut deps = Vec::new();

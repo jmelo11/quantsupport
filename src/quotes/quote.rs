@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    ad::adreal::ADReal,
+    ad::adreal::IsReal,
     currencies::currency::Currency,
     indices::marketindex::MarketIndex,
     instruments::{
@@ -122,8 +122,6 @@ impl QuoteLevels {
         }
     }
 }
-
-
 
 /// Represents if the strike is quoted in absolute or relative values.
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
@@ -975,19 +973,22 @@ impl std::str::FromStr for QuoteDetails {
 // ---------------------------------------------------------------------------
 
 /// Wraps every concrete instrument type that can be produced from a [`Quote`].
-pub enum BuiltInstrument {
+pub enum BuiltInstrument<T = f64>
+where
+    T: IsReal,
+{
     /// A vanilla fixed-rate deposit.
-    FixedRateDeposit(FixedRateDeposit<ADReal>),
+    FixedRateDeposit(FixedRateDeposit<T>),
     /// A fixed-vs-floating interest rate swap (e.g. OIS).
-    Swap(Swap<ADReal>),
+    Swap(Swap<T>),
     /// A floating-vs-floating basis swap.
-    BasisSwap(BasisSwap<ADReal>),
+    BasisSwap(BasisSwap<T>),
     /// A rate futures contract.
     RateFutures(RateFutures),
     /// An FX outright forward.
     FxForward(FxForward),
     /// A cross-currency swap (fixed domestic vs floating foreign).
-    CrossCurrencySwap(CrossCurrencySwap<ADReal>),
+    CrossCurrencySwap(CrossCurrencySwap<T>),
     /// A European equity call option.
     Call(EquityEuropeanOption),
     /// A European equity put option.
@@ -995,7 +996,7 @@ pub enum BuiltInstrument {
     /// An interest rate cap or floor.
     CapFloor(CapFloor),
     /// A swaption (option on a swap).
-    Swaption(Swaption<ADReal>),
+    Swaption(Swaption<T>),
 }
 
 // ---------------------------------------------------------------------------
@@ -1043,6 +1044,14 @@ impl Quote {
     /// * the instrument type is not directly buildable (e.g. vol-only quotes), or
     /// * the underlying maker returns an error.
     pub fn build_instrument(&self, reference_date: Date, level: Level) -> Result<BuiltInstrument> {
+        self.build_typed_instrument::<f64>(reference_date, level)
+    }
+
+    fn build_typed_instrument<T: IsReal + Default>(
+        &self,
+        reference_date: Date,
+        level: Level,
+    ) -> Result<BuiltInstrument<T>> {
         let value = self.levels.value(level)?;
         let notional = 1.0;
         match self.details.instrument() {
@@ -1060,9 +1069,7 @@ impl Quote {
             QuoteInstrument::EquityPut => self.build_put(reference_date),
             QuoteInstrument::CapFloor => self.build_cap_floor(value, reference_date, notional),
             QuoteInstrument::Swaption => self.build_swaption(value, reference_date, notional),
-            QuoteInstrument::FxForwardPoints => {
-                self.build_fx_forward_points(value, reference_date)
-            },
+            QuoteInstrument::FxForwardPoints => self.build_fx_forward_points(value, reference_date),
             QuoteInstrument::FxCall | QuoteInstrument::FxPut => Err(QSError::NotImplementedErr(
                 "FX option instrument builders are not implemented yet".into(),
             )),
@@ -1088,7 +1095,12 @@ impl Quote {
     }
 
     /// OIS swap — mid value is the fixed rate.
-    fn build_ois(&self, rate: f64, reference_date: Date, notional: f64) -> Result<BuiltInstrument> {
+    fn build_ois<T: IsReal + Default>(
+        &self,
+        rate: f64,
+        reference_date: Date,
+        notional: f64,
+    ) -> Result<BuiltInstrument<T>> {
         let d = &self.details;
         let currency = d
             .currency()
@@ -1101,7 +1113,7 @@ impl Quote {
         let market_index = Self::required_market_index(d, "OIS quote")?;
         let rd = Self::rate_definition_for(&market_index);
 
-        let swap = MakeSwap::<ADReal>::default()
+        let swap = MakeSwap::<T>::default()
             .with_identifier(d.identifier())
             .with_start_date(reference_date)
             .with_maturity_date(maturity)
@@ -1116,12 +1128,12 @@ impl Quote {
     }
 
     /// Fixed Rate Deposit — mid value is the deposit rate.
-    fn build_fixed_rate_deposit(
+    fn build_fixed_rate_deposit<T: IsReal + Default>(
         &self,
         rate: f64,
         reference_date: Date,
         notional: f64,
-    ) -> Result<BuiltInstrument> {
+    ) -> Result<BuiltInstrument<T>> {
         let d = &self.details;
         let currency = d
             .currency()
@@ -1134,7 +1146,7 @@ impl Quote {
         let market_index = Self::required_market_index(d, "deposit quote")?;
         let rd = Self::rate_definition_for(&market_index);
 
-        let deposit = MakeFixedRateDeposit::<ADReal>::default()
+        let deposit = MakeFixedRateDeposit::<T>::default()
             .with_identifier(d.identifier())
             .with_start_date(reference_date)
             .with_maturity_date(maturity)
@@ -1149,12 +1161,12 @@ impl Quote {
     }
 
     /// Basis Swap — mid value is the spread applied to the receive leg.
-    fn build_basis_swap(
+    fn build_basis_swap<T: IsReal + Default>(
         &self,
         spread: f64,
         reference_date: Date,
         notional: f64,
-    ) -> Result<BuiltInstrument> {
+    ) -> Result<BuiltInstrument<T>> {
         let d = &self.details;
         let currency = d
             .currency()
@@ -1172,7 +1184,7 @@ impl Quote {
 
         let maturity = reference_date + tenor;
 
-        let basis_swap = MakeBasisSwap::<ADReal>::default()
+        let basis_swap = MakeBasisSwap::<T>::default()
             .with_identifier(d.identifier())
             .with_start_date(reference_date)
             .with_maturity_date(maturity)
@@ -1187,7 +1199,11 @@ impl Quote {
     }
 
     /// Rate Futures — mid value is the futures price, dates resolved from IMM code.
-    fn build_rate_futures(&self, price: f64, reference_date: Date) -> Result<BuiltInstrument> {
+    fn build_rate_futures<T: IsReal + Default>(
+        &self,
+        price: f64,
+        reference_date: Date,
+    ) -> Result<BuiltInstrument<T>> {
         let d = &self.details;
         let code = d
             .contract_code()
@@ -1211,7 +1227,11 @@ impl Quote {
     }
 
     /// FX Forward — mid value is the outright forward rate.
-    fn build_fx_forward(&self, forward_rate: f64, reference_date: Date) -> Result<BuiltInstrument> {
+    fn build_fx_forward<T: IsReal + Default>(
+        &self,
+        forward_rate: f64,
+        reference_date: Date,
+    ) -> Result<BuiltInstrument<T>> {
         let d = &self.details;
         let base = d
             .pay_currency()
@@ -1241,18 +1261,18 @@ impl Quote {
     /// Builds an [`FxForward`] with `forward_points` set. The bootstrap
     /// residual combines these with the FX spot (from the discount policy)
     /// to solve for discount factors via covered interest-rate parity.
-    fn build_fx_forward_points(
+    fn build_fx_forward_points<T: IsReal + Default>(
         &self,
         points: f64,
         reference_date: Date,
-    ) -> Result<BuiltInstrument> {
+    ) -> Result<BuiltInstrument<T>> {
         let d = &self.details;
         let base = d
             .pay_currency()
             .ok_or_else(|| QSError::ValueNotSetErr("Base currency on FX fwd pts quote".into()))?;
-        let quote_ccy = d.receive_currency().ok_or_else(|| {
-            QSError::ValueNotSetErr("Quote currency on FX fwd pts quote".into())
-        })?;
+        let quote_ccy = d
+            .receive_currency()
+            .ok_or_else(|| QSError::ValueNotSetErr("Quote currency on FX fwd pts quote".into()))?;
         let tenor = d
             .tenor()
             .ok_or_else(|| QSError::ValueNotSetErr("Tenor on FX fwd pts quote".into()))?;
@@ -1272,12 +1292,12 @@ impl Quote {
 
     /// Cross-Currency Swap (fixed domestic vs floating foreign).
     /// Mid value is the fixed rate on the domestic leg.
-    fn build_cross_currency_swap(
+    fn build_cross_currency_swap<T: IsReal + Default>(
         &self,
         fixed_rate: f64,
         reference_date: Date,
         notional: f64,
-    ) -> Result<BuiltInstrument> {
+    ) -> Result<BuiltInstrument<T>> {
         let d = &self.details;
         let domestic_ccy = d.pay_currency().ok_or_else(|| {
             QSError::ValueNotSetErr("Domestic currency on xccy swap quote".into())
@@ -1299,7 +1319,7 @@ impl Quote {
         let domestic_index = Self::required_market_index(d, "xccy swap quote")?;
         let rd = Self::rate_definition_for(&domestic_index);
 
-        let xccy = MakeCrossCurrencySwap::<ADReal>::default()
+        let xccy = MakeCrossCurrencySwap::<T>::default()
             .with_identifier(d.identifier())
             .with_start_date(reference_date)
             .with_maturity_date(maturity)
@@ -1317,7 +1337,7 @@ impl Quote {
     }
 
     /// European equity Call — strike and expiry from details.
-    fn build_call(&self, reference_date: Date) -> Result<BuiltInstrument> {
+    fn build_call<T: IsReal + Default>(&self, reference_date: Date) -> Result<BuiltInstrument<T>> {
         let d = &self.details;
         let strike = d
             .strike()
@@ -1339,7 +1359,7 @@ impl Quote {
     }
 
     /// European equity Put — strike and expiry from details.
-    fn build_put(&self, reference_date: Date) -> Result<BuiltInstrument> {
+    fn build_put<T: IsReal + Default>(&self, reference_date: Date) -> Result<BuiltInstrument<T>> {
         let d = &self.details;
         let strike = d
             .strike()
@@ -1362,12 +1382,12 @@ impl Quote {
 
     /// Interest rate Cap or Floor — strike and tenor from details.
     /// The quote value is used as the strike when the details don't carry one.
-    fn build_cap_floor(
+    fn build_cap_floor<T: IsReal + Default>(
         &self,
         value: f64,
         reference_date: Date,
         notional: f64,
-    ) -> Result<BuiltInstrument> {
+    ) -> Result<BuiltInstrument<T>> {
         let d = &self.details;
         let tenor = d
             .tenor()
@@ -1404,12 +1424,12 @@ impl Quote {
     /// European swaption — builds the underlying swap and wraps it.
     /// The quote value is used as the strike (fixed rate) when the details
     /// don't carry one.
-    fn build_swaption(
+    fn build_swaption<T: IsReal + Default>(
         &self,
         value: f64,
         reference_date: Date,
         notional: f64,
-    ) -> Result<BuiltInstrument> {
+    ) -> Result<BuiltInstrument<T>> {
         let d = &self.details;
         let option_expiry_period = d
             .option_expiry()
@@ -1425,7 +1445,7 @@ impl Quote {
 
         let strike = d.strike().unwrap_or(value);
 
-        let swaption = MakeSwaption::default()
+        let swaption = MakeSwaption::<T>::default()
             .with_identifier(d.identifier())
             .with_expiry(expiry_date)
             .with_start_date(expiry_date)

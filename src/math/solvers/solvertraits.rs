@@ -1,8 +1,5 @@
-use crate::ad::{
-    adreal::{ADReal, IsReal},
-    tape::Tape,
-};
 use crate::utils::errors::{QSError, Result};
+use nalgebra::{DMatrix, DVector};
 use std::ops::Sub;
 
 /// Dense matrix alias used by solver interfaces.
@@ -28,6 +25,8 @@ pub struct OptimizerSolution<X, F = f64> {
     pub f: F,
     /// Solver status indicating convergence or not.
     pub status: SolutionStatus,
+    /// Optional Jacobian captured at the solution point.
+    pub jacobian: Option<Matrix<f64>>,
 }
 
 /// Trait for a continuous function (or objective) over `X`.
@@ -109,6 +108,7 @@ where
                     x,
                     f: fval,
                     status: SolutionStatus::Converged,
+                    jacobian: None,
                 });
             }
             x = x - self.step(&x, f, fval)?;
@@ -117,6 +117,7 @@ where
             x,
             f: fval,
             status: SolutionStatus::NotConverged,
+            jacobian: None,
         })
     }
 }
@@ -137,77 +138,50 @@ pub trait JacobianFunc<X, Y, J>: VectorFunc<X, Y> {
     /// # Errors
     /// Returns an error if Jacobian evaluation fails.
     fn jacobian(&self, x: &[X]) -> Result<Matrix<J>>;
-}
 
-/// AD specialization for Jacobian evaluation using reverse-mode autodiff.
-///
-/// Implement this trait for an AD vector function to automatically obtain a
-/// [`JacobianFunc<ADReal, ADReal>`] implementation.
-pub trait ADJacobian: VectorFunc<ADReal, ADReal> {
-    /// Computes an autodiff Jacobian at `x`.
+    /// Solves the implicit-function-theorem system `J × S = -diag(g)`.
     ///
     /// # Errors
-    /// Returns an error if residual evaluation fails, dimensions mismatch, or
-    /// if AD backpropagation fails.
-    fn jacobian_ad(&self, x: &[ADReal]) -> Result<Matrix<f64>> {
-        let started_locally = if Tape::is_active() {
-            false
-        } else {
-            Tape::start_recording();
-            true
-        };
-
-        let result = (|| {
-            Tape::set_mark();
-            let local_x = x
-                .iter()
-                .map(|value| ADReal::new(value.value()))
-                .collect::<Vec<_>>();
-            let residual = self.call(&local_x)?;
-            let n = x.len();
-
-            if residual.len() != n {
-                return Err(QSError::SolverErr(
-                    "Vector function must return residual size equal to variable size".into(),
-                ));
-            }
-
-            for item in residual.iter().take(n) {
-                if !item.is_on_tape() {
-                    return Err(QSError::NodeNotIndexedInTapeErr);
-                }
-            }
-
-            let mut j = vec![vec![0.0; n]; n];
-            for (row, j_row) in j.iter_mut().enumerate().take(n) {
-                Tape::reset_adjoints();
-                residual[row].backward_to_mark()?;
-                for (col, j_cell) in j_row.iter_mut().enumerate().take(n) {
-                    *j_cell = local_x[col].adjoint()?;
-                }
-            }
-
-            Tape::reset_adjoints();
-
-            Ok(j)
-        })();
-
-        if started_locally {
-            Tape::stop_recording();
-            Tape::rewind_to_init();
-        } else {
-            Tape::rewind_to_mark();
+    /// Returns an error if the Jacobian dimensions are inconsistent or the
+    /// linear solves fail.
+    fn solve_ift(&self, x: &[X], g_diag: &[f64]) -> Result<Matrix<f64>>
+    where
+        J: Copy + Into<f64>,
+    {
+        let j = self.jacobian(x)?;
+        let n = g_diag.len();
+        if j.len() != n || j.iter().any(|row| row.len() != n) {
+            return Err(QSError::SolverErr(
+                "IFT requires a square Jacobian matching the quote sensitivity size".into(),
+            ));
         }
 
-        result
-    }
-}
+        let jacobian = j
+            .iter()
+            .map(|row| row.iter().copied().map(Into::into).collect::<Vec<f64>>())
+            .collect::<Vec<_>>();
 
-impl<T> JacobianFunc<ADReal, ADReal, f64> for T
-where
-    T: ADJacobian,
-{
-    fn jacobian(&self, x: &[ADReal]) -> Result<Matrix<f64>> {
-        self.jacobian_ad(x)
+        let data = jacobian
+            .iter()
+            .flat_map(|row| row.iter().copied())
+            .collect::<Vec<_>>();
+        let matrix = DMatrix::from_row_slice(n, n, &data);
+
+        let mut sensitivities = vec![vec![0.0; n]; n];
+        for j_col in 0..n {
+            let mut rhs = vec![0.0; n];
+            rhs[j_col] = -g_diag[j_col];
+            let rhs = DVector::from_row_slice(&rhs);
+            let column = matrix
+                .clone()
+                .lu()
+                .solve(&rhs)
+                .ok_or_else(|| QSError::SolverErr("Singular Jacobian in IFT".into()))?;
+            for i in 0..n {
+                sensitivities[i][j_col] = column[i];
+            }
+        }
+
+        Ok(sensitivities)
     }
 }

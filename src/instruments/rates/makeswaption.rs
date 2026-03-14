@@ -1,5 +1,5 @@
 use crate::{
-    ad::adreal::ADReal,
+    ad::adreal::IsReal,
     currencies::currency::Currency,
     indices::marketindex::MarketIndex,
     instruments::rates::{
@@ -14,6 +14,7 @@ use crate::{
     },
     utils::errors::{QSError, Result},
 };
+use std::marker::PhantomData;
 
 /// A builder for creating a [`Swaption`] instance.
 ///
@@ -30,7 +31,7 @@ use crate::{
 ///     Frequency::Semiannual,
 /// );
 ///
-/// let swaption = MakeSwaption::default()
+/// let swaption = MakeSwaption::<f64>::default()
 ///     .with_identifier("SWPTN-5Y10Y".to_string())
 ///     .with_expiry(Date::new(2024, 6, 1))
 ///     .with_swap_tenor_date(Date::new(2034, 6, 1))
@@ -48,7 +49,7 @@ use crate::{
 /// assert_eq!(swaption.strike(), 0.03);
 /// ```
 #[derive(Default)]
-pub struct MakeSwaption {
+pub struct MakeSwaption<T: IsReal + Default> {
     start_date: Option<Date>,
     swap_tenor_date: Option<Date>,
     expiry: Option<Date>,
@@ -66,9 +67,13 @@ pub struct MakeSwaption {
     business_day_convention: Option<BusinessDayConvention>,
     date_generation_rule: Option<DateGenerationRule>,
     end_of_month: Option<bool>,
+    _marker: PhantomData<T>,
 }
 
-impl MakeSwaption {
+impl<T> MakeSwaption<T>
+where
+    T: IsReal + Default,
+{
     /// Sets the start date of the underlying swap (= option expiry for Europeans).
     #[must_use]
     pub const fn with_start_date(mut self, start_date: Date) -> Self {
@@ -193,7 +198,7 @@ impl MakeSwaption {
     /// # Errors
     /// Returns an error when required fields are missing or the underlying
     /// swap builder fails.
-    pub fn build(self) -> Result<Swaption<ADReal>> {
+    pub fn build(self) -> Result<Swaption<T>> {
         let strike = self
             .strike
             .ok_or_else(|| QSError::ValueNotSetErr("Strike".into()))?;
@@ -221,7 +226,7 @@ impl MakeSwaption {
             .ok_or_else(|| QSError::ValueNotSetErr("Swap tenor date".into()))?;
 
         // Build the underlying swap via MakeSwap.
-        let mut swap_builder = MakeSwap::<ADReal>::default()
+        let mut swap_builder = MakeSwap::<T>::default()
             .with_identifier(format!("{identifier}_underlying"))
             .with_start_date(swap_start)
             .with_maturity_date(swap_maturity)
@@ -274,6 +279,7 @@ impl MakeSwaption {
 mod tests {
     use super::*;
     use crate::{
+        ad::adreal::ADReal,
         core::instrument::Instrument,
         rates::compounding::Compounding,
         time::{daycounter::DayCounter, enums::Frequency},
@@ -287,8 +293,8 @@ mod tests {
         )
     }
 
-    fn base_builder() -> MakeSwaption {
-        MakeSwaption::default()
+    fn base_builder() -> MakeSwaption<ADReal> {
+        MakeSwaption::<ADReal>::default()
             .with_identifier("swaption_test".to_string())
             .with_expiry(Date::new(2024, 6, 1))
             .with_swap_tenor_date(Date::new(2026, 6, 1))
@@ -315,7 +321,7 @@ mod tests {
 
     #[test]
     fn test_build_swaption_missing_swap_tenor_fails() {
-        let result = MakeSwaption::default()
+        let result = MakeSwaption::<ADReal>::default()
             .with_identifier("swaption_missing_tenor".to_string())
             .with_expiry(Date::new(2024, 6, 1))
             .with_strike(0.03)

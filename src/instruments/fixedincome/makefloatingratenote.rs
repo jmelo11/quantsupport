@@ -14,8 +14,7 @@ use crate::{
     },
     utils::errors::{QSError, Result},
 };
-#[cfg(test)]
-use crate::ad::adreal::ADReal;
+
 use std::marker::PhantomData;
 
 /// A builder for creating a [`FloatingRateNote`] instance, allowing for a flexible and stepwise construction process.

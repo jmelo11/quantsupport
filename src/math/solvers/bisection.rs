@@ -73,6 +73,7 @@ where
                     x: mid,
                     f: f_mid,
                     status: SolutionStatus::Converged,
+                    jacobian: None,
                 });
             }
             if f_mid.signum() == f_low.signum() {
@@ -88,6 +89,7 @@ where
             x: mid,
             f: f.call(&mid)?,
             status: SolutionStatus::NotConverged,
+            jacobian: None,
         })
     }
 }

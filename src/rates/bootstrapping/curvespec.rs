@@ -2,10 +2,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     ad::adreal::{ADReal, IsReal},
-    core::request::LegsProvider,
     currencies::currency::Currency,
     indices::marketindex::MarketIndex,
-    instruments::cashflows::{cashflowtype::CashflowType, leg::Leg},
     math::interpolation::interpolator::{Interpolate as _, Interpolator},
     quotes::quote::{BuiltInstrument, Level, Quote},
     rates::{
@@ -107,16 +105,9 @@ impl CurveSpec {
                 continue;
             };
 
-            let fallback_value = ADReal::new(quote.levels().value(level)?);
+            let quote_value = quote.levels().value(level)?;
             let built = quote.build_instrument(selector.reference_date(), level)?;
             let pillar_date = Self::resolve_pillar_dates(&built)?;
-
-            // When the tape is recording, the instrument build creates
-            // ADReal leaf nodes for its internal rates.  We extract that
-            // same ADReal so `pillar_values` shares the identical tape
-            // node used in the bootstrap residual computation, giving
-            // end-to-end AD connectivity from quote → solver → DF.
-            let quote_value = Self::extract_primary_rate(&built).unwrap_or(fallback_value);
 
             instruments.push(ResolvedInstrument::new(
                 quote,
@@ -140,82 +131,13 @@ impl CurveSpec {
         ))
     }
 
-    /// Extracts the primary AD-enabled rate from a built instrument.
-    ///
-    /// For instruments whose quote enters the residual through the
-    /// coupon-level `InterestRate` (deposits, swaps), this returns the
-    /// `ADReal` stored in the first [`FixedRateCoupon`].  Because
-    /// [`ADReal`] is `Copy` with a shared tape-node pointer, this is the
-    /// *same* tape leaf used by every coupon of the instrument.
-    ///
-    /// For instruments where the quote is used directly in the residual
-    /// function (FX forwards, rate futures), the fallback `quote_value`
-    /// created in [`collect_quotes`] is used instead.
-    fn extract_primary_rate(built: &BuiltInstrument) -> Option<ADReal> {
-        match built {
-            BuiltInstrument::FixedRateDeposit(dep) => dep.leg().cashflows().iter().find_map(|cf| {
-                if let CashflowType::FixedRateCoupon(c) = cf {
-                    Some(c.rate().rate())
-                } else {
-                    None
-                }
-            }),
-            BuiltInstrument::Swap(swap) => {
-                for leg in swap.legs() {
-                    for cf in leg.cashflows() {
-                        if let CashflowType::FixedRateCoupon(c) = cf {
-                            return Some(c.rate().rate());
-                        }
-                    }
-                }
-                None
-            }
-            BuiltInstrument::BasisSwap(bs) => {
-                // For basis swaps the quote is typically a spread on
-                // one of the floating legs.
-                for leg in bs.legs() {
-                    for cf in leg.cashflows() {
-                        if let CashflowType::FloatingRateCoupon(c) = cf {
-                            let s = c.spread();
-                            if s.value().abs() > 1e-18 {
-                                return Some(s);
-                            }
-                        }
-                    }
-                }
-                None
-            }
-            // Rate futures and FX forwards: the quote value is passed
-            // directly to the residual function, so we rely on the
-            // fallback created in collect_quotes.
-            _ => None,
-        }
-    }
-
     /// Resolves the pillar date for a given built instrument.
     fn resolve_pillar_dates(built: &BuiltInstrument) -> Result<Date> {
         match built {
             BuiltInstrument::FixedRateDeposit(x) => Ok(x.leg().last_payment_date()),
-            BuiltInstrument::Swap(x) => x
-                .legs()
-                .iter()
-                .map(Leg::last_payment_date)
-                .max()
-                .ok_or_else(|| QSError::InvalidValueErr("Swap has no legs".into())),
-            BuiltInstrument::BasisSwap(x) => x
-                .legs()
-                .iter()
-                .map(Leg::last_payment_date)
-                .max()
-                .ok_or_else(|| QSError::InvalidValueErr("BasisSwap has no legs".into())),
-            BuiltInstrument::CrossCurrencySwap(x) => x
-                .legs()
-                .iter()
-                .map(Leg::last_payment_date)
-                .max()
-                .ok_or_else(|| {
-                    QSError::InvalidValueErr("CrossCurrencySwap has no legs".into())
-                }),
+            BuiltInstrument::Swap(x) => Ok(x.fixed_leg().last_payment_date().max(x.floating_leg().last_payment_date())),
+            BuiltInstrument::BasisSwap(x) => Ok(x.pay_leg().last_payment_date().max(x.receive_leg().last_payment_date())),
+            BuiltInstrument::CrossCurrencySwap(x) => Ok(x.domestic_leg().last_payment_date().max(x.foreign_leg().last_payment_date())),
             BuiltInstrument::RateFutures(x) => Ok(x.end_date()),
             BuiltInstrument::FxForward(x) => Ok(x.delivery_date()),
             _ => Err(QSError::InvalidValueErr("Instrument not supported".into())),

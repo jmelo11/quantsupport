@@ -8,7 +8,7 @@ use std::f64::consts::PI;
 
 /// A tagged union of per-model parameter sets.
 ///
-/// Stored as a `Vec<ModelParameters>` in
+/// Stored as a [`Vec<ModelParameters>`] in
 /// [`ContextManager`](crate::core::contextmanager::ContextManager),
 /// [`MarketDataRequest`](crate::core::marketdatahandling::marketdata::MarketDataRequest), and
 /// [`MarketData`](crate::core::marketdatahandling::marketdata::MarketData) so that multiple model

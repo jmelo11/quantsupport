@@ -1,8 +1,6 @@
 use std::collections::HashSet;
 
 use crate::{
-    ad::adreal::ADReal,
-    core::request::LegsProvider,
     currencies::currency::Currency,
     indices::marketindex::MarketIndex,
     math::interpolation::interpolator::Interpolator,
@@ -16,13 +14,13 @@ use crate::{
 // ---------------------------------------------------------------------------
 
 /// A resolved calibration instrument: a quote that has been turned into a
-/// concrete [`BuiltInstrument`] with a known pillar date and AD-enabled quote
+/// concrete [`BuiltInstrument`] with a known pillar date and scalar quote
 /// value.
 pub struct ResolvedInstrument {
     quote: Quote,
     level: Level,
     built: BuiltInstrument,
-    quote_value: ADReal,
+    quote_value: f64,
     pillar_date: Date,
 }
 
@@ -33,7 +31,7 @@ impl ResolvedInstrument {
         quote: Quote,
         level: Level,
         built: BuiltInstrument,
-        quote_value: ADReal,
+        quote_value: f64,
         pillar_date: Date,
     ) -> Self {
         Self {
@@ -63,10 +61,10 @@ impl ResolvedInstrument {
         &self.built
     }
 
-    /// Returns the market input value as an `ADReal`.
+    /// Returns the market input value.
     #[must_use]
-    pub const fn quote_value(&self) -> &ADReal {
-        &self.quote_value
+    pub const fn quote_value(&self) -> f64 {
+        self.quote_value
     }
 
     /// Returns the pillar date.
@@ -180,29 +178,38 @@ impl ResolvedCurveSpec {
             // might reference a curve that is not the one being bootstrapped).
             match instr.built() {
                 BuiltInstrument::Swap(s) => {
-                    for leg in s.legs() {
-                        if let Some(idx) = leg.market_index() {
-                            if idx != target {
-                                deps.insert(idx.clone());
-                            }
+                    if let Some(idx) = s.fixed_leg().market_index() {
+                        if idx != target {
+                            deps.insert(idx.clone());
+                        }
+                    }
+                    if let Some(idx) = s.floating_leg().market_index() {
+                        if idx != target {
+                            deps.insert(idx.clone());
                         }
                     }
                 }
                 BuiltInstrument::BasisSwap(bs) => {
-                    for leg in bs.legs() {
-                        if let Some(idx) = leg.market_index() {
-                            if idx != target {
-                                deps.insert(idx.clone());
-                            }
+                    if let Some(idx) = bs.pay_leg().market_index() {
+                        if idx != target {
+                            deps.insert(idx.clone());
+                        }
+                    }
+                    if let Some(idx) = bs.receive_leg().market_index() {
+                        if idx != target {
+                            deps.insert(idx.clone());
                         }
                     }
                 }
                 BuiltInstrument::CrossCurrencySwap(xccy) => {
-                    for leg in xccy.legs() {
-                        if let Some(idx) = leg.market_index() {
-                            if idx != target {
-                                deps.insert(idx.clone());
-                            }
+                    if let Some(idx) = xccy.domestic_leg().market_index() {
+                        if idx != target {
+                            deps.insert(idx.clone());
+                        }
+                    }
+                    if let Some(idx) = xccy.foreign_leg().market_index() {
+                        if idx != target {
+                            deps.insert(idx.clone());
                         }
                     }
                 }
@@ -231,11 +238,11 @@ impl ResolvedCurveSpec {
             .collect()
     }
 
-    /// Returns the market par-quote values (one per instrument) as `ADReal`.
+    /// Returns the market par-quote values (one per instrument).
     ///
     /// These are the original market inputs used to calibrate the curve.
     #[must_use]
-    pub fn quote_values(&self) -> Vec<ADReal> {
-        self.instruments.iter().map(|i| *i.quote_value()).collect()
+    pub fn quote_values(&self) -> Vec<f64> {
+        self.instruments.iter().map(ResolvedInstrument::quote_value).collect()
     }
 }

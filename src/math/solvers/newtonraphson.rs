@@ -90,6 +90,7 @@ where
                     x,
                     f: fval,
                     status: SolutionStatus::Converged,
+                    jacobian: None,
                 });
             }
             x = x - self.step(&x, f, fval)?;
@@ -98,6 +99,7 @@ where
             x,
             f: fval,
             status: SolutionStatus::NotConverged,
+            jacobian: None,
         })
     }
 }

@@ -1,14 +1,10 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 
 use crate::{
-    ad::{
-        adreal::{ADReal, IsReal},
-        tape::Tape,
-    },
+    ad::adreal::{ADReal, IsReal},
     core::{
         elements::curveelement::{ADCurveElement, DiscountCurveElement},
         marketdatahandling::constructedelementstore::SharedElement,
-        request::LegsProvider,
     },
     currencies::exchangeratestore::ExchangeRateStore,
     indices::marketindex::MarketIndex,
@@ -18,9 +14,9 @@ use crate::{
         rates::{crosscurrencyswap::CrossCurrencySwap, ratefutures::RateFutures},
     },
     math::{
-        interpolation::interpolator::Interpolator,
+        interpolation::interpolator::{Interpolate as _, Interpolator},
         solvers::{
-            solvertraits::{ADJacobian, ContFunc, VectorFunc},
+            solvertraits::{ContFunc, JacobianFunc, VectorFunc},
             vectornewton::VectorNewton,
         },
     },
@@ -32,6 +28,7 @@ use crate::{
             resolvedcurvespec::{ResolvedCurveSpec, ResolvedInstrument},
         },
         compounding::Compounding,
+        interestrate::InterestRate,
         yieldtermstructure::discounttermstructure::DiscountTermStructure,
     },
     time::{date::Date, daycounter::DayCounter, enums::Frequency},
@@ -39,6 +36,67 @@ use crate::{
 };
 
 use std::{cell::RefCell, rc::Rc};
+
+#[derive(Clone)]
+struct SolvedCurve {
+    reference_date: Date,
+    times: Vec<f64>,
+    discount_factors: Vec<f64>,
+    day_counter: DayCounter,
+    interpolator: Interpolator,
+}
+
+impl SolvedCurve {
+    fn new_with_dfs(
+        reference_date: Date,
+        times: Vec<f64>,
+        discount_factors: Vec<f64>,
+        day_counter: DayCounter,
+        interpolator: Interpolator,
+    ) -> Self {
+        Self {
+            reference_date,
+            times,
+            discount_factors,
+            day_counter,
+            interpolator,
+        }
+    }
+
+    fn discount_factor(&self, date: Date) -> Result<f64> {
+        let year_fraction = self.day_counter.year_fraction(self.reference_date, date);
+        self.interpolator
+            .interpolate(year_fraction, &self.times, &self.discount_factors, true)
+    }
+
+    fn forward_rate(
+        &self,
+        start_date: Date,
+        end_date: Date,
+        compounding: Compounding,
+        frequency: Frequency,
+    ) -> Result<f64> {
+        let discount_factor_to_start = self.discount_factor(start_date)?;
+        let discount_factor_to_end = self.discount_factor(end_date)?;
+        let comp_factor = discount_factor_to_start / discount_factor_to_end;
+        let tenor = self.day_counter.year_fraction(start_date, end_date);
+
+        Ok(InterestRate::<f64>::implied_rate(
+            comp_factor,
+            self.day_counter,
+            compounding,
+            frequency,
+            tenor,
+        )?
+        .rate())
+    }
+}
+
+struct CalibratedCurve {
+    solved_curve: SolvedCurve,
+    output_curve: BootstrappedCurve,
+    pillar_values: Vec<ADReal>,
+}
 
 /// Dependency-aware, lazy multi-curve bootstrapper.
 ///
@@ -165,18 +223,22 @@ impl MultiCurveBootstrapper {
         let order = Self::dependency_order(&resolved, &self.discount_policy)?;
 
         // 3. Iteratively bootstrap in dependency order.
+        let mut solved_curves: HashMap<MarketIndex, SolvedCurve> = HashMap::new();
         let mut bootstrapped: HashMap<MarketIndex, BootstrappedCurve> = HashMap::new();
+        let mut pillar_values: HashMap<MarketIndex, Vec<ADReal>> = HashMap::new();
 
         for index in &order {
             let spec = resolved.get(index).ok_or_else(|| {
                 QSError::NotFoundErr(format!("Missing resolved spec for {index}"))
             })?;
-            let curve = self.bootstrap_curve(index, spec, &bootstrapped)?;
-            bootstrapped.insert(index.clone(), curve);
+            let calibrated = self.bootstrap_curve(index, spec, &solved_curves)?;
+            solved_curves.insert(index.clone(), calibrated.solved_curve);
+            pillar_values.insert(index.clone(), calibrated.pillar_values);
+            bootstrapped.insert(index.clone(), calibrated.output_curve);
         }
 
         // 4. Convert to DiscountCurveElements.
-        Self::build_curve_elements(&resolved, &bootstrapped)
+        Self::build_curve_elements(&resolved, &bootstrapped, &pillar_values)
     }
 
     // -----------------------------------------------------------------------
@@ -282,11 +344,8 @@ impl MultiCurveBootstrapper {
         &self,
         target_index: &MarketIndex,
         spec: &ResolvedCurveSpec,
-        other_curves: &HashMap<MarketIndex, BootstrappedCurve>,
-    ) -> Result<BootstrappedCurve> {
-        Tape::start_recording();
-        Tape::set_mark();
-
+        other_curves: &HashMap<MarketIndex, SolvedCurve>,
+    ) -> Result<CalibratedCurve> {
         let reference_date = spec.reference_date();
         let dc = spec.day_counter();
         let interp = spec.interpolator();
@@ -301,7 +360,7 @@ impl MultiCurveBootstrapper {
         let n = spec.instruments().len();
 
         // Initial guess: slight discount (safe for positive-rate environments).
-        let x0: Vec<ADReal> = vec![ADReal::new(0.99); n];
+        let x0 = vec![0.99; n];
 
         // Build the problem.
         let problem = BootstrapProblem {
@@ -329,113 +388,83 @@ impl MultiCurveBootstrapper {
         //   J = ∂F/∂x ,  G_diag[i] = ∂F_i/∂q_i  (diagonal because each
         //   residual depends on only its own quote value).
         // -----------------------------------------------------------------
-        let converged_x = &solution.x; // Vec<ADReal> of converged DFs (without T0)
-
-        // J = ∂F/∂x  (via AD Jacobian already available in the solver)
-        let j_matrix = problem.jacobian_ad(converged_x)?; // Matrix<f64>
+        let converged_x = &solution.x; // Vec<f64> of converged DFs (without T0)
 
         // G_diag = ∂F_i/∂q_i  (annuity of the quote-dependent terms)
-        let trial = problem.trial_curve(converged_x);
-        let g_diag = problem.quote_derivatives(&trial)?;
+        let g_diag = problem.quote_derivatives(converged_x)?;
 
-        // Solve  J × S_col_j = −g_jj × e_j  for each j.
-        // Collect all columns of S.
-        let ift_sens = Self::solve_ift(&j_matrix, &g_diag)?; // ift_sens[i][j]
+        let ift_sens = if let Some(jacobian) = solution.jacobian.as_ref() {
+            let n = g_diag.len();
+            let mut sensitivities = vec![vec![0.0; n]; n];
+            let data = jacobian
+                .iter()
+                .flat_map(|row| row.iter().copied())
+                .collect::<Vec<_>>();
+            let matrix = nalgebra::DMatrix::from_row_slice(n, n, &data);
+
+            for j_col in 0..n {
+                let mut rhs = vec![0.0; n];
+                rhs[j_col] = -g_diag[j_col];
+                let rhs = nalgebra::DVector::from_row_slice(&rhs);
+                let column = matrix
+                    .clone()
+                    .lu()
+                    .solve(&rhs)
+                    .ok_or_else(|| QSError::SolverErr("Singular Jacobian in IFT".into()))?;
+                for i in 0..n {
+                    sensitivities[i][j_col] = column[i];
+                }
+            }
+
+            sensitivities
+        } else {
+            problem.solve_ift(converged_x, &g_diag)?
+        }; // ift_sens[i][j]
 
         // Create IFT-corrected DFs connected to quote_values via S.
-        let quote_values = spec.quote_values(); // Vec<ADReal> – the pillar leaves
+        let base_quote_values = spec.quote_values();
+        let quote_values = base_quote_values
+            .iter()
+            .copied()
+            .map(ADReal::new)
+            .collect::<Vec<_>>();
         let mut corrected_dfs = Vec::with_capacity(n);
         for i in 0..n {
-            let base = converged_x[i].value();
+            let base = converged_x[i];
             let mut df = ADReal::new(base);
             for j in 0..n {
                 // (q_j − base_q_j) evaluates to zero but creates a tape
                 // edge whose weight is 1.0 w.r.t. q_j, carrying the IFT
                 // sensitivity through the chain rule.
-                let dq: ADReal = (quote_values[j] - ADReal::new(quote_values[j].value())).into();
+                let dq: ADReal = (quote_values[j] - base_quote_values[j]).into();
                 df = (df + dq * ift_sens[i][j]).into();
             }
             corrected_dfs.push(df);
         }
 
-        // Build the bootstrapped curve with IFT-corrected DFs.
-        let mut dfs = vec![ADReal::one()];
-        dfs.extend(corrected_dfs);
-        Ok(BootstrappedCurve::new_with_dfs(
-            reference_date,
-            times,
-            dfs,
-            dc,
-            interp,
-        ))
-    }
+        let mut solved_dfs = vec![1.0_f64];
+        solved_dfs.extend(converged_x.iter().copied());
 
-    /// Solves J × S = −diag(g) for the IFT sensitivity matrix.
-    fn solve_ift(j: &[Vec<f64>], g_diag: &[f64]) -> Result<Vec<Vec<f64>>> {
-        let n = g_diag.len();
-        // Re-use the same Gaussian elimination as the Newton solver.
-        // For each column j we solve  J s = −g_jj e_j.
-        let mut s = vec![vec![0.0; n]; n];
-        for j_col in 0..n {
-            let mut rhs: Vec<f64> = vec![0.0; n];
-            rhs[j_col] = -g_diag[j_col];
-            let col = Self::solve_f64_system(j, &rhs)?;
-            for i in 0..n {
-                s[i][j_col] = col[i];
-            }
-        }
-        Ok(s)
-    }
+        let mut output_dfs = vec![ADReal::one()];
+        output_dfs.extend(corrected_dfs);
 
-    /// Solves a dense linear system A x = b using Gaussian elimination with
-    /// partial pivoting.  Operates entirely in `f64`.
-    /// TODO: replace with a more efficient and stable linear algebra library if needed.
-    #[allow(clippy::needless_range_loop)]
-    fn solve_f64_system(a: &[Vec<f64>], b: &[f64]) -> Result<Vec<f64>> {
-        let n = a.len();
-        let mut aa: Vec<Vec<f64>> = a.to_vec();
-        let mut bb: Vec<f64> = b.to_vec();
-
-        for i in 0..n {
-            // Partial pivot.
-            let mut pivot = i;
-            let mut max_val = aa[i][i].abs();
-            for r in (i + 1)..n {
-                if aa[r][i].abs() > max_val {
-                    max_val = aa[r][i].abs();
-                    pivot = r;
-                }
-            }
-            if max_val < 1e-14 {
-                return Err(QSError::SolverErr("Singular Jacobian in IFT".into()));
-            }
-            if pivot != i {
-                aa.swap(i, pivot);
-                bb.swap(i, pivot);
-            }
-
-            let diag = aa[i][i];
-            for c in i..n {
-                aa[i][c] /= diag;
-            }
-            bb[i] /= diag;
-
-            for r in 0..n {
-                if r == i {
-                    continue;
-                }
-                let factor = aa[r][i];
-                if factor == 0.0 {
-                    continue;
-                }
-                let bi = bb[i];
-                for c in i..n {
-                    aa[r][c] -= factor * aa[i][c];
-                }
-                bb[r] -= bi * factor;
-            }
-        }
-        Ok(bb)
+        Ok(CalibratedCurve {
+            solved_curve: SolvedCurve::new_with_dfs(
+                reference_date,
+                times.clone(),
+                solved_dfs,
+                dc,
+                interp,
+            ),
+            output_curve: BootstrappedCurve::new_with_dfs(
+                reference_date,
+                times,
+                output_dfs,
+                dc,
+                interp,
+            ),
+            pillar_values: quote_values,
+        })
     }
 
     /// Converts the bootstrapped curves into [`DiscountCurveElement`]s
@@ -444,6 +473,7 @@ impl MultiCurveBootstrapper {
     fn build_curve_elements(
         resolved: &HashMap<MarketIndex, ResolvedCurveSpec>,
         bootstrapped: &HashMap<MarketIndex, BootstrappedCurve>,
+        pillar_values: &HashMap<MarketIndex, Vec<ADReal>>,
     ) -> Result<HashMap<MarketIndex, DiscountCurveElement>> {
         let mut map = HashMap::new();
 
@@ -462,7 +492,10 @@ impl MultiCurveBootstrapper {
 
             let dfs = bc.discount_factors().to_vec();
             let labels = spec.pillar_labels();
-            let quote_values = spec.quote_values();
+            let quote_values = pillar_values
+                .get(idx)
+                .cloned()
+                .ok_or_else(|| QSError::NotFoundErr(format!("Missing pillar values for {idx}")))?;
 
             let ts = DiscountTermStructure::<ADReal>::new(
                 dates,
@@ -498,18 +531,18 @@ struct BootstrapProblem<'a> {
     day_counter: DayCounter,
     interpolator: Interpolator,
     instruments: &'a [ResolvedInstrument],
-    other_curves: &'a HashMap<MarketIndex, BootstrappedCurve>,
+    other_curves: &'a HashMap<MarketIndex, SolvedCurve>,
     discount_policy: &'a BootstrapDiscountPolicy,
     exchange_rate_store: &'a ExchangeRateStore,
 }
 
 impl BootstrapProblem<'_> {
-    /// Builds a temporary `BootstrappedCurve` from the trial unknowns.
-    fn trial_curve(&self, x: &[ADReal]) -> BootstrappedCurve {
+    /// Builds a temporary solved curve from the trial unknowns.
+    fn trial_curve(&self, x: &[f64]) -> SolvedCurve {
         let mut dfs = Vec::with_capacity(self.times.len());
-        dfs.push(ADReal::one()); // DF(0) = 1
+        dfs.push(1.0_f64); // DF(0) = 1
         dfs.extend_from_slice(x);
-        BootstrappedCurve::new_with_dfs(
+        SolvedCurve::new_with_dfs(
             self.reference_date,
             self.times.clone(),
             dfs,
@@ -518,13 +551,26 @@ impl BootstrapProblem<'_> {
         )
     }
 
+    fn residuals(&self, trial: &SolvedCurve) -> Result<Vec<f64>> {
+        let mut residuals = Vec::with_capacity(self.instruments.len());
+        for instr in self.instruments {
+            residuals.push(self.compute_residual(instr, trial)?);
+        }
+        Ok(residuals)
+    }
+
+    fn quote_derivatives(&self, x: &[f64]) -> Result<Vec<f64>> {
+        let trial = self.trial_curve(x);
+        self.quote_derivatives_on_curve(&trial)
+    }
+
     /// Retrieves the curve for a given index, falling back to
     /// `other_curves` when the index differs from the target.
     fn get_curve<'b>(
         &'b self,
         index: &MarketIndex,
-        trial: &'b BootstrappedCurve,
-    ) -> Option<&'b BootstrappedCurve> {
+        trial: &'b SolvedCurve,
+    ) -> Option<&'b SolvedCurve> {
         if index == &self.target_index {
             Some(trial)
         } else {
@@ -539,17 +585,19 @@ impl BootstrapProblem<'_> {
     /// Dispatches the residual computation for a single instrument based
     /// on its type (deposit, swap, basis swap, cross-currency swap,
     /// rate futures, or FX forward).
-    fn compute_residual(
-        &self,
-        instr: &ResolvedInstrument,
-        trial: &BootstrappedCurve,
-    ) -> Result<ADReal> {
+    fn compute_residual(&self, instr: &ResolvedInstrument, trial: &SolvedCurve) -> Result<f64> {
         match instr.built() {
             BuiltInstrument::FixedRateDeposit(dep) => {
-                self.residual_deposit(dep.legs(), &self.target_index, trial)
+                self.residual_deposit(dep.leg(), &self.target_index, trial)
             }
-            BuiltInstrument::Swap(swap) => self.residual_legs(swap.legs(), trial),
-            BuiltInstrument::BasisSwap(bs) => self.residual_legs(bs.legs(), trial),
+            BuiltInstrument::Swap(swap) => {
+                let legs = [swap.fixed_leg(), swap.floating_leg()];
+                self.residual_legs(&legs, trial)
+            }
+            BuiltInstrument::BasisSwap(bs) => {
+                let legs = [bs.pay_leg(), bs.receive_leg()];
+                self.residual_legs(&legs, trial)
+            }
             BuiltInstrument::CrossCurrencySwap(xccy) => self.residual_xccy(xccy, trial),
             BuiltInstrument::RateFutures(f) => self.residual_futures(f, instr.quote_value(), trial),
             BuiltInstrument::FxForward(fx) => {
@@ -570,37 +618,35 @@ impl BootstrapProblem<'_> {
     ///
     /// `G[i] = ∂F_i/∂q_i` where `q_i` is instrument i's market quote.
     /// Since each residual depends only on its own quote, G is diagonal.
-    fn quote_derivatives(&self, trial: &BootstrappedCurve) -> Result<Vec<f64>> {
+    fn quote_derivatives_on_curve(&self, trial: &SolvedCurve) -> Result<Vec<f64>> {
         let mut g = Vec::with_capacity(self.instruments.len());
         for instr in self.instruments {
             let d = match instr.built() {
                 BuiltInstrument::FixedRateDeposit(dep) => {
-                    // F = Σ(cf × DF) ;  fixed cfs scale linearly with q ⇒
-                    // ∂F/∂q = Σ(yf_k × DF(t_k)) × notional × side
-                    self.annuity_fixed_coupons(dep.legs(), trial)?
+                    let legs = [dep.leg()];
+                    self.annuity_fixed_coupons(&legs, trial)?
                 }
-                BuiltInstrument::Swap(swap) => self.annuity_fixed_coupons(swap.legs(), trial)?,
+                BuiltInstrument::Swap(swap) => {
+                    let legs = [swap.fixed_leg(), swap.floating_leg()];
+                    self.annuity_fixed_coupons(&legs, trial)?
+                }
                 BuiltInstrument::BasisSwap(bs) => {
-                    // Quote = spread on one floating leg → annuity of that leg
-                    self.annuity_floating_coupons(bs.legs(), trial)?
+                    let legs = [bs.pay_leg(), bs.receive_leg()];
+                    self.annuity_floating_coupons(&legs, trial)?
                 }
                 BuiltInstrument::CrossCurrencySwap(xccy) => {
-                    self.annuity_fixed_coupons(xccy.legs(), trial)?
+                    let legs = [xccy.domestic_leg(), xccy.foreign_leg()];
+                    self.annuity_fixed_coupons(&legs, trial)?
                 }
-                BuiltInstrument::RateFutures(_) => {
-                    // F = implied_fwd − q  ⇒  ∂F/∂q = −1
-                    -1.0
-                }
+                BuiltInstrument::RateFutures(_) => -1.0,
                 BuiltInstrument::FxForward(fx) => {
-                    // Outright: F = DF_base − q × DF_quote ⇒ ∂F/∂q = −DF_quote
-                    // Forward pts: F = DF_base − DF_quote(1 + q/S) ⇒ ∂F/∂q = −DF_quote/S
                     let quote_disc_idx = self
                         .discount_policy
                         .discount_index_for_currency(fx.quote_currency());
                     let q_curve = self.get_curve(&quote_disc_idx, trial).ok_or_else(|| {
                         QSError::NotFoundErr(format!("Missing quote curve {quote_disc_idx}"))
                     })?;
-                    let df_q = q_curve.discount_factor(fx.delivery_date())?.value();
+                    let df_q = q_curve.discount_factor(fx.delivery_date())?;
                     if fx.has_forward_points() {
                         let spot = self
                             .exchange_rate_store
@@ -623,7 +669,7 @@ impl BootstrapProblem<'_> {
     }
 
     /// Annuity of the fixed-rate coupons: Σ side × notional × yf × DF(pay).
-    fn annuity_fixed_coupons(&self, legs: &[Leg<ADReal>], trial: &BootstrappedCurve) -> Result<f64> {
+    fn annuity_fixed_coupons(&self, legs: &[&Leg<f64>], trial: &SolvedCurve) -> Result<f64> {
         let disc_index = self.discount_policy.csa_index();
         let disc = self.get_curve(disc_index, trial).unwrap_or(trial);
 
@@ -636,7 +682,7 @@ impl BootstrapProblem<'_> {
                         .rate()
                         .day_counter()
                         .year_fraction(c.accrual_start_date(), c.accrual_end_date());
-                    let df = disc.discount_factor(c.payment_date())?.value();
+                    let df = disc.discount_factor(c.payment_date())?;
                     annuity += side * c.notional() * yf * df;
                 }
             }
@@ -646,7 +692,7 @@ impl BootstrapProblem<'_> {
 
     /// Annuity of the floating-rate coupons (for basis-swap spread):
     /// Σ side × notional × yf × DF(pay).
-    fn annuity_floating_coupons(&self, legs: &[Leg<ADReal>], trial: &BootstrappedCurve) -> Result<f64> {
+    fn annuity_floating_coupons(&self, legs: &[&Leg<f64>], trial: &SolvedCurve) -> Result<f64> {
         let disc_index = self.discount_policy.csa_index();
         let disc = self.get_curve(disc_index, trial).unwrap_or(trial);
 
@@ -658,7 +704,7 @@ impl BootstrapProblem<'_> {
                     let yf = c
                         .day_counter()
                         .year_fraction(c.accrual_start_date(), c.accrual_end_date());
-                    let df = disc.discount_factor(c.payment_date())?.value();
+                    let df = disc.discount_factor(c.payment_date())?;
                     annuity += side * 1.0 * yf * df; // notional = 1 for basis swap quote
                 }
             }
@@ -670,41 +716,36 @@ impl BootstrapProblem<'_> {
     /// At the solution this equals zero.
     fn residual_deposit(
         &self,
-        legs: &[Leg<ADReal>],
+        leg: &Leg<f64>,
         disc_index: &MarketIndex,
-        trial: &BootstrappedCurve,
-    ) -> Result<ADReal> {
+        trial: &SolvedCurve,
+    ) -> Result<f64> {
         let disc_curve = self
             .get_curve(disc_index, trial)
             .ok_or_else(|| QSError::NotFoundErr(format!("Missing discount curve {disc_index}")))?;
 
-        let mut npv = ADReal::new(0.0);
-        for leg in legs {
-            let side = leg.side().sign();
-            npv = (npv + self.pv_leg(leg, disc_curve, trial)? * side).into();
-        }
-        Ok(npv)
+        Ok(self.pv_leg(leg, disc_curve, trial)? * leg.side().sign())
     }
 
     /// Computes the NPV residual for legs-based instruments (swaps, basis swaps)
     /// by summing each leg's present value weighted by its side.
-    fn residual_legs(&self, legs: &[Leg<ADReal>], trial: &BootstrappedCurve) -> Result<ADReal> {
+    fn residual_legs(&self, legs: &[&Leg<f64>], trial: &SolvedCurve) -> Result<f64> {
         let disc_index = self.discount_policy.csa_index();
         let disc_curve = self
             .get_curve(disc_index, trial)
             .ok_or_else(|| QSError::NotFoundErr(format!("Missing discount curve {disc_index}")))?;
 
-        let mut npv = ADReal::new(0.0);
+        let mut npv = 0.0;
         for leg in legs {
             let side = leg.side().sign();
-            npv = (npv + self.pv_leg(leg, disc_curve, trial)? * side).into();
+            npv += self.pv_leg(leg, disc_curve, trial)? * side;
         }
         Ok(npv)
     }
 
     /// Computes the cross-currency swap residual, discounting each leg
     /// with its own currency's discount curve as determined by the policy.
-    fn residual_xccy(&self, xccy: &CrossCurrencySwap<ADReal>, trial: &BootstrappedCurve) -> Result<ADReal> {
+    fn residual_xccy(&self, xccy: &CrossCurrencySwap<f64>, trial: &SolvedCurve) -> Result<f64> {
         let dom_disc_idx = self
             .discount_policy
             .discount_index_for_currency(xccy.domestic_currency());
@@ -719,16 +760,12 @@ impl BootstrapProblem<'_> {
             QSError::NotFoundErr(format!("Missing foreign discount curve {for_disc_idx}"))
         })?;
 
-        let legs = xccy.legs();
-        let mut npv = ADReal::new(0.0);
-        // legs[0] = domestic, legs[1] = foreign
-        if legs.len() >= 2 {
-            let dom_side = legs[0].side().sign();
-            npv = (npv + self.pv_leg(&legs[0], dom_disc, trial)? * dom_side).into();
+        let mut npv = 0.0;
+        let dom_leg = xccy.domestic_leg();
+        npv += self.pv_leg(dom_leg, dom_disc, trial)? * dom_leg.side().sign();
 
-            let for_side = legs[1].side().sign();
-            npv = (npv + self.pv_leg(&legs[1], for_disc, trial)? * for_side).into();
-        }
+        let for_leg = xccy.foreign_leg();
+        npv += self.pv_leg(for_leg, for_disc, trial)? * for_leg.side().sign();
         Ok(npv)
     }
 
@@ -737,9 +774,9 @@ impl BootstrapProblem<'_> {
     fn residual_futures(
         &self,
         f: &RateFutures,
-        quote_value: &ADReal,
-        trial: &BootstrappedCurve,
-    ) -> Result<ADReal> {
+        quote_value: f64,
+        trial: &SolvedCurve,
+    ) -> Result<f64> {
         let proj_idx = f.market_index();
         let proj_curve = self
             .get_curve(&proj_idx, trial)
@@ -753,7 +790,7 @@ impl BootstrapProblem<'_> {
             rd.frequency(),
         )?;
 
-        Ok((implied - *quote_value).into())
+        Ok(implied - quote_value)
     }
 
     /// Computes the FX-forward residual normalised as
@@ -762,9 +799,9 @@ impl BootstrapProblem<'_> {
     fn residual_fx_forward(
         &self,
         fx: &FxForward,
-        quote_value: &ADReal,
-        trial: &BootstrappedCurve,
-    ) -> Result<ADReal> {
+        quote_value: f64,
+        trial: &SolvedCurve,
+    ) -> Result<f64> {
         let base_disc_idx = self
             .discount_policy
             .discount_index_for_currency(fx.base_currency());
@@ -786,7 +823,7 @@ impl BootstrapProblem<'_> {
         if fx.has_forward_points() {
             // Forward points: F = S + pts  →  F/S = 1 + pts/S = DF_base/DF_quote
             //   DF_base − DF_quote × (1 + pts/S) = 0
-            let pts = *quote_value;
+            let pts = quote_value;
             let s = self
                 .exchange_rate_store
                 .get_exchange_rate(fx.base_currency(), fx.quote_currency())
@@ -797,12 +834,9 @@ impl BootstrapProblem<'_> {
                         fx.quote_currency()
                     ))
                 })?;
-            Ok((df_base - df_quote * (ADReal::one() + pts / s)).into())
+            Ok(df_base - df_quote * (1.0 + pts / s.value()))
         } else {
-            // Outright: F/S = DF_base / DF_quote  →  DF_base - (F/S) × DF_quote = 0
-            // quote_value is the outright forward; spot at t₀ cancels.
-            let f = *quote_value;
-            Ok((df_base - f * df_quote).into())
+            Ok(df_base - quote_value * df_quote)
         }
     }
 
@@ -816,21 +850,21 @@ impl BootstrapProblem<'_> {
     /// curve (identified by `leg.market_index()` or the target curve).
     fn pv_leg(
         &self,
-        leg: &Leg<ADReal>,
-        discount_curve: &BootstrappedCurve,
-        trial: &BootstrappedCurve,
-    ) -> Result<ADReal> {
+        leg: &Leg<f64>,
+        discount_curve: &SolvedCurve,
+        trial: &SolvedCurve,
+    ) -> Result<f64> {
         let proj_index = leg.market_index().unwrap_or(&self.target_index);
         let proj_curve = self.get_curve(proj_index, trial).ok_or_else(|| {
             QSError::NotFoundErr(format!("Missing projection curve {proj_index}"))
         })?;
 
-        let mut pv = ADReal::new(0.0);
+        let mut pv = 0.0;
         for cf in leg.cashflows() {
             let (amount, pay_date) = self.cashflow_amount(cf, proj_curve)?;
             let df = discount_curve.discount_factor(pay_date)?;
 
-            pv = (pv + amount * df).into();
+            pv += amount * df;
         }
         Ok(pv)
     }
@@ -839,9 +873,9 @@ impl BootstrapProblem<'_> {
     #[allow(clippy::unused_self)]
     fn cashflow_amount(
         &self,
-        cf: &CashflowType<ADReal>,
-        proj_curve: &BootstrappedCurve,
-    ) -> Result<(ADReal, Date)> {
+        cf: &CashflowType<f64>,
+        proj_curve: &SolvedCurve,
+    ) -> Result<(f64, Date)> {
         match cf {
             CashflowType::FixedRateCoupon(c) => {
                 let amt = c.amount()?;
@@ -858,16 +892,8 @@ impl BootstrapProblem<'_> {
                 let amt = c.amount()?;
                 Ok((amt, c.payment_date()))
             }
-            CashflowType::Redemption(c) => {
-                let amt = ADReal::new(c.amount()?);
-                Ok((amt, c.payment_date()))
-            }
-            CashflowType::Disbursement(c) => {
-                // Disbursements are outflows — negate so that NPV = Σ(signed_cf × DF) = 0
-                // holds for deposits (where disbursement and redemption don't cancel).
-                let amt = ADReal::new(-c.amount()?);
-                Ok((amt, c.payment_date()))
-            }
+            CashflowType::Redemption(c) => Ok((c.amount()?, c.payment_date())),
+            CashflowType::Disbursement(c) => Ok((-c.amount()?, c.payment_date())),
             CashflowType::OptionEmbeddedCoupon(_) => Err(QSError::InvalidValueErr(
                 "Option-embedded coupons are not supported in bootstrapping".into(),
             )),
@@ -879,20 +905,41 @@ impl BootstrapProblem<'_> {
 // Solver trait implementations
 // ---------------------------------------------------------------------------
 
-impl ContFunc<[ADReal], Vec<ADReal>> for BootstrapProblem<'_> {
-    fn call(&self, x: &[ADReal]) -> Result<Vec<ADReal>> {
+impl ContFunc<[f64], Vec<f64>> for BootstrapProblem<'_> {
+    fn call(&self, x: &[f64]) -> Result<Vec<f64>> {
         let trial = self.trial_curve(x);
-
-        let mut residuals = Vec::with_capacity(self.instruments.len());
-        for instr in self.instruments {
-            residuals.push(self.compute_residual(instr, &trial)?);
-        }
-        Ok(residuals)
+        self.residuals(&trial)
     }
 }
 
-impl VectorFunc<ADReal, ADReal> for BootstrapProblem<'_> {}
-impl ADJacobian for BootstrapProblem<'_> {}
+impl JacobianFunc<f64, f64, f64> for BootstrapProblem<'_> {
+    fn jacobian(&self, x: &[f64]) -> Result<Vec<Vec<f64>>> {
+        let n = x.len();
+        let mut jacobian = vec![vec![0.0; n]; n];
+
+        for col in 0..n {
+            let base_bump = (x[col].abs().max(1.0) * 1e-6).max(1e-8);
+            let bump = base_bump.min((x[col] * 0.25).max(1e-8));
+
+            let mut up = x.to_vec();
+            let mut dn = x.to_vec();
+            up[col] += bump;
+            dn[col] = (dn[col] - bump).max(1e-8);
+
+            let up_res = self.call(&up)?;
+            let dn_res = self.call(&dn)?;
+            let denom = up[col] - dn[col];
+
+            for row in 0..n {
+                jacobian[row][col] = (up_res[row] - dn_res[row]) / denom;
+            }
+        }
+
+        Ok(jacobian)
+    }
+}
+
+impl VectorFunc<f64, f64> for BootstrapProblem<'_> {}
 
 // ===========================================================================
 // Tests
