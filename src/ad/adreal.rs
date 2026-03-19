@@ -9,14 +9,14 @@ use std::cmp::Ordering;
 use std::ptr::NonNull;
 
 /// Represents a number that can be used in differentiable functions.
-/// 
+///
 /// ## Example
 /// ```
 /// use quantsupport::ad::adreal::ADReal;
 /// use quantsupport::ad::adreal::FloatExt;
 /// use quantsupport::ad::adreal::IsReal;
 /// use quantsupport::ad::tape::Tape;
-/// 
+///
 /// Tape::start_recording();
 /// let x = ADReal::new(0.0);
 /// let expr = x.cos();
@@ -91,8 +91,8 @@ impl IsReal for ADReal {
 }
 
 /// A differentiable expression that can record its contribution to the tape.
-/// 
-/// This trait is implemented by `ADReal` and can be used to define complex expressions 
+///
+/// This trait is implemented by `ADReal` and can be used to define complex expressions
 /// that automatically record their derivatives, allowing for more efficient memory usage.
 pub trait Expr: Clone {
     /// Returns the scalar value of the expression.
