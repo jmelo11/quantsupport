@@ -19,7 +19,7 @@
 // ///
 // /// # Example
 // /// ```
-// /// use rustatlas::prelude::*;
+// /// use quantsupport::prelude::*;
 // /// use std::sync::Arc;
 // /// let ref_date = Date::new(2021, 1, 1);
 // ///

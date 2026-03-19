@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use std::fmt::Display;
 use std::ops::{Add, AddAssign, Sub, SubAssign};
 
-/// Extends the [`NaiveDate`] struct from the chrono rustatlas.
+/// Extends the [`NaiveDate`] struct from the chrono library.
 /// # Examples
 /// ```
 /// use quantsupport::time::date::*;
@@ -169,7 +169,7 @@ impl Sub<Period> for NaiveDate {
     }
 }
 
-/// Wrapper around the [`NaiveDate`] struct from the chrono rustatlas.
+/// Wrapper around the [`NaiveDate`] struct from the chrono library.
 /// # Examples
 /// ```
 /// use quantsupport::time::date::Date;

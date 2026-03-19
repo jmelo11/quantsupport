@@ -188,14 +188,20 @@ where
             }
         }
 
-        // FX sensitivities from the exchange-rate store
-        if let Some(fx_store) = state.get_exchange_rate_store() {
-            for (label, value) in fx_store
-                .pillars()
-                .ok_or_else(|| QSError::ValueNotSetErr("Pillars".into()))?
-            {
-                all_ids.push(label);
-                all_exposures.push(value.adjoint().unwrap_or(0.0));
+        // FX sensitivities — only include when cross-currency discounting was
+        // actually used (i.e. at least one Collateral index was resolved).
+        let has_cross_currency = seen_indices
+            .iter()
+            .any(|idx| matches!(idx, MarketIndex::Collateral(_, _)));
+        if has_cross_currency {
+            if let Some(fx_store) = state.get_exchange_rate_store() {
+                for (label, value) in fx_store
+                    .pillars()
+                    .ok_or_else(|| QSError::ValueNotSetErr("Pillars".into()))?
+                {
+                    all_ids.push(label);
+                    all_exposures.push(value.adjoint().unwrap_or(0.0));
+                }
             }
         }
 

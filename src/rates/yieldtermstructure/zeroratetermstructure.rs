@@ -22,7 +22,7 @@
 // ///
 // /// # Example
 // /// ```
-// /// use rustatlas::prelude::*;
+// /// use quantsupport::prelude::*;
 // /// let ref_date = Date::new(2021, 1, 1);
 // /// let dates = vec![
 // ///    Date::new(2021, 1, 1),
