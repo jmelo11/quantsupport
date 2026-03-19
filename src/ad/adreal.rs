@@ -178,12 +178,13 @@ impl ADReal {
         })
     }
 
-    /// Attaches this value to the current tape if it is not already recorded.
+    /// Attaches this value to the current tape, creating a fresh leaf node.
+    ///
+    /// Any previously recorded node is replaced unconditionally so that
+    /// shared data (e.g. curves behind `Rc<RefCell<>>`) is always
+    /// registered on the **current** tape session rather than retaining
+    /// stale pointers from a prior session whose arena has been reset.
     pub fn put_on_tape(&mut self) {
-        if self.node.is_some() {
-            return; // already on a tape
-        }
-
         TAPE.with_borrow_mut(|tape| {
             let node = tape.new_leaf();
             self.node = node;

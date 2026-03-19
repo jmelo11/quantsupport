@@ -7,6 +7,7 @@ use crate::{
 };
 
 /// An enumeration representing different types of cash flows that can occur in financial instruments.
+#[derive(Clone)]
 pub enum CashflowType<T: IsReal> {
     /// A fixed rate coupon, where the cash flow is determined by a fixed interest rate applied to the notional amount.
     FixedRateCoupon(FixedRateCoupon<T>),

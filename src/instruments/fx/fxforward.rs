@@ -1,5 +1,6 @@
 use crate::{
     core::{
+        collateral::Discountable,
         instrument::{AssetClass, Instrument},
         trade::{Side, Trade},
     },
@@ -26,7 +27,7 @@ pub enum FxForwardSettlement {
 ///
 /// The contract can be quoted either as an outright forward price or as forward points,
 /// and can settle physically or as a non-deliverable forward (NDF).
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct FxForward {
     identifier: String,
     delivery_date: Date,
@@ -164,6 +165,12 @@ impl FxForward {
 impl Instrument for FxForward {
     fn identifier(&self) -> String {
         self.identifier.clone()
+    }
+}
+
+impl Discountable for FxForward {
+    fn currency(&self) -> Currency {
+        self.quote_currency
     }
 
     fn asset_class(&self) -> AssetClass {

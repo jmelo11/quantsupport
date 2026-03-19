@@ -1,7 +1,7 @@
 use crate::{
     ad::adreal::{ADReal, IsReal},
     core::{
-        instrument::{AssetClass, Instrument},
+        instrument::Instrument,
         request::LegsProvider,
         trade::{Side, Trade},
     },
@@ -16,13 +16,14 @@ use crate::{
 /// Both legs pay floating rates (each referencing an index in its own currency) plus
 /// optional spreads. Notional exchanges typically occur at inception and maturity at
 /// the initial FX spot rate.
+#[derive(Clone)]
 pub struct FloatFloatCrossCurrencySwap<T: IsReal> {
     identifier: String,
     legs: Vec<Leg<T>>,
     domestic_currency: Currency,
     foreign_currency: Currency,
-    domestic_market_index: MarketIndex,
-    foreign_market_index: MarketIndex,
+    domestic_forward_index: MarketIndex,
+    foreign_forward_index: MarketIndex,
 }
 
 impl<T> FloatFloatCrossCurrencySwap<T>
@@ -40,16 +41,16 @@ where
         foreign_leg: Leg<T>,
         domestic_currency: Currency,
         foreign_currency: Currency,
-        domestic_market_index: MarketIndex,
-        foreign_market_index: MarketIndex,
+        domestic_forward_index: MarketIndex,
+        foreign_forward_index: MarketIndex,
     ) -> Self {
         Self {
             identifier,
             legs: vec![domestic_leg, foreign_leg],
             domestic_currency,
             foreign_currency,
-            domestic_market_index,
-            foreign_market_index,
+            domestic_forward_index,
+            foreign_forward_index,
         }
     }
 
@@ -79,14 +80,14 @@ where
 
     /// Returns the domestic market index.
     #[must_use]
-    pub fn domestic_market_index(&self) -> MarketIndex {
-        self.domestic_market_index.clone()
+    pub fn domestic_forward_index(&self) -> MarketIndex {
+        self.domestic_forward_index.clone()
     }
 
     /// Returns the foreign market index.
     #[must_use]
-    pub fn foreign_market_index(&self) -> MarketIndex {
-        self.foreign_market_index.clone()
+    pub fn foreign_forward_index(&self) -> MarketIndex {
+        self.foreign_forward_index.clone()
     }
 }
 
@@ -97,14 +98,13 @@ where
     fn identifier(&self) -> String {
         self.identifier.clone()
     }
-
-    fn asset_class(&self) -> AssetClass {
-        AssetClass::Fx
-    }
 }
 
-impl LegsProvider for FloatFloatCrossCurrencySwap<ADReal> {
-    fn legs(&self) -> &[Leg<ADReal>] {
+impl<T> LegsProvider<T> for FloatFloatCrossCurrencySwap<T>
+where
+    T: IsReal,
+{
+    fn legs(&self) -> &[Leg<T>] {
         &self.legs
     }
 }
@@ -153,6 +153,15 @@ where
     }
 }
 
+impl<T> LegsProvider<T> for FloatFloatCrossCurrencySwapTrade<T>
+where
+    T: IsReal,
+{
+    fn legs(&self) -> &[Leg<T>] {
+        self.instrument.legs()
+    }
+}
+
 impl<T> Trade<FloatFloatCrossCurrencySwap<T>> for FloatFloatCrossCurrencySwapTrade<T>
 where
     T: IsReal,
@@ -170,12 +179,6 @@ where
     }
 }
 
-impl LegsProvider for FloatFloatCrossCurrencySwapTrade<ADReal> {
-    fn legs(&self) -> &[Leg<ADReal>] {
-        self.instrument.legs()
-    }
-}
-
 impl From<FloatFloatCrossCurrencySwap<f64>> for FloatFloatCrossCurrencySwap<ADReal> {
     fn from(value: FloatFloatCrossCurrencySwap<f64>) -> Self {
         let mut legs = value.legs.into_iter();
@@ -185,8 +188,8 @@ impl From<FloatFloatCrossCurrencySwap<f64>> for FloatFloatCrossCurrencySwap<ADRe
             legs.next().expect("foreign leg must exist").into(),
             value.domestic_currency,
             value.foreign_currency,
-            value.domestic_market_index,
-            value.foreign_market_index,
+            value.domestic_forward_index,
+            value.foreign_forward_index,
         )
     }
 }
@@ -200,8 +203,8 @@ impl From<FloatFloatCrossCurrencySwap<ADReal>> for FloatFloatCrossCurrencySwap<f
             legs.next().expect("foreign leg must exist").into(),
             value.domestic_currency,
             value.foreign_currency,
-            value.domestic_market_index,
-            value.foreign_market_index,
+            value.domestic_forward_index,
+            value.foreign_forward_index,
         )
     }
 }

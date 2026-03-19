@@ -1,6 +1,6 @@
 use crate::{
     ad::adreal::{ADReal, IsReal},
-    core::{collateral::HasCurrency, trade::Side},
+    core::{collateral::Discountable, instrument::AssetClass, trade::Side},
     currencies::currency::Currency,
     indices::marketindex::MarketIndex,
     instruments::cashflows::cashflowtype::CashflowType,
@@ -9,6 +9,7 @@ use crate::{
 };
 
 /// A [`Leg`] represents a sequence of cashflows associated to a particular instrument.
+#[derive(Clone)]
 pub struct Leg<T: IsReal> {
     /// identifier for the leg, used for referencing in pricers and other components
     id: usize,
@@ -16,8 +17,10 @@ pub struct Leg<T: IsReal> {
     cashflows: Vec<CashflowType<T>>,
     /// currency of the cashflows
     currency: Currency,
+    /// discount index, if required
+    discount_index: Option<MarketIndex>,
     /// forward rate index, if required
-    market_index: Option<MarketIndex>,
+    forward_index: Option<MarketIndex>,
     /// spread of the floating leg, if any
     spread: Option<T>,
     /// rate associated with fixed-rate cashflows, if any
@@ -26,6 +29,8 @@ pub struct Leg<T: IsReal> {
     side: Side,
     /// whether the leg has a linear payoff structure (e.g., fixed payments) or non-linear (e.g., options)
     is_linear: bool,
+    /// type of the underlying asset (e.g., interest rate, equity, commodity)
+    asset_class: AssetClass,
     /// optional first and last payment dates for the leg, used for optimization and curve bootstrapping
     first_payment_date: Date,
     /// optional last payment date for the leg, used for optimization and curve bootstrapping
@@ -43,11 +48,13 @@ where
         id: usize,
         cashflows: Vec<CashflowType<T>>,
         currency: Currency,
-        market_index: Option<MarketIndex>,
+        discount_index: Option<MarketIndex>,
+        forward_index: Option<MarketIndex>,
         spread: Option<T>,
         interest_rate: Option<InterestRate<T>>,
         side: Side,
         is_linear: bool,
+        asset_class: AssetClass,
         first_payment_date: Date,
         last_payment_date: Date,
     ) -> Self {
@@ -55,11 +62,13 @@ where
             id,
             cashflows,
             currency,
-            market_index,
+            discount_index,
+            forward_index,
             spread,
             interest_rate,
             side,
             is_linear,
+            asset_class,
             first_payment_date,
             last_payment_date,
         }
@@ -79,8 +88,8 @@ where
 
     /// Returns the market index associated with the leg, if any.
     #[must_use]
-    pub const fn market_index(&self) -> Option<&MarketIndex> {
-        self.market_index.as_ref()
+    pub const fn forward_index(&self) -> Option<&MarketIndex> {
+        self.forward_index.as_ref()
     }
 
     /// Returns the spread associated with the leg, if any.
@@ -107,6 +116,12 @@ where
         self.is_linear
     }
 
+    /// Returns the asset class of the leg (e.g., interest rate, equity, commodity).
+    #[must_use]
+    pub const fn asset_class(&self) -> AssetClass {
+        self.asset_class
+    }
+
     /// Returns the first payment date of the leg.
     #[must_use]
     pub const fn first_payment_date(&self) -> Date {
@@ -120,12 +135,20 @@ where
     }
 }
 
-impl<T> HasCurrency for Leg<T>
+impl<T> Discountable for Leg<T>
 where
     T: IsReal,
 {
     fn currency(&self) -> Currency {
         self.currency
+    }
+
+    fn asset_class(&self) -> AssetClass {
+        self.asset_class
+    }
+
+    fn discount_index(&self) -> Option<MarketIndex> {
+        self.discount_index.clone()
     }
 }
 
@@ -135,11 +158,13 @@ impl From<Leg<f64>> for Leg<ADReal> {
             value.id,
             value.cashflows.into_iter().map(Into::into).collect(),
             value.currency,
-            value.market_index,
+            value.discount_index,
+            value.forward_index,
             value.spread.map(ADReal::new),
             value.interest_rate.map(Into::into),
             value.side,
             value.is_linear,
+            value.asset_class,
             value.first_payment_date,
             value.last_payment_date,
         )
@@ -152,11 +177,13 @@ impl From<Leg<ADReal>> for Leg<f64> {
             value.id,
             value.cashflows.into_iter().map(Into::into).collect(),
             value.currency,
-            value.market_index,
+            value.discount_index,
+            value.forward_index,
             value.spread.map(|spread| spread.value()),
             value.interest_rate.map(Into::into),
             value.side,
             value.is_linear,
+            value.asset_class,
             value.first_payment_date,
             value.last_payment_date,
         )

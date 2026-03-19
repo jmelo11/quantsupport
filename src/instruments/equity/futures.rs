@@ -1,6 +1,6 @@
 use crate::{
     core::{
-        instrument::{AssetClass, Instrument},
+        instrument::Instrument,
         trade::{Side, Trade},
     },
     currencies::currency::Currency,
@@ -87,10 +87,6 @@ impl Futures {
 impl Instrument for Futures {
     fn identifier(&self) -> String {
         self.identifier.clone()
-    }
-
-    fn asset_class(&self) -> AssetClass {
-        AssetClass::Equity
     }
 }
 

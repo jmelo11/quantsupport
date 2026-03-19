@@ -54,11 +54,7 @@ fn create_pricing_context() -> ContextManager {
     let mut constructed_elements = ConstructedElementStore::default();
     constructed_elements.discount_curves_mut().insert(
         MarketIndex::SOFR,
-        DiscountCurveElement::new(
-            MarketIndex::SOFR,
-            Currency::USD,
-            Rc::new(RefCell::new(discount_curve)),
-        ),
+        DiscountCurveElement::new(MarketIndex::SOFR, Rc::new(RefCell::new(discount_curve))),
     );
 
     // -- Quote / Fixing stores (empty for this example) --

@@ -1,0 +1,185 @@
+{
+    "reference_date": "2025-11-11",
+    "quotes": [
+        {
+            "identifier": "FixedRateDeposit_USD_SOFR_1D",
+            "mid": 0.04330
+        },
+        {
+            "identifier": "OIS_USD_SOFR_3M",
+            "mid": 0.04335
+        },
+        {
+            "identifier": "OIS_USD_SOFR_6M",
+            "mid": 0.04250
+        },
+        {
+            "identifier": "OIS_USD_SOFR_1Y",
+            "mid": 0.04100
+        },
+        {
+            "identifier": "OIS_USD_SOFR_2Y",
+            "mid": 0.03920
+        },
+        {
+            "identifier": "OIS_USD_SOFR_3Y",
+            "mid": 0.03840
+        },
+        {
+            "identifier": "OIS_USD_SOFR_4Y",
+            "mid": 0.03800
+        },
+        {
+            "identifier": "OIS_USD_SOFR_5Y",
+            "mid": 0.03780
+        },
+        {
+            "identifier": "OIS_USD_SOFR_7Y",
+            "mid": 0.03770
+        },
+        {
+            "identifier": "OIS_USD_SOFR_10Y",
+            "mid": 0.03790
+        },
+        {
+            "identifier": "OIS_USD_SOFR_15Y",
+            "mid": 0.03850
+        },
+        {
+            "identifier": "OIS_USD_SOFR_20Y",
+            "mid": 0.03880
+        },
+        {
+            "identifier": "OIS_USD_SOFR_30Y",
+            "mid": 0.03750
+        },
+        {
+            "identifier": "FixedRateDeposit_USD_TermSOFR3m_3M",
+            "mid": 0.04365
+        },
+        {
+            "identifier": "BasisSwap_USD_SOFR_TermSOFR3m_6M",
+            "mid": 0.000127237986
+        },
+        {
+            "identifier": "BasisSwap_USD_SOFR_TermSOFR3m_1Y",
+            "mid": 0.000160745572
+        },
+        {
+            "identifier": "BasisSwap_USD_SOFR_TermSOFR3m_2Y",
+            "mid": 0.000196298404
+        },
+        {
+            "identifier": "BasisSwap_USD_SOFR_TermSOFR3m_3Y",
+            "mid": 0.000224136825
+        },
+        {
+            "identifier": "BasisSwap_USD_SOFR_TermSOFR3m_4Y",
+            "mid": 0.000243421966
+        },
+        {
+            "identifier": "BasisSwap_USD_SOFR_TermSOFR3m_5Y",
+            "mid": 0.000262792898
+        },
+        {
+            "identifier": "BasisSwap_USD_SOFR_TermSOFR3m_7Y",
+            "mid": 0.000298893256
+        },
+        {
+            "identifier": "BasisSwap_USD_SOFR_TermSOFR3m_10Y",
+            "mid": 0.000335114864
+        },
+        {
+            "identifier": "BasisSwap_USD_SOFR_TermSOFR3m_15Y",
+            "mid": 0.000378100224
+        },
+        {
+            "identifier": "BasisSwap_USD_SOFR_TermSOFR3m_20Y",
+            "mid": 0.000415419903
+        },
+        {
+            "identifier": "BasisSwap_USD_SOFR_TermSOFR3m_30Y",
+            "mid": 0.000465137190
+        },
+        {
+            "identifier": "FixedRateDeposit_CLP_ICP_1D",
+            "mid": 0.0500
+        },
+        {
+            "identifier": "FixedRateDeposit_CLP_ICP_3M",
+            "mid": 0.0498
+        },
+        {
+            "identifier": "OIS_CLP_ICP_6M",
+            "mid": 0.0495
+        },
+        {
+            "identifier": "OIS_CLP_ICP_1Y",
+            "mid": 0.0485
+        },
+        {
+            "identifier": "OIS_CLP_ICP_2Y",
+            "mid": 0.0470
+        },
+        {
+            "identifier": "OIS_CLP_ICP_3Y",
+            "mid": 0.0455
+        },
+        {
+            "identifier": "OIS_CLP_ICP_5Y",
+            "mid": 0.0440
+        },
+        {
+            "identifier": "OIS_CLP_ICP_7Y",
+            "mid": 0.0430
+        },
+        {
+            "identifier": "OIS_CLP_ICP_10Y",
+            "mid": 0.0425
+        },
+        {
+            "identifier": "OIS_CLP_ICP_20Y",
+            "mid": 0.0420
+        },
+        {
+            "identifier": "FxForwardPoints_USDCLP_1M",
+            "mid": 1.50
+        },
+        {
+            "identifier": "FxForwardPoints_USDCLP_3M",
+            "mid": 5.30
+        },
+        {
+            "identifier": "FxForwardPoints_USDCLP_6M",
+            "mid": 12.80
+        },
+        {
+            "identifier": "CrossCurrencySwap_CLP_ICP_SOFR_USD_1Y",
+            "mid": 0.0510
+        },
+        {
+            "identifier": "CrossCurrencySwap_CLP_ICP_SOFR_USD_2Y",
+            "mid": 0.0485
+        },
+        {
+            "identifier": "CrossCurrencySwap_CLP_ICP_SOFR_USD_3Y",
+            "mid": 0.0465
+        },
+        {
+            "identifier": "CrossCurrencySwap_CLP_ICP_SOFR_USD_5Y",
+            "mid": 0.0455
+        },
+        {
+            "identifier": "CrossCurrencySwap_CLP_ICP_SOFR_USD_7Y",
+            "mid": 0.0450
+        },
+        {
+            "identifier": "CrossCurrencySwap_CLP_ICP_SOFR_USD_10Y",
+            "mid": 0.0440
+        },
+        {
+            "identifier": "CrossCurrencySwap_CLP_ICP_SOFR_USD_20Y",
+            "mid": 0.0430
+        }
+    ]
+}

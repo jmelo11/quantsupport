@@ -1,4 +1,5 @@
 /// [`AssetClass`] represents the different asset classes that an instrument can be part of.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum AssetClass {
     /// Fixed income products (bonds, deposits and other cash-associated products).
     FixedIncome,
@@ -18,13 +19,7 @@ pub enum AssetClass {
 ///
 /// Financial products have more characteristics (i.e. start date, initial spread, strike, etc.) that
 /// structs that implement [`Instrument`] could provide.
-pub trait Instrument: Send + Sync + Sized {
+pub trait Instrument: Send + Sync {
     /// Market-associated name of the instrument. For example, it could be the name of the stock, CUSIP of a bond, among others.
     fn identifier(&self) -> String;
-
-    /// Resolves the instrument by filling in any missing required fields. This may involve fetching data from external sources or performing calculations.
-    ///
-    /// ## Errors
-    /// Returns an error if the instrument cannot be resolved due to missing data or other issues.
-    fn asset_class(&self) -> AssetClass;
 }

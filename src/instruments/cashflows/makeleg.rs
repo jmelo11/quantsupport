@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use crate::ad::adreal::ADReal;
 use crate::{
     ad::adreal::IsReal,
-    core::trade::Side,
+    core::{instrument::AssetClass, trade::Side},
     currencies::currency::Currency,
     indices::marketindex::MarketIndex,
     instruments::cashflows::{
@@ -73,7 +73,7 @@ pub enum PaymentStructure {
 ///     .with_side(Side::PayShort)
 ///     .with_currency(Currency::USD)
 ///     .with_payment_frequency(Frequency::Semiannual)
-///     .with_market_index(MarketIndex::SOFR)
+///     .with_forward_index(MarketIndex::SOFR)
 ///     .bullet()
 ///     .build()
 ///     .expect("failed to build leg");
@@ -98,16 +98,19 @@ pub struct MakeLeg<T: IsReal> {
     calendar: Option<Calendar>,
     business_day_convention: Option<BusinessDayConvention>,
     date_generation_rule: Option<DateGenerationRule>,
-
+    discount_index: Option<MarketIndex>,
     rate_type: Option<RateType>,
 
     // floating rate specific fields
     spread: Option<f64>,
-    market_index: Option<MarketIndex>,
+    forward_index: Option<MarketIndex>,
 
     // fixed rate specific fields
     rate: Option<InterestRate<T>>,
     disbursements: Option<HashMap<Date, f64>>,
+
+    // asset class
+    asset_class: AssetClass,
 
     // option-embedded structures
     floorlet_strike: Option<f64>,
@@ -138,9 +141,11 @@ where
             date_generation_rule: None,
             rate_type: None,
             spread: None,
-            market_index: None,
+            discount_index: None,
+            forward_index: None,
             rate: None,
             disbursements: None,
+            asset_class: AssetClass::InterestRate,
             floorlet_strike: None,
             caplet_strike: None,
         }
@@ -152,6 +157,13 @@ impl<T> MakeLeg<T>
 where
     T: IsReal,
 {
+    /// Sets the asset class for the leg.
+    #[must_use]
+    pub const fn with_asset_class(mut self, asset_class: AssetClass) -> Self {
+        self.asset_class = asset_class;
+        self
+    }
+
     /// Sets the end of month flag.
     #[must_use]
     pub const fn with_end_of_month(mut self, end_of_month: Option<bool>) -> Self {
@@ -291,10 +303,17 @@ where
         self
     }
 
-    /// Sets the market index for floating rate or option-embedded legs.
+    /// Sets the discounting index for cashflows.
     #[must_use]
-    pub fn with_market_index(mut self, market_index: MarketIndex) -> Self {
-        self.market_index = Some(market_index);
+    pub fn with_discount_index(mut self, market_index: Option<MarketIndex>) -> Self {
+        self.discount_index = market_index;
+        self
+    }
+
+    /// Sets the forward index for floating rate or option-embedded legs.
+    #[must_use]
+    pub fn with_forward_index(mut self, market_index: MarketIndex) -> Self {
+        self.forward_index = Some(market_index);
         self
     }
 
@@ -491,19 +510,18 @@ where
                             &notionals,
                             rate,
                         )?;
-                        let market_index = self
-                            .market_index
-                            .ok_or_else(|| QSError::ValueNotSetErr("Market index".into()))?;
 
                         let leg = Leg::new(
                             leg_id,
                             cashflows,
                             currency,
-                            Some(market_index),
+                            self.discount_index,
+                            None,
                             None,
                             self.rate,
                             side,
                             true,
+                            self.asset_class,
                             schedule.dates()[1],
                             last_date[0],
                         );
@@ -516,27 +534,29 @@ where
                             .spread
                             .ok_or_else(|| QSError::ValueNotSetErr("Spread".into()))?;
 
-                        let market_index = self
-                            .market_index
-                            .ok_or_else(|| QSError::ValueNotSetErr("Market index".into()))?;
+                        let forward_index = self.forward_index.ok_or_else(|| {
+                            QSError::ValueNotSetErr("Forward Market Index".into())
+                        })?;
 
                         build_floating_rate_coupons_from_notionals(
                             &mut cashflows,
                             schedule.dates(),
                             &notionals,
                             T::new(spread),
-                            &market_index,
+                            &forward_index,
                         )?;
 
                         let leg = Leg::new(
                             leg_id,
                             cashflows,
                             currency,
-                            Some(market_index),
+                            self.discount_index,
+                            Some(forward_index),
                             Some(T::new(spread)),
                             None,
                             side,
                             true,
+                            self.asset_class,
                             schedule.dates()[1],
                             last_date[0],
                         );
@@ -547,17 +567,16 @@ where
                             .spread
                             .ok_or_else(|| QSError::ValueNotSetErr("Spread".into()))?;
 
-                        let market_index = self
-                            .market_index
-                            .clone()
-                            .ok_or_else(|| QSError::ValueNotSetErr("Market index".into()))?;
+                        let forward_index = self.forward_index.ok_or_else(|| {
+                            QSError::ValueNotSetErr("Forward Market Index".into())
+                        })?;
 
                         build_embedded_option_coupons_from_notionals(
                             &mut cashflows,
                             schedule.dates(),
                             &notionals,
                             T::new(spread),
-                            &market_index,
+                            &forward_index,
                             self.floorlet_strike,
                             self.caplet_strike,
                         )?;
@@ -566,11 +585,13 @@ where
                             leg_id,
                             cashflows,
                             currency,
-                            Some(market_index),
+                            self.discount_index,
+                            Some(forward_index),
                             Some(T::new(spread)),
                             None,
                             side,
                             true,
+                            self.asset_class,
                             schedule.dates()[1],
                             last_date[0],
                         );
@@ -627,11 +648,13 @@ where
                     leg_id,
                     cashflows,
                     currency,
-                    self.market_index,
+                    self.discount_index,
+                    None,
                     None,
                     None,
                     side,
                     true,
+                    self.asset_class,
                     first_pay,
                     last_pay,
                 );
@@ -725,19 +748,17 @@ where
                             schedule.dates().iter().skip(1).copied().collect();
                         add_cashflows_to_vec(&mut cashflows, &redemption_dates, &redemptions, 0);
 
-                        let market_index = self
-                            .market_index
-                            .ok_or_else(|| QSError::ValueNotSetErr("Market index".into()))?;
-
                         let leg = Leg::new(
                             leg_id,
                             cashflows,
                             currency,
-                            Some(market_index),
+                            self.discount_index,
+                            None,
                             None,
                             self.rate,
                             side,
                             true,
+                            self.asset_class,
                             schedule.dates()[1],
                             *schedule
                                 .dates()
@@ -804,11 +825,13 @@ where
                     leg_id,
                     cashflows,
                     currency,
-                    self.market_index,
+                    self.discount_index,
+                    None,
                     None,
                     None,
                     side,
                     true,
+                    self.asset_class,
                     first_date[0],
                     last_date[0],
                 );
@@ -892,19 +915,17 @@ where
                             schedule.dates().iter().skip(1).copied().collect();
                         add_cashflows_to_vec(&mut cashflows, &redemption_dates, &redemptions, 0);
 
-                        let market_index = self
-                            .market_index
-                            .ok_or_else(|| QSError::ValueNotSetErr("Market index".into()))?;
-
                         let leg = Leg::new(
                             leg_id,
                             cashflows,
                             currency,
-                            Some(market_index),
+                            self.discount_index,
+                            None,
                             None,
                             self.rate,
                             side,
                             true,
+                            self.asset_class,
                             schedule.dates()[1],
                             *schedule
                                 .dates()
@@ -919,16 +940,16 @@ where
                             .spread
                             .ok_or_else(|| QSError::ValueNotSetErr("Spread".into()))?;
 
-                        let market_index = self
-                            .market_index
-                            .ok_or_else(|| QSError::ValueNotSetErr("Market index".into()))?;
+                        let forward_index = self.forward_index.ok_or_else(|| {
+                            QSError::ValueNotSetErr("Forward Market Index".into())
+                        })?;
 
                         build_floating_rate_coupons_from_notionals(
                             &mut cashflows,
                             schedule.dates(),
                             &notionals,
                             T::new(spread),
-                            &market_index,
+                            &forward_index,
                         )?;
 
                         let redemption_dates: Vec<Date> =
@@ -939,11 +960,13 @@ where
                             leg_id,
                             cashflows,
                             currency,
-                            Some(market_index),
+                            self.discount_index,
+                            Some(forward_index),
                             Some(T::new(spread)),
                             None,
                             side,
                             true,
+                            self.asset_class,
                             schedule.dates()[1],
                             *schedule
                                 .dates()
@@ -957,18 +980,16 @@ where
                             .spread
                             .ok_or_else(|| QSError::ValueNotSetErr("Spread".into()))?;
 
-                        let market_index = self
-                            .market_index
-                            .as_ref()
-                            .ok_or_else(|| QSError::ValueNotSetErr("Market index".into()))?
-                            .clone();
+                        let forward_index = self.forward_index.ok_or_else(|| {
+                            QSError::ValueNotSetErr("Forward Market Index".into())
+                        })?;
 
                         build_embedded_option_coupons_from_notionals(
                             &mut cashflows,
                             schedule.dates(),
                             &notionals,
                             T::new(spread),
-                            &market_index,
+                            &forward_index,
                             self.floorlet_strike,
                             self.caplet_strike,
                         )?;
@@ -981,11 +1002,13 @@ where
                             leg_id,
                             cashflows,
                             currency,
-                            Some(market_index),
+                            self.discount_index,
+                            Some(forward_index),
                             Some(T::new(spread)),
                             None,
                             side,
                             true,
+                            self.asset_class,
                             schedule.dates()[1],
                             *schedule
                                 .dates()
@@ -1263,7 +1286,7 @@ mod tests {
             .with_side(Side::PayShort)
             .with_currency(Currency::USD)
             .with_payment_frequency(Frequency::Annual)
-            .with_market_index(MarketIndex::SOFR)
+            .with_forward_index(MarketIndex::SOFR)
     }
 
     #[test]

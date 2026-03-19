@@ -3,7 +3,6 @@ use std::cell::{Ref, RefMut};
 use crate::{
     ad::adreal::ADReal,
     core::{marketdatahandling::constructedelementstore::SharedElement, pillars::Pillars},
-    currencies::currency::Currency,
     indices::marketindex::MarketIndex,
     rates::yieldtermstructure::interestratestermstructure::InterestRatesTermStructure,
 };
@@ -21,21 +20,15 @@ pub trait ADCurveElement:
 #[derive(Clone)]
 pub struct DiscountCurveElement {
     market_index: MarketIndex,
-    currency: Currency,
     curve: SharedElement<dyn ADCurveElement>,
 }
 
 impl DiscountCurveElement {
     /// Creates a new [`DiscountCurveElement`] with the specified market index, currency, and curve.
     #[must_use]
-    pub const fn new(
-        market_index: MarketIndex,
-        currency: Currency,
-        curve: SharedElement<dyn ADCurveElement>,
-    ) -> Self {
+    pub const fn new(market_index: MarketIndex, curve: SharedElement<dyn ADCurveElement>) -> Self {
         Self {
             market_index,
-            currency,
             curve,
         }
     }
@@ -44,12 +37,6 @@ impl DiscountCurveElement {
     #[must_use]
     pub const fn market_index(&self) -> &MarketIndex {
         &self.market_index
-    }
-
-    /// Returns the currency associated with the discount curve element.
-    #[must_use]
-    pub const fn currency(&self) -> Currency {
-        self.currency
     }
 
     /// Returns a reference to the curve associated with the discount curve element.
@@ -70,21 +57,15 @@ impl DiscountCurveElement {
 #[derive(Clone)]
 pub struct DividendCurveElement {
     market_index: MarketIndex,
-    currency: Currency,
     curve: SharedElement<dyn ADCurveElement>,
 }
 
 impl DividendCurveElement {
     /// Creates a new [`DividendCurveElement`] with the specified market index, currency, and curve.
     #[must_use]
-    pub const fn new(
-        market_index: MarketIndex,
-        currency: Currency,
-        curve: SharedElement<dyn ADCurveElement>,
-    ) -> Self {
+    pub const fn new(market_index: MarketIndex, curve: SharedElement<dyn ADCurveElement>) -> Self {
         Self {
             market_index,
-            currency,
             curve,
         }
     }
@@ -93,12 +74,6 @@ impl DividendCurveElement {
     #[must_use]
     pub const fn market_index(&self) -> &MarketIndex {
         &self.market_index
-    }
-
-    /// Returns the currency associated with the dividend curve element.
-    #[must_use]
-    pub const fn currency(&self) -> &Currency {
-        &self.currency
     }
 
     /// Returns a reference to the curve associated with the dividend curve element.

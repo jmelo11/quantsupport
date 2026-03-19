@@ -1,6 +1,7 @@
 use crate::{
     ad::adreal::{ADReal, IsReal},
     core::{
+        collateral::Discountable,
         instrument::{AssetClass, Instrument},
         request::LegsProvider,
         trade::{Side, Trade},
@@ -17,7 +18,7 @@ pub struct FixedRateBond<T: IsReal> {
     identifier: String,
     units: f64,
     leg: Leg<T>,
-    market_index: MarketIndex,
+    discount_index: Option<MarketIndex>,
     currency: Currency,
 }
 
@@ -31,14 +32,14 @@ where
         identifier: String,
         units: f64,
         leg: Leg<T>,
-        market_index: MarketIndex,
+        discount_index: Option<MarketIndex>,
         currency: Currency,
     ) -> Self {
         Self {
             identifier,
             units,
             leg,
-            market_index,
+            discount_index,
             currency,
         }
     }
@@ -54,18 +55,6 @@ where
     pub const fn leg(&self) -> &Leg<T> {
         &self.leg
     }
-
-    /// Returns the associated market index.
-    #[must_use]
-    pub fn market_index(&self) -> MarketIndex {
-        self.market_index.clone()
-    }
-
-    /// Returns the currency of payment.
-    #[must_use]
-    pub const fn currency(&self) -> Currency {
-        self.currency
-    }
 }
 
 impl<T> Instrument for FixedRateBond<T>
@@ -75,15 +64,31 @@ where
     fn identifier(&self) -> String {
         self.identifier.clone()
     }
+}
+
+impl<T> LegsProvider<T> for FixedRateBond<T>
+where
+    T: IsReal,
+{
+    fn legs(&self) -> &[Leg<T>] {
+        std::slice::from_ref(&self.leg)
+    }
+}
+
+impl<T> Discountable for FixedRateBond<T>
+where
+    T: IsReal,
+{
+    fn currency(&self) -> Currency {
+        self.currency
+    }
 
     fn asset_class(&self) -> AssetClass {
         AssetClass::FixedIncome
     }
-}
 
-impl LegsProvider for FixedRateBond<ADReal> {
-    fn legs(&self) -> &[Leg<ADReal>] {
-        std::slice::from_ref(&self.leg)
+    fn discount_index(&self) -> Option<MarketIndex> {
+        self.discount_index.clone()
     }
 }
 
@@ -139,8 +144,11 @@ where
     }
 }
 
-impl LegsProvider for FixedRateBondTrade<ADReal> {
-    fn legs(&self) -> &[Leg<ADReal>] {
+impl<T> LegsProvider<T> for FixedRateBondTrade<T>
+where
+    T: IsReal,
+{
+    fn legs(&self) -> &[Leg<T>] {
         self.instrument.legs()
     }
 }
@@ -151,7 +159,7 @@ impl From<FixedRateBond<f64>> for FixedRateBond<ADReal> {
             value.identifier,
             value.units,
             value.leg.into(),
-            value.market_index,
+            value.discount_index,
             value.currency,
         )
     }
@@ -163,7 +171,7 @@ impl From<FixedRateBond<ADReal>> for FixedRateBond<f64> {
             value.identifier,
             value.units,
             value.leg.into(),
-            value.market_index,
+            value.discount_index,
             value.currency,
         )
     }

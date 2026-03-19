@@ -9,11 +9,11 @@ use crate::{
             marketdata::{MarketData, MarketDataProvider, MarketDataRequest},
         },
     },
-    currencies::currency::Currency,
+    currencies::{currency::Currency, exchangeratestore::ExchangeRateStore},
     indices::marketindex::MarketIndex,
     models::ModelParameters,
     quotes::{fixingstore::FixingStore, quote::Level, quotestore::QuoteStore},
-    rates::bootstrapping::curvespec::CurveSpec,
+    rates::bootstrapping::curveconfiguration::CurveConfiguration,
     time::date::Date,
     utils::errors::{QSError, Result},
 };
@@ -36,12 +36,12 @@ pub struct ContextManager {
     models: Vec<ModelParameters>,
     /// Curve specifications for curve construction.
     #[allow(dead_code)]
-    curve_specs: Vec<CurveSpec>,
+    curve_specs: Vec<CurveConfiguration>,
 
     /// Constructed market data elements, such as discount curves, dividend curves, volatility surfaces, and simulations, that have been built in response to market data requests. This allows for caching and reuse of constructed elements across multiple pricing operations.
     constructed_elements: ConstructedElementStore,
-    // Pricer configuration settings, such as the base currency for reporting results.
-    // pricer_config: PricerConfig,
+    /// Optional exchange rate store for FX spot rates used in cross-currency discounting.
+    exchange_rate_store: Option<ExchangeRateStore>,
 }
 
 impl ContextManager {
@@ -57,6 +57,7 @@ impl ContextManager {
             base_currency: Currency::USD,
             curve_specs: Vec::new(),
             constructed_elements: ConstructedElementStore::default(),
+            exchange_rate_store: None,
         }
     }
 
@@ -111,6 +112,13 @@ impl ContextManager {
         constructed_elements: ConstructedElementStore,
     ) -> Self {
         self.constructed_elements = constructed_elements;
+        self
+    }
+
+    /// Sets the exchange rate store.
+    #[must_use]
+    pub fn with_exchange_rate_store(mut self, store: ExchangeRateStore) -> Self {
+        self.exchange_rate_store = Some(store);
         self
     }
 
@@ -224,6 +232,10 @@ impl MarketDataProvider for ContextManager {
         }
 
         // 3. Assemble final MarketData with models from this context.
-        Ok(MarketData::new(fixings, constructed_elements, &self.models))
+        let mut md = MarketData::new(fixings, constructed_elements, &self.models);
+        if let Some(store) = &self.exchange_rate_store {
+            md = md.with_exchange_rate_store(store.clone());
+        }
+        Ok(md)
     }
 }

@@ -1,3 +1,5 @@
+#[cfg(test)]
+use crate::ad::adreal::ADReal;
 use crate::{
     ad::adreal::IsReal,
     core::trade::Side,
@@ -14,8 +16,6 @@ use crate::{
     },
     utils::errors::{QSError, Result},
 };
-#[cfg(test)]
-use crate::ad::adreal::ADReal;
 use std::marker::PhantomData;
 
 /// A builder for creating a [`BasisSwap`] instance (floating-vs-floating interest rate swap).
@@ -216,7 +216,7 @@ where
             .with_notional(notional)
             .with_side(Side::PayShort)
             .with_currency(currency)
-            .with_market_index(pay_market_index.clone())
+            .with_forward_index(pay_market_index.clone())
             .with_start_date(start_date)
             .with_end_date(maturity_date)
             .with_rate_type(RateType::Floating)
@@ -235,7 +235,7 @@ where
             .with_notional(notional)
             .with_side(Side::LongReceive)
             .with_currency(currency)
-            .with_market_index(receive_market_index.clone())
+            .with_forward_index(receive_market_index.clone())
             .with_start_date(start_date)
             .with_end_date(maturity_date)
             .with_rate_type(RateType::Floating)
@@ -283,8 +283,8 @@ mod tests {
         let swap = result.unwrap();
         assert_eq!(swap.identifier(), "basis_swap_test");
         assert_eq!(swap.currency(), Currency::USD);
-        assert_eq!(swap.pay_market_index(), MarketIndex::SOFR);
-        assert_eq!(swap.receive_market_index(), MarketIndex::TermSOFR3m);
+        assert_eq!(swap.pay_forward_index(), MarketIndex::SOFR);
+        assert_eq!(swap.receive_forward_index(), MarketIndex::TermSOFR3m);
         assert!(!swap.pay_leg().cashflows().is_empty());
         assert!(!swap.receive_leg().cashflows().is_empty());
     }

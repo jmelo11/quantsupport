@@ -4,7 +4,7 @@ use crate::{
         tape::Tape,
     },
     core::{
-        collateral::{DiscountPolicy, HasCurrency},
+        collateral::{DiscountPolicy, Discountable},
         evaluationresults::{EvaluationResults, SensitivityMap},
         instrument::Instrument,
         marketdatahandling::{
@@ -20,6 +20,7 @@ use crate::{
         },
         trade::Trade,
     },
+    indices::marketindex::MarketIndex,
     instruments::cashflows::{cashflow::Cashflow, cashflowtype::CashflowType, leg::Leg},
     rates::compounding::Compounding,
     time::enums::Frequency,
@@ -70,7 +71,7 @@ impl PricerState for DCFState<'_> {
 /// ```
 pub struct CashflowDiscountPricer<I, T> {
     _phantom: PhantomData<fn() -> (I, T)>,
-    discount_policy: Option<Box<dyn DiscountPolicy<Leg<ADReal>>>>,
+    discount_policy: Option<Box<dyn DiscountPolicy>>,
 }
 
 impl<I, T> CashflowDiscountPricer<I, T> {
@@ -84,7 +85,7 @@ impl<I, T> CashflowDiscountPricer<I, T> {
     }
 }
 
-impl LegsProvider for DCFState<'_> {
+impl LegsProvider<ADReal> for DCFState<'_> {
     fn legs(&self) -> &[Leg<ADReal>] {
         self.legs
     }
@@ -93,7 +94,7 @@ impl LegsProvider for DCFState<'_> {
 impl<I, T> HandleCashflows<T, DCFState<'_>> for CashflowDiscountPricer<I, T>
 where
     I: Instrument,
-    T: LegsProvider + Trade<I>,
+    T: LegsProvider<ADReal> + Trade<I>,
 {
 }
 
@@ -106,7 +107,7 @@ impl<I, T> Default for CashflowDiscountPricer<I, T> {
 impl<I, T> HandleSensitivities<T, DCFState<'_>> for CashflowDiscountPricer<I, T>
 where
     I: Instrument,
-    T: LegsProvider + Trade<I>,
+    T: LegsProvider<ADReal> + Trade<I>,
 {
     fn handle_sensitivities(&self, trade: &T, state: &mut DCFState<'_>) -> Result<SensitivityMap> {
         let price = if let Some(p) = state.value {
@@ -127,7 +128,7 @@ where
 
         // Forward / leg curves
         for leg in trade.legs() {
-            if let Some(market_index) = leg.market_index() {
+            if let Some(market_index) = leg.forward_index() {
                 if seen_indices.insert(market_index.clone()) {
                     let element = state.get_discount_curve_element(market_index)?;
 
@@ -135,7 +136,27 @@ where
                         .curve()
                         .pillars()
                         .into_iter()
-                        .flat_map(std::iter::IntoIterator::into_iter)
+                        .flat_map(IntoIterator::into_iter)
+                        .map(|(label, value)| (label, value.adjoint().ok()))
+                        .unzip();
+
+                    all_ids.extend(ids);
+                    let exposures: Vec<f64> = exposures.into_iter().flatten().collect();
+                    all_exposures.extend(exposures);
+                }
+            }
+
+            // Discount index (from Discountable trait) - captures curves used
+            // for discounting that are not already covered by forward_index
+            if let Some(disc_index) = leg.discount_index() {
+                if seen_indices.insert(disc_index.clone()) {
+                    let element = state.get_discount_curve_element(&disc_index)?;
+
+                    let (ids, exposures): (Vec<_>, Vec<_>) = element
+                        .curve()
+                        .pillars()
+                        .into_iter()
+                        .flat_map(IntoIterator::into_iter)
                         .map(|(label, value)| (label, value.adjoint().ok()))
                         .unzip();
 
@@ -188,7 +209,7 @@ where
 impl<I, T> HandleValue<T, DCFState<'_>> for CashflowDiscountPricer<I, T>
 where
     I: Instrument,
-    T: LegsProvider + Trade<I>,
+    T: LegsProvider<ADReal> + Trade<I>,
 {
     #[allow(clippy::too_many_lines)]
     fn handle_value(&self, trade: &T, state: &mut DCFState<'_>) -> Result<f64> {
@@ -229,7 +250,11 @@ where
                     .constructed_elements()
                     .discount_curves()
                     .iter()
-                    .filter(|(_, element)| element.currency() == leg_currency)
+                    .filter(|(idx, _)| {
+                        idx.rate_index_details()
+                            .map(|d| d.currency() == leg_currency)
+                            .unwrap_or(false)
+                    })
                     .map(|(index, _)| index.clone());
 
                 let first = matching.next().ok_or_else(|| {
@@ -245,7 +270,9 @@ where
                 }
 
                 first
-            } else if let Some(index) = leg.market_index() {
+            } else if let Some(index) = leg.discount_index() {
+                index
+            } else if let Some(index) = leg.forward_index() {
                 index.clone()
             } else {
                 let mut matching = state
@@ -256,7 +283,11 @@ where
                     .constructed_elements()
                     .discount_curves()
                     .iter()
-                    .filter(|(_, element)| element.currency() == leg_currency)
+                    .filter(|(idx, _)| {
+                        idx.rate_index_details()
+                            .map(|d| d.currency() == leg_currency)
+                            .unwrap_or(false)
+                    })
                     .map(|(index, _)| index.clone());
 
                 let first = matching.next().ok_or_else(|| {
@@ -285,7 +316,7 @@ where
                     }
                     CashflowType::FloatingRateCoupon(coupon) => {
                         // Forward / projection curve always comes from the leg's own market index
-                        let forward_index = leg.market_index().ok_or_else(|| {
+                        let forward_index = leg.forward_index().ok_or_else(|| {
                             QSError::NotFoundErr(
                                 "A market index must be set to price floating rate coupons."
                                     .to_string(),
@@ -319,27 +350,19 @@ where
                         .curve()
                         .discount_factor(payment_date)?;
 
-                    let discount_currency = state
-                        .get_discount_curve_element(&leg_discount_index)?
-                        .currency();
-                    if leg_currency == discount_currency {
-                        (amount * df_leg).into()
+                    if let MarketIndex::Collateral(_, coll_ccy) = &leg_discount_index {
+                        // Cross-currency discounting: convert the leg-currency
+                        // cashflow to the collateral currency at FX spot, then
+                        // discount with the collateral curve.
+                        //
+                        //   PV_coll = CF_leg × FX_spot(leg→coll) × DF_Collateral(T)
+                        //
+                        // This is the correct CSA-aware formula: the Collateral
+                        // curve already embeds the cross-currency basis adjustment.
+                        let fx_spot = state.get_exchange_rate(leg_currency, *coll_ccy)?;
+                        (amount * fx_spot * df_leg).into()
                     } else {
-                        let leg_curve_index = leg.market_index().ok_or_else(|| {
-                            QSError::NotFoundErr(format!(
-                                "Leg {} requires market index to compute FX parity against discount curve currency {}",
-                                leg.id(),
-                                discount_currency
-                            ))
-                        })?;
-                        let df_leg_ccy = state
-                            .get_discount_curve_element(leg_curve_index)?
-                            .curve()
-                            .discount_factor(payment_date)?;
-                        let fx_spot = state.get_exchange_rate(leg_currency, discount_currency)?;
-                        // FX_fwd(t) × DF_coll(t) = FX_spot × DF_leg(t)
-                        let fx_fwd: ADReal = (fx_spot * df_leg_ccy / df_leg).into();
-                        (amount * fx_fwd * df_leg).into()
+                        (amount * df_leg).into()
                     }
                 } else {
                     let df = state
@@ -366,7 +389,7 @@ where
 impl<I, T> HandleFairRate<T, DCFState<'_>> for CashflowDiscountPricer<I, T>
 where
     I: Instrument,
-    T: LegsProvider + Trade<I>,
+    T: LegsProvider<ADReal> + Trade<I>,
 {
     fn handle_fair_rate(&self, trade: &T, state: &mut DCFState<'_>) -> Result<f64> {
         let mut annuity = 0.0_f64;
@@ -374,7 +397,7 @@ where
 
         for leg in trade.legs() {
             // Forward / projection curve always comes from the leg's own market index
-            let forward_index = leg.market_index().ok_or_else(|| {
+            let forward_index = leg.forward_index().ok_or_else(|| {
                 QSError::NotFoundErr("Market index required for par rate computation".to_string())
             })?;
             let forward_curve = state.get_discount_curve_element(forward_index)?.curve();
@@ -393,18 +416,12 @@ where
                             let coll_curve =
                                 state.get_discount_curve_element(&collateral_index)?.curve();
                             let df_coll = coll_curve.discount_factor(payment_date)?.value();
-                            let discount_currency = state
-                                .get_discount_curve_element(&collateral_index)?
-                                .currency();
-                            if leg.currency() == discount_currency {
-                                df_coll
+                            if let MarketIndex::Collateral(_, coll_ccy) = &collateral_index {
+                                let fx_spot =
+                                    state.get_exchange_rate(leg.currency(), *coll_ccy)?.value();
+                                fx_spot * df_coll
                             } else {
-                                let fx_spot = state
-                                    .get_exchange_rate(leg.currency(), discount_currency)?
-                                    .value();
-                                let df_leg = forward_curve.discount_factor(payment_date)?.value();
-                                // FX_fwd(t) × DF_coll(t) = FX_spot × DF_leg(t)
-                                fx_spot * df_leg
+                                df_coll
                             }
                         } else {
                             forward_curve.discount_factor(payment_date)?.value()
@@ -429,17 +446,12 @@ where
                             let coll_curve =
                                 state.get_discount_curve_element(&collateral_index)?.curve();
                             let df_coll = coll_curve.discount_factor(payment_date)?.value();
-                            let discount_currency = state
-                                .get_discount_curve_element(&collateral_index)?
-                                .currency();
-                            if leg.currency() == discount_currency {
-                                df_coll
+                            if let MarketIndex::Collateral(_, coll_ccy) = &collateral_index {
+                                let fx_spot =
+                                    state.get_exchange_rate(leg.currency(), *coll_ccy)?.value();
+                                fx_spot * df_coll
                             } else {
-                                let fx_spot = state
-                                    .get_exchange_rate(leg.currency(), discount_currency)?
-                                    .value();
-                                let df_leg = forward_curve.discount_factor(payment_date)?.value();
-                                fx_spot * df_leg
+                                df_coll
                             }
                         } else {
                             forward_curve.discount_factor(payment_date)?.value()
@@ -467,10 +479,10 @@ where
 impl<I, T> Pricer for CashflowDiscountPricer<I, T>
 where
     I: Instrument,
-    T: LegsProvider + Trade<I> + Send + Sync,
+    T: LegsProvider<ADReal> + Trade<I> + Send + Sync,
 {
     type Item = T;
-    type Policy = dyn DiscountPolicy<Leg<ADReal>>;
+    type Policy = dyn DiscountPolicy;
 
     fn evaluate(
         &self,
@@ -540,7 +552,7 @@ where
 
         // Always request forward / discount curves for each leg
         for leg in legs {
-            if let Some(index) = leg.market_index() {
+            if let Some(index) = leg.forward_index() {
                 if seen_indices.insert(index.clone()) {
                     constructed_elements.push(ConstructedElementRequest::DiscountCurve {
                         market_index: index.clone(),
@@ -608,8 +620,8 @@ mod tests {
                 fixedratedeposit::{FixedRateDeposit, FixedRateDepositTrade},
                 makefixedratedeposit::MakeFixedRateDeposit,
             },
-            rates::crosscurrencyswap::{CrossCurrencySwap, CrossCurrencySwapTrade},
-            rates::makecrosscurrencyswap::MakeCrossCurrencySwap,
+            rates::crosscurrencyswap::{FixFloatCrossCurrencySwap, FixFloatCrossCurrencySwapTrade},
+            rates::makefixfloatcrosscurrencyswap::MakeFixFloatCrossCurrencySwap,
             rates::makeswap::MakeSwap,
             rates::swap::{Swap, SwapTrade},
         },
@@ -666,11 +678,11 @@ mod tests {
             .with_rate(deposit_rate)
             .with_rate_definition(rate_definition)
             .with_currency(Currency::USD)
-            .with_side(Side::PayShort)
-            .with_market_index(MarketIndex::SOFR)
+            .with_side(Side::LongReceive)
+            .with_discount_index(Some(MarketIndex::SOFR))
             .build()
             .expect("Failed to build deposit");
-        let trade = FixedRateDepositTrade::new(deposit, trade_date, notional, Side::PayShort);
+        let trade = FixedRateDepositTrade::new(deposit, trade_date, notional, Side::LongReceive);
 
         // --- 2. Set up market data: flat 3% discount curve ---
         let discount_curve = FlatForwardTermStructure::new(
@@ -683,11 +695,7 @@ mod tests {
         let mut constructed_elements = ConstructedElementStore::default();
         constructed_elements.discount_curves_mut().insert(
             MarketIndex::SOFR,
-            DiscountCurveElement::new(
-                MarketIndex::SOFR,
-                Currency::USD,
-                Rc::new(RefCell::new(discount_curve)),
-            ),
+            DiscountCurveElement::new(MarketIndex::SOFR, Rc::new(RefCell::new(discount_curve))),
         );
         let market_data = MarketData::new(HashMap::new(), constructed_elements, &[]);
 
@@ -698,7 +706,8 @@ mod tests {
 
         // --- 3. Price using the Pricer trait ---
         let pricer =
-            CashflowDiscountPricer::<FixedRateDeposit<ADReal>, FixedRateDepositTrade<ADReal>>::new();
+            CashflowDiscountPricer::<FixedRateDeposit<ADReal>, FixedRateDepositTrade<ADReal>>::new(
+            );
         let results = pricer
             .evaluate(&trade, &[Request::Value, Request::Sensitivities], &provider)
             .expect("Pricing failed");
@@ -793,11 +802,7 @@ mod tests {
         let mut constructed_elements = ConstructedElementStore::default();
         constructed_elements.discount_curves_mut().insert(
             MarketIndex::SOFR,
-            DiscountCurveElement::new(
-                MarketIndex::SOFR,
-                Currency::USD,
-                Rc::new(RefCell::new(discount_curve)),
-            ),
+            DiscountCurveElement::new(MarketIndex::SOFR, Rc::new(RefCell::new(discount_curve))),
         );
         let market_data = MarketData::new(HashMap::new(), constructed_elements, &[]);
         let provider = VanillaSwapMarketDataProvider {
@@ -948,7 +953,7 @@ mod tests {
 
         // --- 1. Build the cross-currency swap ---
         // Domestic = EUR (fixed, receive), Foreign = USD (floating SOFR, pay)
-        let xccy_swap = MakeCrossCurrencySwap::<ADReal>::default()
+        let xccy_swap = MakeFixFloatCrossCurrencySwap::<ADReal>::default()
             .with_identifier("XCCY_EUR_USD".to_string())
             .with_start_date(trade_date)
             .with_maturity_date(maturity_date)
@@ -967,7 +972,7 @@ mod tests {
             .build()
             .expect("Failed to build cross-currency swap");
 
-        let trade = CrossCurrencySwapTrade::new(
+        let trade = FixFloatCrossCurrencySwapTrade::new(
             xccy_swap,
             trade_date,
             eur_notional,
@@ -1003,25 +1008,16 @@ mod tests {
         let mut constructed_elements = ConstructedElementStore::default();
         constructed_elements.discount_curves_mut().insert(
             MarketIndex::SOFR,
-            DiscountCurveElement::new(
-                MarketIndex::SOFR,
-                Currency::USD,
-                Rc::new(RefCell::new(sofr_curve)),
-            ),
+            DiscountCurveElement::new(MarketIndex::SOFR, Rc::new(RefCell::new(sofr_curve))),
         );
         constructed_elements.discount_curves_mut().insert(
             estr_index.clone(),
-            DiscountCurveElement::new(
-                estr_index.clone(),
-                Currency::EUR,
-                Rc::new(RefCell::new(estr_curve)),
-            ),
+            DiscountCurveElement::new(estr_index.clone(), Rc::new(RefCell::new(estr_curve))),
         );
         constructed_elements.discount_curves_mut().insert(
             MarketIndex::Collateral(Currency::USD, Currency::EUR),
             DiscountCurveElement::new(
                 MarketIndex::Collateral(Currency::USD, Currency::EUR),
-                Currency::EUR,
                 Rc::new(RefCell::new(collateral_usd_eur_curve)),
             ),
         );
@@ -1040,8 +1036,8 @@ mod tests {
 
         // --- 3. Price with CSA ---
         let mut pricer = CashflowDiscountPricer::<
-            CrossCurrencySwap<ADReal>,
-            CrossCurrencySwapTrade<ADReal>,
+            FixFloatCrossCurrencySwap<ADReal>,
+            FixFloatCrossCurrencySwapTrade<ADReal>,
         >::new();
         pricer.set_discount_policy(Box::new(SingleCurveCSADiscountPolicy::new(
             estr_index.clone(),

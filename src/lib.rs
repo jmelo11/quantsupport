@@ -91,7 +91,6 @@
 //!     MarketIndex::SOFR,
 //!     DiscountCurveElement::new(
 //!         MarketIndex::SOFR,
-//!         Currency::USD,
 //!         Rc::new(RefCell::new(discount_curve)),
 //!     ),
 //! );
@@ -140,7 +139,7 @@
 //! # let mut constructed_elements = ConstructedElementStore::default();
 //! # constructed_elements.discount_curves_mut().insert(
 //! #     MarketIndex::SOFR, DiscountCurveElement::new(
-//! #         MarketIndex::SOFR, Currency::USD,
+//! #         MarketIndex::SOFR,
 //! #         Rc::new(RefCell::new(discount_curve))));
 //! # let quote_store  = QuoteStore::new(evaluation_date);
 //! # let fixing_store = FixingStore::default();
@@ -191,6 +190,7 @@ pub mod indices;
 pub mod instruments;
 pub mod math;
 pub mod models;
+/// Commonly used public exports for pricing and market-data workflows.
 pub mod prelude;
 pub mod pricers;
 pub mod quotes;

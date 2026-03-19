@@ -28,7 +28,7 @@ struct JsonQuotes {
 /// Top-level JSON structure for the curve-specs file.
 #[derive(Deserialize)]
 struct JsonCurveSpecs {
-    curve_specs: Vec<CurveSpec>,
+    curve_specs: Vec<CurveConfiguration>,
 }
 
 /// Loads quotes from a JSON file into a [`QuoteStore`].
@@ -49,7 +49,7 @@ fn load_quotes(path: &PathBuf) -> Result<QuoteStore> {
 }
 
 /// Loads curve specifications from a JSON file.
-fn load_curve_specs(path: &PathBuf) -> Result<Vec<CurveSpec>> {
+fn load_curve_specs(path: &PathBuf) -> Result<Vec<CurveConfiguration>> {
     let file =
         File::open(path).map_err(|e| QSError::NotFoundErr(format!("{}: {e}", path.display())))?;
     let reader = BufReader::new(file);
@@ -121,11 +121,8 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     //    CLP cashflows are discounted with the Collateral(CLP, USD) curve,
     //    which is bootstrapped from cross-currency swaps.
     let csa_index = curve_specs[0].market_index().clone();
-    let csa_currency = curve_specs[0].currency();
-    let policy = BootstrapDiscountPolicy::new(csa_index, csa_currency).with_collateral_curve(
-        Currency::CLP,
-        MarketIndex::Collateral(Currency::CLP, Currency::USD),
-    );
+    let csa_currency = Currency::USD;
+    let policy = BootstrapDiscountPolicy::new(csa_index, csa_currency);
 
     // FX spot from fixings: 1 USD = 935 CLP
     let mut fx_store = ExchangeRateStore::new();

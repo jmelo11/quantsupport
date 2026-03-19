@@ -1,7 +1,7 @@
 use crate::{
     ad::adreal::{ADReal, IsReal},
     core::{
-        instrument::{AssetClass, Instrument},
+        instrument::Instrument,
         request::LegsProvider,
         trade::{Side, Trade},
     },
@@ -15,11 +15,12 @@ use crate::{
 ///
 /// Both legs reference different floating rate indices (e.g., SOFR 3M vs SOFR 1M,
 /// or two different tenor indices). Each leg may carry a different spread.
+#[derive(Clone)]
 pub struct BasisSwap<T: IsReal> {
     identifier: String,
     legs: Vec<Leg<T>>,
-    pay_market_index: MarketIndex,
-    receive_market_index: MarketIndex,
+    pay_forward_index: MarketIndex,
+    receive_forward_index: MarketIndex,
     currency: Currency,
 }
 
@@ -35,15 +36,15 @@ where
         identifier: String,
         pay_leg: Leg<T>,
         receive_leg: Leg<T>,
-        pay_market_index: MarketIndex,
-        receive_market_index: MarketIndex,
+        pay_forward_index: MarketIndex,
+        receive_forward_index: MarketIndex,
         currency: Currency,
     ) -> Self {
         Self {
             identifier,
             legs: vec![pay_leg, receive_leg],
-            pay_market_index,
-            receive_market_index,
+            pay_forward_index,
+            receive_forward_index,
             currency,
         }
     }
@@ -62,14 +63,14 @@ where
 
     /// Returns the pay-side market index.
     #[must_use]
-    pub fn pay_market_index(&self) -> MarketIndex {
-        self.pay_market_index.clone()
+    pub fn pay_forward_index(&self) -> MarketIndex {
+        self.pay_forward_index.clone()
     }
 
     /// Returns the receive-side market index.
     #[must_use]
-    pub fn receive_market_index(&self) -> MarketIndex {
-        self.receive_market_index.clone()
+    pub fn receive_forward_index(&self) -> MarketIndex {
+        self.receive_forward_index.clone()
     }
 
     /// Returns the currency of the swap.
@@ -86,14 +87,13 @@ where
     fn identifier(&self) -> String {
         self.identifier.clone()
     }
-
-    fn asset_class(&self) -> AssetClass {
-        AssetClass::InterestRate
-    }
 }
 
-impl LegsProvider for BasisSwap<ADReal> {
-    fn legs(&self) -> &[Leg<ADReal>] {
+impl<T> LegsProvider<T> for BasisSwap<T>
+where
+    T: IsReal,
+{
+    fn legs(&self) -> &[Leg<T>] {
         &self.legs
     }
 }
@@ -112,7 +112,12 @@ where
 {
     /// Creates a new [`BasisSwapTrade`].
     #[must_use]
-    pub const fn new(instrument: BasisSwap<T>, trade_date: Date, notional: f64, side: Side) -> Self {
+    pub const fn new(
+        instrument: BasisSwap<T>,
+        trade_date: Date,
+        notional: f64,
+        side: Side,
+    ) -> Self {
         Self {
             instrument,
             trade_date,
@@ -145,12 +150,6 @@ where
     }
 }
 
-impl LegsProvider for BasisSwapTrade<ADReal> {
-    fn legs(&self) -> &[Leg<ADReal>] {
-        self.instrument.legs()
-    }
-}
-
 impl From<BasisSwap<f64>> for BasisSwap<ADReal> {
     fn from(value: BasisSwap<f64>) -> Self {
         let mut legs = value.legs.into_iter();
@@ -158,8 +157,8 @@ impl From<BasisSwap<f64>> for BasisSwap<ADReal> {
             value.identifier,
             legs.next().expect("pay leg must exist").into(),
             legs.next().expect("receive leg must exist").into(),
-            value.pay_market_index,
-            value.receive_market_index,
+            value.pay_forward_index,
+            value.receive_forward_index,
             value.currency,
         )
     }
@@ -172,8 +171,8 @@ impl From<BasisSwap<ADReal>> for BasisSwap<f64> {
             value.identifier,
             legs.next().expect("pay leg must exist").into(),
             legs.next().expect("receive leg must exist").into(),
-            value.pay_market_index,
-            value.receive_market_index,
+            value.pay_forward_index,
+            value.receive_forward_index,
             value.currency,
         )
     }
@@ -181,12 +180,22 @@ impl From<BasisSwap<ADReal>> for BasisSwap<f64> {
 
 impl From<BasisSwapTrade<f64>> for BasisSwapTrade<ADReal> {
     fn from(value: BasisSwapTrade<f64>) -> Self {
-        Self::new(value.instrument.into(), value.trade_date, value.notional, value.side)
+        Self::new(
+            value.instrument.into(),
+            value.trade_date,
+            value.notional,
+            value.side,
+        )
     }
 }
 
 impl From<BasisSwapTrade<ADReal>> for BasisSwapTrade<f64> {
     fn from(value: BasisSwapTrade<ADReal>) -> Self {
-        Self::new(value.instrument.into(), value.trade_date, value.notional, value.side)
+        Self::new(
+            value.instrument.into(),
+            value.trade_date,
+            value.notional,
+            value.side,
+        )
     }
 }

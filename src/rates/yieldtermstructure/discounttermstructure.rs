@@ -58,6 +58,9 @@ where
     enable_extrapolation: bool,
     pillar_labels: Option<Vec<String>>,
     pillar_values: Option<Vec<T>>,
+    /// IFT sensitivity matrix: `ift_sensitivities[i][j]` = ∂DF(i+1)/∂q(j).
+    /// Used to rebuild AD-connected discount factors when pillars are placed on tape.
+    ift_sensitivities: Option<Vec<Vec<f64>>>,
 }
 
 impl<T> DiscountTermStructure<T>
@@ -110,6 +113,14 @@ where
         }
         self.pillar_labels = Some(pillar_labels);
         Ok(self)
+    }
+
+    /// Stores the IFT sensitivity matrix so that `put_pillars_on_tape` can
+    /// rebuild AD-connected discount factors.
+    #[must_use]
+    pub fn with_ift_sensitivities(mut self, sensitivities: Vec<Vec<f64>>) -> Self {
+        self.ift_sensitivities = Some(sensitivities);
+        self
     }
 
     /// Overrides the values exposed through the [`Pillars`] interface.
@@ -189,6 +200,7 @@ impl DiscountTermStructure<f64> {
             enable_extrapolation,
             pillar_labels: None,
             pillar_values: None,
+            ift_sensitivities: None,
         })
     }
 }
@@ -248,6 +260,7 @@ impl DiscountTermStructure<ADReal> {
             enable_extrapolation,
             pillar_labels: None,
             pillar_values: None,
+            ift_sensitivities: None,
         })
     }
 }
@@ -270,6 +283,30 @@ impl Pillars<ADReal> for DiscountTermStructure<ADReal> {
     fn put_pillars_on_tape(&mut self) {
         if let Some(pillar_values) = self.pillar_values.as_mut() {
             pillar_values.iter_mut().for_each(ADReal::put_on_tape);
+
+            // When IFT sensitivities are stored, rebuild discount_factors as
+            // tape-connected expressions:
+            //   DF(i+1) = df_val + Σ_j S[i][j] * (q_j - q_j_val)
+            // The numeric result is exact (delta evaluates to 0) but the AD
+            // graph now connects discount_factors → pillar_values.
+            if let Some(ref sens) = self.ift_sensitivities {
+                let n = pillar_values.len();
+                let mut new_dfs = Vec::with_capacity(n + 1);
+                new_dfs.push(ADReal::new(1.0)); // DF(0) = 1
+                for i in 0..n {
+                    let mut df_ad = ADReal::new(self.discount_factors[i + 1].value());
+                    for j in 0..n {
+                        let s = sens[i][j];
+                        if s.abs() > 1e-16 {
+                            let delta: ADReal =
+                                (pillar_values[j] - ADReal::new(pillar_values[j].value())).into();
+                            df_ad = (df_ad + ADReal::new(s) * delta).into();
+                        }
+                    }
+                    new_dfs.push(df_ad);
+                }
+                self.discount_factors = new_dfs;
+            }
         } else {
             self.discount_factors
                 .iter_mut()

@@ -1,3 +1,5 @@
+#[cfg(test)]
+use crate::ad::adreal::ADReal;
 use crate::{
     ad::adreal::IsReal,
     core::trade::Side,
@@ -15,8 +17,6 @@ use crate::{
     },
     utils::errors::{QSError, Result},
 };
-#[cfg(test)]
-use crate::ad::adreal::ADReal;
 use std::marker::PhantomData;
 
 /// A builder for creating a [`Swap`] instance (vanilla fixed-float interest rate swap).
@@ -230,7 +230,6 @@ where
             .with_notional(notional)
             .with_side(side)
             .with_currency(currency)
-            .with_market_index(market_index.clone())
             .with_start_date(start_date)
             .with_end_date(maturity_date)
             .with_rate_type(RateType::Fixed)
@@ -254,7 +253,7 @@ where
             .with_notional(notional)
             .with_side(floating_side)
             .with_currency(currency)
-            .with_market_index(market_index.clone())
+            .with_forward_index(market_index.clone())
             .with_start_date(start_date)
             .with_end_date(maturity_date)
             .with_rate_type(RateType::Floating)
@@ -314,7 +313,7 @@ mod tests {
         let swap = result.unwrap();
         assert_eq!(swap.identifier(), "swap_test");
         assert_eq!(swap.currency(), Currency::USD);
-        assert_eq!(swap.market_index(), MarketIndex::SOFR);
+        assert_eq!(swap.forward_index(), MarketIndex::SOFR);
         assert!(!swap.fixed_leg().cashflows().is_empty());
         assert!(!swap.floating_leg().cashflows().is_empty());
     }

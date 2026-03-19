@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     core::{
-        collateral::HasCurrency,
+        collateral::Discountable,
         instrument::{AssetClass, Instrument},
         trade::{Side, Trade},
     },
@@ -130,19 +130,22 @@ impl CapletFloorlet {
     }
 }
 
-impl HasCurrency for CapletFloorlet {
+impl Discountable for CapletFloorlet {
     fn currency(&self) -> Currency {
         self.currency
+    }
+    fn asset_class(&self) -> AssetClass {
+        AssetClass::InterestRate
+    }
+
+    fn discount_index(&self) -> Option<MarketIndex> {
+        None
     }
 }
 
 impl Instrument for CapletFloorlet {
     fn identifier(&self) -> String {
         self.name.clone()
-    }
-
-    fn asset_class(&self) -> AssetClass {
-        AssetClass::InterestRate
     }
 }
 

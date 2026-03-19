@@ -1,6 +1,8 @@
+#[cfg(test)]
+use crate::ad::adreal::ADReal;
 use crate::{
     ad::adreal::IsReal,
-    core::trade::Side,
+    core::{instrument::AssetClass, trade::Side},
     currencies::currency::Currency,
     indices::marketindex::MarketIndex,
     instruments::{
@@ -14,8 +16,6 @@ use crate::{
     },
     utils::errors::{QSError, Result},
 };
-#[cfg(test)]
-use crate::ad::adreal::ADReal;
 use std::marker::PhantomData;
 
 /// A builder for creating a [`FloatFloatCrossCurrencySwap`] instance
@@ -241,8 +241,9 @@ where
             .with_leg_id(0)
             .with_notional(domestic_notional)
             .with_side(side)
+            .with_asset_class(AssetClass::Fx)
             .with_currency(domestic_currency)
-            .with_market_index(domestic_market_index.clone())
+            .with_forward_index(domestic_market_index.clone())
             .with_start_date(start_date)
             .with_end_date(maturity_date)
             .with_rate_type(RateType::Floating)
@@ -265,8 +266,9 @@ where
             .with_leg_id(1)
             .with_notional(foreign_notional)
             .with_side(foreign_side)
+            .with_asset_class(AssetClass::Fx)
             .with_currency(foreign_currency)
-            .with_market_index(foreign_market_index.clone())
+            .with_forward_index(foreign_market_index.clone())
             .with_start_date(start_date)
             .with_end_date(maturity_date)
             .with_rate_type(RateType::Floating)
@@ -323,8 +325,8 @@ mod tests {
         assert_eq!(swap.identifier(), "ff_xccy_swap_test");
         assert_eq!(swap.domestic_currency(), Currency::USD);
         assert_eq!(swap.foreign_currency(), Currency::EUR);
-        assert_eq!(swap.domestic_market_index(), MarketIndex::SOFR);
-        assert_eq!(swap.foreign_market_index(), MarketIndex::TermSOFR3m);
+        assert_eq!(swap.domestic_forward_index(), MarketIndex::SOFR);
+        assert_eq!(swap.foreign_forward_index(), MarketIndex::TermSOFR3m);
     }
 
     #[test]

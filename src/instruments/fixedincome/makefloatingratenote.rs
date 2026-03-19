@@ -1,6 +1,6 @@
 use crate::{
     ad::adreal::IsReal,
-    core::trade::Side,
+    core::{instrument::AssetClass, trade::Side},
     currencies::currency::Currency,
     indices::marketindex::MarketIndex,
     instruments::{
@@ -29,7 +29,7 @@ use std::marker::PhantomData;
 ///     .with_maturity_date(Date::new(2026, 1, 1))
 ///     .with_spread(0.005)
 ///     .with_notional(1_000_000.0)
-///     .with_market_index(MarketIndex::TermSOFR3m)
+///     .with_forward_index(MarketIndex::TermSOFR3m)
 ///     .with_currency(Currency::USD)
 ///     .with_payment_frequency(Frequency::Quarterly)
 ///     .with_payment_structure(PaymentStructure::Bullet)
@@ -46,7 +46,8 @@ pub struct MakeFloatingRateNote<T: IsReal> {
     units: Option<f64>,
     notional: Option<f64>,
     identifier: Option<String>,
-    market_index: Option<MarketIndex>,
+    forward_index: Option<MarketIndex>,
+    discount_index: Option<MarketIndex>,
     currency: Option<Currency>,
     side: Option<Side>,
     payment_frequency: Option<Frequency>,
@@ -93,8 +94,8 @@ where
 
     /// Sets the market index for the floating rate reference.
     #[must_use]
-    pub fn with_market_index(mut self, market_index: MarketIndex) -> Self {
-        self.market_index = Some(market_index);
+    pub fn with_forward_index(mut self, forward_index: MarketIndex) -> Self {
+        self.forward_index = Some(forward_index);
         self
     }
 
@@ -193,9 +194,9 @@ where
         let currency = self
             .currency
             .ok_or_else(|| QSError::ValueNotSetErr("Currency".into()))?;
-        let market_index = self
-            .market_index
-            .ok_or_else(|| QSError::ValueNotSetErr("Market index".into()))?;
+        let forward_index = self
+            .forward_index
+            .ok_or_else(|| QSError::ValueNotSetErr("Forward index".into()))?;
         let identifier = self
             .identifier
             .ok_or_else(|| QSError::ValueNotSetErr("Identifier".into()))?;
@@ -209,8 +210,10 @@ where
             .with_leg_id(0)
             .with_notional(notional)
             .with_side(side)
+            .with_asset_class(AssetClass::FixedIncome)
             .with_currency(currency)
-            .with_market_index(market_index.clone())
+            .with_forward_index(forward_index.clone())
+            .with_discount_index(self.discount_index.clone())
             .with_start_date(start_date)
             .with_end_date(maturity_date)
             .with_rate_type(RateType::Floating)
@@ -228,7 +231,8 @@ where
             identifier,
             units,
             leg,
-            market_index,
+            self.discount_index,
+            Some(forward_index),
             currency,
         ))
     }

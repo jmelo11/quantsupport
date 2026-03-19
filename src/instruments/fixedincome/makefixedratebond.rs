@@ -1,6 +1,6 @@
 use crate::{
     ad::adreal::IsReal,
-    core::trade::Side,
+    core::{instrument::AssetClass, trade::Side},
     currencies::currency::Currency,
     indices::marketindex::MarketIndex,
     instruments::{
@@ -37,7 +37,7 @@ use std::marker::PhantomData;
 ///     .with_rate(0.04)
 ///     .with_notional(1_000_000.0)
 ///     .with_rate_definition(rate_def)
-///     .with_market_index(MarketIndex::Other("UST".to_string()))
+///     .with_discount_index(MarketIndex::Other("UST".to_string()))
 ///     .with_currency(Currency::USD)
 ///     .with_payment_frequency(Frequency::Semiannual)
 ///     .with_payment_structure(PaymentStructure::Bullet)
@@ -56,7 +56,7 @@ pub struct MakeFixedRateBond<T: IsReal> {
     notional: Option<f64>,
     identifier: Option<String>,
     rate_definition: Option<RateDefinition>,
-    market_index: Option<MarketIndex>,
+    discount_index: Option<MarketIndex>,
     currency: Option<Currency>,
     side: Option<Side>,
     payment_frequency: Option<Frequency>,
@@ -110,8 +110,8 @@ where
 
     /// Sets the market index associated with the bond.
     #[must_use]
-    pub fn with_market_index(mut self, market_index: MarketIndex) -> Self {
-        self.market_index = Some(market_index);
+    pub fn with_discount_index(mut self, discount_index: MarketIndex) -> Self {
+        self.discount_index = Some(discount_index);
         self
     }
 
@@ -215,9 +215,7 @@ where
         let currency = self
             .currency
             .ok_or_else(|| QSError::ValueNotSetErr("Currency".into()))?;
-        let market_index = self
-            .market_index
-            .ok_or_else(|| QSError::ValueNotSetErr("Market index".into()))?;
+
         let identifier = self
             .identifier
             .ok_or_else(|| QSError::ValueNotSetErr("Identifier".into()))?;
@@ -233,8 +231,9 @@ where
             .with_leg_id(0)
             .with_notional(notional)
             .with_side(side)
+            .with_asset_class(AssetClass::FixedIncome)
             .with_currency(currency)
-            .with_market_index(market_index.clone())
+            .with_discount_index(self.discount_index.clone())
             .with_start_date(start_date)
             .with_end_date(maturity_date)
             .with_rate_type(RateType::Fixed)
@@ -252,7 +251,7 @@ where
             identifier,
             units,
             leg,
-            market_index,
+            self.discount_index,
             currency,
         ))
     }

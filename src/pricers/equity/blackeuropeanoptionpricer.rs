@@ -17,9 +17,7 @@ use crate::{
         request::{HandleSensitivities, HandleValue, Request},
         trade::Trade,
     },
-    instruments::equity::equityeuropeanoption::{
-        EquityEuropeanOption, EquityEuropeanOptionTrade, EuroOptionType,
-    },
+    instruments::equity::equityeuropeanoption::{EquityEuropeanOptionTrade, EuroOptionType},
     pricers::pricerdefinitions::BlackClosedFormPricer,
     utils::errors::{QSError, Result},
 };
@@ -66,7 +64,7 @@ impl PricerState for EquityOptionState {
 /// //   );
 /// ```
 pub struct BlackEuropeanOptionPricer {
-    discount_policy: Option<Box<dyn DiscountPolicy<EquityEuropeanOption>>>,
+    discount_policy: Option<Box<dyn DiscountPolicy>>,
 }
 
 impl BlackEuropeanOptionPricer {
@@ -227,7 +225,7 @@ impl HandleSensitivities<EquityEuropeanOptionTrade, EquityOptionState>
 
 impl Pricer for BlackEuropeanOptionPricer {
     type Item = EquityEuropeanOptionTrade;
-    type Policy = dyn DiscountPolicy<EquityEuropeanOption>;
+    type Policy = dyn DiscountPolicy;
     fn evaluate(
         &self,
         trade: &EquityEuropeanOptionTrade,
@@ -332,7 +330,6 @@ mod tests {
             request::Request,
             trade::Side,
         },
-        currencies::currency::Currency,
         indices::marketindex::MarketIndex,
         instruments::equity::equityeuropeanoption::{
             EquityEuropeanOption, EquityEuropeanOptionTrade, EuroOptionType,
@@ -444,7 +441,6 @@ mod tests {
             market_index.clone(),
             DiscountCurveElement::new(
                 market_index.clone(),
-                Currency::USD,
                 Rc::new(RefCell::new(discount_curve.clone())),
             ),
         );
@@ -452,7 +448,6 @@ mod tests {
             market_index.clone(),
             DividendCurveElement::new(
                 market_index.clone(),
-                Currency::USD,
                 Rc::new(RefCell::new(dividend_curve.clone())),
             ),
         );

@@ -11,6 +11,7 @@ use crate::{
 /// The payoff is determined by a specified payoff function. For example, this could
 /// represent a floored or capped coupon, where the payoff is determined by the
 /// underlying index and the specified floor or cap.
+#[derive(Clone)]
 pub struct OptionEmbeddedCoupon<T: IsReal> {
     notional: f64,
     fixing: Option<T>,

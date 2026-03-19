@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     ad::adreal::{ADReal, IsReal},
     core::{
-        instrument::{AssetClass, Instrument},
+        instrument::Instrument,
         request::LegsProvider,
         trade::{Side, Trade},
     },
@@ -33,7 +33,7 @@ pub enum SwaptionType {
 ///
 /// The holder has the right, but not the obligation, to enter into
 /// the underlying [`Swap`] at expiry.
-#[allow(clippy::struct_field_names)]
+#[derive(Clone)]
 pub struct Swaption<T: IsReal> {
     identifier: String,
     underlying: Swap<T>,
@@ -51,7 +51,6 @@ where
 {
     /// Creates a new [`Swaption`].
     #[must_use]
-    #[allow(clippy::too_many_arguments)]
     pub const fn new(
         identifier: String,
         underlying: Swap<T>,
@@ -124,14 +123,13 @@ where
     fn identifier(&self) -> String {
         self.identifier.clone()
     }
-
-    fn asset_class(&self) -> AssetClass {
-        AssetClass::InterestRate
-    }
 }
 
-impl LegsProvider for Swaption<ADReal> {
-    fn legs(&self) -> &[Leg<ADReal>] {
+impl<T> LegsProvider<T> for Swaption<T>
+where
+    T: IsReal,
+{
+    fn legs(&self) -> &[Leg<T>] {
         self.underlying.legs()
     }
 }
@@ -150,12 +148,7 @@ where
 {
     /// Creates a new [`SwaptionTrade`].
     #[must_use]
-    pub const fn new(
-        instrument: Swaption<T>,
-        trade_date: Date,
-        notional: f64,
-        side: Side,
-    ) -> Self {
+    pub const fn new(instrument: Swaption<T>, trade_date: Date, notional: f64, side: Side) -> Self {
         Self {
             instrument,
             trade_date,
@@ -185,12 +178,6 @@ where
 
     fn side(&self) -> Side {
         self.side
-    }
-}
-
-impl LegsProvider for SwaptionTrade<ADReal> {
-    fn legs(&self) -> &[Leg<ADReal>] {
-        self.instrument.legs()
     }
 }
 
@@ -226,12 +213,22 @@ impl From<Swaption<ADReal>> for Swaption<f64> {
 
 impl From<SwaptionTrade<f64>> for SwaptionTrade<ADReal> {
     fn from(value: SwaptionTrade<f64>) -> Self {
-        Self::new(value.instrument.into(), value.trade_date, value.notional, value.side)
+        Self::new(
+            value.instrument.into(),
+            value.trade_date,
+            value.notional,
+            value.side,
+        )
     }
 }
 
 impl From<SwaptionTrade<ADReal>> for SwaptionTrade<f64> {
     fn from(value: SwaptionTrade<ADReal>) -> Self {
-        Self::new(value.instrument.into(), value.trade_date, value.notional, value.side)
+        Self::new(
+            value.instrument.into(),
+            value.trade_date,
+            value.notional,
+            value.side,
+        )
     }
 }

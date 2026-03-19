@@ -1,7 +1,7 @@
 use crate::{
     ad::adreal::{ADReal, IsReal},
     core::{
-        instrument::{AssetClass, Instrument},
+        instrument::Instrument,
         request::LegsProvider,
         trade::{Side, Trade},
     },
@@ -13,10 +13,11 @@ use crate::{
 
 /// A [`Swap`] represents a vanilla fixed-float interest rate swap with two legs:
 /// a fixed-rate leg and a floating-rate leg.
+#[derive(Clone)]
 pub struct Swap<T: IsReal> {
     identifier: String,
     legs: Vec<Leg<T>>,
-    market_index: MarketIndex,
+    forward_index: MarketIndex,
     currency: Currency,
 }
 
@@ -32,13 +33,13 @@ where
         identifier: String,
         fixed_leg: Leg<T>,
         floating_leg: Leg<T>,
-        market_index: MarketIndex,
+        forward_index: MarketIndex,
         currency: Currency,
     ) -> Self {
         Self {
             identifier,
             legs: vec![fixed_leg, floating_leg],
-            market_index,
+            forward_index,
             currency,
         }
     }
@@ -57,8 +58,8 @@ where
 
     /// Returns the associated market index.
     #[must_use]
-    pub fn market_index(&self) -> MarketIndex {
-        self.market_index.clone()
+    pub fn forward_index(&self) -> MarketIndex {
+        self.forward_index.clone()
     }
 
     /// Returns the currency of the swap.
@@ -75,14 +76,13 @@ where
     fn identifier(&self) -> String {
         self.identifier.clone()
     }
-
-    fn asset_class(&self) -> AssetClass {
-        AssetClass::InterestRate
-    }
 }
 
-impl LegsProvider for Swap<ADReal> {
-    fn legs(&self) -> &[Leg<ADReal>] {
+impl<T> LegsProvider<T> for Swap<T>
+where
+    T: IsReal,
+{
+    fn legs(&self) -> &[Leg<T>] {
         &self.legs
     }
 }
@@ -93,6 +93,15 @@ pub struct SwapTrade<T: IsReal> {
     trade_date: Date,
     notional: f64,
     side: Side,
+}
+
+impl<T> LegsProvider<T> for SwapTrade<T>
+where
+    T: IsReal,
+{
+    fn legs(&self) -> &[Leg<T>] {
+        self.instrument.legs()
+    }
 }
 
 impl<T> SwapTrade<T>
@@ -134,12 +143,6 @@ where
     }
 }
 
-impl LegsProvider for SwapTrade<ADReal> {
-    fn legs(&self) -> &[Leg<ADReal>] {
-        self.instrument.legs()
-    }
-}
-
 impl From<Swap<f64>> for Swap<ADReal> {
     fn from(value: Swap<f64>) -> Self {
         let mut legs = value.legs.into_iter();
@@ -147,7 +150,7 @@ impl From<Swap<f64>> for Swap<ADReal> {
             value.identifier,
             legs.next().expect("fixed leg must exist").into(),
             legs.next().expect("floating leg must exist").into(),
-            value.market_index,
+            value.forward_index,
             value.currency,
         )
     }
@@ -160,7 +163,7 @@ impl From<Swap<ADReal>> for Swap<f64> {
             value.identifier,
             legs.next().expect("fixed leg must exist").into(),
             legs.next().expect("floating leg must exist").into(),
-            value.market_index,
+            value.forward_index,
             value.currency,
         )
     }
@@ -168,12 +171,22 @@ impl From<Swap<ADReal>> for Swap<f64> {
 
 impl From<SwapTrade<f64>> for SwapTrade<ADReal> {
     fn from(value: SwapTrade<f64>) -> Self {
-        Self::new(value.instrument.into(), value.trade_date, value.notional, value.side)
+        Self::new(
+            value.instrument.into(),
+            value.trade_date,
+            value.notional,
+            value.side,
+        )
     }
 }
 
 impl From<SwapTrade<ADReal>> for SwapTrade<f64> {
     fn from(value: SwapTrade<ADReal>) -> Self {
-        Self::new(value.instrument.into(), value.trade_date, value.notional, value.side)
+        Self::new(
+            value.instrument.into(),
+            value.trade_date,
+            value.notional,
+            value.side,
+        )
     }
 }
