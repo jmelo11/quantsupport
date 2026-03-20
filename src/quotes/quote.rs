@@ -1002,12 +1002,12 @@ impl std::str::FromStr for QuoteDetails {
 }
 
 // ---------------------------------------------------------------------------
-// BuiltInstrument
+// CalibrationInstrumentType
 // ---------------------------------------------------------------------------
 
 /// Wraps every concrete instrument type that can be produced from a [`Quote`].
 #[derive(Clone)]
-pub enum BuiltInstrument<T = f64>
+pub enum CalibrationInstrumentType<T = f64>
 where
     T: IsReal,
 {
@@ -1035,32 +1035,32 @@ where
     Swaption(Swaption<T>),
 }
 
-impl<T> BuiltInstrument<T>
+impl<T> CalibrationInstrumentType<T>
 where
     T: IsReal,
 {
     /// Returns the final date that defines the calibration pillar for the instrument.
     pub fn pillar_date(&self) -> Result<Date> {
         match self {
-            BuiltInstrument::FixedRateDeposit(x) => Ok(x.leg().last_payment_date()),
-            BuiltInstrument::Swap(x) => Ok(x
+            CalibrationInstrumentType::FixedRateDeposit(x) => Ok(x.leg().last_payment_date()),
+            CalibrationInstrumentType::Swap(x) => Ok(x
                 .fixed_leg()
                 .last_payment_date()
                 .max(x.floating_leg().last_payment_date())),
-            BuiltInstrument::BasisSwap(x) => Ok(x
+            CalibrationInstrumentType::BasisSwap(x) => Ok(x
                 .pay_leg()
                 .last_payment_date()
                 .max(x.receive_leg().last_payment_date())),
-            BuiltInstrument::FixFloatCrossCurrencySwap(x) => Ok(x
+            CalibrationInstrumentType::FixFloatCrossCurrencySwap(x) => Ok(x
                 .domestic_leg()
                 .last_payment_date()
                 .max(x.foreign_leg().last_payment_date())),
-            BuiltInstrument::FloatFloatCrossCurrencySwap(x) => Ok(x
+            CalibrationInstrumentType::FloatFloatCrossCurrencySwap(x) => Ok(x
                 .domestic_leg()
                 .last_payment_date()
                 .max(x.foreign_leg().last_payment_date())),
-            BuiltInstrument::RateFutures(x) => Ok(x.end_date()),
-            BuiltInstrument::FxForward(x) => Ok(x.delivery_date()),
+            CalibrationInstrumentType::RateFutures(x) => Ok(x.end_date()),
+            CalibrationInstrumentType::FxForward(x) => Ok(x.delivery_date()),
             _ => Err(QSError::InvalidValueErr("Instrument not supported".into())),
         }
     }
@@ -1118,7 +1118,7 @@ impl Quote {
         reference_date: Date,
         level: Level,
         fx_spot: Option<f64>,
-    ) -> Result<BuiltInstrument<f64>> {
+    ) -> Result<CalibrationInstrumentType<f64>> {
         let value = self.levels.value(level)?;
         let notional = 1.0;
         match self.details.instrument() {
@@ -1170,7 +1170,7 @@ impl Quote {
         rate: f64,
         reference_date: Date,
         notional: f64,
-    ) -> Result<BuiltInstrument<T>> {
+    ) -> Result<CalibrationInstrumentType<T>> {
         let d = &self.details;
         let currency = d
             .currency()
@@ -1194,7 +1194,7 @@ impl Quote {
             .with_market_index(market_index)
             .build()?;
 
-        Ok(BuiltInstrument::Swap(swap))
+        Ok(CalibrationInstrumentType::Swap(swap))
     }
 
     /// Fixed Rate Deposit — mid value is the deposit rate.
@@ -1203,7 +1203,7 @@ impl Quote {
         rate: f64,
         reference_date: Date,
         notional: f64,
-    ) -> Result<BuiltInstrument<T>> {
+    ) -> Result<CalibrationInstrumentType<T>> {
         let d = &self.details;
         let currency = d
             .currency()
@@ -1227,7 +1227,7 @@ impl Quote {
             .with_discount_index(Some(market_index))
             .build()?;
 
-        Ok(BuiltInstrument::FixedRateDeposit(deposit))
+        Ok(CalibrationInstrumentType::FixedRateDeposit(deposit))
     }
 
     /// Basis Swap — mid value is the spread applied to the receive leg.
@@ -1236,7 +1236,7 @@ impl Quote {
         spread: f64,
         reference_date: Date,
         notional: f64,
-    ) -> Result<BuiltInstrument<T>> {
+    ) -> Result<CalibrationInstrumentType<T>> {
         let d = &self.details;
         let currency = d
             .currency()
@@ -1265,7 +1265,7 @@ impl Quote {
             .with_pay_spread(spread)
             .build()?;
 
-        Ok(BuiltInstrument::BasisSwap(basis_swap))
+        Ok(CalibrationInstrumentType::BasisSwap(basis_swap))
     }
 
     /// Rate Futures — mid value is the futures price, dates resolved from IMM code.
@@ -1273,7 +1273,7 @@ impl Quote {
         &self,
         price: f64,
         reference_date: Date,
-    ) -> Result<BuiltInstrument<T>> {
+    ) -> Result<CalibrationInstrumentType<T>> {
         let d = &self.details;
         let code = d
             .contract_code()
@@ -1293,7 +1293,7 @@ impl Quote {
             .with_rate_definition(rd)
             .build()?;
 
-        Ok(BuiltInstrument::RateFutures(futures))
+        Ok(CalibrationInstrumentType::RateFutures(futures))
     }
 
     /// FX Forward — mid value is the outright forward rate.
@@ -1301,7 +1301,7 @@ impl Quote {
         &self,
         forward_rate: f64,
         reference_date: Date,
-    ) -> Result<BuiltInstrument<T>> {
+    ) -> Result<CalibrationInstrumentType<T>> {
         let d = &self.details;
         let base = d
             .pay_currency()
@@ -1323,7 +1323,7 @@ impl Quote {
             .with_quote_currency(quote_ccy)
             .build()?;
 
-        Ok(BuiltInstrument::FxForward(fwd))
+        Ok(CalibrationInstrumentType::FxForward(fwd))
     }
 
     /// FX Forward Points — mid value is the forward points (absolute).
@@ -1335,7 +1335,7 @@ impl Quote {
         &self,
         points: f64,
         reference_date: Date,
-    ) -> Result<BuiltInstrument<T>> {
+    ) -> Result<CalibrationInstrumentType<T>> {
         let d = &self.details;
         let base = d
             .pay_currency()
@@ -1357,7 +1357,7 @@ impl Quote {
             .with_quote_currency(quote_ccy)
             .build()?;
 
-        Ok(BuiltInstrument::FxForward(fwd))
+        Ok(CalibrationInstrumentType::FxForward(fwd))
     }
 
     /// Cross-Currency Swap (fixed domestic vs floating foreign).
@@ -1368,7 +1368,7 @@ impl Quote {
         reference_date: Date,
         domestic_notional: f64,
         foreign_notional: f64,
-    ) -> Result<BuiltInstrument<T>> {
+    ) -> Result<CalibrationInstrumentType<T>> {
         let d = &self.details;
         let domestic_ccy = d.pay_currency().ok_or_else(|| {
             QSError::ValueNotSetErr("Domestic currency on xccy swap quote".into())
@@ -1404,7 +1404,7 @@ impl Quote {
             .with_foreign_market_index(foreign_index)
             .build()?;
 
-        Ok(BuiltInstrument::FixFloatCrossCurrencySwap(xccy))
+        Ok(CalibrationInstrumentType::FixFloatCrossCurrencySwap(xccy))
     }
 
     /// Float-float cross-currency swap — mid value is the spread on the
@@ -1415,7 +1415,7 @@ impl Quote {
         reference_date: Date,
         domestic_notional: f64,
         foreign_notional: f64,
-    ) -> Result<BuiltInstrument<T>> {
+    ) -> Result<CalibrationInstrumentType<T>> {
         let d = &self.details;
         let domestic_ccy = d.pay_currency().ok_or_else(|| {
             QSError::ValueNotSetErr("Domestic currency on ff-xccy swap quote".into())
@@ -1449,11 +1449,11 @@ impl Quote {
             .with_foreign_market_index(foreign_index)
             .build()?;
 
-        Ok(BuiltInstrument::FloatFloatCrossCurrencySwap(xccy))
+        Ok(CalibrationInstrumentType::FloatFloatCrossCurrencySwap(xccy))
     }
 
     /// European equity Call — strike and expiry from details.
-    fn build_call<T: IsReal + Default>(&self, reference_date: Date) -> Result<BuiltInstrument<T>> {
+    fn build_call<T: IsReal + Default>(&self, reference_date: Date) -> Result<CalibrationInstrumentType<T>> {
         let d = &self.details;
         let strike = d
             .strike()
@@ -1471,11 +1471,11 @@ impl Quote {
             EuroOptionType::Call,
             d.identifier(),
         );
-        Ok(BuiltInstrument::Call(opt))
+        Ok(CalibrationInstrumentType::Call(opt))
     }
 
     /// European equity Put — strike and expiry from details.
-    fn build_put<T: IsReal + Default>(&self, reference_date: Date) -> Result<BuiltInstrument<T>> {
+    fn build_put<T: IsReal + Default>(&self, reference_date: Date) -> Result<CalibrationInstrumentType<T>> {
         let d = &self.details;
         let strike = d
             .strike()
@@ -1493,7 +1493,7 @@ impl Quote {
             EuroOptionType::Put,
             d.identifier(),
         );
-        Ok(BuiltInstrument::Put(opt))
+        Ok(CalibrationInstrumentType::Put(opt))
     }
 
     /// Interest rate Cap or Floor — strike and tenor from details.
@@ -1503,7 +1503,7 @@ impl Quote {
         value: f64,
         reference_date: Date,
         notional: f64,
-    ) -> Result<BuiltInstrument<T>> {
+    ) -> Result<CalibrationInstrumentType<T>> {
         let d = &self.details;
         let tenor = d
             .tenor()
@@ -1534,7 +1534,7 @@ impl Quote {
             .with_cap_floor_type(cap_floor_type)
             .build()?;
 
-        Ok(BuiltInstrument::CapFloor(cf))
+        Ok(CalibrationInstrumentType::CapFloor(cf))
     }
 
     /// European swaption — builds the underlying swap and wraps it.
@@ -1545,7 +1545,7 @@ impl Quote {
         value: f64,
         reference_date: Date,
         notional: f64,
-    ) -> Result<BuiltInstrument<T>> {
+    ) -> Result<CalibrationInstrumentType<T>> {
         let d = &self.details;
         let option_expiry_period = d
             .option_expiry()
@@ -1576,7 +1576,7 @@ impl Quote {
             )
             .build()?;
 
-        Ok(BuiltInstrument::Swaption(swaption))
+        Ok(CalibrationInstrumentType::Swaption(swaption))
     }
 }
 
@@ -1714,7 +1714,7 @@ mod tests {
         let inst = quote
             .build_instrument(ref_date(), Level::Mid, None)
             .unwrap();
-        assert!(matches!(inst, BuiltInstrument::Swap(_)));
+        assert!(matches!(inst, CalibrationInstrumentType::Swap(_)));
     }
 
     #[test]
@@ -1724,7 +1724,7 @@ mod tests {
         let inst = quote
             .build_instrument(ref_date(), Level::Mid, None)
             .unwrap();
-        assert!(matches!(inst, BuiltInstrument::FixedRateDeposit(_)));
+        assert!(matches!(inst, CalibrationInstrumentType::FixedRateDeposit(_)));
     }
 
     #[test]
@@ -1734,7 +1734,7 @@ mod tests {
         let inst = quote
             .build_instrument(ref_date(), Level::Mid, None)
             .unwrap();
-        assert!(matches!(inst, BuiltInstrument::BasisSwap(_)));
+        assert!(matches!(inst, CalibrationInstrumentType::BasisSwap(_)));
     }
 
     #[test]
@@ -1744,7 +1744,7 @@ mod tests {
         let inst = quote
             .build_instrument(ref_date(), Level::Mid, None)
             .unwrap();
-        assert!(matches!(inst, BuiltInstrument::RateFutures(_)));
+        assert!(matches!(inst, CalibrationInstrumentType::RateFutures(_)));
     }
 
     #[test]
@@ -1754,7 +1754,7 @@ mod tests {
         let inst = quote
             .build_instrument(ref_date(), Level::Mid, None)
             .unwrap();
-        assert!(matches!(inst, BuiltInstrument::FxForward(_)));
+        assert!(matches!(inst, CalibrationInstrumentType::FxForward(_)));
     }
 
     #[test]
@@ -1768,7 +1768,7 @@ mod tests {
             .unwrap();
         assert!(matches!(
             inst,
-            BuiltInstrument::FixFloatCrossCurrencySwap(_)
+            CalibrationInstrumentType::FixFloatCrossCurrencySwap(_)
         ));
     }
 
@@ -1779,7 +1779,7 @@ mod tests {
         let inst = quote
             .build_instrument(ref_date(), Level::Mid, None)
             .unwrap();
-        assert!(matches!(inst, BuiltInstrument::Call(_)));
+        assert!(matches!(inst, CalibrationInstrumentType::Call(_)));
     }
 
     #[test]
@@ -1789,7 +1789,7 @@ mod tests {
         let inst = quote
             .build_instrument(ref_date(), Level::Mid, None)
             .unwrap();
-        assert!(matches!(inst, BuiltInstrument::Put(_)));
+        assert!(matches!(inst, CalibrationInstrumentType::Put(_)));
     }
 
     #[test]
@@ -1801,7 +1801,7 @@ mod tests {
         let inst = quote
             .build_instrument(ref_date(), Level::Mid, None)
             .unwrap();
-        assert!(matches!(inst, BuiltInstrument::Swaption(_)));
+        assert!(matches!(inst, CalibrationInstrumentType::Swaption(_)));
     }
 
     #[test]
@@ -1811,7 +1811,7 @@ mod tests {
         let inst = quote
             .build_instrument(ref_date(), Level::Mid, None)
             .unwrap();
-        assert!(matches!(inst, BuiltInstrument::CapFloor(_)));
+        assert!(matches!(inst, CalibrationInstrumentType::CapFloor(_)));
     }
 
     #[test]

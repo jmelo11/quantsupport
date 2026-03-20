@@ -122,9 +122,9 @@ pub use crate::{
     rates::{
         bootstrapping::{
             bootstrapdiscountpolicy::BootstrapDiscountPolicy,
+            calibrationinstrument::CalibrationInstrument,
             curveconfiguration::{CurveConfiguration, QuoteSelector},
             multicurvebootstrapper::MultiCurveBootstrapper,
-            resolvedinstrument::ResolvedInstrument,
         },
         compounding::Compounding,
         interestrate::{InterestRate, RateDefinition},

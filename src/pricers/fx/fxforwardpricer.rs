@@ -197,7 +197,8 @@ impl HandleSensitivities<FxForwardTrade, FxForwardState> for FxForwardPricer {
 
         Ok(SensitivityMap::default()
             .with_instrument_keys(&ids)
-            .with_exposure(&exposures))
+            .with_exposure(&exposures)
+            .aggregate())
     }
 }
 

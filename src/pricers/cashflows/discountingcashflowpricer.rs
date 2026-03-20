@@ -207,7 +207,8 @@ where
 
         let sensitivities = SensitivityMap::default()
             .with_instrument_keys(&all_ids)
-            .with_exposure(&all_exposures);
+            .with_exposure(&all_exposures)
+            .aggregate();
         Ok(sensitivities)
     }
 }

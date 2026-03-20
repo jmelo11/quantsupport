@@ -6,5 +6,5 @@ pub mod bootstraputils;
 pub mod curveconfiguration;
 /// Interest rate curve bootstrapper.
 pub mod multicurvebootstrapper;
-/// Resolved calibration instruments for bootstrapping.
-pub mod resolvedinstrument;
+/// Calibration instruments for bootstrapping.
+pub mod calibrationinstrument;

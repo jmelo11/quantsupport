@@ -21,9 +21,9 @@ use crate::{
     rates::{
         bootstrapping::{
             bootstrapdiscountpolicy::BootstrapDiscountPolicy,
-            bootstraputils::{dependency_order, BootstrapCurveSet, SolvedCurve},
+            bootstraputils::{dependency_order, BootstrapCurveSet, CrossCurveDep, SolvedCurve},
+            calibrationinstrument::CalibrationInstrument,
             curveconfiguration::{CurveConfiguration, QuoteSelector},
-            resolvedinstrument::ResolvedInstrument,
         },
         yieldtermstructure::discounttermstructure::DiscountTermStructure,
     },
@@ -41,7 +41,7 @@ use crate::{
 /// * `discount_policy`: the discount policy defines how to determine the discount curve for each instrument during bootstrapping, including handling of cross-currency instruments and collateralization. See [`BootstrapDiscountPolicy`] for details.
 ///
 /// ## Example
-/// ```
+/// ```ignore
 /// use quantsupport::prelude::*;
 /// use std::collections::HashMap;
 ///
@@ -89,7 +89,7 @@ use crate::{
 /// selector.add("OIS_USD_SOFR_2Y", 0.045);
 ///
 /// // We configure a single curve for the SOFR index, with 4 pillars.
-/// let spec = CurveSpec::new(
+/// let spec = CurveConfiguration::new(
 ///     MarketIndex::SOFR,
 ///     Currency::USD,
 ///     DayCounter::Actual360,
@@ -141,7 +141,7 @@ impl MultiCurveBootstrapper {
     /// configured curve.
     ///
     /// ## Parameters
-    /// * `selector`: the quote selector to resolve market quotes for the pillar instruments. The selector should be able to build the corresponding `BuiltInstrument`s for each quote ID, as these are needed for bootstrapping.
+    /// * `selector`: the quote selector to resolve market quotes for the pillar instruments. The selector should be able to build the corresponding `CalibrationInstrumentType`s for each quote ID, as these are needed for bootstrapping.
     ///
     /// ## Errors
     /// Returns an error if quote resolution fails, a dependency cycle or
@@ -225,7 +225,11 @@ impl MultiCurveBootstrapper {
             )?;
 
             ts = ts.with_pillar_values(pv.clone())?;
-            ts = ts.with_pillar_labels(spec.pillar_labels())?;
+            let labels = sc
+                .pillar_labels()
+                .map(|l| l.to_vec())
+                .unwrap_or_else(|| spec.pillar_labels());
+            ts = ts.with_pillar_labels(labels)?;
             if let Some(ift_sens) = sc.ift_sensitivities() {
                 ts = ts.with_ift_sensitivities(ift_sens.clone());
             }
@@ -254,9 +258,11 @@ impl MultiCurveBootstrapper {
         // Build pillar time grid: [0, t_1, t_2, …]
         let instruments = curve_config.instruments()?;
         let mut times = vec![0.0_f64];
-        times.extend(instruments.iter().map(|instr| {
-            dc.year_fraction(reference_date, instr.pillar_date())
-        }));
+        times.extend(
+            instruments
+                .iter()
+                .map(|instr| dc.year_fraction(reference_date, instr.pillar_date())),
+        );
 
         let n = instruments.len();
 
@@ -283,20 +289,19 @@ impl MultiCurveBootstrapper {
         // -----------------------------------------------------------------
         // IFT post-processing
         //
-        // Given the implicit relation  F(x, q) = 0  where x are the
-        // discount factors and q the market quotes, the implicit function
-        // theorem gives:
+        // Given the implicit relation  F(x, q, z) = 0  where x are the
+        // discount factors, q the market quotes, and z the parent curve
+        // discount factors, the implicit function theorem gives:
         //
-        //   dx/dq = −J⁻¹ G
+        //   dx/dq = −J⁻¹ G           (own-curve sensitivity)
+        //   dx/dz = −J⁻¹ (∂F/∂z)    (cross-curve sensitivity)
         //
-        // where J = ∂F/∂x is the Jacobian at the solution (already
-        // returned by the Newton solver) and G = ∂F/∂q is a diagonal
-        // matrix (quote q_i only enters residual F_i).
+        // where J = ∂F/∂x is the Jacobian at the solution and
+        // G = ∂F/∂q is diagonal (quote q_i only enters residual F_i).
         //
-        // We compute the sensitivity matrix S = dx/dq, then build ADReal
-        // discount factors whose tape-recorded derivatives encode these
-        // sensitivities.  Downstream pricers that call `backward()` will
-        // then propagate through DF → quote correctly.
+        // Downstream pricers that call `backward()` on the AD tape will
+        // propagate through DF → own quotes AND DF → parent DFs → parent
+        // quotes correctly.
         // -----------------------------------------------------------------
         let converged_x = &solution.x;
 
@@ -305,11 +310,11 @@ impl MultiCurveBootstrapper {
 
         // Retrieve quote values and the Jacobian J = ∂F/∂x.
         let quote_vals = curve_config.quote_values();
-        let j_raw = solution.jacobian.ok_or_else(|| {
-            QSError::SolverErr("Newton solver did not return a Jacobian".into())
-        })?;
+        let j_raw = solution
+            .jacobian
+            .ok_or_else(|| QSError::SolverErr("Newton solver did not return a Jacobian".into()))?;
 
-        // Compute diagonal of G = ∂F/∂q by finite-difference bumping.
+        // Compute diagonal of G = ∂F/∂q analytically.
         let g_diag = Self::compute_quote_sensitivities(&problem, converged_x)?;
 
         // Build nalgebra objects and solve  J · S_col = −g_col  for each
@@ -330,22 +335,145 @@ impl MultiCurveBootstrapper {
             }
         }
 
+        // -----------------------------------------------------------------
+        // Cross-curve IFT: compute ∂DF_self/∂DF_parent for each parent.
+        //
+        // For each parent curve present in `other_curves`, compute the
+        // matrix ∂F/∂z (how residuals depend on parent DFs) via central
+        // finite differences, then solve  J · cross_col = −(∂F/∂z)_col.
+        // -----------------------------------------------------------------
+        let _base_residual = problem.call(converged_x)?;
+        let mut cross_deps: Vec<CrossCurveDep> = Vec::new();
+
+        for (parent_idx, parent_curve) in other_curves {
+            let parent_dfs = parent_curve.discount_factors();
+            let parent_n = parent_dfs.len() - 1; // excluding DF(0) = 1
+
+            // Skip parent curves that provide no pillar IFT data
+            let parent_ift = match parent_curve.ift_sensitivities() {
+                Some(ift) => ift.clone(),
+                None => continue,
+            };
+            let parent_labels: Vec<String> = parent_curve
+                .pillar_labels()
+                .map(|l| l.to_vec())
+                .unwrap_or_else(|| {
+                    parent_curve
+                        .pillar_values()
+                        .map(|pv| pv.iter().map(|_| String::new()).collect())
+                        .unwrap_or_default()
+                });
+
+            // Compute ∂F/∂z by bumping each parent DF (indices 1..=parent_n)
+            // dF_dz[row][col] = ∂F_row / ∂z_{col+1}
+            let mut df_dz = vec![vec![0.0_f64; parent_n]; n];
+
+            for m in 0..parent_n {
+                let bump = (parent_dfs[m + 1].abs() * 1e-6).max(1e-10);
+
+                let (up_res, up_bump) = self.bumped_residual(
+                    &problem,
+                    parent_idx,
+                    parent_curve,
+                    m + 1,
+                    bump,
+                    converged_x,
+                )?;
+                let (dn_res, dn_bump) = self.bumped_residual(
+                    &problem,
+                    parent_idx,
+                    parent_curve,
+                    m + 1,
+                    -bump,
+                    converged_x,
+                )?;
+
+                let denom = up_bump - dn_bump;
+                for row in 0..n {
+                    df_dz[row][m] = (up_res[row] - dn_res[row]) / denom;
+                }
+            }
+
+            // Solve  J · cross_S_col = −(∂F/∂z)_col  for each parent DF
+            // cross_df_sens[i][m] = ∂DF_self(i+1)/∂DF_parent(m+1)
+            let mut cross_df_sens = vec![vec![0.0_f64; parent_n]; n];
+            let mut has_nonzero = false;
+            for m in 0..parent_n {
+                let mut rhs = DVector::zeros(n);
+                for row in 0..n {
+                    rhs[row] = df_dz[row][m];
+                }
+                if let Some(col) = lu.solve(&rhs) {
+                    for i in 0..n {
+                        let val = -col[i];
+                        if val.abs() > 1e-16 {
+                            cross_df_sens[i][m] = val;
+                            has_nonzero = true;
+                        }
+                    }
+                }
+            }
+
+            if has_nonzero {
+                // Retrieve parent quote values
+                let parent_quote_vals: Vec<f64> = parent_curve
+                    .pillar_values()
+                    .map(|pv| pv.iter().map(|v| v.value()).collect())
+                    .unwrap_or_default();
+
+                cross_deps.push(CrossCurveDep {
+                    cross_df_sens,
+                    parent_ift_sens: parent_ift,
+                    parent_quote_values: parent_quote_vals,
+                    parent_pillar_labels: parent_labels,
+                });
+            }
+        }
+
         // Build ADReal discount factors whose derivatives flow to the
         // quote ADReals via the computed sensitivities.
         let quote_ad: Vec<ADReal> = quote_vals.iter().map(|&v| ADReal::new(v)).collect();
+
+        // Pre-compose cross-curve dependencies into the IFT matrix.
+        // For each parent, compose:  combined[i][k] = Σ_m cross_df_sens[i][m] * parent_ift_sens[m][k]
+        // Extend pillar_values and pillar_labels with parent quotes.
+        let mut full_sensitivity = sensitivity.clone();
+        let mut full_quotes = quote_ad.clone();
+        let mut full_labels = curve_config.pillar_labels();
+
+        for dep in &cross_deps {
+            let parent_n_quotes = dep.parent_quote_values.len();
+            let m_count = dep.parent_ift_sens.len();
+            for i in 0..n {
+                let mut row_ext = Vec::with_capacity(parent_n_quotes);
+                for k in 0..parent_n_quotes {
+                    let mut combined = 0.0_f64;
+                    for m in 0..m_count {
+                        combined += dep.cross_df_sens[i][m] * dep.parent_ift_sens[m][k];
+                    }
+                    row_ext.push(combined);
+                }
+                full_sensitivity[i].extend(row_ext);
+            }
+            for &v in &dep.parent_quote_values {
+                full_quotes.push(ADReal::new(v));
+            }
+            full_labels.extend(dep.parent_pillar_labels.clone());
+        }
 
         // Build output discount factors: DF_0 = 1 (constant), then each
         // DF_{i+1} = converged_value + Σ_j  S[i][j] * (q_j − q_j_value).
         // Since (q_j − q_j_value) = 0 in value, the numeric result is
         // exact; but the AD graph records ∂DF/∂q correctly.
+        let n_total = full_quotes.len();
         let mut ad_dfs: Vec<ADReal> = Vec::with_capacity(n + 1);
         ad_dfs.push(ADReal::new(1.0)); // DF(0) = 1
         for i in 0..n {
             let mut df_ad = ADReal::new(converged_x[i]);
-            for j in 0..n {
-                let s = sensitivity[i][j];
+            for j in 0..n_total {
+                let s = full_sensitivity[i][j];
                 if s.abs() > 1e-16 {
-                    let delta = quote_ad[j] - ADReal::new(quote_vals[j]);
+                    let delta = full_quotes[j] - ADReal::new(full_quotes[j].value());
                     df_ad = (df_ad + ADReal::new(s) * delta).into();
                 }
             }
@@ -360,9 +488,10 @@ impl MultiCurveBootstrapper {
             dc,
             interp,
         )
-        .with_pillar_values(quote_ad)
+        .with_pillar_values(full_quotes)
+        .with_pillar_labels(full_labels)
         .with_output_discount_factors(ad_dfs)
-        .with_ift_sensitivities(sensitivity))
+        .with_ift_sensitivities(full_sensitivity))
     }
 
     /// Computes the diagonal of the G = ∂F/∂q matrix analytically.
@@ -370,10 +499,7 @@ impl MultiCurveBootstrapper {
     /// Each quote only enters its own residual, so only the diagonal is
     /// non-zero.  The per-instrument `quote_sensitivity` returns ∂F_j/∂q_j
     /// directly.
-    fn compute_quote_sensitivities(
-        problem: &BootstrapProblem,
-        x: &[f64],
-    ) -> Result<Vec<f64>> {
+    fn compute_quote_sensitivities(problem: &BootstrapProblem, x: &[f64]) -> Result<Vec<f64>> {
         let trial = problem.create_trial_curve(x);
         let curves = BootstrapCurveSet::new(
             &trial,
@@ -387,6 +513,39 @@ impl MultiCurveBootstrapper {
             .iter()
             .map(|instr| instr.quote_sensitivity(&curves))
             .collect()
+    }
+
+    fn bumped_residual(
+        &self,
+        problem: &BootstrapProblem,
+        parent_idx: &MarketIndex,
+        parent_curve: &SolvedCurve,
+        parent_df_idx: usize,
+        bump: f64,
+        x: &[f64],
+    ) -> Result<(Vec<f64>, f64)> {
+        let original_df = parent_curve.discount_factors()[parent_df_idx];
+        let bumped_df = (original_df + bump).max(1e-10);
+
+        let mut bumped_parent = parent_curve.clone();
+        bumped_parent.discount_factors_mut()[parent_df_idx] = bumped_df;
+
+        let mut bumped_others = problem.other_curves.clone();
+        bumped_others.insert(parent_idx.clone(), bumped_parent);
+
+        let bumped_problem = BootstrapProblem {
+            target_index: problem.target_index.clone(),
+            reference_date: problem.reference_date,
+            times: problem.times.clone(),
+            day_counter: problem.day_counter,
+            interpolator: problem.interpolator,
+            instruments: problem.instruments,
+            other_curves: &bumped_others,
+            discount_policy: problem.discount_policy,
+            exchange_rate_store: problem.exchange_rate_store,
+        };
+
+        Ok((bumped_problem.call(x)?, bumped_df - original_df))
     }
 }
 
@@ -403,7 +562,7 @@ struct BootstrapProblem<'a> {
     pub times: Vec<f64>,
     pub day_counter: DayCounter,
     pub interpolator: Interpolator,
-    pub instruments: &'a [ResolvedInstrument],
+    pub instruments: &'a [CalibrationInstrument],
     pub other_curves: &'a HashMap<MarketIndex, SolvedCurve>,
     pub discount_policy: &'a BootstrapDiscountPolicy,
     pub exchange_rate_store: &'a ExchangeRateStore,

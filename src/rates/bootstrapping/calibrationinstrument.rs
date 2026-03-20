@@ -9,7 +9,7 @@ use crate::{
     utils::errors::{QSError, Result},
 };
 
-/// A resolved calibration instrument: a quote that has been turned into a
+/// A calibration instrument: a quote that has been turned into a
 /// concrete [`CalibrationInstrumentType`] with a known pillar date and scalar quote
 /// value.
 #[derive(Clone)]
@@ -227,12 +227,8 @@ impl CalibrationInstrument {
     pub fn quote_sensitivity(&self, curves: &BootstrapCurveSet) -> Result<f64> {
         match self.built() {
             CalibrationInstrumentType::FixedRateDeposit(_) => Ok(-1.0),
-            CalibrationInstrumentType::Swap(swap) => {
-                self.fixed_leg_annuity(swap.fixed_leg(), curves)
-            }
-            CalibrationInstrumentType::BasisSwap(bs) => {
-                self.floating_leg_annuity(bs.pay_leg(), curves)
-            }
+            CalibrationInstrumentType::Swap(swap) => self.fixed_leg_annuity(swap.fixed_leg(), curves),
+            CalibrationInstrumentType::BasisSwap(bs) => self.floating_leg_annuity(bs.pay_leg(), curves),
             CalibrationInstrumentType::FixFloatCrossCurrencySwap(xccy) => {
                 self.fixed_leg_annuity(xccy.domestic_leg(), curves)
             }

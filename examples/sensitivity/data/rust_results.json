@@ -889,43 +889,43 @@
         },
         {
           "pillar": "OIS_USD_SOFR_3M",
-          "exposure": 27218.72642102078,
-          "dv01": 2.721872642102078
+          "exposure": -499.94072647388384,
+          "dv01": -0.049994072647388386
         },
         {
           "pillar": "OIS_USD_SOFR_6M",
-          "exposure": -21261.952205872654,
-          "dv01": -2.1261952205872654
+          "exposure": -3030.1050183480074,
+          "dv01": -0.30301050183480077
         },
         {
           "pillar": "OIS_USD_SOFR_1Y",
-          "exposure": -7590.690354328623,
-          "dv01": -0.7590690354328623
+          "exposure": -12221.25368982247,
+          "dv01": -1.222125368982247
         },
         {
           "pillar": "OIS_USD_SOFR_2Y",
-          "exposure": -44425.02480132648,
-          "dv01": -4.4425024801326485
+          "exposure": -33107.393400583445,
+          "dv01": -3.3107393400583445
         },
         {
           "pillar": "OIS_USD_SOFR_3Y",
-          "exposure": -79174.07017241974,
-          "dv01": -7.917407017241975
+          "exposure": -50815.767265060305,
+          "dv01": -5.0815767265060305
         },
         {
           "pillar": "OIS_USD_SOFR_4Y",
-          "exposure": -103017.49128884927,
-          "dv01": -10.301749128884927
+          "exposure": -68984.30295379634,
+          "dv01": -6.898430295379635
         },
         {
           "pillar": "OIS_USD_SOFR_5Y",
-          "exposure": -304505.44856131996,
-          "dv01": -30.450544856131998
+          "exposure": -45619383.85877111,
+          "dv01": -4561.938385877111
         },
         {
           "pillar": "OIS_USD_SOFR_7Y",
-          "exposure": -1902.1470483793157,
-          "dv01": -0.19021470483793157
+          "exposure": -177095.37701427753,
+          "dv01": -17.709537701427752
         },
         {
           "pillar": "OIS_USD_SOFR_10Y",
@@ -1454,38 +1454,38 @@
         },
         {
           "pillar": "FxForwardPoints_USDCLP_3M",
-          "exposure": 69.49913798511777,
-          "dv01": 0.006949913798511777
+          "exposure": -1.6995960627027529,
+          "dv01": -0.0001699596062702753
         },
         {
           "pillar": "FxForwardPoints_USDCLP_6M",
-          "exposure": -20.36182957608335,
-          "dv01": -0.0020361829576083347
+          "exposure": 1.4666620734872389,
+          "dv01": 0.0001466662073487239
         },
         {
           "pillar": "CrossCurrencySwap_CLP_ICP_SOFR_USD_1Y",
-          "exposure": 10184.892886317422,
-          "dv01": 1.0184892886317423
+          "exposure": -9.898122936850996,
+          "dv01": -0.0009898122936850995
         },
         {
           "pillar": "CrossCurrencySwap_CLP_ICP_SOFR_USD_2Y",
-          "exposure": 5637.446661418884,
-          "dv01": 0.5637446661418885
+          "exposure": -38.5948025816142,
+          "dv01": -0.0038594802581614204
         },
         {
           "pillar": "CrossCurrencySwap_CLP_ICP_SOFR_USD_3Y",
-          "exposure": -43764.553127686806,
-          "dv01": -4.376455312768681
+          "exposure": 2.991114415533957,
+          "dv01": 0.0002991114415533957
         },
         {
           "pillar": "CrossCurrencySwap_CLP_ICP_SOFR_USD_5Y",
-          "exposure": -196342.69021438804,
-          "dv01": -19.634269021438804
+          "exposure": -9.842292873421684,
+          "dv01": -0.0009842292873421684
         },
         {
           "pillar": "CrossCurrencySwap_CLP_ICP_SOFR_USD_7Y",
-          "exposure": -1081.4693593943318,
-          "dv01": -0.10814693593943318
+          "exposure": -291.74320219301876,
+          "dv01": -0.02917432021930188
         },
         {
           "pillar": "CrossCurrencySwap_CLP_ICP_SOFR_USD_10Y",
@@ -1494,6 +1494,71 @@
         },
         {
           "pillar": "CrossCurrencySwap_CLP_ICP_SOFR_USD_20Y",
+          "exposure": 0.0,
+          "dv01": 0.0
+        },
+        {
+          "pillar": "FixedRateDeposit_USD_SOFR_1D",
+          "exposure": 0.0,
+          "dv01": 0.0
+        },
+        {
+          "pillar": "OIS_USD_SOFR_3M",
+          "exposure": -403.9361066323654,
+          "dv01": -0.040393610663236545
+        },
+        {
+          "pillar": "OIS_USD_SOFR_6M",
+          "exposure": 684.2905926690637,
+          "dv01": 0.06842905926690637
+        },
+        {
+          "pillar": "OIS_USD_SOFR_1Y",
+          "exposure": -5.084022742027141e-9,
+          "dv01": -5.084022742027141e-13
+        },
+        {
+          "pillar": "OIS_USD_SOFR_2Y",
+          "exposure": -1.0596427560790244e-8,
+          "dv01": -1.0596427560790245e-12
+        },
+        {
+          "pillar": "OIS_USD_SOFR_3Y",
+          "exposure": -6.659980086591717e-11,
+          "dv01": -6.659980086591717e-15
+        },
+        {
+          "pillar": "OIS_USD_SOFR_4Y",
+          "exposure": -9.041631684513762e-11,
+          "dv01": -9.041631684513763e-15
+        },
+        {
+          "pillar": "OIS_USD_SOFR_5Y",
+          "exposure": 3.6457736539479086e-8,
+          "dv01": 3.645773653947909e-12
+        },
+        {
+          "pillar": "OIS_USD_SOFR_7Y",
+          "exposure": -4.5345710922832015e-8,
+          "dv01": -4.534571092283201e-12
+        },
+        {
+          "pillar": "OIS_USD_SOFR_10Y",
+          "exposure": 0.0,
+          "dv01": 0.0
+        },
+        {
+          "pillar": "OIS_USD_SOFR_15Y",
+          "exposure": 0.0,
+          "dv01": 0.0
+        },
+        {
+          "pillar": "OIS_USD_SOFR_20Y",
+          "exposure": 0.0,
+          "dv01": 0.0
+        },
+        {
+          "pillar": "OIS_USD_SOFR_30Y",
           "exposure": 0.0,
           "dv01": 0.0
         },
@@ -2003,49 +2068,99 @@
           "dv01": 0.0
         },
         {
+          "pillar": "FxForwardPoints_USDCLP_1M",
+          "exposure": -711.6238913091273,
+          "dv01": -0.07116238913091273
+        },
+        {
+          "pillar": "FxForwardPoints_USDCLP_3M",
+          "exposure": -9.880521911470225,
+          "dv01": -0.0009880521911470226
+        },
+        {
+          "pillar": "FxForwardPoints_USDCLP_6M",
+          "exposure": -8.305814196081073,
+          "dv01": -0.0008305814196081073
+        },
+        {
+          "pillar": "CrossCurrencySwap_CLP_ICP_SOFR_USD_1Y",
+          "exposure": -21117.35531788076,
+          "dv01": -2.111735531788076
+        },
+        {
+          "pillar": "CrossCurrencySwap_CLP_ICP_SOFR_USD_2Y",
+          "exposure": -57853.94072720536,
+          "dv01": -5.785394072720536
+        },
+        {
+          "pillar": "CrossCurrencySwap_CLP_ICP_SOFR_USD_3Y",
+          "exposure": -135016.8192850033,
+          "dv01": -13.50168192850033
+        },
+        {
+          "pillar": "CrossCurrencySwap_CLP_ICP_SOFR_USD_5Y",
+          "exposure": -44704174.27655765,
+          "dv01": -4470.417427655765
+        },
+        {
+          "pillar": "CrossCurrencySwap_CLP_ICP_SOFR_USD_7Y",
+          "exposure": -172685.16567951214,
+          "dv01": -17.268516567951213
+        },
+        {
+          "pillar": "CrossCurrencySwap_CLP_ICP_SOFR_USD_10Y",
+          "exposure": 0.0,
+          "dv01": 0.0
+        },
+        {
+          "pillar": "CrossCurrencySwap_CLP_ICP_SOFR_USD_20Y",
+          "exposure": 0.0,
+          "dv01": 0.0
+        },
+        {
           "pillar": "FixedRateDeposit_USD_SOFR_1D",
-          "exposure": 54925.262359703614,
-          "dv01": 5.492526235970361
+          "exposure": 53664.14975773943,
+          "dv01": 5.366414975773943
         },
         {
           "pillar": "OIS_USD_SOFR_3M",
-          "exposure": 55537.31594572194,
-          "dv01": 5.553731594572194
+          "exposure": -491.3089514398016,
+          "dv01": -0.04913089514398016
         },
         {
           "pillar": "OIS_USD_SOFR_6M",
-          "exposure": -7.210127834212981e-10,
-          "dv01": -7.210127834212981e-14
+          "exposure": -3875.188675587575,
+          "dv01": -0.38751886755875753
         },
         {
           "pillar": "OIS_USD_SOFR_1Y",
-          "exposure": -1.7504136200361343e-9,
-          "dv01": -1.7504136200361344e-13
+          "exposure": -0.0024568735703330937,
+          "dv01": -2.456873570333094e-7
         },
         {
           "pillar": "OIS_USD_SOFR_2Y",
-          "exposure": 7.395310300213339e-9,
-          "dv01": 7.395310300213339e-13
+          "exposure": -0.005159572789855538,
+          "dv01": -5.159572789855538e-7
         },
         {
           "pillar": "OIS_USD_SOFR_3Y",
-          "exposure": -1.6754228913798796e-8,
-          "dv01": -1.6754228913798798e-12
+          "exposure": -0.00029192816137683643,
+          "dv01": -2.9192816137683644e-8
         },
         {
           "pillar": "OIS_USD_SOFR_4Y",
-          "exposure": -1.7170669009604082e-9,
-          "dv01": -1.7170669009604083e-13
+          "exposure": -0.0003963025375190565,
+          "dv01": -3.963025375190565e-8
         },
         {
           "pillar": "OIS_USD_SOFR_5Y",
-          "exposure": 1.9714269007685707e-9,
-          "dv01": 1.9714269007685708e-13
+          "exposure": 0.013081086433763673,
+          "dv01": 1.3081086433763674e-6
         },
         {
           "pillar": "OIS_USD_SOFR_7Y",
-          "exposure": -2.140737434569518e-11,
-          "dv01": -2.140737434569518e-15
+          "exposure": -0.000026840515186502028,
+          "dv01": -2.6840515186502027e-9
         },
         {
           "pillar": "OIS_USD_SOFR_10Y",
@@ -2064,56 +2179,6 @@
         },
         {
           "pillar": "OIS_USD_SOFR_30Y",
-          "exposure": 0.0,
-          "dv01": 0.0
-        },
-        {
-          "pillar": "FxForwardPoints_USDCLP_1M",
-          "exposure": -711.6238913091273,
-          "dv01": -0.07116238913091273
-        },
-        {
-          "pillar": "FxForwardPoints_USDCLP_3M",
-          "exposure": -143.0221545808943,
-          "dv01": -0.014302215458089431
-        },
-        {
-          "pillar": "FxForwardPoints_USDCLP_6M",
-          "exposure": 32.51346518861578,
-          "dv01": 0.0032513465188615783
-        },
-        {
-          "pillar": "CrossCurrencySwap_CLP_ICP_SOFR_USD_1Y",
-          "exposure": -40181.61450518627,
-          "dv01": -4.018161450518627
-        },
-        {
-          "pillar": "CrossCurrencySwap_CLP_ICP_SOFR_USD_2Y",
-          "exposure": -68468.13826488634,
-          "dv01": -6.846813826488634
-        },
-        {
-          "pillar": "CrossCurrencySwap_CLP_ICP_SOFR_USD_3Y",
-          "exposure": -53171.51155227213,
-          "dv01": -5.317151155227213
-        },
-        {
-          "pillar": "CrossCurrencySwap_CLP_ICP_SOFR_USD_5Y",
-          "exposure": -44337031.850944415,
-          "dv01": -4433.703185094441
-        },
-        {
-          "pillar": "CrossCurrencySwap_CLP_ICP_SOFR_USD_7Y",
-          "exposure": -171208.37776554568,
-          "dv01": -17.12083777655457
-        },
-        {
-          "pillar": "CrossCurrencySwap_CLP_ICP_SOFR_USD_10Y",
-          "exposure": 0.0,
-          "dv01": 0.0
-        },
-        {
-          "pillar": "CrossCurrencySwap_CLP_ICP_SOFR_USD_20Y",
           "exposure": 0.0,
           "dv01": 0.0
         },

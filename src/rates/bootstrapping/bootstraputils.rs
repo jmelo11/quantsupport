@@ -9,7 +9,7 @@ use crate::{
     rates::{
         bootstrapping::{
             bootstrapdiscountpolicy::BootstrapDiscountPolicy,
-            curveconfiguration::CurveConfiguration, resolvedinstrument::ResolvedInstrument,
+            calibrationinstrument::CalibrationInstrument, curveconfiguration::CurveConfiguration,
         },
         interestrate::{InterestRate, RateDefinition},
     },
@@ -21,7 +21,7 @@ use crate::{
 pub fn get_pillar_times(
     reference_date: Date,
     day_counter: DayCounter,
-    instruments: &[ResolvedInstrument],
+    instruments: &[CalibrationInstrument],
 ) -> Vec<f64> {
     let mut times = vec![0.0_f64];
     for instr in instruments {
@@ -89,6 +89,19 @@ pub fn dependency_order(
     Ok(order)
 }
 
+/// Cross-curve dependency: how a child curve's DFs depend on a parent curve.
+#[derive(Clone)]
+pub struct CrossCurveDep {
+    /// `cross_df_sens[i][m]` = ∂DF_self(i+1)/∂DF_parent(m+1)
+    pub cross_df_sens: Vec<Vec<f64>>,
+    /// Parent curve's IFT sensitivity matrix: `parent_ift_sens[m][k]` = ∂DF_parent(m+1)/∂q_parent(k)
+    pub parent_ift_sens: Vec<Vec<f64>>,
+    /// Parent curve's quote values (for AD linkage).
+    pub parent_quote_values: Vec<f64>,
+    /// Parent curve's pillar labels.
+    pub parent_pillar_labels: Vec<String>,
+}
+
 /// Internally constructed curve representation used during bootstrapping.
 #[derive(Clone)]
 pub struct SolvedCurve {
@@ -99,6 +112,7 @@ pub struct SolvedCurve {
     day_counter: DayCounter,
     interpolator: Interpolator,
     pillar_values: Option<Vec<ADReal>>,
+    pillar_labels: Option<Vec<String>>,
     output_discount_factors: Option<Vec<ADReal>>,
     ift_sensitivities: Option<Vec<Vec<f64>>>,
 }
@@ -121,6 +135,7 @@ impl SolvedCurve {
             day_counter,
             interpolator,
             pillar_values: None,
+            pillar_labels: None,
             output_discount_factors: None,
             ift_sensitivities: None,
         }
@@ -137,22 +152,31 @@ impl SolvedCurve {
         self
     }
 
-    pub(crate) fn with_output_discount_factors(
-        mut self,
-        output_discount_factors: Vec<ADReal>,
-    ) -> Self {
+    /// Attaches pillar labels (matching pillar_values in order).
+    pub fn with_pillar_labels(mut self, labels: Vec<String>) -> Self {
+        self.pillar_labels = Some(labels);
+        self
+    }
+
+    /// Returns pillar labels, if set.
+    pub fn pillar_labels(&self) -> Option<&[String]> {
+        self.pillar_labels.as_deref()
+    }
+
+    /// Attaches AD-tracked discount factors at the pillar dates.
+    pub fn with_output_discount_factors(mut self, output_discount_factors: Vec<ADReal>) -> Self {
         self.output_discount_factors = Some(output_discount_factors);
         self
     }
 
     /// Attaches the IFT sensitivity matrix: `sens[i][j]` = ∂DF(i+1)/∂q(j).
-    pub(crate) fn with_ift_sensitivities(mut self, sensitivities: Vec<Vec<f64>>) -> Self {
+    pub fn with_ift_sensitivities(mut self, sensitivities: Vec<Vec<f64>>) -> Self {
         self.ift_sensitivities = Some(sensitivities);
         self
     }
 
     /// Returns the IFT sensitivity matrix, if available.
-    pub(crate) fn ift_sensitivities(&self) -> Option<&Vec<Vec<f64>>> {
+    pub fn ift_sensitivities(&self) -> Option<&Vec<Vec<f64>>> {
         self.ift_sensitivities.as_ref()
     }
 
@@ -167,6 +191,11 @@ impl SolvedCurve {
     /// Returns the raw discount factors.
     pub fn discount_factors(&self) -> &[f64] {
         &self.discount_factors
+    }
+
+    /// Returns a mutable reference to the raw discount factors.
+    pub fn discount_factors_mut(&mut self) -> &mut Vec<f64> {
+        &mut self.discount_factors
     }
 
     /// Returns the discount factor at the given date.

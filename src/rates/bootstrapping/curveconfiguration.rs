@@ -6,9 +6,10 @@ use crate::{
     core::collateral::Discountable,
     indices::marketindex::MarketIndex,
     math::interpolation::interpolator::Interpolator,
-    quotes::quote::{BuiltInstrument, Level, Quote},
+    quotes::quote::{CalibrationInstrumentType, Level, Quote},
     rates::bootstrapping::{
-        bootstrapdiscountpolicy::BootstrapDiscountPolicy, resolvedinstrument::ResolvedInstrument,
+        bootstrapdiscountpolicy::BootstrapDiscountPolicy,
+        calibrationinstrument::CalibrationInstrument,
     },
     time::{date::Date, daycounter::DayCounter},
     utils::errors::{QSError, Result},
@@ -39,7 +40,7 @@ pub struct CurveConfiguration {
     #[serde(skip)]
     reference_date: Option<Date>,
     #[serde(skip)]
-    resolved_instruments: Option<Vec<ResolvedInstrument>>,
+    calibration_instruments: Option<Vec<CalibrationInstrument>>,
 }
 
 const fn default_day_counter() -> DayCounter {
@@ -69,7 +70,7 @@ impl CurveConfiguration {
             enable_extrapolation,
             quotes,
             reference_date: None,
-            resolved_instruments: None,
+            calibration_instruments: None,
         }
     }
 
@@ -103,7 +104,7 @@ impl CurveConfiguration {
             let built = quote.build_instrument(selector.reference_date(), level, fx_spot)?;
             let pillar_date = built.pillar_date()?;
 
-            instruments.push(ResolvedInstrument::new(
+            instruments.push(CalibrationInstrument::new(
                 quote,
                 level,
                 built,
@@ -112,17 +113,17 @@ impl CurveConfiguration {
             ));
         }
 
-        instruments.sort_by_key(ResolvedInstrument::pillar_date);
-        self.resolved_instruments = Some(instruments);
+        instruments.sort_by_key(CalibrationInstrument::pillar_date);
+        self.calibration_instruments = Some(instruments);
         Ok(())
     }
 
-    /// Returns the resolved instruments in pillar order.
+    /// Returns the calibration instruments in pillar order.
     ///
     /// # Errors
     /// Returns an error if the configuration has not been resolved yet.
-    pub fn instruments(&self) -> Result<&[ResolvedInstrument]> {
-        self.resolved_instruments
+    pub fn instruments(&self) -> Result<&[CalibrationInstrument]> {
+        self.calibration_instruments
             .as_ref()
             .map(|instruments| instruments.as_slice())
             .ok_or_else(|| QSError::InvalidValueErr("Curve configuration not resolved".into()))
@@ -156,12 +157,12 @@ impl CurveConfiguration {
     #[must_use]
     /// Returns the resolved pillar dates in calibration order.
     pub fn pillar_dates(&self) -> Vec<Date> {
-        self.resolved_instruments
+        self.calibration_instruments
             .as_ref()
             .map(|instruments| {
                 instruments
                     .iter()
-                    .map(ResolvedInstrument::pillar_date)
+                    .map(CalibrationInstrument::pillar_date)
                     .collect()
             })
             .unwrap_or_default()
@@ -170,12 +171,12 @@ impl CurveConfiguration {
     #[must_use]
     /// Returns the resolved pillar labels in calibration order.
     pub fn pillar_labels(&self) -> Vec<String> {
-        self.resolved_instruments
+        self.calibration_instruments
             .as_ref()
             .map(|instruments| {
                 instruments
                     .iter()
-                    .map(ResolvedInstrument::pillar_label)
+                    .map(CalibrationInstrument::pillar_label)
                     .collect()
             })
             .unwrap_or_default()
@@ -184,19 +185,19 @@ impl CurveConfiguration {
     #[must_use]
     /// Returns the resolved market quote values in calibration order.
     pub fn quote_values(&self) -> Vec<f64> {
-        self.resolved_instruments
+        self.calibration_instruments
             .as_ref()
             .map(|instruments| {
                 instruments
                     .iter()
-                    .map(ResolvedInstrument::quote_value)
+                    .map(CalibrationInstrument::quote_value)
                     .collect()
             })
             .unwrap_or_default()
     }
 
     #[must_use]
-    /// Returns the set of external curve dependencies implied by the resolved instruments.
+    /// Returns the set of external curve dependencies implied by the calibration instruments.
     pub fn local_dependencies(&self) -> Result<HashSet<MarketIndex>> {
         let mut set = HashSet::new();
         set.insert(self.market_index.clone());
@@ -204,29 +205,29 @@ impl CurveConfiguration {
 
         for instrument in instruments {
             match instrument.built() {
-                BuiltInstrument::FixedRateDeposit(deposit) => {
+                CalibrationInstrumentType::FixedRateDeposit(deposit) => {
                     if let Some(discount_index) = deposit.discount_index() {
                         set.insert(discount_index);
                     }
                 }
-                BuiltInstrument::Swap(swap) => {
+                CalibrationInstrumentType::Swap(swap) => {
                     set.insert(swap.forward_index());
                 }
-                BuiltInstrument::FixFloatCrossCurrencySwap(xccy) => {
+                CalibrationInstrumentType::FixFloatCrossCurrencySwap(xccy) => {
                     set.insert(xccy.forward_index());
                 }
-                BuiltInstrument::FloatFloatCrossCurrencySwap(xccy) => {
+                CalibrationInstrumentType::FloatFloatCrossCurrencySwap(xccy) => {
                     set.insert(xccy.domestic_forward_index());
                     set.insert(xccy.foreign_forward_index());
                 }
-                BuiltInstrument::BasisSwap(basis) => {
+                CalibrationInstrumentType::BasisSwap(basis) => {
                     set.insert(basis.pay_forward_index());
                     set.insert(basis.receive_forward_index());
                 }
-                BuiltInstrument::RateFutures(rf) => {
+                CalibrationInstrumentType::RateFutures(rf) => {
                     set.insert(rf.market_index());
                 }
-                BuiltInstrument::FxForward(_) => {
+                CalibrationInstrumentType::FxForward(_) => {
                     // Dependencies are resolved via the discount policy.
                 }
                 _ => {}
@@ -242,17 +243,17 @@ impl CurveConfiguration {
         let instruments = self.instruments()?;
         for instrument in instruments {
             match instrument.built() {
-                BuiltInstrument::Swap(swap) => {
+                CalibrationInstrumentType::Swap(swap) => {
                     if let Ok(idx) = policy.discount_index(swap.fixed_leg()) {
                         deps.insert(idx);
                     }
                 }
-                BuiltInstrument::BasisSwap(basis) => {
+                CalibrationInstrumentType::BasisSwap(basis) => {
                     if let Ok(idx) = policy.discount_index(basis.pay_leg()) {
                         deps.insert(idx);
                     }
                 }
-                BuiltInstrument::FixFloatCrossCurrencySwap(xccy) => {
+                CalibrationInstrumentType::FixFloatCrossCurrencySwap(xccy) => {
                     if let Ok(idx) = policy.discount_index(xccy.domestic_leg()) {
                         deps.insert(idx);
                     }
@@ -260,7 +261,7 @@ impl CurveConfiguration {
                         deps.insert(idx);
                     }
                 }
-                BuiltInstrument::FloatFloatCrossCurrencySwap(xccy) => {
+                CalibrationInstrumentType::FloatFloatCrossCurrencySwap(xccy) => {
                     if let Ok(idx) = policy.discount_index(xccy.domestic_leg()) {
                         deps.insert(idx);
                     }
@@ -268,7 +269,7 @@ impl CurveConfiguration {
                         deps.insert(idx);
                     }
                 }
-                BuiltInstrument::FxForward(fwd) => {
+                CalibrationInstrumentType::FxForward(fwd) => {
                     if let Ok(idx) = policy.discount_index_for_currency(fwd.base_currency()) {
                         deps.insert(idx);
                     }

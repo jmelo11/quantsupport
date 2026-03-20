@@ -44,6 +44,7 @@ use crate::{
 /// );
 ///  ```
 
+/// A discount factors term structure.
 #[derive(Clone)]
 pub struct DiscountTermStructure<T>
 where
@@ -59,7 +60,8 @@ where
     pillar_labels: Option<Vec<String>>,
     pillar_values: Option<Vec<T>>,
     /// IFT sensitivity matrix: `ift_sensitivities[i][j]` = ∂DF(i+1)/∂q(j).
-    /// Used to rebuild AD-connected discount factors when pillars are placed on tape.
+    /// When cross-curve dependencies are pre-composed at bootstrap time,
+    /// the matrix is non-square: n_dfs rows × n_total_pillars columns.
     ift_sensitivities: Option<Vec<Vec<f64>>>,
 }
 
@@ -289,13 +291,16 @@ impl Pillars<ADReal> for DiscountTermStructure<ADReal> {
             //   DF(i+1) = df_val + Σ_j S[i][j] * (q_j - q_j_val)
             // The numeric result is exact (delta evaluates to 0) but the AD
             // graph now connects discount_factors → pillar_values.
+            // The matrix may be non-square when cross-curve dependencies
+            // have been pre-composed at bootstrap time (n_pillars > n_dfs).
             if let Some(ref sens) = self.ift_sensitivities {
-                let n = pillar_values.len();
-                let mut new_dfs = Vec::with_capacity(n + 1);
+                let n_dfs = sens.len();
+                let n_pillars = pillar_values.len();
+                let mut new_dfs = Vec::with_capacity(n_dfs + 1);
                 new_dfs.push(ADReal::new(1.0)); // DF(0) = 1
-                for i in 0..n {
+                for i in 0..n_dfs {
                     let mut df_ad = ADReal::new(self.discount_factors[i + 1].value());
-                    for j in 0..n {
+                    for j in 0..n_pillars {
                         let s = sens[i][j];
                         if s.abs() > 1e-16 {
                             let delta: ADReal =
