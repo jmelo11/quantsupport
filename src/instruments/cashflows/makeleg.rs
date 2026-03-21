@@ -458,7 +458,7 @@ where
                     )
                     .with_rule(
                         self.date_generation_rule
-                            .unwrap_or(DateGenerationRule::Backward),
+                            .unwrap_or(DateGenerationRule::Forward),
                     );
 
                 let schedule = if let Some(date) = self.first_coupon_date {

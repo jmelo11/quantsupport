@@ -5,9 +5,9 @@
       "name": "Collateral(CLP/USD)",
       "nodes": [
         {
-          "date": "2025-11-12",
-          "year_fraction": 0.002777777777777778,
-          "discount_factor": 0.9998268156485963
+          "date": "2025-11-11",
+          "year_fraction": 0.0,
+          "discount_factor": 1.0
         },
         {
           "date": "2025-12-11",
@@ -40,11 +40,6 @@
           "discount_factor": 0.8699669816617213
         },
         {
-          "date": "2029-11-11",
-          "year_fraction": 4.058333333333334,
-          "discount_factor": 0.8325615554701795
-        },
-        {
           "date": "2030-11-11",
           "year_fraction": 5.072222222222222,
           "discount_factor": 0.7967644269934524
@@ -60,19 +55,9 @@
           "discount_factor": 0.6450865335174002
         },
         {
-          "date": "2040-11-11",
-          "year_fraction": 15.219444444444445,
-          "discount_factor": 0.5237791988973337
-        },
-        {
           "date": "2045-11-11",
           "year_fraction": 20.291666666666668,
-          "discount_factor": 0.4253319786696564
-        },
-        {
-          "date": "2055-11-11",
-          "year_fraction": 30.43611111111111,
-          "discount_factor": 0.2804707754308981
+          "discount_factor": 0.42533197866965644
         }
       ]
     },
@@ -80,14 +65,14 @@
       "name": "ICP",
       "nodes": [
         {
+          "date": "2025-11-11",
+          "year_fraction": 0.0,
+          "discount_factor": 1.0
+        },
+        {
           "date": "2025-11-12",
           "year_fraction": 0.002777777777777778,
           "discount_factor": 0.9998611303985557
-        },
-        {
-          "date": "2025-12-11",
-          "year_fraction": 0.08333333333333333,
-          "discount_factor": 0.99588371448077
         },
         {
           "date": "2026-02-11",
@@ -115,11 +100,6 @@
           "discount_factor": 0.8722857253156445
         },
         {
-          "date": "2029-11-11",
-          "year_fraction": 4.058333333333334,
-          "discount_factor": 0.8367291341917331
-        },
-        {
           "date": "2030-11-11",
           "year_fraction": 5.072222222222222,
           "discount_factor": 0.802621920417079
@@ -135,19 +115,9 @@
           "discount_factor": 0.6544305203275027
         },
         {
-          "date": "2040-11-11",
-          "year_fraction": 15.219444444444445,
-          "discount_factor": 0.532000366740938
-        },
-        {
           "date": "2045-11-11",
           "year_fraction": 20.291666666666668,
           "discount_factor": 0.4325233448382645
-        },
-        {
-          "date": "2055-11-11",
-          "year_fraction": 30.43611111111111,
-          "discount_factor": 0.2858938382133205
         }
       ]
     },
@@ -155,14 +125,14 @@
       "name": "SOFR",
       "nodes": [
         {
+          "date": "2025-11-11",
+          "year_fraction": 0.0,
+          "discount_factor": 1.0
+        },
+        {
           "date": "2025-11-12",
           "year_fraction": 0.002777777777777778,
           "discount_factor": 0.9998797366872261
-        },
-        {
-          "date": "2025-12-11",
-          "year_fraction": 0.08333333333333333,
-          "discount_factor": 0.9964134591663842
         },
         {
           "date": "2026-02-11",
@@ -230,14 +200,9 @@
       "name": "TermSOFR3m",
       "nodes": [
         {
-          "date": "2025-11-12",
-          "year_fraction": 0.002777777777777778,
-          "discount_factor": 0.9998794285536913
-        },
-        {
-          "date": "2025-12-11",
-          "year_fraction": 0.08333333333333333,
-          "discount_factor": 0.9963891733011842
+          "date": "2025-11-11",
+          "year_fraction": 0.0,
+          "discount_factor": 1.0
         },
         {
           "date": "2026-02-11",

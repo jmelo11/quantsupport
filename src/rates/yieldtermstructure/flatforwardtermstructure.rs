@@ -119,6 +119,10 @@ impl InterestRatesTermStructure<f64> for FlatForwardTermStructure<f64> {
                 .rate(),
         )
     }
+
+    fn nodes(&self) -> Option<Vec<(Date, f64)>> {
+        None
+    }
 }
 
 impl InterestRatesTermStructure<ADReal> for FlatForwardTermStructure<ADReal> {
@@ -151,6 +155,10 @@ impl InterestRatesTermStructure<ADReal> for FlatForwardTermStructure<ADReal> {
             t,
         )?
         .rate())
+    }
+
+    fn nodes(&self) -> Option<Vec<(Date, ADReal)>> {
+        None
     }
 }
 

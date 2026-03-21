@@ -10,7 +10,7 @@ use pricing::price_product;
 
 fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     let cwd = std::env::current_dir()?;
-    let data_dir = cwd.join("data");
+    let data_dir = cwd.join("examples/sensitivity/data");
     println!("Loading market data and curve specs from {}", data_dir.display());
     // ── 1. Load market data and curve specs ───────────────────────────
     let quote_store = load_quotes(&data_dir.join("quotes.json"))?;
@@ -184,7 +184,7 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         products,
     };
 
-    let output_path = data_dir.join("rust_results.json");
+    let output_path = data_dir.join("qs_results.json");
     output::write_results(&results, &output_path)?;
 
     Ok(())

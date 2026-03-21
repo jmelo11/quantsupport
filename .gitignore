@@ -4,6 +4,4 @@ Cargo.lock
 test.ipynb
 .vscode
 .DS_Store
-examples/sensitivity/__pycache__/data_loading.cpython-312.pyc
-examples/sensitivity/__pycache__/display.cpython-312.pyc
-examples/sensitivity/__pycache__/ql_helpers.cpython-312.pyc
+__pycache__

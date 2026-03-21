@@ -3,6 +3,7 @@ use std::fs::File;
 use std::io::Write;
 use std::path::Path;
 
+use quantsupport::ad::node;
 use quantsupport::prelude::*;
 use serde::Serialize;
 
@@ -188,26 +189,21 @@ pub fn extract_curve_nodes(
     dc: DayCounter,
 ) -> CurveOutput {
     let curve = elem.curve();
-    let tenors = [
-        "1D", "1M", "3M", "6M", "1Y", "2Y", "3Y", "4Y", "5Y", "7Y", "10Y", "15Y", "20Y", "30Y",
-    ];
-    let nodes: Vec<CurveNode> = tenors
-        .iter()
-        .filter_map(|t| {
-            let period = Period::from_str(t).ok()?;
-            let date = rd + period;
-            let df = curve.discount_factor(date).ok()?.value();
+    let nodes = curve.nodes().unwrap_or_default();
+    let node_vec: Vec<CurveNode> = nodes
+        .into_iter()
+        .map(|(date, df)| {
             let yf = dc.year_fraction(rd, date);
-            Some(CurveNode {
+            CurveNode {
                 date: date.to_string(),
                 year_fraction: yf,
-                discount_factor: df,
-            })
+                discount_factor: df.value(),
+            }
         })
         .collect();
     CurveOutput {
         name: name.to_string(),
-        nodes,
+        nodes: node_vec,
     }
 }
 

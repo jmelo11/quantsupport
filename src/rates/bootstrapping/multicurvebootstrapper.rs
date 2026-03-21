@@ -33,8 +33,8 @@ use crate::{
 
 /// Dependency-aware, lazy multi-curve bootstrapper.
 ///
-/// Accepts a set of [`CurveSpec`]s and a [`BootstrapDiscountPolicy`] that
-/// will determine how to bootstrap each curve. It resolves dependencies between [`CurveSpec`].
+/// Accepts a set of [`CurveConfiguration`]s and a [`BootstrapDiscountPolicy`] that
+/// will determine how to bootstrap each curve. It resolves dependencies between [`CurveConfiguration`].
 ///
 /// ## Parameters
 /// * `curve_specs`: the list of curve specifications to bootstrap. Each spec includes the market index, currency, day count convention, interpolation method, and the list of pillar instruments (identified by their quote IDs).

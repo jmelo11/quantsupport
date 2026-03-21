@@ -20,7 +20,6 @@
         },
         {
             "market_index": "TermSOFR3m",
-            "currency": "USD",
             "quotes": [
                 "FixedRateDeposit_USD_TermSOFR3m_3M",
                 "BasisSwap_USD_SOFR_TermSOFR3m_6M",

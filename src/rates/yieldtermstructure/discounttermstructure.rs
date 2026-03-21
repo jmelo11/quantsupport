@@ -1,5 +1,8 @@
 use crate::{
-    ad::adreal::{ADReal, Const, FloatExt, IsReal},
+    ad::{
+        adreal::{ADReal, Const, FloatExt, IsReal},
+        node,
+    },
     core::{elements::curveelement::ADCurveElement, pillars::Pillars},
     math::interpolation::interpolator::{Interpolate, Interpolator},
     rates::{
@@ -366,6 +369,16 @@ impl InterestRatesTermStructure<f64> for DiscountTermStructure<f64> {
                 .rate(),
         )
     }
+
+    fn nodes(&self) -> Option<Vec<(Date, f64)>> {
+        Some(
+            self.dates
+                .iter()
+                .cloned()
+                .zip(self.discount_factors.iter().cloned())
+                .collect(),
+        )
+    }
 }
 
 impl InterestRatesTermStructure<ADReal> for DiscountTermStructure<ADReal> {
@@ -424,6 +437,16 @@ impl InterestRatesTermStructure<ADReal> for DiscountTermStructure<ADReal> {
             t,
         )?
         .rate())
+    }
+
+    fn nodes(&self) -> Option<Vec<(Date, ADReal)>> {
+        Some(
+            self.dates
+                .iter()
+                .cloned()
+                .zip(self.discount_factors.iter().cloned())
+                .collect(),
+        )
     }
 }
 

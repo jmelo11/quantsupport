@@ -1,0 +1,1123 @@
+{
+    "refDate": "2025-11-11",
+    "curves": [
+        {
+            "curveName": "SOFR",
+            "curveConfig": {
+                "curveType": "Piecewise",
+                "dayCounter": "Actual360",
+                "currency": "USD",
+                "enableExtrapolation": true,
+                "rateHelpers": [
+                    {
+                        "helperType": "Deposit",
+                        "helperConfig": {
+                            "tenor": "1D",
+                            "dayCounter": "Actual360",
+                            "calendar": "NullCalendar",
+                            "settlementDays": 0,
+                            "endOfMonth": false,
+                            "convention": "Unadjusted"
+                        },
+                        "marketConfig": {
+                            "rate": {
+                                "value": 0.04330
+                            }
+                        }
+                    },
+                    {
+                        "helperType": "OIS",
+                        "helperConfig": {
+                            "tenor": "3M",
+                            "dayCounter": "Actual360",
+                            "calendar": "NullCalendar",
+                            "convention": "Following",
+                            "endOfMonth": false,
+                            "frequency": "Annual",
+                            "settlementDays": 0,
+                            "paymentLag": 0,
+                            "telescopicValueDates": true,
+                            "index": "SOFR",
+                            "fixedLegFrequency": "Semiannual",
+                            "fwdStart": "0D",
+                            "discountCurve": "SOFR"
+                        },
+                        "marketConfig": {
+                            "rate": {
+                                "value": 0.04335
+                            },
+                            "spread": {
+                                "value": 0.0
+                            }
+                        }
+                    },
+                    {
+                        "helperType": "OIS",
+                        "helperConfig": {
+                            "tenor": "6M",
+                            "dayCounter": "Actual360",
+                            "calendar": "NullCalendar",
+                            "convention": "Following",
+                            "endOfMonth": false,
+                            "frequency": "Annual",
+                            "settlementDays": 0,
+                            "paymentLag": 0,
+                            "telescopicValueDates": true,
+                            "index": "SOFR",
+                            "fixedLegFrequency": "Semiannual",
+                            "fwdStart": "0D",
+                            "discountCurve": "SOFR"
+                        },
+                        "marketConfig": {
+                            "rate": {
+                                "value": 0.04250
+                            },
+                            "spread": {
+                                "value": 0.0
+                            }
+                        }
+                    },
+                    {
+                        "helperType": "OIS",
+                        "helperConfig": {
+                            "tenor": "1Y",
+                            "dayCounter": "Actual360",
+                            "calendar": "NullCalendar",
+                            "convention": "Following",
+                            "endOfMonth": false,
+                            "frequency": "Annual",
+                            "settlementDays": 0,
+                            "paymentLag": 0,
+                            "telescopicValueDates": true,
+                            "index": "SOFR",
+                            "fixedLegFrequency": "Semiannual",
+                            "fwdStart": "0D",
+                            "discountCurve": "SOFR"
+                        },
+                        "marketConfig": {
+                            "rate": {
+                                "value": 0.04100
+                            },
+                            "spread": {
+                                "value": 0.0
+                            }
+                        }
+                    },
+                    {
+                        "helperType": "OIS",
+                        "helperConfig": {
+                            "tenor": "2Y",
+                            "dayCounter": "Actual360",
+                            "calendar": "NullCalendar",
+                            "convention": "Following",
+                            "endOfMonth": false,
+                            "frequency": "Annual",
+                            "settlementDays": 0,
+                            "paymentLag": 0,
+                            "telescopicValueDates": true,
+                            "index": "SOFR",
+                            "fixedLegFrequency": "Semiannual",
+                            "fwdStart": "0D",
+                            "discountCurve": "SOFR"
+                        },
+                        "marketConfig": {
+                            "rate": {
+                                "value": 0.03920
+                            },
+                            "spread": {
+                                "value": 0.0
+                            }
+                        }
+                    },
+                    {
+                        "helperType": "OIS",
+                        "helperConfig": {
+                            "tenor": "3Y",
+                            "dayCounter": "Actual360",
+                            "calendar": "NullCalendar",
+                            "convention": "Following",
+                            "endOfMonth": false,
+                            "frequency": "Annual",
+                            "settlementDays": 0,
+                            "paymentLag": 0,
+                            "telescopicValueDates": true,
+                            "index": "SOFR",
+                            "fixedLegFrequency": "Semiannual",
+                            "fwdStart": "0D",
+                            "discountCurve": "SOFR"
+                        },
+                        "marketConfig": {
+                            "rate": {
+                                "value": 0.03840
+                            },
+                            "spread": {
+                                "value": 0.0
+                            }
+                        }
+                    },
+                    {
+                        "helperType": "OIS",
+                        "helperConfig": {
+                            "tenor": "4Y",
+                            "dayCounter": "Actual360",
+                            "calendar": "NullCalendar",
+                            "convention": "Following",
+                            "endOfMonth": false,
+                            "frequency": "Annual",
+                            "settlementDays": 0,
+                            "paymentLag": 0,
+                            "telescopicValueDates": true,
+                            "index": "SOFR",
+                            "fixedLegFrequency": "Semiannual",
+                            "fwdStart": "0D",
+                            "discountCurve": "SOFR"
+                        },
+                        "marketConfig": {
+                            "rate": {
+                                "value": 0.03800
+                            },
+                            "spread": {
+                                "value": 0.0
+                            }
+                        }
+                    },
+                    {
+                        "helperType": "OIS",
+                        "helperConfig": {
+                            "tenor": "5Y",
+                            "dayCounter": "Actual360",
+                            "calendar": "NullCalendar",
+                            "convention": "Following",
+                            "endOfMonth": false,
+                            "frequency": "Annual",
+                            "settlementDays": 0,
+                            "paymentLag": 0,
+                            "telescopicValueDates": true,
+                            "index": "SOFR",
+                            "fixedLegFrequency": "Semiannual",
+                            "fwdStart": "0D",
+                            "discountCurve": "SOFR"
+                        },
+                        "marketConfig": {
+                            "rate": {
+                                "value": 0.03780
+                            },
+                            "spread": {
+                                "value": 0.0
+                            }
+                        }
+                    },
+                    {
+                        "helperType": "OIS",
+                        "helperConfig": {
+                            "tenor": "7Y",
+                            "dayCounter": "Actual360",
+                            "calendar": "NullCalendar",
+                            "convention": "Following",
+                            "endOfMonth": false,
+                            "frequency": "Annual",
+                            "settlementDays": 0,
+                            "paymentLag": 0,
+                            "telescopicValueDates": true,
+                            "index": "SOFR",
+                            "fixedLegFrequency": "Semiannual",
+                            "fwdStart": "0D",
+                            "discountCurve": "SOFR"
+                        },
+                        "marketConfig": {
+                            "rate": {
+                                "value": 0.03770
+                            },
+                            "spread": {
+                                "value": 0.0
+                            }
+                        }
+                    },
+                    {
+                        "helperType": "OIS",
+                        "helperConfig": {
+                            "tenor": "10Y",
+                            "dayCounter": "Actual360",
+                            "calendar": "NullCalendar",
+                            "convention": "Following",
+                            "endOfMonth": false,
+                            "frequency": "Annual",
+                            "settlementDays": 0,
+                            "paymentLag": 0,
+                            "telescopicValueDates": true,
+                            "index": "SOFR",
+                            "fixedLegFrequency": "Semiannual",
+                            "fwdStart": "0D",
+                            "discountCurve": "SOFR"
+                        },
+                        "marketConfig": {
+                            "rate": {
+                                "value": 0.03790
+                            },
+                            "spread": {
+                                "value": 0.0
+                            }
+                        }
+                    },
+                    {
+                        "helperType": "OIS",
+                        "helperConfig": {
+                            "tenor": "15Y",
+                            "dayCounter": "Actual360",
+                            "calendar": "NullCalendar",
+                            "convention": "Following",
+                            "endOfMonth": false,
+                            "frequency": "Annual",
+                            "settlementDays": 0,
+                            "paymentLag": 0,
+                            "telescopicValueDates": true,
+                            "index": "SOFR",
+                            "fixedLegFrequency": "Semiannual",
+                            "fwdStart": "0D",
+                            "discountCurve": "SOFR"
+                        },
+                        "marketConfig": {
+                            "rate": {
+                                "value": 0.03850
+                            },
+                            "spread": {
+                                "value": 0.0
+                            }
+                        }
+                    },
+                    {
+                        "helperType": "OIS",
+                        "helperConfig": {
+                            "tenor": "20Y",
+                            "dayCounter": "Actual360",
+                            "calendar": "NullCalendar",
+                            "convention": "Following",
+                            "endOfMonth": false,
+                            "frequency": "Annual",
+                            "settlementDays": 0,
+                            "paymentLag": 0,
+                            "telescopicValueDates": true,
+                            "index": "SOFR",
+                            "fixedLegFrequency": "Semiannual",
+                            "fwdStart": "0D",
+                            "discountCurve": "SOFR"
+                        },
+                        "marketConfig": {
+                            "rate": {
+                                "value": 0.03880
+                            },
+                            "spread": {
+                                "value": 0.0
+                            }
+                        }
+                    },
+                    {
+                        "helperType": "OIS",
+                        "helperConfig": {
+                            "tenor": "30Y",
+                            "dayCounter": "Actual360",
+                            "calendar": "NullCalendar",
+                            "convention": "Following",
+                            "endOfMonth": false,
+                            "frequency": "Annual",
+                            "settlementDays": 0,
+                            "paymentLag": 0,
+                            "telescopicValueDates": true,
+                            "index": "SOFR",
+                            "fixedLegFrequency": "Semiannual",
+                            "fwdStart": "0D",
+                            "discountCurve": "SOFR"
+                        },
+                        "marketConfig": {
+                            "rate": {
+                                "value": 0.03750
+                            },
+                            "spread": {
+                                "value": 0.0
+                            }
+                        }
+                    }
+                ]
+            },
+            "curveIndex": {
+                "indexType": "OvernightIndex",
+                "tenor": "1D",
+                "dayCounter": "Actual360",
+                "currency": "USD",
+                "fixingDays": 0,
+                "calendar": "NullCalendar",
+                "endOfMonth": false,
+                "convention": "Unadjusted"
+            }
+        },
+        {
+            "curveName": "TermSOFR3m",
+            "curveConfig": {
+                "curveType": "Piecewise",
+                "dayCounter": "Actual360",
+                "currency": "USD",
+                "enableExtrapolation": true,
+                "rateHelpers": [
+                    {
+                        "helperType": "Deposit",
+                        "helperConfig": {
+                            "tenor": "3M",
+                            "dayCounter": "Actual360",
+                            "calendar": "NullCalendar",
+                            "settlementDays": 0,
+                            "endOfMonth": false,
+                            "convention": "Unadjusted"
+                        },
+                        "marketConfig": {
+                            "rate": {
+                                "value": 0.04365
+                            }
+                        }
+                    },
+                    {
+                        "helperType": "OvernightIborBasis",
+                        "helperConfig": {
+                            "tenor": "6M",
+                            "settlementDays": 0,
+                            "calendar": "NullCalendar",
+                            "convention": "Unadjusted",
+                            "endOfMonth": false,
+                            "overnightIndex": "SOFR",
+                            "iborIndex": "TermSOFR3m",
+                            "discountCurve": "SOFR"
+                        },
+                        "marketConfig": {
+                            "spread": {
+                                "value": 0.000127237986
+                            }
+                        }
+                    },
+                    {
+                        "helperType": "OvernightIborBasis",
+                        "helperConfig": {
+                            "tenor": "1Y",
+                            "settlementDays": 0,
+                            "calendar": "NullCalendar",
+                            "convention": "Unadjusted",
+                            "endOfMonth": false,
+                            "overnightIndex": "SOFR",
+                            "iborIndex": "TermSOFR3m",
+                            "discountCurve": "SOFR"
+                        },
+                        "marketConfig": {
+                            "spread": {
+                                "value": 0.000160745572
+                            }
+                        }
+                    },
+                    {
+                        "helperType": "OvernightIborBasis",
+                        "helperConfig": {
+                            "tenor": "2Y",
+                            "settlementDays": 0,
+                            "calendar": "NullCalendar",
+                            "convention": "Unadjusted",
+                            "endOfMonth": false,
+                            "overnightIndex": "SOFR",
+                            "iborIndex": "TermSOFR3m",
+                            "discountCurve": "SOFR"
+                        },
+                        "marketConfig": {
+                            "spread": {
+                                "value": 0.000196298404
+                            }
+                        }
+                    },
+                    {
+                        "helperType": "OvernightIborBasis",
+                        "helperConfig": {
+                            "tenor": "3Y",
+                            "settlementDays": 0,
+                            "calendar": "NullCalendar",
+                            "convention": "Unadjusted",
+                            "endOfMonth": false,
+                            "overnightIndex": "SOFR",
+                            "iborIndex": "TermSOFR3m",
+                            "discountCurve": "SOFR"
+                        },
+                        "marketConfig": {
+                            "spread": {
+                                "value": 0.000224136825
+                            }
+                        }
+                    },
+                    {
+                        "helperType": "OvernightIborBasis",
+                        "helperConfig": {
+                            "tenor": "4Y",
+                            "settlementDays": 0,
+                            "calendar": "NullCalendar",
+                            "convention": "Unadjusted",
+                            "endOfMonth": false,
+                            "overnightIndex": "SOFR",
+                            "iborIndex": "TermSOFR3m",
+                            "discountCurve": "SOFR"
+                        },
+                        "marketConfig": {
+                            "spread": {
+                                "value": 0.000243421966
+                            }
+                        }
+                    },
+                    {
+                        "helperType": "OvernightIborBasis",
+                        "helperConfig": {
+                            "tenor": "5Y",
+                            "settlementDays": 0,
+                            "calendar": "NullCalendar",
+                            "convention": "Unadjusted",
+                            "endOfMonth": false,
+                            "overnightIndex": "SOFR",
+                            "iborIndex": "TermSOFR3m",
+                            "discountCurve": "SOFR"
+                        },
+                        "marketConfig": {
+                            "spread": {
+                                "value": 0.000262792898
+                            }
+                        }
+                    },
+                    {
+                        "helperType": "OvernightIborBasis",
+                        "helperConfig": {
+                            "tenor": "7Y",
+                            "settlementDays": 0,
+                            "calendar": "NullCalendar",
+                            "convention": "Unadjusted",
+                            "endOfMonth": false,
+                            "overnightIndex": "SOFR",
+                            "iborIndex": "TermSOFR3m",
+                            "discountCurve": "SOFR"
+                        },
+                        "marketConfig": {
+                            "spread": {
+                                "value": 0.000298893256
+                            }
+                        }
+                    },
+                    {
+                        "helperType": "OvernightIborBasis",
+                        "helperConfig": {
+                            "tenor": "10Y",
+                            "settlementDays": 0,
+                            "calendar": "NullCalendar",
+                            "convention": "Unadjusted",
+                            "endOfMonth": false,
+                            "overnightIndex": "SOFR",
+                            "iborIndex": "TermSOFR3m",
+                            "discountCurve": "SOFR"
+                        },
+                        "marketConfig": {
+                            "spread": {
+                                "value": 0.000335114864
+                            }
+                        }
+                    },
+                    {
+                        "helperType": "OvernightIborBasis",
+                        "helperConfig": {
+                            "tenor": "15Y",
+                            "settlementDays": 0,
+                            "calendar": "NullCalendar",
+                            "convention": "Unadjusted",
+                            "endOfMonth": false,
+                            "overnightIndex": "SOFR",
+                            "iborIndex": "TermSOFR3m",
+                            "discountCurve": "SOFR"
+                        },
+                        "marketConfig": {
+                            "spread": {
+                                "value": 0.000378100224
+                            }
+                        }
+                    },
+                    {
+                        "helperType": "OvernightIborBasis",
+                        "helperConfig": {
+                            "tenor": "20Y",
+                            "settlementDays": 0,
+                            "calendar": "NullCalendar",
+                            "convention": "Unadjusted",
+                            "endOfMonth": false,
+                            "overnightIndex": "SOFR",
+                            "iborIndex": "TermSOFR3m",
+                            "discountCurve": "SOFR"
+                        },
+                        "marketConfig": {
+                            "spread": {
+                                "value": 0.000415419903
+                            }
+                        }
+                    },
+                    {
+                        "helperType": "OvernightIborBasis",
+                        "helperConfig": {
+                            "tenor": "30Y",
+                            "settlementDays": 0,
+                            "calendar": "NullCalendar",
+                            "convention": "Unadjusted",
+                            "endOfMonth": false,
+                            "overnightIndex": "SOFR",
+                            "iborIndex": "TermSOFR3m",
+                            "discountCurve": "SOFR"
+                        },
+                        "marketConfig": {
+                            "spread": {
+                                "value": 0.000465137190
+                            }
+                        }
+                    }
+                ]
+            },
+            "curveIndex": {
+                "indexType": "IborIndex",
+                "tenor": "3M",
+                "dayCounter": "Actual360",
+                "currency": "USD",
+                "fixingDays": 0,
+                "calendar": "NullCalendar",
+                "endOfMonth": false,
+                "convention": "Unadjusted"
+            }
+        },
+        {
+            "curveName": "ICP",
+            "curveConfig": {
+                "curveType": "Piecewise",
+                "dayCounter": "Actual360",
+                "currency": "CLP",
+                "enableExtrapolation": true,
+                "rateHelpers": [
+                    {
+                        "helperType": "Deposit",
+                        "helperConfig": {
+                            "tenor": "1D",
+                            "dayCounter": "Actual360",
+                            "calendar": "NullCalendar",
+                            "settlementDays": 0,
+                            "endOfMonth": false,
+                            "convention": "Unadjusted"
+                        },
+                        "marketConfig": {
+                            "rate": {
+                                "value": 0.0500
+                            }
+                        }
+                    },
+                    {
+                        "helperType": "Deposit",
+                        "helperConfig": {
+                            "tenor": "3M",
+                            "dayCounter": "Actual360",
+                            "calendar": "NullCalendar",
+                            "settlementDays": 0,
+                            "endOfMonth": false,
+                            "convention": "Unadjusted"
+                        },
+                        "marketConfig": {
+                            "rate": {
+                                "value": 0.0498
+                            }
+                        }
+                    },
+                    {
+                        "helperType": "OIS",
+                        "helperConfig": {
+                            "tenor": "6M",
+                            "dayCounter": "Actual360",
+                            "calendar": "NullCalendar",
+                            "convention": "Following",
+                            "endOfMonth": false,
+                            "frequency": "Annual",
+                            "settlementDays": 0,
+                            "paymentLag": 0,
+                            "telescopicValueDates": true,
+                            "index": "ICP",
+                            "fixedLegFrequency": "Semiannual",
+                            "fwdStart": "0D",
+                            "discountCurve": "ICP"
+                        },
+                        "marketConfig": {
+                            "rate": {
+                                "value": 0.0495
+                            },
+                            "spread": {
+                                "value": 0.0
+                            }
+                        }
+                    },
+                    {
+                        "helperType": "OIS",
+                        "helperConfig": {
+                            "tenor": "1Y",
+                            "dayCounter": "Actual360",
+                            "calendar": "NullCalendar",
+                            "convention": "Following",
+                            "endOfMonth": false,
+                            "frequency": "Annual",
+                            "settlementDays": 0,
+                            "paymentLag": 0,
+                            "telescopicValueDates": true,
+                            "index": "ICP",
+                            "fixedLegFrequency": "Semiannual",
+                            "fwdStart": "0D",
+                            "discountCurve": "ICP"
+                        },
+                        "marketConfig": {
+                            "rate": {
+                                "value": 0.0485
+                            },
+                            "spread": {
+                                "value": 0.0
+                            }
+                        }
+                    },
+                    {
+                        "helperType": "OIS",
+                        "helperConfig": {
+                            "tenor": "2Y",
+                            "dayCounter": "Actual360",
+                            "calendar": "NullCalendar",
+                            "convention": "Following",
+                            "endOfMonth": false,
+                            "frequency": "Annual",
+                            "settlementDays": 0,
+                            "paymentLag": 0,
+                            "telescopicValueDates": true,
+                            "index": "ICP",
+                            "fixedLegFrequency": "Semiannual",
+                            "fwdStart": "0D",
+                            "discountCurve": "ICP"
+                        },
+                        "marketConfig": {
+                            "rate": {
+                                "value": 0.0470
+                            },
+                            "spread": {
+                                "value": 0.0
+                            }
+                        }
+                    },
+                    {
+                        "helperType": "OIS",
+                        "helperConfig": {
+                            "tenor": "3Y",
+                            "dayCounter": "Actual360",
+                            "calendar": "NullCalendar",
+                            "convention": "Following",
+                            "endOfMonth": false,
+                            "frequency": "Annual",
+                            "settlementDays": 0,
+                            "paymentLag": 0,
+                            "telescopicValueDates": true,
+                            "index": "ICP",
+                            "fixedLegFrequency": "Semiannual",
+                            "fwdStart": "0D",
+                            "discountCurve": "ICP"
+                        },
+                        "marketConfig": {
+                            "rate": {
+                                "value": 0.0455
+                            },
+                            "spread": {
+                                "value": 0.0
+                            }
+                        }
+                    },
+                    {
+                        "helperType": "OIS",
+                        "helperConfig": {
+                            "tenor": "5Y",
+                            "dayCounter": "Actual360",
+                            "calendar": "NullCalendar",
+                            "convention": "Following",
+                            "endOfMonth": false,
+                            "frequency": "Annual",
+                            "settlementDays": 0,
+                            "paymentLag": 0,
+                            "telescopicValueDates": true,
+                            "index": "ICP",
+                            "fixedLegFrequency": "Semiannual",
+                            "fwdStart": "0D",
+                            "discountCurve": "ICP"
+                        },
+                        "marketConfig": {
+                            "rate": {
+                                "value": 0.0440
+                            },
+                            "spread": {
+                                "value": 0.0
+                            }
+                        }
+                    },
+                    {
+                        "helperType": "OIS",
+                        "helperConfig": {
+                            "tenor": "7Y",
+                            "dayCounter": "Actual360",
+                            "calendar": "NullCalendar",
+                            "convention": "Following",
+                            "endOfMonth": false,
+                            "frequency": "Annual",
+                            "settlementDays": 0,
+                            "paymentLag": 0,
+                            "telescopicValueDates": true,
+                            "index": "ICP",
+                            "fixedLegFrequency": "Semiannual",
+                            "fwdStart": "0D",
+                            "discountCurve": "ICP"
+                        },
+                        "marketConfig": {
+                            "rate": {
+                                "value": 0.0430
+                            },
+                            "spread": {
+                                "value": 0.0
+                            }
+                        }
+                    },
+                    {
+                        "helperType": "OIS",
+                        "helperConfig": {
+                            "tenor": "10Y",
+                            "dayCounter": "Actual360",
+                            "calendar": "NullCalendar",
+                            "convention": "Following",
+                            "endOfMonth": false,
+                            "frequency": "Annual",
+                            "settlementDays": 0,
+                            "paymentLag": 0,
+                            "telescopicValueDates": true,
+                            "index": "ICP",
+                            "fixedLegFrequency": "Semiannual",
+                            "fwdStart": "0D",
+                            "discountCurve": "ICP"
+                        },
+                        "marketConfig": {
+                            "rate": {
+                                "value": 0.0425
+                            },
+                            "spread": {
+                                "value": 0.0
+                            }
+                        }
+                    },
+                    {
+                        "helperType": "OIS",
+                        "helperConfig": {
+                            "tenor": "20Y",
+                            "dayCounter": "Actual360",
+                            "calendar": "NullCalendar",
+                            "convention": "Following",
+                            "endOfMonth": false,
+                            "frequency": "Annual",
+                            "settlementDays": 0,
+                            "paymentLag": 0,
+                            "telescopicValueDates": true,
+                            "index": "ICP",
+                            "fixedLegFrequency": "Semiannual",
+                            "fwdStart": "0D",
+                            "discountCurve": "ICP"
+                        },
+                        "marketConfig": {
+                            "rate": {
+                                "value": 0.0420
+                            },
+                            "spread": {
+                                "value": 0.0
+                            }
+                        }
+                    }
+                ]
+            },
+            "curveIndex": {
+                "indexType": "OvernightIndex",
+                "tenor": "1D",
+                "dayCounter": "Actual360",
+                "currency": "CLP",
+                "fixingDays": 0,
+                "calendar": "NullCalendar",
+                "endOfMonth": false,
+                "convention": "Unadjusted"
+            }
+        },
+        {
+            "curveName": "Collateral(CLP/USD)",
+            "curveConfig": {
+                "curveType": "Piecewise",
+                "dayCounter": "Actual360",
+                "currency": "CLP",
+                "enableExtrapolation": true,
+                "rateHelpers": [
+                    {
+                        "helperType": "FxSwap",
+                        "helperConfig": {
+                            "tenor": "1M",
+                            "calendar": "NullCalendar",
+                            "fixingDays": 0,
+                            "endOfMonth": false,
+                            "baseCurrencyAsCollateral": true,
+                            "convention": "Unadjusted",
+                            "discountCurve": "SOFR",
+                            "settlementDays": 0
+                        },
+                        "marketConfig": {
+                            "fxSpot": {
+                                "value": 935.0
+                            },
+                            "fxPoints": {
+                                "value": 1.50
+                            }
+                        }
+                    },
+                    {
+                        "helperType": "FxSwap",
+                        "helperConfig": {
+                            "tenor": "3M",
+                            "calendar": "NullCalendar",
+                            "fixingDays": 0,
+                            "endOfMonth": false,
+                            "baseCurrencyAsCollateral": true,
+                            "convention": "Unadjusted",
+                            "discountCurve": "SOFR",
+                            "settlementDays": 0
+                        },
+                        "marketConfig": {
+                            "fxSpot": {
+                                "value": 935.0
+                            },
+                            "fxPoints": {
+                                "value": 5.30
+                            }
+                        }
+                    },
+                    {
+                        "helperType": "FxSwap",
+                        "helperConfig": {
+                            "tenor": "6M",
+                            "calendar": "NullCalendar",
+                            "fixingDays": 0,
+                            "endOfMonth": false,
+                            "baseCurrencyAsCollateral": true,
+                            "convention": "Unadjusted",
+                            "discountCurve": "SOFR",
+                            "settlementDays": 0
+                        },
+                        "marketConfig": {
+                            "fxSpot": {
+                                "value": 935.0
+                            },
+                            "fxPoints": {
+                                "value": 12.80
+                            }
+                        }
+                    },
+                    {
+                        "helperType": "Xccy",
+                        "helperConfig": {
+                            "tenor": "1Y",
+                            "dayCounter": "Actual360",
+                            "calendar": "NullCalendar",
+                            "convention": "Unadjusted",
+                            "endOfMonth": false,
+                            "settlementDays": 0,
+                            "discountCurve": "SOFR",
+                            "index": "SOFR",
+                            "fixedLegCurrency": "CLP",
+                            "fwdStart": "0D",
+                            "fixedLegFrequency": "Semiannual"
+                        },
+                        "marketConfig": {
+                            "rate": {
+                                "value": 0.0510
+                            },
+                            "spread": {
+                                "value": 0.0
+                            },
+                            "fxSpot": {
+                                "value": 935.0
+                            }
+                        }
+                    },
+                    {
+                        "helperType": "Xccy",
+                        "helperConfig": {
+                            "tenor": "2Y",
+                            "dayCounter": "Actual360",
+                            "calendar": "NullCalendar",
+                            "convention": "Unadjusted",
+                            "endOfMonth": false,
+                            "settlementDays": 0,
+                            "discountCurve": "SOFR",
+                            "index": "SOFR",
+                            "fixedLegCurrency": "CLP",
+                            "fwdStart": "0D",
+                            "fixedLegFrequency": "Semiannual"
+                        },
+                        "marketConfig": {
+                            "rate": {
+                                "value": 0.0485
+                            },
+                            "spread": {
+                                "value": 0.0
+                            },
+                            "fxSpot": {
+                                "value": 935.0
+                            }
+                        }
+                    },
+                    {
+                        "helperType": "Xccy",
+                        "helperConfig": {
+                            "tenor": "3Y",
+                            "dayCounter": "Actual360",
+                            "calendar": "NullCalendar",
+                            "convention": "Unadjusted",
+                            "endOfMonth": false,
+                            "settlementDays": 0,
+                            "discountCurve": "SOFR",
+                            "index": "SOFR",
+                            "fixedLegCurrency": "CLP",
+                            "fwdStart": "0D",
+                            "fixedLegFrequency": "Semiannual"
+                        },
+                        "marketConfig": {
+                            "rate": {
+                                "value": 0.0465
+                            },
+                            "spread": {
+                                "value": 0.0
+                            },
+                            "fxSpot": {
+                                "value": 935.0
+                            }
+                        }
+                    },
+                    {
+                        "helperType": "Xccy",
+                        "helperConfig": {
+                            "tenor": "5Y",
+                            "dayCounter": "Actual360",
+                            "calendar": "NullCalendar",
+                            "convention": "Unadjusted",
+                            "endOfMonth": false,
+                            "settlementDays": 0,
+                            "discountCurve": "SOFR",
+                            "index": "SOFR",
+                            "fixedLegCurrency": "CLP",
+                            "fwdStart": "0D",
+                            "fixedLegFrequency": "Semiannual"
+                        },
+                        "marketConfig": {
+                            "rate": {
+                                "value": 0.0455
+                            },
+                            "spread": {
+                                "value": 0.0
+                            },
+                            "fxSpot": {
+                                "value": 935.0
+                            }
+                        }
+                    },
+                    {
+                        "helperType": "Xccy",
+                        "helperConfig": {
+                            "tenor": "7Y",
+                            "dayCounter": "Actual360",
+                            "calendar": "NullCalendar",
+                            "convention": "Unadjusted",
+                            "endOfMonth": false,
+                            "settlementDays": 0,
+                            "discountCurve": "SOFR",
+                            "index": "SOFR",
+                            "fixedLegCurrency": "CLP",
+                            "fwdStart": "0D",
+                            "fixedLegFrequency": "Semiannual"
+                        },
+                        "marketConfig": {
+                            "rate": {
+                                "value": 0.0450
+                            },
+                            "spread": {
+                                "value": 0.0
+                            },
+                            "fxSpot": {
+                                "value": 935.0
+                            }
+                        }
+                    },
+                    {
+                        "helperType": "Xccy",
+                        "helperConfig": {
+                            "tenor": "10Y",
+                            "dayCounter": "Actual360",
+                            "calendar": "NullCalendar",
+                            "convention": "Unadjusted",
+                            "endOfMonth": false,
+                            "settlementDays": 0,
+                            "discountCurve": "SOFR",
+                            "index": "SOFR",
+                            "fixedLegCurrency": "CLP",
+                            "fwdStart": "0D",
+                            "fixedLegFrequency": "Semiannual"
+                        },
+                        "marketConfig": {
+                            "rate": {
+                                "value": 0.0440
+                            },
+                            "spread": {
+                                "value": 0.0
+                            },
+                            "fxSpot": {
+                                "value": 935.0
+                            }
+                        }
+                    },
+                    {
+                        "helperType": "Xccy",
+                        "helperConfig": {
+                            "tenor": "20Y",
+                            "dayCounter": "Actual360",
+                            "calendar": "NullCalendar",
+                            "convention": "Unadjusted",
+                            "endOfMonth": false,
+                            "settlementDays": 0,
+                            "discountCurve": "SOFR",
+                            "index": "SOFR",
+                            "fixedLegCurrency": "CLP",
+                            "fwdStart": "0D",
+                            "fixedLegFrequency": "Semiannual"
+                        },
+                        "marketConfig": {
+                            "rate": {
+                                "value": 0.0430
+                            },
+                            "spread": {
+                                "value": 0.0
+                            },
+                            "fxSpot": {
+                                "value": 935.0
+                            }
+                        }
+                    }
+                ]
+            },
+            "curveIndex": {
+                "indexType": "OvernightIndex",
+                "tenor": "1D",
+                "dayCounter": "Actual360",
+                "currency": "CLP",
+                "fixingDays": 0,
+                "calendar": "NullCalendar",
+                "endOfMonth": false,
+                "convention": "Unadjusted"
+            }
+        }
+    ]
+}
