@@ -207,14 +207,15 @@ impl MultiCurveBootstrapper {
 
             // Use IFT-connected AD discount factors when available,
             // otherwise fall back to unconnected AD nodes.
-            let ad_dfs: Vec<ADReal> = if let Ok(ift_dfs) = sc.output_discount_factors() {
-                ift_dfs.to_vec()
-            } else {
-                sc.discount_factors()
-                    .iter()
-                    .map(|&df| ADReal::new(df))
-                    .collect()
-            };
+            let ad_dfs = sc.output_discount_factors().map_or_else(
+                |_| {
+                    sc.discount_factors()
+                        .iter()
+                        .map(|&df| ADReal::new(df))
+                        .collect()
+                },
+                <[ADReal]>::to_vec,
+            );
 
             let mut ts = DiscountTermStructure::<ADReal>::new(
                 dates,
@@ -227,8 +228,7 @@ impl MultiCurveBootstrapper {
             ts = ts.with_pillar_values(pv.clone())?;
             let labels = sc
                 .pillar_labels()
-                .map(|l| l.to_vec())
-                .unwrap_or_else(|| spec.pillar_labels());
+                .map_or_else(|| spec.pillar_labels(), <[String]>::to_vec);
             ts = ts.with_pillar_labels(labels)?;
             if let Some(ift_sens) = sc.ift_sensitivities() {
                 ts = ts.with_ift_sensitivities(ift_sens.clone());
@@ -245,6 +245,7 @@ impl MultiCurveBootstrapper {
     /// reprice all its instruments to zero residual. After the Newton
     /// solver converges, applies the implicit function theorem (IFT) to
     /// attach exact sensitivities w.r.t. market quotes to the result.
+    #[allow(clippy::too_many_lines)]
     fn bootstrap_next_curve(
         &self,
         target_index: &MarketIndex,
@@ -354,15 +355,15 @@ impl MultiCurveBootstrapper {
                 Some(ift) => ift.clone(),
                 None => continue,
             };
-            let parent_labels: Vec<String> = parent_curve
-                .pillar_labels()
-                .map(|l| l.to_vec())
-                .unwrap_or_else(|| {
+            let parent_labels: Vec<String> = parent_curve.pillar_labels().map_or_else(
+                || {
                     parent_curve
                         .pillar_values()
                         .map(|pv| pv.iter().map(|_| String::new()).collect())
                         .unwrap_or_default()
-                });
+                },
+                <[String]>::to_vec,
+            );
 
             // Compute ∂F/∂z by bumping each parent DF (indices 1..=parent_n)
             // dF_dz[row][col] = ∂F_row / ∂z_{col+1}
@@ -371,15 +372,9 @@ impl MultiCurveBootstrapper {
             for m in 0..parent_n {
                 let bump = (parent_dfs[m + 1].abs() * 1e-6).max(1e-10);
 
-                let (up_res, up_bump) = self.bumped_residual(
-                    &problem,
-                    parent_idx,
-                    parent_curve,
-                    m + 1,
-                    bump,
-                    converged_x,
-                )?;
-                let (dn_res, dn_bump) = self.bumped_residual(
+                let (up_res, up_bump) =
+                    bumped_residual(&problem, parent_idx, parent_curve, m + 1, bump, converged_x)?;
+                let (dn_res, dn_bump) = bumped_residual(
                     &problem,
                     parent_idx,
                     parent_curve,
@@ -418,7 +413,7 @@ impl MultiCurveBootstrapper {
                 // Retrieve parent quote values
                 let parent_quote_vals: Vec<f64> = parent_curve
                     .pillar_values()
-                    .map(|pv| pv.iter().map(|v| v.value()).collect())
+                    .map(|pv| pv.iter().map(IsReal::value).collect())
                     .unwrap_or_default();
 
                 cross_deps.push(CrossCurveDep {
@@ -438,13 +433,13 @@ impl MultiCurveBootstrapper {
         // For each parent, compose:  combined[i][k] = Σ_m cross_df_sens[i][m] * parent_ift_sens[m][k]
         // Extend pillar_values and pillar_labels with parent quotes.
         let mut full_sensitivity = sensitivity.clone();
-        let mut full_quotes = quote_ad.clone();
+        let mut full_quotes = quote_ad;
         let mut full_labels = curve_config.pillar_labels();
 
         for dep in &cross_deps {
             let parent_n_quotes = dep.parent_quote_values.len();
             let m_count = dep.parent_ift_sens.len();
-            for i in 0..n {
+            for (i, sensitivity_row) in full_sensitivity.iter_mut().enumerate().take(n) {
                 let mut row_ext = Vec::with_capacity(parent_n_quotes);
                 for k in 0..parent_n_quotes {
                     let mut combined = 0.0_f64;
@@ -453,7 +448,7 @@ impl MultiCurveBootstrapper {
                     }
                     row_ext.push(combined);
                 }
-                full_sensitivity[i].extend(row_ext);
+                sensitivity_row.extend(row_ext);
             }
             for &v in &dep.parent_quote_values {
                 full_quotes.push(ADReal::new(v));
@@ -497,7 +492,7 @@ impl MultiCurveBootstrapper {
     /// Computes the diagonal of the G = ∂F/∂q matrix analytically.
     ///
     /// Each quote only enters its own residual, so only the diagonal is
-    /// non-zero.  The per-instrument `quote_sensitivity` returns ∂F_j/∂q_j
+    /// non-zero.  The per-instrument `quote_sensitivity` returns `∂F_j/∂q_j`
     /// directly.
     fn compute_quote_sensitivities(problem: &BootstrapProblem, x: &[f64]) -> Result<Vec<f64>> {
         let trial = problem.create_trial_curve(x);
@@ -514,39 +509,38 @@ impl MultiCurveBootstrapper {
             .map(|instr| instr.quote_sensitivity(&curves))
             .collect()
     }
+}
 
-    fn bumped_residual(
-        &self,
-        problem: &BootstrapProblem,
-        parent_idx: &MarketIndex,
-        parent_curve: &SolvedCurve,
-        parent_df_idx: usize,
-        bump: f64,
-        x: &[f64],
-    ) -> Result<(Vec<f64>, f64)> {
-        let original_df = parent_curve.discount_factors()[parent_df_idx];
-        let bumped_df = (original_df + bump).max(1e-10);
+fn bumped_residual(
+    problem: &BootstrapProblem,
+    parent_idx: &MarketIndex,
+    parent_curve: &SolvedCurve,
+    parent_df_idx: usize,
+    bump: f64,
+    x: &[f64],
+) -> Result<(Vec<f64>, f64)> {
+    let original_df = parent_curve.discount_factors()[parent_df_idx];
+    let bumped_df = (original_df + bump).max(1e-10);
 
-        let mut bumped_parent = parent_curve.clone();
-        bumped_parent.discount_factors_mut()[parent_df_idx] = bumped_df;
+    let mut bumped_parent = parent_curve.clone();
+    bumped_parent.discount_factors_mut()[parent_df_idx] = bumped_df;
 
-        let mut bumped_others = problem.other_curves.clone();
-        bumped_others.insert(parent_idx.clone(), bumped_parent);
+    let mut bumped_others = problem.other_curves.clone();
+    bumped_others.insert(parent_idx.clone(), bumped_parent);
 
-        let bumped_problem = BootstrapProblem {
-            target_index: problem.target_index.clone(),
-            reference_date: problem.reference_date,
-            times: problem.times.clone(),
-            day_counter: problem.day_counter,
-            interpolator: problem.interpolator,
-            instruments: problem.instruments,
-            other_curves: &bumped_others,
-            discount_policy: problem.discount_policy,
-            exchange_rate_store: problem.exchange_rate_store,
-        };
+    let bumped_problem = BootstrapProblem {
+        target_index: problem.target_index.clone(),
+        reference_date: problem.reference_date,
+        times: problem.times.clone(),
+        day_counter: problem.day_counter,
+        interpolator: problem.interpolator,
+        instruments: problem.instruments,
+        other_curves: &bumped_others,
+        discount_policy: problem.discount_policy,
+        exchange_rate_store: problem.exchange_rate_store,
+    };
 
-        Ok((bumped_problem.call(x)?, bumped_df - original_df))
-    }
+    Ok((bumped_problem.call(x)?, bumped_df - original_df))
 }
 
 /// Maps a trial vector of discount factors into the residual vector used by

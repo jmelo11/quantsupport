@@ -150,6 +150,7 @@ where
     }
 }
 
+#[allow(clippy::expect_used)]
 impl From<BasisSwap<f64>> for BasisSwap<ADReal> {
     fn from(value: BasisSwap<f64>) -> Self {
         let mut legs = value.legs.into_iter();
@@ -164,6 +165,7 @@ impl From<BasisSwap<f64>> for BasisSwap<ADReal> {
     }
 }
 
+#[allow(clippy::expect_used)]
 impl From<BasisSwap<ADReal>> for BasisSwap<f64> {
     fn from(value: BasisSwap<ADReal>) -> Self {
         let mut legs = value.legs.into_iter();

@@ -124,14 +124,14 @@ impl CurveConfiguration {
     /// Returns an error if the configuration has not been resolved yet.
     pub fn instruments(&self) -> Result<&[CalibrationInstrument]> {
         self.calibration_instruments
-            .as_ref()
-            .map(|instruments| instruments.as_slice())
+            .as_deref()
             .ok_or_else(|| QSError::InvalidValueErr("Curve configuration not resolved".into()))
     }
 
     #[must_use]
     /// Returns the valuation date captured during resolution.
-    pub fn reference_date(&self) -> Date {
+    #[allow(clippy::expect_used)]
+    pub const fn reference_date(&self) -> Date {
         self.reference_date
             .expect("Curve configuration must be resolved before accessing reference_date")
     }
@@ -196,8 +196,10 @@ impl CurveConfiguration {
             .unwrap_or_default()
     }
 
-    #[must_use]
     /// Returns the set of external curve dependencies implied by the calibration instruments.
+    ///
+    /// # Errors
+    /// Returns an error if any instrument dependencies cannot be resolved.
     pub fn local_dependencies(&self) -> Result<HashSet<MarketIndex>> {
         let mut set = HashSet::new();
         set.insert(self.market_index.clone());
@@ -227,17 +229,18 @@ impl CurveConfiguration {
                 CalibrationInstrumentType::RateFutures(rf) => {
                     set.insert(rf.market_index());
                 }
-                CalibrationInstrumentType::FxForward(_) => {
-                    // Dependencies are resolved via the discount policy.
-                }
+                // FxForward: dependencies are resolved via the discount policy.
                 _ => {}
-            };
+            }
         }
         Ok(set)
     }
 
     /// Returns the full set of curve dependencies, including those implied
     /// by the discount policy (e.g. CSA and collateral curves).
+    ///
+    /// # Errors
+    /// Returns an error if any instrument dependencies cannot be resolved via the policy.
     pub fn dependencies(&self, policy: &BootstrapDiscountPolicy) -> Result<HashSet<MarketIndex>> {
         let mut deps = self.local_dependencies()?;
         let instruments = self.instruments()?;

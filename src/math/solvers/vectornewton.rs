@@ -94,7 +94,7 @@ where
                 let candidate = x
                     .iter()
                     .zip(dx.iter())
-                    .map(|(xi, dxi)| *xi - *dxi * step)
+                    .map(|(xi, dxi)| (*dxi).mul_add(-step, *xi))
                     .collect::<Vec<_>>();
 
                 if candidate.iter().any(|v| !v.is_finite() || *v <= 0.0) {

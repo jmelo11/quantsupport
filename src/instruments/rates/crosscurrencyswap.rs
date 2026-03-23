@@ -170,6 +170,7 @@ where
     }
 }
 
+#[allow(clippy::expect_used)]
 impl From<FixFloatCrossCurrencySwap<f64>> for FixFloatCrossCurrencySwap<ADReal> {
     fn from(value: FixFloatCrossCurrencySwap<f64>) -> Self {
         let mut legs = value.legs.into_iter();
@@ -184,6 +185,7 @@ impl From<FixFloatCrossCurrencySwap<f64>> for FixFloatCrossCurrencySwap<ADReal> 
     }
 }
 
+#[allow(clippy::expect_used)]
 impl From<FixFloatCrossCurrencySwap<ADReal>> for FixFloatCrossCurrencySwap<f64> {
     fn from(value: FixFloatCrossCurrencySwap<ADReal>) -> Self {
         let mut legs = value.legs.into_iter();

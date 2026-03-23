@@ -39,7 +39,8 @@ where
             self.end_date,
             self.payment_date,
         );
-        if let Some(fixing) = *self.fixing.read().unwrap() {
+        let value = *self.fixing.read().unwrap();
+        if let Some(fixing) = value {
             coupon.set_fixing(fixing);
         }
         coupon

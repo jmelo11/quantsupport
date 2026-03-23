@@ -38,7 +38,7 @@ pub struct Swaption<T: IsReal> {
     identifier: String,
     underlying: Swap<T>,
     expiry: Date,
-    swaption_type: SwaptionType,
+    underlying_type: SwaptionType,
     exercise_type: SwaptionExerciseType,
     strike: f64,
     market_index: MarketIndex,
@@ -51,11 +51,12 @@ where
 {
     /// Creates a new [`Swaption`].
     #[must_use]
+    #[allow(clippy::too_many_arguments)]
     pub const fn new(
         identifier: String,
         underlying: Swap<T>,
         expiry: Date,
-        swaption_type: SwaptionType,
+        underlying_type: SwaptionType,
         exercise_type: SwaptionExerciseType,
         strike: f64,
         market_index: MarketIndex,
@@ -65,7 +66,7 @@ where
             identifier,
             underlying,
             expiry,
-            swaption_type,
+            underlying_type,
             exercise_type,
             strike,
             market_index,
@@ -87,8 +88,8 @@ where
 
     /// Returns the swaption type (payer or receiver).
     #[must_use]
-    pub const fn swaption_type(&self) -> SwaptionType {
-        self.swaption_type
+    pub const fn underlying_type(&self) -> SwaptionType {
+        self.underlying_type
     }
 
     /// Returns the exercise type.
@@ -187,7 +188,7 @@ impl From<Swaption<f64>> for Swaption<ADReal> {
             value.identifier,
             value.underlying.into(),
             value.expiry,
-            value.swaption_type,
+            value.underlying_type,
             value.exercise_type,
             value.strike,
             value.market_index,
@@ -202,7 +203,7 @@ impl From<Swaption<ADReal>> for Swaption<f64> {
             value.identifier,
             value.underlying.into(),
             value.expiry,
-            value.swaption_type,
+            value.underlying_type,
             value.exercise_type,
             value.strike,
             value.market_index,

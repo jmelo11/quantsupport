@@ -259,8 +259,7 @@ where
                     .iter()
                     .filter(|(idx, _)| {
                         idx.rate_index_details()
-                            .map(|d| d.currency() == leg_currency)
-                            .unwrap_or(false)
+                            .is_ok_and(|d| d.currency() == leg_currency)
                     })
                     .map(|(index, _)| index.clone());
 
@@ -292,8 +291,7 @@ where
                     .iter()
                     .filter(|(idx, _)| {
                         idx.rate_index_details()
-                            .map(|d| d.currency() == leg_currency)
-                            .unwrap_or(false)
+                            .is_ok_and(|d| d.currency() == leg_currency)
                     })
                     .map(|(index, _)| index.clone());
 

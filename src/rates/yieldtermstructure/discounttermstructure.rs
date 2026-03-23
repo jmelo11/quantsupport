@@ -1,8 +1,5 @@
 use crate::{
-    ad::{
-        adreal::{ADReal, Const, FloatExt, IsReal},
-        node,
-    },
+    ad::adreal::{ADReal, Const, FloatExt, IsReal},
     core::{elements::curveelement::ADCurveElement, pillars::Pillars},
     math::interpolation::interpolator::{Interpolate, Interpolator},
     rates::{
@@ -46,7 +43,6 @@ use crate::{
 ///     discount_factors
 /// );
 ///  ```
-
 /// A discount factors term structure.
 #[derive(Clone)]
 pub struct DiscountTermStructure<T>
@@ -62,9 +58,6 @@ where
     enable_extrapolation: bool,
     pillar_labels: Option<Vec<String>>,
     pillar_values: Option<Vec<T>>,
-    /// IFT sensitivity matrix: `ift_sensitivities[i][j]` = ∂DF(i+1)/∂q(j).
-    /// When cross-curve dependencies are pre-composed at bootstrap time,
-    /// the matrix is non-square: n_dfs rows × n_total_pillars columns.
     ift_sensitivities: Option<Vec<Vec<f64>>>,
 }
 
@@ -297,14 +290,13 @@ impl Pillars<ADReal> for DiscountTermStructure<ADReal> {
             // The matrix may be non-square when cross-curve dependencies
             // have been pre-composed at bootstrap time (n_pillars > n_dfs).
             if let Some(ref sens) = self.ift_sensitivities {
-                let n_dfs = sens.len();
                 let n_pillars = pillar_values.len();
-                let mut new_dfs = Vec::with_capacity(n_dfs + 1);
+                let mut new_dfs = Vec::with_capacity(sens.len() + 1);
                 new_dfs.push(ADReal::new(1.0)); // DF(0) = 1
-                for i in 0..n_dfs {
+                for (i, sens_row) in sens.iter().enumerate() {
                     let mut df_ad = ADReal::new(self.discount_factors[i + 1].value());
                     for j in 0..n_pillars {
-                        let s = sens[i][j];
+                        let s = sens_row[j];
                         if s.abs() > 1e-16 {
                             let delta: ADReal =
                                 (pillar_values[j] - ADReal::new(pillar_values[j].value())).into();
@@ -374,8 +366,8 @@ impl InterestRatesTermStructure<f64> for DiscountTermStructure<f64> {
         Some(
             self.dates
                 .iter()
-                .cloned()
-                .zip(self.discount_factors.iter().cloned())
+                .copied()
+                .zip(self.discount_factors.iter().copied())
                 .collect(),
         )
     }
@@ -443,8 +435,8 @@ impl InterestRatesTermStructure<ADReal> for DiscountTermStructure<ADReal> {
         Some(
             self.dates
                 .iter()
-                .cloned()
-                .zip(self.discount_factors.iter().cloned())
+                .copied()
+                .zip(self.discount_factors.iter().copied())
                 .collect(),
         )
     }

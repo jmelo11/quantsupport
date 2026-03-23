@@ -6,7 +6,7 @@ use crate::{
         tape::Tape,
     },
     core::{
-        collateral::{Discountable, DiscountPolicy},
+        collateral::{DiscountPolicy, Discountable},
         evaluationresults::{EvaluationResults, SensitivityMap},
         instrument::{AssetClass, Instrument},
         marketdatahandling::{
@@ -138,14 +138,13 @@ impl HandleValue<FxForwardTrade, FxForwardState> for FxForwardPricer {
 
         // NPV = notional * (F_model - K) * DF_quote * side
         let notional = ADReal::new(trade.notional());
-        let npv: ADReal = if let Some(k) = inst.forward_price() {
-            let side = ADReal::new(trade.side().sign());
-            (notional * (forward - k) * df_quote * side).into()
-        } else {
-            // When no agreed price, return the model forward scaled by notional
-            (notional * forward * df_quote).into()
-        };
-
+        let npv: ADReal = inst.forward_price().map_or_else(
+            || (notional * forward * df_quote).into(),
+            |k| {
+                let side = ADReal::new(trade.side().sign());
+                (notional * (forward - k) * df_quote * side).into()
+            },
+        );
         state.value = Some(npv);
 
         Tape::stop_recording();
@@ -174,8 +173,12 @@ impl HandleSensitivities<FxForwardTrade, FxForwardState> for FxForwardPricer {
         let policy = self.discount_policy.as_ref().ok_or_else(|| {
             QSError::InvalidValueErr("Discount policy required for FX forward pricing".into())
         })?;
-        let base_idx = policy.accept(&CurrencyDiscountable { currency: inst.base_currency() })?;
-        let quote_idx = policy.accept(&CurrencyDiscountable { currency: inst.quote_currency() })?;
+        let base_idx = policy.accept(&CurrencyDiscountable {
+            currency: inst.base_currency(),
+        })?;
+        let quote_idx = policy.accept(&CurrencyDiscountable {
+            currency: inst.quote_currency(),
+        })?;
 
         let mut ids = Vec::new();
         let mut exposures = Vec::new();
@@ -246,15 +249,12 @@ impl Pricer for FxForwardPricer {
         for ccy in [inst.base_currency(), inst.quote_currency()] {
             if let Ok(idx) = policy.accept(&CurrencyDiscountable { currency: ccy }) {
                 if seen_indices.insert(idx.clone()) {
-                    elements.push(ConstructedElementRequest::DiscountCurve {
-                        market_index: idx,
-                    });
+                    elements.push(ConstructedElementRequest::DiscountCurve { market_index: idx });
                 }
             }
         }
 
-        let mut request = MarketDataRequest::default()
-            .with_exchange_rates();
+        let mut request = MarketDataRequest::default().with_exchange_rates();
 
         if !elements.is_empty() {
             request = request.with_constructed_elements_request(elements);

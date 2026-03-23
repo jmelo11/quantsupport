@@ -1040,27 +1040,30 @@ where
     T: IsReal,
 {
     /// Returns the final date that defines the calibration pillar for the instrument.
+    ///
+    /// # Errors
+    /// Returns an error if the instrument type is not supported or if underlying instrument data is invalid.
     pub fn pillar_date(&self) -> Result<Date> {
         match self {
-            CalibrationInstrumentType::FixedRateDeposit(x) => Ok(x.leg().last_payment_date()),
-            CalibrationInstrumentType::Swap(x) => Ok(x
+            Self::FixedRateDeposit(x) => Ok(x.leg().last_payment_date()),
+            Self::Swap(x) => Ok(x
                 .fixed_leg()
                 .last_payment_date()
                 .max(x.floating_leg().last_payment_date())),
-            CalibrationInstrumentType::BasisSwap(x) => Ok(x
+            Self::BasisSwap(x) => Ok(x
                 .pay_leg()
                 .last_payment_date()
                 .max(x.receive_leg().last_payment_date())),
-            CalibrationInstrumentType::FixFloatCrossCurrencySwap(x) => Ok(x
+            Self::FixFloatCrossCurrencySwap(x) => Ok(x
                 .domestic_leg()
                 .last_payment_date()
                 .max(x.foreign_leg().last_payment_date())),
-            CalibrationInstrumentType::FloatFloatCrossCurrencySwap(x) => Ok(x
+            Self::FloatFloatCrossCurrencySwap(x) => Ok(x
                 .domestic_leg()
                 .last_payment_date()
                 .max(x.foreign_leg().last_payment_date())),
-            CalibrationInstrumentType::RateFutures(x) => Ok(x.end_date()),
-            CalibrationInstrumentType::FxForward(x) => Ok(x.delivery_date()),
+            Self::RateFutures(x) => Ok(x.end_date()),
+            Self::FxForward(x) => Ok(x.delivery_date()),
             _ => Err(QSError::InvalidValueErr("Instrument not supported".into())),
         }
     }
@@ -1130,11 +1133,11 @@ impl Quote {
             QuoteInstrument::Future => self.build_rate_futures(value, reference_date),
             QuoteInstrument::FxOutrightForward => self.build_fx_forward(value, reference_date),
             QuoteInstrument::CrossCurrencySwap => {
-                let domestic_notional = fx_spot.map(|fx| notional * fx).unwrap_or(notional);
+                let domestic_notional = fx_spot.map_or(notional, |fx| notional * fx);
                 self.build_cross_currency_swap(value, reference_date, domestic_notional, notional)
             }
             QuoteInstrument::FloatFloatCrossCurrencySwap => {
-                let domestic_notional = fx_spot.map(|fx| notional * fx).unwrap_or(notional);
+                let domestic_notional = fx_spot.map_or(notional, |fx| notional * fx);
                 self.build_float_float_cross_currency_swap(
                     value,
                     reference_date,
@@ -1453,7 +1456,10 @@ impl Quote {
     }
 
     /// European equity Call — strike and expiry from details.
-    fn build_call<T: IsReal + Default>(&self, reference_date: Date) -> Result<CalibrationInstrumentType<T>> {
+    fn build_call<T: IsReal + Default>(
+        &self,
+        reference_date: Date,
+    ) -> Result<CalibrationInstrumentType<T>> {
         let d = &self.details;
         let strike = d
             .strike()
@@ -1475,7 +1481,10 @@ impl Quote {
     }
 
     /// European equity Put — strike and expiry from details.
-    fn build_put<T: IsReal + Default>(&self, reference_date: Date) -> Result<CalibrationInstrumentType<T>> {
+    fn build_put<T: IsReal + Default>(
+        &self,
+        reference_date: Date,
+    ) -> Result<CalibrationInstrumentType<T>> {
         let d = &self.details;
         let strike = d
             .strike()
@@ -1724,7 +1733,10 @@ mod tests {
         let inst = quote
             .build_instrument(ref_date(), Level::Mid, None)
             .unwrap();
-        assert!(matches!(inst, CalibrationInstrumentType::FixedRateDeposit(_)));
+        assert!(matches!(
+            inst,
+            CalibrationInstrumentType::FixedRateDeposit(_)
+        ));
     }
 
     #[test]

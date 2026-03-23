@@ -36,6 +36,8 @@ impl BootstrapDiscountPolicy {
     }
 
     /// Returns the primary CSA curve index.
+    #[allow(clippy::unwrap_used)]
+    #[must_use]
     pub fn csa_index(&self) -> MarketIndex {
         self.csa_discount_policy
             .discount_indices()
@@ -45,6 +47,10 @@ impl BootstrapDiscountPolicy {
     }
 
     /// Resolves the discount curve index for the given leg.
+    ///
+    /// # Errors
+    /// Returns an error if the leg's asset class is unsupported or if the appropriate discount index
+    /// cannot be resolved based on the leg's characteristics and the policy configuration.
     pub fn discount_index(&self, leg: &Leg<f64>) -> Result<MarketIndex> {
         match leg.asset_class() {
             AssetClass::FixedIncome => self.fixed_income_discount_policy.accept(leg),
@@ -59,6 +65,10 @@ impl BootstrapDiscountPolicy {
     /// Resolves the discount curve index for a given currency under the FX
     /// asset class. Uses collateral overrides first, then falls back to the
     /// CSA policy.
+    ///
+    /// # Errors
+    /// Returns an error if the currency is not supported or if the appropriate discount index
+    /// cannot be resolved based on the policy configuration.
     pub fn discount_index_for_currency(&self, currency: Currency) -> Result<MarketIndex> {
         if let Some(idx) = self.collateral_overrides.get(&currency) {
             return Ok(idx.clone());

@@ -28,7 +28,7 @@ pub struct CapFloor {
     market_index: MarketIndex,
     currency: Currency,
     strike: f64,
-    cap_floor_type: CapFloorType,
+    payoff_type: CapFloorType,
 }
 
 impl CapFloor {
@@ -40,7 +40,7 @@ impl CapFloor {
         market_index: MarketIndex,
         currency: Currency,
         strike: f64,
-        cap_floor_type: CapFloorType,
+        payoff_type: CapFloorType,
     ) -> Self {
         Self {
             identifier,
@@ -48,7 +48,7 @@ impl CapFloor {
             market_index,
             currency,
             strike,
-            cap_floor_type,
+            payoff_type,
         }
     }
 
@@ -72,8 +72,8 @@ impl CapFloor {
 
     /// Whether this is a cap or a floor.
     #[must_use]
-    pub const fn cap_floor_type(&self) -> CapFloorType {
-        self.cap_floor_type
+    pub const fn payoff_type(&self) -> CapFloorType {
+        self.payoff_type
     }
 
     /// Returns the caplet/floorlet strip.

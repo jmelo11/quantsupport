@@ -85,6 +85,12 @@ impl CalibrationInstrument {
     /// swaps), the discount and forward curves are resolved per-leg via the
     /// discount policy embedded in the curve set.  For rate futures and FX
     /// forwards, specialised residual formulas are used.
+    ///
+    /// # Errors
+    /// Returns an error if the instrument type is unsupported for residual
+    /// calculation or if required market data (e.g., forward rates for floating coupons,
+    /// discount factors for cashflow dates) is missing from
+    #[allow(clippy::too_many_lines)]
     pub fn residual(&self, curves: &BootstrapCurveSet) -> Result<f64> {
         match self.built() {
             CalibrationInstrumentType::FixedRateDeposit(deposit) => {
@@ -210,33 +216,38 @@ impl CalibrationInstrument {
         }
     }
 
-    /// Returns the analytical ∂F/∂q for this instrument.
+    /// Returns the analytical `∂F/∂q` for this instrument.
     ///
     /// Because each quote enters its own residual linearly, the derivative
     /// is a closed-form scalar that depends only on the instrument type:
     ///
-    /// | Type              | ∂F/∂q                            |
+    /// | Type              | `∂F/∂q`                            |
     /// |-------------------|----------------------------------|
-    /// | Deposit           | −1                               |
-    /// | Swap              | fixed-leg annuity                |
-    /// | BasisSwap         | pay-leg (spread-leg) annuity     |
-    /// | FixFloatXCcy      | domestic fixed-leg annuity       |
-    /// | FloatFloatXCcy    | domestic floating-leg annuity    |
-    /// | RateFutures       | 1/100                            |
-    /// | FxForward         | −1                               |
+    /// | `Deposit`           | −1                               |
+    /// | `Swap`              | fixed-leg annuity                |
+    /// | `BasisSwap`         | pay-leg (spread-leg) annuity     |
+    /// | `FixFloatXCcy`      | domestic fixed-leg annuity       |
+    /// | `FloatFloatXCcy`    | domestic floating-leg annuity    |
+    /// | `RateFutures`       | 1/100                            |
+    /// | `FxForward`         | −1                               |
+    ///
+    /// # Errors
+    /// Returns an error if the instrument type is unsupported for quote sensitivity
+    /// calculation or if required market data (e.g., discount factors for cashflow dates) is 
+    /// missing from the provided curves for leg-based instruments.
     pub fn quote_sensitivity(&self, curves: &BootstrapCurveSet) -> Result<f64> {
         match self.built() {
-            CalibrationInstrumentType::FixedRateDeposit(_) => Ok(-1.0),
-            CalibrationInstrumentType::Swap(swap) => self.fixed_leg_annuity(swap.fixed_leg(), curves),
-            CalibrationInstrumentType::BasisSwap(bs) => self.floating_leg_annuity(bs.pay_leg(), curves),
+            CalibrationInstrumentType::FixedRateDeposit(_)
+            | CalibrationInstrumentType::FxForward(_) => Ok(-1.0),
+            CalibrationInstrumentType::Swap(swap) => fixed_leg_annuity(swap.fixed_leg(), curves),
+            CalibrationInstrumentType::BasisSwap(bs) => floating_leg_annuity(bs.pay_leg(), curves),
             CalibrationInstrumentType::FixFloatCrossCurrencySwap(xccy) => {
-                self.fixed_leg_annuity(xccy.domestic_leg(), curves)
+                fixed_leg_annuity(xccy.domestic_leg(), curves)
             }
             CalibrationInstrumentType::FloatFloatCrossCurrencySwap(xccy) => {
-                self.floating_leg_annuity(xccy.domestic_leg(), curves)
+                floating_leg_annuity(xccy.domestic_leg(), curves)
             }
             CalibrationInstrumentType::RateFutures(_) => Ok(1.0 / 100.0),
-            CalibrationInstrumentType::FxForward(_) => Ok(-1.0),
             _ => Err(QSError::InvalidValueErr(
                 "Unsupported instrument type for quote sensitivity".into(),
             )),
@@ -244,6 +255,9 @@ impl CalibrationInstrument {
     }
 
     /// Computes the present value of a single leg using the given discount and forward curves.
+    ///
+    /// # Errors
+    /// Returns an error if any cashflow in the leg is of an unsupported type or if required market data (e.g., forward rates for floating coupons) is missing from the provided curves.
     pub fn leg_pv(
         &self,
         leg: &Leg<f64>,
@@ -293,7 +307,7 @@ impl CalibrationInstrument {
                     floating_coupon.set_fixing(fixing);
                     pv += side * floating_coupon.amount()? * df;
                 }
-                _ => {
+                CashflowType::OptionEmbeddedCoupon(_) => {
                     return Err(QSError::InvalidValueErr(
                         "Unsupported cashflow type for PV calculation".into(),
                     ))
@@ -302,42 +316,39 @@ impl CalibrationInstrument {
         }
         Ok(pv)
     }
+}
 
-    /// Computes the fixed-leg annuity: Σ (side × τ × notional × DF).
-    /// This gives ∂NPV_fixed/∂rate and is used for IFT quote sensitivities.
-    fn fixed_leg_annuity(&self, leg: &Leg<f64>, curves: &BootstrapCurveSet) -> Result<f64> {
-        let disc = curves.discount_curve_for_leg(leg)?;
-        let side = leg.side().sign();
-        let mut annuity = 0.0;
-        for cashflow in leg.cashflows() {
-            if let CashflowType::FixedRateCoupon(coupon) = cashflow {
-                let df = disc.discount_factor(coupon.payment_date())?;
-                let yf = coupon
-                    .rate()
-                    .day_counter()
-                    .year_fraction(coupon.accrual_start_date(), coupon.accrual_end_date());
-                annuity += side * yf * coupon.notional() * df;
-            }
+/// Computes the fixed-leg annuity
+fn fixed_leg_annuity(leg: &Leg<f64>, curves: &BootstrapCurveSet) -> Result<f64> {
+    let disc = curves.discount_curve_for_leg(leg)?;
+    let side = leg.side().sign();
+    let mut annuity = 0.0;
+    for cashflow in leg.cashflows() {
+        if let CashflowType::FixedRateCoupon(coupon) = cashflow {
+            let df = disc.discount_factor(coupon.payment_date())?;
+            let yf = coupon
+                .rate()
+                .day_counter()
+                .year_fraction(coupon.accrual_start_date(), coupon.accrual_end_date());
+            annuity += side * yf * coupon.notional() * df;
         }
-        Ok(annuity)
     }
+    Ok(annuity)
+}
 
-    /// Computes the floating-leg annuity (DV01 of the spread):
-    /// Σ (side × τ × notional × DF). Used for basis/xccy swap
-    /// quote sensitivities where the quote is the spread.
-    fn floating_leg_annuity(&self, leg: &Leg<f64>, curves: &BootstrapCurveSet) -> Result<f64> {
-        let disc = curves.discount_curve_for_leg(leg)?;
-        let side = leg.side().sign();
-        let mut annuity = 0.0;
-        for cashflow in leg.cashflows() {
-            if let CashflowType::FloatingRateCoupon(coupon) = cashflow {
-                let df = disc.discount_factor(coupon.payment_date())?;
-                let yf = coupon
-                    .day_counter()
-                    .year_fraction(coupon.accrual_start_date(), coupon.accrual_end_date());
-                annuity += side * yf * coupon.notional() * df;
-            }
+/// Computes the floating-leg annuity
+fn floating_leg_annuity(leg: &Leg<f64>, curves: &BootstrapCurveSet) -> Result<f64> {
+    let disc = curves.discount_curve_for_leg(leg)?;
+    let side = leg.side().sign();
+    let mut annuity = 0.0;
+    for cashflow in leg.cashflows() {
+        if let CashflowType::FloatingRateCoupon(coupon) = cashflow {
+            let df = disc.discount_factor(coupon.payment_date())?;
+            let yf = coupon
+                .day_counter()
+                .year_fraction(coupon.accrual_start_date(), coupon.accrual_end_date());
+            annuity += side * yf * coupon.notional() * df;
         }
-        Ok(annuity)
     }
+    Ok(annuity)
 }

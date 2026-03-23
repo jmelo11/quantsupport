@@ -18,6 +18,7 @@ use crate::{
 };
 
 /// Computes the pillar time grid from instruments.
+#[must_use]
 pub fn get_pillar_times(
     reference_date: Date,
     day_counter: DayCounter,
@@ -31,8 +32,12 @@ pub fn get_pillar_times(
 }
 
 /// Computes a topological ordering of curves respecting dependencies.
-pub fn dependency_order(
-    curve_configs: &HashMap<MarketIndex, CurveConfiguration>,
+/// 
+/// # Errors
+/// Returns an error if a circular dependency is detected among the curve specifications, which would prevent successful 
+/// bootstrapping. The error message will indicate the presence of a circular dependency to aid in debugging curve configuration issues.
+pub fn dependency_order<S: ::std::hash::BuildHasher>(
+    curve_configs: &HashMap<MarketIndex, CurveConfiguration, S>,
     policy: &BootstrapDiscountPolicy,
 ) -> Result<Vec<MarketIndex>> {
     let mut dep_map: HashMap<MarketIndex, HashSet<MarketIndex>> = HashMap::new();
@@ -92,9 +97,9 @@ pub fn dependency_order(
 /// Cross-curve dependency: how a child curve's DFs depend on a parent curve.
 #[derive(Clone)]
 pub struct CrossCurveDep {
-    /// `cross_df_sens[i][m]` = ∂DF_self(i+1)/∂DF_parent(m+1)
+    /// Child curve's sensitivity matrix.
     pub cross_df_sens: Vec<Vec<f64>>,
-    /// Parent curve's IFT sensitivity matrix: `parent_ift_sens[m][k]` = ∂DF_parent(m+1)/∂q_parent(k)
+    /// Parent curve's IFT sensitivity matrix.
     pub parent_ift_sens: Vec<Vec<f64>>,
     /// Parent curve's quote values (for AD linkage).
     pub parent_quote_values: Vec<f64>,
@@ -119,7 +124,8 @@ pub struct SolvedCurve {
 
 impl SolvedCurve {
     /// Creates a new solved curve from raw data.
-    pub fn new(
+    #[must_use]
+    pub const fn new(
         market_index: MarketIndex,
         reference_date: Date,
         times: Vec<f64>,
@@ -142,63 +148,77 @@ impl SolvedCurve {
     }
 
     /// Returns the market index of this curve.
+    #[must_use]
     pub fn market_index(&self) -> MarketIndex {
         self.market_index.clone()
     }
 
     /// Attaches AD-tracked pillar values (typically market quotes).
+    #[must_use]
     pub fn with_pillar_values(mut self, pillar_values: Vec<ADReal>) -> Self {
         self.pillar_values = Some(pillar_values);
         self
     }
 
-    /// Attaches pillar labels (matching pillar_values in order).
+    /// Attaches pillar labels (matching `pillar_values` in order).
+    #[must_use]
     pub fn with_pillar_labels(mut self, labels: Vec<String>) -> Self {
         self.pillar_labels = Some(labels);
         self
     }
 
     /// Returns pillar labels, if set.
+    #[must_use]
     pub fn pillar_labels(&self) -> Option<&[String]> {
         self.pillar_labels.as_deref()
     }
 
     /// Attaches AD-tracked discount factors at the pillar dates.
+    #[must_use]
     pub fn with_output_discount_factors(mut self, output_discount_factors: Vec<ADReal>) -> Self {
         self.output_discount_factors = Some(output_discount_factors);
         self
     }
 
     /// Attaches the IFT sensitivity matrix: `sens[i][j]` = ∂DF(i+1)/∂q(j).
+    #[must_use]
     pub fn with_ift_sensitivities(mut self, sensitivities: Vec<Vec<f64>>) -> Self {
         self.ift_sensitivities = Some(sensitivities);
         self
     }
 
     /// Returns the IFT sensitivity matrix, if available.
-    pub fn ift_sensitivities(&self) -> Option<&Vec<Vec<f64>>> {
+    #[must_use]
+    pub const fn ift_sensitivities(&self) -> Option<&Vec<Vec<f64>>> {
         self.ift_sensitivities.as_ref()
     }
 
     /// Returns the AD-tracked pillar values.
+    ///
+    /// # Errors
+    /// Returns an error if the pillar values have not been set, which typically indicates that the curve has not been fully bootstrapped or that there is an issue with the AD linkage during bootstrapping.
     pub fn pillar_values(&self) -> Result<&[ADReal]> {
         self.pillar_values
-            .as_ref()
-            .map(|v| v.as_slice())
+            .as_deref()
             .ok_or_else(|| QSError::InvalidValueErr("Pillar values not set".into()))
     }
 
     /// Returns the raw discount factors.
+    #[must_use]
     pub fn discount_factors(&self) -> &[f64] {
         &self.discount_factors
     }
 
     /// Returns a mutable reference to the raw discount factors.
-    pub fn discount_factors_mut(&mut self) -> &mut Vec<f64> {
+    #[must_use]
+    pub const fn discount_factors_mut(&mut self) -> &mut Vec<f64> {
         &mut self.discount_factors
     }
 
     /// Returns the discount factor at the given date.
+    ///
+    /// # Errors
+    /// Returns an error if the date is out of bounds for the curve's time grid or if interpolation fails for any reason (e.g., NaN inputs, invalid interpolator state). The error message will indicate the nature of the failure to aid in debugging bootstrapping issues.
     pub fn discount_factor(&self, date: Date) -> Result<f64> {
         let year_fraction = self.day_counter.year_fraction(self.reference_date, date);
         self.interpolator
@@ -206,14 +226,19 @@ impl SolvedCurve {
     }
 
     /// Returns the AD-tracked discount factors at the pillar dates.
+    ///
+    /// # Errors
+    /// Returns an error if the output discount factors have not been set, which typically indicates that the curve has not been fully bootstrapped or that there is an issue with the AD linkage during bootstrapping.
     pub fn output_discount_factors(&self) -> Result<&[ADReal]> {
         self.output_discount_factors
-            .as_ref()
-            .map(|values| values.as_slice())
+            .as_deref()
             .ok_or_else(|| QSError::InvalidValueErr("Output discount factors not set".into()))
     }
 
     /// Computes the forward rate between two dates.
+    ///
+    /// # Errors
+    /// Returns an error if the discount factor for either date cannot be computed or if the year fraction between the dates is invalid for the given rate definition.    
     pub fn forward_rate(
         &self,
         start_date: Date,
@@ -249,6 +274,7 @@ pub struct BootstrapCurveSet<'a> {
 
 impl<'a> BootstrapCurveSet<'a> {
     /// Builds a curve set from the trial curve and the already-solved curves.
+    #[must_use]
     pub fn new(
         trial: &'a SolvedCurve,
         other_curves: &'a HashMap<MarketIndex, SolvedCurve>,
@@ -266,16 +292,21 @@ impl<'a> BootstrapCurveSet<'a> {
     }
 
     /// Looks up a curve by market index.
+    #[must_use]
     pub fn get(&self, index: &MarketIndex) -> Option<&SolvedCurve> {
         self.curves.get(index).copied()
     }
 
     /// Returns the discount policy.
-    pub fn discount_policy(&self) -> &BootstrapDiscountPolicy {
+    #[must_use]
+    pub const fn discount_policy(&self) -> &BootstrapDiscountPolicy {
         self.discount_policy
     }
 
     /// Resolves the discount curve for the given leg via the discount policy.
+    ///
+    /// # Errors
+    /// Returns an error if the leg's discount index cannot be resolved via the policy or if the corresponding curve is not found in the curve set, which typically indicates a misconfiguration in the curve
     pub fn discount_curve_for_leg(&self, leg: &Leg<f64>) -> Result<&SolvedCurve> {
         let index = self.discount_policy.discount_index(leg)?;
         self.curves
@@ -285,6 +316,9 @@ impl<'a> BootstrapCurveSet<'a> {
     }
 
     /// Resolves the forward/projection curve for the given leg, if it has one.
+    ///
+    /// # Errors
+    /// Returns an error if the leg has a forward index but the corresponding curve is not found in the curve set, which typically indicates a misconfiguration in the curve specifications or an issue with the
     pub fn forward_curve_for_leg(&self, leg: &Leg<f64>) -> Result<Option<&SolvedCurve>> {
         match leg.forward_index() {
             Some(idx) => {
@@ -299,6 +333,10 @@ impl<'a> BootstrapCurveSet<'a> {
     }
 
     /// Looks up the FX spot rate.
+    ///
+    /// # Errors
+    /// Returns an error if the exchange rate for the given currency pair is not available in the [`ExchangeRateStore`].
+    /// The error message will indicate the missing currency pair to aid in debugging bootstr
     pub fn fx_spot(&self, base: Currency, quote: Currency) -> Result<f64> {
         Ok(self
             .exchange_rate_store

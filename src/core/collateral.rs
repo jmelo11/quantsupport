@@ -79,17 +79,18 @@ impl DiscountPolicy for FixedIncomeDiscountPolicy {
             AssetClass::FixedIncome => {
                 if self.prefer_instrument_index {
                     if let Some(indices) = target.discount_index() {
-                        return Ok(indices.clone());
+                        return Ok(indices);
                     }
                 }
-                if let Some(rf_index) = self.risk_free_index(target.currency()) {
-                    Ok(rf_index.clone())
-                } else {
-                    Err(QSError::InvalidValueErr(format!(
-                        "No risk-free index configured for currency {}",
-                        target.currency()
-                    )))
-                }
+                self.risk_free_index(target.currency()).map_or_else(
+                    || {
+                        Err(QSError::InvalidValueErr(format!(
+                            "No risk-free index configured for currency {}",
+                            target.currency()
+                        )))
+                    },
+                    Ok,
+                )
             }
             _ => Err(QSError::InvalidValueErr(format!(
                 "Unsupported asset class for FixedIncomeDiscountPolicy: {:?}",

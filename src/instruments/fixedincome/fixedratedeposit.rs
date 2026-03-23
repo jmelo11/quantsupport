@@ -59,7 +59,7 @@ where
 
     /// Return the interest rate of the deposit.
     #[must_use]
-    pub fn rate(&self) -> Option<InterestRate<T>> {
+    pub const fn rate(&self) -> Option<InterestRate<T>> {
         self.leg.interest_rate()
     }
 
