@@ -27,7 +27,7 @@ use super::traits::{
 ///
 /// # Example
 /// ```
-/// use rustatlas::prelude::*;
+/// use quantsupport::prelude::*;
 /// let ref_date = Date::new(2021, 1, 1);
 /// let tenor = Period::new(1, TimeUnit::Months);
 /// let rate_definition = RateDefinition::new(DayCounter::Actual360, Compounding::Simple, Frequency::Annual);
@@ -84,8 +84,8 @@ impl IborIndex {
     /// Sets the tenor from a frequency for this index.
     #[must_use]
     pub fn with_frequency(mut self, frequency: Frequency) -> Self {
-        self.tenor = Period::from_frequency(frequency)
-            .unwrap_or_else(|| panic!("Invalid frequency"));
+        self.tenor =
+            Period::from_frequency(frequency).unwrap_or_else(|| panic!("Invalid frequency"));
         self
     }
 
@@ -229,9 +229,8 @@ impl AdvanceInterestRateIndexInTime for IborIndex {
     }
 
     fn advance_to_date(&self, date: Date) -> Result<Arc<RwLock<dyn InterestRateIndexTrait>>> {
-        let days = i32::try_from(date - self.reference_date()).map_err(|_| {
-            AtlasError::InvalidValueErr("Day count should fit in i32".to_string())
-        })?;
+        let days = i32::try_from(date - self.reference_date())
+            .map_err(|_| AtlasError::InvalidValueErr("Day count should fit in i32".to_string()))?;
         if days < 0 {
             return Err(AtlasError::InvalidValueErr(format!(
                 "Date {date} is before reference date {reference_date}",

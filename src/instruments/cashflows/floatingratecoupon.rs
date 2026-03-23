@@ -12,20 +12,39 @@ use crate::{
 
 /// A [`FloatingRateCoupon`] represents a cash flow from a floating-rate bond or loan,
 /// where the interest rate is determined by a market index plus a spread.
-///
-/// The fixing is stored in an [`RwLock`] so that it can be set by the pricer
-/// through a shared (`&self`) reference — the trade itself remains immutable
-/// while still satisfying `Send + Sync`.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct FloatingRateCoupon<T: IsReal> {
     notional: f64,
     spread: T,
+    #[serde(skip)]
     fixing: RwLock<Option<T>>,
     index: MarketIndex,
     start_date: Date,
     end_date: Date,
     payment_date: Date,
     day_counter: DayCounter,
+}
+
+#[allow(clippy::unwrap_used)]
+impl<T> Clone for FloatingRateCoupon<T>
+where
+    T: IsReal,
+{
+    fn clone(&self) -> Self {
+        let coupon = Self::new(
+            self.notional,
+            self.spread,
+            self.index.clone(),
+            self.start_date,
+            self.end_date,
+            self.payment_date,
+        );
+        let value = *self.fixing.read().unwrap();
+        if let Some(fixing) = value {
+            coupon.set_fixing(fixing);
+        }
+        coupon
+    }
 }
 
 impl<T> FloatingRateCoupon<T>
@@ -43,7 +62,9 @@ where
     ) -> Self {
         let day_counter = index
             .rate_index_details()
-            .map_or(DayCounter::Actual360, |details| details.rate_definition().day_counter());
+            .map_or(DayCounter::Actual360, |details| {
+                details.rate_definition().day_counter()
+            });
 
         Self {
             notional,
@@ -58,10 +79,7 @@ where
     }
 
     /// Sets the fixing for the coupon.
-    ///
-    /// Uses interior mutability ([`RwLock`]) so that the pricer can resolve
-    /// forward rates without requiring a mutable reference to the trade.
-    #[allow(clippy::unwrap_used)] // RwLock poisoning is unrecoverable
+    #[allow(clippy::unwrap_used)]
     pub fn set_fixing(&self, fixing: T) {
         *self.fixing.write().unwrap() = Some(fixing);
     }
@@ -77,7 +95,7 @@ where
     }
 
     /// Returns the fixing value if set.
-    #[allow(clippy::unwrap_used)] // RwLock poisoning is unrecoverable
+    #[allow(clippy::unwrap_used)]
     pub fn fixing(&self) -> Option<T> {
         *self.fixing.read().unwrap()
     }
@@ -99,6 +117,48 @@ where
 }
 
 #[allow(clippy::unwrap_used)] // RwLock poisoning is unrecoverable
+impl Cashflow<f64> for FloatingRateCoupon<f64> {
+    fn amount(&self) -> Result<f64> {
+        let fixing = self
+            .fixing
+            .read()
+            .unwrap()
+            .ok_or_else(|| QSError::InvalidValueErr("Fixing not set".into()))?;
+        let year_fraction = self
+            .day_counter
+            .year_fraction(self.start_date, self.end_date);
+        Ok((fixing + self.spread) * (year_fraction * self.notional))
+    }
+
+    fn payment_date(&self) -> Date {
+        self.payment_date
+    }
+}
+
+#[allow(clippy::unwrap_used)] // RwLock poisoning is unrecoverable
+impl LinearCoupon<f64> for FloatingRateCoupon<f64> {
+    fn accrued_amount(&self, start_date: Date, end_date: Date) -> Result<f64> {
+        let fixing = self
+            .fixing()
+            .ok_or_else(|| QSError::InvalidValueErr("Fixing not set".into()))?;
+        let year_fraction = self.day_counter.year_fraction(start_date, end_date);
+        Ok((fixing + self.spread) * (year_fraction * self.notional))
+    }
+
+    fn accrual_start_date(&self) -> Date {
+        self.start_date
+    }
+
+    fn accrual_end_date(&self) -> Date {
+        self.end_date
+    }
+
+    fn notional(&self) -> f64 {
+        self.notional
+    }
+}
+
+#[allow(clippy::unwrap_used)] // RwLock poisoning is unrecoverable
 impl Cashflow<ADReal> for FloatingRateCoupon<ADReal> {
     fn amount(&self) -> Result<ADReal> {
         let fixing = self
@@ -109,7 +169,7 @@ impl Cashflow<ADReal> for FloatingRateCoupon<ADReal> {
         let year_fraction = self
             .day_counter
             .year_fraction(self.start_date, self.end_date);
-        Ok(((fixing + self.spread) * year_fraction * self.notional).into())
+        Ok(((fixing + self.spread) * ADReal::new(year_fraction * self.notional)).into())
     }
 
     fn payment_date(&self) -> Date {
@@ -126,7 +186,7 @@ impl LinearCoupon<ADReal> for FloatingRateCoupon<ADReal> {
             .unwrap()
             .ok_or_else(|| QSError::InvalidValueErr("Fixing not set".into()))?;
         let year_fraction = self.day_counter.year_fraction(start_date, end_date);
-        Ok(((fixing + self.spread) * year_fraction * self.notional).into())
+        Ok(((fixing + self.spread) * ADReal::new(year_fraction * self.notional)).into())
     }
 
     fn accrual_start_date(&self) -> Date {
@@ -139,5 +199,42 @@ impl LinearCoupon<ADReal> for FloatingRateCoupon<ADReal> {
 
     fn notional(&self) -> f64 {
         self.notional
+    }
+}
+
+impl From<FloatingRateCoupon<f64>> for FloatingRateCoupon<ADReal> {
+    fn from(value: FloatingRateCoupon<f64>) -> Self {
+        let fixing = value.fixing();
+        let coupon = Self::new(
+            value.notional,
+            ADReal::new(value.spread.value()),
+            value.index,
+            value.start_date,
+            value.end_date,
+            value.payment_date,
+        );
+        if let Some(fixing) = fixing {
+            coupon.set_fixing(ADReal::new(fixing.value()));
+        }
+        coupon
+    }
+}
+
+#[allow(clippy::unwrap_used)] // RwLock poisoning is unrecoverable
+impl From<FloatingRateCoupon<ADReal>> for FloatingRateCoupon<f64> {
+    fn from(value: FloatingRateCoupon<ADReal>) -> Self {
+        let fixing = value.fixing();
+        let coupon = Self::new(
+            value.notional,
+            value.spread.value(),
+            value.index,
+            value.start_date,
+            value.end_date,
+            value.payment_date,
+        );
+        if let Some(fixing) = fixing {
+            coupon.set_fixing(fixing.value());
+        }
+        coupon
     }
 }

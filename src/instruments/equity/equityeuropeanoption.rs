@@ -1,6 +1,6 @@
 use crate::{
     core::{
-        collateral::HasCurrency,
+        collateral::Discountable,
         instrument::{AssetClass, Instrument},
         trade::{Side, Trade},
     },
@@ -101,9 +101,17 @@ impl EquityEuropeanOption {
     }
 }
 
-impl HasCurrency for EquityEuropeanOption {
+impl Discountable for EquityEuropeanOption {
     fn currency(&self) -> Currency {
         self.currency
+    }
+
+    fn asset_class(&self) -> AssetClass {
+        AssetClass::Equity
+    }
+
+    fn discount_index(&self) -> Option<MarketIndex> {
+        None
     }
 }
 
@@ -134,10 +142,6 @@ impl EquityEuropeanOptionTrade {
 impl Instrument for EquityEuropeanOption {
     fn identifier(&self) -> String {
         self.identifier.clone()
-    }
-
-    fn asset_class(&self) -> AssetClass {
-        AssetClass::Equity
     }
 }
 

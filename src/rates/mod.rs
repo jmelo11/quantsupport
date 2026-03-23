@@ -4,6 +4,8 @@
 //! structures, and multi-curve bootstrapping algorithms.
 
 /// Bootstrapping algorithms for interest rate curves.
+// pub mod bootstrapping;
+/// tmp
 pub mod bootstrapping;
 /// Compounding types for interest rate calculations.
 pub mod compounding;

@@ -9,14 +9,14 @@ use std::cmp::Ordering;
 use std::ptr::NonNull;
 
 /// Represents a number that can be used in differentiable functions.
-/// 
+///
 /// ## Example
 /// ```
 /// use quantsupport::ad::adreal::ADReal;
 /// use quantsupport::ad::adreal::FloatExt;
 /// use quantsupport::ad::adreal::IsReal;
 /// use quantsupport::ad::tape::Tape;
-/// 
+///
 /// Tape::start_recording();
 /// let x = ADReal::new(0.0);
 /// let expr = x.cos();
@@ -37,7 +37,7 @@ unsafe impl Send for ADReal {}
 /// Conversion helpers for numeric types used by this crate.
 pub trait IsReal
 where
-    Self: Sized + Copy + Add + Sub + Mul + Div + PartialEq + PartialOrd,
+    Self: Sized + Copy + Add + Sub + Mul + Div + PartialEq + PartialOrd + Send + Sync,
 {
     /// Creates a new numeric value from the given scalar in f64.
     fn new(v: f64) -> Self;
@@ -91,8 +91,8 @@ impl IsReal for ADReal {
 }
 
 /// A differentiable expression that can record its contribution to the tape.
-/// 
-/// This trait is implemented by `ADReal` and can be used to define complex expressions 
+///
+/// This trait is implemented by `ADReal` and can be used to define complex expressions
 /// that automatically record their derivatives, allowing for more efficient memory usage.
 pub trait Expr: Clone {
     /// Returns the scalar value of the expression.
@@ -178,12 +178,13 @@ impl ADReal {
         })
     }
 
-    /// Attaches this value to the current tape if it is not already recorded.
+    /// Attaches this value to the current tape, creating a fresh leaf node.
+    ///
+    /// Any previously recorded node is replaced unconditionally so that
+    /// shared data (e.g. curves behind `Rc<RefCell<>>`) is always
+    /// registered on the **current** tape session rather than retaining
+    /// stale pointers from a prior session whose arena has been reset.
     pub fn put_on_tape(&mut self) {
-        if self.node.is_some() {
-            return; // already on a tape
-        }
-
         TAPE.with_borrow_mut(|tape| {
             let node = tape.new_leaf();
             self.node = node;

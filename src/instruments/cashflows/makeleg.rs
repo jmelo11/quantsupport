@@ -1,8 +1,10 @@
 use std::collections::HashMap;
 
+#[cfg(test)]
+use crate::ad::adreal::ADReal;
 use crate::{
-    ad::adreal::{ADReal, IsReal},
-    core::trade::Side,
+    ad::adreal::IsReal,
+    core::{instrument::AssetClass, trade::Side},
     currencies::currency::Currency,
     indices::marketindex::MarketIndex,
     instruments::cashflows::{
@@ -10,6 +12,7 @@ use crate::{
         fixedratecoupon::FixedRateCoupon, floatingratecoupon::FloatingRateCoupon, leg::Leg,
         optionembeddedcoupon::OptionEmbeddedCoupon,
     },
+    rates::compounding::Compounding,
     rates::interestrate::InterestRate,
     time::{
         calendar::Calendar,
@@ -70,15 +73,15 @@ pub enum PaymentStructure {
 ///     .with_side(Side::PayShort)
 ///     .with_currency(Currency::USD)
 ///     .with_payment_frequency(Frequency::Semiannual)
-///     .with_market_index(MarketIndex::SOFR)
+///     .with_forward_index(MarketIndex::SOFR)
 ///     .bullet()
 ///     .build()
 ///     .expect("failed to build leg");
 ///
 /// assert!(!leg.cashflows().is_empty());
 /// ```
-#[derive(Clone, Default)]
-pub struct MakeLeg {
+#[derive(Clone)]
+pub struct MakeLeg<T: IsReal> {
     // common fields
     leg_id: Option<usize>,
     start_date: Option<Date>,
@@ -95,16 +98,19 @@ pub struct MakeLeg {
     calendar: Option<Calendar>,
     business_day_convention: Option<BusinessDayConvention>,
     date_generation_rule: Option<DateGenerationRule>,
-
+    discount_index: Option<MarketIndex>,
     rate_type: Option<RateType>,
 
     // floating rate specific fields
     spread: Option<f64>,
-    market_index: Option<MarketIndex>,
+    forward_index: Option<MarketIndex>,
 
     // fixed rate specific fields
-    rate: Option<InterestRate<ADReal>>,
+    rate: Option<InterestRate<T>>,
     disbursements: Option<HashMap<Date, f64>>,
+
+    // asset class
+    asset_class: AssetClass,
 
     // option-embedded structures
     floorlet_strike: Option<f64>,
@@ -112,8 +118,52 @@ pub struct MakeLeg {
     // payoff_ops: Option<PayoffOps>, for later
 }
 
+impl<T> Default for MakeLeg<T>
+where
+    T: IsReal,
+{
+    fn default() -> Self {
+        Self {
+            leg_id: None,
+            start_date: None,
+            end_date: None,
+            first_coupon_date: None,
+            payment_frequency: None,
+            tenor: None,
+            currency: None,
+            side: None,
+            notional: None,
+            structure: None,
+            redemptions: None,
+            end_of_month: None,
+            calendar: None,
+            business_day_convention: None,
+            date_generation_rule: None,
+            rate_type: None,
+            spread: None,
+            discount_index: None,
+            forward_index: None,
+            rate: None,
+            disbursements: None,
+            asset_class: AssetClass::InterestRate,
+            floorlet_strike: None,
+            caplet_strike: None,
+        }
+    }
+}
+
 /// New, setters and getters
-impl MakeLeg {
+impl<T> MakeLeg<T>
+where
+    T: IsReal,
+{
+    /// Sets the asset class for the leg.
+    #[must_use]
+    pub const fn with_asset_class(mut self, asset_class: AssetClass) -> Self {
+        self.asset_class = asset_class;
+        self
+    }
+
     /// Sets the end of month flag.
     #[must_use]
     pub const fn with_end_of_month(mut self, end_of_month: Option<bool>) -> Self {
@@ -234,7 +284,7 @@ impl MakeLeg {
 
     /// Sets the rate.
     #[must_use]
-    pub const fn with_rate(mut self, rate: InterestRate<ADReal>) -> Self {
+    pub const fn with_rate(mut self, rate: InterestRate<T>) -> Self {
         self.rate = Some(rate);
         self
     }
@@ -253,10 +303,17 @@ impl MakeLeg {
         self
     }
 
-    /// Sets the market index for floating rate or option-embedded legs.
+    /// Sets the discounting index for cashflows.
     #[must_use]
-    pub fn with_market_index(mut self, market_index: MarketIndex) -> Self {
-        self.market_index = Some(market_index);
+    pub fn with_discount_index(mut self, market_index: Option<MarketIndex>) -> Self {
+        self.discount_index = market_index;
+        self
+    }
+
+    /// Sets the forward index for floating rate or option-embedded legs.
+    #[must_use]
+    pub fn with_forward_index(mut self, market_index: MarketIndex) -> Self {
+        self.forward_index = Some(market_index);
         self
     }
 
@@ -318,7 +375,10 @@ enum LegType {
     OptionEmbedded,
 }
 
-impl MakeLeg {
+impl<T> MakeLeg<T>
+where
+    T: IsReal,
+{
     /// Checks the consistency of the configured fields and infers the leg type.
     fn check_leg_type(&self) -> Result<LegType> {
         match self.rate_type {
@@ -352,7 +412,7 @@ impl MakeLeg {
     /// # Errors
     /// Returns an error if required builder fields are missing or inconsistent.
     #[allow(clippy::too_many_lines)]
-    pub fn build(self) -> Result<Leg> {
+    pub fn build(self) -> Result<Leg<T>> {
         let mut cashflows = Vec::new();
         let structure = self
             .structure
@@ -398,7 +458,7 @@ impl MakeLeg {
                     )
                     .with_rule(
                         self.date_generation_rule
-                            .unwrap_or(DateGenerationRule::Backward),
+                            .unwrap_or(DateGenerationRule::Forward),
                     );
 
                 let schedule = if let Some(date) = self.first_coupon_date {
@@ -450,19 +510,18 @@ impl MakeLeg {
                             &notionals,
                             rate,
                         )?;
-                        let market_index = self
-                            .market_index
-                            .ok_or_else(|| QSError::ValueNotSetErr("Market index".into()))?;
 
                         let leg = Leg::new(
                             leg_id,
                             cashflows,
                             currency,
-                            Some(market_index),
+                            self.discount_index,
+                            None,
                             None,
                             self.rate,
                             side,
                             true,
+                            self.asset_class,
                             schedule.dates()[1],
                             last_date[0],
                         );
@@ -475,27 +534,29 @@ impl MakeLeg {
                             .spread
                             .ok_or_else(|| QSError::ValueNotSetErr("Spread".into()))?;
 
-                        let market_index = self
-                            .market_index
-                            .ok_or_else(|| QSError::ValueNotSetErr("Market index".into()))?;
+                        let forward_index = self.forward_index.ok_or_else(|| {
+                            QSError::ValueNotSetErr("Forward Market Index".into())
+                        })?;
 
                         build_floating_rate_coupons_from_notionals(
                             &mut cashflows,
                             schedule.dates(),
                             &notionals,
-                            ADReal::new(spread),
-                            &market_index,
+                            T::new(spread),
+                            &forward_index,
                         )?;
 
                         let leg = Leg::new(
                             leg_id,
                             cashflows,
                             currency,
-                            Some(market_index),
-                            Some(ADReal::new(spread)),
+                            self.discount_index,
+                            Some(forward_index),
+                            Some(T::new(spread)),
                             None,
                             side,
                             true,
+                            self.asset_class,
                             schedule.dates()[1],
                             last_date[0],
                         );
@@ -506,17 +567,16 @@ impl MakeLeg {
                             .spread
                             .ok_or_else(|| QSError::ValueNotSetErr("Spread".into()))?;
 
-                        let market_index = self
-                            .market_index
-                            .clone()
-                            .ok_or_else(|| QSError::ValueNotSetErr("Market index".into()))?;
+                        let forward_index = self.forward_index.ok_or_else(|| {
+                            QSError::ValueNotSetErr("Forward Market Index".into())
+                        })?;
 
                         build_embedded_option_coupons_from_notionals(
                             &mut cashflows,
                             schedule.dates(),
                             &notionals,
-                            ADReal::new(spread),
-                            &market_index,
+                            T::new(spread),
+                            &forward_index,
                             self.floorlet_strike,
                             self.caplet_strike,
                         )?;
@@ -525,11 +585,13 @@ impl MakeLeg {
                             leg_id,
                             cashflows,
                             currency,
-                            Some(market_index),
-                            Some(ADReal::new(spread)),
+                            self.discount_index,
+                            Some(forward_index),
+                            Some(T::new(spread)),
                             None,
                             side,
                             true,
+                            self.asset_class,
                             schedule.dates()[1],
                             last_date[0],
                         );
@@ -586,11 +648,13 @@ impl MakeLeg {
                     leg_id,
                     cashflows,
                     currency,
-                    self.market_index,
+                    self.discount_index,
+                    None,
                     None,
                     None,
                     side,
                     true,
+                    self.asset_class,
                     first_pay,
                     last_pay,
                 );
@@ -684,19 +748,17 @@ impl MakeLeg {
                             schedule.dates().iter().skip(1).copied().collect();
                         add_cashflows_to_vec(&mut cashflows, &redemption_dates, &redemptions, 0);
 
-                        let market_index = self
-                            .market_index
-                            .ok_or_else(|| QSError::ValueNotSetErr("Market index".into()))?;
-
                         let leg = Leg::new(
                             leg_id,
                             cashflows,
                             currency,
-                            Some(market_index),
+                            self.discount_index,
+                            None,
                             None,
                             self.rate,
                             side,
                             true,
+                            self.asset_class,
                             schedule.dates()[1],
                             *schedule
                                 .dates()
@@ -763,11 +825,13 @@ impl MakeLeg {
                     leg_id,
                     cashflows,
                     currency,
-                    self.market_index,
+                    self.discount_index,
+                    None,
                     None,
                     None,
                     side,
                     true,
+                    self.asset_class,
                     first_date[0],
                     last_date[0],
                 );
@@ -851,19 +915,17 @@ impl MakeLeg {
                             schedule.dates().iter().skip(1).copied().collect();
                         add_cashflows_to_vec(&mut cashflows, &redemption_dates, &redemptions, 0);
 
-                        let market_index = self
-                            .market_index
-                            .ok_or_else(|| QSError::ValueNotSetErr("Market index".into()))?;
-
                         let leg = Leg::new(
                             leg_id,
                             cashflows,
                             currency,
-                            Some(market_index),
+                            self.discount_index,
+                            None,
                             None,
                             self.rate,
                             side,
                             true,
+                            self.asset_class,
                             schedule.dates()[1],
                             *schedule
                                 .dates()
@@ -878,16 +940,16 @@ impl MakeLeg {
                             .spread
                             .ok_or_else(|| QSError::ValueNotSetErr("Spread".into()))?;
 
-                        let market_index = self
-                            .market_index
-                            .ok_or_else(|| QSError::ValueNotSetErr("Market index".into()))?;
+                        let forward_index = self.forward_index.ok_or_else(|| {
+                            QSError::ValueNotSetErr("Forward Market Index".into())
+                        })?;
 
                         build_floating_rate_coupons_from_notionals(
                             &mut cashflows,
                             schedule.dates(),
                             &notionals,
-                            ADReal::new(spread),
-                            &market_index,
+                            T::new(spread),
+                            &forward_index,
                         )?;
 
                         let redemption_dates: Vec<Date> =
@@ -898,11 +960,13 @@ impl MakeLeg {
                             leg_id,
                             cashflows,
                             currency,
-                            Some(market_index),
-                            Some(ADReal::new(spread)),
+                            self.discount_index,
+                            Some(forward_index),
+                            Some(T::new(spread)),
                             None,
                             side,
                             true,
+                            self.asset_class,
                             schedule.dates()[1],
                             *schedule
                                 .dates()
@@ -916,18 +980,16 @@ impl MakeLeg {
                             .spread
                             .ok_or_else(|| QSError::ValueNotSetErr("Spread".into()))?;
 
-                        let market_index = self
-                            .market_index
-                            .as_ref()
-                            .ok_or_else(|| QSError::ValueNotSetErr("Market index".into()))?
-                            .clone();
+                        let forward_index = self.forward_index.ok_or_else(|| {
+                            QSError::ValueNotSetErr("Forward Market Index".into())
+                        })?;
 
                         build_embedded_option_coupons_from_notionals(
                             &mut cashflows,
                             schedule.dates(),
                             &notionals,
-                            ADReal::new(spread),
-                            &market_index,
+                            T::new(spread),
+                            &forward_index,
                             self.floorlet_strike,
                             self.caplet_strike,
                         )?;
@@ -940,11 +1002,13 @@ impl MakeLeg {
                             leg_id,
                             cashflows,
                             currency,
-                            Some(market_index),
-                            Some(ADReal::new(spread)),
+                            self.discount_index,
+                            Some(forward_index),
+                            Some(T::new(spread)),
                             None,
                             side,
                             true,
+                            self.asset_class,
                             schedule.dates()[1],
                             *schedule
                                 .dates()
@@ -960,12 +1024,15 @@ impl MakeLeg {
 }
 
 /// Helper function to build fixed rate coupons from a vector of notionals and schedule dates.
-fn build_fixed_rate_coupons_from_notionals(
-    cashflows: &mut Vec<CashflowType>,
+fn build_fixed_rate_coupons_from_notionals<T>(
+    cashflows: &mut Vec<CashflowType<T>>,
     dates: &[Date],
     notionals: &[f64],
-    rate: InterestRate<ADReal>,
-) -> Result<()> {
+    rate: InterestRate<T>,
+) -> Result<()>
+where
+    T: IsReal,
+{
     if dates.len() - 1 != notionals.len() {
         Err(QSError::InvalidValueErr(
             "Dates and notionals must have the same length".to_string(),
@@ -986,13 +1053,16 @@ fn build_fixed_rate_coupons_from_notionals(
 }
 
 /// Helper function to build floating rate coupons from a vector of notionals and schedule dates.
-fn build_floating_rate_coupons_from_notionals(
-    cashflows: &mut Vec<CashflowType>,
+fn build_floating_rate_coupons_from_notionals<T>(
+    cashflows: &mut Vec<CashflowType<T>>,
     dates: &[Date],
     notionals: &[f64],
-    spread: ADReal,
+    spread: T,
     market_index: &MarketIndex,
-) -> Result<()> {
+) -> Result<()>
+where
+    T: IsReal,
+{
     if dates.len() - 1 != notionals.len() {
         Err(QSError::InvalidValueErr(
             "Dates and notionals must have the same length".to_string(),
@@ -1012,15 +1082,18 @@ fn build_floating_rate_coupons_from_notionals(
     Ok(())
 }
 
-fn build_embedded_option_coupons_from_notionals(
-    cashflows: &mut Vec<CashflowType>,
+fn build_embedded_option_coupons_from_notionals<T>(
+    cashflows: &mut Vec<CashflowType<T>>,
     dates: &[Date],
     notionals: &[f64],
-    spread: ADReal,
+    spread: T,
     market_index: &MarketIndex,
     floorlet_strike: Option<f64>,
     caplet_strike: Option<f64>,
-) -> Result<()> {
+) -> Result<()>
+where
+    T: IsReal,
+{
     if dates.len() - 1 != notionals.len() {
         Err(QSError::InvalidValueErr(
             "Dates and notionals must have the same length".to_string(),
@@ -1075,12 +1148,14 @@ fn build_embedded_option_coupons_from_notionals(
 }
 
 /// Helper function to add cashflows to a vector based on dates, amounts and cashflow type (0 for redemption, 1 for disbursement).
-fn add_cashflows_to_vec(
-    cashflows: &mut Vec<CashflowType>,
+fn add_cashflows_to_vec<T>(
+    cashflows: &mut Vec<CashflowType<T>>,
     dates: &[Date],
     amounts: &[f64],
     cashflow_type: usize,
-) {
+) where
+    T: IsReal,
+{
     for (date, amount) in dates.iter().zip(amounts) {
         let cashflow = SimpleCashflow::new(*amount, *date);
         match cashflow_type {
@@ -1118,17 +1193,20 @@ fn notionals_vector(n: usize, notional: f64, structure: PaymentStructure) -> Vec
 
 /// Closed-form solution for constant amortizing payment
 /// Payment = Notional / Annuity Factor where Annuity Factor = sum(1 / `compound_factor_i`) for each period
-fn calculate_equal_payment_redemptions(
+fn calculate_equal_payment_redemptions<T>(
     dates: &[Date],
-    rate: InterestRate<ADReal>,
+    rate: InterestRate<T>,
     notional: f64,
-) -> Vec<f64> {
+) -> Vec<f64>
+where
+    T: IsReal,
+{
     let mut annuity_factor = 0.0;
     for date_pair in dates.windows(2) {
         let d1 = date_pair[0];
         let d2 = date_pair[1];
-        let cf = rate.compound_factor(d1, d2);
-        let cf_f64: f64 = cf.value();
+        let year_fraction = rate.day_counter().year_fraction(d1, d2);
+        let cf_f64 = compound_factor_from_yf_value(rate, year_fraction);
         annuity_factor += 1.0 / cf_f64;
     }
 
@@ -1142,8 +1220,8 @@ fn calculate_equal_payment_redemptions(
     for date_pair in dates.windows(2) {
         let d1 = date_pair[0];
         let d2 = date_pair[1];
-        let cf = rate.compound_factor(d1, d2);
-        let cf_f64: f64 = cf.value();
+        let year_fraction = rate.day_counter().year_fraction(d1, d2);
+        let cf_f64 = compound_factor_from_yf_value(rate, year_fraction);
         let interest = balance * (cf_f64 - 1.0);
         let principal = payment - interest;
         balance -= principal;
@@ -1153,6 +1231,33 @@ fn calculate_equal_payment_redemptions(
     redemptions
 }
 
+fn compound_factor_from_yf_value<T>(rate: InterestRate<T>, year_fraction: f64) -> f64
+where
+    T: IsReal,
+{
+    let rate_value = rate.rate().value();
+    let f = f64::from(rate.frequency() as i32);
+    match rate.compounding() {
+        Compounding::Simple => rate_value.mul_add(year_fraction, 1.0),
+        Compounding::Compounded => (1.0 + rate_value / f).powf(f * year_fraction),
+        Compounding::Continuous => (rate_value * year_fraction).exp(),
+        Compounding::SimpleThenCompounded => {
+            if year_fraction <= 1.0 / f {
+                rate_value.mul_add(year_fraction, 1.0)
+            } else {
+                (1.0 + rate_value / f).powf(year_fraction * f)
+            }
+        }
+        Compounding::CompoundedThenSimple => {
+            if year_fraction > 1.0 / f {
+                rate_value.mul_add(year_fraction, 1.0)
+            } else {
+                (1.0 + rate_value / f).powf(year_fraction * f)
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1160,7 +1265,7 @@ mod tests {
     use crate::rates::interestrate::RateDefinition;
     use crate::time::daycounter::DayCounter;
 
-    fn create_test_leg_builder() -> MakeLeg {
+    fn create_test_leg_builder() -> MakeLeg<ADReal> {
         let start_date = Date::new(2024, 1, 1);
         let end_date = Date::new(2025, 1, 1);
         let rate = InterestRate::from_rate_definition(
@@ -1172,7 +1277,7 @@ mod tests {
             ),
         );
 
-        MakeLeg::default()
+        MakeLeg::<ADReal>::default()
             .with_start_date(start_date)
             .with_end_date(end_date)
             .with_notional(100_000.0)
@@ -1181,7 +1286,7 @@ mod tests {
             .with_side(Side::PayShort)
             .with_currency(Currency::USD)
             .with_payment_frequency(Frequency::Annual)
-            .with_market_index(MarketIndex::SOFR)
+            .with_forward_index(MarketIndex::SOFR)
     }
 
     #[test]
@@ -1247,7 +1352,7 @@ mod tests {
         let start_date = Date::new(2024, 1, 1);
         let end_date = Date::new(2025, 1, 1);
 
-        let leg_builder = MakeLeg::default()
+        let leg_builder = MakeLeg::<ADReal>::default()
             .with_start_date(start_date)
             .with_end_date(end_date)
             .bullet()
@@ -1265,7 +1370,7 @@ mod tests {
         let start_date = Date::new(2024, 1, 1);
         let end_date = Date::new(2025, 1, 1);
 
-        let leg_builder = MakeLeg::default()
+        let leg_builder = MakeLeg::<ADReal>::default()
             .with_start_date(start_date)
             .with_end_date(end_date)
             .with_notional(100_000.0)
@@ -1293,7 +1398,7 @@ mod tests {
         let mut redemptions = HashMap::new();
         redemptions.insert(end_date, 100_000.0);
 
-        let leg_builder = MakeLeg::default()
+        let leg_builder = MakeLeg::<ADReal>::default()
             .with_start_date(start_date)
             .with_end_date(end_date)
             .with_notional(100_000.0)
@@ -1323,7 +1428,7 @@ mod tests {
         let mut redemptions = HashMap::new();
         redemptions.insert(end_date, 95_000.0); // Unequal amount
 
-        let leg_builder = MakeLeg::default()
+        let leg_builder = MakeLeg::<ADReal>::default()
             .with_start_date(start_date)
             .with_end_date(end_date)
             .other()

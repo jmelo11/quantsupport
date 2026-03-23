@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     core::{
-        instrument::{AssetClass, Instrument},
+        instrument::Instrument,
         trade::{Side, Trade},
     },
     currencies::currency::Currency,
@@ -21,14 +21,14 @@ pub enum CapFloorType {
 }
 
 /// A [`CapFloor`] represents a strip of caplets or floorlets.
-#[allow(clippy::struct_field_names)]
+#[derive(Clone)]
 pub struct CapFloor {
     identifier: String,
     caplet_floorlets: Vec<CapletFloorlet>,
     market_index: MarketIndex,
     currency: Currency,
     strike: f64,
-    cap_floor_type: CapFloorType,
+    payoff_type: CapFloorType,
 }
 
 impl CapFloor {
@@ -40,7 +40,7 @@ impl CapFloor {
         market_index: MarketIndex,
         currency: Currency,
         strike: f64,
-        cap_floor_type: CapFloorType,
+        payoff_type: CapFloorType,
     ) -> Self {
         Self {
             identifier,
@@ -48,7 +48,7 @@ impl CapFloor {
             market_index,
             currency,
             strike,
-            cap_floor_type,
+            payoff_type,
         }
     }
 
@@ -72,8 +72,8 @@ impl CapFloor {
 
     /// Whether this is a cap or a floor.
     #[must_use]
-    pub const fn cap_floor_type(&self) -> CapFloorType {
-        self.cap_floor_type
+    pub const fn payoff_type(&self) -> CapFloorType {
+        self.payoff_type
     }
 
     /// Returns the caplet/floorlet strip.
@@ -86,10 +86,6 @@ impl CapFloor {
 impl Instrument for CapFloor {
     fn identifier(&self) -> String {
         self.identifier.clone()
-    }
-
-    fn asset_class(&self) -> AssetClass {
-        AssetClass::InterestRate
     }
 }
 

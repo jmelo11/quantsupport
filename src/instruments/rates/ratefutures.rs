@@ -1,6 +1,6 @@
 use crate::{
     core::{
-        instrument::{AssetClass, Instrument},
+        instrument::Instrument,
         trade::{Side, Trade},
     },
     indices::marketindex::MarketIndex,
@@ -15,6 +15,7 @@ use crate::{
 ///
 /// The contract settles at expiry based on the realised fixing of the reference
 /// rate over the accrual period `[start_date, end_date]`.
+#[derive(Clone)]
 pub struct RateFutures {
     identifier: String,
     market_index: MarketIndex,
@@ -107,10 +108,6 @@ impl RateFutures {
 impl Instrument for RateFutures {
     fn identifier(&self) -> String {
         self.identifier.clone()
-    }
-
-    fn asset_class(&self) -> AssetClass {
-        AssetClass::InterestRate
     }
 }
 

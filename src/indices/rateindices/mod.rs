@@ -6,6 +6,8 @@ pub mod corra;
 pub mod estr;
 /// EURIBOR (EUR) index implementation.
 pub mod euribor;
+/// ICP (CLP) index implementation.
+pub mod icp;
 /// NOWA (NOK) index implementation.
 pub mod nowa;
 /// NZONIA (NZD) index implementation.

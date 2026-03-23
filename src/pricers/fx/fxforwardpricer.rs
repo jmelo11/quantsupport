@@ -1,12 +1,18 @@
+use std::collections::HashSet;
+
 use crate::{
     ad::{
         adreal::{ADReal, IsReal},
         tape::Tape,
     },
     core::{
+        collateral::{DiscountPolicy, Discountable},
         evaluationresults::{EvaluationResults, SensitivityMap},
-        instrument::Instrument,
-        marketdatahandling::marketdata::{MarketData, MarketDataProvider, MarketDataRequest},
+        instrument::{AssetClass, Instrument},
+        marketdatahandling::{
+            constructedelementrequest::ConstructedElementRequest,
+            marketdata::{MarketData, MarketDataProvider, MarketDataRequest},
+        },
         pillars::Pillars,
         pricer::Pricer,
         pricerstate::PricerState,
@@ -18,10 +24,16 @@ use crate::{
     utils::errors::{QSError, Result},
 };
 
-/// Pricer for FX forward quotes.
+/// Pricer for FX forward trades.
 ///
-/// The model quote is computed as
-/// `F = S * DF_quote(T) / DF_base(T)`.
+/// The model forward is computed as
+/// `F = S * DF_quote(T) / DF_base(T)`,
+/// and the NPV of the trade (from the buyer's side) is
+/// `NPV = N * (F - K) * DF_quote(T)`,
+/// where `K` is the agreed forward price.
+///
+/// When a [`DiscountPolicy`] is set, the pricer uses the policy-resolved
+/// discount curve for the quote-currency leg instead of the natural curve.
 ///
 /// ## Example
 /// ```rust
@@ -44,14 +56,23 @@ use crate::{
 /// //   let trade = FxForwardTrade::new(fx_fwd, Date::new(2024, 6, 1), 1_000_000.0);
 /// //   let results = pricer.evaluate(&trade, &[Request::Value], &ctx);
 /// ```
-#[derive(Debug, Clone, Default)]
-pub struct FxForwardPricer;
+pub struct FxForwardPricer {
+    discount_policy: Option<Box<dyn DiscountPolicy>>,
+}
 
 impl FxForwardPricer {
     /// Creates a new [`FxForwardPricer`].
     #[must_use]
-    pub const fn new() -> Self {
-        Self
+    pub fn new() -> Self {
+        Self {
+            discount_policy: None,
+        }
+    }
+}
+
+impl Default for FxForwardPricer {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -71,33 +92,19 @@ impl PricerState for FxForwardState {
     }
 }
 
-impl FxForwardState {
-    fn resolve_curve_index_for_currency(
-        &self,
-        ccy: Currency,
-    ) -> Result<crate::indices::marketindex::MarketIndex> {
-        let md = self
-            .get_market_data_reponse()
-            .ok_or_else(|| QSError::NotFoundErr("MarketDataResponse not available.".into()))?;
+/// Lightweight [`Discountable`] wrapper used to resolve a discount curve
+/// for a specific currency through the discount policy.
+struct CurrencyDiscountable {
+    currency: Currency,
+}
 
-        let mut matches = md
-            .constructed_elements()
-            .discount_curves()
-            .iter()
-            .filter(|(_, elem)| elem.currency() == ccy)
-            .map(|(idx, _)| idx.clone());
+impl Discountable for CurrencyDiscountable {
+    fn asset_class(&self) -> AssetClass {
+        AssetClass::Fx
+    }
 
-        let first = matches.next().ok_or_else(|| {
-            QSError::NotFoundErr(format!("No discount curve found for currency {ccy}"))
-        })?;
-
-        if matches.next().is_some() {
-            return Err(QSError::InvalidValueErr(format!(
-                "Multiple discount curves found for currency {ccy}; cannot disambiguate"
-            )));
-        }
-
-        Ok(first)
+    fn currency(&self) -> Currency {
+        self.currency
     }
 }
 
@@ -111,8 +118,11 @@ impl HandleValue<FxForwardTrade, FxForwardState> for FxForwardPricer {
         let base = inst.base_currency();
         let quote = inst.quote_currency();
 
-        let base_idx = state.resolve_curve_index_for_currency(base)?;
-        let quote_idx = state.resolve_curve_index_for_currency(quote)?;
+        let policy = self.discount_policy.as_ref().ok_or_else(|| {
+            QSError::InvalidValueErr("Discount policy required for FX forward pricing".into())
+        })?;
+        let base_idx = policy.accept(&CurrencyDiscountable { currency: base })?;
+        let quote_idx = policy.accept(&CurrencyDiscountable { currency: quote })?;
 
         let df_base = state
             .get_discount_curve_element(&base_idx)?
@@ -124,11 +134,21 @@ impl HandleValue<FxForwardTrade, FxForwardState> for FxForwardPricer {
             .discount_factor(inst.delivery_date())?;
 
         let spot = state.get_exchange_rate(base, quote)?;
-        let forward = (spot * df_quote / df_base).into();
-        state.value = Some(forward);
+        let forward: ADReal = (spot * df_quote / df_base).into();
+
+        // NPV = notional * (F_model - K) * DF_quote * side
+        let notional = ADReal::new(trade.notional());
+        let npv: ADReal = inst.forward_price().map_or_else(
+            || (notional * forward * df_quote).into(),
+            |k| {
+                let side = ADReal::new(trade.side().sign());
+                (notional * (forward - k) * df_quote * side).into()
+            },
+        );
+        state.value = Some(npv);
 
         Tape::stop_recording();
-        Ok(forward.value())
+        Ok(npv.value())
     }
 }
 
@@ -150,11 +170,19 @@ impl HandleSensitivities<FxForwardTrade, FxForwardState> for FxForwardPricer {
         value.backward_to_mark()?;
 
         let inst = trade.instrument();
-        let base_idx = state.resolve_curve_index_for_currency(inst.base_currency())?;
-        let quote_idx = state.resolve_curve_index_for_currency(inst.quote_currency())?;
+        let policy = self.discount_policy.as_ref().ok_or_else(|| {
+            QSError::InvalidValueErr("Discount policy required for FX forward pricing".into())
+        })?;
+        let base_idx = policy.accept(&CurrencyDiscountable {
+            currency: inst.base_currency(),
+        })?;
+        let quote_idx = policy.accept(&CurrencyDiscountable {
+            currency: inst.quote_currency(),
+        })?;
 
         let mut ids = Vec::new();
         let mut exposures = Vec::new();
+
         for idx in [base_idx, quote_idx] {
             let element = state.get_discount_curve_element(&idx)?;
             for (label, value) in element.curve().pillars().into_iter().flatten() {
@@ -172,13 +200,14 @@ impl HandleSensitivities<FxForwardTrade, FxForwardState> for FxForwardPricer {
 
         Ok(SensitivityMap::default()
             .with_instrument_keys(&ids)
-            .with_exposure(&exposures))
+            .with_exposure(&exposures)
+            .aggregate())
     }
 }
 
 impl Pricer for FxForwardPricer {
     type Item = FxForwardTrade;
-    type Policy = ();
+    type Policy = dyn DiscountPolicy;
 
     fn evaluate(
         &self,
@@ -211,15 +240,34 @@ impl Pricer for FxForwardPricer {
         Ok(out)
     }
 
-    fn market_data_request(&self, _trade: &FxForwardTrade) -> Option<MarketDataRequest> {
-        Some(MarketDataRequest::default().with_exchange_rates())
+    fn market_data_request(&self, trade: &FxForwardTrade) -> Option<MarketDataRequest> {
+        let policy = self.discount_policy.as_ref()?;
+        let inst = trade.instrument();
+        let mut elements = Vec::new();
+        let mut seen_indices = HashSet::new();
+
+        for ccy in [inst.base_currency(), inst.quote_currency()] {
+            if let Ok(idx) = policy.accept(&CurrencyDiscountable { currency: ccy }) {
+                if seen_indices.insert(idx.clone()) {
+                    elements.push(ConstructedElementRequest::DiscountCurve { market_index: idx });
+                }
+            }
+        }
+
+        let mut request = MarketDataRequest::default().with_exchange_rates();
+
+        if !elements.is_empty() {
+            request = request.with_constructed_elements_request(elements);
+        }
+
+        Some(request)
     }
 
-    fn set_discount_policy(&mut self, _policy: Box<Self::Policy>) {
-        // No-op: FxForwardPricer does not use a discount policy.
+    fn set_discount_policy(&mut self, policy: Box<Self::Policy>) {
+        self.discount_policy = Some(policy);
     }
 
     fn discount_policy(&self) -> Option<&Self::Policy> {
-        None
+        self.discount_policy.as_deref()
     }
 }

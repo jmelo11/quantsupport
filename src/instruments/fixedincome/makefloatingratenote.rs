@@ -1,5 +1,6 @@
 use crate::{
-    core::trade::Side,
+    ad::adreal::IsReal,
+    core::{instrument::AssetClass, trade::Side},
     currencies::currency::Currency,
     indices::marketindex::MarketIndex,
     instruments::{
@@ -14,19 +15,21 @@ use crate::{
     utils::errors::{QSError, Result},
 };
 
+use std::marker::PhantomData;
+
 /// A builder for creating a [`FloatingRateNote`] instance, allowing for a flexible and stepwise construction process.
 ///
 /// ## Example
 /// ```rust
 /// use quantsupport::prelude::*;
 ///
-/// let frn = MakeFloatingRateNote::default()
+/// let frn = MakeFloatingRateNote::<ADReal>::default()
 ///     .with_identifier("FRN-2Y".to_string())
 ///     .with_start_date(Date::new(2024, 1, 1))
 ///     .with_maturity_date(Date::new(2026, 1, 1))
 ///     .with_spread(0.005)
 ///     .with_notional(1_000_000.0)
-///     .with_market_index(MarketIndex::TermSOFR3m)
+///     .with_forward_index(MarketIndex::TermSOFR3m)
 ///     .with_currency(Currency::USD)
 ///     .with_payment_frequency(Frequency::Quarterly)
 ///     .with_payment_structure(PaymentStructure::Bullet)
@@ -36,14 +39,15 @@ use crate::{
 /// assert_eq!(frn.identifier(), "FRN-2Y");
 /// ```
 #[derive(Default)]
-pub struct MakeFloatingRateNote {
+pub struct MakeFloatingRateNote<T: IsReal> {
     start_date: Option<Date>,
     maturity_date: Option<Date>,
     spread: Option<f64>,
     units: Option<f64>,
     notional: Option<f64>,
     identifier: Option<String>,
-    market_index: Option<MarketIndex>,
+    forward_index: Option<MarketIndex>,
+    discount_index: Option<MarketIndex>,
     currency: Option<Currency>,
     side: Option<Side>,
     payment_frequency: Option<Frequency>,
@@ -53,9 +57,13 @@ pub struct MakeFloatingRateNote {
     date_generation_rule: Option<DateGenerationRule>,
     end_of_month: Option<bool>,
     first_coupon_date: Option<Date>,
+    _marker: PhantomData<T>,
 }
 
-impl MakeFloatingRateNote {
+impl<T> MakeFloatingRateNote<T>
+where
+    T: IsReal,
+{
     /// Sets the start date of the note.
     #[must_use]
     pub const fn with_start_date(mut self, start_date: Date) -> Self {
@@ -86,8 +94,8 @@ impl MakeFloatingRateNote {
 
     /// Sets the market index for the floating rate reference.
     #[must_use]
-    pub fn with_market_index(mut self, market_index: MarketIndex) -> Self {
-        self.market_index = Some(market_index);
+    pub fn with_forward_index(mut self, forward_index: MarketIndex) -> Self {
+        self.forward_index = Some(forward_index);
         self
     }
 
@@ -172,7 +180,7 @@ impl MakeFloatingRateNote {
     ///
     /// # Errors
     /// Returns an error if any of the required fields are missing or invalid.
-    pub fn build(self) -> Result<FloatingRateNote> {
+    pub fn build(self) -> Result<FloatingRateNote<T>> {
         let notional = self
             .notional
             .ok_or_else(|| QSError::ValueNotSetErr("Notional".into()))?;
@@ -186,9 +194,9 @@ impl MakeFloatingRateNote {
         let currency = self
             .currency
             .ok_or_else(|| QSError::ValueNotSetErr("Currency".into()))?;
-        let market_index = self
-            .market_index
-            .ok_or_else(|| QSError::ValueNotSetErr("Market index".into()))?;
+        let forward_index = self
+            .forward_index
+            .ok_or_else(|| QSError::ValueNotSetErr("Forward index".into()))?;
         let identifier = self
             .identifier
             .ok_or_else(|| QSError::ValueNotSetErr("Identifier".into()))?;
@@ -198,12 +206,14 @@ impl MakeFloatingRateNote {
         let payment_frequency = self.payment_frequency.unwrap_or(Frequency::Quarterly);
         let structure = self.payment_structure.unwrap_or(PaymentStructure::Bullet);
 
-        let leg = MakeLeg::default()
+        let leg = MakeLeg::<T>::default()
             .with_leg_id(0)
             .with_notional(notional)
             .with_side(side)
+            .with_asset_class(AssetClass::FixedIncome)
             .with_currency(currency)
-            .with_market_index(market_index.clone())
+            .with_forward_index(forward_index.clone())
+            .with_discount_index(self.discount_index.clone())
             .with_start_date(start_date)
             .with_end_date(maturity_date)
             .with_rate_type(RateType::Floating)
@@ -221,7 +231,8 @@ impl MakeFloatingRateNote {
             identifier,
             units,
             leg,
-            market_index,
+            self.discount_index,
+            Some(forward_index),
             currency,
         ))
     }

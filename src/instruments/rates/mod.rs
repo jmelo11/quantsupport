@@ -13,7 +13,7 @@ pub mod makebasisswap;
 /// Cap/floor builder.
 pub mod makecapfloor;
 /// Cross-currency swap builder (fixed vs float).
-pub mod makecrosscurrencyswap;
+pub mod makefixfloatcrosscurrencyswap;
 /// Cross-currency swap builder (float vs float).
 pub mod makefloatfloatcrosscurrencyswap;
 /// Rate futures builder.

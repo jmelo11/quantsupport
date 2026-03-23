@@ -5,11 +5,13 @@
 
 pub use crate::{
     ad::{
-        adreal::{ADReal, Const, Expr, IsReal},
+        adreal::{ADReal, Const, Expr, FloatExt, IsReal},
         tape::Tape,
     },
     core::{
-        collateral::{DiscountPolicy, FixedIncomeDiscountPolicy, SingleCurveCSADiscountPolicy},
+        collateral::{
+            DiscountPolicy, Discountable, FixedIncomeDiscountPolicy, SingleCurveCSADiscountPolicy,
+        },
         contextmanager::ContextManager,
         elements::{
             curveelement::{ADCurveElement, DiscountCurveElement, DividendCurveElement},
@@ -80,13 +82,13 @@ pub use crate::{
             basisswap::{BasisSwap, BasisSwapTrade},
             capfloor::{CapFloor, CapFloorTrade, CapFloorType},
             capletfloorlet::{CapletFloorlet, CapletFloorletTrade, CapletFloorletType},
-            crosscurrencyswap::{CrossCurrencySwap, CrossCurrencySwapTrade},
+            crosscurrencyswap::{FixFloatCrossCurrencySwap, FixFloatCrossCurrencySwapTrade},
             floatfloatcrosscurrencyswap::{
                 FloatFloatCrossCurrencySwap, FloatFloatCrossCurrencySwapTrade,
             },
             makebasisswap::MakeBasisSwap,
             makecapfloor::MakeCapFloor,
-            makecrosscurrencyswap::MakeCrossCurrencySwap,
+            makefixfloatcrosscurrencyswap::MakeFixFloatCrossCurrencySwap,
             makefloatfloatcrosscurrencyswap::MakeFloatFloatCrossCurrencySwap,
             makeratefutures::MakeRateFutures,
             makeswap::MakeSwap,
@@ -105,7 +107,6 @@ pub use crate::{
     pricers::{
         cashflows::discountingcashflowpricer::CashflowDiscountPricer,
         equity::blackeuropeanoptionpricer::BlackEuropeanOptionPricer,
-        fixedincome::fixedratedepositdiscountingpricer::FixedRateDepositDiscountingPricer,
         fx::fxforwardpricer::FxForwardPricer,
         pricerdefinitions::{
             BlackClosedFormPricer, CloseFormPricer, GbmMonteCarloPricer, HullWhiteClosedFormPricer,
@@ -120,10 +121,10 @@ pub use crate::{
     },
     rates::{
         bootstrapping::{
-            bootstrap::MultiCurveBootstrapper,
             bootstrapdiscountpolicy::BootstrapDiscountPolicy,
-            curvespec::{BootstrappedCurve, CurveSpec, QuoteSelector},
-            resolvedcurvespec::{ResolvedCurveSpec, ResolvedInstrument},
+            calibrationinstrument::CalibrationInstrument,
+            curveconfiguration::{CurveConfiguration, QuoteSelector},
+            multicurvebootstrapper::MultiCurveBootstrapper,
         },
         compounding::Compounding,
         interestrate::{InterestRate, RateDefinition},

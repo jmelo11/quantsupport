@@ -16,7 +16,7 @@ use crate::{
         request::{HandleSensitivities, HandleValue, Request},
         trade::Trade,
     },
-    instruments::rates::capletfloorlet::{CapletFloorlet, CapletFloorletTrade, CapletFloorletType},
+    instruments::rates::capletfloorlet::{CapletFloorletTrade, CapletFloorletType},
     pricers::pricerdefinitions::BlackClosedFormPricer,
     utils::errors::{QSError, Result},
     volatility::volatilityindexing::Strike,
@@ -59,7 +59,7 @@ use std::collections::HashSet;
 /// //   let results = pricer.evaluate(&caplet_trade, &[Request::Value], &ctx);
 /// ```
 pub struct BlackCapletPricer {
-    discount_policy: Option<Box<dyn DiscountPolicy<CapletFloorlet>>>,
+    discount_policy: Option<Box<dyn DiscountPolicy>>,
 }
 
 impl BlackCapletPricer {
@@ -220,13 +220,14 @@ impl HandleSensitivities<CapletFloorletTrade, BlackCapletState> for BlackCapletP
 
         Ok(SensitivityMap::default()
             .with_instrument_keys(&ids)
-            .with_exposure(&exposures))
+            .with_exposure(&exposures)
+            .aggregate())
     }
 }
 
 impl Pricer for BlackCapletPricer {
     type Item = CapletFloorletTrade;
-    type Policy = dyn DiscountPolicy<CapletFloorlet>;
+    type Policy = dyn DiscountPolicy;
 
     fn evaluate(
         &self,
@@ -444,7 +445,6 @@ mod tests {
             market_index.clone(),
             DiscountCurveElement::new(
                 market_index.clone(),
-                Currency::USD,
                 Rc::new(RefCell::new(discount_curve.clone())),
             ),
         );

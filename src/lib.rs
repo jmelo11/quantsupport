@@ -40,7 +40,7 @@
 //!     Frequency::Semiannual,
 //! );
 //!
-//! let swap = MakeSwap::default()
+//! let swap = MakeSwap::<ADReal>::default()
 //!     .with_identifier("USD_IRS_5Y".to_string())
 //!     .with_start_date(start_date)
 //!     .with_maturity_date(maturity_date)
@@ -91,7 +91,6 @@
 //!     MarketIndex::SOFR,
 //!     DiscountCurveElement::new(
 //!         MarketIndex::SOFR,
-//!         Currency::USD,
 //!         Rc::new(RefCell::new(discount_curve)),
 //!     ),
 //! );
@@ -120,7 +119,7 @@
 //! # let fixed_rate    = 0.030;
 //! # let rate_definition = RateDefinition::new(
 //! #     DayCounter::Actual360, Compounding::Simple, Frequency::Semiannual);
-//! # let swap = MakeSwap::default()
+//! # let swap = MakeSwap::<ADReal>::default()
 //! #     .with_identifier("USD_IRS_5Y".to_string())
 //! #     .with_start_date(start_date).with_maturity_date(maturity_date)
 //! #     .with_fixed_rate(fixed_rate).with_notional(notional)
@@ -140,14 +139,14 @@
 //! # let mut constructed_elements = ConstructedElementStore::default();
 //! # constructed_elements.discount_curves_mut().insert(
 //! #     MarketIndex::SOFR, DiscountCurveElement::new(
-//! #         MarketIndex::SOFR, Currency::USD,
+//! #         MarketIndex::SOFR,
 //! #         Rc::new(RefCell::new(discount_curve))));
 //! # let quote_store  = QuoteStore::new(evaluation_date);
 //! # let fixing_store = FixingStore::default();
 //! # let context = ContextManager::new(quote_store, fixing_store)
 //! #     .with_base_currency(Currency::USD)
 //! #     .with_constructed_elements(constructed_elements);
-//! let pricer   = CashflowDiscountPricer::<Swap, SwapTrade>::new();
+//! let pricer   = CashflowDiscountPricer::<Swap<ADReal>, SwapTrade<ADReal>>::new();
 //! let requests = vec![Request::Value, Request::Cashflows, Request::Sensitivities];
 //! let results  = pricer.evaluate(&trade, &requests, &context).expect("pricing failed");
 //!
@@ -191,6 +190,7 @@ pub mod indices;
 pub mod instruments;
 pub mod math;
 pub mod models;
+/// Commonly used public exports for pricing and market-data workflows.
 pub mod prelude;
 pub mod pricers;
 pub mod quotes;

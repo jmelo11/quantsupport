@@ -10,6 +10,7 @@ use crate::indices::{
         corra::CORRAIndex,
         estr::ESTRIndex,
         euribor::{Euribor12mIndex, Euribor1mIndex, Euribor3mIndex, Euribor6mIndex},
+        icp::ICPIndex,
         nowa::NOWAIndex,
         nzonia::NZONIAIndex,
         saron::SARONIndex,
@@ -240,6 +241,7 @@ impl MarketIndex {
             Self::NZONIA => Ok(Box::new(NZONIAIndex)),
             Self::NOWA => Ok(Box::new(NOWAIndex)),
             Self::SWESTR => Ok(Box::new(SWESTRIndex)),
+            Self::ICP => Ok(Box::new(ICPIndex)),
             _ => Err(QSError::InvalidValueErr(
                 "Index does not contain market details".into(),
             )),
@@ -272,7 +274,9 @@ impl MarketIndex {
             Self::NZONIA => Ok(Box::new(NZONIAIndex)),
             Self::NOWA => Ok(Box::new(NOWAIndex)),
             Self::SWESTR => Ok(Box::new(SWESTRIndex)),
+            Self::ICP => Ok(Box::new(ICPIndex)),
             _ => Err(QSError::InvalidValueErr("Index is not rate index".into())),
         }
     }
+
 }

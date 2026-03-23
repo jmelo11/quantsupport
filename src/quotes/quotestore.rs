@@ -3,7 +3,9 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    quotes::quote::Quote, rates::bootstrapping::curvespec::QuoteSelector, time::date::Date,
+    quotes::quote::Quote,
+    rates::bootstrapping::curveconfiguration::QuoteSelector,
+    time::date::Date,
 };
 
 /// Provider of market data loaded from quotes.

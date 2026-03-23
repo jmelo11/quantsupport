@@ -4,3 +4,4 @@ Cargo.lock
 test.ipynb
 .vscode
 .DS_Store
+__pycache__

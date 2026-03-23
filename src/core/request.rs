@@ -1,5 +1,5 @@
-use crate::ad::adreal::IsReal;
-use crate::core::collateral::HasCurrency;
+use crate::ad::adreal::{ADReal, IsReal};
+use crate::core::collateral::Discountable;
 use crate::time::daycounter::DayCounter;
 use crate::{
     core::evaluationresults::{CashflowsTable, SensitivityMap},
@@ -88,9 +88,12 @@ pub trait HandleFairRate<T, S> {
 }
 
 /// The [`LegsProvider`] trait defines a method for providing the cashflows of an instrument.
-pub trait LegsProvider {
+pub trait LegsProvider<T>
+where
+    T: IsReal,
+{
     /// Provides the cashflows of the instrument.
-    fn legs(&self) -> &[Leg];
+    fn legs(&self) -> &[Leg<T>];
 }
 
 /// The [`HandleCashflows`] trait defines a method for handling a cashflows request.
@@ -98,7 +101,10 @@ pub trait LegsProvider {
 /// The generic type parameter `T` represents the type of trade, and `S` represents the state or context in which the cashflows are evaluated.
 /// As cashflows often depend on current evaluation and market conditions, the mutable state is responsable
 /// for proving the a resolved instance of the legs and underlying cashflows.
-pub trait HandleCashflows<T, S: LegsProvider> {
+pub trait HandleCashflows<T, S>
+where
+    S: LegsProvider<ADReal>,
+{
     /// Handles cashflow-related operations and returns a vector of cashflows.
     ///
     /// ## Errors
@@ -216,7 +222,7 @@ mod tests {
     use super::*;
     use crate::{
         ad::adreal::ADReal,
-        core::trade::Side,
+        core::{instrument::AssetClass, trade::Side},
         currencies::currency::Currency,
         instruments::cashflows::{
             cashflow::SimpleCashflow, fixedratecoupon::FixedRateCoupon, leg::Leg,
@@ -230,11 +236,11 @@ mod tests {
 
     /// Mock state that implements LegsProvider for testing
     struct MockState {
-        legs: Vec<Leg>,
+        legs: Vec<Leg<ADReal>>,
     }
 
-    impl LegsProvider for MockState {
-        fn legs(&self) -> &[Leg] {
+    impl LegsProvider<ADReal> for MockState {
+        fn legs(&self) -> &[Leg<ADReal>] {
             &self.legs
         }
     }
@@ -278,8 +284,10 @@ mod tests {
             None,
             None,
             None,
+            None,
             Side::PayShort,
             true,
+            AssetClass::InterestRate,
             Date::new(2024, 1, 1),
             Date::new(2024, 4, 1),
         );
@@ -321,8 +329,10 @@ mod tests {
             None,
             None,
             None,
+            None,
             Side::PayShort,
             true,
+            AssetClass::InterestRate,
             Date::new(2024, 1, 1),
             Date::new(2024, 4, 1),
         );
@@ -353,8 +363,10 @@ mod tests {
             None,
             None,
             None,
+            None,
             Side::PayShort,
             true,
+            AssetClass::InterestRate,
             Date::new(2024, 1, 1),
             Date::new(2024, 4, 1),
         );
@@ -401,8 +413,10 @@ mod tests {
             None,
             None,
             None,
+            None,
             Side::PayShort,
             true,
+            AssetClass::InterestRate,
             Date::new(2024, 1, 1),
             Date::new(2024, 4, 1),
         );
@@ -439,8 +453,10 @@ mod tests {
             None,
             None,
             None,
+            None,
             Side::PayShort,
             true,
+            AssetClass::InterestRate,
             Date::new(2024, 1, 1),
             Date::new(2024, 4, 1),
         );
@@ -454,8 +470,10 @@ mod tests {
             None,
             None,
             None,
+            None,
             Side::LongReceive,
             true,
+            AssetClass::InterestRate,
             Date::new(2024, 1, 1),
             Date::new(2024, 4, 1),
         );
@@ -504,8 +522,10 @@ mod tests {
             None,
             None,
             None,
+            None,
             Side::PayShort,
             true,
+            AssetClass::InterestRate,
             Date::new(2024, 1, 1),
             Date::new(2024, 4, 1),
         );
@@ -537,8 +557,10 @@ mod tests {
             None,
             None,
             None,
+            None,
             Side::PayShort,
             true,
+            AssetClass::InterestRate,
             Date::new(2024, 1, 1),
             Date::new(2024, 4, 1),
         );
@@ -585,8 +607,10 @@ mod tests {
             None,
             None,
             None,
+            None,
             Side::PayShort,
             true,
+            AssetClass::InterestRate,
             Date::new(2024, 1, 1),
             Date::new(2024, 4, 1),
         );
@@ -598,8 +622,10 @@ mod tests {
             None,
             None,
             None,
+            None,
             Side::PayShort,
             true,
+            AssetClass::InterestRate,
             Date::new(2024, 1, 1),
             Date::new(2024, 4, 1),
         );

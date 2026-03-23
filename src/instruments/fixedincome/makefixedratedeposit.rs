@@ -1,6 +1,6 @@
 use crate::{
-    ad::adreal::{ADReal, IsReal},
-    core::trade::Side,
+    ad::adreal::IsReal,
+    core::{instrument::AssetClass, trade::Side},
     currencies::currency::Currency,
     indices::marketindex::MarketIndex,
     instruments::{
@@ -11,6 +11,8 @@ use crate::{
     time::{date::Date, enums::Frequency},
     utils::errors::{QSError, Result},
 };
+
+use std::marker::PhantomData;
 
 /// A builder for creating a [`FixedRateDeposit`] instance, allowing for a flexible and stepwise construction process.
 ///
@@ -24,14 +26,14 @@ use crate::{
 ///     Frequency::Annual,
 /// );
 ///
-/// let deposit = MakeFixedRateDeposit::default()
+/// let deposit = MakeFixedRateDeposit::<ADReal>::default()
 ///     .with_identifier("DEPO-3M".to_string())
 ///     .with_start_date(Date::new(2024, 1, 1))
 ///     .with_maturity_date(Date::new(2024, 4, 1))
 ///     .with_rate(0.05)
 ///     .with_notional(1_000_000.0)
 ///     .with_rate_definition(rate_def)
-///     .with_market_index(MarketIndex::SOFR)
+///     .with_discount_index(Some(MarketIndex::SOFR))
 ///     .with_currency(Currency::USD)
 ///     .build()
 ///     .expect("failed to build fixed rate deposit");
@@ -39,7 +41,7 @@ use crate::{
 /// assert_eq!(deposit.identifier(), "DEPO-3M");
 /// ```
 #[derive(Default)]
-pub struct MakeFixedRateDeposit {
+pub struct MakeFixedRateDeposit<T: IsReal> {
     start_date: Option<Date>,
     maturity_date: Option<Date>,
     rate: Option<f64>,
@@ -47,12 +49,16 @@ pub struct MakeFixedRateDeposit {
     notional: Option<f64>,
     identifier: Option<String>,
     rate_definition: Option<RateDefinition>,
-    market_index: Option<MarketIndex>,
+    discount_index: Option<MarketIndex>,
     currency: Option<Currency>,
     side: Option<Side>,
+    _marker: PhantomData<T>,
 }
 
-impl MakeFixedRateDeposit {
+impl<T> MakeFixedRateDeposit<T>
+where
+    T: IsReal,
+{
     /// Sets the start date of the fixed rate deposit.
     #[must_use]
     pub const fn with_start_date(mut self, start_date: Date) -> Self {
@@ -90,8 +96,8 @@ impl MakeFixedRateDeposit {
 
     /// Sets the market index associated with the fixed rate deposit.
     #[must_use]
-    pub fn with_market_index(mut self, market_index: MarketIndex) -> Self {
-        self.market_index = Some(market_index);
+    pub fn with_discount_index(mut self, discount_index: Option<MarketIndex>) -> Self {
+        self.discount_index = discount_index;
         self
     }
 
@@ -128,7 +134,7 @@ impl MakeFixedRateDeposit {
     ///
     /// # Errors
     /// Returns an error if any of the required fields are missing or invalid.
-    pub fn build(self) -> Result<FixedRateDeposit> {
+    pub fn build(self) -> Result<FixedRateDeposit<T>> {
         let notional = self
             .notional
             .ok_or_else(|| QSError::ValueNotSetErr("Notional".into()))?;
@@ -147,9 +153,6 @@ impl MakeFixedRateDeposit {
         let currency = self
             .currency
             .ok_or_else(|| QSError::ValueNotSetErr("Currency".into()))?;
-        let market_index = self
-            .market_index
-            .ok_or_else(|| QSError::ValueNotSetErr("Market index ".into()))?;
 
         let identifier = self
             .identifier
@@ -158,14 +161,15 @@ impl MakeFixedRateDeposit {
         let units = self.units.unwrap_or(100.0);
         let side = self.side.unwrap_or(Side::LongReceive);
 
-        let interest_rate = InterestRate::from_rate_definition(ADReal::new(rate), rate_definition);
+        let interest_rate = InterestRate::from_rate_definition(T::new(rate), rate_definition);
 
-        let leg = MakeLeg::default()
+        let leg = MakeLeg::<T>::default()
             .with_leg_id(0)
             .with_notional(notional)
             .with_side(side)
+            .with_asset_class(AssetClass::FixedIncome)
             .with_currency(currency)
-            .with_market_index(market_index.clone())
+            .with_discount_index(self.discount_index.clone())
             .with_start_date(start_date)
             .with_end_date(maturity_date)
             .with_rate_type(RateType::Fixed)
@@ -178,7 +182,9 @@ impl MakeFixedRateDeposit {
             identifier,
             units,
             leg,
-            market_index,
+            self.discount_index,
+            start_date,
+            maturity_date,
             currency,
         ))
     }

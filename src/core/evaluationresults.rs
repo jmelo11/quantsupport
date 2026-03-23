@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use crate::{currencies::currency::Currency, time::date::Date};
 
 /// Contains the cashflow structure of the instrument.
@@ -139,6 +141,31 @@ impl SensitivityMap {
     pub fn with_exposure(mut self, exposure: &[f64]) -> Self {
         exposure.clone_into(&mut self.exposure);
         self
+    }
+
+    /// Aggregates duplicate keys by summing their exposures.
+    ///
+    /// When cross-curve IFT is active, a parent quote may appear both from
+    /// the parent curve's own pillars and from the child curve's cross-curve
+    /// pillar list.  This method merges them, preserving insertion order of
+    /// the first occurrence.
+    #[must_use]
+    pub fn aggregate(self) -> Self {
+        let mut order: Vec<String> = Vec::new();
+        let mut sums: HashMap<String, f64> = HashMap::new();
+
+        for (key, exp) in self.instrument_key.iter().zip(self.exposure.iter()) {
+            if !sums.contains_key(key) {
+                order.push(key.clone());
+            }
+            *sums.entry(key.clone()).or_insert(0.0) += exp;
+        }
+
+        let exposure: Vec<f64> = order.iter().map(|k| sums[k]).collect();
+        Self {
+            instrument_key: order,
+            exposure,
+        }
     }
 }
 

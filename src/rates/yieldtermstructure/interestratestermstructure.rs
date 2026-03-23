@@ -32,4 +32,7 @@ where
         comp: Compounding,
         freq: Frequency,
     ) -> Result<T>;
+
+    /// Returns the nodes of the term structure, if available.
+    fn nodes(&self) -> Option<Vec<(Date, T)>>;
 }

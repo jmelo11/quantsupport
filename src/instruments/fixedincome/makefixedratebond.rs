@@ -1,6 +1,6 @@
 use crate::{
-    ad::adreal::{ADReal, IsReal},
-    core::trade::Side,
+    ad::adreal::IsReal,
+    core::{instrument::AssetClass, trade::Side},
     currencies::currency::Currency,
     indices::marketindex::MarketIndex,
     instruments::{
@@ -16,6 +16,8 @@ use crate::{
     utils::errors::{QSError, Result},
 };
 
+use std::marker::PhantomData;
+
 /// A builder for creating a [`FixedRateBond`] instance, allowing for a flexible and stepwise construction process.
 ///
 /// ## Example
@@ -28,14 +30,14 @@ use crate::{
 ///     Frequency::Semiannual,
 /// );
 ///
-/// let bond = MakeFixedRateBond::default()
+/// let bond = MakeFixedRateBond::<ADReal>::default()
 ///     .with_identifier("UST-5Y".to_string())
 ///     .with_start_date(Date::new(2024, 1, 1))
 ///     .with_maturity_date(Date::new(2029, 1, 1))
 ///     .with_rate(0.04)
 ///     .with_notional(1_000_000.0)
 ///     .with_rate_definition(rate_def)
-///     .with_market_index(MarketIndex::Other("UST".to_string()))
+///     .with_discount_index(MarketIndex::Other("UST".to_string()))
 ///     .with_currency(Currency::USD)
 ///     .with_payment_frequency(Frequency::Semiannual)
 ///     .with_payment_structure(PaymentStructure::Bullet)
@@ -46,7 +48,7 @@ use crate::{
 /// assert_eq!(bond.currency(), Currency::USD);
 /// ```
 #[derive(Default)]
-pub struct MakeFixedRateBond {
+pub struct MakeFixedRateBond<T: IsReal> {
     start_date: Option<Date>,
     maturity_date: Option<Date>,
     rate: Option<f64>,
@@ -54,7 +56,7 @@ pub struct MakeFixedRateBond {
     notional: Option<f64>,
     identifier: Option<String>,
     rate_definition: Option<RateDefinition>,
-    market_index: Option<MarketIndex>,
+    discount_index: Option<MarketIndex>,
     currency: Option<Currency>,
     side: Option<Side>,
     payment_frequency: Option<Frequency>,
@@ -64,9 +66,13 @@ pub struct MakeFixedRateBond {
     date_generation_rule: Option<DateGenerationRule>,
     end_of_month: Option<bool>,
     first_coupon_date: Option<Date>,
+    _marker: PhantomData<T>,
 }
 
-impl MakeFixedRateBond {
+impl<T> MakeFixedRateBond<T>
+where
+    T: IsReal,
+{
     /// Sets the start date of the bond.
     #[must_use]
     pub const fn with_start_date(mut self, start_date: Date) -> Self {
@@ -104,8 +110,8 @@ impl MakeFixedRateBond {
 
     /// Sets the market index associated with the bond.
     #[must_use]
-    pub fn with_market_index(mut self, market_index: MarketIndex) -> Self {
-        self.market_index = Some(market_index);
+    pub fn with_discount_index(mut self, discount_index: MarketIndex) -> Self {
+        self.discount_index = Some(discount_index);
         self
     }
 
@@ -190,7 +196,7 @@ impl MakeFixedRateBond {
     ///
     /// # Errors
     /// Returns an error if any of the required fields are missing or invalid.
-    pub fn build(self) -> Result<FixedRateBond> {
+    pub fn build(self) -> Result<FixedRateBond<T>> {
         let notional = self
             .notional
             .ok_or_else(|| QSError::ValueNotSetErr("Notional".into()))?;
@@ -209,9 +215,7 @@ impl MakeFixedRateBond {
         let currency = self
             .currency
             .ok_or_else(|| QSError::ValueNotSetErr("Currency".into()))?;
-        let market_index = self
-            .market_index
-            .ok_or_else(|| QSError::ValueNotSetErr("Market index".into()))?;
+
         let identifier = self
             .identifier
             .ok_or_else(|| QSError::ValueNotSetErr("Identifier".into()))?;
@@ -221,14 +225,15 @@ impl MakeFixedRateBond {
         let payment_frequency = self.payment_frequency.unwrap_or(Frequency::Semiannual);
         let structure = self.payment_structure.unwrap_or(PaymentStructure::Bullet);
 
-        let interest_rate = InterestRate::from_rate_definition(ADReal::new(rate), rate_definition);
+        let interest_rate = InterestRate::from_rate_definition(T::new(rate), rate_definition);
 
-        let leg = MakeLeg::default()
+        let leg = MakeLeg::<T>::default()
             .with_leg_id(0)
             .with_notional(notional)
             .with_side(side)
+            .with_asset_class(AssetClass::FixedIncome)
             .with_currency(currency)
-            .with_market_index(market_index.clone())
+            .with_discount_index(self.discount_index.clone())
             .with_start_date(start_date)
             .with_end_date(maturity_date)
             .with_rate_type(RateType::Fixed)
@@ -246,7 +251,7 @@ impl MakeFixedRateBond {
             identifier,
             units,
             leg,
-            market_index,
+            self.discount_index,
             currency,
         ))
     }
