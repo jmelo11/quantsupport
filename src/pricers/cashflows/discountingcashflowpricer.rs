@@ -328,11 +328,15 @@ where
                             )
                         })?;
                         let fwd_curve = state.get_discount_curve_element(forward_index)?.curve();
+                        let rd = coupon
+                            .market_index()
+                            .rate_index_details()?
+                            .rate_definition();
                         let fwd = fwd_curve.forward_rate(
                             coupon.accrual_start_date(),
                             coupon.accrual_end_date(),
-                            Compounding::Simple,
-                            Frequency::Annual,
+                            rd.compounding(),
+                            rd.frequency(),
                         )?;
                         coupon.set_fixing(fwd);
                         (coupon.amount()?, coupon.payment_date())
@@ -343,9 +347,13 @@ where
                             leg.id()
                         )));
                     }
-                    CashflowType::Redemption(cf) => (ADReal::from(cf.amount()?), cf.payment_date()),
-                    CashflowType::Disbursement(cf) => {
+                    CashflowType::Redemption(cf) => {
+                        // Redemption is the return of principal at maturity,
+                        // opposite in sign to the initial disbursement.
                         (ADReal::from(cf.amount()?), cf.payment_date())
+                    }
+                    CashflowType::Disbursement(cf) => {
+                        (ADReal::from(-cf.amount()?), cf.payment_date())
                     }
                 };
 
@@ -969,8 +977,7 @@ mod tests {
             .with_rate_definition(rate_definition)
             .with_domestic_currency(Currency::EUR)
             .with_foreign_currency(Currency::USD)
-            .with_domestic_market_index(estr_index.clone())
-            .with_foreign_market_index(MarketIndex::SOFR)
+            .with_floating_index(MarketIndex::SOFR)
             .with_side(Side::LongReceive) // receive EUR fixed, pay USD floating
             .with_domestic_leg_frequency(Frequency::Semiannual)
             .with_foreign_leg_frequency(Frequency::Quarterly)

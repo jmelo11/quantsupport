@@ -44,8 +44,7 @@ use std::marker::PhantomData;
 ///     .with_rate_definition(rate_def)
 ///     .with_domestic_currency(Currency::USD)
 ///     .with_foreign_currency(Currency::EUR)
-///     .with_domestic_market_index(MarketIndex::SOFR)
-///     .with_foreign_market_index(MarketIndex::TermSOFR3m)
+///     .with_floating_index(MarketIndex::SOFR)
 ///     .build()
 ///     .expect("failed to build cross-currency swap");
 ///
@@ -65,8 +64,7 @@ pub struct MakeFixFloatCrossCurrencySwap<T: IsReal> {
     rate_definition: Option<RateDefinition>,
     domestic_currency: Option<Currency>,
     foreign_currency: Option<Currency>,
-    domestic_market_index: Option<MarketIndex>,
-    foreign_market_index: Option<MarketIndex>,
+    floating_market_index: Option<MarketIndex>,
     side: Option<Side>,
     domestic_leg_frequency: Option<Frequency>,
     foreign_leg_frequency: Option<Frequency>,
@@ -151,17 +149,10 @@ where
         self
     }
 
-    /// Sets the domestic market index.
-    #[must_use]
-    pub fn with_domestic_market_index(mut self, idx: MarketIndex) -> Self {
-        self.domestic_market_index = Some(idx);
-        self
-    }
-
     /// Sets the foreign market index.
     #[must_use]
-    pub fn with_foreign_market_index(mut self, idx: MarketIndex) -> Self {
-        self.foreign_market_index = Some(idx);
+    pub fn with_floating_index(mut self, idx: MarketIndex) -> Self {
+        self.floating_market_index = Some(idx);
         self
     }
 
@@ -243,8 +234,8 @@ where
         let foreign_currency = self
             .foreign_currency
             .ok_or_else(|| QSError::ValueNotSetErr("Foreign currency".into()))?;
-        let foreign_market_index = self
-            .foreign_market_index
+        let floating_market_index = self
+            .floating_market_index
             .ok_or_else(|| QSError::ValueNotSetErr("Foreign market index".into()))?;
         let identifier = self
             .identifier
@@ -288,7 +279,7 @@ where
             .with_side(foreign_side)
             .with_asset_class(AssetClass::Fx)
             .with_currency(foreign_currency)
-            .with_forward_index(foreign_market_index.clone())
+            .with_forward_index(floating_market_index.clone())
             .with_start_date(start_date)
             .with_end_date(maturity_date)
             .with_rate_type(RateType::Floating)
@@ -307,7 +298,7 @@ where
             foreign_leg,
             domestic_currency,
             foreign_currency,
-            foreign_market_index,
+            floating_market_index,
         ))
     }
 }
@@ -340,8 +331,7 @@ mod tests {
             .with_rate_definition(sample_rate_definition())
             .with_domestic_currency(Currency::USD)
             .with_foreign_currency(Currency::EUR)
-            .with_domestic_market_index(MarketIndex::SOFR)
-            .with_foreign_market_index(MarketIndex::TermSOFR3m)
+            .with_floating_index(MarketIndex::TermSOFR3m)
     }
 
     #[test]
@@ -370,8 +360,7 @@ mod tests {
             .with_fixed_rate(0.03)
             .with_rate_definition(sample_rate_definition())
             .with_foreign_currency(Currency::EUR)
-            .with_domestic_market_index(MarketIndex::SOFR)
-            .with_foreign_market_index(MarketIndex::TermSOFR3m)
+            .with_floating_index(MarketIndex::TermSOFR3m)
             .build();
 
         assert!(

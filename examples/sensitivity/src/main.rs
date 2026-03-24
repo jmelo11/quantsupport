@@ -31,7 +31,7 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     let rate_def = RateDefinition::new(
         DayCounter::Actual360,
         Compounding::Simple,
-        Frequency::Semiannual,
+        Frequency::Annual,
     );
 
     let mut products: Vec<ProductOutput> = Vec::new();

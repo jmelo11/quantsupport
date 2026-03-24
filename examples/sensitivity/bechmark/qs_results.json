@@ -12,12 +12,12 @@
         {
           "date": "2025-12-11",
           "year_fraction": 0.08333333333333333,
-          "discount_factor": 0.9948174952702288
+          "discount_factor": 0.9948174952702289
         },
         {
           "date": "2026-02-11",
           "year_fraction": 0.25555555555555554,
-          "discount_factor": 0.9834683112356765
+          "discount_factor": 0.9834683112356768
         },
         {
           "date": "2026-05-11",
@@ -27,37 +27,37 @@
         {
           "date": "2026-11-11",
           "year_fraction": 1.0138888888888888,
-          "discount_factor": 0.9504585419342281
+          "discount_factor": 0.9504585419342275
         },
         {
           "date": "2027-11-11",
           "year_fraction": 2.0277777777777777,
-          "discount_factor": 0.9077313783041089
+          "discount_factor": 0.9077313783041083
         },
         {
           "date": "2028-11-11",
           "year_fraction": 3.0444444444444443,
-          "discount_factor": 0.8699669816617213
+          "discount_factor": 0.8699669816617209
         },
         {
           "date": "2030-11-11",
           "year_fraction": 5.072222222222222,
-          "discount_factor": 0.7967644269934524
+          "discount_factor": 0.7967644269934521
         },
         {
           "date": "2032-11-11",
           "year_fraction": 7.102777777777778,
-          "discount_factor": 0.7300453272147769
+          "discount_factor": 0.730045327214776
         },
         {
           "date": "2035-11-11",
           "year_fraction": 10.144444444444444,
-          "discount_factor": 0.6450865335174002
+          "discount_factor": 0.6450865335173998
         },
         {
           "date": "2045-11-11",
           "year_fraction": 20.291666666666668,
-          "discount_factor": 0.42533197866965644
+          "discount_factor": 0.42533197866965633
         }
       ]
     },
@@ -82,42 +82,42 @@
         {
           "date": "2026-05-11",
           "year_fraction": 0.5027777777777778,
-          "discount_factor": 0.9757932516285502
+          "discount_factor": 0.9757168469710091
         },
         {
           "date": "2026-11-11",
           "year_fraction": 1.0138888888888888,
-          "discount_factor": 0.9526192657023026
+          "discount_factor": 0.9525899019139297
         },
         {
           "date": "2027-11-11",
           "year_fraction": 2.0277777777777777,
-          "discount_factor": 0.9102091080925133
+          "discount_factor": 0.910178707298433
         },
         {
           "date": "2028-11-11",
           "year_fraction": 3.0444444444444443,
-          "discount_factor": 0.8722857253156445
+          "discount_factor": 0.8722568869178222
         },
         {
           "date": "2030-11-11",
           "year_fraction": 5.072222222222222,
-          "discount_factor": 0.802621920417079
+          "discount_factor": 0.8025760161708413
         },
         {
           "date": "2032-11-11",
           "year_fraction": 7.102777777777778,
-          "discount_factor": 0.7405112031297363
+          "discount_factor": 0.740443220024302
         },
         {
           "date": "2035-11-11",
           "year_fraction": 10.144444444444444,
-          "discount_factor": 0.6544305203275027
+          "discount_factor": 0.6543699478732392
         },
         {
           "date": "2045-11-11",
           "year_fraction": 20.291666666666668,
-          "discount_factor": 0.4325233448382645
+          "discount_factor": 0.4324779994514264
         }
       ]
     },
@@ -137,7 +137,7 @@
         {
           "date": "2026-02-11",
           "year_fraction": 0.25555555555555554,
-          "discount_factor": 0.989043051395622
+          "discount_factor": 0.9890430513956222
         },
         {
           "date": "2026-05-11",
@@ -147,52 +147,52 @@
         {
           "date": "2026-11-11",
           "year_fraction": 1.0138888888888888,
-          "discount_factor": 0.9597061980228249
+          "discount_factor": 0.9597061980228245
         },
         {
           "date": "2027-11-11",
           "year_fraction": 2.0277777777777777,
-          "discount_factor": 0.9243882594107069
+          "discount_factor": 0.9243882594107068
         },
         {
           "date": "2028-11-11",
           "year_fraction": 3.0444444444444443,
-          "discount_factor": 0.890828878433155
+          "discount_factor": 0.8908288784331553
         },
         {
           "date": "2029-11-11",
           "year_fraction": 4.058333333333334,
-          "discount_factor": 0.8585791637288539
+          "discount_factor": 0.8585791637288541
         },
         {
           "date": "2030-11-11",
           "year_fraction": 5.072222222222222,
-          "discount_factor": 0.8273197252190979
+          "discount_factor": 0.8273197252190977
         },
         {
           "date": "2032-11-11",
           "year_fraction": 7.102777777777778,
-          "discount_factor": 0.7673403029346065
+          "discount_factor": 0.7673403029346066
         },
         {
           "date": "2035-11-11",
           "year_fraction": 10.144444444444444,
-          "discount_factor": 0.6833842369580063
+          "discount_factor": 0.6833842369580064
         },
         {
           "date": "2040-11-11",
           "year_fraction": 15.219444444444445,
-          "discount_factor": 0.558655709448172
+          "discount_factor": 0.5586557094481728
         },
         {
           "date": "2045-11-11",
           "year_fraction": 20.291666666666668,
-          "discount_factor": 0.45664717256814613
+          "discount_factor": 0.45664717256814585
         },
         {
           "date": "2055-11-11",
           "year_fraction": 30.43611111111111,
-          "discount_factor": 0.32814153503193494
+          "discount_factor": 0.32814153503193444
         }
       ]
     },
@@ -212,57 +212,57 @@
         {
           "date": "2026-05-11",
           "year_fraction": 0.5027777777777778,
-          "discount_factor": 0.979017489333449
+          "discount_factor": 0.9790174893334492
         },
         {
           "date": "2026-11-11",
           "year_fraction": 1.0138888888888888,
-          "discount_factor": 0.9595515339677267
+          "discount_factor": 0.9595515339677269
         },
         {
           "date": "2027-11-11",
           "year_fraction": 2.0277777777777777,
-          "discount_factor": 0.9240227910942383
+          "discount_factor": 0.9240227910942391
         },
         {
           "date": "2028-11-11",
           "year_fraction": 3.0444444444444443,
-          "discount_factor": 0.8902229720938449
+          "discount_factor": 0.8902229720938463
         },
         {
           "date": "2029-11-11",
           "year_fraction": 4.058333333333334,
-          "discount_factor": 0.8577316333873333
+          "discount_factor": 0.8577316333873344
         },
         {
           "date": "2030-11-11",
           "year_fraction": 5.072222222222222,
-          "discount_factor": 0.8262142303037209
+          "discount_factor": 0.8262142303037219
         },
         {
           "date": "2032-11-11",
           "year_fraction": 7.102777777777778,
-          "discount_factor": 0.7656959176670842
+          "discount_factor": 0.7656959176670841
         },
         {
           "date": "2035-11-11",
           "year_fraction": 10.144444444444444,
-          "discount_factor": 0.6810216381213988
+          "discount_factor": 0.6810216381213989
         },
         {
           "date": "2040-11-11",
           "year_fraction": 15.219444444444445,
-          "discount_factor": 0.5553456329848642
+          "discount_factor": 0.5553456329848652
         },
         {
           "date": "2045-11-11",
           "year_fraction": 20.291666666666668,
-          "discount_factor": 0.4526128738629292
+          "discount_factor": 0.45261287386292803
         },
         {
           "date": "2055-11-11",
           "year_fraction": 30.43611111111111,
-          "discount_factor": 0.323144683632446
+          "discount_factor": 0.3231446836324452
         }
       ]
     }
@@ -270,52 +270,52 @@
   "products": [
     {
       "label": "SOFR OIS 5Y Swap",
-      "npv": 342.59551084128907,
+      "npv": 342.59551083917904,
       "sensitivities": [
         {
           "pillar": "FixedRateDeposit_USD_SOFR_1D",
-          "exposure": 27462.631179851807,
-          "dv01": 2.7462631179851806
+          "exposure": 27462.631179851815,
+          "dv01": 2.7462631179851815
         },
         {
           "pillar": "OIS_USD_SOFR_3M",
-          "exposure": 27768.657972861056,
-          "dv01": 2.776865797286106
+          "exposure": 27768.657968430212,
+          "dv01": 2.7768657968430213
         },
         {
           "pillar": "OIS_USD_SOFR_6M",
-          "exposure": 1014.6112021186564,
-          "dv01": 0.10146112021186564
+          "exposure": 1014.6129507935257,
+          "dv01": 0.10146129507935257
         },
         {
           "pillar": "OIS_USD_SOFR_1Y",
-          "exposure": 30.039254989416804,
-          "dv01": 0.0030039254989416807
+          "exposure": 30.04245033225743,
+          "dv01": 0.0030042450332257433
         },
         {
           "pillar": "OIS_USD_SOFR_2Y",
-          "exposure": -5.9969130009412766,
-          "dv01": -0.0005996913000941277
+          "exposure": -5.998994758119807,
+          "dv01": -0.0005998994758119807
         },
         {
           "pillar": "OIS_USD_SOFR_3Y",
-          "exposure": -6.69626199058257,
-          "dv01": -0.0006696261990582571
+          "exposure": -6.692406313493848,
+          "dv01": -0.0006692406313493849
         },
         {
           "pillar": "OIS_USD_SOFR_4Y",
-          "exposure": -8.633127994136885,
-          "dv01": -0.0008633127994136885
+          "exposure": -8.624575898516923,
+          "dv01": -0.0008624575898516924
         },
         {
           "pillar": "OIS_USD_SOFR_5Y",
-          "exposure": -45551787.573425144,
-          "dv01": -4555.1787573425145
+          "exposure": -45551787.57360094,
+          "dv01": -4555.178757360094
         },
         {
           "pillar": "OIS_USD_SOFR_7Y",
-          "exposure": -176897.76521045613,
-          "dv01": -17.689776521045612
+          "exposure": -176897.76517695317,
+          "dv01": -17.689776517695318
         },
         {
           "pillar": "OIS_USD_SOFR_10Y",
@@ -363,7 +363,7 @@
           "amount": 10000000.0,
           "currency": "USD",
           "side": "Receive",
-          "discount_factor": 0.8271493876765762
+          "discount_factor": 0.827149387676576
         },
         {
           "payment_date": "2026-05-13",
@@ -389,7 +389,7 @@
           "amount": 193200.0,
           "currency": "USD",
           "side": "Receive",
-          "discount_factor": 0.959509044579995
+          "discount_factor": 0.9595090445799946
         },
         {
           "payment_date": "2027-05-13",
@@ -402,7 +402,7 @@
           "amount": 190050.0,
           "currency": "USD",
           "side": "Receive",
-          "discount_factor": 0.9418333260676736
+          "discount_factor": 0.9418333260676733
         },
         {
           "payment_date": "2027-11-13",
@@ -415,7 +415,7 @@
           "amount": 193200.0,
           "currency": "USD",
           "side": "Receive",
-          "discount_factor": 0.9242014820245205
+          "discount_factor": 0.9242014820245203
         },
         {
           "payment_date": "2028-05-13",
@@ -428,7 +428,7 @@
           "amount": 191099.99999999997,
           "currency": "USD",
           "side": "Receive",
-          "discount_factor": 0.9073617633987907
+          "discount_factor": 0.9073617633987909
         },
         {
           "payment_date": "2028-11-13",
@@ -441,7 +441,7 @@
           "amount": 193200.0,
           "currency": "USD",
           "side": "Receive",
-          "discount_factor": 0.8906489078586488
+          "discount_factor": 0.8906489078586491
         },
         {
           "payment_date": "2029-05-13",
@@ -454,7 +454,7 @@
           "amount": 190050.0,
           "currency": "USD",
           "side": "Receive",
-          "discount_factor": 0.8745112063750087
+          "discount_factor": 0.874511206375009
         },
         {
           "payment_date": "2029-11-13",
@@ -467,7 +467,7 @@
           "amount": 193200.0,
           "currency": "USD",
           "side": "Receive",
-          "discount_factor": 0.8584047009567642
+          "discount_factor": 0.8584047009567645
         },
         {
           "payment_date": "2030-05-13",
@@ -493,7 +493,7 @@
           "amount": 193200.0,
           "currency": "USD",
           "side": "Receive",
-          "discount_factor": 0.8271493876765762
+          "discount_factor": 0.827149387676576
         },
         {
           "payment_date": "2025-11-13",
@@ -519,7 +519,7 @@
           "amount": 10000000.0,
           "currency": "USD",
           "side": "Pay",
-          "discount_factor": 0.8271493876765762
+          "discount_factor": 0.827149387676576
         },
         {
           "payment_date": "2026-02-13",
@@ -527,12 +527,12 @@
           "accrual_end": "2026-02-13",
           "cashflow_type": "FloatingRateCoupon",
           "notional": 10000000.0,
-          "rate": 0.04330062783929402,
+          "rate": 0.04330062783929315,
           "year_fraction": 0.25555555555555554,
-          "amount": 110657.16003375138,
+          "amount": 110657.16003374915,
           "currency": "USD",
           "side": "Pay",
-          "discount_factor": 0.988818029885642
+          "discount_factor": 0.9888180298856423
         },
         {
           "payment_date": "2026-05-13",
@@ -540,9 +540,9 @@
           "accrual_end": "2026-05-13",
           "cashflow_type": "FloatingRateCoupon",
           "notional": 10000000.0,
-          "rate": 0.04112317518349835,
+          "rate": 0.041123175183499255,
           "year_fraction": 0.24722222222222223,
-          "amount": 101665.62753698205,
+          "amount": 101665.62753698428,
           "currency": "USD",
           "side": "Pay",
           "discount_factor": 0.9788663239754636
@@ -558,7 +558,7 @@
           "amount": 100426.55117099787,
           "currency": "USD",
           "side": "Pay",
-          "discount_factor": 0.9691336489764171
+          "discount_factor": 0.969133648976417
         },
         {
           "payment_date": "2026-11-13",
@@ -566,12 +566,12 @@
           "accrual_end": "2026-11-13",
           "cashflow_type": "FloatingRateCoupon",
           "notional": 10000000.0,
-          "rate": 0.03925079776683689,
+          "rate": 0.03925079776683776,
           "year_fraction": 0.25555555555555554,
-          "amount": 100307.5942930276,
+          "amount": 100307.59429302982,
           "currency": "USD",
           "side": "Pay",
-          "discount_factor": 0.959509044579995
+          "discount_factor": 0.9595090445799946
         },
         {
           "payment_date": "2027-02-13",
@@ -584,7 +584,7 @@
           "amount": 94955.9845733683,
           "currency": "USD",
           "side": "Pay",
-          "discount_factor": 0.9504836336545409
+          "discount_factor": 0.9504836336545407
         },
         {
           "payment_date": "2027-05-13",
@@ -597,7 +597,7 @@
           "amount": 91845.41837125248,
           "currency": "USD",
           "side": "Pay",
-          "discount_factor": 0.9418333260676736
+          "discount_factor": 0.9418333260676733
         },
         {
           "payment_date": "2027-08-13",
@@ -610,7 +610,7 @@
           "amount": 94955.9845733683,
           "currency": "USD",
           "side": "Pay",
-          "discount_factor": 0.9329741779032404
+          "discount_factor": 0.9329741779032403
         },
         {
           "payment_date": "2027-11-13",
@@ -623,7 +623,7 @@
           "amount": 94921.89797729811,
           "currency": "USD",
           "side": "Pay",
-          "discount_factor": 0.9242014820245205
+          "discount_factor": 0.9242014820245203
         },
         {
           "payment_date": "2028-02-13",
@@ -636,7 +636,7 @@
           "amount": 93388.12027338773,
           "currency": "USD",
           "side": "Pay",
-          "discount_factor": 0.9156503951019053
+          "discount_factor": 0.9156503951019052
         },
         {
           "payment_date": "2028-05-13",
@@ -644,12 +644,12 @@
           "accrual_end": "2028-05-13",
           "cashflow_type": "FloatingRateCoupon",
           "notional": 10000000.0,
-          "rate": 0.03653947978617467,
+          "rate": 0.03653947978617378,
           "year_fraction": 0.25,
-          "amount": 91348.69946543667,
+          "amount": 91348.69946543445,
           "currency": "USD",
           "side": "Pay",
-          "discount_factor": 0.9073617633987907
+          "discount_factor": 0.9073617633987909
         },
         {
           "payment_date": "2028-08-13",
@@ -662,7 +662,7 @@
           "amount": 93388.12027338773,
           "currency": "USD",
           "side": "Pay",
-          "discount_factor": 0.8989664843822671
+          "discount_factor": 0.8989664843822673
         },
         {
           "payment_date": "2028-11-13",
@@ -675,7 +675,7 @@
           "amount": 93387.82600223362,
           "currency": "USD",
           "side": "Pay",
-          "discount_factor": 0.8906489078586488
+          "discount_factor": 0.8906489078586491
         },
         {
           "payment_date": "2029-02-13",
@@ -688,7 +688,7 @@
           "amount": 93374.5838091027,
           "currency": "USD",
           "side": "Pay",
-          "discount_factor": 0.8824094463781705
+          "discount_factor": 0.8824094463781709
         },
         {
           "payment_date": "2029-05-13",
@@ -701,7 +701,7 @@
           "amount": 90316.0525055058,
           "currency": "USD",
           "side": "Pay",
-          "discount_factor": 0.8745112063750087
+          "discount_factor": 0.874511206375009
         },
         {
           "payment_date": "2029-08-13",
@@ -709,12 +709,12 @@
           "accrual_end": "2029-08-13",
           "cashflow_type": "FloatingRateCoupon",
           "notional": 10000000.0,
-          "rate": 0.03653788062095323,
+          "rate": 0.036537880620954095,
           "year_fraction": 0.25555555555555554,
-          "amount": 93374.5838091027,
+          "amount": 93374.58380910491,
           "currency": "USD",
           "side": "Pay",
-          "discount_factor": 0.8664210360109116
+          "discount_factor": 0.8664210360109118
         },
         {
           "payment_date": "2029-11-13",
@@ -727,7 +727,7 @@
           "amount": 93386.4300278464,
           "currency": "USD",
           "side": "Pay",
-          "discount_factor": 0.8584047009567642
+          "discount_factor": 0.8584047009567645
         },
         {
           "payment_date": "2030-02-13",
@@ -735,12 +735,12 @@
           "accrual_end": "2030-02-13",
           "cashflow_type": "FloatingRateCoupon",
           "notional": 10000000.0,
-          "rate": 0.03675111818933078,
+          "rate": 0.03675111818933165,
           "year_fraction": 0.25555555555555554,
-          "amount": 93919.5242616231,
+          "amount": 93919.52426162532,
           "currency": "USD",
           "side": "Pay",
-          "discount_factor": 0.8504176191354736
+          "discount_factor": 0.8504176191354738
         },
         {
           "payment_date": "2030-05-13",
@@ -761,12 +761,12 @@
           "accrual_end": "2030-08-13",
           "cashflow_type": "FloatingRateCoupon",
           "notional": 10000000.0,
-          "rate": 0.03675111818933078,
+          "rate": 0.03675111818933165,
           "year_fraction": 0.25555555555555554,
-          "amount": 93919.5242616231,
+          "amount": 93919.52426162532,
           "currency": "USD",
           "side": "Pay",
-          "discount_factor": 0.8349201829573633
+          "discount_factor": 0.8349201829573631
         },
         {
           "payment_date": "2030-11-13",
@@ -774,58 +774,58 @@
           "accrual_end": "2030-11-13",
           "cashflow_type": "FloatingRateCoupon",
           "notional": 10000000.0,
-          "rate": 0.03676175095746282,
+          "rate": 0.03676175095746369,
           "year_fraction": 0.25555555555555554,
-          "amount": 93946.69689129388,
+          "amount": 93946.69689129609,
           "currency": "USD",
           "side": "Pay",
-          "discount_factor": 0.8271493876765762
+          "discount_factor": 0.827149387676576
         }
       ]
     },
     {
       "label": "TermSOFR3m 5Y Swap",
-      "npv": 88754.6845112474,
+      "npv": 88754.68451125592,
       "sensitivities": [
         {
           "pillar": "FixedRateDeposit_USD_TermSOFR3m_3M",
-          "exposure": 55605.4794942704,
-          "dv01": 5.560547949427041
+          "exposure": 55605.48011069127,
+          "dv01": 5.560548011069128
         },
         {
           "pillar": "BasisSwap_USD_SOFR_TermSOFR3m_6M",
-          "exposure": -111.63383260868432,
-          "dv01": -0.011163383260868432
+          "exposure": -111.63426800489833,
+          "dv01": -0.011163426800489833
         },
         {
           "pillar": "BasisSwap_USD_SOFR_TermSOFR3m_1Y",
-          "exposure": 20.68912817206001,
-          "dv01": 0.002068912817206001
+          "exposure": 20.685899200034328,
+          "dv01": 0.002068589920003433
         },
         {
           "pillar": "BasisSwap_USD_SOFR_TermSOFR3m_2Y",
-          "exposure": -42.79494599311147,
-          "dv01": -0.004279494599311147
+          "exposure": -42.7921891460428,
+          "dv01": -0.004279218914604281
         },
         {
           "pillar": "BasisSwap_USD_SOFR_TermSOFR3m_3Y",
-          "exposure": -22.211141791776754,
-          "dv01": -0.0022211141791776755
+          "exposure": -22.205433142953552,
+          "dv01": -0.0022205433142953555
         },
         {
           "pillar": "BasisSwap_USD_SOFR_TermSOFR3m_4Y",
-          "exposure": -11.355235507013276,
-          "dv01": -0.0011355235507013277
+          "exposure": -11.351107260910794,
+          "dv01": -0.0011351107260910796
         },
         {
           "pillar": "BasisSwap_USD_SOFR_TermSOFR3m_5Y",
-          "exposure": -45768883.54933147,
-          "dv01": -4576.888354933148
+          "exposure": -45768883.53797796,
+          "dv01": -4576.888353797796
         },
         {
           "pillar": "BasisSwap_USD_SOFR_TermSOFR3m_7Y",
-          "exposure": -176894.31476973573,
-          "dv01": -17.689431476973574
+          "exposure": -176894.3147783181,
+          "dv01": -17.68943147783181
         },
         {
           "pillar": "BasisSwap_USD_SOFR_TermSOFR3m_10Y",
@@ -849,48 +849,48 @@
         },
         {
           "pillar": "FixedRateDeposit_USD_SOFR_1D",
-          "exposure": 5.25359441965684e-13,
-          "dv01": 5.25359441965684e-17
+          "exposure": -4.849471771990928e-13,
+          "dv01": -4.849471771990928e-17
         },
         {
           "pillar": "OIS_USD_SOFR_3M",
-          "exposure": -499.94072647388384,
-          "dv01": -0.049994072647388386
+          "exposure": -499.94075298686585,
+          "dv01": -0.04999407529868659
         },
         {
           "pillar": "OIS_USD_SOFR_6M",
-          "exposure": -3030.1050183480074,
-          "dv01": -0.30301050183480077
+          "exposure": -3030.10448882329,
+          "dv01": -0.30301044888232903
         },
         {
           "pillar": "OIS_USD_SOFR_1Y",
-          "exposure": -12221.25368982247,
-          "dv01": -1.222125368982247
+          "exposure": -12221.252884463242,
+          "dv01": -1.2221252884463243
         },
         {
           "pillar": "OIS_USD_SOFR_2Y",
-          "exposure": -33107.393400583445,
-          "dv01": -3.3107393400583445
+          "exposure": -33107.393289921514,
+          "dv01": -3.3107393289921516
         },
         {
           "pillar": "OIS_USD_SOFR_3Y",
-          "exposure": -50815.767265060305,
-          "dv01": -5.0815767265060305
+          "exposure": -50815.76450710134,
+          "dv01": -5.081576450710134
         },
         {
           "pillar": "OIS_USD_SOFR_4Y",
-          "exposure": -68984.30295379634,
-          "dv01": -6.898430295379635
+          "exposure": -68984.29676940576,
+          "dv01": -6.898429676940577
         },
         {
           "pillar": "OIS_USD_SOFR_5Y",
-          "exposure": -45619383.85877111,
-          "dv01": -4561.938385877111
+          "exposure": -45619383.84103149,
+          "dv01": -4561.9383841031495
         },
         {
           "pillar": "OIS_USD_SOFR_7Y",
-          "exposure": -177095.37701427753,
-          "dv01": -17.709537701427752
+          "exposure": -177095.37707263438,
+          "dv01": -17.70953770726344
         },
         {
           "pillar": "OIS_USD_SOFR_10Y",
@@ -938,7 +938,7 @@
           "amount": 10000000.0,
           "currency": "USD",
           "side": "Receive",
-          "discount_factor": 0.8271493876765762
+          "discount_factor": 0.827149387676576
         },
         {
           "payment_date": "2026-05-13",
@@ -964,7 +964,7 @@
           "amount": 204444.44444444444,
           "currency": "USD",
           "side": "Receive",
-          "discount_factor": 0.959509044579995
+          "discount_factor": 0.9595090445799946
         },
         {
           "payment_date": "2027-05-13",
@@ -977,7 +977,7 @@
           "amount": 201111.11111111112,
           "currency": "USD",
           "side": "Receive",
-          "discount_factor": 0.9418333260676736
+          "discount_factor": 0.9418333260676733
         },
         {
           "payment_date": "2027-11-13",
@@ -990,7 +990,7 @@
           "amount": 204444.44444444444,
           "currency": "USD",
           "side": "Receive",
-          "discount_factor": 0.9242014820245205
+          "discount_factor": 0.9242014820245203
         },
         {
           "payment_date": "2028-05-13",
@@ -1003,7 +1003,7 @@
           "amount": 202222.22222222222,
           "currency": "USD",
           "side": "Receive",
-          "discount_factor": 0.9073617633987907
+          "discount_factor": 0.9073617633987909
         },
         {
           "payment_date": "2028-11-13",
@@ -1016,7 +1016,7 @@
           "amount": 204444.44444444444,
           "currency": "USD",
           "side": "Receive",
-          "discount_factor": 0.8906489078586488
+          "discount_factor": 0.8906489078586491
         },
         {
           "payment_date": "2029-05-13",
@@ -1029,7 +1029,7 @@
           "amount": 201111.11111111112,
           "currency": "USD",
           "side": "Receive",
-          "discount_factor": 0.8745112063750087
+          "discount_factor": 0.874511206375009
         },
         {
           "payment_date": "2029-11-13",
@@ -1042,7 +1042,7 @@
           "amount": 204444.44444444444,
           "currency": "USD",
           "side": "Receive",
-          "discount_factor": 0.8584047009567642
+          "discount_factor": 0.8584047009567645
         },
         {
           "payment_date": "2030-05-13",
@@ -1068,7 +1068,7 @@
           "amount": 204444.44444444444,
           "currency": "USD",
           "side": "Receive",
-          "discount_factor": 0.8271493876765762
+          "discount_factor": 0.827149387676576
         },
         {
           "payment_date": "2025-11-13",
@@ -1094,7 +1094,7 @@
           "amount": 10000000.0,
           "currency": "USD",
           "side": "Pay",
-          "discount_factor": 0.8271493876765762
+          "discount_factor": 0.827149387676576
         },
         {
           "payment_date": "2026-02-13",
@@ -1107,7 +1107,7 @@
           "amount": 111409.35377004003,
           "currency": "USD",
           "side": "Pay",
-          "discount_factor": 0.988818029885642
+          "discount_factor": 0.9888180298856423
         },
         {
           "payment_date": "2026-05-13",
@@ -1115,9 +1115,9 @@
           "accrual_end": "2026-05-13",
           "cashflow_type": "FloatingRateCoupon",
           "notional": 10000000.0,
-          "rate": 0.0410755739059881,
+          "rate": 0.041075573905987206,
           "year_fraction": 0.24722222222222223,
-          "amount": 101547.94660091503,
+          "amount": 101547.94660091282,
           "currency": "USD",
           "side": "Pay",
           "discount_factor": 0.9788663239754636
@@ -1133,7 +1133,7 @@
           "amount": 100923.29308131865,
           "currency": "USD",
           "side": "Pay",
-          "discount_factor": 0.9691336489764171
+          "discount_factor": 0.969133648976417
         },
         {
           "payment_date": "2026-11-13",
@@ -1146,7 +1146,7 @@
           "amount": 100806.49758020145,
           "currency": "USD",
           "side": "Pay",
-          "discount_factor": 0.959509044579995
+          "discount_factor": 0.9595090445799946
         },
         {
           "payment_date": "2027-02-13",
@@ -1159,7 +1159,7 @@
           "amount": 95552.09754942506,
           "currency": "USD",
           "side": "Pay",
-          "discount_factor": 0.9504836336545409
+          "discount_factor": 0.9504836336545407
         },
         {
           "payment_date": "2027-05-13",
@@ -1167,12 +1167,12 @@
           "accrual_end": "2027-05-13",
           "cashflow_type": "FloatingRateCoupon",
           "notional": 10000000.0,
-          "rate": 0.037384145245429025,
+          "rate": 0.03738414524542812,
           "year_fraction": 0.24722222222222223,
-          "amount": 92421.91463453288,
+          "amount": 92421.91463453065,
           "currency": "USD",
           "side": "Pay",
-          "discount_factor": 0.9418333260676736
+          "discount_factor": 0.9418333260676733
         },
         {
           "payment_date": "2027-08-13",
@@ -1180,12 +1180,12 @@
           "accrual_end": "2027-08-13",
           "cashflow_type": "FloatingRateCoupon",
           "notional": 10000000.0,
-          "rate": 0.037389951214993285,
+          "rate": 0.03738995121499242,
           "year_fraction": 0.25555555555555554,
-          "amount": 95552.09754942729,
+          "amount": 95552.09754942506,
           "currency": "USD",
           "side": "Pay",
-          "discount_factor": 0.9329741779032404
+          "discount_factor": 0.9329741779032403
         },
         {
           "payment_date": "2027-11-13",
@@ -1193,12 +1193,12 @@
           "accrual_end": "2027-11-13",
           "cashflow_type": "FloatingRateCoupon",
           "notional": 10000000.0,
-          "rate": 0.03737769239479173,
+          "rate": 0.037377692394790864,
           "year_fraction": 0.25555555555555554,
-          "amount": 95520.76945335664,
+          "amount": 95520.76945335443,
           "currency": "USD",
           "side": "Pay",
-          "discount_factor": 0.9242014820245205
+          "discount_factor": 0.9242014820245203
         },
         {
           "payment_date": "2028-02-13",
@@ -1211,7 +1211,7 @@
           "amount": 94111.1057442523,
           "currency": "USD",
           "side": "Pay",
-          "discount_factor": 0.9156503951019053
+          "discount_factor": 0.9156503951019052
         },
         {
           "payment_date": "2028-05-13",
@@ -1224,7 +1224,7 @@
           "amount": 92055.8244030989,
           "currency": "USD",
           "side": "Pay",
-          "discount_factor": 0.9073617633987907
+          "discount_factor": 0.9073617633987909
         },
         {
           "payment_date": "2028-08-13",
@@ -1232,12 +1232,12 @@
           "accrual_end": "2028-08-13",
           "cashflow_type": "FloatingRateCoupon",
           "notional": 10000000.0,
-          "rate": 0.03682608485644742,
+          "rate": 0.03682608485644569,
           "year_fraction": 0.25555555555555554,
-          "amount": 94111.10574425453,
+          "amount": 94111.10574425009,
           "currency": "USD",
           "side": "Pay",
-          "discount_factor": 0.8989664843822671
+          "discount_factor": 0.8989664843822673
         },
         {
           "payment_date": "2028-11-13",
@@ -1250,7 +1250,7 @@
           "amount": 94112.08661106229,
           "currency": "USD",
           "side": "Pay",
-          "discount_factor": 0.8906489078586488
+          "discount_factor": 0.8906489078586491
         },
         {
           "payment_date": "2029-02-13",
@@ -1263,7 +1263,7 @@
           "amount": 94156.22571619543,
           "currency": "USD",
           "side": "Pay",
-          "discount_factor": 0.8824094463781705
+          "discount_factor": 0.8824094463781709
         },
         {
           "payment_date": "2029-05-13",
@@ -1276,7 +1276,7 @@
           "amount": 91071.97600269013,
           "currency": "USD",
           "side": "Pay",
-          "discount_factor": 0.8745112063750087
+          "discount_factor": 0.874511206375009
         },
         {
           "payment_date": "2029-08-13",
@@ -1289,7 +1289,7 @@
           "amount": 94156.22571619543,
           "currency": "USD",
           "side": "Pay",
-          "discount_factor": 0.8664210360109116
+          "discount_factor": 0.8664210360109118
         },
         {
           "payment_date": "2029-11-13",
@@ -1302,7 +1302,7 @@
           "amount": 94170.41161182472,
           "currency": "USD",
           "side": "Pay",
-          "discount_factor": 0.8584047009567642
+          "discount_factor": 0.8584047009567645
         },
         {
           "payment_date": "2030-02-13",
@@ -1315,7 +1315,7 @@
           "amount": 94808.79754949268,
           "currency": "USD",
           "side": "Pay",
-          "discount_factor": 0.8504176191354736
+          "discount_factor": 0.8504176191354738
         },
         {
           "payment_date": "2030-05-13",
@@ -1336,12 +1336,12 @@
           "accrual_end": "2030-08-13",
           "cashflow_type": "FloatingRateCoupon",
           "notional": 10000000.0,
-          "rate": 0.03709909469327888,
+          "rate": 0.037099094693279745,
           "year_fraction": 0.25555555555555554,
-          "amount": 94808.79754949047,
+          "amount": 94808.79754949268,
           "currency": "USD",
           "side": "Pay",
-          "discount_factor": 0.8349201829573633
+          "discount_factor": 0.8349201829573631
         },
         {
           "payment_date": "2030-11-13",
@@ -1354,53 +1354,53 @@
           "amount": 94838.95977100643,
           "currency": "USD",
           "side": "Pay",
-          "discount_factor": 0.8271493876765762
+          "discount_factor": 0.827149387676576
         }
       ]
     },
     {
       "label": "CLP ICP OIS 5Y Swap (USD collateral)",
-      "npv": 288.2737786340076,
+      "npv": 4.440637932617392,
       "sensitivities": [
         {
           "pillar": "FixedRateDeposit_CLP_ICP_1D",
-          "exposure": 14624.084284340843,
-          "dv01": 1.4624084284340844
+          "exposure": 14624.110017202127,
+          "dv01": 1.4624110017202128
         },
         {
           "pillar": "FixedRateDeposit_CLP_ICP_3M",
-          "exposure": 15647.97102609852,
-          "dv01": 1.564797102609852
+          "exposure": -9370.680215702148,
+          "dv01": -0.9370680215702148
         },
         {
-          "pillar": "OIS_CLP_ICP_6M",
-          "exposure": -745.1354550207107,
-          "dv01": -0.07451354550207107
+          "pillar": "FixedRateDeposit_CLP_ICP_6M",
+          "exposure": 11301.310195506725,
+          "dv01": 1.1301310195506726
         },
         {
           "pillar": "OIS_CLP_ICP_1Y",
-          "exposure": 257.71734062442556,
-          "dv01": 0.025771734062442556
+          "exposure": 12370.445420182281,
+          "dv01": 1.237044542018228
         },
         {
           "pillar": "OIS_CLP_ICP_2Y",
-          "exposure": -28.17955942597473,
-          "dv01": -0.002817955942597473
+          "exposure": 3067.721828102658,
+          "dv01": 0.3067721828102658
         },
         {
           "pillar": "OIS_CLP_ICP_3Y",
-          "exposure": -17.36087526648771,
-          "dv01": -0.0017360875266487711
+          "exposure": 6160.970030111726,
+          "dv01": 0.6160970030111727
         },
         {
           "pillar": "OIS_CLP_ICP_5Y",
-          "exposure": -23817571.647621673,
-          "dv01": -2381.7571647621676
+          "exposure": -23701187.527036317,
+          "dv01": -2370.118752703632
         },
         {
           "pillar": "OIS_CLP_ICP_7Y",
-          "exposure": -92183.3976454119,
-          "dv01": -9.21833976454119
+          "exposure": -91761.07378577937,
+          "dv01": -9.176107378577937
         },
         {
           "pillar": "OIS_CLP_ICP_10Y",
@@ -1419,46 +1419,46 @@
         },
         {
           "pillar": "FxForwardPoints_USDCLP_3M",
-          "exposure": -1.6995960627027529,
-          "dv01": -0.0001699596062702753
+          "exposure": 69.50887694522599,
+          "dv01": 0.006950887694522599
         },
         {
           "pillar": "FxForwardPoints_USDCLP_6M",
-          "exposure": 1.4666620734872389,
-          "dv01": 0.0001466662073487239
+          "exposure": -35.30321273855567,
+          "dv01": -0.0035303212738555675
         },
         {
-          "pillar": "CrossCurrencySwap_CLP_ICP_SOFR_USD_1Y",
-          "exposure": -9.898122936850996,
-          "dv01": -0.0009898122936850995
+          "pillar": "FixFloatCrossCurrencySwap_CLP_SOFR_USD_1Y",
+          "exposure": -1672.2339951851154,
+          "dv01": -0.16722339951851156
         },
         {
-          "pillar": "CrossCurrencySwap_CLP_ICP_SOFR_USD_2Y",
-          "exposure": -38.5948025816142,
-          "dv01": -0.0038594802581614204
+          "pillar": "FixFloatCrossCurrencySwap_CLP_SOFR_USD_2Y",
+          "exposure": -3713.9770517449024,
+          "dv01": -0.3713977051744903
         },
         {
-          "pillar": "CrossCurrencySwap_CLP_ICP_SOFR_USD_3Y",
-          "exposure": 2.991114415533957,
-          "dv01": 0.0002991114415533957
+          "pillar": "FixFloatCrossCurrencySwap_CLP_SOFR_USD_3Y",
+          "exposure": -1605.2242470874626,
+          "dv01": -0.16052242470874625
         },
         {
-          "pillar": "CrossCurrencySwap_CLP_ICP_SOFR_USD_5Y",
-          "exposure": -9.842292873421684,
-          "dv01": -0.0009842292873421684
+          "pillar": "FixFloatCrossCurrencySwap_CLP_SOFR_USD_5Y",
+          "exposure": -122968.51437919476,
+          "dv01": -12.296851437919477
         },
         {
-          "pillar": "CrossCurrencySwap_CLP_ICP_SOFR_USD_7Y",
-          "exposure": -291.74320219301876,
-          "dv01": -0.02917432021930188
+          "pillar": "FixFloatCrossCurrencySwap_CLP_SOFR_USD_7Y",
+          "exposure": -753.3734810563215,
+          "dv01": -0.07533734810563215
         },
         {
-          "pillar": "CrossCurrencySwap_CLP_ICP_SOFR_USD_10Y",
+          "pillar": "FixFloatCrossCurrencySwap_CLP_SOFR_USD_10Y",
           "exposure": 0.0,
           "dv01": 0.0
         },
         {
-          "pillar": "CrossCurrencySwap_CLP_ICP_SOFR_USD_20Y",
+          "pillar": "FixFloatCrossCurrencySwap_CLP_SOFR_USD_20Y",
           "exposure": 0.0,
           "dv01": 0.0
         },
@@ -1469,43 +1469,43 @@
         },
         {
           "pillar": "OIS_USD_SOFR_3M",
-          "exposure": -403.9361066323654,
-          "dv01": -0.040393610663236545
+          "exposure": 16519.89301657941,
+          "dv01": 1.6519893016579412
         },
         {
           "pillar": "OIS_USD_SOFR_6M",
-          "exposure": 684.2905926690637,
-          "dv01": 0.06842905926690637
+          "exposure": -16471.18092277118,
+          "dv01": -1.6471180922771178
         },
         {
           "pillar": "OIS_USD_SOFR_1Y",
-          "exposure": -5.084022742027141e-9,
-          "dv01": -5.084022742027141e-13
+          "exposure": -4.8434384587552404e-6,
+          "dv01": -4.843438458755241e-10
         },
         {
           "pillar": "OIS_USD_SOFR_2Y",
-          "exposure": -1.0596427560790244e-8,
-          "dv01": -1.0596427560790245e-12
+          "exposure": 8.796526510497703e-7,
+          "dv01": 8.796526510497703e-11
         },
         {
           "pillar": "OIS_USD_SOFR_3Y",
-          "exposure": -6.659980086591717e-11,
-          "dv01": -6.659980086591717e-15
+          "exposure": 7.037443509020412e-6,
+          "dv01": 7.037443509020412e-10
         },
         {
           "pillar": "OIS_USD_SOFR_4Y",
-          "exposure": -9.041631684513762e-11,
-          "dv01": -9.041631684513763e-15
+          "exposure": -0.00001418692090780222,
+          "dv01": -1.418692090780222e-9
         },
         {
           "pillar": "OIS_USD_SOFR_5Y",
-          "exposure": 3.6457736539479086e-8,
-          "dv01": 3.645773653947909e-12
+          "exposure": 9.613484409388487e-6,
+          "dv01": 9.613484409388488e-10
         },
         {
           "pillar": "OIS_USD_SOFR_7Y",
-          "exposure": -4.5345710922832015e-8,
-          "dv01": -4.534571092283201e-12
+          "exposure": 2.2386297810175475e-7,
+          "dv01": 2.2386297810175477e-11
         },
         {
           "pillar": "OIS_USD_SOFR_10Y",
@@ -1529,8 +1529,8 @@
         },
         {
           "pillar": "USD/CLP",
-          "exposure": -0.3083142017476348,
-          "dv01": -0.00003083142017476348
+          "exposure": -0.00474934538215166,
+          "dv01": -4.74934538215166e-7
         }
       ],
       "cashflows": [
@@ -1558,7 +1558,7 @@
           "amount": 5000000000.0,
           "currency": "CLP",
           "side": "Receive",
-          "discount_factor": 0.7965738096066792
+          "discount_factor": 0.7965738096066789
         },
         {
           "payment_date": "2026-05-13",
@@ -1584,7 +1584,7 @@
           "amount": 112444444.44444443,
           "currency": "CLP",
           "side": "Receive",
-          "discount_factor": 0.9502190250685858
+          "discount_factor": 0.9502190250685852
         },
         {
           "payment_date": "2027-05-13",
@@ -1597,7 +1597,7 @@
           "amount": 110611111.1111111,
           "currency": "CLP",
           "side": "Receive",
-          "discount_factor": 0.9287907875049402
+          "discount_factor": 0.9287907875049396
         },
         {
           "payment_date": "2027-11-13",
@@ -1610,7 +1610,7 @@
           "amount": 112444444.44444443,
           "currency": "CLP",
           "side": "Receive",
-          "discount_factor": 0.9075206243874934
+          "discount_factor": 0.9075206243874928
         },
         {
           "payment_date": "2028-05-13",
@@ -1623,7 +1623,7 @@
           "amount": 111222222.22222221,
           "currency": "CLP",
           "side": "Receive",
-          "discount_factor": 0.8885454284357938
+          "discount_factor": 0.8885454284357933
         },
         {
           "payment_date": "2028-11-13",
@@ -1636,7 +1636,7 @@
           "amount": 112444444.44444443,
           "currency": "CLP",
           "side": "Receive",
-          "discount_factor": 0.8697575088285673
+          "discount_factor": 0.869757508828567
         },
         {
           "payment_date": "2029-05-13",
@@ -1649,7 +1649,7 @@
           "amount": 110611111.1111111,
           "currency": "CLP",
           "side": "Receive",
-          "discount_factor": 0.8510075550172387
+          "discount_factor": 0.8510075550172383
         },
         {
           "payment_date": "2029-11-13",
@@ -1662,7 +1662,7 @@
           "amount": 112444444.44444443,
           "currency": "CLP",
           "side": "Receive",
-          "discount_factor": 0.8323610892094183
+          "discount_factor": 0.832361089209418
         },
         {
           "payment_date": "2030-05-13",
@@ -1675,7 +1675,7 @@
           "amount": 110611111.1111111,
           "currency": "CLP",
           "side": "Receive",
-          "discount_factor": 0.8144173154349973
+          "discount_factor": 0.814417315434997
         },
         {
           "payment_date": "2030-11-13",
@@ -1688,7 +1688,7 @@
           "amount": 112444444.44444443,
           "currency": "CLP",
           "side": "Receive",
-          "discount_factor": 0.7965738096066792
+          "discount_factor": 0.7965738096066789
         },
         {
           "payment_date": "2025-11-13",
@@ -1714,7 +1714,7 @@
           "amount": 5000000000.0,
           "currency": "CLP",
           "side": "Pay",
-          "discount_factor": 0.7965738096066792
+          "discount_factor": 0.7965738096066789
         },
         {
           "payment_date": "2026-02-13",
@@ -1722,12 +1722,12 @@
           "accrual_end": "2026-02-13",
           "cashflow_type": "FloatingRateCoupon",
           "notional": 5000000000.0,
-          "rate": 0.0497609738053202,
+          "rate": 0.049767946843445376,
           "year_fraction": 0.25555555555555554,
-          "amount": 63583466.52902025,
+          "amount": 63592376.5221802,
           "currency": "CLP",
           "side": "Pay",
-          "discount_factor": 0.9830690361537328
+          "discount_factor": 0.983069036153733
         },
         {
           "payment_date": "2026-05-13",
@@ -1735,9 +1735,9 @@
           "accrual_end": "2026-05-13",
           "cashflow_type": "FloatingRateCoupon",
           "notional": 5000000000.0,
-          "rate": 0.04822983641795164,
+          "rate": 0.04854104169249061,
           "year_fraction": 0.24722222222222223,
-          "amount": 59617436.68330133,
+          "amount": 60002120.980995335,
           "currency": "CLP",
           "side": "Pay",
           "discount_factor": 0.965687860861079
@@ -1748,12 +1748,12 @@
           "accrual_end": "2026-08-13",
           "cashflow_type": "FloatingRateCoupon",
           "notional": 5000000000.0,
-          "rate": 0.04730952671822963,
+          "rate": 0.047215512275669974,
           "year_fraction": 0.25555555555555554,
-          "amount": 60451061.91773786,
+          "amount": 60330932.35224496,
           "currency": "CLP",
           "side": "Pay",
-          "discount_factor": 0.957959267644237
+          "discount_factor": 0.9579592676442367
         },
         {
           "payment_date": "2026-11-13",
@@ -1761,12 +1761,12 @@
           "accrual_end": "2026-11-13",
           "cashflow_type": "FloatingRateCoupon",
           "notional": 5000000000.0,
-          "rate": 0.04726313104983639,
+          "rate": 0.047171217343433935,
           "year_fraction": 0.25555555555555554,
-          "amount": 60391778.56367983,
+          "amount": 60274333.27216558,
           "currency": "CLP",
           "side": "Pay",
-          "discount_factor": 0.9502190250685858
+          "discount_factor": 0.9502190250685852
         },
         {
           "payment_date": "2027-02-13",
@@ -1774,12 +1774,12 @@
           "accrual_end": "2027-02-13",
           "cashflow_type": "FloatingRateCoupon",
           "notional": 5000000000.0,
-          "rate": 0.04517588842571397,
+          "rate": 0.045178458081330954,
           "year_fraction": 0.25555555555555554,
-          "amount": 57724746.32174562,
+          "amount": 57728029.770589545,
           "currency": "CLP",
           "side": "Pay",
-          "discount_factor": 0.9392662509199661
+          "discount_factor": 0.9392662509199655
         },
         {
           "payment_date": "2027-05-13",
@@ -1787,12 +1787,12 @@
           "accrual_end": "2027-05-13",
           "cashflow_type": "FloatingRateCoupon",
           "notional": 5000000000.0,
-          "rate": 0.04516741843338471,
+          "rate": 0.04516998712730834,
           "year_fraction": 0.24722222222222223,
-          "amount": 55831947.78571166,
+          "amount": 55835122.9768117,
           "currency": "CLP",
           "side": "Pay",
-          "discount_factor": 0.9287907875049402
+          "discount_factor": 0.9287907875049396
         },
         {
           "payment_date": "2027-08-13",
@@ -1800,12 +1800,12 @@
           "accrual_end": "2027-08-13",
           "cashflow_type": "FloatingRateCoupon",
           "notional": 5000000000.0,
-          "rate": 0.045175888425714836,
+          "rate": 0.045178458081330954,
           "year_fraction": 0.25555555555555554,
-          "amount": 57724746.32174673,
+          "amount": 57728029.770589545,
           "currency": "CLP",
           "side": "Pay",
-          "discount_factor": 0.918085007617902
+          "discount_factor": 0.9180850076179016
         },
         {
           "payment_date": "2027-11-13",
@@ -1813,12 +1813,12 @@
           "accrual_end": "2027-11-13",
           "cashflow_type": "FloatingRateCoupon",
           "notional": 5000000000.0,
-          "rate": 0.04510865562004423,
+          "rate": 0.04511116203685659,
           "year_fraction": 0.25555555555555554,
-          "amount": 57638837.73672318,
+          "amount": 57642040.38042786,
           "currency": "CLP",
           "side": "Pay",
-          "discount_factor": 0.9075206243874934
+          "discount_factor": 0.9075206243874928
         },
         {
           "payment_date": "2028-02-13",
@@ -1826,12 +1826,12 @@
           "accrual_end": "2028-02-13",
           "cashflow_type": "FloatingRateCoupon",
           "notional": 5000000000.0,
-          "rate": 0.04208436103100057,
+          "rate": 0.04208402392456389,
           "year_fraction": 0.25555555555555554,
-          "amount": 53774461.317389615,
+          "amount": 53774030.570276074,
           "currency": "CLP",
           "side": "Pay",
-          "discount_factor": 0.8978786560888811
+          "discount_factor": 0.8978786560888805
         },
         {
           "payment_date": "2028-05-13",
@@ -1839,12 +1839,12 @@
           "accrual_end": "2028-05-13",
           "cashflow_type": "FloatingRateCoupon",
           "notional": 5000000000.0,
-          "rate": 0.04207945925004086,
+          "rate": 0.04207912222199006,
           "year_fraction": 0.25,
-          "amount": 52599324.06255108,
+          "amount": 52598902.777487576,
           "currency": "CLP",
           "side": "Pay",
-          "discount_factor": 0.8885454284357938
+          "discount_factor": 0.8885454284357933
         },
         {
           "payment_date": "2028-08-13",
@@ -1852,12 +1852,12 @@
           "accrual_end": "2028-08-13",
           "cashflow_type": "FloatingRateCoupon",
           "notional": 5000000000.0,
-          "rate": 0.0420843610309997,
+          "rate": 0.04208402392456389,
           "year_fraction": 0.25555555555555554,
-          "amount": 53774461.3173885,
+          "amount": 53774030.570276074,
           "currency": "CLP",
           "side": "Pay",
-          "discount_factor": 0.8791050624290849
+          "discount_factor": 0.8791050624290845
         },
         {
           "payment_date": "2028-11-13",
@@ -1865,12 +1865,12 @@
           "accrual_end": "2028-11-13",
           "cashflow_type": "FloatingRateCoupon",
           "notional": 5000000000.0,
-          "rate": 0.042066494411706096,
+          "rate": 0.04206642614082671,
           "year_fraction": 0.25555555555555554,
-          "amount": 53751631.74829112,
+          "amount": 53751544.51327857,
           "currency": "CLP",
           "side": "Pay",
-          "discount_factor": 0.8697575088285673
+          "discount_factor": 0.869757508828567
         },
         {
           "payment_date": "2029-02-13",
@@ -1878,12 +1878,12 @@
           "accrual_end": "2029-02-13",
           "cashflow_type": "FloatingRateCoupon",
           "notional": 5000000000.0,
-          "rate": 0.041262580072169215,
+          "rate": 0.04127460690670966,
           "year_fraction": 0.25555555555555554,
-          "amount": 52724407.86999399,
+          "amount": 52739775.49190678,
           "currency": "CLP",
           "side": "Pay",
-          "discount_factor": 0.860176084925266
+          "discount_factor": 0.8601760849252656
         },
         {
           "payment_date": "2029-05-13",
@@ -1891,12 +1891,12 @@
           "accrual_end": "2029-05-13",
           "cashflow_type": "FloatingRateCoupon",
           "notional": 5000000000.0,
-          "rate": 0.04125551151510734,
+          "rate": 0.041267534235921756,
           "year_fraction": 0.24722222222222223,
-          "amount": 50996396.178396575,
+          "amount": 51011257.59718106,
           "currency": "CLP",
           "side": "Pay",
-          "discount_factor": 0.8510075550172387
+          "discount_factor": 0.8510075550172383
         },
         {
           "payment_date": "2029-08-13",
@@ -1904,12 +1904,12 @@
           "accrual_end": "2029-08-13",
           "cashflow_type": "FloatingRateCoupon",
           "notional": 5000000000.0,
-          "rate": 0.041262580072169215,
+          "rate": 0.04127460690670879,
           "year_fraction": 0.25555555555555554,
-          "amount": 52724407.86999399,
+          "amount": 52739775.491905674,
           "currency": "CLP",
           "side": "Pay",
-          "discount_factor": 0.8416326843817277
+          "discount_factor": 0.8416326843817273
         },
         {
           "payment_date": "2029-11-13",
@@ -1917,12 +1917,12 @@
           "accrual_end": "2029-11-13",
           "cashflow_type": "FloatingRateCoupon",
           "notional": 5000000000.0,
-          "rate": 0.04126258007216835,
+          "rate": 0.04127460690670966,
           "year_fraction": 0.25555555555555554,
-          "amount": 52724407.86999288,
+          "amount": 52739775.49190678,
           "currency": "CLP",
           "side": "Pay",
-          "discount_factor": 0.8323610892094183
+          "discount_factor": 0.832361089209418
         },
         {
           "payment_date": "2030-02-13",
@@ -1930,12 +1930,12 @@
           "accrual_end": "2030-02-13",
           "cashflow_type": "FloatingRateCoupon",
           "notional": 5000000000.0,
-          "rate": 0.041262580072169215,
+          "rate": 0.04127460690670879,
           "year_fraction": 0.25555555555555554,
-          "amount": 52724407.86999399,
+          "amount": 52739775.491905674,
           "currency": "CLP",
           "side": "Pay",
-          "discount_factor": 0.8231916317970064
+          "discount_factor": 0.8231916317970059
         },
         {
           "payment_date": "2030-05-13",
@@ -1943,12 +1943,12 @@
           "accrual_end": "2030-05-13",
           "cashflow_type": "FloatingRateCoupon",
           "notional": 5000000000.0,
-          "rate": 0.04125551151510734,
+          "rate": 0.04126753423592265,
           "year_fraction": 0.24722222222222223,
-          "amount": 50996396.178396575,
+          "amount": 51011257.59718217,
           "currency": "CLP",
           "side": "Pay",
-          "discount_factor": 0.8144173154349973
+          "discount_factor": 0.814417315434997
         },
         {
           "payment_date": "2030-08-13",
@@ -1956,12 +1956,12 @@
           "accrual_end": "2030-08-13",
           "cashflow_type": "FloatingRateCoupon",
           "notional": 5000000000.0,
-          "rate": 0.04126258007216835,
+          "rate": 0.04127460690670879,
           "year_fraction": 0.25555555555555554,
-          "amount": 52724407.86999288,
+          "amount": 52739775.491905674,
           "currency": "CLP",
           "side": "Pay",
-          "discount_factor": 0.8054455302487088
+          "discount_factor": 0.8054455302487084
         },
         {
           "payment_date": "2030-11-13",
@@ -1969,58 +1969,58 @@
           "accrual_end": "2030-11-13",
           "cashflow_type": "FloatingRateCoupon",
           "notional": 5000000000.0,
-          "rate": 0.04123224098511528,
+          "rate": 0.04124438077422316,
           "year_fraction": 0.25555555555555554,
-          "amount": 52685641.2587584,
+          "amount": 52701153.21150737,
           "currency": "CLP",
           "side": "Pay",
-          "discount_factor": 0.7965738096066792
+          "discount_factor": 0.7965738096066789
         }
       ]
     },
     {
       "label": "Cross-Currency Swap CLP/USD 5Y (receive CLP ICP, pay USD SOFR)",
-      "npv": 156003.52826733203,
+      "npv": 158661.25810766272,
       "sensitivities": [
         {
           "pillar": "FixedRateDeposit_CLP_ICP_1D",
-          "exposure": -27347.037611717376,
-          "dv01": -2.7347037611717377
+          "exposure": -27347.085732167987,
+          "dv01": -2.734708573216799
         },
         {
           "pillar": "FixedRateDeposit_CLP_ICP_3M",
-          "exposure": -29261.705818803694,
-          "dv01": -2.9261705818803696
+          "exposure": 17523.172003363437,
+          "dv01": 1.7523172003363439
         },
         {
-          "pillar": "OIS_CLP_ICP_6M",
-          "exposure": 1393.4033008877595,
-          "dv01": 0.13934033008877597
+          "pillar": "FixedRateDeposit_CLP_ICP_6M",
+          "exposure": -21133.450065598765,
+          "dv01": -2.1133450065598764
         },
         {
           "pillar": "OIS_CLP_ICP_1Y",
-          "exposure": -481.93142697319854,
-          "dv01": -0.048193142697319856
+          "exposure": -23132.73293574329,
+          "dv01": -2.313273293574329
         },
         {
           "pillar": "OIS_CLP_ICP_2Y",
-          "exposure": 52.695776121574454,
-          "dv01": 0.0052695776121574455
+          "exposure": -5736.6398185542785,
+          "dv01": -0.5736639818554279
         },
         {
           "pillar": "OIS_CLP_ICP_3Y",
-          "exposure": 32.46483672759496,
-          "dv01": 0.0032464836727594958
+          "exposure": -11521.013956307666,
+          "dv01": -1.1521013956307666
         },
         {
           "pillar": "OIS_CLP_ICP_5Y",
-          "exposure": 44538858.9810525,
-          "dv01": 4453.885898105251
+          "exposure": 44321220.67555791,
+          "dv01": 4432.122067555792
         },
         {
           "pillar": "OIS_CLP_ICP_7Y",
-          "exposure": 172382.95359692024,
-          "dv01": 17.238295359692025
+          "exposure": 171593.20797940745,
+          "dv01": 17.159320797940747
         },
         {
           "pillar": "OIS_CLP_ICP_10Y",
@@ -2034,98 +2034,98 @@
         },
         {
           "pillar": "FxForwardPoints_USDCLP_1M",
-          "exposure": -711.6238913091273,
-          "dv01": -0.07116238913091273
+          "exposure": 711.6238913091273,
+          "dv01": 0.07116238913091273
         },
         {
           "pillar": "FxForwardPoints_USDCLP_3M",
-          "exposure": -9.880521911470225,
-          "dv01": -0.0009880521911470226
+          "exposure": -143.0403664362967,
+          "dv01": -0.01430403664362967
         },
         {
           "pillar": "FxForwardPoints_USDCLP_6M",
-          "exposure": -8.305814196081073,
-          "dv01": -0.0008305814196081073
+          "exposure": 60.45385136480567,
+          "dv01": 0.006045385136480568
         },
         {
-          "pillar": "CrossCurrencySwap_CLP_ICP_SOFR_USD_1Y",
-          "exposure": -21117.35531788076,
-          "dv01": -2.111735531788076
+          "pillar": "FixFloatCrossCurrencySwap_CLP_SOFR_USD_1Y",
+          "exposure": -18008.78696618183,
+          "dv01": -1.8008786966181831
         },
         {
-          "pillar": "CrossCurrencySwap_CLP_ICP_SOFR_USD_2Y",
-          "exposure": -57853.94072720536,
-          "dv01": -5.785394072720536
+          "pillar": "FixFloatCrossCurrencySwap_CLP_SOFR_USD_2Y",
+          "exposure": -50980.97494570051,
+          "dv01": -5.098097494570051
         },
         {
-          "pillar": "CrossCurrencySwap_CLP_ICP_SOFR_USD_3Y",
-          "exposure": -135016.8192850033,
-          "dv01": -13.50168192850033
+          "pillar": "FixFloatCrossCurrencySwap_CLP_SOFR_USD_3Y",
+          "exposure": -132009.45802895445,
+          "dv01": -13.200945802895445
         },
         {
-          "pillar": "CrossCurrencySwap_CLP_ICP_SOFR_USD_5Y",
-          "exposure": -44704174.27655765,
-          "dv01": -4470.417427655765
+          "pillar": "FixFloatCrossCurrencySwap_CLP_SOFR_USD_5Y",
+          "exposure": -44474241.55648317,
+          "dv01": -4447.4241556483175
         },
         {
-          "pillar": "CrossCurrencySwap_CLP_ICP_SOFR_USD_7Y",
-          "exposure": -172685.16567951214,
-          "dv01": -17.268516567951213
+          "pillar": "FixFloatCrossCurrencySwap_CLP_SOFR_USD_7Y",
+          "exposure": -171821.91705104127,
+          "dv01": -17.182191705104128
         },
         {
-          "pillar": "CrossCurrencySwap_CLP_ICP_SOFR_USD_10Y",
+          "pillar": "FixFloatCrossCurrencySwap_CLP_SOFR_USD_10Y",
           "exposure": 0.0,
           "dv01": 0.0
         },
         {
-          "pillar": "CrossCurrencySwap_CLP_ICP_SOFR_USD_20Y",
+          "pillar": "FixFloatCrossCurrencySwap_CLP_SOFR_USD_20Y",
           "exposure": 0.0,
           "dv01": 0.0
         },
         {
           "pillar": "FixedRateDeposit_USD_SOFR_1D",
-          "exposure": 53664.14975773943,
-          "dv01": 5.366414975773943
+          "exposure": 1261.112601964184,
+          "dv01": 0.1261112601964184
         },
         {
           "pillar": "OIS_USD_SOFR_3M",
-          "exposure": -491.3089514398016,
-          "dv01": -0.04913089514398016
+          "exposure": 19684.537318985324,
+          "dv01": 1.9684537318985325
         },
         {
           "pillar": "OIS_USD_SOFR_6M",
-          "exposure": -3875.188675587575,
-          "dv01": -0.38751886755875753
+          "exposure": 28205.5438914696,
+          "dv01": 2.82055438914696
         },
         {
           "pillar": "OIS_USD_SOFR_1Y",
-          "exposure": -0.0024568735703330937,
-          "dv01": -2.456873570333094e-7
+          "exposure": -0.0016237738137358506,
+          "dv01": -1.6237738137358508e-7
         },
         {
           "pillar": "OIS_USD_SOFR_2Y",
-          "exposure": -0.005159572789855538,
-          "dv01": -5.159572789855538e-7
+          "exposure": 0.00040154510107824495,
+          "dv01": 4.0154510107824496e-8
         },
         {
           "pillar": "OIS_USD_SOFR_3Y",
-          "exposure": -0.00029192816137683643,
-          "dv01": -2.9192816137683644e-8
+          "exposure": 0.0024543570730584936,
+          "dv01": 2.4543570730584935e-7
         },
         {
           "pillar": "OIS_USD_SOFR_4Y",
-          "exposure": -0.0003963025375190565,
-          "dv01": -3.963025375190565e-8
+          "exposure": -0.005122478517096991,
+          "dv01": -5.122478517096991e-7
         },
         {
           "pillar": "OIS_USD_SOFR_5Y",
-          "exposure": 0.013081086433763673,
-          "dv01": 1.3081086433763674e-6
+          "exposure": 0.003485145374552822,
+          "dv01": 3.4851453745528226e-7
         },
         {
           "pillar": "OIS_USD_SOFR_7Y",
-          "exposure": -0.000026840515186502028,
-          "dv01": -2.6840515186502027e-9
+          "exposure": 0.00005105645891333323,
+          "dv01": 5.1056458913333235e-9
         },
         {
           "pillar": "OIS_USD_SOFR_10Y",
@@ -2149,8 +2149,8 @@
         },
         {
           "pillar": "USD/CLP",
-          "exposure": -21552.089535759147,
-          "dv01": -2.1552089535759147
+          "exposure": -169.6911851418863,
+          "dv01": -0.01696911851418863
         }
       ],
       "cashflows": [
@@ -2178,7 +2178,7 @@
           "amount": 9350000000.0,
           "currency": "CLP",
           "side": "Receive",
-          "discount_factor": 0.7965738096066792
+          "discount_factor": 0.7965738096066789
         },
         {
           "payment_date": "2026-02-13",
@@ -2186,12 +2186,12 @@
           "accrual_end": "2026-02-13",
           "cashflow_type": "FloatingRateCoupon",
           "notional": 9350000000.0,
-          "rate": 0.0497609738053202,
+          "rate": 0.049767946843445376,
           "year_fraction": 0.25555555555555554,
-          "amount": 130848304.63149008,
+          "amount": 130864966.31869918,
           "currency": "CLP",
           "side": "Receive",
-          "discount_factor": 0.9830690361537328
+          "discount_factor": 0.983069036153733
         },
         {
           "payment_date": "2026-05-13",
@@ -2199,9 +2199,9 @@
           "accrual_end": "2026-05-13",
           "cashflow_type": "FloatingRateCoupon",
           "notional": 9350000000.0,
-          "rate": 0.04822983641795164,
+          "rate": 0.04854104169249061,
           "year_fraction": 0.24722222222222223,
-          "amount": 123042245.48666236,
+          "amount": 123761605.12335014,
           "currency": "CLP",
           "side": "Receive",
           "discount_factor": 0.965687860861079
@@ -2212,12 +2212,12 @@
           "accrual_end": "2026-08-13",
           "cashflow_type": "FloatingRateCoupon",
           "notional": 9350000000.0,
-          "rate": 0.04730952671822963,
+          "rate": 0.047215512275669974,
           "year_fraction": 0.25555555555555554,
-          "amount": 124990708.008392,
+          "amount": 124766065.7209203,
           "currency": "CLP",
           "side": "Receive",
-          "discount_factor": 0.957959267644237
+          "discount_factor": 0.9579592676442367
         },
         {
           "payment_date": "2026-11-13",
@@ -2225,12 +2225,12 @@
           "accrual_end": "2026-11-13",
           "cashflow_type": "FloatingRateCoupon",
           "notional": 9350000000.0,
-          "rate": 0.04726313104983639,
+          "rate": 0.047171217343433935,
           "year_fraction": 0.25555555555555554,
-          "amount": 124879848.1363035,
+          "amount": 124660225.44117184,
           "currency": "CLP",
           "side": "Receive",
-          "discount_factor": 0.9502190250685858
+          "discount_factor": 0.9502190250685852
         },
         {
           "payment_date": "2027-02-13",
@@ -2238,12 +2238,12 @@
           "accrual_end": "2027-02-13",
           "cashflow_type": "FloatingRateCoupon",
           "notional": 9350000000.0,
-          "rate": 0.04517588842571397,
+          "rate": 0.045178458081330954,
           "year_fraction": 0.25555555555555554,
-          "amount": 119892497.84388652,
+          "amount": 119898637.89322467,
           "currency": "CLP",
           "side": "Receive",
-          "discount_factor": 0.9392662509199661
+          "discount_factor": 0.9392662509199655
         },
         {
           "payment_date": "2027-05-13",
@@ -2251,12 +2251,12 @@
           "accrual_end": "2027-05-13",
           "cashflow_type": "FloatingRateCoupon",
           "notional": 9350000000.0,
-          "rate": 0.04516741843338471,
+          "rate": 0.04516998712730834,
           "year_fraction": 0.24722222222222223,
-          "amount": 115963381.24816968,
+          "amount": 115969318.85552675,
           "currency": "CLP",
           "side": "Receive",
-          "discount_factor": 0.9287907875049402
+          "discount_factor": 0.9287907875049396
         },
         {
           "payment_date": "2027-08-13",
@@ -2264,12 +2264,12 @@
           "accrual_end": "2027-08-13",
           "cashflow_type": "FloatingRateCoupon",
           "notional": 9350000000.0,
-          "rate": 0.045175888425714836,
+          "rate": 0.045178458081330954,
           "year_fraction": 0.25555555555555554,
-          "amount": 119892497.8438886,
+          "amount": 119898637.89322467,
           "currency": "CLP",
           "side": "Receive",
-          "discount_factor": 0.918085007617902
+          "discount_factor": 0.9180850076179016
         },
         {
           "payment_date": "2027-11-13",
@@ -2277,12 +2277,12 @@
           "accrual_end": "2027-11-13",
           "cashflow_type": "FloatingRateCoupon",
           "notional": 9350000000.0,
-          "rate": 0.04510865562004423,
+          "rate": 0.04511116203685659,
           "year_fraction": 0.25555555555555554,
-          "amount": 119731848.78989455,
+          "amount": 119737837.73362231,
           "currency": "CLP",
           "side": "Receive",
-          "discount_factor": 0.9075206243874934
+          "discount_factor": 0.9075206243874928
         },
         {
           "payment_date": "2028-02-13",
@@ -2290,12 +2290,12 @@
           "accrual_end": "2028-02-13",
           "cashflow_type": "FloatingRateCoupon",
           "notional": 9350000000.0,
-          "rate": 0.04208436103100057,
+          "rate": 0.04208402392456389,
           "year_fraction": 0.25555555555555554,
-          "amount": 112505464.88574079,
+          "amount": 112504659.38863847,
           "currency": "CLP",
           "side": "Receive",
-          "discount_factor": 0.8978786560888811
+          "discount_factor": 0.8978786560888805
         },
         {
           "payment_date": "2028-05-13",
@@ -2303,12 +2303,12 @@
           "accrual_end": "2028-05-13",
           "cashflow_type": "FloatingRateCoupon",
           "notional": 9350000000.0,
-          "rate": 0.04207945925004086,
+          "rate": 0.04207912222199006,
           "year_fraction": 0.25,
-          "amount": 110048235.9969705,
+          "amount": 110047448.19390176,
           "currency": "CLP",
           "side": "Receive",
-          "discount_factor": 0.8885454284357938
+          "discount_factor": 0.8885454284357933
         },
         {
           "payment_date": "2028-08-13",
@@ -2316,12 +2316,12 @@
           "accrual_end": "2028-08-13",
           "cashflow_type": "FloatingRateCoupon",
           "notional": 9350000000.0,
-          "rate": 0.0420843610309997,
+          "rate": 0.04208402392456389,
           "year_fraction": 0.25555555555555554,
-          "amount": 112505464.8857387,
+          "amount": 112504659.38863847,
           "currency": "CLP",
           "side": "Receive",
-          "discount_factor": 0.8791050624290849
+          "discount_factor": 0.8791050624290845
         },
         {
           "payment_date": "2028-11-13",
@@ -2329,12 +2329,12 @@
           "accrual_end": "2028-11-13",
           "cashflow_type": "FloatingRateCoupon",
           "notional": 9350000000.0,
-          "rate": 0.042066494411706096,
+          "rate": 0.04206642614082671,
           "year_fraction": 0.25555555555555554,
-          "amount": 112462773.5915266,
+          "amount": 112462610.46205314,
           "currency": "CLP",
           "side": "Receive",
-          "discount_factor": 0.8697575088285673
+          "discount_factor": 0.869757508828567
         },
         {
           "payment_date": "2029-02-13",
@@ -2342,12 +2342,12 @@
           "accrual_end": "2029-02-13",
           "cashflow_type": "FloatingRateCoupon",
           "notional": 9350000000.0,
-          "rate": 0.041262580072169215,
+          "rate": 0.04127460690670966,
           "year_fraction": 0.25555555555555554,
-          "amount": 110541864.93911098,
+          "amount": 110570602.39208789,
           "currency": "CLP",
           "side": "Receive",
-          "discount_factor": 0.860176084925266
+          "discount_factor": 0.8601760849252656
         },
         {
           "payment_date": "2029-05-13",
@@ -2355,12 +2355,12 @@
           "accrual_end": "2029-05-13",
           "cashflow_type": "FloatingRateCoupon",
           "notional": 9350000000.0,
-          "rate": 0.04125551151510734,
+          "rate": 0.041267534235921756,
           "year_fraction": 0.24722222222222223,
-          "amount": 106920899.74249047,
+          "amount": 106948690.59561746,
           "currency": "CLP",
           "side": "Receive",
-          "discount_factor": 0.8510075550172387
+          "discount_factor": 0.8510075550172383
         },
         {
           "payment_date": "2029-08-13",
@@ -2368,12 +2368,12 @@
           "accrual_end": "2029-08-13",
           "cashflow_type": "FloatingRateCoupon",
           "notional": 9350000000.0,
-          "rate": 0.041262580072169215,
+          "rate": 0.04127460690670879,
           "year_fraction": 0.25555555555555554,
-          "amount": 110541864.93911098,
+          "amount": 110570602.39208582,
           "currency": "CLP",
           "side": "Receive",
-          "discount_factor": 0.8416326843817277
+          "discount_factor": 0.8416326843817273
         },
         {
           "payment_date": "2029-11-13",
@@ -2381,12 +2381,12 @@
           "accrual_end": "2029-11-13",
           "cashflow_type": "FloatingRateCoupon",
           "notional": 9350000000.0,
-          "rate": 0.04126258007216835,
+          "rate": 0.04127460690670966,
           "year_fraction": 0.25555555555555554,
-          "amount": 110541864.93910891,
+          "amount": 110570602.39208789,
           "currency": "CLP",
           "side": "Receive",
-          "discount_factor": 0.8323610892094183
+          "discount_factor": 0.832361089209418
         },
         {
           "payment_date": "2030-02-13",
@@ -2394,12 +2394,12 @@
           "accrual_end": "2030-02-13",
           "cashflow_type": "FloatingRateCoupon",
           "notional": 9350000000.0,
-          "rate": 0.041262580072169215,
+          "rate": 0.04127460690670879,
           "year_fraction": 0.25555555555555554,
-          "amount": 110541864.93911098,
+          "amount": 110570602.39208582,
           "currency": "CLP",
           "side": "Receive",
-          "discount_factor": 0.8231916317970064
+          "discount_factor": 0.8231916317970059
         },
         {
           "payment_date": "2030-05-13",
@@ -2407,12 +2407,12 @@
           "accrual_end": "2030-05-13",
           "cashflow_type": "FloatingRateCoupon",
           "notional": 9350000000.0,
-          "rate": 0.04125551151510734,
+          "rate": 0.04126753423592265,
           "year_fraction": 0.24722222222222223,
-          "amount": 106920899.74249047,
+          "amount": 106948690.59561953,
           "currency": "CLP",
           "side": "Receive",
-          "discount_factor": 0.8144173154349973
+          "discount_factor": 0.814417315434997
         },
         {
           "payment_date": "2030-08-13",
@@ -2420,12 +2420,12 @@
           "accrual_end": "2030-08-13",
           "cashflow_type": "FloatingRateCoupon",
           "notional": 9350000000.0,
-          "rate": 0.04126258007216835,
+          "rate": 0.04127460690670879,
           "year_fraction": 0.25555555555555554,
-          "amount": 110541864.93910891,
+          "amount": 110570602.39208582,
           "currency": "CLP",
           "side": "Receive",
-          "discount_factor": 0.8054455302487088
+          "discount_factor": 0.8054455302487084
         },
         {
           "payment_date": "2030-11-13",
@@ -2433,12 +2433,12 @@
           "accrual_end": "2030-11-13",
           "cashflow_type": "FloatingRateCoupon",
           "notional": 9350000000.0,
-          "rate": 0.04123224098511528,
+          "rate": 0.04124438077422316,
           "year_fraction": 0.25555555555555554,
-          "amount": 110469371.37610044,
+          "amount": 110498378.72774099,
           "currency": "CLP",
           "side": "Receive",
-          "discount_factor": 0.7965738096066792
+          "discount_factor": 0.7965738096066789
         },
         {
           "payment_date": "2025-11-13",
@@ -2464,7 +2464,7 @@
           "amount": 10000000.0,
           "currency": "USD",
           "side": "Pay",
-          "discount_factor": 0.8271493876765762
+          "discount_factor": 0.827149387676576
         },
         {
           "payment_date": "2026-02-13",
@@ -2472,12 +2472,12 @@
           "accrual_end": "2026-02-13",
           "cashflow_type": "FloatingRateCoupon",
           "notional": 10000000.0,
-          "rate": 0.04330062783929402,
+          "rate": 0.04330062783929315,
           "year_fraction": 0.25555555555555554,
-          "amount": 110657.16003375138,
+          "amount": 110657.16003374915,
           "currency": "USD",
           "side": "Pay",
-          "discount_factor": 0.988818029885642
+          "discount_factor": 0.9888180298856423
         },
         {
           "payment_date": "2026-05-13",
@@ -2485,9 +2485,9 @@
           "accrual_end": "2026-05-13",
           "cashflow_type": "FloatingRateCoupon",
           "notional": 10000000.0,
-          "rate": 0.04112317518349835,
+          "rate": 0.041123175183499255,
           "year_fraction": 0.24722222222222223,
-          "amount": 101665.62753698205,
+          "amount": 101665.62753698428,
           "currency": "USD",
           "side": "Pay",
           "discount_factor": 0.9788663239754636
@@ -2503,7 +2503,7 @@
           "amount": 100426.55117099787,
           "currency": "USD",
           "side": "Pay",
-          "discount_factor": 0.9691336489764171
+          "discount_factor": 0.969133648976417
         },
         {
           "payment_date": "2026-11-13",
@@ -2511,12 +2511,12 @@
           "accrual_end": "2026-11-13",
           "cashflow_type": "FloatingRateCoupon",
           "notional": 10000000.0,
-          "rate": 0.03925079776683689,
+          "rate": 0.03925079776683776,
           "year_fraction": 0.25555555555555554,
-          "amount": 100307.5942930276,
+          "amount": 100307.59429302982,
           "currency": "USD",
           "side": "Pay",
-          "discount_factor": 0.959509044579995
+          "discount_factor": 0.9595090445799946
         },
         {
           "payment_date": "2027-02-13",
@@ -2529,7 +2529,7 @@
           "amount": 94955.9845733683,
           "currency": "USD",
           "side": "Pay",
-          "discount_factor": 0.9504836336545409
+          "discount_factor": 0.9504836336545407
         },
         {
           "payment_date": "2027-05-13",
@@ -2542,7 +2542,7 @@
           "amount": 91845.41837125248,
           "currency": "USD",
           "side": "Pay",
-          "discount_factor": 0.9418333260676736
+          "discount_factor": 0.9418333260676733
         },
         {
           "payment_date": "2027-08-13",
@@ -2555,7 +2555,7 @@
           "amount": 94955.9845733683,
           "currency": "USD",
           "side": "Pay",
-          "discount_factor": 0.9329741779032404
+          "discount_factor": 0.9329741779032403
         },
         {
           "payment_date": "2027-11-13",
@@ -2568,7 +2568,7 @@
           "amount": 94921.89797729811,
           "currency": "USD",
           "side": "Pay",
-          "discount_factor": 0.9242014820245205
+          "discount_factor": 0.9242014820245203
         },
         {
           "payment_date": "2028-02-13",
@@ -2581,7 +2581,7 @@
           "amount": 93388.12027338773,
           "currency": "USD",
           "side": "Pay",
-          "discount_factor": 0.9156503951019053
+          "discount_factor": 0.9156503951019052
         },
         {
           "payment_date": "2028-05-13",
@@ -2589,12 +2589,12 @@
           "accrual_end": "2028-05-13",
           "cashflow_type": "FloatingRateCoupon",
           "notional": 10000000.0,
-          "rate": 0.03653947978617467,
+          "rate": 0.03653947978617378,
           "year_fraction": 0.25,
-          "amount": 91348.69946543667,
+          "amount": 91348.69946543445,
           "currency": "USD",
           "side": "Pay",
-          "discount_factor": 0.9073617633987907
+          "discount_factor": 0.9073617633987909
         },
         {
           "payment_date": "2028-08-13",
@@ -2607,7 +2607,7 @@
           "amount": 93388.12027338773,
           "currency": "USD",
           "side": "Pay",
-          "discount_factor": 0.8989664843822671
+          "discount_factor": 0.8989664843822673
         },
         {
           "payment_date": "2028-11-13",
@@ -2620,7 +2620,7 @@
           "amount": 93387.82600223362,
           "currency": "USD",
           "side": "Pay",
-          "discount_factor": 0.8906489078586488
+          "discount_factor": 0.8906489078586491
         },
         {
           "payment_date": "2029-02-13",
@@ -2633,7 +2633,7 @@
           "amount": 93374.5838091027,
           "currency": "USD",
           "side": "Pay",
-          "discount_factor": 0.8824094463781705
+          "discount_factor": 0.8824094463781709
         },
         {
           "payment_date": "2029-05-13",
@@ -2646,7 +2646,7 @@
           "amount": 90316.0525055058,
           "currency": "USD",
           "side": "Pay",
-          "discount_factor": 0.8745112063750087
+          "discount_factor": 0.874511206375009
         },
         {
           "payment_date": "2029-08-13",
@@ -2654,12 +2654,12 @@
           "accrual_end": "2029-08-13",
           "cashflow_type": "FloatingRateCoupon",
           "notional": 10000000.0,
-          "rate": 0.03653788062095323,
+          "rate": 0.036537880620954095,
           "year_fraction": 0.25555555555555554,
-          "amount": 93374.5838091027,
+          "amount": 93374.58380910491,
           "currency": "USD",
           "side": "Pay",
-          "discount_factor": 0.8664210360109116
+          "discount_factor": 0.8664210360109118
         },
         {
           "payment_date": "2029-11-13",
@@ -2672,7 +2672,7 @@
           "amount": 93386.4300278464,
           "currency": "USD",
           "side": "Pay",
-          "discount_factor": 0.8584047009567642
+          "discount_factor": 0.8584047009567645
         },
         {
           "payment_date": "2030-02-13",
@@ -2680,12 +2680,12 @@
           "accrual_end": "2030-02-13",
           "cashflow_type": "FloatingRateCoupon",
           "notional": 10000000.0,
-          "rate": 0.03675111818933078,
+          "rate": 0.03675111818933165,
           "year_fraction": 0.25555555555555554,
-          "amount": 93919.5242616231,
+          "amount": 93919.52426162532,
           "currency": "USD",
           "side": "Pay",
-          "discount_factor": 0.8504176191354736
+          "discount_factor": 0.8504176191354738
         },
         {
           "payment_date": "2030-05-13",
@@ -2706,12 +2706,12 @@
           "accrual_end": "2030-08-13",
           "cashflow_type": "FloatingRateCoupon",
           "notional": 10000000.0,
-          "rate": 0.03675111818933078,
+          "rate": 0.03675111818933165,
           "year_fraction": 0.25555555555555554,
-          "amount": 93919.5242616231,
+          "amount": 93919.52426162532,
           "currency": "USD",
           "side": "Pay",
-          "discount_factor": 0.8349201829573633
+          "discount_factor": 0.8349201829573631
         },
         {
           "payment_date": "2030-11-13",
@@ -2719,12 +2719,12 @@
           "accrual_end": "2030-11-13",
           "cashflow_type": "FloatingRateCoupon",
           "notional": 10000000.0,
-          "rate": 0.03676175095746282,
+          "rate": 0.03676175095746369,
           "year_fraction": 0.25555555555555554,
-          "amount": 93946.69689129388,
+          "amount": 93946.69689129609,
           "currency": "USD",
           "side": "Pay",
-          "discount_factor": 0.8271493876765762
+          "discount_factor": 0.827149387676576
         }
       ]
     }
