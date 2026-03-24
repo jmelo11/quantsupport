@@ -9,7 +9,7 @@ use crate::{
     currencies::currency::Currency,
     indices::marketindex::MarketIndex,
     instruments::cashflows::leg::Leg,
-    prelude::InterestRate,
+    rates::interestrate::InterestRate,
     time::date::Date,
 };
 

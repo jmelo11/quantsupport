@@ -96,9 +96,9 @@ impl CurveConfiguration {
         self.reference_date = Some(selector.reference_date());
 
         for id in &self.quotes {
-            let Some(quote) = selector.select(id) else {
-                continue;
-            };
+            let quote = selector
+                .select(id)
+                .ok_or_else(|| QSError::NotFoundErr(format!("Quote {id} not found in quotes.")))?;
 
             let quote_value = quote.levels().value(level)?;
             let built = quote.build_instrument(selector.reference_date(), level, fx_spot)?;

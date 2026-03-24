@@ -27,7 +27,7 @@ use crate::{
             swaption::Swaption,
         },
     },
-    time::{date::Date, imm::IMM, period::Period},
+    time::{date::Date, enums::Frequency, imm::IMM, period::Period},
     utils::errors::{QSError, Result},
     volatility::volatilityindexing::VolatilityType,
 };
@@ -165,7 +165,7 @@ pub enum QuoteInstrument {
     /// FX put option.
     FxPut,
     /// Cross currency swap instrument (fixed vs floating).
-    CrossCurrencySwap,
+    FixFloatCrossCurrencySwap,
     /// Float-float cross currency swap instrument (both legs floating).
     FloatFloatCrossCurrencySwap,
     /// FX forward points.
@@ -596,29 +596,27 @@ impl QuoteDetails {
             .with_tenor(tenor))
     }
 
-    /// `{Instrument}_DomesticCCY_{DomIndex}_{ForIndex}_{ForeignCCY}_{Tenor}`
-    /// e.g. `CrossCurrencySwap_USD_SOFR_ICP_CLP_1Y`
+    /// `{Instrument}_DomesticCCY_{FloatingIndex}_{ForeignCCY}_{Tenor}`
+    /// e.g. `FixFloatCrossCurrencySwap_USD_ICP_CLP_1Y`
     ///
     /// # Errors
     /// Returns an error if the identifier is too short or fields cannot be parsed.
-    pub fn parse_cross_currency_swap(id: &str, parts: &[&str]) -> Result<Self> {
-        if parts.len() < 6 {
+    pub fn parse_fix_float_cross_currency_swap(id: &str, parts: &[&str]) -> Result<Self> {
+        if parts.len() < 5 {
             return Err(QSError::InvalidValueErr(format!(
-                "CrossCurrencySwap identifier too short: {id}"
+                "FixFloatCrossCurrencySwap identifier too short: {id}"
             )));
         }
         let domestic_currency: Currency = parts[1].parse()?;
-        let dom_index = parts[2].parse::<MarketIndex>()?;
-        let for_index = parts[3].parse::<MarketIndex>()?;
-        let foreign_currency: Currency = parts[4].parse()?;
-        let tenor = Period::from_str(parts[5])?;
+        let floating_index = parts[2].parse::<MarketIndex>()?;
+        let foreign_currency: Currency = parts[3].parse()?;
+        let tenor = Period::from_str(parts[4])?;
         Ok(
-            Self::new(id.to_string(), QuoteInstrument::CrossCurrencySwap)
-                .with_market_index(dom_index)
+            Self::new(id.to_string(), QuoteInstrument::FixFloatCrossCurrencySwap)
+                .with_market_index(floating_index)
                 .with_currency(domestic_currency)
                 .with_pay_currency(domestic_currency)
                 .with_receive_currency(foreign_currency)
-                .with_secondary_market_index(for_index)
                 .with_tenor(tenor),
         )
     }
@@ -959,9 +957,7 @@ impl QuoteDetails {
             "OIS" => Self::parse_ois(s, &parts),
             "FixedRateDeposit" => Self::parse_fixed_rate_deposit(s, &parts),
             "BasisSwap" => Self::parse_basis_swap(s, &parts),
-            "CrossCurrencySwap" | "FixFloatCrossCurrencySwap" => {
-                Self::parse_cross_currency_swap(s, &parts)
-            }
+            "FixFloatCrossCurrencySwap" => Self::parse_fix_float_cross_currency_swap(s, &parts),
             "CapFloor" => Self::parse_cap_floor(s, &parts),
             "CapletFloorlet" => Self::parse_caplet_floorlet(s, &parts),
             "Future" => Self::parse_future(s, &parts),
@@ -1132,9 +1128,14 @@ impl Quote {
             QuoteInstrument::BasisSwap => self.build_basis_swap(value, reference_date, notional),
             QuoteInstrument::Future => self.build_rate_futures(value, reference_date),
             QuoteInstrument::FxOutrightForward => self.build_fx_forward(value, reference_date),
-            QuoteInstrument::CrossCurrencySwap => {
+            QuoteInstrument::FixFloatCrossCurrencySwap => {
                 let domestic_notional = fx_spot.map_or(notional, |fx| notional * fx);
-                self.build_cross_currency_swap(value, reference_date, domestic_notional, notional)
+                self.build_fix_float_cross_currency_swap(
+                    value,
+                    reference_date,
+                    domestic_notional,
+                    notional,
+                )
             }
             QuoteInstrument::FloatFloatCrossCurrencySwap => {
                 let domestic_notional = fx_spot.map_or(notional, |fx| notional * fx);
@@ -1194,6 +1195,8 @@ impl Quote {
             .with_notional(notional)
             .with_rate_definition(rd)
             .with_currency(currency)
+            .with_fixed_leg_frequency(Frequency::Semiannual)
+            .with_floating_leg_frequency(Frequency::Semiannual)
             .with_market_index(market_index)
             .build()?;
 
@@ -1365,7 +1368,7 @@ impl Quote {
 
     /// Cross-Currency Swap (fixed domestic vs floating foreign).
     /// Mid value is the fixed rate on the domestic leg.
-    fn build_cross_currency_swap<T: IsReal + Default>(
+    fn build_fix_float_cross_currency_swap<T: IsReal + Default>(
         &self,
         fixed_rate: f64,
         reference_date: Date,
@@ -1379,8 +1382,8 @@ impl Quote {
         let foreign_ccy = d
             .receive_currency()
             .ok_or_else(|| QSError::ValueNotSetErr("Foreign currency on xccy swap quote".into()))?;
-        let foreign_index = d
-            .secondary_market_index()
+        let floating_index = d
+            .market_index()
             .ok_or_else(|| {
                 QSError::ValueNotSetErr("Foreign market index on xccy swap quote".into())
             })?
@@ -1390,8 +1393,7 @@ impl Quote {
             .ok_or_else(|| QSError::ValueNotSetErr("Tenor on xccy swap quote".into()))?;
 
         let maturity = reference_date + tenor;
-        let domestic_index = Self::required_market_index(d, "xccy swap quote")?;
-        let rd = domestic_index.rate_index_details()?.rate_definition();
+        let rd = floating_index.rate_index_details()?.rate_definition();
 
         let xccy = MakeFixFloatCrossCurrencySwap::<T>::default()
             .with_identifier(d.identifier())
@@ -1403,8 +1405,7 @@ impl Quote {
             .with_rate_definition(rd)
             .with_domestic_currency(domestic_ccy)
             .with_foreign_currency(foreign_ccy)
-            .with_domestic_market_index(domestic_index)
-            .with_foreign_market_index(foreign_index)
+            .with_floating_index(floating_index)
             .build()?;
 
         Ok(CalibrationInstrumentType::FixFloatCrossCurrencySwap(xccy))
@@ -1678,8 +1679,13 @@ mod tests {
 
     #[test]
     fn parse_cross_currency_swap_identifier() {
-        let det: QuoteDetails = "CrossCurrencySwap_USD_SOFR_ICP_CLP_1Y".parse().unwrap();
-        assert_eq!(*det.instrument(), QuoteInstrument::CrossCurrencySwap);
+        let det: QuoteDetails = "FixFloatCrossCurrencySwap_USD_ICP_CLP_1Y"
+            .parse()
+            .unwrap();
+        assert_eq!(
+            *det.instrument(),
+            QuoteInstrument::FixFloatCrossCurrencySwap
+        );
         assert_eq!(det.pay_currency(), Some(Currency::USD));
         assert_eq!(det.receive_currency(), Some(Currency::CLP));
     }
@@ -1771,7 +1777,7 @@ mod tests {
 
     #[test]
     fn build_cross_currency_swap() {
-        let details: QuoteDetails = "FixFloatCrossCurrencySwap_USD_SOFR_ICP_CLP_1Y"
+        let details: QuoteDetails = "FixFloatCrossCurrencySwap_USD_ICP_CLP_1Y"
             .parse()
             .unwrap();
         let quote = Quote::new(details, QuoteLevels::with_mid(0.05));

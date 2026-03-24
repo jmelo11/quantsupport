@@ -233,7 +233,7 @@ impl CalibrationInstrument {
     ///
     /// # Errors
     /// Returns an error if the instrument type is unsupported for quote sensitivity
-    /// calculation or if required market data (e.g., discount factors for cashflow dates) is 
+    /// calculation or if required market data (e.g., discount factors for cashflow dates) is
     /// missing from the provided curves for leg-based instruments.
     pub fn quote_sensitivity(&self, curves: &BootstrapCurveSet) -> Result<f64> {
         match self.built() {
@@ -271,7 +271,7 @@ impl CalibrationInstrument {
                 CashflowType::Disbursement(disbursement) => {
                     let payment_date = disbursement.payment_date();
                     let df = discount_curve.discount_factor(payment_date)?;
-                    pv += side * disbursement.amount()? * df;
+                    pv += -side * disbursement.amount()? * df;
                 }
                 CashflowType::Redemption(redemption) => {
                     let payment_date = redemption.payment_date();

@@ -40,7 +40,7 @@
             "quotes": [
                 "FixedRateDeposit_CLP_ICP_1D",
                 "FixedRateDeposit_CLP_ICP_3M",
-                "OIS_CLP_ICP_6M",
+                "FixedRateDeposit_CLP_ICP_6M",
                 "OIS_CLP_ICP_1Y",
                 "OIS_CLP_ICP_2Y",
                 "OIS_CLP_ICP_3Y",
@@ -61,13 +61,13 @@
                 "FxForwardPoints_USDCLP_1M",
                 "FxForwardPoints_USDCLP_3M",
                 "FxForwardPoints_USDCLP_6M",
-                "CrossCurrencySwap_CLP_ICP_SOFR_USD_1Y",
-                "CrossCurrencySwap_CLP_ICP_SOFR_USD_2Y",
-                "CrossCurrencySwap_CLP_ICP_SOFR_USD_3Y",
-                "CrossCurrencySwap_CLP_ICP_SOFR_USD_5Y",
-                "CrossCurrencySwap_CLP_ICP_SOFR_USD_7Y",
-                "CrossCurrencySwap_CLP_ICP_SOFR_USD_10Y",
-                "CrossCurrencySwap_CLP_ICP_SOFR_USD_20Y"
+                "FixFloatCrossCurrencySwap_CLP_SOFR_USD_1Y",
+                "FixFloatCrossCurrencySwap_CLP_SOFR_USD_2Y",
+                "FixFloatCrossCurrencySwap_CLP_SOFR_USD_3Y",
+                "FixFloatCrossCurrencySwap_CLP_SOFR_USD_5Y",
+                "FixFloatCrossCurrencySwap_CLP_SOFR_USD_7Y",
+                "FixFloatCrossCurrencySwap_CLP_SOFR_USD_10Y",
+                "FixFloatCrossCurrencySwap_CLP_SOFR_USD_20Y"
             ]
         }
     ]

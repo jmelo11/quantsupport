@@ -626,28 +626,18 @@
                         }
                     },
                     {
-                        "helperType": "OIS",
+                        "helperType": "Deposit",
                         "helperConfig": {
                             "tenor": "6M",
                             "dayCounter": "Actual360",
                             "calendar": "NullCalendar",
-                            "convention": "Following",
-                            "endOfMonth": false,
-                            "frequency": "Annual",
                             "settlementDays": 0,
-                            "paymentLag": 0,
-                            "telescopicValueDates": true,
-                            "index": "ICP",
-                            "fixedLegFrequency": "Semiannual",
-                            "fwdStart": "0D",
-                            "discountCurve": "ICP"
+                            "endOfMonth": false,
+                            "convention": "Unadjusted"
                         },
                         "marketConfig": {
                             "rate": {
                                 "value": 0.0495
-                            },
-                            "spread": {
-                                "value": 0.0
                             }
                         }
                     },
@@ -659,14 +649,14 @@
                             "calendar": "NullCalendar",
                             "convention": "Following",
                             "endOfMonth": false,
-                            "frequency": "Annual",
+                            "frequency": "Semiannual",
                             "settlementDays": 0,
                             "paymentLag": 0,
                             "telescopicValueDates": true,
                             "index": "ICP",
                             "fixedLegFrequency": "Semiannual",
                             "fwdStart": "0D",
-                            "discountCurve": "ICP"
+                            "discountCurve": "Collateral(CLP/USD)"
                         },
                         "marketConfig": {
                             "rate": {
@@ -685,14 +675,14 @@
                             "calendar": "NullCalendar",
                             "convention": "Following",
                             "endOfMonth": false,
-                            "frequency": "Annual",
+                            "frequency": "Semiannual",
                             "settlementDays": 0,
                             "paymentLag": 0,
                             "telescopicValueDates": true,
                             "index": "ICP",
                             "fixedLegFrequency": "Semiannual",
                             "fwdStart": "0D",
-                            "discountCurve": "ICP"
+                            "discountCurve": "Collateral(CLP/USD)"
                         },
                         "marketConfig": {
                             "rate": {
@@ -711,14 +701,14 @@
                             "calendar": "NullCalendar",
                             "convention": "Following",
                             "endOfMonth": false,
-                            "frequency": "Annual",
+                            "frequency": "Semiannual",
                             "settlementDays": 0,
                             "paymentLag": 0,
                             "telescopicValueDates": true,
                             "index": "ICP",
                             "fixedLegFrequency": "Semiannual",
                             "fwdStart": "0D",
-                            "discountCurve": "ICP"
+                            "discountCurve": "Collateral(CLP/USD)"
                         },
                         "marketConfig": {
                             "rate": {
@@ -737,14 +727,14 @@
                             "calendar": "NullCalendar",
                             "convention": "Following",
                             "endOfMonth": false,
-                            "frequency": "Annual",
+                            "frequency": "Semiannual",
                             "settlementDays": 0,
                             "paymentLag": 0,
                             "telescopicValueDates": true,
                             "index": "ICP",
                             "fixedLegFrequency": "Semiannual",
                             "fwdStart": "0D",
-                            "discountCurve": "ICP"
+                            "discountCurve": "Collateral(CLP/USD)"
                         },
                         "marketConfig": {
                             "rate": {
@@ -763,14 +753,14 @@
                             "calendar": "NullCalendar",
                             "convention": "Following",
                             "endOfMonth": false,
-                            "frequency": "Annual",
+                            "frequency": "Semiannual",
                             "settlementDays": 0,
                             "paymentLag": 0,
                             "telescopicValueDates": true,
                             "index": "ICP",
                             "fixedLegFrequency": "Semiannual",
                             "fwdStart": "0D",
-                            "discountCurve": "ICP"
+                            "discountCurve": "Collateral(CLP/USD)"
                         },
                         "marketConfig": {
                             "rate": {
@@ -789,14 +779,14 @@
                             "calendar": "NullCalendar",
                             "convention": "Following",
                             "endOfMonth": false,
-                            "frequency": "Annual",
+                            "frequency": "Semiannual",
                             "settlementDays": 0,
                             "paymentLag": 0,
                             "telescopicValueDates": true,
                             "index": "ICP",
                             "fixedLegFrequency": "Semiannual",
                             "fwdStart": "0D",
-                            "discountCurve": "ICP"
+                            "discountCurve": "Collateral(CLP/USD)"
                         },
                         "marketConfig": {
                             "rate": {
@@ -815,14 +805,14 @@
                             "calendar": "NullCalendar",
                             "convention": "Following",
                             "endOfMonth": false,
-                            "frequency": "Annual",
+                            "frequency": "Semiannual",
                             "settlementDays": 0,
                             "paymentLag": 0,
                             "telescopicValueDates": true,
                             "index": "ICP",
                             "fixedLegFrequency": "Semiannual",
                             "fwdStart": "0D",
-                            "discountCurve": "ICP"
+                            "discountCurve": "Collateral(CLP/USD)"
                         },
                         "marketConfig": {
                             "rate": {
@@ -854,6 +844,7 @@
                 "currency": "CLP",
                 "enableExtrapolation": true,
                 "rateHelpers": [
+                   
                     {
                         "helperType": "FxSwap",
                         "helperConfig": {

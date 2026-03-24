@@ -110,7 +110,7 @@
             "mid": 0.0498
         },
         {
-            "identifier": "OIS_CLP_ICP_6M",
+            "identifier": "FixedRateDeposit_CLP_ICP_6M",
             "mid": 0.0495
         },
         {
@@ -143,6 +143,10 @@
         },
         {
             "identifier": "FxForwardPoints_USDCLP_1M",
+            "mid": 0.20
+        },
+        {
+            "identifier": "FxForwardPoints_USDCLP_1M",
             "mid": 1.50
         },
         {
@@ -154,31 +158,31 @@
             "mid": 12.80
         },
         {
-            "identifier": "CrossCurrencySwap_CLP_ICP_SOFR_USD_1Y",
+            "identifier": "FixFloatCrossCurrencySwap_CLP_SOFR_USD_1Y",
             "mid": 0.0510
         },
         {
-            "identifier": "CrossCurrencySwap_CLP_ICP_SOFR_USD_2Y",
+            "identifier": "FixFloatCrossCurrencySwap_CLP_SOFR_USD_2Y",
             "mid": 0.0485
         },
         {
-            "identifier": "CrossCurrencySwap_CLP_ICP_SOFR_USD_3Y",
+            "identifier": "FixFloatCrossCurrencySwap_CLP_SOFR_USD_3Y",
             "mid": 0.0465
         },
         {
-            "identifier": "CrossCurrencySwap_CLP_ICP_SOFR_USD_5Y",
+            "identifier": "FixFloatCrossCurrencySwap_CLP_SOFR_USD_5Y",
             "mid": 0.0455
         },
         {
-            "identifier": "CrossCurrencySwap_CLP_ICP_SOFR_USD_7Y",
+            "identifier": "FixFloatCrossCurrencySwap_CLP_SOFR_USD_7Y",
             "mid": 0.0450
         },
         {
-            "identifier": "CrossCurrencySwap_CLP_ICP_SOFR_USD_10Y",
+            "identifier": "FixFloatCrossCurrencySwap_CLP_SOFR_USD_10Y",
             "mid": 0.0440
         },
         {
-            "identifier": "CrossCurrencySwap_CLP_ICP_SOFR_USD_20Y",
+            "identifier": "FixFloatCrossCurrencySwap_CLP_SOFR_USD_20Y",
             "mid": 0.0430
         }
     ]
