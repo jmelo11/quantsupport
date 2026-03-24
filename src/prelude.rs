@@ -103,7 +103,7 @@ pub use crate::{
         probability::norm_cdf::NormCDF,
         solvers::{bisection::Bisection, newtonraphson::NewtonRaphson},
     },
-    models::{GbmModelParameters, ModelParameters},
+    models::{sabr::SabrModelParameters, GbmModelParameters, ModelParameters},
     pricers::{
         cashflows::discountingcashflowpricer::CashflowDiscountPricer,
         equity::blackeuropeanoptionpricer::BlackEuropeanOptionPricer,

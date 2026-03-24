@@ -1,10 +1,15 @@
 //! Financial model parameter definitions.
 //!
 //! Contains [`ModelParameters`] (a tagged union of per-model parameter sets)
-//! and concrete parameter structs such as [`GbmModelParameters`].
+//! and concrete parameter structs such as [`GbmModelParameters`] and
+//! [`sabr::SabrModelParameters`].
+
+pub mod sabr;
 
 use rand::{rngs::StdRng, Rng, SeedableRng};
 use std::f64::consts::PI;
+
+use sabr::SabrModelParameters;
 
 /// A tagged union of per-model parameter sets.
 ///
@@ -19,6 +24,8 @@ pub enum ModelParameters {
     Gbm(GbmModelParameters),
     /// Placeholder for Hull-White short-rate model parameters (to be extended).
     HullWhite,
+    /// Parameters for the SABR stochastic volatility model.
+    Sabr(SabrModelParameters),
 }
 
 /// Parameters for the Geometric Brownian Motion (GBM) model used in Monte Carlo simulation.
