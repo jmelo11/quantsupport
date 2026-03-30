@@ -219,6 +219,49 @@ impl std::str::FromStr for OptionStrategy {
 ///
 /// Instances can be built manually via [`QuoteDetails::new`] + builder setters,
 /// or parsed from an identifier string via the [`std::str::FromStr`] trait.
+///
+/// # Identifier format
+///
+/// Each identifier is an underscore-separated string whose first segment
+/// determines the instrument type. The table below shows the positional
+/// parameters for every supported product. Square brackets denote optional
+/// segments.
+///
+/// | Product | Pos 0 | Pos 1 | Pos 2 | Pos 3 | Pos 4 | Pos 5 | Pos 6 | Pos 7 | Pos 8 |
+/// |---|---|---|---|---|---|---|---|---|---|
+/// | OIS | `OIS` | CCY | Index | Tenor | \[PayFreq\] | \[RecvFreq\] | | | |
+/// | FixedRateDeposit | `FixedRateDeposit` | CCY | Index | Tenor | | | | | |
+/// | BasisSwap | `BasisSwap` | CCY | PayIndex | RecvIndex | Tenor | \[PayFreq\] | \[RecvFreq\] | | |
+/// | FixFloatCrossCurrencySwap | `FixFloatCrossCurrencySwap` | DomCCY | FloatIndex | ForCCY | Tenor | \[DomFreq\] | \[ForFreq\] | | |
+/// | FloatFloatCrossCurrencySwap | `FloatFloatCrossCurrencySwap` | DomCCY | DomIndex | ForIndex | ForCCY | Tenor | \[DomFreq\] | \[ForFreq\] | |
+/// | CapFloor | `CapFloor` | CCY | Index | Tenor | \[Freq\] | StrikeType | \[Strike\] | VolType | |
+/// | CapletFloorlet | `CapletFloorlet` | CCY | Index | IdxTenor | Expiry | StrikeType | \[Strike\] | Strategy | VolType |
+/// | Future | `Future` | CCY | Index | IMMCode | | | | | |
+/// | ConvexityAdjustment | `ConvexityAdjustment` | CCY | Index | IMMCode | | | | | |
+/// | Swaption | `Swaption` | CCY | Index | Expiry | SwapTenor | \[PayFreq\] | \[RecvFreq\] | StrikeType | \[Strike\] VolType |
+/// | FxOutrightForward | `FxOutrightForward` | CCYPAIR | Tenor | | | | | | |
+/// | FxForwardPoints | `FxForwardPoints` | CCYPAIR | Tenor | | | | | | |
+/// | EquityCall | `EquityCall` | CCY | Index | Tenor | Strike | | | | |
+/// | EquityPut | `EquityPut` | CCY | Index | Tenor | Strike | | | | |
+/// | FxCall | `FxCall` | CCYPAIR | Tenor | Strike | | | | | |
+/// | FxPut | `FxPut` | CCYPAIR | Tenor | Strike | | | | | |
+///
+/// **Frequency values**: `Annual`, `Semiannual`, `Quarterly`, `Monthly`,
+/// `Bimonthly`, `Biweekly`, `Weekly`, `Daily`, `EveryFourthMonth`,
+/// `EveryFourthWeek`, `Once`, `NoFrequency`.
+///
+/// # Examples
+///
+/// ```text
+/// OIS_USD_SOFR_1Y
+/// OIS_USD_SOFR_1Y_Semiannual_Semiannual
+/// BasisSwap_USD_SOFR_TermSOFR3m_1Y_Quarterly_Quarterly
+/// FixFloatCrossCurrencySwap_USD_ICP_CLP_1Y_Semiannual_Quarterly
+/// Swaption_USD_SOFR_3M_2Y_Semiannual_Semiannual_Absolute_0.04_Black
+/// CapFloor_USD_SOFR_1Y_Quarterly_Absolute_0.03_Black
+/// EquityCall_USD_SPX_1Y_5000
+/// FxCall_EURUSD_1Y_1.10
+/// ```
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct QuoteDetails {
     identifier: String,
@@ -264,6 +307,12 @@ pub struct QuoteDetails {
     /// Underlying index tenor (caplet/floorlet frequency).
     #[serde(default)]
     index_tenor: Option<Period>,
+    /// Pay (or fixed / domestic) leg frequency.
+    #[serde(default)]
+    pay_leg_frequency: Option<Frequency>,
+    /// Receive (or floating / foreign) leg frequency.
+    #[serde(default)]
+    receive_leg_frequency: Option<Frequency>,
 }
 
 impl QuoteDetails {
@@ -291,6 +340,8 @@ impl QuoteDetails {
             option_expiry: None,
             contract_code: None,
             index_tenor: None,
+            pay_leg_frequency: None,
+            receive_leg_frequency: None,
         }
     }
 
@@ -418,6 +469,18 @@ impl QuoteDetails {
         self.index_tenor
     }
 
+    /// Returns the pay (or fixed / domestic) leg frequency, if present.
+    #[must_use]
+    pub const fn pay_leg_frequency(&self) -> Option<Frequency> {
+        self.pay_leg_frequency
+    }
+
+    /// Returns the receive (or floating / foreign) leg frequency, if present.
+    #[must_use]
+    pub const fn receive_leg_frequency(&self) -> Option<Frequency> {
+        self.receive_leg_frequency
+    }
+
     // -----------------------------------------------------------------------
     // Builder setters
     // -----------------------------------------------------------------------
@@ -525,6 +588,20 @@ impl QuoteDetails {
         self
     }
 
+    /// Sets the pay (or fixed / domestic) leg frequency.
+    #[must_use]
+    pub const fn with_pay_leg_frequency(mut self, f: Frequency) -> Self {
+        self.pay_leg_frequency = Some(f);
+        self
+    }
+
+    /// Sets the receive (or floating / foreign) leg frequency.
+    #[must_use]
+    pub const fn with_receive_leg_frequency(mut self, f: Frequency) -> Self {
+        self.receive_leg_frequency = Some(f);
+        self
+    }
+
     /// Sets the primary market index.
     #[must_use]
     pub fn with_market_index(mut self, idx: MarketIndex) -> Self {
@@ -536,7 +613,30 @@ impl QuoteDetails {
     // Identifier parsing helpers
     // -----------------------------------------------------------------------
 
-    /// `{Instrument}_CCY_{Index}_{Tenor}` — e.g. `OIS_USD_SOFR_1Y`
+    /// Tries to parse one or two optional [`Frequency`] values starting at
+    /// `parts[start]`.
+    ///
+    /// Returns `(pay_freq, recv_freq, next_index)` where `next_index` is the
+    /// position of the first part that was *not* consumed as a frequency.
+    fn try_parse_frequencies(
+        parts: &[&str],
+        start: usize,
+    ) -> (Option<Frequency>, Option<Frequency>, usize) {
+        let pay: Option<Frequency> = parts.get(start).and_then(|s| s.parse().ok());
+        if let Some(p) = pay {
+            let recv: Option<Frequency> = parts.get(start + 1).and_then(|s| s.parse().ok());
+            if let Some(r) = recv {
+                (Some(p), Some(r), start + 2)
+            } else {
+                (Some(p), None, start + 1)
+            }
+        } else {
+            (None, None, start)
+        }
+    }
+
+    /// `{Instrument}_CCY_{Index}_{Tenor}[_{PayFreq}[_{RecvFreq}]]`
+    /// e.g. `OIS_USD_SOFR_1Y` or `OIS_USD_SOFR_1Y_Semiannual_Semiannual`
     ///
     /// # Errors
     /// Returns an error if the identifier is too short or fields cannot be parsed.
@@ -549,10 +649,20 @@ impl QuoteDetails {
         let currency: Currency = parts[1].parse()?;
         let index = parts[2].parse::<MarketIndex>()?;
         let tenor = Period::from_str(parts[3])?;
-        Ok(Self::new(id.to_string(), QuoteInstrument::OIS)
+
+        let (pay_freq, recv_freq, _) = Self::try_parse_frequencies(parts, 4);
+
+        let mut det = Self::new(id.to_string(), QuoteInstrument::OIS)
             .with_market_index(index)
             .with_currency(currency)
-            .with_tenor(tenor))
+            .with_tenor(tenor);
+        if let Some(f) = pay_freq {
+            det = det.with_pay_leg_frequency(f);
+        }
+        if let Some(f) = recv_freq {
+            det = det.with_receive_leg_frequency(f);
+        }
+        Ok(det)
     }
 
     /// `{Instrument}_CCY_{Index}_{Tenor}` — e.g. `FixedRateDeposit_USD_SOFR_1Y`
@@ -574,8 +684,9 @@ impl QuoteDetails {
             .with_tenor(tenor))
     }
 
-    /// `{Instrument}_CCY_{PayIndex}_{RecvIndex}_{Tenor}`
-    /// e.g. `BasisSwap_USD_SOFR_TermSOFR3m_1Y`
+    /// `{Instrument}_CCY_{PayIndex}_{RecvIndex}_{Tenor}[_{PayFreq}_{RecvFreq}]`
+    /// e.g. `BasisSwap_USD_SOFR_TermSOFR3m_1Y` or
+    /// `BasisSwap_USD_SOFR_TermSOFR3m_1Y_Quarterly_Quarterly`
     ///
     /// # Errors
     /// Returns an error if the identifier is too short or fields cannot be parsed.
@@ -589,15 +700,26 @@ impl QuoteDetails {
         let pay_index = parts[2].parse::<MarketIndex>()?;
         let recv_index = parts[3].parse::<MarketIndex>()?;
         let tenor = Period::from_str(parts[4])?;
-        Ok(Self::new(id.to_string(), QuoteInstrument::BasisSwap)
+
+        let (pay_freq, recv_freq, _) = Self::try_parse_frequencies(parts, 5);
+
+        let mut det = Self::new(id.to_string(), QuoteInstrument::BasisSwap)
             .with_market_index(pay_index)
             .with_currency(currency)
             .with_secondary_market_index(recv_index)
-            .with_tenor(tenor))
+            .with_tenor(tenor);
+        if let Some(f) = pay_freq {
+            det = det.with_pay_leg_frequency(f);
+        }
+        if let Some(f) = recv_freq {
+            det = det.with_receive_leg_frequency(f);
+        }
+        Ok(det)
     }
 
-    /// `{Instrument}_DomesticCCY_{FloatingIndex}_{ForeignCCY}_{Tenor}`
-    /// e.g. `FixFloatCrossCurrencySwap_USD_ICP_CLP_1Y`
+    /// `{Instrument}_DomesticCCY_{FloatingIndex}_{ForeignCCY}_{Tenor}[_{DomFreq}_{ForFreq}]`
+    /// e.g. `FixFloatCrossCurrencySwap_USD_ICP_CLP_1Y` or
+    /// `FixFloatCrossCurrencySwap_USD_ICP_CLP_1Y_Semiannual_Quarterly`
     ///
     /// # Errors
     /// Returns an error if the identifier is too short or fields cannot be parsed.
@@ -611,18 +733,27 @@ impl QuoteDetails {
         let floating_index = parts[2].parse::<MarketIndex>()?;
         let foreign_currency: Currency = parts[3].parse()?;
         let tenor = Period::from_str(parts[4])?;
-        Ok(
-            Self::new(id.to_string(), QuoteInstrument::FixFloatCrossCurrencySwap)
-                .with_market_index(floating_index)
-                .with_currency(domestic_currency)
-                .with_pay_currency(domestic_currency)
-                .with_receive_currency(foreign_currency)
-                .with_tenor(tenor),
-        )
+
+        let (dom_freq, for_freq, _) = Self::try_parse_frequencies(parts, 5);
+
+        let mut det = Self::new(id.to_string(), QuoteInstrument::FixFloatCrossCurrencySwap)
+            .with_market_index(floating_index)
+            .with_currency(domestic_currency)
+            .with_pay_currency(domestic_currency)
+            .with_receive_currency(foreign_currency)
+            .with_tenor(tenor);
+        if let Some(f) = dom_freq {
+            det = det.with_pay_leg_frequency(f);
+        }
+        if let Some(f) = for_freq {
+            det = det.with_receive_leg_frequency(f);
+        }
+        Ok(det)
     }
 
-    /// `{Instrument}_{DomCCY}_{DomIndex}_{ForIndex}_{ForCCY}_{Tenor}`
-    /// e.g. `FloatFloatCrossCurrencySwap_CLP_ICP_SOFR_USD_1Y`
+    /// `{Instrument}_{DomCCY}_{DomIndex}_{ForIndex}_{ForCCY}_{Tenor}[_{DomFreq}_{ForFreq}]`
+    /// e.g. `FloatFloatCrossCurrencySwap_CLP_ICP_SOFR_USD_1Y` or
+    /// `FloatFloatCrossCurrencySwap_CLP_ICP_SOFR_USD_1Y_Quarterly_Quarterly`
     ///
     /// # Errors
     /// Returns an error if the identifier is too short or fields cannot be parsed.
@@ -637,22 +768,31 @@ impl QuoteDetails {
         let for_index = parts[3].parse::<MarketIndex>()?;
         let foreign_currency: Currency = parts[4].parse()?;
         let tenor = Period::from_str(parts[5])?;
-        Ok(
-            Self::new(id.to_string(), QuoteInstrument::FloatFloatCrossCurrencySwap)
-                .with_market_index(dom_index)
-                .with_currency(domestic_currency)
-                .with_pay_currency(domestic_currency)
-                .with_receive_currency(foreign_currency)
-                .with_secondary_market_index(for_index)
-                .with_tenor(tenor),
-        )
+
+        let (dom_freq, for_freq, _) = Self::try_parse_frequencies(parts, 6);
+
+        let mut det = Self::new(id.to_string(), QuoteInstrument::FloatFloatCrossCurrencySwap)
+            .with_market_index(dom_index)
+            .with_currency(domestic_currency)
+            .with_pay_currency(domestic_currency)
+            .with_receive_currency(foreign_currency)
+            .with_secondary_market_index(for_index)
+            .with_tenor(tenor);
+        if let Some(f) = dom_freq {
+            det = det.with_pay_leg_frequency(f);
+        }
+        if let Some(f) = for_freq {
+            det = det.with_receive_leg_frequency(f);
+        }
+        Ok(det)
     }
 
-    /// `{Instrument}_CCY_{Index}_{Tenor}_{StrikeType}_{VolType}` (without strike)
+    /// `{Instrument}_CCY_{Index}_{Tenor}[_{Freq}]_{StrikeType}_{VolType}` (without strike)
     ///
-    /// `{Instrument}_CCY_{Index}_{Tenor}_{StrikeType}_{Strike}_{VolType}` (with strike)
+    /// `{Instrument}_CCY_{Index}_{Tenor}[_{Freq}]_{StrikeType}_{Strike}_{VolType}` (with strike)
     ///
-    /// e.g. `CapFloor_USD_SOFR_1Y_Absolute_Black`
+    /// e.g. `CapFloor_USD_SOFR_1Y_Absolute_Black` or
+    /// `CapFloor_USD_SOFR_1Y_Quarterly_Absolute_Black`
     ///
     /// # Errors
     /// Returns an error if the identifier is too short or fields cannot be parsed.
@@ -665,11 +805,22 @@ impl QuoteDetails {
         let currency: Currency = parts[1].parse()?;
         let index = parts[2].parse::<MarketIndex>()?;
         let tenor = Period::from_str(parts[3])?;
-        let strike_type = parts[4].parse::<StrikeType>()?;
 
-        // Try parsing parts[5] as f64 (strike value). If it succeeds, the vol
-        // type follows at parts[6]; otherwise parts[5] is the vol type.
-        let (strike, vol_idx) = parts[5].parse::<f64>().map_or((None, 5), |s| (Some(s), 6));
+        // Try optional frequency after tenor
+        let (freq, next) = parts
+            .get(4)
+            .and_then(|s| s.parse::<Frequency>().ok())
+            .map_or((None, 4), |f| (Some(f), 5));
+
+        let strike_type = parts[next].parse::<StrikeType>()?;
+
+        // Try parsing next+1 as f64 (strike value). If it succeeds, the vol
+        // type follows at next+2; otherwise next+1 is the vol type.
+        let strike_idx = next + 1;
+        let (strike, vol_idx) = parts
+            .get(strike_idx)
+            .and_then(|s| s.parse::<f64>().ok())
+            .map_or((None, strike_idx), |s| (Some(s), strike_idx + 1));
         let vol_type: VolatilityType = parts
             .get(vol_idx)
             .ok_or_else(|| QSError::InvalidValueErr(format!("Missing vol type in: {id}")))?
@@ -683,6 +834,9 @@ impl QuoteDetails {
             .with_vol_type(vol_type);
         if let Some(k) = strike {
             det = det.with_strike(k);
+        }
+        if let Some(f) = freq {
+            det = det.with_pay_leg_frequency(f);
         }
         Ok(det)
     }
@@ -774,9 +928,10 @@ impl QuoteDetails {
 
     /// Swaption identifier parser.
     ///
-    /// `{Instrument}_CCY_{Index}_{Expiry}_{SwapTenor}_{StrikeType}_{VolType}` (no strike)
-    /// `{Instrument}_CCY_{Index}_{Expiry}_{SwapTenor}_{StrikeType}_{Strike}_{VolType}` (with strike)
-    /// e.g. `Swaption_USD_SOFR_3M_2Y_Absolute_Black`
+    /// `{Instrument}_CCY_{Index}_{Expiry}_{SwapTenor}[_{PayFreq}_{RecvFreq}]_{StrikeType}_{VolType}` (no strike)
+    /// `{Instrument}_CCY_{Index}_{Expiry}_{SwapTenor}[_{PayFreq}_{RecvFreq}]_{StrikeType}_{Strike}_{VolType}` (with strike)
+    /// e.g. `Swaption_USD_SOFR_3M_2Y_Absolute_Black` or
+    /// `Swaption_USD_SOFR_3M_2Y_Semiannual_Semiannual_Absolute_Black`
     ///
     /// # Errors
     /// Returns an error if the identifier is too short or fields cannot be parsed.
@@ -790,9 +945,16 @@ impl QuoteDetails {
         let index = parts[2].parse::<MarketIndex>()?;
         let option_expiry = Period::from_str(parts[3])?;
         let swap_tenor = Period::from_str(parts[4])?;
-        let strike_type = parts[5].parse::<StrikeType>()?;
 
-        let (strike, vol_idx) = parts[6].parse::<f64>().map_or((None, 6), |s| (Some(s), 7));
+        let (pay_freq, recv_freq, next) = Self::try_parse_frequencies(parts, 5);
+
+        let strike_type = parts[next].parse::<StrikeType>()?;
+
+        let strike_idx = next + 1;
+        let (strike, vol_idx) = parts
+            .get(strike_idx)
+            .and_then(|s| s.parse::<f64>().ok())
+            .map_or((None, strike_idx), |s| (Some(s), strike_idx + 1));
         let vol_type: VolatilityType = parts
             .get(vol_idx)
             .ok_or_else(|| QSError::InvalidValueErr(format!("Missing vol type in: {id}")))?
@@ -807,6 +969,12 @@ impl QuoteDetails {
             .with_vol_type(vol_type);
         if let Some(k) = strike {
             det = det.with_strike(k);
+        }
+        if let Some(f) = pay_freq {
+            det = det.with_pay_leg_frequency(f);
+        }
+        if let Some(f) = recv_freq {
+            det = det.with_receive_leg_frequency(f);
         }
         Ok(det)
     }
@@ -1187,7 +1355,7 @@ impl Quote {
         let market_index = Self::required_market_index(d, "OIS quote")?;
         let rd = market_index.rate_index_details()?.rate_definition();
 
-        let swap = MakeSwap::<T>::default()
+        let mut builder = MakeSwap::<T>::default()
             .with_identifier(d.identifier())
             .with_start_date(reference_date)
             .with_maturity_date(maturity)
@@ -1195,10 +1363,14 @@ impl Quote {
             .with_notional(notional)
             .with_rate_definition(rd)
             .with_currency(currency)
-            .with_fixed_leg_frequency(Frequency::Semiannual)
-            .with_floating_leg_frequency(Frequency::Semiannual)
-            .with_market_index(market_index)
-            .build()?;
+            .with_market_index(market_index);
+        if let Some(f) = d.pay_leg_frequency() {
+            builder = builder.with_fixed_leg_frequency(f);
+        }
+        if let Some(f) = d.receive_leg_frequency() {
+            builder = builder.with_floating_leg_frequency(f);
+        }
+        let swap = builder.build()?;
 
         Ok(CalibrationInstrumentType::Swap(swap))
     }
@@ -1260,7 +1432,7 @@ impl Quote {
 
         let maturity = reference_date + tenor;
 
-        let basis_swap = MakeBasisSwap::<T>::default()
+        let mut builder = MakeBasisSwap::<T>::default()
             .with_identifier(d.identifier())
             .with_start_date(reference_date)
             .with_maturity_date(maturity)
@@ -1268,8 +1440,14 @@ impl Quote {
             .with_currency(currency)
             .with_pay_market_index(pay_index)
             .with_receive_market_index(recv_index)
-            .with_pay_spread(spread)
-            .build()?;
+            .with_pay_spread(spread);
+        if let Some(f) = d.pay_leg_frequency() {
+            builder = builder.with_pay_leg_frequency(f);
+        }
+        if let Some(f) = d.receive_leg_frequency() {
+            builder = builder.with_receive_leg_frequency(f);
+        }
+        let basis_swap = builder.build()?;
 
         Ok(CalibrationInstrumentType::BasisSwap(basis_swap))
     }
@@ -1395,7 +1573,7 @@ impl Quote {
         let maturity = reference_date + tenor;
         let rd = floating_index.rate_index_details()?.rate_definition();
 
-        let xccy = MakeFixFloatCrossCurrencySwap::<T>::default()
+        let mut builder = MakeFixFloatCrossCurrencySwap::<T>::default()
             .with_identifier(d.identifier())
             .with_start_date(reference_date)
             .with_maturity_date(maturity)
@@ -1405,8 +1583,14 @@ impl Quote {
             .with_rate_definition(rd)
             .with_domestic_currency(domestic_ccy)
             .with_foreign_currency(foreign_ccy)
-            .with_floating_index(floating_index)
-            .build()?;
+            .with_floating_index(floating_index);
+        if let Some(f) = d.pay_leg_frequency() {
+            builder = builder.with_domestic_leg_frequency(f);
+        }
+        if let Some(f) = d.receive_leg_frequency() {
+            builder = builder.with_foreign_leg_frequency(f);
+        }
+        let xccy = builder.build()?;
 
         Ok(CalibrationInstrumentType::FixFloatCrossCurrencySwap(xccy))
     }
@@ -1440,7 +1624,7 @@ impl Quote {
         let maturity = reference_date + tenor;
         let domestic_index = Self::required_market_index(d, "ff-xccy swap quote")?;
 
-        let xccy = MakeFloatFloatCrossCurrencySwap::<T>::default()
+        let mut builder = MakeFloatFloatCrossCurrencySwap::<T>::default()
             .with_identifier(d.identifier())
             .with_start_date(reference_date)
             .with_maturity_date(maturity)
@@ -1450,8 +1634,14 @@ impl Quote {
             .with_domestic_currency(domestic_ccy)
             .with_foreign_currency(foreign_ccy)
             .with_domestic_market_index(domestic_index)
-            .with_foreign_market_index(foreign_index)
-            .build()?;
+            .with_foreign_market_index(foreign_index);
+        if let Some(f) = d.pay_leg_frequency() {
+            builder = builder.with_domestic_leg_frequency(f);
+        }
+        if let Some(f) = d.receive_leg_frequency() {
+            builder = builder.with_foreign_leg_frequency(f);
+        }
+        let xccy = builder.build()?;
 
         Ok(CalibrationInstrumentType::FloatFloatCrossCurrencySwap(xccy))
     }
@@ -1529,7 +1719,7 @@ impl Quote {
         // Default to Cap for the quote-driven builder.
         let cap_floor_type = CapFloorType::Cap;
 
-        let cf = MakeCapFloor::default()
+        let mut builder = MakeCapFloor::default()
             .with_identifier(d.identifier())
             .with_start_date(reference_date)
             .with_maturity_date(maturity)
@@ -1541,8 +1731,11 @@ impl Quote {
                 d.currency()
                     .ok_or_else(|| QSError::ValueNotSetErr("Currency on CapFloor quote".into()))?,
             )
-            .with_cap_floor_type(cap_floor_type)
-            .build()?;
+            .with_cap_floor_type(cap_floor_type);
+        if let Some(f) = d.pay_leg_frequency() {
+            builder = builder.with_frequency(f);
+        }
+        let cf = builder.build()?;
 
         Ok(CalibrationInstrumentType::CapFloor(cf))
     }
@@ -1571,7 +1764,7 @@ impl Quote {
 
         let strike = d.strike().unwrap_or(value);
 
-        let swaption = MakeSwaption::<T>::default()
+        let mut builder = MakeSwaption::<T>::default()
             .with_identifier(d.identifier())
             .with_expiry(expiry_date)
             .with_start_date(expiry_date)
@@ -1583,8 +1776,14 @@ impl Quote {
             .with_currency(
                 d.currency()
                     .ok_or_else(|| QSError::ValueNotSetErr("Currency on Swaption quote".into()))?,
-            )
-            .build()?;
+            );
+        if let Some(f) = d.pay_leg_frequency() {
+            builder = builder.with_fixed_leg_frequency(f);
+        }
+        if let Some(f) = d.receive_leg_frequency() {
+            builder = builder.with_floating_leg_frequency(f);
+        }
+        let swaption = builder.build()?;
 
         Ok(CalibrationInstrumentType::Swaption(swaption))
     }
@@ -1679,9 +1878,7 @@ mod tests {
 
     #[test]
     fn parse_cross_currency_swap_identifier() {
-        let det: QuoteDetails = "FixFloatCrossCurrencySwap_USD_ICP_CLP_1Y"
-            .parse()
-            .unwrap();
+        let det: QuoteDetails = "FixFloatCrossCurrencySwap_USD_ICP_CLP_1Y".parse().unwrap();
         assert_eq!(
             *det.instrument(),
             QuoteInstrument::FixFloatCrossCurrencySwap
@@ -1777,9 +1974,7 @@ mod tests {
 
     #[test]
     fn build_cross_currency_swap() {
-        let details: QuoteDetails = "FixFloatCrossCurrencySwap_USD_ICP_CLP_1Y"
-            .parse()
-            .unwrap();
+        let details: QuoteDetails = "FixFloatCrossCurrencySwap_USD_ICP_CLP_1Y".parse().unwrap();
         let quote = Quote::new(details, QuoteLevels::with_mid(0.05));
         let inst = quote
             .build_instrument(ref_date(), Level::Mid, None)
@@ -1842,5 +2037,100 @@ mod tests {
         let quote = Quote::new(details, QuoteLevels::with_mid(0.33));
         let result = quote.build_instrument(ref_date(), Level::Mid, None);
         assert!(result.is_err());
+    }
+
+    // -- frequency parsing --------------------------------------------------
+
+    #[test]
+    fn parse_ois_with_frequencies() {
+        let det: QuoteDetails = "OIS_USD_SOFR_1Y_Semiannual_Quarterly".parse().unwrap();
+        assert_eq!(*det.instrument(), QuoteInstrument::OIS);
+        assert_eq!(det.pay_leg_frequency(), Some(Frequency::Semiannual));
+        assert_eq!(det.receive_leg_frequency(), Some(Frequency::Quarterly));
+    }
+
+    #[test]
+    fn parse_ois_with_single_frequency() {
+        let det: QuoteDetails = "OIS_USD_SOFR_1Y_Annual".parse().unwrap();
+        assert_eq!(det.pay_leg_frequency(), Some(Frequency::Annual));
+        assert_eq!(det.receive_leg_frequency(), None);
+    }
+
+    #[test]
+    fn parse_ois_without_frequency_still_works() {
+        let det: QuoteDetails = "OIS_USD_SOFR_1Y".parse().unwrap();
+        assert_eq!(det.pay_leg_frequency(), None);
+        assert_eq!(det.receive_leg_frequency(), None);
+    }
+
+    #[test]
+    fn parse_basis_swap_with_frequencies() {
+        let det: QuoteDetails = "BasisSwap_USD_SOFR_TermSOFR3m_1Y_Quarterly_Monthly"
+            .parse()
+            .unwrap();
+        assert_eq!(*det.instrument(), QuoteInstrument::BasisSwap);
+        assert_eq!(det.pay_leg_frequency(), Some(Frequency::Quarterly));
+        assert_eq!(det.receive_leg_frequency(), Some(Frequency::Monthly));
+    }
+
+    #[test]
+    fn parse_fix_float_xccy_with_frequencies() {
+        let det: QuoteDetails = "FixFloatCrossCurrencySwap_USD_ICP_CLP_1Y_Semiannual_Quarterly"
+            .parse()
+            .unwrap();
+        assert_eq!(
+            *det.instrument(),
+            QuoteInstrument::FixFloatCrossCurrencySwap
+        );
+        assert_eq!(det.pay_leg_frequency(), Some(Frequency::Semiannual));
+        assert_eq!(det.receive_leg_frequency(), Some(Frequency::Quarterly));
+    }
+
+    #[test]
+    fn parse_float_float_xccy_with_frequencies() {
+        let det: QuoteDetails =
+            "FloatFloatCrossCurrencySwap_CLP_ICP_SOFR_USD_1Y_Quarterly_Quarterly"
+                .parse()
+                .unwrap();
+        assert_eq!(
+            *det.instrument(),
+            QuoteInstrument::FloatFloatCrossCurrencySwap
+        );
+        assert_eq!(det.pay_leg_frequency(), Some(Frequency::Quarterly));
+        assert_eq!(det.receive_leg_frequency(), Some(Frequency::Quarterly));
+    }
+
+    #[test]
+    fn parse_swaption_with_frequencies() {
+        let det: QuoteDetails = "Swaption_USD_SOFR_3M_2Y_Semiannual_Semiannual_Absolute_0.04_Black"
+            .parse()
+            .unwrap();
+        assert_eq!(*det.instrument(), QuoteInstrument::Swaption);
+        assert_eq!(det.pay_leg_frequency(), Some(Frequency::Semiannual));
+        assert_eq!(det.receive_leg_frequency(), Some(Frequency::Semiannual));
+        assert_eq!(det.strike(), Some(0.04));
+    }
+
+    #[test]
+    fn parse_swaption_without_frequencies_still_works() {
+        let det: QuoteDetails = "Swaption_USD_SOFR_3M_2Y_Absolute_Black".parse().unwrap();
+        assert_eq!(det.pay_leg_frequency(), None);
+        assert_eq!(det.receive_leg_frequency(), None);
+    }
+
+    #[test]
+    fn parse_cap_floor_with_frequency() {
+        let det: QuoteDetails = "CapFloor_USD_SOFR_1Y_Quarterly_Absolute_0.03_Black"
+            .parse()
+            .unwrap();
+        assert_eq!(*det.instrument(), QuoteInstrument::CapFloor);
+        assert_eq!(det.pay_leg_frequency(), Some(Frequency::Quarterly));
+        assert_eq!(det.strike(), Some(0.03));
+    }
+
+    #[test]
+    fn parse_cap_floor_without_frequency_still_works() {
+        let det: QuoteDetails = "CapFloor_USD_SOFR_1Y_Absolute_Black".parse().unwrap();
+        assert_eq!(det.pay_leg_frequency(), None);
     }
 }

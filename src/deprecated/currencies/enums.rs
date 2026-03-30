@@ -5,7 +5,6 @@ use serde::{Deserialize, Serialize};
 use super::traits::CurrencyDetails;
 use crate::utils::errors::{AtlasError, Result};
 
-/// # Self
 /// Enum for currencies supported by the library
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Currency {
