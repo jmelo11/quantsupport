@@ -1,7 +1,7 @@
-use crate::ad::adreal::{ADReal, IsReal};
+use crate::ad::adreal::{DualFwd, Scalar};
 
 /// Numeric behavior required for bilinear interpolation.
-pub trait BilinearValue: IsReal {
+pub trait BilinearValue: Scalar {
     /// Linearly interpolates between `a` and `b` using scalar weight `t`.
     fn lerp(a: Self, b: Self, t: f64) -> Self;
 }
@@ -12,16 +12,15 @@ impl BilinearValue for f64 {
     }
 }
 
-impl BilinearValue for ADReal {
+impl BilinearValue for DualFwd {
     fn lerp(a: Self, b: Self, t: f64) -> Self {
         (a + (b - a) * t).into()
     }
 }
 
-/// # `BilinearPoint`
 /// Input point for bilinear interpolation.
 #[derive(Clone)]
-pub struct BilinearPoint<T: IsReal> {
+pub struct BilinearPoint<T: Scalar> {
     /// X coordinate.
     pub x: f64,
     /// Y coordinate.
@@ -101,19 +100,36 @@ impl BilinearInterpolator {
 #[cfg(test)]
 mod tests {
     use crate::{
-        ad::adreal::{ADReal, IsReal},
+        ad::adreal::DualFwd,
         math::interpolation::bilinear::{BilinearInterpolator, BilinearPoint},
     };
 
     #[test]
     fn bilinear_interpolates_center() {
         let points = vec![
-            BilinearPoint { x: 0.0, y: 0.0, value: ADReal::from(1.0) },
-            BilinearPoint { x: 1.0, y: 0.0, value: ADReal::from(3.0) },
-            BilinearPoint { x: 0.0, y: 1.0, value: ADReal::from(2.0) },
-            BilinearPoint { x: 1.0, y: 1.0, value: ADReal::from(4.0) },
+            BilinearPoint {
+                x: 0.0,
+                y: 0.0,
+                value: DualFwd::from(1.0),
+            },
+            BilinearPoint {
+                x: 1.0,
+                y: 0.0,
+                value: DualFwd::from(3.0),
+            },
+            BilinearPoint {
+                x: 0.0,
+                y: 1.0,
+                value: DualFwd::from(2.0),
+            },
+            BilinearPoint {
+                x: 1.0,
+                y: 1.0,
+                value: DualFwd::from(4.0),
+            },
         ];
-        let out = BilinearInterpolator::interpolate(0.5, 0.5, points).expect("center interpolation");
+        let out =
+            BilinearInterpolator::interpolate(0.5, 0.5, points).expect("center interpolation");
         assert!((out.value() - 2.5).abs() < 1e-12);
     }
 }

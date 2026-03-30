@@ -1,5 +1,5 @@
 use crate::{
-    ad::adreal::{ADReal, FloatExt, IsReal},
+    ad::adreal::{DualFwd, Scalar},
     instruments::cashflows::cashflow::Cashflow,
     time::date::Date,
     utils::errors::Result,
@@ -11,7 +11,7 @@ use crate::{
 /// and can calculate the accrued amount for a given period.
 pub trait LinearCoupon<T>: Cashflow<T>
 where
-    T: IsReal,
+    T: Scalar,
 {
     /// Returns the accrued amount between two dates.
     ///
@@ -53,7 +53,7 @@ impl PayoffOps {
     ///
     /// ## Errors
     /// Returns an error if the payoff cannot be evaluated.
-    pub fn evaluate(&self, index_fixing: ADReal) -> Result<ADReal> {
+    pub fn evaluate(&self, index_fixing: DualFwd) -> Result<DualFwd> {
         match self {
             Self::Max(left, right) => Ok(left
                 .evaluate(index_fixing)?
@@ -72,7 +72,7 @@ impl PayoffOps {
             Self::Minus(left, right) => {
                 Ok((left.evaluate(index_fixing)? - right.evaluate(index_fixing)?).into())
             }
-            Self::Const(value) => Ok(ADReal::new(*value)),
+            Self::Const(value) => Ok(DualFwd::new(*value)),
             Self::Index => Ok(index_fixing),
         }
     }

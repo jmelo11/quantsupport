@@ -1,5 +1,5 @@
 use crate::{
-    ad::adreal::{ADReal, IsReal},
+    ad::adreal::{DualFwd, Scalar},
     core::{
         collateral::Discountable,
         instrument::{AssetClass, Instrument},
@@ -14,7 +14,7 @@ use crate::{
 
 /// A [`FloatingRateNote`] represents a bond that pays periodic floating-rate coupons
 /// (typically referencing an interest rate index plus a spread) and repays its principal at maturity.
-pub struct FloatingRateNote<T: IsReal> {
+pub struct FloatingRateNote<T: Scalar> {
     identifier: String,
     units: f64,
     leg: Leg<T>,
@@ -25,7 +25,7 @@ pub struct FloatingRateNote<T: IsReal> {
 
 impl<T> FloatingRateNote<T>
 where
-    T: IsReal,
+    T: Scalar,
 {
     /// Creates a new [`FloatingRateNote`].
     #[must_use]
@@ -62,7 +62,7 @@ where
 
 impl<T> Discountable for FloatingRateNote<T>
 where
-    T: IsReal,
+    T: Scalar,
 {
     fn currency(&self) -> Currency {
         self.currency
@@ -79,7 +79,7 @@ where
 
 impl<T> Instrument for FloatingRateNote<T>
 where
-    T: IsReal,
+    T: Scalar,
 {
     fn identifier(&self) -> String {
         self.identifier.clone()
@@ -88,7 +88,7 @@ where
 
 impl<T> LegsProvider<T> for FloatingRateNote<T>
 where
-    T: IsReal,
+    T: Scalar,
 {
     fn legs(&self) -> &[Leg<T>] {
         std::slice::from_ref(&self.leg)
@@ -96,7 +96,7 @@ where
 }
 
 /// Represents a trade of a floating rate note instrument.
-pub struct FloatingRateNoteTrade<T: IsReal> {
+pub struct FloatingRateNoteTrade<T: Scalar> {
     instrument: FloatingRateNote<T>,
     trade_date: Date,
     notional: f64,
@@ -105,7 +105,7 @@ pub struct FloatingRateNoteTrade<T: IsReal> {
 
 impl<T> FloatingRateNoteTrade<T>
 where
-    T: IsReal,
+    T: Scalar,
 {
     /// Creates a new [`FloatingRateNoteTrade`].
     #[must_use]
@@ -132,7 +132,7 @@ where
 
 impl<T> Trade<FloatingRateNote<T>> for FloatingRateNoteTrade<T>
 where
-    T: IsReal,
+    T: Scalar,
 {
     fn instrument(&self) -> &FloatingRateNote<T> {
         &self.instrument
@@ -147,7 +147,7 @@ where
     }
 }
 
-impl From<FloatingRateNote<f64>> for FloatingRateNote<ADReal> {
+impl From<FloatingRateNote<f64>> for FloatingRateNote<DualFwd> {
     fn from(value: FloatingRateNote<f64>) -> Self {
         Self::new(
             value.identifier,
@@ -160,8 +160,8 @@ impl From<FloatingRateNote<f64>> for FloatingRateNote<ADReal> {
     }
 }
 
-impl From<FloatingRateNote<ADReal>> for FloatingRateNote<f64> {
-    fn from(value: FloatingRateNote<ADReal>) -> Self {
+impl From<FloatingRateNote<DualFwd>> for FloatingRateNote<f64> {
+    fn from(value: FloatingRateNote<DualFwd>) -> Self {
         Self::new(
             value.identifier,
             value.units,
@@ -173,7 +173,7 @@ impl From<FloatingRateNote<ADReal>> for FloatingRateNote<f64> {
     }
 }
 
-impl From<FloatingRateNoteTrade<f64>> for FloatingRateNoteTrade<ADReal> {
+impl From<FloatingRateNoteTrade<f64>> for FloatingRateNoteTrade<DualFwd> {
     fn from(value: FloatingRateNoteTrade<f64>) -> Self {
         Self::new(
             value.instrument.into(),
@@ -184,8 +184,8 @@ impl From<FloatingRateNoteTrade<f64>> for FloatingRateNoteTrade<ADReal> {
     }
 }
 
-impl From<FloatingRateNoteTrade<ADReal>> for FloatingRateNoteTrade<f64> {
-    fn from(value: FloatingRateNoteTrade<ADReal>) -> Self {
+impl From<FloatingRateNoteTrade<DualFwd>> for FloatingRateNoteTrade<f64> {
+    fn from(value: FloatingRateNoteTrade<DualFwd>) -> Self {
         Self::new(
             value.instrument.into(),
             value.trade_date,

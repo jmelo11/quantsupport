@@ -1,6 +1,6 @@
 use crate::{
     ad::{
-        adreal::{ADReal, IsReal},
+        adreal::DualFwd,
         tape::Tape,
     },
     core::{
@@ -25,8 +25,8 @@ use crate::{
 /// State struct for storing intermediate values during the pricing of an equity option, including the option value, spot price, and market data response.
 #[derive(Default)]
 struct EquityOptionState {
-    value: Option<ADReal>,
-    spot: Option<ADReal>,
+    value: Option<DualFwd>,
+    spot: Option<DualFwd>,
     market_data: Option<MarketData>,
 }
 
@@ -103,12 +103,12 @@ impl HandleValue<EquityEuropeanOptionTrade, EquityOptionState> for BlackEuropean
             .day_counter()
             .year_fraction(trade.trade_date(), option.expiry_date());
 
-        Tape::start_recording();
-        Tape::set_mark();
+        Tape::start_recording_fwd();
+        Tape::set_mark_fwd();
 
         // get and put the spot in the tape
         let spot = state.get_fixing(&index, trade.trade_date())?;
-        let mut spot_ad = ADReal::new(spot);
+        let mut spot_ad = DualFwd::new(spot);
         spot_ad.put_on_tape();
         state.spot = Some(spot_ad);
 
@@ -129,10 +129,10 @@ impl HandleValue<EquityEuropeanOptionTrade, EquityOptionState> for BlackEuropean
         let df_q = if let Ok(curve) = state.get_dividend_curve_element(&index) {
             curve.curve().discount_factor(option.expiry_date())?
         } else {
-            ADReal::one()
+            DualFwd::one()
         };
 
-        let fwd: ADReal = (spot_ad * df_q / df_r).into();
+        let fwd: DualFwd = (spot_ad * df_q / df_r).into();
 
         let undiscounted = BlackClosedFormPricer::black_forward_price(
             fwd,
@@ -142,9 +142,9 @@ impl HandleValue<EquityEuropeanOptionTrade, EquityOptionState> for BlackEuropean
             matches!(option.option_type(), EuroOptionType::Call),
         );
 
-        let value: ADReal = (df_r * undiscounted * trade.notional()).into();
+        let value: DualFwd = (df_r * undiscounted * trade.notional()).into();
         state.value = Some(value);
-        Tape::stop_recording();
+        Tape::stop_recording_fwd();
         Ok(value.value())
     }
 }
@@ -187,7 +187,7 @@ impl HandleSensitivities<EquityEuropeanOptionTrade, EquityOptionState>
             state
                 .spot
                 .ok_or_else(|| QSError::UnexpectedErr("Spot not recorded on state".into()))?
-                .adjoint()?,
+                .adjoint()?.value(),
         );
 
         for (label, pillar) in state
@@ -197,7 +197,7 @@ impl HandleSensitivities<EquityEuropeanOptionTrade, EquityOptionState>
             .unwrap_or_default()
         {
             ids.push(label);
-            exposures.push(pillar.adjoint()?);
+            exposures.push(pillar.adjoint()?.value());
         }
 
         for (label, pillar) in state
@@ -207,13 +207,13 @@ impl HandleSensitivities<EquityEuropeanOptionTrade, EquityOptionState>
             .unwrap_or_default()
         {
             ids.push(label);
-            exposures.push(pillar.adjoint()?);
+            exposures.push(pillar.adjoint()?.value());
         }
 
         if let Ok(curve) = state.get_dividend_curve_element(index) {
             for (label, pillar) in curve.curve().pillars().unwrap_or_default() {
                 ids.push(label);
-                exposures.push(pillar.adjoint()?);
+                exposures.push(pillar.adjoint()?.value());
             }
         }
 
@@ -317,7 +317,7 @@ mod tests {
     };
 
     use crate::{
-        ad::adreal::{ADReal, IsReal},
+        ad::adreal::DualFwd,
         core::{
             elements::{
                 curveelement::{DiscountCurveElement, DividendCurveElement},
@@ -370,22 +370,22 @@ mod tests {
         dividend_rate: f64,
     ) -> Result<(
         MarketData,
-        FlatForwardTermStructure<ADReal>,
-        FlatForwardTermStructure<ADReal>,
-        Rc<RefCell<InterpolatedVolatilitySurface<ADReal>>>,
+        FlatForwardTermStructure<DualFwd>,
+        FlatForwardTermStructure<DualFwd>,
+        Rc<RefCell<InterpolatedVolatilitySurface<DualFwd>>>,
     )> {
         let six_month_days = expiry_date - trade_date;
 
         let discount_curve = FlatForwardTermStructure::new(
             trade_date,
-            ADReal::from(risk_free_rate),
+            DualFwd::from(risk_free_rate),
             RateDefinition::default(),
         )
         .with_pillar_label("discount_rate".to_string());
 
         let dividend_curve = FlatForwardTermStructure::new(
             trade_date,
-            ADReal::from(dividend_rate),
+            DualFwd::from(dividend_rate),
             RateDefinition::default(),
         )
         .with_pillar_label("dividend_rate".to_string());
@@ -394,25 +394,25 @@ mod tests {
         surface_points.insert(
             Period::new(six_month_days as i32, TimeUnit::Days),
             BTreeMap::from([
-                (F64Key::new(70.0), ADReal::from(0.28)),
-                (F64Key::new(80.0), ADReal::from(0.24)),
-                (F64Key::new(90.0), ADReal::from(0.22)),
-                (F64Key::new(100.0), ADReal::from(0.23)),
-                (F64Key::new(110.0), ADReal::from(0.24)),
-                (F64Key::new(120.0), ADReal::from(0.26)),
-                (F64Key::new(130.0), ADReal::from(0.28)),
+                (F64Key::new(70.0), DualFwd::from(0.28)),
+                (F64Key::new(80.0), DualFwd::from(0.24)),
+                (F64Key::new(90.0), DualFwd::from(0.22)),
+                (F64Key::new(100.0), DualFwd::from(0.23)),
+                (F64Key::new(110.0), DualFwd::from(0.24)),
+                (F64Key::new(120.0), DualFwd::from(0.26)),
+                (F64Key::new(130.0), DualFwd::from(0.28)),
             ]),
         );
         surface_points.insert(
             Period::new(six_month_days as i32 + 365, TimeUnit::Days),
             BTreeMap::from([
-                (F64Key::new(70.0), ADReal::from(0.30)),
-                (F64Key::new(80.0), ADReal::from(0.26)),
-                (F64Key::new(90.0), ADReal::from(0.25)),
-                (F64Key::new(100.0), ADReal::from(0.25)),
-                (F64Key::new(110.0), ADReal::from(0.27)),
-                (F64Key::new(120.0), ADReal::from(0.29)),
-                (F64Key::new(130.0), ADReal::from(0.30)),
+                (F64Key::new(70.0), DualFwd::from(0.30)),
+                (F64Key::new(80.0), DualFwd::from(0.26)),
+                (F64Key::new(90.0), DualFwd::from(0.25)),
+                (F64Key::new(100.0), DualFwd::from(0.25)),
+                (F64Key::new(110.0), DualFwd::from(0.27)),
+                (F64Key::new(120.0), DualFwd::from(0.29)),
+                (F64Key::new(130.0), DualFwd::from(0.30)),
             ]),
         );
         let labels = vec![

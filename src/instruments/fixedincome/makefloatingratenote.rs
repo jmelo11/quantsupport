@@ -1,5 +1,5 @@
 use crate::{
-    ad::adreal::IsReal,
+    ad::adreal::Scalar,
     core::{instrument::AssetClass, trade::Side},
     currencies::currency::Currency,
     indices::marketindex::MarketIndex,
@@ -23,7 +23,7 @@ use std::marker::PhantomData;
 /// ```rust
 /// use quantsupport::prelude::*;
 ///
-/// let frn = MakeFloatingRateNote::<ADReal>::default()
+/// let frn = MakeFloatingRateNote::<DualFwd>::default()
 ///     .with_identifier("FRN-2Y".to_string())
 ///     .with_start_date(Date::new(2024, 1, 1))
 ///     .with_maturity_date(Date::new(2026, 1, 1))
@@ -39,7 +39,7 @@ use std::marker::PhantomData;
 /// assert_eq!(frn.identifier(), "FRN-2Y");
 /// ```
 #[derive(Default)]
-pub struct MakeFloatingRateNote<T: IsReal> {
+pub struct MakeFloatingRateNote<T: Scalar> {
     start_date: Option<Date>,
     maturity_date: Option<Date>,
     spread: Option<f64>,
@@ -62,7 +62,7 @@ pub struct MakeFloatingRateNote<T: IsReal> {
 
 impl<T> MakeFloatingRateNote<T>
 where
-    T: IsReal,
+    T: Scalar,
 {
     /// Sets the start date of the note.
     #[must_use]

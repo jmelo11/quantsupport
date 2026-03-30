@@ -5,7 +5,7 @@
 
 pub use crate::{
     ad::{
-        adreal::{ADReal, Const, Expr, FloatExt, IsReal},
+        adreal::{ADForward, Const, Dual, DualFwd, Expr, FloatExt, InnerScalar, IsReal, Scalar},
         tape::Tape,
     },
     core::{

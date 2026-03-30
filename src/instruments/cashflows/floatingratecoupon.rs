@@ -3,7 +3,7 @@ use std::sync::RwLock;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    ad::adreal::{ADReal, IsReal},
+    ad::adreal::{DualFwd, Scalar},
     indices::marketindex::MarketIndex,
     instruments::cashflows::{cashflow::Cashflow, coupons::LinearCoupon},
     time::{date::Date, daycounter::DayCounter},
@@ -13,7 +13,7 @@ use crate::{
 /// A [`FloatingRateCoupon`] represents a cash flow from a floating-rate bond or loan,
 /// where the interest rate is determined by a market index plus a spread.
 #[derive(Debug, Serialize, Deserialize)]
-pub struct FloatingRateCoupon<T: IsReal> {
+pub struct FloatingRateCoupon<T: Scalar> {
     notional: f64,
     spread: T,
     #[serde(skip)]
@@ -28,7 +28,7 @@ pub struct FloatingRateCoupon<T: IsReal> {
 #[allow(clippy::unwrap_used)]
 impl<T> Clone for FloatingRateCoupon<T>
 where
-    T: IsReal,
+    T: Scalar,
 {
     fn clone(&self) -> Self {
         let coupon = Self::new(
@@ -49,7 +49,7 @@ where
 
 impl<T> FloatingRateCoupon<T>
 where
-    T: IsReal,
+    T: Scalar,
 {
     /// Creates a new [`FloatingRateCoupon`].
     pub fn new(
@@ -159,8 +159,8 @@ impl LinearCoupon<f64> for FloatingRateCoupon<f64> {
 }
 
 #[allow(clippy::unwrap_used)] // RwLock poisoning is unrecoverable
-impl Cashflow<ADReal> for FloatingRateCoupon<ADReal> {
-    fn amount(&self) -> Result<ADReal> {
+impl Cashflow<DualFwd> for FloatingRateCoupon<DualFwd> {
+    fn amount(&self) -> Result<DualFwd> {
         let fixing = self
             .fixing
             .read()
@@ -169,7 +169,7 @@ impl Cashflow<ADReal> for FloatingRateCoupon<ADReal> {
         let year_fraction = self
             .day_counter
             .year_fraction(self.start_date, self.end_date);
-        Ok(((fixing + self.spread) * ADReal::new(year_fraction * self.notional)).into())
+        Ok(((fixing + self.spread) * DualFwd::new(year_fraction * self.notional)).into())
     }
 
     fn payment_date(&self) -> Date {
@@ -178,15 +178,15 @@ impl Cashflow<ADReal> for FloatingRateCoupon<ADReal> {
 }
 
 #[allow(clippy::unwrap_used)] // RwLock poisoning is unrecoverable
-impl LinearCoupon<ADReal> for FloatingRateCoupon<ADReal> {
-    fn accrued_amount(&self, start_date: Date, end_date: Date) -> Result<ADReal> {
+impl LinearCoupon<DualFwd> for FloatingRateCoupon<DualFwd> {
+    fn accrued_amount(&self, start_date: Date, end_date: Date) -> Result<DualFwd> {
         let fixing = self
             .fixing
             .read()
             .unwrap()
             .ok_or_else(|| QSError::InvalidValueErr("Fixing not set".into()))?;
         let year_fraction = self.day_counter.year_fraction(start_date, end_date);
-        Ok(((fixing + self.spread) * ADReal::new(year_fraction * self.notional)).into())
+        Ok(((fixing + self.spread) * DualFwd::new(year_fraction * self.notional)).into())
     }
 
     fn accrual_start_date(&self) -> Date {
@@ -202,27 +202,27 @@ impl LinearCoupon<ADReal> for FloatingRateCoupon<ADReal> {
     }
 }
 
-impl From<FloatingRateCoupon<f64>> for FloatingRateCoupon<ADReal> {
+impl From<FloatingRateCoupon<f64>> for FloatingRateCoupon<DualFwd> {
     fn from(value: FloatingRateCoupon<f64>) -> Self {
         let fixing = value.fixing();
         let coupon = Self::new(
             value.notional,
-            ADReal::new(value.spread.value()),
+            DualFwd::new(value.spread.value()),
             value.index,
             value.start_date,
             value.end_date,
             value.payment_date,
         );
         if let Some(fixing) = fixing {
-            coupon.set_fixing(ADReal::new(fixing.value()));
+            coupon.set_fixing(DualFwd::new(fixing.value()));
         }
         coupon
     }
 }
 
 #[allow(clippy::unwrap_used)] // RwLock poisoning is unrecoverable
-impl From<FloatingRateCoupon<ADReal>> for FloatingRateCoupon<f64> {
-    fn from(value: FloatingRateCoupon<ADReal>) -> Self {
+impl From<FloatingRateCoupon<DualFwd>> for FloatingRateCoupon<f64> {
+    fn from(value: FloatingRateCoupon<DualFwd>) -> Self {
         let fixing = value.fixing();
         let coupon = Self::new(
             value.notional,

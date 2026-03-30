@@ -1,7 +1,7 @@
 #[cfg(test)]
-use crate::ad::adreal::ADReal;
+use crate::ad::adreal::DualFwd;
 use crate::{
-    ad::adreal::IsReal,
+    ad::adreal::Scalar,
     core::trade::Side,
     currencies::currency::Currency,
     indices::marketindex::MarketIndex,
@@ -31,7 +31,7 @@ use std::marker::PhantomData;
 ///     Frequency::Semiannual,
 /// );
 ///
-/// let swap = MakeSwap::<ADReal>::default()
+/// let swap = MakeSwap::<DualFwd>::default()
 ///     .with_identifier("IRS-5Y".to_string())
 ///     .with_start_date(Date::new(2024, 1, 1))
 ///     .with_maturity_date(Date::new(2029, 1, 1))
@@ -50,7 +50,7 @@ use std::marker::PhantomData;
 /// assert!(!swap.floating_leg().cashflows().is_empty());
 /// ```
 #[derive(Default)]
-pub struct MakeSwap<T: IsReal> {
+pub struct MakeSwap<T: Scalar> {
     start_date: Option<Date>,
     maturity_date: Option<Date>,
     fixed_rate: Option<f64>,
@@ -72,7 +72,7 @@ pub struct MakeSwap<T: IsReal> {
 
 impl<T> MakeSwap<T>
 where
-    T: IsReal,
+    T: Scalar,
 {
     /// Sets the start date.
     #[must_use]
@@ -222,7 +222,7 @@ where
         let fixed_leg_frequency = self.fixed_leg_frequency.unwrap_or(Frequency::Semiannual);
         let floating_leg_frequency = self.floating_leg_frequency.unwrap_or(Frequency::Quarterly);
 
-        let interest_rate = InterestRate::from_rate_definition(T::new(fixed_rate), rate_definition);
+        let interest_rate = InterestRate::from_rate_definition(T::scalar(fixed_rate), rate_definition);
 
         // Fixed leg: receive side matches the swap side
         let fixed_leg = MakeLeg::<T>::default()
@@ -293,8 +293,8 @@ mod tests {
         )
     }
 
-    fn base_builder() -> MakeSwap<ADReal> {
-        MakeSwap::<ADReal>::default()
+    fn base_builder() -> MakeSwap<DualFwd> {
+        MakeSwap::<DualFwd>::default()
             .with_identifier("swap_test".to_string())
             .with_start_date(Date::new(2024, 1, 1))
             .with_maturity_date(Date::new(2025, 1, 1))
@@ -320,7 +320,7 @@ mod tests {
 
     #[test]
     fn test_build_swap_missing_fixed_rate_fails() {
-        let result = MakeSwap::<ADReal>::default()
+        let result = MakeSwap::<DualFwd>::default()
             .with_identifier("swap_missing_fixed_rate".to_string())
             .with_start_date(Date::new(2024, 1, 1))
             .with_maturity_date(Date::new(2025, 1, 1))

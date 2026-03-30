@@ -1,6 +1,6 @@
 // use crate::{
 //     ad::{
-//         adreal::{exp, max, ADReal, IsReal},
+//         adreal::{exp, max, DualFwd, IsReal},
 //         tape::Tape,
 //     },
 //     core::{
@@ -25,8 +25,8 @@
 // /// State struct for storing intermediate values during Monte Carlo pricing of an equity option.
 // #[derive(Default)]
 // struct MonteCarloState {
-//     value: Option<ADReal>,
-//     spot: Option<ADReal>,
+//     value: Option<DualFwd>,
+//     spot: Option<DualFwd>,
 //     market_data: Option<MarketData>,
 // }
 
@@ -78,11 +78,11 @@
 //         let draws: Vec<f64> = simulation.draws().to_vec();
 //         let n_paths = draws.len();
 
-//         Tape::start_recording();
-//         Tape::set_mark();
+//         Tape::start_recording_fwd();
+//         Tape::set_mark_fwd();
 
 //         let spot = state.get_fixing(&index, trade.trade_date())?;
-//         let mut spot_ad = ADReal::new(spot);
+//         let mut spot_ad = DualFwd::new(spot);
 //         spot_ad.put_on_tape();
 //         state.spot = Some(spot_ad);
 
@@ -102,28 +102,28 @@
 //         let df_q = if let Ok(div_curve) = state.get_dividend_curve_element(&index) {
 //             div_curve.curve().discount_factor(expiry)?
 //         } else {
-//             ADReal::one()
+//             DualFwd::one()
 //         };
 
-//         let fwd: ADReal = (spot_ad * df_q / df_r).into();
-//         let drift: ADReal = (vol * vol * (-0.5) * tau).into();
-//         let diffusion_scale: ADReal = (vol * tau.sqrt()).into();
-//         let strike_ad = ADReal::new(strike);
+//         let fwd: DualFwd = (spot_ad * df_q / df_r).into();
+//         let drift: DualFwd = (vol * vol * (-0.5) * tau).into();
+//         let diffusion_scale: DualFwd = (vol * tau.sqrt()).into();
+//         let strike_ad = DualFwd::new(strike);
 
-//         let mut payoff_sum = ADReal::new(0.0);
+//         let mut payoff_sum = DualFwd::new(0.0);
 //         for &z in &draws {
-//             let terminal: ADReal = (fwd * exp(drift + diffusion_scale * z)).into();
-//             let payoff: ADReal = match option.option_type() {
-//                 EuroOptionType::Call => max(terminal - strike_ad, ADReal::zero()).into(),
-//                 EuroOptionType::Put => max(strike_ad - terminal, ADReal::zero()).into(),
+//             let terminal: DualFwd = (fwd * exp(drift + diffusion_scale * z)).into();
+//             let payoff: DualFwd = match option.option_type() {
+//                 EuroOptionType::Call => max(terminal - strike_ad, DualFwd::zero()).into(),
+//                 EuroOptionType::Put => max(strike_ad - terminal, DualFwd::zero()).into(),
 //             };
 //             payoff_sum = (payoff_sum + payoff).into();
 //         }
 
 //         #[allow(clippy::cast_precision_loss)]
-//         let value: ADReal = (df_r * payoff_sum * (trade.notional() / n_paths as f64)).into();
+//         let value: DualFwd = (df_r * payoff_sum * (trade.notional() / n_paths as f64)).into();
 //         state.value = Some(value);
-//         Tape::stop_recording();
+//         Tape::stop_recording_fwd();
 //         Ok(value.value())
 //     }
 // }
@@ -302,7 +302,7 @@
 //         },
 //     };
 
-//     use crate::ad::adreal::{ADReal, IsReal};
+//     use crate::ad::adreal::{DualFwd, IsReal};
 
 //     struct SimpleMarketDataProvider {
 //         evaluation_date: Date,
@@ -338,25 +338,25 @@
 
 //         let discount_curve = FlatForwardTermStructure::new(
 //             trade_date,
-//             ADReal::from(risk_free_rate),
+//             DualFwd::from(risk_free_rate),
 //             RateDefinition::default(),
 //         )
 //         .with_pillar_label("discount_rate".to_string());
 
 //         let dividend_curve = FlatForwardTermStructure::new(
 //             trade_date,
-//             ADReal::from(dividend_rate),
+//             DualFwd::from(dividend_rate),
 //             RateDefinition::default(),
 //         )
 //         .with_pillar_label("dividend_rate".to_string());
 
 //         let mut surface_points = BTreeMap::new();
 //         let smile = BTreeMap::from([
-//             (F64Key::new(80.0), ADReal::from(vol)),
-//             (F64Key::new(90.0), ADReal::from(vol)),
-//             (F64Key::new(100.0), ADReal::from(vol)),
-//             (F64Key::new(110.0), ADReal::from(vol)),
-//             (F64Key::new(120.0), ADReal::from(vol)),
+//             (F64Key::new(80.0), DualFwd::from(vol)),
+//             (F64Key::new(90.0), DualFwd::from(vol)),
+//             (F64Key::new(100.0), DualFwd::from(vol)),
+//             (F64Key::new(110.0), DualFwd::from(vol)),
+//             (F64Key::new(120.0), DualFwd::from(vol)),
 //         ]);
 //         surface_points.insert(Period::new(days as i32, TimeUnit::Days), smile.clone());
 //         // Second tenor needed for bilinear interpolation grid
@@ -527,12 +527,12 @@
 //         // Closed-form Black-Scholes price
 //         let discount_curve = FlatForwardTermStructure::new(
 //             trade_date,
-//             ADReal::from(risk_free_rate),
+//             DualFwd::from(risk_free_rate),
 //             RateDefinition::default(),
 //         );
 //         let dividend_curve = FlatForwardTermStructure::new(
 //             trade_date,
-//             ADReal::from(dividend_rate),
+//             DualFwd::from(dividend_rate),
 //             RateDefinition::default(),
 //         );
 //         let df_r = discount_curve.discount_factor(expiry_date)?.value();
@@ -541,8 +541,8 @@
 //         let d1 = ((fwd / strike).ln() + 0.5 * vol * vol * tau) / (vol * tau.sqrt());
 //         let d2 = d1 - vol * tau.sqrt();
 //         let bs_price = df_r
-//             * (fwd * norm_cdf(ADReal::new(d1)).value()
-//                 - strike * norm_cdf(ADReal::new(d2)).value());
+//             * (fwd * norm_cdf(DualFwd::new(d1)).value()
+//                 - strike * norm_cdf(DualFwd::new(d2)).value());
 
 //         // MC price with many paths
 //         let model_params = GbmModelParameters::new(200_000, 99);
@@ -605,12 +605,12 @@
 //         // Discount factors from the same curve objects the pricer uses
 //         let discount_curve = FlatForwardTermStructure::new(
 //             trade_date,
-//             ADReal::from(risk_free_rate),
+//             DualFwd::from(risk_free_rate),
 //             RateDefinition::default(),
 //         );
 //         let dividend_curve = FlatForwardTermStructure::new(
 //             trade_date,
-//             ADReal::from(dividend_rate),
+//             DualFwd::from(dividend_rate),
 //             RateDefinition::default(),
 //         );
 //         let df_r = discount_curve.discount_factor(expiry_date)?.value();
@@ -620,7 +620,7 @@
 //         let d1 = ((fwd / strike).ln() + 0.5 * vol * vol * tau) / (vol * tau.sqrt());
 
 //         // Closed-form greeks (valid for any compounding convention)
-//         let bs_delta = df_q * norm_cdf(ADReal::new(d1)).value();
+//         let bs_delta = df_q * norm_cdf(DualFwd::new(d1)).value();
 //         let n_d1 = (-0.5 * d1 * d1).exp() / (2.0 * PI).sqrt();
 //         let bs_vega = spot * df_q * tau.sqrt() * n_d1;
 

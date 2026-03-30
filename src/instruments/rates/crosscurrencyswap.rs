@@ -1,5 +1,5 @@
 use crate::{
-    ad::adreal::{ADReal, IsReal},
+    ad::adreal::{DualFwd, Scalar},
     core::{
         instrument::Instrument,
         request::LegsProvider,
@@ -17,7 +17,7 @@ use crate::{
 /// other pays a floating (or fixed) rate in a second currency, with notional exchanges at
 /// inception and maturity.
 #[derive(Clone)]
-pub struct FixFloatCrossCurrencySwap<T: IsReal> {
+pub struct FixFloatCrossCurrencySwap<T: Scalar> {
     identifier: String,
     legs: Vec<Leg<T>>,
     domestic_currency: Currency,
@@ -27,7 +27,7 @@ pub struct FixFloatCrossCurrencySwap<T: IsReal> {
 
 impl<T> FixFloatCrossCurrencySwap<T>
 where
-    T: IsReal,
+    T: Scalar,
 {
     /// Creates a new [`FixFloatCrossCurrencySwap`].
     ///
@@ -84,7 +84,7 @@ where
 
 impl<T> Instrument for FixFloatCrossCurrencySwap<T>
 where
-    T: IsReal,
+    T: Scalar,
 {
     fn identifier(&self) -> String {
         self.identifier.clone()
@@ -93,7 +93,7 @@ where
 
 impl<T> LegsProvider<T> for FixFloatCrossCurrencySwap<T>
 where
-    T: IsReal,
+    T: Scalar,
 {
     fn legs(&self) -> &[Leg<T>] {
         &self.legs
@@ -101,7 +101,7 @@ where
 }
 
 /// Represents a trade of a cross-currency swap.
-pub struct FixFloatCrossCurrencySwapTrade<T: IsReal> {
+pub struct FixFloatCrossCurrencySwapTrade<T: Scalar> {
     instrument: FixFloatCrossCurrencySwap<T>,
     trade_date: Date,
     domestic_notional: f64,
@@ -111,7 +111,7 @@ pub struct FixFloatCrossCurrencySwapTrade<T: IsReal> {
 
 impl<T> FixFloatCrossCurrencySwapTrade<T>
 where
-    T: IsReal,
+    T: Scalar,
 {
     /// Creates a new [`FixFloatCrossCurrencySwapTrade`].
     #[must_use]
@@ -146,7 +146,7 @@ where
 
 impl<T> LegsProvider<T> for FixFloatCrossCurrencySwapTrade<T>
 where
-    T: IsReal,
+    T: Scalar,
 {
     fn legs(&self) -> &[Leg<T>] {
         self.instrument.legs()
@@ -155,7 +155,7 @@ where
 
 impl<T> Trade<FixFloatCrossCurrencySwap<T>> for FixFloatCrossCurrencySwapTrade<T>
 where
-    T: IsReal,
+    T: Scalar,
 {
     fn instrument(&self) -> &FixFloatCrossCurrencySwap<T> {
         &self.instrument
@@ -171,7 +171,7 @@ where
 }
 
 #[allow(clippy::expect_used)]
-impl From<FixFloatCrossCurrencySwap<f64>> for FixFloatCrossCurrencySwap<ADReal> {
+impl From<FixFloatCrossCurrencySwap<f64>> for FixFloatCrossCurrencySwap<DualFwd> {
     fn from(value: FixFloatCrossCurrencySwap<f64>) -> Self {
         let mut legs = value.legs.into_iter();
         Self::new(
@@ -186,8 +186,8 @@ impl From<FixFloatCrossCurrencySwap<f64>> for FixFloatCrossCurrencySwap<ADReal> 
 }
 
 #[allow(clippy::expect_used)]
-impl From<FixFloatCrossCurrencySwap<ADReal>> for FixFloatCrossCurrencySwap<f64> {
-    fn from(value: FixFloatCrossCurrencySwap<ADReal>) -> Self {
+impl From<FixFloatCrossCurrencySwap<DualFwd>> for FixFloatCrossCurrencySwap<f64> {
+    fn from(value: FixFloatCrossCurrencySwap<DualFwd>) -> Self {
         let mut legs = value.legs.into_iter();
         Self::new(
             value.identifier,
@@ -200,7 +200,7 @@ impl From<FixFloatCrossCurrencySwap<ADReal>> for FixFloatCrossCurrencySwap<f64> 
     }
 }
 
-impl From<FixFloatCrossCurrencySwapTrade<f64>> for FixFloatCrossCurrencySwapTrade<ADReal> {
+impl From<FixFloatCrossCurrencySwapTrade<f64>> for FixFloatCrossCurrencySwapTrade<DualFwd> {
     fn from(value: FixFloatCrossCurrencySwapTrade<f64>) -> Self {
         Self::new(
             value.instrument.into(),
@@ -212,8 +212,8 @@ impl From<FixFloatCrossCurrencySwapTrade<f64>> for FixFloatCrossCurrencySwapTrad
     }
 }
 
-impl From<FixFloatCrossCurrencySwapTrade<ADReal>> for FixFloatCrossCurrencySwapTrade<f64> {
-    fn from(value: FixFloatCrossCurrencySwapTrade<ADReal>) -> Self {
+impl From<FixFloatCrossCurrencySwapTrade<DualFwd>> for FixFloatCrossCurrencySwapTrade<f64> {
+    fn from(value: FixFloatCrossCurrencySwapTrade<DualFwd>) -> Self {
         Self::new(
             value.instrument.into(),
             value.trade_date,

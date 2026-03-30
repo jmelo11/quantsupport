@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    ad::adreal::IsReal,
+    ad::adreal::Scalar,
     currencies::currency::Currency,
     indices::marketindex::MarketIndex,
     instruments::{
@@ -1005,7 +1005,7 @@ impl std::str::FromStr for QuoteDetails {
 #[derive(Clone)]
 pub enum CalibrationInstrumentType<T = f64>
 where
-    T: IsReal,
+    T: Scalar,
 {
     /// A vanilla fixed-rate deposit.
     FixedRateDeposit(FixedRateDeposit<T>),
@@ -1033,7 +1033,7 @@ where
 
 impl<T> CalibrationInstrumentType<T>
 where
-    T: IsReal,
+    T: Scalar,
 {
     /// Returns the final date that defines the calibration pillar for the instrument.
     ///
@@ -1169,7 +1169,7 @@ impl Quote {
     }
 
     /// OIS swap - mid value is the fixed rate.
-    fn build_ois<T: IsReal + Default>(
+    fn build_ois<T: Scalar + Default>(
         &self,
         rate: f64,
         reference_date: Date,
@@ -1204,7 +1204,7 @@ impl Quote {
     }
 
     /// Fixed Rate Deposit — mid value is the deposit rate.
-    fn build_fixed_rate_deposit<T: IsReal + Default>(
+    fn build_fixed_rate_deposit<T: Scalar + Default>(
         &self,
         rate: f64,
         reference_date: Date,
@@ -1237,7 +1237,7 @@ impl Quote {
     }
 
     /// Basis Swap — mid value is the spread applied to the receive leg.
-    fn build_basis_swap<T: IsReal + Default>(
+    fn build_basis_swap<T: Scalar + Default>(
         &self,
         spread: f64,
         reference_date: Date,
@@ -1275,7 +1275,7 @@ impl Quote {
     }
 
     /// Rate Futures — mid value is the futures price, dates resolved from IMM code.
-    fn build_rate_futures<T: IsReal + Default>(
+    fn build_rate_futures<T: Scalar + Default>(
         &self,
         price: f64,
         reference_date: Date,
@@ -1303,7 +1303,7 @@ impl Quote {
     }
 
     /// FX Forward — mid value is the outright forward rate.
-    fn build_fx_forward<T: IsReal + Default>(
+    fn build_fx_forward<T: Scalar + Default>(
         &self,
         forward_rate: f64,
         reference_date: Date,
@@ -1337,7 +1337,7 @@ impl Quote {
     /// Builds an [`FxForward`] with `forward_points` set. The bootstrap
     /// residual combines these with the FX spot (from the discount policy)
     /// to solve for discount factors via covered interest-rate parity.
-    fn build_fx_forward_points<T: IsReal + Default>(
+    fn build_fx_forward_points<T: Scalar + Default>(
         &self,
         points: f64,
         reference_date: Date,
@@ -1368,7 +1368,7 @@ impl Quote {
 
     /// Cross-Currency Swap (fixed domestic vs floating foreign).
     /// Mid value is the fixed rate on the domestic leg.
-    fn build_fix_float_cross_currency_swap<T: IsReal + Default>(
+    fn build_fix_float_cross_currency_swap<T: Scalar + Default>(
         &self,
         fixed_rate: f64,
         reference_date: Date,
@@ -1413,7 +1413,7 @@ impl Quote {
 
     /// Float-float cross-currency swap — mid value is the spread on the
     /// domestic floating leg.
-    fn build_float_float_cross_currency_swap<T: IsReal + Default>(
+    fn build_float_float_cross_currency_swap<T: Scalar + Default>(
         &self,
         domestic_spread: f64,
         reference_date: Date,
@@ -1457,7 +1457,7 @@ impl Quote {
     }
 
     /// European equity Call — strike and expiry from details.
-    fn build_call<T: IsReal + Default>(
+    fn build_call<T: Scalar + Default>(
         &self,
         reference_date: Date,
     ) -> Result<CalibrationInstrumentType<T>> {
@@ -1482,7 +1482,7 @@ impl Quote {
     }
 
     /// European equity Put — strike and expiry from details.
-    fn build_put<T: IsReal + Default>(
+    fn build_put<T: Scalar + Default>(
         &self,
         reference_date: Date,
     ) -> Result<CalibrationInstrumentType<T>> {
@@ -1508,7 +1508,7 @@ impl Quote {
 
     /// Interest rate Cap or Floor — strike and tenor from details.
     /// The quote value is used as the strike when the details don't carry one.
-    fn build_cap_floor<T: IsReal + Default>(
+    fn build_cap_floor<T: Scalar + Default>(
         &self,
         value: f64,
         reference_date: Date,
@@ -1550,7 +1550,7 @@ impl Quote {
     /// European swaption — builds the underlying swap and wraps it.
     /// The quote value is used as the strike (fixed rate) when the details
     /// don't carry one.
-    fn build_swaption<T: IsReal + Default>(
+    fn build_swaption<T: Scalar + Default>(
         &self,
         value: f64,
         reference_date: Date,

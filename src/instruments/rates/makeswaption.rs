@@ -1,5 +1,5 @@
 use crate::{
-    ad::adreal::IsReal,
+    ad::adreal::Scalar,
     currencies::currency::Currency,
     indices::marketindex::MarketIndex,
     instruments::rates::{
@@ -49,7 +49,7 @@ use std::marker::PhantomData;
 /// assert_eq!(swaption.strike(), 0.03);
 /// ```
 #[derive(Default)]
-pub struct MakeSwaption<T: IsReal + Default> {
+pub struct MakeSwaption<T: Scalar + Default> {
     start_date: Option<Date>,
     swap_tenor_date: Option<Date>,
     expiry: Option<Date>,
@@ -72,7 +72,7 @@ pub struct MakeSwaption<T: IsReal + Default> {
 
 impl<T> MakeSwaption<T>
 where
-    T: IsReal + Default,
+    T: Scalar + Default,
 {
     /// Sets the start date of the underlying swap (= option expiry for Europeans).
     #[must_use]
@@ -279,7 +279,7 @@ where
 mod tests {
     use super::*;
     use crate::{
-        ad::adreal::ADReal,
+        ad::adreal::DualFwd,
         core::instrument::Instrument,
         rates::compounding::Compounding,
         time::{daycounter::DayCounter, enums::Frequency},
@@ -293,8 +293,8 @@ mod tests {
         )
     }
 
-    fn base_builder() -> MakeSwaption<ADReal> {
-        MakeSwaption::<ADReal>::default()
+    fn base_builder() -> MakeSwaption<DualFwd> {
+        MakeSwaption::<DualFwd>::default()
             .with_identifier("swaption_test".to_string())
             .with_expiry(Date::new(2024, 6, 1))
             .with_swap_tenor_date(Date::new(2026, 6, 1))
@@ -321,7 +321,7 @@ mod tests {
 
     #[test]
     fn test_build_swaption_missing_swap_tenor_fails() {
-        let result = MakeSwaption::<ADReal>::default()
+        let result = MakeSwaption::<DualFwd>::default()
             .with_identifier("swaption_missing_tenor".to_string())
             .with_expiry(Date::new(2024, 6, 1))
             .with_strike(0.03)

@@ -1,6 +1,6 @@
 use crate::{
     ad::{
-        adreal::{ADReal, IsReal},
+        adreal::DualFwd,
         tape::Tape,
     },
     core::{
@@ -31,11 +31,11 @@ use std::{collections::HashSet, marker::PhantomData};
 /// State for cashflow discounting, holding market data and intermediate values.
 struct DCFState<'a> {
     /// The computed DCF value.
-    pub value: Option<ADReal>,
+    pub value: Option<DualFwd>,
     /// Market data response for discount curves.
     pub md_response: Option<MarketData>,
     /// Resolved legs used by default cashflows handling.
-    pub legs: &'a [Leg<ADReal>],
+    pub legs: &'a [Leg<DualFwd>],
 }
 
 impl PricerState for DCFState<'_> {
@@ -59,11 +59,11 @@ impl PricerState for DCFState<'_> {
 /// use quantsupport::prelude::*;
 ///
 /// // Create the pricer for a FixedRateBond/Trade pair
-/// let pricer: CashflowDiscountPricer<FixedRateBond<ADReal>, FixedRateBondTrade<ADReal>> =
+/// let pricer: CashflowDiscountPricer<FixedRateBond<DualFwd>, FixedRateBondTrade<DualFwd>> =
 ///     CashflowDiscountPricer::new();
 ///
 /// // Or use it for a FloatingRateNote:
-/// let frn_pricer: CashflowDiscountPricer<FloatingRateNote<ADReal>, FloatingRateNoteTrade<ADReal>> =
+/// let frn_pricer: CashflowDiscountPricer<FloatingRateNote<DualFwd>, FloatingRateNoteTrade<DualFwd>> =
 ///     CashflowDiscountPricer::new();
 ///
 /// // Evaluation requires a MarketDataProvider. The typical flow is:
@@ -85,8 +85,8 @@ impl<I, T> CashflowDiscountPricer<I, T> {
     }
 }
 
-impl LegsProvider<ADReal> for DCFState<'_> {
-    fn legs(&self) -> &[Leg<ADReal>] {
+impl LegsProvider<DualFwd> for DCFState<'_> {
+    fn legs(&self) -> &[Leg<DualFwd>] {
         self.legs
     }
 }
@@ -94,7 +94,7 @@ impl LegsProvider<ADReal> for DCFState<'_> {
 impl<I, T> HandleCashflows<T, DCFState<'_>> for CashflowDiscountPricer<I, T>
 where
     I: Instrument,
-    T: LegsProvider<ADReal> + Trade<I>,
+    T: LegsProvider<DualFwd> + Trade<I>,
 {
 }
 
@@ -107,7 +107,7 @@ impl<I, T> Default for CashflowDiscountPricer<I, T> {
 impl<I, T> HandleSensitivities<T, DCFState<'_>> for CashflowDiscountPricer<I, T>
 where
     I: Instrument,
-    T: LegsProvider<ADReal> + Trade<I>,
+    T: LegsProvider<DualFwd> + Trade<I>,
 {
     fn handle_sensitivities(&self, trade: &T, state: &mut DCFState<'_>) -> Result<SensitivityMap> {
         let price = if let Some(p) = state.value {
@@ -141,7 +141,7 @@ where
                         .unzip();
 
                     all_ids.extend(ids);
-                    let exposures: Vec<f64> = exposures.into_iter().flatten().collect();
+                    let exposures: Vec<f64> = exposures.into_iter().flatten().map(|v| v.value()).collect();
                     all_exposures.extend(exposures);
                 }
             }
@@ -161,7 +161,7 @@ where
                         .unzip();
 
                     all_ids.extend(ids);
-                    let exposures: Vec<f64> = exposures.into_iter().flatten().collect();
+                    let exposures: Vec<f64> = exposures.into_iter().flatten().map(|v| v.value()).collect();
                     all_exposures.extend(exposures);
                 }
             }
@@ -182,7 +182,7 @@ where
                         .unzip();
 
                     all_ids.extend(ids);
-                    let exposures: Vec<f64> = exposures.into_iter().flatten().collect();
+                    let exposures: Vec<f64> = exposures.into_iter().flatten().map(|v| v.value()).collect();
                     all_exposures.extend(exposures);
                 }
             }
@@ -200,7 +200,7 @@ where
                     .ok_or_else(|| QSError::ValueNotSetErr("Pillars".into()))?
                 {
                     all_ids.push(label);
-                    all_exposures.push(value.adjoint().unwrap_or(0.0));
+                    all_exposures.push(value.adjoint().map(|a| a.value()).unwrap_or(0.0));
                 }
             }
         }
@@ -216,7 +216,7 @@ where
 impl<I, T> HandleValue<T, DCFState<'_>> for CashflowDiscountPricer<I, T>
 where
     I: Instrument,
-    T: LegsProvider<ADReal> + Trade<I>,
+    T: LegsProvider<DualFwd> + Trade<I>,
 {
     #[allow(clippy::too_many_lines)]
     fn handle_value(&self, trade: &T, state: &mut DCFState<'_>) -> Result<f64> {
@@ -230,10 +230,10 @@ where
             }
         }
 
-        Tape::start_recording();
-        Tape::set_mark();
+        Tape::start_recording_fwd();
+        Tape::set_mark_fwd();
 
-        let mut pv = ADReal::new(0.0);
+        let mut pv = DualFwd::new(0.0);
 
         // Put pillars on tape for sensitivity calculation
         state.put_pillars_on_tape()?;
@@ -350,14 +350,14 @@ where
                     CashflowType::Redemption(cf) => {
                         // Redemption is the return of principal at maturity,
                         // opposite in sign to the initial disbursement.
-                        (ADReal::from(cf.amount()?), cf.payment_date())
+                        (DualFwd::from(cf.amount()?), cf.payment_date())
                     }
                     CashflowType::Disbursement(cf) => {
-                        (ADReal::from(-cf.amount()?), cf.payment_date())
+                        (DualFwd::from(-cf.amount()?), cf.payment_date())
                     }
                 };
 
-                let cf_pv: ADReal = if self.discount_policy.is_some() {
+                let cf_pv: DualFwd = if self.discount_policy.is_some() {
                     let df_leg = state
                         .get_discount_curve_element(&leg_discount_index)?
                         .curve()
@@ -391,7 +391,7 @@ where
 
         state.value = Some(pv);
 
-        Tape::stop_recording();
+        Tape::stop_recording_fwd();
         Ok(state
             .value
             .ok_or_else(|| QSError::ValueNotSetErr("PV value".into()))?
@@ -402,7 +402,7 @@ where
 impl<I, T> HandleFairRate<T, DCFState<'_>> for CashflowDiscountPricer<I, T>
 where
     I: Instrument,
-    T: LegsProvider<ADReal> + Trade<I>,
+    T: LegsProvider<DualFwd> + Trade<I>,
 {
     fn handle_fair_rate(&self, trade: &T, state: &mut DCFState<'_>) -> Result<f64> {
         let mut annuity = 0.0_f64;
@@ -492,7 +492,7 @@ where
 impl<I, T> Pricer for CashflowDiscountPricer<I, T>
 where
     I: Instrument,
-    T: LegsProvider<ADReal> + Trade<I> + Send + Sync,
+    T: LegsProvider<DualFwd> + Trade<I> + Send + Sync,
 {
     type Item = T;
     type Policy = dyn DiscountPolicy;
@@ -683,7 +683,7 @@ mod tests {
         );
 
         // --- 1. Build the deposit trade ---
-        let deposit = MakeFixedRateDeposit::<ADReal>::default()
+        let deposit = MakeFixedRateDeposit::<DualFwd>::default()
             .with_identifier("TEST_DEPOSIT".to_string())
             .with_start_date(trade_date)
             .with_maturity_date(maturity_date)
@@ -700,7 +700,7 @@ mod tests {
         // --- 2. Set up market data: flat 3% discount curve ---
         let discount_curve = FlatForwardTermStructure::new(
             trade_date,
-            ADReal::from(discount_rate),
+            DualFwd::from(discount_rate),
             RateDefinition::default(),
         )
         .with_pillar_label("SOFR_flat".to_string());
@@ -719,7 +719,7 @@ mod tests {
 
         // --- 3. Price using the Pricer trait ---
         let pricer =
-            CashflowDiscountPricer::<FixedRateDeposit<ADReal>, FixedRateDepositTrade<ADReal>>::new(
+            CashflowDiscountPricer::<FixedRateDeposit<DualFwd>, FixedRateDepositTrade<DualFwd>>::new(
             );
         let results = pricer
             .evaluate(&trade, &[Request::Value, Request::Sensitivities], &provider)
@@ -769,7 +769,7 @@ mod tests {
             Frequency::Annual,
         );
 
-        let swap = MakeSwap::<ADReal>::default()
+        let swap = MakeSwap::<DualFwd>::default()
             .with_identifier("VANILLA_SWAP_CF_TEST".to_string())
             .with_start_date(start_date)
             .with_maturity_date(maturity_date)
@@ -807,7 +807,7 @@ mod tests {
 
         let discount_curve = FlatForwardTermStructure::new(
             start_date,
-            ADReal::from(0.031),
+            DualFwd::from(0.031),
             RateDefinition::default(),
         )
         .with_pillar_label("SOFR_flat".to_string());
@@ -823,7 +823,7 @@ mod tests {
             market_data,
         };
 
-        let pricer = CashflowDiscountPricer::<Swap<ADReal>, SwapTrade<ADReal>>::new();
+        let pricer = CashflowDiscountPricer::<Swap<DualFwd>, SwapTrade<DualFwd>>::new();
         let results = pricer
             .evaluate(&trade, &[Request::Cashflows], &provider)
             .expect("Vanilla swap cashflows evaluation failed");
@@ -966,7 +966,7 @@ mod tests {
 
         // --- 1. Build the cross-currency swap ---
         // Domestic = EUR (fixed, receive), Foreign = USD (floating SOFR, pay)
-        let xccy_swap = MakeFixFloatCrossCurrencySwap::<ADReal>::default()
+        let xccy_swap = MakeFixFloatCrossCurrencySwap::<DualFwd>::default()
             .with_identifier("XCCY_EUR_USD".to_string())
             .with_start_date(trade_date)
             .with_maturity_date(maturity_date)
@@ -996,7 +996,7 @@ mod tests {
         // SOFR curve (USD floating leg projection + forward FX)
         let sofr_curve = FlatForwardTermStructure::new(
             trade_date,
-            ADReal::from(sofr_rate),
+            DualFwd::from(sofr_rate),
             RateDefinition::default(),
         )
         .with_pillar_label("SOFR_flat".to_string());
@@ -1004,7 +1004,7 @@ mod tests {
         // ESTR curve (EUR leg discount + CSA collateral OIS)
         let estr_curve = FlatForwardTermStructure::new(
             trade_date,
-            ADReal::from(estr_rate),
+            DualFwd::from(estr_rate),
             RateDefinition::default(),
         )
         .with_pillar_label("ESTR_flat".to_string());
@@ -1012,7 +1012,7 @@ mod tests {
         // Collateral curve for USD cashflows under EUR CSA (same underlying rate as ESTR)
         let collateral_usd_eur_curve = FlatForwardTermStructure::new(
             trade_date,
-            ADReal::from(estr_rate),
+            DualFwd::from(estr_rate),
             RateDefinition::default(),
         )
         .with_pillar_label("ESTR_flat".to_string());
@@ -1036,7 +1036,7 @@ mod tests {
 
         // FX spot rate
         let mut fx_store = ExchangeRateStore::new();
-        fx_store.add_exchange_rate(Currency::USD, Currency::EUR, ADReal::from(fx_usd_eur));
+        fx_store.add_exchange_rate(Currency::USD, Currency::EUR, DualFwd::from(fx_usd_eur));
 
         let market_data = MarketData::new(HashMap::new(), constructed_elements, &[])
             .with_exchange_rate_store(fx_store);
@@ -1048,8 +1048,8 @@ mod tests {
 
         // --- 3. Price with CSA ---
         let mut pricer = CashflowDiscountPricer::<
-            FixFloatCrossCurrencySwap<ADReal>,
-            FixFloatCrossCurrencySwapTrade<ADReal>,
+            FixFloatCrossCurrencySwap<DualFwd>,
+            FixFloatCrossCurrencySwapTrade<DualFwd>,
         >::new();
         pricer.set_discount_policy(Box::new(SingleCurveCSADiscountPolicy::new(
             estr_index.clone(),

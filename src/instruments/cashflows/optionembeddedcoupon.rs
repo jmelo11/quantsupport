@@ -1,5 +1,5 @@
 use crate::{
-    ad::adreal::{ADReal, IsReal},
+    ad::adreal::{DualFwd, Scalar},
     indices::marketindex::MarketIndex,
     instruments::cashflows::coupons::{NonLinearCoupon, PayoffOps},
     time::date::Date,
@@ -12,7 +12,7 @@ use crate::{
 /// represent a floored or capped coupon, where the payoff is determined by the
 /// underlying index and the specified floor or cap.
 #[derive(Clone)]
-pub struct OptionEmbeddedCoupon<T: IsReal> {
+pub struct OptionEmbeddedCoupon<T: Scalar> {
     notional: f64,
     fixing: Option<T>,
     spread: T,
@@ -23,7 +23,7 @@ pub struct OptionEmbeddedCoupon<T: IsReal> {
     payoff: PayoffOps,
 }
 
-impl<T: IsReal> OptionEmbeddedCoupon<T> {
+impl<T: Scalar> OptionEmbeddedCoupon<T> {
     /// Creates a new [`OptionEmbeddedCoupon`].
     #[must_use]
     pub const fn new(
@@ -86,13 +86,13 @@ impl OptionEmbeddedCoupon<f64> {
     }
 }
 
-impl OptionEmbeddedCoupon<ADReal> {
+impl OptionEmbeddedCoupon<DualFwd> {
     /// Returns the amount of the coupon (calculated from accrued amount).
     ///
     /// # Errors
     ///
     /// Returns an error if the accrued amount calculation fails.
-    pub fn amount(&self) -> Result<ADReal> {
+    pub fn amount(&self) -> Result<DualFwd> {
         self.accrued_amount(self.accrual_start_date, self.accrual_end_date)
     }
 }
@@ -136,7 +136,7 @@ impl NonLinearCoupon<f64> for OptionEmbeddedCoupon<f64> {
     }
 }
 
-impl NonLinearCoupon<ADReal> for OptionEmbeddedCoupon<ADReal> {
+impl NonLinearCoupon<DualFwd> for OptionEmbeddedCoupon<DualFwd> {
     fn accrual_end_date(&self) -> Date {
         self.accrual_end_date
     }
@@ -145,7 +145,7 @@ impl NonLinearCoupon<ADReal> for OptionEmbeddedCoupon<ADReal> {
         self.accrual_start_date
     }
 
-    fn accrued_amount(&self, start_date: Date, end_date: Date) -> Result<ADReal> {
+    fn accrued_amount(&self, start_date: Date, end_date: Date) -> Result<DualFwd> {
         let fixing = self
             .fixing
             .ok_or_else(|| QSError::NotFoundErr("Fixing not set".into()))?;
@@ -158,8 +158,8 @@ impl NonLinearCoupon<ADReal> for OptionEmbeddedCoupon<ADReal> {
             .year_fraction(start_date, end_date);
 
         let resuling_rate = self.payoff.evaluate(fixing)?;
-        let coupon_rate: ADReal = (self.spread + resuling_rate).into();
-        Ok((coupon_rate * ADReal::new(year_fraction * self.notional)).into())
+        let coupon_rate: DualFwd = (self.spread + resuling_rate).into();
+        Ok((coupon_rate * DualFwd::new(year_fraction * self.notional)).into())
     }
 
     fn notional(&self) -> f64 {
@@ -175,12 +175,12 @@ impl NonLinearCoupon<ADReal> for OptionEmbeddedCoupon<ADReal> {
     }
 }
 
-impl From<OptionEmbeddedCoupon<f64>> for OptionEmbeddedCoupon<ADReal> {
+impl From<OptionEmbeddedCoupon<f64>> for OptionEmbeddedCoupon<DualFwd> {
     fn from(value: OptionEmbeddedCoupon<f64>) -> Self {
         Self {
             notional: value.notional,
-            fixing: value.fixing.map(ADReal::new),
-            spread: ADReal::new(value.spread.value()),
+            fixing: value.fixing.map(DualFwd::new),
+            spread: DualFwd::new(value.spread.value()),
             index: value.index,
             accrual_start_date: value.accrual_start_date,
             accrual_end_date: value.accrual_end_date,
@@ -190,8 +190,8 @@ impl From<OptionEmbeddedCoupon<f64>> for OptionEmbeddedCoupon<ADReal> {
     }
 }
 
-impl From<OptionEmbeddedCoupon<ADReal>> for OptionEmbeddedCoupon<f64> {
-    fn from(value: OptionEmbeddedCoupon<ADReal>) -> Self {
+impl From<OptionEmbeddedCoupon<DualFwd>> for OptionEmbeddedCoupon<f64> {
+    fn from(value: OptionEmbeddedCoupon<DualFwd>) -> Self {
         Self {
             notional: value.notional,
             fixing: value.fixing.map(|fixing| fixing.value()),

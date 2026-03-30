@@ -1,5 +1,5 @@
 use crate::{
-    ad::adreal::{ADReal, IsReal},
+    ad::adreal::{DualFwd, Scalar},
     time::date::Date,
     utils::errors::Result,
 };
@@ -7,7 +7,7 @@ use crate::{
 /// A [`Cashflow`] represents a single payment that occurs at a specific date. It has an amount and a payment date.
 pub trait Cashflow<T>
 where
-    T: IsReal,
+    T: Scalar,
 {
     /// Returns the amount of the cashflow.
     ///
@@ -23,7 +23,7 @@ where
 #[derive(Clone)]
 pub struct SimpleCashflow<T = f64>
 where
-    T: IsReal,
+    T: Scalar,
 {
     amount: T,
     payment_date: Date,
@@ -31,7 +31,7 @@ where
 
 impl<T> SimpleCashflow<T>
 where
-    T: IsReal,
+    T: Scalar,
 {
     /// Creates a new [`SimpleCashflow`] with the given amount and payment date.
     pub const fn new(amount: T, payment_date: Date) -> Self {
@@ -44,7 +44,7 @@ where
 
 impl<T> Cashflow<T> for SimpleCashflow<T>
 where
-    T: IsReal,
+    T: Scalar,
 {
     fn amount(&self) -> Result<T> {
         Ok(self.amount)
@@ -55,14 +55,14 @@ where
     }
 }
 
-impl From<SimpleCashflow<f64>> for SimpleCashflow<ADReal> {
+impl From<SimpleCashflow<f64>> for SimpleCashflow<DualFwd> {
     fn from(value: SimpleCashflow<f64>) -> Self {
-        Self::new(ADReal::new(value.amount.value()), value.payment_date)
+        Self::new(DualFwd::new(value.amount.value()), value.payment_date)
     }
 }
 
-impl From<SimpleCashflow<ADReal>> for SimpleCashflow<f64> {
-    fn from(value: SimpleCashflow<ADReal>) -> Self {
+impl From<SimpleCashflow<DualFwd>> for SimpleCashflow<f64> {
+    fn from(value: SimpleCashflow<DualFwd>) -> Self {
         Self::new(value.amount.value(), value.payment_date)
     }
 }

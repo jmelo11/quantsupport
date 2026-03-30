@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    ad::adreal::{ADReal, Const, FloatExt, IsReal},
+    ad::adreal::{DualFwd, Const, FloatExt, Scalar},
     time::{date::Date, daycounter::DayCounter, enums::Frequency},
     utils::errors::{QSError, Result},
 };
@@ -87,7 +87,7 @@ impl Default for RateDefinition {
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct InterestRate<T>
 where
-    T: IsReal,
+    T: Scalar,
 {
     rate: T,
     rate_definition: RateDefinition,
@@ -95,7 +95,7 @@ where
 
 impl<T> InterestRate<T>
 where
-    T: IsReal,
+    T: Scalar,
 {
     /// Creates a new [`InterestRate<T>`] with the specified rate value and rate definition parameters.
     #[must_use]
@@ -163,14 +163,14 @@ where
     }
 }
 
-impl From<InterestRate<f64>> for InterestRate<ADReal> {
+impl From<InterestRate<f64>> for InterestRate<DualFwd> {
     fn from(value: InterestRate<f64>) -> Self {
-        Self::from_rate_definition(ADReal::new(value.rate().value()), value.rate_definition())
+        Self::from_rate_definition(DualFwd::new(value.rate().value()), value.rate_definition())
     }
 }
 
-impl From<InterestRate<ADReal>> for InterestRate<f64> {
-    fn from(value: InterestRate<ADReal>) -> Self {
+impl From<InterestRate<DualFwd>> for InterestRate<f64> {
+    fn from(value: InterestRate<DualFwd>) -> Self {
         Self::from_rate_definition(value.rate().value(), value.rate_definition())
     }
 }
@@ -285,14 +285,14 @@ impl InterestRate<f64> {
     }
 }
 
-impl InterestRate<ADReal> {
+impl InterestRate<DualFwd> {
     /// Calculates the implied interest rate from a compound factor.
     ///
     /// # Errors
     /// Returns an error if the compound factor or time are invalid for the
     /// requested compounding convention.
     pub fn implied_rate(
-        compound: ADReal,
+        compound: DualFwd,
         result_dc: DayCounter,
         comp: Compounding,
         freq: Frequency,
@@ -304,7 +304,7 @@ impl InterestRate<ADReal> {
             ));
         }
         // NOTE: Unlike the f64 version we do NOT short-circuit when
-        // compound ≈ 1.  Returning `ADReal::zero()` would sever the
+        // compound ≈ 1.  Returning `DualFwd::zero()` would sever the
         // connection to the AD tape and produce a zero-row Jacobian,
         // which breaks Newton solvers that rely on AD derivatives
         // (e.g. multi-curve bootstrapping).  The normal formulas below
@@ -313,7 +313,7 @@ impl InterestRate<ADReal> {
             // The only safe early-out: when time is non-positive AND
             // compound ≈ 1 the rate is mathematically 0.  Otherwise error.
             if (compound.value() - 1.0).abs() < 1e-12 {
-                return Ok(Self::new(ADReal::zero(), comp, freq, result_dc));
+                return Ok(Self::new(DualFwd::zero(), comp, freq, result_dc));
             }
             return Err(QSError::InvalidValueErr(
                 "Positive time required".to_string(),
@@ -356,7 +356,7 @@ impl InterestRate<ADReal> {
 
     /// Calculates the compound factor between two dates using the day counter.
     #[must_use]
-    pub fn compound_factor(&self, start: Date, end: Date) -> ADReal {
+    pub fn compound_factor(&self, start: Date, end: Date) -> DualFwd {
         let day_counter = self.day_counter();
         let year_fraction = day_counter.year_fraction(start, end); // for now
         self.compound_factor_from_yf(year_fraction)
@@ -364,7 +364,7 @@ impl InterestRate<ADReal> {
 
     /// Calculates the compound factor from a year fraction.
     #[must_use]
-    pub fn compound_factor_from_yf(&self, year_fraction: f64) -> ADReal {
+    pub fn compound_factor_from_yf(&self, year_fraction: f64) -> DualFwd {
         let rate = self.rate();
         let compounding = self.compounding();
         let f = f64::from(self.frequency() as i32);
@@ -391,7 +391,7 @@ impl InterestRate<ADReal> {
 
     /// Calculates the discount factor between two dates.
     #[must_use]
-    pub fn discount_factor(&self, start: Date, end: Date) -> ADReal {
+    pub fn discount_factor(&self, start: Date, end: Date) -> DualFwd {
         (Const::one() / self.compound_factor(start, end)).into()
     }
 
@@ -403,7 +403,7 @@ impl InterestRate<ADReal> {
         _end_date: Date,
         _comp: Compounding,
         _freq: Frequency,
-    ) -> ADReal {
+    ) -> DualFwd {
         self.rate
     }
 }

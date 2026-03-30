@@ -1,5 +1,5 @@
 use crate::{
-    ad::adreal::{ADReal, IsReal},
+    ad::adreal::{DualFwd, Scalar},
     core::{collateral::Discountable, instrument::AssetClass, trade::Side},
     currencies::currency::Currency,
     indices::marketindex::MarketIndex,
@@ -10,7 +10,7 @@ use crate::{
 
 /// A [`Leg`] represents a sequence of cashflows associated to a particular instrument.
 #[derive(Clone)]
-pub struct Leg<T: IsReal> {
+pub struct Leg<T: Scalar> {
     /// identifier for the leg, used for referencing in pricers and other components
     id: usize,
     /// list of cashflows associated with the leg
@@ -39,7 +39,7 @@ pub struct Leg<T: IsReal> {
 
 impl<T> Leg<T>
 where
-    T: IsReal,
+    T: Scalar,
 {
     /// Creates a new [`Leg`] with the specified parameters.
     #[must_use]
@@ -137,7 +137,7 @@ where
 
 impl<T> Discountable for Leg<T>
 where
-    T: IsReal,
+    T: Scalar,
 {
     fn currency(&self) -> Currency {
         self.currency
@@ -152,7 +152,7 @@ where
     }
 }
 
-impl From<Leg<f64>> for Leg<ADReal> {
+impl From<Leg<f64>> for Leg<DualFwd> {
     fn from(value: Leg<f64>) -> Self {
         Self::new(
             value.id,
@@ -160,7 +160,7 @@ impl From<Leg<f64>> for Leg<ADReal> {
             value.currency,
             value.discount_index,
             value.forward_index,
-            value.spread.map(ADReal::new),
+            value.spread.map(DualFwd::new),
             value.interest_rate.map(Into::into),
             value.side,
             value.is_linear,
@@ -171,8 +171,8 @@ impl From<Leg<f64>> for Leg<ADReal> {
     }
 }
 
-impl From<Leg<ADReal>> for Leg<f64> {
-    fn from(value: Leg<ADReal>) -> Self {
+impl From<Leg<DualFwd>> for Leg<f64> {
+    fn from(value: Leg<DualFwd>) -> Self {
         Self::new(
             value.id,
             value.cashflows.into_iter().map(Into::into).collect(),

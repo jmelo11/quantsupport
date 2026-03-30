@@ -1,7 +1,7 @@
 #[cfg(test)]
-use crate::ad::adreal::ADReal;
+use crate::ad::adreal::DualFwd;
 use crate::{
-    ad::adreal::IsReal,
+    ad::adreal::Scalar,
     core::{instrument::AssetClass, trade::Side},
     currencies::currency::Currency,
     indices::marketindex::MarketIndex,
@@ -34,7 +34,7 @@ use std::marker::PhantomData;
 ///     Frequency::Semiannual,
 /// );
 ///
-/// let xccy = MakeFixFloatCrossCurrencySwap::<ADReal>::default()
+/// let xccy = MakeFixFloatCrossCurrencySwap::<DualFwd>::default()
 ///     .with_identifier("XCCY-USDEUR".to_string())
 ///     .with_start_date(Date::new(2024, 1, 1))
 ///     .with_maturity_date(Date::new(2029, 1, 1))
@@ -53,7 +53,7 @@ use std::marker::PhantomData;
 /// assert_eq!(xccy.foreign_currency(), Currency::EUR);
 /// ```
 #[derive(Default)]
-pub struct MakeFixFloatCrossCurrencySwap<T: IsReal> {
+pub struct MakeFixFloatCrossCurrencySwap<T: Scalar> {
     start_date: Option<Date>,
     maturity_date: Option<Date>,
     domestic_notional: Option<f64>,
@@ -77,7 +77,7 @@ pub struct MakeFixFloatCrossCurrencySwap<T: IsReal> {
 
 impl<T> MakeFixFloatCrossCurrencySwap<T>
 where
-    T: IsReal,
+    T: Scalar,
 {
     /// Sets the start date.
     #[must_use]
@@ -246,7 +246,7 @@ where
         let domestic_freq = self.domestic_leg_frequency.unwrap_or(Frequency::Semiannual);
         let foreign_freq = self.foreign_leg_frequency.unwrap_or(Frequency::Quarterly);
 
-        let interest_rate = InterestRate::from_rate_definition(T::new(fixed_rate), rate_definition);
+        let interest_rate = InterestRate::from_rate_definition(T::scalar(fixed_rate), rate_definition);
 
         // Domestic (fixed) leg
         let domestic_leg = MakeLeg::<T>::default()
@@ -320,8 +320,8 @@ mod tests {
         )
     }
 
-    fn base_builder() -> MakeFixFloatCrossCurrencySwap<ADReal> {
-        MakeFixFloatCrossCurrencySwap::<ADReal>::default()
+    fn base_builder() -> MakeFixFloatCrossCurrencySwap<DualFwd> {
+        MakeFixFloatCrossCurrencySwap::<DualFwd>::default()
             .with_identifier("xccy_swap_test".to_string())
             .with_start_date(Date::new(2024, 1, 1))
             .with_maturity_date(Date::new(2025, 1, 1))
@@ -351,7 +351,7 @@ mod tests {
 
     #[test]
     fn test_build_cross_currency_swap_missing_domestic_currency_fails() {
-        let result = MakeFixFloatCrossCurrencySwap::<ADReal>::default()
+        let result = MakeFixFloatCrossCurrencySwap::<DualFwd>::default()
             .with_identifier("xccy_missing_dom_ccy".to_string())
             .with_start_date(Date::new(2024, 1, 1))
             .with_maturity_date(Date::new(2025, 1, 1))

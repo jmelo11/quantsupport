@@ -65,7 +65,7 @@ pub struct CashflowEntry {
 // ---------------------------------------------------------------------------
 
 pub fn extract_cashflows(
-    legs: &[Leg<ADReal>],
+    legs: &[Leg<DualFwd>],
     curve_lookup: &HashMap<MarketIndex, DiscountCurveElement>,
     csa_index: MarketIndex,
     csa_currency: Currency,
@@ -120,7 +120,7 @@ pub fn extract_cashflows(
                         accrual_start: c.accrual_start_date().to_string(),
                         accrual_end: c.accrual_end_date().to_string(),
                         cashflow_type: "FloatingRateCoupon".into(),
-                        notional: LinearCoupon::<ADReal>::notional(c),
+                        notional: LinearCoupon::<DualFwd>::notional(c),
                         rate: c.fixing().map(|f| f.value()),
                         year_fraction: yf,
                         amount: c.amount().map_or(f64::NAN, |a| a.value()),

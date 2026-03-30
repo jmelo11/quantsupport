@@ -1,12 +1,12 @@
 use serde::{Deserialize, Serialize};
 
 use super::{linear::LinearInterpolator, loglinear::LogLinearInterpolator};
-use crate::{ad::adreal::IsReal, utils::errors::Result};
+use crate::{ad::adreal::Scalar, utils::errors::Result};
 
 /// A trait that defines the interpolation of a function. It does not require a reference to self.
 pub trait StaticInterpolate<T>
 where
-    T: IsReal,
+    T: Scalar,
 {
     /// Interpolates a value at the given point.
     ///
@@ -49,7 +49,7 @@ pub enum Interpolator {
 /// Implements the `Interpolate` trait for the `Interpolator` enum, allowing it to perform interpolation based on the selected method.
 pub trait Interpolate<T>
 where
-    T: IsReal,
+    T: Scalar,
 {
     /// Performs interpolation for a given x value using the specified interpolation method.
     ///
@@ -69,7 +69,7 @@ where
 
 impl<T> Interpolate<T> for Interpolator
 where
-    T: IsReal,
+    T: Scalar,
     LinearInterpolator: StaticInterpolate<T>,
     LogLinearInterpolator: StaticInterpolate<T>,
 {

@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    ad::adreal::{ADReal, IsReal},
+    ad::adreal::{DualFwd, Scalar},
     core::{
         instrument::Instrument,
         request::LegsProvider,
@@ -34,7 +34,7 @@ pub enum SwaptionType {
 /// The holder has the right, but not the obligation, to enter into
 /// the underlying [`Swap`] at expiry.
 #[derive(Clone)]
-pub struct Swaption<T: IsReal> {
+pub struct Swaption<T: Scalar> {
     identifier: String,
     underlying: Swap<T>,
     expiry: Date,
@@ -47,7 +47,7 @@ pub struct Swaption<T: IsReal> {
 
 impl<T> Swaption<T>
 where
-    T: IsReal,
+    T: Scalar,
 {
     /// Creates a new [`Swaption`].
     #[must_use]
@@ -119,7 +119,7 @@ where
 
 impl<T> Instrument for Swaption<T>
 where
-    T: IsReal,
+    T: Scalar,
 {
     fn identifier(&self) -> String {
         self.identifier.clone()
@@ -128,7 +128,7 @@ where
 
 impl<T> LegsProvider<T> for Swaption<T>
 where
-    T: IsReal,
+    T: Scalar,
 {
     fn legs(&self) -> &[Leg<T>] {
         self.underlying.legs()
@@ -136,7 +136,7 @@ where
 }
 
 /// Represents a trade on a swaption.
-pub struct SwaptionTrade<T: IsReal> {
+pub struct SwaptionTrade<T: Scalar> {
     instrument: Swaption<T>,
     trade_date: Date,
     notional: f64,
@@ -145,7 +145,7 @@ pub struct SwaptionTrade<T: IsReal> {
 
 impl<T> SwaptionTrade<T>
 where
-    T: IsReal,
+    T: Scalar,
 {
     /// Creates a new [`SwaptionTrade`].
     #[must_use]
@@ -167,7 +167,7 @@ where
 
 impl<T> Trade<Swaption<T>> for SwaptionTrade<T>
 where
-    T: IsReal,
+    T: Scalar,
 {
     fn instrument(&self) -> &Swaption<T> {
         &self.instrument
@@ -182,7 +182,7 @@ where
     }
 }
 
-impl From<Swaption<f64>> for Swaption<ADReal> {
+impl From<Swaption<f64>> for Swaption<DualFwd> {
     fn from(value: Swaption<f64>) -> Self {
         Self::new(
             value.identifier,
@@ -197,8 +197,8 @@ impl From<Swaption<f64>> for Swaption<ADReal> {
     }
 }
 
-impl From<Swaption<ADReal>> for Swaption<f64> {
-    fn from(value: Swaption<ADReal>) -> Self {
+impl From<Swaption<DualFwd>> for Swaption<f64> {
+    fn from(value: Swaption<DualFwd>) -> Self {
         Self::new(
             value.identifier,
             value.underlying.into(),
@@ -212,7 +212,7 @@ impl From<Swaption<ADReal>> for Swaption<f64> {
     }
 }
 
-impl From<SwaptionTrade<f64>> for SwaptionTrade<ADReal> {
+impl From<SwaptionTrade<f64>> for SwaptionTrade<DualFwd> {
     fn from(value: SwaptionTrade<f64>) -> Self {
         Self::new(
             value.instrument.into(),
@@ -223,8 +223,8 @@ impl From<SwaptionTrade<f64>> for SwaptionTrade<ADReal> {
     }
 }
 
-impl From<SwaptionTrade<ADReal>> for SwaptionTrade<f64> {
-    fn from(value: SwaptionTrade<ADReal>) -> Self {
+impl From<SwaptionTrade<DualFwd>> for SwaptionTrade<f64> {
+    fn from(value: SwaptionTrade<DualFwd>) -> Self {
         Self::new(
             value.instrument.into(),
             value.trade_date,

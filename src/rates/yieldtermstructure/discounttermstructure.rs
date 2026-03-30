@@ -1,5 +1,5 @@
 use crate::{
-    ad::adreal::{ADReal, Const, FloatExt, IsReal},
+    ad::adreal::{DualFwd, Const, FloatExt, Scalar},
     core::{elements::curveelement::ADCurveElement, pillars::Pillars},
     math::interpolation::interpolator::{Interpolate, Interpolator},
     rates::{
@@ -47,7 +47,7 @@ use crate::{
 #[derive(Clone)]
 pub struct DiscountTermStructure<T>
 where
-    T: IsReal,
+    T: Scalar,
 {
     reference_date: Date,
     dates: Vec<Date>,
@@ -63,7 +63,7 @@ where
 
 impl<T> DiscountTermStructure<T>
 where
-    T: IsReal,
+    T: Scalar,
 {
     /// Returns a reference to the vector of dates.
     #[must_use]
@@ -203,7 +203,7 @@ impl DiscountTermStructure<f64> {
     }
 }
 
-impl DiscountTermStructure<ADReal> {
+impl DiscountTermStructure<DualFwd> {
     /// Creates a new `DiscountTermStructure` with the given dates, discount factors, day counter, interpolator, and extrapolation setting.
     ///
     /// # Arguments
@@ -219,7 +219,7 @@ impl DiscountTermStructure<ADReal> {
     /// Returns an error if dates and discount factors have different lengths or if the first discount factor is not 1.0.
     pub fn new(
         dates: Vec<Date>,
-        discount_factors: Vec<ADReal>,
+        discount_factors: Vec<DualFwd>,
         day_counter: DayCounter,
         interpolator: Interpolator,
         enable_extrapolation: bool,
@@ -234,7 +234,7 @@ impl DiscountTermStructure<ADReal> {
         // order dates y discount_factors
         let mut zipped = dates.into_iter().zip(discount_factors).collect::<Vec<_>>();
         zipped.sort_by_key(|a| a.0);
-        let (dates, discount_factors): (Vec<Date>, Vec<ADReal>) = zipped.into_iter().unzip();
+        let (dates, discount_factors): (Vec<Date>, Vec<DualFwd>) = zipped.into_iter().unzip();
 
         // discount_factors[0] needs to be 1.0
         if (discount_factors[0] - Const::one()).abs() > 1e-12 {
@@ -263,8 +263,8 @@ impl DiscountTermStructure<ADReal> {
     }
 }
 
-impl Pillars<ADReal> for DiscountTermStructure<ADReal> {
-    fn pillars(&self) -> Option<Vec<(String, &ADReal)>> {
+impl Pillars<DualFwd> for DiscountTermStructure<DualFwd> {
+    fn pillars(&self) -> Option<Vec<(String, &DualFwd)>> {
         self.pillar_labels.as_ref().map(|labels| {
             let values = self
                 .pillar_values
@@ -280,7 +280,7 @@ impl Pillars<ADReal> for DiscountTermStructure<ADReal> {
 
     fn put_pillars_on_tape(&mut self) {
         if let Some(pillar_values) = self.pillar_values.as_mut() {
-            pillar_values.iter_mut().for_each(ADReal::put_on_tape);
+            pillar_values.iter_mut().for_each(DualFwd::put_on_tape);
 
             // When IFT sensitivities are stored, rebuild discount_factors as
             // tape-connected expressions:
@@ -292,15 +292,15 @@ impl Pillars<ADReal> for DiscountTermStructure<ADReal> {
             if let Some(ref sens) = self.ift_sensitivities {
                 let n_pillars = pillar_values.len();
                 let mut new_dfs = Vec::with_capacity(sens.len() + 1);
-                new_dfs.push(ADReal::new(1.0)); // DF(0) = 1
+                new_dfs.push(DualFwd::new(1.0)); // DF(0) = 1
                 for (i, sens_row) in sens.iter().enumerate() {
-                    let mut df_ad = ADReal::new(self.discount_factors[i + 1].value());
+                    let mut df_ad = DualFwd::new(self.discount_factors[i + 1].value());
                     for j in 0..n_pillars {
                         let s = sens_row[j];
                         if s.abs() > 1e-16 {
-                            let delta: ADReal =
-                                (pillar_values[j] - ADReal::new(pillar_values[j].value())).into();
-                            df_ad = (df_ad + ADReal::new(s) * delta).into();
+                            let delta: DualFwd =
+                                (pillar_values[j] - DualFwd::new(pillar_values[j].value())).into();
+                            df_ad = (df_ad + DualFwd::new(s) * delta).into();
                         }
                     }
                     new_dfs.push(df_ad);
@@ -310,7 +310,7 @@ impl Pillars<ADReal> for DiscountTermStructure<ADReal> {
         } else {
             self.discount_factors
                 .iter_mut()
-                .for_each(ADReal::put_on_tape);
+                .for_each(DualFwd::put_on_tape);
         }
     }
 }
@@ -373,21 +373,21 @@ impl InterestRatesTermStructure<f64> for DiscountTermStructure<f64> {
     }
 }
 
-impl InterestRatesTermStructure<ADReal> for DiscountTermStructure<ADReal> {
+impl InterestRatesTermStructure<DualFwd> for DiscountTermStructure<DualFwd> {
     fn reference_date(&self) -> Date {
         self.reference_date
     }
-    fn discount_factor(&self, date: Date) -> Result<ADReal> {
+    fn discount_factor(&self, date: Date) -> Result<DualFwd> {
         if date < self.reference_date() {
             return Err(QSError::InvalidValueErr(
                 "Date needs to be greater than reference date".to_string(),
             ));
         }
         if date == self.reference_date() {
-            return Ok(ADReal::one());
+            return Ok(DualFwd::one());
         }
 
-        let year_fraction = ADReal::new(
+        let year_fraction = DualFwd::new(
             self.day_counter()
                 .year_fraction(self.reference_date(), date),
         );
@@ -396,8 +396,8 @@ impl InterestRatesTermStructure<ADReal> for DiscountTermStructure<ADReal> {
             .year_fractions
             .iter()
             .copied()
-            .map(ADReal::new)
-            .collect::<Vec<ADReal>>();
+            .map(DualFwd::new)
+            .collect::<Vec<DualFwd>>();
 
         let discount_factor = self.interpolator.interpolate(
             year_fraction,
@@ -414,14 +414,14 @@ impl InterestRatesTermStructure<ADReal> for DiscountTermStructure<ADReal> {
         end_date: Date,
         comp: Compounding,
         freq: Frequency,
-    ) -> Result<ADReal> {
+    ) -> Result<DualFwd> {
         let discount_factor_to_star = self.discount_factor(start_date)?;
         let discount_factor_to_end = self.discount_factor(end_date)?;
 
         let comp_factor = discount_factor_to_star / discount_factor_to_end;
         let t = self.day_counter().year_fraction(start_date, end_date);
 
-        Ok(InterestRate::<ADReal>::implied_rate(
+        Ok(InterestRate::<DualFwd>::implied_rate(
             comp_factor.into(),
             self.day_counter(),
             comp,
@@ -431,7 +431,7 @@ impl InterestRatesTermStructure<ADReal> for DiscountTermStructure<ADReal> {
         .rate())
     }
 
-    fn nodes(&self) -> Option<Vec<(Date, ADReal)>> {
+    fn nodes(&self) -> Option<Vec<(Date, DualFwd)>> {
         Some(
             self.dates
                 .iter()
@@ -442,7 +442,7 @@ impl InterestRatesTermStructure<ADReal> for DiscountTermStructure<ADReal> {
     }
 }
 
-impl ADCurveElement for DiscountTermStructure<ADReal> {}
+impl ADCurveElement for DiscountTermStructure<DualFwd> {}
 
 #[cfg(test)]
 mod tests {

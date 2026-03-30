@@ -1,4 +1,4 @@
-use crate::ad::adreal::{ADReal, FloatExt, IsReal};
+use crate::ad::adreal::{DualFwd, FloatExt, Scalar};
 
 /// Generic `norm_cdf` implementation - works for any type supporting the needed operations.
 /// This is the single entry point used everywhere.
@@ -8,7 +8,7 @@ pub fn norm_cdf<T: NormCDF>(x: T) -> T {
 }
 
 /// Trait for types that can compute `norm_cdf` using Hart approximation.
-pub trait NormCDF: IsReal + Clone {
+pub trait NormCDF: Scalar + Clone {
     /// Computes the Hart approximation of the standard normal CDF.
     #[must_use]
     fn norm_cdf(self) -> Self;
@@ -36,8 +36,8 @@ impl NormCDF for f64 {
     }
 }
 
-/// Implementation for `ADReal`
-impl NormCDF for ADReal {
+/// Implementation for `DualFwd`
+impl NormCDF for DualFwd {
     fn norm_cdf(self) -> Self {
         let one: Self = 1.0.into();
         let l = self.abs();

@@ -40,7 +40,7 @@
 //!     Frequency::Semiannual,
 //! );
 //!
-//! let swap = MakeSwap::<ADReal>::default()
+//! let swap = MakeSwap::<DualFwd>::default()
 //!     .with_identifier("USD_IRS_5Y".to_string())
 //!     .with_start_date(start_date)
 //!     .with_maturity_date(maturity_date)
@@ -80,7 +80,7 @@
 //! // Build the flat-forward term structure.
 //! let discount_curve = FlatForwardTermStructure::new(
 //!     evaluation_date,
-//!     ADReal::from(discount_rate),
+//!     DualFwd::from(discount_rate),
 //!     curve_definition,
 //! )
 //! .with_pillar_label("SOFR_flat".to_string());
@@ -119,7 +119,7 @@
 //! # let fixed_rate    = 0.030;
 //! # let rate_definition = RateDefinition::new(
 //! #     DayCounter::Actual360, Compounding::Simple, Frequency::Semiannual);
-//! # let swap = MakeSwap::<ADReal>::default()
+//! # let swap = MakeSwap::<DualFwd>::default()
 //! #     .with_identifier("USD_IRS_5Y".to_string())
 //! #     .with_start_date(start_date).with_maturity_date(maturity_date)
 //! #     .with_fixed_rate(fixed_rate).with_notional(notional)
@@ -134,7 +134,7 @@
 //! # let curve_definition = RateDefinition::new(
 //! #     DayCounter::Actual360, Compounding::Continuous, Frequency::Annual);
 //! # let discount_curve = FlatForwardTermStructure::new(
-//! #     evaluation_date, ADReal::from(0.03), curve_definition)
+//! #     evaluation_date, DualFwd::from(0.03), curve_definition)
 //! #     .with_pillar_label("SOFR_flat".to_string());
 //! # let mut constructed_elements = ConstructedElementStore::default();
 //! # constructed_elements.discount_curves_mut().insert(
@@ -146,7 +146,7 @@
 //! # let context = ContextManager::new(quote_store, fixing_store)
 //! #     .with_base_currency(Currency::USD)
 //! #     .with_constructed_elements(constructed_elements);
-//! let pricer   = CashflowDiscountPricer::<Swap<ADReal>, SwapTrade<ADReal>>::new();
+//! let pricer   = CashflowDiscountPricer::<Swap<DualFwd>, SwapTrade<DualFwd>>::new();
 //! let requests = vec![Request::Value, Request::Cashflows, Request::Sensitivities];
 //! let results  = pricer.evaluate(&trade, &requests, &context).expect("pricing failed");
 //!

@@ -3,7 +3,7 @@ use std::{cell::RefCell, rc::Rc};
 use quantsupport::prelude::*;
 
 /// Build a 5-year receive-fixed / pay-floating vanilla USD swap.
-fn create_swap() -> SwapTrade<ADReal> {
+fn create_swap() -> SwapTrade<DualFwd> {
     let start_date = Date::new(2024, 1, 15);
     let maturity_date = Date::new(2029, 1, 15);
     let notional = 10_000_000.0;
@@ -15,7 +15,7 @@ fn create_swap() -> SwapTrade<ADReal> {
         Frequency::Semiannual,
     );
 
-    let swap = MakeSwap::<ADReal>::default()
+    let swap = MakeSwap::<DualFwd>::default()
         .with_identifier("USD_IRS_5Y".to_string())
         .with_start_date(start_date)
         .with_maturity_date(maturity_date)
@@ -46,7 +46,7 @@ fn create_pricing_context() -> ContextManager {
     );
     let discount_curve = FlatForwardTermStructure::new(
         evaluation_date,
-        ADReal::from(discount_rate),
+        DualFwd::from(discount_rate),
         curve_definition,
     )
     .with_pillar_label("SOFR_flat".to_string());
@@ -72,7 +72,7 @@ fn main() -> Result<()> {
     let context = create_pricing_context();
 
     // ── 2. Price the swap ─────────────────────────────────────────────
-    let pricer = CashflowDiscountPricer::<Swap<ADReal>, SwapTrade<ADReal>>::new();
+    let pricer = CashflowDiscountPricer::<Swap<DualFwd>, SwapTrade<DualFwd>>::new();
     let requests = vec![Request::Value, Request::Cashflows, Request::Sensitivities];
     let results = pricer.evaluate(&trade, &requests, &context)?;
 

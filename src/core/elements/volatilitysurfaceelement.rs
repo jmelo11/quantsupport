@@ -1,7 +1,7 @@
 use std::cell::{Ref, RefMut};
 
 use crate::{
-    ad::adreal::ADReal,
+    ad::adreal::DualFwd,
     core::{marketdatahandling::constructedelementstore::SharedElement, pillars::Pillars},
     indices::marketindex::MarketIndex,
     volatility::volatilitysurface::VolatilitySurface,
@@ -9,7 +9,7 @@ use crate::{
 
 /// [`ADVolatilitySurfaceElement`] is a trait to identify AD-enable volatility surfaces.
 pub trait ADVolatilitySurfaceElement:
-    VolatilitySurface<ADReal> + Pillars<ADReal> + Send + Sync
+    VolatilitySurface<DualFwd> + Pillars<DualFwd> + Send + Sync
 {
 }
 

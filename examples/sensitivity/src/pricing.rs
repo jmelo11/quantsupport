@@ -18,7 +18,7 @@ pub fn price_product<I, T>(
 ) -> std::result::Result<ProductOutput, Box<dyn std::error::Error>>
 where
     I: Instrument,
-    T: LegsProvider<ADReal> + Trade<I> + Send + Sync,
+    T: LegsProvider<DualFwd> + Trade<I> + Send + Sync,
 {
     let mut pricer = CashflowDiscountPricer::<I, T>::new();
     pricer.set_discount_policy(Box::new(SingleCurveCSADiscountPolicy::new(

@@ -74,7 +74,7 @@ pub fn build_curves(
 
     // FX spot: 1 USD = 935 CLP
     let mut fx_store = ExchangeRateStore::new();
-    fx_store.add_exchange_rate(Currency::USD, Currency::CLP, ADReal::new(935.0));
+    fx_store.add_exchange_rate(Currency::USD, Currency::CLP, DualFwd::new(935.0));
 
     let bootstrapper =
         MultiCurveBootstrapper::new(curve_specs, policy).with_exchange_rate_store(fx_store);
@@ -93,7 +93,7 @@ pub fn build_curves(
 
     let fixing_store = FixingStore::default();
     let mut pricing_fx_store = ExchangeRateStore::new();
-    pricing_fx_store.add_exchange_rate(Currency::USD, Currency::CLP, ADReal::new(935.0));
+    pricing_fx_store.add_exchange_rate(Currency::USD, Currency::CLP, DualFwd::new(935.0));
 
     let context = ContextManager::new(QuoteStore::new(rd), fixing_store)
         .with_base_currency(Currency::USD)

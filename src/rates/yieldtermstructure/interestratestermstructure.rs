@@ -1,5 +1,5 @@
 use crate::{
-    ad::adreal::IsReal,
+    ad::adreal::Scalar,
     rates::compounding::Compounding,
     time::{date::Date, enums::Frequency},
     utils::errors::Result,
@@ -12,7 +12,7 @@ use crate::{
 /// zero curve) will implement this trait with their own logic for these calculations.
 pub trait InterestRatesTermStructure<T>
 where
-    T: IsReal,
+    T: Scalar,
 {
     /// Returns the reference date for the given curve.
     fn reference_date(&self) -> Date;

@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 
 use crate::{
-    ad::adreal::{ADReal, IsReal},
+    ad::adreal::DualFwd,
     currencies::{currency::Currency, exchangeratestore::ExchangeRateStore},
     indices::marketindex::MarketIndex,
     instruments::cashflows::leg::Leg,
@@ -116,9 +116,9 @@ pub struct SolvedCurve {
     discount_factors: Vec<f64>,
     day_counter: DayCounter,
     interpolator: Interpolator,
-    pillar_values: Option<Vec<ADReal>>,
+    pillar_values: Option<Vec<DualFwd>>,
     pillar_labels: Option<Vec<String>>,
-    output_discount_factors: Option<Vec<ADReal>>,
+    output_discount_factors: Option<Vec<DualFwd>>,
     ift_sensitivities: Option<Vec<Vec<f64>>>,
 }
 
@@ -155,7 +155,7 @@ impl SolvedCurve {
 
     /// Attaches AD-tracked pillar values (typically market quotes).
     #[must_use]
-    pub fn with_pillar_values(mut self, pillar_values: Vec<ADReal>) -> Self {
+    pub fn with_pillar_values(mut self, pillar_values: Vec<DualFwd>) -> Self {
         self.pillar_values = Some(pillar_values);
         self
     }
@@ -175,7 +175,7 @@ impl SolvedCurve {
 
     /// Attaches AD-tracked discount factors at the pillar dates.
     #[must_use]
-    pub fn with_output_discount_factors(mut self, output_discount_factors: Vec<ADReal>) -> Self {
+    pub fn with_output_discount_factors(mut self, output_discount_factors: Vec<DualFwd>) -> Self {
         self.output_discount_factors = Some(output_discount_factors);
         self
     }
@@ -197,7 +197,7 @@ impl SolvedCurve {
     ///
     /// # Errors
     /// Returns an error if the pillar values have not been set, which typically indicates that the curve has not been fully bootstrapped or that there is an issue with the AD linkage during bootstrapping.
-    pub fn pillar_values(&self) -> Result<&[ADReal]> {
+    pub fn pillar_values(&self) -> Result<&[DualFwd]> {
         self.pillar_values
             .as_deref()
             .ok_or_else(|| QSError::InvalidValueErr("Pillar values not set".into()))
@@ -229,7 +229,7 @@ impl SolvedCurve {
     ///
     /// # Errors
     /// Returns an error if the output discount factors have not been set, which typically indicates that the curve has not been fully bootstrapped or that there is an issue with the AD linkage during bootstrapping.
-    pub fn output_discount_factors(&self) -> Result<&[ADReal]> {
+    pub fn output_discount_factors(&self) -> Result<&[DualFwd]> {
         self.output_discount_factors
             .as_deref()
             .ok_or_else(|| QSError::InvalidValueErr("Output discount factors not set".into()))

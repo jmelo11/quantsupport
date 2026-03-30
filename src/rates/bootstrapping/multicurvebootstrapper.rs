@@ -3,7 +3,7 @@ use std::{cell::RefCell, collections::HashMap, rc::Rc};
 use nalgebra::{DMatrix, DVector};
 
 use crate::{
-    ad::adreal::{ADReal, IsReal},
+    ad::adreal::{DualFwd, Scalar},
     core::{
         elements::curveelement::{ADCurveElement, DiscountCurveElement},
         marketdatahandling::constructedelementstore::SharedElement,
@@ -175,7 +175,7 @@ impl MultiCurveBootstrapper {
 
         // 3. Iteratively bootstrap in dependency order.
         let mut solved_curves: HashMap<MarketIndex, SolvedCurve> = HashMap::new();
-        let mut pillar_values: HashMap<MarketIndex, Vec<ADReal>> = HashMap::new();
+        let mut pillar_values: HashMap<MarketIndex, Vec<DualFwd>> = HashMap::new();
 
         for index in &order {
             let spec = resolved.get(index).ok_or_else(|| {
@@ -211,13 +211,13 @@ impl MultiCurveBootstrapper {
                 |_| {
                     sc.discount_factors()
                         .iter()
-                        .map(|&df| ADReal::new(df))
+                        .map(|&df| DualFwd::new(df))
                         .collect()
                 },
-                <[ADReal]>::to_vec,
+                <[DualFwd]>::to_vec,
             );
 
-            let mut ts = DiscountTermStructure::<ADReal>::new(
+            let mut ts = DiscountTermStructure::<DualFwd>::new(
                 dates,
                 ad_dfs,
                 spec.day_counter(),
@@ -413,7 +413,7 @@ impl MultiCurveBootstrapper {
                 // Retrieve parent quote values
                 let parent_quote_vals: Vec<f64> = parent_curve
                     .pillar_values()
-                    .map(|pv| pv.iter().map(IsReal::value).collect())
+                    .map(|pv| pv.iter().map(Scalar::value).collect())
                     .unwrap_or_default();
 
                 cross_deps.push(CrossCurveDep {
@@ -425,9 +425,9 @@ impl MultiCurveBootstrapper {
             }
         }
 
-        // Build ADReal discount factors whose derivatives flow to the
-        // quote ADReals via the computed sensitivities.
-        let quote_ad: Vec<ADReal> = quote_vals.iter().map(|&v| ADReal::new(v)).collect();
+        // Build DualFwd discount factors whose derivatives flow to the
+        // quote DualFwds via the computed sensitivities.
+        let quote_ad: Vec<DualFwd> = quote_vals.iter().map(|&v| DualFwd::new(v)).collect();
 
         // Pre-compose cross-curve dependencies into the IFT matrix.
         // For each parent, compose:  combined[i][k] = Σ_m cross_df_sens[i][m] * parent_ift_sens[m][k]
@@ -451,7 +451,7 @@ impl MultiCurveBootstrapper {
                 sensitivity_row.extend(row_ext);
             }
             for &v in &dep.parent_quote_values {
-                full_quotes.push(ADReal::new(v));
+                full_quotes.push(DualFwd::new(v));
             }
             full_labels.extend(dep.parent_pillar_labels.clone());
         }
@@ -461,15 +461,15 @@ impl MultiCurveBootstrapper {
         // Since (q_j − q_j_value) = 0 in value, the numeric result is
         // exact; but the AD graph records ∂DF/∂q correctly.
         let n_total = full_quotes.len();
-        let mut ad_dfs: Vec<ADReal> = Vec::with_capacity(n + 1);
-        ad_dfs.push(ADReal::new(1.0)); // DF(0) = 1
+        let mut ad_dfs: Vec<DualFwd> = Vec::with_capacity(n + 1);
+        ad_dfs.push(DualFwd::new(1.0)); // DF(0) = 1
         for i in 0..n {
-            let mut df_ad = ADReal::new(converged_x[i]);
+            let mut df_ad = DualFwd::new(converged_x[i]);
             for j in 0..n_total {
                 let s = full_sensitivity[i][j];
                 if s.abs() > 1e-16 {
-                    let delta = full_quotes[j] - ADReal::new(full_quotes[j].value());
-                    df_ad = (df_ad + ADReal::new(s) * delta).into();
+                    let delta = full_quotes[j] - DualFwd::new(full_quotes[j].value());
+                    df_ad = (df_ad + DualFwd::new(s) * delta).into();
                 }
             }
             ad_dfs.push(df_ad);

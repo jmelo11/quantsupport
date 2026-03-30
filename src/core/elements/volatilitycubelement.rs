@@ -1,14 +1,14 @@
 use std::cell::{Ref, RefMut};
 
 use crate::{
-    ad::adreal::ADReal,
+    ad::adreal::DualFwd,
     core::{marketdatahandling::constructedelementstore::SharedElement, pillars::Pillars},
     indices::marketindex::MarketIndex,
     volatility::volatilitycube::VolatilityCube,
 };
 
 /// [`ADVolatilityCubeElement`] is a trait to identify AD-enable volatility cubes.
-pub trait ADVolatilityCubeElement: VolatilityCube<ADReal> + Pillars<ADReal> + Send + Sync {}
+pub trait ADVolatilityCubeElement: VolatilityCube<DualFwd> + Pillars<DualFwd> + Send + Sync {}
 
 /// [`VolatilityCubeElement`] is a handle to a particular [`ADVolatilityCubeElement`].
 #[derive(Clone)]

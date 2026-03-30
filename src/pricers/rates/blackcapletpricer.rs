@@ -1,6 +1,6 @@
 use crate::{
     ad::{
-        adreal::{ADReal, IsReal},
+        adreal::DualFwd,
         tape::Tape,
     },
     core::{
@@ -81,7 +81,7 @@ impl Default for BlackCapletPricer {
 /// State for Black caplet/floorlet pricing.
 #[derive(Default)]
 struct BlackCapletState {
-    value: Option<ADReal>,
+    value: Option<DualFwd>,
     market_data: Option<MarketData>,
 }
 
@@ -119,13 +119,13 @@ impl HandleValue<CapletFloorletTrade, BlackCapletState> for BlackCapletPricer {
             .day_counter()
             .year_fraction(trade.trade_date(), start_date);
 
-        Tape::start_recording();
-        Tape::set_mark();
+        Tape::start_recording_fwd();
+        Tape::set_mark_fwd();
 
         state.put_pillars_on_tape()?;
 
         // Forward rate using the conventions from the caplet's rate definition
-        let fwd: ADReal = state
+        let fwd: DualFwd = state
             .get_discount_curve_element(&index)?
             .curve()
             .forward_rate(
@@ -157,10 +157,10 @@ impl HandleValue<CapletFloorletTrade, BlackCapletState> for BlackCapletPricer {
         let undiscounted =
             BlackClosedFormPricer::black_forward_price(fwd, effective_strike, vol, tau, is_cap);
 
-        let value: ADReal = (df_pay * undiscounted * alpha * trade.notional()).into();
+        let value: DualFwd = (df_pay * undiscounted * alpha * trade.notional()).into();
         state.value = Some(value);
 
-        Tape::stop_recording();
+        Tape::stop_recording_fwd();
         Ok(value.value())
     }
 }
@@ -204,7 +204,7 @@ impl HandleSensitivities<CapletFloorletTrade, BlackCapletState> for BlackCapletP
             .unwrap_or_default()
         {
             ids.push(label);
-            exposures.push(pillar.adjoint()?);
+            exposures.push(pillar.adjoint()?.value());
         }
 
         // Volatility surface sensitivities
@@ -215,7 +215,7 @@ impl HandleSensitivities<CapletFloorletTrade, BlackCapletState> for BlackCapletP
             .unwrap_or_default()
         {
             ids.push(label);
-            exposures.push(pillar.adjoint()?);
+            exposures.push(pillar.adjoint()?.value());
         }
 
         Ok(SensitivityMap::default()
@@ -319,7 +319,7 @@ mod tests {
     };
 
     use crate::{
-        ad::adreal::{ADReal, IsReal},
+        ad::adreal::DualFwd,
         core::{
             elements::{
                 curveelement::DiscountCurveElement,
@@ -392,12 +392,12 @@ mod tests {
         anchor_strike: f64,
     ) -> Result<(
         MarketData,
-        FlatForwardTermStructure<ADReal>,
-        Rc<RefCell<InterpolatedVolatilitySurface<ADReal>>>,
+        FlatForwardTermStructure<DualFwd>,
+        Rc<RefCell<InterpolatedVolatilitySurface<DualFwd>>>,
     )> {
         let discount_curve = FlatForwardTermStructure::new(
             trade_date,
-            ADReal::from(risk_free_rate),
+            DualFwd::from(risk_free_rate),
             RateDefinition::default(),
         )
         .with_pillar_label("discount_rate".to_string());
@@ -416,15 +416,15 @@ mod tests {
                 TimeUnit::Days,
             ),
             BTreeMap::from([
-                (F64Key::new(strike_lo), ADReal::from(flat_vol)),
-                (F64Key::new(strike_hi), ADReal::from(flat_vol)),
+                (F64Key::new(strike_lo), DualFwd::from(flat_vol)),
+                (F64Key::new(strike_hi), DualFwd::from(flat_vol)),
             ]),
         );
         surface_points.insert(
             Period::new(i32::try_from(days_after_start).unwrap_or(0), TimeUnit::Days),
             BTreeMap::from([
-                (F64Key::new(strike_lo), ADReal::from(flat_vol)),
-                (F64Key::new(strike_hi), ADReal::from(flat_vol)),
+                (F64Key::new(strike_lo), DualFwd::from(flat_vol)),
+                (F64Key::new(strike_hi), DualFwd::from(flat_vol)),
             ]),
         );
 

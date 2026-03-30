@@ -1,5 +1,5 @@
 use crate::{
-    ad::adreal::{ADReal, IsReal},
+    ad::adreal::{DualFwd, Scalar},
     core::{elements::volatilitysurfaceelement::ADVolatilitySurfaceElement, pillars::Pillars},
     indices::marketindex::MarketIndex,
     math::interpolation::bilinear::{BilinearInterpolator, BilinearPoint, BilinearValue},
@@ -15,15 +15,15 @@ type SurfaceMap<T> = BTreeMap<Period, BTreeMap<F64Key, T>>;
 /// Represents if the volatility surface.
 ///
 /// ## Generics
-/// - `T`: Numeric type for the volatility values (e.g., `f64`, `ADReal`).
-pub struct InterpolatedVolatilitySurface<T: IsReal> {
+/// - `T`: Numeric type for the volatility values (e.g., `f64`, `DualFwd`).
+pub struct InterpolatedVolatilitySurface<T: Scalar> {
     reference_date: Date,
     market_index: MarketIndex,
     points: SurfaceMap<T>,
     labels: Option<Vec<String>>,
 }
 
-impl<T: IsReal> InterpolatedVolatilitySurface<T> {
+impl<T: Scalar> InterpolatedVolatilitySurface<T> {
     /// Creates a new `VolatilitySurface`.
     #[must_use]
     pub const fn new(
@@ -91,8 +91,8 @@ impl<T: BilinearValue> VolatilitySurface<T> for InterpolatedVolatilitySurface<T>
     }
 }
 
-impl Pillars<ADReal> for InterpolatedVolatilitySurface<ADReal> {
-    fn pillars(&self) -> Option<Vec<(String, &ADReal)>> {
+impl Pillars<DualFwd> for InterpolatedVolatilitySurface<DualFwd> {
+    fn pillars(&self) -> Option<Vec<(String, &DualFwd)>> {
         self.labels.as_ref().map(|labels| {
             labels
                 .iter()
@@ -115,7 +115,7 @@ impl Pillars<ADReal> for InterpolatedVolatilitySurface<ADReal> {
     }
 }
 
-impl ADVolatilitySurfaceElement for InterpolatedVolatilitySurface<ADReal> {}
+impl ADVolatilitySurfaceElement for InterpolatedVolatilitySurface<DualFwd> {}
 
 #[cfg(test)]
 mod tests {
@@ -123,7 +123,7 @@ mod tests {
 
     use crate::{
         ad::{
-            adreal::{ADReal, IsReal},
+            adreal::DualFwd,
             tape::Tape,
         },
         indices::marketindex::MarketIndex,
@@ -162,21 +162,21 @@ mod tests {
 
     #[test]
     fn interpolated_surface_returns_bilinear_value_for_adreal() {
-        Tape::start_recording();
+        Tape::start_recording_fwd();
 
         let mut points = BTreeMap::new();
         points.insert(
             Period::new(6, TimeUnit::Months),
             BTreeMap::from([
-                (F64Key::new(90.0), ADReal::from(0.20)),
-                (F64Key::new(110.0), ADReal::from(0.30)),
+                (F64Key::new(90.0), DualFwd::from(0.20)),
+                (F64Key::new(110.0), DualFwd::from(0.30)),
             ]),
         );
         points.insert(
             Period::new(12, TimeUnit::Months),
             BTreeMap::from([
-                (F64Key::new(90.0), ADReal::from(0.22)),
-                (F64Key::new(110.0), ADReal::from(0.34)),
+                (F64Key::new(90.0), DualFwd::from(0.22)),
+                (F64Key::new(110.0), DualFwd::from(0.34)),
             ]),
         );
 

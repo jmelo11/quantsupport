@@ -1,4 +1,4 @@
-use crate::ad::adreal::{ADReal, FloatExt};
+use crate::ad::adreal::{DualFwd, FloatExt};
 use crate::math::probability::norm_cdf::norm_cdf;
 use crate::models::GbmModelParameters;
 
@@ -20,23 +20,23 @@ impl CloseFormPricer for BlackClosedFormPricer {}
 impl BlackClosedFormPricer {
     /// Computes d1 and d2 for Black-style formulas.
     #[must_use]
-    pub fn d1_d2(fwd: ADReal, strike: f64, vol: ADReal, tau: f64) -> (ADReal, ADReal) {
+    pub fn d1_d2(fwd: DualFwd, strike: f64, vol: DualFwd, tau: f64) -> (DualFwd, DualFwd) {
         let vol_sqrt_tau = vol * tau.sqrt();
-        let d1: ADReal =
+        let d1: DualFwd =
             (((fwd / strike).ln() + vol * vol * 0.5 * tau) / vol_sqrt_tau.clone()).into();
-        let d2: ADReal = (d1 - vol_sqrt_tau).into();
+        let d2: DualFwd = (d1 - vol_sqrt_tau).into();
         (d1, d2)
     }
 
     /// Returns undiscounted Black call/put price from a forward.
     #[must_use]
     pub fn black_forward_price(
-        fwd: ADReal,
+        fwd: DualFwd,
         strike: f64,
-        vol: ADReal,
+        vol: DualFwd,
         tau: f64,
         is_call: bool,
-    ) -> ADReal {
+    ) -> DualFwd {
         let (d1, d2) = Self::d1_d2(fwd, strike, vol, tau);
 
         if is_call {
@@ -44,8 +44,8 @@ impl BlackClosedFormPricer {
             let nd2 = norm_cdf(d2);
             (fwd * nd1 - nd2 * strike).into()
         } else {
-            let nmd1: ADReal = norm_cdf((-d1).into());
-            let nmd2: ADReal = norm_cdf((-d2).into());
+            let nmd1: DualFwd = norm_cdf((-d1).into());
+            let nmd2: DualFwd = norm_cdf((-d2).into());
             (nmd2 * strike - fwd * nmd1).into()
         }
     }
@@ -91,10 +91,7 @@ impl CloseFormPricer for HullWhiteClosedFormPricer {}
 
 #[cfg(test)]
 mod tests {
-    use crate::ad::{
-        adreal::{ADReal, IsReal},
-        tape::Tape,
-    };
+    use crate::ad::{adreal::DualFwd, tape::Tape};
 
     use super::BlackClosedFormPricer;
 
@@ -105,10 +102,10 @@ mod tests {
         let vol = 0.24;
         let tau = 0.75;
 
-        Tape::start_recording();
+        Tape::start_recording_fwd();
 
-        let mut fwd_ad = ADReal::new(fwd);
-        let mut vol_ad = ADReal::new(vol);
+        let mut fwd_ad = DualFwd::new(fwd);
+        let mut vol_ad = DualFwd::new(vol);
         fwd_ad.put_on_tape();
         vol_ad.put_on_tape();
 
@@ -121,36 +118,38 @@ mod tests {
         assert!(ad_delta.is_ok());
         assert!(ad_vega.is_ok());
 
+        Tape::stop_recording_fwd();
+
         let bump = 1e-5;
         let pv_up_f = BlackClosedFormPricer::black_forward_price(
-            ADReal::new(fwd + bump),
+            DualFwd::new(fwd + bump),
             strike,
-            ADReal::new(vol),
+            DualFwd::new(vol),
             tau,
             true,
         )
         .value();
         let pv_dn_f = BlackClosedFormPricer::black_forward_price(
-            ADReal::new(fwd - bump),
+            DualFwd::new(fwd - bump),
             strike,
-            ADReal::new(vol),
+            DualFwd::new(vol),
             tau,
             true,
         )
         .value();
 
         let pv_up_v = BlackClosedFormPricer::black_forward_price(
-            ADReal::new(fwd),
+            DualFwd::new(fwd),
             strike,
-            ADReal::new(vol + bump),
+            DualFwd::new(vol + bump),
             tau,
             true,
         )
         .value();
         let pv_dn_v = BlackClosedFormPricer::black_forward_price(
-            ADReal::new(fwd),
+            DualFwd::new(fwd),
             strike,
-            ADReal::new(vol - bump),
+            DualFwd::new(vol - bump),
             tau,
             true,
         )
@@ -159,10 +158,12 @@ mod tests {
         let fd_delta = (pv_up_f - pv_dn_f) / (2.0 * bump);
         let fd_vega = (pv_up_v - pv_dn_v) / (2.0 * bump);
 
-        let ad_delta = ad_delta.unwrap_or_default();
-        let ad_vega = ad_vega.unwrap_or_default();
+        let ad_delta = ad_delta.unwrap_or_default().value();
+        let ad_vega = ad_vega.unwrap_or_default().value();
 
         assert!((ad_delta - fd_delta).abs() < 1e-4);
         assert!((ad_vega - fd_vega).abs() < 1e-4);
+
+        Tape::rewind_to_init_fwd();
     }
 }

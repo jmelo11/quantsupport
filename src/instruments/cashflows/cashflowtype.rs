@@ -1,5 +1,5 @@
 use crate::{
-    ad::adreal::{ADReal, IsReal},
+    ad::adreal::{DualFwd, Scalar},
     instruments::cashflows::{
         cashflow::SimpleCashflow, fixedratecoupon::FixedRateCoupon,
         floatingratecoupon::FloatingRateCoupon, optionembeddedcoupon::OptionEmbeddedCoupon,
@@ -8,7 +8,7 @@ use crate::{
 
 /// An enumeration representing different types of cash flows that can occur in financial instruments.
 #[derive(Clone)]
-pub enum CashflowType<T: IsReal> {
+pub enum CashflowType<T: Scalar> {
     /// A fixed rate coupon, where the cash flow is determined by a fixed interest rate applied to the notional amount.
     FixedRateCoupon(FixedRateCoupon<T>),
     /// A floating rate coupon, where the cash flow is determined by a variable interest rate (often linked to an index) applied to the notional amount.
@@ -21,7 +21,7 @@ pub enum CashflowType<T: IsReal> {
     Disbursement(SimpleCashflow<f64>),
 }
 
-impl From<CashflowType<f64>> for CashflowType<ADReal> {
+impl From<CashflowType<f64>> for CashflowType<DualFwd> {
     fn from(value: CashflowType<f64>) -> Self {
         match value {
             CashflowType::FixedRateCoupon(coupon) => Self::FixedRateCoupon(coupon.into()),
@@ -33,8 +33,8 @@ impl From<CashflowType<f64>> for CashflowType<ADReal> {
     }
 }
 
-impl From<CashflowType<ADReal>> for CashflowType<f64> {
-    fn from(value: CashflowType<ADReal>) -> Self {
+impl From<CashflowType<DualFwd>> for CashflowType<f64> {
+    fn from(value: CashflowType<DualFwd>) -> Self {
         match value {
             CashflowType::FixedRateCoupon(coupon) => Self::FixedRateCoupon(coupon.into()),
             CashflowType::FloatingRateCoupon(coupon) => Self::FloatingRateCoupon(coupon.into()),

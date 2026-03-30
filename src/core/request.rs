@@ -1,4 +1,4 @@
-use crate::ad::adreal::{ADReal, IsReal};
+use crate::ad::adreal::{DualFwd, Scalar};
 use crate::core::collateral::Discountable;
 use crate::time::daycounter::DayCounter;
 use crate::{
@@ -90,7 +90,7 @@ pub trait HandleFairRate<T, S> {
 /// The [`LegsProvider`] trait defines a method for providing the cashflows of an instrument.
 pub trait LegsProvider<T>
 where
-    T: IsReal,
+    T: Scalar,
 {
     /// Provides the cashflows of the instrument.
     fn legs(&self) -> &[Leg<T>];
@@ -103,7 +103,7 @@ where
 /// for proving the a resolved instance of the legs and underlying cashflows.
 pub trait HandleCashflows<T, S>
 where
-    S: LegsProvider<ADReal>,
+    S: LegsProvider<DualFwd>,
 {
     /// Handles cashflow-related operations and returns a vector of cashflows.
     ///
@@ -221,7 +221,7 @@ where
 mod tests {
     use super::*;
     use crate::{
-        ad::adreal::ADReal,
+        ad::adreal::DualFwd,
         core::{instrument::AssetClass, trade::Side},
         currencies::currency::Currency,
         instruments::cashflows::{
@@ -236,11 +236,11 @@ mod tests {
 
     /// Mock state that implements LegsProvider for testing
     struct MockState {
-        legs: Vec<Leg<ADReal>>,
+        legs: Vec<Leg<DualFwd>>,
     }
 
-    impl LegsProvider<ADReal> for MockState {
-        fn legs(&self) -> &[Leg<ADReal>] {
+    impl LegsProvider<DualFwd> for MockState {
+        fn legs(&self) -> &[Leg<DualFwd>] {
             &self.legs
         }
     }
@@ -250,9 +250,9 @@ mod tests {
 
     impl HandleCashflows<MockTrade, MockState> for MockHandler {}
 
-    fn create_test_rate() -> InterestRate<ADReal> {
+    fn create_test_rate() -> InterestRate<DualFwd> {
         InterestRate::from_rate_definition(
-            ADReal::new(0.05),
+            DualFwd::new(0.05),
             crate::rates::interestrate::RateDefinition::new(
                 DayCounter::Actual360,
                 crate::rates::compounding::Compounding::Simple,

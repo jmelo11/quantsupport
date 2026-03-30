@@ -1,12 +1,11 @@
 use std::cmp::Ordering;
 
 use crate::{
-    ad::adreal::ADReal,
+    ad::adreal::DualFwd,
     math::interpolation::interpolator::StaticInterpolate,
     utils::errors::{QSError, Result},
 };
 
-/// # `Linear Interpolator`
 /// Basic linear interpolator.
 #[derive(Clone)]
 pub struct LinearInterpolator {}
@@ -47,13 +46,13 @@ impl StaticInterpolate<f64> for LinearInterpolator {
     }
 }
 
-impl StaticInterpolate<ADReal> for LinearInterpolator {
+impl StaticInterpolate<DualFwd> for LinearInterpolator {
     fn interpolate(
-        x: ADReal,
-        x_: &[ADReal],
-        y_: &[ADReal],
+        x: DualFwd,
+        x_: &[DualFwd],
+        y_: &[DualFwd],
         enable_extrapolation: bool,
-    ) -> Result<ADReal> {
+    ) -> Result<DualFwd> {
         let index =
             match x_.binary_search_by(|&probe| probe.partial_cmp(&x).unwrap_or(Ordering::Equal)) {
                 Ok(index) | Err(index) => index,
@@ -90,8 +89,7 @@ impl StaticInterpolate<ADReal> for LinearInterpolator {
 
 #[cfg(test)]
 mod tests {
-    use crate::ad::adreal::ADReal;
-    use crate::ad::adreal::IsReal;
+    use crate::ad::adreal::DualFwd;
     use crate::ad::tape::Tape;
 
     use super::LinearInterpolator;
@@ -108,19 +106,19 @@ mod tests {
 
     #[test]
     fn test_linear_interpolation_adreal() {
-        let x = ADReal::from(0.5);
-        let x_ = vec![ADReal::from(0.0), ADReal::from(1.0)];
-        let y_ = vec![ADReal::from(0.0), ADReal::from(1.0)];
+        let x = DualFwd::from(0.5);
+        let x_ = vec![DualFwd::from(0.0), DualFwd::from(1.0)];
+        let y_ = vec![DualFwd::from(0.0), DualFwd::from(1.0)];
         let y = LinearInterpolator::interpolate(x, &x_, &y_, true).unwrap();
         assert!((y.value() - 0.5).abs() < 1e-12);
     }
 
     #[test]
     fn test_sens_to_pillars() {
-        Tape::start_recording();
-        let x = ADReal::from(0.5);
-        let x_ = vec![ADReal::from(0.0), ADReal::from(1.0)];
-        let y_ = vec![ADReal::from(0.0), ADReal::from(1.0)];
+        Tape::start_recording_fwd();
+        let x = DualFwd::from(0.5);
+        let x_ = vec![DualFwd::from(0.0), DualFwd::from(1.0)];
+        let y_ = vec![DualFwd::from(0.0), DualFwd::from(1.0)];
         let y = LinearInterpolator::interpolate(x, &x_, &y_, true).unwrap();
         let _ = y.backward();
         assert!(y_.first().unwrap().adjoint().unwrap() - 0.5 < 1e-12);

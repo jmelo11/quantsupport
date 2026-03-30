@@ -1,5 +1,5 @@
 use crate::{
-    ad::adreal::{ADReal, IsReal},
+    ad::adreal::{DualFwd, Scalar},
     core::{
         instrument::Instrument,
         request::LegsProvider,
@@ -14,7 +14,7 @@ use crate::{
 /// A [`Swap`] represents a vanilla fixed-float interest rate swap with two legs:
 /// a fixed-rate leg and a floating-rate leg.
 #[derive(Clone)]
-pub struct Swap<T: IsReal> {
+pub struct Swap<T: Scalar> {
     identifier: String,
     legs: Vec<Leg<T>>,
     forward_index: MarketIndex,
@@ -23,7 +23,7 @@ pub struct Swap<T: IsReal> {
 
 impl<T> Swap<T>
 where
-    T: IsReal,
+    T: Scalar,
 {
     /// Creates a new [`Swap`].
     ///
@@ -71,7 +71,7 @@ where
 
 impl<T> Instrument for Swap<T>
 where
-    T: IsReal,
+    T: Scalar,
 {
     fn identifier(&self) -> String {
         self.identifier.clone()
@@ -80,7 +80,7 @@ where
 
 impl<T> LegsProvider<T> for Swap<T>
 where
-    T: IsReal,
+    T: Scalar,
 {
     fn legs(&self) -> &[Leg<T>] {
         &self.legs
@@ -88,7 +88,7 @@ where
 }
 
 /// Represents a trade of an interest rate swap.
-pub struct SwapTrade<T: IsReal> {
+pub struct SwapTrade<T: Scalar> {
     instrument: Swap<T>,
     trade_date: Date,
     notional: f64,
@@ -97,7 +97,7 @@ pub struct SwapTrade<T: IsReal> {
 
 impl<T> LegsProvider<T> for SwapTrade<T>
 where
-    T: IsReal,
+    T: Scalar,
 {
     fn legs(&self) -> &[Leg<T>] {
         self.instrument.legs()
@@ -106,7 +106,7 @@ where
 
 impl<T> SwapTrade<T>
 where
-    T: IsReal,
+    T: Scalar,
 {
     /// Creates a new [`SwapTrade`].
     #[must_use]
@@ -128,7 +128,7 @@ where
 
 impl<T> Trade<Swap<T>> for SwapTrade<T>
 where
-    T: IsReal,
+    T: Scalar,
 {
     fn instrument(&self) -> &Swap<T> {
         &self.instrument
@@ -144,7 +144,7 @@ where
 }
 
 #[allow(clippy::expect_used)]
-impl From<Swap<f64>> for Swap<ADReal> {
+impl From<Swap<f64>> for Swap<DualFwd> {
     fn from(value: Swap<f64>) -> Self {
         let mut legs = value.legs.into_iter();
         Self::new(
@@ -158,8 +158,8 @@ impl From<Swap<f64>> for Swap<ADReal> {
 }
 
 #[allow(clippy::expect_used)]
-impl From<Swap<ADReal>> for Swap<f64> {
-    fn from(value: Swap<ADReal>) -> Self {
+impl From<Swap<DualFwd>> for Swap<f64> {
+    fn from(value: Swap<DualFwd>) -> Self {
         let mut legs = value.legs.into_iter();
         Self::new(
             value.identifier,
@@ -171,7 +171,7 @@ impl From<Swap<ADReal>> for Swap<f64> {
     }
 }
 
-impl From<SwapTrade<f64>> for SwapTrade<ADReal> {
+impl From<SwapTrade<f64>> for SwapTrade<DualFwd> {
     fn from(value: SwapTrade<f64>) -> Self {
         Self::new(
             value.instrument.into(),
@@ -182,8 +182,8 @@ impl From<SwapTrade<f64>> for SwapTrade<ADReal> {
     }
 }
 
-impl From<SwapTrade<ADReal>> for SwapTrade<f64> {
-    fn from(value: SwapTrade<ADReal>) -> Self {
+impl From<SwapTrade<DualFwd>> for SwapTrade<f64> {
+    fn from(value: SwapTrade<DualFwd>) -> Self {
         Self::new(
             value.instrument.into(),
             value.trade_date,
