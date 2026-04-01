@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use std::str::FromStr;
 
 use quantsupport::prelude::*;
+use quantsupport::quotes::fxstore::FxStore;
 use serde::Deserialize;
 
 // ---------------------------------------------------------------------------
@@ -125,11 +126,11 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     let policy = BootstrapDiscountPolicy::new(csa_index, csa_currency);
 
     // FX spot from fixings: 1 USD = 935 CLP
-    let mut fx_store = ExchangeRateStore::new();
-    fx_store.add_exchange_rate(Currency::USD, Currency::CLP, DualFwd::new(935.0));
+    let mut fx_store = FxStore::new();
+    fx_store.add_fx_rate(Currency::USD, Currency::CLP, DualFwd::new(935.0));
 
     let bootstrapper =
-        MultiCurveBootstrapper::new(curve_specs, policy).with_exchange_rate_store(fx_store);
+        MultiCurveBootstrapper::new(curve_specs, policy).with_fx_store(fx_store);
     let curves = bootstrapper.bootstrap(&quote_store, Level::Mid)?;
 
     // 4. Display results for each bootstrapped curve

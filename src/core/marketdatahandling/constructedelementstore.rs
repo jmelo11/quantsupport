@@ -31,6 +31,16 @@ impl ConstructedElementStore {
         &self.discount_curves
     }
 
+    /// Checks if the store is empty (i.e., contains no constructed elements).
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.discount_curves.is_empty()
+            && self.dividend_curves.is_empty()
+            && self.volatility_surfaces.is_empty()
+            && self.volatility_cubes.is_empty()
+            && self.simulations.is_empty()
+    }
+
     /// Returns mutable discount curves map.
     #[must_use]
     pub const fn discount_curves_mut(&mut self) -> &mut HashMap<MarketIndex, DiscountCurveElement> {

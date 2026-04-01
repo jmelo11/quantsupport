@@ -12,3 +12,6 @@ pub mod quote;
 
 /// Provider of market data
 pub mod quotestore;
+
+/// Exchange rate storage functionality.
+pub mod fxstore;

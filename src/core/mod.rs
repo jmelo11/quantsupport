@@ -6,12 +6,12 @@
 
 /// Collateral / CSA discount policy module.
 pub mod collateral;
-/// Pricing data context module.
-pub mod contextmanager;
 /// Constructed element module.
 pub mod elements;
 /// Evaluation results module.
 pub mod evaluationresults;
+/// Trade evaluator that dispatches pricing requests to registered pricers.
+pub mod evaluator;
 /// Instrument module.
 pub mod instrument;
 /// Market data handling module.
@@ -22,6 +22,8 @@ pub mod pillars;
 pub mod pricer;
 /// Pricer state module.
 pub mod pricerstate;
+/// Pricing data context module.
+pub mod pricingcontext;
 /// Pricing request module.
 pub mod request;
 /// Trade module.

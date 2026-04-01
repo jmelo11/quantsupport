@@ -1,6 +1,6 @@
 // use crate::{
 //     ad::{
-//         adreal::{exp, max, DualFwd, IsReal},
+//         adreal::{exp, max, DualFwd},
 //         tape::Tape,
 //     },
 //     core::{
@@ -17,10 +17,12 @@
 //         trade::Trade,
 //     },
 //     instruments::equity::equityeuropeanoption::{EquityEuropeanOptionTrade, EuroOptionType},
-//     models::ModelParameters,
-//     pricers::pricerdefinitions::GbmMonteCarloPricer,
-//     utils::errors::{AtlasError, Result},
+//     prelude::SingleCurveCSADiscountPolicy,
+//     utils::errors::Result,
 // };
+
+// #[derive(Clone, Copy, Debug, Default)]
+// pub struct BlackMonteCarloPricer;
 
 // /// State struct for storing intermediate values during Monte Carlo pricing of an equity option.
 // #[derive(Default)]
@@ -40,7 +42,7 @@
 //     }
 // }
 
-// impl HandleValue<EquityEuropeanOptionTrade, MonteCarloState> for GbmMonteCarloPricer {
+// impl HandleValue<EquityEuropeanOptionTrade, MonteCarloState> for BlackMonteCarloPricer {
 //     fn handle_value(
 //         &self,
 //         trade: &EquityEuropeanOptionTrade,
@@ -128,7 +130,7 @@
 //     }
 // }
 
-// impl HandleSensitivities<EquityEuropeanOptionTrade, MonteCarloState> for GbmMonteCarloPricer {
+// impl HandleSensitivities<EquityEuropeanOptionTrade, MonteCarloState> for BlackMonteCarloPricer {
 //     fn handle_sensitivities(
 //         &self,
 //         trade: &EquityEuropeanOptionTrade,
@@ -193,8 +195,9 @@
 //     }
 // }
 
-// impl Pricer for GbmMonteCarloPricer {
+// impl Pricer for BlackMonteCarloPricer {
 //     type Item = EquityEuropeanOptionTrade;
+//     type Policy = SingleCurveCSADiscountPolicy;
 
 //     fn evaluate(
 //         &self,

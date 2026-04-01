@@ -1,6 +1,6 @@
 use crate::{
     core::{
-        contextmanager::ContextManager, evaluationresults::EvaluationResults, request::Request,
+        pricingcontext::PricingContext, evaluationresults::EvaluationResults, request::Request,
     },
     utils::errors::Result,
 };
@@ -18,6 +18,6 @@ pub trait Visitable<P: Visitor> {
         &self,
         visitor: &P,
         requests: &[Request],
-        ctx: &ContextManager,
+        ctx: &PricingContext,
     ) -> Result<EvaluationResults>;
 }

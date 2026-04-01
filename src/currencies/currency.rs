@@ -60,6 +60,12 @@ pub enum Currency {
     IDR,
 }
 
+impl Default for Currency {
+    fn default() -> Self {
+        Self::USD
+    }
+}
+
 impl Currency {
     /// Returns static metadata about the currency as
     /// (alphabetic code, display name, symbol, decimal precision, numeric ISO 4217 code).

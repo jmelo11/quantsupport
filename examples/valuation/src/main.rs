@@ -34,7 +34,7 @@ fn create_swap() -> SwapTrade<DualFwd> {
 }
 
 /// Build a pricing context backed by a flat SOFR discount curve at 3.0%.
-fn create_pricing_context() -> ContextManager {
+fn create_pricing_context() -> PricingContext {
     let evaluation_date = Date::new(2024, 1, 15);
     let discount_rate = 0.03; // 3.0% flat curve
 
@@ -61,7 +61,9 @@ fn create_pricing_context() -> ContextManager {
     let quote_store = QuoteStore::new(evaluation_date);
     let fixing_store = FixingStore::default();
 
-    ContextManager::new(quote_store, fixing_store)
+    PricingContext::new()
+        .with_quote_store(quote_store)
+        .with_fixing_store(fixing_store)
         .with_base_currency(Currency::USD)
         .with_constructed_elements(constructed_elements)
 }
@@ -72,7 +74,7 @@ fn main() -> Result<()> {
     let context = create_pricing_context();
 
     // ── 2. Price the swap ─────────────────────────────────────────────
-    let pricer = CashflowDiscountPricer::<Swap<DualFwd>, SwapTrade<DualFwd>>::new();
+    let pricer = DiscountedCashflowPricer::<Swap<DualFwd>, SwapTrade<DualFwd>>::new();
     let requests = vec![Request::Value, Request::Cashflows, Request::Sensitivities];
     let results = pricer.evaluate(&trade, &requests, &context)?;
 

@@ -14,7 +14,7 @@ use std::{
 /// - [`Self::derivs`]: Local derivatives (type `T`) for each child.
 /// - [`Self::adj`]: Accumulated adjoint (type `T`) for this node.
 #[derive(Clone)]
-pub struct TapeNode<T = f64> {
+pub struct TapeNode<T> {
     /// Child nodes that receive propagated adjoints.
     pub childs: Vec<NonNull<Self>>,
     /// Local derivatives for each child.

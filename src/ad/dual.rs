@@ -6,8 +6,7 @@ use std::ptr::NonNull;
 
 use crate::ad::constant::Const;
 use crate::ad::expr::{
-    AbsOp, BinExpr, CosOp, ExpOp, Expr, LogOp, MaxOp, MinOp, PowOp, SinOp, SqrtOp, UnExpr,
-    flatten,
+    flatten, AbsOp, BinExpr, CosOp, ExpOp, Expr, LogOp, MaxOp, MinOp, PowOp, SinOp, SqrtOp, UnExpr,
 };
 use crate::ad::forward::ADForward;
 use crate::ad::node::TapeNode;

@@ -9,3 +9,6 @@ pub mod loglinear;
 
 /// Bilinear interpolation implementation.
 pub mod bilinear;
+
+/// Cubic spline interpolation implementation.
+pub mod cubicspline;

@@ -3,9 +3,7 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    quotes::quote::Quote,
-    rates::bootstrapping::curveconfiguration::QuoteSelector,
-    time::date::Date,
+    quotes::quote::Quote, rates::bootstrapping::curveconfiguration::QuoteSelector, time::date::Date,
 };
 
 /// Provider of market data loaded from quotes.
@@ -13,6 +11,15 @@ use crate::{
 pub struct QuoteStore {
     reference_date: Date,
     quotes: HashMap<String, Quote>,
+}
+
+impl Default for QuoteStore {
+    fn default() -> Self {
+        Self {
+            reference_date: Date::default(),
+            quotes: HashMap::new(),
+        }
+    }
 }
 
 impl QuoteStore {

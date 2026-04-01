@@ -11,7 +11,7 @@ use crate::output::{extract_cashflows, CashflowEntry, ProductOutput, Sensitivity
 pub fn price_product<I, T>(
     label: &str,
     trade: &T,
-    context: &ContextManager,
+    context: &PricingContext,
     csa_index: MarketIndex,
     csa_currency: Currency,
     curve_lookup: &HashMap<MarketIndex, DiscountCurveElement>,
@@ -20,7 +20,7 @@ where
     I: Instrument,
     T: LegsProvider<DualFwd> + Trade<I> + Send + Sync,
 {
-    let mut pricer = CashflowDiscountPricer::<I, T>::new();
+    let mut pricer = DiscountedCashflowPricer::<I, T>::new();
     pricer.set_discount_policy(Box::new(SingleCurveCSADiscountPolicy::new(
         csa_index.clone(),
         csa_currency,

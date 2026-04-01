@@ -8,7 +8,6 @@ use crate::{
         elements::curveelement::{ADCurveElement, DiscountCurveElement},
         marketdatahandling::constructedelementstore::SharedElement,
     },
-    currencies::exchangeratestore::ExchangeRateStore,
     indices::marketindex::MarketIndex,
     math::{
         interpolation::interpolator::Interpolator,
@@ -17,7 +16,7 @@ use crate::{
             vectornewton::VectorNewton,
         },
     },
-    quotes::quote::Level,
+    quotes::{fxstore::FxStore, quote::Level},
     rates::{
         bootstrapping::{
             bootstrapdiscountpolicy::BootstrapDiscountPolicy,
@@ -112,7 +111,7 @@ use crate::{
 pub struct MultiCurveBootstrapper {
     curve_specs: Vec<CurveConfiguration>,
     discount_policy: BootstrapDiscountPolicy,
-    exchange_rate_store: ExchangeRateStore,
+    fx_store: FxStore,
 }
 
 impl MultiCurveBootstrapper {
@@ -125,15 +124,15 @@ impl MultiCurveBootstrapper {
         Self {
             curve_specs,
             discount_policy,
-            exchange_rate_store: ExchangeRateStore::new(),
+            fx_store: FxStore::new(),
         }
     }
 
-    /// Registers an [`ExchangeRateStore`] for FX spot rates. Required for
+    /// Registers an [`FxStore`] for FX spot rates. Required for
     /// instruments referencing multiple currencies (e.g. cross-currency swaps, FX forwards).
     #[must_use]
-    pub fn with_exchange_rate_store(mut self, store: ExchangeRateStore) -> Self {
-        self.exchange_rate_store = store;
+    pub fn with_fx_store(mut self, store: FxStore) -> Self {
+        self.fx_store = store;
         self
     }
 
@@ -159,8 +158,8 @@ impl MultiCurveBootstrapper {
             // For cross-currency curve specs (Collateral), pass FX spot so
             // that xccy swap notionals are FX-adjusted at inception.
             let fx_spot = if let MarketIndex::Collateral(ccy, coll_ccy) = spec.market_index() {
-                self.exchange_rate_store
-                    .get_exchange_rate(*coll_ccy, *ccy)
+                self.fx_store
+                    .get_fx_rate(*coll_ccy, *ccy)
                     .ok()
                     .map(|r| r.value())
             } else {
@@ -280,7 +279,7 @@ impl MultiCurveBootstrapper {
             instruments,
             other_curves,
             discount_policy: &self.discount_policy,
-            exchange_rate_store: &self.exchange_rate_store,
+            fx_store: &self.fx_store,
         };
 
         // Solve.
@@ -500,7 +499,7 @@ impl MultiCurveBootstrapper {
             &trial,
             problem.other_curves,
             problem.discount_policy,
-            problem.exchange_rate_store,
+            problem.fx_store,
         );
 
         problem
@@ -537,7 +536,7 @@ fn bumped_residual(
         instruments: problem.instruments,
         other_curves: &bumped_others,
         discount_policy: problem.discount_policy,
-        exchange_rate_store: problem.exchange_rate_store,
+        fx_store: problem.fx_store,
     };
 
     Ok((bumped_problem.call(x)?, bumped_df - original_df))
@@ -559,7 +558,7 @@ struct BootstrapProblem<'a> {
     pub instruments: &'a [CalibrationInstrument],
     pub other_curves: &'a HashMap<MarketIndex, SolvedCurve>,
     pub discount_policy: &'a BootstrapDiscountPolicy,
-    pub exchange_rate_store: &'a ExchangeRateStore,
+    pub fx_store: &'a FxStore,
 }
 
 impl BootstrapProblem<'_> {
@@ -585,7 +584,7 @@ impl ContFunc<[f64], Vec<f64>> for BootstrapProblem<'_> {
             &trial,
             self.other_curves,
             self.discount_policy,
-            self.exchange_rate_store,
+            self.fx_store,
         );
         self.instruments
             .iter()

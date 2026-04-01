@@ -1,10 +1,13 @@
+use std::any::Any;
+
 use crate::{
     core::{
         evaluationresults::EvaluationResults,
         marketdatahandling::marketdata::{MarketDataProvider, MarketDataRequest},
+        pricingcontext::PricingContext,
         request::Request,
     },
-    utils::errors::QSError,
+    utils::errors::Result,
 };
 
 /// The [`Pricer`] trait should be implemented by any instrument pricing methodology. Implementers
@@ -14,8 +17,8 @@ pub trait Pricer: Send + Sync {
     type Item;
     /// The discount policy type supported by this pricer.
     type Policy: ?Sized + Send + Sync;
-    ///
-    /// Evaluates the instrument over a [`Request`] given a [`ContextManager`](crate::core::contextmanager::ContextManager).
+
+    /// Evaluates the instrument over a [`Request`] given a [`MarketDataProvider`].
     ///
     /// ## Arguments
     /// * `trade`: the associated instrument that this pricer is capable of handeling.
@@ -26,13 +29,13 @@ pub trait Pricer: Send + Sync {
     /// Returns [`EvaluationResults`] if the evaluation succeded.
     ///
     /// ## Errors
-    /// Returns an [`QSError`] if the evaluation fails.
+    /// Returns an error if the evaluation fails.
     fn evaluate(
         &self,
         trade: &Self::Item,
         requests: &[Request],
         ctx: &impl MarketDataProvider,
-    ) -> Result<EvaluationResults, QSError>;
+    ) -> Result<EvaluationResults>;
 
     /// Returns a [`MarketDataRequest`] containing the market data elements required to evaluate the instrument.
     ///
@@ -49,4 +52,25 @@ pub trait Pricer: Send + Sync {
 
     /// Returns the currently active [`DiscountPolicy`](crate::core::collateral::DiscountPolicy), if any.
     fn discount_policy(&self) -> Option<&Self::Policy>;
+}
+
+/// The [`ErasedPricer`] trait provides a type-erased interface for evaluating trades without requiring compile-time knowledge
+/// of the specific pricer type. This allows for dynamic dispatch of pricers based on
+/// the type of trade being evaluated, enabling greater flexibility in the evaluation process.
+pub trait ErasedPricer: Send + Sync {
+    /// Evaluates the given trade using the pricer's logic, without requiring knowledge of the specific trade type at compile time.
+    ///
+    /// ## Arguments
+    /// * `trade`: a reference to the trade to be evaluated, provided as a trait object of type `dyn Any`.
+    /// * `requests`: a slice of market data requests that may be needed to perform the evaluation.
+    /// * `ctx`: a reference to the pricing context, which provides access to market data and other relevant information needed for the evaluation.
+    ///
+    /// ## Returns
+    /// Returns an [`EvaluationResults`] object containing the results of the evaluation if successful, or an error if the evaluation fails.
+    fn evaluate_erased(
+        &self,
+        trade: &dyn Any,
+        requests: &[Request],
+        ctx: &PricingContext,
+    ) -> Result<EvaluationResults>;
 }

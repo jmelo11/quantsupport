@@ -189,6 +189,7 @@ pub mod currencies;
 pub mod indices;
 pub mod instruments;
 pub mod math;
+/// Pricing models (GBM, Hull-White, etc.).
 pub mod models;
 /// Commonly used public exports for pricing and market-data workflows.
 pub mod prelude;

@@ -1,8 +1,7 @@
+use std::any::Any;
+
 use crate::{
-    ad::{
-        adreal::DualFwd,
-        tape::Tape,
-    },
+    ad::{adreal::DualFwd, tape::Tape},
     core::{
         collateral::DiscountPolicy,
         evaluationresults::{EvaluationResults, SensitivityMap},
@@ -12,13 +11,14 @@ use crate::{
             fixingrequest::FixingRequest,
             marketdata::{MarketData, MarketDataProvider, MarketDataRequest},
         },
-        pricer::Pricer,
+        pricer::{ErasedPricer, Pricer},
         pricerstate::PricerState,
+        pricingcontext::PricingContext,
         request::{HandleSensitivities, HandleValue, Request},
         trade::Trade,
     },
     instruments::equity::equityeuropeanoption::{EquityEuropeanOptionTrade, EuroOptionType},
-    pricers::pricerdefinitions::BlackClosedFormPricer,
+    models::geometricbrownianmotion::GeometricBrownianMotion,
     utils::errors::{QSError, Result},
 };
 
@@ -134,7 +134,7 @@ impl HandleValue<EquityEuropeanOptionTrade, EquityOptionState> for BlackEuropean
 
         let fwd: DualFwd = (spot_ad * df_q / df_r).into();
 
-        let undiscounted = BlackClosedFormPricer::black_forward_price(
+        let undiscounted = GeometricBrownianMotion::closed_form_price(
             fwd,
             strike,
             vol,
@@ -187,7 +187,8 @@ impl HandleSensitivities<EquityEuropeanOptionTrade, EquityOptionState>
             state
                 .spot
                 .ok_or_else(|| QSError::UnexpectedErr("Spot not recorded on state".into()))?
-                .adjoint()?.value(),
+                .adjoint()?
+                .value(),
         );
 
         for (label, pillar) in state
@@ -305,6 +306,20 @@ impl Pricer for BlackEuropeanOptionPricer {
 
     fn discount_policy(&self) -> Option<&Self::Policy> {
         self.discount_policy.as_deref()
+    }
+}
+
+impl ErasedPricer for BlackEuropeanOptionPricer {
+    fn evaluate_erased(
+        &self,
+        trade: &dyn Any,
+        requests: &[Request],
+        ctx: &PricingContext,
+    ) -> Result<EvaluationResults> {
+        let trade = trade
+            .downcast_ref::<EquityEuropeanOptionTrade>()
+            .ok_or_else(|| QSError::InvalidValueErr("Invalid trade type for pricer".into()))?;
+        self.evaluate(trade, requests, ctx)
     }
 }
 
@@ -458,7 +473,7 @@ mod tests {
         );
 
         let fixings = HashMap::from([(market_index.clone(), BTreeMap::from([(trade_date, spot)]))]);
-        let market_data = MarketData::new(fixings, constructed_elements, &[]);
+        let market_data = MarketData::new(fixings, constructed_elements);
 
         Ok((market_data, discount_curve, dividend_curve, vol_surface))
     }
@@ -473,7 +488,6 @@ mod tests {
             Ok(MarketData::new(
                 self.market_data.fixings().clone(),
                 self.market_data.constructed_elements().clone(),
-                &[],
             ))
         }
 

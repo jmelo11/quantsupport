@@ -10,8 +10,9 @@ use crate::{
         marketdatahandling::marketdata::MarketData,
         pillars::Pillars,
     },
-    currencies::{currency::Currency, exchangeratestore::ExchangeRateStore},
+    currencies::currency::Currency,
     indices::marketindex::MarketIndex,
+    quotes::fxstore::FxStore,
     time::date::Date,
     utils::errors::{QSError, Result},
 };
@@ -83,12 +84,12 @@ pub trait PricerState {
         self.get_market_data_reponse()
             .ok_or_else(|| QSError::NotFoundErr("MarketDataResponse not available.".into()))?
             .exchange_rate_store()
-            .ok_or_else(|| QSError::NotFoundErr("ExchangeRateStore not available.".into()))?
-            .get_exchange_rate(base, quote)
+            .ok_or_else(|| QSError::NotFoundErr("FxStore not available.".into()))?
+            .get_fx_rate(base, quote)
     }
 
     /// Retrieves the exchange-rate store from the market data, if available.
-    fn get_exchange_rate_store(&self) -> Option<&ExchangeRateStore> {
+    fn get_exchange_rate_store(&self) -> Option<&FxStore> {
         self.get_market_data_reponse()
             .and_then(|md| md.exchange_rate_store())
     }

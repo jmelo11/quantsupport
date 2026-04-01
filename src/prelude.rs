@@ -12,7 +12,6 @@ pub use crate::{
         collateral::{
             DiscountPolicy, Discountable, FixedIncomeDiscountPolicy, SingleCurveCSADiscountPolicy,
         },
-        contextmanager::ContextManager,
         elements::{
             curveelement::{ADCurveElement, DiscountCurveElement, DividendCurveElement},
             montecarlosimulationelement::{
@@ -32,6 +31,7 @@ pub use crate::{
         pillars::Pillars,
         pricer::Pricer,
         pricerstate::PricerState,
+        pricingcontext::PricingContext,
         request::{
             HandleCashflows, HandleFairRate, HandleModifiedDuration, HandleSensitivities,
             HandleValue, HandleYieldToMaturity, LegsProvider, Request,
@@ -39,9 +39,7 @@ pub use crate::{
         trade::{Side, Trade},
         visitable::{Visitable, Visitor},
     },
-    currencies::{
-        currency::Currency, currencydetails::CurrencyDetails, exchangeratestore::ExchangeRateStore,
-    },
+    currencies::{currency::Currency, currencydetails::CurrencyDetails},
     indices::{
         marketindex::{MarketIndex, MarketIndexDetails},
         quotetype::QuoteType,
@@ -103,15 +101,10 @@ pub use crate::{
         probability::norm_cdf::NormCDF,
         solvers::{bisection::Bisection, newtonraphson::NewtonRaphson},
     },
-    models::{GbmModelParameters, ModelParameters},
     pricers::{
-        cashflows::discountingcashflowpricer::CashflowDiscountPricer,
+        cashflows::discountedcashflowpricer::DiscountedCashflowPricer,
         equity::blackeuropeanoptionpricer::BlackEuropeanOptionPricer,
         fx::fxforwardpricer::FxForwardPricer,
-        pricerdefinitions::{
-            BlackClosedFormPricer, CloseFormPricer, GbmMonteCarloPricer, HullWhiteClosedFormPricer,
-            MonteCarloPricer, NormalClosedFormPricer,
-        },
         rates::{blackcapletpricer::BlackCapletPricer, ratefuturespricer::RateFuturesPricer},
     },
     quotes::{

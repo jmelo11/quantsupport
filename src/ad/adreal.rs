@@ -3,11 +3,11 @@
 //! path continues to work without modification.
 
 // Re-export everything from the submodules.
-pub use super::scalar::*;
-pub use super::forward::*;
 pub use super::constant::*;
-pub use super::expr::*;
 pub use super::dual::*;
+pub use super::expr::*;
+pub use super::forward::*;
+pub use super::scalar::*;
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  Tests
@@ -323,7 +323,7 @@ mod tests {
         Tape::start_recording_fwd();
         let x_inner = ADForward::var(1.0);
         let x = Dual::<ADForward>::new_from_inner(x_inner);
-        let y: Dual<ADForward> = FloatExt::exp(x).into();
+        let y: Dual<ADForward> = x.exp().into();
         y.backward().unwrap();
         let adj = x.adjoint().unwrap();
         let e = 1.0_f64.exp();

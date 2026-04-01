@@ -1,8 +1,5 @@
 use crate::{
-    ad::{
-        adreal::DualFwd,
-        tape::Tape,
-    },
+    ad::{adreal::DualFwd, tape::Tape},
     core::{
         collateral::DiscountPolicy,
         evaluationresults::{EvaluationResults, SensitivityMap},
@@ -17,7 +14,7 @@ use crate::{
         trade::Trade,
     },
     instruments::rates::capletfloorlet::{CapletFloorletTrade, CapletFloorletType},
-    pricers::pricerdefinitions::BlackClosedFormPricer,
+    models::geometricbrownianmotion::GeometricBrownianMotion,
     utils::errors::{QSError, Result},
     volatility::volatilityindexing::Strike,
 };
@@ -155,7 +152,7 @@ impl HandleValue<CapletFloorletTrade, BlackCapletState> for BlackCapletPricer {
 
         let is_cap = matches!(caplet.option_type(), CapletFloorletType::Caplet);
         let undiscounted =
-            BlackClosedFormPricer::black_forward_price(fwd, effective_strike, vol, tau, is_cap);
+            GeometricBrownianMotion::closed_form_price(fwd, effective_strike, vol, tau, is_cap);
 
         let value: DualFwd = (df_pay * undiscounted * alpha * trade.notional()).into();
         state.value = Some(value);
@@ -367,7 +364,6 @@ mod tests {
             Ok(MarketData::new(
                 self.market_data.fixings().clone(),
                 self.market_data.constructed_elements().clone(),
-                &[],
             ))
         }
 
@@ -453,7 +449,7 @@ mod tests {
             VolatilitySurfaceElement::new(market_index.clone(), vol_surface.clone()),
         );
 
-        let market_data = MarketData::new(HashMap::new(), constructed_elements, &[]);
+        let market_data = MarketData::new(HashMap::new(), constructed_elements);
         Ok((market_data, discount_curve, vol_surface))
     }
 

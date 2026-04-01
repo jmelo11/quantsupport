@@ -2,10 +2,11 @@ use std::collections::{HashMap, HashSet, VecDeque};
 
 use crate::{
     ad::adreal::DualFwd,
-    currencies::{currency::Currency, exchangeratestore::ExchangeRateStore},
+    currencies::currency::Currency,
     indices::marketindex::MarketIndex,
     instruments::cashflows::leg::Leg,
     math::interpolation::interpolator::{Interpolate, Interpolator},
+    quotes::fxstore::FxStore,
     rates::{
         bootstrapping::{
             bootstrapdiscountpolicy::BootstrapDiscountPolicy,
@@ -32,9 +33,9 @@ pub fn get_pillar_times(
 }
 
 /// Computes a topological ordering of curves respecting dependencies.
-/// 
+///
 /// # Errors
-/// Returns an error if a circular dependency is detected among the curve specifications, which would prevent successful 
+/// Returns an error if a circular dependency is detected among the curve specifications, which would prevent successful
 /// bootstrapping. The error message will indicate the presence of a circular dependency to aid in debugging curve configuration issues.
 pub fn dependency_order<S: ::std::hash::BuildHasher>(
     curve_configs: &HashMap<MarketIndex, CurveConfiguration, S>,
@@ -269,7 +270,7 @@ impl SolvedCurve {
 pub struct BootstrapCurveSet<'a> {
     curves: HashMap<MarketIndex, &'a SolvedCurve>,
     discount_policy: &'a BootstrapDiscountPolicy,
-    exchange_rate_store: &'a ExchangeRateStore,
+    fx_store: &'a FxStore,
 }
 
 impl<'a> BootstrapCurveSet<'a> {
@@ -279,7 +280,7 @@ impl<'a> BootstrapCurveSet<'a> {
         trial: &'a SolvedCurve,
         other_curves: &'a HashMap<MarketIndex, SolvedCurve>,
         discount_policy: &'a BootstrapDiscountPolicy,
-        exchange_rate_store: &'a ExchangeRateStore,
+        fx_store: &'a FxStore,
     ) -> Self {
         let mut curves: HashMap<MarketIndex, &SolvedCurve> =
             other_curves.iter().map(|(k, v)| (k.clone(), v)).collect();
@@ -287,7 +288,7 @@ impl<'a> BootstrapCurveSet<'a> {
         Self {
             curves,
             discount_policy,
-            exchange_rate_store,
+            fx_store,
         }
     }
 
@@ -335,12 +336,9 @@ impl<'a> BootstrapCurveSet<'a> {
     /// Looks up the FX spot rate.
     ///
     /// # Errors
-    /// Returns an error if the exchange rate for the given currency pair is not available in the [`ExchangeRateStore`].
+    /// Returns an error if the exchange rate for the given currency pair is not available in the [`FxStore`].
     /// The error message will indicate the missing currency pair to aid in debugging bootstr
     pub fn fx_spot(&self, base: Currency, quote: Currency) -> Result<f64> {
-        Ok(self
-            .exchange_rate_store
-            .get_exchange_rate(base, quote)?
-            .value())
+        Ok(self.fx_store.get_fx_rate(base, quote)?.value())
     }
 }

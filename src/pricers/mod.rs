@@ -9,6 +9,8 @@ pub mod cashflows;
 pub mod equity;
 /// FX pricers.
 pub mod fx;
+/// Monte Carlo simulation engine and planner.
+pub mod montecarloengine;
 /// Available pricers
 pub mod pricerdefinitions;
 /// Rates pricers.
