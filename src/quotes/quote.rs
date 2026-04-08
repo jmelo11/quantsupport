@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    ad::adreal::Scalar,
+    ad::scalar::Scalar,
     currencies::currency::Currency,
     indices::marketindex::MarketIndex,
     instruments::{

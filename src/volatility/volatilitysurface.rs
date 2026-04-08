@@ -1,5 +1,5 @@
 use crate::{
-    ad::adreal::Scalar,
+    ad::scalar::Scalar,
     indices::marketindex::MarketIndex,
     time::{date::Date, enums::TimeUnit, period::Period},
     utils::errors::{QSError, Result},

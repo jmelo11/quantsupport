@@ -284,7 +284,7 @@ un_op!(
 // ═══════════════════════════════════════════════════════════════════════════
 
 /// A lazy binary expression over two child expressions.
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub struct BinExpr<T, L, R, O> {
     l: L,
     r: R,
@@ -323,7 +323,7 @@ impl<T: InnerScalar, L: Expr<T>, R: Expr<T>, O: BinOp<T> + Clone> Expr<T> for Bi
 // ═══════════════════════════════════════════════════════════════════════════
 
 /// A lazy unary expression over a child expression.
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub struct UnExpr<T, A, O> {
     a: A,
     val: T,

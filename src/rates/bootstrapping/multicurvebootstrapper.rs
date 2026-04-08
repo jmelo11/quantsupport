@@ -3,7 +3,7 @@ use std::{cell::RefCell, collections::HashMap, rc::Rc};
 use nalgebra::{DMatrix, DVector};
 
 use crate::{
-    ad::adreal::{DualFwd, Scalar},
+    ad::{dual::DualFwd, scalar::Scalar},
     core::{
         elements::curveelement::{ADCurveElement, DiscountCurveElement},
         marketdatahandling::constructedelementstore::SharedElement,
@@ -30,7 +30,7 @@ use crate::{
     utils::errors::{QSError, Result},
 };
 
-/// Dependency-aware, lazy multi-curve bootstrapper.
+/// Multi-curve bootstrapping engine.
 ///
 /// Accepts a set of [`CurveConfiguration`]s and a [`BootstrapDiscountPolicy`] that
 /// will determine how to bootstrap each curve. It resolves dependencies between [`CurveConfiguration`].

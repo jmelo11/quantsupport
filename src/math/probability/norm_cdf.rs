@@ -1,4 +1,4 @@
-use crate::ad::adreal::{DualFwd, FloatExt, Scalar};
+use crate::ad::{dual::DualFwd, expr::FloatExt, scalar::Scalar};
 
 /// Generic `norm_cdf` implementation - works for any type supporting the needed operations.
 /// This is the single entry point used everywhere.
@@ -36,24 +36,23 @@ impl NormCDF for f64 {
     }
 }
 
-/// Implementation for `DualFwd`
+/// Implementation for [`DualFwd`]
 impl NormCDF for DualFwd {
     fn norm_cdf(self) -> Self {
         let one: Self = 1.0.into();
         let l = self.abs();
-        let k: Self = (one / (one + l.clone() * 0.231_641_9)).into();
-        let poly: Self =
-            (((((k * 1.330_274_429 - 1.821_255_978) * k + 1.781_477_937) * k - 0.356_563_782) * k
+        let k = one / (one + l.clone() * 0.231_641_9);
+        let poly =
+            ((((k * 1.330_274_429 - 1.821_255_978) * k + 1.781_477_937) * k - 0.356_563_782) * k
                 + 0.319_381_530)
-                * k)
-                .into();
-        let pdf: Self = ((-(l.clone() * l) * 0.5).exp() * 0.398_942_280_401_432_7).into();
-        let w: Self = (one - pdf * poly).into();
+                * k;
+        let pdf = (-(l.clone() * l) * 0.5).exp() * 0.398_942_280_401_432_7;
+        let w = one - pdf * poly;
 
         if self.value() < 0.0 {
             (one - w).into()
         } else {
-            w
+            w.into()
         }
     }
 }

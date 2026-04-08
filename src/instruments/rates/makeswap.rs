@@ -1,7 +1,7 @@
 #[cfg(test)]
-use crate::ad::adreal::DualFwd;
+use crate::ad::dual::DualFwd;
 use crate::{
-    ad::adreal::Scalar,
+    ad::scalar::Scalar,
     core::trade::Side,
     currencies::currency::Currency,
     indices::marketindex::MarketIndex,

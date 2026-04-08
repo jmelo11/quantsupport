@@ -1,16 +1,14 @@
 use std::collections::HashSet;
 
 use crate::{
-    ad::{
-        adreal::DualFwd,
-        tape::Tape,
-    },
+    ad::{dual::DualFwd, tape::Tape},
     core::{
         collateral::{DiscountPolicy, Discountable},
         evaluationresults::{EvaluationResults, SensitivityMap},
         instrument::{AssetClass, Instrument},
         marketdatahandling::{
             constructedelementrequest::ConstructedElementRequest,
+            fxrequest::FxRequest,
             marketdata::{MarketData, MarketDataProvider, MarketDataRequest},
         },
         pillars::Pillars,
@@ -191,7 +189,7 @@ impl HandleSensitivities<FxForwardTrade, FxForwardState> for FxForwardPricer {
             }
         }
 
-        if let Some(store) = state.get_exchange_rate_store() {
+        if let Some(store) = state.get_fx_store() {
             for (label, value) in store.pillars().into_iter().flatten() {
                 ids.push(label);
                 exposures.push(value.adjoint().map(|a| a.value()).unwrap_or(0.0));
@@ -254,7 +252,10 @@ impl Pricer for FxForwardPricer {
             }
         }
 
-        let mut request = MarketDataRequest::default().with_exchange_rates();
+        let mut request = MarketDataRequest::default().with_fx_request(vec![FxRequest::new(
+            inst.base_currency(),
+            inst.quote_currency(),
+        )]);
 
         if !elements.is_empty() {
             request = request.with_constructed_elements_request(elements);

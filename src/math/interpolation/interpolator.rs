@@ -4,7 +4,7 @@ use super::{
     cubicspline::CubicSplineInterpolator, linear::LinearInterpolator,
     loglinear::LogLinearInterpolator,
 };
-use crate::{ad::adreal::Scalar, utils::errors::Result};
+use crate::{ad::scalar::Scalar, utils::errors::Result};
 
 /// A trait that defines the interpolation of a function. It does not require a reference to self.
 pub trait StaticInterpolate<T>

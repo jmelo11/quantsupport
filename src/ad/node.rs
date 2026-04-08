@@ -7,7 +7,7 @@ use std::{
 /// A node recorded on the tape, with child links and adjoint values.
 ///
 /// Generic over the inner scalar `T`, which is `f64` for first-order
-/// backward-mode AD, or [`ADForward`](crate::ad::adreal::ADForward) for
+/// backward-mode AD, or [`ADForward`](crate::ad::forward::ADForward) for
 /// mixed backward+forward second-order AD.
 ///
 /// - [`Self::childs`]: Pointers to child nodes that receive propagated adjoints.

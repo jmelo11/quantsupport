@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    ad::adreal::{DualFwd, Const, FloatExt, Scalar},
+    ad::{constant::Const, dual::DualFwd, expr::FloatExt, scalar::Scalar},
     time::{date::Date, daycounter::DayCounter, enums::Frequency},
     utils::errors::{QSError, Result},
 };

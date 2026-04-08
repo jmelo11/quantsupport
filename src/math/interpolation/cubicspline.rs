@@ -1,7 +1,7 @@
 use std::cmp::Ordering;
 
 use crate::{
-    ad::adreal::{DualFwd, Scalar},
+    ad::{dual::DualFwd, scalar::Scalar},
     math::interpolation::interpolator::StaticInterpolate,
     utils::errors::{QSError, Result},
 };

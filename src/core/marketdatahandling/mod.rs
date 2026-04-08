@@ -4,5 +4,7 @@ pub mod constructedelementrequest;
 pub mod constructedelementstore;
 /// Fixing request module.
 pub mod fixingrequest;
+/// FX rate request module.
+pub mod fxrequest;
 /// Market data provider module.
 pub mod marketdata;

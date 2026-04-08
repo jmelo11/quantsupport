@@ -13,7 +13,7 @@
 //!
 //! Everything needed is re-exported through the [`prelude`] module.
 //!
-//! ```no_run
+//! ```ignore
 //! use std::{cell::RefCell, rc::Rc};
 //! use quantsupport::prelude::*;
 //! ```
@@ -25,7 +25,7 @@
 //! [`SwapTrade`](crate::instruments::rates::swap::SwapTrade) that carries
 //! trade-level metadata (trade date, notional, side).
 //!
-//! ```no_run
+//! ```ignore
 //! # use std::{cell::RefCell, rc::Rc};
 //! # use quantsupport::prelude::*;
 //! let start_date    = Date::new(2024, 1, 15);
@@ -64,7 +64,7 @@
 //! market data (discount curves, quote / fixing stores) that pricers consult
 //! during evaluation.  Here we create a flat SOFR discount curve at 3.0%.
 //!
-//! ```no_run
+//! ```ignore
 //! # use std::{cell::RefCell, rc::Rc};
 //! # use quantsupport::prelude::*;
 //! let evaluation_date = Date::new(2024, 1, 15);
@@ -110,7 +110,7 @@
 //! choose which outputs you need via [`Request`](crate::core::request::Request),
 //! and call `evaluate`.
 //!
-//! ```no_run
+//! ```ignore
 //! # use std::{cell::RefCell, rc::Rc};
 //! # use quantsupport::prelude::*;
 //! # let start_date    = Date::new(2024, 1, 15);

@@ -1,5 +1,5 @@
 use crate::{
-    ad::adreal::{DualFwd, Const, FloatExt, Scalar},
+    ad::{constant::Const, dual::DualFwd, expr::FloatExt, scalar::Scalar},
     core::{elements::curveelement::ADCurveElement, pillars::Pillars},
     math::interpolation::interpolator::{Interpolate, Interpolator},
     rates::{
@@ -371,6 +371,27 @@ impl InterestRatesTermStructure<f64> for DiscountTermStructure<f64> {
                 .collect(),
         )
     }
+
+    fn day_counter(&self) -> Option<DayCounter> {
+        Some(self.day_counter)
+    }
+
+    fn discount_factor_from_time(&self, t: f64) -> Result<f64> {
+        if t < 0.0 {
+            return Err(QSError::InvalidValueErr(
+                "Time must be non-negative".to_string(),
+            ));
+        }
+        if t == 0.0 {
+            return Ok(1.0);
+        }
+        self.interpolator.interpolate(
+            t,
+            &self.year_fractions,
+            &self.discount_factors,
+            self.enable_extrapolation,
+        )
+    }
 }
 
 impl InterestRatesTermStructure<DualFwd> for DiscountTermStructure<DualFwd> {
@@ -438,6 +459,34 @@ impl InterestRatesTermStructure<DualFwd> for DiscountTermStructure<DualFwd> {
                 .copied()
                 .zip(self.discount_factors.iter().copied())
                 .collect(),
+        )
+    }
+
+    fn day_counter(&self) -> Option<DayCounter> {
+        Some(self.day_counter)
+    }
+
+    fn discount_factor_from_time(&self, t: f64) -> Result<DualFwd> {
+        if t < 0.0 {
+            return Err(QSError::InvalidValueErr(
+                "Time must be non-negative".to_string(),
+            ));
+        }
+        if t == 0.0 {
+            return Ok(DualFwd::one());
+        }
+        let yf = DualFwd::new(t);
+        let tmp_yfs: Vec<DualFwd> = self
+            .year_fractions
+            .iter()
+            .copied()
+            .map(DualFwd::new)
+            .collect();
+        self.interpolator.interpolate(
+            yf,
+            &tmp_yfs,
+            &self.discount_factors,
+            self.enable_extrapolation,
         )
     }
 }

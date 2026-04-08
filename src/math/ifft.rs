@@ -19,7 +19,7 @@
 //! }
 //! ```
 
-use crate::ad::adreal::Scalar;
+use crate::ad::scalar::Scalar;
 use crate::math::fft::{fft_core, Complex};
 use crate::utils::errors::{QSError, Result};
 

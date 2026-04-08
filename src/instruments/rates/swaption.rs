@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    ad::adreal::{DualFwd, Scalar},
+    ad::{dual::DualFwd, scalar::Scalar},
     core::{
         instrument::Instrument,
         request::LegsProvider,

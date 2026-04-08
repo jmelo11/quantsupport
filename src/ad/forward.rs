@@ -523,3 +523,73 @@ impl Tape<ADForward> {
         });
     }
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  Tests
+// ═══════════════════════════════════════════════════════════════════════════
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const EPS: f64 = 1e-10;
+    fn approx(a: f64, b: f64) -> bool {
+        (a - b).abs() < EPS
+    }
+
+    #[test]
+    fn forward_x_squared() {
+        let x = ADForward::var(3.0);
+        let y = x * x;
+        assert!(approx(y.val, 9.0));
+        assert!(approx(y.dot, 6.0));
+        assert!(approx(y.dot2, 2.0));
+    }
+
+    #[test]
+    fn forward_x_cubed() {
+        let x = ADForward::var(2.0);
+        let y = x * x * x;
+        assert!(approx(y.val, 8.0));
+        assert!(approx(y.dot, 12.0));
+        assert!(approx(y.dot2, 12.0));
+    }
+
+    #[test]
+    fn forward_exp() {
+        let x = ADForward::var(1.0);
+        let y = x.exp();
+        let e = 1.0_f64.exp();
+        assert!(approx(y.val, e));
+        assert!(approx(y.dot, e));
+        assert!(approx(y.dot2, e));
+    }
+
+    #[test]
+    fn forward_ln() {
+        let x = ADForward::var(2.0);
+        let y = x.ln();
+        assert!(approx(y.val, 2.0_f64.ln()));
+        assert!(approx(y.dot, 0.5));
+        assert!(approx(y.dot2, -0.25));
+    }
+
+    #[test]
+    fn forward_sin() {
+        let x = ADForward::var(1.0);
+        let y = x.sin();
+        assert!(approx(y.val, 1.0_f64.sin()));
+        assert!(approx(y.dot, 1.0_f64.cos()));
+        assert!(approx(y.dot2, -1.0_f64.sin()));
+    }
+
+    #[test]
+    fn complex_ad_forward_basic() {
+        use num_complex::Complex;
+        let a = Complex::new(ADForward::constant(1.0), ADForward::constant(2.0));
+        let b = Complex::new(ADForward::constant(3.0), ADForward::constant(-1.0));
+        let c = a * b;
+        assert!(approx(c.re.val, 5.0));
+        assert!(approx(c.im.val, 5.0));
+    }
+}

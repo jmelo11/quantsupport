@@ -14,7 +14,7 @@ use crate::{ad::node::TapeNode, utils::errors::QSError};
 // ---------------------------------------------------------------------------
 
 /// Trait implemented by types that can serve as the inner scalar of a
-/// [`Dual`](crate::ad::adreal::Dual).
+/// [`Dual`](crate::ad::dual::Dual).
 ///
 /// Each implementing type owns a thread-local [`Tape`] that records
 /// operations for reverse-mode differentiation.
@@ -185,7 +185,7 @@ impl TapeHolder for f64 {
 }
 
 thread_local! {
-    /// Thread-local tape used by [`Dual<f64>`](crate::ad::adreal::Dual) (aka `DualFwd`).
+    /// Thread-local tape used by [`Dual<f64>`](crate::ad::dual::Dual) (aka `DualFwd`).
     pub static TAPE: RefCell<Tape<f64>> = RefCell::new(Tape {
         bump:   Bump::new(),
         book:   Vec::new(),

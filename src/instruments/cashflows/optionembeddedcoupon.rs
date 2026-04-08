@@ -1,5 +1,5 @@
 use crate::{
-    ad::adreal::{DualFwd, Scalar},
+    ad::{dual::DualFwd, scalar::Scalar},
     indices::marketindex::MarketIndex,
     instruments::cashflows::coupons::{NonLinearCoupon, PayoffOps},
     time::date::Date,

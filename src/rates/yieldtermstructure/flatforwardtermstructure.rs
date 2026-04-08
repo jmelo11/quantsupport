@@ -1,12 +1,12 @@
 use crate::{
-    ad::adreal::{DualFwd, Scalar},
+    ad::{constant::Const, dual::DualFwd, scalar::Scalar},
     core::{elements::curveelement::ADCurveElement, pillars::Pillars},
     rates::{
         compounding::Compounding,
         interestrate::{InterestRate, RateDefinition},
         yieldtermstructure::interestratestermstructure::InterestRatesTermStructure,
     },
-    time::{date::Date, enums::Frequency},
+    time::{date::Date, daycounter::DayCounter, enums::Frequency},
     utils::errors::{QSError, Result},
 };
 
@@ -123,6 +123,19 @@ impl InterestRatesTermStructure<f64> for FlatForwardTermStructure<f64> {
     fn nodes(&self) -> Option<Vec<(Date, f64)>> {
         None
     }
+
+    fn day_counter(&self) -> Option<DayCounter> {
+        Some(self.rate.day_counter())
+    }
+
+    fn discount_factor_from_time(&self, t: f64) -> Result<f64> {
+        if t < 0.0 {
+            return Err(QSError::InvalidValueErr(
+                "Time must be non-negative".into(),
+            ));
+        }
+        Ok(1.0 / self.rate.compound_factor_from_yf(t))
+    }
 }
 
 impl InterestRatesTermStructure<DualFwd> for FlatForwardTermStructure<DualFwd> {
@@ -159,6 +172,20 @@ impl InterestRatesTermStructure<DualFwd> for FlatForwardTermStructure<DualFwd> {
 
     fn nodes(&self) -> Option<Vec<(Date, DualFwd)>> {
         None
+    }
+
+    fn day_counter(&self) -> Option<DayCounter> {
+        Some(self.rate.day_counter())
+    }
+
+    fn discount_factor_from_time(&self, t: f64) -> Result<DualFwd> {
+        if t < 0.0 {
+            return Err(QSError::InvalidValueErr(
+                "Time must be non-negative".into(),
+            ));
+        }
+        let cf = self.rate.compound_factor_from_yf(t);
+        Ok((Const::one() / cf).into())
     }
 }
 

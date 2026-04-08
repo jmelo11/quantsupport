@@ -1,6 +1,6 @@
 // use crate::{
 //     ad::{
-//         adreal::{exp, max, DualFwd},
+//         {dual::DualFwd},
 //         tape::Tape,
 //     },
 //     core::{
@@ -305,7 +305,7 @@
 //         },
 //     };
 
-//     use crate::ad::adreal::{DualFwd, IsReal};
+//     use crate::ad::{dual::DualFwd, scalar::IsReal};
 
 //     struct SimpleMarketDataProvider {
 //         evaluation_date: Date,

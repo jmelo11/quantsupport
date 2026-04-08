@@ -1,5 +1,5 @@
 use crate::{
-    ad::{adreal::DualFwd, tape::Tape},
+    ad::{dual::DualFwd, tape::Tape},
     core::{
         collateral::DiscountPolicy,
         evaluationresults::{EvaluationResults, SensitivityMap},
@@ -14,7 +14,7 @@ use crate::{
         trade::Trade,
     },
     instruments::rates::capletfloorlet::{CapletFloorletTrade, CapletFloorletType},
-    models::geometricbrownianmotion::GeometricBrownianMotion,
+    models::brownianmotion::BrownianMotion,
     utils::errors::{QSError, Result},
     volatility::volatilityindexing::Strike,
 };
@@ -152,7 +152,7 @@ impl HandleValue<CapletFloorletTrade, BlackCapletState> for BlackCapletPricer {
 
         let is_cap = matches!(caplet.option_type(), CapletFloorletType::Caplet);
         let undiscounted =
-            GeometricBrownianMotion::closed_form_price(fwd, effective_strike, vol, tau, is_cap);
+            BrownianMotion::<DualFwd>::closed_form_price(fwd, effective_strike, vol, tau, is_cap)?;
 
         let value: DualFwd = (df_pay * undiscounted * alpha * trade.notional()).into();
         state.value = Some(value);
@@ -288,13 +288,9 @@ impl Pricer for BlackCapletPricer {
             }
         }
 
-        let mut request = MarketDataRequest::default()
+        let request = MarketDataRequest::default()
             .with_constructed_elements_request(elements)
             .with_fixings_request(fixings);
-
-        if self.discount_policy.is_some() {
-            request = request.with_exchange_rates();
-        }
         Some(request)
     }
 
@@ -316,7 +312,7 @@ mod tests {
     };
 
     use crate::{
-        ad::adreal::DualFwd,
+        ad::dual::DualFwd,
         core::{
             elements::{
                 curveelement::DiscountCurveElement,

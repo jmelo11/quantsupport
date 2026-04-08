@@ -67,8 +67,6 @@ pub fn build_curves(
     quote_store: &QuoteStore,
     curve_specs: Vec<CurveConfiguration>,
 ) -> std::result::Result<CurveEnvironment, Box<dyn std::error::Error>> {
-    let rd = quote_store.reference_date();
-
     let csa_index = MarketIndex::SOFR;
     let csa_currency = Currency::USD;
     let policy = BootstrapDiscountPolicy::new(csa_index.clone(), csa_currency);
@@ -91,7 +89,6 @@ pub fn build_curves(
             .insert(index, elem);
     }
 
-    let fixing_store = FixingStore::default();
     let mut pricing_fx_store = FxStore::new();
     pricing_fx_store.add_fx_rate(Currency::USD, Currency::CLP, DualFwd::new(935.0));
 

@@ -1,5 +1,5 @@
 use crate::{
-    ad::adreal::{DualFwd, Scalar},
+    ad::{dual::DualFwd, scalar::Scalar},
     instruments::cashflows::{
         cashflow::SimpleCashflow, fixedratecoupon::FixedRateCoupon,
         floatingratecoupon::FloatingRateCoupon, optionembeddedcoupon::OptionEmbeddedCoupon,

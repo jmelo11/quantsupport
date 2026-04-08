@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 
 use crate::{
-    ad::adreal::DualFwd,
+    ad::dual::DualFwd,
     core::pillars::Pillars,
     currencies::currency::Currency,
     utils::errors::{QSError, Result},

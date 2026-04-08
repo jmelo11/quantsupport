@@ -1,5 +1,5 @@
 use crate::{
-    ad::adreal::DualFwd,
+    ad::dual::DualFwd,
     core::{marketdatahandling::constructedelementstore::SharedElement, pillars::Pillars},
     indices::marketindex::MarketIndex,
     simulations::simulation::MonteCarloSimulation,

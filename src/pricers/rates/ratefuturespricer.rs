@@ -1,6 +1,6 @@
 use crate::{
     ad::{
-        adreal::DualFwd,
+        dual::DualFwd,
         tape::Tape,
     },
     core::{

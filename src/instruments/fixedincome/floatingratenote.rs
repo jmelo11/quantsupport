@@ -1,5 +1,5 @@
 use crate::{
-    ad::adreal::{DualFwd, Scalar},
+    ad::{dual::DualFwd, scalar::Scalar},
     core::{
         collateral::Discountable,
         instrument::{AssetClass, Instrument},

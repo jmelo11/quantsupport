@@ -1,5 +1,5 @@
 use crate::{
-    ad::adreal::DualFwd,
+    ad::dual::DualFwd,
     core::{
         elements::{
             curveelement::{DiscountCurveElement, DividendCurveElement},
@@ -83,15 +83,15 @@ pub trait PricerState {
     fn get_exchange_rate(&self, base: Currency, quote: Currency) -> Result<DualFwd> {
         self.get_market_data_reponse()
             .ok_or_else(|| QSError::NotFoundErr("MarketDataResponse not available.".into()))?
-            .exchange_rate_store()
+            .fx_store()
             .ok_or_else(|| QSError::NotFoundErr("FxStore not available.".into()))?
             .get_fx_rate(base, quote)
     }
 
     /// Retrieves the exchange-rate store from the market data, if available.
-    fn get_exchange_rate_store(&self) -> Option<&FxStore> {
+    fn get_fx_store(&self) -> Option<&FxStore> {
         self.get_market_data_reponse()
-            .and_then(|md| md.exchange_rate_store())
+            .and_then(|md| md.fx_store())
     }
 
     /// Retrieves the fixing for a given market index and date, if available.
@@ -205,7 +205,7 @@ pub trait PricerState {
                 surface.surface_mut().put_pillars_on_tape();
             }
             // Put FX spot rates on tape
-            if let Some(fx_store) = md_response.exchange_rate_store_mut() {
+            if let Some(fx_store) = md_response.fx_store_mut() {
                 fx_store.put_pillars_on_tape();
             }
         }

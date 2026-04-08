@@ -1,4 +1,4 @@
-use crate::{ad::adreal::Scalar, indices::marketindex::MarketIndex, time::date::Date};
+use crate::{ad::scalar::Scalar, indices::marketindex::MarketIndex, time::date::Date};
 
 type Matrix<T> = Vec<Vec<T>>;
 

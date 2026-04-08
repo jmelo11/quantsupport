@@ -1,12 +1,14 @@
 use crate::{
-    ad::adreal::{DualFwd, Scalar},
+    ad::{dual::DualFwd, scalar::Scalar},
     core::{elements::volatilitysurfaceelement::ADVolatilitySurfaceElement, pillars::Pillars},
     indices::marketindex::MarketIndex,
     math::interpolation::bilinear::{BilinearInterpolator, BilinearPoint, BilinearValue},
     time::{date::Date, period::Period},
     utils::errors::{QSError, Result},
-    volatility::volatilityindexing::F64Key,
-    volatility::volatilitysurface::VolatilitySurface,
+    volatility::{
+        volatilityindexing::{F64Key, SmileType, VolatilityType},
+        volatilitysurface::VolatilitySurface,
+    },
 };
 use std::collections::BTreeMap;
 
@@ -74,8 +76,8 @@ impl<T: BilinearValue> VolatilitySurface<T> for InterpolatedVolatilitySurface<T>
         })
     }
 
-    fn volatility_type(&self) -> crate::volatility::volatilityindexing::VolatilityType {
-        crate::volatility::volatilityindexing::VolatilityType::Black
+    fn volatility_type(&self) -> VolatilityType {
+        VolatilityType::Black
     }
 
     fn market_index(&self) -> &MarketIndex {
@@ -86,8 +88,8 @@ impl<T: BilinearValue> VolatilitySurface<T> for InterpolatedVolatilitySurface<T>
         self.reference_date
     }
 
-    fn smile_type(&self) -> crate::volatility::volatilityindexing::SmileType {
-        crate::volatility::volatilityindexing::SmileType::Strike
+    fn smile_type(&self) -> SmileType {
+        SmileType::Strike
     }
 }
 
@@ -122,10 +124,7 @@ mod tests {
     use std::collections::BTreeMap;
 
     use crate::{
-        ad::{
-            adreal::DualFwd,
-            tape::Tape,
-        },
+        ad::{dual::DualFwd, tape::Tape},
         indices::marketindex::MarketIndex,
         time::{date::Date, enums::TimeUnit, period::Period},
         volatility::{

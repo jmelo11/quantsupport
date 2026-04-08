@@ -1,5 +1,5 @@
 use crate::{
-    ad::adreal::Scalar,
+    ad::scalar::Scalar,
     currencies::currency::Currency,
     indices::marketindex::MarketIndex,
     instruments::rates::{
@@ -279,7 +279,7 @@ where
 mod tests {
     use super::*;
     use crate::{
-        ad::adreal::DualFwd,
+        ad::dual::DualFwd,
         core::instrument::Instrument,
         rates::compounding::Compounding,
         time::{daycounter::DayCounter, enums::Frequency},

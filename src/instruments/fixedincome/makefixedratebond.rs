@@ -1,5 +1,5 @@
 use crate::{
-    ad::adreal::Scalar,
+    ad::scalar::Scalar,
     core::{instrument::AssetClass, trade::Side},
     currencies::currency::Currency,
     indices::marketindex::MarketIndex,

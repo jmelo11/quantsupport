@@ -1,5 +1,5 @@
 use crate::{
-    ad::adreal::{DualFwd, Scalar},
+    ad::{dual::DualFwd, scalar::Scalar},
     time::date::Date,
     utils::errors::Result,
 };

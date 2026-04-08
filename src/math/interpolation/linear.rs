@@ -1,7 +1,7 @@
 use std::cmp::Ordering;
 
 use crate::{
-    ad::adreal::DualFwd,
+    ad::dual::DualFwd,
     math::interpolation::interpolator::StaticInterpolate,
     utils::errors::{QSError, Result},
 };
@@ -89,7 +89,7 @@ impl StaticInterpolate<DualFwd> for LinearInterpolator {
 
 #[cfg(test)]
 mod tests {
-    use crate::ad::adreal::DualFwd;
+    use crate::ad::dual::DualFwd;
     use crate::ad::tape::Tape;
 
     use super::LinearInterpolator;

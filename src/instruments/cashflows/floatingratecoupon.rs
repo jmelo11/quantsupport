@@ -3,7 +3,7 @@ use std::sync::RwLock;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    ad::adreal::{DualFwd, Scalar},
+    ad::{dual::DualFwd, scalar::Scalar},
     indices::marketindex::MarketIndex,
     instruments::cashflows::{cashflow::Cashflow, coupons::LinearCoupon},
     time::{date::Date, daycounter::DayCounter},

@@ -1,4 +1,4 @@
-use crate::ad::adreal::{DualFwd, Scalar};
+use crate::ad::{dual::DualFwd, scalar::Scalar};
 
 /// Numeric behavior required for bilinear interpolation.
 pub trait BilinearValue: Scalar {
@@ -100,7 +100,7 @@ impl BilinearInterpolator {
 #[cfg(test)]
 mod tests {
     use crate::{
-        ad::adreal::DualFwd,
+        ad::dual::DualFwd,
         math::interpolation::bilinear::{BilinearInterpolator, BilinearPoint},
     };
 

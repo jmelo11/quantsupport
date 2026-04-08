@@ -1,4 +1,4 @@
-use crate::ad::adreal::{DualFwd, Scalar};
+use crate::ad::{dual::DualFwd, scalar::Scalar};
 use crate::core::collateral::Discountable;
 use crate::time::daycounter::DayCounter;
 use crate::{
@@ -221,7 +221,7 @@ where
 mod tests {
     use super::*;
     use crate::{
-        ad::adreal::DualFwd,
+        ad::dual::DualFwd,
         core::{instrument::AssetClass, trade::Side},
         currencies::currency::Currency,
         instruments::cashflows::{

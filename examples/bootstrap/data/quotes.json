@@ -1,45 +1,153 @@
 {
     "reference_date": "2026-02-24",
     "quotes": [
-        { "identifier": "FixedRateDeposit_USD_SOFR_1D",              "mid": 0.045 },
-        { "identifier": "OIS_USD_SOFR_1Y",                           "mid": 0.0483664339 },
-        { "identifier": "OIS_USD_SOFR_2Y",                           "mid": 0.0452778478 },
-        { "identifier": "OIS_USD_SOFR_3Y",                           "mid": 0.0426004359 },
-        { "identifier": "OIS_USD_SOFR_5Y",                           "mid": 0.0407677739 },
-        { "identifier": "OIS_USD_SOFR_7Y",                           "mid": 0.0403282175 },
-        { "identifier": "OIS_USD_SOFR_10Y",                          "mid": 0.0389759898 },
-        { "identifier": "OIS_USD_SOFR_30Y",                          "mid": 0.0373842872 },
-
-        { "identifier": "FixedRateDeposit_USD_TermSOFR3m_3M",        "mid": 0.0465 },
-        { "identifier": "BasisSwap_USD_SOFR_TermSOFR3m_6M",          "mid": 0.00035 },
-        { "identifier": "BasisSwap_USD_SOFR_TermSOFR3m_1Y",          "mid": 0.00028 },
-        { "identifier": "BasisSwap_USD_SOFR_TermSOFR3m_2Y",          "mid": 0.00022 }, 
-        { "identifier": "BasisSwap_USD_SOFR_TermSOFR3m_3Y",          "mid": 0.00018 },
-        { "identifier": "BasisSwap_USD_SOFR_TermSOFR3m_5Y",          "mid": 0.00012 },
-        { "identifier": "BasisSwap_USD_SOFR_TermSOFR3m_7Y",          "mid": 0.00010 },
-        { "identifier": "BasisSwap_USD_SOFR_TermSOFR3m_10Y",         "mid": 0.00008 },
-        { "identifier": "BasisSwap_USD_SOFR_TermSOFR3m_30Y",         "mid": 0.00005 },
-
-        { "identifier": "FxForwardPoints_USDCLP_1M",                   "mid": 1.50 },
-        { "identifier": "FxForwardPoints_USDCLP_3M",                   "mid": 5.30 },
-        { "identifier": "FxForwardPoints_USDCLP_6M",                   "mid": 12.80 },
-
-        { "identifier": "FloatFloatCrossCurrencySwap_CLP_ICP_SOFR_USD_1Y",        "mid": 0.0510 },
-        { "identifier": "FloatFloatCrossCurrencySwap_CLP_ICP_SOFR_USD_2Y",        "mid": 0.0485 },
-        { "identifier": "FloatFloatCrossCurrencySwap_CLP_ICP_SOFR_USD_3Y",        "mid": 0.0465 },
-        { "identifier": "FloatFloatCrossCurrencySwap_CLP_ICP_SOFR_USD_5Y",        "mid": 0.0455 },
-        { "identifier": "FloatFloatCrossCurrencySwap_CLP_ICP_SOFR_USD_7Y",        "mid": 0.0450 },
-        { "identifier": "FloatFloatCrossCurrencySwap_CLP_ICP_SOFR_USD_10Y",       "mid": 0.0440 },
-        { "identifier": "FloatFloatCrossCurrencySwap_CLP_ICP_SOFR_USD_20Y",       "mid": 0.0430 },
-
-        { "identifier": "FixedRateDeposit_CLP_ICP_1D",               "mid": 0.0500 },
-        { "identifier": "FixedRateDeposit_CLP_ICP_3M",               "mid": 0.0498 },
-        { "identifier": "OIS_CLP_ICP_6M",                            "mid": 0.0495 },
-        { "identifier": "OIS_CLP_ICP_1Y",                            "mid": 0.0485 },
-        { "identifier": "OIS_CLP_ICP_2Y",                            "mid": 0.0470 },
-        { "identifier": "OIS_CLP_ICP_3Y",                            "mid": 0.0455 },
-        { "identifier": "OIS_CLP_ICP_5Y",                            "mid": 0.0440 },
-        { "identifier": "OIS_CLP_ICP_7Y",                            "mid": 0.0430 },
-        { "identifier": "OIS_CLP_ICP_10Y",                           "mid": 0.0425 },
-        { "identifier": "OIS_CLP_ICP_20Y",                           "mid": 0.0420 }    ]
+        {
+            "identifier": "FixedRateDeposit_USD_SOFR_1D",
+            "mid": 0.045
+        },
+        {
+            "identifier": "OIS_USD_SOFR_1Y",
+            "mid": 0.0483664339
+        },
+        {
+            "identifier": "OIS_USD_SOFR_2Y",
+            "mid": 0.0452778478
+        },
+        {
+            "identifier": "OIS_USD_SOFR_3Y",
+            "mid": 0.0426004359
+        },
+        {
+            "identifier": "OIS_USD_SOFR_5Y",
+            "mid": 0.0407677739
+        },
+        {
+            "identifier": "OIS_USD_SOFR_7Y",
+            "mid": 0.0403282175
+        },
+        {
+            "identifier": "OIS_USD_SOFR_10Y",
+            "mid": 0.0389759898
+        },
+        {
+            "identifier": "OIS_USD_SOFR_30Y",
+            "mid": 0.0373842872
+        },
+        {
+            "identifier": "FixedRateDeposit_USD_TermSOFR3m_3M",
+            "mid": 0.0465
+        },
+        {
+            "identifier": "BasisSwap_USD_SOFR_TermSOFR3m_6M",
+            "mid": 0.00035
+        },
+        {
+            "identifier": "BasisSwap_USD_SOFR_TermSOFR3m_1Y",
+            "mid": 0.00028
+        },
+        {
+            "identifier": "BasisSwap_USD_SOFR_TermSOFR3m_2Y",
+            "mid": 0.00022
+        },
+        {
+            "identifier": "BasisSwap_USD_SOFR_TermSOFR3m_3Y",
+            "mid": 0.00018
+        },
+        {
+            "identifier": "BasisSwap_USD_SOFR_TermSOFR3m_5Y",
+            "mid": 0.00012
+        },
+        {
+            "identifier": "BasisSwap_USD_SOFR_TermSOFR3m_7Y",
+            "mid": 0.00010
+        },
+        {
+            "identifier": "BasisSwap_USD_SOFR_TermSOFR3m_10Y",
+            "mid": 0.00008
+        },
+        {
+            "identifier": "BasisSwap_USD_SOFR_TermSOFR3m_30Y",
+            "mid": 0.00005
+        },
+        {
+            "identifier": "FxForwardPoints_USDCLP_1M",
+            "mid": 1.50
+        },
+        {
+            "identifier": "FxForwardPoints_USDCLP_3M",
+            "mid": 5.30
+        },
+        {
+            "identifier": "FxForwardPoints_USDCLP_6M",
+            "mid": 12.80
+        },
+        {
+            "identifier": "FixFloatCrossCurrencySwap_CLP_SOFR_USD_1Y",
+            "mid": 0.0510
+        },
+        {
+            "identifier": "FixFloatCrossCurrencySwap_CLP_SOFR_USD_2Y",
+            "mid": 0.0485
+        },
+        {
+            "identifier": "FixFloatCrossCurrencySwap_CLP_SOFR_USD_3Y",
+            "mid": 0.0465
+        },
+        {
+            "identifier": "FixFloatCrossCurrencySwap_CLP_SOFR_USD_5Y",
+            "mid": 0.0455
+        },
+        {
+            "identifier": "FixFloatCrossCurrencySwap_CLP_SOFR_USD_7Y",
+            "mid": 0.0450
+        },
+        {
+            "identifier": "FixFloatCrossCurrencySwap_CLP_SOFR_USD_10Y",
+            "mid": 0.0440
+        },
+        {
+            "identifier": "FixFloatCrossCurrencySwap_CLP_SOFR_USD_20Y",
+            "mid": 0.0430
+        },
+        {
+            "identifier": "FixedRateDeposit_CLP_ICP_1D",
+            "mid": 0.0500
+        },
+        {
+            "identifier": "FixedRateDeposit_CLP_ICP_3M",
+            "mid": 0.0498
+        },
+        {
+            "identifier": "OIS_CLP_ICP_6M",
+            "mid": 0.0495
+        },
+        {
+            "identifier": "OIS_CLP_ICP_1Y",
+            "mid": 0.0485
+        },
+        {
+            "identifier": "OIS_CLP_ICP_2Y",
+            "mid": 0.0470
+        },
+        {
+            "identifier": "OIS_CLP_ICP_3Y",
+            "mid": 0.0455
+        },
+        {
+            "identifier": "OIS_CLP_ICP_5Y",
+            "mid": 0.0440
+        },
+        {
+            "identifier": "OIS_CLP_ICP_7Y",
+            "mid": 0.0430
+        },
+        {
+            "identifier": "OIS_CLP_ICP_10Y",
+            "mid": 0.0425
+        },
+        {
+            "identifier": "OIS_CLP_ICP_20Y",
+            "mid": 0.0420
+        }
+    ]
 }

@@ -1,11 +1,12 @@
 use crate::{
-    ad::{adreal::DualFwd, tape::Tape},
+    ad::{dual::DualFwd, tape::Tape},
     core::{
         collateral::{DiscountPolicy, Discountable},
         evaluationresults::{EvaluationResults, SensitivityMap},
         instrument::Instrument,
         marketdatahandling::{
             constructedelementrequest::ConstructedElementRequest,
+            fxrequest::FxRequest,
             marketdata::{MarketData, MarketDataProvider, MarketDataRequest},
         },
         pillars::Pillars,
@@ -194,7 +195,7 @@ where
             .iter()
             .any(|idx| matches!(idx, MarketIndex::Collateral(_, _)));
         if has_cross_currency {
-            if let Some(fx_store) = state.get_exchange_rate_store() {
+            if let Some(fx_store) = state.get_fx_store() {
                 for (label, value) in fx_store
                     .pillars()
                     .ok_or_else(|| QSError::ValueNotSetErr("Pillars".into()))?
@@ -561,7 +562,6 @@ where
         let legs = trade.legs();
         let mut constructed_elements = Vec::new();
         let mut seen_indices = HashSet::new();
-        let mut requires_fx = false;
 
         // Always request forward / discount curves for each leg
         for leg in legs {
@@ -576,10 +576,14 @@ where
 
         // When a CSA discount policy is set, also request:
         //  1. The collateral currency's OIS discount curve(s) per leg
-        //  2. Exchange rates (via FxStore) for forward FX computation
+        //  2. Exchange rates (via FxRequest) for forward FX computation
+        let mut fx_requests = Vec::new();
         if let Some(policy) = &self.discount_policy {
             for leg in legs {
                 if let Ok(csa_index) = policy.accept(leg) {
+                    if let MarketIndex::Collateral(_, coll_ccy) = &csa_index {
+                        fx_requests.push(FxRequest::new(leg.currency(), *coll_ccy));
+                    }
                     if seen_indices.insert(csa_index.clone()) {
                         constructed_elements.push(ConstructedElementRequest::DiscountCurve {
                             market_index: csa_index,
@@ -587,13 +591,12 @@ where
                     }
                 }
             }
-            requires_fx = true;
         }
 
         let mut request =
             MarketDataRequest::default().with_constructed_elements_request(constructed_elements);
-        if requires_fx {
-            request = request.with_exchange_rates();
+        if !fx_requests.is_empty() {
+            request = request.with_fx_request(fx_requests);
         }
         Some(request)
     }
@@ -936,8 +939,8 @@ mod tests {
                     self.market_data.fixings().clone(),
                     self.market_data.constructed_elements().clone(),
                 );
-                if let Some(store) = self.market_data.exchange_rate_store() {
-                    md = md.with_exchange_rate_store(store.clone());
+                if let Some(store) = self.market_data.fx_store() {
+                    md = md.with_fx_store(store.clone());
                 }
                 Ok(md)
             }
@@ -1039,8 +1042,8 @@ mod tests {
         let mut fx_store = FxStore::new();
         fx_store.add_fx_rate(Currency::USD, Currency::EUR, DualFwd::from(fx_usd_eur));
 
-        let market_data = MarketData::new(HashMap::new(), constructed_elements)
-            .with_exchange_rate_store(fx_store);
+        let market_data =
+            MarketData::new(HashMap::new(), constructed_elements).with_fx_store(fx_store);
 
         let provider = CsaMarketDataProvider {
             evaluation_date: trade_date,

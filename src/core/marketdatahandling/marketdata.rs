@@ -4,6 +4,7 @@ use crate::{
     core::marketdatahandling::{
         constructedelementrequest::ConstructedElementRequest,
         constructedelementstore::ConstructedElementStore, fixingrequest::FixingRequest,
+        fxrequest::FxRequest,
     },
     indices::marketindex::MarketIndex,
     quotes::fxstore::FxStore,
@@ -17,8 +18,7 @@ use crate::{
 pub struct MarketDataRequest {
     constructed_elements_request: Option<Vec<ConstructedElementRequest>>,
     fixings_request: Option<Vec<FixingRequest>>,
-    /// Whether the pricer needs an exchange-rate store for FX conversions.
-    needs_exchange_rates: bool,
+    fx_request: Option<Vec<FxRequest>>,
 }
 
 impl MarketDataRequest {
@@ -27,11 +27,12 @@ impl MarketDataRequest {
     pub const fn new(
         constructed_elements_request: Option<Vec<ConstructedElementRequest>>,
         fixings_request: Option<Vec<FixingRequest>>,
+        fx_request: Option<Vec<FxRequest>>,
     ) -> Self {
         Self {
             constructed_elements_request,
             fixings_request,
-            needs_exchange_rates: false,
+            fx_request: fx_request,
         }
     }
 
@@ -64,16 +65,16 @@ impl MarketDataRequest {
         self
     }
 
-    /// Returns whether the pricer needs an exchange-rate store.
+    /// Returns the FX rate request, if any.
     #[must_use]
-    pub const fn needs_exchange_rates(&self) -> bool {
-        self.needs_exchange_rates
+    pub const fn fx_request(&self) -> Option<&Vec<FxRequest>> {
+        self.fx_request.as_ref()
     }
 
-    /// Builder method to indicate that an exchange-rate store is required.
+    /// Builder method to set the FX rate request.
     #[must_use]
-    pub const fn with_exchange_rates(mut self) -> Self {
-        self.needs_exchange_rates = true;
+    pub fn with_fx_request(mut self, request: Vec<FxRequest>) -> Self {
+        self.fx_request = Some(request);
         self
     }
 }
@@ -83,8 +84,8 @@ impl MarketDataRequest {
 #[derive(Clone, Default)]
 pub struct MarketData {
     fixings: HashMap<MarketIndex, BTreeMap<Date, f64>>,
+    fx_store: Option<FxStore>,
     constructed_elements: ConstructedElementStore,
-    exchange_rate_store: Option<FxStore>,
 }
 
 impl MarketData {
@@ -98,7 +99,7 @@ impl MarketData {
         Self {
             fixings,
             constructed_elements,
-            exchange_rate_store: None,
+            fx_store: None,
         }
     }
 
@@ -122,20 +123,20 @@ impl MarketData {
 
     /// Returns the exchange-rate store, if any.
     #[must_use]
-    pub const fn exchange_rate_store(&self) -> Option<&FxStore> {
-        self.exchange_rate_store.as_ref()
+    pub const fn fx_store(&self) -> Option<&FxStore> {
+        self.fx_store.as_ref()
     }
 
     /// Returns a mutable reference to the exchange-rate store, if any.
     #[must_use]
-    pub const fn exchange_rate_store_mut(&mut self) -> Option<&mut FxStore> {
-        self.exchange_rate_store.as_mut()
+    pub const fn fx_store_mut(&mut self) -> Option<&mut FxStore> {
+        self.fx_store.as_mut()
     }
 
     /// Builder method to set the exchange-rate store.
     #[must_use]
-    pub fn with_exchange_rate_store(mut self, store: FxStore) -> Self {
-        self.exchange_rate_store = Some(store);
+    pub fn with_fx_store(mut self, store: FxStore) -> Self {
+        self.fx_store = Some(store);
         self
     }
 }

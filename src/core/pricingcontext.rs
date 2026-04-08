@@ -8,8 +8,11 @@ use crate::{
     },
     currencies::currency::Currency,
     indices::marketindex::MarketIndex,
-    quotes::{fixingstore::FixingStore, fxstore::FxStore, quotestore::QuoteStore},
-    rates::bootstrapping::curveconfiguration::CurveConfiguration,
+    quotes::{fixingstore::FixingStore, fxstore::FxStore, quote::Level, quotestore::QuoteStore},
+    rates::bootstrapping::{
+        bootstrapdiscountpolicy::BootstrapDiscountPolicy, curveconfiguration::CurveConfiguration,
+        multicurvebootstrapper::MultiCurveBootstrapper,
+    },
     time::date::Date,
     utils::errors::{QSError, Result},
 };
@@ -30,6 +33,8 @@ pub struct PricingContext {
     constructed_elements: ConstructedElementStore,
     /// The base currency for pricing and reporting results.
     base_currency: Currency,
+    /// Base remuneration index
+    base_index: MarketIndex,
 }
 
 impl PricingContext {
@@ -43,6 +48,7 @@ impl PricingContext {
             curve_configurations: Vec::new(),
             constructed_elements: ConstructedElementStore::default(),
             base_currency: Currency::USD, // Default base currency
+            base_index: MarketIndex::SOFR,
         }
     }
 
@@ -78,6 +84,13 @@ impl PricingContext {
         self
     }
 
+    /// Sets the base collateral remuneration index.
+    #[must_use]
+    pub fn with_base_index(mut self, base_index: MarketIndex) -> Self {
+        self.base_index = base_index.clone();
+        self
+    }
+
     /// Sets the fixing store.
     #[must_use]
     pub fn with_fixing_store(mut self, fixing_store: FixingStore) -> Self {
@@ -110,8 +123,17 @@ impl PricingContext {
 
     /// Placeholder for one-time initialisation (pre-loading caches, etc.).
     #[must_use]
-    pub fn initialize() -> Result<()> {
+    pub fn initialize(&mut self) -> Result<()> {
         // Placeholder for any initialization logic, such as pre-loading market data or setting up caches.
+        let policy = BootstrapDiscountPolicy::new(self.base_index.clone(), self.base_currency);
+        let bootstrapper = MultiCurveBootstrapper::new(self.curve_configurations.clone(), policy)
+            .with_fx_store(self.fx_store.clone());
+        let curves = bootstrapper.bootstrap(&self.quote_store, Level::Mid)?;
+        for (index, curve) in curves {
+            self.constructed_elements
+                .discount_curves_mut()
+                .insert(index.clone(), curve);
+        }
         Ok(())
     }
 }
@@ -121,6 +143,7 @@ impl MarketDataProvider for PricingContext {
         self.quote_store.reference_date()
     }
 
+    // this needs to be refactored
     fn handle_request(&self, request: &MarketDataRequest) -> Result<MarketData> {
         // 1. Resolve constructed elements from the internal store.
         let mut constructed_elements = ConstructedElementStore::default();
@@ -179,6 +202,7 @@ impl MarketDataProvider for PricingContext {
                             .volatility_cubes_mut()
                             .insert(market_index.clone(), cube.clone());
                     }
+                    // probably this will be moved out
                     ConstructedElementRequest::Simulation { market_index } => {
                         let sim = self
                             .constructed_elements
@@ -211,9 +235,19 @@ impl MarketDataProvider for PricingContext {
             }
         }
 
-        // 3. Assemble final MarketData with models from this context.
-        let md = MarketData::new(fixings, constructed_elements)
-            .with_exchange_rate_store(self.fx_store.clone());
+        // 3. Resolve FX rates from the FX store.
+        // this approach is not ideal, it could lead to sensitivities in unnatural parities
+        let mut fx_store = FxStore::new();
+        if let Some(fx_requests) = request.fx_request() {
+            for fx_req in fx_requests {
+                let rate = self.fx_store.get_fx_rate(fx_req.base(), fx_req.quote())?;
+                fx_store.add_fx_rate(fx_req.base(), fx_req.quote(), rate);
+            }
+        }
+
+        // 4. Assemble final MarketData.
+        let md = MarketData::new(fixings, constructed_elements).with_fx_store(fx_store);
+
         Ok(md)
     }
 }

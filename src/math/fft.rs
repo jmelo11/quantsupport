@@ -17,7 +17,7 @@
 //! assert!((data[0].re - 4.0).abs() < 1e-12);
 //! ```
 
-use crate::ad::adreal::Scalar;
+use crate::ad::scalar::Scalar;
 use crate::utils::errors::{QSError, Result};
 
 /// Minimal complex number that only requires [`Scalar`].
@@ -228,7 +228,7 @@ mod tests {
     // FFT with DualFwd scalars.
     #[test]
     fn adreal_fft_derivative() {
-        use crate::ad::adreal::DualFwd;
+        use crate::ad::dual::DualFwd;
         use crate::ad::tape::Tape;
 
         Tape::start_recording_fwd();

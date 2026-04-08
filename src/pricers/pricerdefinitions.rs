@@ -1,4 +1,4 @@
-// use crate::ad::adreal::{DualFwd, FloatExt};
+// use crate::ad::{dual::DualFwd, expr::FloatExt};
 // use crate::math::probability::norm_cdf::norm_cdf;
 // use crate::models::GbmModelParameters;
 
@@ -91,7 +91,7 @@
 
 // #[cfg(test)]
 // mod tests {
-//     use crate::ad::{adreal::DualFwd, tape::Tape};
+//     use crate::ad::{dual::DualFwd, tape::Tape};
 
 //     use super::BlackClosedFormPricer;
 

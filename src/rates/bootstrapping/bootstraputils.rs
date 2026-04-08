@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 
 use crate::{
-    ad::adreal::DualFwd,
+    ad::dual::DualFwd,
     currencies::currency::Currency,
     indices::marketindex::MarketIndex,
     instruments::cashflows::leg::Leg,
