@@ -184,6 +184,7 @@
 //! ```
 
 pub mod ad;
+pub mod calibration;
 pub mod core;
 pub mod currencies;
 pub mod indices;
@@ -200,3 +201,4 @@ pub mod simulations;
 pub mod time;
 pub mod utils;
 pub mod volatility;
+pub mod xva;

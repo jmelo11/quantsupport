@@ -13,23 +13,24 @@ use crate::{
         rates::{
             basisswap::BasisSwap,
             capfloor::{CapFloor, CapFloorType},
+            capletfloorlet::CapletFloorlet,
             crosscurrencyswap::FixFloatCrossCurrencySwap,
+            europeanswaption::EuropeanSwaption,
             floatfloatcrosscurrencyswap::FloatFloatCrossCurrencySwap,
             makebasisswap::MakeBasisSwap,
             makecapfloor::MakeCapFloor,
+            makeeuropeanswaption::MakeSwaption,
             makefixfloatcrosscurrencyswap::MakeFixFloatCrossCurrencySwap,
             makefloatfloatcrosscurrencyswap::MakeFloatFloatCrossCurrencySwap,
             makeratefutures::MakeRateFutures,
             makeswap::MakeSwap,
-            makeswaption::MakeSwaption,
             ratefutures::RateFutures,
             swap::Swap,
-            swaption::Swaption,
         },
     },
     time::{date::Date, enums::Frequency, imm::IMM, period::Period},
     utils::errors::{QSError, Result},
-    volatility::volatilityindexing::VolatilityType,
+    volatility::volatilityindexing::{Strike, VolatilityType},
 };
 
 /// Splits a 6-character FX pair string (e.g. `"EURUSD"`) into two currencies.
@@ -124,29 +125,6 @@ impl QuoteLevels {
     }
 }
 
-/// Represents if the strike is quoted in absolute or relative values.
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
-pub enum StrikeType {
-    /// Absolute strike.
-    Absolute,
-    /// Relative (moneyness) strike.
-    Relative,
-}
-
-impl std::str::FromStr for StrikeType {
-    type Err = QSError;
-
-    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
-        match s {
-            "Absolute" => Ok(Self::Absolute),
-            "Relative" => Ok(Self::Relative),
-            _ => Err(QSError::InvalidValueErr(format!(
-                "Unknown strike type: {s}"
-            ))),
-        }
-    }
-}
-
 /// Represents the type of instruments that can be handled by the quoting system.
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub enum QuoteInstrument {
@@ -179,7 +157,7 @@ pub enum QuoteInstrument {
     /// Caplet or floorlet instrument.
     CapletFloorlet,
     /// Swaption instrument.
-    Swaption,
+    EuropeanSwaption,
     /// Cap/Floor (requires stripping).
     CapFloor,
 }
@@ -234,11 +212,11 @@ impl std::str::FromStr for OptionStrategy {
 /// | BasisSwap | `BasisSwap` | CCY | PayIndex | RecvIndex | Tenor | \[PayFreq\] | \[RecvFreq\] | | |
 /// | FixFloatCrossCurrencySwap | `FixFloatCrossCurrencySwap` | DomCCY | FloatIndex | ForCCY | Tenor | \[DomFreq\] | \[ForFreq\] | | |
 /// | FloatFloatCrossCurrencySwap | `FloatFloatCrossCurrencySwap` | DomCCY | DomIndex | ForIndex | ForCCY | Tenor | \[DomFreq\] | \[ForFreq\] | |
-/// | CapFloor | `CapFloor` | CCY | Index | Tenor | \[Freq\] | StrikeType | \[Strike\] | VolType | |
-/// | CapletFloorlet | `CapletFloorlet` | CCY | Index | IdxTenor | Expiry | StrikeType | \[Strike\] | Strategy | VolType |
+/// | CapFloor | `CapFloor` | CCY | Index | Tenor | \[Freq\] | Strike | \[StrikeValue\] | VolType | |
+/// | CapletFloorlet | `CapletFloorlet` | CCY | Index | IdxTenor | Expiry | Strike | \[StrikeValue\] | Strategy | VolType |
 /// | Future | `Future` | CCY | Index | IMMCode | | | | | |
 /// | ConvexityAdjustment | `ConvexityAdjustment` | CCY | Index | IMMCode | | | | | |
-/// | Swaption | `Swaption` | CCY | Index | Expiry | SwapTenor | \[PayFreq\] | \[RecvFreq\] | StrikeType | \[Strike\] VolType |
+/// | Swaption | `Swaption` | CCY | Index | Expiry | SwapTenor | \[PayFreq\] | \[RecvFreq\] | Strike | \[StrikeValue\] VolType |
 /// | FxOutrightForward | `FxOutrightForward` | CCYPAIR | Tenor | | | | | | |
 /// | FxForwardPoints | `FxForwardPoints` | CCYPAIR | Tenor | | | | | | |
 /// | EquityCall | `EquityCall` | CCY | Index | Tenor | Strike | | | | |
@@ -283,9 +261,7 @@ pub struct QuoteDetails {
     #[serde(default)]
     receive_currency: Option<Currency>,
     #[serde(default)]
-    strike: Option<f64>,
-    #[serde(default)]
-    strike_type: Option<StrikeType>,
+    strike: Option<Strike>,
     #[serde(default)]
     maturity: Option<Date>,
     #[serde(default)]
@@ -331,7 +307,6 @@ impl QuoteDetails {
             pay_currency: None,
             receive_currency: None,
             strike: None,
-            strike_type: None,
             maturity: None,
             tenor: None,
             vol_shift: None,
@@ -411,14 +386,8 @@ impl QuoteDetails {
 
     /// Returns the strike, if present.
     #[must_use]
-    pub const fn strike(&self) -> Option<f64> {
+    pub const fn strike(&self) -> Option<Strike> {
         self.strike
-    }
-
-    /// Returns the strike type, if present.
-    #[must_use]
-    pub const fn strike_type(&self) -> Option<StrikeType> {
-        self.strike_type
     }
 
     /// Returns the vol shift, if present.
@@ -529,16 +498,11 @@ impl QuoteDetails {
     }
     /// Sets the strike.
     #[must_use]
-    pub const fn with_strike(mut self, s: f64) -> Self {
+    pub const fn with_strike(mut self, s: Strike) -> Self {
         self.strike = Some(s);
         self
     }
-    /// Sets the strike type.
-    #[must_use]
-    pub const fn with_strike_type(mut self, t: StrikeType) -> Self {
-        self.strike_type = Some(t);
-        self
-    }
+
     /// Sets the maturity.
     #[must_use]
     pub const fn with_maturity(mut self, d: Date) -> Self {
@@ -787,9 +751,9 @@ impl QuoteDetails {
         Ok(det)
     }
 
-    /// `{Instrument}_CCY_{Index}_{Tenor}[_{Freq}]_{StrikeType}_{VolType}` (without strike)
+    /// `{Instrument}_CCY_{Index}_{Tenor}[_{Freq}]_{Strike}_{VolType}` (without strike value)
     ///
-    /// `{Instrument}_CCY_{Index}_{Tenor}[_{Freq}]_{StrikeType}_{Strike}_{VolType}` (with strike)
+    /// `{Instrument}_CCY_{Index}_{Tenor}[_{Freq}]_{Strike}_{StrikeValue}_{VolType}` (with strike value)
     ///
     /// e.g. `CapFloor_USD_SOFR_1Y_Absolute_Black` or
     /// `CapFloor_USD_SOFR_1Y_Quarterly_Absolute_Black`
@@ -812,7 +776,7 @@ impl QuoteDetails {
             .and_then(|s| s.parse::<Frequency>().ok())
             .map_or((None, 4), |f| (Some(f), 5));
 
-        let strike_type = parts[next].parse::<StrikeType>()?;
+        let strike_base = parts[next].parse::<Strike>()?;
 
         // Try parsing next+1 as f64 (strike value). If it succeeds, the vol
         // type follows at next+2; otherwise next+1 is the vol type.
@@ -820,7 +784,14 @@ impl QuoteDetails {
         let (strike, vol_idx) = parts
             .get(strike_idx)
             .and_then(|s| s.parse::<f64>().ok())
-            .map_or((None, strike_idx), |s| (Some(s), strike_idx + 1));
+            .map_or((strike_base, strike_idx), |s| {
+                let st = match strike_base {
+                    Strike::Absolute(_) => Strike::Absolute(s),
+                    Strike::Relative(_) => Strike::Relative(s),
+                    Strike::Atm => Strike::Atm,
+                };
+                (st, strike_idx + 1)
+            });
         let vol_type: VolatilityType = parts
             .get(vol_idx)
             .ok_or_else(|| QSError::InvalidValueErr(format!("Missing vol type in: {id}")))?
@@ -830,20 +801,17 @@ impl QuoteDetails {
             .with_market_index(index)
             .with_currency(currency)
             .with_tenor(tenor)
-            .with_strike_type(strike_type)
+            .with_strike(strike)
             .with_vol_type(vol_type);
-        if let Some(k) = strike {
-            det = det.with_strike(k);
-        }
         if let Some(f) = freq {
             det = det.with_pay_leg_frequency(f);
         }
         Ok(det)
     }
 
-    /// `{Instrument}_CCY_{Index}_{IdxTenor}_{Expiry}_{StrikeType}_{Strike}_{Strategy}_{VolType}`
+    /// `{Instrument}_CCY_{Index}_{IdxTenor}_{Expiry}_{Strike}_{StrikeValue}_{Strategy}_{VolType}`
     ///
-    /// Or without explicit strike: `.._{StrikeType}_{Strategy}_{VolType}`.
+    /// Or without explicit strike value: `.._{Strike}_{Strategy}_{VolType}`.
     ///
     /// e.g. `CapletFloorlet_USD_TermSOFR3m_3M_3M_Absolute_0.010_Straddle_Black`
     ///
@@ -859,9 +827,16 @@ impl QuoteDetails {
         let index = parts[2].parse::<MarketIndex>()?;
         let index_tenor = Period::from_str(parts[3])?;
         let option_expiry = Period::from_str(parts[4])?;
-        let strike_type = parts[5].parse::<StrikeType>()?;
+        let strike_base = parts[5].parse::<Strike>()?;
 
-        let (strike, next_idx) = parts[6].parse::<f64>().map_or((None, 6), |s| (Some(s), 7));
+        let (strike, next_idx) = parts[6].parse::<f64>().map_or((strike_base, 6), |s| {
+            let st = match strike_base {
+                Strike::Absolute(_) => Strike::Absolute(s),
+                Strike::Relative(_) => Strike::Relative(s),
+                Strike::Atm => Strike::Atm,
+            };
+            (st, 7)
+        });
 
         let strategy: OptionStrategy = parts
             .get(next_idx)
@@ -872,17 +847,14 @@ impl QuoteDetails {
             .ok_or_else(|| QSError::InvalidValueErr(format!("Missing vol type in: {id}")))?
             .parse()?;
 
-        let mut det = Self::new(id.to_string(), QuoteInstrument::CapletFloorlet)
+        let det = Self::new(id.to_string(), QuoteInstrument::CapletFloorlet)
             .with_market_index(index)
             .with_currency(currency)
             .with_index_tenor(index_tenor)
             .with_option_expiry(option_expiry)
-            .with_strike_type(strike_type)
+            .with_strike(strike)
             .with_strategy(strategy)
             .with_vol_type(vol_type);
-        if let Some(k) = strike {
-            det = det.with_strike(k);
-        }
         Ok(det)
     }
 
@@ -928,8 +900,8 @@ impl QuoteDetails {
 
     /// Swaption identifier parser.
     ///
-    /// `{Instrument}_CCY_{Index}_{Expiry}_{SwapTenor}[_{PayFreq}_{RecvFreq}]_{StrikeType}_{VolType}` (no strike)
-    /// `{Instrument}_CCY_{Index}_{Expiry}_{SwapTenor}[_{PayFreq}_{RecvFreq}]_{StrikeType}_{Strike}_{VolType}` (with strike)
+    /// `{Instrument}_CCY_{Index}_{Expiry}_{SwapTenor}[_{PayFreq}_{RecvFreq}]_{Strike}_{VolType}` (no strike value)
+    /// `{Instrument}_CCY_{Index}_{Expiry}_{SwapTenor}[_{PayFreq}_{RecvFreq}]_{Strike}_{StrikeValue}_{VolType}` (with strike value)
     /// e.g. `Swaption_USD_SOFR_3M_2Y_Absolute_Black` or
     /// `Swaption_USD_SOFR_3M_2Y_Semiannual_Semiannual_Absolute_Black`
     ///
@@ -948,28 +920,32 @@ impl QuoteDetails {
 
         let (pay_freq, recv_freq, next) = Self::try_parse_frequencies(parts, 5);
 
-        let strike_type = parts[next].parse::<StrikeType>()?;
+        let strike_base = parts[next].parse::<Strike>()?;
 
         let strike_idx = next + 1;
         let (strike, vol_idx) = parts
             .get(strike_idx)
             .and_then(|s| s.parse::<f64>().ok())
-            .map_or((None, strike_idx), |s| (Some(s), strike_idx + 1));
+            .map_or((strike_base, strike_idx), |s| {
+                let st = match strike_base {
+                    Strike::Absolute(_) => Strike::Absolute(s),
+                    Strike::Relative(_) => Strike::Relative(s),
+                    Strike::Atm => Strike::Atm,
+                };
+                (st, strike_idx + 1)
+            });
         let vol_type: VolatilityType = parts
             .get(vol_idx)
             .ok_or_else(|| QSError::InvalidValueErr(format!("Missing vol type in: {id}")))?
             .parse()?;
 
-        let mut det = Self::new(id.to_string(), QuoteInstrument::Swaption)
+        let mut det = Self::new(id.to_string(), QuoteInstrument::EuropeanSwaption)
             .with_market_index(index)
             .with_currency(currency)
             .with_option_expiry(option_expiry)
             .with_tenor(swap_tenor)
-            .with_strike_type(strike_type)
+            .with_strike(strike)
             .with_vol_type(vol_type);
-        if let Some(k) = strike {
-            det = det.with_strike(k);
-        }
         if let Some(f) = pay_freq {
             det = det.with_pay_leg_frequency(f);
         }
@@ -1037,7 +1013,7 @@ impl QuoteDetails {
             .with_market_index(index)
             .with_currency(currency)
             .with_tenor(tenor)
-            .with_strike(strike))
+            .with_strike(Strike::Absolute(strike)))
     }
 
     /// `{Instrument}_CCY_{Index}_{Expiry}_{Strike}` — e.g. `EquityPut_USD_SPX_1Y_5000`
@@ -1060,7 +1036,7 @@ impl QuoteDetails {
             .with_market_index(index)
             .with_currency(currency)
             .with_tenor(tenor)
-            .with_strike(strike))
+            .with_strike(Strike::Absolute(strike)))
     }
 
     /// `{Instrument}_{CCYPAIR}_{Expiry}_{Strike}` — e.g. `FxCall_EURUSD_1Y_1.10`
@@ -1083,7 +1059,7 @@ impl QuoteDetails {
             .with_pay_currency(base)
             .with_receive_currency(quote_ccy)
             .with_tenor(tenor)
-            .with_strike(strike))
+            .with_strike(Strike::Absolute(strike)))
     }
 
     /// `{Instrument}_{CCYPAIR}_{Expiry}_{Strike}` — e.g. `FxPut_EURUSD_1Y_1.10`
@@ -1106,7 +1082,7 @@ impl QuoteDetails {
             .with_pay_currency(base)
             .with_receive_currency(quote_ccy)
             .with_tenor(tenor)
-            .with_strike(strike))
+            .with_strike(Strike::Absolute(strike)))
     }
 
     /// Parses a quote identifier using a custom separator.
@@ -1165,10 +1141,6 @@ impl std::str::FromStr for QuoteDetails {
     }
 }
 
-// ---------------------------------------------------------------------------
-// CalibrationInstrumentType
-// ---------------------------------------------------------------------------
-
 /// Wraps every concrete instrument type that can be produced from a [`Quote`].
 #[derive(Clone)]
 pub enum CalibrationInstrumentType<T = f64>
@@ -1195,8 +1167,33 @@ where
     Put(EquityEuropeanOption),
     /// An interest rate cap or floor.
     CapFloor(CapFloor),
-    /// A swaption (option on a swap).
-    Swaption(Swaption<T>),
+    /// A single caplet or floorlet.
+    CapletFloorlet(CapletFloorlet),
+    /// A European swaption (option on a swap).
+    EuropeanSwaption(EuropeanSwaption<T>),
+}
+
+impl<T: Scalar> std::fmt::Debug for CalibrationInstrumentType<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::FixedRateDeposit(_) => write!(f, "CalibrationInstrumentType::FixedRateDeposit"),
+            Self::Swap(_) => write!(f, "CalibrationInstrumentType::Swap"),
+            Self::BasisSwap(_) => write!(f, "CalibrationInstrumentType::BasisSwap"),
+            Self::RateFutures(_) => write!(f, "CalibrationInstrumentType::RateFutures"),
+            Self::FxForward(_) => write!(f, "CalibrationInstrumentType::FxForward"),
+            Self::FixFloatCrossCurrencySwap(_) => {
+                write!(f, "CalibrationInstrumentType::FixFloatCrossCurrencySwap")
+            }
+            Self::FloatFloatCrossCurrencySwap(_) => {
+                write!(f, "CalibrationInstrumentType::FloatFloatCrossCurrencySwap")
+            }
+            Self::Call(_) => write!(f, "CalibrationInstrumentType::Call"),
+            Self::Put(_) => write!(f, "CalibrationInstrumentType::Put"),
+            Self::CapFloor(_) => write!(f, "CalibrationInstrumentType::CapFloor"),
+            Self::CapletFloorlet(_) => write!(f, "CalibrationInstrumentType::CapletFloorlet"),
+            Self::EuropeanSwaption(_) => write!(f, "CalibrationInstrumentType::EuropeanSwaption"),
+        }
+    }
 }
 
 impl<T> CalibrationInstrumentType<T>
@@ -1228,14 +1225,13 @@ where
                 .max(x.foreign_leg().last_payment_date())),
             Self::RateFutures(x) => Ok(x.end_date()),
             Self::FxForward(x) => Ok(x.delivery_date()),
-            _ => Err(QSError::InvalidValueErr("Instrument not supported".into())),
+            Self::Call(x) | Self::Put(x) => Ok(x.expiry_date()),
+            Self::CapletFloorlet(x) => Ok(x.fixing_date()),
+            Self::CapFloor(x) => Ok(x.last_fixing_date()),
+            Self::EuropeanSwaption(x) => Ok(x.expiry_date()),
         }
     }
 }
-
-// ---------------------------------------------------------------------------
-// Quote
-// ---------------------------------------------------------------------------
 
 /// Contains the quote information.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -1317,7 +1313,10 @@ impl Quote {
             QuoteInstrument::EquityCall => self.build_call(reference_date),
             QuoteInstrument::EquityPut => self.build_put(reference_date),
             QuoteInstrument::CapFloor => self.build_cap_floor(value, reference_date, notional),
-            QuoteInstrument::Swaption => self.build_swaption(value, reference_date, notional),
+            QuoteInstrument::CapletFloorlet => self.build_caplet_floorlet(reference_date),
+            QuoteInstrument::EuropeanSwaption => {
+                self.build_swaption(value, reference_date, notional)
+            }
             QuoteInstrument::FxForwardPoints => self.build_fx_forward_points(value, reference_date),
             QuoteInstrument::FxCall | QuoteInstrument::FxPut => Err(QSError::NotImplementedErr(
                 "FX option instrument builders are not implemented yet".into(),
@@ -1654,7 +1653,8 @@ impl Quote {
         let d = &self.details;
         let strike = d
             .strike()
-            .ok_or_else(|| QSError::ValueNotSetErr("Strike on Call quote".into()))?;
+            .ok_or_else(|| QSError::ValueNotSetErr("Strike on Call quote".into()))?
+            .resolve(0.0);
         let tenor = d
             .tenor()
             .ok_or_else(|| QSError::ValueNotSetErr("Tenor on Call quote".into()))?;
@@ -1679,7 +1679,8 @@ impl Quote {
         let d = &self.details;
         let strike = d
             .strike()
-            .ok_or_else(|| QSError::ValueNotSetErr("Strike on Put quote".into()))?;
+            .ok_or_else(|| QSError::ValueNotSetErr("Strike on Put quote".into()))?
+            .resolve(0.0);
         let tenor = d
             .tenor()
             .ok_or_else(|| QSError::ValueNotSetErr("Tenor on Put quote".into()))?;
@@ -1694,6 +1695,45 @@ impl Quote {
             d.identifier(),
         );
         Ok(CalibrationInstrumentType::Put(opt))
+    }
+
+    /// Builds a single `CapletFloorlet` from a vol quote.
+    ///
+    /// The quote value is the market vol; the strike, expiry, and index tenor
+    /// are extracted from the parsed `QuoteDetails`.
+    fn build_caplet_floorlet(&self, reference_date: Date) -> Result<CalibrationInstrumentType> {
+        use crate::instruments::rates::capletfloorlet::{
+            CapletFloorlet as CFL, CapletFloorletType,
+        };
+
+        let d = &self.details;
+        let option_expiry = d
+            .option_expiry()
+            .ok_or_else(|| QSError::ValueNotSetErr("Option expiry on CapletFloorlet".into()))?;
+        let index_tenor = d
+            .index_tenor()
+            .ok_or_else(|| QSError::ValueNotSetErr("Index tenor on CapletFloorlet".into()))?;
+        let market_index = Self::required_market_index(d, "CapletFloorlet quote")?;
+
+        let start = reference_date + option_expiry;
+        let end = start + index_tenor;
+
+        let strike = d.strike().unwrap_or(Strike::Atm);
+
+        let cfl = CFL::new(
+            d.identifier(),
+            market_index,
+            d.currency()
+                .ok_or_else(|| QSError::ValueNotSetErr("Currency on CapletFloorlet".into()))?,
+            start,
+            start,
+            end,
+            end, // payment_date = end_date
+            CapletFloorletType::Caplet,
+            strike,
+        );
+
+        Ok(CalibrationInstrumentType::CapletFloorlet(cfl))
     }
 
     /// Interest rate Cap or Floor — strike and tenor from details.
@@ -1714,7 +1754,7 @@ impl Quote {
 
         // The quote value is treated as the strike. If the details already
         // carry a parsed strike, prefer that.
-        let strike = d.strike().unwrap_or(value);
+        let strike = d.strike().unwrap_or(Strike::Absolute(value)).resolve(0.0);
 
         // Default to Cap for the quote-driven builder.
         let cap_floor_type = CapFloorType::Cap;
@@ -1762,7 +1802,7 @@ impl Quote {
         let market_index = Self::required_market_index(d, "Swaption quote")?;
         let rd = market_index.rate_index_details()?.rate_definition();
 
-        let strike = d.strike().unwrap_or(value);
+        let strike = d.strike().unwrap_or(Strike::Absolute(value)).resolve(0.0);
 
         let mut builder = MakeSwaption::<T>::default()
             .with_identifier(d.identifier())
@@ -1785,7 +1825,7 @@ impl Quote {
         }
         let swaption = builder.build()?;
 
-        Ok(CalibrationInstrumentType::Swaption(swaption))
+        Ok(CalibrationInstrumentType::EuropeanSwaption(swaption))
     }
 }
 
@@ -1841,10 +1881,10 @@ mod tests {
     fn parse_cap_floor_identifier() {
         let det: QuoteDetails = "CapFloor_USD_SOFR_1Y_Absolute_Black".parse().unwrap();
         assert_eq!(*det.instrument(), QuoteInstrument::CapFloor);
-        assert!(det.strike().is_none());
+        assert_eq!(det.strike(), Some(Strike::Absolute(0.0)));
 
         let det2: QuoteDetails = "CapFloor_USD_SOFR_1Y_Absolute_0.03_Black".parse().unwrap();
-        assert_eq!(det2.strike(), Some(0.03));
+        assert_eq!(det2.strike(), Some(Strike::Absolute(0.03)));
     }
 
     #[test]
@@ -1853,13 +1893,13 @@ mod tests {
             .parse()
             .unwrap();
         assert_eq!(*det.instrument(), QuoteInstrument::CapletFloorlet);
-        assert_eq!(det.strike(), Some(0.010));
+        assert_eq!(det.strike(), Some(Strike::Absolute(0.010)));
     }
 
     #[test]
     fn parse_swaption_identifier() {
         let det: QuoteDetails = "Swaption_USD_SOFR_3M_2Y_Absolute_Black".parse().unwrap();
-        assert_eq!(*det.instrument(), QuoteInstrument::Swaption);
+        assert_eq!(*det.instrument(), QuoteInstrument::EuropeanSwaption);
     }
 
     #[test]
@@ -1891,14 +1931,14 @@ mod tests {
     fn parse_call_identifier() {
         let det: QuoteDetails = "EquityCall_USD_SPX_1Y_5000".parse().unwrap();
         assert_eq!(*det.instrument(), QuoteInstrument::EquityCall);
-        assert_eq!(det.strike(), Some(5000.0));
+        assert_eq!(det.strike(), Some(Strike::Absolute(5000.0)));
     }
 
     #[test]
     fn parse_put_identifier() {
         let det: QuoteDetails = "EquityPut_USD_SPX_1Y_4500".parse().unwrap();
         assert_eq!(*det.instrument(), QuoteInstrument::EquityPut);
-        assert_eq!(det.strike(), Some(4500.0));
+        assert_eq!(det.strike(), Some(Strike::Absolute(4500.0)));
     }
 
     #[test]
@@ -1914,7 +1954,7 @@ mod tests {
         let det = QuoteDetails::parse("EquityCall|USD|SPX|1Y|5000", '|').unwrap();
         assert_eq!(*det.instrument(), QuoteInstrument::EquityCall);
         assert_eq!(det.currency(), Some(Currency::USD));
-        assert_eq!(det.strike(), Some(5000.0));
+        assert_eq!(det.strike(), Some(Strike::Absolute(5000.0)));
     }
 
     // -- build_instrument ---------------------------------------------------
@@ -2014,7 +2054,10 @@ mod tests {
         let inst = quote
             .build_instrument(ref_date(), Level::Mid, None)
             .unwrap();
-        assert!(matches!(inst, CalibrationInstrumentType::Swaption(_)));
+        assert!(matches!(
+            inst,
+            CalibrationInstrumentType::EuropeanSwaption(_)
+        ));
     }
 
     #[test]
@@ -2028,15 +2071,16 @@ mod tests {
     }
 
     #[test]
-    fn vol_quote_returns_not_implemented() {
-        // CapletFloorlet is a vol quote — no builder for it yet.
+    fn vol_quote_builds_caplet_floorlet() {
         let details: QuoteDetails =
             "CapletFloorlet_USD_TermSOFR3m_3M_3M_Absolute_0.010_Straddle_Black"
                 .parse()
                 .unwrap();
         let quote = Quote::new(details, QuoteLevels::with_mid(0.33));
         let result = quote.build_instrument(ref_date(), Level::Mid, None);
-        assert!(result.is_err());
+        assert!(result.is_ok());
+        let inst = result.unwrap();
+        assert!(matches!(inst, CalibrationInstrumentType::CapletFloorlet(_)));
     }
 
     // -- frequency parsing --------------------------------------------------
@@ -2105,10 +2149,10 @@ mod tests {
         let det: QuoteDetails = "Swaption_USD_SOFR_3M_2Y_Semiannual_Semiannual_Absolute_0.04_Black"
             .parse()
             .unwrap();
-        assert_eq!(*det.instrument(), QuoteInstrument::Swaption);
+        assert_eq!(*det.instrument(), QuoteInstrument::EuropeanSwaption);
         assert_eq!(det.pay_leg_frequency(), Some(Frequency::Semiannual));
         assert_eq!(det.receive_leg_frequency(), Some(Frequency::Semiannual));
-        assert_eq!(det.strike(), Some(0.04));
+        assert_eq!(det.strike(), Some(Strike::Absolute(0.04)));
     }
 
     #[test]
@@ -2125,7 +2169,7 @@ mod tests {
             .unwrap();
         assert_eq!(*det.instrument(), QuoteInstrument::CapFloor);
         assert_eq!(det.pay_leg_frequency(), Some(Frequency::Quarterly));
-        assert_eq!(det.strike(), Some(0.03));
+        assert_eq!(det.strike(), Some(Strike::Absolute(0.03)));
     }
 
     #[test]

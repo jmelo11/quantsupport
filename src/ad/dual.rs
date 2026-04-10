@@ -379,6 +379,13 @@ impl<T: TapeHolder + InnerScalar> PartialOrd<f64> for Dual<T> {
     }
 }
 
+impl<T: TapeHolder + InnerScalar> From<Dual<T>> for f64 {
+    #[inline]
+    fn from(d: Dual<T>) -> Self {
+        d.val.value()
+    }
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 //  Type alias
 // ═══════════════════════════════════════════════════════════════════════════

@@ -15,6 +15,12 @@ use crate::{
     },
     time::date::Date,
     utils::errors::{QSError, Result},
+    volatility::{
+        volatilitycubebuilder::VolatilityCubeBuilder,
+        volatilitycubeconfiguration::VolatilityCubeConfiguration,
+        volatilitysurfacebuilder::VolatilitySurfaceBuilder,
+        volatilitysurfaceconfiguration::VolatilitySurfaceConfiguration,
+    },
 };
 
 /// Manages the context for instrument evaluation, including market data access, quote level preferences,
@@ -29,6 +35,10 @@ pub struct PricingContext {
     fx_store: FxStore,
     /// Curve specifications for curve construction.    
     curve_configurations: Vec<CurveConfiguration>,
+    /// Volatility surface specifications.
+    volatility_surface_configurations: Vec<VolatilitySurfaceConfiguration>,
+    /// Volatility cube specifications.
+    volatility_cube_configurations: Vec<VolatilityCubeConfiguration>,
     /// Constructed market data elements, such as discount curves, volatility surfaces, among others.
     constructed_elements: ConstructedElementStore,
     /// The base currency for pricing and reporting results.
@@ -46,6 +56,8 @@ impl PricingContext {
             fixing_store: FixingStore::default(),
             fx_store: FxStore::default(),
             curve_configurations: Vec::new(),
+            volatility_surface_configurations: Vec::new(),
+            volatility_cube_configurations: Vec::new(),
             constructed_elements: ConstructedElementStore::default(),
             base_currency: Currency::USD, // Default base currency
             base_index: MarketIndex::SOFR,
@@ -115,6 +127,26 @@ impl PricingContext {
         self
     }
 
+    /// Sets the volatility surface configurations.
+    #[must_use]
+    pub fn with_volatility_surface_configurations(
+        mut self,
+        configs: Vec<VolatilitySurfaceConfiguration>,
+    ) -> Self {
+        self.volatility_surface_configurations = configs;
+        self
+    }
+
+    /// Sets the volatility cube configurations.
+    #[must_use]
+    pub fn with_volatility_cube_configurations(
+        mut self,
+        configs: Vec<VolatilityCubeConfiguration>,
+    ) -> Self {
+        self.volatility_cube_configurations = configs;
+        self
+    }
+
     /// Returns the current reference date.
     #[must_use]
     pub const fn evaluation_date(&self) -> Date {
@@ -124,7 +156,7 @@ impl PricingContext {
     /// Placeholder for one-time initialisation (pre-loading caches, etc.).
     #[must_use]
     pub fn initialize(&mut self) -> Result<()> {
-        // Placeholder for any initialization logic, such as pre-loading market data or setting up caches.
+        // Bootstrap discount curves.
         let policy = BootstrapDiscountPolicy::new(self.base_index.clone(), self.base_currency);
         let bootstrapper = MultiCurveBootstrapper::new(self.curve_configurations.clone(), policy)
             .with_fx_store(self.fx_store.clone());
@@ -134,6 +166,31 @@ impl PricingContext {
                 .discount_curves_mut()
                 .insert(index.clone(), curve);
         }
+
+        // Build volatility surfaces.
+        if !self.volatility_surface_configurations.is_empty() {
+            let surface_builder =
+                VolatilitySurfaceBuilder::new(self.volatility_surface_configurations.clone());
+            let surfaces = surface_builder.build(&self.quote_store, Level::Mid)?;
+            for (index, surface) in surfaces {
+                self.constructed_elements
+                    .volatility_surfaces_mut()
+                    .insert(index, surface);
+            }
+        }
+
+        // Build volatility cubes.
+        if !self.volatility_cube_configurations.is_empty() {
+            let cube_builder =
+                VolatilityCubeBuilder::new(self.volatility_cube_configurations.clone());
+            let cubes = cube_builder.build(&self.quote_store, Level::Mid)?;
+            for (index, cube) in cubes {
+                self.constructed_elements
+                    .volatility_cubes_mut()
+                    .insert(index, cube);
+            }
+        }
+
         Ok(())
     }
 }
@@ -240,8 +297,10 @@ impl MarketDataProvider for PricingContext {
         let mut fx_store = FxStore::new();
         if let Some(fx_requests) = request.fx_request() {
             for fx_req in fx_requests {
-                let rate = self.fx_store.get_fx_rate(fx_req.base(), fx_req.quote())?;
-                fx_store.add_fx_rate(fx_req.base(), fx_req.quote(), rate);
+                if let Some(quote_ccy) = fx_req.quote() {
+                    let rate = self.fx_store.get_fx_rate(fx_req.base(), quote_ccy)?;
+                    fx_store.add_fx_rate(fx_req.base(), quote_ccy, rate);
+                }
             }
         }
 

@@ -8,12 +8,11 @@ use crate::{
     currencies::currency::Currency,
     indices::marketindex::MarketIndex,
     instruments::cashflows::{
-        cashflow::SimpleCashflow, cashflowtype::CashflowType, coupons::PayoffOps,
-        fixedratecoupon::FixedRateCoupon, floatingratecoupon::FloatingRateCoupon, leg::Leg,
-        optionembeddedcoupon::OptionEmbeddedCoupon,
+        cashflow::SimpleCashflow, cashflowtype::CashflowType, fixedratecoupon::FixedRateCoupon,
+        floatingratecoupon::FloatingRateCoupon, leg::Leg,
+        optionembeddedcoupon::OptionEmbeddedCoupon, payoffops::PayoffOps,
     },
-    rates::compounding::Compounding,
-    rates::interestrate::InterestRate,
+    rates::{compounding::Compounding, interestrate::InterestRate},
     time::{
         calendar::Calendar,
         calendars::nullcalendar::NullCalendar,

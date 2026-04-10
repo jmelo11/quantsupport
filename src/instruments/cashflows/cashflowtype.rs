@@ -2,7 +2,8 @@ use crate::{
     ad::{dual::DualFwd, scalar::Scalar},
     instruments::cashflows::{
         cashflow::SimpleCashflow, fixedratecoupon::FixedRateCoupon,
-        floatingratecoupon::FloatingRateCoupon, optionembeddedcoupon::OptionEmbeddedCoupon,
+        floatingratecoupon::FloatingRateCoupon, optionembeddedcashflow::OptionEmbeddedCashflow,
+        optionembeddedcoupon::OptionEmbeddedCoupon,
     },
 };
 
@@ -19,6 +20,10 @@ pub enum CashflowType<T: Scalar> {
     Redemption(SimpleCashflow<f64>),
     /// A simple cash flow representing a disbursement of the notional amount at the start of the instrument.
     Disbursement(SimpleCashflow<f64>),
+    /// Constant amount
+    ConstantAmount(SimpleCashflow<f64>),
+    /// An option-embedded cash flow, where the cash flow is determined by a payoff function that may include optionality features (e.g., caps, floors).
+    OptionEmbeddedCashflow(OptionEmbeddedCashflow<T>),
 }
 
 impl From<CashflowType<f64>> for CashflowType<DualFwd> {
@@ -29,6 +34,10 @@ impl From<CashflowType<f64>> for CashflowType<DualFwd> {
             CashflowType::OptionEmbeddedCoupon(coupon) => Self::OptionEmbeddedCoupon(coupon.into()),
             CashflowType::Redemption(cashflow) => Self::Redemption(cashflow),
             CashflowType::Disbursement(cashflow) => Self::Disbursement(cashflow),
+            CashflowType::ConstantAmount(cashflow) => Self::ConstantAmount(cashflow),
+            CashflowType::OptionEmbeddedCashflow(cashflow) => {
+                Self::OptionEmbeddedCashflow(cashflow.into())
+            }
         }
     }
 }
@@ -41,6 +50,10 @@ impl From<CashflowType<DualFwd>> for CashflowType<f64> {
             CashflowType::OptionEmbeddedCoupon(coupon) => Self::OptionEmbeddedCoupon(coupon.into()),
             CashflowType::Redemption(cashflow) => Self::Redemption(cashflow),
             CashflowType::Disbursement(cashflow) => Self::Disbursement(cashflow),
+            CashflowType::ConstantAmount(cashflow) => Self::ConstantAmount(cashflow.into()),
+            CashflowType::OptionEmbeddedCashflow(cashflow) => {
+                Self::OptionEmbeddedCashflow(cashflow.into())
+            }
         }
     }
 }

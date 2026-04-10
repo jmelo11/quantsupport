@@ -6,6 +6,8 @@ pub mod discounttermstructure;
 pub mod flatforwardtermstructure;
 /// Rates term structure module.
 pub mod interestratestermstructure;
+/// Spread term structure module.
+pub mod spreadtermstructure;
 /// Tenor-based zero rate term structure module.
 pub mod tenorbasedzeroratetermstructure;
 /// Zero rate term structure module.

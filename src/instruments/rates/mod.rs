@@ -21,10 +21,10 @@ pub mod makeratefutures;
 /// Interest rate swap builder.
 pub mod makeswap;
 /// Swaption builder.
-pub mod makeswaption;
+pub mod makeeuropeanswaption;
 /// Interest rate futures instruments.
 pub mod ratefutures;
 /// Interest rate swap instruments.
 pub mod swap;
 /// Interest rate swaption instruments.
-pub mod swaption;
+pub mod europeanswaption;

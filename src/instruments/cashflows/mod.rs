@@ -12,5 +12,8 @@ pub mod floatingratecoupon;
 pub mod leg;
 /// Make Leg Module
 pub mod makeleg;
+pub mod optionembeddedcashflow;
 /// Option Embedded Coupon Module
 pub mod optionembeddedcoupon;
+/// Payoff description module.
+pub mod payoffops;

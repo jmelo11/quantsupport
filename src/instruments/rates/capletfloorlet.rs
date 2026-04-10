@@ -8,7 +8,6 @@ use crate::{
     },
     currencies::currency::Currency,
     indices::marketindex::MarketIndex,
-    rates::interestrate::RateDefinition,
     time::date::Date,
     volatility::volatilityindexing::Strike,
 };
@@ -33,22 +32,22 @@ pub enum CapletFloorletType {
 /// context / `MarketDataProvider` level, not on the instrument itself.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CapletFloorlet {
-    name: String,
+    identifier: String,
     market_index: MarketIndex,
     /// Currency of the caplet/floorlet.
     currency: Currency,
-    /// Fixing / option expiry date.
-    start_date: Date,
-    /// End of the floating period.
-    end_date: Date,
+    /// Rate fixing date.
+    fixing_date: Date,
+    /// Start of the accrual period.
+    start_accrual_date: Date,
+    /// End of the accrual period.
+    end_accrual_date: Date,
     /// Payment date (defaults to `end_date`).
     payment_date: Date,
     /// Caplet or floorlet direction.
-    option_type: CapletFloorletType,
+    payoff_type: CapletFloorletType,
     /// Strike specification (absolute, ATM, or relative to forward).
     strike: Strike,
-    /// Rate definition used to derive the forward rate and accrual factor.
-    rate_definition: RateDefinition,
 }
 
 impl CapletFloorlet {
@@ -56,26 +55,26 @@ impl CapletFloorlet {
     #[must_use]
     #[allow(clippy::too_many_arguments)]
     pub const fn new(
-        name: String,
+        identifier: String,
         market_index: MarketIndex,
         currency: Currency,
-        start_date: Date,
-        end_date: Date,
+        fixing_date: Date,
+        start_accrual_date: Date,
+        end_accrual_date: Date,
         payment_date: Date,
-        option_type: CapletFloorletType,
+        payoff_type: CapletFloorletType,
         strike: Strike,
-        rate_definition: RateDefinition,
     ) -> Self {
         Self {
-            name,
+            identifier,
             market_index,
             currency,
-            start_date,
-            end_date,
+            fixing_date,
+            start_accrual_date,
+            end_accrual_date,
             payment_date,
-            option_type,
+            payoff_type,
             strike,
-            rate_definition,
         }
     }
 
@@ -87,14 +86,20 @@ impl CapletFloorlet {
 
     /// Returns the fixing / expiry date of the option.
     #[must_use]
-    pub const fn start_date(&self) -> Date {
-        self.start_date
+    pub const fn start_accrual_date(&self) -> Date {
+        self.start_accrual_date
     }
 
     /// Returns the end date of the floating period.
     #[must_use]
-    pub const fn end_date(&self) -> Date {
-        self.end_date
+    pub const fn end_accrual_date(&self) -> Date {
+        self.end_accrual_date
+    }
+
+    /// Returns the fixing date of the caplet/floorlet.
+    #[must_use]
+    pub const fn fixing_date(&self) -> Date {
+        self.fixing_date
     }
 
     /// Returns the payment date of the caplet/floorlet.
@@ -105,28 +110,14 @@ impl CapletFloorlet {
 
     /// Returns the option type (caplet or floorlet).
     #[must_use]
-    pub const fn option_type(&self) -> CapletFloorletType {
-        self.option_type
+    pub const fn payoff_type(&self) -> CapletFloorletType {
+        self.payoff_type
     }
 
     /// Returns the strike specification.
     #[must_use]
     pub const fn strike(&self) -> Strike {
         self.strike
-    }
-
-    /// Returns the rate definition used to derive the forward rate and accrual factor.
-    #[must_use]
-    pub const fn rate_definition(&self) -> RateDefinition {
-        self.rate_definition
-    }
-
-    /// Computes the accrual factor `α = year_fraction(start_date, end_date)`.
-    #[must_use]
-    pub fn accrual_factor(&self) -> f64 {
-        self.rate_definition
-            .day_counter()
-            .year_fraction(self.start_date, self.end_date)
     }
 }
 
@@ -145,7 +136,7 @@ impl Discountable for CapletFloorlet {
 
 impl Instrument for CapletFloorlet {
     fn identifier(&self) -> String {
-        self.name.clone()
+        self.identifier.clone()
     }
 }
 

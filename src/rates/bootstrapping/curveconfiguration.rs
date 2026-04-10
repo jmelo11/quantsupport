@@ -6,22 +6,15 @@ use crate::{
     core::collateral::Discountable,
     indices::marketindex::MarketIndex,
     math::interpolation::interpolator::Interpolator,
-    quotes::quote::{CalibrationInstrumentType, Level, Quote},
-    rates::bootstrapping::{
-        bootstrapdiscountpolicy::BootstrapDiscountPolicy,
+    quotes::{
         calibrationinstrument::CalibrationInstrument,
+        quote::{CalibrationInstrumentType, Level},
+        quoteselector::QuoteSelector,
     },
+    rates::bootstrapping::bootstrapdiscountpolicy::BootstrapDiscountPolicy,
     time::{date::Date, daycounter::DayCounter},
     utils::errors::{QSError, Result},
 };
-
-/// Selects market quotes by identifier.
-pub trait QuoteSelector {
-    /// Returns the quote with the given identifier.
-    fn select(&self, identifier: &str) -> Option<Quote>;
-    /// Returns the reference (valuation) date used for building instruments.
-    fn reference_date(&self) -> Date;
-}
 
 /// User-defined bootstrap specification for a curve, carrying the quote
 /// identifiers that should be used to calibrate it.

@@ -360,7 +360,8 @@ mod tests {
         utils::errors::{QSError, Result},
         volatility::{
             interpolatedvolatilitysurface::InterpolatedVolatilitySurface,
-            volatilityindexing::F64Key, volatilitysurface::VolatilitySurface,
+            volatilityindexing::{F64Key, SmileType, VolatilityType},
+            volatilitysurface::VolatilitySurface,
         },
     };
 
@@ -445,8 +446,14 @@ mod tests {
         ];
 
         let vol_surface = Rc::new(RefCell::new(
-            InterpolatedVolatilitySurface::new(trade_date, market_index.clone(), surface_points)
-                .with_labels(&labels),
+            InterpolatedVolatilitySurface::new(
+                trade_date,
+                market_index.clone(),
+                surface_points,
+                VolatilityType::Black,
+                SmileType::Strike,
+            )
+            .with_labels(&labels),
         ));
 
         let mut constructed_elements = ConstructedElementStore::default();

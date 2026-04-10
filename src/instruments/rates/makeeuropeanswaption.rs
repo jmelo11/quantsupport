@@ -4,7 +4,7 @@ use crate::{
     indices::marketindex::MarketIndex,
     instruments::rates::{
         makeswap::MakeSwap,
-        swaption::{Swaption, SwaptionExerciseType, SwaptionType},
+        europeanswaption::{EuropeanSwaption, SwaptionType},
     },
     rates::interestrate::RateDefinition,
     time::{
@@ -16,7 +16,7 @@ use crate::{
 };
 use std::marker::PhantomData;
 
-/// A builder for creating a [`Swaption`] instance.
+/// A builder for creating an [`EuropeanSwaption`] instance.
 ///
 /// The builder first constructs the underlying swap (via [`MakeSwap`]) and then
 /// wraps it with the option-specific parameters (expiry, type, strike).
@@ -41,7 +41,6 @@ use std::marker::PhantomData;
 ///     .with_market_index(MarketIndex::SOFR)
 ///     .with_currency(Currency::USD)
 ///     .with_swaption_type(SwaptionType::Payer)
-///     .with_exercise_type(SwaptionExerciseType::European)
 ///     .build()
 ///     .expect("failed to build swaption");
 ///
@@ -60,7 +59,6 @@ pub struct MakeSwaption<T: Scalar + Default> {
     market_index: Option<MarketIndex>,
     currency: Option<Currency>,
     swaption_type: Option<SwaptionType>,
-    exercise_type: Option<SwaptionExerciseType>,
     fixed_leg_frequency: Option<Frequency>,
     floating_leg_frequency: Option<Frequency>,
     calendar: Option<Calendar>,
@@ -144,13 +142,6 @@ where
         self
     }
 
-    /// Sets the exercise type (european).
-    #[must_use]
-    pub const fn with_exercise_type(mut self, exercise_type: SwaptionExerciseType) -> Self {
-        self.exercise_type = Some(exercise_type);
-        self
-    }
-
     /// Sets the fixed leg payment frequency.
     #[must_use]
     pub const fn with_fixed_leg_frequency(mut self, frequency: Frequency) -> Self {
@@ -198,7 +189,7 @@ where
     /// # Errors
     /// Returns an error when required fields are missing or the underlying
     /// swap builder fails.
-    pub fn build(self) -> Result<Swaption<T>> {
+    pub fn build(self) -> Result<EuropeanSwaption<T>> {
         let strike = self
             .strike
             .ok_or_else(|| QSError::ValueNotSetErr("Strike".into()))?;
@@ -217,7 +208,6 @@ where
             .currency
             .ok_or_else(|| QSError::ValueNotSetErr("Currency".into()))?;
         let swaption_type = self.swaption_type.unwrap_or(SwaptionType::Payer);
-        let exercise_type = self.exercise_type.unwrap_or(SwaptionExerciseType::European);
 
         // The underlying swap starts at expiry (European swaption).
         let swap_start = self.start_date.unwrap_or(expiry);
@@ -262,12 +252,11 @@ where
 
         let underlying = swap_builder.build()?;
 
-        Ok(Swaption::new(
+        Ok(EuropeanSwaption::new(
             identifier,
             underlying,
             expiry,
             swaption_type,
-            exercise_type,
             strike,
             market_index,
             currency,
@@ -304,7 +293,6 @@ mod tests {
             .with_market_index(MarketIndex::SOFR)
             .with_currency(Currency::USD)
             .with_swaption_type(SwaptionType::Payer)
-            .with_exercise_type(SwaptionExerciseType::European)
     }
 
     #[test]

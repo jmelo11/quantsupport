@@ -1,7 +1,7 @@
 use crate::{
     ad::{dual::DualFwd, scalar::Scalar},
     indices::marketindex::MarketIndex,
-    instruments::cashflows::coupons::{NonLinearCoupon, PayoffOps},
+    instruments::cashflows::{coupons::NonLinearCoupon, payoffops::PayoffOps},
     time::date::Date,
     utils::errors::{QSError, Result},
 };

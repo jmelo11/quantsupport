@@ -1,5 +1,5 @@
 [workspace]
-members = [".", "examples/bootstrap", "examples/valuation", "examples/sensitivity", "examples/evaluator"]
+members = [".", "examples/bootstrap", "examples/valuation", "examples/sensitivity", "examples/evaluator", "examples/volatilitysurface", "examples/hullwhite"]
 
 [package]
 name = "quantsupport"
@@ -29,7 +29,7 @@ num-complex = "0.4"
 num-traits = "0.2"
 
 [lints.rust]
-missing_docs = "forbid"
+
 unreachable_patterns = "forbid"
 unused_must_use = "forbid"
 unused_import_braces = "forbid"

@@ -209,6 +209,26 @@ where
                             None,
                         );
                     }
+                    CashflowType::ConstantAmount(cashflow) => {
+                        let amount = cashflow.amount()?.value();
+                        let payment_date = cashflow.payment_date();
+
+                        cashflows_table.add_cashflow(
+                            payment_date,
+                            "ConstantAmount".to_string(),
+                            amount,
+                            None,
+                            0.0,
+                            currency,
+                            None,
+                            None,
+                        );
+                    }
+                    _ => {
+                        unimplemented!(
+                            "Cashflow type not supported in cashflows table generation yet"
+                        );
+                    }
                 }
             }
         }

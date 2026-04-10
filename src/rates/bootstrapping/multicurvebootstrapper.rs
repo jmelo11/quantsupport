@@ -4,6 +4,9 @@ use nalgebra::{DMatrix, DVector};
 
 use crate::{
     ad::{dual::DualFwd, scalar::Scalar},
+    calibration::{
+        calibrationpricer::CalibrationInstrumentPricer, calibrationprocess::CalibrationProcess,
+    },
     core::{
         elements::curveelement::{ADCurveElement, DiscountCurveElement},
         marketdatahandling::constructedelementstore::SharedElement,
@@ -16,13 +19,18 @@ use crate::{
             vectornewton::VectorNewton,
         },
     },
-    quotes::{fxstore::FxStore, quote::Level},
+    quotes::{
+        calibrationinstrument::CalibrationInstrument, fxstore::FxStore, quote::Level,
+        quoteselector::QuoteSelector,
+    },
     rates::{
         bootstrapping::{
+            bootstrapcalibrationinstrument::BootstrapStepEvaluation,
             bootstrapdiscountpolicy::BootstrapDiscountPolicy,
-            bootstraputils::{dependency_order, BootstrapCurveSet, CrossCurveDep, SolvedCurve},
-            calibrationinstrument::CalibrationInstrument,
-            curveconfiguration::{CurveConfiguration, QuoteSelector},
+            bootstrappedcurve::BootstrappedCurve,
+            bootstrapstep::BootstrapStep,
+            bootstraputils::{dependency_order, CrossCurveDep},
+            curveconfiguration::CurveConfiguration,
         },
         yieldtermstructure::discounttermstructure::DiscountTermStructure,
     },
@@ -173,7 +181,7 @@ impl MultiCurveBootstrapper {
         let order = dependency_order(&resolved, &self.discount_policy)?;
 
         // 3. Iteratively bootstrap in dependency order.
-        let mut solved_curves: HashMap<MarketIndex, SolvedCurve> = HashMap::new();
+        let mut solved_curves: HashMap<MarketIndex, BootstrappedCurve> = HashMap::new();
         let mut pillar_values: HashMap<MarketIndex, Vec<DualFwd>> = HashMap::new();
 
         for index in &order {
@@ -249,8 +257,8 @@ impl MultiCurveBootstrapper {
         &self,
         target_index: &MarketIndex,
         curve_config: &CurveConfiguration,
-        other_curves: &HashMap<MarketIndex, SolvedCurve>,
-    ) -> Result<SolvedCurve> {
+        other_curves: &HashMap<MarketIndex, BootstrappedCurve>,
+    ) -> Result<BootstrappedCurve> {
         let reference_date = curve_config.reference_date();
         let dc = curve_config.day_counter();
         let interp = curve_config.interpolator();
@@ -270,7 +278,7 @@ impl MultiCurveBootstrapper {
         let x0 = vec![0.99; n];
 
         // Build the problem.
-        let problem = BootstrapProblem {
+        let problem = BootstrapObjectiveFunc {
             target_index: target_index.clone(),
             reference_date,
             times: times.clone(),
@@ -474,7 +482,7 @@ impl MultiCurveBootstrapper {
             ad_dfs.push(df_ad);
         }
 
-        Ok(SolvedCurve::new(
+        Ok(BootstrappedCurve::new(
             target_index.clone(),
             reference_date,
             times,
@@ -493,27 +501,30 @@ impl MultiCurveBootstrapper {
     /// Each quote only enters its own residual, so only the diagonal is
     /// non-zero.  The per-instrument `quote_sensitivity` returns `∂F_j/∂q_j`
     /// directly.
-    fn compute_quote_sensitivities(problem: &BootstrapProblem, x: &[f64]) -> Result<Vec<f64>> {
+    fn compute_quote_sensitivities(
+        problem: &BootstrapObjectiveFunc,
+        x: &[f64],
+    ) -> Result<Vec<f64>> {
         let trial = problem.create_trial_curve(x);
-        let curves = BootstrapCurveSet::new(
+        let step = BootstrapStep::new(
             &trial,
             problem.other_curves,
             problem.discount_policy,
             problem.fx_store,
         );
-
+        let evaluator = BootstrapStepEvaluation::new(&step);
         problem
             .instruments
             .iter()
-            .map(|instr| instr.quote_sensitivity(&curves))
+            .map(|inst| evaluator.sensitivity(inst))
             .collect()
     }
 }
 
 fn bumped_residual(
-    problem: &BootstrapProblem,
+    problem: &BootstrapObjectiveFunc,
     parent_idx: &MarketIndex,
-    parent_curve: &SolvedCurve,
+    parent_curve: &BootstrappedCurve,
     parent_df_idx: usize,
     bump: f64,
     x: &[f64],
@@ -527,7 +538,7 @@ fn bumped_residual(
     let mut bumped_others = problem.other_curves.clone();
     bumped_others.insert(parent_idx.clone(), bumped_parent);
 
-    let bumped_problem = BootstrapProblem {
+    let bumped_problem = BootstrapObjectiveFunc {
         target_index: problem.target_index.clone(),
         reference_date: problem.reference_date,
         times: problem.times.clone(),
@@ -549,24 +560,24 @@ fn bumped_residual(
 /// * **Deposits / Swaps / Basis-swaps / XCcy-swaps** → NPV (should be ≈ 0)
 /// * **Rate futures** → `implied_forward - market_rate`
 /// * **FX forwards** → `implied_FX - market_FX`
-struct BootstrapProblem<'a> {
+struct BootstrapObjectiveFunc<'a> {
     pub target_index: MarketIndex,
     pub reference_date: Date,
     pub times: Vec<f64>,
     pub day_counter: DayCounter,
     pub interpolator: Interpolator,
     pub instruments: &'a [CalibrationInstrument],
-    pub other_curves: &'a HashMap<MarketIndex, SolvedCurve>,
+    pub other_curves: &'a HashMap<MarketIndex, BootstrappedCurve>,
     pub discount_policy: &'a BootstrapDiscountPolicy,
     pub fx_store: &'a FxStore,
 }
 
-impl BootstrapProblem<'_> {
-    fn create_trial_curve(&self, x: &[f64]) -> SolvedCurve {
+impl BootstrapObjectiveFunc<'_> {
+    fn create_trial_curve(&self, x: &[f64]) -> BootstrappedCurve {
         let mut dfs = Vec::with_capacity(self.times.len());
         dfs.push(1.0_f64); // DF(0) = 1
         dfs.extend_from_slice(x);
-        SolvedCurve::new(
+        BootstrappedCurve::new(
             self.target_index.clone(),
             self.reference_date,
             self.times.clone(),
@@ -577,23 +588,21 @@ impl BootstrapProblem<'_> {
     }
 }
 
-impl ContFunc<[f64], Vec<f64>> for BootstrapProblem<'_> {
+impl ContFunc<[f64], Vec<f64>> for BootstrapObjectiveFunc<'_> {
     fn call(&self, x: &[f64]) -> Result<Vec<f64>> {
         let trial = self.create_trial_curve(x);
-        let curves = BootstrapCurveSet::new(
+        let step = BootstrapStep::new(
             &trial,
             self.other_curves,
             self.discount_policy,
             self.fx_store,
         );
-        self.instruments
-            .iter()
-            .map(|instr| instr.residual(&curves))
-            .collect()
+        let evaluator = BootstrapStepEvaluation::new(&step);
+        evaluator.residual(&self.instruments)
     }
 }
 
-impl JacobianFunc<f64, f64, f64> for BootstrapProblem<'_> {
+impl JacobianFunc<f64, f64, f64> for BootstrapObjectiveFunc<'_> {
     fn jacobian(&self, x: &[f64]) -> Result<Vec<Vec<f64>>> {
         let n = x.len();
         let mut jacobian = vec![vec![0.0; n]; n];
@@ -620,4 +629,4 @@ impl JacobianFunc<f64, f64, f64> for BootstrapProblem<'_> {
     }
 }
 
-impl VectorFunc<f64, f64> for BootstrapProblem<'_> {}
+impl VectorFunc<f64, f64> for BootstrapObjectiveFunc<'_> {}

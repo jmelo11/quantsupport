@@ -252,7 +252,7 @@ impl Pricer for FxForwardPricer {
             }
         }
 
-        let mut request = MarketDataRequest::default().with_fx_request(vec![FxRequest::new(
+        let mut request = MarketDataRequest::default().with_fx_request(vec![FxRequest::pair(
             inst.base_currency(),
             inst.quote_currency(),
         )]);

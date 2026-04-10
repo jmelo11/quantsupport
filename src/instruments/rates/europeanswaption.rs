@@ -13,13 +13,6 @@ use crate::{
     time::date::Date,
 };
 
-/// Swaption exercise type (European only for now).
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
-pub enum SwaptionExerciseType {
-    /// European — exercisable only at expiry.
-    European,
-}
-
 /// Swaption option type — payer or receiver.
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub enum SwaptionType {
@@ -29,23 +22,22 @@ pub enum SwaptionType {
     Receiver,
 }
 
-/// A [`Swaption`] represents an option on an interest rate swap.
+/// A [`EuropeanSwaption`] represents an option on an interest rate swap.
 ///
 /// The holder has the right, but not the obligation, to enter into
 /// the underlying [`Swap`] at expiry.
 #[derive(Clone)]
-pub struct Swaption<T: Scalar> {
+pub struct EuropeanSwaption<T: Scalar> {
     identifier: String,
     underlying: Swap<T>,
-    expiry: Date,
+    expiry_date: Date,
     underlying_type: SwaptionType,
-    exercise_type: SwaptionExerciseType,
     strike: f64,
     market_index: MarketIndex,
     currency: Currency,
 }
 
-impl<T> Swaption<T>
+impl<T> EuropeanSwaption<T>
 where
     T: Scalar,
 {
@@ -55,9 +47,8 @@ where
     pub const fn new(
         identifier: String,
         underlying: Swap<T>,
-        expiry: Date,
+        expiry_date: Date,
         underlying_type: SwaptionType,
-        exercise_type: SwaptionExerciseType,
         strike: f64,
         market_index: MarketIndex,
         currency: Currency,
@@ -65,9 +56,8 @@ where
         Self {
             identifier,
             underlying,
-            expiry,
+            expiry_date,
             underlying_type,
-            exercise_type,
             strike,
             market_index,
             currency,
@@ -82,20 +72,14 @@ where
 
     /// Returns the option expiry date.
     #[must_use]
-    pub const fn expiry(&self) -> Date {
-        self.expiry
+    pub const fn expiry_date(&self) -> Date {
+        self.expiry_date
     }
 
     /// Returns the swaption type (payer or receiver).
     #[must_use]
     pub const fn underlying_type(&self) -> SwaptionType {
         self.underlying_type
-    }
-
-    /// Returns the exercise type.
-    #[must_use]
-    pub const fn exercise_type(&self) -> SwaptionExerciseType {
-        self.exercise_type
     }
 
     /// Returns the strike (fixed rate of the underlying swap).
@@ -117,7 +101,7 @@ where
     }
 }
 
-impl<T> Instrument for Swaption<T>
+impl<T> Instrument for EuropeanSwaption<T>
 where
     T: Scalar,
 {
@@ -126,7 +110,7 @@ where
     }
 }
 
-impl<T> LegsProvider<T> for Swaption<T>
+impl<T> LegsProvider<T> for EuropeanSwaption<T>
 where
     T: Scalar,
 {
@@ -136,20 +120,25 @@ where
 }
 
 /// Represents a trade on a swaption.
-pub struct SwaptionTrade<T: Scalar> {
-    instrument: Swaption<T>,
+pub struct EuropeanSwaptionTrade<T: Scalar> {
+    instrument: EuropeanSwaption<T>,
     trade_date: Date,
     notional: f64,
     side: Side,
 }
 
-impl<T> SwaptionTrade<T>
+impl<T> EuropeanSwaptionTrade<T>
 where
     T: Scalar,
 {
-    /// Creates a new [`SwaptionTrade`].
+    /// Creates a new [`EuropeanSwaptionTrade`].
     #[must_use]
-    pub const fn new(instrument: Swaption<T>, trade_date: Date, notional: f64, side: Side) -> Self {
+    pub const fn new(
+        instrument: EuropeanSwaption<T>,
+        trade_date: Date,
+        notional: f64,
+        side: Side,
+    ) -> Self {
         Self {
             instrument,
             trade_date,
@@ -165,11 +154,11 @@ where
     }
 }
 
-impl<T> Trade<Swaption<T>> for SwaptionTrade<T>
+impl<T> Trade<EuropeanSwaption<T>> for EuropeanSwaptionTrade<T>
 where
     T: Scalar,
 {
-    fn instrument(&self) -> &Swaption<T> {
+    fn instrument(&self) -> &EuropeanSwaption<T> {
         &self.instrument
     }
 
@@ -182,14 +171,13 @@ where
     }
 }
 
-impl From<Swaption<f64>> for Swaption<DualFwd> {
-    fn from(value: Swaption<f64>) -> Self {
+impl From<EuropeanSwaption<f64>> for EuropeanSwaption<DualFwd> {
+    fn from(value: EuropeanSwaption<f64>) -> Self {
         Self::new(
             value.identifier,
             value.underlying.into(),
-            value.expiry,
+            value.expiry_date,
             value.underlying_type,
-            value.exercise_type,
             value.strike,
             value.market_index,
             value.currency,
@@ -197,14 +185,13 @@ impl From<Swaption<f64>> for Swaption<DualFwd> {
     }
 }
 
-impl From<Swaption<DualFwd>> for Swaption<f64> {
-    fn from(value: Swaption<DualFwd>) -> Self {
+impl From<EuropeanSwaption<DualFwd>> for EuropeanSwaption<f64> {
+    fn from(value: EuropeanSwaption<DualFwd>) -> Self {
         Self::new(
             value.identifier,
             value.underlying.into(),
-            value.expiry,
+            value.expiry_date,
             value.underlying_type,
-            value.exercise_type,
             value.strike,
             value.market_index,
             value.currency,
@@ -212,8 +199,8 @@ impl From<Swaption<DualFwd>> for Swaption<f64> {
     }
 }
 
-impl From<SwaptionTrade<f64>> for SwaptionTrade<DualFwd> {
-    fn from(value: SwaptionTrade<f64>) -> Self {
+impl From<EuropeanSwaptionTrade<f64>> for EuropeanSwaptionTrade<DualFwd> {
+    fn from(value: EuropeanSwaptionTrade<f64>) -> Self {
         Self::new(
             value.instrument.into(),
             value.trade_date,
@@ -223,8 +210,8 @@ impl From<SwaptionTrade<f64>> for SwaptionTrade<DualFwd> {
     }
 }
 
-impl From<SwaptionTrade<DualFwd>> for SwaptionTrade<f64> {
-    fn from(value: SwaptionTrade<DualFwd>) -> Self {
+impl From<EuropeanSwaptionTrade<DualFwd>> for EuropeanSwaptionTrade<f64> {
+    fn from(value: EuropeanSwaptionTrade<DualFwd>) -> Self {
         Self::new(
             value.instrument.into(),
             value.trade_date,

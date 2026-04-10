@@ -13,8 +13,8 @@ use crate::{
         request::{HandleSensitivities, HandleValue, Request},
         trade::Trade,
     },
-    instruments::rates::capletfloorlet::{CapletFloorletTrade, CapletFloorletType},
-    models::brownianmotion::BrownianMotion,
+    instruments::rates::{capfloor::CapFloorTrade, capletfloorlet::CapletFloorletType},
+    models::utils::{black_call_ad, black_put_ad},
     utils::errors::{QSError, Result},
     volatility::volatilityindexing::Strike,
 };
@@ -35,7 +35,7 @@ use std::collections::HashSet;
 /// ```rust
 /// use quantsupport::prelude::*;
 ///
-/// let pricer = BlackCapletPricer::new();
+/// let pricer = ClosedFormBlackCapPricer::new();
 ///
 /// // Build a cap/floor strip:
 /// let cap = MakeCapFloor::default()
@@ -52,15 +52,15 @@ use std::collections::HashSet;
 ///     .expect("failed to build cap");
 ///
 /// // Each caplet in the strip is priced individually:
-/// //   let caplet_trade = CapletFloorletTrade::new(caplet, eval_date, notional);
+/// //   let caplet_trade = CapFloorTrade::new(caplet, eval_date, notional);
 /// //   let results = pricer.evaluate(&caplet_trade, &[Request::Value], &ctx);
 /// ```
-pub struct BlackCapletPricer {
+pub struct ClosedFormBlackCapPricer {
     discount_policy: Option<Box<dyn DiscountPolicy>>,
 }
 
-impl BlackCapletPricer {
-    /// Creates a new [`BlackCapletPricer`].
+impl ClosedFormBlackCapPricer {
+    /// Creates a new [`ClosedFormBlackCapPricer`].
     #[must_use]
     pub fn new() -> Self {
         Self {
@@ -69,7 +69,7 @@ impl BlackCapletPricer {
     }
 }
 
-impl Default for BlackCapletPricer {
+impl Default for ClosedFormBlackCapPricer {
     fn default() -> Self {
         Self::new()
     }
@@ -77,12 +77,12 @@ impl Default for BlackCapletPricer {
 
 /// State for Black caplet/floorlet pricing.
 #[derive(Default)]
-struct BlackCapletState {
+struct BlackCapState {
     value: Option<DualFwd>,
     market_data: Option<MarketData>,
 }
 
-impl PricerState for BlackCapletState {
+impl PricerState for BlackCapState {
     fn get_market_data_reponse(&self) -> Option<&MarketData> {
         self.market_data.as_ref()
     }
@@ -92,81 +92,81 @@ impl PricerState for BlackCapletState {
     }
 }
 
-impl HandleValue<CapletFloorletTrade, BlackCapletState> for BlackCapletPricer {
-    fn handle_value(
-        &self,
-        trade: &CapletFloorletTrade,
-        state: &mut BlackCapletState,
-    ) -> Result<f64> {
-        let caplet = trade.instrument();
-        let index = caplet.market_index();
+impl HandleValue<CapFloorTrade, BlackCapState> for ClosedFormBlackCapPricer {
+    fn handle_value(&self, trade: &CapFloorTrade, state: &mut BlackCapState) -> Result<f64> {
+        let caplets = trade.instrument().caplet_floorlets();
+        let cap = trade.instrument();
+        let index = cap.market_index();
         let discount_index = if let Some(policy) = &self.discount_policy {
-            policy.accept(caplet)?
+            policy.accept(cap)?
         } else {
             index.clone()
         };
-        let start_date = caplet.start_date();
-        let end_date = caplet.end_date();
-        let payment_date = caplet.payment_date();
-        let rate_def = caplet.rate_definition();
-        let alpha = caplet.accrual_factor();
-
-        // Time to expiry: from trade date to fixing date
-        let tau = rate_def
-            .day_counter()
-            .year_fraction(trade.trade_date(), start_date);
+        let rate_def = index.rate_index_details()?.rate_definition();
 
         Tape::start_recording_fwd();
         Tape::set_mark_fwd();
-
         state.put_pillars_on_tape()?;
+        let mut npv = DualFwd::zero();
+        for c in caplets.iter() {
+            let fixing_date = c.fixing_date();
+            let start_date = c.start_accrual_date();
+            let end_date = c.end_accrual_date();
+            let payment_date = c.payment_date();
+            let yf = rate_def.day_counter().year_fraction(start_date, end_date);
 
-        // Forward rate using the conventions from the caplet's rate definition
-        let fwd: DualFwd = state
-            .get_discount_curve_element(&index)?
-            .curve()
-            .forward_rate(
-                start_date,
-                end_date,
-                rate_def.compounding(),
-                rate_def.frequency(),
-            )?;
+            // Time to expiry: from trade date to fixing date
+            let tau = rate_def
+                .day_counter()
+                .year_fraction(trade.trade_date(), start_date);
 
-        // Resolve effective strike from the instrument's strike specification
-        let effective_strike = match caplet.strike() {
-            Strike::Absolute(k) => k,
-            Strike::Atm => fwd.value(),
-            Strike::Relative(spread) => fwd.value() + spread,
-        };
+            // Forward rate using the conventions from the caplet's rate definition
+            let fwd: DualFwd = state
+                .get_discount_curve_element(&index)?
+                .curve()
+                .forward_rate(
+                    start_date,
+                    end_date,
+                    rate_def.compounding(),
+                    rate_def.frequency(),
+                )?;
 
-        // Payment discounting uses CSA collateral curve when a discount policy is provided.
-        let df_pay = state
-            .get_discount_curve_element(&discount_index)?
-            .curve()
-            .discount_factor(payment_date)?;
+            // Resolve effective strike from the instrument's strike specification
+            let effective_strike = match c.strike() {
+                Strike::Absolute(k) => k,
+                Strike::Atm => fwd.value(),
+                Strike::Relative(pct) => fwd.value() * (1.0 + pct),
+            };
 
-        let vol = state
-            .get_volatility_surface_element(&index)?
-            .surface()
-            .volatility_from_date(start_date, effective_strike)?;
+            // Payment discounting uses CSA collateral curve when a discount policy is provided.
+            let df_pay = state
+                .get_discount_curve_element(&discount_index)?
+                .curve()
+                .discount_factor(payment_date)?;
 
-        let is_cap = matches!(caplet.option_type(), CapletFloorletType::Caplet);
-        let undiscounted =
-            BrownianMotion::<DualFwd>::closed_form_price(fwd, effective_strike, vol, tau, is_cap)?;
+            let vol = state
+                .get_volatility_surface_element(&index)?
+                .surface()
+                .volatility_from_date(fixing_date, effective_strike)?;
 
-        let value: DualFwd = (df_pay * undiscounted * alpha * trade.notional()).into();
-        state.value = Some(value);
+            let undiscounted = match c.payoff_type() {
+                CapletFloorletType::Caplet => black_call_ad(fwd, effective_strike, vol, tau)?,
+                CapletFloorletType::Floorlet => black_put_ad(fwd, effective_strike, vol, tau)?,
+            };
 
-        Tape::stop_recording_fwd();
-        Ok(value.value())
+            let value = df_pay * undiscounted * yf * trade.notional();
+            npv = (npv + value).into();
+        }
+        state.value = Some(npv);
+        Ok(npv.value())
     }
 }
 
-impl HandleSensitivities<CapletFloorletTrade, BlackCapletState> for BlackCapletPricer {
+impl HandleSensitivities<CapFloorTrade, BlackCapState> for ClosedFormBlackCapPricer {
     fn handle_sensitivities(
         &self,
-        trade: &CapletFloorletTrade,
-        state: &mut BlackCapletState,
+        trade: &CapFloorTrade,
+        state: &mut BlackCapState,
     ) -> Result<SensitivityMap> {
         let value = if let Some(v) = state.value {
             v
@@ -181,19 +181,19 @@ impl HandleSensitivities<CapletFloorletTrade, BlackCapletState> for BlackCapletP
 
         value.backward_to_mark()?;
 
-        let caplet = trade.instrument();
-        let index = caplet.market_index();
+        let cap = trade.instrument();
+        let index = cap.market_index();
         let policy_discount_index = if let Some(policy) = &self.discount_policy {
-            Some(policy.accept(caplet)?)
+            Some(policy.accept(cap)?)
         } else {
             None
         };
-        let discount_index = policy_discount_index.as_ref().unwrap_or(&index);
 
         let mut ids = Vec::new();
         let mut exposures = Vec::new();
 
         // Discount curve sensitivities
+        let discount_index = policy_discount_index.as_ref().unwrap_or(&index);
         for (label, pillar) in state
             .get_discount_curve_element(discount_index)?
             .curve()
@@ -202,6 +202,20 @@ impl HandleSensitivities<CapletFloorletTrade, BlackCapletState> for BlackCapletP
         {
             ids.push(label);
             exposures.push(pillar.adjoint()?.value());
+        }
+
+        // Forward curve sensitivities
+        let fwd_index = trade.instrument().market_index();
+        if &fwd_index != discount_index {
+            for (label, pillar) in state
+                .get_discount_curve_element(&fwd_index)?
+                .curve()
+                .pillars()
+                .unwrap_or_default()
+            {
+                ids.push(label);
+                exposures.push(pillar.adjoint()?.value());
+            }
         }
 
         // Volatility surface sensitivities
@@ -222,13 +236,13 @@ impl HandleSensitivities<CapletFloorletTrade, BlackCapletState> for BlackCapletP
     }
 }
 
-impl Pricer for BlackCapletPricer {
-    type Item = CapletFloorletTrade;
+impl Pricer for ClosedFormBlackCapPricer {
+    type Item = CapFloorTrade;
     type Policy = dyn DiscountPolicy;
 
     fn evaluate(
         &self,
-        trade: &CapletFloorletTrade,
+        trade: &CapFloorTrade,
         requests: &[Request],
         ctx: &impl MarketDataProvider,
     ) -> Result<EvaluationResults> {
@@ -241,7 +255,7 @@ impl Pricer for BlackCapletPricer {
             .ok_or_else(|| QSError::InvalidValueErr("Missing market data request".into()))?;
 
         let mut results = EvaluationResults::new(eval_date, identifier);
-        let mut state = BlackCapletState {
+        let mut state = BlackCapState {
             value: None,
             market_data: Some(ctx.handle_request(&md_request)?),
         };
@@ -263,7 +277,7 @@ impl Pricer for BlackCapletPricer {
         Ok(results)
     }
 
-    fn market_data_request(&self, trade: &CapletFloorletTrade) -> Option<MarketDataRequest> {
+    fn market_data_request(&self, trade: &CapFloorTrade) -> Option<MarketDataRequest> {
         let index = trade.instrument().market_index();
         let mut elements = vec![
             ConstructedElementRequest::DiscountCurve {
@@ -311,6 +325,7 @@ mod tests {
         rc::Rc,
     };
 
+    use super::ClosedFormBlackCapPricer;
     use crate::{
         ad::dual::DualFwd,
         core::{
@@ -328,11 +343,11 @@ mod tests {
         },
         currencies::currency::Currency,
         indices::marketindex::MarketIndex,
-        instruments::rates::capletfloorlet::{
-            CapletFloorlet, CapletFloorletTrade, CapletFloorletType,
+        instruments::rates::{
+            capfloor::{CapFloor, CapFloorTrade, CapFloorType},
+            capletfloorlet::{CapletFloorlet, CapletFloorletType},
         },
         math::probability::norm_cdf::norm_cdf,
-        pricers::rates::blackcapletpricer::BlackCapletPricer,
         rates::{
             compounding::Compounding,
             interestrate::RateDefinition,
@@ -345,7 +360,7 @@ mod tests {
         utils::errors::{QSError, Result},
         volatility::{
             interpolatedvolatilitysurface::InterpolatedVolatilitySurface,
-            volatilityindexing::{F64Key, Strike},
+            volatilityindexing::{F64Key, SmileType, Strike, VolatilityType},
             volatilitysurface::VolatilitySurface,
         },
     };
@@ -428,8 +443,14 @@ mod tests {
         ];
 
         let vol_surface = Rc::new(RefCell::new(
-            InterpolatedVolatilitySurface::new(trade_date, market_index.clone(), surface_points)
-                .with_labels(&labels),
+            InterpolatedVolatilitySurface::new(
+                trade_date,
+                market_index.clone(),
+                surface_points,
+                VolatilityType::Black,
+                SmileType::Strike,
+            )
+            .with_labels(&labels),
         ));
 
         let mut constructed_elements = ConstructedElementStore::default();
@@ -447,6 +468,42 @@ mod tests {
 
         let market_data = MarketData::new(HashMap::new(), constructed_elements);
         Ok((market_data, discount_curve, vol_surface))
+    }
+
+    /// Builds a one-period [`CapFloor`] strip for testing.
+    fn make_single_period_cap(
+        identifier: &str,
+        market_index: MarketIndex,
+        start_date: Date,
+        end_date: Date,
+        cap_floor_type: CapFloorType,
+        strike: Strike,
+    ) -> CapFloor {
+        let caplet_type = match cap_floor_type {
+            CapFloorType::Cap => CapletFloorletType::Caplet,
+            CapFloorType::Floor => CapletFloorletType::Floorlet,
+        };
+        let caplet = CapletFloorlet::new(
+            format!("{identifier}:{start_date}-{end_date}"),
+            market_index.clone(),
+            Currency::USD,
+            start_date,
+            start_date,
+            end_date,
+            end_date,
+            caplet_type,
+            strike,
+        );
+        CapFloor::new(
+            identifier.to_string(),
+            vec![caplet],
+            market_index,
+            Currency::USD,
+            start_date,
+            end_date,
+            cap_floor_type,
+            strike,
+        )
     }
 
     #[test]
@@ -472,26 +529,22 @@ mod tests {
         )?;
 
         let rate_def = RateDefinition::default();
-        let caplet = CapletFloorlet::new(
-            "SOFR3M_CAPLET".to_string(),
+        let cap = make_single_period_cap(
+            "CAP-3M",
             market_index,
-            Currency::USD,
             start_date,
             end_date,
-            end_date,
-            CapletFloorletType::Caplet,
+            CapFloorType::Cap,
             Strike::Absolute(strike),
-            rate_def,
         );
-        let trade =
-            CapletFloorletTrade::new(caplet.clone(), trade_date, notional, Side::LongReceive);
+        let trade = CapFloorTrade::new(cap, trade_date, notional, Side::LongReceive);
 
         let provider = SimpleMarketDataProvider {
             evaluation_date: trade_date,
             market_data,
         };
 
-        let pricer = BlackCapletPricer::new();
+        let pricer = ClosedFormBlackCapPricer::new();
         let results = pricer.evaluate(&trade, &[Request::Value], &provider)?;
         let price = results
             .price()
@@ -499,7 +552,7 @@ mod tests {
 
         // Compute closed-form Black caplet price using curve.forward_rate
         let tau = rate_def.day_counter().year_fraction(trade_date, start_date);
-        let alpha = caplet.accrual_factor();
+        let alpha = rate_def.day_counter().year_fraction(start_date, end_date);
         let df_pay = discount_curve.discount_factor(end_date)?.value();
         let fwd = discount_curve
             .forward_rate(
@@ -555,26 +608,22 @@ mod tests {
             strike,
         )?;
 
-        let caplet = CapletFloorlet::new(
-            "SOFR3M_CAPLET".to_string(),
+        let cap = make_single_period_cap(
+            "CAP-3M",
             market_index.clone(),
-            Currency::USD,
             start_date,
             end_date,
-            end_date,
-            CapletFloorletType::Caplet,
+            CapFloorType::Cap,
             Strike::Absolute(strike),
-            rate_def,
         );
-        let trade =
-            CapletFloorletTrade::new(caplet.clone(), trade_date, notional, Side::LongReceive);
+        let trade = CapFloorTrade::new(cap, trade_date, notional, Side::LongReceive);
 
         let provider = SimpleMarketDataProvider {
             evaluation_date: trade_date,
             market_data,
         };
 
-        let pricer = BlackCapletPricer::new();
+        let pricer = ClosedFormBlackCapPricer::new();
         let results =
             pricer.evaluate(&trade, &[Request::Value, Request::Sensitivities], &provider)?;
 
@@ -585,7 +634,7 @@ mod tests {
             .sensitivities()
             .ok_or_else(|| QSError::UnexpectedErr("Missing sensitivities".to_string()))?;
         let tau = rate_def.day_counter().year_fraction(trade_date, start_date);
-        let alpha = caplet.accrual_factor();
+        let alpha = rate_def.day_counter().year_fraction(start_date, end_date);
         let df_pay = discount_curve.discount_factor(end_date)?.value();
         let fwd = discount_curve
             .forward_rate(
@@ -717,25 +766,22 @@ mod tests {
             strike,
         )?;
 
-        let caplet = CapletFloorlet::new(
-            "SOFR3M_CAPLET".to_string(),
+        let cap = make_single_period_cap(
+            "CAP-3M",
             market_index,
-            Currency::USD,
             start_date,
             end_date,
-            end_date,
-            CapletFloorletType::Caplet,
+            CapFloorType::Cap,
             Strike::Absolute(strike),
-            RateDefinition::default(),
         );
-        let trade = CapletFloorletTrade::new(caplet, trade_date, notional, Side::LongReceive);
+        let trade = CapFloorTrade::new(cap, trade_date, notional, Side::LongReceive);
 
         let provider = SimpleMarketDataProvider {
             evaluation_date: trade_date,
             market_data,
         };
 
-        let pricer = BlackCapletPricer::new();
+        let pricer = ClosedFormBlackCapPricer::new();
         let results =
             pricer.evaluate(&trade, &[Request::Value, Request::Sensitivities], &provider)?;
 
@@ -769,25 +815,22 @@ mod tests {
             strike,
         )?;
 
-        let caplet = CapletFloorlet::new(
-            "SOFR3M_FLOORLET".to_string(),
+        let cap = make_single_period_cap(
+            "FLOOR-3M",
             market_index,
-            Currency::USD,
             start_date,
             end_date,
-            end_date,
-            CapletFloorletType::Floorlet,
+            CapFloorType::Floor,
             Strike::Absolute(strike),
-            RateDefinition::default(),
         );
-        let trade = CapletFloorletTrade::new(caplet, trade_date, notional, Side::LongReceive);
+        let trade = CapFloorTrade::new(cap, trade_date, notional, Side::LongReceive);
 
         let provider = SimpleMarketDataProvider {
             evaluation_date: trade_date,
             market_data,
         };
 
-        let pricer = BlackCapletPricer::new();
+        let pricer = ClosedFormBlackCapPricer::new();
         let results = pricer.evaluate(&trade, &[Request::Value], &provider)?;
         let price = results
             .price()
@@ -820,25 +863,22 @@ mod tests {
             anchor_strike,
         )?;
 
-        let caplet = CapletFloorlet::new(
-            "SOFR3M_CAPLET_ATM".to_string(),
+        let cap = make_single_period_cap(
+            "CAP-3M-ATM",
             market_index,
-            Currency::USD,
             start_date,
             end_date,
-            end_date,
-            CapletFloorletType::Caplet,
+            CapFloorType::Cap,
             Strike::Atm,
-            RateDefinition::default(),
         );
-        let trade = CapletFloorletTrade::new(caplet, trade_date, notional, Side::LongReceive);
+        let trade = CapFloorTrade::new(cap, trade_date, notional, Side::LongReceive);
 
         let provider = SimpleMarketDataProvider {
             evaluation_date: trade_date,
             market_data,
         };
 
-        let pricer = BlackCapletPricer::new();
+        let pricer = ClosedFormBlackCapPricer::new();
         let results = pricer.evaluate(&trade, &[Request::Value], &provider)?;
         let price = results
             .price()
@@ -873,25 +913,22 @@ mod tests {
             anchor_strike,
         )?;
 
-        let caplet = CapletFloorlet::new(
-            "SOFR3M_CAPLET_REL".to_string(),
+        let cap = make_single_period_cap(
+            "CAP-3M-REL",
             market_index,
-            Currency::USD,
             start_date,
             end_date,
-            end_date,
-            CapletFloorletType::Caplet,
+            CapFloorType::Cap,
             Strike::Relative(spread),
-            RateDefinition::default(),
         );
-        let trade = CapletFloorletTrade::new(caplet, trade_date, notional, Side::LongReceive);
+        let trade = CapFloorTrade::new(cap, trade_date, notional, Side::LongReceive);
 
         let provider = SimpleMarketDataProvider {
             evaluation_date: trade_date,
             market_data,
         };
 
-        let pricer = BlackCapletPricer::new();
+        let pricer = ClosedFormBlackCapPricer::new();
         let results = pricer.evaluate(&trade, &[Request::Value], &provider)?;
         let price = results
             .price()

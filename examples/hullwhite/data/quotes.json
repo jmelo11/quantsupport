@@ -1,0 +1,145 @@
+{
+    "reference_date": "2026-02-24",
+    "quotes": [
+        {
+            "identifier": "FixedRateDeposit_USD_SOFR_1D",
+            "mid": 0.045
+        },
+        {
+            "identifier": "OIS_USD_SOFR_1Y",
+            "mid": 0.04837
+        },
+        {
+            "identifier": "OIS_USD_SOFR_2Y",
+            "mid": 0.04528
+        },
+        {
+            "identifier": "OIS_USD_SOFR_3Y",
+            "mid": 0.04260
+        },
+        {
+            "identifier": "OIS_USD_SOFR_5Y",
+            "mid": 0.04077
+        },
+        {
+            "identifier": "OIS_USD_SOFR_7Y",
+            "mid": 0.04033
+        },
+        {
+            "identifier": "OIS_USD_SOFR_10Y",
+            "mid": 0.03898
+        },
+        {
+            "identifier": "OIS_USD_SOFR_30Y",
+            "mid": 0.03738
+        },
+        {
+            "identifier": "CapletFloorlet_USD_SOFR_3M_3M_Absolute_0.035_Straddle_Black",
+            "mid": 0.38
+        },
+        {
+            "identifier": "CapletFloorlet_USD_SOFR_3M_3M_Absolute_0.045_Straddle_Black",
+            "mid": 0.34
+        },
+        {
+            "identifier": "CapletFloorlet_USD_SOFR_3M_3M_Absolute_0.055_Straddle_Black",
+            "mid": 0.38
+        },
+        {
+            "identifier": "CapletFloorlet_USD_SOFR_3M_6M_Absolute_0.035_Straddle_Black",
+            "mid": 0.36
+        },
+        {
+            "identifier": "CapletFloorlet_USD_SOFR_3M_6M_Absolute_0.045_Straddle_Black",
+            "mid": 0.32
+        },
+        {
+            "identifier": "CapletFloorlet_USD_SOFR_3M_6M_Absolute_0.055_Straddle_Black",
+            "mid": 0.36
+        },
+        {
+            "identifier": "CapletFloorlet_USD_SOFR_3M_1Y_Absolute_0.035_Straddle_Black",
+            "mid": 0.33
+        },
+        {
+            "identifier": "CapletFloorlet_USD_SOFR_3M_1Y_Absolute_0.045_Straddle_Black",
+            "mid": 0.29
+        },
+        {
+            "identifier": "CapletFloorlet_USD_SOFR_3M_1Y_Absolute_0.055_Straddle_Black",
+            "mid": 0.33
+        },
+        {
+            "identifier": "CapletFloorlet_USD_SOFR_3M_2Y_Absolute_0.035_Straddle_Black",
+            "mid": 0.28
+        },
+        {
+            "identifier": "CapletFloorlet_USD_SOFR_3M_2Y_Absolute_0.045_Straddle_Black",
+            "mid": 0.25
+        },
+        {
+            "identifier": "CapletFloorlet_USD_SOFR_3M_2Y_Absolute_0.055_Straddle_Black",
+            "mid": 0.28
+        },
+        {
+            "identifier": "CapletFloorlet_USD_SOFR_3M_3Y_Absolute_0.035_Straddle_Black",
+            "mid": 0.25
+        },
+        {
+            "identifier": "CapletFloorlet_USD_SOFR_3M_3Y_Absolute_0.045_Straddle_Black",
+            "mid": 0.22
+        },
+        {
+            "identifier": "CapletFloorlet_USD_SOFR_3M_3Y_Absolute_0.055_Straddle_Black",
+            "mid": 0.25
+        },
+        {
+            "identifier": "CapletFloorlet_USD_SOFR_3M_5Y_Absolute_0.035_Straddle_Black",
+            "mid": 0.23
+        },
+        {
+            "identifier": "CapletFloorlet_USD_SOFR_3M_5Y_Absolute_0.045_Straddle_Black",
+            "mid": 0.20
+        },
+        {
+            "identifier": "CapletFloorlet_USD_SOFR_3M_5Y_Absolute_0.055_Straddle_Black",
+            "mid": 0.23
+        },
+        {
+            "identifier": "CapletFloorlet_USD_SOFR_3M_7Y_Absolute_0.035_Straddle_Black",
+            "mid": 0.21
+        },
+        {
+            "identifier": "CapletFloorlet_USD_SOFR_3M_7Y_Absolute_0.045_Straddle_Black",
+            "mid": 0.19
+        },
+        {
+            "identifier": "CapletFloorlet_USD_SOFR_3M_7Y_Absolute_0.055_Straddle_Black",
+            "mid": 0.21
+        },
+        {
+            "identifier": "CapletFloorlet_USD_SOFR_3M_10Y_Absolute_0.035_Straddle_Black",
+            "mid": 0.20
+        },
+        {
+            "identifier": "CapletFloorlet_USD_SOFR_3M_10Y_Absolute_0.045_Straddle_Black",
+            "mid": 0.18
+        },
+        {
+            "identifier": "CapletFloorlet_USD_SOFR_3M_10Y_Absolute_0.055_Straddle_Black",
+            "mid": 0.20
+        },
+        {
+            "identifier": "CapletFloorlet_USD_SOFR_3M_12Y_Absolute_0.035_Straddle_Black",
+            "mid": 0.19
+        },
+        {
+            "identifier": "CapletFloorlet_USD_SOFR_3M_12Y_Absolute_0.045_Straddle_Black",
+            "mid": 0.17
+        },
+        {
+            "identifier": "CapletFloorlet_USD_SOFR_3M_12Y_Absolute_0.055_Straddle_Black",
+            "mid": 0.19
+        }
+    ]
+}

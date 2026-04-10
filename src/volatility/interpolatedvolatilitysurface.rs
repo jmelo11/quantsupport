@@ -14,7 +14,7 @@ use std::collections::BTreeMap;
 
 type SurfaceMap<T> = BTreeMap<Period, BTreeMap<F64Key, T>>;
 
-/// Represents if the volatility surface.
+/// Represents an interpolated volatility surface.
 ///
 /// ## Generics
 /// - `T`: Numeric type for the volatility values (e.g., `f64`, `DualFwd`).
@@ -23,6 +23,8 @@ pub struct InterpolatedVolatilitySurface<T: Scalar> {
     market_index: MarketIndex,
     points: SurfaceMap<T>,
     labels: Option<Vec<String>>,
+    volatility_type: VolatilityType,
+    smile_type: SmileType,
 }
 
 impl<T: Scalar> InterpolatedVolatilitySurface<T> {
@@ -32,12 +34,16 @@ impl<T: Scalar> InterpolatedVolatilitySurface<T> {
         reference_date: Date,
         market_index: MarketIndex,
         points: SurfaceMap<T>,
+        volatility_type: VolatilityType,
+        smile_type: SmileType,
     ) -> Self {
         Self {
             reference_date,
             market_index,
             points,
             labels: None,
+            volatility_type,
+            smile_type,
         }
     }
 
@@ -77,7 +83,7 @@ impl<T: BilinearValue> VolatilitySurface<T> for InterpolatedVolatilitySurface<T>
     }
 
     fn volatility_type(&self) -> VolatilityType {
-        VolatilityType::Black
+        self.volatility_type.clone()
     }
 
     fn market_index(&self) -> &MarketIndex {
@@ -89,7 +95,7 @@ impl<T: BilinearValue> VolatilitySurface<T> for InterpolatedVolatilitySurface<T>
     }
 
     fn smile_type(&self) -> SmileType {
-        SmileType::Strike
+        self.smile_type
     }
 }
 
@@ -129,7 +135,8 @@ mod tests {
         time::{date::Date, enums::TimeUnit, period::Period},
         volatility::{
             interpolatedvolatilitysurface::InterpolatedVolatilitySurface,
-            volatilityindexing::F64Key, volatilitysurface::VolatilitySurface,
+            volatilityindexing::{F64Key, SmileType, VolatilityType},
+            volatilitysurface::VolatilitySurface,
         },
     };
 
@@ -150,6 +157,8 @@ mod tests {
             Date::new(2025, 1, 1),
             MarketIndex::Equity("SPX".to_string()),
             points,
+            VolatilityType::Black,
+            SmileType::Strike,
         );
 
         let vol = surface
@@ -183,6 +192,8 @@ mod tests {
             Date::new(2025, 1, 1),
             MarketIndex::Equity("SPX".to_string()),
             points,
+            VolatilityType::Black,
+            SmileType::Strike,
         );
 
         let vol = surface
@@ -208,6 +219,8 @@ mod tests {
             Date::new(2025, 1, 1),
             MarketIndex::Equity("SPX".to_string()),
             points,
+            VolatilityType::Black,
+            SmileType::Strike,
         );
 
         let vol = surface.volatility_from_period(Period::new(3, TimeUnit::Months), 100.0);

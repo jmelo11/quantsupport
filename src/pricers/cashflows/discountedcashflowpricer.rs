@@ -356,6 +356,12 @@ where
                     CashflowType::Disbursement(cf) => {
                         (DualFwd::from(-cf.amount()?), cf.payment_date())
                     }
+                    _ => {
+                        return Err(QSError::InvalidValueErr(format!(
+                            "Unsupported cashflow type in leg {}. DiscountedCashflowPricer only supports FixedRateCoupon, FloatingRateCoupon, Redemption and Disbursement cashflows.",
+                            leg.id()
+                        )));
+                    }
                 };
 
                 let cf_pv: DualFwd = if self.discount_policy.is_some() {
@@ -582,7 +588,7 @@ where
             for leg in legs {
                 if let Ok(csa_index) = policy.accept(leg) {
                     if let MarketIndex::Collateral(_, coll_ccy) = &csa_index {
-                        fx_requests.push(FxRequest::new(leg.currency(), *coll_ccy));
+                        fx_requests.push(FxRequest::pair(leg.currency(), *coll_ccy));
                     }
                     if seen_indices.insert(csa_index.clone()) {
                         constructed_elements.push(ConstructedElementRequest::DiscountCurve {
