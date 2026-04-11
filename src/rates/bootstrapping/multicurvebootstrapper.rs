@@ -598,7 +598,7 @@ impl ContFunc<[f64], Vec<f64>> for BootstrapObjectiveFunc<'_> {
             self.fx_store,
         );
         let evaluator = BootstrapStepEvaluation::new(&step);
-        evaluator.residual(&self.instruments)
+        evaluator.residual(self.instruments)
     }
 }
 

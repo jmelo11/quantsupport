@@ -146,8 +146,8 @@ impl Mul for ADForward {
     fn mul(self, r: Self) -> Self {
         Self {
             val: self.val * r.val,
-            dot: self.dot * r.val + self.val * r.dot,
-            dot2: self.dot2 * r.val + 2.0 * self.dot * r.dot + self.val * r.dot2,
+            dot: self.dot.mul_add(r.val, self.val * r.dot),
+            dot2: self.val.mul_add(r.dot2, self.dot2.mul_add(r.val, 2.0 * self.dot * r.dot)),
         }
     }
 }
@@ -159,9 +159,8 @@ impl Div for ADForward {
         let inv2 = inv * inv;
         Self {
             val: self.val * inv,
-            dot: (self.dot * r.val - self.val * r.dot) * inv2,
-            dot2: ((self.dot2 * r.val - self.val * r.dot2) * r.val
-                - 2.0 * (self.dot * r.val - self.val * r.dot) * r.dot)
+            dot: self.dot.mul_add(r.val, -(self.val * r.dot)) * inv2,
+            dot2: self.dot2.mul_add(r.val, -(self.val * r.dot2)).mul_add(r.val, -(2.0 * self.dot.mul_add(r.val, -(self.val * r.dot)) * r.dot))
                 / (r.val * r.val * r.val),
         }
     }
@@ -333,7 +332,7 @@ impl Scalar for ADForward {
         Self {
             val: ev,
             dot: ev * self.dot,
-            dot2: ev * (self.dot * self.dot + self.dot2),
+            dot2: ev * self.dot.mul_add(self.dot, self.dot2),
         }
     }
     fn ln(self) -> Self {
@@ -341,7 +340,7 @@ impl Scalar for ADForward {
         Self {
             val: self.val.ln(),
             dot: self.dot * inv,
-            dot2: self.dot2 * inv - self.dot * self.dot * inv * inv,
+            dot2: self.dot2.mul_add(inv, -(self.dot * self.dot * inv * inv)),
         }
     }
     fn sqrt(self) -> Self {
@@ -350,7 +349,7 @@ impl Scalar for ADForward {
         Self {
             val: sv,
             dot: self.dot * inv2s,
-            dot2: self.dot2 * inv2s - self.dot * self.dot / (4.0 * self.val * sv),
+            dot2: self.dot2.mul_add(inv2s, -(self.dot * self.dot / (4.0 * self.val * sv))),
         }
     }
     fn sin(self) -> Self {
@@ -358,7 +357,7 @@ impl Scalar for ADForward {
         Self {
             val: s,
             dot: c * self.dot,
-            dot2: c * self.dot2 - s * self.dot * self.dot,
+            dot2: c.mul_add(self.dot2, -(s * self.dot * self.dot)),
         }
     }
     fn cos(self) -> Self {
@@ -366,7 +365,7 @@ impl Scalar for ADForward {
         Self {
             val: c,
             dot: -s * self.dot,
-            dot2: -s * self.dot2 - c * self.dot * self.dot,
+            dot2: (-s).mul_add(self.dot2, -(c * self.dot * self.dot)),
         }
     }
     fn abs(self) -> Self {
@@ -383,22 +382,20 @@ impl Scalar for ADForward {
         Self {
             val: vp,
             dot: p * vp1 * self.dot,
-            dot2: p * (p - 1.0) * self.val.powf(p - 2.0) * self.dot * self.dot
-                + p * vp1 * self.dot2,
+            dot2: (p * (p - 1.0) * self.val.powf(p - 2.0) * self.dot).mul_add(self.dot, p * vp1 * self.dot2),
         }
     }
+    #[allow(clippy::suspicious_operation_groupings)]
     fn pows(self, b: Self) -> Self {
         let lna = self.val.ln();
         let y = self.val.powf(b.val);
-        let u = b.dot * lna + b.val * self.dot / self.val;
+        let u = b.dot.mul_add(lna, b.val * self.dot / self.val);
         let dot = y * u;
-        let up = b.dot2 * lna
-            + 2.0 * b.dot * self.dot / self.val
-            + b.val * (self.dot2 / self.val - self.dot * self.dot / (self.val * self.val));
+        let up = b.val.mul_add(self.dot2 / self.val - self.dot * self.dot / (self.val * self.val), b.dot2.mul_add(lna, 2.0 * b.dot * self.dot / self.val));
         Self {
             val: y,
             dot,
-            dot2: dot * u + y * up,
+            dot2: dot.mul_add(u, y * up),
         }
     }
     fn max_val(self, o: Self) -> Self {
@@ -471,10 +468,10 @@ thread_local! {
 }
 
 impl TapeHolder for ADForward {
-    fn with_tape<R>(f: impl FnOnce(&mut Tape<ADForward>) -> R) -> R {
+    fn with_tape<R>(f: impl FnOnce(&mut Tape<Self>) -> R) -> R {
         TAPE_FWD.with(|tc| {
             let mut t = tc.borrow_mut();
-            f(&mut *t)
+            f(&mut t)
         })
     }
 }

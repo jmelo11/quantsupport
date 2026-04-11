@@ -1,4 +1,6 @@
-//! Expression-template system: [`Expr`], [`BinOp`], [`UnOp`], operators,
+//! Expression-template system for automatic differentiation.
+//!
+//! Provides [`Expr`], [`BinOp`], [`UnOp`], operators,
 //! [`BinExpr`], [`UnExpr`], [`FloatExt`], and free-standing transcendentals.
 
 use std::cmp::Ordering;

@@ -14,7 +14,8 @@ use crate::{
 
 /// Black-Scholes d₁ and d₂.
 ///
-/// Returns `Err` if `strike`, `tau`, or `vol` are non-positive.
+/// # Errors
+/// Returns an error if `strike`, `tau`, or `vol` are non-positive.
 pub fn d1_d2(fwd: f64, strike: f64, vol: f64, tau: f64) -> Result<(f64, f64)> {
     if strike <= 0.0 {
         return Err(QSError::InvalidValueErr("strike must be positive".into()));
@@ -30,21 +31,27 @@ pub fn d1_d2(fwd: f64, strike: f64, vol: f64, tau: f64) -> Result<(f64, f64)> {
         ));
     }
     let sqrt_tau = tau.sqrt();
-    let d1 = (fwd / strike).ln() / (vol * sqrt_tau) + 0.5 * vol * sqrt_tau;
-    let d2 = d1 - vol * sqrt_tau;
+    let d1 = (0.5 * vol).mul_add(sqrt_tau, (fwd / strike).ln() / (vol * sqrt_tau));
+    let d2 = vol.mul_add(-sqrt_tau, d1);
     Ok((d1, d2))
 }
 
 /// Undiscounted Black call price: F·N(d₁) − K·N(d₂).
+///
+/// # Errors
+/// Returns an error if d₁/d₂ computation fails.
 pub fn black_call(fwd: f64, strike: f64, vol: f64, tau: f64) -> Result<f64> {
     let (d1, d2) = d1_d2(fwd, strike, vol, tau)?;
-    Ok(fwd * d1.norm_cdf() - strike * d2.norm_cdf())
+    Ok(fwd.mul_add(d1.norm_cdf(), -(strike * d2.norm_cdf())))
 }
 
 /// Undiscounted Black put price: K·N(−d₂) − F·N(−d₁).
+///
+/// # Errors
+/// Returns an error if d₁/d₂ computation fails.
 pub fn black_put(fwd: f64, strike: f64, vol: f64, tau: f64) -> Result<f64> {
     let (d1, d2) = d1_d2(fwd, strike, vol, tau)?;
-    Ok(strike * (-d2).norm_cdf() - fwd * (-d1).norm_cdf())
+    Ok(strike.mul_add((-d2).norm_cdf(), -(fwd * (-d1).norm_cdf())))
 }
 
 // ---------------------------------------------------------------------------
@@ -54,7 +61,10 @@ pub fn black_put(fwd: f64, strike: f64, vol: f64, tau: f64) -> Result<f64> {
 /// Black-Scholes d₁ and d₂ (AD-enabled).
 ///
 /// `fwd` and `vol` carry derivative information; `strike` and `tau` are
-/// constants.  Returns `Err` if `strike` or `tau` are non-positive.
+/// constants.
+///
+/// # Errors
+/// Returns an error if `strike` or `tau` are non-positive.
 pub fn d1_d2_ad(fwd: DualFwd, strike: f64, vol: DualFwd, tau: f64) -> Result<(DualFwd, DualFwd)> {
     if strike <= 0.0 {
         return Err(QSError::InvalidValueErr("strike must be positive".into()));
@@ -77,6 +87,9 @@ pub fn d1_d2_ad(fwd: DualFwd, strike: f64, vol: DualFwd, tau: f64) -> Result<(Du
 /// * `strike` - Strike price.
 /// * `vol` - Volatility (AD-enabled).
 /// * `tau` - Time to expiry in years.
+///
+/// # Errors
+/// Returns an error if d₁/d₂ computation fails.
 pub fn black_call_ad(fwd: DualFwd, strike: f64, vol: DualFwd, tau: f64) -> Result<DualFwd> {
     let (d1, d2) = d1_d2_ad(fwd, strike, vol, tau)?;
     Ok((fwd * norm_cdf(d1) - norm_cdf(d2) * strike).into())
@@ -89,6 +102,9 @@ pub fn black_call_ad(fwd: DualFwd, strike: f64, vol: DualFwd, tau: f64) -> Resul
 /// * `strike` - Strike price.
 /// * `vol` - Volatility (AD-enabled).
 /// * `tau` - Time to expiry in years.
+///
+/// # Errors
+/// Returns an error if d₁/d₂ computation fails.
 pub fn black_put_ad(fwd: DualFwd, strike: f64, vol: DualFwd, tau: f64) -> Result<DualFwd> {
     let (d1, d2) = d1_d2_ad(fwd, strike, vol, tau)?;
     let neg_d2: DualFwd = (-d2).into();
@@ -98,6 +114,9 @@ pub fn black_put_ad(fwd: DualFwd, strike: f64, vol: DualFwd, tau: f64) -> Result
 
 /// Computes the swap annuity (sum of discount factors times year fractions)
 /// for annual payment dates from `start` to `end`.
+///
+/// # Errors
+/// Returns an error if discount factor lookup fails.
 pub fn swap_annuity_from_curve(
     curve: &dyn InterestRatesTermStructure<f64>,
     reference_date: Date,

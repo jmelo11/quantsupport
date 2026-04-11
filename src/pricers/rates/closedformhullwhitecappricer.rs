@@ -97,7 +97,7 @@ impl HandleValue<CapFloorTrade, HullWhiteCapState> for ClosedFormHullWhiteCapPri
 
         let mut npv = DualFwd::zero();
 
-        for c in caplets.iter() {
+        for c in caplets {
             let start_date = c.start_accrual_date();
             let end_date = c.end_accrual_date();
             let payment_date = c.payment_date();
@@ -118,7 +118,7 @@ impl HandleValue<CapFloorTrade, HullWhiteCapState> for ClosedFormHullWhiteCapPri
                 Strike::Relative(pct) => fwd.value() * (1.0 + pct),
             };
 
-            let x = 1.0 / (1.0 + tau * strike);
+            let x = 1.0 / tau.mul_add(strike, 1.0);
             let sigma_p = self.zcb_price_volatility(t, big_s);
 
             let df_t: DualFwd = state
@@ -143,12 +143,12 @@ impl HandleValue<CapFloorTrade, HullWhiteCapState> for ClosedFormHullWhiteCapPri
                     let put: DualFwd = (DualFwd::new(x) * df_t * norm_cdf(neg_d2)
                         - df_s * norm_cdf(neg_d1))
                         .into();
-                    (DualFwd::new(1.0 + tau * strike) * put).into()
+                    (DualFwd::new(tau.mul_add(strike, 1.0)) * put).into()
                 }
                 CapletFloorletType::Floorlet => {
                     let call: DualFwd =
                         (df_s * norm_cdf(d1) - DualFwd::new(x) * df_t * norm_cdf(d2)).into();
-                    (DualFwd::new(1.0 + tau * strike) * call).into()
+                    (DualFwd::new(tau.mul_add(strike, 1.0)) * call).into()
                 }
             };
 

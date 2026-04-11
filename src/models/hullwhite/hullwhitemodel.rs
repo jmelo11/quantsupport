@@ -35,7 +35,7 @@ impl<'a, T: Scalar> HullWhite<'a, T> {
 
     /// Returns the mean-reversion speed.
     #[must_use]
-    pub fn alpha(&self) -> T {
+    pub const fn alpha(&self) -> T {
         self.alpha
     }
 
@@ -47,7 +47,7 @@ impl<'a, T: Scalar> HullWhite<'a, T> {
 
     /// Returns the time-dependent volatility function.
     #[must_use]
-    pub fn vol_func(&self) -> Option<&HullWhiteTimeDependentVolatility<T>> {
+    pub const fn vol_func(&self) -> Option<&HullWhiteTimeDependentVolatility<T>> {
         self.vol_func.as_ref()
     }
 
@@ -67,6 +67,9 @@ impl HullWhite<'_, f64> {
     }
 
     /// Computes `A(t,T)` for the affine ZCB price `P(t,T|r_t) = A(t,T) * exp(-B(t,T)*r_t)`.
+    ///
+    /// # Errors
+    /// Returns an error if discount factor lookup fails.
     #[allow(non_snake_case)]
     pub fn A(
         &self,
@@ -83,13 +86,15 @@ impl HullWhite<'_, f64> {
         let p_0_t_h = curve.discount_factor_from_time(t + h)?;
         let f_0_t = -(p_0_t_h / p_0_t).ln() / h;
 
-        let ln_a = (p_0_T / p_0_t).ln() + b * f_0_t
-            - sigma * sigma / (4.0 * self.alpha) * (1.0 - (-2.0 * self.alpha * t).exp()) * b * b;
+        let ln_a = (sigma * sigma / (4.0 * self.alpha) * (1.0 - (-2.0 * self.alpha * t).exp()) * b).mul_add(-b, b.mul_add(f_0_t, (p_0_T / p_0_t).ln()));
         Ok(ln_a.exp())
     }
 
     /// Returns the price of a zero-coupon bond at time `t` maturing at `T`
     /// given the short rate `r_t`, using the provided discount curve.
+    ///
+    /// # Errors
+    /// Returns an error if discount factor lookup fails.
     #[allow(non_snake_case)]
     pub fn zcb_price(
         &self,
@@ -112,6 +117,10 @@ impl HullWhite<'_, f64> {
     }
 
     /// Computes the drift function theta(t) from the initial curve.
+    ///
+    /// # Errors
+    /// Returns an error if discount factor lookup fails.
+    #[allow(clippy::similar_names)]
     pub fn theta(
         &self,
         t: f64,
@@ -131,17 +140,15 @@ impl HullWhite<'_, f64> {
             (f_fwd - f_bwd) / h
         } else {
             // Forward difference for small t.
-            let df_plus2 = curve.discount_factor_from_time(t + 2.0 * h)?;
+            let df_plus2 = curve.discount_factor_from_time(2.0f64.mul_add(h, t))?;
             let f_fwd2 = -(df_plus2 / df_plus).ln() / h;
             (f_fwd2 - f_fwd) / h
         };
 
-        Ok(f_deriv
-            + alpha * f_fwd
-            + sigma * sigma / (2.0 * alpha) * (1.0 - (-2.0 * alpha * t).exp()))
+        Ok((sigma * sigma / (2.0 * alpha)).mul_add(1.0 - (-2.0 * alpha * t).exp(), alpha.mul_add(f_fwd, f_deriv)))
     }
 
-    /// Conditional variance of the short rate: Var_t(r_T) = σ²(1 − e^{−2α(T−t)}) / (2α).
+    /// Conditional variance of the short rate: `Var_t(r_T)` = σ²(1 − e^{−2α(T−t)}) / (2α).
     #[allow(non_snake_case)]
     #[must_use]
     pub fn short_rate_variance(&self, t: f64, T: f64, sigma: f64) -> f64 {
@@ -149,8 +156,11 @@ impl HullWhite<'_, f64> {
     }
 
     /// Price of a zero-coupon bond put at time 0:
-    ///   Put(0; T_opt, T_bond, X) = X·P(0,T_opt)·Φ(−d₂) − P(0,T_bond)·Φ(−d₁)
-    /// where σ_P = σ·B(T_opt,T_bond)·√((1−e^{−2αT_opt})/(2α)).
+    ///   Put(0; `T_opt`, `T_bond`, X) = `X·P(0,T_opt)·Φ(−d₂)` − `P(0,T_bond)·Φ(−d₁)`
+    /// where `σ_P` = `σ·B(T_opt,T_bond)·√((1−e^{−2αT_opt})/(2α))`.
+    ///
+    /// # Errors
+    /// Returns an error if discount factor lookup fails.
     #[allow(non_snake_case)]
     pub fn bond_put_price(
         &self,
@@ -163,13 +173,16 @@ impl HullWhite<'_, f64> {
         let p_0_t = curve.discount_factor_from_time(t_option)?;
         let p_0_s = curve.discount_factor_from_time(t_bond)?;
         let sigma_p = self.zcb_price_volatility(sigma, t_option, t_bond);
-        let d1 = ((p_0_s / (strike_bond * p_0_t)).ln() + 0.5 * sigma_p * sigma_p) / sigma_p;
+        let d1 = (0.5 * sigma_p).mul_add(sigma_p, (p_0_s / (strike_bond * p_0_t)).ln()) / sigma_p;
         let d2 = d1 - sigma_p;
-        Ok(strike_bond * p_0_t * norm_cdf(-d2) - p_0_s * norm_cdf(-d1))
+        Ok((strike_bond * p_0_t).mul_add(norm_cdf(-d2), -(p_0_s * norm_cdf(-d1))))
     }
 
     /// Price of a zero-coupon bond call at time 0:
-    ///   Call(0; T_opt, T_bond, X) = P(0,T_bond)·Φ(d₁) − X·P(0,T_opt)·Φ(d₂)
+    ///   Call(0; `T_opt`, `T_bond`, X) = `P(0,T_bond)·Φ(d₁)` − `X·P(0,T_opt)·Φ(d₂)`
+    ///
+    /// # Errors
+    /// Returns an error if discount factor lookup fails.
     #[allow(non_snake_case)]
     pub fn bond_call_price(
         &self,
@@ -182,9 +195,9 @@ impl HullWhite<'_, f64> {
         let p_0_t = curve.discount_factor_from_time(t_option)?;
         let p_0_s = curve.discount_factor_from_time(t_bond)?;
         let sigma_p = self.zcb_price_volatility(sigma, t_option, t_bond);
-        let d1 = ((p_0_s / (strike_bond * p_0_t)).ln() + 0.5 * sigma_p * sigma_p) / sigma_p;
+        let d1 = (0.5 * sigma_p).mul_add(sigma_p, (p_0_s / (strike_bond * p_0_t)).ln()) / sigma_p;
         let d2 = d1 - sigma_p;
-        Ok(p_0_s * norm_cdf(d1) - strike_bond * p_0_t * norm_cdf(d2))
+        Ok(p_0_s.mul_add(norm_cdf(d1), -(strike_bond * p_0_t * norm_cdf(d2))))
     }
 
     /// Caplet price under the Hull-White model at time 0.
@@ -193,6 +206,9 @@ impl HullWhite<'_, f64> {
     ///   Caplet(0) = (1 + δK) · BondPut(0; T, S, X)
     /// where T = reset date (option expiry), S = T + δ (payment date),
     /// δ = S − T (accrual period), K = strike rate, X = 1/(1+δK).
+    ///
+    /// # Errors
+    /// Returns an error if the underlying bond put pricing fails.
     #[allow(non_snake_case)]
     pub fn caplet_price(
         &self,
@@ -203,9 +219,9 @@ impl HullWhite<'_, f64> {
         curve: &dyn InterestRatesTermStructure<f64>,
     ) -> Result<f64> {
         let tau = S - t;
-        let x = 1.0 / (1.0 + tau * strike);
+        let x = 1.0 / tau.mul_add(strike, 1.0);
         let put = self.bond_put_price(t, S, x, sigma, curve)?;
-        Ok((1.0 + tau * strike) * put)
+        Ok(tau.mul_add(strike, 1.0) * put)
     }
 
     /// Floorlet price under the Hull-White model at time 0.
@@ -213,6 +229,9 @@ impl HullWhite<'_, f64> {
     /// Uses the bond-option representation:
     ///   Floorlet(0) = (1 + δK) · BondCall(0; T, S, X)
     /// where X = 1/(1+δK).
+    ///
+    /// # Errors
+    /// Returns an error if the underlying bond call pricing fails.
     #[allow(non_snake_case)]
     pub fn floorlet_price(
         &self,
@@ -223,9 +242,9 @@ impl HullWhite<'_, f64> {
         curve: &dyn InterestRatesTermStructure<f64>,
     ) -> Result<f64> {
         let tau = S - t;
-        let x = 1.0 / (1.0 + tau * strike);
+        let x = 1.0 / tau.mul_add(strike, 1.0);
         let call = self.bond_call_price(t, S, x, sigma, curve)?;
-        Ok((1.0 + tau * strike) * call)
+        Ok(tau.mul_add(strike, 1.0) * call)
     }
 
     /// Swaption price via Jamshidian decomposition.
@@ -233,9 +252,12 @@ impl HullWhite<'_, f64> {
     /// For a payer swaption on a swap with fixed rate K, payment dates
     /// `swap_schedule[0..n]`, and accrual fractions `tau_i`, the price
     /// is decomposed into a portfolio of zero-coupon bond options:
-    ///   Swaption(0) = Σ c_i · BondPut(0; T_opt, T_i, X_i)
-    /// where X_i = P(T_opt, T_i | r*) via the critical short rate r*
+    ///   Swaption(0) = Σ `c_i` · BondPut(0; `T_opt`, `T_i`, `X_i`)
+    /// where `X_i` = `P(T_opt`, `T_i` | r*) via the critical short rate r*
     /// that makes the swap value zero.
+    ///
+    /// # Errors
+    /// Returns an error if discount factor lookups or root-finding fails.
     #[allow(non_snake_case)]
     pub fn swaption_price(
         &self,
@@ -256,7 +278,7 @@ impl HullWhite<'_, f64> {
         let mut cashflows = Vec::with_capacity(n);
         for (i, &(t_i, tau_i)) in swap_schedule.iter().enumerate() {
             let c = if i == n - 1 {
-                1.0 + tau_i * strike
+                tau_i.mul_add(strike, 1.0)
             } else {
                 tau_i * strike
             };
@@ -321,13 +343,13 @@ impl PathGenerator<f64> for HullWhite<'_, f64> {
             let sigma_t = vol_func.vol(t)?;
 
             let decay = (-2.0 * alpha * dt).exp();
-            var_x = var_x * decay + sigma_t * sigma_t * (1.0 - decay) / (2.0 * alpha);
+            var_x = var_x.mul_add(decay, sigma_t * sigma_t * (1.0 - decay) / (2.0 * alpha));
 
             let dw = draws[i] * sigma_t * dt.sqrt();
-            x_t += -alpha * x_t * dt + dw;
+            x_t += (-alpha * x_t).mul_add(dt, dw);
 
             let f_0_t = self.forward_rate_from_curve(t)?;
-            let phi_t = f_0_t + 0.5 * var_x;
+            let phi_t = 0.5f64.mul_add(var_x, f_0_t);
 
             scenario[i] = x_t + phi_t;
             t_prev = t;

@@ -118,7 +118,7 @@ impl NonLinearCoupon<f64> for OptionEmbeddedCoupon<f64> {
             .day_counter()
             .year_fraction(start_date, end_date);
 
-        let resuling_rate = self.payoff.evaluate_f64(fixing)?;
+        let resuling_rate = self.payoff.eval(fixing)?;
         let coupon_rate = self.spread + resuling_rate;
         Ok(coupon_rate * (year_fraction * self.notional))
     }
@@ -157,7 +157,7 @@ impl NonLinearCoupon<DualFwd> for OptionEmbeddedCoupon<DualFwd> {
             .day_counter()
             .year_fraction(start_date, end_date);
 
-        let resuling_rate = self.payoff.evaluate(fixing)?;
+        let resuling_rate = self.payoff.eval(fixing)?;
         let coupon_rate: DualFwd = (self.spread + resuling_rate).into();
         Ok((coupon_rate * DualFwd::new(year_fraction * self.notional)).into())
     }

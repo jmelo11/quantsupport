@@ -207,22 +207,22 @@ impl std::str::FromStr for OptionStrategy {
 ///
 /// | Product | Pos 0 | Pos 1 | Pos 2 | Pos 3 | Pos 4 | Pos 5 | Pos 6 | Pos 7 | Pos 8 |
 /// |---|---|---|---|---|---|---|---|---|---|
-/// | OIS | `OIS` | CCY | Index | Tenor | \[PayFreq\] | \[RecvFreq\] | | | |
-/// | FixedRateDeposit | `FixedRateDeposit` | CCY | Index | Tenor | | | | | |
-/// | BasisSwap | `BasisSwap` | CCY | PayIndex | RecvIndex | Tenor | \[PayFreq\] | \[RecvFreq\] | | |
-/// | FixFloatCrossCurrencySwap | `FixFloatCrossCurrencySwap` | DomCCY | FloatIndex | ForCCY | Tenor | \[DomFreq\] | \[ForFreq\] | | |
-/// | FloatFloatCrossCurrencySwap | `FloatFloatCrossCurrencySwap` | DomCCY | DomIndex | ForIndex | ForCCY | Tenor | \[DomFreq\] | \[ForFreq\] | |
-/// | CapFloor | `CapFloor` | CCY | Index | Tenor | \[Freq\] | Strike | \[StrikeValue\] | VolType | |
-/// | CapletFloorlet | `CapletFloorlet` | CCY | Index | IdxTenor | Expiry | Strike | \[StrikeValue\] | Strategy | VolType |
-/// | Future | `Future` | CCY | Index | IMMCode | | | | | |
-/// | ConvexityAdjustment | `ConvexityAdjustment` | CCY | Index | IMMCode | | | | | |
-/// | Swaption | `Swaption` | CCY | Index | Expiry | SwapTenor | \[PayFreq\] | \[RecvFreq\] | Strike | \[StrikeValue\] VolType |
-/// | FxOutrightForward | `FxOutrightForward` | CCYPAIR | Tenor | | | | | | |
-/// | FxForwardPoints | `FxForwardPoints` | CCYPAIR | Tenor | | | | | | |
-/// | EquityCall | `EquityCall` | CCY | Index | Tenor | Strike | | | | |
-/// | EquityPut | `EquityPut` | CCY | Index | Tenor | Strike | | | | |
-/// | FxCall | `FxCall` | CCYPAIR | Tenor | Strike | | | | | |
-/// | FxPut | `FxPut` | CCYPAIR | Tenor | Strike | | | | | |
+/// | OIS | `OIS` | CCY | Index | Tenor | \[`PayFreq`\] | \[`RecvFreq`\] | | | |
+/// | `FixedRateDeposit` | `FixedRateDeposit` | CCY | Index | Tenor | | | | | |
+/// | `BasisSwap` | `BasisSwap` | CCY | `PayIndex` | `RecvIndex` | Tenor | \[`PayFreq`\] | \[`RecvFreq`\] | | |
+/// | `FixFloatCrossCurrencySwap` | `FixFloatCrossCurrencySwap` | `DomCCY` | `FloatIndex` | `ForCCY` | Tenor | \[`DomFreq`\] | \[`ForFreq`\] | | |
+/// | `FloatFloatCrossCurrencySwap` | `FloatFloatCrossCurrencySwap` | `DomCCY` | `DomIndex` | `ForIndex` | `ForCCY` | Tenor | \[`DomFreq`\] | \[`ForFreq`\] | |
+/// | `CapFloor` | `CapFloor` | CCY | Index | Tenor | \[Freq\] | Strike | \[`StrikeValue`\] | `VolType` | |
+/// | `CapletFloorlet` | `CapletFloorlet` | CCY | Index | `IdxTenor` | Expiry | Strike | \[`StrikeValue`\] | Strategy | `VolType` |
+/// | Future | `Future` | CCY | Index | `IMMCode` | | | | | |
+/// | `ConvexityAdjustment` | `ConvexityAdjustment` | CCY | Index | `IMMCode` | | | | | |
+/// | Swaption | `Swaption` | CCY | Index | Expiry | `SwapTenor` | \[`PayFreq`\] | \[`RecvFreq`\] | Strike | \[`StrikeValue`\] `VolType` |
+/// | `FxOutrightForward` | `FxOutrightForward` | CCYPAIR | Tenor | | | | | | |
+/// | `FxForwardPoints` | `FxForwardPoints` | CCYPAIR | Tenor | | | | | | |
+/// | `EquityCall` | `EquityCall` | CCY | Index | Tenor | Strike | | | | |
+/// | `EquityPut` | `EquityPut` | CCY | Index | Tenor | Strike | | | | |
+/// | `FxCall` | `FxCall` | CCYPAIR | Tenor | Strike | | | | | |
+/// | `FxPut` | `FxPut` | CCYPAIR | Tenor | Strike | | | | | |
 ///
 /// **Frequency values**: `Annual`, `Semiannual`, `Quarterly`, `Monthly`,
 /// `Bimonthly`, `Biweekly`, `Weekly`, `Daily`, `EveryFourthMonth`,
@@ -587,16 +587,10 @@ impl QuoteDetails {
         start: usize,
     ) -> (Option<Frequency>, Option<Frequency>, usize) {
         let pay: Option<Frequency> = parts.get(start).and_then(|s| s.parse().ok());
-        if let Some(p) = pay {
+        pay.map_or((None, None, start), |p| {
             let recv: Option<Frequency> = parts.get(start + 1).and_then(|s| s.parse().ok());
-            if let Some(r) = recv {
-                (Some(p), Some(r), start + 2)
-            } else {
-                (Some(p), None, start + 1)
-            }
-        } else {
-            (None, None, start)
-        }
+            recv.map_or_else(|| (Some(p), None, start + 1), |r| (Some(p), Some(r), start + 2))
+        })
     }
 
     /// `{Instrument}_CCY_{Index}_{Tenor}[_{PayFreq}[_{RecvFreq}]]`
@@ -1227,7 +1221,9 @@ where
             Self::FxForward(x) => Ok(x.delivery_date()),
             Self::Call(x) | Self::Put(x) => Ok(x.expiry_date()),
             Self::CapletFloorlet(x) => Ok(x.fixing_date()),
-            Self::CapFloor(x) => Ok(x.last_fixing_date()),
+            Self::CapFloor(x) => x
+                .last_fixing_date()
+                .ok_or_else(|| crate::utils::errors::QSError::ValueNotSetErr("cap/floor has no caplet/floorlets".into())),
             Self::EuropeanSwaption(x) => Ok(x.expiry_date()),
         }
     }
@@ -1321,8 +1317,9 @@ impl Quote {
             QuoteInstrument::FxCall | QuoteInstrument::FxPut => Err(QSError::NotImplementedErr(
                 "FX option instrument builders are not implemented yet".into(),
             )),
-            other => Err(QSError::NotImplementedErr(format!(
-                "Cannot build instrument for {other:?} — it is a vol / auxiliary quote type"
+            QuoteInstrument::ConvexityAdjustment => Err(QSError::NotImplementedErr(format!(
+                "Cannot build instrument for {:?} — it is a vol / auxiliary quote type",
+                QuoteInstrument::ConvexityAdjustment
             ))),
         }
     }

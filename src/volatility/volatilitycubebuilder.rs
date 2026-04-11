@@ -24,7 +24,7 @@ pub struct VolatilityCubeBuilder {
 impl VolatilityCubeBuilder {
     /// Creates a new builder from a list of cube specifications.
     #[must_use]
-    pub fn new(specs: Vec<VolatilityCubeConfiguration>) -> Self {
+    pub const fn new(specs: Vec<VolatilityCubeConfiguration>) -> Self {
         Self { specs }
     }
 
@@ -53,6 +53,7 @@ impl VolatilityCubeBuilder {
         Ok(cubes)
     }
 
+    #[allow(clippy::unused_self)]
     fn build_one(
         &self,
         spec: &VolatilityCubeConfiguration,

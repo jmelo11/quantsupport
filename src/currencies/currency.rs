@@ -6,9 +6,10 @@ use super::currencydetails::CurrencyDetails;
 use crate::utils::errors::{QSError, Result};
 
 /// Enum for currencies supported by the library
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum Currency {
     /// US Dollar
+    #[default]
     USD,
     /// Euro
     EUR,
@@ -58,12 +59,6 @@ pub enum Currency {
     DKK,
     /// Indonesian Rupiah
     IDR,
-}
-
-impl Default for Currency {
-    fn default() -> Self {
-        Self::USD
-    }
 }
 
 impl Currency {

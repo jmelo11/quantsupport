@@ -7,7 +7,7 @@ use std::cmp::Ordering;
 use crate::ad::scalar::{InnerScalar, Scalar};
 
 /// A constant expression wrapper for interoperability with AD expressions.
-#[derive(Clone, Copy, PartialEq, PartialOrd, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Debug)]
 pub struct Const<T = f64>(pub T);
 
 // -- Scalar impl  -----------------------------------------------------------
@@ -113,8 +113,8 @@ impl From<u32> for Const<f64> {
         Self(f64::from(v))
     }
 }
-impl From<Const<f64>> for f64 {
-    fn from(c: Const<f64>) -> Self {
+impl From<Const<Self>> for f64 {
+    fn from(c: Const<Self>) -> Self {
         c.0
     }
 }

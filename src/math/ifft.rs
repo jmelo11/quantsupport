@@ -29,6 +29,7 @@ use crate::utils::errors::{QSError, Result};
 ///
 /// # Errors
 /// Returns [`QSError::InvalidValueErr`] when the length is not a power of two.
+#[allow(clippy::cast_precision_loss)]
 pub fn ifft<T: Scalar>(data: &mut [Complex<T>]) -> Result<()> {
     let n = data.len();
     if n <= 1 {

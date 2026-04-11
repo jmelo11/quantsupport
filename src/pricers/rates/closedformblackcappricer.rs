@@ -108,7 +108,7 @@ impl HandleValue<CapFloorTrade, BlackCapState> for ClosedFormBlackCapPricer {
         Tape::set_mark_fwd();
         state.put_pillars_on_tape()?;
         let mut npv = DualFwd::zero();
-        for c in caplets.iter() {
+        for c in caplets {
             let fixing_date = c.fixing_date();
             let start_date = c.start_accrual_date();
             let end_date = c.end_accrual_date();

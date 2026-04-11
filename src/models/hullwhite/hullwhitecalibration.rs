@@ -36,7 +36,7 @@ impl HullWhiteTimeDependentVolatility<f64> {
     /// Creates a new time-dependent volatility function from a schedule of
     /// `(year_fraction, sigma)` pairs.
     #[must_use]
-    pub fn new(schedule: Vec<(f64, f64)>) -> Self {
+    pub const fn new(schedule: Vec<(f64, f64)>) -> Self {
         Self {
             schedule,
             pillar_labels: None,
@@ -66,13 +66,13 @@ impl HullWhiteTimeDependentVolatility<f64> {
 
     /// Returns the number of schedule entries.
     #[must_use]
-    pub fn len(&self) -> usize {
+    pub const fn len(&self) -> usize {
         self.schedule.len()
     }
 
     /// Returns true if the schedule is empty.
     #[must_use]
-    pub fn is_empty(&self) -> bool {
+    pub const fn is_empty(&self) -> bool {
         self.schedule.is_empty()
     }
 
@@ -106,7 +106,7 @@ struct HullWhiteCalibration<'a, 'b> {
     curve: &'a dyn InterestRatesTermStructure<f64>,
 }
 
-impl<'a, 'b> HullWhiteCalibration<'a, 'b> {
+impl HullWhiteCalibration<'_, '_> {
     /// Computes the market price from a Black vol for the given calibration
     /// instrument.  This is the target that the model price must match.
     fn market_price(&self, instrument: &CalibrationInstrument, market_vol: f64) -> Result<f64> {
@@ -280,7 +280,7 @@ fn extract_calibration_params(
     }
 }
 
-/// Objective for HW calibration: f(sigma) = model_price(sigma_p) - market_price.
+/// Objective for HW calibration: f(sigma) = `model_price(sigma_p)` - `market_price`.
 struct HwCalibrationObjective<'a, 'b> {
     hw: &'a HullWhite<'b, f64>,
     instrument: &'a CalibrationInstrument,
@@ -308,6 +308,9 @@ impl ContFunc<f64> for HwCalibrationObjective<'_, '_> {
 impl HullWhite<'_, f64> {
     /// Calibrates the short-rate volatility sigma(t) to market vol quotes,
     /// updating the internal volatility function and calibration quality.
+    ///
+    /// # Errors
+    /// Returns an error if calibration quotes are missing or curve data is invalid.
     pub fn calibrate(
         &mut self,
         quote_ids: &[String],

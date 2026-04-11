@@ -109,6 +109,7 @@ where
     ///
     /// ## Errors
     /// Returns an error if the evaluation fails.
+    #[allow(clippy::too_many_lines)]
     fn handle_cashflows(&self, _trade: &T, state: &mut S) -> Result<CashflowsTable> {
         let mut cashflows_table = CashflowsTable::new();
 
@@ -224,7 +225,7 @@ where
                             None,
                         );
                     }
-                    _ => {
+                    CashflowType::OptionEmbeddedCashflow(_) => {
                         unimplemented!(
                             "Cashflow type not supported in cashflows table generation yet"
                         );

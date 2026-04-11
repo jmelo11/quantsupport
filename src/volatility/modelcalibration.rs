@@ -36,7 +36,7 @@ pub struct ModelCalibrationConfiguration {
 impl ModelCalibrationConfiguration {
     /// Creates a new calibration configuration.
     #[must_use]
-    pub fn new(source: CalibrationSource, quote_ids: Vec<String>, alpha: f64) -> Self {
+    pub const fn new(source: CalibrationSource, quote_ids: Vec<String>, alpha: f64) -> Self {
         Self {
             source,
             quote_ids,

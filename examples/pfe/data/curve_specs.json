@@ -1,0 +1,40 @@
+{
+    "curve_specs": [
+        {
+            "market_index": "SOFR",
+            "quotes": [
+                "FixedRateDeposit_USD_SOFR_1D",
+                "OIS_USD_SOFR_3M",
+                "OIS_USD_SOFR_6M",
+                "OIS_USD_SOFR_1Y",
+                "OIS_USD_SOFR_2Y",
+                "OIS_USD_SOFR_3Y",
+                "OIS_USD_SOFR_4Y",
+                "OIS_USD_SOFR_5Y",
+                "OIS_USD_SOFR_7Y",
+                "OIS_USD_SOFR_10Y",
+                "OIS_USD_SOFR_15Y",
+                "OIS_USD_SOFR_20Y",
+                "OIS_USD_SOFR_30Y"
+            ]
+        },
+        {
+            "market_index": "ESTR",
+            "quotes": [
+                "FixedRateDeposit_EUR_ESTR_1D",
+                "OIS_EUR_ESTR_3M",
+                "OIS_EUR_ESTR_6M",
+                "OIS_EUR_ESTR_1Y",
+                "OIS_EUR_ESTR_2Y",
+                "OIS_EUR_ESTR_3Y",
+                "OIS_EUR_ESTR_4Y",
+                "OIS_EUR_ESTR_5Y",
+                "OIS_EUR_ESTR_7Y",
+                "OIS_EUR_ESTR_10Y",
+                "OIS_EUR_ESTR_15Y",
+                "OIS_EUR_ESTR_20Y",
+                "OIS_EUR_ESTR_30Y"
+            ]
+        }
+    ]
+}

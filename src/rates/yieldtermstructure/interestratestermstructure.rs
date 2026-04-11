@@ -45,4 +45,10 @@ where
     /// # Errors
     /// Returns an error if the discount factor cannot be computed for the given time.
     fn discount_factor_from_time(&self, t: f64) -> Result<T>;
+
+    /// Calculates the forward rate between two year fractions.
+    ///
+    /// # Errors
+    /// Returns an error if the forward rate cannot be computed for the given time interval.
+    fn forward_rate_from_time(&self, start: f64, end: f64) -> Result<T>;
 }

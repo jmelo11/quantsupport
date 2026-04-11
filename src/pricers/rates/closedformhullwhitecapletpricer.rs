@@ -62,7 +62,7 @@ impl ClosedFormHullWhiteCapletPricer {
         (1.0 - (-self.alpha * (big_t - t)).exp()) / self.alpha
     }
 
-    /// ZCB price volatility: $\sigma_P = \sigma\, B(t,T)\,\sqrt{(1 - e^{-2\alpha t})/(2\alpha)}$.
+    /// ZCB price volatility: `sigma_P = sigma * B(t,T) * sqrt((1 - exp(-2*alpha*t)) / (2*alpha))`.
     fn zcb_price_volatility(&self, t: f64, big_t: f64) -> f64 {
         let b = self.B(t, big_t);
         self.sigma * b * ((1.0 - (-2.0 * self.alpha * t).exp()) / (2.0 * self.alpha)).sqrt()
@@ -133,7 +133,7 @@ impl HandleValue<CapletFloorletTrade, HullWhiteCapletState> for ClosedFormHullWh
         };
 
         // Bond-option parameters (all f64 — model params only)
-        let x = 1.0 / (1.0 + tau * strike); // bond strike
+        let x = 1.0 / tau.mul_add(strike, 1.0); // bond strike
         let sigma_p = self.zcb_price_volatility(t, big_s); // f64
 
         // DualFwd discount factors from the forward curve
@@ -161,26 +161,26 @@ impl HandleValue<CapletFloorletTrade, HullWhiteCapletState> for ClosedFormHullWh
                 let neg_d1: DualFwd = (DualFwd::new(0.0) - d1).into();
                 let put: DualFwd =
                     (DualFwd::new(x) * df_t * norm_cdf(neg_d2) - df_s * norm_cdf(neg_d1)).into();
-                (DualFwd::new(1.0 + tau * strike) * put).into()
+                (DualFwd::new(tau.mul_add(strike, 1.0)) * put).into()
             }
             // Floorlet = (1+τK) * BondCall = (1+τK) * [P(0,S)·Φ(d1) − X·P(0,T)·Φ(d2)]
             CapletFloorletType::Floorlet => {
                 let call: DualFwd =
                     (df_s * norm_cdf(d1) - DualFwd::new(x) * df_t * norm_cdf(d2)).into();
-                (DualFwd::new(1.0 + tau * strike) * call).into()
+                (DualFwd::new(tau.mul_add(strike, 1.0)) * call).into()
             }
         };
 
         // Dual-curve adjustment: if discount index != forward index, multiply
         // by df_disc(S) / df_fwd(S)
-        let value: DualFwd = if disc_index != fwd_index {
+        let value: DualFwd = if disc_index == fwd_index {
+            (undiscounted * DualFwd::new(trade.notional())).into()
+        } else {
             let df_disc_s: DualFwd = state
                 .get_discount_curve_element(&disc_index)?
                 .curve()
                 .discount_factor(payment_date)?;
             (undiscounted * df_disc_s / df_s * DualFwd::new(trade.notional())).into()
-        } else {
-            (undiscounted * DualFwd::new(trade.notional())).into()
         };
 
         state.value = Some(value);

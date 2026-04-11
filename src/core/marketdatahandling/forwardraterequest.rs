@@ -1,6 +1,7 @@
 use crate::{indices::marketindex::MarketIndex, time::date::Date};
 
 /// Request for a forward rate between two dates for a given market index.
+#[derive(Clone)]
 pub struct ForwardRateRequest {
     market_index: MarketIndex,
     fixing_date: Date,
@@ -48,13 +49,13 @@ impl ForwardRateRequest {
 
     /// Returns the start date for the forward rate calculation, if set.
     #[must_use]
-    pub fn start_date(&self) -> Option<Date> {
+    pub const fn start_date(&self) -> Option<Date> {
         self.start_date
     }
 
     /// Returns the end date for the forward rate calculation, if set.
     #[must_use]
-    pub fn end_date(&self) -> Option<Date> {
+    pub const fn end_date(&self) -> Option<Date> {
         self.end_date
     }
 }

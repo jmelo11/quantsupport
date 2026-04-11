@@ -37,13 +37,13 @@ unsafe impl<T: Sync> Sync for Dual<T> {}
 impl<T> Dual<T> {
     /// Low-level constructor used by [`flatten`](crate::ad::expr::flatten).
     #[inline]
-    pub(crate) fn from_raw(val: T, node: Option<NonNull<TapeNode<T>>>) -> Self {
+    pub(crate) const fn from_raw(val: T, node: Option<NonNull<TapeNode<T>>>) -> Self {
         Self { val, node }
     }
 
     /// Returns the inner `T` value (for the expression-template system).
     #[inline]
-    pub(crate) fn val(&self) -> T
+    pub(crate) const fn val(&self) -> T
     where
         T: Copy,
     {
@@ -52,7 +52,7 @@ impl<T> Dual<T> {
 
     /// Returns the raw tape-node pointer (for the expression-template system).
     #[inline]
-    pub(crate) fn node_ptr(&self) -> Option<NonNull<TapeNode<T>>> {
+    pub(crate) const fn node_ptr(&self) -> Option<NonNull<TapeNode<T>>> {
         self.node
     }
 }
@@ -73,23 +73,24 @@ impl<T: Default> Default for Dual<T> {
 impl<T: TapeHolder + InnerScalar> Dual<T> {
     /// Creates a new value, registering a leaf on the active tape.
     #[inline]
+    #[must_use] 
     pub fn new(val: f64) -> Self {
         let v = T::scalar(val);
-        let node = T::with_tape(|tape| tape.new_leaf());
+        let node = T::with_tape(super::tape::Tape::new_leaf);
         Self { val: v, node }
     }
 
     /// Creates a `Dual` from an already-constructed inner `T` value.
     #[inline]
     pub fn new_from_inner(val: T) -> Self {
-        let node = T::with_tape(|tape| tape.new_leaf());
+        let node = T::with_tape(super::tape::Tape::new_leaf);
         Self { val, node }
     }
 
     /// Creates a constant — no tape node.
     #[inline]
     #[must_use]
-    pub fn constant(val: T) -> Self {
+    pub const fn constant(val: T) -> Self {
         Self { val, node: None }
     }
 
@@ -103,23 +104,28 @@ impl<T: TapeHolder + InnerScalar> Dual<T> {
     /// Returns the inner `T` value.
     #[inline]
     #[must_use]
-    pub fn inner(&self) -> T {
+    pub const fn inner(&self) -> T {
         self.val
     }
 
     /// Zero constant (no tape).
     #[inline]
+    #[must_use] 
     pub fn zero() -> Self {
         Self::constant(T::zero())
     }
 
     /// One constant (no tape).
     #[inline]
+    #[must_use] 
     pub fn one() -> Self {
         Self::constant(T::one())
     }
 
     /// Returns the adjoint after a backward pass.
+    ///
+    /// # Errors
+    /// Returns [`QSError::NodeNotIndexedInTapeErr`] if this node is not on the tape.
     #[inline]
     pub fn adjoint(&self) -> Result<T> {
         self.node
@@ -133,6 +139,9 @@ impl<T: TapeHolder + InnerScalar> Dual<T> {
     }
 
     /// Full backward pass from this node to tape start.
+    ///
+    /// # Errors
+    /// Returns [`QSError::NodeNotIndexedInTapeErr`] if this node is not on the tape.
     pub fn backward(&self) -> Result<()> {
         let root = self.node.ok_or(QSError::NodeNotIndexedInTapeErr)?;
         T::with_tape(|tape| {
@@ -144,6 +153,9 @@ impl<T: TapeHolder + InnerScalar> Dual<T> {
     }
 
     /// Backward pass from current mark to start.
+    ///
+    /// # Errors
+    /// Returns [`QSError::NodeNotIndexedInTapeErr`] if this node is not on the tape.
     pub fn backward_mark_to_start(&self) -> Result<()> {
         let root = self.node.ok_or(QSError::NodeNotIndexedInTapeErr)?;
         T::with_tape(|tape| {
@@ -155,6 +167,9 @@ impl<T: TapeHolder + InnerScalar> Dual<T> {
     }
 
     /// Backward pass from tape end to current mark.
+    ///
+    /// # Errors
+    /// Returns [`QSError::NodeNotIndexedInTapeErr`] if this node is not on the tape.
     pub fn backward_to_mark(&self) -> Result<()> {
         let root = self.node.ok_or(QSError::NodeNotIndexedInTapeErr)?;
         T::with_tape(|tape| {
@@ -193,36 +208,43 @@ impl<T: TapeHolder + InnerScalar> Dual<T> {
 
     /// Exponential.
     #[inline]
+    #[must_use]
     pub fn exp(self) -> Self {
         flatten(&UnExpr::<T, Self, ExpOp>::new(self))
     }
     /// Natural logarithm.
     #[inline]
+    #[must_use]
     pub fn ln(self) -> Self {
         flatten(&UnExpr::<T, Self, LogOp>::new(self))
     }
     /// Square root.
     #[inline]
+    #[must_use]
     pub fn sqrt(self) -> Self {
         flatten(&UnExpr::<T, Self, SqrtOp>::new(self))
     }
     /// Sine.
     #[inline]
+    #[must_use]
     pub fn sin(self) -> Self {
         flatten(&UnExpr::<T, Self, SinOp>::new(self))
     }
     /// Cosine.
     #[inline]
+    #[must_use]
     pub fn cos(self) -> Self {
         flatten(&UnExpr::<T, Self, CosOp>::new(self))
     }
     /// Absolute value.
     #[inline]
+    #[must_use]
     pub fn abs(self) -> Self {
         flatten(&UnExpr::<T, Self, AbsOp>::new(self))
     }
     /// Raise to a constant `f64` power.
     #[inline]
+    #[must_use]
     pub fn powf(self, p: f64) -> Self {
         flatten(&BinExpr::<T, Self, Const<T>, PowOp>::new(
             self,
@@ -231,16 +253,19 @@ impl<T: TapeHolder + InnerScalar> Dual<T> {
     }
     /// Component-wise maximum.
     #[inline]
+    #[must_use]
     pub fn max<R: Expr<T>>(self, r: R) -> Self {
         flatten(&BinExpr::<T, Self, R, MaxOp>::new(self, r))
     }
     /// Component-wise minimum.
     #[inline]
+    #[must_use]
     pub fn min<R: Expr<T>>(self, r: R) -> Self {
         flatten(&BinExpr::<T, Self, R, MinOp>::new(self, r))
     }
     /// Raise to a `Self`-typed exponent.
     #[inline]
+    #[must_use]
     pub fn pow_expr<R: Expr<T>>(self, p: R) -> Self {
         flatten(&BinExpr::<T, Self, R, PowOp>::new(self, p))
     }
@@ -269,43 +294,43 @@ impl<T: TapeHolder + InnerScalar> Scalar for Dual<T> {
     }
     #[inline]
     fn exp(self) -> Self {
-        Dual::exp(self)
+        Self::exp(self)
     }
     #[inline]
     fn ln(self) -> Self {
-        Dual::ln(self)
+        Self::ln(self)
     }
     #[inline]
     fn sqrt(self) -> Self {
-        Dual::sqrt(self)
+        Self::sqrt(self)
     }
     #[inline]
     fn sin(self) -> Self {
-        Dual::sin(self)
+        Self::sin(self)
     }
     #[inline]
     fn cos(self) -> Self {
-        Dual::cos(self)
+        Self::cos(self)
     }
     #[inline]
     fn abs(self) -> Self {
-        Dual::abs(self)
+        Self::abs(self)
     }
     #[inline]
     fn powf(self, p: f64) -> Self {
-        Dual::powf(self, p)
+        Self::powf(self, p)
     }
     #[inline]
     fn pows(self, p: Self) -> Self {
-        Dual::pow_expr(self, p)
+        Self::pow_expr(self, p)
     }
     #[inline]
     fn max_val(self, o: Self) -> Self {
-        Dual::max(self, o)
+        Self::max(self, o)
     }
     #[inline]
     fn min_val(self, o: Self) -> Self {
-        Dual::min(self, o)
+        Self::min(self, o)
     }
     #[inline]
     fn add_val(self, other: Self) -> Self {

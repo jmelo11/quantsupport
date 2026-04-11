@@ -18,6 +18,7 @@ pub struct CubicSplineInterpolator {}
 // ═══════════════════════════════════════════════════════════════════════════
 
 impl StaticInterpolate<f64> for CubicSplineInterpolator {
+    #[allow(clippy::many_single_char_names)]
     fn interpolate(x: f64, x_: &[f64], y_: &[f64], enable_extrapolation: bool) -> Result<f64> {
         let n = x_.len();
         if n < 2 {
@@ -46,7 +47,7 @@ impl StaticInterpolate<f64> for CubicSplineInterpolator {
         // If only 2 points, fall back to linear.
         if n == 2 {
             let slope = (y_[1] - y_[0]) / (x_[1] - x_[0]);
-            return Ok(y_[0] + slope * (x - x_[0]));
+            return Ok(slope.mul_add(x - x_[0], y_[0]));
         }
 
         // Compute second derivatives (moments) M via the Thomas algorithm.
@@ -69,15 +70,15 @@ impl StaticInterpolate<f64> for CubicSplineInterpolator {
         let a = (x_[idx + 1] - x) / h;
         let b = (x - x_[idx]) / h;
 
-        let y = a * y_[idx]
-            + b * y_[idx + 1]
-            + ((a * a * a - a) * m[idx] + (b * b * b - b) * m[idx + 1]) * (h * h) / 6.0;
+        let y = a.mul_add(y_[idx], b * y_[idx + 1])
+            + (a * a).mul_add(a, -a).mul_add(m[idx], (b * b).mul_add(b, -b) * m[idx + 1]) * (h * h) / 6.0;
 
         Ok(y)
     }
 }
 
 /// Solve the tridiagonal system for natural cubic spline second derivatives.
+#[allow(clippy::many_single_char_names)]
 fn compute_moments_f64(x: &[f64], y: &[f64]) -> Vec<f64> {
     let n = x.len();
     let mut m = vec![0.0; n]; // M_0 = M_{n-1} = 0 (natural BC)
@@ -110,15 +111,15 @@ fn compute_moments_f64(x: &[f64], y: &[f64]) -> Vec<f64> {
     cp[0] = upper[0] / d[0];
     dp[0] = rhs[0] / d[0];
     for i in 1..inner {
-        let denom = d[i] - lower[i] * cp[i - 1];
+        let denom = lower[i].mul_add(-cp[i - 1], d[i]);
         cp[i] = upper[i] / denom;
-        dp[i] = (rhs[i] - lower[i] * dp[i - 1]) / denom;
+        dp[i] = lower[i].mul_add(-dp[i - 1], rhs[i]) / denom;
     }
 
     // Back substitution
     m[inner] = dp[inner - 1]; // m[inner] maps to M_{inner} = M_{n-2}
     for i in (0..inner - 1).rev() {
-        m[i + 1] = dp[i] - cp[i] * m[i + 2];
+        m[i + 1] = cp[i].mul_add(-m[i + 2], dp[i]);
     }
 
     m
@@ -129,6 +130,7 @@ fn compute_moments_f64(x: &[f64], y: &[f64]) -> Vec<f64> {
 // ═══════════════════════════════════════════════════════════════════════════
 
 impl StaticInterpolate<DualFwd> for CubicSplineInterpolator {
+    #[allow(clippy::many_single_char_names)]
     fn interpolate(
         x: DualFwd,
         x_: &[DualFwd],
@@ -199,7 +201,8 @@ impl StaticInterpolate<DualFwd> for CubicSplineInterpolator {
     }
 }
 
-/// Solve the tridiagonal system for natural cubic spline second derivatives (DualFwd).
+/// Solve the tridiagonal system for natural cubic spline second derivatives (`DualFwd`).
+#[allow(clippy::many_single_char_names)]
 fn compute_moments_dual(x: &[DualFwd], y: &[DualFwd]) -> Vec<DualFwd> {
     let n = x.len();
     let zero = DualFwd::from(0.0);

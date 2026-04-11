@@ -201,7 +201,7 @@ where
                     .ok_or_else(|| QSError::ValueNotSetErr("Pillars".into()))?
                 {
                     all_ids.push(label);
-                    all_exposures.push(value.adjoint().map(|a| a.value()).unwrap_or(0.0));
+                    all_exposures.push(value.adjoint().map_or(0.0, |a| a.value()));
                 }
             }
         }

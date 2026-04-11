@@ -18,17 +18,17 @@ pub struct VolatilityCubeConfiguration {
     quotes: Vec<String>,
 }
 
-fn default_volatility_type() -> VolatilityType {
+const fn default_volatility_type() -> VolatilityType {
     VolatilityType::Black
 }
-fn default_smile_type() -> SmileType {
+const fn default_smile_type() -> SmileType {
     SmileType::Strike
 }
 
 impl VolatilityCubeConfiguration {
     /// Creates a new cube configuration.
     #[must_use]
-    pub fn new(
+    pub const fn new(
         market_index: MarketIndex,
         volatility_type: VolatilityType,
         smile_type: SmileType,

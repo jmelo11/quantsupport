@@ -50,7 +50,7 @@ impl From<CashflowType<DualFwd>> for CashflowType<f64> {
             CashflowType::OptionEmbeddedCoupon(coupon) => Self::OptionEmbeddedCoupon(coupon.into()),
             CashflowType::Redemption(cashflow) => Self::Redemption(cashflow),
             CashflowType::Disbursement(cashflow) => Self::Disbursement(cashflow),
-            CashflowType::ConstantAmount(cashflow) => Self::ConstantAmount(cashflow.into()),
+            CashflowType::ConstantAmount(cashflow) => Self::ConstantAmount(cashflow),
             CashflowType::OptionEmbeddedCashflow(cashflow) => {
                 Self::OptionEmbeddedCashflow(cashflow.into())
             }

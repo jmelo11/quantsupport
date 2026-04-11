@@ -1,3 +1,9 @@
+//! Builder and conversion utilities for [`ContingentClaim`].
+//!
+//! * [`MakeContingentClaim`] — step-by-step builder with validation.
+//! * [`IntoContingentClaims`] — trait for decomposing high-level
+//!   structures (e.g. [`Leg`]) into a flat list of claims.
+
 use crate::{
     core::{collateral::Discountable, trade::Side},
     currencies::currency::Currency,
@@ -30,6 +36,7 @@ use crate::{
 ///     .build()
 ///     .expect("failed to build claim");
 /// ```
+#[derive(Default)]
 pub struct MakeContingentClaim {
     trade_id: Option<String>,
     leg_id: Option<usize>,
@@ -43,25 +50,6 @@ pub struct MakeContingentClaim {
     side: Option<Side>,
     evaluation_strategy: Option<ClaimEvaluationStrategy>,
     index: Option<MarketIndex>,
-}
-
-impl Default for MakeContingentClaim {
-    fn default() -> Self {
-        Self {
-            trade_id: None,
-            leg_id: None,
-            payment_date: None,
-            fixing_date: None,
-            accrual_start: None,
-            accrual_end: None,
-            currency: None,
-            foreign_currency: None,
-            notional: None,
-            side: None,
-            evaluation_strategy: None,
-            index: None,
-        }
-    }
 }
 
 impl MakeContingentClaim {
@@ -137,6 +125,13 @@ impl MakeContingentClaim {
         self
     }
 
+    /// Validates required fields and builds the [`ContingentClaim`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`QSError::InvalidValueErr`] if any required field
+    /// (`trade_id`, `leg_id`, `payment_date`, `currency`, `notional`,
+    /// `side`, `evaluation_strategy`) was not set.
     pub fn build(self) -> Result<ContingentClaim> {
         let trade_id = self
             .trade_id
@@ -178,15 +173,24 @@ impl MakeContingentClaim {
 }
 
 /// Trait for types that can be decomposed into a flat list of [`ContingentClaim`]s.
+///
+/// Implemented for [`Leg<f64>`] (converts each cashflow into one claim)
+/// and for `Vec<Leg<f64>>` (concatenates all legs).
 pub trait IntoContingentClaims {
+    /// Decomposes `self` into contingent claims, tagging each with `trade_id`.
+    ///
+    /// # Errors
+    /// Returns an error if a cashflow cannot be converted into a contingent claim.
+    #[allow(clippy::wrong_self_convention)]
     fn into_contingent_claims(&self, trade_id: &str) -> Result<Vec<ContingentClaim>>;
 }
 
 impl IntoContingentClaims for Leg<f64> {
+    #[allow(clippy::too_many_lines)]
     fn into_contingent_claims(&self, trade_id: &str) -> Result<Vec<ContingentClaim>> {
         let mut claims = Vec::with_capacity(self.cashflows().len());
 
-        for cf in self.cashflows().iter() {
+        for cf in self.cashflows() {
             let base = MakeContingentClaim::default()
                 .with_trade_id(trade_id.to_string())
                 .with_leg_id(self.id())
@@ -195,7 +199,9 @@ impl IntoContingentClaims for Leg<f64> {
 
             let claim = match cf {
                 CashflowType::FixedRateCoupon(coupon) => {
-                    let amount = Cashflow::<f64>::amount(coupon)?;
+                    // Cashflow::amount() returns rate × τ × notional, but evaluate()
+                    // multiplies by notional, so we normalise to rate × τ.
+                    let amount = Cashflow::<f64>::amount(coupon)? / coupon.notional();
                     base.with_payment_date(Cashflow::<f64>::payment_date(coupon))
                         .with_accrual_start(coupon.accrual_start_date())
                         .with_accrual_end(coupon.accrual_end_date())
@@ -245,25 +251,15 @@ impl IntoContingentClaims for Leg<f64> {
                         })
                         .build()?
                 }
-                CashflowType::Redemption(cf) => {
+                CashflowType::Redemption(cf)
+                | CashflowType::Disbursement(cf)
+                | CashflowType::ConstantAmount(cf) => {
                     let amount = Cashflow::<f64>::amount(cf)?;
                     base.with_payment_date(cf.payment_date())
                         .with_notional(amount)
-                        .with_evaluation_strategy(ClaimEvaluationStrategy::Deterministic { amount })
-                        .build()?
-                }
-                CashflowType::Disbursement(cf) => {
-                    let amount = Cashflow::<f64>::amount(cf)?;
-                    base.with_payment_date(cf.payment_date())
-                        .with_notional(amount)
-                        .with_evaluation_strategy(ClaimEvaluationStrategy::Deterministic { amount })
-                        .build()?
-                }
-                CashflowType::ConstantAmount(cf) => {
-                    let amount = Cashflow::<f64>::amount(cf)?;
-                    base.with_payment_date(cf.payment_date())
-                        .with_notional(amount)
-                        .with_evaluation_strategy(ClaimEvaluationStrategy::Deterministic { amount })
+                        .with_evaluation_strategy(ClaimEvaluationStrategy::Deterministic {
+                            amount: 1.0,
+                        })
                         .build()?
                 }
                 CashflowType::OptionEmbeddedCashflow(cf) => {

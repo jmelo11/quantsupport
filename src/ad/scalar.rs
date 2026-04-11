@@ -36,24 +36,34 @@ pub trait Scalar:
     /// The multiplicative identity.
     fn one() -> Self;
     /// Exponential.
+    #[must_use]
     fn exp(self) -> Self;
     /// Natural logarithm.
+    #[must_use]
     fn ln(self) -> Self;
     /// Square root.
+    #[must_use]
     fn sqrt(self) -> Self;
     /// Sine.
+    #[must_use]
     fn sin(self) -> Self;
     /// Cosine.
+    #[must_use]
     fn cos(self) -> Self;
     /// Absolute value.
+    #[must_use]
     fn abs(self) -> Self;
     /// Raise to a constant `f64` power.
+    #[must_use]
     fn powf(self, p: f64) -> Self;
     /// Raise to a `Self`-typed power (AD-through-AD).
+    #[must_use]
     fn pows(self, p: Self) -> Self;
     /// Component-wise maximum.
+    #[must_use]
     fn max_val(self, other: Self) -> Self;
     /// Component-wise minimum.
+    #[must_use]
     fn min_val(self, other: Self) -> Self;
 
     // -- Eager arithmetic (always returns `Self`) ----------------------------
@@ -62,14 +72,19 @@ pub trait Scalar:
     // for generic code (e.g. `Complex<T>`) that cannot work with lazy trees.
 
     /// Eager addition.
+    #[must_use]
     fn add_val(self, other: Self) -> Self;
     /// Eager subtraction.
+    #[must_use]
     fn sub_val(self, other: Self) -> Self;
     /// Eager multiplication.
+    #[must_use]
     fn mul_val(self, other: Self) -> Self;
     /// Eager division.
+    #[must_use]
     fn div_val(self, other: Self) -> Self;
     /// Eager negation.
+    #[must_use]
     fn neg_val(self) -> Self;
 }
 
@@ -100,43 +115,43 @@ impl Scalar for f64 {
     }
     #[inline]
     fn exp(self) -> Self {
-        f64::exp(self)
+        Self::exp(self)
     }
     #[inline]
     fn ln(self) -> Self {
-        f64::ln(self)
+        Self::ln(self)
     }
     #[inline]
     fn sqrt(self) -> Self {
-        f64::sqrt(self)
+        Self::sqrt(self)
     }
     #[inline]
     fn sin(self) -> Self {
-        f64::sin(self)
+        Self::sin(self)
     }
     #[inline]
     fn cos(self) -> Self {
-        f64::cos(self)
+        Self::cos(self)
     }
     #[inline]
     fn abs(self) -> Self {
-        f64::abs(self)
+        Self::abs(self)
     }
     #[inline]
     fn powf(self, p: f64) -> Self {
-        f64::powf(self, p)
+        Self::powf(self, p)
     }
     #[inline]
     fn pows(self, p: Self) -> Self {
-        f64::powf(self, p)
+        Self::powf(self, p)
     }
     #[inline]
     fn max_val(self, o: Self) -> Self {
-        f64::max(self, o)
+        Self::max(self, o)
     }
     #[inline]
     fn min_val(self, o: Self) -> Self {
-        f64::min(self, o)
+        Self::min(self, o)
     }
     #[inline]
     fn add_val(self, other: Self) -> Self {
@@ -164,8 +179,9 @@ impl Scalar for f64 {
 //  InnerScalar — Scalar + arithmetic ops (only f64 and ADForward)
 // ═══════════════════════════════════════════════════════════════════════════
 
-/// A [`Scalar`] that also supports the standard arithmetic operators
-/// with `Output = Self`. This is satisfied by the *inner* scalar types
+/// A [`Scalar`] that also supports the standard arithmetic operators.
+///
+/// Requires `Output = Self`. This is satisfied by the *inner* scalar types
 /// (`f64`, [`ADForward`](super::forward::ADForward)) but **not** by
 /// [`Dual<T>`](super::dual::Dual) (whose operators return expression-template
 /// types).

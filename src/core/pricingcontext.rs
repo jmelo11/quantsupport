@@ -91,7 +91,7 @@ impl PricingContext {
 
     /// Sets the base currency of the context.
     #[must_use]
-    pub fn with_base_currency(mut self, base_currency: Currency) -> Self {
+    pub const fn with_base_currency(mut self, base_currency: Currency) -> Self {
         self.base_currency = base_currency;
         self
     }
@@ -99,7 +99,7 @@ impl PricingContext {
     /// Sets the base collateral remuneration index.
     #[must_use]
     pub fn with_base_index(mut self, base_index: MarketIndex) -> Self {
-        self.base_index = base_index.clone();
+        self.base_index = base_index;
         self
     }
 
@@ -154,7 +154,9 @@ impl PricingContext {
     }
 
     /// Placeholder for one-time initialisation (pre-loading caches, etc.).
-    #[must_use]
+    ///
+    /// # Errors
+    /// Returns an error if bootstrapping or volatility surface construction fails.
     pub fn initialize(&mut self) -> Result<()> {
         // Bootstrap discount curves.
         let policy = BootstrapDiscountPolicy::new(self.base_index.clone(), self.base_currency);

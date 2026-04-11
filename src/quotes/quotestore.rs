@@ -8,19 +8,10 @@ use crate::{
 };
 
 /// Provider of market data loaded from quotes.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Default)]
 pub struct QuoteStore {
     reference_date: Date,
     quotes: HashMap<String, Quote>,
-}
-
-impl Default for QuoteStore {
-    fn default() -> Self {
-        Self {
-            reference_date: Date::default(),
-            quotes: HashMap::new(),
-        }
-    }
 }
 
 impl QuoteStore {

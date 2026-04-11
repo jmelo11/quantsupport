@@ -6,6 +6,7 @@ use crate::{currencies::currency::Currency, time::date::Date};
 ///   The context will triangulate to the reporting currency if needed.
 /// - **One currency** (`base` only, `quote = None`): the cashflow pays in `base`.
 ///   The context resolves the conversion to the reporting currency.
+#[derive(Clone)]
 pub struct FxRequest {
     base: Currency,
     quote: Option<Currency>,

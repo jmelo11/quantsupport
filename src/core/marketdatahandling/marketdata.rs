@@ -15,6 +15,7 @@ use crate::{
 /// Request for market data, including constructed elements, fixings, and an optional list
 /// of model parameter sets that the provider may inspect when fulfilling the request.
 #[derive(Default)]
+#[allow(clippy::struct_field_names)]
 pub struct MarketDataRequest {
     constructed_elements_request: Option<Vec<ConstructedElementRequest>>,
     fixings_request: Option<Vec<FixingRequest>>,
@@ -32,7 +33,7 @@ impl MarketDataRequest {
         Self {
             constructed_elements_request,
             fixings_request,
-            fx_request: fx_request,
+            fx_request,
         }
     }
 
@@ -92,7 +93,7 @@ impl MarketData {
     /// Creates a new [`MarketData`] with the specified fixings, constructed elements, and model
     /// parameter sets.
     #[must_use]
-    pub fn new(
+    pub const fn new(
         fixings: HashMap<MarketIndex, BTreeMap<Date, f64>>,
         constructed_elements: ConstructedElementStore,
     ) -> Self {

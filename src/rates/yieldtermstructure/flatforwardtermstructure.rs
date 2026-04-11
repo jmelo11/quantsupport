@@ -130,11 +130,23 @@ impl InterestRatesTermStructure<f64> for FlatForwardTermStructure<f64> {
 
     fn discount_factor_from_time(&self, t: f64) -> Result<f64> {
         if t < 0.0 {
-            return Err(QSError::InvalidValueErr(
-                "Time must be non-negative".into(),
-            ));
+            return Err(QSError::InvalidValueErr("Time must be non-negative".into()));
         }
         Ok(1.0 / self.rate.compound_factor_from_yf(t))
+    }
+
+    fn forward_rate_from_time(&self, start: f64, end: f64) -> Result<f64> {
+        if (end - start).abs() < 1e-14 {
+            // Instantaneous forward rate: use numerical limit
+            let eps = 1e-8;
+            let df_s = self.discount_factor_from_time(start)?;
+            let df_e = self.discount_factor_from_time(start + eps)?;
+            return Ok((df_s / df_e - 1.0) / eps);
+        }
+        let df_start = self.discount_factor_from_time(start)?;
+        let df_end = self.discount_factor_from_time(end)?;
+        let fwd = (df_start / df_end - 1.0) / (end - start);
+        Ok(fwd)
     }
 }
 
@@ -180,12 +192,24 @@ impl InterestRatesTermStructure<DualFwd> for FlatForwardTermStructure<DualFwd> {
 
     fn discount_factor_from_time(&self, t: f64) -> Result<DualFwd> {
         if t < 0.0 {
-            return Err(QSError::InvalidValueErr(
-                "Time must be non-negative".into(),
-            ));
+            return Err(QSError::InvalidValueErr("Time must be non-negative".into()));
         }
         let cf = self.rate.compound_factor_from_yf(t);
         Ok((Const::one() / cf).into())
+    }
+
+    fn forward_rate_from_time(&self, start: f64, end: f64) -> Result<DualFwd> {
+        if (end - start).abs() < 1e-14 {
+            let eps = 1e-8;
+            let df_s = self.discount_factor_from_time(start)?;
+            let df_e = self.discount_factor_from_time(start + eps)?;
+            let fwd = (df_s / df_e - 1.0) / eps;
+            return Ok(fwd.into());
+        }
+        let df_start = self.discount_factor_from_time(start)?;
+        let df_end = self.discount_factor_from_time(end)?;
+        let fwd = (df_start / df_end - 1.0) / (end - start);
+        Ok(fwd.into())
     }
 }
 

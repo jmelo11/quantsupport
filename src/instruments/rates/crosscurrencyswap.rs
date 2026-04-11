@@ -9,6 +9,8 @@ use crate::{
     indices::marketindex::MarketIndex,
     instruments::cashflows::leg::Leg,
     time::date::Date,
+    utils::errors::Result,
+    xva::{contigentclaim::ContingentClaim, makecontigentclaim::IntoContingentClaims},
 };
 
 /// A [`FixFloatCrossCurrencySwap`] represents a swap with legs in different currencies.
@@ -167,6 +169,21 @@ where
 
     fn side(&self) -> Side {
         self.side
+    }
+}
+
+impl FixFloatCrossCurrencySwapTrade<f64> {
+    /// Decomposes the cross-currency swap trade into contingent claims
+    /// using the instrument's own identifier as the trade id.
+    ///
+    /// # Errors
+    /// Returns an error if claim construction fails.
+    pub fn into_contingent_claims(&self) -> Result<Vec<ContingentClaim>> {
+        let trade_id = self.instrument().identifier();
+        self.instrument()
+            .legs()
+            .to_vec()
+            .into_contingent_claims(&trade_id)
     }
 }
 

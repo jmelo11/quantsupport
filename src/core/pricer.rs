@@ -54,11 +54,15 @@ pub trait Pricer: Send + Sync {
     fn discount_policy(&self) -> Option<&Self::Policy>;
 }
 
-/// The [`ErasedPricer`] trait provides a type-erased interface for evaluating trades without requiring compile-time knowledge
-/// of the specific pricer type. This allows for dynamic dispatch of pricers based on
-/// the type of trade being evaluated, enabling greater flexibility in the evaluation process.
+/// The [`ErasedPricer`] trait provides a type-erased interface for evaluating trades.
+///
+/// It removes the need for compile-time knowledge of the specific pricer type,
+/// allowing dynamic dispatch based on the trade type being evaluated.
 pub trait ErasedPricer: Send + Sync {
     /// Evaluates the given trade using the pricer's logic, without requiring knowledge of the specific trade type at compile time.
+    ///
+    /// # Errors
+    /// Returns an error if the trade type is unsupported or evaluation fails.
     ///
     /// ## Arguments
     /// * `trade`: a reference to the trade to be evaluated, provided as a trait object of type `dyn Any`.

@@ -23,7 +23,7 @@ pub struct VolatilitySurfaceBuilder {
 impl VolatilitySurfaceBuilder {
     /// Creates a new builder from a list of surface specifications.
     #[must_use]
-    pub fn new(specs: Vec<VolatilitySurfaceConfiguration>) -> Self {
+    pub const fn new(specs: Vec<VolatilitySurfaceConfiguration>) -> Self {
         Self { specs }
     }
 
@@ -52,6 +52,7 @@ impl VolatilitySurfaceBuilder {
         Ok(surfaces)
     }
 
+    #[allow(clippy::unused_self)]
     fn build_one(
         &self,
         spec: &VolatilitySurfaceConfiguration,

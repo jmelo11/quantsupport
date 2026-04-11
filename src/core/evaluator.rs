@@ -25,7 +25,9 @@ impl Evaluator {
     }
 
     /// Evaluates the given trade using the registered models and pricers, returning the evaluation results.
-    #[must_use]
+    ///
+    /// # Errors
+    /// Returns an error if no pricer is registered for the trade type or if evaluation fails.
     pub fn evaluate(
         &self,
         trade: &dyn Any,
@@ -33,13 +35,13 @@ impl Evaluator {
         context: &PricingContext,
     ) -> Result<EvaluationResults> {
         let trade_type_id = trade.type_id();
-        if let Some(pricer) = self.pricers.get(&trade_type_id) {
-            pricer.evaluate_erased(trade, requests, context)
-        } else {
-            Err(QSError::NotFoundErr(format!(
-                "No pricer registered for trade type: {:?}",
-                trade_type_id
-            )))
-        }
+        self.pricers.get(&trade_type_id).map_or_else(
+            || {
+                Err(QSError::NotFoundErr(format!(
+                    "No pricer registered for trade type: {trade_type_id:?}"
+                )))
+            },
+            |pricer| pricer.evaluate_erased(trade, requests, context),
+        )
     }
 }

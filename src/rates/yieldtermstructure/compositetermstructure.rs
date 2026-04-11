@@ -82,6 +82,13 @@ impl InterestRatesTermStructure<f64> for CompositeTermStructure<f64> {
         let base_df = self.base_curve.borrow().discount_factor_from_time(t)?;
         Ok(spread_df * base_df)
     }
+
+    fn forward_rate_from_time(&self, start: f64, end: f64) -> Result<f64> {
+        let df_start = self.discount_factor_from_time(start)?;
+        let df_end = self.discount_factor_from_time(end)?;
+        let fwd = (df_start / df_end - 1.0) / (end - start);
+        Ok(fwd)
+    }
 }
 
 impl InterestRatesTermStructure<DualFwd> for CompositeTermStructure<DualFwd> {
@@ -122,6 +129,13 @@ impl InterestRatesTermStructure<DualFwd> for CompositeTermStructure<DualFwd> {
         let spread_df = self.spread_curve.borrow().discount_factor_from_time(t)?;
         let base_df = self.base_curve.borrow().discount_factor_from_time(t)?;
         Ok((spread_df * base_df).into())
+    }
+
+    fn forward_rate_from_time(&self, start: f64, end: f64) -> Result<DualFwd> {
+        let df_start = self.discount_factor_from_time(start)?;
+        let df_end = self.discount_factor_from_time(end)?;
+        let fwd = (df_start / df_end - DualFwd::one()) / DualFwd::new(end - start);
+        Ok(fwd.into())
     }
 }
 

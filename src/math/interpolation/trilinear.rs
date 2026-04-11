@@ -24,6 +24,7 @@ impl TrilinearInterpolator {
     /// Returns `None` when the query falls outside the grid or the grid
     /// has fewer than two unique values along any axis.
     #[must_use]
+    #[allow(clippy::similar_names)]
     pub fn interpolate<T: BilinearValue>(
         x: f64,
         y: f64,

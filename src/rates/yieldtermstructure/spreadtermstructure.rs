@@ -13,17 +13,16 @@ use crate::{
 /// A term structure that represents the continuously-compounded zero-rate
 /// spread between two curves.
 ///
-/// Given a *target* curve and a *base* curve the spread at each tenor $t_i$ is:
-/// $$
-///   s(t_i) = -\frac{\ln\bigl(\text{DF}_{\text{target}}(t_i)
-///               / \text{DF}_{\text{base}}(t_i)\bigr)}{t_i}
-/// $$
+/// Given a *target* curve and a *base* curve the spread at each tenor `t_i` is:
+/// ```text
+///   s(t_i) = -ln(DF_target(t_i) / DF_base(t_i)) / t_i
+/// ```
 ///
-/// The discount factor at an arbitrary time $t$ is obtained by interpolating
+/// The discount factor at an arbitrary time `t` is obtained by interpolating
 /// the spread and applying:
-/// $$
-///   \text{DF}_{\text{spread}}(t) = e^{-s(t)\,t}
-/// $$
+/// ```text
+///   DF_spread(t) = exp(-s(t) * t)
+/// ```
 ///
 /// When built with `T = DualFwd`, the spread values live on the AD tape and
 /// sensitivities to the spread can be extracted via the [`Pillars`] trait.
@@ -83,7 +82,7 @@ impl<T: Scalar> SpreadTermStructure<T> {
 
     /// Returns the reference date of the term structure.
     #[must_use]
-    pub fn ref_date(&self) -> Date {
+    pub const fn ref_date(&self) -> Date {
         self.reference_date
     }
 }
@@ -133,7 +132,7 @@ impl SpreadTermStructure<f64> {
         })
     }
 
-    /// Converts this f64 spread term structure into a DualFwd version,
+    /// Converts this f64 spread term structure into a `DualFwd` version,
     /// wrapping every spread value as a new [`DualFwd`].
     #[must_use]
     pub fn to_dual(&self) -> SpreadTermStructure<DualFwd> {
@@ -188,6 +187,13 @@ impl InterestRatesTermStructure<f64> for SpreadTermStructure<f64> {
             .interpolator
             .interpolate(t, &self.year_fractions, &self.spreads, true)?;
         Ok((-spread * t).exp())
+    }
+
+    fn forward_rate_from_time(&self, start: f64, end: f64) -> Result<f64> {
+        let df_start = self.discount_factor_from_time(start)?;
+        let df_end = self.discount_factor_from_time(end)?;
+        let fwd = (df_start / df_end - 1.0) / (end - start);
+        Ok(fwd)
     }
 }
 
@@ -245,6 +251,13 @@ impl InterestRatesTermStructure<DualFwd> for SpreadTermStructure<DualFwd> {
             .interpolator
             .interpolate(yf, &tmp_yfs, &self.spreads, true)?;
         Ok((DualFwd::new(0.0) - spread * DualFwd::new(t)).exp().into())
+    }
+
+    fn forward_rate_from_time(&self, start: f64, end: f64) -> Result<DualFwd> {
+        let df_start = self.discount_factor_from_time(start)?;
+        let df_end = self.discount_factor_from_time(end)?;
+        let fwd = (df_start / df_end - DualFwd::one()) / DualFwd::new(end - start);
+        Ok(fwd.into())
     }
 }
 

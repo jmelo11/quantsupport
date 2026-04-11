@@ -1,10 +1,19 @@
+//! Evaluation strategies for contingent claims.
+//!
+//! Each variant of [`ClaimEvaluationStrategy`] describes *how* a claim's
+//! raw value is computed from simulated market data before notional,
+//! discounting, and FX conversion are applied.
+
 use crate::{
     instruments::cashflows::payoffops::PayoffOps,
     time::{date::Date, daycounter::DayCounter},
     xva::contigentclaim::ContingentClaim,
 };
 
-/// How to reduce multiple observations into a single fixing.
+/// Aggregation method for reducing multiple observations into a single value.
+///
+/// Used by [`ClaimEvaluationStrategy::PathDependent`] to combine observations
+/// along a simulated path (e.g. arithmetic mean for Asian options).
 pub enum PathAggregator {
     ArithmeticMean,
     GeometricMean,
@@ -13,6 +22,20 @@ pub enum PathAggregator {
     Sum,
 }
 
+/// Defines how the raw value of a [`ContingentClaim`] is computed from
+/// simulated market data.
+///
+/// The evaluator calls [`ContingentClaim::evaluate`] which dispatches on
+/// this enum.  Each variant describes a different payoff structure:
+///
+/// | Variant | Typical use |
+/// |---------|-------------|
+/// | [`Deterministic`](Self::Deterministic) | Fixed coupons, redemptions |
+/// | [`LinearRate`](Self::LinearRate) | Floating-rate coupons |
+/// | [`NonLinearRate`](Self::NonLinearRate) | Caps, floors, digitals |
+/// | [`SpotPayoff`](Self::SpotPayoff) | Equity/FX options |
+/// | [`PathDependent`](Self::PathDependent) | Asian, lookback |
+/// | [`ExerciseContingent`](Self::ExerciseContingent) | Bermudans, callables |
 pub enum ClaimEvaluationStrategy {
     /// Known amount (fixed coupons, redemptions, disbursements).
     Deterministic { amount: f64 },

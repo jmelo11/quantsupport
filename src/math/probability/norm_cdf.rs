@@ -41,12 +41,12 @@ impl NormCDF for DualFwd {
     fn norm_cdf(self) -> Self {
         let one: Self = 1.0.into();
         let l = self.abs();
-        let k = one / (one + l.clone() * 0.231_641_9);
+        let k = one / (one + l * 0.231_641_9);
         let poly =
             ((((k * 1.330_274_429 - 1.821_255_978) * k + 1.781_477_937) * k - 0.356_563_782) * k
                 + 0.319_381_530)
                 * k;
-        let pdf = (-(l.clone() * l) * 0.5).exp() * 0.398_942_280_401_432_7;
+        let pdf = (-(l * l) * 0.5).exp() * 0.398_942_280_401_432_7;
         let w = one - pdf * poly;
 
         if self.value() < 0.0 {

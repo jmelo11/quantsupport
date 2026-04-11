@@ -38,6 +38,7 @@ pub struct CapFloor {
 impl CapFloor {
     /// Creates a new [`CapFloor`].
     #[must_use]
+    #[allow(clippy::too_many_arguments)]
     pub const fn new(
         identifier: String,
         caplet_floorlets: Vec<CapletFloorlet>,
@@ -92,12 +93,11 @@ impl CapFloor {
 
     /// Returns the last fixing date across all caplet/floorlets.
     #[must_use]
-    pub fn last_fixing_date(&self) -> Date {
+    pub fn last_fixing_date(&self) -> Option<Date> {
         self.caplet_floorlets
             .iter()
             .max_by(|x, y| x.fixing_date().cmp(&y.fixing_date()))
-            .unwrap()
-            .fixing_date()
+            .map(CapletFloorlet::fixing_date)
     }
 
     /// Return the start date of the cap/floor.

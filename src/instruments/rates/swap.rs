@@ -9,6 +9,8 @@ use crate::{
     indices::marketindex::MarketIndex,
     instruments::cashflows::leg::Leg,
     time::date::Date,
+    utils::errors::Result,
+    xva::makecontigentclaim::IntoContingentClaims,
 };
 
 /// A [`Swap`] represents a vanilla fixed-float interest rate swap with two legs:
@@ -190,5 +192,22 @@ impl From<SwapTrade<DualFwd>> for SwapTrade<f64> {
             value.notional,
             value.side,
         )
+    }
+}
+
+impl SwapTrade<f64> {
+    /// Decomposes the swap trade into contingent claims using the
+    /// instrument's own identifier as the trade id.
+    ///
+    /// # Errors
+    /// Returns an error if claim construction fails.
+    pub fn into_contingent_claims(
+        &self,
+    ) -> Result<Vec<crate::xva::contigentclaim::ContingentClaim>> {
+        let trade_id = self.instrument().identifier();
+        self.instrument()
+            .legs()
+            .to_vec()
+            .into_contingent_claims(&trade_id)
     }
 }

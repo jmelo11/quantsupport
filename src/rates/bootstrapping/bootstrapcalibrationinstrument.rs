@@ -19,10 +19,12 @@ pub struct BootstrapStepEvaluation<'a> {
 
 impl<'a> BootstrapStepEvaluation<'a> {
     /// Creates a new evaluator from a bootstrap step.
-    pub fn new(step: &'a BootstrapStep) -> Self {
-        Self { step: step }
+    #[must_use] 
+    pub const fn new(step: &'a BootstrapStep) -> Self {
+        Self { step }
     }
 
+    #[allow(clippy::unused_self)]
     fn leg_pv(
         &self,
         leg: &Leg<f64>,
@@ -83,7 +85,8 @@ impl<'a> BootstrapStepEvaluation<'a> {
     }
 }
 
-impl<'a> CalibrationInstrumentPricer for BootstrapStepEvaluation<'a> {
+impl CalibrationInstrumentPricer for BootstrapStepEvaluation<'_> {
+    #[allow(clippy::too_many_lines)]
     fn price(&self, instrument: &CalibrationInstrument) -> Result<f64> {
         match instrument.built() {
             CalibrationInstrumentType::FixedRateDeposit(deposit) => {
@@ -205,7 +208,7 @@ impl<'a> CalibrationInstrumentPricer for BootstrapStepEvaluation<'a> {
                 }
             }
             _ => {
-                return Err(QSError::InvalidValueErr(format!(
+                Err(QSError::InvalidValueErr(format!(
                     "Calibration Instrumet of type {:?} is not supported for curve bootstrapping.",
                     instrument.built()
                 )))
@@ -235,7 +238,7 @@ impl<'a> CalibrationInstrumentPricer for BootstrapStepEvaluation<'a> {
     }
 }
 
-impl<'a> CalibrationProcess for BootstrapStepEvaluation<'a> {}
+impl CalibrationProcess for BootstrapStepEvaluation<'_> {}
 
 // pub trait BootstrapCalibrationInstrument {
 //     /// Returns the market index associated with this instrument, if any.

@@ -185,14 +185,14 @@ impl HandleSensitivities<FxForwardTrade, FxForwardState> for FxForwardPricer {
             let element = state.get_discount_curve_element(&idx)?;
             for (label, value) in element.curve().pillars().into_iter().flatten() {
                 ids.push(label);
-                exposures.push(value.adjoint().map(|a| a.value()).unwrap_or(0.0));
+                exposures.push(value.adjoint().map_or(0.0, |a| a.value()));
             }
         }
 
         if let Some(store) = state.get_fx_store() {
             for (label, value) in store.pillars().into_iter().flatten() {
                 ids.push(label);
-                exposures.push(value.adjoint().map(|a| a.value()).unwrap_or(0.0));
+                exposures.push(value.adjoint().map_or(0.0, |a| a.value()));
             }
         }
 

@@ -27,6 +27,7 @@ pub enum Strike {
 
 impl Strike {
     /// Resolves the effective absolute strike given the current forward rate.
+    #[must_use] 
     pub fn resolve(self, forward_rate: f64) -> f64 {
         match self {
             Self::Absolute(k) => k,

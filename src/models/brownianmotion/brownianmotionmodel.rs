@@ -38,25 +38,28 @@ impl<T: Scalar> BrownianMotion<T> {
 
     /// Returns the spot price.
     #[must_use]
-    pub fn spot(&self) -> T {
+    pub const fn spot(&self) -> T {
         self.spot
     }
 
     /// Returns the risk-free rate.
     #[must_use]
-    pub fn rate(&self) -> T {
+    pub const fn rate(&self) -> T {
         self.rate
     }
 
     /// Returns the continuous dividend rate.
     #[must_use]
-    pub fn dividend_rate(&self) -> Option<&T> {
+    pub const fn dividend_rate(&self) -> Option<&T> {
         self.dividend_rate.as_ref()
     }
 }
 
 impl BrownianMotion<f64> {
     ///  Black call/put price from a forward (AD-enabled).
+    ///
+    /// # Errors
+    /// Returns an error if strike, volatility, or time to expiry are non-positive.
     pub fn closed_form_price(
         fwd: f64,
         strike: f64,
@@ -72,6 +75,9 @@ impl BrownianMotion<f64> {
     }
 
     /// Black-Scholes delta: ∂V/∂F (forward delta).
+    ///
+    /// # Errors
+    /// Returns an error if d₁/d₂ computation fails.
     pub fn delta(fwd: f64, strike: f64, vol: f64, tau: f64, is_call: bool) -> Result<f64> {
         let (d1, _) = d1_d2(fwd, strike, vol, tau)?;
         if is_call {
@@ -82,6 +88,9 @@ impl BrownianMotion<f64> {
     }
 
     /// Black-Scholes vega: ∂V/∂σ = F · φ(d₁) · √τ.
+    ///
+    /// # Errors
+    /// Returns an error if d₁/d₂ computation fails.
     pub fn vega(fwd: f64, strike: f64, vol: f64, tau: f64) -> Result<f64> {
         let (d1, _) = d1_d2(fwd, strike, vol, tau)?;
         let pdf_d1 = (-0.5 * d1 * d1).exp() * FRAC_1_SQRT_2PI;
@@ -89,6 +98,9 @@ impl BrownianMotion<f64> {
     }
 
     /// Black-Scholes rho: ∂V/∂r = K · τ · N(±d₂).
+    ///
+    /// # Errors
+    /// Returns an error if d₁/d₂ computation fails.
     pub fn rho(fwd: f64, strike: f64, vol: f64, tau: f64, is_call: bool) -> Result<f64> {
         let (_, d2) = d1_d2(fwd, strike, vol, tau)?;
         if is_call {
@@ -99,20 +111,26 @@ impl BrownianMotion<f64> {
     }
 
     /// Black-Scholes theta: ∂V/∂τ.
+    ///
+    /// # Errors
+    /// Returns an error if d₁/d₂ computation fails.
     pub fn theta(fwd: f64, strike: f64, vol: f64, tau: f64, is_call: bool) -> Result<f64> {
         let (d1, d2) = d1_d2(fwd, strike, vol, tau)?;
         let pdf_d1 = (-0.5 * d1 * d1).exp() * FRAC_1_SQRT_2PI;
         let term1 = -fwd * pdf_d1 * vol / (2.0 * tau.sqrt());
         if is_call {
-            Ok(term1 + strike * d2.norm_cdf())
+            Ok(strike.mul_add(d2.norm_cdf(), term1))
         } else {
-            Ok(term1 - strike * (-d2).norm_cdf())
+            Ok(strike.mul_add(-(-d2).norm_cdf(), term1))
         }
     }
 }
 
 impl BrownianMotion<DualFwd> {
     /// Undiscounted Black call/put price from a forward (AD-enabled).
+    ///
+    /// # Errors
+    /// Returns an error if strike or time to expiry are non-positive.
     pub fn closed_form_price(
         fwd: DualFwd,
         strike: f64,
@@ -128,6 +146,9 @@ impl BrownianMotion<DualFwd> {
     }
 
     /// Black-Scholes delta: ∂V/∂F (AD-enabled).
+    ///
+    /// # Errors
+    /// Returns an error if d₁/d₂ computation fails.
     pub fn delta(
         fwd: DualFwd,
         strike: f64,
@@ -145,6 +166,9 @@ impl BrownianMotion<DualFwd> {
     }
 
     /// Black-Scholes vega: ∂V/∂σ = F · φ(d₁) · √τ (AD-enabled).
+    ///
+    /// # Errors
+    /// Returns an error if d₁/d₂ computation fails.
     pub fn vega(fwd: DualFwd, strike: f64, vol: DualFwd, tau: f64) -> Result<DualFwd> {
         let (d1, _) = d1_d2_ad(fwd, strike, vol, tau)?;
         let pdf_d1 = (-d1 * d1 * 0.5).exp() * FRAC_1_SQRT_2PI;
@@ -152,6 +176,9 @@ impl BrownianMotion<DualFwd> {
     }
 
     /// Black-Scholes rho: ∂V/∂r = K · τ · N(±d₂) (AD-enabled).
+    ///
+    /// # Errors
+    /// Returns an error if d₁/d₂ computation fails.
     pub fn rho(
         fwd: DualFwd,
         strike: f64,
@@ -170,6 +197,9 @@ impl BrownianMotion<DualFwd> {
     }
 
     /// Black-Scholes theta: ∂V/∂τ (AD-enabled).
+    ///
+    /// # Errors
+    /// Returns an error if d₁/d₂ computation fails.
     pub fn theta(
         fwd: DualFwd,
         strike: f64,
@@ -202,7 +232,7 @@ impl PathGenerator<f64> for BrownianMotion<f64> {
             let t = times[i];
             let z = draws[i];
             let vol = self.vol_func.vol(t)?;
-            let drift = (self.rate - self.dividend_rate.unwrap_or(0.0)) * t - 0.5 * vol * vol * t;
+            let drift = (self.rate - self.dividend_rate.unwrap_or(0.0)).mul_add(t, -(0.5 * vol * vol * t));
             let diffusion = vol * z * t.sqrt();
             let log_return = drift + diffusion;
             let spot = prev_spot * log_return.exp();

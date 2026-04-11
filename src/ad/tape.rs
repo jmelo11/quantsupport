@@ -176,10 +176,10 @@ impl<T: TapeHolder> Default for Tape<T> {
 // ---------------------------------------------------------------------------
 
 impl TapeHolder for f64 {
-    fn with_tape<R>(f: impl FnOnce(&mut Tape<f64>) -> R) -> R {
+    fn with_tape<R>(f: impl FnOnce(&mut Tape<Self>) -> R) -> R {
         TAPE.with(|tc| {
             let mut t = tc.borrow_mut();
-            f(&mut *t)
+            f(&mut t)
         })
     }
 }

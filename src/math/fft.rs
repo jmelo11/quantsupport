@@ -35,12 +35,13 @@ pub struct Complex<T> {
 impl<T: Scalar> Complex<T> {
     /// Creates a new complex number.
     #[inline]
-    pub fn new(re: T, im: T) -> Self {
+    pub const fn new(re: T, im: T) -> Self {
         Self { re, im }
     }
 
     /// The complex zero.
     #[inline]
+    #[must_use] 
     pub fn zero() -> Self {
         Self {
             re: T::zero(),
@@ -54,7 +55,7 @@ impl<T: Scalar> std::ops::Add for Complex<T> {
     type Output = Self;
     #[inline]
     fn add(self, rhs: Self) -> Self {
-        Complex {
+        Self {
             re: self.re.add_val(rhs.re),
             im: self.im.add_val(rhs.im),
         }
@@ -66,7 +67,7 @@ impl<T: Scalar> std::ops::Sub for Complex<T> {
     type Output = Self;
     #[inline]
     fn sub(self, rhs: Self) -> Self {
-        Complex {
+        Self {
             re: self.re.sub_val(rhs.re),
             im: self.im.sub_val(rhs.im),
         }
@@ -78,7 +79,7 @@ impl<T: Scalar> std::ops::Mul for Complex<T> {
     type Output = Self;
     #[inline]
     fn mul(self, rhs: Self) -> Self {
-        Complex {
+        Self {
             re: self.re.mul_val(rhs.re).sub_val(self.im.mul_val(rhs.im)),
             im: self.re.mul_val(rhs.im).add_val(self.im.mul_val(rhs.re)),
         }
@@ -90,7 +91,7 @@ impl<T: Scalar> std::ops::Mul<T> for Complex<T> {
     type Output = Self;
     #[inline]
     fn mul(self, s: T) -> Self {
-        Complex {
+        Self {
             re: self.re.mul_val(s),
             im: self.im.mul_val(s),
         }
@@ -108,6 +109,7 @@ pub fn fft<T: Scalar>(data: &mut [Complex<T>]) -> Result<()> {
 }
 
 /// Shared core for forward / inverse FFT.
+#[allow(clippy::cast_precision_loss)]
 pub(crate) fn fft_core<T: Scalar>(data: &mut [Complex<T>], forward: bool) -> Result<()> {
     let n = data.len();
     if n <= 1 {

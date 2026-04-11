@@ -1,4 +1,4 @@
-use crate::ad::dual::DualFwd;
+use crate::ad::scalar::Scalar;
 use crate::utils::errors::Result;
 
 /// [`PayoffOps`] describes the set of possible mathematical operations that can be used to compute the payoff of a [`NonLinearCoupon`].
@@ -25,52 +25,24 @@ impl PayoffOps {
     ///
     /// ## Errors
     /// Returns an error if the payoff cannot be evaluated.
-    pub fn evaluate(&self, index_fixing: DualFwd) -> Result<DualFwd> {
+    pub fn eval<T: Scalar>(&self, index_fixing: T) -> Result<T> {
         match self {
-            Self::Max(left, right) => Ok(left
-                .evaluate(index_fixing)?
-                .max(right.evaluate(index_fixing)?)
-                .into()),
-            Self::Min(left, right) => Ok(left
-                .evaluate(index_fixing)?
-                .min(right.evaluate(index_fixing)?)
-                .into()),
+            Self::Max(left, right) => {
+                Ok(left.eval(index_fixing)?.max_val(right.eval(index_fixing)?))
+            }
+            Self::Min(left, right) => {
+                Ok(left.eval(index_fixing)?.min_val(right.eval(index_fixing)?))
+            }
             Self::Times(left, right) => {
-                Ok((left.evaluate(index_fixing)? * right.evaluate(index_fixing)?).into())
+                Ok(left.eval(index_fixing)?.mul_val(right.eval(index_fixing)?))
             }
             Self::Plus(left, right) => {
-                Ok((left.evaluate(index_fixing)? + right.evaluate(index_fixing)?).into())
+                Ok(left.eval(index_fixing)?.add_val(right.eval(index_fixing)?))
             }
             Self::Minus(left, right) => {
-                Ok((left.evaluate(index_fixing)? - right.evaluate(index_fixing)?).into())
+                Ok(left.eval(index_fixing)?.sub_val(right.eval(index_fixing)?))
             }
-            Self::Const(value) => Ok(DualFwd::new(*value)),
-            Self::Index => Ok(index_fixing),
-        }
-    }
-
-    /// Evaluates the payoff operation given an `f64` fixing.
-    ///
-    /// ## Errors
-    /// Returns an error if the payoff cannot be evaluated.
-    pub fn evaluate_f64(&self, index_fixing: f64) -> Result<f64> {
-        match self {
-            Self::Max(left, right) => Ok(left
-                .evaluate_f64(index_fixing)?
-                .max(right.evaluate_f64(index_fixing)?)),
-            Self::Min(left, right) => Ok(left
-                .evaluate_f64(index_fixing)?
-                .min(right.evaluate_f64(index_fixing)?)),
-            Self::Times(left, right) => {
-                Ok(left.evaluate_f64(index_fixing)? * right.evaluate_f64(index_fixing)?)
-            }
-            Self::Plus(left, right) => {
-                Ok(left.evaluate_f64(index_fixing)? + right.evaluate_f64(index_fixing)?)
-            }
-            Self::Minus(left, right) => {
-                Ok(left.evaluate_f64(index_fixing)? - right.evaluate_f64(index_fixing)?)
-            }
-            Self::Const(value) => Ok(*value),
+            Self::Const(value) => Ok(T::scalar(*value)),
             Self::Index => Ok(index_fixing),
         }
     }
