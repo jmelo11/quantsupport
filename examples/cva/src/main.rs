@@ -2,33 +2,14 @@ mod utils;
 
 use std::collections::HashMap;
 
-use quantsupport::{
-    ad::dual::DualFwd,
-    core::{pricingcontext::PricingContext, request::LegsProvider, trade::Side},
-    currencies::currency::Currency,
-    indices::marketindex::MarketIndex,
-    instruments::rates::{
-        makefloatfloatcrosscurrencyswap::MakeFloatFloatCrossCurrencySwap, makeswap::MakeSwap,
-        swap::SwapTrade,
-    },
-    quotes::fxstore::FxStore,
-    rates::{compounding::Compounding, interestrate::RateDefinition},
-    time::{
-        daycounter::DayCounter,
-        enums::{Frequency, TimeUnit},
-    },
-    xva::{
-        engine::{XvaEngine, XvaEngineConfig},
-        makecontigentclaim::IntoContingentClaims,
-    },
-};
+use quantsupport::prelude::*;
 
 use utils::{load_curve_specs, load_quotes};
 
 fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     // ── 1. Build PricingContext from market data ────────────────
-    let cwd = std::env::current_dir()?;
-    let data_dir = cwd.join("data");
+    let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let data_dir = manifest_dir.join("data");
 
     let quote_store = load_quotes(&data_dir.join("quotes.json"))?;
     let ref_date = quote_store.reference_date();
@@ -126,19 +107,19 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    println!("\nCurve pillar sensitivities (dCVA/dquote):");
+    println!("\nCurve pillar sensitivities (dXVA/dquote):");
     if let Some(ref sensitivities) = result.sensitivities {
         let mut sens = sensitivities.clone();
         sens.sort_by(|a, b| a.0.cmp(&b.0));
         for (label, value) in &sens {
-            if !label.starts_with("CVA.") && value.abs() > 1e-10 {
+            if !label.starts_with("CVA.") && !label.starts_with("FVA.") && value.abs() > 1e-10 {
                 println!("  {label:<30} = {value:>12.6}");
             }
         }
 
-        println!("\nCredit sensitivities:");
+        println!("\nCredit & funding sensitivities:");
         for (label, value) in &sens {
-            if label.starts_with("CVA.") {
+            if label.starts_with("CVA.") || label.starts_with("FVA.") {
                 println!("  {label:<30} = {value:>12.6}");
             }
         }

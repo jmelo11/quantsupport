@@ -13,7 +13,7 @@ fn std_normal(rng: &mut impl Rng) -> f64 {
 }
 
 fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
-    let data_dir = PathBuf::from("data");
+    let data_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("data");
 
     // 1. Load market data from JSON
     let quote_store = utils::load_quotes(&data_dir.join("quotes.json"))?;

@@ -50,6 +50,47 @@ pub fn load_curve_specs(path: &PathBuf) -> Result<Vec<CurveConfiguration>> {
     Ok(json.curve_specs)
 }
 
+/// Loads historical fixings from a JSON file into a [`FixingStore`].
+///
+/// Expected format:
+/// ```json
+/// { "SOFR": [{"date": "2025-05-12", "rate": 0.043}, ...], ... }
+/// ```
+pub fn load_fixings(
+    path: &PathBuf,
+) -> std::result::Result<FixingStore, Box<dyn std::error::Error>> {
+    let file =
+        File::open(path).map_err(|e| QSError::NotFoundErr(format!("{}: {e}", path.display())))?;
+    let reader = BufReader::new(file);
+    let json: HashMap<String, Vec<FixingRecord>> =
+        serde_json::from_reader(reader).map_err(|e| QSError::InvalidValueErr(e.to_string()))?;
+
+    let mut store = FixingStore::default();
+    for (index_name, records) in json {
+        let market_index = parse_market_index(&index_name)?;
+        for rec in records {
+            store.add_fixing(&market_index, rec.date, rec.rate);
+        }
+    }
+    Ok(store)
+}
+
+#[derive(serde::Deserialize)]
+struct FixingRecord {
+    date: Date,
+    rate: f64,
+}
+
+fn parse_market_index(name: &str) -> std::result::Result<MarketIndex, Box<dyn std::error::Error>> {
+    match name {
+        "SOFR" => Ok(MarketIndex::SOFR),
+        "ESTR" => Ok(MarketIndex::ESTR),
+        "SONIA" => Ok(MarketIndex::SONIA),
+        "ICP" => Ok(MarketIndex::ICP),
+        other => Err(format!("Unknown market index: {other}").into()),
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Bootstrapping
 // ---------------------------------------------------------------------------
@@ -97,18 +138,12 @@ pub fn extract_f64_curve(
     dfs.push(1.0_f64);
 
     for i in 1..=n_points {
-        let d = ref_date.advance(3 * i as i32, quantsupport::time::enums::TimeUnit::Months);
+        let d = ref_date.advance(3 * i as i32, TimeUnit::Months);
         let df = curve.discount_factor(d)?;
         dates.push(d);
         dfs.push(df.value());
     }
 
-    let ts = DiscountTermStructure::<f64>::new(
-        dates,
-        dfs,
-        dc,
-        quantsupport::math::interpolation::interpolator::Interpolator::LogLinear,
-        true,
-    )?;
+    let ts = DiscountTermStructure::<f64>::new(dates, dfs, dc, Interpolator::LogLinear, true)?;
     Ok(ts)
 }

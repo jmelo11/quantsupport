@@ -5,7 +5,8 @@ use std::path::PathBuf;
 
 fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     // 1. Load quotes from JSON.
-    let path = PathBuf::from("data/quotes.json");
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let path = manifest_dir.join("data/quotes.json");
     let quote_store = utils::load_quotes(&path)?;
 
     // 2. Collect all quote identifiers for the surface configuration.

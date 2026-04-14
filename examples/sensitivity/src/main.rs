@@ -9,9 +9,12 @@ use output::{extract_curve_nodes, CurveOutput, OutputResults, ProductOutput};
 use pricing::price_product;
 
 fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
-    let cwd = std::env::current_dir()?;
-    let data_dir = cwd.join("examples/sensitivity/data");
-    println!("Loading market data and curve specs from {}", data_dir.display());
+    let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let data_dir = manifest_dir.join("data");
+    println!(
+        "Loading market data and curve specs from {}",
+        data_dir.display()
+    );
     // ── 1. Load market data and curve specs ───────────────────────────
     let quote_store = load_quotes(&data_dir.join("quotes.json"))?;
     let rd = quote_store.reference_date();

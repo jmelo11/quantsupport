@@ -103,8 +103,8 @@ fn print_bootstrap_results(
 // ---------------------------------------------------------------------------
 
 fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
-    let cwd = std::env::current_dir()?;
-    let data_dir = cwd.join("examples/bootstrap/data");
+    let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let data_dir = manifest_dir.join("data");
 
     // 1. Load market quotes
     let quote_store = load_quotes(&data_dir.join("quotes.json"))?;

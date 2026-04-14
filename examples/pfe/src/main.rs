@@ -1,48 +1,14 @@
 mod utils;
-
+use quantsupport::prelude::*;
 use std::collections::HashMap;
+use utils::{bootstrap_curves, extract_f64_curve, load_curve_specs, load_fixings, load_quotes};
 
-use quantsupport::{
-    core::{collateral::SingleCurveCSADiscountPolicy, trade::Side},
-    currencies::currency::Currency,
-    indices::marketindex::MarketIndex,
-    instruments::{
-        fx::{
-            fxforward::FxForwardTrade,
-            fxoption::{FxOptionTrade, FxOptionType},
-            makefxforward::MakeFxForward,
-            makefxoption::MakeFxOption,
-        },
-        rates::{
-            crosscurrencyswap::FixFloatCrossCurrencySwapTrade,
-            makefixfloatcrosscurrencyswap::MakeFixFloatCrossCurrencySwap, makeswap::MakeSwap,
-            swap::SwapTrade,
-        },
-    },
-    models::lgm::{
-        lgmcomponents::{LgmFxModel, LgmRateModel},
-        lgmmarketmodel::LgmMarketModel,
-    },
-    rates::{compounding::Compounding, interestrate::RateDefinition},
-    time::{
-        daycounter::DayCounter,
-        enums::{Frequency, TimeUnit},
-        schedule::MakeSchedule,
-    },
-    utils::plot::Plot,
-    xva::visitors::{
-        exposureevaluator::ExposureEvaluator, inspector::Inspector, marketmodel::MarketModel,
-    },
-};
-
-use utils::{bootstrap_curves, extract_f64_curve, load_curve_specs, load_quotes};
-
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     let dc = DayCounter::Actual365;
 
     // ── 1. Load market data and bootstrap curves ────────────────
-    let cwd = std::env::current_dir()?;
-    let data_dir = cwd.join("./data");
+    let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let data_dir = manifest_dir.join("data");
 
     let quote_store = load_quotes(&data_dir.join("quotes.json"))?;
     let ref_date = quote_store.reference_date();
@@ -63,13 +29,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let eur_curve = extract_f64_curve(estr_elem, ref_date, 35)?;
     println!("SOFR and ESTR curves bootstrapped.");
 
+    // ── 1b. Load historical fixings ─────────────────────────────
+    let fixing_store = load_fixings(&data_dir.join("fixings.json"))?;
+    println!("Loaded SOFR fixings for fixing resolution.");
+
     // ── 2. Build trades ─────────────────────────────────────────
 
-    // Trade 1 — 5Y USD IRS (receive fixed @ 3.78%, pay SOFR)
+    // Trade 1 — 5Y USD IRS started 6 months ago (receive fixed @ 3.78%, pay SOFR)
+    //           Some coupons are already in the past and need fixings.
+    let irs_start = ref_date.advance(-6, TimeUnit::Months);
     let swap = MakeSwap::<f64>::default()
         .with_identifier("USD_IRS_5Y".to_string())
-        .with_start_date(ref_date)
-        .with_maturity_date(ref_date.advance(5, TimeUnit::Years))
+        .with_start_date(irs_start)
+        .with_maturity_date(irs_start.advance(5, TimeUnit::Years))
         .with_fixed_rate(0.0378)
         .with_notional(10_000_000.0)
         .with_rate_definition(RateDefinition::new(
@@ -84,7 +56,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_floating_leg_frequency(Frequency::Semiannual)
         .build()
         .expect("Failed to build swap");
-    let irs_trade = SwapTrade::new(swap, ref_date, 10_000_000.0, Side::LongReceive);
+    let irs_trade = SwapTrade::new(swap, irs_start, 10_000_000.0, Side::LongReceive);
 
     // Trade 2 — 1Y EUR/USD FX Forward (buy EUR / sell USD at 1.10)
     let fx_fwd = MakeFxForward::default()
@@ -171,8 +143,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // ── 4. Inspector: assign indices & collect simulation requests
     let discount_policy = SingleCurveCSADiscountPolicy::new(MarketIndex::SOFR, Currency::USD);
-    let mut inspector = Inspector::with_discount_policy(Box::new(discount_policy));
-    inspector.visit(&mut all_claims);
+    let fixing_pp = FixingPreprocessor::new(ref_date, DayCounter::Actual360, fixing_store);
+    let mut inspector = PreprocessorExecutor::with_discount_policy(Box::new(discount_policy))
+        .with_preprocessor(Box::new(fixing_pp));
+    inspector.visit(vec![all_claims.as_mut_slice()]);
 
     let requests: Vec<_> = inspector.requests().to_vec();
 
@@ -267,7 +241,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // ── 9. Plot exposure profiles ───────────────────────────────
-    let example_dir = data_dir.join("..");
+    let example_dir = &manifest_dir;
     for cube in &result.cubes {
         let filename = format!("exposure_{}.png", cube.trade_id.to_lowercase());
         let plot_path = example_dir.join(&filename);

@@ -2,29 +2,7 @@ use std::collections::HashMap;
 
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use pprof::criterion::{Output, PProfProfiler};
-use quantsupport::{
-    core::{
-        collateral::SingleCurveCSADiscountPolicy, instrument::Instrument, trade::Side, trade::Trade,
-    },
-    currencies::currency::Currency,
-    indices::marketindex::MarketIndex,
-    instruments::rates::{makeswap::MakeSwap, swap::SwapTrade},
-    math::interpolation::interpolator::Interpolator,
-    models::lgm::{lgmcomponents::LgmRateModel, lgmmarketmodel::LgmMarketModel},
-    rates::{
-        compounding::Compounding, interestrate::RateDefinition,
-        yieldtermstructure::discounttermstructure::DiscountTermStructure,
-    },
-    time::{
-        date::Date,
-        daycounter::DayCounter,
-        enums::{Frequency, TimeUnit},
-        schedule::MakeSchedule,
-    },
-    xva::visitors::{
-        exposureevaluator::ExposureEvaluator, inspector::Inspector, marketmodel::MarketModel,
-    },
-};
+use quantsupport::prelude::*;
 
 /// Build a flat f64 discount curve at the given continuously-compounded rate.
 fn flat_curve(ref_date: Date, rate: f64, max_years: u32) -> DiscountTermStructure<f64> {
@@ -122,7 +100,7 @@ fn run_pfe(trades: &[SwapTrade<f64>], curve: &DiscountTermStructure<f64>, ref_da
 
     // 2. Inspector: assign indices & collect simulation requests
     let discount_policy = SingleCurveCSADiscountPolicy::new(MarketIndex::SOFR, Currency::USD);
-    let mut inspector = Inspector::with_discount_policy(Box::new(discount_policy));
+    let mut inspector = PreprocessorExecutor::with_discount_policy(Box::new(discount_policy));
     inspector.visit(&mut all_claims);
     let requests: Vec<_> = inspector.requests().to_vec();
 
@@ -157,7 +135,7 @@ fn run_pfe(trades: &[SwapTrade<f64>], curve: &DiscountTermStructure<f64>, ref_da
     let results = evaluator.evaluate(&trades_map);
 
     // Prevent dead-code elimination
-    assert!(!results.is_empty());
+    assert!(results.is_ok());
 }
 
 fn bench_swap_pfe(c: &mut Criterion) {

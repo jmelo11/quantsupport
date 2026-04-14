@@ -32,5 +32,6 @@
     "seed": 42,
     "frequency": "Monthly",
     "credit_spread": 0.01,
-    "recovery": 0.40
+    "recovery": 0.40,
+    "funding_spread": 0.005
 }

@@ -5,7 +5,6 @@ use std::path::PathBuf;
 use std::str::FromStr;
 
 use quantsupport::prelude::*;
-use quantsupport::quotes::fxstore::FxStore;
 use serde::Deserialize;
 
 // ---------------------------------------------------------------------------
