@@ -185,6 +185,13 @@ impl<'a, T: Scalar + 'static> ExposureEvaluator<'a, T> {
     }
 }
 
+/// Callback type for [`XvaModelSetup::with_model`].
+///
+/// Receives a thread-local `MarketModel<DualFwd>` and the tracked
+/// `(label, DualFwd)` leaves, returns an arbitrary `Result<R>`.
+pub type ModelCallback<'a, R> =
+    dyn FnMut(&dyn MarketModel<DualFwd>, &[(String, DualFwd)]) -> Result<R> + 'a;
+
 /// Per-thread model construction for the Savine parallel AAD loop.
 ///
 /// Each rayon thread calls [`with_model`](Self::with_model) once. The
@@ -207,11 +214,7 @@ pub trait XvaModelSetup: Send + Sync {
     ///   curve sensitivities after the backward pass.
     /// # Errors
     /// Returns an error if model construction or callback execution fails.
-    fn with_model<R>(
-        &self,
-        dates: &[Date],
-        callback: &mut dyn FnMut(&dyn MarketModel<DualFwd>, &[(String, DualFwd)]) -> Result<R>,
-    ) -> Result<R>;
+    fn with_model<R>(&self, dates: &[Date], callback: &mut ModelCallback<'_, R>) -> Result<R>;
 }
 
 /// Per-thread accumulation result for the parallel AAD loop.
@@ -609,11 +612,7 @@ mod tests {
             self.n_paths
         }
 
-        fn with_model<R>(
-            &self,
-            dates: &[Date],
-            callback: &mut dyn FnMut(&dyn MarketModel<DualFwd>, &[(String, DualFwd)]) -> Result<R>,
-        ) -> Result<R> {
+        fn with_model<R>(&self, dates: &[Date], callback: &mut ModelCallback<'_, R>) -> Result<R> {
             let dfs: Vec<DualFwd> = self
                 .discount_factors
                 .iter()

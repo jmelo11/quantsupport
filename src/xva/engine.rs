@@ -26,7 +26,7 @@ use crate::{
         contigentclaim::ContingentClaim,
         nettingset::NettingSet,
         visitors::{
-            exposureevaluator::{evaluate_with_xva, ExposureResult, XvaModelSetup},
+            exposureevaluator::{evaluate_with_xva, ExposureResult, ModelCallback, XvaModelSetup},
             fixingpreprocessor::FixingPreprocessor,
             marketmodel::MarketModel,
             preprocessorexecutor::{PreprocessorExecutor, SimulationRequest},
@@ -326,11 +326,7 @@ impl XvaModelSetup for InternalModelSetup {
         self.n_paths
     }
 
-    fn with_model<R>(
-        &self,
-        dates: &[Date],
-        callback: &mut dyn FnMut(&dyn MarketModel<DualFwd>, &[(String, DualFwd)]) -> Result<R>,
-    ) -> Result<R> {
+    fn with_model<R>(&self, dates: &[Date], callback: &mut ModelCallback<'_, R>) -> Result<R> {
         // 1. Build DualFwd curves and collect leaves.
         let mut built_curves: Vec<(MarketIndex, DiscountTermStructure<DualFwd>)> = Vec::new();
         let mut all_leaves: Vec<(String, DualFwd)> = Vec::new();
