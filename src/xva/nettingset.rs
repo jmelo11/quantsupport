@@ -19,6 +19,7 @@ pub struct NettingSet {
 
 impl NettingSet {
     /// Creates a new netting set from a vector of claims and a discount policy.
+    #[must_use]
     pub fn new(claims: Vec<ContingentClaim>, discount_policy: Box<dyn DiscountPolicy>) -> Self {
         Self {
             claims,
@@ -39,11 +40,12 @@ impl NettingSet {
 
     /// Returns a mutable reference to the underlying claim vector
     /// (needed for compression which may change the length).
-    pub(crate) fn claims_vec_mut(&mut self) -> &mut Vec<ContingentClaim> {
+    pub(crate) const fn claims_vec_mut(&mut self) -> &mut Vec<ContingentClaim> {
         &mut self.claims
     }
 
     /// Returns a reference to the discount policy.
+    #[must_use]
     pub fn discount_policy(&self) -> &dyn DiscountPolicy {
         &*self.discount_policy
     }
@@ -57,19 +59,20 @@ impl NettingSet {
     }
 
     /// Consumes the netting set and returns its claims.
+    #[must_use]
     pub fn into_claims(self) -> Vec<ContingentClaim> {
         self.claims
     }
 
     /// Number of claims in this netting set.
     #[must_use]
-    pub fn len(&self) -> usize {
+    pub const fn len(&self) -> usize {
         self.claims.len()
     }
 
     /// Whether the netting set is empty.
     #[must_use]
-    pub fn is_empty(&self) -> bool {
+    pub const fn is_empty(&self) -> bool {
         self.claims.is_empty()
     }
 }

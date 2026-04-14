@@ -88,8 +88,13 @@ impl<T> BlockList<T> {
     /// # Panics
     /// Panics if `index >= self.len`.
     #[inline]
+    #[must_use]
     pub fn get(&self, index: usize) -> &T {
-        assert!(index < self.len, "BlockList index {index} out of bounds (len {})", self.len);
+        assert!(
+            index < self.len,
+            "BlockList index {index} out of bounds (len {})",
+            self.len
+        );
         let block_idx = index / self.block_cap;
         let slot_idx = index % self.block_cap;
         // SAFETY: all slots in [0..len) have been initialised via `alloc`.
@@ -102,7 +107,11 @@ impl<T> BlockList<T> {
     /// Panics if `index >= self.len`.
     #[inline]
     pub fn get_mut(&mut self, index: usize) -> &mut T {
-        assert!(index < self.len, "BlockList index {index} out of bounds (len {})", self.len);
+        assert!(
+            index < self.len,
+            "BlockList index {index} out of bounds (len {})",
+            self.len
+        );
         let block_idx = index / self.block_cap;
         let slot_idx = index % self.block_cap;
         // SAFETY: all slots in [0..len) have been initialised via `alloc`.

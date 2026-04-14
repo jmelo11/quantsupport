@@ -211,7 +211,7 @@ pub struct LgmFxModel<'a, T: Scalar> {
 impl<'a, T: Scalar> LgmFxModel<'a, T> {
     /// Creates a new LGM FX model.
     #[must_use]
-    pub fn new(
+    pub const fn new(
         domestic: &'a LgmRateModel<'a, T>,
         foreign: &'a LgmRateModel<'a, T>,
         fx_vol: T,
@@ -229,13 +229,13 @@ impl<'a, T: Scalar> LgmFxModel<'a, T> {
 
     /// Returns the FX volatility.
     #[must_use]
-    pub fn fx_vol(&self) -> T {
+    pub const fn fx_vol(&self) -> T {
         self.fx_vol
     }
 
     /// Returns the initial FX spot rate.
     #[must_use]
-    pub fn initial_spot(&self) -> T {
+    pub const fn initial_spot(&self) -> T {
         self.spot_0
     }
 }

@@ -19,7 +19,7 @@ pub mod aggregator;
 pub mod claimevaluationstrategy;
 /// The atomic unit of exposure: a single contingent cashflow.
 pub mod contigentclaim;
-/// High-level XVA engine — takes a PricingContext and runs the full pipeline.
+/// XVA engine .
 pub mod engine;
 /// Builder and conversion helpers for creating contingent claims.
 pub mod makecontigentclaim;

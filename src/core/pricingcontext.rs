@@ -167,7 +167,7 @@ impl PricingContext {
     }
 
     /// Returns a mutable reference to the constructed elements store.
-    pub fn constructed_elements_mut(&mut self) -> &mut ConstructedElementStore {
+    pub const fn constructed_elements_mut(&mut self) -> &mut ConstructedElementStore {
         &mut self.constructed_elements
     }
 
@@ -179,7 +179,7 @@ impl PricingContext {
 
     /// Returns the base index.
     #[must_use]
-    pub fn base_index(&self) -> &MarketIndex {
+    pub const fn base_index(&self) -> &MarketIndex {
         &self.base_index
     }
 

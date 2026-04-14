@@ -21,7 +21,11 @@ use crate::{
     },
     currencies::currency::Currency,
     indices::marketindex::MarketIndex,
-    time::date::Date,
+    instruments::cashflows::payoffops::PayoffOps,
+    time::{
+        date::Date,
+        daycounter::DayCounter,
+    },
     utils::errors::Result,
     xva::{
         claimevaluationstrategy::ClaimEvaluationStrategy,
@@ -75,9 +79,9 @@ pub struct ContingentClaim {
 /// Information for an in-arrears coupon whose accrual period straddles the
 /// reference date: the realized portion is locked in, the rest is forecast.
 pub struct PartialFixing {
-    /// Compound accrual factor for the realized portion: P₀(start)/P₀(ref_date).
+    /// Compound accrual factor for the realized portion: `P₀(start)/P₀(ref_date)`.
     pub realized_accrual_factor: f64,
-    /// Original accrual start date (before adjustment to ref_date).
+    /// Original accrual start date (before adjustment to `ref_date`).
     pub original_accrual_start: Date,
 }
 
@@ -207,7 +211,7 @@ impl ContingentClaim {
 
     /// Sets a fully realized fixing rate. When set, the claim will use this
     /// value instead of the simulated forward rate.
-    pub fn set_realized_fixing(&mut self, rate: f64) {
+    pub const fn set_realized_fixing(&mut self, rate: f64) {
         self.realized_fixing = Some(rate);
     }
 
@@ -221,7 +225,7 @@ impl ContingentClaim {
     /// period straddles the reference date. Also adjusts `accrual_start`
     /// to `new_start` so the forward rate request covers only the remaining
     /// forecast period.
-    pub fn set_partial_fixing(
+    pub const fn set_partial_fixing(
         &mut self,
         realized_accrual_factor: f64,
         original_accrual_start: Date,
@@ -332,6 +336,82 @@ impl ContingentClaim {
         }
     }
 
+    /// Evaluates the linear-rate payoff for the three fixing scenarios.
+    fn eval_linear_rate<T: Scalar + 'static>(
+        &self,
+        response: &SimulationResponse<T>,
+        spread: f64,
+        day_counter: DayCounter,
+    ) -> T {
+        let (start, end) = (
+            self.accrual_start().unwrap_or_else(|| self.payment_date()),
+            self.accrual_end().unwrap_or_else(|| self.payment_date()),
+        );
+        match (self.realized_fixing, &self.partial_fixing) {
+            (Some(rf), _) => {
+                let tau = day_counter.year_fraction(start, end);
+                T::scalar((rf + spread) * tau)
+            }
+            (None, Some(pf)) => {
+                let tau_full = day_counter.year_fraction(pf.original_accrual_start, end);
+                let tau_rem = day_counter.year_fraction(start, end);
+                let fwd = response.forward_rates.unwrap_or_else(T::zero);
+                let compound = T::scalar(pf.realized_accrual_factor)
+                    .mul_val(T::one().add_val(fwd.mul_val(T::scalar(tau_rem))));
+                compound
+                    .sub_val(T::one())
+                    .div_val(T::scalar(tau_full))
+                    .add_val(T::scalar(spread))
+                    .mul_val(T::scalar(tau_full))
+            }
+            (None, None) => {
+                let rate = response.forward_rates.unwrap_or_else(T::zero);
+                let tau = day_counter.year_fraction(start, end);
+                rate.add_val(T::scalar(spread)).mul_val(T::scalar(tau))
+            }
+        }
+    }
+
+    /// Evaluates the non-linear-rate payoff for the three fixing scenarios.
+    fn eval_nonlinear_rate<T: Scalar + 'static>(
+        &self,
+        response: &SimulationResponse<T>,
+        payoff_ops: &PayoffOps,
+        spread: f64,
+        day_counter: DayCounter,
+    ) -> T {
+        let (start, end) = (
+            self.accrual_start().unwrap_or_else(|| self.payment_date()),
+            self.accrual_end().unwrap_or_else(|| self.payment_date()),
+        );
+        match (self.realized_fixing, &self.partial_fixing) {
+            (Some(rf), _) => {
+                let tau = day_counter.year_fraction(start, end);
+                let fixing = T::scalar(rf + spread);
+                let payoff = payoff_ops.eval(fixing).unwrap_or_else(|_| T::zero());
+                payoff.mul_val(T::scalar(tau))
+            }
+            (None, Some(pf)) => {
+                let tau_full = day_counter.year_fraction(pf.original_accrual_start, end);
+                let tau_rem = day_counter.year_fraction(start, end);
+                let fwd = response.forward_rates.unwrap_or_else(T::zero);
+                let compound = T::scalar(pf.realized_accrual_factor)
+                    .mul_val(T::one().add_val(fwd.mul_val(T::scalar(tau_rem))));
+                let rate = compound.sub_val(T::one()).div_val(T::scalar(tau_full));
+                let fixing = rate.add_val(T::scalar(spread));
+                let payoff = payoff_ops.eval(fixing).unwrap_or_else(|_| T::zero());
+                payoff.mul_val(T::scalar(tau_full))
+            }
+            (None, None) => {
+                let rate = response.forward_rates.unwrap_or_else(T::zero);
+                let tau = day_counter.year_fraction(start, end);
+                let fixing = rate.add_val(T::scalar(spread));
+                let payoff = payoff_ops.eval(fixing).unwrap_or_else(|_| T::zero());
+                payoff.mul_val(T::scalar(tau))
+            }
+        }
+    }
+
     /// Evaluates the value of a single claim at a given evaluation date using
     /// the simulated market data in the [`SimulationResponse`].
     ///
@@ -349,79 +429,14 @@ impl ContingentClaim {
             ClaimEvaluationStrategy::LinearRate {
                 spread,
                 day_counter,
-            } => {
-                if let Some(rf) = self.realized_fixing {
-                    // Fully realized: use the stored rate, no simulation
-                    let start = self.accrual_start().unwrap_or_else(|| self.payment_date());
-                    let end = self.accrual_end().unwrap_or_else(|| self.payment_date());
-                    let tau = day_counter.year_fraction(start, end);
-                    T::scalar((rf + spread) * tau)
-                } else if let Some(pf) = &self.partial_fixing {
-                    // Partially fixed in-arrears: combine realized accrual with forecast
-                    let end = self.accrual_end().unwrap_or_else(|| self.payment_date());
-                    let tau_full = day_counter.year_fraction(pf.original_accrual_start, end);
-                    let start = self.accrual_start().unwrap_or_else(|| self.payment_date());
-                    let tau_rem = day_counter.year_fraction(start, end);
-                    let fwd = response.forward_rates.unwrap_or_else(T::zero);
-                    // compound = raf * (1 + fwd * tau_rem)
-                    let compound = T::scalar(pf.realized_accrual_factor)
-                        .mul_val(T::one().add_val(fwd.mul_val(T::scalar(tau_rem))));
-                    // rate = (compound - 1) / tau_full + spread
-                    compound
-                        .sub_val(T::one())
-                        .div_val(T::scalar(tau_full))
-                        .add_val(T::scalar(*spread))
-                        .mul_val(T::scalar(tau_full))
-                } else {
-                    // Standard: use simulated forward rate
-                    let rate = response.forward_rates.unwrap_or_else(T::zero);
-                    let start = self.accrual_start().unwrap_or_else(|| self.payment_date());
-                    let end = self.accrual_end().unwrap_or_else(|| self.payment_date());
-                    let tau = day_counter.year_fraction(start, end);
-                    rate.add_val(T::scalar(*spread)).mul_val(T::scalar(tau))
-                }
-            }
+            } => self.eval_linear_rate(response, *spread, *day_counter),
 
             ClaimEvaluationStrategy::NonLinearRate {
                 payoff_ops,
                 spread,
                 strike: _,
                 day_counter,
-            } => {
-                if let Some(rf) = self.realized_fixing {
-                    // Fully realized
-                    let start = self.accrual_start().unwrap_or_else(|| self.payment_date());
-                    let end = self.accrual_end().unwrap_or_else(|| self.payment_date());
-                    let tau = day_counter.year_fraction(start, end);
-                    let fixing = T::scalar(rf + spread);
-                    let payoff = payoff_ops.eval(fixing).unwrap_or_else(|_| T::zero());
-                    payoff.mul_val(T::scalar(tau))
-                } else if let Some(pf) = &self.partial_fixing {
-                    // Partially fixed in-arrears
-                    let end = self.accrual_end().unwrap_or_else(|| self.payment_date());
-                    let tau_full = day_counter.year_fraction(pf.original_accrual_start, end);
-                    let start = self.accrual_start().unwrap_or_else(|| self.payment_date());
-                    let tau_rem = day_counter.year_fraction(start, end);
-                    let fwd = response.forward_rates.unwrap_or_else(T::zero);
-                    let compound = T::scalar(pf.realized_accrual_factor)
-                        .mul_val(T::one().add_val(fwd.mul_val(T::scalar(tau_rem))));
-                    let rate = compound
-                        .sub_val(T::one())
-                        .div_val(T::scalar(tau_full));
-                    let fixing = rate.add_val(T::scalar(*spread));
-                    let payoff = payoff_ops.eval(fixing).unwrap_or_else(|_| T::zero());
-                    payoff.mul_val(T::scalar(tau_full))
-                } else {
-                    // Standard
-                    let rate = response.forward_rates.unwrap_or_else(T::zero);
-                    let start = self.accrual_start().unwrap_or_else(|| self.payment_date());
-                    let end = self.accrual_end().unwrap_or_else(|| self.payment_date());
-                    let tau = day_counter.year_fraction(start, end);
-                    let fixing = rate.add_val(T::scalar(*spread));
-                    let payoff = payoff_ops.eval(fixing).unwrap_or_else(|_| T::zero());
-                    payoff.mul_val(T::scalar(tau))
-                }
-            }
+            } => self.eval_nonlinear_rate(response, payoff_ops, *spread, *day_counter),
 
             ClaimEvaluationStrategy::SpotPayoff {
                 payoff_ops,

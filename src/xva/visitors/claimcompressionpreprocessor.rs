@@ -31,6 +31,8 @@ impl ClaimCompressionPreprocessor {
     /// [`PreprocessorExecutor`](super::preprocessorexecutor::PreprocessorExecutor)
     /// visit pass that follows.
     pub fn compress(claims: &mut Vec<ContingentClaim>) {
+        type Key = (Date, Currency, Option<Currency>);
+
         // Partition into deterministic (compressible) and others.
         let mut deterministic: Vec<ContingentClaim> = Vec::new();
         let mut others: Vec<ContingentClaim> = Vec::new();
@@ -47,7 +49,6 @@ impl ClaimCompressionPreprocessor {
         }
 
         // Group deterministic claims by (payment_date, currency, foreign_currency).
-        type Key = (Date, Currency, Option<Currency>);
         let mut groups: HashMap<Key, Vec<ContingentClaim>> = HashMap::new();
 
         for claim in deterministic {

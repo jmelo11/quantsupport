@@ -244,17 +244,17 @@ impl<'a, T: Scalar> LgmPathContext<'a, T> {
             let sqrt_dt = dt.sqrt();
 
             // 1. Generate independent normals (reuse buffer)
-            for e in eps.iter_mut() {
+            for e in &mut eps {
                 *e = std_normal(rng);
             }
 
             // 2. Apply Cholesky to get correlated increments (dW_i = sum_j L[i][j] * eps[j] * sqrt(dt))
-            for i in 0..self.n_factors {
+            for (i, dw_i) in dw.iter_mut().enumerate().take(self.n_factors) {
                 let mut w = 0.0;
                 for (j, eps_j) in eps.iter().enumerate().take(i + 1) {
                     w += self.cholesky_l[i][j] * eps_j;
                 }
-                dw[i] = w * sqrt_dt;
+                *dw_i = w * sqrt_dt;
             }
 
             // 3. Evolve domestic factor (index 0, drift = 0)

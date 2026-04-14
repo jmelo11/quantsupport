@@ -122,7 +122,7 @@ impl Schedule {
 
     /// Returns the [`Calendar`] of the schedule.
     #[must_use]
-    pub fn calendar(&self) -> &Calendar {
+    pub const fn calendar(&self) -> &Calendar {
         &self.calendar
     }
 

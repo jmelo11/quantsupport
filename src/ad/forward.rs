@@ -528,6 +528,9 @@ impl Tape<ADForward> {
     }
     /// Propagates accumulated adjoints from the mark backward to the start
     /// of the [`ADForward`] tape.
+    ///
+    /// # Errors
+    /// Returns an error if adjoint propagation fails.
     pub fn propagate_mark_to_start_fwd() -> crate::utils::errors::Result<()> {
         TAPE_FWD.with(|tc| tc.borrow_mut().propagate_mark_to_start())
     }

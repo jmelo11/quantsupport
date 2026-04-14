@@ -72,6 +72,7 @@ impl<T: TapeHolder> Tape<T> {
     }
 
     /// Returns the current mark index for this tape.
+    #[must_use]
     pub const fn mark(&self) -> usize {
         self.mark
     }
@@ -95,6 +96,7 @@ impl<T: TapeHolder> Tape<T> {
     }
 
     /// Retrieves an immutable reference to a node by pointer.
+    #[must_use]
     pub fn node(&self, p: NonNull<TapeNode<T>>) -> Option<&TapeNode<T>> {
         self.index_of(p).map(|i| unsafe { self.book[i].as_ref() })
     }

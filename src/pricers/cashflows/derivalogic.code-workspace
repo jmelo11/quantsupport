@@ -1,0 +1,20 @@
+{
+	"folders": [
+		{
+			"path": "../../../../derivalogic"
+		},
+		{
+			"path": "../../.."
+		}
+	],
+	"settings": {
+		"chat.tools.terminal.autoApprove": {
+			"aws": true,
+			"/^python3 -c \"\nimport json\nwith open\\('/Users/josemelo/\\.aws/sso/cache/02211150c533bdf092ed6bd1dec8b55e2d89de94\\.json'\\) as f:\n    d = json\\.load\\(f\\)\n    token = d\\['accessToken'\\]\n    \nimport urllib\\.request\n# Try listing accounts with this token  \nurl = 'https://portal\\.sso\\.us-east-2\\.amazonaws\\.com/assignment/accounts\\?max_result=10'\nreq = urllib\\.request\\.Request\\(url, headers=\\{\n    'x-amz-sso_bearer_token': token,\n    'x-amz-sso-bearer-only': 'true'  \n\\}\\)\ntry:\n    resp = urllib\\.request\\.urlopen\\(req\\)\n    print\\(resp\\.read\\(\\)\\.decode\\(\\)\\)\nexcept Exception as e:\n    print\\(f'Error: \\{e\\}'\\)\n\" 2>&1$/": {
+				"approve": true,
+				"matchCommandLine": true
+			},
+			"npm install": true
+		}
+	}
+}
