@@ -108,6 +108,10 @@ pub use crate::{
             },
             hullwhitemodel::HullWhite,
         },
+        lgm::{
+            lgmcomponents::{LgmFxModel, LgmRateModel},
+            lgmmarketmodel::LgmMarketModel,
+        },
         montecarloengine::{PathGenerator, TimeDependentVolatility},
     },
     pricers::{
@@ -165,5 +169,17 @@ pub use crate::{
         volatilitysurface::VolatilitySurface,
         volatilitysurfacebuilder::VolatilitySurfaceBuilder,
         volatilitysurfaceconfiguration::VolatilitySurfaceConfiguration,
+    },
+    xva::{
+        contigentclaim::ContingentClaim,
+        engine::{XvaEngine, XvaEngineConfig},
+        makecontigentclaim::IntoContingentClaims,
+        visitors::{
+            claimpreprocessor::ClaimPreprocessor,
+            exposureevaluator::{ExposureEvaluator, ExposureResult, NpvCube},
+            fixingpreprocessor::FixingPreprocessor,
+            marketmodel::MarketModel,
+            preprocessorexecutor::PreprocessorExecutor,
+        },
     },
 };

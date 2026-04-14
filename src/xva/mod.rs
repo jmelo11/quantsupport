@@ -14,6 +14,7 @@
 //!    for cubes, or [`evaluate_with_xva`](visitors::exposureevaluator::evaluate_with_xva)
 //!    for cubes + XVA values + sensitivities.
 
+pub mod aggregator;
 /// Evaluation strategies that define how a single contingent claim is valued.
 pub mod claimevaluationstrategy;
 /// The atomic unit of exposure: a single contingent cashflow.
@@ -22,6 +23,5 @@ pub mod contigentclaim;
 pub mod engine;
 /// Builder and conversion helpers for creating contingent claims.
 pub mod makecontigentclaim;
-pub mod va;
 /// Visitor pipeline: inspection, market generation, and exposure evaluation.
 pub mod visitors;

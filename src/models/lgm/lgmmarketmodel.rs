@@ -3,7 +3,6 @@ use std::collections::HashMap;
 use rand::rngs::StdRng;
 use rand::Rng;
 use rand::SeedableRng;
-use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
 use crate::{
     ad::scalar::Scalar,
@@ -19,7 +18,7 @@ use crate::{
     time::{date::Date, daycounter::DayCounter},
     utils::errors::{QSError, Result},
     xva::visitors::{
-        inspector::SimulationRequest,
+        preprocessorexecutor::SimulationRequest,
         marketmodel::{MarketModel, PathScenario, SimulationResponse},
     },
 };
@@ -350,7 +349,7 @@ impl<'a, T: Scalar> LgmPathContext<'a, T> {
                                 curve_model.instantaneous_forward_rate(t_eval, t_start, z_t)?;
                             resp.forward_rates = Some(rate);
                         } else {
-                            // Simply-compounded forward rate: L = (1/tau)*(P(t,S,z)/P(t,E,z) - 1)
+                            // Forward rate from discount factors
                             let p_start = curve_model.P_discount(t_eval, t_start, z_t)?;
                             let p_end = curve_model.P_discount(t_eval, t_end, z_t)?;
                             let tau = t_end - t_start;
@@ -438,41 +437,6 @@ impl<'a, T: Scalar> LgmPathContext<'a, T> {
         Ok(scenario)
     }
 }
-
-/// Sequential path iterator used by [`MarketModel::path_iter`].
-struct LgmPathIter<'a, T: Scalar> {
-    ctx: LgmPathContext<'a, T>,
-    rng: StdRng,
-    paths_remaining: usize,
-}
-
-impl<'a, T: Scalar> LgmPathIter<'a, T> {
-    fn new(model: &'a LgmMarketModel<'a, T>) -> Self {
-        Self {
-            ctx: LgmPathContext::new(model),
-            rng: StdRng::seed_from_u64(model.seed),
-            paths_remaining: model.n_paths,
-        }
-    }
-}
-
-impl<T: Scalar> Iterator for LgmPathIter<'_, T> {
-    type Item = PathScenario<T>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.paths_remaining == 0 {
-            return None;
-        }
-        self.paths_remaining -= 1;
-        self.ctx.generate_path(&mut self.rng).ok()
-    }
-}
-
-// SAFETY: The iterator only holds &LgmMarketModel (shared ref) and StdRng (Send).
-// LgmMarketModel contains &dyn InterestRatesTermStructure which must be Sync for
-// the shared reference to be Send.  This is sound because the trait objects are
-// read-only during iteration.
-unsafe impl<T: Scalar> Send for LgmPathIter<'_, T> {}
 
 // SAFETY: LgmMarketModel is immutable during simulation — all &dyn
 // InterestRatesTermStructure references are used for read-only discount-factor

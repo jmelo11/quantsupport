@@ -17,4 +17,9 @@ pub trait RateIndexDetails: MarketIndexDetails {
     fn fixing_lag(&self) -> i64;
     /// Enum related to the index.
     fn market_index(&self) -> MarketIndex;
+    /// Whether the index fixes in arrears (e.g. overnight RFRs like SOFR, SONIA).
+    /// Term rates (e.g. Term SOFR, EURIBOR) fix in advance and return `false`.
+    fn is_in_arrears(&self) -> bool {
+        true
+    }
 }

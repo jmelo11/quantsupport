@@ -11,7 +11,7 @@ use crate::{
 
 /// Fixing store for market indices, providing access to historical fixings and the ability to fill missing
 /// fixings using interpolation.
-#[derive(Serialize, Debug, Default, Deserialize)]
+#[derive(Serialize, Debug, Default, Deserialize, Clone)]
 pub struct FixingStore {
     values: HashMap<MarketIndex, BTreeMap<Date, f64>>,
 }

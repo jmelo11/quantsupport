@@ -13,7 +13,7 @@ use crate::{
     },
     time::date::Date,
     utils::errors::Result,
-    xva::visitors::inspector::SimulationRequest,
+    xva::visitors::preprocessorexecutor::SimulationRequest,
 };
 
 /// A full Monte Carlo path: one `Vec<SimulationResponse<T>>` per simulation date.

@@ -18,7 +18,7 @@ use crate::{
     time::date::Date,
     utils::errors::Result,
     xva::{
-        contigentclaim::ContingentClaim, va::aggregator::PfeAggregatorFactory,
+        aggregator::PfeAggregatorFactory, contigentclaim::ContingentClaim,
         visitors::marketmodel::MarketModel,
     },
 };
@@ -209,7 +209,7 @@ pub trait XvaModelSetup: Send + Sync {
     ) -> R;
 }
 
-/// Savine-style parallel AAD evaluation.
+/// Parallel AAD evaluation.
 ///
 /// Per rayon thread:
 /// 1. `rewind_to_init_fwd` then `start_recording_fwd`.
@@ -550,8 +550,8 @@ mod tests {
             schedule::MakeSchedule,
         },
         xva::{
-            va::aggregator::{CvaAggregator, CvaFactory, PfeAggregator, PfeAggregatorFactory},
-            visitors::inspector::Inspector,
+            aggregator::{CvaAggregator, CvaFactory, PfeAggregator, PfeAggregatorFactory},
+            visitors::preprocessorexecutor::PreprocessorExecutor,
         },
     };
 
@@ -577,7 +577,7 @@ mod tests {
         seed: u64,
         ref_date: Date,
         dc: DayCounter,
-        requests: Vec<crate::xva::visitors::inspector::SimulationRequest>,
+        requests: Vec<crate::xva::visitors::preprocessorexecutor::SimulationRequest>,
     }
 
     impl XvaModelSetup for TestModelSetup {
@@ -652,14 +652,13 @@ mod tests {
             callback(&model, &leaves)
         }
     }
-
     struct TestData {
         ref_date: Date,
         dc: DayCounter,
         curve_dates: Vec<Date>,
         discount_factors: Vec<f64>,
         claims: Vec<crate::xva::contigentclaim::ContingentClaim>,
-        requests: Vec<crate::xva::visitors::inspector::SimulationRequest>,
+        requests: Vec<crate::xva::visitors::preprocessorexecutor::SimulationRequest>,
         sim_dates: Vec<Date>,
     }
 
@@ -690,8 +689,8 @@ mod tests {
         let mut claims = irs_trade.into_contingent_claims().unwrap();
 
         let discount_policy = SingleCurveCSADiscountPolicy::new(MarketIndex::SOFR, Currency::USD);
-        let mut inspector = Inspector::with_discount_policy(Box::new(discount_policy));
-        inspector.visit(&mut claims);
+        let mut inspector = PreprocessorExecutor::with_discount_policy(Box::new(discount_policy));
+        inspector.visit(vec![claims.as_mut_slice()]);
         let requests = inspector.requests().to_vec();
 
         let max_maturity = ref_date.advance(5, TimeUnit::Years);

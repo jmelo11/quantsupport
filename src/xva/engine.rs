@@ -5,10 +5,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     ad::{dual::DualFwd, scalar::Scalar},
     core::{
-        collateral::{DiscountPolicy, SingleCurveCSADiscountPolicy},
-        marketdatahandling::discountrequest::DiscountRequest,
-        pillars::Pillars,
-        pricingcontext::PricingContext,
+        collateral::SingleCurveCSADiscountPolicy, pillars::Pillars, pricingcontext::PricingContext,
     },
     currencies::currency::Currency,
     indices::marketindex::MarketIndex,
@@ -17,6 +14,7 @@ use crate::{
         lgmcomponents::{LgmFxModel, LgmRateModel},
         lgmmarketmodel::LgmMarketModel,
     },
+    quotes::fixingstore::FixingStore,
     rates::yieldtermstructure::discounttermstructure::DiscountTermStructure,
     time::{
         date::Date,
@@ -26,12 +24,13 @@ use crate::{
     },
     utils::errors::{QSError, Result},
     xva::{
+        aggregator::{CvaFactory, FvaFactory, PfeAggregatorFactory},
         contigentclaim::ContingentClaim,
-        va::aggregator::{CvaFactory, PfeAggregatorFactory},
         visitors::{
             exposureevaluator::{evaluate_with_xva, ExposureResult, XvaModelSetup},
-            inspector::SimulationRequest,
+            fixingpreprocessor::FixingPreprocessor,
             marketmodel::MarketModel,
+            preprocessorexecutor::{PreprocessorExecutor, SimulationRequest},
         },
     },
 };
@@ -74,11 +73,10 @@ pub struct XvaEngineConfig {
     pub credit_spread: f64,
     /// Recovery rate for CVA calculation.
     pub recovery: f64,
+    /// Funding spread for FVA calculation.
+    #[serde(default)]
+    pub funding_spread: f64,
 }
-
-// ---------------------------------------------------------------------------
-// XvaEngine — high-level entry point
-// ---------------------------------------------------------------------------
 
 /// High-level XVA engine.
 ///
@@ -102,6 +100,7 @@ pub struct XvaEngine {
     frequency: Frequency,
     credit_spread: f64,
     recovery: f64,
+    funding_spread: f64,
 }
 
 impl XvaEngine {
@@ -189,17 +188,20 @@ impl XvaEngine {
                 n_paths: config.n_paths,
                 seed: config.seed,
                 requests: Vec::new(), // filled in run()
+                fixing_store: context.fixing_store().clone(),
             },
             frequency: config.frequency,
             credit_spread: config.credit_spread,
             recovery: config.recovery,
+            funding_spread: config.funding_spread,
         })
     }
 
     /// Runs the full XVA pipeline.
     ///
-    /// Assigns flat-vector indices to every claim, builds simulation dates,
-    /// and runs the Savine parallel AAD loop.
+    /// Builds an [`PreprocessorExecutor`] with preprocessing steps (fixing resolution,
+    /// discount policy), runs it on all claims, then launches the Savine
+    /// parallel AAD evaluation loop.
     ///
     /// # Errors
     /// Returns an error if simulation or evaluation fails.
@@ -207,28 +209,26 @@ impl XvaEngine {
         &mut self,
         trades: &mut HashMap<String, Vec<ContingentClaim>>,
     ) -> Result<ExposureResult> {
-        // 1. Assign indices and collect requests across all trades.
+        // 1. Build Inspector with preprocessors.
+        let fixing_pp = FixingPreprocessor::new(
+            self.setup.reference_date,
+            self.setup.day_counter,
+            self.setup.fixing_store.clone(),
+        );
+
         let discount_policy = SingleCurveCSADiscountPolicy::new(
             self.setup.domestic_index.clone(),
             self.setup.domestic_currency,
         );
-        let mut requests = Vec::new();
-        let mut offset = 0_usize;
-        for claims in trades.values_mut() {
-            for claim in claims.iter_mut() {
-                let mut req = claim.simulation_request();
-                if let Ok(disc_idx) = discount_policy.accept(claim) {
-                    req.discount_request =
-                        Some(DiscountRequest::new(disc_idx, claim.payment_date()));
-                }
-                claim.set_idx(offset);
-                requests.push(req);
-                offset += 1;
-            }
-        }
-        self.setup.requests = requests;
 
-        // 2. Build simulation dates.
+        let mut inspector = PreprocessorExecutor::with_discount_policy(Box::new(discount_policy))
+            .with_preprocessor(Box::new(fixing_pp));
+
+        // 2. Visit all claims in-place, assigning global indices across trades.
+        inspector.visit(trades.values_mut().map(|v| v.as_mut_slice()));
+        self.setup.requests = inspector.requests().to_vec();
+
+        // 3. Build simulation dates.
         let max_maturity = trades
             .values()
             .flat_map(|v| v.iter())
@@ -241,21 +241,25 @@ impl XvaEngine {
             .build()?;
         let sim_dates = schedule.dates().clone();
 
-        // 3. Aggregator factories.
+        // 4. Aggregator factories.
         let cva_factory = CvaFactory {
             credit_spread: self.credit_spread,
             recovery: self.recovery,
             n_paths: self.setup.n_paths,
         };
-        let factories: Vec<&dyn PfeAggregatorFactory> = vec![&cva_factory];
+        let fva_factory = FvaFactory {
+            funding_spread: self.funding_spread,
+            n_paths: self.setup.n_paths,
+        };
+        let factories: Vec<&dyn PfeAggregatorFactory> = vec![&cva_factory, &fva_factory];
 
-        // 4. Build trade slice map.
+        // 5. Build trade slice map.
         let trade_slices: HashMap<String, &[ContingentClaim]> = trades
             .iter()
             .map(|(id, v)| (id.clone(), v.as_slice()))
             .collect();
 
-        // 5. Run.
+        // 6. Run.
         evaluate_with_xva(&sim_dates, &trade_slices, &factories, &self.setup)
     }
 }
@@ -322,6 +326,7 @@ struct InternalModelSetup {
     n_paths: usize,
     seed: u64,
     requests: Vec<SimulationRequest>,
+    fixing_store: FixingStore,
 }
 
 // Safety: all fields are owned plain data (Vec, HashMap, f64, etc.). No Rc/RefCell.
@@ -393,14 +398,13 @@ impl XvaModelSetup for InternalModelSetup {
 
         // 3. Build FX models from the separate rate model instances.
         //    Find domestic and foreign rate models by index.
-        let find_fx_rate =
-            |idx: &MarketIndex| -> Option<usize> {
-                fx_rate_models.iter().position(|(i, _)| i == idx)
-            };
+        let find_fx_rate = |idx: &MarketIndex| -> Option<usize> {
+            fx_rate_models.iter().position(|(i, _)| i == idx)
+        };
 
         for fx_cfg in &self.fx_configs {
-            let dom_pos = find_fx_rate(&self.domestic_index)
-                .expect("Domestic rate model not found for FX");
+            let dom_pos =
+                find_fx_rate(&self.domestic_index).expect("Domestic rate model not found for FX");
             // Find the foreign index by currency
             let foreign_index = self
                 .model_configs
@@ -412,8 +416,7 @@ impl XvaModelSetup for InternalModelSetup {
                 })
                 .map(|(_, mc)| &mc.market_index)
                 .expect("Foreign rate model not found for FX");
-            let for_pos = find_fx_rate(foreign_index)
-                .expect("Foreign rate model not found for FX");
+            let for_pos = find_fx_rate(foreign_index).expect("Foreign rate model not found for FX");
 
             // SAFETY: dom_pos != for_pos (domestic != foreign currency).
             // We need two simultaneous immutable borrows from the Vec.

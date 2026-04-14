@@ -4,10 +4,10 @@
 //! combines them into a single Pfe contribution scalar that can be used
 //! as the backward-pass root.
 
-use crate::ad::dual::DualFwd;
-use crate::ad::scalar::Scalar;
-use crate::time::date::Date;
-use crate::time::daycounter::DayCounter;
+use crate::{
+    ad::{dual::DualFwd, scalar::Scalar},
+    time::{date::Date, daycounter::DayCounter},
+};
 
 /// Aggregates per-date NPVs from one MC path into a single Pfe contribution.
 ///
@@ -52,11 +52,6 @@ pub trait PfeAggregatorFactory: Send + Sync {
 }
 
 /// Unilateral CVA aggregator.
-///
-/// Per-path contribution:
-/// ```text
-/// C_p = LGD / N  ×  Σ_d  max(V_d, 0) × [S(t_{d-1}) − S(t_d)]
-/// ```
 pub struct CvaAggregator<T: Scalar> {
     /// Loss-given-default: `1 − R`.
     lgd: T,
@@ -113,16 +108,7 @@ impl<T: Scalar> PfeAggregator<T> for CvaAggregator<T> {
     }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  DVA Aggregator
-// ═══════════════════════════════════════════════════════════════════════════
-
 /// Unilateral DVA aggregator (own-default).
-///
-/// Per-path contribution:
-/// ```text
-/// D_p = LGD_own / N  ×  Σ_d  max(−V_d, 0) × [S_own(t_{d-1}) − S_own(t_d)]
-/// ```
 pub struct DvaAggregator<T: Scalar> {
     lgd: T,
     survival_probs: Vec<T>,
@@ -172,11 +158,6 @@ impl<T: Scalar> PfeAggregator<T> for DvaAggregator<T> {
 }
 
 /// Funding valuation adjustment aggregator.
-///
-/// Per-path contribution:
-/// ```text
-/// F_p = 1/N  ×  Σ_d  V_d × s_f × Δt_d
-/// ```
 pub struct FvaAggregator<T: Scalar> {
     funding_spread: T,
     inv_n: f64,
