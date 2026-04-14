@@ -505,14 +505,25 @@ impl InterestRatesTermStructure<DualFwd> for DiscountTermStructure<DualFwd> {
     }
 
     fn forward_rate_from_time(&self, start: f64, end: f64) -> Result<DualFwd> {
-        let df_start = self.discount_factor_from_time(start)?;
-        let df_end = self.discount_factor_from_time(end)?;
-        let fwd = (df_start / df_end - 1.0) / (end - start);
+        let dt = end - start;
+        let (s, e, dt) = if dt.abs() < 1e-10 {
+            let eps = 1e-6;
+            (start, start + eps, eps)
+        } else {
+            (start, end, dt)
+        };
+        let df_start = self.discount_factor_from_time(s)?;
+        let df_end = self.discount_factor_from_time(e)?;
+        let fwd = (df_start / df_end - 1.0) / dt;
         Ok(fwd.into())
     }
 }
 
-impl ADCurveElement for DiscountTermStructure<DualFwd> {}
+impl ADCurveElement for DiscountTermStructure<DualFwd> {
+    fn ift_sensitivities(&self) -> Option<&[Vec<f64>]> {
+        self.ift_sensitivities.as_deref()
+    }
+}
 
 #[cfg(test)]
 mod tests {

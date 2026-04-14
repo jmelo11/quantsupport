@@ -127,6 +127,13 @@ impl PricingContext {
         self
     }
 
+    /// Sets the curve configurations for bootstrapping.
+    #[must_use]
+    pub fn with_curve_configurations(mut self, configs: Vec<CurveConfiguration>) -> Self {
+        self.curve_configurations = configs;
+        self
+    }
+
     /// Sets the volatility surface configurations.
     #[must_use]
     pub fn with_volatility_surface_configurations(
@@ -151,6 +158,29 @@ impl PricingContext {
     #[must_use]
     pub const fn evaluation_date(&self) -> Date {
         self.quote_store.reference_date()
+    }
+
+    /// Returns the constructed elements store.
+    #[must_use]
+    pub const fn constructed_elements(&self) -> &ConstructedElementStore {
+        &self.constructed_elements
+    }
+
+    /// Returns a mutable reference to the constructed elements store.
+    pub fn constructed_elements_mut(&mut self) -> &mut ConstructedElementStore {
+        &mut self.constructed_elements
+    }
+
+    /// Returns the base currency.
+    #[must_use]
+    pub const fn base_currency(&self) -> Currency {
+        self.base_currency
+    }
+
+    /// Returns the base index.
+    #[must_use]
+    pub fn base_index(&self) -> &MarketIndex {
+        &self.base_index
     }
 
     /// Placeholder for one-time initialisation (pre-loading caches, etc.).

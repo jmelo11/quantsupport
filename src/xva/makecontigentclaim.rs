@@ -53,72 +53,84 @@ pub struct MakeContingentClaim {
 }
 
 impl MakeContingentClaim {
+    /// Sets the trade identifier.
     #[must_use]
     pub fn with_trade_id(mut self, trade_id: String) -> Self {
         self.trade_id = Some(trade_id);
         self
     }
 
+    /// Sets the leg identifier.
     #[must_use]
     pub const fn with_leg_id(mut self, leg_id: usize) -> Self {
         self.leg_id = Some(leg_id);
         self
     }
 
+    /// Sets the payment date.
     #[must_use]
     pub const fn with_payment_date(mut self, payment_date: Date) -> Self {
         self.payment_date = Some(payment_date);
         self
     }
 
+    /// Sets the fixing date.
     #[must_use]
     pub const fn with_fixing_date(mut self, fixing_date: Date) -> Self {
         self.fixing_date = Some(fixing_date);
         self
     }
 
+    /// Sets the accrual start date.
     #[must_use]
     pub const fn with_accrual_start(mut self, accrual_start: Date) -> Self {
         self.accrual_start = Some(accrual_start);
         self
     }
 
+    /// Sets the accrual end date.
     #[must_use]
     pub const fn with_accrual_end(mut self, accrual_end: Date) -> Self {
         self.accrual_end = Some(accrual_end);
         self
     }
 
+    /// Sets the domestic currency.
     #[must_use]
     pub const fn with_currency(mut self, currency: Currency) -> Self {
         self.currency = Some(currency);
         self
     }
 
+    /// Sets the foreign currency (for cross-currency claims).
     #[must_use]
     pub const fn with_foreign_currency(mut self, currency: Currency) -> Self {
         self.foreign_currency = Some(currency);
         self
     }
 
+    /// Sets the notional amount.
     #[must_use]
     pub const fn with_notional(mut self, notional: f64) -> Self {
         self.notional = Some(notional);
         self
     }
 
+    /// Sets the trade side (pay or receive).
     #[must_use]
     pub const fn with_side(mut self, side: Side) -> Self {
         self.side = Some(side);
         self
     }
 
+    /// Sets the evaluation strategy (deterministic, linear rate, etc.).
     #[must_use]
     pub fn with_evaluation_strategy(mut self, strategy: ClaimEvaluationStrategy) -> Self {
         self.evaluation_strategy = Some(strategy);
         self
     }
 
+    /// Sets the market index for the underlying rate or asset.
     #[must_use]
     pub fn with_index(mut self, index: MarketIndex) -> Self {
         self.index = Some(index);

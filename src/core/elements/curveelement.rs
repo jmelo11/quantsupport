@@ -13,6 +13,10 @@ use crate::{
 pub trait ADCurveElement:
     InterestRatesTermStructure<DualFwd> + Pillars<DualFwd> + Send + Sync
 {
+    /// Returns the IFT sensitivity matrix `∂DF/∂q` if available.
+    fn ift_sensitivities(&self) -> Option<&[Vec<f64>]> {
+        None
+    }
 }
 
 /// Struct representing a discount curve element, which includes

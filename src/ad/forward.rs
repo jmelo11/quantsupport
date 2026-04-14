@@ -5,14 +5,9 @@ use std::cell::RefCell;
 use std::cmp::Ordering;
 use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Rem, Sub, SubAssign};
 
-use bumpalo::Bump;
-
+use crate::ad::blocklist::BlockList;
 use crate::ad::scalar::{InnerScalar, Scalar};
 use crate::ad::tape::{Tape, TapeHolder};
-
-// ═══════════════════════════════════════════════════════════════════════════
-//  ADForward — pure forward-mode type  (val, dot, dot2)
-// ═══════════════════════════════════════════════════════════════════════════
 
 /// A forward-mode automatic differentiation number carrying a value and up to
 /// second-order derivative seeds.
@@ -147,7 +142,9 @@ impl Mul for ADForward {
         Self {
             val: self.val * r.val,
             dot: self.dot.mul_add(r.val, self.val * r.dot),
-            dot2: self.val.mul_add(r.dot2, self.dot2.mul_add(r.val, 2.0 * self.dot * r.dot)),
+            dot2: self
+                .val
+                .mul_add(r.dot2, self.dot2.mul_add(r.val, 2.0 * self.dot * r.dot)),
         }
     }
 }
@@ -160,8 +157,10 @@ impl Div for ADForward {
         Self {
             val: self.val * inv,
             dot: self.dot.mul_add(r.val, -(self.val * r.dot)) * inv2,
-            dot2: self.dot2.mul_add(r.val, -(self.val * r.dot2)).mul_add(r.val, -(2.0 * self.dot.mul_add(r.val, -(self.val * r.dot)) * r.dot))
-                / (r.val * r.val * r.val),
+            dot2: self.dot2.mul_add(r.val, -(self.val * r.dot2)).mul_add(
+                r.val,
+                -(2.0 * self.dot.mul_add(r.val, -(self.val * r.dot)) * r.dot),
+            ) / (r.val * r.val * r.val),
         }
     }
 }
@@ -349,7 +348,9 @@ impl Scalar for ADForward {
         Self {
             val: sv,
             dot: self.dot * inv2s,
-            dot2: self.dot2.mul_add(inv2s, -(self.dot * self.dot / (4.0 * self.val * sv))),
+            dot2: self
+                .dot2
+                .mul_add(inv2s, -(self.dot * self.dot / (4.0 * self.val * sv))),
         }
     }
     fn sin(self) -> Self {
@@ -382,7 +383,8 @@ impl Scalar for ADForward {
         Self {
             val: vp,
             dot: p * vp1 * self.dot,
-            dot2: (p * (p - 1.0) * self.val.powf(p - 2.0) * self.dot).mul_add(self.dot, p * vp1 * self.dot2),
+            dot2: (p * (p - 1.0) * self.val.powf(p - 2.0) * self.dot)
+                .mul_add(self.dot, p * vp1 * self.dot2),
         }
     }
     #[allow(clippy::suspicious_operation_groupings)]
@@ -391,7 +393,10 @@ impl Scalar for ADForward {
         let y = self.val.powf(b.val);
         let u = b.dot.mul_add(lna, b.val * self.dot / self.val);
         let dot = y * u;
-        let up = b.val.mul_add(self.dot2 / self.val - self.dot * self.dot / (self.val * self.val), b.dot2.mul_add(lna, 2.0 * b.dot * self.dot / self.val));
+        let up = b.val.mul_add(
+            self.dot2 / self.val - self.dot * self.dot / (self.val * self.val),
+            b.dot2.mul_add(lna, 2.0 * b.dot * self.dot / self.val),
+        );
         Self {
             val: y,
             dot,
@@ -463,7 +468,7 @@ impl num_traits::Num for ADForward {
 thread_local! {
     /// Thread-local tape for [`Dual<ADForward>`](super::dual::Dual).
     pub static TAPE_FWD: RefCell<Tape<ADForward>> = RefCell::new(Tape {
-        bump: Bump::new(), book: Vec::new(), mark: 0, active: false,
+        storage: BlockList::with_default_cap(), book: Vec::new(), mark: 0, active: false,
     });
 }
 
@@ -494,7 +499,7 @@ impl Tape<ADForward> {
     pub fn rewind_to_init_fwd() {
         TAPE_FWD.with(|tc| {
             let mut t = tc.borrow_mut();
-            t.bump.reset();
+            t.storage.reset();
             t.book.clear();
             t.mark = 0;
         });
@@ -506,11 +511,13 @@ impl Tape<ADForward> {
             tc.borrow_mut().mark = len;
         });
     }
-    /// Truncates the tape back to the current mark.
+    /// Truncates the tape back to the current mark, dropping post-mark nodes.
     pub fn rewind_to_mark_fwd() {
         TAPE_FWD.with(|tc| {
-            let mark = tc.borrow().mark;
-            tc.borrow_mut().book.truncate(mark);
+            let mut t = tc.borrow_mut();
+            let mark = t.mark;
+            t.book.truncate(mark);
+            t.storage.rewind_to(mark);
         });
     }
     /// Resets the mark to the beginning of the tape.
@@ -518,6 +525,11 @@ impl Tape<ADForward> {
         TAPE_FWD.with(|tc| {
             tc.borrow_mut().mark = 0;
         });
+    }
+    /// Propagates accumulated adjoints from the mark backward to the start
+    /// of the [`ADForward`] tape.
+    pub fn propagate_mark_to_start_fwd() -> crate::utils::errors::Result<()> {
+        TAPE_FWD.with(|tc| tc.borrow_mut().propagate_mark_to_start())
     }
 }
 

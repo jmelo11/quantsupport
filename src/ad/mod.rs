@@ -4,6 +4,8 @@
 //! [`Tape`](crate::ad::tape::Tape) for recording operations, and graph
 //! [`TapeNode`](crate::ad::node::TapeNode)s for backward-mode adjoint propagation.
 
+/// Block-based slab allocator for tape nodes.
+pub mod blocklist;
 /// Constant wrapper (Const<T>).
 pub mod constant;
 /// Backward-mode AD wrapper (Dual<T>) and DualFwd alias.

@@ -243,7 +243,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         &all_claims[fxopt_end..xccy_end],
     );
 
-    let results = evaluator.evaluate(&trades_map);
+    let result = evaluator.evaluate(&trades_map)?;
     println!("Evaluation complete.");
 
     // ── 8. Extract and print results ────────────────────────────
@@ -252,26 +252,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .map(|d| dc.year_fraction(ref_date, *d))
         .collect();
 
-    for eval in &results {
-        println!("\nTrade: {}", eval.identifier());
+    for cube in &result.cubes {
+        let epe = cube.epe();
+        let ene = cube.ene();
+        let ee = cube.ee();
+        println!("\nTrade: {}", cube.trade_id);
         println!("{:<8} {:>14} {:>14} {:>14}", "Time", "EPE", "ENE", "EE");
         for (i, t) in times.iter().enumerate() {
             println!(
                 "{:<8.2} {:>14.2} {:>14.2} {:>14.2}",
-                t,
-                eval.epe()[i],
-                eval.ene()[i],
-                eval.ee()[i]
+                t, epe[i], ene[i], ee[i]
             );
         }
     }
 
     // ── 9. Plot exposure profiles ───────────────────────────────
     let example_dir = data_dir.join("..");
-    for eval in &results {
-        let filename = format!("exposure_{}.png", eval.identifier().to_lowercase());
+    for cube in &result.cubes {
+        let filename = format!("exposure_{}.png", cube.trade_id.to_lowercase());
         let plot_path = example_dir.join(&filename);
-        eval.plot(plot_path.to_str().unwrap())?;
+        cube.plot(plot_path.to_str().unwrap())?;
         println!("Plot saved: {}", plot_path.display());
     }
 

@@ -2,6 +2,7 @@
 pub mod brownianmotion;
 /// Hull-White one-factor short-rate model.
 pub mod hullwhite;
+/// Linear Gaussian Markov (LGM) model.
 pub mod lgm;
 /// Monte Carlo simulation engine and planner.
 pub mod montecarloengine;

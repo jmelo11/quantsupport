@@ -1,9 +1,9 @@
 use std::collections::HashMap;
-use std::marker::PhantomData;
 
 use rand::rngs::StdRng;
 use rand::Rng;
 use rand::SeedableRng;
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
 use crate::{
     ad::scalar::Scalar,
@@ -13,6 +13,7 @@ use crate::{
     },
     currencies::currency::Currency,
     indices::marketindex::MarketIndex,
+    math::linalg::cholesky,
     math::solvers::solvertraits::Matrix,
     models::lgm::lgmcomponents::{LgmFxModel, LgmRateModel},
     time::{date::Date, daycounter::DayCounter},
@@ -23,21 +24,25 @@ use crate::{
     },
 };
 
+/// Cached simulation state: Gaussian factors and FX spots keyed by date.
 #[derive(Default)]
 struct LgmMarketModelState {
     rates: HashMap<MarketIndex, HashMap<Date, f64>>,
     fx: HashMap<Currency, HashMap<Date, f64>>,
 }
 
-pub struct LgmMarketModel<'a> {
+/// Single- or multi-currency LGM (Linear Gaussian Markov) market model.
+///
+/// Drives Monte-Carlo path generation for XVA / exposure calculations.
+/// Each rate currency is modelled by an [`LgmRateModel`] and each FX pair
+/// by an [`LgmFxModel`]; cross-factor correlations are captured via a
+/// Cholesky-decomposed correlation matrix.
+pub struct LgmMarketModel<'a, T: Scalar> {
     domestic_currency: Currency,
     domestic_index: MarketIndex,
-    curve_models: HashMap<MarketIndex, LgmRateModel<'a>>,
-    fx_models: HashMap<Currency, LgmFxModel<'a>>,
-    /// Precomputed currency → `MarketIndex` lookup (populated by `add_curve_model`).
+    curve_models: HashMap<MarketIndex, LgmRateModel<'a, T>>,
+    fx_models: HashMap<Currency, LgmFxModel<'a, T>>,
     currency_to_index: HashMap<Currency, MarketIndex>,
-    /// Maps a `MarketIndex` used in `SpotRequests` to a foreign currency
-    /// so that the LGM FX state can fulfil spot-like payoffs (e.g. FX options).
     fx_spot_indices: HashMap<MarketIndex, Currency>,
     dates: Vec<Date>,
     requests: Vec<SimulationRequest>,
@@ -49,7 +54,8 @@ pub struct LgmMarketModel<'a> {
     state: LgmMarketModelState,
 }
 
-impl<'a> LgmMarketModel<'a> {
+impl<'a, T: Scalar> LgmMarketModel<'a, T> {
+    /// Creates a new LGM market model for the given domestic currency.
     #[must_use]
     pub fn new(
         domestic_currency: Currency,
@@ -75,25 +81,29 @@ impl<'a> LgmMarketModel<'a> {
         }
     }
 
+    /// Sets the number of Monte Carlo paths.
     #[must_use]
     pub const fn with_n_paths(mut self, n: usize) -> Self {
         self.n_paths = n;
         self
     }
 
+    /// Sets the base RNG seed.
     #[must_use]
     pub const fn with_seed(mut self, seed: u64) -> Self {
         self.seed = seed;
         self
     }
 
+    /// Sets the cross-factor correlation matrix.
     #[must_use]
     pub fn with_correlation_matrix(mut self, corr: Matrix<f64>) -> Self {
         self.correlation_matrix = Some(corr);
         self
     }
 
-    pub fn add_curve_model(&mut self, market_index: MarketIndex, model: LgmRateModel<'a>) {
+    /// Adds a rate curve model for the given market index.
+    pub fn add_curve_model(&mut self, market_index: MarketIndex, model: LgmRateModel<'a, T>) {
         if let Ok(details) = market_index.rate_index_details() {
             self.currency_to_index
                 .insert(details.currency(), market_index.clone());
@@ -101,7 +111,8 @@ impl<'a> LgmMarketModel<'a> {
         self.curve_models.insert(market_index, model);
     }
 
-    pub fn add_fx_model(&mut self, currency: Currency, model: LgmFxModel<'a>) {
+    /// Adds an FX model for the given foreign currency.
+    pub fn add_fx_model(&mut self, currency: Currency, model: LgmFxModel<'a, T>) {
         self.fx_models.insert(currency, model);
     }
 
@@ -111,6 +122,7 @@ impl<'a> LgmMarketModel<'a> {
         self.fx_spot_indices.insert(index, currency);
     }
 
+    /// Sets the simulation requests (one per contingent claim).
     pub fn set_requests(&mut self, requests: Vec<SimulationRequest>) {
         self.requests = requests;
     }
@@ -144,29 +156,6 @@ impl<'a> LgmMarketModel<'a> {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Helper: Cholesky decomposition of a symmetric positive-definite matrix
-// ---------------------------------------------------------------------------
-#[allow(clippy::needless_range_loop)]
-fn cholesky(matrix: &[Vec<f64>]) -> Vec<Vec<f64>> {
-    let n = matrix.len();
-    let mut l = vec![vec![0.0; n]; n];
-    for i in 0..n {
-        for j in 0..=i {
-            let mut sum = 0.0;
-            for k in 0..j {
-                sum += l[i][k] * l[j][k];
-            }
-            if i == j {
-                l[i][j] = (matrix[i][i] - sum).max(0.0).sqrt();
-            } else if l[j][j].abs() > 1e-14 {
-                l[i][j] = (matrix[i][j] - sum) / l[j][j];
-            }
-        }
-    }
-    l
-}
-
 /// Box–Muller standard-normal sample.
 fn std_normal(rng: &mut impl Rng) -> f64 {
     let u1: f64 = rng.gen_range(f64::EPSILON..1.0);
@@ -174,44 +163,40 @@ fn std_normal(rng: &mut impl Rng) -> f64 {
     (-2.0 * u1.ln()).sqrt() * u2.cos()
 }
 
-// ---------------------------------------------------------------------------
-// Path iterator
-// ---------------------------------------------------------------------------
-struct LgmPathIter<'a, T: Scalar> {
-    model: &'a LgmMarketModel<'a>,
-    rng: StdRng,
-    paths_remaining: usize,
-    // Pre-computed
+/// Read-only pre-computed data shared by all path generators.
+struct LgmPathContext<'a, T: Scalar> {
+    model: &'a LgmMarketModel<'a, T>,
     times: Vec<f64>,
     rate_indices: Vec<MarketIndex>,
     fx_currencies: Vec<Currency>,
     cholesky_l: Vec<Vec<f64>>,
     n_factors: usize,
-    _phantom: PhantomData<T>,
 }
 
-impl<'a, T: Scalar> LgmPathIter<'a, T> {
-    fn new(model: &'a LgmMarketModel<'a>) -> Self {
+// SAFETY: `LgmPathContext` is read-only during parallel path generation.
+// The `&dyn InterestRatesTermStructure` references inside `LgmRateModel`
+// are only used for discount-factor lookups (pure reads).
+unsafe impl<T: Scalar> Sync for LgmPathContext<'_, T> {}
+unsafe impl<T: Scalar> Send for LgmPathContext<'_, T> {}
+
+impl<'a, T: Scalar> LgmPathContext<'a, T> {
+    fn new(model: &'a LgmMarketModel<'a, T>) -> Self {
         let (rate_indices, fx_currencies) = model.build_factor_ordering();
         let n_rates = rate_indices.len();
         let n_fx = fx_currencies.len();
         let n_factors = n_rates + n_fx;
 
-        // Build Cholesky factor
         let cholesky_l = model.correlation_matrix.as_ref().map_or_else(
             || {
-                // Identity
                 let mut id = vec![vec![0.0; n_factors]; n_factors];
-                #[allow(clippy::needless_range_loop)]
-                for i in 0..n_factors {
-                    id[i][i] = 1.0;
+                for (i, row) in id.iter_mut().enumerate() {
+                    row[i] = 1.0;
                 }
                 id
             },
             |corr| cholesky(corr),
         );
 
-        // Time grid: [0.0, t(date_0), t(date_1), ...]
         let mut times = Vec::with_capacity(model.dates.len() + 1);
         times.push(0.0);
         for d in &model.dates {
@@ -220,29 +205,24 @@ impl<'a, T: Scalar> LgmPathIter<'a, T> {
 
         Self {
             model,
-            rng: StdRng::seed_from_u64(model.seed),
-            paths_remaining: model.n_paths,
             times,
             rate_indices,
             fx_currencies,
             cholesky_l,
             n_factors,
-            _phantom: PhantomData,
         }
     }
 
-    /// Generate one MC path and build the full `PathScenario`.
-    #[allow(clippy::needless_range_loop)]
+    /// Generate one MC path using the given RNG.
     #[allow(clippy::too_many_lines)]
-    #[allow(clippy::similar_names)]
-    fn generate_path(&mut self) -> Result<PathScenario<T>> {
+    fn generate_path(&self, rng: &mut StdRng) -> Result<PathScenario<T>> {
         let n_dates = self.model.dates.len();
         let n_requests = self.model.requests.len();
-        let n_rates = self.rate_indices.len();
+        let rate_count = self.rate_indices.len();
 
-        // State vectors
-        let mut z: Vec<f64> = vec![0.0; n_rates]; // Gaussian factors (z_dom, z_for_1, ...)
-        let mut x: HashMap<Currency, f64> = self
+        // State vectors — AD-typed so gradients flow through.
+        let mut z: Vec<T> = vec![T::zero(); rate_count];
+        let mut x: HashMap<Currency, T> = self
             .fx_currencies
             .iter()
             .map(|ccy| {
@@ -251,8 +231,12 @@ impl<'a, T: Scalar> LgmPathIter<'a, T> {
             })
             .collect();
 
-        let mut x_history: Vec<HashMap<Currency, f64>> = Vec::with_capacity(n_dates);
+        let mut x_history: Vec<HashMap<Currency, T>> = Vec::with_capacity(n_dates);
         let mut scenario: Vec<Vec<SimulationResponse<T>>> = Vec::with_capacity(n_dates);
+
+        // Pre-allocate scratch buffers for normals and correlated increments
+        let mut eps: Vec<f64> = vec![0.0; self.n_factors];
+        let mut dw: Vec<f64> = vec![0.0; self.n_factors];
 
         for step in 0..n_dates {
             let t = self.times[step];
@@ -260,26 +244,24 @@ impl<'a, T: Scalar> LgmPathIter<'a, T> {
             let dt = t_next - t;
             let sqrt_dt = dt.sqrt();
 
-            // 1. Generate independent normals
-            let eps: Vec<f64> = (0..self.n_factors)
-                .map(|_| std_normal(&mut self.rng))
-                .collect();
+            // 1. Generate independent normals (reuse buffer)
+            for e in eps.iter_mut() {
+                *e = std_normal(rng);
+            }
 
             // 2. Apply Cholesky to get correlated increments (dW_i = sum_j L[i][j] * eps[j] * sqrt(dt))
-            let dw: Vec<f64> = (0..self.n_factors)
-                .map(|i| {
-                    let mut w = 0.0;
-                    for j in 0..=i {
-                        w += self.cholesky_l[i][j] * eps[j];
-                    }
-                    w * sqrt_dt
-                })
-                .collect();
+            for i in 0..self.n_factors {
+                let mut w = 0.0;
+                for (j, eps_j) in eps.iter().enumerate().take(i + 1) {
+                    w += self.cholesky_l[i][j] * eps_j;
+                }
+                dw[i] = w * sqrt_dt;
+            }
 
             // 3. Evolve domestic factor (index 0, drift = 0)
             let dom_model = &self.model.curve_models[&self.rate_indices[0]];
             if dt > 1e-14 {
-                z[0] = dom_model.evolve_factor_euler(t, z[0], dt, 0.0, dw[0]);
+                z[0] = dom_model.evolve_domestic_factor_euler(t, z[0], dt, dw[0]);
             }
 
             // 4. Evolve foreign factors and FX spots
@@ -296,7 +278,7 @@ impl<'a, T: Scalar> LgmPathIter<'a, T> {
                         .ok_or_else(|| {
                             QSError::NotFoundErr(format!("Rate position for {for_index}"))
                         })?;
-                    let fx_pos = n_rates + fi; // position in factor array
+                    let fx_pos = rate_count + fi; // position in factor array
 
                     let for_model = &self.model.curve_models[&for_index];
 
@@ -308,17 +290,16 @@ impl<'a, T: Scalar> LgmPathIter<'a, T> {
                         .map_or((0.0, 0.0), |c| (c[rate_pos][0], c[rate_pos][fx_pos]));
 
                     // Evolve foreign Gaussian factor under domestic measure
-                    z[rate_pos] =
-                        for_model.evolve_foreign_factor_under_domestic_measure_euler(
-                            t,
-                            z[rate_pos],
-                            dt,
-                            dw[rate_pos],
-                            dom_model,
-                            fx_model.fx_vol(),
-                            rho_zx_for_fx,
-                            rho_zz_for_dom,
-                        );
+                    z[rate_pos] = for_model.evolve_foreign_factor_under_domestic_measure_euler(
+                        t,
+                        z[rate_pos],
+                        dt,
+                        dw[rate_pos],
+                        dom_model,
+                        fx_model.fx_vol().value(),
+                        rho_zx_for_fx,
+                        rho_zz_for_dom,
+                    );
 
                     // Evolve FX spot (log-Euler)
                     let x_curr = x[ccy];
@@ -367,14 +348,17 @@ impl<'a, T: Scalar> LgmPathIter<'a, T> {
                             // Instantaneous forward rate
                             let rate =
                                 curve_model.instantaneous_forward_rate(t_eval, t_start, z_t)?;
-                            resp.forward_rates = Some(T::scalar(rate));
+                            resp.forward_rates = Some(rate);
                         } else {
-                            // Simply-compounded forward rate: L = (1/tau)*(P(t,S,z)/P(t,T,z) - 1)
+                            // Simply-compounded forward rate: L = (1/tau)*(P(t,S,z)/P(t,E,z) - 1)
                             let p_start = curve_model.P_discount(t_eval, t_start, z_t)?;
                             let p_end = curve_model.P_discount(t_eval, t_end, z_t)?;
                             let tau = t_end - t_start;
-                            let rate = (p_start / p_end - 1.0) / tau;
-                            resp.forward_rates = Some(T::scalar(rate));
+                            let rate = p_start
+                                .div_val(p_end)
+                                .sub_val(T::one())
+                                .div_val(T::scalar(tau));
+                            resp.forward_rates = Some(rate);
                         }
                     }
                 }
@@ -385,7 +369,7 @@ impl<'a, T: Scalar> LgmPathIter<'a, T> {
                     if base == self.model.domestic_currency {
                         resp.fx_rates = Some(T::one());
                     } else if let Some(&spot) = x.get(&base) {
-                        resp.fx_rates = Some(T::scalar(spot));
+                        resp.fx_rates = Some(spot);
                     } else {
                         resp.fx_rates = Some(T::one());
                     }
@@ -405,7 +389,7 @@ impl<'a, T: Scalar> LgmPathIter<'a, T> {
                         let t_pay = self.model.time_from_date(disc_req.date());
                         if t_pay > t_eval {
                             if let Ok(df) = curve_model.P_discount(t_eval, t_pay, z_t) {
-                                resp.discounts = Some(T::scalar(df));
+                                resp.discounts = Some(df);
                             }
                         } else {
                             resp.discounts = Some(T::one());
@@ -430,17 +414,7 @@ impl<'a, T: Scalar> LgmPathIter<'a, T> {
         }
 
         // Post-processing: resolve spot requests using S at the observation date.
-        //
-        // Spot requests (e.g. FX options) are skipped during the main loop
-        // because the spot value at the observation date may belong to a
-        // future simulation step that has not been computed yet.  Once the
-        // full path is available in `x_history`, we go back and fill in the
-        // spot field for every (step, request) pair.
-        //
-        // For each spot request we find the latest simulation step whose
-        // date is <= the requested observation date (`rposition`) and read
-        // the FX spot from `x_history` at that step.
-        for step in 0..n_dates {
+        for (step, step_responses) in scenario.iter_mut().enumerate() {
             for (ri, req) in self.model.requests.iter().enumerate() {
                 if let Some(spot_req) = &req.spot_request {
                     let idx = spot_req.market_index();
@@ -454,7 +428,7 @@ impl<'a, T: Scalar> LgmPathIter<'a, T> {
                             .unwrap_or(step)
                             .min(n_dates - 1);
                         if let Some(&fx_spot) = x_history[obs_step].get(ccy) {
-                            scenario[step][ri].spots = Some(T::scalar(fx_spot));
+                            step_responses[ri].spots = Some(fx_spot);
                         }
                     }
                 }
@@ -462,6 +436,23 @@ impl<'a, T: Scalar> LgmPathIter<'a, T> {
         }
 
         Ok(scenario)
+    }
+}
+
+/// Sequential path iterator used by [`MarketModel::path_iter`].
+struct LgmPathIter<'a, T: Scalar> {
+    ctx: LgmPathContext<'a, T>,
+    rng: StdRng,
+    paths_remaining: usize,
+}
+
+impl<'a, T: Scalar> LgmPathIter<'a, T> {
+    fn new(model: &'a LgmMarketModel<'a, T>) -> Self {
+        Self {
+            ctx: LgmPathContext::new(model),
+            rng: StdRng::seed_from_u64(model.seed),
+            paths_remaining: model.n_paths,
+        }
     }
 }
 
@@ -473,7 +464,7 @@ impl<T: Scalar> Iterator for LgmPathIter<'_, T> {
             return None;
         }
         self.paths_remaining -= 1;
-        self.generate_path().ok()
+        self.ctx.generate_path(&mut self.rng).ok()
     }
 }
 
@@ -483,19 +474,32 @@ impl<T: Scalar> Iterator for LgmPathIter<'_, T> {
 // read-only during iteration.
 unsafe impl<T: Scalar> Send for LgmPathIter<'_, T> {}
 
+// SAFETY: LgmMarketModel is immutable during simulation — all &dyn
+// InterestRatesTermStructure references are used for read-only discount-factor
+// lookups.  No interior mutability is involved.
+unsafe impl<T: Scalar> Sync for LgmMarketModel<'_, T> {}
+#[allow(clippy::non_send_fields_in_send_ty)]
+unsafe impl<T: Scalar> Send for LgmMarketModel<'_, T> {}
+
 // ---------------------------------------------------------------------------
 // MarketModel implementation
 // ---------------------------------------------------------------------------
-impl MarketModel<f64> for LgmMarketModel<'_> {
-    fn path_iter(&self) -> Box<dyn Iterator<Item = PathScenario<f64>> + Send + '_> {
-        Box::new(LgmPathIter::<f64>::new(self))
+impl<T: Scalar + 'static> MarketModel<T> for LgmMarketModel<'_, T> {
+    fn n_paths(&self) -> usize {
+        self.n_paths
+    }
+
+    fn generate_path(&self, index: usize) -> Option<PathScenario<T>> {
+        let ctx = LgmPathContext::new(self);
+        let mut rng = StdRng::seed_from_u64(self.seed.wrapping_add(index as u64));
+        ctx.generate_path(&mut rng).ok()
     }
 
     fn set_evaluation_dates(&mut self, dates: Vec<Date>) {
         self.dates = dates;
     }
 
-    fn resolve_discount_request(&self, eval_date: Date, request: &DiscountRequest) -> Result<f64> {
+    fn resolve_discount_request(&self, eval_date: Date, request: &DiscountRequest) -> Result<T> {
         let idx = request.market_index();
         let curve_model = self
             .curve_models
@@ -503,7 +507,7 @@ impl MarketModel<f64> for LgmMarketModel<'_> {
             .ok_or_else(|| QSError::NotFoundErr(format!("Curve model for {idx}")))?;
         let t_eval = self.time_from_date(eval_date);
         let t_pay = self.time_from_date(request.date());
-        let z_t = self.state_z(&idx, eval_date).unwrap_or(0.0);
+        let z_t = T::scalar(self.state_z(&idx, eval_date).unwrap_or(0.0));
         curve_model.P_discount(t_eval, t_pay, z_t)
     }
 
@@ -511,14 +515,14 @@ impl MarketModel<f64> for LgmMarketModel<'_> {
         &self,
         eval_date: Date,
         request: &ForwardRateRequest,
-    ) -> Result<f64> {
+    ) -> Result<T> {
         let idx = request.market_index();
         let curve_model = self
             .curve_models
             .get(&idx)
             .ok_or_else(|| QSError::NotFoundErr(format!("Curve model for {idx}")))?;
         let t_eval = self.time_from_date(eval_date);
-        let z_t = self.state_z(&idx, eval_date).unwrap_or(0.0);
+        let z_t = T::scalar(self.state_z(&idx, eval_date).unwrap_or(0.0));
 
         let start = request
             .start_date()
@@ -533,20 +537,21 @@ impl MarketModel<f64> for LgmMarketModel<'_> {
             let p_s = curve_model.P_discount(t_eval, t_start, z_t)?;
             let p_e = curve_model.P_discount(t_eval, t_end, z_t)?;
             let tau = t_end - t_start;
-            Ok((p_s / p_e - 1.0) / tau)
+            Ok(p_s.div_val(p_e).sub_val(T::one()).div_val(T::scalar(tau)))
         }
     }
 
-    fn resolve_fx_request(&self, eval_date: Date, request: &FxRequest) -> Result<f64> {
+    fn resolve_fx_request(&self, eval_date: Date, request: &FxRequest) -> Result<T> {
         let base = request.base();
         if base == self.domestic_currency {
-            return Ok(1.0);
+            return Ok(T::one());
         }
         self.state_fx(base, eval_date)
+            .map(|v| T::scalar(v))
             .ok_or_else(|| QSError::NotFoundErr(format!("FX state for {base} at {eval_date}")))
     }
 
-    fn resolve_spot_request(&self, eval_date: Date, request: &SpotRequest) -> Result<f64> {
+    fn resolve_spot_request(&self, eval_date: Date, request: &SpotRequest) -> Result<T> {
         let idx = request.market_index();
         self.fx_spot_indices.get(&idx).map_or_else(
             || {
@@ -555,9 +560,11 @@ impl MarketModel<f64> for LgmMarketModel<'_> {
                 ))
             },
             |ccy| {
-                self.state_fx(*ccy, eval_date).ok_or_else(|| {
-                    QSError::NotFoundErr(format!("FX state for {ccy} at {eval_date}"))
-                })
+                self.state_fx(*ccy, eval_date)
+                    .map(|v| T::scalar(v))
+                    .ok_or_else(|| {
+                        QSError::NotFoundErr(format!("FX state for {ccy} at {eval_date}"))
+                    })
             },
         )
     }
@@ -566,7 +573,7 @@ impl MarketModel<f64> for LgmMarketModel<'_> {
         &self,
         _eval_date: Date,
         _request: &PathDependentRequest,
-    ) -> Result<f64> {
+    ) -> Result<T> {
         Err(QSError::NotImplementedErr(
             "Path-dependent request not supported in LGM rate model".into(),
         ))
@@ -576,7 +583,7 @@ impl MarketModel<f64> for LgmMarketModel<'_> {
 // ---------------------------------------------------------------------------
 // State accessors (used by resolve methods when state is populated externally)
 // ---------------------------------------------------------------------------
-impl LgmMarketModel<'_> {
+impl<T: Scalar> LgmMarketModel<'_, T> {
     fn state_z(&self, index: &MarketIndex, date: Date) -> Option<f64> {
         self.state.rates.get(index)?.get(&date).copied()
     }

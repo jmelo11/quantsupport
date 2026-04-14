@@ -1,4 +1,3 @@
-use bumpalo::Bump;
 use std::{
     cell::RefCell,
     fmt::Debug,
@@ -6,6 +5,7 @@ use std::{
     ptr::NonNull,
 };
 
+use crate::ad::blocklist::BlockList;
 use crate::utils::errors::Result;
 use crate::{ad::node::TapeNode, utils::errors::QSError};
 
@@ -39,8 +39,8 @@ pub trait TapeHolder:
 /// The default type parameter `T = f64` preserves backward compatibility:
 /// `Tape` (without turbofish) is `Tape<f64>`.
 pub struct Tape<T = f64> {
-    /// Bump arena for efficient node allocation.
-    pub bump: Bump,
+    /// Block-based slab allocator for tape nodes.
+    pub storage: BlockList<TapeNode<T>>,
     /// Ordered list of recorded node pointers.
     pub book: Vec<NonNull<TapeNode<T>>>,
     /// Current mark index for nested operations.
@@ -56,7 +56,7 @@ impl<T: TapeHolder> Tape<T> {
     #[must_use]
     pub fn new() -> Self {
         Self {
-            bump: Bump::new(),
+            storage: BlockList::with_default_cap(),
             book: Vec::new(),
             mark: 0,
             active: false,
@@ -66,7 +66,7 @@ impl<T: TapeHolder> Tape<T> {
     /// Allocates a node in the bump arena and records it in the tape book.
     #[inline]
     fn push(&mut self, n: TapeNode<T>) -> NonNull<TapeNode<T>> {
-        let ptr = NonNull::from(self.bump.alloc(n));
+        let ptr = self.storage.alloc(n);
         self.book.push(ptr);
         ptr
     }
@@ -158,7 +158,7 @@ impl<T: TapeHolder> Tape<T> {
 
     /// Clears the tape and begins recording.
     pub fn start_inner(&mut self) {
-        self.bump.reset();
+        self.storage.reset();
         self.book.clear();
         self.mark = 0;
         self.active = true;
@@ -185,12 +185,12 @@ impl TapeHolder for f64 {
 }
 
 thread_local! {
-    /// Thread-local tape used by [`Dual<f64>`](crate::ad::dual::Dual) (aka `DualFwd`).
+    /// Thread-local tape used by [`Dual<f64>`](crate::ad::dual::Dual).
     pub static TAPE: RefCell<Tape<f64>> = RefCell::new(Tape {
-        bump:   Bump::new(),
-        book:   Vec::new(),
-        mark:   0,
-        active: false,
+        storage: BlockList::with_default_cap(),
+        book:    Vec::new(),
+        mark:    0,
+        active:  false,
     });
 }
 
@@ -224,11 +224,13 @@ impl Tape<f64> {
         });
     }
 
-    /// Truncates the tape back to the current mark.
+    /// Truncates the tape back to the current mark, dropping post-mark nodes.
     pub fn rewind_to_mark() {
         TAPE.with(|tc| {
-            let mark = tc.borrow().mark;
-            tc.borrow_mut().book.truncate(mark);
+            let mut t = tc.borrow_mut();
+            let mark = t.mark;
+            t.book.truncate(mark);
+            t.storage.rewind_to(mark);
         });
     }
 
@@ -243,7 +245,7 @@ impl Tape<f64> {
     pub fn rewind_to_init() {
         TAPE.with(|tc| {
             let mut t = tc.borrow_mut();
-            t.bump.reset();
+            t.storage.reset();
             t.book.clear();
             t.mark = 0;
         });

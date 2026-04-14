@@ -444,7 +444,7 @@ where
                     start_date + tenor
                 };
 
-                let mut schedule_builder = MakeSchedule::new(start_date, end_date)
+                let schedule_builder = MakeSchedule::new(start_date, end_date)
                     .with_frequency(payment_frequency)
                     .end_of_month(self.end_of_month.unwrap_or(false))
                     .with_calendar(
@@ -673,7 +673,7 @@ where
                         .ok_or_else(|| QSError::ValueNotSetErr("Tenor".into()))?;
                     start_date + tenor
                 };
-                let mut schedule_builder = MakeSchedule::new(start_date, end_date)
+                let schedule_builder = MakeSchedule::new(start_date, end_date)
                     .with_frequency(payment_frequency)
                     .end_of_month(self.end_of_month.unwrap_or(false))
                     .with_calendar(
@@ -850,7 +850,7 @@ where
                         .ok_or_else(|| QSError::ValueNotSetErr("Tenor".into()))?;
                     start_date + tenor
                 };
-                let mut schedule_builder = MakeSchedule::new(start_date, end_date)
+                let schedule_builder = MakeSchedule::new(start_date, end_date)
                     .with_frequency(payment_frequency)
                     .end_of_month(self.end_of_month.unwrap_or(false))
                     .with_convention(

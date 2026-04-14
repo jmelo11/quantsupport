@@ -12,6 +12,7 @@ pub mod floatingratecoupon;
 pub mod leg;
 /// Make Leg Module
 pub mod makeleg;
+/// Option-embedded cashflow (e.g. cap/floor payoffs).
 pub mod optionembeddedcashflow;
 /// Option Embedded Coupon Module
 pub mod optionembeddedcoupon;

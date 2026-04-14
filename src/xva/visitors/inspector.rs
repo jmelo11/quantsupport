@@ -23,10 +23,15 @@ use crate::{
 /// passes the full list to the [`MarketModel`](super::marketgenerator::MarketModel).
 #[derive(Default, Clone)]
 pub struct SimulationRequest {
+    /// Discount factor request.
     pub discount_request: Option<DiscountRequest>,
+    /// Forward rate request.
     pub forward_rate_request: Option<ForwardRateRequest>,
+    /// FX rate request.
     pub fx_request: Option<FxRequest>,
+    /// Spot observation request.
     pub spot_request: Option<SpotRequest>,
+    /// Path-dependent observation request.
     pub path_dependent_request: Option<PathDependentRequest>,
 }
 
@@ -51,7 +56,7 @@ impl Default for Inspector {
 
 impl Inspector {
     /// Creates an inspector without a discount policy.
-    #[must_use] 
+    #[must_use]
     pub fn new() -> Self {
         Self {
             requests: Vec::new(),
@@ -61,7 +66,7 @@ impl Inspector {
 
     /// Creates an inspector with a discount policy that will resolve
     /// the discount curve for each claim during [`visit`].
-    #[must_use] 
+    #[must_use]
     pub fn with_discount_policy(policy: Box<dyn DiscountPolicy>) -> Self {
         Self {
             requests: Vec::new(),
@@ -95,7 +100,7 @@ impl Inspector {
     }
 
     /// Returns the collected simulation requests, one per claim, in visit order.
-    #[must_use] 
+    #[must_use]
     pub fn requests(&self) -> &[SimulationRequest] {
         &self.requests
     }

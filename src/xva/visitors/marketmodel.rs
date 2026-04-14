@@ -27,11 +27,17 @@ pub type PathScenario<T> = Vec<Vec<SimulationResponse<T>>>;
 /// Each field corresponds to a request category in [`SimulationRequest`].
 /// Fields are `None` when the claim did not request that data category.
 pub struct SimulationResponse<T: Scalar> {
+    /// Simulated discount factor.
     pub discounts: Option<T>,
+    /// Simulated forward rate.
     pub forward_rates: Option<T>,
+    /// Simulated FX rate.
     pub fx_rates: Option<T>,
+    /// Simulated spot observation.
     pub spots: Option<T>,
+    /// Simulated path-dependent observation.
     pub path_dependent_observations: Option<T>,
+    /// Numeraire value.
     pub numeraire: Option<T>,
 }
 
@@ -46,7 +52,7 @@ where
     T: Scalar,
 {
     /// Creates an empty response with all fields set to `None`.
-    #[must_use] 
+    #[must_use]
     pub const fn new() -> Self {
         Self {
             discounts: None,
@@ -68,9 +74,15 @@ where
 ///
 /// A default [`resolve_request`](Self::resolve_request) implementation dispatches
 /// to the individual resolvers.
-pub trait MarketModel<T: Scalar> {
-    /// Returns an iterator that lazily generates Monte Carlo paths.
-    fn path_iter(&self) -> Box<dyn Iterator<Item = PathScenario<T>> + Send + '_>;
+pub trait MarketModel<T: Scalar>: Send + Sync {
+    /// Returns the number of Monte Carlo paths.
+    fn n_paths(&self) -> usize;
+
+    /// Generates a single path for the given path index.
+    ///
+    /// Each index should produce a deterministic, independent path
+    /// (e.g. by deriving the RNG seed from `index`).
+    fn generate_path(&self, index: usize) -> Option<PathScenario<T>>;
 
     /// Sets the simulation date grid.
     fn set_evaluation_dates(&mut self, dates: Vec<Date>);

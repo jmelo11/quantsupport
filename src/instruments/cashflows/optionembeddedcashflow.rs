@@ -4,6 +4,7 @@ use crate::{
     instruments::cashflows::payoffops::PayoffOps,
 };
 
+/// A cashflow with an embedded option payoff (e.g. cap/floor).
 #[derive(Clone)]
 pub struct OptionEmbeddedCashflow<T: Scalar> {
     payoff_ops: PayoffOps,
