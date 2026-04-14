@@ -38,7 +38,7 @@ use crate::{
 ///     .expect("failed to build cap");
 ///
 /// assert_eq!(cap.identifier(), "CAP-3Y");
-/// assert_eq!(cap.strike(), 0.04);
+/// assert_eq!(cap.strike(), Strike::Absolute(0.04));
 /// assert!(!cap.caplet_floorlets().is_empty());
 /// ```
 #[derive(Default)]

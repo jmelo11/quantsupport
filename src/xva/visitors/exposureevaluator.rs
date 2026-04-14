@@ -612,8 +612,8 @@ mod tests {
         fn with_model<R>(
             &self,
             dates: &[Date],
-            callback: &mut dyn FnMut(&dyn MarketModel<DualFwd>, &[(String, DualFwd)]) -> R,
-        ) -> R {
+            callback: &mut dyn FnMut(&dyn MarketModel<DualFwd>, &[(String, DualFwd)]) -> Result<R>,
+        ) -> Result<R> {
             let dfs: Vec<DualFwd> = self
                 .discount_factors
                 .iter()
@@ -627,13 +627,6 @@ mod tests {
                 .collect();
             let pillar_labels: Vec<String> =
                 (0..n_inner).map(|i| format!("DF_{}", i + 1)).collect();
-            let ift: Vec<Vec<f64>> = (0..n_inner)
-                .map(|i| {
-                    let mut row = vec![0.0; n_inner];
-                    row[i] = 1.0;
-                    row
-                })
-                .collect();
 
             let mut curve = DiscountTermStructure::<DualFwd>::new(
                 self.curve_dates.clone(),
@@ -646,8 +639,7 @@ mod tests {
             .with_pillar_values(pillar_values)
             .unwrap()
             .with_pillar_labels(pillar_labels)
-            .unwrap()
-            .with_ift_sensitivities(ift);
+            .unwrap();
 
             curve.put_pillars_on_tape();
 
