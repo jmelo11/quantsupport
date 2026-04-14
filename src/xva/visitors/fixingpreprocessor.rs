@@ -28,7 +28,7 @@ pub struct FixingPreprocessor {
 
 impl FixingPreprocessor {
     #[must_use]
-    pub fn new(ref_date: Date, day_counter: DayCounter, fixing_store: FixingStore) -> Self {
+    pub const fn new(ref_date: Date, day_counter: DayCounter, fixing_store: FixingStore) -> Self {
         Self {
             ref_date,
             day_counter,
@@ -53,7 +53,7 @@ impl FixingPreprocessor {
                 end
             };
             let dt = self.day_counter.year_fraction(d, next);
-            factor *= 1.0 + rate * dt;
+            factor *= rate.mul_add(dt, 1.0);
         }
         Some(factor)
     }
@@ -70,10 +70,7 @@ impl ClaimPreprocessor for FixingPreprocessor {
             return;
         }
 
-        let fixing_date = match claim.fixing_date() {
-            Some(d) => d,
-            None => return,
-        };
+        let Some(fixing_date) = claim.fixing_date() else { return };
         if fixing_date >= self.ref_date {
             return;
         }
@@ -85,11 +82,10 @@ impl ClaimPreprocessor for FixingPreprocessor {
 
         let in_arrears = market_index
             .rate_index_details()
-            .map(|d| d.is_in_arrears())
-            .unwrap_or(true);
+            .map_or(true, |d| d.is_in_arrears());
 
         let accrual_start = claim.accrual_start().unwrap_or(fixing_date);
-        let accrual_end = claim.accrual_end().unwrap_or(claim.payment_date());
+        let accrual_end = claim.accrual_end().unwrap_or_else(|| claim.payment_date());
 
         if !in_arrears {
             // Term rate: single historical fixing at fixing_date.

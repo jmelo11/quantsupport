@@ -44,7 +44,7 @@ pub struct SimulationRequest {
 
 /// Collects [`SimulationRequest`]s from a set of [`NettingSet`]s.
 ///
-/// The PreprocessorExecutor is the first step of the XVA pipeline.  For
+/// The [`PreprocessorExecutor`] is the first step of the XVA pipeline.  For
 /// each netting set it:
 ///
 /// 1. Runs the per-claim [`ClaimPreprocessor`] pipeline.
@@ -67,7 +67,7 @@ impl Default for PreprocessorExecutor {
 }
 
 impl PreprocessorExecutor {
-    /// Creates a PreprocessorExecutor without any preprocessors.
+    /// Creates a `PreprocessorExecutor` without any preprocessors.
     #[must_use]
     pub fn new() -> Self {
         Self {
@@ -90,7 +90,7 @@ impl PreprocessorExecutor {
     /// preprocessing, reducing the number of evaluations in the
     /// Monte Carlo loop.
     #[must_use]
-    pub fn with_compression(mut self) -> Self {
+    pub const fn with_compression(mut self) -> Self {
         self.compress = true;
         self
     }

@@ -17,7 +17,7 @@ use crate::{
 /// called **after** the mark inside each path iteration.
 pub trait PfeAggregator<T: Scalar>: Send + Sync {
     /// Human-readable name for this measure (e.g. `"CVA"`, `"DVA"`).
-    fn name(&self) -> &str;
+    fn name(&self) -> &'static str;
 
     /// Combine per-date NPVs into a single Pfe contribution for one path.
     ///
@@ -44,7 +44,7 @@ pub struct AggregatorBundle {
 /// (pre-mark).
 pub trait PfeAggregatorFactory: Send + Sync {
     /// Human-readable name for the Pfe measure (e.g. `"CVA"`).
-    fn name(&self) -> &str;
+    fn name(&self) -> &'static str;
 
     /// Creates an aggregator and its tracked leaves on the current thread's
     /// tape.  Must be called **before** `set_mark`.
@@ -87,20 +87,21 @@ impl<T: Scalar> CvaAggregator<T> {
         Self {
             lgd,
             survival_probs,
-            inv_n: 1.0 / n_paths as f64,
+            inv_n: 1.0 / f64::from(u32::try_from(n_paths).unwrap_or(u32::MAX)),
         }
     }
 }
 
 impl<T: Scalar> PfeAggregator<T> for CvaAggregator<T> {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "CVA"
     }
 
     fn aggregate_path(&self, npvs: &[T], dates: &[Date]) -> T {
         let mut c_p = T::zero();
-        for d in 1..dates.len().min(npvs.len()) {
-            let exposure = npvs[d].max_val(T::zero());
+        let n = dates.len().min(npvs.len());
+        for (d, npv) in npvs.iter().enumerate().take(n).skip(1) {
+            let exposure = npv.max_val(T::zero());
             let delta_pd = self.survival_probs[d - 1].sub_val(self.survival_probs[d]);
             c_p = c_p.add_val(exposure.mul_val(delta_pd));
         }
@@ -136,20 +137,21 @@ impl<T: Scalar> DvaAggregator<T> {
         Self {
             lgd,
             survival_probs,
-            inv_n: 1.0 / n_paths as f64,
+            inv_n: 1.0 / f64::from(u32::try_from(n_paths).unwrap_or(u32::MAX)),
         }
     }
 }
 
 impl<T: Scalar> PfeAggregator<T> for DvaAggregator<T> {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "DVA"
     }
 
     fn aggregate_path(&self, npvs: &[T], dates: &[Date]) -> T {
         let mut d_p = T::zero();
-        for d in 1..dates.len().min(npvs.len()) {
-            let exposure = npvs[d].neg_val().max_val(T::zero());
+        let n = dates.len().min(npvs.len());
+        for (d, npv) in npvs.iter().enumerate().take(n).skip(1) {
+            let exposure = npv.neg_val().max_val(T::zero());
             let delta_pd = self.survival_probs[d - 1].sub_val(self.survival_probs[d]);
             d_p = d_p.add_val(exposure.mul_val(delta_pd));
         }
@@ -167,13 +169,13 @@ impl<T: Scalar> FvaAggregator<T> {
     pub fn new(funding_spread: T, n_paths: usize) -> Self {
         Self {
             funding_spread,
-            inv_n: 1.0 / n_paths as f64,
+            inv_n: 1.0 / f64::from(u32::try_from(n_paths).unwrap_or(u32::MAX)),
         }
     }
 }
 
 impl<T: Scalar> PfeAggregator<T> for FvaAggregator<T> {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "FVA"
     }
 
@@ -196,7 +198,7 @@ pub struct CvaFactory {
 }
 
 impl PfeAggregatorFactory for CvaFactory {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "CVA"
     }
 
@@ -222,7 +224,7 @@ pub struct DvaFactory {
 }
 
 impl PfeAggregatorFactory for DvaFactory {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "DVA"
     }
 
@@ -247,7 +249,7 @@ pub struct FvaFactory {
 }
 
 impl PfeAggregatorFactory for FvaFactory {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "FVA"
     }
 

@@ -22,14 +22,12 @@ use crate::{
     },
     utils::errors::{QSError, Result},
     xva::{
-        aggregator::{CvaFactory, FvaFactory, PfeAggregatorFactory},
-        nettingset::NettingSet,
-        visitors::{
-            exposureevaluator::{evaluate_with_xva, ExposureResult, XvaModelSetup},
+        aggregator::{CvaFactory, FvaFactory, PfeAggregatorFactory}, contigentclaim::ContingentClaim, nettingset::NettingSet, visitors::{
+            exposureevaluator::{ExposureResult, XvaModelSetup, evaluate_with_xva},
             fixingpreprocessor::FixingPreprocessor,
             marketmodel::MarketModel,
             preprocessorexecutor::{PreprocessorExecutor, SimulationRequest},
-        },
+        }
     },
 };
 
@@ -138,7 +136,7 @@ impl XvaEngine {
                 .iter()
                 .map(|(_, v)| v.value())
                 .collect();
-            let ift = borrowed.ift_sensitivities().map(|s| s.to_vec());
+            let ift = borrowed.ift_sensitivities().map(<[Vec<f64>]>::to_vec);
             let dc = borrowed.day_counter().unwrap_or(DayCounter::Actual365);
 
             curves.insert(
@@ -227,9 +225,9 @@ impl XvaEngine {
         let max_maturity = netting_sets
             .values()
             .flat_map(|ns| ns.claims().iter())
-            .map(|c| c.payment_date())
+            .map(ContingentClaim::payment_date)
             .max()
-            .unwrap_or(self.setup.reference_date.advance(1, TimeUnit::Years));
+            .unwrap_or_else(|| self.setup.reference_date.advance(1, TimeUnit::Years));
 
         let schedule = MakeSchedule::new(self.setup.reference_date, max_maturity)
             .with_frequency(self.frequency)
@@ -259,8 +257,8 @@ impl XvaEngine {
     }
 }
 
-/// Snapshot of f64 curve data extracted from the PricingContext.
-/// Each rayon thread uses this to build a thread-local DualFwd curve.
+/// Snapshot of f64 curve data extracted from the `PricingContext`.
+/// Each rayon thread uses this to build a thread-local `DualFwd` curve.
 #[derive(Clone)]
 struct CurveSnapshot {
     dates: Vec<Date>,
@@ -274,7 +272,10 @@ struct CurveSnapshot {
 
 impl CurveSnapshot {
     /// Build a `DiscountTermStructure<DualFwd>` on the current thread's tape.
-    fn build_dualfwd_curve(&self) -> DiscountTermStructure<DualFwd> {
+    ///
+    /// # Errors
+    /// Returns an error if curve construction or pillar assignment fails.
+    fn build_dualfwd_curve(&self) -> Result<DiscountTermStructure<DualFwd>> {
         let dfs: Vec<DualFwd> = self
             .discount_factors
             .iter()
@@ -292,19 +293,16 @@ impl CurveSnapshot {
             self.day_counter,
             self.interpolator,
             true,
-        )
-        .expect("CurveSnapshot: failed to create DualFwd curve")
-        .with_pillar_values(pvs)
-        .expect("CurveSnapshot: failed to set pillar values")
-        .with_pillar_labels(self.pillar_labels.clone())
-        .expect("CurveSnapshot: failed to set pillar labels");
+        )?
+        .with_pillar_values(pvs)?
+        .with_pillar_labels(self.pillar_labels.clone())?;
 
         if let Some(ref sens) = self.ift_sensitivities {
             curve = curve.with_ift_sensitivities(sens.clone());
         }
 
         curve.put_pillars_on_tape();
-        curve
+        Ok(curve)
     }
 }
 
@@ -336,14 +334,14 @@ impl XvaModelSetup for InternalModelSetup {
     fn with_model<R>(
         &self,
         dates: &[Date],
-        callback: &mut dyn FnMut(&dyn MarketModel<DualFwd>, &[(String, DualFwd)]) -> R,
-    ) -> R {
+        callback: &mut dyn FnMut(&dyn MarketModel<DualFwd>, &[(String, DualFwd)]) -> Result<R>,
+    ) -> Result<R> {
         // 1. Build DualFwd curves and collect leaves.
         let mut built_curves: Vec<(MarketIndex, DiscountTermStructure<DualFwd>)> = Vec::new();
         let mut all_leaves: Vec<(String, DualFwd)> = Vec::new();
 
         for (idx, snap) in &self.curves {
-            let curve = snap.build_dualfwd_curve();
+            let curve = snap.build_dualfwd_curve()?;
             let leaves: Vec<(String, DualFwd)> = curve
                 .pillars()
                 .unwrap_or_default()
@@ -371,7 +369,7 @@ impl XvaModelSetup for InternalModelSetup {
             let cfg = self
                 .model_configs
                 .get(idx)
-                .expect("Model config missing for curve");
+                .ok_or_else(|| QSError::NotFoundErr(format!("Model config missing for curve {idx:?}")))?;
             let rate_model = LgmRateModel::new(
                 DualFwd::scalar(cfg.lambda),
                 DualFwd::scalar(cfg.sigma),
@@ -399,7 +397,7 @@ impl XvaModelSetup for InternalModelSetup {
 
         for fx_cfg in &self.fx_configs {
             let dom_pos =
-                find_fx_rate(&self.domestic_index).expect("Domestic rate model not found for FX");
+                find_fx_rate(&self.domestic_index).ok_or_else(|| QSError::NotFoundErr("Domestic rate model not found for FX".into()))?;
             // Find the foreign index by currency
             let foreign_index = self
                 .model_configs
@@ -407,11 +405,11 @@ impl XvaModelSetup for InternalModelSetup {
                 .find(|(_, mc)| {
                     mc.market_index
                         .rate_index_details()
-                        .map_or(false, |d| d.currency() == fx_cfg.foreign_currency)
+                        .is_ok_and(|d| d.currency() == fx_cfg.foreign_currency)
                 })
                 .map(|(_, mc)| &mc.market_index)
-                .expect("Foreign rate model not found for FX");
-            let for_pos = find_fx_rate(foreign_index).expect("Foreign rate model not found for FX");
+                .ok_or_else(|| QSError::NotFoundErr("Foreign rate model not found for FX".into()))?;
+            let for_pos = find_fx_rate(foreign_index).ok_or_else(|| QSError::NotFoundErr("Foreign rate model not found for FX".into()))?;
 
             // SAFETY: dom_pos != for_pos (domestic != foreign currency).
             // We need two simultaneous immutable borrows from the Vec.
@@ -426,7 +424,7 @@ impl XvaModelSetup for InternalModelSetup {
             let spot = *self
                 .fx_spots
                 .get(&fx_cfg.foreign_currency)
-                .expect("FX spot missing for currency");
+                .ok_or_else(|| QSError::NotFoundErr(format!("FX spot missing for currency {}", fx_cfg.foreign_currency)))?;
 
             let fx_model = LgmFxModel::new(
                 dom_rate,

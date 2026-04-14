@@ -40,7 +40,7 @@ impl NpvCube {
         if n_paths == 0 {
             return vec![0.0; n_dates];
         }
-        let inv_n = 1.0 / n_paths as f64;
+        let inv_n = 1.0 / f64::from(u32::try_from(n_paths).unwrap_or(u32::MAX));
         (0..n_dates)
             .map(|d| {
                 let sum: f64 = self.npvs.iter().map(|path| path[d].max(0.0)).sum();
@@ -57,7 +57,7 @@ impl NpvCube {
         if n_paths == 0 {
             return vec![0.0; n_dates];
         }
-        let inv_n = 1.0 / n_paths as f64;
+        let inv_n = 1.0 / f64::from(u32::try_from(n_paths).unwrap_or(u32::MAX));
         (0..n_dates)
             .map(|d| {
                 let sum: f64 = self.npvs.iter().map(|path| path[d].min(0.0)).sum();
@@ -74,7 +74,7 @@ impl NpvCube {
         if n_paths == 0 {
             return vec![0.0; n_dates];
         }
-        let inv_n = 1.0 / n_paths as f64;
+        let inv_n = 1.0 / f64::from(u32::try_from(n_paths).unwrap_or(u32::MAX));
         (0..n_dates)
             .map(|d| {
                 let sum: f64 = self.npvs.iter().map(|path| path[d]).sum();
@@ -111,6 +111,9 @@ impl<'a, T: Scalar + 'static> ExposureEvaluator<'a, T> {
     }
 
     /// Runs the Monte Carlo simulation and returns per-trade NPV cubes.
+    ///
+    /// # Errors
+    /// Returns an error if claim evaluation fails for any path.
     pub fn evaluate(&self, trades: &HashMap<String, &[ContingentClaim]>) -> Result<ExposureResult> {
         let n_paths = self.model.n_paths();
         let n_dates = self.dates.len();
@@ -202,11 +205,20 @@ pub trait XvaModelSetup: Send + Sync {
     ///   the current thread's tape.
     /// - `leaves` -- tracked `(label, DualFwd)` pairs whose adjoints carry
     ///   curve sensitivities after the backward pass.
+    /// # Errors
+    /// Returns an error if model construction or callback execution fails.
     fn with_model<R>(
         &self,
         dates: &[Date],
-        callback: &mut dyn FnMut(&dyn MarketModel<DualFwd>, &[(String, DualFwd)]) -> R,
-    ) -> R;
+        callback: &mut dyn FnMut(&dyn MarketModel<DualFwd>, &[(String, DualFwd)]) -> Result<R>,
+    ) -> Result<R>;
+}
+
+/// Per-thread accumulation result for the parallel AAD loop.
+struct ChunkResult {
+    cubes: HashMap<String, Vec<Vec<f64>>>,
+    xva_accums: Vec<f64>,
+    sensitivities: Vec<(String, f64)>,
 }
 
 /// Parallel AAD evaluation.
@@ -222,9 +234,13 @@ pub trait XvaModelSetup: Send + Sync {
 ///
 /// Returns NPV cubes, per-aggregator XVA values, and total sensitivities
 /// summed across threads.
-pub fn evaluate_with_xva<S: XvaModelSetup>(
+///
+/// # Errors
+/// Returns an error if model construction, claim evaluation, or adjoint
+/// propagation fails for any thread or path.
+pub fn evaluate_with_xva<S: XvaModelSetup, H: std::hash::BuildHasher + Sync>(
     dates: &[Date],
-    trades: &HashMap<String, &[ContingentClaim]>,
+    trades: &HashMap<String, &[ContingentClaim], H>,
     factories: &[&dyn PfeAggregatorFactory],
     model_setup: &S,
 ) -> Result<ExposureResult> {
@@ -235,7 +251,7 @@ pub fn evaluate_with_xva<S: XvaModelSetup>(
 
     // Build chunks (one per rayon thread)
     let n_threads = rayon::current_num_threads();
-    let chunk_size = (n_paths + n_threads - 1) / n_threads;
+    let chunk_size = n_paths.div_ceil(n_threads);
 
     let chunks: Vec<(usize, usize)> = (0..n_threads)
         .map(|t| {
@@ -245,12 +261,6 @@ pub fn evaluate_with_xva<S: XvaModelSetup>(
         })
         .filter(|(s, e)| s < e)
         .collect();
-
-    struct ChunkResult {
-        cubes: HashMap<String, Vec<Vec<f64>>>,
-        xva_accums: Vec<f64>,
-        sensitivities: Vec<(String, f64)>,
-    }
 
     let chunk_results: Vec<ChunkResult> = chunks
         .into_par_iter()
@@ -336,7 +346,19 @@ pub fn evaluate_with_xva<S: XvaModelSetup>(
         })
         .collect::<Result<Vec<_>>>()?;
 
-    // Reduce across chunks
+    let result = reduce_chunk_results(&chunk_results, factories, dates, &trade_ids, n_aggs);
+
+    Ok(result)
+}
+
+/// Merges per-thread chunk results into a single [`ExposureResult`].
+fn reduce_chunk_results(
+    chunk_results: &[ChunkResult],
+    factories: &[&dyn PfeAggregatorFactory],
+    dates: &[Date],
+    trade_ids: &[String],
+    n_aggs: usize,
+) -> ExposureResult {
     let mut total_xva = vec![0.0_f64; n_aggs];
     let mut sens_map: HashMap<String, f64> = HashMap::new();
     let mut merged_cubes: HashMap<String, Vec<Vec<f64>>> = trade_ids
@@ -344,7 +366,7 @@ pub fn evaluate_with_xva<S: XvaModelSetup>(
         .map(|id| (id.clone(), Vec::new()))
         .collect();
 
-    for chunk in &chunk_results {
+    for chunk in chunk_results {
         for (a, &v) in chunk.xva_accums.iter().enumerate() {
             total_xva[a] += v;
         }
@@ -375,11 +397,11 @@ pub fn evaluate_with_xva<S: XvaModelSetup>(
         })
         .collect();
 
-    Ok(ExposureResult {
+    ExposureResult {
         cubes,
         xva_values: Some(xva_values),
         sensitivities: Some(sensitivities),
-    })
+    }
 }
 
 #[cfg(feature = "plot")]
