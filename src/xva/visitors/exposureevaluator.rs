@@ -276,32 +276,33 @@ pub fn evaluate_with_xva<S: XvaModelSetup>(
                     Tape::rewind_to_mark_fwd();
 
                     if let Some(scenario) = model.generate_path(i) {
-                        let mut portfolio_npvs = vec![DualFwd::zero(); n_dates];
+                        let mut total = DualFwd::zero();
 
-                        for (trade_id, claims) in trades {
-                            let mut trade_npvs = vec![0.0_f64; n_dates];
+                        for (ns_id, claims) in trades {
+                            let mut ns_npvs = vec![DualFwd::zero(); n_dates];
+                            let mut ns_npvs_f64 = vec![0.0_f64; n_dates];
                             for (d, date_responses) in scenario.iter().enumerate() {
                                 let eval_date = dates[d];
                                 for claim in *claims {
                                     if claim.payment_date() > eval_date {
                                         if let Some(idx) = claim.idx() {
                                             let value = claim.evaluate(&date_responses[idx])?;
-                                            portfolio_npvs[d] = portfolio_npvs[d].add_val(value);
-                                            trade_npvs[d] += value.value();
+                                            ns_npvs[d] = ns_npvs[d].add_val(value);
+                                            ns_npvs_f64[d] += value.value();
                                         }
                                     }
                                 }
                             }
-                            if let Some(cube) = cubes.get_mut(trade_id.as_str()) {
-                                cube.push(trade_npvs);
+                            if let Some(cube) = cubes.get_mut(ns_id.as_str()) {
+                                cube.push(ns_npvs_f64);
                             }
-                        }
 
-                        let mut total = DualFwd::zero();
-                        for (a, bundle) in bundles.iter().enumerate() {
-                            let c_p = bundle.aggregator.aggregate_path(&portfolio_npvs, dates);
-                            xva_accums[a] += c_p.value();
-                            total = total.add_val(c_p);
+                            // Per-netting-set aggregation.
+                            for (a, bundle) in bundles.iter().enumerate() {
+                                let c_p = bundle.aggregator.aggregate_path(&ns_npvs, dates);
+                                xva_accums[a] += c_p.value();
+                                total = total.add_val(c_p);
+                            }
                         }
 
                         if total.is_on_tape() {
@@ -551,6 +552,7 @@ mod tests {
         },
         xva::{
             aggregator::{CvaAggregator, CvaFactory, PfeAggregator, PfeAggregatorFactory},
+            nettingset::NettingSet,
             visitors::preprocessorexecutor::PreprocessorExecutor,
         },
     };
@@ -686,12 +688,14 @@ mod tests {
             .build()
             .unwrap();
         let irs_trade = SwapTrade::new(swap, ref_date, 10_000_000.0, Side::LongReceive);
-        let mut claims = irs_trade.into_contingent_claims().unwrap();
+        let claims = irs_trade.into_contingent_claims().unwrap();
 
         let discount_policy = SingleCurveCSADiscountPolicy::new(MarketIndex::SOFR, Currency::USD);
-        let mut inspector = PreprocessorExecutor::with_discount_policy(Box::new(discount_policy));
-        inspector.visit(vec![claims.as_mut_slice()]);
+        let mut ns = NettingSet::new(claims, Box::new(discount_policy));
+        let mut inspector = PreprocessorExecutor::new();
+        inspector.visit(std::iter::once(&mut ns));
         let requests = inspector.requests().to_vec();
+        let claims = ns.into_claims();
 
         let max_maturity = ref_date.advance(5, TimeUnit::Years);
         let schedule = MakeSchedule::new(ref_date, max_maturity)

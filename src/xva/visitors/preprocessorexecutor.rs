@@ -1,24 +1,27 @@
 //! Claim inspection and market-data request collection.
 //!
-//! The [`PreprocessorExecutor`] walks a slice of [`ContingentClaim`]s, running a
-//! pipeline of [`ClaimPreprocessor`]s (discount policy, fixing resolution,
-//! etc.) and then collecting each claim's [`SimulationRequest`] into a
-//! flat vector while assigning indices so the evaluator can locate each
-//! claim's response within a scenario.
+//! The [`PreprocessorExecutor`] walks a set of [`NettingSet`]s, running a
+//! pipeline of [`ClaimPreprocessor`]s (fixing resolution, etc.),
+//! optionally compressing claims, and then collecting each claim's
+//! [`SimulationRequest`] into a flat vector while assigning indices so
+//! the evaluator can locate each claim's response within a scenario.
+//!
+//! Each [`NettingSet`] carries its own [`DiscountPolicy`] which is used
+//! to resolve the discount curve for claims within that set.
 
 use crate::{
-    core::{
-        collateral::DiscountPolicy,
-        marketdatahandling::{
-            discountrequest::DiscountRequest, forwardraterequest::ForwardRateRequest,
-            fxrequest::FxRequest, pathdependentrequest::PathDependentRequest,
-            spotrequest::SpotRequest,
-        },
+    core::marketdatahandling::{
+        discountrequest::DiscountRequest, forwardraterequest::ForwardRateRequest,
+        fxrequest::FxRequest, pathdependentrequest::PathDependentRequest,
+        spotrequest::SpotRequest,
     },
-    xva::contigentclaim::ContingentClaim,
+    xva::nettingset::NettingSet,
 };
 
-use super::claimpreprocessor::ClaimPreprocessor;
+use super::{
+    claimcompressionpreprocessor::ClaimCompressionPreprocessor,
+    claimpreprocessor::ClaimPreprocessor,
+};
 
 /// Declares the market data a [`ContingentClaim`] needs for simulation.
 ///
@@ -39,20 +42,22 @@ pub struct SimulationRequest {
     pub path_dependent_request: Option<PathDependentRequest>,
 }
 
-/// Collects [`SimulationRequest`]s from a set of [`ContingentClaim`]s.
+/// Collects [`SimulationRequest`]s from a set of [`NettingSet`]s.
 ///
-/// The PreprocessorExecutor is the first step of the XVA pipeline.  It runs a
-/// pipeline of [`ClaimPreprocessor`]s (discount resolution, fixing
-/// resolution, compression, …) and then:
+/// The PreprocessorExecutor is the first step of the XVA pipeline.  For
+/// each netting set it:
 ///
-/// 1. Asks each claim what market data it needs.
-/// 2. Resolves the discount curve via the attached [`DiscountPolicy`].
-/// 3. Assigns a flat-vector index to each claim so the evaluator can
+/// 1. Runs the per-claim [`ClaimPreprocessor`] pipeline.
+/// 2. Optionally compresses compatible claims via
+///    [`ClaimCompressionPreprocessor`].
+/// 3. Resolves the discount curve using each netting set's own
+///    [`DiscountPolicy`](crate::core::collateral::DiscountPolicy).
+/// 4. Assigns a flat-vector index to each claim so the evaluator can
 ///    locate the corresponding [`SimulationResponse`](super::marketmodel::SimulationResponse).
 pub struct PreprocessorExecutor {
     requests: Vec<SimulationRequest>,
-    discount_policy: Option<Box<dyn DiscountPolicy>>,
     preprocessors: Vec<Box<dyn ClaimPreprocessor>>,
+    compress: bool,
 }
 
 impl Default for PreprocessorExecutor {
@@ -62,24 +67,13 @@ impl Default for PreprocessorExecutor {
 }
 
 impl PreprocessorExecutor {
-    /// Creates an PreprocessorExecutor without any preprocessors or discount policy.
+    /// Creates a PreprocessorExecutor without any preprocessors.
     #[must_use]
     pub fn new() -> Self {
         Self {
             requests: Vec::new(),
-            discount_policy: None,
             preprocessors: Vec::new(),
-        }
-    }
-
-    /// Creates an PreprocessorExecutor with a discount policy that will resolve
-    /// the discount curve for each claim during [`visit`](Self::visit).
-    #[must_use]
-    pub fn with_discount_policy(policy: Box<dyn DiscountPolicy>) -> Self {
-        Self {
-            requests: Vec::new(),
-            discount_policy: Some(policy),
-            preprocessors: Vec::new(),
+            compress: false,
         }
     }
 
@@ -91,22 +85,49 @@ impl PreprocessorExecutor {
         self
     }
 
-    /// Like [`visit`](Self::visit), but operates over multiple disjoint
-    /// claim slices while maintaining a single global index counter.
-    pub fn visit<'a>(&mut self, slices: impl IntoIterator<Item = &'a mut [ContingentClaim]>) {
+    /// Enables claim compression. Compatible deterministic cashflows
+    /// within each netting set will be merged after per-claim
+    /// preprocessing, reducing the number of evaluations in the
+    /// Monte Carlo loop.
+    #[must_use]
+    pub fn with_compression(mut self) -> Self {
+        self.compress = true;
+        self
+    }
+
+    /// Visits all netting sets, preprocessing claims and collecting
+    /// simulation requests with a single global index counter.
+    ///
+    /// For each netting set the pipeline is:
+    /// 1. Per-claim preprocessing (fixing resolution, …).
+    /// 2. Claim compression (if enabled).
+    /// 3. Discount resolution via the netting set's own
+    ///    [`DiscountPolicy`](crate::core::collateral::DiscountPolicy).
+    /// 4. Global index assignment.
+    pub fn visit<'a>(&mut self, netting_sets: impl IntoIterator<Item = &'a mut NettingSet>) {
         self.requests.clear();
         let mut global_idx = 0;
-        for claims in slices {
-            for claim in claims.iter_mut() {
+
+        for ns in netting_sets {
+            // Phase 1: per-claim preprocessing.
+            for claim in ns.claims_mut() {
                 for pp in &self.preprocessors {
                     pp.process(claim);
                 }
+            }
+
+            // Phase 2: compression.
+            if self.compress {
+                ClaimCompressionPreprocessor::compress(ns.claims_vec_mut());
+            }
+
+            // Phase 3 + 4: discount resolution & index assignment.
+            let (policy, claims) = ns.discount_policy_and_claims_mut();
+            for claim in claims {
                 let mut request = claim.simulation_request();
-                if let Some(policy) = &self.discount_policy {
-                    if let Ok(discount_index) = policy.accept(claim) {
-                        request.discount_request =
-                            Some(DiscountRequest::new(discount_index, claim.payment_date()));
-                    }
+                if let Ok(discount_index) = policy.accept(claim) {
+                    request.discount_request =
+                        Some(DiscountRequest::new(discount_index, claim.payment_date()));
                 }
                 claim.set_idx(global_idx);
                 self.requests.push(request);

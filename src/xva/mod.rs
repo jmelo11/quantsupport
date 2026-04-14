@@ -23,5 +23,7 @@ pub mod contigentclaim;
 pub mod engine;
 /// Builder and conversion helpers for creating contingent claims.
 pub mod makecontigentclaim;
+/// Netting set — groups claims under a single netting agreement with its own discount policy.
+pub mod nettingset;
 /// Visitor pipeline: inspection, market generation, and exposure evaluation.
 pub mod visitors;

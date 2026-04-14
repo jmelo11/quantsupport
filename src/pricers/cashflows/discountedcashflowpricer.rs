@@ -6,6 +6,7 @@ use crate::{
         instrument::Instrument,
         marketdatahandling::{
             constructedelementrequest::ConstructedElementRequest,
+            fixingrequest::FixingRequest,
             fxrequest::FxRequest,
             marketdata::{MarketData, MarketDataProvider, MarketDataRequest},
         },
@@ -21,7 +22,7 @@ use crate::{
     indices::marketindex::MarketIndex,
     instruments::cashflows::{cashflow::Cashflow, cashflowtype::CashflowType, leg::Leg},
     rates::compounding::Compounding,
-    time::enums::Frequency,
+    time::{date::Date, enums::Frequency},
     utils::errors::{QSError, Result},
 };
 use std::{collections::HashSet, marker::PhantomData};
@@ -34,6 +35,8 @@ struct DCFState<'a> {
     pub md_response: Option<MarketData>,
     /// Resolved legs used by default cashflows handling.
     pub legs: &'a [Leg<DualFwd>],
+    /// The evaluation date, used to determine if a fixing is in the past.
+    pub eval_date: Date,
 }
 
 impl PricerState for DCFState<'_> {
@@ -321,25 +324,37 @@ where
                         (coupon.amount()?, coupon.payment_date())
                     }
                     CashflowType::FloatingRateCoupon(coupon) => {
-                        // Forward / projection curve always comes from the leg's own market index
                         let forward_index = leg.forward_index().ok_or_else(|| {
                             QSError::NotFoundErr(
                                 "A market index must be set to price floating rate coupons."
                                     .to_string(),
                             )
                         })?;
-                        let fwd_curve = state.get_discount_curve_element(forward_index)?.curve();
-                        let rd = coupon
-                            .market_index()
-                            .rate_index_details()?
-                            .rate_definition();
-                        let fwd = fwd_curve.forward_rate(
-                            coupon.accrual_start_date(),
-                            coupon.accrual_end_date(),
-                            rd.compounding(),
-                            rd.frequency(),
-                        )?;
-                        coupon.set_fixing(fwd);
+
+                        // If the fixing date (accrual start) is before the
+                        // evaluation date, use the historical fixing from the
+                        // store. Otherwise project the forward rate from the
+                        // curve.
+                        if coupon.accrual_start_date() < state.eval_date {
+                            let realized = state
+                                .get_fixing(forward_index, coupon.accrual_start_date())
+                                .map(DualFwd::new)?;
+                            coupon.set_fixing(realized);
+                        } else {
+                            let fwd_curve =
+                                state.get_discount_curve_element(forward_index)?.curve();
+                            let rd = coupon
+                                .market_index()
+                                .rate_index_details()?
+                                .rate_definition();
+                            let fwd = fwd_curve.forward_rate(
+                                coupon.accrual_start_date(),
+                                coupon.accrual_end_date(),
+                                rd.compounding(),
+                                rd.frequency(),
+                            )?;
+                            coupon.set_fixing(fwd);
+                        }
                         (coupon.amount()?, coupon.payment_date())
                     }
                     CashflowType::OptionEmbeddedCoupon(_) => {
@@ -449,14 +464,20 @@ where
                         annuity += coupon.notional() * year_fraction * df_fx;
                     }
                     CashflowType::FloatingRateCoupon(coupon) => {
-                        let forward = forward_curve
-                            .forward_rate(
-                                coupon.accrual_start_date(),
-                                coupon.accrual_end_date(),
-                                Compounding::Simple,
-                                Frequency::Annual,
-                            )?
-                            .value();
+                        // Use historical fixing when accrual has already
+                        // started, otherwise project from the forward curve.
+                        let forward = if coupon.accrual_start_date() < state.eval_date {
+                            state.get_fixing(forward_index, coupon.accrual_start_date())?
+                        } else {
+                            forward_curve
+                                .forward_rate(
+                                    coupon.accrual_start_date(),
+                                    coupon.accrual_end_date(),
+                                    Compounding::Simple,
+                                    Frequency::Annual,
+                                )?
+                                .value()
+                        };
                         coupon.set_fixing(forward.into());
                         let amount = coupon.amount()?.value();
                         let payment_date = coupon.payment_date();
@@ -513,15 +534,41 @@ where
         let eval_date = ctx.evaluation_date();
         let identifier = trade.instrument().identifier();
 
-        let md_request = self
+        let mut md_request = self
             .market_data_request(trade)
             .ok_or_else(|| QSError::InvalidValueErr("Missing market data request".into()))?;
+
+        // Collect fixing requests for floating coupons whose accrual has
+        // already started (fixing date < evaluation date).
+        let fixing_requests: Vec<FixingRequest> = trade
+            .legs()
+            .iter()
+            .flat_map(|leg| {
+                let fwd_idx = leg.forward_index();
+                leg.cashflows().iter().filter_map(move |cf| {
+                    if let CashflowType::FloatingRateCoupon(coupon) = cf {
+                        if coupon.accrual_start_date() < eval_date {
+                            let index = fwd_idx
+                                .cloned()
+                                .unwrap_or_else(|| coupon.market_index().clone());
+                            return Some(FixingRequest::new(index, coupon.accrual_start_date()));
+                        }
+                    }
+                    None
+                })
+            })
+            .collect();
+
+        if !fixing_requests.is_empty() {
+            md_request = md_request.with_fixings_request(fixing_requests);
+        }
 
         let mut results = EvaluationResults::new(eval_date, identifier);
         let mut state = DCFState {
             value: None,
             md_response: Some(ctx.handle_request(&md_request)?),
             legs: trade.legs(),
+            eval_date,
         };
 
         // Pre-compute value if any request needs it (Value, Cashflows, Sensitivities all need the

@@ -89,15 +89,20 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
 
     let mut engine = XvaEngine::new(&ctx, config)?;
 
-    let mut trades = HashMap::new();
-    trades.insert("USD_IRS_5Y".to_string(), irs_claims);
-    trades.insert("CLPUSD_XCCY_5Y".to_string(), xccy_claims);
+    // Both trades share the same CSA → single netting set.
+    let discount_policy = SingleCurveCSADiscountPolicy::new(MarketIndex::SOFR, Currency::USD);
+    let n_claims = irs_claims.len() + xccy_claims.len();
+    let mut all_claims = irs_claims;
+    all_claims.extend(xccy_claims);
 
-    println!(
-        "Running XVA engine with {} paths...",
-        trades.values().map(|v| v.len()).sum::<usize>()
+    let mut netting_sets = HashMap::new();
+    netting_sets.insert(
+        "portfolio".to_string(),
+        NettingSet::new(all_claims, Box::new(discount_policy)),
     );
-    let result = engine.run(&mut trades)?;
+
+    println!("Running XVA engine with {n_claims} claims...");
+    let result = engine.run(&mut netting_sets)?;
 
     // ── 4. Display results ──────────────────────────────────────
     println!("\nXVA Values:");

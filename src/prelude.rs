@@ -174,8 +174,10 @@ pub use crate::{
         contigentclaim::ContingentClaim,
         engine::{XvaEngine, XvaEngineConfig},
         makecontigentclaim::IntoContingentClaims,
+        nettingset::NettingSet,
         visitors::{
             claimpreprocessor::ClaimPreprocessor,
+            claimcompressionpreprocessor::ClaimCompressionPreprocessor,
             exposureevaluator::{ExposureEvaluator, ExposureResult, NpvCube},
             fixingpreprocessor::FixingPreprocessor,
             marketmodel::MarketModel,

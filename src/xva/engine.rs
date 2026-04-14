@@ -4,9 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     ad::{dual::DualFwd, scalar::Scalar},
-    core::{
-        collateral::SingleCurveCSADiscountPolicy, pillars::Pillars, pricingcontext::PricingContext,
-    },
+    core::{pillars::Pillars, pricingcontext::PricingContext},
     currencies::currency::Currency,
     indices::marketindex::MarketIndex,
     math::interpolation::interpolator::Interpolator,
@@ -25,7 +23,7 @@ use crate::{
     utils::errors::{QSError, Result},
     xva::{
         aggregator::{CvaFactory, FvaFactory, PfeAggregatorFactory},
-        contigentclaim::ContingentClaim,
+        nettingset::NettingSet,
         visitors::{
             exposureevaluator::{evaluate_with_xva, ExposureResult, XvaModelSetup},
             fixingpreprocessor::FixingPreprocessor,
@@ -199,39 +197,36 @@ impl XvaEngine {
 
     /// Runs the full XVA pipeline.
     ///
-    /// Builds an [`PreprocessorExecutor`] with preprocessing steps (fixing resolution,
-    /// discount policy), runs it on all claims, then launches the Savine
+    /// Builds a [`PreprocessorExecutor`] with preprocessing steps (fixing resolution),
+    /// runs it on all netting sets, then launches the Savine
     /// parallel AAD evaluation loop.
+    ///
+    /// Each [`NettingSet`] carries its own discount policy (CSA terms).
     ///
     /// # Errors
     /// Returns an error if simulation or evaluation fails.
     pub fn run(
         &mut self,
-        trades: &mut HashMap<String, Vec<ContingentClaim>>,
+        netting_sets: &mut HashMap<String, NettingSet>,
     ) -> Result<ExposureResult> {
-        // 1. Build Inspector with preprocessors.
+        // 1. Build preprocessor pipeline.
         let fixing_pp = FixingPreprocessor::new(
             self.setup.reference_date,
             self.setup.day_counter,
             self.setup.fixing_store.clone(),
         );
 
-        let discount_policy = SingleCurveCSADiscountPolicy::new(
-            self.setup.domestic_index.clone(),
-            self.setup.domestic_currency,
-        );
+        let mut inspector =
+            PreprocessorExecutor::new().with_preprocessor(Box::new(fixing_pp));
 
-        let mut inspector = PreprocessorExecutor::with_discount_policy(Box::new(discount_policy))
-            .with_preprocessor(Box::new(fixing_pp));
-
-        // 2. Visit all claims in-place, assigning global indices across trades.
-        inspector.visit(trades.values_mut().map(|v| v.as_mut_slice()));
+        // 2. Visit all netting sets in-place, assigning global indices.
+        inspector.visit(netting_sets.values_mut());
         self.setup.requests = inspector.requests().to_vec();
 
         // 3. Build simulation dates.
-        let max_maturity = trades
+        let max_maturity = netting_sets
             .values()
-            .flat_map(|v| v.iter())
+            .flat_map(|ns| ns.claims().iter())
             .map(|c| c.payment_date())
             .max()
             .unwrap_or(self.setup.reference_date.advance(1, TimeUnit::Years));
@@ -253,14 +248,14 @@ impl XvaEngine {
         };
         let factories: Vec<&dyn PfeAggregatorFactory> = vec![&cva_factory, &fva_factory];
 
-        // 5. Build trade slice map.
-        let trade_slices: HashMap<String, &[ContingentClaim]> = trades
+        // 5. Build netting-set slice map.
+        let ns_slices: HashMap<String, &[_]> = netting_sets
             .iter()
-            .map(|(id, v)| (id.clone(), v.as_slice()))
+            .map(|(id, ns)| (id.clone(), ns.claims()))
             .collect();
 
         // 6. Run.
-        evaluate_with_xva(&sim_dates, &trade_slices, &factories, &self.setup)
+        evaluate_with_xva(&sim_dates, &ns_slices, &factories, &self.setup)
     }
 }
 

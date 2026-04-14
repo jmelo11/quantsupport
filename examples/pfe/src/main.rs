@@ -133,20 +133,33 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
 
     println!("Claims: IRS={irs_n}, FxFwd={fxfwd_n}, FxOpt={fxopt_n}, Xccy={xccy_n}",);
 
-    // Merge all claims into a single vector so the Inspector assigns
-    // globally-unique indices in one pass.
-    let mut all_claims = Vec::with_capacity(irs_n + fxfwd_n + fxopt_n + xccy_n);
-    all_claims.extend(irs_claims);
-    all_claims.extend(fxfwd_claims);
-    all_claims.extend(fxopt_claims);
-    all_claims.extend(xccy_claims);
+    // ── 4. Wrap each trade in its own NettingSet ────────────────
+    let make_policy =
+        || Box::new(SingleCurveCSADiscountPolicy::new(MarketIndex::SOFR, Currency::USD));
 
-    // ── 4. Inspector: assign indices & collect simulation requests
-    let discount_policy = SingleCurveCSADiscountPolicy::new(MarketIndex::SOFR, Currency::USD);
+    let mut netting_sets: HashMap<String, NettingSet> = HashMap::new();
+    netting_sets.insert(
+        "USD_IRS_5Y".to_string(),
+        NettingSet::new(irs_claims, make_policy()),
+    );
+    netting_sets.insert(
+        "FX_FWD_EURUSD_1Y".to_string(),
+        NettingSet::new(fxfwd_claims, make_policy()),
+    );
+    netting_sets.insert(
+        "FX_OPT_EURUSD_1Y".to_string(),
+        NettingSet::new(fxopt_claims, make_policy()),
+    );
+    netting_sets.insert(
+        "XCCY_USDEUR_3Y".to_string(),
+        NettingSet::new(xccy_claims, make_policy()),
+    );
+
+    // ── 5. Inspector: assign indices & collect simulation requests
     let fixing_pp = FixingPreprocessor::new(ref_date, DayCounter::Actual360, fixing_store);
-    let mut inspector = PreprocessorExecutor::with_discount_policy(Box::new(discount_policy))
-        .with_preprocessor(Box::new(fixing_pp));
-    inspector.visit(vec![all_claims.as_mut_slice()]);
+    let mut inspector =
+        PreprocessorExecutor::new().with_preprocessor(Box::new(fixing_pp));
+    inspector.visit(netting_sets.values_mut());
 
     let requests: Vec<_> = inspector.requests().to_vec();
 
@@ -196,26 +209,11 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
 
     let evaluator = ExposureEvaluator::<f64>::new(dates.clone(), &model);
 
-    // Slice into the merged claims vector by trade
-    let irs_end = irs_n;
-    let fxfwd_end = irs_end + fxfwd_n;
-    let fxopt_end = fxfwd_end + fxopt_n;
-    let xccy_end = fxopt_end + xccy_n;
-
-    let mut trades_map: HashMap<String, &[_]> = HashMap::new();
-    trades_map.insert("USD_IRS_5Y".to_string(), &all_claims[..irs_end]);
-    trades_map.insert(
-        "FX_FWD_EURUSD_1Y".to_string(),
-        &all_claims[irs_end..fxfwd_end],
-    );
-    trades_map.insert(
-        "FX_OPT_EURUSD_1Y".to_string(),
-        &all_claims[fxfwd_end..fxopt_end],
-    );
-    trades_map.insert(
-        "XCCY_USDEUR_3Y".to_string(),
-        &all_claims[fxopt_end..xccy_end],
-    );
+    // Build evaluator map from netting sets.
+    let trades_map: HashMap<String, &[_]> = netting_sets
+        .iter()
+        .map(|(id, ns)| (id.clone(), ns.claims()))
+        .collect();
 
     let result = evaluator.evaluate(&trades_map)?;
     println!("Evaluation complete.");

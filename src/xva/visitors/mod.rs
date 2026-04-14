@@ -5,6 +5,8 @@
 //! * [`ExposureEvaluator`](exposureevaluator::ExposureEvaluator) -- computes NPV cubes,
 //!   exposure profiles (EPE/ENE/EE), and optionally XVA values with sensitivities.
 
+/// Bulk claim compression — merges compatible cashflows to reduce Monte Carlo cost.
+pub mod claimcompressionpreprocessor;
 /// The [`ClaimPreprocessor`] trait for preprocessing claims before simulation.
 pub mod claimpreprocessor;
 /// Monte Carlo exposure evaluator with optional Savine-style parallel AAD.
