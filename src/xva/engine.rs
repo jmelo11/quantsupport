@@ -22,12 +22,15 @@ use crate::{
     },
     utils::errors::{QSError, Result},
     xva::{
-        aggregator::{CvaFactory, FvaFactory, PfeAggregatorFactory}, contigentclaim::ContingentClaim, nettingset::NettingSet, visitors::{
-            exposureevaluator::{ExposureResult, XvaModelSetup, evaluate_with_xva},
+        aggregator::{CvaFactory, FvaFactory, PfeAggregatorFactory},
+        contigentclaim::ContingentClaim,
+        nettingset::NettingSet,
+        visitors::{
+            exposureevaluator::{evaluate_with_xva, ExposureResult, XvaModelSetup},
             fixingpreprocessor::FixingPreprocessor,
             marketmodel::MarketModel,
             preprocessorexecutor::{PreprocessorExecutor, SimulationRequest},
-        }
+        },
     },
 };
 
@@ -136,7 +139,6 @@ impl XvaEngine {
                 .iter()
                 .map(|(_, v)| v.value())
                 .collect();
-            let ift = borrowed.ift_sensitivities().map(<[Vec<f64>]>::to_vec);
             let dc = borrowed.day_counter().unwrap_or(DayCounter::Actual365);
 
             curves.insert(
@@ -148,7 +150,6 @@ impl XvaEngine {
                     interpolator: Interpolator::LogLinear,
                     pillar_labels,
                     pillar_values,
-                    ift_sensitivities: ift,
                 },
             );
             model_configs.insert(mc.market_index.clone(), mc.clone());
@@ -214,8 +215,7 @@ impl XvaEngine {
             self.setup.fixing_store.clone(),
         );
 
-        let mut inspector =
-            PreprocessorExecutor::new().with_preprocessor(Box::new(fixing_pp));
+        let mut inspector = PreprocessorExecutor::new().with_preprocessor(Box::new(fixing_pp));
 
         // 2. Visit all netting sets in-place, assigning global indices.
         inspector.visit(netting_sets.values_mut());
@@ -267,7 +267,6 @@ struct CurveSnapshot {
     interpolator: Interpolator,
     pillar_labels: Vec<String>,
     pillar_values: Vec<f64>,
-    ift_sensitivities: Option<Vec<Vec<f64>>>,
 }
 
 impl CurveSnapshot {
@@ -296,10 +295,6 @@ impl CurveSnapshot {
         )?
         .with_pillar_values(pvs)?
         .with_pillar_labels(self.pillar_labels.clone())?;
-
-        if let Some(ref sens) = self.ift_sensitivities {
-            curve = curve.with_ift_sensitivities(sens.clone());
-        }
 
         curve.put_pillars_on_tape();
         Ok(curve)
@@ -366,10 +361,9 @@ impl XvaModelSetup for InternalModelSetup {
         .with_seed(self.seed);
 
         for (idx, curve) in &built_curves {
-            let cfg = self
-                .model_configs
-                .get(idx)
-                .ok_or_else(|| QSError::NotFoundErr(format!("Model config missing for curve {idx:?}")))?;
+            let cfg = self.model_configs.get(idx).ok_or_else(|| {
+                QSError::NotFoundErr(format!("Model config missing for curve {idx:?}"))
+            })?;
             let rate_model = LgmRateModel::new(
                 DualFwd::scalar(cfg.lambda),
                 DualFwd::scalar(cfg.sigma),
@@ -396,8 +390,9 @@ impl XvaModelSetup for InternalModelSetup {
         };
 
         for fx_cfg in &self.fx_configs {
-            let dom_pos =
-                find_fx_rate(&self.domestic_index).ok_or_else(|| QSError::NotFoundErr("Domestic rate model not found for FX".into()))?;
+            let dom_pos = find_fx_rate(&self.domestic_index).ok_or_else(|| {
+                QSError::NotFoundErr("Domestic rate model not found for FX".into())
+            })?;
             // Find the foreign index by currency
             let foreign_index = self
                 .model_configs
@@ -408,8 +403,12 @@ impl XvaModelSetup for InternalModelSetup {
                         .is_ok_and(|d| d.currency() == fx_cfg.foreign_currency)
                 })
                 .map(|(_, mc)| &mc.market_index)
-                .ok_or_else(|| QSError::NotFoundErr("Foreign rate model not found for FX".into()))?;
-            let for_pos = find_fx_rate(foreign_index).ok_or_else(|| QSError::NotFoundErr("Foreign rate model not found for FX".into()))?;
+                .ok_or_else(|| {
+                    QSError::NotFoundErr("Foreign rate model not found for FX".into())
+                })?;
+            let for_pos = find_fx_rate(foreign_index).ok_or_else(|| {
+                QSError::NotFoundErr("Foreign rate model not found for FX".into())
+            })?;
 
             // SAFETY: dom_pos != for_pos (domestic != foreign currency).
             // We need two simultaneous immutable borrows from the Vec.
@@ -421,10 +420,12 @@ impl XvaModelSetup for InternalModelSetup {
                 (&right[0].1, &left[for_pos].1)
             };
 
-            let spot = *self
-                .fx_spots
-                .get(&fx_cfg.foreign_currency)
-                .ok_or_else(|| QSError::NotFoundErr(format!("FX spot missing for currency {}", fx_cfg.foreign_currency)))?;
+            let spot = *self.fx_spots.get(&fx_cfg.foreign_currency).ok_or_else(|| {
+                QSError::NotFoundErr(format!(
+                    "FX spot missing for currency {}",
+                    fx_cfg.foreign_currency
+                ))
+            })?;
 
             let fx_model = LgmFxModel::new(
                 dom_rate,

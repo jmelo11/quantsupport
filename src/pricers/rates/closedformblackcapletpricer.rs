@@ -38,7 +38,7 @@ use std::collections::HashSet;
 /// let pricer = ClosedFormBlackCapletPricer::new();
 ///
 /// // Build a cap/floor strip:
-/// let cap = MakeCapletFloorlet::default()
+/// let cap = MakeCapFloor::default()
 ///     .with_identifier("CAP-3Y".to_string())
 ///     .with_start_date(Date::new(2024, 1, 1))
 ///     .with_maturity_date(Date::new(2027, 1, 1))
@@ -46,7 +46,7 @@ use std::collections::HashSet;
 ///     .with_notional(5_000_000.0)
 ///     .with_market_index(MarketIndex::SOFR)
 ///     .with_currency(Currency::USD)
-///     .with_cap_floor_type(CapletFloorletType::Caplet)
+///     .with_cap_floor_type(CapFloorType::Cap)
 ///     .with_frequency(Frequency::Quarterly)
 ///     .build()
 ///     .expect("failed to build cap");
