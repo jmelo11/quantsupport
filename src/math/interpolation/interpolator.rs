@@ -1,12 +1,15 @@
 use serde::{Deserialize, Serialize};
 
-use super::{linear::LinearInterpolator, loglinear::LogLinearInterpolator};
-use crate::{ad::adreal::IsReal, utils::errors::Result};
+use super::{
+    cubicspline::CubicSplineInterpolator, linear::LinearInterpolator,
+    loglinear::LogLinearInterpolator,
+};
+use crate::{ad::scalar::Scalar, utils::errors::Result};
 
 /// A trait that defines the interpolation of a function. It does not require a reference to self.
 pub trait StaticInterpolate<T>
 where
-    T: IsReal,
+    T: Scalar,
 {
     /// Interpolates a value at the given point.
     ///
@@ -44,12 +47,14 @@ pub enum Interpolator {
     Linear,
     /// Log-linear interpolation method.
     LogLinear,
+    /// Natural cubic spline interpolation method.
+    CubicSpline,
 }
 
 /// Implements the `Interpolate` trait for the `Interpolator` enum, allowing it to perform interpolation based on the selected method.
 pub trait Interpolate<T>
 where
-    T: IsReal,
+    T: Scalar,
 {
     /// Performs interpolation for a given x value using the specified interpolation method.
     ///
@@ -69,14 +74,18 @@ where
 
 impl<T> Interpolate<T> for Interpolator
 where
-    T: IsReal,
+    T: Scalar,
     LinearInterpolator: StaticInterpolate<T>,
     LogLinearInterpolator: StaticInterpolate<T>,
+    CubicSplineInterpolator: StaticInterpolate<T>,
 {
     fn interpolate(&self, x: T, x_: &[T], y_: &[T], enable_extrapolation: bool) -> Result<T> {
         match self {
             Self::Linear => LinearInterpolator::interpolate(x, x_, y_, enable_extrapolation),
             Self::LogLinear => LogLinearInterpolator::interpolate(x, x_, y_, enable_extrapolation),
+            Self::CubicSpline => {
+                CubicSplineInterpolator::interpolate(x, x_, y_, enable_extrapolation)
+            }
         }
     }
 }

@@ -1,7 +1,7 @@
 use std::cell::{Ref, RefMut};
 
 use crate::{
-    ad::adreal::ADReal,
+    ad::dual::DualFwd,
     core::{marketdatahandling::constructedelementstore::SharedElement, pillars::Pillars},
     indices::marketindex::MarketIndex,
     rates::yieldtermstructure::interestratestermstructure::InterestRatesTermStructure,
@@ -11,8 +11,12 @@ use crate::{
 /// differentiation contexts. It combines the properties of an interest rates
 /// term structure and pillars, and allows for cloning.
 pub trait ADCurveElement:
-    InterestRatesTermStructure<ADReal> + Pillars<ADReal> + Send + Sync
+    InterestRatesTermStructure<DualFwd> + Pillars<DualFwd> + Send + Sync
 {
+    /// Returns the IFT sensitivity matrix `∂DF/∂q` if available.
+    fn ift_sensitivities(&self) -> Option<&[Vec<f64>]> {
+        None
+    }
 }
 
 /// Struct representing a discount curve element, which includes

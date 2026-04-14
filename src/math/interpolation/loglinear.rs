@@ -1,7 +1,7 @@
 use std::cmp::Ordering;
 
 use crate::{
-    ad::adreal::{ADReal, FloatExt},
+    ad::{dual::DualFwd, expr::FloatExt},
     math::interpolation::interpolator::StaticInterpolate,
     utils::errors::{QSError, Result},
 };
@@ -47,13 +47,13 @@ impl StaticInterpolate<f64> for LogLinearInterpolator {
     }
 }
 
-impl StaticInterpolate<ADReal> for LogLinearInterpolator {
+impl StaticInterpolate<DualFwd> for LogLinearInterpolator {
     fn interpolate(
-        x: ADReal,
-        x_: &[ADReal],
-        y_: &[ADReal],
+        x: DualFwd,
+        x_: &[DualFwd],
+        y_: &[DualFwd],
         enable_extrapolation: bool,
-    ) -> Result<ADReal> {
+    ) -> Result<DualFwd> {
         let index =
             match x_.binary_search_by(|&probe| probe.partial_cmp(&x).unwrap_or(Ordering::Less)) {
                 Ok(index) | Err(index) => index,

@@ -1,0 +1,37 @@
+{
+    "model_configs": [
+        {
+            "market_index": "SOFR",
+            "lambda": 0.05,
+            "sigma": 0.01
+        },
+        {
+            "market_index": "ICP",
+            "lambda": 0.05,
+            "sigma": 0.015
+        },
+        {
+            "market_index": {
+                "Collateral": [
+                    "CLP",
+                    "USD"
+                ]
+            },
+            "lambda": 0.05,
+            "sigma": 0.01
+        }
+    ],
+    "fx_configs": [
+        {
+            "foreign_currency": "CLP",
+            "fx_vol": 0.10,
+            "rho": 0.15
+        }
+    ],
+    "n_paths": 1000,
+    "seed": 42,
+    "frequency": "Monthly",
+    "credit_spread": 0.01,
+    "recovery": 0.40,
+    "funding_spread": 0.005
+}

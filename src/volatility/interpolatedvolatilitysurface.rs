@@ -1,41 +1,49 @@
 use crate::{
-    ad::adreal::{ADReal, IsReal},
+    ad::{dual::DualFwd, scalar::Scalar},
     core::{elements::volatilitysurfaceelement::ADVolatilitySurfaceElement, pillars::Pillars},
     indices::marketindex::MarketIndex,
     math::interpolation::bilinear::{BilinearInterpolator, BilinearPoint, BilinearValue},
     time::{date::Date, period::Period},
     utils::errors::{QSError, Result},
-    volatility::volatilityindexing::F64Key,
-    volatility::volatilitysurface::VolatilitySurface,
+    volatility::{
+        volatilityindexing::{F64Key, SmileType, VolatilityType},
+        volatilitysurface::VolatilitySurface,
+    },
 };
 use std::collections::BTreeMap;
 
 type SurfaceMap<T> = BTreeMap<Period, BTreeMap<F64Key, T>>;
 
-/// Represents if the volatility surface.
+/// Represents an interpolated volatility surface.
 ///
 /// ## Generics
-/// - `T`: Numeric type for the volatility values (e.g., `f64`, `ADReal`).
-pub struct InterpolatedVolatilitySurface<T: IsReal> {
+/// - `T`: Numeric type for the volatility values (e.g., `f64`, `DualFwd`).
+pub struct InterpolatedVolatilitySurface<T: Scalar> {
     reference_date: Date,
     market_index: MarketIndex,
     points: SurfaceMap<T>,
     labels: Option<Vec<String>>,
+    volatility_type: VolatilityType,
+    smile_type: SmileType,
 }
 
-impl<T: IsReal> InterpolatedVolatilitySurface<T> {
+impl<T: Scalar> InterpolatedVolatilitySurface<T> {
     /// Creates a new `VolatilitySurface`.
     #[must_use]
     pub const fn new(
         reference_date: Date,
         market_index: MarketIndex,
         points: SurfaceMap<T>,
+        volatility_type: VolatilityType,
+        smile_type: SmileType,
     ) -> Self {
         Self {
             reference_date,
             market_index,
             points,
             labels: None,
+            volatility_type,
+            smile_type,
         }
     }
 
@@ -74,8 +82,8 @@ impl<T: BilinearValue> VolatilitySurface<T> for InterpolatedVolatilitySurface<T>
         })
     }
 
-    fn volatility_type(&self) -> crate::volatility::volatilityindexing::VolatilityType {
-        crate::volatility::volatilityindexing::VolatilityType::Black
+    fn volatility_type(&self) -> VolatilityType {
+        self.volatility_type.clone()
     }
 
     fn market_index(&self) -> &MarketIndex {
@@ -86,13 +94,13 @@ impl<T: BilinearValue> VolatilitySurface<T> for InterpolatedVolatilitySurface<T>
         self.reference_date
     }
 
-    fn smile_type(&self) -> crate::volatility::volatilityindexing::SmileType {
-        crate::volatility::volatilityindexing::SmileType::Strike
+    fn smile_type(&self) -> SmileType {
+        self.smile_type
     }
 }
 
-impl Pillars<ADReal> for InterpolatedVolatilitySurface<ADReal> {
-    fn pillars(&self) -> Option<Vec<(String, &ADReal)>> {
+impl Pillars<DualFwd> for InterpolatedVolatilitySurface<DualFwd> {
+    fn pillars(&self) -> Option<Vec<(String, &DualFwd)>> {
         self.labels.as_ref().map(|labels| {
             labels
                 .iter()
@@ -115,22 +123,20 @@ impl Pillars<ADReal> for InterpolatedVolatilitySurface<ADReal> {
     }
 }
 
-impl ADVolatilitySurfaceElement for InterpolatedVolatilitySurface<ADReal> {}
+impl ADVolatilitySurfaceElement for InterpolatedVolatilitySurface<DualFwd> {}
 
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
 
     use crate::{
-        ad::{
-            adreal::{ADReal, IsReal},
-            tape::Tape,
-        },
+        ad::{dual::DualFwd, tape::Tape},
         indices::marketindex::MarketIndex,
         time::{date::Date, enums::TimeUnit, period::Period},
         volatility::{
             interpolatedvolatilitysurface::InterpolatedVolatilitySurface,
-            volatilityindexing::F64Key, volatilitysurface::VolatilitySurface,
+            volatilityindexing::{F64Key, SmileType, VolatilityType},
+            volatilitysurface::VolatilitySurface,
         },
     };
 
@@ -151,6 +157,8 @@ mod tests {
             Date::new(2025, 1, 1),
             MarketIndex::Equity("SPX".to_string()),
             points,
+            VolatilityType::Black,
+            SmileType::Strike,
         );
 
         let vol = surface
@@ -162,21 +170,21 @@ mod tests {
 
     #[test]
     fn interpolated_surface_returns_bilinear_value_for_adreal() {
-        Tape::start_recording();
+        Tape::start_recording_fwd();
 
         let mut points = BTreeMap::new();
         points.insert(
             Period::new(6, TimeUnit::Months),
             BTreeMap::from([
-                (F64Key::new(90.0), ADReal::from(0.20)),
-                (F64Key::new(110.0), ADReal::from(0.30)),
+                (F64Key::new(90.0), DualFwd::from(0.20)),
+                (F64Key::new(110.0), DualFwd::from(0.30)),
             ]),
         );
         points.insert(
             Period::new(12, TimeUnit::Months),
             BTreeMap::from([
-                (F64Key::new(90.0), ADReal::from(0.22)),
-                (F64Key::new(110.0), ADReal::from(0.34)),
+                (F64Key::new(90.0), DualFwd::from(0.22)),
+                (F64Key::new(110.0), DualFwd::from(0.34)),
             ]),
         );
 
@@ -184,6 +192,8 @@ mod tests {
             Date::new(2025, 1, 1),
             MarketIndex::Equity("SPX".to_string()),
             points,
+            VolatilityType::Black,
+            SmileType::Strike,
         );
 
         let vol = surface
@@ -209,6 +219,8 @@ mod tests {
             Date::new(2025, 1, 1),
             MarketIndex::Equity("SPX".to_string()),
             points,
+            VolatilityType::Black,
+            SmileType::Strike,
         );
 
         let vol = surface.volatility_from_period(Period::new(3, TimeUnit::Months), 100.0);

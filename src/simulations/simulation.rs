@@ -1,4 +1,4 @@
-use crate::{ad::adreal::IsReal, indices::marketindex::MarketIndex, time::date::Date};
+use crate::{ad::scalar::Scalar, indices::marketindex::MarketIndex, time::date::Date};
 
 type Matrix<T> = Vec<Vec<T>>;
 
@@ -6,7 +6,7 @@ type Matrix<T> = Vec<Vec<T>>;
 /// simulation must have.
 pub trait MonteCarloSimulation<T>
 where
-    T: IsReal,
+    T: Scalar,
 {
     /// Returns the simulated paths of the Monte Carlo simulation, where each path is a vector of
     /// values corresponding to the simulation dates.

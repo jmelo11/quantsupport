@@ -1,7 +1,7 @@
 #[cfg(test)]
-use crate::ad::adreal::ADReal;
+use crate::ad::dual::DualFwd;
 use crate::{
-    ad::adreal::IsReal,
+    ad::scalar::Scalar,
     core::trade::Side,
     currencies::currency::Currency,
     indices::marketindex::MarketIndex,
@@ -24,7 +24,7 @@ use std::marker::PhantomData;
 /// ```rust
 /// use quantsupport::prelude::*;
 ///
-/// let basis_swap = MakeBasisSwap::<ADReal>::default()
+/// let basis_swap = MakeBasisSwap::<DualFwd>::default()
 ///     .with_identifier("BASIS-3M6M".to_string())
 ///     .with_start_date(Date::new(2024, 1, 1))
 ///     .with_maturity_date(Date::new(2026, 1, 1))
@@ -42,7 +42,7 @@ use std::marker::PhantomData;
 /// assert!(!basis_swap.receive_leg().cashflows().is_empty());
 /// ```
 #[derive(Default)]
-pub struct MakeBasisSwap<T: IsReal> {
+pub struct MakeBasisSwap<T: Scalar> {
     start_date: Option<Date>,
     maturity_date: Option<Date>,
     notional: Option<f64>,
@@ -64,7 +64,7 @@ pub struct MakeBasisSwap<T: IsReal> {
 
 impl<T> MakeBasisSwap<T>
 where
-    T: IsReal,
+    T: Scalar,
 {
     /// Sets the start date.
     #[must_use]
@@ -264,8 +264,8 @@ mod tests {
     use super::*;
     use crate::core::instrument::Instrument;
 
-    fn base_builder() -> MakeBasisSwap<ADReal> {
-        MakeBasisSwap::<ADReal>::default()
+    fn base_builder() -> MakeBasisSwap<DualFwd> {
+        MakeBasisSwap::<DualFwd>::default()
             .with_identifier("basis_swap_test".to_string())
             .with_start_date(Date::new(2024, 1, 1))
             .with_maturity_date(Date::new(2025, 1, 1))
@@ -291,7 +291,7 @@ mod tests {
 
     #[test]
     fn test_build_basis_swap_missing_receive_index_fails() {
-        let result = MakeBasisSwap::<ADReal>::default()
+        let result = MakeBasisSwap::<DualFwd>::default()
             .with_identifier("basis_swap_missing_receive".to_string())
             .with_start_date(Date::new(2024, 1, 1))
             .with_maturity_date(Date::new(2025, 1, 1))

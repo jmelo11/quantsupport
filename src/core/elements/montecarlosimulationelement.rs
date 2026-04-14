@@ -1,5 +1,5 @@
 use crate::{
-    ad::adreal::ADReal,
+    ad::dual::DualFwd,
     core::{marketdatahandling::constructedelementstore::SharedElement, pillars::Pillars},
     indices::marketindex::MarketIndex,
     simulations::simulation::MonteCarloSimulation,
@@ -11,7 +11,7 @@ use crate::{
 /// simulation draws and the associated market index. This trait is used to define the structure of the simulation
 /// elements that will be stored in the `ConstructedElementStore` and used for pricing and risk calculations.
 pub trait ADMonteCarloSimulationElement:
-    MonteCarloSimulation<ADReal> + Pillars<ADReal> + Send + Sync
+    MonteCarloSimulation<DualFwd> + Pillars<DualFwd> + Send + Sync
 {
 }
 

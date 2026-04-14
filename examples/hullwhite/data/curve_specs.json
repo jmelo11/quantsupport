@@ -1,0 +1,17 @@
+{
+    "curve_specs": [
+        {
+            "market_index": "SOFR",
+            "quotes": [
+                "FixedRateDeposit_USD_SOFR_1D",
+                "OIS_USD_SOFR_1Y",
+                "OIS_USD_SOFR_2Y",
+                "OIS_USD_SOFR_3Y",
+                "OIS_USD_SOFR_5Y",
+                "OIS_USD_SOFR_7Y",
+                "OIS_USD_SOFR_10Y",
+                "OIS_USD_SOFR_30Y"
+            ]
+        }
+    ]
+}

@@ -1,7 +1,7 @@
 #[cfg(test)]
-use crate::ad::adreal::ADReal;
+use crate::ad::dual::DualFwd;
 use crate::{
-    ad::adreal::IsReal,
+    ad::scalar::Scalar,
     core::{instrument::AssetClass, trade::Side},
     currencies::currency::Currency,
     indices::marketindex::MarketIndex,
@@ -25,7 +25,7 @@ use std::marker::PhantomData;
 /// ```rust
 /// use quantsupport::prelude::*;
 ///
-/// let ff_xccy = MakeFloatFloatCrossCurrencySwap::<ADReal>::default()
+/// let ff_xccy = MakeFloatFloatCrossCurrencySwap::<DualFwd>::default()
 ///     .with_identifier("FF-XCCY-USDEUR".to_string())
 ///     .with_start_date(Date::new(2024, 1, 1))
 ///     .with_maturity_date(Date::new(2027, 1, 1))
@@ -45,7 +45,7 @@ use std::marker::PhantomData;
 /// assert_eq!(ff_xccy.foreign_currency(), Currency::EUR);
 /// ```
 #[derive(Default)]
-pub struct MakeFloatFloatCrossCurrencySwap<T: IsReal> {
+pub struct MakeFloatFloatCrossCurrencySwap<T: Scalar> {
     start_date: Option<Date>,
     maturity_date: Option<Date>,
     domestic_notional: Option<f64>,
@@ -69,7 +69,7 @@ pub struct MakeFloatFloatCrossCurrencySwap<T: IsReal> {
 
 impl<T> MakeFloatFloatCrossCurrencySwap<T>
 where
-    T: IsReal,
+    T: Scalar,
 {
     /// Sets the start date.
     #[must_use]
@@ -298,8 +298,8 @@ mod tests {
     use super::*;
     use crate::core::instrument::Instrument;
 
-    fn base_builder() -> MakeFloatFloatCrossCurrencySwap<ADReal> {
-        MakeFloatFloatCrossCurrencySwap::<ADReal>::default()
+    fn base_builder() -> MakeFloatFloatCrossCurrencySwap<DualFwd> {
+        MakeFloatFloatCrossCurrencySwap::<DualFwd>::default()
             .with_identifier("ff_xccy_swap_test".to_string())
             .with_start_date(Date::new(2024, 1, 1))
             .with_maturity_date(Date::new(2025, 1, 1))
@@ -331,7 +331,7 @@ mod tests {
 
     #[test]
     fn test_build_float_float_cross_currency_swap_missing_foreign_currency_fails() {
-        let result = MakeFloatFloatCrossCurrencySwap::<ADReal>::default()
+        let result = MakeFloatFloatCrossCurrencySwap::<DualFwd>::default()
             .with_identifier("ff_xccy_missing_foreign_ccy".to_string())
             .with_start_date(Date::new(2024, 1, 1))
             .with_maturity_date(Date::new(2025, 1, 1))

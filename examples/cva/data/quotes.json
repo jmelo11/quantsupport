@@ -1,0 +1,189 @@
+{
+    "reference_date": "2025-11-11",
+    "quotes": [
+        {
+            "identifier": "FixedRateDeposit_USD_SOFR_1D",
+            "mid": 0.04330
+        },
+        {
+            "identifier": "OIS_USD_SOFR_3M",
+            "mid": 0.04335
+        },
+        {
+            "identifier": "OIS_USD_SOFR_6M",
+            "mid": 0.04250
+        },
+        {
+            "identifier": "OIS_USD_SOFR_1Y",
+            "mid": 0.04100
+        },
+        {
+            "identifier": "OIS_USD_SOFR_2Y",
+            "mid": 0.03920
+        },
+        {
+            "identifier": "OIS_USD_SOFR_3Y",
+            "mid": 0.03840
+        },
+        {
+            "identifier": "OIS_USD_SOFR_4Y",
+            "mid": 0.03800
+        },
+        {
+            "identifier": "OIS_USD_SOFR_5Y",
+            "mid": 0.03780
+        },
+        {
+            "identifier": "OIS_USD_SOFR_7Y",
+            "mid": 0.03770
+        },
+        {
+            "identifier": "OIS_USD_SOFR_10Y",
+            "mid": 0.03790
+        },
+        {
+            "identifier": "OIS_USD_SOFR_15Y",
+            "mid": 0.03850
+        },
+        {
+            "identifier": "OIS_USD_SOFR_20Y",
+            "mid": 0.03880
+        },
+        {
+            "identifier": "OIS_USD_SOFR_30Y",
+            "mid": 0.03750
+        },
+        {
+            "identifier": "FixedRateDeposit_EUR_ESTR_1D",
+            "mid": 0.02900
+        },
+        {
+            "identifier": "OIS_EUR_ESTR_3M",
+            "mid": 0.02880
+        },
+        {
+            "identifier": "OIS_EUR_ESTR_6M",
+            "mid": 0.02800
+        },
+        {
+            "identifier": "OIS_EUR_ESTR_1Y",
+            "mid": 0.02650
+        },
+        {
+            "identifier": "OIS_EUR_ESTR_2Y",
+            "mid": 0.02500
+        },
+        {
+            "identifier": "OIS_EUR_ESTR_3Y",
+            "mid": 0.02450
+        },
+        {
+            "identifier": "OIS_EUR_ESTR_4Y",
+            "mid": 0.02430
+        },
+        {
+            "identifier": "OIS_EUR_ESTR_5Y",
+            "mid": 0.02420
+        },
+        {
+            "identifier": "OIS_EUR_ESTR_7Y",
+            "mid": 0.02450
+        },
+        {
+            "identifier": "OIS_EUR_ESTR_10Y",
+            "mid": 0.02520
+        },
+        {
+            "identifier": "OIS_EUR_ESTR_15Y",
+            "mid": 0.02580
+        },
+        {
+            "identifier": "OIS_EUR_ESTR_20Y",
+            "mid": 0.02550
+        },
+        {
+            "identifier": "OIS_EUR_ESTR_30Y",
+            "mid": 0.02400
+        },
+        {
+            "identifier": "FxForwardPoints_USDCLP_1M",
+            "mid": 1.50
+        },
+        {
+            "identifier": "FxForwardPoints_USDCLP_3M",
+            "mid": 5.30
+        },
+        {
+            "identifier": "FxForwardPoints_USDCLP_6M",
+            "mid": 12.80
+        },
+        {
+            "identifier": "FixFloatCrossCurrencySwap_CLP_SOFR_USD_1Y",
+            "mid": 0.0510
+        },
+        {
+            "identifier": "FixFloatCrossCurrencySwap_CLP_SOFR_USD_2Y",
+            "mid": 0.0485
+        },
+        {
+            "identifier": "FixFloatCrossCurrencySwap_CLP_SOFR_USD_3Y",
+            "mid": 0.0465
+        },
+        {
+            "identifier": "FixFloatCrossCurrencySwap_CLP_SOFR_USD_5Y",
+            "mid": 0.0455
+        },
+        {
+            "identifier": "FixFloatCrossCurrencySwap_CLP_SOFR_USD_7Y",
+            "mid": 0.0450
+        },
+        {
+            "identifier": "FixFloatCrossCurrencySwap_CLP_SOFR_USD_10Y",
+            "mid": 0.0440
+        },
+        {
+            "identifier": "FixFloatCrossCurrencySwap_CLP_SOFR_USD_20Y",
+            "mid": 0.0430
+        },
+        {
+            "identifier": "FixedRateDeposit_CLP_ICP_1D",
+            "mid": 0.0500
+        },
+        {
+            "identifier": "FixedRateDeposit_CLP_ICP_3M",
+            "mid": 0.0498
+        },
+        {
+            "identifier": "OIS_CLP_ICP_6M",
+            "mid": 0.0495
+        },
+        {
+            "identifier": "OIS_CLP_ICP_1Y",
+            "mid": 0.0485
+        },
+        {
+            "identifier": "OIS_CLP_ICP_2Y",
+            "mid": 0.0470
+        },
+        {
+            "identifier": "OIS_CLP_ICP_3Y",
+            "mid": 0.0455
+        },
+        {
+            "identifier": "OIS_CLP_ICP_5Y",
+            "mid": 0.0440
+        },
+        {
+            "identifier": "OIS_CLP_ICP_7Y",
+            "mid": 0.0430
+        },
+        {
+            "identifier": "OIS_CLP_ICP_10Y",
+            "mid": 0.0425
+        },
+        {
+            "identifier": "OIS_CLP_ICP_20Y",
+            "mid": 0.0420
+        }
+    ]
+}

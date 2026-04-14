@@ -198,11 +198,6 @@ impl MakeCapFloor {
 
         let _side = self.side.unwrap_or(Side::LongReceive);
         let frequency = self.frequency.unwrap_or(Frequency::Quarterly);
-        let rate_definition = if let Some(rd) = self.rate_definition {
-            rd
-        } else {
-            market_index.rate_index_details()?.rate_definition()
-        };
 
         let strike_spec = Strike::Absolute(strike);
         let option_type = match cap_floor_type {
@@ -250,21 +245,26 @@ impl MakeCapFloor {
                 market_index.clone(),
                 currency,
                 period_start,
+                period_start,
                 period_end,
                 payment_date,
                 option_type,
                 strike_spec,
-                rate_definition,
             ));
         }
+
+        let cf_start_date = dates.first().copied().unwrap_or(start_date);
+        let cf_end_date = dates.last().copied().unwrap_or(maturity_date);
 
         Ok(CapFloor::new(
             identifier,
             caplet_floorlets,
             market_index,
             currency,
-            strike,
+            cf_start_date,
+            cf_end_date,
             cap_floor_type,
+            Strike::Absolute(strike),
         ))
     }
 }
@@ -295,17 +295,8 @@ mod tests {
         assert_eq!(capfloor.identifier(), "capfloor_test");
         assert_eq!(capfloor.currency(), Currency::USD);
         assert_eq!(capfloor.market_index(), MarketIndex::SOFR);
-        assert_eq!(capfloor.strike(), 0.03);
+        assert_eq!(capfloor.strike(), Strike::Absolute(0.03));
         assert!(!capfloor.caplet_floorlets().is_empty());
-
-        let expected_rate_definition = MarketIndex::SOFR
-            .rate_index_details()
-            .unwrap()
-            .rate_definition();
-        assert_eq!(
-            capfloor.caplet_floorlets()[0].rate_definition(),
-            expected_rate_definition
-        );
     }
 
     #[test]

@@ -1,6 +1,6 @@
 use crate::{
     ad::{
-        adreal::{ADReal, IsReal},
+        dual::DualFwd,
         tape::Tape,
     },
     core::{
@@ -57,7 +57,7 @@ impl RateFuturesPricer {
 
 #[derive(Default)]
 struct RateFuturesState {
-    value: Option<ADReal>,
+    value: Option<DualFwd>,
     market_data: Option<MarketData>,
 }
 
@@ -73,13 +73,13 @@ impl PricerState for RateFuturesState {
 
 impl HandleValue<RateFuturesTrade, RateFuturesState> for RateFuturesPricer {
     fn handle_value(&self, trade: &RateFuturesTrade, state: &mut RateFuturesState) -> Result<f64> {
-        Tape::start_recording();
-        Tape::set_mark();
+        Tape::start_recording_fwd();
+        Tape::set_mark_fwd();
         state.put_pillars_on_tape()?;
 
         let inst = trade.instrument();
         let rd = inst.rate_definition();
-        let quote: ADReal = {
+        let quote: DualFwd = {
             let curve = state
                 .get_discount_curve_element(&inst.market_index())?
                 .curve();
@@ -89,11 +89,11 @@ impl HandleValue<RateFuturesTrade, RateFuturesState> for RateFuturesPricer {
                 rd.compounding(),
                 rd.frequency(),
             )?;
-            (ADReal::new(100.0) - fwd * 100.0).into()
+            (DualFwd::new(100.0) - fwd * 100.0).into()
         };
         state.value = Some(quote);
 
-        Tape::stop_recording();
+        Tape::stop_recording_fwd();
         Ok(quote.value())
     }
 }
@@ -123,7 +123,7 @@ impl HandleSensitivities<RateFuturesTrade, RateFuturesState> for RateFuturesPric
             .flat_map(std::iter::IntoIterator::into_iter)
             .map(|(label, val)| (label, val.adjoint().ok()))
             .unzip();
-        let exposures: Vec<f64> = exposures.into_iter().flatten().collect();
+        let exposures: Vec<f64> = exposures.into_iter().flatten().map(|v| v.value()).collect();
 
         Ok(SensitivityMap::default()
             .with_instrument_keys(&ids)

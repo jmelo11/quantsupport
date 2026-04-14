@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    ad::adreal::{ADReal, IsReal},
+    ad::{dual::DualFwd, scalar::Scalar},
     instruments::cashflows::{cashflow::Cashflow, coupons::LinearCoupon},
     rates::interestrate::InterestRate,
     time::date::Date,
@@ -10,7 +10,7 @@ use crate::{
 
 /// A [`FixedRateCoupon`] represents a cash flow from a fixed-rate bond or loan.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FixedRateCoupon<T: IsReal> {
+pub struct FixedRateCoupon<T: Scalar> {
     notional: f64,
     rate: Box<InterestRate<T>>,
     accrual_start_date: Date,
@@ -18,7 +18,7 @@ pub struct FixedRateCoupon<T: IsReal> {
     payment_date: Date,
 }
 
-impl<T: IsReal> FixedRateCoupon<T> {
+impl<T: Scalar> FixedRateCoupon<T> {
     /// Creates a new [`FixedRateCoupon`].
     #[must_use]
     pub const fn new(
@@ -95,13 +95,13 @@ impl LinearCoupon<f64> for FixedRateCoupon<f64> {
     }
 }
 
-impl Cashflow<ADReal> for FixedRateCoupon<ADReal> {
-    fn amount(&self) -> Result<ADReal> {
+impl Cashflow<DualFwd> for FixedRateCoupon<DualFwd> {
+    fn amount(&self) -> Result<DualFwd> {
         let year_fraction = self
             .rate
             .day_counter()
             .year_fraction(self.accrual_start_date, self.accrual_end_date);
-        Ok((self.rate.rate() * ADReal::new(year_fraction * self.notional)).into())
+        Ok((self.rate.rate() * DualFwd::new(year_fraction * self.notional)).into())
     }
 
     fn payment_date(&self) -> Date {
@@ -109,10 +109,10 @@ impl Cashflow<ADReal> for FixedRateCoupon<ADReal> {
     }
 }
 
-impl LinearCoupon<ADReal> for FixedRateCoupon<ADReal> {
-    fn accrued_amount(&self, start_date: Date, end_date: Date) -> Result<ADReal> {
+impl LinearCoupon<DualFwd> for FixedRateCoupon<DualFwd> {
+    fn accrued_amount(&self, start_date: Date, end_date: Date) -> Result<DualFwd> {
         let year_fraction = self.rate.day_counter().year_fraction(start_date, end_date);
-        Ok((self.rate.rate() * ADReal::new(year_fraction * self.notional)).into())
+        Ok((self.rate.rate() * DualFwd::new(year_fraction * self.notional)).into())
     }
 
     fn accrual_start_date(&self) -> Date {
@@ -128,7 +128,7 @@ impl LinearCoupon<ADReal> for FixedRateCoupon<ADReal> {
     }
 }
 
-impl From<FixedRateCoupon<f64>> for FixedRateCoupon<ADReal> {
+impl From<FixedRateCoupon<f64>> for FixedRateCoupon<DualFwd> {
     fn from(value: FixedRateCoupon<f64>) -> Self {
         Self::new(
             value.notional,
@@ -140,8 +140,8 @@ impl From<FixedRateCoupon<f64>> for FixedRateCoupon<ADReal> {
     }
 }
 
-impl From<FixedRateCoupon<ADReal>> for FixedRateCoupon<f64> {
-    fn from(value: FixedRateCoupon<ADReal>) -> Self {
+impl From<FixedRateCoupon<DualFwd>> for FixedRateCoupon<f64> {
+    fn from(value: FixedRateCoupon<DualFwd>) -> Self {
         Self::new(
             value.notional,
             Box::new((*value.rate).into()),

@@ -12,3 +12,12 @@ pub mod quote;
 
 /// Provider of market data
 pub mod quotestore;
+
+/// Exchange rate storage functionality.
+pub mod fxstore;
+
+/// Quote selection.
+pub mod quoteselector;
+
+/// Calibration instrument used in models and bootstrapping.
+pub mod calibrationinstrument;

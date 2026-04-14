@@ -54,6 +54,10 @@ macro_rules! tibor_index {
             fn market_index(&self) -> MarketIndex {
                 MarketIndex::$variant
             }
+
+            fn is_in_arrears(&self) -> bool {
+                false
+            }
         }
     };
 }

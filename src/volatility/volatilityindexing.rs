@@ -15,7 +15,7 @@ use crate::utils::errors::QSError;
 /// For [`Strike::Atm`] and [`Strike::Relative`], the effective absolute strike
 /// is computed by the pricer from the forward rate before querying the
 /// volatility surface.
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Strike {
     /// A fixed absolute strike rate.
     Absolute(f64),
@@ -23,6 +23,33 @@ pub enum Strike {
     Atm,
     /// A spread over the forward rate: `K_eff = F + spread`.
     Relative(f64),
+}
+
+impl Strike {
+    /// Resolves the effective absolute strike given the current forward rate.
+    #[must_use] 
+    pub fn resolve(self, forward_rate: f64) -> f64 {
+        match self {
+            Self::Absolute(k) => k,
+            Self::Atm => forward_rate,
+            Self::Relative(spread) => forward_rate + spread,
+        }
+    }
+}
+
+impl std::str::FromStr for Strike {
+    type Err = QSError;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        match s {
+            "Absolute" => Ok(Self::Absolute(0.0)),
+            "ATM" => Ok(Self::Atm),
+            "Relative" => Ok(Self::Relative(0.0)),
+            _ => Err(QSError::InvalidValueErr(format!(
+                "Unknown strike type: {s}"
+            ))),
+        }
+    }
 }
 
 /// Represents if the volatility is quoted as black (log-normal) or normal volatility.
@@ -49,7 +76,7 @@ impl std::str::FromStr for VolatilityType {
 }
 
 /// Smile axis used in volatility surfaces/cubes.
-#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SmileType {
     /// Strike axis point.
     Strike,

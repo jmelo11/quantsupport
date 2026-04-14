@@ -1,5 +1,5 @@
 use crate::{
-    ad::adreal::{ADReal, IsReal},
+    ad::{dual::DualFwd, scalar::Scalar},
     core::{
         collateral::Discountable,
         instrument::{AssetClass, Instrument},
@@ -15,7 +15,7 @@ use crate::{
 
 /// A [`FixedRateDeposit`] represents a fixed-rate cash deposit with a single payment at the end (capital plus interest).
 #[derive(Clone)]
-pub struct FixedRateDeposit<T: IsReal> {
+pub struct FixedRateDeposit<T: Scalar> {
     identifier: String,
     units: f64,
     leg: Leg<T>,
@@ -27,7 +27,7 @@ pub struct FixedRateDeposit<T: IsReal> {
 
 impl<T> FixedRateDeposit<T>
 where
-    T: IsReal,
+    T: Scalar,
 {
     /// Creates a new [`FixedRateDeposit`].
     #[must_use]
@@ -84,7 +84,7 @@ where
 
 impl<T> Discountable for FixedRateDeposit<T>
 where
-    T: IsReal,
+    T: Scalar,
 {
     fn currency(&self) -> Currency {
         self.currency
@@ -101,7 +101,7 @@ where
 
 impl<T> Instrument for FixedRateDeposit<T>
 where
-    T: IsReal,
+    T: Scalar,
 {
     fn identifier(&self) -> String {
         self.identifier.clone()
@@ -110,7 +110,7 @@ where
 
 impl<T> LegsProvider<T> for FixedRateDeposit<T>
 where
-    T: IsReal,
+    T: Scalar,
 {
     fn legs(&self) -> &[Leg<T>] {
         std::slice::from_ref(&self.leg)
@@ -118,7 +118,7 @@ where
 }
 
 /// Represents a trade of a deposit instrument.
-pub struct FixedRateDepositTrade<T: IsReal> {
+pub struct FixedRateDepositTrade<T: Scalar> {
     instrument: FixedRateDeposit<T>,
     trade_date: Date,
     notional: f64,
@@ -127,7 +127,7 @@ pub struct FixedRateDepositTrade<T: IsReal> {
 
 impl<T> LegsProvider<T> for FixedRateDepositTrade<T>
 where
-    T: IsReal,
+    T: Scalar,
 {
     fn legs(&self) -> &[Leg<T>] {
         self.instrument.legs()
@@ -136,7 +136,7 @@ where
 
 impl<T> FixedRateDepositTrade<T>
 where
-    T: IsReal,
+    T: Scalar,
 {
     /// Creates a new [`FixedRateDepositTrade`].
     #[must_use]
@@ -163,7 +163,7 @@ where
 
 impl<T> Trade<FixedRateDeposit<T>> for FixedRateDepositTrade<T>
 where
-    T: IsReal,
+    T: Scalar,
 {
     fn instrument(&self) -> &FixedRateDeposit<T> {
         &self.instrument
@@ -178,7 +178,7 @@ where
     }
 }
 
-impl From<FixedRateDeposit<f64>> for FixedRateDeposit<ADReal> {
+impl From<FixedRateDeposit<f64>> for FixedRateDeposit<DualFwd> {
     fn from(value: FixedRateDeposit<f64>) -> Self {
         Self::new(
             value.identifier,
@@ -192,8 +192,8 @@ impl From<FixedRateDeposit<f64>> for FixedRateDeposit<ADReal> {
     }
 }
 
-impl From<FixedRateDeposit<ADReal>> for FixedRateDeposit<f64> {
-    fn from(value: FixedRateDeposit<ADReal>) -> Self {
+impl From<FixedRateDeposit<DualFwd>> for FixedRateDeposit<f64> {
+    fn from(value: FixedRateDeposit<DualFwd>) -> Self {
         Self::new(
             value.identifier,
             value.units,
@@ -206,7 +206,7 @@ impl From<FixedRateDeposit<ADReal>> for FixedRateDeposit<f64> {
     }
 }
 
-impl From<FixedRateDepositTrade<f64>> for FixedRateDepositTrade<ADReal> {
+impl From<FixedRateDepositTrade<f64>> for FixedRateDepositTrade<DualFwd> {
     fn from(value: FixedRateDepositTrade<f64>) -> Self {
         Self::new(
             value.instrument.into(),
@@ -217,8 +217,8 @@ impl From<FixedRateDepositTrade<f64>> for FixedRateDepositTrade<ADReal> {
     }
 }
 
-impl From<FixedRateDepositTrade<ADReal>> for FixedRateDepositTrade<f64> {
-    fn from(value: FixedRateDepositTrade<ADReal>) -> Self {
+impl From<FixedRateDepositTrade<DualFwd>> for FixedRateDepositTrade<f64> {
+    fn from(value: FixedRateDepositTrade<DualFwd>) -> Self {
         Self::new(
             value.instrument.into(),
             value.trade_date,

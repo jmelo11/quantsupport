@@ -3,13 +3,12 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    quotes::quote::Quote,
-    rates::bootstrapping::curveconfiguration::QuoteSelector,
+    quotes::{quote::Quote, quoteselector::QuoteSelector},
     time::date::Date,
 };
 
 /// Provider of market data loaded from quotes.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Default)]
 pub struct QuoteStore {
     reference_date: Date,
     quotes: HashMap<String, Quote>,

@@ -1,19 +1,18 @@
 use std::collections::HashMap;
 
 #[cfg(test)]
-use crate::ad::adreal::ADReal;
+use crate::ad::dual::DualFwd;
 use crate::{
-    ad::adreal::IsReal,
+    ad::scalar::Scalar,
     core::{instrument::AssetClass, trade::Side},
     currencies::currency::Currency,
     indices::marketindex::MarketIndex,
     instruments::cashflows::{
-        cashflow::SimpleCashflow, cashflowtype::CashflowType, coupons::PayoffOps,
-        fixedratecoupon::FixedRateCoupon, floatingratecoupon::FloatingRateCoupon, leg::Leg,
-        optionembeddedcoupon::OptionEmbeddedCoupon,
+        cashflow::SimpleCashflow, cashflowtype::CashflowType, fixedratecoupon::FixedRateCoupon,
+        floatingratecoupon::FloatingRateCoupon, leg::Leg,
+        optionembeddedcoupon::OptionEmbeddedCoupon, payoffops::PayoffOps,
     },
-    rates::compounding::Compounding,
-    rates::interestrate::InterestRate,
+    rates::{compounding::Compounding, interestrate::InterestRate},
     time::{
         calendar::Calendar,
         calendars::nullcalendar::NullCalendar,
@@ -60,7 +59,7 @@ pub enum PaymentStructure {
 /// use quantsupport::prelude::*;
 ///
 /// let rate = InterestRate::from_rate_definition(
-///     ADReal::new(0.05),
+///     DualFwd::new(0.05),
 ///     RateDefinition::new(DayCounter::Actual360, Compounding::Simple, Frequency::Annual),
 /// );
 ///
@@ -81,7 +80,7 @@ pub enum PaymentStructure {
 /// assert!(!leg.cashflows().is_empty());
 /// ```
 #[derive(Clone)]
-pub struct MakeLeg<T: IsReal> {
+pub struct MakeLeg<T: Scalar> {
     // common fields
     leg_id: Option<usize>,
     start_date: Option<Date>,
@@ -120,7 +119,7 @@ pub struct MakeLeg<T: IsReal> {
 
 impl<T> Default for MakeLeg<T>
 where
-    T: IsReal,
+    T: Scalar,
 {
     fn default() -> Self {
         Self {
@@ -155,7 +154,7 @@ where
 /// New, setters and getters
 impl<T> MakeLeg<T>
 where
-    T: IsReal,
+    T: Scalar,
 {
     /// Sets the asset class for the leg.
     #[must_use]
@@ -377,7 +376,7 @@ enum LegType {
 
 impl<T> MakeLeg<T>
 where
-    T: IsReal,
+    T: Scalar,
 {
     /// Checks the consistency of the configured fields and infers the leg type.
     fn check_leg_type(&self) -> Result<LegType> {
@@ -445,7 +444,7 @@ where
                     start_date + tenor
                 };
 
-                let mut schedule_builder = MakeSchedule::new(start_date, end_date)
+                let schedule_builder = MakeSchedule::new(start_date, end_date)
                     .with_frequency(payment_frequency)
                     .end_of_month(self.end_of_month.unwrap_or(false))
                     .with_calendar(
@@ -542,7 +541,7 @@ where
                             &mut cashflows,
                             schedule.dates(),
                             &notionals,
-                            T::new(spread),
+                            T::scalar(spread),
                             &forward_index,
                         )?;
 
@@ -552,7 +551,7 @@ where
                             currency,
                             self.discount_index,
                             Some(forward_index),
-                            Some(T::new(spread)),
+                            Some(T::scalar(spread)),
                             None,
                             side,
                             true,
@@ -575,7 +574,7 @@ where
                             &mut cashflows,
                             schedule.dates(),
                             &notionals,
-                            T::new(spread),
+                            T::scalar(spread),
                             &forward_index,
                             self.floorlet_strike,
                             self.caplet_strike,
@@ -587,7 +586,7 @@ where
                             currency,
                             self.discount_index,
                             Some(forward_index),
-                            Some(T::new(spread)),
+                            Some(T::scalar(spread)),
                             None,
                             side,
                             true,
@@ -674,7 +673,7 @@ where
                         .ok_or_else(|| QSError::ValueNotSetErr("Tenor".into()))?;
                     start_date + tenor
                 };
-                let mut schedule_builder = MakeSchedule::new(start_date, end_date)
+                let schedule_builder = MakeSchedule::new(start_date, end_date)
                     .with_frequency(payment_frequency)
                     .end_of_month(self.end_of_month.unwrap_or(false))
                     .with_calendar(
@@ -851,7 +850,7 @@ where
                         .ok_or_else(|| QSError::ValueNotSetErr("Tenor".into()))?;
                     start_date + tenor
                 };
-                let mut schedule_builder = MakeSchedule::new(start_date, end_date)
+                let schedule_builder = MakeSchedule::new(start_date, end_date)
                     .with_frequency(payment_frequency)
                     .end_of_month(self.end_of_month.unwrap_or(false))
                     .with_convention(
@@ -948,7 +947,7 @@ where
                             &mut cashflows,
                             schedule.dates(),
                             &notionals,
-                            T::new(spread),
+                            T::scalar(spread),
                             &forward_index,
                         )?;
 
@@ -962,7 +961,7 @@ where
                             currency,
                             self.discount_index,
                             Some(forward_index),
-                            Some(T::new(spread)),
+                            Some(T::scalar(spread)),
                             None,
                             side,
                             true,
@@ -988,7 +987,7 @@ where
                             &mut cashflows,
                             schedule.dates(),
                             &notionals,
-                            T::new(spread),
+                            T::scalar(spread),
                             &forward_index,
                             self.floorlet_strike,
                             self.caplet_strike,
@@ -1004,7 +1003,7 @@ where
                             currency,
                             self.discount_index,
                             Some(forward_index),
-                            Some(T::new(spread)),
+                            Some(T::scalar(spread)),
                             None,
                             side,
                             true,
@@ -1031,7 +1030,7 @@ fn build_fixed_rate_coupons_from_notionals<T>(
     rate: InterestRate<T>,
 ) -> Result<()>
 where
-    T: IsReal,
+    T: Scalar,
 {
     if dates.len() - 1 != notionals.len() {
         Err(QSError::InvalidValueErr(
@@ -1061,7 +1060,7 @@ fn build_floating_rate_coupons_from_notionals<T>(
     market_index: &MarketIndex,
 ) -> Result<()>
 where
-    T: IsReal,
+    T: Scalar,
 {
     if dates.len() - 1 != notionals.len() {
         Err(QSError::InvalidValueErr(
@@ -1092,7 +1091,7 @@ fn build_embedded_option_coupons_from_notionals<T>(
     caplet_strike: Option<f64>,
 ) -> Result<()>
 where
-    T: IsReal,
+    T: Scalar,
 {
     if dates.len() - 1 != notionals.len() {
         Err(QSError::InvalidValueErr(
@@ -1154,7 +1153,7 @@ fn add_cashflows_to_vec<T>(
     amounts: &[f64],
     cashflow_type: usize,
 ) where
-    T: IsReal,
+    T: Scalar,
 {
     for (date, amount) in dates.iter().zip(amounts) {
         let cashflow = SimpleCashflow::new(*amount, *date);
@@ -1199,7 +1198,7 @@ fn calculate_equal_payment_redemptions<T>(
     notional: f64,
 ) -> Vec<f64>
 where
-    T: IsReal,
+    T: Scalar,
 {
     let mut annuity_factor = 0.0;
     for date_pair in dates.windows(2) {
@@ -1233,7 +1232,7 @@ where
 
 fn compound_factor_from_yf_value<T>(rate: InterestRate<T>, year_fraction: f64) -> f64
 where
-    T: IsReal,
+    T: Scalar,
 {
     let rate_value = rate.rate().value();
     let f = f64::from(rate.frequency() as i32);
@@ -1265,11 +1264,11 @@ mod tests {
     use crate::rates::interestrate::RateDefinition;
     use crate::time::daycounter::DayCounter;
 
-    fn create_test_leg_builder() -> MakeLeg<ADReal> {
+    fn create_test_leg_builder() -> MakeLeg<DualFwd> {
         let start_date = Date::new(2024, 1, 1);
         let end_date = Date::new(2025, 1, 1);
         let rate = InterestRate::from_rate_definition(
-            ADReal::new(0.05),
+            DualFwd::new(0.05),
             RateDefinition::new(
                 DayCounter::Actual360,
                 Compounding::Simple,
@@ -1277,7 +1276,7 @@ mod tests {
             ),
         );
 
-        MakeLeg::<ADReal>::default()
+        MakeLeg::<DualFwd>::default()
             .with_start_date(start_date)
             .with_end_date(end_date)
             .with_notional(100_000.0)
@@ -1352,7 +1351,7 @@ mod tests {
         let start_date = Date::new(2024, 1, 1);
         let end_date = Date::new(2025, 1, 1);
 
-        let leg_builder = MakeLeg::<ADReal>::default()
+        let leg_builder = MakeLeg::<DualFwd>::default()
             .with_start_date(start_date)
             .with_end_date(end_date)
             .bullet()
@@ -1370,7 +1369,7 @@ mod tests {
         let start_date = Date::new(2024, 1, 1);
         let end_date = Date::new(2025, 1, 1);
 
-        let leg_builder = MakeLeg::<ADReal>::default()
+        let leg_builder = MakeLeg::<DualFwd>::default()
             .with_start_date(start_date)
             .with_end_date(end_date)
             .with_notional(100_000.0)
@@ -1398,7 +1397,7 @@ mod tests {
         let mut redemptions = HashMap::new();
         redemptions.insert(end_date, 100_000.0);
 
-        let leg_builder = MakeLeg::<ADReal>::default()
+        let leg_builder = MakeLeg::<DualFwd>::default()
             .with_start_date(start_date)
             .with_end_date(end_date)
             .with_notional(100_000.0)
@@ -1428,7 +1427,7 @@ mod tests {
         let mut redemptions = HashMap::new();
         redemptions.insert(end_date, 95_000.0); // Unequal amount
 
-        let leg_builder = MakeLeg::<ADReal>::default()
+        let leg_builder = MakeLeg::<DualFwd>::default()
             .with_start_date(start_date)
             .with_end_date(end_date)
             .other()

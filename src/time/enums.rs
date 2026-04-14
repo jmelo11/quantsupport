@@ -38,11 +38,11 @@ pub enum Frequency {
     OtherFrequency = 999,
 }
 
-impl TryFrom<String> for Frequency {
-    type Error = QSError;
+impl std::str::FromStr for Frequency {
+    type Err = QSError;
 
-    fn try_from(s: String) -> Result<Self> {
-        match s.as_str() {
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        match s {
             "NoFrequency" => Ok(Self::NoFrequency),
             "Once" => Ok(Self::Once),
             "Annual" => Ok(Self::Annual),
@@ -58,6 +58,14 @@ impl TryFrom<String> for Frequency {
             "OtherFrequency" => Ok(Self::OtherFrequency),
             _ => Err(QSError::InvalidValueErr(format!("Invalid frequency: {s}"))),
         }
+    }
+}
+
+impl TryFrom<String> for Frequency {
+    type Error = QSError;
+
+    fn try_from(s: String) -> Result<Self> {
+        s.parse()
     }
 }
 

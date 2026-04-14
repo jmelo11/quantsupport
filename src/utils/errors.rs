@@ -51,7 +51,7 @@ pub enum QSError {
     TapeError(String),
     /// A generic AD number error.
     #[error("AD Real error: {0}")]
-    ADRealError(String),
+    DualFwdError(String),
     /// Attempted to access a node that is not recorded on the tape.
     #[error("Node not indexed in tape")]
     NodeNotIndexedInTapeErr,

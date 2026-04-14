@@ -1,0 +1,109 @@
+{
+    "reference_date": "2025-11-11",
+    "quotes": [
+        {
+            "identifier": "FixedRateDeposit_USD_SOFR_1D",
+            "mid": 0.04330
+        },
+        {
+            "identifier": "OIS_USD_SOFR_3M",
+            "mid": 0.04335
+        },
+        {
+            "identifier": "OIS_USD_SOFR_6M",
+            "mid": 0.04250
+        },
+        {
+            "identifier": "OIS_USD_SOFR_1Y",
+            "mid": 0.04100
+        },
+        {
+            "identifier": "OIS_USD_SOFR_2Y",
+            "mid": 0.03920
+        },
+        {
+            "identifier": "OIS_USD_SOFR_3Y",
+            "mid": 0.03840
+        },
+        {
+            "identifier": "OIS_USD_SOFR_4Y",
+            "mid": 0.03800
+        },
+        {
+            "identifier": "OIS_USD_SOFR_5Y",
+            "mid": 0.03780
+        },
+        {
+            "identifier": "OIS_USD_SOFR_7Y",
+            "mid": 0.03770
+        },
+        {
+            "identifier": "OIS_USD_SOFR_10Y",
+            "mid": 0.03790
+        },
+        {
+            "identifier": "OIS_USD_SOFR_15Y",
+            "mid": 0.03850
+        },
+        {
+            "identifier": "OIS_USD_SOFR_20Y",
+            "mid": 0.03880
+        },
+        {
+            "identifier": "OIS_USD_SOFR_30Y",
+            "mid": 0.03750
+        },
+        {
+            "identifier": "FixedRateDeposit_EUR_ESTR_1D",
+            "mid": 0.02900
+        },
+        {
+            "identifier": "OIS_EUR_ESTR_3M",
+            "mid": 0.02880
+        },
+        {
+            "identifier": "OIS_EUR_ESTR_6M",
+            "mid": 0.02800
+        },
+        {
+            "identifier": "OIS_EUR_ESTR_1Y",
+            "mid": 0.02650
+        },
+        {
+            "identifier": "OIS_EUR_ESTR_2Y",
+            "mid": 0.02500
+        },
+        {
+            "identifier": "OIS_EUR_ESTR_3Y",
+            "mid": 0.02450
+        },
+        {
+            "identifier": "OIS_EUR_ESTR_4Y",
+            "mid": 0.02430
+        },
+        {
+            "identifier": "OIS_EUR_ESTR_5Y",
+            "mid": 0.02420
+        },
+        {
+            "identifier": "OIS_EUR_ESTR_7Y",
+            "mid": 0.02450
+        },
+        {
+            "identifier": "OIS_EUR_ESTR_10Y",
+            "mid": 0.02520
+        },
+        {
+            "identifier": "OIS_EUR_ESTR_15Y",
+            "mid": 0.02580
+        },
+        {
+            "identifier": "OIS_EUR_ESTR_20Y",
+            "mid": 0.02550
+        },
+        {
+            "identifier": "OIS_EUR_ESTR_30Y",
+            "mid": 0.02400
+        }
+    ]
+}

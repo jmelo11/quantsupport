@@ -103,8 +103,8 @@ fn print_bootstrap_results(
 // ---------------------------------------------------------------------------
 
 fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
-    let cwd = std::env::current_dir()?;
-    let data_dir = cwd.join("examples/bootstrap/data");
+    let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let data_dir = manifest_dir.join("data");
 
     // 1. Load market quotes
     let quote_store = load_quotes(&data_dir.join("quotes.json"))?;
@@ -125,11 +125,10 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     let policy = BootstrapDiscountPolicy::new(csa_index, csa_currency);
 
     // FX spot from fixings: 1 USD = 935 CLP
-    let mut fx_store = ExchangeRateStore::new();
-    fx_store.add_exchange_rate(Currency::USD, Currency::CLP, ADReal::new(935.0));
+    let mut fx_store = FxStore::new();
+    fx_store.add_fx_rate(Currency::USD, Currency::CLP, DualFwd::new(935.0));
 
-    let bootstrapper =
-        MultiCurveBootstrapper::new(curve_specs, policy).with_exchange_rate_store(fx_store);
+    let bootstrapper = MultiCurveBootstrapper::new(curve_specs, policy).with_fx_store(fx_store);
     let curves = bootstrapper.bootstrap(&quote_store, Level::Mid)?;
 
     // 4. Display results for each bootstrapped curve

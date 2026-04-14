@@ -1,5 +1,5 @@
 use crate::{
-    ad::adreal::IsReal,
+    ad::scalar::Scalar,
     indices::marketindex::MarketIndex,
     time::{date::Date, enums::TimeUnit, period::Period},
     utils::errors::{QSError, Result},
@@ -7,7 +7,7 @@ use crate::{
 };
 
 /// Trait for volatility cubes parameterized by numeric type.
-pub trait VolatilityCube<T: IsReal> {
+pub trait VolatilityCube<T: Scalar> {
     /// Returns the volatility for a given expiry and key (e.g., strike, delta, log-moneyness).
     ///
     /// ## Errors

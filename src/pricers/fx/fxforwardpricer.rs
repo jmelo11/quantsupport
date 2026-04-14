@@ -1,16 +1,14 @@
 use std::collections::HashSet;
 
 use crate::{
-    ad::{
-        adreal::{ADReal, IsReal},
-        tape::Tape,
-    },
+    ad::{dual::DualFwd, tape::Tape},
     core::{
         collateral::{DiscountPolicy, Discountable},
         evaluationresults::{EvaluationResults, SensitivityMap},
         instrument::{AssetClass, Instrument},
         marketdatahandling::{
             constructedelementrequest::ConstructedElementRequest,
+            fxrequest::FxRequest,
             marketdata::{MarketData, MarketDataProvider, MarketDataRequest},
         },
         pillars::Pillars,
@@ -78,7 +76,7 @@ impl Default for FxForwardPricer {
 
 #[derive(Default)]
 struct FxForwardState {
-    value: Option<ADReal>,
+    value: Option<DualFwd>,
     market_data: Option<MarketData>,
 }
 
@@ -110,8 +108,8 @@ impl Discountable for CurrencyDiscountable {
 
 impl HandleValue<FxForwardTrade, FxForwardState> for FxForwardPricer {
     fn handle_value(&self, trade: &FxForwardTrade, state: &mut FxForwardState) -> Result<f64> {
-        Tape::start_recording();
-        Tape::set_mark();
+        Tape::start_recording_fwd();
+        Tape::set_mark_fwd();
         state.put_pillars_on_tape()?;
 
         let inst = trade.instrument();
@@ -134,20 +132,20 @@ impl HandleValue<FxForwardTrade, FxForwardState> for FxForwardPricer {
             .discount_factor(inst.delivery_date())?;
 
         let spot = state.get_exchange_rate(base, quote)?;
-        let forward: ADReal = (spot * df_quote / df_base).into();
+        let forward: DualFwd = (spot * df_quote / df_base).into();
 
         // NPV = notional * (F_model - K) * DF_quote * side
-        let notional = ADReal::new(trade.notional());
-        let npv: ADReal = inst.forward_price().map_or_else(
+        let notional = DualFwd::new(trade.notional());
+        let npv: DualFwd = inst.forward_price().map_or_else(
             || (notional * forward * df_quote).into(),
             |k| {
-                let side = ADReal::new(trade.side().sign());
+                let side = DualFwd::new(trade.side().sign());
                 (notional * (forward - k) * df_quote * side).into()
             },
         );
         state.value = Some(npv);
 
-        Tape::stop_recording();
+        Tape::stop_recording_fwd();
         Ok(npv.value())
     }
 }
@@ -187,14 +185,14 @@ impl HandleSensitivities<FxForwardTrade, FxForwardState> for FxForwardPricer {
             let element = state.get_discount_curve_element(&idx)?;
             for (label, value) in element.curve().pillars().into_iter().flatten() {
                 ids.push(label);
-                exposures.push(value.adjoint().unwrap_or(0.0));
+                exposures.push(value.adjoint().map_or(0.0, |a| a.value()));
             }
         }
 
-        if let Some(store) = state.get_exchange_rate_store() {
+        if let Some(store) = state.get_fx_store() {
             for (label, value) in store.pillars().into_iter().flatten() {
                 ids.push(label);
-                exposures.push(value.adjoint().unwrap_or(0.0));
+                exposures.push(value.adjoint().map_or(0.0, |a| a.value()));
             }
         }
 
@@ -254,7 +252,10 @@ impl Pricer for FxForwardPricer {
             }
         }
 
-        let mut request = MarketDataRequest::default().with_exchange_rates();
+        let mut request = MarketDataRequest::default().with_fx_request(vec![FxRequest::pair(
+            inst.base_currency(),
+            inst.quote_currency(),
+        )]);
 
         if !elements.is_empty() {
             request = request.with_constructed_elements_request(elements);

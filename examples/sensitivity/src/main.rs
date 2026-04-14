@@ -9,9 +9,12 @@ use output::{extract_curve_nodes, CurveOutput, OutputResults, ProductOutput};
 use pricing::price_product;
 
 fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
-    let cwd = std::env::current_dir()?;
-    let data_dir = cwd.join("examples/sensitivity/data");
-    println!("Loading market data and curve specs from {}", data_dir.display());
+    let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let data_dir = manifest_dir.join("data");
+    println!(
+        "Loading market data and curve specs from {}",
+        data_dir.display()
+    );
     // ── 1. Load market data and curve specs ───────────────────────────
     let quote_store = load_quotes(&data_dir.join("quotes.json"))?;
     let rd = quote_store.reference_date();
@@ -38,7 +41,7 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
 
     // ── 3a. SOFR swap: receive fixed 3.78% vs pay SOFR quarterly ─────
     {
-        let swap = MakeSwap::<ADReal>::default()
+        let swap = MakeSwap::<DualFwd>::default()
             .with_identifier("USD_SOFR_IRS_5Y".to_string())
             .with_start_date(start)
             .with_maturity_date(maturity)
@@ -53,7 +56,7 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
             .build()?;
 
         let trade = SwapTrade::new(swap, start, notional, Side::LongReceive);
-        let output = price_product::<Swap<ADReal>, SwapTrade<ADReal>>(
+        let output = price_product::<Swap<DualFwd>, SwapTrade<DualFwd>>(
             "SOFR OIS 5Y Swap",
             &trade,
             &env.context,
@@ -66,7 +69,7 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
 
     // ── 3b. TermSOFR3m swap: receive fixed 4.00% vs pay TermSOFR3m quarterly
     {
-        let swap = MakeSwap::<ADReal>::default()
+        let swap = MakeSwap::<DualFwd>::default()
             .with_identifier("USD_TermSOFR3m_IRS_5Y".to_string())
             .with_start_date(start)
             .with_maturity_date(maturity)
@@ -81,7 +84,7 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
             .build()?;
 
         let trade = SwapTrade::new(swap, start, notional, Side::LongReceive);
-        let output = price_product::<Swap<ADReal>, SwapTrade<ADReal>>(
+        let output = price_product::<Swap<DualFwd>, SwapTrade<DualFwd>>(
             "TermSOFR3m 5Y Swap",
             &trade,
             &env.context,
@@ -101,7 +104,7 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
             Frequency::Semiannual,
         );
 
-        let swap = MakeSwap::<ADReal>::default()
+        let swap = MakeSwap::<DualFwd>::default()
             .with_identifier("CLP_ICP_OIS_5Y".to_string())
             .with_start_date(start)
             .with_maturity_date(maturity)
@@ -116,7 +119,7 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
             .build()?;
 
         let trade = SwapTrade::new(swap, start, clp_notional, Side::LongReceive);
-        let output = price_product::<Swap<ADReal>, SwapTrade<ADReal>>(
+        let output = price_product::<Swap<DualFwd>, SwapTrade<DualFwd>>(
             "CLP ICP OIS 5Y Swap (USD collateral)",
             &trade,
             &env.context,
@@ -132,7 +135,7 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         let usd_notional = 10_000_000.0;
         let clp_notional_xccy = usd_notional * 935.0;
 
-        let xccy = MakeFloatFloatCrossCurrencySwap::<ADReal>::default()
+        let xccy = MakeFloatFloatCrossCurrencySwap::<DualFwd>::default()
             .with_identifier("XCCY_CLP_ICP_SOFR_USD_5Y".to_string())
             .with_start_date(start)
             .with_maturity_date(maturity)
@@ -156,8 +159,8 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
             Side::LongReceive,
         );
         let output = price_product::<
-            FloatFloatCrossCurrencySwap<ADReal>,
-            FloatFloatCrossCurrencySwapTrade<ADReal>,
+            FloatFloatCrossCurrencySwap<DualFwd>,
+            FloatFloatCrossCurrencySwapTrade<DualFwd>,
         >(
             "Cross-Currency Swap CLP/USD 5Y (receive CLP ICP, pay USD SOFR)",
             &trade,

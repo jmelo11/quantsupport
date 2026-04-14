@@ -1,5 +1,5 @@
 use crate::{
-    ad::adreal::ADReal,
+    ad::dual::DualFwd,
     core::{
         elements::{
             curveelement::{DiscountCurveElement, DividendCurveElement},
@@ -10,8 +10,9 @@ use crate::{
         marketdatahandling::marketdata::MarketData,
         pillars::Pillars,
     },
-    currencies::{currency::Currency, exchangeratestore::ExchangeRateStore},
+    currencies::currency::Currency,
     indices::marketindex::MarketIndex,
+    quotes::fxstore::FxStore,
     time::date::Date,
     utils::errors::{QSError, Result},
 };
@@ -73,24 +74,24 @@ pub trait PricerState {
 
     /// Retrieves the exchange rate between two currencies from the exchange-rate store.
     ///
-    /// Returns an [`ADReal`] so that sensitivities to FX rates are captured on the AD tape.
+    /// Returns an [`DualFwd`] so that sensitivities to FX rates are captured on the AD tape.
     ///
     /// ## Errors
     ///
     /// Returns an error if the market data response or exchange-rate store is not available,
     /// or if no rate path exists between the two currencies.
-    fn get_exchange_rate(&self, base: Currency, quote: Currency) -> Result<ADReal> {
+    fn get_exchange_rate(&self, base: Currency, quote: Currency) -> Result<DualFwd> {
         self.get_market_data_reponse()
             .ok_or_else(|| QSError::NotFoundErr("MarketDataResponse not available.".into()))?
-            .exchange_rate_store()
-            .ok_or_else(|| QSError::NotFoundErr("ExchangeRateStore not available.".into()))?
-            .get_exchange_rate(base, quote)
+            .fx_store()
+            .ok_or_else(|| QSError::NotFoundErr("FxStore not available.".into()))?
+            .get_fx_rate(base, quote)
     }
 
     /// Retrieves the exchange-rate store from the market data, if available.
-    fn get_exchange_rate_store(&self) -> Option<&ExchangeRateStore> {
+    fn get_fx_store(&self) -> Option<&FxStore> {
         self.get_market_data_reponse()
-            .and_then(|md| md.exchange_rate_store())
+            .and_then(|md| md.fx_store())
     }
 
     /// Retrieves the fixing for a given market index and date, if available.
@@ -204,7 +205,7 @@ pub trait PricerState {
                 surface.surface_mut().put_pillars_on_tape();
             }
             // Put FX spot rates on tape
-            if let Some(fx_store) = md_response.exchange_rate_store_mut() {
+            if let Some(fx_store) = md_response.fx_store_mut() {
                 fx_store.put_pillars_on_tape();
             }
         }

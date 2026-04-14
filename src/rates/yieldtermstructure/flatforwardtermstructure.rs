@@ -1,12 +1,12 @@
 use crate::{
-    ad::adreal::{ADReal, IsReal},
+    ad::{constant::Const, dual::DualFwd, scalar::Scalar},
     core::{elements::curveelement::ADCurveElement, pillars::Pillars},
     rates::{
         compounding::Compounding,
         interestrate::{InterestRate, RateDefinition},
         yieldtermstructure::interestratestermstructure::InterestRatesTermStructure,
     },
-    time::{date::Date, enums::Frequency},
+    time::{date::Date, daycounter::DayCounter, enums::Frequency},
     utils::errors::{QSError, Result},
 };
 
@@ -23,7 +23,7 @@ use crate::{
 #[derive(Clone)]
 pub struct FlatForwardTermStructure<T>
 where
-    T: IsReal,
+    T: Scalar,
 {
     reference_date: Date,
     rate: InterestRate<T>,
@@ -32,7 +32,7 @@ where
 
 impl<T> FlatForwardTermStructure<T>
 where
-    T: IsReal,
+    T: Scalar,
 {
     /// Creates a new [`FlatForwardTermStructure`].
     ///
@@ -76,8 +76,8 @@ where
     }
 }
 
-impl Pillars<ADReal> for FlatForwardTermStructure<ADReal> {
-    fn pillars(&self) -> Option<Vec<(String, &ADReal)>> {
+impl Pillars<DualFwd> for FlatForwardTermStructure<DualFwd> {
+    fn pillars(&self) -> Option<Vec<(String, &DualFwd)>> {
         self.pillar_label
             .as_ref()
             .map(|label| vec![(label.clone(), self.rate.rate_ref())])
@@ -123,13 +123,38 @@ impl InterestRatesTermStructure<f64> for FlatForwardTermStructure<f64> {
     fn nodes(&self) -> Option<Vec<(Date, f64)>> {
         None
     }
+
+    fn day_counter(&self) -> Option<DayCounter> {
+        Some(self.rate.day_counter())
+    }
+
+    fn discount_factor_from_time(&self, t: f64) -> Result<f64> {
+        if t < 0.0 {
+            return Err(QSError::InvalidValueErr("Time must be non-negative".into()));
+        }
+        Ok(1.0 / self.rate.compound_factor_from_yf(t))
+    }
+
+    fn forward_rate_from_time(&self, start: f64, end: f64) -> Result<f64> {
+        if (end - start).abs() < 1e-14 {
+            // Instantaneous forward rate: use numerical limit
+            let eps = 1e-8;
+            let df_s = self.discount_factor_from_time(start)?;
+            let df_e = self.discount_factor_from_time(start + eps)?;
+            return Ok((df_s / df_e - 1.0) / eps);
+        }
+        let df_start = self.discount_factor_from_time(start)?;
+        let df_end = self.discount_factor_from_time(end)?;
+        let fwd = (df_start / df_end - 1.0) / (end - start);
+        Ok(fwd)
+    }
 }
 
-impl InterestRatesTermStructure<ADReal> for FlatForwardTermStructure<ADReal> {
+impl InterestRatesTermStructure<DualFwd> for FlatForwardTermStructure<DualFwd> {
     fn reference_date(&self) -> Date {
         self.reference_date
     }
-    fn discount_factor(&self, date: Date) -> Result<ADReal> {
+    fn discount_factor(&self, date: Date) -> Result<DualFwd> {
         if date < self.reference_date() {
             return Err(QSError::InvalidValueErr(format!(
                 "Date {date:?} is before reference date {reference_date:?}",
@@ -144,10 +169,10 @@ impl InterestRatesTermStructure<ADReal> for FlatForwardTermStructure<ADReal> {
         end_date: Date,
         comp: Compounding,
         freq: Frequency,
-    ) -> Result<ADReal> {
+    ) -> Result<DualFwd> {
         let comp_factor = self.discount_factor(start_date)? / self.discount_factor(end_date)?;
         let t = self.rate.day_counter().year_fraction(start_date, end_date);
-        Ok(InterestRate::<ADReal>::implied_rate(
+        Ok(InterestRate::<DualFwd>::implied_rate(
             comp_factor.into(),
             self.rate.day_counter(),
             comp,
@@ -157,12 +182,38 @@ impl InterestRatesTermStructure<ADReal> for FlatForwardTermStructure<ADReal> {
         .rate())
     }
 
-    fn nodes(&self) -> Option<Vec<(Date, ADReal)>> {
+    fn nodes(&self) -> Option<Vec<(Date, DualFwd)>> {
         None
+    }
+
+    fn day_counter(&self) -> Option<DayCounter> {
+        Some(self.rate.day_counter())
+    }
+
+    fn discount_factor_from_time(&self, t: f64) -> Result<DualFwd> {
+        if t < 0.0 {
+            return Err(QSError::InvalidValueErr("Time must be non-negative".into()));
+        }
+        let cf = self.rate.compound_factor_from_yf(t);
+        Ok((Const::one() / cf).into())
+    }
+
+    fn forward_rate_from_time(&self, start: f64, end: f64) -> Result<DualFwd> {
+        if (end - start).abs() < 1e-14 {
+            let eps = 1e-8;
+            let df_s = self.discount_factor_from_time(start)?;
+            let df_e = self.discount_factor_from_time(start + eps)?;
+            let fwd = (df_s / df_e - 1.0) / eps;
+            return Ok(fwd.into());
+        }
+        let df_start = self.discount_factor_from_time(start)?;
+        let df_end = self.discount_factor_from_time(end)?;
+        let fwd = (df_start / df_end - 1.0) / (end - start);
+        Ok(fwd.into())
     }
 }
 
-impl ADCurveElement for FlatForwardTermStructure<ADReal> {}
+impl ADCurveElement for FlatForwardTermStructure<DualFwd> {}
 
 #[cfg(test)]
 mod tests {
@@ -255,8 +306,8 @@ mod tests {
     // fn test_ad_forward_rate() -> Result<()> {
     //     let reference_date = Date::new(2023, 8, 19);
 
-    //     let mut rate = ADReal::from(0.05);
-    //     Tape::start_recording();
+    //     let mut rate = DualFwd::from(0.05);
+    //     Tape::start_recording_fwd();
     //     rate.put_on_tape();
     //     let term_structure =
     //         FlatForwardTermStructure::new(reference_date, rate, RateDefinition::default());
@@ -266,7 +317,7 @@ mod tests {
     //     let df2 =
     //         term_structure_2.discount_factor(reference_date + Period::new(1, TimeUnit::Years));
 
-    //     Tape::stop_recording();
+    //     Tape::stop_recording_fwd();
     //     let rate2 = rate.clone();
     //     // let _ = df?.backward()?;
     //     // println!("Rate sensitivity: {:?}", rate.adjoint()?);

@@ -6,6 +6,11 @@ use crate::{
     },
     currencies::currency::Currency,
     time::{date::Date, daycounter::DayCounter},
+    utils::errors::Result,
+    xva::{
+        claimevaluationstrategy::ClaimEvaluationStrategy, contigentclaim::ContingentClaim,
+        makecontigentclaim::MakeContingentClaim,
+    },
 };
 
 /// Settlement convention for an [`FxForward`].
@@ -218,5 +223,53 @@ impl Trade<FxForward> for FxForwardTrade {
 
     fn side(&self) -> Side {
         self.side
+    }
+}
+
+impl FxForwardTrade {
+    /// Decomposes the FX forward trade into contingent claims.
+    ///
+    /// A deliverable FX forward produces two deterministic claims:
+    /// - Receive base-currency notional at delivery (converted to domestic via FX).
+    /// - Pay quote-currency notional (= base notional × forward price) at delivery.
+    ///
+    /// # Errors
+    /// Returns an error if the forward price is not set.
+    pub fn into_contingent_claims(&self) -> Result<Vec<ContingentClaim>> {
+        let fwd = self.instrument();
+        let trade_id = fwd.identifier();
+        let delivery = fwd.delivery_date();
+        let fwd_price = fwd
+            .forward_price()
+            .ok_or_else(|| crate::utils::errors::QSError::ValueNotSetErr("forward price".into()))?;
+
+        let opposite = match self.side {
+            Side::LongReceive => Side::PayShort,
+            Side::PayShort => Side::LongReceive,
+        };
+
+        // Base-currency leg: receive notional of base at delivery
+        let base_claim = MakeContingentClaim::default()
+            .with_trade_id(trade_id.clone())
+            .with_leg_id(0)
+            .with_payment_date(delivery)
+            .with_currency(fwd.base_currency())
+            .with_notional(self.notional)
+            .with_side(self.side)
+            .with_evaluation_strategy(ClaimEvaluationStrategy::Deterministic { amount: 1.0 })
+            .build()?;
+
+        // Quote-currency leg: pay notional × K of quote at delivery
+        let quote_claim = MakeContingentClaim::default()
+            .with_trade_id(trade_id)
+            .with_leg_id(1)
+            .with_payment_date(delivery)
+            .with_currency(fwd.quote_currency())
+            .with_notional(self.notional * fwd_price)
+            .with_side(opposite)
+            .with_evaluation_strategy(ClaimEvaluationStrategy::Deterministic { amount: 1.0 })
+            .build()?;
+
+        Ok(vec![base_claim, quote_claim])
     }
 }

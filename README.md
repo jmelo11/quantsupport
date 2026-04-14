@@ -68,7 +68,7 @@ fn create_pricing_context() -> ContextManager {
     );
     let discount_curve = FlatForwardTermStructure::new(
         evaluation_date,
-        ADReal::from(discount_rate),
+        DualF64::from(discount_rate),
         curve_definition,
     )
     .with_pillar_label("SOFR_flat".to_string());

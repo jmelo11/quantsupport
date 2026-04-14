@@ -1,5 +1,5 @@
 use crate::{
-    ad::adreal::IsReal,
+    ad::scalar::Scalar,
     core::{instrument::AssetClass, trade::Side},
     currencies::currency::Currency,
     indices::marketindex::MarketIndex,
@@ -30,7 +30,7 @@ use std::marker::PhantomData;
 ///     Frequency::Semiannual,
 /// );
 ///
-/// let bond = MakeFixedRateBond::<ADReal>::default()
+/// let bond = MakeFixedRateBond::<DualFwd>::default()
 ///     .with_identifier("UST-5Y".to_string())
 ///     .with_start_date(Date::new(2024, 1, 1))
 ///     .with_maturity_date(Date::new(2029, 1, 1))
@@ -48,7 +48,7 @@ use std::marker::PhantomData;
 /// assert_eq!(bond.currency(), Currency::USD);
 /// ```
 #[derive(Default)]
-pub struct MakeFixedRateBond<T: IsReal> {
+pub struct MakeFixedRateBond<T: Scalar> {
     start_date: Option<Date>,
     maturity_date: Option<Date>,
     rate: Option<f64>,
@@ -71,7 +71,7 @@ pub struct MakeFixedRateBond<T: IsReal> {
 
 impl<T> MakeFixedRateBond<T>
 where
-    T: IsReal,
+    T: Scalar,
 {
     /// Sets the start date of the bond.
     #[must_use]
@@ -225,7 +225,7 @@ where
         let payment_frequency = self.payment_frequency.unwrap_or(Frequency::Semiannual);
         let structure = self.payment_structure.unwrap_or(PaymentStructure::Bullet);
 
-        let interest_rate = InterestRate::from_rate_definition(T::new(rate), rate_definition);
+        let interest_rate = InterestRate::from_rate_definition(T::scalar(rate), rate_definition);
 
         let leg = MakeLeg::<T>::default()
             .with_leg_id(0)

@@ -18,6 +18,9 @@ use crate::{
 
 macro_rules! sofr_index {
     ($name:ident, $doc:expr, $display:expr, $variant:ident) => {
+        sofr_index!($name, $doc, $display, $variant, true);
+    };
+    ($name:ident, $doc:expr, $display:expr, $variant:ident, $in_arrears:expr) => {
         #[doc = $doc]
         #[derive(Copy, Clone, Serialize, Default, Deserialize)]
         pub struct $name;
@@ -56,13 +59,17 @@ macro_rules! sofr_index {
             fn market_index(&self) -> MarketIndex {
                 MarketIndex::$variant
             }
+
+            fn is_in_arrears(&self) -> bool {
+                $in_arrears
+            }
         }
     };
 }
 
 sofr_index!(SOFRIndex, "Details for the SOFR overnight rate index.", "SOFR", SOFR);
 sofr_index!(SOFRCompoundedIndex, "Details for the SOFR Compounded rate index.", "SOFRCompounded", SOFRCompounded);
-sofr_index!(TermSOFR1mIndex, "Details for the Term-SOFR 1-month rate index.", "TermSOFR1m", TermSOFR1m);
-sofr_index!(TermSOFR3mIndex, "Details for the Term-SOFR 3-month rate index.", "TermSOFR3m", TermSOFR3m);
-sofr_index!(TermSOFR6mIndex, "Details for the Term-SOFR 6-month rate index.", "TermSOFR6m", TermSOFR6m);
-sofr_index!(TermSOFR12mIndex, "Details for the Term-SOFR 12-month rate index.", "TermSOFR12m", TermSOFR12m);
+sofr_index!(TermSOFR1mIndex, "Details for the Term-SOFR 1-month rate index.", "TermSOFR1m", TermSOFR1m, false);
+sofr_index!(TermSOFR3mIndex, "Details for the Term-SOFR 3-month rate index.", "TermSOFR3m", TermSOFR3m, false);
+sofr_index!(TermSOFR6mIndex, "Details for the Term-SOFR 6-month rate index.", "TermSOFR6m", TermSOFR6m, false);
+sofr_index!(TermSOFR12mIndex, "Details for the Term-SOFR 12-month rate index.", "TermSOFR12m", TermSOFR12m, false);

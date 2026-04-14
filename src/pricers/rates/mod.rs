@@ -1,6 +1,10 @@
 /// Black model caplet pricer.
-pub mod blackcapletpricer;
+pub mod closedformblackcapletpricer;
+/// Black model cap pricer.
+pub mod closedformblackcappricer;
+/// Closed-form Hull-White caplet pricer.
+pub mod closedformhullwhitecapletpricer;
+/// Closed-form Hull-White cap pricer.
+pub mod closedformhullwhitecappricer;
 /// Pricer for rate futures quotes.
 pub mod ratefuturespricer;
-/// Discounting pricer for interest rate swaps.
-pub mod swapdiscountedcashflowpricer;

@@ -1,5 +1,5 @@
 use crate::{
-    ad::adreal::IsReal,
+    ad::scalar::Scalar,
     core::{instrument::AssetClass, trade::Side},
     currencies::currency::Currency,
     indices::marketindex::MarketIndex,
@@ -26,7 +26,7 @@ use std::marker::PhantomData;
 ///     Frequency::Annual,
 /// );
 ///
-/// let deposit = MakeFixedRateDeposit::<ADReal>::default()
+/// let deposit = MakeFixedRateDeposit::<DualFwd>::default()
 ///     .with_identifier("DEPO-3M".to_string())
 ///     .with_start_date(Date::new(2024, 1, 1))
 ///     .with_maturity_date(Date::new(2024, 4, 1))
@@ -41,7 +41,7 @@ use std::marker::PhantomData;
 /// assert_eq!(deposit.identifier(), "DEPO-3M");
 /// ```
 #[derive(Default)]
-pub struct MakeFixedRateDeposit<T: IsReal> {
+pub struct MakeFixedRateDeposit<T: Scalar> {
     start_date: Option<Date>,
     maturity_date: Option<Date>,
     rate: Option<f64>,
@@ -57,7 +57,7 @@ pub struct MakeFixedRateDeposit<T: IsReal> {
 
 impl<T> MakeFixedRateDeposit<T>
 where
-    T: IsReal,
+    T: Scalar,
 {
     /// Sets the start date of the fixed rate deposit.
     #[must_use]
@@ -161,7 +161,7 @@ where
         let units = self.units.unwrap_or(100.0);
         let side = self.side.unwrap_or(Side::LongReceive);
 
-        let interest_rate = InterestRate::from_rate_definition(T::new(rate), rate_definition);
+        let interest_rate = InterestRate::from_rate_definition(T::scalar(rate), rate_definition);
 
         let leg = MakeLeg::<T>::default()
             .with_leg_id(0)

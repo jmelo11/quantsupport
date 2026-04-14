@@ -1,9 +1,10 @@
 use crate::{
-    ad::adreal::IsReal,
+    ad::scalar::Scalar,
     rates::compounding::Compounding,
-    time::{date::Date, enums::Frequency},
+    time::{date::Date, daycounter::DayCounter, enums::Frequency},
     utils::errors::Result,
 };
+
 /// Base trait for rate term structures.
 ///
 /// This trait defines the common interface for all interest rate term structures, including methods
@@ -12,7 +13,7 @@ use crate::{
 /// zero curve) will implement this trait with their own logic for these calculations.
 pub trait InterestRatesTermStructure<T>
 where
-    T: IsReal,
+    T: Scalar,
 {
     /// Returns the reference date for the given curve.
     fn reference_date(&self) -> Date;
@@ -35,4 +36,19 @@ where
 
     /// Returns the nodes of the term structure, if available.
     fn nodes(&self) -> Option<Vec<(Date, T)>>;
+
+    /// Returns the day count convention used by the term structure, if available.
+    fn day_counter(&self) -> Option<DayCounter>;
+
+    /// Calculates the discount factor for a given year fraction from the reference date.
+    ///
+    /// # Errors
+    /// Returns an error if the discount factor cannot be computed for the given time.
+    fn discount_factor_from_time(&self, t: f64) -> Result<T>;
+
+    /// Calculates the forward rate between two year fractions.
+    ///
+    /// # Errors
+    /// Returns an error if the forward rate cannot be computed for the given time interval.
+    fn forward_rate_from_time(&self, start: f64, end: f64) -> Result<T>;
 }

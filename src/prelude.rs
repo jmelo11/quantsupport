@@ -4,15 +4,11 @@
 //! `use quantsupport::prelude::*;` brings everything into scope.
 
 pub use crate::{
-    ad::{
-        adreal::{ADReal, Const, Expr, FloatExt, IsReal},
-        tape::Tape,
-    },
+    ad::{dual::DualFwd, scalar::Scalar, tape::Tape},
     core::{
         collateral::{
             DiscountPolicy, Discountable, FixedIncomeDiscountPolicy, SingleCurveCSADiscountPolicy,
         },
-        contextmanager::ContextManager,
         elements::{
             curveelement::{ADCurveElement, DiscountCurveElement, DividendCurveElement},
             montecarlosimulationelement::{
@@ -32,6 +28,7 @@ pub use crate::{
         pillars::Pillars,
         pricer::Pricer,
         pricerstate::PricerState,
+        pricingcontext::PricingContext,
         request::{
             HandleCashflows, HandleFairRate, HandleModifiedDuration, HandleSensitivities,
             HandleValue, HandleYieldToMaturity, LegsProvider, Request,
@@ -39,9 +36,7 @@ pub use crate::{
         trade::{Side, Trade},
         visitable::{Visitable, Visitor},
     },
-    currencies::{
-        currency::Currency, currencydetails::CurrencyDetails, exchangeratestore::ExchangeRateStore,
-    },
+    currencies::{currency::Currency, currencydetails::CurrencyDetails},
     indices::{
         marketindex::{MarketIndex, MarketIndexDetails},
         quotetype::QuoteType,
@@ -76,26 +71,28 @@ pub use crate::{
         },
         fx::{
             fxforward::{FxForward, FxForwardSettlement, FxForwardTrade},
+            fxoption::{FxOption, FxOptionTrade, FxOptionType},
             makefxforward::MakeFxForward,
+            makefxoption::MakeFxOption,
         },
         rates::{
             basisswap::{BasisSwap, BasisSwapTrade},
             capfloor::{CapFloor, CapFloorTrade, CapFloorType},
             capletfloorlet::{CapletFloorlet, CapletFloorletTrade, CapletFloorletType},
             crosscurrencyswap::{FixFloatCrossCurrencySwap, FixFloatCrossCurrencySwapTrade},
+            europeanswaption::{EuropeanSwaption, EuropeanSwaptionTrade, SwaptionType},
             floatfloatcrosscurrencyswap::{
                 FloatFloatCrossCurrencySwap, FloatFloatCrossCurrencySwapTrade,
             },
             makebasisswap::MakeBasisSwap,
             makecapfloor::MakeCapFloor,
+            makeeuropeanswaption::MakeSwaption,
             makefixfloatcrosscurrencyswap::MakeFixFloatCrossCurrencySwap,
             makefloatfloatcrosscurrencyswap::MakeFloatFloatCrossCurrencySwap,
             makeratefutures::MakeRateFutures,
             makeswap::MakeSwap,
-            makeswaption::MakeSwaption,
             ratefutures::{RateFutures, RateFuturesTrade},
             swap::{Swap, SwapTrade},
-            swaption::{Swaption, SwaptionExerciseType, SwaptionTrade, SwaptionType},
         },
     },
     math::{
@@ -103,28 +100,40 @@ pub use crate::{
         probability::norm_cdf::NormCDF,
         solvers::{bisection::Bisection, newtonraphson::NewtonRaphson},
     },
-    models::{GbmModelParameters, ModelParameters},
+    models::{
+        hullwhite::{
+            hullwhitecalibration::HullWhiteTimeDependentVolatility,
+            hullwhitecalibrationquality::{
+                HullWhiteCalibrationQuality, HullWhiteCalibrationRecord,
+            },
+            hullwhitemodel::HullWhite,
+        },
+        lgm::{
+            lgmcomponents::{LgmFxModel, LgmRateModel},
+            lgmmarketmodel::LgmMarketModel,
+        },
+        montecarloengine::{PathGenerator, TimeDependentVolatility},
+    },
     pricers::{
-        cashflows::discountingcashflowpricer::CashflowDiscountPricer,
+        cashflows::discountedcashflowpricer::DiscountedCashflowPricer,
         equity::blackeuropeanoptionpricer::BlackEuropeanOptionPricer,
         fx::fxforwardpricer::FxForwardPricer,
-        pricerdefinitions::{
-            BlackClosedFormPricer, CloseFormPricer, GbmMonteCarloPricer, HullWhiteClosedFormPricer,
-            MonteCarloPricer, NormalClosedFormPricer,
+        rates::{
+            closedformblackcapletpricer::ClosedFormBlackCapletPricer,
+            ratefuturespricer::RateFuturesPricer,
         },
-        rates::{blackcapletpricer::BlackCapletPricer, ratefuturespricer::RateFuturesPricer},
     },
     quotes::{
         fixingstore::FixingStore,
+        fxstore::FxStore,
         quote::{Level, Quote, QuoteDetails, QuoteInstrument, QuoteLevels},
+        quoteselector::QuoteSelector,
         quotestore::QuoteStore,
     },
     rates::{
         bootstrapping::{
             bootstrapdiscountpolicy::BootstrapDiscountPolicy,
-            calibrationinstrument::CalibrationInstrument,
-            curveconfiguration::{CurveConfiguration, QuoteSelector},
-            multicurvebootstrapper::MultiCurveBootstrapper,
+            curveconfiguration::CurveConfiguration, multicurvebootstrapper::MultiCurveBootstrapper,
         },
         compounding::Compounding,
         interestrate::{InterestRate, RateDefinition},
@@ -148,10 +157,31 @@ pub use crate::{
         schedule::{MakeSchedule, Schedule},
     },
     utils::errors::{QSError, Result},
+    utils::plot::Plot,
     volatility::{
+        interpolatedvolatilitycube::InterpolatedVolatilityCube,
         interpolatedvolatilitysurface::InterpolatedVolatilitySurface,
+        modelcalibration::{CalibrationSource, ModelCalibrationConfiguration},
         volatilitycube::VolatilityCube,
+        volatilitycubebuilder::VolatilityCubeBuilder,
+        volatilitycubeconfiguration::VolatilityCubeConfiguration,
         volatilityindexing::{SmileType, Strike, VolatilityType},
         volatilitysurface::VolatilitySurface,
+        volatilitysurfacebuilder::VolatilitySurfaceBuilder,
+        volatilitysurfaceconfiguration::VolatilitySurfaceConfiguration,
+    },
+    xva::{
+        contigentclaim::ContingentClaim,
+        engine::{XvaEngine, XvaEngineConfig},
+        makecontigentclaim::IntoContingentClaims,
+        nettingset::NettingSet,
+        visitors::{
+            claimpreprocessor::ClaimPreprocessor,
+            claimcompressionpreprocessor::ClaimCompressionPreprocessor,
+            exposureevaluator::{ExposureEvaluator, ExposureResult, NpvCube},
+            fixingpreprocessor::FixingPreprocessor,
+            marketmodel::MarketModel,
+            preprocessorexecutor::PreprocessorExecutor,
+        },
     },
 };

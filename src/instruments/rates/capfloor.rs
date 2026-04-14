@@ -2,13 +2,15 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     core::{
-        instrument::Instrument,
+        collateral::Discountable,
+        instrument::{AssetClass, Instrument},
         trade::{Side, Trade},
     },
     currencies::currency::Currency,
     indices::marketindex::MarketIndex,
     instruments::rates::capletfloorlet::CapletFloorlet,
     time::date::Date,
+    volatility::volatilityindexing::Strike,
 };
 
 /// Direction of the cap/floor strip.
@@ -26,29 +28,36 @@ pub struct CapFloor {
     identifier: String,
     caplet_floorlets: Vec<CapletFloorlet>,
     market_index: MarketIndex,
+    start_date: Date,
+    end_date: Date,
     currency: Currency,
-    strike: f64,
     payoff_type: CapFloorType,
+    strike: Strike,
 }
 
 impl CapFloor {
     /// Creates a new [`CapFloor`].
     #[must_use]
+    #[allow(clippy::too_many_arguments)]
     pub const fn new(
         identifier: String,
         caplet_floorlets: Vec<CapletFloorlet>,
         market_index: MarketIndex,
         currency: Currency,
-        strike: f64,
+        start_date: Date,
+        end_date: Date,
         payoff_type: CapFloorType,
+        strike: Strike,
     ) -> Self {
         Self {
             identifier,
             caplet_floorlets,
             market_index,
+            start_date,
+            end_date,
             currency,
-            strike,
             payoff_type,
+            strike,
         }
     }
 
@@ -66,7 +75,7 @@ impl CapFloor {
 
     /// Returns the strike rate.
     #[must_use]
-    pub const fn strike(&self) -> f64 {
+    pub const fn strike(&self) -> Strike {
         self.strike
     }
 
@@ -80,6 +89,27 @@ impl CapFloor {
     #[must_use]
     pub fn caplet_floorlets(&self) -> &[CapletFloorlet] {
         &self.caplet_floorlets
+    }
+
+    /// Returns the last fixing date across all caplet/floorlets.
+    #[must_use]
+    pub fn last_fixing_date(&self) -> Option<Date> {
+        self.caplet_floorlets
+            .iter()
+            .max_by(|x, y| x.fixing_date().cmp(&y.fixing_date()))
+            .map(CapletFloorlet::fixing_date)
+    }
+
+    /// Return the start date of the cap/floor.
+    #[must_use]
+    pub const fn start_date(&self) -> Date {
+        self.start_date
+    }
+
+    /// Returns the end date of the cap/floor.
+    #[must_use]
+    pub const fn end_date(&self) -> Date {
+        self.end_date
     }
 }
 
@@ -127,5 +157,19 @@ impl Trade<CapFloor> for CapFloorTrade {
 
     fn side(&self) -> Side {
         self.side
+    }
+}
+
+impl Discountable for CapFloor {
+    fn asset_class(&self) -> AssetClass {
+        AssetClass::InterestRate
+    }
+
+    fn currency(&self) -> Currency {
+        self.currency
+    }
+
+    fn discount_index(&self) -> Option<MarketIndex> {
+        Some(self.market_index.clone())
     }
 }

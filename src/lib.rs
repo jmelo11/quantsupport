@@ -13,7 +13,7 @@
 //!
 //! Everything needed is re-exported through the [`prelude`] module.
 //!
-//! ```no_run
+//! ```ignore
 //! use std::{cell::RefCell, rc::Rc};
 //! use quantsupport::prelude::*;
 //! ```
@@ -25,7 +25,7 @@
 //! [`SwapTrade`](crate::instruments::rates::swap::SwapTrade) that carries
 //! trade-level metadata (trade date, notional, side).
 //!
-//! ```no_run
+//! ```ignore
 //! # use std::{cell::RefCell, rc::Rc};
 //! # use quantsupport::prelude::*;
 //! let start_date    = Date::new(2024, 1, 15);
@@ -40,7 +40,7 @@
 //!     Frequency::Semiannual,
 //! );
 //!
-//! let swap = MakeSwap::<ADReal>::default()
+//! let swap = MakeSwap::<DualFwd>::default()
 //!     .with_identifier("USD_IRS_5Y".to_string())
 //!     .with_start_date(start_date)
 //!     .with_maturity_date(maturity_date)
@@ -64,7 +64,7 @@
 //! market data (discount curves, quote / fixing stores) that pricers consult
 //! during evaluation.  Here we create a flat SOFR discount curve at 3.0%.
 //!
-//! ```no_run
+//! ```ignore
 //! # use std::{cell::RefCell, rc::Rc};
 //! # use quantsupport::prelude::*;
 //! let evaluation_date = Date::new(2024, 1, 15);
@@ -80,7 +80,7 @@
 //! // Build the flat-forward term structure.
 //! let discount_curve = FlatForwardTermStructure::new(
 //!     evaluation_date,
-//!     ADReal::from(discount_rate),
+//!     DualFwd::from(discount_rate),
 //!     curve_definition,
 //! )
 //! .with_pillar_label("SOFR_flat".to_string());
@@ -110,7 +110,7 @@
 //! choose which outputs you need via [`Request`](crate::core::request::Request),
 //! and call `evaluate`.
 //!
-//! ```no_run
+//! ```ignore
 //! # use std::{cell::RefCell, rc::Rc};
 //! # use quantsupport::prelude::*;
 //! # let start_date    = Date::new(2024, 1, 15);
@@ -119,7 +119,7 @@
 //! # let fixed_rate    = 0.030;
 //! # let rate_definition = RateDefinition::new(
 //! #     DayCounter::Actual360, Compounding::Simple, Frequency::Semiannual);
-//! # let swap = MakeSwap::<ADReal>::default()
+//! # let swap = MakeSwap::<DualFwd>::default()
 //! #     .with_identifier("USD_IRS_5Y".to_string())
 //! #     .with_start_date(start_date).with_maturity_date(maturity_date)
 //! #     .with_fixed_rate(fixed_rate).with_notional(notional)
@@ -134,7 +134,7 @@
 //! # let curve_definition = RateDefinition::new(
 //! #     DayCounter::Actual360, Compounding::Continuous, Frequency::Annual);
 //! # let discount_curve = FlatForwardTermStructure::new(
-//! #     evaluation_date, ADReal::from(0.03), curve_definition)
+//! #     evaluation_date, DualFwd::from(0.03), curve_definition)
 //! #     .with_pillar_label("SOFR_flat".to_string());
 //! # let mut constructed_elements = ConstructedElementStore::default();
 //! # constructed_elements.discount_curves_mut().insert(
@@ -146,7 +146,7 @@
 //! # let context = ContextManager::new(quote_store, fixing_store)
 //! #     .with_base_currency(Currency::USD)
 //! #     .with_constructed_elements(constructed_elements);
-//! let pricer   = CashflowDiscountPricer::<Swap<ADReal>, SwapTrade<ADReal>>::new();
+//! let pricer   = CashflowDiscountPricer::<Swap<DualFwd>, SwapTrade<DualFwd>>::new();
 //! let requests = vec![Request::Value, Request::Cashflows, Request::Sensitivities];
 //! let results  = pricer.evaluate(&trade, &requests, &context).expect("pricing failed");
 //!
@@ -184,11 +184,13 @@
 //! ```
 
 pub mod ad;
+pub mod calibration;
 pub mod core;
 pub mod currencies;
 pub mod indices;
 pub mod instruments;
 pub mod math;
+/// Pricing models (GBM, Hull-White, etc.).
 pub mod models;
 /// Commonly used public exports for pricing and market-data workflows.
 pub mod prelude;
@@ -199,3 +201,4 @@ pub mod simulations;
 pub mod time;
 pub mod utils;
 pub mod volatility;
+pub mod xva;

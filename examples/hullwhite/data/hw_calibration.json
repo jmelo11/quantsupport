@@ -1,0 +1,17 @@
+{
+    "source": {
+        "Surface": {
+            "market_index": "SOFR"
+        }
+    },
+    "quote_ids": [
+        "CapletFloorlet_USD_SOFR_3M_6M_Absolute_0.045_Straddle_Black",
+        "CapletFloorlet_USD_SOFR_3M_1Y_Absolute_0.045_Straddle_Black",
+        "CapletFloorlet_USD_SOFR_3M_2Y_Absolute_0.045_Straddle_Black",
+        "CapletFloorlet_USD_SOFR_3M_3Y_Absolute_0.045_Straddle_Black",
+        "CapletFloorlet_USD_SOFR_3M_5Y_Absolute_0.045_Straddle_Black",
+        "CapletFloorlet_USD_SOFR_3M_7Y_Absolute_0.045_Straddle_Black",
+        "CapletFloorlet_USD_SOFR_3M_10Y_Absolute_0.045_Straddle_Black"
+    ],
+    "alpha": 0.1
+}

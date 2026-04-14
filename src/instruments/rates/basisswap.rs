@@ -1,5 +1,5 @@
 use crate::{
-    ad::adreal::{ADReal, IsReal},
+    ad::{dual::DualFwd, scalar::Scalar},
     core::{
         instrument::Instrument,
         request::LegsProvider,
@@ -16,7 +16,7 @@ use crate::{
 /// Both legs reference different floating rate indices (e.g., SOFR 3M vs SOFR 1M,
 /// or two different tenor indices). Each leg may carry a different spread.
 #[derive(Clone)]
-pub struct BasisSwap<T: IsReal> {
+pub struct BasisSwap<T: Scalar> {
     identifier: String,
     legs: Vec<Leg<T>>,
     pay_forward_index: MarketIndex,
@@ -26,7 +26,7 @@ pub struct BasisSwap<T: IsReal> {
 
 impl<T> BasisSwap<T>
 where
-    T: IsReal,
+    T: Scalar,
 {
     /// Creates a new [`BasisSwap`].
     ///
@@ -82,7 +82,7 @@ where
 
 impl<T> Instrument for BasisSwap<T>
 where
-    T: IsReal,
+    T: Scalar,
 {
     fn identifier(&self) -> String {
         self.identifier.clone()
@@ -91,7 +91,7 @@ where
 
 impl<T> LegsProvider<T> for BasisSwap<T>
 where
-    T: IsReal,
+    T: Scalar,
 {
     fn legs(&self) -> &[Leg<T>] {
         &self.legs
@@ -99,7 +99,7 @@ where
 }
 
 /// Represents a trade of a basis swap.
-pub struct BasisSwapTrade<T: IsReal> {
+pub struct BasisSwapTrade<T: Scalar> {
     instrument: BasisSwap<T>,
     trade_date: Date,
     notional: f64,
@@ -108,7 +108,7 @@ pub struct BasisSwapTrade<T: IsReal> {
 
 impl<T> BasisSwapTrade<T>
 where
-    T: IsReal,
+    T: Scalar,
 {
     /// Creates a new [`BasisSwapTrade`].
     #[must_use]
@@ -135,7 +135,7 @@ where
 
 impl<T> Trade<BasisSwap<T>> for BasisSwapTrade<T>
 where
-    T: IsReal,
+    T: Scalar,
 {
     fn instrument(&self) -> &BasisSwap<T> {
         &self.instrument
@@ -151,7 +151,7 @@ where
 }
 
 #[allow(clippy::expect_used)]
-impl From<BasisSwap<f64>> for BasisSwap<ADReal> {
+impl From<BasisSwap<f64>> for BasisSwap<DualFwd> {
     fn from(value: BasisSwap<f64>) -> Self {
         let mut legs = value.legs.into_iter();
         Self::new(
@@ -166,8 +166,8 @@ impl From<BasisSwap<f64>> for BasisSwap<ADReal> {
 }
 
 #[allow(clippy::expect_used)]
-impl From<BasisSwap<ADReal>> for BasisSwap<f64> {
-    fn from(value: BasisSwap<ADReal>) -> Self {
+impl From<BasisSwap<DualFwd>> for BasisSwap<f64> {
+    fn from(value: BasisSwap<DualFwd>) -> Self {
         let mut legs = value.legs.into_iter();
         Self::new(
             value.identifier,
@@ -180,7 +180,7 @@ impl From<BasisSwap<ADReal>> for BasisSwap<f64> {
     }
 }
 
-impl From<BasisSwapTrade<f64>> for BasisSwapTrade<ADReal> {
+impl From<BasisSwapTrade<f64>> for BasisSwapTrade<DualFwd> {
     fn from(value: BasisSwapTrade<f64>) -> Self {
         Self::new(
             value.instrument.into(),
@@ -191,8 +191,8 @@ impl From<BasisSwapTrade<f64>> for BasisSwapTrade<ADReal> {
     }
 }
 
-impl From<BasisSwapTrade<ADReal>> for BasisSwapTrade<f64> {
-    fn from(value: BasisSwapTrade<ADReal>) -> Self {
+impl From<BasisSwapTrade<DualFwd>> for BasisSwapTrade<f64> {
+    fn from(value: BasisSwapTrade<DualFwd>) -> Self {
         Self::new(
             value.instrument.into(),
             value.trade_date,

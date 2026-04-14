@@ -1,8 +1,7 @@
+use std::any::Any;
+
 use crate::{
-    ad::{
-        adreal::{ADReal, IsReal},
-        tape::Tape,
-    },
+    ad::{dual::DualFwd, tape::Tape},
     core::{
         collateral::DiscountPolicy,
         evaluationresults::{EvaluationResults, SensitivityMap},
@@ -12,21 +11,22 @@ use crate::{
             fixingrequest::FixingRequest,
             marketdata::{MarketData, MarketDataProvider, MarketDataRequest},
         },
-        pricer::Pricer,
+        pricer::{ErasedPricer, Pricer},
         pricerstate::PricerState,
+        pricingcontext::PricingContext,
         request::{HandleSensitivities, HandleValue, Request},
         trade::Trade,
     },
     instruments::equity::equityeuropeanoption::{EquityEuropeanOptionTrade, EuroOptionType},
-    pricers::pricerdefinitions::BlackClosedFormPricer,
+    models::brownianmotion::BrownianMotion,
     utils::errors::{QSError, Result},
 };
 
 /// State struct for storing intermediate values during the pricing of an equity option, including the option value, spot price, and market data response.
 #[derive(Default)]
 struct EquityOptionState {
-    value: Option<ADReal>,
-    spot: Option<ADReal>,
+    value: Option<DualFwd>,
+    spot: Option<DualFwd>,
     market_data: Option<MarketData>,
 }
 
@@ -103,12 +103,12 @@ impl HandleValue<EquityEuropeanOptionTrade, EquityOptionState> for BlackEuropean
             .day_counter()
             .year_fraction(trade.trade_date(), option.expiry_date());
 
-        Tape::start_recording();
-        Tape::set_mark();
+        Tape::start_recording_fwd();
+        Tape::set_mark_fwd();
 
         // get and put the spot in the tape
         let spot = state.get_fixing(&index, trade.trade_date())?;
-        let mut spot_ad = ADReal::new(spot);
+        let mut spot_ad = DualFwd::new(spot);
         spot_ad.put_on_tape();
         state.spot = Some(spot_ad);
 
@@ -129,22 +129,22 @@ impl HandleValue<EquityEuropeanOptionTrade, EquityOptionState> for BlackEuropean
         let df_q = if let Ok(curve) = state.get_dividend_curve_element(&index) {
             curve.curve().discount_factor(option.expiry_date())?
         } else {
-            ADReal::one()
+            DualFwd::one()
         };
 
-        let fwd: ADReal = (spot_ad * df_q / df_r).into();
+        let fwd: DualFwd = (spot_ad * df_q / df_r).into();
 
-        let undiscounted = BlackClosedFormPricer::black_forward_price(
+        let undiscounted = BrownianMotion::<DualFwd>::closed_form_price(
             fwd,
             strike,
             vol,
             tau,
             matches!(option.option_type(), EuroOptionType::Call),
-        );
+        )?;
 
-        let value: ADReal = (df_r * undiscounted * trade.notional()).into();
+        let value: DualFwd = (df_r * undiscounted * trade.notional()).into();
         state.value = Some(value);
-        Tape::stop_recording();
+        Tape::stop_recording_fwd();
         Ok(value.value())
     }
 }
@@ -187,7 +187,8 @@ impl HandleSensitivities<EquityEuropeanOptionTrade, EquityOptionState>
             state
                 .spot
                 .ok_or_else(|| QSError::UnexpectedErr("Spot not recorded on state".into()))?
-                .adjoint()?,
+                .adjoint()?
+                .value(),
         );
 
         for (label, pillar) in state
@@ -197,7 +198,7 @@ impl HandleSensitivities<EquityEuropeanOptionTrade, EquityOptionState>
             .unwrap_or_default()
         {
             ids.push(label);
-            exposures.push(pillar.adjoint()?);
+            exposures.push(pillar.adjoint()?.value());
         }
 
         for (label, pillar) in state
@@ -207,13 +208,13 @@ impl HandleSensitivities<EquityEuropeanOptionTrade, EquityOptionState>
             .unwrap_or_default()
         {
             ids.push(label);
-            exposures.push(pillar.adjoint()?);
+            exposures.push(pillar.adjoint()?.value());
         }
 
         if let Ok(curve) = state.get_dividend_curve_element(index) {
             for (label, pillar) in curve.curve().pillars().unwrap_or_default() {
                 ids.push(label);
-                exposures.push(pillar.adjoint()?);
+                exposures.push(pillar.adjoint()?.value());
             }
         }
 
@@ -290,12 +291,9 @@ impl Pricer for BlackEuropeanOptionPricer {
             }
         }
 
-        let mut request = MarketDataRequest::default()
+        let request = MarketDataRequest::default()
             .with_constructed_elements_request(elements)
             .with_fixings_request(fixings);
-        if self.discount_policy.is_some() {
-            request = request.with_exchange_rates();
-        }
         Some(request)
     }
 
@@ -308,6 +306,20 @@ impl Pricer for BlackEuropeanOptionPricer {
     }
 }
 
+impl ErasedPricer for BlackEuropeanOptionPricer {
+    fn evaluate_erased(
+        &self,
+        trade: &dyn Any,
+        requests: &[Request],
+        ctx: &PricingContext,
+    ) -> Result<EvaluationResults> {
+        let trade = trade
+            .downcast_ref::<EquityEuropeanOptionTrade>()
+            .ok_or_else(|| QSError::InvalidValueErr("Invalid trade type for pricer".into()))?;
+        self.evaluate(trade, requests, ctx)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::{
@@ -317,7 +329,7 @@ mod tests {
     };
 
     use crate::{
-        ad::adreal::{ADReal, IsReal},
+        ad::dual::DualFwd,
         core::{
             elements::{
                 curveelement::{DiscountCurveElement, DividendCurveElement},
@@ -348,7 +360,8 @@ mod tests {
         utils::errors::{QSError, Result},
         volatility::{
             interpolatedvolatilitysurface::InterpolatedVolatilitySurface,
-            volatilityindexing::F64Key, volatilitysurface::VolatilitySurface,
+            volatilityindexing::{F64Key, SmileType, VolatilityType},
+            volatilitysurface::VolatilitySurface,
         },
     };
 
@@ -370,22 +383,22 @@ mod tests {
         dividend_rate: f64,
     ) -> Result<(
         MarketData,
-        FlatForwardTermStructure<ADReal>,
-        FlatForwardTermStructure<ADReal>,
-        Rc<RefCell<InterpolatedVolatilitySurface<ADReal>>>,
+        FlatForwardTermStructure<DualFwd>,
+        FlatForwardTermStructure<DualFwd>,
+        Rc<RefCell<InterpolatedVolatilitySurface<DualFwd>>>,
     )> {
         let six_month_days = expiry_date - trade_date;
 
         let discount_curve = FlatForwardTermStructure::new(
             trade_date,
-            ADReal::from(risk_free_rate),
+            DualFwd::from(risk_free_rate),
             RateDefinition::default(),
         )
         .with_pillar_label("discount_rate".to_string());
 
         let dividend_curve = FlatForwardTermStructure::new(
             trade_date,
-            ADReal::from(dividend_rate),
+            DualFwd::from(dividend_rate),
             RateDefinition::default(),
         )
         .with_pillar_label("dividend_rate".to_string());
@@ -394,25 +407,25 @@ mod tests {
         surface_points.insert(
             Period::new(six_month_days as i32, TimeUnit::Days),
             BTreeMap::from([
-                (F64Key::new(70.0), ADReal::from(0.28)),
-                (F64Key::new(80.0), ADReal::from(0.24)),
-                (F64Key::new(90.0), ADReal::from(0.22)),
-                (F64Key::new(100.0), ADReal::from(0.23)),
-                (F64Key::new(110.0), ADReal::from(0.24)),
-                (F64Key::new(120.0), ADReal::from(0.26)),
-                (F64Key::new(130.0), ADReal::from(0.28)),
+                (F64Key::new(70.0), DualFwd::from(0.28)),
+                (F64Key::new(80.0), DualFwd::from(0.24)),
+                (F64Key::new(90.0), DualFwd::from(0.22)),
+                (F64Key::new(100.0), DualFwd::from(0.23)),
+                (F64Key::new(110.0), DualFwd::from(0.24)),
+                (F64Key::new(120.0), DualFwd::from(0.26)),
+                (F64Key::new(130.0), DualFwd::from(0.28)),
             ]),
         );
         surface_points.insert(
             Period::new(six_month_days as i32 + 365, TimeUnit::Days),
             BTreeMap::from([
-                (F64Key::new(70.0), ADReal::from(0.30)),
-                (F64Key::new(80.0), ADReal::from(0.26)),
-                (F64Key::new(90.0), ADReal::from(0.25)),
-                (F64Key::new(100.0), ADReal::from(0.25)),
-                (F64Key::new(110.0), ADReal::from(0.27)),
-                (F64Key::new(120.0), ADReal::from(0.29)),
-                (F64Key::new(130.0), ADReal::from(0.30)),
+                (F64Key::new(70.0), DualFwd::from(0.30)),
+                (F64Key::new(80.0), DualFwd::from(0.26)),
+                (F64Key::new(90.0), DualFwd::from(0.25)),
+                (F64Key::new(100.0), DualFwd::from(0.25)),
+                (F64Key::new(110.0), DualFwd::from(0.27)),
+                (F64Key::new(120.0), DualFwd::from(0.29)),
+                (F64Key::new(130.0), DualFwd::from(0.30)),
             ]),
         );
         let labels = vec![
@@ -433,8 +446,14 @@ mod tests {
         ];
 
         let vol_surface = Rc::new(RefCell::new(
-            InterpolatedVolatilitySurface::new(trade_date, market_index.clone(), surface_points)
-                .with_labels(&labels),
+            InterpolatedVolatilitySurface::new(
+                trade_date,
+                market_index.clone(),
+                surface_points,
+                VolatilityType::Black,
+                SmileType::Strike,
+            )
+            .with_labels(&labels),
         ));
 
         let mut constructed_elements = ConstructedElementStore::default();
@@ -458,7 +477,7 @@ mod tests {
         );
 
         let fixings = HashMap::from([(market_index.clone(), BTreeMap::from([(trade_date, spot)]))]);
-        let market_data = MarketData::new(fixings, constructed_elements, &[]);
+        let market_data = MarketData::new(fixings, constructed_elements);
 
         Ok((market_data, discount_curve, dividend_curve, vol_surface))
     }
@@ -473,7 +492,6 @@ mod tests {
             Ok(MarketData::new(
                 self.market_data.fixings().clone(),
                 self.market_data.constructed_elements().clone(),
-                &[],
             ))
         }
 

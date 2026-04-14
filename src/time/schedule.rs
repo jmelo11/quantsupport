@@ -122,8 +122,8 @@ impl Schedule {
 
     /// Returns the [`Calendar`] of the schedule.
     #[must_use]
-    pub fn calendar(&self) -> Calendar {
-        self.calendar.clone()
+    pub fn calendar(&self) -> &Calendar {
+        &self.calendar
     }
 
     /// Returns the [`BusinessDayConvention`] of the schedule.
@@ -321,7 +321,7 @@ impl MakeSchedule {
     /// incompatible first or next-to-last dates, or an end-of-month convention that
     /// conflicts with the selected date generation rule.
     #[allow(clippy::too_many_lines)]
-    pub fn build(&mut self) -> Result<Schedule> {
+    pub fn build(mut self) -> Result<Schedule> {
         if self.tenor.length() < 0 {
             return Err(QSError::MakeScheduleErr(format!(
                 "non positive tenor ({tenor_length})",
@@ -685,15 +685,15 @@ impl MakeSchedule {
 
         Ok(Schedule {
             tenor: self.tenor,
-            calendar: self.calendar.clone(),
+            calendar: self.calendar,
             convention: self.convention,
             termination_date_convention: self.termination_date_convention,
             rule: self.rule,
             end_of_month: self.end_of_month,
             first_date: self.first_date,
             next_to_last_date: self.next_to_last_date,
-            dates: self.dates.clone(),
-            is_regular: self.is_regular.clone(),
+            dates: self.dates,
+            is_regular: self.is_regular,
         })
     }
 }

@@ -58,7 +58,7 @@ pub fn load_curve_specs(path: &PathBuf) -> Result<Vec<CurveConfiguration>> {
 // ---------------------------------------------------------------------------
 
 pub struct CurveEnvironment {
-    pub context: ContextManager,
+    pub context: PricingContext,
     pub curve_lookup: HashMap<MarketIndex, DiscountCurveElement>,
 }
 
@@ -66,18 +66,15 @@ pub fn build_curves(
     quote_store: &QuoteStore,
     curve_specs: Vec<CurveConfiguration>,
 ) -> std::result::Result<CurveEnvironment, Box<dyn std::error::Error>> {
-    let rd = quote_store.reference_date();
-
     let csa_index = MarketIndex::SOFR;
     let csa_currency = Currency::USD;
     let policy = BootstrapDiscountPolicy::new(csa_index.clone(), csa_currency);
 
     // FX spot: 1 USD = 935 CLP
-    let mut fx_store = ExchangeRateStore::new();
-    fx_store.add_exchange_rate(Currency::USD, Currency::CLP, ADReal::new(935.0));
+    let mut fx_store = FxStore::new();
+    fx_store.add_fx_rate(Currency::USD, Currency::CLP, DualFwd::new(935.0));
 
-    let bootstrapper =
-        MultiCurveBootstrapper::new(curve_specs, policy).with_exchange_rate_store(fx_store);
+    let bootstrapper = MultiCurveBootstrapper::new(curve_specs, policy).with_fx_store(fx_store);
     let curves = bootstrapper.bootstrap(quote_store, Level::Mid)?;
 
     // Keep a lookup of curves for DF extraction in cashflow details
@@ -91,14 +88,13 @@ pub fn build_curves(
             .insert(index, elem);
     }
 
-    let fixing_store = FixingStore::default();
-    let mut pricing_fx_store = ExchangeRateStore::new();
-    pricing_fx_store.add_exchange_rate(Currency::USD, Currency::CLP, ADReal::new(935.0));
+    let mut pricing_fx_store = FxStore::new();
+    pricing_fx_store.add_fx_rate(Currency::USD, Currency::CLP, DualFwd::new(935.0));
 
-    let context = ContextManager::new(QuoteStore::new(rd), fixing_store)
+    let context = PricingContext::new()
         .with_base_currency(Currency::USD)
         .with_constructed_elements(constructed_elements)
-        .with_exchange_rate_store(pricing_fx_store);
+        .with_fx_store(pricing_fx_store);
 
     Ok(CurveEnvironment {
         context,
