@@ -430,12 +430,20 @@ where
         let mut annuity = 0.0_f64;
         let mut float_pv = 0.0_f64;
 
+        let forward_index = trade
+            .legs()
+            .iter()
+            .find_map(Leg::forward_index)
+            .ok_or_else(|| {
+                QSError::InvalidValueErr(
+                    "At least one leg must be floating to get a fair rate".into(),
+                )
+            })?;
+
+        let forward_curve = state.get_discount_curve_element(forward_index)?.curve();
+
         for leg in trade.legs() {
             // Forward / projection curve always comes from the leg's own market index
-            let forward_index = leg.forward_index().ok_or_else(|| {
-                QSError::NotFoundErr("Market index required for par rate computation".to_string())
-            })?;
-            let forward_curve = state.get_discount_curve_element(forward_index)?.curve();
 
             for cashflow in leg.cashflows() {
                 match cashflow {
