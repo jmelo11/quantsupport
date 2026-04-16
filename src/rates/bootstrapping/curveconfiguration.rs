@@ -116,17 +116,21 @@ impl CurveConfiguration {
     /// # Errors
     /// Returns an error if the configuration has not been resolved yet.
     pub fn instruments(&self) -> Result<&[CalibrationInstrument]> {
-        self.calibration_instruments
-            .as_deref()
-            .ok_or_else(|| QSError::InvalidValueErr("Curve configuration not resolved".into()))
+        self.calibration_instruments.as_deref().ok_or_else(|| {
+            QSError::InvalidValueErr(format!(
+                "Calibration instruments of curve {} not constructed.",
+                self.market_index
+            ))
+        })
     }
 
-    #[must_use]
     /// Returns the valuation date captured during resolution.
-    #[allow(clippy::expect_used)]
-    pub const fn reference_date(&self) -> Date {
+    ///
+    /// # Errors
+    /// Returns an error if the configuration has not been resolved yet.
+    pub fn reference_date(&self) -> Result<Date> {
         self.reference_date
-            .expect("Curve configuration must be resolved before accessing reference_date")
+            .ok_or_else(|| QSError::InvalidValueErr("Curve configuration not resolved".into()))
     }
 
     #[must_use]
@@ -189,15 +193,22 @@ impl CurveConfiguration {
             .unwrap_or_default()
     }
 
-    /// Returns the set of external curve dependencies implied by the calibration instruments.
+    /// Returns the full set of curve dependencies, including those implied
+    /// by the discount policy (e.g. CSA and collateral curves).
     ///
     /// # Errors
-    /// Returns an error if any instrument dependencies cannot be resolved.
-    pub fn local_dependencies(&self) -> Result<HashSet<MarketIndex>> {
+    /// Returns an error if any instrument dependencies cannot be resolved via the policy or
+    /// the curve has no constructed instruments.
+    pub fn dependencies(&self, policy: &BootstrapDiscountPolicy) -> Result<HashSet<MarketIndex>> {
         let mut set = HashSet::new();
         set.insert(self.market_index.clone());
         let instruments = self.instruments()?;
-
+        if instruments.is_empty() {
+            return Err(QSError::NotFoundErr(format!(
+                "Curve for index {} has no calibration instruments.",
+                self.market_index
+            )));
+        };
         for instrument in instruments {
             match instrument.built() {
                 CalibrationInstrumentType::FixedRateDeposit(deposit) => {
@@ -206,76 +217,269 @@ impl CurveConfiguration {
                     }
                 }
                 CalibrationInstrumentType::Swap(swap) => {
+                    if let Ok(idx) = policy.discount_index(swap.fixed_leg()) {
+                        set.insert(idx);
+                    }
                     set.insert(swap.forward_index());
                 }
+                CalibrationInstrumentType::BasisSwap(basis) => {
+                    if let Ok(idx) = policy.discount_index(basis.pay_leg()) {
+                        set.insert(idx);
+                    }
+                    set.insert(basis.pay_forward_index());
+                    set.insert(basis.receive_forward_index());
+                }
                 CalibrationInstrumentType::FixFloatCrossCurrencySwap(xccy) => {
+                    if let Ok(idx) = policy.discount_index(xccy.domestic_leg()) {
+                        set.insert(idx);
+                    }
+                    if let Ok(idx) = policy.discount_index(xccy.foreign_leg()) {
+                        set.insert(idx);
+                    }
                     set.insert(xccy.forward_index());
                 }
                 CalibrationInstrumentType::FloatFloatCrossCurrencySwap(xccy) => {
+                    if let Ok(idx) = policy.discount_index(xccy.domestic_leg()) {
+                        set.insert(idx);
+                    }
+                    if let Ok(idx) = policy.discount_index(xccy.foreign_leg()) {
+                        set.insert(idx);
+                    }
                     set.insert(xccy.domestic_forward_index());
                     set.insert(xccy.foreign_forward_index());
                 }
-                CalibrationInstrumentType::BasisSwap(basis) => {
-                    set.insert(basis.pay_forward_index());
-                    set.insert(basis.receive_forward_index());
+                CalibrationInstrumentType::FxForward(fwd) => {
+                    if let Ok(idx) = policy.discount_index_for_currency(fwd.base_currency()) {
+                        set.insert(idx);
+                    }
+                    if let Ok(idx) = policy.discount_index_for_currency(fwd.quote_currency()) {
+                        set.insert(idx);
+                    }
                 }
                 CalibrationInstrumentType::RateFutures(rf) => {
                     set.insert(rf.market_index());
                 }
-                // FxForward: dependencies are resolved via the discount policy.
                 _ => {}
             }
         }
         Ok(set)
     }
+}
 
-    /// Returns the full set of curve dependencies, including those implied
-    /// by the discount policy (e.g. CSA and collateral curves).
-    ///
-    /// # Errors
-    /// Returns an error if any instrument dependencies cannot be resolved via the policy.
-    pub fn dependencies(&self, policy: &BootstrapDiscountPolicy) -> Result<HashSet<MarketIndex>> {
-        let mut deps = self.local_dependencies()?;
-        let instruments = self.instruments()?;
-        for instrument in instruments {
-            match instrument.built() {
-                CalibrationInstrumentType::Swap(swap) => {
-                    if let Ok(idx) = policy.discount_index(swap.fixed_leg()) {
-                        deps.insert(idx);
-                    }
-                }
-                CalibrationInstrumentType::BasisSwap(basis) => {
-                    if let Ok(idx) = policy.discount_index(basis.pay_leg()) {
-                        deps.insert(idx);
-                    }
-                }
-                CalibrationInstrumentType::FixFloatCrossCurrencySwap(xccy) => {
-                    if let Ok(idx) = policy.discount_index(xccy.domestic_leg()) {
-                        deps.insert(idx);
-                    }
-                    if let Ok(idx) = policy.discount_index(xccy.foreign_leg()) {
-                        deps.insert(idx);
-                    }
-                }
-                CalibrationInstrumentType::FloatFloatCrossCurrencySwap(xccy) => {
-                    if let Ok(idx) = policy.discount_index(xccy.domestic_leg()) {
-                        deps.insert(idx);
-                    }
-                    if let Ok(idx) = policy.discount_index(xccy.foreign_leg()) {
-                        deps.insert(idx);
-                    }
-                }
-                CalibrationInstrumentType::FxForward(fwd) => {
-                    if let Ok(idx) = policy.discount_index_for_currency(fwd.base_currency()) {
-                        deps.insert(idx);
-                    }
-                    if let Ok(idx) = policy.discount_index_for_currency(fwd.quote_currency()) {
-                        deps.insert(idx);
-                    }
-                }
-                _ => {}
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use crate::{
+        currencies::currency::Currency,
+        indices::marketindex::MarketIndex,
+        math::interpolation::interpolator::Interpolator,
+        quotes::{
+            quote::{Level, Quote, QuoteDetails, QuoteLevels},
+            quoteselector::QuoteSelector,
+        },
+        rates::bootstrapping::bootstrapdiscountpolicy::BootstrapDiscountPolicy,
+        time::{date::Date, daycounter::DayCounter},
+        utils::errors::Result,
+    };
+
+    use super::CurveConfiguration;
+
+    struct MapSelector {
+        reference_date: Date,
+        quotes: HashMap<String, f64>,
+    }
+
+    impl MapSelector {
+        fn new(reference_date: Date) -> Self {
+            Self {
+                reference_date,
+                quotes: HashMap::new(),
             }
         }
-        Ok(deps)
+        fn add(&mut self, id: &str, rate: f64) {
+            self.quotes.insert(id.to_string(), rate);
+        }
+    }
+
+    impl QuoteSelector for MapSelector {
+        fn select(&self, identifier: &str) -> Option<Quote> {
+            let rate = self.quotes.get(identifier)?;
+            let det: QuoteDetails = identifier.parse().ok()?;
+            let q = Quote::new(det, QuoteLevels::with_mid(*rate));
+            if q.build_instrument(self.reference_date, Level::Mid, None)
+                .is_ok()
+            {
+                Some(q)
+            } else {
+                None
+            }
+        }
+        fn reference_date(&self) -> Date {
+            self.reference_date
+        }
+    }
+
+    fn make_selector(quotes: &[(&str, f64)]) -> MapSelector {
+        let mut sel = MapSelector::new(Date::new(2024, 1, 2));
+        for (id, rate) in quotes {
+            sel.add(id, *rate);
+        }
+        sel
+    }
+
+    fn resolve_config(
+        index: MarketIndex,
+        quote_ids: Vec<String>,
+        selector: &MapSelector,
+    ) -> Result<CurveConfiguration> {
+        let mut cfg = CurveConfiguration::new(
+            index,
+            DayCounter::Actual360,
+            Interpolator::Linear,
+            true,
+            quote_ids,
+        );
+        cfg.resolve(selector, Level::Mid, None)?;
+        Ok(cfg)
+    }
+
+    #[test]
+    fn dependencies_unresolved_errors() {
+        let cfg = CurveConfiguration::new(
+            MarketIndex::SOFR,
+            DayCounter::Actual360,
+            Interpolator::Linear,
+            true,
+            vec!["OIS_USD_SOFR_1Y".into()],
+        );
+        let policy = BootstrapDiscountPolicy::new(MarketIndex::SOFR, Currency::USD);
+        assert!(cfg.dependencies(&policy).is_err());
+    }
+
+    #[test]
+    fn dependencies_empty_instruments_errors() -> Result<()> {
+        let selector = make_selector(&[]);
+        let cfg = resolve_config(MarketIndex::SOFR, vec![], &selector)?;
+        let policy = BootstrapDiscountPolicy::new(MarketIndex::SOFR, Currency::USD);
+        assert!(cfg.dependencies(&policy).is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn dependencies_deposit() -> Result<()> {
+        let selector = make_selector(&[("FixedRateDeposit_USD_SOFR_6M", 0.05)]);
+        let cfg = resolve_config(
+            MarketIndex::SOFR,
+            vec!["FixedRateDeposit_USD_SOFR_6M".into()],
+            &selector,
+        )?;
+        let policy = BootstrapDiscountPolicy::new(MarketIndex::SOFR, Currency::USD);
+        let deps = cfg.dependencies(&policy)?;
+
+        assert!(deps.contains(&MarketIndex::SOFR));
+        Ok(())
+    }
+
+    #[test]
+    fn dependencies_ois_swap() -> Result<()> {
+        let selector = make_selector(&[("OIS_USD_SOFR_1Y", 0.05)]);
+        let cfg = resolve_config(MarketIndex::SOFR, vec!["OIS_USD_SOFR_1Y".into()], &selector)?;
+        let policy = BootstrapDiscountPolicy::new(MarketIndex::SOFR, Currency::USD);
+        let deps = cfg.dependencies(&policy)?;
+
+        // OIS swap: self index + forward index + discount index
+        assert!(deps.contains(&MarketIndex::SOFR));
+        Ok(())
+    }
+
+    #[test]
+    fn dependencies_ois_swap_cross_currency_discount() -> Result<()> {
+        let selector = make_selector(&[("OIS_EUR_EURIBOR1m_1Y", 0.03)]);
+        let cfg = resolve_config(
+            MarketIndex::EURIBOR1m,
+            vec!["OIS_EUR_EURIBOR1m_1Y".into()],
+            &selector,
+        )?;
+        // CSA in USD, so EUR leg discount → Collateral(EUR, USD)
+        let policy = BootstrapDiscountPolicy::new(MarketIndex::SOFR, Currency::USD);
+        let deps = cfg.dependencies(&policy)?;
+
+        assert!(deps.contains(&MarketIndex::EURIBOR1m));
+        assert!(deps.contains(&MarketIndex::Collateral(Currency::EUR, Currency::USD)));
+        Ok(())
+    }
+
+    #[test]
+    fn dependencies_basis_swap() -> Result<()> {
+        let selector = make_selector(&[("BasisSwap_USD_SOFR_TermSOFR3m_1Y", 0.001)]);
+        let cfg = resolve_config(
+            MarketIndex::TermSOFR3m,
+            vec!["BasisSwap_USD_SOFR_TermSOFR3m_1Y".into()],
+            &selector,
+        )?;
+        let policy = BootstrapDiscountPolicy::new(MarketIndex::SOFR, Currency::USD);
+        let deps = cfg.dependencies(&policy)?;
+
+        assert!(deps.contains(&MarketIndex::TermSOFR3m));
+        assert!(deps.contains(&MarketIndex::SOFR));
+        Ok(())
+    }
+
+    #[test]
+    fn dependencies_fx_forward() -> Result<()> {
+        let selector = make_selector(&[("FxForwardPoints_EURUSD_1M", 0.001)]);
+        let cfg = resolve_config(
+            MarketIndex::Collateral(Currency::EUR, Currency::USD),
+            vec!["FxForwardPoints_EURUSD_1M".into()],
+            &selector,
+        )?;
+        let policy = BootstrapDiscountPolicy::new(MarketIndex::SOFR, Currency::USD);
+        let deps = cfg.dependencies(&policy)?;
+
+        // FxForward: discount indices for both base and quote currencies
+        assert!(deps.contains(&MarketIndex::Collateral(Currency::EUR, Currency::USD)));
+        assert!(deps.contains(&MarketIndex::SOFR)); // USD discount
+        Ok(())
+    }
+
+    #[test]
+    fn dependencies_rate_futures() -> Result<()> {
+        let selector = make_selector(&[("Future_USD_SOFR_H5", 95.0)]);
+        let cfg = resolve_config(
+            MarketIndex::SOFR,
+            vec!["Future_USD_SOFR_H5".into()],
+            &selector,
+        )?;
+        let policy = BootstrapDiscountPolicy::new(MarketIndex::SOFR, Currency::USD);
+        let deps = cfg.dependencies(&policy)?;
+
+        assert!(deps.contains(&MarketIndex::SOFR));
+        Ok(())
+    }
+
+    #[test]
+    fn dependencies_multiple_instruments() -> Result<()> {
+        let selector = make_selector(&[
+            ("FixedRateDeposit_USD_SOFR_3M", 0.04),
+            ("OIS_USD_SOFR_1Y", 0.05),
+            ("OIS_USD_SOFR_2Y", 0.05),
+        ]);
+        let cfg = resolve_config(
+            MarketIndex::SOFR,
+            vec![
+                "FixedRateDeposit_USD_SOFR_3M".into(),
+                "OIS_USD_SOFR_1Y".into(),
+                "OIS_USD_SOFR_2Y".into(),
+            ],
+            &selector,
+        )?;
+        let policy = BootstrapDiscountPolicy::new(MarketIndex::SOFR, Currency::USD);
+        let deps = cfg.dependencies(&policy)?;
+
+        assert!(deps.contains(&MarketIndex::SOFR));
+        // All instruments are USD/SOFR, so only SOFR should appear
+        assert_eq!(deps.len(), 1);
+        Ok(())
     }
 }

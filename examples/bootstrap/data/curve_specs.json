@@ -34,7 +34,6 @@
                     "USD"
                 ]
             },
-            "currency": "CLP",
             "quotes": [
                 "FxForwardPoints_USDCLP_1M",
                 "FxForwardPoints_USDCLP_3M",
@@ -50,7 +49,6 @@
         },
         {
             "market_index": "ICP",
-            "currency": "CLP",
             "quotes": [
                 "FixedRateDeposit_CLP_ICP_1D",
                 "FixedRateDeposit_CLP_ICP_3M",

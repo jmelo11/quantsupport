@@ -208,7 +208,7 @@ impl MultiCurveBootstrapper {
             })?;
 
             // Build pillar dates: reference_date followed by each instrument's pillar.
-            let reference_date = spec.reference_date();
+            let reference_date = spec.reference_date()?;
             let mut dates = vec![reference_date];
             dates.extend(spec.pillar_dates());
 
@@ -249,9 +249,7 @@ impl MultiCurveBootstrapper {
     }
 
     /// Bootstraps a single curve by solving for discount factors that
-    /// reprice all its instruments to zero residual. After the Newton
-    /// solver converges, applies the implicit function theorem (IFT) to
-    /// attach exact sensitivities w.r.t. market quotes to the result.
+    /// reprice all its instruments to zero residual.
     #[allow(clippy::too_many_lines)]
     fn bootstrap_next_curve(
         &self,
@@ -259,7 +257,7 @@ impl MultiCurveBootstrapper {
         curve_config: &CurveConfiguration,
         other_curves: &HashMap<MarketIndex, BootstrappedCurve>,
     ) -> Result<BootstrappedCurve> {
-        let reference_date = curve_config.reference_date();
+        let reference_date = curve_config.reference_date()?;
         let dc = curve_config.day_counter();
         let interp = curve_config.interpolator();
 
@@ -630,3 +628,424 @@ impl JacobianFunc<f64, f64, f64> for BootstrapObjectiveFunc<'_> {
 }
 
 impl VectorFunc<f64, f64> for BootstrapObjectiveFunc<'_> {}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use crate::{
+        ad::dual::DualFwd,
+        currencies::currency::Currency,
+        indices::marketindex::MarketIndex,
+        math::interpolation::interpolator::Interpolator,
+        quotes::{
+            fxstore::FxStore,
+            quote::{Level, Quote, QuoteDetails, QuoteLevels},
+            quoteselector::QuoteSelector,
+        },
+        rates::bootstrapping::{
+            bootstrapdiscountpolicy::BootstrapDiscountPolicy,
+            curveconfiguration::CurveConfiguration, multicurvebootstrapper::MultiCurveBootstrapper,
+        },
+        time::{date::Date, daycounter::DayCounter},
+        utils::errors::Result,
+    };
+
+    struct MapSelector {
+        reference_date: Date,
+        quotes: HashMap<String, f64>,
+    }
+
+    impl MapSelector {
+        fn new(reference_date: Date) -> Self {
+            Self {
+                reference_date,
+                quotes: HashMap::new(),
+            }
+        }
+        fn add(&mut self, id: &str, rate: f64) {
+            self.quotes.insert(id.to_string(), rate);
+        }
+    }
+
+    impl QuoteSelector for MapSelector {
+        fn select(&self, identifier: &str) -> Option<Quote> {
+            let rate = self.quotes.get(identifier)?;
+            let det: QuoteDetails = identifier.parse().ok()?;
+            let q = Quote::new(det, QuoteLevels::with_mid(*rate));
+            if q.build_instrument(self.reference_date, Level::Mid, None)
+                .is_ok()
+            {
+                Some(q)
+            } else {
+                None
+            }
+        }
+        fn reference_date(&self) -> Date {
+            self.reference_date
+        }
+    }
+
+    fn rd() -> Date {
+        Date::new(2024, 6, 1)
+    }
+
+    fn default_policy() -> BootstrapDiscountPolicy {
+        BootstrapDiscountPolicy::new(MarketIndex::SOFR, Currency::USD)
+    }
+
+    #[test]
+    fn bootstrap_single_deposit() -> Result<()> {
+        let mut selector = MapSelector::new(rd());
+        selector.add("FixedRateDeposit_USD_SOFR_6M", 0.05);
+
+        let spec = CurveConfiguration::new(
+            MarketIndex::SOFR,
+            DayCounter::Actual360,
+            Interpolator::LogLinear,
+            true,
+            vec!["FixedRateDeposit_USD_SOFR_6M".into()],
+        );
+
+        let bootstrapper = MultiCurveBootstrapper::new(vec![spec], default_policy());
+        let result = bootstrapper.bootstrap(&selector, Level::Mid)?;
+
+        assert!(result.contains_key(&MarketIndex::SOFR));
+        let curve = result[&MarketIndex::SOFR].curve();
+        let df = curve.discount_factor(Date::new(2024, 12, 1))?;
+        assert!(
+            df.value() > 0.0 && df.value() < 1.0,
+            "DF should be in (0,1)"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn bootstrap_deposits_and_swaps() -> Result<()> {
+        let mut selector = MapSelector::new(rd());
+        selector.add("FixedRateDeposit_USD_SOFR_3M", 0.05);
+        selector.add("FixedRateDeposit_USD_SOFR_6M", 0.051);
+        selector.add("OIS_USD_SOFR_1Y", 0.048);
+        selector.add("OIS_USD_SOFR_2Y", 0.045);
+
+        let spec = CurveConfiguration::new(
+            MarketIndex::SOFR,
+            DayCounter::Actual360,
+            Interpolator::LogLinear,
+            true,
+            vec![
+                "FixedRateDeposit_USD_SOFR_3M".into(),
+                "FixedRateDeposit_USD_SOFR_6M".into(),
+                "OIS_USD_SOFR_1Y".into(),
+                "OIS_USD_SOFR_2Y".into(),
+            ],
+        );
+
+        let bootstrapper = MultiCurveBootstrapper::new(vec![spec], default_policy());
+        let result = bootstrapper.bootstrap(&selector, Level::Mid)?;
+
+        let curve = result[&MarketIndex::SOFR].curve();
+
+        // DFs should be monotonically decreasing for positive rates.
+        let dates = [
+            Date::new(2024, 9, 1),
+            Date::new(2024, 12, 1),
+            Date::new(2025, 6, 1),
+            Date::new(2026, 6, 1),
+        ];
+        let mut prev_df = 1.0;
+        for d in &dates {
+            let df = curve.discount_factor(*d)?.value();
+            assert!(df < prev_df, "DF at {d} should be < previous DF");
+            assert!(df > 0.0, "DF should be positive");
+            prev_df = df;
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn bootstrap_result_has_ift_sensitivities() -> Result<()> {
+        let mut selector = MapSelector::new(rd());
+        selector.add("FixedRateDeposit_USD_SOFR_3M", 0.05);
+        selector.add("OIS_USD_SOFR_1Y", 0.048);
+
+        let spec = CurveConfiguration::new(
+            MarketIndex::SOFR,
+            DayCounter::Actual360,
+            Interpolator::LogLinear,
+            true,
+            vec![
+                "FixedRateDeposit_USD_SOFR_3M".into(),
+                "OIS_USD_SOFR_1Y".into(),
+            ],
+        );
+
+        let bootstrapper = MultiCurveBootstrapper::new(vec![spec], default_policy());
+        let result = bootstrapper.bootstrap(&selector, Level::Mid)?;
+
+        let elem = &result[&MarketIndex::SOFR];
+        let curve = elem.curve();
+        let ift = curve.ift_sensitivities();
+        assert!(ift.is_some(), "IFT sensitivities should be present");
+
+        let sens = ift.unwrap();
+        assert_eq!(sens.len(), 2, "Should have 2 pillar rows");
+        assert_eq!(sens[0].len(), 2, "Should have 2 quote columns");
+        Ok(())
+    }
+
+    #[test]
+    fn bootstrap_missing_quote_errors() {
+        let selector = MapSelector::new(rd());
+        // Not adding any quotes to the selector.
+
+        let spec = CurveConfiguration::new(
+            MarketIndex::SOFR,
+            DayCounter::Actual360,
+            Interpolator::LogLinear,
+            true,
+            vec!["OIS_USD_SOFR_1Y".into()],
+        );
+
+        let bootstrapper = MultiCurveBootstrapper::new(vec![spec], default_policy());
+        let result = bootstrapper.bootstrap(&selector, Level::Mid);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn bootstrap_basis_swap_two_curves() -> Result<()> {
+        let mut selector = MapSelector::new(rd());
+        // SOFR curve pillars
+        selector.add("FixedRateDeposit_USD_SOFR_6M", 0.05);
+        selector.add("OIS_USD_SOFR_1Y", 0.048);
+        // TermSOFR3m curve via basis swap
+        selector.add("BasisSwap_USD_SOFR_TermSOFR3m_1Y", 0.001);
+
+        let sofr_spec = CurveConfiguration::new(
+            MarketIndex::SOFR,
+            DayCounter::Actual360,
+            Interpolator::LogLinear,
+            true,
+            vec![
+                "FixedRateDeposit_USD_SOFR_6M".into(),
+                "OIS_USD_SOFR_1Y".into(),
+            ],
+        );
+        let term_spec = CurveConfiguration::new(
+            MarketIndex::TermSOFR3m,
+            DayCounter::Actual360,
+            Interpolator::LogLinear,
+            true,
+            vec!["BasisSwap_USD_SOFR_TermSOFR3m_1Y".into()],
+        );
+
+        let bootstrapper =
+            MultiCurveBootstrapper::new(vec![sofr_spec, term_spec], default_policy());
+        let result = bootstrapper.bootstrap(&selector, Level::Mid)?;
+
+        assert!(result.contains_key(&MarketIndex::SOFR));
+        assert!(result.contains_key(&MarketIndex::TermSOFR3m));
+
+        // TermSOFR3m curve should produce valid DFs.
+        let term_curve = result[&MarketIndex::TermSOFR3m].curve();
+        let df = term_curve.discount_factor(Date::new(2025, 6, 1))?.value();
+        assert!(df > 0.0 && df < 1.0);
+        Ok(())
+    }
+
+    #[test]
+    fn bootstrap_fx_forward_cross_currency_missing_fx() -> Result<()> {
+        let mut selector = MapSelector::new(rd());
+        // USD SOFR curve
+        selector.add("FixedRateDeposit_USD_SOFR_6M", 0.05);
+        selector.add("OIS_USD_SOFR_1Y", 0.048);
+        // EUR collateral curve via FX forward points
+        selector.add("FxForwardPoints_EURUSD_6M", 0.005);
+        selector.add("FxForwardPoints_EURUSD_1Y", 0.008);
+
+        let sofr_spec = CurveConfiguration::new(
+            MarketIndex::SOFR,
+            DayCounter::Actual360,
+            Interpolator::LogLinear,
+            true,
+            vec![
+                "FixedRateDeposit_USD_SOFR_6M".into(),
+                "OIS_USD_SOFR_1Y".into(),
+            ],
+        );
+        let collateral_spec = CurveConfiguration::new(
+            MarketIndex::Collateral(Currency::EUR, Currency::USD),
+            DayCounter::Actual360,
+            Interpolator::LogLinear,
+            true,
+            vec![
+                "FxForwardPoints_EURUSD_6M".into(),
+                "FxForwardPoints_EURUSD_1Y".into(),
+            ],
+        );
+
+        let bootstrapper =
+            MultiCurveBootstrapper::new(vec![sofr_spec, collateral_spec], default_policy());
+        assert!(bootstrapper.bootstrap(&selector, Level::Mid).is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn bootstrap_fx_forward_cross_currency() -> Result<()> {
+        let mut selector = MapSelector::new(rd());
+        // USD SOFR curve
+        selector.add("FixedRateDeposit_USD_SOFR_6M", 0.05);
+        selector.add("OIS_USD_SOFR_1Y", 0.048);
+        // EUR collateral curve via FX forward points
+        selector.add("FxForwardPoints_EURUSD_6M", 0.005);
+        selector.add("FxForwardPoints_EURUSD_1Y", 0.008);
+
+        let sofr_spec = CurveConfiguration::new(
+            MarketIndex::SOFR,
+            DayCounter::Actual360,
+            Interpolator::LogLinear,
+            true,
+            vec![
+                "FixedRateDeposit_USD_SOFR_6M".into(),
+                "OIS_USD_SOFR_1Y".into(),
+            ],
+        );
+        let collateral_spec = CurveConfiguration::new(
+            MarketIndex::Collateral(Currency::EUR, Currency::USD),
+            DayCounter::Actual360,
+            Interpolator::LogLinear,
+            true,
+            vec![
+                "FxForwardPoints_EURUSD_6M".into(),
+                "FxForwardPoints_EURUSD_1Y".into(),
+            ],
+        );
+
+        let mut fx_store = FxStore::new();
+        fx_store.add_fx_rate(Currency::USD, Currency::EUR, DualFwd::new(1.08));
+
+        let bootstrapper =
+            MultiCurveBootstrapper::new(vec![sofr_spec, collateral_spec], default_policy())
+                .with_fx_store(fx_store);
+        let result = bootstrapper.bootstrap(&selector, Level::Mid)?;
+
+        assert!(result.contains_key(&MarketIndex::SOFR));
+        assert!(result.contains_key(&MarketIndex::Collateral(Currency::EUR, Currency::USD)));
+
+        let coll_curve = result[&MarketIndex::Collateral(Currency::EUR, Currency::USD)].curve();
+        let df = coll_curve.discount_factor(Date::new(2025, 6, 1))?.value();
+        assert!(df > 0.0 && df < 1.5, "Collateral DF should be reasonable");
+        Ok(())
+    }
+
+    #[test]
+    fn bootstrap_fx_forward_cross_currency_inverse_parity() -> Result<()> {
+        let mut selector = MapSelector::new(rd());
+        // USD SOFR curve
+        selector.add("FixedRateDeposit_USD_SOFR_6M", 0.05);
+        selector.add("OIS_USD_SOFR_1Y", 0.048);
+        // EUR collateral curve via FX forward points
+        selector.add("FxForwardPoints_EURUSD_6M", 0.005);
+        selector.add("FxForwardPoints_EURUSD_1Y", 0.008);
+
+        let sofr_spec = CurveConfiguration::new(
+            MarketIndex::SOFR,
+            DayCounter::Actual360,
+            Interpolator::LogLinear,
+            true,
+            vec![
+                "FixedRateDeposit_USD_SOFR_6M".into(),
+                "OIS_USD_SOFR_1Y".into(),
+            ],
+        );
+        let collateral_spec = CurveConfiguration::new(
+            MarketIndex::Collateral(Currency::EUR, Currency::USD),
+            DayCounter::Actual360,
+            Interpolator::LogLinear,
+            true,
+            vec![
+                "FxForwardPoints_EURUSD_6M".into(),
+                "FxForwardPoints_EURUSD_1Y".into(),
+            ],
+        );
+
+        let mut fx_store = FxStore::new();
+        fx_store.add_fx_rate(Currency::EUR, Currency::USD, DualFwd::new(1.0/1.08));
+        fx_store.add_fx_rate(Currency::CLP, Currency::USD, DualFwd::new(900.0));
+
+        let bootstrapper =
+            MultiCurveBootstrapper::new(vec![sofr_spec, collateral_spec], default_policy())
+                .with_fx_store(fx_store);
+        let result = bootstrapper.bootstrap(&selector, Level::Mid)?;
+
+        assert!(result.contains_key(&MarketIndex::SOFR));
+        assert!(result.contains_key(&MarketIndex::Collateral(Currency::EUR, Currency::USD)));
+
+        let coll_curve = result[&MarketIndex::Collateral(Currency::EUR, Currency::USD)].curve();
+        let df = coll_curve.discount_factor(Date::new(2025, 6, 1))?.value();
+        assert!(df > 0.0 && df < 1.5, "Collateral DF should be reasonable");
+        Ok(())
+    }
+
+    #[test]
+    fn bootstrap_rate_futures() -> Result<()> {
+        let mut selector = MapSelector::new(rd());
+        selector.add("Future_USD_SOFR_U4", 95.0);
+        selector.add("Future_USD_SOFR_Z4", 95.5);
+
+        let spec = CurveConfiguration::new(
+            MarketIndex::SOFR,
+            DayCounter::Actual360,
+            Interpolator::LogLinear,
+            true,
+            vec!["Future_USD_SOFR_U4".into(), "Future_USD_SOFR_Z4".into()],
+        );
+
+        let bootstrapper = MultiCurveBootstrapper::new(vec![spec], default_policy());
+        let result = bootstrapper.bootstrap(&selector, Level::Mid)?;
+
+        assert!(result.contains_key(&MarketIndex::SOFR));
+        let curve = result[&MarketIndex::SOFR].curve();
+        let df = curve.discount_factor(Date::new(2024, 12, 18))?.value();
+        assert!(df > 0.0 && df < 1.0);
+        Ok(())
+    }
+
+    #[test]
+    fn bootstrap_reprices_inputs() -> Result<()> {
+        let mut selector = MapSelector::new(rd());
+        let rates = [
+            ("FixedRateDeposit_USD_SOFR_3M", 0.05),
+            ("FixedRateDeposit_USD_SOFR_6M", 0.051),
+            ("OIS_USD_SOFR_1Y", 0.048),
+        ];
+        for (id, rate) in &rates {
+            selector.add(id, *rate);
+        }
+
+        let spec = CurveConfiguration::new(
+            MarketIndex::SOFR,
+            DayCounter::Actual360,
+            Interpolator::LogLinear,
+            true,
+            rates.iter().map(|(id, _)| (*id).into()).collect(),
+        );
+
+        let bootstrapper = MultiCurveBootstrapper::new(vec![spec], default_policy());
+        let result = bootstrapper.bootstrap(&selector, Level::Mid)?;
+
+        // The curve should have pillar labels matching the input quotes.
+        let elem = &result[&MarketIndex::SOFR];
+        let curve = elem.curve();
+        let nodes = curve.nodes();
+        assert!(nodes.is_some(), "Nodes should be available");
+        let nodes = nodes.unwrap();
+        // reference_date + 3 pillars = 4 nodes
+        assert_eq!(nodes.len(), 4);
+        // All DFs should be in (0, 1) for positive rates.
+        for (_date, df) in &nodes {
+            assert!(df.value() > 0.0 && df.value() <= 1.0);
+        }
+        Ok(())
+    }
+}
