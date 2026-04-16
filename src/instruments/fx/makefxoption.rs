@@ -4,6 +4,7 @@ use crate::{
     instruments::fx::fxoption::{FxOption, FxOptionType},
     time::{date::Date, daycounter::DayCounter},
     utils::errors::{QSError, Result},
+    volatility::volatilityindexing::Strike,
 };
 
 /// A builder for creating an [`FxOption`] instance.
@@ -23,7 +24,7 @@ use crate::{
 ///     .build()
 ///     .expect("failed to build fx option");
 ///
-/// assert_eq!(fx_opt.strike(), 1.12);
+/// assert_eq!(fx_opt.strike(), Strike::Absolute(1.12));
 /// ```
 #[derive(Default)]
 pub struct MakeFxOption {
@@ -126,7 +127,7 @@ impl MakeFxOption {
         Ok(FxOption::new(
             identifier,
             expiry_date,
-            strike,
+            Strike::Absolute(strike),
             option_type,
             base_currency,
             quote_currency,
@@ -140,10 +141,9 @@ impl MakeFxOption {
 mod tests {
     use super::MakeFxOption;
     use crate::{
-        currencies::currency::Currency,
-        indices::marketindex::MarketIndex,
-        instruments::fx::fxoption::FxOptionType,
-        time::date::Date,
+        currencies::currency::Currency, indices::marketindex::MarketIndex,
+        instruments::fx::fxoption::FxOptionType, time::date::Date,
+        volatility::volatilityindexing::Strike,
     };
 
     #[test]
@@ -159,7 +159,7 @@ mod tests {
             .build()
             .expect("call option should build");
 
-        assert_eq!(fx_opt.strike(), 1.12);
+        assert_eq!(fx_opt.strike(), Strike::Absolute(1.12));
         assert_eq!(fx_opt.option_type(), FxOptionType::Call);
         assert_eq!(fx_opt.base_currency(), Currency::EUR);
         assert_eq!(fx_opt.quote_currency(), Currency::USD);

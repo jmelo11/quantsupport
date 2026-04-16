@@ -9,6 +9,7 @@ use crate::{
     instruments::cashflows::payoffops::PayoffOps,
     time::{date::Date, daycounter::DayCounter},
     utils::errors::Result,
+    volatility::volatilityindexing::Strike,
     xva::{
         claimevaluationstrategy::ClaimEvaluationStrategy, contigentclaim::ContingentClaim,
         makecontigentclaim::MakeContingentClaim,
@@ -31,7 +32,7 @@ pub enum FxOptionType {
 pub struct FxOption {
     identifier: String,
     expiry_date: Date,
-    strike: f64,
+    strike: Strike,
     option_type: FxOptionType,
     base_currency: Currency,
     quote_currency: Currency,
@@ -46,7 +47,7 @@ impl FxOption {
     pub const fn new(
         identifier: String,
         expiry_date: Date,
-        strike: f64,
+        strike: Strike,
         option_type: FxOptionType,
         base_currency: Currency,
         quote_currency: Currency,
@@ -73,7 +74,7 @@ impl FxOption {
 
     /// Returns the strike price.
     #[must_use]
-    pub const fn strike(&self) -> f64 {
+    pub const fn strike(&self) -> Strike {
         self.strike
     }
 
@@ -164,7 +165,7 @@ impl FxOptionTrade {
         let opt = self.instrument();
         let trade_id = opt.identifier();
         let expiry = opt.expiry_date();
-        let strike = opt.strike();
+        let strike = opt.strike().resolve(0.0);
 
         let payoff = match opt.option_type() {
             FxOptionType::Call => PayoffOps::Max(

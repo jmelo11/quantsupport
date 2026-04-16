@@ -118,7 +118,7 @@ impl HandleValue<EquityEuropeanOptionTrade, EquityOptionState> for BlackEuropean
         let vol = state
             .get_volatility_surface_element(&index)?
             .surface()
-            .volatility_from_date(expiry, strike)?;
+            .volatility_from_date(expiry, strike.resolve(0.0))?;
 
         // this should discount the underyling currency curve
         let df_r = state
@@ -136,7 +136,7 @@ impl HandleValue<EquityEuropeanOptionTrade, EquityOptionState> for BlackEuropean
 
         let undiscounted = BrownianMotion::<DualFwd>::closed_form_price(
             fwd,
-            strike,
+            strike.resolve(fwd.value()),
             vol,
             tau,
             matches!(option.option_type(), EuroOptionType::Call),
@@ -360,7 +360,7 @@ mod tests {
         utils::errors::{QSError, Result},
         volatility::{
             interpolatedvolatilitysurface::InterpolatedVolatilitySurface,
-            volatilityindexing::{F64Key, SmileType, VolatilityType},
+            volatilityindexing::{F64Key, SmileType, Strike, VolatilityType},
             volatilitysurface::VolatilitySurface,
         },
     };
@@ -527,7 +527,7 @@ mod tests {
         let option = EquityEuropeanOption::new(
             market_index,
             expiry_date,
-            strike,
+            Strike::Absolute(strike),
             EuroOptionType::Call,
             "SPX_CALL_90".to_string(),
         );
@@ -626,7 +626,7 @@ mod tests {
                 let option = EquityEuropeanOption::new(
                     market_index.clone(),
                     expiry_date,
-                    strike,
+                    Strike::Absolute(strike),
                     EuroOptionType::Call,
                     format!("SPX_CALL_{}", strike as i32),
                 );

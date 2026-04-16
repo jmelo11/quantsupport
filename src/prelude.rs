@@ -117,7 +117,7 @@ pub use crate::{
     pricers::{
         cashflows::discountedcashflowpricer::DiscountedCashflowPricer,
         equity::blackeuropeanoptionpricer::BlackEuropeanOptionPricer,
-        fx::fxforwardpricer::FxForwardPricer,
+        fx::{fxforwardpricer::FxForwardPricer, fxoptionpricer::FxOptionPricer},
         rates::{
             closedformblackcapletpricer::ClosedFormBlackCapletPricer,
             closedformblackcappricer::ClosedFormBlackCapPricer,

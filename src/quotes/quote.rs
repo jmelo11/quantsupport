@@ -1650,8 +1650,7 @@ impl Quote {
         let d = &self.details;
         let strike = d
             .strike()
-            .ok_or_else(|| QSError::ValueNotSetErr("Strike on Call quote".into()))?
-            .resolve(0.0);
+            .ok_or_else(|| QSError::ValueNotSetErr("Strike on Call quote".into()))?;
         let tenor = d
             .tenor()
             .ok_or_else(|| QSError::ValueNotSetErr("Tenor on Call quote".into()))?;
@@ -1676,8 +1675,7 @@ impl Quote {
         let d = &self.details;
         let strike = d
             .strike()
-            .ok_or_else(|| QSError::ValueNotSetErr("Strike on Put quote".into()))?
-            .resolve(0.0);
+            .ok_or_else(|| QSError::ValueNotSetErr("Strike on Put quote".into()))?;
         let tenor = d
             .tenor()
             .ok_or_else(|| QSError::ValueNotSetErr("Tenor on Put quote".into()))?;

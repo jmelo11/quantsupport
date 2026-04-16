@@ -7,6 +7,7 @@ use crate::{
     currencies::currency::Currency,
     indices::marketindex::MarketIndex,
     time::{date::Date, daycounter::DayCounter},
+    volatility::volatilityindexing::Strike,
 };
 
 /// Represents the payoff type of an European option.
@@ -26,7 +27,7 @@ pub struct EquityEuropeanOption {
     /// The expiry date of the option.
     expiry_date: Date,
     /// The strike price of the option.
-    strike: f64,
+    strike: Strike,
     /// The type of the option (Call or Put).
     option_type: EuroOptionType,
     /// The unique identifier for this option.
@@ -55,7 +56,7 @@ impl EquityEuropeanOption {
     pub const fn new(
         market_index: MarketIndex,
         expiry_date: Date,
-        strike: f64,
+        strike: Strike,
         option_type: EuroOptionType,
         identifier: String,
     ) -> Self {
@@ -84,7 +85,7 @@ impl EquityEuropeanOption {
 
     /// Returns the strike price of this option.
     #[must_use]
-    pub const fn strike(&self) -> f64 {
+    pub const fn strike(&self) -> Strike {
         self.strike
     }
 
