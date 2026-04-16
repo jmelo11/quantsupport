@@ -9,8 +9,5 @@ pub mod cashflows;
 pub mod equity;
 /// FX pricers.
 pub mod fx;
-
-/// Available pricers
-pub mod pricerdefinitions;
 /// Rates pricers.
 pub mod rates;
