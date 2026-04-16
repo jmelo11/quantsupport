@@ -208,7 +208,7 @@ impl CurveConfiguration {
                 "Curve for index {} has no calibration instruments.",
                 self.market_index
             )));
-        };
+        }
         for instrument in instruments {
             match instrument.built() {
                 CalibrationInstrumentType::FixedRateDeposit(deposit) => {
