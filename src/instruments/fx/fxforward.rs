@@ -5,6 +5,7 @@ use crate::{
         trade::{Side, Trade},
     },
     currencies::currency::Currency,
+    indices::fxpair::FxPair,
     time::{date::Date, daycounter::DayCounter},
     utils::errors::Result,
     xva::{
@@ -164,6 +165,15 @@ impl FxForward {
     #[must_use]
     pub const fn day_counter(&self) -> &DayCounter {
         &self.day_counter
+    }
+
+    /// Returns an [`FxPair`] derived from base/quote currencies.
+    ///
+    /// # Errors
+    /// Returns an error if base and quote currencies are the same (should never
+    /// happen for a well-formed forward).
+    pub fn pair(&self) -> Result<FxPair> {
+        FxPair::new(self.base_currency, self.quote_currency)
     }
 }
 

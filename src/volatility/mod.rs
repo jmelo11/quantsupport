@@ -13,6 +13,8 @@ pub mod volatilitycube;
 pub mod volatilityindexing;
 /// Volatility surface traits.
 pub mod volatilitysurface;
+/// Oriented FX volatility surface adapter.
+pub mod orientedfxvolsurface;
 /// Volatility surface configuration.
 pub mod volatilitysurfaceconfiguration;
 /// Volatility cube configuration.

@@ -14,7 +14,7 @@ use crate::{
             basisswap::BasisSwap,
             capfloor::{CapFloor, CapFloorType},
             capletfloorlet::CapletFloorlet,
-            crosscurrencyswap::FixFloatCrossCurrencySwap,
+            fixfloatcrosscurrencyswap::FixFloatCrossCurrencySwap,
             europeanswaption::EuropeanSwaption,
             floatfloatcrosscurrencyswap::FloatFloatCrossCurrencySwap,
             makebasisswap::MakeBasisSwap,

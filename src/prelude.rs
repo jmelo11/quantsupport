@@ -38,6 +38,7 @@ pub use crate::{
     },
     currencies::{currency::Currency, currencydetails::CurrencyDetails},
     indices::{
+        fxpair::FxPair,
         marketindex::{MarketIndex, MarketIndexDetails},
         quotetype::QuoteType,
         rateindex::RateIndexDetails,
@@ -79,8 +80,10 @@ pub use crate::{
             basisswap::{BasisSwap, BasisSwapTrade},
             capfloor::{CapFloor, CapFloorTrade, CapFloorType},
             capletfloorlet::{CapletFloorlet, CapletFloorletTrade, CapletFloorletType},
-            crosscurrencyswap::{FixFloatCrossCurrencySwap, FixFloatCrossCurrencySwapTrade},
             europeanswaption::{EuropeanSwaption, EuropeanSwaptionTrade, SwaptionType},
+            fixfloatcrosscurrencyswap::{
+                FixFloatCrossCurrencySwap, FixFloatCrossCurrencySwapTrade,
+            },
             floatfloatcrosscurrencyswap::{
                 FloatFloatCrossCurrencySwap, FloatFloatCrossCurrencySwapTrade,
             },
@@ -163,6 +166,7 @@ pub use crate::{
         interpolatedvolatilitycube::InterpolatedVolatilityCube,
         interpolatedvolatilitysurface::InterpolatedVolatilitySurface,
         modelcalibration::{CalibrationSource, ModelCalibrationConfiguration},
+        orientedfxvolsurface::OrientedFxVolSurface,
         volatilitycube::VolatilityCube,
         volatilitycubebuilder::VolatilityCubeBuilder,
         volatilitycubeconfiguration::VolatilityCubeConfiguration,

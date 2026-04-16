@@ -11,10 +11,11 @@ use crate::{
         pillars::Pillars,
     },
     currencies::currency::Currency,
-    indices::marketindex::MarketIndex,
+    indices::{fxpair::FxPair, marketindex::MarketIndex},
     quotes::fxstore::FxStore,
     time::date::Date,
     utils::errors::{QSError, Result},
+    volatility::orientedfxvolsurface::OrientedFxVolSurface,
 };
 
 /// The [`PricerState`] trait defines the interface for accessing
@@ -127,6 +128,25 @@ pub trait PricerState {
             .volatility_surfaces()
             .get(index)
             .ok_or_else(|| QSError::NotFoundErr(format!("Volatility surface for index {index}")))
+    }
+
+    /// Retrieves an FX volatility surface for the given pair, returning an
+    /// [`OrientedFxVolSurface`] that transparently handles parity inversion.
+    ///
+    /// ## Errors
+    ///
+    /// Returns an error if the market data response is not available or if no
+    /// volatility surface is found for either orientation of the pair.
+    fn get_fx_volatility_surface(&self, pair: &FxPair) -> Result<OrientedFxVolSurface<'_>> {
+        self.get_market_data_reponse()
+            .ok_or_else(|| QSError::NotFoundErr("MarketDataResponse not available.".into()))?
+            .constructed_elements()
+            .fx_volatility_surface(pair)
+            .ok_or_else(|| {
+                QSError::NotFoundErr(format!(
+                    "Volatility surface for FX pair {pair}"
+                ))
+            })
     }
 
     /// Retrieves the volatility surface element associated with the given market index, if available.

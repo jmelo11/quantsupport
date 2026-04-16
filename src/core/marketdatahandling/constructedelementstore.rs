@@ -7,7 +7,8 @@ use crate::{
         volatilitycubelement::VolatilityCubeElement,
         volatilitysurfaceelement::VolatilitySurfaceElement,
     },
-    indices::marketindex::MarketIndex,
+    indices::{fxpair::FxPair, marketindex::MarketIndex},
+    volatility::orientedfxvolsurface::OrientedFxVolSurface,
 };
 
 /// Type alias for a shared element using reference counting and interior mutability.
@@ -117,6 +118,26 @@ impl ConstructedElementStore {
     #[must_use]
     pub fn volatility_surface(&self, index: &MarketIndex) -> Option<&VolatilitySurfaceElement> {
         self.volatility_surfaces.get(index)
+    }
+
+    /// Gets an FX volatility surface for the given pair, returning an oriented
+    /// view that transparently handles parity inversion.
+    ///
+    /// Looks up first by the pair as given, then by its canonical form. If the
+    /// surface is found under the inverted orientation the returned adapter
+    /// applies the `K → 1/K` transform automatically.
+    #[must_use]
+    pub fn fx_volatility_surface(&self, pair: &FxPair) -> Option<OrientedFxVolSurface<'_>> {
+        let key = MarketIndex::FxPair(*pair);
+        if let Some(elem) = self.volatility_surfaces.get(&key) {
+            return Some(OrientedFxVolSurface::new(elem, false));
+        }
+        // Try the inverted pair
+        let inv_key = MarketIndex::FxPair(pair.inverted());
+        if let Some(elem) = self.volatility_surfaces.get(&inv_key) {
+            return Some(OrientedFxVolSurface::new(elem, true));
+        }
+        None
     }
 
     /// Gets one volatility cube by index.

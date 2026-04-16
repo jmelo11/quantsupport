@@ -5,7 +5,7 @@ use crate::{
         trade::{Side, Trade},
     },
     currencies::currency::Currency,
-    indices::marketindex::MarketIndex,
+    indices::{fxpair::FxPair, marketindex::MarketIndex},
     instruments::cashflows::payoffops::PayoffOps,
     time::{date::Date, daycounter::DayCounter},
     utils::errors::Result,
@@ -37,7 +37,7 @@ pub struct FxOption {
     base_currency: Currency,
     quote_currency: Currency,
     day_counter: DayCounter,
-    underlying_index: MarketIndex,
+    pair: FxPair,
 }
 
 impl FxOption {
@@ -52,7 +52,7 @@ impl FxOption {
         base_currency: Currency,
         quote_currency: Currency,
         day_counter: DayCounter,
-        underlying_index: MarketIndex,
+        pair: FxPair,
     ) -> Self {
         Self {
             identifier,
@@ -62,7 +62,7 @@ impl FxOption {
             base_currency,
             quote_currency,
             day_counter,
-            underlying_index,
+            pair,
         }
     }
 
@@ -102,10 +102,16 @@ impl FxOption {
         &self.day_counter
     }
 
-    /// Returns the underlying spot index (e.g. `MarketIndex::Other("EURUSD")`).
+    /// Returns the FX pair.
     #[must_use]
-    pub const fn underlying_index(&self) -> &MarketIndex {
-        &self.underlying_index
+    pub const fn pair(&self) -> &FxPair {
+        &self.pair
+    }
+
+    /// Returns the underlying spot index as a [`MarketIndex::FxPair`].
+    #[must_use]
+    pub const fn underlying_index(&self) -> MarketIndex {
+        MarketIndex::FxPair(self.pair)
     }
 }
 
@@ -191,7 +197,7 @@ impl FxOptionTrade {
             .with_currency(opt.quote_currency())
             .with_notional(self.notional)
             .with_side(self.side)
-            .with_index(opt.underlying_index().clone())
+            .with_index(opt.underlying_index())
             .with_evaluation_strategy(ClaimEvaluationStrategy::SpotPayoff {
                 payoff_ops: payoff,
                 strike,

@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::fmt::{self, Display, Formatter};
 
 use crate::currencies::currency::Currency;
+use crate::indices::fxpair::FxPair;
 use crate::indices::rateindex::RateIndexDetails;
 use crate::indices::{
     quotetype::QuoteType,
@@ -27,7 +28,6 @@ use crate::indices::{
 use crate::utils::errors::{QSError, Result};
 
 #[derive(Serialize, Deserialize, Debug, Hash, PartialEq, Eq, Clone)]
-/// # `InterestRateIndex`
 pub enum MarketIndex {
     // ── USD ──────────────────────────────────────────────
     /// SOFR Index (overnight, USD).
@@ -98,6 +98,10 @@ pub enum MarketIndex {
     VIX,
     /// Equity index or price. Used to identify volatilities.
     Equity(String),
+    /// FX spot pair. Encodes a directed foreign-exchange pair.
+    ///
+    /// For example `FxPair(FxPair::new(EUR, USD))` represents the EUR/USD spot.
+    FxPair(FxPair),
     /// Collateral discount curve for cashflows in `ccy` posted under `collateral_ccy`.
     ///
     /// For example `Collateral(CLP, USD)` represents the CLP discount curve
@@ -145,6 +149,7 @@ impl Display for MarketIndex {
             Self::ICP => write!(f, "ICP"),
             Self::VIX => write!(f, "VIX"),
             Self::Equity(name) => write!(f, "{name}"),
+            Self::FxPair(pair) => write!(f, "FX:{pair}"),
             Self::Collateral(ccy, coll) => write!(f, "Collateral({ccy}/{coll})"),
             Self::Other(s) => write!(f, "{s}"),
         }
@@ -179,6 +184,10 @@ impl std::str::FromStr for MarketIndex {
             "SWESTR" => Self::SWESTR,
             "ICP" => Self::ICP,
             "VIX" => Self::VIX,
+            other if other.starts_with("FX:") => {
+                let pair_str = &other["FX:".len()..];
+                pair_str.parse::<FxPair>().map_or_else(|_| Self::Other(other.to_string()), Self::FxPair)
+            }
             other if other.starts_with("Collateral(") && other.ends_with(')') => {
                 let inner = &other["Collateral(".len()..other.len() - 1];
                 if let Some((a, b)) = inner.split_once('/') {

@@ -7,7 +7,7 @@ use crate::{
     indices::marketindex::MarketIndex,
     instruments::{
         cashflows::makeleg::{MakeLeg, RateType},
-        rates::crosscurrencyswap::FixFloatCrossCurrencySwap,
+        rates::fixfloatcrosscurrencyswap::FixFloatCrossCurrencySwap,
     },
     rates::interestrate::{InterestRate, RateDefinition},
     time::{

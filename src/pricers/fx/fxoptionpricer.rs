@@ -122,8 +122,7 @@ impl HandleValue<FxOptionTrade, FxOptionState> for FxOptionPricer {
 
         let strike = inst.strike().resolve(forward.value());
         let vol = state
-            .get_volatility_surface_element(inst.underlying_index())?
-            .surface()
+            .get_fx_volatility_surface(inst.pair())?
             .volatility_from_date(inst.expiry_date(), strike)?;
 
         let is_call = matches!(inst.option_type(), FxOptionType::Call);
@@ -182,7 +181,8 @@ impl HandleSensitivities<FxOptionTrade, FxOptionState> for FxOptionPricer {
 
         // Volatility surface sensitivities
         for (label, pillar) in state
-            .get_volatility_surface_element(inst.underlying_index())?
+            .get_fx_volatility_surface(inst.pair())?
+            .element()
             .surface()
             .pillars()
             .unwrap_or_default()
@@ -256,7 +256,7 @@ impl Pricer for FxOptionPricer {
         }
 
         elements.push(ConstructedElementRequest::VolatilitySurface {
-            market_index: inst.underlying_index().clone(),
+            market_index: inst.underlying_index(),
         });
 
         let mut request = MarketDataRequest::default().with_fx_request(vec![FxRequest::pair(
@@ -305,7 +305,7 @@ mod tests {
             trade::Side,
         },
         currencies::currency::Currency,
-        indices::marketindex::MarketIndex,
+        indices::{fxpair::FxPair, marketindex::MarketIndex},
         instruments::fx::fxoption::{FxOption, FxOptionTrade, FxOptionType},
         pricers::fx::fxoptionpricer::FxOptionPricer,
         quotes::fxstore::FxStore,
@@ -470,7 +470,8 @@ mod tests {
         let quote_ccy = Currency::USD;
         let base_index = MarketIndex::Other("EUR_DISC".to_string());
         let quote_index = MarketIndex::Other("USD_DISC".to_string());
-        let underlying_index = MarketIndex::Other("EURUSD".to_string());
+        let fx_pair = FxPair::new(base_ccy, quote_ccy).unwrap();
+        let underlying_index = MarketIndex::FxPair(fx_pair);
 
         let spot = 1.10;
         let strike = 1.12;
@@ -499,7 +500,7 @@ mod tests {
             base_ccy,
             quote_ccy,
             DayCounter::Actual360,
-            underlying_index,
+            fx_pair,
         );
         let trade = FxOptionTrade::new(option, trade_date, notional, Side::LongReceive);
 
@@ -536,7 +537,8 @@ mod tests {
         let quote_ccy = Currency::USD;
         let base_index = MarketIndex::Other("EUR_DISC".to_string());
         let quote_index = MarketIndex::Other("USD_DISC".to_string());
-        let underlying_index = MarketIndex::Other("EURUSD".to_string());
+        let fx_pair = FxPair::new(base_ccy, quote_ccy).unwrap();
+        let underlying_index = MarketIndex::FxPair(fx_pair);
 
         let spot = 1.10;
         let strike = 1.08;
@@ -563,7 +565,7 @@ mod tests {
             base_ccy,
             quote_ccy,
             DayCounter::Actual360,
-            underlying_index,
+            fx_pair,
         );
         let trade = FxOptionTrade::new(option, trade_date, notional, Side::LongReceive);
 
@@ -600,7 +602,8 @@ mod tests {
         let quote_ccy = Currency::USD;
         let base_index = MarketIndex::Other("EUR_DISC".to_string());
         let quote_index = MarketIndex::Other("USD_DISC".to_string());
-        let underlying_index = MarketIndex::Other("EURUSD".to_string());
+        let fx_pair = FxPair::new(base_ccy, quote_ccy).unwrap();
+        let underlying_index = MarketIndex::FxPair(fx_pair);
 
         let spot = 1.10;
         let strike = 1.12;
@@ -630,7 +633,7 @@ mod tests {
             base_ccy,
             quote_ccy,
             DayCounter::Actual360,
-            underlying_index.clone(),
+            fx_pair,
         );
         let call_trade = FxOptionTrade::new(call, trade_date, notional, Side::LongReceive);
 
@@ -674,7 +677,7 @@ mod tests {
             base_ccy,
             quote_ccy,
             DayCounter::Actual360,
-            underlying_index.clone(),
+            fx_pair,
         );
         let put_trade = FxOptionTrade::new(put, trade_date, notional, Side::LongReceive);
 
@@ -714,7 +717,8 @@ mod tests {
         let quote_ccy = Currency::USD;
         let base_index = MarketIndex::Other("EUR_DISC".to_string());
         let quote_index = MarketIndex::Other("USD_DISC".to_string());
-        let underlying_index = MarketIndex::Other("EURUSD".to_string());
+        let fx_pair = FxPair::new(base_ccy, quote_ccy).unwrap();
+        let underlying_index = MarketIndex::FxPair(fx_pair);
 
         let spot = 1.10;
         let strike = 1.10;
@@ -741,7 +745,7 @@ mod tests {
             base_ccy,
             quote_ccy,
             DayCounter::Actual360,
-            underlying_index,
+            fx_pair,
         );
         let trade = FxOptionTrade::new(option, trade_date, notional, Side::LongReceive);
 
@@ -803,8 +807,8 @@ mod tests {
         let quote_ccy = Currency::USD;
         let base_index = MarketIndex::Other("EUR_DISC".to_string());
         let quote_index = MarketIndex::Other("USD_DISC".to_string());
-        let underlying_index = MarketIndex::Other("EURUSD".to_string());
-
+        let fx_pair = FxPair::new(base_ccy, quote_ccy).unwrap();
+        let underlying_index = MarketIndex::FxPair(fx_pair);
         let spot = 1.10;
         let strike = 1.12;
         let notional = 1_000_000.0;
@@ -830,7 +834,7 @@ mod tests {
             base_ccy,
             quote_ccy,
             DayCounter::Actual360,
-            underlying_index.clone(),
+            fx_pair,
         );
         let long_trade = FxOptionTrade::new(option_long, trade_date, notional, Side::LongReceive);
 
@@ -875,7 +879,7 @@ mod tests {
             base_ccy,
             quote_ccy,
             DayCounter::Actual360,
-            underlying_index,
+            fx_pair,
         );
         let short_trade = FxOptionTrade::new(option_short, trade_date, notional, Side::PayShort);
 

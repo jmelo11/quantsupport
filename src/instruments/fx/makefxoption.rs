@@ -1,6 +1,6 @@
 use crate::{
     currencies::currency::Currency,
-    indices::marketindex::MarketIndex,
+    indices::fxpair::FxPair,
     instruments::fx::fxoption::{FxOption, FxOptionType},
     time::{date::Date, daycounter::DayCounter},
     utils::errors::{QSError, Result},
@@ -20,7 +20,7 @@ use crate::{
 ///     .with_option_type(FxOptionType::Call)
 ///     .with_base_currency(Currency::EUR)
 ///     .with_quote_currency(Currency::USD)
-///     .with_underlying_index(MarketIndex::Other("EURUSD".to_string()))
+///     .with_pair(FxPair::new(Currency::EUR, Currency::USD).unwrap())
 ///     .build()
 ///     .expect("failed to build fx option");
 ///
@@ -35,7 +35,7 @@ pub struct MakeFxOption {
     base_currency: Option<Currency>,
     quote_currency: Option<Currency>,
     day_counter: Option<DayCounter>,
-    underlying_index: Option<MarketIndex>,
+    pair: Option<FxPair>,
 }
 
 impl MakeFxOption {
@@ -88,10 +88,10 @@ impl MakeFxOption {
         self
     }
 
-    /// Sets the underlying spot index (e.g. `MarketIndex::Other("EURUSD")`).
+    /// Sets the FX pair.
     #[must_use]
-    pub fn with_underlying_index(mut self, index: MarketIndex) -> Self {
-        self.underlying_index = Some(index);
+    pub const fn with_pair(mut self, pair: FxPair) -> Self {
+        self.pair = Some(pair);
         self
     }
 
@@ -118,9 +118,9 @@ impl MakeFxOption {
         let quote_currency = self
             .quote_currency
             .ok_or_else(|| QSError::ValueNotSetErr("Quote currency".into()))?;
-        let underlying_index = self
-            .underlying_index
-            .ok_or_else(|| QSError::ValueNotSetErr("Underlying index".into()))?;
+        let pair = self
+            .pair
+            .ok_or_else(|| QSError::ValueNotSetErr("FX pair".into()))?;
 
         let day_counter = self.day_counter.unwrap_or(DayCounter::Actual360);
 
@@ -132,7 +132,7 @@ impl MakeFxOption {
             base_currency,
             quote_currency,
             day_counter,
-            underlying_index,
+            pair,
         ))
     }
 }
@@ -141,7 +141,7 @@ impl MakeFxOption {
 mod tests {
     use super::MakeFxOption;
     use crate::{
-        currencies::currency::Currency, indices::marketindex::MarketIndex,
+        currencies::currency::Currency, indices::fxpair::FxPair,
         instruments::fx::fxoption::FxOptionType, time::date::Date,
         volatility::volatilityindexing::Strike,
     };
@@ -155,7 +155,7 @@ mod tests {
             .with_option_type(FxOptionType::Call)
             .with_base_currency(Currency::EUR)
             .with_quote_currency(Currency::USD)
-            .with_underlying_index(MarketIndex::Other("EURUSD".to_string()))
+            .with_pair(FxPair::new(Currency::EUR, Currency::USD).unwrap())
             .build()
             .expect("call option should build");
 
@@ -174,7 +174,7 @@ mod tests {
             .with_option_type(FxOptionType::Put)
             .with_base_currency(Currency::EUR)
             .with_quote_currency(Currency::USD)
-            .with_underlying_index(MarketIndex::Other("EURUSD".to_string()))
+            .with_pair(FxPair::new(Currency::EUR, Currency::USD).unwrap())
             .build()
             .expect("put option should build");
 
@@ -189,7 +189,7 @@ mod tests {
             .with_option_type(FxOptionType::Call)
             .with_base_currency(Currency::EUR)
             .with_quote_currency(Currency::USD)
-            .with_underlying_index(MarketIndex::Other("EURUSD".to_string()))
+            .with_pair(FxPair::new(Currency::EUR, Currency::USD).unwrap())
             .build();
 
         assert!(result.is_err());
