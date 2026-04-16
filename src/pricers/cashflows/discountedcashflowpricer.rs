@@ -1170,4 +1170,330 @@ mod tests {
             exposures[fx_idx]
         );
     }
+
+    #[test]
+    fn test_fair_rate_vanilla_swap() {
+        // The fair rate of a vanilla swap on a flat curve should approximately
+        // equal the flat forward rate (small day-count mismatch is expected).
+        // Re-pricing the swap at the fair rate should give ~zero NPV.
+
+        struct FairRateMarketDataProvider {
+            evaluation_date: Date,
+            market_data: MarketData,
+        }
+
+        impl MarketDataProvider for FairRateMarketDataProvider {
+            fn handle_request(&self, _request: &MarketDataRequest) -> Result<MarketData> {
+                Ok(MarketData::new(
+                    self.market_data.fixings().clone(),
+                    self.market_data.constructed_elements().clone(),
+                ))
+            }
+
+            fn evaluation_date(&self) -> Date {
+                self.evaluation_date
+            }
+        }
+
+        let start_date = Date::new(2024, 1, 1);
+        let maturity_date = Date::new(2026, 1, 1); // 2Y swap
+        let notional = 1_000_000.0;
+        let flat_rate = 0.04;
+
+        let rate_definition = RateDefinition::new(
+            DayCounter::Actual360,
+            Compounding::Simple,
+            Frequency::Annual,
+        );
+
+        // Build swap with an arbitrary fixed rate (not at par).
+        let swap = MakeSwap::<DualFwd>::default()
+            .with_identifier("FAIR_RATE_TEST".to_string())
+            .with_start_date(start_date)
+            .with_maturity_date(maturity_date)
+            .with_fixed_rate(0.03) // intentionally off-market
+            .with_notional(notional)
+            .with_rate_definition(rate_definition)
+            .with_currency(Currency::USD)
+            .with_market_index(MarketIndex::SOFR)
+            .with_side(Side::LongReceive)
+            .with_fixed_leg_frequency(Frequency::Semiannual)
+            .with_floating_leg_frequency(Frequency::Quarterly)
+            .build()
+            .expect("Failed to build swap");
+
+        let trade = SwapTrade::new(swap, start_date, notional, Side::LongReceive);
+
+        // Flat 4% SOFR curve.
+        let discount_curve = FlatForwardTermStructure::new(
+            start_date,
+            DualFwd::from(flat_rate),
+            RateDefinition::default(),
+        )
+        .with_pillar_label("SOFR_flat".to_string());
+
+        let mut constructed_elements = ConstructedElementStore::default();
+        constructed_elements.discount_curves_mut().insert(
+            MarketIndex::SOFR,
+            DiscountCurveElement::new(MarketIndex::SOFR, Rc::new(RefCell::new(discount_curve))),
+        );
+        let market_data = MarketData::new(HashMap::new(), constructed_elements);
+        let provider = FairRateMarketDataProvider {
+            evaluation_date: start_date,
+            market_data,
+        };
+
+        // Evaluate fair rate.
+        let pricer = DiscountedCashflowPricer::<Swap<DualFwd>, SwapTrade<DualFwd>>::new();
+        let results = pricer
+            .evaluate(&trade, &[Request::FairRate], &provider)
+            .expect("Fair rate evaluation failed");
+
+        let fair_rate = results.fair_rate().expect("Missing fair rate in results");
+
+        // Fair rate should be close to the flat forward rate.
+        assert!(
+            (fair_rate - flat_rate).abs() < 0.005,
+            "Fair rate {fair_rate:.6} should be near flat rate {flat_rate}"
+        );
+        println!("Fair rate = {fair_rate:.8}, flat rate = {flat_rate}");
+
+        // Re-price the swap at the fair rate: NPV should be ~0.
+        let swap_at_par = MakeSwap::<DualFwd>::default()
+            .with_identifier("FAIR_RATE_REPRICE".to_string())
+            .with_start_date(start_date)
+            .with_maturity_date(maturity_date)
+            .with_fixed_rate(fair_rate)
+            .with_notional(notional)
+            .with_rate_definition(rate_definition)
+            .with_currency(Currency::USD)
+            .with_market_index(MarketIndex::SOFR)
+            .with_side(Side::LongReceive)
+            .with_fixed_leg_frequency(Frequency::Semiannual)
+            .with_floating_leg_frequency(Frequency::Quarterly)
+            .build()
+            .expect("Failed to build par swap");
+
+        let par_trade = SwapTrade::new(swap_at_par, start_date, notional, Side::LongReceive);
+
+        // Rebuild market data (tape state is consumed by previous eval).
+        let discount_curve2 = FlatForwardTermStructure::new(
+            start_date,
+            DualFwd::from(flat_rate),
+            RateDefinition::default(),
+        )
+        .with_pillar_label("SOFR_flat".to_string());
+
+        let mut constructed_elements2 = ConstructedElementStore::default();
+        constructed_elements2.discount_curves_mut().insert(
+            MarketIndex::SOFR,
+            DiscountCurveElement::new(MarketIndex::SOFR, Rc::new(RefCell::new(discount_curve2))),
+        );
+        let market_data2 = MarketData::new(HashMap::new(), constructed_elements2);
+        let provider2 = FairRateMarketDataProvider {
+            evaluation_date: start_date,
+            market_data: market_data2,
+        };
+
+        let results2 = pricer
+            .evaluate(&par_trade, &[Request::Value], &provider2)
+            .expect("Re-pricing at fair rate failed");
+
+        let pv_at_par = results2.price().expect("Missing price");
+        assert!(
+            pv_at_par.abs() < 1.0,
+            "PV at fair rate should be near zero, got {pv_at_par:.4}"
+        );
+        println!("PV at fair rate = {pv_at_par:.8}");
+    }
+
+    #[test]
+    fn test_fair_rate_clp_swap_with_usd_csa() {
+        // CLP ICP swap with USD CSA collateral.
+        // The fixed leg (CLP) is discounted via Collateral(CLP, USD), and
+        // floating leg forwards are projected from ICP.  The fair rate
+        // should still be close to the flat ICP rate and re-pricing at par
+        // should produce ~zero NPV.
+
+        struct CsaFairRateProvider {
+            evaluation_date: Date,
+            market_data: MarketData,
+        }
+
+        impl MarketDataProvider for CsaFairRateProvider {
+            fn handle_request(&self, _request: &MarketDataRequest) -> Result<MarketData> {
+                let mut md = MarketData::new(
+                    self.market_data.fixings().clone(),
+                    self.market_data.constructed_elements().clone(),
+                );
+                if let Some(store) = self.market_data.fx_store() {
+                    md = md.with_fx_store(store.clone());
+                }
+                Ok(md)
+            }
+
+            fn evaluation_date(&self) -> Date {
+                self.evaluation_date
+            }
+        }
+
+        let start_date = Date::new(2024, 1, 1);
+        let maturity_date = Date::new(2026, 1, 1); // 2Y
+        let notional = 1_000_000_000.0; // 1bn CLP
+        let icp_rate = 0.06;
+        let collateral_rate = 0.05; // USD-collateralised CLP discount
+        let fx_clp_usd = 0.001; // 1 CLP = 0.001 USD (i.e. 1000 CLP/USD)
+
+        let rate_definition = RateDefinition::new(
+            DayCounter::Actual360,
+            Compounding::Simple,
+            Frequency::Annual,
+        );
+
+        // Build CLP ICP swap with an off-market fixed rate.
+        let swap = MakeSwap::<DualFwd>::default()
+            .with_identifier("CLP_ICP_FAIR_RATE".to_string())
+            .with_start_date(start_date)
+            .with_maturity_date(maturity_date)
+            .with_fixed_rate(0.04) // intentionally off-market
+            .with_notional(notional)
+            .with_rate_definition(rate_definition)
+            .with_currency(Currency::CLP)
+            .with_market_index(MarketIndex::ICP)
+            .with_side(Side::LongReceive)
+            .with_fixed_leg_frequency(Frequency::Semiannual)
+            .with_floating_leg_frequency(Frequency::Semiannual)
+            .build()
+            .expect("Failed to build CLP swap");
+
+        let trade = SwapTrade::new(swap, start_date, notional, Side::LongReceive);
+
+        // ICP curve (CLP forward projection).
+        let icp_curve = FlatForwardTermStructure::new(
+            start_date,
+            DualFwd::from(icp_rate),
+            RateDefinition::default(),
+        )
+        .with_pillar_label("ICP_flat".to_string());
+
+        // Collateral(CLP, USD): CLP discount under USD CSA.
+        let collateral_curve = FlatForwardTermStructure::new(
+            start_date,
+            DualFwd::from(collateral_rate),
+            RateDefinition::default(),
+        )
+        .with_pillar_label("Collateral_CLP_USD_flat".to_string());
+
+        let mut constructed_elements = ConstructedElementStore::default();
+        constructed_elements.discount_curves_mut().insert(
+            MarketIndex::ICP,
+            DiscountCurveElement::new(MarketIndex::ICP, Rc::new(RefCell::new(icp_curve))),
+        );
+        constructed_elements.discount_curves_mut().insert(
+            MarketIndex::Collateral(Currency::CLP, Currency::USD),
+            DiscountCurveElement::new(
+                MarketIndex::Collateral(Currency::CLP, Currency::USD),
+                Rc::new(RefCell::new(collateral_curve)),
+            ),
+        );
+
+        let mut fx_store = FxStore::new();
+        fx_store.add_fx_rate(Currency::CLP, Currency::USD, DualFwd::from(fx_clp_usd));
+
+        let market_data =
+            MarketData::new(HashMap::new(), constructed_elements).with_fx_store(fx_store);
+        let provider = CsaFairRateProvider {
+            evaluation_date: start_date,
+            market_data,
+        };
+
+        // Evaluate fair rate with USD CSA policy.
+        let mut pricer = DiscountedCashflowPricer::<Swap<DualFwd>, SwapTrade<DualFwd>>::new();
+        pricer.set_discount_policy(Box::new(SingleCurveCSADiscountPolicy::new(
+            MarketIndex::SOFR,
+            Currency::USD,
+        )));
+        let results = pricer
+            .evaluate(&trade, &[Request::FairRate], &provider)
+            .expect("CLP fair rate evaluation failed");
+
+        let fair_rate = results.fair_rate().expect("Missing fair rate");
+        println!(
+            "CLP fair rate (USD CSA) = {fair_rate:.8}, ICP flat = {icp_rate}, collateral flat = {collateral_rate}"
+        );
+
+        // Fair rate should differ from the ICP flat rate because discounting
+        // uses a different curve (collateral), but should still be reasonable.
+        assert!(
+            fair_rate > 0.0 && fair_rate < 0.15,
+            "Fair rate {fair_rate:.6} should be positive and reasonable"
+        );
+
+        // Re-price at the fair rate: NPV should be ~zero.
+        let swap_at_par = MakeSwap::<DualFwd>::default()
+            .with_identifier("CLP_ICP_REPRICE".to_string())
+            .with_start_date(start_date)
+            .with_maturity_date(maturity_date)
+            .with_fixed_rate(fair_rate)
+            .with_notional(notional)
+            .with_rate_definition(rate_definition)
+            .with_currency(Currency::CLP)
+            .with_market_index(MarketIndex::ICP)
+            .with_side(Side::LongReceive)
+            .with_fixed_leg_frequency(Frequency::Semiannual)
+            .with_floating_leg_frequency(Frequency::Semiannual)
+            .build()
+            .expect("Failed to build CLP par swap");
+
+        let par_trade = SwapTrade::new(swap_at_par, start_date, notional, Side::LongReceive);
+
+        // Rebuild market data.
+        let icp_curve2 = FlatForwardTermStructure::new(
+            start_date,
+            DualFwd::from(icp_rate),
+            RateDefinition::default(),
+        )
+        .with_pillar_label("ICP_flat".to_string());
+
+        let collateral_curve2 = FlatForwardTermStructure::new(
+            start_date,
+            DualFwd::from(collateral_rate),
+            RateDefinition::default(),
+        )
+        .with_pillar_label("Collateral_CLP_USD_flat".to_string());
+
+        let mut constructed_elements2 = ConstructedElementStore::default();
+        constructed_elements2.discount_curves_mut().insert(
+            MarketIndex::ICP,
+            DiscountCurveElement::new(MarketIndex::ICP, Rc::new(RefCell::new(icp_curve2))),
+        );
+        constructed_elements2.discount_curves_mut().insert(
+            MarketIndex::Collateral(Currency::CLP, Currency::USD),
+            DiscountCurveElement::new(
+                MarketIndex::Collateral(Currency::CLP, Currency::USD),
+                Rc::new(RefCell::new(collateral_curve2)),
+            ),
+        );
+
+        let mut fx_store2 = FxStore::new();
+        fx_store2.add_fx_rate(Currency::CLP, Currency::USD, DualFwd::from(fx_clp_usd));
+
+        let market_data2 =
+            MarketData::new(HashMap::new(), constructed_elements2).with_fx_store(fx_store2);
+        let provider2 = CsaFairRateProvider {
+            evaluation_date: start_date,
+            market_data: market_data2,
+        };
+
+        let results2 = pricer
+            .evaluate(&par_trade, &[Request::Value], &provider2)
+            .expect("Re-pricing CLP swap at fair rate failed");
+
+        let pv_at_par = results2.price().expect("Missing price");
+        assert!(
+            pv_at_par.abs() < 1.0,
+            "PV at fair rate should be near zero, got {pv_at_par:.4}"
+        );
+        println!("CLP PV at fair rate = {pv_at_par:.8}");
+    }
 }
