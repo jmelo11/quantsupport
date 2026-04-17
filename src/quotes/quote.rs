@@ -14,8 +14,8 @@ use crate::{
             basisswap::BasisSwap,
             capfloor::{CapFloor, CapFloorType},
             capletfloorlet::CapletFloorlet,
-            fixfloatcrosscurrencyswap::FixFloatCrossCurrencySwap,
             europeanswaption::EuropeanSwaption,
+            fixfloatcrosscurrencyswap::FixFloatCrossCurrencySwap,
             floatfloatcrosscurrencyswap::FloatFloatCrossCurrencySwap,
             makebasisswap::MakeBasisSwap,
             makecapfloor::MakeCapFloor,
@@ -217,7 +217,7 @@ impl std::str::FromStr for OptionStrategy {
 /// | Future | `Future` | CCY | Index | `IMMCode` | | | | | |
 /// | `ConvexityAdjustment` | `ConvexityAdjustment` | CCY | Index | `IMMCode` | | | | | |
 /// | Swaption | `Swaption` | CCY | Index | Expiry | `SwapTenor` | \[`PayFreq`\] | \[`RecvFreq`\] | Strike | \[`StrikeValue`\] `VolType` |
-/// | `FxOutrightForward` | `FxOutrightForward` | CCYPAIR | Tenor | | | | | | |
+/// | `FxForwardOutright` | `ForwardOutright` | CCYPAIR | Tenor | | | | | | |
 /// | `FxForwardPoints` | `FxForwardPoints` | CCYPAIR | Tenor | | | | | | |
 /// | `EquityCall` | `EquityCall` | CCY | Index | Tenor | Strike | | | | |
 /// | `EquityPut` | `EquityPut` | CCY | Index | Tenor | Strike | | | | |
@@ -589,7 +589,10 @@ impl QuoteDetails {
         let pay: Option<Frequency> = parts.get(start).and_then(|s| s.parse().ok());
         pay.map_or((None, None, start), |p| {
             let recv: Option<Frequency> = parts.get(start + 1).and_then(|s| s.parse().ok());
-            recv.map_or_else(|| (Some(p), None, start + 1), |r| (Some(p), Some(r), start + 2))
+            recv.map_or_else(
+                || (Some(p), None, start + 1),
+                |r| (Some(p), Some(r), start + 2),
+            )
         })
     }
 
@@ -1101,7 +1104,7 @@ impl QuoteDetails {
             "Future" => Self::parse_future(s, &parts),
             "ConvexityAdjustment" => Self::parse_convexity_adjustment(s, &parts),
             "Swaption" => Self::parse_swaption(s, &parts),
-            "FxOutrightForward" | "OutrightForward" => Self::parse_outright_forward(s, &parts),
+            "FxForwardOutright" | "ForwardOutright" => Self::parse_outright_forward(s, &parts),
             "FloatFloatCrossCurrencySwap" => Self::parse_float_float_cross_currency_swap(s, &parts),
             "FxForwardPoints" | "ForwardPoints" => Self::parse_forward_points(s, &parts),
             "EquityCall" | "Call" => Self::parse_equity_call(s, &parts),
@@ -1221,9 +1224,11 @@ where
             Self::FxForward(x) => Ok(x.delivery_date()),
             Self::Call(x) | Self::Put(x) => Ok(x.expiry_date()),
             Self::CapletFloorlet(x) => Ok(x.fixing_date()),
-            Self::CapFloor(x) => x
-                .last_fixing_date()
-                .ok_or_else(|| crate::utils::errors::QSError::ValueNotSetErr("cap/floor has no caplet/floorlets".into())),
+            Self::CapFloor(x) => x.last_fixing_date().ok_or_else(|| {
+                crate::utils::errors::QSError::ValueNotSetErr(
+                    "cap/floor has no caplet/floorlets".into(),
+                )
+            }),
             Self::EuropeanSwaption(x) => Ok(x.expiry_date()),
         }
     }

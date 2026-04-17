@@ -71,7 +71,8 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     let fxfwd_trade = FxForwardTrade::new(fx_fwd, ref_date, 5_000_000.0, Side::LongReceive);
 
     // Trade 3 — 1Y EUR/USD FX call option (buy EUR call, strike 1.12)
-    let fx_spot_index = MarketIndex::Other("EURUSD".to_string());
+    let fx_pair = FxPair::new(Currency::EUR, Currency::USD)?;
+    let fx_spot_index = MarketIndex::FxPair(fx_pair);
     let fx_opt = MakeFxOption::default()
         .with_identifier("FX_OPT_EURUSD_1Y".to_string())
         .with_expiry_date(ref_date.advance(1, TimeUnit::Years))
@@ -79,7 +80,7 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         .with_option_type(FxOptionType::Call)
         .with_base_currency(Currency::EUR)
         .with_quote_currency(Currency::USD)
-        .with_underlying_index(fx_spot_index.clone())
+        .with_pair(fx_pair)
         .build()
         .expect("Failed to build FX option");
     let fxopt_trade = FxOptionTrade::new(fx_opt, ref_date, 5_000_000.0, Side::LongReceive);
