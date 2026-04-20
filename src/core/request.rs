@@ -113,7 +113,7 @@ where
     fn handle_cashflows(&self, _trade: &T, state: &mut S) -> Result<CashflowsTable> {
         let mut cashflows_table = CashflowsTable::new();
 
-        for leg in state.legs() {
+        for (leg_index, leg) in state.legs().iter().enumerate() {
             let currency = leg.currency();
 
             for cashflow in leg.cashflows() {
@@ -137,6 +137,7 @@ where
                             currency,
                             None,
                             None,
+                            leg_index,
                         );
                     }
                     CashflowType::FloatingRateCoupon(coupon) => {
@@ -158,6 +159,7 @@ where
                             currency,
                             None,
                             None,
+                            leg_index,
                         );
                     }
                     CashflowType::OptionEmbeddedCoupon(coupon) => {
@@ -178,6 +180,7 @@ where
                             currency,
                             None,
                             None,
+                            leg_index,
                         );
                     }
                     CashflowType::Redemption(cashflow) => {
@@ -193,6 +196,7 @@ where
                             currency,
                             None,
                             None,
+                            leg_index,
                         );
                     }
                     CashflowType::Disbursement(cashflow) => {
@@ -208,6 +212,7 @@ where
                             currency,
                             None,
                             None,
+                            leg_index,
                         );
                     }
                     CashflowType::ConstantAmount(cashflow) => {
@@ -223,6 +228,7 @@ where
                             currency,
                             None,
                             None,
+                            leg_index,
                         );
                     }
                     CashflowType::OptionEmbeddedCashflow(_) => {

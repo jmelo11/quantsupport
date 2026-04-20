@@ -13,6 +13,7 @@ pub struct CashflowsTable {
     currencies: Vec<Currency>,
     floorlet_strike: Vec<Option<f64>>,
     caplet_strike: Vec<Option<f64>>,
+    leg_indices: Vec<usize>,
 }
 
 impl CashflowsTable {
@@ -28,6 +29,7 @@ impl CashflowsTable {
             currencies: Vec::new(),
             floorlet_strike: Vec::new(),
             caplet_strike: Vec::new(),
+            leg_indices: Vec::new(),
         }
     }
 
@@ -79,6 +81,12 @@ impl CashflowsTable {
         &self.caplet_strike
     }
 
+    /// Returns the leg indices.
+    #[must_use]
+    pub fn leg_indices(&self) -> &[usize] {
+        &self.leg_indices
+    }
+
     /// Adds a cashflow entry to the table.
     #[allow(clippy::too_many_arguments)]
     pub fn add_cashflow(
@@ -91,6 +99,7 @@ impl CashflowsTable {
         currency: Currency,
         floorlet_strike: Option<f64>,
         caplet_strike: Option<f64>,
+        leg_index: usize,
     ) {
         self.payment_dates.push(payment_date);
         self.cashflow_types.push(cashflow_type);
@@ -100,6 +109,7 @@ impl CashflowsTable {
         self.currencies.push(currency);
         self.floorlet_strike.push(floorlet_strike);
         self.caplet_strike.push(caplet_strike);
+        self.leg_indices.push(leg_index);
     }
 }
 
