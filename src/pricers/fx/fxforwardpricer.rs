@@ -14,7 +14,7 @@ use crate::{
         pillars::Pillars,
         pricer::Pricer,
         pricerstate::PricerState,
-        request::{HandleSensitivities, HandleValue, Request},
+        request::{HandleFairRate, HandleSensitivities, HandleValue, Request},
         trade::Trade,
     },
     currencies::currency::Currency,
@@ -150,6 +150,35 @@ impl HandleValue<FxForwardTrade, FxForwardState> for FxForwardPricer {
     }
 }
 
+impl HandleFairRate<FxForwardTrade, FxForwardState> for FxForwardPricer {
+    /// Computes the fair (par) forward rate, defined as `F = S * DF_quote / DF_base`.
+    /// This is the strike at which the trade has zero NPV.
+    fn handle_fair_rate(&self, trade: &FxForwardTrade, state: &mut FxForwardState) -> Result<f64> {
+        let inst = trade.instrument();
+        let base = inst.base_currency();
+        let quote = inst.quote_currency();
+
+        let policy = self.discount_policy.as_ref().ok_or_else(|| {
+            QSError::InvalidValueErr("Discount policy required for FX forward pricing".into())
+        })?;
+        let base_idx = policy.accept(&CurrencyDiscountable { currency: base })?;
+        let quote_idx = policy.accept(&CurrencyDiscountable { currency: quote })?;
+
+        let df_base = state
+            .get_discount_curve_element(&base_idx)?
+            .curve()
+            .discount_factor(inst.delivery_date())?;
+        let df_quote = state
+            .get_discount_curve_element(&quote_idx)?
+            .curve()
+            .discount_factor(inst.delivery_date())?;
+
+        let spot = state.get_exchange_rate(base, quote)?;
+        let forward: DualFwd = (spot * df_quote / df_base).into();
+        Ok(forward.value())
+    }
+}
+
 impl HandleSensitivities<FxForwardTrade, FxForwardState> for FxForwardPricer {
     fn handle_sensitivities(
         &self,
@@ -230,6 +259,9 @@ impl Pricer for FxForwardPricer {
                 Request::Value => out = out.with_price(self.handle_value(trade, &mut state)?),
                 Request::Sensitivities => {
                     out = out.with_sensitivities(self.handle_sensitivities(trade, &mut state)?);
+                }
+                Request::FairRate => {
+                    out = out.with_fair_rate(self.handle_fair_rate(trade, &mut state)?);
                 }
                 _ => {}
             }
