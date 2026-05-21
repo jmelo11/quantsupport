@@ -1093,6 +1093,10 @@ impl QuoteDetails {
                 "Identifier has fewer than 3 parts: {s}"
             )));
         }
+	// Previous accepted identifiers:
+	// "FxForwardOutright" | "ForwardOutright"
+	// Added "FxOutrightForward" to support existing test identifiers
+	// and maintain backward compatibility.
 
         match parts[0] {
             "OIS" => Self::parse_ois(s, &parts),
@@ -1104,7 +1108,7 @@ impl QuoteDetails {
             "Future" => Self::parse_future(s, &parts),
             "ConvexityAdjustment" => Self::parse_convexity_adjustment(s, &parts),
             "Swaption" => Self::parse_swaption(s, &parts),
-            "FxForwardOutright" | "ForwardOutright" => Self::parse_outright_forward(s, &parts),
+            "FxForwardOutright" | "FxOutrightForward" | "ForwardOutright" => Self::parse_outright_forward(s, &parts),
             "FloatFloatCrossCurrencySwap" => Self::parse_float_float_cross_currency_swap(s, &parts),
             "FxForwardPoints" | "ForwardPoints" => Self::parse_forward_points(s, &parts),
             "EquityCall" | "Call" => Self::parse_equity_call(s, &parts),
