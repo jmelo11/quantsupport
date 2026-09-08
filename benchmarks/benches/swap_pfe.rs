@@ -110,7 +110,7 @@ fn run_pfe(trades: &[SwapTrade<f64>], curve: &DiscountTermStructure<f64>, ref_da
     let usd_rate = LgmRateModel::new(0.05, 0.005, curve);
 
     let mut model = LgmMarketModel::new(Currency::USD, MarketIndex::SOFR, ref_date, dc)
-        .with_n_paths(1000)
+        .with_n_paths(500)
         .with_seed(42);
 
     model.add_curve_model(MarketIndex::SOFR, usd_rate);

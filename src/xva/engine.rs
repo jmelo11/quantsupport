@@ -754,6 +754,7 @@ struct CurveSnapshot {
     ift_sensitivities: Option<Vec<Vec<f64>>>,
 }
 
+
 /// Snapshot of a bootstrapped credit (survival) curve. The reference-date
 /// node (`S = 1`) is excluded.
 #[derive(Clone)]

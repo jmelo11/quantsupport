@@ -6,16 +6,10 @@ QuantSupport
 Roadmap
 ------------
 
-**QuantSupport** is currently in alpha.
+**QuantSupport** is currently in alpha. The following developments are required to move to a beta state:
 
-- **Available Pricers**
-  - Implement pricers for fundamental products such as swaps, caps, floors, and swaptions, which are essential for supporting more complex financial processes.
-- **Curve Bootstrapping and Volatility Stripping**
-  - Develop robust procedures for generating market-data-derived components required by downstream analytics.
-- **Comprehensive Testing**
-  - Rigorous testing is critical for financial software to ensure reliability and correctness.
-- **Usage Examples**
-  - Provide high-quality examples to help users learn the library and reduce the learning curve.
+- Volatility surface support must be added to the `FxModelConfig` in the XVA engine.
+- `CurveSnapshot` and `CreditCurveSnapshot` should reuse the available curves or create specific ones in the rates module.
 
 Example – Pricing a Vanilla Interest-Rate Swap
 ------------
@@ -127,6 +121,7 @@ License
 -------
 
 QuantSupport is released under the MIT License. Details can be found in the [LICENSE](LICENSE) file.
+
 
 Contact
 -------

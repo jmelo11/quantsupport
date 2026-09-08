@@ -1,0 +1,84 @@
+{
+    "model_configs": [
+        {
+            "market_index": "SOFR",
+            "lambda": 0.05,
+            "volatility": {
+                "Calibrated": {
+                    "source": {
+                        "Surface": {
+                            "market_index": "SOFR"
+                        }
+                    },
+                    "quote_ids": [
+                        "CapletFloorlet_USD_SOFR_3M_6M_Absolute_0.035_Straddle_Black",
+                        "CapletFloorlet_USD_SOFR_3M_6M_Absolute_0.045_Straddle_Black",
+                        "CapletFloorlet_USD_SOFR_3M_6M_Absolute_0.055_Straddle_Black",
+                        "CapletFloorlet_USD_SOFR_3M_1Y_Absolute_0.035_Straddle_Black",
+                        "CapletFloorlet_USD_SOFR_3M_1Y_Absolute_0.045_Straddle_Black",
+                        "CapletFloorlet_USD_SOFR_3M_1Y_Absolute_0.055_Straddle_Black",
+                        "CapletFloorlet_USD_SOFR_3M_2Y_Absolute_0.035_Straddle_Black",
+                        "CapletFloorlet_USD_SOFR_3M_2Y_Absolute_0.045_Straddle_Black",
+                        "CapletFloorlet_USD_SOFR_3M_2Y_Absolute_0.055_Straddle_Black",
+                        "CapletFloorlet_USD_SOFR_3M_3Y_Absolute_0.035_Straddle_Black",
+                        "CapletFloorlet_USD_SOFR_3M_3Y_Absolute_0.045_Straddle_Black",
+                        "CapletFloorlet_USD_SOFR_3M_3Y_Absolute_0.055_Straddle_Black",
+                        "CapletFloorlet_USD_SOFR_3M_4Y_Absolute_0.035_Straddle_Black",
+                        "CapletFloorlet_USD_SOFR_3M_4Y_Absolute_0.045_Straddle_Black",
+                        "CapletFloorlet_USD_SOFR_3M_4Y_Absolute_0.055_Straddle_Black"
+                    ],
+                    "strike": "Atm",
+                    "alpha": 0.05
+                }
+            }
+        },
+        {
+            "market_index": "ICP",
+            "lambda": 0.05,
+            "volatility": {
+                "Calibrated": {
+                    "source": {
+                        "Cube": {
+                            "market_index": "ICP"
+                        }
+                    },
+                    "quote_ids": [
+                        "Swaption_CLP_ICP_6M_1Y_Absolute_0.035_Black",
+                        "Swaption_CLP_ICP_6M_1Y_Absolute_0.045_Black",
+                        "Swaption_CLP_ICP_6M_1Y_Absolute_0.055_Black",
+                        "Swaption_CLP_ICP_1Y_1Y_Absolute_0.035_Black",
+                        "Swaption_CLP_ICP_1Y_1Y_Absolute_0.045_Black",
+                        "Swaption_CLP_ICP_1Y_1Y_Absolute_0.055_Black",
+                        "Swaption_CLP_ICP_2Y_1Y_Absolute_0.035_Black",
+                        "Swaption_CLP_ICP_2Y_1Y_Absolute_0.045_Black",
+                        "Swaption_CLP_ICP_2Y_1Y_Absolute_0.055_Black",
+                        "Swaption_CLP_ICP_3Y_1Y_Absolute_0.035_Black",
+                        "Swaption_CLP_ICP_3Y_1Y_Absolute_0.045_Black",
+                        "Swaption_CLP_ICP_3Y_1Y_Absolute_0.055_Black"
+                    ],
+                    "strike": "Atm",
+                    "alpha": 0.05
+                }
+            }
+        },
+        {
+            "market_index": {
+                "Collateral": [
+                    "CLP",
+                    "USD"
+                ]
+            },
+            "driver": "ICP"
+        }
+    ],
+    "fx_configs": [
+        {
+            "foreign_currency": "CLP",
+            "fx_vol": 0.10,
+            "rho": 0.15
+        }
+    ],
+    "n_paths": 1000,
+    "seed": 42,
+    "frequency": "Monthly"
+}

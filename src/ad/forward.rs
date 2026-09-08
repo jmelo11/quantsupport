@@ -47,10 +47,6 @@ pub type Fwd4 = Fwd<Fwd3>;
 /// [`DualFwd`](crate::ad::dual::DualFwd).
 pub type ADForward = Fwd2;
 
-// ---------------------------------------------------------------------------
-// Seeding
-// ---------------------------------------------------------------------------
-
 /// Scalars that can be seeded as an independent variable at every nesting
 /// level (used by [`Fwd::var`]).
 pub trait FwdSeed: InnerScalar {

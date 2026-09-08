@@ -14,6 +14,7 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     let quote_store = load_quotes(&data_dir.join("quotes.json"))?;
     let ref_date = quote_store.reference_date();
     let curve_specs = load_curve_specs(&data_dir.join("curve_specs.json"))?;
+    
     // Only bootstrap curves we need: SOFR, ICP, Collateral(CLP, USD) and the
     // TermSOFR3m funding-index curve, bootstrapped from a 3M deposit plus
     // OIS-vs-TermSOFR basis swaps.

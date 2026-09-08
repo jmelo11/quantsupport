@@ -3,7 +3,7 @@ members = [".", "examples/bootstrap", "examples/valuation", "examples/sensitivit
 
 [package]
 name = "quantsupport"
-version = "0.1.3"
+version = "0.1.4"
 edition = "2021"
 
 description = "Rust library for derivative pricing and risk analytics."
@@ -11,7 +11,6 @@ license = "MIT"
 repository = "https://github.com/jmelo11/quantsupport"
 keywords = ["finance", "quant", "risk", "pricing", "derivatives"]
 categories = ["finance", "science"]
-readme = "README.md"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

@@ -14,10 +14,6 @@ use crate::ad::scalar::{InnerScalar, Scalar};
 use crate::ad::tape::{Tape, TapeHolder};
 use crate::utils::errors::{QSError, Result};
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Dual<T>
-// ═══════════════════════════════════════════════════════════════════════════
-
 /// A number that participates in reverse-mode automatic differentiation.
 ///
 /// * `Dual<f64>` — first-order backward-mode AD.
@@ -66,14 +62,10 @@ impl<T: Default> Default for Dual<T> {
     }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Constructors & accessors
-// ═══════════════════════════════════════════════════════════════════════════
-
 impl<T: TapeHolder + InnerScalar> Dual<T> {
     /// Creates a new value, registering a leaf on the active tape.
     #[inline]
-    #[must_use] 
+    #[must_use]
     pub fn new(val: f64) -> Self {
         let v = T::scalar(val);
         let node = T::with_tape(super::tape::Tape::new_leaf);
@@ -110,14 +102,14 @@ impl<T: TapeHolder + InnerScalar> Dual<T> {
 
     /// Zero constant (no tape).
     #[inline]
-    #[must_use] 
+    #[must_use]
     pub fn zero() -> Self {
         Self::constant(T::zero())
     }
 
     /// One constant (no tape).
     #[inline]
-    #[must_use] 
+    #[must_use]
     pub fn one() -> Self {
         Self::constant(T::one())
     }
@@ -271,9 +263,7 @@ impl<T: TapeHolder + InnerScalar> Dual<T> {
     }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
 //  Scalar impl for Dual<T>
-// ═══════════════════════════════════════════════════════════════════════════
 
 impl<T: TapeHolder + InnerScalar> Scalar for Dual<T> {
     #[inline]
@@ -364,9 +354,7 @@ impl<T: TapeHolder + InnerScalar> Scalar for Dual<T> {
     }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
 //  Display / Debug
-// ═══════════════════════════════════════════════════════════════════════════
 
 impl<T: fmt::Debug> fmt::Debug for Dual<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -379,9 +367,7 @@ impl<T: fmt::Display> fmt::Display for Dual<T> {
     }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
 //  Comparison (value-based)
-// ═══════════════════════════════════════════════════════════════════════════
 
 impl<T: TapeHolder + InnerScalar> PartialEq for Dual<T> {
     fn eq(&self, o: &Self) -> bool {
@@ -411,16 +397,11 @@ impl<T: TapeHolder + InnerScalar> From<Dual<T>> for f64 {
     }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
 //  Type alias
-// ═══════════════════════════════════════════════════════════════════════════
 
 /// Mixed-mode AD number: backward (1st order) + forward (2nd order).
 pub type DualFwd = Dual<ADForward>;
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Tests
-// ═══════════════════════════════════════════════════════════════════════════
 
 #[cfg(test)]
 mod tests {

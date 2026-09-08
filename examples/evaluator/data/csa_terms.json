@@ -1,0 +1,19 @@
+{
+    "collateral_index": "SOFR",
+    "collateral_currency": "USD",
+    "credit_spread": 0.01,
+    "recovery": 0.40,
+    "funding_index": "TermSOFR3m",
+    "funding_spread_curve": {
+        "dates": [
+            "2026-11-11",
+            "2028-11-11",
+            "2030-11-11"
+        ],
+        "spreads": [
+            0.0040,
+            0.0050,
+            0.0060
+        ]
+    }
+}
