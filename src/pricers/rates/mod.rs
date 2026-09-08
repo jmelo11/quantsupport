@@ -6,5 +6,7 @@ pub mod closedformblackcappricer;
 pub mod closedformhullwhitecapletpricer;
 /// Closed-form Hull-White cap pricer.
 pub mod closedformhullwhitecappricer;
+/// Closed-form Hull-White European swaption pricer.
+pub mod closedformhullwhiteswaptionpricer;
 /// Pricer for rate futures quotes.
 pub mod ratefuturespricer;

@@ -3,7 +3,8 @@ use serde::{Deserialize, Serialize};
 use crate::{
     ad::{dual::DualFwd, scalar::Scalar},
     core::{
-        instrument::Instrument,
+        collateral::Discountable,
+        instrument::{AssetClass, Instrument},
         request::LegsProvider,
         trade::{Side, Trade},
     },
@@ -107,6 +108,23 @@ where
 {
     fn identifier(&self) -> String {
         self.identifier.clone()
+    }
+}
+
+impl<T> Discountable for EuropeanSwaption<T>
+where
+    T: Scalar,
+{
+    fn asset_class(&self) -> AssetClass {
+        AssetClass::InterestRate
+    }
+
+    fn currency(&self) -> Currency {
+        self.currency
+    }
+
+    fn discount_index(&self) -> Option<MarketIndex> {
+        Some(self.market_index.clone())
     }
 }
 

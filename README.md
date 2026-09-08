@@ -9,7 +9,7 @@ QuantSupport is a quantitative-finance library written in Rust, with Python bind
 | Area | Current support |
 | --- | --- |
 | Instruments | Fixed-rate deposits and bonds, floating-rate notes, rate futures, swaps, basis swaps, caps/floors, caplets/floorlets, European swaptions, fixed/float and float/float cross-currency swaps, equity forwards and European options, FX forwards and options, futures, and credit default swaps |
-| Pricing | Generic discounted-cashflow pricing; Black equity, FX, caplet, and cap/floor pricing; Monte Carlo equity option pricing; Hull-White caplet and cap/floor pricing; rate-futures and CDS pricing |
+| Pricing | Generic discounted-cashflow pricing; Black equity, FX, caplet, and cap/floor pricing; Monte Carlo equity option pricing; Hull-White caplet, cap/floor, and European swaption pricing; rate-futures and CDS pricing |
 | Results and risk | NPV, fair rate, cashflow tables, and quote-pillar sensitivities through automatic differentiation; type-erased pricer dispatch through `Evaluator` |
 | Curves | Flat and interpolated term structures, multi-curve bootstrapping, cross-curve dependencies, FX-implied collateral curves, and CDS-based survival-curve bootstrapping |
 | Volatility | Interpolated volatility surfaces and cubes, Black and normal volatility conventions, FX surface orientation, and constant, surface-, cube-, or calibration-driven volatility sources |
@@ -260,7 +260,7 @@ See the [Python README](bindings/python/README.md) and [guided notebook](binding
 
 - The project is still in alpha and does not promise API or serialized-configuration stability yet.
 - The high-level XVA FX model currently accepts constant FX volatility; sourcing FX volatility directly from a constructed surface remains on the roadmap.
-- Some instrument representations are used for curve/volatility calibration or claim decomposition even when no standalone public pricer exists for that product.
+- Instrument definitions and standalone pricing coverage are not yet one-to-one; check the pricing capability list above for the currently available public pricers.
 
 ## Contributing
 

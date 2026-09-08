@@ -137,6 +137,7 @@ pub use crate::{
         rates::{
             closedformblackcapletpricer::ClosedFormBlackCapletPricer,
             closedformblackcappricer::ClosedFormBlackCapPricer,
+            closedformhullwhiteswaptionpricer::ClosedFormHullWhiteSwaptionPricer,
             ratefuturespricer::RateFuturesPricer,
         },
     },
