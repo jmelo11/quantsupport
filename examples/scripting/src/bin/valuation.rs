@@ -43,13 +43,10 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         Currency::USD,
         MarketIndex::SOFR,
     )?;
-    let script_results = script.evaluate(&mut model)?;
-    let scripted_value = match script_results.get("swap") {
-        Some(ScriptValue::Number(value)) => *value,
-        other => return Err(format!("expected numeric scripted swap NPV, got {other:?}").into()),
-    };
-    scripted_value.backward()?;
-    let scripted_npv = scripted_value.value();
+    let script_results = script.evaluate(&mut model, Some("swap"))?;
+    let scripted_npv = *script_results
+        .get("swap")
+        .ok_or_else(|| QSError::ValueNotSetErr("scripted swap NPV".to_string()))?;
     let scripted_sensitivities: HashMap<String, f64> = curve
         .pillars()
         .ok_or_else(|| QSError::ValueNotSetErr("scripted curve pillars".to_string()))?
