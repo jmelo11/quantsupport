@@ -89,9 +89,16 @@ impl HasChildren for IfData {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub enum SpotUnderlying {
+    /// FX spot `first`/`second` (price of one unit of `first` in `second`).
+    Fx { first: Currency, second: Currency },
+    /// Equity spot identified by ticker / index name.
+    Equity(String),
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct SpotData {
-    pub first: Currency,
-    pub second: Currency,
+    pub underlying: SpotUnderlying,
     pub date: Option<Date>,
     pub id: Option<usize>,
 }
@@ -511,8 +518,15 @@ impl Node {
 
     pub fn new_spot(first: Currency, second: Currency, date: Option<Date>) -> Node {
         Node::Spot(SpotData {
-            first,
-            second,
+            underlying: SpotUnderlying::Fx { first, second },
+            date,
+            id: None,
+        })
+    }
+
+    pub fn new_equity_spot(name: String, date: Option<Date>) -> Node {
+        Node::Spot(SpotData {
+            underlying: SpotUnderlying::Equity(name),
             date,
             id: None,
         })

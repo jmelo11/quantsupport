@@ -14,7 +14,7 @@ use crate::{
     indices::marketindex::MarketIndex,
     math::linalg::cholesky,
     math::solvers::solvertraits::Matrix,
-    models::lgm::lgmcomponents::{LgmFxModel, LgmRateModel},
+    models::lgm::lgmcomponents::{LgmEquityModel, LgmFxModel, LgmRateModel},
     time::{date::Date, daycounter::DayCounter},
     utils::errors::{QSError, Result},
     xva::visitors::{
@@ -41,6 +41,7 @@ pub struct LgmMarketModel<'a, T: Scalar> {
     domestic_index: MarketIndex,
     curve_models: HashMap<MarketIndex, LgmRateModel<'a, T>>,
     fx_models: HashMap<Currency, LgmFxModel<'a, T>>,
+    equity_models: HashMap<String, LgmEquityModel<'a, T>>,
     currency_to_index: HashMap<Currency, MarketIndex>,
     fx_spot_indices: HashMap<MarketIndex, Currency>,
     /// Derived curve → driving rate model. Derived curves (e.g. FX-implied
@@ -72,6 +73,7 @@ impl<'a, T: Scalar> LgmMarketModel<'a, T> {
             domestic_index,
             curve_models: HashMap::new(),
             fx_models: HashMap::new(),
+            equity_models: HashMap::new(),
             currency_to_index: HashMap::new(),
             fx_spot_indices: HashMap::new(),
             curve_drivers: HashMap::new(),
@@ -121,6 +123,14 @@ impl<'a, T: Scalar> LgmMarketModel<'a, T> {
         self.fx_models.insert(currency, model);
     }
 
+    /// Adds an equity model for the given underlying name.
+    ///
+    /// [`SpotRequest`]s referencing [`MarketIndex::Equity`] with this name
+    /// are resolved from the simulated equity spot.
+    pub fn add_equity_model(&mut self, name: String, model: LgmEquityModel<'a, T>) {
+        self.equity_models.insert(name, model);
+    }
+
     /// Declares `index` as a derived curve driven by `driver`'s factor.
     ///
     /// The derived curve's rate model should be built with the driver's
@@ -156,10 +166,12 @@ impl<'a, T: Scalar> LgmMarketModel<'a, T> {
     }
 
     /// Factor ordering:
-    ///   [`z_dom` (0), `z_for_1` (1), ..., `z_for_N` (N), `x_1` (N+1), ..., `x_N` (2N)]
+    ///   [`z_dom` (0), `z_for_1` (1), ..., `z_for_N` (N), `x_1` (N+1), ..., `x_N` (2N),
+    ///    `s_1` (2N+1), ..., `s_M` (2N+M)]
     ///
-    /// Returns (`rate_indices`, `fx_currencies`) where `rate_indices`[0] = domestic.
-    fn build_factor_ordering(&self) -> (Vec<MarketIndex>, Vec<Currency>) {
+    /// Returns (`rate_indices`, `fx_currencies`, `equity_names`) where
+    /// `rate_indices`[0] = domestic. Equity names are sorted for determinism.
+    fn build_factor_ordering(&self) -> (Vec<MarketIndex>, Vec<Currency>, Vec<String>) {
         let mut rate_indices = vec![self.domestic_index.clone()];
         let mut fx_currencies = Vec::new();
 
@@ -172,7 +184,10 @@ impl<'a, T: Scalar> LgmMarketModel<'a, T> {
             fx_currencies.push(*ccy);
         }
 
-        (rate_indices, fx_currencies)
+        let mut equity_names: Vec<String> = self.equity_models.keys().cloned().collect();
+        equity_names.sort();
+
+        (rate_indices, fx_currencies, equity_names)
     }
 }
 
@@ -189,6 +204,7 @@ struct LgmPathContext<'a, T: Scalar> {
     times: Vec<f64>,
     rate_indices: Vec<MarketIndex>,
     fx_currencies: Vec<Currency>,
+    equity_names: Vec<String>,
     cholesky_l: Vec<Vec<f64>>,
     n_factors: usize,
 }
@@ -201,10 +217,11 @@ unsafe impl<T: Scalar> Send for LgmPathContext<'_, T> {}
 
 impl<'a, T: Scalar> LgmPathContext<'a, T> {
     fn new(model: &'a LgmMarketModel<'a, T>) -> Self {
-        let (rate_indices, fx_currencies) = model.build_factor_ordering();
+        let (rate_indices, fx_currencies, equity_names) = model.build_factor_ordering();
         let n_rates = rate_indices.len();
         let n_fx = fx_currencies.len();
-        let n_factors = n_rates + n_fx;
+        let n_eq = equity_names.len();
+        let n_factors = n_rates + n_fx + n_eq;
 
         let cholesky_l = model.correlation_matrix.as_ref().map_or_else(
             || {
@@ -228,6 +245,7 @@ impl<'a, T: Scalar> LgmPathContext<'a, T> {
             times,
             rate_indices,
             fx_currencies,
+            equity_names,
             cholesky_l,
             n_factors,
         }
@@ -252,6 +270,15 @@ impl<'a, T: Scalar> LgmPathContext<'a, T> {
             .collect();
 
         let mut x_history: Vec<HashMap<Currency, T>> = Vec::with_capacity(n_dates);
+
+        // Equity spot state.
+        let mut s: HashMap<String, T> = self
+            .equity_names
+            .iter()
+            .map(|name| (name.clone(), self.model.equity_models[name].initial_spot()))
+            .collect();
+        let mut s_history: Vec<HashMap<String, T>> = Vec::with_capacity(n_dates);
+
         let mut scenario: Vec<Vec<SimulationResponse<T>>> = Vec::with_capacity(n_dates);
 
         // Pre-allocate scratch buffers for normals and correlated increments
@@ -336,6 +363,19 @@ impl<'a, T: Scalar> LgmPathContext<'a, T> {
             }
 
             x_history.push(x.clone());
+
+            // 4b. Evolve equity spots (log-Euler, domestic short rate minus dividend yield)
+            if dt > 1e-14 {
+                for (ei, name) in self.equity_names.iter().enumerate() {
+                    let eq_model = &self.model.equity_models[name];
+                    let eq_pos = rate_count + self.fx_currencies.len() + ei;
+                    let s_curr = s[name];
+                    let new_s =
+                        eq_model.evolve_spot_log_euler(t, s_curr, z[0], dt, dw[eq_pos])?;
+                    s.insert(name.clone(), new_s);
+                }
+            }
+            s_history.push(s.clone());
 
             // 5. Build SimulationResponse for each request at this date
             let eval_date = self.model.dates[step];
@@ -442,16 +482,20 @@ impl<'a, T: Scalar> LgmPathContext<'a, T> {
                 if let Some(spot_req) = &req.spot_request {
                     let idx = spot_req.market_index();
                     let obs_date = spot_req.date();
+                    let obs_step = self
+                        .model
+                        .dates
+                        .iter()
+                        .rposition(|d| *d <= obs_date)
+                        .unwrap_or(step)
+                        .min(n_dates - 1);
                     if let Some(ccy) = self.model.fx_spot_indices.get(&idx) {
-                        let obs_step = self
-                            .model
-                            .dates
-                            .iter()
-                            .rposition(|d| *d <= obs_date)
-                            .unwrap_or(step)
-                            .min(n_dates - 1);
                         if let Some(&fx_spot) = x_history[obs_step].get(ccy) {
                             step_responses[ri].spots = Some(fx_spot);
+                        }
+                    } else if let MarketIndex::Equity(name) = &idx {
+                        if let Some(&eq_spot) = s_history[obs_step].get(name) {
+                            step_responses[ri].spots = Some(eq_spot);
                         }
                     }
                 }

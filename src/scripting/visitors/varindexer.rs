@@ -1,14 +1,14 @@
 use crate::{
     core::marketdatahandling::{
         discountrequest::DiscountRequest, forwardraterequest::ForwardRateRequest,
-        fxrequest::FxRequest,
+        fxrequest::FxRequest, spotrequest::SpotRequest,
     },
     currencies::currency::Currency,
     indices::marketindex::MarketIndex,
     scripting::{
         nodes::{
             event::EventStream,
-            node::{HasChildren, Node},
+            node::{HasChildren, Node, SpotUnderlying},
             traits::NodeVisitor,
         },
         request::SimulationDataRequest,
@@ -313,15 +313,6 @@ impl NodeVisitor for VarIndexer {
                 match data.id {
                     Some(_) => {}
                     None => {
-                        let size = self
-                            .market_requests
-                            .borrow_mut()
-                            .last()
-                            .ok_or(ScriptingError::NotFoundError(
-                                "No market requests found".to_string(),
-                            ))?
-                            .fxs()
-                            .len();
                         let event_date =
                             self.event_date
                                 .borrow()
@@ -329,14 +320,28 @@ impl NodeVisitor for VarIndexer {
                                     "Event date is not set".to_string(),
                                 ))?;
                         let ref_date = data.date.unwrap_or(event_date);
-                        self.market_requests
-                            .borrow_mut()
-                            .last_mut()
-                            .ok_or(ScriptingError::NotFoundError(
-                                "No market requests found".to_string(),
-                            ))?
-                            .push_fx(FxRequest::pair(data.first, data.second).with_date(ref_date));
-                        data.id = Some(size);
+                        let mut requests = self.market_requests.borrow_mut();
+                        let last =
+                            requests
+                                .last_mut()
+                                .ok_or(ScriptingError::NotFoundError(
+                                    "No market requests found".to_string(),
+                                ))?;
+                        match &data.underlying {
+                            SpotUnderlying::Fx { first, second } => {
+                                let size = last.fxs().len();
+                                last.push_fx(FxRequest::pair(*first, *second).with_date(ref_date));
+                                data.id = Some(size);
+                            }
+                            SpotUnderlying::Equity(name) => {
+                                let size = last.spots().len();
+                                last.push_spot(SpotRequest::new(
+                                    MarketIndex::Equity(name.clone()),
+                                    ref_date,
+                                ));
+                                data.id = Some(size);
+                            }
+                        }
                     }
                 };
                 Ok(())

@@ -39,6 +39,7 @@ struct EventResponseMap {
     discounts: ResponseRange,
     forwards: ResponseRange,
     fx: ResponseRange,
+    spots: ResponseRange,
 }
 
 /// Compiled event stream ready to run on an existing market model.
@@ -164,6 +165,7 @@ impl ScriptEngine {
                     ]
                 }))
                 .chain(request.fxs().iter().filter_map(|fx| fx.date()))
+                .chain(request.spots().iter().map(|spot| spot.date()))
         });
         event_dates
             .into_iter()
@@ -384,6 +386,9 @@ impl ScriptEngine {
                     collect_responses(responses, mapping.fx, event_index, "FX", |response| {
                         response.fx_rates
                     })?,
+                    collect_responses(responses, mapping.spots, event_index, "spot", |response| {
+                        response.spots
+                    })?,
                 ))
             })
             .collect()
@@ -415,6 +420,9 @@ impl ScriptEngine {
                     )?,
                     collect_responses(responses, mapping.fx, event_index, "FX", |response| {
                         response.fx_rates
+                    })?,
+                    collect_responses(responses, mapping.spots, event_index, "spot", |response| {
+                        response.spots
                     })?,
                 ))
             })
@@ -461,6 +469,18 @@ fn flatten_requests(
                 }),
         );
 
+        let spot_start = flattened.len();
+        flattened.extend(
+            request
+                .spots()
+                .iter()
+                .cloned()
+                .map(|spot_request| SimulationRequest {
+                    spot_request: Some(spot_request),
+                    ..SimulationRequest::default()
+                }),
+        );
+
         maps.push(EventResponseMap {
             discounts: ResponseRange {
                 start: discount_start,
@@ -473,6 +493,10 @@ fn flatten_requests(
             fx: ResponseRange {
                 start: fx_start,
                 len: request.fxs().len(),
+            },
+            spots: ResponseRange {
+                start: spot_start,
+                len: request.spots().len(),
             },
         });
     }
@@ -562,6 +586,71 @@ mod tests {
         assert!(
             (event_discount.adjoint()?.value() - 100.0).abs() < 1.0e-8,
             "pillar adjoints must be accumulated by evaluate itself"
+        );
+
+        Tape::stop_recording_fwd();
+        Ok(())
+    }
+
+    #[test]
+    fn evaluates_equity_spot_script_with_lgm_equity_model() -> Result<()> {
+        use crate::models::lgm::lgmcomponents::LgmEquityModel;
+
+        Tape::start_recording_fwd();
+
+        let reference_date = Date::new(2025, 1, 1);
+        let event_date = reference_date.advance(1, TimeUnit::Years);
+        let day_counter = DayCounter::Actual365;
+        let rate = 0.05_f64;
+        let tau = day_counter.year_fraction(reference_date, event_date);
+        let event_discount_value = (-rate * tau).exp();
+        let curve = DiscountTermStructure::<DualFwd>::new(
+            vec![reference_date, event_date],
+            vec![DualFwd::one(), DualFwd::new(event_discount_value)],
+            day_counter,
+            Interpolator::LogLinear,
+            true,
+        )?;
+        let rate_model = LgmRateModel::new(DualFwd::scalar(0.05), DualFwd::zero(), &curve);
+        let eq_rate_model = LgmRateModel::new(DualFwd::scalar(0.05), DualFwd::zero(), &curve);
+        let spot_0 = DualFwd::new(100.0);
+        // Zero vol and zero dividend yield: S_T = S_0 * exp(r * tau) exactly,
+        // so the discounted payoff equals S_0 on every path.
+        let equity_model = LgmEquityModel::new(
+            &eq_rate_model,
+            DualFwd::zero(),
+            spot_0,
+            DualFwd::zero(),
+            DualFwd::zero(),
+        );
+        let mut model = LgmMarketModel::new(
+            Currency::USD,
+            MarketIndex::SOFR,
+            reference_date,
+            day_counter,
+        )
+        .with_n_paths(4)
+        .with_seed(7);
+        model.add_curve_model(MarketIndex::SOFR, rate_model);
+        model.add_equity_model("ACME".to_string(), equity_model);
+
+        let events = EventStream::try_from(vec![CodedEvent::new(
+            event_date,
+            "payoff = 0; payoff pays Spot(\"ACME\");".to_string(),
+        )])?;
+        let engine = ScriptEngine::new(events, reference_date, Currency::USD, MarketIndex::SOFR)?;
+        let values = engine.evaluate(&mut model, Some("payoff"))?;
+        let value = *values.get("payoff").ok_or_else(|| {
+            ScriptingError::EvaluationError("expected numeric payoff result".to_string())
+        })?;
+
+        assert!(
+            (value - 100.0).abs() < 1.0e-5,
+            "discounted zero-vol equity forward must equal spot, got {value}"
+        );
+        assert!(
+            (spot_0.adjoint()?.value() - 1.0).abs() < 1.0e-6,
+            "d(value)/d(spot) must be 1 for a zero-vol forward"
         );
 
         Tape::stop_recording_fwd();

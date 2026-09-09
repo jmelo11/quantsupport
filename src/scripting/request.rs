@@ -2,6 +2,7 @@
 
 use crate::core::marketdatahandling::{
     discountrequest::DiscountRequest, forwardraterequest::ForwardRateRequest, fxrequest::FxRequest,
+    spotrequest::SpotRequest,
 };
 
 /// Market data required to evaluate one scripted event.
@@ -13,6 +14,7 @@ pub struct SimulationDataRequest {
     discounts: Vec<DiscountRequest>,
     forwards: Vec<ForwardRateRequest>,
     fx: Vec<FxRequest>,
+    spots: Vec<SpotRequest>,
     requires_numeraire: bool,
 }
 
@@ -24,6 +26,7 @@ impl SimulationDataRequest {
             discounts: Vec::new(),
             forwards: Vec::new(),
             fx: Vec::new(),
+            spots: Vec::new(),
             requires_numeraire: false,
         }
     }
@@ -35,6 +38,7 @@ impl SimulationDataRequest {
             discounts: Vec::with_capacity(discounts),
             forwards: Vec::with_capacity(forwards),
             fx: Vec::with_capacity(fx),
+            spots: Vec::new(),
             requires_numeraire: false,
         }
     }
@@ -54,6 +58,11 @@ impl SimulationDataRequest {
         self.fx.push(request);
     }
 
+    /// Adds an equity/asset spot request.
+    pub fn push_spot(&mut self, request: SpotRequest) {
+        self.spots.push(request);
+    }
+
     /// Discount-factor requests in expression-index order.
     #[must_use]
     pub fn dfs(&self) -> &[DiscountRequest] {
@@ -70,6 +79,12 @@ impl SimulationDataRequest {
     #[must_use]
     pub fn fxs(&self) -> &[FxRequest] {
         &self.fx
+    }
+
+    /// Spot requests in expression-index order.
+    #[must_use]
+    pub fn spots(&self) -> &[SpotRequest] {
+        &self.spots
     }
 
     /// Marks the event as requiring reference-date discounting.

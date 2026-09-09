@@ -478,6 +478,96 @@ impl<T: Scalar> LgmFxModel<'_, T> {
     }
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+//  LgmEquityModel
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// LGM equity model: lognormal spot with stochastic (LGM) domestic short rate
+/// and a constant continuous dividend yield.
+///
+/// Structurally identical to [`LgmFxModel`] with the foreign short rate
+/// replaced by the dividend yield `q`: under the domestic measure the spot
+/// drift is `rho·α₀·H₀·σ + r_dom(t) − q`.
+pub struct LgmEquityModel<'a, T: Scalar> {
+    domestic: &'a LgmRateModel<'a, T>,
+    vol: T,
+    spot_0: T,
+    dividend_yield: T,
+    rho_zs_dom: T, // corr(dz_dom, dW_S)
+}
+
+impl<'a, T: Scalar> LgmEquityModel<'a, T> {
+    /// Creates a new LGM equity model.
+    #[must_use]
+    pub const fn new(
+        domestic: &'a LgmRateModel<'a, T>,
+        vol: T,
+        spot_0: T,
+        dividend_yield: T,
+        rho_zs_dom: T,
+    ) -> Self {
+        Self {
+            domestic,
+            vol,
+            spot_0,
+            dividend_yield,
+            rho_zs_dom,
+        }
+    }
+
+    /// Returns the equity volatility.
+    #[must_use]
+    pub const fn vol(&self) -> T {
+        self.vol
+    }
+
+    /// Returns the initial equity spot.
+    #[must_use]
+    pub const fn initial_spot(&self) -> T {
+        self.spot_0
+    }
+
+    /// Computes the equity drift under the domestic measure.
+    ///
+    /// # Errors
+    /// Returns an error if short rate computation fails.
+    pub fn drift(&self, t: f64, z_dom: T) -> Result<T> {
+        let r_0 = self.domestic.short_rate(t, z_dom)?;
+        let alpha_0 = self.domestic.alpha(t);
+        let h_0 = self.domestic.H(t);
+        // rho * α_0 * H_0 * σ + r_0 - q
+        Ok(self
+            .rho_zs_dom
+            .mul_val(alpha_0)
+            .mul_val(h_0)
+            .mul_val(self.vol)
+            .add_val(r_0)
+            .sub_val(self.dividend_yield))
+    }
+
+    /// Evolves the equity spot using log-Euler discretization.
+    ///
+    /// # Errors
+    /// Returns an error if drift computation fails.
+    pub fn evolve_spot_log_euler(
+        &self,
+        t: f64,
+        s_t: T,
+        z_dom: T,
+        dt: f64,
+        dw_s: f64,
+    ) -> Result<T> {
+        let mu = self.drift(t, z_dom)?;
+        // mu - 0.5 σ²
+        let mu_log = mu.sub_val(T::scalar(0.5).mul_val(self.vol).mul_val(self.vol));
+        // s * exp(mu_log * dt + σ * dW)
+        let exponent = mu_log
+            .mul_val(T::scalar(dt))
+            .add_val(self.vol.mul_val(T::scalar(dw_s)));
+        Ok(s_t.mul_val(exponent.exp()))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::{cell::RefCell, collections::BTreeMap, rc::Rc, str::FromStr};

@@ -9,7 +9,7 @@ use crate::{
     ad::expr::FloatExt,
     scripting::{
         data::simulationdata::{Scenario, SimulationData},
-        nodes::{event::EventStream, node::Node, traits::NodeConstVisitor},
+        nodes::{event::EventStream, node::Node, node::SpotUnderlying, traits::NodeConstVisitor},
         utils::errors::{Result, ScriptingError},
         NumericType,
     },
@@ -281,7 +281,11 @@ impl<'a> NodeConstVisitor for SingleScenarioEvaluator<'a> {
                         "Spot not found".to_string(),
                     ))?;
 
-                self.digit_stack.borrow_mut().push(market_data.get_fx(id)?);
+                let value = match &data.underlying {
+                    SpotUnderlying::Fx { .. } => market_data.get_fx(id)?,
+                    SpotUnderlying::Equity(_) => market_data.get_spot(id)?,
+                };
+                self.digit_stack.borrow_mut().push(value);
                 Ok(())
             }
             Node::Df(data) => {
@@ -1925,6 +1929,7 @@ mod ai_gen_tests {
             vec![NumericType::new(0.5)],
             Vec::new(),
             Vec::new(),
+            Vec::new(),
         )];
 
         let indexer = VarIndexer::new().with_event_date(event_date);
@@ -1960,6 +1965,7 @@ mod ai_gen_tests {
             vec![NumericType::new(0.5)],
             Vec::new(),
             vec![NumericType::new(0.8)],
+            Vec::new(),
         )];
 
         let indexer = VarIndexer::new()

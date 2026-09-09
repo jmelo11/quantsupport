@@ -125,7 +125,7 @@ pub use crate::{
             hullwhitemodel::HullWhite,
         },
         lgm::{
-            lgmcomponents::{LgmFxModel, LgmRateModel},
+            lgmcomponents::{LgmEquityModel, LgmFxModel, LgmRateModel},
             lgmmarketmodel::LgmMarketModel,
         },
         modelconfiguration::{ModelConfiguration, SimulationConfiguration},

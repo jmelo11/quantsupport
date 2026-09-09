@@ -744,12 +744,30 @@ impl Parser {
         self.advance();
         self.expect_token(Token::OpenParen)?;
         self.advance();
-        let first = match self.parse_string()? {
-            Node::String(s) => {
-                Currency::try_from(s).map_err(|_| self.invalid_syntax_err("Invalid currency"))?
-            }
+        let first_str = match self.parse_string()? {
+            Node::String(s) => s,
             _ => return Err(self.invalid_syntax_err("Invalid argument, expected string")),
         };
+
+        // Non-currency first argument => equity spot: Spot("AAPL"[, "date"]).
+        let Ok(first) = Currency::try_from(first_str.clone()) else {
+            let mut date: Option<Date> = None;
+            if self.current_token() == Token::Comma {
+                self.advance();
+                let date_str = match self.parse_string()? {
+                    Node::String(s) => s,
+                    _ => return Err(self.invalid_syntax_err("Invalid argument, expected string")),
+                };
+                date = Some(
+                    Date::from_str(&date_str, "%Y-%m-%d")
+                        .map_err(|_| self.invalid_syntax_err("Invalid date"))?,
+                );
+            }
+            self.expect_token(Token::CloseParen)?;
+            self.advance();
+            return Ok(Node::new_equity_spot(first_str, date));
+        };
+
         let mut second: Currency = Currency::USD;
         let mut date: Option<Date> = None;
         if self.current_token() == Token::Comma {

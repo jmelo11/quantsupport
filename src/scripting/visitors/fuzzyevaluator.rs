@@ -4,7 +4,7 @@ use crate::{
     ad::expr::FloatExt,
     scripting::{
         data::simulationdata::{Scenario, SimulationData},
-        nodes::{node::Node, traits::NodeConstVisitor},
+        nodes::{node::Node, node::SpotUnderlying, traits::NodeConstVisitor},
         utils::errors::{Result, ScriptingError},
         visitors::evaluator::Value,
         NumericType,
@@ -252,7 +252,11 @@ impl<'a> NodeConstVisitor for FuzzyEvaluator<'a> {
                     .ok_or(ScriptingError::EvaluationError("No scenario set".into()))?
                     .get(*self.current_event.borrow())
                     .ok_or(ScriptingError::EvaluationError("Spot not found".into()))?;
-                self.digit_stack.borrow_mut().push(market_data.get_fx(id)?);
+                let value = match &data.underlying {
+                    SpotUnderlying::Fx { .. } => market_data.get_fx(id)?,
+                    SpotUnderlying::Equity(_) => market_data.get_spot(id)?,
+                };
+                self.digit_stack.borrow_mut().push(value);
                 Ok(())
             }
             Node::Df(data) => {

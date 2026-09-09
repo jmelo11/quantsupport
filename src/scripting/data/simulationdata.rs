@@ -8,6 +8,7 @@ pub struct SimulationData {
     dfs: Vec<NumericType>,
     fwds: Vec<NumericType>,
     fxs: Vec<NumericType>,
+    spots: Vec<NumericType>,
 }
 
 impl SimulationData {
@@ -16,12 +17,14 @@ impl SimulationData {
         dfs: Vec<NumericType>,
         fwds: Vec<NumericType>,
         fxs: Vec<NumericType>,
+        spots: Vec<NumericType>,
     ) -> SimulationData {
         SimulationData {
             numeraire,
             dfs,
             fwds,
             fxs,
+            spots,
         }
     }
 
@@ -66,6 +69,20 @@ impl SimulationData {
             .cloned()
             .ok_or(ScriptingError::NotFoundError(format!(
                 "fx at index {}",
+                index
+            )))
+    }
+
+    pub fn spots(&self) -> &[NumericType] {
+        &self.spots
+    }
+
+    pub fn get_spot(&self, index: usize) -> Result<NumericType> {
+        self.spots
+            .get(index)
+            .cloned()
+            .ok_or(ScriptingError::NotFoundError(format!(
+                "spot at index {}",
                 index
             )))
     }
