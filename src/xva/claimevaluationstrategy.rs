@@ -6,6 +6,7 @@
 
 use crate::{
     instruments::cashflows::payoffops::PayoffOps,
+    scripting::product::ScriptedPayoff,
     time::{date::Date, daycounter::DayCounter},
     xva::contigentclaim::ContingentClaim,
 };
@@ -41,6 +42,7 @@ pub enum PathAggregator {
 /// | [`SpotPayoff`](Self::SpotPayoff) | Equity/FX options |
 /// | [`PathDependent`](Self::PathDependent) | Asian, lookback |
 /// | [`ExerciseContingent`](Self::ExerciseContingent) | Bermudans, callables |
+/// | [`Scripted`](Self::Scripted) | Conditional or path-dependent scripted payments |
 pub enum ClaimEvaluationStrategy {
     /// Known amount (fixed coupons, redemptions, disbursements).
     Deterministic {
@@ -106,5 +108,11 @@ pub enum ClaimEvaluationStrategy {
         exercise_group: usize,
         /// Inner claim realised upon exercise.
         inner: Box<ContingentClaim>,
+    },
+
+    /// Raw payoff produced by one indexed `pays` expression in a script.
+    Scripted {
+        /// Compiled script and the payment to capture when it is evaluated.
+        payoff: ScriptedPayoff,
     },
 }

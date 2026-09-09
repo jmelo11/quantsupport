@@ -12,8 +12,7 @@
 use crate::{
     core::marketdatahandling::{
         discountrequest::DiscountRequest, forwardraterequest::ForwardRateRequest,
-        fxrequest::FxRequest, pathdependentrequest::PathDependentRequest,
-        spotrequest::SpotRequest,
+        fxrequest::FxRequest, pathdependentrequest::PathDependentRequest, spotrequest::SpotRequest,
     },
     xva::nettingset::NettingSet,
 };
@@ -26,8 +25,9 @@ use super::{
 /// Declares the market data a [`ContingentClaim`](crate::xva::contigentclaim::ContingentClaim) needs for simulation.
 ///
 /// Each field is optional — `None` means the claim does not require that
-/// data category.  The [`PreprocessorExecutor`] collects one of these per claim and
-/// passes the full list to the [`MarketModel`](super::marketmodel::MarketModel).
+/// data category. The [`PreprocessorExecutor`] collects each claim's complete
+/// response block and passes the flat list to the
+/// [`MarketModel`](super::marketmodel::MarketModel).
 #[derive(Default, Clone)]
 pub struct SimulationRequest {
     /// Discount factor request.
@@ -124,19 +124,19 @@ impl PreprocessorExecutor {
             // Phase 3 + 4: discount resolution & index assignment.
             let (policy, claims) = ns.discount_policy_and_claims_mut();
             for claim in claims {
-                let mut request = claim.simulation_request();
+                let mut requests = claim.simulation_requests();
                 if let Ok(discount_index) = policy.accept(claim) {
-                    request.discount_request =
+                    requests[0].discount_request =
                         Some(DiscountRequest::new(discount_index, claim.payment_date()));
                 }
                 claim.set_idx(global_idx);
-                self.requests.push(request);
-                global_idx += 1;
+                global_idx += requests.len();
+                self.requests.extend(requests);
             }
         }
     }
 
-    /// Returns the collected simulation requests, one per claim, in visit order.
+    /// Returns the flattened claim response blocks in visit order.
     #[must_use]
     pub fn requests(&self) -> &[SimulationRequest] {
         &self.requests

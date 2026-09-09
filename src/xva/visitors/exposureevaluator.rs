@@ -337,11 +337,10 @@ where
                                 let eval_date = dates[d];
                                 for claim in *claims {
                                     if claim.payment_date() > eval_date {
-                                        if let Some(idx) = claim.idx() {
-                                            let value = claim.evaluate(&date_responses[idx])?;
-                                            ns_npvs[d] = ns_npvs[d].add_val(value);
-                                            ns_npvs_f64[d] += value.value();
-                                        }
+                                        let value =
+                                            claim.evaluate_dualfwd(eval_date, date_responses)?;
+                                        ns_npvs[d] = ns_npvs[d].add_val(value);
+                                        ns_npvs_f64[d] += value.value();
                                     }
                                 }
                             }
@@ -407,10 +406,8 @@ fn reduce_chunk_results(
         .map(|fs| vec![0.0_f64; fs.len()])
         .collect();
     let mut sens_map: HashMap<String, f64> = HashMap::new();
-    let mut merged_cubes: HashMap<String, Vec<Vec<f64>>> = ns_ids
-        .iter()
-        .map(|id| (id.clone(), Vec::new()))
-        .collect();
+    let mut merged_cubes: HashMap<String, Vec<Vec<f64>>> =
+        ns_ids.iter().map(|id| (id.clone(), Vec::new())).collect();
 
     for chunk in chunk_results {
         for (ns, accums) in chunk.xva_accums.iter().enumerate() {

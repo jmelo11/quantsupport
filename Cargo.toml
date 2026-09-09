@@ -1,5 +1,5 @@
 [workspace]
-members = [".", "examples/bootstrap", "examples/valuation", "examples/sensitivity", "examples/evaluator", "examples/volatilitysurface", "examples/hullwhite", "examples/pfe", "examples/cva", "benchmarks", "bindings/python"]
+members = [".", "examples/bootstrap", "examples/valuation", "examples/sensitivity", "examples/evaluator", "examples/volatilitysurface", "examples/hullwhite", "examples/pfe", "examples/cva", "examples/scripting", "benchmarks", "bindings/python"]
 
 [package]
 name = "quantsupport"

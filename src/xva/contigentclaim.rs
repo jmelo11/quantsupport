@@ -1,7 +1,7 @@
 //! The atomic unit of exposure computation.
 //!
 //! A [`ContingentClaim`] represents a single contingent cashflow that can
-//! declare its market-data requirements via [`simulation_request`](ContingentClaim::simulation_request)
+//! declare its market-data requirements via [`simulation_requests`](ContingentClaim::simulation_requests)
 //! and be valued on a simulated scenario via [`evaluate`](ContingentClaim::evaluate).
 //!
 //! Trades are decomposed into one or more `ContingentClaim`s by the
@@ -9,7 +9,7 @@
 //! or the [`MakeContingentClaim`](super::makecontigentclaim::MakeContingentClaim) builder.
 
 use crate::{
-    ad::scalar::Scalar,
+    ad::{dual::DualFwd, scalar::Scalar},
     core::{
         collateral::Discountable,
         instrument::AssetClass,
@@ -22,14 +22,11 @@ use crate::{
     currencies::currency::Currency,
     indices::marketindex::MarketIndex,
     instruments::cashflows::payoffops::PayoffOps,
-    time::{
-        date::Date,
-        daycounter::DayCounter,
-    },
-    utils::errors::Result,
+    time::{date::Date, daycounter::DayCounter},
+    utils::errors::{QSError, Result},
     xva::{
         claimevaluationstrategy::ClaimEvaluationStrategy,
-        visitors::{preprocessorexecutor::SimulationRequest, marketmodel::SimulationResponse},
+        visitors::{marketmodel::SimulationResponse, preprocessorexecutor::SimulationRequest},
     },
 };
 
@@ -91,7 +88,7 @@ impl ContingentClaim {
     /// Prefer using [`MakeContingentClaim`](super::makecontigentclaim::MakeContingentClaim)
     /// for a more ergonomic builder interface.
     #[allow(clippy::too_many_arguments)]
-    #[must_use] 
+    #[must_use]
     pub const fn new(
         trade_id: String,
         leg_id: usize,
@@ -126,79 +123,79 @@ impl ContingentClaim {
     }
 
     /// Returns the trade identifier this claim belongs to.
-    #[must_use] 
+    #[must_use]
     pub fn trade_id(&self) -> &str {
         &self.trade_id
     }
 
     /// Returns the leg identifier within the trade.
-    #[must_use] 
+    #[must_use]
     pub const fn leg_id(&self) -> usize {
         self.leg_id
     }
 
     /// Returns the date on which this cashflow is paid.
-    #[must_use] 
+    #[must_use]
     pub const fn payment_date(&self) -> Date {
         self.payment_date
     }
 
     /// Returns the fixing date, if any.
-    #[must_use] 
+    #[must_use]
     pub const fn fixing_date(&self) -> Option<Date> {
         self.fixing_date
     }
 
     /// Returns the accrual period start date, if any.
-    #[must_use] 
+    #[must_use]
     pub const fn accrual_start(&self) -> Option<Date> {
         self.accrual_start
     }
 
     /// Returns the accrual period end date, if any.
-    #[must_use] 
+    #[must_use]
     pub const fn accrual_end(&self) -> Option<Date> {
         self.accrual_end
     }
 
     /// Returns the payment currency.
-    #[must_use] 
+    #[must_use]
     pub const fn currency(&self) -> Currency {
         self.currency
     }
 
     /// Returns the foreign currency, if this is a multi-currency claim.
-    #[must_use] 
+    #[must_use]
     pub const fn foreign_currency(&self) -> Option<Currency> {
         self.foreign_currency
     }
 
     /// Returns the notional amount.
-    #[must_use] 
+    #[must_use]
     pub const fn notional(&self) -> f64 {
         self.notional
     }
 
     /// Returns the side (long/receive or short/pay).
-    #[must_use] 
+    #[must_use]
     pub const fn side(&self) -> Side {
         self.side
     }
 
     /// Returns the evaluation strategy that defines how the raw payoff is computed.
-    #[must_use] 
+    #[must_use]
     pub const fn evaluation_strategy(&self) -> &ClaimEvaluationStrategy {
         &self.evaluation_strategy
     }
 
     /// Returns the market index for the underlying, if any.
-    #[must_use] 
+    #[must_use]
     pub const fn index(&self) -> Option<&MarketIndex> {
         self.index.as_ref()
     }
 
     /// Returns the flat-vector index assigned by the [`PreprocessorExecutor`](super::visitors::preprocessorexecutor::PreprocessorExecutor).
-    #[must_use] 
+    #[must_use]
     pub const fn idx(&self) -> Option<usize> {
         self.idx
     }
@@ -249,7 +246,7 @@ impl ContingentClaim {
     /// Discounting and reporting-currency conversion are handled by the context
     /// (discount policy / CSA). The claim only declares what market data it needs:
     /// currencies, forward rates, spot observations, or path-dependent observations.
-    #[must_use] 
+    #[must_use]
     pub fn simulation_request(&self) -> SimulationRequest {
         let fx_request = Some(self.foreign_currency.map_or_else(
             || FxRequest::single(self.currency),
@@ -257,7 +254,8 @@ impl ContingentClaim {
         ));
 
         match &self.evaluation_strategy {
-            ClaimEvaluationStrategy::Deterministic { .. } => SimulationRequest {
+            ClaimEvaluationStrategy::Deterministic { .. }
+            | ClaimEvaluationStrategy::Scripted { .. } => SimulationRequest {
                 discount_request: None,
                 forward_rate_request: None,
                 fx_request,
@@ -334,6 +332,19 @@ impl ContingentClaim {
                 }
             }
         }
+    }
+
+    /// Builds the complete response block needed to evaluate this claim.
+    ///
+    /// Most claims need one request. A scripted claim adds the requests used
+    /// while replaying its event stream after that primary discount/FX request.
+    #[must_use]
+    pub fn simulation_requests(&self) -> Vec<SimulationRequest> {
+        let mut requests = vec![self.simulation_request()];
+        if let ClaimEvaluationStrategy::Scripted { payoff } = self.evaluation_strategy() {
+            requests.extend_from_slice(payoff.simulation_requests());
+        }
+        requests
     }
 
     /// Evaluates the linear-rate payoff for the three fixing scenarios.
@@ -438,18 +449,12 @@ impl ContingentClaim {
                 day_counter,
             } => self.eval_nonlinear_rate(response, payoff_ops, *spread, *day_counter),
 
-            ClaimEvaluationStrategy::SpotPayoff {
-                payoff_ops,
-                ..
-            } => {
+            ClaimEvaluationStrategy::SpotPayoff { payoff_ops, .. } => {
                 let spot = response.spots.unwrap_or_else(T::zero);
                 payoff_ops.eval(spot).unwrap_or_else(|_| T::zero())
             }
 
-            ClaimEvaluationStrategy::PathDependent {
-                payoff_ops,
-                ..
-            } => {
+            ClaimEvaluationStrategy::PathDependent { payoff_ops, .. } => {
                 let obs = response.path_dependent_observations.unwrap_or_else(T::zero);
                 payoff_ops.eval(obs).unwrap_or_else(|_| T::zero())
             }
@@ -457,12 +462,65 @@ impl ContingentClaim {
             ClaimEvaluationStrategy::ExerciseContingent { inner, .. } => {
                 inner.evaluate(response)?
             }
+
+            ClaimEvaluationStrategy::Scripted { .. } => {
+                return Err(QSError::NotImplementedErr(
+                    "scripted claims require scenario-row DualFwd evaluation".to_string(),
+                ));
+            }
         };
 
         Ok(raw
             .mul_val(discount)
             .mul_val(fx)
             .mul_val(T::scalar(sign * notional)))
+    }
+
+    /// Evaluates this claim from its indexed response block in a `DualFwd` scenario row.
+    ///
+    /// # Errors
+    /// Returns an error if preprocessing has not assigned an index, the model
+    /// returned an incomplete response block, or the scripted payoff fails.
+    pub fn evaluate_dualfwd(
+        &self,
+        evaluation_date: Date,
+        responses: &[SimulationResponse<DualFwd>],
+    ) -> Result<DualFwd> {
+        let index = self.idx.ok_or_else(|| {
+            QSError::EvaluationErr(format!(
+                "contingent claim '{}' has not been indexed",
+                self.trade_id
+            ))
+        })?;
+        let primary = responses.get(index).ok_or_else(|| {
+            QSError::EvaluationErr(format!(
+                "missing response {index} for contingent claim '{}'",
+                self.trade_id
+            ))
+        })?;
+
+        let ClaimEvaluationStrategy::Scripted { payoff } = self.evaluation_strategy() else {
+            return self.evaluate(primary);
+        };
+
+        let first_script_response = index + 1;
+        let end_script_response = first_script_response + payoff.simulation_requests().len();
+        let script_responses = responses
+            .get(first_script_response..end_script_response)
+            .ok_or_else(|| {
+                QSError::EvaluationErr(format!(
+                    "incomplete scripted response block for contingent claim '{}'",
+                    self.trade_id
+                ))
+            })?;
+        let raw = payoff.evaluate(evaluation_date, script_responses)?;
+        let discount = primary.discounts.unwrap_or_else(DualFwd::one);
+        let fx = primary.fx_rates.unwrap_or_else(DualFwd::one);
+
+        Ok(raw
+            .mul_val(discount)
+            .mul_val(fx)
+            .mul_val(DualFwd::scalar(self.side.sign() * self.notional)))
     }
 }
 

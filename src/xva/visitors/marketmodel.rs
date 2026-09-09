@@ -1,9 +1,10 @@
 //! Market model trait and simulation response types.
 //!
 //! A [`MarketModel`] produces Monte Carlo paths as sequences of
-//! [`SimulationResponse`]s.  Each response corresponds to one claim
-//! at one simulation date and carries the subset of market data that
-//! the claim declared via its [`SimulationRequest`].
+//! [`SimulationResponse`]s. Each response corresponds to one request slot
+//! at one simulation date and carries the subset of market data declared by
+//! its [`SimulationRequest`]. Most claims occupy one slot; composite claims
+//! may own a contiguous response block.
 
 use crate::{
     ad::scalar::Scalar,
@@ -18,7 +19,7 @@ use crate::{
 
 /// A full Monte Carlo path: one `Vec<SimulationResponse<T>>` per simulation date.
 ///
-/// `scenario[d][i]` is the response for claim `i` at simulation date `d`.
+/// `scenario[d][i]` is the response for request slot `i` at simulation date `d`.
 pub type PathScenario<T> = Vec<Vec<SimulationResponse<T>>>;
 
 /// Market data produced by a [`MarketModel`] for a single claim at a single
@@ -70,6 +71,7 @@ where
 /// Implementors (e.g. LGM) must provide:
 /// * [`generate_path`](Self::generate_path) — yields one [`PathScenario`] per MC path.
 /// * [`set_evaluation_dates`](Self::set_evaluation_dates) — configures the time grid.
+/// * [`set_requests`](Self::set_requests) — configures the data produced at each date.
 /// * Individual `resolve_*` methods for each market data category.
 ///
 /// A default [`resolve_request`](Self::resolve_request) implementation dispatches
@@ -86,6 +88,13 @@ pub trait MarketModel<T: Scalar>: Send + Sync {
 
     /// Sets the simulation date grid.
     fn set_evaluation_dates(&mut self, dates: Vec<Date>);
+
+    /// Sets the market-data requests that must be materialized on every path.
+    ///
+    /// XVA preprocessing and the scripting runtime both use the same request
+    /// representation, which keeps model implementations independent of the
+    /// consumer evaluating their paths.
+    fn set_requests(&mut self, requests: Vec<SimulationRequest>);
 
     /// Resolves a full [`SimulationRequest`] into a [`SimulationResponse`]
     /// by dispatching to the individual `resolve_*` methods.

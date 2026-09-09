@@ -1,0 +1,10 @@
+[package]
+name = "scripting-examples"
+version = "0.1.0"
+edition = "2021"
+description = "Scripting valuation and XVA examples for quantsupport"
+license = "MIT"
+publish = false
+
+[dependencies]
+quantsupport = { path = "../.." }

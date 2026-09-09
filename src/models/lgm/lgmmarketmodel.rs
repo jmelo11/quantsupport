@@ -18,8 +18,8 @@ use crate::{
     time::{date::Date, daycounter::DayCounter},
     utils::errors::{QSError, Result},
     xva::visitors::{
-        preprocessorexecutor::SimulationRequest,
         marketmodel::{MarketModel, PathScenario, SimulationResponse},
+        preprocessorexecutor::SimulationRequest,
     },
 };
 
@@ -487,6 +487,10 @@ impl<T: Scalar + 'static> MarketModel<T> for LgmMarketModel<'_, T> {
         self.dates = dates;
     }
 
+    fn set_requests(&mut self, requests: Vec<SimulationRequest>) {
+        self.requests = requests;
+    }
+
     fn resolve_discount_request(&self, eval_date: Date, request: &DiscountRequest) -> Result<T> {
         let idx = request.market_index();
         let curve_model = self
@@ -573,7 +577,11 @@ impl<T: Scalar + 'static> MarketModel<T> for LgmMarketModel<'_, T> {
 // ---------------------------------------------------------------------------
 impl<T: Scalar> LgmMarketModel<'_, T> {
     fn state_z(&self, index: &MarketIndex, date: Date) -> Option<f64> {
-        self.state.rates.get(self.factor_index(index))?.get(&date).copied()
+        self.state
+            .rates
+            .get(self.factor_index(index))?
+            .get(&date)
+            .copied()
     }
 
     fn state_fx(&self, currency: Currency, date: Date) -> Option<f64> {
