@@ -251,13 +251,10 @@ impl ScriptEngine {
             };
             for (name, value) in &values {
                 if let Value::Number(number) = value {
-                    *averages.entry(name.clone()).or_insert(0.0) +=
-                        number.value() / n_scenarios;
+                    *averages.entry(name.clone()).or_insert(0.0) += number.value() / n_scenarios;
                 }
             }
-            if let Some(Value::Number(number)) =
-                result_variable.and_then(|name| values.get(name))
-            {
+            if let Some(Value::Number(number)) = result_variable.and_then(|name| values.get(name)) {
                 let contribution: DualFwd = (*number / n_scenarios).into();
                 if contribution.is_on_tape() {
                     contribution.backward_to_mark()?;
