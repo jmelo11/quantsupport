@@ -1,0 +1,19 @@
+[book]
+title = "The QuantSupport Book"
+authors = ["QuantSupport contributors"]
+description = "A practical guide to derivatives pricing, risk, simulation, and XVA with QuantSupport."
+language = "en"
+src = "book/src"
+
+[build]
+build-dir = "book/html"
+create-missing = false
+
+[output.html]
+git-repository-url = "https://github.com/jmelo11/quantsupport"
+edit-url-template = "https://github.com/jmelo11/quantsupport/edit/main/book/src/{path}"
+site-url = "/quantsupport/"
+
+[output.html.fold]
+enable = true
+level = 1
