@@ -12,7 +12,7 @@ Add the dependency to `Cargo.toml`:
 
 ```toml
 [dependencies]
-quantsupport = "0.1"
+quantsupport = "0.1.6"
 ```
 
 Or, from a checkout of the repository:
