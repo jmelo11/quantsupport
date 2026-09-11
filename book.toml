@@ -9,11 +9,15 @@ src = "book/src"
 build-dir = "book/html"
 create-missing = false
 
+[preprocessor.mermaid]
+command = "mdbook-mermaid"
+
 [output.html]
 git-repository-url = "https://github.com/jmelo11/quantsupport"
 edit-url-template = "https://github.com/jmelo11/quantsupport/edit/main/book/src/{path}"
 site-url = "/quantsupport/"
 mathjax-support = true
+additional-js = ["mermaid.min.js", "mermaid-init.js"]
 
 [output.html.fold]
 enable = true
