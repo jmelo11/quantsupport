@@ -1,6 +1,6 @@
 # Your First Swap
 
-This chapter walks through `examples/valuation/src/main.rs` line by line. It values a five-year receive-fixed USD SOFR swap against a flat curve and asks for NPV, cashflows and curve sensitivities. A flat curve keeps the market setup short; [Curve Bootstrapping](../curves/bootstrapping.md) replaces it with quotes.
+This chapter walks through `examples/valuation/src/main.rs` line by line. It values a five-year receive-fixed USD SOFR swap against a flat curve and asks for NPV, cashflows and curve sensitivities.
 
 Run the finished program with `cargo run -p valuation`.
 

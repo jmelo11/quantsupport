@@ -263,12 +263,12 @@ All examples below are workspace packages and use local JSON market data where a
 The `plot` Cargo feature enables the library's plotting helpers:
 
 ```toml
-quantsupport = { version = "0.1.4", features = ["plot"] }
+quantsupport = { version = "0.1.6", features = ["plot"] }
 ```
 
 ## Python bindings
 
-The Python package exposes typed dates and enums, market-data/configuration objects, curve/volatility/simulation exploration, the supported trade specifications, pricing results as pandas tables, quote scenarios, and the high-level XVA workflow.
+The Python are under development, but a package exposes typed dates and enums, market-data/configuration objects, curve/volatility/simulation exploration, the supported trade specifications, pricing results as pandas tables, quote scenarios, and the high-level XVA workflow.
 
 Build it into the active virtual environment from the repository root:
 
@@ -311,12 +311,6 @@ mdbook serve --open
 ```
 
 Generated HTML is written to `book/html/`.
-
-## Current limitations
-
-- The project is still in alpha and does not promise API or serialized-configuration stability yet.
-- The high-level XVA FX model currently accepts constant FX volatility; sourcing FX volatility directly from a constructed surface remains on the roadmap.
-- Instrument definitions and standalone pricing coverage are not yet one-to-one; check the pricing capability list above for the currently available public pricers.
 
 ## Contributing
 

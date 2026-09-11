@@ -1,6 +1,6 @@
 # Introduction
 
-QuantSupport is a Rust library (crate `quantsupport`, edition 2021, `#![forbid(missing_docs)]`) for building market data, pricing derivatives, measuring risk with automatic differentiation, simulating exposure, and computing XVA. Python bindings built with PyO3 expose the configuration-driven parts of the same API.
+QuantSupport is a Rust library for building market data, pricing derivatives, measuring risk with automatic differentiation, simulating exposure, and computing XVA. Python bindings built with PyO3 expose the configuration-driven parts of the same API.
 
 Everything is organised around one flow:
 
@@ -46,13 +46,5 @@ The single generic scalar parameter `T: Scalar` runs through curves, instruments
 - **Reference** lists the JSON schemas, the runnable examples, and a glossary.
 
 Rust snippets marked `rust,ignore` are extracted from the library and the `examples/` packages but are not compiled as doctests; the full programs are listed in [Examples](reference/examples.md).
-
-## Conventions
-
-- Rates, spreads and volatilities are decimals: `0.05` is 5%, `0.0025` is 25 bp.
-- `Side::LongReceive` receives the fixed/first leg; `Side::PayShort` pays it. `Side::sign()` is `+1`/`-1` respectively.
-- Dates are `Date::new(y, m, d)`; periods are parsed with `Period::from_str("1Y6M")` and support `Date + Period` and `date.advance(n, TimeUnit::Years)`.
-- Fallible operations return `quantsupport::prelude::Result<T>` (alias for `std::result::Result<T, QSError>`); the scripting module has its own `ScriptingError`.
-- JSON keys follow the Rust field names; enums serialise as their variant names (`"SOFR"`, `"Actual360"`, `"LogLinear"`).
 
 Continue with [Installation](getting-started/installation.md).
