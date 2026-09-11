@@ -6,6 +6,8 @@
 //! its [`SimulationRequest`]. Most claims occupy one slot; composite claims
 //! may own a contiguous response block.
 
+#![deny(missing_docs)]
+
 use crate::{
     ad::scalar::Scalar,
     core::marketdatahandling::{
@@ -95,6 +97,17 @@ pub trait MarketModel<T: Scalar>: Send + Sync {
     /// representation, which keeps model implementations independent of the
     /// consumer evaluating their paths.
     fn set_requests(&mut self, requests: Vec<SimulationRequest>);
+
+    /// Optionally identifies the one evaluation date on which each request is
+    /// needed. Portfolio/XVA callers can keep the default (all requests on all
+    /// dates); scripted pricing uses this to avoid quadratic request work.
+    fn set_request_dates(&mut self, _request_dates: Vec<Option<Date>>) {}
+
+    /// Whether generated paths contain only the requests active on each date,
+    /// rather than the full global request vector at every date.
+    fn uses_compact_dated_requests(&self) -> bool {
+        false
+    }
 
     /// Resolves a full [`SimulationRequest`] into a [`SimulationResponse`]
     /// by dispatching to the individual `resolve_*` methods.

@@ -26,7 +26,9 @@ use crate::{
 
 /// Per-trade NPV cube: `npvs[path][date]`.
 pub struct NpvCube {
+    /// Identifier of the trade represented by this cube.
     pub trade_id: String,
+    /// Exposure observation dates corresponding to each path value.
     pub dates: Vec<Date>,
     /// `npvs[path][date]` -- each inner `Vec` has length `dates.len()`.
     pub npvs: Matrix<f64>,

@@ -6,8 +6,8 @@ use crate::{
     time::{date::Date, period::Period},
     utils::errors::{QSError, Result},
     volatility::{
-        volatilityindexing::{F64Key, SmileType, VolatilityType},
         volatilitycube::VolatilityCube,
+        volatilityindexing::{F64Key, SmileType, VolatilityType},
     },
 };
 use std::collections::BTreeMap;

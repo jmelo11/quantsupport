@@ -1,3 +1,20 @@
+/*
+This file is part of QuantSupport's Rust rewrite and adaptation of the
+derivatives scripting code written by Antoine Savine in 2018.
+
+The original code is the strict intellectual property of Antoine Savine.
+
+A license to use and alter the original code for personal and commercial
+applications is freely granted to any person or company that purchased a copy
+of the book:
+
+Modern Computational Finance: Scripting for Derivatives and XVA
+Jesper Andreasen and Antoine Savine
+Wiley, 2018
+
+This attribution and license notice must be preserved at the top of this file.
+*/
+
 use std::cell::{Cell, RefCell};
 
 use crate::{
@@ -14,7 +31,13 @@ use crate::{
 
 const EPS: f64 = 1.0e-12;
 const ONE_MINUS_EPS: f64 = 1.0 - EPS;
+/// Width of an implicit `if` call spread relative to the values being
+/// compared. Two percent keeps pathwise AAD stable for digital payoffs while
+/// leaving the transition narrow relative to the underlying level.
+const AUTO_SMOOTHING_RELATIVE_WIDTH: f64 = 0.02;
+const AUTO_SMOOTHING_MIN_WIDTH: f64 = 1.0e-8;
 
+/// Single-scenario evaluator that smooths conditional branch transitions.
 pub struct FuzzyEvaluator<'a> {
     variables: RefCell<Vec<Value>>,
     digit_stack: RefCell<Vec<NumericType>>,
@@ -36,6 +59,7 @@ pub struct FuzzyEvaluator<'a> {
 
     /// Default smoothing width (ε) when a node does not override it.
     eps: f64,
+    auto_scale_comparisons: bool,
 
     /// Temporary variable stores per *nested-if* level.
     /// `[level][var_index]`
@@ -47,8 +71,7 @@ pub struct FuzzyEvaluator<'a> {
 }
 
 impl<'a> FuzzyEvaluator<'a> {
-    /* ───────────────────────── constructors ───────────────────────── */
-
+    /// Creates an evaluator with variable storage for the maximum conditional depth.
     pub fn new(n_vars: usize, max_nested_ifs: usize) -> Self {
         let mut var_store0 = Vec::with_capacity(max_nested_ifs);
         let mut var_store1 = Vec::with_capacity(max_nested_ifs);
@@ -73,50 +96,61 @@ impl<'a> FuzzyEvaluator<'a> {
             branch_weight: RefCell::new(NumericType::one()),
             dt_stack: RefCell::new(Vec::new()),
             eps: EPS,
+            auto_scale_comparisons: true,
             var_store0: RefCell::new(var_store0),
             var_store1: RefCell::new(var_store1),
             nested_if_lvl: Cell::new(0),
         }
     }
 
+    /// Overrides the smoothing width and disables automatic comparison scaling.
     pub fn with_eps(mut self, eps: f64) -> Self {
         self.eps = eps;
+        self.auto_scale_comparisons = false;
         self
     }
 
+    /// Assigns the market-data scenario used by financial expressions.
     pub fn with_scenario(mut self, scenario: &'a Scenario) -> Self {
         self.scenario = Some(scenario);
         self
     }
 
     #[must_use]
+    /// Excludes payments on or before `valuation_date`.
     pub const fn with_valuation_date(mut self, valuation_date: Date) -> Self {
         self.valuation_date = Some(valuation_date);
         self
     }
 
     #[must_use]
+    /// Captures the undiscounted amount produced by one indexed payment.
     pub const fn with_payment_capture(mut self, payment_id: usize) -> Self {
         self.captured_payment_id = Some(payment_id);
         self
     }
 
-    /* ─────────────────────── public accessors ─────────────────────── */
-
+    /// Returns a snapshot of runtime variables.
     pub fn variables(&self) -> Vec<Value> {
         self.variables.borrow().clone()
     }
 
+    /// Resizes runtime variable storage to `n` slots.
     pub fn with_variables(self, n: usize) -> Self {
         self.variables.borrow_mut().resize(n, Value::Null);
         self
     }
 
+    /// Sets the active event index.
     pub fn with_current_event(self, event: usize) -> Self {
         *self.current_event.borrow_mut() = event;
         self
     }
 
+    /// Returns market data for the active event.
+    ///
+    /// # Errors
+    /// Returns an error if no scenario is set or the event index is invalid.
     pub fn current_market_data(&self) -> Result<&SimulationData> {
         let scenario = self
             .scenario
@@ -126,14 +160,17 @@ impl<'a> FuzzyEvaluator<'a> {
             .ok_or(ScriptingError::EvaluationError("Event not found".into()))
     }
 
+    /// Returns the active event index.
     pub fn current_event(&self) -> usize {
         *self.current_event.borrow()
     }
 
+    /// Replaces the active event index.
     pub fn set_current_event(&self, event: usize) {
         *self.current_event.borrow_mut() = event;
     }
 
+    /// Stores `val` in variable slot `idx`, extending storage if required.
     pub fn set_variable(&self, idx: usize, val: Value) {
         let mut vars = self.variables.borrow_mut();
         if idx >= vars.len() {
@@ -142,15 +179,18 @@ impl<'a> FuzzyEvaluator<'a> {
         vars[idx] = val;
     }
 
+    /// Returns a snapshot of the numeric evaluation stack.
     pub fn digit_stack(&self) -> Vec<NumericType> {
         self.digit_stack.borrow().clone()
     }
 
+    /// Returns a snapshot of the Boolean evaluation stack.
     pub fn boolean_stack(&self) -> Vec<bool> {
         self.boolean_stack.borrow().clone()
     }
 
     #[must_use]
+    /// Returns the selected payment amount if its branch was evaluated.
     pub fn captured_payment_value(&self) -> Option<NumericType> {
         *self.captured_payment_value.borrow()
     }
@@ -197,6 +237,40 @@ impl<'a> FuzzyEvaluator<'a> {
         } else {
             (NumericType::one() - x / rb).into()
         }
+    }
+
+    /// Evaluate a canonical comparison expression and select its smoothing
+    /// width. `IfConditionTransform` rewrites comparisons to `(lhs-rhs) > 0`;
+    /// evaluating the two sides separately lets ordinary `if` statements use
+    /// a scale-aware band even when the threshold is held in a script variable.
+    fn comparison_input(&self, node: &Node) -> Result<(NumericType, f64)> {
+        if self.auto_scale_comparisons {
+            if let Node::Subtract(data) = node {
+                if data.children.len() == 2 {
+                    self.const_visit(&data.children[0])?;
+                    let left = self.digit_stack.borrow_mut().pop().ok_or_else(|| {
+                        ScriptingError::EvaluationError(
+                            "comparison left side produced no numeric value".into(),
+                        )
+                    })?;
+                    self.const_visit(&data.children[1])?;
+                    let right = self.digit_stack.borrow_mut().pop().ok_or_else(|| {
+                        ScriptingError::EvaluationError(
+                            "comparison right side produced no numeric value".into(),
+                        )
+                    })?;
+                    let scale = left.value().abs().max(right.value().abs());
+                    let eps = (scale * AUTO_SMOOTHING_RELATIVE_WIDTH).max(AUTO_SMOOTHING_MIN_WIDTH);
+                    return Ok(((left - right).into(), eps));
+                }
+            }
+        }
+
+        self.const_visit(node)?;
+        let value = self.digit_stack.borrow_mut().pop().ok_or_else(|| {
+            ScriptingError::EvaluationError("comparison produced no numeric value".into())
+        })?;
+        Ok((value, self.eps))
     }
 }
 
@@ -656,26 +730,24 @@ impl<'a> NodeConstVisitor for FuzzyEvaluator<'a> {
 
             /* ─────────────── comparison ─────────────── */
             Node::Equal(data) => {
-                self.const_visit(&data.children[0])?;
-                let expr = self.digit_stack.borrow_mut().pop().unwrap();
+                let (expr, eps) = self.comparison_input(&data.children[0])?;
 
                 let dt = if data.discrete {
                     self.bfly_bounds(expr, data.lb, data.rb)
                 } else {
-                    self.bfly(expr, self.eps)
+                    self.bfly(expr, eps)
                 };
                 self.dt_stack.borrow_mut().push(dt);
                 Ok(())
             }
 
             Node::Superior(data) | Node::SuperiorOrEqual(data) => {
-                self.const_visit(&data.children[0])?;
-                let expr = self.digit_stack.borrow_mut().pop().unwrap();
+                let (expr, eps) = self.comparison_input(&data.children[0])?;
 
                 let dt = if data.discrete {
                     self.c_spr_bounds(expr, data.lb, data.rb)
                 } else {
-                    self.c_spr(expr, self.eps)
+                    self.c_spr(expr, eps)
                 };
                 self.dt_stack.borrow_mut().push(dt);
                 Ok(())
@@ -801,6 +873,10 @@ impl<'a> NodeConstVisitor for FuzzyEvaluator<'a> {
 }
 
 impl FuzzyEvaluator<'_> {
+    /// Evaluates every event and returns values keyed by variable name.
+    ///
+    /// # Errors
+    /// Returns an error when an event expression cannot be evaluated.
     pub fn visit_events(
         &self,
         event_stream: &crate::scripting::nodes::event::EventStream,

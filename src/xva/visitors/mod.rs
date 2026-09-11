@@ -6,8 +6,10 @@
 //!   exposure profiles (EPE/ENE/EE), and optionally XVA values with sensitivities.
 
 pub mod claimcompressionpreprocessor;
+/// Claim preprocessing into simulation requests.
 pub mod claimpreprocessor;
 pub mod exposureevaluator;
+/// Historical-fixing preprocessing.
 pub mod fixingpreprocessor;
 pub mod marketmodel;
 pub mod preprocessorexecutor;

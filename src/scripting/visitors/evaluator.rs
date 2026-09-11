@@ -1,3 +1,20 @@
+/*
+This file is part of QuantSupport's Rust rewrite and adaptation of the
+derivatives scripting code written by Antoine Savine in 2018.
+
+The original code is the strict intellectual property of Antoine Savine.
+
+A license to use and alter the original code for personal and commercial
+applications is freely granted to any person or company that purchased a copy
+of the book:
+
+Modern Computational Finance: Scripting for Derivatives and XVA
+Jesper Andreasen and Antoine Savine
+Wiley, 2018
+
+This attribution and license notice must be preserved at the top of this file.
+*/
+
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use std::{
     cell::RefCell,
@@ -16,27 +33,21 @@ use crate::{
     time::{date::Date, daycounter::DayCounter},
 };
 
-#[cfg(test)]
-use crate::{
-    currencies::currency::Currency,
-    scripting::{
-        nodes::event::Event,
-        nodes::traits::NodeVisitor,
-        parsing::{lexer::Lexer, parser::Parser},
-        visitors::varindexer::VarIndexer,
-    },
-};
-
 /// # Value
 /// Enum representing the possible values of a variable
 /// in the scripting language. We could say that this language
 /// is dynamically typed.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Value {
+    /// Boolean script value.
     Bool(bool),
+    /// Numeric script value with automatic differentiation.
     Number(NumericType),
+    /// String script value.
     String(String),
+    /// Dynamically typed array value.
     Array(Vec<Value>),
+    /// Uninitialized or invalid value.
     Null,
 }
 
@@ -122,6 +133,7 @@ pub struct SingleScenarioEvaluator<'a> {
 }
 
 impl<'a> SingleScenarioEvaluator<'a> {
+    /// Creates an evaluator without variables or scenario data.
     pub fn new() -> Self {
         SingleScenarioEvaluator {
             variables: RefCell::new(Vec::new()),
@@ -140,16 +152,19 @@ impl<'a> SingleScenarioEvaluator<'a> {
         }
     }
 
+    /// Assigns the market-data scenario used by financial expressions.
     pub fn with_scenario(mut self, scenario: &'a Scenario) -> Self {
         self.scenario = Some(scenario);
         self
     }
 
+    /// Initializes `n` runtime variable slots.
     pub fn with_variables(self, n: usize) -> Self {
         self.variables.borrow_mut().resize(n, Value::Null);
         self
     }
 
+    /// Sets the active event index.
     pub fn with_current_event(self, event: usize) -> Self {
         *self.current_event.borrow_mut() = event;
         self
@@ -177,6 +192,10 @@ impl<'a> SingleScenarioEvaluator<'a> {
         *self.captured_payment_value.borrow()
     }
 
+    /// Returns market data for the active event.
+    ///
+    /// # Errors
+    /// Returns an error if no scenario is set or the event index is invalid.
     pub fn current_market_data(&self) -> Result<&SimulationData> {
         let scenario = self.scenario.ok_or(ScriptingError::EvaluationError(
             "No scenario set".to_string(),
@@ -188,18 +207,22 @@ impl<'a> SingleScenarioEvaluator<'a> {
             ))
     }
 
+    /// Returns the active event index.
     pub fn current_event(&self) -> usize {
         *self.current_event.borrow_mut()
     }
 
+    /// Replaces the active event index.
     pub fn set_current_event(&self, event: usize) {
         *self.current_event.borrow_mut() = event;
     }
 
+    /// Returns a snapshot of runtime variables.
     pub fn variables(&self) -> Vec<Value> {
         self.variables.borrow_mut().clone()
     }
 
+    /// Stores `val` in variable slot `idx`, extending storage if required.
     pub fn set_variable(&self, idx: usize, val: Value) {
         let mut vars = self.variables.borrow_mut();
         if idx >= vars.len() {
@@ -208,10 +231,12 @@ impl<'a> SingleScenarioEvaluator<'a> {
         vars[idx] = val;
     }
 
+    /// Returns a snapshot of the numeric evaluation stack.
     pub fn digit_stack(&self) -> Vec<NumericType> {
         self.digit_stack.borrow_mut().clone()
     }
 
+    /// Returns a snapshot of the Boolean evaluation stack.
     pub fn boolean_stack(&self) -> Vec<bool> {
         self.boolean_stack.borrow_mut().clone()
     }
@@ -882,6 +907,10 @@ impl<'a> NodeConstVisitor for SingleScenarioEvaluator<'a> {
 }
 
 impl<'a> SingleScenarioEvaluator<'a> {
+    /// Evaluates every event and returns values keyed by variable name.
+    ///
+    /// # Errors
+    /// Returns an error when an event expression cannot be evaluated.
     pub fn visit_events(
         &self,
         event_stream: &EventStream,
@@ -908,16 +937,22 @@ impl<'a> SingleScenarioEvaluator<'a> {
     }
 }
 
+/// Evaluates and averages an event stream over a collection of scenarios.
 pub struct Evaluator<'a> {
     n_vars: usize,
     scenarios: &'a Vec<Scenario>,
 }
 
 impl<'a> Evaluator<'a> {
+    /// Creates a multi-scenario evaluator with `n_vars` variable slots.
     pub fn new(n_vars: usize, scenarios: &'a Vec<Scenario>) -> Self {
         Evaluator { n_vars, scenarios }
     }
 
+    /// Evaluates scenarios serially and averages numeric variables.
+    ///
+    /// # Errors
+    /// Returns an error when any scenario cannot be evaluated.
     pub fn visit_events(
         &self,
         event_stream: &EventStream,
@@ -953,6 +988,10 @@ impl<'a> Evaluator<'a> {
         Ok(combined_results)
     }
 
+    /// Evaluates scenarios with Rayon and averages numeric variables.
+    ///
+    /// # Errors
+    /// Returns an error when any scenario cannot be evaluated.
     pub fn par_visit_events(
         &self,
         event_stream: &EventStream,
@@ -988,6 +1027,17 @@ impl<'a> Evaluator<'a> {
         Ok(combined_results)
     }
 }
+
+#[cfg(test)]
+use crate::{
+    currencies::currency::Currency,
+    scripting::{
+        nodes::event::Event,
+        nodes::traits::NodeVisitor,
+        parsing::{lexer::Lexer, parser::Parser},
+        visitors::varindexer::VarIndexer,
+    },
+};
 
 #[cfg(test)]
 mod general_tests {

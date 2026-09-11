@@ -173,7 +173,9 @@ pub use crate::{
         nodes::event::{CodedEvent, Event, EventStream},
         product::ScriptedProduct,
         request::SimulationDataRequest,
-        runtime::ScriptEngine,
+        runtime::{
+            ParallelScriptEvaluation, ScriptEngine, ScriptModelCallback, ScriptModelSetup,
+        },
         utils::errors::ScriptingError,
         visitors::evaluator::Value as ScriptValue,
     },

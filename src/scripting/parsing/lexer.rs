@@ -1,48 +1,107 @@
+/*
+This file is part of QuantSupport's Rust rewrite and adaptation of the
+derivatives scripting code written by Antoine Savine in 2018.
+
+The original code is the strict intellectual property of Antoine Savine.
+
+A license to use and alter the original code for personal and commercial
+applications is freely granted to any person or company that purchased a copy
+of the book:
+
+Modern Computational Finance: Scripting for Derivatives and XVA
+Jesper Andreasen and Antoine Savine
+Wiley, 2018
+
+This attribution and license notice must be preserved at the top of this file.
+*/
+
 use crate::scripting::utils::errors::{Result, ScriptingError};
 use std::cell::RefCell;
 
 #[derive(Debug, Clone, PartialEq)]
+/// Lexical token produced from payoff script source text.
 pub enum Token {
+    /// Numeric or Boolean literal.
     Value(Option<f64>, Option<bool>),
+    /// User-defined or function identifier.
     Identifier(String),
+    /// Quoted string literal.
     String(String),
+    /// `+` operator.
     Plus,
+    /// `+=` assignment operator.
     PlusAssign,
+    /// `-` operator.
     Minus,
+    /// `-=` assignment operator.
     MinusAssign,
+    /// `*` operator.
     Multiply,
+    /// `*=` assignment operator.
     MultiplyAssign,
+    /// `/` operator.
     Divide,
+    /// `/=` assignment operator.
     DivideAssign,
+    /// `=` assignment operator.
     Assign,
+    /// `==` comparison operator.
     Equal,
+    /// `!=` comparison operator.
     NotEqual,
+    /// Logical `and` keyword.
     And,
+    /// Logical `or` keyword.
     Or,
+    /// Logical `not` keyword.
     Not,
+    /// Payment `pays` keyword.
     Pays,
+    /// Payment-date `on` keyword.
     On,
+    /// Iteration `in` keyword.
     In,
+    /// `>` comparison operator.
     Superior,
+    /// `<` comparison operator.
     Inferior,
+    /// `>=` comparison operator.
     SuperiorOrEqual,
+    /// `<=` comparison operator.
     InferiorOrEqual,
+    /// Opening parenthesis.
     OpenParen,
+    /// Closing parenthesis.
     CloseParen,
+    /// Opening brace.
     OpenCurlyParen,
+    /// Closing brace.
     CloseCurlyParen,
+    /// Opening square bracket.
     OpenBracket,
+    /// Closing square bracket.
     CloseBracket,
+    /// Conditional `if` keyword.
     If,
+    /// Conditional `then` keyword.
     Then,
+    /// Conditional `else` keyword.
     Else,
+    /// Block `end` keyword.
     End,
+    /// Argument separator.
     Comma,
+    /// Member-access dot.
     Dot,
+    /// `**` power operator.
     Power,
+    /// Loop `for` keyword.
     For,
+    /// Statement terminator.
     Semicolon, // for end of an expression or statement
+    /// Source line terminator.
     Newline,   // for end of a line
+    /// End of input.
     EOF,
 }
 
@@ -54,6 +113,7 @@ pub struct Lexer {
 }
 
 impl Lexer {
+    /// Creates a lexer for `input`.
     pub fn new(input: String) -> Self {
         Self {
             input: input.chars().collect(),
@@ -79,6 +139,10 @@ impl Lexer {
         }
     }
 
+    /// Reads the next token and advances the input position.
+    ///
+    /// # Errors
+    /// Returns an error for invalid characters or malformed literals.
     pub fn next_token(&self) -> Result<Token> {
         self.skip_whitespace();
         let ch = self.next_char();
@@ -234,6 +298,10 @@ impl Lexer {
         }
     }
 
+    /// Tokenizes the entire remaining input.
+    ///
+    /// # Errors
+    /// Returns an error when any token is invalid.
     pub fn tokenize(&self) -> Result<Vec<Token>> {
         let mut tokens = Vec::new();
         loop {
@@ -247,7 +315,12 @@ impl Lexer {
     }
 }
 
+/// Convenience conversion from source text to scripting tokens.
 pub trait Tokenize {
+    /// Tokenizes this source value.
+    ///
+    /// # Errors
+    /// Returns an error when the source contains invalid syntax.
     fn tokenize(&self) -> Result<Vec<Token>>;
 }
 

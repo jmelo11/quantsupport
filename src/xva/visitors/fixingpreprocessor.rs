@@ -27,6 +27,7 @@ pub struct FixingPreprocessor {
 }
 
 impl FixingPreprocessor {
+    /// Creates a preprocessor for fixings observed before `ref_date`.
     #[must_use]
     pub const fn new(ref_date: Date, day_counter: DayCounter, fixing_store: FixingStore) -> Self {
         Self {

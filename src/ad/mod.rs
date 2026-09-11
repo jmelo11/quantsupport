@@ -12,6 +12,8 @@ pub mod constant;
 pub mod dual;
 pub mod expr;
 pub mod forward;
+/// Reverse-mode tape node representation.
 pub mod node;
 pub mod scalar;
+/// Thread-local reverse-mode tape implementation.
 pub mod tape;

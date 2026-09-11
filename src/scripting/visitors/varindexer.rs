@@ -1,3 +1,20 @@
+/*
+This file is part of QuantSupport's Rust rewrite and adaptation of the
+derivatives scripting code written by Antoine Savine in 2018.
+
+The original code is the strict intellectual property of Antoine Savine.
+
+A license to use and alter the original code for personal and commercial
+applications is freely granted to any person or company that purchased a copy
+of the book:
+
+Modern Computational Finance: Scripting for Derivatives and XVA
+Jesper Andreasen and Antoine Savine
+Wiley, 2018
+
+This attribution and license notice must be preserved at the top of this file.
+*/
+
 use crate::{
     core::marketdatahandling::{
         discountrequest::DiscountRequest, forwardraterequest::ForwardRateRequest,
@@ -21,6 +38,7 @@ use std::collections::HashMap;
 
 #[cfg(test)]
 use crate::scripting::nodes::event::Event;
+
 /// # VarIndexer
 /// The VarIndexer is a visitor that traverses the expression tree and indexes all the variables and market requests.
 pub struct VarIndexer {
@@ -321,12 +339,9 @@ impl NodeVisitor for VarIndexer {
                                 ))?;
                         let ref_date = data.date.unwrap_or(event_date);
                         let mut requests = self.market_requests.borrow_mut();
-                        let last =
-                            requests
-                                .last_mut()
-                                .ok_or(ScriptingError::NotFoundError(
-                                    "No market requests found".to_string(),
-                                ))?;
+                        let last = requests.last_mut().ok_or(ScriptingError::NotFoundError(
+                            "No market requests found".to_string(),
+                        ))?;
                         match &data.underlying {
                             SpotUnderlying::Fx { first, second } => {
                                 let size = last.fxs().len();
@@ -499,6 +514,7 @@ impl NodeVisitor for VarIndexer {
 }
 
 impl VarIndexer {
+    /// Creates an empty variable and market-request indexer.
     pub fn new() -> Self {
         VarIndexer {
             variables: RefCell::new(HashMap::new()),
@@ -517,6 +533,7 @@ impl VarIndexer {
         self
     }
 
+    /// Sets the local payment and reporting currency.
     pub fn with_local_currency(self, ccy: Currency) -> Self {
         *self.local_currency.borrow_mut() = Some(ccy);
         self
@@ -556,18 +573,25 @@ impl VarIndexer {
         self.variables.borrow_mut().keys().cloned().collect()
     }
 
+    /// Returns the mapping from variable names to runtime slots.
     pub fn get_variable_indexes(&self) -> HashMap<String, usize> {
         self.variables.borrow_mut().clone()
     }
 
+    /// Returns the number of indexed runtime variables.
     pub fn get_variables_size(&self) -> usize {
         self.variables.borrow_mut().len()
     }
 
+    /// Returns per-event market-data requests built during indexing.
     pub fn get_request(&self) -> Vec<SimulationDataRequest> {
         self.market_requests.borrow_mut().clone()
     }
 
+    /// Indexes all variables, payments, and market requests in `events`.
+    ///
+    /// # Errors
+    /// Returns an error when an expression contains invalid market metadata.
     pub fn visit_events(&self, events: &mut EventStream) -> Result<()> {
         events.mut_events().iter_mut().try_for_each(|event| {
             *self.event_date.borrow_mut() = Some(event.event_date());

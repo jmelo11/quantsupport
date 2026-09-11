@@ -18,6 +18,7 @@ pub mod aggregator;
 pub mod claimevaluationstrategy;
 pub mod contigentclaim;
 pub mod csa;
+/// High-level XVA engine and model setup.
 pub mod engine;
 pub mod makecontigentclaim;
 pub mod nettingset;

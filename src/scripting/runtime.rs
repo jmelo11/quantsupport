@@ -1,6 +1,24 @@
-//! Model-backed scripting runtime.
+/*
+This file is part of QuantSupport's Rust rewrite and adaptation of the
+derivatives scripting code written by Antoine Savine in 2018.
 
-use std::collections::HashMap;
+The original code is the strict intellectual property of Antoine Savine.
+
+A license to use and alter the original code for personal and commercial
+applications is freely granted to any person or company that purchased a copy
+of the book:
+
+Modern Computational Finance: Scripting for Derivatives and XVA
+Jesper Andreasen and Antoine Savine
+Wiley, 2018
+
+This attribution and license notice must be preserved at the top of this file.
+*/
+
+//! Model-backed scripting runtime.
+use std::{collections::HashMap, ops::Range};
+
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
 use crate::{
     ad::{dual::DualFwd, tape::Tape},
@@ -36,10 +54,32 @@ struct ResponseRange {
 
 #[derive(Clone, Copy)]
 struct EventResponseMap {
+    event_start: usize,
     discounts: ResponseRange,
     forwards: ResponseRange,
+    forward_discounts: ResponseRange,
     fx: ResponseRange,
     spots: ResponseRange,
+}
+
+impl EventResponseMap {
+    fn for_layout(self, compact: bool) -> Self {
+        if !compact {
+            return self;
+        }
+        let local = |range: ResponseRange| ResponseRange {
+            start: range.start - self.event_start,
+            len: range.len,
+        };
+        Self {
+            event_start: 0,
+            discounts: local(self.discounts),
+            forwards: local(self.forwards),
+            forward_discounts: local(self.forward_discounts),
+            fx: local(self.fx),
+            spots: local(self.spots),
+        }
+    }
 }
 
 /// Compiled event stream ready to run on an existing market model.
@@ -54,10 +94,52 @@ pub struct ScriptEngine {
     local_discount_index: MarketIndex,
     requests: Vec<SimulationDataRequest>,
     model_requests: Vec<SimulationRequest>,
+    model_request_dates: Vec<Option<Date>>,
     response_maps: Vec<EventResponseMap>,
     variable_indexes: HashMap<String, usize>,
     n_variables: usize,
     max_nested_ifs: usize,
+}
+
+/// Callback used by [`ScriptModelSetup`] to expose a model whose AD leaves
+/// belong to the calling Rayon worker's thread-local tape.
+pub type ScriptModelCallback<'a, R> =
+    dyn FnMut(&mut dyn MarketModel<DualFwd>, &[(String, DualFwd)]) -> Result<R> + 'a;
+
+/// Factory for rebuilding a script market model on each Rayon worker.
+///
+/// A [`DualFwd`] value contains a pointer into a thread-local reverse-mode
+/// tape. Consequently, parallel pricing must rebuild curves, model
+/// parameters, and tracked leaves inside each worker instead of sharing one
+/// model created on the caller's tape.
+pub trait ScriptModelSetup: Send + Sync {
+    /// Returns the total number of Monte Carlo paths.
+    fn n_paths(&self) -> usize;
+
+    /// Builds one model on the current worker's tape and invokes `callback`.
+    ///
+    /// `leaves` contains stable labels and the corresponding AD leaves. Their
+    /// adjoints are reduced across workers by
+    /// [`ScriptEngine::evaluate_parallel`].
+    ///
+    /// # Errors
+    /// Returns an error if model construction or callback execution fails.
+    fn with_model<R>(&self, callback: &mut ScriptModelCallback<'_, R>) -> Result<R>;
+}
+
+/// Values and first-order sensitivities produced by parallel script pricing.
+#[derive(Debug)]
+pub struct ParallelScriptEvaluation {
+    /// Path-averaged numeric script variables.
+    pub values: HashMap<String, f64>,
+    /// First-order adjoints keyed by the labels supplied by
+    /// [`ScriptModelSetup::with_model`].
+    pub sensitivities: Vec<(String, f64)>,
+}
+
+struct ScriptChunkResult {
+    values: HashMap<String, f64>,
+    sensitivities: Vec<(String, f64)>,
 }
 
 impl ScriptEngine {
@@ -93,7 +175,8 @@ impl ScriptEngine {
             .with_local_market_index(local_discount_index.clone());
         indexer.visit_events(&mut events)?;
         let requests = indexer.get_request();
-        let (model_requests, response_maps) = flatten_requests(&requests);
+        let (model_requests, model_request_dates, response_maps) =
+            flatten_requests(&requests, &event_dates, &local_discount_index);
         let n_variables = indexer.get_variables_size();
 
         let condition_transform = IfConditionTransform::new();
@@ -117,6 +200,7 @@ impl ScriptEngine {
             local_discount_index,
             requests,
             model_requests,
+            model_request_dates,
             response_maps,
             variable_indexes: indexer.get_variable_indexes(),
             n_variables,
@@ -228,11 +312,60 @@ impl ScriptEngine {
         }
         model.set_evaluation_dates(self.events.event_dates());
         model.set_requests(self.model_requests.clone());
+        model.set_request_dates(self.model_request_dates.clone());
+        let compact_responses = model.uses_compact_dated_requests();
         let numeraires = self.event_numeraires(model)?;
         let n_scenarios = n_paths as f64;
 
+        // Estimate two martingale-control coefficients on a small pilot set:
+        // discounted zero-coupon bonds and discounted forward payoffs. The
+        // main pass then has the same path count and AAD behavior as before,
+        // while its noisy linear rate component is anchored to curve-exact
+        // expectations. Treating the fitted coefficients as constants keeps
+        // the estimator stable and avoids differentiating the regression.
+        let control_expectations = self.control_expectations(model)?;
+        let use_controls = result_variable.is_some()
+            && n_paths >= 16
+            && self
+                .response_maps
+                .iter()
+                .any(|mapping| mapping.discounts.len + mapping.forwards.len > 0);
+
         let mut averages: HashMap<String, f64> = HashMap::new();
         Tape::set_mark_fwd();
+        let control_betas = if use_controls {
+            let pilot_paths = n_paths.min(64);
+            let mut pilot = Vec::with_capacity(pilot_paths);
+            for pilot_offset in 0..pilot_paths {
+                // Keep coefficient fitting disjoint from the reported path
+                // set, avoiding the small in-sample control-variate bias.
+                let path_index = n_paths + pilot_offset;
+                Tape::rewind_to_mark_fwd();
+                let path = model.generate_path(path_index).ok_or_else(|| {
+                    ScriptingError::EvaluationError(format!(
+                        "market model failed to generate pilot path {path_index}"
+                    ))
+                })?;
+                let scenario = self.scenario_from_path(&path, &numeraires, compact_responses)?;
+                let values = self.evaluate_scenario(&scenario)?;
+                let result = result_variable
+                    .and_then(|name| values.get(name))
+                    .and_then(|value| match value {
+                        Value::Number(number) => Some(number.value()),
+                        _ => None,
+                    })
+                    .ok_or_else(|| {
+                        ScriptingError::EvaluationError(
+                            "result variable did not produce a numeric pilot value".to_string(),
+                        )
+                    })?;
+                let controls = self.path_controls(&path, &numeraires, compact_responses)?;
+                pilot.push([result, controls[0].value(), controls[1].value()]);
+            }
+            estimate_control_betas(&pilot)
+        } else {
+            [0.0; 2]
+        };
         let paths_result = (0..n_paths).try_for_each(|path_index| -> Result<()> {
             Tape::rewind_to_mark_fwd();
             let path = model.generate_path(path_index).ok_or_else(|| {
@@ -240,24 +373,47 @@ impl ScriptEngine {
                     "market model failed to generate path {path_index}"
                 ))
             })?;
-            let scenario = self.scenario_from_path(&path, &numeraires)?;
-            let values = if self.max_nested_ifs == 0 {
-                SingleScenarioEvaluator::new()
-                    .with_variables(self.n_variables)
-                    .with_scenario(&scenario)
-                    .visit_events(&self.events, &self.variable_indexes)?
+            let scenario = self.scenario_from_path(&path, &numeraires, compact_responses)?;
+            let values = self.evaluate_scenario(&scenario)?;
+            let adjusted_result: Option<DualFwd> = if use_controls {
+                let controls = self.path_controls(&path, &numeraires, compact_responses)?;
+                result_variable
+                    .and_then(|name| values.get(name))
+                    .and_then(|value| {
+                        if let Value::Number(number) = value {
+                            Some(
+                                (*number
+                                    - (controls[0] - control_expectations[0]) * control_betas[0]
+                                    - (controls[1] - control_expectations[1]) * control_betas[1])
+                                    .into(),
+                            )
+                        } else {
+                            None
+                        }
+                    })
             } else {
-                FuzzyEvaluator::new(self.n_variables, self.max_nested_ifs)
-                    .with_scenario(&scenario)
-                    .visit_events(&self.events, &self.variable_indexes)?
+                None
             };
             for (name, value) in &values {
                 if let Value::Number(number) = value {
-                    *averages.entry(name.clone()).or_insert(0.0) += number.value() / n_scenarios;
+                    let path_value = if result_variable == Some(name.as_str()) {
+                        adjusted_result.unwrap_or(*number)
+                    } else {
+                        *number
+                    };
+                    *averages.entry(name.clone()).or_insert(0.0) +=
+                        path_value.value() / n_scenarios;
                 }
             }
-            if let Some(Value::Number(number)) = result_variable.and_then(|name| values.get(name)) {
-                let contribution: DualFwd = (*number / n_scenarios).into();
+            if let Some(number) = adjusted_result.or_else(|| {
+                result_variable
+                    .and_then(|name| values.get(name))
+                    .and_then(|value| match value {
+                        Value::Number(number) => Some(*number),
+                        _ => None,
+                    })
+            }) {
+                let contribution: DualFwd = (number / n_scenarios).into();
                 if contribution.is_on_tape() {
                     contribution.backward_to_mark()?;
                 }
@@ -271,6 +427,353 @@ impl ScriptEngine {
         paths_result?;
         propagated?;
         Ok(averages)
+    }
+
+    /// Evaluates Monte Carlo paths in parallel with one model and AD tape per
+    /// Rayon worker.
+    ///
+    /// The setup rebuilds the model on every worker so no [`DualFwd`] node is
+    /// shared across thread-local tapes. Paths are divided into contiguous,
+    /// deterministic ranges, and worker values and adjoints are summed after
+    /// all ranges complete. The normalization always uses the total path
+    /// count, so results do not depend on the number of Rayon workers.
+    ///
+    /// # Errors
+    /// Returns an error when the result variable is absent, setup/model path
+    /// counts disagree, model construction fails, a path cannot be evaluated,
+    /// or adjoint propagation fails.
+    pub fn evaluate_parallel<S: ScriptModelSetup>(
+        &self,
+        setup: &S,
+        result_variable: Option<&str>,
+    ) -> Result<ParallelScriptEvaluation> {
+        if let Some(name) = result_variable {
+            if !self.variable_indexes.contains_key(name) {
+                return Err(ScriptingError::EvaluationError(format!(
+                    "result variable '{name}' is not defined by the script"
+                )));
+            }
+        }
+        let n_paths = setup.n_paths();
+        if n_paths == 0 {
+            return Err(ScriptingError::EvaluationError(
+                "market model exposes no paths".to_string(),
+            ));
+        }
+        let use_controls = self.uses_controls(result_variable, n_paths);
+        let control_betas = if use_controls {
+            self.fit_parallel_control_betas(setup, result_variable, n_paths)?
+        } else {
+            [0.0; 2]
+        };
+
+        let n_workers = rayon::current_num_threads().min(n_paths);
+        let chunk_size = n_paths.div_ceil(n_workers);
+        let chunks: Vec<Range<usize>> = (0..n_workers)
+            .map(|worker| {
+                let start = worker * chunk_size;
+                start..(start + chunk_size).min(n_paths)
+            })
+            .filter(|range| !range.is_empty())
+            .collect();
+
+        let chunk_results: Vec<ScriptChunkResult> = chunks
+            .into_par_iter()
+            .map(|range| -> Result<ScriptChunkResult> {
+                Tape::rewind_to_init_fwd();
+                Tape::start_recording_fwd();
+                let result = setup.with_model(&mut |model, leaves| {
+                    self.configure_model(model, n_paths)?;
+                    let numeraires = self.event_numeraires(model)?;
+                    let control_expectations = if use_controls {
+                        self.control_expectations(model)?
+                    } else {
+                        [DualFwd::zero(); 2]
+                    };
+                    Tape::set_mark_fwd();
+                    let values = self.evaluate_path_range(
+                        model,
+                        result_variable,
+                        range.clone(),
+                        n_paths,
+                        &numeraires,
+                        use_controls,
+                        control_expectations,
+                        control_betas,
+                    )?;
+                    let sensitivities = leaves
+                        .iter()
+                        .filter_map(|(label, leaf)| {
+                            leaf.adjoint()
+                                .ok()
+                                .map(|adjoint| (label.clone(), adjoint.value()))
+                        })
+                        .collect();
+                    Ok(ScriptChunkResult {
+                        values,
+                        sensitivities,
+                    })
+                });
+                Tape::stop_recording_fwd();
+                result
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        let mut values = HashMap::new();
+        let mut sensitivity_map = HashMap::new();
+        for chunk in chunk_results {
+            for (name, value) in chunk.values {
+                *values.entry(name).or_insert(0.0) += value;
+            }
+            for (label, sensitivity) in chunk.sensitivities {
+                *sensitivity_map.entry(label).or_insert(0.0) += sensitivity;
+            }
+        }
+        let mut sensitivities: Vec<_> = sensitivity_map.into_iter().collect();
+        sensitivities.sort_by(|left, right| left.0.cmp(&right.0));
+        Ok(ParallelScriptEvaluation {
+            values,
+            sensitivities,
+        })
+    }
+
+    fn uses_controls(&self, result_variable: Option<&str>, n_paths: usize) -> bool {
+        result_variable.is_some()
+            && n_paths >= 16
+            && self
+                .response_maps
+                .iter()
+                .any(|mapping| mapping.discounts.len + mapping.forwards.len > 0)
+    }
+
+    fn configure_model(&self, model: &mut dyn MarketModel<DualFwd>, n_paths: usize) -> Result<()> {
+        if model.n_paths() != n_paths {
+            return Err(ScriptingError::EvaluationError(format!(
+                "model exposes {} paths but setup declares {n_paths}",
+                model.n_paths()
+            )));
+        }
+        model.set_evaluation_dates(self.events.event_dates());
+        model.set_requests(self.model_requests.clone());
+        model.set_request_dates(self.model_request_dates.clone());
+        Ok(())
+    }
+
+    fn fit_parallel_control_betas<S: ScriptModelSetup>(
+        &self,
+        setup: &S,
+        result_variable: Option<&str>,
+        n_paths: usize,
+    ) -> Result<[f64; 2]> {
+        Tape::rewind_to_init_fwd();
+        Tape::start_recording_fwd();
+        let result = setup.with_model(&mut |model, _| {
+            self.configure_model(model, n_paths)?;
+            let numeraires = self.event_numeraires(model)?;
+            let compact_responses = model.uses_compact_dated_requests();
+            Tape::set_mark_fwd();
+            let pilot_paths = n_paths.min(64);
+            let mut pilot = Vec::with_capacity(pilot_paths);
+            for pilot_offset in 0..pilot_paths {
+                let path_index = n_paths + pilot_offset;
+                Tape::rewind_to_mark_fwd();
+                let path = model.generate_path(path_index).ok_or_else(|| {
+                    ScriptingError::EvaluationError(format!(
+                        "market model failed to generate pilot path {path_index}"
+                    ))
+                })?;
+                let scenario = self.scenario_from_path(&path, &numeraires, compact_responses)?;
+                let values = self.evaluate_scenario(&scenario)?;
+                let result = result_variable
+                    .and_then(|name| values.get(name))
+                    .and_then(|value| match value {
+                        Value::Number(number) => Some(number.value()),
+                        _ => None,
+                    })
+                    .ok_or_else(|| {
+                        ScriptingError::EvaluationError(
+                            "result variable did not produce a numeric pilot value".to_string(),
+                        )
+                    })?;
+                let controls = self.path_controls(&path, &numeraires, compact_responses)?;
+                pilot.push([result, controls[0].value(), controls[1].value()]);
+            }
+            Ok(estimate_control_betas(&pilot))
+        });
+        Tape::reset_mark_fwd();
+        Tape::stop_recording_fwd();
+        result
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn evaluate_path_range(
+        &self,
+        model: &dyn MarketModel<DualFwd>,
+        result_variable: Option<&str>,
+        path_range: Range<usize>,
+        n_paths: usize,
+        numeraires: &[DualFwd],
+        use_controls: bool,
+        control_expectations: [DualFwd; 2],
+        control_betas: [f64; 2],
+    ) -> Result<HashMap<String, f64>> {
+        let compact_responses = model.uses_compact_dated_requests();
+        let n_scenarios = n_paths as f64;
+        let mut averages = HashMap::new();
+        let paths_result = path_range
+            .into_iter()
+            .try_for_each(|path_index| -> Result<()> {
+                Tape::rewind_to_mark_fwd();
+                let path = model.generate_path(path_index).ok_or_else(|| {
+                    ScriptingError::EvaluationError(format!(
+                        "market model failed to generate path {path_index}"
+                    ))
+                })?;
+                let scenario = self.scenario_from_path(&path, numeraires, compact_responses)?;
+                let values = self.evaluate_scenario(&scenario)?;
+                let adjusted_result = if use_controls {
+                    let controls = self.path_controls(&path, numeraires, compact_responses)?;
+                    result_variable
+                        .and_then(|name| values.get(name))
+                        .and_then(|value| {
+                            if let Value::Number(number) = value {
+                                Some(
+                                    (*number
+                                        - (controls[0] - control_expectations[0])
+                                            * control_betas[0]
+                                        - (controls[1] - control_expectations[1])
+                                            * control_betas[1])
+                                        .into(),
+                                )
+                            } else {
+                                None
+                            }
+                        })
+                } else {
+                    None
+                };
+                for (name, value) in &values {
+                    if let Value::Number(number) = value {
+                        let path_value = if result_variable == Some(name.as_str()) {
+                            adjusted_result.unwrap_or(*number)
+                        } else {
+                            *number
+                        };
+                        *averages.entry(name.clone()).or_insert(0.0) +=
+                            path_value.value() / n_scenarios;
+                    }
+                }
+                if let Some(number) = adjusted_result.or_else(|| {
+                    result_variable.and_then(|name| values.get(name)).and_then(
+                        |value| match value {
+                            Value::Number(number) => Some(*number),
+                            _ => None,
+                        },
+                    )
+                }) {
+                    let contribution: DualFwd = (number / n_scenarios).into();
+                    if contribution.is_on_tape() {
+                        contribution.backward_to_mark()?;
+                    }
+                }
+                Ok(())
+            });
+        let propagated = Tape::propagate_mark_to_start_fwd();
+        Tape::reset_mark_fwd();
+        paths_result?;
+        propagated?;
+        Ok(averages)
+    }
+
+    fn evaluate_scenario(&self, scenario: &Scenario) -> Result<HashMap<String, Value>> {
+        if self.max_nested_ifs == 0 {
+            SingleScenarioEvaluator::new()
+                .with_variables(self.n_variables)
+                .with_scenario(scenario)
+                .visit_events(&self.events, &self.variable_indexes)
+        } else {
+            FuzzyEvaluator::new(self.n_variables, self.max_nested_ifs)
+                .with_scenario(scenario)
+                .visit_events(&self.events, &self.variable_indexes)
+        }
+    }
+
+    fn control_expectations(&self, model: &dyn MarketModel<DualFwd>) -> Result<[DualFwd; 2]> {
+        let mut bonds = DualFwd::zero();
+        let mut forwards = DualFwd::zero();
+        for request in &self.requests {
+            for discount in request.dfs() {
+                bonds += model.resolve_discount_request(self.reference_date, discount)?;
+            }
+            for forward in request.fwds() {
+                let forward_value =
+                    model.resolve_forward_rate_request(self.reference_date, forward)?;
+                let payment_date = forward.end_date().unwrap_or_else(|| forward.fixing_date());
+                let discount = model.resolve_discount_request(
+                    self.reference_date,
+                    &DiscountRequest::new(self.local_discount_index.clone(), payment_date),
+                )?;
+                forwards += forward_value * discount;
+            }
+        }
+        Ok([bonds, forwards])
+    }
+
+    fn path_controls(
+        &self,
+        path: &PathScenario<DualFwd>,
+        numeraires: &[DualFwd],
+        compact_responses: bool,
+    ) -> Result<[DualFwd; 2]> {
+        let mut bonds = DualFwd::zero();
+        let mut forwards = DualFwd::zero();
+        for (event_index, ((responses, mapping), fallback_numeraire)) in path
+            .iter()
+            .zip(&self.response_maps)
+            .zip(numeraires)
+            .enumerate()
+        {
+            let mapping = mapping.for_layout(compact_responses);
+            let numeraire = responses
+                .iter()
+                .find_map(|response| response.numeraire)
+                .unwrap_or(*fallback_numeraire);
+            for response_index in
+                mapping.discounts.start..mapping.discounts.start + mapping.discounts.len
+            {
+                let discount = responses
+                    .get(response_index)
+                    .and_then(|response| response.discounts)
+                    .ok_or_else(|| {
+                        ScriptingError::EvaluationError(format!(
+                            "missing bond control response {response_index} for event {event_index}"
+                        ))
+                    })?;
+                bonds += discount / numeraire;
+            }
+            for offset in 0..mapping.forwards.len {
+                let forward_index = mapping.forwards.start + offset;
+                let discount_index = mapping.forward_discounts.start + offset;
+                let forward = responses
+                    .get(forward_index)
+                    .and_then(|response| response.forward_rates)
+                    .ok_or_else(|| {
+                        ScriptingError::EvaluationError(format!(
+                            "missing forward control response {forward_index} for event {event_index}"
+                        ))
+                    })?;
+                let discount = responses
+                    .get(discount_index)
+                    .and_then(|response| response.discounts)
+                    .ok_or_else(|| {
+                        ScriptingError::EvaluationError(format!(
+                            "missing forward discount response {discount_index} for event {event_index}"
+                        ))
+                    })?;
+                forwards += forward * discount / numeraire;
+            }
+        }
+        Ok([bonds, forwards])
     }
 
     /// Generates scripting scenarios without evaluating the event stream.
@@ -289,6 +792,8 @@ impl ScriptEngine {
         }
         model.set_evaluation_dates(self.events.event_dates());
         model.set_requests(self.model_requests.clone());
+        model.set_request_dates(self.model_request_dates.clone());
+        let compact_responses = model.uses_compact_dated_requests();
 
         let numeraires = self.event_numeraires(model)?;
         (0..model.n_paths())
@@ -298,7 +803,7 @@ impl ScriptEngine {
                         "market model failed to generate path {path_index}"
                     ))
                 })?;
-                self.scenario_from_path(&path, &numeraires)
+                self.scenario_from_path(&path, &numeraires, compact_responses)
             })
             .collect()
     }
@@ -353,6 +858,7 @@ impl ScriptEngine {
         &self,
         path: &PathScenario<DualFwd>,
         numeraires: &[DualFwd],
+        compact_responses: bool,
     ) -> Result<Scenario> {
         if path.len() != self.response_maps.len() {
             return Err(ScriptingError::EvaluationError(format!(
@@ -367,8 +873,13 @@ impl ScriptEngine {
             .zip(numeraires.iter())
             .enumerate()
             .map(|(event_index, ((responses, mapping), numeraire))| {
+                let mapping = mapping.for_layout(compact_responses);
+                let path_numeraire = responses
+                    .iter()
+                    .find_map(|response| response.numeraire)
+                    .unwrap_or(*numeraire);
                 Ok(SimulationData::new(
-                    *numeraire,
+                    path_numeraire,
                     collect_responses(
                         responses,
                         mapping.discounts,
@@ -432,11 +943,19 @@ impl ScriptEngine {
 
 fn flatten_requests(
     requests: &[SimulationDataRequest],
-) -> (Vec<SimulationRequest>, Vec<EventResponseMap>) {
+    event_dates: &[Date],
+    local_discount_index: &MarketIndex,
+) -> (
+    Vec<SimulationRequest>,
+    Vec<Option<Date>>,
+    Vec<EventResponseMap>,
+) {
     let mut flattened = Vec::new();
+    let mut request_dates = Vec::new();
     let mut maps = Vec::with_capacity(requests.len());
 
-    for request in requests {
+    for (request, event_date) in requests.iter().zip(event_dates) {
+        let event_start = flattened.len();
         let discount_start = flattened.len();
         flattened.extend(
             request
@@ -455,6 +974,19 @@ fn flatten_requests(
                 forward_rate_request: Some(forward_rate_request),
                 ..SimulationRequest::default()
             }
+        }));
+
+        // Hidden discount responses turn each simulated forward into a
+        // discounted forward payoff. Its expectation is known from today's
+        // curve, making it an effective martingale control variate for
+        // scripted rate products without changing their public syntax.
+        let forward_discount_start = flattened.len();
+        flattened.extend(request.fwds().iter().map(|forward| SimulationRequest {
+            discount_request: Some(DiscountRequest::new(
+                local_discount_index.clone(),
+                forward.end_date().unwrap_or_else(|| forward.fixing_date()),
+            )),
+            ..SimulationRequest::default()
         }));
 
         let fx_start = flattened.len();
@@ -482,12 +1014,17 @@ fn flatten_requests(
         );
 
         maps.push(EventResponseMap {
+            event_start,
             discounts: ResponseRange {
                 start: discount_start,
                 len: request.dfs().len(),
             },
             forwards: ResponseRange {
                 start: forward_start,
+                len: request.fwds().len(),
+            },
+            forward_discounts: ResponseRange {
+                start: forward_discount_start,
                 len: request.fwds().len(),
             },
             fx: ResponseRange {
@@ -499,9 +1036,10 @@ fn flatten_requests(
                 len: request.spots().len(),
             },
         });
+        request_dates.resize(flattened.len(), Some(*event_date));
     }
 
-    (flattened, maps)
+    (flattened, request_dates, maps)
 }
 
 fn collect_responses(
@@ -525,9 +1063,58 @@ fn collect_responses(
         .collect()
 }
 
+/// Least-squares coefficients for two centered controls. Standardizing first
+/// keeps the tiny bond/forward values numerically well conditioned next to
+/// notionals that can be several orders of magnitude larger.
+fn estimate_control_betas(samples: &[[f64; 3]]) -> [f64; 2] {
+    if samples.len() < 2 {
+        return [0.0; 2];
+    }
+    let count = samples.len() as f64;
+    let means = samples.iter().fold([0.0; 3], |mut sums, sample| {
+        for index in 0..3 {
+            sums[index] += sample[index] / count;
+        }
+        sums
+    });
+    let mut moments = [0.0; 5];
+    for sample in samples {
+        let y = sample[0] - means[0];
+        let x0 = sample[1] - means[1];
+        let x1 = sample[2] - means[2];
+        moments[0] += x0 * x0;
+        moments[1] += x1 * x1;
+        moments[2] += x0 * x1;
+        moments[3] += x0 * y;
+        moments[4] += x1 * y;
+    }
+    let sd0 = moments[0].sqrt();
+    let sd1 = moments[1].sqrt();
+    let active0 = sd0 > 1.0e-14;
+    let active1 = sd1 > 1.0e-14;
+    match (active0, active1) {
+        (false, false) => [0.0; 2],
+        (true, false) => [moments[3] / moments[0], 0.0],
+        (false, true) => [0.0, moments[4] / moments[1]],
+        (true, true) => {
+            let correlation = (moments[2] / (sd0 * sd1)).clamp(-0.999_999, 0.999_999);
+            let cov_y_z0 = moments[3] / sd0;
+            let cov_y_z1 = moments[4] / sd1;
+            // A small ridge protects scripts whose bond and forward controls
+            // are almost collinear on the pilot paths.
+            let determinant = 1.0 - correlation * correlation + 1.0e-6;
+            let gamma0 = (cov_y_z0 - correlation * cov_y_z1) / determinant;
+            let gamma1 = (cov_y_z1 - correlation * cov_y_z0) / determinant;
+            [gamma0 / sd0, gamma1 / sd1]
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
     use crate::{
         ad::{scalar::Scalar, tape::Tape},
         math::interpolation::interpolator::Interpolator,
@@ -536,6 +1123,56 @@ mod tests {
         scripting::nodes::event::CodedEvent,
         time::{daycounter::DayCounter, enums::TimeUnit},
     };
+
+    struct ParallelFlatSetup {
+        reference_date: Date,
+        payment_date: Date,
+        discount: f64,
+        calls: AtomicUsize,
+    }
+
+    impl ScriptModelSetup for ParallelFlatSetup {
+        fn n_paths(&self) -> usize {
+            64
+        }
+
+        fn with_model<R>(&self, callback: &mut ScriptModelCallback<'_, R>) -> Result<R> {
+            self.calls.fetch_add(1, Ordering::Relaxed);
+            let curve = DiscountTermStructure::<DualFwd>::new(
+                vec![self.reference_date, self.payment_date],
+                vec![DualFwd::one(), DualFwd::scalar(self.discount)],
+                DayCounter::Actual365,
+                Interpolator::LogLinear,
+                true,
+            )?;
+            let rate_model = LgmRateModel::new(DualFwd::scalar(0.03), DualFwd::zero(), &curve);
+            let mut model = LgmMarketModel::new(
+                Currency::USD,
+                MarketIndex::SOFR,
+                self.reference_date,
+                DayCounter::Actual365,
+            )
+            .with_n_paths(self.n_paths())
+            .with_seed(11);
+            model.add_curve_model(MarketIndex::SOFR, rate_model);
+            callback(&mut model, &[])
+        }
+    }
+
+    #[test]
+    fn control_regression_recovers_linear_coefficients() {
+        let samples: Vec<[f64; 3]> = (0..20)
+            .map(|index| {
+                let x0 = f64::from(index) - 7.0;
+                let x1 = f64::from((index * index + 3) % 11) - 4.0;
+                [5.0 + 2.0 * x0 - 4.0 * x1, x0, x1]
+            })
+            .collect();
+        let betas = estimate_control_betas(&samples);
+        assert!((betas[0] - 2.0).abs() < 1.0e-4);
+        assert!((betas[1] + 4.0).abs() < 1.0e-4);
+    }
+
     #[test]
     fn evaluates_script_with_existing_lgm_model_and_requests() -> Result<()> {
         Tape::start_recording_fwd();
@@ -586,6 +1223,70 @@ mod tests {
         assert!(
             (event_discount.adjoint()?.value() - 100.0).abs() < 1.0e-8,
             "pillar adjoints must be accumulated by evaluate itself"
+        );
+
+        Tape::stop_recording_fwd();
+        Ok(())
+    }
+
+    #[test]
+    fn market_dependent_ifs_smooth_payoffs_without_explicit_fif() -> Result<()> {
+        Tape::start_recording_fwd();
+
+        let reference_date = Date::new(2025, 1, 1);
+        let observation_date = reference_date.advance(1, TimeUnit::Years);
+        let payment_date = reference_date.advance(2, TimeUnit::Years);
+        let day_counter = DayCounter::Actual365;
+        let rate = 0.04_f64;
+        let observation_df =
+            (-rate * day_counter.year_fraction(reference_date, observation_date)).exp();
+        let payment_df = (-rate * day_counter.year_fraction(reference_date, payment_date)).exp();
+        let curve = DiscountTermStructure::<DualFwd>::new(
+            vec![reference_date, observation_date, payment_date],
+            vec![
+                DualFwd::one(),
+                DualFwd::new(observation_df),
+                DualFwd::new(payment_df),
+            ],
+            day_counter,
+            Interpolator::LogLinear,
+            true,
+        )?;
+        let rate_model = LgmRateModel::new(DualFwd::scalar(0.03), DualFwd::zero(), &curve);
+        let mut model = LgmMarketModel::new(
+            Currency::USD,
+            MarketIndex::SOFR,
+            reference_date,
+            day_counter,
+        )
+        .with_n_paths(1)
+        .with_seed(7);
+        model.add_curve_model(MarketIndex::SOFR, rate_model);
+
+        let source = format!(
+            r#"
+            note = 0;
+            breaches = 0;
+            fixing = RateIndex("SOFR", "{observation_date}", "{payment_date}");
+            if fixing > 0.05 {{ breaches += 1; }}
+            if breaches == 0 {{
+                note pays 107 on "{payment_date}";
+            }} else {{
+                note pays 102 on "{payment_date}";
+            }}
+            "#
+        );
+        let events = EventStream::try_from(vec![CodedEvent::new(observation_date, source)])?;
+        let engine = ScriptEngine::new(events, reference_date, Currency::USD, MarketIndex::SOFR)?;
+        let values = engine.evaluate(&mut model, Some("note"))?;
+        let value = *values.get("note").ok_or_else(|| {
+            ScriptingError::EvaluationError("expected numeric note result".to_string())
+        })?;
+
+        assert!(
+            (value - 107.0 * payment_df).abs() < 1.0e-8,
+            "ordinary if should produce the high redemption, got {value}; values: {values:?}; events: {:?}",
+            engine.events()
         );
 
         Tape::stop_recording_fwd();
@@ -654,6 +1355,37 @@ mod tests {
         );
 
         Tape::stop_recording_fwd();
+        Ok(())
+    }
+
+    #[test]
+    fn parallel_evaluation_builds_one_model_per_worker_and_preserves_paths() -> Result<()> {
+        let reference_date = Date::new(2025, 1, 1);
+        let payment_date = reference_date.advance(1, TimeUnit::Years);
+        let discount = (-0.05_f64).exp();
+        let setup = ParallelFlatSetup {
+            reference_date,
+            payment_date,
+            discount,
+            calls: AtomicUsize::new(0),
+        };
+        let source = format!(
+            "deal_value = 0; r = RateIndex(\"SOFR\", \"{reference_date}\", \"{payment_date}\"); if r < 0.10 {{ deal_value pays 100 on \"{payment_date}\"; }} else {{ deal_value pays 0 on \"{payment_date}\"; }}"
+        );
+        let events = EventStream::try_from(vec![CodedEvent::new(reference_date, source)])?;
+        let engine = ScriptEngine::new(events, reference_date, Currency::USD, MarketIndex::SOFR)?;
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(4)
+            .build()
+            .map_err(|error| ScriptingError::EvaluationError(error.to_string()))?;
+        let result = pool.install(|| engine.evaluate_parallel(&setup, Some("deal_value")))?;
+        let value = result.values.get("deal_value").copied().ok_or_else(|| {
+            ScriptingError::EvaluationError("parallel result omitted deal_value".into())
+        })?;
+
+        assert!((value - 100.0 * discount).abs() < 1.0e-10);
+        // One pilot model plus one model for each of the four path chunks.
+        assert_eq!(setup.calls.load(Ordering::Relaxed), 5);
         Ok(())
     }
 }

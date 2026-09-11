@@ -74,11 +74,23 @@ pub enum ModelConfiguration {
         #[serde(default)]
         dividend_rate: Option<f64>,
     },
-    /// Linear Gaussian Markov rate model.
+    /// One-factor Linear Gaussian Markov rate model fitted to the initial
+    /// discount curve.
+    ///
+    /// This uses the convention documented by
+    /// [`LgmRateModel`](crate::models::lgm::lgmcomponents::LgmRateModel):
+    /// `H(t) = (1 - exp(-lambda * t)) / lambda`, with a Gaussian state whose
+    /// diffusion is derived from the configured short-rate volatility.
     Lgm {
-        /// Mean-reversion speed.
+        /// Mean-reversion speed in inverse years. Larger positive values
+        /// reduce the effect of a factor shock on distant maturities. Zero is
+        /// supported and selects the non-mean-reverting limit.
         lambda: f64,
-        /// Volatility source (`Constant` or `Calibrated`).
+        /// Absolute short-rate volatility source. `Constant { value: 0.01 }`
+        /// means 100 bp per square-root year. `Calibrated` solves a
+        /// piecewise-constant short-rate volatility schedule against caplet or
+        /// swaption prices. `Surface` and `Cube` quotes enter through the
+        /// calibration instruments and produce model sigma values.
         volatility: VolatilitySourceConfiguration,
     },
 }

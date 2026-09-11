@@ -1,3 +1,20 @@
+/*
+This file is part of QuantSupport's Rust rewrite and adaptation of the
+derivatives scripting code written by Antoine Savine in 2018.
+
+The original code is the strict intellectual property of Antoine Savine.
+
+A license to use and alter the original code for personal and commercial
+applications is freely granted to any person or company that purchased a copy
+of the book:
+
+Modern Computational Finance: Scripting for Derivatives and XVA
+Jesper Andreasen and Antoine Savine
+Wiley, 2018
+
+This attribution and license notice must be preserved at the top of this file.
+*/
+
 use std::cell::RefCell;
 
 use crate::{
@@ -25,6 +42,7 @@ pub struct Parser {
 
 /// public methods
 impl Parser {
+    /// Creates a parser over an ordered token stream.
     pub fn new(tokens: Vec<Token>) -> Self {
         Self {
             tokens: RefCell::new(tokens),
@@ -55,6 +73,10 @@ impl Parser {
         }
     }
 
+    /// Parses all tokens into a root AST node.
+    ///
+    /// # Errors
+    /// Returns an error when the token stream violates the scripting grammar.
     pub fn parse(&self) -> Result<Node> {
         let mut expressions = Vec::new();
         while self.current_token() != Token::EOF {
@@ -287,7 +309,10 @@ impl Parser {
             self.expect_token(Token::OpenCurlyParen)?;
             self.advance();
 
-            else_index = Some(if_body.len());
+            // `children[0]` is the condition, so the else branch starts one
+            // position after the number of statements in the true branch.
+            // All evaluators treat `first_else` as an absolute child index.
+            else_index = Some(if_body.len() + 1);
 
             while self.current_token() != Token::CloseCurlyParen {
                 if self.current_token() == Token::EOF {
@@ -1283,7 +1308,7 @@ mod other_tests {
 }
 
 #[cfg(test)]
-pub mod tests_for {
+mod tests_for {
     use super::*;
     use crate::scripting::parsing::lexer::Lexer;
 
@@ -1376,7 +1401,7 @@ pub mod tests_for {
 }
 
 #[cfg(test)]
-pub mod tests_if {
+mod tests_if {
     use super::*;
     use crate::scripting::parsing::lexer::Lexer;
 
@@ -1447,7 +1472,7 @@ pub mod tests_if {
                         Node::new_constant(3.0),
                     ),
                 ],
-                first_else: Some(1),
+                first_else: Some(2),
                 affected_vars: Vec::new(),
             })],
         });
@@ -1490,7 +1515,7 @@ pub mod tests_if {
                     Node::new_constant(4.0),
                 ),
             ],
-            first_else: Some(1),
+            first_else: Some(2),
             affected_vars: Vec::new(),
         });
 
@@ -1507,7 +1532,7 @@ pub mod tests_if {
                         Node::new_constant(5.0),
                     ),
                 ],
-                first_else: Some(1),
+                first_else: Some(2),
                 affected_vars: Vec::new(),
             })],
         });
@@ -1561,7 +1586,7 @@ pub mod tests_if {
                     Node::new_constant(6.0),
                 ),
             ],
-            first_else: Some(2),
+            first_else: Some(3),
             affected_vars: Vec::new(),
         });
 
@@ -1582,7 +1607,7 @@ pub mod tests_if {
                         Node::new_constant(8.0),
                     ),
                 ],
-                first_else: Some(1),
+                first_else: Some(2),
                 affected_vars: Vec::new(),
             })],
         });

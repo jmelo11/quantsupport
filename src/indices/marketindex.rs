@@ -28,6 +28,7 @@ use crate::indices::{
 use crate::utils::errors::{QSError, Result};
 
 #[derive(Serialize, Deserialize, Debug, Hash, PartialEq, Eq, Clone)]
+/// Identifier for an observable market index or underlying.
 pub enum MarketIndex {
     // ── USD ──────────────────────────────────────────────
     /// SOFR Index (overnight, USD).

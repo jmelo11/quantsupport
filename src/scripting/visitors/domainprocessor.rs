@@ -1,3 +1,20 @@
+/*
+This file is part of QuantSupport's Rust rewrite and adaptation of the
+derivatives scripting code written by Antoine Savine in 2018.
+
+The original code is the strict intellectual property of Antoine Savine.
+
+A license to use and alter the original code for personal and commercial
+applications is freely granted to any person or company that purchased a copy
+of the book:
+
+Modern Computational Finance: Scripting for Derivatives and XVA
+Jesper Andreasen and Antoine Savine
+Wiley, 2018
+
+This attribution and license notice must be preserved at the top of this file.
+*/
+
 use std::cell::{Cell, RefCell};
 
 use crate::scripting::{
@@ -8,7 +25,9 @@ use crate::scripting::{
 /// Simplified domain representation used for constant propagation.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Domain {
+    /// Value cannot be determined statically.
     Any,
+    /// Statically known numeric value.
     Constant(f64),
 }
 
@@ -59,9 +78,13 @@ impl Domain {
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
+/// Static truth classification for a condition.
 pub enum CondProp {
+    /// Condition is always true.
     AlwaysTrue,
+    /// Condition is always false.
     AlwaysFalse,
+    /// Condition depends on runtime values.
     TrueOrFalse,
 }
 
@@ -76,6 +99,7 @@ pub struct DomainProcessor {
 }
 
 impl DomainProcessor {
+    /// Creates a processor with `n_var` zero-initialized variable domains.
     pub fn new(n_var: usize) -> Self {
         Self {
             var_domains: RefCell::new(vec![Domain::Constant(0.0); n_var]),
@@ -86,6 +110,7 @@ impl DomainProcessor {
         }
     }
 
+    /// Returns the inferred domain of every indexed variable.
     pub fn variable_domains(&self) -> Vec<Domain> {
         self.var_domains.borrow().clone()
     }
