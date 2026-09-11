@@ -5,3 +5,4 @@ test.ipynb
 .vscode
 .DS_Store
 __pycache__
+book/html/

@@ -254,6 +254,17 @@ with qs.PricingContext(
 
 See the [Python README](bindings/python/README.md) and [guided notebook](bindings/python/examples/tour.ipynb) for pricing and XVA examples.
 
+## Book
+
+The [QuantSupport Book](book/src/SUMMARY.md) covers installation, market construction, pricing, risk, simulation, and XVA. Install [mdBook](https://rust-lang.github.io/mdBook/), then build or serve it from the repository root:
+
+```bash
+mdbook build
+mdbook serve --open
+```
+
+Generated HTML is written to `book/html/`.
+
 ## Current limitations
 
 - The project is still in alpha and does not promise API or serialized-configuration stability yet.
