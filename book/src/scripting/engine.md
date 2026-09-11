@@ -24,15 +24,15 @@ pub fn new(
 
 ### Accessors
 
-| Method | Returns |
-| --- | --- |
-| `events() -> &EventStream` | The indexed and transformed stream |
-| `requests() -> &[SimulationDataRequest]` | One request bundle per event (`dfs()`, `fwds()`, `fxs()`, `spots()`, `requires_numeraire()`) |
-| `model_requests() -> &[SimulationRequest]` | Flattened requests for a `MarketModel` |
-| `reference_date() -> Date` | |
-| `maturity() -> Date` | Latest of all event dates and all requested observation/payment dates |
-| `has_variable(&str) -> bool` | Whether the script defines a variable, useful to validate a `result_variable` before running |
-| `local_currency() -> Currency` | |
+| Method                                     | Returns                                                                                      |
+| ------------------------------------------ | -------------------------------------------------------------------------------------------- |
+| `events() -> &EventStream`                 | The indexed and transformed stream                                                           |
+| `requests() -> &[SimulationDataRequest]`   | One request bundle per event (`dfs()`, `fwds()`, `fxs()`, `spots()`, `requires_numeraire()`) |
+| `model_requests() -> &[SimulationRequest]` | Flattened requests for a `MarketModel`                                                       |
+| `reference_date() -> Date`                 |                                                                                              |
+| `maturity() -> Date`                       | Latest of all event dates and all requested observation/payment dates                        |
+| `has_variable(&str) -> bool`               | Whether the script defines a variable, useful to validate a `result_variable` before running |
+| `local_currency() -> Currency`             |                                                                                              |
 
 ## Evaluation on a single tape
 

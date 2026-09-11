@@ -17,23 +17,23 @@ Implemented for `f64`, `Fwd<T>` (forward mode), `Dual<T>` (reverse mode), and th
 
 ## Market data
 
-| Type | Purpose |
-| --- | --- |
-| `QuoteStore` | Quotes keyed by identifier with a `reference_date()`; `add_quote`, `quote(id)`, `quotes()` |
-| `Quote`, `QuoteDetails`, `QuoteInstrument`, `QuoteLevels`, `Level` | One quote: parsed identifier, instrument kind, `mid`/`bid`/`ask` |
-| `FixingStore` | Historical fixings per `MarketIndex` |
-| `FxStore`, `FxRateRecord` | Spot FX rates with triangulation |
-| `Scenario`, `ScenarioType` | Absolute/relative quote shocks |
-| `QuoteSelector` | Trait implemented by `QuoteStore` (and shocked stores) used by bootstrappers to read values at a `Level` |
+| Type                                                               | Purpose                                                                                                  |
+| ------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------- |
+| `QuoteStore`                                                       | Quotes keyed by identifier with a `reference_date()`; `add_quote`, `quote(id)`, `quotes()`               |
+| `Quote`, `QuoteDetails`, `QuoteInstrument`, `QuoteLevels`, `Level` | One quote: parsed identifier, instrument kind, `mid`/`bid`/`ask`                                         |
+| `FixingStore`                                                      | Historical fixings per `MarketIndex`                                                                     |
+| `FxStore`, `FxRateRecord`                                          | Spot FX rates with triangulation                                                                         |
+| `Scenario`, `ScenarioType`                                         | Absolute/relative quote shocks                                                                           |
+| `QuoteSelector`                                                    | Trait implemented by `QuoteStore` (and shocked stores) used by bootstrappers to read values at a `Level` |
 
 ## Constructed elements and context
 
-| Type | Purpose |
-| --- | --- |
-| `PricingContext` | Inputs + configurations + `initialize()` + accessors; implements `MarketDataProvider` |
-| `ConstructedElementStore` | Built objects: `discount_curves()`, `credit_curves()`, `volatility_surfaces()`, `volatility_cubes()`, `simulations()` (each with `_mut` variants) |
-| `DiscountCurveElement`, `VolatilitySurfaceElement`, `VolatilityCubeElement`, `SimulationElement` | Wrappers holding the index plus `Rc<RefCell<..>>` of the object |
-| `MarketDataProvider`, `MarketDataRequest` | Trait a pricer uses to fetch what it needs (discount factors, forwards, fixings, FX, vols) |
+| Type                                                                                             | Purpose                                                                                                                                           |
+| ------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PricingContext`                                                                                 | Inputs + configurations + `initialize()` + accessors; implements `MarketDataProvider`                                                             |
+| `ConstructedElementStore`                                                                        | Built objects: `discount_curves()`, `credit_curves()`, `volatility_surfaces()`, `volatility_cubes()`, `simulations()` (each with `_mut` variants) |
+| `DiscountCurveElement`, `VolatilitySurfaceElement`, `VolatilityCubeElement`, `SimulationElement` | Wrappers holding the index plus `Rc<RefCell<..>>` of the object                                                                                   |
+| `MarketDataProvider`, `MarketDataRequest`                                                        | Trait a pricer uses to fetch what it needs (discount factors, forwards, fixings, FX, vols)                                                        |
 
 ## Instruments and trades
 

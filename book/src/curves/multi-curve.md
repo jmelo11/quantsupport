@@ -4,12 +4,12 @@ Since the move to OIS discounting, a single currency needs several curves—one 
 
 ## Curve roles
 
-| Role | `MarketIndex` | Built from | Used for |
-| --- | --- | --- | --- |
-| CSA / discount curve | e.g. `SOFR` | deposits + OIS | discounting all collateralised USD cashflows; projecting SOFR coupons |
-| Projection curve | e.g. `TermSOFR3m`, `EURIBOR6m` | deposit + basis swaps vs the OIS index (or fixed–float swaps) | forward rates for coupons fixing on that index |
-| Collateral-adjusted curve | `Collateral(CLP, USD)` | FX forwards + cross-currency swaps | discounting CLP cashflows under a USD CSA |
-| Local OIS curve | e.g. `ICP` | CLP deposits + OIS | projecting ICP coupons |
+| Role                      | `MarketIndex`                  | Built from                                                    | Used for                                                              |
+| ------------------------- | ------------------------------ | ------------------------------------------------------------- | --------------------------------------------------------------------- |
+| CSA / discount curve      | e.g. `SOFR`                    | deposits + OIS                                                | discounting all collateralised USD cashflows; projecting SOFR coupons |
+| Projection curve          | e.g. `TermSOFR3m`, `EURIBOR6m` | deposit + basis swaps vs the OIS index (or fixed–float swaps) | forward rates for coupons fixing on that index                        |
+| Collateral-adjusted curve | `Collateral(CLP, USD)`         | FX forwards + cross-currency swaps                            | discounting CLP cashflows under a USD CSA                             |
+| Local OIS curve           | e.g. `ICP`                     | CLP deposits + OIS                                            | projecting ICP coupons                                                |
 
 Nothing in the code is hard-wired to these names: `PricingContext::with_base_index` / `with_base_currency` (defaults `SOFR` / `USD`) decide which curve is the CSA curve.
 
@@ -35,7 +35,7 @@ pub trait DiscountPolicy: Send + Sync {
 
 `BootstrapDiscountPolicy::new(csa_index, csa_currency)` combines both for the bootstrapper: `discount_index(&Leg<f64>)` dispatches on the leg's asset class (`FixedIncome` → fixed-income policy with `prefer_instrument_index = true`; `InterestRate`/`Fx` → CSA policy), and `discount_index_for_currency(ccy)` resolves a bare currency, honouring per-currency collateral overrides first.
 
-`DiscountedCashflowPricer::set_discount_policy(Box<dyn DiscountPolicy>)` installs the same kind of policy at pricing time. Without a policy the pricer falls back to a heuristic: a leg with floating coupons is discounted on the *unique* curve whose rate index is in the leg currency (an error if there are zero or several), otherwise the leg's `discount_index`, otherwise its `forward_index`. Always set a policy in multi-curve setups.
+`DiscountedCashflowPricer::set_discount_policy(Box<dyn DiscountPolicy>)` installs the same kind of policy at pricing time. Without a policy the pricer falls back to a heuristic: a leg with floating coupons is discounted on the _unique_ curve whose rate index is in the leg currency (an error if there are zero or several), otherwise the leg's `discount_index`, otherwise its `forward_index`. Always set a policy in multi-curve setups.
 
 ## Dependency resolution
 
@@ -48,15 +48,15 @@ flowchart LR
     ICP --> COLL
 ```
 
-- `TermSOFR3m` pillars are basis swaps vs SOFR: the SOFR leg is projected *and* discounted on the solved SOFR curve, and only the TermSOFR3m projection is unknown.
-- `Collateral(CLP, USD)` pillars are `FixFloatCrossCurrencySwap_CLP_SOFR_USD_*` (fixed CLP vs float SOFR USD) and `FxForwardPoints_USDCLP_*`. The USD leg is discounted and projected on SOFR; the CLP leg's *discount* curve is the unknown, so the solve produces the CLP-under-USD-collateral curve directly. FX spot (`FxStore`) converts the two notionals.
+- `TermSOFR3m` pillars are basis swaps vs SOFR: the SOFR leg is projected _and_ discounted on the solved SOFR curve, and only the TermSOFR3m projection is unknown.
+- `Collateral(CLP, USD)` pillars are `FixFloatCrossCurrencySwap_CLP_SOFR_USD_*` (fixed CLP vs float SOFR USD) and `FxForwardPoints_USDCLP_*`. The USD leg is discounted and projected on SOFR; the CLP leg's _discount_ curve is the unknown, so the solve produces the CLP-under-USD-collateral curve directly. FX spot (`FxStore`) converts the two notionals.
 - `ICP` is independent; it projects ICP coupons in CLP swaps priced under USD collateral (discounting on the Collateral curve).
 
 Missing pieces are reported explicitly: bootstrapping `TermSOFR3m` without a `SOFR` configuration fails with "Curve TermSOFR3m requires SOFR for discounting but no curve configuration was provided for it".
 
 ## Cross-curve sensitivities
 
-Because the IFT step records \(\partial P^{\text{child}}/\partial P^{\text{parent}}\) for every parent (`CrossCurveDep`), risk flows through the dependency graph: a CLP swap discounted on `Collateral(CLP, USD)` reports sensitivities to the cross-currency swap quotes, the FX forward points *and* the SOFR OIS quotes. See [Sensitivities](../risk/sensitivities.md) for the output format.
+Because the IFT step records \\(\partial P^{\text{child}}/\partial P^{\text{parent}}\\) for every parent (`CrossCurveDep`), risk flows through the dependency graph: a CLP swap discounted on `Collateral(CLP, USD)` reports sensitivities to the cross-currency swap quotes, the FX forward points _and_ the SOFR OIS quotes. See [Sensitivities](../risk/sensitivities.md) for the output format.
 
 ## Pricing a cross-currency portfolio
 
@@ -85,7 +85,7 @@ pricer.set_discount_policy(Box::new(SingleCurveCSADiscountPolicy::new(MarketInde
 let res = pricer.evaluate(&trade, &[Request::Value, Request::Sensitivities], &ctx)?;
 ```
 
-When the policy resolves a `Collateral(leg_ccy, coll_ccy)` curve, each cashflow is converted at spot and discounted on that curve, \(PV = CF_{\text{leg}}\times S_{\text{leg}\to\text{coll}}\times P_{\text{Collateral}}(T)\), so the `Value` of a CLP swap under a USD CSA is reported in **USD**. Legs in the CSA currency are discounted on the CSA curve without conversion.
+When the policy resolves a `Collateral(leg_ccy, coll_ccy)` curve, each cashflow is converted at spot and discounted on that curve, \\(PV = CF*{\text{leg}}\times S*{\text{leg}\to\text{coll}}\times P\_{\text{Collateral}}(T)\\), so the `Value` of a CLP swap under a USD CSA is reported in **USD**. Legs in the CSA currency are discounted on the CSA curve without conversion.
 
 ## Configuration checklist
 

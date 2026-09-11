@@ -1,6 +1,6 @@
 # Curves Overview
 
-A *curve* in QuantSupport is any object implementing `InterestRatesTermStructure<T>`. Curves are usually produced by the bootstrapper from quotes, but the same trait is implemented by simple hand-built structures that are useful for tests, toy models and the scripting example.
+A _curve_ in QuantSupport is any object implementing `InterestRatesTermStructure<T>`. Curves are usually produced by the bootstrapper from quotes, but the same trait is implemented by simple hand-built structures that are useful for tests, toy models and the scripting example.
 
 ## The trait
 
@@ -18,11 +18,11 @@ pub trait InterestRatesTermStructure<T: Scalar> {
 
 `T` is `f64` or `DualFwd`. Forward rates are always derived from discount factors through `InterestRate::implied_rate`, so any compounding convention is consistent with the curve's discount factors:
 
-\[
+\\[
 P(t_1,t_2)=\frac{P(0,t_2)}{P(0,t_1)},\qquad
 F_{\text{simple}}=\frac{1}{\tau}\left(\frac{1}{P(t_1,t_2)}-1\right),\qquad
 F_{\text{cont}}=-\frac{\ln P(t_1,t_2)}{\tau}.
-\]
+\\]
 
 Constructed curves are wrapped as `Rc<RefCell<dyn ADCurveElement>>` inside a `DiscountCurveElement`, where `ADCurveElement = InterestRatesTermStructure<DualFwd> + Pillars<DualFwd>`. `element.curve()` returns a borrow of the underlying curve.
 
@@ -45,7 +45,7 @@ let curve = DiscountTermStructure::<DualFwd>::new(
 
 - `new(dates, discount_factors, day_counter, interpolator, enable_extrapolation) -> Result<Self>`: the first date is the reference date and must carry DF = 1; lengths must match.
 - Accessors: `dates()`, `discount_factors()`, `day_counter()`, `interpolator()`, `enable_extrapolation()`.
-- `with_pillar_labels(Vec<String>) -> Result<Self>` names the pillars for sensitivity reporting; `with_pillar_values(Vec<T>) -> Result<Self>` overrides the values exposed through `Pillars` (the bootstrapper stores the *quotes* here, so sensitivities are reported per quote, not per DF); `with_ift_sensitivities(Vec<Vec<f64>>)` stores the Jacobian used to rebuild AD links (see [Bootstrapping](bootstrapping.md)).
+- `with_pillar_labels(Vec<String>) -> Result<Self>` names the pillars for sensitivity reporting; `with_pillar_values(Vec<T>) -> Result<Self>` overrides the values exposed through `Pillars` (the bootstrapper stores the _quotes_ here, so sensitivities are reported per quote, not per DF); `with_ift_sensitivities(Vec<Vec<f64>>)` stores the Jacobian used to rebuild AD links (see [Bootstrapping](bootstrapping.md)).
 - Interpolation is done on year fractions with the chosen `Interpolator` applied to the discount factors themselves; `LogLinear` therefore gives piecewise-constant forward rates.
 
 ### `FlatForwardTermStructure<T>`
@@ -55,7 +55,7 @@ let curve = DiscountTermStructure::<DualFwd>::new(
 ### `SpreadTermStructure<T>` and `CompositeTermStructure<T>`
 
 `SpreadTermStructure::new(reference_date, year_fractions, spreads, day_counter, interpolator)` stores continuously compounded zero spreads
-\(s(t_i) = -\ln\!\big(P_{\text{target}}(t_i)/P_{\text{base}}(t_i)\big)/t_i\) and returns \(P_s(t)=e^{-s(t)t}\). `CompositeTermStructure::new(spread_curve, base_curve)` multiplies discount factors, \(P(t)=P_s(t)\,P_b(t)\), taking the reference date from the base. Together they express "base curve plus spread" (funding curves, CSA adjustments) with sensitivities to the spread pillars and the base pillars kept separate.
+\\(s(t*i) = -\ln\\!\big(P*{\text{target}}(t*i)/P*{\text{base}}(t_i)\big)/t_i\\) and returns \\(P_s(t)=e^{-s(t)t}\\). `CompositeTermStructure::new(spread_curve, base_curve)` multiplies discount factors, \\(P(t)=P_s(t)\\,P_b(t)\\), taking the reference date from the base. Together they express "base curve plus spread" (funding curves, CSA adjustments) with sensitivities to the spread pillars and the base pillars kept separate.
 
 ## Interpolators
 
