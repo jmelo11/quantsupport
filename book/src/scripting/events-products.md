@@ -91,11 +91,11 @@ Note the pattern: the **event date is the fixing date** (`start`), the rate is o
 
 ### Validation performed by `ScriptEngine::new`
 
-| Check | Error |
-| --- | --- |
-| Stream has no events | `InvalidOperation("a script must contain at least one event")` |
+| Check                                   | Error                                                                        |
+| --------------------------------------- | ---------------------------------------------------------------------------- |
+| Stream has no events                    | `InvalidOperation("a script must contain at least one event")`               |
 | An event date precedes `reference_date` | `InvalidOperation("scripted event dates cannot precede the reference date")` |
-| Events are not sorted by date | `InvalidOperation("scripted events must be ordered by date")` |
+| Events are not sorted by date           | `InvalidOperation("scripted events must be ordered by date")`                |
 
 Two events may share a date; they are executed in order.
 
@@ -125,14 +125,14 @@ impl IntoContingentClaims for ScriptedProduct {
 
 Each payment becomes one `ContingentClaim` built with `MakeContingentClaim`:
 
-| Claim field | Value |
-| --- | --- |
-| `trade_id` | The id passed to `new` (or to `into_contingent_claims`) |
-| `leg_id` | The payment id assigned during indexing |
-| `payment_date` | `on` date or event date |
-| `currency` | `in` currency or `local_currency` |
-| `notional` | `1.0` (the script amount already includes the notional) |
-| `side` | `Side::LongReceive` (sign lives in the script expression) |
+| Claim field           | Value                                                          |
+| --------------------- | -------------------------------------------------------------- |
+| `trade_id`            | The id passed to `new` (or to `into_contingent_claims`)        |
+| `leg_id`              | The payment id assigned during indexing                        |
+| `payment_date`        | `on` date or event date                                        |
+| `currency`            | `in` currency or `local_currency`                              |
+| `notional`            | `1.0` (the script amount already includes the notional)        |
+| `side`                | `Side::LongReceive` (sign lives in the script expression)      |
 | `evaluation_strategy` | `ClaimEvaluationStrategy::Scripted { payoff: ScriptedPayoff }` |
 
 `ScriptedPayoff` holds an `Arc<ScriptEngine>` and the payment id. When the XVA exposure evaluator reaches a valuation date it calls `ScriptedPayoff::evaluate(valuation_date, responses)`, which replays the script on the path's `SimulationResponse`s and returns only the value of that payment. The engine shares one compiled script between all claims, so a product with 40 coupons parses once.

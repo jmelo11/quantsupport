@@ -23,7 +23,7 @@ During `XvaEngine::run`:
 
 1. `PreprocessorExecutor` collects `SimulationRequest`s from every claim. For scripted claims these are `ScriptedPayoff::simulation_requests()`, i.e. `ScriptEngine::model_requests()` — the discount factors, forward rates, FX rates and spots the script observes.
 2. The LGM market model simulates those observables on every path and evaluation date.
-3. At each valuation date \(t_k\) the exposure evaluator asks every live claim for its value. For a scripted claim it calls `ScriptedPayoff::evaluate(valuation_date, responses)`, which replays the compiled script on that path's responses and returns the numeraire-deflated value of **that payment only**. Payments already settled before \(t_k\) are excluded automatically, so the exposure profile rolls off correctly.
+3. At each valuation date \\(t_k\\) the exposure evaluator asks every live claim for its value. For a scripted claim it calls `ScriptedPayoff::evaluate(valuation_date, responses)`, which replays the compiled script on that path's responses and returns the numeraire-deflated value of **that payment only**. Payments already settled before \\(t_k\\) are excluded automatically, so the exposure profile rolls off correctly.
 4. The per-path NPVs are aggregated into `NpvCube`s and then into CVA/DVA/FVA by the configured aggregators.
 
 Because the payoff is evaluated in `DualFwd`, the engine's AAD pass produces XVA sensitivities to curve pillars and model parameters for scripted claims with no extra work.

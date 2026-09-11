@@ -37,16 +37,16 @@ let swap = MakeSwap::<DualFwd>::default()
 
 `MakeSwap<T>` is a builder; `build()` fails with `QSError` if any of the required fields (`notional`, `start_date`, `maturity_date`, `fixed_rate`, `rate_definition`, `currency`, `market_index`, `identifier`) is missing. Optional fields and their defaults:
 
-| Builder method | Default |
-| --- | --- |
-| `with_spread(f64)` | `0.0` on the floating leg |
-| `with_side(Side)` | `Side::LongReceive` |
-| `with_fixed_leg_frequency(Frequency)` | `Frequency::Semiannual` |
-| `with_floating_leg_frequency(Frequency)` | `Frequency::Quarterly` |
-| `with_calendar(Calendar)` | `Calendar::NullCalendar` (no holiday adjustment) |
-| `with_business_day_convention(BusinessDayConvention)` | `Unadjusted` |
-| `with_date_generation_rule(DateGenerationRule)` | `Backward` for bullet legs |
-| `with_end_of_month(bool)` | `false` |
+| Builder method                                        | Default                                          |
+| ----------------------------------------------------- | ------------------------------------------------ |
+| `with_spread(f64)`                                    | `0.0` on the floating leg                        |
+| `with_side(Side)`                                     | `Side::LongReceive`                              |
+| `with_fixed_leg_frequency(Frequency)`                 | `Frequency::Semiannual`                          |
+| `with_floating_leg_frequency(Frequency)`              | `Frequency::Quarterly`                           |
+| `with_calendar(Calendar)`                             | `Calendar::NullCalendar` (no holiday adjustment) |
+| `with_business_day_convention(BusinessDayConvention)` | `Unadjusted`                                     |
+| `with_date_generation_rule(DateGenerationRule)`       | `Backward` for bullet legs                       |
+| `with_end_of_month(bool)`                             | `false`                                          |
 
 Internally the builder creates two `Leg`s with `MakeLeg`: leg `0` is the fixed leg on the swap's side, leg `1` is the floating leg on the opposite side, indexed by `market_index`, both bullet (no amortisation). The `RateDefinition` describes how the fixed rate accrues: day counter, compounding (`Simple`, `Compounded`, `Continuous`, `SimpleThenCompounded`, `CompoundedThenSimple`) and frequency. The scalar type `DualFwd` makes every coupon differentiable; use `MakeSwap::<f64>` when you only need a number.
 
@@ -92,7 +92,7 @@ let requests = vec![Request::Value, Request::Cashflows, Request::Sensitivities];
 let results = pricer.evaluate(&trade, &requests, &context)?;
 ```
 
-`DiscountedCashflowPricer<I, T>` is generic over the instrument and trade types and implements `Pricer`. It supports `Request::Value`, `FairRate`, `Cashflows`, `Sensitivities`, `YieldToMaturity` and `ModifiedDuration`. Passing several requests at once evaluates the cashflows once and derives every result from the same tape.
+`DiscountedCashflowPricer<I, T>` is generic over the instrument and trade types and implements `Pricer`. It handles `Request::Value`, `FairRate`, `Cashflows` and `Sensitivities` (`YieldToMaturity` and `ModifiedDuration` exist in the `Request` enum but are ignored by this pricer). Passing several requests at once evaluates the cashflows once and derives every result from the same tape.
 
 ## 5. Read the results
 
@@ -120,7 +120,7 @@ if let Some(cashflows) = results.cashflows() {
 
 `EvaluationResults` exposes `price()`, `fair_rate()`, `sensitivities() -> Option<&SensitivityMap>` and `cashflows() -> Option<&CashflowsTable>`. `SensitivityMap` is a pair of parallel vectors: `instrument_keys()` (pillar labels) and `exposure()` (`dNPV/dPillar`). `CashflowsTable` is column-oriented: `payment_dates()`, `cashflow_types()`, `amounts()`, `fixing()`, `accrual_periods()`, `currencies()`, `leg_indices()`, plus `caplet_strikes()`/`floorlet_strikes()` for optional legs.
 
-With the flat curve the sensitivity table has a single row, `SOFR_flat`, equal to \(\partial\text{NPV}/\partial r\). Once the curve is bootstrapped from quotes (next chapters) the same request returns one row per quote identifier, e.g. `OIS_USD_SOFR_5Y`.
+With the flat curve the sensitivity table has a single row, `SOFR_flat`, equal to \\(\partial\text{NPV}/\partial r\\). Once the curve is bootstrapped from quotes (next chapters) the same request returns one row per quote identifier, e.g. `OIS_USD_SOFR_5Y`.
 
 ## What to read next
 

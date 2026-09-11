@@ -39,21 +39,21 @@ flowchart LR
 
 ## Layer 2 – configuration
 
-Configuration structs say *how* to turn quotes into objects: which quotes belong to the SOFR curve, which interpolator to use, which caplet quotes form the vol surface, what model drives a simulation. They are plain `Serialize`/`Deserialize` data, so the same JSON can drive Rust and Python. See [Configuration](../reference/configuration.md) for schemas.
+Configuration structs say _how_ to turn quotes into objects: which quotes belong to the SOFR curve, which interpolator to use, which caplet quotes form the vol surface, what model drives a simulation. They are plain `Serialize`/`Deserialize` data, so the same JSON can drive Rust and Python. See [Configuration](../reference/configuration.md) for schemas.
 
 ## Layer 3 – constructed elements
 
 `PricingContext::initialize()` produces the `ConstructedElementStore`, a set of `HashMap<MarketIndex, *Element>`:
 
-| Accessor | Element | Holds |
-| --- | --- | --- |
-| `discount_curves()` / `discount_curve(&idx)` | `DiscountCurveElement` | `Rc<RefCell<dyn InterestRatesTermStructure<DualFwd>>>` |
-| `dividend_curves()` / `dividend_curve(&idx)` | `DividendCurveElement` | dividend yield curve for equity indices |
-| `credit_curves()` / `credit_curve(&idx)` | `CreditCurveElement` | survival-probability curve from CDS |
-| `volatility_surfaces()` / `volatility_surface(&idx)` | `VolatilitySurfaceElement` | expiry × key surface |
-| `fx_volatility_surface(&FxPair)` | `OrientedFxVolSurface` | surface oriented for a pair, inverting if only the reciprocal pair exists |
-| `volatility_cubes()` / `volatility_cube(&idx)` | `VolatilityCubeElement` | expiry × tenor × key cube |
-| `simulations()` | `MonteCarloSimulationElement` | generated paths |
+| Accessor                                             | Element                       | Holds                                                                     |
+| ---------------------------------------------------- | ----------------------------- | ------------------------------------------------------------------------- |
+| `discount_curves()` / `discount_curve(&idx)`         | `DiscountCurveElement`        | `Rc<RefCell<dyn InterestRatesTermStructure<DualFwd>>>`                    |
+| `dividend_curves()` / `dividend_curve(&idx)`         | `DividendCurveElement`        | dividend yield curve for equity indices                                   |
+| `credit_curves()` / `credit_curve(&idx)`             | `CreditCurveElement`          | survival-probability curve from CDS                                       |
+| `volatility_surfaces()` / `volatility_surface(&idx)` | `VolatilitySurfaceElement`    | expiry × key surface                                                      |
+| `fx_volatility_surface(&FxPair)`                     | `OrientedFxVolSurface`        | surface oriented for a pair, inverting if only the reciprocal pair exists |
+| `volatility_cubes()` / `volatility_cube(&idx)`       | `VolatilityCubeElement`       | expiry × tenor × key cube                                                 |
+| `simulations()`                                      | `MonteCarloSimulationElement` | generated paths                                                           |
 
 Each accessor has a `_mut` twin so bootstrappers and hand-built markets can insert objects. The order of construction inside `initialize()` is fixed: scenarios → discount curves (`MultiCurveBootstrapper`) → credit curves (`CreditCurveBootstrapper`, which discounts CDS legs on the curves just built) → volatility surfaces → volatility cubes → simulations (`SimulationBuilder`, which may calibrate models to the surfaces/cubes).
 
@@ -71,7 +71,7 @@ A `Pricer` maps `(trade, requests, market) → EvaluationResults`. Before pricin
 
 ## Layer 6 – simulation, scripting and XVA
 
-`LgmMarketModel` and `HullWhite` read the constructed curves (and calibrate to constructed vol objects); `ScriptEngine` evaluates payoffs on a `MarketModel<DualFwd>`; `XvaEngine` decomposes trades into `ContingentClaim`s and prices them on the simulated paths. Because these layers consume the same `DiscountCurveElement`s that the deterministic pricers use, NPV at \(t_0\) from the exposure engine equals the pricer NPV, and AAD sensitivities flow back to the same quote pillars.
+`LgmMarketModel` and `HullWhite` read the constructed curves (and calibrate to constructed vol objects); `ScriptEngine` evaluates payoffs on a `MarketModel<DualFwd>`; `XvaEngine` decomposes trades into `ContingentClaim`s and prices them on the simulated paths. Because these layers consume the same `DiscountCurveElement`s that the deterministic pricers use, NPV at \\(t_0\\) from the exposure engine equals the pricer NPV, and AAD sensitivities flow back to the same quote pillars.
 
 ## The AD thread running through everything
 

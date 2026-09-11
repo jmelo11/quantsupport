@@ -34,19 +34,19 @@ Vec<CodedEvent>  ──TryFrom──▶  EventStream (parsed AST per event)
 
 Module layout (`src/scripting/`):
 
-| Path | Responsibility |
-| --- | --- |
-| `parsing/lexer.rs`, `parsing/parser.rs` | Tokenizer and recursive-descent parser producing `Node` trees |
-| `nodes/node.rs` | The `Node` enum (arithmetic, comparison, `If`, `ForEach`, `Pays`, `Spot`, `Df`, `RateIndex`, …) and per-node metadata used by the analysers |
-| `nodes/event.rs` | `CodedEvent` (date + source), `Event` (date + AST), `EventStream` |
-| `visitors/varindexer.rs` | Assigns variable slots, collects `SimulationDataRequest`s |
-| `visitors/ifconditiontransform.rs`, `ifprocessor.rs`, `domainprocessor.rs` | Static passes preparing conditionals for smoothing and nested-if variable stores |
-| `visitors/evaluator.rs` | `SingleScenarioEvaluator`: exact path evaluation |
-| `visitors/fuzzyevaluator.rs` | `FuzzyEvaluator`: smoothed conditionals for stable AAD on digital payoffs |
-| `request.rs` | `SimulationDataRequest` (discounts, forwards, FX, spots, numeraire flag) |
-| `runtime.rs` | `ScriptEngine`, `ScriptModelSetup`, `ParallelScriptEvaluation`, `ExpectedCashflow` |
-| `product.rs` | `ScriptedProduct`, `ScriptedPayoff` and the `IntoContingentClaims` bridge to XVA |
-| `utils/errors.rs` | `ScriptingError` |
+| Path                                                                       | Responsibility                                                                                                                              |
+| -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `parsing/lexer.rs`, `parsing/parser.rs`                                    | Tokenizer and recursive-descent parser producing `Node` trees                                                                               |
+| `nodes/node.rs`                                                            | The `Node` enum (arithmetic, comparison, `If`, `ForEach`, `Pays`, `Spot`, `Df`, `RateIndex`, …) and per-node metadata used by the analysers |
+| `nodes/event.rs`                                                           | `CodedEvent` (date + source), `Event` (date + AST), `EventStream`                                                                           |
+| `visitors/varindexer.rs`                                                   | Assigns variable slots, collects `SimulationDataRequest`s                                                                                   |
+| `visitors/ifconditiontransform.rs`, `ifprocessor.rs`, `domainprocessor.rs` | Static passes preparing conditionals for smoothing and nested-if variable stores                                                            |
+| `visitors/evaluator.rs`                                                    | `SingleScenarioEvaluator`: exact path evaluation                                                                                            |
+| `visitors/fuzzyevaluator.rs`                                               | `FuzzyEvaluator`: smoothed conditionals for stable AAD on digital payoffs                                                                   |
+| `request.rs`                                                               | `SimulationDataRequest` (discounts, forwards, FX, spots, numeraire flag)                                                                    |
+| `runtime.rs`                                                               | `ScriptEngine`, `ScriptModelSetup`, `ParallelScriptEvaluation`, `ExpectedCashflow`                                                          |
+| `product.rs`                                                               | `ScriptedProduct`, `ScriptedPayoff` and the `IntoContingentClaims` bridge to XVA                                                            |
+| `utils/errors.rs`                                                          | `ScriptingError`                                                                                                                            |
 
 The numeric type used inside scripts is `NumericType = DualFwd`, so every script variable is differentiable with respect to curve pillars and model parameters that were put on the tape before evaluation.
 
@@ -94,4 +94,4 @@ Both binaries assert agreement with the native implementation to `1e-8` (NPV, EP
 - Products whose term sheet changes frequently: the script is data (a `Vec<CodedEvent>` is `Serialize`/`Deserialize`), so it can be stored and versioned alongside market data.
 - Getting an XVA exposure profile for a bespoke product without writing a claim decomposition.
 
-Prefer native instruments and pricers when a closed form exists (Black caplets, Garman–Kohlhagen FX options, Hull–White swaptions) or when you need `Request::FairRate`, `YieldToMaturity`, or cashflow tables in the `EvaluationResults` format.
+Prefer native instruments and pricers when a closed form exists (Black caplets, Garman–Kohlhagen FX options, Hull–White swaptions) or when you need `Request::FairRate` or cashflow tables in the `EvaluationResults` format.

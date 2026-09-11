@@ -27,18 +27,18 @@ pub enum CashflowType<T: Scalar> {
 
 `Leg<T>` groups cashflows that share a currency, side and set of indices:
 
-| Field | Meaning |
-| --- | --- |
-| `id: usize` | leg identifier used by pricers (`CashflowsTable` rows, XVA `leg_id`) |
-| `cashflows: Vec<CashflowType<T>>` | ordered cashflows |
-| `currency: Currency` | payment currency |
-| `discount_index: Option<MarketIndex>` | explicit discount curve override |
-| `forward_index: Option<MarketIndex>` | index fixing floating coupons |
-| `spread: Option<T>`, `interest_rate: Option<InterestRate<T>>` | floating spread / fixed rate |
-| `side: Side` | `PayShort` or `LongReceive` |
-| `is_linear: bool` | `false` when option-embedded coupons are present |
-| `asset_class: AssetClass` | `FixedIncome, InterestRate, Equity, Fx, Credit, Other` |
-| `first_payment_date`, `last_payment_date` | used by bootstrappers to order pillars |
+| Field                                                         | Meaning                                                              |
+| ------------------------------------------------------------- | -------------------------------------------------------------------- |
+| `id: usize`                                                   | leg identifier used by pricers (`CashflowsTable` rows, XVA `leg_id`) |
+| `cashflows: Vec<CashflowType<T>>`                             | ordered cashflows                                                    |
+| `currency: Currency`                                          | payment currency                                                     |
+| `discount_index: Option<MarketIndex>`                         | explicit discount curve override                                     |
+| `forward_index: Option<MarketIndex>`                          | index fixing floating coupons                                        |
+| `spread: Option<T>`, `interest_rate: Option<InterestRate<T>>` | floating spread / fixed rate                                         |
+| `side: Side`                                                  | `PayShort` or `LongReceive`                                          |
+| `is_linear: bool`                                             | `false` when option-embedded coupons are present                     |
+| `asset_class: AssetClass`                                     | `FixedIncome, InterestRate, Equity, Fx, Credit, Other`               |
+| `first_payment_date`, `last_payment_date`                     | used by bootstrappers to order pillars                               |
 
 ### `MakeLeg`
 
@@ -65,13 +65,13 @@ let leg = MakeLeg::<DualFwd>::default()
 
 Payment structures (`PaymentStructure`):
 
-| Method | Structure | Notes |
-| --- | --- | --- |
-| `.bullet()` | coupons + single redemption at maturity | default for swaps |
-| `.equal_redemptions()` | principal amortised in equal amounts, coupons on outstanding notional | |
-| `.equal_payments()` | constant coupon + principal instalments | fixed legs only (error on floating) |
-| `.zero()` | one payment at maturity | forces `Frequency::Once` |
-| `.other()` | custom `with_disbursements(HashMap<Date,f64>)` / `with_redemptions(HashMap<Date,f64>)` | forces `Frequency::OtherFrequency` |
+| Method                 | Structure                                                                              | Notes                               |
+| ---------------------- | -------------------------------------------------------------------------------------- | ----------------------------------- |
+| `.bullet()`            | coupons + single redemption at maturity                                                | default for swaps                   |
+| `.equal_redemptions()` | principal amortised in equal amounts, coupons on outstanding notional                  |                                     |
+| `.equal_payments()`    | constant coupon + principal instalments                                                | fixed legs only (error on floating) |
+| `.zero()`              | one payment at maturity                                                                | forces `Frequency::Once`            |
+| `.other()`             | custom `with_disbursements(HashMap<Date,f64>)` / `with_redemptions(HashMap<Date,f64>)` | forces `Frequency::OtherFrequency`  |
 
 Optional extras: `with_first_coupon_date`, `with_end_of_month`, `with_leg_id`, `with_asset_class`, `with_caplet_strike`/`with_floorlet_strike` (turns a floating leg into option-embedded coupons; not allowed on fixed legs). `build()` fails with `ValueNotSetErr("Rate type")` and similar messages when a required field is missing, and with `InvalidValueErr` for inconsistent combinations.
 
@@ -99,26 +99,26 @@ impl<T: Scalar> SwapTrade<T> {
 
 ### Catalogue
 
-| Asset class | Instrument | Builder | Trade | Deterministic pricer |
-| --- | --- | --- | --- | --- |
-| Rates | `Swap` (fixed vs float) | `MakeSwap` | `SwapTrade` | `DiscountedCashflowPricer` |
-| Rates | `BasisSwap` (float vs float) | `MakeBasisSwap` | `BasisSwapTrade` | `DiscountedCashflowPricer` |
-| Rates | `FixFloatCrossCurrencySwap` | `MakeFixFloatCrossCurrencySwap` | `FixFloatCrossCurrencySwapTrade` | `DiscountedCashflowPricer` |
-| Rates | `FloatFloatCrossCurrencySwap` | `MakeFloatFloatCrossCurrencySwap` | `FloatFloatCrossCurrencySwapTrade` | `DiscountedCashflowPricer` |
-| Rates | `CapFloor` | `MakeCapFloor` | `CapFloorTrade` | `ClosedFormBlackCapPricer`, `ClosedFormHullWhiteCapPricer` |
-| Rates | `CapletFloorlet` | — (from quotes) | `CapletFloorletTrade` | `ClosedFormBlackCapletPricer`, `ClosedFormHullWhiteCapletPricer` |
-| Rates | `EuropeanSwaption` | `MakeSwaption` | `EuropeanSwaptionTrade<DualFwd>` | `ClosedFormHullWhiteSwaptionPricer` |
-| Rates | `RateFutures` | `MakeRateFutures` | `RateFuturesTrade` | `RateFuturesPricer` |
-| Fixed income | `FixedRateBond` | `MakeFixedRateBond` | `FixedRateBondTrade` | `DiscountedCashflowPricer` |
-| Fixed income | `FloatingRateNote` | `MakeFloatingRateNote` | `FloatingRateNoteTrade` | `DiscountedCashflowPricer` |
-| Fixed income | `FixedRateDeposit` | `MakeFixedRateDeposit` | `FixedRateDepositTrade` | `DiscountedCashflowPricer` |
-| FX | `FxForward` | `MakeFxForward` | `FxForwardTrade` | `FxForwardPricer` |
-| FX | `FxOption` | `MakeFxOption` | `FxOptionTrade` | `FxOptionPricer` (Garman–Kohlhagen) |
-| Equity | `EquityForward` | `MakeEquityForward` | `EquityForwardTrade` | — (claims / scripting) |
-| Equity | `EquityEuropeanOption` | — | `EquityEuropeanOptionTrade` | `BlackEuropeanOptionPricer`, `BlackMCEuropeanOptionPricer` |
-| Equity | `Futures` | `MakeFutures` | `FuturesTrade` | — (claims / scripting) |
-| Credit | `CreditDefaultSwap` | — | `CdsTrade` | `CdsPricer` |
-| Any | `ScriptedProduct` | script text | — | `ScriptEngine` (Monte Carlo) |
+| Asset class  | Instrument                    | Builder                           | Trade                              | Deterministic pricer                                             |
+| ------------ | ----------------------------- | --------------------------------- | ---------------------------------- | ---------------------------------------------------------------- |
+| Rates        | `Swap` (fixed vs float)       | `MakeSwap`                        | `SwapTrade`                        | `DiscountedCashflowPricer`                                       |
+| Rates        | `BasisSwap` (float vs float)  | `MakeBasisSwap`                   | `BasisSwapTrade`                   | `DiscountedCashflowPricer`                                       |
+| Rates        | `FixFloatCrossCurrencySwap`   | `MakeFixFloatCrossCurrencySwap`   | `FixFloatCrossCurrencySwapTrade`   | `DiscountedCashflowPricer`                                       |
+| Rates        | `FloatFloatCrossCurrencySwap` | `MakeFloatFloatCrossCurrencySwap` | `FloatFloatCrossCurrencySwapTrade` | `DiscountedCashflowPricer`                                       |
+| Rates        | `CapFloor`                    | `MakeCapFloor`                    | `CapFloorTrade`                    | `ClosedFormBlackCapPricer`, `ClosedFormHullWhiteCapPricer`       |
+| Rates        | `CapletFloorlet`              | — (from quotes)                   | `CapletFloorletTrade`              | `ClosedFormBlackCapletPricer`, `ClosedFormHullWhiteCapletPricer` |
+| Rates        | `EuropeanSwaption`            | `MakeSwaption`                    | `EuropeanSwaptionTrade<DualFwd>`   | `ClosedFormHullWhiteSwaptionPricer`                              |
+| Rates        | `RateFutures`                 | `MakeRateFutures`                 | `RateFuturesTrade`                 | `RateFuturesPricer`                                              |
+| Fixed income | `FixedRateBond`               | `MakeFixedRateBond`               | `FixedRateBondTrade`               | `DiscountedCashflowPricer`                                       |
+| Fixed income | `FloatingRateNote`            | `MakeFloatingRateNote`            | `FloatingRateNoteTrade`            | `DiscountedCashflowPricer`                                       |
+| Fixed income | `FixedRateDeposit`            | `MakeFixedRateDeposit`            | `FixedRateDepositTrade`            | `DiscountedCashflowPricer`                                       |
+| FX           | `FxForward`                   | `MakeFxForward`                   | `FxForwardTrade`                   | `FxForwardPricer`                                                |
+| FX           | `FxOption`                    | `MakeFxOption`                    | `FxOptionTrade`                    | `FxOptionPricer` (Garman–Kohlhagen)                              |
+| Equity       | `EquityForward`               | `MakeEquityForward`               | `EquityForwardTrade`               | — (claims / scripting)                                           |
+| Equity       | `EquityEuropeanOption`        | —                                 | `EquityEuropeanOptionTrade`        | `BlackEuropeanOptionPricer`, `BlackMCEuropeanOptionPricer`       |
+| Equity       | `Futures`                     | `MakeFutures`                     | `FuturesTrade`                     | — (claims / scripting)                                           |
+| Credit       | `CreditDefaultSwap`           | —                                 | `CdsTrade`                         | `CdsPricer`                                                      |
+| Any          | `ScriptedProduct`             | script text                       | —                                  | `ScriptEngine` (Monte Carlo)                                     |
 
 The generic parameter `T` on rate/fixed-income instruments is `f64` or `DualFwd`; build in `f64` when you do not need rate sensitivities and convert with `.into()` when you do. FX, equity, cap/floor and credit instruments are non-generic and always price in `DualFwd` internally.
 

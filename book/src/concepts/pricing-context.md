@@ -27,16 +27,16 @@ All `with_*` methods consume and return `Self`. The evaluation date is not set s
 
 ### Read accessors
 
-| Method | Returns |
-| --- | --- |
-| `quote_store()` | shocked store if scenarios are attached, otherwise the base store |
-| `base_quote_store()` | the unshocked store |
-| `fixing_store()`, `fx_store()` | the stores as given |
-| `scenarios()` | `&Vec<Scenario>` |
-| `base_currency()`, `base_index()` | CSA currency / index |
-| `curve_configurations()`, `credit_curve_configurations()`, `volatility_surface_configurations()`, `volatility_cube_configurations()`, `simulation_configurations()` | the configuration vectors |
-| `constructed_elements()` / `constructed_elements_mut()` | the `ConstructedElementStore` populated by `initialize()` |
-| `evaluation_date()` | reference date of the quote store |
+| Method                                                                                                                                                              | Returns                                                           |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| `quote_store()`                                                                                                                                                     | shocked store if scenarios are attached, otherwise the base store |
+| `base_quote_store()`                                                                                                                                                | the unshocked store                                               |
+| `fixing_store()`, `fx_store()`                                                                                                                                      | the stores as given                                               |
+| `scenarios()`                                                                                                                                                       | `&Vec<Scenario>`                                                  |
+| `base_currency()`, `base_index()`                                                                                                                                   | CSA currency / index                                              |
+| `curve_configurations()`, `credit_curve_configurations()`, `volatility_surface_configurations()`, `volatility_cube_configurations()`, `simulation_configurations()` | the configuration vectors                                         |
+| `constructed_elements()` / `constructed_elements_mut()`                                                                                                             | the `ConstructedElementStore` populated by `initialize()`         |
+| `evaluation_date()`                                                                                                                                                 | reference date of the quote store                                 |
 
 ## What `initialize()` does
 
