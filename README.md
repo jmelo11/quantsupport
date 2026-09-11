@@ -2,8 +2,6 @@
 
 QuantSupport is a quantitative-finance library written in Rust, with Python bindings provided in the same repository. It combines instrument construction, market-data bootstrapping, pricing, automatic differentiation, Monte Carlo exposure simulation, and XVA in one toolkit.
 
-> **Project status:** QuantSupport is alpha software. The core workflows are implemented and covered by tests and runnable examples, but public APIs and configuration schemas may still change between releases.
-
 ## Capabilities
 
 | Area | Current support |

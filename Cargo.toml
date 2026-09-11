@@ -6,13 +6,18 @@ name = "quantsupport"
 version = "0.1.5"
 edition = "2021"
 
-description = "Rust library for derivative pricing and risk analytics."
 license = "MIT"
 repository = "https://github.com/jmelo11/quantsupport"
-keywords = ["finance", "quant", "risk", "pricing", "derivatives"]
+description = "Rust quantitative finance library for derivatives pricing, yield-curve bootstrapping, AAD risk, Monte Carlo exposure, and XVA."
+keywords = [
+    "quantitative-finance",
+    "derivatives",
+    "pricing",
+    "risk",
+    "xva",
+]
 categories = ["finance", "science"]
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+documentation = "https://docs.rs/quantsupport"
 
 [dependencies]
 chrono = "0.4.37"
