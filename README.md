@@ -2,51 +2,6 @@
 
 QuantSupport is a quantitative-finance library written in Rust, with Python bindings provided in the same repository. It combines instrument construction, market-data bootstrapping, pricing, automatic differentiation, payoff scripting, Monte Carlo exposure simulation, and XVA in one toolkit.
 
-## Capabilities
-
-| Area | Current support |
-| --- | --- |
-| Instruments | Fixed-rate deposits and bonds, floating-rate notes, rate futures, swaps, basis swaps, caps/floors, caplets/floorlets, European swaptions, fixed/float and float/float cross-currency swaps, equity forwards and European options, FX forwards and options, futures, and credit default swaps |
-| Pricing | Generic discounted-cashflow pricing; Black equity, FX, caplet, and cap/floor pricing; Monte Carlo equity option pricing; Hull-White caplet, cap/floor, and European swaption pricing; rate-futures and CDS pricing |
-| Results and risk | NPV, fair rate, cashflow tables, and quote-pillar sensitivities through automatic differentiation; type-erased pricer dispatch through `Evaluator` |
-| Curves | Flat and interpolated term structures, multi-curve bootstrapping, cross-curve dependencies, FX-implied collateral curves, and CDS-based survival-curve bootstrapping |
-| Volatility | Interpolated volatility surfaces and cubes, Black and normal volatility conventions, FX surface orientation, and constant, surface-, cube-, or calibration-driven volatility sources |
-| Models and simulation | Brownian motion, Hull-White, and LGM models; Hull-White/LGM volatility calibration; seeded Monte Carlo path generation from serializable configurations |
-| Exposure and XVA | Contingent-claim decomposition, fixing preprocessing, claim compression, netting sets, CSA terms, NPV cubes, EPE/ENE/EE, CVA, DVA, FVA, and parallel AAD sensitivities |
-| Scripting | Payoff scripting language (assignments, `if`/`else`, `for`, `pays`, `RateIndex`, `Df`, `Spot`, `cvg`, `fif`, arrays); dated event streams; single-tape and Rayon-parallel Monte Carlo evaluation with AAD sensitivities and expected cashflows; smoothed conditionals for digital payoffs; scripted products as XVA contingent claims |
-| Market data | Quote, fixing, and FX stores; bid/mid/ask selection; absolute and relative quote scenarios that rebuild dependent curves, volatility objects, and simulations |
-| Conventions and numerics | Dates, periods, schedules, IMM dates, calendars, business-day conventions, day counts, compounding, interpolation, root solvers, FFT, and probability utilities |
-| Languages | Native Rust API and PyO3-based Python bindings with pandas result tables |
-
-The Rust prelude re-exports the types used by the main workflows:
-
-```rust
-use quantsupport::prelude::*;
-```
-
-## Installation
-
-Add the Rust crate to `Cargo.toml`:
-
-```toml
-[dependencies]
-quantsupport = "0.1.6"
-```
-
-To work from this checkout instead:
-
-```toml
-[dependencies]
-quantsupport = { path = "../quantsupport" }
-```
-
-Build and test the Rust library with:
-
-```bash
-cargo build -p quantsupport
-cargo test -p quantsupport
-```
-
 ## Quick start: price and risk a swap
 
 This complete example values a five-year receive-fixed USD swap against a flat SOFR curve and asks for NPV, par rate, cashflows, and curve sensitivity.
@@ -133,6 +88,51 @@ fn main() -> Result<()> {
 ```
 
 The same program, with a more detailed cashflow report, is available in [`examples/valuation`](examples/valuation).
+
+## Capabilities
+
+| Area | Current support |
+| --- | --- |
+| Instruments | Fixed-rate deposits and bonds, floating-rate notes, rate futures, swaps, basis swaps, caps/floors, caplets/floorlets, European swaptions, fixed/float and float/float cross-currency swaps, equity forwards and European options, FX forwards and options, futures, and credit default swaps |
+| Pricing | Generic discounted-cashflow pricing; Black equity, FX, caplet, and cap/floor pricing; Monte Carlo equity option pricing; Hull-White caplet, cap/floor, and European swaption pricing; rate-futures and CDS pricing |
+| Results and risk | NPV, fair rate, cashflow tables, and quote-pillar sensitivities through automatic differentiation; type-erased pricer dispatch through `Evaluator` |
+| Curves | Flat and interpolated term structures, multi-curve bootstrapping, cross-curve dependencies, FX-implied collateral curves, and CDS-based survival-curve bootstrapping |
+| Volatility | Interpolated volatility surfaces and cubes, Black and normal volatility conventions, FX surface orientation, and constant, surface-, cube-, or calibration-driven volatility sources |
+| Models and simulation | Brownian motion, Hull-White, and LGM models; Hull-White/LGM volatility calibration; seeded Monte Carlo path generation from serializable configurations |
+| Exposure and XVA | Contingent-claim decomposition, fixing preprocessing, claim compression, netting sets, CSA terms, NPV cubes, EPE/ENE/EE, CVA, DVA, FVA, and parallel AAD sensitivities |
+| Scripting | Payoff scripting language (assignments, `if`/`else`, `for`, `pays`, `RateIndex`, `Df`, `Spot`, `cvg`, `fif`, arrays); dated event streams; single-tape and Rayon-parallel Monte Carlo evaluation with AAD sensitivities and expected cashflows; smoothed conditionals for digital payoffs; scripted products as XVA contingent claims |
+| Market data | Quote, fixing, and FX stores; bid/mid/ask selection; absolute and relative quote scenarios that rebuild dependent curves, volatility objects, and simulations |
+| Conventions and numerics | Dates, periods, schedules, IMM dates, calendars, business-day conventions, day counts, compounding, interpolation, root solvers, FFT, and probability utilities |
+| Languages | Native Rust API and PyO3-based Python bindings with pandas result tables |
+
+The Rust prelude re-exports the types used by the main workflows:
+
+```rust
+use quantsupport::prelude::*;
+```
+
+## Installation
+
+Add the Rust crate to `Cargo.toml`:
+
+```toml
+[dependencies]
+quantsupport = "0.1.6"
+```
+
+To work from this checkout instead:
+
+```toml
+[dependencies]
+quantsupport = { path = "../quantsupport" }
+```
+
+Build and test the Rust library with:
+
+```bash
+cargo build -p quantsupport
+cargo test -p quantsupport
+```
 
 ## Configuration-driven market setup
 
