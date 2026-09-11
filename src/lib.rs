@@ -197,6 +197,8 @@ pub mod prelude;
 pub mod pricers;
 pub mod quotes;
 pub mod rates;
+/// Payoff scripting language and model-backed evaluation runtime.
+pub mod scripting;
 pub mod simulations;
 pub mod time;
 pub mod utils;

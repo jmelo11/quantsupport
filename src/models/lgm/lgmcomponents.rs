@@ -1,3 +1,29 @@
+//! LGM rate, FX, and equity model components.
+//!
+//! # Rate-model convention
+//!
+//! `LgmRateModel` uses a
+//! one-factor Linear Gaussian Markov representation
+//! fitted exactly to the supplied time-zero discount curve. With time measured
+//! in years from the curve reference date, the implementation defines
+//!
+//! ```text
+//! H(t)     = (1 - exp(-lambda * t)) / lambda
+//! alpha(t) = sigma(t) * exp(lambda * t)
+//! zeta(t)  = integral(0, t, alpha(s)^2 ds)
+//! ```
+//!
+//! The Gaussian state follows `dz(t) = alpha(t) dW(t)` under the LGM numeraire
+//! measure and starts at `z(0) = 0`. The short rate is obtained from
+//! `r(t) = f(0,t) + H'(t) * (H(t) * zeta(t) + z(t))`. Bond prices combine this
+//! state with the initial curve, giving an exact time-zero fit for every
+//! `lambda` and `sigma`.
+//!
+//! `lambda` is a mean-reversion speed in inverse years. `sigma` is an
+//! annualized absolute rate volatility in rate units per square-root year:
+//! `0.01` means 100 basis points per square-root year.
+//! The implementation supports the continuous `lambda = 0` limit.
+
 use crate::{
     ad::scalar::Scalar,
     core::marketdatahandling::constructedelementstore::ConstructedElementStore,
@@ -14,9 +40,20 @@ use crate::{
     },
 };
 
-/// Single-factor LGM rate model parametrised by mean-reversion (`lambda`)
-/// and a piecewise-constant short-rate volatility schedule (`sigma`),
-/// calibrated to an initial discount curve.
+/// One-factor LGM interest-rate model.
+///
+/// The two model parameters have distinct roles:
+///
+/// - `lambda` controls how quickly shocks lose influence at longer maturities
+///   through the loading `H(T) - H(t)`. It is expressed in inverse years.
+/// - `sigma(t)` controls the instantaneous absolute short-rate volatility and
+///   is expressed in rate units per square-root year.
+///
+/// The borrowed discount curve supplies `P(0, t)` and the initial forward
+/// curve. It is therefore both the calibration anchor and the source of the
+/// model's exact time-zero curve fit. Use [`f64`] for ordinary valuation and an
+/// AD scalar such as [`DualFwd`](crate::ad::dual::DualFwd) when parameter or
+/// curve sensitivities are required.
 pub struct LgmRateModel<'a, T: Scalar> {
     lambda: T,
     sigma_schedule: Vec<(f64, T)>,
@@ -24,7 +61,18 @@ pub struct LgmRateModel<'a, T: Scalar> {
 }
 
 impl<'a, T: Scalar> LgmRateModel<'a, T> {
-    /// Creates a new LGM rate model with a constant volatility.
+    /// Creates an LGM rate model with constant short-rate volatility.
+    ///
+    /// # Arguments
+    ///
+    /// - `lambda` — mean-reversion speed in inverse years. Larger positive
+    ///   values reduce long-maturity factor loadings; zero selects the
+    ///   non-mean-reverting limit.
+    /// - `sigma` — annualized absolute short-rate volatility in rate units per
+    ///   square-root year. For example, `0.01` is 100 bp/√year.
+    /// - `discount_curve` — initial term structure used for `P(0, t)` and
+    ///   forwards. Model-method times use the curve's time origin and
+    ///   year-fraction convention.
     pub fn new(lambda: T, sigma: T, discount_curve: &'a dyn InterestRatesTermStructure<T>) -> Self {
         Self {
             lambda,
@@ -33,13 +81,23 @@ impl<'a, T: Scalar> LgmRateModel<'a, T> {
         }
     }
 
-    /// Creates a new LGM rate model with a piecewise-constant short-rate
-    /// volatility schedule of `(year_fraction, sigma)` pairs. Each sigma
-    /// applies from its year fraction onward (the first also applies before).
+    /// Creates an LGM rate model with piecewise-constant short-rate volatility.
+    ///
+    /// # Arguments
+    ///
+    /// - `lambda` — mean-reversion speed in inverse years, with the same
+    ///   convention as [`Self::new`].
+    /// - `sigma_schedule` — ordered `(start_time, sigma)` pairs. Times are year
+    ///   fractions from the curve reference date and each value applies on
+    ///   `[start_time, next_start_time)`. The first value also applies from
+    ///   time zero when its stated start is positive. Each `sigma` is an
+    ///   annualized absolute rate volatility.
+    /// - `discount_curve` — initial term structure to reproduce exactly at
+    ///   time zero.
     ///
     /// # Errors
-    /// Returns an error if the schedule is empty or not strictly increasing
-    /// in time.
+    /// Returns an error for an empty schedule or schedule times outside strict
+    /// ascending order.
     pub fn new_piecewise(
         lambda: T,
         sigma_schedule: Vec<(f64, T)>,
@@ -62,7 +120,10 @@ impl<'a, T: Scalar> LgmRateModel<'a, T> {
         })
     }
 
-    /// Returns the drift of the Gaussian factor under its own measure (always zero).
+    /// Returns the Gaussian-state drift under the LGM numeraire measure.
+    ///
+    /// The drift is identically zero. `t` is accepted to satisfy the common
+    /// model interface and is a year fraction from the reference date.
     #[must_use]
     pub fn self_drift(&self, _t: f64) -> T {
         T::zero()
@@ -79,10 +140,25 @@ impl<'a> LgmRateModel<'a, f64> {
     /// Hull-White parametrisation via
     /// [`HullWhite::calibrate_with_configuration`], and the resulting
     /// piecewise-constant sigma schedule is transferred to the LGM model.
+    /// Market Black or normal volatilities define instrument-price calibration
+    /// targets, and calibration solves the corresponding LGM sigma values.
+    ///
+    /// # Arguments
+    ///
+    /// - `lambda` — fixed mean-reversion speed in inverse years. Calibration
+    ///   solves the volatility schedule while holding this value constant.
+    /// - `discount_curve` — curve used both to price calibration instruments
+    ///   and to anchor the LGM model.
+    /// - `configuration` — calibration instruments, quote identifiers,
+    ///   volatility convention, and calibration source.
+    /// - `store` — constructed volatility surfaces or cubes referenced by the
+    ///   configuration.
+    /// - `selector` — market quote source used by the calibration instruments.
+    /// - `level` — bid, mid, or ask quote level selected from the quote source.
     ///
     /// # Errors
-    /// Returns an error if the surface/cube has not been constructed, if
-    /// calibration quotes are missing, or if calibration fails.
+    /// Returns an error when the configured surface or cube is unavailable,
+    /// calibration quotes are missing, or calibration fails.
     pub fn calibrated(
         lambda: f64,
         discount_curve: &'a dyn InterestRatesTermStructure<f64>,
@@ -106,13 +182,18 @@ impl<'a> LgmRateModel<'a, f64> {
 
     /// Creates an LGM rate model from a serde-enabled [`ModelConfiguration`].
     ///
-    /// Supported volatility sources: `Constant` and `Calibrated`. Sampling a
-    /// surface/cube directly would misuse Black vols as short-rate vols and
-    /// is rejected.
+    /// Supported volatility sources are `Constant` and `Calibrated`.
+    /// `Constant` supplies LGM sigma directly. `Calibrated` derives LGM sigma
+    /// from prices of instruments quoted through a volatility surface or cube.
+    ///
+    /// `configuration` supplies `lambda` and the volatility policy;
+    /// `discount_curve`, `store`, `selector`, and `level` have the same roles
+    /// as in [`Self::calibrated`]. A constant source interprets its value as
+    /// absolute short-rate volatility in rate units per square-root year.
     ///
     /// # Errors
-    /// Returns an error if the configuration is not an `Lgm` model, if the
-    /// volatility source is unsupported, or if calibration fails.
+    /// Returns an error for another model type, an unsupported volatility
+    /// source, or a calibration failure.
     pub fn from_configuration(
         configuration: &ModelConfiguration,
         discount_curve: &'a dyn InterestRatesTermStructure<f64>,
@@ -129,14 +210,9 @@ impl<'a> LgmRateModel<'a, f64> {
             VolatilitySourceConfiguration::Constant { value } => {
                 Ok(Self::new(*lambda, *value, discount_curve))
             }
-            VolatilitySourceConfiguration::Calibrated(calibration) => Self::calibrated(
-                *lambda,
-                discount_curve,
-                calibration,
-                store,
-                selector,
-                level,
-            ),
+            VolatilitySourceConfiguration::Calibrated(calibration) => {
+                Self::calibrated(*lambda, discount_curve, calibration, store, selector, level)
+            }
             VolatilitySourceConfiguration::Surface { .. }
             | VolatilitySourceConfiguration::Cube { .. } => Err(QSError::InvalidValueErr(
                 "Lgm supports Constant or Calibrated volatility sources; sampling a \
@@ -149,6 +225,10 @@ impl<'a> LgmRateModel<'a, f64> {
 
 impl<T: Scalar> LgmRateModel<'_, T> {
     /// Returns the piecewise-constant short-rate volatility schedule.
+    ///
+    /// Each tuple is `(start_time_in_years, sigma)`. `sigma` is annualized
+    /// absolute rate volatility, and the first entry also governs the interval
+    /// from time zero to its stated start.
     #[must_use]
     pub fn sigma_schedule(&self) -> &[(f64, T)] {
         &self.sigma_schedule
@@ -166,7 +246,12 @@ impl<T: Scalar> LgmRateModel<'_, T> {
         val
     }
 
-    /// Mean-reversion function `H(t) = (1 - e^{-λt}) / λ`.
+    /// Returns the LGM maturity-loading function
+    /// `H(t) = (1 - exp(-lambda * t)) / lambda`.
+    ///
+    /// `t` is a year fraction from the reference date. The function returns
+    /// `t` when `lambda` is zero. Bond-price exposure to the state between
+    /// observation `t` and maturity `T` is governed by `H(T) - H(t)`.
     #[allow(non_snake_case)]
     #[must_use]
     pub fn H(&self, t: f64) -> T {
@@ -179,7 +264,9 @@ impl<T: Scalar> LgmRateModel<'_, T> {
         }
     }
 
-    /// Derivative `H'(t) = e^{-λt}`.
+    /// Returns `dH(t)/dt = exp(-lambda * t)`.
+    ///
+    /// `t` is a year fraction from the reference date.
     #[allow(non_snake_case)]
     #[must_use]
     pub fn H_dot(&self, t: f64) -> T {
@@ -190,7 +277,11 @@ impl<T: Scalar> LgmRateModel<'_, T> {
         }
     }
 
-    /// Instantaneous volatility of the Gaussian factor.
+    /// Returns the instantaneous Gaussian-state volatility
+    /// `alpha(t) = sigma(t) * exp(lambda * t)`.
+    ///
+    /// `t` is a year fraction from the reference date. `alpha(t)` is the
+    /// diffusion coefficient in `dz(t) = alpha(t) dW(t)`.
     #[must_use]
     pub fn alpha(&self, t: f64) -> T {
         let sigma = self.sigma_at(t);
@@ -201,8 +292,11 @@ impl<T: Scalar> LgmRateModel<'_, T> {
         }
     }
 
-    /// Integrated variance `ζ(t) = ∫₀ᵗ α²(s) ds`, computed piecewise over the
-    /// sigma schedule.
+    /// Returns the integrated state variance
+    /// `zeta(t) = integral(0, t, alpha(s)^2 ds)`.
+    ///
+    /// `t` is a year fraction from the reference date. The integration is
+    /// analytic on every piecewise-constant `sigma` interval.
     #[must_use]
     pub fn zeta(&self, t: f64) -> T {
         let n = self.sigma_schedule.len();
@@ -236,7 +330,18 @@ impl<T: Scalar> LgmRateModel<'_, T> {
         total
     }
 
-    /// Computes the simulated discount factor `P(t,T|z_t)`.
+    /// Computes the model discount factor `P(t, maturity | z_t)`.
+    ///
+    /// # Arguments
+    ///
+    /// - `t` — observation time as a year fraction from the curve reference
+    ///   date.
+    /// - `T` — bond maturity time in the same year-fraction convention.
+    /// - `z_t` — Gaussian LGM state observed at `t`, produced by integrating
+    ///   `dz(s) = alpha(s) dW(s)` from time zero to `t`.
+    ///
+    /// At `t = 0` and `z_t = 0`, the result equals the initial curve's
+    /// `P(0, T)`. The pricing domain is `T >= t`.
     ///
     /// # Errors
     /// Returns an error if discount factor lookup fails.
@@ -257,7 +362,41 @@ impl<T: Scalar> LgmRateModel<'_, T> {
         Ok(p0_T.div_val(p0_t).mul_val(exponent.exp()))
     }
 
-    /// Computes the instantaneous forward rate `f(t,T|z_t)`.
+    /// Returns the LGM numeraire associated with the driftless state measure.
+    ///
+    /// Dividing a pathwise cashflow by this value expresses the cashflow in the
+    /// LGM numeraire measure. The expectation can then be converted to its
+    /// time-zero domestic value.
+    ///
+    /// # Arguments
+    ///
+    /// - `t` — numeraire observation time in years from the reference date.
+    /// - `z_t` — Gaussian LGM state at `t`.
+    ///
+    /// # Errors
+    /// Returns an error when the initial-curve lookup for `P(0, t)` fails.
+    pub fn numeraire(&self, t: f64, z_t: T) -> Result<T> {
+        let p0_t = self.discount_curve.discount_factor_from_time(t)?;
+        let h_t = self.H(t);
+        let exponent = h_t.mul_val(z_t).add_val(
+            T::scalar(0.5)
+                .mul_val(h_t)
+                .mul_val(h_t)
+                .mul_val(self.zeta(t)),
+        );
+        Ok(exponent.exp().div_val(p0_t))
+    }
+
+    /// Computes the instantaneous forward rate `f(t, maturity | z_t)`.
+    ///
+    /// # Arguments
+    ///
+    /// - `t` — state observation time in years from the reference date.
+    /// - `T` — forward maturity time in the same convention.
+    /// - `z_t` — Gaussian LGM state at `t`.
+    ///
+    /// The initial curve supplies `f(0, T)`; the remaining terms apply the
+    /// stochastic LGM displacement.
     ///
     /// # Errors
     /// Returns an error if forward rate lookup fails.
@@ -275,7 +414,10 @@ impl<T: Scalar> LgmRateModel<'_, T> {
             .add_val(f0_T))
     }
 
-    /// Computes the short rate `r(t|z_t)`.
+    /// Computes the instantaneous short rate `r(t | z_t) = f(t, t | z_t)`.
+    ///
+    /// `t` is measured in years from the reference date and `z_t` is the
+    /// Gaussian state at that time.
     ///
     /// # Errors
     /// Returns an error if forward rate computation fails.
@@ -283,7 +425,21 @@ impl<T: Scalar> LgmRateModel<'_, T> {
         self.instantaneous_forward_rate(t, t, z_t)
     }
 
-    /// Drift adjustment (gamma) for a foreign factor under the domestic measure.
+    /// Computes the foreign-rate state drift under the domestic measure.
+    ///
+    /// # Arguments
+    ///
+    /// - `t` — current simulation time in years.
+    /// - `domestic_rate_model` — LGM model for the domestic discount curve.
+    /// - `fx_vol` — annualized lognormal FX volatility as a decimal; `0.12`
+    ///   means 12% per square-root year.
+    /// - `rho_zx_self_fx` — correlation between this foreign-rate Brownian
+    ///   factor and the FX-spot Brownian factor.
+    /// - `rho_zz_self_dom` — correlation between this foreign-rate Brownian
+    ///   factor and the domestic-rate Brownian factor.
+    ///
+    /// Both correlations lie in `[-1, 1]` and equal the corresponding entries
+    /// in the path-generation correlation matrix.
     #[must_use]
     pub fn gamma_under_domestic_measure(
         &self,
@@ -310,7 +466,16 @@ impl<T: Scalar> LgmRateModel<'_, T> {
             )
     }
 
-    /// Euler step for the Gaussian factor with an arbitrary drift.
+    /// Advances a Gaussian factor by one Euler step.
+    ///
+    /// # Arguments
+    ///
+    /// - `t` — start time of the step, in years.
+    /// - `z_t` — factor value at `t`.
+    /// - `dt` — positive step length in years.
+    /// - `drift` — instantaneous factor drift at `t`.
+    /// - `dw_z` — Brownian increment for the step, computed as a standard-normal
+    ///   draw times `sqrt(dt)`.
     #[must_use]
     pub fn evolve_factor_euler(&self, t: f64, z_t: T, dt: f64, drift: T, dw_z: f64) -> T {
         // z + drift * dt + alpha(t) * dW
@@ -318,13 +483,21 @@ impl<T: Scalar> LgmRateModel<'_, T> {
             .add_val(self.alpha(t).mul_val(T::scalar(dw_z)))
     }
 
-    /// Euler step for the domestic Gaussian factor (zero drift).
+    /// Advances the domestic Gaussian factor under its zero-drift LGM measure.
+    ///
+    /// `t`, `z_t`, and `dt` follow [`Self::evolve_factor_euler`]; `dw_z` is a
+    /// Brownian increment already multiplied by `sqrt(dt)`.
     #[must_use]
     pub fn evolve_domestic_factor_euler(&self, t: f64, z_t: T, dt: f64, dw_z: f64) -> T {
         self.evolve_factor_euler(t, z_t, dt, T::zero(), dw_z)
     }
 
-    /// Euler step for a foreign factor under the domestic risk-neutral measure.
+    /// Advances a foreign Gaussian factor under the domestic measure.
+    ///
+    /// `t`, `z_t`, `dt`, and `dw_z` follow [`Self::evolve_factor_euler`]. The
+    /// remaining arguments follow [`Self::gamma_under_domestic_measure`].
+    /// `fx_vol` is a decimal lognormal volatility; the correlation arguments
+    /// are the entries used to correlate the path shocks.
     #[allow(clippy::too_many_arguments)]
     #[must_use]
     pub fn evolve_foreign_factor_under_domestic_measure_euler(
@@ -365,8 +538,7 @@ impl PathGenerator<f64> for LgmRateModel<'_, f64> {
             let dt = t - prev_t;
             if dt <= 0.0 {
                 return Err(QSError::InvalidValueErr(
-                    "LgmRateModel::generate: times must be positive and strictly increasing"
-                        .into(),
+                    "LgmRateModel::generate: times must be positive and strictly increasing".into(),
                 ));
             }
             z = self.evolve_domestic_factor_euler(prev_t, z, dt, draws[i] * dt.sqrt());
@@ -381,7 +553,12 @@ impl PathGenerator<f64> for LgmRateModel<'_, f64> {
 //  LgmFxModel
 // ═══════════════════════════════════════════════════════════════════════════
 
-/// LGM FX model coupling domestic and foreign rate models with an FX volatility.
+/// Lognormal FX spot model coupled to domestic and foreign LGM rate factors.
+///
+/// The spot convention is domestic-currency units per one unit of foreign
+/// currency. Under the domestic pricing measure, the spot drift includes the
+/// stochastic domestic and foreign short rates plus the domestic-rate/FX
+/// quanto adjustment. `fx_vol` is a flat annualized lognormal volatility.
 pub struct LgmFxModel<'a, T: Scalar> {
     domestic: &'a LgmRateModel<'a, T>,
     foreign: &'a LgmRateModel<'a, T>,
@@ -391,7 +568,21 @@ pub struct LgmFxModel<'a, T: Scalar> {
 }
 
 impl<'a, T: Scalar> LgmFxModel<'a, T> {
-    /// Creates a new LGM FX model.
+    /// Creates a coupled LGM FX model.
+    ///
+    /// # Arguments
+    ///
+    /// - `domestic` — rate model for the currency in which the FX spot and
+    ///   payoff are valued.
+    /// - `foreign` — rate model for the foreign currency.
+    /// - `fx_vol` — annualized lognormal spot volatility as a decimal;
+    ///   `0.12` means 12% per square-root year.
+    /// - `spot_0` — time-zero spot in domestic currency per one unit of
+    ///   foreign currency. For a USD-domestic EUR model, this is EUR/USD.
+    /// - `rho_zx_dom_fx` — correlation between domestic-rate and FX-spot
+    ///   Brownian shocks. It controls the drift adjustment and equals the
+    ///   corresponding entry in [`LgmMarketModel`](super::lgmmarketmodel::LgmMarketModel)'s
+    ///   path correlation matrix.
     #[must_use]
     pub const fn new(
         domestic: &'a LgmRateModel<'a, T>,
@@ -409,13 +600,13 @@ impl<'a, T: Scalar> LgmFxModel<'a, T> {
         }
     }
 
-    /// Returns the FX volatility.
+    /// Returns the annualized lognormal FX volatility as a decimal.
     #[must_use]
     pub const fn fx_vol(&self) -> T {
         self.fx_vol
     }
 
-    /// Returns the initial FX spot rate.
+    /// Returns the initial spot in domestic-currency units per foreign unit.
     #[must_use]
     pub const fn initial_spot(&self) -> T {
         self.spot_0
@@ -427,7 +618,11 @@ impl<'a, T: Scalar> LgmFxModel<'a, T> {
 // ═══════════════════════════════════════════════════════════════════════════
 
 impl<T: Scalar> LgmFxModel<'_, T> {
-    /// Computes the FX drift under the domestic measure.
+    /// Computes the proportional FX-spot drift under the domestic measure.
+    ///
+    /// `t` is the current time in years, while `z_dom` and `z_for` are the
+    /// domestic and foreign Gaussian rate states. The result is the drift in
+    /// `dX / X`, before subtracting half the FX variance for log evolution.
     ///
     /// # Errors
     /// Returns an error if short rate computation fails.
@@ -446,7 +641,10 @@ impl<T: Scalar> LgmFxModel<'_, T> {
             .sub_val(r_i))
     }
 
-    /// Computes the log FX drift under the domestic measure.
+    /// Computes the drift of `log(X)` under the domestic measure.
+    ///
+    /// `t`, `z_dom`, and `z_for` follow [`Self::fx_drift`]. The result is the
+    /// proportional spot drift less `0.5 * fx_vol^2`.
     ///
     /// # Errors
     /// Returns an error if FX drift computation fails.
@@ -456,7 +654,16 @@ impl<T: Scalar> LgmFxModel<'_, T> {
         Ok(drift.sub_val(T::scalar(0.5).mul_val(self.fx_vol).mul_val(self.fx_vol)))
     }
 
-    /// Evolves the FX spot using log-Euler discretization.
+    /// Evolves the FX spot using a positivity-preserving log-Euler step.
+    ///
+    /// # Arguments
+    ///
+    /// - `t` — step start time in years.
+    /// - `x_t` — FX spot at `t`, using the domestic-per-foreign convention.
+    /// - `z_dom` — domestic Gaussian rate state at `t`.
+    /// - `z_for` — foreign Gaussian rate state at `t`.
+    /// - `dt` — positive step length in years.
+    /// - `dw_x` — FX Brownian increment already scaled by `sqrt(dt)`.
     ///
     /// # Errors
     /// Returns an error if log FX drift computation fails.
@@ -475,6 +682,116 @@ impl<T: Scalar> LgmFxModel<'_, T> {
             .mul_val(T::scalar(dt))
             .add_val(self.fx_vol.mul_val(T::scalar(dw_x)));
         Ok(x_t.mul_val(exponent.exp()))
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  LgmEquityModel
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// LGM equity model: lognormal spot with stochastic (LGM) domestic short rate
+/// and a constant continuous dividend yield.
+///
+/// Structurally identical to [`LgmFxModel`] with the foreign short rate
+/// replaced by the dividend yield `q`: under the domestic measure the spot
+/// drift is `rho·α₀·H₀·σ + r_dom(t) − q`.
+///
+/// `vol` and `dividend_yield` are continuously compounded annualized decimals.
+/// The spot remains positive because it is advanced with log-Euler steps.
+pub struct LgmEquityModel<'a, T: Scalar> {
+    domestic: &'a LgmRateModel<'a, T>,
+    vol: T,
+    spot_0: T,
+    dividend_yield: T,
+    rho_zs_dom: T, // corr(dz_dom, dW_S)
+}
+
+impl<'a, T: Scalar> LgmEquityModel<'a, T> {
+    /// Creates an equity spot model coupled to the domestic LGM rate factor.
+    ///
+    /// # Arguments
+    ///
+    /// - `domestic` — LGM model for the payoff currency's rate curve.
+    /// - `vol` — annualized lognormal equity volatility as a decimal; `0.20`
+    ///   means 20% per square-root year.
+    /// - `spot_0` — strictly positive time-zero equity spot.
+    /// - `dividend_yield` — continuously compounded annual dividend yield as a
+    ///   decimal; `0.02` means 2% per year.
+    /// - `rho_zs_dom` — correlation between the domestic-rate and equity-spot
+    ///   Brownian shocks. It controls the drift adjustment and equals the
+    ///   corresponding path correlation-matrix entry.
+    #[must_use]
+    pub const fn new(
+        domestic: &'a LgmRateModel<'a, T>,
+        vol: T,
+        spot_0: T,
+        dividend_yield: T,
+        rho_zs_dom: T,
+    ) -> Self {
+        Self {
+            domestic,
+            vol,
+            spot_0,
+            dividend_yield,
+            rho_zs_dom,
+        }
+    }
+
+    /// Returns the annualized lognormal equity volatility as a decimal.
+    #[must_use]
+    pub const fn vol(&self) -> T {
+        self.vol
+    }
+
+    /// Returns the strictly positive time-zero equity spot.
+    #[must_use]
+    pub const fn initial_spot(&self) -> T {
+        self.spot_0
+    }
+
+    /// Computes the proportional equity-spot drift under the domestic measure.
+    ///
+    /// `t` is the current time in years and `z_dom` is the domestic Gaussian
+    /// rate state. The result is the drift in `dS / S`, before subtracting half
+    /// the equity variance for log evolution.
+    ///
+    /// # Errors
+    /// Returns an error if short rate computation fails.
+    pub fn drift(&self, t: f64, z_dom: T) -> Result<T> {
+        let r_0 = self.domestic.short_rate(t, z_dom)?;
+        let alpha_0 = self.domestic.alpha(t);
+        let h_0 = self.domestic.H(t);
+        // rho * α_0 * H_0 * σ + r_0 - q
+        Ok(self
+            .rho_zs_dom
+            .mul_val(alpha_0)
+            .mul_val(h_0)
+            .mul_val(self.vol)
+            .add_val(r_0)
+            .sub_val(self.dividend_yield))
+    }
+
+    /// Evolves the equity spot using a positivity-preserving log-Euler step.
+    ///
+    /// # Arguments
+    ///
+    /// - `t` — step start time in years.
+    /// - `s_t` — equity spot at `t`.
+    /// - `z_dom` — domestic Gaussian rate state at `t`.
+    /// - `dt` — positive step length in years.
+    /// - `dw_s` — equity Brownian increment already scaled by `sqrt(dt)`.
+    ///
+    /// # Errors
+    /// Returns an error if drift computation fails.
+    pub fn evolve_spot_log_euler(&self, t: f64, s_t: T, z_dom: T, dt: f64, dw_s: f64) -> Result<T> {
+        let mu = self.drift(t, z_dom)?;
+        // mu - 0.5 σ²
+        let mu_log = mu.sub_val(T::scalar(0.5).mul_val(self.vol).mul_val(self.vol));
+        // s * exp(mu_log * dt + σ * dW)
+        let exponent = mu_log
+            .mul_val(T::scalar(dt))
+            .add_val(self.vol.mul_val(T::scalar(dw_s)));
+        Ok(s_t.mul_val(exponent.exp()))
     }
 }
 
@@ -522,7 +839,11 @@ mod tests {
         DiscountTermStructure::<f64>::new(dates, dfs, dc, Interpolator::LogLinear, true)
     }
 
-    fn setup() -> Result<(QuoteStore, DiscountTermStructure<f64>, ConstructedElementStore)> {
+    fn setup() -> Result<(
+        QuoteStore,
+        DiscountTermStructure<f64>,
+        ConstructedElementStore,
+    )> {
         let reference_date = Date::new(2025, 1, 2);
 
         let mut quote_store = QuoteStore::new(reference_date);

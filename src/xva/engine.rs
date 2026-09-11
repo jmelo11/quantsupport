@@ -45,43 +45,51 @@ use crate::{
     },
 };
 
-/// LGM model parameters for a single rate curve.
+/// LGM parameters for one rate curve in the XVA simulation.
 ///
-/// The short-rate volatility is either a flat `sigma` or a
+/// `lambda` is measured in inverse years and controls the decay of
+/// long-maturity factor loadings. `sigma` is an annualized absolute rate
+/// volatility: `0.01` means 100 bp per square-root year.
+///
+/// The short-rate volatility can be either a flat `sigma` or a
 /// [`VolatilitySourceConfiguration`]: `Constant`, or `Calibrated` against a
 /// volatility surface (caplets) or cube (swaptions) constructed in the
 /// pricing context. When both are set, `volatility` takes precedence.
 ///
-/// Curves without dynamics of their own (e.g. FX-implied collateral curves
-/// such as `Collateral(CLP, USD)`) must instead set [`Self::driver`].
+/// FX-implied collateral curves such as `Collateral(CLP, USD)` set
+/// [`Self::driver`] to reuse another curve's stochastic factor.
 #[derive(Clone, Serialize, Deserialize)]
 pub struct LgmModelConfig {
+    /// Curve or rate index represented by this model configuration.
     pub market_index: MarketIndex,
-    /// Mean reversion. Required unless [`Self::driver`] is set.
+    /// Mean-reversion speed in inverse years. Larger positive values reduce
+    /// distant-maturity exposure to the current factor. Zero selects the
+    /// continuous non-mean-reverting limit. Required unless [`Self::driver`]
+    /// is set.
     #[serde(default)]
     pub lambda: Option<f64>,
-    /// Flat short-rate volatility. Ignored when [`Self::volatility`] is set.
+    /// Flat annualized absolute short-rate volatility in rate units per
+    /// square-root year. For example, `0.01` means 100 bp/√year. Ignored when
+    /// [`Self::volatility`] is set.
     #[serde(default)]
     pub sigma: Option<f64>,
-    /// Volatility source (`Constant` or `Calibrated` from a constructed
-    /// surface/cube). Takes precedence over [`Self::sigma`].
+    /// Short-rate volatility source. `Constant` uses the same units as
+    /// [`Self::sigma`]. `Calibrated` converts market caplet/swaption quotes
+    /// into a piecewise-constant model-sigma schedule. Surface and cube values
+    /// enter through calibration-instrument prices. Takes precedence over
+    /// [`Self::sigma`].
     #[serde(default)]
     pub volatility: Option<VolatilitySourceConfiguration>,
     /// Rate model that drives this curve's dynamics.
     ///
-    /// Use for curves that carry no volatility of their own, e.g. FX-implied
-    /// collateral curves: under the standard deterministic cross-currency
-    /// basis assumption, `Collateral(CLP, USD)` evolves with the CLP
-    /// risk-free model (ICP) — its vol is implied by the driver's curve vol
-    /// together with the FX vol, whose quanto effect is already carried by
-    /// the driver's factor drift under the domestic measure.
+    /// An FX-implied collateral curve can reuse a risk-free curve's Gaussian
+    /// factor. For example, `Collateral(CLP, USD)` can use `ICP` as its driver.
+    /// The driver supplies `lambda`, sigma, and the simulated state.
     ///
-    /// During simulation the curve's discount factors are reconstructed with
-    /// the driver's simulated factor, mean reversion and sigma schedule, but
-    /// from the curve's *own* initial term structure, so the time-0
-    /// cross-currency basis is preserved and evolves deterministically.
-    /// Mutually exclusive with `lambda`, `sigma` and `volatility`; the
-    /// driver must itself be a non-derived model config.
+    /// The derived curve supplies its own initial term structure. Its discount
+    /// factors combine that term structure with the driver's state, preserving
+    /// the time-zero cross-currency basis. A driver configuration leaves
+    /// `lambda`, `sigma`, and `volatility` empty.
     ///
     /// ```json
     /// { "market_index": { "Collateral": ["CLP", "USD"] }, "driver": "ICP" }
@@ -90,14 +98,21 @@ pub struct LgmModelConfig {
     pub driver: Option<MarketIndex>,
 }
 
-/// FX model parameters for a single currency pair.
+/// FX model parameters for a foreign currency against the engine base currency.
+///
+/// The simulated spot is quoted as base-currency units per one unit of
+/// `foreign_currency` and follows a flat-volatility lognormal process coupled
+/// to the domestic and foreign LGM rate factors.
 #[derive(Clone, Serialize, Deserialize)]
 pub struct FxModelConfig {
     /// Foreign currency (domestic is always the engine's base currency).
     pub foreign_currency: Currency,
-    /// FX volatility.
+    /// Annualized lognormal FX volatility as a decimal; `0.12` means 12% per
+    /// square-root year.
     pub fx_vol: f64,
-    /// Correlation between domestic rate factor and FX spot.
+    /// Correlation between domestic-rate and FX-spot Brownian shocks, in
+    /// `[-1, 1]`. This is used both to correlate path shocks and in the
+    /// domestic-measure quanto drift.
     #[serde(default)]
     pub rho: f64,
 }
@@ -114,11 +129,14 @@ pub struct XvaEngineConfig {
     /// FX model parameters, one per foreign currency.
     #[serde(default)]
     pub fx_configs: Vec<FxModelConfig>,
-    /// Number of Monte Carlo paths.
+    /// Number of Monte Carlo paths. Use an even value so every Sobol point has
+    /// an antithetic partner; at least 2,048 is recommended for optional
+    /// exposure profiles.
     pub n_paths: usize,
-    /// RNG seed.
+    /// Deterministic Owen-scrambling seed for the Sobol sequence.
     pub seed: u64,
-    /// Simulation frequency (e.g. Monthly, Quarterly).
+    /// Simulation-grid frequency (for example monthly or quarterly). Finer
+    /// grids reduce time-discretization error at increased runtime and memory.
     pub frequency: Frequency,
 }
 
@@ -155,11 +173,10 @@ pub struct XvaEngine {
 impl XvaEngine {
     /// Creates a new engine from an initialised [`PricingContext`].
     ///
-    /// Snapshots the f64 curve data from every discount curve referenced
-    /// in `config.model_configs`. The curves must already be bootstrapped
-    /// in the context. Model configs with a `Calibrated` volatility source
-    /// are calibrated here, against the volatility surfaces/cubes
-    /// constructed in the context.
+    /// Snapshots the f64 curve data from every discount curve referenced in
+    /// `config.model_configs`. The initialized context supplies the
+    /// bootstrapped curves and constructed volatility surfaces or cubes.
+    /// `Calibrated` model configurations are calibrated during construction.
     ///
     /// # Errors
     /// Returns an error if a required discount curve, volatility surface or
@@ -753,7 +770,6 @@ struct CurveSnapshot {
     /// leaves so the AAD pass yields dXVA/dquote sensitivities.
     ift_sensitivities: Option<Vec<Vec<f64>>>,
 }
-
 
 /// Snapshot of a bootstrapped credit (survival) curve. The reference-date
 /// node (`S = 1`) is excluded.

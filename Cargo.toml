@@ -1,23 +1,29 @@
 [workspace]
-members = [".", "examples/bootstrap", "examples/valuation", "examples/sensitivity", "examples/evaluator", "examples/volatilitysurface", "examples/hullwhite", "examples/pfe", "examples/cva", "benchmarks", "bindings/python"]
+members = [".", "examples/bootstrap", "examples/valuation", "examples/sensitivity", "examples/evaluator", "examples/volatilitysurface", "examples/hullwhite", "examples/pfe", "examples/cva", "examples/scripting", "benchmarks", "bindings/python"]
 
 [package]
 name = "quantsupport"
 version = "0.1.5"
 edition = "2021"
 
-description = "Rust library for derivative pricing and risk analytics."
 license = "MIT"
 repository = "https://github.com/jmelo11/quantsupport"
-keywords = ["finance", "quant", "risk", "pricing", "derivatives"]
+description = "Rust quantitative finance library for derivatives pricing, yield-curve bootstrapping, AAD risk, Monte Carlo exposure, and XVA."
+keywords = [
+    "quantitative-finance",
+    "derivatives",
+    "pricing",
+    "risk",
+    "xva",
+]
 categories = ["finance", "science"]
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+documentation = "https://docs.rs/quantsupport"
 
 [dependencies]
 chrono = "0.4.37"
 rayon = "1.7.0"
 rand = "0.8.0"
+sobol_burley = { version = "0.5.0", default-features = false }
 thiserror = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 nalgebra = "0.34.1"
@@ -33,6 +39,7 @@ default = []
 plot = ["plotters"]
 
 [lints.rust]
+missing_docs = "forbid"
 unreachable_patterns = "forbid"
 unused_must_use = "forbid"
 unused_import_braces = "forbid"

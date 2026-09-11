@@ -164,8 +164,6 @@ pub enum QuoteInstrument {
     Cds,
 }
 
-/// # `OptionStrategy`
-///
 /// Represents the strategy for which the volatility quotes.
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub enum OptionStrategy {

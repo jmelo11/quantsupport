@@ -144,6 +144,7 @@ pub struct DvaAggregator<T: Scalar> {
 }
 
 impl<T: Scalar> DvaAggregator<T> {
+    /// Creates a unilateral DVA estimator from a flat own-credit spread and recovery rate.
     pub fn new(
         own_spread: T,
         own_recovery: T,
@@ -273,8 +274,11 @@ impl<T: Scalar> PfeAggregator<T> for FvaAggregator<T> {
 
 /// Factory for [`CvaAggregator`].
 pub struct CvaFactory {
+    /// Flat counterparty credit spread used to derive default probabilities.
     pub credit_spread: f64,
+    /// Counterparty recovery rate.
     pub recovery: f64,
+    /// Number of Monte Carlo paths used to normalize the aggregate.
     pub n_paths: usize,
     /// System-curve discount factors `DF(0, t_d)` at the simulation dates.
     pub system_dfs: Option<Vec<f64>>,
@@ -420,8 +424,11 @@ impl PfeAggregatorFactory for CreditCurveCvaFactory {
 
 /// Factory for [`DvaAggregator`].
 pub struct DvaFactory {
+    /// Flat own-credit spread used to derive default probabilities.
     pub own_spread: f64,
+    /// Own recovery rate.
     pub own_recovery: f64,
+    /// Number of Monte Carlo paths used to normalize the aggregate.
     pub n_paths: usize,
 }
 
@@ -446,7 +453,9 @@ impl PfeAggregatorFactory for DvaFactory {
 
 /// Factory for [`FvaAggregator`].
 pub struct FvaFactory {
+    /// Flat funding spread applied to the simulated exposure profile.
     pub funding_spread: f64,
+    /// Number of Monte Carlo paths used to normalize the aggregate.
     pub n_paths: usize,
     /// System-curve discount factors `DF(0, t_d)` at the simulation dates.
     pub system_dfs: Option<Vec<f64>>,

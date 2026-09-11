@@ -29,8 +29,13 @@ pub use crate::{
         marketdatahandling::{
             constructedelementrequest::ConstructedElementRequest,
             constructedelementstore::{ConstructedElementStore, SharedElement},
+            discountrequest::DiscountRequest,
             fixingrequest::FixingRequest,
+            forwardraterequest::ForwardRateRequest,
+            fxrequest::FxRequest,
             marketdata::{MarketData, MarketDataProvider, MarketDataRequest},
+            pathdependentrequest::PathDependentRequest,
+            spotrequest::SpotRequest,
         },
         pillars::Pillars,
         pricer::Pricer,
@@ -120,7 +125,7 @@ pub use crate::{
             hullwhitemodel::HullWhite,
         },
         lgm::{
-            lgmcomponents::{LgmFxModel, LgmRateModel},
+            lgmcomponents::{LgmEquityModel, LgmFxModel, LgmRateModel},
             lgmmarketmodel::LgmMarketModel,
         },
         modelconfiguration::{ModelConfiguration, SimulationConfiguration},
@@ -163,6 +168,17 @@ pub use crate::{
             flatforwardtermstructure::FlatForwardTermStructure,
             interestratestermstructure::InterestRatesTermStructure,
         },
+    },
+    scripting::{
+        nodes::event::{CodedEvent, Event, EventStream},
+        product::ScriptedProduct,
+        request::SimulationDataRequest,
+        runtime::{
+            ExpectedCashflow, ParallelScriptEvaluation, ScriptEngine, ScriptModelCallback,
+            ScriptModelSetup,
+        },
+        utils::errors::ScriptingError,
+        visitors::evaluator::Value as ScriptValue,
     },
     simulations::{
         generatedsimulation::GeneratedMonteCarloSimulation, simulation::MonteCarloSimulation,
@@ -207,7 +223,7 @@ pub use crate::{
         },
         contigentclaim::ContingentClaim,
         csa::{CsaTerms, FundingSpreadCurve},
-        engine::{XvaEngine, XvaEngineConfig},
+        engine::{FxModelConfig, LgmModelConfig, XvaEngine, XvaEngineConfig},
         makecontigentclaim::IntoContingentClaims,
         nettingset::NettingSet,
         visitors::{
