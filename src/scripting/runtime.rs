@@ -32,7 +32,7 @@ use crate::{
         utils::errors::{Result, ScriptingError},
         visitors::{
             domainprocessor::DomainProcessor,
-            evaluator::{SingleScenarioEvaluator, Value},
+            evaluator::{CapturedCashflow, SingleScenarioEvaluator, Value},
             fuzzyevaluator::FuzzyEvaluator,
             ifconditiontransform::IfConditionTransform,
             ifprocessor::IfProcessor,
@@ -135,11 +135,64 @@ pub struct ParallelScriptEvaluation {
     /// First-order adjoints keyed by the labels supplied by
     /// [`ScriptModelSetup::with_model`].
     pub sensitivities: Vec<(String, f64)>,
+    /// Path-averaged expected cashflows ordered by payment date. The
+    /// discounted values decompose the script price by payment date.
+    pub cashflows: Vec<ExpectedCashflow>,
+}
+
+/// Path-averaged cashflow expected on one payment date.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ExpectedCashflow {
+    /// Payment date.
+    pub date: Date,
+    /// Payment currency (the script's local currency when the payment does
+    /// not name one).
+    pub currency: Currency,
+    /// Path-averaged undiscounted amount in the payment currency.
+    pub amount: f64,
+    /// Path-averaged discounted, numeraire-deflated value in the local
+    /// currency. Summing this field over all cashflows reproduces the
+    /// script's Monte Carlo price.
+    pub present_value: f64,
 }
 
 struct ScriptChunkResult {
     values: HashMap<String, f64>,
     sensitivities: Vec<(String, f64)>,
+    cashflows: Vec<ExpectedCashflow>,
+}
+
+/// Adds one path-weighted cashflow into `sink`, merging on date and currency.
+fn merge_cashflow(sink: &mut Vec<ExpectedCashflow>, cashflow: ExpectedCashflow) {
+    if let Some(entry) = sink
+        .iter_mut()
+        .find(|entry| entry.date == cashflow.date && entry.currency == cashflow.currency)
+    {
+        entry.amount += cashflow.amount;
+        entry.present_value += cashflow.present_value;
+    } else {
+        sink.push(cashflow);
+    }
+}
+
+/// Accumulates evaluator-captured payments into `sink` with weight `weight`.
+fn accumulate_cashflows(
+    sink: &mut Vec<ExpectedCashflow>,
+    captured: &[CapturedCashflow],
+    local_currency: Currency,
+    weight: f64,
+) {
+    for (date, currency, amount, present_value) in captured {
+        merge_cashflow(
+            sink,
+            ExpectedCashflow {
+                date: *date,
+                currency: currency.unwrap_or(local_currency),
+                amount: amount * weight,
+                present_value: present_value * weight,
+            },
+        );
+    }
 }
 
 impl ScriptEngine {
@@ -297,6 +350,22 @@ impl ScriptEngine {
         model: &mut dyn MarketModel<DualFwd>,
         result_variable: Option<&str>,
     ) -> Result<HashMap<String, f64>> {
+        self.evaluate_with_cashflows(model, result_variable)
+            .map(|(values, _)| values)
+    }
+
+    /// Same as [`evaluate`](Self::evaluate) but additionally returns the
+    /// path-averaged expected cashflows ordered by payment date. The
+    /// discounted cashflow values decompose the price by payment date.
+    ///
+    /// # Errors
+    /// Returns an error under the same conditions as
+    /// [`evaluate`](Self::evaluate).
+    pub fn evaluate_with_cashflows(
+        &self,
+        model: &mut dyn MarketModel<DualFwd>,
+        result_variable: Option<&str>,
+    ) -> Result<(HashMap<String, f64>, Vec<ExpectedCashflow>)> {
         if let Some(name) = result_variable {
             if !self.variable_indexes.contains_key(name) {
                 return Err(ScriptingError::EvaluationError(format!(
@@ -332,6 +401,7 @@ impl ScriptEngine {
                 .any(|mapping| mapping.discounts.len + mapping.forwards.len > 0);
 
         let mut averages: HashMap<String, f64> = HashMap::new();
+        let mut cashflows: Vec<ExpectedCashflow> = Vec::new();
         Tape::set_mark_fwd();
         let control_betas = if use_controls {
             let pilot_paths = n_paths.min(64);
@@ -374,7 +444,8 @@ impl ScriptEngine {
                 ))
             })?;
             let scenario = self.scenario_from_path(&path, &numeraires, compact_responses)?;
-            let values = self.evaluate_scenario(&scenario)?;
+            let values =
+                self.evaluate_scenario_collecting(&scenario, &mut cashflows, 1.0 / n_scenarios)?;
             let adjusted_result: Option<DualFwd> = if use_controls {
                 let controls = self.path_controls(&path, &numeraires, compact_responses)?;
                 result_variable
@@ -426,7 +497,8 @@ impl ScriptEngine {
         Tape::reset_mark_fwd();
         paths_result?;
         propagated?;
-        Ok(averages)
+        cashflows.sort_by_key(|cashflow| cashflow.date);
+        Ok((averages, cashflows))
     }
 
     /// Evaluates Monte Carlo paths in parallel with one model and AD tape per
@@ -491,7 +563,7 @@ impl ScriptEngine {
                         [DualFwd::zero(); 2]
                     };
                     Tape::set_mark_fwd();
-                    let values = self.evaluate_path_range(
+                    let (values, cashflows) = self.evaluate_path_range(
                         model,
                         result_variable,
                         range.clone(),
@@ -512,6 +584,7 @@ impl ScriptEngine {
                     Ok(ScriptChunkResult {
                         values,
                         sensitivities,
+                        cashflows,
                     })
                 });
                 Tape::stop_recording_fwd();
@@ -521,6 +594,7 @@ impl ScriptEngine {
 
         let mut values = HashMap::new();
         let mut sensitivity_map = HashMap::new();
+        let mut cashflows: Vec<ExpectedCashflow> = Vec::new();
         for chunk in chunk_results {
             for (name, value) in chunk.values {
                 *values.entry(name).or_insert(0.0) += value;
@@ -528,12 +602,17 @@ impl ScriptEngine {
             for (label, sensitivity) in chunk.sensitivities {
                 *sensitivity_map.entry(label).or_insert(0.0) += sensitivity;
             }
+            for cashflow in chunk.cashflows {
+                merge_cashflow(&mut cashflows, cashflow);
+            }
         }
+        cashflows.sort_by_key(|cashflow| cashflow.date);
         let mut sensitivities: Vec<_> = sensitivity_map.into_iter().collect();
         sensitivities.sort_by(|left, right| left.0.cmp(&right.0));
         Ok(ParallelScriptEvaluation {
             values,
             sensitivities,
+            cashflows,
         })
     }
 
@@ -616,10 +695,11 @@ impl ScriptEngine {
         use_controls: bool,
         control_expectations: [DualFwd; 2],
         control_betas: [f64; 2],
-    ) -> Result<HashMap<String, f64>> {
+    ) -> Result<(HashMap<String, f64>, Vec<ExpectedCashflow>)> {
         let compact_responses = model.uses_compact_dated_requests();
         let n_scenarios = n_paths as f64;
         let mut averages = HashMap::new();
+        let mut cashflows: Vec<ExpectedCashflow> = Vec::new();
         let paths_result = path_range
             .into_iter()
             .try_for_each(|path_index| -> Result<()> {
@@ -630,7 +710,11 @@ impl ScriptEngine {
                     ))
                 })?;
                 let scenario = self.scenario_from_path(&path, numeraires, compact_responses)?;
-                let values = self.evaluate_scenario(&scenario)?;
+                let values = self.evaluate_scenario_collecting(
+                    &scenario,
+                    &mut cashflows,
+                    1.0 / n_scenarios,
+                )?;
                 let adjusted_result = if use_controls {
                     let controls = self.path_controls(&path, numeraires, compact_responses)?;
                     result_variable
@@ -682,7 +766,7 @@ impl ScriptEngine {
         Tape::reset_mark_fwd();
         paths_result?;
         propagated?;
-        Ok(averages)
+        Ok((averages, cashflows))
     }
 
     fn evaluate_scenario(&self, scenario: &Scenario) -> Result<HashMap<String, Value>> {
@@ -695,6 +779,42 @@ impl ScriptEngine {
             FuzzyEvaluator::new(self.n_variables, self.max_nested_ifs)
                 .with_scenario(scenario)
                 .visit_events(&self.events, &self.variable_indexes)
+        }
+    }
+
+    /// Evaluates one scenario while accumulating its payments into `sink`,
+    /// each weighted by `weight` (one over the total path count).
+    fn evaluate_scenario_collecting(
+        &self,
+        scenario: &Scenario,
+        sink: &mut Vec<ExpectedCashflow>,
+        weight: f64,
+    ) -> Result<HashMap<String, Value>> {
+        if self.max_nested_ifs == 0 {
+            let evaluator = SingleScenarioEvaluator::new()
+                .with_variables(self.n_variables)
+                .with_scenario(scenario)
+                .with_cashflow_capture();
+            let values = evaluator.visit_events(&self.events, &self.variable_indexes)?;
+            accumulate_cashflows(
+                sink,
+                &evaluator.captured_cashflows(),
+                self.local_currency,
+                weight,
+            );
+            Ok(values)
+        } else {
+            let evaluator = FuzzyEvaluator::new(self.n_variables, self.max_nested_ifs)
+                .with_scenario(scenario)
+                .with_cashflow_capture();
+            let values = evaluator.visit_events(&self.events, &self.variable_indexes)?;
+            accumulate_cashflows(
+                sink,
+                &evaluator.captured_cashflows(),
+                self.local_currency,
+                weight,
+            );
+            Ok(values)
         }
     }
 

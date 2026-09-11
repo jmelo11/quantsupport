@@ -24,6 +24,7 @@ use std::{
 
 use crate::{
     ad::expr::FloatExt,
+    currencies::currency::Currency,
     scripting::{
         data::simulationdata::{Scenario, SimulationData},
         nodes::{event::EventStream, node::Node, node::SpotUnderlying, traits::NodeConstVisitor},
@@ -32,6 +33,11 @@ use crate::{
     },
     time::{date::Date, daycounter::DayCounter},
 };
+
+/// Payment recorded by an evaluator when cashflow capture is enabled:
+/// `(payment date, optional payment currency, undiscounted amount,
+/// discounted numeraire-deflated value)`.
+pub type CapturedCashflow = (Date, Option<Currency>, f64, f64);
 
 /// # Value
 /// Enum representing the possible values of a variable
@@ -130,6 +136,8 @@ pub struct SingleScenarioEvaluator<'a> {
     valuation_date: Option<Date>,
     captured_payment_id: Option<usize>,
     captured_payment_value: RefCell<Option<NumericType>>,
+    capture_cashflows: bool,
+    captured_cashflows: RefCell<Vec<CapturedCashflow>>,
 }
 
 impl<'a> SingleScenarioEvaluator<'a> {
@@ -149,6 +157,8 @@ impl<'a> SingleScenarioEvaluator<'a> {
             valuation_date: None,
             captured_payment_id: None,
             captured_payment_value: RefCell::new(None),
+            capture_cashflows: false,
+            captured_cashflows: RefCell::new(Vec::new()),
         }
     }
 
@@ -190,6 +200,19 @@ impl<'a> SingleScenarioEvaluator<'a> {
     #[must_use]
     pub fn captured_payment_value(&self) -> Option<NumericType> {
         *self.captured_payment_value.borrow()
+    }
+
+    /// Records every executed payment's date, currency, and amounts.
+    #[must_use]
+    pub const fn with_cashflow_capture(mut self) -> Self {
+        self.capture_cashflows = true;
+        self
+    }
+
+    /// Returns the payments recorded while cashflow capture was enabled.
+    #[must_use]
+    pub fn captured_cashflows(&self) -> Vec<CapturedCashflow> {
+        self.captured_cashflows.borrow().clone()
     }
 
     /// Returns market data for the active event.
@@ -401,6 +424,17 @@ impl<'a> NodeConstVisitor for SingleScenarioEvaluator<'a> {
                 } else {
                     ((current_value * df) / numeraire).into()
                 };
+
+                if self.capture_cashflows {
+                    if let Some(date) = payment_date {
+                        self.captured_cashflows.borrow_mut().push((
+                            date,
+                            data.currency,
+                            current_value.value(),
+                            value.value(),
+                        ));
+                    }
+                }
 
                 self.digit_stack.borrow_mut().push(value);
                 Ok(())
@@ -1029,14 +1063,11 @@ impl<'a> Evaluator<'a> {
 }
 
 #[cfg(test)]
-use crate::{
-    currencies::currency::Currency,
-    scripting::{
-        nodes::event::Event,
-        nodes::traits::NodeVisitor,
-        parsing::{lexer::Lexer, parser::Parser},
-        visitors::varindexer::VarIndexer,
-    },
+use crate::scripting::{
+    nodes::event::Event,
+    nodes::traits::NodeVisitor,
+    parsing::{lexer::Lexer, parser::Parser},
+    visitors::varindexer::VarIndexer,
 };
 
 #[cfg(test)]

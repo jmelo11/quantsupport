@@ -23,7 +23,7 @@ use crate::{
         data::simulationdata::{Scenario, SimulationData},
         nodes::{node::Node, node::SpotUnderlying, traits::NodeConstVisitor},
         utils::errors::{Result, ScriptingError},
-        visitors::evaluator::Value,
+        visitors::evaluator::{CapturedCashflow, Value},
         NumericType,
     },
     time::{date::Date, daycounter::DayCounter},
@@ -52,6 +52,8 @@ pub struct FuzzyEvaluator<'a> {
     valuation_date: Option<Date>,
     captured_payment_id: Option<usize>,
     captured_payment_value: RefCell<Option<NumericType>>,
+    capture_cashflows: bool,
+    captured_cashflows: RefCell<Vec<CapturedCashflow>>,
     branch_weight: RefCell<NumericType>,
 
     /// Stack of truth degrees (`dt`) produced while evaluating conditions.
@@ -93,6 +95,8 @@ impl<'a> FuzzyEvaluator<'a> {
             valuation_date: None,
             captured_payment_id: None,
             captured_payment_value: RefCell::new(None),
+            capture_cashflows: false,
+            captured_cashflows: RefCell::new(Vec::new()),
             branch_weight: RefCell::new(NumericType::one()),
             dt_stack: RefCell::new(Vec::new()),
             eps: EPS,
@@ -128,6 +132,20 @@ impl<'a> FuzzyEvaluator<'a> {
     pub const fn with_payment_capture(mut self, payment_id: usize) -> Self {
         self.captured_payment_id = Some(payment_id);
         self
+    }
+
+    /// Records every executed payment's date, currency, and amounts,
+    /// weighted by the smoothed branch probability.
+    #[must_use]
+    pub const fn with_cashflow_capture(mut self) -> Self {
+        self.capture_cashflows = true;
+        self
+    }
+
+    /// Returns the payments recorded while cashflow capture was enabled.
+    #[must_use]
+    pub fn captured_cashflows(&self) -> Vec<CapturedCashflow> {
+        self.captured_cashflows.borrow().clone()
     }
 
     /// Returns a snapshot of runtime variables.
@@ -407,6 +425,19 @@ impl<'a> NodeConstVisitor for FuzzyEvaluator<'a> {
                 } else {
                     ((current_value * df) / numeraire).into()
                 };
+                if self.capture_cashflows {
+                    if let Some(date) = payment_date {
+                        let weight = *self.branch_weight.borrow();
+                        let undiscounted: NumericType = (weight * current_value).into();
+                        let discounted: NumericType = (weight * value).into();
+                        self.captured_cashflows.borrow_mut().push((
+                            date,
+                            data.currency,
+                            undiscounted.value(),
+                            discounted.value(),
+                        ));
+                    }
+                }
                 self.digit_stack.borrow_mut().push(value);
                 Ok(())
             }

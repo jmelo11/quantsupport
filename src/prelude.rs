@@ -174,7 +174,8 @@ pub use crate::{
         product::ScriptedProduct,
         request::SimulationDataRequest,
         runtime::{
-            ParallelScriptEvaluation, ScriptEngine, ScriptModelCallback, ScriptModelSetup,
+            ExpectedCashflow, ParallelScriptEvaluation, ScriptEngine, ScriptModelCallback,
+            ScriptModelSetup,
         },
         utils::errors::ScriptingError,
         visitors::evaluator::Value as ScriptValue,
