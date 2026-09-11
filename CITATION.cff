@@ -1,0 +1,26 @@
+cff-version: 1.2.0
+message: "If you use QuantSupport in your work, please cite it using the metadata below."
+title: "QuantSupport"
+type: software
+authors:
+  - family-names: "Melo"
+    given-names: "Jose"
+    email: "jmelo@live.cl"
+    orcid: ""
+version: 0.1.5
+repository-code: "https://github.com/jmelo11/quantsupport"
+url: "https://docs.rs/quantsupport"
+license: MIT
+abstract: >-
+  QuantSupport is a quantitative-finance library written in Rust with Python
+  bindings for derivative pricing, market-data bootstrapping, automatic
+  differentiation, Monte Carlo exposure simulation, and XVA.
+keywords:
+  - quantitative finance
+  - derivatives pricing
+  - risk analytics
+  - automatic differentiation
+  - Monte Carlo
+  - XVA
+  - Rust
+  - Python
