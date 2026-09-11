@@ -40,6 +40,14 @@
 - [Market Quote Sensitivities](risk/sensitivities.md)
 - [Scenario Analysis](risk/scenarios.md)
 
+# Scripting
+
+- [Scripting Overview](scripting/overview.md)
+- [Script Language](scripting/language.md)
+- [Events and Scripted Products](scripting/events-products.md)
+- [Script Engine](scripting/engine.md)
+- [Scripted Products in XVA](scripting/xva.md)
+
 # Models and Simulation
 
 - [Monte Carlo](simulation/monte-carlo.md)

@@ -1,6 +1,6 @@
 # QuantSupport
 
-QuantSupport is a quantitative-finance library written in Rust, with Python bindings provided in the same repository. It combines instrument construction, market-data bootstrapping, pricing, automatic differentiation, Monte Carlo exposure simulation, and XVA in one toolkit.
+QuantSupport is a quantitative-finance library written in Rust, with Python bindings provided in the same repository. It combines instrument construction, market-data bootstrapping, pricing, automatic differentiation, payoff scripting, Monte Carlo exposure simulation, and XVA in one toolkit.
 
 ## Capabilities
 
@@ -13,6 +13,7 @@ QuantSupport is a quantitative-finance library written in Rust, with Python bind
 | Volatility | Interpolated volatility surfaces and cubes, Black and normal volatility conventions, FX surface orientation, and constant, surface-, cube-, or calibration-driven volatility sources |
 | Models and simulation | Brownian motion, Hull-White, and LGM models; Hull-White/LGM volatility calibration; seeded Monte Carlo path generation from serializable configurations |
 | Exposure and XVA | Contingent-claim decomposition, fixing preprocessing, claim compression, netting sets, CSA terms, NPV cubes, EPE/ENE/EE, CVA, DVA, FVA, and parallel AAD sensitivities |
+| Scripting | Payoff scripting language (assignments, `if`/`else`, `for`, `pays`, `RateIndex`, `Df`, `Spot`, `cvg`, `fif`, arrays); dated event streams; single-tape and Rayon-parallel Monte Carlo evaluation with AAD sensitivities and expected cashflows; smoothed conditionals for digital payoffs; scripted products as XVA contingent claims |
 | Market data | Quote, fixing, and FX stores; bid/mid/ask selection; absolute and relative quote scenarios that rebuild dependent curves, volatility objects, and simulations |
 | Conventions and numerics | Dates, periods, schedules, IMM dates, calendars, business-day conventions, day counts, compounding, interpolation, root solvers, FFT, and probability utilities |
 | Languages | Native Rust API and PyO3-based Python bindings with pandas result tables |
@@ -29,7 +30,7 @@ Add the Rust crate to `Cargo.toml`:
 
 ```toml
 [dependencies]
-quantsupport = "0.1.4"
+quantsupport = "0.1.6"
 ```
 
 To work from this checkout instead:
@@ -199,6 +200,50 @@ fn main() -> Result<()> {
 
 Attach scenarios with `.with_scenarios(...)` before `PricingContext::initialize()` to rebuild the full market consistently from shocked inputs.
 
+## Scripting
+
+Bespoke payoffs can be described as dated scripts instead of new Rust instruments. A script is a list of `CodedEvent`s (date + source); the `ScriptEngine` parses and indexes them once, derives the discount factors, forward rates, FX rates, and spots it needs from the market model, and evaluates every Monte Carlo path in `DualFwd`, so NPV, pillar sensitivities, and expected cashflows come out of the same run.
+
+The language supports `=`/`+=`/`-=`/`*=`/`/=`, arithmetic (`+ - * / **`), comparisons combined with `and`/`or`/`not`, `if { } else { }`, `for x in range(a, b) { }`, arrays (`[..]`, `.append`, `.mean`, `.std`, indexing), `exp`, `ln`, `pow`, `min`, `max`, `cvg(start, end, day_counter)`, the smoothed indicator `fif(x, a, b, eps)`, market observations `RateIndex("SOFR", start, end)`, `Df(date[, curve])`, `Spot("AAPL")` / `Spot("USD", "CLP")`, and payments `acc pays amount on "date" in "CCY";`. Conditionals are evaluated with scale-aware smoothing so digital payoffs keep finite AAD sensitivities.
+
+```rust,ignore
+use quantsupport::prelude::*;
+
+// One event per accrual period: observe SOFR on the start date, pay the net coupon at the end.
+let events: Vec<CodedEvent> = periods
+    .iter()
+    .enumerate()
+    .map(|(i, (start, end))| {
+        let init = if i == 0 { "swap = 0; fixed_rate = 0.035;" } else { "" };
+        CodedEvent::new(*start, format!(r#"
+            {init}
+            accrual = cvg("{start}", "{end}", "Actual360");
+            floating_rate = RateIndex("SOFR", "{start}", "{end}");
+            swap pays 10000000 * (fixed_rate - floating_rate) * accrual on "{end}";
+        "#))
+    })
+    .collect();
+
+let engine = ScriptEngine::new(EventStream::try_from(events)?, ref_date, Currency::USD, MarketIndex::SOFR)?;
+
+// Any MarketModel<DualFwd> works; here an LGM model whose curve pillars are on the AD tape.
+let (values, cashflows) = engine.evaluate_with_cashflows(&mut lgm_model, Some("swap"))?;
+println!("NPV = {}", values["swap"]);          // pillar.adjoint() now holds dNPV/dPillar
+for cf in cashflows {
+    println!("{} {} amount={:.2} pv={:.2}", cf.date, cf.currency, cf.amount, cf.present_value);
+}
+
+// Multi-threaded evaluation rebuilds the model per Rayon worker through `ScriptModelSetup`
+// and returns values, labelled sensitivities, and cashflows.
+let parallel: ParallelScriptEvaluation = engine.evaluate_parallel(&setup, Some("swap"))?;
+
+// The same script enters the XVA engine as ordinary contingent claims.
+let claims = ScriptedProduct::new("note", EventStream::try_from(events)?, ref_date, Currency::USD, MarketIndex::SOFR)?
+    .contingent_claims()?;
+```
+
+`examples/scripting` prices a swap both natively and as a script and checks that NPV, pillar sensitivities, EPE, and CVA/FVA sensitivities agree. The [Scripting](book/src/scripting/overview.md) part of the book documents the full language and runtime.
+
 ## Runnable Rust examples
 
 All examples below are workspace packages and use local JSON market data where appropriate.
@@ -212,6 +257,8 @@ All examples below are workspace packages and use local JSON market data where a
 | [`hullwhite`](examples/hullwhite) | Curve construction, caplet-vol calibration, Hull-White pricing, simulation, and plots | `cargo run -p hullwhite` |
 | [`pfe`](examples/pfe) | Multi-currency LGM exposure simulation for swaps, FX products, and cross-currency swaps | `cargo run -p pfe` |
 | [`cva`](examples/cva) | High-level netting-set XVA with CSA, credit/funding inputs, CVA/FVA values, exposure profiles, and AAD sensitivities | `cargo run -p cva` |
+| [`scripting`](examples/scripting) | Scripted swap vs native swap: NPV and pillar sensitivities through `ScriptEngine` | `cargo run -p scripting-examples --bin valuation` |
+| [`scripting`](examples/scripting) | Scripted product as XVA contingent claims: EPE and CVA/FVA sensitivities vs native swap | `cargo run -p scripting-examples --bin xva` |
 
 The `plot` Cargo feature enables the library's plotting helpers:
 
@@ -256,7 +303,7 @@ See the [Python README](bindings/python/README.md) and [guided notebook](binding
 
 ## Book
 
-The [QuantSupport Book](book/src/SUMMARY.md) covers installation, market construction, pricing, risk, simulation, and XVA. Install [mdBook](https://rust-lang.github.io/mdBook/), then build or serve it from the repository root:
+The [QuantSupport Book](https://jmelo11.github.io/quantsupport/) covers installation, market construction, pricing, risk, scripting, simulation, and XVA. It is published to GitHub Pages on every push to `main`; the sources live under [`book/src`](book/src/SUMMARY.md). To build it locally, install [mdBook](https://rust-lang.github.io/mdBook/), then from the repository root:
 
 ```bash
 mdbook build
