@@ -72,6 +72,7 @@ pub use crate::{
             },
             equityforward::{EquityForward, EquityForwardTrade},
             futures::{Futures, FuturesTrade},
+            makeequityeuropeanoption::MakeEquityEuropeanOption,
             makeequityforward::MakeEquityForward,
             makefutures::MakeFutures,
         },
@@ -84,10 +85,10 @@ pub use crate::{
             makefloatingratenote::MakeFloatingRateNote,
         },
         fx::{
+            fxeuropeanoption::{FxEuropeanOption, FxEuropeanOptionTrade},
             fxforward::{FxForward, FxForwardSettlement, FxForwardTrade},
-            fxoption::{FxOption, FxOptionTrade, FxOptionType},
+            makefxeuropeanoption::MakeFxEuropeanOption,
             makefxforward::MakeFxForward,
-            makefxoption::MakeFxOption,
         },
         rates::{
             basisswap::{BasisSwap, BasisSwapTrade},
@@ -138,7 +139,7 @@ pub use crate::{
             blackeuropeanoptionpricer::BlackEuropeanOptionPricer,
             blackmceuropeanoptionpricer::BlackMCEuropeanOptionPricer,
         },
-        fx::{fxforwardpricer::FxForwardPricer, fxoptionpricer::FxOptionPricer},
+        fx::{fxeuropeanoptionpricer::FxEuropeanOptionPricer, fxforwardpricer::FxForwardPricer},
         rates::{
             closedformblackcapletpricer::ClosedFormBlackCapletPricer,
             closedformblackcappricer::ClosedFormBlackCapPricer,

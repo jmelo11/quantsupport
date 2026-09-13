@@ -18,19 +18,21 @@ use crate::{
         trade::Trade,
     },
     currencies::currency::Currency,
-    instruments::fx::fxoption::{FxOptionTrade, FxOptionType},
+    instruments::{
+        equity::equityeuropeanoption::EuroOptionType, fx::fxeuropeanoption::FxEuropeanOptionTrade,
+    },
     models::brownianmotion::BrownianMotion,
     utils::errors::{QSError, Result},
 };
 
 /// State struct for storing intermediate values during FX option pricing.
 #[derive(Default)]
-struct FxOptionState {
+struct FxEuropeanOptionState {
     value: Option<DualFwd>,
     market_data: Option<MarketData>,
 }
 
-impl PricerState for FxOptionState {
+impl PricerState for FxEuropeanOptionState {
     fn get_market_data_reponse(&self) -> Option<&MarketData> {
         self.market_data.as_ref()
     }
@@ -67,12 +69,12 @@ impl Discountable for CurrencyDiscountable {
 ///
 /// When a [`DiscountPolicy`] is set, the pricer uses the policy-resolved
 /// discount curves for both the base and quote currencies.
-pub struct FxOptionPricer {
+pub struct FxEuropeanOptionPricer {
     discount_policy: Option<Box<dyn DiscountPolicy>>,
 }
 
-impl FxOptionPricer {
-    /// Creates a new [`FxOptionPricer`].
+impl FxEuropeanOptionPricer {
+    /// Creates a new [`FxEuropeanOptionPricer`].
     #[must_use]
     pub fn new() -> Self {
         Self {
@@ -81,14 +83,18 @@ impl FxOptionPricer {
     }
 }
 
-impl Default for FxOptionPricer {
+impl Default for FxEuropeanOptionPricer {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl HandleValue<FxOptionTrade, FxOptionState> for FxOptionPricer {
-    fn handle_value(&self, trade: &FxOptionTrade, state: &mut FxOptionState) -> Result<f64> {
+impl HandleValue<FxEuropeanOptionTrade, FxEuropeanOptionState> for FxEuropeanOptionPricer {
+    fn handle_value(
+        &self,
+        trade: &FxEuropeanOptionTrade,
+        state: &mut FxEuropeanOptionState,
+    ) -> Result<f64> {
         Tape::start_recording_fwd();
         Tape::set_mark_fwd();
         state.put_pillars_on_tape()?;
@@ -122,10 +128,10 @@ impl HandleValue<FxOptionTrade, FxOptionState> for FxOptionPricer {
 
         let strike = inst.strike().resolve(forward.value());
         let vol = state
-            .get_fx_volatility_surface(inst.pair())?
+            .get_fx_volatility_surface(&inst.pair()?)?
             .volatility_from_date(inst.expiry_date(), strike)?;
 
-        let is_call = matches!(inst.option_type(), FxOptionType::Call);
+        let is_call = matches!(inst.option_type(), EuroOptionType::Call);
         let undiscounted =
             BrownianMotion::<DualFwd>::closed_form_price(forward, strike, vol, tau, is_call)?;
 
@@ -139,11 +145,11 @@ impl HandleValue<FxOptionTrade, FxOptionState> for FxOptionPricer {
     }
 }
 
-impl HandleSensitivities<FxOptionTrade, FxOptionState> for FxOptionPricer {
+impl HandleSensitivities<FxEuropeanOptionTrade, FxEuropeanOptionState> for FxEuropeanOptionPricer {
     fn handle_sensitivities(
         &self,
-        trade: &FxOptionTrade,
-        state: &mut FxOptionState,
+        trade: &FxEuropeanOptionTrade,
+        state: &mut FxEuropeanOptionState,
     ) -> Result<SensitivityMap> {
         let value = if let Some(v) = state.value {
             v
@@ -181,7 +187,7 @@ impl HandleSensitivities<FxOptionTrade, FxOptionState> for FxOptionPricer {
 
         // Volatility surface sensitivities
         for (label, pillar) in state
-            .get_fx_volatility_surface(inst.pair())?
+            .get_fx_volatility_surface(&inst.pair()?)?
             .element()
             .surface()
             .pillars()
@@ -206,13 +212,13 @@ impl HandleSensitivities<FxOptionTrade, FxOptionState> for FxOptionPricer {
     }
 }
 
-impl Pricer for FxOptionPricer {
-    type Item = FxOptionTrade;
+impl Pricer for FxEuropeanOptionPricer {
+    type Item = FxEuropeanOptionTrade;
     type Policy = dyn DiscountPolicy;
 
     fn evaluate(
         &self,
-        trade: &FxOptionTrade,
+        trade: &FxEuropeanOptionTrade,
         requests: &[Request],
         ctx: &impl MarketDataProvider,
     ) -> Result<EvaluationResults> {
@@ -222,7 +228,7 @@ impl Pricer for FxOptionPricer {
             QSError::InvalidValueErr("Missing market-data request for FX option".into())
         })?;
 
-        let mut state = FxOptionState {
+        let mut state = FxEuropeanOptionState {
             value: None,
             market_data: Some(ctx.handle_request(&md_request)?),
         };
@@ -241,7 +247,7 @@ impl Pricer for FxOptionPricer {
         Ok(out)
     }
 
-    fn market_data_request(&self, trade: &FxOptionTrade) -> Option<MarketDataRequest> {
+    fn market_data_request(&self, trade: &FxEuropeanOptionTrade) -> Option<MarketDataRequest> {
         let policy = self.discount_policy.as_ref()?;
         let inst = trade.instrument();
         let mut elements = Vec::new();
@@ -256,7 +262,7 @@ impl Pricer for FxOptionPricer {
         }
 
         elements.push(ConstructedElementRequest::VolatilitySurface {
-            market_index: inst.underlying_index(),
+            market_index: inst.market_index().clone(),
         });
 
         let mut request = MarketDataRequest::default().with_fx_request(vec![FxRequest::pair(
@@ -306,8 +312,11 @@ mod tests {
         },
         currencies::currency::Currency,
         indices::{fxpair::FxPair, marketindex::MarketIndex},
-        instruments::fx::fxoption::{FxOption, FxOptionTrade, FxOptionType},
-        pricers::fx::fxoptionpricer::FxOptionPricer,
+        instruments::{
+            equity::equityeuropeanoption::EuroOptionType,
+            fx::fxeuropeanoption::{FxEuropeanOption, FxEuropeanOptionTrade},
+        },
+        pricers::fx::fxeuropeanoptionpricer::FxEuropeanOptionPricer,
         quotes::fxstore::FxStore,
         rates::{
             interestrate::RateDefinition,
@@ -492,24 +501,24 @@ mod tests {
             quote_ccy,
         )?;
 
-        let option = FxOption::new(
+        let option = FxEuropeanOption::new(
             "EURUSD-CALL".to_string(),
+            underlying_index.clone(),
             expiry_date,
             Strike::Absolute(strike),
-            FxOptionType::Call,
+            EuroOptionType::Call,
             base_ccy,
             quote_ccy,
             DayCounter::Actual360,
-            fx_pair,
         );
-        let trade = FxOptionTrade::new(option, trade_date, notional, Side::LongReceive);
+        let trade = FxEuropeanOptionTrade::new(option, trade_date, notional, Side::LongReceive);
 
         let provider = SimpleMarketDataProvider {
             evaluation_date: trade_date,
             market_data,
         };
 
-        let mut pricer = FxOptionPricer::new();
+        let mut pricer = FxEuropeanOptionPricer::new();
         pricer.set_discount_policy(Box::new(FxDiscountPolicy {
             base_index,
             base_currency: base_ccy,
@@ -557,24 +566,24 @@ mod tests {
             quote_ccy,
         )?;
 
-        let option = FxOption::new(
+        let option = FxEuropeanOption::new(
             "EURUSD-PUT".to_string(),
+            underlying_index.clone(),
             expiry_date,
             Strike::Absolute(strike),
-            FxOptionType::Put,
+            EuroOptionType::Put,
             base_ccy,
             quote_ccy,
             DayCounter::Actual360,
-            fx_pair,
         );
-        let trade = FxOptionTrade::new(option, trade_date, notional, Side::LongReceive);
+        let trade = FxEuropeanOptionTrade::new(option, trade_date, notional, Side::LongReceive);
 
         let provider = SimpleMarketDataProvider {
             evaluation_date: trade_date,
             market_data,
         };
 
-        let mut pricer = FxOptionPricer::new();
+        let mut pricer = FxEuropeanOptionPricer::new();
         pricer.set_discount_policy(Box::new(FxDiscountPolicy {
             base_index,
             base_currency: base_ccy,
@@ -625,24 +634,24 @@ mod tests {
             quote_ccy,
         )?;
 
-        let call = FxOption::new(
+        let call = FxEuropeanOption::new(
             "EURUSD-CALL".to_string(),
+            underlying_index.clone(),
             expiry_date,
             Strike::Absolute(strike),
-            FxOptionType::Call,
+            EuroOptionType::Call,
             base_ccy,
             quote_ccy,
             DayCounter::Actual360,
-            fx_pair,
         );
-        let call_trade = FxOptionTrade::new(call, trade_date, notional, Side::LongReceive);
+        let call_trade = FxEuropeanOptionTrade::new(call, trade_date, notional, Side::LongReceive);
 
         let call_provider = SimpleMarketDataProvider {
             evaluation_date: trade_date,
             market_data: md_call,
         };
 
-        let mut pricer = FxOptionPricer::new();
+        let mut pricer = FxEuropeanOptionPricer::new();
         pricer.set_discount_policy(Box::new(FxDiscountPolicy {
             base_index: base_index.clone(),
             base_currency: base_ccy,
@@ -669,17 +678,17 @@ mod tests {
             quote_ccy,
         )?;
 
-        let put = FxOption::new(
+        let put = FxEuropeanOption::new(
             "EURUSD-PUT".to_string(),
+            underlying_index.clone(),
             expiry_date,
             Strike::Absolute(strike),
-            FxOptionType::Put,
+            EuroOptionType::Put,
             base_ccy,
             quote_ccy,
             DayCounter::Actual360,
-            fx_pair,
         );
-        let put_trade = FxOptionTrade::new(put, trade_date, notional, Side::LongReceive);
+        let put_trade = FxEuropeanOptionTrade::new(put, trade_date, notional, Side::LongReceive);
 
         let put_provider = SimpleMarketDataProvider {
             evaluation_date: trade_date,
@@ -737,24 +746,24 @@ mod tests {
             quote_ccy,
         )?;
 
-        let option = FxOption::new(
+        let option = FxEuropeanOption::new(
             "EURUSD-CALL".to_string(),
+            underlying_index.clone(),
             expiry_date,
             Strike::Absolute(strike),
-            FxOptionType::Call,
+            EuroOptionType::Call,
             base_ccy,
             quote_ccy,
             DayCounter::Actual360,
-            fx_pair,
         );
-        let trade = FxOptionTrade::new(option, trade_date, notional, Side::LongReceive);
+        let trade = FxEuropeanOptionTrade::new(option, trade_date, notional, Side::LongReceive);
 
         let provider = SimpleMarketDataProvider {
             evaluation_date: trade_date,
             market_data,
         };
 
-        let mut pricer = FxOptionPricer::new();
+        let mut pricer = FxEuropeanOptionPricer::new();
         pricer.set_discount_policy(Box::new(FxDiscountPolicy {
             base_index,
             base_currency: base_ccy,
@@ -826,19 +835,20 @@ mod tests {
             base_ccy,
             quote_ccy,
         )?;
-        let option_long = FxOption::new(
+        let option_long = FxEuropeanOption::new(
             "EURUSD-CALL".to_string(),
+            underlying_index.clone(),
             expiry_date,
             Strike::Absolute(strike),
-            FxOptionType::Call,
+            EuroOptionType::Call,
             base_ccy,
             quote_ccy,
             DayCounter::Actual360,
-            fx_pair,
         );
-        let long_trade = FxOptionTrade::new(option_long, trade_date, notional, Side::LongReceive);
+        let long_trade =
+            FxEuropeanOptionTrade::new(option_long, trade_date, notional, Side::LongReceive);
 
-        let mut pricer = FxOptionPricer::new();
+        let mut pricer = FxEuropeanOptionPricer::new();
         pricer.set_discount_policy(Box::new(FxDiscountPolicy {
             base_index: base_index.clone(),
             base_currency: base_ccy,
@@ -871,17 +881,18 @@ mod tests {
             base_ccy,
             quote_ccy,
         )?;
-        let option_short = FxOption::new(
+        let option_short = FxEuropeanOption::new(
             "EURUSD-CALL".to_string(),
+            underlying_index.clone(),
             expiry_date,
             Strike::Absolute(strike),
-            FxOptionType::Call,
+            EuroOptionType::Call,
             base_ccy,
             quote_ccy,
             DayCounter::Actual360,
-            fx_pair,
         );
-        let short_trade = FxOptionTrade::new(option_short, trade_date, notional, Side::PayShort);
+        let short_trade =
+            FxEuropeanOptionTrade::new(option_short, trade_date, notional, Side::PayShort);
 
         let short_price = pricer
             .evaluate(

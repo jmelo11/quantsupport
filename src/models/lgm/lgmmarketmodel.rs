@@ -703,6 +703,11 @@ impl<'a, T: Scalar> LgmPathContext<'a, T> {
             let request = &self.model.requests[request_index];
             let mut response = SimulationResponse::new();
 
+            if !request.is_active_on(evaluation_date) {
+                responses.push(response);
+                continue;
+            }
+
             if let Some(forward_request) = &request.forward_rate_request {
                 let index = forward_request.market_index();
                 if let Some(curve_model) = self.model.curve_models.get(&index) {
@@ -793,7 +798,11 @@ impl<'a, T: Scalar> LgmPathContext<'a, T> {
             for (local_index, &request_index) in
                 self.request_indices_by_step[step].iter().enumerate()
             {
-                let Some(spot_request) = &self.model.requests[request_index].spot_request else {
+                let request = &self.model.requests[request_index];
+                if !request.is_active_on(self.model.dates[step]) {
+                    continue;
+                }
+                let Some(spot_request) = &request.spot_request else {
                     continue;
                 };
                 let index = spot_request.market_index();
@@ -887,14 +896,14 @@ impl<T: Scalar + 'static> MarketModel<T> for LgmMarketModel<'_, T> {
         self.n_paths
     }
 
-    fn generate_path(&self, index: usize) -> Option<PathScenario<T>> {
+    fn generate_path(&self, index: usize) -> Result<PathScenario<T>> {
         let ctx = LgmPathContext::new(self);
         let pair_index = index / 2;
-        let sample_index = u32::try_from(pair_index % SOBOL_SEQUENCE_LENGTH).ok()?;
+        let sample_index = u32::try_from(pair_index % SOBOL_SEQUENCE_LENGTH)
+            .map_err(|_| QSError::UnexpectedErr("Failed to convert sample index to u32".into()))?;
         let sequence_block = pair_index / SOBOL_SEQUENCE_LENGTH;
         let antithetic_sign = if index.is_multiple_of(2) { 1.0 } else { -1.0 };
         ctx.generate_path(sample_index, sequence_block, antithetic_sign)
-            .ok()
     }
 
     fn set_evaluation_dates(&mut self, dates: Vec<Date>) {
@@ -1023,12 +1032,44 @@ impl<T: Scalar> LgmMarketModel<'_, T> {
 mod sampling_tests {
     use super::*;
     use crate::{
+        core::marketdatahandling::discountrequest::DiscountRequest,
         rates::{
             interestrate::RateDefinition,
             yieldtermstructure::flatforwardtermstructure::FlatForwardTermStructure,
         },
         time::date::Date,
+        xva::visitors::preprocessorexecutor::SimulationRequest,
     };
+
+    #[test]
+    fn expired_requests_keep_empty_global_response_slots() {
+        let reference_date = Date::new(2026, 1, 1);
+        let active_date = Date::new(2026, 1, 2);
+        let expiration_date = Date::new(2026, 1, 3);
+        let payment_date = Date::new(2026, 1, 10);
+        let curve = FlatForwardTermStructure::new(reference_date, 0.03, RateDefinition::default());
+        let mut model = LgmMarketModel::new(
+            Currency::USD,
+            MarketIndex::SOFR,
+            reference_date,
+            DayCounter::Actual365,
+        )
+        .with_n_paths(1);
+        model.add_curve_model(MarketIndex::SOFR, LgmRateModel::new(0.03, 0.01, &curve));
+        model.set_evaluation_dates(vec![active_date, expiration_date]);
+        model.set_requests(vec![SimulationRequest {
+            expiration_date: Some(expiration_date),
+            discount_request: Some(DiscountRequest::new(MarketIndex::SOFR, payment_date)),
+            ..SimulationRequest::default()
+        }]);
+
+        let scenario = model.generate_path(0).unwrap();
+
+        assert_eq!(scenario[0].len(), 1);
+        assert!(scenario[0][0].discounts.is_some());
+        assert_eq!(scenario[1].len(), 1);
+        assert!(scenario[1][0].discounts.is_none());
+    }
 
     #[test]
     fn sobol_normals_are_repeatable_antithetic_pairs() {

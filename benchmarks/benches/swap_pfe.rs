@@ -77,7 +77,12 @@ fn create_swaps(n: usize, ref_date: Date) -> Vec<SwapTrade<f64>> {
 }
 
 /// Run the full PFE pipeline: decompose → inspect → simulate → evaluate.
-fn run_pfe(trades: &[SwapTrade<f64>], curve: &DiscountTermStructure<f64>, ref_date: Date) {
+fn run_pfe(
+    trades: &[SwapTrade<f64>],
+    curve: &DiscountTermStructure<f64>,
+    ref_date: Date,
+    expire_requests: bool,
+) {
     let dc = DayCounter::Actual365;
 
     // 1. Decompose all trades into contingent claims
@@ -104,7 +109,12 @@ fn run_pfe(trades: &[SwapTrade<f64>], curve: &DiscountTermStructure<f64>, ref_da
 
     let mut inspector = PreprocessorExecutor::new();
     inspector.visit(std::iter::once(&mut netting_set));
-    let requests: Vec<_> = inspector.requests().to_vec();
+    let mut requests = inspector.requests().to_vec();
+    if !expire_requests {
+        for request in &mut requests {
+            request.expiration_date = None;
+        }
+    }
 
     // 3. Build LGM market model (single-currency USD)
     let usd_rate = LgmRateModel::new(0.05, 0.005, curve);
@@ -152,9 +162,11 @@ fn bench_swap_pfe(c: &mut Criterion) {
     for n in [100, 1000] {
         let trades = create_swaps(n, ref_date);
 
-        group.bench_with_input(BenchmarkId::new("pfe", n), &trades, |b, trades| {
-            b.iter(|| run_pfe(trades, &curve, ref_date));
-        });
+        for (mode, expire_requests) in [("all_requests", false), ("expiring_requests", true)] {
+            group.bench_with_input(BenchmarkId::new(mode, n), &trades, |b, trades| {
+                b.iter(|| run_pfe(trades, &curve, ref_date, expire_requests));
+            });
+        }
     }
 
     group.finish();

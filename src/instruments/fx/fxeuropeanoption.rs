@@ -6,9 +6,9 @@ use crate::{
     },
     currencies::currency::Currency,
     indices::{fxpair::FxPair, marketindex::MarketIndex},
-    instruments::cashflows::payoffops::PayoffOps,
+    instruments::{cashflows::payoffops::PayoffOps, equity::equityeuropeanoption::EuroOptionType},
     time::{date::Date, daycounter::DayCounter},
-    utils::errors::Result,
+    utils::errors::{QSError, Result},
     volatility::volatilityindexing::Strike,
     xva::{
         claimevaluationstrategy::ClaimEvaluationStrategy, contigentclaim::ContingentClaim,
@@ -16,53 +16,45 @@ use crate::{
     },
 };
 
-/// Represents the type of an FX option.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FxOptionType {
-    /// Call option — right to buy the base currency at the strike price.
-    Call,
-    /// Put option — right to sell the base currency at the strike price.
-    Put,
-}
-
 /// A European FX option giving the holder the right (but not the obligation) to
 /// exchange a notional amount of base currency for quote currency at a fixed
 /// strike rate on the expiry date.
 #[derive(Clone)]
-pub struct FxOption {
+pub struct FxEuropeanOption {
     identifier: String,
+    /// Must be of type [`MarketIndex::FxPair`].
+    market_index: MarketIndex,
     expiry_date: Date,
     strike: Strike,
-    option_type: FxOptionType,
+    option_type: EuroOptionType,
     base_currency: Currency,
     quote_currency: Currency,
     day_counter: DayCounter,
-    pair: FxPair,
 }
 
-impl FxOption {
-    /// Creates a new [`FxOption`].
+impl FxEuropeanOption {
+    /// Creates a new [`FxEuropeanOption`].
     #[must_use]
     #[allow(clippy::too_many_arguments)]
     pub const fn new(
         identifier: String,
+        market_index: MarketIndex,
         expiry_date: Date,
         strike: Strike,
-        option_type: FxOptionType,
+        option_type: EuroOptionType,
         base_currency: Currency,
         quote_currency: Currency,
         day_counter: DayCounter,
-        pair: FxPair,
     ) -> Self {
         Self {
             identifier,
+            market_index,
             expiry_date,
             strike,
             option_type,
             base_currency,
             quote_currency,
             day_counter,
-            pair,
         }
     }
 
@@ -70,6 +62,12 @@ impl FxOption {
     #[must_use]
     pub const fn expiry_date(&self) -> Date {
         self.expiry_date
+    }
+
+    /// Returns the market index of this option.
+    #[must_use]
+    pub const fn market_index(&self) -> &MarketIndex {
+        &self.market_index
     }
 
     /// Returns the strike price.
@@ -80,7 +78,7 @@ impl FxOption {
 
     /// Returns the option type (Call or Put).
     #[must_use]
-    pub const fn option_type(&self) -> FxOptionType {
+    pub const fn option_type(&self) -> EuroOptionType {
         self.option_type
     }
 
@@ -102,26 +100,27 @@ impl FxOption {
         &self.day_counter
     }
 
-    /// Returns the FX pair.
-    #[must_use]
-    pub const fn pair(&self) -> &FxPair {
-        &self.pair
-    }
-
-    /// Returns the underlying spot index as a [`MarketIndex::FxPair`].
-    #[must_use]
-    pub const fn underlying_index(&self) -> MarketIndex {
-        MarketIndex::FxPair(self.pair)
+    /// Returns the FX pair represented by the option's market index.
+    ///
+    /// # Errors
+    /// Returns an error if the market index is not an FX pair.
+    pub fn pair(&self) -> Result<FxPair> {
+        match self.market_index {
+            MarketIndex::FxPair(pair) => Ok(pair),
+            _ => Err(QSError::InvalidValueErr(
+                "Invalid Market Index for FXEuropeanOption".into(),
+            )),
+        }
     }
 }
 
-impl Instrument for FxOption {
+impl Instrument for FxEuropeanOption {
     fn identifier(&self) -> String {
         self.identifier.clone()
     }
 }
 
-impl Discountable for FxOption {
+impl Discountable for FxEuropeanOption {
     fn currency(&self) -> Currency {
         self.quote_currency
     }
@@ -132,19 +131,24 @@ impl Discountable for FxOption {
 }
 
 /// Represents a trade of an FX option.
-pub struct FxOptionTrade {
-    instrument: FxOption,
+pub struct FxEuropeanOptionTrade {
+    instrument: FxEuropeanOption,
     trade_date: Date,
     notional: f64,
     side: Side,
 }
 
-impl FxOptionTrade {
-    /// Creates a new [`FxOptionTrade`].
+impl FxEuropeanOptionTrade {
+    /// Creates a new [`FxEuropeanOptionTrade`].
     ///
     /// `notional` is in base-currency terms.
     #[must_use]
-    pub const fn new(instrument: FxOption, trade_date: Date, notional: f64, side: Side) -> Self {
+    pub const fn new(
+        instrument: FxEuropeanOption,
+        trade_date: Date,
+        notional: f64,
+        side: Side,
+    ) -> Self {
         Self {
             instrument,
             trade_date,
@@ -174,14 +178,14 @@ impl FxOptionTrade {
         let strike = opt.strike().resolve(0.0);
 
         let payoff = match opt.option_type() {
-            FxOptionType::Call => PayoffOps::Max(
+            EuroOptionType::Call => PayoffOps::Max(
                 Box::new(PayoffOps::Minus(
                     Box::new(PayoffOps::Index),
                     Box::new(PayoffOps::Const(strike)),
                 )),
                 Box::new(PayoffOps::Const(0.0)),
             ),
-            FxOptionType::Put => PayoffOps::Max(
+            EuroOptionType::Put => PayoffOps::Max(
                 Box::new(PayoffOps::Minus(
                     Box::new(PayoffOps::Const(strike)),
                     Box::new(PayoffOps::Index),
@@ -197,7 +201,7 @@ impl FxOptionTrade {
             .with_currency(opt.quote_currency())
             .with_notional(self.notional)
             .with_side(self.side)
-            .with_index(opt.underlying_index())
+            .with_index(opt.market_index().clone())
             .with_evaluation_strategy(ClaimEvaluationStrategy::SpotPayoff {
                 payoff_ops: payoff,
                 strike,
@@ -209,8 +213,8 @@ impl FxOptionTrade {
     }
 }
 
-impl Trade<FxOption> for FxOptionTrade {
-    fn instrument(&self) -> &FxOption {
+impl Trade<FxEuropeanOption> for FxEuropeanOptionTrade {
+    fn instrument(&self) -> &FxEuropeanOption {
         &self.instrument
     }
 

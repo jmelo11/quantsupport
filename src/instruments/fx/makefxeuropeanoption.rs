@@ -1,7 +1,9 @@
 use crate::{
     currencies::currency::Currency,
-    indices::fxpair::FxPair,
-    instruments::fx::fxoption::{FxOption, FxOptionType},
+    indices::{fxpair::FxPair, marketindex::MarketIndex},
+    instruments::{
+        equity::equityeuropeanoption::EuroOptionType, fx::fxeuropeanoption::FxEuropeanOption,
+    },
     time::{date::Date, daycounter::DayCounter},
     utils::errors::{QSError, Result},
     volatility::volatilityindexing::Strike,
@@ -13,11 +15,11 @@ use crate::{
 /// ```rust
 /// use quantsupport::prelude::*;
 ///
-/// let fx_opt = MakeFxOption::default()
+/// let fx_opt = MakeFxEuropeanOption::default()
 ///     .with_identifier("EURUSD-1Y-CALL".to_string())
 ///     .with_expiry_date(Date::new(2027, 4, 11))
 ///     .with_strike(1.12)
-///     .with_option_type(FxOptionType::Call)
+///     .with_option_type(EuroOptionType::Call)
 ///     .with_base_currency(Currency::EUR)
 ///     .with_quote_currency(Currency::USD)
 ///     .with_pair(FxPair::new(Currency::EUR, Currency::USD).unwrap())
@@ -27,18 +29,18 @@ use crate::{
 /// assert_eq!(fx_opt.strike(), Strike::Absolute(1.12));
 /// ```
 #[derive(Default)]
-pub struct MakeFxOption {
+pub struct MakeFxEuropeanOption {
     identifier: Option<String>,
     expiry_date: Option<Date>,
-    strike: Option<f64>,
-    option_type: Option<FxOptionType>,
+    strike: Option<Strike>,
+    option_type: Option<EuroOptionType>,
     base_currency: Option<Currency>,
     quote_currency: Option<Currency>,
     day_counter: Option<DayCounter>,
     pair: Option<FxPair>,
 }
 
-impl MakeFxOption {
+impl MakeFxEuropeanOption {
     /// Sets the identifier.
     #[must_use]
     pub fn with_identifier(mut self, identifier: String) -> Self {
@@ -56,13 +58,20 @@ impl MakeFxOption {
     /// Sets the strike price.
     #[must_use]
     pub const fn with_strike(mut self, strike: f64) -> Self {
+        self.strike = Some(Strike::Absolute(strike));
+        self
+    }
+
+    /// Sets an absolute, ATM, or relative strike specification.
+    #[must_use]
+    pub const fn with_strike_spec(mut self, strike: Strike) -> Self {
         self.strike = Some(strike);
         self
     }
 
     /// Sets the option type (Call or Put).
     #[must_use]
-    pub const fn with_option_type(mut self, option_type: FxOptionType) -> Self {
+    pub const fn with_option_type(mut self, option_type: EuroOptionType) -> Self {
         self.option_type = Some(option_type);
         self
     }
@@ -95,11 +104,11 @@ impl MakeFxOption {
         self
     }
 
-    /// Builds the [`FxOption`] instance.
+    /// Builds the [`FxEuropeanOption`] instance.
     ///
     /// # Errors
     /// Returns an error if any of the required fields are missing.
-    pub fn build(self) -> Result<FxOption> {
+    pub fn build(self) -> Result<FxEuropeanOption> {
         let identifier = self
             .identifier
             .ok_or_else(|| QSError::ValueNotSetErr("Identifier".into()))?;
@@ -122,37 +131,38 @@ impl MakeFxOption {
             .pair
             .ok_or_else(|| QSError::ValueNotSetErr("FX pair".into()))?;
 
+        let market_index = MarketIndex::FxPair(pair);
         let day_counter = self.day_counter.unwrap_or(DayCounter::Actual360);
 
-        Ok(FxOption::new(
+        Ok(FxEuropeanOption::new(
             identifier,
+            market_index,
             expiry_date,
-            Strike::Absolute(strike),
+            strike,
             option_type,
             base_currency,
             quote_currency,
             day_counter,
-            pair,
         ))
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::MakeFxOption;
+    use super::MakeFxEuropeanOption;
     use crate::{
         currencies::currency::Currency, indices::fxpair::FxPair,
-        instruments::fx::fxoption::FxOptionType, time::date::Date,
+        instruments::equity::equityeuropeanoption::EuroOptionType, time::date::Date,
         volatility::volatilityindexing::Strike,
     };
 
     #[test]
     fn builds_fx_call_option() {
-        let fx_opt = MakeFxOption::default()
+        let fx_opt = MakeFxEuropeanOption::default()
             .with_identifier("EURUSD-1Y-CALL".to_string())
             .with_expiry_date(Date::new(2027, 4, 11))
             .with_strike(1.12)
-            .with_option_type(FxOptionType::Call)
+            .with_option_type(EuroOptionType::Call)
             .with_base_currency(Currency::EUR)
             .with_quote_currency(Currency::USD)
             .with_pair(FxPair::new(Currency::EUR, Currency::USD).unwrap())
@@ -160,33 +170,49 @@ mod tests {
             .expect("call option should build");
 
         assert_eq!(fx_opt.strike(), Strike::Absolute(1.12));
-        assert_eq!(fx_opt.option_type(), FxOptionType::Call);
+        assert_eq!(fx_opt.option_type(), EuroOptionType::Call);
         assert_eq!(fx_opt.base_currency(), Currency::EUR);
         assert_eq!(fx_opt.quote_currency(), Currency::USD);
     }
 
     #[test]
     fn builds_fx_put_option() {
-        let fx_opt = MakeFxOption::default()
+        let fx_opt = MakeFxEuropeanOption::default()
             .with_identifier("EURUSD-1Y-PUT".to_string())
             .with_expiry_date(Date::new(2027, 4, 11))
             .with_strike(1.08)
-            .with_option_type(FxOptionType::Put)
+            .with_option_type(EuroOptionType::Put)
             .with_base_currency(Currency::EUR)
             .with_quote_currency(Currency::USD)
             .with_pair(FxPair::new(Currency::EUR, Currency::USD).unwrap())
             .build()
             .expect("put option should build");
 
-        assert_eq!(fx_opt.option_type(), FxOptionType::Put);
+        assert_eq!(fx_opt.option_type(), EuroOptionType::Put);
+    }
+
+    #[test]
+    fn preserves_relative_strike() {
+        let fx_opt = MakeFxEuropeanOption::default()
+            .with_identifier("EURUSD-1Y-CALL".to_string())
+            .with_expiry_date(Date::new(2027, 4, 11))
+            .with_strike_spec(Strike::Relative(0.05))
+            .with_option_type(EuroOptionType::Call)
+            .with_base_currency(Currency::EUR)
+            .with_quote_currency(Currency::USD)
+            .with_pair(FxPair::new(Currency::EUR, Currency::USD).unwrap())
+            .build()
+            .expect("call option should build");
+
+        assert_eq!(fx_opt.strike(), Strike::Relative(0.05));
     }
 
     #[test]
     fn missing_strike_fails() {
-        let result = MakeFxOption::default()
+        let result = MakeFxEuropeanOption::default()
             .with_identifier("EURUSD-1Y-CALL".to_string())
             .with_expiry_date(Date::new(2027, 4, 11))
-            .with_option_type(FxOptionType::Call)
+            .with_option_type(EuroOptionType::Call)
             .with_base_currency(Currency::EUR)
             .with_quote_currency(Currency::USD)
             .with_pair(FxPair::new(Currency::EUR, Currency::USD).unwrap())

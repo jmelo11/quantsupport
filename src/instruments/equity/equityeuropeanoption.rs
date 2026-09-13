@@ -1,3 +1,5 @@
+use serde::{Deserialize, Serialize};
+
 use crate::{
     core::{
         collateral::Discountable,
@@ -11,7 +13,7 @@ use crate::{
 };
 
 /// Represents the payoff type of an European option.
-#[derive(Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EuroOptionType {
     /// Call option type.
     Call,
@@ -54,6 +56,7 @@ impl EquityEuropeanOption {
     /// Creates a new european equity option.
     #[must_use]
     pub const fn new(
+        // Must be of type [`MarketIndex::Equity`]
         market_index: MarketIndex,
         expiry_date: Date,
         strike: Strike,
@@ -99,6 +102,20 @@ impl EquityEuropeanOption {
     #[must_use]
     pub const fn day_counter(&self) -> &DayCounter {
         &self.day_counter
+    }
+
+    /// Sets the settlement currency.
+    #[must_use]
+    pub const fn with_currency(mut self, currency: Currency) -> Self {
+        self.currency = currency;
+        self
+    }
+
+    /// Sets the day count convention.
+    #[must_use]
+    pub const fn with_day_counter(mut self, day_counter: DayCounter) -> Self {
+        self.day_counter = day_counter;
+        self
     }
 }
 

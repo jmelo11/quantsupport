@@ -5,11 +5,17 @@ use crate::{
     currencies::currency::Currency,
     indices::marketindex::MarketIndex,
     instruments::{
-        equity::equityeuropeanoption::{EquityEuropeanOption, EuroOptionType},
+        equity::{
+            equityeuropeanoption::{EquityEuropeanOption, EuroOptionType},
+            makeequityeuropeanoption::MakeEquityEuropeanOption,
+        },
         fixedincome::{
             fixedratedeposit::FixedRateDeposit, makefixedratedeposit::MakeFixedRateDeposit,
         },
-        fx::{fxforward::FxForward, makefxforward::MakeFxForward},
+        fx::{
+            fxeuropeanoption::FxEuropeanOption, fxforward::FxForward,
+            makefxeuropeanoption::MakeFxEuropeanOption, makefxforward::MakeFxForward,
+        },
         rates::{
             basisswap::BasisSwap,
             capfloor::{CapFloor, CapFloorType},
@@ -43,6 +49,20 @@ fn parse_fx_pair(pair: &str) -> Result<(Currency, Currency)> {
     let base: Currency = pair[..3].parse()?;
     let quote_ccy: Currency = pair[3..6].parse()?;
     Ok((base, quote_ccy))
+}
+
+fn parse_strike(id: &str, kind: &str, value: &str) -> Result<Strike> {
+    let strike_kind = kind.parse::<Strike>()?;
+    let strike_value = value
+        .parse::<f64>()
+        .map_err(|e| QSError::InvalidValueErr(format!("Bad strike in {id}: {e}")))?;
+    match strike_kind {
+        Strike::Absolute(_) => Ok(Strike::Absolute(strike_value)),
+        Strike::Relative(_) => Ok(Strike::Relative(strike_value)),
+        Strike::Atm => Err(QSError::InvalidValueErr(format!(
+            "ATM strike in {id} must not have a strike value"
+        ))),
+    }
 }
 
 /// Quote level enumeration.
@@ -205,24 +225,25 @@ impl std::str::FromStr for OptionStrategy {
 /// parameters for every supported product. Square brackets denote optional
 /// segments.
 ///
-/// | Product | Pos 0 | Pos 1 | Pos 2 | Pos 3 | Pos 4 | Pos 5 | Pos 6 | Pos 7 | Pos 8 |
-/// |---|---|---|---|---|---|---|---|---|---|
-/// | OIS | `OIS` | CCY | Index | Tenor | \[`PayFreq`\] | \[`RecvFreq`\] | | | |
-/// | `FixedRateDeposit` | `FixedRateDeposit` | CCY | Index | Tenor | | | | | |
-/// | `BasisSwap` | `BasisSwap` | CCY | `PayIndex` | `RecvIndex` | Tenor | \[`PayFreq`\] | \[`RecvFreq`\] | | |
-/// | `FixFloatCrossCurrencySwap` | `FixFloatCrossCurrencySwap` | `DomCCY` | `FloatIndex` | `ForCCY` | Tenor | \[`DomFreq`\] | \[`ForFreq`\] | | |
-/// | `FloatFloatCrossCurrencySwap` | `FloatFloatCrossCurrencySwap` | `DomCCY` | `DomIndex` | `ForIndex` | `ForCCY` | Tenor | \[`DomFreq`\] | \[`ForFreq`\] | |
-/// | `CapFloor` | `CapFloor` | CCY | Index | Tenor | \[Freq\] | Strike | \[`StrikeValue`\] | `VolType` | |
-/// | `CapletFloorlet` | `CapletFloorlet` | CCY | Index | `IdxTenor` | Expiry | Strike | \[`StrikeValue`\] | Strategy | `VolType` |
-/// | Future | `Future` | CCY | Index | `IMMCode` | | | | | |
-/// | `ConvexityAdjustment` | `ConvexityAdjustment` | CCY | Index | `IMMCode` | | | | | |
-/// | Swaption | `Swaption` | CCY | Index | Expiry | `SwapTenor` | \[`PayFreq`\] | \[`RecvFreq`\] | Strike | \[`StrikeValue`\] `VolType` |
-/// | `FxOutrightForward` | `FxOutrightForward` | CCYPAIR | Tenor | | | | | | |
-/// | `FxForwardPoints` | `FxForwardPoints` | CCYPAIR | Tenor | | | | | | |
-/// | `EquityCall` | `EquityCall` | CCY | Index | Tenor | Strike | | | | |
-/// | `EquityPut` | `EquityPut` | CCY | Index | Tenor | Strike | | | | |
-/// | `FxCall` | `FxCall` | CCYPAIR | Tenor | Strike | | | | | |
-/// | `FxPut` | `FxPut` | CCYPAIR | Tenor | Strike | | | | | |
+/// | Product                      | Pos 0                       | Pos 1       | Pos 2         | Pos 3      | Pos 4          | Pos 5           | Pos 6            | Pos 7     | Pos 8 |
+/// |-----------------------------|-----------------------------|-------------|---------------|------------|----------------|-----------------|------------------|----------|-------|
+/// | `OIS`                       | `OIS`                       | CCY         | Index         | Tenor      | \[`PayFreq`\]  | \[`RecvFreq`\]  |                   |          |       |
+/// | `FixedRateDeposit`          | `FixedRateDeposit`          | CCY         | Index         | Tenor      |                |                 |                   |          |       |
+/// | `FixedRateBond`             | `FixedRateBond`             | CCY         | Index         | Tenor      | \[`PayFreq`\]  |                 |                   |          |       |
+/// | `BasisSwap`                 | `BasisSwap`                 | CCY         | `PayIndex`    | `RecvIndex`| Tenor          | \[`PayFreq`\]   | \[`RecvFreq`\]    |          |       |
+/// | `FixFloatCrossCurrencySwap` | `FixFloatCrossCurrencySwap` | `DomCCY`    | `FloatIndex`  | `ForCCY`   | Tenor          | \[`DomFreq`\]   | \[`ForFreq`\]     |          |       |
+/// |`FloatFloatCrossCurrencySwap`|`FloatFloatCrossCurrencySwap`| `DomCCY`    | `DomIndex`    | `ForIndex` | `ForCCY`       | Tenor           | \[`DomFreq`\]     | \[`ForFreq`\] |       |
+/// | `CapFloor`                  | `CapFloor`                  | CCY         | Index         | Tenor      | \[Freq\]       | Strike          | \[`StrikeValue`\] | `VolType` |       |
+/// | `CapletFloorlet`            | `CapletFloorlet`            | CCY         | Index         | `IdxTenor` | Expiry         | Strike          | \[`StrikeValue`\] | Strategy  | `VolType` |
+/// | `Future`                    | `Future`                    | CCY         | Index         | `IMMCode`  |                |                 |                   |          |       |
+/// | `ConvexityAdjustment`       | `ConvexityAdjustment`       | CCY         | Index         | `IMMCode`  |                |                 |                   |          |       |
+/// | `Swaption`                  | `Swaption`                  | CCY         | Index         | Expiry     | `SwapTenor`    | \[`PayFreq`\]   | \[`RecvFreq`\]    | Strike   | \[`StrikeValue`\] `VolType` |
+/// | `FxOutrightForward`         | `FxOutrightForward`         | CCYPAIR     | Tenor         |            |                |                 |                   |          |       |
+/// | `FxForwardPoints`           | `FxForwardPoints`           | CCYPAIR     | Tenor         |            |                |                 |                   |          |       |
+/// | `EquityCall`                | `EquityCall`                | CCY         | Index         | Tenor      | Strike kind    | Strike          |                   |          |       |
+/// | `EquityPut`                 | `EquityPut`                 | CCY         | Index         | Tenor      | Strike kind    | Strike          |                   |          |       |
+/// | `FxCall`                    | `FxCall`                    | CCYPAIR     | Tenor         | Strike kind| Strike         |                 |                   |          |       |
+/// | `FxPut`                     | `FxPut`                     | CCYPAIR     | Tenor         | Strike kind| Strike         |                 |                   |          |       |
 ///
 /// **Frequency values**: `Annual`, `Semiannual`, `Quarterly`, `Monthly`,
 /// `Bimonthly`, `Biweekly`, `Weekly`, `Daily`, `EveryFourthMonth`,
@@ -237,8 +258,8 @@ impl std::str::FromStr for OptionStrategy {
 /// FixFloatCrossCurrencySwap_USD_ICP_CLP_1Y_Semiannual_Quarterly
 /// Swaption_USD_SOFR_3M_2Y_Semiannual_Semiannual_Absolute_0.04_Black
 /// CapFloor_USD_SOFR_1Y_Quarterly_Absolute_0.03_Black
-/// EquityCall_USD_SPX_1Y_5000
-/// FxCall_EURUSD_1Y_1.10
+/// EquityCall_USD_SPX_1Y_Absolute_5000
+/// FxCall_EURUSD_1Y_Absolute_1.10
 /// ```
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct QuoteDetails {
@@ -1011,12 +1032,12 @@ impl QuoteDetails {
             .with_tenor(tenor))
     }
 
-    /// `{Instrument}_CCY_{Index}_{Expiry}_{Strike}` — e.g. `EquityCall_USD_SPX_1Y_5000`
+    /// `{Instrument}_CCY_{Index}_{Expiry}_{StrikeKind}_{Strike}` — e.g. `EquityCall_USD_SPX_1Y_Absolute_5000`
     ///
     /// # Errors
     /// Returns an error if the identifier is too short or fields cannot be parsed.
     pub fn parse_equity_call(id: &str, parts: &[&str]) -> Result<Self> {
-        if parts.len() < 5 {
+        if parts.len() < 6 {
             return Err(QSError::InvalidValueErr(format!(
                 "Call identifier too short: {id}"
             )));
@@ -1024,22 +1045,20 @@ impl QuoteDetails {
         let currency: Currency = parts[1].parse()?;
         let index = parts[2].parse::<MarketIndex>()?;
         let tenor = Period::from_str(parts[3])?;
-        let strike: f64 = parts[4]
-            .parse()
-            .map_err(|e| QSError::InvalidValueErr(format!("Bad strike in {id}: {e}")))?;
+        let strike = parse_strike(id, parts[4], parts[5])?;
         Ok(Self::new(id.to_string(), QuoteInstrument::EquityCall)
             .with_market_index(index)
             .with_currency(currency)
             .with_tenor(tenor)
-            .with_strike(Strike::Absolute(strike)))
+            .with_strike(strike))
     }
 
-    /// `{Instrument}_CCY_{Index}_{Expiry}_{Strike}` — e.g. `EquityPut_USD_SPX_1Y_5000`
+    /// `{Instrument}_CCY_{Index}_{Expiry}_{StrikeKind}_{Strike}` — e.g. `EquityPut_USD_SPX_1Y_Absolute_5000`
     ///
     /// # Errors
     /// Returns an error if the identifier is too short or fields cannot be parsed.
     pub fn parse_equity_put(id: &str, parts: &[&str]) -> Result<Self> {
-        if parts.len() < 5 {
+        if parts.len() < 6 {
             return Err(QSError::InvalidValueErr(format!(
                 "Put identifier too short: {id}"
             )));
@@ -1047,60 +1066,54 @@ impl QuoteDetails {
         let currency: Currency = parts[1].parse()?;
         let index = parts[2].parse::<MarketIndex>()?;
         let tenor = Period::from_str(parts[3])?;
-        let strike: f64 = parts[4]
-            .parse()
-            .map_err(|e| QSError::InvalidValueErr(format!("Bad strike in {id}: {e}")))?;
+        let strike = parse_strike(id, parts[4], parts[5])?;
         Ok(Self::new(id.to_string(), QuoteInstrument::EquityPut)
             .with_market_index(index)
             .with_currency(currency)
             .with_tenor(tenor)
-            .with_strike(Strike::Absolute(strike)))
+            .with_strike(strike))
     }
 
-    /// `{Instrument}_{CCYPAIR}_{Expiry}_{Strike}` — e.g. `FxCall_EURUSD_1Y_1.10`
+    /// `{Instrument}_{CCYPAIR}_{Expiry}_{StrikeKind}_{Strike}` — e.g. `FxCall_EURUSD_1Y_Absolute_1.10`
     ///
     /// # Errors
     /// Returns an error if the identifier is too short or fields cannot be parsed.
     pub fn parse_fx_call(id: &str, parts: &[&str]) -> Result<Self> {
-        if parts.len() < 4 {
+        if parts.len() < 5 {
             return Err(QSError::InvalidValueErr(format!(
                 "FxCall identifier too short: {id}"
             )));
         }
         let (base, quote_ccy) = parse_fx_pair(parts[1])?;
         let tenor = Period::from_str(parts[2])?;
-        let strike: f64 = parts[3]
-            .parse()
-            .map_err(|e| QSError::InvalidValueErr(format!("Bad strike in {id}: {e}")))?;
+        let strike = parse_strike(id, parts[3], parts[4])?;
 
         Ok(Self::new(id.to_string(), QuoteInstrument::FxCall)
             .with_pay_currency(base)
             .with_receive_currency(quote_ccy)
             .with_tenor(tenor)
-            .with_strike(Strike::Absolute(strike)))
+            .with_strike(strike))
     }
 
-    /// `{Instrument}_{CCYPAIR}_{Expiry}_{Strike}` — e.g. `FxPut_EURUSD_1Y_1.10`
+    /// `{Instrument}_{CCYPAIR}_{Expiry}_{StrikeKind}_{Strike}` — e.g. `FxPut_EURUSD_1Y_Absolute_1.10`
     ///
     /// # Errors
     /// Returns an error if the identifier is too short or fields cannot be parsed.
     pub fn parse_fx_put(id: &str, parts: &[&str]) -> Result<Self> {
-        if parts.len() < 4 {
+        if parts.len() < 5 {
             return Err(QSError::InvalidValueErr(format!(
                 "FxPut identifier too short: {id}"
             )));
         }
         let (base, quote_ccy) = parse_fx_pair(parts[1])?;
         let tenor = Period::from_str(parts[2])?;
-        let strike: f64 = parts[3]
-            .parse()
-            .map_err(|e| QSError::InvalidValueErr(format!("Bad strike in {id}: {e}")))?;
+        let strike = parse_strike(id, parts[3], parts[4])?;
 
         Ok(Self::new(id.to_string(), QuoteInstrument::FxPut)
             .with_pay_currency(base)
             .with_receive_currency(quote_ccy)
             .with_tenor(tenor)
-            .with_strike(Strike::Absolute(strike)))
+            .with_strike(strike))
     }
 
     /// Parses a quote identifier using a custom separator.
@@ -1146,10 +1159,6 @@ impl QuoteDetails {
     }
 }
 
-// ---------------------------------------------------------------------------
-// FromStr – parse a quote identifier into a QuoteDetails
-// ---------------------------------------------------------------------------
-
 impl std::str::FromStr for QuoteDetails {
     type Err = QSError;
 
@@ -1157,7 +1166,7 @@ impl std::str::FromStr for QuoteDetails {
     ///
     /// The first `_`-delimited segment determines the instrument type and must
     /// match the exact [`QuoteInstrument`] variant name (e.g.
-    /// `FxOutrightForward`/`FxForwardPoints`).
+    /// [`FxOutrightForward`]/[`FxForwardPoints`]).
     ///
     /// # Errors
     /// Returns an error if the identifier cannot be parsed.
@@ -1187,9 +1196,13 @@ where
     /// A float-float cross-currency swap (both legs floating).
     FloatFloatCrossCurrencySwap(FloatFloatCrossCurrencySwap<T>),
     /// A European equity call option.
-    Call(EquityEuropeanOption),
+    EquityCall(EquityEuropeanOption),
     /// A European equity put option.
-    Put(EquityEuropeanOption),
+    EquityPut(EquityEuropeanOption),
+    /// A European FX call option.
+    FxCall(FxEuropeanOption),
+    /// A European FX put option.
+    FxPut(FxEuropeanOption),
     /// An interest rate cap or floor.
     CapFloor(CapFloor),
     /// A single caplet or floorlet.
@@ -1212,8 +1225,10 @@ impl<T: Scalar> std::fmt::Debug for CalibrationInstrumentType<T> {
             Self::FloatFloatCrossCurrencySwap(_) => {
                 write!(f, "CalibrationInstrumentType::FloatFloatCrossCurrencySwap")
             }
-            Self::Call(_) => write!(f, "CalibrationInstrumentType::Call"),
-            Self::Put(_) => write!(f, "CalibrationInstrumentType::Put"),
+            Self::EquityCall(_) => write!(f, "CalibrationInstrumentType::EquityCall"),
+            Self::EquityPut(_) => write!(f, "CalibrationInstrumentType::EquityPut"),
+            Self::FxCall(_) => write!(f, "CalibrationInstrumentType::FxCall"),
+            Self::FxPut(_) => write!(f, "CalibrationInstrumentType::FxPut"),
             Self::CapFloor(_) => write!(f, "CalibrationInstrumentType::CapFloor"),
             Self::CapletFloorlet(_) => write!(f, "CalibrationInstrumentType::CapletFloorlet"),
             Self::EuropeanSwaption(_) => write!(f, "CalibrationInstrumentType::EuropeanSwaption"),
@@ -1250,7 +1265,8 @@ where
                 .max(x.foreign_leg().last_payment_date())),
             Self::RateFutures(x) => Ok(x.end_date()),
             Self::FxForward(x) => Ok(x.delivery_date()),
-            Self::Call(x) | Self::Put(x) => Ok(x.expiry_date()),
+            Self::EquityCall(x) | Self::EquityPut(x) => Ok(x.expiry_date()),
+            Self::FxCall(x) | Self::FxPut(x) => Ok(x.expiry_date()),
             Self::CapletFloorlet(x) => Ok(x.fixing_date()),
             Self::CapFloor(x) => x.last_fixing_date().ok_or_else(|| {
                 crate::utils::errors::QSError::ValueNotSetErr(
@@ -1339,17 +1355,16 @@ impl Quote {
                     notional,
                 )
             }
-            QuoteInstrument::EquityCall => self.build_call(reference_date),
-            QuoteInstrument::EquityPut => self.build_put(reference_date),
+            QuoteInstrument::EquityCall => self.build_equity_call(reference_date),
+            QuoteInstrument::EquityPut => self.build_equity_put(reference_date),
             QuoteInstrument::CapFloor => self.build_cap_floor(value, reference_date, notional),
             QuoteInstrument::CapletFloorlet => self.build_caplet_floorlet(reference_date),
             QuoteInstrument::EuropeanSwaption => {
                 self.build_swaption(value, reference_date, notional)
             }
             QuoteInstrument::FxForwardPoints => self.build_fx_forward_points(value, reference_date),
-            QuoteInstrument::FxCall | QuoteInstrument::FxPut => Err(QSError::NotImplementedErr(
-                "FX option instrument builders are not implemented yet".into(),
-            )),
+            QuoteInstrument::FxCall => self.build_fx_call(reference_date),
+            QuoteInstrument::FxPut => self.build_fx_put(reference_date),
             QuoteInstrument::ConvexityAdjustment => Err(QSError::NotImplementedErr(format!(
                 "Cannot build instrument for {:?} — it is a vol / auxiliary quote type",
                 QuoteInstrument::ConvexityAdjustment
@@ -1362,7 +1377,7 @@ impl Quote {
         }
     }
 
-    /// wtf?
+    /// Convenience method for getting the quote index.
     fn required_market_index(details: &QuoteDetails, context: &str) -> Result<MarketIndex> {
         details
             .market_index()
@@ -1680,54 +1695,101 @@ impl Quote {
         Ok(CalibrationInstrumentType::FloatFloatCrossCurrencySwap(xccy))
     }
 
-    /// European equity Call — strike and expiry from details.
-    fn build_call<T: Scalar + Default>(
+    /// European Fx Call — strike and expiry from details.
+    fn build_fx_call<T: Scalar + Default>(
         &self,
         reference_date: Date,
+    ) -> Result<CalibrationInstrumentType<T>> {
+        self.build_fx_option(reference_date, EuroOptionType::Call)
+    }
+
+    /// European Fx Call — strike and expiry from details.
+    fn build_fx_put<T: Scalar + Default>(
+        &self,
+        reference_date: Date,
+    ) -> Result<CalibrationInstrumentType<T>> {
+        self.build_fx_option(reference_date, EuroOptionType::Put)
+    }
+
+    fn build_fx_option<T: Scalar + Default>(
+        &self,
+        reference_date: Date,
+        option_type: EuroOptionType,
     ) -> Result<CalibrationInstrumentType<T>> {
         let d = &self.details;
         let strike = d
             .strike()
-            .ok_or_else(|| QSError::ValueNotSetErr("Strike on Call quote".into()))?;
+            .ok_or_else(|| QSError::ValueNotSetErr("Strike on FX option quote".into()))?;
         let tenor = d
             .tenor()
-            .ok_or_else(|| QSError::ValueNotSetErr("Tenor on Call quote".into()))?;
-        let expiry = reference_date + tenor;
+            .ok_or_else(|| QSError::ValueNotSetErr("Tenor on FX option quote".into()))?;
+        let base_currency = d
+            .pay_currency()
+            .ok_or_else(|| QSError::ValueNotSetErr("Base currency on FX option quote".into()))?;
+        let quote_currency = d
+            .receive_currency()
+            .ok_or_else(|| QSError::ValueNotSetErr("Quote currency on FX option quote".into()))?;
+        let pair = crate::indices::fxpair::FxPair::new(base_currency, quote_currency)?;
+        let option = MakeFxEuropeanOption::default()
+            .with_identifier(d.identifier())
+            .with_expiry_date(reference_date + tenor)
+            .with_strike_spec(strike)
+            .with_option_type(option_type)
+            .with_base_currency(base_currency)
+            .with_quote_currency(quote_currency)
+            .with_pair(pair)
+            .build()?;
 
-        let market_index = Self::required_market_index(d, "Call quote")?;
-        let opt = EquityEuropeanOption::new(
-            market_index,
-            expiry,
-            strike,
-            EuroOptionType::Call,
-            d.identifier(),
-        );
-        Ok(CalibrationInstrumentType::Call(opt))
+        Ok(match option_type {
+            EuroOptionType::Call => CalibrationInstrumentType::FxCall(option),
+            EuroOptionType::Put => CalibrationInstrumentType::FxPut(option),
+        })
+    }
+
+    /// European equity Call — strike and expiry from details.
+    fn build_equity_call<T: Scalar + Default>(
+        &self,
+        reference_date: Date,
+    ) -> Result<CalibrationInstrumentType<T>> {
+        self.build_equity_option(reference_date, EuroOptionType::Call)
     }
 
     /// European equity Put — strike and expiry from details.
-    fn build_put<T: Scalar + Default>(
+    fn build_equity_put<T: Scalar + Default>(
         &self,
         reference_date: Date,
+    ) -> Result<CalibrationInstrumentType<T>> {
+        self.build_equity_option(reference_date, EuroOptionType::Put)
+    }
+
+    fn build_equity_option<T: Scalar + Default>(
+        &self,
+        reference_date: Date,
+        option_type: EuroOptionType,
     ) -> Result<CalibrationInstrumentType<T>> {
         let d = &self.details;
         let strike = d
             .strike()
-            .ok_or_else(|| QSError::ValueNotSetErr("Strike on Put quote".into()))?;
+            .ok_or_else(|| QSError::ValueNotSetErr("Strike on equity option quote".into()))?;
         let tenor = d
             .tenor()
-            .ok_or_else(|| QSError::ValueNotSetErr("Tenor on Put quote".into()))?;
-        let expiry = reference_date + tenor;
+            .ok_or_else(|| QSError::ValueNotSetErr("Tenor on equity option quote".into()))?;
+        let currency = d
+            .currency()
+            .ok_or_else(|| QSError::ValueNotSetErr("Currency on equity option quote".into()))?;
+        let option = MakeEquityEuropeanOption::default()
+            .with_identifier(d.identifier())
+            .with_market_index(Self::required_market_index(d, "equity option quote")?)
+            .with_expiry_date(reference_date + tenor)
+            .with_strike_spec(strike)
+            .with_option_type(option_type)
+            .with_currency(currency)
+            .build()?;
 
-        let market_index = Self::required_market_index(d, "Put quote")?;
-        let opt = EquityEuropeanOption::new(
-            market_index,
-            expiry,
-            strike,
-            EuroOptionType::Put,
-            d.identifier(),
-        );
-        Ok(CalibrationInstrumentType::Put(opt))
+        Ok(match option_type {
+            EuroOptionType::Call => CalibrationInstrumentType::EquityCall(option),
+            EuroOptionType::Put => CalibrationInstrumentType::EquityPut(option),
+        })
     }
 
     /// Builds a single `CapletFloorlet` from a vol quote.
@@ -1962,29 +2024,30 @@ mod tests {
 
     #[test]
     fn parse_call_identifier() {
-        let det: QuoteDetails = "EquityCall_USD_SPX_1Y_5000".parse().unwrap();
+        let det: QuoteDetails = "EquityCall_USD_SPX_1Y_Absolute_5000".parse().unwrap();
         assert_eq!(*det.instrument(), QuoteInstrument::EquityCall);
         assert_eq!(det.strike(), Some(Strike::Absolute(5000.0)));
     }
 
     #[test]
     fn parse_put_identifier() {
-        let det: QuoteDetails = "EquityPut_USD_SPX_1Y_4500".parse().unwrap();
+        let det: QuoteDetails = "EquityPut_USD_SPX_1Y_Relative_0.05".parse().unwrap();
         assert_eq!(*det.instrument(), QuoteInstrument::EquityPut);
-        assert_eq!(det.strike(), Some(Strike::Absolute(4500.0)));
+        assert_eq!(det.strike(), Some(Strike::Relative(0.05)));
     }
 
     #[test]
     fn parse_fx_call_identifier() {
-        let det: QuoteDetails = "FxCall_EURUSD_1Y_1.10".parse().unwrap();
+        let det: QuoteDetails = "FxCall_EURUSD_1Y_Relative_0.05".parse().unwrap();
         assert_eq!(*det.instrument(), QuoteInstrument::FxCall);
         assert_eq!(det.pay_currency(), Some(Currency::EUR));
         assert_eq!(det.receive_currency(), Some(Currency::USD));
+        assert_eq!(det.strike(), Some(Strike::Relative(0.05)));
     }
 
     #[test]
     fn parse_with_custom_separator() {
-        let det = QuoteDetails::parse("EquityCall|USD|SPX|1Y|5000", '|').unwrap();
+        let det = QuoteDetails::parse("EquityCall|USD|SPX|1Y|Absolute|5000", '|').unwrap();
         assert_eq!(*det.instrument(), QuoteInstrument::EquityCall);
         assert_eq!(det.currency(), Some(Currency::USD));
         assert_eq!(det.strike(), Some(Strike::Absolute(5000.0)));
@@ -2060,22 +2123,57 @@ mod tests {
 
     #[test]
     fn build_call_option() {
-        let details: QuoteDetails = "EquityCall_USD_SPX_1Y_5000".parse().unwrap();
+        let details: QuoteDetails = "EquityCall_USD_SPX_1Y_Absolute_5000".parse().unwrap();
         let quote = Quote::new(details, QuoteLevels::with_mid(150.0));
         let inst = quote
             .build_instrument(ref_date(), Level::Mid, None)
             .unwrap();
-        assert!(matches!(inst, CalibrationInstrumentType::Call(_)));
+        assert!(matches!(
+            inst,
+            CalibrationInstrumentType::EquityCall(option)
+                if option.strike() == Strike::Absolute(5000.0)
+        ));
     }
 
     #[test]
     fn build_put_option() {
-        let details: QuoteDetails = "EquityPut_USD_SPX_1Y_4500".parse().unwrap();
+        let details: QuoteDetails = "EquityPut_USD_SPX_1Y_Relative_0.05".parse().unwrap();
         let quote = Quote::new(details, QuoteLevels::with_mid(100.0));
         let inst = quote
             .build_instrument(ref_date(), Level::Mid, None)
             .unwrap();
-        assert!(matches!(inst, CalibrationInstrumentType::Put(_)));
+        assert!(matches!(
+            inst,
+            CalibrationInstrumentType::EquityPut(option)
+                if option.strike() == Strike::Relative(0.05)
+        ));
+    }
+
+    #[test]
+    fn build_fx_options() {
+        let call = Quote::new(
+            "FxCall_EURUSD_1Y_Absolute_1.10".parse().unwrap(),
+            QuoteLevels::with_mid(0.12),
+        )
+        .build_instrument(ref_date(), Level::Mid, None)
+        .unwrap();
+        let put = Quote::new(
+            "FxPut_EURUSD_1Y_Relative_0.05".parse().unwrap(),
+            QuoteLevels::with_mid(0.11),
+        )
+        .build_instrument(ref_date(), Level::Mid, None)
+        .unwrap();
+
+        assert!(matches!(
+            call,
+            CalibrationInstrumentType::FxCall(option)
+                if option.strike() == Strike::Absolute(1.10)
+        ));
+        assert!(matches!(
+            put,
+            CalibrationInstrumentType::FxPut(option)
+                if option.strike() == Strike::Relative(0.05)
+        ));
     }
 
     #[test]

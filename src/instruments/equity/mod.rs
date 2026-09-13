@@ -4,6 +4,8 @@ pub mod equityeuropeanoption;
 pub mod equityforward;
 /// Futures instruments.
 pub mod futures;
+/// Equity european option builder.
+pub mod makeequityeuropeanoption;
 /// Equity forward builder.
 pub mod makeequityforward;
 /// Futures builder.

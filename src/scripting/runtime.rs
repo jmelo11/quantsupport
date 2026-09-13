@@ -411,7 +411,7 @@ impl ScriptEngine {
                 // set, avoiding the small in-sample control-variate bias.
                 let path_index = n_paths + pilot_offset;
                 Tape::rewind_to_mark_fwd();
-                let path = model.generate_path(path_index).ok_or_else(|| {
+                let path = model.generate_path(path_index).map_err(|_| {
                     ScriptingError::EvaluationError(format!(
                         "market model failed to generate pilot path {path_index}"
                     ))
@@ -438,7 +438,7 @@ impl ScriptEngine {
         };
         let paths_result = (0..n_paths).try_for_each(|path_index| -> Result<()> {
             Tape::rewind_to_mark_fwd();
-            let path = model.generate_path(path_index).ok_or_else(|| {
+            let path = model.generate_path(path_index).map_err(|_| {
                 ScriptingError::EvaluationError(format!(
                     "market model failed to generate path {path_index}"
                 ))
@@ -656,7 +656,7 @@ impl ScriptEngine {
             for pilot_offset in 0..pilot_paths {
                 let path_index = n_paths + pilot_offset;
                 Tape::rewind_to_mark_fwd();
-                let path = model.generate_path(path_index).ok_or_else(|| {
+                let path = model.generate_path(path_index).map_err(|_| {
                     ScriptingError::EvaluationError(format!(
                         "market model failed to generate pilot path {path_index}"
                     ))
@@ -704,7 +704,7 @@ impl ScriptEngine {
             .into_iter()
             .try_for_each(|path_index| -> Result<()> {
                 Tape::rewind_to_mark_fwd();
-                let path = model.generate_path(path_index).ok_or_else(|| {
+                let path = model.generate_path(path_index).map_err(|_| {
                     ScriptingError::EvaluationError(format!(
                         "market model failed to generate path {path_index}"
                     ))
@@ -918,7 +918,7 @@ impl ScriptEngine {
         let numeraires = self.event_numeraires(model)?;
         (0..model.n_paths())
             .map(|path_index| {
-                let path = model.generate_path(path_index).ok_or_else(|| {
+                let path = model.generate_path(path_index).map_err(|_| {
                     ScriptingError::EvaluationError(format!(
                         "market model failed to generate path {path_index}"
                     ))
