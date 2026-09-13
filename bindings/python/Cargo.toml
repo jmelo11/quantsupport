@@ -1,6 +1,6 @@
 [package]
 name = "quantsupport-py"
-version = "0.1.0"
+version.workspace = true
 edition = "2021"
 description = "Python bindings for the quantsupport derivative pricing and risk analytics library."
 license = "MIT"

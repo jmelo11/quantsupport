@@ -6,11 +6,10 @@
 
 ## Rust crate
 
-Add the dependency to `Cargo.toml`:
+Add the latest release to your project:
 
-```toml
-[dependencies]
-quantsupport = "0.1.6"
+```bash
+cargo add quantsupport
 ```
 
 Or, from a checkout of the repository:
@@ -22,8 +21,8 @@ quantsupport = { path = "../quantsupport" }
 
 With plotting helpers:
 
-```toml
-quantsupport = { version = "0.1.6", features = ["plot"] }
+```bash
+cargo add quantsupport --features plot
 ```
 
 Runtime dependencies pulled in by the crate: `chrono` (dates), `rayon` (parallel XVA and script evaluation), `rand` and `sobol_burley` (random numbers and Owen-scrambled Sobol sequences), `nalgebra` (linear algebra for the Newton solver and correlation matrices), `num-complex` (FFT), `serde` (configuration), `thiserror` (errors). `serde_json` is a dev-dependency only; add it to your own project to load the JSON files described in [Configuration](../reference/configuration.md).

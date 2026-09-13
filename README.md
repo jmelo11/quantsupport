@@ -113,11 +113,10 @@ use quantsupport::prelude::*;
 
 ## Installation
 
-Add the Rust crate to `Cargo.toml`:
+Add the latest Rust crate release:
 
-```toml
-[dependencies]
-quantsupport = "0.1.6"
+```bash
+cargo add quantsupport
 ```
 
 To work from this checkout instead:
@@ -262,8 +261,8 @@ All examples below are workspace packages and use local JSON market data where a
 
 The `plot` Cargo feature enables the library's plotting helpers:
 
-```toml
-quantsupport = { version = "0.1.6", features = ["plot"] }
+```bash
+cargo add quantsupport --features plot
 ```
 
 ## Python bindings
