@@ -1,10 +1,35 @@
 # Your First Swap
 
-This chapter walks through `examples/valuation/src/main.rs` line by line. It values a five-year receive-fixed USD SOFR swap against a flat curve and asks for NPV, cashflows and curve sensitivities.
+This chapter introduces the QuantSupport pricing workflow through a five-year USD SOFR swap. The values are specific to the example, but the workflow applies to other products:
 
-Run the finished program with `cargo run -p valuation`.
+1. Define the instrument's contractual economics.
+2. Wrap the instrument in a trade.
+3. Assemble the market state for an evaluation date.
+4. Select a compatible pricer and request specific calculations.
+5. Read the requested values from `EvaluationResults`.
 
-## 1. Build the instrument
+These responsibilities are deliberately separate. Instruments do not look up curves, market contexts do not decide which outputs to calculate, and result objects contain only the outputs produced by the pricer.
+
+The complete program is in [`examples/valuation/src/main.rs`](../../../examples/valuation/src/main.rs). Run it from the workspace root with `cargo run -p valuation`.
+
+## Choosing a scalar type
+
+Most numerical types in QuantSupport are generic over `T: Scalar`. The scalar determines whether a calculation carries only values or also automatic derivatives:
+
+- `f64` is appropriate for value-only calculations where the relevant market data and pricer support it.
+- `DualFwd` carries automatic-differentiation information used by the current pricing and sensitivity infrastructure.
+
+The instrument, curves, and pricer must use compatible scalar types. This example requests curve sensitivities, so it uses `DualFwd` throughout.
+
+## 1. Define the instrument
+
+An **instrument** describes contractual economics: schedules, rates, indices, currencies, and payoff direction. QuantSupport constructs instruments with `Make*` builders. A builder collects inputs, applies documented defaults, and validates required fields in `build()`.
+
+For a vanilla fixed-versus-floating swap, `MakeSwap<T>` creates a fixed leg and a floating leg. `RateDefinition` describes how the fixed rate accrues through its day-count, compounding, and frequency conventions. Leg payment frequency is configured separately because payment and rate conventions are distinct.
+
+### In this example
+
+The contract receives a 3% fixed rate and pays six-month SOFR on USD 10 million from 15 January 2024 to 15 January 2029:
 
 ```rust,ignore
 use std::{cell::RefCell, rc::Rc};
@@ -29,13 +54,13 @@ let swap = MakeSwap::<DualFwd>::default()
     .with_rate_definition(rate_definition)
     .with_currency(Currency::USD)
     .with_market_index(MarketIndex::SOFR)
-    .with_side(Side::LongReceive)              // receive fixed, pay floating
+    .with_side(Side::LongReceive)
     .with_fixed_leg_frequency(Frequency::Semiannual)
     .with_floating_leg_frequency(Frequency::Semiannual)
     .build()?;
 ```
 
-`MakeSwap<T>` is a builder; `build()` fails with `QSError` if any of the required fields (`notional`, `start_date`, `maturity_date`, `fixed_rate`, `rate_definition`, `currency`, `market_index`, `identifier`) is missing. Optional fields and their defaults:
+`build()` returns `QSError` when a required field is absent or invalid. For `MakeSwap`, the required fields are the identifier, dates, notional, fixed rate, rate definition, currency, and floating-rate index. The principal optional settings are:
 
 | Builder method                                        | Default                                          |
 | ----------------------------------------------------- | ------------------------------------------------ |
@@ -48,31 +73,54 @@ let swap = MakeSwap::<DualFwd>::default()
 | `with_date_generation_rule(DateGenerationRule)`       | `Backward` for bullet legs                       |
 | `with_end_of_month(bool)`                             | `false`                                          |
 
-Internally the builder creates two `Leg`s with `MakeLeg`: leg `0` is the fixed leg on the swap's side, leg `1` is the floating leg on the opposite side, indexed by `market_index`, both bullet (no amortisation). The `RateDefinition` describes how the fixed rate accrues: day counter, compounding (`Simple`, `Compounded`, `Continuous`, `SimpleThenCompounded`, `CompoundedThenSimple`) and frequency. The scalar type `DualFwd` makes every coupon differentiable; use `MakeSwap::<f64>` when you only need a number.
+Internally, leg `0` is fixed and has the swap's side. Leg `1` is floating, references `MarketIndex::SOFR`, and has the opposite side. Both are bullet legs, so their notionals do not amortize. The example overrides the floating-leg frequency from its quarterly default to semiannual.
 
-## 2. Wrap it in a trade
+## 2. Add the trade layer
+
+An instrument defines what pays; a **trade** adds position-level metadata such as trade date, notional, and side. This separation lets pricing and portfolio workflows operate on positions without putting lifecycle metadata into every product definition. Pricers generally accept trades rather than bare instruments.
+
+### In this example
 
 ```rust,ignore
 let trade = SwapTrade::new(swap, start_date, notional, Side::LongReceive);
 ```
 
-Instruments describe economics; trades add `trade_date`, `notional` and `side`. Pricers and the XVA engine take trades. `SwapTrade<f64>` converts into `SwapTrade<DualFwd>` with `.into()` when you want to reuse an `f64` definition on the tape.
+`LongReceive` means receive the fixed leg and pay the floating leg; `PayShort` reverses those signs.
 
-## 3. Build a market
+## 3. Assemble the market
+
+Pricing needs a market state as of an evaluation date. QuantSupport separates that state into three layers:
+
+- Raw stores contain observations such as quotes, historical fixings, and FX rates.
+- `ConstructedElementStore` contains derived objects such as discount and credit curves, volatility objects, and simulations.
+- `PricingContext` owns those stores and implements `MarketDataProvider`, the interface through which pricers request only the data they need.
+
+In a configuration-driven workflow, populate quotes and configurations and call `PricingContext::initialize()`. For a small program or unit test, constructed elements can instead be inserted directly. Elements are keyed by `MarketIndex`, so a SOFR leg resolves against the SOFR curve registered in the context; a missing required element is an error.
+
+### In this example
+
+The example creates one flat SOFR curve directly. `FlatForwardTermStructure` represents a constant rate interpreted using its `RateDefinition`; here the input is 3% with continuous compounding. The pillar label names that market input for sensitivity reporting.
 
 ```rust,ignore
 let evaluation_date = Date::new(2024, 1, 15);
 let discount_curve = FlatForwardTermStructure::new(
     evaluation_date,
     DualFwd::from(0.03),
-    RateDefinition::new(DayCounter::Actual360, Compounding::Continuous, Frequency::Annual),
+    RateDefinition::new(
+        DayCounter::Actual360,
+        Compounding::Continuous,
+        Frequency::Annual,
+    ),
 )
 .with_pillar_label("SOFR_flat".to_string());
 
 let mut constructed_elements = ConstructedElementStore::default();
 constructed_elements.discount_curves_mut().insert(
     MarketIndex::SOFR,
-    DiscountCurveElement::new(MarketIndex::SOFR, Rc::new(RefCell::new(discount_curve))),
+    DiscountCurveElement::new(
+        MarketIndex::SOFR,
+        Rc::new(RefCell::new(discount_curve)),
+    ),
 );
 
 let context = PricingContext::new()
@@ -82,9 +130,22 @@ let context = PricingContext::new()
     .with_constructed_elements(constructed_elements);
 ```
 
-`FlatForwardTermStructure::new(reference_date, rate, RateDefinition)` implements `InterestRatesTermStructure<T>` with a constant continuously-compounded rate; `with_pillar_label` gives its single rate a name that will appear in the sensitivity table. Curves are stored in a `ConstructedElementStore`, keyed by `MarketIndex`, and wrapped in `Rc<RefCell<_>>` so bootstrappers can update them in place. The `PricingContext` is the object every pricer reads from; because we built the curve ourselves, `initialize()` is not needed here.
+The curve is wrapped in `Rc<RefCell<_>>`, allowing constructed elements to be shared and updated by calibration workflows. The fixing store is empty because the swap starts on the evaluation date. The example does not call `initialize()` because its required curve has already been constructed and inserted.
 
-## 4. Price
+## 4. Select a pricer and requests
+
+A **pricer** connects a trade to market data. Its `market_data_request()` declares the curves, fixings, FX rates, and volatility objects it needs, and the provider resolves that declaration. The caller separately chooses outputs with `Request`, avoiding calculations that are not needed.
+
+| Request                  | Meaning                                             |
+| ------------------------ | --------------------------------------------------- |
+| `Request::Value`         | Present value or NPV                                |
+| `Request::Cashflows`     | Coupon and payment details                          |
+| `Request::Sensitivities` | Derivatives with respect to labelled market pillars |
+| `Request::FairRate`      | Rate that makes the instrument NPV equal to zero    |
+
+Request support is pricer-specific.
+
+### In this example
 
 ```rust,ignore
 let pricer = DiscountedCashflowPricer::<Swap<DualFwd>, SwapTrade<DualFwd>>::new();
@@ -92,9 +153,13 @@ let requests = vec![Request::Value, Request::Cashflows, Request::Sensitivities];
 let results = pricer.evaluate(&trade, &requests, &context)?;
 ```
 
-`DiscountedCashflowPricer<I, T>` is generic over the instrument and trade types and implements `Pricer`. It handles `Request::Value`, `FairRate`, `Cashflows` and `Sensitivities` (`YieldToMaturity` and `ModifiedDuration` exist in the `Request` enum but are ignored by this pricer). Passing several requests at once evaluates the cashflows once and derives every result from the same tape.
+The generic parameters of `DiscountedCashflowPricer<I, T>` identify its instrument and trade types. It supports value, fair rate, cashflows, and sensitivities for leg-based products; `YieldToMaturity` and `ModifiedDuration` are not populated by this pricer. Value, cashflows, and sensitivities share one prepared valuation state during this `evaluate()` call.
 
-## 5. Read the results
+## 5. Interpret the results
+
+`EvaluationResults` is an envelope of optional outputs. A getter returns `Some(...)` when the corresponding result was produced and `None` otherwise. Callers should read the fields associated with the requests they submitted rather than assume every field is present.
+
+### In this example
 
 ```rust,ignore
 if let Some(price) = results.price() {
@@ -102,8 +167,12 @@ if let Some(price) = results.price() {
 }
 
 if let Some(sensitivities) = results.sensitivities() {
-    for (key, exposure) in sensitivities.instrument_keys().iter().zip(sensitivities.exposure()) {
-        println!("  {key}: {exposure:.4}");        // "SOFR_flat: -4,6xx,xxx.xxxx"
+    for (key, exposure) in sensitivities
+        .instrument_keys()
+        .iter()
+        .zip(sensitivities.exposure())
+    {
+        println!("  {key}: {exposure:.4}");
     }
 }
 
@@ -112,18 +181,22 @@ if let Some(cashflows) = results.cashflows() {
     let types = cashflows.cashflow_types();
     let amounts = cashflows.amounts();
     let currencies = cashflows.currencies();
+
     for i in 0..dates.len() {
-        println!("{:<12} {:<22} {:>14.2} {:>6}", dates[i], types[i], amounts[i], currencies[i]);
+        println!(
+            "{:<12} {:<22} {:>14.2} {:>6}",
+            dates[i], types[i], amounts[i], currencies[i]
+        );
     }
 }
 ```
 
-`EvaluationResults` exposes `price()`, `fair_rate()`, `sensitivities() -> Option<&SensitivityMap>` and `cashflows() -> Option<&CashflowsTable>`. `SensitivityMap` is a pair of parallel vectors: `instrument_keys()` (pillar labels) and `exposure()` (`dNPV/dPillar`). `CashflowsTable` is column-oriented: `payment_dates()`, `cashflow_types()`, `amounts()`, `fixing()`, `accrual_periods()`, `currencies()`, `leg_indices()`, plus `caplet_strikes()`/`floorlet_strikes()` for optional legs.
+`SensitivityMap` contains parallel `instrument_keys()` and `exposure()` vectors. Each exposure is the derivative of NPV with respect to the labelled market pillar. This flat-curve example has one pillar, `SOFR_flat`, so it reports one value for \(\partial\mathrm{NPV}/\partial r\). A bootstrapped curve instead reports sensitivities against its quote labels, such as `OIS_USD_SOFR_5Y`.
 
-With the flat curve the sensitivity table has a single row, `SOFR_flat`, equal to \\(\partial\text{NPV}/\partial r\\). Once the curve is bootstrapped from quotes (next chapters) the same request returns one row per quote identifier, e.g. `OIS_USD_SOFR_5Y`.
+`CashflowsTable` is column-oriented. In addition to the columns printed above, it exposes `fixing()`, `accrual_periods()`, `leg_indices()`, and optional caplet/floorlet strikes. Leg index `0` identifies fixed-leg rows and index `1` identifies floating-leg rows.
 
 ## What to read next
 
-- [Rust API](rust-api.md) summarises the traits behind the objects used above.
-- [Pricing Context](../concepts/pricing-context.md) explains `initialize()` for configuration-driven markets.
-- [Interest Rate Swaps](../pricing/swaps.md) covers fair rates, spreads, fixings and basis swaps.
+- [Rust API](rust-api.md) summarizes the traits behind the objects used above.
+- [Pricing Context](../concepts/pricing-context.md) explains configuration-driven market construction and `initialize()`.
+- [Interest Rate Swaps](../pricing/swaps.md) covers fair rates, spreads, fixings, and basis swaps.

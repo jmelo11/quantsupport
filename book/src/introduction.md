@@ -1,6 +1,6 @@
 # Introduction
 
-QuantSupport is a Rust library for building market data, pricing derivatives, measuring risk with automatic differentiation, simulating exposure, and computing XVA. Python bindings built with PyO3 expose the configuration-driven parts of the same API.
+QuantSupport is a Rust library for building market data, pricing derivatives, measuring risk with automatic differentiation, simulating exposure, and computing XVA.
 
 Everything is organised around one flow:
 

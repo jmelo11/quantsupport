@@ -9,7 +9,6 @@
 - [Installation](getting-started/installation.md)
 - [Your First Swap](getting-started/first-swap.md)
 - [Rust API](getting-started/rust-api.md)
-- [Python API](getting-started/python-api.md)
 
 # Core Concepts
 
