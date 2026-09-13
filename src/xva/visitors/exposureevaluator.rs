@@ -35,55 +35,53 @@ pub struct NpvCube {
 }
 
 impl NpvCube {
+    /// Expected positive, negative, and unconditional exposure at each date.
+    #[must_use]
+    pub fn exposure_profiles(&self) -> (Vec<f64>, Vec<f64>, Vec<f64>) {
+        let n_dates = self.dates.len();
+        let n_paths = self.npvs.len();
+        let mut epe = vec![0.0; n_dates];
+        let mut ene = vec![0.0; n_dates];
+        let mut ee = vec![0.0; n_dates];
+
+        if n_paths == 0 {
+            return (epe, ene, ee);
+        }
+
+        for path in &self.npvs {
+            for (date_index, &npv) in path.iter().enumerate() {
+                epe[date_index] += npv.max(0.0);
+                ene[date_index] += npv.min(0.0);
+                ee[date_index] += npv;
+            }
+        }
+
+        let inv_n = 1.0 / f64::from(u32::try_from(n_paths).unwrap_or(u32::MAX));
+        for values in [&mut epe, &mut ene, &mut ee] {
+            for value in values {
+                *value *= inv_n;
+            }
+        }
+
+        (epe, ene, ee)
+    }
+
     /// Expected Positive Exposure at each date, averaged over paths.
     #[must_use]
     pub fn epe(&self) -> Vec<f64> {
-        let n_dates = self.dates.len();
-        let n_paths = self.npvs.len();
-        if n_paths == 0 {
-            return vec![0.0; n_dates];
-        }
-        let inv_n = 1.0 / f64::from(u32::try_from(n_paths).unwrap_or(u32::MAX));
-        (0..n_dates)
-            .map(|d| {
-                let sum: f64 = self.npvs.iter().map(|path| path[d].max(0.0)).sum();
-                sum * inv_n
-            })
-            .collect()
+        self.exposure_profiles().0
     }
 
     /// Expected Negative Exposure at each date, averaged over paths.
     #[must_use]
     pub fn ene(&self) -> Vec<f64> {
-        let n_dates = self.dates.len();
-        let n_paths = self.npvs.len();
-        if n_paths == 0 {
-            return vec![0.0; n_dates];
-        }
-        let inv_n = 1.0 / f64::from(u32::try_from(n_paths).unwrap_or(u32::MAX));
-        (0..n_dates)
-            .map(|d| {
-                let sum: f64 = self.npvs.iter().map(|path| path[d].min(0.0)).sum();
-                sum * inv_n
-            })
-            .collect()
+        self.exposure_profiles().1
     }
 
     /// Expected Exposure (unconditional mean) at each date, averaged over paths.
     #[must_use]
     pub fn ee(&self) -> Vec<f64> {
-        let n_dates = self.dates.len();
-        let n_paths = self.npvs.len();
-        if n_paths == 0 {
-            return vec![0.0; n_dates];
-        }
-        let inv_n = 1.0 / f64::from(u32::try_from(n_paths).unwrap_or(u32::MAX));
-        (0..n_dates)
-            .map(|d| {
-                let sum: f64 = self.npvs.iter().map(|path| path[d]).sum();
-                sum * inv_n
-            })
-            .collect()
+        self.exposure_profiles().2
     }
 }
 
@@ -132,58 +130,70 @@ impl<'a, T: Scalar + 'static> ExposureEvaluator<'a, T> {
         let n_paths = self.model.n_paths();
         let n_dates = self.dates.len();
         let dates = &self.dates;
-        let trade_ids: Vec<String> = trades.keys().cloned().collect();
+        let mut trade_ids: Vec<&String> = trades.keys().collect();
+        trade_ids.sort_unstable();
 
-        let cubes_map = (0..n_paths)
+        let active_claims_by_date: Vec<Vec<(usize, &ContingentClaim, usize)>> = dates
+            .iter()
+            .map(|eval_date| {
+                trade_ids
+                    .iter()
+                    .enumerate()
+                    .flat_map(|(trade_index, trade_id)| {
+                        trades[*trade_id].iter().filter_map(move |claim| {
+                            (claim.payment_date() > *eval_date)
+                                .then(|| claim.idx().map(|idx| (trade_index, claim, idx)))
+                                .flatten()
+                        })
+                    })
+                    .collect()
+            })
+            .collect();
+
+        let n_trades = trade_ids.len();
+        let paths_per_worker = n_paths.div_ceil(rayon::current_num_threads());
+
+        let cube_paths = (0..n_paths)
             .into_par_iter()
             .try_fold(
-                || -> HashMap<String, Vec<Vec<f64>>> {
-                    trade_ids
-                        .iter()
-                        .map(|id| (id.clone(), Vec::new()))
+                || -> Vec<Vec<Vec<f64>>> {
+                    (0..n_trades)
+                        .map(|_| Vec::with_capacity(paths_per_worker))
                         .collect()
                 },
-                |mut acc, i| -> Result<HashMap<String, Vec<Vec<f64>>>> {
+                |mut acc, i| -> Result<Vec<Vec<Vec<f64>>>> {
                     let scenario = self.model.generate_path(i)?;
-                    for (trade_id, claims) in trades {
-                        let mut npvs = vec![0.0_f64; n_dates];
-                        for (d, date_responses) in scenario.iter().enumerate() {
-                            let eval_date = dates[d];
-                            for claim in *claims {
-                                if claim.payment_date() > eval_date {
-                                    if let Some(idx) = claim.idx() {
-                                        let value = claim.evaluate::<T>(&date_responses[idx])?;
-                                        npvs[d] += value.value();
-                                    }
-                                }
-                            }
+                    let mut path_npvs = vec![vec![0.0_f64; n_dates]; n_trades];
+
+                    for (date_index, active_claims) in active_claims_by_date.iter().enumerate() {
+                        let date_responses = &scenario[date_index];
+                        for &(trade_index, claim, response_index) in active_claims {
+                            let value = claim.evaluate::<T>(&date_responses[response_index])?;
+                            path_npvs[trade_index][date_index] += value.value();
                         }
-                        if let Some(cube) = acc.get_mut(trade_id.as_str()) {
-                            cube.push(npvs);
-                        }
+                    }
+
+                    for (trade_paths, npvs) in acc.iter_mut().zip(path_npvs) {
+                        trade_paths.push(npvs);
                     }
                     Ok(acc)
                 },
             )
             .try_reduce(
-                || {
-                    trade_ids
-                        .iter()
-                        .map(|id| (id.clone(), Vec::new()))
-                        .collect()
-                },
+                || (0..n_trades).map(|_| Vec::new()).collect(),
                 |mut a, b| {
-                    for (id, paths) in b {
-                        a.entry(id).or_default().extend(paths);
+                    for (target, paths) in a.iter_mut().zip(b) {
+                        target.extend(paths);
                     }
                     Ok(a)
                 },
             )?;
 
-        let cubes: Vec<NpvCube> = cubes_map
+        let cubes = trade_ids
             .into_iter()
+            .zip(cube_paths)
             .map(|(trade_id, npvs)| NpvCube {
-                trade_id,
+                trade_id: trade_id.clone(),
                 dates: dates.clone(),
                 npvs,
             })
@@ -231,7 +241,7 @@ pub trait XvaModelSetup: Send + Sync {
 
 /// Per-thread accumulation result for the parallel AAD loop.
 struct ChunkResult {
-    cubes: HashMap<String, Vec<Vec<f64>>>,
+    cubes: Vec<Vec<Vec<f64>>>,
     /// `xva_accums[ns][a]` — accumulated value of aggregator `a` for netting set `ns`.
     xva_accums: Vec<Vec<f64>>,
     sensitivities: Vec<(String, f64)>,
@@ -284,6 +294,23 @@ where
         .collect();
     let ns_factories = &ns_factories;
 
+    let active_claims_by_date: Vec<Vec<(usize, &ContingentClaim)>> = dates
+        .iter()
+        .map(|eval_date| {
+            ns_ids
+                .iter()
+                .enumerate()
+                .flat_map(|(ns_index, ns_id)| {
+                    trades[ns_id.as_str()]
+                        .iter()
+                        .filter(move |claim| claim.payment_date() > *eval_date)
+                        .map(move |claim| (ns_index, claim))
+                })
+                .collect()
+        })
+        .collect();
+    let active_claims_by_date = &active_claims_by_date;
+
     // Build chunks (one per rayon thread)
     let n_threads = rayon::current_num_threads();
     let chunk_size = n_paths.div_ceil(n_threads);
@@ -318,39 +345,36 @@ where
 
                 let mut xva_accums: Vec<Vec<f64>> =
                     bundles.iter().map(|b| vec![0.0_f64; b.len()]).collect();
-                let mut cubes: HashMap<String, Vec<Vec<f64>>> =
-                    ns_ids.iter().map(|id| (id.clone(), Vec::new())).collect();
+                let mut cubes: Vec<Vec<Vec<f64>>> = ns_ids
+                    .iter()
+                    .map(|_| Vec::with_capacity(end - start))
+                    .collect();
 
                 for i in start..end {
                     Tape::rewind_to_mark_fwd();
 
                     let scenario = model.generate_path(i)?;
                     let mut total = DualFwd::zero();
+                    let mut ns_npvs = vec![vec![DualFwd::zero(); n_dates]; ns_ids.len()];
+                    let mut ns_npvs_f64 = vec![vec![0.0_f64; n_dates]; ns_ids.len()];
 
-                    for (ns, ns_id) in ns_ids.iter().enumerate() {
-                        let Some(claims) = trades.get(ns_id.as_str()) else {
-                            continue;
-                        };
-                        let mut ns_npvs = vec![DualFwd::zero(); n_dates];
-                        let mut ns_npvs_f64 = vec![0.0_f64; n_dates];
-                        for (d, date_responses) in scenario.iter().enumerate() {
-                            let eval_date = dates[d];
-                            for claim in *claims {
-                                if claim.payment_date() > eval_date {
-                                    let value =
-                                        claim.evaluate_dualfwd(eval_date, date_responses)?;
-                                    ns_npvs[d] = ns_npvs[d].add_val(value);
-                                    ns_npvs_f64[d] += value.value();
-                                }
-                            }
+                    for (date_index, active_claims) in active_claims_by_date.iter().enumerate() {
+                        let date_responses = &scenario[date_index];
+                        for &(ns_index, claim) in active_claims {
+                            let value =
+                                claim.evaluate_dualfwd(dates[date_index], date_responses)?;
+                            ns_npvs[ns_index][date_index] =
+                                ns_npvs[ns_index][date_index].add_val(value);
+                            ns_npvs_f64[ns_index][date_index] += value.value();
                         }
-                        if let Some(cube) = cubes.get_mut(ns_id.as_str()) {
-                            cube.push(ns_npvs_f64);
-                        }
+                    }
+
+                    for (ns, npvs) in ns_npvs.iter().enumerate() {
+                        cubes[ns].push(ns_npvs_f64[ns].clone());
 
                         // Per-netting-set aggregation with the client's own terms.
                         for (a, bundle) in bundles[ns].iter().enumerate() {
-                            let c_p = bundle.aggregator.aggregate_path(&ns_npvs, dates);
+                            let c_p = bundle.aggregator.aggregate_path(npvs, dates);
                             xva_accums[ns][a] += c_p.value();
                             total = total.add_val(c_p);
                         }
@@ -405,8 +429,7 @@ fn reduce_chunk_results(
         .map(|fs| vec![0.0_f64; fs.len()])
         .collect();
     let mut sens_map: HashMap<String, f64> = HashMap::new();
-    let mut merged_cubes: HashMap<String, Vec<Vec<f64>>> =
-        ns_ids.iter().map(|id| (id.clone(), Vec::new())).collect();
+    let mut merged_cubes: Vec<Vec<Vec<f64>>> = ns_ids.iter().map(|_| Vec::new()).collect();
 
     for chunk in chunk_results {
         for (ns, accums) in chunk.xva_accums.iter().enumerate() {
@@ -417,10 +440,8 @@ fn reduce_chunk_results(
         for (label, adj) in &chunk.sensitivities {
             *sens_map.entry(label.clone()).or_insert(0.0) += adj;
         }
-        for (id, paths) in &chunk.cubes {
-            if let Some(entry) = merged_cubes.get_mut(id.as_str()) {
-                entry.extend(paths.iter().cloned());
-            }
+        for (cube, paths) in merged_cubes.iter_mut().zip(&chunk.cubes) {
+            cube.extend(paths.iter().cloned());
         }
     }
 
@@ -442,8 +463,10 @@ fn reduce_chunk_results(
 
     let sensitivities: Vec<(String, f64)> = sens_map.into_iter().collect();
 
-    let cubes: Vec<NpvCube> = merged_cubes
-        .into_iter()
+    let cubes = ns_ids
+        .iter()
+        .cloned()
+        .zip(merged_cubes)
         .map(|(trade_id, npvs)| NpvCube {
             trade_id,
             dates: dates.to_vec(),
@@ -472,9 +495,7 @@ impl crate::utils::plot::Plot for NpvCube {
 
         let dc = DayCounter::Actual365;
         let ref_date = self.dates[0];
-        let epe = self.epe();
-        let ene = self.ene();
-        let ee = self.ee();
+        let (epe, ene, ee) = self.exposure_profiles();
 
         // Find the last date with non-zero exposure, then include one more
         // point so the plot shows the drop to zero at expiry.
@@ -632,6 +653,24 @@ mod tests {
             visitors::preprocessorexecutor::PreprocessorExecutor,
         },
     };
+
+    #[test]
+    fn exposure_profiles_compute_all_means() {
+        let cube = NpvCube {
+            trade_id: "test".to_string(),
+            dates: vec![Date::new(2025, 1, 1), Date::new(2025, 2, 1)],
+            npvs: vec![vec![2.0, -2.0], vec![-1.0, 4.0]],
+        };
+
+        let (epe, ene, ee) = cube.exposure_profiles();
+
+        assert_eq!(epe, vec![1.0, 2.0]);
+        assert_eq!(ene, vec![-0.5, -1.0]);
+        assert_eq!(ee, vec![0.5, 1.0]);
+        assert_eq!(cube.epe(), epe);
+        assert_eq!(cube.ene(), ene);
+        assert_eq!(cube.ee(), ee);
+    }
 
     fn make_flat_curve(ref_date: Date, rate: f64) -> (Vec<Date>, Vec<f64>) {
         let dc = DayCounter::Actual365;

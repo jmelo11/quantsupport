@@ -256,6 +256,7 @@ impl ContingentClaim {
         match &self.evaluation_strategy {
             ClaimEvaluationStrategy::Deterministic { .. }
             | ClaimEvaluationStrategy::Scripted { .. } => SimulationRequest {
+                expiration_date: None,
                 discount_request: None,
                 forward_rate_request: None,
                 fx_request,
@@ -279,6 +280,7 @@ impl ContingentClaim {
                 };
 
                 SimulationRequest {
+                    expiration_date: None,
                     discount_request: None,
                     forward_rate_request: forward_request,
                     fx_request,
@@ -296,6 +298,7 @@ impl ContingentClaim {
                     .map(|idx| SpotRequest::new(idx, *observation_date));
 
                 SimulationRequest {
+                    expiration_date: None,
                     discount_request: None,
                     forward_rate_request: None,
                     fx_request,
@@ -313,6 +316,7 @@ impl ContingentClaim {
                     .map(|idx| PathDependentRequest::new(observation_dates.clone(), idx));
 
                 SimulationRequest {
+                    expiration_date: None,
                     discount_request: None,
                     forward_rate_request: None,
                     fx_request,
@@ -324,6 +328,7 @@ impl ContingentClaim {
             ClaimEvaluationStrategy::ExerciseContingent { inner, .. } => {
                 let inner_request = inner.simulation_request();
                 SimulationRequest {
+                    expiration_date: None,
                     discount_request: None,
                     forward_rate_request: inner_request.forward_rate_request,
                     fx_request,

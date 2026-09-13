@@ -14,6 +14,7 @@ use crate::{
         discountrequest::DiscountRequest, forwardraterequest::ForwardRateRequest,
         fxrequest::FxRequest, pathdependentrequest::PathDependentRequest, spotrequest::SpotRequest,
     },
+    time::date::Date,
     xva::nettingset::NettingSet,
 };
 
@@ -30,6 +31,8 @@ use super::{
 /// [`MarketModel`](super::marketmodel::MarketModel).
 #[derive(Default, Clone)]
 pub struct SimulationRequest {
+    /// Exclusive date after which this request is no longer needed.
+    pub expiration_date: Option<Date>,
     /// Discount factor request.
     pub discount_request: Option<DiscountRequest>,
     /// Forward rate request.
@@ -40,6 +43,15 @@ pub struct SimulationRequest {
     pub spot_request: Option<SpotRequest>,
     /// Path-dependent observation request.
     pub path_dependent_request: Option<PathDependentRequest>,
+}
+
+impl SimulationRequest {
+    /// Returns whether the request is needed at `evaluation_date`.
+    #[must_use]
+    pub fn is_active_on(&self, evaluation_date: Date) -> bool {
+        self.expiration_date
+            .is_none_or(|expiration| evaluation_date < expiration)
+    }
 }
 
 /// Collects [`SimulationRequest`]s from a set of [`NettingSet`]s.
@@ -125,6 +137,9 @@ impl PreprocessorExecutor {
             let (policy, claims) = ns.discount_policy_and_claims_mut();
             for claim in claims {
                 let mut requests = claim.simulation_requests();
+                for request in &mut requests {
+                    request.expiration_date = Some(claim.payment_date());
+                }
                 if let Ok(discount_index) = policy.accept(claim) {
                     requests[0].discount_request =
                         Some(DiscountRequest::new(discount_index, claim.payment_date()));
