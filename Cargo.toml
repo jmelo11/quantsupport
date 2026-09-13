@@ -2,7 +2,7 @@
 members = [".", "examples/bootstrap", "examples/valuation", "examples/sensitivity", "examples/evaluator", "examples/volatilitysurface", "examples/hullwhite", "examples/pfe", "examples/cva", "examples/scripting", "benchmarks", "bindings/python"]
 
 [workspace.package]
-version = "0.1.6"
+version = "0.1.7"
 
 [package]
 name = "quantsupport"
