@@ -887,14 +887,14 @@ impl<T: Scalar + 'static> MarketModel<T> for LgmMarketModel<'_, T> {
         self.n_paths
     }
 
-    fn generate_path(&self, index: usize) -> Option<PathScenario<T>> {
+    fn generate_path(&self, index: usize) -> Result<PathScenario<T>> {
         let ctx = LgmPathContext::new(self);
         let pair_index = index / 2;
-        let sample_index = u32::try_from(pair_index % SOBOL_SEQUENCE_LENGTH).ok()?;
+        let sample_index = u32::try_from(pair_index % SOBOL_SEQUENCE_LENGTH)
+            .map_err(|_| QSError::UnexpectedErr("Failed to convert sample index to u32".into()))?;
         let sequence_block = pair_index / SOBOL_SEQUENCE_LENGTH;
         let antithetic_sign = if index.is_multiple_of(2) { 1.0 } else { -1.0 };
         ctx.generate_path(sample_index, sequence_block, antithetic_sign)
-            .ok()
     }
 
     fn set_evaluation_dates(&mut self, dates: Vec<Date>) {

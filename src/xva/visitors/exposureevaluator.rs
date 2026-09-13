@@ -144,24 +144,22 @@ impl<'a, T: Scalar + 'static> ExposureEvaluator<'a, T> {
                         .collect()
                 },
                 |mut acc, i| -> Result<HashMap<String, Vec<Vec<f64>>>> {
-                    if let Some(scenario) = self.model.generate_path(i) {
-                        for (trade_id, claims) in trades {
-                            let mut npvs = vec![0.0_f64; n_dates];
-                            for (d, date_responses) in scenario.iter().enumerate() {
-                                let eval_date = dates[d];
-                                for claim in *claims {
-                                    if claim.payment_date() > eval_date {
-                                        if let Some(idx) = claim.idx() {
-                                            let value =
-                                                claim.evaluate::<T>(&date_responses[idx])?;
-                                            npvs[d] += value.value();
-                                        }
+                    let scenario = self.model.generate_path(i)?;
+                    for (trade_id, claims) in trades {
+                        let mut npvs = vec![0.0_f64; n_dates];
+                        for (d, date_responses) in scenario.iter().enumerate() {
+                            let eval_date = dates[d];
+                            for claim in *claims {
+                                if claim.payment_date() > eval_date {
+                                    if let Some(idx) = claim.idx() {
+                                        let value = claim.evaluate::<T>(&date_responses[idx])?;
+                                        npvs[d] += value.value();
                                     }
                                 }
                             }
-                            if let Some(cube) = acc.get_mut(trade_id.as_str()) {
-                                cube.push(npvs);
-                            }
+                        }
+                        if let Some(cube) = acc.get_mut(trade_id.as_str()) {
+                            cube.push(npvs);
                         }
                     }
                     Ok(acc)
@@ -326,41 +324,40 @@ where
                 for i in start..end {
                     Tape::rewind_to_mark_fwd();
 
-                    if let Some(scenario) = model.generate_path(i) {
-                        let mut total = DualFwd::zero();
+                    let scenario = model.generate_path(i)?;
+                    let mut total = DualFwd::zero();
 
-                        for (ns, ns_id) in ns_ids.iter().enumerate() {
-                            let Some(claims) = trades.get(ns_id.as_str()) else {
-                                continue;
-                            };
-                            let mut ns_npvs = vec![DualFwd::zero(); n_dates];
-                            let mut ns_npvs_f64 = vec![0.0_f64; n_dates];
-                            for (d, date_responses) in scenario.iter().enumerate() {
-                                let eval_date = dates[d];
-                                for claim in *claims {
-                                    if claim.payment_date() > eval_date {
-                                        let value =
-                                            claim.evaluate_dualfwd(eval_date, date_responses)?;
-                                        ns_npvs[d] = ns_npvs[d].add_val(value);
-                                        ns_npvs_f64[d] += value.value();
-                                    }
+                    for (ns, ns_id) in ns_ids.iter().enumerate() {
+                        let Some(claims) = trades.get(ns_id.as_str()) else {
+                            continue;
+                        };
+                        let mut ns_npvs = vec![DualFwd::zero(); n_dates];
+                        let mut ns_npvs_f64 = vec![0.0_f64; n_dates];
+                        for (d, date_responses) in scenario.iter().enumerate() {
+                            let eval_date = dates[d];
+                            for claim in *claims {
+                                if claim.payment_date() > eval_date {
+                                    let value =
+                                        claim.evaluate_dualfwd(eval_date, date_responses)?;
+                                    ns_npvs[d] = ns_npvs[d].add_val(value);
+                                    ns_npvs_f64[d] += value.value();
                                 }
                             }
-                            if let Some(cube) = cubes.get_mut(ns_id.as_str()) {
-                                cube.push(ns_npvs_f64);
-                            }
-
-                            // Per-netting-set aggregation with the client's own terms.
-                            for (a, bundle) in bundles[ns].iter().enumerate() {
-                                let c_p = bundle.aggregator.aggregate_path(&ns_npvs, dates);
-                                xva_accums[ns][a] += c_p.value();
-                                total = total.add_val(c_p);
-                            }
+                        }
+                        if let Some(cube) = cubes.get_mut(ns_id.as_str()) {
+                            cube.push(ns_npvs_f64);
                         }
 
-                        if total.is_on_tape() {
-                            total.backward_to_mark()?;
+                        // Per-netting-set aggregation with the client's own terms.
+                        for (a, bundle) in bundles[ns].iter().enumerate() {
+                            let c_p = bundle.aggregator.aggregate_path(&ns_npvs, dates);
+                            xva_accums[ns][a] += c_p.value();
+                            total = total.add_val(c_p);
                         }
+                    }
+
+                    if total.is_on_tape() {
+                        total.backward_to_mark()?;
                     }
                 }
 
