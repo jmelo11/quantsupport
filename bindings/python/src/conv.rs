@@ -7,8 +7,8 @@ use pyo3::prelude::*;
 use pyo3::types::PyDict;
 use quantsupport::prelude::{
     BusinessDayConvention, CapFloorType, CapletFloorletType, Compounding, Currency, Date,
-    DayCounter, EuroOptionType, Frequency, FxOptionType, MarketIndex, PaymentStructure, Period,
-    Request, ScenarioType, Side, Strike, TimeUnit,
+    DayCounter, EuroOptionType, Frequency, MarketIndex, PaymentStructure, Period, Request,
+    ScenarioType, Side, Strike, TimeUnit,
 };
 use serde::de::DeserializeOwned;
 
@@ -128,12 +128,6 @@ enum_extractor!(
     extract_option_type,
     crate::enums::OptionType,
     EuroOptionType,
-    "option type"
-);
-enum_extractor!(
-    extract_fx_option_type,
-    crate::enums::OptionType,
-    FxOptionType,
     "option type"
 );
 enum_extractor!(

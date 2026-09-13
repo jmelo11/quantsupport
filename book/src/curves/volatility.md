@@ -42,8 +42,8 @@ VolatilityCubeConfiguration::new(market_index, volatility_type, smile_type, quot
 | ------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
 | `CapletFloorlet_USD_SOFR_3M_6M_Absolute_0.045_Straddle_Black` | index tenor `3M`, **expiry `6M`**, **strike `0.045`**, strategy `Straddle`, vol type `Black`                      |
 | `Swaption_CLP_ICP_1Y_2Y_Absolute_0.045_Black`                 | **expiry `1Y`**, **swap tenor `2Y`**, **strike `0.045`** (optional `PayFreq_RecvFreq` segments before the strike) |
-| `FxCall_USDCLP_6M_950`, `FxPut_...`                           | expiry, strike (FX surfaces)                                                                                      |
-| `EquityCall_USD_AAPL_1Y_150`                                  | expiry, strike (equity surfaces)                                                                                  |
+| `FxCall_USDCLP_6M_Absolute_950`, `FxPut_...`                  | expiry, strike (FX surfaces)                                                                                      |
+| `EquityCall_USD_AAPL_1Y_Absolute_150`                         | expiry, strike (equity surfaces)                                                                                  |
 
 Caplet quotes populate a surface (expiry × strike); swaption quotes populate a cube (expiry × tenor × strike).
 

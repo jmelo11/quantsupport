@@ -6,28 +6,25 @@
 
 use pyo3::prelude::*;
 use quantsupport::prelude::{
-    BasisSwap as QsBasisSwap, BasisSwapTrade, CapFloor as QsCapFloor, CapFloorTrade,
-    CapFloorType, CapletFloorlet as QsCapletFloorlet, CapletFloorletTrade, CapletFloorletType,
-    CdsTrade, Compounding, ContingentClaim, CreditDefaultSwap as QsCreditDefaultSwap, Currency,
-    Date, DayCounter, DualFwd, EquityEuropeanOption as QsEquityEuropeanOption,
-    EquityEuropeanOptionTrade, EuroOptionType, FixFloatCrossCurrencySwap as QsFixFloatXccy,
-    FixFloatCrossCurrencySwapTrade, FixedRateBond as QsFixedRateBond, FixedRateBondTrade,
-    FixedRateDeposit as QsFixedRateDeposit, FixedRateDepositTrade,
-    FloatFloatCrossCurrencySwap, FloatFloatCrossCurrencySwapTrade,
-    FloatingRateNote as QsFloatingRateNote, FloatingRateNoteTrade, Frequency, FxForwardTrade,
-    FxOptionTrade, FxOptionType,
-    IntoContingentClaims, LegsProvider, MakeBasisSwap, MakeCapFloor, MakeFixFloatCrossCurrencySwap,
-    MakeFixedRateBond, MakeFixedRateDeposit, MakeFloatFloatCrossCurrencySwap, MakeFloatingRateNote,
-    MakeFxForward, MakeFxOption, MakeRateFutures, MakeSwap, MarketIndex, PaymentStructure,
-    RateDefinition, RateFutures as QsRateFutures, RateFuturesTrade, Side, Strike, Swap as QsSwap,
-    SwapTrade,
+    BasisSwap as QsBasisSwap, BasisSwapTrade, CapFloor as QsCapFloor, CapFloorTrade, CapFloorType,
+    CapletFloorlet as QsCapletFloorlet, CapletFloorletTrade, CapletFloorletType, CdsTrade,
+    Compounding, ContingentClaim, CreditDefaultSwap as QsCreditDefaultSwap, Currency, Date,
+    DayCounter, DualFwd, EquityEuropeanOption as QsEquityEuropeanOption, EquityEuropeanOptionTrade,
+    EuroOptionType, FixFloatCrossCurrencySwap as QsFixFloatXccy, FixFloatCrossCurrencySwapTrade,
+    FixedRateBond as QsFixedRateBond, FixedRateBondTrade, FixedRateDeposit as QsFixedRateDeposit,
+    FixedRateDepositTrade, FloatFloatCrossCurrencySwap, FloatFloatCrossCurrencySwapTrade,
+    FloatingRateNote as QsFloatingRateNote, FloatingRateNoteTrade, Frequency,
+    FxEuropeanOptionTrade, FxForwardTrade, IntoContingentClaims, LegsProvider, MakeBasisSwap,
+    MakeCapFloor, MakeFixFloatCrossCurrencySwap, MakeFixedRateBond, MakeFixedRateDeposit,
+    MakeFloatFloatCrossCurrencySwap, MakeFloatingRateNote, MakeFxEuropeanOption, MakeFxForward,
+    MakeRateFutures, MakeSwap, MarketIndex, PaymentStructure, RateDefinition,
+    RateFutures as QsRateFutures, RateFuturesTrade, Side, Strike, Swap as QsSwap, SwapTrade,
 };
 
 use crate::conv::{
     extract_cap_floor_type, extract_caplet_floorlet_type, extract_compounding, extract_currency,
-    extract_date, extract_day_counter, extract_frequency, extract_fx_option_type,
-    extract_market_index, extract_option_type, extract_payment_structure, extract_side,
-    extract_strike, qs_err,
+    extract_date, extract_day_counter, extract_frequency, extract_market_index,
+    extract_option_type, extract_payment_structure, extract_side, extract_strike, qs_err,
 };
 
 /// A vanilla fixed-vs-floating interest rate swap.
@@ -787,7 +784,8 @@ impl FixedRateBond {
 
     /// Builds an AD-enabled trade for pricing.
     pub fn build_trade_dual(&self) -> PyResult<FixedRateBondTrade<DualFwd>> {
-        let instrument: QsFixedRateBond<DualFwd> = build_fixed_rate_bond_instrument!(self, DualFwd)?;
+        let instrument: QsFixedRateBond<DualFwd> =
+            build_fixed_rate_bond_instrument!(self, DualFwd)?;
         Ok(FixedRateBondTrade::new(
             instrument,
             self.trade_date(),
@@ -1281,7 +1279,7 @@ pub struct FxOptionPy {
     pub identifier: String,
     pub expiry_date: Date,
     pub strike: f64,
-    pub option_type: FxOptionType,
+    pub option_type: EuroOptionType,
     pub base_currency: Currency,
     pub quote_currency: Currency,
     pub notional: f64,
@@ -1291,8 +1289,8 @@ pub struct FxOptionPy {
 
 impl FxOptionPy {
     /// Builds the trade for pricing.
-    pub fn build_trade(&self) -> PyResult<FxOptionTrade> {
-        let instrument = MakeFxOption::default()
+    pub fn build_trade(&self) -> PyResult<FxEuropeanOptionTrade> {
+        let instrument = MakeFxEuropeanOption::default()
             .with_identifier(self.identifier.clone())
             .with_expiry_date(self.expiry_date)
             .with_strike(self.strike)
@@ -1301,7 +1299,7 @@ impl FxOptionPy {
             .with_quote_currency(self.quote_currency)
             .build()
             .map_err(qs_err)?;
-        Ok(FxOptionTrade::new(
+        Ok(FxEuropeanOptionTrade::new(
             instrument,
             self.trade_date.unwrap_or(self.expiry_date),
             self.notional,
@@ -1340,7 +1338,7 @@ impl FxOptionPy {
             identifier,
             expiry_date: extract_date(expiry_date)?,
             strike,
-            option_type: extract_fx_option_type(option_type)?,
+            option_type: extract_option_type(option_type)?,
             base_currency: extract_currency(base_currency)?,
             quote_currency: extract_currency(quote_currency)?,
             notional,

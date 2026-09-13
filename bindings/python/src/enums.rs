@@ -18,10 +18,10 @@ use quantsupport::prelude::{
     BusinessDayConvention as QsBusinessDayConvention, CapFloorType as QsCapFloorType,
     CapletFloorletType as QsCapletFloorletType, Compounding as QsCompounding,
     Currency as QsCurrency, DayCounter as QsDayCounter, EuroOptionType as QsEuroOptionType,
-    Frequency as QsFrequency, FxOptionType as QsFxOptionType, FxPair,
-    MarketIndex as QsMarketIndex, PaymentStructure as QsPaymentStructure, Request as QsRequest,
-    ScenarioType as QsScenarioType, Side as QsSide, SmileType as QsSmileType,
-    TimeUnit as QsTimeUnit, VolatilityType as QsVolatilityType,
+    Frequency as QsFrequency, FxPair, MarketIndex as QsMarketIndex,
+    PaymentStructure as QsPaymentStructure, Request as QsRequest, ScenarioType as QsScenarioType,
+    Side as QsSide, SmileType as QsSmileType, TimeUnit as QsTimeUnit,
+    VolatilityType as QsVolatilityType,
 };
 
 use crate::conv::{extract_currency, extract_date, qs_err};
@@ -175,7 +175,13 @@ mirror_enum!(
     Compounding,
     QsCompounding,
     "Compounding",
-    [Simple, Compounded, Continuous, SimpleThenCompounded, CompoundedThenSimple]
+    [
+        Simple,
+        Compounded,
+        Continuous,
+        SimpleThenCompounded,
+        CompoundedThenSimple
+    ]
 );
 
 #[pymethods]
@@ -201,8 +207,19 @@ mirror_enum!(
     QsFrequency,
     "Frequency",
     [
-        NoFrequency, Once, Annual, Semiannual, EveryFourthMonth, Quarterly, Bimonthly, Monthly,
-        EveryFourthWeek, Biweekly, Weekly, Daily, OtherFrequency,
+        NoFrequency,
+        Once,
+        Annual,
+        Semiannual,
+        EveryFourthMonth,
+        Quarterly,
+        Bimonthly,
+        Monthly,
+        EveryFourthWeek,
+        Biweekly,
+        Weekly,
+        Daily,
+        OtherFrequency,
     ]
 );
 
@@ -228,7 +245,14 @@ mirror_enum!(
     DayCounter,
     QsDayCounter,
     "DayCounter",
-    [Actual360, Actual365, Thirty360, Thirty360US, ActualActual, Business252]
+    [
+        Actual360,
+        Actual365,
+        Thirty360,
+        Thirty360US,
+        ActualActual,
+        Business252
+    ]
 );
 
 #[pymethods]
@@ -289,8 +313,13 @@ mirror_enum!(
     QsBusinessDayConvention,
     "BusinessDayConvention",
     [
-        Following, ModifiedFollowing, HalfMonthModifiedFollowing, Preceding, ModifiedPreceding,
-        Unadjusted, Nearest,
+        Following,
+        ModifiedFollowing,
+        HalfMonthModifiedFollowing,
+        Preceding,
+        ModifiedPreceding,
+        Unadjusted,
+        Nearest,
     ]
 );
 
@@ -316,7 +345,14 @@ mirror_enum!(
     Request,
     QsRequest,
     "Request",
-    [Value, YieldToMaturity, ModifiedDuration, Sensitivities, Cashflows, FairRate]
+    [
+        Value,
+        YieldToMaturity,
+        ModifiedDuration,
+        Sensitivities,
+        Cashflows,
+        FairRate
+    ]
 );
 
 #[pymethods]
@@ -557,15 +593,6 @@ mirror_enum!(
     "OptionType",
     [Call, Put]
 );
-
-impl From<OptionType> for QsFxOptionType {
-    fn from(v: OptionType) -> Self {
-        match v {
-            OptionType::Call => Self::Call,
-            OptionType::Put => Self::Put,
-        }
-    }
-}
 
 #[pymethods]
 impl OptionType {

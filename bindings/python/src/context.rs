@@ -17,7 +17,7 @@ use quantsupport::prelude::{
     FixFloatCrossCurrencySwapTrade, FixedRateBond as QsFixedRateBond, FixedRateBondTrade,
     FixedRateDeposit as QsFixedRateDeposit, FixedRateDepositTrade, FloatFloatCrossCurrencySwap,
     FloatFloatCrossCurrencySwapTrade, FloatingRateNote as QsFloatingRateNote,
-    FloatingRateNoteTrade, FxForwardPricer, FxOptionPricer, MarketIndex, Pricer,
+    FloatingRateNoteTrade, FxEuropeanOptionPricer, FxForwardPricer, MarketIndex, Pricer,
     PricingContext as QsPricingContext, RateFuturesPricer, Swap as QsSwap, SwapTrade, Tape,
     XvaEngine,
 };
@@ -355,9 +355,7 @@ impl PricingContext {
             .simulations()
             .get(&idx)
             .map(|e| Simulation { element: e.clone() })
-            .ok_or_else(|| {
-                QuantSupportError::new_err(format!("no simulation for index '{idx}'"))
-            })
+            .ok_or_else(|| QuantSupportError::new_err(format!("no simulation for index '{idx}'")))
     }
 
     fn __enter__(mut slf: PyRefMut<'_, Self>) -> PyResult<PyRefMut<'_, Self>> {
@@ -462,7 +460,7 @@ impl PricingContext {
         }
         if let Ok(opt) = trade.extract::<FxOptionPy>() {
             let t = opt.build_trade()?;
-            let pricer = FxOptionPricer::new();
+            let pricer = FxEuropeanOptionPricer::new();
             let res = pricer.evaluate(&t, &reqs, &self.inner).map_err(qs_err)?;
             return Ok(EvaluationResults::from_qs(&res));
         }

@@ -32,7 +32,7 @@ use crate::{
 pub struct MakeFxEuropeanOption {
     identifier: Option<String>,
     expiry_date: Option<Date>,
-    strike: Option<f64>,
+    strike: Option<Strike>,
     option_type: Option<EuroOptionType>,
     base_currency: Option<Currency>,
     quote_currency: Option<Currency>,
@@ -58,6 +58,13 @@ impl MakeFxEuropeanOption {
     /// Sets the strike price.
     #[must_use]
     pub const fn with_strike(mut self, strike: f64) -> Self {
+        self.strike = Some(Strike::Absolute(strike));
+        self
+    }
+
+    /// Sets an absolute, ATM, or relative strike specification.
+    #[must_use]
+    pub const fn with_strike_spec(mut self, strike: Strike) -> Self {
         self.strike = Some(strike);
         self
     }
@@ -131,7 +138,7 @@ impl MakeFxEuropeanOption {
             identifier,
             market_index,
             expiry_date,
-            Strike::Absolute(strike),
+            strike,
             option_type,
             base_currency,
             quote_currency,
@@ -182,6 +189,22 @@ mod tests {
             .expect("put option should build");
 
         assert_eq!(fx_opt.option_type(), EuroOptionType::Put);
+    }
+
+    #[test]
+    fn preserves_relative_strike() {
+        let fx_opt = MakeFxEuropeanOption::default()
+            .with_identifier("EURUSD-1Y-CALL".to_string())
+            .with_expiry_date(Date::new(2027, 4, 11))
+            .with_strike_spec(Strike::Relative(0.05))
+            .with_option_type(EuroOptionType::Call)
+            .with_base_currency(Currency::EUR)
+            .with_quote_currency(Currency::USD)
+            .with_pair(FxPair::new(Currency::EUR, Currency::USD).unwrap())
+            .build()
+            .expect("call option should build");
+
+        assert_eq!(fx_opt.strike(), Strike::Relative(0.05));
     }
 
     #[test]

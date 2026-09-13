@@ -7,7 +7,7 @@ use crate::{
     currencies::currency::Currency,
     indices::{fxpair::FxPair, marketindex::MarketIndex},
     instruments::{cashflows::payoffops::PayoffOps, equity::equityeuropeanoption::EuroOptionType},
-    time::{calendars::brazil::Market, date::Date, daycounter::DayCounter},
+    time::{date::Date, daycounter::DayCounter},
     utils::errors::{QSError, Result},
     volatility::volatilityindexing::Strike,
     xva::{
@@ -99,6 +99,10 @@ impl FxEuropeanOption {
         &self.day_counter
     }
 
+    /// Returns the FX pair represented by the option's market index.
+    ///
+    /// # Errors
+    /// Returns an error if the market index is not an FX pair.
     #[must_use]
     pub fn pair(&self) -> Result<FxPair> {
         match self.market_index {

@@ -72,6 +72,7 @@ pub use crate::{
             },
             equityforward::{EquityForward, EquityForwardTrade},
             futures::{Futures, FuturesTrade},
+            makeequityeuropeanoption::MakeEquityEuropeanOption,
             makeequityforward::MakeEquityForward,
             makefutures::MakeFutures,
         },

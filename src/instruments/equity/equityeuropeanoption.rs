@@ -103,6 +103,20 @@ impl EquityEuropeanOption {
     pub const fn day_counter(&self) -> &DayCounter {
         &self.day_counter
     }
+
+    /// Sets the settlement currency.
+    #[must_use]
+    pub const fn with_currency(mut self, currency: Currency) -> Self {
+        self.currency = currency;
+        self
+    }
+
+    /// Sets the day count convention.
+    #[must_use]
+    pub const fn with_day_counter(mut self, day_counter: DayCounter) -> Self {
+        self.day_counter = day_counter;
+        self
+    }
 }
 
 impl Discountable for EquityEuropeanOption {

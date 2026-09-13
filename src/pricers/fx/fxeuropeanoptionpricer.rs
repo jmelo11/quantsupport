@@ -471,446 +471,446 @@ mod tests {
         Ok(market_data)
     }
 
-    // #[test]
-    // fn fx_option_call_price_is_positive() -> Result<()> {
-    //     let trade_date = Date::new(2025, 1, 2);
-    //     let expiry_date = trade_date + Period::new(6, TimeUnit::Months);
-    //     let base_ccy = Currency::EUR;
-    //     let quote_ccy = Currency::USD;
-    //     let base_index = MarketIndex::Other("EUR_DISC".to_string());
-    //     let quote_index = MarketIndex::Other("USD_DISC".to_string());
-    //     let fx_pair = FxPair::new(base_ccy, quote_ccy).unwrap();
-    //     let underlying_index = MarketIndex::FxPair(fx_pair);
+    #[test]
+    fn fx_option_call_price_is_positive() -> Result<()> {
+        let trade_date = Date::new(2025, 1, 2);
+        let expiry_date = trade_date + Period::new(6, TimeUnit::Months);
+        let base_ccy = Currency::EUR;
+        let quote_ccy = Currency::USD;
+        let base_index = MarketIndex::Other("EUR_DISC".to_string());
+        let quote_index = MarketIndex::Other("USD_DISC".to_string());
+        let fx_pair = FxPair::new(base_ccy, quote_ccy).unwrap();
+        let underlying_index = MarketIndex::FxPair(fx_pair);
 
-    //     let spot = 1.10;
-    //     let strike = 1.12;
-    //     let notional = 1_000_000.0;
-    //     let base_rate = 0.03;
-    //     let quote_rate = 0.05;
+        let spot = 1.10;
+        let strike = 1.12;
+        let notional = 1_000_000.0;
+        let base_rate = 0.03;
+        let quote_rate = 0.05;
 
-    //     let market_data = setup_fx_option_market_data(
-    //         trade_date,
-    //         expiry_date,
-    //         &base_index,
-    //         &quote_index,
-    //         &underlying_index,
-    //         spot,
-    //         base_rate,
-    //         quote_rate,
-    //         base_ccy,
-    //         quote_ccy,
-    //     )?;
+        let market_data = setup_fx_option_market_data(
+            trade_date,
+            expiry_date,
+            &base_index,
+            &quote_index,
+            &underlying_index,
+            spot,
+            base_rate,
+            quote_rate,
+            base_ccy,
+            quote_ccy,
+        )?;
 
-    //     let option = FxEuropeanOption::new(
-    //         "EURUSD-CALL".to_string(),
-    //         expiry_date,
-    //         Strike::Absolute(strike),
-    //         EuroOptionType::Call,
-    //         base_ccy,
-    //         quote_ccy,
-    //         DayCounter::Actual360,
-    //         fx_pair,
-    //     );
-    //     let trade = FxEuropeanOptionTrade::new(option, trade_date, notional, Side::LongReceive);
+        let option = FxEuropeanOption::new(
+            "EURUSD-CALL".to_string(),
+            underlying_index.clone(),
+            expiry_date,
+            Strike::Absolute(strike),
+            EuroOptionType::Call,
+            base_ccy,
+            quote_ccy,
+            DayCounter::Actual360,
+        );
+        let trade = FxEuropeanOptionTrade::new(option, trade_date, notional, Side::LongReceive);
 
-    //     let provider = SimpleMarketDataProvider {
-    //         evaluation_date: trade_date,
-    //         market_data,
-    //     };
+        let provider = SimpleMarketDataProvider {
+            evaluation_date: trade_date,
+            market_data,
+        };
 
-    //     let mut pricer = FxEuropeanOptionPricer::new();
-    //     pricer.set_discount_policy(Box::new(FxDiscountPolicy {
-    //         base_index,
-    //         base_currency: base_ccy,
-    //         quote_index,
-    //         quote_currency: quote_ccy,
-    //     }));
+        let mut pricer = FxEuropeanOptionPricer::new();
+        pricer.set_discount_policy(Box::new(FxDiscountPolicy {
+            base_index,
+            base_currency: base_ccy,
+            quote_index,
+            quote_currency: quote_ccy,
+        }));
 
-    //     let results = pricer.evaluate(&trade, &[Request::Value], &provider)?;
-    //     let price = results
-    //         .price()
-    //         .ok_or_else(|| QSError::UnexpectedErr("Missing price".into()))?;
+        let results = pricer.evaluate(&trade, &[Request::Value], &provider)?;
+        let price = results
+            .price()
+            .ok_or_else(|| QSError::UnexpectedErr("Missing price".into()))?;
 
-    //     assert!(
-    //         price > 0.0,
-    //         "Call option price should be positive, got {price}"
-    //     );
-    //     Ok(())
-    // }
+        assert!(
+            price > 0.0,
+            "Call option price should be positive, got {price}"
+        );
+        Ok(())
+    }
 
-    // #[test]
-    // fn fx_option_put_price_is_positive() -> Result<()> {
-    //     let trade_date = Date::new(2025, 1, 2);
-    //     let expiry_date = trade_date + Period::new(6, TimeUnit::Months);
-    //     let base_ccy = Currency::EUR;
-    //     let quote_ccy = Currency::USD;
-    //     let base_index = MarketIndex::Other("EUR_DISC".to_string());
-    //     let quote_index = MarketIndex::Other("USD_DISC".to_string());
-    //     let fx_pair = FxPair::new(base_ccy, quote_ccy).unwrap();
-    //     let underlying_index = MarketIndex::FxPair(fx_pair);
+    #[test]
+    fn fx_option_put_price_is_positive() -> Result<()> {
+        let trade_date = Date::new(2025, 1, 2);
+        let expiry_date = trade_date + Period::new(6, TimeUnit::Months);
+        let base_ccy = Currency::EUR;
+        let quote_ccy = Currency::USD;
+        let base_index = MarketIndex::Other("EUR_DISC".to_string());
+        let quote_index = MarketIndex::Other("USD_DISC".to_string());
+        let fx_pair = FxPair::new(base_ccy, quote_ccy).unwrap();
+        let underlying_index = MarketIndex::FxPair(fx_pair);
 
-    //     let spot = 1.10;
-    //     let strike = 1.08;
-    //     let notional = 1_000_000.0;
+        let spot = 1.10;
+        let strike = 1.08;
+        let notional = 1_000_000.0;
 
-    //     let market_data = setup_fx_option_market_data(
-    //         trade_date,
-    //         expiry_date,
-    //         &base_index,
-    //         &quote_index,
-    //         &underlying_index,
-    //         spot,
-    //         0.03,
-    //         0.05,
-    //         base_ccy,
-    //         quote_ccy,
-    //     )?;
+        let market_data = setup_fx_option_market_data(
+            trade_date,
+            expiry_date,
+            &base_index,
+            &quote_index,
+            &underlying_index,
+            spot,
+            0.03,
+            0.05,
+            base_ccy,
+            quote_ccy,
+        )?;
 
-    //     let option = FxEuropeanOption::new(
-    //         "EURUSD-PUT".to_string(),
-    //         expiry_date,
-    //         Strike::Absolute(strike),
-    //         EuroOptionType::Put,
-    //         base_ccy,
-    //         quote_ccy,
-    //         DayCounter::Actual360,
-    //         fx_pair,
-    //     );
-    //     let trade = FxEuropeanOptionTrade::new(option, trade_date, notional, Side::LongReceive);
+        let option = FxEuropeanOption::new(
+            "EURUSD-PUT".to_string(),
+            underlying_index.clone(),
+            expiry_date,
+            Strike::Absolute(strike),
+            EuroOptionType::Put,
+            base_ccy,
+            quote_ccy,
+            DayCounter::Actual360,
+        );
+        let trade = FxEuropeanOptionTrade::new(option, trade_date, notional, Side::LongReceive);
 
-    //     let provider = SimpleMarketDataProvider {
-    //         evaluation_date: trade_date,
-    //         market_data,
-    //     };
+        let provider = SimpleMarketDataProvider {
+            evaluation_date: trade_date,
+            market_data,
+        };
 
-    //     let mut pricer = FxEuropeanOptionPricer::new();
-    //     pricer.set_discount_policy(Box::new(FxDiscountPolicy {
-    //         base_index,
-    //         base_currency: base_ccy,
-    //         quote_index,
-    //         quote_currency: quote_ccy,
-    //     }));
+        let mut pricer = FxEuropeanOptionPricer::new();
+        pricer.set_discount_policy(Box::new(FxDiscountPolicy {
+            base_index,
+            base_currency: base_ccy,
+            quote_index,
+            quote_currency: quote_ccy,
+        }));
 
-    //     let results = pricer.evaluate(&trade, &[Request::Value], &provider)?;
-    //     let price = results
-    //         .price()
-    //         .ok_or_else(|| QSError::UnexpectedErr("Missing price".into()))?;
+        let results = pricer.evaluate(&trade, &[Request::Value], &provider)?;
+        let price = results
+            .price()
+            .ok_or_else(|| QSError::UnexpectedErr("Missing price".into()))?;
 
-    //     assert!(
-    //         price > 0.0,
-    //         "Put option price should be positive, got {price}"
-    //     );
-    //     Ok(())
-    // }
+        assert!(
+            price > 0.0,
+            "Put option price should be positive, got {price}"
+        );
+        Ok(())
+    }
 
-    // #[test]
-    // fn fx_option_put_call_parity() -> Result<()> {
-    //     let trade_date = Date::new(2025, 1, 2);
-    //     let expiry_date = trade_date + Period::new(6, TimeUnit::Months);
-    //     let base_ccy = Currency::EUR;
-    //     let quote_ccy = Currency::USD;
-    //     let base_index = MarketIndex::Other("EUR_DISC".to_string());
-    //     let quote_index = MarketIndex::Other("USD_DISC".to_string());
-    //     let fx_pair = FxPair::new(base_ccy, quote_ccy).unwrap();
-    //     let underlying_index = MarketIndex::FxPair(fx_pair);
+    #[test]
+    fn fx_option_put_call_parity() -> Result<()> {
+        let trade_date = Date::new(2025, 1, 2);
+        let expiry_date = trade_date + Period::new(6, TimeUnit::Months);
+        let base_ccy = Currency::EUR;
+        let quote_ccy = Currency::USD;
+        let base_index = MarketIndex::Other("EUR_DISC".to_string());
+        let quote_index = MarketIndex::Other("USD_DISC".to_string());
+        let fx_pair = FxPair::new(base_ccy, quote_ccy).unwrap();
+        let underlying_index = MarketIndex::FxPair(fx_pair);
 
-    //     let spot = 1.10;
-    //     let strike = 1.12;
-    //     let notional = 1.0;
-    //     let base_rate = 0.03;
-    //     let quote_rate = 0.05;
+        let spot = 1.10;
+        let strike = 1.12;
+        let notional = 1.0;
+        let base_rate = 0.03;
+        let quote_rate = 0.05;
 
-    //     // Price call
-    //     let md_call = setup_fx_option_market_data(
-    //         trade_date,
-    //         expiry_date,
-    //         &base_index,
-    //         &quote_index,
-    //         &underlying_index,
-    //         spot,
-    //         base_rate,
-    //         quote_rate,
-    //         base_ccy,
-    //         quote_ccy,
-    //     )?;
+        // Price call
+        let md_call = setup_fx_option_market_data(
+            trade_date,
+            expiry_date,
+            &base_index,
+            &quote_index,
+            &underlying_index,
+            spot,
+            base_rate,
+            quote_rate,
+            base_ccy,
+            quote_ccy,
+        )?;
 
-    //     let call = FxEuropeanOption::new(
-    //         "EURUSD-CALL".to_string(),
-    //         expiry_date,
-    //         Strike::Absolute(strike),
-    //         EuroOptionType::Call,
-    //         base_ccy,
-    //         quote_ccy,
-    //         DayCounter::Actual360,
-    //         fx_pair,
-    //     );
-    //     let call_trade = FxEuropeanOptionTrade::new(call, trade_date, notional, Side::LongReceive);
+        let call = FxEuropeanOption::new(
+            "EURUSD-CALL".to_string(),
+            underlying_index.clone(),
+            expiry_date,
+            Strike::Absolute(strike),
+            EuroOptionType::Call,
+            base_ccy,
+            quote_ccy,
+            DayCounter::Actual360,
+        );
+        let call_trade = FxEuropeanOptionTrade::new(call, trade_date, notional, Side::LongReceive);
 
-    //     let call_provider = SimpleMarketDataProvider {
-    //         evaluation_date: trade_date,
-    //         market_data: md_call,
-    //     };
+        let call_provider = SimpleMarketDataProvider {
+            evaluation_date: trade_date,
+            market_data: md_call,
+        };
 
-    //     let mut pricer = FxEuropeanOptionPricer::new();
-    //     pricer.set_discount_policy(Box::new(FxDiscountPolicy {
-    //         base_index: base_index.clone(),
-    //         base_currency: base_ccy,
-    //         quote_index: quote_index.clone(),
-    //         quote_currency: quote_ccy,
-    //     }));
+        let mut pricer = FxEuropeanOptionPricer::new();
+        pricer.set_discount_policy(Box::new(FxDiscountPolicy {
+            base_index: base_index.clone(),
+            base_currency: base_ccy,
+            quote_index: quote_index.clone(),
+            quote_currency: quote_ccy,
+        }));
 
-    //     let call_price = pricer
-    //         .evaluate(&call_trade, &[Request::Value], &call_provider)?
-    //         .price()
-    //         .unwrap();
+        let call_price = pricer
+            .evaluate(&call_trade, &[Request::Value], &call_provider)?
+            .price()
+            .unwrap();
 
-    //     // Price put
-    //     let md_put = setup_fx_option_market_data(
-    //         trade_date,
-    //         expiry_date,
-    //         &base_index,
-    //         &quote_index,
-    //         &underlying_index,
-    //         spot,
-    //         base_rate,
-    //         quote_rate,
-    //         base_ccy,
-    //         quote_ccy,
-    //     )?;
+        // Price put
+        let md_put = setup_fx_option_market_data(
+            trade_date,
+            expiry_date,
+            &base_index,
+            &quote_index,
+            &underlying_index,
+            spot,
+            base_rate,
+            quote_rate,
+            base_ccy,
+            quote_ccy,
+        )?;
 
-    //     let put = FxEuropeanOption::new(
-    //         "EURUSD-PUT".to_string(),
-    //         expiry_date,
-    //         Strike::Absolute(strike),
-    //         EuroOptionType::Put,
-    //         base_ccy,
-    //         quote_ccy,
-    //         DayCounter::Actual360,
-    //         fx_pair,
-    //     );
-    //     let put_trade = FxEuropeanOptionTrade::new(put, trade_date, notional, Side::LongReceive);
+        let put = FxEuropeanOption::new(
+            "EURUSD-PUT".to_string(),
+            underlying_index.clone(),
+            expiry_date,
+            Strike::Absolute(strike),
+            EuroOptionType::Put,
+            base_ccy,
+            quote_ccy,
+            DayCounter::Actual360,
+        );
+        let put_trade = FxEuropeanOptionTrade::new(put, trade_date, notional, Side::LongReceive);
 
-    //     let put_provider = SimpleMarketDataProvider {
-    //         evaluation_date: trade_date,
-    //         market_data: md_put,
-    //     };
+        let put_provider = SimpleMarketDataProvider {
+            evaluation_date: trade_date,
+            market_data: md_put,
+        };
 
-    //     let put_price = pricer
-    //         .evaluate(&put_trade, &[Request::Value], &put_provider)?
-    //         .price()
-    //         .unwrap();
+        let put_price = pricer
+            .evaluate(&put_trade, &[Request::Value], &put_provider)?
+            .price()
+            .unwrap();
 
-    //     // Put-call parity: C - P = DF_quote * (F - K)
-    //     // where F = S * DF_base / DF_quote
-    //     // Use simple compounding (ACT/360) to match FlatForwardTermStructure default
-    //     let tau = DayCounter::Actual360.year_fraction(trade_date, expiry_date);
-    //     let df_base = 1.0 / (1.0 + base_rate * tau);
-    //     let df_quote = 1.0 / (1.0 + quote_rate * tau);
-    //     let forward = spot * df_base / df_quote;
-    //     let expected_diff = df_quote * (forward - strike);
+        // Put-call parity: C - P = DF_quote * (F - K)
+        // where F = S * DF_base / DF_quote
+        // Use simple compounding (ACT/360) to match FlatForwardTermStructure default
+        let tau = DayCounter::Actual360.year_fraction(trade_date, expiry_date);
+        let df_base = 1.0 / (1.0 + base_rate * tau);
+        let df_quote = 1.0 / (1.0 + quote_rate * tau);
+        let forward = spot * df_base / df_quote;
+        let expected_diff = df_quote * (forward - strike);
 
-    //     let actual_diff = call_price - put_price;
-    //     assert!(
-    //         (actual_diff - expected_diff).abs() < 1e-8,
-    //         "Put-call parity violation: C-P={actual_diff}, DF*(F-K)={expected_diff}"
-    //     );
+        let actual_diff = call_price - put_price;
+        assert!(
+            (actual_diff - expected_diff).abs() < 1e-8,
+            "Put-call parity violation: C-P={actual_diff}, DF*(F-K)={expected_diff}"
+        );
 
-    //     Ok(())
-    // }
+        Ok(())
+    }
 
-    // #[test]
-    // fn fx_option_sensitivities_are_computed() -> Result<()> {
-    //     let trade_date = Date::new(2025, 1, 2);
-    //     let expiry_date = trade_date + Period::new(6, TimeUnit::Months);
-    //     let base_ccy = Currency::EUR;
-    //     let quote_ccy = Currency::USD;
-    //     let base_index = MarketIndex::Other("EUR_DISC".to_string());
-    //     let quote_index = MarketIndex::Other("USD_DISC".to_string());
-    //     let fx_pair = FxPair::new(base_ccy, quote_ccy).unwrap();
-    //     let underlying_index = MarketIndex::FxPair(fx_pair);
+    #[test]
+    fn fx_option_sensitivities_are_computed() -> Result<()> {
+        let trade_date = Date::new(2025, 1, 2);
+        let expiry_date = trade_date + Period::new(6, TimeUnit::Months);
+        let base_ccy = Currency::EUR;
+        let quote_ccy = Currency::USD;
+        let base_index = MarketIndex::Other("EUR_DISC".to_string());
+        let quote_index = MarketIndex::Other("USD_DISC".to_string());
+        let fx_pair = FxPair::new(base_ccy, quote_ccy).unwrap();
+        let underlying_index = MarketIndex::FxPair(fx_pair);
 
-    //     let spot = 1.10;
-    //     let strike = 1.10;
-    //     let notional = 1_000_000.0;
+        let spot = 1.10;
+        let strike = 1.10;
+        let notional = 1_000_000.0;
 
-    //     let market_data = setup_fx_option_market_data(
-    //         trade_date,
-    //         expiry_date,
-    //         &base_index,
-    //         &quote_index,
-    //         &underlying_index,
-    //         spot,
-    //         0.03,
-    //         0.05,
-    //         base_ccy,
-    //         quote_ccy,
-    //     )?;
+        let market_data = setup_fx_option_market_data(
+            trade_date,
+            expiry_date,
+            &base_index,
+            &quote_index,
+            &underlying_index,
+            spot,
+            0.03,
+            0.05,
+            base_ccy,
+            quote_ccy,
+        )?;
 
-    //     let option = FxEuropeanOption::new(
-    //         "EURUSD-CALL".to_string(),
-    //         expiry_date,
-    //         Strike::Absolute(strike),
-    //         EuroOptionType::Call,
-    //         base_ccy,
-    //         quote_ccy,
-    //         DayCounter::Actual360,
-    //         fx_pair,
-    //     );
-    //     let trade = FxEuropeanOptionTrade::new(option, trade_date, notional, Side::LongReceive);
+        let option = FxEuropeanOption::new(
+            "EURUSD-CALL".to_string(),
+            underlying_index.clone(),
+            expiry_date,
+            Strike::Absolute(strike),
+            EuroOptionType::Call,
+            base_ccy,
+            quote_ccy,
+            DayCounter::Actual360,
+        );
+        let trade = FxEuropeanOptionTrade::new(option, trade_date, notional, Side::LongReceive);
 
-    //     let provider = SimpleMarketDataProvider {
-    //         evaluation_date: trade_date,
-    //         market_data,
-    //     };
+        let provider = SimpleMarketDataProvider {
+            evaluation_date: trade_date,
+            market_data,
+        };
 
-    //     let mut pricer = FxEuropeanOptionPricer::new();
-    //     pricer.set_discount_policy(Box::new(FxDiscountPolicy {
-    //         base_index,
-    //         base_currency: base_ccy,
-    //         quote_index,
-    //         quote_currency: quote_ccy,
-    //     }));
+        let mut pricer = FxEuropeanOptionPricer::new();
+        pricer.set_discount_policy(Box::new(FxDiscountPolicy {
+            base_index,
+            base_currency: base_ccy,
+            quote_index,
+            quote_currency: quote_ccy,
+        }));
 
-    //     let results =
-    //         pricer.evaluate(&trade, &[Request::Value, Request::Sensitivities], &provider)?;
+        let results =
+            pricer.evaluate(&trade, &[Request::Value, Request::Sensitivities], &provider)?;
 
-    //     let sensitivities = results
-    //         .sensitivities()
-    //         .ok_or_else(|| QSError::UnexpectedErr("Missing sensitivities".into()))?;
+        let sensitivities = results
+            .sensitivities()
+            .ok_or_else(|| QSError::UnexpectedErr("Missing sensitivities".into()))?;
 
-    //     // Should have non-empty sensitivities
-    //     assert!(
-    //         !sensitivities.instrument_keys().is_empty(),
-    //         "Sensitivities should not be empty"
-    //     );
+        // Should have non-empty sensitivities
+        assert!(
+            !sensitivities.instrument_keys().is_empty(),
+            "Sensitivities should not be empty"
+        );
 
-    //     // Should have FX spot sensitivity
-    //     let has_fx_sens = sensitivities
-    //         .instrument_keys()
-    //         .iter()
-    //         .any(|k| k.contains("EUR") && k.contains("USD"));
-    //     assert!(has_fx_sens, "Should have FX spot sensitivity");
+        // Should have FX spot sensitivity
+        let has_fx_sens = sensitivities
+            .instrument_keys()
+            .iter()
+            .any(|k| k.contains("EUR") && k.contains("USD"));
+        assert!(has_fx_sens, "Should have FX spot sensitivity");
 
-    //     // Should have discount curve sensitivities
-    //     let has_rate_sens = sensitivities
-    //         .instrument_keys()
-    //         .iter()
-    //         .any(|k| k.contains("rate"));
-    //     assert!(has_rate_sens, "Should have discount curve sensitivities");
+        // Should have discount curve sensitivities
+        let has_rate_sens = sensitivities
+            .instrument_keys()
+            .iter()
+            .any(|k| k.contains("rate"));
+        assert!(has_rate_sens, "Should have discount curve sensitivities");
 
-    //     // Should have vol sensitivities
-    //     let has_vol_sens = sensitivities
-    //         .instrument_keys()
-    //         .iter()
-    //         .any(|k| k.contains("vol"));
-    //     assert!(has_vol_sens, "Should have volatility sensitivities");
+        // Should have vol sensitivities
+        let has_vol_sens = sensitivities
+            .instrument_keys()
+            .iter()
+            .any(|k| k.contains("vol"));
+        assert!(has_vol_sens, "Should have volatility sensitivities");
 
-    //     Ok(())
-    // }
+        Ok(())
+    }
 
-    // #[test]
-    // fn fx_option_short_side_negates_price() -> Result<()> {
-    //     let trade_date = Date::new(2025, 1, 2);
-    //     let expiry_date = trade_date + Period::new(6, TimeUnit::Months);
-    //     let base_ccy = Currency::EUR;
-    //     let quote_ccy = Currency::USD;
-    //     let base_index = MarketIndex::Other("EUR_DISC".to_string());
-    //     let quote_index = MarketIndex::Other("USD_DISC".to_string());
-    //     let fx_pair = FxPair::new(base_ccy, quote_ccy).unwrap();
-    //     let underlying_index = MarketIndex::FxPair(fx_pair);
-    //     let spot = 1.10;
-    //     let strike = 1.12;
-    //     let notional = 1_000_000.0;
+    #[test]
+    fn fx_option_short_side_negates_price() -> Result<()> {
+        let trade_date = Date::new(2025, 1, 2);
+        let expiry_date = trade_date + Period::new(6, TimeUnit::Months);
+        let base_ccy = Currency::EUR;
+        let quote_ccy = Currency::USD;
+        let base_index = MarketIndex::Other("EUR_DISC".to_string());
+        let quote_index = MarketIndex::Other("USD_DISC".to_string());
+        let fx_pair = FxPair::new(base_ccy, quote_ccy).unwrap();
+        let underlying_index = MarketIndex::FxPair(fx_pair);
+        let spot = 1.10;
+        let strike = 1.12;
+        let notional = 1_000_000.0;
 
-    //     // Long trade
-    //     let md_long = setup_fx_option_market_data(
-    //         trade_date,
-    //         expiry_date,
-    //         &base_index,
-    //         &quote_index,
-    //         &underlying_index,
-    //         spot,
-    //         0.03,
-    //         0.05,
-    //         base_ccy,
-    //         quote_ccy,
-    //     )?;
-    //     let option_long = FxEuropeanOption::new(
-    //         "EURUSD-CALL".to_string(),
-    //         expiry_date,
-    //         Strike::Absolute(strike),
-    //         EuroOptionType::Call,
-    //         base_ccy,
-    //         quote_ccy,
-    //         DayCounter::Actual360,
-    //         fx_pair,
-    //     );
-    //     let long_trade =
-    //         FxEuropeanOptionTrade::new(option_long, trade_date, notional, Side::LongReceive);
+        // Long trade
+        let md_long = setup_fx_option_market_data(
+            trade_date,
+            expiry_date,
+            &base_index,
+            &quote_index,
+            &underlying_index,
+            spot,
+            0.03,
+            0.05,
+            base_ccy,
+            quote_ccy,
+        )?;
+        let option_long = FxEuropeanOption::new(
+            "EURUSD-CALL".to_string(),
+            underlying_index.clone(),
+            expiry_date,
+            Strike::Absolute(strike),
+            EuroOptionType::Call,
+            base_ccy,
+            quote_ccy,
+            DayCounter::Actual360,
+        );
+        let long_trade =
+            FxEuropeanOptionTrade::new(option_long, trade_date, notional, Side::LongReceive);
 
-    //     let mut pricer = FxEuropeanOptionPricer::new();
-    //     pricer.set_discount_policy(Box::new(FxDiscountPolicy {
-    //         base_index: base_index.clone(),
-    //         base_currency: base_ccy,
-    //         quote_index: quote_index.clone(),
-    //         quote_currency: quote_ccy,
-    //     }));
+        let mut pricer = FxEuropeanOptionPricer::new();
+        pricer.set_discount_policy(Box::new(FxDiscountPolicy {
+            base_index: base_index.clone(),
+            base_currency: base_ccy,
+            quote_index: quote_index.clone(),
+            quote_currency: quote_ccy,
+        }));
 
-    //     let long_price = pricer
-    //         .evaluate(
-    //             &long_trade,
-    //             &[Request::Value],
-    //             &SimpleMarketDataProvider {
-    //                 evaluation_date: trade_date,
-    //                 market_data: md_long,
-    //             },
-    //         )?
-    //         .price()
-    //         .unwrap();
+        let long_price = pricer
+            .evaluate(
+                &long_trade,
+                &[Request::Value],
+                &SimpleMarketDataProvider {
+                    evaluation_date: trade_date,
+                    market_data: md_long,
+                },
+            )?
+            .price()
+            .unwrap();
 
-    //     // Short trade
-    //     let md_short = setup_fx_option_market_data(
-    //         trade_date,
-    //         expiry_date,
-    //         &base_index,
-    //         &quote_index,
-    //         &underlying_index,
-    //         spot,
-    //         0.03,
-    //         0.05,
-    //         base_ccy,
-    //         quote_ccy,
-    //     )?;
-    //     let option_short = FxEuropeanOption::new(
-    //         "EURUSD-CALL".to_string(),
-    //         expiry_date,
-    //         Strike::Absolute(strike),
-    //         EuroOptionType::Call,
-    //         base_ccy,
-    //         quote_ccy,
-    //         DayCounter::Actual360,
-    //         fx_pair,
-    //     );
-    //     let short_trade =
-    //         FxEuropeanOptionTrade::new(option_short, trade_date, notional, Side::PayShort);
+        // Short trade
+        let md_short = setup_fx_option_market_data(
+            trade_date,
+            expiry_date,
+            &base_index,
+            &quote_index,
+            &underlying_index,
+            spot,
+            0.03,
+            0.05,
+            base_ccy,
+            quote_ccy,
+        )?;
+        let option_short = FxEuropeanOption::new(
+            "EURUSD-CALL".to_string(),
+            underlying_index.clone(),
+            expiry_date,
+            Strike::Absolute(strike),
+            EuroOptionType::Call,
+            base_ccy,
+            quote_ccy,
+            DayCounter::Actual360,
+        );
+        let short_trade =
+            FxEuropeanOptionTrade::new(option_short, trade_date, notional, Side::PayShort);
 
-    //     let short_price = pricer
-    //         .evaluate(
-    //             &short_trade,
-    //             &[Request::Value],
-    //             &SimpleMarketDataProvider {
-    //                 evaluation_date: trade_date,
-    //                 market_data: md_short,
-    //             },
-    //         )?
-    //         .price()
-    //         .unwrap();
+        let short_price = pricer
+            .evaluate(
+                &short_trade,
+                &[Request::Value],
+                &SimpleMarketDataProvider {
+                    evaluation_date: trade_date,
+                    market_data: md_short,
+                },
+            )?
+            .price()
+            .unwrap();
 
-    //     assert!(
-    //         (long_price + short_price).abs() < 1e-8,
-    //         "Long + Short should be zero, got {long_price} + {short_price}"
-    //     );
+        assert!(
+            (long_price + short_price).abs() < 1e-8,
+            "Long + Short should be zero, got {long_price} + {short_price}"
+        );
 
-    //     Ok(())
-    // }
+        Ok(())
+    }
 }

@@ -107,18 +107,18 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
 
     // Trade 3 — 1Y EUR/USD FX call option (buy EUR call, strike 1.12)
     let fx_pair = FxPair::new(Currency::EUR, Currency::USD)?;
-    let fx_spot_index = MarketIndex::FxPair(fx_pair);
-    let fx_opt = MakeFxOption::default()
+    let fx_spot_index: MarketIndex = MarketIndex::FxPair(fx_pair);
+    let fx_opt = MakeFxEuropeanOption::default()
         .with_identifier("FX_OPT_EURUSD_1Y".to_string())
         .with_expiry_date(ref_date.advance(1, TimeUnit::Years))
         .with_strike(1.12)
-        .with_option_type(FxOptionType::Call)
+        .with_option_type(EuroOptionType::Call)
         .with_base_currency(Currency::EUR)
         .with_quote_currency(Currency::USD)
         .with_pair(fx_pair)
         .build()
         .expect("Failed to build FX option");
-    let fxopt_trade = FxOptionTrade::new(fx_opt, ref_date, 5_000_000.0, Side::LongReceive);
+    let fxopt_trade = FxEuropeanOptionTrade::new(fx_opt, ref_date, 5_000_000.0, Side::LongReceive);
     let fx_option_claims = fxopt_trade.into_contingent_claims()?;
 
     // Trade 4 — 3Y USD/EUR cross-currency swap (pay USD fixed, receive EUR ESTR float)
@@ -170,8 +170,12 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     println!("Claims: IRS={irs_n}, FxFwd={fxfwd_n}, FxOpt={fxopt_n}, Xccy={xccy_n}",);
 
     // ── 4. Wrap each trade in its own NettingSet ────────────────
-    let make_policy =
-        || Box::new(SingleCurveCSADiscountPolicy::new(MarketIndex::SOFR, Currency::USD));
+    let make_policy = || {
+        Box::new(SingleCurveCSADiscountPolicy::new(
+            MarketIndex::SOFR,
+            Currency::USD,
+        ))
+    };
 
     let mut netting_sets: HashMap<String, NettingSet> = HashMap::new();
     netting_sets.insert(
@@ -193,8 +197,7 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
 
     // ── 5. Inspector: assign indices & collect simulation requests
     let fixing_pp = FixingPreprocessor::new(ref_date, DayCounter::Actual360, fixing_store);
-    let mut inspector =
-        PreprocessorExecutor::new().with_preprocessor(Box::new(fixing_pp));
+    let mut inspector = PreprocessorExecutor::new().with_preprocessor(Box::new(fixing_pp));
     inspector.visit(netting_sets.values_mut());
 
     let requests: Vec<_> = inspector.requests().to_vec();

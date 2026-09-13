@@ -50,4 +50,4 @@ The Monte Carlo pricer keeps paths as `DualFwd`, so sensitivities to the spot/vo
 
 ## Vol quotes
 
-FX surfaces: `FxCall_USDCLP_6M_950_Black`-style identifiers; equity surfaces: `EquityCall_USD_AAPL_1Y_150_Black`. Both feed `VolatilitySurfaceConfiguration` with `smile_type` `Strike`, `Delta` or `LogMoneyness` — the pricer passes the `key` consistent with the configured smile type.
+FX surfaces: `FxCall_USDCLP_6M_Absolute_950`-style identifiers; equity surfaces: `EquityCall_USD_AAPL_1Y_Absolute_150`. Both feed `VolatilitySurfaceConfiguration` with `smile_type` `Strike`, `Delta` or `LogMoneyness` — the pricer passes the `key` consistent with the configured smile type.
