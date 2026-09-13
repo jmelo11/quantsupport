@@ -1,3 +1,5 @@
+use serde::{Deserialize, Serialize};
+
 use crate::{
     core::{
         collateral::Discountable,
@@ -11,7 +13,7 @@ use crate::{
 };
 
 /// Represents the payoff type of an European option.
-#[derive(Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EuroOptionType {
     /// Call option type.
     Call,
@@ -54,6 +56,7 @@ impl EquityEuropeanOption {
     /// Creates a new european equity option.
     #[must_use]
     pub const fn new(
+        // Must be of type [`MarketIndex::Equity`]
         market_index: MarketIndex,
         expiry_date: Date,
         strike: Strike,
