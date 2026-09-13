@@ -86,6 +86,9 @@ pub trait MarketModel<T: Scalar>: Send + Sync {
     ///
     /// Each index should produce a deterministic, independent path
     /// (e.g. by deriving the RNG seed from `index`).
+    ///
+    /// # Errors
+    /// Returns an error when path generation or request resolution fails.
     fn generate_path(&self, index: usize) -> Result<PathScenario<T>>;
 
     /// Sets the simulation date grid.

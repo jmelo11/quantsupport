@@ -35,6 +35,7 @@ pub struct FxEuropeanOption {
 impl FxEuropeanOption {
     /// Creates a new [`FxEuropeanOption`].
     #[must_use]
+    #[allow(clippy::too_many_arguments)]
     pub const fn new(
         identifier: String,
         market_index: MarketIndex,
@@ -103,7 +104,6 @@ impl FxEuropeanOption {
     ///
     /// # Errors
     /// Returns an error if the market index is not an FX pair.
-    #[must_use]
     pub fn pair(&self) -> Result<FxPair> {
         match self.market_index {
             MarketIndex::FxPair(pair) => Ok(pair),
