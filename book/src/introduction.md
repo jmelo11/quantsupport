@@ -11,7 +11,7 @@ Everything is organised around one flow:
 5. Ask a **pricer** (`DiscountedCashflowPricer`, `ClosedFormBlackCapPricer`, `FxOptionPricer`, …) for `Request::Value`, `FairRate`, `Cashflows`, or `Sensitivities`.
 6. Reuse the same market for **scenarios** (`Scenario`), **scripted payoffs** (`ScriptEngine`), **simulation** (`LgmMarketModel`, `HullWhite`), and **XVA** (`XvaEngine`).
 
-The single generic scalar parameter `T: Scalar` runs through curves, instruments and pricers. With `T = f64` you get plain numbers; with `T = DualFwd` (reverse-mode tape over a second-order forward type) every price is differentiable with respect to the quotes that built the market. This is why sensitivities never need a separate bump-and-reprice implementation.
+To allow sensitivity computations via automatic differentiation (AAD), generic scalar parameter `T: Scalar` is available in curves, instruments and pricers. With `T = f64` you get plain numbers; with `T = DualFwd` (reverse-mode tape over a second-order forward type) every price is differentiable with respect to the quotes that built the market.
 
 ## Crate layout
 

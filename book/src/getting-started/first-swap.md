@@ -8,8 +8,6 @@ This chapter introduces the QuantSupport pricing workflow through a five-year US
 4. Select a compatible pricer and request specific calculations.
 5. Read the requested values from `EvaluationResults`.
 
-These responsibilities are deliberately separate. Instruments do not look up curves, market contexts do not decide which outputs to calculate, and result objects contain only the outputs produced by the pricer.
-
 The complete program is in [`examples/valuation/src/main.rs`](../../../examples/valuation/src/main.rs). Run it from the workspace root with `cargo run -p valuation`.
 
 ## Choosing a scalar type
@@ -23,9 +21,7 @@ The instrument, curves, and pricer must use compatible scalar types. This exampl
 
 ## 1. Define the instrument
 
-An **instrument** describes contractual economics: schedules, rates, indices, currencies, and payoff direction. QuantSupport constructs instruments with `Make*` builders. A builder collects inputs, applies documented defaults, and validates required fields in `build()`.
-
-For a vanilla fixed-versus-floating swap, `MakeSwap<T>` creates a fixed leg and a floating leg. `RateDefinition` describes how the fixed rate accrues through its day-count, compounding, and frequency conventions. Leg payment frequency is configured separately because payment and rate conventions are distinct.
+An **instrument** describes a financial product contractual economics: schedules, rates, indices, currencies, and payoff direction. QuantSupport constructs instruments with `Make*` builders (builder pattern). A builder collects inputs, applies documented defaults, and validates required fields in `build()`. For a vanilla fixed-versus-floating swap, `MakeSwap<T>` creates a fixed leg and a floating leg, with the given parameters.
 
 ### In this example
 
@@ -60,7 +56,7 @@ let swap = MakeSwap::<DualFwd>::default()
     .build()?;
 ```
 
-`build()` returns `QSError` when a required field is absent or invalid. For `MakeSwap`, the required fields are the identifier, dates, notional, fixed rate, rate definition, currency, and floating-rate index. The principal optional settings are:
+`build()` returns `QSError` when a required field is absent or invalid. For `MakeSwap`, the required fields are the identifier (a string to identify this particular swap), dates, notional, fixed rate, rate definition, currency, and floating-rate index. The principal optional settings are:
 
 | Builder method                                        | Default                                          |
 | ----------------------------------------------------- | ------------------------------------------------ |
@@ -73,7 +69,7 @@ let swap = MakeSwap::<DualFwd>::default()
 | `with_date_generation_rule(DateGenerationRule)`       | `Backward` for bullet legs                       |
 | `with_end_of_month(bool)`                             | `false`                                          |
 
-Internally, leg `0` is fixed and has the swap's side. Leg `1` is floating, references `MarketIndex::SOFR`, and has the opposite side. Both are bullet legs, so their notionals do not amortize. The example overrides the floating-leg frequency from its quarterly default to semiannual.
+Internally, legs are stored in a vector, where leg `0` is fixed and has the swap's side and leg `1` is floating, references `MarketIndex::SOFR`, and has the opposite side. Both are bullet legs, so their notionals do not amortize. In this example we choose to override the floating-leg frequency from its quarterly default to semiannual.
 
 ## 2. Add the trade layer
 
@@ -89,17 +85,17 @@ let trade = SwapTrade::new(swap, start_date, notional, Side::LongReceive);
 
 ## 3. Assemble the market
 
-Pricing needs a market state as of an evaluation date. QuantSupport separates that state into three layers:
+Pricing needs a market state (a set of market variables) as of an evaluation date. QuantSupport separates that state into three layers:
 
 - Raw stores contain observations such as quotes, historical fixings, and FX rates.
 - `ConstructedElementStore` contains derived objects such as discount and credit curves, volatility objects, and simulations.
 - `PricingContext` owns those stores and implements `MarketDataProvider`, the interface through which pricers request only the data they need.
 
-In a configuration-driven workflow, populate quotes and configurations and call `PricingContext::initialize()`. For a small program or unit test, constructed elements can instead be inserted directly. Elements are keyed by `MarketIndex`, so a SOFR leg resolves against the SOFR curve registered in the context; a missing required element is an error.
+In a configuration-driven workflow, the user should populate quotes and configurations and call `PricingContext::initialize()`, as this will intialize all elements required for pricing, such as discount curves and volatility surfaces. All risk factors or elements are keyed by a `MarketIndex`, so for example a SOFR leg can resolve against the SOFR curve already registered in the context. If a product references a `MarketIndex` not available in the context, an error is returned.
 
 ### In this example
 
-The example creates one flat SOFR curve directly. `FlatForwardTermStructure` represents a constant rate interpreted using its `RateDefinition`; here the input is 3% with continuous compounding. The pillar label names that market input for sensitivity reporting.
+In this example, we create a flat SOFR curve. `FlatForwardTermStructure` represents a constant rate interpreted using its `RateDefinition`; here the input is 3% with continuous compounding. As we want to obtain sensitivities to this curve, the pillar label is required for sensitivity reporting.
 
 ```rust,ignore
 let evaluation_date = Date::new(2024, 1, 15);
@@ -134,7 +130,7 @@ The curve is wrapped in `Rc<RefCell<_>>`, allowing constructed elements to be sh
 
 ## 4. Select a pricer and requests
 
-A **pricer** connects a trade to market data. Its `market_data_request()` declares the curves, fixings, FX rates, and volatility objects it needs, and the provider resolves that declaration. The caller separately chooses outputs with `Request`, avoiding calculations that are not needed.
+A **pricer** connects a trade to market data in order to get different `Request`s. Its `market_data_request()` declares the required curves, fixings, FX rates, and volatility objects it needs to evaluate the product, and the market data provider resolves that declaration. An user can separately choose outputs with different `Request`, avoiding calculations that are not needed.
 
 | Request                  | Meaning                                             |
 | ------------------------ | --------------------------------------------------- |
@@ -143,7 +139,7 @@ A **pricer** connects a trade to market data. Its `market_data_request()` declar
 | `Request::Sensitivities` | Derivatives with respect to labelled market pillars |
 | `Request::FairRate`      | Rate that makes the instrument NPV equal to zero    |
 
-Request support is pricer-specific.
+Request support is pricer-specific, as not all pricer and product share the same variables.
 
 ### In this example
 

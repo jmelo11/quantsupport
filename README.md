@@ -89,27 +89,162 @@ fn main() -> Result<()> {
 
 The same program, with a more detailed cashflow report, is available in [`examples/valuation`](examples/valuation).
 
-## Capabilities
+## Architecture and components
 
-| Area | Current support |
-| --- | --- |
-| Instruments | Fixed-rate deposits and bonds, floating-rate notes, rate futures, swaps, basis swaps, caps/floors, caplets/floorlets, European swaptions, fixed/float and float/float cross-currency swaps, equity forwards and European options, FX forwards and options, futures, and credit default swaps |
-| Pricing | Generic discounted-cashflow pricing; Black equity, FX, caplet, and cap/floor pricing; Monte Carlo equity option pricing; Hull-White caplet, cap/floor, and European swaption pricing; rate-futures and CDS pricing |
-| Results and risk | NPV, fair rate, cashflow tables, and quote-pillar sensitivities through automatic differentiation; type-erased pricer dispatch through `Evaluator` |
-| Curves | Flat and interpolated term structures, multi-curve bootstrapping, cross-curve dependencies, FX-implied collateral curves, and CDS-based survival-curve bootstrapping |
-| Volatility | Interpolated volatility surfaces and cubes, Black and normal volatility conventions, FX surface orientation, and constant, surface-, cube-, or calibration-driven volatility sources |
-| Models and simulation | Brownian motion, Hull-White, and LGM models; Hull-White/LGM volatility calibration; seeded Monte Carlo path generation from serializable configurations |
-| Exposure and XVA | Contingent-claim decomposition, fixing preprocessing, claim compression, netting sets, CSA terms, NPV cubes, EPE/ENE/EE, CVA, DVA, FVA, and parallel AAD sensitivities |
-| Scripting | Payoff scripting language (assignments, `if`/`else`, `for`, `pays`, `RateIndex`, `Df`, `Spot`, `cvg`, `fif`, arrays); dated event streams; single-tape and Rayon-parallel Monte Carlo evaluation with AAD sensitivities and expected cashflows; smoothed conditionals for digital payoffs; scripted products as XVA contingent claims |
-| Market data | Quote, fixing, and FX stores; bid/mid/ask selection; absolute and relative quote scenarios that rebuild dependent curves, volatility objects, and simulations |
-| Conventions and numerics | Dates, periods, schedules, IMM dates, calendars, business-day conventions, day counts, compounding, interpolation, root solvers, FFT, and probability utilities |
-| Languages | Native Rust API and PyO3-based Python bindings with pandas result tables |
+QuantSupport separates market observables, calibrated market objects, product
+definitions, and valuation engines. This keeps the same market construction and
+risk machinery reusable across deterministic pricing, Monte Carlo, scripting,
+and XVA.
 
-The Rust prelude re-exports the types used by the main workflows:
-
-```rust
-use quantsupport::prelude::*;
+```mermaid
+flowchart LR
+    A[Quotes, fixings, and FX] --> B[PricingContext]
+    C[Curve, volatility, and model configuration] --> B
+    B --> D[Curves, surfaces, cubes, and simulations]
+    E[Native trade or scripted payoff] --> F[Pricing engine]
+    D --> F
+    F --> G[NPV, cashflows, fair values, and sensitivities]
+    E --> H[Exposure and XVA engine]
+    D --> H
+    H --> I[EPE, ENE, CVA, DVA, and FVA]
 ```
+
+### Market inputs and conventions
+
+`QuoteStore`, `FixingStore`, and `FxStore` contain observable data: instrument
+quotes, historical index fixings, and spot FX rates. Dates, calendars, schedules,
+day-count rules, compounding, currencies, and indices provide the conventions
+used to interpret those observations and build product cashflows.
+
+Scenarios also operate at this input layer. A shocked valuation rebuilds the
+dependent market rather than modifying an already-built curve, so curves,
+volatility objects, and simulations remain consistent with one another.
+
+### Market construction
+
+`PricingContext` is the boundary between raw inputs and objects that can be used
+for valuation. It combines the stores with serializable configuration and builds
+the dependency graph in order:
+
+1. discount and forwarding curves, including multi-curve and collateralized FX
+   dependencies;
+2. credit curves bootstrapped from CDS quotes;
+3. volatility surfaces and cubes;
+4. calibrated model configurations and Monte Carlo simulations.
+
+The resulting `ConstructedElementStore` is shared by all downstream engines.
+Pricers request only the curves, fixings, FX rates, volatility objects, or paths
+needed by a particular trade. See the [architecture](book/src/concepts/architecture.md)
+and [pricing context](book/src/concepts/pricing-context.md) chapters for the
+detailed object model.
+
+For example, a production context can be assembled from JSON-backed stores and
+configuration, then initialized once before pricing a portfolio:
+
+```rust,ignore
+let mut context = PricingContext::new()
+    .with_quote_store(quotes)
+    .with_fixing_store(fixings)
+    .with_fx_store(fx)
+    .with_base_currency(Currency::USD)
+    .with_base_index(MarketIndex::SOFR)
+    .with_curve_configurations(curve_configs)
+    .with_volatility_surface_configurations(surface_configs)
+    .with_simulation_configurations(simulation_configs);
+
+context.initialize()?;
+```
+
+Attaching a scenario uses the same construction path. Here every quote whose
+identifier contains the `SOFR` segment is shifted up by one basis point before
+the dependent market is rebuilt:
+
+```rust,ignore
+let mut shocked_context = PricingContext::new()
+    .with_quote_store(quotes)
+    .with_fixing_store(fixings)
+    .with_curve_configurations(curve_configs)
+    .with_scenarios(vec![Scenario::new(
+        "SOFR",
+        0.0001,
+        ScenarioType::Absolute,
+    )]);
+
+shocked_context.initialize()?;
+```
+
+See [`examples/bootstrap`](examples/bootstrap) for configuration loading and
+multi-curve construction, and [`examples/sensitivity`](examples/sensitivity)
+for quote-level risk across dependent curves.
+
+### Products: native instruments and scripts
+
+There are two ways to represent a product:
+
+- **Native instruments** model standard products such as bonds, swaps, caps,
+  swaptions, equity and FX options, cross-currency swaps, futures, and CDSs.
+  An instrument defines the economics and cashflows; a trade adds ownership
+  information such as notional, side, and trade date.
+- **Scripted products** describe bespoke payoffs as dated events that observe
+  rates, discount factors, FX, or equity spots and emit payments. Scripts use
+  the same market models and automatic-differentiation tape as native products,
+  so they produce NPV, expected cashflows, and quote-level sensitivities without
+  requiring a new Rust instrument or pricer.
+
+Native products are the preferred path when a standard cashflow or closed-form
+model exists. Scripting is intended for structured coupons, digitals, range
+accruals, autocallables, and products whose terms change more quickly than the
+library API. The [scripting guide](book/src/scripting/overview.md) documents the
+language and runtime.
+
+A scripted product is a dated financial event stream. For example, the following event observes SOFR for one
+accrual period and adds the discounted coupon to the `note` variable, which would represent the value of the product:
+
+```rust,ignore
+let events = vec![CodedEvent::new(
+    Date::new(2026, 1, 2),
+    r#"
+        accrual = cvg("2026-01-02", "2026-04-02", "Actual360");
+        coupon = RateIndex("SOFR", "2026-01-02", "2026-04-02");
+        note pays 1000000 * coupon * accrual on "2026-04-02" in "USD";
+    "#
+    .to_string(),
+)];
+
+let stream = EventStream::try_from(events)?;
+let engine = ScriptEngine::new(
+    stream,
+    reference_date,
+    Currency::USD,
+    MarketIndex::SOFR,
+)?;
+let (values, cashflows) =
+    engine.evaluate_with_cashflows(&mut market_model, Some("note"))?;
+```
+
+Interoperability between engines is possible under QuantSupport. In this example, the same `EventStream` can be wrapped in `ScriptedProduct` and converted to
+contingent claims for XVA. [`examples/scripting`](examples/scripting) compares
+this path with a native swap for NPV, pillar sensitivities, and exposure.
+
+### Pricing and risk
+
+Pricers combine a trade with the market objects supplied by `PricingContext`.
+Cashflow products use generic discounting, while options and optional rates
+products can use Black, Hull-White, LGM, or Monte Carlo engines. Every call to a pricer
+returns an `EvaluationResults` object containing the outputs requested by the
+caller, such as NPV, fair rate, cashflows, or sensitivities.
+
+Automatic differentiation runs through market construction and valuation.
+Quotes become labelled leaves on the AAD tape, so a reverse sweep maps a result back
+to the curve or volatility quotes that produced it. This is the common risk
+mechanism for native pricers, scripted payoffs, and XVA. Full revaluation under
+quote scenarios complements AAD for stress tests and non-linear moves.
+
+### Exposure and XVA
+
+Trades and scripted products can both be converted into contingent claims. A contigent claim in QuantSupport represents a single cashflow inside a product. The exposure engine evaluates those claims across simulated paths and aggregates them by netting set and CSA. The same workflow produces NPV cubes and exposure
+profiles, then CVA, DVA, and FVA with sensitivities to the original market
+quotes.
 
 ## Installation
 
@@ -126,122 +261,18 @@ To work from this checkout instead:
 quantsupport = { path = "../quantsupport" }
 ```
 
-Build and test the Rust library with:
+The main Rust workflows are re-exported through the prelude:
+
+```rust
+use quantsupport::prelude::*;
+```
+
+Build and test the library with:
 
 ```bash
 cargo build -p quantsupport
 cargo test -p quantsupport
 ```
-
-## Configuration-driven market setup
-
-`PricingContext::initialize` builds the requested market objects in dependency order: scenario-shocked quotes, discount curves, credit curves, volatility surfaces, volatility cubes, then model-driven simulations. All configuration types support Serde, so production inputs can live in JSON rather than application code.
-
-```rust,ignore
-// `quotes`, `fixings`, `fx`, and the configuration vectors can be
-// deserialized from the JSON schemas used under examples/*/data/.
-let mut context = PricingContext::new()
-    .with_quote_store(quotes)
-    .with_fixing_store(fixings)
-    .with_fx_store(fx)
-    .with_base_currency(Currency::USD)
-    .with_base_index(MarketIndex::SOFR)
-    .with_curve_configurations(curve_configs)
-    .with_credit_curve_configurations(credit_curve_configs)
-    .with_volatility_surface_configurations(surface_configs)
-    .with_volatility_cube_configurations(cube_configs)
-    .with_simulation_configurations(simulation_configs);
-
-context.initialize()?;
-
-let market = context.constructed_elements();
-let sofr_curve = market
-    .discount_curve(&MarketIndex::SOFR)
-    .expect("SOFR was configured");
-let five_year_df = sofr_curve
-    .curve()
-    .discount_factor(context.evaluation_date() + Period::from_str("5Y")?)?;
-println!("SOFR 5Y discount factor: {:.8}", five_year_df.value());
-```
-
-For a complete configuration-loading implementation, see [`examples/bootstrap`](examples/bootstrap).
-
-## Scenario analysis
-
-A scenario can target one exact quote identifier or match identifier segments such as `SOFR`, `OIS_USD_SOFR`, or `Swaption_USD`. Absolute shocks are added to quote values; relative shocks multiply them by `1 + shock`.
-
-```rust
-use std::str::FromStr;
-
-use quantsupport::prelude::*;
-
-fn main() -> Result<()> {
-    let mut quotes = QuoteStore::new(Date::new(2025, 11, 11));
-    let details = QuoteDetails::from_str("OIS_USD_SOFR_1Y")?;
-    quotes.add_quote(Quote::new(details, QuoteLevels::with_mid(0.04)));
-
-    // Add 100 basis points to every quote with a SOFR identifier segment.
-    let scenario = Scenario::new("SOFR", 0.01, ScenarioType::Absolute);
-    let shocked_quotes = scenario.apply(&mut quotes)?;
-
-    let shocked_mid = quotes
-        .quote("OIS_USD_SOFR_1Y")
-        .and_then(|quote| quote.levels().mid())
-        .unwrap_or_default();
-    println!(
-        "Shocked {shocked_quotes} quote(s); new 1Y OIS rate: {:.2}%",
-        shocked_mid * 100.0
-    );
-
-    Ok(())
-}
-```
-
-Attach scenarios with `.with_scenarios(...)` before `PricingContext::initialize()` to rebuild the full market consistently from shocked inputs.
-
-## Scripting
-
-Bespoke payoffs can be described as dated scripts instead of new Rust instruments. A script is a list of `CodedEvent`s (date + source); the `ScriptEngine` parses and indexes them once, derives the discount factors, forward rates, FX rates, and spots it needs from the market model, and evaluates every Monte Carlo path in `DualFwd`, so NPV, pillar sensitivities, and expected cashflows come out of the same run.
-
-The language supports `=`/`+=`/`-=`/`*=`/`/=`, arithmetic (`+ - * / **`), comparisons combined with `and`/`or`/`not`, `if { } else { }`, `for x in range(a, b) { }`, arrays (`[..]`, `.append`, `.mean`, `.std`, indexing), `exp`, `ln`, `pow`, `min`, `max`, `cvg(start, end, day_counter)`, the smoothed indicator `fif(x, a, b, eps)`, market observations `RateIndex("SOFR", start, end)`, `Df(date[, curve])`, `Spot("AAPL")` / `Spot("USD", "CLP")`, and payments `acc pays amount on "date" in "CCY";`. Conditionals are evaluated with scale-aware smoothing so digital payoffs keep finite AAD sensitivities.
-
-```rust,ignore
-use quantsupport::prelude::*;
-
-// One event per accrual period: observe SOFR on the start date, pay the net coupon at the end.
-let events: Vec<CodedEvent> = periods
-    .iter()
-    .enumerate()
-    .map(|(i, (start, end))| {
-        let init = if i == 0 { "swap = 0; fixed_rate = 0.035;" } else { "" };
-        CodedEvent::new(*start, format!(r#"
-            {init}
-            accrual = cvg("{start}", "{end}", "Actual360");
-            floating_rate = RateIndex("SOFR", "{start}", "{end}");
-            swap pays 10000000 * (fixed_rate - floating_rate) * accrual on "{end}";
-        "#))
-    })
-    .collect();
-
-let engine = ScriptEngine::new(EventStream::try_from(events)?, ref_date, Currency::USD, MarketIndex::SOFR)?;
-
-// Any MarketModel<DualFwd> works; here an LGM model whose curve pillars are on the AD tape.
-let (values, cashflows) = engine.evaluate_with_cashflows(&mut lgm_model, Some("swap"))?;
-println!("NPV = {}", values["swap"]);          // pillar.adjoint() now holds dNPV/dPillar
-for cf in cashflows {
-    println!("{} {} amount={:.2} pv={:.2}", cf.date, cf.currency, cf.amount, cf.present_value);
-}
-
-// Multi-threaded evaluation rebuilds the model per Rayon worker through `ScriptModelSetup`
-// and returns values, labelled sensitivities, and cashflows.
-let parallel: ParallelScriptEvaluation = engine.evaluate_parallel(&setup, Some("swap"))?;
-
-// The same script enters the XVA engine as ordinary contingent claims.
-let claims = ScriptedProduct::new("note", EventStream::try_from(events)?, ref_date, Currency::USD, MarketIndex::SOFR)?
-    .contingent_claims()?;
-```
-
-`examples/scripting` prices a swap both natively and as a script and checks that NPV, pillar sensitivities, EPE, and CVA/FVA sensitivities agree. The [Scripting](book/src/scripting/overview.md) part of the book documents the full language and runtime.
 
 ## Runnable Rust examples
 

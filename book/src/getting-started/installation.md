@@ -51,17 +51,6 @@ cargo run -p scripting-examples --bin valuation
 
 See [Examples](../reference/examples.md) for the full list.
 
-## Python bindings
-
-```bash
-python -m venv .venv && source .venv/bin/activate
-python -m pip install maturin pandas
-maturin develop -m bindings/python/Cargo.toml --release
-python -c "import quantsupport as qs; print(qs.Date(2025, 1, 1) + '6M')"
-```
-
-`maturin develop` compiles the PyO3 extension in release mode and installs it into the active environment. Result tables are returned as pandas `DataFrame`s, so pandas must be installed.
-
 ## Documentation
 
 - API docs: <https://docs.rs/quantsupport>
