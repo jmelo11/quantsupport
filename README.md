@@ -2,6 +2,12 @@
 
 QuantSupport is a quantitative-finance library written in Rust, with Python bindings provided in the same repository. It combines instrument construction, market-data bootstrapping, pricing, automatic differentiation, payoff scripting, Monte Carlo exposure simulation, and XVA in one toolkit.
 
+A crate is available for usage in your project:
+
+```rust
+cargo add quantsupport
+```
+
 ## Quick start: price and risk a swap
 
 This complete example values a five-year receive-fixed USD swap against a flat SOFR curve and asks for NPV, par rate, cashflows, and curve sensitivity.
