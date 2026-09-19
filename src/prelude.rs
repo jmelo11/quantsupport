@@ -150,7 +150,10 @@ pub use crate::{
     quotes::{
         fixingstore::FixingStore,
         fxstore::{FxRateRecord, FxStore},
-        quote::{Level, Quote, QuoteDetails, QuoteInstrument, QuoteLevels},
+        quote::{
+            BondCalibrationStrategy, FxForwardCalibrationStrategy, Level, Quote, QuoteDetails,
+            QuoteInstrument, QuoteLevels,
+        },
         quoteselector::QuoteSelector,
         quotestore::{QuoteRecord, QuoteStore, QuoteStoreRecords},
         scenario::{Scenario, ScenarioType},

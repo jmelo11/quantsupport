@@ -49,7 +49,7 @@ flowchart LR
 ```
 
 - `TermSOFR3m` pillars are basis swaps vs SOFR: the SOFR leg is projected _and_ discounted on the solved SOFR curve, and only the TermSOFR3m projection is unknown.
-- `Collateral(CLP, USD)` pillars are `FixFloatCrossCurrencySwap_CLP_SOFR_USD_*` (fixed CLP vs float SOFR USD) and `FxForwardPoints_USDCLP_*`. The USD leg is discounted and projected on SOFR; the CLP leg's _discount_ curve is the unknown, so the solve produces the CLP-under-USD-collateral curve directly. FX spot (`FxStore`) converts the two notionals.
+- `Collateral(CLP, USD)` pillars are `FixFloatCrossCurrencySwap_CLP_SOFR_USD_*` (fixed CLP vs float SOFR USD) and `FxForward_USDCLP_*_AnchorForwardPoints`. The USD leg is discounted and projected on SOFR; the CLP leg's _discount_ curve is the unknown, so the solve produces the CLP-under-USD-collateral curve directly. FX spot (`FxStore`) converts the two notionals.
 - `ICP` is independent; it projects ICP coupons in CLP swaps priced under USD collateral (discounting on the Collateral curve).
 
 Missing pieces are reported explicitly: bootstrapping `TermSOFR3m` without a `SOFR` configuration fails with "Curve TermSOFR3m requires SOFR for discounting but no curve configuration was provided for it".

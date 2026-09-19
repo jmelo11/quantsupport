@@ -8,13 +8,13 @@ Every quote is identified by an underscore-separated string that is parsed by `Q
 
 | Instrument                      | Pattern                                                                                                 | Example                                                                                                            |
 | ------------------------------- | ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| Overnight deposit / cash        | `FixedRateDeposit_<CCY>_<Index>_<Tenor>`                                                                | `FixedRateDeposit_USD_SOFR_1D`                                                                                     |
+| Fixed-rate deposit              | `FixedRateDeposit_<CCY>_<Index>_<Tenor>`                                                                | `FixedRateDeposit_USD_SOFR_1D`                                                                                    |
+| Fixed-rate bond                 | `FixedRateBond_<CCY>_<Index>_<Tenor>[_<PayFreq>]_<CouponRate>[_<CalibrationStrategy>]`                  | `FixedRateBond_USD_CORP_5Y_Semiannual_0.04_AnchorPrice`                                                           |
 | OIS / fixed–float swap          | `OIS_<CCY>_<Index>_<Tenor>[_<FixedFreq>_<FloatFreq>]`                                                   | `OIS_USD_SOFR_5Y`, `OIS_CLP_ICP_6M`                                                                                |
 | Tenor basis swap                | `BasisSwap_<CCY>_<PayIndex>_<RecvIndex>_<Tenor>[_<PayFreq>_<RecvFreq>]`                                 | `BasisSwap_USD_SOFR_TermSOFR3m_2Y`                                                                                 |
 | Fix–float cross-currency swap   | `FixFloatCrossCurrencySwap_<FixedCCY>_<FloatIndex>_<FloatCCY>_<Tenor>[..]`                              | `FixFloatCrossCurrencySwap_CLP_SOFR_USD_5Y`                                                                        |
 | Float–float cross-currency swap | `FloatFloatCrossCurrencySwap_<DomCCY>_<DomIndex>_<ForIndex>_<ForCCY>_<Tenor>[..]`                       | `FloatFloatCrossCurrencySwap_USD_SOFR_ESTR_EUR_5Y`                                                                 |
-| FX forward points               | `FxForwardPoints_<PAIR>_<Tenor>`                                                                        | `FxForwardPoints_USDCLP_3M`                                                                                        |
-| FX outright forward             | `FxOutrightForward_<PAIR>_<Tenor>`                                                                      | `FxOutrightForward_EURUSD_1Y`                                                                                      |
+| FX forward                      | `FxForward_<PAIR>_<Tenor>_<CalibrationStrategy>`                                                        | `FxForward_USDCLP_3M_AnchorForwardPoints`, `FxForward_EURUSD_1Y_AnchorOutrightPrice`                              |
 | Rate future                     | `Future_<CCY>_<Index>_<IMM>`                                                                            | `Future_USD_SOFR_H26`                                                                                              |
 | Convexity adjustment            | `ConvexityAdjustment_<CCY>_<Index>_<IMM>`                                                               |                                                                                                                    |
 | Cap / floor volatility          | `CapFloor_<CCY>_<Index>_<Tenor>_<Freq>_<StrikeKind>_<Strike>_<VolType>`                                 | `CapFloor_USD_SOFR_5Y_Quarterly_Absolute_0.04_Black`                                                               |
@@ -27,9 +27,10 @@ Every quote is identified by an underscore-separated string that is parsed by `Q
 - `<Tenor>` and `<Expiry>` are `Period` strings (`1D`, `3M`, `5Y`, `1Y6M`).
 - `<StrikeKind>` is `Absolute` (strike follows as a decimal), `Atm`, or `Relative` (offset from ATM).
 - `<VolType>` is `Black` or `Normal`; `<Strategy>` for caplets is `Cap`, `Floor` or `Straddle`.
+- `<CalibrationStrategy>` is `AnchorYield` or `AnchorPrice` for bonds and defaults to `AnchorYield`. For FX forwards it is required and is either `AnchorForwardPoints` or `AnchorOutrightPrice`. Deposits accept rate quotes only. Strategy aliases without the `Anchor` prefix are rejected.
 - Currency pairs are concatenated ISO codes (`USDCLP` = price of 1 USD in CLP).
 
-`QuoteInstrument` has one variant per row (`Ois`, `FixedRateDeposit`, `BasisSwap`, `FixFloatCrossCurrencySwap`, `FloatFloatCrossCurrencySwap`, `FxForwardPoints`, `FxOutrightForward`, `Future`, `ConvexityAdjustment`, `CapFloor`, `CapletFloorlet`, `Swaption`, `EquityOption`, `FxOption`, `Cds`) carrying the parsed fields. Bootstrappers call `CurveConfiguration::instruments()` to turn these into instruments at the quoted levels.
+`QuoteInstrument` has one variant per row (`Ois`, `FixedRateDeposit`, `FixedRateBond`, `BasisSwap`, `FixFloatCrossCurrencySwap`, `FloatFloatCrossCurrencySwap`, `FxForward`, `Future`, `ConvexityAdjustment`, `CapFloor`, `CapletFloorlet`, `Swaption`, `EquityOption`, `FxOption`, `Cds`) carrying the parsed fields. Bootstrappers call `CurveConfiguration::instruments()` to turn these into instruments at the quoted levels.
 
 ## `QuoteStore`
 
@@ -38,7 +39,7 @@ let mut store = QuoteStore::new(Date::new(2026, 2, 24));
 let details = QuoteDetails::from_str("OIS_USD_SOFR_5Y")?;
 store.add_quote(Quote::new(details, QuoteLevels::with_mid(0.0407677739)));
 store.add_quote(Quote::new(
-    QuoteDetails::from_str("FxForwardPoints_USDCLP_3M")?,
+    QuoteDetails::from_str("FxForward_USDCLP_3M_AnchorForwardPoints")?,
     QuoteLevels::new(Some(5.30), Some(5.20), Some(5.40)),   // mid, bid, ask
 ));
 
@@ -63,7 +64,7 @@ The examples use this schema (`examples/bootstrap/data/quotes.json`):
     { "identifier": "FixedRateDeposit_USD_SOFR_1D", "mid": 0.045 },
     { "identifier": "OIS_USD_SOFR_1Y", "mid": 0.0483664339 },
     { "identifier": "BasisSwap_USD_SOFR_TermSOFR3m_1Y", "mid": 0.00028 },
-    { "identifier": "FxForwardPoints_USDCLP_3M", "mid": 5.3 },
+    { "identifier": "FxForward_USDCLP_3M_AnchorForwardPoints", "mid": 5.3 },
     { "identifier": "FixFloatCrossCurrencySwap_CLP_SOFR_USD_5Y", "mid": 0.0512 }
   ]
 }

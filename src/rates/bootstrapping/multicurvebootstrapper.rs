@@ -449,7 +449,11 @@ impl MultiCurveBootstrapper {
                 for k in 0..parent_n_quotes {
                     let mut combined = 0.0_f64;
                     for m in 0..m_count {
-                        combined = f64::mul_add(dep.cross_df_sens[i][m], dep.parent_ift_sens[m][k], combined);
+                        combined = f64::mul_add(
+                            dep.cross_df_sens[i][m],
+                            dep.parent_ift_sens[m][k],
+                            combined,
+                        );
                     }
                     row_ext.push(combined);
                 }
@@ -721,6 +725,54 @@ mod tests {
     }
 
     #[test]
+    fn bootstrap_price_anchored_bond() -> Result<()> {
+        let corporate = MarketIndex::Other("CORP".into());
+        let quote_id = "FixedRateBond_USD_CORP_2Y_Semiannual_0.04_AnchorPrice";
+        let mut selector = MapSelector::new(rd());
+        selector.add(quote_id, 99.0);
+
+        let spec = CurveConfiguration::new(
+            corporate.clone(),
+            DayCounter::ActualActual,
+            Interpolator::LogLinear,
+            true,
+            vec![quote_id.into()],
+        );
+
+        let result = MultiCurveBootstrapper::new(vec![spec], default_policy())
+            .bootstrap(&selector, Level::Mid)?;
+        let curve = result[&corporate].curve();
+        let df = curve.discount_factor(Date::new(2026, 6, 1))?.value();
+        assert!(df > 0.0 && df < 1.0);
+        Ok(())
+    }
+
+    #[test]
+    fn bootstrap_yield_anchored_bond() -> Result<()> {
+        let corporate = MarketIndex::Other("CORP".into());
+        let quote_id = "FixedRateBond_USD_CORP_2Y_Semiannual_0.04_AnchorYield";
+        let mut selector = MapSelector::new(rd());
+        selector.add(quote_id, 0.05);
+
+        let spec = CurveConfiguration::new(
+            corporate.clone(),
+            DayCounter::ActualActual,
+            Interpolator::LogLinear,
+            true,
+            vec![quote_id.into()],
+        );
+
+        let result = MultiCurveBootstrapper::new(vec![spec], default_policy())
+            .bootstrap(&selector, Level::Mid)?;
+        let df = result[&corporate]
+            .curve()
+            .discount_factor(Date::new(2026, 6, 1))?
+            .value();
+        assert!(df > 0.0 && df < 1.0);
+        Ok(())
+    }
+
+    #[test]
     fn bootstrap_deposits_and_swaps() -> Result<()> {
         let mut selector = MapSelector::new(rd());
         selector.add("FixedRateDeposit_USD_SOFR_3M", 0.05);
@@ -860,8 +912,8 @@ mod tests {
         selector.add("FixedRateDeposit_USD_SOFR_6M", 0.05);
         selector.add("OIS_USD_SOFR_1Y", 0.048);
         // EUR collateral curve via FX forward points
-        selector.add("FxForwardPoints_EURUSD_6M", 0.005);
-        selector.add("FxForwardPoints_EURUSD_1Y", 0.008);
+        selector.add("FxForward_EURUSD_6M_AnchorForwardPoints", 0.005);
+        selector.add("FxForward_EURUSD_1Y_AnchorForwardPoints", 0.008);
 
         let sofr_spec = CurveConfiguration::new(
             MarketIndex::SOFR,
@@ -879,8 +931,8 @@ mod tests {
             Interpolator::LogLinear,
             true,
             vec![
-                "FxForwardPoints_EURUSD_6M".into(),
-                "FxForwardPoints_EURUSD_1Y".into(),
+                "FxForward_EURUSD_6M_AnchorForwardPoints".into(),
+                "FxForward_EURUSD_1Y_AnchorForwardPoints".into(),
             ],
         );
 
@@ -897,8 +949,8 @@ mod tests {
         selector.add("FixedRateDeposit_USD_SOFR_6M", 0.05);
         selector.add("OIS_USD_SOFR_1Y", 0.048);
         // EUR collateral curve via FX forward points
-        selector.add("FxForwardPoints_EURUSD_6M", 0.005);
-        selector.add("FxForwardPoints_EURUSD_1Y", 0.008);
+        selector.add("FxForward_EURUSD_6M_AnchorForwardPoints", 0.005);
+        selector.add("FxForward_EURUSD_1Y_AnchorForwardPoints", 0.008);
 
         let sofr_spec = CurveConfiguration::new(
             MarketIndex::SOFR,
@@ -916,8 +968,8 @@ mod tests {
             Interpolator::LogLinear,
             true,
             vec![
-                "FxForwardPoints_EURUSD_6M".into(),
-                "FxForwardPoints_EURUSD_1Y".into(),
+                "FxForward_EURUSD_6M_AnchorForwardPoints".into(),
+                "FxForward_EURUSD_1Y_AnchorForwardPoints".into(),
             ],
         );
 
@@ -945,8 +997,8 @@ mod tests {
         selector.add("FixedRateDeposit_USD_SOFR_6M", 0.05);
         selector.add("OIS_USD_SOFR_1Y", 0.048);
         // EUR collateral curve via FX forward points
-        selector.add("FxForwardPoints_EURUSD_6M", 0.005);
-        selector.add("FxForwardPoints_EURUSD_1Y", 0.008);
+        selector.add("FxForward_EURUSD_6M_AnchorForwardPoints", 0.005);
+        selector.add("FxForward_EURUSD_1Y_AnchorForwardPoints", 0.008);
 
         let sofr_spec = CurveConfiguration::new(
             MarketIndex::SOFR,
@@ -964,13 +1016,13 @@ mod tests {
             Interpolator::LogLinear,
             true,
             vec![
-                "FxForwardPoints_EURUSD_6M".into(),
-                "FxForwardPoints_EURUSD_1Y".into(),
+                "FxForward_EURUSD_6M_AnchorForwardPoints".into(),
+                "FxForward_EURUSD_1Y_AnchorForwardPoints".into(),
             ],
         );
 
         let mut fx_store = FxStore::new();
-        fx_store.add_fx_rate(Currency::EUR, Currency::USD, DualFwd::new(1.0/1.08));
+        fx_store.add_fx_rate(Currency::EUR, Currency::USD, DualFwd::new(1.0 / 1.08));
         fx_store.add_fx_rate(Currency::CLP, Currency::USD, DualFwd::new(900.0));
 
         let bootstrapper =

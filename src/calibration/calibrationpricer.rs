@@ -3,7 +3,10 @@ use crate::{quotes::calibrationinstrument::CalibrationInstrument, utils::errors:
 /// A pricer that can compute model-implied values and sensitivities
 /// for a [`CalibrationInstrument`].
 pub trait CalibrationInstrumentPricer {
-    /// Returns the model-implied price (or rate) for the given instrument.
+    /// Returns the model-implied calibration value for the instrument.
+    /// Implementations used with the default [`CalibrationProcess`](crate::calibration::calibrationprocess::CalibrationProcess)
+    /// return a zero-target residual and interpret any product-specific
+    /// calibration strategy here.
     ///
     /// # Errors
     /// Returns an error if pricing fails.

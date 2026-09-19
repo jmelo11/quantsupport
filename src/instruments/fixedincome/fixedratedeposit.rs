@@ -13,7 +13,8 @@ use crate::{
     time::date::Date,
 };
 
-/// A [`FixedRateDeposit`] represents a fixed-rate cash deposit with a single payment at the end (capital plus interest).
+/// A [`FixedRateDeposit`] represents a fixed-rate cash deposit with a single payment at
+/// the end (capital plus interest).
 #[derive(Clone)]
 pub struct FixedRateDeposit<T: Scalar> {
     identifier: String,

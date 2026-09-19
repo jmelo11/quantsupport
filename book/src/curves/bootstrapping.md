@@ -45,14 +45,17 @@ Each quote becomes a `CalibrationInstrumentType` and contributes one residual \\
 
 | Quote type                                                 | Instrument                               | Residual                                                                                   |
 | ---------------------------------------------------------- | ---------------------------------------- | ------------------------------------------------------------------------------------------ |
-| `FixedRateDeposit`                                         | zero-coupon deposit                      | NPV of the deposit legs                                                                    |
+| `FixedRateDeposit`                                         | fixed-rate deposit                       | implied rate − quoted rate                                                                  |
+| `FixedRateBond`                                            | option-free fixed-rate bond              | model price − the target selected by `AnchorYield` or `AnchorPrice`                         |
 | `OIS`                                                      | fixed vs overnight swap                  | NPV (fixed − floating)                                                                     |
 | `BasisSwap`                                                | float vs float + spread                  | NPV                                                                                        |
 | `FixFloatCrossCurrencySwap`, `FloatFloatCrossCurrencySwap` | two-currency swap with notional exchange | NPV in the collateral currency                                                             |
 | `Future`                                                   | rate future                              | implied forward − market rate (convexity-adjusted if a `ConvexityAdjustment` quote exists) |
-| `FxForwardPoints`, `FxOutrightForward`                     | FX forward                               | implied FX forward − market forward                                                        |
+| `FxForward`                                                | FX forward                               | implied outright or forward points − quote, according to its strategy                      |
 
 Instruments whose floating leg references another index (e.g. a `BasisSwap_USD_SOFR_TermSOFR3m_*` pillar in the `TermSOFR3m` curve) project the other index from the already-solved curve, and all legs are discounted according to the `BootstrapDiscountPolicy`.
+
+`CalibrationProcess::residual` only calls the calibration pricer's `price` method; the pricer interprets the strategy stored with the concrete instrument. For bond yield anchors it converts the quoted yield to a target price using the bond's coupon compounding convention. Bond pricing reuses the bootstrap fixed-leg PV routine and normalizes the result to the instrument's quote units (100 by default). OAS calibration is intentionally not supported.
 
 ## `MultiCurveBootstrapper`
 
@@ -113,7 +116,7 @@ if let Some(pillars) = curve.pillars() {
 let zero = -df.ln() / DayCounter::Actual360.year_fraction(rd, date);
 ```
 
-`examples/bootstrap` (`cargo run -p bootstrap`) prints, for each of SOFR, TermSOFR3m, ICP and `Collateral(CLP, USD)`, the pillar quotes, discount factors, zero rates, and interpolated DFs at 6M/4Y/15Y/20Y.
+`examples/bootstrap` (`cargo run -p bootstrap`) prints, for each of SOFR, TermSOFR3m, ICP, `Collateral(CLP, USD)`, and a price-anchored corporate bond curve, the pillar quotes, discount factors, zero rates, and interpolated DFs at 6M/4Y/15Y/20Y.
 
 ## Credit curves
 

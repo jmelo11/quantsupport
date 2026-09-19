@@ -14,6 +14,20 @@
             ]
         },
         {
+            "market_index": {
+                "Other": "CORP"
+            },
+            "day_counter": "Actual365",
+            "quotes": [
+                "FixedRateBond_USD_CORP_1Y_Semiannual_0.0480_AnchorPrice",
+                "FixedRateBond_USD_CORP_2Y_Semiannual_0.0490_AnchorPrice",
+                "FixedRateBond_USD_CORP_3Y_Semiannual_0.0500_AnchorPrice",
+                "FixedRateBond_USD_CORP_5Y_Semiannual_0.0510_AnchorPrice",
+                "FixedRateBond_USD_CORP_7Y_Semiannual_0.0520_AnchorPrice",
+                "FixedRateBond_USD_CORP_10Y_Semiannual_0.0530_AnchorPrice"
+            ]
+        },
+        {
             "market_index": "TermSOFR3m",
             "quotes": [
                 "FixedRateDeposit_USD_TermSOFR3m_3M",
@@ -35,9 +49,9 @@
                 ]
             },
             "quotes": [
-                "FxForwardPoints_USDCLP_1M",
-                "FxForwardPoints_USDCLP_3M",
-                "FxForwardPoints_USDCLP_6M",
+                "FxForward_USDCLP_1M_AnchorForwardPoints",
+                "FxForward_USDCLP_3M_AnchorForwardPoints",
+                "FxForward_USDCLP_6M_AnchorForwardPoints",
                 "FixFloatCrossCurrencySwap_CLP_SOFR_USD_1Y",
                 "FixFloatCrossCurrencySwap_CLP_SOFR_USD_2Y",
                 "FixFloatCrossCurrencySwap_CLP_SOFR_USD_3Y",

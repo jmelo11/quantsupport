@@ -34,6 +34,30 @@
             "mid": 0.0373842872
         },
         {
+            "identifier": "FixedRateBond_USD_CORP_1Y_Semiannual_0.0480_AnchorPrice",
+            "mid": 100.0
+        },
+        {
+            "identifier": "FixedRateBond_USD_CORP_2Y_Semiannual_0.0490_AnchorPrice",
+            "mid": 100.0
+        },
+        {
+            "identifier": "FixedRateBond_USD_CORP_3Y_Semiannual_0.0500_AnchorPrice",
+            "mid": 100.0
+        },
+        {
+            "identifier": "FixedRateBond_USD_CORP_5Y_Semiannual_0.0510_AnchorPrice",
+            "mid": 100.0
+        },
+        {
+            "identifier": "FixedRateBond_USD_CORP_7Y_Semiannual_0.0520_AnchorPrice",
+            "mid": 100.0
+        },
+        {
+            "identifier": "FixedRateBond_USD_CORP_10Y_Semiannual_0.0530_AnchorPrice",
+            "mid": 100.0
+        },
+        {
             "identifier": "FixedRateDeposit_USD_TermSOFR3m_3M",
             "mid": 0.0465
         },
@@ -70,15 +94,15 @@
             "mid": 0.00005
         },
         {
-            "identifier": "FxForwardPoints_USDCLP_1M",
+            "identifier": "FxForward_USDCLP_1M_AnchorForwardPoints",
             "mid": 1.50
         },
         {
-            "identifier": "FxForwardPoints_USDCLP_3M",
+            "identifier": "FxForward_USDCLP_3M_AnchorForwardPoints",
             "mid": 5.30
         },
         {
-            "identifier": "FxForwardPoints_USDCLP_6M",
+            "identifier": "FxForward_USDCLP_6M_AnchorForwardPoints",
             "mid": 12.80
         },
         {

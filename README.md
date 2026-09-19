@@ -281,7 +281,7 @@ All examples below are workspace packages and use local JSON market data where a
 | Example | Demonstrates | Run |
 | --- | --- | --- |
 | [`valuation`](examples/valuation) | Flat-curve swap NPV, cashflows, and AAD sensitivity | `cargo run -p valuation` |
-| [`bootstrap`](examples/bootstrap) | JSON quote loading and dependent USD/CLP multi-curve bootstrapping | `cargo run -p bootstrap` |
+| [`bootstrap`](examples/bootstrap) | JSON quote loading, USD/CLP multi-curve bootstrapping, and a corporate bond curve | `cargo run -p bootstrap` |
 | [`sensitivity`](examples/sensitivity) | Multi-curve pricing of SOFR, Term SOFR, ICP, and cross-currency swaps with pillar DV01 | `cargo run -p sensitivity` |
 | [`volatilitysurface`](examples/volatilitysurface) | Building and querying an interpolated SOFR caplet Black-volatility surface | `cargo run -p volatilitysurface` |
 | [`hullwhite`](examples/hullwhite) | Curve construction, caplet-vol calibration, Hull-White pricing, simulation, and plots | `cargo run -p hullwhite` |

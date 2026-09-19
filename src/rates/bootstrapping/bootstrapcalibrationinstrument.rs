@@ -3,11 +3,20 @@ use crate::{
         calibrationpricer::CalibrationInstrumentPricer, calibrationprocess::CalibrationProcess,
     },
     core::collateral::Discountable,
+    indices::marketindex::MarketIndex,
     instruments::cashflows::{
         cashflow::Cashflow, cashflowtype::CashflowType, coupons::LinearCoupon, leg::Leg,
     },
-    quotes::{calibrationinstrument::CalibrationInstrument, quote::CalibrationInstrumentType},
-    rates::bootstrapping::{bootstrappedcurve::BootstrappedCurve, bootstrapstep::BootstrapStep},
+    math::interpolation::interpolator::Interpolator,
+    quotes::{
+        calibrationinstrument::CalibrationInstrument,
+        quote::{BondCalibrationStrategy, CalibrationInstrumentType, FxForwardCalibrationStrategy},
+    },
+    rates::{
+        bootstrapping::{bootstrappedcurve::BootstrappedCurve, bootstrapstep::BootstrapStep},
+        interestrate::InterestRate,
+    },
+    time::date::Date,
     utils::errors::{QSError, Result},
 };
 
@@ -83,6 +92,91 @@ impl<'a> BootstrapStepEvaluation<'a> {
         }
         Ok(pv)
     }
+
+    /// Converts the existing fixed-leg PV into a quoted price (normally 100
+    /// per unit of principal) by adding back the initial disbursement.
+    fn fixed_leg_price(
+        &self,
+        leg: &Leg<f64>,
+        units: f64,
+        curve: &BootstrappedCurve,
+    ) -> Result<f64> {
+        let pv = self.leg_pv(leg, curve, None)?;
+        let side = leg.side().sign();
+        let mut principal = 0.0;
+        let mut disbursement_pv = 0.0;
+        for cashflow in leg.cashflows() {
+            if let CashflowType::Disbursement(disbursement) = cashflow {
+                let amount = disbursement.amount()?;
+                principal += amount;
+                disbursement_pv = amount.mul_add(
+                    curve.discount_factor(disbursement.payment_date())?,
+                    disbursement_pv,
+                );
+            }
+        }
+        if principal.abs() < f64::EPSILON {
+            return Err(QSError::InvalidValueErr(
+                "Cannot normalize fixed-leg price without an initial disbursement".into(),
+            ));
+        }
+        Ok((pv / side + disbursement_pv) * units / principal)
+    }
+
+    fn settlement_date(leg: &Leg<f64>) -> Result<Date> {
+        leg.cashflows()
+            .iter()
+            .filter_map(|cashflow| match cashflow {
+                CashflowType::Disbursement(disbursement) => Some(disbursement.payment_date()),
+                _ => None,
+            })
+            .min()
+            .ok_or_else(|| {
+                QSError::ValueNotSetErr("Initial disbursement date for yield calibration".into())
+            })
+    }
+
+    fn yield_price(&self, leg: &Leg<f64>, units: f64, yield_rate: f64) -> Result<f64> {
+        let settlement_date = Self::settlement_date(leg)?;
+        let rate_definition = leg
+            .interest_rate()
+            .ok_or_else(|| QSError::ValueNotSetErr("Fixed-leg rate definition".into()))?
+            .rate_definition();
+        let yield_definition = InterestRate::from_rate_definition(yield_rate, rate_definition);
+        let day_counter = rate_definition.day_counter();
+        let mut dates = Vec::with_capacity(leg.cashflows().len());
+        for cashflow in leg.cashflows() {
+            let date = match cashflow {
+                CashflowType::FixedRateCoupon(coupon) => coupon.payment_date(),
+                CashflowType::Redemption(redemption) => redemption.payment_date(),
+                CashflowType::Disbursement(disbursement) => disbursement.payment_date(),
+                _ => {
+                    return Err(QSError::InvalidValueErr(
+                        "Yield calibration requires a fixed-rate leg".into(),
+                    ))
+                }
+            };
+            dates.push(date);
+        }
+        dates.sort_unstable();
+        dates.dedup();
+
+        let mut times = vec![0.0];
+        let mut discount_factors = vec![1.0];
+        for date in dates.into_iter().filter(|date| *date > settlement_date) {
+            times.push(day_counter.year_fraction(settlement_date, date));
+            discount_factors.push(yield_definition.discount_factor(settlement_date, date));
+        }
+        let yield_curve = BootstrappedCurve::new(
+            MarketIndex::Other("fixed-rate-bond-yield".into()),
+            settlement_date,
+            times,
+            discount_factors,
+            day_counter,
+            Interpolator::LogLinear,
+        );
+        self.fixed_leg_price(leg, units, &yield_curve)
+    }
 }
 
 impl CalibrationInstrumentPricer for BootstrapStepEvaluation<'_> {
@@ -90,23 +184,35 @@ impl CalibrationInstrumentPricer for BootstrapStepEvaluation<'_> {
     fn price(&self, instrument: &CalibrationInstrument) -> Result<f64> {
         match instrument.built() {
             CalibrationInstrumentType::FixedRateDeposit(deposit) => {
-                // The deposit rate is the quote; extract start/end dates
-                // from the single coupon and compare the curve-implied rate
-                // to the market rate.
                 let idx = deposit
                     .discount_index()
                     .ok_or_else(|| QSError::NotFoundErr("Deposit has no market index".into()))?;
                 let curve = self.step.get(&idx).ok_or_else(|| {
                     QSError::NotFoundErr(format!("Missing curve {idx} for deposit"))
                 })?;
-                let start = deposit.start_date();
-                let end = deposit.maturity_date();
                 let rd = deposit
                     .rate()
                     .ok_or_else(|| QSError::ValueNotSetErr("Deposit rate not set".into()))?
                     .rate_definition();
-                let implied = curve.forward_rate(start, end, rd)?;
-                Ok(implied)
+                let implied =
+                    curve.forward_rate(deposit.start_date(), deposit.maturity_date(), rd)?;
+                Ok(implied - instrument.quote_value())
+            }
+            CalibrationInstrumentType::FixedRateBond(bond, strategy) => {
+                let idx = bond.discount_index().ok_or_else(|| {
+                    QSError::NotFoundErr("Fixed-rate bond has no market index".into())
+                })?;
+                let curve = self.step.get(&idx).ok_or_else(|| {
+                    QSError::NotFoundErr(format!("Missing curve {idx} for fixed-rate bond"))
+                })?;
+                let model_price = self.fixed_leg_price(bond.leg(), bond.units(), curve)?;
+                match strategy {
+                    BondCalibrationStrategy::AnchorPrice => {
+                        Ok(model_price - instrument.quote_value())
+                    }
+                    BondCalibrationStrategy::AnchorYield => Ok(model_price
+                        - self.yield_price(bond.leg(), bond.units(), instrument.quote_value())?),
+                }
             }
             CalibrationInstrumentType::Swap(swap) => {
                 let pv_fixed = {
@@ -169,9 +275,9 @@ impl CalibrationInstrumentPricer for BootstrapStepEvaluation<'_> {
                 })?;
                 let implied =
                     curve.forward_rate(rf.start_date(), rf.end_date(), rf.rate_definition())?;
-                Ok(implied)
+                Ok(implied - rf.implied_rate())
             }
-            CalibrationInstrumentType::FxForward(fxf) => {
+            CalibrationInstrumentType::FxForward(fxf, strategy) => {
                 let base_ccy = fxf.base_currency();
                 let quote_ccy = fxf.quote_currency();
                 let spot = self.step.fx_spot(base_ccy, quote_ccy)?;
@@ -196,15 +302,13 @@ impl CalibrationInstrumentPricer for BootstrapStepEvaluation<'_> {
                 let df_quote = quote_curve.discount_factor(delivery)?;
                 let implied_fwd = spot * df_base / df_quote;
 
-                // Handle both outright forward prices and forward points.
-                match fxf.forward_price() {
-                    Some(_) => Ok(implied_fwd),
-                    None => match fxf.forward_points() {
-                        Some(_) => Ok(implied_fwd - spot),
-                        None => Err(QSError::ValueNotSetErr(
-                            "FX forward: neither price nor points set".into(),
-                        )),
-                    },
+                match strategy {
+                    FxForwardCalibrationStrategy::AnchorOutrightPrice => {
+                        Ok(implied_fwd - instrument.quote_value())
+                    }
+                    FxForwardCalibrationStrategy::AnchorForwardPoints => {
+                        Ok(implied_fwd - spot - instrument.quote_value())
+                    }
                 }
             }
             _ => Err(QSError::InvalidValueErr(format!(
@@ -217,7 +321,17 @@ impl CalibrationInstrumentPricer for BootstrapStepEvaluation<'_> {
     fn sensitivity(&self, instrument: &CalibrationInstrument) -> Result<f64> {
         match instrument.built() {
             CalibrationInstrumentType::FixedRateDeposit(_)
-            | CalibrationInstrumentType::FxForward(_) => Ok(-1.0),
+            | CalibrationInstrumentType::FxForward(_, _) => Ok(-1.0),
+            CalibrationInstrumentType::FixedRateBond(bond, strategy) => match strategy {
+                BondCalibrationStrategy::AnchorPrice => Ok(-1.0),
+                BondCalibrationStrategy::AnchorYield => {
+                    let bump = 1e-6;
+                    let market_yield = instrument.quote_value();
+                    let up = self.yield_price(bond.leg(), bond.units(), market_yield + bump)?;
+                    let down = self.yield_price(bond.leg(), bond.units(), market_yield - bump)?;
+                    Ok(-(up - down) / (2.0 * bump))
+                }
+            },
             CalibrationInstrumentType::Swap(swap) => fixed_leg_annuity(swap.fixed_leg(), self.step),
             CalibrationInstrumentType::BasisSwap(bs) => {
                 floating_leg_annuity(bs.pay_leg(), self.step)

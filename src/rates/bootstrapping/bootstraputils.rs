@@ -176,7 +176,7 @@ mod tests {
         let mut selector = MapSelector::new(ref_date);
         selector.add("OIS_USD_SOFR_1Y", 0.05);
         selector.add("OIS_EUR_EURIBOR1m_1Y", 0.03);
-        selector.add("FxForwardPoints_USDEUR_1M", 0.03);
+        selector.add("FxForward_USDEUR_1M_AnchorForwardPoints", 0.03);
 
         let quotes = vec!["OIS_USD_SOFR_1Y".to_string()];
         let index_a = MarketIndex::SOFR;
@@ -192,7 +192,7 @@ mod tests {
 
         // Collateral curve required by the discount policy for EUR cashflows under USD CSA.
         let index_c = MarketIndex::Collateral(Currency::EUR, Currency::USD);
-        let quotes = vec!["FxForwardPoints_USDEUR_1M".to_string()];
+        let quotes = vec!["FxForward_USDEUR_1M_AnchorForwardPoints".to_string()];
         let mut curve_c =
             CurveConfiguration::new(index_c.clone(), dc, interp, enable_extrapolation, quotes);
         curve_c.resolve(&selector, Level::Mid, None)?;

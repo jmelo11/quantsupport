@@ -1413,17 +1413,17 @@
           "dv01": 0.0
         },
         {
-          "pillar": "FxForwardPoints_USDCLP_1M",
+          "pillar": "FxForward_USDCLP_1M_AnchorForwardPoints",
           "exposure": 0.0,
           "dv01": 0.0
         },
         {
-          "pillar": "FxForwardPoints_USDCLP_3M",
+          "pillar": "FxForward_USDCLP_3M_AnchorForwardPoints",
           "exposure": 69.50887694522599,
           "dv01": 0.006950887694522599
         },
         {
-          "pillar": "FxForwardPoints_USDCLP_6M",
+          "pillar": "FxForward_USDCLP_6M_AnchorForwardPoints",
           "exposure": -35.303212738555814,
           "dv01": -0.0035303212738555818
         },
@@ -2033,17 +2033,17 @@
           "dv01": 0.0
         },
         {
-          "pillar": "FxForwardPoints_USDCLP_1M",
+          "pillar": "FxForward_USDCLP_1M_AnchorForwardPoints",
           "exposure": 711.6238913091271,
           "dv01": 0.07116238913091272
         },
         {
-          "pillar": "FxForwardPoints_USDCLP_3M",
+          "pillar": "FxForward_USDCLP_3M_AnchorForwardPoints",
           "exposure": -143.0403664362967,
           "dv01": -0.01430403664362967
         },
         {
-          "pillar": "FxForwardPoints_USDCLP_6M",
+          "pillar": "FxForward_USDCLP_6M_AnchorForwardPoints",
           "exposure": 60.45385136480593,
           "dv01": 0.006045385136480593
         },

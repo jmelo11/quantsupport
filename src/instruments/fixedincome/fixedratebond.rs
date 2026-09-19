@@ -14,6 +14,7 @@ use crate::{
 
 /// A [`FixedRateBond`] represents a bond that pays periodic fixed-rate coupons
 /// and repays its principal at maturity.
+#[derive(Clone)]
 pub struct FixedRateBond<T: Scalar> {
     identifier: String,
     units: f64,
