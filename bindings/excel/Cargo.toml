@@ -13,9 +13,4 @@ crate-type = ["cdylib"]
 
 [dependencies]
 quantsupport = { path = "../.." }
-
-[target.'cfg(all(windows, target_arch = "x86_64"))'.dependencies]
-xll-rs = "0.1.1"
-
-[target.'cfg(all(windows, target_arch = "x86_64"))'.build-dependencies]
 xll-rs = "0.1.1"

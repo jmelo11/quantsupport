@@ -131,7 +131,7 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     let csa_currency = Currency::USD;
     let policy = BootstrapDiscountPolicy::new(csa_index, csa_currency);
 
-    // FX spot from fixings: 1 USD = 935 CLP
+    // FX spot from fixings: 1 USD = 935 CLP 
     let mut fx_store = FxStore::new();
     fx_store.add_fx_rate(Currency::USD, Currency::CLP, DualFwd::new(935.0));
 
