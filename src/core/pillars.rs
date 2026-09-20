@@ -1,12 +1,15 @@
-/// Key reference points for curve and surface construction.
+/// Differentiable state variables exposed by a constructed market object.
 ///
-/// The [`Pillars<T>`] trait provides methods to retrieve the pillars and their labels, as well as a
-/// method to put the pillars on the tape for automatic differentiation purposes.
+/// Pillar values are registered on the automatic-differentiation tape, and
+/// their labels identify the adjoints returned in sensitivity reports. When a
+/// surface or cube also stores calibration instrument identifiers, those
+/// identifiers describe the source option contracts available to a model's
+/// calibration basket. Pillars describe the variables that receive risk.
 pub trait Pillars<T> {
-    /// Returns an optional vector of tuples containing pillar labels and their corresponding values.
+    /// Returns the sensitivity label and differentiable value of each pillar.
     fn pillars(&self) -> Option<Vec<(String, &T)>>;
-    /// Returns an optional vector of pillar labels.
+    /// Returns the labels used to identify pillar adjoints in reports.
     fn pillar_labels(&self) -> Option<Vec<String>>;
-    /// Puts the pillars on the tape for automatic differentiation purposes.
+    /// Registers each pillar as a leaf on the automatic-differentiation tape.
     fn put_pillars_on_tape(&mut self);
 }

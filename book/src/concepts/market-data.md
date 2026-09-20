@@ -6,6 +6,11 @@ Market data enters the library through three stores: `QuoteStore` (prices), `Fix
 
 Every quote is identified by an underscore-separated string that is parsed by `QuoteDetails::from_str` into a `QuoteInstrument`. The identifier is what curve configurations, vol configurations and scenarios refer to, and it doubles as the pillar label in sensitivity reports.
 
+The grammar embeds enough information to reconstruct a calibration instrument.
+Reading the table from left to right shows how the instrument family determines
+the remaining fields and why option quotes require more coordinates than rate
+quotes.
+
 | Instrument                      | Pattern                                                                                                 | Example                                                                                                            |
 | ------------------------------- | ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
 | Fixed-rate deposit              | `FixedRateDeposit_<CCY>_<Index>_<Tenor>`                                                                | `FixedRateDeposit_USD_SOFR_1D`                                                                                    |
@@ -26,13 +31,17 @@ Every quote is identified by an underscore-separated string that is parsed by `Q
 
 - `<Tenor>` and `<Expiry>` are `Period` strings (`1D`, `3M`, `5Y`, `1Y6M`).
 - `<StrikeKind>` is `Absolute` (strike follows as a decimal), `Atm`, or `Relative` (offset from ATM).
-- `<VolType>` is `Black` or `Normal`; `<Strategy>` for caplets is `Cap`, `Floor` or `Straddle`.
+- `<VolType>` is `Black` or `Normal`. `<Strategy>` for caplets is `Cap`, `Floor`, or `Straddle`.
 - `<CalibrationStrategy>` is `AnchorYield` or `AnchorPrice` for bonds and defaults to `AnchorYield`. For FX forwards it is required and is either `AnchorForwardPoints` or `AnchorOutrightPrice`. Deposits accept rate quotes only. Strategy aliases without the `Anchor` prefix are rejected.
 - Currency pairs are concatenated ISO codes (`USDCLP` = price of 1 USD in CLP).
 
 `QuoteInstrument` has one variant per row (`Ois`, `FixedRateDeposit`, `FixedRateBond`, `BasisSwap`, `FixFloatCrossCurrencySwap`, `FloatFloatCrossCurrencySwap`, `FxForward`, `Future`, `ConvexityAdjustment`, `CapFloor`, `CapletFloorlet`, `Swaption`, `EquityOption`, `FxOption`, `Cds`) carrying the parsed fields. Bootstrappers call `CurveConfiguration::instruments()` to turn these into instruments at the quoted levels.
 
 ## `QuoteStore`
+
+`QuoteStore` combines the parsed identifiers with bid, mid, and ask values at a
+single reference date. The following example adds one curve quote and one FX
+forward quote, then retrieves the mid value used by a builder.
 
 ```rust,ignore
 let mut store = QuoteStore::new(Date::new(2026, 2, 24));
@@ -49,13 +58,20 @@ store.quotes();                                // &HashMap<String, Quote>
 let mid = store.quote("OIS_USD_SOFR_5Y").and_then(|q| q.levels().mid());
 ```
 
-`QuoteLevels::with_mid(mid)` sets only the mid; `QuoteLevels::new(mid, bid, ask)` takes three `Option<f64>`; `levels.value(Level::Mid | Bid | Ask)` returns `Result<f64>` and fails if that level was not supplied. Bootstrappers and builders take a `Level` argument, so one store can produce a mid curve and a bid/ask pair.
+The store retains the complete `QuoteDetails`, so downstream components use the
+same parsed currency, index, maturity, and strategy information. This avoids
+reinterpreting strings inside individual bootstrappers.
+
+`QuoteLevels::with_mid(mid)` sets the mid. `QuoteLevels::new(mid, bid, ask)` takes three `Option<f64>` values. `levels.value(Level::Mid | Bid | Ask)` returns `Result<f64>` and reports an absent level. Bootstrappers and builders take a `Level` argument, so one store can produce a mid curve and bid or ask constructions.
 
 `QuoteStore` implements `QuoteSelector`, the trait bootstrappers read from. `PricingContext::quote_store()` returns the shocked copy when scenarios are attached and the base store otherwise (`base_quote_store()` always returns the original).
 
 ### JSON
 
-The examples use this schema (`examples/bootstrap/data/quotes.json`):
+Applications commonly receive observations from files or services. The
+examples use the following small envelope in
+`examples/bootstrap/data/quotes.json`, where the reference date applies to
+every record.
 
 ```json
 {
@@ -70,7 +86,13 @@ The examples use this schema (`examples/bootstrap/data/quotes.json`):
 }
 ```
 
-The loader in `examples/bootstrap/src/main.rs` is ten lines:
+The document contains observations only. Curve membership and construction
+choices belong to their own configuration files, which allows the same quote
+store to support several market builds.
+
+The loader in `examples/bootstrap/src/main.rs` deserialises the envelope,
+parses every identifier, and creates a store. Its compact form is shown here so
+the boundary between application I/O and library types is explicit.
 
 ```rust,ignore
 #[derive(Deserialize)] struct QuoteRecord { identifier: String, mid: f64 }
@@ -83,9 +105,16 @@ for rec in json.quotes {
 }
 ```
 
-The Python binding `QuoteStore.from_json` reads the same file.
+The result is the same `QuoteStore` used by programmatic construction. The
+Python binding `QuoteStore.from_json` reads the same file, so both languages
+share the identifier grammar and validation rules.
 
 ## `FixingStore`
+
+Historical fixings settle coupon observations whose fixing dates have already
+occurred. A fixing store is indexed by market index and date, which makes a
+missing observation an explicit valuation error. Future observation dates use
+the applicable curve forecast.
 
 ```rust,ignore
 let mut fixings = FixingStore::default();
@@ -95,7 +124,11 @@ fixings.fixings(&MarketIndex::SOFR)?;                         // Result<&BTreeMa
 fixings.fill_missing_fixings(Interpolator::Linear)?;          // fill every calendar day between first and last fixing
 ```
 
-Fixings are needed for any floating coupon whose fixing date is on or before the valuation date. `DiscountedCashflowPricer` reads them through `MarketDataRequest`; the XVA `FixingPreprocessor` uses them to set `realized_fixing` / `partial_fixing` on claims (compounding daily fixings for in-arrears indices such as SOFR). JSON schema used by the examples:
+Interpolation is an application choice for genuinely missing daily history.
+The original endpoints remain observations. Generated dates fill the
+interior required by compounded overnight coupons.
+
+Fixings are needed for any floating coupon whose fixing date is on or before the valuation date. `DiscountedCashflowPricer` reads them through `MarketDataRequest`. The XVA `FixingPreprocessor` uses them to set `realized_fixing` or `partial_fixing` on claims, including compounding daily observations for in-arrears indices such as SOFR. The examples use this JSON schema:
 
 ```json
 {
@@ -106,7 +139,14 @@ Fixings are needed for any floating coupon whose fixing date is on or before the
 }
 ```
 
+Keeping fixings in a dedicated file makes their historical role visible and
+prevents them from being confused with current calibration quotes.
+
 ## `FxStore`
+
+Spot FX forms a connected graph of currencies. `FxStore` accepts whichever
+direct pairs are available and resolves reciprocal or triangulated rates when
+a pricer asks for another orientation.
 
 ```rust,ignore
 let mut fx = FxStore::new();
@@ -117,10 +157,25 @@ fx.get_fx_rate(Currency::EUR, Currency::CLP)?;                       // triangul
 let fx = FxStore::from_records(vec![FxRateRecord { base: Currency::CLP, quote: Currency::USD, rate: 1.0 / 900.0 }]);
 ```
 
-`get_fx_rate` returns `DualFwd::one()` for identical currencies, a direct lookup if the pair is stored, and otherwise breadth-first triangulation over stored pairs (multiplying along `base→quote` edges and dividing along reversed ones); it fails with `NotFoundErr` when the currencies are disconnected. `FxStore` implements `Pillars<DualFwd>` (labels `"USD/CLP"`), so `put_pillars_on_tape()` turns every stored rate into a tape leaf and FX-spot sensitivities appear next to curve pillars. `from_records` stores rates with `DualFwd::from`, i.e. off-tape until you call `put_pillars_on_tape()`. The bootstrapper uses the store to build `MarketIndex::Collateral(CLP, USD)` curves from cross-currency quotes; `FxForwardPricer` and `FxOptionPricer` read spot from it.
+The example demonstrates all three lookup paths: direct storage, reciprocal
+orientation, and triangulation through an intermediate currency.
+
+`get_fx_rate` returns `DualFwd::one()` for identical currencies and uses a direct lookup for a stored pair. For other connected currencies, it performs breadth-first triangulation, multiplying along `base→quote` edges and dividing along reversed edges. Disconnected currencies produce `NotFoundErr`. `FxStore` implements `Pillars<DualFwd>` with labels such as `"USD/CLP"`, so `put_pillars_on_tape()` registers every stored rate as a tape leaf. `from_records` creates off-tape values with `DualFwd::from`, ready for later registration. The bootstrapper uses the store to build `MarketIndex::Collateral(CLP, USD)` curves from cross-currency quotes. `FxForwardPricer` and `FxOptionPricer` read spot from it.
 
 ## Currencies and indices
 
+Currencies and market indices provide typed keys for the stores described
+above. Currency metadata controls display and rounding. Market indices connect
+contract references to curves, volatility markets, fixings, and simulations.
+
 `Currency` variants: `USD, EUR, JPY, ZAR, CLP, CLF, CHF, BRL, COP, MXN, AUD, CAD, CNY, GBP, NZD, NOK, SEK, PEN, CNH, INR, TWD, HKD, KRW, DKK, IDR`, with `as_str()`, `name()`, `symbol()`, `precision()`, `numeric_code()` and `Currency::try_from("USD")`.
 
-`MarketIndex` variants: `SOFR, SOFRCompounded, TermSOFR1m, TermSOFR3m, TermSOFR6m, TermSOFR12m, ESTR, EURIBOR1m, EURIBOR3m, EURIBOR6m, EURIBOR12m, SONIA, TONAR, TIBOR3m, TIBOR6m, SARON, CORRA, AONIA, NZONIA, NOWA, SWESTR, ICP, VIX, Equity(String), FxPair(FxPair), Collateral(Currency, Currency), Credit(String), Other(String)`. Rate indices know their currency, tenor and day counter (`MarketIndex::SOFR.currency() == Currency::USD`); `Collateral(CLP, USD)` names the curve that discounts CLP cashflows collateralised in USD. In JSON, unit variants serialise as strings (`"SOFR"`) and tuple variants as objects (`{"Collateral": ["CLP", "USD"]}`, `{"Equity": "AAPL"}`).
+`MarketIndex` variants include standard rates such as SOFR, ESTR, EURIBOR, SONIA, and ICP, along with `VIX`, `Equity(String)`, `FxPair(FxPair)`, `Collateral(Currency, Currency)`, `Credit(String)`, and `Other(String)`. Rate indices know their currency, tenor, and day counter. `Collateral(CLP, USD)` names the curve that discounts CLP cashflows collateralized in USD. In JSON, unit variants serialize as strings such as `"SOFR"`, and structured variants serialize as tagged objects such as `{"Collateral": ["CLP", "USD"]}` and `{"Equity": "AAPL"}`.
+
+## From observations to a market
+
+These stores deliberately stop at observed data. Quote identifiers describe
+calibration instruments, fixings preserve realised history, and FX rates
+connect currencies. The pricing context combines them with configuration in
+the next construction step, where interpolation, bootstrapping, and model
+calibration begin.

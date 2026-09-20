@@ -30,8 +30,10 @@ impl VolatilitySurfaceBuilder {
     /// Builds all configured surfaces from the given quote source.
     ///
     /// # Errors
-    /// Returns an error if a required quote is missing from the selector or
-    /// if the quote details lack the expected fields.
+    /// Returns an error when a quote is missing, belongs to another market
+    /// index, lacks an expiry or strike, or duplicates an expiry-strike node.
+    /// A second configuration for the same market index also produces an
+    /// error.
     pub fn build(
         &self,
         selector: &impl QuoteSelector,
@@ -42,11 +44,22 @@ impl VolatilitySurfaceBuilder {
 
         for spec in &self.specs {
             let (surface, labels) = self.build_one(spec, selector, level, reference_date)?;
+            let surface = surface
+                .with_labels(&labels)
+                .with_calibration_instrument_ids(&labels);
             let element = VolatilitySurfaceElement::new(
                 spec.market_index().clone(),
-                Rc::new(RefCell::new(surface.with_labels(&labels))),
+                Rc::new(RefCell::new(surface)),
             );
-            surfaces.insert(spec.market_index().clone(), element);
+            if surfaces
+                .insert(spec.market_index().clone(), element)
+                .is_some()
+            {
+                return Err(QSError::InvalidValueErr(format!(
+                    "Duplicate volatility surface configuration for index {}",
+                    spec.market_index()
+                )));
+            }
         }
 
         Ok(surfaces)
@@ -61,7 +74,7 @@ impl VolatilitySurfaceBuilder {
         reference_date: Date,
     ) -> Result<(InterpolatedVolatilitySurface<DualFwd>, Vec<String>)> {
         let mut points: BTreeMap<Period, BTreeMap<F64Key, DualFwd>> = BTreeMap::new();
-        let mut labels = Vec::new();
+        let mut node_labels: BTreeMap<Period, BTreeMap<F64Key, String>> = BTreeMap::new();
 
         for qid in spec.quotes() {
             let quote = selector
@@ -69,6 +82,13 @@ impl VolatilitySurfaceBuilder {
                 .ok_or_else(|| QSError::NotFoundErr(format!("Quote not found: {qid}")))?;
             let val = quote.levels().value(level)?;
             let details = quote.details();
+            if details.market_index() != Some(spec.market_index()) {
+                return Err(QSError::InvalidValueErr(format!(
+                    "Quote {qid} belongs to {:?}, expected surface index {}",
+                    details.market_index(),
+                    spec.market_index()
+                )));
+            }
 
             let expiry = details.option_expiry().ok_or_else(|| {
                 QSError::InvalidValueErr(format!("Quote {qid} missing option_expiry"))
@@ -77,12 +97,30 @@ impl VolatilitySurfaceBuilder {
                 .strike()
                 .ok_or_else(|| QSError::InvalidValueErr(format!("Quote {qid} missing strike")))?;
 
+            let key = F64Key::new(strike.resolve(0.0));
+            if node_labels
+                .entry(expiry)
+                .or_default()
+                .insert(key.clone(), qid.clone())
+                .is_some()
+            {
+                return Err(QSError::InvalidValueErr(format!(
+                    "Duplicate volatility surface node at expiry {expiry}, key {}",
+                    key.value()
+                )));
+            }
             points
                 .entry(expiry)
                 .or_default()
-                .insert(F64Key::new(strike.resolve(0.0)), DualFwd::from(val));
-            labels.push(qid.clone());
+                .insert(key, DualFwd::from(val));
         }
+
+        // Keep labels in exactly the same canonical coordinate order used by
+        // `InterpolatedVolatilitySurface::pillars`.
+        let labels = node_labels
+            .values()
+            .flat_map(|smile| smile.values().cloned())
+            .collect();
 
         let surface = InterpolatedVolatilitySurface::new(
             reference_date,

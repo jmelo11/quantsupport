@@ -1,8 +1,10 @@
 # Scripting Overview
 
-The `quantsupport::scripting` module lets you describe a payoff as a dated sequence of small scripts instead of implementing a new `Instrument` and pricer in Rust. Scripts are parsed once, statically analysed, and then evaluated over Monte Carlo paths produced by any `MarketModel<DualFwd>` (in practice the LGM market model). Because evaluation runs on the same AD tape as the rest of the library, a scripted payoff yields **NPV, per-pillar sensitivities, and expected cashflows** without any extra code, and it can enter the XVA engine as a set of ordinary contingent claims.
+The `quantsupport::scripting` module describes a payoff as a dated sequence of small programs. This form is useful for bespoke products whose cashflows depend on path observations and evolving state. Scripts are parsed once, analyzed before simulation, and evaluated over paths produced by a `MarketModel<DualFwd>`. The current examples use the LGM market model.
 
-Everything you need is re-exported from the prelude:
+Script evaluation shares the automatic-differentiation tape used throughout the library. One payoff definition can therefore produce NPV, quote-level sensitivities, expected cashflows, and contingent claims for XVA. This chapter introduces that end-to-end workflow and points to the detailed language and runtime chapters.
+
+The scripting API is re-exported from the prelude. The following imports show its four main groups: dated source events, runtime evaluation, parallel execution, and XVA integration.
 
 ```rust
 use quantsupport::prelude::{
@@ -14,7 +16,11 @@ use quantsupport::prelude::{
 };
 ```
 
+`CodedEvent` and `EventStream` represent source and parsed events. `ScriptEngine` coordinates analysis and valuation. `ScriptedProduct` converts the same event stream into claims that the XVA engine can schedule.
+
 ## Pipeline
+
+The pipeline turns source text into a validated runtime before it generates any paths. That early analysis discovers variables and market requests, which gives model setup and error reporting a complete view of the payoff. The stages are:
 
 ```text
 Vec<CodedEvent>  ──TryFrom──▶  EventStream (parsed AST per event)
@@ -32,7 +38,9 @@ Vec<CodedEvent>  ──TryFrom──▶  EventStream (parsed AST per event)
       ScriptedProduct::new(..).contingent_claims()  → Vec<ContingentClaim> for XvaEngine
 ```
 
-Module layout (`src/scripting/`):
+The parsed event stream is the shared representation in the center of the flow. Direct valuation sends it to `ScriptEngine`, and XVA conversion sends it to `ScriptedProduct`. Both paths therefore use the same dates, expressions, and payment definitions.
+
+The implementation under `src/scripting/` assigns each stage to a focused module:
 
 | Path                                                                       | Responsibility                                                                                                                              |
 | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -48,20 +56,20 @@ Module layout (`src/scripting/`):
 | `product.rs`                                                               | `ScriptedProduct`, `ScriptedPayoff` and the `IntoContingentClaims` bridge to XVA                                                            |
 | `utils/errors.rs`                                                          | `ScriptingError`                                                                                                                            |
 
-The numeric type used inside scripts is `NumericType = DualFwd`, so every script variable is differentiable with respect to curve pillars and model parameters that were put on the tape before evaluation.
+The parser and visitors establish the meaning of the program, and `runtime.rs` executes that prepared representation. The numeric type inside scripts is `NumericType = DualFwd`, so every script variable remains differentiable with respect to curve pillars and recorded model parameters.
 
 ## A complete example
 
-The `scripting-examples` package prices a one-year receive-fixed SOFR swap twice: once with `MakeSwap` + `DiscountedCashflowPricer`, once as four scripted events. The script for each accrual period (`examples/scripting/src/lib.rs`) is:
+The `scripting-examples` package gives a controlled comparison using a one-year receive-fixed SOFR swap. It prices the contractual swap with `MakeSwap` and `DiscountedCashflowPricer`, then expresses the same four coupon periods as scripted events. The first event initializes `swap` and `fixed_rate`. Each event calculates its accrual fraction, requests the applicable forward rate, and records a payment:
 
 ```text
-swap = 0; fixed_rate = 0.035;                                   # first event only
+swap = 0; fixed_rate = 0.035;
 accrual = cvg("2025-01-01", "2025-04-01", "Actual360");
 floating_rate = RateIndex("SOFR", "2025-01-01", "2025-04-01");
 swap pays 10000000 * (fixed_rate - floating_rate) * accrual on "2025-04-01";
 ```
 
-and the driver (`examples/scripting/src/bin/valuation.rs`) evaluates it against an LGM model with zero volatility so the comparison is exact:
+The valuation driver in `examples/scripting/src/bin/valuation.rs` uses an LGM model with zero volatility. Under that deterministic setup, the native and scripted cashflows have an exact comparison:
 
 ```rust,ignore
 Tape::start_recording_fwd();
@@ -79,19 +87,25 @@ let npv = results["swap"];
 Tape::stop_recording_fwd();
 ```
 
-Run it with:
+The package exposes separate commands for direct valuation and XVA:
 
 ```bash
 cargo run -p scripting-examples --bin valuation   # NPV + pillar sensitivities vs native swap
 cargo run -p scripting-examples --bin xva         # EPE profile + CVA/FVA sensitivities vs native swap
 ```
 
-Both binaries assert agreement with the native implementation to `1e-8` (NPV, EPE) and `1e-6` (sensitivities).
+Both binaries assert agreement with the native implementation to `1e-8` for NPV and EPE and to `1e-6` for sensitivities. These checks demonstrate that scripting participates in the same market and risk graph as native products.
 
 ## When to use scripting
 
-- Structured coupons, digitals, range accruals, autocallables, and other payoffs that are not worth a dedicated Rust instrument.
-- Products whose term sheet changes frequently: the script is data (a `Vec<CodedEvent>` is `Serialize`/`Deserialize`), so it can be stored and versioned alongside market data.
-- Getting an XVA exposure profile for a bespoke product without writing a claim decomposition.
+Scripting is most useful when payoff flexibility and rapid product iteration are the primary requirements:
 
-Prefer native instruments and pricers when a closed form exists (Black caplets, Garman–Kohlhagen FX options, Hull–White swaptions) or when you need `Request::FairRate` or cashflow tables in the `EvaluationResults` format.
+- Structured coupons, digitals, range accruals, autocallables, and other bespoke payoffs.
+- Products whose term sheet changes frequently: the script is data (a `Vec<CodedEvent>` is `Serialize`/`Deserialize`), so it can be stored and versioned alongside market data.
+- Producing an XVA exposure profile from the payment events already present in a bespoke payoff.
+
+Native instruments provide specialized closed forms for products such as Black caplets, Garman–Kohlhagen FX options, and Hull–White swaptions. They also provide product-specific outputs such as `Request::FairRate` and standardized cashflow tables. Scripting provides a general path-based route for products defined most naturally as dated payoff logic.
+
+## What to remember
+
+A scripted product begins as dated source text and becomes a parsed, analyzed event stream. The runtime derives its market requests, evaluates it over differentiable model paths, and records expected payments. The same event stream can then enter XVA through contingent claims, giving bespoke and native products a common exposure workflow.

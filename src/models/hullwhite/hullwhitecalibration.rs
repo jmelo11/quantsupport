@@ -146,7 +146,10 @@ impl HullWhiteCalibration<'_, '_> {
                 let df_start = self.curve.discount_factor_from_time(t)?;
                 let df_end = self.curve.discount_factor_from_time(big_t)?;
                 let fwd = (df_start / df_end - 1.0) / tau;
-                total = (df_end * tau).mul_add(vanilla_call(fwd, strike.resolve(fwd), market_vol, t)?, total);
+                total = (df_end * tau).mul_add(
+                    vanilla_call(fwd, strike.resolve(fwd), market_vol, t)?,
+                    total,
+                );
             }
             return Ok(total);
         }
@@ -363,6 +366,8 @@ impl ContFunc<f64> for HwCalibrationObjective<'_, '_> {
 /// per (option expiry, tenor) pillar and each instrument's strike is replaced
 /// by the override (resolved against the pillar forward downstream). This lets
 /// callers pass all available market quotes and select moneyness separately.
+/// Without an override, each expiry-tenor pillar must identify a single smile
+/// node.
 /// Instruments are returned sorted by pillar date.
 fn build_calibration_instruments(
     quote_ids: &[String],
@@ -381,13 +386,17 @@ fn build_calibration_instruments(
             || quote.clone(),
             |k| Quote::new(quote.details().clone().with_strike(k), *quote.levels()),
         );
-        if strike_override.is_some() {
-            let pillar = (quote.details().option_expiry(), quote.details().tenor());
-            if seen_pillars.contains(&pillar) {
+        let pillar = (quote.details().option_expiry(), quote.details().tenor());
+        if seen_pillars.contains(&pillar) {
+            if strike_override.is_some() {
                 continue;
             }
-            seen_pillars.push(pillar);
+            return Err(QSError::InvalidValueErr(format!(
+                "Calibration selected multiple smile nodes for expiry {:?} and tenor {:?}. Set calibration_basket.strike to choose one strike rule per pillar",
+                pillar.0, pillar.1
+            )));
         }
+        seen_pillars.push(pillar);
         let mkt_vol = quote.levels().value(level)?;
         let built = quote.build_instrument(reference_date, level, None)?;
         let pillar_date = built.pillar_date()?;
@@ -404,12 +413,8 @@ fn build_calibration_instruments(
 }
 
 impl HullWhite<'_, f64> {
-    /// Calibrates the short-rate volatility sigma(t) to market vol quotes,
-    /// updating the internal volatility function and calibration quality.
-    ///
-    /// # Errors
-    /// Returns an error if calibration quotes are missing or curve data is invalid.
-    pub fn calibrate(
+    #[cfg(test)]
+    pub(crate) fn calibrate(
         &mut self,
         quote_ids: &[String],
         selector: &dyn QuoteSelector,
@@ -426,21 +431,22 @@ impl HullWhite<'_, f64> {
     /// a constructed volatility surface or cube, as specified by the
     /// configuration's [`CalibrationSource`].
     ///
-    /// The quote identifiers in the configuration determine the calibration
-    /// instruments (caplets/floorlets or swaptions), but the market vols are
-    /// interpolated from the surface/cube instead of being read from the raw
-    /// quotes. This keeps the model consistent with the same market data
-    /// object used by the pricers.
+    /// The surface or cube provides the available option instrument
+    /// identifiers. The calibration basket selects a subset of those
+    /// instruments, and the calibrator samples their market volatilities from
+    /// the same constructed object used by option pricers.
     ///
-    /// All available market quotes may be passed: when the configuration
-    /// carries a [`strike`](ModelCalibrationConfiguration::strike) override
-    /// (ATM, relative, or absolute), quotes are collapsed to one instrument
-    /// per (expiry, tenor) pillar and the strike is resolved against the
-    /// pillar forward from `curve` before sampling the surface/cube.
+    /// A common [`strike`](ModelCalibrationConfiguration::strike) rule groups
+    /// the selected smile nodes into one instrument for each expiry and tenor.
+    /// The calibrator resolves ATM and relative strikes against the pillar
+    /// forward from `curve`, then samples the surface or cube at the resulting
+    /// strike. When the rule is omitted, every selected expiry-tenor pair must
+    /// contain a single smile node.
     ///
     /// # Errors
-    /// Returns an error if the surface/cube has not been constructed, if
-    /// calibration quotes are missing, or if curve data is invalid.
+    /// Returns an error when the surface or cube is unavailable, calibration
+    /// instruments are missing, several smile nodes remain at one pillar, or
+    /// the curve data is invalid.
     pub fn calibrate_with_configuration(
         &mut self,
         configuration: &ModelCalibrationConfiguration,
@@ -453,8 +459,9 @@ impl HullWhite<'_, f64> {
         let day_counter = curve
             .day_counter()
             .ok_or_else(|| QSError::InvalidValueErr("Curve has no day counter".to_string()))?;
+        let quote_ids = configuration.resolve_instrument_ids(store)?;
         let mut cal_instruments = build_calibration_instruments(
-            configuration.quote_ids(),
+            &quote_ids,
             selector,
             level,
             reference_date,
@@ -654,7 +661,7 @@ mod tests {
         rates::yieldtermstructure::discounttermstructure::DiscountTermStructure,
         volatility::{
             interpolatedvolatilitysurface::InterpolatedVolatilitySurface,
-            modelcalibration::CalibrationSource,
+            modelcalibration::{CalibrationBasket, CalibrationSource},
             volatilityindexing::{F64Key, SmileType, VolatilityType},
         },
     };
@@ -664,6 +671,30 @@ mod tests {
         "CapletFloorlet_USD_SOFR_3M_1Y_Absolute_0.045_Straddle_Black",
     ];
     const MARKET_VOL: f64 = 0.20;
+
+    fn flat_surface_store(reference_date: Date, labels: &[String]) -> ConstructedElementStore {
+        let smile = BTreeMap::from([
+            (F64Key::new(0.0), DualFwd::from(MARKET_VOL)),
+            (F64Key::new(0.10), DualFwd::from(MARKET_VOL)),
+        ]);
+        let mut points = BTreeMap::new();
+        points.insert(Period::new(1, TimeUnit::Months), smile.clone());
+        points.insert(Period::new(2, TimeUnit::Years), smile);
+        let surface = InterpolatedVolatilitySurface::new(
+            reference_date,
+            MarketIndex::SOFR,
+            points,
+            VolatilityType::Black,
+            SmileType::Strike,
+        )
+        .with_calibration_instrument_ids(labels);
+        let mut store = ConstructedElementStore::default();
+        store.volatility_surfaces_mut().insert(
+            MarketIndex::SOFR,
+            VolatilitySurfaceElement::new(MarketIndex::SOFR, Rc::new(RefCell::new(surface))),
+        );
+        store
+    }
 
     fn setup() -> Result<(
         QuoteStore,
@@ -692,26 +723,11 @@ mod tests {
         let curve =
             DiscountTermStructure::<f64>::new(dates, dfs, dc, Interpolator::LogLinear, true)?;
 
-        // Flat surface at MARKET_VOL spanning the calibration expiries/strikes.
-        let smile = BTreeMap::from([
-            (F64Key::new(0.0), DualFwd::from(MARKET_VOL)),
-            (F64Key::new(0.10), DualFwd::from(MARKET_VOL)),
-        ]);
-        let mut points = BTreeMap::new();
-        points.insert(Period::new(1, TimeUnit::Months), smile.clone());
-        points.insert(Period::new(2, TimeUnit::Years), smile);
-        let surface = InterpolatedVolatilitySurface::new(
-            reference_date,
-            MarketIndex::SOFR,
-            points,
-            VolatilityType::Black,
-            SmileType::Strike,
-        );
-        let mut store = ConstructedElementStore::default();
-        store.volatility_surfaces_mut().insert(
-            MarketIndex::SOFR,
-            VolatilitySurfaceElement::new(MarketIndex::SOFR, Rc::new(RefCell::new(surface))),
-        );
+        let labels = QUOTE_IDS
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>();
+        let store = flat_surface_store(reference_date, &labels);
 
         Ok((quote_store, curve, store))
     }
@@ -730,13 +746,9 @@ mod tests {
             .copied()
             .collect();
 
-        let configuration = ModelCalibrationConfiguration::new(
-            CalibrationSource::Surface {
-                market_index: MarketIndex::SOFR,
-            },
-            quote_ids,
-            0.1,
-        );
+        let configuration = ModelCalibrationConfiguration::new(CalibrationSource::Surface {
+            market_index: MarketIndex::SOFR,
+        });
         let mut hw_surface = HullWhite::new(0.1, &curve);
         hw_surface.calibrate_with_configuration(
             &configuration,
@@ -768,14 +780,9 @@ mod tests {
     #[test]
     fn calibrate_with_configuration_errors_without_surface() -> Result<()> {
         let (quote_store, curve, _) = setup()?;
-        let quote_ids: Vec<String> = QUOTE_IDS.iter().map(ToString::to_string).collect();
-        let configuration = ModelCalibrationConfiguration::new(
-            CalibrationSource::Surface {
-                market_index: MarketIndex::SOFR,
-            },
-            quote_ids,
-            0.1,
-        );
+        let configuration = ModelCalibrationConfiguration::new(CalibrationSource::Surface {
+            market_index: MarketIndex::SOFR,
+        });
         let empty_store = ConstructedElementStore::default();
         let mut hw = HullWhite::new(0.1, &curve);
         let result = hw.calibrate_with_configuration(
@@ -791,7 +798,7 @@ mod tests {
 
     #[test]
     fn strike_override_dedupes_pillars_and_resolves_moneyness() -> Result<()> {
-        let (mut quote_store, curve, store) = setup()?;
+        let (mut quote_store, curve, _) = setup()?;
 
         // Pass ALL available market quotes: 3 strikes per expiry, shuffled order.
         let all_ids: Vec<String> = ["1Y", "6M"]
@@ -806,16 +813,24 @@ mod tests {
             let details = QuoteDetails::from_str(id)?;
             quote_store.add_quote(Quote::new(details, QuoteLevels::with_mid(MARKET_VOL)));
         }
+        let store = flat_surface_store(Date::new(2025, 1, 2), &all_ids);
+
+        let ambiguous = ModelCalibrationConfiguration::new(CalibrationSource::Surface {
+            market_index: MarketIndex::SOFR,
+        });
+        let mut ambiguous_hw = HullWhite::new(0.1, &curve);
+        assert!(
+            ambiguous_hw
+                .calibrate_with_configuration(&ambiguous, &store, &quote_store, &curve, Level::Mid,)
+                .is_err(),
+            "a smile requires an explicit calibration strike rule"
+        );
 
         // ATM moneyness: the system collapses to one pillar per expiry and
         // resolves the strike from the curve forward.
-        let configuration = ModelCalibrationConfiguration::new(
-            CalibrationSource::Surface {
-                market_index: MarketIndex::SOFR,
-            },
-            all_ids.clone(),
-            0.1,
-        )
+        let configuration = ModelCalibrationConfiguration::new(CalibrationSource::Surface {
+            market_index: MarketIndex::SOFR,
+        })
         .with_strike(Strike::Atm);
         let mut hw = HullWhite::new(0.1, &curve);
         hw.calibrate_with_configuration(&configuration, &store, &quote_store, &curve, Level::Mid)?;
@@ -844,13 +859,9 @@ mod tests {
         }
 
         // Absolute moneyness override matches an explicit per-quote calibration.
-        let abs_configuration = ModelCalibrationConfiguration::new(
-            CalibrationSource::Surface {
-                market_index: MarketIndex::SOFR,
-            },
-            all_ids,
-            0.1,
-        )
+        let abs_configuration = ModelCalibrationConfiguration::new(CalibrationSource::Surface {
+            market_index: MarketIndex::SOFR,
+        })
         .with_strike(Strike::Absolute(0.045));
         let mut hw_abs = HullWhite::new(0.1, &curve);
         hw_abs.calibrate_with_configuration(
@@ -861,14 +872,11 @@ mod tests {
             Level::Mid,
         )?;
 
-        let explicit_ids: Vec<String> = QUOTE_IDS.iter().map(ToString::to_string).collect();
-        let explicit_configuration = ModelCalibrationConfiguration::new(
-            CalibrationSource::Surface {
+        let explicit_configuration =
+            ModelCalibrationConfiguration::new(CalibrationSource::Surface {
                 market_index: MarketIndex::SOFR,
-            },
-            explicit_ids,
-            0.1,
-        );
+            })
+            .with_strike(Strike::Absolute(0.045));
         let mut hw_explicit = HullWhite::new(0.1, &curve);
         hw_explicit.calibrate_with_configuration(
             &explicit_configuration,
@@ -895,6 +903,63 @@ mod tests {
             assert!((t_a - t_e).abs() < 1e-12);
             assert!((s_a - s_e).abs() < 1e-12);
         }
+        Ok(())
+    }
+
+    #[test]
+    fn calibration_basket_filters_expiry_and_tenor() -> Result<()> {
+        let (mut quote_store, curve, _) = setup()?;
+        let all_ids: Vec<String> = ["6M", "1Y"]
+            .iter()
+            .flat_map(|expiry| {
+                ["0.035", "0.045", "0.055"].iter().map(move |strike| {
+                    format!("CapletFloorlet_USD_SOFR_3M_{expiry}_Absolute_{strike}_Straddle_Black")
+                })
+            })
+            .collect();
+        for id in &all_ids {
+            quote_store.add_quote(Quote::new(
+                QuoteDetails::from_str(id)?,
+                QuoteLevels::with_mid(MARKET_VOL),
+            ));
+        }
+        let store = flat_surface_store(Date::new(2025, 1, 2), &all_ids);
+        let calibration_basket = CalibrationBasket::all()
+            .with_expiries(vec![Period::new(1, TimeUnit::Years)])
+            .with_tenors(vec![Period::new(3, TimeUnit::Months)])
+            .with_strike(Strike::Atm);
+        let configuration = ModelCalibrationConfiguration::new(CalibrationSource::Surface {
+            market_index: MarketIndex::SOFR,
+        })
+        .with_calibration_basket(calibration_basket);
+
+        let selected = configuration.resolve_instrument_ids(&store)?;
+        assert_eq!(selected.len(), 3, "all three 1Y smile nodes are selected");
+        assert!(selected.iter().all(|id| id.contains("_1Y_")));
+
+        let missing_tenor = ModelCalibrationConfiguration::new(CalibrationSource::Surface {
+            market_index: MarketIndex::SOFR,
+        })
+        .with_calibration_basket(
+            CalibrationBasket::all().with_tenors(vec![Period::new(6, TimeUnit::Months)]),
+        );
+        let error = missing_tenor.resolve_instrument_ids(&store).unwrap_err();
+        assert!(matches!(
+            error,
+            QSError::NotFoundErr(message)
+                if message.contains("tenor 6M") && message.contains("contains no instrument")
+        ));
+
+        let mut hw = HullWhite::new(0.1, &curve);
+        hw.calibrate_with_configuration(&configuration, &store, &quote_store, &curve, Level::Mid)?;
+        assert_eq!(
+            hw.calibration_quality()
+                .ok_or_else(|| QSError::UnexpectedErr("no quality".into()))?
+                .records
+                .len(),
+            1,
+            "ATM override collapses the smile to one calibration pillar"
+        );
         Ok(())
     }
 
@@ -967,7 +1032,7 @@ mod tests {
     #[test]
     fn calibrate_with_configuration_rejects_vol_convention_mismatch() -> Result<()> {
         // Black surface in the store, but Normal calibration quotes.
-        let (mut quote_store, curve, store) = setup()?;
+        let (mut quote_store, curve, _) = setup()?;
         let normal_ids: Vec<String> = QUOTE_IDS
             .iter()
             .map(|id| id.replace("_Black", "_Normal"))
@@ -976,13 +1041,10 @@ mod tests {
             let details = QuoteDetails::from_str(id)?;
             quote_store.add_quote(Quote::new(details, QuoteLevels::with_mid(0.01)));
         }
-        let configuration = ModelCalibrationConfiguration::new(
-            CalibrationSource::Surface {
-                market_index: MarketIndex::SOFR,
-            },
-            normal_ids,
-            0.1,
-        );
+        let store = flat_surface_store(Date::new(2025, 1, 2), &normal_ids);
+        let configuration = ModelCalibrationConfiguration::new(CalibrationSource::Surface {
+            market_index: MarketIndex::SOFR,
+        });
         let mut hw = HullWhite::new(0.1, &curve);
         let result = hw.calibrate_with_configuration(
             &configuration,

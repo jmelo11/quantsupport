@@ -7,11 +7,11 @@
 //!
 //! ```json
 //! {
-//!     "market_index": "Credit(ACME)",
+//!     "market_index": "Credit(SOMECORP)",
 //!     "currency": "USD",
 //!     "discount_index": "SOFR",
 //!     "recovery": 0.4,
-//!     "quotes": ["Cds_ACME_USD_1Y", "Cds_ACME_USD_5Y", "Cds_ACME_USD_10Y"]
+//!     "quotes": ["Cds_SOMECORP_USD_1Y", "Cds_SOMECORP_USD_5Y", "Cds_SOMECORP_USD_10Y"]
 //! }
 //! ```
 

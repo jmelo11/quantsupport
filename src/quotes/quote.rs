@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     ad::scalar::Scalar,
     currencies::currency::Currency,
-    indices::marketindex::MarketIndex,
+    indices::{fxpair::FxPair, marketindex::MarketIndex},
     instruments::{
         equity::{
             equityeuropeanoption::{EquityEuropeanOption, EuroOptionType},
@@ -1175,13 +1175,14 @@ impl QuoteDetails {
             )));
         }
         let currency: Currency = parts[1].parse()?;
-        let index = parts[2].parse::<MarketIndex>()?;
+        let index = MarketIndex::Equity(parts[2].to_string());
         let tenor = Period::from_str(parts[3])?;
         let strike = parse_strike(id, parts[4], parts[5])?;
         Ok(Self::new(id.to_string(), QuoteInstrument::EquityCall)
             .with_market_index(index)
             .with_currency(currency)
             .with_tenor(tenor)
+            .with_option_expiry(tenor)
             .with_strike(strike))
     }
 
@@ -1196,13 +1197,14 @@ impl QuoteDetails {
             )));
         }
         let currency: Currency = parts[1].parse()?;
-        let index = parts[2].parse::<MarketIndex>()?;
+        let index = MarketIndex::Equity(parts[2].to_string());
         let tenor = Period::from_str(parts[3])?;
         let strike = parse_strike(id, parts[4], parts[5])?;
         Ok(Self::new(id.to_string(), QuoteInstrument::EquityPut)
             .with_market_index(index)
             .with_currency(currency)
             .with_tenor(tenor)
+            .with_option_expiry(tenor)
             .with_strike(strike))
     }
 
@@ -1221,9 +1223,11 @@ impl QuoteDetails {
         let strike = parse_strike(id, parts[3], parts[4])?;
 
         Ok(Self::new(id.to_string(), QuoteInstrument::FxCall)
+            .with_market_index(MarketIndex::FxPair(FxPair::new(base, quote_ccy)?))
             .with_pay_currency(base)
             .with_receive_currency(quote_ccy)
             .with_tenor(tenor)
+            .with_option_expiry(tenor)
             .with_strike(strike))
     }
 
@@ -1242,9 +1246,11 @@ impl QuoteDetails {
         let strike = parse_strike(id, parts[3], parts[4])?;
 
         Ok(Self::new(id.to_string(), QuoteInstrument::FxPut)
+            .with_market_index(MarketIndex::FxPair(FxPair::new(base, quote_ccy)?))
             .with_pay_currency(base)
             .with_receive_currency(quote_ccy)
             .with_tenor(tenor)
+            .with_option_expiry(tenor)
             .with_strike(strike))
     }
 
@@ -1398,11 +1404,9 @@ where
             Self::EquityCall(x) | Self::EquityPut(x) => Ok(x.expiry_date()),
             Self::FxCall(x) | Self::FxPut(x) => Ok(x.expiry_date()),
             Self::CapletFloorlet(x) => Ok(x.fixing_date()),
-            Self::CapFloor(x) => x.last_fixing_date().ok_or_else(|| {
-                crate::utils::errors::QSError::ValueNotSetErr(
-                    "cap/floor has no caplet/floorlets".into(),
-                )
-            }),
+            Self::CapFloor(x) => x
+                .last_fixing_date()
+                .ok_or_else(|| QSError::ValueNotSetErr("cap/floor has no caplet/floorlets".into())),
             Self::EuropeanSwaption(x) => Ok(x.expiry_date()),
         }
     }
@@ -2080,6 +2084,7 @@ impl Quote {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::time::enums::TimeUnit;
 
     fn ref_date() -> Date {
         Date::new(2026, 2, 24)
@@ -2225,6 +2230,11 @@ mod tests {
     fn parse_call_identifier() {
         let det: QuoteDetails = "EquityCall_USD_SPX_1Y_Absolute_5000".parse().unwrap();
         assert_eq!(*det.instrument(), QuoteInstrument::EquityCall);
+        assert_eq!(
+            det.market_index(),
+            Some(&MarketIndex::Equity("SPX".to_string()))
+        );
+        assert_eq!(det.option_expiry(), Some(Period::new(1, TimeUnit::Years)));
         assert_eq!(det.strike(), Some(Strike::Absolute(5000.0)));
     }
 
@@ -2238,6 +2248,8 @@ mod tests {
     #[test]
     fn parse_fx_call_identifier() {
         let det: QuoteDetails = "FxCall_EURUSD_1Y_Relative_0.05".parse().unwrap();
+        assert!(matches!(det.market_index(), Some(MarketIndex::FxPair(_))));
+        assert_eq!(det.option_expiry(), Some(Period::new(1, TimeUnit::Years)));
         assert_eq!(*det.instrument(), QuoteInstrument::FxCall);
         assert_eq!(det.pay_currency(), Some(Currency::EUR));
         assert_eq!(det.receive_currency(), Some(Currency::USD));

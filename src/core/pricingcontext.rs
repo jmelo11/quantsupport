@@ -1,3 +1,4 @@
+use scoped_tls::scoped_thread_local;
 use std::collections::{BTreeMap, HashMap};
 
 use crate::{
@@ -10,17 +11,13 @@ use crate::{
     indices::marketindex::MarketIndex,
     models::modelconfiguration::SimulationConfiguration,
     quotes::{
-        fixingstore::FixingStore,
-        fxstore::FxStore,
-        quote::Level,
-        quotestore::QuoteStore,
+        fixingstore::FixingStore, fxstore::FxStore, quote::Level, quotestore::QuoteStore,
         scenario::Scenario,
     },
     rates::bootstrapping::{
         bootstrapdiscountpolicy::BootstrapDiscountPolicy,
         creditcurvebootstrapper::CreditCurveBootstrapper,
-        creditcurveconfiguration::CreditCurveConfiguration,
-        curveconfiguration::CurveConfiguration,
+        creditcurveconfiguration::CreditCurveConfiguration, curveconfiguration::CurveConfiguration,
         multicurvebootstrapper::MultiCurveBootstrapper,
     },
     simulations::simulationbuilder::SimulationBuilder,
@@ -92,7 +89,9 @@ impl PricingContext {
     /// otherwise the base store.
     #[must_use]
     pub fn quote_store(&self) -> &QuoteStore {
-        self.shocked_quote_store.as_ref().unwrap_or(&self.quote_store)
+        self.shocked_quote_store
+            .as_ref()
+            .unwrap_or(&self.quote_store)
     }
 
     /// Returns the base (unshocked) quote store.
@@ -212,10 +211,7 @@ impl PricingContext {
 
     /// Sets the model-driven simulation configurations.
     #[must_use]
-    pub fn with_simulation_configurations(
-        mut self,
-        configs: Vec<SimulationConfiguration>,
-    ) -> Self {
+    pub fn with_simulation_configurations(mut self, configs: Vec<SimulationConfiguration>) -> Self {
         self.simulation_configurations = configs;
         self
     }
@@ -353,8 +349,7 @@ impl PricingContext {
         // Build model-driven Monte Carlo simulations. Runs last so that
         // models can consume the constructed curves, surfaces, and cubes.
         if !self.simulation_configurations.is_empty() {
-            let simulation_builder =
-                SimulationBuilder::new(self.simulation_configurations.clone());
+            let simulation_builder = SimulationBuilder::new(self.simulation_configurations.clone());
             let simulations = simulation_builder.build(
                 &self.constructed_elements,
                 self.quote_store(),
@@ -501,3 +496,5 @@ impl MarketDataProvider for PricingContext {
         Ok(md)
     }
 }
+
+scoped_thread_local!(static CURRENT_CONTEXT: PricingContext);

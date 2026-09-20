@@ -9,7 +9,7 @@ use crate::{
     volatility::volatilityindexing::Strike,
 };
 
-/// A builder for creating an [`FxOption`] instance.
+/// A builder for creating an [`FxEuropeanOption`] instance.
 ///
 /// ## Example
 /// ```rust

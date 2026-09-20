@@ -1,19 +1,25 @@
 # Multi-Curve Framework
 
-Since the move to OIS discounting, a single currency needs several curves—one to discount collateralised cashflows and one per projected index—and each foreign currency collateralised in the base currency needs a cross-currency-adjusted curve. QuantSupport encodes this with `MarketIndex` naming, discount policies and bootstrapper dependency resolution.
+A modern rates portfolio usually needs several related curves. Collateralized cashflows use an overnight discount curve, each floating index has its own projection curve, and foreign-currency cashflows may require a curve adjusted for the collateral currency. This chapter explains how QuantSupport assigns those roles, chooses discount curves, orders calibration dependencies, and carries risk through the resulting graph.
+
+The framework combines three ideas. `MarketIndex` gives every curve a stable identity. Discount policies express the economic rules that map cashflows to curves. The bootstrapper derives a dependency order from the instruments used to calibrate each curve.
 
 ## Curve roles
 
+Each curve identity states the market quantity represented by that term structure. The common roles are summarized below, using the USD and CLP example developed throughout the book:
+
 | Role                      | `MarketIndex`                  | Built from                                                    | Used for                                                              |
 | ------------------------- | ------------------------------ | ------------------------------------------------------------- | --------------------------------------------------------------------- |
-| CSA / discount curve      | e.g. `SOFR`                    | deposits + OIS                                                | discounting all collateralised USD cashflows; projecting SOFR coupons |
+| CSA / discount curve      | e.g. `SOFR`                    | deposits + OIS                                                | discounting collateralized USD cashflows and projecting SOFR coupons  |
 | Projection curve          | e.g. `TermSOFR3m`, `EURIBOR6m` | deposit + basis swaps vs the OIS index (or fixed–float swaps) | forward rates for coupons fixing on that index                        |
 | Collateral-adjusted curve | `Collateral(CLP, USD)`         | FX forwards + cross-currency swaps                            | discounting CLP cashflows under a USD CSA                             |
 | Local OIS curve           | e.g. `ICP`                     | CLP deposits + OIS                                            | projecting ICP coupons                                                |
 
-Nothing in the code is hard-wired to these names: `PricingContext::with_base_index` / `with_base_currency` (defaults `SOFR` / `USD`) decide which curve is the CSA curve.
+The names in the table illustrate one market setup. `PricingContext::with_base_index` and `with_base_currency` select the CSA index and currency for an application. Their defaults are SOFR and USD. Changing those settings applies the same framework to another collateral agreement or market.
 
 ## Discount policies
+
+A curve name identifies a term structure. A discount policy decides which term structure applies to a particular cashflow or instrument. That decision depends on properties such as asset class, currency, and an optional issuer or instrument index. The two traits below separate the description of a discountable object from the rule that selects its curve:
 
 ```rust,ignore
 pub trait Discountable {
@@ -28,18 +34,18 @@ pub trait DiscountPolicy: Send + Sync {
 }
 ```
 
-`Leg`, instruments and trades implement `Discountable`. Two policies ship with the library:
+`Leg`, instrument, and trade types implement `Discountable`. The library supplies two principal policies:
 
 - **`SingleCurveCSADiscountPolicy::new(discount_index, currency)`** – returns `discount_index` when the target's currency equals the CSA currency, and `MarketIndex::Collateral(target_ccy, csa_ccy)` otherwise. This is the derivative (`AssetClass::InterestRate`, `Fx`) rule.
-- **`FixedIncomeDiscountPolicy::new(prefer_instrument_index).with_risk_free_index(ccy, idx)`** – for `AssetClass::FixedIncome` only. If `prefer_instrument_index` and the instrument declares its own `discount_index` (issuer curve), that wins; otherwise the per-currency risk-free index; otherwise `InvalidValueErr("No risk-free index configured for currency …")`. Any other asset class is an error.
+- **`FixedIncomeDiscountPolicy::new(prefer_instrument_index).with_risk_free_index(ccy, idx)`** applies to `AssetClass::FixedIncome`. When configured to prefer the instrument index, it selects a declared issuer curve first. It then tries the per-currency risk-free index. An absent mapping produces `InvalidValueErr("No risk-free index configured for currency …")`, and another asset class produces a type-specific error.
 
-`BootstrapDiscountPolicy::new(csa_index, csa_currency)` combines both for the bootstrapper: `discount_index(&Leg<f64>)` dispatches on the leg's asset class (`FixedIncome` → fixed-income policy with `prefer_instrument_index = true`; `InterestRate`/`Fx` → CSA policy), and `discount_index_for_currency(ccy)` resolves a bare currency, honouring per-currency collateral overrides first.
+`BootstrapDiscountPolicy::new(csa_index, csa_currency)` combines these rules during calibration. Its `discount_index` method sends fixed-income legs to the fixed-income policy with instrument-index preference enabled. Interest-rate and FX legs use the CSA policy. `discount_index_for_currency` handles requests that carry only a currency and gives configured collateral overrides priority.
 
-`DiscountedCashflowPricer::set_discount_policy(Box<dyn DiscountPolicy>)` installs the same kind of policy at pricing time. Without a policy the pricer falls back to a heuristic: a leg with floating coupons is discounted on the _unique_ curve whose rate index is in the leg currency (an error if there are zero or several), otherwise the leg's `discount_index`, otherwise its `forward_index`. Always set a policy in multi-curve setups.
+`DiscountedCashflowPricer::set_discount_policy` installs the same kind of rule at valuation time. If the caller omits it, the pricer attempts to infer a curve from the leg. A floating leg requires one unique rate index in its currency. Other legs use a declared discount index and then a forward index. Ambiguity becomes an error. Production multi-curve contexts should therefore set an explicit policy so the collateral agreement remains visible and reviewable.
 
 ## Dependency resolution
 
-`CurveConfiguration::dependencies(&policy)` inspects each pillar instrument's legs: the forward index of floating legs and the discount index returned by the policy. `dependency_order` performs a Kahn topological sort. For the standard example configuration:
+Curve calibration can begin only after every required parent curve is available. `CurveConfiguration::dependencies` inspects each pillar instrument's legs and collects their forward indices together with the discount indices returned by the policy. `dependency_order` applies a topological sort to that graph. The standard example has the following shape:
 
 ```mermaid
 flowchart LR
@@ -49,16 +55,20 @@ flowchart LR
 ```
 
 - `TermSOFR3m` pillars are basis swaps vs SOFR: the SOFR leg is projected _and_ discounted on the solved SOFR curve, and only the TermSOFR3m projection is unknown.
-- `Collateral(CLP, USD)` pillars are `FixFloatCrossCurrencySwap_CLP_SOFR_USD_*` (fixed CLP vs float SOFR USD) and `FxForward_USDCLP_*_AnchorForwardPoints`. The USD leg is discounted and projected on SOFR; the CLP leg's _discount_ curve is the unknown, so the solve produces the CLP-under-USD-collateral curve directly. FX spot (`FxStore`) converts the two notionals.
-- `ICP` is independent; it projects ICP coupons in CLP swaps priced under USD collateral (discounting on the Collateral curve).
+- `Collateral(CLP, USD)` pillars are `FixFloatCrossCurrencySwap_CLP_SOFR_USD_*` and `FxForward_USDCLP_*_AnchorForwardPoints`. The USD leg is discounted and projected on SOFR. The solve determines the CLP discount curve under USD collateral, and `FxStore` converts the notionals at spot.
+- `ICP` is independent. It projects ICP coupons in CLP swaps whose discounting uses the collateral curve.
 
-Missing pieces are reported explicitly: bootstrapping `TermSOFR3m` without a `SOFR` configuration fails with "Curve TermSOFR3m requires SOFR for discounting but no curve configuration was provided for it".
+The arrows mean that the source curve must be solved before the destination curve. SOFR is therefore available when Term SOFR and the collateralized CLP curve are calibrated. ICP can be solved independently and used later for CLP coupon projection.
+
+Missing dependencies are reported with both curve identities. For example, a Term SOFR configuration with no SOFR configuration reports that Term SOFR requires SOFR for discounting. A cycle is also rejected because no valid first calibration exists.
 
 ## Cross-curve sensitivities
 
-Because the IFT step records \\(\partial P^{\text{child}}/\partial P^{\text{parent}}\\) for every parent (`CrossCurveDep`), risk flows through the dependency graph: a CLP swap discounted on `Collateral(CLP, USD)` reports sensitivities to the cross-currency swap quotes, the FX forward points _and_ the SOFR OIS quotes. See [Sensitivities](../risk/sensitivities.md) for the output format.
+The calibration graph also defines the path followed by risk. For every parent curve, the implicit-function step records \\(\partial P^{\text{child}}/\partial P^{\text{parent}}\\) in a `CrossCurveDep`. A CLP swap discounted on `Collateral(CLP, USD)` can therefore report sensitivity to cross-currency swap quotes, FX forward points, and the SOFR OIS quotes that influence its parent curve. [Sensitivities](../risk/sensitivities.md) describes the final report format.
 
 ## Pricing a cross-currency portfolio
+
+Once the context has built the required curves, trade pricing uses the same index identities and discount policy. The following example initializes a four-curve USD/CLP market and values a CLP fixed-versus-ICP swap under a USD collateral agreement:
 
 ```rust,ignore
 let mut ctx = PricingContext::new()
@@ -85,11 +95,25 @@ pricer.set_discount_policy(Box::new(SingleCurveCSADiscountPolicy::new(MarketInde
 let res = pricer.evaluate(&trade, &[Request::Value, Request::Sensitivities], &ctx)?;
 ```
 
-When the policy resolves a `Collateral(leg_ccy, coll_ccy)` curve, each cashflow is converted at spot and discounted on that curve, \\(PV = CF*{\text{leg}}\times S*{\text{leg}\to\text{coll}}\times P\_{\text{Collateral}}(T)\\), so the `Value` of a CLP swap under a USD CSA is reported in **USD**. Legs in the CSA currency are discounted on the CSA curve without conversion.
+When the policy selects `Collateral(leg_ccy, coll_ccy)`, each cashflow is converted at spot and discounted on that collateral-adjusted curve:
+
+\\[
+PV = CF_{\text{leg}}\,S_{\text{leg}\rightarrow\text{coll}}\,P_{\text{Collateral}}(T).
+\\]
+
+The value of a CLP swap under a USD CSA is therefore reported in USD. Cashflows already denominated in the CSA currency use the CSA curve directly and require no FX conversion.
 
 ## Configuration checklist
+
+A valid setup follows from the dependency and discounting rules developed above. Before initialization, verify the following items:
 
 1. One `CurveConfiguration` per index that any instrument projects or discounts on.
 2. The CSA curve (`base_index`) configured with deposits/OIS in the `base_currency`.
 3. For every foreign currency with collateralised trades, a `Collateral(ccy, base_ccy)` configuration with FX forward and/or cross-currency swap pillars, plus the FX spot in the `FxStore`.
 4. Fixings for every projected index with coupons already fixed.
+
+## What to remember
+
+The multi-curve framework makes curve choice an explicit part of the market model. Stable index identities describe available term structures, policies encode discounting economics, and calibration dependencies establish construction order. The same graph then carries sensitivities back through parent curves to observable quotes.
+
+With this structure in place, adding a projection index or collateralized currency means supplying its configuration, policy mapping, and market inputs. Existing pricers continue to query curves through the common interfaces introduced in [Curves Overview](overview.md).

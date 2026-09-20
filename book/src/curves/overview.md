@@ -1,8 +1,12 @@
 # Curves Overview
 
-A _curve_ in QuantSupport is any object implementing `InterestRatesTermStructure<T>`. Curves are usually produced by the bootstrapper from quotes, but the same trait is implemented by simple hand-built structures that are useful for tests, toy models and the scripting example.
+Interest-rate curves turn a small set of market observations into discount factors and forward rates for every date needed by a trade. This chapter explains the common curve interface, the available curve representations, and the conventions that connect their numerical values to financial meaning. These ideas matter because pricing, simulation, and risk all rely on the same curve contract, even when the curves were constructed in different ways.
+
+In QuantSupport, a curve is any object that implements `InterestRatesTermStructure<T>`. Production curves usually come from market calibration. Simpler hand-built curves use the same interface and are useful for tests, controlled examples, and scenario analysis.
 
 ## The trait
+
+The term-structure trait defines the questions that downstream components may ask. A pricer can request a discount factor or a forward rate without knowing whether the answer comes from bootstrapped nodes, a flat rate, or a composite curve. The following definition shows that shared boundary:
 
 ```rust,ignore
 pub trait InterestRatesTermStructure<T: Scalar> {
@@ -16,21 +20,25 @@ pub trait InterestRatesTermStructure<T: Scalar> {
 }
 ```
 
-`T` is `f64` or `DualFwd`. Forward rates are always derived from discount factors through `InterestRate::implied_rate`, so any compounding convention is consistent with the curve's discount factors:
+The scalar type `T` is usually `f64` for ordinary numerical work or `DualFwd` when automatic differentiation is required. Forward rates are derived from discount factors through `InterestRate::implied_rate`. As a result, the requested compounding convention remains consistent with the discount factors stored by the curve:
 
 \\[
-P(t_1,t_2)=\frac{P(0,t_2)}{P(0,t_1)},\qquad
-F_{\text{simple}}=\frac{1}{\tau}\left(\frac{1}{P(t_1,t_2)}-1\right),\qquad
-F_{\text{cont}}=-\frac{\ln P(t_1,t_2)}{\tau}.
+P(t_1,t_2)=\\frac{P(0,t_2)}{P(0,t_1)},\\qquad
+F_{\\text{simple}}=\\frac{1}{\\tau}\\left(\\frac{1}{P(t_1,t_2)}-1\\right),\\qquad
+F_{\\text{cont}}=-\\frac{\\ln P(t_1,t_2)}{\\tau}.
 \\]
 
-Constructed curves are wrapped as `Rc<RefCell<dyn ADCurveElement>>` inside a `DiscountCurveElement`, where `ADCurveElement = InterestRatesTermStructure<DualFwd> + Pillars<DualFwd>`. `element.curve()` returns a borrow of the underlying curve.
+The first relation converts two zero-date discount factors into a discount factor over a subperiod. The other relations express that same quantity as a simple or continuously compounded forward rate. These identities are the common economic foundation beneath every curve implementation.
+
+Constructed curves are held in a `DiscountCurveElement`. Internally, that wrapper uses `Rc<RefCell<dyn ADCurveElement>>`, where an `ADCurveElement` supports both term-structure queries and named risk pillars. Calling `element.curve()` borrows the underlying curve through this wrapper. Shared ownership allows several pricers to refer to one market curve. Interior mutability supports the controlled tape operations needed for automatic differentiation.
 
 ## Implementations
 
+Different representations suit different jobs. A nodal curve is appropriate for calibrated market data, a flat curve offers a compact controlled assumption, and composite curves express adjustments to an existing base. Each representation implements the same trait, so choosing one leaves pricer interfaces unchanged.
+
 ### `DiscountTermStructure<T>`
 
-The workhorse: a set of pillar dates with discount factors, interpolated on year fractions.
+`DiscountTermStructure<T>` is the main nodal representation. It stores discount factors at dated pillars and interpolates between them using year fractions measured by a specified day counter. The example below constructs a three-node curve and attaches labels that will later identify its risk sensitivities:
 
 ```rust,ignore
 let curve = DiscountTermStructure::<DualFwd>::new(
@@ -38,45 +46,62 @@ let curve = DiscountTermStructure::<DualFwd>::new(
     vec![DualFwd::new(1.0), DualFwd::new(0.99), DualFwd::new(0.957)],
     DayCounter::Actual360,
     Interpolator::LogLinear,
-    true,                         // enable_extrapolation
+    true,
 )?
-.with_pillar_labels(vec!["SOFR.0M".into(), "SOFR.3M".into(), "SOFR.12M".into()])?;   // Result<Self>
+.with_pillar_labels(vec!["SOFR.0M".into(), "SOFR.3M".into(), "SOFR.12M".into()])?;
 ```
 
-- `new(dates, discount_factors, day_counter, interpolator, enable_extrapolation) -> Result<Self>`: the first date is the reference date and must carry DF = 1; lengths must match.
-- Accessors: `dates()`, `discount_factors()`, `day_counter()`, `interpolator()`, `enable_extrapolation()`.
-- `with_pillar_labels(Vec<String>) -> Result<Self>` names the pillars for sensitivity reporting; `with_pillar_values(Vec<T>) -> Result<Self>` overrides the values exposed through `Pillars` (the bootstrapper stores the _quotes_ here, so sensitivities are reported per quote, not per DF); `with_ift_sensitivities(Vec<Vec<f64>>)` stores the Jacobian used to rebuild AD links (see [Bootstrapping](bootstrapping.md)).
-- Interpolation is done on year fractions with the chosen `Interpolator` applied to the discount factors themselves; `LogLinear` therefore gives piecewise-constant forward rates.
+Construction enforces the mathematical invariants of a discount curve. The date and value vectors must have equal lengths. The first date is the reference date and its discount factor must equal one. The `dates()`, `discount_factors()`, `day_counter()`, `interpolator()`, and `enable_extrapolation()` accessors expose those choices for inspection.
+
+Pillar metadata connects the numerical curve to market risk. `with_pillar_labels` assigns stable names to nodes. `with_pillar_values` controls the values exposed through the `Pillars` interface. A bootstrapper uses market quotes for these exposed values, which makes the reported sensitivities quote sensitivities even though pricing uses discount factors. `with_ift_sensitivities` stores the Jacobian that reconnects calibrated nodes to those quotes, as explained in [Bootstrapping](bootstrapping.md).
+
+Interpolation operates on year fractions and applies the selected interpolator to the discount factors. For example, log-linear interpolation makes the logarithm of the discount factor linear between adjacent nodes, which produces a piecewise-constant instantaneous forward rate.
 
 ### `FlatForwardTermStructure<T>`
 
-`FlatForwardTermStructure::new(reference_date, rate: T, RateDefinition)` – a single rate compounded with the given `RateDefinition` (day counter, compounding, frequency). `with_pillar_label(String)` exposes the rate as one pillar. Use it in unit tests and quick what-ifs.
+A flat-forward curve describes the whole term structure with one rate and one rate convention. `FlatForwardTermStructure::new(reference_date, rate, rate_definition)` combines the rate with its day counter, compounding rule, and frequency. `with_pillar_label` exposes that rate as a single risk factor. This compact representation is useful when the purpose is to isolate product logic or study a simple parallel-rate scenario.
 
 ### `SpreadTermStructure<T>` and `CompositeTermStructure<T>`
 
-`SpreadTermStructure::new(reference_date, year_fractions, spreads, day_counter, interpolator)` stores continuously compounded zero spreads
-\\(s(t*i) = -\ln\\!\big(P*{\text{target}}(t*i)/P*{\text{base}}(t_i)\big)/t_i\\) and returns \\(P_s(t)=e^{-s(t)t}\\). `CompositeTermStructure::new(spread_curve, base_curve)` multiplies discount factors, \\(P(t)=P_s(t)\\,P_b(t)\\), taking the reference date from the base. Together they express "base curve plus spread" (funding curves, CSA adjustments) with sensitivities to the spread pillars and the base pillars kept separate.
+A spread curve represents continuously compounded zero-rate adjustments at a set of year fractions. At each pillar, the spread is inferred from the ratio between a target discount factor and a base discount factor:
+
+\\[
+s(t_i)=-\\frac{\\ln\\!\\left(P_{\\text{target}}(t_i)/P_{\\text{base}}(t_i)\\right)}{t_i},
+\\qquad P_s(t)=e^{-s(t)t}.
+\\]
+
+`SpreadTermStructure::new` stores and interpolates these adjustments. `CompositeTermStructure::new(spread_curve, base_curve)` then multiplies the spread and base discount factors, so \\(P(t)=P_s(t)P_b(t)\\). This construction is useful for funding spreads and collateral adjustments because the resulting curve preserves separate sensitivities to the base market and the spread market.
 
 ## Interpolators
 
-`Interpolator::{Linear, LogLinear, CubicSpline}` (serialised as strings). The `Interpolate` trait provides `interpolate(x, xs, ys, enable_extrapolation)`; extrapolation past the last pillar is flat-forward for `LogLinear` and linear for the others, and is an error when disabled.
+Interpolation determines how a finite set of pillars becomes a continuous term structure, so it is part of the financial model. `Interpolator` provides `Linear`, `LogLinear`, and `CubicSpline`, which are serialized by name in configuration. The `Interpolate` trait evaluates a point from coordinates and values and applies the curve's extrapolation policy.
+
+Beyond the last pillar, log-linear interpolation continues with a flat forward rate. Linear and cubic-spline curves use linear extrapolation. When extrapolation is disabled, a query outside the supported range returns an error. A caller can therefore choose explicitly whether an unavailable market horizon should fail or follow a documented continuation rule.
 
 ## `Pillars<T>`
+
+Risk reports need names and differentiable values in addition to prices. The `Pillars<T>` trait supplies that information independently of the curve's pricing interface:
 
 ```rust,ignore
 pub trait Pillars<T> {
     fn pillar_labels(&self) -> Option<Vec<String>>;
-    fn pillars(&self) -> Option<Vec<(String, &T)>>;   // label → tape value
+    fn pillars(&self) -> Option<Vec<(String, &T)>>;
     fn put_pillars_on_tape(&mut self);
 }
 ```
 
-Every curve (and `FxStore`) implements `Pillars<DualFwd>`. Pricers use it to produce named sensitivities: after `Tape::backward()` they iterate `pillars()` and read `value.adjoint()`. `put_pillars_on_tape()` must be called after `Tape::start_recording_fwd()` and before pricing when the curve was built outside the current tape; the bootstrapper's curves are rebuilt from quotes through the IFT matrices so sensitivities are w.r.t. quotes rather than discount factors.
+Every differentiable curve, along with `FxStore`, implements `Pillars<DualFwd>`. After a reverse sweep, a pricer iterates over `pillars()` and reads each value's adjoint under its label. When a curve was created outside the active tape, `put_pillars_on_tape()` records its independent values after `Tape::start_recording_fwd()` and before pricing.
+
+Bootstrapped curves require one additional connection. Their pricing values are calibrated discount factors, and their market inputs are quotes. The stored implicit-function Jacobian rebuilds the dependency between the two, which lets the final report describe sensitivity to the original quotes.
 
 ## Rate conventions
 
-- `Compounding::{Simple, Compounded, Continuous, SimpleThenCompounded, CompoundedThenSimple}`.
-- `RateDefinition::new(day_counter, compounding, frequency)`; `InterestRate::from_rate_definition(rate, def)`, `InterestRate::new(rate, compounding, frequency, day_counter)`, `compound_factor(t)`, `discount_factor(t)`, `implied_rate(compound, dc, comp, freq, t)`.
-- Day counters: `DayCounter::{Actual360, Actual365, Thirty360, Thirty360US, ActualActual, Business252}` with `year_fraction(d1, d2)` and `day_count(d1, d2)`.
+Rates only have meaning when their time measurement and compounding rules are known. `Compounding` supports simple, periodic, continuous, and the two mixed conventions commonly used around short maturities. `RateDefinition::new` groups a day counter, a compounding convention, and a payment frequency so that a rate can travel with its interpretation.
 
-The next chapters cover how curves are produced: [Bootstrapping](bootstrapping.md) for single curves, [Multi-Curve Framework](multi-curve.md) for dependent curves and collateral, and [Volatility Surfaces](volatility.md) for option markets.
+`InterestRate` uses that definition to calculate compound factors, discount factors, and implied rates. Available day counters include Actual/360, Actual/365, 30/360, 30/360 US, Actual/Actual, and Business/252. Their `year_fraction` and `day_count` methods provide the time measure used by both interest-rate conversions and curve interpolation.
+
+## What to remember
+
+All curve implementations answer the same discounting and forwarding questions. Their differences describe how values are represented, interpolated, extrapolated, and linked to risk factors. This separation keeps pricer interfaces stable as market construction evolves from a flat test curve to a calibrated multi-curve environment.
+
+The next chapters develop that process. [Bootstrapping](bootstrapping.md) explains how quotes determine curve nodes, [Multi-Curve Framework](multi-curve.md) describes dependencies and collateral policies, and [Volatility Surfaces](volatility.md) introduces the option markets used by volatility-dependent products and model calibration.

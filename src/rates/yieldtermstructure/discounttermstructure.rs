@@ -43,7 +43,6 @@ use crate::{
 ///     discount_factors
 /// );
 ///  ```
-/// A discount factors term structure.
 #[derive(Clone)]
 pub struct DiscountTermStructure<T>
 where

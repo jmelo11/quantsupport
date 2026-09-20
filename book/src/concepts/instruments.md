@@ -4,6 +4,11 @@ QuantSupport models a contract at three levels: **cashflows** grouped into **leg
 
 ## Cashflows
 
+Cashflows are the smallest contractual units in the library. Every cashflow
+knows when it pays. Its variant determines how the amount is obtained.
+The trait and enum below show the common interface and the supported economic
+rules.
+
 ```rust,ignore
 pub trait Cashflow<T: Scalar> {
     fn amount(&self) -> Result<T>;
@@ -21,11 +26,19 @@ pub enum CashflowType<T: Scalar> {
 }
 ```
 
-`FixedRateCoupon` carries an `InterestRate<T>` (rate + `RateDefinition` = day counter, compounding, frequency); its `amount()` is `notional × (compound_factor − 1)`. `FloatingRateCoupon` stores fixing/accrual dates, the forward index and a spread; its amount is undefined until a fixing is supplied by the pricer, which is why `amount()` returns `Result`. `CashflowType<f64>` and `CashflowType<DualFwd>` convert into each other with `.into()`, so instruments built in `f64` can be priced with AAD.
+The enum keeps product-specific amount logic typed. A pricer can therefore
+visit fixed, floating, optional, and principal cashflows and retain the
+information needed to resolve rates or option payoffs.
+
+`FixedRateCoupon` carries an `InterestRate<T>`, whose `RateDefinition` provides the day counter, compounding, and frequency. Its `amount()` is `notional × (compound_factor − 1)`. `FloatingRateCoupon` stores fixing and accrual dates, the forward index, and a spread. Its `amount()` returns `Result` because the pricer must first supply a fixing or projection. `CashflowType<f64>` and `CashflowType<DualFwd>` convert into each other with `.into()`, allowing instruments built in `f64` to enter AAD pricing.
 
 ## Legs
 
 `Leg<T>` groups cashflows that share a currency, side and set of indices:
+
+The shared fields explain how a stream is projected, discounted, signed, and
+reported. They also let a pricer prepare market data once for the complete
+stream.
 
 | Field                                                         | Meaning                                                              |
 | ------------------------------------------------------------- | -------------------------------------------------------------------- |
@@ -40,9 +53,15 @@ pub enum CashflowType<T: Scalar> {
 | `asset_class: AssetClass`                                     | `FixedIncome, InterestRate, Equity, Fx, Credit, Other`               |
 | `first_payment_date`, `last_payment_date`                     | used by bootstrappers to order pillars                               |
 
+Together, these fields turn individual payments into a coherent side of a
+contract. Multi-leg products then combine streams with complementary signs and
+possibly different currencies or indices.
+
 ### `MakeLeg`
 
-Every multi-leg instrument builder delegates to `MakeLeg<T>`:
+Every multi-leg instrument builder delegates to `MakeLeg<T>`. The builder is
+shown in detail because its scheduling and payment choices also explain the
+behavior of swap, bond, and cross-currency builders.
 
 ```rust,ignore
 let leg = MakeLeg::<DualFwd>::default()
@@ -60,8 +79,12 @@ let leg = MakeLeg::<DualFwd>::default()
     .with_date_generation_rule(Some(DateGenerationRule::Backward))
     .with_discount_index(Some(MarketIndex::SOFR))
     .bullet()
-    .build()?;
+.build()?;
 ```
+
+The chain separates contractual choices from schedule generation. Required
+fields define the economics. Calendar and date-generation fields control
+how those economics are placed on actual dates.
 
 Payment structures (`PaymentStructure`):
 
@@ -73,11 +96,11 @@ Payment structures (`PaymentStructure`):
 | `.zero()`              | one payment at maturity                                                                | forces `Frequency::Once`            |
 | `.other()`             | custom `with_disbursements(HashMap<Date,f64>)` / `with_redemptions(HashMap<Date,f64>)` | forces `Frequency::OtherFrequency`  |
 
-Optional extras: `with_first_coupon_date`, `with_end_of_month`, `with_leg_id`, `with_asset_class`, `with_caplet_strike`/`with_floorlet_strike` (turns a floating leg into option-embedded coupons; not allowed on fixed legs). `build()` fails with `ValueNotSetErr("Rate type")` and similar messages when a required field is missing, and with `InvalidValueErr` for inconsistent combinations.
+Optional settings include `with_first_coupon_date`, `with_end_of_month`, `with_leg_id`, `with_asset_class`, `with_caplet_strike`, and `with_floorlet_strike`. Strike settings create option-embedded floating coupons. `build()` returns `ValueNotSetErr("Rate type")` and similar messages for a missing required field, and `InvalidValueErr` for an inconsistent combination.
 
 ## Instruments and trades
 
-An instrument holds the legs and static terms; a trade wraps it with `trade_date`, `notional` and `Side`:
+An instrument holds the legs and static terms. A trade wraps it with `trade_date`, `notional`, and `Side`:
 
 ```rust,ignore
 pub struct Swap<T: Scalar> { fixed_leg, floating_leg, forward_index, currency, ... }
@@ -95,9 +118,13 @@ impl<T: Scalar> SwapTrade<T> {
 }
 ```
 
-`Side::LongReceive` means the trade receives the fixed leg (for swaps) / owns the instrument; `Side::PayShort` is the mirror. `Side::sign()` returns `+1.0`/`-1.0` and pricers multiply by it. Trades implement `Instrument` (`identifier()`), `Discountable` (asset class, currency, optional discount index) and, for exposure simulation, `IntoContingentClaims`.
+For a swap, `Side::LongReceive` receives the fixed leg and `Side::PayShort` pays it. `Side::sign()` returns `+1.0` or `-1.0`, which pricers apply to value. Trades implement `Instrument`, `Discountable`, and `IntoContingentClaims` for exposure simulation.
 
 ### Catalogue
+
+The catalogue connects each contract representation to its normal builder,
+trade wrapper, and deterministic valuation route. It is a map for choosing the
+next detailed pricing chapter.
 
 | Asset class  | Instrument                    | Builder                           | Trade                              | Deterministic pricer                                             |
 | ------------ | ----------------------------- | --------------------------------- | ---------------------------------- | ---------------------------------------------------------------- |
@@ -120,19 +147,31 @@ impl<T: Scalar> SwapTrade<T> {
 | Credit       | `CreditDefaultSwap`           | —                                 | `CdsTrade`                         | `CdsPricer`                                                      |
 | Any          | `ScriptedProduct`             | script text                       | —                                  | `ScriptEngine` (Monte Carlo)                                     |
 
-The generic parameter `T` on rate/fixed-income instruments is `f64` or `DualFwd`; build in `f64` when you do not need rate sensitivities and convert with `.into()` when you do. FX, equity, cap/floor and credit instruments are non-generic and always price in `DualFwd` internally.
+Products without a deterministic pricer still participate in claim-based or
+scripted workflows. The final column records the currently implemented route
+for each contract.
+
+The generic parameter `T` on rate and fixed-income instruments is `f64` or `DualFwd`. Use `f64` for value calculations and convert with `.into()` for AAD pricing. FX, equity, cap, floor, and credit instruments use `DualFwd` internally.
 
 ### Builder conventions
 
 All `Make*` builders follow the same pattern as `MakeSwap` (see [Your First Swap](../getting-started/first-swap.md)):
 
 - `Make*::new()` / `default()` then chained `with_*` setters that take ownership.
-- `build()` returns `Result<Instrument>`; missing mandatory fields produce `QSError::ValueNotSetErr("<Field>")`.
+- `build()` returns `Result<Instrument>`. Missing mandatory fields produce `QSError::ValueNotSetErr("<Field>")`.
 - Defaults are conservative: `Calendar::NullCalendar`, `BusinessDayConvention::Unadjusted`, `DateGenerationRule::Backward`, `spread = 0.0`, `Side::LongReceive`.
-- Cross-currency builders take two currencies, two notionals (or an FX rate to derive one) and per-leg indices; `MakeFxForward` and `MakeFxOption` take a `currency pair`, strike/forward rate and settlement date; `MakeCapFloor` takes an index, strike, cap/floor flag and schedule parameters; `MakeSwaption` wraps a `MakeSwap` plus expiry and settlement type.
+- Cross-currency builders take two currencies, two notionals or an FX rate, and per-leg indices. `MakeFxForward` and `MakeFxOption` take a currency pair, strike or forward rate, and settlement date. `MakeCapFloor` takes an index, strike, product direction, and schedule parameters. `MakeSwaption` wraps swap terms with expiry and settlement type.
 
 The per-product chapters under [Pricing](../pricing/overview.md) show each builder with its required fields and the requests its pricer supports.
 
 ## Contingent claims
 
-For simulation-based pricing every trade is decomposed into `ContingentClaim`s—atomic payments with a payment date, currency, leg id, side and a `ClaimEvaluationStrategy` (fixed amount, forward-rate coupon, option payoff, scripted payoff, …). `IntoContingentClaims::into_contingent_claims(&self, trade_id: &str) -> Result<Vec<ContingentClaim>>` performs the decomposition; the XVA engine, the scripting engine and `LgmMarketModel` all consume claims rather than instruments. See [Exposure](../simulation/exposure.md).
+For simulation-based pricing, every trade is decomposed into `ContingentClaim` values. Each claim is an atomic payment with a payment date, currency, leg id, side, and a `ClaimEvaluationStrategy` such as a fixed amount, forward-rate coupon, option payoff, or scripted payoff. `IntoContingentClaims::into_contingent_claims(&self, trade_id: &str) -> Result<Vec<ContingentClaim>>` performs the decomposition. The XVA engine, scripting engine, and `LgmMarketModel` consume this common claim representation. See [Exposure](../simulation/exposure.md).
+
+## From contract to valuation
+
+The hierarchy now has a clear direction. Cashflows define amounts and dates,
+legs organize related payments, instruments define a product, and trades add
+the held position. Deterministic pricers consume trades directly. Simulation
+workflows translate them into contingent claims. Both routes begin
+from the same contractual definition, which keeps pricing and exposure aligned.

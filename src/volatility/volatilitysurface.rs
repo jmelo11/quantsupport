@@ -45,4 +45,20 @@ pub trait VolatilitySurface<T: Scalar> {
     /// Returns the smile axis convention used by the surface.
     #[must_use]
     fn smile_type(&self) -> SmileType;
+
+    /// Returns the option-instrument identifiers available to model
+    /// calibration, when present.
+    ///
+    /// [`ModelCalibrationConfiguration`](crate::volatility::modelcalibration::ModelCalibrationConfiguration)
+    /// parses these identifiers to obtain expiry, tenor, and strike metadata
+    /// for `calibration_basket` selection. [`Pillars`](crate::core::pillars::Pillars)
+    /// exposes the differentiable values whose adjoints appear in sensitivity
+    /// reports. An interpolated grid commonly uses source quote volatilities
+    /// as its pillars. A parametrised surface such as SABR can retain the
+    /// source option identifiers here while exposing `alpha`, `beta`, `rho`,
+    /// and `nu` through `Pillars`.
+    #[must_use]
+    fn calibration_instrument_ids(&self) -> Option<Vec<String>> {
+        None
+    }
 }

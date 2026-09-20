@@ -14,6 +14,7 @@ use crate::{
             lgmcomponents::{LgmFxModel, LgmRateModel},
             lgmmarketmodel::LgmMarketModel,
         },
+        modelconfiguration::{GaussianRateParameterSource, ParameterSource},
     },
     quotes::{fixingstore::FixingStore, quote::Level},
     rates::yieldtermstructure::{
@@ -27,7 +28,6 @@ use crate::{
         schedule::MakeSchedule,
     },
     utils::errors::{QSError, Result},
-    volatility::volatilitysource::VolatilitySourceConfiguration,
     xva::{
         aggregator::{
             CreditCurveCvaFactory, CvaFactory, FundingCurveFvaFactory, FvaFactory,
@@ -49,16 +49,16 @@ use crate::{
 ///
 /// `lambda` is measured in inverse years and controls the decay of
 /// long-maturity factor loadings. `sigma` is an annualized absolute rate
-/// volatility: `0.01` means 100 bp per square-root year.
+/// volatility. A value of `0.01` means 100 bp per square-root year.
 ///
-/// The short-rate volatility can be either a flat `sigma` or a
-/// [`VolatilitySourceConfiguration`]: `Constant`, or `Calibrated` against a
+/// Parameters are either `Fixed { sigma }` or `Calibrated` against a
 /// volatility surface (caplets) or cube (swaptions) constructed in the
-/// pricing context. When both are set, `volatility` takes precedence.
+/// pricing context.
 ///
 /// FX-implied collateral curves such as `Collateral(CLP, USD)` set
 /// [`Self::driver`] to reuse another curve's stochastic factor.
 #[derive(Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct LgmModelConfig {
     /// Curve or rate index represented by this model configuration.
     pub market_index: MarketIndex,
@@ -68,18 +68,10 @@ pub struct LgmModelConfig {
     /// is set.
     #[serde(default)]
     pub lambda: Option<f64>,
-    /// Flat annualized absolute short-rate volatility in rate units per
-    /// square-root year. For example, `0.01` means 100 bp/√year. Ignored when
-    /// [`Self::volatility`] is set.
+    /// Source of the Gaussian parameters. Required unless [`Self::driver`] is
+    /// set.
     #[serde(default)]
-    pub sigma: Option<f64>,
-    /// Short-rate volatility source. `Constant` uses the same units as
-    /// [`Self::sigma`]. `Calibrated` converts market caplet/swaption quotes
-    /// into a piecewise-constant model-sigma schedule. Surface and cube values
-    /// enter through calibration-instrument prices. Takes precedence over
-    /// [`Self::sigma`].
-    #[serde(default)]
-    pub volatility: Option<VolatilitySourceConfiguration>,
+    pub parameter_source: Option<GaussianRateParameterSource>,
     /// Rate model that drives this curve's dynamics.
     ///
     /// An FX-implied collateral curve can reuse a risk-free curve's Gaussian
@@ -89,7 +81,7 @@ pub struct LgmModelConfig {
     /// The derived curve supplies its own initial term structure. Its discount
     /// factors combine that term structure with the driver's state, preserving
     /// the time-zero cross-currency basis. A driver configuration leaves
-    /// `lambda`, `sigma`, and `volatility` empty.
+    /// `lambda` and `parameter_source` empty.
     ///
     /// ```json
     /// { "market_index": { "Collateral": ["CLP", "USD"] }, "driver": "ICP" }
@@ -104,11 +96,12 @@ pub struct LgmModelConfig {
 /// `foreign_currency` and follows a flat-volatility lognormal process coupled
 /// to the domestic and foreign LGM rate factors.
 #[derive(Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct FxModelConfig {
     /// Foreign currency (domestic is always the engine's base currency).
     pub foreign_currency: Currency,
-    /// Annualized lognormal FX volatility as a decimal; `0.12` means 12% per
-    /// square-root year.
+    /// Annualized lognormal FX volatility as a decimal. A value of `0.12`
+    /// means 12% per square-root year.
     pub fx_vol: f64,
     /// Correlation between domestic-rate and FX-spot Brownian shocks, in
     /// `[-1, 1]`. This is used both to correlate path shocks and in the
@@ -123,6 +116,7 @@ pub struct FxModelConfig {
 /// collateral (CSA) parameters are per client and belong to each
 /// [`NettingSet`]'s [`CsaTerms`].
 #[derive(Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct XvaEngineConfig {
     /// LGM model parameters, one per rate curve.
     pub model_configs: Vec<LgmModelConfig>,
@@ -130,8 +124,8 @@ pub struct XvaEngineConfig {
     #[serde(default)]
     pub fx_configs: Vec<FxModelConfig>,
     /// Number of Monte Carlo paths. Use an even value so every Sobol point has
-    /// an antithetic partner; at least 2,048 is recommended for optional
-    /// exposure profiles.
+    /// an antithetic partner. At least 2,048 paths are recommended for
+    /// optional exposure profiles.
     pub n_paths: usize,
     /// Deterministic Owen-scrambling seed for the Sobol sequence.
     pub seed: u64,
@@ -410,8 +404,8 @@ impl XvaEngine {
     }
 
     /// Snapshots the f64 data of a model's bootstrapped discount curve and
-    /// resolves its LGM parameters (calibrating the sigma schedule when a
-    /// volatility source is configured).
+    /// resolves its LGM parameters (calibrating the sigma schedule when
+    /// calibrated parameters are configured).
     ///
     /// # Errors
     /// Returns an error if the curve is missing or empty, or if sigma
@@ -423,8 +417,8 @@ impl XvaEngine {
         let snapshot = Self::snapshot_curve_data(context, &mc.market_index)?;
 
         // Resolve the short-rate sigma schedule: calibrate against the
-        // constructed vol surface/cube when a volatility source is
-        // configured, otherwise use the flat sigma. Calibrated models
+        // constructed vol surface/cube when calibrated parameters are
+        // configured, otherwise use the fixed sigma. Calibrated models
         // also retain the vol-quote pillars and the IFT sensitivities
         // `d(sigma_i)/d(vol_i)` so the AAD pass can report XVA
         // sensitivities to the market vol quotes.
@@ -459,17 +453,18 @@ impl XvaEngine {
     /// structure.
     ///
     /// # Errors
-    /// Returns an error if the config also sets `lambda`/`sigma`/`volatility`,
-    /// or if the driver is missing or itself derived.
+    /// Returns an error if the config also sets `lambda` or
+    /// `parameter_source`. An error is also returned when the driver is
+    /// missing or is itself derived.
     fn snapshot_derived_curve(
         context: &PricingContext,
         mc: &LgmModelConfig,
         resolved: &HashMap<MarketIndex, LgmResolvedParams>,
     ) -> Result<(CurveSnapshot, LgmResolvedParams)> {
-        if mc.lambda.is_some() || mc.sigma.is_some() || mc.volatility.is_some() {
+        if mc.lambda.is_some() || mc.parameter_source.is_some() {
             return Err(QSError::InvalidValueErr(format!(
-                "LgmModelConfig for {}: `driver` is mutually exclusive with `lambda`, `sigma` \
-                 and `volatility` — the curve inherits its driver's dynamics",
+                "LgmModelConfig for {}: `driver` is mutually exclusive with `lambda` and \
+                 `parameter_source` because the curve inherits its driver's dynamics",
                 mc.market_index
             )));
         }
@@ -538,8 +533,8 @@ impl XvaEngine {
     /// calibration IFT sensitivities `d(sigma_i)/d(vol_i)`.
     ///
     /// # Errors
-    /// Returns an error if neither `sigma` nor `volatility` is set, if the
-    /// volatility source is unsupported, or if calibration fails.
+    /// Returns an error if `parameter_source` is missing or calibration
+    /// fails.
     fn resolve_sigma_schedule(
         context: &PricingContext,
         mc: &LgmModelConfig,
@@ -547,16 +542,11 @@ impl XvaEngine {
         dfs: &[f64],
         dc: DayCounter,
     ) -> Result<SigmaResolution> {
-        let Some(volatility) = &mc.volatility else {
-            return mc.sigma.map_or_else(
-                || {
-                    Err(QSError::InvalidValueErr(format!(
-                        "LgmModelConfig for {} must set either `sigma` or `volatility`",
-                        mc.market_index
-                    )))
-                },
-                |sigma| Ok((vec![(0.0, sigma)], None)),
-            );
+        let Some(parameter_source) = &mc.parameter_source else {
+            return Err(QSError::InvalidValueErr(format!(
+                "LgmModelConfig for {} must set `parameter_source`",
+                mc.market_index
+            )));
         };
         let curve_f64 = DiscountTermStructure::<f64>::new(
             dates.to_vec(),
@@ -565,9 +555,12 @@ impl XvaEngine {
             Interpolator::LogLinear,
             true,
         )?;
-        match volatility {
-            VolatilitySourceConfiguration::Constant { value } => Ok((vec![(0.0, *value)], None)),
-            VolatilitySourceConfiguration::Calibrated(calibration) => {
+        match parameter_source {
+            ParameterSource::Fixed(fixed) => {
+                fixed.validate()?;
+                Ok((vec![(0.0, fixed.sigma)], None))
+            }
+            ParameterSource::Calibrated(calibration) => {
                 let lambda = mc.lambda.ok_or_else(|| {
                     QSError::InvalidValueErr(format!(
                         "LgmModelConfig for {} must set `lambda` to calibrate",
@@ -603,12 +596,6 @@ impl XvaEngine {
                 };
                 Ok((schedule, vol_pillars))
             }
-            VolatilitySourceConfiguration::Surface { .. }
-            | VolatilitySourceConfiguration::Cube { .. } => Err(QSError::InvalidValueErr(
-                "Lgm supports Constant or Calibrated volatility sources; sampling a \
-                 surface/cube directly would misuse Black vols as short-rate vols"
-                    .into(),
-            )),
         }
     }
 

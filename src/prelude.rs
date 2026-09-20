@@ -129,7 +129,10 @@ pub use crate::{
             lgmcomponents::{LgmEquityModel, LgmFxModel, LgmRateModel},
             lgmmarketmodel::LgmMarketModel,
         },
-        modelconfiguration::{ModelConfiguration, SimulationConfiguration},
+        modelconfiguration::{
+            GaussianRateModelParameters, GaussianRateParameterSource, LognormalModelParameters,
+            LognormalParameterSource, ModelConfiguration, ParameterSource, SimulationConfiguration,
+        },
         montecarloengine::{PathGenerator, TimeDependentVolatility},
     },
     pricers::{
@@ -206,15 +209,15 @@ pub use crate::{
     volatility::{
         interpolatedvolatilitycube::InterpolatedVolatilityCube,
         interpolatedvolatilitysurface::InterpolatedVolatilitySurface,
-        modelcalibration::{CalibrationSource, ModelCalibrationConfiguration},
+        modelcalibration::{CalibrationBasket, CalibrationSource, ModelCalibrationConfiguration},
         orientedfxvolsurface::OrientedFxVolSurface,
         volatilitycube::VolatilityCube,
         volatilitycubebuilder::VolatilityCubeBuilder,
         volatilitycubeconfiguration::VolatilityCubeConfiguration,
         volatilityindexing::{SmileType, Strike, VolatilityType},
         volatilitysource::{
-            bootstrap_black_term_volatility, ConstantVolatility, CubeTermVolatility,
-            PiecewiseConstantVolatility, SurfaceTermVolatility, VolatilitySourceConfiguration,
+            ConstantVolatility, CubeTermVolatility, PiecewiseConstantVolatility,
+            SurfaceTermVolatility, VolatilitySourceConfiguration, bootstrap_black_term_volatility,
         },
         volatilitysurface::VolatilitySurface,
         volatilitysurfacebuilder::VolatilitySurfaceBuilder,

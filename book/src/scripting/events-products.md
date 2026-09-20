@@ -1,8 +1,10 @@
 # Events and Scripted Products
 
-A scripted product is a **dated sequence of scripts**. Each script runs once per Monte Carlo path on its event date, with access to the market state simulated up to that date and to every variable assigned by earlier events. The types live in `src/scripting/nodes/event.rs` and `src/scripting/product.rs`.
+A scripted product is a **dated sequence of scripts**. Each script runs once per Monte Carlo path on its event date, with access to the simulated market state and the variables assigned by earlier events. This chapter follows a product from serializable source events through parsed event streams to the contingent claims consumed by XVA. The types live in `src/scripting/nodes/event.rs` and `src/scripting/product.rs`.
 
 ## `CodedEvent`
+
+`CodedEvent` is the external representation of one dated program. It contains plain source text and a date, which makes it suitable for construction in Rust or deserialization from a product file:
 
 ```rust,ignore
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -15,7 +17,7 @@ impl CodedEvent {
 }
 ```
 
-`CodedEvent` is the storage format: it is plain data and derives Serde, so a product can be persisted as JSON:
+Deriving Serde allows a sequence of coded events to be persisted as JSON. This example stores the first two accrual periods of a scripted swap:
 
 ```json
 [
@@ -30,11 +32,11 @@ impl CodedEvent {
 ]
 ```
 
-Dates use the library's `Date` serialisation (`YYYY-MM-DD`).
+Each JSON object becomes one `CodedEvent`. Dates use the library's `YYYY-MM-DD` serialization, and the script remains a string until parsing begins.
 
 ## `Event` and `EventStream`
 
-`Event::try_from(CodedEvent)` parses the source into a `Node` tree; a syntax error is reported as `ScriptingError::InvalidSyntax("<message> (event date: <date>)")`, so you always know which event failed.
+`Event::try_from(CodedEvent)` parses source text into a `Node` tree. A syntax error includes the event date in `ScriptingError::InvalidSyntax`, which identifies the affected point in the product timeline. `EventStream` then owns the ordered collection of parsed events:
 
 ```rust,ignore
 pub struct Event { event_date: Date, expr: Node }
@@ -59,7 +61,7 @@ impl EventStream {
 impl TryFrom<Vec<CodedEvent>> for EventStream { type Error = ScriptingError; }
 ```
 
-The usual way to build a stream is `EventStream::try_from(coded_events)`, exactly as `scripted_swap_events()` does in `examples/scripting/src/lib.rs`:
+Most applications build a stream with `EventStream::try_from(coded_events)`. The `scripted_swap_events()` helper in `examples/scripting/src/lib.rs` demonstrates how regular accrual periods can generate source events programmatically:
 
 ```rust,ignore
 pub fn scripted_swap_events() -> Result<EventStream, ScriptingError> {
@@ -87,19 +89,23 @@ pub fn scripted_swap_events() -> Result<EventStream, ScriptingError> {
 }
 ```
 
-Note the pattern: the **event date is the fixing date** (`start`), the rate is observed on that date, and the payment is deferred with `on "{end}"`. The engine discounts from the payment date back to the reference date on every path.
+In this pattern, the **event date is the fixing date** given by `start`. The rate is observed on that event, and `on "{end}"` schedules payment at the accrual end. The engine discounts from the payment date to the reference date on every path.
 
 ### Validation performed by `ScriptEngine::new`
+
+Engine construction validates the timeline before model paths are requested. The checks and their diagnostic messages are:
 
 | Check                                   | Error                                                                        |
 | --------------------------------------- | ---------------------------------------------------------------------------- |
 | Stream has no events                    | `InvalidOperation("a script must contain at least one event")`               |
 | An event date precedes `reference_date` | `InvalidOperation("scripted event dates cannot precede the reference date")` |
-| Events are not sorted by date           | `InvalidOperation("scripted events must be ordered by date")`                |
+| Event dates are out of order            | `InvalidOperation("scripted events must be ordered by date")`                |
 
-Two events may share a date; they are executed in order.
+Two events may share a date. Their vector order determines their execution order and therefore the state visible to the later event.
 
 ## `ScriptedProduct`
+
+`ScriptedProduct` is the bridge from a validated event stream to the product and claim interfaces. It owns a shared compiled engine and a catalog of every scripted payment:
 
 ```rust,ignore
 pub struct ScriptedProduct { id: String, engine: Arc<ScriptEngine>, payments: Vec<ScriptPayment> }
@@ -121,9 +127,9 @@ impl IntoContingentClaims for ScriptedProduct {
 }
 ```
 
-`ScriptedProduct::new` compiles the stream through `ScriptEngine::new`, walks every event's AST (including `if` branches, `for` bodies and indexed expressions) and records one `ScriptPayment { id, date, currency }` per `pays` node. Two extra checks apply: at least one `pays` must exist, and no payment date may precede the reference date. The default date of a payment is its event date; the default currency is `local_currency`.
+`ScriptedProduct::new` compiles the stream through `ScriptEngine::new`. It walks every event's AST, including conditional branches, loop bodies, and indexed expressions, and records one `ScriptPayment { id, date, currency }` per `pays` node. Product validation requires at least one payment and requires every payment date to fall on or after the reference date. A missing payment date uses the event date, and a missing payment currency uses `local_currency`.
 
-Each payment becomes one `ContingentClaim` built with `MakeContingentClaim`:
+Each recorded payment becomes one `ContingentClaim` built with `MakeContingentClaim`. The field mapping preserves the script's identity and economic meaning:
 
 | Claim field           | Value                                                          |
 | --------------------- | -------------------------------------------------------------- |
@@ -135,15 +141,19 @@ Each payment becomes one `ContingentClaim` built with `MakeContingentClaim`:
 | `side`                | `Side::LongReceive` (sign lives in the script expression)      |
 | `evaluation_strategy` | `ClaimEvaluationStrategy::Scripted { payoff: ScriptedPayoff }` |
 
-`ScriptedPayoff` holds an `Arc<ScriptEngine>` and the payment id. When the XVA exposure evaluator reaches a valuation date it calls `ScriptedPayoff::evaluate(valuation_date, responses)`, which replays the script on the path's `SimulationResponse`s and returns only the value of that payment. The engine shares one compiled script between all claims, so a product with 40 coupons parses once.
+`ScriptedPayoff` holds an `Arc<ScriptEngine>` and one payment id. At each XVA valuation date, the exposure evaluator calls `ScriptedPayoff::evaluate(valuation_date, responses)`. The method replays the program on the path's `SimulationResponse` sequence and returns the value associated with that payment. All claims share one compiled engine, so a product with 40 coupons performs parsing once.
 
 ## Reading scripts from files
 
-Because `CodedEvent` is `Deserialize`, loading a product is a one-liner with `serde_json`:
+Because `CodedEvent` implements `Deserialize`, an application can load the event list with `serde_json` and pass the parsed stream directly to `ScriptedProduct`:
 
 ```rust,ignore
 let coded: Vec<CodedEvent> = serde_json::from_reader(File::open("product.json")?)?;
 let product = ScriptedProduct::new("STRUCTURED_NOTE", EventStream::try_from(coded)?, ref_date, Currency::USD, MarketIndex::SOFR)?;
 ```
 
-Pair this with the JSON `QuoteStore`, `CurveConfiguration` and `XvaEngineConfig` described in [Configuration](../reference/configuration.md) to keep an entire pricing job in data.
+The resulting product can share a data-driven job with the JSON `QuoteStore`, `CurveConfiguration`, and `XvaEngineConfig` described in [Configuration](../reference/configuration.md). Product terms, market construction, and XVA settings can then be stored and versioned together.
+
+## What to remember
+
+`CodedEvent` is the serializable source form, `Event` is one parsed program, and `EventStream` is the validated timeline. `ScriptedProduct` discovers payments in that timeline and turns each one into a contingent claim backed by the shared compiled engine. These stages preserve dates, state, and payment identities from product data through pathwise exposure.
