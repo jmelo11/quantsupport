@@ -1,4 +1,3 @@
-use scoped_tls::scoped_thread_local;
 use std::collections::{BTreeMap, HashMap};
 
 use crate::{
@@ -496,5 +495,3 @@ impl MarketDataProvider for PricingContext {
         Ok(md)
     }
 }
-
-scoped_thread_local!(static CURRENT_CONTEXT: PricingContext);
