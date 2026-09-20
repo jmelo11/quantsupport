@@ -19,7 +19,7 @@ keywords = [
     "risk",
     "xva",
 ]
-categories = ["finance", "science", "library"]
+categories = ["finance", "science"]
 documentation = "https://docs.rs/quantsupport"
 
 [dependencies]
