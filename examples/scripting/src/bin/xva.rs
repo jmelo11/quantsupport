@@ -67,8 +67,9 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         model_configs: vec![LgmModelConfig {
             market_index: MarketIndex::SOFR,
             lambda: Some(0.05),
-            sigma: Some(0.01),
-            volatility: None,
+            parameter_source: Some(ParameterSource::Fixed(GaussianRateModelParameters::new(
+                0.01,
+            ))),
             driver: None,
         }],
         fx_configs: Vec::new(),

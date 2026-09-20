@@ -237,6 +237,7 @@ mod tests {
             pricingcontext::PricingContext,
         },
         math::interpolation::interpolator::Interpolator,
+        models::modelconfiguration::{GaussianRateModelParameters, ParameterSource},
         quotes::quotestore::QuoteStore,
         rates::yieldtermstructure::discounttermstructure::DiscountTermStructure,
         scripting::nodes::event::CodedEvent,
@@ -353,8 +354,9 @@ mod tests {
                 model_configs: vec![LgmModelConfig {
                     market_index: MarketIndex::SOFR,
                     lambda: Some(0.05),
-                    sigma: Some(0.01),
-                    volatility: None,
+                    parameter_source: Some(ParameterSource::Fixed(
+                        GaussianRateModelParameters::new(0.01),
+                    )),
                     driver: None,
                 }],
                 fx_configs: Vec::new(),

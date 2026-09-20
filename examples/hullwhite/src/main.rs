@@ -9,17 +9,17 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     // 1. Load market data from JSON
     let quote_store = utils::load_quotes(&data_dir.join("quotes.json"))?;
     let curve_specs = utils::load_curve_specs(&data_dir.join("curve_specs.json"))?;
-    let hw_config = utils::load_hw_calibration(&data_dir.join("hw_calibration.json"))?;
+    let vol_specs = utils::load_vol_specs(&data_dir.join("vol_specs.json"))?;
     let sim_config = utils::load_simulation_config(&data_dir.join("simulation.json"))?;
     let ref_date = quote_store.reference_date();
     let dc = DayCounter::Actual365;
 
     println!("Reference date: {ref_date}");
     println!(
-        "Loaded {} quotes, {} curve spec(s), {} calibration quote(s)",
+        "Loaded {} quotes, {} curve spec(s), {} volatility surface spec(s)",
         quote_store.quotes().len(),
         curve_specs.len(),
-        hw_config.quote_ids().len(),
+        vol_specs.volatility_surfaces.len(),
     );
 
     // 2. Bootstrap SOFR discount curve
@@ -32,20 +32,11 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     let curve = sofr_element.to_f64_term_structure(dc)?;
     println!("Bootstrapped SOFR curve ({} nodes)", curve.dates().len());
 
-    // 3. Build the SOFR caplet vol surface from the same quote store
-    let caplet_quote_ids: Vec<String> = quote_store
-        .quotes()
-        .keys()
-        .filter(|id| id.starts_with("CapletFloorlet"))
-        .cloned()
-        .collect();
-    let surface_config = VolatilitySurfaceConfiguration::new(
-        MarketIndex::SOFR,
-        VolatilityType::Black,
-        SmileType::Strike,
-        caplet_quote_ids,
-    );
-    let surfaces = VolatilitySurfaceBuilder::new(vec![surface_config])
+    // 3. Build the SOFR caplet vol surface. This is the only configuration
+    // that owns the quote identifiers. Model calibration selects its
+    // calibration basket
+    // from the constructed surface.
+    let surfaces = VolatilitySurfaceBuilder::new(vol_specs.volatility_surfaces)
         .build(&quote_store, Level::Mid)?;
     println!("Built {} volatility surface(s)", surfaces.len());
 
@@ -60,15 +51,32 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         store.volatility_surfaces_mut().insert(index, element);
     }
 
-    // 4. Calibrate HW to caplet vols interpolated from the surface
-    let alpha = hw_config.alpha();
-    let mut hw = HullWhite::new(alpha, &curve);
+    // 4. Resolve the model definition embedded in the simulation config and
+    // calibrate HW to caplet vols interpolated from its referenced surface.
+    let ModelConfiguration::HullWhite {
+        alpha,
+        parameter_source,
+    } = sim_config.model()
+    else {
+        return Err("Hull-White example requires a HullWhite model configuration".into());
+    };
+    let ParameterSource::Calibrated(hw_config) = parameter_source else {
+        return Err("Hull-White example requires calibrated model parameters".into());
+    };
+
+    let mut hw = HullWhite::new(*alpha, &curve);
+
     hw.calibrate_with_configuration(&hw_config, &store, &quote_store, &curve, Level::Mid)
         .expect("calibration should converge");
 
     let quality = hw
         .calibration_quality()
         .expect("calibration quality should be set after calibrate");
+    println!(
+        "Selected {} surface node(s), calibrated {} instrument pillar(s)",
+        hw_config.resolve_instrument_ids(&store)?.len(),
+        quality.records.len()
+    );
 
     // 6. Print calibration quality table
     println!("\n=== Calibration Quality ===");

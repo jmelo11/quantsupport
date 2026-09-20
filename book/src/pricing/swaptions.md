@@ -1,6 +1,10 @@
 # Swaptions
 
+A swaption grants the right to enter an interest-rate swap at a future expiry. Its value therefore combines the underlying swap schedule with the distribution of future rates. This chapter introduces the contract, develops the closed-form Hull-White valuation, and connects market swaption cubes to model calibration.
+
 ## Instrument
+
+The swaption builder specifies both the option expiry and the maturity date of the underlying swap. It also records the strike, notional, currency, index, and payer-or-receiver direction. The following example creates a one-year option on a five-year payer swap:
 
 ```rust,ignore
 let swaption = MakeSwaption::<DualFwd>::default()
@@ -16,23 +20,31 @@ let swaption = MakeSwaption::<DualFwd>::default()
 let trade = EuropeanSwaptionTrade::new(swaption, rd, 10_000_000.0, Side::LongReceive);
 ```
 
-Required: strike, expiry, identifier, market_index, currency, swap_tenor_date, notional. `SwaptionType::{Payer, Receiver}`. The underlying swap's fixed-leg coupons `(payment_time, accrual_fraction)` are derived from the swaption's frequency settings.
+The builder requires the strike, expiry, identifier, market index, currency, underlying maturity, and notional. `SwaptionType` selects payer or receiver rights. Frequency settings generate the payment times and accrual fractions of the underlying fixed leg, which the closed-form decomposition uses directly.
 
 ## `ClosedFormHullWhiteSwaptionPricer`
+
+The Hull-White pricer takes the model's mean reversion and short-rate volatility. It supports value and quote sensitivities and requests the curve of the swaption index together with any additional curve selected by the discount policy:
 
 ```rust,ignore
 let pricer = ClosedFormHullWhiteSwaptionPricer::new(alpha, sigma);
 let results = pricer.evaluate(&trade, &[Request::Value, Request::Sensitivities], &ctx)?;
 ```
 
-Handles `Request::Value` and `Request::Sensitivities`; requests the discount curve of `market_index` (and the policy's discount index if different). The price is Jamshidian's decomposition:
+Valuation uses Jamshidian's decomposition, which converts the option on a coupon-bearing swap into a portfolio of zero-coupon bond options. The calculation proceeds in three stages:
 
 1. Zero-coupon bond prices in Hull-White are affine, \\(P(t,T\mid r_t)=A(t,T)\\,e^{-B(t,T)r_t}\\), with \\(B(t,T)=\frac{1-e^{-\alpha(T-t)}}{\alpha}\\) and \\(A\\) fitted to the initial curve.
-2. Find the critical short rate \\(r^{\ast}\\) such that the underlying swap's fixed leg (coupons \\(c_i\\) plus final notional) is worth par at expiry: \\(\sum_i c_i P(T_0,T_i\mid r^{\ast}) = 1\\). The solve is a bisection with up to 200 iterations.
-3. Strikes \\(X_i = P(T_0,T_i\mid r^{\ast})\\) turn the swaption into a portfolio of zero-coupon bond options: a payer swaption is \\(\sum_i c_i\\,\text{BondPut}(T_0,T_i,X_i)\\), a receiver the corresponding calls, each priced with the bond volatility \\(\sigma\\,B(T_0,T_i)\sqrt{(1-e^{-2\alpha T_0})/(2\alpha)}\\).
+2. Find the critical short rate \\(r^{\ast}\\) that makes the underlying fixed leg, including final principal, worth par at expiry. This means solving \\(\sum_i c_i P(T_0,T_i\mid r^{\ast}) = 1\\) by bisection with up to 200 iterations.
+3. Use \\(X_i = P(T_0,T_i\mid r^{\ast})\\) as the strike of each zero-coupon bond option. A payer swaption becomes \\(\sum_i c_i\\,\text{BondPut}(T_0,T_i,X_i)\\). A receiver swaption uses the corresponding calls. Each option uses bond volatility \\(\sigma\\,B(T_0,T_i)\sqrt{(1-e^{-2\alpha T_0})/(2\alpha)}\\).
 
-The implicit solve is handled inside the AD framework, so `Request::Sensitivities` returns exact derivatives with respect to the curve quotes without bumping.
+The automatic-differentiation graph includes the result of the critical-rate solve. `Request::Sensitivities` can therefore return derivatives with respect to curve quotes from the same valuation, with no quote-by-quote recalibration loop.
 
 ## Volatility cubes
 
-Market swaption volatilities live in a `VolatilityCubeConfiguration` built from `Swaption_CCY_Index_Expiry_Tenor_[PayFreq_RecvFreq]_Strike_val_VolType` quotes (see [Volatility Surfaces](../curves/volatility.md)). The cube is used to calibrate LGM/Hull-White sigma schedules for simulation (`VolatilitySourceConfiguration::Calibrated` with `CalibrationSource::Cube`, as in `examples/cva/data/xva_config.json` for `ICP`); pair it with the Hull-White swaption pricer to verify that the calibrated model reprices the calibration instruments.
+Market swaption volatilities live in a `VolatilityCubeConfiguration` built from identifiers of the form `Swaption_CCY_Index_Expiry_Tenor_[PayFreq_RecvFreq]_Strike_val_VolType`. [Volatility Surfaces](../curves/volatility.md) explains how those fields become cube coordinates.
+
+`ParameterSource::Calibrated` references the constructed cube through `CalibrationSource::Cube`. Its `calibration_basket` selects the expiry, tenor, and strike rule used to fit an LGM or Hull-White sigma schedule. The ICP configuration in `examples/cva/data/xva_config.json` provides a complete example. Pricing the selected contracts with the Hull-White swaption pricer then provides a direct calibration-quality check.
+
+## What to remember
+
+The swaption contract supplies an expiry and an underlying swap schedule. Hull-White supplies a future-rate distribution and a bond-option representation. The volatility cube supplies market targets for calibration. Keeping those roles explicit lets the same pricer value fixed model parameters, verify calibrated parameters, and report risk under the original curve and volatility identifiers.

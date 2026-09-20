@@ -216,6 +216,11 @@ impl CurveConfiguration {
                         set.insert(discount_index);
                     }
                 }
+                CalibrationInstrumentType::FixedRateBond(bond, _) => {
+                    if let Some(discount_index) = bond.discount_index() {
+                        set.insert(discount_index);
+                    }
+                }
                 CalibrationInstrumentType::Swap(swap) => {
                     if let Ok(idx) = policy.discount_index(swap.fixed_leg()) {
                         set.insert(idx);
@@ -248,7 +253,7 @@ impl CurveConfiguration {
                     set.insert(xccy.domestic_forward_index());
                     set.insert(xccy.foreign_forward_index());
                 }
-                CalibrationInstrumentType::FxForward(fwd) => {
+                CalibrationInstrumentType::FxForward(fwd, _) => {
                     if let Ok(idx) = policy.discount_index_for_currency(fwd.base_currency()) {
                         set.insert(idx);
                     }
@@ -428,10 +433,10 @@ mod tests {
 
     #[test]
     fn dependencies_fx_forward() -> Result<()> {
-        let selector = make_selector(&[("FxForwardPoints_EURUSD_1M", 0.001)]);
+        let selector = make_selector(&[("FxForward_EURUSD_1M_AnchorForwardPoints", 0.001)]);
         let cfg = resolve_config(
             MarketIndex::Collateral(Currency::EUR, Currency::USD),
-            vec!["FxForwardPoints_EURUSD_1M".into()],
+            vec!["FxForward_EURUSD_1M_AnchorForwardPoints".into()],
             &selector,
         )?;
         let policy = BootstrapDiscountPolicy::new(MarketIndex::SOFR, Currency::USD);

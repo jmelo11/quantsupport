@@ -290,7 +290,10 @@ mod tests {
         math::interpolation::interpolator::Interpolator,
         models::{
             brownianmotion::BrownianMotion,
-            modelconfiguration::{ModelConfiguration, SimulationConfiguration},
+            modelconfiguration::{
+                LognormalModelParameters, ModelConfiguration, ParameterSource,
+                SimulationConfiguration,
+            },
         },
         quotes::{fixingstore::FixingStore, quote::Level, quotestore::QuoteStore},
         rates::yieldtermstructure::discounttermstructure::DiscountTermStructure,
@@ -302,7 +305,6 @@ mod tests {
             period::Period,
         },
         volatility::volatilityindexing::Strike,
-        volatility::volatilitysource::VolatilitySourceConfiguration,
     };
 
     struct SimpleMarketDataProvider {
@@ -343,10 +345,10 @@ mod tests {
         let curve =
             DiscountTermStructure::<DualFwd>::new(dates, dfs, dc, Interpolator::LogLinear, true)?
                 .with_pillar_labels(vec![
-                    "df_0d".to_string(),
-                    "df_1y".to_string(),
-                    "df_5y".to_string(),
-                ])?;
+                "df_0d".to_string(),
+                "df_1y".to_string(),
+                "df_5y".to_string(),
+            ])?;
         let mut store = ConstructedElementStore::default();
         store.discount_curves_mut().insert(
             index.clone(),
@@ -360,7 +362,7 @@ mod tests {
         let builder = SimulationBuilder::new(vec![SimulationConfiguration::new(
             index.clone(),
             ModelConfiguration::BrownianMotion {
-                volatility: VolatilitySourceConfiguration::Constant { value: vol },
+                parameter_source: ParameterSource::Fixed(LognormalModelParameters::new(vol)),
                 dividend_rate: None,
             },
             50_000,
@@ -389,7 +391,8 @@ mod tests {
         let trade = EquityEuropeanOptionTrade::new(option, 1.0, reference_date, Side::LongReceive);
 
         let pricer = BlackMCEuropeanOptionPricer::new();
-        let results = pricer.evaluate(&trade, &[Request::Value, Request::Sensitivities], &provider)?;
+        let results =
+            pricer.evaluate(&trade, &[Request::Value, Request::Sensitivities], &provider)?;
         let mc_price = results
             .price()
             .ok_or_else(|| QSError::UnexpectedErr("No MC price".into()))?;
@@ -398,8 +401,7 @@ mod tests {
         let tau = dc.year_fraction(reference_date, expiry);
         let df = (-rate * tau).exp();
         let fwd = spot / df;
-        let bs_price =
-            df * BrownianMotion::<f64>::closed_form_price(fwd, 100.0, vol, tau, true)?;
+        let bs_price = df * BrownianMotion::<f64>::closed_form_price(fwd, 100.0, vol, tau, true)?;
 
         assert!(
             (mc_price - bs_price).abs() / bs_price < 0.02,

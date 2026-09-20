@@ -28,16 +28,14 @@ use crate::{
     ad::scalar::Scalar,
     core::marketdatahandling::constructedelementstore::ConstructedElementStore,
     models::{
-        hullwhite::hullwhitemodel::HullWhite, modelconfiguration::ModelConfiguration,
+        hullwhite::hullwhitemodel::HullWhite,
+        modelconfiguration::{ModelConfiguration, ParameterSource},
         montecarloengine::PathGenerator,
     },
     quotes::{quote::Level, quoteselector::QuoteSelector},
     rates::yieldtermstructure::interestratestermstructure::InterestRatesTermStructure,
     utils::errors::{QSError, Result},
-    volatility::{
-        modelcalibration::ModelCalibrationConfiguration,
-        volatilitysource::VolatilitySourceConfiguration,
-    },
+    volatility::modelcalibration::ModelCalibrationConfiguration,
 };
 
 /// One-factor LGM interest-rate model.
@@ -149,8 +147,8 @@ impl<'a> LgmRateModel<'a, f64> {
     ///   solves the volatility schedule while holding this value constant.
     /// - `discount_curve` — curve used both to price calibration instruments
     ///   and to anchor the LGM model.
-    /// - `configuration` — calibration instruments, quote identifiers,
-    ///   volatility convention, and calibration source.
+    /// - `configuration` — calibration source, instrument selection, and
+    ///   volatility convention.
     /// - `store` — constructed volatility surfaces or cubes referenced by the
     ///   configuration.
     /// - `selector` — market quote source used by the calibration instruments.
@@ -182,18 +180,18 @@ impl<'a> LgmRateModel<'a, f64> {
 
     /// Creates an LGM rate model from a serde-enabled [`ModelConfiguration`].
     ///
-    /// Supported volatility sources are `Constant` and `Calibrated`.
-    /// `Constant` supplies LGM sigma directly. `Calibrated` derives LGM sigma
+    /// Supported parameter sources are `Fixed` and `Calibrated`.
+    /// `Fixed` supplies LGM sigma directly. `Calibrated` derives LGM sigma
     /// from prices of instruments quoted through a volatility surface or cube.
     ///
-    /// `configuration` supplies `lambda` and the volatility policy;
-    /// `discount_curve`, `store`, `selector`, and `level` have the same roles
-    /// as in [`Self::calibrated`]. A constant source interprets its value as
-    /// absolute short-rate volatility in rate units per square-root year.
+    /// `configuration` supplies `lambda` and the parameter source.
+    /// `discount_curve`, `store`, `selector`, and `level` provide the market
+    /// inputs described by [`Self::calibrated`]. Fixed sigma values use
+    /// absolute rate units per square-root year.
     ///
     /// # Errors
-    /// Returns an error for another model type, an unsupported volatility
-    /// source, or a calibration failure.
+    /// Returns an error when the configuration selects another model type,
+    /// fixed parameters fail validation, or market calibration fails.
     pub fn from_configuration(
         configuration: &ModelConfiguration,
         discount_curve: &'a dyn InterestRatesTermStructure<f64>,
@@ -201,24 +199,23 @@ impl<'a> LgmRateModel<'a, f64> {
         selector: &dyn QuoteSelector,
         level: Level,
     ) -> Result<Self> {
-        let ModelConfiguration::Lgm { lambda, volatility } = configuration else {
+        let ModelConfiguration::Lgm {
+            lambda,
+            parameter_source,
+        } = configuration
+        else {
             return Err(QSError::InvalidValueErr(format!(
                 "LgmRateModel::from_configuration expects an Lgm model, got {configuration:?}"
             )));
         };
-        match volatility {
-            VolatilitySourceConfiguration::Constant { value } => {
-                Ok(Self::new(*lambda, *value, discount_curve))
+        match parameter_source {
+            ParameterSource::Fixed(fixed) => {
+                fixed.validate()?;
+                Ok(Self::new(*lambda, fixed.sigma, discount_curve))
             }
-            VolatilitySourceConfiguration::Calibrated(calibration) => {
+            ParameterSource::Calibrated(calibration) => {
                 Self::calibrated(*lambda, discount_curve, calibration, store, selector, level)
             }
-            VolatilitySourceConfiguration::Surface { .. }
-            | VolatilitySourceConfiguration::Cube { .. } => Err(QSError::InvalidValueErr(
-                "Lgm supports Constant or Calibrated volatility sources; sampling a \
-                 surface/cube directly would misuse Black vols as short-rate vols"
-                    .into(),
-            )),
         }
     }
 }
@@ -805,6 +802,7 @@ mod tests {
         core::elements::volatilitysurfaceelement::VolatilitySurfaceElement,
         indices::marketindex::MarketIndex,
         math::interpolation::interpolator::Interpolator,
+        models::modelconfiguration::GaussianRateModelParameters,
         quotes::{
             quote::{Quote, QuoteDetails, QuoteLevels},
             quotestore::QuoteStore,
@@ -861,13 +859,18 @@ mod tests {
         let mut points = BTreeMap::new();
         points.insert(Period::new(1, TimeUnit::Months), smile.clone());
         points.insert(Period::new(2, TimeUnit::Years), smile);
+        let labels = QUOTE_IDS
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>();
         let surface = InterpolatedVolatilitySurface::new(
             reference_date,
             MarketIndex::SOFR,
             points,
             VolatilityType::Black,
             SmileType::Strike,
-        );
+        )
+        .with_calibration_instrument_ids(&labels);
         let mut store = ConstructedElementStore::default();
         store.volatility_surfaces_mut().insert(
             MarketIndex::SOFR,
@@ -917,13 +920,9 @@ mod tests {
         let (quote_store, curve, store) = setup()?;
         let quote_ids: Vec<String> = QUOTE_IDS.iter().map(ToString::to_string).collect();
         let lambda = 0.1_f64;
-        let configuration = ModelCalibrationConfiguration::new(
-            CalibrationSource::Surface {
-                market_index: MarketIndex::SOFR,
-            },
-            quote_ids.clone(),
-            lambda,
-        );
+        let configuration = ModelCalibrationConfiguration::new(CalibrationSource::Surface {
+            market_index: MarketIndex::SOFR,
+        });
 
         let lgm = LgmRateModel::calibrated(
             lambda,
@@ -952,12 +951,12 @@ mod tests {
     }
 
     #[test]
-    fn from_configuration_supports_constant_and_calibrated_only() -> Result<()> {
+    fn from_configuration_supports_fixed_and_calibrated_parameters() -> Result<()> {
         let (quote_store, curve, store) = setup()?;
 
         let constant = ModelConfiguration::Lgm {
             lambda: 0.05,
-            volatility: VolatilitySourceConfiguration::Constant { value: 0.01 },
+            parameter_source: ParameterSource::Fixed(GaussianRateModelParameters::new(0.01)),
         };
         let model =
             LgmRateModel::from_configuration(&constant, &curve, &store, &quote_store, Level::Mid)?;
@@ -965,15 +964,11 @@ mod tests {
 
         let calibrated = ModelConfiguration::Lgm {
             lambda: 0.1,
-            volatility: VolatilitySourceConfiguration::Calibrated(
-                ModelCalibrationConfiguration::new(
-                    CalibrationSource::Surface {
-                        market_index: MarketIndex::SOFR,
-                    },
-                    QUOTE_IDS.iter().map(ToString::to_string).collect(),
-                    0.1,
-                ),
-            ),
+            parameter_source: ParameterSource::Calibrated(ModelCalibrationConfiguration::new(
+                CalibrationSource::Surface {
+                    market_index: MarketIndex::SOFR,
+                },
+            )),
         };
         let model = LgmRateModel::from_configuration(
             &calibrated,
@@ -984,21 +979,6 @@ mod tests {
         )?;
         assert_eq!(model.sigma_schedule().len(), 2);
 
-        let surface_sampled = ModelConfiguration::Lgm {
-            lambda: 0.05,
-            volatility: VolatilitySourceConfiguration::Surface {
-                market_index: MarketIndex::SOFR,
-                key: 0.045,
-            },
-        };
-        assert!(LgmRateModel::from_configuration(
-            &surface_sampled,
-            &curve,
-            &store,
-            &quote_store,
-            Level::Mid
-        )
-        .is_err());
         Ok(())
     }
 

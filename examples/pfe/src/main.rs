@@ -3,7 +3,7 @@ use quantsupport::prelude::*;
 use std::collections::HashMap;
 use utils::{
     bootstrap_curves, extract_f64_curve, load_curve_specs, load_fixings, load_model_config,
-    load_quotes,
+    load_quotes, load_vol_specs,
 };
 
 fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
@@ -41,20 +41,9 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     println!("Loaded LGM model configuration from models.json.");
 
     // ── 1d. Build the SOFR caplet vol surface for model calibration
-    let caplet_quote_ids: Vec<String> = quote_store
-        .quotes()
-        .keys()
-        .filter(|id| id.starts_with("CapletFloorlet"))
-        .cloned()
-        .collect();
-    let surface_config = VolatilitySurfaceConfiguration::new(
-        MarketIndex::SOFR,
-        VolatilityType::Black,
-        SmileType::Strike,
-        caplet_quote_ids,
-    );
-    let surfaces =
-        VolatilitySurfaceBuilder::new(vec![surface_config]).build(&quote_store, Level::Mid)?;
+    let vol_specs = load_vol_specs(&data_dir.join("vol_specs.json"))?;
+    let surfaces = VolatilitySurfaceBuilder::new(vol_specs.volatility_surfaces)
+        .build(&quote_store, Level::Mid)?;
 
     // Constructed element store shared by model calibration.
     let mut store = ConstructedElementStore::default();
@@ -204,7 +193,8 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
 
     // ── 5. Build LGM market model (USD domestic + EUR foreign) ──
     // The SOFR model's sigma schedule is calibrated to the caplet vol surface
-    // (Calibrated source in models.json); the ESTR model uses a constant vol.
+    // SOFR parameters are calibrated from the market configured in
+    // models.json. ESTR uses fixed model parameters.
     let n_paths: usize = model_config.n_paths;
     let sofr_model = model_config.rate_model(&MarketIndex::SOFR)?;
     let estr_model = model_config.rate_model(&MarketIndex::ESTR)?;

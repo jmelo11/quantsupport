@@ -58,9 +58,9 @@
                 ]
             },
             "quotes": [
-                "FxForwardPoints_USDCLP_1M",
-                "FxForwardPoints_USDCLP_3M",
-                "FxForwardPoints_USDCLP_6M",
+                "FxForward_USDCLP_1M_AnchorForwardPoints",
+                "FxForward_USDCLP_3M_AnchorForwardPoints",
+                "FxForward_USDCLP_6M_AnchorForwardPoints",
                 "FixFloatCrossCurrencySwap_CLP_SOFR_USD_1Y",
                 "FixFloatCrossCurrencySwap_CLP_SOFR_USD_2Y",
                 "FixFloatCrossCurrencySwap_CLP_SOFR_USD_3Y",

@@ -142,19 +142,19 @@
             "mid": 0.0420
         },
         {
-            "identifier": "FxForwardPoints_USDCLP_1M",
+            "identifier": "FxForward_USDCLP_1M_AnchorForwardPoints",
             "mid": 0.20
         },
         {
-            "identifier": "FxForwardPoints_USDCLP_1M",
+            "identifier": "FxForward_USDCLP_1M_AnchorForwardPoints",
             "mid": 1.50
         },
         {
-            "identifier": "FxForwardPoints_USDCLP_3M",
+            "identifier": "FxForward_USDCLP_3M_AnchorForwardPoints",
             "mid": 5.30
         },
         {
-            "identifier": "FxForwardPoints_USDCLP_6M",
+            "identifier": "FxForward_USDCLP_6M_AnchorForwardPoints",
             "mid": 12.80
         },
         {

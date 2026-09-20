@@ -25,6 +25,11 @@ struct JsonCurveSpecs {
     curve_specs: Vec<CurveConfiguration>,
 }
 
+#[derive(serde::Deserialize)]
+pub struct VolSpecs {
+    pub volatility_surfaces: Vec<VolatilitySurfaceConfiguration>,
+}
+
 pub fn load_quotes(path: &PathBuf) -> Result<QuoteStore> {
     let file =
         File::open(path).map_err(|e| QSError::NotFoundErr(format!("{}: {e}", path.display())))?;
@@ -48,6 +53,14 @@ pub fn load_curve_specs(path: &PathBuf) -> Result<Vec<CurveConfiguration>> {
     let json: JsonCurveSpecs =
         serde_json::from_reader(reader).map_err(|e| QSError::InvalidValueErr(e.to_string()))?;
     Ok(json.curve_specs)
+}
+
+/// Loads the volatility markets used by model calibration.
+pub fn load_vol_specs(path: &PathBuf) -> Result<VolSpecs> {
+    let file =
+        File::open(path).map_err(|e| QSError::NotFoundErr(format!("{}: {e}", path.display())))?;
+    let reader = BufReader::new(file);
+    serde_json::from_reader(reader).map_err(|e| QSError::InvalidValueErr(e.to_string()))
 }
 
 /// Loads historical fixings from a JSON file into a [`FixingStore`].
@@ -106,7 +119,7 @@ pub struct RateModelSpec {
 #[derive(serde::Deserialize)]
 pub struct FxModelSpec {
     pub currency: Currency,
-    pub volatility: VolatilitySourceConfiguration,
+    pub parameter_source: LognormalParameterSource,
     pub spot: f64,
     pub rho: f64,
 }
@@ -144,9 +157,11 @@ impl LgmMarketConfig {
             .iter()
             .find(|s| s.currency == currency)
             .ok_or_else(|| format!("No FX model configured for {currency}"))?;
-        let store = ConstructedElementStore::default();
-        let vol = spec.volatility.resolve(&store)?.vol(0.0)?;
-        Ok((vol, spec.spot, spec.rho))
+        let ParameterSource::Fixed(parameters) = &spec.parameter_source else {
+            return Err("The PFE FX model requires fixed lognormal parameters".into());
+        };
+        parameters.validate()?;
+        Ok((parameters.volatility, spec.spot, spec.rho))
     }
 }
 

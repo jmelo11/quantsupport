@@ -1,8 +1,12 @@
 # Cross-Currency Swaps
 
-Two instruments cover cross-currency swaps, both with initial and final notional exchange and priced by `DiscountedCashflowPricer`.
+Cross-currency swaps exchange interest and principal cashflows denominated in two currencies. Their valuation brings together projection curves, collateral-adjusted discount curves, FX conversion, and basis risk. This chapter explains the two supported swap forms, the discounting flow under a collateral agreement, their sensitivities, and the related FX-forward contract.
+
+QuantSupport provides fixed-versus-floating and floating-versus-floating cross-currency swaps. Both include initial and final notional exchanges and use `DiscountedCashflowPricer`.
 
 ## Builders
+
+The builder records each leg's currency, notional, index, and spread. Choosing notionals that are equivalent at the inception spot makes the initial exchange economically balanced. The following example builds a five-year USD/CLP floating-rate swap:
 
 ```rust,ignore
 let xccy = MakeFloatFloatCrossCurrencySwap::<f64>::default()
@@ -22,14 +26,16 @@ let trade = FloatFloatCrossCurrencySwapTrade::new(xccy, rd, 10_000_000.0, Side::
 
 | Builder                              | Required                                                                                                                                                     | Defaults                                                                                |
 | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------- |
-| `MakeFixFloatCrossCurrencySwap<T>`   | start_date, maturity_date, domestic_notional, foreign_notional, fixed_rate, identifier, domestic_currency, foreign_currency, floating_market_index           | spread 0, side LongReceive; `with_domestic_leg_frequency`, `with_foreign_leg_frequency` |
+| `MakeFixFloatCrossCurrencySwap<T>`   | start_date, maturity_date, domestic_notional, foreign_notional, fixed_rate, identifier, domestic_currency, foreign_currency, floating_market_index           | spread 0, side LongReceive, and configurable domestic and foreign frequencies           |
 | `MakeFloatFloatCrossCurrencySwap<T>` | start_date, maturity_date, domestic_notional, foreign_notional, identifier, domestic_currency, foreign_currency, domestic_market_index, foreign_market_index | domestic/foreign spread 0, side LongReceive                                             |
 
-Trades: `FixFloatCrossCurrencySwapTrade<T>::new(..)`, `FloatFloatCrossCurrencySwapTrade<T>::new(..)`.
+The builder table separates required economic terms from convenience defaults. Both generated instruments are wrapped in the corresponding trade type, either `FixFloatCrossCurrencySwapTrade` or `FloatFloatCrossCurrencySwapTrade`, before pricing.
 
 ## Discounting and FX
 
-Each leg is priced in its own currency, converted to the reporting currency with the `FxStore` (`get_fx_rate` triangulates through intermediate currencies with a BFS when the direct pair is absent) and discounted on the curve chosen by the discount policy. Under a USD CSA:
+Each leg is first valued in its own currency. `FxStore` converts that value into the reporting currency, and the discount policy selects a curve consistent with the collateral agreement. `get_fx_rate` can triangulate through available intermediate currencies when the direct pair is absent.
+
+Under a USD CSA, the policy is installed as follows:
 
 ```rust,ignore
 pricer.set_discount_policy(Box::new(SingleCurveCSADiscountPolicy::new(MarketIndex::SOFR, Currency::USD)));
@@ -37,6 +43,8 @@ pricer.set_discount_policy(Box::new(SingleCurveCSADiscountPolicy::new(MarketInde
 
 - USD leg → discounted on `SOFR`.
 - CLP leg → discounted on `MarketIndex::Collateral(Currency::CLP, Currency::USD)`, the CLP curve implied by USD collateral. That curve must be bootstrapped from cross-currency basis quotes:
+
+The collateralized CLP curve configuration can use the swap itself as a calibration instrument. This JSON example selects one-, two-, and five-year USD/CLP basis quotes:
 
 ```json
 {
@@ -49,18 +57,24 @@ pricer.set_discount_policy(Box::new(SingleCurveCSADiscountPolicy::new(MarketInde
 }
 ```
 
-`MultiCurveBootstrapper` needs `with_fx_store(fx)` for such specs so the notionals are FX-consistent at inception. `examples/bootstrap` and `examples/sensitivity` do this for USD/CLP; `examples/cva` runs the same trade through XVA.
+`MultiCurveBootstrapper` receives the FX store through `with_fx_store(fx)`, which lets the calibration instruments align their notionals at inception spot. The `bootstrap` and `sensitivity` examples demonstrate this construction for USD/CLP. The `cva` example carries the resulting trade and curves into an XVA calculation.
 
 ## Sensitivities
 
-With `DualFwd` the sensitivity table for the swap above contains rows for `OIS_USD_SOFR_*` (discounting), `OIS_CLP_ICP_*` (projection of the CLP leg) and `FloatFloatCrossCurrencySwap_USD_SOFR_ICP_CLP_*` (collateral curve). Sensitivity to the FX spot is exposed if the spot is registered as a `DualFwd::new` leaf in the `FxStore` (`add_fx_rate(base, quote, DualFwd)`).
+With `DualFwd`, the sensitivity table reflects every market path used by the valuation. `OIS_USD_SOFR_*` rows describe USD discounting and projection. `OIS_CLP_ICP_*` rows describe projection of the CLP coupons. `FloatFloatCrossCurrencySwap_USD_SOFR_ICP_CLP_*` rows describe the collateralized CLP curve. Registering spot as a `DualFwd::new` leaf through `add_fx_rate` also exposes the FX delta.
 
 ## FX forwards
 
-`MakeFxForward` (`with_identifier`, `with_delivery_date`, `with_base_currency`, `with_quote_currency`, and either `with_forward_price`/`with_forward_rate` or `with_forward_points`; `as_deliverable()` default or `as_ndf(fixing_date, settlement_ccy)`; `with_day_counter` default Actual360) produces an `FxForward`, wrapped by `FxForwardTrade::new`. `FxForwardPricer::new()` supports Value, FairRate and Sensitivities with
+An FX forward exchanges currencies at a future date and provides a simpler view of the same discount-factor relationship. `MakeFxForward` requires an identifier, delivery date, currency pair, and a strike expressed as an outright rate or forward points. Contracts are deliverable by default. `as_ndf(fixing_date, settlement_ccy)` creates a cash-settled non-deliverable forward, and the day counter defaults to Actual/360.
+
+`FxForwardTrade::new` adds the position metadata. `FxForwardPricer` supports value, fair rate, and sensitivities through
 
 \\[
 F = S\\,\frac{P_{quote}(T)}{P_{base}(T)},\qquad \text{NPV} = N\\,(F-K)\\,P_{quote}(T).
 \\]
 
-`Request::FairRate` returns \\(F\\).
+The fair forward \\(F\\) follows from spot and the relative discount factors of the two currencies. `Request::FairRate` returns this value, and the NPV compares it with the contractual rate \\(K\\).
+
+## What to remember
+
+Cross-currency valuation keeps four economic roles explicit: each index projects its own coupons, the collateral agreement selects discount curves, spot FX converts currencies, and cross-currency instruments calibrate the collateral adjustment. The resulting sensitivity report follows those same links back to domestic, foreign, basis, and FX market inputs.

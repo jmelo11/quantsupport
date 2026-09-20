@@ -3,14 +3,15 @@ use serde::{Deserialize, Serialize};
 use crate::{
     ad::scalar::Scalar,
     currencies::currency::Currency,
-    indices::marketindex::MarketIndex,
+    indices::{fxpair::FxPair, marketindex::MarketIndex},
     instruments::{
         equity::{
             equityeuropeanoption::{EquityEuropeanOption, EuroOptionType},
             makeequityeuropeanoption::MakeEquityEuropeanOption,
         },
         fixedincome::{
-            fixedratedeposit::FixedRateDeposit, makefixedratedeposit::MakeFixedRateDeposit,
+            fixedratebond::FixedRateBond, fixedratedeposit::FixedRateDeposit,
+            makefixedratebond::MakeFixedRateBond, makefixedratedeposit::MakeFixedRateDeposit,
         },
         fx::{
             fxeuropeanoption::FxEuropeanOption, fxforward::FxForward,
@@ -34,7 +35,8 @@ use crate::{
             swap::Swap,
         },
     },
-    time::{date::Date, enums::Frequency, imm::IMM, period::Period},
+    rates::{compounding::Compounding, interestrate::RateDefinition},
+    time::{date::Date, daycounter::DayCounter, enums::Frequency, imm::IMM, period::Period},
     utils::errors::{QSError, Result},
     volatility::volatilityindexing::{Strike, VolatilityType},
 };
@@ -150,6 +152,8 @@ impl QuoteLevels {
 pub enum QuoteInstrument {
     /// Deposit instrument.
     FixedRateDeposit,
+    /// Fixed-rate bond instrument.
+    FixedRateBond,
     /// Basis swap instrument.
     BasisSwap,
     /// OIS swap instrument.
@@ -166,10 +170,8 @@ pub enum QuoteInstrument {
     FixFloatCrossCurrencySwap,
     /// Float-float cross currency swap instrument (both legs floating).
     FloatFloatCrossCurrencySwap,
-    /// FX forward points.
-    FxForwardPoints,
-    /// FX outright forward instrument.
-    FxOutrightForward,
+    /// FX forward instrument, quoted as points or an outright according to its strategy.
+    FxForward,
     /// Future instrument.
     Future,
     /// Convexity adjustment.
@@ -213,6 +215,52 @@ impl std::str::FromStr for OptionStrategy {
     }
 }
 
+/// Strategies for calibrating a curve from fixed-rate bonds.
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub enum BondCalibrationStrategy {
+    /// Use the bond's market price as the calibration anchor.
+    AnchorPrice,
+    /// Use the bond's yield to maturity as the calibration anchor.
+    AnchorYield,
+}
+
+impl std::str::FromStr for BondCalibrationStrategy {
+    type Err = QSError;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        match s {
+            "AnchorPrice" => Ok(Self::AnchorPrice),
+            "AnchorYield" => Ok(Self::AnchorYield),
+            _ => Err(QSError::InvalidValueErr(format!(
+                "Unknown fixed-rate bond calibration strategy: {s}"
+            ))),
+        }
+    }
+}
+
+/// Strategies for calibrating a curve from FX forwards.
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub enum FxForwardCalibrationStrategy {
+    /// Use the FX forward's forward points as the calibration anchor.
+    AnchorForwardPoints,
+    /// Use the FX forward's outright price as the calibration anchor.
+    AnchorOutrightPrice,
+}
+
+impl std::str::FromStr for FxForwardCalibrationStrategy {
+    type Err = QSError;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        match s {
+            "AnchorForwardPoints" => Ok(Self::AnchorForwardPoints),
+            "AnchorOutrightPrice" => Ok(Self::AnchorOutrightPrice),
+            _ => Err(QSError::InvalidValueErr(format!(
+                "Unknown FX forward calibration strategy: {s}"
+            ))),
+        }
+    }
+}
+
 /// A [`QuoteDetails`] contains all details related to a particular quote.
 ///
 /// Instances can be built manually via [`QuoteDetails::new`] + builder setters,
@@ -229,7 +277,7 @@ impl std::str::FromStr for OptionStrategy {
 /// |-----------------------------|-----------------------------|-------------|---------------|------------|----------------|-----------------|------------------|----------|-------|
 /// | `OIS`                       | `OIS`                       | CCY         | Index         | Tenor      | \[`PayFreq`\]  | \[`RecvFreq`\]  |                   |          |       |
 /// | `FixedRateDeposit`          | `FixedRateDeposit`          | CCY         | Index         | Tenor      |                |                 |                   |          |       |
-/// | `FixedRateBond`             | `FixedRateBond`             | CCY         | Index         | Tenor      | \[`PayFreq`\]  |                 |                   |          |       |
+/// | `FixedRateBond`             | `FixedRateBond`             | CCY         | Index         | Tenor      | \[`PayFreq`\]  | Coupon Rate     | \[`Strategy`\]   |          |       |
 /// | `BasisSwap`                 | `BasisSwap`                 | CCY         | `PayIndex`    | `RecvIndex`| Tenor          | \[`PayFreq`\]   | \[`RecvFreq`\]    |          |       |
 /// | `FixFloatCrossCurrencySwap` | `FixFloatCrossCurrencySwap` | `DomCCY`    | `FloatIndex`  | `ForCCY`   | Tenor          | \[`DomFreq`\]   | \[`ForFreq`\]     |          |       |
 /// |`FloatFloatCrossCurrencySwap`|`FloatFloatCrossCurrencySwap`| `DomCCY`    | `DomIndex`    | `ForIndex` | `ForCCY`       | Tenor           | \[`DomFreq`\]     | \[`ForFreq`\] |       |
@@ -238,8 +286,7 @@ impl std::str::FromStr for OptionStrategy {
 /// | `Future`                    | `Future`                    | CCY         | Index         | `IMMCode`  |                |                 |                   |          |       |
 /// | `ConvexityAdjustment`       | `ConvexityAdjustment`       | CCY         | Index         | `IMMCode`  |                |                 |                   |          |       |
 /// | `Swaption`                  | `Swaption`                  | CCY         | Index         | Expiry     | `SwapTenor`    | \[`PayFreq`\]   | \[`RecvFreq`\]    | Strike   | \[`StrikeValue`\] `VolType` |
-/// | `FxOutrightForward`         | `FxOutrightForward`         | CCYPAIR     | Tenor         |            |                |                 |                   |          |       |
-/// | `FxForwardPoints`           | `FxForwardPoints`           | CCYPAIR     | Tenor         |            |                |                 |                   |          |       |
+/// | `FxForward`                 | `FxForward`                 | CCYPAIR     | Tenor         | Strategy   |                |                 |                   |          |       |
 /// | `EquityCall`                | `EquityCall`                | CCY         | Index         | Tenor      | Strike kind    | Strike          |                   |          |       |
 /// | `EquityPut`                 | `EquityPut`                 | CCY         | Index         | Tenor      | Strike kind    | Strike          |                   |          |       |
 /// | `FxCall`                    | `FxCall`                    | CCYPAIR     | Tenor         | Strike kind| Strike         |                 |                   |          |       |
@@ -254,6 +301,9 @@ impl std::str::FromStr for OptionStrategy {
 /// ```text
 /// OIS_USD_SOFR_1Y
 /// OIS_USD_SOFR_1Y_Semiannual_Semiannual
+/// FixedRateDeposit_USD_SOFR_6M
+/// FixedRateBond_USD_CORP_5Y_Semiannual_0.04_AnchorYield
+/// FxForward_EURUSD_1M_AnchorForwardPoints
 /// BasisSwap_USD_SOFR_TermSOFR3m_1Y_Quarterly_Quarterly
 /// FixFloatCrossCurrencySwap_USD_ICP_CLP_1Y_Semiannual_Quarterly
 /// Swaption_USD_SOFR_3M_2Y_Semiannual_Semiannual_Absolute_0.04_Black
@@ -268,7 +318,11 @@ pub struct QuoteDetails {
     #[serde(default)]
     market_index: Option<MarketIndex>,
     #[serde(default)]
-    strategy: Option<OptionStrategy>,
+    option_strategy: Option<OptionStrategy>,
+    #[serde(default)]
+    bond_calibration_strategy: Option<BondCalibrationStrategy>,
+    #[serde(default)]
+    fx_forward_calibration_strategy: Option<FxForwardCalibrationStrategy>,
     #[serde(default)]
     vol_type: Option<VolatilityType>,
     #[serde(default)]
@@ -320,7 +374,9 @@ impl QuoteDetails {
             identifier,
             instrument,
             market_index: None,
-            strategy: None,
+            option_strategy: None,
+            bond_calibration_strategy: None,
+            fx_forward_calibration_strategy: None,
             vol_type: None,
             rate: None,
             price: None,
@@ -365,8 +421,20 @@ impl QuoteDetails {
 
     /// Returns the option strategy, if present.
     #[must_use]
-    pub const fn strategy(&self) -> Option<OptionStrategy> {
-        self.strategy
+    pub const fn option_strategy(&self) -> Option<OptionStrategy> {
+        self.option_strategy
+    }
+
+    /// Returns the fixed-rate bond calibration strategy, if specified.
+    #[must_use]
+    pub const fn bond_calibration_strategy(&self) -> Option<BondCalibrationStrategy> {
+        self.bond_calibration_strategy
+    }
+
+    /// Returns the FX forward calibration strategy, if specified.
+    #[must_use]
+    pub const fn fx_forward_calibration_strategy(&self) -> Option<FxForwardCalibrationStrategy> {
+        self.fx_forward_calibration_strategy
     }
 
     /// Returns the volatility type, if present.
@@ -477,8 +545,23 @@ impl QuoteDetails {
 
     /// Sets the option strategy.
     #[must_use]
-    pub const fn with_strategy(mut self, s: OptionStrategy) -> Self {
-        self.strategy = Some(s);
+    pub const fn with_option_strategy(mut self, s: OptionStrategy) -> Self {
+        self.option_strategy = Some(s);
+        self
+    }
+    /// Sets the fixed-rate bond calibration strategy.
+    #[must_use]
+    pub const fn with_bond_calibration_strategy(mut self, s: BondCalibrationStrategy) -> Self {
+        self.bond_calibration_strategy = Some(s);
+        self
+    }
+    /// Sets the FX forward calibration strategy.
+    #[must_use]
+    pub const fn with_fx_forward_calibration_strategy(
+        mut self,
+        s: FxForwardCalibrationStrategy,
+    ) -> Self {
+        self.fx_forward_calibration_strategy = Some(s);
         self
     }
     /// Sets the volatility type.
@@ -647,14 +730,17 @@ impl QuoteDetails {
         Ok(det)
     }
 
-    /// `{Instrument}_CCY_{Index}_{Tenor}` — e.g. `FixedRateDeposit_USD_SOFR_1Y`
+    /// `{Instrument}_CCY_{Index}_{Tenor}`
+    ///
+    /// Fixed-rate deposit quotes are rates; no alternative calibration
+    /// strategies are supported.
     ///
     /// # Errors
     /// Returns an error if the identifier is too short or fields cannot be parsed.
     pub fn parse_fixed_rate_deposit(id: &str, parts: &[&str]) -> Result<Self> {
-        if parts.len() < 4 {
+        if parts.len() != 4 {
             return Err(QSError::InvalidValueErr(format!(
-                "FixedRateDeposit identifier too short: {id}"
+                "FixedRateDeposit identifier must contain exactly four fields: {id}"
             )));
         }
         let currency: Currency = parts[1].parse()?;
@@ -664,6 +750,69 @@ impl QuoteDetails {
             .with_market_index(index)
             .with_currency(currency)
             .with_tenor(tenor))
+    }
+
+    /// `{Instrument}_{CCY}_{Index}_{Tenor}[_{PayFreq}]_{CouponRate}[_{Strategy}]`
+    ///
+    /// The strategy defaults to `AnchorYield`, for example
+    /// `FixedRateBond_USD_UST_5Y_Semiannual_0.04_AnchorYield`.
+    ///
+    /// # Errors
+    /// Returns an error if the identifier is too short or fields cannot be parsed.
+    pub fn parse_fixed_rate_bond(id: &str, parts: &[&str]) -> Result<Self> {
+        if parts.len() < 4 {
+            return Err(QSError::InvalidValueErr(format!(
+                "FixedRateBond identifier too short: {id}"
+            )));
+        }
+        let currency = parts
+            .get(1)
+            .ok_or_else(|| {
+                QSError::InvalidValueErr(format!("FixedRateBond identifier too short: {id}"))
+            })?
+            .parse::<Currency>()?;
+        let index = parts
+            .get(2)
+            .ok_or_else(|| {
+                QSError::InvalidValueErr(format!("FixedRateBond identifier too short: {id}"))
+            })?
+            .parse::<MarketIndex>()?;
+        let tenor = Period::from_str(parts.get(3).ok_or_else(|| {
+            QSError::InvalidValueErr(format!("FixedRateBond identifier too short: {id}"))
+        })?)?;
+        let mut next = 4;
+        let freq = parts.get(next).and_then(|s| s.parse::<Frequency>().ok());
+        if freq.is_some() {
+            next += 1;
+        }
+        let coupon_rate = parts.get(next).and_then(|s| s.parse::<f64>().ok());
+        if coupon_rate.is_some() {
+            next += 1;
+        }
+        let strategy = parts
+            .get(next)
+            .map(|s| s.parse::<BondCalibrationStrategy>())
+            .transpose()?;
+        if parts.len() > next + usize::from(strategy.is_some()) {
+            return Err(QSError::InvalidValueErr(format!(
+                "Unexpected fields in fixed-rate bond identifier: {id}"
+            )));
+        }
+        let mut quote = Self::new(id.to_string(), QuoteInstrument::FixedRateBond)
+            .with_market_index(index)
+            .with_currency(currency)
+            .with_tenor(tenor);
+
+        if let Some(f) = freq {
+            quote = quote.with_pay_leg_frequency(f);
+        }
+        if let Some(c) = coupon_rate {
+            quote = quote.with_coupon_rate(c);
+        }
+        if let Some(strategy) = strategy {
+            quote = quote.with_bond_calibration_strategy(strategy);
+        }
+        Ok(quote)
     }
 
     /// `{Instrument}_{Entity}_{CCY}_{Tenor}` — e.g. `Cds_ACME_USD_5Y`
@@ -892,7 +1041,7 @@ impl QuoteDetails {
             .with_index_tenor(index_tenor)
             .with_option_expiry(option_expiry)
             .with_strike(strike)
-            .with_strategy(strategy)
+            .with_option_strategy(strategy)
             .with_vol_type(vol_type);
         Ok(det)
     }
@@ -994,42 +1143,25 @@ impl QuoteDetails {
         Ok(det)
     }
 
-    /// `{Instrument}_{CCYPAIR}_{Tenor}` — e.g. `FxOutrightForward_EURUSD_1M`
+    /// `{Instrument}_{CCYPAIR}_{Tenor}_{Strategy}` — e.g.
+    /// `FxForward_EURUSD_1M_AnchorOutrightPrice`
     ///
     /// # Errors
     /// Returns an error if the identifier is too short or fields cannot be parsed.
-    pub fn parse_outright_forward(id: &str, parts: &[&str]) -> Result<Self> {
-        if parts.len() < 3 {
+    pub fn parse_fx_forward(id: &str, parts: &[&str]) -> Result<Self> {
+        if parts.len() != 4 {
             return Err(QSError::InvalidValueErr(format!(
-                "OutrightForward identifier too short: {id}"
+                "FxForward identifier must contain a calibration strategy: {id}"
             )));
         }
         let (base, quote_ccy) = parse_fx_pair(parts[1])?;
         let tenor = Period::from_str(parts[2])?;
-        Ok(
-            Self::new(id.to_string(), QuoteInstrument::FxOutrightForward)
-                .with_pay_currency(base)
-                .with_receive_currency(quote_ccy)
-                .with_tenor(tenor),
-        )
-    }
-
-    /// `{Instrument}_{CCYPAIR}_{Tenor}` — e.g. `FxForwardPoints_EURUSD_1M`
-    ///
-    /// # Errors
-    /// Returns an error if the identifier is too short or fields cannot be parsed.
-    pub fn parse_forward_points(id: &str, parts: &[&str]) -> Result<Self> {
-        if parts.len() < 3 {
-            return Err(QSError::InvalidValueErr(format!(
-                "ForwardPoints identifier too short: {id}"
-            )));
-        }
-        let (base, quote_ccy) = parse_fx_pair(parts[1])?;
-        let tenor = Period::from_str(parts[2])?;
-        Ok(Self::new(id.to_string(), QuoteInstrument::FxForwardPoints)
+        let strategy = parts[3].parse::<FxForwardCalibrationStrategy>()?;
+        Ok(Self::new(id.to_string(), QuoteInstrument::FxForward)
             .with_pay_currency(base)
             .with_receive_currency(quote_ccy)
-            .with_tenor(tenor))
+            .with_tenor(tenor)
+            .with_fx_forward_calibration_strategy(strategy))
     }
 
     /// `{Instrument}_CCY_{Index}_{Expiry}_{StrikeKind}_{Strike}` — e.g. `EquityCall_USD_SPX_1Y_Absolute_5000`
@@ -1043,13 +1175,14 @@ impl QuoteDetails {
             )));
         }
         let currency: Currency = parts[1].parse()?;
-        let index = parts[2].parse::<MarketIndex>()?;
+        let index = MarketIndex::Equity(parts[2].to_string());
         let tenor = Period::from_str(parts[3])?;
         let strike = parse_strike(id, parts[4], parts[5])?;
         Ok(Self::new(id.to_string(), QuoteInstrument::EquityCall)
             .with_market_index(index)
             .with_currency(currency)
             .with_tenor(tenor)
+            .with_option_expiry(tenor)
             .with_strike(strike))
     }
 
@@ -1064,13 +1197,14 @@ impl QuoteDetails {
             )));
         }
         let currency: Currency = parts[1].parse()?;
-        let index = parts[2].parse::<MarketIndex>()?;
+        let index = MarketIndex::Equity(parts[2].to_string());
         let tenor = Period::from_str(parts[3])?;
         let strike = parse_strike(id, parts[4], parts[5])?;
         Ok(Self::new(id.to_string(), QuoteInstrument::EquityPut)
             .with_market_index(index)
             .with_currency(currency)
             .with_tenor(tenor)
+            .with_option_expiry(tenor)
             .with_strike(strike))
     }
 
@@ -1089,9 +1223,11 @@ impl QuoteDetails {
         let strike = parse_strike(id, parts[3], parts[4])?;
 
         Ok(Self::new(id.to_string(), QuoteInstrument::FxCall)
+            .with_market_index(MarketIndex::FxPair(FxPair::new(base, quote_ccy)?))
             .with_pay_currency(base)
             .with_receive_currency(quote_ccy)
             .with_tenor(tenor)
+            .with_option_expiry(tenor)
             .with_strike(strike))
     }
 
@@ -1110,9 +1246,11 @@ impl QuoteDetails {
         let strike = parse_strike(id, parts[3], parts[4])?;
 
         Ok(Self::new(id.to_string(), QuoteInstrument::FxPut)
+            .with_market_index(MarketIndex::FxPair(FxPair::new(base, quote_ccy)?))
             .with_pay_currency(base)
             .with_receive_currency(quote_ccy)
             .with_tenor(tenor)
+            .with_option_expiry(tenor)
             .with_strike(strike))
     }
 
@@ -1127,14 +1265,10 @@ impl QuoteDetails {
                 "Identifier has fewer than 3 parts: {s}"
             )));
         }
-        // Previous accepted identifiers:
-        // "FxForwardOutright" | "ForwardOutright"
-        // Added "FxOutrightForward" to support existing test identifiers
-        // and maintain backward compatibility.
-
         match parts[0] {
             "OIS" => Self::parse_ois(s, &parts),
             "FixedRateDeposit" => Self::parse_fixed_rate_deposit(s, &parts),
+            "FixedRateBond" => Self::parse_fixed_rate_bond(s, &parts),
             "BasisSwap" => Self::parse_basis_swap(s, &parts),
             "FixFloatCrossCurrencySwap" => Self::parse_fix_float_cross_currency_swap(s, &parts),
             "CapFloor" => Self::parse_cap_floor(s, &parts),
@@ -1142,11 +1276,8 @@ impl QuoteDetails {
             "Future" => Self::parse_future(s, &parts),
             "ConvexityAdjustment" => Self::parse_convexity_adjustment(s, &parts),
             "Swaption" => Self::parse_swaption(s, &parts),
-            "FxForwardOutright" | "FxOutrightForward" | "ForwardOutright" => {
-                Self::parse_outright_forward(s, &parts)
-            }
             "FloatFloatCrossCurrencySwap" => Self::parse_float_float_cross_currency_swap(s, &parts),
-            "FxForwardPoints" => Self::parse_forward_points(s, &parts),
+            "FxForward" => Self::parse_fx_forward(s, &parts),
             "EquityCall" => Self::parse_equity_call(s, &parts),
             "EquityPut" => Self::parse_equity_put(s, &parts),
             "FxCall" => Self::parse_fx_call(s, &parts),
@@ -1165,8 +1296,7 @@ impl std::str::FromStr for QuoteDetails {
     /// Parses a quote identifier string (underscore-separated) into [`QuoteDetails`].
     ///
     /// The first `_`-delimited segment determines the instrument type and must
-    /// match the exact [`QuoteInstrument`] variant name (e.g.
-    /// [`FxOutrightForward`]/[`FxForwardPoints`]).
+    /// match the exact [`QuoteInstrument`] variant name (e.g. [`FxForward`]).
     ///
     /// # Errors
     /// Returns an error if the identifier cannot be parsed.
@@ -1183,14 +1313,16 @@ where
 {
     /// A vanilla fixed-rate deposit.
     FixedRateDeposit(FixedRateDeposit<T>),
+    /// A fixed-rate bond.
+    FixedRateBond(FixedRateBond<T>, BondCalibrationStrategy),
     /// A fixed-vs-floating interest rate swap (e.g. OIS).
     Swap(Swap<T>),
     /// A floating-vs-floating basis swap.
     BasisSwap(BasisSwap<T>),
     /// A rate futures contract.
     RateFutures(RateFutures),
-    /// An FX outright forward.
-    FxForward(FxForward),
+    /// An FX forward quoted as points or an outright.
+    FxForward(FxForward, FxForwardCalibrationStrategy),
     /// A cross-currency swap (fixed domestic vs floating foreign).
     FixFloatCrossCurrencySwap(FixFloatCrossCurrencySwap<T>),
     /// A float-float cross-currency swap (both legs floating).
@@ -1214,17 +1346,20 @@ where
 impl<T: Scalar> std::fmt::Debug for CalibrationInstrumentType<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::FixedRateDeposit(_) => write!(f, "CalibrationInstrumentType::FixedRateDeposit"),
+            Self::FixedRateDeposit(_) => {
+                write!(f, "CalibrationInstrumentType::FixedRateDeposit")
+            }
             Self::Swap(_) => write!(f, "CalibrationInstrumentType::Swap"),
             Self::BasisSwap(_) => write!(f, "CalibrationInstrumentType::BasisSwap"),
             Self::RateFutures(_) => write!(f, "CalibrationInstrumentType::RateFutures"),
-            Self::FxForward(_) => write!(f, "CalibrationInstrumentType::FxForward"),
+            Self::FxForward(_, _) => write!(f, "CalibrationInstrumentType::FxForward"),
             Self::FixFloatCrossCurrencySwap(_) => {
                 write!(f, "CalibrationInstrumentType::FixFloatCrossCurrencySwap")
             }
             Self::FloatFloatCrossCurrencySwap(_) => {
                 write!(f, "CalibrationInstrumentType::FloatFloatCrossCurrencySwap")
             }
+            Self::FixedRateBond(_, _) => write!(f, "CalibrationInstrumentType::FixedRateBond"),
             Self::EquityCall(_) => write!(f, "CalibrationInstrumentType::EquityCall"),
             Self::EquityPut(_) => write!(f, "CalibrationInstrumentType::EquityPut"),
             Self::FxCall(_) => write!(f, "CalibrationInstrumentType::FxCall"),
@@ -1247,6 +1382,7 @@ where
     pub fn pillar_date(&self) -> Result<Date> {
         match self {
             Self::FixedRateDeposit(x) => Ok(x.leg().last_payment_date()),
+            Self::FixedRateBond(x, _) => Ok(x.leg().last_payment_date()),
             Self::Swap(x) => Ok(x
                 .fixed_leg()
                 .last_payment_date()
@@ -1264,15 +1400,13 @@ where
                 .last_payment_date()
                 .max(x.foreign_leg().last_payment_date())),
             Self::RateFutures(x) => Ok(x.end_date()),
-            Self::FxForward(x) => Ok(x.delivery_date()),
+            Self::FxForward(x, _) => Ok(x.delivery_date()),
             Self::EquityCall(x) | Self::EquityPut(x) => Ok(x.expiry_date()),
             Self::FxCall(x) | Self::FxPut(x) => Ok(x.expiry_date()),
             Self::CapletFloorlet(x) => Ok(x.fixing_date()),
-            Self::CapFloor(x) => x.last_fixing_date().ok_or_else(|| {
-                crate::utils::errors::QSError::ValueNotSetErr(
-                    "cap/floor has no caplet/floorlets".into(),
-                )
-            }),
+            Self::CapFloor(x) => x
+                .last_fixing_date()
+                .ok_or_else(|| QSError::ValueNotSetErr("cap/floor has no caplet/floorlets".into())),
             Self::EuropeanSwaption(x) => Ok(x.expiry_date()),
         }
     }
@@ -1334,9 +1468,10 @@ impl Quote {
             QuoteInstrument::FixedRateDeposit => {
                 self.build_fixed_rate_deposit(value, reference_date, notional)
             }
+            QuoteInstrument::FixedRateBond => self.build_fixed_rate_bond(reference_date, notional),
             QuoteInstrument::BasisSwap => self.build_basis_swap(value, reference_date, notional),
             QuoteInstrument::Future => self.build_rate_futures(value, reference_date),
-            QuoteInstrument::FxOutrightForward => self.build_fx_forward(value, reference_date),
+            QuoteInstrument::FxForward => self.build_fx_forward(value, reference_date),
             QuoteInstrument::FixFloatCrossCurrencySwap => {
                 let domestic_notional = fx_spot.map_or(notional, |fx| notional * fx);
                 self.build_fix_float_cross_currency_swap(
@@ -1362,7 +1497,6 @@ impl Quote {
             QuoteInstrument::EuropeanSwaption => {
                 self.build_swaption(value, reference_date, notional)
             }
-            QuoteInstrument::FxForwardPoints => self.build_fx_forward_points(value, reference_date),
             QuoteInstrument::FxCall => self.build_fx_call(reference_date),
             QuoteInstrument::FxPut => self.build_fx_put(reference_date),
             QuoteInstrument::ConvexityAdjustment => Err(QSError::NotImplementedErr(format!(
@@ -1424,10 +1558,10 @@ impl Quote {
         Ok(CalibrationInstrumentType::Swap(swap))
     }
 
-    /// Fixed Rate Deposit — mid value is the deposit rate.
+    /// Builds a fixed-rate deposit from its rate quote.
     fn build_fixed_rate_deposit<T: Scalar + Default>(
         &self,
-        rate: f64,
+        quote_value: f64,
         reference_date: Date,
         notional: f64,
     ) -> Result<CalibrationInstrumentType<T>> {
@@ -1447,7 +1581,7 @@ impl Quote {
             .with_identifier(d.identifier())
             .with_start_date(reference_date)
             .with_maturity_date(maturity)
-            .with_rate(rate)
+            .with_rate(quote_value)
             .with_notional(notional)
             .with_rate_definition(rd)
             .with_currency(currency)
@@ -1455,6 +1589,48 @@ impl Quote {
             .build()?;
 
         Ok(CalibrationInstrumentType::FixedRateDeposit(deposit))
+    }
+
+    /// Builds a fixed-rate bond using the configured calibration strategy.
+    /// The default strategy is yield anchoring.
+    fn build_fixed_rate_bond<T: Scalar + Default>(
+        &self,
+        reference_date: Date,
+        notional: f64,
+    ) -> Result<CalibrationInstrumentType<T>> {
+        let d = &self.details;
+        let currency = d
+            .currency()
+            .ok_or_else(|| QSError::ValueNotSetErr("Currency on fixed rate bond quote".into()))?;
+        let tenor = d
+            .tenor()
+            .ok_or_else(|| QSError::ValueNotSetErr("Tenor on fixed rate bond quote".into()))?;
+
+        let maturity = reference_date + tenor;
+        let market_index = Self::required_market_index(d, "fixed rate bond quote")?;
+        let coupon_rate = d.coupon_rate().ok_or_else(|| {
+            QSError::ValueNotSetErr("Coupon rate on fixed-rate bond quote".into())
+        })?;
+        let frequency = d.pay_leg_frequency().unwrap_or(Frequency::Semiannual);
+        let rate_definition =
+            RateDefinition::new(DayCounter::ActualActual, Compounding::Compounded, frequency);
+        let strategy = d
+            .bond_calibration_strategy()
+            .unwrap_or(BondCalibrationStrategy::AnchorYield);
+
+        let bond = MakeFixedRateBond::<T>::default()
+            .with_identifier(d.identifier())
+            .with_start_date(reference_date)
+            .with_maturity_date(maturity)
+            .with_rate(coupon_rate)
+            .with_notional(notional)
+            .with_rate_definition(rate_definition)
+            .with_currency(currency)
+            .with_discount_index(market_index)
+            .with_payment_frequency(frequency)
+            .build()?;
+
+        Ok(CalibrationInstrumentType::FixedRateBond(bond, strategy))
     }
 
     /// Basis Swap — mid value is the spread applied to the receive leg.
@@ -1529,10 +1705,10 @@ impl Quote {
         Ok(CalibrationInstrumentType::RateFutures(futures))
     }
 
-    /// FX Forward — mid value is the outright forward rate.
+    /// Builds an FX forward according to the quote's calibration strategy.
     fn build_fx_forward<T: Scalar + Default>(
         &self,
-        forward_rate: f64,
+        quote_value: f64,
         reference_date: Date,
     ) -> Result<CalibrationInstrumentType<T>> {
         let d = &self.details;
@@ -1548,49 +1724,26 @@ impl Quote {
 
         let delivery_date = reference_date + tenor;
 
-        let fwd = MakeFxForward::default()
+        let strategy = d.fx_forward_calibration_strategy().ok_or_else(|| {
+            QSError::ValueNotSetErr("Calibration strategy on FX forward quote".into())
+        })?;
+        let mut builder = MakeFxForward::default()
             .with_identifier(d.identifier())
             .with_delivery_date(delivery_date)
-            .with_forward_rate(forward_rate)
             .with_base_currency(base)
-            .with_quote_currency(quote_ccy)
-            .build()?;
-
-        Ok(CalibrationInstrumentType::FxForward(fwd))
-    }
-
-    /// FX Forward Points — mid value is the forward points (absolute).
-    ///
-    /// Builds an [`FxForward`] with `forward_points` set. The bootstrap
-    /// residual combines these with the FX spot (from the discount policy)
-    /// to solve for discount factors via covered interest-rate parity.
-    fn build_fx_forward_points<T: Scalar + Default>(
-        &self,
-        points: f64,
-        reference_date: Date,
-    ) -> Result<CalibrationInstrumentType<T>> {
-        let d = &self.details;
-        let base = d
-            .pay_currency()
-            .ok_or_else(|| QSError::ValueNotSetErr("Base currency on FX fwd pts quote".into()))?;
-        let quote_ccy = d
-            .receive_currency()
-            .ok_or_else(|| QSError::ValueNotSetErr("Quote currency on FX fwd pts quote".into()))?;
-        let tenor = d
-            .tenor()
-            .ok_or_else(|| QSError::ValueNotSetErr("Tenor on FX fwd pts quote".into()))?;
-
-        let delivery_date = reference_date + tenor;
-
-        let fwd = MakeFxForward::default()
-            .with_identifier(d.identifier())
-            .with_delivery_date(delivery_date)
-            .with_forward_points(points)
-            .with_base_currency(base)
-            .with_quote_currency(quote_ccy)
-            .build()?;
-
-        Ok(CalibrationInstrumentType::FxForward(fwd))
+            .with_quote_currency(quote_ccy);
+        builder = match strategy {
+            FxForwardCalibrationStrategy::AnchorForwardPoints => {
+                builder.with_forward_points(quote_value)
+            }
+            FxForwardCalibrationStrategy::AnchorOutrightPrice => {
+                builder.with_forward_rate(quote_value)
+            }
+        };
+        Ok(CalibrationInstrumentType::FxForward(
+            builder.build()?,
+            strategy,
+        ))
     }
 
     /// Cross-Currency Swap (fixed domestic vs floating foreign).
@@ -1931,6 +2084,7 @@ impl Quote {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::time::enums::TimeUnit;
 
     fn ref_date() -> Date {
         Date::new(2026, 2, 24)
@@ -1950,6 +2104,48 @@ mod tests {
     fn parse_deposit_identifier() {
         let det: QuoteDetails = "FixedRateDeposit_USD_SOFR_6M".parse().unwrap();
         assert_eq!(*det.instrument(), QuoteInstrument::FixedRateDeposit);
+    }
+
+    #[test]
+    fn deposit_rejects_non_rate_quote_fields() {
+        assert!("FixedRateDeposit_USD_SOFR_6M_AnchorPrice"
+            .parse::<QuoteDetails>()
+            .is_err());
+    }
+
+    #[test]
+    fn parse_price_anchored_bond_identifier() {
+        let det: QuoteDetails = "FixedRateBond_USD_CORP_5Y_Semiannual_0.04_AnchorPrice"
+            .parse()
+            .unwrap();
+        assert_eq!(*det.instrument(), QuoteInstrument::FixedRateBond);
+        assert_eq!(det.pay_leg_frequency(), Some(Frequency::Semiannual));
+        assert_eq!(det.coupon_rate(), Some(0.04));
+        assert_eq!(
+            det.bond_calibration_strategy(),
+            Some(BondCalibrationStrategy::AnchorPrice)
+        );
+    }
+
+    #[test]
+    fn calibration_strategy_names_must_use_anchor_prefix() {
+        assert!("FixedRateBond_USD_CORP_5Y_Semiannual_0.04_Price"
+            .parse::<QuoteDetails>()
+            .is_err());
+        assert!("FixedRateBond_USD_CORP_5Y_Semiannual_0.04_AnchorOAS"
+            .parse::<QuoteDetails>()
+            .is_err());
+        assert!("FxForward_EURUSD_1M_ForwardPoints"
+            .parse::<QuoteDetails>()
+            .is_err());
+    }
+
+    #[test]
+    fn legacy_fx_forward_instrument_names_are_rejected() {
+        assert!("FxForwardPoints_EURUSD_1M".parse::<QuoteDetails>().is_err());
+        assert!("FxOutrightForward_EURUSD_1M"
+            .parse::<QuoteDetails>()
+            .is_err());
     }
 
     #[test]
@@ -1999,16 +2195,24 @@ mod tests {
 
     #[test]
     fn parse_outright_forward_identifier() {
-        let det: QuoteDetails = "FxOutrightForward_EURUSD_1M".parse().unwrap();
-        assert_eq!(*det.instrument(), QuoteInstrument::FxOutrightForward);
+        let det: QuoteDetails = "FxForward_EURUSD_1M_AnchorOutrightPrice".parse().unwrap();
+        assert_eq!(*det.instrument(), QuoteInstrument::FxForward);
         assert_eq!(det.pay_currency(), Some(Currency::EUR));
         assert_eq!(det.receive_currency(), Some(Currency::USD));
+        assert_eq!(
+            det.fx_forward_calibration_strategy(),
+            Some(FxForwardCalibrationStrategy::AnchorOutrightPrice)
+        );
     }
 
     #[test]
     fn parse_forward_points_identifier() {
-        let det: QuoteDetails = "FxForwardPoints_EURUSD_1Y".parse().unwrap();
-        assert_eq!(*det.instrument(), QuoteInstrument::FxForwardPoints);
+        let det: QuoteDetails = "FxForward_EURUSD_1Y_AnchorForwardPoints".parse().unwrap();
+        assert_eq!(*det.instrument(), QuoteInstrument::FxForward);
+        assert_eq!(
+            det.fx_forward_calibration_strategy(),
+            Some(FxForwardCalibrationStrategy::AnchorForwardPoints)
+        );
     }
 
     #[test]
@@ -2026,6 +2230,11 @@ mod tests {
     fn parse_call_identifier() {
         let det: QuoteDetails = "EquityCall_USD_SPX_1Y_Absolute_5000".parse().unwrap();
         assert_eq!(*det.instrument(), QuoteInstrument::EquityCall);
+        assert_eq!(
+            det.market_index(),
+            Some(&MarketIndex::Equity("SPX".to_string()))
+        );
+        assert_eq!(det.option_expiry(), Some(Period::new(1, TimeUnit::Years)));
         assert_eq!(det.strike(), Some(Strike::Absolute(5000.0)));
     }
 
@@ -2039,6 +2248,8 @@ mod tests {
     #[test]
     fn parse_fx_call_identifier() {
         let det: QuoteDetails = "FxCall_EURUSD_1Y_Relative_0.05".parse().unwrap();
+        assert!(matches!(det.market_index(), Some(MarketIndex::FxPair(_))));
+        assert_eq!(det.option_expiry(), Some(Period::new(1, TimeUnit::Years)));
         assert_eq!(*det.instrument(), QuoteInstrument::FxCall);
         assert_eq!(det.pay_currency(), Some(Currency::EUR));
         assert_eq!(det.receive_currency(), Some(Currency::USD));
@@ -2079,6 +2290,21 @@ mod tests {
     }
 
     #[test]
+    fn build_price_anchored_bond() {
+        let details: QuoteDetails = "FixedRateBond_USD_CORP_5Y_Semiannual_0.04_AnchorPrice"
+            .parse()
+            .unwrap();
+        let quote = Quote::new(details, QuoteLevels::with_mid(99.5));
+        let inst = quote
+            .build_instrument(ref_date(), Level::Mid, None)
+            .unwrap();
+        assert!(matches!(
+            inst,
+            CalibrationInstrumentType::FixedRateBond(_, BondCalibrationStrategy::AnchorPrice)
+        ));
+    }
+
+    #[test]
     fn build_basis_swap() {
         let details: QuoteDetails = "BasisSwap_USD_SOFR_TermSOFR3m_1Y".parse().unwrap();
         let quote = Quote::new(details, QuoteLevels::with_mid(0.0003));
@@ -2100,12 +2326,18 @@ mod tests {
 
     #[test]
     fn build_fx_forward() {
-        let details: QuoteDetails = "FxOutrightForward_EURUSD_1M".parse().unwrap();
+        let details: QuoteDetails = "FxForward_EURUSD_1M_AnchorOutrightPrice".parse().unwrap();
         let quote = Quote::new(details, QuoteLevels::with_mid(1.08));
         let inst = quote
             .build_instrument(ref_date(), Level::Mid, None)
             .unwrap();
-        assert!(matches!(inst, CalibrationInstrumentType::FxForward(_)));
+        assert!(matches!(
+            inst,
+            CalibrationInstrumentType::FxForward(
+                _,
+                FxForwardCalibrationStrategy::AnchorOutrightPrice
+            )
+        ));
     }
 
     #[test]

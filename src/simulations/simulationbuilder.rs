@@ -23,7 +23,7 @@ use crate::{
         brownianmotion::BrownianMotion,
         hullwhite::hullwhitemodel::HullWhite,
         lgm::lgmcomponents::LgmRateModel,
-        modelconfiguration::{ModelConfiguration, SimulationConfiguration},
+        modelconfiguration::{ModelConfiguration, ParameterSource, SimulationConfiguration},
         montecarloengine::{PathGenerator, TimeDependentVolatility},
     },
     quotes::{fixingstore::FixingStore, quote::Level, quoteselector::QuoteSelector},
@@ -31,7 +31,7 @@ use crate::{
     simulations::generatedsimulation::GeneratedMonteCarloSimulation,
     time::{date::Date, schedule::MakeSchedule},
     utils::errors::{QSError, Result},
-    volatility::volatilitysource::{bootstrap_black_term_volatility, VolatilitySourceConfiguration},
+    volatility::volatilitysource::{bootstrap_black_term_volatility, ConstantVolatility},
 };
 
 /// Builds [`MonteCarloSimulationElement`]s from serde-enabled
@@ -106,13 +106,17 @@ impl SimulationBuilder {
         let curve = curve_element.to_f64_term_structure(day_counter)?;
 
         let paths = match spec.model() {
-            ModelConfiguration::HullWhite { alpha, volatility } => {
+            ModelConfiguration::HullWhite {
+                alpha,
+                parameter_source,
+            } => {
                 let mut hw = HullWhite::new(*alpha, &curve);
-                match volatility {
-                    VolatilitySourceConfiguration::Constant { value } => {
-                        hw = hw.with_constant_volatility(*value);
+                match parameter_source {
+                    ParameterSource::Fixed(fixed) => {
+                        fixed.validate()?;
+                        hw = hw.with_constant_volatility(fixed.sigma);
                     }
-                    VolatilitySourceConfiguration::Calibrated(configuration) => {
+                    ParameterSource::Calibrated(configuration) => {
                         hw.calibrate_with_configuration(
                             configuration,
                             store,
@@ -121,27 +125,22 @@ impl SimulationBuilder {
                             level,
                         )?;
                     }
-                    VolatilitySourceConfiguration::Surface { .. }
-                    | VolatilitySourceConfiguration::Cube { .. } => {
-                        return Err(QSError::InvalidValueErr(
-                            "HullWhite supports Constant or Calibrated volatility sources; \
-                             sampling a surface/cube directly would misuse Black vols as \
-                             short-rate vols"
-                                .into(),
-                        ));
-                    }
                 }
                 generate_paths(&hw, &times, spec.n_paths(), spec.seed())?
             }
             ModelConfiguration::BrownianMotion {
-                volatility,
+                parameter_source,
                 dividend_rate,
             } => {
                 let spot = fixing_store.fixing(&index, reference_date)?;
                 let t_end = times.last().copied().unwrap_or(1.0);
                 let rate = -curve.discount_factor_from_time(t_end)?.ln() / t_end;
-                let vol_func: Box<dyn TimeDependentVolatility<f64>> = match volatility {
-                    VolatilitySourceConfiguration::Calibrated(configuration) => {
+                let vol_func: Box<dyn TimeDependentVolatility<f64>> = match parameter_source {
+                    ParameterSource::Fixed(fixed) => {
+                        fixed.validate()?;
+                        Box::new(ConstantVolatility::new(fixed.volatility))
+                    }
+                    ParameterSource::Calibrated(configuration) => {
                         Box::new(bootstrap_black_term_volatility(
                             configuration,
                             store,
@@ -149,7 +148,6 @@ impl SimulationBuilder {
                             day_counter,
                         )?)
                     }
-                    other => other.resolve(store)?,
                 };
                 let bm = BrownianMotion::new(spot, rate, vol_func, *dividend_rate);
                 generate_paths(&bm, &times, spec.n_paths(), spec.seed())?
@@ -199,19 +197,20 @@ mod tests {
     use crate::{
         ad::dual::DualFwd,
         core::elements::{
-            curveelement::DiscountCurveElement,
-            volatilitysurfaceelement::VolatilitySurfaceElement,
+            curveelement::DiscountCurveElement, volatilitysurfaceelement::VolatilitySurfaceElement,
         },
         rates::yieldtermstructure::discounttermstructure::DiscountTermStructure,
         time::{daycounter::DayCounter, enums::Frequency, enums::TimeUnit, period::Period},
         volatility::{
             interpolatedvolatilitysurface::InterpolatedVolatilitySurface,
             modelcalibration::{CalibrationSource, ModelCalibrationConfiguration},
-            volatilityindexing::{F64Key, SmileType, VolatilityType},
+            volatilityindexing::{F64Key, SmileType, Strike, VolatilityType},
         },
     };
     use crate::{
-        math::interpolation::interpolator::Interpolator, quotes::quotestore::QuoteStore,
+        math::interpolation::interpolator::Interpolator,
+        models::modelconfiguration::{GaussianRateModelParameters, LognormalModelParameters},
+        quotes::quotestore::QuoteStore,
         time::date::Date,
     };
 
@@ -253,6 +252,10 @@ mod tests {
     }
 
     fn add_flat_surface(store: &mut ConstructedElementStore, index: &MarketIndex, vol: f64) {
+        let labels = vec![
+            "EquityCall_USD_SPX_6M_Absolute_0.05".to_string(),
+            "EquityCall_USD_SPX_1Y_Absolute_0.05".to_string(),
+        ];
         let smile = BTreeMap::from([
             (F64Key::new(0.0), DualFwd::from(vol)),
             (F64Key::new(0.10), DualFwd::from(vol)),
@@ -266,7 +269,8 @@ mod tests {
             points,
             VolatilityType::Black,
             SmileType::Strike,
-        );
+        )
+        .with_calibration_instrument_ids(&labels);
         store.volatility_surfaces_mut().insert(
             index.clone(),
             VolatilitySurfaceElement::new(index.clone(), Rc::new(RefCell::new(surface))),
@@ -274,16 +278,9 @@ mod tests {
     }
 
     fn caplet_calibration(index: &MarketIndex) -> ModelCalibrationConfiguration {
-        ModelCalibrationConfiguration::new(
-            CalibrationSource::Surface {
-                market_index: index.clone(),
-            },
-            vec![
-                "CapletFloorlet_USD_SOFR_3M_6M_Absolute_0.045_Straddle_Black".to_string(),
-                "CapletFloorlet_USD_SOFR_3M_1Y_Absolute_0.045_Straddle_Black".to_string(),
-            ],
-            0.1,
-        )
+        ModelCalibrationConfiguration::new(CalibrationSource::Surface {
+            market_index: index.clone(),
+        })
     }
 
     #[test]
@@ -297,7 +294,7 @@ mod tests {
         let builder = SimulationBuilder::new(vec![spec(
             &index,
             ModelConfiguration::BrownianMotion {
-                volatility: VolatilitySourceConfiguration::Constant { value: 0.2 },
+                parameter_source: ParameterSource::Fixed(LognormalModelParameters::new(0.2)),
                 dividend_rate: None,
             },
         )]);
@@ -330,7 +327,7 @@ mod tests {
             &index,
             ModelConfiguration::HullWhite {
                 alpha: 0.1,
-                volatility: VolatilitySourceConfiguration::Constant { value: 0.01 },
+                parameter_source: ParameterSource::Fixed(GaussianRateModelParameters::new(0.01)),
             },
         )]);
         let simulations = builder.build(&store, &quotes, &fixings, Level::Mid)?;
@@ -356,7 +353,7 @@ mod tests {
         let builder = SimulationBuilder::new(vec![spec(
             &index,
             ModelConfiguration::BrownianMotion {
-                volatility: VolatilitySourceConfiguration::Calibrated(caplet_calibration(&index)),
+                parameter_source: ParameterSource::Calibrated(caplet_calibration(&index)),
                 dividend_rate: None,
             },
         )]);
@@ -385,7 +382,7 @@ mod tests {
             &index,
             ModelConfiguration::Lgm {
                 lambda: 0.05,
-                volatility: VolatilitySourceConfiguration::Constant { value: 0.01 },
+                parameter_source: ParameterSource::Fixed(GaussianRateModelParameters::new(0.01)),
             },
         )]);
         let simulations = builder.build(&store, &quotes, &fixings, Level::Mid)?;
@@ -407,30 +404,17 @@ mod tests {
     }
 
     #[test]
-    fn rejects_unsupported_model_volatility_combinations() -> Result<()> {
+    fn calibrated_asset_model_requires_constructed_volatility_market() -> Result<()> {
         let index = MarketIndex::SOFR;
         let store = setup_store(&index)?;
         let quotes = QuoteStore::new(reference_date());
         let fixings = FixingStore::default();
 
-        // Hull-White cannot sample a surface directly.
-        let hw_surface = SimulationBuilder::new(vec![spec(
-            &index,
-            ModelConfiguration::HullWhite {
-                alpha: 0.1,
-                volatility: VolatilitySourceConfiguration::Surface {
-                    market_index: index.clone(),
-                    key: 0.03,
-                },
-            },
-        )]);
-        assert!(hw_surface.build(&store, &quotes, &fixings, Level::Mid).is_err());
-
         // Brownian motion calibration requires the surface to be constructed.
         let bm_calibrated = SimulationBuilder::new(vec![spec(
             &index,
             ModelConfiguration::BrownianMotion {
-                volatility: VolatilitySourceConfiguration::Calibrated(caplet_calibration(&index)),
+                parameter_source: ParameterSource::Calibrated(caplet_calibration(&index)),
                 dividend_rate: None,
             },
         )]);
@@ -438,18 +422,6 @@ mod tests {
             .build(&store, &quotes, &fixings, Level::Mid)
             .is_err());
 
-        // Lgm cannot sample a surface directly.
-        let lgm = SimulationBuilder::new(vec![spec(
-            &index,
-            ModelConfiguration::Lgm {
-                lambda: 0.05,
-                volatility: VolatilitySourceConfiguration::Surface {
-                    market_index: index.clone(),
-                    key: 0.03,
-                },
-            },
-        )]);
-        assert!(lgm.build(&store, &quotes, &fixings, Level::Mid).is_err());
         Ok(())
     }
 
@@ -460,7 +432,7 @@ mod tests {
             "model": {
                 "HullWhite": {
                     "alpha": 0.1,
-                    "volatility": { "Constant": { "value": 0.01 } }
+                    "parameter_source": { "Fixed": { "sigma": 0.01 } }
                 }
             },
             "horizon": "5Y"
@@ -475,6 +447,61 @@ mod tests {
         let reparsed: SimulationConfiguration =
             serde_json::from_str(&round).map_err(|e| QSError::InvalidValueErr(e.to_string()))?;
         assert_eq!(reparsed.horizon(), parsed.horizon());
+        Ok(())
+    }
+
+    #[test]
+    fn calibrated_configuration_uses_explicit_section_names() -> Result<()> {
+        let json = r#"{
+            "market_index": "SOFR",
+            "model": {
+                "HullWhite": {
+                    "alpha": 0.1,
+                    "parameter_source": {
+                        "Calibrated": {
+                            "source": { "Surface": { "market_index": "SOFR" } },
+                            "calibration_basket": {
+                                "expiries": ["1Y", "2Y"],
+                                "tenors": ["3M"],
+                                "strike": "Atm"
+                            }
+                        }
+                    }
+                }
+            },
+            "horizon": "5Y"
+        }"#;
+        let parsed: SimulationConfiguration =
+            serde_json::from_str(json).map_err(|e| QSError::InvalidValueErr(e.to_string()))?;
+        let ModelConfiguration::HullWhite {
+            parameter_source: ParameterSource::Calibrated(calibration),
+            ..
+        } = parsed.model()
+        else {
+            return Err(QSError::UnexpectedErr(
+                "expected calibrated Hull-White configuration".into(),
+            ));
+        };
+        assert_eq!(
+            calibration
+                .calibration_basket()
+                .expiries()
+                .map(|values| values.len()),
+            Some(2)
+        );
+        assert_eq!(
+            calibration
+                .calibration_basket()
+                .tenors()
+                .map(|values| values.len()),
+            Some(1)
+        );
+        assert_eq!(calibration.calibration_basket().strike(), Some(Strike::Atm));
+
+        let ambiguous_name = json.replace("calibration_basket", "basket");
+        assert!(serde_json::from_str::<SimulationConfiguration>(&ambiguous_name).is_err());
+        let ambiguous_source = json.replace("parameter_source", "parameters");
+        assert!(serde_json::from_str::<SimulationConfiguration>(&ambiguous_source).is_err());
         Ok(())
     }
 }

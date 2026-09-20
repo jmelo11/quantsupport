@@ -67,22 +67,33 @@ fn print_bootstrap_results(
         let curve = elem.curve();
         println!("=== {index} ===\n");
         println!(
-            "{:<42} {:>12} {:>14} {:>14}",
-            "Pillar", "Quote (%)", "DF", "Zero Rate (%)"
+            "{:<68} {:>12} {:>14} {:>14}",
+            "Pillar", "Quote", "DF", "Zero Rate (%)"
         );
-        println!("{}", "-".repeat(84));
+        println!("{}", "-".repeat(110));
 
         if let Some(pillars) = curve.pillars() {
             for (label, quote_val) in &pillars {
-                let tenor_str = label.rsplit('_').next().unwrap_or("0D");
-                let pillar_date = rd + Period::from_str(tenor_str).unwrap();
+                let details = QuoteDetails::from_str(label)?;
+                let tenor = details
+                    .tenor()
+                    .ok_or_else(|| QSError::ValueNotSetErr(format!("Tenor on quote {label}")))?;
+                let pillar_date = rd + tenor;
                 let df = curve.discount_factor(pillar_date)?.value();
                 let yf = DayCounter::Actual360.year_fraction(rd, pillar_date);
                 let zero = if yf > 0.0 { -df.ln() / yf * 100.0 } else { 0.0 };
-                println!(
-                    "{label:<42} {:>12.4} {df:>14.8} {zero:>14.4}",
+                let quote = if matches!(*details.instrument(), QuoteInstrument::FixedRateBond)
+                    && matches!(
+                        details.bond_calibration_strategy(),
+                        Some(BondCalibrationStrategy::AnchorPrice)
+                    )
+                    || matches!(*details.instrument(), QuoteInstrument::FxForward)
+                {
+                    quote_val.value()
+                } else {
                     quote_val.value() * 100.0
-                );
+                };
+                println!("{label:<68} {quote:>12.4} {df:>14.8} {zero:>14.4}");
             }
         }
 
@@ -97,10 +108,6 @@ fn print_bootstrap_results(
     }
     Ok(())
 }
-
-// ---------------------------------------------------------------------------
-// Main
-// ---------------------------------------------------------------------------
 
 fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));

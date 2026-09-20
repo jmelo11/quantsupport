@@ -1,9 +1,8 @@
-//! Generic volatility sources for models and simulations.
+//! Time-dependent volatility adapters for market-data components.
 //!
-//! Models consume volatility through the
-//! [`TimeDependentVolatility`]
-//! trait. This module provides the adapters that connect that trait to the
-//! market data components:
+//! Components that directly consume volatility use the
+//! [`TimeDependentVolatility`] trait. This module connects that trait to flat
+//! values and constructed volatility markets:
 //!
 //! - [`ConstantVolatility`] — a flat volatility, useful for debugging and
 //!   simple setups.
@@ -132,15 +131,13 @@ impl<T: Scalar> TimeDependentVolatility<T> for PiecewiseConstantVolatility<T> {
 /// variance at each quoted expiry is reproduced:
 /// `∫₀^{T_i} σ(s)² ds = σ_impl(T_i)² T_i`.
 ///
-/// The configuration's quote identifiers determine the expiries and strikes at
-/// which the surface/cube is sampled (honouring the [`CalibrationSource`]).
-/// All available market quotes may be passed: when the configuration carries a
-/// [`strike`](ModelCalibrationConfiguration::strike) override, quotes are
-/// collapsed to one pillar per (expiry, tenor) and the surface is sampled at
-/// the override. Because no forward curve is available here, the override (or
-/// each quote's own strike) must be [`Strike::Absolute`] — ATM/relative
-/// moneyness can only be resolved by curve-aware models (Hull-White, LGM).
-/// This is the calibrated volatility source for lognormal models such as
+/// The configuration's calibration basket selects surface or cube pillars
+/// according to expiry, tenor, and strike. A common strike rule creates one
+/// pillar for each selected expiry and tenor. This bootstrap receives no
+/// forward curve, so it supports [`Strike::Absolute`] values. Curve-aware
+/// calibrators such as Hull-White and LGM also resolve ATM and relative
+/// moneyness against forward rates. This function supplies calibrated
+/// volatility to lognormal models such as
 /// [`BrownianMotion`](crate::models::brownianmotion::BrownianMotion).
 ///
 /// # Errors
@@ -153,9 +150,10 @@ pub fn bootstrap_black_term_volatility(
     reference_date: Date,
     day_counter: DayCounter,
 ) -> Result<PiecewiseConstantVolatility<f64>> {
+    let quote_ids = configuration.resolve_instrument_ids(store)?;
     let mut seen_pillars: Vec<(Option<Period>, Option<Period>)> = Vec::new();
-    let mut pillars: Vec<(f64, f64)> = Vec::with_capacity(configuration.quote_ids().len());
-    for id in configuration.quote_ids() {
+    let mut pillars: Vec<(f64, f64)> = Vec::with_capacity(quote_ids.len());
+    for id in &quote_ids {
         let details = QuoteDetails::from_str(id)?;
         if matches!(details.vol_type(), Some(VolatilityType::Normal)) {
             return Err(QSError::InvalidValueErr(format!(
@@ -180,7 +178,7 @@ pub fn bootstrap_black_term_volatility(
                 return Err(QSError::InvalidValueErr(format!(
                     "Black term-vol bootstrap requires absolute strikes (no forward curve \
                      available to resolve moneyness), got {other:?} for {id}"
-                )))
+                )));
             }
         };
         let implied = match configuration.source() {
@@ -340,17 +338,16 @@ impl TimeDependentVolatility<DualFwd> for CubeTermVolatility {
     }
 }
 
-/// Serde-enabled configuration selecting how a model sources its volatility.
+/// Serde-enabled configuration for a direct volatility adapter.
 ///
 /// ## JSON examples
 /// ```json
 /// { "Constant": { "value": 0.2 } }
 /// { "Surface": { "market_index": "SOFR", "key": 0.03 } }
 /// { "Cube": { "market_index": "SOFR", "tenor": "5Y", "key": 0.03 } }
-/// { "Calibrated": { "source": { "Surface": { "market_index": "SOFR" } },
-///                   "quote_ids": ["..."], "alpha": 0.1 } }
 /// ```
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub enum VolatilitySourceConfiguration {
     /// A flat volatility (useful for debugging).
     Constant {
@@ -373,24 +370,15 @@ pub enum VolatilitySourceConfiguration {
         /// Smile key (strike, delta, or log-moneyness) to sample at.
         key: f64,
     },
-    /// Bootstrap the model volatility by calibrating to market vols read from
-    /// a surface or cube. Only supported by models with a calibration routine
-    /// (e.g. Hull-White).
-    Calibrated(ModelCalibrationConfiguration),
 }
 
 impl VolatilitySourceConfiguration {
     /// Resolves the configuration into a [`TimeDependentVolatility`] using the
     /// constructed elements store.
     ///
-    /// [`VolatilitySourceConfiguration::Calibrated`] cannot be resolved
-    /// directly: model calibration routines (e.g.
-    /// [`HullWhite::calibrate_with_configuration`](crate::models::hullwhite::hullwhitemodel::HullWhite))
-    /// must be used instead.
-    ///
     /// # Errors
-    /// Returns an error if the referenced surface/cube has not been
-    /// constructed, or if the configuration is `Calibrated`.
+    /// Returns an error if the referenced surface or cube is missing from the
+    /// constructed-element store.
     pub fn resolve(
         &self,
         store: &ConstructedElementStore,
@@ -421,11 +409,6 @@ impl VolatilitySourceConfiguration {
                     *key,
                 )))
             }
-            Self::Calibrated(_) => Err(QSError::InvalidValueErr(
-                "Calibrated volatility must be resolved through the model's calibration \
-                 routine (e.g. HullWhite::calibrate_with_configuration)"
-                    .into(),
-            )),
         }
     }
 }
@@ -581,16 +564,6 @@ mod tests {
             key: 0.03,
         };
         assert!(missing.resolve(&store).is_err());
-
-        let calibrated =
-            VolatilitySourceConfiguration::Calibrated(ModelCalibrationConfiguration::new(
-                CalibrationSource::Surface {
-                    market_index: MarketIndex::SOFR,
-                },
-                vec![],
-                0.1,
-            ));
-        assert!(calibrated.resolve(&store).is_err());
     }
 
     #[test]
@@ -630,7 +603,11 @@ mod tests {
         Ok(())
     }
 
-    fn term_surface_store(vol_6m: f64, vol_1y: f64) -> ConstructedElementStore {
+    fn term_surface_store_with_labels(
+        vol_6m: f64,
+        vol_1y: f64,
+        labels: &[String],
+    ) -> ConstructedElementStore {
         let smile = |v: f64| {
             BTreeMap::from([
                 (F64Key::new(0.0), DualFwd::from(v)),
@@ -647,7 +624,8 @@ mod tests {
             points,
             VolatilityType::Black,
             SmileType::Strike,
-        );
+        )
+        .with_calibration_instrument_ids(labels);
         let mut store = ConstructedElementStore::default();
         store.volatility_surfaces_mut().insert(
             MarketIndex::SOFR,
@@ -656,17 +634,18 @@ mod tests {
         store
     }
 
+    fn term_surface_store(vol_6m: f64, vol_1y: f64) -> ConstructedElementStore {
+        let labels = vec![
+            "CapletFloorlet_USD_SOFR_3M_6M_Absolute_0.045_Straddle_Black".to_string(),
+            "CapletFloorlet_USD_SOFR_3M_1Y_Absolute_0.045_Straddle_Black".to_string(),
+        ];
+        term_surface_store_with_labels(vol_6m, vol_1y, &labels)
+    }
+
     fn bootstrap_configuration() -> ModelCalibrationConfiguration {
-        ModelCalibrationConfiguration::new(
-            CalibrationSource::Surface {
-                market_index: MarketIndex::SOFR,
-            },
-            vec![
-                "CapletFloorlet_USD_SOFR_3M_6M_Absolute_0.045_Straddle_Black".to_string(),
-                "CapletFloorlet_USD_SOFR_3M_1Y_Absolute_0.045_Straddle_Black".to_string(),
-            ],
-            0.1,
-        )
+        ModelCalibrationConfiguration::new(CalibrationSource::Surface {
+            market_index: MarketIndex::SOFR,
+        })
     }
 
     #[test]
@@ -730,7 +709,6 @@ mod tests {
 
     #[test]
     fn bootstrap_strike_override_dedupes_pillars() -> Result<()> {
-        let store = term_surface_store(0.20, 0.20);
         // All available market quotes: several strikes per expiry.
         let all_ids: Vec<String> = ["6M", "1Y"]
             .iter()
@@ -740,12 +718,13 @@ mod tests {
                 })
             })
             .collect();
+        let store = term_surface_store_with_labels(0.20, 0.20, &all_ids);
         let source = CalibrationSource::Surface {
             market_index: MarketIndex::SOFR,
         };
 
         // Without a strike override, duplicate expiries are ambiguous.
-        let ambiguous = ModelCalibrationConfiguration::new(source.clone(), all_ids.clone(), 0.1);
+        let ambiguous = ModelCalibrationConfiguration::new(source.clone());
         assert!(bootstrap_black_term_volatility(
             &ambiguous,
             &store,
@@ -755,8 +734,8 @@ mod tests {
         .is_err());
 
         // An absolute strike override collapses to one pillar per expiry.
-        let config = ModelCalibrationConfiguration::new(source.clone(), all_ids.clone(), 0.1)
-            .with_strike(Strike::Absolute(0.045));
+        let config =
+            ModelCalibrationConfiguration::new(source.clone()).with_strike(Strike::Absolute(0.045));
         let vol = bootstrap_black_term_volatility(
             &config,
             &store,
@@ -767,8 +746,7 @@ mod tests {
         assert!((vol.vol(0.25)? - 0.20).abs() < 1e-12);
 
         // ATM/relative moneyness cannot be resolved without a forward curve.
-        let atm_config =
-            ModelCalibrationConfiguration::new(source, all_ids, 0.1).with_strike(Strike::Atm);
+        let atm_config = ModelCalibrationConfiguration::new(source).with_strike(Strike::Atm);
         assert!(bootstrap_black_term_volatility(
             &atm_config,
             &store,
@@ -781,18 +759,14 @@ mod tests {
 
     #[test]
     fn bootstrap_rejects_normal_vol_quotes() {
-        let store = term_surface_store(0.20, 0.20);
         let ids = vec![
             "CapletFloorlet_USD_SOFR_3M_6M_Absolute_0.045_Straddle_Normal".to_string(),
             "CapletFloorlet_USD_SOFR_3M_1Y_Absolute_0.045_Straddle_Normal".to_string(),
         ];
-        let config = ModelCalibrationConfiguration::new(
-            CalibrationSource::Surface {
-                market_index: MarketIndex::SOFR,
-            },
-            ids,
-            0.1,
-        );
+        let store = term_surface_store_with_labels(0.20, 0.20, &ids);
+        let config = ModelCalibrationConfiguration::new(CalibrationSource::Surface {
+            market_index: MarketIndex::SOFR,
+        });
         let result = bootstrap_black_term_volatility(
             &config,
             &store,

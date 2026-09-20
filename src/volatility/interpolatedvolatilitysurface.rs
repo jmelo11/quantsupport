@@ -23,6 +23,7 @@ pub struct InterpolatedVolatilitySurface<T: Scalar> {
     market_index: MarketIndex,
     points: SurfaceMap<T>,
     labels: Option<Vec<String>>,
+    calibration_instrument_ids: Option<Vec<String>>,
     volatility_type: VolatilityType,
     smile_type: SmileType,
 }
@@ -42,15 +43,31 @@ impl<T: Scalar> InterpolatedVolatilitySurface<T> {
             market_index,
             points,
             labels: None,
+            calibration_instrument_ids: None,
             volatility_type,
             smile_type,
         }
     }
 
-    /// Attaches labels to each volatility pillar used in sensitivity reports.
+    /// Attaches one sensitivity label to each differentiable grid value.
+    ///
+    /// These labels identify adjoints returned by automatic differentiation.
+    /// They may differ from the source option identifiers used to select
+    /// calibration instruments.
     #[must_use]
     pub fn with_labels(mut self, labels: &[String]) -> Self {
         self.labels = Some(labels.to_owned());
+        self
+    }
+
+    /// Attaches source option identifiers for calibration-basket selection.
+    ///
+    /// The identifiers provide expiry, tenor, and strike metadata to model
+    /// calibrators. [`Pillars`] defines the differentiable values reported by
+    /// the risk system.
+    #[must_use]
+    pub fn with_calibration_instrument_ids(mut self, identifiers: &[String]) -> Self {
+        self.calibration_instrument_ids = Some(identifiers.to_owned());
         self
     }
 
@@ -96,6 +113,10 @@ impl<T: BilinearValue> VolatilitySurface<T> for InterpolatedVolatilitySurface<T>
 
     fn smile_type(&self) -> SmileType {
         self.smile_type
+    }
+
+    fn calibration_instrument_ids(&self) -> Option<Vec<String>> {
+        self.calibration_instrument_ids.clone()
     }
 }
 

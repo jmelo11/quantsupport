@@ -31,8 +31,10 @@ impl VolatilityCubeBuilder {
     /// Builds all configured cubes from the given quote source.
     ///
     /// # Errors
-    /// Returns an error if a required quote is missing from the selector or
-    /// if the quote details lack the expected fields.
+    /// Returns an error when a quote is missing, belongs to another market
+    /// index, lacks an expiry, tenor, or strike, or duplicates an
+    /// expiry-tenor-strike node. A second configuration for the same market
+    /// index also produces an error.
     pub fn build(
         &self,
         selector: &impl QuoteSelector,
@@ -43,11 +45,19 @@ impl VolatilityCubeBuilder {
 
         for spec in &self.specs {
             let (cube, labels) = self.build_one(spec, selector, level, reference_date)?;
+            let cube = cube
+                .with_labels(&labels)
+                .with_calibration_instrument_ids(&labels);
             let element = VolatilityCubeElement::new(
                 spec.market_index().clone(),
-                Rc::new(RefCell::new(cube.with_labels(&labels))),
+                Rc::new(RefCell::new(cube)),
             );
-            cubes.insert(spec.market_index().clone(), element);
+            if cubes.insert(spec.market_index().clone(), element).is_some() {
+                return Err(QSError::InvalidValueErr(format!(
+                    "Duplicate volatility cube configuration for index {}",
+                    spec.market_index()
+                )));
+            }
         }
 
         Ok(cubes)
@@ -63,7 +73,8 @@ impl VolatilityCubeBuilder {
     ) -> Result<(InterpolatedVolatilityCube<DualFwd>, Vec<String>)> {
         let mut points: BTreeMap<Period, BTreeMap<Period, BTreeMap<F64Key, DualFwd>>> =
             BTreeMap::new();
-        let mut labels = Vec::new();
+        let mut node_labels: BTreeMap<Period, BTreeMap<Period, BTreeMap<F64Key, String>>> =
+            BTreeMap::new();
 
         for qid in spec.quotes() {
             let quote = selector
@@ -71,6 +82,13 @@ impl VolatilityCubeBuilder {
                 .ok_or_else(|| QSError::NotFoundErr(format!("Quote not found: {qid}")))?;
             let val = quote.levels().value(level)?;
             let details = quote.details();
+            if details.market_index() != Some(spec.market_index()) {
+                return Err(QSError::InvalidValueErr(format!(
+                    "Quote {qid} belongs to {:?}, expected cube index {}",
+                    details.market_index(),
+                    spec.market_index()
+                )));
+            }
 
             let expiry = details.option_expiry().ok_or_else(|| {
                 QSError::InvalidValueErr(format!("Quote {qid} missing option_expiry"))
@@ -82,14 +100,34 @@ impl VolatilityCubeBuilder {
                 .strike()
                 .ok_or_else(|| QSError::InvalidValueErr(format!("Quote {qid} missing strike")))?;
 
+            let key = F64Key::new(strike.resolve(0.0));
+            if node_labels
+                .entry(expiry)
+                .or_default()
+                .entry(tenor)
+                .or_default()
+                .insert(key.clone(), qid.clone())
+                .is_some()
+            {
+                return Err(QSError::InvalidValueErr(format!(
+                    "Duplicate volatility cube node at expiry {expiry}, tenor {tenor}, key {}",
+                    key.value()
+                )));
+            }
             points
                 .entry(expiry)
                 .or_default()
                 .entry(tenor)
                 .or_default()
-                .insert(F64Key::new(strike.resolve(0.0)), DualFwd::from(val));
-            labels.push(qid.clone());
+                .insert(key, DualFwd::from(val));
         }
+
+        // Keep labels in exactly the same canonical coordinate order used by
+        // `InterpolatedVolatilityCube::pillars`.
+        let labels = node_labels
+            .values()
+            .flat_map(|tenors| tenors.values().flat_map(|smile| smile.values().cloned()))
+            .collect();
 
         let cube = InterpolatedVolatilityCube::new(
             reference_date,

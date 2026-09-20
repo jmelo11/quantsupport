@@ -1,10 +1,12 @@
 # XVA Sensitivities
 
-`XvaEngine::run` computes sensitivities of every XVA value with the same tape-based AD used for pricing: the market model is built from `DualFwd` leaves, paths are simulated as `DualFwd`, aggregators are differentiated, and one reverse sweep returns the gradient with respect to every registered leaf. No bumping and re-simulation is required.
+XVA sensitivities explain how simulated exposure and its valuation adjustments respond to market inputs and model assumptions. `XvaEngine::run` uses the tape-based differentiation framework shared with pricing. The market model begins from `DualFwd` leaves, simulated paths preserve those dependencies, aggregators remain differentiable, and a reverse sweep returns gradients under registered labels.
+
+This chapter explains those labels, shows how to rank the results, and states the numerical conventions needed for interpretation and validation.
 
 ## Labels
 
-`result.sensitivities: Option<Vec<(String, f64)>>` pairs a label with \\(\partial\text{XVA}/\partial\text{leaf}\\):
+`result.sensitivities` pairs each registered label with \\(\partial\text{XVA}/\partial\text{leaf}\\). Label families identify the economic source of the derivative:
 
 | Label                                                                                                                                                                                        | Leaf                                                    |
 | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
@@ -14,9 +16,13 @@
 | `<credit_index>.pillar_<i>`                                                                                                                                                                  | survival pillars of a bootstrapped credit curve         |
 | `funding_spread.<date>` or `<funding_index>.<date>`                                                                                                                                          | funding spread term structure                           |
 
-Values are aggregated across all netting sets in the run. To obtain per-set sensitivities run the engine once per netting set.
+Curve labels refer to observable calibration quotes through the curve IFT. Volatility labels refer to the instruments used to calibrate LGM sigma schedules. FX, credit, and funding labels identify their direct model or term-structure inputs.
+
+The returned values aggregate all netting sets included in the run. Running one set at a time produces a set-specific gradient when that reporting dimension is required.
 
 ## Example
+
+Risk reports often rank values by absolute magnitude before grouping them by factor family. The following example sorts the engine result and prints the ten largest entries:
 
 ```rust,ignore
 let result = engine.run(&mut netting_sets)?;
@@ -27,11 +33,17 @@ for (label, value) in sens.iter().take(10) {
 }
 ```
 
-Typical top rows for the `examples/cva` portfolio are the long-dated SOFR OIS quotes (through both the exposure and the system discounting), the cross-currency basis quotes and `FX.CLPUSD.vol`.
+For the `examples/cva` portfolio, large rows commonly include long-dated SOFR OIS quotes through exposure dynamics and calibration dependencies, cross-currency basis quotes through the collateralized CLP curve, and `FX.CLPUSD.vol` through simulated currency conversion.
 
 ## Notes
 
-- The deterministic system-curve discounting step (\\(P(0,t_k)\\) from the domestic curve) is not differentiated, so curve sensitivities exclude that term.
-- Path noise is common to value and gradient: since sensitivities come from the same paths, they are consistent with the reported XVA (no bump-noise), but they still carry Monte Carlo error that decreases with `n_paths`.
-- Sensitivities to `lambda`, `rho` and constant `sigma`/`fx_vol` configuration values are available where those values are leaves (`FX.<pair>.vol`); `lambda` and `rho` are treated as constants.
+Four implementation conventions define the scope and statistical meaning of the reported gradient:
+
+- The deterministic system-curve discounting sequence \\(P(0,t_k)\\) from the domestic curve is held fixed during differentiation. Curve sensitivities cover exposure and model paths.
+- Value and gradient use the same paths and therefore share sampling noise. Their Monte Carlo error decreases as `n_paths` grows.
+- Registered leaves such as `FX.<pair>.vol` appear in the report. The current engine treats `lambda` and `rho` as fixed configuration values.
 - Validate by rerunning with a `Scenario` on the base quotes (see [Scenarios](../risk/scenarios.md)) and the same `seed`.
+
+## What to remember
+
+XVA risk follows one differentiable chain from quotes and model leaves through calibrated dynamics, simulated exposure, and aggregation. Labels preserve the economic origin of each derivative. Common random paths align values and gradients, and same-seed scenario runs provide a finite-difference validation for selected factors.

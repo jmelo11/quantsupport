@@ -1,9 +1,9 @@
 //! Serde-enabled model and simulation configurations.
 //!
-//! [`ModelConfiguration`] describes a stochastic model and how it sources its
-//! volatility (constant, surface/cube-sampled, or calibrated).
-//! [`SimulationConfiguration`] pairs a model with a Monte Carlo setup (paths,
-//! seed, horizon, frequency) and is consumed by
+//! [`ModelConfiguration`] selects the stochastic dynamics and describes how
+//! the model obtains its parameters. [`SimulationConfiguration`] combines that
+//! model definition with the path count, random seed, horizon, and time-step
+//! frequency used by
 //! [`SimulationBuilder`](crate::simulations::simulationbuilder::SimulationBuilder)
 //! during [`PricingContext::initialize`](crate::core::pricingcontext::PricingContext::initialize).
 //!
@@ -14,11 +14,10 @@
 //!     "model": {
 //!         "HullWhite": {
 //!             "alpha": 0.1,
-//!             "volatility": {
+//!             "parameter_source": {
 //!                 "Calibrated": {
 //!                     "source": { "Surface": { "market_index": "SOFR" } },
-//!                     "quote_ids": ["CapletFloorlet_USD_SOFR_3M_1Y_Absolute_0.045_Straddle_Black"],
-//!                     "alpha": 0.1
+//!                     "calibration_basket": { "strike": "Atm" }
 //!                 }
 //!             }
 //!         }
@@ -35,41 +34,126 @@ use serde::{Deserialize, Serialize};
 use crate::{
     indices::marketindex::MarketIndex,
     time::{daycounter::DayCounter, enums::Frequency, period::Period},
-    volatility::volatilitysource::VolatilitySourceConfiguration,
+    utils::errors::{QSError, Result},
+    volatility::modelcalibration::ModelCalibrationConfiguration,
 };
 
-/// Describes a stochastic model and its volatility source.
+/// Describes how a stochastic model obtains its parameters.
 ///
-/// Supported volatility sources per model:
-///
-/// | Model            | `Constant` | `Surface`/`Cube` | `Calibrated` |
-/// |------------------|------------|------------------|--------------|
-/// | `HullWhite`      | yes        | no               | yes          |
-/// | `BrownianMotion` | yes        | yes              | yes          |
-/// | `Lgm`            | yes        | no               | yes          |
-///
-/// For `HullWhite` and `Lgm`, `Calibrated` bootstraps a piecewise-constant
-/// short-rate volatility to the configured caplet/swaption vols. For
-/// `BrownianMotion`, `Calibrated` bootstraps a piecewise-constant forward
-/// volatility that reproduces the Black total variance at each quoted expiry
-/// (see
-/// [`bootstrap_black_term_volatility`](crate::volatility::volatilitysource::bootstrap_black_term_volatility)).
+/// `Fixed` carries a fully specified parameter set. `Calibrated` carries a
+/// market target that the model's calibrator converts into a parameter set.
+/// The type parameters preserve each model's natural representation. For
+/// example, a one-factor Gaussian rate model uses a scalar short-rate
+/// volatility, while an HJM model can use factor-loading functions and a
+/// correlation matrix.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub enum ParameterSource<P, C> {
+    /// Uses the supplied parameters when the model is constructed.
+    Fixed(P),
+    /// Fits the model parameters to the supplied market target when the model
+    /// is constructed.
+    Calibrated(C),
+}
+
+/// Fixed parameters for one-factor Gaussian rate models.
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GaussianRateModelParameters {
+    /// Annualized absolute short-rate volatility in rate units per square-root
+    /// year. `0.01` means 100 bp/√year.
+    pub sigma: f64,
+}
+
+impl GaussianRateModelParameters {
+    /// Creates fixed one-factor Gaussian parameters.
+    #[must_use]
+    pub const fn new(sigma: f64) -> Self {
+        Self { sigma }
+    }
+
+    /// Validates that sigma is finite and non-negative.
+    ///
+    /// # Errors
+    /// Returns an error for negative, infinite, or NaN volatility.
+    pub fn validate(&self) -> Result<()> {
+        if self.sigma.is_finite() && self.sigma >= 0.0 {
+            Ok(())
+        } else {
+            Err(QSError::InvalidValueErr(format!(
+                "Gaussian short-rate sigma must be finite and non-negative, got {}",
+                self.sigma
+            )))
+        }
+    }
+}
+
+/// Fixed or calibrated parameters for Hull-White and one-factor LGM.
+pub type GaussianRateParameterSource =
+    ParameterSource<GaussianRateModelParameters, ModelCalibrationConfiguration>;
+
+/// Fixed parameters for a lognormal Brownian-motion model.
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LognormalModelParameters {
+    /// Annualized lognormal volatility as a decimal. `0.20` means 20% per
+    /// square-root year.
+    pub volatility: f64,
+}
+
+impl LognormalModelParameters {
+    /// Creates fixed lognormal model parameters.
+    #[must_use]
+    pub const fn new(volatility: f64) -> Self {
+        Self { volatility }
+    }
+
+    /// Validates that volatility is finite and non-negative.
+    ///
+    /// # Errors
+    /// Returns an error for negative, infinite, or NaN volatility.
+    pub fn validate(&self) -> Result<()> {
+        if self.volatility.is_finite() && self.volatility >= 0.0 {
+            Ok(())
+        } else {
+            Err(QSError::InvalidValueErr(format!(
+                "Lognormal volatility must be finite and non-negative, got {}",
+                self.volatility
+            )))
+        }
+    }
+}
+
+/// Fixed or calibrated parameters for lognormal Brownian motion.
+pub type LognormalParameterSource =
+    ParameterSource<LognormalModelParameters, ModelCalibrationConfiguration>;
+
+/// Configures the stochastic dynamics used to generate simulation paths.
+///
+/// Hull-White and LGM resolve `GaussianRateModelParameters` from a fixed value
+/// or from caplet and swaption calibration. Brownian motion resolves
+/// `LognormalModelParameters` from a fixed value or strips a
+/// piecewise-constant forward-volatility curve from Black implied
+/// volatilities. The stripping algorithm reproduces total variance at each
+/// selected expiry and is implemented by
+/// [`bootstrap_black_term_volatility`](crate::volatility::volatilitysource::bootstrap_black_term_volatility).
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub enum ModelConfiguration {
-    /// Hull-White one-factor short-rate model. The discount curve is taken
-    /// from the constructed curve for the simulation's market index.
+    /// Hull-White one-factor short-rate model anchored to the constructed
+    /// discount curve for the simulation's market index.
     HullWhite {
         /// Mean-reversion speed.
         alpha: f64,
-        /// Short-rate volatility source (`Constant` or `Calibrated`).
-        volatility: VolatilitySourceConfiguration,
+        /// Short-rate volatility supplied directly or fitted to option prices.
+        parameter_source: GaussianRateParameterSource,
     },
-    /// Geometric Brownian motion (Black-Scholes). The spot is read from the
-    /// fixing store at the reference date and the drift from the constructed
-    /// discount curve for the simulation's market index.
+    /// Geometric Brownian motion using the reference-date fixing as spot and
+    /// the constructed discount curve as the risk-neutral drift input.
     BrownianMotion {
-        /// Volatility source (`Constant`, `Surface`, `Cube`, or `Calibrated`).
-        volatility: VolatilitySourceConfiguration,
+        /// Lognormal volatility supplied directly or stripped from a Black
+        /// volatility market.
+        parameter_source: LognormalParameterSource,
         /// Optional continuous dividend rate.
         #[serde(default)]
         dividend_rate: Option<f64>,
@@ -86,12 +170,8 @@ pub enum ModelConfiguration {
         /// reduce the effect of a factor shock on distant maturities. Zero is
         /// supported and selects the non-mean-reverting limit.
         lambda: f64,
-        /// Absolute short-rate volatility source. `Constant { value: 0.01 }`
-        /// means 100 bp per square-root year. `Calibrated` solves a
-        /// piecewise-constant short-rate volatility schedule against caplet or
-        /// swaption prices. `Surface` and `Cube` quotes enter through the
-        /// calibration instruments and produce model sigma values.
-        volatility: VolatilitySourceConfiguration,
+        /// Short-rate volatility supplied directly or fitted to option prices.
+        parameter_source: GaussianRateParameterSource,
     },
 }
 

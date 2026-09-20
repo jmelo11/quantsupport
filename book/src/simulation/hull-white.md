@@ -1,12 +1,16 @@
 # Hull-White Model
 
-One-factor Gaussian short-rate model, `src/models/hullwhite/`:
+Hull-White is a one-factor Gaussian short-rate model that fits the initial discount curve through a time-dependent drift. It supports closed-form bond options, caplets, and swaptions, and it also generates rate paths for Monte Carlo pricing. This chapter explains the model API, its calibration to a constructed volatility market, and its simulation configuration. The implementation lives in `src/models/hullwhite/`.
+
+The short rate follows
 
 \\[
 dr_t = \bigl(\theta(t) - \alpha r_t\bigr)dt + \sigma(t)\\,dW_t .
 \\]
 
 ## API
+
+The model owns mean reversion, a reference to the initial curve, and an optional volatility function and calibration report. The following definition and constructor show those responsibilities:
 
 ```rust,ignore
 pub struct HullWhite<'a, T: Scalar> {
@@ -19,6 +23,8 @@ pub struct HullWhite<'a, T: Scalar> {
 let mut hw = HullWhite::new(alpha, &sofr_curve).with_constant_volatility(0.01);
 ```
 
+Once volatility has been supplied, the model can evaluate its central affine quantities and closed-form option prices:
+
 | Method                                                                   | Formula                                                                                                  |
 | ------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------- |
 | `B(t, T)`                                                                | \\(\frac{1-e^{-\alpha(T-t)}}{\alpha}\\)                                                                  |
@@ -30,41 +36,44 @@ let mut hw = HullWhite::new(alpha, &sofr_curve).with_constant_volatility(0.01);
 | `swaption_price(strike, t_option, &[(pay_time, accrual)], sigma, curve)` | Jamshidian decomposition                                                                                 |
 | `bond_put_price`, `bond_call_price`                                      | zero-coupon bond options                                                                                 |
 
-The closed forms are shared with `ClosedFormHullWhiteCapletPricer`, `ClosedFormHullWhiteCapPricer` and `ClosedFormHullWhiteSwaptionPricer` ([Caps and Floors](../pricing/caps-floors.md), [Swaptions](../pricing/swaptions.md)).
+`B` measures how a future bond responds to the current short rate, and `A` fits that bond price to the initial curve. The option methods build on these affine bond prices. `ClosedFormHullWhiteCapletPricer`, `ClosedFormHullWhiteCapPricer`, and `ClosedFormHullWhiteSwaptionPricer` reuse the same formulas, as described in [Caps and Floors](../pricing/caps-floors.md) and [Swaptions](../pricing/swaptions.md).
 
 ## Calibration
 
+Calibration converts market caplet or swaption volatilities into the model's piecewise-constant short-rate volatility schedule. The caller supplies a semantic calibration configuration together with the constructed market and curve:
+
 ```rust,ignore
-hw.calibrate(&quote_ids, &quote_store, &curve, Level::Mid)?;
 hw.calibrate_with_configuration(&config, &constructed_store, &quote_store, &curve, Level::Mid)?;
 ```
 
-`ModelCalibrationConfiguration` (JSON in `examples/hullwhite/data/hw_calibration.json`):
+`examples/hullwhite/data/vol_specs.json` defines the caplet quotes that form the surface. The `Calibrated` part of `simulation.json` references that surface and selects the instruments by expiry, index tenor, and strike rule:
 
 ```json
 {
   "source": { "Surface": { "market_index": "SOFR" } },
-  "quote_ids": [
-    "CapletFloorlet_USD_SOFR_3M_3M_Absolute_0.045_Straddle_Black",
-    "CapletFloorlet_USD_SOFR_3M_6M_Absolute_0.045_Straddle_Black",
-    "CapletFloorlet_USD_SOFR_3M_1Y_Absolute_0.045_Straddle_Black"
-  ],
-  "strike": "Atm",
-  "alpha": 0.1
+  "calibration_basket": {
+    "expiries": ["3M", "6M", "1Y"],
+    "tenors": ["3M"],
+    "strike": "Atm"
+  }
 }
 ```
 
-Algorithm, per calibration quote in expiry order:
+The calibrator processes the selected instruments in expiry order:
 
-1. Parse the identifier to get expiry \\(T_i\\), index tenor and strike; `strike: "Atm"` replaces the quoted strike with the forward.
+1. Resolve the surface or cube instrument identifiers and select the configured expiries and tenors. `strike: "Atm"` sets each calibration strike to its forward rate.
 2. Read the Black (or Normal) vol from the surface/cube and compute the market caplet/swaption price.
-3. Solve by bisection for the piecewise-constant \\(\sigma*i\\) on \\([T*{i-1},T_i]\\) such that the Hull-White price matches, keeping earlier pillars fixed.
+3. Solve by bisection for the piecewise-constant \\(\sigma_i\\) on \\([T_{i-1},T_i]\\) such that the Hull-White price matches, keeping earlier pillars fixed.
 
-Results are kept in `HullWhiteCalibrationQuality { records: Vec<HullWhiteCalibrationRecord> }`, each record holding `identifier, expiry, t, big_t, market_vol, market_price, model_price, calibrated_sigma, forward_rate, effective_strike`. `HullWhiteTimeDependentVolatility::new(schedule).with_pillar_labels().with_ift_sensitivities()` exposes the sigma pillars as labelled AD leaves so downstream prices carry sensitivities to the calibration quotes.
+The result is a `HullWhiteCalibrationQuality` containing one `HullWhiteCalibrationRecord` per target. A record captures the instrument identifier, timing, market volatility, market and model prices, calibrated sigma, forward rate, and effective strike. This gives users both numerical parameters and an instrument-level quality report.
 
-`cargo run -p hullwhite` bootstraps SOFR, builds the caplet surface, calibrates and prints a quality table (expiry, t, market vol, model implied vol, market price, model price, error) followed by ATM cap prices built from the calibrated model, then simulates paths using `examples/hullwhite/data/simulation.json`.
+`HullWhiteTimeDependentVolatility::new(schedule).with_pillar_labels().with_ift_sensitivities()` equips the calibrated schedule with market labels and implicit-function derivatives. Downstream prices can then carry sensitivities to the option quotes used in calibration.
+
+The `hullwhite` example bootstraps SOFR, builds the caplet surface, calibrates the schedule, and prints an instrument-level quality table. It then prices ATM caps with the calibrated model and simulates paths from `examples/hullwhite/data/simulation.json`. Run it with `cargo run -p hullwhite`.
 
 ## Simulation
+
+Simulation can use the same calibrated source through `SimulationConfiguration`. The complete JSON below chooses the SOFR surface, selects ATM instruments, and defines a monthly five-year path grid:
 
 ```json
 {
@@ -72,12 +81,10 @@ Results are kept in `HullWhiteCalibrationQuality { records: Vec<HullWhiteCalibra
   "model": {
     "HullWhite": {
       "alpha": 0.1,
-      "volatility": {
+      "parameter_source": {
         "Calibrated": {
           "source": { "Surface": { "market_index": "SOFR" } },
-          "quote_ids": ["..."],
-          "strike": "Atm",
-          "alpha": 0.1
+          "calibration_basket": { "strike": "Atm" }
         }
       }
     }
@@ -89,4 +96,8 @@ Results are kept in `HullWhiteCalibrationQuality { records: Vec<HullWhiteCalibra
 }
 ```
 
-`SimulationBuilder` calibrates (if `Calibrated`), then evolves \\(r\\) exactly on the date grid with the Gaussian transition \\(r\_{t+\Delta} = r_t e^{-\alpha\Delta} + \int\theta + \sigma\sqrt{\frac{1-e^{-2\alpha\Delta}}{2\alpha}}Z\\). Discount factors along a path are `zcb_price(r_t, t, T)`. In the XVA engine the same calibrated schedule is transferred to an LGM model via `LgmRateModel::calibrated` ([LGM](lgm.md)).
+`SimulationBuilder` resolves the parameter source before path generation. A calibrated source runs the procedure above, and a fixed source creates a constant schedule from its sigma. The model then evolves \\(r\\) exactly on the date grid with the Gaussian transition \\(r_{t+\Delta} = r_t e^{-\alpha\Delta} + \int\theta + \sigma\sqrt{\frac{1-e^{-2\alpha\Delta}}{2\alpha}}Z\\). Pathwise discount factors use `zcb_price(r_t, t, T)`. For XVA, `LgmRateModel::calibrated` accepts the same calibrated schedule, as explained in [LGM](lgm.md).
+
+## What to remember
+
+Hull-White combines an initial-curve fit, mean reversion, and a model volatility schedule. Fixed configuration supplies that schedule directly. Calibrated configuration derives it from selected caplet or swaption instruments and retains an instrument-level quality report together with quote sensitivities. The same resolved model supports closed-form pricing and Monte Carlo paths.

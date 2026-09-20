@@ -11,7 +11,7 @@ quotes and fixings -> PricingContext -> Pricer -> EvaluationResults
 
 The easiest entry point is `quantsupport::prelude::*`, which re-exports the types used by normal pricing workflows. Lower-level modules remain useful when implementing a new instrument, pricer, curve, or simulation model.
 
-This chapter is a map of those responsibilities. It is not an exhaustive API reference; the generated Rust documentation remains the source for every method and trait bound.
+This chapter maps those responsibilities and their relationships. The generated Rust documentation supplies the complete method and trait-bound reference.
 
 ## The pricing pipeline
 
@@ -42,7 +42,7 @@ The [first swap](first-swap.md) chapter develops a complete example of this flow
 
 ## Numerical scalar types
 
-Curves, instruments, and models commonly use a generic `T: Scalar`. The scalar supplies arithmetic and mathematical operations while allowing the same financial logic to run with different numeric representations.
+Curves, instruments, and models commonly use a generic `T: Scalar`. The scalar supplies arithmetic and mathematical operations and allows the same financial logic to run with different numeric representations.
 
 ```rust,ignore
 pub trait Scalar: Copy + PartialOrd {
@@ -65,7 +65,7 @@ The principal choices are:
 
 Scalar types must agree across connected objects. For example, a `Swap<DualFwd>` is valued against curves that produce `DualFwd`. The current constructed-market and standard pricing-context infrastructure is AD-oriented, so `DualFwd` is the normal choice for direct pricing. Some simulations and standalone numerical components use `f64`.
 
-Use `.value()` when a scalar calculation reaches a reporting boundary. Do not convert intermediate values to `f64`, because doing so discards derivative information.
+Use `.value()` when a scalar calculation reaches a reporting boundary. Keep intermediate values in their scalar form so they retain derivative information.
 
 See [Automatic Differentiation](../risk/aad.md) for tape and sensitivity behavior.
 
@@ -79,7 +79,7 @@ pub trait Instrument: Send + Sync {
 }
 ```
 
-Product-specific traits expose additional capabilities. Examples include leg access, currency, discounting index, strike, or maturity. Pricers use these narrower capability traits rather than placing every possible property on `Instrument`.
+Product-specific traits expose additional capabilities. Examples include leg access, currency, discounting index, strike, or maturity. Pricers combine the capability traits required by their valuation method, and the base `Instrument` trait remains focused on identity.
 
 Instruments are normally created with `Make*` builders:
 
@@ -113,7 +113,7 @@ pub enum Side {
 }
 ```
 
-The exact meaning of the side follows the product. For a vanilla swap, `LongReceive` receives the fixed leg and pays the floating leg. Pricers generally accept the trade type, not the bare instrument.
+The exact meaning of the side follows the product. For a vanilla swap, `LongReceive` receives the fixed leg and pays the floating leg. Pricers generally accept the trade type, which supplies both contract and position metadata.
 
 ## Market data and the pricing context
 
@@ -123,10 +123,10 @@ Market data is split between raw observations and constructed valuation objects.
 | --- | --- | --- |
 | Raw data | `QuoteStore`, `FixingStore`, `FxStore` | Quotes, historical fixings, and spot FX observations |
 | Configuration | Curve, volatility, credit, and simulation configurations | Instructions for constructing market objects |
-| Constructed data | `ConstructedElementStore` | Discount, dividend, and credit curves; volatility surfaces and cubes; simulations |
+| Constructed data | `ConstructedElementStore` | Discount, dividend, and credit curves, volatility surfaces and cubes, and simulations |
 | Orchestration | `PricingContext` | Owns the market state and serves pricer requests |
 
-`MarketIndex` is the key connecting products to market objects. A SOFR floating leg requests data under `MarketIndex::SOFR`; the context must contain or construct the corresponding curve.
+`MarketIndex` is the key connecting products to market objects. A SOFR floating leg requests data under `MarketIndex::SOFR`. The context must contain or construct the corresponding curve.
 
 There are two common ways to prepare a context.
 
@@ -153,7 +153,7 @@ Small applications and tests can create market objects themselves and insert the
 
 ### Request and response boundary
 
-Pricers do not traverse `PricingContext` directly. They declare a `MarketDataRequest`, and a `MarketDataProvider` returns the requested subset as `MarketData`:
+Pricers declare a `MarketDataRequest`, and a `MarketDataProvider` returns the requested subset as `MarketData`. This boundary gives the pricer a focused view of `PricingContext`:
 
 ```rust,ignore
 pub trait MarketDataProvider {
@@ -202,7 +202,7 @@ pub enum Request {
 }
 ```
 
-Support is pricer-specific. Request only outputs listed for that pricer in the [pricing overview](../pricing/overview.md). Depending on the implementation, an unsupported request may be ignored rather than producing a populated result.
+Support is pricer-specific. Request the outputs listed for that pricer in the [pricing overview](../pricing/overview.md). A pricer populates the fields it supports, and unsupported fields remain empty.
 
 When several outputs share valuation work, pricers can calculate the common state once. For example, `DiscountedCashflowPricer` prepares value state once for value, cashflow, and sensitivity requests submitted in the same call.
 
@@ -240,11 +240,11 @@ The main result types are:
 | `SensitivityMap` | Parallel market-pillar labels and NPV derivatives |
 | `CashflowsTable` | Column-oriented payment dates, types, amounts, fixings, accrual periods, currencies, leg indices, and optional strikes |
 
-Always check the relevant `Option`; creating an `EvaluationResults` value does not imply that every calculation was performed.
+Check the `Option` associated with each submitted request. A populated variant confirms that the corresponding calculation was performed.
 
 ## Discount policies
 
-Discounting is a policy decision rather than an intrinsic property of every payoff. A `DiscountPolicy` maps a discountable object to the curve index that should discount it:
+Discounting rules depend on collateral, currency, asset class, and sometimes an issuer curve. A `DiscountPolicy` maps a discountable object to the curve index selected by those rules:
 
 ```rust,ignore
 pub trait DiscountPolicy: Send + Sync {
@@ -267,7 +267,7 @@ The common rate-curve abstraction is `InterestRatesTermStructure<T>`. It provide
 - `FlatForwardTermStructure<T>` for a constant rate.
 - `DiscountTermStructure<T>` for an interpolated discount-factor curve.
 
-Volatility surfaces resolve an expiry and strike coordinate; volatility cubes add tenor. Model and simulation APIs consume constructed curves and volatility objects rather than raw quote strings.
+Volatility surfaces resolve expiry and strike coordinates. Volatility cubes add tenor. Model and simulation APIs consume the constructed curve and volatility interfaces, whose builders retain the links to source quotes.
 
 Use the dedicated chapters for domain behavior:
 
@@ -321,11 +321,11 @@ Common error categories are:
 | --- | --- |
 | `ValueNotSetErr` | A required builder input is absent |
 | `NotFoundErr` | A required curve, fixing, quote, model, or pricer is unavailable |
-| `InvalidValueErr` | Inputs are present but inconsistent or outside the accepted domain |
+| `InvalidValueErr` | Inputs are inconsistent or outside the accepted domain |
 | `InterpolationErr` / `NodeError` | Curve or surface construction/evaluation failed |
 | `SolverErr` | Calibration or root finding failed |
 | `TapeError` / `DualFwdError` | Automatic-differentiation state is invalid |
-| Parsing and serialization errors | External identifiers or data could not be decoded |
+| Parsing and serialization errors | External identifiers or data failed decoding |
 
 Use `?` to propagate errors and add application context at system boundaries. Avoid treating a missing optional result as an error unless that result was required by the workflow.
 
@@ -340,13 +340,17 @@ Time types are shared across instruments, curves, and models:
 | `DayCounter` | Converts date intervals to year fractions |
 | `Frequency` | Coupon, compounding, or schedule frequency |
 | `Calendar` | Holiday and business-day rules |
-| `BusinessDayConvention` | Adjustment rule when a date is not a business day |
+| `BusinessDayConvention` | Adjustment rule applied to a date outside the business calendar |
 | `DateGenerationRule` | Forward, backward, IMM, CDS, and related schedule rules |
 | `MakeSchedule` | Builds explicit date schedules |
 
-These conventions are part of valuation inputs. A coupon's day count, its payment frequency, and a curve's compounding convention are separate choices and should not be assumed to match.
+These conventions are valuation inputs. A coupon's day count, its payment frequency, and a curve's compounding convention are separate explicit choices.
 
 ## Extending the library
+
+The architecture supports extension through focused traits. Choosing the
+narrowest boundary keeps a new component reusable and prevents product logic
+from becoming coupled to a particular market-loading or reporting workflow.
 
 Add functionality at the narrowest suitable boundary:
 
@@ -357,3 +361,15 @@ Add functionality at the narrowest suitable boundary:
 - New portfolio dispatch entry: register the pricer with `Evaluator` under the trade's `TypeId`.
 
 Keep economic definitions in instruments, market lookup in providers, numerical valuation in pricers, and presentation outside `EvaluationResults`. Maintaining those boundaries is what lets the same products participate in direct pricing, calibration, simulation, and XVA workflows.
+
+## Putting the API together
+
+The Rust API is built around explicit ownership of responsibilities. Generic
+scalar types carry values and derivatives, builders validate contracts,
+providers resolve market data, pricers answer calculation requests, and result
+types form the reporting boundary. Once these roles are clear, the larger
+library becomes a composition of small interfaces with well-defined links.
+
+The next conceptual chapters follow data through those interfaces. They begin
+with the architecture as a whole, then examine market data, the pricing
+context, and the instrument hierarchy individually.

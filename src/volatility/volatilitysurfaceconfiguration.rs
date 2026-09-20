@@ -8,6 +8,7 @@ use crate::{
 /// JSON-serializable specification for building a 2-D volatility surface
 /// (expiry × strike) from market quotes.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct VolatilitySurfaceConfiguration {
     market_index: MarketIndex,
     #[serde(default = "default_volatility_type")]

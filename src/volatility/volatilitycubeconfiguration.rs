@@ -9,6 +9,7 @@ use crate::{
 /// (expiry x tenor x strike) from market quotes.  Cubes are typically
 /// used for swaption volatilities.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct VolatilityCubeConfiguration {
     market_index: MarketIndex,
     #[serde(default = "default_volatility_type")]

@@ -1,8 +1,12 @@
 # Bootstrapping
 
-Bootstrapping turns a `CurveConfiguration` (a list of quote identifiers) into a `DiscountTermStructure<DualFwd>` whose pillars are the market quotes. The implementation is a global Newton solve per curve followed by an implicit-function-theorem (IFT) step that connects the discount factors to the quotes on the AD tape.
+Bootstrapping finds the curve values that make a collection of market instruments reproduce their quoted prices or rates. This chapter follows that process from configuration through numerical solution and risk construction. It also explains how dependencies between curves are ordered, how credit curves use the same broad pattern, and how to interpret common failures.
+
+QuantSupport turns a `CurveConfiguration` into a `DiscountTermStructure<DualFwd>` whose named risk pillars are the original market quotes. Each curve is solved as one global nonlinear system. An implicit-function-theorem step then connects the calibrated discount factors to the quotes on the automatic-differentiation tape.
 
 ## `CurveConfiguration`
+
+A curve configuration identifies the market being built and the conventions used between observed pillars. Its quote identifiers define the calibration instruments and their order-independent market membership. The Rust structure makes every available choice explicit:
 
 ```rust,ignore
 pub struct CurveConfiguration {
@@ -16,7 +20,7 @@ pub struct CurveConfiguration {
 CurveConfiguration::new(market_index, day_counter, interpolator, enable_extrapolation, quotes)
 ```
 
-JSON (all optional fields may be omitted):
+The same information can be supplied through JSON. The following SOFR example uses deposits at the short end and overnight-indexed swaps across the remaining maturities. Fields with documented defaults may be omitted:
 
 ```json
 {
@@ -37,24 +41,29 @@ JSON (all optional fields may be omitted):
 }
 ```
 
-`resolve(selector, level, fx_spot)` looks every identifier up in the `QuoteSelector`, builds the calibration instrument at the requested `Level` (`Mid`, `Bid`, `Ask`), computes its pillar date and sorts the instruments by pillar date. Missing quotes produce `NotFoundErr("Quote … not found in quotes.")`. After resolution `instruments()`, `pillar_dates()`, `pillar_labels()` (the identifiers) and `quote_values()` are available.
+The configuration holds identities and conventions until construction begins. `resolve(selector, level, fx_spot)` then looks up every identifier, builds the corresponding calibration instrument at the requested market level, computes its pillar date, and sorts the instruments by maturity. The supported levels are `Mid`, `Bid`, and `Ask`. A missing identifier produces `NotFoundErr("Quote … not found in quotes.")`. Once resolution succeeds, the instruments, pillar dates, labels, and quote values are available to the solver.
 
 ## Supported pillar instruments and residuals
 
-Each quote becomes a `CalibrationInstrumentType` and contributes one residual \\(F_i(x)\\) to the solver:
+Every quote resolves to a concrete calibration instrument. That instrument contributes one residual, which measures the difference between its model value and market target. The following table shows how each supported quote type defines that condition:
 
 | Quote type                                                 | Instrument                               | Residual                                                                                   |
 | ---------------------------------------------------------- | ---------------------------------------- | ------------------------------------------------------------------------------------------ |
-| `FixedRateDeposit`                                         | zero-coupon deposit                      | NPV of the deposit legs                                                                    |
+| `FixedRateDeposit`                                         | fixed-rate deposit                       | implied rate − quoted rate                                                                  |
+| `FixedRateBond`                                            | option-free fixed-rate bond              | model price − the target selected by `AnchorYield` or `AnchorPrice`                         |
 | `OIS`                                                      | fixed vs overnight swap                  | NPV (fixed − floating)                                                                     |
 | `BasisSwap`                                                | float vs float + spread                  | NPV                                                                                        |
 | `FixFloatCrossCurrencySwap`, `FloatFloatCrossCurrencySwap` | two-currency swap with notional exchange | NPV in the collateral currency                                                             |
 | `Future`                                                   | rate future                              | implied forward − market rate (convexity-adjusted if a `ConvexityAdjustment` quote exists) |
-| `FxForwardPoints`, `FxOutrightForward`                     | FX forward                               | implied FX forward − market forward                                                        |
+| `FxForward`                                                | FX forward                               | implied outright or forward points − quote, according to its strategy                      |
 
-Instruments whose floating leg references another index (e.g. a `BasisSwap_USD_SOFR_TermSOFR3m_*` pillar in the `TermSOFR3m` curve) project the other index from the already-solved curve, and all legs are discounted according to the `BootstrapDiscountPolicy`.
+Instruments whose floating leg references another index, such as a SOFR-versus-Term-SOFR basis swap, project that index from an already solved curve. Every leg obtains its discount curve from the `BootstrapDiscountPolicy`. These requirements create the dependency graph used by the multi-curve bootstrapper.
+
+`CalibrationProcess::residual` delegates valuation to the calibration instrument's pricer. The concrete instrument carries the strategy needed to interpret its quote. A bond yield anchor, for example, converts the quoted yield to a target price using the bond's coupon compounding convention. Bond pricing reuses the fixed-leg present-value routine and normalizes the result to the quote units, whose default is 100. The current bond calibration strategies cover price and yield anchors. They exclude OAS calibration.
 
 ## `MultiCurveBootstrapper`
+
+Real markets contain several related curves. The multi-curve bootstrapper owns their shared discount policy, resolves cross-curve dependencies, and solves them in a valid order. The example below creates a policy and supplies an FX spot needed by collateralized or cross-currency instruments:
 
 ```rust,ignore
 let policy = BootstrapDiscountPolicy::new(MarketIndex::SOFR, Currency::USD);
@@ -67,39 +76,43 @@ let curves: HashMap<MarketIndex, DiscountCurveElement> =
         .bootstrap(&quote_store, Level::Mid)?;
 ```
 
-`bootstrap` proceeds in four steps:
+Calling `bootstrap` performs four stages:
 
 1. **Resolve** every configuration. For `MarketIndex::Collateral(ccy, coll_ccy)` specs the FX spot `coll_ccy→ccy` is passed so cross-currency notionals are FX-consistent at inception.
-2. **Order** the curves topologically with `dependency_order`. A curve depends on every curve its pillar instruments need for projection or discounting. A dependency without configuration fails with `NotFoundErr("Curve X requires Y for discounting but no curve configuration was provided for it …")`; cycles fail with `InvalidValueErr("Circular dependency detected …")`.
+2. **Order** the curves topologically with `dependency_order`. A curve depends on every curve its pillar instruments need for projection or discounting. A missing dependency produces `NotFoundErr("Curve X requires Y for discounting and no curve configuration was provided for it …")`. Cycles produce `InvalidValueErr("Circular dependency detected …")`.
 3. **Solve** each curve in order with `bootstrap_next_curve`.
 4. **Wrap** the result as `DiscountTermStructure<DualFwd>` with pillar labels, pillar values (the quotes) and IFT matrices, inside a `DiscountCurveElement`.
 
+This sequence keeps configuration resolution, dependency management, numerical calibration, and runtime storage as distinct responsibilities. Errors can therefore identify whether the problem arose in market data, graph construction, or the solve itself.
+
 ### The Newton solve
 
-For a curve with \\(n\\) pillars the unknowns are the discount factors \\(x = (P_1,\dots,P_n)\\) at the pillar dates, with \\(P_0 = 1\\) fixed. The trial curve is a `DiscountTermStructure` with the configured interpolator, so _all_ instruments are repriced on the _whole_ curve at every iteration—this is a global fit rather than a sequential strip, and it handles overlapping and non-monotone pillars.
+For a curve with \\(n\\) pillars, the unknowns are the discount factors \\(x = (P_1,\dots,P_n)\\) at those dates, with \\(P_0 = 1\\) fixed at the reference date. Every iteration constructs a trial `DiscountTermStructure` with the configured interpolator and reprices the full instrument set. This global fit supports overlapping cashflows and arbitrary maturity order.
 
 - Initial guess \\(x_0 = 0.99\\) for every pillar.
-- `VectorNewton::new(1e-12, 200)`: tolerance \\(10^{-12}\\) on the residual norm, at most 200 iterations; failure returns `SolverErr`.
+- `VectorNewton::new(1e-12, 200)` uses a tolerance of \\(10^{-12}\\) on the residual norm and allows at most 200 iterations. Failure returns `SolverErr`.
 - The Jacobian \\(J = \partial F/\partial x\\) is computed by central finite differences with a relative bump of \\(10^{-6}\\) (floored at \\(10^{-8}\\)) and reused for the IFT step.
 
 ### Implicit-function-theorem sensitivities
 
-At the solution \\(F(x^{\ast}, q, z) = 0\\), where \\(q\\) are the curve's own quotes and \\(z\\) the discount factors of parent curves. Differentiating gives
+Calibration introduces an intermediate set of solved discount factors between market quotes and trade prices. The implicit function theorem supplies the derivative through that solve without rerunning calibration for every risk factor. At the solution \\(F(x^{\ast}, q, z) = 0\\), let \\(q\\) denote the curve's quotes and \\(z\\) the discount factors of parent curves. Differentiating gives
 
 \\[
 \frac{\partial x}{\partial q} = -J^{-1}\\,\frac{\partial F}{\partial q},\qquad
 \frac{\partial x}{\partial z} = -J^{-1}\\,\frac{\partial F}{\partial z}.
 \\]
 
-Because quote \\(q_i\\) enters only residual \\(F_i\\), \\(\partial F/\partial q\\) is diagonal and its entries are computed analytically (`compute_quote_sensitivities`). \\(\partial F/\partial z\\) is computed by bumping each parent discount factor. The resulting matrices are stored with the curve (`with_ift_sensitivities`, `CrossCurveDep`) and used by `put_pillars_on_tape()` to rebuild each discount factor as
+Each quote \\(q_i\\) enters its corresponding residual \\(F_i\\), so \\(\partial F/\partial q\\) is diagonal and `compute_quote_sensitivities` obtains its entries analytically. The parent-curve derivative \\(\partial F/\partial z\\) is calculated by bumping each parent discount factor. The resulting matrices are stored with the curve through `with_ift_sensitivities` and `CrossCurveDep`. During tape setup, `put_pillars_on_tape()` uses them to rebuild each discount factor as
 
 \\[
 P_i = P_i^{\ast} + \sum_j \frac{\partial P_i}{\partial q_j}\\,(q_j - q_j^{\ast}) + \sum_k \frac{\partial P_i}{\partial z_k}\\,(z_k - z_k^{\ast}),
 \\]
 
-with \\(q_j\\) as tape leaves. Consequently, when a pricer back-propagates through a curve, sensitivities land on the **quotes**—`OIS_USD_SOFR_5Y`, `BasisSwap_USD_SOFR_TermSOFR3m_2Y`, …—including chained effects such as a TermSOFR3m swap's exposure to the SOFR OIS quotes used for discounting.
+Here, each \\(q_j\\) is a tape leaf. A reverse sweep therefore reports sensitivities under market identifiers such as `OIS_USD_SOFR_5Y` and `BasisSwap_USD_SOFR_TermSOFR3m_2Y`. Cross-curve terms also preserve chained effects, including a Term SOFR swap's exposure to the SOFR OIS quotes used for discounting.
 
 ## Reading a bootstrapped curve
+
+After calibration, callers use the ordinary term-structure interface for valuation and the pillar interface for market interpretation. The following example reads an interpolated discount factor, displays the quotes represented by the curve, and derives a continuously compounded zero rate:
 
 ```rust,ignore
 let elem = &curves[&MarketIndex::SOFR];
@@ -113,11 +126,13 @@ if let Some(pillars) = curve.pillars() {
 let zero = -df.ln() / DayCounter::Actual360.year_fraction(rd, date);
 ```
 
-`examples/bootstrap` (`cargo run -p bootstrap`) prints, for each of SOFR, TermSOFR3m, ICP and `Collateral(CLP, USD)`, the pillar quotes, discount factors, zero rates, and interpolated DFs at 6M/4Y/15Y/20Y.
+The labels and values returned by `pillars()` describe calibration inputs. The discount factor returned by the curve is a solved and possibly interpolated pricing value. Together, these views let an application explain a curve in market language and use its numerical representation for pricing.
+
+The `examples/bootstrap` program demonstrates the same inspection for SOFR, Term SOFR 3M, ICP, a USD-collateralized CLP curve, and a price-anchored corporate bond curve. It prints pillar quotes, solved discount factors, zero rates, and interpolated values at representative maturities.
 
 ## Credit curves
 
-`CreditCurveBootstrapper::new(Vec<CreditCurveConfiguration>).bootstrap(&quote_store, Level::Mid, &discount_curves)` strips piecewise-constant hazard rates from CDS par spreads. The result is a `CreditCurveElement` wrapping a `DiscountTermStructure` whose "discount factor" is the survival probability \\(Q(t)\\).
+Credit calibration applies the same broad construction pattern to default probabilities. `CreditCurveBootstrapper` strips piecewise-constant hazard rates from CDS par spreads. Its result is a `CreditCurveElement` that wraps a `DiscountTermStructure` whose curve value represents the survival probability \\(Q(t)\\). The configuration below identifies the credit name, recovery assumption, discount curve, CDS conventions, and calibration quotes:
 
 ```rust,ignore
 pub struct CreditCurveConfiguration {
@@ -133,6 +148,8 @@ pub struct CreditCurveConfiguration {
 }
 ```
 
+Applications may express the same configuration in JSON. This example calibrates the ACME survival curve from one-, five-, and ten-year USD CDS spreads:
+
 ```json
 {
   "market_index": { "Credit": "ACME" },
@@ -143,9 +160,11 @@ pub struct CreditCurveConfiguration {
 }
 ```
 
-For each maturity in order, the hazard rate on the last interval is solved by bisection (bounds \\(10^{-12}\\) to 20, 200 iterations) so that the CDS prices to par given the previously stripped intervals. A finite-difference IFT Jacobian (spread bump \\(10^{-6}\\)) is attached, so `CdsPricer` sensitivities are reported per CDS quote exactly like rate sensitivities. Duplicate maturities or empty quote lists are configuration errors.
+For each maturity, the bootstrapper solves the hazard rate on the newest interval by bisection so that the CDS prices to par given the previously stripped intervals. The search bounds run from \\(10^{-12}\\) to 20 and allow 200 iterations. A finite-difference IFT Jacobian, calculated with a \\(10^{-6}\\) spread bump, links survival probabilities to CDS quotes. `CdsPricer` can then report quote-level credit sensitivity through the same risk mechanism used by rate curves. Duplicate maturities and empty quote lists are rejected during configuration validation.
 
 ## Interpreting failures
+
+Bootstrap errors usually point to one of three stages: resolving market inputs, ordering dependencies, or finding a consistent numerical solution. The table below maps the main error forms to the first checks an operator should make:
 
 | Error                                                 | Typical cause                                                                                                                                               |
 | ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -153,3 +172,11 @@ For each maturity in order, the hazard rate on the last interval is solved by bi
 | `NotFoundErr("Curve X requires Y …")`                 | pillar instrument references an index (projection or collateral) without configuration                                                                      |
 | `SolverErr` after 200 iterations                      | inconsistent quotes (e.g. deposit and OIS at the same pillar with very different levels), wrong day counter, or an FX spot inconsistent with forward points |
 | `InvalidValueErr("Curve configuration not resolved")` | `instruments()`/`reference_date()` called before `bootstrap`                                                                                                |
+
+These diagnostics preserve the curve or quote identity involved in the failure. Start with that identity, then check its configured market membership and required parent curves before adjusting numerical solver settings.
+
+## What to remember
+
+A successful bootstrap produces more than interpolated discount factors. It records which market instruments define the curve, how dependent curves influence it, and how trade risk flows back to the original quotes. The global solver establishes pricing consistency. The implicit-function Jacobians preserve that market interpretation for automatic differentiation.
+
+The [Multi-Curve Framework](multi-curve.md) chapter develops the discount and dependency policies used here. The [Risk](../risk/aad.md) chapters then show how the stored sensitivities participate in portfolio calculations.

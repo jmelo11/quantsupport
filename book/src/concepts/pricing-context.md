@@ -4,6 +4,10 @@
 
 ## Building a context
 
+A context is assembled in two phases. Builder methods collect observations and
+construction instructions, then `initialize()` turns that description into a
+usable market. The following chain makes every input visible at the call site.
+
 ```rust,ignore
 use quantsupport::prelude::*;
 
@@ -23,9 +27,17 @@ let mut ctx = PricingContext::new()
 ctx.initialize()?;
 ```
 
-All `with_*` methods consume and return `Self`. The evaluation date is not set separately: `evaluation_date()` returns `quote_store.reference_date()`.
+Before the final call, the context owns its inputs. Expensive market
+construction begins in `initialize()`, giving an application a clear point at
+which to validate or modify configuration.
+
+All `with_*` methods consume and return `Self`. `evaluation_date()` takes its value from `quote_store.reference_date()`, giving observations and constructed elements one shared date.
 
 ### Read accessors
+
+After construction, accessors expose the inputs and results without
+transferring ownership. The table distinguishes the shocked quote view from
+the original observations and shows where initialized elements are stored.
 
 | Method                                                                                                                                                              | Returns                                                           |
 | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
@@ -38,7 +50,15 @@ All `with_*` methods consume and return `Self`. The evaluation date is not set s
 | `constructed_elements()` / `constructed_elements_mut()`                                                                                                             | the `ConstructedElementStore` populated by `initialize()`         |
 | `evaluation_date()`                                                                                                                                                 | reference date of the quote store                                 |
 
+Application pricing normally uses the provider interface described below.
+Direct access is valuable for diagnostics, calibration reports, and tests that
+inspect a particular constructed object.
+
 ## What `initialize()` does
+
+Initialization follows dependency order because later objects consume earlier
+ones. The method has a small public signature. The sequence below
+explains the work represented by that call.
 
 ```rust,ignore
 pub fn initialize(&mut self) -> Result<()>
@@ -53,6 +73,10 @@ pub fn initialize(&mut self) -> Result<()>
 
 Steps 3–6 are skipped when the corresponding configuration vector is empty. Calling `initialize()` twice rebuilds everything from the (possibly shocked) quotes.
 
+This ordering guarantees that every calibrator sees a complete set of its
+dependencies. It also lets a scenario propagate consistently through curves,
+volatility markets, and simulations.
+
 ## Serving market data to pricers
 
 `PricingContext` implements `MarketDataProvider`:
@@ -63,6 +87,10 @@ pub trait MarketDataProvider {
     fn handle_request(&self, request: &MarketDataRequest) -> Result<MarketData>;
 }
 ```
+
+The provider boundary turns a broad context into a focused response. A pricer
+declares its needs first, which makes missing data visible before its valuation
+formula begins.
 
 A pricer first calls `market_data_request(&trade)` to describe what it needs, then the context resolves it:
 
@@ -94,23 +122,44 @@ let ctx = PricingContext::new()
     .with_constructed_elements(store)
     .with_base_currency(Currency::USD)
     .with_base_index(MarketIndex::SOFR);
-// no initialize(): the curves are already there
+// The directly inserted curve makes the context ready for pricing.
 ```
+
+This direct-construction route is useful for unit tests and focused examples. Configuration-driven applications call `initialize()` so the context can build and link the same element types from observable inputs.
 
 ## Scenarios
 
+Scenarios modify observable quotes and ask the context to rebuild the market.
+This provides a full revaluation path for large or non-linear shocks.
+
 `Scenario::new(target, shock, ScenarioType::{Absolute, Relative})` shocks quotes before bootstrapping:
 
-- `Absolute` adds `shock` to the quote (`0.0001` = 1 bp); `Relative` multiplies by `1 + shock`.
+- `Absolute` adds `shock` to the quote, where `0.0001` is one basis point. `Relative` multiplies by `1 + shock`.
 - `target` is a full identifier (`"OIS_USD_SOFR_5Y"`, one key-rate bump) or a segment selector: every underscore-separated segment of the target must appear among the identifier's segments. `"SOFR"` shocks all SOFR quotes (parallel shift), `"OIS_USD_SOFR"` all USD SOFR OIS pillars, `"Swaption_USD"` the USD swaption vol cube, `"CapletFloorlet_USD_SOFR"` the caplet surface.
 - `scenario.apply(&mut store)` returns the number of quotes shocked and errors when zero matched.
 
-Since all curves, vols and simulations are rebuilt from the shocked quotes, a scenario valuation is a full repricing, not a curve-level approximation. Use AAD sensitivities (`Request::Sensitivities`) for first-order risk and scenarios for stress tests, bump-and-reprice validation of AAD, or non-linear moves. See [Scenarios](../risk/scenarios.md).
+Since all curves, volatility objects, and simulations are rebuilt from shocked quotes, a scenario performs full repricing. Use AAD sensitivities (`Request::Sensitivities`) for first-order risk. Use scenarios for stress tests, bump-and-reprice validation, and nonlinear moves. See [Scenarios](../risk/scenarios.md).
 
 ## Evaluating trades
+
+Once initialization succeeds, the context is ready to serve deterministic and
+simulation-based consumers. The caller still chooses the pricer and requested
+outputs. The context resolves their market dependencies.
 
 The chapter [Rust API](../getting-started/rust-api.md) shows the pricer-based flow (`DiscountedCashflowPricer::new().evaluate(&trade, &[Request::Value, Request::Sensitivities], &ctx)`), and [Pricing Overview](../pricing/overview.md) lists which pricer handles which trade type and the `Evaluator` for heterogeneous portfolios. The XVA engine takes the same context: `XvaEngine::new(&ctx, config)?.run(&mut netting_sets)`.
 
 ## Python
 
-The binding exposes the same object with keyword arguments matching the builders: `PricingContext(quotes, curves, fixings=None, fx=None, volatility_surfaces=None, volatility_cubes=None, simulations=None, discounting=None, scenarios=None)`; `initialize()` runs on construction, and the object is a context manager that clears the AD tape on exit. See [Python API](../getting-started/python-api.md).
+The Python wrapper preserves the same lifecycle: one object owns the market,
+and initialization builds its derived state. Keyword arguments mirror the
+Rust builder inputs so configuration can be shared across both interfaces.
+
+The binding exposes the same object with keyword arguments matching the builders: `PricingContext(quotes, curves, fixings=None, fx=None, volatility_surfaces=None, volatility_cubes=None, simulations=None, discounting=None, scenarios=None)`. Initialization runs during construction, and the object acts as a context manager that clears the AD tape on exit. See the generated Python API documentation for the exported types.
+
+## Context lifecycle in practice
+
+A pricing context moves from collected inputs to an initialized market and
+then serves valuation requests until the inputs change. Rebuilding after a
+scenario or market update preserves that lifecycle and keeps derived objects
+synchronized. The context therefore coordinates the workflow, and economic
+logic remains in instruments and numerical logic remains in pricers.

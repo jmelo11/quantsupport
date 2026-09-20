@@ -29,6 +29,11 @@ struct JsonCurveSpecs {
     curve_specs: Vec<CurveConfiguration>,
 }
 
+#[derive(Deserialize)]
+pub struct VolSpecs {
+    pub volatility_surfaces: Vec<VolatilitySurfaceConfiguration>,
+}
+
 /// Loads quotes from a JSON file into a [`QuoteStore`].
 pub fn load_quotes(path: &PathBuf) -> Result<QuoteStore> {
     let file =
@@ -56,8 +61,8 @@ pub fn load_curve_specs(path: &PathBuf) -> Result<Vec<CurveConfiguration>> {
     Ok(json.curve_specs)
 }
 
-/// Loads a Hull-White calibration configuration from a JSON file.
-pub fn load_hw_calibration(path: &PathBuf) -> Result<ModelCalibrationConfiguration> {
+/// Loads the volatility markets used by model calibration.
+pub fn load_vol_specs(path: &PathBuf) -> Result<VolSpecs> {
     let file =
         File::open(path).map_err(|e| QSError::NotFoundErr(format!("{}: {e}", path.display())))?;
     let reader = BufReader::new(file);

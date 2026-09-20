@@ -25,7 +25,8 @@ pub struct HullWhiteCalibrationRecord {
     pub effective_strike: f64,
 }
 
-/// Aggregated calibration quality report returned by [`HullWhite::calibrate`](crate::models::hullwhite::hullwhitemodel::HullWhite::calibrate).
+/// Aggregated diagnostics produced by
+/// [`HullWhite::calibrate_with_configuration`](crate::models::hullwhite::hullwhitemodel::HullWhite::calibrate_with_configuration).
 #[derive(Clone, Debug)]
 pub struct HullWhiteCalibrationQuality {
     /// Per-expiry calibration records.

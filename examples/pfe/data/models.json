@@ -7,44 +7,10 @@
             "model": {
                 "Lgm": {
                     "lambda": 0.05,
-                    "volatility": {
+                    "parameter_source": {
                         "Calibrated": {
-                            "source": {
-                                "Surface": {
-                                    "market_index": "SOFR"
-                                }
-                            },
-                            "quote_ids": [
-                                "CapletFloorlet_USD_SOFR_3M_3M_Absolute_0.035_Straddle_Black",
-                                "CapletFloorlet_USD_SOFR_3M_3M_Absolute_0.045_Straddle_Black",
-                                "CapletFloorlet_USD_SOFR_3M_3M_Absolute_0.055_Straddle_Black",
-                                "CapletFloorlet_USD_SOFR_3M_6M_Absolute_0.035_Straddle_Black",
-                                "CapletFloorlet_USD_SOFR_3M_6M_Absolute_0.045_Straddle_Black",
-                                "CapletFloorlet_USD_SOFR_3M_6M_Absolute_0.055_Straddle_Black",
-                                "CapletFloorlet_USD_SOFR_3M_1Y_Absolute_0.035_Straddle_Black",
-                                "CapletFloorlet_USD_SOFR_3M_1Y_Absolute_0.045_Straddle_Black",
-                                "CapletFloorlet_USD_SOFR_3M_1Y_Absolute_0.055_Straddle_Black",
-                                "CapletFloorlet_USD_SOFR_3M_2Y_Absolute_0.035_Straddle_Black",
-                                "CapletFloorlet_USD_SOFR_3M_2Y_Absolute_0.045_Straddle_Black",
-                                "CapletFloorlet_USD_SOFR_3M_2Y_Absolute_0.055_Straddle_Black",
-                                "CapletFloorlet_USD_SOFR_3M_3Y_Absolute_0.035_Straddle_Black",
-                                "CapletFloorlet_USD_SOFR_3M_3Y_Absolute_0.045_Straddle_Black",
-                                "CapletFloorlet_USD_SOFR_3M_3Y_Absolute_0.055_Straddle_Black",
-                                "CapletFloorlet_USD_SOFR_3M_5Y_Absolute_0.035_Straddle_Black",
-                                "CapletFloorlet_USD_SOFR_3M_5Y_Absolute_0.045_Straddle_Black",
-                                "CapletFloorlet_USD_SOFR_3M_5Y_Absolute_0.055_Straddle_Black",
-                                "CapletFloorlet_USD_SOFR_3M_7Y_Absolute_0.035_Straddle_Black",
-                                "CapletFloorlet_USD_SOFR_3M_7Y_Absolute_0.045_Straddle_Black",
-                                "CapletFloorlet_USD_SOFR_3M_7Y_Absolute_0.055_Straddle_Black",
-                                "CapletFloorlet_USD_SOFR_3M_10Y_Absolute_0.035_Straddle_Black",
-                                "CapletFloorlet_USD_SOFR_3M_10Y_Absolute_0.045_Straddle_Black",
-                                "CapletFloorlet_USD_SOFR_3M_10Y_Absolute_0.055_Straddle_Black",
-                                "CapletFloorlet_USD_SOFR_3M_12Y_Absolute_0.035_Straddle_Black",
-                                "CapletFloorlet_USD_SOFR_3M_12Y_Absolute_0.045_Straddle_Black",
-                                "CapletFloorlet_USD_SOFR_3M_12Y_Absolute_0.055_Straddle_Black"
-                            ],
-                            "alpha": 0.05,
-                            "strike": "Atm"
+                            "source": { "Surface": { "market_index": "SOFR" } },
+                            "calibration_basket": { "strike": "Atm" }
                         }
                     }
                 }
@@ -55,10 +21,8 @@
             "model": {
                 "Lgm": {
                     "lambda": 0.03,
-                    "volatility": {
-                        "Constant": {
-                            "value": 0.008
-                        }
+                    "parameter_source": {
+                        "Fixed": { "sigma": 0.008 }
                     }
                 }
             }
@@ -67,10 +31,8 @@
     "fx_models": [
         {
             "currency": "EUR",
-            "volatility": {
-                "Constant": {
-                    "value": 0.08
-                }
+            "parameter_source": {
+                "Fixed": { "volatility": 0.08 }
             },
             "spot": 1.08,
             "rho": 0.15
