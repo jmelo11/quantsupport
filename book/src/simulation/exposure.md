@@ -48,10 +48,10 @@ let claims = PreprocessorExecutor::new()
 
 ## NPV cube
 
-For each evaluation date \\(t_k\\) on the configured frequency grid and each path \\(p\\), the engine values the live claims, converts their amounts to the netting-set currency with simulated FX, and applies pathwise discount factors and the numeraire. It stores the sum
+For each evaluation date \\(t\_k\\) on the configured frequency grid and each path \\(p\\), the engine values the live claims, converts their amounts to the netting-set currency with simulated FX, and applies pathwise discount factors and the numeraire. It stores the sum
 
 \\[
-\text{NPV}_{p,k} = \sum_{\text{claims}} \text{side}\cdot\text{payoff}_p\\,\frac{P_p(t_k,T)}{1}.
+\text{NPV}\_{p,k} = \sum\_{\text{claims}} \text{side}\cdot\text{payoff}\_p\\,\frac{P\_p(t\_k,T)}{1}.
 \\]
 
 `NpvCube` organizes this result with paths as rows and evaluation dates as columns. Its convenience methods calculate three common profiles:
@@ -74,7 +74,7 @@ Aggregators convert an NPV cube into risk or valuation-adjustment measures. Quan
 | Type                                                                                        | Output                                                                                       |
 | ------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
 | `PfeAggregator` / `PfeAggregatorFactory`                                                    | quantile of positive exposure per date (e.g. 97.5%)                                          |
-| `CvaAggregator { lgd, hazard }`                                                             | \\(\sum_k \text{EPE}_k\\,\text{LGD}\\,(S(t_{k-1})-S(t_k))\\) with \\(S(t)=e^{-\lambda t}\\) |
+| `CvaAggregator { lgd, hazard }`                                                             | \\(\sum\_k \text{EPE}\_k\\,\text{LGD}\\,(S(t\_{k-1})-S(t\_k))\\) with \\(S(t)=e^{-\lambda t}\\) |
 | `AggregatorBundle`                                                                          | runs several aggregators over one cube                                                       |
 | `CvaFactory`, `DvaFactory`, `FvaFactory`, `CreditCurveCvaFactory`, `FundingCurveFvaFactory` | build aggregators from `CsaTerms` (flat spreads or bootstrapped credit/funding curves)       |
 

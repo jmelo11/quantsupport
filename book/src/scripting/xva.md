@@ -30,7 +30,7 @@ During `XvaEngine::run`, the claim participates in the standard simulation and a
 3. At each valuation date \\(t_k\\), the exposure evaluator asks every live claim for its value. For a scripted claim, it calls `ScriptedPayoff::evaluate(valuation_date, responses)`. This method replays the compiled program and returns the numeraire-deflated value associated with that payment id. The live-claim schedule excludes payments settled before \\(t_k\\), which makes the exposure profile roll off over time.
 4. The per-path NPVs are aggregated into `NpvCube`s and then into CVA/DVA/FVA by the configured aggregators.
 
-The payoff is evaluated in `DualFwd`, so the engine's AAD pass carries scripted-claim XVA back to curve pillars and model parameters. Native and scripted claims therefore contribute to the same labelled sensitivity report.
+The payoff is evaluated in `DualFwd`, so the engine's AAD pass carries scripted-claim XVA back to curve pillars and model parameters. Native and scripted claims therefore contribute to the same labeled sensitivity report.
 
 ## Worked comparison
 

@@ -29,7 +29,7 @@ Each arrow passes a more resolved representation to the next stage. Trades becom
 3. Build the evaluation grid with `MakeSchedule::new(reference_date, max_payment_date).with_frequency(frequency)`.
 4. Compute system discount factors \\(P(0,t_k)\\) from the domestic curve. XVA values are reported in present value on that curve, and this system-discount sequence is held fixed during differentiation.
 5. For each netting set build a CVA aggregator (`CreditCurveCvaFactory` if `credit_index` is set, else flat `CvaFactory` from `credit_spread`/`recovery`) and an FVA aggregator (`FundingCurveFvaFactory` from `funding_index` or `funding_spread_curve`, else flat `FvaFactory` from `funding_spread`).
-6. Build the LGM market model from the configs (calibrating sigma schedules if `parameter_source` is `Calibrated`), simulate, evaluate claims into `NpvCube`s, aggregate, and back-propagate adjoints to the labelled leaves.
+6. Build the LGM market model from the configs (calibrating sigma schedules if `parameter_source` is `Calibrated`), simulate, evaluate claims into `NpvCube`s, aggregate, and back-propagate adjoints to the labeled leaves.
 
 The sequence uses one model path set for all claims in the run. Shared paths make netting coherent across trades and give values and gradients the same random sample.
 
@@ -109,7 +109,7 @@ for v in result.xva_values.unwrap_or_default() { println!("{} {} {:.2}", v.netti
 for (label, dv) in result.sensitivities.unwrap_or_default() { println!("{label:40} {dv:12.4}"); }
 ```
 
-`ExposureResult` contains trade-level `NpvCube` values, optional XVA measures by netting set, and optional labelled sensitivities. The high-level engine currently creates CVA and FVA measures from CSA terms. `DvaAggregator` supports explicit own-credit calculations through the lower-level aggregation API.
+`ExposureResult` contains trade-level `NpvCube` values, optional XVA measures by netting set, and optional labeled sensitivities. The high-level engine currently creates CVA and FVA measures from CSA terms. `DvaAggregator` supports explicit own-credit calculations through the lower-level aggregation API.
 
 Running `cargo run -p cva` applies this workflow to a five-year USD SOFR swap and a five-year USD/CLP floating cross-currency swap. The program prints each netting set, measure, and value.
 

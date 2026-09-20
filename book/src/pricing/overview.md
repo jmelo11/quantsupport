@@ -49,7 +49,7 @@ pub trait DiscountPolicy {
 }
 ```
 
-| Policy                                                                                     | Behaviour                                                                                                                                                            |
+| Policy                                                                                     | Behavior                                                                                                                                                            |
 | ------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `SingleCurveCSADiscountPolicy::new(discount_index, currency)`                              | legs in `currency` discount on `discount_index`. Legs in another currency use `MarketIndex::Collateral(leg_ccy, currency)`, the FX-implied collateral curve            |
 | `FixedIncomeDiscountPolicy::new(prefer_instrument_index).with_risk_free_index(ccy, index)` | bonds/deposits use their own `discount_index` when `prefer_instrument_index` and one is set, otherwise the risk-free index registered for their currency             |

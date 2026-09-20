@@ -4,20 +4,20 @@ Exposure profiles become valuation adjustments after they are combined with defa
 
 ## Definitions
 
-Let \\(V_k^p\\) be netted NPV on path \\(p\\) at grid date \\(t_k\\), let \\(n\\) be the path count, and let \\(P(0,t_k)\\) be the system discount factor. Expected positive and negative exposure are
+Let \\(V\_k^p\\) be netted NPV on path \\(p\\) at grid date \\(t\_k\\), let \\(n\\) be the path count, and let \\(P(0,t\_k)\\) be the system discount factor. Expected positive and negative exposure are
 
 \\[
-\\text{EPE}_k=\\frac1n\\sum_p \\max(V_k^p,0),\\qquad
-\\text{ENE}_k=\\frac1n\\sum_p \\min(V_k^p,0).
+\\text{EPE}\_k=\\frac1n\\sum\_p \\max(V\_k^p,0),\\qquad
+\\text{ENE}\_k=\\frac1n\\sum\_p \\min(V\_k^p,0).
 \\]
 
 The aggregators apply these profiles to the following discrete-time formulas:
 
 | Aggregator                   | Formula                                                                                                           | Economic inputs                                                        |
 | ---------------------------- | ----------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
-| `CvaAggregator { lgd, ... }` | \\(\\text{CVA}=\\text{LGD}\\sum_k P(0,t_k)\\,\\text{EPE}_k\\,[S(t_{k-1})-S(t_k)]\\)                                  | counterparty survival \\(S\\) and loss given default                    |
-| `DvaAggregator`              | \\(\\text{DVA}=\\text{LGD}_{own}\\sum_k P(0,t_k)\\,(-\\text{ENE}_k)\\,[S_{own}(t_{k-1})-S_{own}(t_k)]\\)             | own survival curve and own loss given default                          |
-| `FvaAggregator`              | \\(\\text{FVA}=\\sum_k P(0,t_k)\\,\\text{EPE}_k\\,s_f(t_k)\\,\\Delta t_k\\)                                         | funding spread \\(s_f\\) as a flat value or term structure             |
+| `CvaAggregator { lgd, ... }` | \\(\\text{CVA}=\\text{LGD}\\sum\_k P(0,t\_k)\\,\\text{EPE}\_k\\,[S(t\_{k-1})-S(t\_k)]\\)                                  | counterparty survival \\(S\\) and loss given default                    |
+| `DvaAggregator`              | \\(\\text{DVA}=\\text{LGD}\_{own}\\sum\_k P(0,t\_k)\\,(-\\text{ENE}\_k)\\,[S\_{own}(t\_{k-1})-S\_{own}(t\_k)]\\)             | own survival curve and own loss given default                          |
+| `FvaAggregator`              | \\(\\text{FVA}=\\sum\_k P(0,t\_k)\\,\\text{EPE}\_k\\,s\_f(t\_k)\\,\\Delta t\_k\\)                                         | funding spread \\(s\_f\\) as a flat value or term structure             |
 
 CVA weights positive exposure by the counterparty default probability over each interval and by the loss incurred at default. DVA applies the corresponding own-credit logic to negative exposure. FVA integrates positive funding needs against the applicable spread.
 

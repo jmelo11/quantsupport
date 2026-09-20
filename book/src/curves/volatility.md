@@ -122,12 +122,19 @@ pub struct ModelCalibrationConfiguration {
 In JSON, `parameter_source` contains one of the two choices. A calibrated Hull-White configuration can select ATM instruments at specified expiries:
 
 ```json
-"parameter_source": {
-  "Calibrated": {
-    "source": { "Surface": { "market_index": "SOFR" } },
-    "calibration_basket": {
-      "expiries": ["1Y", "2Y", "5Y"],
-      "strike": "Atm"
+{
+  "model": {
+    "HullWhite": {
+      "alpha": 0.1,
+      "parameter_source": {
+        "Calibrated": {
+          "source": { "Surface": { "market_index": "SOFR" } },
+          "calibration_basket": {
+            "expiries": ["1Y", "2Y", "5Y"],
+            "strike": "Atm"
+          }
+        }
+      }
     }
   }
 }
@@ -136,7 +143,14 @@ In JSON, `parameter_source` contains one of the two choices. A calibrated Hull-W
 For a model whose volatility is supplied directly, the same field contains its complete fixed parameter set:
 
 ```json
-"parameter_source": { "Fixed": { "sigma": 0.01 } }
+{
+  "model": {
+    "HullWhite": {
+      "alpha": 0.1,
+      "parameter_source": { "Fixed": { "sigma": 0.01 } }
+    }
+  }
+}
 ```
 
 `VolatilitySurfaceConfiguration` and `VolatilityCubeConfiguration` define

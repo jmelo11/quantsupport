@@ -5,7 +5,7 @@ QuantSupport is a Rust library for building market data, pricing derivatives, me
 Everything is organised around one flow:
 
 1. Load observable **quotes**, **fixings**, and **FX rates** into `QuoteStore`, `FixingStore`, and `FxStore`.
-2. Describe **curves**, **credit curves**, **volatility surfaces/cubes**, and **simulations** with serialisable configuration structs (`CurveConfiguration`, `CreditCurveConfiguration`, `VolatilitySurfaceConfiguration`, `VolatilityCubeConfiguration`, `SimulationConfiguration`).
+2. Describe **curves**, **credit curves**, **volatility surfaces/cubes**, and **simulations** with serializable configuration structs (`CurveConfiguration`, `CreditCurveConfiguration`, `VolatilitySurfaceConfiguration`, `VolatilityCubeConfiguration`, `SimulationConfiguration`).
 3. Put them into a [`PricingContext`](concepts/pricing-context.md) and call `initialize()`, which bootstraps and builds every object in dependency order.
 4. Build an **instrument** with a `Make*` builder and wrap it in a **trade** (`SwapTrade`, `FxForwardTrade`, …) that carries notional and side.
 5. Ask a **pricer** (`DiscountedCashflowPricer`, `ClosedFormBlackCapPricer`, `FxOptionPricer`, …) for `Request::Value`, `FairRate`, `Cashflows`, or `Sensitivities`.

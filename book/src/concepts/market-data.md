@@ -90,7 +90,7 @@ The document contains observations only. Curve membership and construction
 choices belong to their own configuration files, which allows the same quote
 store to support several market builds.
 
-The loader in `examples/bootstrap/src/main.rs` deserialises the envelope,
+The loader in `examples/bootstrap/src/main.rs` deserializes the envelope,
 parses every identifier, and creates a store. Its compact form is shown here so
 the boundary between application I/O and library types is explicit.
 
@@ -175,7 +175,7 @@ contract references to curves, volatility markets, fixings, and simulations.
 ## From observations to a market
 
 These stores deliberately stop at observed data. Quote identifiers describe
-calibration instruments, fixings preserve realised history, and FX rates
+calibration instruments, fixings preserve realized history, and FX rates
 connect currencies. The pricing context combines them with configuration in
 the next construction step, where interpolation, bootstrapping, and model
 calibration begin.

@@ -109,7 +109,7 @@ A valid setup follows from the dependency and discounting rules developed above.
 
 1. One `CurveConfiguration` per index that any instrument projects or discounts on.
 2. The CSA curve (`base_index`) configured with deposits/OIS in the `base_currency`.
-3. For every foreign currency with collateralised trades, a `Collateral(ccy, base_ccy)` configuration with FX forward and/or cross-currency swap pillars, plus the FX spot in the `FxStore`.
+3. For every foreign currency with collateralized trades, a `Collateral(ccy, base_ccy)` configuration with FX forward and/or cross-currency swap pillars, plus the FX spot in the `FxStore`.
 4. Fixings for every projected index with coupons already fixed.
 
 ## What to remember

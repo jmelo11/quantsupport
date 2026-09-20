@@ -36,7 +36,7 @@ The model state is \\(z_t\\) with \\(z_0 = 0\\). From that state, the following 
 | `evolve_domestic_factor_euler(t, z, dt, dw)`                    | \\(z + \alpha(t)\\,dW\\)                                                                      |
 | `evolve_foreign_factor_under_domestic_measure_euler(..)`        | \\(z + \gamma\\,dt + \alpha(t)\\,dW\\)                                                        |
 
-The functions \(H\) and \(\zeta\) connect the Gaussian state to bond prices and numeraires. Domestic factors have zero drift under the domestic measure. Foreign factors receive `gamma_under_domestic_measure`, which incorporates rate and FX correlations.
+The functions \\(H\\) and \\(\zeta\\) connect the Gaussian state to bond prices and numeraires. Domestic factors have zero drift under the domestic measure. Foreign factors receive `gamma_under_domestic_measure`, which incorporates rate and FX correlations.
 
 ## FX and equity components
 

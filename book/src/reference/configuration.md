@@ -18,7 +18,7 @@ The quote file establishes the market reference date and the observable values a
       "mid": 0.32 },
     { "identifier": "Swaption_CLP_ICP_1Y_2Y_Absolute_0.045_Black",
       "mid": 0.26 },
-    { "identifier": "Cds_CLIENT_A_USD_5Y", "mid": 0.01 }
+    { "identifier": "Cds_ACME_USD_5Y", "mid": 0.01 }
   ]
 }
 ```
@@ -73,12 +73,12 @@ Credit curves use `CreditCurveConfiguration` because CDS calibration also needs 
 
 ```json
 {
-  "market_index": { "Credit": "CLIENT_A" },
+  "market_index": { "Credit": "ACME" },
   "currency": "USD",
   "discount_index": "SOFR",
   "recovery": 0.4,
   "premium_frequency": "Quarterly",
-  "quotes": ["Cds_CLIENT_A_USD_1Y", "Cds_CLIENT_A_USD_5Y"]
+  "quotes": ["Cds_ACME_USD_1Y", "Cds_ACME_USD_5Y"]
 }
 ```
 
@@ -200,7 +200,7 @@ CSA terms describe collateral discounting and the credit and funding inputs for 
     "dates": ["2026-11-11", "2028-11-11"],
     "spreads": [0.004, 0.005]
   },
-  "credit_index": { "Credit": "CLIENT_A" }
+  "credit_index": { "Credit": "ACME" }
 }
 ```
 

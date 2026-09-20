@@ -138,7 +138,7 @@ A **pricer** connects a trade to market data and produces selected `Request` out
 | ------------------------ | --------------------------------------------------- |
 | `Request::Value`         | Present value or NPV                                |
 | `Request::Cashflows`     | Coupon and payment details                          |
-| `Request::Sensitivities` | Derivatives with respect to labelled market pillars |
+| `Request::Sensitivities` | Derivatives with respect to labeled market pillars |
 | `Request::FairRate`      | Rate that makes the instrument NPV equal to zero    |
 
 Request support is pricer-specific because each product and valuation method exposes its own measures.
@@ -193,7 +193,7 @@ if let Some(cashflows) = results.cashflows() {
 }
 ```
 
-`SensitivityMap` contains parallel `instrument_keys()` and `exposure()` vectors. Each exposure is the derivative of NPV with respect to the labelled market pillar. This flat-curve example has one pillar, `SOFR_flat`, so it reports one value for \(\partial\mathrm{NPV}/\partial r\). A bootstrapped curve instead reports sensitivities against its quote labels, such as `OIS_USD_SOFR_5Y`.
+`SensitivityMap` contains parallel `instrument_keys()` and `exposure()` vectors. Each exposure is the derivative of NPV with respect to the labeled market pillar. This flat-curve example has one pillar, `SOFR_flat`, so it reports one value for \\(\partial\mathrm{NPV}/\partial r\\). A bootstrapped curve reports sensitivities against its quote labels, such as `OIS_USD_SOFR_5Y`.
 
 `CashflowsTable` is column-oriented. In addition to the columns printed above, it exposes `fixing()`, `accrual_periods()`, `leg_indices()`, and optional caplet/floorlet strikes. Leg index `0` identifies fixed-leg rows and index `1` identifies floating-leg rows.
 

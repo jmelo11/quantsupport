@@ -97,7 +97,7 @@ The main pass subtracts `β·(control − E[control])` from the payoff. The esti
 
 ## Parallel evaluation
 
-Parallel evaluation requires each worker to own its market model and AD tape. `ScriptModelSetup` acts as the worker-local factory, and `ParallelScriptEvaluation` collects normalized values, labelled sensitivities, and expected cashflows:
+Parallel evaluation requires each worker to own its market model and AD tape. `ScriptModelSetup` acts as the worker-local factory, and `ParallelScriptEvaluation` collects normalized values, labeled sensitivities, and expected cashflows:
 
 ```rust,ignore
 pub trait ScriptModelSetup: Send + Sync {
@@ -120,11 +120,11 @@ pub struct ParallelScriptEvaluation {
 }
 ```
 
-A `DualFwd` holds a pointer into a **thread-local** tape. Each Rayon worker therefore builds its own curves and model through `ScriptModelSetup::with_model`, registers the required pillars and parameters on that worker's tape, and supplies them as labelled `leaves`. The engine then:
+A `DualFwd` holds a pointer into a **thread-local** tape. Each Rayon worker therefore builds its own curves and model through `ScriptModelSetup::with_model`, registers the required pillars and parameters on that worker's tape, and supplies them as labeled `leaves`. The engine then:
 
 1. Splits `0..n_paths` into `rayon::current_num_threads()` contiguous ranges.
 2. Resets and starts a fresh tape on each worker, calls `with_model`, configures the model, evaluates the range, and reads `leaf.adjoint()` for every supplied leaf.
-3. sums values, adjoints and cashflows across workers. Normalisation always uses the total path count, so results are independent of the number of threads and deterministic for a fixed seed.
+3. sums values, adjoints and cashflows across workers. Normalization always uses the total path count, so results are independent of the number of threads and deterministic for a fixed seed.
 
 The following setup illustrates the worker-local construction for a SOFR curve and LGM model:
 

@@ -23,14 +23,14 @@ At every path and date, the engine sums all claim values in the set before calcu
 
 ```rust,ignore
 pub struct CsaTerms {
-    collateral_index: MarketIndex,       // discount curve for collateralised cashflows
+    collateral_index: MarketIndex,       // discount curve for collateralized cashflows
     collateral_currency: Currency,       // currency of collateral
     credit_spread: f64,                  // flat counterparty hazard rate (if no credit_index)
     recovery: f64,                       // LGD = 1 - recovery
     funding_spread: f64,                 // flat funding spread (fallback)
     funding_spread_curve: Option<FundingSpreadCurve { dates: Vec<Date>, spreads: Vec<f64> }>,
     funding_index: Option<MarketIndex>,  // bootstrapped funding curve
-    credit_index: Option<MarketIndex>,   // bootstrapped credit curve, e.g. Credit("CLIENT_A")
+    credit_index: Option<MarketIndex>,   // bootstrapped credit curve, e.g. Credit("ACME")
 }
 ```
 
@@ -58,7 +58,7 @@ Optional fields follow a defined precedence when the engine builds aggregators:
 
 | Field set              | Aggregator                                                                                                                   |
 | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `credit_index`         | `CreditCurveCvaFactory` with pillar survivals from the bootstrapped credit curve (sensitivities labelled `<index>.pillar_i`) |
+| `credit_index`         | `CreditCurveCvaFactory` with pillar survivals from the bootstrapped credit curve (sensitivities labeled `<index>.pillar_i`) |
 | otherwise              | `CvaFactory` with \\(S(t)=e^{-\text{credit\\\_spread}\cdot t}\\)                                                             |
 | `funding_index`        | `FundingCurveFvaFactory` using the spread between the funding curve and the system curve (labels `<funding_index>.<date>`)   |
 | `funding_spread_curve` | `FundingCurveFvaFactory` with the explicit term structure (labels `funding_spread.<date>`)                                   |
