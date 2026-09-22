@@ -1,97 +1,86 @@
-pub mod registry;
+//! Native Excel XLL bindings for QuantSupport.
+//!
+//! The actual XLL exports only compile on Windows. The object registry remains
+//! portable so its behavior can be unit-tested on any development host.
 
-use crate::registry::*;
+#[cfg_attr(not(windows), allow(dead_code))]
+mod registry;
 
-use xll_rs::convert::return_xl_error;
-use xll_rs::register::Reg;
-use xll_rs::returning::XlReturn;
-use xll_rs::types::*;
+#[cfg(windows)]
+mod functions;
 
+#[cfg(windows)]
+use registry::with_registry_mut;
+#[cfg(windows)]
+use xll_rs::{
+    convert::return_xl_error,
+    register::Reg,
+    returning::XlReturn,
+    types::{XLERR_VALUE, XLOPER12, XLTYPE_INT, XLTYPE_NUM},
+};
 
-#[no_mangle]
-pub extern "system" fn xl_add(a: *const XLOPER12, b: *const XLOPER12) -> *mut XLOPER12 {
-    if a.is_null() || b.is_null() {
-        return return_xl_error(XLERR_VALUE);
-    }
-    unsafe {
-        let av = (*a).as_f64().unwrap_or(0.0);
-        let bv = (*b).as_f64().unwrap_or(0.0);
-        XlReturn::num(av + bv).into_raw()
-    }
-}
-
+/// Registers every worksheet function when Excel loads the XLL.
+#[cfg(windows)]
 #[no_mangle]
 pub extern "system" fn xlAutoOpen() -> i32 {
-    let reg = Reg::new();
+    let registry = Reg::new();
+    let mut functions: Vec<_> = xll_rs::inventory::iter::<xll_rs::registry::XllExport>
+        .into_iter()
+        .copied()
+        .collect();
+    functions.sort_by(|left, right| left.name.cmp(right.name));
 
-    let _  = reg.add(
-        "xl_add",
-        "QQQ$",
-        "ADD.RUST",
-        "a, b",
-        "xll-rs",
-        "Adds two numbers",
-        &["First number", "Second number"],
-    );
-
-    let _  = reg.add(
-        "create_fx_store",
-        "Q",
-        "QS.CREATE_FX_STORE",
-        "",
-        "QS",
-        "Creates a new FX store and returns its identifier",
-        &[],
-    );
-
-    let _ = reg.add(
-        "add_fx_quote",
-        "QQQQQ",
-        "QS.ADD.FX.QUOTE",
-        "target,ccy1,ccy2,quote",
-        "QuantSupport",
-        "Adds an FX quote to an FxStore",
-        &[
-            "FxStore handle",
-            "Base currency",
-            "Quote currency",
-            "FX rate",
-        ],
-    );
-
-    let _  = reg.add(
-        "get_fx_quote",
-        "QQQ",
-        "QS.GET_FX_QUOTE",
-        "target, ccy1, ccy2",
-        "QS",
-        "Retrieves the FX quote between two currencies from the specified FX store",
-        &["FX Store Identifier", "Base Currency", "Quote Currency"],
-    );
-
+    for function in functions {
+        for excel_name in std::iter::once(function.name).chain(function.aliases.iter().copied()) {
+            if registry
+                .add(
+                    function.rust_name,
+                    function.type_str,
+                    excel_name,
+                    function.arg_names,
+                    function.category,
+                    function.help,
+                    function.arg_help,
+                )
+                .is_err()
+            {
+                return 0;
+            }
+        }
+    }
     1
 }
 
+/// Releases all in-process object handles when Excel unloads the XLL.
+#[cfg(windows)]
 #[no_mangle]
 pub extern "system" fn xlAutoClose() -> i32 {
+    with_registry_mut(|registry| registry.clear());
     1
 }
 
+/// Supplies the display name shown in Excel's Add-in Manager.
+///
+/// # Safety
+///
+/// Excel must pass a valid callback-owned `XLOPER12` pointer.
+#[cfg(windows)]
 #[no_mangle]
-pub extern "system" fn xlAddInManagerInfo12(action: *const XLOPER12) -> *mut XLOPER12 {
+pub unsafe extern "system" fn xlAddInManagerInfo12(action: *const XLOPER12) -> *mut XLOPER12 {
     if !action.is_null() {
         let oper = unsafe { &*action };
-        let is_one = match oper.base_type() {
+        let requests_name = match oper.base_type() {
             XLTYPE_NUM => (unsafe { oper.val.num }) == 1.0,
             XLTYPE_INT => (unsafe { oper.val.w }) == 1,
             _ => false,
         };
-        if is_one {
-            return XlReturn::str("xll-rs example").into_raw();
+        if requests_name {
+            return XlReturn::str("QuantSupport").into_raw();
         }
     }
     return_xl_error(XLERR_VALUE)
 }
 
-// Excel calls this after it copies results with xlbitDLLFree set
+// Excel calls this after copying a result marked with xlbitDLLFree.
+#[cfg(windows)]
 pub use xll_rs::memory::xlAutoFree12;

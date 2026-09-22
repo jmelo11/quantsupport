@@ -16,7 +16,7 @@ keywords = [
     "quantitative-finance",
     "derivatives",
     "pricing",
-    "risk",
+    "yield-curve",
     "xva",
 ]
 categories = ["finance", "science"]

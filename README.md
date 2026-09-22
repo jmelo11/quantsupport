@@ -337,6 +337,15 @@ with qs.PricingContext(
 
 See the [Python README](bindings/python/README.md) and [guided notebook](bindings/python/examples/tour.ipynb) for pricing and XVA examples.
 
+## Excel bindings
+
+The [`bindings/excel`](bindings/excel) crate is a native 64-bit Windows XLL. It
+stores the library's own quote, fixing, FX, configuration, context, curve, and
+trade types behind revisioned Excel handles, invokes the native QuantSupport
+pricers, and discovers worksheet-function registrations by module. See the
+[Excel README](bindings/excel/README.md) for build, formula, quote-update,
+pricing, and extension examples.
+
 ## Book
 
 The [QuantSupport Book](https://jmelo11.github.io/quantsupport/) covers installation, market construction, pricing, risk, scripting, simulation, and XVA. It is published to GitHub Pages on every push to `main`; the sources live under [`book/src`](book/src/SUMMARY.md). To build it locally, install [mdBook](https://rust-lang.github.io/mdBook/), then from the repository root:
