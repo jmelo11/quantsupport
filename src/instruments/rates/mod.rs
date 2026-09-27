@@ -4,6 +4,8 @@ pub mod basisswap;
 pub mod capfloor;
 /// Interest rate caplet instruments.
 pub mod capletfloorlet;
+/// Interest rate swaption instruments.
+pub mod europeanswaption;
 /// Cross-currency swap instruments (fixed vs float).
 pub mod fixfloatcrosscurrencyswap;
 /// Cross-currency swap instruments (float vs float).
@@ -12,6 +14,8 @@ pub mod floatfloatcrosscurrencyswap;
 pub mod makebasisswap;
 /// Cap/floor builder.
 pub mod makecapfloor;
+/// Swaption builder.
+pub mod makeeuropeanswaption;
 /// Cross-currency swap builder (fixed vs float).
 pub mod makefixfloatcrosscurrencyswap;
 /// Cross-currency swap builder (float vs float).
@@ -20,11 +24,7 @@ pub mod makefloatfloatcrosscurrencyswap;
 pub mod makeratefutures;
 /// Interest rate swap builder.
 pub mod makeswap;
-/// Swaption builder.
-pub mod makeeuropeanswaption;
 /// Interest rate futures instruments.
 pub mod ratefutures;
 /// Interest rate swap instruments.
 pub mod swap;
-/// Interest rate swaption instruments.
-pub mod europeanswaption;

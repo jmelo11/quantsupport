@@ -216,8 +216,8 @@ pub use crate::{
         volatilitycubeconfiguration::VolatilityCubeConfiguration,
         volatilityindexing::{SmileType, Strike, VolatilityType},
         volatilitysource::{
-            ConstantVolatility, CubeTermVolatility, PiecewiseConstantVolatility,
-            SurfaceTermVolatility, VolatilitySourceConfiguration, bootstrap_black_term_volatility,
+            bootstrap_black_term_volatility, ConstantVolatility, CubeTermVolatility,
+            PiecewiseConstantVolatility, SurfaceTermVolatility, VolatilitySourceConfiguration,
         },
         volatilitysurface::VolatilitySurface,
         volatilitysurfacebuilder::VolatilitySurfaceBuilder,

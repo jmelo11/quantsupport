@@ -254,8 +254,14 @@ impl Calendar {
     /// Adjusts a date to a business day under the given convention
     /// (default `Following`).
     #[pyo3(signature = (date, convention = None))]
-    fn adjust(&self, date: &Bound<'_, PyAny>, convention: Option<&Bound<'_, PyAny>>) -> PyResult<Date> {
-        let conv = convention.map(extract_business_day_convention).transpose()?;
+    fn adjust(
+        &self,
+        date: &Bound<'_, PyAny>,
+        convention: Option<&Bound<'_, PyAny>>,
+    ) -> PyResult<Date> {
+        let conv = convention
+            .map(extract_business_day_convention)
+            .transpose()?;
         Ok(Date {
             inner: self.inner.adjust(extract_date(date)?, conv),
         })
@@ -270,7 +276,9 @@ impl Calendar {
         convention: Option<&Bound<'_, PyAny>>,
         end_of_month: bool,
     ) -> PyResult<Date> {
-        let conv = convention.map(extract_business_day_convention).transpose()?;
+        let conv = convention
+            .map(extract_business_day_convention)
+            .transpose()?;
         Ok(Date {
             inner: self.inner.advance(
                 extract_date(date)?,

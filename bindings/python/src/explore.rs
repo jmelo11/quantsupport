@@ -112,7 +112,10 @@ impl DiscountCurve {
     }
 
     fn __repr__(&self) -> String {
-        format!("DiscountCurve(market_index='{}')", self.element.market_index())
+        format!(
+            "DiscountCurve(market_index='{}')",
+            self.element.market_index()
+        )
     }
 }
 
@@ -157,7 +160,10 @@ impl VolatilitySurface {
     fn volatility(&self, expiry: &Bound<'_, PyAny>, key: f64) -> PyResult<f64> {
         let surface = self.element.surface();
         if let Ok(date) = extract_date(expiry) {
-            return Ok(surface.volatility_from_date(date, key).map_err(qs_err)?.value());
+            return Ok(surface
+                .volatility_from_date(date, key)
+                .map_err(qs_err)?
+                .value());
         }
         let period = extract_period(expiry)?;
         Ok(surface

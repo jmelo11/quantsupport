@@ -18,6 +18,7 @@ use quantsupport::prelude::{
 
 const HANDLE_PREFIX: &str = "QSObject";
 const MAX_OBJECT_NAME_UTF16: usize = 128;
+const RESET_OPERATION_ID: &str = "__registry_reset__";
 
 /// QuantSupport components and trades that can be referenced by an Excel cell.
 pub enum QsObject {
@@ -113,6 +114,8 @@ impl QsObject {
 struct RegistryEntry {
     revision: u64,
     object: QsObject,
+    definition_key: Option<String>,
+    mutation_keys: HashMap<String, String>,
 }
 
 /// Error returned when an object handle cannot be used.
@@ -140,6 +143,8 @@ pub enum RegistryError {
     },
     /// An object's revision counter could not be incremented.
     RevisionOverflow(String),
+    /// The object is immutable or cannot be reconstructed without its inputs.
+    ResetUnsupported(&'static str),
 }
 
 impl fmt::Display for RegistryError {
@@ -165,6 +170,10 @@ impl fmt::Display for RegistryError {
             Self::RevisionOverflow(handle) => {
                 write!(formatter, "revision counter overflow for '{handle}'")
             }
+            Self::ResetUnsupported(actual) => write!(
+                formatter,
+                "object type {actual} cannot be reset; reset the mutable input store or configuration collection instead"
+            ),
         }
     }
 }
@@ -200,16 +209,53 @@ macro_rules! collection_accessor {
 }
 
 impl Registry {
-    /// Inserts or replaces a named object and returns its revisioned handle.
-    pub fn upsert(&mut self, name: &str, object: QsObject) -> Result<String, RegistryError> {
+    /// Returns the current handle when a constructor's defining inputs match.
+    pub fn handle_if_unchanged(
+        &self,
+        name: &str,
+        kind: &str,
+        definition_key: &str,
+    ) -> Result<Option<String>, RegistryError> {
+        let name = validate_name(name)?;
+        let identity = identity(kind, name);
+        Ok(self.objects.get(&identity).and_then(|entry| {
+            (entry.definition_key.as_deref() == Some(definition_key))
+                .then(|| format_handle(&identity, entry.revision))
+        }))
+    }
+
+    /// Inserts a named object only when its defining worksheet inputs changed.
+    ///
+    /// Mutations made after construction are retained when Excel recalculates
+    /// the constructor with the same key.
+    pub fn upsert_if_changed(
+        &mut self,
+        name: &str,
+        object: QsObject,
+        definition_key: impl Into<String>,
+    ) -> Result<String, RegistryError> {
         let name = validate_name(name)?;
         let identity = identity(object.kind(), name);
+        let definition_key = definition_key.into();
+        if let Some(entry) = self.objects.get(&identity) {
+            if entry.definition_key.as_deref() == Some(definition_key.as_str()) {
+                return Ok(format_handle(&identity, entry.revision));
+            }
+        }
+
         let revision = self
             .objects
             .get(&identity)
             .map_or(Ok(1), |entry| next_revision(entry.revision, &identity))?;
-        self.objects
-            .insert(identity.clone(), RegistryEntry { revision, object });
+        self.objects.insert(
+            identity.clone(),
+            RegistryEntry {
+                revision,
+                object,
+                definition_key: Some(definition_key),
+                mutation_keys: HashMap::new(),
+            },
+        );
         Ok(format_handle(&identity, revision))
     }
 
@@ -266,50 +312,87 @@ impl Registry {
         "PricingContext"
     );
 
-    /// Mutates a quote store and returns the operation result and new handle.
-    pub fn update_quote_store<R>(
+    /// Mutates a quote store only when this operation's worksheet inputs changed.
+    pub fn update_quote_store_if_changed(
         &mut self,
         handle: &str,
-        operation: impl FnOnce(&mut QuoteStore) -> R,
-    ) -> Result<(R, String), RegistryError> {
-        self.mutate(handle, |object| match object {
-            QsObject::QuoteStore(store) => Ok(operation(store.as_mut())),
+        operation_id: &str,
+        value_key: &str,
+        operation: impl FnOnce(&mut QuoteStore),
+    ) -> Result<String, RegistryError> {
+        self.mutate_if_changed(handle, operation_id, value_key, |object| match object {
+            QsObject::QuoteStore(store) => {
+                operation(store.as_mut());
+                Ok(())
+            }
             other => Err(wrong_type("QuoteStore", other)),
         })
     }
 
-    /// Mutates a fixing store and returns the operation result and new handle.
-    pub fn update_fixing_store<R>(
+    /// Mutates a fixing store only when this operation's worksheet inputs changed.
+    pub fn update_fixing_store_if_changed(
         &mut self,
         handle: &str,
-        operation: impl FnOnce(&mut FixingStore) -> R,
-    ) -> Result<(R, String), RegistryError> {
-        self.mutate(handle, |object| match object {
-            QsObject::FixingStore(store) => Ok(operation(store.as_mut())),
+        operation_id: &str,
+        value_key: &str,
+        operation: impl FnOnce(&mut FixingStore),
+    ) -> Result<String, RegistryError> {
+        self.mutate_if_changed(handle, operation_id, value_key, |object| match object {
+            QsObject::FixingStore(store) => {
+                operation(store.as_mut());
+                Ok(())
+            }
             other => Err(wrong_type("FixingStore", other)),
         })
     }
 
-    /// Mutates an FX store and returns the operation result and new handle.
-    pub fn update_fx_store<R>(
+    /// Mutates an FX store only when this operation's worksheet inputs changed.
+    pub fn update_fx_store_if_changed(
         &mut self,
         handle: &str,
-        operation: impl FnOnce(&mut FxStore) -> R,
-    ) -> Result<(R, String), RegistryError> {
-        self.mutate(handle, |object| match object {
-            QsObject::FxStore(store) => Ok(operation(store.as_mut())),
+        operation_id: &str,
+        value_key: &str,
+        operation: impl FnOnce(&mut FxStore),
+    ) -> Result<String, RegistryError> {
+        self.mutate_if_changed(handle, operation_id, value_key, |object| match object {
+            QsObject::FxStore(store) => {
+                operation(store.as_mut());
+                Ok(())
+            }
             other => Err(wrong_type("FxStore", other)),
         })
     }
 
-    /// Mutates a constructed-element store and returns its new handle.
-    pub fn update_constructed_elements<R>(
+    /// Mutates curve configurations only when this operation's inputs changed.
+    pub fn update_curve_configurations_if_changed(
         &mut self,
         handle: &str,
-        operation: impl FnOnce(&mut ConstructedElementStore) -> R,
-    ) -> Result<(R, String), RegistryError> {
-        self.mutate(handle, |object| match object {
-            QsObject::ConstructedElements(store) => Ok(operation(store.as_mut())),
+        operation_id: &str,
+        value_key: &str,
+        operation: impl FnOnce(&mut Vec<CurveConfiguration>),
+    ) -> Result<String, RegistryError> {
+        self.mutate_if_changed(handle, operation_id, value_key, |object| match object {
+            QsObject::CurveConfigurations(configurations) => {
+                operation(configurations);
+                Ok(())
+            }
+            other => Err(wrong_type("CurveConfigurations", other)),
+        })
+    }
+
+    /// Mutates constructed elements only when this operation's inputs changed.
+    pub fn update_constructed_elements_if_changed(
+        &mut self,
+        handle: &str,
+        operation_id: &str,
+        value_key: &str,
+        operation: impl FnOnce(&mut ConstructedElementStore),
+    ) -> Result<String, RegistryError> {
+        self.mutate_if_changed(handle, operation_id, value_key, |object| match object {
+            QsObject::ConstructedElements(store) => {
+                operation(store.as_mut());
+                Ok(())
+            }
             other => Err(wrong_type("ConstructedElementStore", other)),
         })
     }
@@ -333,6 +416,47 @@ impl Registry {
         };
         ensure_current(handle, &identity, parsed.revision, entry.revision)?;
         Ok(self.objects.remove(&identity).is_some())
+    }
+
+    /// Resets a mutable store or configuration collection when `reset_key`
+    /// changes and returns its new revisioned handle.
+    ///
+    /// The reset also clears cached mutation keys so unchanged downstream
+    /// worksheet formulas repopulate the fresh object. As with other
+    /// mutators, an older revision of the same object identity is accepted;
+    /// Excel mutation chains commonly retain their original constructor
+    /// handle between recalculations.
+    pub fn reset_if_changed(
+        &mut self,
+        handle: &str,
+        reset_key: &str,
+    ) -> Result<String, RegistryError> {
+        let parsed = ParsedHandle::parse(handle)?;
+        let identity = parsed.identity();
+        let entry = self
+            .objects
+            .get_mut(&identity)
+            .ok_or_else(|| RegistryError::NotFound(handle.to_string()))?;
+        if parsed.kind != entry.object.kind() {
+            return Err(wrong_type(parsed.kind, &entry.object));
+        }
+        if entry
+            .mutation_keys
+            .get(RESET_OPERATION_ID)
+            .map(String::as_str)
+            == Some(reset_key)
+        {
+            return Ok(format_handle(&identity, entry.revision));
+        }
+
+        let revision = next_revision(entry.revision, &identity)?;
+        reset_object(&mut entry.object)?;
+        entry.revision = revision;
+        entry.mutation_keys.clear();
+        entry
+            .mutation_keys
+            .insert(RESET_OPERATION_ID.to_string(), reset_key.to_string());
+        Ok(format_handle(&identity, entry.revision))
     }
 
     /// Returns the number of live object identities.
@@ -360,11 +484,13 @@ impl Registry {
         Ok(entry)
     }
 
-    fn mutate<R>(
+    fn mutate_if_changed(
         &mut self,
         handle: &str,
-        operation: impl FnOnce(&mut QsObject) -> Result<R, RegistryError>,
-    ) -> Result<(R, String), RegistryError> {
+        operation_id: &str,
+        value_key: &str,
+        operation: impl FnOnce(&mut QsObject) -> Result<(), RegistryError>,
+    ) -> Result<String, RegistryError> {
         let parsed = ParsedHandle::parse(handle)?;
         let identity = parsed.identity();
         let entry = self
@@ -374,13 +500,16 @@ impl Registry {
         if parsed.kind != entry.object.kind() {
             return Err(wrong_type(parsed.kind, &entry.object));
         }
+        if entry.mutation_keys.get(operation_id).map(String::as_str) == Some(value_key) {
+            return Ok(format_handle(&identity, entry.revision));
+        }
 
-        // Excel can recalculate a mutation using its original upstream handle.
-        // Apply it to the current identity and emit a fresh token. Reads remain
-        // strict, so stale dependencies cannot silently price old state.
-        let result = operation(&mut entry.object)?;
+        operation(&mut entry.object)?;
         entry.revision = next_revision(entry.revision, &identity)?;
-        Ok((result, format_handle(&identity, entry.revision)))
+        entry
+            .mutation_keys
+            .insert(operation_id.to_string(), value_key.to_string());
+        Ok(format_handle(&identity, entry.revision))
     }
 }
 
@@ -465,6 +594,26 @@ fn wrong_type(expected: &str, object: &QsObject) -> RegistryError {
     }
 }
 
+fn reset_object(object: &mut QsObject) -> Result<(), RegistryError> {
+    match object {
+        QsObject::QuoteStore(store) => {
+            let reference_date = store.reference_date();
+            **store = QuoteStore::new(reference_date);
+        }
+        QsObject::FixingStore(store) => **store = FixingStore::default(),
+        QsObject::FxStore(store) => **store = FxStore::new(),
+        QsObject::CurveConfigurations(configurations) => configurations.clear(),
+        QsObject::CreditCurveConfigurations(configurations) => configurations.clear(),
+        QsObject::VolatilitySurfaceConfigurations(configurations) => configurations.clear(),
+        QsObject::VolatilityCubeConfigurations(configurations) => configurations.clear(),
+        QsObject::SimulationConfigurations(configurations) => configurations.clear(),
+        QsObject::Scenarios(scenarios) => scenarios.clear(),
+        QsObject::ConstructedElements(store) => **store = ConstructedElementStore::default(),
+        other => return Err(RegistryError::ResetUnsupported(other.kind())),
+    }
+    Ok(())
+}
+
 thread_local! {
     static REGISTRY: RefCell<Registry> = RefCell::new(Registry::default());
 }
@@ -487,17 +636,25 @@ mod tests {
     use quantsupport::prelude::{Currency, Date, Quote, QuoteDetails, QuoteLevels};
 
     #[test]
-    fn named_upsert_reuses_identity_and_increments_revision() {
+    fn constructor_recalculation_reuses_revision_until_inputs_change() {
         let mut registry = Registry::default();
         let first = registry
-            .upsert("fx", QsObject::FxStore(Box::new(FxStore::new())))
+            .upsert_if_changed("fx", QsObject::FxStore(Box::new(FxStore::new())), "empty")
             .expect("valid name");
-        let second = registry
-            .upsert("fx", QsObject::FxStore(Box::new(FxStore::new())))
+        let recalculated = registry
+            .upsert_if_changed("fx", QsObject::FxStore(Box::new(FxStore::new())), "empty")
+            .expect("same constructor inputs");
+        let changed = registry
+            .upsert_if_changed(
+                "fx",
+                QsObject::FxStore(Box::new(FxStore::new())),
+                "different inputs",
+            )
             .expect("valid name");
 
         assert_eq!(first, "QSObject:FxStore:fx:1");
-        assert_eq!(second, "QSObject:FxStore:fx:2");
+        assert_eq!(recalculated, first);
+        assert_eq!(changed, "QSObject:FxStore:fx:2");
         assert_eq!(registry.len(), 1);
         assert!(matches!(
             registry.fx_store(&first),
@@ -506,27 +663,37 @@ mod tests {
     }
 
     #[test]
-    fn quote_recalculation_uses_old_input_and_returns_new_token() {
+    fn mutation_recalculation_reuses_revision_and_constructor_keeps_state() {
         let mut registry = Registry::default();
         let created = registry
-            .upsert("fx", QsObject::FxStore(Box::new(FxStore::new())))
+            .upsert_if_changed("fx", QsObject::FxStore(Box::new(FxStore::new())), "empty")
             .expect("valid name");
-        let (_, first_update) = registry
-            .update_fx_store(&created, |store| {
+        let first_update = registry
+            .update_fx_store_if_changed(&created, "EUR/USD", "1.1", |store| {
                 store.add_fx_rate(Currency::EUR, Currency::USD, DualFwd::from(1.1));
             })
             .expect("first update");
-        let (_, recalculated) = registry
-            .update_fx_store(&created, |store| {
+        let recalculated = registry
+            .update_fx_store_if_changed(&created, "EUR/USD", "1.1", |_| {
+                panic!("unchanged operation must not run")
+            })
+            .expect("same mutation inputs");
+        let constructor_recalculated = registry
+            .upsert_if_changed("fx", QsObject::FxStore(Box::new(FxStore::new())), "empty")
+            .expect("same constructor inputs");
+        let changed = registry
+            .update_fx_store_if_changed(&created, "EUR/USD", "1.2", |store| {
                 store.add_fx_rate(Currency::EUR, Currency::USD, DualFwd::from(1.2));
             })
             .expect("Excel may recalculate with the original handle");
 
         assert_eq!(first_update, "QSObject:FxStore:fx:2");
-        assert_eq!(recalculated, "QSObject:FxStore:fx:3");
+        assert_eq!(recalculated, first_update);
+        assert_eq!(constructor_recalculated, first_update);
+        assert_eq!(changed, "QSObject:FxStore:fx:3");
         assert!(registry.fx_store(&first_update).is_err());
         let rate = registry
-            .fx_store(&recalculated)
+            .fx_store(&changed)
             .expect("new handle")
             .get_fx_rate(Currency::EUR, Currency::USD)
             .expect("updated rate")
@@ -538,19 +705,20 @@ mod tests {
     fn quote_update_revises_the_real_quote_store() {
         let mut registry = Registry::default();
         let created = registry
-            .upsert(
+            .upsert_if_changed(
                 "quotes",
                 QsObject::QuoteStore(Box::new(QuoteStore::new(Date::new(2026, 1, 2)))),
+                "2026-01-02",
             )
             .expect("valid name");
         let details = QuoteDetails::from_str("OIS_USD_SOFR_1Y").expect("valid quote identifier");
-        let (_, first_update) = registry
-            .update_quote_store(&created, |store| {
+        let first_update = registry
+            .update_quote_store_if_changed(&created, "OIS_USD_SOFR_1Y", "0.03", |store| {
                 store.add_quote(Quote::new(details.clone(), QuoteLevels::with_mid(0.03)));
             })
             .expect("first quote update");
-        let (_, second_update) = registry
-            .update_quote_store(&created, |store| {
+        let second_update = registry
+            .update_quote_store_if_changed(&created, "OIS_USD_SOFR_1Y", "0.04", |store| {
                 store.add_quote(Quote::new(details, QuoteLevels::with_mid(0.04)));
             })
             .expect("recalculated quote update");
@@ -568,10 +736,14 @@ mod tests {
     fn rejects_malformed_handles_and_names() {
         let mut registry = Registry::default();
         assert!(registry
-            .upsert("", QsObject::FxStore(Box::new(FxStore::new())))
+            .upsert_if_changed("", QsObject::FxStore(Box::new(FxStore::new())), "empty")
             .is_err());
         assert!(registry
-            .upsert("bad:name", QsObject::FxStore(Box::new(FxStore::new())))
+            .upsert_if_changed(
+                "bad:name",
+                QsObject::FxStore(Box::new(FxStore::new())),
+                "empty",
+            )
             .is_err());
         assert!(matches!(
             registry.object_type("not-a-handle"),
@@ -583,14 +755,74 @@ mod tests {
     fn remove_requires_the_current_revision() {
         let mut registry = Registry::default();
         let first = registry
-            .upsert("fx", QsObject::FxStore(Box::new(FxStore::new())))
+            .upsert_if_changed("fx", QsObject::FxStore(Box::new(FxStore::new())), "first")
             .expect("valid name");
         let second = registry
-            .upsert("fx", QsObject::FxStore(Box::new(FxStore::new())))
+            .upsert_if_changed("fx", QsObject::FxStore(Box::new(FxStore::new())), "second")
             .expect("valid name");
 
         assert!(registry.remove(&first).is_err());
         assert!(registry.remove(&second).expect("current handle"));
         assert_eq!(registry.len(), 0);
+    }
+
+    #[test]
+    fn keyed_reset_clears_stale_quotes_and_reapplies_unchanged_mutations() {
+        let mut registry = Registry::default();
+        let created = registry
+            .upsert_if_changed(
+                "quotes",
+                QsObject::QuoteStore(Box::new(QuoteStore::new(Date::new(2026, 1, 2)))),
+                "2026-01-02",
+            )
+            .expect("quote store");
+        let details = QuoteDetails::from_str("OIS_USD_SOFR_1Y").expect("quote identifier");
+        registry
+            .update_quote_store_if_changed(&created, "quote:1Y", "0.03", |store| {
+                store.add_quote(Quote::new(details.clone(), QuoteLevels::with_mid(0.03)));
+            })
+            .expect("initial quote");
+
+        let reset = registry
+            .reset_if_changed(&created, "configuration-v2")
+            .expect("reset accepts the constructor handle");
+        assert!(registry
+            .quote_store(&reset)
+            .expect("reset store")
+            .quote("OIS_USD_SOFR_1Y")
+            .is_none());
+
+        let reapplied = registry
+            .update_quote_store_if_changed(&reset, "quote:1Y", "0.03", |store| {
+                store.add_quote(Quote::new(details, QuoteLevels::with_mid(0.03)));
+            })
+            .expect("unchanged mutation must be reapplied after reset");
+        let unchanged_reset = registry
+            .reset_if_changed(&created, "configuration-v2")
+            .expect("same reset key");
+
+        assert_eq!(unchanged_reset, reapplied);
+        assert!(registry
+            .quote_store(&unchanged_reset)
+            .expect("repopulated store")
+            .quote("OIS_USD_SOFR_1Y")
+            .is_some());
+    }
+
+    #[test]
+    fn reset_rejects_immutable_objects() {
+        let mut registry = Registry::default();
+        let handle = registry
+            .upsert_if_changed(
+                "context",
+                QsObject::PricingContext(Box::new(PricingContext::new())),
+                "definition",
+            )
+            .expect("context handle");
+
+        assert!(matches!(
+            registry.reset_if_changed(&handle, "v2"),
+            Err(RegistryError::ResetUnsupported("PricingContext"))
+        ));
     }
 }

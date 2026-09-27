@@ -137,10 +137,7 @@ mod tests {
             // relative error in the deep tails.
             let ok = (computed - expected).abs() < 1e-15
                 || (computed - expected).abs() / expected < 1e-8;
-            assert!(
-                ok,
-                "norm_cdf({x}) = {computed}, expected {expected}"
-            );
+            assert!(ok, "norm_cdf({x}) = {computed}, expected {expected}");
         }
     }
 

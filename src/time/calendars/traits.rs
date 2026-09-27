@@ -137,10 +137,10 @@ pub trait IsCalendar: ImplCalendar {
     ) -> i64 {
         match from.cmp(&to) {
             Ordering::Less => self.impl_days_between(from, to, include_first, include_last),
-            Ordering::Greater => {
-                -self.impl_days_between(to, from, include_last, include_first)
+            Ordering::Greater => -self.impl_days_between(to, from, include_last, include_first),
+            Ordering::Equal => {
+                i64::from(include_first && include_last && self.is_business_day(&from))
             }
-            Ordering::Equal => i64::from(include_first && include_last && self.is_business_day(&from)),
         }
     }
 
@@ -177,8 +177,7 @@ pub trait IsCalendar: ImplCalendar {
                 while self.is_holiday(&d1) {
                     d1 -= 1;
                 }
-                if conv == BusinessDayConvention::ModifiedPreceding && d1.month() != date.month()
-                {
+                if conv == BusinessDayConvention::ModifiedPreceding && d1.month() != date.month() {
                     return self.adjust(date, Some(BusinessDayConvention::Following));
                 }
             }

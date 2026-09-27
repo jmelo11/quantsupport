@@ -402,7 +402,6 @@ impl<T: TapeHolder + InnerScalar> From<Dual<T>> for f64 {
 /// Mixed-mode AD number: backward (1st order) + forward (2nd order).
 pub type DualFwd = Dual<ADForward>;
 
-
 #[cfg(test)]
 mod tests {
     use super::*;

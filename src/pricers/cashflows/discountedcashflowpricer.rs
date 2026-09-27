@@ -705,7 +705,9 @@ mod tests {
                 makefixedratedeposit::MakeFixedRateDeposit,
             },
             rates::{
-                fixfloatcrosscurrencyswap::{FixFloatCrossCurrencySwap, FixFloatCrossCurrencySwapTrade},
+                fixfloatcrosscurrencyswap::{
+                    FixFloatCrossCurrencySwap, FixFloatCrossCurrencySwapTrade,
+                },
                 makefixfloatcrosscurrencyswap::MakeFixFloatCrossCurrencySwap,
                 makeswap::MakeSwap,
                 swap::{Swap, SwapTrade},

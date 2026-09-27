@@ -1,6 +1,6 @@
 use crate::{
     core::{
-        pricingcontext::PricingContext, evaluationresults::EvaluationResults, request::Request,
+        evaluationresults::EvaluationResults, pricingcontext::PricingContext, request::Request,
     },
     utils::errors::Result,
 };

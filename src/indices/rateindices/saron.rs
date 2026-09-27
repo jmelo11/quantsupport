@@ -9,13 +9,10 @@ use crate::{
     },
     rates::{compounding::Compounding, interestrate::RateDefinition},
     time::{
-        calendar::Calendar,
-        calendars::weekendsonly::WeekendsOnly,
-        daycounter::DayCounter,
+        calendar::Calendar, calendars::weekendsonly::WeekendsOnly, daycounter::DayCounter,
         enums::Frequency,
     },
 };
-
 
 /// Details for SARON (Swiss Average Rate Overnight).
 /// Overnight secured rate published by SIX Swiss Exchange.

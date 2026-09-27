@@ -71,7 +71,11 @@ impl StaticInterpolate<f64> for CubicSplineInterpolator {
         let b = (x - x_[idx]) / h;
 
         let y = a.mul_add(y_[idx], b * y_[idx + 1])
-            + (a * a).mul_add(a, -a).mul_add(m[idx], (b * b).mul_add(b, -b) * m[idx + 1]) * (h * h) / 6.0;
+            + (a * a)
+                .mul_add(a, -a)
+                .mul_add(m[idx], (b * b).mul_add(b, -b) * m[idx + 1])
+                * (h * h)
+                / 6.0;
 
         Ok(y)
     }

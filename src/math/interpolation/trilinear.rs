@@ -126,14 +126,54 @@ mod tests {
         // 2×2×2 cube: x in {0,1}, y in {0,1}, z in {0,1}
         // values: v = 1 + 2x + 3y + 4z  (linear → trilinear gives exact result)
         vec![
-            TrilinearPoint { x: 0.0, y: 0.0, z: 0.0, value: 1.0 },
-            TrilinearPoint { x: 1.0, y: 0.0, z: 0.0, value: 3.0 },
-            TrilinearPoint { x: 0.0, y: 1.0, z: 0.0, value: 4.0 },
-            TrilinearPoint { x: 1.0, y: 1.0, z: 0.0, value: 6.0 },
-            TrilinearPoint { x: 0.0, y: 0.0, z: 1.0, value: 5.0 },
-            TrilinearPoint { x: 1.0, y: 0.0, z: 1.0, value: 7.0 },
-            TrilinearPoint { x: 0.0, y: 1.0, z: 1.0, value: 8.0 },
-            TrilinearPoint { x: 1.0, y: 1.0, z: 1.0, value: 10.0 },
+            TrilinearPoint {
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+                value: 1.0,
+            },
+            TrilinearPoint {
+                x: 1.0,
+                y: 0.0,
+                z: 0.0,
+                value: 3.0,
+            },
+            TrilinearPoint {
+                x: 0.0,
+                y: 1.0,
+                z: 0.0,
+                value: 4.0,
+            },
+            TrilinearPoint {
+                x: 1.0,
+                y: 1.0,
+                z: 0.0,
+                value: 6.0,
+            },
+            TrilinearPoint {
+                x: 0.0,
+                y: 0.0,
+                z: 1.0,
+                value: 5.0,
+            },
+            TrilinearPoint {
+                x: 1.0,
+                y: 0.0,
+                z: 1.0,
+                value: 7.0,
+            },
+            TrilinearPoint {
+                x: 0.0,
+                y: 1.0,
+                z: 1.0,
+                value: 8.0,
+            },
+            TrilinearPoint {
+                x: 1.0,
+                y: 1.0,
+                z: 1.0,
+                value: 10.0,
+            },
         ]
     }
 
@@ -142,7 +182,10 @@ mod tests {
         let expected = 1.0 + 2.0 * 0.5 + 3.0 * 0.5 + 4.0 * 0.5; // 5.5
         let val = TrilinearInterpolator::interpolate(0.5, 0.5, 0.5, cube_points_f64())
             .expect("center interpolation");
-        assert!((val - expected).abs() < 1e-12, "got {val}, expected {expected}");
+        assert!(
+            (val - expected).abs() < 1e-12,
+            "got {val}, expected {expected}"
+        );
     }
 
     #[test]

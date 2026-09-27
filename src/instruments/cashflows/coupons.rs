@@ -1,5 +1,7 @@
 use crate::{
-    ad::scalar::Scalar, instruments::cashflows::{cashflow::Cashflow, payoffops::PayoffOps}, time::date::Date,
+    ad::scalar::Scalar,
+    instruments::cashflows::{cashflow::Cashflow, payoffops::PayoffOps},
+    time::date::Date,
     utils::errors::Result,
 };
 

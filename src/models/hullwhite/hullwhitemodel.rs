@@ -340,7 +340,11 @@ impl HullWhite<'_, f64> {
         for &(t_i, c_i) in &cashflows {
             let x_i =
                 self.A(t_option, t_i, sigma, curve)? * (-self.B(t_option, t_i) * r_star).exp();
-            total = f64::mul_add(c_i, self.bond_put_price(t_option, t_i, x_i, sigma, curve)?, total);
+            total = f64::mul_add(
+                c_i,
+                self.bond_put_price(t_option, t_i, x_i, sigma, curve)?,
+                total,
+            );
         }
         Ok(total)
     }

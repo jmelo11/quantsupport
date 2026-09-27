@@ -222,7 +222,8 @@ where
         let fixed_leg_frequency = self.fixed_leg_frequency.unwrap_or(Frequency::Semiannual);
         let floating_leg_frequency = self.floating_leg_frequency.unwrap_or(Frequency::Quarterly);
 
-        let interest_rate = InterestRate::from_rate_definition(T::scalar(fixed_rate), rate_definition);
+        let interest_rate =
+            InterestRate::from_rate_definition(T::scalar(fixed_rate), rate_definition);
 
         // Fixed leg: receive side matches the swap side
         let fixed_leg = MakeLeg::<T>::default()

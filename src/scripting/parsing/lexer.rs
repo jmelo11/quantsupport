@@ -100,7 +100,7 @@ pub enum Token {
     /// Statement terminator.
     Semicolon, // for end of an expression or statement
     /// Source line terminator.
-    Newline,   // for end of a line
+    Newline, // for end of a line
     /// End of input.
     EOF,
 }

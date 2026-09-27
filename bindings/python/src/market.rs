@@ -26,7 +26,8 @@ fn list_from_value<T: DeserializeOwned>(value: serde_json::Value, what: &str) ->
         match v {
             serde_json::Value::Array(_) => serde_json::from_value(v),
             serde_json::Value::Object(ref map)
-                if map.len() == 1 && map.values().next().is_some_and(serde_json::Value::is_array) =>
+                if map.len() == 1
+                    && map.values().next().is_some_and(serde_json::Value::is_array) =>
             {
                 let inner = v.as_object().unwrap().values().next().unwrap().clone();
                 serde_json::from_value(inner)
@@ -73,8 +74,9 @@ macro_rules! config_wrapper {
 
             /// Returns the configuration as a dict.
             fn to_dict<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-                pythonize::pythonize(py, &self.inner)
-                    .map_err(|e| QuantSupportError::new_err(format!("cannot serialize {}: {e}", $what)))
+                pythonize::pythonize(py, &self.inner).map_err(|e| {
+                    QuantSupportError::new_err(format!("cannot serialize {}: {e}", $what))
+                })
             }
 
             fn __repr__(&self) -> String {
@@ -261,7 +263,12 @@ impl FxStore {
     }
 
     /// Adds a spot rate: 1 `base` = `rate` `quote`.
-    fn add(&mut self, base: &Bound<'_, PyAny>, quote: &Bound<'_, PyAny>, rate: f64) -> PyResult<()> {
+    fn add(
+        &mut self,
+        base: &Bound<'_, PyAny>,
+        quote: &Bound<'_, PyAny>,
+        rate: f64,
+    ) -> PyResult<()> {
         self.inner.add_fx_rate(
             extract_currency(base)?,
             extract_currency(quote)?,
@@ -297,11 +304,7 @@ pub struct Scenario {
 impl Scenario {
     #[new]
     #[pyo3(signature = (target, shock, scenario_type = None))]
-    fn new(
-        target: String,
-        shock: f64,
-        scenario_type: Option<&Bound<'_, PyAny>>,
-    ) -> PyResult<Self> {
+    fn new(target: String, shock: f64, scenario_type: Option<&Bound<'_, PyAny>>) -> PyResult<Self> {
         let scenario_type = scenario_type
             .map(crate::conv::extract_scenario_type)
             .transpose()?

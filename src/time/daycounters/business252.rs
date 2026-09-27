@@ -7,10 +7,10 @@ use crate::time::{
 };
 
 /// # `Business252`
-/// 
+///
 /// Business/252 day count convention.
 /// Calculates the number of business days between two dates.
-/// 
+///
 /// ## Example
 /// ```
 /// use quantsupport::time::date::Date;

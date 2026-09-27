@@ -41,7 +41,7 @@ impl<T: Scalar> Complex<T> {
 
     /// The complex zero.
     #[inline]
-    #[must_use] 
+    #[must_use]
     pub fn zero() -> Self {
         Self {
             re: T::zero(),

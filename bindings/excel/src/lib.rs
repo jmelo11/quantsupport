@@ -4,6 +4,8 @@
 //! portable so its behavior can be unit-tested on any development host.
 
 #[cfg_attr(not(windows), allow(dead_code))]
+mod function_help;
+#[cfg_attr(not(windows), allow(dead_code))]
 mod registry;
 
 #[cfg(windows)]
@@ -31,6 +33,13 @@ pub extern "system" fn xlAutoOpen() -> i32 {
     functions.sort_by(|left, right| left.name.cmp(right.name));
 
     for function in functions {
+        let generated_argument_help =
+            function_help::argument_help(function.name, function.arg_names);
+        let argument_help = if function.arg_help.is_empty() {
+            generated_argument_help.as_slice()
+        } else {
+            function.arg_help
+        };
         for excel_name in std::iter::once(function.name).chain(function.aliases.iter().copied()) {
             if registry
                 .add(
@@ -40,7 +49,7 @@ pub extern "system" fn xlAutoOpen() -> i32 {
                     function.arg_names,
                     function.category,
                     function.help,
-                    function.arg_help,
+                    argument_help,
                 )
                 .is_err()
             {

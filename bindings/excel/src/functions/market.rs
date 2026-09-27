@@ -6,12 +6,15 @@ use quantsupport::prelude::{
     Scenario, SimulationConfiguration, VolatilityCubeConfiguration, VolatilitySurfaceConfiguration,
 };
 use serde::de::DeserializeOwned;
-use xll_rs::types::XllError;
+use xll_rs::types::{XllError, XLOPER12};
 use xllgen::xll_bindgen;
 
 use crate::registry::{with_registry, with_registry_mut, QsObject};
 
-use super::helpers::{not_found, parse_currency, parse_date, parse_index, value_error};
+use super::helpers::{
+    bool_value, input_key, not_found, parse_currency, parse_date, parse_day_counter, parse_index,
+    parse_interpolator, string_values, value_error,
+};
 
 fn parse_json<T: DeserializeOwned>(json: &str, what: &str) -> Result<T, XllError> {
     serde_json::from_str(json).map_err(|error| value_error(format!("invalid {what}: {error}")))
@@ -40,6 +43,10 @@ fn parse_json_list<T: DeserializeOwned>(json: &str, what: &str) -> Result<Vec<T>
         .map_err(|error| value_error(format!("invalid {what}: {error}")))
 }
 
+fn cached_handle(name: &str, kind: &str, key: &str) -> Result<Option<String>, XllError> {
+    with_registry(|registry| registry.handle_if_unchanged(name, kind, key)).map_err(value_error)
+}
+
 #[xll_bindgen(
     name = "QS.QUOTES.CREATE",
     volatile,
@@ -47,9 +54,15 @@ fn parse_json_list<T: DeserializeOwned>(json: &str, what: &str) -> Result<Vec<T>
     help = "Creates a QuantSupport QuoteStore"
 )]
 pub fn qs_quotes_create(name: &str, reference_date: &str) -> Result<String, XllError> {
+    let key = input_key(&reference_date)?;
+    if let Some(handle) = cached_handle(name, "QuoteStore", &key)? {
+        return Ok(handle);
+    }
     let store = QuoteStore::new(parse_date(reference_date)?);
-    with_registry_mut(|registry| registry.upsert(name, QsObject::QuoteStore(Box::new(store))))
-        .map_err(value_error)
+    with_registry_mut(|registry| {
+        registry.upsert_if_changed(name, QsObject::QuoteStore(Box::new(store)), key)
+    })
+    .map_err(value_error)
 }
 
 #[xll_bindgen(
@@ -59,16 +72,21 @@ pub fn qs_quotes_create(name: &str, reference_date: &str) -> Result<String, XllE
     help = "Creates a QuoteStore from the library's QuoteStoreRecords JSON shape"
 )]
 pub fn qs_quotes_from_json(name: &str, json: &str) -> Result<String, XllError> {
+    if let Some(handle) = cached_handle(name, "QuoteStore", json)? {
+        return Ok(handle);
+    }
     let records: QuoteStoreRecords = parse_json(json, "quote store")?;
     let store = QuoteStore::try_from(records).map_err(value_error)?;
-    with_registry_mut(|registry| registry.upsert(name, QsObject::QuoteStore(Box::new(store))))
-        .map_err(value_error)
+    with_registry_mut(|registry| {
+        registry.upsert_if_changed(name, QsObject::QuoteStore(Box::new(store)), json)
+    })
+    .map_err(value_error)
 }
 
 #[xll_bindgen(
     name = "QS.QUOTES.SET",
     category = "QuantSupport - Market Data",
-    help = "Adds or replaces a Quote in a QuoteStore and returns the next revision"
+    help = "Adds or replaces a Quote; unchanged inputs reuse the current QuoteStore revision"
 )]
 pub fn qs_quotes_set(
     store: &str,
@@ -79,10 +97,16 @@ pub fn qs_quotes_set(
 ) -> Result<String, XllError> {
     let details = QuoteDetails::from_str(identifier).map_err(value_error)?;
     let quote = Quote::new(details, QuoteLevels::new(mid, bid, ask));
+    let operation_id = format!("quote:{}", identifier.trim());
+    let value_key = input_key(&(
+        mid.map(f64::to_bits),
+        bid.map(f64::to_bits),
+        ask.map(f64::to_bits),
+    ))?;
     with_registry_mut(|registry| {
-        registry
-            .update_quote_store(store, |target| target.add_quote(quote))
-            .map(|(_, handle)| handle)
+        registry.update_quote_store_if_changed(store, &operation_id, &value_key, |target| {
+            target.add_quote(quote)
+        })
     })
     .map_err(value_error)
 }
@@ -117,8 +141,13 @@ pub fn qs_quotes_get(store: &str, identifier: &str, level: &str) -> Result<f64, 
     help = "Creates an empty QuantSupport FixingStore"
 )]
 pub fn qs_fixings_create(name: &str) -> Result<String, XllError> {
-    with_registry_mut(|registry| registry.upsert(name, QsObject::FixingStore(Box::default())))
-        .map_err(value_error)
+    if let Some(handle) = cached_handle(name, "FixingStore", "empty")? {
+        return Ok(handle);
+    }
+    with_registry_mut(|registry| {
+        registry.upsert_if_changed(name, QsObject::FixingStore(Box::default()), "empty")
+    })
+    .map_err(value_error)
 }
 
 #[xll_bindgen(
@@ -128,15 +157,20 @@ pub fn qs_fixings_create(name: &str) -> Result<String, XllError> {
     help = "Creates a FixingStore from its native JSON representation"
 )]
 pub fn qs_fixings_from_json(name: &str, json: &str) -> Result<String, XllError> {
+    if let Some(handle) = cached_handle(name, "FixingStore", json)? {
+        return Ok(handle);
+    }
     let store: FixingStore = parse_json(json, "fixing store")?;
-    with_registry_mut(|registry| registry.upsert(name, QsObject::FixingStore(Box::new(store))))
-        .map_err(value_error)
+    with_registry_mut(|registry| {
+        registry.upsert_if_changed(name, QsObject::FixingStore(Box::new(store)), json)
+    })
+    .map_err(value_error)
 }
 
 #[xll_bindgen(
     name = "QS.FIXINGS.SET",
     category = "QuantSupport - Market Data",
-    help = "Adds or replaces a historical fixing and returns the next revision"
+    help = "Adds or replaces a historical fixing; unchanged inputs reuse the current revision"
 )]
 pub fn qs_fixings_set(
     store: &str,
@@ -146,10 +180,12 @@ pub fn qs_fixings_set(
 ) -> Result<String, XllError> {
     let index = parse_index(market_index)?;
     let date = parse_date(date)?;
+    let operation_id = format!("fixing:{market_index}:{date}");
+    let value_key = input_key(&value.to_bits())?;
     with_registry_mut(|registry| {
-        registry
-            .update_fixing_store(store, |target| target.add_fixing(&index, date, value))
-            .map(|(_, handle)| handle)
+        registry.update_fixing_store_if_changed(store, &operation_id, &value_key, |target| {
+            target.add_fixing(&index, date, value)
+        })
     })
     .map_err(value_error)
 }
@@ -180,8 +216,13 @@ pub fn qs_fixings_get(store: &str, market_index: &str, date: &str) -> Result<f64
     help = "Creates an empty QuantSupport FxStore"
 )]
 pub fn qs_fx_create(name: &str) -> Result<String, XllError> {
-    with_registry_mut(|registry| registry.upsert(name, QsObject::FxStore(Box::new(FxStore::new()))))
-        .map_err(value_error)
+    if let Some(handle) = cached_handle(name, "FxStore", "empty")? {
+        return Ok(handle);
+    }
+    with_registry_mut(|registry| {
+        registry.upsert_if_changed(name, QsObject::FxStore(Box::new(FxStore::new())), "empty")
+    })
+    .map_err(value_error)
 }
 
 #[xll_bindgen(
@@ -191,11 +232,15 @@ pub fn qs_fx_create(name: &str) -> Result<String, XllError> {
     help = "Creates an FxStore from an array of native FxRateRecord objects"
 )]
 pub fn qs_fx_from_json(name: &str, json: &str) -> Result<String, XllError> {
+    if let Some(handle) = cached_handle(name, "FxStore", json)? {
+        return Ok(handle);
+    }
     let records: Vec<FxRateRecord> = parse_json_list(json, "FX rate records")?;
     with_registry_mut(|registry| {
-        registry.upsert(
+        registry.upsert_if_changed(
             name,
             QsObject::FxStore(Box::new(FxStore::from_records(records))),
+            json,
         )
     })
     .map_err(value_error)
@@ -205,7 +250,7 @@ pub fn qs_fx_from_json(name: &str, json: &str) -> Result<String, XllError> {
     name = "QS.FX.SET",
     aliases = ["QS.ADD.FX.QUOTE"],
     category = "QuantSupport - Market Data",
-    help = "Adds or replaces an FX rate and returns the FxStore's next revision"
+    help = "Adds or replaces an FX rate; unchanged inputs reuse the current FxStore revision"
 )]
 pub fn qs_fx_set(
     store: &str,
@@ -215,12 +260,12 @@ pub fn qs_fx_set(
 ) -> Result<String, XllError> {
     let base = parse_currency(base_currency)?;
     let quote = parse_currency(quote_currency)?;
+    let operation_id = format!("fx:{base}:{quote}");
+    let value_key = input_key(&rate.to_bits())?;
     with_registry_mut(|registry| {
-        registry
-            .update_fx_store(store, |target| {
-                target.add_fx_rate(base, quote, DualFwd::from(rate));
-            })
-            .map(|(_, handle)| handle)
+        registry.update_fx_store_if_changed(store, &operation_id, &value_key, |target| {
+            target.add_fx_rate(base, quote, DualFwd::from(rate));
+        })
     })
     .map_err(value_error)
 }
@@ -252,11 +297,16 @@ macro_rules! json_config_function {
                                                     volatile,
                                                     category = "QuantSupport - Configuration",
                                                     help = $help
-                                                )]
+        )]
         pub fn $fn_name(name: &str, json: &str) -> Result<String, XllError> {
+            if let Some(handle) = cached_handle(name, stringify!($variant), json)? {
+                return Ok(handle);
+            }
             let values: Vec<$type> = parse_json_list(json, $what)?;
-            with_registry_mut(|registry| registry.upsert(name, QsObject::$variant(values)))
-                .map_err(value_error)
+            with_registry_mut(|registry| {
+                registry.upsert_if_changed(name, QsObject::$variant(values), json)
+            })
+            .map_err(value_error)
         }
     };
 }
@@ -311,6 +361,75 @@ json_config_function!(
 );
 
 #[xll_bindgen(
+    name = "QS.CURVE.CONFIGS.CREATE",
+    volatile,
+    category = "QuantSupport - Configuration",
+    help = "Creates an empty curve-configuration collection for worksheet-built curves"
+)]
+pub fn qs_curve_configs_create(name: &str) -> Result<String, XllError> {
+    if let Some(handle) = cached_handle(name, "CurveConfigurations", "empty")? {
+        return Ok(handle);
+    }
+    with_registry_mut(|registry| {
+        registry.upsert_if_changed(name, QsObject::CurveConfigurations(Vec::new()), "empty")
+    })
+    .map_err(value_error)
+}
+
+#[xll_bindgen(
+    name = "QS.CURVE.CONFIGS.ADD",
+    category = "QuantSupport - Configuration",
+    help = "Adds or replaces a bootstrapped curve from an Excel range; unchanged inputs reuse the current handle"
+)]
+pub fn qs_curve_configs_add(
+    configurations: &str,
+    market_index: &str,
+    day_counter: &str,
+    interpolator: &str,
+    enable_extrapolation: *const XLOPER12,
+    quote_identifiers: *const XLOPER12,
+) -> Result<String, XllError> {
+    let market_index = parse_index(market_index)?;
+    let day_counter = parse_day_counter(day_counter)?;
+    let interpolator = parse_interpolator(interpolator)?;
+    let enable_extrapolation = bool_value(enable_extrapolation, "enable_extrapolation")?;
+    let quote_identifiers = string_values(quote_identifiers, "quote_identifiers")?;
+    let operation_id = format!("curve:{market_index}");
+    let value_key = input_key(&(
+        &market_index,
+        day_counter,
+        interpolator,
+        enable_extrapolation,
+        &quote_identifiers,
+    ))?;
+    let configuration = CurveConfiguration::new(
+        market_index,
+        day_counter,
+        interpolator,
+        enable_extrapolation,
+        quote_identifiers,
+    );
+    with_registry_mut(|registry| {
+        registry.update_curve_configurations_if_changed(
+            configurations,
+            &operation_id,
+            &value_key,
+            |target| {
+                if let Some(position) = target
+                    .iter()
+                    .position(|existing| existing.market_index() == configuration.market_index())
+                {
+                    target[position] = configuration;
+                } else {
+                    target.push(configuration);
+                }
+            },
+        )
+    })
+    .map_err(value_error)
+}
+
+#[xll_bindgen(
     name = "QS.CONTEXT.CREATE",
     volatile,
     category = "QuantSupport - Context",
@@ -332,6 +451,23 @@ pub fn qs_context_create(
     base_currency: &str,
     base_index: &str,
 ) -> Result<String, XllError> {
+    let definition_key = input_key(&(
+        quotes,
+        curve_configurations.as_deref(),
+        credit_curve_configurations.as_deref(),
+        fixings.as_deref(),
+        fx.as_deref(),
+        volatility_surface_configurations.as_deref(),
+        volatility_cube_configurations.as_deref(),
+        simulation_configurations.as_deref(),
+        constructed_elements.as_deref(),
+        scenarios.as_deref(),
+        base_currency,
+        base_index,
+    ))?;
+    if let Some(handle) = cached_handle(name, "PricingContext", &definition_key)? {
+        return Ok(handle);
+    }
     let components = with_registry(|registry| {
         Ok::<_, crate::registry::RegistryError>((
             registry.quote_store(quotes)?.clone(),
@@ -419,8 +555,14 @@ pub fn qs_context_create(
     }
     context.initialize().map_err(value_error)?;
 
-    with_registry_mut(|registry| registry.upsert(name, QsObject::PricingContext(Box::new(context))))
-        .map_err(value_error)
+    with_registry_mut(|registry| {
+        registry.upsert_if_changed(
+            name,
+            QsObject::PricingContext(Box::new(context)),
+            definition_key,
+        )
+    })
+    .map_err(value_error)
 }
 
 #[xll_bindgen(

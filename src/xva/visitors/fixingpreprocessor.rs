@@ -71,7 +71,9 @@ impl ClaimPreprocessor for FixingPreprocessor {
             return;
         }
 
-        let Some(fixing_date) = claim.fixing_date() else { return };
+        let Some(fixing_date) = claim.fixing_date() else {
+            return;
+        };
         if fixing_date >= self.ref_date {
             return;
         }

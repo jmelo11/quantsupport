@@ -110,7 +110,12 @@ impl HandleValue<CapFloorTrade, HullWhiteCapState> for ClosedFormHullWhiteCapPri
             let fwd: DualFwd = state
                 .get_discount_curve_element(&fwd_index)?
                 .curve()
-                .forward_rate(start_date, end_date, rate_def.compounding(), rate_def.frequency())?;
+                .forward_rate(
+                    start_date,
+                    end_date,
+                    rate_def.compounding(),
+                    rate_def.frequency(),
+                )?;
 
             let strike = match c.strike() {
                 Strike::Absolute(k) => k,
@@ -130,10 +135,10 @@ impl HandleValue<CapFloorTrade, HullWhiteCapState> for ClosedFormHullWhiteCapPri
                 .curve()
                 .discount_factor(payment_date)?;
 
-            let d1: DualFwd =
-                (((df_s / (DualFwd::new(x) * df_t)).ln() + DualFwd::new(0.5 * sigma_p * sigma_p))
-                    / DualFwd::new(sigma_p))
-                .into();
+            let d1: DualFwd = (((df_s / (DualFwd::new(x) * df_t)).ln()
+                + DualFwd::new(0.5 * sigma_p * sigma_p))
+                / DualFwd::new(sigma_p))
+            .into();
             let d2: DualFwd = (d1 - DualFwd::new(sigma_p)).into();
 
             let caplet_value: DualFwd = match c.payoff_type() {
@@ -142,7 +147,7 @@ impl HandleValue<CapFloorTrade, HullWhiteCapState> for ClosedFormHullWhiteCapPri
                     let neg_d1: DualFwd = (DualFwd::new(0.0) - d1).into();
                     let put: DualFwd = (DualFwd::new(x) * df_t * norm_cdf(neg_d2)
                         - df_s * norm_cdf(neg_d1))
-                        .into();
+                    .into();
                     (DualFwd::new(tau.mul_add(strike, 1.0)) * put).into()
                 }
                 CapletFloorletType::Floorlet => {
@@ -309,11 +314,7 @@ impl Pricer for ClosedFormHullWhiteCapPricer {
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        cell::RefCell,
-        collections::HashMap,
-        rc::Rc,
-    };
+    use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
     use crate::{
         ad::dual::DualFwd,
@@ -377,10 +378,7 @@ mod tests {
         let mut constructed_elements = ConstructedElementStore::default();
         constructed_elements.discount_curves_mut().insert(
             market_index.clone(),
-            DiscountCurveElement::new(
-                market_index.clone(),
-                Rc::new(RefCell::new(discount_curve)),
-            ),
+            DiscountCurveElement::new(market_index.clone(), Rc::new(RefCell::new(discount_curve))),
         );
 
         MarketData::new(HashMap::new(), constructed_elements)
@@ -595,11 +593,8 @@ mod tests {
         };
 
         let pricer = ClosedFormHullWhiteCapPricer::new(alpha, sigma);
-        let results = pricer.evaluate(
-            &trade,
-            &[Request::Value, Request::Sensitivities],
-            &provider,
-        )?;
+        let results =
+            pricer.evaluate(&trade, &[Request::Value, Request::Sensitivities], &provider)?;
 
         let price = results.price().unwrap();
         assert!(price > 0.0, "cap price should be positive");

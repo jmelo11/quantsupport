@@ -163,7 +163,8 @@ impl Chile {
                     || Self::is_reformation_day(day, month, year)
                     || Self::is_all_saints_day(day, month)
                     || Self::is_immaculate_conception(day, month)
-                    || Self::is_christmas_day(day, month) || Self::is_bank_holiday(day, month))
+                    || Self::is_christmas_day(day, month)
+                    || Self::is_bank_holiday(day, month))
             }
         }
     }

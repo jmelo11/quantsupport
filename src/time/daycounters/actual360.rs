@@ -5,7 +5,7 @@ use crate::time::date::Date;
 ///
 ///
 /// Day count convention.
-/// 
+///
 /// ## Example
 /// ```
 /// use quantsupport::time::date::Date;

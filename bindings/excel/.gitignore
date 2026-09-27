@@ -1,2 +1,3 @@
 /dist/
 !scripts/build.ps1
+!examples/create_swap_example.ps1

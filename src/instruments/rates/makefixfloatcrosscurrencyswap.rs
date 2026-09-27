@@ -246,7 +246,8 @@ where
         let domestic_freq = self.domestic_leg_frequency.unwrap_or(Frequency::Semiannual);
         let foreign_freq = self.foreign_leg_frequency.unwrap_or(Frequency::Quarterly);
 
-        let interest_rate = InterestRate::from_rate_definition(T::scalar(fixed_rate), rate_definition);
+        let interest_rate =
+            InterestRate::from_rate_definition(T::scalar(fixed_rate), rate_definition);
 
         // Domestic (fixed) leg
         let domestic_leg = MakeLeg::<T>::default()

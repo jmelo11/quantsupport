@@ -105,8 +105,7 @@ pub trait PricerState {
 
     /// Retrieves the exchange-rate store from the market data, if available.
     fn get_fx_store(&self) -> Option<&FxStore> {
-        self.get_market_data_reponse()
-            .and_then(|md| md.fx_store())
+        self.get_market_data_reponse().and_then(|md| md.fx_store())
     }
 
     /// Retrieves the fixing for a given market index and date, if available.
@@ -156,11 +155,7 @@ pub trait PricerState {
             .ok_or_else(|| QSError::NotFoundErr("MarketDataResponse not available.".into()))?
             .constructed_elements()
             .fx_volatility_surface(pair)
-            .ok_or_else(|| {
-                QSError::NotFoundErr(format!(
-                    "Volatility surface for FX pair {pair}"
-                ))
-            })
+            .ok_or_else(|| QSError::NotFoundErr(format!("Volatility surface for FX pair {pair}")))
     }
 
     /// Retrieves the volatility surface element associated with the given market index, if available.

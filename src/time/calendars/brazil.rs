@@ -135,7 +135,8 @@ impl Brazil {
                     || Self::is_republic_day(day, month)
                     || Self::is_christmas(day, month)
                     || Self::is_passion_of_christ(day, month, year)
-                    || Self::is_carnival(day, month, year) || Self::is_corpus_christi(day, month, year))
+                    || Self::is_carnival(day, month, year)
+                    || Self::is_corpus_christi(day, month, year))
             }
             Market::Exchange => {
                 !(Self::is_new_years_day(day, month)
@@ -152,7 +153,8 @@ impl Brazil {
                     || Self::is_christmas(day, month)
                     || Self::is_passion_of_christ(day, month, year)
                     || Self::is_carnival(day, month, year)
-                    || Self::is_corpus_christi(day, month, year) || Self::is_last_business_day_of_year(day, month, year))
+                    || Self::is_corpus_christi(day, month, year)
+                    || Self::is_last_business_day_of_year(day, month, year))
             }
         }
     }

@@ -11,13 +11,17 @@ use quantsupport::prelude::{
 use xll_rs::types::XllError;
 use xllgen::xll_bindgen;
 
-use crate::registry::{with_registry_mut, QsObject};
+use crate::registry::{with_registry, with_registry_mut, QsObject};
 
 use super::helpers::{
-    parse_cap_floor_type, parse_caplet_floorlet_type, parse_compounding, parse_currency,
+    input_key, parse_cap_floor_type, parse_caplet_floorlet_type, parse_compounding, parse_currency,
     parse_date, parse_day_counter, parse_frequency, parse_index, parse_option_type, parse_side,
     value_error,
 };
+
+fn cached_handle(name: &str, kind: &str, key: &str) -> Result<Option<String>, XllError> {
+    with_registry(|registry| registry.handle_if_unchanged(name, kind, key)).map_err(value_error)
+}
 
 #[xll_bindgen(
     name = "QS.TRADE.FX.FORWARD",
@@ -36,6 +40,18 @@ pub fn qs_trade_fx_forward(
     notional: f64,
     side: &str,
 ) -> Result<String, XllError> {
+    let definition_key = input_key(&(
+        trade_date,
+        delivery_date,
+        base_currency,
+        quote_currency,
+        forward_rate.to_bits(),
+        notional.to_bits(),
+        side,
+    ))?;
+    if let Some(handle) = cached_handle(name, "FxForwardTrade", &definition_key)? {
+        return Ok(handle);
+    }
     let side = parse_side(side)?;
     let instrument = MakeFxForward::default()
         .with_identifier(name.to_string())
@@ -53,8 +69,14 @@ pub fn qs_trade_fx_forward(
         notional,
         side,
     );
-    with_registry_mut(|registry| registry.upsert(name, QsObject::FxForwardTrade(Box::new(trade))))
-        .map_err(value_error)
+    with_registry_mut(|registry| {
+        registry.upsert_if_changed(
+            name,
+            QsObject::FxForwardTrade(Box::new(trade)),
+            definition_key,
+        )
+    })
+    .map_err(value_error)
 }
 
 #[xll_bindgen(
@@ -81,6 +103,25 @@ pub fn qs_trade_swap(
     fixed_leg_frequency: &str,
     floating_leg_frequency: &str,
 ) -> Result<String, XllError> {
+    let definition_key = input_key(&(
+        trade_date,
+        start_date,
+        maturity_date,
+        currency,
+        market_index,
+        notional.to_bits(),
+        fixed_rate.to_bits(),
+        spread.to_bits(),
+        side,
+        day_counter,
+        compounding,
+        rate_frequency,
+        fixed_leg_frequency,
+        floating_leg_frequency,
+    ))?;
+    if let Some(handle) = cached_handle(name, "SwapTrade", &definition_key)? {
+        return Ok(handle);
+    }
     let side = parse_side(side)?;
     let instrument = MakeSwap::<DualFwd>::default()
         .with_identifier(name.to_string())
@@ -102,8 +143,10 @@ pub fn qs_trade_swap(
         .build()
         .map_err(value_error)?;
     let trade = SwapTrade::new(instrument, parse_date(trade_date)?, notional, side);
-    with_registry_mut(|registry| registry.upsert(name, QsObject::SwapTrade(Box::new(trade))))
-        .map_err(value_error)
+    with_registry_mut(|registry| {
+        registry.upsert_if_changed(name, QsObject::SwapTrade(Box::new(trade)), definition_key)
+    })
+    .map_err(value_error)
 }
 
 #[xll_bindgen(
@@ -128,6 +171,23 @@ pub fn qs_trade_basis_swap(
     receive_frequency: &str,
     side: &str,
 ) -> Result<String, XllError> {
+    let definition_key = input_key(&(
+        trade_date,
+        start_date,
+        maturity_date,
+        currency,
+        pay_index,
+        receive_index,
+        notional.to_bits(),
+        pay_spread.to_bits(),
+        receive_spread.to_bits(),
+        pay_frequency,
+        receive_frequency,
+        side,
+    ))?;
+    if let Some(handle) = cached_handle(name, "BasisSwapTrade", &definition_key)? {
+        return Ok(handle);
+    }
     let side = parse_side(side)?;
     let instrument = MakeBasisSwap::<DualFwd>::default()
         .with_identifier(name.to_string())
@@ -145,8 +205,14 @@ pub fn qs_trade_basis_swap(
         .build()
         .map_err(value_error)?;
     let trade = BasisSwapTrade::new(instrument, parse_date(trade_date)?, notional, side);
-    with_registry_mut(|registry| registry.upsert(name, QsObject::BasisSwapTrade(Box::new(trade))))
-        .map_err(value_error)
+    with_registry_mut(|registry| {
+        registry.upsert_if_changed(
+            name,
+            QsObject::BasisSwapTrade(Box::new(trade)),
+            definition_key,
+        )
+    })
+    .map_err(value_error)
 }
 
 #[xll_bindgen(
@@ -173,6 +239,26 @@ pub fn qs_trade_xccy_float_float(
     foreign_frequency: &str,
     side: &str,
 ) -> Result<String, XllError> {
+    let definition_key = input_key(&(
+        trade_date,
+        start_date,
+        maturity_date,
+        domestic_currency,
+        foreign_currency,
+        domestic_index,
+        foreign_index,
+        domestic_notional.to_bits(),
+        foreign_notional.to_bits(),
+        domestic_spread.to_bits(),
+        foreign_spread.to_bits(),
+        domestic_frequency,
+        foreign_frequency,
+        side,
+    ))?;
+    if let Some(handle) = cached_handle(name, "FloatFloatCrossCurrencySwapTrade", &definition_key)?
+    {
+        return Ok(handle);
+    }
     let side = parse_side(side)?;
     let instrument = MakeFloatFloatCrossCurrencySwap::<DualFwd>::default()
         .with_identifier(name.to_string())
@@ -199,9 +285,10 @@ pub fn qs_trade_xccy_float_float(
         side,
     );
     with_registry_mut(|registry| {
-        registry.upsert(
+        registry.upsert_if_changed(
             name,
             QsObject::FloatFloatCrossCurrencySwapTrade(Box::new(trade)),
+            definition_key,
         )
     })
     .map_err(value_error)
@@ -233,6 +320,27 @@ pub fn qs_trade_xccy_fix_float(
     foreign_frequency: &str,
     side: &str,
 ) -> Result<String, XllError> {
+    let definition_key = input_key(&(
+        trade_date,
+        start_date,
+        maturity_date,
+        domestic_currency,
+        foreign_currency,
+        foreign_index,
+        domestic_notional.to_bits(),
+        foreign_notional.to_bits(),
+        fixed_rate.to_bits(),
+        foreign_spread.to_bits(),
+        day_counter,
+        compounding,
+        rate_frequency,
+        domestic_frequency,
+        foreign_frequency,
+        side,
+    ))?;
+    if let Some(handle) = cached_handle(name, "FixFloatCrossCurrencySwapTrade", &definition_key)? {
+        return Ok(handle);
+    }
     let side = parse_side(side)?;
     let instrument = MakeFixFloatCrossCurrencySwap::<DualFwd>::default()
         .with_identifier(name.to_string())
@@ -263,9 +371,10 @@ pub fn qs_trade_xccy_fix_float(
         side,
     );
     with_registry_mut(|registry| {
-        registry.upsert(
+        registry.upsert_if_changed(
             name,
             QsObject::FixFloatCrossCurrencySwapTrade(Box::new(trade)),
+            definition_key,
         )
     })
     .map_err(value_error)
@@ -293,6 +402,23 @@ pub fn qs_trade_fixed_bond(
     rate_frequency: &str,
     payment_frequency: &str,
 ) -> Result<String, XllError> {
+    let definition_key = input_key(&(
+        trade_date,
+        start_date,
+        maturity_date,
+        currency,
+        discount_index,
+        notional.to_bits(),
+        coupon_rate.to_bits(),
+        side,
+        day_counter,
+        compounding,
+        rate_frequency,
+        payment_frequency,
+    ))?;
+    if let Some(handle) = cached_handle(name, "FixedRateBondTrade", &definition_key)? {
+        return Ok(handle);
+    }
     let side = parse_side(side)?;
     let instrument = MakeFixedRateBond::<DualFwd>::default()
         .with_identifier(name.to_string())
@@ -314,7 +440,11 @@ pub fn qs_trade_fixed_bond(
         .map_err(value_error)?;
     let trade = FixedRateBondTrade::new(instrument, parse_date(trade_date)?, notional, side);
     with_registry_mut(|registry| {
-        registry.upsert(name, QsObject::FixedRateBondTrade(Box::new(trade)))
+        registry.upsert_if_changed(
+            name,
+            QsObject::FixedRateBondTrade(Box::new(trade)),
+            definition_key,
+        )
     })
     .map_err(value_error)
 }
@@ -340,6 +470,22 @@ pub fn qs_trade_fixed_deposit(
     compounding: &str,
     rate_frequency: &str,
 ) -> Result<String, XllError> {
+    let definition_key = input_key(&(
+        trade_date,
+        start_date,
+        maturity_date,
+        currency,
+        discount_index,
+        notional.to_bits(),
+        rate.to_bits(),
+        side,
+        day_counter,
+        compounding,
+        rate_frequency,
+    ))?;
+    if let Some(handle) = cached_handle(name, "FixedRateDepositTrade", &definition_key)? {
+        return Ok(handle);
+    }
     let side = parse_side(side)?;
     let instrument = MakeFixedRateDeposit::<DualFwd>::default()
         .with_identifier(name.to_string())
@@ -359,7 +505,11 @@ pub fn qs_trade_fixed_deposit(
         .map_err(value_error)?;
     let trade = FixedRateDepositTrade::new(instrument, parse_date(trade_date)?, notional, side);
     with_registry_mut(|registry| {
-        registry.upsert(name, QsObject::FixedRateDepositTrade(Box::new(trade)))
+        registry.upsert_if_changed(
+            name,
+            QsObject::FixedRateDepositTrade(Box::new(trade)),
+            definition_key,
+        )
     })
     .map_err(value_error)
 }
@@ -383,6 +533,20 @@ pub fn qs_trade_floating_note(
     payment_frequency: &str,
     side: &str,
 ) -> Result<String, XllError> {
+    let definition_key = input_key(&(
+        trade_date,
+        start_date,
+        maturity_date,
+        currency,
+        forward_index,
+        notional.to_bits(),
+        spread.to_bits(),
+        payment_frequency,
+        side,
+    ))?;
+    if let Some(handle) = cached_handle(name, "FloatingRateNoteTrade", &definition_key)? {
+        return Ok(handle);
+    }
     let side = parse_side(side)?;
     let instrument = MakeFloatingRateNote::<DualFwd>::default()
         .with_identifier(name.to_string())
@@ -399,7 +563,11 @@ pub fn qs_trade_floating_note(
         .map_err(value_error)?;
     let trade = FloatingRateNoteTrade::new(instrument, parse_date(trade_date)?, notional, side);
     with_registry_mut(|registry| {
-        registry.upsert(name, QsObject::FloatingRateNoteTrade(Box::new(trade)))
+        registry.upsert_if_changed(
+            name,
+            QsObject::FloatingRateNoteTrade(Box::new(trade)),
+            definition_key,
+        )
     })
     .map_err(value_error)
 }
@@ -423,6 +591,20 @@ pub fn qs_trade_fx_option(
     side: &str,
     day_counter: &str,
 ) -> Result<String, XllError> {
+    let definition_key = input_key(&(
+        trade_date,
+        expiry_date,
+        base_currency,
+        quote_currency,
+        strike.to_bits(),
+        option_type,
+        notional.to_bits(),
+        side,
+        day_counter,
+    ))?;
+    if let Some(handle) = cached_handle(name, "FxEuropeanOptionTrade", &definition_key)? {
+        return Ok(handle);
+    }
     let base = parse_currency(base_currency)?;
     let quote = parse_currency(quote_currency)?;
     let side = parse_side(side)?;
@@ -439,7 +621,11 @@ pub fn qs_trade_fx_option(
         .map_err(value_error)?;
     let trade = FxEuropeanOptionTrade::new(instrument, parse_date(trade_date)?, notional, side);
     with_registry_mut(|registry| {
-        registry.upsert(name, QsObject::FxEuropeanOptionTrade(Box::new(trade)))
+        registry.upsert_if_changed(
+            name,
+            QsObject::FxEuropeanOptionTrade(Box::new(trade)),
+            definition_key,
+        )
     })
     .map_err(value_error)
 }
@@ -463,6 +649,20 @@ pub fn qs_trade_equity_option(
     side: &str,
     day_counter: &str,
 ) -> Result<String, XllError> {
+    let definition_key = input_key(&(
+        trade_date,
+        expiry_date,
+        market_index,
+        currency,
+        strike.to_bits(),
+        option_type,
+        notional.to_bits(),
+        side,
+        day_counter,
+    ))?;
+    if let Some(handle) = cached_handle(name, "EquityEuropeanOptionTrade", &definition_key)? {
+        return Ok(handle);
+    }
     let side = parse_side(side)?;
     let instrument = MakeEquityEuropeanOption::default()
         .with_identifier(name.to_string())
@@ -476,7 +676,11 @@ pub fn qs_trade_equity_option(
         .map_err(value_error)?;
     let trade = EquityEuropeanOptionTrade::new(instrument, notional, parse_date(trade_date)?, side);
     with_registry_mut(|registry| {
-        registry.upsert(name, QsObject::EquityEuropeanOptionTrade(Box::new(trade)))
+        registry.upsert_if_changed(
+            name,
+            QsObject::EquityEuropeanOptionTrade(Box::new(trade)),
+            definition_key,
+        )
     })
     .map_err(value_error)
 }
@@ -503,6 +707,23 @@ pub fn qs_trade_cds(
     notional: f64,
     side: &str,
 ) -> Result<String, XllError> {
+    let definition_key = input_key(&(
+        trade_date,
+        start_date,
+        maturity_date,
+        credit_index,
+        discount_index,
+        currency,
+        spread.to_bits(),
+        recovery.to_bits(),
+        premium_frequency,
+        day_counter,
+        notional.to_bits(),
+        side,
+    ))?;
+    if let Some(handle) = cached_handle(name, "CdsTrade", &definition_key)? {
+        return Ok(handle);
+    }
     let side = parse_side(side)?;
     let instrument = CreditDefaultSwap::new(
         name.to_string(),
@@ -518,8 +739,10 @@ pub fn qs_trade_cds(
     )
     .map_err(value_error)?;
     let trade = CdsTrade::new(instrument, parse_date(trade_date)?, notional, side);
-    with_registry_mut(|registry| registry.upsert(name, QsObject::CdsTrade(Box::new(trade))))
-        .map_err(value_error)
+    with_registry_mut(|registry| {
+        registry.upsert_if_changed(name, QsObject::CdsTrade(Box::new(trade)), definition_key)
+    })
+    .map_err(value_error)
 }
 
 #[xll_bindgen(
@@ -545,6 +768,24 @@ pub fn qs_trade_cap_floor(
     rate_frequency: &str,
     side: &str,
 ) -> Result<String, XllError> {
+    let definition_key = input_key(&(
+        trade_date,
+        start_date,
+        maturity_date,
+        market_index,
+        currency,
+        strike.to_bits(),
+        cap_floor_type,
+        notional.to_bits(),
+        frequency,
+        day_counter,
+        compounding,
+        rate_frequency,
+        side,
+    ))?;
+    if let Some(handle) = cached_handle(name, "CapFloorTrade", &definition_key)? {
+        return Ok(handle);
+    }
     let side = parse_side(side)?;
     let instrument = MakeCapFloor::default()
         .with_identifier(name.to_string())
@@ -565,8 +806,14 @@ pub fn qs_trade_cap_floor(
         .build()
         .map_err(value_error)?;
     let trade = CapFloorTrade::new(instrument, parse_date(trade_date)?, notional, side);
-    with_registry_mut(|registry| registry.upsert(name, QsObject::CapFloorTrade(Box::new(trade))))
-        .map_err(value_error)
+    with_registry_mut(|registry| {
+        registry.upsert_if_changed(
+            name,
+            QsObject::CapFloorTrade(Box::new(trade)),
+            definition_key,
+        )
+    })
+    .map_err(value_error)
 }
 
 #[xll_bindgen(
@@ -590,6 +837,22 @@ pub fn qs_trade_caplet_floorlet(
     notional: f64,
     side: &str,
 ) -> Result<String, XllError> {
+    let definition_key = input_key(&(
+        trade_date,
+        fixing_date,
+        accrual_start,
+        accrual_end,
+        payment_date,
+        market_index,
+        currency,
+        strike.to_bits(),
+        caplet_floorlet_type,
+        notional.to_bits(),
+        side,
+    ))?;
+    if let Some(handle) = cached_handle(name, "CapletFloorletTrade", &definition_key)? {
+        return Ok(handle);
+    }
     let side = parse_side(side)?;
     let instrument = CapletFloorlet::new(
         name.to_string(),
@@ -604,7 +867,11 @@ pub fn qs_trade_caplet_floorlet(
     );
     let trade = CapletFloorletTrade::new(instrument, parse_date(trade_date)?, notional, side);
     with_registry_mut(|registry| {
-        registry.upsert(name, QsObject::CapletFloorletTrade(Box::new(trade)))
+        registry.upsert_if_changed(
+            name,
+            QsObject::CapletFloorletTrade(Box::new(trade)),
+            definition_key,
+        )
     })
     .map_err(value_error)
 }
@@ -627,6 +894,19 @@ pub fn qs_trade_rate_future(
     number_of_contracts: f64,
     side: &str,
 ) -> Result<String, XllError> {
+    let definition_key = input_key(&(
+        trade_date,
+        start_date,
+        end_date,
+        market_index,
+        futures_price.to_bits(),
+        contract_size.to_bits(),
+        number_of_contracts.to_bits(),
+        side,
+    ))?;
+    if let Some(handle) = cached_handle(name, "RateFuturesTrade", &definition_key)? {
+        return Ok(handle);
+    }
     let side = parse_side(side)?;
     let instrument = MakeRateFutures::default()
         .with_identifier(name.to_string())
@@ -644,6 +924,12 @@ pub fn qs_trade_rate_future(
         number_of_contracts,
         side,
     );
-    with_registry_mut(|registry| registry.upsert(name, QsObject::RateFuturesTrade(Box::new(trade))))
-        .map_err(value_error)
+    with_registry_mut(|registry| {
+        registry.upsert_if_changed(
+            name,
+            QsObject::RateFuturesTrade(Box::new(trade)),
+            definition_key,
+        )
+    })
+    .map_err(value_error)
 }
