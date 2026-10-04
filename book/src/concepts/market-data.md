@@ -27,7 +27,7 @@ quotes.
 | Swaption volatility             | `Swaption_<CCY>_<Index>_<Expiry>_<SwapTenor>[_<FixedFreq>_<FloatFreq>]_<StrikeKind>_<Strike>_<VolType>` | `Swaption_CLP_ICP_1Y_1Y_Absolute_0.045_Black`, `Swaption_USD_SOFR_3M_2Y_Semiannual_Semiannual_Absolute_0.04_Black` |
 | Equity option                   | `EquityCall_<CCY>_<Index>_<Tenor>_<StrikeKind>_<Strike>`, `EquityPut_...`                               | `EquityCall_USD_AAPL_6M_Absolute_150`                                                                              |
 | FX option                       | `FxCall_<PAIR>_<Tenor>_<StrikeKind>_<Strike>`, `FxPut_...`                                              | `FxPut_USDCLP_3M_Absolute_950`                                                                                     |
-| Credit default swap             | `Cds_<Entity>_<CCY>_<Tenor>`                                                                            | `Cds_ACME_USD_5Y`                                                                                                  |
+| Credit default swap             | `Cds_<Entity>_<CCY>_<Tenor>`                                                                            | `Cds_CORPORATE-A_USD_5Y`                                                                                            |
 
 - `<Tenor>` and `<Expiry>` are `Period` strings (`1D`, `3M`, `5Y`, `1Y6M`).
 - `<StrikeKind>` is `Absolute` (strike follows as a decimal), `Atm`, or `Relative` (offset from ATM).

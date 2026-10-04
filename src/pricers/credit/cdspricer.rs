@@ -361,7 +361,7 @@ mod tests {
             Rc::new(RefCell::new(flat_exp_curve(ref_date, r)?)),
         );
         let credit = CreditCurveElement::new(
-            MarketIndex::Credit("ACME".to_string()),
+            MarketIndex::Credit("CORPORATE-A".to_string()),
             0.4,
             Rc::new(RefCell::new(flat_exp_curve(ref_date, lambda)?)),
         );
@@ -371,7 +371,7 @@ mod tests {
             .insert(MarketIndex::SOFR, discount);
         store
             .credit_curves_mut()
-            .insert(MarketIndex::Credit("ACME".to_string()), credit);
+            .insert(MarketIndex::Credit("CORPORATE-A".to_string()), credit);
         Ok(FlatProvider {
             evaluation_date: ref_date,
             market_data: MarketData::new(HashMap::new(), store),
@@ -387,8 +387,8 @@ mod tests {
         notional: f64,
     ) -> Result<CdsTrade> {
         let cds = CreditDefaultSwap::new(
-            format!("CDS_ACME_{years}Y"),
-            MarketIndex::Credit("ACME".to_string()),
+            format!("CDS_CORPORATE-A_{years}Y"),
+            MarketIndex::Credit("CORPORATE-A".to_string()),
             MarketIndex::SOFR,
             Currency::USD,
             ref_date,

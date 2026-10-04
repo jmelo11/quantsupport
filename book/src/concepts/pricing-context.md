@@ -21,6 +21,7 @@ let mut ctx = PricingContext::new()
     .with_credit_curve_configurations(credit_specs)         // Vec<CreditCurveConfiguration>
     .with_volatility_surface_configurations(surface_specs)  // Vec<VolatilitySurfaceConfiguration>
     .with_volatility_cube_configurations(cube_specs)        // Vec<VolatilityCubeConfiguration>
+    .with_pricer_configurations(pricer_specs)               // Vec<PricerConfiguration>
     .with_simulation_configurations(sim_specs)              // Vec<SimulationConfiguration>
     .with_scenarios(vec![Scenario::new("SOFR", 0.0001, ScenarioType::Absolute)]);
 
@@ -30,6 +31,13 @@ ctx.initialize()?;
 Before the final call, the context owns its inputs. Expensive market
 construction begins in `initialize()`, giving an application a clear point at
 which to validate or modify configuration.
+
+`PricerConfiguration` is keyed by `InstrumentType`, so the same mechanism can
+select an implementation for bonds, swaps, options, or future instrument
+families. A configuration carries a typed `PricerImplementation` and typed
+`ModelConfiguration` assignments by `MarketIndex`; valuation code does not
+interpret arbitrary model or pricer strings. Duplicate configurations for one
+instrument type are rejected during initialization.
 
 All `with_*` methods consume and return `Self`. `evaluation_date()` takes its value from `quote_store.reference_date()`, giving observations and constructed elements one shared date.
 
@@ -46,7 +54,7 @@ the original observations and shows where initialized elements are stored.
 | `fixing_store()`, `fx_store()`                                                                                                                                      | the stores as given                                               |
 | `scenarios()`                                                                                                                                                       | `&Vec<Scenario>`                                                  |
 | `base_currency()`, `base_index()`                                                                                                                                   | CSA currency / index                                              |
-| `curve_configurations()`, `credit_curve_configurations()`, `volatility_surface_configurations()`, `volatility_cube_configurations()`, `simulation_configurations()` | the configuration vectors                                         |
+| `curve_configurations()`, `credit_curve_configurations()`, `volatility_surface_configurations()`, `volatility_cube_configurations()`, `pricer_configurations()`, `simulation_configurations()` | the configuration vectors                                         |
 | `constructed_elements()` / `constructed_elements_mut()`                                                                                                             | the `ConstructedElementStore` populated by `initialize()`         |
 | `evaluation_date()`                                                                                                                                                 | reference date of the quote store                                 |
 
@@ -64,14 +72,15 @@ explains the work represented by that call.
 pub fn initialize(&mut self) -> Result<()>
 ```
 
-1. **Scenarios.** If `scenarios` is non-empty, clone the quote store and apply each `Scenario` in order. A scenario that matches no quote is an error. Everything below reads the shocked copy.
-2. **Discount curves.** `MultiCurveBootstrapper::new(curve_configurations, BootstrapDiscountPolicy::new(base_index, base_currency)).with_fx_store(fx_store).bootstrap(quote_store, Level::Mid)`. Each resulting `DiscountCurveElement` is inserted under its `MarketIndex`.
-3. **Credit curves.** `CreditCurveBootstrapper::bootstrap(quote_store, Level::Mid, discount_curves)` — CDS premium and protection legs are discounted on the curves from step 2.
-4. **Volatility surfaces.** `VolatilitySurfaceBuilder::build(quote_store, Level::Mid)`.
-5. **Volatility cubes.** `VolatilityCubeBuilder::build(quote_store, Level::Mid)`.
-6. **Simulations.** `SimulationBuilder::build(constructed_elements, quote_store, fixing_store, Level::Mid)` — runs last so models can calibrate to the surfaces/cubes and diffuse the bootstrapped curves.
+1. **Pricer configuration.** Validate instrument/pricer compatibility, numerical controls, and the one-configuration-per-instrument rule.
+2. **Scenarios.** If `scenarios` is non-empty, clone the quote store and apply each `Scenario` in order. A scenario that matches no quote is an error. Everything below reads the shocked copy.
+3. **Discount curves.** `MultiCurveBootstrapper::new(curve_configurations, BootstrapDiscountPolicy::new(base_index, base_currency)).with_fx_store(fx_store).bootstrap(quote_store, Level::Mid)`. Each resulting `DiscountCurveElement` is inserted under its `MarketIndex`.
+4. **Credit curves.** `CreditCurveBootstrapper::bootstrap(quote_store, Level::Mid, discount_curves)` — CDS premium and protection legs are discounted on the curves from step 3.
+5. **Volatility surfaces.** `VolatilitySurfaceBuilder::build(quote_store, Level::Mid)`.
+6. **Volatility cubes.** `VolatilityCubeBuilder::build(quote_store, Level::Mid)`.
+7. **Simulations.** `SimulationBuilder::build(constructed_elements, quote_store, fixing_store, Level::Mid)` — runs last so models can calibrate to the surfaces/cubes and diffuse the bootstrapped curves.
 
-Steps 3–6 are skipped when the corresponding configuration vector is empty. Calling `initialize()` twice rebuilds everything from the (possibly shocked) quotes.
+Steps 4–7 are skipped when the corresponding configuration vector is empty. Calling `initialize()` twice rebuilds everything from the (possibly shocked) quotes.
 
 This ordering guarantees that every calibrator sees a complete set of its
 dependencies. It also lets a scenario propagate consistently through curves,
@@ -99,12 +108,18 @@ pub struct MarketDataRequest {                 // all fields optional
     constructed_elements_request: Option<Vec<ConstructedElementRequest>>,
     fixings_request: Option<Vec<FixingRequest>>,
     fx_request: Option<Vec<FxRequest>>,
+    pricer_configuration_request: Option<Vec<InstrumentType>>,
 }
 pub enum ConstructedElementRequest {
     DiscountCurve { market_index }, DividendCurve { market_index }, CreditCurve { market_index },
     VolatilitySurface { market_index }, VolatilityCube { market_index }, Simulation { market_index },
 }
 ```
+
+When requested, the response also carries the configuration selected by the
+typed `InstrumentType`. This lets a pricer obtain its implementation controls
+and model assignments through the same narrow provider boundary as its curve
+and fixing dependencies.
 
 `handle_request` copies the requested elements into a fresh `ConstructedElementStore`, gathers the fixings (`MarketData::fixings()` is a `HashMap<MarketIndex, BTreeMap<Date, f64>>`), and attaches the `FxStore`. A missing element produces `QSError::NotFoundErr("Discount curve not found for index …")` — the most common error when a trade references an index without a curve configuration.
 
@@ -154,7 +169,7 @@ The Python wrapper preserves the same lifecycle: one object owns the market,
 and initialization builds its derived state. Keyword arguments mirror the
 Rust builder inputs so configuration can be shared across both interfaces.
 
-The binding exposes the same object with keyword arguments matching the builders: `PricingContext(quotes, curves, fixings=None, fx=None, volatility_surfaces=None, volatility_cubes=None, simulations=None, discounting=None, scenarios=None)`. Initialization runs during construction, and the object acts as a context manager that clears the AD tape on exit. See the generated Python API documentation for the exported types.
+The binding exposes the same object with keyword arguments matching the builders: `PricingContext(quotes, curves, fixings=None, fx=None, volatility_surfaces=None, volatility_cubes=None, pricer_configurations=None, simulations=None, discounting=None, scenarios=None)`. Initialization runs explicitly through `initialize()` or when entering the context manager; exit clears the constructed market and AD tape. Python-defined pricers can be registered with `register_pricer(TradeType, pricer)` and then participate in the same `context.evaluate(...)` workflow; they receive the initialized context as their market-data provider. The standalone Python `Evaluator` provides the corresponding type-based dispatch for custom providers and heterogeneous portfolios.
 
 ## Context lifecycle in practice
 

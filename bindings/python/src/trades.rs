@@ -5,30 +5,83 @@
 //! `f64` for XVA contingent-claim decomposition.
 
 use pyo3::prelude::*;
+use pyo3::types::{PyDict, PyType};
 use quantsupport::prelude::{
-    BasisSwap as QsBasisSwap, BasisSwapTrade, CapFloor as QsCapFloor, CapFloorTrade, CapFloorType,
-    CapletFloorlet as QsCapletFloorlet, CapletFloorletTrade, CapletFloorletType, CdsTrade,
-    Compounding, ContingentClaim, CreditDefaultSwap as QsCreditDefaultSwap, Currency, Date,
-    DayCounter, DualFwd, EquityEuropeanOption as QsEquityEuropeanOption, EquityEuropeanOptionTrade,
-    EuroOptionType, FixFloatCrossCurrencySwap as QsFixFloatXccy, FixFloatCrossCurrencySwapTrade,
+    BasisSwap as QsBasisSwap, BasisSwapTrade, CallScheduleEntry as QsCallScheduleEntry,
+    CapFloor as QsCapFloor, CapFloorTrade, CapFloorType, CapletFloorlet as QsCapletFloorlet,
+    CapletFloorletTrade, CapletFloorletType, CashflowType as QsCashflowType, CdsTrade, Compounding,
+    ContingentClaim, CreditDefaultSwap as QsCreditDefaultSwap, Currency, Date, DayCounter, DualFwd,
+    EquityEuropeanOption as QsEquityEuropeanOption, EquityEuropeanOptionTrade, EuroOptionType,
+    FixFloatCrossCurrencySwap as QsFixFloatXccy, FixFloatCrossCurrencySwapTrade,
     FixedRateBond as QsFixedRateBond, FixedRateBondTrade, FixedRateDeposit as QsFixedRateDeposit,
     FixedRateDepositTrade, FloatFloatCrossCurrencySwap, FloatFloatCrossCurrencySwapTrade,
     FloatingRateNote as QsFloatingRateNote, FloatingRateNoteTrade, Frequency,
     FxEuropeanOptionTrade, FxForwardTrade, IntoContingentClaims, LegsProvider, MakeBasisSwap,
     MakeCapFloor, MakeFixFloatCrossCurrencySwap, MakeFixedRateBond, MakeFixedRateDeposit,
     MakeFloatFloatCrossCurrencySwap, MakeFloatingRateNote, MakeFxEuropeanOption, MakeFxForward,
-    MakeRateFutures, MakeSwap, MarketIndex, PaymentStructure, RateDefinition,
-    RateFutures as QsRateFutures, RateFuturesTrade, Side, Strike, Swap as QsSwap, SwapTrade,
+    MakeRateFutures, MakeSteppedCouponBond, MakeSwap, MarketIndex, PaymentStructure,
+    RateDefinition, RateFutures as QsRateFutures, RateFuturesTrade, Side,
+    SteppedCouponBond as QsSteppedCouponBond, SteppedCouponBondTrade, Strike, Swap as QsSwap,
+    SwapTrade,
 };
 
 use crate::conv::{
     extract_cap_floor_type, extract_caplet_floorlet_type, extract_compounding, extract_currency,
     extract_date, extract_day_counter, extract_frequency, extract_market_index,
-    extract_option_type, extract_payment_structure, extract_side, extract_strike, qs_err,
+    extract_option_type, extract_payment_structure, extract_side, extract_strike, from_py, qs_err,
 };
 
+use quantsupport::instruments::cashflows::payoffops::PayoffOps;
+
+macro_rules! product_dict_constructors {
+    ($($name:ty),+ $(,)?) => {
+        $(
+            #[pymethods]
+            impl $name {
+                /// Builds a product using the same fields and defaults as its constructor.
+                #[classmethod]
+                fn from_dict<'py>(
+                    cls: &Bound<'py, PyType>,
+                    obj: &Bound<'py, PyDict>,
+                ) -> PyResult<Bound<'py, PyAny>> {
+                    cls.call((), Some(obj))
+                }
+
+                /// Loads constructor fields from a JSON file.
+                #[classmethod]
+                fn from_json<'py>(
+                    cls: &Bound<'py, PyType>,
+                    path: &str,
+                ) -> PyResult<Bound<'py, PyAny>> {
+                    let value: serde_json::Value = crate::conv::from_json_file(path, "product")?;
+                    let obj = pythonize::pythonize(cls.py(), &value).map_err(qs_err)?;
+                    cls.call((), Some(obj.cast::<PyDict>()?))
+                }
+            }
+        )+
+    };
+}
+
+product_dict_constructors!(
+    Swap,
+    CrossCurrencySwap,
+    BasisSwap,
+    FixFloatCrossCurrencySwap,
+    FixedRateBond,
+    SteppedCouponBond,
+    FloatingRateNote,
+    FixedRateDeposit,
+    FxForwardPy,
+    FxOptionPy,
+    EquityOption,
+    CreditDefaultSwapPy,
+    CapFloorPy,
+    CapletFloorletPy,
+    RateFuturesPy,
+);
+
 /// A vanilla fixed-vs-floating interest rate swap.
-#[pyclass(name = "Swap", from_py_object)]
+#[pyclass(name = "Swap", from_py_object, subclass, dict)]
 #[derive(Clone)]
 pub struct Swap {
     pub identifier: String,
@@ -227,7 +280,7 @@ impl Swap {
 }
 
 /// A float-vs-float cross-currency swap.
-#[pyclass(name = "CrossCurrencySwap", from_py_object)]
+#[pyclass(name = "CrossCurrencySwap", from_py_object, subclass, dict)]
 #[derive(Clone)]
 pub struct CrossCurrencySwap {
     pub identifier: String,
@@ -421,7 +474,7 @@ impl CrossCurrencySwap {
 }
 
 /// A float-vs-float single-currency basis swap.
-#[pyclass(name = "BasisSwap", from_py_object)]
+#[pyclass(name = "BasisSwap", from_py_object, subclass, dict)]
 #[derive(Clone)]
 pub struct BasisSwap {
     pub identifier: String,
@@ -563,7 +616,7 @@ impl BasisSwap {
 }
 
 /// A fixed-vs-float cross-currency swap.
-#[pyclass(name = "FixFloatCrossCurrencySwap", from_py_object)]
+#[pyclass(name = "FixFloatCrossCurrencySwap", from_py_object, subclass, dict)]
 #[derive(Clone)]
 pub struct FixFloatCrossCurrencySwap {
     pub identifier: String,
@@ -734,8 +787,226 @@ impl FixFloatCrossCurrencySwap {
     }
 }
 
+/// One dated issuer call in a callable bond's schedule.
+#[pyclass(name = "CallScheduleEntry", from_py_object, frozen)]
+#[derive(Clone, Copy)]
+pub struct CallScheduleEntry {
+    pub inner: QsCallScheduleEntry,
+}
+
+#[pymethods]
+impl CallScheduleEntry {
+    #[new]
+    #[pyo3(signature = (date = None, strike = 100.0, *, start_date = None, end_date = None))]
+    fn new(
+        date: Option<&Bound<'_, PyAny>>,
+        strike: f64,
+        start_date: Option<&Bound<'_, PyAny>>,
+        end_date: Option<&Bound<'_, PyAny>>,
+    ) -> PyResult<Self> {
+        if date.is_some() && start_date.is_some() {
+            return Err(pyo3::exceptions::PyValueError::new_err(
+                "specify date or start_date, not both",
+            ));
+        }
+        let start = date.or(start_date).ok_or_else(|| {
+            pyo3::exceptions::PyValueError::new_err("date or start_date is required")
+        })?;
+        let start = extract_date(start)?;
+        let inner = match end_date {
+            Some(end) => QsCallScheduleEntry::window(start, extract_date(end)?, strike),
+            None => QsCallScheduleEntry::new(start, strike),
+        };
+        inner.validate().map_err(qs_err)?;
+        Ok(Self { inner })
+    }
+
+    /// Builds a validated native call entry from a dict.
+    #[staticmethod]
+    fn from_dict(obj: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let inner: QsCallScheduleEntry = from_py(obj, "call schedule entry")?;
+        inner.validate().map_err(qs_err)?;
+        Ok(Self { inner })
+    }
+
+    /// Creates an inclusive issuer-call window.
+    #[staticmethod]
+    fn window(
+        start_date: &Bound<'_, PyAny>,
+        end_date: &Bound<'_, PyAny>,
+        strike: f64,
+    ) -> PyResult<Self> {
+        Self::new(None, strike, Some(start_date), Some(end_date))
+    }
+
+    /// Returns the native JSON-compatible schema.
+    fn to_dict<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        pythonize::pythonize(py, &self.inner).map_err(qs_err)
+    }
+
+    /// Inclusive first exercise date.
+    #[getter]
+    fn start_date(&self) -> crate::time::Date {
+        self.date()
+    }
+
+    /// Inclusive final exercise date.
+    #[getter]
+    fn end_date(&self) -> crate::time::Date {
+        crate::time::Date {
+            inner: self.inner.end_date(),
+        }
+    }
+
+    /// Whether a date is inside the inclusive exercise window.
+    fn contains(&self, date: &Bound<'_, PyAny>) -> PyResult<bool> {
+        Ok(self.inner.contains(extract_date(date)?))
+    }
+
+    /// Issuer call date.
+    #[getter]
+    fn date(&self) -> crate::time::Date {
+        crate::time::Date {
+            inner: self.inner.date(),
+        }
+    }
+
+    /// Call strike per bond units, excluding same-day coupon and amortization.
+    #[getter]
+    fn strike(&self) -> f64 {
+        self.inner.strike()
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "CallScheduleEntry(start_date='{}', end_date='{}', strike={})",
+            self.inner.date(),
+            self.inner.end_date(),
+            self.inner.strike()
+        )
+    }
+}
+
+/// One positional coupon definition in a stepped-coupon schedule.
+#[pyclass(name = "Coupon", from_py_object, frozen)]
+#[derive(Clone)]
+pub struct Coupon {
+    pub inner: QsCashflowType<f64>,
+}
+
+impl Coupon {
+    fn specification(&self) -> serde_json::Value {
+        match &self.inner {
+            QsCashflowType::FixedRateCoupon(coupon) => {
+                serde_json::json!({"Fixed": {"rate": coupon.rate().rate()}})
+            }
+            QsCashflowType::FloatingRateCoupon(coupon) => serde_json::json!({"Floating": {
+                "index": coupon.market_index(), "spread": coupon.spread(), "floor": null, "cap": null,
+            }}),
+            QsCashflowType::OptionEmbeddedCoupon(coupon) => {
+                let spread = coupon.spread();
+                let (capped, floor) = match coupon.payoff_ops() {
+                    PayoffOps::Max(inner, lower) => (
+                        &**inner,
+                        match &**lower {
+                            PayoffOps::Const(value) => Some(value + spread),
+                            _ => None,
+                        },
+                    ),
+                    other => (other, None),
+                };
+                let cap = match capped {
+                    PayoffOps::Min(_, upper) => match &**upper {
+                        PayoffOps::Const(value) => Some(value + spread),
+                        _ => None,
+                    },
+                    _ => None,
+                };
+                serde_json::json!({"Floating": {"index": coupon.market_index(), "spread": spread, "floor": floor, "cap": cap}})
+            }
+            _ => unreachable!("Coupon wrappers contain only coupon cashflows"),
+        }
+    }
+}
+
+#[pymethods]
+impl Coupon {
+    /// Creates a fixed coupon definition.
+    #[staticmethod]
+    fn fixed(rate: f64) -> PyResult<Self> {
+        let coupon_type = QsCashflowType::fixed(rate);
+        coupon_type.validate_coupon().map_err(qs_err)?;
+        Ok(Self { inner: coupon_type })
+    }
+
+    /// Creates a floating coupon whose all-in rate may be capped or floored.
+    #[staticmethod]
+    #[pyo3(signature = (index, spread = 0.0, floor = None, cap = None))]
+    fn floating(
+        index: &Bound<'_, PyAny>,
+        spread: f64,
+        floor: Option<f64>,
+        cap: Option<f64>,
+    ) -> PyResult<Self> {
+        let coupon_type =
+            QsCashflowType::floating(extract_market_index(index)?, spread, floor, cap);
+        coupon_type.validate_coupon().map_err(qs_err)?;
+        Ok(Self { inner: coupon_type })
+    }
+
+    /// Builds existing coupon cashflows from compact dictionary terms.
+    #[staticmethod]
+    fn from_dict(obj: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let specification = obj.cast::<PyDict>()?;
+        if specification.len() != 1 {
+            return Err(pyo3::exceptions::PyValueError::new_err(
+                "A coupon dict requires exactly one coupon kind",
+            ));
+        }
+        let (kind, terms) = specification
+            .iter()
+            .next()
+            .ok_or_else(|| pyo3::exceptions::PyValueError::new_err("Missing coupon kind"))?;
+        let kind: String = kind.extract()?;
+        let terms = terms.cast::<PyDict>()?;
+        match kind.as_str() {
+            "Fixed" | "FixedRateCoupon" => obj
+                .py()
+                .get_type::<Self>()
+                .getattr("fixed")?
+                .call((), Some(terms))?
+                .extract()
+                .map_err(Into::into),
+            "Floating" | "FloatingRateCoupon" | "OptionEmbeddedCoupon" => obj
+                .py()
+                .get_type::<Self>()
+                .getattr("floating")?
+                .call((), Some(terms))?
+                .extract()
+                .map_err(Into::into),
+            _ => Err(pyo3::exceptions::PyValueError::new_err(format!(
+                "Unsupported coupon cashflow kind '{kind}'"
+            ))),
+        }
+    }
+
+    /// Returns compact constructor terms for the existing coupon cashflow.
+    fn to_dict<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        pythonize::pythonize(py, &self.specification()).map_err(qs_err)
+    }
+
+    fn __repr__(&self) -> String {
+        match &self.inner {
+            QsCashflowType::FixedRateCoupon(coupon) => {
+                format!("Coupon.fixed(rate={})", coupon.rate().rate())
+            }
+            _ => format!("Coupon({})", self.specification()),
+        }
+    }
+}
+
 /// A fixed-rate bullet (or amortizing) bond.
-#[pyclass(name = "FixedRateBond", from_py_object)]
+#[pyclass(name = "FixedRateBond", from_py_object, subclass, dict)]
 #[derive(Clone)]
 pub struct FixedRateBond {
     pub identifier: String,
@@ -744,7 +1015,7 @@ pub struct FixedRateBond {
     pub notional: f64,
     pub rate: f64,
     pub currency: Currency,
-    pub discount_index: MarketIndex,
+    pub discount_index: Option<MarketIndex>,
     pub side: Side,
     pub day_counter: DayCounter,
     pub compounding: Compounding,
@@ -756,7 +1027,7 @@ pub struct FixedRateBond {
 
 macro_rules! build_fixed_rate_bond_instrument {
     ($self:expr, $t:ty) => {{
-        MakeFixedRateBond::<$t>::default()
+        let mut builder = MakeFixedRateBond::<$t>::default()
             .with_identifier($self.identifier.clone())
             .with_start_date($self.start_date)
             .with_maturity_date($self.maturity_date)
@@ -767,13 +1038,14 @@ macro_rules! build_fixed_rate_bond_instrument {
                 $self.compounding,
                 $self.rate_frequency,
             ))
-            .with_discount_index($self.discount_index.clone())
             .with_currency($self.currency)
             .with_side($self.side)
             .with_payment_frequency($self.payment_frequency)
-            .with_payment_structure($self.payment_structure)
-            .build()
-            .map_err(qs_err)
+            .with_payment_structure($self.payment_structure);
+        if let Some(index) = &$self.discount_index {
+            builder = builder.with_discount_index(index.clone());
+        }
+        builder.build().map_err(qs_err)
     }};
 }
 
@@ -816,7 +1088,7 @@ impl FixedRateBond {
         notional,
         rate,
         currency,
-        discount_index,
+        discount_index = None,
         side = None,
         day_counter = None,
         compounding = None,
@@ -832,7 +1104,7 @@ impl FixedRateBond {
         notional: f64,
         rate: f64,
         currency: &Bound<'_, PyAny>,
-        discount_index: &Bound<'_, PyAny>,
+        discount_index: Option<&Bound<'_, PyAny>>,
         side: Option<&Bound<'_, PyAny>>,
         day_counter: Option<&Bound<'_, PyAny>>,
         compounding: Option<&Bound<'_, PyAny>>,
@@ -848,7 +1120,7 @@ impl FixedRateBond {
             notional,
             rate,
             currency: extract_currency(currency)?,
-            discount_index: extract_market_index(discount_index)?,
+            discount_index: discount_index.map(extract_market_index).transpose()?,
             side: side
                 .map(extract_side)
                 .transpose()?
@@ -890,8 +1162,180 @@ impl FixedRateBond {
     }
 }
 
+/// A callable bond with positional coupon and outstanding-notional schedules.
+#[pyclass(name = "SteppedCouponBond", from_py_object, subclass, dict)]
+#[derive(Clone)]
+pub struct SteppedCouponBond {
+    pub identifier: String,
+    pub start_date: Date,
+    pub maturity_date: Date,
+    pub notional: f64,
+    pub units: f64,
+    pub currency: Currency,
+    pub side: Side,
+    pub payment_frequency: Frequency,
+    pub coupon_day_counter: DayCounter,
+    pub coupons: Vec<Coupon>,
+    pub notional_percentages: Vec<f64>,
+    pub call_schedule: Vec<CallScheduleEntry>,
+    pub trade_date: Option<Date>,
+}
+
+impl SteppedCouponBond {
+    /// Builds the AD-enabled native trade consumed by the callable engines.
+    pub fn build_trade_dual(&self) -> PyResult<SteppedCouponBondTrade<DualFwd>> {
+        let instrument: QsSteppedCouponBond<DualFwd> = MakeSteppedCouponBond::default()
+            .with_identifier(self.identifier.clone())
+            .with_start_date(self.start_date)
+            .with_maturity_date(self.maturity_date)
+            .with_notional(self.notional)
+            .with_units(self.units)
+            .with_currency(self.currency)
+            .with_side(self.side)
+            .with_payment_frequency(self.payment_frequency)
+            .with_coupon_day_counter(self.coupon_day_counter)
+            .with_coupons(
+                self.coupons
+                    .iter()
+                    .map(|coupon| coupon.inner.clone().into())
+                    .collect(),
+            )
+            .with_notional_percentages(self.notional_percentages.clone())
+            .with_call_schedule(self.call_schedule.iter().map(|call| call.inner).collect())
+            .build()
+            .map_err(qs_err)?;
+        Ok(SteppedCouponBondTrade::new(
+            instrument,
+            self.trade_date.unwrap_or(self.start_date),
+            self.notional,
+            self.side,
+        ))
+    }
+}
+
+#[pymethods]
+impl SteppedCouponBond {
+    #[new]
+    #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (
+        identifier,
+        start_date,
+        maturity_date,
+        notional,
+        currency,
+        coupons,
+        notional_percentages,
+        call_schedule = None,
+        units = 100.0,
+        side = None,
+        payment_frequency = None,
+        coupon_day_counter = None,
+        trade_date = None,
+    ))]
+    fn new(
+        identifier: String,
+        start_date: &Bound<'_, PyAny>,
+        maturity_date: &Bound<'_, PyAny>,
+        notional: f64,
+        currency: &Bound<'_, PyAny>,
+        coupons: Vec<Bound<'_, PyAny>>,
+        notional_percentages: Vec<f64>,
+        call_schedule: Option<Vec<Bound<'_, PyAny>>>,
+        units: f64,
+        side: Option<&Bound<'_, PyAny>>,
+        payment_frequency: Option<&Bound<'_, PyAny>>,
+        coupon_day_counter: Option<&Bound<'_, PyAny>>,
+        trade_date: Option<&Bound<'_, PyAny>>,
+    ) -> PyResult<Self> {
+        if coupons.is_empty() {
+            return Err(pyo3::exceptions::PyValueError::new_err(
+                "coupons cannot be empty",
+            ));
+        }
+        if notional_percentages.is_empty() {
+            return Err(pyo3::exceptions::PyValueError::new_err(
+                "notional_percentages cannot be empty",
+            ));
+        }
+        let coupons = coupons
+            .iter()
+            .map(|obj| obj.extract::<Coupon>().or_else(|_| Coupon::from_dict(obj)))
+            .collect::<PyResult<Vec<_>>>()?;
+        let call_schedule = call_schedule
+            .unwrap_or_default()
+            .iter()
+            .map(|obj| {
+                obj.extract::<CallScheduleEntry>()
+                    .or_else(|_| CallScheduleEntry::from_dict(obj))
+            })
+            .collect::<PyResult<Vec<_>>>()?;
+        Ok(Self {
+            identifier,
+            start_date: extract_date(start_date)?,
+            maturity_date: extract_date(maturity_date)?,
+            notional,
+            units,
+            currency: extract_currency(currency)?,
+            side: side
+                .map(extract_side)
+                .transpose()?
+                .unwrap_or(Side::LongReceive),
+            payment_frequency: payment_frequency
+                .map(extract_frequency)
+                .transpose()?
+                .unwrap_or(Frequency::Semiannual),
+            coupon_day_counter: coupon_day_counter
+                .map(extract_day_counter)
+                .transpose()?
+                .unwrap_or(DayCounter::Actual365),
+            coupons,
+            notional_percentages,
+            call_schedule,
+            trade_date: trade_date.map(extract_date).transpose()?,
+        })
+    }
+
+    /// Returns constructor fields with native nested coupon and call schemas.
+    fn to_dict<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let value = serde_json::json!({
+            "identifier": self.identifier,
+            "start_date": self.start_date,
+            "maturity_date": self.maturity_date,
+            "notional": self.notional,
+            "units": self.units,
+            "currency": self.currency,
+            "side": format!("{:?}", self.side),
+            "payment_frequency": self.payment_frequency,
+            "coupon_day_counter": self.coupon_day_counter,
+            "coupons": self.coupons.iter().map(Coupon::specification).collect::<Vec<_>>(),
+            "notional_percentages": self.notional_percentages,
+            "call_schedule": self.call_schedule.iter().map(|call| call.inner).collect::<Vec<_>>(),
+            "trade_date": self.trade_date,
+        });
+        pythonize::pythonize(py, &value).map_err(qs_err)
+    }
+
+    #[getter]
+    fn identifier(&self) -> &str {
+        &self.identifier
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "SteppedCouponBond(identifier='{}', start_date='{}', maturity_date='{}', notional={}, coupons={}, notionals={}, calls={})",
+            self.identifier,
+            self.start_date,
+            self.maturity_date,
+            self.notional,
+            self.coupons.len(),
+            self.notional_percentages.len(),
+            self.call_schedule.len()
+        )
+    }
+}
+
 /// A floating-rate note.
-#[pyclass(name = "FloatingRateNote", from_py_object)]
+#[pyclass(name = "FloatingRateNote", from_py_object, subclass, dict)]
 #[derive(Clone)]
 pub struct FloatingRateNote {
     pub identifier: String,
@@ -1020,7 +1464,7 @@ impl FloatingRateNote {
 }
 
 /// A fixed-rate deposit.
-#[pyclass(name = "FixedRateDeposit", from_py_object)]
+#[pyclass(name = "FixedRateDeposit", from_py_object, subclass, dict)]
 #[derive(Clone)]
 pub struct FixedRateDeposit {
     pub identifier: String,
@@ -1159,7 +1603,7 @@ impl FixedRateDeposit {
 }
 
 /// A deliverable or non-deliverable FX forward.
-#[pyclass(name = "FxForward", from_py_object)]
+#[pyclass(name = "FxForward", from_py_object, subclass, dict)]
 #[derive(Clone)]
 pub struct FxForwardPy {
     pub identifier: String,
@@ -1273,7 +1717,7 @@ impl FxForwardPy {
 }
 
 /// A European FX option.
-#[pyclass(name = "FxOption", from_py_object)]
+#[pyclass(name = "FxOption", from_py_object, subclass, dict)]
 #[derive(Clone)]
 pub struct FxOptionPy {
     pub identifier: String,
@@ -1364,7 +1808,7 @@ impl FxOptionPy {
 }
 
 /// A European equity option.
-#[pyclass(name = "EquityOption", from_py_object)]
+#[pyclass(name = "EquityOption", from_py_object, subclass, dict)]
 #[derive(Clone)]
 pub struct EquityOption {
     pub identifier: String,
@@ -1384,7 +1828,7 @@ impl EquityOption {
             self.market_index.clone(),
             self.expiry_date,
             self.strike,
-            self.option_type.clone(),
+            self.option_type,
             self.identifier.clone(),
         );
         Ok(EquityEuropeanOptionTrade::new(
@@ -1449,7 +1893,7 @@ impl EquityOption {
 }
 
 /// A single-name credit default swap.
-#[pyclass(name = "CreditDefaultSwap", from_py_object)]
+#[pyclass(name = "CreditDefaultSwap", from_py_object, subclass, dict)]
 #[derive(Clone)]
 pub struct CreditDefaultSwapPy {
     pub identifier: String,
@@ -1573,7 +2017,7 @@ impl CreditDefaultSwapPy {
 }
 
 /// An interest-rate cap or floor.
-#[pyclass(name = "CapFloor", from_py_object)]
+#[pyclass(name = "CapFloor", from_py_object, subclass, dict)]
 #[derive(Clone)]
 pub struct CapFloorPy {
     pub identifier: String,
@@ -1679,7 +2123,7 @@ impl CapFloorPy {
 }
 
 /// A single caplet or floorlet.
-#[pyclass(name = "CapletFloorlet", from_py_object)]
+#[pyclass(name = "CapletFloorlet", from_py_object, subclass, dict)]
 #[derive(Clone)]
 pub struct CapletFloorletPy {
     pub identifier: String,
@@ -1784,7 +2228,7 @@ impl CapletFloorletPy {
 }
 
 /// An exchange-traded interest-rate futures position.
-#[pyclass(name = "RateFutures", from_py_object)]
+#[pyclass(name = "RateFutures", from_py_object, subclass, dict)]
 #[derive(Clone)]
 pub struct RateFuturesPy {
     pub identifier: String,

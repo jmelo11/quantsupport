@@ -136,7 +136,8 @@ next detailed pricing chapter.
 | Rates        | `CapletFloorlet`              | — (from quotes)                   | `CapletFloorletTrade`              | `ClosedFormBlackCapletPricer`, `ClosedFormHullWhiteCapletPricer` |
 | Rates        | `EuropeanSwaption`            | `MakeSwaption`                    | `EuropeanSwaptionTrade<DualFwd>`   | `ClosedFormHullWhiteSwaptionPricer`                              |
 | Rates        | `RateFutures`                 | `MakeRateFutures`                 | `RateFuturesTrade`                 | `RateFuturesPricer`                                              |
-| Fixed income | `FixedRateBond`               | `MakeFixedRateBond`               | `FixedRateBondTrade`               | `DiscountedCashflowPricer`                                       |
+| Fixed income | `FixedRateBond`               | `MakeFixedRateBond`               | `FixedRateBondTrade`               | `BondPricer`                                                     |
+| Fixed income | `SteppedCouponBond`           | `MakeSteppedCouponBond`           | `SteppedCouponBondTrade`           | `TreeBasedBondPricer` / `BackwardFourierEvolutionBondPricer`     |
 | Fixed income | `FloatingRateNote`            | `MakeFloatingRateNote`            | `FloatingRateNoteTrade`            | `DiscountedCashflowPricer`                                       |
 | Fixed income | `FixedRateDeposit`            | `MakeFixedRateDeposit`            | `FixedRateDepositTrade`            | `DiscountedCashflowPricer`                                       |
 | FX           | `FxForward`                   | `MakeFxForward`                   | `FxForwardTrade`                   | `FxForwardPricer`                                                |

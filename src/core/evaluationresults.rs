@@ -189,6 +189,12 @@ pub struct EvaluationResults {
     price: Option<f64>,
     /// Yield to maturity.
     ytm: Option<f64>,
+    /// Modified duration with respect to the bond's yield convention.
+    modified_duration: Option<f64>,
+    /// Continuously compounded zero-volatility spread over the discount curve.
+    z_spread: Option<f64>,
+    /// Option-adjusted spread.
+    oas: Option<f64>,
     /// Sensitivities to market inputs.    
     sensitivities: Option<SensitivityMap>,
     /// Cashflows of the instrument.
@@ -206,10 +212,25 @@ impl EvaluationResults {
             identifier,
             price: None,
             ytm: None,
+            modified_duration: None,
+            z_spread: None,
+            oas: None,
             sensitivities: None,
             cashflows: None,
             fair_rate: None,
         }
+    }
+
+    /// Returns the reference or as-of date of the evaluation.
+    #[must_use]
+    pub const fn evaluation_date(&self) -> Date {
+        self.evaluation_date
+    }
+
+    /// Returns the evaluated instrument identifier.
+    #[must_use]
+    pub fn identifier(&self) -> &str {
+        &self.identifier
     }
 
     /// Sets the price or present value.
@@ -223,6 +244,30 @@ impl EvaluationResults {
     #[must_use]
     pub const fn price(&self) -> Option<f64> {
         self.price
+    }
+
+    /// Returns the yield to maturity, if available.
+    #[must_use]
+    pub const fn ytm(&self) -> Option<f64> {
+        self.ytm
+    }
+
+    /// Returns the modified duration, if available.
+    #[must_use]
+    pub const fn modified_duration(&self) -> Option<f64> {
+        self.modified_duration
+    }
+
+    /// Returns the Z-spread, if available.
+    #[must_use]
+    pub const fn z_spread(&self) -> Option<f64> {
+        self.z_spread
+    }
+
+    /// Returns the option-adjusted spread, if available.
+    #[must_use]
+    pub const fn oas(&self) -> Option<f64> {
+        self.oas
     }
 
     /// Returns sensitivities if available.
@@ -269,6 +314,27 @@ impl EvaluationResults {
     #[must_use]
     pub const fn with_ytm(mut self, ytm: f64) -> Self {
         self.ytm = Some(ytm);
+        self
+    }
+
+    /// Sets the modified duration.
+    #[must_use]
+    pub const fn with_modified_duration(mut self, modified_duration: f64) -> Self {
+        self.modified_duration = Some(modified_duration);
+        self
+    }
+
+    /// Sets the Z-spread.
+    #[must_use]
+    pub const fn with_z_spread(mut self, z_spread: f64) -> Self {
+        self.z_spread = Some(z_spread);
+        self
+    }
+
+    /// Sets the option-adjusted spread.
+    #[must_use]
+    pub const fn with_oas(mut self, oas: f64) -> Self {
+        self.oas = Some(oas);
         self
     }
 

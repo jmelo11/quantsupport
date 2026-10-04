@@ -815,7 +815,7 @@ impl QuoteDetails {
         Ok(quote)
     }
 
-    /// `{Instrument}_{Entity}_{CCY}_{Tenor}` — e.g. `Cds_ACME_USD_5Y`
+    /// `{Instrument}_{Entity}_{CCY}_{Tenor}` — e.g. `Cds_CORPORATE-A_USD_5Y`
     ///
     /// The quote level is the CDS par spread (decimal, e.g. `0.0125`).
     ///

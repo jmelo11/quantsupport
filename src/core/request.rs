@@ -9,8 +9,11 @@ use crate::{
     utils::errors::Result,
 };
 
-/// A [`Request`] of different types of requests that can be made for instrument evaluation,
-/// including value, yield to maturity, modified duration, sensitivities, cashflows, and fair rate.
+/// A requested instrument result.
+///
+/// Supported measures include value, yield, duration, spreads,
+/// sensitivities, cashflows, and fair rate.
+#[allow(clippy::upper_case_acronyms)]
 pub enum Request {
     /// Price
     Value,
@@ -18,6 +21,10 @@ pub enum Request {
     YieldToMaturity,
     /// Modified Duration
     ModifiedDuration,
+    /// Continuously compounded zero-volatility spread over the discount curve.
+    ZSpread,
+    /// Option-adjusted spread produced by an issuer-call bond model.
+    OAS,
     /// Sensitivities
     Sensitivities,
     /// Cashflows
@@ -35,8 +42,10 @@ impl Request {
             Self::Sensitivities => 1,
             Self::YieldToMaturity => 2,
             Self::ModifiedDuration => 3,
-            Self::Cashflows => 4,
-            Self::FairRate => 5,
+            Self::ZSpread => 4,
+            Self::OAS => 5,
+            Self::Cashflows => 6,
+            Self::FairRate => 7,
         }
     }
 }

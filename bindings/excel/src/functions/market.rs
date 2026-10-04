@@ -2,8 +2,9 @@ use std::str::FromStr;
 
 use quantsupport::prelude::{
     CreditCurveConfiguration, CurveConfiguration, DualFwd, FixingStore, FxRateRecord, FxStore,
-    Level, PricingContext, Quote, QuoteDetails, QuoteLevels, QuoteStore, QuoteStoreRecords,
-    Scenario, SimulationConfiguration, VolatilityCubeConfiguration, VolatilitySurfaceConfiguration,
+    Level, PricerConfiguration, PricingContext, Quote, QuoteDetails, QuoteLevels, QuoteStore,
+    QuoteStoreRecords, Scenario, SimulationConfiguration, VolatilityCubeConfiguration,
+    VolatilitySurfaceConfiguration,
 };
 use serde::de::DeserializeOwned;
 use xll_rs::types::{XllError, XLOPER12};
@@ -344,6 +345,14 @@ json_config_function!(
     "Stores native QuantSupport VolatilityCubeConfiguration values parsed from JSON"
 );
 json_config_function!(
+    qs_pricer_configs_from_json,
+    "QS.PRICER.CONFIGS.FROM.JSON",
+    PricerConfiguration,
+    PricerConfigurations,
+    "PricerConfiguration values",
+    "Stores instrument-level pricer selections and typed model assignments parsed from JSON"
+);
+json_config_function!(
     qs_simulation_configs_from_json,
     "QS.SIMULATION.CONFIGS.FROM.JSON",
     SimulationConfiguration,
@@ -445,6 +454,7 @@ pub fn qs_context_create(
     fx: Option<String>,
     volatility_surface_configurations: Option<String>,
     volatility_cube_configurations: Option<String>,
+    pricer_configurations: Option<String>,
     simulation_configurations: Option<String>,
     constructed_elements: Option<String>,
     scenarios: Option<String>,
@@ -459,6 +469,7 @@ pub fn qs_context_create(
         fx.as_deref(),
         volatility_surface_configurations.as_deref(),
         volatility_cube_configurations.as_deref(),
+        pricer_configurations.as_deref(),
         simulation_configurations.as_deref(),
         constructed_elements.as_deref(),
         scenarios.as_deref(),
@@ -494,6 +505,10 @@ pub fn qs_context_create(
                 .as_deref()
                 .map(|handle| registry.volatility_cube_configurations(handle).cloned())
                 .transpose()?,
+            pricer_configurations
+                .as_deref()
+                .map(|handle| registry.pricer_configurations(handle).cloned())
+                .transpose()?,
             simulation_configurations
                 .as_deref()
                 .map(|handle| registry.simulation_configurations(handle).cloned())
@@ -518,6 +533,7 @@ pub fn qs_context_create(
         fx,
         surfaces,
         cubes,
+        pricer_configs,
         simulations,
         elements,
         scenarios,
@@ -543,6 +559,9 @@ pub fn qs_context_create(
     }
     if let Some(value) = cubes {
         context = context.with_volatility_cube_configurations(value);
+    }
+    if let Some(value) = pricer_configs {
+        context = context.with_pricer_configurations(value);
     }
     if let Some(value) = simulations {
         context = context.with_simulation_configurations(value);

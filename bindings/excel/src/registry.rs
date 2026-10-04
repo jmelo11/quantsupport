@@ -11,9 +11,9 @@ use quantsupport::prelude::{
     CreditCurveConfiguration, CurveConfiguration, DiscountCurveElement, DualFwd,
     EquityEuropeanOptionTrade, FixFloatCrossCurrencySwapTrade, FixedRateBondTrade,
     FixedRateDepositTrade, FixingStore, FloatFloatCrossCurrencySwapTrade, FloatingRateNoteTrade,
-    FxEuropeanOptionTrade, FxForwardTrade, FxStore, PricingContext, QuoteStore, RateFuturesTrade,
-    Scenario, SimulationConfiguration, SwapTrade, VolatilityCubeConfiguration,
-    VolatilitySurfaceConfiguration,
+    FxEuropeanOptionTrade, FxForwardTrade, FxStore, PricerConfiguration, PricingContext,
+    QuoteStore, RateFuturesTrade, Scenario, SimulationConfiguration, SwapTrade,
+    VolatilityCubeConfiguration, VolatilitySurfaceConfiguration,
 };
 
 const HANDLE_PREFIX: &str = "QSObject";
@@ -38,6 +38,8 @@ pub enum QsObject {
     VolatilityCubeConfigurations(Vec<VolatilityCubeConfiguration>),
     /// Monte Carlo simulation configurations.
     SimulationConfigurations(Vec<SimulationConfiguration>),
+    /// Instrument-level pricer selections and typed model assignments.
+    PricerConfigurations(Vec<PricerConfiguration>),
     /// Quote scenarios.
     Scenarios(Vec<Scenario>),
     /// A constructed discount curve.
@@ -89,6 +91,7 @@ impl QsObject {
             Self::VolatilitySurfaceConfigurations(_) => "VolatilitySurfaceConfigurations",
             Self::VolatilityCubeConfigurations(_) => "VolatilityCubeConfigurations",
             Self::SimulationConfigurations(_) => "SimulationConfigurations",
+            Self::PricerConfigurations(_) => "PricerConfigurations",
             Self::Scenarios(_) => "Scenarios",
             Self::DiscountCurve(_) => "DiscountCurveElement",
             Self::ConstructedElements(_) => "ConstructedElementStore",
@@ -291,6 +294,12 @@ impl Registry {
         SimulationConfigurations,
         SimulationConfiguration,
         "SimulationConfigurations"
+    );
+    collection_accessor!(
+        pricer_configurations,
+        PricerConfigurations,
+        PricerConfiguration,
+        "PricerConfigurations"
     );
     collection_accessor!(scenarios, Scenarios, Scenario, "Scenarios");
     accessor!(
@@ -607,6 +616,7 @@ fn reset_object(object: &mut QsObject) -> Result<(), RegistryError> {
         QsObject::VolatilitySurfaceConfigurations(configurations) => configurations.clear(),
         QsObject::VolatilityCubeConfigurations(configurations) => configurations.clear(),
         QsObject::SimulationConfigurations(configurations) => configurations.clear(),
+        QsObject::PricerConfigurations(configurations) => configurations.clear(),
         QsObject::Scenarios(scenarios) => scenarios.clear(),
         QsObject::ConstructedElements(store) => **store = ConstructedElementStore::default(),
         other => return Err(RegistryError::ResetUnsupported(other.kind())),

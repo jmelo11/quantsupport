@@ -23,7 +23,9 @@ Each pricer specializes the common contract for one payoff family and one valuat
 
 | Pricer                                                 | Trade type                                                                                                              | Requests                                  | Market data                                                       | Model                                      |
 | ------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------- | ----------------------------------------- | ----------------------------------------------------------------- | ------------------------------------------ |
-| `DiscountedCashflowPricer<I, T>::new()`                | any `T: LegsProvider<DualFwd> + Trade<I>` (swaps, basis swaps, XCCY swaps, bonds, FRNs, deposits, FX forwards via legs) | Value, FairRate, Cashflows, Sensitivities | discount curve per leg index, FX for cross-currency legs, fixings | \\(\sum_i CF_i\\,P(T_i)\\)                 |
+| `DiscountedCashflowPricer<I, T>::new()`                | any linear `T: LegsProvider<DualFwd> + Trade<I>` (swaps, basis swaps, XCCY swaps, FRNs, deposits, FX forwards via legs) | Value, FairRate, Cashflows, Sensitivities | discount curve per leg index, FX for cross-currency legs, fixings | \\(\sum_i CF_i\\,P(T_i)\\)                 |
+| `BondPricer::new(anchor)`                           | `FixedRateBondTrade<DualFwd>`                                                                                           | Value, YieldToMaturity, ModifiedDuration, ZSpread, Cashflows, Sensitivities | discount curve                                                    | deterministic spread discounting             |
+| `TreeBasedBondPricer::new(anchor)` / `BackwardFourierEvolutionBondPricer::new(anchor)` | `SteppedCouponBondTrade<DualFwd>` | Value, OAS, Cashflows, Sensitivities | discount and forward curves; `PricerConfiguration` and typed model | Hull-White trinomial tree or backward Fourier evolution |
 | `CdsPricer::new()`                                     | `CdsTrade`                                                                                                              | Value, FairRate, Sensitivities            | credit curve `MarketIndex::Credit(name)`, discount curve          | premium/protection legs on survival curve  |
 | `BlackEuropeanOptionPricer::new()`                     | `EquityEuropeanOptionTrade`                                                                                             | Value, Sensitivities                      | spot, equity surface, discount curve, dividend                    | Black-Scholes                              |
 | `BlackMCEuropeanOptionPricer::new()`                   | `EquityEuropeanOptionTrade`                                                                                             | Value, Sensitivities                      | a `SimulationConfiguration`-generated path set                    | \\(P(T)\\,\mathbb E[\text{payoff}(S_T)]\\) |
@@ -36,7 +38,7 @@ Each pricer specializes the common contract for one payoff family and one valuat
 | `ClosedFormHullWhiteSwaptionPricer::new(alpha, sigma)` | `EuropeanSwaptionTrade<T>`                                                                                              | Value, Sensitivities                      | discount curve                                                    | Jamshidian                                 |
 | `RateFuturesPricer::new()`                             | `RateFuturesTrade`                                                                                                      | Value, Sensitivities                      | curve of `market_index`                                           | \\(Q = 100 - 100F\\)                       |
 
-The table also shows that market-data needs belong to the valuation method. A closed-form option pricer requests a volatility surface. A Monte Carlo pricer requests simulated paths. `Request::YieldToMaturity` and `Request::ModifiedDuration` are reserved in the request enum for specialized fixed-income implementations.
+The table also shows that market-data needs belong to the valuation method. A closed-form option pricer requests a volatility surface. A Monte Carlo pricer requests simulated paths. Straight fixed-rate bonds own quoted-price conversion, yield, duration, and Z-spread. Callable stepped-coupon bonds own price/OAS conversion and select their numerical engine through `InstrumentType::SteppedCouponBond`. See [Bond Pricing](bonds.md).
 
 ## Discount policies
 
@@ -67,7 +69,7 @@ The installed policy is reused for every leg valued by this pricer. Its explicit
 
 ## Results
 
-`EvaluationResults` collects the outputs produced for a request set. Its accessors expose price, fair rate, sensitivities, and detailed cashflows. A caller should request only the measures needed for that operation, then inspect the corresponding optional result.
+`EvaluationResults` collects the outputs produced for a request set. Its accessors expose price, yield, modified duration, Z-spread, OAS, fair rate, sensitivities, and detailed cashflows. A caller should request only the measures needed for that operation, then inspect the corresponding optional result.
 
 Sensitivities come from one reverse sweep from the price to the quote leaves of every curve and volatility object used. The report labels them with market identifiers such as `OIS_USD_SOFR_5Y` and `CapletFloorlet_..._Black`. `SensitivityMap::aggregate()` combines repeated labels that arrive through multiple dependency paths.
 

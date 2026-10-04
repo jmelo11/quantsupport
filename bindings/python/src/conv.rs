@@ -4,7 +4,7 @@
 //! Rust types through their serde implementations via `pythonize`.
 
 use pyo3::prelude::*;
-use pyo3::types::PyDict;
+use pyo3::types::{PyDict, PyList, PyTuple};
 use quantsupport::prelude::{
     BusinessDayConvention, CapFloorType, CapletFloorletType, Compounding, Currency, Date,
     DayCounter, EuroOptionType, Frequency, MarketIndex, PaymentStructure, Period, Request,
@@ -21,8 +21,63 @@ pub fn qs_err<E: std::fmt::Display>(e: E) -> PyErr {
 
 /// Deserializes a JSON-compatible Python object (dict/list/str/...) into `T`.
 pub fn from_py<T: DeserializeOwned>(obj: &Bound<'_, PyAny>, what: &str) -> PyResult<T> {
-    pythonize::depythonize(obj)
+    pythonize::depythonize(&serde_input(obj)?)
         .map_err(|e| QuantSupportError::new_err(format!("invalid {what}: {e}")))
+}
+
+fn serde_input<'py>(obj: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+    macro_rules! enum_input {
+        ($($name:ident),+ $(,)?) => { $(
+            if let Ok(value) = obj.extract::<crate::enums::$name>() {
+                return format!("{value:?}").into_pyobject(obj.py()).map(Bound::into_any).map_err(Into::into);
+            }
+        )+ };
+    }
+    enum_input!(
+        Currency,
+        Side,
+        Compounding,
+        Frequency,
+        DayCounter,
+        TimeUnit,
+        BusinessDayConvention,
+        Request,
+        VolatilityType,
+        SmileType,
+        ScenarioType,
+        OptionType,
+        CapFloorType,
+        CapletFloorletType,
+        PaymentStructure
+    );
+    if let Ok(index) = obj.extract::<crate::enums::MarketIndex>() {
+        return pythonize::pythonize(obj.py(), &index.inner).map_err(qs_err);
+    }
+    if obj.is_instance_of::<crate::time::Date>() || obj.is_instance_of::<crate::time::Period>() {
+        return obj.str().map(Bound::into_any);
+    }
+    if let Ok(dictionary) = obj.cast::<PyDict>() {
+        let result = PyDict::new(obj.py());
+        for (key, value) in dictionary.iter() {
+            result.set_item(serde_input(&key)?, serde_input(&value)?)?;
+        }
+        return Ok(result.into_any());
+    }
+    let items = if let Ok(list) = obj.cast::<PyList>() {
+        Some(list.iter().collect::<Vec<_>>())
+    } else {
+        obj.cast::<PyTuple>()
+            .ok()
+            .map(|tuple| tuple.iter().collect::<Vec<_>>())
+    };
+    if let Some(items) = items {
+        let values = items
+            .iter()
+            .map(serde_input)
+            .collect::<PyResult<Vec<_>>>()?;
+        return PyList::new(obj.py(), values).map(Bound::into_any);
+    }
+    Ok(obj.clone())
 }
 
 /// Reads a JSON file and deserializes it into `T`.
@@ -149,7 +204,7 @@ enum_extractor!(
     "payment structure"
 );
 
-/// Extracts a `Strike` from a float (absolute strike) or the string `"ATM"`.
+/// Extracts a `Strike` from a float, `"ATM"`, or the native tagged schema.
 pub fn extract_strike(obj: &Bound<'_, PyAny>) -> PyResult<Strike> {
     if let Ok(v) = obj.extract::<f64>() {
         return Ok(Strike::Absolute(v));
@@ -159,8 +214,11 @@ pub fn extract_strike(obj: &Bound<'_, PyAny>) -> PyResult<Strike> {
             return Ok(Strike::Atm);
         }
     }
+    if obj.is_instance_of::<PyDict>() {
+        return from_py(obj, "strike");
+    }
     Err(QuantSupportError::new_err(format!(
-        "invalid strike: expected a float or 'ATM', got {}",
+        "invalid strike: expected a float, 'ATM', or native tagged dict, got {}",
         obj.get_type().name()?
     )))
 }
@@ -174,8 +232,11 @@ pub fn extract_market_index(obj: &Bound<'_, PyAny>) -> PyResult<MarketIndex> {
     if let Ok(s) = obj.extract::<String>() {
         return parse_str_enum(&s, "market index");
     }
+    if obj.is_instance_of::<PyDict>() {
+        return from_py(obj, "market index");
+    }
     Err(QuantSupportError::new_err(format!(
-        "invalid market index: expected a MarketIndex or string, got {}",
+        "invalid market index: expected a MarketIndex, string, or native tagged dict, got {}",
         obj.get_type().name()?
     )))
 }

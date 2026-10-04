@@ -39,6 +39,10 @@ pub use crate::{
         },
         pillars::Pillars,
         pricer::Pricer,
+        pricerconfiguration::{
+            FourierGridConfiguration, InstrumentType, PricerConfiguration, PricerImplementation,
+            PricingModelConfiguration, TimeGridConfiguration,
+        },
         pricerstate::PricerState,
         pricingcontext::PricingContext,
         request::{
@@ -77,12 +81,15 @@ pub use crate::{
             makefutures::MakeFutures,
         },
         fixedincome::{
+            callschedule::CallScheduleEntry,
             fixedratebond::{FixedRateBond, FixedRateBondTrade},
             fixedratedeposit::{FixedRateDeposit, FixedRateDepositTrade},
             floatingratenote::{FloatingRateNote, FloatingRateNoteTrade},
             makefixedratebond::MakeFixedRateBond,
             makefixedratedeposit::MakeFixedRateDeposit,
             makefloatingratenote::MakeFloatingRateNote,
+            makesteppedcouponbond::MakeSteppedCouponBond,
+            steppedcouponbond::{SteppedCouponBond, SteppedCouponBondTrade},
         },
         fx::{
             fxeuropeanoption::{FxEuropeanOption, FxEuropeanOptionTrade},
@@ -141,6 +148,11 @@ pub use crate::{
         equity::{
             blackeuropeanoptionpricer::BlackEuropeanOptionPricer,
             blackmceuropeanoptionpricer::BlackMCEuropeanOptionPricer,
+        },
+        fixedincome::{
+            backwardfourierevolutionbondpricer::BackwardFourierEvolutionBondPricer,
+            bondpricer::{BondPricer, BondPricingAnchor},
+            treebasedbondpricer::TreeBasedBondPricer,
         },
         fx::{fxeuropeanoptionpricer::FxEuropeanOptionPricer, fxforwardpricer::FxForwardPricer},
         rates::{

@@ -1,17 +1,20 @@
 use std::collections::{BTreeMap, HashMap};
 
 use crate::{
-    core::marketdatahandling::{
-        constructedelementrequest::ConstructedElementRequest,
-        constructedelementstore::ConstructedElementStore,
-        marketdata::{MarketData, MarketDataProvider, MarketDataRequest},
+    core::{
+        marketdatahandling::{
+            constructedelementrequest::ConstructedElementRequest,
+            constructedelementstore::ConstructedElementStore,
+            marketdata::{MarketData, MarketDataProvider, MarketDataRequest},
+        },
+        pricerconfiguration::{InstrumentType, PricerConfiguration},
     },
     currencies::currency::Currency,
     indices::marketindex::MarketIndex,
     models::modelconfiguration::SimulationConfiguration,
     quotes::{
-        fixingstore::FixingStore, fxstore::FxStore, quote::Level, quotestore::QuoteStore,
-        scenario::Scenario,
+        fixingstore::FixingStore, fxstore::FxStore, quote::Level, quoteselector::QuoteSelector,
+        quotestore::QuoteStore, scenario::Scenario,
     },
     rates::bootstrapping::{
         bootstrapdiscountpolicy::BootstrapDiscountPolicy,
@@ -54,6 +57,8 @@ pub struct PricingContext {
     volatility_cube_configurations: Vec<VolatilityCubeConfiguration>,
     /// Model-driven Monte Carlo simulation specifications.
     simulation_configurations: Vec<SimulationConfiguration>,
+    /// Instrument-level pricer selections and their typed model assignments.
+    pricer_configurations: Vec<PricerConfiguration>,
     /// Constructed market data elements, such as discount curves, volatility surfaces, among others.
     constructed_elements: ConstructedElementStore,
     /// The base currency for pricing and reporting results.
@@ -77,6 +82,7 @@ impl PricingContext {
             volatility_surface_configurations: Vec::new(),
             volatility_cube_configurations: Vec::new(),
             simulation_configurations: Vec::new(),
+            pricer_configurations: Vec::new(),
             constructed_elements: ConstructedElementStore::default(),
             base_currency: Currency::USD, // Default base currency
             base_index: MarketIndex::SOFR,
@@ -215,6 +221,14 @@ impl PricingContext {
         self
     }
 
+    /// Sets instrument-level pricer configurations loaded from typed data or
+    /// JSON.
+    #[must_use]
+    pub fn with_pricer_configurations(mut self, configs: Vec<PricerConfiguration>) -> Self {
+        self.pricer_configurations = configs;
+        self
+    }
+
     /// Returns the curve configurations used for bootstrapping.
     #[must_use]
     pub const fn curve_configurations(&self) -> &Vec<CurveConfiguration> {
@@ -243,6 +257,23 @@ impl PricingContext {
     #[must_use]
     pub const fn simulation_configurations(&self) -> &Vec<SimulationConfiguration> {
         &self.simulation_configurations
+    }
+
+    /// Returns all instrument-level pricer configurations.
+    #[must_use]
+    pub const fn pricer_configurations(&self) -> &Vec<PricerConfiguration> {
+        &self.pricer_configurations
+    }
+
+    /// Returns the configuration for one instrument family, if supplied.
+    #[must_use]
+    pub fn pricer_configuration(
+        &self,
+        instrument_type: InstrumentType,
+    ) -> Option<&PricerConfiguration> {
+        self.pricer_configurations
+            .iter()
+            .find(|configuration| configuration.instrument_type() == instrument_type)
     }
 
     /// Returns the current reference date.
@@ -274,12 +305,25 @@ impl PricingContext {
         &self.base_index
     }
 
-    /// Placeholder for one-time initialisation (pre-loading caches, etc.).
+    /// Validates pricing configuration and constructs all configured market
+    /// objects in dependency order.
     ///
     /// # Errors
-    /// Returns an error if a scenario matches no quotes, or if bootstrapping
-    /// or volatility surface construction fails.
+    /// Returns an error for duplicate or incompatible pricer configuration,
+    /// an unmatched scenario, or failed curve, volatility, or simulation
+    /// construction.
     pub fn initialize(&mut self) -> Result<()> {
+        let mut configured_instruments = std::collections::HashSet::new();
+        for configuration in &self.pricer_configurations {
+            configuration.validate()?;
+            if !configured_instruments.insert(configuration.instrument_type()) {
+                return Err(QSError::InvalidValueErr(format!(
+                    "Duplicate pricer configuration for instrument type {:?}",
+                    configuration.instrument_type()
+                )));
+            }
+        }
+
         // Apply scenario shocks to a copy of the base quote store. All
         // downstream construction (curves, vols, simulations) then uses the
         // shocked market.
@@ -490,7 +534,41 @@ impl MarketDataProvider for PricingContext {
         }
 
         // 4. Assemble final MarketData.
-        let md = MarketData::new(fixings, constructed_elements).with_fx_store(fx_store);
+        let mut pricer_configurations = HashMap::new();
+        if let Some(configuration_requests) = request.pricer_configuration_request() {
+            for instrument_type in configuration_requests {
+                let configuration = self
+                    .pricer_configurations
+                    .iter()
+                    .find(|configuration| configuration.instrument_type() == *instrument_type)
+                    .ok_or_else(|| {
+                        QSError::NotFoundErr(format!(
+                            "Pricer configuration not found for instrument type {instrument_type:?}"
+                        ))
+                    })?;
+                pricer_configurations.insert(*instrument_type, configuration.clone());
+            }
+        }
+
+        let calibration_quotes = request
+            .calibration_request()
+            .map(|calibration| {
+                let mut quotes = QuoteStore::new(self.evaluation_date());
+                for identifier in calibration.resolve_instrument_ids(&constructed_elements)? {
+                    let quote = self.quote_store().select(&identifier).ok_or_else(|| {
+                        QSError::NotFoundErr(format!("Calibration quote not found: {identifier}"))
+                    })?;
+                    quotes.add_quote(quote.clone());
+                }
+                Ok::<_, QSError>(quotes)
+            })
+            .transpose()?;
+        let mut md = MarketData::new(fixings, constructed_elements)
+            .with_fx_store(fx_store)
+            .with_pricer_configurations(pricer_configurations);
+        if let Some(quotes) = calibration_quotes {
+            md = md.with_calibration_quotes(quotes);
+        }
 
         Ok(md)
     }

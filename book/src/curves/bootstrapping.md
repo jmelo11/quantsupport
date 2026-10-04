@@ -136,7 +136,7 @@ Credit calibration applies the same broad construction pattern to default probab
 
 ```rust,ignore
 pub struct CreditCurveConfiguration {
-    market_index: MarketIndex,      // MarketIndex::Credit("ACME")
+  market_index: MarketIndex,      // MarketIndex::Credit("CORPORATE-A")
     currency: Currency,
     discount_index: MarketIndex,    // curve discounting premium & protection legs, e.g. SOFR
     recovery: f64,                  // e.g. 0.4
@@ -144,19 +144,19 @@ pub struct CreditCurveConfiguration {
     premium_frequency: Frequency,   // default Quarterly
     interpolator: Interpolator,     // default LogLinear (on survival probabilities)
     enable_extrapolation: bool,     // default true
-    quotes: Vec<String>,            // "Cds_ACME_USD_1Y", "Cds_ACME_USD_5Y", ...
+    quotes: Vec<String>,            // "Cds_CORPORATE-A_USD_1Y", "Cds_CORPORATE-A_USD_5Y", ...
 }
 ```
 
-Applications may express the same configuration in JSON. This example calibrates the ACME survival curve from one-, five-, and ten-year USD CDS spreads:
+Applications may express the same configuration in JSON. This example calibrates the CORPORATE-A survival curve from one-, five-, and ten-year USD CDS spreads:
 
 ```json
 {
-  "market_index": { "Credit": "ACME" },
+  "market_index": { "Credit": "CORPORATE-A" },
   "currency": "USD",
   "discount_index": "SOFR",
   "recovery": 0.4,
-  "quotes": ["Cds_ACME_USD_1Y", "Cds_ACME_USD_5Y", "Cds_ACME_USD_10Y"]
+  "quotes": ["Cds_CORPORATE-A_USD_1Y", "Cds_CORPORATE-A_USD_5Y", "Cds_CORPORATE-A_USD_10Y"]
 }
 ```
 

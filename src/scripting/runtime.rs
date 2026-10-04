@@ -1453,11 +1453,11 @@ mod tests {
         .with_n_paths(4)
         .with_seed(7);
         model.add_curve_model(MarketIndex::SOFR, rate_model);
-        model.add_equity_model("ACME".to_string(), equity_model);
+        model.add_equity_model("CORPORATE-A".to_string(), equity_model);
 
         let events = EventStream::try_from(vec![CodedEvent::new(
             event_date,
-            "payoff = 0; payoff pays Spot(\"ACME\");".to_string(),
+            "payoff = 0; payoff pays Spot(\"CORPORATE-A\");".to_string(),
         )])?;
         let engine = ScriptEngine::new(events, reference_date, Currency::USD, MarketIndex::SOFR)?;
         let values = engine.evaluate(&mut model, Some("payoff"))?;

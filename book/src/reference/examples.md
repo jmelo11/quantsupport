@@ -8,6 +8,7 @@ Run the commands from the repository root. The table is ordered broadly from mar
 | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `cargo run -p bootstrap`                          | Loads `quotes.json` and `curve_specs.json`, bootstraps SOFR, TermSOFR3m, ICP, the CLP-under-USD collateral curve, and a price-anchored corporate bond curve, then prints pillar dates, discount factors and zero rates |
 | `cargo run -p valuation`                          | Builds swaps with `MakeSwap`, evaluates `Value`, `FairRate` and `Cashflows` through `PricingContext`, prints the cashflow table                                                                         |
+| `cargo run --manifest-path examples/valuation/Cargo.toml --bin stepped_coupon_bond` | Prices a mixed fixed/floating, capped/floored, amortizing callable bond with both the tree and backward-Fourier engines |
 | `cargo run -p sensitivity`                        | Prices SOFR, Term SOFR, ICP and USD/CLP cross-currency swaps with `DualFwd` and prints per-quote sensitivity ladders                                                                                    |
 | `cargo run -p evaluator`                          | Registers several pricers in an `Evaluator` keyed by `TypeId` and prices a heterogeneous portfolio via `&dyn Any`                                                                                       |
 | `cargo run -p volatilitysurface`                  | Builds a SOFR caplet Black surface and prints interpolated vols on an expiry × strike grid                                                                                                              |
@@ -16,6 +17,7 @@ Run the commands from the repository root. The table is ordered broadly from mar
 | `cargo run -p cva`                                | Runs `XvaEngine` on a netting set (5Y SOFR swap + 5Y USD/CLP XCCY) with `csa_terms.json` and `xva_config.json`, prints CVA/FVA and sensitivities                                                        |
 | `cargo run -p scripting-examples --bin valuation` | Parses a scripted payoff, builds a `ScriptEngine` and prints value and expected cashflows                                                                                                               |
 | `cargo run -p scripting-examples --bin xva`       | Wraps a `ScriptedProduct` as contingent claims and runs it through the exposure engine next to a vanilla swap                                                                                           |
+| `cargo run -p scripting-examples --bin stepped_coupon_bond` | Cross-checks deterministic stepped-coupon and issuer-call cashflows between the native tree and an equivalent script |
 
 The examples deliberately overlap. For instance, `bootstrap` focuses on constructed curves, `sensitivity` follows those curves into trade risk, and `cva` extends them into simulated exposure. Reading that sequence shows how the same market identities and quote labels survive across workflows.
 
@@ -51,7 +53,7 @@ Product-specific examples add volatility, simulation, or XVA configuration befor
 
 ## Python
 
-`bindings/python` mirrors the pricing and XVA workflows through `PricingContext(...)`, `ctx.evaluate(trade, requests)`, and `ctx.run_xva(config, netting_sets)`. Results are returned as pandas DataFrames. `bindings/python/README.md` documents the supported constructors and conversion rules. Scripted-product construction currently lives in the Rust API.
+`bindings/python` mirrors the pricing and XVA workflows through `PricingContext(...)`, `ctx.evaluate(trade, requests)`, and `ctx.run_xva(config, netting_sets)`. Results are returned as pandas DataFrames. Python-defined `Instrument`, `Trade`, and `Pricer` implementations can be registered on a context or standalone `Evaluator`, and ordinary Python classes are accepted structurally. `bindings/python/examples/stepped_coupon_bond.ipynb` demonstrates the callable stepped-coupon API and invokes its scripted cross-check. `bindings/python/README.md` documents the constructors, conversion rules, and extension API.
 
 ## Tests and benchmarks
 

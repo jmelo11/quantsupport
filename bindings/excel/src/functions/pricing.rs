@@ -1,8 +1,8 @@
 use quantsupport::prelude::{
-    BasisSwap, BasisSwapTrade, BlackEuropeanOptionPricer, CdsPricer, ClosedFormBlackCapPricer,
-    ClosedFormBlackCapletPricer, DiscountedCashflowPricer, DualFwd, EvaluationResults,
-    FixFloatCrossCurrencySwap, FixFloatCrossCurrencySwapTrade, FixedRateBond, FixedRateBondTrade,
-    FixedRateDeposit, FixedRateDepositTrade, FloatFloatCrossCurrencySwap,
+    BasisSwap, BasisSwapTrade, BlackEuropeanOptionPricer, BondPricer, BondPricingAnchor, CdsPricer,
+    ClosedFormBlackCapPricer, ClosedFormBlackCapletPricer, DiscountedCashflowPricer, DualFwd,
+    EvaluationResults, FixFloatCrossCurrencySwap, FixFloatCrossCurrencySwapTrade,
+    FixedRateBondTrade, FixedRateDeposit, FixedRateDepositTrade, FloatFloatCrossCurrencySwap,
     FloatFloatCrossCurrencySwapTrade, FloatingRateNote, FloatingRateNoteTrade,
     FxEuropeanOptionPricer, FxForwardPricer, Pricer, PricingContext, RateFuturesPricer, Request,
     SingleCurveCSADiscountPolicy, Swap, SwapTrade,
@@ -53,11 +53,9 @@ fn evaluate(
         >::new()
         .evaluate(trade, requests, context)
         .map_err(|error| error.to_string()),
-        QsObject::FixedRateBondTrade(trade) => {
-            DiscountedCashflowPricer::<FixedRateBond<DualFwd>, FixedRateBondTrade<DualFwd>>::new()
-                .evaluate(trade, requests, context)
-                .map_err(|error| error.to_string())
-        }
+        QsObject::FixedRateBondTrade(trade) => BondPricer::new(BondPricingAnchor::ZSpread(0.0))
+            .evaluate(trade, requests, context)
+            .map_err(|error| error.to_string()),
         QsObject::FloatingRateNoteTrade(trade) => DiscountedCashflowPricer::<
             FloatingRateNote<DualFwd>,
             FloatingRateNoteTrade<DualFwd>,
@@ -123,6 +121,75 @@ fn evaluate(
     }
 }
 
+fn evaluate_fixed_rate_bond(
+    trade: &FixedRateBondTrade<DualFwd>,
+    context: &PricingContext,
+    anchor: BondPricingAnchor,
+    requests: &[Request],
+) -> Result<EvaluationResults, String> {
+    BondPricer::new(anchor)
+        .evaluate(trade, requests, context)
+        .map_err(|error| error.to_string())
+}
+
+fn selected_bond_anchor(
+    clean_price: Option<f64>,
+    dirty_price: Option<f64>,
+    z_spread: Option<f64>,
+    oas: Option<f64>,
+) -> Result<BondPricingAnchor, String> {
+    let anchors = [
+        clean_price.map(BondPricingAnchor::CleanPrice),
+        dirty_price.map(BondPricingAnchor::DirtyPrice),
+        z_spread.map(BondPricingAnchor::ZSpread),
+        oas.map(BondPricingAnchor::OAS),
+    ];
+    let mut selected = anchors.into_iter().flatten();
+    let anchor = selected.next().ok_or_else(|| {
+        "provide exactly one of clean_price, dirty_price, z_spread, or OAS".to_string()
+    })?;
+    if selected.next().is_some() {
+        return Err(
+            "provide exactly one of clean_price, dirty_price, z_spread, or OAS".to_string(),
+        );
+    }
+    Ok(anchor)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn evaluate_bond(
+    registry: &Registry,
+    trade_handle: &str,
+    context_handle: &str,
+    clean_price: Option<f64>,
+    dirty_price: Option<f64>,
+    z_spread: Option<f64>,
+    oas: Option<f64>,
+    requests: &[Request],
+) -> Result<EvaluationResults, String> {
+    let context = registry
+        .pricing_context(context_handle)
+        .map_err(|error| error.to_string())?;
+    let trade = match registry
+        .object(trade_handle)
+        .map_err(|error| error.to_string())?
+    {
+        QsObject::FixedRateBondTrade(trade) => trade,
+        object => {
+            return Err(format!(
+                "object type '{}' is not a fixed-rate bond trade",
+                object.kind()
+            ))
+        }
+    };
+    evaluate_fixed_rate_bond(
+        trade,
+        context,
+        selected_bond_anchor(clean_price, dirty_price, z_spread, oas)?,
+        requests,
+    )
+}
+
 fn evaluate_fx_forward(
     trade: &quantsupport::prelude::FxForwardTrade,
     context: &PricingContext,
@@ -148,6 +215,170 @@ pub fn qs_price(trade: &str, context: &str) -> Result<f64, XllError> {
         .map_err(value_error)?
         .price()
         .ok_or_else(|| not_found("the selected pricer did not return a price"))
+}
+
+#[xll_bindgen(
+    name = "QS.BOND.PRICE",
+    category = "QuantSupport - Fixed Income",
+    help = "Prices a straight fixed-rate bond from exactly one clean-price, dirty-price, or Z-spread anchor"
+)]
+pub fn qs_bond_price(
+    trade: &str,
+    context: &str,
+    clean_price: Option<f64>,
+    dirty_price: Option<f64>,
+    z_spread: Option<f64>,
+    oas: Option<f64>,
+) -> Result<f64, XllError> {
+    with_registry(|registry| {
+        evaluate_bond(
+            registry,
+            trade,
+            context,
+            clean_price,
+            dirty_price,
+            z_spread,
+            oas,
+            &[Request::Value],
+        )
+    })
+    .map_err(value_error)?
+    .price()
+    .ok_or_else(|| not_found("the bond pricer did not return a price"))
+}
+
+#[xll_bindgen(
+    name = "QS.BOND.MODIFIED.DURATION",
+    category = "QuantSupport - Fixed Income",
+    help = "Returns straight-bond yield-modified duration from a clean-price, dirty-price, or Z-spread anchor"
+)]
+pub fn qs_bond_modified_duration(
+    trade: &str,
+    context: &str,
+    clean_price: Option<f64>,
+    dirty_price: Option<f64>,
+    z_spread: Option<f64>,
+    oas: Option<f64>,
+) -> Result<f64, XllError> {
+    with_registry(|registry| {
+        evaluate_bond(
+            registry,
+            trade,
+            context,
+            clean_price,
+            dirty_price,
+            z_spread,
+            oas,
+            &[Request::ModifiedDuration],
+        )
+    })
+    .map_err(value_error)?
+    .modified_duration()
+    .ok_or_else(|| not_found("the bond pricer did not return modified duration"))
+}
+
+#[xll_bindgen(
+    name = "QS.BOND.Z.SPREAD",
+    category = "QuantSupport - Fixed Income",
+    help = "Returns the Z-spread of a straight bond from exactly one pricing anchor"
+)]
+pub fn qs_bond_z_spread(
+    trade: &str,
+    context: &str,
+    clean_price: Option<f64>,
+    dirty_price: Option<f64>,
+    z_spread: Option<f64>,
+    oas: Option<f64>,
+) -> Result<f64, XllError> {
+    with_registry(|registry| {
+        evaluate_bond(
+            registry,
+            trade,
+            context,
+            clean_price,
+            dirty_price,
+            z_spread,
+            oas,
+            &[Request::ZSpread],
+        )
+    })
+    .map_err(value_error)?
+    .z_spread()
+    .ok_or_else(|| not_found("the bond pricer did not return a Z-spread"))
+}
+
+#[xll_bindgen(
+    name = "QS.BOND.OAS",
+    category = "QuantSupport - Fixed Income",
+    help = "Returns OAS for an issuer-call bond; straight fixed-rate bond handles are rejected"
+)]
+pub fn qs_bond_oas(
+    trade: &str,
+    context: &str,
+    clean_price: Option<f64>,
+    dirty_price: Option<f64>,
+    z_spread: Option<f64>,
+    oas: Option<f64>,
+) -> Result<f64, XllError> {
+    with_registry(|registry| {
+        evaluate_bond(
+            registry,
+            trade,
+            context,
+            clean_price,
+            dirty_price,
+            z_spread,
+            oas,
+            &[Request::OAS],
+        )
+    })
+    .map_err(value_error)?
+    .oas()
+    .ok_or_else(|| not_found("the bond pricer did not return an OAS"))
+}
+
+#[xll_bindgen(
+    name = "QS.BOND.SENSITIVITIES",
+    category = "QuantSupport - Fixed Income",
+    help = "Spills curve and dPV/dZSpread risk in one table for a straight fixed-rate bond"
+)]
+pub fn qs_bond_sensitivities(
+    trade: &str,
+    context: &str,
+    clean_price: Option<f64>,
+    dirty_price: Option<f64>,
+    z_spread: Option<f64>,
+    oas: Option<f64>,
+) -> Result<*mut XLOPER12, XllError> {
+    let results = with_registry(|registry| {
+        evaluate_bond(
+            registry,
+            trade,
+            context,
+            clean_price,
+            dirty_price,
+            z_spread,
+            oas,
+            &[Request::Value, Request::Sensitivities],
+        )
+    })
+    .map_err(value_error)?;
+    let sensitivities = results
+        .sensitivities()
+        .ok_or_else(|| not_found("the bond pricer did not return sensitivities"))?;
+    let rows = sensitivities.instrument_keys().len() + 1;
+    let mut cells = Vec::with_capacity(rows * 2);
+    cells.push(XLOPER12::from_str("Risk factor"));
+    cells.push(XLOPER12::from_str("Sensitivity"));
+    for (key, exposure) in sensitivities
+        .instrument_keys()
+        .iter()
+        .zip(sensitivities.exposure())
+    {
+        cells.push(XLOPER12::from_str(key));
+        cells.push(XLOPER12::from_f64(*exposure));
+    }
+    Ok(build_multi(cells, rows, 2))
 }
 
 #[xll_bindgen(

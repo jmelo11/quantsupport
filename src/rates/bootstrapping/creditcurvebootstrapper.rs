@@ -362,7 +362,7 @@ mod tests {
         ))
     }
 
-    /// Bootstraps an ACME credit curve from the given `(quote id, spread)`
+    /// Bootstraps a CORPORATE-A credit curve from the given `(quote id, spread)`
     /// pairs over a flat 3% discount curve.
     fn bootstrap_with(
         ref_date: Date,
@@ -385,7 +385,7 @@ mod tests {
         discount_curves.insert(MarketIndex::SOFR, discount_element.clone());
 
         let spec = CreditCurveConfiguration::new(
-            MarketIndex::Credit("ACME".to_string()),
+            MarketIndex::Credit("CORPORATE-A".to_string()),
             Currency::USD,
             MarketIndex::SOFR,
             recovery,
@@ -408,19 +408,19 @@ mod tests {
         bootstrap_with(
             ref_date,
             &[
-                ("Cds_ACME_USD_1Y", 0.010),
-                ("Cds_ACME_USD_3Y", 0.015),
-                ("Cds_ACME_USD_5Y", 0.020),
+                ("Cds_CORPORATE-A_USD_1Y", 0.010),
+                ("Cds_CORPORATE-A_USD_3Y", 0.015),
+                ("Cds_CORPORATE-A_USD_5Y", 0.020),
             ],
             0.4,
         )
     }
 
-    fn get_acme_curve(
+    fn get_corporate_curve(
         curves: &HashMap<MarketIndex, CreditCurveElement>,
     ) -> Result<&CreditCurveElement> {
         curves
-            .get(&MarketIndex::Credit("ACME".to_string()))
+            .get(&MarketIndex::Credit("CORPORATE-A".to_string()))
             .ok_or_else(|| QSError::NotFoundErr("credit curve".into()))
     }
 
@@ -433,7 +433,7 @@ mod tests {
         Ok(nodes.iter().map(|(d, v)| (*d, v.value())).collect())
     }
 
-    /// Prices a spot-starting quarterly ACME CDS against the given curves.
+    /// Prices a spot-starting quarterly CORPORATE-A CDS against the given curves.
     #[allow(clippy::too_many_arguments)]
     fn price_cds(
         curves: &HashMap<MarketIndex, CreditCurveElement>,
@@ -445,21 +445,21 @@ mod tests {
         side: Side,
         requests: &[Request],
     ) -> Result<crate::core::evaluationresults::EvaluationResults> {
-        let credit_index = MarketIndex::Credit("ACME".to_string());
+        let credit_index = MarketIndex::Credit("CORPORATE-A".to_string());
         let mut store = ConstructedElementStore::default();
         store
             .discount_curves_mut()
             .insert(MarketIndex::SOFR, discount_element.clone());
         store
             .credit_curves_mut()
-            .insert(credit_index.clone(), get_acme_curve(curves)?.clone());
+            .insert(credit_index.clone(), get_corporate_curve(curves)?.clone());
         let provider = SimpleMarketDataProvider {
             evaluation_date: ref_date,
             market_data: MarketData::new(HashMap::new(), store),
         };
 
         let cds = CreditDefaultSwap::new(
-            format!("CDS_ACME_{years}Y"),
+            format!("CDS_CORPORATE-A_{years}Y"),
             credit_index,
             MarketIndex::SOFR,
             Currency::USD,
@@ -478,7 +478,7 @@ mod tests {
     fn bootstrap_produces_decreasing_survivals() -> Result<()> {
         let ref_date = Date::new(2025, 1, 2);
         let (curves, _) = bootstrap_test_curve(ref_date)?;
-        let credit_index = MarketIndex::Credit("ACME".to_string());
+        let credit_index = MarketIndex::Credit("CORPORATE-A".to_string());
         let element = curves
             .get(&credit_index)
             .ok_or_else(|| QSError::NotFoundErr("credit curve".into()))?;
@@ -500,7 +500,7 @@ mod tests {
     fn pillar_cds_reprices_at_par() -> Result<()> {
         let ref_date = Date::new(2025, 1, 2);
         let (curves, discount_element) = bootstrap_test_curve(ref_date)?;
-        let credit_index = MarketIndex::Credit("ACME".to_string());
+        let credit_index = MarketIndex::Credit("CORPORATE-A".to_string());
 
         let mut store = ConstructedElementStore::default();
         store
@@ -521,7 +521,7 @@ mod tests {
         let notional = 1_000_000.0;
         let quoted_spread = 0.020;
         let cds = CreditDefaultSwap::new(
-            "CDS_ACME_5Y".to_string(),
+            "CDS_CORPORATE-A_5Y".to_string(),
             credit_index,
             MarketIndex::SOFR,
             Currency::USD,
@@ -564,7 +564,7 @@ mod tests {
             sensitivities
                 .instrument_keys()
                 .iter()
-                .any(|k| k.contains("Cds_ACME_USD_5Y")),
+                .any(|k| k.contains("Cds_CORPORATE-A_USD_5Y")),
             "sensitivities should include the CDS quote pillars"
         );
         Ok(())
@@ -584,13 +584,13 @@ mod tests {
         let (curves, _) = bootstrap_with(
             ref_date,
             &[
-                ("Cds_ACME_USD_1Y", spread),
-                ("Cds_ACME_USD_3Y", spread),
-                ("Cds_ACME_USD_5Y", spread),
+                ("Cds_CORPORATE-A_USD_1Y", spread),
+                ("Cds_CORPORATE-A_USD_3Y", spread),
+                ("Cds_CORPORATE-A_USD_5Y", spread),
             ],
             recovery,
         )?;
-        let nodes = node_survivals(get_acme_curve(&curves)?)?;
+        let nodes = node_survivals(get_corporate_curve(&curves)?)?;
         let dc = DayCounter::Actual360;
         let expected_hazard = spread / (1.0 - recovery);
         for (date, survival) in nodes.iter().skip(1) {
@@ -611,10 +611,13 @@ mod tests {
         let ref_date = Date::new(2025, 1, 2);
         let (curves, _) = bootstrap_with(
             ref_date,
-            &[("Cds_ACME_USD_1Y", 0.0), ("Cds_ACME_USD_5Y", 0.0)],
+            &[
+                ("Cds_CORPORATE-A_USD_1Y", 0.0),
+                ("Cds_CORPORATE-A_USD_5Y", 0.0),
+            ],
             0.4,
         )?;
-        for (_, survival) in node_survivals(get_acme_curve(&curves)?)? {
+        for (_, survival) in node_survivals(get_corporate_curve(&curves)?)? {
             assert!(
                 (survival - 1.0).abs() < 1e-9,
                 "zero spread must imply ~full survival, got {survival}"
@@ -632,10 +635,13 @@ mod tests {
         for spread in [1e-4, 0.20] {
             let (curves, _) = bootstrap_with(
                 ref_date,
-                &[("Cds_ACME_USD_1Y", spread), ("Cds_ACME_USD_5Y", spread)],
+                &[
+                    ("Cds_CORPORATE-A_USD_1Y", spread),
+                    ("Cds_CORPORATE-A_USD_5Y", spread),
+                ],
                 0.4,
             )?;
-            let nodes = node_survivals(get_acme_curve(&curves)?)?;
+            let nodes = node_survivals(get_corporate_curve(&curves)?)?;
             let expected_hazard = spread / 0.6;
             for (date, survival) in nodes.iter().skip(1) {
                 assert!(*survival > 0.0 && *survival < 1.0);
@@ -657,7 +663,7 @@ mod tests {
     fn impossible_spread_errors() {
         let ref_date = Date::new(2025, 1, 2);
         // Required hazard ≈ 15 / 0.6 = 25 > HAZARD_UPPER (20).
-        let result = bootstrap_with(ref_date, &[("Cds_ACME_USD_5Y", 15.0)], 0.4);
+        let result = bootstrap_with(ref_date, &[("Cds_CORPORATE-A_USD_5Y", 15.0)], 0.4);
         assert!(result.is_err(), "absurd spread should fail the strip");
     }
 
@@ -669,13 +675,13 @@ mod tests {
         let (curves, _) = bootstrap_with(
             ref_date,
             &[
-                ("Cds_ACME_USD_1Y", 0.020),
-                ("Cds_ACME_USD_3Y", 0.019),
-                ("Cds_ACME_USD_5Y", 0.018),
+                ("Cds_CORPORATE-A_USD_1Y", 0.020),
+                ("Cds_CORPORATE-A_USD_3Y", 0.019),
+                ("Cds_CORPORATE-A_USD_5Y", 0.018),
             ],
             0.4,
         )?;
-        let nodes = node_survivals(get_acme_curve(&curves)?)?;
+        let nodes = node_survivals(get_corporate_curve(&curves)?)?;
         for w in nodes.windows(2) {
             assert!(w[1].1 < w[0].1, "survivals must remain decreasing");
             assert!(w[1].1 > 0.0);
@@ -769,9 +775,9 @@ mod tests {
     fn ad_sensitivities_match_finite_difference() -> Result<()> {
         let ref_date = Date::new(2025, 1, 2);
         let base_spreads = [
-            ("Cds_ACME_USD_1Y", 0.010),
-            ("Cds_ACME_USD_3Y", 0.015),
-            ("Cds_ACME_USD_5Y", 0.020),
+            ("Cds_CORPORATE-A_USD_1Y", 0.010),
+            ("Cds_CORPORATE-A_USD_3Y", 0.015),
+            ("Cds_CORPORATE-A_USD_5Y", 0.020),
         ];
         let contract_spread = 0.012; // off-market so quote sensitivities are nonzero
         let bump = 1e-4; // 1bp

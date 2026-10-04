@@ -50,6 +50,24 @@ current modules cover:
   caps/floors, caplets/floorlets, and rate futures;
 - native price, fair-rate, cashflow, and sensitivity requests.
 
+Straight fixed-rate bonds have dedicated worksheet functions. Each accepts a
+clean price, dirty price, or Z-spread anchor; leave the other anchor cells
+blank:
+
+```text
+=QS.BOND.PRICE(bond,context,99.25,,,)
+=QS.BOND.MODIFIED.DURATION(bond,context,99.25,,,)
+=QS.BOND.Z.SPREAD(bond,context,99.25,,,)
+=QS.BOND.SENSITIVITIES(bond,context,99.25,,,)
+```
+
+The sensitivity spill contains curve risk and `dPV/dZSpread` in the same
+table. Callable terms are not part of `QS.TRADE.FIXED.BOND`; the separate
+`SteppedCouponBond` callable product is currently exposed by the Rust and
+Python APIs. Instrument-level pricer selection and typed model assignments
+are loaded with `QS.PRICER.CONFIGS.FROM.JSON` and passed to
+`QS.CONTEXT.CREATE`.
+
 ## Object handles and quote updates
 
 An Excel cell cannot contain a Rust object, so constructors return a revisioned
@@ -144,7 +162,7 @@ To configure another curve, add its quote rows and call
 setting and pillar selection remains visible and editable in the workbook.
 
 Complex indices use explicit prefixes in worksheet arguments:
-`Equity:SPX`, `Credit:ACME`, `FX:EUR/USD`, and `Collateral:EUR/USD`.
+`Equity:SPX`, `Credit:CORPORATE-A`, `FX:EUR/USD`, and `Collateral:EUR/USD`.
 
 ## Inspect a bootstrapped curve
 
@@ -185,6 +203,7 @@ already store QuantSupport JSON, the add-in also exposes import functions:
 =QS.CREDIT.CURVE.CONFIGS.FROM.JSON("credit", credit_configs_json)
 =QS.VOL.SURFACE.CONFIGS.FROM.JSON("surfaces", surface_configs_json)
 =QS.VOL.CUBE.CONFIGS.FROM.JSON("cubes", cube_configs_json)
+=QS.PRICER.CONFIGS.FROM.JSON("pricers", pricer_configs_json)
 =QS.SIMULATION.CONFIGS.FROM.JSON("simulations", simulation_configs_json)
 =QS.SCENARIOS.FROM.JSON("scenario", scenario_json)
 ```

@@ -86,6 +86,15 @@ where
         &self.cashflows
     }
 
+    /// Returns mutable cashflows for market-data resolution by a pricer.
+    ///
+    /// Instrument builders establish the contractual shape; pricers use this
+    /// access only to install resolved fixings on a cloned leg.
+    #[must_use]
+    pub fn cashflows_mut(&mut self) -> &mut [CashflowType<T>] {
+        &mut self.cashflows
+    }
+
     /// Returns the market index associated with the leg, if any.
     #[must_use]
     pub const fn forward_index(&self) -> Option<&MarketIndex> {

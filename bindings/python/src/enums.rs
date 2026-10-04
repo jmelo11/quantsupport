@@ -350,6 +350,8 @@ mirror_enum!(
         YieldToMaturity,
         ModifiedDuration,
         Sensitivities,
+        ZSpread,
+        OAS,
         Cashflows,
         FairRate
     ]
@@ -367,6 +369,8 @@ impl Request {
             "FairRate" | "fair_rate" => Ok(Self::FairRate),
             "YieldToMaturity" | "ytm" => Ok(Self::YieldToMaturity),
             "ModifiedDuration" | "modified_duration" => Ok(Self::ModifiedDuration),
+            "ZSpread" | "z_spread" | "zspread" => Ok(Self::ZSpread),
+            "OAS" | "oas" => Ok(Self::OAS),
             other => Self::from_name(other),
         }
     }

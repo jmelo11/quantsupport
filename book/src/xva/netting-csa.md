@@ -30,7 +30,7 @@ pub struct CsaTerms {
     funding_spread: f64,                 // flat funding spread (fallback)
     funding_spread_curve: Option<FundingSpreadCurve { dates: Vec<Date>, spreads: Vec<f64> }>,
     funding_index: Option<MarketIndex>,  // bootstrapped funding curve
-    credit_index: Option<MarketIndex>,   // bootstrapped credit curve, e.g. Credit("ACME")
+    credit_index: Option<MarketIndex>,   // bootstrapped credit curve, e.g. Credit("CORPORATE-A")
 }
 ```
 

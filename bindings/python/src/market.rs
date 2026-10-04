@@ -8,15 +8,17 @@
 use pyo3::prelude::*;
 use quantsupport::prelude::{
     CurveConfiguration as QsCurveConfiguration, DualFwd, FixingStore as QsFixingStore,
-    FxRateRecord, FxStore as QsFxStore, QuoteStore as QsQuoteStore, QuoteStoreRecords,
-    Scenario as QsScenario, ScenarioType as QsScenarioType,
-    SimulationConfiguration as QsSimulationConfiguration,
+    FxRateRecord, FxStore as QsFxStore, PricerConfiguration as QsPricerConfiguration,
+    QuoteStore as QsQuoteStore, QuoteStoreRecords, Scenario as QsScenario,
+    ScenarioType as QsScenarioType, SimulationConfiguration as QsSimulationConfiguration,
     VolatilityCubeConfiguration as QsVolatilityCubeConfiguration,
     VolatilitySurfaceConfiguration as QsVolatilitySurfaceConfiguration,
 };
 use serde::de::DeserializeOwned;
 
-use crate::conv::{extract_currency, from_json_file, from_py, qs_err};
+use crate::conv::{
+    extract_currency, extract_date, extract_market_index, from_json_file, from_py, qs_err,
+};
 use crate::QuantSupportError;
 
 /// Accepts a JSON value that is either a list of `T`, a single `T`, or an
@@ -58,6 +60,16 @@ macro_rules! config_wrapper {
                 Ok(Self {
                     inner: from_py(obj, $what)?,
                 })
+            }
+
+            /// Builds configurations from a list, single dict, or wrapped list.
+            #[staticmethod]
+            fn from_dict_list(obj: &Bound<'_, PyAny>) -> PyResult<Vec<Self>> {
+                let value: serde_json::Value = from_py(obj, $what)?;
+                Ok(list_from_value::<$inner>(value, $what)?
+                    .into_iter()
+                    .map(|inner| Self { inner })
+                    .collect())
             }
 
             /// Loads configurations from a JSON file. Accepts a list, a
@@ -107,6 +119,12 @@ config_wrapper!(
     QsVolatilityCubeConfiguration,
     "VolatilityCubeConfiguration",
     "volatility cube configuration"
+);
+config_wrapper!(
+    PricerConfiguration,
+    QsPricerConfiguration,
+    "PricerConfiguration",
+    "pricer configuration"
 );
 config_wrapper!(
     SimulationConfiguration,
@@ -159,6 +177,39 @@ impl QuoteStore {
         ids
     }
 
+    /// Returns one quote level by identifier (`"mid"`, `"bid"`, or `"ask"`).
+    #[pyo3(signature = (identifier, level = "mid"))]
+    fn value(&self, identifier: &str, level: &str) -> PyResult<f64> {
+        let quote = self.inner.quote(identifier).ok_or_else(|| {
+            QuantSupportError::new_err(format!("quote '{identifier}' was not found"))
+        })?;
+        let value = match level.to_ascii_lowercase().as_str() {
+            "mid" => quote.levels().mid(),
+            "bid" => quote.levels().bid(),
+            "ask" => quote.levels().ask(),
+            _ => {
+                return Err(QuantSupportError::new_err(format!(
+                    "invalid quote level '{level}' (expected 'mid', 'bid', or 'ask')"
+                )))
+            }
+        };
+        value.ok_or_else(|| {
+            QuantSupportError::new_err(format!("quote '{identifier}' has no {level} level"))
+        })
+    }
+
+    /// Returns `(mid, bid, ask)` for one quote identifier.
+    fn levels(&self, identifier: &str) -> PyResult<(Option<f64>, Option<f64>, Option<f64>)> {
+        let quote = self.inner.quote(identifier).ok_or_else(|| {
+            QuantSupportError::new_err(format!("quote '{identifier}' was not found"))
+        })?;
+        Ok((
+            quote.levels().mid(),
+            quote.levels().bid(),
+            quote.levels().ask(),
+        ))
+    }
+
     /// All quotes as a DataFrame with columns `identifier`, `mid`, `bid`,
     /// `ask`, sorted by identifier.
     fn to_dataframe<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
@@ -207,6 +258,14 @@ pub struct FixingStore {
 
 #[pymethods]
 impl FixingStore {
+    /// Creates an empty fixing store.
+    #[new]
+    fn new() -> Self {
+        Self {
+            inner: QsFixingStore::default(),
+        }
+    }
+
     /// Builds a fixing store from a dict.
     #[staticmethod]
     fn from_dict(obj: &Bound<'_, PyAny>) -> PyResult<Self> {
@@ -221,6 +280,44 @@ impl FixingStore {
         Ok(Self {
             inner: from_json_file(path, "fixings")?,
         })
+    }
+
+    /// Adds or replaces a fixing.
+    fn add(
+        &mut self,
+        index: &Bound<'_, PyAny>,
+        date: &Bound<'_, PyAny>,
+        value: f64,
+    ) -> PyResult<()> {
+        self.inner
+            .add_fixing(&extract_market_index(index)?, extract_date(date)?, value);
+        Ok(())
+    }
+
+    /// Returns one historical fixing.
+    fn fixing(&self, index: &Bound<'_, PyAny>, date: &Bound<'_, PyAny>) -> PyResult<f64> {
+        self.inner
+            .fixing(&extract_market_index(index)?, extract_date(date)?)
+            .map_err(qs_err)
+    }
+
+    /// All fixings for an index as a DataFrame with `date` and `value` columns.
+    fn to_dataframe<'py>(
+        &self,
+        py: Python<'py>,
+        index: &Bound<'_, PyAny>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let index = extract_market_index(index)?;
+        let fixings = self.inner.fixings(&index).map_err(qs_err)?;
+        let dates: Vec<String> = fixings.keys().map(ToString::to_string).collect();
+        let values: Vec<f64> = fixings.values().copied().collect();
+        crate::conv::dataframe(
+            py,
+            &[
+                ("date", dates.into_pyobject(py)?.into_any()),
+                ("value", values.into_pyobject(py)?.into_any()),
+            ],
+        )
     }
 
     fn __repr__(&self) -> String {
@@ -275,6 +372,14 @@ impl FxStore {
             DualFwd::from(rate),
         );
         Ok(())
+    }
+
+    /// Returns a direct, inverse, or triangulated FX rate.
+    fn rate(&self, base: &Bound<'_, PyAny>, quote: &Bound<'_, PyAny>) -> PyResult<f64> {
+        self.inner
+            .get_fx_rate(extract_currency(base)?, extract_currency(quote)?)
+            .map(|rate| rate.value())
+            .map_err(qs_err)
     }
 
     fn __repr__(&self) -> String {

@@ -73,7 +73,7 @@ impl FundingSpreadCurve {
 ///     "credit_spread": 0.01,
 ///     "recovery": 0.4,
 ///     "funding_spread": 0.005,
-///     "credit_index": "Credit(ACME)"
+///     "credit_index": "Credit(CORPORATE-A)"
 /// }
 /// ```
 ///

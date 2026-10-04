@@ -5,8 +5,10 @@
 
 use pyo3::prelude::*;
 use quantsupport::prelude::EvaluationResults as QsEvaluationResults;
+use serde::Deserialize;
 
-use crate::conv::dataframe;
+use crate::conv::{dataframe, extract_date, from_py};
+use crate::QuantSupportError;
 
 /// A single cashflow row extracted from the Rust `CashflowsTable`.
 #[derive(Clone)]
@@ -22,10 +24,65 @@ struct CashflowRow {
     leg_index: usize,
 }
 
+#[derive(Deserialize)]
+struct CashflowInput {
+    payment_date: String,
+    #[serde(rename = "type", alias = "cashflow_type")]
+    cashflow_type: String,
+    amount: f64,
+    #[serde(default)]
+    fixing: Option<f64>,
+    #[serde(default)]
+    accrual_period: f64,
+    currency: String,
+    #[serde(default)]
+    caplet_strike: Option<f64>,
+    #[serde(default)]
+    floorlet_strike: Option<f64>,
+    #[serde(default)]
+    leg_index: usize,
+}
+
+impl From<CashflowInput> for CashflowRow {
+    fn from(value: CashflowInput) -> Self {
+        Self {
+            payment_date: value.payment_date,
+            cashflow_type: value.cashflow_type,
+            amount: value.amount,
+            fixing: value.fixing,
+            accrual_period: value.accrual_period,
+            currency: value.currency,
+            caplet_strike: value.caplet_strike,
+            floorlet_strike: value.floorlet_strike,
+            leg_index: value.leg_index,
+        }
+    }
+}
+
+fn extract_sensitivities(obj: &Bound<'_, PyAny>) -> PyResult<Vec<(String, f64)>> {
+    if let Ok(pairs) = obj.extract::<Vec<(String, f64)>>() {
+        return Ok(pairs);
+    }
+    if let Ok(map) = obj.extract::<std::collections::HashMap<String, f64>>() {
+        let mut pairs: Vec<_> = map.into_iter().collect();
+        pairs.sort_by(|left, right| left.0.cmp(&right.0));
+        return Ok(pairs);
+    }
+    Err(QuantSupportError::new_err(
+        "sensitivities must be a mapping or an iterable of (pillar, value) pairs",
+    ))
+}
+
 /// Results of evaluating a trade.
-#[pyclass(name = "EvaluationResults")]
+#[pyclass(name = "EvaluationResults", subclass, dict)]
 pub struct EvaluationResults {
+    evaluation_date: quantsupport::prelude::Date,
+    identifier: String,
     price: Option<f64>,
+    yield_to_maturity: Option<f64>,
+    modified_duration: Option<f64>,
+    z_spread: Option<f64>,
+    oas: Option<f64>,
     fair_rate: Option<f64>,
     sensitivities: Option<Vec<(String, f64)>>,
     cashflows: Option<Vec<CashflowRow>>,
@@ -56,7 +113,13 @@ impl EvaluationResults {
                 .collect()
         });
         Self {
+            evaluation_date: res.evaluation_date(),
+            identifier: res.identifier().to_string(),
             price: res.price(),
+            yield_to_maturity: res.ytm(),
+            modified_duration: res.modified_duration(),
+            z_spread: res.z_spread(),
+            oas: res.oas(),
             fair_rate: res.fair_rate(),
             sensitivities,
             cashflows,
@@ -66,10 +129,107 @@ impl EvaluationResults {
 
 #[pymethods]
 impl EvaluationResults {
+    /// Creates results from a Python pricer.
+    ///
+    /// `sensitivities` accepts either a mapping or `(pillar, value)` pairs.
+    /// `cashflows` accepts dictionaries with the same columns exposed by the
+    /// `cashflows` DataFrame property.
+    #[new]
+    #[pyo3(signature = (
+        evaluation_date,
+        identifier,
+        *,
+        price = None,
+        yield_to_maturity = None,
+        modified_duration = None,
+        z_spread = None,
+        oas = None,
+        fair_rate = None,
+        sensitivities = None,
+        cashflows = None,
+    ))]
+    #[allow(clippy::too_many_arguments)]
+    fn new(
+        evaluation_date: &Bound<'_, PyAny>,
+        identifier: String,
+        price: Option<f64>,
+        yield_to_maturity: Option<f64>,
+        modified_duration: Option<f64>,
+        z_spread: Option<f64>,
+        oas: Option<f64>,
+        fair_rate: Option<f64>,
+        sensitivities: Option<&Bound<'_, PyAny>>,
+        cashflows: Option<&Bound<'_, PyAny>>,
+    ) -> PyResult<Self> {
+        let sensitivities = sensitivities.map(extract_sensitivities).transpose()?;
+        let cashflows = cashflows
+            .map(|value| {
+                from_py::<Vec<CashflowInput>>(value, "cashflows")
+                    .map(|rows| rows.into_iter().map(Into::into).collect())
+            })
+            .transpose()?;
+        Ok(Self {
+            evaluation_date: extract_date(evaluation_date)?,
+            identifier,
+            price,
+            yield_to_maturity,
+            modified_duration,
+            z_spread,
+            oas,
+            fair_rate,
+            sensitivities,
+            cashflows,
+        })
+    }
+
+    /// Reference or as-of date of the evaluation.
+    #[getter]
+    fn evaluation_date(&self) -> crate::time::Date {
+        crate::time::Date {
+            inner: self.evaluation_date,
+        }
+    }
+
+    /// Evaluated instrument identifier.
+    #[getter]
+    fn identifier(&self) -> &str {
+        &self.identifier
+    }
+
     /// Net present value, if `"Value"` was requested.
     #[getter]
     fn price(&self) -> Option<f64> {
         self.price
+    }
+
+    /// Yield to maturity, if requested and supported by the pricer.
+    #[getter]
+    fn yield_to_maturity(&self) -> Option<f64> {
+        self.yield_to_maturity
+    }
+
+    /// Alias for `yield_to_maturity`.
+    #[getter]
+    fn ytm(&self) -> Option<f64> {
+        self.yield_to_maturity
+    }
+
+    /// Modified duration, if requested and supported by the pricer.
+    #[getter]
+    fn modified_duration(&self) -> Option<f64> {
+        self.modified_duration
+    }
+
+    /// Z-spread, if requested and supported by the pricer.
+    #[getter]
+    fn z_spread(&self) -> Option<f64> {
+        self.z_spread
+    }
+
+    /// OAS, if requested and supported by the pricer.
+    #[getter]
+    fn oas(&self) -> Option<f64> {
+        self.oas
     }
 
     /// Fair (par) rate, if `"FairRate"` was requested.
@@ -156,8 +316,12 @@ impl EvaluationResults {
 
     fn __repr__(&self) -> String {
         format!(
-            "EvaluationResults(price={:?}, fair_rate={:?}, sensitivities={}, cashflows={})",
+            "EvaluationResults(identifier='{}', evaluation_date='{}', price={:?}, z_spread={:?}, OAS={:?}, fair_rate={:?}, sensitivities={}, cashflows={})",
+            self.identifier,
+            self.evaluation_date,
             self.price,
+            self.z_spread,
+            self.oas,
             self.fair_rate,
             self.sensitivities.is_some(),
             self.cashflows.is_some(),

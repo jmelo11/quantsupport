@@ -110,8 +110,8 @@ pub enum MarketIndex {
     Collateral(Currency, Currency),
     /// Credit (survival/hazard) curve of a reference entity or counterparty.
     ///
-    /// For example `Credit("ACME")` keys the survival curve bootstrapped from
-    /// ACME CDS quotes. Survival probabilities are exposed through the
+    /// For example `Credit("CORPORATE-A")` keys the survival curve bootstrapped from
+    /// CORPORATE-A CDS quotes. Survival probabilities are exposed through the
     /// standard term-structure interface (a survival probability plays the
     /// same role as a discount factor).
     Credit(String),
@@ -156,10 +156,10 @@ impl Display for MarketIndex {
             // Other
             Self::ICP => write!(f, "ICP"),
             Self::VIX => write!(f, "VIX"),
-            Self::Equity(name) => write!(f, "{name}"),
+            Self::Equity(name) => write!(f, "EQ:{name}"),
             Self::FxPair(pair) => write!(f, "FX:{pair}"),
-            Self::Collateral(ccy, coll) => write!(f, "Collateral({ccy}/{coll})"),
-            Self::Credit(entity) => write!(f, "Credit({entity})"),
+            Self::Collateral(ccy, coll) => write!(f, "COLL:{ccy}/{coll}"),
+            Self::Credit(entity) => write!(f, "CREDIT:{entity}"),
             Self::Other(s) => write!(f, "{s}"),
         }
     }
