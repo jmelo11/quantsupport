@@ -81,6 +81,7 @@ pub use crate::{
             makefutures::MakeFutures,
         },
         fixedincome::{
+            bondpricinganchor::BondPricingAnchor,
             callschedule::CallScheduleEntry,
             fixedratebond::{FixedRateBond, FixedRateBondTrade},
             fixedratedeposit::{FixedRateDeposit, FixedRateDepositTrade},
@@ -151,8 +152,7 @@ pub use crate::{
         },
         fixedincome::{
             backwardfourierevolutionbondpricer::BackwardFourierEvolutionBondPricer,
-            bondpricer::{BondPricer, BondPricingAnchor},
-            treebasedbondpricer::TreeBasedBondPricer,
+            bondpricer::BondPricer, treebasedbondpricer::TreeBasedBondPricer,
         },
         fx::{fxeuropeanoptionpricer::FxEuropeanOptionPricer, fxforwardpricer::FxForwardPricer},
         rates::{

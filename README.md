@@ -287,7 +287,7 @@ All examples below are workspace packages and use local JSON market data where a
 | Example | Demonstrates | Run |
 | --- | --- | --- |
 | [`valuation`](examples/valuation) | Flat-curve swap NPV, cashflows, and AAD sensitivity | `cargo run -p valuation` |
-| [`valuation`](examples/valuation) | Callable mixed stepped-coupon bond priced by tree and backward Fourier evolution | `cargo run --manifest-path examples/valuation/Cargo.toml --bin stepped_coupon_bond` |
+| [`valuation`](examples/valuation) | Callable mixed stepped-coupon bond priced by tree and backward Fourier evolution | `cargo run --manifest-path examples/valuation/Cargo.toml --bin stepped-coupon-bond` |
 | [`bootstrap`](examples/bootstrap) | JSON quote loading, USD/CLP multi-curve bootstrapping, and a corporate bond curve | `cargo run -p bootstrap` |
 | [`sensitivity`](examples/sensitivity) | Multi-curve pricing of SOFR, Term SOFR, ICP, and cross-currency swaps with pillar DV01 | `cargo run -p sensitivity` |
 | [`volatilitysurface`](examples/volatilitysurface) | Building and querying an interpolated SOFR caplet Black-volatility surface | `cargo run -p volatilitysurface` |
@@ -296,7 +296,7 @@ All examples below are workspace packages and use local JSON market data where a
 | [`cva`](examples/cva) | High-level netting-set XVA with CSA, credit/funding inputs, CVA/FVA values, exposure profiles, and AAD sensitivities | `cargo run -p cva` |
 | [`scripting`](examples/scripting) | Scripted swap vs native swap: NPV and pillar sensitivities through `ScriptEngine` | `cargo run -p scripting-examples --bin valuation` |
 | [`scripting`](examples/scripting) | Scripted product as XVA contingent claims: EPE and CVA/FVA sensitivities vs native swap | `cargo run -p scripting-examples --bin xva` |
-| [`scripting`](examples/scripting) | Native callable stepped-coupon bond checked against an equivalent deterministic script | `cargo run -p scripting-examples --bin stepped_coupon_bond` |
+| [`scripting`](examples/scripting) | Native callable stepped-coupon bond checked against an equivalent deterministic script | `cargo run -p scripting-examples --bin stepped-coupon-bond` |
 
 The `plot` Cargo feature enables the library's plotting helpers:
 
@@ -313,10 +313,11 @@ workflow. Python applications can also define their own instruments, trades,
 pricers, and market-data providers and register them by trade type with
 `PricingContext` or `Evaluator`.
 
-The callable-bond notebook at
-[`bindings/python/examples/stepped_coupon_bond.ipynb`](bindings/python/examples/stepped_coupon_bond.ipynb)
-shows positional coupon/notional schedules, explicit call dates and strikes,
-tree/Fourier comparison, OAS risk, and the scripted cross-check.
+The [Python examples guide](bindings/python/examples/README.md) provides nine
+independently runnable notebooks, from a first swap through product valuations,
+curve and volatility inspection, simulation results, portfolio risk, callable
+bonds, scripted payoffs, and XVA. They explain the library concepts and result
+units, with local data-loading helpers and editable model configuration files.
 
 Build it into the active virtual environment from the repository root:
 
@@ -332,22 +333,26 @@ import quantsupport as qs
 
 quotes = qs.QuoteStore.from_json("quotes.json")
 curves = qs.CurveConfiguration.from_json("curve_specs.json")
-discounting = qs.DiscountingConfig(
-    currency=qs.Currency.USD,
-    index=qs.MarketIndex.SOFR,
+csa_policy = qs.SingleCurveCSADiscountPolicy(
+    collateral_currency=qs.Currency.USD,
+    collateral_index=qs.MarketIndex.SOFR,
 )
 
-with qs.PricingContext(
+context = qs.PricingContext(
     quotes=quotes,
     curves=curves,
-    discounting=discounting,
-) as context:
+    csa_policy=csa_policy,
+)
+context.initialize()
+
+with context:
     sofr = context.curve(qs.MarketIndex.SOFR)
     print(sofr.nodes())
     print(sofr.discount_factor(quotes.reference_date + "5Y"))
 ```
 
-See the [Python README](bindings/python/README.md) and [guided notebook](bindings/python/examples/tour.ipynb) for pricing and XVA examples.
+See the [Python README](bindings/python/README.md) for API details and the
+[first-swap notebook](bindings/python/examples/valuation/tour.ipynb) to start the walkthrough.
 
 ## Excel bindings
 

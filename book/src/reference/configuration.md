@@ -25,6 +25,11 @@ The quote file establishes the market reference date and the observable values a
 
 Deserialize this shape as `QuoteStoreRecords`, then convert it with `QuoteStore::try_from`. Example packages sometimes use an equivalent local loader. Builders read values at `Level::Bid`, `Level::Mid`, or `Level::Ask`, and a missing requested level produces an error.
 
+Choose the level in context setup with `PricingContext::new().with_quote_level(Level::Bid)`
+in Rust or `qs.PricingContext(quotes=quotes, curves=curves, quote_level=qs.Level.Bid)`
+in Python. It applies to market construction and model calibration; omitting it
+preserves the mid default.
+
 ## `fixings.json`
 
 Fixings record historical index observations used by coupons whose fixing date has passed. The top-level keys are `MarketIndex` names and each value is a dated rate series:

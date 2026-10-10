@@ -10,7 +10,7 @@ use crate::{
         pricerconfiguration::{InstrumentType, PricerConfiguration},
     },
     indices::marketindex::MarketIndex,
-    quotes::{fxstore::FxStore, quotestore::QuoteStore},
+    quotes::{fxstore::FxStore, quote::Level, quotestore::QuoteStore},
     time::date::Date,
     utils::errors::Result,
     volatility::modelcalibration::ModelCalibrationConfiguration,
@@ -125,6 +125,7 @@ pub struct MarketData {
     constructed_elements: ConstructedElementStore,
     pricer_configurations: HashMap<InstrumentType, PricerConfiguration>,
     calibration_quotes: Option<QuoteStore>,
+    quote_level: Level,
 }
 
 impl MarketData {
@@ -140,6 +141,7 @@ impl MarketData {
             fx_store: None,
             pricer_configurations: HashMap::new(),
             calibration_quotes: None,
+            quote_level: Level::Mid,
         }
     }
 
@@ -206,6 +208,19 @@ impl MarketData {
     #[must_use]
     pub fn with_calibration_quotes(mut self, quotes: QuoteStore) -> Self {
         self.calibration_quotes = Some(quotes);
+        self
+    }
+
+    /// Returns the quote level used to calibrate models for this valuation.
+    #[must_use]
+    pub const fn quote_level(&self) -> Level {
+        self.quote_level
+    }
+
+    /// Sets the quote level used for model calibration. Defaults to mid.
+    #[must_use]
+    pub const fn with_quote_level(mut self, quote_level: Level) -> Self {
+        self.quote_level = quote_level;
         self
     }
 }

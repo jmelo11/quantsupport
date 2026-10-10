@@ -60,6 +60,8 @@ fn describe_argument(function_name: &str, argument_name: &str) -> &'static str {
         (_, "scenarios") => "Optional scenario handle from QS.SCENARIOS.FROM.JSON; blank is allowed",
         (_, "elements") => "Current ConstructedElementStore handle",
         (_, "context") => "Initialized PricingContext handle returned by QS.CONTEXT.CREATE",
+        (_, "pricing_anchor") => "Bond trade anchor: CleanPrice, DirtyPrice, or ZSpread",
+        (_, "anchor_value") => "Bond price per quote units or decimal spread, according to pricing_anchor",
         (_, "trade") => "Trade handle returned by a QS.TRADE.* function",
         (_, "market_index" | "base_index" | "forward_index" | "discount_index") => {
             "Market index, for example SOFR; prefixes include Equity:, Credit:, FX:, and Collateral:"
@@ -121,6 +123,7 @@ fn describe_argument(function_name: &str, argument_name: &str) -> &'static str {
         }
         (_, "identifier") => "Quote identifier understood by QuantSupport, for example OIS_USD_SOFR_1Y",
         (_, "level") => "Quote level: Mid, Bid, or Ask",
+        (_, "quote_level") => "Quote level for construction and calibration: Mid (default), Bid, or Ask",
         (_, "value") => "Numeric fixing value",
         (_, "length" | "maturity_length") => "Whole-number tenor length",
         (_, "unit" | "maturity_unit") => "Tenor unit: Days, Weeks, Months, or Years",

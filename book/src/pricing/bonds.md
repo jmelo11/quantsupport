@@ -15,7 +15,8 @@ that instrument return an error.
 
 ## Pricing anchors
 
-Every bond pricer receives exactly one `BondPricingAnchor`:
+Every bond trade stores exactly one required `BondPricingAnchor`. Pricers
+are reusable and take no quote in their constructors:
 
 - `CleanPrice(value)` is a price per bond units excluding accrued interest.
 - `DirtyPrice(value)` is a price per bond units including accrued interest.
@@ -51,6 +52,19 @@ derivative of each yield discount factor.
 price anchors the spread; it does not redefine PV.
 
 ## Stepped-coupon contract
+
+The builder delegates date generation to `MakeSchedule`. In addition to
+`payment_frequency`, it accepts a calendar, business-day convention,
+termination-date convention, date-generation rule, end-of-month flag,
+first-coupon date and next-to-last-coupon date. The final date defaults to the
+same adjustment convention as intermediate dates. Python exposes the same
+schedule controls.
+
+Side belongs to `SteppedCouponBondTrade` or `FixedRateBondTrade`, together with
+the pricing anchor and optional settlement/spread day-count terms. Instrument
+builders do not accept side. Cashflows describe the contract; the pricer applies
+the trade direction to PV and sensitivities, and claim decomposition applies
+that direction to XVA claims.
 
 `SteppedCouponBond` is built from three independent schedules:
 
@@ -125,7 +139,11 @@ let bond = MakeSteppedCouponBond::<DualFwd>::default()
     ])
     .build()?;
 
-  let mut pricer = TreeBasedBondPricer::new(BondPricingAnchor::OAS(0.0075));
+let trade = SteppedCouponBondTrade::new(
+    bond, Date::new(2025, 1, 1), 1_000_000.0, Side::LongReceive,
+    BondPricingAnchor::OAS(0.0075),
+);
+let mut pricer = TreeBasedBondPricer::new();
   pricer.set_discount_policy(Box::new(
     FixedIncomeDiscountPolicy::new(false)
       .with_risk_free_index(Currency::USD, MarketIndex::SOFR),
@@ -144,8 +162,12 @@ let bond = MakeSteppedCouponBond::<DualFwd>::default()
 
 The numerical implementations live in separate modules:
 `treebasedbondpricer` and `backwardfourierevolutionbondpricer`.
-They share settlement, model calibration, anchors, and risk reporting through
-`bondpricer`; existing imports from `bondpricer` remain supported.
+Common settlement, quote conversion, spread solving and risk reporting live in
+`bondanalytics`; contract-to-grid mapping lives in `bondevents`. Each engine
+prepares its own numerical controls and implements its valuation function.
+Hull–White parameter resolution, calibration state and transition variance live
+under `models/hullwhite`. `BondPricingAnchor` is exported from
+`instruments/fixedincome/bondpricinganchor` and the prelude.
 
 ## Floating-coupon projection convention
 
@@ -324,9 +346,24 @@ engines for fixed and mixed capped/floored coupons.
 
 Runnable examples are:
 
-- `cargo run --manifest-path examples/valuation/Cargo.toml --bin stepped_coupon_bond`
+- `cargo run --manifest-path examples/valuation/Cargo.toml --bin stepped-coupon-bond`
   prices the same mixed-coupon instrument with both engines.
-- `cargo run --manifest-path examples/scripting/Cargo.toml --bin stepped_coupon_bond`
+- `cargo run --manifest-path examples/scripting/Cargo.toml --bin stepped-coupon-bond`
   compares the native tree with an equivalent scripted deterministic payoff.
-- `bindings/python/examples/stepped_coupon_bond.ipynb` constructs and prices
-  the product from Python and invokes the scripting comparison.
+- `bindings/python/examples/valuation/stepped_coupon_bond.ipynb` constructs and
+  prices the product from Python with typed terms and auxiliary model settings.
+- `bindings/python/examples/scripting/scripted_cashflows.ipynb` explains the
+  scripted underlying and its deterministic native comparison.
+
+Calibrated Hull–White parameters retain the entire piecewise sigma schedule.
+Transition variance integration splits at every sigma boundary, using the
+first sigma from time zero and extrapolating the last beyond its final pillar.
+Calibration uses the curve's reference date and day counter while preserving
+the configured step density and maximum steps. Callable valuation currently
+requires settlement to equal the context evaluation date.
+
+Volatility sensitivities chain the calibration Jacobian through sampled
+surface or cube quotes to their original risk pillars. The current calibrator
+supplies the volatility Jacobian only: sigma's response to curve quotes and
+changes in calibration strikes is not included. Cube calibration must select
+at most one underlying tenor per expiry and stay within the source domain.

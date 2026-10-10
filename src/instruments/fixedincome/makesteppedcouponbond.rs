@@ -35,7 +35,6 @@ pub struct MakeSteppedCouponBond<T: Scalar> {
     notional: Option<f64>,
     identifier: Option<String>,
     currency: Option<Currency>,
-    side: Option<Side>,
     payment_frequency: Option<Frequency>,
     coupon_day_counter: Option<DayCounter>,
     calendar: Option<Calendar>,
@@ -43,6 +42,8 @@ pub struct MakeSteppedCouponBond<T: Scalar> {
     date_generation_rule: Option<DateGenerationRule>,
     end_of_month: Option<bool>,
     first_coupon_date: Option<Date>,
+    next_to_last_coupon_date: Option<Date>,
+    termination_date_convention: Option<BusinessDayConvention>,
     coupons: Vec<CashflowType<T>>,
     notional_percentages: Vec<f64>,
     call_schedule: Vec<CallScheduleEntry>,
@@ -92,13 +93,6 @@ impl<T: Scalar> MakeSteppedCouponBond<T> {
         self
     }
 
-    /// Sets the contractual leg side.
-    #[must_use]
-    pub const fn with_side(mut self, side: Side) -> Self {
-        self.side = Some(side);
-        self
-    }
-
     /// Sets the regular coupon frequency.
     #[must_use]
     pub const fn with_payment_frequency(mut self, frequency: Frequency) -> Self {
@@ -145,6 +139,23 @@ impl<T: Scalar> MakeSteppedCouponBond<T> {
     #[must_use]
     pub const fn with_first_coupon_date(mut self, date: Date) -> Self {
         self.first_coupon_date = Some(date);
+        self
+    }
+
+    /// Sets the final regular coupon date before a short or long final period.
+    #[must_use]
+    pub const fn with_next_to_last_coupon_date(mut self, date: Date) -> Self {
+        self.next_to_last_coupon_date = Some(date);
+        self
+    }
+
+    /// Sets the maturity-date adjustment; defaults to the business-day convention.
+    #[must_use]
+    pub const fn with_termination_date_convention(
+        mut self,
+        convention: BusinessDayConvention,
+    ) -> Self {
+        self.termination_date_convention = Some(convention);
         self
     }
 
@@ -206,6 +217,14 @@ impl<T: Scalar> MakeSteppedCouponBond<T> {
         if let Some(first_coupon_date) = self.first_coupon_date {
             schedule_builder = schedule_builder.with_first_date(first_coupon_date);
         }
+        if let Some(date) = self.next_to_last_coupon_date {
+            schedule_builder = schedule_builder.with_next_to_last_date(date);
+        }
+        schedule_builder = schedule_builder.with_termination_date_convention(
+            self.termination_date_convention
+                .or(self.business_day_convention)
+                .unwrap_or(BusinessDayConvention::Unadjusted),
+        );
         let schedule = schedule_builder.build()?;
         let dates = schedule.dates();
         let period_count = dates.len().saturating_sub(1);
@@ -307,11 +326,13 @@ impl<T: Scalar> MakeSteppedCouponBond<T> {
             forward_index,
             None,
             None,
-            self.side.unwrap_or(Side::LongReceive),
+            Side::LongReceive,
             !contains_optional_coupon,
             AssetClass::FixedIncome,
             dates[1],
-            maturity_date,
+            *dates
+                .last()
+                .ok_or_else(|| QSError::InvalidValueErr("Empty coupon schedule".into()))?,
         );
         SteppedCouponBond::new(
             identifier,

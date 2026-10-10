@@ -58,7 +58,6 @@ pub struct MakeFixedRateBond<T: Scalar> {
     rate_definition: Option<RateDefinition>,
     discount_index: Option<MarketIndex>,
     currency: Option<Currency>,
-    side: Option<Side>,
     payment_frequency: Option<Frequency>,
     payment_structure: Option<PaymentStructure>,
     calendar: Option<Calendar>,
@@ -133,13 +132,6 @@ where
     #[must_use]
     pub fn with_identifier(mut self, identifier: String) -> Self {
         self.identifier = Some(identifier);
-        self
-    }
-
-    /// Sets the side of the bond (defaults to `LongReceive` if not set).
-    #[must_use]
-    pub const fn with_side(mut self, side: Side) -> Self {
-        self.side = Some(side);
         self
     }
 
@@ -221,7 +213,6 @@ where
             .ok_or_else(|| QSError::ValueNotSetErr("Identifier".into()))?;
 
         let units = self.units.unwrap_or(100.0);
-        let side = self.side.unwrap_or(Side::LongReceive);
         let payment_frequency = self.payment_frequency.unwrap_or(Frequency::Semiannual);
         let structure = self.payment_structure.unwrap_or(PaymentStructure::Bullet);
 
@@ -230,7 +221,7 @@ where
         let leg = MakeLeg::<T>::default()
             .with_leg_id(0)
             .with_notional(notional)
-            .with_side(side)
+            .with_side(Side::LongReceive)
             .with_asset_class(AssetClass::FixedIncome)
             .with_currency(currency)
             .with_discount_index(self.discount_index.clone())

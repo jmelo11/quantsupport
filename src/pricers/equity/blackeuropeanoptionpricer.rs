@@ -555,7 +555,7 @@ mod tests {
         let ad_delta = exposure_for_key(
             sensitivities.instrument_keys(),
             sensitivities.exposure(),
-            "SPX",
+            "EQ:SPX",
         )
         .ok_or_else(|| QSError::NotFoundErr("Spot sensitivity not found".to_string()))?;
 
@@ -652,7 +652,7 @@ mod tests {
             let delta = exposure_for_key(
                 sensitivities.instrument_keys(),
                 sensitivities.exposure(),
-                "SPX",
+                "EQ:SPX",
             );
             assert!(
                 delta.is_some(),
@@ -722,7 +722,7 @@ mod tests {
             exposure_for_key(
                 sensitivities.instrument_keys(),
                 sensitivities.exposure(),
-                "SPX",
+                "EQ:SPX",
             )
         } else {
             None

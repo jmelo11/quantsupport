@@ -1,4 +1,4 @@
-//! Prices one callable stepped-coupon bond with both numerical engines.
+//! Prices a callable stepped-coupon bond with both numerical engines.
 
 use std::{cell::RefCell, rc::Rc};
 
@@ -39,6 +39,7 @@ fn trade() -> Result<SteppedCouponBondTrade<DualFwd>> {
         reference_date(),
         FACE,
         Side::LongReceive,
+        BondPricingAnchor::OAS(OAS),
     ))
 }
 
@@ -91,9 +92,9 @@ fn main() -> Result<()> {
                 .with_risk_free_index(Currency::USD, MarketIndex::SOFR),
         )
     };
-    let mut tree_pricer = TreeBasedBondPricer::new(BondPricingAnchor::OAS(OAS));
+    let mut tree_pricer = TreeBasedBondPricer::new();
     tree_pricer.set_discount_policy(policy());
-    let mut fourier_pricer = BackwardFourierEvolutionBondPricer::new(BondPricingAnchor::OAS(OAS));
+    let mut fourier_pricer = BackwardFourierEvolutionBondPricer::new();
     fourier_pricer.set_discount_policy(policy());
     let tree = tree_pricer.evaluate(&trade, &requests, &tree_context)?;
     let fourier = fourier_pricer.evaluate(&trade, &requests, &fourier_context)?;

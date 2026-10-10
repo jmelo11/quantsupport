@@ -460,7 +460,20 @@ pub fn qs_context_create(
     scenarios: Option<String>,
     base_currency: &str,
     base_index: &str,
+    quote_level: Option<String>,
 ) -> Result<String, XllError> {
+    let quote_level = match quote_level
+        .as_deref()
+        .unwrap_or("Mid")
+        .trim()
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "" | "mid" => Level::Mid,
+        "bid" => Level::Bid,
+        "ask" => Level::Ask,
+        _ => return Err(value_error("invalid quote level; use Mid, Bid, or Ask")),
+    };
     let definition_key = input_key(&(
         quotes,
         curve_configurations.as_deref(),
@@ -475,6 +488,7 @@ pub fn qs_context_create(
         scenarios.as_deref(),
         base_currency,
         base_index,
+        quote_level,
     ))?;
     if let Some(handle) = cached_handle(name, "PricingContext", &definition_key)? {
         return Ok(handle);
@@ -539,6 +553,7 @@ pub fn qs_context_create(
         scenarios,
     ) = components;
     let mut context = PricingContext::new()
+        .with_quote_level(quote_level)
         .with_quote_store(quotes)
         .with_base_currency(parse_currency(base_currency)?)
         .with_base_index(parse_index(base_index)?);

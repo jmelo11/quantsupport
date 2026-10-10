@@ -50,15 +50,15 @@ current modules cover:
   caps/floors, caplets/floorlets, and rate futures;
 - native price, fair-rate, cashflow, and sensitivity requests.
 
-Straight fixed-rate bonds have dedicated worksheet functions. Each accepts a
-clean price, dirty price, or Z-spread anchor; leave the other anchor cells
-blank:
+Set the clean-price, dirty-price, or Z-spread anchor when constructing a
+trade with `QS.TRADE.FIXED.BOND`. The dedicated bond valuation functions
+use that trade's anchor:
 
 ```text
-=QS.BOND.PRICE(bond,context,99.25,,,)
-=QS.BOND.MODIFIED.DURATION(bond,context,99.25,,,)
-=QS.BOND.Z.SPREAD(bond,context,99.25,,,)
-=QS.BOND.SENSITIVITIES(bond,context,99.25,,,)
+=QS.BOND.PRICE(bond,context)
+=QS.BOND.MODIFIED.DURATION(bond,context)
+=QS.BOND.Z.SPREAD(bond,context)
+=QS.BOND.SENSITIVITIES(bond,context)
 ```
 
 The sensitivity spill contains curve risk and `dPV/dZSpread` in the same
@@ -103,6 +103,13 @@ When a quote cell changes, `QS.QUOTES.SET` replaces that quote and returns a new
 volatilities, simulations, and the price are rebuilt consistently. Multiple
 updates must form a chain (`A1 -> A2 -> A3 ...`). Reads reject stale handles,
 which prevents a price from silently using an older context.
+
+The optional final `quote_level` argument of `QS.CONTEXT.CREATE`, after
+`base_index`, selects `"Mid"` (the default), `"Bid"`, or `"Ask"` for market
+construction and model calibration. Names are case-insensitive; blank uses
+mid. For example, append `,"Bid"` after `"SOFR"` in the context formula above.
+Changing the level rebuilds the context. Every consumed quote must contain
+the requested level.
 
 Recalculating a mutator may supply its original upstream revision after another
 formula advanced the object. Mutators therefore apply changed inputs to the
@@ -246,3 +253,8 @@ argument name has domain-specific accepted values.
 Keep raw `XLOPER12` values at the Excel boundary. The registry must own Rust
 values because Excel callback arguments are only valid for the duration of a
 call.
+
+Bond anchors are trade inputs: `QS.TRADE.FIXED.BOND` requires trailing
+`pricing_anchor` (`CleanPrice`, `DirtyPrice`, or `ZSpread`) and `anchor_value`
+arguments. The `QS.BOND.*` valuation functions accept only the stored trade
+and context handles. Side is stored on the trade and applied once in valuation.

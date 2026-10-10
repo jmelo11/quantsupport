@@ -1,3 +1,5 @@
+/// Bond trade pricing anchors.
+pub mod bondpricinganchor;
 /// Issuer call schedule entries for callable bonds.
 pub mod callschedule;
 /// Fixed Rate Bond Module

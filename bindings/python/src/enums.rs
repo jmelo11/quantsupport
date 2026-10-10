@@ -17,11 +17,11 @@ use pyo3::prelude::*;
 use quantsupport::prelude::{
     BusinessDayConvention as QsBusinessDayConvention, CapFloorType as QsCapFloorType,
     CapletFloorletType as QsCapletFloorletType, Compounding as QsCompounding,
-    Currency as QsCurrency, DayCounter as QsDayCounter, EuroOptionType as QsEuroOptionType,
-    Frequency as QsFrequency, FxPair, MarketIndex as QsMarketIndex,
-    PaymentStructure as QsPaymentStructure, Request as QsRequest, ScenarioType as QsScenarioType,
-    Side as QsSide, SmileType as QsSmileType, TimeUnit as QsTimeUnit,
-    VolatilityType as QsVolatilityType,
+    Currency as QsCurrency, DateGenerationRule as QsDateGenerationRule, DayCounter as QsDayCounter,
+    EuroOptionType as QsEuroOptionType, Frequency as QsFrequency, FxPair, Level as QsLevel,
+    MarketIndex as QsMarketIndex, PaymentStructure as QsPaymentStructure, Request as QsRequest,
+    ScenarioType as QsScenarioType, Side as QsSide, SmileType as QsSmileType,
+    TimeUnit as QsTimeUnit, VolatilityType as QsVolatilityType,
 };
 
 use crate::conv::{extract_currency, extract_date, qs_err};
@@ -71,6 +71,31 @@ macro_rules! mirror_enum {
             }
         }
     };
+}
+
+mirror_enum!(
+    /// Market quote level used for construction and calibration.
+    Level,
+    QsLevel,
+    "Level",
+    [Mid, Bid, Ask]
+);
+
+#[pymethods]
+impl Level {
+    /// Parses a quote level from its name (case-insensitive).
+    #[staticmethod]
+    pub fn parse(s: &str) -> PyResult<Self> {
+        Self::from_name(s)
+    }
+
+    fn __str__(&self) -> String {
+        format!("{self:?}")
+    }
+
+    fn __repr__(&self) -> String {
+        format!("Level.{self:?}")
+    }
 }
 
 mirror_enum!(
@@ -687,5 +712,37 @@ impl PaymentStructure {
 
     fn __repr__(&self) -> String {
         format!("PaymentStructure.{self:?}")
+    }
+}
+
+mirror_enum!(
+    /// Schedule date-generation rule.
+    DateGenerationRule,
+    QsDateGenerationRule,
+    "DateGenerationRule",
+    [
+        Backward,
+        Forward,
+        Zero,
+        ThirdWednesday,
+        ThirdWednesdayInclusive,
+        Twentieth,
+        TwentiethIMM,
+        OldCDS,
+        CDS,
+        CDS2015
+    ]
+);
+#[pymethods]
+impl DateGenerationRule {
+    #[staticmethod]
+    pub fn parse(s: &str) -> PyResult<Self> {
+        Self::from_name(s)
+    }
+    fn __str__(&self) -> String {
+        format!("{self:?}")
+    }
+    fn __repr__(&self) -> String {
+        format!("DateGenerationRule.{self:?}")
     }
 }

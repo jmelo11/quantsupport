@@ -6,3 +6,5 @@ pub mod hullwhitecalibration;
 pub mod hullwhitecalibrationquality;
 /// Hull-White model implementation.
 pub mod hullwhitemodel;
+
+pub(crate) mod parameters;

@@ -113,6 +113,13 @@ where
         self.interest_rate
     }
 
+    /// Returns a leg oriented for a trade or claim decomposition.
+    #[must_use]
+    pub const fn with_side(mut self, side: Side) -> Self {
+        self.side = side;
+        self
+    }
+
     /// Returns the side of the leg (long or short).
     #[must_use]
     pub const fn side(&self) -> Side {

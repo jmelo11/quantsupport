@@ -1,6 +1,7 @@
 use crate::indices::marketindex::MarketIndex;
 
 /// Request for a specific derived market-data element.
+#[derive(Clone)]
 pub enum ConstructedElementRequest {
     /// Request for discount curve of a market index.
     DiscountCurve {

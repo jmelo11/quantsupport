@@ -4,15 +4,17 @@
 //! instrument is built on demand — as `DualFwd` for AD-enabled pricing or as
 //! `f64` for XVA contingent-claim decomposition.
 
+use crate::bondpricinganchor::BondPricingAnchorConfig;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyType};
 use quantsupport::prelude::{
-    BasisSwap as QsBasisSwap, BasisSwapTrade, CallScheduleEntry as QsCallScheduleEntry,
-    CapFloor as QsCapFloor, CapFloorTrade, CapFloorType, CapletFloorlet as QsCapletFloorlet,
-    CapletFloorletTrade, CapletFloorletType, CashflowType as QsCashflowType, CdsTrade, Compounding,
-    ContingentClaim, CreditDefaultSwap as QsCreditDefaultSwap, Currency, Date, DayCounter, DualFwd,
-    EquityEuropeanOption as QsEquityEuropeanOption, EquityEuropeanOptionTrade, EuroOptionType,
-    FixFloatCrossCurrencySwap as QsFixFloatXccy, FixFloatCrossCurrencySwapTrade,
+    BasisSwap as QsBasisSwap, BasisSwapTrade, BondPricingAnchor, BusinessDayConvention, Calendar,
+    CallScheduleEntry as QsCallScheduleEntry, CapFloor as QsCapFloor, CapFloorTrade, CapFloorType,
+    CapletFloorlet as QsCapletFloorlet, CapletFloorletTrade, CapletFloorletType,
+    CashflowType as QsCashflowType, CdsTrade, Compounding, ContingentClaim,
+    CreditDefaultSwap as QsCreditDefaultSwap, Currency, Date, DateGenerationRule, DayCounter,
+    DualFwd, EquityEuropeanOption as QsEquityEuropeanOption, EquityEuropeanOptionTrade,
+    EuroOptionType, FixFloatCrossCurrencySwap as QsFixFloatXccy, FixFloatCrossCurrencySwapTrade,
     FixedRateBond as QsFixedRateBond, FixedRateBondTrade, FixedRateDeposit as QsFixedRateDeposit,
     FixedRateDepositTrade, FloatFloatCrossCurrencySwap, FloatFloatCrossCurrencySwapTrade,
     FloatingRateNote as QsFloatingRateNote, FloatingRateNoteTrade, Frequency,
@@ -20,14 +22,14 @@ use quantsupport::prelude::{
     MakeCapFloor, MakeFixFloatCrossCurrencySwap, MakeFixedRateBond, MakeFixedRateDeposit,
     MakeFloatFloatCrossCurrencySwap, MakeFloatingRateNote, MakeFxEuropeanOption, MakeFxForward,
     MakeRateFutures, MakeSteppedCouponBond, MakeSwap, MarketIndex, PaymentStructure,
-    RateDefinition, RateFutures as QsRateFutures, RateFuturesTrade, Side,
-    SteppedCouponBond as QsSteppedCouponBond, SteppedCouponBondTrade, Strike, Swap as QsSwap,
-    SwapTrade,
+    RateDefinition, RateFutures as QsRateFutures, RateFuturesTrade, Side, SteppedCouponBondTrade,
+    Strike, Swap as QsSwap, SwapTrade,
 };
 
 use crate::conv::{
-    extract_cap_floor_type, extract_caplet_floorlet_type, extract_compounding, extract_currency,
-    extract_date, extract_day_counter, extract_frequency, extract_market_index,
+    extract_business_day_convention, extract_calendar, extract_cap_floor_type,
+    extract_caplet_floorlet_type, extract_compounding, extract_currency, extract_date,
+    extract_date_generation_rule, extract_day_counter, extract_frequency, extract_market_index,
     extract_option_type, extract_payment_structure, extract_side, extract_strike, from_py, qs_err,
 };
 
@@ -1023,6 +1025,14 @@ pub struct FixedRateBond {
     pub payment_frequency: Frequency,
     pub payment_structure: PaymentStructure,
     pub trade_date: Option<Date>,
+    pub pricing_anchor: BondPricingAnchor,
+    pub settlement_date: Option<Date>,
+    pub spread_day_counter: Option<DayCounter>,
+    pub calendar: Option<Calendar>,
+    pub business_day_convention: Option<BusinessDayConvention>,
+    pub date_generation_rule: Option<DateGenerationRule>,
+    pub end_of_month: Option<bool>,
+    pub first_coupon_date: Option<Date>,
 }
 
 macro_rules! build_fixed_rate_bond_instrument {
@@ -1039,11 +1049,25 @@ macro_rules! build_fixed_rate_bond_instrument {
                 $self.rate_frequency,
             ))
             .with_currency($self.currency)
-            .with_side($self.side)
             .with_payment_frequency($self.payment_frequency)
             .with_payment_structure($self.payment_structure);
         if let Some(index) = &$self.discount_index {
             builder = builder.with_discount_index(index.clone());
+        }
+        if let Some(calendar) = &$self.calendar {
+            builder = builder.with_calendar(calendar.clone());
+        }
+        if let Some(convention) = $self.business_day_convention {
+            builder = builder.with_business_day_convention(convention);
+        }
+        if let Some(rule) = $self.date_generation_rule {
+            builder = builder.with_date_generation_rule(rule);
+        }
+        if let Some(enabled) = $self.end_of_month {
+            builder = builder.with_end_of_month(enabled);
+        }
+        if let Some(date) = $self.first_coupon_date {
+            builder = builder.with_first_coupon_date(date);
         }
         builder.build().map_err(qs_err)
     }};
@@ -1058,22 +1082,34 @@ impl FixedRateBond {
     pub fn build_trade_dual(&self) -> PyResult<FixedRateBondTrade<DualFwd>> {
         let instrument: QsFixedRateBond<DualFwd> =
             build_fixed_rate_bond_instrument!(self, DualFwd)?;
-        Ok(FixedRateBondTrade::new(
+        let mut trade = FixedRateBondTrade::new(
             instrument,
             self.trade_date(),
             self.notional,
             self.side,
-        ))
+            self.pricing_anchor,
+        );
+        if let Some(date) = self.settlement_date {
+            trade = trade.with_settlement_date(date);
+        }
+        if let Some(day_counter) = self.spread_day_counter {
+            trade = trade.with_spread_day_counter(day_counter);
+        }
+        Ok(trade)
     }
 
     /// Decomposes the trade into contingent claims for XVA.
     pub fn claims(&self) -> PyResult<Vec<ContingentClaim>> {
         let instrument: QsFixedRateBond<f64> = build_fixed_rate_bond_instrument!(self, f64)?;
-        instrument
-            .legs()
-            .to_vec()
-            .into_contingent_claims(&self.identifier)
-            .map_err(qs_err)
+        FixedRateBondTrade::new(
+            instrument,
+            self.trade_date(),
+            self.notional,
+            self.side,
+            self.pricing_anchor,
+        )
+        .into_contingent_claims(&self.identifier)
+        .map_err(qs_err)
     }
 }
 
@@ -1088,6 +1124,7 @@ impl FixedRateBond {
         notional,
         rate,
         currency,
+        pricing_anchor,
         discount_index = None,
         side = None,
         day_counter = None,
@@ -1096,6 +1133,13 @@ impl FixedRateBond {
         payment_frequency = None,
         payment_structure = None,
         trade_date = None,
+        settlement_date = None,
+        spread_day_counter = None,
+        calendar = None,
+        business_day_convention = None,
+        date_generation_rule = None,
+        end_of_month = None,
+        first_coupon_date = None,
     ))]
     fn new(
         identifier: String,
@@ -1104,6 +1148,7 @@ impl FixedRateBond {
         notional: f64,
         rate: f64,
         currency: &Bound<'_, PyAny>,
+        pricing_anchor: &Bound<'_, PyAny>,
         discount_index: Option<&Bound<'_, PyAny>>,
         side: Option<&Bound<'_, PyAny>>,
         day_counter: Option<&Bound<'_, PyAny>>,
@@ -1112,6 +1157,13 @@ impl FixedRateBond {
         payment_frequency: Option<&Bound<'_, PyAny>>,
         payment_structure: Option<&Bound<'_, PyAny>>,
         trade_date: Option<&Bound<'_, PyAny>>,
+        settlement_date: Option<&Bound<'_, PyAny>>,
+        spread_day_counter: Option<&Bound<'_, PyAny>>,
+        calendar: Option<&Bound<'_, PyAny>>,
+        business_day_convention: Option<&Bound<'_, PyAny>>,
+        date_generation_rule: Option<&Bound<'_, PyAny>>,
+        end_of_month: Option<bool>,
+        first_coupon_date: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<Self> {
         Ok(Self {
             identifier,
@@ -1146,7 +1198,48 @@ impl FixedRateBond {
                 .transpose()?
                 .unwrap_or(PaymentStructure::Bullet),
             trade_date: trade_date.map(extract_date).transpose()?,
+            pricing_anchor: BondPricingAnchorConfig::extract(pricing_anchor)?,
+            settlement_date: settlement_date.map(extract_date).transpose()?,
+            spread_day_counter: spread_day_counter.map(extract_day_counter).transpose()?,
+            calendar: calendar.map(extract_calendar).transpose()?,
+            business_day_convention: business_day_convention
+                .map(extract_business_day_convention)
+                .transpose()?,
+            date_generation_rule: date_generation_rule
+                .map(extract_date_generation_rule)
+                .transpose()?,
+            end_of_month,
+            first_coupon_date: first_coupon_date.map(extract_date).transpose()?,
         })
+    }
+
+    /// Serializes bond contract and trade terms for constructor round trips.
+    fn to_dict<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        pythonize::pythonize(py, &serde_json::json!({
+            "identifier": self.identifier, "start_date": self.start_date, "maturity_date": self.maturity_date,
+            "notional": self.notional, "rate": self.rate, "currency": self.currency, "discount_index": self.discount_index,
+            "side": format!("{:?}", self.side), "day_counter": self.day_counter, "compounding": self.compounding,
+            "rate_frequency": self.rate_frequency, "payment_frequency": self.payment_frequency,
+            "payment_structure": format!("{:?}", crate::enums::PaymentStructure::from(self.payment_structure)), "trade_date": self.trade_date,
+            "pricing_anchor": self.pricing_anchor, "settlement_date": self.settlement_date, "spread_day_counter": self.spread_day_counter,
+            "calendar": self.calendar, "business_day_convention": self.business_day_convention, "date_generation_rule": self.date_generation_rule,
+            "end_of_month": self.end_of_month, "first_coupon_date": self.first_coupon_date
+        })).map_err(qs_err)
+    }
+
+    /// Returns a copy of this trade with a different market pricing anchor.
+    fn with_pricing_anchor(&self, anchor: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let mut trade = self.clone();
+        trade.pricing_anchor = BondPricingAnchorConfig::extract(anchor)?;
+        Ok(trade)
+    }
+
+    /// Market anchor owned by this trade.
+    #[getter]
+    fn pricing_anchor(&self) -> BondPricingAnchorConfig {
+        BondPricingAnchorConfig {
+            inner: self.pricing_anchor,
+        }
     }
 
     #[getter]
@@ -1179,19 +1272,28 @@ pub struct SteppedCouponBond {
     pub notional_percentages: Vec<f64>,
     pub call_schedule: Vec<CallScheduleEntry>,
     pub trade_date: Option<Date>,
+    pub pricing_anchor: BondPricingAnchor,
+    pub settlement_date: Option<Date>,
+    pub spread_day_counter: Option<DayCounter>,
+    pub calendar: Option<Calendar>,
+    pub business_day_convention: Option<BusinessDayConvention>,
+    pub date_generation_rule: Option<DateGenerationRule>,
+    pub end_of_month: Option<bool>,
+    pub first_coupon_date: Option<Date>,
+    pub next_to_last_coupon_date: Option<Date>,
+    pub termination_date_convention: Option<BusinessDayConvention>,
 }
 
 impl SteppedCouponBond {
     /// Builds the AD-enabled native trade consumed by the callable engines.
     pub fn build_trade_dual(&self) -> PyResult<SteppedCouponBondTrade<DualFwd>> {
-        let instrument: QsSteppedCouponBond<DualFwd> = MakeSteppedCouponBond::default()
+        let mut builder = MakeSteppedCouponBond::<DualFwd>::default()
             .with_identifier(self.identifier.clone())
             .with_start_date(self.start_date)
             .with_maturity_date(self.maturity_date)
             .with_notional(self.notional)
             .with_units(self.units)
             .with_currency(self.currency)
-            .with_side(self.side)
             .with_payment_frequency(self.payment_frequency)
             .with_coupon_day_counter(self.coupon_day_counter)
             .with_coupons(
@@ -1201,15 +1303,43 @@ impl SteppedCouponBond {
                     .collect(),
             )
             .with_notional_percentages(self.notional_percentages.clone())
-            .with_call_schedule(self.call_schedule.iter().map(|call| call.inner).collect())
-            .build()
-            .map_err(qs_err)?;
-        Ok(SteppedCouponBondTrade::new(
+            .with_call_schedule(self.call_schedule.iter().map(|call| call.inner).collect());
+        if let Some(calendar) = &self.calendar {
+            builder = builder.with_calendar(calendar.clone());
+        }
+        if let Some(convention) = self.business_day_convention {
+            builder = builder.with_business_day_convention(convention);
+        }
+        if let Some(rule) = self.date_generation_rule {
+            builder = builder.with_date_generation_rule(rule);
+        }
+        if let Some(enabled) = self.end_of_month {
+            builder = builder.with_end_of_month(enabled);
+        }
+        if let Some(date) = self.first_coupon_date {
+            builder = builder.with_first_coupon_date(date);
+        }
+        if let Some(date) = self.next_to_last_coupon_date {
+            builder = builder.with_next_to_last_coupon_date(date);
+        }
+        if let Some(convention) = self.termination_date_convention {
+            builder = builder.with_termination_date_convention(convention);
+        }
+        let instrument = builder.build().map_err(qs_err)?;
+        let mut trade = SteppedCouponBondTrade::new(
             instrument,
             self.trade_date.unwrap_or(self.start_date),
             self.notional,
             self.side,
-        ))
+            self.pricing_anchor,
+        );
+        if let Some(date) = self.settlement_date {
+            trade = trade.with_settlement_date(date);
+        }
+        if let Some(day_counter) = self.spread_day_counter {
+            trade = trade.with_spread_day_counter(day_counter);
+        }
+        Ok(trade)
     }
 }
 
@@ -1223,6 +1353,7 @@ impl SteppedCouponBond {
         maturity_date,
         notional,
         currency,
+        pricing_anchor,
         coupons,
         notional_percentages,
         call_schedule = None,
@@ -1231,6 +1362,15 @@ impl SteppedCouponBond {
         payment_frequency = None,
         coupon_day_counter = None,
         trade_date = None,
+        settlement_date = None,
+        spread_day_counter = None,
+        calendar = None,
+        business_day_convention = None,
+        date_generation_rule = None,
+        end_of_month = None,
+        first_coupon_date = None,
+        next_to_last_coupon_date = None,
+        termination_date_convention = None,
     ))]
     fn new(
         identifier: String,
@@ -1238,6 +1378,7 @@ impl SteppedCouponBond {
         maturity_date: &Bound<'_, PyAny>,
         notional: f64,
         currency: &Bound<'_, PyAny>,
+        pricing_anchor: &Bound<'_, PyAny>,
         coupons: Vec<Bound<'_, PyAny>>,
         notional_percentages: Vec<f64>,
         call_schedule: Option<Vec<Bound<'_, PyAny>>>,
@@ -1246,6 +1387,15 @@ impl SteppedCouponBond {
         payment_frequency: Option<&Bound<'_, PyAny>>,
         coupon_day_counter: Option<&Bound<'_, PyAny>>,
         trade_date: Option<&Bound<'_, PyAny>>,
+        settlement_date: Option<&Bound<'_, PyAny>>,
+        spread_day_counter: Option<&Bound<'_, PyAny>>,
+        calendar: Option<&Bound<'_, PyAny>>,
+        business_day_convention: Option<&Bound<'_, PyAny>>,
+        date_generation_rule: Option<&Bound<'_, PyAny>>,
+        end_of_month: Option<bool>,
+        first_coupon_date: Option<&Bound<'_, PyAny>>,
+        next_to_last_coupon_date: Option<&Bound<'_, PyAny>>,
+        termination_date_convention: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<Self> {
         if coupons.is_empty() {
             return Err(pyo3::exceptions::PyValueError::new_err(
@@ -1292,6 +1442,22 @@ impl SteppedCouponBond {
             notional_percentages,
             call_schedule,
             trade_date: trade_date.map(extract_date).transpose()?,
+            pricing_anchor: BondPricingAnchorConfig::extract(pricing_anchor)?,
+            settlement_date: settlement_date.map(extract_date).transpose()?,
+            spread_day_counter: spread_day_counter.map(extract_day_counter).transpose()?,
+            calendar: calendar.map(extract_calendar).transpose()?,
+            business_day_convention: business_day_convention
+                .map(extract_business_day_convention)
+                .transpose()?,
+            date_generation_rule: date_generation_rule
+                .map(extract_date_generation_rule)
+                .transpose()?,
+            end_of_month,
+            first_coupon_date: first_coupon_date.map(extract_date).transpose()?,
+            next_to_last_coupon_date: next_to_last_coupon_date.map(extract_date).transpose()?,
+            termination_date_convention: termination_date_convention
+                .map(extract_business_day_convention)
+                .transpose()?,
         })
     }
 
@@ -1311,8 +1477,33 @@ impl SteppedCouponBond {
             "notional_percentages": self.notional_percentages,
             "call_schedule": self.call_schedule.iter().map(|call| call.inner).collect::<Vec<_>>(),
             "trade_date": self.trade_date,
+            "pricing_anchor": self.pricing_anchor,
+            "settlement_date": self.settlement_date,
+            "spread_day_counter": self.spread_day_counter,
+            "calendar": self.calendar,
+            "business_day_convention": self.business_day_convention,
+            "date_generation_rule": self.date_generation_rule,
+            "end_of_month": self.end_of_month,
+            "first_coupon_date": self.first_coupon_date,
+            "next_to_last_coupon_date": self.next_to_last_coupon_date,
+            "termination_date_convention": self.termination_date_convention,
         });
         pythonize::pythonize(py, &value).map_err(qs_err)
+    }
+
+    /// Returns a copy of this trade with a different market pricing anchor.
+    fn with_pricing_anchor(&self, anchor: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let mut trade = self.clone();
+        trade.pricing_anchor = BondPricingAnchorConfig::extract(anchor)?;
+        Ok(trade)
+    }
+
+    /// Market anchor owned by this trade.
+    #[getter]
+    fn pricing_anchor(&self) -> BondPricingAnchorConfig {
+        BondPricingAnchorConfig {
+            inner: self.pricing_anchor,
+        }
     }
 
     #[getter]

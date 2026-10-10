@@ -39,6 +39,8 @@ use crate::{
 pub struct PricingContext {
     /// The quote store provides access to direct market data quotes and reference date information.
     quote_store: QuoteStore,
+    /// Quote level used for market construction and model calibration.
+    quote_level: Level,
     /// Scenario shocks applied to the quote store before bootstrapping.
     scenarios: Vec<Scenario>,
     /// The quote store with scenario shocks applied (built on `initialize`).
@@ -68,11 +70,32 @@ pub struct PricingContext {
 }
 
 impl PricingContext {
+    /// Sets the default collateral policy used to construct curves.
+    #[must_use]
+    pub fn with_csa_policy(
+        mut self,
+        policy: &crate::core::collateral::SingleCurveCSADiscountPolicy,
+    ) -> Self {
+        self.base_currency = policy.collateral_currency();
+        self.base_index = policy.collateral_index().clone();
+        self
+    }
+
+    /// Returns the default collateral policy for derivative valuation.
+    #[must_use]
+    pub fn csa_policy(&self) -> crate::core::collateral::SingleCurveCSADiscountPolicy {
+        crate::core::collateral::SingleCurveCSADiscountPolicy::new(
+            self.base_index.clone(),
+            self.base_currency,
+        )
+    }
+
     /// Creates a new pricing data context.
     #[must_use]
     pub fn new() -> Self {
         Self {
             quote_store: QuoteStore::default(),
+            quote_level: Level::Mid,
             scenarios: Vec::new(),
             shocked_quote_store: None,
             fixing_store: FixingStore::default(),
@@ -123,6 +146,21 @@ impl PricingContext {
         self.quote_store = quote_store;
         self.shocked_quote_store = None;
         self
+    }
+
+    /// Selects the quote level for market construction and model calibration.
+    /// Defaults to [`Level::Mid`]. Call [`Self::initialize`] after changing it
+    /// to rebuild configured market objects. Missing levels produce an error.
+    #[must_use]
+    pub const fn with_quote_level(mut self, quote_level: Level) -> Self {
+        self.quote_level = quote_level;
+        self
+    }
+
+    /// Returns the quote level used for market construction and calibration.
+    #[must_use]
+    pub const fn quote_level(&self) -> Level {
+        self.quote_level
     }
 
     /// Sets the scenario shocks applied to the quote store on `initialize`.
@@ -341,7 +379,7 @@ impl PricingContext {
         let policy = BootstrapDiscountPolicy::new(self.base_index.clone(), self.base_currency);
         let bootstrapper = MultiCurveBootstrapper::new(self.curve_configurations.clone(), policy)
             .with_fx_store(self.fx_store.clone());
-        let curves = bootstrapper.bootstrap(self.quote_store(), Level::Mid)?;
+        let curves = bootstrapper.bootstrap(self.quote_store(), self.quote_level)?;
         for (index, curve) in curves {
             self.constructed_elements
                 .discount_curves_mut()
@@ -355,7 +393,7 @@ impl PricingContext {
                 CreditCurveBootstrapper::new(self.credit_curve_configurations.clone());
             let credit_curves = credit_bootstrapper.bootstrap(
                 self.quote_store(),
-                Level::Mid,
+                self.quote_level,
                 self.constructed_elements.discount_curves(),
             )?;
             for (index, curve) in credit_curves {
@@ -369,7 +407,7 @@ impl PricingContext {
         if !self.volatility_surface_configurations.is_empty() {
             let surface_builder =
                 VolatilitySurfaceBuilder::new(self.volatility_surface_configurations.clone());
-            let surfaces = surface_builder.build(self.quote_store(), Level::Mid)?;
+            let surfaces = surface_builder.build(self.quote_store(), self.quote_level)?;
             for (index, surface) in surfaces {
                 self.constructed_elements
                     .volatility_surfaces_mut()
@@ -381,7 +419,7 @@ impl PricingContext {
         if !self.volatility_cube_configurations.is_empty() {
             let cube_builder =
                 VolatilityCubeBuilder::new(self.volatility_cube_configurations.clone());
-            let cubes = cube_builder.build(self.quote_store(), Level::Mid)?;
+            let cubes = cube_builder.build(self.quote_store(), self.quote_level)?;
             for (index, cube) in cubes {
                 self.constructed_elements
                     .volatility_cubes_mut()
@@ -397,7 +435,7 @@ impl PricingContext {
                 &self.constructed_elements,
                 self.quote_store(),
                 &self.fixing_store,
-                Level::Mid,
+                self.quote_level,
             )?;
             for (index, simulation) in simulations {
                 self.constructed_elements
@@ -558,12 +596,13 @@ impl MarketDataProvider for PricingContext {
                     let quote = self.quote_store().select(&identifier).ok_or_else(|| {
                         QSError::NotFoundErr(format!("Calibration quote not found: {identifier}"))
                     })?;
-                    quotes.add_quote(quote.clone());
+                    quotes.add_quote(quote);
                 }
                 Ok::<_, QSError>(quotes)
             })
             .transpose()?;
         let mut md = MarketData::new(fixings, constructed_elements)
+            .with_quote_level(self.quote_level)
             .with_fx_store(fx_store)
             .with_pricer_configurations(pricer_configurations);
         if let Some(quotes) = calibration_quotes {

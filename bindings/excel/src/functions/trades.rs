@@ -401,6 +401,8 @@ pub fn qs_trade_fixed_bond(
     compounding: &str,
     rate_frequency: &str,
     payment_frequency: &str,
+    pricing_anchor: &str,
+    anchor_value: f64,
 ) -> Result<String, XllError> {
     let definition_key = input_key(&(
         trade_date,
@@ -415,10 +417,23 @@ pub fn qs_trade_fixed_bond(
         compounding,
         rate_frequency,
         payment_frequency,
+        pricing_anchor,
+        anchor_value.to_bits(),
     ))?;
     if let Some(handle) = cached_handle(name, "FixedRateBondTrade", &definition_key)? {
         return Ok(handle);
     }
+    let anchor = match pricing_anchor {
+        "CleanPrice" => quantsupport::prelude::BondPricingAnchor::CleanPrice(anchor_value),
+        "DirtyPrice" => quantsupport::prelude::BondPricingAnchor::DirtyPrice(anchor_value),
+        "ZSpread" => quantsupport::prelude::BondPricingAnchor::ZSpread(anchor_value),
+        _ => {
+            return Err(value_error(
+                "fixed bonds require CleanPrice, DirtyPrice, or ZSpread",
+            ))
+        }
+    };
+    anchor.validate().map_err(value_error)?;
     let side = parse_side(side)?;
     let instrument = MakeFixedRateBond::<DualFwd>::default()
         .with_identifier(name.to_string())
@@ -433,12 +448,12 @@ pub fn qs_trade_fixed_bond(
         ))
         .with_discount_index(parse_index(discount_index)?)
         .with_currency(parse_currency(currency)?)
-        .with_side(side)
         .with_payment_frequency(parse_frequency(payment_frequency)?)
         .with_payment_structure(PaymentStructure::Bullet)
         .build()
         .map_err(value_error)?;
-    let trade = FixedRateBondTrade::new(instrument, parse_date(trade_date)?, notional, side);
+    let trade =
+        FixedRateBondTrade::new(instrument, parse_date(trade_date)?, notional, side, anchor);
     with_registry_mut(|registry| {
         registry.upsert_if_changed(
             name,

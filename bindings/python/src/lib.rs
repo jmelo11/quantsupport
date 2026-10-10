@@ -1,5 +1,7 @@
 //! Python bindings for the quantsupport derivative pricing library.
 
+mod bondpricinganchor;
+mod collateral;
 mod context;
 mod conv;
 mod enums;
@@ -24,6 +26,7 @@ pyo3::create_exception!(
 #[pymodule]
 fn quantsupport(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Enums
+    m.add_class::<enums::Level>()?;
     m.add_class::<enums::Currency>()?;
     m.add_class::<enums::MarketIndex>()?;
     m.add_class::<enums::Side>()?;
@@ -32,6 +35,7 @@ fn quantsupport(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<enums::DayCounter>()?;
     m.add_class::<enums::TimeUnit>()?;
     m.add_class::<enums::BusinessDayConvention>()?;
+    m.add_class::<enums::DateGenerationRule>()?;
     m.add_class::<enums::Request>()?;
     m.add_class::<enums::VolatilityType>()?;
     m.add_class::<enums::SmileType>()?;
@@ -60,8 +64,9 @@ fn quantsupport(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<explore::VolatilityCube>()?;
     m.add_class::<explore::Simulation>()?;
     // Context
-    m.add_class::<context::DiscountingConfig>()?;
-    m.add_class::<context::BondPricingAnchorConfig>()?;
+    m.add_class::<collateral::SingleCurveCSADiscountPolicy>()?;
+    m.add_class::<collateral::FixedIncomeDiscountPolicy>()?;
+    m.add_class::<bondpricinganchor::BondPricingAnchorConfig>()?;
     m.add_class::<context::PricingContext>()?;
     // Python-native extension points
     m.add_class::<extension::Instrument>()?;
@@ -113,10 +118,18 @@ mod tests {
             let run = || -> PyResult<()> {
                 let module = PyModule::new(py, "quantsupport")?;
                 super::quantsupport(&module)?;
-                py.import("sys")?.getattr("modules")?.set_item("quantsupport", module)?;
+                py.import("sys")?
+                    .getattr("modules")?
+                    .set_item("quantsupport", module)?;
                 let globals = PyDict::new(py);
                 globals.set_item("__name__", "binding_contract_tests")?;
-                globals.set_item("__file__", concat!(env!("CARGO_MANIFEST_DIR"), "/tests/test_dict_and_scripting.py"))?;
+                globals.set_item(
+                    "__file__",
+                    concat!(
+                        env!("CARGO_MANIFEST_DIR"),
+                        "/tests/test_dict_and_scripting.py"
+                    ),
+                )?;
                 let source = CString::new(include_str!("../tests/test_dict_and_scripting.py"))
                     .map_err(|error| pyo3::exceptions::PyValueError::new_err(error.to_string()))?;
                 py.run(&source, Some(&globals), None)?;

@@ -10,14 +10,38 @@ pip install maturin
 maturin develop -m bindings/python/Cargo.toml --release
 ```
 
+## Guided examples
+
+Start with the [examples guide](examples/README.md) for setup and a suggested
+reading order. The notebooks explain the library to readers who know the
+financial products, with typed Python contracts and local data-loading helpers.
+They are cataloged under the same scopes as the Rust examples: `bootstrap`,
+`valuation`, `volatilitysurface`, `hullwhite`, `sensitivity`, `scripting`, and `cva`.
+
+| Notebook | Workflow |
+| --- | --- |
+| [Curve bootstrapping](examples/bootstrap/curves.ipynb) | Quote inputs, construction conventions, nodes, pillars, and forwards |
+| [First swap](examples/valuation/tour.ipynb) | Market inputs, dates, context lifecycle, requests, and result units |
+| [Product valuations](examples/valuation/product_valuations.ipynb) | Swaps, straight bonds, caplets and caps; par rates, yields, duration and spreads |
+| [Curves and volatility](examples/volatilitysurface/curves_and_volatility.ipynb) | Construction, inspection, and their impact on swap and option values |
+| [Simulations](examples/hullwhite/simulations.ipynb) | Calibration, path retrieval, distributions, seeds and sampling error |
+| [Portfolio risk](examples/sensitivity/portfolio_risk.ipynb) | Position aggregation, DV01/vega, cashflow reports, and full-revaluation checks |
+| [Stepped-coupon bond](examples/valuation/stepped_coupon_bond.ipynb) | Callable terms, tree/Fourier engines, OAS and sensitivities |
+| [Scripted cashflows](examples/scripting/scripted_cashflows.ipynb) | Dated payoffs and native/scripted representation checks |
+| [XVA](examples/cva/xva.ipynb) | Netting sets, client terms, exposure profiles and adjustment risk |
+
+Execute all notebooks with `python bindings/python/examples/run_notebooks.py`
+after installing the example dependencies and building the binding. The runner
+uses a fresh kernel per notebook and leaves the source notebooks unchanged.
+
 ## Usage
 
 Market data and configurations are typed objects created from dicts
 (`from_dict`) or JSON files (`from_json`), deserialized directly by the Rust
-library's serde implementations. The `PricingContext` is a context manager:
-entering the `with` block bootstraps curves, volatility surfaces/cubes and
-simulations, and starts the AD tape; exiting releases all constructed market
-data and rewinds the tape.
+library's serde implementations. Create `PricingContext` and call `initialize()`
+before the `with` block to bootstrap curves, volatility surfaces/cubes and
+simulations. `with ctx:` then reuses the initialized market and starts the AD
+tape; exiting releases constructed market data and rewinds the tape.
 
 ```python
 import quantsupport as qs
@@ -25,7 +49,7 @@ import quantsupport as qs
 quotes = qs.QuoteStore.from_json("quotes.json")
 curves = qs.CurveConfiguration.from_json("curve_specs.json")   # list
 fx = qs.FxStore.from_dict([{"base": "CLP", "quote": "USD", "rate": 1 / 900}])
-discounting = qs.DiscountingConfig(currency=qs.Currency.USD, index=qs.MarketIndex.SOFR)
+csa_policy = qs.SingleCurveCSADiscountPolicy(collateral_currency=qs.Currency.USD, collateral_index=qs.MarketIndex.SOFR)
 
 ref = quotes.reference_date            # qs.Date
 swap = qs.Swap(
@@ -39,7 +63,10 @@ swap = qs.Swap(
     side=qs.Side.LongReceive,
 )
 
-with qs.PricingContext(quotes=quotes, curves=curves, fx=fx, discounting=discounting) as ctx:
+ctx = qs.PricingContext(quotes=quotes, curves=curves, fx=fx, csa_policy=csa_policy)
+ctx.initialize()
+
+with ctx:
     # explore the bootstrapped market data
     sofr = ctx.curve(qs.MarketIndex.SOFR)
     print(sofr.nodes())                 # DataFrame: date / discount_factor
@@ -55,6 +82,13 @@ with qs.PricingContext(quotes=quotes, curves=curves, fx=fx, discounting=discount
 
 Every enum argument also accepts its string name (`currency="USD"`,
 `side="pay"`, `requests=["Value"]`, ...).
+
+Select the quote level during setup with
+`qs.PricingContext(quotes=quotes, curves=curves, quote_level=qs.Level.Bid)`.
+The setting accepts `qs.Level.Mid`, `qs.Level.Bid`, `qs.Level.Ask`, or their
+case-insensitive names, such as `quote_level="ask"`. It defaults to mid and
+applies to market construction and model calibration. `ctx.quote_level`
+reports the selection. Every consumed quote must provide the requested level.
 
 ### In-memory product and market schemas
 
@@ -75,7 +109,7 @@ swap = qs.Swap.from_dict({
 quotes = qs.QuoteStore.from_dict(quote_data)
 curves = qs.CurveConfiguration.from_dict_list(curve_data)
 volatility_surfaces = qs.VolatilitySurfaceConfiguration.from_dict_list(volatility_data)
-discounting = qs.DiscountingConfig.from_dict({"currency": "USD", "index": "SOFR"})
+csa_policy = qs.SingleCurveCSADiscountPolicy.from_dict({"collateral_currency": "USD", "collateral_index": "SOFR"})
 fx = qs.FxStore.from_dict([{"base": "EUR", "quote": "USD", "rate": 1.1}])
 ```
 
@@ -85,7 +119,7 @@ fx = qs.FxStore.from_dict([{"base": "EUR", "quote": "USD", "rate": 1.1}])
 accepts a list, one configuration dict, or a single-key object wrapping a list,
 such as `{"curve_specs": [...]}`. `from_dict` on those classes still returns
 one configuration. `QuoteStore`, `FixingStore`, `FxStore`, `Scenario`, and
-`DiscountingConfig` keep their existing `from_dict` methods.
+`SingleCurveCSADiscountPolicy` keep their existing `from_dict` methods.
 
 Market configs use the native Rust serde schemas. For product market-index
 fields, rate indices are strings (`"SOFR"`); other variants use native tagged
@@ -96,22 +130,24 @@ Strikes accept a float, `"ATM"`, or a native tagged dict such as
 
 ### Bond pricing, Z-spread, and OAS
 
-Straight fixed-rate bonds use `BondPricer`. Pass a `BondPricingAnchor` to
-`PricingContext.evaluate`; clean and dirty prices are explicit anchor
-constructors, not values of a second price-type enum:
+Straight fixed-rate bonds use `BondPricer`. Supply the required `pricing_anchor`
+when constructing the Python bond trade. Use `bond.with_pricing_anchor(anchor)`
+to create a copy with another quote; `PricingContext.evaluate(trade, requests)`
+reads the quote from that trade.
 
 `FixedRateBond.discount_index` is optional. Omit it to use the context's
 fixed-income discount policy, which maps the base currency to the base index.
-An explicit index remains supported for compatibility and takes precedence.
+An explicit index takes precedence when `prefer_instrument_index=True`.
+Pass `fixed_income_policy=qs.FixedIncomeDiscountPolicy({"USD": "SOFR"},
+prefer_instrument_index=False)` to select the policy curve explicitly.
 An unmapped currency produces an error rather than silently selecting a curve.
 
 ```python
 anchor = qs.BondPricingAnchor.clean_price(99.25)
 result = ctx.evaluate(
-    bond,
+    bond.with_pricing_anchor(anchor),
     [qs.Request.Value, qs.Request.ModifiedDuration,
      qs.Request.ZSpread, qs.Request.Sensitivities],
-    bond_anchor=anchor,
 )
 print(result.z_spread)
 print(result.modified_duration)
@@ -124,7 +160,7 @@ repeats for all later generated payment periods. Calls always use explicit
 dates and strikes:
 
 ```python
-callable_bond = qs.SteppedCouponBond(
+callable_bond = qs.SteppedCouponBond(pricing_anchor=qs.BondPricingAnchor.OAS(0.0),
     identifier="USD-STEPPED-CALL-2031", start_date=ref, maturity_date=ref + "6Y",
     notional=1_000_000, currency=qs.Currency.USD,
     coupons=[
@@ -143,24 +179,43 @@ callable_bond = qs.SteppedCouponBond(
 # TreeBased or BackwardFourierEvolution plus a typed HullWhite model.
 pricers = qs.PricerConfiguration.from_json("pricers.json")
 
-with qs.PricingContext(quotes=quotes, curves=curves,
+ctx = qs.PricingContext(quotes=quotes, curves=curves,
                        pricer_configurations=pricers,
-                       discounting=discounting) as ctx:
+                       csa_policy=csa_policy)
+ctx.initialize()
+
+with ctx:
     result = ctx.evaluate(
-        callable_bond,
+        callable_bond.with_pricing_anchor(qs.BondPricingAnchor.dirty_price(101.10)),
         [qs.Request.Value, qs.Request.OAS, qs.Request.Sensitivities],
-        bond_anchor=qs.BondPricingAnchor.dirty_price(101.10),
     )
     print(result.oas)
     print(result.sensitivities)  # curve rows plus <identifier>.OAS
 ```
+
+The constructor generates coupon dates from `payment_frequency`. Both bond
+wrappers accept `calendar`, `business_day_convention`, `date_generation_rule`,
+`end_of_month`, and `first_coupon_date`. Stepped bonds additionally accept
+`next_to_last_coupon_date` and `termination_date_convention` (defaulting to the
+business-day convention). Calendar names or `qs.Calendar` objects and string or
+enum conventions are accepted. These fields survive dictionary round trips.
+
+`side`, `pricing_anchor`, `settlement_date`, and `spread_day_counter` belong to
+the trade. The Rust instrument builder always builds the contractual cashflows
+in the receiving direction; valuation applies trade side once. Defaults for
+settlement and spread day count remain the context date and curve convention.
+
+`csa_policy` configures collateral remuneration for curve construction and
+native derivative pricing. A foreign-currency leg resolves the corresponding
+collateral-adjusted curve. `CsaTerms` remains the netting/XVA input, including
+credit, recovery and funding terms; it is distinct from the context's CSA policy.
 
 `SteppedCouponBond` has no contractual `discount_index` argument or dictionary
 field. Discounting is selected by the context's fixed-income policy. Its nested
 coupon and call entries may be plain native dicts or the existing wrappers:
 
 ```python
-bond_spec = {
+bond_spec = {"pricing_anchor": {"OAS": 0.0},
     "identifier": "STEP", "start_date": "2026-02-24",
     "maturity_date": "2031-02-24", "notional": 1_000_000,
     "currency": "USD", "units": 100.0,
@@ -231,7 +286,10 @@ script_spec = {
     }],
 }
 product = qs.ScriptedProduct.from_dict(script_spec)
-with qs.PricingContext(quotes=quotes, curves=curves, discounting=discounting) as ctx:
+ctx = qs.PricingContext(quotes=quotes, curves=curves, csa_policy=csa_policy)
+ctx.initialize()
+
+with ctx:
     values = ctx.evaluate_script(product, n_paths=1000, seed=42)
     inline_values = ctx.evaluate_script(script_spec, n_paths=1000, seed=42)
     print(values["note"])
@@ -270,8 +328,9 @@ Native calibration resolves option prices from the context's market and fits
 the sigma schedule. Missing models, curves, calibration data, invalid event
 order/dates, and script parse/runtime failures raise Python exceptions.
 
-See [examples/stepped_coupon_bond.ipynb](examples/stepped_coupon_bond.ipynb)
-for tree/Fourier pricing and the native-versus-scripted comparison.
+See [examples/valuation/stepped_coupon_bond.ipynb](examples/valuation/stepped_coupon_bond.ipynb)
+for tree/Fourier pricing and [examples/scripting/scripted_cashflows.ipynb](examples/scripting/scripted_cashflows.ipynb)
+for the native-versus-scripted comparison.
 
 ### Extending the library in Python
 
@@ -314,6 +373,7 @@ trade = ZeroCouponTrade(note, ref)
 
 # Context registration participates in the normal ctx.evaluate workflow.
 ctx.register_pricer(ZeroCouponTrade, ZeroCouponPricer())
+ctx.initialize()
 with ctx:
     result = ctx.evaluate(trade, [qs.Request.Value])
     print(result.price)
@@ -355,7 +415,10 @@ csa_a = qs.CsaTerms(collateral_index="SOFR", collateral_currency="USD",
                     credit_spread=0.010, recovery=0.40, funding_spread=0.005)
 csa_b = qs.CsaTerms.from_json("client_b_csa.json")
 
-with qs.PricingContext(quotes=quotes, curves=curves, fx=fx, discounting=discounting) as ctx:
+ctx = qs.PricingContext(quotes=quotes, curves=curves, fx=fx, csa_policy=csa_policy)
+ctx.initialize()
+
+with ctx:
     result = ctx.run_xva(config, netting_sets=[
         qs.NettingSet("clientA", [swap], csa_a),
         qs.NettingSet("clientB", [xccy], csa_b),
@@ -367,8 +430,8 @@ with qs.PricingContext(quotes=quotes, curves=curves, fx=fx, discounting=discount
         print(p.to_dataframe())   # DataFrame: date / epe / ene / ee
 ```
 
-See [examples/tour.ipynb](examples/tour.ipynb) for a guided notebook covering
-all components (dates, enums, market data, curve exploration, pricing, XVA).
+See [examples/cva/xva.ipynb](examples/cva/xva.ipynb) for a complete netting comparison
+and [the examples guide](examples/README.md) for the full learning sequence.
 
 ## Focused validation
 
@@ -418,11 +481,12 @@ Market data & configuration (each with `from_dict` / `from_json`, plus
 - `CurveConfiguration`, `VolatilitySurfaceConfiguration`,
   `VolatilityCubeConfiguration`, `PricerConfiguration`,
   `SimulationConfiguration`
-- `DiscountingConfig(currency, index)` — base-curve definition of the context
+- `SingleCurveCSADiscountPolicy(collateral_currency, collateral_index)` — collateral policy for curve construction and derivative valuation
+- `FixedIncomeDiscountPolicy(risk_free_indices, prefer_instrument_index=True)` — per-currency bond discount curves
 
 Pricing:
 
-- `PricingContext(quotes, curves, fixings=None, fx=None, volatility_surfaces=None, volatility_cubes=None, pricer_configurations=None, simulations=None, discounting=None, scenarios=None)` — context manager
+- `PricingContext(quotes, curves, fixings=None, fx=None, volatility_surfaces=None, volatility_cubes=None, pricer_configurations=None, simulations=None, csa_policy=None, fixed_income_policy=None, scenarios=None)` — context manager
 - inputs: `ctx.reference_date` / `ctx.evaluation_date`, `ctx.quotes`,
   `ctx.fixings`, `ctx.fx`, `ctx.base_currency`, `ctx.base_index`,
   `ctx.curve_configurations`,
@@ -438,7 +502,7 @@ Pricing:
 - `Swap`, `CrossCurrencySwap`, `FixedRateBond`, `SteppedCouponBond` — trade
   specifications with typed getters; callable stepped bonds use `Coupon` and
   explicit `CallScheduleEntry(date, strike)` terms
-- `ctx.evaluate(trade, requests, bond_anchor=None)` → `EvaluationResults` (`price`, `yield_to_maturity`, `modified_duration`, `z_spread`, `oas`, `fair_rate`, `sensitivities` DataFrame, `cashflows` DataFrame)
+- `ctx.evaluate(trade, requests)` → `EvaluationResults` (`price`, `yield_to_maturity`, `modified_duration`, `z_spread`, `oas`, `fair_rate`, `sensitivities` DataFrame, `cashflows` DataFrame)
 
 - extensibility: `Instrument`, `Trade`, `Pricer`, `MarketDataProvider`,
   `Evaluator`; `ctx.register_pricer(type, pricer)`,
@@ -458,3 +522,12 @@ All JSON schemas match the Rust examples in `examples/*/data/`. New products
 and pricing methods can be implemented and registered entirely in Python;
 adding a native binding in `bindings/python/src/trades.rs` remains available
 when Rust-level performance or integration is required.
+
+### Bond API migration
+
+Bond constructors require `pricing_anchor=qs.BondPricingAnchor.z_spread(0.0)`
+for an explicitly unspread straight bond, or `qs.BondPricingAnchor.OAS(0.0)`
+for an issuer-call bond. Pass a price anchor to imply the appropriate spread.
+The `bond_anchor` evaluation argument has been removed. Replace the former
+`discounting`/`DiscountingConfig` context input with `csa_policy` and
+`SingleCurveCSADiscountPolicy(collateral_currency=..., collateral_index=...)`.

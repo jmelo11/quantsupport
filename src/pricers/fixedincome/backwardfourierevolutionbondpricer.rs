@@ -1,70 +1,46 @@
-//! Callable-bond pricing with AD-compatible backward Fourier evolution.
-
-use super::bondpricer::{
-    bond_market_data_request, evaluate_bond, impl_bond_pricer, transition_variances,
-    BondPricerSettings, BondPricingAnchor, BondPricingEngine, BondState, BondTerms, LatticeTerms,
-    NumericalMethod,
+//! Backward Fourier evolution valuation of callable bond trades.
+use super::bondanalytics::{
+    bond_market_data_request, contractual_market_request, discounted_value, evaluate_bond,
+    impl_bond_pricer, BondPricingEngine, BondState, BondTerms, BondValuation,
+};
+use super::{
+    bondevents::BondEventGrid,
+    callablebond::{prepare_callable_bond, pricer_configuration, CallableBondModel},
 };
 use crate::{
     ad::{dual::DualFwd, scalar::Scalar},
     core::{
         collateral::DiscountPolicy,
         evaluationresults::EvaluationResults,
-        marketdatahandling::marketdata::{MarketDataProvider, MarketDataRequest},
+        marketdatahandling::marketdata::{MarketData, MarketDataProvider, MarketDataRequest},
         pricer::Pricer,
-        pricerconfiguration::FourierGridConfiguration,
         request::{HandleCashflows, Request},
     },
-    instruments::fixedincome::steppedcouponbond::SteppedCouponBondTrade,
+    indices::marketindex::MarketIndex,
+    utils::errors::Result,
+};
+use crate::{
+    core::pricerconfiguration::FourierGridConfiguration,
     math::{
         fft::{fft, Complex},
         ifft::ifft,
     },
-    time::{date::Date, daycounter::DayCounter},
-    utils::errors::{QSError, Result},
 };
-
-/// Callable-bond pricer using backward Fourier evolution.
-///
-/// Gaussian transitions are evaluated with the library's FFT and IFFT,
-/// followed by discounting, exercise, and contractual cashflows.
+use crate::{
+    core::pricerconfiguration::PricerImplementation,
+    instruments::fixedincome::steppedcouponbond::SteppedCouponBondTrade,
+    models::hullwhite::parameters::transition_variances, utils::errors::QSError,
+};
+/// Callable bond pricer with backward Fourier evolution.
+#[derive(Default)]
 pub struct BackwardFourierEvolutionBondPricer {
-    pub(super) settings: BondPricerSettings,
+    discount_policy: Option<Box<dyn DiscountPolicy>>,
 }
-
 impl BackwardFourierEvolutionBondPricer {
-    /// Creates a Fourier bond pricer using context-date settlement.
+    /// Creates a reusable engine; quote and settlement terms belong to each trade.
     #[must_use]
-    pub const fn new(anchor: BondPricingAnchor) -> Self {
-        Self {
-            settings: BondPricerSettings::new(anchor),
-        }
-    }
-
-    /// Uses an explicit settlement date, equal to evaluation for callable bonds.
-    #[must_use]
-    pub fn with_settlement_date(mut self, settlement_date: Date) -> Self {
-        self.settings = self.settings.with_settlement_date(settlement_date);
-        self
-    }
-
-    /// Overrides the spread day counter.
-    #[must_use]
-    pub fn with_spread_day_counter(mut self, day_counter: DayCounter) -> Self {
-        self.settings = self.settings.with_spread_day_counter(day_counter);
-        self
-    }
-
-    /// Returns the configured price or spread anchor.
-    #[must_use]
-    pub const fn anchor(&self) -> BondPricingAnchor {
-        self.settings.anchor()
-    }
-}
-
-impl Default for BackwardFourierEvolutionBondPricer {
-    fn default() -> Self {
-        Self::new(BondPricingAnchor::OAS(0.0))
+    pub fn new() -> Self {
+        Self::default()
     }
 }
 /// Applies the Gaussian transition semigroup to values on a periodic uniform
@@ -191,7 +167,7 @@ fn fourier_curve_shifts<T: Scalar>(
 #[allow(clippy::cast_precision_loss)]
 pub(super) fn backward_fourier_value<T: Scalar>(
     discount_factor: impl FnMut(f64) -> Result<T>,
-    terms: &LatticeTerms<T>,
+    terms: &BondEventGrid<T>,
     alpha: f64,
     sigma_schedule: &[(f64, T)],
     spread: T,
@@ -250,17 +226,71 @@ pub(super) fn backward_fourier_value<T: Scalar>(
 }
 
 impl BondPricingEngine for BackwardFourierEvolutionBondPricer {
-    fn settings(&self) -> &BondPricerSettings {
-        &self.settings
+    type Model<T: Scalar> = (Option<CallableBondModel<T>>, FourierGridConfiguration);
+    fn policy(&self) -> Option<&dyn DiscountPolicy> {
+        self.discount_policy.as_deref()
     }
-
-    fn numerical_method(&self) -> NumericalMethod {
-        NumericalMethod::BackwardFourierEvolution
+    fn prepare(
+        &self,
+        trade: &impl BondTerms,
+        index: &MarketIndex,
+        context: &impl MarketDataProvider,
+    ) -> Result<(MarketData, Self::Model<f64>)> {
+        if trade.call_schedule().is_empty() {
+            return Ok((
+                context.handle_request(&contractual_market_request(
+                    trade,
+                    index,
+                    context.evaluation_date(),
+                ))?,
+                (None, FourierGridConfiguration::default()),
+            ));
+        }
+        let configuration = pricer_configuration(trade, context)?;
+        let (time_grid, grid) = match configuration.pricer() {
+            PricerImplementation::BackwardFourierEvolution { time_grid, fourier_grid } => (*time_grid, *fourier_grid),
+            actual => return Err(QSError::InvalidValueErr(format!("BackwardFourierEvolutionBondPricer requires a BackwardFourierEvolution context configuration, got {actual:?}"))),
+        };
+        let (market, model) =
+            prepare_callable_bond(trade, index, context, &configuration, time_grid)?;
+        Ok((market, (Some(model), grid)))
+    }
+    fn ad_model(
+        &self,
+        model: &Self::Model<f64>,
+        market: &MarketData,
+    ) -> Result<Self::Model<DualFwd>> {
+        Ok((
+            model
+                .0
+                .as_ref()
+                .map(|model| model.ad_model(market))
+                .transpose()?,
+            model.1,
+        ))
+    }
+    fn value<T: Scalar>(
+        &self,
+        model: &Self::Model<T>,
+        valuation: &BondValuation<'_, T>,
+        spread: T,
+    ) -> Result<T> {
+        if let Some(callable) = &model.0 {
+            let terms = callable.events(valuation)?;
+            backward_fourier_value(
+                |time| valuation.curve.discount_factor_from_time(time),
+                &terms,
+                callable.parameters.alpha,
+                &callable.parameters.sigma_schedule,
+                spread,
+                model.1,
+            )
+        } else {
+            discounted_value(valuation, spread)
+        }
     }
 }
-
 impl<T: BondTerms> HandleCashflows<T, BondState> for BackwardFourierEvolutionBondPricer {}
-
 impl_bond_pricer!(
     BackwardFourierEvolutionBondPricer,
     SteppedCouponBondTrade<DualFwd>

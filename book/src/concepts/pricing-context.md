@@ -13,6 +13,7 @@ use quantsupport::prelude::*;
 
 let mut ctx = PricingContext::new()
     .with_quote_store(quote_store)                          // required: prices + reference date
+    .with_quote_level(Level::Mid)                           // optional: Mid (default), Bid, or Ask
     .with_fixing_store(fixings)                             // optional: historical fixings
     .with_fx_store(fx_store)                                // optional: spot FX (needed for Collateral curves)
     .with_base_currency(Currency::USD)                      // CSA currency, default USD
@@ -41,6 +42,14 @@ instrument type are rejected during initialization.
 
 All `with_*` methods consume and return `Self`. `evaluation_date()` takes its value from `quote_store.reference_date()`, giving observations and constructed elements one shared date.
 
+Set `with_quote_level(Level::Bid)` or `with_quote_level(Level::Ask)` during setup
+to choose which quote levels build the market. The choice applies to discount
+and credit curves, volatility surfaces and cubes, simulations, and subsequent
+bond, scripting, and XVA model calibration. Mid remains the default. A missing
+requested level produces an error; no other level is substituted. After
+changing the level on an existing Rust context, call `initialize()` to rebuild
+its configured objects.
+
 ### Read accessors
 
 After construction, accessors expose the inputs and results without
@@ -51,6 +60,7 @@ the original observations and shows where initialized elements are stored.
 | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
 | `quote_store()`                                                                                                                                                     | shocked store if scenarios are attached, otherwise the base store |
 | `base_quote_store()`                                                                                                                                                | the unshocked store                                               |
+| `quote_level()` | selected `Level` for construction and calibration |
 | `fixing_store()`, `fx_store()`                                                                                                                                      | the stores as given                                               |
 | `scenarios()`                                                                                                                                                       | `&Vec<Scenario>`                                                  |
 | `base_currency()`, `base_index()`                                                                                                                                   | CSA currency / index                                              |
@@ -74,11 +84,11 @@ pub fn initialize(&mut self) -> Result<()>
 
 1. **Pricer configuration.** Validate instrument/pricer compatibility, numerical controls, and the one-configuration-per-instrument rule.
 2. **Scenarios.** If `scenarios` is non-empty, clone the quote store and apply each `Scenario` in order. A scenario that matches no quote is an error. Everything below reads the shocked copy.
-3. **Discount curves.** `MultiCurveBootstrapper::new(curve_configurations, BootstrapDiscountPolicy::new(base_index, base_currency)).with_fx_store(fx_store).bootstrap(quote_store, Level::Mid)`. Each resulting `DiscountCurveElement` is inserted under its `MarketIndex`.
-4. **Credit curves.** `CreditCurveBootstrapper::bootstrap(quote_store, Level::Mid, discount_curves)` — CDS premium and protection legs are discounted on the curves from step 3.
-5. **Volatility surfaces.** `VolatilitySurfaceBuilder::build(quote_store, Level::Mid)`.
-6. **Volatility cubes.** `VolatilityCubeBuilder::build(quote_store, Level::Mid)`.
-7. **Simulations.** `SimulationBuilder::build(constructed_elements, quote_store, fixing_store, Level::Mid)` — runs last so models can calibrate to the surfaces/cubes and diffuse the bootstrapped curves.
+3. **Discount curves.** `MultiCurveBootstrapper::new(curve_configurations, BootstrapDiscountPolicy::new(base_index, base_currency)).with_fx_store(fx_store).bootstrap(quote_store, quote_level)`. Each resulting `DiscountCurveElement` is inserted under its `MarketIndex`.
+4. **Credit curves.** `CreditCurveBootstrapper::bootstrap(quote_store, quote_level, discount_curves)` — CDS premium and protection legs are discounted on the curves from step 3.
+5. **Volatility surfaces.** `VolatilitySurfaceBuilder::build(quote_store, quote_level)`.
+6. **Volatility cubes.** `VolatilityCubeBuilder::build(quote_store, quote_level)`.
+7. **Simulations.** `SimulationBuilder::build(constructed_elements, quote_store, fixing_store, quote_level)` — runs last so models can calibrate to the surfaces/cubes and diffuse the bootstrapped curves.
 
 Steps 4–7 are skipped when the corresponding configuration vector is empty. Calling `initialize()` twice rebuilds everything from the (possibly shocked) quotes.
 
@@ -169,7 +179,7 @@ The Python wrapper preserves the same lifecycle: one object owns the market,
 and initialization builds its derived state. Keyword arguments mirror the
 Rust builder inputs so configuration can be shared across both interfaces.
 
-The binding exposes the same object with keyword arguments matching the builders: `PricingContext(quotes, curves, fixings=None, fx=None, volatility_surfaces=None, volatility_cubes=None, pricer_configurations=None, simulations=None, discounting=None, scenarios=None)`. Initialization runs explicitly through `initialize()` or when entering the context manager; exit clears the constructed market and AD tape. Python-defined pricers can be registered with `register_pricer(TradeType, pricer)` and then participate in the same `context.evaluate(...)` workflow; they receive the initialized context as their market-data provider. The standalone Python `Evaluator` provides the corresponding type-based dispatch for custom providers and heterogeneous portfolios.
+The binding exposes the same object with keyword arguments matching the builders: `PricingContext(quotes, curves, fixings=None, fx=None, volatility_surfaces=None, volatility_cubes=None, pricer_configurations=None, simulations=None, csa_policy=None, fixed_income_policy=None, scenarios=None, quote_level=None)`. Set `quote_level=qs.Level.Bid` or `quote_level="Ask"`; names are case-insensitive, and omitting the setting uses `qs.Level.Mid`. The read-only `context.quote_level` property returns the selected enum. Initialization runs explicitly through `initialize()` or when entering the context manager; exit clears the constructed market and AD tape. Python-defined pricers can be registered with `register_pricer(TradeType, pricer)` and then participate in the same `context.evaluate(...)` workflow; they receive the initialized context as their market-data provider. The standalone Python `Evaluator` provides the corresponding type-based dispatch for custom providers and heterogeneous portfolios.
 
 ## Context lifecycle in practice
 
@@ -178,3 +188,11 @@ then serves valuation requests until the inputs change. Rebuilding after a
 scenario or market update preserves that lifecycle and keeps derived objects
 synchronized. The context therefore coordinates the workflow, and economic
 logic remains in instruments and numerical logic remains in pricers.
+
+The Python `csa_policy` input binds Rust's `SingleCurveCSADiscountPolicy`, with
+explicit `collateral_currency` and `collateral_index` fields. Rust also offers
+`with_csa_policy(policy)` and `csa_policy()`. Python installs that policy on
+native derivative pricers, while `fixed_income_policy` controls bond, deposit
+and FRN curve selection. `CsaTerms` belongs to netting/XVA and additionally
+includes counterparty credit and funding assumptions. The legacy Rust base
+currency/index accessors continue to describe the base collateral curve.

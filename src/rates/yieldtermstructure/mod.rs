@@ -12,3 +12,5 @@ pub mod spreadtermstructure;
 pub mod tenorbasedzeroratetermstructure;
 /// Zero-rate term structure.
 pub mod zeroratetermstructure;
+
+pub(crate) mod primalcurve;

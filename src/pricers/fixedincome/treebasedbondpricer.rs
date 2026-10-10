@@ -1,67 +1,40 @@
-//! Callable-bond pricing with a curve-fitted recombining trinomial tree.
-
-use std::collections::{BTreeMap, BTreeSet};
-
-use super::bondpricer::{
-    bond_market_data_request, evaluate_bond, impl_bond_pricer, transition_variances,
-    BondPricerSettings, BondPricingAnchor, BondPricingEngine, BondState, BondTerms, LatticeTerms,
-    NumericalMethod,
+//! Trinomial-tree valuation of callable bond trades.
+use super::bondanalytics::{
+    bond_market_data_request, contractual_market_request, discounted_value, evaluate_bond,
+    impl_bond_pricer, BondPricingEngine, BondState, BondTerms, BondValuation,
+};
+use super::{
+    bondevents::BondEventGrid,
+    callablebond::{prepare_callable_bond, pricer_configuration, CallableBondModel},
 };
 use crate::{
     ad::{dual::DualFwd, scalar::Scalar},
     core::{
         collateral::DiscountPolicy,
         evaluationresults::EvaluationResults,
-        marketdatahandling::marketdata::{MarketDataProvider, MarketDataRequest},
+        marketdatahandling::marketdata::{MarketData, MarketDataProvider, MarketDataRequest},
         pricer::Pricer,
         request::{HandleCashflows, Request},
     },
-    instruments::fixedincome::steppedcouponbond::SteppedCouponBondTrade,
-    time::{date::Date, daycounter::DayCounter},
-    utils::errors::{QSError, Result},
+    indices::marketindex::MarketIndex,
+    utils::errors::Result,
 };
-
-/// Callable-bond pricer using a curve-fitted recombining trinomial tree.
-///
-/// The tree matches the first two moments of the Hull-White transition and
-/// fits each state-price layer to the initial discount curve.
+use crate::{
+    core::pricerconfiguration::PricerImplementation,
+    instruments::fixedincome::steppedcouponbond::SteppedCouponBondTrade,
+    models::hullwhite::parameters::transition_variances, utils::errors::QSError,
+};
+use std::collections::{BTreeMap, BTreeSet};
+/// Callable bond pricer with a recombining trinomial tree.
+#[derive(Default)]
 pub struct TreeBasedBondPricer {
-    pub(super) settings: BondPricerSettings,
+    discount_policy: Option<Box<dyn DiscountPolicy>>,
 }
-
 impl TreeBasedBondPricer {
-    /// Creates a tree-based bond pricer using context-date settlement.
+    /// Creates a reusable engine; quote and settlement terms belong to each trade.
     #[must_use]
-    pub const fn new(anchor: BondPricingAnchor) -> Self {
-        Self {
-            settings: BondPricerSettings::new(anchor),
-        }
-    }
-
-    /// Uses an explicit settlement date, equal to evaluation for callable bonds.
-    #[must_use]
-    pub fn with_settlement_date(mut self, settlement_date: Date) -> Self {
-        self.settings = self.settings.with_settlement_date(settlement_date);
-        self
-    }
-
-    /// Overrides the spread day counter.
-    #[must_use]
-    pub fn with_spread_day_counter(mut self, day_counter: DayCounter) -> Self {
-        self.settings = self.settings.with_spread_day_counter(day_counter);
-        self
-    }
-
-    /// Returns the configured price or spread anchor.
-    #[must_use]
-    pub const fn anchor(&self) -> BondPricingAnchor {
-        self.settings.anchor()
-    }
-}
-
-impl Default for TreeBasedBondPricer {
-    fn default() -> Self {
-        Self::new(BondPricingAnchor::OAS(0.0))
+    pub fn new() -> Self {
+        Self::default()
     }
 }
 #[derive(Clone, Copy)]
@@ -180,7 +153,7 @@ fn lattice_transitions<T: Scalar>(
 /// backward induction with OAS discounting and issuer-call obstacles.
 pub(super) fn lattice_value<T: Scalar>(
     mut discount_factor: impl FnMut(f64) -> Result<T>,
-    terms: &LatticeTerms<T>,
+    terms: &BondEventGrid<T>,
     alpha: f64,
     sigma_schedule: &[(f64, T)],
     spread: T,
@@ -292,15 +265,66 @@ pub(super) fn lattice_value<T: Scalar>(
 }
 
 impl BondPricingEngine for TreeBasedBondPricer {
-    fn settings(&self) -> &BondPricerSettings {
-        &self.settings
+    type Model<T: Scalar> = Option<CallableBondModel<T>>;
+    fn policy(&self) -> Option<&dyn DiscountPolicy> {
+        self.discount_policy.as_deref()
     }
-
-    fn numerical_method(&self) -> NumericalMethod {
-        NumericalMethod::Tree
+    fn prepare(
+        &self,
+        trade: &impl BondTerms,
+        index: &MarketIndex,
+        context: &impl MarketDataProvider,
+    ) -> Result<(MarketData, Self::Model<f64>)> {
+        if trade.call_schedule().is_empty() {
+            return Ok((
+                context.handle_request(&contractual_market_request(
+                    trade,
+                    index,
+                    context.evaluation_date(),
+                ))?,
+                None,
+            ));
+        }
+        let configuration = pricer_configuration(trade, context)?;
+        let time_grid = match configuration.pricer() {
+            PricerImplementation::TreeBased { time_grid } => *time_grid,
+            actual => return Err(QSError::InvalidValueErr(format!(
+                "TreeBasedBondPricer requires a TreeBased context configuration, got {actual:?}"
+            ))),
+        };
+        let (market, model) =
+            prepare_callable_bond(trade, index, context, &configuration, time_grid)?;
+        Ok((market, Some(model)))
+    }
+    fn ad_model(
+        &self,
+        model: &Self::Model<f64>,
+        market: &MarketData,
+    ) -> Result<Self::Model<DualFwd>> {
+        model
+            .as_ref()
+            .map(|model| model.ad_model(market))
+            .transpose()
+    }
+    fn value<T: Scalar>(
+        &self,
+        model: &Self::Model<T>,
+        valuation: &BondValuation<'_, T>,
+        spread: T,
+    ) -> Result<T> {
+        if let Some(callable) = model {
+            let terms = callable.events(valuation)?;
+            lattice_value(
+                |time| valuation.curve.discount_factor_from_time(time),
+                &terms,
+                callable.parameters.alpha,
+                &callable.parameters.sigma_schedule,
+                spread,
+            )
+        } else {
+            discounted_value(valuation, spread)
+        }
     }
 }
-
 impl<T: BondTerms> HandleCashflows<T, BondState> for TreeBasedBondPricer {}
-
 impl_bond_pricer!(TreeBasedBondPricer, SteppedCouponBondTrade<DualFwd>);

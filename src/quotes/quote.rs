@@ -68,9 +68,10 @@ fn parse_strike(id: &str, kind: &str, value: &str) -> Result<Strike> {
 }
 
 /// Quote level enumeration.
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Level {
     /// Mid (average between Bid and Ask) price.
+    #[default]
     Mid,
     /// Bid (buy) price.
     Bid,
@@ -78,8 +79,8 @@ pub enum Level {
     Ask,
 }
 
-/// Quote levels associated with an instrument identifier. When multiple levels are provided the `mid` is preferred, otherwise `bid/ask`
-/// are used to compute a fallback representative value.
+/// Quote levels associated with an instrument identifier. The requested level
+/// must be present; missing levels are not inferred from other prices.
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize)]
 pub struct QuoteLevels {
     /// Mid price/level.

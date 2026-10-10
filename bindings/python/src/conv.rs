@@ -6,9 +6,9 @@
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList, PyTuple};
 use quantsupport::prelude::{
-    BusinessDayConvention, CapFloorType, CapletFloorletType, Compounding, Currency, Date,
-    DayCounter, EuroOptionType, Frequency, MarketIndex, PaymentStructure, Period, Request,
-    ScenarioType, Side, Strike, TimeUnit,
+    BusinessDayConvention, Calendar, CapFloorType, CapletFloorletType, Compounding, Currency, Date,
+    DateGenerationRule, DayCounter, EuroOptionType, Frequency, Level, MarketIndex,
+    PaymentStructure, Period, Request, ScenarioType, Side, Strike, TimeUnit,
 };
 use serde::de::DeserializeOwned;
 
@@ -34,6 +34,7 @@ fn serde_input<'py>(obj: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
         )+ };
     }
     enum_input!(
+        Level,
         Currency,
         Side,
         Compounding,
@@ -41,6 +42,7 @@ fn serde_input<'py>(obj: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
         DayCounter,
         TimeUnit,
         BusinessDayConvention,
+        DateGenerationRule,
         Request,
         VolatilityType,
         SmileType,
@@ -136,6 +138,7 @@ macro_rules! enum_extractor {
     };
 }
 
+enum_extractor!(extract_level, crate::enums::Level, Level, "quote level");
 enum_extractor!(
     extract_currency,
     crate::enums::Currency,
@@ -294,4 +297,18 @@ pub fn extract_requests(reqs: &[Bound<'_, PyAny>]) -> PyResult<Vec<Request>> {
             )))
         })
         .collect()
+}
+
+enum_extractor!(
+    extract_date_generation_rule,
+    crate::enums::DateGenerationRule,
+    DateGenerationRule,
+    "date generation rule"
+);
+/// Accepts a Python Calendar object or a native calendar name.
+pub fn extract_calendar(obj: &Bound<'_, PyAny>) -> PyResult<Calendar> {
+    if let Ok(calendar) = obj.extract::<crate::time::Calendar>() {
+        return Ok(calendar.inner);
+    }
+    Calendar::try_from(obj.extract::<String>()?).map_err(qs_err)
 }

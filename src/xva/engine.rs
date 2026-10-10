@@ -16,7 +16,7 @@ use crate::{
         },
         modelconfiguration::{GaussianRateParameterSource, ParameterSource},
     },
-    quotes::{fixingstore::FixingStore, quote::Level},
+    quotes::fixingstore::FixingStore,
     rates::yieldtermstructure::{
         discounttermstructure::DiscountTermStructure,
         interestratestermstructure::InterestRatesTermStructure,
@@ -573,7 +573,7 @@ impl XvaEngine {
                     context.constructed_elements(),
                     context.quote_store(),
                     &curve_f64,
-                    Level::Mid,
+                    context.quote_level(),
                 )?;
                 let vol_func = hw.vol_func().ok_or_else(|| {
                     QSError::UnexpectedErr("Calibration produced no vol function".into())

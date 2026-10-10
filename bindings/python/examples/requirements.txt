@@ -1,0 +1,7 @@
+# The native quantsupport binding must also be built into this environment.
+pandas>=2
+matplotlib>=3.7
+jupyterlab>=4
+ipykernel>=6
+nbclient>=0.10
+nbformat>=5.9

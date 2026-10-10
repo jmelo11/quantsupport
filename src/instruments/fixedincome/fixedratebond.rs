@@ -1,3 +1,6 @@
+use super::bondpricinganchor::BondPricingAnchor;
+use crate::time::daycounter::DayCounter;
+
 use crate::{
     ad::{dual::DualFwd, scalar::Scalar},
     core::{
@@ -39,7 +42,7 @@ where
         Self {
             identifier,
             units,
-            leg,
+            leg: leg.with_side(Side::LongReceive),
             discount_index,
             currency,
         }
@@ -94,11 +97,15 @@ where
 }
 
 /// Represents a trade of a fixed rate bond instrument.
+#[derive(Clone)]
 pub struct FixedRateBondTrade<T: Scalar> {
     instrument: FixedRateBond<T>,
     trade_date: Date,
     notional: f64,
     side: Side,
+    pricing_anchor: BondPricingAnchor,
+    settlement_date: Option<Date>,
+    spread_day_counter: Option<DayCounter>,
 }
 
 impl<T> FixedRateBondTrade<T>
@@ -112,13 +119,56 @@ where
         trade_date: Date,
         notional: f64,
         side: Side,
+        pricing_anchor: BondPricingAnchor,
     ) -> Self {
         Self {
             instrument,
             trade_date,
             notional,
             side,
+            pricing_anchor,
+            settlement_date: None,
+            spread_day_counter: None,
         }
+    }
+
+    /// Returns the market quote anchoring this trade's valuation.
+    #[must_use]
+    pub const fn pricing_anchor(&self) -> BondPricingAnchor {
+        self.pricing_anchor
+    }
+
+    /// Replaces the trade's pricing anchor.
+    #[must_use]
+    pub const fn with_pricing_anchor(mut self, anchor: BondPricingAnchor) -> Self {
+        self.pricing_anchor = anchor;
+        self
+    }
+
+    /// Uses an explicit settlement date; otherwise valuation uses the context date.
+    #[must_use]
+    pub const fn with_settlement_date(mut self, date: Date) -> Self {
+        self.settlement_date = Some(date);
+        self
+    }
+
+    /// Returns the trade's explicit settlement date, if supplied.
+    #[must_use]
+    pub const fn settlement_date(&self) -> Option<Date> {
+        self.settlement_date
+    }
+
+    /// Sets the day counter of the spread quote.
+    #[must_use]
+    pub const fn with_spread_day_counter(mut self, day_counter: DayCounter) -> Self {
+        self.spread_day_counter = Some(day_counter);
+        self
+    }
+
+    /// Returns the explicit spread day counter, if supplied.
+    #[must_use]
+    pub const fn spread_day_counter(&self) -> Option<DayCounter> {
+        self.spread_day_counter
     }
 
     /// Returns the notional amount of the trade.
@@ -180,22 +230,43 @@ impl From<FixedRateBond<DualFwd>> for FixedRateBond<f64> {
 
 impl From<FixedRateBondTrade<f64>> for FixedRateBondTrade<DualFwd> {
     fn from(value: FixedRateBondTrade<f64>) -> Self {
-        Self::new(
+        let mut trade = Self::new(
             value.instrument.into(),
             value.trade_date,
             value.notional,
             value.side,
-        )
+            value.pricing_anchor,
+        );
+        trade.settlement_date = value.settlement_date;
+        trade.spread_day_counter = value.spread_day_counter;
+        trade
     }
 }
 
 impl From<FixedRateBondTrade<DualFwd>> for FixedRateBondTrade<f64> {
     fn from(value: FixedRateBondTrade<DualFwd>) -> Self {
-        Self::new(
+        let mut trade = Self::new(
             value.instrument.into(),
             value.trade_date,
             value.notional,
             value.side,
-        )
+            value.pricing_anchor,
+        );
+        trade.settlement_date = value.settlement_date;
+        trade.spread_day_counter = value.spread_day_counter;
+        trade
+    }
+}
+
+impl crate::xva::makecontigentclaim::IntoContingentClaims for FixedRateBondTrade<f64> {
+    fn into_contingent_claims(
+        &self,
+        trade_id: &str,
+    ) -> crate::utils::errors::Result<Vec<crate::xva::contigentclaim::ContingentClaim>> {
+        self.instrument
+            .leg()
+            .clone()
+            .with_side(self.side)
+            .into_contingent_claims(trade_id)
     }
 }
