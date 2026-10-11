@@ -4,7 +4,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     ad::{dual::DualFwd, scalar::Scalar},
-    core::{pillars::Pillars, pricingcontext::PricingContext},
+    core::{
+        marketdatahandling::{discountrequest::DiscountRequest, fxrequest::FxRequest},
+        pillars::Pillars,
+        pricingcontext::PricingContext,
+    },
     currencies::currency::Currency,
     indices::marketindex::MarketIndex,
     math::interpolation::interpolator::Interpolator,
@@ -37,7 +41,10 @@ use crate::{
         csa::CsaTerms,
         nettingset::NettingSet,
         visitors::{
-            exposureevaluator::{evaluate_with_xva, ExposureResult, ModelCallback, XvaModelSetup},
+            exposureevaluator::{
+                evaluate_with_margin, ExposureResult, ModelCallback, VariationMarginSimulation,
+                XvaModelSetup,
+            },
             fixingpreprocessor::FixingPreprocessor,
             marketmodel::MarketModel,
             preprocessorexecutor::{PreprocessorExecutor, SimulationRequest},
@@ -280,6 +287,11 @@ impl XvaEngine {
         &mut self,
         netting_sets: &mut HashMap<String, NettingSet>,
     ) -> Result<ExposureResult> {
+        for ns in netting_sets.values() {
+            if let Some(csa) = ns.csa_terms() {
+                csa.validate()?;
+            }
+        }
         // 1. Build preprocessor pipeline.
         let fixing_pp = FixingPreprocessor::new(
             self.setup.reference_date,
@@ -321,6 +333,7 @@ impl XvaEngine {
             .with_frequency(self.frequency)
             .build()?;
         let sim_dates = schedule.dates().clone();
+        let margins = self.build_variation_margin_requests(netting_sets, &sim_dates)?;
 
         // 3b. System-curve discount factors DF(0, t_d) at the simulation
         // dates, taken from the engine's base (domestic) curve. Exposures at
@@ -400,7 +413,67 @@ impl XvaEngine {
             .collect();
 
         // 6. Run.
-        evaluate_with_xva(&sim_dates, &ns_slices, &factories, &self.setup)
+        evaluate_with_margin(&sim_dates, &ns_slices, &factories, &margins, &self.setup)
+    }
+
+    fn build_variation_margin_requests(
+        &mut self,
+        netting_sets: &HashMap<String, NettingSet>,
+        dates: &[Date],
+    ) -> Result<HashMap<String, VariationMarginSimulation>> {
+        let mut margins = HashMap::new();
+        for (id, ns) in netting_sets {
+            let Some(csa) = ns.csa_terms().filter(|terms| terms.variation_margin) else {
+                continue;
+            };
+            if !self.setup.curves.contains_key(&csa.collateral_index) {
+                return Err(QSError::NotFoundErr(format!(
+                    "Netting set '{id}' requires simulated CSA remuneration curve {}",
+                    csa.collateral_index
+                )));
+            }
+            let fx_request_index = if csa.collateral_currency == self.setup.domestic_currency {
+                None
+            } else {
+                if !self.setup.fx_spots.contains_key(&csa.collateral_currency) {
+                    return Err(QSError::NotFoundErr(format!(
+                        "Netting set '{id}' requires an FX model for collateral currency {}",
+                        csa.collateral_currency
+                    )));
+                }
+                let slot = self.setup.requests.len();
+                self.setup.requests.push(SimulationRequest {
+                    fx_request: Some(FxRequest::single(csa.collateral_currency)),
+                    ..SimulationRequest::default()
+                });
+                Some(slot)
+            };
+            let accrual_request_indices = dates
+                .iter()
+                .skip(1)
+                .map(|&date| {
+                    let slot = self.setup.requests.len();
+                    self.setup.requests.push(SimulationRequest {
+                        expiration_date: Some(date),
+                        discount_request: Some(DiscountRequest::new(
+                            csa.collateral_index.clone(),
+                            date,
+                        )),
+                        ..SimulationRequest::default()
+                    });
+                    slot
+                })
+                .collect();
+            margins.insert(
+                id.clone(),
+                VariationMarginSimulation {
+                    terms: csa.clone(),
+                    accrual_request_indices,
+                    fx_request_index,
+                },
+            );
+        }
+        Ok(margins)
     }
 
     /// Snapshots the f64 data of a model's bootstrapped discount curve and

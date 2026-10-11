@@ -71,7 +71,7 @@ pub struct CsaTerms {
 #[pymethods]
 impl CsaTerms {
     #[new]
-    #[pyo3(signature = (collateral_index, collateral_currency, credit_spread, recovery, funding_spread = 0.0, credit_index = None, funding_spread_curve = None, funding_index = None))]
+    #[pyo3(signature = (collateral_index, collateral_currency, credit_spread, recovery, funding_spread = 0.0, credit_index = None, funding_spread_curve = None, funding_index = None, *, variation_margin = false, counterparty_threshold = 0.0, own_threshold = 0.0, minimum_transfer_amount = 0.0))]
     #[allow(clippy::too_many_arguments)]
     fn new(
         collateral_index: &Bound<'_, PyAny>,
@@ -82,6 +82,10 @@ impl CsaTerms {
         credit_index: Option<&Bound<'_, PyAny>>,
         funding_spread_curve: Option<&Bound<'_, PyAny>>,
         funding_index: Option<&Bound<'_, PyAny>>,
+        variation_margin: bool,
+        counterparty_threshold: f64,
+        own_threshold: f64,
+        minimum_transfer_amount: f64,
     ) -> PyResult<Self> {
         // A list of (date, spread) pairs, dates as Date/'YYYY-MM-DD'/datetime.date.
         let funding_spread_curve = funding_spread_curve
@@ -96,10 +100,14 @@ impl CsaTerms {
                 PyResult::Ok(FundingSpreadCurve { dates, spreads })
             })
             .transpose()?;
-        Ok(Self {
+        let terms = Self {
             inner: QsCsaTerms {
                 collateral_index: extract_market_index(collateral_index)?,
                 collateral_currency: extract_currency(collateral_currency)?,
+                variation_margin,
+                counterparty_threshold,
+                own_threshold,
+                minimum_transfer_amount,
                 credit_spread,
                 recovery,
                 funding_spread,
@@ -107,23 +115,58 @@ impl CsaTerms {
                 funding_index: funding_index.map(extract_market_index).transpose()?,
                 credit_index: credit_index.map(extract_market_index).transpose()?,
             },
-        })
+        };
+        terms
+            .inner
+            .validate()
+            .map_err(|error| QuantSupportError::new_err(error.to_string()))?;
+        Ok(terms)
     }
 
     /// Builds CSA terms from a dict.
     #[staticmethod]
     fn from_dict(obj: &Bound<'_, PyAny>) -> PyResult<Self> {
-        Ok(Self {
+        let terms = Self {
             inner: from_py(obj, "csa terms")?,
-        })
+        };
+        terms
+            .inner
+            .validate()
+            .map_err(|error| QuantSupportError::new_err(error.to_string()))?;
+        Ok(terms)
     }
 
     /// Loads CSA terms from a JSON file.
     #[staticmethod]
     fn from_json(path: &str) -> PyResult<Self> {
-        Ok(Self {
+        let terms = Self {
             inner: from_json_file(path, "csa terms")?,
-        })
+        };
+        terms
+            .inner
+            .validate()
+            .map_err(|error| QuantSupportError::new_err(error.to_string()))?;
+        Ok(terms)
+    }
+
+    #[getter]
+    fn variation_margin(&self) -> bool {
+        self.inner.variation_margin
+    }
+
+    #[getter]
+    fn counterparty_threshold(&self) -> f64 {
+        self.inner.counterparty_threshold
+    }
+
+    #[getter]
+    fn own_threshold(&self) -> f64 {
+        self.inner.own_threshold
+    }
+
+    #[getter]
+    fn minimum_transfer_amount(&self) -> f64 {
+        self.inner.minimum_transfer_amount
     }
 
     #[getter]

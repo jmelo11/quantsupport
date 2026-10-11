@@ -9,6 +9,10 @@ fn csa_terms() -> CsaTerms {
     CsaTerms {
         collateral_index: MarketIndex::SOFR,
         collateral_currency: Currency::USD,
+        variation_margin: false,
+        counterparty_threshold: 0.0,
+        own_threshold: 0.0,
+        minimum_transfer_amount: 0.0,
         credit_spread: 0.01,
         recovery: 0.4,
         funding_spread: 0.005,

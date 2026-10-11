@@ -16,11 +16,12 @@ use crate::{
     ad::{dual::DualFwd, scalar::Scalar, tape::Tape},
     math::solvers::solvertraits::Matrix,
     time::date::Date,
-    utils::errors::Result,
+    utils::errors::{QSError, Result},
     xva::{
         aggregator::{AggregatorBundle, PfeAggregatorFactory},
         contigentclaim::ContingentClaim,
-        visitors::marketmodel::MarketModel,
+        csa::{CsaTerms, VariationMarginAccount},
+        visitors::marketmodel::{MarketModel, PathScenario},
     },
 };
 
@@ -98,7 +99,8 @@ pub struct XvaValue {
 
 /// Result of an exposure evaluation.
 pub struct ExposureResult {
-    /// Per-trade NPV cubes.
+    /// Raw NPV cubes, before variation margin. XVA values use net-of-margin
+    /// exposures when the engine's CSA terms enable variation margin.
     pub cubes: Vec<NpvCube>,
     /// Optional per-netting-set XVA values (populated only by `evaluate_with_xva`).
     pub xva_values: Option<Vec<XvaValue>>,
@@ -247,6 +249,71 @@ struct ChunkResult {
     sensitivities: Vec<(String, f64)>,
 }
 
+pub(crate) struct VariationMarginSimulation {
+    pub(crate) terms: CsaTerms,
+    pub(crate) accrual_request_indices: Vec<usize>,
+    pub(crate) fx_request_index: Option<usize>,
+}
+
+impl VariationMarginSimulation {
+    fn adjust_path(
+        &self,
+        npvs: &[DualFwd],
+        scenario: &PathScenario<DualFwd>,
+    ) -> Result<Vec<DualFwd>> {
+        if !self.terms.variation_margin {
+            return Ok(npvs.to_vec());
+        }
+        let mut account = VariationMarginAccount::new(
+            self.terms.counterparty_threshold,
+            self.terms.own_threshold,
+            self.terms.minimum_transfer_amount,
+        )?;
+        npvs.iter()
+            .enumerate()
+            .map(|(date_index, &npv)| {
+                let accrual = if date_index == 0 {
+                    DualFwd::one()
+                } else {
+                    let discount = self
+                        .accrual_request_indices
+                        .get(date_index - 1)
+                        .and_then(|&slot| scenario.get(date_index - 1)?.get(slot))
+                        .and_then(|response| response.discounts)
+                        .ok_or_else(|| {
+                            QSError::EvaluationErr("Missing CSA remuneration discount".into())
+                        })?;
+                    if !discount.value().is_finite() || discount.value() <= 0.0 {
+                        return Err(QSError::InvalidValueErr(
+                            "CSA remuneration discount must be finite and positive".into(),
+                        ));
+                    }
+                    DualFwd::one().div_val(discount)
+                };
+                let fx = if let Some(slot) = self.fx_request_index {
+                    scenario
+                        .get(date_index)
+                        .and_then(|responses| responses.get(slot))
+                        .and_then(|response| response.fx_rates)
+                        .ok_or_else(|| {
+                            QSError::EvaluationErr("Missing CSA collateral FX rate".into())
+                        })?
+                } else {
+                    DualFwd::one()
+                };
+                if !fx.value().is_finite() || fx.value() <= 0.0 {
+                    return Err(QSError::InvalidValueErr(
+                        "CSA collateral FX rate must be finite and positive".into(),
+                    ));
+                }
+                Ok(account
+                    .exposure_after_call(npv.div_val(fx), accrual)
+                    .mul_val(fx))
+            })
+            .collect()
+    }
+}
+
 /// Parallel AAD evaluation.
 ///
 /// Per rayon thread:
@@ -274,6 +341,22 @@ pub fn evaluate_with_xva<S, H1, H2>(
     dates: &[Date],
     trades: &HashMap<String, &[ContingentClaim], H1>,
     factories: &HashMap<String, Vec<Box<dyn PfeAggregatorFactory>>, H2>,
+    model_setup: &S,
+) -> Result<ExposureResult>
+where
+    S: XvaModelSetup,
+    H1: std::hash::BuildHasher + Sync,
+    H2: std::hash::BuildHasher + Sync,
+{
+    evaluate_with_margin(dates, trades, factories, &HashMap::new(), model_setup)
+}
+
+#[allow(clippy::too_many_lines)]
+pub(crate) fn evaluate_with_margin<S, H1, H2>(
+    dates: &[Date],
+    trades: &HashMap<String, &[ContingentClaim], H1>,
+    factories: &HashMap<String, Vec<Box<dyn PfeAggregatorFactory>>, H2>,
+    margins: &HashMap<String, VariationMarginSimulation>,
     model_setup: &S,
 ) -> Result<ExposureResult>
 where
@@ -372,9 +455,15 @@ where
                     for (ns, npvs) in ns_npvs.iter().enumerate() {
                         cubes[ns].push(ns_npvs_f64[ns].clone());
 
+                        let adjusted = margins
+                            .get(&ns_ids[ns])
+                            .map(|margin| margin.adjust_path(npvs, &scenario))
+                            .transpose()?;
+                        let exposures = adjusted.as_deref().unwrap_or(npvs);
+
                         // Per-netting-set aggregation with the client's own terms.
                         for (a, bundle) in bundles[ns].iter().enumerate() {
-                            let c_p = bundle.aggregator.aggregate_path(npvs, dates);
+                            let c_p = bundle.aggregator.aggregate_path(exposures, dates);
                             xva_accums[ns][a] += c_p.value();
                             total = total.add_val(c_p);
                         }
@@ -670,6 +759,64 @@ mod tests {
         assert_eq!(cube.epe(), epe);
         assert_eq!(cube.ene(), ene);
         assert_eq!(cube.ee(), ee);
+    }
+
+    #[test]
+    fn variation_margin_uses_collateral_currency_and_checks_market_data() -> Result<()> {
+        use crate::xva::visitors::marketmodel::SimulationResponse;
+
+        let terms = CsaTerms {
+            collateral_index: MarketIndex::SOFR,
+            collateral_currency: Currency::EUR,
+            variation_margin: true,
+            counterparty_threshold: 10.0,
+            own_threshold: 20.0,
+            minimum_transfer_amount: 0.0,
+            credit_spread: 0.01,
+            recovery: 0.4,
+            funding_spread: 0.0,
+            funding_spread_curve: None,
+            funding_index: None,
+            credit_index: None,
+        };
+        let margin = VariationMarginSimulation {
+            terms,
+            accrual_request_indices: vec![0],
+            fx_request_index: Some(1),
+        };
+        let mut scenario: PathScenario<DualFwd> = [2.0, 2.2]
+            .into_iter()
+            .map(|fx| {
+                vec![
+                    SimulationResponse {
+                        discounts: Some(DualFwd::one()),
+                        ..SimulationResponse::default()
+                    },
+                    SimulationResponse {
+                        fx_rates: Some(DualFwd::scalar(fx)),
+                        ..SimulationResponse::default()
+                    },
+                ]
+            })
+            .collect();
+        let npvs = [DualFwd::scalar(200.0), DualFwd::scalar(220.0)];
+        let adjusted = margin.adjust_path(&npvs, &scenario)?;
+        assert_eq!(adjusted[0].value(), 20.0);
+        assert_eq!(adjusted[1].value(), 22.0);
+        let adjusted = margin.adjust_path(&npvs.map(Scalar::neg_val), &scenario)?;
+        assert_eq!(adjusted[0].value(), -40.0);
+        assert_eq!(adjusted[1].value(), -44.0);
+        scenario[0][0].discounts = None;
+        assert!(margin.adjust_path(&npvs, &scenario).is_err());
+        for invalid in [0.0, -1.0, f64::NAN, f64::INFINITY] {
+            scenario[0][0].discounts = Some(DualFwd::scalar(invalid));
+            assert!(margin.adjust_path(&npvs, &scenario).is_err());
+            scenario[0][0].discounts = Some(DualFwd::one());
+            scenario[0][1].fx_rates = Some(DualFwd::scalar(invalid));
+            assert!(margin.adjust_path(&npvs, &scenario).is_err());
+            scenario[0][1].fx_rates = Some(DualFwd::scalar(2.0));
+        }
+        Ok(())
     }
 
     fn make_flat_curve(ref_date: Date, rate: f64) -> (Vec<Date>, Vec<f64>) {
