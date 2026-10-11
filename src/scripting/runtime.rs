@@ -929,7 +929,7 @@ impl ScriptEngine {
     }
 
     /// Evaluates one indexed payment from a contingent claim's response block.
-    pub(crate) fn evaluate_payment(
+    pub fn evaluate_payment(
         &self,
         payment_id: usize,
         valuation_date: Date,

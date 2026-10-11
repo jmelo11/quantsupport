@@ -61,7 +61,7 @@ pub struct Instrument {
 }
 
 impl Instrument {
-    pub(crate) fn new(identifier: String) -> Self {
+    pub fn new(identifier: String) -> Self {
         Self { identifier }
     }
 }
@@ -106,24 +106,60 @@ impl Instrument {
 #[pyclass(name = "Trade", subclass, dict, unsendable)]
 pub struct Trade {
     instrument: Py<PyAny>,
-    pub(crate) trade_date: quantsupport::prelude::Date,
-    pub(crate) side: quantsupport::prelude::Side,
-    pub(crate) notional: Option<f64>,
-    pub(crate) domestic_notional: Option<f64>,
-    pub(crate) foreign_notional: Option<f64>,
-    pub(crate) num_contracts: f64,
-    pub(crate) pricing_anchor: Option<quantsupport::prelude::BondPricingAnchor>,
-    pub(crate) settlement_date: Option<quantsupport::prelude::Date>,
-    pub(crate) spread_day_counter: Option<quantsupport::prelude::DayCounter>,
+    trade_date: quantsupport::prelude::Date,
+    side: quantsupport::prelude::Side,
+    notional: Option<f64>,
+    domestic_notional: Option<f64>,
+    foreign_notional: Option<f64>,
+    num_contracts: f64,
+    pricing_anchor: Option<quantsupport::prelude::BondPricingAnchor>,
+    settlement_date: Option<quantsupport::prelude::Date>,
+    spread_day_counter: Option<quantsupport::prelude::DayCounter>,
 }
 
 impl Trade {
-    pub(crate) fn instrument_bound<'py>(&self, py: Python<'py>) -> &Bound<'py, PyAny> {
+    pub const fn trade_date(&self) -> quantsupport::prelude::Date {
+        self.trade_date
+    }
+
+    pub const fn side(&self) -> quantsupport::prelude::Side {
+        self.side
+    }
+
+    pub const fn notional(&self) -> Option<f64> {
+        self.notional
+    }
+
+    pub const fn domestic_notional(&self) -> Option<f64> {
+        self.domestic_notional
+    }
+
+    pub const fn foreign_notional(&self) -> Option<f64> {
+        self.foreign_notional
+    }
+
+    pub const fn num_contracts(&self) -> f64 {
+        self.num_contracts
+    }
+
+    pub const fn pricing_anchor(&self) -> Option<quantsupport::prelude::BondPricingAnchor> {
+        self.pricing_anchor
+    }
+
+    pub const fn settlement_date(&self) -> Option<quantsupport::prelude::Date> {
+        self.settlement_date
+    }
+
+    pub const fn spread_day_counter(&self) -> Option<quantsupport::prelude::DayCounter> {
+        self.spread_day_counter
+    }
+
+    pub fn instrument_bound<'py>(&self, py: Python<'py>) -> &Bound<'py, PyAny> {
         self.instrument.bind(py)
     }
 
-    pub(crate) fn bond_anchor(&self) -> PyResult<quantsupport::prelude::BondPricingAnchor> {
-        self.pricing_anchor.ok_or_else(|| {
+    pub fn bond_anchor(&self) -> PyResult<quantsupport::prelude::BondPricingAnchor> {
+        self.pricing_anchor().ok_or_else(|| {
             pyo3::exceptions::PyValueError::new_err("bond Trade requires pricing_anchor")
         })
     }
@@ -191,16 +227,16 @@ impl Trade {
     }
 
     /// Execution date.
-    #[getter]
-    fn trade_date(&self) -> Date {
+    #[getter(trade_date)]
+    fn trade_date_py(&self) -> Date {
         Date {
             inner: self.trade_date,
         }
     }
 
     /// Pay/receive direction.
-    #[getter]
-    fn side(&self) -> crate::enums::Side {
+    #[getter(side)]
+    fn side_py(&self) -> crate::enums::Side {
         self.side.into()
     }
 
@@ -238,7 +274,7 @@ impl Trade {
     #[getter(pricing_anchor)]
     fn pricing_anchor_py(&self) -> Option<crate::bondpricinganchor::BondPricingAnchorConfig> {
         self.pricing_anchor
-            .map(|inner| crate::bondpricinganchor::BondPricingAnchorConfig { inner })
+            .map(crate::bondpricinganchor::BondPricingAnchorConfig::from)
     }
 
     /// Returns another position in the same instrument with a different bond anchor.

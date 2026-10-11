@@ -280,8 +280,8 @@ impl BondPricingEngine for BackwardFourierEvolutionBondPricer {
             backward_fourier_value(
                 |time| valuation.curve.discount_factor_from_time(time),
                 &terms,
-                callable.parameters.alpha,
-                &callable.parameters.sigma_schedule,
+                callable.parameters.alpha(),
+                callable.parameters.sigma_schedule(),
                 spread,
                 model.1,
             )

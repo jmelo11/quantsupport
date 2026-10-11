@@ -295,8 +295,9 @@ pub struct BinExpr<T, L, R, O> {
 }
 
 impl<T: InnerScalar, L: Expr<T>, R: Expr<T>, O: BinOp<T>> BinExpr<T, L, R, O> {
+    /// Builds a lazy binary expression and evaluates its scalar value.
     #[inline]
-    pub(crate) fn new(l: L, r: R) -> Self {
+    pub fn new(l: L, r: R) -> Self {
         let val = O::eval(l.inner_value(), r.inner_value());
         Self {
             l,
@@ -333,8 +334,9 @@ pub struct UnExpr<T, A, O> {
 }
 
 impl<T: InnerScalar, A: Expr<T>, O: UnOp<T>> UnExpr<T, A, O> {
+    /// Builds a lazy unary expression and evaluates its scalar value.
     #[inline]
-    pub(crate) fn new(a: A) -> Self {
+    pub fn new(a: A) -> Self {
         let val = O::eval(a.inner_value());
         Self {
             a,
@@ -360,7 +362,7 @@ impl<T: InnerScalar, A: Expr<T>, O: UnOp<T> + Clone> Expr<T> for UnExpr<T, A, O>
 // ═══════════════════════════════════════════════════════════════════════════
 
 /// Records an expression tree into one tape node, returning a [`Dual<T>`].
-pub(crate) fn flatten<T: TapeHolder + InnerScalar, E: Expr<T>>(e: &E) -> Dual<T> {
+pub fn flatten<T: TapeHolder + InnerScalar, E: Expr<T>>(e: &E) -> Dual<T> {
     let mut node = TapeNode::default();
     e.push_adj(&mut node, T::one());
     let ptr_opt = T::with_tape(|tape| tape.record(node));

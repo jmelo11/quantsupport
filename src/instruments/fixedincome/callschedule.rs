@@ -25,13 +25,21 @@ impl CallScheduleEntry {
     /// Creates an issuer call date and strike.
     #[must_use]
     pub const fn new(date: Date, strike: f64) -> Self {
-        Self { date, end_date: None, strike }
+        Self {
+            date,
+            end_date: None,
+            strike,
+        }
     }
 
     /// Creates an inclusive dated call window.
     #[must_use]
     pub const fn window(start_date: Date, end_date: Date, strike: f64) -> Self {
-        Self { date: start_date, end_date: Some(end_date), strike }
+        Self {
+            date: start_date,
+            end_date: Some(end_date),
+            strike,
+        }
     }
 
     /// Returns the last eligible exercise date.
@@ -91,14 +99,16 @@ mod tests {
         assert!(window.contains(start));
         assert!(window.contains(end));
         assert!(!window.contains(Date::new(2028, 6, 2)));
-        assert!(CallScheduleEntry::window(end, start, 100.0).validate().is_err());
-        let single: CallScheduleEntry = serde_json::from_str(
-            r#"{"date":"2028-01-01","strike":100.0}"#,
-        ).unwrap();
+        assert!(CallScheduleEntry::window(end, start, 100.0)
+            .validate()
+            .is_err());
+        let single: CallScheduleEntry =
+            serde_json::from_str(r#"{"date":"2028-01-01","strike":100.0}"#).unwrap();
         assert_eq!(single.end_date(), start);
         let decoded: CallScheduleEntry = serde_json::from_str(
             r#"{"start_date":"2028-01-01","end_date":"2028-06-01","strike":100.0}"#,
-        ).unwrap();
+        )
+        .unwrap();
         assert_eq!(decoded, window);
     }
 }

@@ -17,8 +17,8 @@ pub struct HullWhite<'a, T: Scalar> {
     /// Mean-reversion speed.
     alpha: T,
     curve: &'a dyn InterestRatesTermStructure<T>,
-    pub(crate) calibration_quality: Option<HullWhiteCalibrationQuality>,
-    pub(crate) vol_func: Option<HullWhiteTimeDependentVolatility<T>>,
+    calibration_quality: Option<HullWhiteCalibrationQuality>,
+    vol_func: Option<HullWhiteTimeDependentVolatility<T>>,
 }
 
 impl<'a, T: Scalar> HullWhite<'a, T> {
@@ -55,6 +55,16 @@ impl<'a, T: Scalar> HullWhite<'a, T> {
     #[must_use]
     pub fn calibration_quality(&self) -> Option<HullWhiteCalibrationQuality> {
         self.calibration_quality.clone()
+    }
+
+    /// Replaces the calibrated volatility function and its quality report together.
+    pub fn set_calibration_result(
+        &mut self,
+        volatility: HullWhiteTimeDependentVolatility<T>,
+        quality: HullWhiteCalibrationQuality,
+    ) {
+        self.vol_func = Some(volatility);
+        self.calibration_quality = Some(quality);
     }
 }
 

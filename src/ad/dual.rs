@@ -33,13 +33,13 @@ unsafe impl<T: Sync> Sync for Dual<T> {}
 impl<T> Dual<T> {
     /// Low-level constructor used by [`flatten`](crate::ad::expr::flatten).
     #[inline]
-    pub(crate) const fn from_raw(val: T, node: Option<NonNull<TapeNode<T>>>) -> Self {
+    pub const fn from_raw(val: T, node: Option<NonNull<TapeNode<T>>>) -> Self {
         Self { val, node }
     }
 
     /// Returns the inner `T` value (for the expression-template system).
     #[inline]
-    pub(crate) const fn val(&self) -> T
+    pub const fn val(&self) -> T
     where
         T: Copy,
     {
@@ -48,7 +48,7 @@ impl<T> Dual<T> {
 
     /// Returns the raw tape-node pointer (for the expression-template system).
     #[inline]
-    pub(crate) const fn node_ptr(&self) -> Option<NonNull<TapeNode<T>>> {
+    pub const fn node_ptr(&self) -> Option<NonNull<TapeNode<T>>> {
         self.node
     }
 }

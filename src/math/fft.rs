@@ -109,8 +109,11 @@ pub fn fft<T: Scalar>(data: &mut [Complex<T>]) -> Result<()> {
 }
 
 /// Shared core for forward / inverse FFT.
+///
+/// # Errors
+/// Returns an error when a length greater than one is not a power of two.
 #[allow(clippy::cast_precision_loss)]
-pub(crate) fn fft_core<T: Scalar>(data: &mut [Complex<T>], forward: bool) -> Result<()> {
+pub fn fft_core<T: Scalar>(data: &mut [Complex<T>], forward: bool) -> Result<()> {
     let n = data.len();
     if n <= 1 {
         return Ok(());

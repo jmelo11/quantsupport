@@ -104,7 +104,7 @@ macro_rules! build_swap_instrument {
             .with_start_date($self.start_date)
             .with_maturity_date($self.maturity_date)
             .with_fixed_rate($self.fixed_rate)
-            .with_notional($position.notional.unwrap_or($self.notional))
+            .with_notional($position.notional().unwrap_or($self.notional))
             .with_rate_definition(RateDefinition::new(
                 $self.day_counter,
                 $self.compounding,
@@ -112,7 +112,7 @@ macro_rules! build_swap_instrument {
             ))
             .with_currency($self.currency)
             .with_market_index($self.market_index.clone())
-            .with_side($position.side)
+            .with_side($position.side())
             .with_fixed_leg_frequency($self.fixed_leg_frequency)
             .with_floating_leg_frequency($self.floating_leg_frequency);
         if let Some(spread) = $self.spread {
@@ -128,9 +128,9 @@ impl Swap {
         let instrument: QsSwap<DualFwd> = build_swap_instrument!(self, position, DualFwd)?;
         Ok(SwapTrade::new(
             instrument,
-            position.trade_date,
-            position.notional.unwrap_or(self.notional),
-            position.side,
+            position.trade_date(),
+            position.notional().unwrap_or(self.notional),
+            position.side(),
         ))
     }
 
@@ -139,9 +139,9 @@ impl Swap {
         let instrument: QsSwap<f64> = build_swap_instrument!(self, position, f64)?;
         let trade = SwapTrade::new(
             instrument,
-            position.trade_date,
-            position.notional.unwrap_or(self.notional),
-            position.side,
+            position.trade_date(),
+            position.notional().unwrap_or(self.notional),
+            position.side(),
         );
         trade.into_contingent_claims().map_err(qs_err)
     }
@@ -291,17 +291,21 @@ macro_rules! build_xccy_instrument {
             .with_maturity_date($self.maturity_date)
             .with_domestic_notional(
                 $position
-                    .domestic_notional
+                    .domestic_notional()
                     .unwrap_or($self.domestic_notional),
             )
-            .with_foreign_notional($position.foreign_notional.unwrap_or($self.foreign_notional))
+            .with_foreign_notional(
+                $position
+                    .foreign_notional()
+                    .unwrap_or($self.foreign_notional),
+            )
             .with_domestic_spread($self.domestic_spread)
             .with_foreign_spread($self.foreign_spread)
             .with_domestic_currency($self.domestic_currency)
             .with_foreign_currency($self.foreign_currency)
             .with_domestic_market_index($self.domestic_market_index.clone())
             .with_foreign_market_index($self.foreign_market_index.clone())
-            .with_side($position.side)
+            .with_side($position.side())
             .with_domestic_leg_frequency($self.domestic_leg_frequency)
             .with_foreign_leg_frequency($self.foreign_leg_frequency)
             .build()
@@ -319,10 +323,12 @@ impl CrossCurrencySwap {
             build_xccy_instrument!(self, position, DualFwd)?;
         Ok(FloatFloatCrossCurrencySwapTrade::new(
             instrument,
-            position.trade_date,
-            position.domestic_notional.unwrap_or(self.domestic_notional),
-            position.foreign_notional.unwrap_or(self.foreign_notional),
-            position.side,
+            position.trade_date(),
+            position
+                .domestic_notional()
+                .unwrap_or(self.domestic_notional),
+            position.foreign_notional().unwrap_or(self.foreign_notional),
+            position.side(),
         ))
     }
 
@@ -471,11 +477,11 @@ macro_rules! build_basis_swap_instrument {
             .with_identifier($self.identifier.clone())
             .with_start_date($self.start_date)
             .with_maturity_date($self.maturity_date)
-            .with_notional($position.notional.unwrap_or($self.notional))
+            .with_notional($position.notional().unwrap_or($self.notional))
             .with_currency($self.currency)
             .with_pay_market_index($self.pay_market_index.clone())
             .with_receive_market_index($self.receive_market_index.clone())
-            .with_side($position.side)
+            .with_side($position.side())
             .with_pay_leg_frequency($self.pay_leg_frequency)
             .with_receive_leg_frequency($self.receive_leg_frequency);
         if let Some(s) = $self.pay_spread {
@@ -495,9 +501,9 @@ impl BasisSwap {
             build_basis_swap_instrument!(self, position, DualFwd)?;
         Ok(BasisSwapTrade::new(
             instrument,
-            position.trade_date,
-            position.notional.unwrap_or(self.notional),
-            position.side,
+            position.trade_date(),
+            position.notional().unwrap_or(self.notional),
+            position.side(),
         ))
     }
 
@@ -607,10 +613,14 @@ macro_rules! build_fix_float_xccy_instrument {
             .with_maturity_date($self.maturity_date)
             .with_domestic_notional(
                 $position
-                    .domestic_notional
+                    .domestic_notional()
                     .unwrap_or($self.domestic_notional),
             )
-            .with_foreign_notional($position.foreign_notional.unwrap_or($self.foreign_notional))
+            .with_foreign_notional(
+                $position
+                    .foreign_notional()
+                    .unwrap_or($self.foreign_notional),
+            )
             .with_fixed_rate($self.fixed_rate)
             .with_rate_definition(RateDefinition::new(
                 $self.day_counter,
@@ -620,7 +630,7 @@ macro_rules! build_fix_float_xccy_instrument {
             .with_domestic_currency($self.domestic_currency)
             .with_foreign_currency($self.foreign_currency)
             .with_floating_index($self.floating_index.clone())
-            .with_side($position.side)
+            .with_side($position.side())
             .with_domestic_leg_frequency($self.domestic_leg_frequency)
             .with_foreign_leg_frequency($self.foreign_leg_frequency);
         if let Some(spread) = $self.spread {
@@ -640,10 +650,12 @@ impl FixFloatCrossCurrencySwap {
             build_fix_float_xccy_instrument!(self, position, DualFwd)?;
         Ok(FixFloatCrossCurrencySwapTrade::new(
             instrument,
-            position.trade_date,
-            position.domestic_notional.unwrap_or(self.domestic_notional),
-            position.foreign_notional.unwrap_or(self.foreign_notional),
-            position.side,
+            position.trade_date(),
+            position
+                .domestic_notional()
+                .unwrap_or(self.domestic_notional),
+            position.foreign_notional().unwrap_or(self.foreign_notional),
+            position.side(),
         ))
     }
 
@@ -748,7 +760,7 @@ impl FixFloatCrossCurrencySwap {
 
 /// One dated issuer call in a callable bond's schedule.
 #[pyclass(name = "CallScheduleEntry", from_py_object, frozen)]
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub struct CallScheduleEntry {
     pub inner: QsCallScheduleEntry,
 }
@@ -994,7 +1006,7 @@ macro_rules! build_fixed_rate_bond_instrument {
             .with_start_date($self.start_date)
             .with_maturity_date($self.maturity_date)
             .with_rate($self.rate)
-            .with_notional($position.notional.unwrap_or($self.notional))
+            .with_notional($position.notional().unwrap_or($self.notional))
             .with_rate_definition(RateDefinition::new(
                 $self.day_counter,
                 $self.compounding,
@@ -1032,15 +1044,15 @@ impl FixedRateBond {
             build_fixed_rate_bond_instrument!(self, position, DualFwd)?;
         let mut trade = FixedRateBondTrade::new(
             instrument,
-            position.trade_date,
-            position.notional.unwrap_or(self.notional),
-            position.side,
+            position.trade_date(),
+            position.notional().unwrap_or(self.notional),
+            position.side(),
             position.bond_anchor()?,
         );
-        if let Some(date) = position.settlement_date {
+        if let Some(date) = position.settlement_date() {
             trade = trade.with_settlement_date(date);
         }
-        if let Some(day_counter) = position.spread_day_counter {
+        if let Some(day_counter) = position.spread_day_counter() {
             trade = trade.with_spread_day_counter(day_counter);
         }
         Ok(trade)
@@ -1052,9 +1064,9 @@ impl FixedRateBond {
             build_fixed_rate_bond_instrument!(self, position, f64)?;
         FixedRateBondTrade::new(
             instrument,
-            position.trade_date,
-            position.notional.unwrap_or(self.notional),
-            position.side,
+            position.trade_date(),
+            position.notional().unwrap_or(self.notional),
+            position.side(),
             position.bond_anchor()?,
         )
         .into_contingent_claims(&self.identifier)
@@ -1203,7 +1215,7 @@ impl SteppedCouponBond {
             .with_identifier(self.identifier.clone())
             .with_start_date(self.start_date)
             .with_maturity_date(self.maturity_date)
-            .with_notional(position.notional.unwrap_or(self.notional))
+            .with_notional(position.notional().unwrap_or(self.notional))
             .with_units(self.units)
             .with_currency(self.currency)
             .with_payment_frequency(self.payment_frequency)
@@ -1240,15 +1252,15 @@ impl SteppedCouponBond {
         let instrument = builder.build().map_err(qs_err)?;
         let mut trade = SteppedCouponBondTrade::new(
             instrument,
-            position.trade_date,
-            position.notional.unwrap_or(self.notional),
-            position.side,
+            position.trade_date(),
+            position.notional().unwrap_or(self.notional),
+            position.side(),
             position.bond_anchor()?,
         );
-        if let Some(date) = position.settlement_date {
+        if let Some(date) = position.settlement_date() {
             trade = trade.with_settlement_date(date);
         }
-        if let Some(day_counter) = position.spread_day_counter {
+        if let Some(day_counter) = position.spread_day_counter() {
             trade = trade.with_spread_day_counter(day_counter);
         }
         Ok(trade)
@@ -1423,10 +1435,10 @@ macro_rules! build_frn_instrument {
             .with_start_date($self.start_date)
             .with_maturity_date($self.maturity_date)
             .with_spread($self.spread)
-            .with_notional($position.notional.unwrap_or($self.notional))
+            .with_notional($position.notional().unwrap_or($self.notional))
             .with_forward_index($self.forward_index.clone())
             .with_currency($self.currency)
-            .with_side($position.side)
+            .with_side($position.side())
             .with_payment_frequency($self.payment_frequency)
             .with_payment_structure($self.payment_structure)
             .build()
@@ -1441,9 +1453,9 @@ impl FloatingRateNote {
             build_frn_instrument!(self, position, DualFwd)?;
         Ok(FloatingRateNoteTrade::new(
             instrument,
-            position.trade_date,
-            position.notional.unwrap_or(self.notional),
-            position.side,
+            position.trade_date(),
+            position.notional().unwrap_or(self.notional),
+            position.side(),
         ))
     }
 
@@ -1541,7 +1553,7 @@ macro_rules! build_deposit_instrument {
             .with_start_date($self.start_date)
             .with_maturity_date($self.maturity_date)
             .with_rate($self.rate)
-            .with_notional($position.notional.unwrap_or($self.notional))
+            .with_notional($position.notional().unwrap_or($self.notional))
             .with_rate_definition(RateDefinition::new(
                 $self.day_counter,
                 $self.compounding,
@@ -1549,7 +1561,7 @@ macro_rules! build_deposit_instrument {
             ))
             .with_discount_index($self.discount_index.clone())
             .with_currency($self.currency)
-            .with_side($position.side)
+            .with_side($position.side())
             .build()
             .map_err(qs_err)
     }};
@@ -1562,9 +1574,9 @@ impl FixedRateDeposit {
             build_deposit_instrument!(self, position, DualFwd)?;
         Ok(FixedRateDepositTrade::new(
             instrument,
-            position.trade_date,
-            position.notional.unwrap_or(self.notional),
-            position.side,
+            position.trade_date(),
+            position.notional().unwrap_or(self.notional),
+            position.side(),
         ))
     }
 
@@ -1668,7 +1680,7 @@ impl FxForwardPy {
             .with_delivery_date(self.delivery_date)
             .with_base_currency(self.base_currency)
             .with_quote_currency(self.quote_currency)
-            .with_side(position.side);
+            .with_side(position.side());
         if let Some(price) = self.forward_price {
             mk = mk.with_forward_price(price);
         }
@@ -1685,9 +1697,9 @@ impl FxForwardPy {
         let instrument = mk.build().map_err(qs_err)?;
         Ok(FxForwardTrade::new(
             instrument,
-            position.trade_date,
-            position.notional.unwrap_or(1.0),
-            position.side,
+            position.trade_date(),
+            position.notional().unwrap_or(1.0),
+            position.side(),
         ))
     }
 }
@@ -1772,9 +1784,9 @@ impl FxOptionPy {
             .map_err(qs_err)?;
         Ok(FxEuropeanOptionTrade::new(
             instrument,
-            position.trade_date,
-            position.notional.unwrap_or(1.0),
-            position.side,
+            position.trade_date(),
+            position.notional().unwrap_or(1.0),
+            position.side(),
         ))
     }
 }
@@ -1847,9 +1859,9 @@ impl EquityOption {
         );
         Ok(EquityEuropeanOptionTrade::new(
             instrument,
-            position.notional.unwrap_or(1.0),
-            position.trade_date,
-            position.side,
+            position.notional().unwrap_or(1.0),
+            position.trade_date(),
+            position.side(),
         ))
     }
 }
@@ -1930,9 +1942,9 @@ impl CreditDefaultSwapPy {
         .map_err(qs_err)?;
         Ok(CdsTrade::new(
             instrument,
-            position.trade_date,
-            position.notional.unwrap_or(1.0),
-            position.side,
+            position.trade_date(),
+            position.notional().unwrap_or(1.0),
+            position.side(),
         ))
     }
 }
@@ -2030,19 +2042,19 @@ impl CapFloorPy {
             .with_start_date(self.start_date)
             .with_maturity_date(self.maturity_date)
             .with_strike(self.strike)
-            .with_notional(position.notional.unwrap_or(self.notional))
+            .with_notional(position.notional().unwrap_or(self.notional))
             .with_market_index(self.market_index.clone())
             .with_currency(self.currency)
-            .with_side(position.side)
+            .with_side(position.side())
             .with_cap_floor_type(self.cap_floor_type)
             .with_frequency(self.frequency)
             .build()
             .map_err(qs_err)?;
         Ok(CapFloorTrade::new(
             instrument,
-            position.trade_date,
-            position.notional.unwrap_or(self.notional),
-            position.side,
+            position.trade_date(),
+            position.notional().unwrap_or(self.notional),
+            position.side(),
         ))
     }
 }
@@ -2135,9 +2147,9 @@ impl CapletFloorletPy {
         );
         Ok(CapletFloorletTrade::new(
             instrument,
-            position.trade_date,
-            position.notional.unwrap_or(1.0),
-            position.side,
+            position.trade_date(),
+            position.notional().unwrap_or(1.0),
+            position.side(),
         ))
     }
 }
@@ -2217,16 +2229,16 @@ impl RateFuturesPy {
             .with_start_date(self.start_date)
             .with_end_date(self.end_date)
             .with_futures_price(self.futures_price)
-            .with_side(position.side);
+            .with_side(position.side());
         if let Some(size) = self.contract_size {
             mk = mk.with_contract_size(size);
         }
         let instrument: QsRateFutures = mk.build().map_err(qs_err)?;
         Ok(RateFuturesTrade::new(
             instrument,
-            position.trade_date,
-            position.num_contracts,
-            position.side,
+            position.trade_date(),
+            position.num_contracts(),
+            position.side(),
         ))
     }
 }

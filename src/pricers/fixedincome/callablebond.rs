@@ -102,7 +102,7 @@ pub(super) fn prepare_callable_bond(
     }
     let market = context.handle_request(&request)?;
     parameters.resolve_calibration(&market, index)?;
-    if let Some(day_counter) = parameters.day_counter {
+    if let Some(day_counter) = parameters.day_counter() {
         time_grid = TimeGridConfiguration::new(
             time_grid.steps_per_year(),
             time_grid.max_steps(),

@@ -75,7 +75,7 @@ impl PricingContext {
             crate::collateral::FixedIncomeDiscountPolicy::build,
         )
     }
-    pub(crate) fn require_initialized(&self) -> PyResult<()> {
+    pub fn require_initialized(&self) -> PyResult<()> {
         if self.initialized {
             Ok(())
         } else {
@@ -253,10 +253,11 @@ impl PricingContext {
     /// Default collateral policy used for curve construction and derivative valuation.
     #[getter]
     fn csa_policy(&self) -> SingleCurveCSADiscountPolicy {
-        SingleCurveCSADiscountPolicy {
-            collateral_currency: self.inner.base_currency(),
-            collateral_index: self.inner.base_index().clone(),
-        }
+        quantsupport::prelude::SingleCurveCSADiscountPolicy::new(
+            self.inner.base_index().clone(),
+            self.inner.base_currency(),
+        )
+        .into()
     }
 
     /// The original curve configurations (bootstrap inputs).
@@ -494,9 +495,9 @@ impl PricingContext {
             .extract::<ScriptedProduct>()
             .or_else(|_| ScriptedProduct::from_dict(script))?;
         let discount_index =
-            match &script.discount_index {
+            match script.discount_index() {
                 Some(index) => index.clone(),
-                None if script.currency == self.inner.base_currency() => {
+                None if script.currency() == self.inner.base_currency() => {
                     self.inner.base_index().clone()
                 }
                 None => return Err(QuantSupportError::new_err(
@@ -527,7 +528,7 @@ impl PricingContext {
                 );
             }
         }
-        for configuration in &script.models {
+        for configuration in script.models() {
             assignments.insert(
                 configuration.market_index().clone(),
                 configuration.model().clone(),
@@ -566,7 +567,7 @@ impl PricingContext {
             .day_counter()
             .unwrap_or(DayCounter::Actual365);
         let mut market_model = LgmMarketModel::new(
-            script.currency,
+            script.currency(),
             discount_index.clone(),
             reference_date,
             day_counter,
@@ -618,11 +619,11 @@ impl PricingContext {
         ScriptEngine::new(
             script.event_stream()?,
             reference_date,
-            script.currency,
+            script.currency(),
             discount_index,
         )
         .map_err(qs_err)?
-        .evaluate(&mut market_model, script.result_variable.as_deref())
+        .evaluate(&mut market_model, script.result_variable())
         .map_err(qs_err)
     }
 

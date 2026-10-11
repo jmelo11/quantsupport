@@ -32,7 +32,7 @@ pub struct TapeNode<T> {
     pub adj: T,
     /// Position of this node in the tape book, set when recorded.
     /// Enables O(1) lookup instead of a linear scan.
-    pub(crate) idx: usize,
+    pub idx: usize,
 }
 
 impl<T> TapeNode<T> {

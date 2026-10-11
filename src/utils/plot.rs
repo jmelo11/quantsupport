@@ -10,15 +10,21 @@ pub trait Plot {
 }
 
 #[cfg(feature = "plot")]
-pub(crate) mod plotting {
+/// Shared plotting types and exposure-chart colors.
+pub mod plotting {
     pub use plotters::prelude::*;
 
     /// Palette used for the three exposure series.
     pub const EPE_COLOR: RGBColor = RGBColor(31, 119, 180); // steel blue
+    /// Color of expected negative exposure.
     pub const ENE_COLOR: RGBColor = RGBColor(44, 160, 44); // green
+    /// Color of signed expected exposure.
     pub const EE_COLOR: RGBColor = RGBColor(214, 39, 40); // red
 
+    /// Color of chart grid lines.
     pub const GRID_COLOR: RGBColor = RGBColor(220, 220, 220);
+    /// Color of the chart background.
     pub const BG_COLOR: RGBColor = RGBColor(255, 255, 255);
+    /// Color of the reference line at zero exposure.
     pub const ZERO_LINE_COLOR: RGBColor = RGBColor(160, 160, 160);
 }

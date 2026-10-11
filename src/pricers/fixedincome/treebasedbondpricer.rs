@@ -319,8 +319,8 @@ impl BondPricingEngine for TreeBasedBondPricer {
             lattice_value(
                 |time| valuation.curve.discount_factor_from_time(time),
                 &terms,
-                callable.parameters.alpha,
-                &callable.parameters.sigma_schedule,
+                callable.parameters.alpha(),
+                callable.parameters.sigma_schedule(),
                 spread,
             )
         } else {
@@ -699,9 +699,9 @@ mod tests {
                 .clone();
             let mut resolved = HullWhiteParameters::new(configuration.clone())?;
             resolved.resolve_calibration(&market, &MarketIndex::SOFR)?;
-            assert_eq!(resolved.sigma_schedule.len(), 9);
+            assert_eq!(resolved.sigma_schedule().len(), 9);
             assert!(resolved
-                .sigma_schedule
+                .sigma_schedule()
                 .windows(2)
                 .any(|entries| (entries[0].1 - entries[1].1).abs() > 1.0e-5));
             let curve = market
@@ -709,7 +709,7 @@ mod tests {
                 .discount_curve(&MarketIndex::SOFR)
                 .ok_or_else(|| QSError::NotFoundErr("SOFR curve".into()))?
                 .curve();
-            let primal = PrimalCurve(&*curve);
+            let primal = PrimalCurve::new(&*curve);
             let ModelConfiguration::HullWhite {
                 parameter_source, ..
             } = &configuration
@@ -728,7 +728,7 @@ mod tests {
                 context.quote_store(),
                 Level::Mid,
             )?;
-            assert_eq!(resolved.sigma_schedule, lgm.sigma_schedule());
+            assert_eq!(resolved.sigma_schedule(), lgm.sigma_schedule());
             drop(curve);
             let evaluation = context.evaluation_date();
             let trade = bond(

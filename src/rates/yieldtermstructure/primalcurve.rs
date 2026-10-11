@@ -8,7 +8,16 @@ use crate::{
     time::{date::Date, daycounter::DayCounter, enums::Frequency},
     utils::errors::Result,
 };
-pub struct PrimalCurve<'a>(pub(crate) &'a dyn InterestRatesTermStructure<DualFwd>);
+/// A scalar view that reads values from an AD curve without recording sensitivities.
+pub struct PrimalCurve<'a>(&'a dyn InterestRatesTermStructure<DualFwd>);
+
+impl<'a> PrimalCurve<'a> {
+    /// Wraps an AD curve with a read-only scalar view.
+    #[must_use]
+    pub const fn new(curve: &'a dyn InterestRatesTermStructure<DualFwd>) -> Self {
+        Self(curve)
+    }
+}
 
 impl InterestRatesTermStructure<f64> for PrimalCurve<'_> {
     fn reference_date(&self) -> Date {

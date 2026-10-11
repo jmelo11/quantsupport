@@ -66,7 +66,7 @@ impl NettingSet {
 
     /// Returns a mutable reference to the underlying claim vector
     /// (needed for compression which may change the length).
-    pub(crate) const fn claims_vec_mut(&mut self) -> &mut Vec<ContingentClaim> {
+    pub const fn claims_vec_mut(&mut self) -> &mut Vec<ContingentClaim> {
         &mut self.claims
     }
 

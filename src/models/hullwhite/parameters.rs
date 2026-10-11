@@ -15,13 +15,14 @@ use crate::{
     utils::errors::{QSError, Result},
     volatility::modelcalibration::{CalibrationSource, ModelCalibrationConfiguration},
 };
+/// Resolved Hull-White mean reversion, volatility schedule and calibration state.
 #[derive(Clone)]
 pub struct HullWhiteParameters<T: Scalar = f64> {
     model: ModelConfiguration,
-    pub(crate) alpha: f64,
-    pub(crate) sigma_schedule: Vec<(f64, T)>,
+    alpha: f64,
+    sigma_schedule: Vec<(f64, T)>,
     calibration: Option<(HullWhiteCalibrationQuality, Vec<Vec<f64>>)>,
-    pub(crate) day_counter: Option<DayCounter>,
+    day_counter: Option<DayCounter>,
 }
 
 /// Resolves the supported mean reversion and any fixed sigma schedule.
@@ -49,7 +50,11 @@ fn hull_white_parameters(configuration: &ModelConfiguration) -> Result<(f64, Vec
 }
 
 impl HullWhiteParameters {
-    pub(crate) fn new(model: ModelConfiguration) -> Result<Self> {
+    /// Resolves the model's mean reversion and any fixed volatility schedule.
+    ///
+    /// # Errors
+    /// Returns an error for unsupported models or invalid fixed parameters.
+    pub fn new(model: ModelConfiguration) -> Result<Self> {
         let (alpha, sigma_schedule) = hull_white_parameters(&model)?;
         Ok(Self {
             model,
@@ -60,7 +65,9 @@ impl HullWhiteParameters {
         })
     }
 
-    pub(crate) fn calibration_request(&self) -> Option<ModelCalibrationConfiguration> {
+    /// Returns the requested calibration when the volatility is calibrated.
+    #[must_use]
+    pub fn calibration_request(&self) -> Option<ModelCalibrationConfiguration> {
         match &self.model {
             ModelConfiguration::HullWhite {
                 parameter_source: ParameterSource::Calibrated(calibration),
@@ -70,7 +77,12 @@ impl HullWhiteParameters {
         }
     }
 
-    pub(crate) fn resolve_calibration(
+    /// Calibrates the volatility schedule and stores its quote sensitivities.
+    ///
+    /// # Errors
+    /// Returns an error for missing market data, inconsistent reference dates
+    /// or an invalid calibration result.
+    pub fn resolve_calibration(
         &mut self,
         market_data: &MarketData,
         discount_index: &MarketIndex,
@@ -105,7 +117,7 @@ impl HullWhiteParameters {
                 .day_counter()
                 .ok_or_else(|| QSError::ValueNotSetErr("Calibration curve day counter".into()))?,
         );
-        let primal = PrimalCurve(&*curve);
+        let primal = PrimalCurve::new(&*curve);
         let mut model = HullWhite::new(self.alpha, &primal);
         model.calibrate_with_configuration(
             calibration,
@@ -120,7 +132,7 @@ impl HullWhiteParameters {
         self.sigma_schedule = volatility.iter().copied().collect();
         if self.sigma_schedule.is_empty()
             || !self
-                .sigma_schedule
+                .sigma_schedule()
                 .windows(2)
                 .all(|entries| entries[0].0 < entries[1].0)
         {
@@ -142,12 +154,13 @@ impl HullWhiteParameters {
         Ok(())
     }
 
-    pub(crate) fn ad_parameters(
-        &self,
-        market_data: &MarketData,
-    ) -> Result<HullWhiteParameters<DualFwd>> {
+    /// Connects the resolved volatility schedule to AD market-volatility values.
+    ///
+    /// # Errors
+    /// Returns an error for missing calibration data or invalid Jacobian dimensions.
+    pub fn ad_parameters(&self, market_data: &MarketData) -> Result<HullWhiteParameters<DualFwd>> {
         let mut schedule = self
-            .sigma_schedule
+            .sigma_schedule()
             .iter()
             .map(|&(time, sigma)| (time, DualFwd::scalar(sigma)))
             .collect::<Vec<_>>();
@@ -224,8 +237,31 @@ impl HullWhiteParameters {
     }
 }
 
+impl<T: Scalar> HullWhiteParameters<T> {
+    /// Returns the mean-reversion speed.
+    #[must_use]
+    pub const fn alpha(&self) -> f64 {
+        self.alpha
+    }
+
+    /// Returns the resolved time-dependent volatility schedule.
+    #[must_use]
+    pub fn sigma_schedule(&self) -> &[(f64, T)] {
+        &self.sigma_schedule
+    }
+
+    /// Returns the day counter used by calibration, when available.
+    #[must_use]
+    pub const fn day_counter(&self) -> Option<DayCounter> {
+        self.day_counter
+    }
+}
+
 /// Returns the exact conditional variance of the Hull-White Gaussian state
 /// over one uniform time step.
+///
+/// # Errors
+/// Returns an error for an empty volatility schedule or an out-of-range time index.
 pub fn transition_variances<T: Scalar>(
     alpha: f64,
     schedule: &[(f64, T)],

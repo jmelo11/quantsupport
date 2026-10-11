@@ -224,7 +224,11 @@ fn validate_coupon_payoff(payoff: &PayoffOps) -> Result<()> {
     }
 }
 
-pub(crate) fn fixed_cashflow<T: Scalar>(
+/// Builds a fixed-rate coupon and validates its terms.
+///
+/// # Errors
+/// Returns an error when the coupon terms fail validation.
+pub fn fixed_cashflow<T: Scalar>(
     notional: f64,
     rate: InterestRate<T>,
     start: Date,
@@ -242,8 +246,12 @@ pub(crate) fn fixed_cashflow<T: Scalar>(
     Ok(coupon)
 }
 
+/// Builds a floating-rate coupon with optional floor and cap and validates its terms.
+///
+/// # Errors
+/// Returns an error for invalid coupon terms or an unexpected template variant.
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn floating_cashflow<T: Scalar>(
+pub fn floating_cashflow<T: Scalar>(
     notional: f64,
     index: MarketIndex,
     spread: T,

@@ -201,10 +201,7 @@ impl OisConventions {
     ///
     /// # Errors
     /// Rejects excess fields, invalid enum spellings and invalid parameter values.
-    pub(crate) fn with_quote_fields(
-        mut self,
-        fields: &[&str],
-    ) -> crate::utils::errors::Result<Self> {
+    pub fn with_quote_fields(mut self, fields: &[&str]) -> crate::utils::errors::Result<Self> {
         use crate::utils::errors::QSError;
         if fields.len() > 23 {
             return Err(QSError::InvalidValueErr(

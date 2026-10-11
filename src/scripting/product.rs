@@ -158,11 +158,16 @@ impl IntoContingentClaims for ScriptedProduct {
 }
 
 impl ScriptedPayoff {
-    pub(crate) fn simulation_requests(&self) -> &[SimulationRequest] {
+    /// Returns the model observations needed to evaluate this payment.
+    pub fn simulation_requests(&self) -> &[SimulationRequest] {
         self.engine.model_requests()
     }
 
-    pub(crate) fn evaluate(
+    /// Evaluates the payment from the supplied simulated market observations.
+    ///
+    /// # Errors
+    /// Returns an error when the script cannot evaluate the requested payment.
+    pub fn evaluate(
         &self,
         valuation_date: Date,
         responses: &[SimulationResponse<DualFwd>],

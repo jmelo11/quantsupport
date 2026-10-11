@@ -854,7 +854,7 @@ where
             amount: cashflow.amount.value(),
         })
         .collect::<Vec<_>>();
-    let primal_curve = PrimalCurve(&*curve);
+    let primal_curve = PrimalCurve::new(&*curve);
     let valuation = BondValuation {
         curve: &primal_curve,
         cashflows: &cashflows,
