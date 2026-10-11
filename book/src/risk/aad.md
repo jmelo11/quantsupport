@@ -44,6 +44,8 @@ The table separates graph lifecycle operations from scalar operations. Marks all
 
 `PricingContext::initialize()` starts recording, bootstraps curves and surfaces so their quotes become leaves, and sets a mark. Each `evaluate` call records pricing nodes after that mark. It runs `backward_to_mark()` and `propagate_mark_to_start_fwd()` to reach the quote leaves, reads their adjoints, and rewinds to the mark for the next trade. Portfolio-wide sensitivities therefore require roughly one additional reverse calculation per trade.
 
+`Tape::propagate_mark_to_start()`, `Tape::propagate_to_mark()`, and `Tape::propagate_mark_to_start_fwd()` return `()`; empty segments are a no-op. The node-based `backward` methods return `Result<()>` because they validate that the node belongs to the tape.
+
 ## Curves and pillars
 
 Curves expose named risk factors through the `Pillars` interface. `curve.put_pillars_on_tape()` registers the differentiable values, and `curve.pillars()` returns them with labels. For a hand-built curve, those values can be its discount-factor nodes. For a bootstrapped curve, the implicit function theorem maps node derivatives to the original calibration quotes, as described in [Curve Bootstrapping](../curves/bootstrapping.md). `SensitivityMap` can therefore report a market label such as `OIS_USD_SOFR_5Y`.

@@ -552,7 +552,7 @@ class DictAndScriptTests(unittest.TestCase):
                 context.evaluate_script(spec, n_paths=0)
             with self.assertRaisesRegex(qs.QuantSupportError, "no rate model configured"):
                 context.evaluate_script(self.script_spec())
-            with self.assertRaises(qs.QuantSupportError):
+            with self.assertRaisesRegex(qs.QuantSupportError, "Not found error: result variable 'unknown'"):
                 context.evaluate_script(
                     dict(spec, result_variable="unknown"), n_paths=2)
             with self.assertRaises(qs.QuantSupportError):
@@ -560,9 +560,16 @@ class DictAndScriptTests(unittest.TestCase):
                     dict(spec, events=[{"date": "2025-01-01", "code": "note = 1;"}]))
         with self.assertRaises(ValueError):
             qs.ScriptedProduct.from_dict(dict(spec, events=[]))
-        with self.assertRaises(qs.QuantSupportError):
+        with self.assertRaisesRegex(qs.QuantSupportError, "parsing script event dated 2027-01-01: Parsing error:"):
             qs.ScriptedProduct.from_dict(
                 dict(spec, events=[{"date": "2027-01-01", "code": "???"}]))
+        for code, message in [
+                ('note = "unfinished;', "Unterminated string literal"),
+                ("note = 1.2.3;", "Invalid numeric literal '1.2.3'")]:
+            with self.subTest(code=code):
+                with self.assertRaisesRegex(qs.QuantSupportError, message):
+                    qs.ScriptedProduct.from_dict(
+                        dict(spec, events=[{"date": "2027-01-01", "code": code}]))
 
 
 if __name__ == "__main__":

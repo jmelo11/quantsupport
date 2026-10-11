@@ -87,7 +87,7 @@ pub fn native_swap() -> Result<SwapTrade<f64>> {
 }
 
 /// The same swap expressed as four scripted net coupon payments.
-pub fn scripted_swap_events() -> std::result::Result<EventStream, ScriptingError> {
+pub fn scripted_swap_events() -> std::result::Result<EventStream, QSError> {
     let events: Vec<CodedEvent> = accrual_periods()
         .into_iter()
         .enumerate()

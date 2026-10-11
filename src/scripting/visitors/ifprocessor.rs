@@ -18,10 +18,8 @@ This attribution and license notice must be preserved at the top of this file.
 use std::cell::{Cell, RefCell};
 use std::collections::HashSet;
 
-use crate::scripting::{
-    nodes::{event::EventStream, node::Node, traits::NodeVisitor},
-    utils::errors::Result,
-};
+use crate::scripting::nodes::{event::EventStream, node::Node, traits::NodeVisitor};
+use crate::utils::errors::Result;
 
 /// Visitor that records, for each `if` node, the indices of variables
 /// modified inside the `if` block (including nested `if`s). It also

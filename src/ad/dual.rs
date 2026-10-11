@@ -154,7 +154,8 @@ impl<T: TapeHolder + InnerScalar> Dual<T> {
             tape.mut_node(root)
                 .ok_or(QSError::NodeNotIndexedInTapeErr)?
                 .adj = T::one();
-            tape.propagate_mark_to_start()
+            tape.propagate_mark_to_start();
+            Ok(())
         })
     }
 
@@ -168,7 +169,8 @@ impl<T: TapeHolder + InnerScalar> Dual<T> {
             tape.mut_node(root)
                 .ok_or(QSError::NodeNotIndexedInTapeErr)?
                 .adj = T::one();
-            tape.propagate_to_mark()
+            tape.propagate_to_mark();
+            Ok(())
         })
     }
 

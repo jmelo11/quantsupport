@@ -44,7 +44,14 @@ impl VolatilitySurfaceBuilder {
         let mut surfaces = HashMap::new();
 
         for spec in &self.specs {
-            let (surface, labels) = self.build_one(spec, selector, level, reference_date)?;
+            let (surface, labels) = self
+                .build_one(spec, selector, level, reference_date)
+                .map_err(|error| {
+                    error.context(format!(
+                        "building volatility surface {}",
+                        spec.market_index()
+                    ))
+                })?;
             let surface = surface
                 .with_labels(&labels)
                 .with_calibration_instrument_ids(&labels);
@@ -88,7 +95,9 @@ impl VolatilitySurfaceBuilder {
             let quote = selector
                 .select(qid)
                 .ok_or_else(|| QSError::NotFoundErr(format!("Quote not found: {qid}")))?;
-            let val = quote.levels().value(level)?;
+            let val = quote.levels().value(level).map_err(|error| {
+                error.context(format!("reading {level:?} volatility quote '{qid}'"))
+            })?;
             let details = quote.details();
             if details.market_index() != Some(spec.market_index()) {
                 return Err(QSError::InvalidValueErr(format!(

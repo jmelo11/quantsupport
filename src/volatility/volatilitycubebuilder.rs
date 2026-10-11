@@ -45,7 +45,11 @@ impl VolatilityCubeBuilder {
         let mut cubes = HashMap::new();
 
         for spec in &self.specs {
-            let (cube, labels) = self.build_one(spec, selector, level, reference_date)?;
+            let (cube, labels) = self
+                .build_one(spec, selector, level, reference_date)
+                .map_err(|error| {
+                    error.context(format!("building volatility cube {}", spec.market_index()))
+                })?;
             let cube = cube
                 .with_labels(&labels)
                 .with_calibration_instrument_ids(&labels);
@@ -88,7 +92,9 @@ impl VolatilityCubeBuilder {
             let quote = selector
                 .select(qid)
                 .ok_or_else(|| QSError::NotFoundErr(format!("Quote not found: {qid}")))?;
-            let val = quote.levels().value(level)?;
+            let val = quote.levels().value(level).map_err(|error| {
+                error.context(format!("reading {level:?} volatility quote '{qid}'"))
+            })?;
             let details = quote.details();
             if details.market_index() != Some(spec.market_index()) {
                 return Err(QSError::InvalidValueErr(format!(

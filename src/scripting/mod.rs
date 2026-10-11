@@ -37,8 +37,6 @@ pub mod parsing;
 pub mod product;
 pub mod request;
 pub mod runtime;
-/// Scripting errors and shared helpers.
-pub mod utils;
 /// AST analysis, transformation, and evaluation visitors.
 pub mod visitors;
 

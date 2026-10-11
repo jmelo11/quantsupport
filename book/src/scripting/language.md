@@ -144,20 +144,28 @@ Together, these examples cover projected rates, simulated spots, payoff function
 
 ## Errors
 
-Parsing, static analysis, and runtime evaluation return `ScriptingError`. The variant identifies the stage and the accompanying message supplies the source or market detail:
+Parsing, static analysis, and runtime evaluation return the library's `QSError` and `Result<T>`.
 
-| Variant                         | Raised when                                                                                 |
-| ------------------------------- | ------------------------------------------------------------------------------------------- |
-| `InvalidSyntax(String)`         | Grammar violation or reserved-word misuse. The message includes line and column             |
-| `UnexpectedToken(String)`       | Token sequence falls outside the expected production                                        |
-| `InvalidToken(String)`          | Lexer encounters an unrecognized character sequence                                         |
-| `ParsingError(ParseFloatError)` | Malformed numeric literal                                                                   |
-| `EvaluationError(String)`       | Runtime failure such as an unknown requested result variable                                |
-| `NotFoundError(String)`         | A market response slot was missing                                                          |
-| `InvalidOperation(String)`      | Structural rule broken, e.g. no events, unordered events, payment before the reference date |
-| `QuantSupport(QSError)`         | Wrapped library error (date parsing, unknown index or currency, …)                          |
+| Shared variant                | Raised when                                                                                  |
+| ----------------------------- | -------------------------------------------------------------------------------------------- |
+| `ParsingErr(String)`           | Invalid characters, malformed numeric literals, unterminated strings, or grammar violations   |
+| `InvalidValueErr(String)`      | Structural rules fail, such as empty or unordered events or a model with zero paths           |
+| `ValueNotSetErr(String)`       | A required scenario, variable index, or initialized variable is absent                        |
+| `NotFoundErr(String)`          | A result variable or requested market response cannot be found                               |
+| `EvaluationErr(String)`        | An expression cannot be evaluated, such as a nonnumeric payment or an invalid array index    |
+| Other library variants        | Date parsing, solvers, AD operations, and market models retain their original errors          |
 
-Syntax variants identify source-text problems. Evaluation and wrapped-library variants identify runtime state or market-resolution problems, allowing an application to report the appropriate context to the product author.
+`QSError::context` attaches operation details while preserving the original error as its source. For example, a parsing error carries its event date, and a model failure carries its path index. Messages from quote, curve, volatility, and simulation construction also identify the operation and relevant resource. Use `std::error::Error::source` to inspect the cause chain and `error.root_cause()` to match the original library variant:
+
+```rust
+match error.root_cause() {
+    QSError::ParsingErr(_) => report_invalid_script(&error),
+    QSError::NotFoundErr(_) => report_missing_data(&error),
+    _ => report_failure(&error),
+}
+```
+
+Code that matched the former scripting variants should use these shared variants. Grammar and token errors use `ParsingErr`; `InvalidOperation` uses `InvalidValueErr`; `NotFoundError` uses `NotFoundErr`; and `EvaluationError` uses `EvaluationErr` or the more specific missing-value variants above. The former `QuantSupport` wrapper is no longer needed.
 
 ## What to remember
 

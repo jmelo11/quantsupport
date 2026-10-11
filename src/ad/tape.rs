@@ -129,33 +129,21 @@ impl<T: TapeHolder> Tape<T> {
     }
 
     /// Propagates adjoints from the current mark back to the start.
-    ///
-    /// ## Errors
-    /// Returns an error if the tape is empty.
-    pub fn propagate_mark_to_start(&mut self) -> Result<()> {
-        let end = self.mark.saturating_sub(1);
-        for i in (0..=end).rev() {
+    /// An empty marked segment is a no-op.
+    pub fn propagate_mark_to_start(&mut self) {
+        for i in (0..self.mark).rev() {
             // SAFETY: see `propagate_from` — children never alias the node.
             unsafe { self.book[i].as_ref() }.propagate_into();
         }
-        Ok(())
     }
 
     /// Propagates adjoints from the end of the tape down to the current mark.
-    ///
-    /// ## Errors
-    /// Returns an error if the tape is empty.
-    pub fn propagate_to_mark(&mut self) -> Result<()> {
-        let start = self.mark;
-        let end = self.book.len().saturating_sub(1);
-        if start > end {
-            return Ok(());
-        }
-        for i in (start..=end).rev() {
+    /// An empty segment is a no-op.
+    pub fn propagate_to_mark(&mut self) {
+        for i in (self.mark..self.book.len()).rev() {
             // SAFETY: see `propagate_from` — children never alias the node.
             unsafe { self.book[i].as_ref() }.propagate_into();
         }
-        Ok(())
     }
 
     /// Resets all adjoints on this tape to the default (zero) value.
@@ -290,5 +278,18 @@ impl Tape<f64> {
     /// Resets all adjoints on the thread-local tape to zero.
     pub fn reset_adjoints() {
         TAPE.with(|tc| tc.borrow().reset_adjoints_inner());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn empty_tape_propagation_is_a_no_op() {
+        let mut tape = Tape::<f64>::new();
+        tape.propagate_mark_to_start();
+        tape.propagate_to_mark();
+        assert!(tape.book.is_empty());
     }
 }

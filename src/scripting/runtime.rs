@@ -16,6 +16,7 @@ This attribution and license notice must be preserved at the top of this file.
 */
 
 //! Model-backed scripting runtime.
+use crate::utils::errors::{QSError, Result};
 use std::{collections::HashMap, ops::Range};
 
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
@@ -29,7 +30,6 @@ use crate::{
         data::simulationdata::{Scenario, SimulationData},
         nodes::{event::EventStream, traits::NodeVisitor},
         request::SimulationDataRequest,
-        utils::errors::{Result, ScriptingError},
         visitors::{
             domainprocessor::DomainProcessor,
             evaluator::{CapturedCashflow, SingleScenarioEvaluator, Value},
@@ -60,6 +60,15 @@ struct EventResponseMap {
     forward_discounts: ResponseRange,
     fx: ResponseRange,
     spots: ResponseRange,
+}
+
+// Restore the caller's tape mark on every exit, including pilot-path failures.
+struct ScriptTapeMark;
+
+impl Drop for ScriptTapeMark {
+    fn drop(&mut self) {
+        Tape::reset_mark_fwd();
+    }
 }
 
 impl EventResponseMap {
@@ -208,17 +217,17 @@ impl ScriptEngine {
     ) -> Result<Self> {
         let event_dates = events.event_dates();
         if event_dates.is_empty() {
-            return Err(ScriptingError::InvalidOperation(
+            return Err(QSError::InvalidValueErr(
                 "a script must contain at least one event".to_string(),
             ));
         }
         if event_dates.iter().any(|date| *date < reference_date) {
-            return Err(ScriptingError::InvalidOperation(
+            return Err(QSError::InvalidValueErr(
                 "scripted event dates cannot precede the reference date".to_string(),
             ));
         }
         if event_dates.windows(2).any(|dates| dates[0] > dates[1]) {
-            return Err(ScriptingError::InvalidOperation(
+            return Err(QSError::InvalidValueErr(
                 "scripted events must be ordered by date".to_string(),
             ));
         }
@@ -368,14 +377,14 @@ impl ScriptEngine {
     ) -> Result<(HashMap<String, f64>, Vec<ExpectedCashflow>)> {
         if let Some(name) = result_variable {
             if !self.variable_indexes.contains_key(name) {
-                return Err(ScriptingError::EvaluationError(format!(
+                return Err(QSError::NotFoundErr(format!(
                     "result variable '{name}' is not defined by the script"
                 )));
             }
         }
         let n_paths = model.n_paths();
         if n_paths == 0 {
-            return Err(ScriptingError::EvaluationError(
+            return Err(QSError::InvalidValueErr(
                 "market model exposes no paths".to_string(),
             ));
         }
@@ -403,6 +412,7 @@ impl ScriptEngine {
         let mut averages: HashMap<String, f64> = HashMap::new();
         let mut cashflows: Vec<ExpectedCashflow> = Vec::new();
         Tape::set_mark_fwd();
+        let _mark = ScriptTapeMark;
         let control_betas = if use_controls {
             let pilot_paths = n_paths.min(64);
             let mut pilot = Vec::with_capacity(pilot_paths);
@@ -411,10 +421,8 @@ impl ScriptEngine {
                 // set, avoiding the small in-sample control-variate bias.
                 let path_index = n_paths + pilot_offset;
                 Tape::rewind_to_mark_fwd();
-                let path = model.generate_path(path_index).map_err(|_| {
-                    ScriptingError::EvaluationError(format!(
-                        "market model failed to generate pilot path {path_index}"
-                    ))
+                let path = model.generate_path(path_index).map_err(|error| {
+                    error.context(format!("generating script pilot path {path_index}"))
                 })?;
                 let scenario = self.scenario_from_path(&path, &numeraires, compact_responses)?;
                 let values = self.evaluate_scenario(&scenario)?;
@@ -425,7 +433,7 @@ impl ScriptEngine {
                         _ => None,
                     })
                     .ok_or_else(|| {
-                        ScriptingError::EvaluationError(
+                        QSError::EvaluationErr(
                             "result variable did not produce a numeric pilot value".to_string(),
                         )
                     })?;
@@ -438,11 +446,9 @@ impl ScriptEngine {
         };
         let paths_result = (0..n_paths).try_for_each(|path_index| -> Result<()> {
             Tape::rewind_to_mark_fwd();
-            let path = model.generate_path(path_index).map_err(|_| {
-                ScriptingError::EvaluationError(format!(
-                    "market model failed to generate path {path_index}"
-                ))
-            })?;
+            let path = model
+                .generate_path(path_index)
+                .map_err(|error| error.context(format!("generating script path {path_index}")))?;
             let scenario = self.scenario_from_path(&path, &numeraires, compact_responses)?;
             let values =
                 self.evaluate_scenario_collecting(&scenario, &mut cashflows, 1.0 / n_scenarios)?;
@@ -493,10 +499,8 @@ impl ScriptEngine {
         });
         // Propagate whatever was accumulated and restore the mark even when a
         // path failed, so the caller's tape stays usable.
-        let propagated = Tape::propagate_mark_to_start_fwd();
-        Tape::reset_mark_fwd();
+        Tape::propagate_mark_to_start_fwd();
         paths_result?;
-        propagated?;
         cashflows.sort_by_key(|cashflow| cashflow.date);
         Ok((averages, cashflows))
     }
@@ -521,14 +525,14 @@ impl ScriptEngine {
     ) -> Result<ParallelScriptEvaluation> {
         if let Some(name) = result_variable {
             if !self.variable_indexes.contains_key(name) {
-                return Err(ScriptingError::EvaluationError(format!(
+                return Err(QSError::NotFoundErr(format!(
                     "result variable '{name}' is not defined by the script"
                 )));
             }
         }
         let n_paths = setup.n_paths();
         if n_paths == 0 {
-            return Err(ScriptingError::EvaluationError(
+            return Err(QSError::InvalidValueErr(
                 "market model exposes no paths".to_string(),
             ));
         }
@@ -627,7 +631,7 @@ impl ScriptEngine {
 
     fn configure_model(&self, model: &mut dyn MarketModel<DualFwd>, n_paths: usize) -> Result<()> {
         if model.n_paths() != n_paths {
-            return Err(ScriptingError::EvaluationError(format!(
+            return Err(QSError::InvalidValueErr(format!(
                 "model exposes {} paths but setup declares {n_paths}",
                 model.n_paths()
             )));
@@ -656,10 +660,8 @@ impl ScriptEngine {
             for pilot_offset in 0..pilot_paths {
                 let path_index = n_paths + pilot_offset;
                 Tape::rewind_to_mark_fwd();
-                let path = model.generate_path(path_index).map_err(|_| {
-                    ScriptingError::EvaluationError(format!(
-                        "market model failed to generate pilot path {path_index}"
-                    ))
+                let path = model.generate_path(path_index).map_err(|error| {
+                    error.context(format!("generating script pilot path {path_index}"))
                 })?;
                 let scenario = self.scenario_from_path(&path, &numeraires, compact_responses)?;
                 let values = self.evaluate_scenario(&scenario)?;
@@ -670,7 +672,7 @@ impl ScriptEngine {
                         _ => None,
                     })
                     .ok_or_else(|| {
-                        ScriptingError::EvaluationError(
+                        QSError::EvaluationErr(
                             "result variable did not produce a numeric pilot value".to_string(),
                         )
                     })?;
@@ -704,10 +706,8 @@ impl ScriptEngine {
             .into_iter()
             .try_for_each(|path_index| -> Result<()> {
                 Tape::rewind_to_mark_fwd();
-                let path = model.generate_path(path_index).map_err(|_| {
-                    ScriptingError::EvaluationError(format!(
-                        "market model failed to generate path {path_index}"
-                    ))
+                let path = model.generate_path(path_index).map_err(|error| {
+                    error.context(format!("generating script path {path_index}"))
                 })?;
                 let scenario = self.scenario_from_path(&path, numeraires, compact_responses)?;
                 let values = self.evaluate_scenario_collecting(
@@ -762,10 +762,9 @@ impl ScriptEngine {
                 }
                 Ok(())
             });
-        let propagated = Tape::propagate_mark_to_start_fwd();
+        Tape::propagate_mark_to_start_fwd();
         Tape::reset_mark_fwd();
         paths_result?;
-        propagated?;
         Ok((averages, cashflows))
     }
 
@@ -865,7 +864,7 @@ impl ScriptEngine {
                     .get(response_index)
                     .and_then(|response| response.discounts)
                     .ok_or_else(|| {
-                        ScriptingError::EvaluationError(format!(
+                        QSError::NotFoundErr(format!(
                             "missing bond control response {response_index} for event {event_index}"
                         ))
                     })?;
@@ -878,7 +877,7 @@ impl ScriptEngine {
                     .get(forward_index)
                     .and_then(|response| response.forward_rates)
                     .ok_or_else(|| {
-                        ScriptingError::EvaluationError(format!(
+                        QSError::NotFoundErr(format!(
                             "missing forward control response {forward_index} for event {event_index}"
                         ))
                     })?;
@@ -886,7 +885,7 @@ impl ScriptEngine {
                     .get(discount_index)
                     .and_then(|response| response.discounts)
                     .ok_or_else(|| {
-                        ScriptingError::EvaluationError(format!(
+                        QSError::NotFoundErr(format!(
                             "missing forward discount response {discount_index} for event {event_index}"
                         ))
                     })?;
@@ -906,7 +905,7 @@ impl ScriptEngine {
         model: &mut dyn MarketModel<DualFwd>,
     ) -> Result<Vec<Scenario>> {
         if model.n_paths() == 0 {
-            return Err(ScriptingError::EvaluationError(
+            return Err(QSError::InvalidValueErr(
                 "market model exposes no paths".to_string(),
             ));
         }
@@ -918,10 +917,8 @@ impl ScriptEngine {
         let numeraires = self.event_numeraires(model)?;
         (0..model.n_paths())
             .map(|path_index| {
-                let path = model.generate_path(path_index).map_err(|_| {
-                    ScriptingError::EvaluationError(format!(
-                        "market model failed to generate path {path_index}"
-                    ))
+                let path = model.generate_path(path_index).map_err(|error| {
+                    error.context(format!("generating script path {path_index}"))
                 })?;
                 self.scenario_from_path(&path, &numeraires, compact_responses)
             })
@@ -968,7 +965,13 @@ impl ScriptEngine {
                     return Ok(DualFwd::one());
                 }
                 let request = DiscountRequest::new(self.local_discount_index.clone(), event_date);
-                let discount = model.resolve_discount_request(self.reference_date, &request)?;
+                let discount = model
+                    .resolve_discount_request(self.reference_date, &request)
+                    .map_err(|error| {
+                        error.context(format!(
+                            "resolving numeraire for script event dated {event_date}"
+                        ))
+                    })?;
                 Ok((DualFwd::one() / discount).into())
             })
             .collect()
@@ -981,7 +984,7 @@ impl ScriptEngine {
         compact_responses: bool,
     ) -> Result<Scenario> {
         if path.len() != self.response_maps.len() {
-            return Err(ScriptingError::EvaluationError(format!(
+            return Err(QSError::EvaluationErr(format!(
                 "model returned {} dates for {} scripted events",
                 path.len(),
                 self.response_maps.len()
@@ -1175,7 +1178,7 @@ fn collect_responses(
                 .get(response_index)
                 .and_then(&select)
                 .ok_or_else(|| {
-                    ScriptingError::EvaluationError(format!(
+                    QSError::NotFoundErr(format!(
                         "missing {kind} response {response_index} for event {event_index}"
                     ))
                 })
@@ -1237,12 +1240,139 @@ mod tests {
 
     use crate::{
         ad::{scalar::Scalar, tape::Tape},
+        core::marketdatahandling::{
+            forwardraterequest::ForwardRateRequest, fxrequest::FxRequest,
+            pathdependentrequest::PathDependentRequest, spotrequest::SpotRequest,
+        },
         math::interpolation::interpolator::Interpolator,
         models::lgm::{lgmcomponents::LgmRateModel, lgmmarketmodel::LgmMarketModel},
         rates::yieldtermstructure::discounttermstructure::DiscountTermStructure,
         scripting::nodes::event::CodedEvent,
         time::{daycounter::DayCounter, enums::TimeUnit},
     };
+
+    struct FailingPathModel(usize);
+
+    impl MarketModel<DualFwd> for FailingPathModel {
+        fn n_paths(&self) -> usize {
+            self.0
+        }
+
+        fn generate_path(&self, _index: usize) -> Result<PathScenario<DualFwd>> {
+            Err(QSError::SolverErr("covariance factorization failed".into()))
+        }
+
+        fn set_evaluation_dates(&mut self, _dates: Vec<Date>) {}
+        fn set_requests(&mut self, _requests: Vec<SimulationRequest>) {}
+
+        fn resolve_discount_request(
+            &self,
+            _date: Date,
+            _request: &DiscountRequest,
+        ) -> Result<DualFwd> {
+            Ok(DualFwd::one())
+        }
+        fn resolve_forward_rate_request(
+            &self,
+            _date: Date,
+            _request: &ForwardRateRequest,
+        ) -> Result<DualFwd> {
+            Ok(DualFwd::zero())
+        }
+        fn resolve_fx_request(&self, _date: Date, _request: &FxRequest) -> Result<DualFwd> {
+            Ok(DualFwd::one())
+        }
+        fn resolve_spot_request(&self, _date: Date, _request: &SpotRequest) -> Result<DualFwd> {
+            Ok(DualFwd::one())
+        }
+        fn resolve_path_dependent_request(
+            &self,
+            _date: Date,
+            _request: &PathDependentRequest,
+        ) -> Result<DualFwd> {
+            Ok(DualFwd::zero())
+        }
+    }
+
+    fn error_test_engine(source: &str) -> Result<ScriptEngine> {
+        let date = Date::new(2025, 1, 1);
+        let events = EventStream::try_from(vec![CodedEvent::new(date, source.into())])?;
+        ScriptEngine::new(events, date, Currency::USD, MarketIndex::SOFR)
+    }
+
+    #[test]
+    fn model_failure_retains_solver_category_and_path_context() -> Result<()> {
+        let engine = error_test_engine("value = 1;")?;
+        let mut model = FailingPathModel(16);
+        let error = engine.generate_scenarios(&mut model).unwrap_err();
+        assert!(matches!(error.root_cause(), QSError::SolverErr(_)));
+        assert!(error.to_string().contains("generating script path 0"));
+        assert!(error
+            .to_string()
+            .contains("covariance factorization failed"));
+        let error = engine.evaluate(&mut model, Some("value")).unwrap_err();
+        assert!(matches!(error.root_cause(), QSError::SolverErr(_)));
+        assert!(error.to_string().contains("generating script path 0"));
+
+        Tape::start_recording_fwd();
+        let _leaf = DualFwd::new(1.0);
+        let engine =
+            error_test_engine("value = RateIndex(\"SOFR\", \"2025-01-01\", \"2026-01-01\");")?;
+        let error = engine.evaluate(&mut model, Some("value")).unwrap_err();
+        assert!(matches!(error.root_cause(), QSError::SolverErr(_)));
+        assert!(error
+            .to_string()
+            .contains("generating script pilot path 16"));
+        crate::ad::forward::TAPE_FWD.with(|tape| assert_eq!(tape.borrow().mark(), 0));
+        Tape::stop_recording_fwd();
+        Ok(())
+    }
+
+    #[test]
+    fn missing_market_data_is_consistent_for_both_evaluators() -> Result<()> {
+        for source in [
+            "value = Spot(\"AAPL\");",
+            "value = 1; if value > 0 { value = Spot(\"AAPL\"); }",
+        ] {
+            let engine = error_test_engine(source)?;
+            let error = engine
+                .evaluate_scenario(&vec![SimulationData::default()])
+                .unwrap_err();
+            assert!(matches!(error.root_cause(), QSError::NotFoundErr(_)));
+            assert!(error.to_string().contains("spot at index 0"));
+            assert!(error
+                .to_string()
+                .contains("evaluating script event 0 dated 2025-01-01"));
+            assert!(error.to_string().contains("0 spot observations"));
+
+            let error = engine.evaluate_scenario(&vec![]).unwrap_err();
+            assert!(matches!(error.root_cause(), QSError::NotFoundErr(_)));
+            assert!(error.to_string().contains("scenario contains 0 events"));
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn unknown_result_and_missing_response_use_not_found() -> Result<()> {
+        let engine = error_test_engine("value = Spot(\"AAPL\");")?;
+        let mut model = FailingPathModel(16);
+        let error = engine.evaluate(&mut model, Some("unknown")).unwrap_err();
+        assert!(matches!(error.root_cause(), QSError::NotFoundErr(_)));
+        assert!(error.to_string().contains("result variable 'unknown'"));
+        let error = engine
+            .evaluate(&mut FailingPathModel(0), Some("value"))
+            .unwrap_err();
+        assert!(matches!(error.root_cause(), QSError::InvalidValueErr(_)));
+        assert!(error.to_string().contains("market model exposes no paths"));
+        let error = engine
+            .scenario_from_path(&vec![vec![]], &[DualFwd::one()], false)
+            .unwrap_err();
+        assert!(matches!(error.root_cause(), QSError::NotFoundErr(_)));
+        assert!(error
+            .to_string()
+            .contains("missing spot response 0 for event 0"));
+        Ok(())
+    }
 
     struct ParallelFlatSetup {
         reference_date: Date,
@@ -1335,9 +1465,9 @@ mod tests {
         )])?;
         let engine = ScriptEngine::new(events, reference_date, Currency::USD, MarketIndex::SOFR)?;
         let values = engine.evaluate(&mut model, Some("opt"))?;
-        let value = *values.get("opt").ok_or_else(|| {
-            ScriptingError::EvaluationError("expected numeric opt result".to_string())
-        })?;
+        let value = *values
+            .get("opt")
+            .ok_or_else(|| QSError::EvaluationErr("expected numeric opt result".to_string()))?;
 
         assert!((value - 100.0 * event_discount_value).abs() < 1.0e-10);
         assert!(
@@ -1399,9 +1529,9 @@ mod tests {
         let events = EventStream::try_from(vec![CodedEvent::new(observation_date, source)])?;
         let engine = ScriptEngine::new(events, reference_date, Currency::USD, MarketIndex::SOFR)?;
         let values = engine.evaluate(&mut model, Some("note"))?;
-        let value = *values.get("note").ok_or_else(|| {
-            ScriptingError::EvaluationError("expected numeric note result".to_string())
-        })?;
+        let value = *values
+            .get("note")
+            .ok_or_else(|| QSError::EvaluationErr("expected numeric note result".to_string()))?;
 
         assert!(
             (value - 107.0 * payment_df).abs() < 1.0e-8,
@@ -1461,9 +1591,9 @@ mod tests {
         )])?;
         let engine = ScriptEngine::new(events, reference_date, Currency::USD, MarketIndex::SOFR)?;
         let values = engine.evaluate(&mut model, Some("payoff"))?;
-        let value = *values.get("payoff").ok_or_else(|| {
-            ScriptingError::EvaluationError("expected numeric payoff result".to_string())
-        })?;
+        let value = *values
+            .get("payoff")
+            .ok_or_else(|| QSError::EvaluationErr("expected numeric payoff result".to_string()))?;
 
         assert!(
             (value - 100.0).abs() < 1.0e-5,
@@ -1497,11 +1627,12 @@ mod tests {
         let pool = rayon::ThreadPoolBuilder::new()
             .num_threads(4)
             .build()
-            .map_err(|error| ScriptingError::EvaluationError(error.to_string()))?;
+            .map_err(|error| QSError::EvaluationErr(error.to_string()))?;
         let result = pool.install(|| engine.evaluate_parallel(&setup, Some("deal_value")))?;
-        let value = result.values.get("deal_value").copied().ok_or_else(|| {
-            ScriptingError::EvaluationError("parallel result omitted deal_value".into())
-        })?;
+        let value =
+            result.values.get("deal_value").copied().ok_or_else(|| {
+                QSError::EvaluationErr("parallel result omitted deal_value".into())
+            })?;
 
         assert!((value - 100.0 * discount).abs() < 1.0e-10);
         // One pilot model plus one model for each of the four path chunks.

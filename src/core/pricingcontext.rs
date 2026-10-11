@@ -353,7 +353,12 @@ impl PricingContext {
     pub fn initialize(&mut self) -> Result<()> {
         let mut configured_instruments = std::collections::HashSet::new();
         for configuration in &self.pricer_configurations {
-            configuration.validate()?;
+            configuration.validate().map_err(|error| {
+                error.context(format!(
+                    "validating pricer configuration for {:?}",
+                    configuration.instrument_type()
+                ))
+            })?;
             if !configured_instruments.insert(configuration.instrument_type()) {
                 return Err(QSError::InvalidValueErr(format!(
                     "Duplicate pricer configuration for instrument type {:?}",
@@ -370,7 +375,9 @@ impl PricingContext {
         } else {
             let mut store = self.quote_store.clone();
             for scenario in &self.scenarios {
-                scenario.apply(&mut store)?;
+                scenario
+                    .apply(&mut store)
+                    .map_err(|error| error.context("applying market scenario"))?;
             }
             Some(store)
         };
@@ -380,7 +387,9 @@ impl PricingContext {
         let bootstrapper = MultiCurveBootstrapper::new(self.curve_configurations.clone(), policy)
             .with_fx_store(self.fx_store.clone())
             .with_fixing_store(self.fixing_store.clone());
-        let curves = bootstrapper.bootstrap(self.quote_store(), self.quote_level)?;
+        let curves = bootstrapper
+            .bootstrap(self.quote_store(), self.quote_level)
+            .map_err(|error| error.context("bootstrapping discount curves"))?;
         for (index, curve) in curves {
             self.constructed_elements
                 .discount_curves_mut()
@@ -392,11 +401,13 @@ impl PricingContext {
         if !self.credit_curve_configurations.is_empty() {
             let credit_bootstrapper =
                 CreditCurveBootstrapper::new(self.credit_curve_configurations.clone());
-            let credit_curves = credit_bootstrapper.bootstrap(
-                self.quote_store(),
-                self.quote_level,
-                self.constructed_elements.discount_curves(),
-            )?;
+            let credit_curves = credit_bootstrapper
+                .bootstrap(
+                    self.quote_store(),
+                    self.quote_level,
+                    self.constructed_elements.discount_curves(),
+                )
+                .map_err(|error| error.context("bootstrapping credit curves"))?;
             for (index, curve) in credit_curves {
                 self.constructed_elements
                     .credit_curves_mut()
@@ -408,7 +419,9 @@ impl PricingContext {
         if !self.volatility_surface_configurations.is_empty() {
             let surface_builder =
                 VolatilitySurfaceBuilder::new(self.volatility_surface_configurations.clone());
-            let surfaces = surface_builder.build(self.quote_store(), self.quote_level)?;
+            let surfaces = surface_builder
+                .build(self.quote_store(), self.quote_level)
+                .map_err(|error| error.context("initializing volatility surfaces"))?;
             for (index, surface) in surfaces {
                 self.constructed_elements
                     .volatility_surfaces_mut()
@@ -420,7 +433,9 @@ impl PricingContext {
         if !self.volatility_cube_configurations.is_empty() {
             let cube_builder =
                 VolatilityCubeBuilder::new(self.volatility_cube_configurations.clone());
-            let cubes = cube_builder.build(self.quote_store(), self.quote_level)?;
+            let cubes = cube_builder
+                .build(self.quote_store(), self.quote_level)
+                .map_err(|error| error.context("initializing volatility cubes"))?;
             for (index, cube) in cubes {
                 self.constructed_elements
                     .volatility_cubes_mut()
@@ -432,12 +447,14 @@ impl PricingContext {
         // models can consume the constructed curves, surfaces, and cubes.
         if !self.simulation_configurations.is_empty() {
             let simulation_builder = SimulationBuilder::new(self.simulation_configurations.clone());
-            let simulations = simulation_builder.build(
-                &self.constructed_elements,
-                self.quote_store(),
-                &self.fixing_store,
-                self.quote_level,
-            )?;
+            let simulations = simulation_builder
+                .build(
+                    &self.constructed_elements,
+                    self.quote_store(),
+                    &self.fixing_store,
+                    self.quote_level,
+                )
+                .map_err(|error| error.context("building Monte Carlo simulations"))?;
             for (index, simulation) in simulations {
                 self.constructed_elements
                     .simulations_mut()
@@ -812,6 +829,10 @@ mod tests {
                 "No {} quote available",
                 format!("{level:?}").to_lowercase()
             )));
+            assert!(matches!(error.root_cause(), QSError::NotFoundErr(_)));
+            assert!(error.to_string().contains("bootstrapping discount curves"));
+            assert!(error.to_string().contains("reading"));
+            assert!(error.to_string().contains("SOFR"));
         }
         Ok(())
     }

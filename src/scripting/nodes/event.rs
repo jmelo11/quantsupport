@@ -15,13 +15,9 @@ Wiley, 2018
 This attribution and license notice must be preserved at the top of this file.
 */
 
-use crate::{
-    scripting::{
-        nodes::node::Node,
-        utils::errors::{Result, ScriptingError},
-    },
-    time::date::Date,
-};
+use crate::utils::errors::{QSError, Result};
+
+use crate::{scripting::nodes::node::Node, time::date::Date};
 use serde::{Deserialize, Serialize};
 
 /// # CodedEvent
@@ -80,19 +76,12 @@ impl Event {
 }
 
 impl TryFrom<CodedEvent> for Event {
-    type Error = ScriptingError;
+    type Error = QSError;
 
     fn try_from(event: CodedEvent) -> Result<Event> {
-        let expr = match Node::try_from(event.script().clone()) {
-            Ok(expr) => expr,
-            Err(e) => {
-                return Err(ScriptingError::InvalidSyntax(format!(
-                    "{} (event date: {})",
-                    e,
-                    event.event_date()
-                )));
-            }
-        };
+        let expr = Node::try_from(event.script().clone()).map_err(|error| {
+            error.context(format!("parsing script event dated {}", event.event_date()))
+        })?;
         Ok(Event::new(event.event_date(), expr))
     }
 }
@@ -148,7 +137,7 @@ impl EventStream {
 }
 
 impl TryFrom<Vec<CodedEvent>> for EventStream {
-    type Error = ScriptingError;
+    type Error = QSError;
 
     fn try_from(events: Vec<CodedEvent>) -> Result<EventStream> {
         let mut event_stream = EventStream::new();
@@ -158,5 +147,21 @@ impl TryFrom<Vec<CodedEvent>> for EventStream {
             Ok(())
         })?;
         Ok(event_stream)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_error_preserves_category_and_event_date() {
+        let error = Event::try_from(CodedEvent::new(Date::new(2027, 1, 1), "value = ?;".into()))
+            .unwrap_err();
+        assert!(matches!(error.root_cause(), QSError::ParsingErr(_)));
+        assert!(error
+            .to_string()
+            .contains("parsing script event dated 2027-01-01"));
+        assert!(error.to_string().contains("line 1, column 9"));
     }
 }

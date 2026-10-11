@@ -206,7 +206,6 @@ pub use crate::{
             ExpectedCashflow, ParallelScriptEvaluation, ScriptEngine, ScriptModelCallback,
             ScriptModelSetup,
         },
-        utils::errors::ScriptingError,
         visitors::evaluator::Value as ScriptValue,
     },
     simulations::{

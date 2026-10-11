@@ -15,10 +15,9 @@ Wiley, 2018
 This attribution and license notice must be preserved at the top of this file.
 */
 
-use crate::scripting::{
-    utils::errors::{Result, ScriptingError},
-    NumericType,
-};
+use crate::utils::errors::{QSError, Result};
+
+use crate::scripting::NumericType;
 #[derive(Debug, Clone, PartialEq, Default)]
 /// Market observations available while evaluating one scripted event.
 pub struct SimulationData {
@@ -72,13 +71,12 @@ impl SimulationData {
     /// # Errors
     /// Returns an error when the index is outside the discount-factor vector.
     pub fn get_df(&self, index: usize) -> Result<NumericType> {
-        self.dfs
-            .get(index)
-            .cloned()
-            .ok_or(ScriptingError::NotFoundError(format!(
-                "df at index {}",
-                index
-            )))
+        self.dfs.get(index).cloned().ok_or_else(|| {
+            QSError::NotFoundErr(format!(
+                "discount factor at index {index}; scenario contains {} discount factor observations",
+                self.dfs.len()
+            ))
+        })
     }
 
     /// Returns the forward rate at `index`.
@@ -86,26 +84,24 @@ impl SimulationData {
     /// # Errors
     /// Returns an error when the index is outside the forward-rate vector.
     pub fn get_fwd(&self, index: usize) -> Result<NumericType> {
-        self.fwds
-            .get(index)
-            .cloned()
-            .ok_or(ScriptingError::NotFoundError(format!(
-                "fwd at index {}",
-                index
-            )))
+        self.fwds.get(index).cloned().ok_or_else(|| {
+            QSError::NotFoundErr(format!(
+                "forward rate at index {index}; scenario contains {} forward rate observations",
+                self.fwds.len()
+            ))
+        })
     }
     /// Returns the FX rate at `index`.
     ///
     /// # Errors
     /// Returns an error when the index is outside the FX-rate vector.
     pub fn get_fx(&self, index: usize) -> Result<NumericType> {
-        self.fxs
-            .get(index)
-            .cloned()
-            .ok_or(ScriptingError::NotFoundError(format!(
-                "fx at index {}",
-                index
-            )))
+        self.fxs.get(index).cloned().ok_or_else(|| {
+            QSError::NotFoundErr(format!(
+                "FX rate at index {index}; scenario contains {} FX rate observations",
+                self.fxs.len()
+            ))
+        })
     }
 
     /// Returns all indexed spot observations.
@@ -118,13 +114,12 @@ impl SimulationData {
     /// # Errors
     /// Returns an error when the index is outside the spot vector.
     pub fn get_spot(&self, index: usize) -> Result<NumericType> {
-        self.spots
-            .get(index)
-            .cloned()
-            .ok_or(ScriptingError::NotFoundError(format!(
-                "spot at index {}",
-                index
-            )))
+        self.spots.get(index).cloned().ok_or_else(|| {
+            QSError::NotFoundErr(format!(
+                "spot at index {index}; scenario contains {} spot observations",
+                self.spots.len()
+            ))
+        })
     }
 }
 

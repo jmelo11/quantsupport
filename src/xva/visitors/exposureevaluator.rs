@@ -502,7 +502,7 @@ where
                     }
                 }
 
-                Tape::propagate_mark_to_start_fwd()?;
+                Tape::propagate_mark_to_start_fwd();
 
                 let mut sensitivities = Vec::new();
                 for (label, leaf) in model_leaves {

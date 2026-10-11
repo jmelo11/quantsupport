@@ -94,9 +94,26 @@ impl CurveConfiguration {
                 .select(id)
                 .ok_or_else(|| QSError::NotFoundErr(format!("Quote {id} not found in quotes.")))?;
 
-            let quote_value = quote.levels().value(level)?;
-            let built = quote.build_instrument(selector.reference_date(), level, fx_spot)?;
-            let pillar_date = quote.calibration_pillar_date(&built)?;
+            let quote_value = quote.levels().value(level).map_err(|error| {
+                error.context(format!(
+                    "reading {level:?} quote '{id}' for curve {}",
+                    self.market_index
+                ))
+            })?;
+            let built = quote
+                .build_instrument(selector.reference_date(), level, fx_spot)
+                .map_err(|error| {
+                    error.context(format!(
+                        "building calibration instrument '{id}' for curve {}",
+                        self.market_index
+                    ))
+                })?;
+            let pillar_date = quote.calibration_pillar_date(&built).map_err(|error| {
+                error.context(format!(
+                    "resolving pillar date for quote '{id}' on curve {}",
+                    self.market_index
+                ))
+            })?;
 
             instruments.push(CalibrationInstrument::new(
                 quote,
@@ -118,7 +135,7 @@ impl CurveConfiguration {
     /// Returns an error if the configuration has not been resolved yet.
     pub fn instruments(&self) -> Result<&[CalibrationInstrument]> {
         self.calibration_instruments.as_deref().ok_or_else(|| {
-            QSError::InvalidValueErr(format!(
+            QSError::ValueNotSetErr(format!(
                 "Calibration instruments of curve {} not constructed.",
                 self.market_index
             ))
@@ -130,8 +147,12 @@ impl CurveConfiguration {
     /// # Errors
     /// Returns an error if the configuration has not been resolved yet.
     pub fn reference_date(&self) -> Result<Date> {
-        self.reference_date
-            .ok_or_else(|| QSError::InvalidValueErr("Curve configuration not resolved".into()))
+        self.reference_date.ok_or_else(|| {
+            QSError::ValueNotSetErr(format!(
+                "Curve {} configuration not resolved",
+                self.market_index
+            ))
+        })
     }
 
     #[must_use]
@@ -367,6 +388,14 @@ mod tests {
         );
         let policy = BootstrapDiscountPolicy::new(MarketIndex::SOFR, Currency::USD);
         assert!(cfg.dependencies(&policy).is_err());
+        assert!(matches!(
+            cfg.instruments(),
+            Err(crate::utils::errors::QSError::ValueNotSetErr(_))
+        ));
+        assert!(matches!(
+            cfg.reference_date().unwrap_err(),
+            crate::utils::errors::QSError::ValueNotSetErr(_)
+        ));
     }
 
     #[test]

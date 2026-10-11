@@ -15,7 +15,7 @@ Wiley, 2018
 This attribution and license notice must be preserved at the top of this file.
 */
 
-use crate::scripting::utils::errors::{Result, ScriptingError};
+use crate::utils::errors::{QSError, Result};
 use std::cell::RefCell;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -145,6 +145,7 @@ impl Lexer {
     /// Returns an error for invalid characters or malformed literals.
     pub fn next_token(&self) -> Result<Token> {
         self.skip_whitespace();
+        let token_start = *self.position.borrow();
         let ch = self.next_char();
         match ch {
             '+' => {
@@ -209,9 +210,7 @@ impl Lexer {
                     self.next_char();
                     Ok(Token::NotEqual)
                 } else {
-                    Err(ScriptingError::InvalidSyntax(
-                        "Invalid character: !".to_string(),
-                    ))
+                    Err(self.parsing_error("Invalid character: !", token_start))
                 }
             }
             '(' => Ok(Token::OpenParen),
@@ -241,16 +240,24 @@ impl Lexer {
             '\"' => self.read_string(),
             _ if ch.is_ascii_digit() => self.read_number(ch),
             _ if ch.is_alphabetic() => self.read_identifier(ch),
-            _ => Err(ScriptingError::InvalidSyntax(format!(
-                "Invalid character: {}",
-                ch
-            ))),
+            _ => Err(self.parsing_error(&format!("Invalid character: {ch}"), token_start)),
         }
     }
 
+    fn parsing_error(&self, message: &str, position: usize) -> QSError {
+        let prefix = &self.input[..position];
+        let line = prefix.iter().filter(|&&ch| ch == '\n').count() + 1;
+        let column = prefix.iter().rev().take_while(|&&ch| ch != '\n').count() + 1;
+        QSError::ParsingErr(format!("{message} at line {line}, column {column}"))
+    }
+
     fn read_string(&self) -> Result<Token> {
+        let start = *self.position.borrow() - 1;
         let mut string = "".to_string();
         while self.peek_char() != '\"' {
+            if self.peek_char() == '\0' {
+                return Err(self.parsing_error("Unterminated string literal", start));
+            }
             string.push(self.next_char());
         }
         self.next_char(); // consume the closing quote
@@ -265,7 +272,13 @@ impl Lexer {
             number.push(self.next_char());
         }
 
-        Ok(Token::Value(Some(number.parse::<f64>()?), None))
+        let value = number.parse::<f64>().map_err(|error| {
+            self.parsing_error(
+                &format!("Invalid numeric literal '{number}': {error}"),
+                *self.position.borrow() - number.len(),
+            )
+        })?;
+        Ok(Token::Value(Some(value), None))
     }
 
     // This function is used to read identifiers and special keywords
@@ -340,6 +353,34 @@ impl Tokenize for &str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn invalid_character_reports_source_location() {
+        let error = "value = 1;\n  ?".tokenize().unwrap_err();
+        assert!(matches!(error, QSError::ParsingErr(_)));
+        assert!(error
+            .to_string()
+            .contains("Invalid character: ? at line 2, column 3"));
+    }
+
+    #[test]
+    fn malformed_number_reports_literal_and_location() {
+        let error = "value = 1.2.3;".tokenize().unwrap_err();
+        assert!(matches!(error, QSError::ParsingErr(_)));
+        assert!(error
+            .to_string()
+            .contains("Invalid numeric literal '1.2.3'"));
+        assert!(error.to_string().contains("line 1, column 9"));
+    }
+
+    #[test]
+    fn unterminated_string_returns_a_parsing_error() {
+        for source in ["\"", "value = \"missing", "value = \"missing\nquote"] {
+            let error = source.tokenize().unwrap_err();
+            assert!(matches!(error, QSError::ParsingErr(_)));
+            assert!(error.to_string().contains("Unterminated string literal"));
+        }
+    }
 
     #[test]
     fn test_simple_operators() {

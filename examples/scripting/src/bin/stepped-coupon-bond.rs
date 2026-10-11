@@ -80,7 +80,7 @@ fn native_context() -> PricingContext {
         .with_base_index(MarketIndex::SOFR)
 }
 
-fn scripted_events() -> std::result::Result<EventStream, ScriptingError> {
+fn scripted_events() -> std::result::Result<EventStream, QSError> {
     EventStream::try_from(vec![
         CodedEvent::new(
             Date::new(2025, 1, 1),
