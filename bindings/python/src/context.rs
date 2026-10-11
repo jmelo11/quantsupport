@@ -29,8 +29,9 @@ use crate::conv::{extract_level, extract_market_index, extract_requests, qs_err}
 use crate::explore::{DiscountCurve, Simulation, VolatilityCube, VolatilitySurface};
 use crate::extension::{call_pricer, PricerRegistry};
 use crate::market::{
-    CurveConfiguration, FixingStore, FxStore, PricerConfiguration, QuoteStore, Scenario,
-    SimulationConfiguration, VolatilityCubeConfiguration, VolatilitySurfaceConfiguration,
+    CreditCurveConfiguration, CurveConfiguration, FixingStore, FxStore, PricerConfiguration,
+    QuoteStore, Scenario, SimulationConfiguration, VolatilityCubeConfiguration,
+    VolatilitySurfaceConfiguration,
 };
 use crate::results::EvaluationResults;
 use crate::scripting::ScriptedProduct;
@@ -103,6 +104,7 @@ impl PricingContext {
         fixed_income_policy = None,
         scenarios = None,
         quote_level = None,
+        credit_curves = None,
     ))]
     fn new(
         quotes: QuoteStore,
@@ -117,6 +119,7 @@ impl PricingContext {
         fixed_income_policy: Option<crate::collateral::FixedIncomeDiscountPolicy>,
         scenarios: Option<Vec<Scenario>>,
         quote_level: Option<&Bound<'_, PyAny>>,
+        credit_curves: Option<Vec<CreditCurveConfiguration>>,
     ) -> PyResult<Self> {
         let mut ctx = QsPricingContext::new()
             .with_quote_level(
@@ -157,6 +160,14 @@ impl PricingContext {
         }
         if let Some(s) = scenarios {
             ctx = ctx.with_scenarios(s.into_iter().map(|s| s.inner).collect());
+        }
+        if let Some(configurations) = credit_curves {
+            ctx = ctx.with_credit_curve_configurations(
+                configurations
+                    .into_iter()
+                    .map(|configuration| configuration.inner)
+                    .collect(),
+            );
         }
 
         Ok(Self {
@@ -255,6 +266,18 @@ impl PricingContext {
             .curve_configurations()
             .iter()
             .map(|c| CurveConfiguration { inner: c.clone() })
+            .collect()
+    }
+
+    /// The original credit curve configurations (bootstrap inputs).
+    #[getter]
+    fn credit_curve_configurations(&self) -> Vec<CreditCurveConfiguration> {
+        self.inner
+            .credit_curve_configurations()
+            .iter()
+            .map(|configuration| CreditCurveConfiguration {
+                inner: configuration.clone(),
+            })
             .collect()
     }
 

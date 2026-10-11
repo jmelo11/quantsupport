@@ -7,6 +7,7 @@
 
 use pyo3::prelude::*;
 use quantsupport::prelude::{
+    CreditCurveConfiguration as QsCreditCurveConfiguration,
     CurveConfiguration as QsCurveConfiguration, DualFwd, FixingStore as QsFixingStore,
     FxRateRecord, FxStore as QsFxStore, PricerConfiguration as QsPricerConfiguration,
     QuoteStore as QsQuoteStore, QuoteStoreRecords, Scenario as QsScenario,
@@ -107,6 +108,12 @@ config_wrapper!(
     QsCurveConfiguration,
     "CurveConfiguration",
     "curve configuration"
+);
+config_wrapper!(
+    CreditCurveConfiguration,
+    QsCreditCurveConfiguration,
+    "CreditCurveConfiguration",
+    "credit curve configuration"
 );
 config_wrapper!(
     VolatilitySurfaceConfiguration,
