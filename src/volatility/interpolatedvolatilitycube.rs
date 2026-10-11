@@ -2,7 +2,10 @@ use crate::{
     ad::{dual::DualFwd, scalar::Scalar},
     core::{elements::volatilitycubelement::ADVolatilityCubeElement, pillars::Pillars},
     indices::marketindex::MarketIndex,
-    math::interpolation::trilinear::{TrilinearInterpolator, TrilinearPoint},
+    math::interpolation::{
+        extrapolation::ExtrapolationPolicy,
+        trilinear::{TrilinearInterpolator, TrilinearPoint},
+    },
     time::{date::Date, period::Period},
     utils::errors::{QSError, Result},
     volatility::{
@@ -20,6 +23,10 @@ type CubeMap<T> = BTreeMap<Period, BTreeMap<Period, BTreeMap<F64Key, T>>>;
 ///
 /// The three axes are: option expiry (x), underlying tenor/maturity (y), and
 /// strike/delta/log-moneyness (z).
+/// Smiles are interpolated within each expiry/tenor slice, followed by tenor
+/// and expiry interpolation. Slices may have different inner grids.
+/// Out-of-range queries are rejected unless [`Self::with_extrapolation_policy`]
+/// selects flat extrapolation.
 pub struct InterpolatedVolatilityCube<T: Scalar> {
     reference_date: Date,
     market_index: MarketIndex,
@@ -28,6 +35,7 @@ pub struct InterpolatedVolatilityCube<T: Scalar> {
     calibration_instrument_ids: Option<Vec<String>>,
     volatility_type: VolatilityType,
     smile_type: SmileType,
+    extrapolation_policy: ExtrapolationPolicy,
 }
 
 impl<T: Scalar> InterpolatedVolatilityCube<T> {
@@ -48,7 +56,21 @@ impl<T: Scalar> InterpolatedVolatilityCube<T> {
             calibration_instrument_ids: None,
             volatility_type,
             smile_type,
+            extrapolation_policy: ExtrapolationPolicy::Reject,
         }
+    }
+
+    /// Sets the policy for queries outside expiry, tenor, or smile slices.
+    #[must_use]
+    pub const fn with_extrapolation_policy(mut self, policy: ExtrapolationPolicy) -> Self {
+        self.extrapolation_policy = policy;
+        self
+    }
+
+    /// Returns the policy for queries outside the grid.
+    #[must_use]
+    pub const fn extrapolation_policy(&self) -> ExtrapolationPolicy {
+        self.extrapolation_policy
     }
 
     /// Attaches one sensitivity label to each differentiable grid value.
@@ -97,17 +119,18 @@ impl<T: BilinearValue> VolatilityCube<T> for InterpolatedVolatilityCube<T> {
             })
             .collect();
 
-        TrilinearInterpolator::interpolate(
+        TrilinearInterpolator::interpolate_with_extrapolation(
             expiry.period_in_year(),
             maturity.period_in_year(),
             key,
             points,
+            self.extrapolation_policy,
         )
         .ok_or_else(|| {
-            QSError::InterpolationErr(
-                "Could not trilinearly interpolate volatility for requested expiry/maturity/key"
-                    .into(),
-            )
+            QSError::InterpolationErr(format!(
+                "Could not trilinearly interpolate volatility for expiry {expiry}, maturity {maturity} and key {key} on {}",
+                self.market_index,
+            ))
         })
     }
 
@@ -171,6 +194,7 @@ mod tests {
     use crate::{
         ad::dual::DualFwd,
         indices::marketindex::MarketIndex,
+        math::interpolation::extrapolation::ExtrapolationPolicy,
         time::{date::Date, enums::TimeUnit, period::Period},
         volatility::{
             volatilitycube::VolatilityCube,
@@ -271,5 +295,74 @@ mod tests {
             0.035,
         );
         assert!(vol.is_err());
+    }
+
+    #[test]
+    fn cube_reproduces_quoted_nodes_including_upper_boundaries() {
+        let cube = build_cube_f64();
+        for (expiry, tenors) in &cube.points {
+            for (tenor, smile) in tenors {
+                for (key, expected) in smile {
+                    let actual = cube
+                        .volatility_from_period(*expiry, *tenor, key.value())
+                        .expect("quoted cube node");
+                    assert!((actual - expected).abs() < 1e-12);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn cube_supports_single_tenor_and_strike_with_explicit_flat_extrapolation() {
+        let cube = InterpolatedVolatilityCube::new(
+            Date::new(2025, 1, 1),
+            MarketIndex::SOFR,
+            BTreeMap::from([
+                (
+                    Period::new(6, TimeUnit::Months),
+                    BTreeMap::from([(
+                        Period::new(5, TimeUnit::Years),
+                        BTreeMap::from([(F64Key::new(0.03), 0.20)]),
+                    )]),
+                ),
+                (
+                    Period::new(1, TimeUnit::Years),
+                    BTreeMap::from([(
+                        Period::new(5, TimeUnit::Years),
+                        BTreeMap::from([(F64Key::new(0.03), 0.30)]),
+                    )]),
+                ),
+            ]),
+            VolatilityType::Black,
+            SmileType::Strike,
+        );
+        let expiry = Period::new(9, TimeUnit::Months);
+        let tenor = Period::new(5, TimeUnit::Years);
+        assert!(
+            (cube
+                .volatility_from_period(expiry, tenor, 0.03)
+                .expect("single tenor/strike cube")
+                - 0.25)
+                .abs()
+                < 1e-12
+        );
+        assert!(cube.volatility_from_period(expiry, tenor, 0.04).is_err());
+        let cube = cube.with_extrapolation_policy(ExtrapolationPolicy::Flat);
+        assert!(
+            (cube
+                .volatility_from_period(expiry, Period::new(10, TimeUnit::Years), 0.04)
+                .expect("flat singleton axes")
+                - 0.25)
+                .abs()
+                < 1e-12
+        );
+        assert!(
+            (cube
+                .volatility_from_period(Period::new(2, TimeUnit::Years), tenor, 0.03)
+                .expect("flat expiry")
+                - 0.30)
+                .abs()
+                < 1e-12
+        );
     }
 }

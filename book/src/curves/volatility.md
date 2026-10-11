@@ -13,6 +13,7 @@ pub struct VolatilitySurfaceConfiguration {
     market_index: MarketIndex,           // required
     volatility_type: VolatilityType,     // default Black
     smile_type: SmileType,               // default Strike
+    extrapolation_policy: ExtrapolationPolicy, // default Reject
     quotes: Vec<String>,                 // expiry × strike pillars
 }
 pub struct VolatilityCubeConfiguration { /* same fields; quotes are expiry × tenor × strike */ }
@@ -28,6 +29,7 @@ Configuration can also be loaded from JSON. The following example describes a SO
   "market_index": "SOFR",
   "volatility_type": "Black",
   "smile_type": "Strike",
+  "extrapolation_policy": "Flat",
   "quotes": [
     "CapletFloorlet_USD_SOFR_3M_6M_Absolute_0.035_Straddle_Black",
     "CapletFloorlet_USD_SOFR_3M_6M_Absolute_0.045_Straddle_Black",
@@ -48,7 +50,7 @@ Together, these conventions determine how a numerical key maps to an option stri
 
 ## Quote identifiers and axes
 
-Builders recover coordinates from the structured quote identifiers in the store. This convention keeps a configuration compact and gives every output sensitivity a stable market label. The examples below show which parts of each identifier become grid axes:
+Builders recover coordinates from the structured quote identifiers in the store. This convention keeps a configuration compact and gives every output sensitivity a stable market label. Empty quote lists, non-positive expiry or tenor coordinates, non-finite smile keys, and negative or non-finite volatilities are rejected. Equivalent coordinates such as `1Y` and `12M` cannot define separate nodes. The examples below show which parts of each identifier become grid axes:
 
 | Identifier                                                    | Axes                                                                                                              |
 | ------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
@@ -78,11 +80,17 @@ Once constructed, a surface can answer at quoted nodes and intermediate coordina
 
 | Method                                                                    | Notes                                                       |
 | ------------------------------------------------------------------------- | ----------------------------------------------------------- |
-| `volatility_from_period(expiry: Period, key: f64) -> Result<T>`           | bilinear in (expiry year fraction, key), flat extrapolation |
+| `volatility_from_period(expiry: Period, key: f64) -> Result<T>`           | smile interpolation followed by expiry interpolation; explicit extrapolation policy |
 | `volatility_from_date(date: Date, key: f64) -> Result<T>`                 | converts the date to a period first                         |
 | `volatility_type()`, `smile_type()`, `market_index()`, `reference_date()` |                                                             |
 
-`InterpolatedVolatilityCube<T>` adds the tenor axis through `volatility_from_period(expiry, tenor, key)` and uses trilinear interpolation. The next example asks a SOFR surface for a nine-month volatility at a 3.25 percent absolute strike:
+`InterpolatedVolatilityCube<T>` adds the tenor axis through `volatility_from_period(expiry, tenor, key)`. It interpolates smile coordinates within each expiry-tenor slice, then tenor within each expiry, and finally expiry. Rectangular grids reproduce bilinear or trilinear interpolation. Sparse grids may use different strike sets in each smile and different tenor sets at each expiry. Exact nodes, including the largest expiry, tenor, and strike, reproduce their quoted value without requiring neighboring slices.
+
+Single-expiry, single-tenor, single-strike, and single-node grids are supported. Under the default `ExtrapolationPolicy::Reject`, the query must lie within each selected slice's coordinates; for a singleton axis, it must match that coordinate. `ExtrapolationPolicy::Flat` clamps each axis to the nearest boundary and treats singleton axes as constant. NaN or infinite queries are rejected under either policy.
+
+Both interpolated types and both configuration types provide `with_extrapolation_policy`. For example, a surface configuration can enable flat extrapolation in Rust with `.with_extrapolation_policy(ExtrapolationPolicy::Flat)`, or in JSON/Python dictionaries with `"extrapolation_policy": "Flat"`. Omitting the field preserves the default rejection of out-of-range queries. The JSON example above explicitly selects `Flat`.
+
+The next example asks that SOFR surface for a nine-month volatility at a 3.25 percent absolute strike:
 
 ```rust,ignore
 let elem = &surfaces[&MarketIndex::SOFR];

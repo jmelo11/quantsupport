@@ -126,7 +126,10 @@ pub use crate::{
         },
     },
     math::{
-        interpolation::interpolator::{Interpolate, Interpolator, StaticInterpolate},
+        interpolation::{
+            extrapolation::ExtrapolationPolicy,
+            interpolator::{Interpolate, Interpolator, StaticInterpolate},
+        },
         probability::norm_cdf::NormCDF,
         solvers::{bisection::Bisection, newtonraphson::NewtonRaphson},
     },

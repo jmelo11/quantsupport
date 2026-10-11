@@ -10,6 +10,82 @@ import quantsupport as qs
 
 
 class DictAndScriptTests(unittest.TestCase):
+    def test_sparse_volatility_grids_and_upper_cube_boundaries(self):
+        surface_nodes = [
+            ("6M", "0.02", 0.20), ("6M", "0.04", 0.30),
+            ("1Y", "0.025", 0.22), ("1Y", "0.045", 0.34),
+        ]
+        records = [{
+            "identifier": f"CapletFloorlet_USD_SOFR_3M_{expiry}_Absolute_{strike}_Straddle_Black",
+            "mid": value,
+        } for expiry, strike, value in surface_nodes]
+        surface_ids = [record["identifier"] for record in records]
+        cube_records = [{
+            "identifier": f"Swaption_USD_SOFR_{expiry}_{tenor}_Absolute_{strike}_Black",
+            "mid": 0.20 + 0.02 * years + 0.01 * tenor_years + 0.001 * strike,
+        } for expiry, years in [("6M", 0.5), ("1Y", 1.0)]
+            for tenor, tenor_years in [("1Y", 1.0), ("5Y", 5.0)]
+            for strike in [0.02, 0.05]]
+        quotes = qs.QuoteStore.from_dict({
+            "reference_date": "2025-01-01", "quotes": records + cube_records,
+        })
+        for policy in ["Reject", "Flat"]:
+            surface_config = qs.VolatilitySurfaceConfiguration.from_dict({
+                "market_index": "SOFR", "quotes": surface_ids,
+                "extrapolation_policy": policy,
+            })
+            cube_config = qs.VolatilityCubeConfiguration.from_dict({
+                "market_index": "SOFR", "quotes": [record["identifier"] for record in cube_records],
+                "extrapolation_policy": policy,
+            })
+            self.assertEqual(surface_config.to_dict()["extrapolation_policy"], policy)
+            self.assertEqual(cube_config.to_dict()["extrapolation_policy"], policy)
+            with qs.PricingContext(quotes, [], volatility_surfaces=[surface_config],
+                                  volatility_cubes=[cube_config]) as context:
+                surface = context.volatility_surface("SOFR")
+                cube = context.volatility_cube("SOFR")
+                self.assertAlmostEqual(surface.volatility("9M", 0.03), 0.25)
+                self.assertAlmostEqual(surface.volatility("1Y", 0.045), 0.34)
+                self.assertAlmostEqual(cube.volatility("1Y", "5Y", 0.05), 0.27005)
+                if policy == "Reject":
+                    with self.assertRaises(qs.QuantSupportError):
+                        surface.volatility("2Y", 0.06)
+                    with self.assertRaises(qs.QuantSupportError):
+                        cube.volatility("2Y", "10Y", 0.06)
+                else:
+                    self.assertAlmostEqual(surface.volatility("2Y", 0.06), 0.34)
+                    self.assertAlmostEqual(cube.volatility("2Y", "10Y", 0.06), 0.27005)
+
+    def test_single_quote_volatility_and_default_extrapolation_policy(self):
+        surface_id = "CapletFloorlet_USD_SOFR_3M_1Y_Absolute_0.03_Straddle_Black"
+        cube_id = "Swaption_USD_SOFR_1Y_5Y_Absolute_0.03_Black"
+        quotes = qs.QuoteStore.from_dict({"reference_date": "2025-01-01", "quotes": [
+            {"identifier": surface_id, "mid": 0.20},
+            {"identifier": cube_id, "mid": 0.20},
+        ]})
+        for extra, expected_policy in [({}, "Reject"), ({"extrapolation_policy": "Flat"}, "Flat")]:
+            surface_config = qs.VolatilitySurfaceConfiguration.from_dict({
+                "market_index": "SOFR", "quotes": [surface_id], **extra,
+            })
+            cube_config = qs.VolatilityCubeConfiguration.from_dict({
+                "market_index": "SOFR", "quotes": [cube_id], **extra,
+            })
+            self.assertEqual(surface_config.to_dict()["extrapolation_policy"], expected_policy)
+            with qs.PricingContext(quotes, [], volatility_surfaces=[surface_config],
+                                  volatility_cubes=[cube_config]) as context:
+                surface = context.volatility_surface("SOFR")
+                cube = context.volatility_cube("SOFR")
+                self.assertAlmostEqual(surface.volatility("1Y", 0.03), 0.20)
+                self.assertAlmostEqual(cube.volatility("1Y", "5Y", 0.03), 0.20)
+                if expected_policy == "Flat":
+                    self.assertAlmostEqual(surface.volatility("2Y", 0.04), 0.20)
+                    self.assertAlmostEqual(cube.volatility("2Y", "10Y", 0.04), 0.20)
+                else:
+                    with self.assertRaises(qs.QuantSupportError):
+                        surface.volatility("2Y", 0.04)
+                    with self.assertRaises(qs.QuantSupportError):
+                        cube.volatility("2Y", "10Y", 0.04)
+
     def test_python_enums_and_string_dicts_remain_equivalent(self):
         specification = self.stepped_spec()
         enums = dict(specification, currency=qs.Currency.USD,

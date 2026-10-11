@@ -2,7 +2,10 @@ use crate::{
     ad::{dual::DualFwd, scalar::Scalar},
     core::{elements::volatilitysurfaceelement::ADVolatilitySurfaceElement, pillars::Pillars},
     indices::marketindex::MarketIndex,
-    math::interpolation::bilinear::{BilinearInterpolator, BilinearPoint, BilinearValue},
+    math::interpolation::{
+        bilinear::{BilinearInterpolator, BilinearPoint, BilinearValue},
+        extrapolation::ExtrapolationPolicy,
+    },
     time::{date::Date, period::Period},
     utils::errors::{QSError, Result},
     volatility::{
@@ -16,6 +19,10 @@ type SurfaceMap<T> = BTreeMap<Period, BTreeMap<F64Key, T>>;
 
 /// Represents an interpolated volatility surface.
 ///
+/// Interpolates each expiry's smile before interpolating along expiry. Smiles
+/// may have different strike grids. Out-of-range queries are rejected unless
+/// [`Self::with_extrapolation_policy`] selects flat extrapolation.
+///
 /// ## Generics
 /// - `T`: Numeric type for the volatility values (e.g., `f64`, `DualFwd`).
 pub struct InterpolatedVolatilitySurface<T: Scalar> {
@@ -26,6 +33,7 @@ pub struct InterpolatedVolatilitySurface<T: Scalar> {
     calibration_instrument_ids: Option<Vec<String>>,
     volatility_type: VolatilityType,
     smile_type: SmileType,
+    extrapolation_policy: ExtrapolationPolicy,
 }
 
 impl<T: Scalar> InterpolatedVolatilitySurface<T> {
@@ -46,7 +54,21 @@ impl<T: Scalar> InterpolatedVolatilitySurface<T> {
             calibration_instrument_ids: None,
             volatility_type,
             smile_type,
+            extrapolation_policy: ExtrapolationPolicy::Reject,
         }
+    }
+
+    /// Sets the policy for queries outside expiry or smile slices.
+    #[must_use]
+    pub const fn with_extrapolation_policy(mut self, policy: ExtrapolationPolicy) -> Self {
+        self.extrapolation_policy = policy;
+        self
+    }
+
+    /// Returns the policy for queries outside the grid.
+    #[must_use]
+    pub const fn extrapolation_policy(&self) -> ExtrapolationPolicy {
+        self.extrapolation_policy
     }
 
     /// Attaches one sensitivity label to each differentiable grid value.
@@ -92,7 +114,9 @@ impl<T: BilinearValue> VolatilitySurface<T> for InterpolatedVolatilitySurface<T>
             })
             .collect::<Vec<_>>();
 
-        BilinearInterpolator::interpolate(expiry.period_in_year(), key, points).ok_or_else(|| {
+        BilinearInterpolator::interpolate_with_extrapolation(
+            expiry.period_in_year(), key, points, self.extrapolation_policy,
+        ).ok_or_else(|| {
             QSError::InterpolationErr(format!(
                 "Could not bilinearly interpolate volatility for expiry {expiry} and key {key} on {}",
                 self.market_index
@@ -153,7 +177,9 @@ mod tests {
 
     use crate::{
         ad::{dual::DualFwd, tape::Tape},
+        core::pillars::Pillars,
         indices::marketindex::MarketIndex,
+        math::interpolation::extrapolation::ExtrapolationPolicy,
         time::{date::Date, enums::TimeUnit, period::Period},
         volatility::{
             interpolatedvolatilitysurface::InterpolatedVolatilitySurface,
@@ -247,5 +273,120 @@ mod tests {
 
         let vol = surface.volatility_from_period(Period::new(3, TimeUnit::Months), 100.0);
         assert!(vol.is_err());
+    }
+
+    #[test]
+    fn surface_supports_single_expiry_single_strike_and_single_node() {
+        let six_months = Period::new(6, TimeUnit::Months);
+        let one_year = Period::new(1, TimeUnit::Years);
+        for (points, expiry, strike, expected) in [
+            (
+                BTreeMap::from([(
+                    six_months,
+                    BTreeMap::from([(F64Key::new(90.0), 0.20), (F64Key::new(110.0), 0.30)]),
+                )]),
+                six_months,
+                100.0,
+                0.25,
+            ),
+            (
+                BTreeMap::from([
+                    (six_months, BTreeMap::from([(F64Key::new(100.0), 0.20)])),
+                    (one_year, BTreeMap::from([(F64Key::new(100.0), 0.30)])),
+                ]),
+                Period::new(9, TimeUnit::Months),
+                100.0,
+                0.25,
+            ),
+            (
+                BTreeMap::from([(six_months, BTreeMap::from([(F64Key::new(100.0), 0.20)]))]),
+                six_months,
+                100.0,
+                0.20,
+            ),
+        ] {
+            let surface = InterpolatedVolatilitySurface::new(
+                Date::new(2025, 1, 1),
+                MarketIndex::SOFR,
+                points,
+                VolatilityType::Black,
+                SmileType::Strike,
+            );
+            let value = surface
+                .volatility_from_period(expiry, strike)
+                .expect("degenerate surface");
+            assert!((value - expected).abs() < 1e-12);
+        }
+    }
+
+    #[test]
+    fn sparse_surface_preserves_quote_weights_after_tape_registration() {
+        Tape::start_recording_fwd();
+        let mut surface = InterpolatedVolatilitySurface::new(
+            Date::new(2025, 1, 1),
+            MarketIndex::SOFR,
+            BTreeMap::from([
+                (
+                    Period::new(6, TimeUnit::Months),
+                    BTreeMap::from([
+                        (F64Key::new(90.0), DualFwd::from(0.20)),
+                        (F64Key::new(110.0), DualFwd::from(0.30)),
+                    ]),
+                ),
+                (
+                    Period::new(12, TimeUnit::Months),
+                    BTreeMap::from([
+                        (F64Key::new(95.0), DualFwd::from(0.22)),
+                        (F64Key::new(115.0), DualFwd::from(0.34)),
+                    ]),
+                ),
+            ]),
+            VolatilityType::Black,
+            SmileType::Strike,
+        )
+        .with_labels(&[
+            "6M_low".into(),
+            "6M_high".into(),
+            "1Y_low".into(),
+            "1Y_high".into(),
+        ])
+        .with_extrapolation_policy(ExtrapolationPolicy::Flat);
+        surface.put_pillars_on_tape();
+        for (expiry, key, expected_value, expected_weights) in [
+            (
+                Period::new(9, TimeUnit::Months),
+                100.0,
+                0.25,
+                [0.25, 0.25, 0.375, 0.125],
+            ),
+            (
+                Period::new(12, TimeUnit::Months),
+                115.0,
+                0.34,
+                [0.0, 0.0, 0.0, 1.0],
+            ),
+            (
+                Period::new(18, TimeUnit::Months),
+                120.0,
+                0.34,
+                [0.0, 0.0, 0.0, 1.0],
+            ),
+        ] {
+            Tape::reset_adjoints_fwd();
+            let value = surface
+                .volatility_from_period(expiry, key)
+                .expect("sparse surface query");
+            assert!((value.value() - expected_value).abs() < 1e-12);
+            value.backward().expect("surface backward sweep");
+            for ((_, pillar), weight) in surface
+                .pillars()
+                .expect("labelled pillars")
+                .iter()
+                .zip(expected_weights)
+            {
+                assert!((pillar.adjoint().expect("quote adjoint").value() - weight).abs() < 1e-12);
+            }
+        }
+        Tape::stop_recording_fwd();
     }
 }

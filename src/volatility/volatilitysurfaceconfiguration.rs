@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     indices::marketindex::MarketIndex,
+    math::interpolation::extrapolation::ExtrapolationPolicy,
     volatility::volatilityindexing::{SmileType, VolatilityType},
 };
 
@@ -16,6 +17,8 @@ pub struct VolatilitySurfaceConfiguration {
     #[serde(default = "default_smile_type")]
     smile_type: SmileType,
     quotes: Vec<String>,
+    #[serde(default)]
+    extrapolation_policy: ExtrapolationPolicy,
 }
 
 const fn default_volatility_type() -> VolatilityType {
@@ -39,7 +42,21 @@ impl VolatilitySurfaceConfiguration {
             volatility_type,
             smile_type,
             quotes,
+            extrapolation_policy: ExtrapolationPolicy::Reject,
         }
+    }
+
+    /// Sets how queries outside the configured grid are handled.
+    #[must_use]
+    pub const fn with_extrapolation_policy(mut self, policy: ExtrapolationPolicy) -> Self {
+        self.extrapolation_policy = policy;
+        self
+    }
+
+    /// Returns the extrapolation policy; defaults to `Reject`.
+    #[must_use]
+    pub const fn extrapolation_policy(&self) -> ExtrapolationPolicy {
+        self.extrapolation_policy
     }
 
     /// Returns the market index this surface is associated with.
@@ -64,5 +81,33 @@ impl VolatilitySurfaceConfiguration {
     #[must_use]
     pub fn quotes(&self) -> &[String] {
         &self.quotes
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn configuration_json_defaults_to_reject_and_round_trips_flat() {
+        let input = serde_json::json!({"market_index": "SOFR", "quotes": []});
+        let configuration: VolatilitySurfaceConfiguration =
+            serde_json::from_value(input).expect("legacy configuration");
+        assert_eq!(
+            configuration.extrapolation_policy(),
+            ExtrapolationPolicy::Reject
+        );
+        let input = serde_json::json!({"market_index": "SOFR", "quotes": [], "extrapolation_policy": "Flat"});
+        let configuration: VolatilitySurfaceConfiguration =
+            serde_json::from_value(input).expect("flat configuration");
+        assert_eq!(
+            configuration.extrapolation_policy(),
+            ExtrapolationPolicy::Flat
+        );
+        assert_eq!(
+            serde_json::to_value(configuration).expect("configuration serialization")
+                ["extrapolation_policy"],
+            "Flat"
+        );
     }
 }
