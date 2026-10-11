@@ -739,6 +739,63 @@ mod tests {
     }
 
     #[test]
+    fn bootstrap_regular_swaps_alongside_ois() -> Result<()> {
+        use crate::quotes::quote::CalibrationInstrumentType;
+
+        let reference = Date::new(2026, 2, 24);
+        let mut selector = MapSelector::new(reference);
+        for (identifier, rate) in [
+            ("FixedRateDeposit_USD_SOFR_1D", 0.04),
+            ("OIS_USD_SOFR_1Y", 0.04),
+            ("OIS_USD_SOFR_2Y", 0.039),
+            ("Swap_USD_TermSOFR3m_1Y", 0.045),
+            ("Swap_USD_TermSOFR3m_2Y", 0.046),
+        ] {
+            selector.add(identifier, rate);
+        }
+        let overnight = CurveConfiguration::new(
+            MarketIndex::SOFR,
+            DayCounter::Actual360,
+            Interpolator::LogLinear,
+            true,
+            vec![
+                "FixedRateDeposit_USD_SOFR_1D".into(),
+                "OIS_USD_SOFR_1Y".into(),
+                "OIS_USD_SOFR_2Y".into(),
+            ],
+        );
+        let mut term = CurveConfiguration::new(
+            MarketIndex::TermSOFR3m,
+            DayCounter::Actual360,
+            Interpolator::LogLinear,
+            true,
+            vec![
+                "Swap_USD_TermSOFR3m_1Y".into(),
+                "Swap_USD_TermSOFR3m_2Y".into(),
+            ],
+        );
+        term.resolve(&selector, Level::Mid, None)?;
+        assert!(term
+            .instruments()?
+            .iter()
+            .all(|instrument| matches!(instrument.built(), CalibrationInstrumentType::Swap(_))));
+        let curves = MultiCurveBootstrapper::new(vec![term, overnight], default_policy())
+            .bootstrap(&selector, Level::Mid)?;
+        assert_eq!(curves.len(), 2);
+        let maturity = Date::new(2028, 2, 24);
+        let overnight_discount = curves[&MarketIndex::SOFR]
+            .curve()
+            .discount_factor(maturity)?
+            .value();
+        let term_discount = curves[&MarketIndex::TermSOFR3m]
+            .curve()
+            .discount_factor(maturity)?
+            .value();
+        assert!(term_discount > 0.0 && term_discount < overnight_discount);
+        Ok(())
+    }
+
+    #[test]
     fn ois_bootstrap_recovers_discount_growth_with_different_day_counts() {
         use crate::prelude::{Cashflow, CashflowType, MakeOvernightIndexSwap, Period};
 

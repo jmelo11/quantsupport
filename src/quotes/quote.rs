@@ -31,6 +31,7 @@ use crate::{
             makefloatfloatcrosscurrencyswap::MakeFloatFloatCrossCurrencySwap,
             makeovernightindexswap::MakeOvernightIndexSwap,
             makeratefutures::MakeRateFutures,
+            makeswap::MakeSwap,
             oisconventions::{OisConventions, OisPillar, OvernightCouponConventions},
             overnightindexswap::OvernightIndexSwap,
             ratefutures::RateFutures,
@@ -161,6 +162,8 @@ pub enum QuoteInstrument {
     BasisSwap,
     /// OIS swap instrument.
     OIS,
+    /// Regular fixed-versus-floating interest-rate swap instrument.
+    Swap,
     /// Equity call option.
     EquityCall,
     /// Equity put option.
@@ -279,6 +282,7 @@ impl std::str::FromStr for FxForwardCalibrationStrategy {
 /// | Product                      | Pos 0                       | Pos 1       | Pos 2         | Pos 3      | Pos 4          | Pos 5           | Pos 6            | Pos 7     | Pos 8 |
 /// |-----------------------------|-----------------------------|-------------|---------------|------------|----------------|-----------------|------------------|----------|-------|
 /// | `OIS`                       | `OIS`                       | CCY         | Index         | Tenor      | \[`PayFreq`\]  | \[`RecvFreq`\]  |                   |          |       |
+/// | `Swap`                      | `Swap`                      | CCY         | Index         | Tenor      | \[`FixedFreq`\]| \[`FloatFreq`\] |                   |          |       |
 /// | `FixedRateDeposit`          | `FixedRateDeposit`          | CCY         | Index         | Tenor      |                |                 |                   |          |       |
 /// | `FixedRateBond`             | `FixedRateBond`             | CCY         | Index         | Tenor      | \[`PayFreq`\]  | Coupon Rate     | \[`Strategy`\]   |          |       |
 /// | `BasisSwap`                 | `BasisSwap`                 | CCY         | `PayIndex`    | `RecvIndex`| Tenor          | \[`PayFreq`\]   | \[`RecvFreq`\]    |          |       |
@@ -304,6 +308,7 @@ impl std::str::FromStr for FxForwardCalibrationStrategy {
 /// ```text
 /// OIS_USD_SOFR_1Y
 /// OIS_USD_SOFR_1Y_Semiannual_Semiannual
+/// Swap_USD_TermSOFR3m_5Y_Semiannual_Quarterly
 /// FixedRateDeposit_USD_SOFR_6M
 /// FixedRateBond_USD_CORP_5Y_Semiannual_0.04_AnchorYield
 /// FxForward_EURUSD_1M_AnchorForwardPoints
@@ -764,6 +769,42 @@ impl QuoteDetails {
             .unwrap_or('_');
         let parts: Vec<_> = self.identifier.split(separator).collect();
         OisConventions::for_index(index).with_quote_fields(parts.get(4..).unwrap_or_default())
+    }
+
+    /// `Swap_CCY_Index_Tenor[_FixedFreq[_FloatingFreq]]`
+    ///
+    /// # Errors
+    /// Rejects missing required fields, invalid frequencies and excess fields.
+    pub fn parse_swap(id: &str, parts: &[&str]) -> Result<Self> {
+        if !(4..=6).contains(&parts.len()) {
+            return Err(QSError::InvalidValueErr(format!(
+                "Swap identifier requires four to six fields: {id}"
+            )));
+        }
+        let currency: Currency = parts[1].parse()?;
+        let index: MarketIndex = parts[2].parse()?;
+        let tenor = Period::from_str(parts[3])?;
+        let fixed_frequency = parts
+            .get(4)
+            .filter(|value| !value.is_empty())
+            .map(|value| value.parse::<Frequency>())
+            .transpose()?;
+        let floating_frequency = parts
+            .get(5)
+            .filter(|value| !value.is_empty())
+            .map(|value| value.parse::<Frequency>())
+            .transpose()?;
+        let mut details = Self::new(id.to_string(), QuoteInstrument::Swap)
+            .with_market_index(index)
+            .with_currency(currency)
+            .with_tenor(tenor);
+        if let Some(frequency) = fixed_frequency {
+            details = details.with_pay_leg_frequency(frequency);
+        }
+        if let Some(frequency) = floating_frequency {
+            details = details.with_receive_leg_frequency(frequency);
+        }
+        Ok(details)
     }
 
     /// `{Instrument}_CCY_{Index}_{Tenor}`
@@ -1303,6 +1344,7 @@ impl QuoteDetails {
         }
         match parts[0] {
             "OIS" => Self::parse_ois(s, &parts),
+            "Swap" => Self::parse_swap(s, &parts),
             "FixedRateDeposit" => Self::parse_fixed_rate_deposit(s, &parts),
             "FixedRateBond" => Self::parse_fixed_rate_bond(s, &parts),
             "BasisSwap" => Self::parse_basis_swap(s, &parts),
@@ -1508,6 +1550,7 @@ impl Quote {
         let notional = 1.0;
         match self.details.instrument() {
             QuoteInstrument::OIS => self.build_ois(value, reference_date, notional),
+            QuoteInstrument::Swap => self.build_swap(value, reference_date, notional),
             QuoteInstrument::FixedRateDeposit => {
                 self.build_fixed_rate_deposit(value, reference_date, notional)
             }
@@ -1658,6 +1701,45 @@ impl Quote {
         let swap = builder.build()?;
 
         Ok(CalibrationInstrumentType::OIS(swap))
+    }
+
+    /// Builds a regular swap using single-fixing floating coupons and swap defaults.
+    fn build_swap<T: Scalar + Default>(
+        &self,
+        rate: f64,
+        reference_date: Date,
+        notional: f64,
+    ) -> Result<CalibrationInstrumentType<T>> {
+        let details = &self.details;
+        let currency = details
+            .currency()
+            .ok_or_else(|| QSError::ValueNotSetErr("Currency on swap quote".into()))?;
+        let tenor = details
+            .tenor()
+            .ok_or_else(|| QSError::ValueNotSetErr("Tenor on swap quote".into()))?;
+        let index = Self::required_market_index(details, "swap quote")?;
+        let index_details = index.rate_index_details()?;
+        if index_details.currency() != currency {
+            return Err(QSError::InvalidValueErr(
+                "Swap currency does not match its index".into(),
+            ));
+        }
+        let mut builder = MakeSwap::<T>::default()
+            .with_identifier(details.identifier())
+            .with_start_date(reference_date)
+            .with_maturity_date(details.maturity().unwrap_or(reference_date + tenor))
+            .with_fixed_rate(rate)
+            .with_notional(notional)
+            .with_rate_definition(index_details.rate_definition())
+            .with_market_index(index)
+            .with_currency(currency);
+        if let Some(frequency) = details.pay_leg_frequency() {
+            builder = builder.with_fixed_leg_frequency(frequency);
+        }
+        if let Some(frequency) = details.receive_leg_frequency() {
+            builder = builder.with_floating_leg_frequency(frequency);
+        }
+        Ok(CalibrationInstrumentType::Swap(builder.build()?))
     }
 
     /// Builds a fixed-rate deposit from its rate quote.
@@ -2179,7 +2261,6 @@ impl Quote {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2577,6 +2658,116 @@ mod tests {
         let det: QuoteDetails = "OIS_USD_SOFR_1Y".parse().unwrap();
         assert_eq!(det.pay_leg_frequency(), None);
         assert_eq!(det.receive_leg_frequency(), None);
+    }
+
+    #[test]
+    fn parse_regular_swap_quote_fields() {
+        for (identifier, fixed, floating) in [
+            ("Swap_USD_TermSOFR3m_5Y", None, None),
+            (
+                "Swap_USD_TermSOFR3m_5Y_Annual",
+                Some(Frequency::Annual),
+                None,
+            ),
+            (
+                "Swap_USD_TermSOFR3m_5Y_Semiannual_Quarterly",
+                Some(Frequency::Semiannual),
+                Some(Frequency::Quarterly),
+            ),
+            (
+                "Swap_USD_TermSOFR3m_5Y__Quarterly",
+                None,
+                Some(Frequency::Quarterly),
+            ),
+        ] {
+            let details: QuoteDetails = identifier.parse().unwrap();
+            assert_eq!(*details.instrument(), QuoteInstrument::Swap);
+            assert_eq!(details.pay_leg_frequency(), fixed);
+            assert_eq!(details.receive_leg_frequency(), floating);
+            assert!(details.ois_conventions().is_err());
+            let restored: QuoteDetails =
+                serde_json::from_value(serde_json::to_value(&details).unwrap()).unwrap();
+            assert_eq!(*restored.instrument(), QuoteInstrument::Swap);
+        }
+        for identifier in [
+            "Swap_USD_SOFR",
+            "Swap_USD_SOFR_1Y_garbage",
+            "Swap_USD_SOFR_1Y_Annual_Quarterly_2",
+            "Swap_USD_SOFR_1Y_Annual_bad",
+        ] {
+            assert!(identifier.parse::<QuoteDetails>().is_err());
+        }
+    }
+
+    #[test]
+    fn build_regular_swap_keeps_single_fixing_coupons() {
+        use crate::instruments::cashflows::cashflowtype::CashflowType;
+
+        let reference = ref_date();
+        for (identifier, fixed_count, floating_count) in [
+            ("Swap_USD_TermSOFR3m_1Y", 2, 4),
+            ("Swap_USD_TermSOFR3m_1Y_Annual_Semiannual", 1, 2),
+            ("Swap_USD_SOFR_1Y", 2, 4),
+        ] {
+            let details: QuoteDetails = identifier.parse().unwrap();
+            let quote = Quote::new(
+                details,
+                QuoteLevels::new(Some(0.04), Some(0.03), Some(0.05)),
+            );
+            let built = quote.build_instrument(reference, Level::Ask, None).unwrap();
+            let CalibrationInstrumentType::Swap(swap) = &built else {
+                panic!("expected regular swap")
+            };
+            let fixed: Vec<_> = swap
+                .fixed_leg()
+                .cashflows()
+                .iter()
+                .filter_map(|cashflow| {
+                    if let CashflowType::FixedRateCoupon(coupon) = cashflow {
+                        Some(coupon)
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            let floating: Vec<_> = swap
+                .floating_leg()
+                .cashflows()
+                .iter()
+                .filter_map(|cashflow| {
+                    if let CashflowType::FloatingRateCoupon(coupon) = cashflow {
+                        Some(coupon)
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            assert_eq!(fixed.len(), fixed_count);
+            assert_eq!(floating.len(), floating_count);
+            assert_eq!(fixed[0].accrual_start_date(), reference);
+            assert!((fixed[0].rate().rate() - 0.05).abs() < 1e-12);
+            assert!(floating
+                .iter()
+                .all(|coupon| coupon.overnight_conventions().is_none()));
+            assert_eq!(
+                quote.calibration_pillar_date(&built).unwrap(),
+                built.pillar_date().unwrap()
+            );
+        }
+        let mismatched = Quote::new(
+            "Swap_EUR_TermSOFR3m_1Y".parse().unwrap(),
+            QuoteLevels::with_mid(0.04),
+        );
+        assert!(mismatched
+            .build_instrument(reference, Level::Mid, None)
+            .is_err());
+        let term_ois = Quote::new(
+            "OIS_USD_TermSOFR3m_1Y".parse().unwrap(),
+            QuoteLevels::with_mid(0.04),
+        );
+        assert!(term_ois
+            .build_instrument(reference, Level::Mid, None)
+            .is_err());
     }
 
     #[test]
