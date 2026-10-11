@@ -20,18 +20,20 @@ calls on the supplied bond are deliberately omitted from the returned script.
     if (str(start + "6Y") != terms["maturity_date"]
             or terms["payment_frequency"] != "Semiannual"
             or terms["coupon_day_counter"] != "Actual365"
-            or terms["currency"] != "USD"
-            or terms["side"] != "LongReceive"):
-        raise ValueError("This translator only supports the tutorial's six-year semiannual USD note")
+            or terms["currency"] != "USD"):
+        raise ValueError(
+            "This translator only supports the tutorial's six-year semiannual USD note")
 
-    dates = [start + qs.Period(6 * period, qs.TimeUnit.Months) for period in range(13)]
+    dates = [start + qs.Period(6 * period, qs.TimeUnit.Months)
+             for period in range(13)]
     coupons = terms["coupons"]
     percentages = terms["notional_percentages"]
     events = []
     for period, (accrual_start, end) in enumerate(zip(dates, dates[1:])):
         coupon = coupons[min(period, len(coupons) - 1)]
         outstanding = percentages[min(period, len(percentages) - 1)]
-        next_outstanding = percentages[min(period + 1, len(percentages) - 1)] if period < 11 else 0.0
+        next_outstanding = percentages[min(
+            period + 1, len(percentages) - 1)] if period < 11 else 0.0
         principal = terms["notional"] * (outstanding - next_outstanding)
         if "Fixed" in coupon:
             rate = str(coupon["Fixed"]["rate"])
@@ -39,7 +41,8 @@ calls on the supplied bond are deliberately omitted from the returned script.
         else:
             floating = coupon["Floating"]
             if floating["index"] != "SOFR" or floating["cap"] is None or floating["floor"] is None:
-                raise ValueError("The tutorial floating coupon requires SOFR with a cap and floor")
+                raise ValueError(
+                    "The tutorial floating coupon requires SOFR with a cap and floor")
             rate = (
                 f'max(min(RateIndex("SOFR", "{accrual_start}", "{end}") '
                 f'+ {floating["spread"]}, {floating["cap"]}), {floating["floor"]})'

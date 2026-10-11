@@ -60,8 +60,8 @@ swap = qs.Swap(
     fixed_rate=0.0378,
     currency=qs.Currency.USD,
     market_index=qs.MarketIndex.SOFR,
-    side=qs.Side.LongReceive,
 )
+trade = qs.Trade(swap, ref, qs.Side.LongReceive)
 
 ctx = qs.PricingContext(quotes=quotes, curves=curves, fx=fx, csa_policy=csa_policy)
 ctx.initialize()
@@ -74,7 +74,7 @@ with ctx:
     print(sofr.forward_rate(ref + "1Y", ref + "2Y",
                             qs.Compounding.Simple, qs.Frequency.Annual))
 
-    res = ctx.evaluate(swap, [qs.Request.Value, qs.Request.Cashflows, qs.Request.Sensitivities])
+    res = ctx.evaluate(trade, [qs.Request.Value, qs.Request.Cashflows, qs.Request.Sensitivities])
     print(res.price)            # NPV (float)
     print(res.sensitivities)    # pandas DataFrame: pillar / value
     print(res.cashflows)        # pandas DataFrame
@@ -82,6 +82,30 @@ with ctx:
 
 Every enum argument also accepts its string name (`currency="USD"`,
 `side="pay"`, `requests=["Value"]`, ...).
+
+### Instruments And Trades
+
+Built-in products such as `Swap`, `FixedRateBond`, and `FxOption` are
+`Instrument` subclasses containing contract terms, not positions. Both
+`ctx.evaluate()` and `NettingSet` require explicit `Trade` objects:
+
+```python
+long = qs.Trade(swap, ref, qs.Side.LongReceive)
+short = qs.Trade(swap, ref, qs.Side.PayShort, notional=500_000)
+assert long.instrument is short.instrument
+```
+
+The execution date is required and is never inferred from maturity or expiry.
+`side` defaults to `LongReceive`. An optional `notional` overrides the
+instrument's contractual amount for that position without mutating it.
+FX forwards, FX/equity options, CDS and caplets have no contractual notional
+field: their position notional belongs exclusively to `Trade` (default `1.0`).
+Cross-currency positions use `domestic_notional` and `foreign_notional`
+overrides; futures positions use `num_contracts` (default `1.0`). Position
+amounts must be finite and non-negative; direction belongs to `side`.
+Bond positions additionally own `pricing_anchor`, `settlement_date`, and
+`spread_day_counter`. Product constructors and product dictionaries no longer
+accept these position fields, `side`, `trade_date`, or `num_contracts`.
 
 Select the quote level during setup with
 `qs.PricingContext(quotes=quotes, curves=curves, quote_level=qs.Level.Bid)`.
@@ -131,7 +155,7 @@ Strikes accept a float, `"ATM"`, or a native tagged dict such as
 ### Bond pricing, Z-spread, and OAS
 
 Straight fixed-rate bonds use `BondPricer`. Supply the required `pricing_anchor`
-when constructing the Python bond trade. Use `bond.with_pricing_anchor(anchor)`
+when constructing `qs.Trade(bond, ref, pricing_anchor=anchor)`. Use `trade.with_pricing_anchor(anchor)`
 to create a copy with another quote; `PricingContext.evaluate(trade, requests)`
 reads the quote from that trade.
 
@@ -145,7 +169,7 @@ An unmapped currency produces an error rather than silently selecting a curve.
 ```python
 anchor = qs.BondPricingAnchor.clean_price(99.25)
 result = ctx.evaluate(
-    bond.with_pricing_anchor(anchor),
+    qs.Trade(bond, ref, pricing_anchor=anchor),
     [qs.Request.Value, qs.Request.ModifiedDuration,
      qs.Request.ZSpread, qs.Request.Sensitivities],
 )
@@ -160,7 +184,7 @@ repeats for all later generated payment periods. Calls always use explicit
 dates and strikes:
 
 ```python
-callable_bond = qs.SteppedCouponBond(pricing_anchor=qs.BondPricingAnchor.OAS(0.0),
+callable_bond = qs.SteppedCouponBond(
     identifier="USD-STEPPED-CALL-2031", start_date=ref, maturity_date=ref + "6Y",
     notional=1_000_000, currency=qs.Currency.USD,
     coupons=[
@@ -186,7 +210,7 @@ ctx.initialize()
 
 with ctx:
     result = ctx.evaluate(
-        callable_bond.with_pricing_anchor(qs.BondPricingAnchor.dirty_price(101.10)),
+        qs.Trade(callable_bond, ref, pricing_anchor=qs.BondPricingAnchor.dirty_price(101.10)),
         [qs.Request.Value, qs.Request.OAS, qs.Request.Sensitivities],
     )
     print(result.oas)
@@ -215,7 +239,7 @@ field. Discounting is selected by the context's fixed-income policy. Its nested
 coupon and call entries may be plain native dicts or the existing wrappers:
 
 ```python
-bond_spec = {"pricing_anchor": {"OAS": 0.0},
+bond_spec = {
     "identifier": "STEP", "start_date": "2026-02-24",
     "maturity_date": "2031-02-24", "notional": 1_000_000,
     "currency": "USD", "units": 100.0,
@@ -257,7 +281,7 @@ bond value. There is no exercise-type enum because the product supports issuer
 calls only. Yield to maturity and modified duration are intentionally not
 defined for `SteppedCouponBond`; use price, OAS, and sensitivities.
 
-With no call entries, a stepped bond defaults to zero Z-spread instead of OAS.
+With no call entries, use an explicit zero Z-spread anchor on its trade.
 
 ### In-process payoff scripting
 
@@ -379,13 +403,13 @@ with ctx:
     print(result.price)
 ```
 
-Python registrations are resolved by exact type first and then by compatible
-base type. They take precedence over built-in dispatch, so a built-in class can
-also be assigned a custom pricer without modifying the Rust binding. Use
+Python registrations are resolved by exact trade type first and then by compatible
+base type. They take precedence over built-in dispatch, so a trade holding a
+native instrument can use a custom pricer without modifying the Rust binding. Use
 `ctx.unregister_pricer(TradeType)` to restore built-in dispatch.
-Native trade specification classes are subclassable as well: an unregistered
-subclass keeps its native pricer, while registering the subclass selects the
-Python implementation.
+Native instruments and `Trade` are subclassable. An unregistered `Trade`
+subclass holding a native instrument keeps native pricing. Register the trade
+subclass, not the instrument class, to select a Python implementation.
 
 For a heterogeneous collection or a custom market-data provider, use the
 standalone evaluator:
@@ -420,8 +444,8 @@ ctx.initialize()
 
 with ctx:
     result = ctx.run_xva(config, netting_sets=[
-        qs.NettingSet("clientA", [swap], csa_a),
-        qs.NettingSet("clientB", [xccy], csa_b),
+        qs.NettingSet("clientA", [qs.Trade(swap, ref)], csa_a),
+        qs.NettingSet("clientB", [qs.Trade(xccy, ref)], csa_b),
     ])
     print(result.xva_values)      # DataFrame: netting_set / measure / value
     print(result.sensitivities)   # DataFrame: parameter / value
@@ -499,8 +523,8 @@ Pricing:
   - `ctx.volatility_cubes()` / `ctx.volatility_cube(index)` → `VolatilityCube`
   - `ctx.simulations()` / `ctx.simulation(index)` → `Simulation`
     (`dates()`, `n_paths`, `dt`, `paths()` DataFrame)
-- `Swap`, `CrossCurrencySwap`, `FixedRateBond`, `SteppedCouponBond` — trade
-  specifications with typed getters; callable stepped bonds use `Coupon` and
+- `Swap`, `CrossCurrencySwap`, `FixedRateBond`, `SteppedCouponBond` — instrument
+    specifications with typed getters; callable stepped bonds use `Coupon` and
   explicit `CallScheduleEntry(date, strike)` terms
 - `ctx.evaluate(trade, requests)` → `EvaluationResults` (`price`, `yield_to_maturity`, `modified_duration`, `z_spread`, `oas`, `fair_rate`, `sensitivities` DataFrame, `cashflows` DataFrame)
 
@@ -525,9 +549,11 @@ when Rust-level performance or integration is required.
 
 ### Bond API migration
 
-Bond constructors require `pricing_anchor=qs.BondPricingAnchor.z_spread(0.0)`
+Bond `Trade` constructors require `pricing_anchor=qs.BondPricingAnchor.z_spread(0.0)`
 for an explicitly unspread straight bond, or `qs.BondPricingAnchor.OAS(0.0)`
 for an issuer-call bond. Pass a price anchor to imply the appropriate spread.
+Remove position metadata from product constructors and wrap each product in
+`qs.Trade(instrument, trade_date, side, pricing_anchor=...)` before valuation.
 The `bond_anchor` evaluation argument has been removed. Replace the former
 `discounting`/`DiscountingConfig` context input with `csa_policy` and
 `SingleCurveCSADiscountPolicy(collateral_currency=..., collateral_index=...)`.
