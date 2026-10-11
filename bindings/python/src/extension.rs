@@ -60,11 +60,32 @@ pub struct Instrument {
     identifier: String,
 }
 
+impl Instrument {
+    pub(crate) fn new(identifier: String) -> Self {
+        Self { identifier }
+    }
+}
+
 #[pymethods]
 impl Instrument {
     #[new]
-    fn new(identifier: String) -> Self {
-        Self { identifier }
+    #[pyo3(signature = (identifier, *_args, **_kwargs))]
+    fn new_py(
+        identifier: String,
+        _args: &Bound<'_, pyo3::types::PyTuple>,
+        _kwargs: Option<&Bound<'_, pyo3::types::PyDict>>,
+    ) -> Self {
+        Self::new(identifier)
+    }
+
+    #[pyo3(signature = (identifier, *_args, **_kwargs))]
+    fn __init__(
+        &mut self,
+        identifier: String,
+        _args: &Bound<'_, pyo3::types::PyTuple>,
+        _kwargs: Option<&Bound<'_, pyo3::types::PyDict>>,
+    ) {
+        self.identifier = identifier;
     }
 
     /// Stable product identifier used in evaluation results and diagnostics.
@@ -85,19 +106,63 @@ impl Instrument {
 #[pyclass(name = "Trade", subclass, dict, unsendable)]
 pub struct Trade {
     instrument: Py<PyAny>,
-    trade_date: quantsupport::prelude::Date,
-    side: quantsupport::prelude::Side,
+    pub(crate) trade_date: quantsupport::prelude::Date,
+    pub(crate) side: quantsupport::prelude::Side,
+    pub(crate) notional: Option<f64>,
+    pub(crate) domestic_notional: Option<f64>,
+    pub(crate) foreign_notional: Option<f64>,
+    pub(crate) num_contracts: f64,
+    pub(crate) pricing_anchor: Option<quantsupport::prelude::BondPricingAnchor>,
+    pub(crate) settlement_date: Option<quantsupport::prelude::Date>,
+    pub(crate) spread_day_counter: Option<quantsupport::prelude::DayCounter>,
+}
+
+impl Trade {
+    pub(crate) fn instrument_bound<'py>(&self, py: Python<'py>) -> &Bound<'py, PyAny> {
+        self.instrument.bind(py)
+    }
+
+    pub(crate) fn bond_anchor(&self) -> PyResult<quantsupport::prelude::BondPricingAnchor> {
+        self.pricing_anchor.ok_or_else(|| {
+            pyo3::exceptions::PyValueError::new_err("bond Trade requires pricing_anchor")
+        })
+    }
 }
 
 #[pymethods]
 impl Trade {
     #[new]
-    #[pyo3(signature = (instrument, trade_date, side = None))]
+    #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (instrument, trade_date, side = None, *, notional = None,
+        domestic_notional = None, foreign_notional = None, num_contracts = 1.0,
+        pricing_anchor = None, settlement_date = None, spread_day_counter = None))]
     fn new(
         instrument: Py<PyAny>,
         trade_date: &Bound<'_, PyAny>,
         side: Option<&Bound<'_, PyAny>>,
+        notional: Option<f64>,
+        domestic_notional: Option<f64>,
+        foreign_notional: Option<f64>,
+        num_contracts: f64,
+        pricing_anchor: Option<&Bound<'_, PyAny>>,
+        settlement_date: Option<&Bound<'_, PyAny>>,
+        spread_day_counter: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<Self> {
+        for amount in [
+            notional,
+            domestic_notional,
+            foreign_notional,
+            Some(num_contracts),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            if !amount.is_finite() || amount < 0.0 {
+                return Err(pyo3::exceptions::PyValueError::new_err(
+                    "position amounts must be finite and non-negative; use side for direction",
+                ));
+            }
+        }
         Ok(Self {
             instrument,
             trade_date: crate::conv::extract_date(trade_date)?,
@@ -105,6 +170,17 @@ impl Trade {
                 .map(crate::conv::extract_side)
                 .transpose()?
                 .unwrap_or(quantsupport::prelude::Side::LongReceive),
+            notional,
+            domestic_notional,
+            foreign_notional,
+            num_contracts,
+            pricing_anchor: pricing_anchor
+                .map(crate::bondpricinganchor::BondPricingAnchorConfig::extract)
+                .transpose()?,
+            settlement_date: settlement_date.map(crate::conv::extract_date).transpose()?,
+            spread_day_counter: spread_day_counter
+                .map(crate::conv::extract_day_counter)
+                .transpose()?,
         })
     }
 
@@ -126,6 +202,61 @@ impl Trade {
     #[getter]
     fn side(&self) -> crate::enums::Side {
         self.side.into()
+    }
+
+    /// Position amount; None uses the instrument's contractual amount.
+    #[getter(notional)]
+    fn notional_py(&self) -> Option<f64> {
+        self.notional
+    }
+
+    #[getter(domestic_notional)]
+    fn domestic_notional_py(&self) -> Option<f64> {
+        self.domestic_notional
+    }
+
+    #[getter(foreign_notional)]
+    fn foreign_notional_py(&self) -> Option<f64> {
+        self.foreign_notional
+    }
+
+    #[getter(settlement_date)]
+    fn settlement_date_py(&self) -> Option<Date> {
+        self.settlement_date.map(|inner| Date { inner })
+    }
+
+    #[getter(spread_day_counter)]
+    fn spread_day_counter_py(&self) -> Option<crate::enums::DayCounter> {
+        self.spread_day_counter.map(Into::into)
+    }
+
+    #[getter(num_contracts)]
+    fn num_contracts_py(&self) -> f64 {
+        self.num_contracts
+    }
+
+    #[getter(pricing_anchor)]
+    fn pricing_anchor_py(&self) -> Option<crate::bondpricinganchor::BondPricingAnchorConfig> {
+        self.pricing_anchor
+            .map(|inner| crate::bondpricinganchor::BondPricingAnchorConfig { inner })
+    }
+
+    /// Returns another position in the same instrument with a different bond anchor.
+    fn with_pricing_anchor(&self, py: Python<'_>, anchor: &Bound<'_, PyAny>) -> PyResult<Self> {
+        Ok(Self {
+            instrument: self.instrument.clone_ref(py),
+            trade_date: self.trade_date,
+            side: self.side,
+            notional: self.notional,
+            domestic_notional: self.domestic_notional,
+            foreign_notional: self.foreign_notional,
+            num_contracts: self.num_contracts,
+            pricing_anchor: Some(crate::bondpricinganchor::BondPricingAnchorConfig::extract(
+                anchor,
+            )?),
+            settlement_date: self.settlement_date,
+            spread_day_counter: self.spread_day_counter,
+        })
     }
 
     fn __repr__(&self, py: Python<'_>) -> PyResult<String> {

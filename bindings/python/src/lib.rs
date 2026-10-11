@@ -74,7 +74,7 @@ fn quantsupport(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<extension::Pricer>()?;
     m.add_class::<extension::MarketDataProvider>()?;
     m.add_class::<extension::Evaluator>()?;
-    // Trades
+    // Instruments
     m.add_class::<trades::Swap>()?;
     m.add_class::<trades::CrossCurrencySwap>()?;
     m.add_class::<trades::BasisSwap>()?;
@@ -133,7 +133,18 @@ mod tests {
                 let source = CString::new(include_str!("../tests/test_dict_and_scripting.py"))
                     .map_err(|error| pyo3::exceptions::PyValueError::new_err(error.to_string()))?;
                 py.run(&source, Some(&globals), None)?;
-                py.run(c"suite = unittest.defaultTestLoader.loadTestsFromTestCase(DictAndScriptTests)\nresult = unittest.TextTestRunner(verbosity=2).run(suite)\nassert result.wasSuccessful(), 'Python binding contract tests failed'", Some(&globals), None)
+                py.run(c"suite = unittest.defaultTestLoader.loadTestsFromTestCase(DictAndScriptTests)\nresult = unittest.TextTestRunner(verbosity=2).run(suite)\nassert result.wasSuccessful(), 'Python binding contract tests failed'", Some(&globals), None)?;
+                globals.set_item(
+                    "__file__",
+                    concat!(
+                        env!("CARGO_MANIFEST_DIR"),
+                        "/tests/test_trade_instrument.py"
+                    ),
+                )?;
+                let source = CString::new(include_str!("../tests/test_trade_instrument.py"))
+                    .map_err(|error| pyo3::exceptions::PyValueError::new_err(error.to_string()))?;
+                py.run(&source, Some(&globals), None)?;
+                py.run(c"suite = unittest.defaultTestLoader.loadTestsFromTestCase(TradeInstrumentTests)\nresult = unittest.TextTestRunner(verbosity=2).run(suite)\nassert result.wasSuccessful(), 'Trade/instrument contract tests failed'", Some(&globals), None)
             };
             if let Err(error) = run() {
                 error.print(py);

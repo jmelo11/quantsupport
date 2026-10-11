@@ -13,7 +13,7 @@ class DictAndScriptTests(unittest.TestCase):
     def test_python_enums_and_string_dicts_remain_equivalent(self):
         specification = self.stepped_spec()
         enums = dict(specification, currency=qs.Currency.USD,
-                     side=qs.Side.LongReceive, payment_frequency=qs.Frequency.Annual,
+                     payment_frequency=qs.Frequency.Annual,
                      coupon_day_counter=qs.DayCounter.Actual365,
                      start_date=qs.Date(2026, 2, 24))
         enums["coupons"] = [qs.Coupon.fixed(0.04), {
@@ -27,21 +27,24 @@ class DictAndScriptTests(unittest.TestCase):
         self.assertEqual(qs.Coupon.from_dict({"FixedRateCoupon": {"rate": 0.04}}).to_dict(),
                          qs.Coupon.fixed(0.04).to_dict())
         curve = {"market_index": qs.MarketIndex.SOFR, "quotes": []}
-        self.assertEqual(qs.CurveConfiguration.from_dict(curve).to_dict()["market_index"], "SOFR")
+        self.assertEqual(qs.CurveConfiguration.from_dict(
+            curve).to_dict()["market_index"], "SOFR")
         surface = {"market_index": qs.MarketIndex.SOFR, "quotes": [],
                    "volatility_type": qs.VolatilityType.Black, "smile_type": qs.SmileType.Strike}
-        self.assertEqual(qs.VolatilitySurfaceConfiguration.from_dict(surface).to_dict()["volatility_type"], "Black")
+        self.assertEqual(qs.VolatilitySurfaceConfiguration.from_dict(
+            surface).to_dict()["volatility_type"], "Black")
         self.assertIs(surface["volatility_type"], qs.VolatilityType.Black)
         with self.make_context() as context:
-            bond = qs.FixedRateBond.from_dict({"pricing_anchor": {"ZSpread": 0.0}, "identifier": "ENUM-CHECK", "start_date": "2026-02-24",
-                "maturity_date": "2028-02-24", "notional": 100.0, "rate": 0.04,
-                "currency": qs.Currency.USD})
-            enum_value = context.evaluate(bond, [qs.Request.Value]).price
-            string_value = context.evaluate(bond, ["Value"]).price
+            bond = qs.FixedRateBond.from_dict({"identifier": "ENUM-CHECK", "start_date": "2026-02-24",
+                                               "maturity_date": "2028-02-24", "notional": 100.0, "rate": 0.04,
+                                               "currency": qs.Currency.USD})
+            trade = self.bond_trade(bond)
+            enum_value = context.evaluate(trade, [qs.Request.Value]).price
+            string_value = context.evaluate(trade, ["Value"]).price
             self.assertEqual(enum_value, string_value)
 
     def stepped_spec(self):
-        return {"pricing_anchor": {"OAS": 0.0},
+        return {
             "identifier": "STEP",
             "start_date": "2026-02-24",
             "maturity_date": "2030-02-24",
@@ -49,7 +52,6 @@ class DictAndScriptTests(unittest.TestCase):
             "currency": "USD",
             "payment_frequency": "Annual",
             "coupon_day_counter": "Actual365",
-            "side": "LongReceive",
             "coupons": [
                 {"Fixed": {"rate": 0.04}},
                 {"Floating": {"index": "SOFR", "spread": 0.005,
@@ -63,8 +65,15 @@ class DictAndScriptTests(unittest.TestCase):
             ],
         }
 
+    def bond_trade(self, instrument, anchor=None):
+        if anchor is None:
+            anchor = (qs.BondPricingAnchor.OAS(0.0) if isinstance(instrument, qs.SteppedCouponBond)
+                      else qs.BondPricingAnchor.z_spread(0.0))
+        return qs.Trade(instrument, "2026-02-24", pricing_anchor=anchor)
+
     def make_context(self, models=None, with_volatility=False, engine="TreeBased", quote_level=None):
-        data = Path(__file__).resolve().parents[3] / "examples" / "hullwhite" / "data"
+        data = Path(__file__).resolve(
+        ).parents[3] / "examples" / "hullwhite" / "data"
         records = json.loads((data / "quotes.json").read_text())
         if quote_level is not None:
             for quote in records["quotes"]:
@@ -85,14 +94,16 @@ class DictAndScriptTests(unittest.TestCase):
         })]
         return qs.PricingContext(
             quotes=quotes, curves=curves, volatility_surfaces=volatility,
-            csa_policy=qs.SingleCurveCSADiscountPolicy.from_dict({"collateral_currency": "USD", "collateral_index": "SOFR"}),
+            csa_policy=qs.SingleCurveCSADiscountPolicy.from_dict(
+                {"collateral_currency": "USD", "collateral_index": "SOFR"}),
             pricer_configurations=pricers,
             quote_level=quote_level,
         )
 
     def test_quote_level_setup_accepts_enums_and_strings(self):
         quotes = qs.QuoteStore.from_dict({"reference_date": "2026-02-24", "quotes": [
-            {"identifier": "FixedRateDeposit_USD_SOFR_1D", "mid": 0.04, "bid": 0.03, "ask": 0.05},
+            {"identifier": "FixedRateDeposit_USD_SOFR_1D",
+                "mid": 0.04, "bid": 0.03, "ask": 0.05},
             {"identifier": "OIS_USD_SOFR_5Y", "mid": 0.04, "bid": 0.03, "ask": 0.05},
         ]})
         curves = [qs.CurveConfiguration.from_dict({"market_index": "SOFR", "quotes": [
@@ -102,7 +113,8 @@ class DictAndScriptTests(unittest.TestCase):
         for level, expected in [("bId", qs.Level.Bid), (None, qs.Level.Mid), (qs.Level.Ask, qs.Level.Ask)]:
             with qs.PricingContext(quotes, curves, quote_level=level) as context:
                 self.assertEqual(context.quote_level, expected)
-                discounts.append(context.curve("SOFR").discount_factor("2030-02-24"))
+                discounts.append(context.curve(
+                    "SOFR").discount_factor("2030-02-24"))
         self.assertGreater(discounts[0], discounts[1])
         self.assertGreater(discounts[1], discounts[2])
         self.assertEqual(qs.Level.parse("ASK"), qs.Level.Ask)
@@ -129,8 +141,10 @@ class DictAndScriptTests(unittest.TestCase):
                 with self.subTest(engine=engine, level=level):
                     with self.make_context(models=[model], with_volatility=True,
                                            engine=engine, quote_level=level) as context:
-                        bond = qs.SteppedCouponBond.from_dict(self.stepped_spec())
-                        prices.append(context.evaluate(bond).price)
+                        bond = qs.SteppedCouponBond.from_dict(
+                            self.stepped_spec())
+                        prices.append(context.evaluate(
+                            self.bond_trade(bond)).price)
             self.assertAlmostEqual(prices[0], prices[1], places=10)
             self.assertAlmostEqual(prices[0], prices[2], places=10)
 
@@ -159,31 +173,35 @@ class DictAndScriptTests(unittest.TestCase):
                 "foreign_currency": "EUR"}
         cases = [
             (qs.Swap, dict(dated, fixed_rate=0.04, market_index="SOFR",
-                           side="PayShort", day_counter="Actual360", compounding="Simple",
+                           day_counter="Actual360", compounding="Simple",
                            rate_frequency="Annual", fixed_leg_frequency="Semiannual")),
             (qs.CrossCurrencySwap, dict(xccy, domestic_market_index="SOFR",
                                         foreign_market_index="ESTR")),
-            (qs.BasisSwap, dict(dated, pay_market_index="SOFR", receive_market_index="TermSOFR3m")),
-            (qs.FixFloatCrossCurrencySwap, dict(xccy, fixed_rate=0.04, floating_index="ESTR")),
-            (qs.FixedRateBond, dict(dated, pricing_anchor={"ZSpread": 0.0}, rate=0.04, payment_structure="Bullet")),
+            (qs.BasisSwap, dict(dated, pay_market_index="SOFR",
+             receive_market_index="TermSOFR3m")),
+            (qs.FixFloatCrossCurrencySwap, dict(
+                xccy, fixed_rate=0.04, floating_index="ESTR")),
+            (qs.FixedRateBond, dict(dated, rate=0.04, payment_structure="Bullet")),
             (qs.SteppedCouponBond, self.stepped_spec()),
             (qs.FloatingRateNote, dict(dated, spread=0.005, forward_index="SOFR")),
             (qs.FixedRateDeposit, dict(dated, rate=0.04)),
             (qs.FxForward, {"identifier": "TEST", "delivery_date": "2028-02-24",
                             "base_currency": "EUR", "quote_currency": "USD",
-                            "notional": 100.0, "forward_price": 1.1}),
+                            "forward_price": 1.1}),
             (qs.FxOption, {"identifier": "TEST", "expiry_date": "2028-02-24",
                            "strike": 1.1, "option_type": "Call", "base_currency": "EUR",
-                           "quote_currency": "USD", "notional": 100.0}),
+                           "quote_currency": "USD"}),
             (qs.EquityOption, {"identifier": "TEST", "expiry_date": "2028-02-24",
                                "strike": {"Absolute": 100.0}, "option_type": "Put",
-                               "market_index": {"Equity": "AAPL"}, "notional": 100.0}),
-            (qs.CreditDefaultSwap, dict(dated, spread=0.01, credit_index={"Credit": "CORPORATE-A"}, discount_index="SOFR")),
-            (qs.CapFloor, dict(dated, strike=0.04, market_index="SOFR", cap_floor_type="Cap")),
+                               "market_index": {"Equity": "AAPL"}}),
+            (qs.CreditDefaultSwap, dict({key: value for key, value in dated.items() if key != "notional"},
+                                        spread=0.01, credit_index={"Credit": "CORPORATE-A"}, discount_index="SOFR")),
+            (qs.CapFloor, dict(dated, strike=0.04,
+             market_index="SOFR", cap_floor_type="Cap")),
             (qs.CapletFloorlet, {"identifier": "TEST", "fixing_date": "2027-02-24",
                                  "start_accrual_date": "2027-02-24",
                                  "end_accrual_date": "2027-05-24", "payment_date": "2027-05-24",
-                                 "strike": 0.04, "notional": 100.0, "currency": "USD",
+                                 "strike": 0.04, "currency": "USD",
                                  "market_index": "SOFR", "payoff_type": "Caplet"}),
             (qs.RateFutures, {"identifier": "TEST", "start_date": "2027-02-24",
                               "end_date": "2027-05-24", "futures_price": 96.0,
@@ -193,20 +211,24 @@ class DictAndScriptTests(unittest.TestCase):
             with self.subTest(product=product_type.__name__):
                 product = product_type.from_dict(spec)
                 self.assertIsInstance(product, product_type)
+                self.assertIsInstance(product, qs.Instrument)
+                self.assertFalse(hasattr(product, "side"))
+                self.assertFalse(hasattr(product, "trade_date"))
                 self.assertEqual(product.identifier, spec["identifier"])
                 self.assertEqual(repr(product), repr(product_type(**spec)))
                 with tempfile.TemporaryDirectory() as directory:
                     path = Path(directory) / "product.json"
                     path.write_text(json.dumps(spec))
-                    self.assertEqual(repr(product_type.from_json(str(path))), repr(product))
+                    self.assertEqual(
+                        repr(product_type.from_json(str(path))), repr(product))
 
     def test_from_dict_retains_subclass_constructor(self):
         class DeskBond(qs.FixedRateBond):
             pass
 
-        bond = DeskBond.from_dict({"pricing_anchor": {"ZSpread": 0.0}, "identifier": "DESK", "start_date": "2026-02-24",
+        bond = DeskBond.from_dict({"identifier": "DESK", "start_date": "2026-02-24",
                                   "maturity_date": "2028-02-24", "notional": 100.0,
-                                  "rate": 0.04, "currency": "USD"})
+                                   "rate": 0.04, "currency": "USD"})
         self.assertIsInstance(bond, DeskBond)
 
     def test_stepped_nested_roundtrip_and_object_constructor(self):
@@ -215,21 +237,27 @@ class DictAndScriptTests(unittest.TestCase):
         self.assertNotIn("discount_index", spec)
         self.assertEqual(qs.SteppedCouponBond.from_dict(spec).to_dict(), spec)
         self.assertEqual(spec["call_schedule"][0]["start_date"], "2028-02-24")
-        spec["coupons"] = [qs.Coupon.from_dict(coupon) for coupon in spec["coupons"]]
-        spec["call_schedule"] = [qs.CallScheduleEntry.from_dict(call) for call in spec["call_schedule"]]
-        self.assertEqual(qs.SteppedCouponBond(**spec).to_dict(), bond.to_dict())
+        spec["coupons"] = [qs.Coupon.from_dict(
+            coupon) for coupon in spec["coupons"]]
+        spec["call_schedule"] = [qs.CallScheduleEntry.from_dict(
+            call) for call in spec["call_schedule"]]
+        self.assertEqual(qs.SteppedCouponBond(
+            **spec).to_dict(), bond.to_dict())
         with self.assertRaises(TypeError):
-            qs.SteppedCouponBond.from_dict(dict(self.stepped_spec(), discount_index="SOFR"))
+            qs.SteppedCouponBond.from_dict(
+                dict(self.stepped_spec(), discount_index="SOFR"))
 
     def test_call_window_is_inclusive_and_discrete_calls_remain(self):
-        call = qs.CallScheduleEntry(start_date="2028-01-01", end_date="2028-06-30", strike=99.0)
+        call = qs.CallScheduleEntry(
+            start_date="2028-01-01", end_date="2028-06-30", strike=99.0)
         for date in ["2028-01-01", "2028-03-01", "2028-06-30"]:
             self.assertTrue(call.contains(date))
         self.assertFalse(call.contains("2027-12-31"))
         self.assertFalse(call.contains("2028-07-01"))
         self.assertEqual(str(call.start_date), str(call.date))
         self.assertEqual(str(call.end_date), "2028-06-30")
-        self.assertEqual(qs.CallScheduleEntry.window("2028-01-01", "2028-06-30", 99).to_dict(), call.to_dict())
+        self.assertEqual(qs.CallScheduleEntry.window(
+            "2028-01-01", "2028-06-30", 99).to_dict(), call.to_dict())
         discrete = qs.CallScheduleEntry("2028-01-01", 100)
         self.assertEqual(str(discrete.date), str(discrete.end_date))
         self.assertTrue(discrete.contains("2028-01-01"))
@@ -249,34 +277,45 @@ class DictAndScriptTests(unittest.TestCase):
             qs.CallScheduleEntry(date="2028-01-01", start_date="2028-01-01")
         with self.assertRaises(qs.QuantSupportError):
             qs.Coupon.from_dict({"Floating": {"index": "SOFR", "spread": 0.0,
-                                               "floor": 0.06, "cap": 0.02}})
+                                              "floor": 0.06, "cap": 0.02}})
 
     def test_bond_anchor_is_required_and_owned_by_trade(self):
         spec = {"identifier": "ANCHORED", "start_date": "2026-02-24", "maturity_date": "2028-02-24",
                 "notional": 100.0, "rate": 0.04, "currency": "USD"}
+        instrument = qs.FixedRateBond(**spec)
         with self.assertRaises(TypeError):
-            qs.FixedRateBond(**spec)
-        long = qs.FixedRateBond(**spec, pricing_anchor=qs.BondPricingAnchor.dirty_price(98.0))
-        short = qs.FixedRateBond(**dict(long.to_dict(), side="PayShort"))
+            qs.FixedRateBond(
+                **spec, pricing_anchor=qs.BondPricingAnchor.dirty_price(98.0))
+        long = self.bond_trade(
+            instrument, qs.BondPricingAnchor.dirty_price(98.0))
+        short = qs.Trade(instrument, "2026-02-24",
+                         side="PayShort", pricing_anchor=long.pricing_anchor)
         self.assertEqual(long.pricing_anchor.to_dict(), {"DirtyPrice": 98.0})
-        self.assertEqual(qs.FixedRateBond.from_dict(long.to_dict()).to_dict(), long.to_dict())
+        self.assertEqual(qs.FixedRateBond.from_dict(
+            instrument.to_dict()).to_dict(), instrument.to_dict())
         with self.make_context() as ctx:
+            with self.assertRaisesRegex(ValueError, "pricing_anchor"):
+                ctx.evaluate(qs.Trade(instrument, "2026-02-24"))
             result = ctx.evaluate(long, ["Value", "ZSpread", "Sensitivities"])
             short_result = ctx.evaluate(short, ["Value", "ZSpread"])
-            repriced = ctx.evaluate(long.with_pricing_anchor(qs.BondPricingAnchor.z_spread(result.z_spread)))
-            self.assertAlmostEqual(result.price, -short_result.price, places=10)
-            self.assertAlmostEqual(result.z_spread, short_result.z_spread, places=10)
+            repriced = ctx.evaluate(long.with_pricing_anchor(
+                qs.BondPricingAnchor.z_spread(result.z_spread)))
+            self.assertAlmostEqual(
+                result.price, -short_result.price, places=10)
+            self.assertAlmostEqual(
+                result.z_spread, short_result.z_spread, places=10)
             self.assertAlmostEqual(repriced.price, result.price, places=9)
             with self.assertRaises(TypeError):
-                ctx.evaluate(long, bond_anchor=qs.BondPricingAnchor.z_spread(0.0))
+                ctx.evaluate(
+                    long, bond_anchor=qs.BondPricingAnchor.z_spread(0.0))
         for anchor in [{"DirtyPrice": -1.0}, {"ZSpread": float("nan")}]:
             with self.assertRaises(qs.QuantSupportError):
-                qs.FixedRateBond(**spec, pricing_anchor=anchor)
+                qs.Trade(instrument, "2026-02-24", pricing_anchor=anchor)
 
     def test_stepped_schedule_controls_reach_native_schedule_builder(self):
         spec = dict(self.stepped_spec(), start_date="2026-02-28", maturity_date="2027-02-28",
                     coupons=[{"Fixed": {"rate": 0.04}}], notional_percentages=[1.0], call_schedule=[],
-                    pricing_anchor={"ZSpread": 0.0}, payment_frequency="Semiannual",
+                    payment_frequency="Semiannual",
                     calendar="WeekendsOnly", business_day_convention="Following",
                     termination_date_convention="Preceding", date_generation_rule="Forward",
                     end_of_month=False, first_coupon_date="2026-05-31", next_to_last_coupon_date="2026-11-30")
@@ -285,27 +324,34 @@ class DictAndScriptTests(unittest.TestCase):
                               business_day_convention=qs.BusinessDayConvention.Following,
                               termination_date_convention=qs.BusinessDayConvention.Preceding,
                               date_generation_rule=qs.DateGenerationRule.Forward)
-        self.assertEqual(qs.SteppedCouponBond(**native_objects).to_dict(), bond.to_dict())
-        self.assertEqual(qs.SteppedCouponBond.from_dict(bond.to_dict()).to_dict(), bond.to_dict())
+        self.assertEqual(qs.SteppedCouponBond(
+            **native_objects).to_dict(), bond.to_dict())
+        self.assertEqual(qs.SteppedCouponBond.from_dict(
+            bond.to_dict()).to_dict(), bond.to_dict())
         with self.make_context(models=[self.rate_model(family="HullWhite")]) as ctx:
-            table = ctx.evaluate(bond, ["Cashflows"]).cashflows
-        dates = table.loc[table["type"] == "FixedRateCoupon", "payment_date"].tolist()
+            table = ctx.evaluate(self.bond_trade(
+                bond, qs.BondPricingAnchor.z_spread(0.0)), ["Cashflows"]).cashflows
+        dates = table.loc[table["type"] ==
+                          "FixedRateCoupon", "payment_date"].tolist()
         self.assertEqual(dates, ["2026-06-01", "2026-11-30", "2027-02-26"])
 
     def test_csa_policy_and_fixed_income_policy_are_explicit(self):
-        policy = qs.SingleCurveCSADiscountPolicy(collateral_currency="USD", collateral_index="SOFR")
-        self.assertEqual(qs.SingleCurveCSADiscountPolicy.from_dict(policy.to_dict()).to_dict(), policy.to_dict())
+        policy = qs.SingleCurveCSADiscountPolicy(
+            collateral_currency="USD", collateral_index="SOFR")
+        self.assertEqual(qs.SingleCurveCSADiscountPolicy.from_dict(
+            policy.to_dict()).to_dict(), policy.to_dict())
         with self.make_context() as ctx:
             self.assertEqual(ctx.csa_policy.to_dict(), policy.to_dict())
         with self.assertRaises(qs.QuantSupportError):
-            qs.SingleCurveCSADiscountPolicy.from_dict({"currency": "USD", "index": "SOFR"})
+            qs.SingleCurveCSADiscountPolicy.from_dict(
+                {"currency": "USD", "index": "SOFR"})
         spec = dict(identifier="SELECTED", start_date="2026-02-24", maturity_date="2028-02-24",
-                    notional=100, rate=0.04, currency="USD", pricing_anchor={"ZSpread": 0.0}, discount_index={"Other": "UNAVAILABLE"})
+                    notional=100, rate=0.04, currency="USD", discount_index={"Other": "UNAVAILABLE"})
         inputs = self.make_context()
         with qs.PricingContext(quotes=inputs.quotes, curves=inputs.curve_configurations,
-                              csa_policy=policy,
-                              fixed_income_policy=qs.FixedIncomeDiscountPolicy({"USD": "SOFR"}, prefer_instrument_index=False)) as ctx:
-            result = ctx.evaluate(qs.FixedRateBond(**spec))
+                               csa_policy=policy,
+                               fixed_income_policy=qs.FixedIncomeDiscountPolicy({"USD": "SOFR"}, prefer_instrument_index=False)) as ctx:
+            result = ctx.evaluate(self.bond_trade(qs.FixedRateBond(**spec)))
             self.assertTrue(math.isfinite(result.price))
 
     def test_market_config_lists_and_fx_are_in_memory(self):
@@ -313,18 +359,21 @@ class DictAndScriptTests(unittest.TestCase):
         for input_value in [spec, [spec], {"curve_specs": [spec]}]:
             curves = qs.CurveConfiguration.from_dict_list(input_value)
             self.assertEqual(len(curves), 1)
-            self.assertEqual(curves[0].to_dict(), qs.CurveConfiguration.from_dict(spec).to_dict())
-        fx = qs.FxStore.from_dict([{"base": "EUR", "quote": "USD", "rate": 1.1}])
+            self.assertEqual(
+                curves[0].to_dict(), qs.CurveConfiguration.from_dict(spec).to_dict())
+        fx = qs.FxStore.from_dict(
+            [{"base": "EUR", "quote": "USD", "rate": 1.1}])
         self.assertAlmostEqual(fx.rate("USD", "EUR"), 1 / 1.1)
         configs = [
             (qs.VolatilitySurfaceConfiguration, {"market_index": "SOFR", "volatility_type": "Black",
-                                                "smile_type": "Strike", "quotes": []}),
+                                                 "smile_type": "Strike", "quotes": []}),
             (qs.VolatilityCubeConfiguration, {"market_index": "SOFR", "volatility_type": "Black",
                                               "smile_type": "Strike", "quotes": []}),
             (qs.PricerConfiguration, {"instrument_type": "SteppedCouponBond",
                                       "pricer": {"TreeBased": {"time_grid": {}}},
                                       "models": [self.rate_model()]}),
-            (qs.SimulationConfiguration, dict(self.rate_model(), horizon="2Y", n_paths=2)),
+            (qs.SimulationConfiguration, dict(
+                self.rate_model(), horizon="2Y", n_paths=2)),
         ]
         for config_type, config in configs:
             with self.subTest(config=config_type.__name__):
@@ -332,35 +381,42 @@ class DictAndScriptTests(unittest.TestCase):
                                  config_type.from_dict(config).to_dict())
 
     def test_fixed_bond_uses_context_discount_policy(self):
-        spec = {"pricing_anchor": {"ZSpread": 0.0}, "identifier": "BOND", "start_date": "2026-02-24", "maturity_date": "2028-02-24",
+        spec = {"identifier": "BOND", "start_date": "2026-02-24", "maturity_date": "2028-02-24",
                 "notional": 100.0, "rate": 0.04, "currency": "USD"}
         with self.make_context() as context:
-            implicit = context.evaluate(qs.FixedRateBond.from_dict(spec)).price
-            explicit = context.evaluate(qs.FixedRateBond.from_dict(dict(spec, discount_index="SOFR"))).price
+            implicit = context.evaluate(self.bond_trade(
+                qs.FixedRateBond.from_dict(spec))).price
+            explicit = context.evaluate(self.bond_trade(
+                qs.FixedRateBond.from_dict(dict(spec, discount_index="SOFR")))).price
         self.assertAlmostEqual(implicit, explicit, places=10)
 
     def test_script_zero_volatility_matches_context_curve(self):
         spec = self.script_spec([self.rate_model()])
         product = qs.ScriptedProduct.from_dict(spec)
-        self.assertEqual(qs.ScriptedProduct.from_dict(product.to_dict()).to_dict(), product.to_dict())
+        self.assertEqual(qs.ScriptedProduct.from_dict(
+            product.to_dict()).to_dict(), product.to_dict())
         with self.make_context() as context:
-            expected = 100 * context.curve("SOFR").discount_factor("2028-02-24")
+            expected = 100 * \
+                context.curve("SOFR").discount_factor("2028-02-24")
             result = context.evaluate_script(product, n_paths=2, seed=7)
             self.assertAlmostEqual(result["note"], expected, places=8)
-            self.assertEqual(result, context.evaluate_script(spec, n_paths=2, seed=7))
+            self.assertEqual(result, context.evaluate_script(
+                spec, n_paths=2, seed=7))
             explicit = dict(spec, discount_index="SOFR")
-            self.assertEqual(result, context.evaluate_script(explicit, n_paths=2, seed=7))
+            self.assertEqual(result, context.evaluate_script(
+                explicit, n_paths=2, seed=7))
 
     def test_script_inherits_context_hull_white_model(self):
         with self.make_context(models=[self.rate_model(family="HullWhite")]) as context:
             result = context.evaluate_script(self.script_spec(), n_paths=2)
-            expected = 100 * context.curve("SOFR").discount_factor("2028-02-24")
+            expected = 100 * \
+                context.curve("SOFR").discount_factor("2028-02-24")
             self.assertAlmostEqual(result["note"], expected, places=8)
 
     def test_stepped_native_engines_and_script_share_discount_policy(self):
         bond_spec = self.stepped_spec()
         bond_spec.update(maturity_date="2028-02-24", coupons=[{"Fixed": {"rate": 0.04}}],
-                         notional_percentages=[1.0], call_schedule=[], pricing_anchor={"ZSpread": 0.0})
+                         notional_percentages=[1.0], call_schedule=[])
         script = self.script_spec()
         script["events"][0]["code"] = (
             'note = 0; note pays 4 * cvg("2026-02-24", "2027-02-24", "Actual365") '
@@ -370,8 +426,10 @@ class DictAndScriptTests(unittest.TestCase):
         for engine in ["TreeBased", "BackwardFourierEvolution"]:
             with self.subTest(engine=engine):
                 with self.make_context(models=[self.rate_model(family="HullWhite")], engine=engine) as context:
-                    native = context.evaluate(qs.SteppedCouponBond.from_dict(bond_spec)).price
-                    scripted = context.evaluate_script(script, n_paths=2)["note"]
+                    native = context.evaluate(self.bond_trade(qs.SteppedCouponBond.from_dict(
+                        bond_spec), qs.BondPricingAnchor.z_spread(0.0))).price
+                    scripted = context.evaluate_script(
+                        script, n_paths=2)["note"]
                     self.assertAlmostEqual(native, scripted, places=8)
 
     def test_script_seed_is_repeatable(self):
@@ -402,7 +460,8 @@ class DictAndScriptTests(unittest.TestCase):
                 with self.make_context(with_volatility=True, quote_level=level) as context:
                     first = context.evaluate_script(spec, n_paths=4, seed=42)
                     self.assertTrue(math.isfinite(first["note"]))
-                    self.assertEqual(first, context.evaluate_script(spec, n_paths=4, seed=42))
+                    self.assertEqual(first, context.evaluate_script(
+                        spec, n_paths=4, seed=42))
                     prices.append(first["note"])
         self.assertEqual(prices[0], prices[1])
         self.assertEqual(prices[0], prices[2])
@@ -418,13 +477,16 @@ class DictAndScriptTests(unittest.TestCase):
             with self.assertRaisesRegex(qs.QuantSupportError, "no rate model configured"):
                 context.evaluate_script(self.script_spec())
             with self.assertRaises(qs.QuantSupportError):
-                context.evaluate_script(dict(spec, result_variable="unknown"), n_paths=2)
+                context.evaluate_script(
+                    dict(spec, result_variable="unknown"), n_paths=2)
             with self.assertRaises(qs.QuantSupportError):
-                context.evaluate_script(dict(spec, events=[{"date": "2025-01-01", "code": "note = 1;"}]))
+                context.evaluate_script(
+                    dict(spec, events=[{"date": "2025-01-01", "code": "note = 1;"}]))
         with self.assertRaises(ValueError):
             qs.ScriptedProduct.from_dict(dict(spec, events=[]))
         with self.assertRaises(qs.QuantSupportError):
-            qs.ScriptedProduct.from_dict(dict(spec, events=[{"date": "2027-01-01", "code": "???"}]))
+            qs.ScriptedProduct.from_dict(
+                dict(spec, events=[{"date": "2027-01-01", "code": "???"}]))
 
 
 if __name__ == "__main__":

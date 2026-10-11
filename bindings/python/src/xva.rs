@@ -201,44 +201,49 @@ impl CsaTerms {
     }
 }
 
-/// A trade held inside a netting set.
-#[derive(Clone)]
-enum TradeSpec {
-    Swap(Swap),
-    CrossCurrencySwap(CrossCurrencySwap),
-    BasisSwap(BasisSwap),
-    FixFloatCrossCurrencySwap(FixFloatCrossCurrencySwap),
-    FixedRateBond(FixedRateBond),
-    FloatingRateNote(FloatingRateNote),
-    FixedRateDeposit(FixedRateDeposit),
-}
-
 /// A group of trades under a single netting agreement (one client),
 /// carrying the client's [`CsaTerms`].
-#[pyclass(name = "NettingSet", from_py_object)]
-#[derive(Clone)]
+#[pyclass(name = "NettingSet")]
 pub struct NettingSet {
     name: String,
-    trades: Vec<TradeSpec>,
+    trades: Vec<Py<crate::extension::Trade>>,
     csa: QsCsaTerms,
 }
 
 impl NettingSet {
     /// Builds the library netting set (claims + CSA terms).
-    pub fn build(&self) -> PyResult<QsNettingSet> {
+    pub fn build(&self, py: Python<'_>) -> PyResult<QsNettingSet> {
         let mut claims = Vec::new();
-        for t in &self.trades {
-            match t {
-                TradeSpec::Swap(s) => claims.extend(s.claims()?),
-                TradeSpec::CrossCurrencySwap(x) => claims.extend(x.claims()?),
-                TradeSpec::BasisSwap(b) => claims.extend(b.claims()?),
-                TradeSpec::FixFloatCrossCurrencySwap(x) => claims.extend(x.claims()?),
-                TradeSpec::FixedRateBond(b) => claims.extend(b.claims()?),
-                TradeSpec::FloatingRateNote(f) => claims.extend(f.claims()?),
-                TradeSpec::FixedRateDeposit(d) => claims.extend(d.claims()?),
-            }
+        for position in &self.trades {
+            claims.extend(Self::claims(&position.borrow(py), py)?);
         }
         Ok(QsNettingSet::with_csa_terms(claims, self.csa.clone()))
+    }
+
+    fn claims(
+        position: &crate::extension::Trade,
+        py: Python<'_>,
+    ) -> PyResult<Vec<quantsupport::prelude::ContingentClaim>> {
+        let instrument = position.instrument_bound(py);
+        if let Ok(swap) = instrument.extract::<Swap>() {
+            swap.claims(position)
+        } else if let Ok(xccy) = instrument.extract::<CrossCurrencySwap>() {
+            xccy.claims(position)
+        } else if let Ok(basis) = instrument.extract::<BasisSwap>() {
+            basis.claims(position)
+        } else if let Ok(xccy) = instrument.extract::<FixFloatCrossCurrencySwap>() {
+            xccy.claims(position)
+        } else if let Ok(bond) = instrument.extract::<FixedRateBond>() {
+            bond.claims(position)
+        } else if let Ok(frn) = instrument.extract::<FloatingRateNote>() {
+            frn.claims(position)
+        } else if let Ok(deposit) = instrument.extract::<FixedRateDeposit>() {
+            deposit.claims(position)
+        } else {
+            Err(QuantSupportError::new_err(
+                "unsupported instrument type in netting set",
+            ))
+        }
     }
 
     pub fn name(&self) -> &str {
@@ -253,28 +258,13 @@ impl NettingSet {
         let mut specs = Vec::new();
         for item in trades.try_iter()? {
             let item = item?;
-            if let Ok(swap) = item.extract::<Swap>() {
-                specs.push(TradeSpec::Swap(swap));
-            } else if let Ok(xccy) = item.extract::<CrossCurrencySwap>() {
-                specs.push(TradeSpec::CrossCurrencySwap(xccy));
-            } else if let Ok(basis) = item.extract::<BasisSwap>() {
-                specs.push(TradeSpec::BasisSwap(basis));
-            } else if let Ok(xccy) = item.extract::<FixFloatCrossCurrencySwap>() {
-                specs.push(TradeSpec::FixFloatCrossCurrencySwap(xccy));
-            } else if let Ok(bond) = item.extract::<FixedRateBond>() {
-                specs.push(TradeSpec::FixedRateBond(bond));
-            } else if let Ok(frn) = item.extract::<FloatingRateNote>() {
-                specs.push(TradeSpec::FloatingRateNote(frn));
-            } else if let Ok(deposit) = item.extract::<FixedRateDeposit>() {
-                specs.push(TradeSpec::FixedRateDeposit(deposit));
-            } else {
-                return Err(QuantSupportError::new_err(format!(
-                    "unsupported trade type in netting set '{name}' \
-                     (expected Swap, CrossCurrencySwap, BasisSwap, \
-                     FixFloatCrossCurrencySwap, FixedRateBond, FloatingRateNote \
-                     or FixedRateDeposit)"
-                )));
-            }
+            let position = item.extract::<Py<crate::extension::Trade>>().map_err(|_| {
+                pyo3::exceptions::PyTypeError::new_err(
+                    "NettingSet requires Trade objects, not bare instruments",
+                )
+            })?;
+            Self::claims(&position.borrow(item.py()), item.py())?;
+            specs.push(position);
         }
         Ok(Self {
             name,

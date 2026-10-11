@@ -8,18 +8,22 @@ import quantsupport as qs
 
 class QuoteRiskTests(unittest.TestCase):
     def test_contract_terms_do_not_alias_market_pillars_on_a_fresh_tape(self):
-        data = Path(__file__).resolve().parents[3] / "examples" / "hullwhite" / "data"
+        data = Path(__file__).resolve(
+        ).parents[3] / "examples" / "hullwhite" / "data"
         quotes = qs.QuoteStore.from_json(str(data / "quotes.json"))
-        curves = qs.CurveConfiguration.from_json(str(data / "curve_specs.json"))
-        csa_policy = qs.SingleCurveCSADiscountPolicy(qs.Currency.USD, qs.MarketIndex.SOFR)
+        curves = qs.CurveConfiguration.from_json(
+            str(data / "curve_specs.json"))
+        csa_policy = qs.SingleCurveCSADiscountPolicy(
+            qs.Currency.USD, qs.MarketIndex.SOFR)
         ref = quotes.reference_date
         trades = [
-            qs.Swap(identifier="RISK-SWAP", start_date=ref, maturity_date=ref + "5Y",
-                    notional=1_000_000, fixed_rate=0.04, currency=qs.Currency.USD,
-                    market_index=qs.MarketIndex.SOFR, side=qs.Side.PayShort),
-            qs.FixedRateBond(pricing_anchor=qs.BondPricingAnchor.z_spread(0.0), identifier="RISK-BOND", start_date=ref, maturity_date=ref + "5Y",
-                             notional=500_000, rate=0.045, currency=qs.Currency.USD,
-                             payment_frequency=qs.Frequency.Semiannual),
+            qs.Trade(qs.Swap(identifier="RISK-SWAP", start_date=ref, maturity_date=ref + "5Y",
+                             notional=1_000_000, fixed_rate=0.04, currency=qs.Currency.USD,
+                             market_index=qs.MarketIndex.SOFR), ref, qs.Side.PayShort),
+            qs.Trade(qs.FixedRateBond(identifier="RISK-BOND", start_date=ref, maturity_date=ref + "5Y",
+                                      notional=500_000, rate=0.045, currency=qs.Currency.USD,
+                                      payment_frequency=qs.Frequency.Semiannual), ref,
+                     pricing_anchor=qs.BondPricingAnchor.z_spread(0.0)),
         ]
         # The overnight pillar exposed the stale-node alias; the 5Y pillar
         # also verifies an economically material derivative independently.
@@ -38,17 +42,19 @@ class QuoteRiskTests(unittest.TestCase):
         for order in [trades, list(reversed(trades))]:
             with context() as ctx:
                 risks = {
-                    trade.identifier: ctx.evaluate(trade, [qs.Request.Value, qs.Request.Sensitivities])
+                    trade.instrument.identifier: ctx.evaluate(
+                        trade, [qs.Request.Value, qs.Request.Sensitivities])
                     .sensitivities.set_index("pillar")["value"]
                     for trade in order
                 }
             for trade in order:
                 for label in labels:
-                    with self.subTest(first=order[0].identifier, trade=trade.identifier, pillar=label):
+                    with self.subTest(first=order[0].instrument.identifier, trade=trade.instrument.identifier, pillar=label):
                         bump = 1e-5
-                        finite_difference = (value(trade, label, bump) - value(trade, label, -bump)) / (2 * bump)
+                        finite_difference = (
+                            value(trade, label, bump) - value(trade, label, -bump)) / (2 * bump)
                         self.assertAlmostEqual(
-                            risks[trade.identifier][label], finite_difference,
+                            risks[trade.instrument.identifier][label], finite_difference,
                             delta=max(0.1, abs(finite_difference) * 1e-5),
                         )
 

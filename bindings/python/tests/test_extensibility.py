@@ -112,14 +112,17 @@ class ExtensionTests(unittest.TestCase):
         result = evaluator.evaluate(ChildTrade("CHILD", 2.0), Provider())
         self.assertEqual(result.price, 6.0)
 
-    def test_native_trade_classes_are_subclassable_and_overridable(self):
+    def test_native_instruments_and_their_trades_are_subclassable(self):
         class ExtendedSwap(qs.Swap):
+            pass
+
+        class ExtendedSwapTrade(qs.Trade):
             pass
 
         class OverridePricer:
             def evaluate(self, trade, requests, context):
                 return qs.EvaluationResults(
-                    context.evaluation_date, trade.identifier, price=99.0
+                    context.evaluation_date, trade.instrument.identifier, price=99.0
                 )
 
         swap = ExtendedSwap(
@@ -133,11 +136,14 @@ class ExtensionTests(unittest.TestCase):
         )
         swap.python_metadata = {"desk": "custom"}
         context = self.make_context()
-        context.register_pricer(ExtendedSwap, OverridePricer())
+        trade = ExtendedSwapTrade(swap, "2025-01-02")
+        context.register_pricer(ExtendedSwapTrade, OverridePricer())
         with context:
-            result = context.evaluate(swap)
+            result = context.evaluate(trade)
 
         self.assertEqual(result.price, 99.0)
+        self.assertIsInstance(swap, qs.Instrument)
+        self.assertIs(trade.instrument, swap)
         self.assertEqual(swap.python_metadata["desk"], "custom")
 
 
