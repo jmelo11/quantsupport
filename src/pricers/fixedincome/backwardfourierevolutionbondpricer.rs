@@ -295,3 +295,134 @@ impl_bond_pricer!(
     BackwardFourierEvolutionBondPricer,
     SteppedCouponBondTrade<DualFwd>
 );
+
+#[cfg(test)]
+pub(super) mod test_support {
+    use super::super::bondpricer::test_support::{policy, provider_with_method, TestProvider};
+    use super::BackwardFourierEvolutionBondPricer;
+    use crate::prelude::*;
+    use crate::rates::yieldtermstructure::flatforwardtermstructure::FlatForwardTermStructure;
+
+    pub fn fourier_pricer() -> BackwardFourierEvolutionBondPricer {
+        let mut pricer = BackwardFourierEvolutionBondPricer::new();
+        pricer.set_discount_policy(policy());
+        pricer
+    }
+
+    pub fn fourier_provider(
+        evaluation_date: Date,
+        steps_per_year: usize,
+    ) -> (TestProvider, FlatForwardTermStructure<f64>) {
+        provider_with_method(evaluation_date, steps_per_year, true)
+    }
+
+    pub fn fourier_value(
+        pricer: &BackwardFourierEvolutionBondPricer,
+        trade: &SteppedCouponBondTrade<DualFwd>,
+        provider: &TestProvider,
+    ) -> f64 {
+        pricer
+            .evaluate(trade, &[Request::Value], provider)
+            .unwrap_or_else(|error| panic!("Fourier bond value: {error}"))
+            .price()
+            .unwrap_or_else(|| panic!("Fourier bond value must be present"))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::{
+        bondpricer::test_support::{ALPHA, FACE, SIGMA},
+        treebasedbondpricer::test_support::bond,
+    };
+    use super::test_support::*;
+    use crate::prelude::*;
+    use crate::{
+        instruments::{
+            cashflows::makeleg::PaymentStructure, fixedincome::callschedule::CallScheduleEntry,
+        },
+        models::hullwhite::hullwhitemodel::HullWhite,
+    };
+
+    #[test]
+    fn backward_fourier_zero_coupon_matches_hull_white_bond_option_formula() {
+        let evaluation_date = Date::new(2025, 1, 1);
+        let maturity_date = Date::new(2027, 1, 1);
+        let (provider, curve) = fourier_provider(evaluation_date, 96);
+        let strike = 0.95;
+        let trade = bond(
+            evaluation_date,
+            maturity_date,
+            0.0,
+            PaymentStructure::Zero,
+            vec![CallScheduleEntry::new(Date::new(2026, 1, 1), strike * FACE)],
+        );
+        let fourier = fourier_value(
+            &fourier_pricer(),
+            &trade.with_pricing_anchor(BondPricingAnchor::OAS(0.0)),
+            &provider,
+        );
+        let model = HullWhite::new(ALPHA, &curve).with_constant_volatility(SIGMA);
+        let option = model
+            .bond_call_price(1.0, 2.0, strike, SIGMA, &curve)
+            .unwrap_or_else(|error| panic!("closed-form bond call: {error}"));
+        let benchmark = FACE
+            * (curve
+                .discount_factor_from_time(2.0)
+                .unwrap_or_else(|error| panic!("discount factor: {error}"))
+                - option);
+        assert!(
+            (fourier - benchmark).abs() < 0.10,
+            "{fourier} vs {benchmark}"
+        );
+    }
+
+    #[test]
+    fn backward_fourier_oas_sensitivity_is_in_common_table() {
+        let evaluation_date = Date::new(2025, 1, 1);
+        let (provider, _) = fourier_provider(evaluation_date, 24);
+        let trade = bond(
+            evaluation_date,
+            Date::new(2028, 1, 1),
+            0.04,
+            PaymentStructure::Bullet,
+            vec![CallScheduleEntry::new(Date::new(2026, 7, 1), 100.0)],
+        );
+        let oas = 0.005;
+        let results = fourier_pricer()
+            .evaluate(
+                &trade
+                    .clone()
+                    .with_pricing_anchor(BondPricingAnchor::OAS(oas)),
+                &[Request::Value, Request::Sensitivities],
+                &provider,
+            )
+            .unwrap_or_else(|error| panic!("Fourier sensitivities: {error}"));
+        let oas_risk = results
+            .sensitivities()
+            .unwrap_or_else(|| panic!("Fourier sensitivity result"))
+            .instrument_keys()
+            .iter()
+            .zip(
+                results
+                    .sensitivities()
+                    .unwrap_or_else(|| panic!("Fourier sensitivity result"))
+                    .exposure(),
+            )
+            .find_map(|(label, exposure)| (label == "TEST-BOND.OAS").then_some(*exposure))
+            .unwrap_or_else(|| panic!("Fourier OAS sensitivity"));
+        let bump = 1.0e-5;
+        let finite_difference = (fourier_value(
+            &fourier_pricer(),
+            &trade
+                .clone()
+                .with_pricing_anchor(BondPricingAnchor::OAS(oas + bump)),
+            &provider,
+        ) - fourier_value(
+            &fourier_pricer(),
+            &trade.with_pricing_anchor(BondPricingAnchor::OAS(oas - bump)),
+            &provider,
+        )) / (2.0 * bump);
+        assert!((oas_risk - finite_difference).abs() < 0.05);
+    }
+}

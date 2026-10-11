@@ -149,3 +149,77 @@ pub(super) fn bond_event_grid<T: Scalar>(
         calls,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::super::bondanalytics::BondTerms;
+    use super::super::{bondpricer::test_support::FACE, treebasedbondpricer::test_support::bond};
+    use super::{bond_event_grid, ResolvedCashflow};
+    use crate::prelude::*;
+    use crate::{
+        currencies::currency::Currency,
+        instruments::{
+            cashflows::makeleg::PaymentStructure,
+            fixedincome::{
+                callschedule::CallScheduleEntry, makesteppedcouponbond::MakeSteppedCouponBond,
+            },
+        },
+    };
+
+    #[test]
+    fn call_windows_cover_interior_grid_points_and_active_settlement() -> Result<()> {
+        let start = Date::new(2025, 1, 1);
+        let maturity = Date::new(2027, 1, 1);
+        let trade = bond(start, maturity, 0.0, PaymentStructure::Zero, vec![]);
+        let cashflows = vec![ResolvedCashflow {
+            payment_date: maturity,
+            amount: FACE,
+        }];
+        let terms = bond_event_grid(
+            trade.bond_leg(),
+            FACE,
+            &[CallScheduleEntry::window(start + 90, start + 640, 95.0)],
+            &cashflows,
+            start,
+            TimeGridConfiguration::new(2, 4, DayCounter::Actual365),
+        )?;
+        assert_eq!(terms.steps, 4);
+        assert_eq!(
+            terms
+                .calls
+                .iter()
+                .map(|call| call.call_price)
+                .collect::<Vec<_>>(),
+            vec![None, Some(95.0), Some(95.0), Some(95.0), None]
+        );
+        let active = bond_event_grid(
+            trade.bond_leg(),
+            FACE,
+            &[CallScheduleEntry::window(start + 90, start + 640, 95.0)],
+            &cashflows,
+            start + 365,
+            TimeGridConfiguration::new(4, 4, DayCounter::Actual365),
+        )?;
+        assert_eq!(active.calls[0].call_price, Some(95.0));
+        let amortizing = MakeSteppedCouponBond::<DualFwd>::default()
+            .with_identifier("USD-AMORTIZING-WINDOW".into())
+            .with_start_date(start)
+            .with_maturity_date(maturity)
+            .with_notional(FACE)
+            .with_currency(Currency::USD)
+            .with_coupons(vec![CashflowType::fixed(0.0)])
+            .with_notional_percentages(vec![1.0, 0.8])
+            .build()?;
+        let amortizing_terms = bond_event_grid(
+            amortizing.leg(),
+            FACE,
+            &[CallScheduleEntry::window(start + 90, start + 640, 95.0)],
+            &cashflows,
+            start,
+            TimeGridConfiguration::new(2, 4, DayCounter::Actual365),
+        )?;
+        assert_eq!(amortizing_terms.calls[1].call_price, Some(76.0));
+        assert_eq!(amortizing_terms.calls[2].call_price, Some(76.0));
+        Ok(())
+    }
+}

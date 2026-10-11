@@ -18,5 +18,3 @@ pub mod backwardfourierevolutionbondpricer;
 mod bondanalytics;
 mod bondevents;
 mod callablebond;
-#[cfg(test)]
-mod tests;
