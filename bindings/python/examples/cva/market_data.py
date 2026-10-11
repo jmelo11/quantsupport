@@ -22,19 +22,31 @@ class MarketInputs:
 
     quotes: qs.QuoteStore
     curves: list
+    credit_curves: list
     volatility_surfaces: list
     csa_policy: qs.SingleCurveCSADiscountPolicy
 
 
 def load_market():
-    """Load fresh typed inputs from the shared USD/SOFR example data."""
+    """Load shared USD/SOFR inputs and this example's illustrative CDS market."""
+    quotes = json.loads(
+        (MARKET_DATA / "quotes.json").read_text(encoding="utf-8"))
+    credit_quotes = read_configuration("cva", "credit_quotes.json")
+    if quotes["reference_date"] != credit_quotes["reference_date"]:
+        raise ValueError("Rate and credit quotes must share a reference date")
+    quotes["quotes"].extend(credit_quotes["quotes"])
     return MarketInputs(
-        quotes=qs.QuoteStore.from_json(str(MARKET_DATA / "quotes.json")),
-        curves=qs.CurveConfiguration.from_json(str(MARKET_DATA / "curve_specs.json")),
+        quotes=qs.QuoteStore.from_dict(quotes),
+        curves=qs.CurveConfiguration.from_json(
+            str(MARKET_DATA / "curve_specs.json")),
+        credit_curves=qs.CreditCurveConfiguration.from_json(
+            str(EXAMPLES / "cva" / "data" / "credit_curves.json")
+        ),
         volatility_surfaces=qs.VolatilitySurfaceConfiguration.from_json(
             str(MARKET_DATA / "vol_specs.json")
         ),
-        csa_policy=qs.SingleCurveCSADiscountPolicy(qs.Currency.USD, qs.MarketIndex.SOFR),
+        csa_policy=qs.SingleCurveCSADiscountPolicy(
+            qs.Currency.USD, qs.MarketIndex.SOFR),
     )
 
 

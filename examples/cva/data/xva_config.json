@@ -5,8 +5,21 @@
             "lambda": 0.05,
             "parameter_source": {
                 "Calibrated": {
-                    "source": { "Surface": { "market_index": "SOFR" } },
-                    "calibration_basket": { "strike": "Atm" }
+                    "source": {
+                        "Surface": {
+                            "market_index": "SOFR"
+                        }
+                    },
+                    "calibration_basket": {
+                        "expiries": [
+                            "6M",
+                            "1Y",
+                            "2Y",
+                            "3Y",
+                            "4Y"
+                        ],
+                        "strike": "Atm"
+                    }
                 }
             }
         },
@@ -15,17 +28,33 @@
             "lambda": 0.05,
             "parameter_source": {
                 "Calibrated": {
-                    "source": { "Cube": { "market_index": "ICP" } },
+                    "source": {
+                        "Cube": {
+                            "market_index": "ICP"
+                        }
+                    },
                     "calibration_basket": {
-                        "expiries": ["6M", "1Y", "2Y", "3Y"],
-                        "tenors": ["1Y"],
+                        "expiries": [
+                            "6M",
+                            "1Y",
+                            "2Y",
+                            "3Y"
+                        ],
+                        "tenors": [
+                            "1Y"
+                        ],
                         "strike": "Atm"
                     }
                 }
             }
         },
         {
-            "market_index": { "Collateral": ["CLP", "USD"] },
+            "market_index": {
+                "Collateral": [
+                    "CLP",
+                    "USD"
+                ]
+            },
             "driver": "ICP"
         }
     ],

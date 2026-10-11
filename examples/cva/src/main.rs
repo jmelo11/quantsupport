@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use quantsupport::prelude::*;
 
-use utils::{load_curve_specs, load_quotes, load_vol_specs};
+use utils::{load_credit_curve_specs, load_curve_specs, load_quotes, load_vol_specs};
 
 fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     // ── 1. Build PricingContext from market data ────────────────
@@ -14,6 +14,7 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     let quote_store = load_quotes(&data_dir.join("quotes.json"))?;
     let ref_date = quote_store.reference_date();
     let curve_specs = load_curve_specs(&data_dir.join("curve_specs.json"))?;
+    let credit_curve_specs = load_credit_curve_specs(&data_dir.join("credit_curve_specs.json"))?;
 
     // Only bootstrap curves we need: SOFR, ICP, Collateral(CLP, USD) and the
     // TermSOFR3m funding-index curve, bootstrapped from a 3M deposit plus
@@ -39,11 +40,13 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         .with_base_currency(Currency::USD)
         .with_base_index(MarketIndex::SOFR)
         .with_curve_configurations(curve_specs)
+        .with_credit_curve_configurations(credit_curve_specs)
         .with_volatility_surface_configurations(vol_specs.volatility_surfaces)
         .with_volatility_cube_configurations(vol_specs.volatility_cubes);
     ctx.initialize()?;
 
     println!("Curves bootstrapped (SOFR, ICP, Collateral CLP/USD, TermSOFR3m funding).");
+    println!("CORPORATE-A USD credit curve bootstrapped from 1Y, 3Y, 5Y and 10Y CDS quotes.");
     println!("Volatility surface (SOFR caplets) and cube (ICP swaptions) built.");
 
     // ── 2. Build trades ─────────────────────────────────────────
@@ -113,6 +116,14 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     // TermSOFR (`funding_spread_curve`).
     let csa: CsaTerms =
         serde_json::from_reader(std::fs::File::open(data_dir.join("csa_terms.json"))?)?;
+    println!(
+        "CSA: variation margin = {}, thresholds = {}/{}, MTA = {} {}.",
+        csa.variation_margin,
+        csa.counterparty_threshold,
+        csa.own_threshold,
+        csa.minimum_transfer_amount,
+        csa.collateral_currency
+    );
     let n_claims = irs_claims.len() + xccy_claims.len();
     let mut all_claims = irs_claims;
     all_claims.extend(xccy_claims);
@@ -156,7 +167,7 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    println!("\nExposure profile (from cube):");
+    println!("\nRaw exposure profile (pre-margin, from cube):");
     for cube in &result.cubes {
         let epe = cube.epe();
         let ene = cube.ene();

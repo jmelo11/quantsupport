@@ -1,0 +1,19 @@
+{
+    "credit_curve_specs": [
+        {
+            "market_index": {
+                "Credit": "CORPORATE-A"
+            },
+            "currency": "USD",
+            "discount_index": "SOFR",
+            "recovery": 0.40,
+            "enable_extrapolation": false,
+            "quotes": [
+                "Cds_CORPORATE-A_USD_1Y",
+                "Cds_CORPORATE-A_USD_3Y",
+                "Cds_CORPORATE-A_USD_5Y",
+                "Cds_CORPORATE-A_USD_10Y"
+            ]
+        }
+    ]
+}

@@ -93,9 +93,10 @@ impl<T: BilinearValue> VolatilitySurface<T> for InterpolatedVolatilitySurface<T>
             .collect::<Vec<_>>();
 
         BilinearInterpolator::interpolate(expiry.period_in_year(), key, points).ok_or_else(|| {
-            QSError::InterpolationErr(
-                "Could not bilinearly interpolate volatility for requested expiry/key".into(),
-            )
+            QSError::InterpolationErr(format!(
+                "Could not bilinearly interpolate volatility for expiry {expiry} and key {key} on {}",
+                self.market_index
+            ))
         })
     }
 

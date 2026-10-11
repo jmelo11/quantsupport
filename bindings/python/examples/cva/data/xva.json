@@ -11,13 +11,20 @@
             }
           },
           "calibration_basket": {
+            "expiries": [
+              "3M",
+              "6M",
+              "1Y",
+              "2Y",
+              "3Y"
+            ],
             "strike": "Atm"
           }
         }
       }
     }
   ],
-  "n_paths": 512,
+  "n_paths": 1024,
   "seed": 42,
   "frequency": "Quarterly"
 }

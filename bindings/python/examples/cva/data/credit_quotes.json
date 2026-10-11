@@ -1,0 +1,17 @@
+{
+    "reference_date": "2026-02-24",
+    "quotes": [
+        {
+            "identifier": "Cds_CORPORATE-A_USD_1Y",
+            "mid": 0.008
+        },
+        {
+            "identifier": "Cds_CORPORATE-A_USD_3Y",
+            "mid": 0.01
+        },
+        {
+            "identifier": "Cds_CORPORATE-A_USD_5Y",
+            "mid": 0.012
+        }
+    ]
+}
