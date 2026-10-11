@@ -15,7 +15,8 @@ quotes.
 | ------------------------------- | ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
 | Fixed-rate deposit              | `FixedRateDeposit_<CCY>_<Index>_<Tenor>`                                                                | `FixedRateDeposit_USD_SOFR_1D`                                                                                    |
 | Fixed-rate bond                 | `FixedRateBond_<CCY>_<Index>_<Tenor>[_<PayFreq>]_<CouponRate>[_<CalibrationStrategy>]`                  | `FixedRateBond_USD_CORP_5Y_Semiannual_0.04_AnchorPrice`                                                           |
-| OIS / fixed–float swap          | `OIS_<CCY>_<Index>_<Tenor>[_<FixedFreq>_<FloatFreq>]`                                                   | `OIS_USD_SOFR_5Y`, `OIS_CLP_ICP_6M`                                                                                |
+| Overnight index swap           | `OIS_<CCY>_<Index>_<Tenor>[_<FixedFreq>[_<OvernightFreq>[...]]]`                                        | `OIS_USD_SOFR_5Y`, `OIS_CLP_ICP_6M`                                                                                |
+| Regular fixed-float swap        | `Swap_<CCY>_<Index>_<Tenor>[_<FixedFreq>[_<FloatFreq>]]`                                                | `Swap_USD_TermSOFR3m_5Y_Semiannual_Quarterly`                                                                        |
 | Tenor basis swap                | `BasisSwap_<CCY>_<PayIndex>_<RecvIndex>_<Tenor>[_<PayFreq>_<RecvFreq>]`                                 | `BasisSwap_USD_SOFR_TermSOFR3m_2Y`                                                                                 |
 | Fix–float cross-currency swap   | `FixFloatCrossCurrencySwap_<FixedCCY>_<FloatIndex>_<FloatCCY>_<Tenor>[..]`                              | `FixFloatCrossCurrencySwap_CLP_SOFR_USD_5Y`                                                                        |
 | Float–float cross-currency swap | `FloatFloatCrossCurrencySwap_<DomCCY>_<DomIndex>_<ForIndex>_<ForCCY>_<Tenor>[..]`                       | `FloatFloatCrossCurrencySwap_USD_SOFR_ESTR_EUR_5Y`                                                                 |
@@ -35,7 +36,7 @@ quotes.
 - `<CalibrationStrategy>` is `AnchorYield` or `AnchorPrice` for bonds and defaults to `AnchorYield`. For FX forwards it is required and is either `AnchorForwardPoints` or `AnchorOutrightPrice`. Deposits accept rate quotes only. Strategy aliases without the `Anchor` prefix are rejected.
 - Currency pairs are concatenated ISO codes (`USDCLP` = price of 1 USD in CLP).
 
-`QuoteInstrument` has one variant per row (`Ois`, `FixedRateDeposit`, `FixedRateBond`, `BasisSwap`, `FixFloatCrossCurrencySwap`, `FloatFloatCrossCurrencySwap`, `FxForward`, `Future`, `ConvexityAdjustment`, `CapFloor`, `CapletFloorlet`, `Swaption`, `EquityOption`, `FxOption`, `Cds`) carrying the parsed fields. Bootstrappers call `CurveConfiguration::instruments()` to turn these into instruments at the quoted levels.
+`QuoteInstrument` distinguishes `OIS` from `Swap`, along with the other instrument families in the table. `QuoteDetails` carries the parsed fields. Curve configurations resolve these details into calibration instruments at the selected quote level.
 
 ## `QuoteStore`
 
