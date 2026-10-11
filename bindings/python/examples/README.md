@@ -85,7 +85,7 @@ python bindings/python/examples/run_notebooks.py hullwhite/simulations.ipynb sen
 
 The runner discovers notebooks in every scope and uses a fresh kernel with the
 current interpreter for each notebook. It validates the notebook format and
-fails on any cell error or failed assertion.
+fails on any cell error.
 Executed copies preserve the scope folders under `--output-dir`.
 Source notebooks have no stored outputs, so checked-in results cannot be
 mistaken for a run against a different binding version. The callable-bond

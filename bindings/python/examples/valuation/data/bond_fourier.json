@@ -27,7 +27,15 @@
                 }
               },
               "calibration_basket": {
-                "strike": "Atm"
+                "strike": "Atm",
+                "expiries": [
+                  "3M",
+                  "6M",
+                  "1Y",
+                  "2Y",
+                  "3Y",
+                  "5Y"
+                ]
               }
             }
           }

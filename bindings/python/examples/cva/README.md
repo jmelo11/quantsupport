@@ -10,11 +10,12 @@ not imply that raw NPV cubes or PFE percentiles are exposed by that API.
 | [xva.ipynb](xva.ipynb) | How does legal netting change future exposure and XVA for the same positions? | XvaConfig, CsaTerms, NettingSet, calibrated LGM paths, signed EPE/ENE/EE profiles, XVA values and parameter risk |
 
 [data/xva.json](data/xva.json) holds the model and simulation settings. Client
-credit, funding, and variation-margin terms are in
-[data/csa_terms.json](data/csa_terms.json). The credit curve is bootstrapped
+credit, funding, and variation-margin terms are defined directly in Python
+in the notebook. The credit curve is bootstrapped
 from the illustrative CDS quotes in [data/credit_quotes.json](data/credit_quotes.json)
-using [data/credit_curves.json](data/credit_curves.json). The funding-spread
-curve contains dated spreads over SOFR. The notebook compares netting and
+using [data/credit_curves.json](data/credit_curves.json). A reusable
+`TenorBasedZeroRateTermStructure` supplies funding spreads over SOFR;
+`ZeroRateTermStructure` also supports dated pillars. The notebook compares netting and
 variation-margin effects using identical market paths.
 
 The ATM calibration basket stops at the portfolio's three-year horizon.
