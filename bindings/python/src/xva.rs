@@ -10,13 +10,11 @@
 
 use pyo3::prelude::*;
 use quantsupport::prelude::{
-    CsaTerms as QsCsaTerms, ExposureResult, FundingSpreadCurve, NettingSet as QsNettingSet,
+    CsaTerms as QsCsaTerms, ExposureResult, NettingSet as QsNettingSet,
     XvaEngineConfig as QsXvaEngineConfig,
 };
 
-use crate::conv::{
-    dataframe, extract_currency, extract_date, extract_market_index, from_json_file, from_py,
-};
+use crate::conv::{dataframe, extract_currency, extract_market_index, from_json_file, from_py};
 use crate::trades::{
     BasisSwap, CrossCurrencySwap, FixFloatCrossCurrencySwap, FixedRateBond, FixedRateDeposit,
     FloatingRateNote, Swap,
@@ -87,18 +85,8 @@ impl CsaTerms {
         own_threshold: f64,
         minimum_transfer_amount: f64,
     ) -> PyResult<Self> {
-        // A list of (date, spread) pairs, dates as Date/'YYYY-MM-DD'/datetime.date.
         let funding_spread_curve = funding_spread_curve
-            .map(|obj| {
-                let mut dates = Vec::new();
-                let mut spreads = Vec::new();
-                for item in obj.try_iter()? {
-                    let (date, spread) = item?.extract::<(Bound<'_, PyAny>, f64)>()?;
-                    dates.push(extract_date(&date)?);
-                    spreads.push(spread);
-                }
-                PyResult::Ok(FundingSpreadCurve { dates, spreads })
-            })
+            .map(crate::curves::extract_zero_curve)
             .transpose()?;
         let terms = Self {
             inner: QsCsaTerms {
@@ -196,17 +184,13 @@ impl CsaTerms {
         self.inner.funding_spread
     }
 
-    /// The funding spread term structure as a list of `(date, spread)` pairs,
-    /// or `None` when a flat spread / funding curve is used.
+    /// The reusable zero-rate spread curve, or `None` when absent.
     #[getter]
-    fn funding_spread_curve(&self) -> Option<Vec<(String, f64)>> {
-        self.inner.funding_spread_curve.as_ref().map(|c| {
-            c.dates
-                .iter()
-                .zip(&c.spreads)
-                .map(|(d, s)| (d.to_string(), *s))
-                .collect()
-        })
+    fn funding_spread_curve(&self) -> Option<crate::curves::ZeroRateTermStructure> {
+        self.inner
+            .funding_spread_curve
+            .clone()
+            .map(|inner| crate::curves::ZeroRateTermStructure { inner })
     }
 
     #[getter]
@@ -229,7 +213,7 @@ impl CsaTerms {
         let funding = if let Some(idx) = &self.inner.funding_index {
             format!("funding_index={idx:?}")
         } else if let Some(c) = &self.inner.funding_spread_curve {
-            format!("funding_spread_curve=[{} pillars]", c.dates.len())
+            format!("funding_spread_curve=[{} pillars]", c.dates().len())
         } else {
             format!("funding_spread={}", self.inner.funding_spread)
         };

@@ -118,7 +118,6 @@ mod tests {
         assert_eq!(csa.minimum_transfer_amount, 10_000.0);
         assert_eq!(csa.funding_index, Some(MarketIndex::TermSOFR3m));
         let funding = csa.funding_spread_curve.unwrap();
-        funding.validate().unwrap();
-        assert_eq!(funding.spreads, [0.004, 0.005, 0.006]);
+        assert_eq!(funding.rates(), &[0.004, 0.005, 0.006]);
     }
 }

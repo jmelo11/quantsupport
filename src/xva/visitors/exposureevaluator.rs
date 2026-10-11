@@ -249,13 +249,28 @@ struct ChunkResult {
     sensitivities: Vec<(String, f64)>,
 }
 
-pub(crate) struct VariationMarginSimulation {
-    pub(crate) terms: CsaTerms,
-    pub(crate) accrual_request_indices: Vec<usize>,
-    pub(crate) fx_request_index: Option<usize>,
+/// CSA terms and simulation-response slots used to accrue and convert collateral.
+pub struct VariationMarginSimulation {
+    terms: CsaTerms,
+    accrual_request_indices: Vec<usize>,
+    fx_request_index: Option<usize>,
 }
 
 impl VariationMarginSimulation {
+    /// Associates CSA terms with the collateral accrual and optional FX response slots.
+    #[must_use]
+    pub const fn new(
+        terms: CsaTerms,
+        accrual_request_indices: Vec<usize>,
+        fx_request_index: Option<usize>,
+    ) -> Self {
+        Self {
+            terms,
+            accrual_request_indices,
+            fx_request_index,
+        }
+    }
+
     fn adjust_path(
         &self,
         npvs: &[DualFwd],
@@ -348,21 +363,34 @@ where
     H1: std::hash::BuildHasher + Sync,
     H2: std::hash::BuildHasher + Sync,
 {
-    evaluate_with_margin(dates, trades, factories, &HashMap::new(), model_setup)
+    evaluate_with_margin(
+        dates,
+        trades,
+        factories,
+        &HashMap::<String, VariationMarginSimulation>::new(),
+        model_setup,
+    )
 }
 
+/// Evaluates exposure and XVA using each netting set's variation-margin terms.
+/// Exposure cubes retain raw NPVs; XVA aggregators use exposure after margin calls.
+///
+/// # Errors
+/// Returns an error for invalid margin parameters, missing simulated collateral
+/// observations, failed claim evaluation or failed adjoint propagation.
 #[allow(clippy::too_many_lines)]
-pub(crate) fn evaluate_with_margin<S, H1, H2>(
+pub fn evaluate_with_margin<S, H1, H2, H3>(
     dates: &[Date],
     trades: &HashMap<String, &[ContingentClaim], H1>,
     factories: &HashMap<String, Vec<Box<dyn PfeAggregatorFactory>>, H2>,
-    margins: &HashMap<String, VariationMarginSimulation>,
+    margins: &HashMap<String, VariationMarginSimulation, H3>,
     model_setup: &S,
 ) -> Result<ExposureResult>
 where
     S: XvaModelSetup,
     H1: std::hash::BuildHasher + Sync,
     H2: std::hash::BuildHasher + Sync,
+    H3: std::hash::BuildHasher + Sync,
 {
     let n_paths = model_setup.n_paths();
     let n_dates = dates.len();

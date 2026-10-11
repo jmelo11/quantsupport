@@ -202,8 +202,12 @@ CSA terms describe collateral discounting and the credit and funding inputs for 
   "funding_spread": 0.0,
   "funding_index": "TermSOFR3m",
   "funding_spread_curve": {
+    "reference_date": "2026-11-11",
     "dates": ["2026-11-11", "2028-11-11"],
-    "spreads": [0.004, 0.005]
+    "rates": [0.004, 0.005],
+    "rate_definition": {"day_counter": "Actual365", "compounding": "Continuous", "frequency": "Annual"},
+    "interpolator": "Linear",
+    "enable_extrapolation": true
   },
   "credit_index": { "Credit": "CORPORATE-A" }
 }

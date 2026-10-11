@@ -58,6 +58,12 @@ fn serde_input<'py>(obj: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
     if obj.is_instance_of::<crate::time::Date>() || obj.is_instance_of::<crate::time::Period>() {
         return obj.str().map(Bound::into_any);
     }
+    if let Ok(curve) = obj.extract::<crate::curves::ZeroRateTermStructure>() {
+        return pythonize::pythonize(obj.py(), &curve.inner).map_err(qs_err);
+    }
+    if let Ok(curve) = obj.extract::<crate::curves::TenorBasedZeroRateTermStructure>() {
+        return pythonize::pythonize(obj.py(), curve.inner.curve()).map_err(qs_err);
+    }
     if let Ok(dictionary) = obj.cast::<PyDict>() {
         let result = PyDict::new(obj.py());
         for (key, value) in dictionary.iter() {

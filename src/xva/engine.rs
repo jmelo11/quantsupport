@@ -401,7 +401,8 @@ impl XvaEngine {
 
             // FVA: funding curve when assigned, explicit spread term
             // structure otherwise, flat spread as fallback.
-            let fva_factory = self.build_fva_factory(id, csa, &system_ts, &system_dfs)?;
+            let fva_factory =
+                self.build_fva_factory(id, csa, &system_ts, &system_dfs, &sim_dates)?;
 
             factories.insert(id.clone(), vec![cva_factory, fva_factory]);
         }
@@ -466,11 +467,11 @@ impl XvaEngine {
                 .collect();
             margins.insert(
                 id.clone(),
-                VariationMarginSimulation {
-                    terms: csa.clone(),
+                VariationMarginSimulation::new(
+                    csa.clone(),
                     accrual_request_indices,
                     fx_request_index,
-                },
+                ),
             );
         }
         Ok(margins)
@@ -714,25 +715,18 @@ impl XvaEngine {
         csa: &CsaTerms,
         system_ts: &DiscountTermStructure<f64>,
         system_dfs: &[f64],
+        sim_dates: &[Date],
     ) -> Result<Box<dyn PfeAggregatorFactory>> {
-        // Optional overlay: explicit funding spread curve applied on top of
-        // the curve-implied basis (spread over the funding index).
-        let (overlay_dates, overlay_spreads, overlay_labels) =
-            if let Some(spread_curve) = &csa.funding_spread_curve {
-                spread_curve.validate()?;
-                let labels = spread_curve
-                    .dates
-                    .iter()
-                    .map(|d| format!("funding_spread.{d}"))
-                    .collect();
-                (
-                    spread_curve.dates.clone(),
-                    spread_curve.spreads.clone(),
-                    labels,
-                )
-            } else {
-                (Vec::new(), Vec::new(), Vec::new())
-            };
+        if let Some(curve) = &csa.funding_spread_curve {
+            for date in sim_dates {
+                let spread = curve.zero_rate(*date)?;
+                if !spread.is_finite() {
+                    return Err(QSError::InvalidValueErr(format!(
+                        "Non-finite funding spread at {date}"
+                    )));
+                }
+            }
+        }
 
         if let Some(funding_index) = &csa.funding_index {
             let snapshot = self.funding_curves.get(funding_index).ok_or_else(|| {
@@ -780,27 +774,17 @@ impl XvaEngine {
                 pillar_dates,
                 pillar_spreads,
                 pillar_labels: labels,
-                overlay_dates,
-                overlay_spreads,
-                overlay_labels,
+                spread_curve: csa.funding_spread_curve.clone(),
                 n_paths: self.setup.n_paths,
                 day_counter: dc,
                 system_dfs: Some(system_dfs.to_vec()),
             }))
-        } else if let Some(spread_curve) = &csa.funding_spread_curve {
-            spread_curve.validate()?;
-            let labels = spread_curve
-                .dates
-                .iter()
-                .map(|d| format!("funding_spread.{d}"))
-                .collect();
+        } else if csa.funding_spread_curve.is_some() {
             Ok(Box::new(FundingCurveFvaFactory {
-                pillar_dates: spread_curve.dates.clone(),
-                pillar_spreads: spread_curve.spreads.clone(),
-                pillar_labels: labels,
-                overlay_dates: Vec::new(),
-                overlay_spreads: Vec::new(),
-                overlay_labels: Vec::new(),
+                pillar_dates: Vec::new(),
+                pillar_spreads: Vec::new(),
+                pillar_labels: Vec::new(),
+                spread_curve: csa.funding_spread_curve.clone(),
                 n_paths: self.setup.n_paths,
                 day_counter: DayCounter::Actual365,
                 system_dfs: Some(system_dfs.to_vec()),

@@ -32,7 +32,7 @@ pub struct CsaTerms {
     credit_spread: f64,                  // flat counterparty hazard rate (if no credit_index)
     recovery: f64,                       // LGD = 1 - recovery
     funding_spread: f64,                 // flat funding spread (fallback)
-    funding_spread_curve: Option<FundingSpreadCurve { dates: Vec<Date>, spreads: Vec<f64> }>,
+    funding_spread_curve: Option<ZeroRateTermStructure>,
     funding_index: Option<MarketIndex>,  // bootstrapped funding curve
     credit_index: Option<MarketIndex>,   // bootstrapped credit curve, e.g. Credit("CORPORATE-A")
 }
@@ -54,13 +54,24 @@ a bootstrapped counterparty credit curve, and a dated funding-spread curve:
   "recovery": 0.4,
   "funding_index": "TermSOFR3m",
   "funding_spread_curve": {
+    "reference_date": "2026-11-11",
     "dates": ["2026-11-11", "2028-11-11", "2030-11-11"],
-    "spreads": [0.004, 0.005, 0.006]
+    "rates": [0.004, 0.005, 0.006],
+    "rate_definition": {"day_counter": "Actual365", "compounding": "Continuous", "frequency": "Annual"},
+    "interpolator": "Linear",
+    "enable_extrapolation": true
   }
 }
 ```
 
-The recovery value converts to loss given default through `1 - recovery`. When a credit or funding index is present, the engine obtains term structure values from the corresponding constructed curve. The explicit funding-spread curve provides dated spreads directly.
+The recovery value converts to loss given default through `1 - recovery`. When a credit or funding index is present, the engine obtains term structure values from the corresponding constructed curve. The explicit funding-spread input reuses `ZeroRateTermStructure`, treating its rates as annualized spread quotes and respecting its reference date, day counter, interpolation, and extrapolation settings. The Python example defines CSA conditions directly in Python and can also pass `TenorBasedZeroRateTermStructure`; no dedicated funding-spread curve type is needed.
+
+Both zero curves support `f64` and `DualFwd` in Rust. Use `to_dual()` to convert
+scalar rates, `with_pillar_labels()` to name sensitivities, and
+`put_pillars_on_tape()` to register rates on the current tape. Their AD versions
+implement `ADCurveElement`; interpolation, discounting, forwards and rolling
+retain the links to the original zero-rate pillars. FVA uses this AD curve
+interface for its explicit funding spreads.
 
 The CSA implies `SingleCurveCSADiscountPolicy::new(collateral_index, collateral_currency)`. Claims denominated in the collateral currency use `collateral_index`. Claims in another currency use `MarketIndex::Collateral(ccy, collateral_currency)`. Every selected index needs a bootstrapped curve and an `LgmModelConfig` so deterministic valuation and path simulation share the same market identity.
 

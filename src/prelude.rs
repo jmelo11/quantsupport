@@ -191,6 +191,8 @@ pub use crate::{
             discounttermstructure::DiscountTermStructure,
             flatforwardtermstructure::FlatForwardTermStructure,
             interestratestermstructure::InterestRatesTermStructure,
+            tenorbasedzeroratetermstructure::TenorBasedZeroRateTermStructure,
+            zeroratetermstructure::ZeroRateTermStructure,
         },
     },
     scripting::{
@@ -246,7 +248,7 @@ pub use crate::{
             FundingCurveFvaFactory, FvaAggregator, FvaFactory, PfeAggregator, PfeAggregatorFactory,
         },
         contigentclaim::ContingentClaim,
-        csa::{CsaTerms, FundingSpreadCurve},
+        csa::CsaTerms,
         engine::{FxModelConfig, LgmModelConfig, XvaEngine, XvaEngineConfig},
         makecontigentclaim::IntoContingentClaims,
         nettingset::NettingSet,

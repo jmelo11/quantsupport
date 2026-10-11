@@ -13,54 +13,9 @@ use crate::{
     core::collateral::SingleCurveCSADiscountPolicy,
     currencies::currency::Currency,
     indices::marketindex::MarketIndex,
-    time::date::Date,
+    rates::yieldtermstructure::zeroratetermstructure::ZeroRateTermStructure,
     utils::errors::{QSError, Result},
 };
-
-/// Term structure of funding spreads used for FVA.
-///
-/// Pillar dates with their (annualized, continuously-compounded) funding
-/// spreads over the system curve. Spreads at intermediate dates are linearly
-/// interpolated; extrapolation is flat on both sides.
-///
-/// ```json
-/// { "dates": ["2026-09-07", "2028-09-07"], "spreads": [0.004, 0.006] }
-/// ```
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct FundingSpreadCurve {
-    /// Pillar dates (strictly increasing).
-    pub dates: Vec<Date>,
-    /// Funding spreads at the pillar dates.
-    pub spreads: Vec<f64>,
-}
-
-impl FundingSpreadCurve {
-    /// Validates that the curve is non-empty, consistent and sorted.
-    ///
-    /// # Errors
-    /// Returns an error if the curve is empty, if `dates` and `spreads` have
-    /// different lengths, or if `dates` is not strictly increasing.
-    pub fn validate(&self) -> Result<()> {
-        if self.dates.is_empty() {
-            return Err(QSError::InvalidValueErr(
-                "Funding spread curve must have at least one pillar".into(),
-            ));
-        }
-        if self.dates.len() != self.spreads.len() {
-            return Err(QSError::InvalidValueErr(format!(
-                "Funding spread curve has {} dates but {} spreads",
-                self.dates.len(),
-                self.spreads.len()
-            )));
-        }
-        if self.dates.windows(2).any(|w| w[1] <= w[0]) {
-            return Err(QSError::InvalidValueErr(
-                "Funding spread curve dates must be strictly increasing".into(),
-            ));
-        }
-        Ok(())
-    }
-}
 
 /// Per-client CSA and credit configuration.
 ///
@@ -85,8 +40,12 @@ impl FundingSpreadCurve {
 /// ```json
 /// {
 ///     "funding_spread_curve": {
+///         "reference_date": "2026-09-07",
 ///         "dates": ["2026-09-07", "2030-09-07"],
-///         "spreads": [0.004, 0.006]
+///         "rates": [0.004, 0.006],
+///         "rate_definition": { "day_counter": "Actual365", "compounding": "Continuous", "frequency": "Annual" },
+///         "interpolator": "Linear",
+///         "enable_extrapolation": true
 ///     }
 /// }
 /// ```
@@ -128,7 +87,7 @@ pub struct CsaTerms {
     /// additive overlay on top of the curve-implied basis (i.e. it is a
     /// spread over the funding curve).
     #[serde(default)]
-    pub funding_spread_curve: Option<FundingSpreadCurve>,
+    pub funding_spread_curve: Option<ZeroRateTermStructure>,
     /// Bootstrapped funding discount curve. When set, the FVA funding spreads
     /// are derived as the forward spreads of this curve over the engine's
     /// system (base) curve at the simulation dates, plus any
@@ -164,7 +123,8 @@ impl CsaTerms {
     }
 }
 
-pub(crate) struct VariationMarginAccount<T: Scalar> {
+/// Tracks accrued collateral and applies threshold and minimum-transfer rules.
+pub struct VariationMarginAccount<T: Scalar> {
     balance: T,
     counterparty_threshold: f64,
     own_threshold: f64,
@@ -172,7 +132,11 @@ pub(crate) struct VariationMarginAccount<T: Scalar> {
 }
 
 impl<T: Scalar> VariationMarginAccount<T> {
-    pub(crate) fn new(
+    /// Creates a variation-margin account with an initially zero collateral balance.
+    ///
+    /// # Errors
+    /// Returns an error for negative or non-finite thresholds or transfer amounts.
+    pub fn new(
         counterparty_threshold: f64,
         own_threshold: f64,
         minimum_transfer_amount: f64,
@@ -190,7 +154,8 @@ impl<T: Scalar> VariationMarginAccount<T> {
         })
     }
 
-    pub(crate) fn exposure_after_call(&mut self, exposure: T, accrual_factor: T) -> T {
+    /// Accrues the retained balance, settles any margin call and returns unsecured exposure.
+    pub fn exposure_after_call(&mut self, exposure: T, accrual_factor: T) -> T {
         self.balance = self.balance.mul_val(accrual_factor);
         let target = if exposure.value() > self.counterparty_threshold {
             exposure.sub_val(T::scalar(self.counterparty_threshold))

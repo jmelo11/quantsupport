@@ -437,7 +437,15 @@ config = qs.XvaConfig.from_json("xva_config.json")
 
 csa_a = qs.CsaTerms(collateral_index="SOFR", collateral_currency="USD",
                     credit_spread=0.010, recovery=0.40, funding_spread=0.005)
-csa_b = qs.CsaTerms.from_json("client_b_csa.json")
+funding_curve = qs.TenorBasedZeroRateTermStructure(
+    ref, ["0D", "1Y", "3Y"], [0.004, 0.005, 0.006],
+    enable_extrapolation=True,
+)
+csa_b = qs.CsaTerms(collateral_index="SOFR", collateral_currency="USD",
+                    credit_spread=0.015, recovery=0.40,
+                    funding_spread_curve=funding_curve,
+                    variation_margin=True, counterparty_threshold=1000.0,
+                    own_threshold=1000.0, minimum_transfer_amount=500.0)
 
 ctx = qs.PricingContext(quotes=quotes, curves=curves, fx=fx, csa_policy=csa_policy)
 ctx.initialize()
@@ -456,6 +464,24 @@ with ctx:
 
 See [examples/cva/xva.ipynb](examples/cva/xva.ipynb) for a complete netting comparison
 and [the examples guide](examples/README.md) for the full learning sequence.
+
+`ZeroRateTermStructure(ref, dates, rates)` and
+`TenorBasedZeroRateTermStructure(ref, tenors, rates)` are reusable curve objects.
+Both expose `zero_rate`, `discount_factor`, and `forward_rate`, plus their
+time-based variants and a `to_dict()` export of the equivalent dated curve.
+The dated class also supports `from_dict()` and `from_json()`.
+Keyword options select `day_counter`, `compounding`, `frequency`, `interpolator`,
+and `enable_extrapolation`. Defaults are Actual365, Continuous, Annual, Linear,
+and disabled extrapolation.
+
+`CsaTerms.funding_spread_curve` accepts either class (or a dated curve dictionary)
+and returns a `ZeroRateTermStructure`. Its rates are annualized spread quotes;
+FVA uses the curve's reference date, day counter, interpolation, and extrapolation
+settings. `funding_index` can reuse a bootstrapped funding curve, with the
+explicit spread curve as an optional additive overlay. There is no separate
+`FundingSpreadCurve` type or list-of-pairs constructor. Serialized spread curves
+now use the zero-curve schema (`reference_date`, `dates`, `rates`, `rate_definition`,
+`interpolator`, `enable_extrapolation`), replacing the old `dates`/`spreads` schema.
 
 ## Focused validation
 
