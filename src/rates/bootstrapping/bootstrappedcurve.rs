@@ -53,6 +53,12 @@ impl BootstrappedCurve {
         self.market_index.clone()
     }
 
+    /// Returns the curve valuation date.
+    #[must_use]
+    pub const fn reference_date(&self) -> Date {
+        self.reference_date
+    }
+
     /// Attaches AD-tracked pillar values (typically market quotes).
     #[must_use]
     pub fn with_pillar_values(mut self, pillar_values: Vec<DualFwd>) -> Self {
@@ -148,15 +154,46 @@ impl BootstrappedCurve {
         let discount_factor_to_start = self.discount_factor(start_date)?;
         let discount_factor_to_end = self.discount_factor(end_date)?;
         let comp_factor = discount_factor_to_start / discount_factor_to_end;
-        let tenor = self.day_counter.year_fraction(start_date, end_date);
+        let day_counter = rate_definition.day_counter();
+        let tenor = day_counter.year_fraction(start_date, end_date);
 
         Ok(InterestRate::<f64>::implied_rate(
             comp_factor,
-            self.day_counter,
+            day_counter,
             rate_definition.compounding(),
             rate_definition.frequency(),
             tenor,
         )?
         .rate())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{rates::compounding::Compounding, time::enums::Frequency};
+
+    #[test]
+    fn forward_rate_uses_coupon_day_count() {
+        let start = Date::new(2026, 1, 2);
+        let end = Date::new(2027, 1, 2);
+        for curve_day_counter in [DayCounter::Actual360, DayCounter::Actual365] {
+            let curve = BootstrappedCurve::new(
+                MarketIndex::SOFR,
+                start,
+                vec![0.0, curve_day_counter.year_fraction(start, end)],
+                vec![1.0, 0.95],
+                curve_day_counter,
+                Interpolator::LogLinear,
+            );
+            let definition = RateDefinition::new(
+                DayCounter::Actual360,
+                Compounding::Simple,
+                Frequency::Annual,
+            );
+            let rate = curve.forward_rate(start, end, definition).unwrap();
+            let growth = rate * definition.day_counter().year_fraction(start, end);
+            assert!((growth - (1.0 / 0.95 - 1.0)).abs() < 1e-14);
+        }
     }
 }
