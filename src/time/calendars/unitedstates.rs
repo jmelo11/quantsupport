@@ -80,7 +80,7 @@ impl UnitedStates {
     }
 
     fn is_thanksgiving(day: u32, month: u32, weekday: Weekday) -> bool {
-        (22..=29).contains(&day) && weekday == Weekday::Thu && month == 11
+        (22..=28).contains(&day) && weekday == Weekday::Thu && month == 11
     }
 
     fn is_christmas(day: u32, month: u32, weekday: Weekday) -> bool {
@@ -102,6 +102,37 @@ impl UnitedStates {
             return false;
         }
 
+        if self.market == Market::Sofr {
+            let extra_holiday = ((day == 1 || (day == 2 && weekday == Weekday::Mon)) && month == 1)
+                || ((15..=21).contains(&day)
+                    && weekday == Weekday::Mon
+                    && month == 1
+                    && year >= 1983)
+                || i64::from(date.ordinal()) == i64::from(super::traits::easter_monday(year) - 3)
+                || ((day == 19
+                    || (day == 20 && weekday == Weekday::Mon)
+                    || (day == 18 && weekday == Weekday::Fri))
+                    && month == 6
+                    && year >= 2022)
+                || (day <= 7 && weekday == Weekday::Mon && month == 9)
+                || ((8..=14).contains(&day)
+                    && weekday == Weekday::Mon
+                    && month == 10
+                    && year >= 1971)
+                || (if year <= 1970 || year >= 1978 {
+                    (day == 11 || (day == 12 && weekday == Weekday::Mon)) && month == 11
+                } else {
+                    (22..=28).contains(&day) && weekday == Weekday::Mon && month == 10
+                })
+                || matches!(
+                    (year, month, day),
+                    (2018, 12, 5) | (2012, 10, 30) | (2004, 6, 11)
+                );
+            if extra_holiday {
+                return false;
+            }
+        }
+
         match self.market {
             Market::Nyse
             | Market::Settlement
@@ -110,11 +141,11 @@ impl UnitedStates {
             | Market::Nerc
             | Market::FederalReserve
             | Market::Sofr => {
-                Self::is_washington_birthday(day, month, year, weekday)
+                !(Self::is_washington_birthday(day, month, year, weekday)
                     || Self::is_memorial_day(day, month, year, weekday)
                     || Self::is_independence_day(day, month, weekday)
                     || Self::is_thanksgiving(day, month, weekday)
-                    || Self::is_christmas(day, month, weekday)
+                    || Self::is_christmas(day, month, weekday))
             }
         }
     }
@@ -181,5 +212,40 @@ impl IsCalendar for UnitedStates {}
 impl Default for UnitedStates {
     fn default() -> Self {
         Self::new(Market::Sofr)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sofr_calendar_matches_holidays_and_observances() {
+        let calendar = UnitedStates::new(Market::Sofr);
+        for (year, month, day) in [
+            (2026, 1, 1),
+            (2026, 1, 19),
+            (2026, 4, 3),
+            (2026, 6, 19),
+            (2026, 7, 3),
+            (2026, 9, 7),
+            (2026, 10, 12),
+            (2026, 11, 11),
+            (2026, 11, 26),
+            (2026, 12, 25),
+            (2027, 6, 18),
+        ] {
+            assert!(!calendar.is_business_day(Date::new(year, month, day).base_date()));
+        }
+        for (year, month, day) in [
+            (2026, 1, 2),
+            (2026, 10, 8),
+            (2026, 10, 9),
+            (2026, 10, 13),
+            (2026, 11, 12),
+            (2027, 12, 31),
+        ] {
+            assert!(calendar.is_business_day(Date::new(year, month, day).base_date()));
+        }
     }
 }

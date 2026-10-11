@@ -61,15 +61,7 @@ impl<'de> serde::Deserialize<'de> for Calendar {
         D: serde::Deserializer<'de>,
     {
         let s = String::deserialize(deserializer)?;
-        match s.as_str() {
-            "NullCalendar" => Ok(Self::NullCalendar(NullCalendar::new())),
-            "WeekendsOnly" => Ok(Self::WeekendsOnly(WeekendsOnly::new())),
-            "TARGET" => Ok(Self::TARGET(TARGET::new())),
-            "UnitedStates" => Ok(Self::UnitedStates(UnitedStates::default())),
-            "Brazil" => Ok(Self::Brazil(Brazil::default())),
-            "Chile" => Ok(Self::Chile(Chile::default())),
-            _ => Err(serde::de::Error::custom(format!("Invalid calendar: {s}"))),
-        }
+        Self::try_from(s).map_err(serde::de::Error::custom)
     }
 }
 
@@ -81,9 +73,30 @@ impl TryFrom<String> for Calendar {
             "NullCalendar" => Ok(Self::NullCalendar(NullCalendar::new())),
             "WeekendsOnly" => Ok(Self::WeekendsOnly(WeekendsOnly::new())),
             "TARGET" => Ok(Self::TARGET(TARGET::new())),
-            "UnitedStates" => Ok(Self::UnitedStates(UnitedStates::default())),
-            "Brazil" => Ok(Self::Brazil(Brazil::default())),
-            "Chile" => Ok(Self::Chile(Chile::default())),
+            "UnitedStates(Sofr)" => Ok(Self::UnitedStates(UnitedStates::default())),
+            "UnitedStates(Settlement)" => Ok(Self::UnitedStates(UnitedStates::new(
+                super::calendars::unitedstates::Market::Settlement,
+            ))),
+            "UnitedStates(LiborImpact)" => Ok(Self::UnitedStates(UnitedStates::new(
+                super::calendars::unitedstates::Market::LiborImpact,
+            ))),
+            "UnitedStates(Nyse)" => Ok(Self::UnitedStates(UnitedStates::new(
+                super::calendars::unitedstates::Market::Nyse,
+            ))),
+            "UnitedStates(GovernmentBond)" => Ok(Self::UnitedStates(UnitedStates::new(
+                super::calendars::unitedstates::Market::GovernmentBond,
+            ))),
+            "UnitedStates(Nerc)" => Ok(Self::UnitedStates(UnitedStates::new(
+                super::calendars::unitedstates::Market::Nerc,
+            ))),
+            "UnitedStates(FederalReserve)" => Ok(Self::UnitedStates(UnitedStates::new(
+                super::calendars::unitedstates::Market::FederalReserve,
+            ))),
+            "Brazil(Settlement)" => Ok(Self::Brazil(Brazil::default())),
+            "Brazil(Exchange)" => Ok(Self::Brazil(Brazil::new(
+                super::calendars::brazil::Market::Exchange,
+            ))),
+            "Chile(SSE)" => Ok(Self::Chile(Chile::default())),
             _ => Err(QSError::InvalidValueErr(format!("Invalid calendar: {s}"))),
         }
     }
@@ -91,14 +104,7 @@ impl TryFrom<String> for Calendar {
 
 impl From<Calendar> for String {
     fn from(calendar: Calendar) -> Self {
-        match calendar {
-            Calendar::NullCalendar(_) => "NullCalendar".to_string(),
-            Calendar::WeekendsOnly(_) => "WeekendsOnly".to_string(),
-            Calendar::TARGET(_) => "TARGET".to_string(),
-            Calendar::UnitedStates(_) => "UnitedStates".to_string(),
-            Calendar::Brazil(_) => "Brazil".to_string(),
-            Calendar::Chile(_) => "Chile".to_string(),
-        }
+        calendar.impl_name()
     }
 }
 
@@ -218,5 +224,33 @@ mod test {
         assert_eq!(calendar.impl_name(), "Brazil(Settlement)");
         let calendar = Calendar::Chile(Chile::default());
         assert_eq!(calendar.impl_name(), "Chile(SSE)");
+    }
+
+    #[test]
+    fn calendar_strings_have_one_canonical_spelling() {
+        for name in [
+            "NullCalendar",
+            "WeekendsOnly",
+            "TARGET",
+            "UnitedStates(Sofr)",
+            "UnitedStates(Settlement)",
+            "UnitedStates(LiborImpact)",
+            "UnitedStates(Nyse)",
+            "UnitedStates(GovernmentBond)",
+            "UnitedStates(Nerc)",
+            "UnitedStates(FederalReserve)",
+            "Brazil(Settlement)",
+            "Brazil(Exchange)",
+            "Chile(SSE)",
+        ] {
+            let calendar = Calendar::try_from(name.to_string()).unwrap();
+            assert_eq!(String::from(calendar.clone()), name);
+            let json = serde_json::to_string(&calendar).unwrap();
+            assert_eq!(serde_json::from_str::<Calendar>(&json).unwrap(), calendar);
+        }
+        for alias in ["UnitedStates", "Brazil", "Chile", "SOFR", "Sofr", "target"] {
+            assert!(Calendar::try_from(alias.to_string()).is_err());
+            assert!(serde_json::from_value::<Calendar>(serde_json::json!(alias)).is_err());
+        }
     }
 }
