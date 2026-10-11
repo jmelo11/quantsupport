@@ -161,14 +161,20 @@ impl<T: Scalar> CashflowType<T> {
                 end,
                 payment,
             )),
-            Self::FloatingRateCoupon(coupon) => Self::FloatingRateCoupon(FloatingRateCoupon::new(
-                notional,
-                coupon.spread(),
-                coupon.market_index().clone(),
-                start,
-                end,
-                payment,
-            )),
+            Self::FloatingRateCoupon(coupon) => {
+                let mut result = FloatingRateCoupon::new(
+                    notional,
+                    coupon.spread(),
+                    coupon.market_index().clone(),
+                    start,
+                    end,
+                    payment,
+                );
+                if let Some(conventions) = coupon.overnight_conventions() {
+                    result.set_overnight_conventions(conventions.clone())?;
+                }
+                Self::FloatingRateCoupon(result)
+            }
             Self::OptionEmbeddedCoupon(coupon) => {
                 Self::OptionEmbeddedCoupon(OptionEmbeddedCoupon::new(
                     notional,

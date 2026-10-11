@@ -19,6 +19,7 @@ use crate::{
 /// User-defined bootstrap specification for a curve, carrying the quote
 /// identifiers that should be used to calibrate it.
 #[derive(Serialize, Deserialize, Clone)]
+#[serde(deny_unknown_fields)]
 pub struct CurveConfiguration {
     market_index: MarketIndex,
     #[serde(default = "default_day_counter")]
@@ -95,7 +96,7 @@ impl CurveConfiguration {
 
             let quote_value = quote.levels().value(level)?;
             let built = quote.build_instrument(selector.reference_date(), level, fx_spot)?;
-            let pillar_date = built.pillar_date()?;
+            let pillar_date = quote.calibration_pillar_date(&built)?;
 
             instruments.push(CalibrationInstrument::new(
                 quote,
@@ -220,6 +221,12 @@ impl CurveConfiguration {
                     if let Some(discount_index) = bond.discount_index() {
                         set.insert(discount_index);
                     }
+                }
+                CalibrationInstrumentType::OIS(ois) => {
+                    if let Ok(idx) = policy.discount_index(ois.fixed_leg()) {
+                        set.insert(idx);
+                    }
+                    set.insert(ois.forward_index());
                 }
                 CalibrationInstrumentType::Swap(swap) => {
                     if let Ok(idx) = policy.discount_index(swap.fixed_leg()) {
@@ -363,6 +370,53 @@ mod tests {
     }
 
     #[test]
+    fn ois_conventions_calendar_roundtrip_and_pillar_choices() {
+        let reference = Date::new(2026, 1, 2);
+        for (pillar, expected) in [
+            ("MaturityDate", Date::new(2027, 1, 4)),
+            ("LastRelevantDate", Date::new(2027, 1, 6)),
+            ("CustomDate(2027-01-05)", Date::new(2027, 1, 5)),
+        ] {
+            let mut suffix = [""; 23];
+            suffix[..4].copy_from_slice(&["Annual", "Annual", "0", "2"]);
+            suffix[8] = "UnitedStates(Sofr)";
+            suffix[22] = pillar;
+            let identifier = format!("OIS_USD_SOFR_1Y_{}", suffix.join("_"));
+            let config: CurveConfiguration = serde_json::from_value(serde_json::json!({
+                "market_index": "SOFR", "quotes": [identifier]
+            }))
+            .unwrap();
+            let mut roundtrip: CurveConfiguration =
+                serde_json::from_str(&serde_json::to_string(&config).unwrap()).unwrap();
+            let mut selector = MapSelector::new(reference);
+            selector.add(&identifier, 0.04);
+            roundtrip.resolve(&selector, Level::Mid, None).unwrap();
+            assert_eq!(roundtrip.pillar_dates(), vec![expected]);
+        }
+        let mut suffix = [""; 23];
+        suffix[2] = "0";
+        suffix[22] = "CustomDate(2026-01-01)";
+        let identifier = format!("OIS_USD_SOFR_1Y_{}", suffix.join("_"));
+        let mut selector = MapSelector::new(reference);
+        selector.add(&identifier, 0.04);
+        let mut config = CurveConfiguration::new(
+            MarketIndex::SOFR,
+            DayCounter::Actual360,
+            Interpolator::Linear,
+            true,
+            vec![identifier],
+        );
+        assert!(config.resolve(&selector, Level::Mid, None).is_err());
+        assert!(
+            serde_json::from_value::<CurveConfiguration>(serde_json::json!({
+                "market_index": "SOFR", "quotes": ["OIS_USD_SOFR_1Y"],
+                "ois_conventions": {"payment_lag": 0}
+            }))
+            .is_err()
+        );
+    }
+
+    #[test]
     fn dependencies_empty_instruments_errors() -> Result<()> {
         let selector = make_selector(&[]);
         let cfg = resolve_config(MarketIndex::SOFR, vec![], &selector)?;
@@ -400,17 +454,13 @@ mod tests {
 
     #[test]
     fn dependencies_ois_swap_cross_currency_discount() -> Result<()> {
-        let selector = make_selector(&[("OIS_EUR_EURIBOR1m_1Y", 0.03)]);
-        let cfg = resolve_config(
-            MarketIndex::EURIBOR1m,
-            vec!["OIS_EUR_EURIBOR1m_1Y".into()],
-            &selector,
-        )?;
+        let selector = make_selector(&[("OIS_EUR_ESTR_1Y", 0.03)]);
+        let cfg = resolve_config(MarketIndex::ESTR, vec!["OIS_EUR_ESTR_1Y".into()], &selector)?;
         // CSA in USD, so EUR leg discount → Collateral(EUR, USD)
         let policy = BootstrapDiscountPolicy::new(MarketIndex::SOFR, Currency::USD);
         let deps = cfg.dependencies(&policy)?;
 
-        assert!(deps.contains(&MarketIndex::EURIBOR1m));
+        assert!(deps.contains(&MarketIndex::ESTR));
         assert!(deps.contains(&MarketIndex::Collateral(Currency::EUR, Currency::USD)));
         Ok(())
     }

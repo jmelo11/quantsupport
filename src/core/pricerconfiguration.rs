@@ -89,6 +89,8 @@ pub enum InstrumentType {
     FixedRateDeposit,
     /// Fixed-versus-floating interest-rate swap.
     Swap,
+    /// Fixed-versus-daily-compounded overnight indexed swap.
+    OIS,
     /// Floating-versus-floating basis swap.
     BasisSwap,
     /// Floating-versus-floating cross-currency swap.
@@ -389,6 +391,7 @@ impl PricerConfiguration {
             InstrumentType::FloatingRateNote
             | InstrumentType::FixedRateDeposit
             | InstrumentType::Swap
+            | InstrumentType::OIS
             | InstrumentType::BasisSwap
             | InstrumentType::FloatFloatCrossCurrencySwap
             | InstrumentType::FixFloatCrossCurrencySwap => {
@@ -459,6 +462,30 @@ impl PricerConfiguration {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ois_uses_distinct_discounted_cashflow_configuration() {
+        let json = r#"{
+            "instrument_type": "OIS",
+            "pricer": "DiscountedCashflow"
+        }"#;
+        let configuration: PricerConfiguration = serde_json::from_str(json).unwrap();
+        assert_eq!(configuration.instrument_type(), InstrumentType::OIS);
+        assert_ne!(configuration.instrument_type(), InstrumentType::Swap);
+        assert!(configuration.validate().is_ok());
+        assert_eq!(
+            serde_json::to_string(&InstrumentType::OIS).unwrap(),
+            "\"OIS\""
+        );
+        let incompatible = PricerConfiguration::new(
+            InstrumentType::OIS,
+            PricerImplementation::TreeBased {
+                time_grid: TimeGridConfiguration::default(),
+            },
+            Vec::new(),
+        );
+        assert!(incompatible.validate().is_err());
+    }
 
     #[test]
     fn deserializes_tree_pricer_with_typed_hull_white_model() {

@@ -20,10 +20,16 @@ pub mod makeeuropeanswaption;
 pub mod makefixfloatcrosscurrencyswap;
 /// Cross-currency swap builder (float vs float).
 pub mod makefloatfloatcrosscurrencyswap;
+/// Overnight indexed swap builder.
+pub mod makeovernightindexswap;
 /// Rate futures builder.
 pub mod makeratefutures;
 /// Interest rate swap builder.
 pub mod makeswap;
+/// Overnight indexed swap conventions.
+pub mod oisconventions;
+/// Overnight index swap instruments.
+pub mod overnightindexswap;
 /// Interest rate futures instruments.
 pub mod ratefutures;
 /// Interest rate swap instruments.

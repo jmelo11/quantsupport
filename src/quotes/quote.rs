@@ -29,8 +29,10 @@ use crate::{
             makeeuropeanswaption::MakeSwaption,
             makefixfloatcrosscurrencyswap::MakeFixFloatCrossCurrencySwap,
             makefloatfloatcrosscurrencyswap::MakeFloatFloatCrossCurrencySwap,
+            makeovernightindexswap::MakeOvernightIndexSwap,
             makeratefutures::MakeRateFutures,
-            makeswap::MakeSwap,
+            oisconventions::{OisConventions, OisPillar, OvernightCouponConventions},
+            overnightindexswap::OvernightIndexSwap,
             ratefutures::RateFutures,
             swap::Swap,
         },
@@ -313,6 +315,7 @@ impl std::str::FromStr for FxForwardCalibrationStrategy {
 /// FxCall_EURUSD_1Y_Absolute_1.10
 /// ```
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct QuoteDetails {
     identifier: String,
     instrument: QuoteInstrument,
@@ -701,7 +704,7 @@ impl QuoteDetails {
         })
     }
 
-    /// `{Instrument}_CCY_{Index}_{Tenor}[_{PayFreq}[_{RecvFreq}]]`
+    /// `OIS_CCY_Index_Tenor[_FixedFreq[_OvernightFreq[_SettlementDays[_PaymentLag[...]]]]]`
     /// e.g. `OIS_USD_SOFR_1Y` or `OIS_USD_SOFR_1Y_Semiannual_Semiannual`
     ///
     /// # Errors
@@ -716,7 +719,16 @@ impl QuoteDetails {
         let index = parts[2].parse::<MarketIndex>()?;
         let tenor = Period::from_str(parts[3])?;
 
-        let (pay_freq, recv_freq, _) = Self::try_parse_frequencies(parts, 4);
+        let pay_freq = parts
+            .get(4)
+            .filter(|value| !value.is_empty())
+            .map(|value| value.parse::<Frequency>())
+            .transpose()?;
+        let recv_freq = parts
+            .get(5)
+            .filter(|value| !value.is_empty())
+            .map(|value| value.parse::<Frequency>())
+            .transpose()?;
 
         let mut det = Self::new(id.to_string(), QuoteInstrument::OIS)
             .with_market_index(index)
@@ -728,7 +740,30 @@ impl QuoteDetails {
         if let Some(f) = recv_freq {
             det = det.with_receive_leg_frequency(f);
         }
+        det.ois_conventions()?;
         Ok(det)
+    }
+
+    /// Resolves OIS contract parameters exclusively from the quote identifier.
+    /// Omitted parameters retain the index preset.
+    ///
+    /// # Errors
+    /// Rejects excess, malformed, or invalid positional contract parameters.
+    pub fn ois_conventions(&self) -> Result<OisConventions> {
+        if self.instrument != QuoteInstrument::OIS {
+            return Err(QSError::InvalidValueErr("Not an OIS quote".into()));
+        }
+        let index = self
+            .market_index
+            .as_ref()
+            .ok_or_else(|| QSError::ValueNotSetErr("OIS index".into()))?;
+        let separator = self
+            .identifier
+            .strip_prefix("OIS")
+            .and_then(|suffix| suffix.chars().next())
+            .unwrap_or('_');
+        let parts: Vec<_> = self.identifier.split(separator).collect();
+        OisConventions::for_index(index).with_quote_fields(parts.get(4..).unwrap_or_default())
     }
 
     /// `{Instrument}_CCY_{Index}_{Tenor}`
@@ -1316,7 +1351,9 @@ where
     FixedRateDeposit(FixedRateDeposit<T>),
     /// A fixed-rate bond.
     FixedRateBond(FixedRateBond<T>, BondCalibrationStrategy),
-    /// A fixed-vs-floating interest rate swap (e.g. OIS).
+    /// An overnight indexed swap with daily overnight coupon semantics.
+    OIS(OvernightIndexSwap<T>),
+    /// A regular fixed-vs-floating interest rate swap.
     Swap(Swap<T>),
     /// A floating-vs-floating basis swap.
     BasisSwap(BasisSwap<T>),
@@ -1350,6 +1387,7 @@ impl<T: Scalar> std::fmt::Debug for CalibrationInstrumentType<T> {
             Self::FixedRateDeposit(_) => {
                 write!(f, "CalibrationInstrumentType::FixedRateDeposit")
             }
+            Self::OIS(_) => write!(f, "CalibrationInstrumentType::OIS"),
             Self::Swap(_) => write!(f, "CalibrationInstrumentType::Swap"),
             Self::BasisSwap(_) => write!(f, "CalibrationInstrumentType::BasisSwap"),
             Self::RateFutures(_) => write!(f, "CalibrationInstrumentType::RateFutures"),
@@ -1384,6 +1422,10 @@ where
         match self {
             Self::FixedRateDeposit(x) => Ok(x.leg().last_payment_date()),
             Self::FixedRateBond(x, _) => Ok(x.leg().last_payment_date()),
+            Self::OIS(x) => Ok(x
+                .fixed_leg()
+                .last_payment_date()
+                .max(x.floating_leg().last_payment_date())),
             Self::Swap(x) => Ok(x
                 .fixed_leg()
                 .last_payment_date()
@@ -1512,6 +1554,69 @@ impl Quote {
         }
     }
 
+    /// Resolves an OIS calibration node according to its quote identifier.
+    ///
+    /// # Errors
+    /// Rejects custom nodes outside the instrument's relevant date range.
+    pub fn calibration_pillar_date(&self, built: &CalibrationInstrumentType<f64>) -> Result<Date> {
+        use crate::instruments::cashflows::{cashflow::Cashflow, cashflowtype::CashflowType};
+        use crate::time::{
+            calendars::traits::IsCalendar, enums::BusinessDayConvention, enums::TimeUnit,
+            period::Period,
+        };
+        let mut latest = built.pillar_date()?;
+        let CalibrationInstrumentType::OIS(swap) = built else {
+            return Ok(latest);
+        };
+        if *self.details.instrument() != QuoteInstrument::OIS {
+            return Ok(latest);
+        }
+        let mut earliest = latest;
+        let mut maturity = Date::empty();
+        for cashflow in swap
+            .fixed_leg()
+            .cashflows()
+            .iter()
+            .chain(swap.floating_leg().cashflows())
+        {
+            match cashflow {
+                CashflowType::FixedRateCoupon(coupon) => {
+                    earliest = earliest.min(coupon.accrual_start_date());
+                    maturity = maturity.max(coupon.accrual_end_date());
+                }
+                CashflowType::FloatingRateCoupon(coupon) => {
+                    earliest = earliest.min(coupon.accrual_start_date());
+                    maturity = maturity.max(coupon.accrual_end_date());
+                    let calendar = coupon.market_index().rate_index_details()?.calendar();
+                    let value_end = calendar.adjust(
+                        coupon.accrual_end_date(),
+                        Some(BusinessDayConvention::Following),
+                    );
+                    let lookback = coupon
+                        .overnight_conventions()
+                        .map_or(0, OvernightCouponConventions::lookback_days);
+                    let observation_end = calendar.advance(
+                        value_end,
+                        Period::new(-lookback, TimeUnit::Days),
+                        None,
+                        false,
+                    );
+                    latest = latest.max(observation_end).max(coupon.payment_date());
+                }
+                _ => {}
+            }
+        }
+        let choice = self.details.ois_conventions()?.pillar();
+        match choice {
+            OisPillar::LastRelevantDate => Ok(latest),
+            OisPillar::MaturityDate => Ok(maturity),
+            OisPillar::CustomDate(date) if date >= earliest && date <= latest => Ok(date),
+            OisPillar::CustomDate(_) => Err(QSError::InvalidValueErr(
+                "Custom OIS pillar must lie between effective and last relevant dates".into(),
+            )),
+        }
+    }
+
     /// Convenience method for getting the quote index.
     fn required_market_index(details: &QuoteDetails, context: &str) -> Result<MarketIndex> {
         details
@@ -1535,28 +1640,24 @@ impl Quote {
             .tenor()
             .ok_or_else(|| QSError::ValueNotSetErr("Tenor on OIS quote".into()))?;
 
-        let maturity = reference_date + tenor;
         let market_index = Self::required_market_index(d, "OIS quote")?;
-        let rd = market_index.rate_index_details()?.rate_definition();
-
-        let mut builder = MakeSwap::<T>::default()
-            .with_identifier(d.identifier())
-            .with_start_date(reference_date)
-            .with_maturity_date(maturity)
-            .with_fixed_rate(rate)
-            .with_notional(notional)
-            .with_rate_definition(rd)
-            .with_currency(currency)
-            .with_market_index(market_index);
-        if let Some(f) = d.pay_leg_frequency() {
-            builder = builder.with_fixed_leg_frequency(f);
+        if market_index.rate_index_details()?.currency() != currency {
+            return Err(QSError::InvalidValueErr(
+                "OIS currency does not match its index".into(),
+            ));
         }
-        if let Some(f) = d.receive_leg_frequency() {
-            builder = builder.with_floating_leg_frequency(f);
+        let conventions = d.ois_conventions()?;
+        let mut builder =
+            MakeOvernightIndexSwap::<T>::new(market_index, reference_date, tenor, rate)
+                .with_identifier(d.identifier())
+                .with_notional(notional)
+                .with_conventions(conventions);
+        if let Some(maturity) = d.maturity() {
+            builder = builder.with_maturity_date(maturity);
         }
         let swap = builder.build()?;
 
-        Ok(CalibrationInstrumentType::Swap(swap))
+        Ok(CalibrationInstrumentType::OIS(swap))
     }
 
     /// Builds a fixed-rate deposit from its rate quote.
@@ -2078,9 +2179,6 @@ impl Quote {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {
@@ -2274,7 +2372,17 @@ mod tests {
         let inst = quote
             .build_instrument(ref_date(), Level::Mid, None)
             .unwrap();
-        assert!(matches!(inst, CalibrationInstrumentType::Swap(_)));
+        let CalibrationInstrumentType::OIS(swap) = inst else {
+            panic!("expected OIS swap")
+        };
+        assert_eq!(swap.fixed_leg().cashflows().len(), 1);
+        assert_eq!(swap.floating_leg().cashflows().len(), 1);
+        let crate::instruments::cashflows::cashflowtype::CashflowType::FloatingRateCoupon(coupon) =
+            &swap.floating_leg().cashflows()[0]
+        else {
+            panic!("expected overnight coupon")
+        };
+        assert!(coupon.overnight_conventions().is_some());
     }
 
     #[test]
@@ -2469,6 +2577,119 @@ mod tests {
         let det: QuoteDetails = "OIS_USD_SOFR_1Y".parse().unwrap();
         assert_eq!(det.pay_leg_frequency(), None);
         assert_eq!(det.receive_leg_frequency(), None);
+    }
+
+    #[test]
+    fn ois_quote_parameters_preserve_index_defaults() {
+        let default: QuoteDetails = "OIS_USD_SOFR_1Y".parse().unwrap();
+        assert_eq!(default.ois_conventions().unwrap().settlement_days(), 2);
+        assert_eq!(default.ois_conventions().unwrap().payment_lag(), 2);
+        let overridden: QuoteDetails = "OIS_USD_SOFR_1Y_Annual_Annual_0".parse().unwrap();
+        let conventions = overridden.ois_conventions().unwrap();
+        assert_eq!(conventions.settlement_days(), 0);
+        assert_eq!(conventions.payment_lag(), 2);
+        assert!(matches!(conventions.pillar(), OisPillar::LastRelevantDate));
+        let serialized = serde_json::to_string(&overridden).unwrap();
+        assert!(!serialized.contains("ois_conventions"));
+        let restored: QuoteDetails = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(restored.ois_conventions().unwrap().settlement_days(), 0);
+        assert_eq!(restored.ois_conventions().unwrap().payment_lag(), 2);
+    }
+
+    #[test]
+    fn ois_quote_optional_positions_do_not_shift_when_empty() {
+        let details: QuoteDetails = "OIS_USD_SOFR_1Y___0_3".parse().unwrap();
+        assert_eq!(details.pay_leg_frequency(), None);
+        assert_eq!(details.receive_leg_frequency(), None);
+        let conventions = details.ois_conventions().unwrap();
+        assert_eq!(conventions.fixed_frequency(), Frequency::Annual);
+        assert_eq!(conventions.overnight_frequency(), Frequency::Annual);
+        assert_eq!(conventions.settlement_days(), 0);
+        assert_eq!(conventions.payment_lag(), 3);
+        let details: QuoteDetails = "OIS_USD_SOFR_1Y__Quarterly".parse().unwrap();
+        assert_eq!(details.pay_leg_frequency(), None);
+        assert_eq!(details.receive_leg_frequency(), Some(Frequency::Quarterly));
+        assert_eq!(details.ois_conventions().unwrap().payment_lag(), 2);
+        let excess = format!("OIS_USD_SOFR_1Y_{}", [""; 24].join("_"));
+        assert!(excess.parse::<QuoteDetails>().is_err());
+    }
+
+    #[test]
+    fn ois_quote_parameters_parse_contract_and_observations() {
+        let details: QuoteDetails = concat!(
+            "OIS_USD_SOFR_5Y_Semiannual_Quarterly_1_3_Actual365",
+            "_UnitedStates(Sofr)_WeekendsOnly_UnitedStates(Sofr)_UnitedStates(Settlement)",
+            "_Following_Preceding_ModifiedFollowing_Forward_false_1M",
+            "_2027-01-05_2030-01-05_Simple_2_1_true_true_CustomDate(2030-01-05)"
+        )
+        .parse()
+        .unwrap();
+        let conventions = details.ois_conventions().unwrap();
+        assert_eq!(conventions.settlement_days(), 1);
+        assert_eq!(conventions.payment_lag(), 3);
+        assert_eq!(conventions.fixed_frequency(), Frequency::Semiannual);
+        assert_eq!(conventions.overnight_frequency(), Frequency::Quarterly);
+        assert_eq!(conventions.fixed_day_counter(), Some(DayCounter::Actual365));
+        assert_eq!(conventions.end_of_month(), Some(false));
+        assert_eq!(conventions.first_coupon_date(), Some(Date::new(2027, 1, 5)));
+        assert_eq!(
+            conventions.next_to_last_coupon_date(),
+            Some(Date::new(2030, 1, 5))
+        );
+        assert_eq!(
+            conventions.overnight().averaging(),
+            crate::instruments::rates::oisconventions::OvernightAveraging::Simple
+        );
+        assert_eq!(conventions.overnight().lookback_days(), 2);
+        assert_eq!(conventions.overnight().lockout_days(), 1);
+        assert!(conventions.overnight().observation_shift());
+        assert!(conventions.overnight().compound_spread_daily());
+        assert_eq!(
+            String::from(conventions.payment_calendar().unwrap().clone()),
+            "UnitedStates(Settlement)"
+        );
+    }
+
+    #[test]
+    fn ois_quote_parameters_reject_ambiguous_or_invalid_inputs() {
+        for suffix in [
+            "SettlementDays=0",
+            "Annual_Annual_PaymentLag=2",
+            "Annual_Annual_-1",
+            "Annual_Annual_2_-1",
+            "Annual_Annual_2_abc",
+            "Annual_Annual_2_2_UnitedStates(Sofr)",
+            "Annual_Annual_2_2_Actual360_UnitedStates",
+            "Annual_garbage",
+            "garbage",
+        ] {
+            assert!(
+                format!("OIS_USD_SOFR_1Y_{suffix}")
+                    .parse::<QuoteDetails>()
+                    .is_err(),
+                "{suffix}"
+            );
+        }
+    }
+
+    #[test]
+    fn ois_quote_parameters_follow_the_identifier_separator() {
+        let identifier = "OIS|USD|SOFR|1Y|Annual|Annual|0|3";
+        let details = QuoteDetails::parse(identifier, '|').unwrap();
+        assert_eq!(details.identifier(), identifier);
+        assert_eq!(details.ois_conventions().unwrap().settlement_days(), 0);
+        assert_eq!(details.ois_conventions().unwrap().payment_lag(), 3);
+        let serialized = serde_json::to_value(&details).unwrap();
+        let restored: QuoteDetails = serde_json::from_value(serialized.clone()).unwrap();
+        assert_eq!(restored.ois_conventions().unwrap().payment_lag(), 3);
+        let quote = Quote::new(restored, QuoteLevels::with_mid(0.04));
+        let built = quote
+            .build_instrument(ref_date(), Level::Mid, None)
+            .unwrap();
+        assert!(matches!(built, CalibrationInstrumentType::OIS(_)));
+        let mut conflicting = serialized;
+        conflicting["ois_conventions"] = serde_json::json!({"payment_lag": 0});
+        assert!(serde_json::from_value::<QuoteDetails>(conflicting).is_err());
     }
 
     #[test]

@@ -378,7 +378,8 @@ impl PricingContext {
         // Bootstrap discount curves.
         let policy = BootstrapDiscountPolicy::new(self.base_index.clone(), self.base_currency);
         let bootstrapper = MultiCurveBootstrapper::new(self.curve_configurations.clone(), policy)
-            .with_fx_store(self.fx_store.clone());
+            .with_fx_store(self.fx_store.clone())
+            .with_fixing_store(self.fixing_store.clone());
         let curves = bootstrapper.bootstrap(self.quote_store(), self.quote_level)?;
         for (index, curve) in curves {
             self.constructed_elements
@@ -551,7 +552,11 @@ impl MarketDataProvider for PricingContext {
             for fix_req in fixing_requests {
                 let market_index = fix_req.market_index();
                 let date = fix_req.date();
-                let value = self.fixing_store.fixing(market_index, date)?;
+                let value = match self.fixing_store.fixing(market_index, date) {
+                    Ok(value) => value,
+                    Err(_) if fix_req.missing_fixing_allowed() => continue,
+                    Err(error) => return Err(error),
+                };
                 fixings
                     .entry(market_index.clone())
                     .or_default()

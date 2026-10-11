@@ -175,7 +175,7 @@ mod tests {
 
         let mut selector = MapSelector::new(ref_date);
         selector.add("OIS_USD_SOFR_1Y", 0.05);
-        selector.add("OIS_EUR_EURIBOR1m_1Y", 0.03);
+        selector.add("OIS_EUR_ESTR_1Y", 0.03);
         selector.add("FxForward_USDEUR_1M_AnchorForwardPoints", 0.03);
 
         let quotes = vec!["OIS_USD_SOFR_1Y".to_string()];
@@ -184,8 +184,8 @@ mod tests {
             CurveConfiguration::new(index_a.clone(), dc, interp, enable_extrapolation, quotes);
         curve_a.resolve(&selector, Level::Mid, None)?;
 
-        let quotes = vec!["OIS_EUR_EURIBOR1m_1Y".to_string()];
-        let index_b = MarketIndex::EURIBOR1m;
+        let quotes = vec!["OIS_EUR_ESTR_1Y".to_string()];
+        let index_b = MarketIndex::ESTR;
         let mut curve_b =
             CurveConfiguration::new(index_b.clone(), dc, interp, enable_extrapolation, quotes);
         curve_b.resolve(&selector, Level::Mid, None)?;
@@ -211,7 +211,7 @@ mod tests {
             vec![
                 MarketIndex::SOFR,
                 MarketIndex::Collateral(Currency::EUR, Currency::USD),
-                MarketIndex::EURIBOR1m
+                MarketIndex::ESTR
             ]
         );
         Ok(())

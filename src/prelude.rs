@@ -114,8 +114,13 @@ pub use crate::{
             makeeuropeanswaption::MakeSwaption,
             makefixfloatcrosscurrencyswap::MakeFixFloatCrossCurrencySwap,
             makefloatfloatcrosscurrencyswap::MakeFloatFloatCrossCurrencySwap,
+            makeovernightindexswap::MakeOvernightIndexSwap,
             makeratefutures::MakeRateFutures,
             makeswap::MakeSwap,
+            oisconventions::{
+                OisConventions, OisPillar, OvernightAveraging, OvernightCouponConventions,
+            },
+            overnightindexswap::{OvernightIndexSwap, OvernightIndexSwapTrade},
             ratefutures::{RateFutures, RateFuturesTrade},
             swap::{Swap, SwapTrade},
         },
