@@ -349,13 +349,15 @@ context = qs.PricingContext(
     curves=curves,
     csa_policy=csa_policy,
 )
-context.initialize()
 
 with context:
     sofr = context.curve(qs.MarketIndex.SOFR)
     print(sofr.nodes())
     print(sofr.discount_factor(quotes.reference_date + "5Y"))
 ```
+
+Entering `with context:` initializes the market automatically; exiting clears
+the constructed market data and differentiation tape.
 
 See the [Python README](bindings/python/README.md) for API details and the
 [first-swap notebook](bindings/python/examples/valuation/tour.ipynb) to start the walkthrough.

@@ -103,9 +103,10 @@ historical fixing or FX inputs. Curve and volatility configurations describe how
 to construct market objects from quote identifiers. A `MarketIndex` is the key
 that connects those objects to products and models; it is not a market value.
 
-Create a `PricingContext` and call `context.initialize()` before entering
-`with context:`. Initialization constructs the market; the `with` block manages
-the differentiation tape and cleanup, reusing the initialized market. Product
+Create a `PricingContext` and enter `with context:`. Entering the block
+automatically constructs the market and starts the differentiation tape;
+exiting clears both, including when an exception occurs. Call `initialize()`
+explicitly only when using the context without a `with` block. Product
 specifications describe the contract and position; the native pricer supplies
 the valuation method. `evaluate(trade, requests)` returns an `EvaluationResults` object with
 scalar analytics and pandas tables. Save those results inside the context and

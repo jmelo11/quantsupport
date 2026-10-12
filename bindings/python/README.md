@@ -38,10 +38,11 @@ uses a fresh kernel per notebook and leaves the source notebooks unchanged.
 
 Market data and configurations are typed objects created from dicts
 (`from_dict`) or JSON files (`from_json`), deserialized directly by the Rust
-library's serde implementations. Create `PricingContext` and call `initialize()`
-before the `with` block to bootstrap curves, volatility surfaces/cubes and
-simulations. `with ctx:` then reuses the initialized market and starts the AD
-tape; exiting releases constructed market data and rewinds the tape.
+library's serde implementations. Create `PricingContext` and enter `with ctx:`
+to bootstrap curves, volatility surfaces/cubes and simulations automatically
+and start the AD tape. Exiting releases constructed market data and rewinds
+the tape, including when the block raises an exception. Call `initialize()`
+explicitly only when using the context without a `with` block.
 
 ```python
 import quantsupport as qs
@@ -64,7 +65,6 @@ swap = qs.Swap(
 trade = qs.Trade(swap, ref, qs.Side.LongReceive)
 
 ctx = qs.PricingContext(quotes=quotes, curves=curves, fx=fx, csa_policy=csa_policy)
-ctx.initialize()
 
 with ctx:
     # explore the bootstrapped market data
@@ -270,7 +270,6 @@ pricers = qs.PricerConfiguration.from_json("pricers.json")
 ctx = qs.PricingContext(quotes=quotes, curves=curves,
                        pricer_configurations=pricers,
                        csa_policy=csa_policy)
-ctx.initialize()
 
 with ctx:
     result = ctx.evaluate(
@@ -375,7 +374,6 @@ script_spec = {
 }
 product = qs.ScriptedProduct.from_dict(script_spec)
 ctx = qs.PricingContext(quotes=quotes, curves=curves, csa_policy=csa_policy)
-ctx.initialize()
 
 with ctx:
     values = ctx.evaluate_script(product, n_paths=1000, seed=42)
@@ -461,7 +459,6 @@ trade = ZeroCouponTrade(note, ref)
 
 # Context registration participates in the normal ctx.evaluate workflow.
 ctx.register_pricer(ZeroCouponTrade, ZeroCouponPricer())
-ctx.initialize()
 with ctx:
     result = ctx.evaluate(trade, [qs.Request.Value])
     print(result.price)
@@ -512,7 +509,6 @@ csa_b = qs.CsaTerms(collateral_index="SOFR", collateral_currency="USD",
                     own_threshold=1000.0, minimum_transfer_amount=500.0)
 
 ctx = qs.PricingContext(quotes=quotes, curves=curves, fx=fx, csa_policy=csa_policy)
-ctx.initialize()
 
 with ctx:
     result = ctx.run_xva(config, netting_sets=[
@@ -606,7 +602,8 @@ Pricing:
   `ctx.curve_configurations`,
   `ctx.volatility_surface_configurations`, `ctx.volatility_cube_configurations`,
   `ctx.simulation_configurations`
-- constructed outputs (after `initialize()` / inside the `with` block):
+- constructed outputs (inside the `with` block, or after an explicit
+  `initialize()` when using the context without one):
   - `ctx.curves()` / `ctx.curve(index)` → `DiscountCurve`
     (`nodes()`, `pillars()`, `discount_factor(date)`, `forward_rate(...)`)
   - `ctx.volatility_surfaces()` / `ctx.volatility_surface(index)` → `VolatilitySurface`

@@ -179,7 +179,14 @@ The Python wrapper preserves the same lifecycle: one object owns the market,
 and initialization builds its derived state. Keyword arguments mirror the
 Rust builder inputs so configuration can be shared across both interfaces.
 
-The binding exposes the same object with keyword arguments matching the builders: `PricingContext(quotes, curves, fixings=None, fx=None, volatility_surfaces=None, volatility_cubes=None, pricer_configurations=None, simulations=None, csa_policy=None, fixed_income_policy=None, scenarios=None, quote_level=None)`. Set `quote_level=qs.Level.Bid` or `quote_level="Ask"`; names are case-insensitive, and omitting the setting uses `qs.Level.Mid`. The read-only `context.quote_level` property returns the selected enum. Initialization runs explicitly through `initialize()` or when entering the context manager; exit clears the constructed market and AD tape. Python-defined pricers can be registered with `register_pricer(TradeType, pricer)` and then participate in the same `context.evaluate(...)` workflow; they receive the initialized context as their market-data provider. The standalone Python `Evaluator` provides the corresponding type-based dispatch for custom providers and heterogeneous portfolios.
+The binding exposes the same object with keyword arguments matching the builders: `PricingContext(quotes, curves, fixings=None, fx=None, volatility_surfaces=None, volatility_cubes=None, pricer_configurations=None, simulations=None, csa_policy=None, fixed_income_policy=None, scenarios=None, quote_level=None)`. Set `quote_level=qs.Level.Bid` or `quote_level="Ask"`; names are case-insensitive, and omitting the setting uses `qs.Level.Mid`. The read-only `context.quote_level` property returns the selected enum.
+
+Enter `with context:` to initialize the market automatically and start the AD
+tape. Exiting the block clears the constructed market and resets the tape,
+including when an exception occurs. An explicit `initialize()` call is only
+needed when using the context without a `with` block.
+
+Python-defined pricers can be registered with `register_pricer(TradeType, pricer)` and then participate in the same `context.evaluate(...)` workflow; they receive the initialized context as their market-data provider. The standalone Python `Evaluator` provides the corresponding type-based dispatch for custom providers and heterogeneous portfolios.
 
 ## Context lifecycle in practice
 
