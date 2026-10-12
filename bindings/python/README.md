@@ -83,6 +83,10 @@ with ctx:
 Every enum argument also accepts its string name (`currency="USD"`,
 `side="pay"`, `requests=["Value"]`, ...).
 
+The [currency-conversion walkthrough](examples/valuation/currency_conversion.ipynb)
+values a CLP swap in the USD base currency under a USD CSA, explains FX pair
+direction, and reconciles the native value from converted, discounted cashflows.
+
 ### Instruments And Trades
 
 Built-in products such as `Swap`, `FixedRateBond`, and `FxOption` are

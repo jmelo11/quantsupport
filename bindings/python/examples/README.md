@@ -14,7 +14,7 @@ to that scope.
 | Scope | Catalog | Coverage |
 | --- | --- | --- |
 | `bootstrap` | [Curve construction](bootstrap/README.md) | Quotes, bootstrap configurations, nodes, pillars, and forwards |
-| `valuation` | [Product pricing](valuation/README.md) | First swap, other product analytics, and callable stepped bonds |
+| `valuation` | [Product pricing](valuation/README.md) | First swap, product analytics, base-currency conversion, and callable stepped bonds |
 | `volatilitysurface` | [Volatility markets](volatilitysurface/README.md) | Curves, surfaces, and independent rate/volatility valuation shocks |
 | `hullwhite` | [Rate simulations](hullwhite/README.md) | Calibrated model setup and retrieving simulation results |
 | `sensitivity` | [Portfolio and risk](sensitivity/README.md) | Valuation requests, aggregation, quote risk, and scenarios |
@@ -27,12 +27,13 @@ to that scope.
 | --- | --- | --- |
 | 1 | [From quotes to a swap](valuation/tour.ipynb) | Dates and conventions, product/position terms, market indices, the context lifecycle, requests, and result units |
 | 2 | [Product valuations](valuation/product_valuations.ipynb) | Swap par rate, bond price/yield/duration/Z-spread, caplet and cap valuation, and which requests fit each product |
-| 3 | [Curves and volatility](volatilitysurface/curves_and_volatility.ipynb) | Configure and inspect curves and surfaces, query forwards and smiles, and explain rate/volatility shocks through product P&L |
-| 4 | [Simulations and their results](hullwhite/simulations.ipynb) | Model calibration, path count/seed/grid, retrieving paths, date-wise statistics, plots, and sampling error |
-| 5 | [Portfolio valuation and risk](sensitivity/portfolio_risk.ipynb) | Price several trades in one context, aggregate quote risk and payments, distinguish DV01 from vega, and check AAD against full revaluation |
-| 6 | [Callable stepped-coupon bond](valuation/stepped_coupon_bond.ipynb) | Typed coupon/principal/call terms, calibrated tree and Fourier engines, price/OAS anchors, and curve/volatility/OAS risk |
-| 7 | [Scripted cashflows](scripting/scripted_cashflows.ipynb) | Dated observations and payments, path-averaged results, and the native-versus-scripted stepped-bond underlying check |
-| 8 | [Exposure and XVA](cva/xva.ipynb) | Per-client terms, netting sets, EPE/ENE/EE, XVA values and risk, and the effect of netting |
+| 3 | [Currency conversion](valuation/currency_conversion.ipynb) | Read FX pair direction, value a CLP swap under USD collateral, and reconcile its base-currency PV |
+| 4 | [Curves and volatility](volatilitysurface/curves_and_volatility.ipynb) | Configure and inspect curves and surfaces, query forwards and smiles, and explain rate/volatility shocks through product P&L |
+| 5 | [Simulations and their results](hullwhite/simulations.ipynb) | Model calibration, path count/seed/grid, retrieving paths, date-wise statistics, plots, and sampling error |
+| 6 | [Portfolio valuation and risk](sensitivity/portfolio_risk.ipynb) | Price several trades in one context, aggregate quote risk and payments, distinguish DV01 from vega, and check AAD against full revaluation |
+| 7 | [Callable stepped-coupon bond](valuation/stepped_coupon_bond.ipynb) | Typed coupon/principal/call terms, calibrated tree and Fourier engines, price/OAS anchors, and curve/volatility/OAS risk |
+| 8 | [Scripted cashflows](scripting/scripted_cashflows.ipynb) | Dated observations and payments, path-averaged results, and the native-versus-scripted stepped-bond underlying check |
+| 9 | [Exposure and XVA](cva/xva.ipynb) | Per-client terms, netting sets, EPE/ENE/EE, XVA values and risk, and the effect of netting |
 
 The introduction is the recommended starting point. For a closer look at curve
 construction before pricing, read [bootstrap/curves.ipynb](bootstrap/curves.ipynb).
@@ -97,10 +98,12 @@ defaults to 600 seconds and can be changed with `--timeout`.
 ## How the pieces fit
 
 `QuoteStore` contains observations, `FixingStore` contains historical index
-observations, and `FxStore` contains spot exchange rates. Our core examples are
-forward-looking USD products on one reference date, so they do not require
-historical fixing or FX inputs. Curve and volatility configurations describe how
-to construct market objects from quote identifiers. A `MarketIndex` is the key
+observations, and `FxStore` contains spot exchange rates. Most examples are
+forward-looking USD products on one reference date. The currency-conversion
+example also supplies USD/CLP spot FX and a CLP curve under USD collateral.
+These examples do not require historical fixings. Curve and volatility
+configurations describe how to construct market objects from quote identifiers.
+A `MarketIndex` is the key
 that connects those objects to products and models; it is not a market value.
 
 Create a `PricingContext` and enter `with context:`. Entering the block
@@ -135,9 +138,13 @@ The notebooks focus on native products and their existing Python entry points.
 | [cva/data/xva.json](cva/data/xva.json) | Calibrated LGM exposure-engine settings |
 | [run_notebooks.py](run_notebooks.py) | Execute the documentation against an installed binding |
 
-All notebooks use the **illustrative 2026-02-24** snapshot already maintained in
+Most notebooks use the **illustrative 2026-02-24** snapshot already maintained in
 [`examples/hullwhite/data`](../../../examples/hullwhite/data) at the repository
-root: `quotes.json`, `curve_specs.json`, and `vol_specs.json`.
+root: `quotes.json`, `curve_specs.json`, and `vol_specs.json`. The
+[currency-conversion notebook](valuation/currency_conversion.ipynb) uses the
+USD/CLP quote and curve files in
+[`examples/bootstrap/data`](../../../examples/bootstrap/data) on the same
+reference date, with an explicit illustrative spot rate of 935 CLP per USD.
 Keep the repository layout when running the tutorials; copying only the
 notebooks omits their helpers and source market data. Nothing downloads or
 updates these quotes automatically.

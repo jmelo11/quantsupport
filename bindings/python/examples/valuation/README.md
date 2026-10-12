@@ -7,6 +7,7 @@ corresponding to the Rust [`valuation`](../../../../examples/valuation) examples
 | --- | --- | --- |
 | [tour.ipynb](tour.ipynb) | How do I value a receive-fixed swap and read its results? | Dates, enums, contract/position terms, context, requests, result units |
 | [product_valuations.ipynb](product_valuations.ipynb) | How do requests differ for swaps, bonds, caplets and caps? | Par rate, price/spread anchors, yield, duration, cashflows, Black option valuation |
+| [currency_conversion.ipynb](currency_conversion.ipynb) | How is a CLP swap valued in the USD base currency? | FX direction, USD CSA, collateral-adjusted discounting, cashflow-to-PV reconciliation |
 | [stepped_coupon_bond.ipynb](stepped_coupon_bond.ipynb) | How do stepped coupons, amortization and issuer calls affect value and OAS? | Typed coupons/calls, calibrated Hull–White model, tree/Fourier engines, OAS risk |
 
 [data/bond_tree.json](data/bond_tree.json) and
@@ -22,13 +23,17 @@ convergence guarantee: refine both grids when adapting the example to a pricing
 tolerance. Sensitivities are requested only for the tree risk report; the
 Fourier comparison and price-to-OAS round trip request value and OAS.
 
-The notebook imports its local [market_data.py](market_data.py) directly.
+The notebooks import their local [market_data.py](market_data.py) directly.
+The currency-conversion example loads USD/CLP curves from the Rust
+[`bootstrap` market](../../../../examples/bootstrap/data) and shows the spot
+rate explicitly in the notebook. It checks that converted, discounted CLP
+cashflows reproduce the native USD value.
 
 Follow the [shared setup](../README.md#install-and-run). Run this scope from the
 repository root with:
 
 ```bash
-python bindings/python/examples/run_notebooks.py valuation/tour.ipynb valuation/product_valuations.ipynb valuation/stepped_coupon_bond.ipynb
+python bindings/python/examples/run_notebooks.py valuation/tour.ipynb valuation/product_valuations.ipynb valuation/currency_conversion.ipynb valuation/stepped_coupon_bond.ipynb
 ```
 
 Next: [portfolio sensitivity](../sensitivity/README.md) or

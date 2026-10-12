@@ -1,8 +1,9 @@
 """File loading for the notebooks; pricing stays in the notebook cells.
 
 Paths are relative to this module, never the shell's working directory. The
-market is the repository's illustrative 2026-02-24 Hull-White snapshot, not a
-live feed. This module is example code, not part of the installed binding.
+markets are the repository's illustrative 2026-02-24 Hull-White and bootstrap
+snapshots, not live feeds. This module is example code, not part of the installed
+binding.
 """
 
 from dataclasses import dataclass
@@ -14,6 +15,7 @@ import quantsupport as qs
 
 EXAMPLES = Path(__file__).resolve().parents[1]
 MARKET_DATA = EXAMPLES.parents[2] / "examples" / "hullwhite" / "data"
+MULTI_CURRENCY_MARKET_DATA = EXAMPLES.parents[2] / "examples" / "bootstrap" / "data"
 
 
 @dataclass
@@ -34,6 +36,26 @@ def load_market():
         volatility_surfaces=qs.VolatilitySurfaceConfiguration.from_json(
             str(MARKET_DATA / "vol_specs.json")
         ),
+        csa_policy=qs.SingleCurveCSADiscountPolicy(qs.Currency.USD, qs.MarketIndex.SOFR),
+    )
+
+
+def load_currency_market():
+    """Load USD/CLP curve inputs for the currency-conversion walkthrough."""
+    indices = (
+        "SOFR",
+        "ICP",
+        {"Collateral": ("CLP", "USD")},
+    )
+    curves = qs.CurveConfiguration.from_json(
+        str(MULTI_CURRENCY_MARKET_DATA / "curve_specs.json")
+    )
+    return MarketInputs(
+        quotes=qs.QuoteStore.from_json(
+            str(MULTI_CURRENCY_MARKET_DATA / "quotes.json")
+        ),
+        curves=[curve for curve in curves if curve.to_dict()["market_index"] in indices],
+        volatility_surfaces=[],
         csa_policy=qs.SingleCurveCSADiscountPolicy(qs.Currency.USD, qs.MarketIndex.SOFR),
     )
 
