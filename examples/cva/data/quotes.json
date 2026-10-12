@@ -2,6 +2,22 @@
     "reference_date": "2025-11-11",
     "quotes": [
         {
+            "identifier": "Cds_CORPORATE-A_USD_1Y",
+            "mid": 0.0080
+        },
+        {
+            "identifier": "Cds_CORPORATE-A_USD_3Y",
+            "mid": 0.0100
+        },
+        {
+            "identifier": "Cds_CORPORATE-A_USD_5Y",
+            "mid": 0.0120
+        },
+        {
+            "identifier": "Cds_CORPORATE-A_USD_10Y",
+            "mid": 0.0150
+        },
+        {
             "identifier": "FixedRateDeposit_USD_SOFR_1D",
             "mid": 0.04330
         },

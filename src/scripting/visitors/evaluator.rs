@@ -15,6 +15,8 @@ Wiley, 2018
 This attribution and license notice must be preserved at the top of this file.
 */
 
+use crate::utils::errors::{QSError, Result};
+
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use std::{
     cell::RefCell,
@@ -28,7 +30,6 @@ use crate::{
     scripting::{
         data::simulationdata::{Scenario, SimulationData},
         nodes::{event::EventStream, node::Node, node::SpotUnderlying, traits::NodeConstVisitor},
-        utils::errors::{Result, ScriptingError},
         NumericType,
     },
     time::{date::Date, daycounter::DayCounter},
@@ -220,14 +221,16 @@ impl<'a> SingleScenarioEvaluator<'a> {
     /// # Errors
     /// Returns an error if no scenario is set or the event index is invalid.
     pub fn current_market_data(&self) -> Result<&SimulationData> {
-        let scenario = self.scenario.ok_or(ScriptingError::EvaluationError(
-            "No scenario set".to_string(),
-        ))?;
-        scenario
-            .get(*self.current_event.borrow())
-            .ok_or(ScriptingError::EvaluationError(
-                "Event not found".to_string(),
+        let scenario = self
+            .scenario
+            .ok_or(QSError::ValueNotSetErr("No scenario set".to_string()))?;
+        scenario.get(*self.current_event.borrow()).ok_or_else(|| {
+            QSError::NotFoundErr(format!(
+                "market data for script event {}; scenario contains {} events",
+                self.current_event.borrow(),
+                scenario.len()
             ))
+        })
     }
 
     /// Returns the active event index.
@@ -289,7 +292,7 @@ impl<'a> NodeConstVisitor for SingleScenarioEvaluator<'a> {
                 } else {
                     match data.id {
                         None => {
-                            return Err(ScriptingError::EvaluationError(format!(
+                            return Err(QSError::ValueNotSetErr(format!(
                                 "Variable {} not indexed",
                                 name
                             )))
@@ -303,7 +306,7 @@ impl<'a> NodeConstVisitor for SingleScenarioEvaluator<'a> {
                                 Value::String(v) => self.string_stack.borrow_mut().push(v.clone()),
                                 Value::Array(a) => self.array_stack.borrow_mut().push(a.clone()),
                                 Value::Null => {
-                                    return Err(ScriptingError::EvaluationError(format!(
+                                    return Err(QSError::ValueNotSetErr(format!(
                                         "Variable {} not initialized",
                                         name
                                     )))
@@ -315,19 +318,11 @@ impl<'a> NodeConstVisitor for SingleScenarioEvaluator<'a> {
                 }
             }
             Node::Spot(data) => {
-                let id = data.id.ok_or(ScriptingError::EvaluationError(
-                    "Spot not indexed".to_string(),
-                ))?;
+                let id = data
+                    .id
+                    .ok_or(QSError::ValueNotSetErr("Spot not indexed".to_string()))?;
 
-                let market_data = self
-                    .scenario
-                    .ok_or(ScriptingError::EvaluationError(
-                        "No scenario set".to_string(),
-                    ))?
-                    .get(*self.current_event.borrow_mut())
-                    .ok_or(ScriptingError::EvaluationError(
-                        "Spot not found".to_string(),
-                    ))?;
+                let market_data = self.current_market_data()?;
 
                 let value = match &data.underlying {
                     SpotUnderlying::Fx { .. } => market_data.get_fx(id)?,
@@ -337,35 +332,21 @@ impl<'a> NodeConstVisitor for SingleScenarioEvaluator<'a> {
                 Ok(())
             }
             Node::Df(data) => {
-                let id = data.id.ok_or(ScriptingError::EvaluationError(
-                    "Df not indexed".to_string(),
-                ))?;
+                let id = data
+                    .id
+                    .ok_or(QSError::ValueNotSetErr("Df not indexed".to_string()))?;
 
-                let market_data = self
-                    .scenario
-                    .ok_or(ScriptingError::EvaluationError(
-                        "No scenario set".to_string(),
-                    ))?
-                    .get(*self.current_event.borrow_mut())
-                    .ok_or(ScriptingError::EvaluationError("Df not found".to_string()))?;
+                let market_data = self.current_market_data()?;
 
                 self.digit_stack.borrow_mut().push(market_data.get_df(id)?);
                 Ok(())
             }
             Node::RateIndex(data) => {
-                let id = data.id.ok_or(ScriptingError::EvaluationError(
-                    "RateIndex not indexed".to_string(),
-                ))?;
+                let id = data
+                    .id
+                    .ok_or(QSError::ValueNotSetErr("RateIndex not indexed".to_string()))?;
 
-                let market_data = self
-                    .scenario
-                    .ok_or(ScriptingError::EvaluationError(
-                        "No scenario set".to_string(),
-                    ))?
-                    .get(*self.current_event.borrow_mut())
-                    .ok_or(ScriptingError::EvaluationError(
-                        "RateIndex not found".to_string(),
-                    ))?;
+                let market_data = self.current_market_data()?;
 
                 self.digit_stack.borrow_mut().push(market_data.get_fwd(id)?);
                 Ok(())
@@ -376,7 +357,7 @@ impl<'a> NodeConstVisitor for SingleScenarioEvaluator<'a> {
                     .try_for_each(|child| self.const_visit(child))?;
 
                 let current_value = self.digit_stack.borrow_mut().pop().ok_or_else(|| {
-                    ScriptingError::EvaluationError(
+                    QSError::EvaluationErr(
                         "payment expression produced no numeric value".to_string(),
                     )
                 })?;
@@ -398,27 +379,18 @@ impl<'a> NodeConstVisitor for SingleScenarioEvaluator<'a> {
                     );
                 }
 
-                let market_data = self
-                    .scenario
-                    .ok_or(ScriptingError::EvaluationError(
-                        "No scenario set".to_string(),
-                    ))?
-                    .get(*self.current_event.borrow_mut())
-                    .ok_or(ScriptingError::EvaluationError(
-                        "Event not found".to_string(),
-                    ))?
-                    .clone();
+                let market_data = self.current_market_data()?.clone();
 
-                let df_id = data.df_id.ok_or(ScriptingError::EvaluationError(
-                    "Pays not indexed".to_string(),
-                ))?;
+                let df_id = data
+                    .df_id
+                    .ok_or(QSError::ValueNotSetErr("Pays not indexed".to_string()))?;
                 let df = market_data.get_df(df_id)?;
                 let numeraire = market_data.numeraire();
 
                 let value: NumericType = if data.currency.is_some() {
-                    let fx_id = data.spot_id.ok_or(ScriptingError::EvaluationError(
-                        "Pays FX not indexed".to_string(),
-                    ))?;
+                    let fx_id = data
+                        .spot_id
+                        .ok_or(QSError::ValueNotSetErr("Pays FX not indexed".to_string()))?;
                     let fx = market_data.get_fx(fx_id)?;
                     ((current_value * df * fx) / numeraire).into()
                 } else {
@@ -499,7 +471,7 @@ impl<'a> NodeConstVisitor for SingleScenarioEvaluator<'a> {
                 match variable {
                     Node::Variable(data) => match data.id {
                         None => {
-                            return Err(ScriptingError::EvaluationError(format!(
+                            return Err(QSError::ValueNotSetErr(format!(
                                 "Variable {} not indexed",
                                 data.name
                             )))
@@ -526,7 +498,7 @@ impl<'a> NodeConstVisitor for SingleScenarioEvaluator<'a> {
                         }
                     },
                     _ => {
-                        return Err(ScriptingError::EvaluationError(
+                        return Err(QSError::EvaluationErr(
                             "Invalid variable assignment".to_string(),
                         ))
                     }
@@ -754,7 +726,7 @@ impl<'a> NodeConstVisitor for SingleScenarioEvaluator<'a> {
 
                 let var_node = self.lhs_variable.borrow_mut().clone().unwrap();
                 if let Node::Variable(data) = var_node {
-                    let id = data.id.ok_or(ScriptingError::EvaluationError(format!(
+                    let id = data.id.ok_or(QSError::ValueNotSetErr(format!(
                         "Variable {} not indexed",
                         data.name
                     )))?;
@@ -774,16 +746,12 @@ impl<'a> NodeConstVisitor for SingleScenarioEvaluator<'a> {
                             *vars.get_mut(id).unwrap() = Value::Array(vec![val]);
                         }
                         _ => {
-                            return Err(ScriptingError::EvaluationError(
-                                "Append on non-array".to_string(),
-                            ));
+                            return Err(QSError::EvaluationErr("Append on non-array".to_string()));
                         }
                     }
                     Ok(())
                 } else {
-                    Err(ScriptingError::EvaluationError(
-                        "Invalid append target".to_string(),
-                    ))
+                    Err(QSError::EvaluationErr("Invalid append target".to_string()))
                 }
             }
             Node::Mean(data) => {
@@ -800,9 +768,7 @@ impl<'a> NodeConstVisitor for SingleScenarioEvaluator<'a> {
                     }
                 }
                 if count == 0.0 {
-                    return Err(ScriptingError::EvaluationError(
-                        "mean of empty array".to_string(),
-                    ));
+                    return Err(QSError::EvaluationErr("mean of empty array".to_string()));
                 }
                 self.digit_stack.borrow_mut().push((sum / count).into());
                 Ok(())
@@ -823,9 +789,7 @@ impl<'a> NodeConstVisitor for SingleScenarioEvaluator<'a> {
                     }
                 }
                 if count == 0.0 {
-                    return Err(ScriptingError::EvaluationError(
-                        "std of empty array".to_string(),
-                    ));
+                    return Err(QSError::EvaluationErr("std of empty array".to_string()));
                 }
                 let mean = sum / count;
                 let mut var = NumericType::new(0.0);
@@ -882,9 +846,10 @@ impl<'a> NodeConstVisitor for SingleScenarioEvaluator<'a> {
                 let array = self.array_stack.borrow_mut().pop().unwrap_or_default();
                 let idx = idx_val.value().round() as usize;
                 if idx >= array.len() {
-                    return Err(ScriptingError::EvaluationError(
-                        "Index out of bounds".to_string(),
-                    ));
+                    return Err(QSError::EvaluationErr(format!(
+                        "Array index {idx} is out of bounds for {} elements",
+                        array.len()
+                    )));
                 }
                 match array[idx].clone() {
                     Value::Bool(v) => self.boolean_stack.borrow_mut().push(v),
@@ -898,7 +863,7 @@ impl<'a> NodeConstVisitor for SingleScenarioEvaluator<'a> {
             Node::ForEach(data) => {
                 self.const_visit(&data.node)?;
                 let array = self.array_stack.borrow_mut().pop().unwrap_or_default();
-                let idx = data.id.ok_or(ScriptingError::EvaluationError(
+                let idx = data.id.ok_or(QSError::ValueNotSetErr(
                     "Loop variable not indexed".to_string(),
                 ))?;
                 for val in array {
@@ -957,7 +922,12 @@ impl<'a> SingleScenarioEvaluator<'a> {
             .try_for_each(|(i, event)| -> Result<()> {
                 self.set_current_event(i);
                 *self.current_event_date.borrow_mut() = Some(event.event_date());
-                self.const_visit(event.expr())?;
+                self.const_visit(event.expr()).map_err(|error| {
+                    error.context(format!(
+                        "evaluating script event {i} dated {}",
+                        event.event_date()
+                    ))
+                })?;
                 Ok(())
             })?;
         let v = self.variables.borrow_mut();

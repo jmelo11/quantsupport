@@ -222,6 +222,9 @@ impl IntoContingentClaims for Leg<f64> {
                         .build()?
                 }
                 CashflowType::FloatingRateCoupon(coupon) => {
+                    if coupon.overnight_conventions().is_some_and(|conventions| *conventions != crate::instruments::rates::oisconventions::OvernightCouponConventions::default()) {
+                        return Err(QSError::NotImplementedErr("Nonstandard overnight observation conventions are not supported by XVA claim conversion".into()));
+                    }
                     let forward_index = self
                         .forward_index()
                         .cloned()

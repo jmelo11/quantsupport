@@ -33,13 +33,13 @@ unsafe impl<T: Sync> Sync for Dual<T> {}
 impl<T> Dual<T> {
     /// Low-level constructor used by [`flatten`](crate::ad::expr::flatten).
     #[inline]
-    pub(crate) const fn from_raw(val: T, node: Option<NonNull<TapeNode<T>>>) -> Self {
+    pub const fn from_raw(val: T, node: Option<NonNull<TapeNode<T>>>) -> Self {
         Self { val, node }
     }
 
     /// Returns the inner `T` value (for the expression-template system).
     #[inline]
-    pub(crate) const fn val(&self) -> T
+    pub const fn val(&self) -> T
     where
         T: Copy,
     {
@@ -48,7 +48,7 @@ impl<T> Dual<T> {
 
     /// Returns the raw tape-node pointer (for the expression-template system).
     #[inline]
-    pub(crate) const fn node_ptr(&self) -> Option<NonNull<TapeNode<T>>> {
+    pub const fn node_ptr(&self) -> Option<NonNull<TapeNode<T>>> {
         self.node
     }
 }
@@ -154,7 +154,8 @@ impl<T: TapeHolder + InnerScalar> Dual<T> {
             tape.mut_node(root)
                 .ok_or(QSError::NodeNotIndexedInTapeErr)?
                 .adj = T::one();
-            tape.propagate_mark_to_start()
+            tape.propagate_mark_to_start();
+            Ok(())
         })
     }
 
@@ -168,7 +169,8 @@ impl<T: TapeHolder + InnerScalar> Dual<T> {
             tape.mut_node(root)
                 .ok_or(QSError::NodeNotIndexedInTapeErr)?
                 .adj = T::one();
-            tape.propagate_to_mark()
+            tape.propagate_to_mark();
+            Ok(())
         })
     }
 
@@ -401,7 +403,6 @@ impl<T: TapeHolder + InnerScalar> From<Dual<T>> for f64 {
 
 /// Mixed-mode AD number: backward (1st order) + forward (2nd order).
 pub type DualFwd = Dual<ADForward>;
-
 
 #[cfg(test)]
 mod tests {

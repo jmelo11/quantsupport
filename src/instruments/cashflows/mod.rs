@@ -2,6 +2,7 @@
 pub mod cashflow;
 /// Cash Flow Type Module
 pub mod cashflowtype;
+/// Reusable coupon terms and cashflow construction.
 /// Coupon Module
 pub mod coupons;
 /// Fixed Rate Coupon Module

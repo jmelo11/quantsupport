@@ -8,7 +8,7 @@ Everything is organised around one flow:
 2. Describe **curves**, **credit curves**, **volatility surfaces/cubes**, and **simulations** with serializable configuration structs (`CurveConfiguration`, `CreditCurveConfiguration`, `VolatilitySurfaceConfiguration`, `VolatilityCubeConfiguration`, `SimulationConfiguration`).
 3. Put them into a [`PricingContext`](concepts/pricing-context.md) and call `initialize()`, which bootstraps and builds every object in dependency order.
 4. Build an **instrument** with a `Make*` builder and wrap it in a **trade** (`SwapTrade`, `FxForwardTrade`, …) that carries notional and side.
-5. Ask a **pricer** (`DiscountedCashflowPricer`, `ClosedFormBlackCapPricer`, `FxOptionPricer`, …) for `Request::Value`, `FairRate`, `Cashflows`, or `Sensitivities`.
+5. Ask a **pricer** (`DiscountedCashflowPricer`, `ClosedFormBlackCapPricer`, `FxEuropeanOptionPricer`, …) for `Request::Value`, `FairRate`, `Cashflows`, or `Sensitivities`.
 6. Reuse the same market for **scenarios** (`Scenario`), **scripted payoffs** (`ScriptEngine`), **simulation** (`LgmMarketModel`, `HullWhite`), and **XVA** (`XvaEngine`).
 
 Curves, instruments, and pricers use the generic scalar parameter `T: Scalar`. `T = f64` carries plain numerical values. `T = DualFwd`, a reverse-mode tape over a second-order forward type, makes each price differentiable with respect to the quotes that built the market.

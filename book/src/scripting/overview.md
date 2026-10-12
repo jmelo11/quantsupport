@@ -12,7 +12,7 @@ use quantsupport::prelude::{
     ScriptEngine, ScriptModelSetup,      // evaluation
     ScriptModelCallback, ParallelScriptEvaluation, ExpectedCashflow,
     ScriptedProduct,                     // XVA integration
-    SimulationDataRequest, ScriptingError, ScriptValue,
+    SimulationDataRequest, QSError, ScriptValue,
 };
 ```
 
@@ -54,7 +54,7 @@ The implementation under `src/scripting/` assigns each stage to a focused module
 | `request.rs`                                                               | `SimulationDataRequest` (discounts, forwards, FX, spots, numeraire flag)                                                                    |
 | `runtime.rs`                                                               | `ScriptEngine`, `ScriptModelSetup`, `ParallelScriptEvaluation`, `ExpectedCashflow`                                                          |
 | `product.rs`                                                               | `ScriptedProduct`, `ScriptedPayoff` and the `IntoContingentClaims` bridge to XVA                                                            |
-| `utils/errors.rs`                                                          | `ScriptingError`                                                                                                                            |
+| `../utils/errors.rs`                                                          | `QSError` and the shared `Result<T>`                                                                                |
 
 The parser and visitors establish the meaning of the program, and `runtime.rs` executes that prepared representation. The numeric type inside scripts is `NumericType = DualFwd`, so every script variable remains differentiable with respect to curve pillars and recorded model parameters.
 

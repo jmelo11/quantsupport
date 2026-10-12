@@ -63,7 +63,7 @@ pub struct CreditCurveConfiguration {
     /// Whether extrapolation beyond the last pillar is allowed.
     #[serde(default = "default_enable_extrapolation")]
     enable_extrapolation: bool,
-    /// CDS par-spread quote identifiers (e.g. `Cds_ACME_USD_5Y`).
+    /// CDS par-spread quote identifiers (e.g. `Cds_CORPORATE-A_USD_5Y`).
     #[serde(default)]
     quotes: Vec<String>,
 }

@@ -18,12 +18,17 @@ The quote file establishes the market reference date and the observable values a
       "mid": 0.32 },
     { "identifier": "Swaption_CLP_ICP_1Y_2Y_Absolute_0.045_Black",
       "mid": 0.26 },
-    { "identifier": "Cds_ACME_USD_5Y", "mid": 0.01 }
+    { "identifier": "Cds_CORPORATE-A_USD_5Y", "mid": 0.01 }
   ]
 }
 ```
 
 Deserialize this shape as `QuoteStoreRecords`, then convert it with `QuoteStore::try_from`. Example packages sometimes use an equivalent local loader. Builders read values at `Level::Bid`, `Level::Mid`, or `Level::Ask`, and a missing requested level produces an error.
+
+Choose the level in context setup with `PricingContext::new().with_quote_level(Level::Bid)`
+in Rust or `qs.PricingContext(quotes=quotes, curves=curves, quote_level=qs.Level.Bid)`
+in Python. It applies to market construction and model calibration; omitting it
+preserves the mid default.
 
 ## `fixings.json`
 
@@ -73,12 +78,12 @@ Credit curves use `CreditCurveConfiguration` because CDS calibration also needs 
 
 ```json
 {
-  "market_index": { "Credit": "ACME" },
+  "market_index": { "Credit": "CORPORATE-A" },
   "currency": "USD",
   "discount_index": "SOFR",
   "recovery": 0.4,
   "premium_frequency": "Quarterly",
-  "quotes": ["Cds_ACME_USD_1Y", "Cds_ACME_USD_5Y"]
+  "quotes": ["Cds_CORPORATE-A_USD_1Y", "Cds_CORPORATE-A_USD_5Y"]
 }
 ```
 
@@ -110,6 +115,39 @@ Volatility specifications define the quote membership and conventions of surface
 ```
 
 The surface quote encodes expiry, index tenor, and strike. The cube quote adds the underlying swap tenor. Builders validate these coordinates and preserve the identifiers for interpolation risk and model calibration.
+
+## `pricer_configurations.json` — `Vec<PricerConfiguration>`
+
+Pricer configurations select an implementation for an instrument family and assign typed models by market index. Supply the vector with `PricingContext::with_pricer_configurations()`. Direct Rust pricing still selects its concrete pricer; for swaptions, pass the selected entry to `ClosedFormHullWhiteSwaptionPricer::from_configuration()`.
+
+This example assigns a Hull-White model calibrated to the SOFR swaption cube:
+
+```json
+[
+  {
+    "instrument_type": "EuropeanSwaption",
+    "pricer": "HullWhiteClosedForm",
+    "models": [
+      {
+        "market_index": "SOFR",
+        "model": {
+          "HullWhite": {
+            "alpha": 0.1,
+            "parameter_source": {
+              "Calibrated": {
+                "source": { "Cube": { "market_index": "SOFR" } },
+                "calibration_basket": { "strike": "Atm" }
+              }
+            }
+          }
+        }
+      }
+    ]
+  }
+]
+```
+
+The context also needs the source quotes, matching `VolatilityCubeConfiguration`, and curves before valuation. `ParameterSource::Fixed` supplies a constant sigma instead. Callable-bond configurations use `TreeBased` or `BackwardFourierEvolution` with numerical grid controls, as described in [Bond Pricing](../pricing/bonds.md). OIS uses `instrument_type: "OIS"` and `pricer: "DiscountedCashflow"`, independently of the regular `"Swap"` family.
 
 ## `ModelCalibrationConfiguration`
 
@@ -197,10 +235,14 @@ CSA terms describe collateral discounting and the credit and funding inputs for 
   "funding_spread": 0.0,
   "funding_index": "TermSOFR3m",
   "funding_spread_curve": {
+    "reference_date": "2026-11-11",
     "dates": ["2026-11-11", "2028-11-11"],
-    "spreads": [0.004, 0.005]
+    "rates": [0.004, 0.005],
+    "rate_definition": {"day_counter": "Actual365", "compounding": "Continuous", "frequency": "Annual"},
+    "interpolator": "Linear",
+    "enable_extrapolation": true
   },
-  "credit_index": { "Credit": "ACME" }
+  "credit_index": { "Credit": "CORPORATE-A" }
 }
 ```
 

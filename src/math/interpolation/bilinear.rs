@@ -1,5 +1,7 @@
 use crate::ad::{dual::DualFwd, scalar::Scalar};
 
+use super::extrapolation::ExtrapolationPolicy;
+
 /// Numeric behavior required for bilinear interpolation.
 pub trait BilinearValue: Scalar {
     /// Linearly interpolates between `a` and `b` using scalar weight `t`.
@@ -29,88 +31,159 @@ pub struct BilinearPoint<T: Scalar> {
     pub value: T,
 }
 
-/// # `BilinearInterpolator`
-/// Bilinear interpolation implementation independent from volatility containers.
+/// Bilinear interpolation over rectangular or sparse x/y slices.
 pub struct BilinearInterpolator;
 
 impl BilinearInterpolator {
-    /// Interpolate at (`x`,`y`) from rectangular points.
+    /// Interpolates y within each x slice, then along x without extrapolation.
+    ///
+    /// Exact boundaries and singleton axes are supported. Slices may contain
+    /// different inner coordinates. Returns `None` for out-of-range queries,
+    /// empty grids, duplicate nodes, or non-finite coordinates or values.
     #[must_use]
     pub fn interpolate<T: BilinearValue>(
         x: f64,
         y: f64,
-        mut points: Vec<BilinearPoint<T>>,
+        points: Vec<BilinearPoint<T>>,
     ) -> Option<T> {
-        if points.is_empty() {
-            return None;
-        }
+        Self::interpolate_with_extrapolation(x, y, points, ExtrapolationPolicy::Reject)
+    }
 
-        points.sort_by(|a, b| a.x.total_cmp(&b.x).then_with(|| a.y.total_cmp(&b.y)));
-
-        let mut xs = points.iter().map(|p| p.x).collect::<Vec<_>>();
-        xs.sort_by(f64::total_cmp);
-        xs.dedup_by(|a, b| (*a - *b).abs() < f64::EPSILON);
-
-        let mut ys = points.iter().map(|p| p.y).collect::<Vec<_>>();
-        ys.sort_by(f64::total_cmp);
-        ys.dedup_by(|a, b| (*a - *b).abs() < f64::EPSILON);
-
-        if xs.len() < 2 || ys.len() < 2 {
-            return None;
-        }
-
-        // Queries landing exactly on the last pillar clamp to the last cell.
-        let clamp_upper = |grid: &[f64], v: f64, idx: usize| {
-            if idx == grid.len() && (v - grid[grid.len() - 1]) <= f64::EPSILON * v.abs().max(1.0) {
-                idx - 1
-            } else {
-                idx
-            }
-        };
-        let ix = clamp_upper(&xs, x, xs.partition_point(|v| *v <= x));
-        let iy = clamp_upper(&ys, y, ys.partition_point(|v| *v <= y));
-        if ix == 0 || ix >= xs.len() || iy == 0 || iy >= ys.len() {
-            return None;
-        }
-
-        let (x0, x1) = (xs[ix - 1], xs[ix]);
-        let (y0, y1) = (ys[iy - 1], ys[iy]);
-
-        let lookup = |lx: f64, ly: f64| {
+    /// Interpolates with an explicit policy for queries outside each slice.
+    ///
+    /// `Flat` clamps each axis to its nearest available boundary, treating a
+    /// singleton axis as constant. Invalid grids and non-finite queries
+    /// return `None` under either policy.
+    #[must_use]
+    pub fn interpolate_with_extrapolation<T: BilinearValue>(
+        x: f64,
+        y: f64,
+        points: Vec<BilinearPoint<T>>,
+        extrapolation: ExtrapolationPolicy,
+    ) -> Option<T> {
+        super::multilinear::interpolate(
+            [x, y],
             points
-                .iter()
-                .find(|p| (p.x - lx).abs() < f64::EPSILON && (p.y - ly).abs() < f64::EPSILON)
-                .cloned()
-        };
-
-        let p00 = lookup(x0, y0)?;
-        let p10 = lookup(x1, y0)?;
-        let p01 = lookup(x0, y1)?;
-        let p11 = lookup(x1, y1)?;
-
-        let tx = if (x1 - x0).abs() < f64::EPSILON {
-            0.0
-        } else {
-            (x - x0) / (x1 - x0)
-        };
-        let ty = if (y1 - y0).abs() < f64::EPSILON {
-            0.0
-        } else {
-            (y - y0) / (y1 - y0)
-        };
-
-        let v0 = T::lerp(p00.value, p10.value, tx);
-        let v1 = T::lerp(p01.value, p11.value, tx);
-        Some(T::lerp(v0, v1, ty))
+                .into_iter()
+                .map(|point| ([point.x, point.y], point.value))
+                .collect(),
+            extrapolation,
+        )
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use super::ExtrapolationPolicy;
     use crate::{
         ad::dual::DualFwd,
         math::interpolation::bilinear::{BilinearInterpolator, BilinearPoint},
     };
+
+    fn point(x: f64, y: f64) -> BilinearPoint<f64> {
+        BilinearPoint {
+            x,
+            y,
+            value: 1.0 + 2.0 * x + 3.0 * y + 4.0 * x * y,
+        }
+    }
+
+    #[test]
+    fn bilinear_reproduces_nodes_edges_and_cross_terms() {
+        let points = vec![
+            point(0.0, 0.0),
+            point(0.0, 1.0),
+            point(1.0, 0.0),
+            point(1.0, 1.0),
+        ];
+        for x in [0.0, 0.25, 1.0] {
+            for y in [0.0, 0.75, 1.0] {
+                let actual =
+                    BilinearInterpolator::interpolate(x, y, points.clone()).expect("in-grid query");
+                assert!((actual - point(x, y).value).abs() < 1e-12);
+            }
+        }
+    }
+
+    #[test]
+    fn bilinear_supports_singleton_axes_and_flat_extrapolation() {
+        for (x, y, points, expected) in [
+            (0.0, 0.5, vec![point(0.0, 0.0), point(0.0, 1.0)], 2.5),
+            (0.5, 0.0, vec![point(0.0, 0.0), point(1.0, 0.0)], 2.0),
+            (0.0, 0.0, vec![point(0.0, 0.0)], 1.0),
+        ] {
+            let actual = BilinearInterpolator::interpolate(x, y, points).expect("singleton axes");
+            assert!((actual - expected).abs() < 1e-12);
+        }
+        let points = vec![point(0.0, 0.0), point(0.0, 1.0)];
+        assert!(BilinearInterpolator::interpolate(5.0, 0.5, points.clone()).is_none());
+        let actual = BilinearInterpolator::interpolate_with_extrapolation(
+            5.0,
+            0.5,
+            points,
+            ExtrapolationPolicy::Flat,
+        )
+        .expect("flat singleton axis");
+        assert!((actual - 2.5).abs() < 1e-12);
+    }
+
+    #[test]
+    fn bilinear_interpolates_sparse_smiles_and_exact_nodes() {
+        let points = vec![
+            point(0.0, 0.0),
+            point(0.0, 2.0),
+            point(1.0, 1.0),
+            point(1.0, 3.0),
+        ];
+        let actual = BilinearInterpolator::interpolate(0.5, 1.5, points.clone())
+            .expect("overlapping sparse smiles");
+        assert!((actual - point(0.5, 1.5).value).abs() < 1e-12);
+        for node in &points {
+            assert_eq!(
+                BilinearInterpolator::interpolate(node.x, node.y, points.clone()),
+                Some(node.value)
+            );
+        }
+        assert!(BilinearInterpolator::interpolate(0.5, 0.0, points.clone()).is_none());
+        let actual = BilinearInterpolator::interpolate_with_extrapolation(
+            0.5,
+            4.0,
+            points,
+            ExtrapolationPolicy::Flat,
+        )
+        .expect("flat extrapolation within each smile");
+        assert!((actual - 15.5).abs() < 1e-12);
+    }
+
+    #[test]
+    fn bilinear_rejects_invalid_grids_and_queries() {
+        for policy in [ExtrapolationPolicy::Reject, ExtrapolationPolicy::Flat] {
+            for query in [(f64::NAN, 0.0), (0.0, f64::INFINITY)] {
+                assert!(BilinearInterpolator::interpolate_with_extrapolation(
+                    query.0,
+                    query.1,
+                    vec![point(0.0, 0.0)],
+                    policy
+                )
+                .is_none());
+            }
+            for points in [
+                vec![],
+                vec![point(0.0, 0.0), point(-0.0, 0.0)],
+                vec![point(f64::NAN, 0.0)],
+                vec![BilinearPoint {
+                    x: 0.0,
+                    y: 0.0,
+                    value: f64::NAN,
+                }],
+            ] {
+                assert!(BilinearInterpolator::interpolate_with_extrapolation(
+                    0.0, 0.0, points, policy
+                )
+                .is_none());
+            }
+        }
+    }
 
     #[test]
     fn bilinear_interpolates_center() {

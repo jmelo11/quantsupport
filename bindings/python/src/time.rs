@@ -18,8 +18,16 @@ use crate::QuantSupportError;
 ///
 /// Wherever the bindings expect a date, a [`Date`], an ISO string
 /// (`"2025-11-11"`) or a `datetime.date` may be passed.
-#[pyclass(name = "Date", eq, ord, frozen, hash, from_py_object)]
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[pyclass(
+    module = "quantsupport",
+    name = "Date",
+    eq,
+    ord,
+    frozen,
+    hash,
+    from_py_object
+)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Date {
     pub inner: QsDate,
 }
@@ -162,8 +170,8 @@ impl Date {
 ///
 /// Wherever the bindings expect a period, a [`Period`] or its string form
 /// may be passed.
-#[pyclass(name = "Period", eq, frozen, from_py_object)]
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[pyclass(module = "quantsupport", name = "Period", eq, frozen, from_py_object)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct Period {
     pub inner: QsPeriod,
 }
@@ -221,7 +229,7 @@ impl Period {
 ///
 /// Available calendars: `NullCalendar`, `WeekendsOnly`, `TARGET`,
 /// `UnitedStates`, `Brazil`, `Chile`.
-#[pyclass(name = "Calendar", from_py_object)]
+#[pyclass(module = "quantsupport", name = "Calendar", from_py_object)]
 #[derive(Clone)]
 pub struct Calendar {
     pub inner: QsCalendar,
@@ -254,8 +262,14 @@ impl Calendar {
     /// Adjusts a date to a business day under the given convention
     /// (default `Following`).
     #[pyo3(signature = (date, convention = None))]
-    fn adjust(&self, date: &Bound<'_, PyAny>, convention: Option<&Bound<'_, PyAny>>) -> PyResult<Date> {
-        let conv = convention.map(extract_business_day_convention).transpose()?;
+    fn adjust(
+        &self,
+        date: &Bound<'_, PyAny>,
+        convention: Option<&Bound<'_, PyAny>>,
+    ) -> PyResult<Date> {
+        let conv = convention
+            .map(extract_business_day_convention)
+            .transpose()?;
         Ok(Date {
             inner: self.inner.adjust(extract_date(date)?, conv),
         })
@@ -270,7 +284,9 @@ impl Calendar {
         convention: Option<&Bound<'_, PyAny>>,
         end_of_month: bool,
     ) -> PyResult<Date> {
-        let conv = convention.map(extract_business_day_convention).transpose()?;
+        let conv = convention
+            .map(extract_business_day_convention)
+            .transpose()?;
         Ok(Date {
             inner: self.inner.advance(
                 extract_date(date)?,

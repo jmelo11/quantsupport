@@ -36,7 +36,7 @@ Each JSON object becomes one `CodedEvent`. Dates use the library's `YYYY-MM-DD` 
 
 ## `Event` and `EventStream`
 
-`Event::try_from(CodedEvent)` parses source text into a `Node` tree. A syntax error includes the event date in `ScriptingError::InvalidSyntax`, which identifies the affected point in the product timeline. `EventStream` then owns the ordered collection of parsed events:
+`Event::try_from(CodedEvent)` parses source text into a `Node` tree. A syntax error uses `QSError::ParsingErr` with the event date attached through `QSError::context`, identifying the affected point in the product timeline. `EventStream` then owns the ordered collection of parsed events:
 
 ```rust,ignore
 pub struct Event { event_date: Date, expr: Node }
@@ -58,13 +58,13 @@ impl EventStream {
     pub fn mut_events(&mut self) -> &mut Vec<Event>;
     pub fn event_dates(&self) -> Vec<Date>;
 }
-impl TryFrom<Vec<CodedEvent>> for EventStream { type Error = ScriptingError; }
+impl TryFrom<Vec<CodedEvent>> for EventStream { type Error = QSError; }
 ```
 
 Most applications build a stream with `EventStream::try_from(coded_events)`. The `scripted_swap_events()` helper in `examples/scripting/src/lib.rs` demonstrates how regular accrual periods can generate source events programmatically:
 
 ```rust,ignore
-pub fn scripted_swap_events() -> Result<EventStream, ScriptingError> {
+pub fn scripted_swap_events() -> Result<EventStream, QSError> {
     let events: Vec<CodedEvent> = accrual_periods()
         .into_iter()
         .enumerate()
@@ -117,7 +117,7 @@ impl ScriptedProduct {
         reference_date: Date,
         local_currency: Currency,
         local_discount_index: MarketIndex,
-    ) -> Result<Self, ScriptingError>;
+    ) -> Result<Self, QSError>;
     pub fn id(&self) -> &str;
     pub fn maturity(&self) -> Date;                    // latest payment date
     pub fn contingent_claims(&self) -> QSResult<Vec<ContingentClaim>>;

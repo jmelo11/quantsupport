@@ -20,8 +20,8 @@ use crate::{
         },
     },
     quotes::{
-        calibrationinstrument::CalibrationInstrument, fxstore::FxStore, quote::Level,
-        quoteselector::QuoteSelector,
+        calibrationinstrument::CalibrationInstrument, fixingstore::FixingStore, fxstore::FxStore,
+        quote::Level, quoteselector::QuoteSelector,
     },
     rates::{
         bootstrapping::{
@@ -120,6 +120,7 @@ pub struct MultiCurveBootstrapper {
     curve_specs: Vec<CurveConfiguration>,
     discount_policy: BootstrapDiscountPolicy,
     fx_store: FxStore,
+    fixing_store: Option<FixingStore>,
 }
 
 impl MultiCurveBootstrapper {
@@ -133,6 +134,7 @@ impl MultiCurveBootstrapper {
             curve_specs,
             discount_policy,
             fx_store: FxStore::new(),
+            fixing_store: None,
         }
     }
 
@@ -141,6 +143,13 @@ impl MultiCurveBootstrapper {
     #[must_use]
     pub fn with_fx_store(mut self, store: FxStore) -> Self {
         self.fx_store = store;
+        self
+    }
+
+    /// Registers historical observations for seasoned or lookback OIS calibration coupons.
+    #[must_use]
+    pub fn with_fixing_store(mut self, store: FixingStore) -> Self {
+        self.fixing_store = Some(store);
         self
     }
 
@@ -286,6 +295,7 @@ impl MultiCurveBootstrapper {
             other_curves,
             discount_policy: &self.discount_policy,
             fx_store: &self.fx_store,
+            fixing_store: self.fixing_store.as_ref(),
         };
 
         // Solve.
@@ -513,7 +523,8 @@ impl MultiCurveBootstrapper {
             problem.other_curves,
             problem.discount_policy,
             problem.fx_store,
-        );
+        )
+        .with_fixing_store(problem.fixing_store);
         let evaluator = BootstrapStepEvaluation::new(&step);
         problem
             .instruments
@@ -550,6 +561,7 @@ fn bumped_residual(
         other_curves: &bumped_others,
         discount_policy: problem.discount_policy,
         fx_store: problem.fx_store,
+        fixing_store: problem.fixing_store,
     };
 
     Ok((bumped_problem.call(x)?, bumped_df - original_df))
@@ -572,6 +584,7 @@ struct BootstrapObjectiveFunc<'a> {
     pub other_curves: &'a HashMap<MarketIndex, BootstrappedCurve>,
     pub discount_policy: &'a BootstrapDiscountPolicy,
     pub fx_store: &'a FxStore,
+    pub fixing_store: Option<&'a FixingStore>,
 }
 
 impl BootstrapObjectiveFunc<'_> {
@@ -598,7 +611,8 @@ impl ContFunc<[f64], Vec<f64>> for BootstrapObjectiveFunc<'_> {
             self.other_curves,
             self.discount_policy,
             self.fx_store,
-        );
+        )
+        .with_fixing_store(self.fixing_store);
         let evaluator = BootstrapStepEvaluation::new(&step);
         evaluator.residual(self.instruments)
     }
@@ -722,6 +736,130 @@ mod tests {
             "DF should be in (0,1)"
         );
         Ok(())
+    }
+
+    #[test]
+    fn bootstrap_regular_swaps_alongside_ois() -> Result<()> {
+        use crate::quotes::quote::CalibrationInstrumentType;
+
+        let reference = Date::new(2026, 2, 24);
+        let mut selector = MapSelector::new(reference);
+        for (identifier, rate) in [
+            ("FixedRateDeposit_USD_SOFR_1D", 0.04),
+            ("OIS_USD_SOFR_1Y", 0.04),
+            ("OIS_USD_SOFR_2Y", 0.039),
+            ("Swap_USD_TermSOFR3m_1Y", 0.045),
+            ("Swap_USD_TermSOFR3m_2Y", 0.046),
+        ] {
+            selector.add(identifier, rate);
+        }
+        let overnight = CurveConfiguration::new(
+            MarketIndex::SOFR,
+            DayCounter::Actual360,
+            Interpolator::LogLinear,
+            true,
+            vec![
+                "FixedRateDeposit_USD_SOFR_1D".into(),
+                "OIS_USD_SOFR_1Y".into(),
+                "OIS_USD_SOFR_2Y".into(),
+            ],
+        );
+        let mut term = CurveConfiguration::new(
+            MarketIndex::TermSOFR3m,
+            DayCounter::Actual360,
+            Interpolator::LogLinear,
+            true,
+            vec![
+                "Swap_USD_TermSOFR3m_1Y".into(),
+                "Swap_USD_TermSOFR3m_2Y".into(),
+            ],
+        );
+        term.resolve(&selector, Level::Mid, None)?;
+        assert!(term
+            .instruments()?
+            .iter()
+            .all(|instrument| matches!(instrument.built(), CalibrationInstrumentType::Swap(_))));
+        let curves = MultiCurveBootstrapper::new(vec![term, overnight], default_policy())
+            .bootstrap(&selector, Level::Mid)?;
+        assert_eq!(curves.len(), 2);
+        let maturity = Date::new(2028, 2, 24);
+        let overnight_discount = curves[&MarketIndex::SOFR]
+            .curve()
+            .discount_factor(maturity)?
+            .value();
+        let term_discount = curves[&MarketIndex::TermSOFR3m]
+            .curve()
+            .discount_factor(maturity)?
+            .value();
+        assert!(term_discount > 0.0 && term_discount < overnight_discount);
+        Ok(())
+    }
+
+    #[test]
+    fn ois_bootstrap_recovers_discount_growth_with_different_day_counts() {
+        use crate::prelude::{Cashflow, CashflowType, MakeOvernightIndexSwap, Period};
+
+        let reference = Date::new(2026, 10, 8);
+        let discount = |date| (-0.04 * DayCounter::Actual365.year_fraction(reference, date)).exp();
+        let mut selector = MapSelector::new(reference);
+        let mut identifiers = Vec::new();
+        for tenor in ["1M", "1Y", "2Y", "5Y"] {
+            let identifier = format!("OIS_USD_SOFR_{tenor}");
+            let swap = MakeOvernightIndexSwap::<f64>::new(
+                MarketIndex::SOFR,
+                reference,
+                Period::from_str(tenor).unwrap(),
+                0.0,
+            )
+            .build()
+            .unwrap();
+            let annuity: f64 = swap
+                .fixed_leg()
+                .cashflows()
+                .iter()
+                .map(|cashflow| {
+                    let CashflowType::FixedRateCoupon(coupon) = cashflow else {
+                        panic!("expected fixed coupon")
+                    };
+                    coupon
+                        .rate()
+                        .day_counter()
+                        .year_fraction(coupon.accrual_start_date(), coupon.accrual_end_date())
+                        * discount(coupon.payment_date())
+                })
+                .sum();
+            let floating_pv: f64 = swap
+                .floating_leg()
+                .cashflows()
+                .iter()
+                .map(|cashflow| {
+                    let CashflowType::FloatingRateCoupon(coupon) = cashflow else {
+                        panic!("expected overnight coupon")
+                    };
+                    (discount(coupon.accrual_start_date()) / discount(coupon.accrual_end_date())
+                        - 1.0)
+                        * discount(coupon.payment_date())
+                })
+                .sum();
+            selector.add(&identifier, floating_pv / annuity);
+            identifiers.push(identifier);
+        }
+        let mut config = CurveConfiguration::new(
+            MarketIndex::SOFR,
+            DayCounter::Actual365,
+            Interpolator::LogLinear,
+            true,
+            identifiers,
+        );
+        config.resolve(&selector, Level::Mid, None).unwrap();
+        let dates = config.pillar_dates();
+        let curves = MultiCurveBootstrapper::new(vec![config], default_policy())
+            .bootstrap(&selector, Level::Mid)
+            .unwrap();
+        let curve = curves[&MarketIndex::SOFR].curve();
+        for date in dates {
+            assert!((curve.discount_factor(date).unwrap().value() - discount(date)).abs() < 1e-10);
+        }
     }
 
     #[test]

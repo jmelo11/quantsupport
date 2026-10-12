@@ -4,7 +4,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     ad::{dual::DualFwd, scalar::Scalar},
-    core::{pillars::Pillars, pricingcontext::PricingContext},
+    core::{
+        marketdatahandling::{discountrequest::DiscountRequest, fxrequest::FxRequest},
+        pillars::Pillars,
+        pricingcontext::PricingContext,
+    },
     currencies::currency::Currency,
     indices::marketindex::MarketIndex,
     math::interpolation::interpolator::Interpolator,
@@ -16,7 +20,7 @@ use crate::{
         },
         modelconfiguration::{GaussianRateParameterSource, ParameterSource},
     },
-    quotes::{fixingstore::FixingStore, quote::Level},
+    quotes::fixingstore::FixingStore,
     rates::yieldtermstructure::{
         discounttermstructure::DiscountTermStructure,
         interestratestermstructure::InterestRatesTermStructure,
@@ -37,7 +41,10 @@ use crate::{
         csa::CsaTerms,
         nettingset::NettingSet,
         visitors::{
-            exposureevaluator::{evaluate_with_xva, ExposureResult, ModelCallback, XvaModelSetup},
+            exposureevaluator::{
+                evaluate_with_margin, ExposureResult, ModelCallback, VariationMarginSimulation,
+                XvaModelSetup,
+            },
             fixingpreprocessor::FixingPreprocessor,
             marketmodel::MarketModel,
             preprocessorexecutor::{PreprocessorExecutor, SimulationRequest},
@@ -280,6 +287,11 @@ impl XvaEngine {
         &mut self,
         netting_sets: &mut HashMap<String, NettingSet>,
     ) -> Result<ExposureResult> {
+        for ns in netting_sets.values() {
+            if let Some(csa) = ns.csa_terms() {
+                csa.validate()?;
+            }
+        }
         // 1. Build preprocessor pipeline.
         let fixing_pp = FixingPreprocessor::new(
             self.setup.reference_date,
@@ -321,6 +333,7 @@ impl XvaEngine {
             .with_frequency(self.frequency)
             .build()?;
         let sim_dates = schedule.dates().clone();
+        let margins = self.build_variation_margin_requests(netting_sets, &sim_dates)?;
 
         // 3b. System-curve discount factors DF(0, t_d) at the simulation
         // dates, taken from the engine's base (domestic) curve. Exposures at
@@ -388,7 +401,8 @@ impl XvaEngine {
 
             // FVA: funding curve when assigned, explicit spread term
             // structure otherwise, flat spread as fallback.
-            let fva_factory = self.build_fva_factory(id, csa, &system_ts, &system_dfs)?;
+            let fva_factory =
+                self.build_fva_factory(id, csa, &system_ts, &system_dfs, &sim_dates)?;
 
             factories.insert(id.clone(), vec![cva_factory, fva_factory]);
         }
@@ -400,7 +414,67 @@ impl XvaEngine {
             .collect();
 
         // 6. Run.
-        evaluate_with_xva(&sim_dates, &ns_slices, &factories, &self.setup)
+        evaluate_with_margin(&sim_dates, &ns_slices, &factories, &margins, &self.setup)
+    }
+
+    fn build_variation_margin_requests(
+        &mut self,
+        netting_sets: &HashMap<String, NettingSet>,
+        dates: &[Date],
+    ) -> Result<HashMap<String, VariationMarginSimulation>> {
+        let mut margins = HashMap::new();
+        for (id, ns) in netting_sets {
+            let Some(csa) = ns.csa_terms().filter(|terms| terms.variation_margin) else {
+                continue;
+            };
+            if !self.setup.curves.contains_key(&csa.collateral_index) {
+                return Err(QSError::NotFoundErr(format!(
+                    "Netting set '{id}' requires simulated CSA remuneration curve {}",
+                    csa.collateral_index
+                )));
+            }
+            let fx_request_index = if csa.collateral_currency == self.setup.domestic_currency {
+                None
+            } else {
+                if !self.setup.fx_spots.contains_key(&csa.collateral_currency) {
+                    return Err(QSError::NotFoundErr(format!(
+                        "Netting set '{id}' requires an FX model for collateral currency {}",
+                        csa.collateral_currency
+                    )));
+                }
+                let slot = self.setup.requests.len();
+                self.setup.requests.push(SimulationRequest {
+                    fx_request: Some(FxRequest::single(csa.collateral_currency)),
+                    ..SimulationRequest::default()
+                });
+                Some(slot)
+            };
+            let accrual_request_indices = dates
+                .iter()
+                .skip(1)
+                .map(|&date| {
+                    let slot = self.setup.requests.len();
+                    self.setup.requests.push(SimulationRequest {
+                        expiration_date: Some(date),
+                        discount_request: Some(DiscountRequest::new(
+                            csa.collateral_index.clone(),
+                            date,
+                        )),
+                        ..SimulationRequest::default()
+                    });
+                    slot
+                })
+                .collect();
+            margins.insert(
+                id.clone(),
+                VariationMarginSimulation::new(
+                    csa.clone(),
+                    accrual_request_indices,
+                    fx_request_index,
+                ),
+            );
+        }
+        Ok(margins)
     }
 
     /// Snapshots the f64 data of a model's bootstrapped discount curve and
@@ -573,7 +647,7 @@ impl XvaEngine {
                     context.constructed_elements(),
                     context.quote_store(),
                     &curve_f64,
-                    Level::Mid,
+                    context.quote_level(),
                 )?;
                 let vol_func = hw.vol_func().ok_or_else(|| {
                     QSError::UnexpectedErr("Calibration produced no vol function".into())
@@ -641,25 +715,18 @@ impl XvaEngine {
         csa: &CsaTerms,
         system_ts: &DiscountTermStructure<f64>,
         system_dfs: &[f64],
+        sim_dates: &[Date],
     ) -> Result<Box<dyn PfeAggregatorFactory>> {
-        // Optional overlay: explicit funding spread curve applied on top of
-        // the curve-implied basis (spread over the funding index).
-        let (overlay_dates, overlay_spreads, overlay_labels) =
-            if let Some(spread_curve) = &csa.funding_spread_curve {
-                spread_curve.validate()?;
-                let labels = spread_curve
-                    .dates
-                    .iter()
-                    .map(|d| format!("funding_spread.{d}"))
-                    .collect();
-                (
-                    spread_curve.dates.clone(),
-                    spread_curve.spreads.clone(),
-                    labels,
-                )
-            } else {
-                (Vec::new(), Vec::new(), Vec::new())
-            };
+        if let Some(curve) = &csa.funding_spread_curve {
+            for date in sim_dates {
+                let spread = curve.zero_rate(*date)?;
+                if !spread.is_finite() {
+                    return Err(QSError::InvalidValueErr(format!(
+                        "Non-finite funding spread at {date}"
+                    )));
+                }
+            }
+        }
 
         if let Some(funding_index) = &csa.funding_index {
             let snapshot = self.funding_curves.get(funding_index).ok_or_else(|| {
@@ -707,27 +774,17 @@ impl XvaEngine {
                 pillar_dates,
                 pillar_spreads,
                 pillar_labels: labels,
-                overlay_dates,
-                overlay_spreads,
-                overlay_labels,
+                spread_curve: csa.funding_spread_curve.clone(),
                 n_paths: self.setup.n_paths,
                 day_counter: dc,
                 system_dfs: Some(system_dfs.to_vec()),
             }))
-        } else if let Some(spread_curve) = &csa.funding_spread_curve {
-            spread_curve.validate()?;
-            let labels = spread_curve
-                .dates
-                .iter()
-                .map(|d| format!("funding_spread.{d}"))
-                .collect();
+        } else if csa.funding_spread_curve.is_some() {
             Ok(Box::new(FundingCurveFvaFactory {
-                pillar_dates: spread_curve.dates.clone(),
-                pillar_spreads: spread_curve.spreads.clone(),
-                pillar_labels: labels,
-                overlay_dates: Vec::new(),
-                overlay_spreads: Vec::new(),
-                overlay_labels: Vec::new(),
+                pillar_dates: Vec::new(),
+                pillar_spreads: Vec::new(),
+                pillar_labels: Vec::new(),
+                spread_curve: csa.funding_spread_curve.clone(),
                 n_paths: self.setup.n_paths,
                 day_counter: DayCounter::Actual365,
                 system_dfs: Some(system_dfs.to_vec()),

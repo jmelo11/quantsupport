@@ -6,6 +6,7 @@
 
 use crate::{
     ad::{dual::DualFwd, scalar::Scalar},
+    rates::yieldtermstructure::zeroratetermstructure::ZeroRateTermStructure,
     time::{date::Date, daycounter::DayCounter},
 };
 
@@ -481,8 +482,9 @@ impl PfeAggregatorFactory for FvaFactory {
 
 /// Factory for an FVA aggregator driven by a funding spread term structure.
 ///
-/// Spreads at the simulation dates are linearly interpolated between the
-/// pillars (flat extrapolation on both sides). The pillar spreads become
+/// Curve-implied spreads use linear interpolation with flat extrapolation.
+/// An explicit zero-rate curve uses its own interpolation and conventions.
+/// The pillar spreads become
 /// tracked tape leaves so that the backward pass yields FVA sensitivities
 /// to the individual pillars (labels are prefixed with `"FVA."`).
 pub struct FundingCurveFvaFactory {
@@ -492,13 +494,9 @@ pub struct FundingCurveFvaFactory {
     pub pillar_spreads: Vec<f64>,
     /// Labels of the pillar spreads (e.g. funding curve quote identifiers).
     pub pillar_labels: Vec<String>,
-    /// Pillar dates of an additive overlay spread curve (e.g. an explicit
-    /// funding spread over the funding index). Empty when unused.
-    pub overlay_dates: Vec<Date>,
-    /// Overlay spreads at the overlay pillar dates.
-    pub overlay_spreads: Vec<f64>,
-    /// Labels of the overlay pillar spreads.
-    pub overlay_labels: Vec<String>,
+    /// Reusable curve of annualized spreads, optionally added to the
+    /// funding-index basis. Validate it at simulation dates before use.
+    pub spread_curve: Option<ZeroRateTermStructure>,
     /// Number of Monte Carlo paths.
     pub n_paths: usize,
     /// Day counter used to convert dates into year fractions.
@@ -541,33 +539,26 @@ impl PfeAggregatorFactory for FundingCurveFvaFactory {
             .iter()
             .map(|s| DualFwd::new(*s))
             .collect();
-        let overlay_leaves: Vec<DualFwd> = self
-            .overlay_spreads
-            .iter()
-            .map(|s| DualFwd::new(*s))
-            .collect();
+        let spread_curve = self
+            .spread_curve
+            .as_ref()
+            .map(ZeroRateTermStructure::to_dual);
 
         let pillar_times: Vec<f64> = self
             .pillar_dates
             .iter()
             .map(|d| self.day_counter.year_fraction(ref_date, *d))
             .collect();
-        let overlay_times: Vec<f64> = self
-            .overlay_dates
-            .iter()
-            .map(|d| self.day_counter.year_fraction(ref_date, *d))
-            .collect();
-
         let spreads: Vec<DualFwd> = dates
             .iter()
             .map(|d| {
                 let t = self.day_counter.year_fraction(ref_date, *d);
                 let base = Self::spread_at(t, &pillar_times, &pillar_leaves);
-                if overlay_leaves.is_empty() {
-                    base
-                } else {
-                    base.add_val(Self::spread_at(t, &overlay_times, &overlay_leaves))
-                }
+                spread_curve.as_ref().map_or(base, |curve| {
+                    base.add_val(curve.zero_rate(*d).unwrap_or_else(|error| {
+                        panic!("Funding curve must be validated before aggregation: {error}")
+                    }))
+                })
             })
             .collect();
 
@@ -580,8 +571,13 @@ impl PfeAggregatorFactory for FundingCurveFvaFactory {
             .pillar_labels
             .iter()
             .zip(&pillar_leaves)
-            .chain(self.overlay_labels.iter().zip(&overlay_leaves))
             .map(|(label, leaf)| (format!("FVA.{label}"), *leaf))
+            .chain(
+                spread_curve
+                    .iter()
+                    .flat_map(|curve| curve.dates().iter().zip(curve.rates()))
+                    .map(|(date, leaf)| (format!("FVA.funding_spread.{date}"), *leaf)),
+            )
             .collect();
 
         AggregatorBundle {
@@ -597,6 +593,53 @@ mod tests {
     use crate::{ad::tape::Tape, time::enums::TimeUnit};
 
     const DC: DayCounter = DayCounter::Actual365;
+
+    #[test]
+    fn funding_curve_reuses_zero_rate_interpolation() -> crate::utils::errors::Result<()> {
+        use crate::{
+            math::interpolation::interpolator::Interpolator, rates::interestrate::RateDefinition,
+        };
+        let reference = Date::new(2026, 1, 1);
+        let dates = sim_dates(reference, &[12, 24]);
+        let curve = ZeroRateTermStructure::new(
+            reference,
+            vec![reference, dates[2]],
+            vec![0.002, 0.008],
+            RateDefinition::default(),
+            Interpolator::LogLinear,
+            true,
+        )?;
+        let expected = dates
+            .windows(2)
+            .map(|pair| {
+                curve
+                    .zero_rate(pair[1])
+                    .map(|spread| 1_000.0 * spread * DC.year_fraction(pair[0], pair[1]))
+            })
+            .sum::<crate::utils::errors::Result<f64>>()?;
+        let factory = FundingCurveFvaFactory {
+            pillar_dates: vec![],
+            pillar_spreads: vec![],
+            pillar_labels: vec![],
+            spread_curve: Some(curve),
+            n_paths: 1,
+            day_counter: DC,
+            system_dfs: None,
+        };
+        Tape::start_recording_fwd();
+        let bundle = factory.create_aggregator(reference, &dates);
+        let npvs = vec![DualFwd::scalar(1_000.0); dates.len()];
+        let result = bundle.aggregator.aggregate_path(&npvs, &dates);
+        let _ = result.backward();
+        assert!((result.value() - expected).abs() < 1e-12);
+        assert_eq!(bundle.leaves.len(), 2);
+        assert!(bundle
+            .leaves
+            .iter()
+            .all(|(_, leaf)| leaf.adjoint().is_ok_and(|value| value > 0.0)));
+        Tape::stop_recording_fwd();
+        Ok(())
+    }
 
     fn sim_dates(ref_date: Date, months: &[i32]) -> Vec<Date> {
         std::iter::once(ref_date)
@@ -834,9 +877,7 @@ mod tests {
             ],
             pillar_spreads: vec![spread, spread],
             pillar_labels: vec!["1Y".into(), "3Y".into()],
-            overlay_dates: vec![],
-            overlay_spreads: vec![],
-            overlay_labels: vec![],
+            spread_curve: None,
             n_paths: 1,
             day_counter: DC,
             system_dfs: None,
@@ -884,9 +925,7 @@ mod tests {
             pillar_dates: pillar_dates.clone(),
             pillar_spreads: vec![s1, s3],
             pillar_labels: vec!["1Y".into(), "3Y".into()],
-            overlay_dates: vec![],
-            overlay_spreads: vec![],
-            overlay_labels: vec![],
+            spread_curve: None,
             n_paths: 1,
             day_counter: DC,
             system_dfs: None,

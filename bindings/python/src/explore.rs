@@ -15,7 +15,7 @@ use crate::enums::{DayCounter, MarketIndex, SmileType, VolatilityType};
 use crate::time::Date;
 
 /// A bootstrapped discount curve, as constructed by the pricing context.
-#[pyclass(name = "DiscountCurve", unsendable)]
+#[pyclass(module = "quantsupport", name = "DiscountCurve", unsendable)]
 pub struct DiscountCurve {
     pub element: DiscountCurveElement,
 }
@@ -112,12 +112,15 @@ impl DiscountCurve {
     }
 
     fn __repr__(&self) -> String {
-        format!("DiscountCurve(market_index='{}')", self.element.market_index())
+        format!(
+            "DiscountCurve(market_index='{}')",
+            self.element.market_index()
+        )
     }
 }
 
 /// A constructed volatility surface.
-#[pyclass(name = "VolatilitySurface", unsendable)]
+#[pyclass(module = "quantsupport", name = "VolatilitySurface", unsendable)]
 pub struct VolatilitySurface {
     pub element: VolatilitySurfaceElement,
 }
@@ -157,7 +160,10 @@ impl VolatilitySurface {
     fn volatility(&self, expiry: &Bound<'_, PyAny>, key: f64) -> PyResult<f64> {
         let surface = self.element.surface();
         if let Ok(date) = extract_date(expiry) {
-            return Ok(surface.volatility_from_date(date, key).map_err(qs_err)?.value());
+            return Ok(surface
+                .volatility_from_date(date, key)
+                .map_err(qs_err)?
+                .value());
         }
         let period = extract_period(expiry)?;
         Ok(surface
@@ -190,7 +196,7 @@ impl VolatilitySurface {
 }
 
 /// A constructed volatility cube (expiry x underlying maturity x smile).
-#[pyclass(name = "VolatilityCube", unsendable)]
+#[pyclass(module = "quantsupport", name = "VolatilityCube", unsendable)]
 pub struct VolatilityCube {
     pub element: VolatilityCubeElement,
 }
@@ -272,13 +278,63 @@ impl VolatilityCube {
 }
 
 /// A constructed Monte Carlo simulation.
-#[pyclass(name = "Simulation", unsendable)]
+#[pyclass(module = "quantsupport", name = "Simulation", unsendable)]
 pub struct Simulation {
     pub element: MonteCarloSimulationElement,
 }
 
 #[pymethods]
 impl Simulation {
+    /// Hull-White calibration records as a DataFrame, or `None` for an uncalibrated model.
+    /// Columns include market/model prices, sigma and the signed price error.
+    fn calibration_diagnostics<'py>(&self, py: Python<'py>) -> PyResult<Option<Bound<'py, PyAny>>> {
+        let Some(quality) = self.element.calibration_quality() else {
+            return Ok(None);
+        };
+        let records = &quality.records;
+        let identifiers: Vec<_> = records.iter().map(|r| r.identifier.clone()).collect();
+        let expiries: Vec<_> = records.iter().map(|r| r.expiry.to_string()).collect();
+        let mut columns = vec![
+            ("identifier", identifiers.into_pyobject(py)?.into_any()),
+            ("expiry", expiries.into_pyobject(py)?.into_any()),
+        ];
+        for (name, values) in [
+            ("t", records.iter().map(|r| r.t).collect::<Vec<_>>()),
+            ("big_t", records.iter().map(|r| r.big_t).collect()),
+            ("market_vol", records.iter().map(|r| r.market_vol).collect()),
+            (
+                "market_price",
+                records.iter().map(|r| r.market_price).collect(),
+            ),
+            (
+                "model_price",
+                records.iter().map(|r| r.model_price).collect(),
+            ),
+            (
+                "calibrated_sigma",
+                records.iter().map(|r| r.calibrated_sigma).collect(),
+            ),
+            (
+                "forward_rate",
+                records.iter().map(|r| r.forward_rate).collect(),
+            ),
+            (
+                "effective_strike",
+                records.iter().map(|r| r.effective_strike).collect(),
+            ),
+            (
+                "price_error",
+                records
+                    .iter()
+                    .map(|r| r.model_price - r.market_price)
+                    .collect(),
+            ),
+        ] {
+            columns.push((name, values.into_pyobject(py)?.into_any()));
+        }
+        dataframe(py, &columns).map(Some)
+    }
+
     /// Simulated market index.
     #[getter]
     fn market_index(&self) -> MarketIndex {

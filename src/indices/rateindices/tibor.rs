@@ -62,5 +62,15 @@ macro_rules! tibor_index {
     };
 }
 
-tibor_index!(Tibor3mIndex, "Details for the TIBOR 3-month rate index.", "TIBOR3m", TIBOR3m);
-tibor_index!(Tibor6mIndex, "Details for the TIBOR 6-month rate index.", "TIBOR6m", TIBOR6m);
+tibor_index!(
+    Tibor3mIndex,
+    "Details for the TIBOR 3-month rate index.",
+    "TIBOR3m",
+    TIBOR3m
+);
+tibor_index!(
+    Tibor6mIndex,
+    "Details for the TIBOR 6-month rate index.",
+    "TIBOR6m",
+    TIBOR6m
+);

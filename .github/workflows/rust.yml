@@ -1,10 +1,18 @@
 name: Rust
 
 on:
-  push:
-    branches: [ "main" ]
   pull_request:
-    branches: [ "main" ]
+    branches: [main]
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      ref:
+        description: Commit to validate
+        required: true
+        type: string
+
+permissions:
+  contents: read
 
 env:
   CARGO_TERM_COLOR: always
@@ -15,10 +23,21 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v6
+      with:
+        ref: ${{ inputs.ref || github.sha }}
+    - name: Install Rust
+      run: rustup toolchain install stable --profile minimal --component clippy
+    - uses: actions/setup-python@v6
+      with:
+        python-version: '3.12'
+    - name: Test release automation
+      run: python .github/scripts/release.py test
     - name: Build
-      run: cargo build --verbose
+      run: cargo +stable build -p quantsupport --verbose
     - name: Run Clippy
-      run: cargo clippy -- -D warnings
+      run: cargo +stable clippy -p quantsupport --lib -- -D warnings
     - name: Run tests
-      run: cargo test --verbose
+      run: cargo +stable test -p quantsupport --verbose
+    - name: Verify crate packaging
+      run: cargo +stable publish -p quantsupport --dry-run

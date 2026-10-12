@@ -10,13 +10,11 @@
 
 use pyo3::prelude::*;
 use quantsupport::prelude::{
-    CsaTerms as QsCsaTerms, ExposureResult, FundingSpreadCurve, NettingSet as QsNettingSet,
+    CsaTerms as QsCsaTerms, ExposureResult, NettingSet as QsNettingSet,
     XvaEngineConfig as QsXvaEngineConfig,
 };
 
-use crate::conv::{
-    dataframe, extract_currency, extract_date, extract_market_index, from_json_file, from_py,
-};
+use crate::conv::{dataframe, extract_currency, extract_market_index, from_json_file, from_py};
 use crate::trades::{
     BasisSwap, CrossCurrencySwap, FixFloatCrossCurrencySwap, FixedRateBond, FixedRateDeposit,
     FloatingRateNote, Swap,
@@ -27,7 +25,7 @@ use crate::QuantSupportError;
 ///
 /// Credit, funding and collateral parameters are **not** part of this
 /// config — they are per client, see [`CsaTerms`].
-#[pyclass(name = "XvaConfig", from_py_object)]
+#[pyclass(module = "quantsupport", name = "XvaConfig", from_py_object)]
 #[derive(Clone)]
 pub struct XvaConfig {
     pub inner: QsXvaEngineConfig,
@@ -62,7 +60,7 @@ impl XvaConfig {
 }
 
 /// Per-client CSA terms: collateral treatment and credit/funding parameters.
-#[pyclass(name = "CsaTerms", from_py_object)]
+#[pyclass(module = "quantsupport", name = "CsaTerms", from_py_object)]
 #[derive(Clone)]
 pub struct CsaTerms {
     pub inner: QsCsaTerms,
@@ -71,7 +69,7 @@ pub struct CsaTerms {
 #[pymethods]
 impl CsaTerms {
     #[new]
-    #[pyo3(signature = (collateral_index, collateral_currency, credit_spread, recovery, funding_spread = 0.0, credit_index = None, funding_spread_curve = None, funding_index = None))]
+    #[pyo3(signature = (collateral_index, collateral_currency, credit_spread, recovery, funding_spread = 0.0, credit_index = None, funding_spread_curve = None, funding_index = None, *, variation_margin = false, counterparty_threshold = 0.0, own_threshold = 0.0, minimum_transfer_amount = 0.0))]
     #[allow(clippy::too_many_arguments)]
     fn new(
         collateral_index: &Bound<'_, PyAny>,
@@ -82,24 +80,22 @@ impl CsaTerms {
         credit_index: Option<&Bound<'_, PyAny>>,
         funding_spread_curve: Option<&Bound<'_, PyAny>>,
         funding_index: Option<&Bound<'_, PyAny>>,
+        variation_margin: bool,
+        counterparty_threshold: f64,
+        own_threshold: f64,
+        minimum_transfer_amount: f64,
     ) -> PyResult<Self> {
-        // A list of (date, spread) pairs, dates as Date/'YYYY-MM-DD'/datetime.date.
         let funding_spread_curve = funding_spread_curve
-            .map(|obj| {
-                let mut dates = Vec::new();
-                let mut spreads = Vec::new();
-                for item in obj.try_iter()? {
-                    let (date, spread) = item?.extract::<(Bound<'_, PyAny>, f64)>()?;
-                    dates.push(extract_date(&date)?);
-                    spreads.push(spread);
-                }
-                PyResult::Ok(FundingSpreadCurve { dates, spreads })
-            })
+            .map(crate::curves::extract_zero_curve)
             .transpose()?;
-        Ok(Self {
+        let terms = Self {
             inner: QsCsaTerms {
                 collateral_index: extract_market_index(collateral_index)?,
                 collateral_currency: extract_currency(collateral_currency)?,
+                variation_margin,
+                counterparty_threshold,
+                own_threshold,
+                minimum_transfer_amount,
                 credit_spread,
                 recovery,
                 funding_spread,
@@ -107,23 +103,58 @@ impl CsaTerms {
                 funding_index: funding_index.map(extract_market_index).transpose()?,
                 credit_index: credit_index.map(extract_market_index).transpose()?,
             },
-        })
+        };
+        terms
+            .inner
+            .validate()
+            .map_err(|error| QuantSupportError::new_err(error.to_string()))?;
+        Ok(terms)
     }
 
     /// Builds CSA terms from a dict.
     #[staticmethod]
     fn from_dict(obj: &Bound<'_, PyAny>) -> PyResult<Self> {
-        Ok(Self {
+        let terms = Self {
             inner: from_py(obj, "csa terms")?,
-        })
+        };
+        terms
+            .inner
+            .validate()
+            .map_err(|error| QuantSupportError::new_err(error.to_string()))?;
+        Ok(terms)
     }
 
     /// Loads CSA terms from a JSON file.
     #[staticmethod]
     fn from_json(path: &str) -> PyResult<Self> {
-        Ok(Self {
+        let terms = Self {
             inner: from_json_file(path, "csa terms")?,
-        })
+        };
+        terms
+            .inner
+            .validate()
+            .map_err(|error| QuantSupportError::new_err(error.to_string()))?;
+        Ok(terms)
+    }
+
+    #[getter]
+    fn variation_margin(&self) -> bool {
+        self.inner.variation_margin
+    }
+
+    #[getter]
+    fn counterparty_threshold(&self) -> f64 {
+        self.inner.counterparty_threshold
+    }
+
+    #[getter]
+    fn own_threshold(&self) -> f64 {
+        self.inner.own_threshold
+    }
+
+    #[getter]
+    fn minimum_transfer_amount(&self) -> f64 {
+        self.inner.minimum_transfer_amount
     }
 
     #[getter]
@@ -153,17 +184,13 @@ impl CsaTerms {
         self.inner.funding_spread
     }
 
-    /// The funding spread term structure as a list of `(date, spread)` pairs,
-    /// or `None` when a flat spread / funding curve is used.
+    /// The reusable zero-rate spread curve, or `None` when absent.
     #[getter]
-    fn funding_spread_curve(&self) -> Option<Vec<(String, f64)>> {
-        self.inner.funding_spread_curve.as_ref().map(|c| {
-            c.dates
-                .iter()
-                .zip(&c.spreads)
-                .map(|(d, s)| (d.to_string(), *s))
-                .collect()
-        })
+    fn funding_spread_curve(&self) -> Option<crate::curves::ZeroRateTermStructure> {
+        self.inner
+            .funding_spread_curve
+            .clone()
+            .map(|inner| crate::curves::ZeroRateTermStructure { inner })
     }
 
     #[getter]
@@ -186,7 +213,7 @@ impl CsaTerms {
         let funding = if let Some(idx) = &self.inner.funding_index {
             format!("funding_index={idx:?}")
         } else if let Some(c) = &self.inner.funding_spread_curve {
-            format!("funding_spread_curve=[{} pillars]", c.dates.len())
+            format!("funding_spread_curve=[{} pillars]", c.dates().len())
         } else {
             format!("funding_spread={}", self.inner.funding_spread)
         };
@@ -201,44 +228,49 @@ impl CsaTerms {
     }
 }
 
-/// A trade held inside a netting set.
-#[derive(Clone)]
-enum TradeSpec {
-    Swap(Swap),
-    CrossCurrencySwap(CrossCurrencySwap),
-    BasisSwap(BasisSwap),
-    FixFloatCrossCurrencySwap(FixFloatCrossCurrencySwap),
-    FixedRateBond(FixedRateBond),
-    FloatingRateNote(FloatingRateNote),
-    FixedRateDeposit(FixedRateDeposit),
-}
-
 /// A group of trades under a single netting agreement (one client),
 /// carrying the client's [`CsaTerms`].
-#[pyclass(name = "NettingSet", from_py_object)]
-#[derive(Clone)]
+#[pyclass(module = "quantsupport", name = "NettingSet")]
 pub struct NettingSet {
     name: String,
-    trades: Vec<TradeSpec>,
+    trades: Vec<Py<crate::extension::Trade>>,
     csa: QsCsaTerms,
 }
 
 impl NettingSet {
     /// Builds the library netting set (claims + CSA terms).
-    pub fn build(&self) -> PyResult<QsNettingSet> {
+    pub fn build(&self, py: Python<'_>) -> PyResult<QsNettingSet> {
         let mut claims = Vec::new();
-        for t in &self.trades {
-            match t {
-                TradeSpec::Swap(s) => claims.extend(s.claims()?),
-                TradeSpec::CrossCurrencySwap(x) => claims.extend(x.claims()?),
-                TradeSpec::BasisSwap(b) => claims.extend(b.claims()?),
-                TradeSpec::FixFloatCrossCurrencySwap(x) => claims.extend(x.claims()?),
-                TradeSpec::FixedRateBond(b) => claims.extend(b.claims()?),
-                TradeSpec::FloatingRateNote(f) => claims.extend(f.claims()?),
-                TradeSpec::FixedRateDeposit(d) => claims.extend(d.claims()?),
-            }
+        for position in &self.trades {
+            claims.extend(Self::claims(&position.borrow(py), py)?);
         }
         Ok(QsNettingSet::with_csa_terms(claims, self.csa.clone()))
+    }
+
+    fn claims(
+        position: &crate::extension::Trade,
+        py: Python<'_>,
+    ) -> PyResult<Vec<quantsupport::prelude::ContingentClaim>> {
+        let instrument = position.instrument_bound(py);
+        if let Ok(swap) = instrument.extract::<Swap>() {
+            swap.claims(position)
+        } else if let Ok(xccy) = instrument.extract::<CrossCurrencySwap>() {
+            xccy.claims(position)
+        } else if let Ok(basis) = instrument.extract::<BasisSwap>() {
+            basis.claims(position)
+        } else if let Ok(xccy) = instrument.extract::<FixFloatCrossCurrencySwap>() {
+            xccy.claims(position)
+        } else if let Ok(bond) = instrument.extract::<FixedRateBond>() {
+            bond.claims(position)
+        } else if let Ok(frn) = instrument.extract::<FloatingRateNote>() {
+            frn.claims(position)
+        } else if let Ok(deposit) = instrument.extract::<FixedRateDeposit>() {
+            deposit.claims(position)
+        } else {
+            Err(QuantSupportError::new_err(
+                "unsupported instrument type in netting set",
+            ))
+        }
     }
 
     pub fn name(&self) -> &str {
@@ -253,28 +285,13 @@ impl NettingSet {
         let mut specs = Vec::new();
         for item in trades.try_iter()? {
             let item = item?;
-            if let Ok(swap) = item.extract::<Swap>() {
-                specs.push(TradeSpec::Swap(swap));
-            } else if let Ok(xccy) = item.extract::<CrossCurrencySwap>() {
-                specs.push(TradeSpec::CrossCurrencySwap(xccy));
-            } else if let Ok(basis) = item.extract::<BasisSwap>() {
-                specs.push(TradeSpec::BasisSwap(basis));
-            } else if let Ok(xccy) = item.extract::<FixFloatCrossCurrencySwap>() {
-                specs.push(TradeSpec::FixFloatCrossCurrencySwap(xccy));
-            } else if let Ok(bond) = item.extract::<FixedRateBond>() {
-                specs.push(TradeSpec::FixedRateBond(bond));
-            } else if let Ok(frn) = item.extract::<FloatingRateNote>() {
-                specs.push(TradeSpec::FloatingRateNote(frn));
-            } else if let Ok(deposit) = item.extract::<FixedRateDeposit>() {
-                specs.push(TradeSpec::FixedRateDeposit(deposit));
-            } else {
-                return Err(QuantSupportError::new_err(format!(
-                    "unsupported trade type in netting set '{name}' \
-                     (expected Swap, CrossCurrencySwap, BasisSwap, \
-                     FixFloatCrossCurrencySwap, FixedRateBond, FloatingRateNote \
-                     or FixedRateDeposit)"
-                )));
-            }
+            let position = item.extract::<Py<crate::extension::Trade>>().map_err(|_| {
+                pyo3::exceptions::PyTypeError::new_err(
+                    "NettingSet requires Trade objects, not bare instruments",
+                )
+            })?;
+            Self::claims(&position.borrow(item.py()), item.py())?;
+            specs.push(position);
         }
         Ok(Self {
             name,
@@ -302,7 +319,7 @@ impl NettingSet {
 }
 
 /// Per-netting-set exposure profile (EPE / ENE / EE by date).
-#[pyclass(name = "ExposureProfile", from_py_object)]
+#[pyclass(module = "quantsupport", name = "ExposureProfile", from_py_object)]
 #[derive(Clone)]
 pub struct ExposureProfile {
     #[pyo3(get)]
@@ -338,7 +355,7 @@ impl ExposureProfile {
 }
 
 /// Result of an XVA engine run.
-#[pyclass(name = "XvaResult")]
+#[pyclass(module = "quantsupport", name = "XvaResult")]
 pub struct XvaResult {
     xva_values: Vec<(String, String, f64)>,
     sensitivities: Vec<(String, f64)>,

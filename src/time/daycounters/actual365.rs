@@ -2,9 +2,9 @@ use super::daycount::DayCount;
 use crate::time::date::Date;
 
 /// # `Actual365` (Fixed)
-/// 
+///
 /// Actual/365 day count convention.
-/// 
+///
 /// ## Example
 /// ```
 /// use quantsupport::time::date::Date;

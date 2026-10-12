@@ -1,19 +1,34 @@
 {
     "collateral_index": "SOFR",
     "collateral_currency": "USD",
+    "variation_margin": true,
+    "counterparty_threshold": 100000,
+    "own_threshold": 100000,
+    "minimum_transfer_amount": 10000,
+    "credit_index": {
+        "Credit": "CORPORATE-A"
+    },
     "credit_spread": 0.01,
     "recovery": 0.40,
     "funding_index": "TermSOFR3m",
     "funding_spread_curve": {
+        "reference_date": "2026-11-11",
         "dates": [
             "2026-11-11",
             "2028-11-11",
             "2030-11-11"
         ],
-        "spreads": [
+        "rates": [
             0.0040,
             0.0050,
             0.0060
-        ]
+        ],
+        "rate_definition": {
+            "day_counter": "Actual365",
+            "compounding": "Continuous",
+            "frequency": "Annual"
+        },
+        "interpolator": "Linear",
+        "enable_extrapolation": true
     }
 }

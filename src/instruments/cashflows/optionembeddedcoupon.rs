@@ -54,6 +54,14 @@ impl<T: Scalar> OptionEmbeddedCoupon<T> {
         self
     }
 
+    /// Replaces the fixing used by the coupon payoff.
+    ///
+    /// This mutable form is used by pricers after they resolve a historical
+    /// fixing or a forward projection from market data.
+    pub const fn set_fixing(&mut self, fixing: T) {
+        self.fixing = Some(fixing);
+    }
+
     /// Returns the spread applied to this coupon.
     pub const fn spread(&self) -> T {
         self.spread

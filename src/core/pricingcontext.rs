@@ -1,17 +1,20 @@
 use std::collections::{BTreeMap, HashMap};
 
 use crate::{
-    core::marketdatahandling::{
-        constructedelementrequest::ConstructedElementRequest,
-        constructedelementstore::ConstructedElementStore,
-        marketdata::{MarketData, MarketDataProvider, MarketDataRequest},
+    core::{
+        marketdatahandling::{
+            constructedelementrequest::ConstructedElementRequest,
+            constructedelementstore::ConstructedElementStore,
+            marketdata::{MarketData, MarketDataProvider, MarketDataRequest},
+        },
+        pricerconfiguration::{InstrumentType, PricerConfiguration},
     },
     currencies::currency::Currency,
     indices::marketindex::MarketIndex,
     models::modelconfiguration::SimulationConfiguration,
     quotes::{
-        fixingstore::FixingStore, fxstore::FxStore, quote::Level, quotestore::QuoteStore,
-        scenario::Scenario,
+        fixingstore::FixingStore, fxstore::FxStore, quote::Level, quoteselector::QuoteSelector,
+        quotestore::QuoteStore, scenario::Scenario,
     },
     rates::bootstrapping::{
         bootstrapdiscountpolicy::BootstrapDiscountPolicy,
@@ -36,6 +39,8 @@ use crate::{
 pub struct PricingContext {
     /// The quote store provides access to direct market data quotes and reference date information.
     quote_store: QuoteStore,
+    /// Quote level used for market construction and model calibration.
+    quote_level: Level,
     /// Scenario shocks applied to the quote store before bootstrapping.
     scenarios: Vec<Scenario>,
     /// The quote store with scenario shocks applied (built on `initialize`).
@@ -54,6 +59,8 @@ pub struct PricingContext {
     volatility_cube_configurations: Vec<VolatilityCubeConfiguration>,
     /// Model-driven Monte Carlo simulation specifications.
     simulation_configurations: Vec<SimulationConfiguration>,
+    /// Instrument-level pricer selections and their typed model assignments.
+    pricer_configurations: Vec<PricerConfiguration>,
     /// Constructed market data elements, such as discount curves, volatility surfaces, among others.
     constructed_elements: ConstructedElementStore,
     /// The base currency for pricing and reporting results.
@@ -63,11 +70,32 @@ pub struct PricingContext {
 }
 
 impl PricingContext {
+    /// Sets the default collateral policy used to construct curves.
+    #[must_use]
+    pub fn with_csa_policy(
+        mut self,
+        policy: &crate::core::collateral::SingleCurveCSADiscountPolicy,
+    ) -> Self {
+        self.base_currency = policy.collateral_currency();
+        self.base_index = policy.collateral_index().clone();
+        self
+    }
+
+    /// Returns the default collateral policy for derivative valuation.
+    #[must_use]
+    pub fn csa_policy(&self) -> crate::core::collateral::SingleCurveCSADiscountPolicy {
+        crate::core::collateral::SingleCurveCSADiscountPolicy::new(
+            self.base_index.clone(),
+            self.base_currency,
+        )
+    }
+
     /// Creates a new pricing data context.
     #[must_use]
     pub fn new() -> Self {
         Self {
             quote_store: QuoteStore::default(),
+            quote_level: Level::Mid,
             scenarios: Vec::new(),
             shocked_quote_store: None,
             fixing_store: FixingStore::default(),
@@ -77,6 +105,7 @@ impl PricingContext {
             volatility_surface_configurations: Vec::new(),
             volatility_cube_configurations: Vec::new(),
             simulation_configurations: Vec::new(),
+            pricer_configurations: Vec::new(),
             constructed_elements: ConstructedElementStore::default(),
             base_currency: Currency::USD, // Default base currency
             base_index: MarketIndex::SOFR,
@@ -117,6 +146,21 @@ impl PricingContext {
         self.quote_store = quote_store;
         self.shocked_quote_store = None;
         self
+    }
+
+    /// Selects the quote level for market construction and model calibration.
+    /// Defaults to [`Level::Mid`]. Call [`Self::initialize`] after changing it
+    /// to rebuild configured market objects. Missing levels produce an error.
+    #[must_use]
+    pub const fn with_quote_level(mut self, quote_level: Level) -> Self {
+        self.quote_level = quote_level;
+        self
+    }
+
+    /// Returns the quote level used for market construction and calibration.
+    #[must_use]
+    pub const fn quote_level(&self) -> Level {
+        self.quote_level
     }
 
     /// Sets the scenario shocks applied to the quote store on `initialize`.
@@ -215,6 +259,14 @@ impl PricingContext {
         self
     }
 
+    /// Sets instrument-level pricer configurations loaded from typed data or
+    /// JSON.
+    #[must_use]
+    pub fn with_pricer_configurations(mut self, configs: Vec<PricerConfiguration>) -> Self {
+        self.pricer_configurations = configs;
+        self
+    }
+
     /// Returns the curve configurations used for bootstrapping.
     #[must_use]
     pub const fn curve_configurations(&self) -> &Vec<CurveConfiguration> {
@@ -243,6 +295,23 @@ impl PricingContext {
     #[must_use]
     pub const fn simulation_configurations(&self) -> &Vec<SimulationConfiguration> {
         &self.simulation_configurations
+    }
+
+    /// Returns all instrument-level pricer configurations.
+    #[must_use]
+    pub const fn pricer_configurations(&self) -> &Vec<PricerConfiguration> {
+        &self.pricer_configurations
+    }
+
+    /// Returns the configuration for one instrument family, if supplied.
+    #[must_use]
+    pub fn pricer_configuration(
+        &self,
+        instrument_type: InstrumentType,
+    ) -> Option<&PricerConfiguration> {
+        self.pricer_configurations
+            .iter()
+            .find(|configuration| configuration.instrument_type() == instrument_type)
     }
 
     /// Returns the current reference date.
@@ -274,12 +343,30 @@ impl PricingContext {
         &self.base_index
     }
 
-    /// Placeholder for one-time initialisation (pre-loading caches, etc.).
+    /// Validates pricing configuration and constructs all configured market
+    /// objects in dependency order.
     ///
     /// # Errors
-    /// Returns an error if a scenario matches no quotes, or if bootstrapping
-    /// or volatility surface construction fails.
+    /// Returns an error for duplicate or incompatible pricer configuration,
+    /// an unmatched scenario, or failed curve, volatility, or simulation
+    /// construction.
     pub fn initialize(&mut self) -> Result<()> {
+        let mut configured_instruments = std::collections::HashSet::new();
+        for configuration in &self.pricer_configurations {
+            configuration.validate().map_err(|error| {
+                error.context(format!(
+                    "validating pricer configuration for {:?}",
+                    configuration.instrument_type()
+                ))
+            })?;
+            if !configured_instruments.insert(configuration.instrument_type()) {
+                return Err(QSError::InvalidValueErr(format!(
+                    "Duplicate pricer configuration for instrument type {:?}",
+                    configuration.instrument_type()
+                )));
+            }
+        }
+
         // Apply scenario shocks to a copy of the base quote store. All
         // downstream construction (curves, vols, simulations) then uses the
         // shocked market.
@@ -288,7 +375,9 @@ impl PricingContext {
         } else {
             let mut store = self.quote_store.clone();
             for scenario in &self.scenarios {
-                scenario.apply(&mut store)?;
+                scenario
+                    .apply(&mut store)
+                    .map_err(|error| error.context("applying market scenario"))?;
             }
             Some(store)
         };
@@ -296,8 +385,11 @@ impl PricingContext {
         // Bootstrap discount curves.
         let policy = BootstrapDiscountPolicy::new(self.base_index.clone(), self.base_currency);
         let bootstrapper = MultiCurveBootstrapper::new(self.curve_configurations.clone(), policy)
-            .with_fx_store(self.fx_store.clone());
-        let curves = bootstrapper.bootstrap(self.quote_store(), Level::Mid)?;
+            .with_fx_store(self.fx_store.clone())
+            .with_fixing_store(self.fixing_store.clone());
+        let curves = bootstrapper
+            .bootstrap(self.quote_store(), self.quote_level)
+            .map_err(|error| error.context("bootstrapping discount curves"))?;
         for (index, curve) in curves {
             self.constructed_elements
                 .discount_curves_mut()
@@ -309,11 +401,13 @@ impl PricingContext {
         if !self.credit_curve_configurations.is_empty() {
             let credit_bootstrapper =
                 CreditCurveBootstrapper::new(self.credit_curve_configurations.clone());
-            let credit_curves = credit_bootstrapper.bootstrap(
-                self.quote_store(),
-                Level::Mid,
-                self.constructed_elements.discount_curves(),
-            )?;
+            let credit_curves = credit_bootstrapper
+                .bootstrap(
+                    self.quote_store(),
+                    self.quote_level,
+                    self.constructed_elements.discount_curves(),
+                )
+                .map_err(|error| error.context("bootstrapping credit curves"))?;
             for (index, curve) in credit_curves {
                 self.constructed_elements
                     .credit_curves_mut()
@@ -325,7 +419,9 @@ impl PricingContext {
         if !self.volatility_surface_configurations.is_empty() {
             let surface_builder =
                 VolatilitySurfaceBuilder::new(self.volatility_surface_configurations.clone());
-            let surfaces = surface_builder.build(self.quote_store(), Level::Mid)?;
+            let surfaces = surface_builder
+                .build(self.quote_store(), self.quote_level)
+                .map_err(|error| error.context("initializing volatility surfaces"))?;
             for (index, surface) in surfaces {
                 self.constructed_elements
                     .volatility_surfaces_mut()
@@ -337,7 +433,9 @@ impl PricingContext {
         if !self.volatility_cube_configurations.is_empty() {
             let cube_builder =
                 VolatilityCubeBuilder::new(self.volatility_cube_configurations.clone());
-            let cubes = cube_builder.build(self.quote_store(), Level::Mid)?;
+            let cubes = cube_builder
+                .build(self.quote_store(), self.quote_level)
+                .map_err(|error| error.context("initializing volatility cubes"))?;
             for (index, cube) in cubes {
                 self.constructed_elements
                     .volatility_cubes_mut()
@@ -349,12 +447,14 @@ impl PricingContext {
         // models can consume the constructed curves, surfaces, and cubes.
         if !self.simulation_configurations.is_empty() {
             let simulation_builder = SimulationBuilder::new(self.simulation_configurations.clone());
-            let simulations = simulation_builder.build(
-                &self.constructed_elements,
-                self.quote_store(),
-                &self.fixing_store,
-                Level::Mid,
-            )?;
+            let simulations = simulation_builder
+                .build(
+                    &self.constructed_elements,
+                    self.quote_store(),
+                    &self.fixing_store,
+                    self.quote_level,
+                )
+                .map_err(|error| error.context("building Monte Carlo simulations"))?;
             for (index, simulation) in simulations {
                 self.constructed_elements
                     .simulations_mut()
@@ -391,6 +491,14 @@ impl MarketDataProvider for PricingContext {
                         constructed_elements
                             .discount_curves_mut()
                             .insert(market_index.clone(), curve.clone());
+                    }
+                    ConstructedElementRequest::OptionalDividendCurve { market_index } => {
+                        if let Some(curve) = self.constructed_elements.dividend_curve(market_index)
+                        {
+                            constructed_elements
+                                .dividend_curves_mut()
+                                .insert(market_index.clone(), curve.clone());
+                        }
                     }
                     ConstructedElementRequest::DividendCurve { market_index } => {
                         let curve = self
@@ -469,7 +577,11 @@ impl MarketDataProvider for PricingContext {
             for fix_req in fixing_requests {
                 let market_index = fix_req.market_index();
                 let date = fix_req.date();
-                let value = self.fixing_store.fixing(market_index, date)?;
+                let value = match self.fixing_store.fixing(market_index, date) {
+                    Ok(value) => value,
+                    Err(_) if fix_req.missing_fixing_allowed() => continue,
+                    Err(error) => return Err(error),
+                };
                 fixings
                     .entry(market_index.clone())
                     .or_default()
@@ -490,8 +602,278 @@ impl MarketDataProvider for PricingContext {
         }
 
         // 4. Assemble final MarketData.
-        let md = MarketData::new(fixings, constructed_elements).with_fx_store(fx_store);
+        let mut pricer_configurations = HashMap::new();
+        if let Some(configuration_requests) = request.pricer_configuration_request() {
+            for instrument_type in configuration_requests {
+                let configuration = self
+                    .pricer_configurations
+                    .iter()
+                    .find(|configuration| configuration.instrument_type() == *instrument_type)
+                    .ok_or_else(|| {
+                        QSError::NotFoundErr(format!(
+                            "Pricer configuration not found for instrument type {instrument_type:?}"
+                        ))
+                    })?;
+                pricer_configurations.insert(*instrument_type, configuration.clone());
+            }
+        }
+
+        let calibration_quotes = request
+            .calibration_request()
+            .map(|calibration| {
+                let mut quotes = QuoteStore::new(self.evaluation_date());
+                for identifier in calibration.resolve_instrument_ids(&constructed_elements)? {
+                    let quote = self.quote_store().select(&identifier).ok_or_else(|| {
+                        QSError::NotFoundErr(format!("Calibration quote not found: {identifier}"))
+                    })?;
+                    quotes.add_quote(quote);
+                }
+                Ok::<_, QSError>(quotes)
+            })
+            .transpose()?;
+        let mut md = MarketData::new(fixings, constructed_elements)
+            .with_quote_level(self.quote_level)
+            .with_fx_store(fx_store)
+            .with_pricer_configurations(pricer_configurations);
+        if let Some(quotes) = calibration_quotes {
+            md = md.with_calibration_quotes(quotes);
+        }
 
         Ok(md)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::prelude::*;
+    use serde_json::json;
+
+    type TestResult<T = ()> = std::result::Result<T, Box<dyn std::error::Error>>;
+
+    const DEPOSIT: &str = "FixedRateDeposit_USD_SOFR_1D";
+    const SWAP: &str = "OIS_USD_SOFR_5Y";
+    const CDS: &str = "Cds_TEST_USD_5Y";
+    const CAPLET: &str = "CapletFloorlet_USD_SOFR_3M_1Y_Absolute_0.04_Straddle_Black";
+    const SWAPTION: &str = "Swaption_USD_SOFR_1Y_5Y_Absolute_0.04_Black";
+
+    fn context(level: Level, only_selected_level: bool) -> TestResult<PricingContext> {
+        let mut quotes = QuoteStore::new(Date::new(2026, 2, 24));
+        let surface_quotes: Vec<_> = ["1Y", "2Y"]
+            .into_iter()
+            .flat_map(|expiry| {
+                ["0.02", "0.04", "0.06"].into_iter().map(move |strike| {
+                    format!("CapletFloorlet_USD_SOFR_3M_{expiry}_Absolute_{strike}_Straddle_Black")
+                })
+            })
+            .collect();
+        for (identifier, mid, bid, ask) in [
+            (DEPOSIT, 0.04, 0.03, 0.05),
+            (SWAP, 0.04, 0.03, 0.05),
+            (CDS, 0.01, 0.005, 0.02),
+            (SWAPTION, 0.25, 0.20, 0.35),
+        ]
+        .into_iter()
+        .chain(
+            surface_quotes
+                .iter()
+                .map(|id| (id.as_str(), 0.20, 0.15, 0.30)),
+        ) {
+            quotes.add_quote(Quote::new(
+                identifier.parse()?,
+                QuoteLevels::new(
+                    (!only_selected_level || level == Level::Mid).then_some(mid),
+                    (!only_selected_level || level == Level::Bid).then_some(bid),
+                    (!only_selected_level || level == Level::Ask).then_some(ask),
+                ),
+            ));
+        }
+        Ok(PricingContext::new()
+            .with_quote_level(level)
+            .with_quote_store(quotes)
+            .with_curve_configurations(vec![serde_json::from_value(json!({
+                "market_index": "SOFR", "quotes": [DEPOSIT, SWAP]
+            }))?])
+            .with_credit_curve_configurations(vec![CreditCurveConfiguration::new(
+                MarketIndex::Credit("TEST".into()),
+                Currency::USD,
+                MarketIndex::SOFR,
+                0.4,
+                vec![CDS.into()],
+            )])
+            .with_volatility_surface_configurations(vec![VolatilitySurfaceConfiguration::new(
+                MarketIndex::SOFR,
+                VolatilityType::Black,
+                SmileType::Strike,
+                surface_quotes,
+            )])
+            .with_volatility_cube_configurations(vec![VolatilityCubeConfiguration::new(
+                MarketIndex::SOFR,
+                VolatilityType::Black,
+                SmileType::Strike,
+                vec![SWAPTION.into()],
+            )])
+            .with_simulation_configurations(vec![serde_json::from_value(json!({
+                "market_index": "SOFR",
+                "model": {"HullWhite": {"alpha": 0.05, "parameter_source": {
+                    "Calibrated": {"source": {"Surface": {"market_index": "SOFR"}},
+                        "calibration_basket": {"strike": "Atm"}}
+                }}},
+                "n_paths": 4, "seed": 42, "horizon": "1Y", "frequency": "Quarterly"
+            }))?]))
+    }
+
+    #[test]
+    fn selected_level_reaches_all_builders_and_xva_calibration() -> TestResult {
+        for level in [Level::Mid, Level::Bid, Level::Ask] {
+            // With no other levels present, any hard-coded mid in a downstream
+            // calibrator fails, even if its constructed surface uses the right side.
+            let mut ctx = context(level, true)?;
+            ctx.initialize()?;
+            let elements = ctx.constructed_elements();
+            assert!(elements
+                .credit_curve(&MarketIndex::Credit("TEST".into()))
+                .is_some());
+            let simulation = elements
+                .simulations()
+                .get(&MarketIndex::SOFR)
+                .ok_or("simulation")?;
+            assert_eq!(simulation.simulation().borrow().n_paths(), 4);
+            let surface = elements
+                .volatility_surface(&MarketIndex::SOFR)
+                .ok_or("surface")?
+                .surface();
+            let expected = ctx
+                .quote_store()
+                .quote(CAPLET)
+                .ok_or("caplet")?
+                .levels()
+                .value(level)?;
+            assert!((surface.pillars().ok_or("pillars")?[0].1.value() - expected).abs() < 1e-12);
+            let cube = elements
+                .volatility_cube(&MarketIndex::SOFR)
+                .ok_or("cube")?
+                .cube();
+            let expected = ctx
+                .quote_store()
+                .quote(SWAPTION)
+                .ok_or("swaption")?
+                .levels()
+                .value(level)?;
+            assert!((cube.pillars().ok_or("pillars")?[0].1.value() - expected).abs() < 1e-12);
+
+            let market = ctx.handle_request(
+                &MarketDataRequest::default()
+                    .with_calibration_request(ModelCalibrationConfiguration::new(
+                        CalibrationSource::Surface {
+                            market_index: MarketIndex::SOFR,
+                        },
+                    ))
+                    .with_constructed_elements_request(vec![
+                        ConstructedElementRequest::VolatilitySurface {
+                            market_index: MarketIndex::SOFR,
+                        },
+                    ]),
+            )?;
+            assert_eq!(market.quote_level(), level);
+            assert!(market.calibration_quotes().is_some());
+
+            let config = serde_json::from_value(json!({
+                "model_configs": [{"market_index": "SOFR", "lambda": 0.05,
+                    "parameter_source": {"Calibrated": {
+                        "source": {"Surface": {"market_index": "SOFR"}},
+                        "calibration_basket": {"strike": "Atm"}
+                    }}
+                }],
+                "n_paths": 4, "seed": 42, "frequency": "Quarterly"
+            }))?;
+            XvaEngine::new(&ctx, config)?;
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn selecting_and_changing_levels_rebuilds_the_market() -> TestResult {
+        assert_eq!(PricingContext::new().quote_level(), Level::Mid);
+        assert_eq!(PricingContext::default().quote_level(), Level::Mid);
+        assert_eq!(MarketData::default().quote_level(), Level::Mid);
+        let mut ctx = context(Level::Bid, false)?;
+        let mut discount_factors = Vec::new();
+        let mut survivals = Vec::new();
+        for level in [Level::Bid, Level::Mid, Level::Ask] {
+            ctx = ctx.with_quote_level(level);
+            ctx.initialize()?;
+            let elements = ctx.constructed_elements();
+            discount_factors.push(
+                elements
+                    .discount_curve(&MarketIndex::SOFR)
+                    .ok_or("curve")?
+                    .curve()
+                    .discount_factor(Date::new(2030, 2, 24))?
+                    .value(),
+            );
+            survivals.push(
+                elements
+                    .credit_curve(&MarketIndex::Credit("TEST".into()))
+                    .ok_or("credit")?
+                    .curve()
+                    .discount_factor(Date::new(2030, 2, 24))?
+                    .value(),
+            );
+        }
+        assert!(discount_factors.windows(2).all(|pair| pair[0] > pair[1]));
+        assert!(survivals.windows(2).all(|pair| pair[0] > pair[1]));
+        Ok(())
+    }
+
+    #[test]
+    fn missing_selected_level_is_an_error() -> TestResult {
+        for level in [Level::Bid, Level::Ask] {
+            let mut ctx = context(Level::Mid, true)?.with_quote_level(level);
+            let error = ctx
+                .initialize()
+                .err()
+                .ok_or("expected missing level error")?;
+            assert!(error.to_string().contains(&format!(
+                "No {} quote available",
+                format!("{level:?}").to_lowercase()
+            )));
+            assert!(matches!(error.root_cause(), QSError::NotFoundErr(_)));
+            assert!(error.to_string().contains("bootstrapping discount curves"));
+            assert!(error.to_string().contains("reading"));
+            assert!(error.to_string().contains("SOFR"));
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn scenarios_preserve_the_selected_level_and_base_quotes() -> TestResult {
+        let mut ctx = context(Level::Ask, true)?.with_scenarios(vec![Scenario::new(
+            CAPLET,
+            0.01,
+            ScenarioType::Absolute,
+        )]);
+        for _ in 0..2 {
+            ctx.initialize()?;
+            let surface = ctx
+                .constructed_elements()
+                .volatility_surface(&MarketIndex::SOFR)
+                .ok_or("surface")?
+                .surface();
+            let pillars = surface.pillars().ok_or("pillars")?;
+            let (_, value) = pillars
+                .iter()
+                .find(|(label, _)| label == CAPLET)
+                .ok_or("caplet pillar")?;
+            assert!((value.value() - 0.31).abs() < 1e-12);
+            assert_eq!(
+                ctx.base_quote_store()
+                    .quote(CAPLET)
+                    .ok_or("caplet")?
+                    .levels()
+                    .ask(),
+                Some(0.30)
+            );
+        }
+        Ok(())
     }
 }

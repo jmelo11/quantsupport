@@ -8,9 +8,10 @@ use crate::{
     currencies::currency::Currency,
     indices::marketindex::MarketIndex,
     instruments::cashflows::{
-        cashflow::SimpleCashflow, cashflowtype::CashflowType, fixedratecoupon::FixedRateCoupon,
-        floatingratecoupon::FloatingRateCoupon, leg::Leg,
-        optionembeddedcoupon::OptionEmbeddedCoupon, payoffops::PayoffOps,
+        cashflow::SimpleCashflow,
+        cashflowtype::CashflowType,
+        cashflowtype::{fixed_cashflow, floating_cashflow},
+        leg::Leg,
     },
     rates::{compounding::Compounding, interestrate::InterestRate},
     time::{
@@ -1045,8 +1046,7 @@ where
     for (date_pair, notional) in dates.windows(2).zip(notionals) {
         let d1 = date_pair[0];
         let d2 = date_pair[1];
-        let coupon = FixedRateCoupon::new(*notional, Box::new(rate), d1, d2, d2);
-        cashflows.push(CashflowType::FixedRateCoupon(coupon));
+        cashflows.push(fixed_cashflow(*notional, rate, d1, d2, d2)?);
     }
     Ok(())
 }
@@ -1075,8 +1075,16 @@ where
     for (date_pair, notional) in dates.windows(2).zip(notionals) {
         let d1 = date_pair[0];
         let d2 = date_pair[1];
-        let coupon = FloatingRateCoupon::new(*notional, spread, market_index.clone(), d1, d2, d2);
-        cashflows.push(CashflowType::FloatingRateCoupon(coupon));
+        cashflows.push(floating_cashflow(
+            *notional,
+            market_index.clone(),
+            spread,
+            None,
+            None,
+            d1,
+            d2,
+            d2,
+        )?);
     }
     Ok(())
 }
@@ -1111,37 +1119,19 @@ where
         ))?;
     }
 
-    let payoff = match (floorlet_strike, caplet_strike) {
-        (Some(floor), Some(cap)) => PayoffOps::Max(
-            Box::new(PayoffOps::Min(
-                Box::new(PayoffOps::Index),
-                Box::new(PayoffOps::Const(floor)),
-            )),
-            Box::new(PayoffOps::Const(cap)),
-        ),
-        (Some(floor), None) => PayoffOps::Min(
-            Box::new(PayoffOps::Index),
-            Box::new(PayoffOps::Const(floor)),
-        ),
-        (None, Some(cap)) => {
-            PayoffOps::Max(Box::new(PayoffOps::Index), Box::new(PayoffOps::Const(cap)))
-        }
-        (None, None) => unreachable!(), // This case is already handled above
-    };
-
     for (date_pair, notional) in dates.windows(2).zip(notionals) {
         let d1 = date_pair[0];
         let d2 = date_pair[1];
-        let coupon = OptionEmbeddedCoupon::new(
+        cashflows.push(floating_cashflow(
             *notional,
             market_index.clone(),
             spread,
+            floorlet_strike.map(|strike| strike + spread.value()),
+            caplet_strike.map(|strike| strike + spread.value()),
             d1,
             d2,
             d2,
-            payoff.clone(),
-        );
-        cashflows.push(CashflowType::OptionEmbeddedCoupon(coupon));
+        )?);
     }
     Ok(())
 }
@@ -1263,6 +1253,57 @@ mod tests {
     use crate::rates::compounding::Compounding;
     use crate::rates::interestrate::RateDefinition;
     use crate::time::daycounter::DayCounter;
+
+    #[test]
+    fn leg_and_shared_definition_build_identical_bounded_coupons() -> Result<()> {
+        let start = Date::new(2025, 1, 1);
+        let end = Date::new(2026, 1, 1);
+        let mut legacy = Vec::<CashflowType<f64>>::new();
+        build_embedded_option_coupons_from_notionals(
+            &mut legacy,
+            &[start, end],
+            &[100.0],
+            0.01,
+            &MarketIndex::SOFR,
+            Some(0.01),
+            Some(0.04),
+        )?;
+        let shared = CashflowType::<f64>::floating(MarketIndex::SOFR, 0.01, Some(0.02), Some(0.05))
+            .for_period(
+                100.0,
+                start,
+                end,
+                end,
+                Some(RateDefinition::new(
+                    DayCounter::Actual365,
+                    Compounding::Simple,
+                    Frequency::Annual,
+                )),
+            )?;
+        let (
+            CashflowType::OptionEmbeddedCoupon(legacy),
+            CashflowType::OptionEmbeddedCoupon(shared),
+        ) = (&legacy[0], shared)
+        else {
+            panic!("both constructors must produce bounded coupons");
+        };
+        for fixing in [-0.10, 0.03, 0.10] {
+            let legacy_amount = legacy.clone().with_fixing(fixing).amount()?;
+            let shared_amount = shared.clone().with_fixing(fixing).amount()?;
+            assert!((legacy_amount - shared_amount).abs() < 1.0e-12);
+        }
+        assert!(build_embedded_option_coupons_from_notionals(
+            &mut Vec::<CashflowType<f64>>::new(),
+            &[start, end],
+            &[100.0],
+            0.01,
+            &MarketIndex::SOFR,
+            Some(0.04),
+            Some(0.01),
+        )
+        .is_err());
+        Ok(())
+    }
 
     fn create_test_leg_builder() -> MakeLeg<DualFwd> {
         let start_date = Date::new(2024, 1, 1);

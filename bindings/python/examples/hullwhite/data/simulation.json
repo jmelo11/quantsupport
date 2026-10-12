@@ -1,0 +1,25 @@
+{
+  "market_index": "SOFR",
+  "model": {
+    "HullWhite": {
+      "alpha": 0.05,
+      "parameter_source": {
+        "Calibrated": {
+          "source": {
+            "Surface": {
+              "market_index": "SOFR"
+            }
+          },
+          "calibration_basket": {
+            "strike": "Atm"
+          }
+        }
+      }
+    }
+  },
+  "n_paths": 2048,
+  "seed": 42,
+  "horizon": "5Y",
+  "frequency": "Monthly",
+  "day_counter": "Actual365"
+}

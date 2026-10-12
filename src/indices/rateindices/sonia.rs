@@ -9,9 +9,7 @@ use crate::{
     },
     rates::{compounding::Compounding, interestrate::RateDefinition},
     time::{
-        calendar::Calendar,
-        calendars::weekendsonly::WeekendsOnly,
-        daycounter::DayCounter,
+        calendar::Calendar, calendars::unitedkingdom::UnitedKingdom, daycounter::DayCounter,
         enums::Frequency,
     },
 };
@@ -33,7 +31,7 @@ impl MarketIndexDetails for SONIAIndex {
 
 impl RateIndexDetails for SONIAIndex {
     fn calendar(&self) -> Calendar {
-        Calendar::WeekendsOnly(WeekendsOnly::new())
+        Calendar::UnitedKingdom(UnitedKingdom::new())
     }
 
     fn currency(&self) -> Currency {
@@ -54,5 +52,15 @@ impl RateIndexDetails for SONIAIndex {
 
     fn market_index(&self) -> MarketIndex {
         MarketIndex::SONIA
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::time::{calendars::traits::IsCalendar, date::Date};
+    #[test]
+    fn overnight_index_uses_local_bank_holidays() {
+        assert!(SONIAIndex.calendar().is_holiday(&Date::new(2026, 4, 3)));
     }
 }

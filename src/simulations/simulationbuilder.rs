@@ -105,6 +105,7 @@ impl SimulationBuilder {
         })?;
         let curve = curve_element.to_f64_term_structure(day_counter)?;
 
+        let mut calibration_quality = None;
         let paths = match spec.model() {
             ModelConfiguration::HullWhite {
                 alpha,
@@ -126,6 +127,7 @@ impl SimulationBuilder {
                         )?;
                     }
                 }
+                calibration_quality = hw.calibration_quality();
                 generate_paths(&hw, &times, spec.n_paths(), spec.seed())?
             }
             ModelConfiguration::BrownianMotion {
@@ -162,10 +164,10 @@ impl SimulationBuilder {
         #[allow(clippy::cast_precision_loss)]
         let dt = times.last().copied().unwrap_or(0.0) / times.len() as f64;
         let simulation = GeneratedMonteCarloSimulation::new(index.clone(), dates, paths, dt);
-        Ok(MonteCarloSimulationElement::new(
-            index,
-            Rc::new(RefCell::new(simulation)),
-        ))
+        Ok(
+            MonteCarloSimulationElement::new(index, Rc::new(RefCell::new(simulation)))
+                .with_calibration_quality(calibration_quality),
+        )
     }
 }
 

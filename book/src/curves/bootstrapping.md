@@ -43,6 +43,88 @@ The same information can be supplied through JSON. The following SOFR example us
 
 The configuration holds identities and conventions until construction begins. `resolve(selector, level, fx_spot)` then looks up every identifier, builds the corresponding calibration instrument at the requested market level, computes its pillar date, and sorts the instruments by maturity. The supported levels are `Mid`, `Bid`, and `Ask`. A missing identifier produces `NotFoundErr("Quote … not found in quotes.")`. Once resolution succeeds, the instruments, pillar dates, labels, and quote values are available to the solver.
 
+### OIS conventions
+
+OIS quotes use `MakeOvernightIndexSwap`, not the generic swap defaults. Legs contain coupons only,
+with annual fixed and overnight schedules, Modified Following accrual dates,
+Following payments, backward generation, and the index calendar and day count.
+SOFR's common preset uses two business days to settlement and a two-business-day
+payment lag. SONIA uses zero settlement days and CORRA one. Other index presets
+use two settlement days and zero payment lag. Verify these choices against the
+specific vendor curve; presets do not guarantee Bloomberg parity.
+
+Contract parameters belong to each quote identifier, not to the curve. Optional
+values appear at the end in a fixed order, separated by underscores:
+
+```json
+{
+  "market_index": "SOFR",
+  "day_counter": "Actual365",
+  "quotes": [
+    "OIS_USD_SOFR_1Y",
+    "OIS_USD_SOFR_2Y_Annual_Annual_2_2_Actual360"
+  ]
+}
+```
+
+The required prefix is `OIS_CCY_Index_Tenor`. Every field after the tenor is
+optional. Omit the entire trailing suffix you do not need; use an empty field
+to retain the default at an earlier position without shifting later values.
+For example, `OIS_USD_SOFR_1Y___0_3` keeps both default frequencies and sets
+settlement days to zero and payment lag to three. Keyword arguments are not
+accepted. Enum values are case-sensitive and use their canonical spellings.
+
+The [OIS quote parameters](../concepts/market-data.md#ois-parameters) define the
+available contract overrides and their defaults.
+
+Calendar fields use exact names such as `UnitedStates(Sofr)` or `TARGET`.
+Bare country names are not aliases; `UnitedStates(Settlement)` is a different
+market. Empty or omitted fields retain the index preset, including SOFR's
+two-business-day payment lag.
+
+`MakeOvernightIndexSwap` builds `OvernightIndexSwap`/`OvernightIndexSwapTrade`,
+independently of the regular `Swap`/`SwapTrade` types. `OvernightIndexSwap`
+requires overnight coupons and rejects term-rate coupon semantics.
+
+The curve's time day count does not determine coupon accrual. An ACT/365 curve
+can project ACT/360 coupons: the equivalent rate is annualized using the coupon's
+day count. Standard future compounded coupons use the exact discount-ratio
+telescoping formula. Realized coupons compound business-day observations with
+weekend/holiday accrual weights, then project any remaining accrual. Payment lag
+changes discounting dates, not accrual dates. Publication lag is not lookback.
+
+Supply historical observations with `MultiCurveBootstrapper::with_fixing_store`
+or `PricingContext::with_fixing_store` (Python: `PricingContext(..., fixings=...)`).
+Missing past observations are errors; today's observation is used when present
+and otherwise forecast. `MakeOvernightIndexSwap` marks coupons as overnight; generic `MakeSwap`
+and `FloatingRateCoupon::new` retain their existing single-fixing semantics unless
+explicit overnight conventions are installed. Nonstandard overnight conventions
+are supported by calibration and discounted valuation, but rejected by the legacy
+XVA claim converter, which cannot represent those observation rules.
+
+The optional Python regression `bindings/python/tests/test_ois_quantlib.py`
+compares SOFR pillars and interpolated discount factors with QuantLib using
+identical conventions. Install QuantLib in the test environment and rebuild the
+Python binding before running it. Matching a vendor also requires matching its
+input instruments, interpolation, as-of time, and displayed zero-rate convention.
+
+### Regular swap quotes
+
+Regular fixed-float swaps use a separate quote family and builder:
+
+```text
+Swap_USD_TermSOFR3m_5Y
+Swap_USD_TermSOFR3m_5Y_Semiannual_Quarterly
+```
+
+The format is `Swap_CCY_Index_Tenor[_FixedFreq[_FloatingFreq]]`. `MakeSwap`
+builds `Swap`, with single-fixing floating coupons rather than overnight
+compounding. Omitted frequencies retain its semiannual fixed and quarterly
+floating defaults. Regular swap quotes start at the reference date and retain
+the regular builder's schedule behavior; they do not inherit OIS settlement,
+payment-lag or observation conventions. Both quote families can participate in
+the same multi-curve calibration, with `Swap` quotes projecting their own index.
+
 ## Supported pillar instruments and residuals
 
 Every quote resolves to a concrete calibration instrument. That instrument contributes one residual, which measures the difference between its model value and market target. The following table shows how each supported quote type defines that condition:
@@ -52,6 +134,7 @@ Every quote resolves to a concrete calibration instrument. That instrument contr
 | `FixedRateDeposit`                                         | fixed-rate deposit                       | implied rate − quoted rate                                                                  |
 | `FixedRateBond`                                            | option-free fixed-rate bond              | model price − the target selected by `AnchorYield` or `AnchorPrice`                         |
 | `OIS`                                                      | fixed vs overnight swap                  | NPV (fixed − floating)                                                                     |
+| `Swap`                                                     | regular fixed vs floating swap           | NPV (fixed − floating)                                                                     |
 | `BasisSwap`                                                | float vs float + spread                  | NPV                                                                                        |
 | `FixFloatCrossCurrencySwap`, `FloatFloatCrossCurrencySwap` | two-currency swap with notional exchange | NPV in the collateral currency                                                             |
 | `Future`                                                   | rate future                              | implied forward − market rate (convexity-adjusted if a `ConvexityAdjustment` quote exists) |
@@ -136,7 +219,7 @@ Credit calibration applies the same broad construction pattern to default probab
 
 ```rust,ignore
 pub struct CreditCurveConfiguration {
-    market_index: MarketIndex,      // MarketIndex::Credit("ACME")
+  market_index: MarketIndex,      // MarketIndex::Credit("CORPORATE-A")
     currency: Currency,
     discount_index: MarketIndex,    // curve discounting premium & protection legs, e.g. SOFR
     recovery: f64,                  // e.g. 0.4
@@ -144,19 +227,19 @@ pub struct CreditCurveConfiguration {
     premium_frequency: Frequency,   // default Quarterly
     interpolator: Interpolator,     // default LogLinear (on survival probabilities)
     enable_extrapolation: bool,     // default true
-    quotes: Vec<String>,            // "Cds_ACME_USD_1Y", "Cds_ACME_USD_5Y", ...
+    quotes: Vec<String>,            // "Cds_CORPORATE-A_USD_1Y", "Cds_CORPORATE-A_USD_5Y", ...
 }
 ```
 
-Applications may express the same configuration in JSON. This example calibrates the ACME survival curve from one-, five-, and ten-year USD CDS spreads:
+Applications may express the same configuration in JSON. This example calibrates the CORPORATE-A survival curve from one-, five-, and ten-year USD CDS spreads:
 
 ```json
 {
-  "market_index": { "Credit": "ACME" },
+  "market_index": { "Credit": "CORPORATE-A" },
   "currency": "USD",
   "discount_index": "SOFR",
   "recovery": 0.4,
-  "quotes": ["Cds_ACME_USD_1Y", "Cds_ACME_USD_5Y", "Cds_ACME_USD_10Y"]
+  "quotes": ["Cds_CORPORATE-A_USD_1Y", "Cds_CORPORATE-A_USD_5Y", "Cds_CORPORATE-A_USD_10Y"]
 }
 ```
 

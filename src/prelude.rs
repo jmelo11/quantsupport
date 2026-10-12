@@ -39,6 +39,10 @@ pub use crate::{
         },
         pillars::Pillars,
         pricer::Pricer,
+        pricerconfiguration::{
+            FourierGridConfiguration, InstrumentType, PricerConfiguration, PricerImplementation,
+            PricingModelConfiguration, TimeGridConfiguration,
+        },
         pricerstate::PricerState,
         pricingcontext::PricingContext,
         request::{
@@ -77,12 +81,16 @@ pub use crate::{
             makefutures::MakeFutures,
         },
         fixedincome::{
+            bondpricinganchor::BondPricingAnchor,
+            callschedule::CallScheduleEntry,
             fixedratebond::{FixedRateBond, FixedRateBondTrade},
             fixedratedeposit::{FixedRateDeposit, FixedRateDepositTrade},
             floatingratenote::{FloatingRateNote, FloatingRateNoteTrade},
             makefixedratebond::MakeFixedRateBond,
             makefixedratedeposit::MakeFixedRateDeposit,
             makefloatingratenote::MakeFloatingRateNote,
+            makesteppedcouponbond::MakeSteppedCouponBond,
+            steppedcouponbond::{SteppedCouponBond, SteppedCouponBondTrade},
         },
         fx::{
             fxeuropeanoption::{FxEuropeanOption, FxEuropeanOptionTrade},
@@ -106,14 +114,22 @@ pub use crate::{
             makeeuropeanswaption::MakeSwaption,
             makefixfloatcrosscurrencyswap::MakeFixFloatCrossCurrencySwap,
             makefloatfloatcrosscurrencyswap::MakeFloatFloatCrossCurrencySwap,
+            makeovernightindexswap::MakeOvernightIndexSwap,
             makeratefutures::MakeRateFutures,
             makeswap::MakeSwap,
+            oisconventions::{
+                OisConventions, OisPillar, OvernightAveraging, OvernightCouponConventions,
+            },
+            overnightindexswap::{OvernightIndexSwap, OvernightIndexSwapTrade},
             ratefutures::{RateFutures, RateFuturesTrade},
             swap::{Swap, SwapTrade},
         },
     },
     math::{
-        interpolation::interpolator::{Interpolate, Interpolator, StaticInterpolate},
+        interpolation::{
+            extrapolation::ExtrapolationPolicy,
+            interpolator::{Interpolate, Interpolator, StaticInterpolate},
+        },
         probability::norm_cdf::NormCDF,
         solvers::{bisection::Bisection, newtonraphson::NewtonRaphson},
     },
@@ -141,6 +157,10 @@ pub use crate::{
         equity::{
             blackeuropeanoptionpricer::BlackEuropeanOptionPricer,
             blackmceuropeanoptionpricer::BlackMCEuropeanOptionPricer,
+        },
+        fixedincome::{
+            backwardfourierevolutionbondpricer::BackwardFourierEvolutionBondPricer,
+            bondpricer::BondPricer, treebasedbondpricer::TreeBasedBondPricer,
         },
         fx::{fxeuropeanoptionpricer::FxEuropeanOptionPricer, fxforwardpricer::FxForwardPricer},
         rates::{
@@ -174,6 +194,8 @@ pub use crate::{
             discounttermstructure::DiscountTermStructure,
             flatforwardtermstructure::FlatForwardTermStructure,
             interestratestermstructure::InterestRatesTermStructure,
+            tenorbasedzeroratetermstructure::TenorBasedZeroRateTermStructure,
+            zeroratetermstructure::ZeroRateTermStructure,
         },
     },
     scripting::{
@@ -184,7 +206,6 @@ pub use crate::{
             ExpectedCashflow, ParallelScriptEvaluation, ScriptEngine, ScriptModelCallback,
             ScriptModelSetup,
         },
-        utils::errors::ScriptingError,
         visitors::evaluator::Value as ScriptValue,
     },
     simulations::{
@@ -216,8 +237,8 @@ pub use crate::{
         volatilitycubeconfiguration::VolatilityCubeConfiguration,
         volatilityindexing::{SmileType, Strike, VolatilityType},
         volatilitysource::{
-            ConstantVolatility, CubeTermVolatility, PiecewiseConstantVolatility,
-            SurfaceTermVolatility, VolatilitySourceConfiguration, bootstrap_black_term_volatility,
+            bootstrap_black_term_volatility, ConstantVolatility, CubeTermVolatility,
+            PiecewiseConstantVolatility, SurfaceTermVolatility, VolatilitySourceConfiguration,
         },
         volatilitysurface::VolatilitySurface,
         volatilitysurfacebuilder::VolatilitySurfaceBuilder,
@@ -229,7 +250,7 @@ pub use crate::{
             FundingCurveFvaFactory, FvaAggregator, FvaFactory, PfeAggregator, PfeAggregatorFactory,
         },
         contigentclaim::ContingentClaim,
-        csa::{CsaTerms, FundingSpreadCurve},
+        csa::CsaTerms,
         engine::{FxModelConfig, LgmModelConfig, XvaEngine, XvaEngineConfig},
         makecontigentclaim::IntoContingentClaims,
         nettingset::NettingSet,
@@ -243,3 +264,12 @@ pub use crate::{
         },
     },
 };
+
+// Settlement calendars and their combination rule.
+pub use crate::time::calendars::{
+    japan::Japan,
+    jointcalendar::{JointCalendar, JointCalendarRule},
+    unitedkingdom::UnitedKingdom,
+};
+
+pub use crate::pricers::equity::equityforwardpricer::EquityForwardPricer;

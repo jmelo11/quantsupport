@@ -15,6 +15,8 @@ Wiley, 2018
 This attribution and license notice must be preserved at the top of this file.
 */
 
+use crate::utils::errors::{QSError, Result};
+
 use crate::{
     core::marketdatahandling::{
         discountrequest::DiscountRequest, forwardraterequest::ForwardRateRequest,
@@ -29,7 +31,6 @@ use crate::{
             traits::NodeVisitor,
         },
         request::SimulationDataRequest,
-        utils::errors::{Result, ScriptingError},
     },
     time::date::Date,
 };
@@ -331,17 +332,15 @@ impl NodeVisitor for VarIndexer {
                 match data.id {
                     Some(_) => {}
                     None => {
-                        let event_date =
-                            self.event_date
-                                .borrow()
-                                .ok_or(ScriptingError::InvalidSyntax(
-                                    "Event date is not set".to_string(),
-                                ))?;
+                        let event_date = self
+                            .event_date
+                            .borrow()
+                            .ok_or(QSError::ValueNotSetErr("Event date is not set".to_string()))?;
                         let ref_date = data.date.unwrap_or(event_date);
                         let mut requests = self.market_requests.borrow_mut();
-                        let last = requests.last_mut().ok_or(ScriptingError::NotFoundError(
-                            "No market requests found".to_string(),
-                        ))?;
+                        let last = requests
+                            .last_mut()
+                            .ok_or(QSError::NotFoundErr("No market requests found".to_string()))?;
                         match &data.underlying {
                             SpotUnderlying::Fx { first, second } => {
                                 let size = last.fxs().len();
@@ -369,15 +368,13 @@ impl NodeVisitor for VarIndexer {
                             .market_requests
                             .borrow_mut()
                             .last()
-                            .ok_or(ScriptingError::NotFoundError(
-                                "No market requests found".to_string(),
-                            ))?
+                            .ok_or(QSError::NotFoundErr("No market requests found".to_string()))?
                             .dfs()
                             .len();
                         let market_index = data.curve.as_ref().map_or_else(
                             || {
                                 self.local_market_index.borrow().clone().ok_or_else(|| {
-                                    ScriptingError::InvalidSyntax(
+                                    QSError::ValueNotSetErr(
                                         "Local market index is not set".to_string(),
                                     )
                                 })
@@ -387,9 +384,7 @@ impl NodeVisitor for VarIndexer {
                         self.market_requests
                             .borrow_mut()
                             .last_mut()
-                            .ok_or(ScriptingError::NotFoundError(
-                                "No market requests found".to_string(),
-                            ))?
+                            .ok_or(QSError::NotFoundErr("No market requests found".to_string()))?
                             .push_df(DiscountRequest::new(market_index, data.date));
                         data.id = Some(size);
                     }
@@ -404,9 +399,7 @@ impl NodeVisitor for VarIndexer {
                             .market_requests
                             .borrow_mut()
                             .last()
-                            .ok_or(ScriptingError::NotFoundError(
-                                "No market requests found".to_string(),
-                            ))?
+                            .ok_or(QSError::NotFoundErr("No market requests found".to_string()))?
                             .fwds()
                             .len();
                         let fwd_request =
@@ -416,9 +409,7 @@ impl NodeVisitor for VarIndexer {
                         self.market_requests
                             .borrow_mut()
                             .last_mut()
-                            .ok_or(ScriptingError::NotFoundError(
-                                "No market requests found".to_string(),
-                            ))?
+                            .ok_or(QSError::NotFoundErr("No market requests found".to_string()))?
                             .push_fwd(fwd_request);
                         data.id = Some(size);
                     }
@@ -441,31 +432,26 @@ impl NodeVisitor for VarIndexer {
                 self.market_requests
                     .borrow_mut()
                     .last_mut()
-                    .ok_or_else(|| {
-                        ScriptingError::NotFoundError("No market requests found".to_string())
-                    })?
+                    .ok_or_else(|| QSError::NotFoundErr("No market requests found".to_string()))?
                     .require_numeraire();
                 match data.df_id {
                     Some(_) => {}
                     None => {
-                        let to_date =
-                            match data.date {
-                                Some(d) => d,
-                                None => self.event_date.borrow().ok_or(
-                                    ScriptingError::InvalidSyntax(
-                                        "Event date is not set".to_string(),
-                                    ),
-                                )?,
-                            };
+                        let to_date = match data.date {
+                            Some(d) => d,
+                            None => self.event_date.borrow().ok_or(QSError::ValueNotSetErr(
+                                "Event date is not set".to_string(),
+                            ))?,
+                        };
                         let size = {
                             let mut mr = self.market_requests.borrow_mut();
-                            let last = mr.last_mut().ok_or(ScriptingError::NotFoundError(
+                            let last = mr.last_mut().ok_or(QSError::NotFoundErr(
                                 "No market requests found".to_string(),
                             ))?;
                             let size = last.dfs().len();
                             let market_index =
                                 self.local_market_index.borrow().clone().ok_or_else(|| {
-                                    ScriptingError::InvalidSyntax(
+                                    QSError::ValueNotSetErr(
                                         "Local market index is not set".to_string(),
                                     )
                                 })?;
@@ -481,21 +467,17 @@ impl NodeVisitor for VarIndexer {
                         Some(_) => {}
                         None => {
                             let dom = self.local_currency.borrow().ok_or(
-                                ScriptingError::InvalidSyntax(
-                                    "Local currency is not set".to_string(),
-                                ),
+                                QSError::ValueNotSetErr("Local currency is not set".to_string()),
                             )?;
                             let event_date = match data.date {
                                 Some(d) => d,
-                                None => self.event_date.borrow().ok_or(
-                                    ScriptingError::InvalidSyntax(
-                                        "Event date is not set".to_string(),
-                                    ),
-                                )?,
+                                None => self.event_date.borrow().ok_or(QSError::ValueNotSetErr(
+                                    "Event date is not set".to_string(),
+                                ))?,
                             };
                             let size = {
                                 let mut mr = self.market_requests.borrow_mut();
-                                let last = mr.last_mut().ok_or(ScriptingError::NotFoundError(
+                                let last = mr.last_mut().ok_or(QSError::NotFoundErr(
                                     "No market requests found".to_string(),
                                 ))?;
                                 let size = last.fxs().len();
@@ -598,7 +580,9 @@ impl VarIndexer {
             self.market_requests
                 .borrow_mut()
                 .push(SimulationDataRequest::new());
-            self.visit(event.mut_expr())?;
+            let date = event.event_date();
+            self.visit(event.mut_expr())
+                .map_err(|error| error.context(format!("indexing script event dated {date}")))?;
             Ok(())
         })
     }

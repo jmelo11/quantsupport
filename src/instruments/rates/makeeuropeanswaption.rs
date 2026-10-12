@@ -3,8 +3,8 @@ use crate::{
     currencies::currency::Currency,
     indices::marketindex::MarketIndex,
     instruments::rates::{
-        makeswap::MakeSwap,
         europeanswaption::{EuropeanSwaption, SwaptionType},
+        makeswap::MakeSwap,
     },
     rates::interestrate::RateDefinition,
     time::{

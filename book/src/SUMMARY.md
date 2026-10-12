@@ -27,6 +27,7 @@
 # Pricing
 
 - [Pricing Overview](pricing/overview.md)
+- [Bond Pricing](pricing/bonds.md)
 - [Interest Rate Swaps](pricing/swaps.md)
 - [Cross-Currency Swaps](pricing/cross-currency.md)
 - [Caps and Floors](pricing/caps-floors.md)

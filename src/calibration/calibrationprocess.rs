@@ -13,7 +13,14 @@ pub trait CalibrationProcess: CalibrationInstrumentPricer {
     fn residual(&self, instruments: &[CalibrationInstrument]) -> Result<Vec<f64>> {
         instruments
             .iter()
-            .map(|instrument| self.price(instrument))
+            .map(|instrument| {
+                self.price(instrument).map_err(|error| {
+                    error.context(format!(
+                        "pricing calibration instrument '{}'",
+                        instrument.pillar_label()
+                    ))
+                })
+            })
             .collect()
     }
 }

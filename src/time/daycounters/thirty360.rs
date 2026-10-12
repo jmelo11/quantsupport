@@ -1,14 +1,14 @@
 use crate::time::{date::Date, daycounters::daycount::DayCount};
 
 /// # `Thirty360` (ISMA)
-/// 
+///
 /// Convention: if the starting date is the 31st of a
 /// month, it becomes equal to the 30th of the same month.
-/// 
+///
 /// If the ending date is the 31st of a month and the starting
 /// date is the 30th or 31th of a month, the ending date
 /// also becomes equal to the 30th of the month.
-/// 
+///
 /// ## Example
 /// ```
 /// use quantsupport::time::date::Date;
@@ -45,7 +45,7 @@ impl DayCount for Thirty360 {
 }
 
 /// # `Thirty360US`
-/// 
+///
 /// convention: if the starting date is the 31st of a month or
 /// the last day of February, it becomes equal to the 30th of the
 /// same month.  If the ending date is the 31st of a month and the
@@ -54,7 +54,7 @@ impl DayCount for Thirty360 {
 /// February and the starting date is also the last of February,
 /// the ending date becomes equal to the 30th.
 /// Also known as "30/360" or "360/360".
-/// 
+///
 /// ## Example
 /// ```
 /// use quantsupport::time::date::Date;

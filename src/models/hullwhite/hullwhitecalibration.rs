@@ -413,8 +413,11 @@ fn build_calibration_instruments(
 }
 
 impl HullWhite<'_, f64> {
-    #[cfg(test)]
-    pub(crate) fn calibrate(
+    /// Calibrates time-dependent volatility to the selected market quotes.
+    ///
+    /// # Errors
+    /// Returns an error for missing quotes, unsupported instruments or failed calibration.
+    pub fn calibrate(
         &mut self,
         quote_ids: &[String],
         selector: &dyn QuoteSelector,
@@ -634,8 +637,7 @@ impl HullWhite<'_, f64> {
             .with_ift_sensitivities(ift_matrix);
 
         let quality = HullWhiteCalibrationQuality { records };
-        self.vol_func = Some(result);
-        self.calibration_quality = Some(quality);
+        self.set_calibration_result(result, quality);
         Ok(())
     }
 }

@@ -29,8 +29,11 @@ use crate::{
             makeeuropeanswaption::MakeSwaption,
             makefixfloatcrosscurrencyswap::MakeFixFloatCrossCurrencySwap,
             makefloatfloatcrosscurrencyswap::MakeFloatFloatCrossCurrencySwap,
+            makeovernightindexswap::MakeOvernightIndexSwap,
             makeratefutures::MakeRateFutures,
             makeswap::MakeSwap,
+            oisconventions::{OisConventions, OisPillar, OvernightCouponConventions},
+            overnightindexswap::OvernightIndexSwap,
             ratefutures::RateFutures,
             swap::Swap,
         },
@@ -68,9 +71,10 @@ fn parse_strike(id: &str, kind: &str, value: &str) -> Result<Strike> {
 }
 
 /// Quote level enumeration.
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Level {
     /// Mid (average between Bid and Ask) price.
+    #[default]
     Mid,
     /// Bid (buy) price.
     Bid,
@@ -78,8 +82,8 @@ pub enum Level {
     Ask,
 }
 
-/// Quote levels associated with an instrument identifier. When multiple levels are provided the `mid` is preferred, otherwise `bid/ask`
-/// are used to compute a fallback representative value.
+/// Quote levels associated with an instrument identifier. The requested level
+/// must be present; missing levels are not inferred from other prices.
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize)]
 pub struct QuoteLevels {
     /// Mid price/level.
@@ -158,6 +162,8 @@ pub enum QuoteInstrument {
     BasisSwap,
     /// OIS swap instrument.
     OIS,
+    /// Regular fixed-versus-floating interest-rate swap instrument.
+    Swap,
     /// Equity call option.
     EquityCall,
     /// Equity put option.
@@ -261,57 +267,187 @@ impl std::str::FromStr for FxForwardCalibrationStrategy {
     }
 }
 
-/// A [`QuoteDetails`] contains all details related to a particular quote.
+/// `QuoteDetails` describes the instrument being quoted: its product family, currencies,
+/// indices, term and any coupon, strike or payment conventions.
 ///
-/// Instances can be built manually via [`QuoteDetails::new`] + builder setters,
-/// or parsed from an identifier string via the [`std::str::FromStr`] trait.
+/// `QuoteDetails` keeps those contract terms together. The observed bid, mid and
+/// ask values are stored in `QuoteLevels`; `Quote` combines the details and values.
+/// For example, `FixedRateDeposit_USD_SOFR_6M` describes a six-month USD deposit
+/// associated with SOFR. A mid value of `0.04` is its quoted rate of 4%.
 ///
-/// # Identifier format
+/// ```rust
+/// use quantsupport::prelude::{Quote, QuoteDetails, QuoteLevels};
 ///
-/// Each identifier is an underscore-separated string whose first segment
-/// determines the instrument type. The table below shows the positional
-/// parameters for every supported product. Square brackets denote optional
-/// segments.
-///
-/// | Product                      | Pos 0                       | Pos 1       | Pos 2         | Pos 3      | Pos 4          | Pos 5           | Pos 6            | Pos 7     | Pos 8 |
-/// |-----------------------------|-----------------------------|-------------|---------------|------------|----------------|-----------------|------------------|----------|-------|
-/// | `OIS`                       | `OIS`                       | CCY         | Index         | Tenor      | \[`PayFreq`\]  | \[`RecvFreq`\]  |                   |          |       |
-/// | `FixedRateDeposit`          | `FixedRateDeposit`          | CCY         | Index         | Tenor      |                |                 |                   |          |       |
-/// | `FixedRateBond`             | `FixedRateBond`             | CCY         | Index         | Tenor      | \[`PayFreq`\]  | Coupon Rate     | \[`Strategy`\]   |          |       |
-/// | `BasisSwap`                 | `BasisSwap`                 | CCY         | `PayIndex`    | `RecvIndex`| Tenor          | \[`PayFreq`\]   | \[`RecvFreq`\]    |          |       |
-/// | `FixFloatCrossCurrencySwap` | `FixFloatCrossCurrencySwap` | `DomCCY`    | `FloatIndex`  | `ForCCY`   | Tenor          | \[`DomFreq`\]   | \[`ForFreq`\]     |          |       |
-/// |`FloatFloatCrossCurrencySwap`|`FloatFloatCrossCurrencySwap`| `DomCCY`    | `DomIndex`    | `ForIndex` | `ForCCY`       | Tenor           | \[`DomFreq`\]     | \[`ForFreq`\] |       |
-/// | `CapFloor`                  | `CapFloor`                  | CCY         | Index         | Tenor      | \[Freq\]       | Strike          | \[`StrikeValue`\] | `VolType` |       |
-/// | `CapletFloorlet`            | `CapletFloorlet`            | CCY         | Index         | `IdxTenor` | Expiry         | Strike          | \[`StrikeValue`\] | Strategy  | `VolType` |
-/// | `Future`                    | `Future`                    | CCY         | Index         | `IMMCode`  |                |                 |                   |          |       |
-/// | `ConvexityAdjustment`       | `ConvexityAdjustment`       | CCY         | Index         | `IMMCode`  |                |                 |                   |          |       |
-/// | `Swaption`                  | `Swaption`                  | CCY         | Index         | Expiry     | `SwapTenor`    | \[`PayFreq`\]   | \[`RecvFreq`\]    | Strike   | \[`StrikeValue`\] `VolType` |
-/// | `FxForward`                 | `FxForward`                 | CCYPAIR     | Tenor         | Strategy   |                |                 |                   |          |       |
-/// | `EquityCall`                | `EquityCall`                | CCY         | Index         | Tenor      | Strike kind    | Strike          |                   |          |       |
-/// | `EquityPut`                 | `EquityPut`                 | CCY         | Index         | Tenor      | Strike kind    | Strike          |                   |          |       |
-/// | `FxCall`                    | `FxCall`                    | CCYPAIR     | Tenor         | Strike kind| Strike         |                 |                   |          |       |
-/// | `FxPut`                     | `FxPut`                     | CCYPAIR     | Tenor         | Strike kind| Strike         |                 |                   |          |       |
-///
-/// **Frequency values**: `Annual`, `Semiannual`, `Quarterly`, `Monthly`,
-/// `Bimonthly`, `Biweekly`, `Weekly`, `Daily`, `EveryFourthMonth`,
-/// `EveryFourthWeek`, `Once`, `NoFrequency`.
-///
-/// # Examples
-///
-/// ```text
-/// OIS_USD_SOFR_1Y
-/// OIS_USD_SOFR_1Y_Semiannual_Semiannual
-/// FixedRateDeposit_USD_SOFR_6M
-/// FixedRateBond_USD_CORP_5Y_Semiannual_0.04_AnchorYield
-/// FxForward_EURUSD_1M_AnchorForwardPoints
-/// BasisSwap_USD_SOFR_TermSOFR3m_1Y_Quarterly_Quarterly
-/// FixFloatCrossCurrencySwap_USD_ICP_CLP_1Y_Semiannual_Quarterly
-/// Swaption_USD_SOFR_3M_2Y_Semiannual_Semiannual_Absolute_0.04_Black
-/// CapFloor_USD_SOFR_1Y_Quarterly_Absolute_0.03_Black
-/// EquityCall_USD_SPX_1Y_Absolute_5000
-/// FxCall_EURUSD_1Y_Absolute_1.10
+/// let details: QuoteDetails = "FixedRateDeposit_USD_SOFR_6M".parse()?;
+/// let quote = Quote::new(details, QuoteLevels::with_mid(0.04));
+/// # Ok::<(), quantsupport::prelude::QSError>(())
 /// ```
+///
+/// # Reading an identifier
+///
+/// Identifiers use underscores to separate contract terms. The first word selects
+/// the product, which determines the meaning of the remaining fields. For example,
+/// `Swap_USD_TermSOFR3m_5Y_Semiannual_Quarterly` describes a five-year USD swap
+/// against three-month Term SOFR, with semiannual fixed payments and quarterly
+/// floating payments.
+///
+/// `CCY` is a currency code such as `USD`; `Index` is a market index such as
+/// `SOFR`, `ICP` or `TermSOFR3m`. `Tenor` and `Expiry` are periods such as `1D`,
+/// `3M`, `5Y` or `1Y6M`. Frequency names include `Annual`, `Semiannual`, `Quarterly`
+/// and `Monthly`. Square brackets mark optional parts of an identifier.
+///
+/// # Parsed fields
+///
+/// `QuoteDetails` exposes the terms through getters. Optional fields return `None`
+/// when absent or inapplicable to the product. An omitted payment frequency,
+/// for example, stays unset in the details; the instrument builder supplies its
+/// default when constructing the contract.
+///
+/// | Getter | Meaning |
+/// | --- | --- |
+/// | `identifier()` | Original market label used to find the quote and identify its sensitivity. |
+/// | `instrument()` | Product family, such as `FixedRateDeposit` or `EuropeanSwaption`. |
+/// | `currency()`, `market_index()` | Main currency and index for a rate, bond, credit or equity quote. |
+/// | `secondary_market_index()` | Receive index of a basis swap, or foreign index of a floating cross-currency swap. |
+/// | `pay_currency()`, `receive_currency()` | Leg currencies of a cross-currency swap, or base and quote currencies of an FX pair. |
+/// | `tenor()` | Instrument term; for a swaption, the underlying swap's term. |
+/// | `option_expiry()` | Time to option expiry. |
+/// | `index_tenor()` | Underlying accrual period of a caplet/floorlet. |
+/// | `contract_code()` | IMM contract code of a future or convexity-adjustment quote. |
+/// | `pay_leg_frequency()`, `receive_leg_frequency()` | Payment frequencies supplied in the identifier. |
+/// | `coupon_rate()`, `strike()`, `vol_type()` | Bond coupon, option strike and volatility quoting convention, where applicable. |
+/// | `bond_calibration_strategy()` | Whether the bond quote supplies a yield or a price. |
+/// | `fx_forward_calibration_strategy()` | Whether the FX forward quote supplies forward points or an outright rate. |
+/// | `option_strategy()` | Caplet/floorlet quote strategy, such as `Straddle`. |
+///
+/// Tenors are relative periods. Builders use the market reference date and the
+/// instrument's conventions to resolve actual start, expiry and payment dates.
+/// For `Swaption_USD_SOFR_1Y_5Y_Absolute_0.04_Black`, `option_expiry()` is one year,
+/// `tenor()` is five years, and `strike()` is 4%. The associated `QuoteLevels`
+/// supplies the observed implied volatility.
+///
+/// # Rates, bonds and credit
+///
+/// | Identifier | What it describes |
+/// | --- | --- |
+/// | `FixedRateDeposit_CCY_Index_Tenor` | A deposit's currency, curve index and term. |
+/// | `OIS_CCY_Index_Tenor[_OisFields]` | A fixed rate against an overnight index; optional conventions are described under [OIS parameters](#ois-parameters). |
+/// | `Swap_CCY_Index_Tenor[_FixedFreq[_FloatFreq]]` | A fixed rate against a floating index, with optional fixed and floating payment frequencies. |
+/// | `FixedRateBond_CCY_Index_Tenor[_PayFreq]_CouponRate[_BondStrategy]` | A bond's currency, curve index, term, coupon and optional payment frequency and calibration strategy. |
+/// | `Future_CCY_Index_IMM` | An interest-rate futures contract identified by its currency, index and IMM code. |
+/// | `ConvexityAdjustment_CCY_Index_IMM` | An adjustment quote associated with the specified futures contract. |
+/// | `Cds_Entity_CCY_Tenor` | A CDS par spread for a credit entity, currency and term. |
+///
+/// Deposit and swap quote values are rates, while CDS quote values are par spreads.
+/// Rates, coupons and spreads use decimals: `0.04` means 4%.
+///
+/// In `FixedRateBond_USD_CORP_5Y_Semiannual_0.04_AnchorPrice`, the `0.04` in the
+/// identifier is the coupon. `AnchorPrice` tells calibration to use the observed
+/// quote as the bond price; `AnchorYield` uses it as yield to maturity and is the
+/// default if the strategy is omitted. `IMM` is a futures contract code such as `H6`.
+///
+/// # Basis and cross-currency swaps
+///
+/// | Identifier | What it describes |
+/// | --- | --- |
+/// | `BasisSwap_CCY_PayIndex_RecvIndex_Tenor[_PayFreq[_RecvFreq]]` | Two floating legs in one currency; the primary index is the pay index and the secondary index is the receive index. |
+/// | `FixFloatCrossCurrencySwap_DomCCY_FloatIndex_ForCCY_Tenor[_DomFreq[_ForFreq]]` | A fixed domestic-currency leg against a floating foreign-currency leg. |
+/// | `FloatFloatCrossCurrencySwap_DomCCY_DomIndex_ForIndex_ForCCY_Tenor[_DomFreq[_ForFreq]]` | A domestic floating leg against a foreign floating leg, each with its own index. |
+///
+/// `DomCCY` and `ForCCY` identify the domestic and foreign legs; `DomFreq` and
+/// `ForFreq` set their payment frequencies. For example,
+/// `FloatFloatCrossCurrencySwap_USD_SOFR_ICP_CLP_5Y` describes five years of USD
+/// SOFR cashflows against CLP ICP cashflows.
+///
+/// # FX and equity
+///
+/// | Identifier | What it describes |
+/// | --- | --- |
+/// | `FxForward_PAIR_Tenor_ForwardStrategy` | A forward's currency pair, delivery term and choice of forward-points or outright-price quote. |
+/// | `EquityCall_CCY_Ticker_Expiry_StrikeKind_StrikeValue` | A call on the specified equity, with its currency, expiry and strike. |
+/// | `EquityPut_CCY_Ticker_Expiry_StrikeKind_StrikeValue` | A put on the specified equity, with its currency, expiry and strike. |
+/// | `FxCall_PAIR_Expiry_StrikeKind_StrikeValue` | A currency call with the specified pair, expiry and strike. |
+/// | `FxPut_PAIR_Expiry_StrikeKind_StrikeValue` | A currency put with the specified pair, expiry and strike. |
+///
+/// `PAIR` contains the base currency followed by the quote currency: `EURUSD`
+/// means USD per EUR. For an FX forward, `AnchorForwardPoints` uses forward points
+/// as the observed quote and `AnchorOutrightPrice` uses the outright forward rate.
+/// For example, `FxForward_EURUSD_1M_AnchorOutrightPrice` identifies a one-month
+/// EUR/USD forward whose quote is the outright rate.
+///
+/// Equity and FX option identifiers accept `Absolute` and `Relative` strike kinds.
+/// `EquityCall_USD_AAPL_6M_Absolute_150` identifies a six-month USD call on AAPL
+/// with a strike of 150. A relative strike is an offset from the forward.
+///
+/// # Interest-rate options
+///
+/// | Identifier | What it describes |
+/// | --- | --- |
+/// | `CapFloor_CCY_Index_Tenor[_Freq]_Strike_VolType` | A cap/floor volatility quote with the full instrument term and optional coupon frequency. |
+/// | `CapletFloorlet_CCY_Index_IndexTenor_Expiry_Strike_Strategy_VolType` | A caplet/floorlet volatility quote; index tenor is the underlying accrual period and expiry is the time until it starts. |
+/// | `Swaption_CCY_Index_Expiry_SwapTenor[_FixedFreq[_FloatFreq]]_Strike_VolType` | A swaption volatility quote; expiry is the exercise term and swap tenor is the length of the underlying swap. |
+///
+/// `Strike` expands to `Absolute_0.04`, `Relative_0.01` or `ATM`. `Absolute` specifies
+/// the strike itself; `Relative` adds an offset to the forward; `ATM` uses the
+/// forward and needs no numeric strike. For example,
+/// `Swaption_USD_SOFR_1Y_5Y_ATM_Black` quotes the volatility of an at-the-money
+/// option expiring in one year on a five-year SOFR swap.
+///
+/// `VolType` is `Black` for lognormal volatility or `Normal` for absolute-rate
+/// volatility. Volatilities use decimals: a Black value of
+/// `0.20` means 20%. The caplet/floorlet `Strategy` field accepts `Straddle`,
+/// `Strangle`, `RiskReversal` or `Butterfly`, as defined by `OptionStrategy`.
+///
+/// # OIS parameters
+///
+/// OIS quotes can specify settlement, payment schedules, calendars and overnight
+/// observation rules after the tenor. `OIS_USD_SOFR_1Y` uses the index preset.
+/// To override a later field while keeping earlier defaults, leave the earlier
+/// fields empty: `OIS_USD_SOFR_1Y___0_3` keeps both default frequencies, starts
+/// with zero settlement days and pays three business days after accrual ends.
+/// Omit any trailing fields you do not need.
+///
+/// | Order | Field | Accepted values / examples | Default |
+/// | --- | --- | --- | --- |
+/// | 1 | Fixed frequency | `Frequency`, e.g. `Annual`, `Semiannual` | `Annual` |
+/// | 2 | Overnight frequency | `Frequency`, e.g. `Annual`, `Quarterly` | `Annual` |
+/// | 3 | Settlement days | Nonnegative business-day count | SONIA: `0`; CORRA: `1`; other indices: `2` |
+/// | 4 | Payment lag | Nonnegative business-day count | `SOFR` / `SOFRCompounded`: `2`; other indices: `0` |
+/// | 5 | Fixed day counter | `DayCounter`, e.g. `Actual360`, `Actual365` | Index day counter |
+/// | 6 | Settlement calendar | Canonical calendar name | Index calendar |
+/// | 7 | Fixed accrual calendar | Canonical calendar name | Index calendar |
+/// | 8 | Overnight accrual calendar | Canonical calendar name | Index calendar |
+/// | 9 | Payment calendar | Canonical calendar name | Index calendar |
+/// | 10 | Accrual adjustment | Accrual business-day convention, e.g. `Following` | `ModifiedFollowing` |
+/// | 11 | Termination adjustment | Termination business-day convention | Accrual convention |
+/// | 12 | Payment adjustment | Payment business-day convention | `Following` |
+/// | 13 | Schedule generation | e.g. `Backward`, `Forward` | `Backward` |
+/// | 14 | End of month | `true` or `false` | Inferred from the effective date |
+/// | 15 | Forward start | `Period`, e.g. `1M` | `0D` (start at spot) |
+/// | 16 | First coupon date | ISO date, e.g. `2027-01-05` | No explicit front stub |
+/// | 17 | Penultimate coupon date | ISO date, e.g. `2030-01-05` | No explicit back stub |
+/// | 18 | Overnight averaging | `Compound` or `Simple` | `Compound` |
+/// | 19 | Lookback days | Nonnegative business-day observation count | `0` |
+/// | 20 | Lockout days | Nonnegative business-day observation count | `0` |
+/// | 21 | Observation shift | `true` or `false` | `false` |
+/// | 22 | Daily spread compounding | `true` or `false` | `false` |
+/// | 23 | Calibration pillar | `LastRelevantDate`, `MaturityDate`, `CustomDate(YYYY-MM-DD)` | `LastRelevantDate` |
+///
+/// Calendar values use names such as `UnitedStates(Sofr)` or `TARGET`.
+/// `OIS_USD_SOFR_2Y_Annual_Annual_2_2_Actual360` specifies annual payments,
+/// two settlement days, a two-business-day payment lag and ACT/360 fixed coupons.
+/// `CustomDate(2027-01-06)` selects an explicit calibration pillar; that date must
+/// lie between the contract's effective and last relevant dates.
+///
+/// # Constructing details
+///
+/// Parse a standard identifier with `str::parse()` or `QuoteDetails::from_str()`.
+/// `QuoteDetails::parse(identifier, separator)` accepts a different separator.
+/// For a structured data feed, `QuoteDetails::new` and the `with_*` setters let
+/// you supply the terms directly.
+///
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct QuoteDetails {
     identifier: String,
     instrument: QuoteInstrument,
@@ -700,8 +836,10 @@ impl QuoteDetails {
         })
     }
 
-    /// `{Instrument}_CCY_{Index}_{Tenor}[_{PayFreq}[_{RecvFreq}]]`
-    /// e.g. `OIS_USD_SOFR_1Y` or `OIS_USD_SOFR_1Y_Semiannual_Semiannual`
+    /// Parses `OIS_CCY_Index_Tenor` followed by optional positional contract fields.
+    /// See the [complete OIS parameter reference](QuoteDetails#ois-parameters).
+    /// For example, `OIS_USD_SOFR_1Y___0_3` keeps the default frequencies,
+    /// with zero settlement days and a three-business-day payment lag.
     ///
     /// # Errors
     /// Returns an error if the identifier is too short or fields cannot be parsed.
@@ -715,7 +853,16 @@ impl QuoteDetails {
         let index = parts[2].parse::<MarketIndex>()?;
         let tenor = Period::from_str(parts[3])?;
 
-        let (pay_freq, recv_freq, _) = Self::try_parse_frequencies(parts, 4);
+        let pay_freq = parts
+            .get(4)
+            .filter(|value| !value.is_empty())
+            .map(|value| value.parse::<Frequency>())
+            .transpose()?;
+        let recv_freq = parts
+            .get(5)
+            .filter(|value| !value.is_empty())
+            .map(|value| value.parse::<Frequency>())
+            .transpose()?;
 
         let mut det = Self::new(id.to_string(), QuoteInstrument::OIS)
             .with_market_index(index)
@@ -727,7 +874,66 @@ impl QuoteDetails {
         if let Some(f) = recv_freq {
             det = det.with_receive_leg_frequency(f);
         }
+        det.ois_conventions()?;
         Ok(det)
+    }
+
+    /// Resolves OIS contract parameters exclusively from the quote identifier.
+    /// Omitted parameters retain the index preset.
+    ///
+    /// # Errors
+    /// Rejects excess, malformed, or invalid positional contract parameters.
+    pub fn ois_conventions(&self) -> Result<OisConventions> {
+        if self.instrument != QuoteInstrument::OIS {
+            return Err(QSError::InvalidValueErr("Not an OIS quote".into()));
+        }
+        let index = self
+            .market_index
+            .as_ref()
+            .ok_or_else(|| QSError::ValueNotSetErr("OIS index".into()))?;
+        let separator = self
+            .identifier
+            .strip_prefix("OIS")
+            .and_then(|suffix| suffix.chars().next())
+            .unwrap_or('_');
+        let parts: Vec<_> = self.identifier.split(separator).collect();
+        OisConventions::for_index(index).with_quote_fields(parts.get(4..).unwrap_or_default())
+    }
+
+    /// `Swap_CCY_Index_Tenor[_FixedFreq[_FloatingFreq]]`
+    ///
+    /// # Errors
+    /// Rejects missing required fields, invalid frequencies and excess fields.
+    pub fn parse_swap(id: &str, parts: &[&str]) -> Result<Self> {
+        if !(4..=6).contains(&parts.len()) {
+            return Err(QSError::InvalidValueErr(format!(
+                "Swap identifier requires four to six fields: {id}"
+            )));
+        }
+        let currency: Currency = parts[1].parse()?;
+        let index: MarketIndex = parts[2].parse()?;
+        let tenor = Period::from_str(parts[3])?;
+        let fixed_frequency = parts
+            .get(4)
+            .filter(|value| !value.is_empty())
+            .map(|value| value.parse::<Frequency>())
+            .transpose()?;
+        let floating_frequency = parts
+            .get(5)
+            .filter(|value| !value.is_empty())
+            .map(|value| value.parse::<Frequency>())
+            .transpose()?;
+        let mut details = Self::new(id.to_string(), QuoteInstrument::Swap)
+            .with_market_index(index)
+            .with_currency(currency)
+            .with_tenor(tenor);
+        if let Some(frequency) = fixed_frequency {
+            details = details.with_pay_leg_frequency(frequency);
+        }
+        if let Some(frequency) = floating_frequency {
+            details = details.with_receive_leg_frequency(frequency);
+        }
+        Ok(details)
     }
 
     /// `{Instrument}_CCY_{Index}_{Tenor}`
@@ -815,7 +1021,7 @@ impl QuoteDetails {
         Ok(quote)
     }
 
-    /// `{Instrument}_{Entity}_{CCY}_{Tenor}` — e.g. `Cds_ACME_USD_5Y`
+    /// `{Instrument}_{Entity}_{CCY}_{Tenor}` — e.g. `Cds_CORPORATE-A_USD_5Y`
     ///
     /// The quote level is the CDS par spread (decimal, e.g. `0.0125`).
     ///
@@ -1267,6 +1473,7 @@ impl QuoteDetails {
         }
         match parts[0] {
             "OIS" => Self::parse_ois(s, &parts),
+            "Swap" => Self::parse_swap(s, &parts),
             "FixedRateDeposit" => Self::parse_fixed_rate_deposit(s, &parts),
             "FixedRateBond" => Self::parse_fixed_rate_bond(s, &parts),
             "BasisSwap" => Self::parse_basis_swap(s, &parts),
@@ -1315,7 +1522,9 @@ where
     FixedRateDeposit(FixedRateDeposit<T>),
     /// A fixed-rate bond.
     FixedRateBond(FixedRateBond<T>, BondCalibrationStrategy),
-    /// A fixed-vs-floating interest rate swap (e.g. OIS).
+    /// An overnight indexed swap with daily overnight coupon semantics.
+    OIS(OvernightIndexSwap<T>),
+    /// A regular fixed-vs-floating interest rate swap.
     Swap(Swap<T>),
     /// A floating-vs-floating basis swap.
     BasisSwap(BasisSwap<T>),
@@ -1349,6 +1558,7 @@ impl<T: Scalar> std::fmt::Debug for CalibrationInstrumentType<T> {
             Self::FixedRateDeposit(_) => {
                 write!(f, "CalibrationInstrumentType::FixedRateDeposit")
             }
+            Self::OIS(_) => write!(f, "CalibrationInstrumentType::OIS"),
             Self::Swap(_) => write!(f, "CalibrationInstrumentType::Swap"),
             Self::BasisSwap(_) => write!(f, "CalibrationInstrumentType::BasisSwap"),
             Self::RateFutures(_) => write!(f, "CalibrationInstrumentType::RateFutures"),
@@ -1383,6 +1593,10 @@ where
         match self {
             Self::FixedRateDeposit(x) => Ok(x.leg().last_payment_date()),
             Self::FixedRateBond(x, _) => Ok(x.leg().last_payment_date()),
+            Self::OIS(x) => Ok(x
+                .fixed_leg()
+                .last_payment_date()
+                .max(x.floating_leg().last_payment_date())),
             Self::Swap(x) => Ok(x
                 .fixed_leg()
                 .last_payment_date()
@@ -1465,6 +1679,7 @@ impl Quote {
         let notional = 1.0;
         match self.details.instrument() {
             QuoteInstrument::OIS => self.build_ois(value, reference_date, notional),
+            QuoteInstrument::Swap => self.build_swap(value, reference_date, notional),
             QuoteInstrument::FixedRateDeposit => {
                 self.build_fixed_rate_deposit(value, reference_date, notional)
             }
@@ -1511,6 +1726,69 @@ impl Quote {
         }
     }
 
+    /// Resolves an OIS calibration node according to its quote identifier.
+    ///
+    /// # Errors
+    /// Rejects custom nodes outside the instrument's relevant date range.
+    pub fn calibration_pillar_date(&self, built: &CalibrationInstrumentType<f64>) -> Result<Date> {
+        use crate::instruments::cashflows::{cashflow::Cashflow, cashflowtype::CashflowType};
+        use crate::time::{
+            calendars::traits::IsCalendar, enums::BusinessDayConvention, enums::TimeUnit,
+            period::Period,
+        };
+        let mut latest = built.pillar_date()?;
+        let CalibrationInstrumentType::OIS(swap) = built else {
+            return Ok(latest);
+        };
+        if *self.details.instrument() != QuoteInstrument::OIS {
+            return Ok(latest);
+        }
+        let mut earliest = latest;
+        let mut maturity = Date::empty();
+        for cashflow in swap
+            .fixed_leg()
+            .cashflows()
+            .iter()
+            .chain(swap.floating_leg().cashflows())
+        {
+            match cashflow {
+                CashflowType::FixedRateCoupon(coupon) => {
+                    earliest = earliest.min(coupon.accrual_start_date());
+                    maturity = maturity.max(coupon.accrual_end_date());
+                }
+                CashflowType::FloatingRateCoupon(coupon) => {
+                    earliest = earliest.min(coupon.accrual_start_date());
+                    maturity = maturity.max(coupon.accrual_end_date());
+                    let calendar = coupon.market_index().rate_index_details()?.calendar();
+                    let value_end = calendar.adjust(
+                        coupon.accrual_end_date(),
+                        Some(BusinessDayConvention::Following),
+                    );
+                    let lookback = coupon
+                        .overnight_conventions()
+                        .map_or(0, OvernightCouponConventions::lookback_days);
+                    let observation_end = calendar.advance(
+                        value_end,
+                        Period::new(-lookback, TimeUnit::Days),
+                        None,
+                        false,
+                    );
+                    latest = latest.max(observation_end).max(coupon.payment_date());
+                }
+                _ => {}
+            }
+        }
+        let choice = self.details.ois_conventions()?.pillar();
+        match choice {
+            OisPillar::LastRelevantDate => Ok(latest),
+            OisPillar::MaturityDate => Ok(maturity),
+            OisPillar::CustomDate(date) if date >= earliest && date <= latest => Ok(date),
+            OisPillar::CustomDate(_) => Err(QSError::InvalidValueErr(
+                "Custom OIS pillar must lie between effective and last relevant dates".into(),
+            )),
+        }
+    }
+
     /// Convenience method for getting the quote index.
     fn required_market_index(details: &QuoteDetails, context: &str) -> Result<MarketIndex> {
         details
@@ -1534,28 +1812,63 @@ impl Quote {
             .tenor()
             .ok_or_else(|| QSError::ValueNotSetErr("Tenor on OIS quote".into()))?;
 
-        let maturity = reference_date + tenor;
         let market_index = Self::required_market_index(d, "OIS quote")?;
-        let rd = market_index.rate_index_details()?.rate_definition();
-
-        let mut builder = MakeSwap::<T>::default()
-            .with_identifier(d.identifier())
-            .with_start_date(reference_date)
-            .with_maturity_date(maturity)
-            .with_fixed_rate(rate)
-            .with_notional(notional)
-            .with_rate_definition(rd)
-            .with_currency(currency)
-            .with_market_index(market_index);
-        if let Some(f) = d.pay_leg_frequency() {
-            builder = builder.with_fixed_leg_frequency(f);
+        if market_index.rate_index_details()?.currency() != currency {
+            return Err(QSError::InvalidValueErr(
+                "OIS currency does not match its index".into(),
+            ));
         }
-        if let Some(f) = d.receive_leg_frequency() {
-            builder = builder.with_floating_leg_frequency(f);
+        let conventions = d.ois_conventions()?;
+        let mut builder =
+            MakeOvernightIndexSwap::<T>::new(market_index, reference_date, tenor, rate)
+                .with_identifier(d.identifier())
+                .with_notional(notional)
+                .with_conventions(conventions);
+        if let Some(maturity) = d.maturity() {
+            builder = builder.with_maturity_date(maturity);
         }
         let swap = builder.build()?;
 
-        Ok(CalibrationInstrumentType::Swap(swap))
+        Ok(CalibrationInstrumentType::OIS(swap))
+    }
+
+    /// Builds a regular swap using single-fixing floating coupons and swap defaults.
+    fn build_swap<T: Scalar + Default>(
+        &self,
+        rate: f64,
+        reference_date: Date,
+        notional: f64,
+    ) -> Result<CalibrationInstrumentType<T>> {
+        let details = &self.details;
+        let currency = details
+            .currency()
+            .ok_or_else(|| QSError::ValueNotSetErr("Currency on swap quote".into()))?;
+        let tenor = details
+            .tenor()
+            .ok_or_else(|| QSError::ValueNotSetErr("Tenor on swap quote".into()))?;
+        let index = Self::required_market_index(details, "swap quote")?;
+        let index_details = index.rate_index_details()?;
+        if index_details.currency() != currency {
+            return Err(QSError::InvalidValueErr(
+                "Swap currency does not match its index".into(),
+            ));
+        }
+        let mut builder = MakeSwap::<T>::default()
+            .with_identifier(details.identifier())
+            .with_start_date(reference_date)
+            .with_maturity_date(details.maturity().unwrap_or(reference_date + tenor))
+            .with_fixed_rate(rate)
+            .with_notional(notional)
+            .with_rate_definition(index_details.rate_definition())
+            .with_market_index(index)
+            .with_currency(currency);
+        if let Some(frequency) = details.pay_leg_frequency() {
+            builder = builder.with_fixed_leg_frequency(frequency);
+        }
+        if let Some(frequency) = details.receive_leg_frequency() {
+            builder = builder.with_floating_leg_frequency(frequency);
+        }
+        Ok(CalibrationInstrumentType::Swap(builder.build()?))
     }
 
     /// Builds a fixed-rate deposit from its rate quote.
@@ -2077,10 +2390,6 @@ impl Quote {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2273,7 +2582,17 @@ mod tests {
         let inst = quote
             .build_instrument(ref_date(), Level::Mid, None)
             .unwrap();
-        assert!(matches!(inst, CalibrationInstrumentType::Swap(_)));
+        let CalibrationInstrumentType::OIS(swap) = inst else {
+            panic!("expected OIS swap")
+        };
+        assert_eq!(swap.fixed_leg().cashflows().len(), 1);
+        assert_eq!(swap.floating_leg().cashflows().len(), 1);
+        let crate::instruments::cashflows::cashflowtype::CashflowType::FloatingRateCoupon(coupon) =
+            &swap.floating_leg().cashflows()[0]
+        else {
+            panic!("expected overnight coupon")
+        };
+        assert!(coupon.overnight_conventions().is_some());
     }
 
     #[test]
@@ -2468,6 +2787,229 @@ mod tests {
         let det: QuoteDetails = "OIS_USD_SOFR_1Y".parse().unwrap();
         assert_eq!(det.pay_leg_frequency(), None);
         assert_eq!(det.receive_leg_frequency(), None);
+    }
+
+    #[test]
+    fn parse_regular_swap_quote_fields() {
+        for (identifier, fixed, floating) in [
+            ("Swap_USD_TermSOFR3m_5Y", None, None),
+            (
+                "Swap_USD_TermSOFR3m_5Y_Annual",
+                Some(Frequency::Annual),
+                None,
+            ),
+            (
+                "Swap_USD_TermSOFR3m_5Y_Semiannual_Quarterly",
+                Some(Frequency::Semiannual),
+                Some(Frequency::Quarterly),
+            ),
+            (
+                "Swap_USD_TermSOFR3m_5Y__Quarterly",
+                None,
+                Some(Frequency::Quarterly),
+            ),
+        ] {
+            let details: QuoteDetails = identifier.parse().unwrap();
+            assert_eq!(*details.instrument(), QuoteInstrument::Swap);
+            assert_eq!(details.pay_leg_frequency(), fixed);
+            assert_eq!(details.receive_leg_frequency(), floating);
+            assert!(details.ois_conventions().is_err());
+            let restored: QuoteDetails =
+                serde_json::from_value(serde_json::to_value(&details).unwrap()).unwrap();
+            assert_eq!(*restored.instrument(), QuoteInstrument::Swap);
+        }
+        for identifier in [
+            "Swap_USD_SOFR",
+            "Swap_USD_SOFR_1Y_garbage",
+            "Swap_USD_SOFR_1Y_Annual_Quarterly_2",
+            "Swap_USD_SOFR_1Y_Annual_bad",
+        ] {
+            assert!(identifier.parse::<QuoteDetails>().is_err());
+        }
+    }
+
+    #[test]
+    fn build_regular_swap_keeps_single_fixing_coupons() {
+        use crate::instruments::cashflows::cashflowtype::CashflowType;
+
+        let reference = ref_date();
+        for (identifier, fixed_count, floating_count) in [
+            ("Swap_USD_TermSOFR3m_1Y", 2, 4),
+            ("Swap_USD_TermSOFR3m_1Y_Annual_Semiannual", 1, 2),
+            ("Swap_USD_SOFR_1Y", 2, 4),
+        ] {
+            let details: QuoteDetails = identifier.parse().unwrap();
+            let quote = Quote::new(
+                details,
+                QuoteLevels::new(Some(0.04), Some(0.03), Some(0.05)),
+            );
+            let built = quote.build_instrument(reference, Level::Ask, None).unwrap();
+            let CalibrationInstrumentType::Swap(swap) = &built else {
+                panic!("expected regular swap")
+            };
+            let fixed: Vec<_> = swap
+                .fixed_leg()
+                .cashflows()
+                .iter()
+                .filter_map(|cashflow| {
+                    if let CashflowType::FixedRateCoupon(coupon) = cashflow {
+                        Some(coupon)
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            let floating: Vec<_> = swap
+                .floating_leg()
+                .cashflows()
+                .iter()
+                .filter_map(|cashflow| {
+                    if let CashflowType::FloatingRateCoupon(coupon) = cashflow {
+                        Some(coupon)
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            assert_eq!(fixed.len(), fixed_count);
+            assert_eq!(floating.len(), floating_count);
+            assert_eq!(fixed[0].accrual_start_date(), reference);
+            assert!((fixed[0].rate().rate() - 0.05).abs() < 1e-12);
+            assert!(floating
+                .iter()
+                .all(|coupon| coupon.overnight_conventions().is_none()));
+            assert_eq!(
+                quote.calibration_pillar_date(&built).unwrap(),
+                built.pillar_date().unwrap()
+            );
+        }
+        let mismatched = Quote::new(
+            "Swap_EUR_TermSOFR3m_1Y".parse().unwrap(),
+            QuoteLevels::with_mid(0.04),
+        );
+        assert!(mismatched
+            .build_instrument(reference, Level::Mid, None)
+            .is_err());
+        let term_ois = Quote::new(
+            "OIS_USD_TermSOFR3m_1Y".parse().unwrap(),
+            QuoteLevels::with_mid(0.04),
+        );
+        assert!(term_ois
+            .build_instrument(reference, Level::Mid, None)
+            .is_err());
+    }
+
+    #[test]
+    fn ois_quote_parameters_preserve_index_defaults() {
+        let default: QuoteDetails = "OIS_USD_SOFR_1Y".parse().unwrap();
+        assert_eq!(default.ois_conventions().unwrap().settlement_days(), 2);
+        assert_eq!(default.ois_conventions().unwrap().payment_lag(), 2);
+        let overridden: QuoteDetails = "OIS_USD_SOFR_1Y_Annual_Annual_0".parse().unwrap();
+        let conventions = overridden.ois_conventions().unwrap();
+        assert_eq!(conventions.settlement_days(), 0);
+        assert_eq!(conventions.payment_lag(), 2);
+        assert!(matches!(conventions.pillar(), OisPillar::LastRelevantDate));
+        let serialized = serde_json::to_string(&overridden).unwrap();
+        assert!(!serialized.contains("ois_conventions"));
+        let restored: QuoteDetails = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(restored.ois_conventions().unwrap().settlement_days(), 0);
+        assert_eq!(restored.ois_conventions().unwrap().payment_lag(), 2);
+    }
+
+    #[test]
+    fn ois_quote_optional_positions_do_not_shift_when_empty() {
+        let details: QuoteDetails = "OIS_USD_SOFR_1Y___0_3".parse().unwrap();
+        assert_eq!(details.pay_leg_frequency(), None);
+        assert_eq!(details.receive_leg_frequency(), None);
+        let conventions = details.ois_conventions().unwrap();
+        assert_eq!(conventions.fixed_frequency(), Frequency::Annual);
+        assert_eq!(conventions.overnight_frequency(), Frequency::Annual);
+        assert_eq!(conventions.settlement_days(), 0);
+        assert_eq!(conventions.payment_lag(), 3);
+        let details: QuoteDetails = "OIS_USD_SOFR_1Y__Quarterly".parse().unwrap();
+        assert_eq!(details.pay_leg_frequency(), None);
+        assert_eq!(details.receive_leg_frequency(), Some(Frequency::Quarterly));
+        assert_eq!(details.ois_conventions().unwrap().payment_lag(), 2);
+        let excess = format!("OIS_USD_SOFR_1Y_{}", [""; 24].join("_"));
+        assert!(excess.parse::<QuoteDetails>().is_err());
+    }
+
+    #[test]
+    fn ois_quote_parameters_parse_contract_and_observations() {
+        let details: QuoteDetails = concat!(
+            "OIS_USD_SOFR_5Y_Semiannual_Quarterly_1_3_Actual365",
+            "_UnitedStates(Sofr)_WeekendsOnly_UnitedStates(Sofr)_UnitedStates(Settlement)",
+            "_Following_Preceding_ModifiedFollowing_Forward_false_1M",
+            "_2027-01-05_2030-01-05_Simple_2_1_true_true_CustomDate(2030-01-05)"
+        )
+        .parse()
+        .unwrap();
+        let conventions = details.ois_conventions().unwrap();
+        assert_eq!(conventions.settlement_days(), 1);
+        assert_eq!(conventions.payment_lag(), 3);
+        assert_eq!(conventions.fixed_frequency(), Frequency::Semiannual);
+        assert_eq!(conventions.overnight_frequency(), Frequency::Quarterly);
+        assert_eq!(conventions.fixed_day_counter(), Some(DayCounter::Actual365));
+        assert_eq!(conventions.end_of_month(), Some(false));
+        assert_eq!(conventions.first_coupon_date(), Some(Date::new(2027, 1, 5)));
+        assert_eq!(
+            conventions.next_to_last_coupon_date(),
+            Some(Date::new(2030, 1, 5))
+        );
+        assert_eq!(
+            conventions.overnight().averaging(),
+            crate::instruments::rates::oisconventions::OvernightAveraging::Simple
+        );
+        assert_eq!(conventions.overnight().lookback_days(), 2);
+        assert_eq!(conventions.overnight().lockout_days(), 1);
+        assert!(conventions.overnight().observation_shift());
+        assert!(conventions.overnight().compound_spread_daily());
+        assert_eq!(
+            String::from(conventions.payment_calendar().unwrap().clone()),
+            "UnitedStates(Settlement)"
+        );
+    }
+
+    #[test]
+    fn ois_quote_parameters_reject_ambiguous_or_invalid_inputs() {
+        for suffix in [
+            "SettlementDays=0",
+            "Annual_Annual_PaymentLag=2",
+            "Annual_Annual_-1",
+            "Annual_Annual_2_-1",
+            "Annual_Annual_2_abc",
+            "Annual_Annual_2_2_UnitedStates(Sofr)",
+            "Annual_Annual_2_2_Actual360_UnitedStates",
+            "Annual_garbage",
+            "garbage",
+        ] {
+            assert!(
+                format!("OIS_USD_SOFR_1Y_{suffix}")
+                    .parse::<QuoteDetails>()
+                    .is_err(),
+                "{suffix}"
+            );
+        }
+    }
+
+    #[test]
+    fn ois_quote_parameters_follow_the_identifier_separator() {
+        let identifier = "OIS|USD|SOFR|1Y|Annual|Annual|0|3";
+        let details = QuoteDetails::parse(identifier, '|').unwrap();
+        assert_eq!(details.identifier(), identifier);
+        assert_eq!(details.ois_conventions().unwrap().settlement_days(), 0);
+        assert_eq!(details.ois_conventions().unwrap().payment_lag(), 3);
+        let serialized = serde_json::to_value(&details).unwrap();
+        let restored: QuoteDetails = serde_json::from_value(serialized.clone()).unwrap();
+        assert_eq!(restored.ois_conventions().unwrap().payment_lag(), 3);
+        let quote = Quote::new(restored, QuoteLevels::with_mid(0.04));
+        let built = quote
+            .build_instrument(ref_date(), Level::Mid, None)
+            .unwrap();
+        assert!(matches!(built, CalibrationInstrumentType::OIS(_)));
+        let mut conflicting = serialized;
+        conflicting["ois_conventions"] = serde_json::json!({"payment_lag": 0});
+        assert!(serde_json::from_value::<QuoteDetails>(conflicting).is_err());
     }
 
     #[test]

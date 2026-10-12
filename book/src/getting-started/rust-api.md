@@ -196,13 +196,15 @@ pub enum Request {
     Value,
     YieldToMaturity,
     ModifiedDuration,
+    ZSpread,
+    OAS,
     Sensitivities,
     Cashflows,
     FairRate,
 }
 ```
 
-Support is pricer-specific. Request the outputs listed for that pricer in the [pricing overview](../pricing/overview.md). A pricer populates the fields it supports, and unsupported fields remain empty.
+Support is pricer-specific. Request the outputs listed for that pricer in the [pricing overview](../pricing/overview.md). A pricer populates the fields associated with supported requests. Unsupported-request behavior depends on the implementation: some pricers leave fields empty, while others return `InvalidValueErr`. Submit only requests supported by the selected pricer.
 
 When several outputs share valuation work, pricers can calculate the common state once. For example, `DiscountedCashflowPricer` prepares value state once for value, cashflow, and sensitivity requests submitted in the same call.
 
@@ -236,7 +238,7 @@ The main result types are:
 
 | Type | Contents |
 | --- | --- |
-| `EvaluationResults` | Optional price, fair rate, sensitivities, and cashflows exposed through public getters |
+| `EvaluationResults` | Optional price, yield, modified duration, Z-spread, OAS, fair rate, sensitivities, and cashflows exposed through public getters |
 | `SensitivityMap` | Parallel market-pillar labels and NPV derivatives |
 | `CashflowsTable` | Column-oriented payment dates, types, amounts, fixings, accrual periods, currencies, leg indices, and optional strikes |
 

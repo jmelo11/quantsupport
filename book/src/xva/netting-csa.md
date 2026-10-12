@@ -25,46 +25,89 @@ At every path and date, the engine sums all claim values in the set before calcu
 pub struct CsaTerms {
     collateral_index: MarketIndex,       // discount curve for collateralized cashflows
     collateral_currency: Currency,       // currency of collateral
+    variation_margin: bool,              // defaults to false for backward compatibility
+    counterparty_threshold: f64,         // unsecured positive exposure, collateral currency
+    own_threshold: f64,                  // unsecured negative exposure, collateral currency
+    minimum_transfer_amount: f64,        // minimum change in collateral balance
     credit_spread: f64,                  // flat counterparty hazard rate (if no credit_index)
     recovery: f64,                       // LGD = 1 - recovery
     funding_spread: f64,                 // flat funding spread (fallback)
-    funding_spread_curve: Option<FundingSpreadCurve { dates: Vec<Date>, spreads: Vec<f64> }>,
+    funding_spread_curve: Option<ZeroRateTermStructure>,
     funding_index: Option<MarketIndex>,  // bootstrapped funding curve
-    credit_index: Option<MarketIndex>,   // bootstrapped credit curve, e.g. Credit("ACME")
+    credit_index: Option<MarketIndex>,   // bootstrapped credit curve, e.g. Credit("CORPORATE-A")
 }
 ```
 
-The CVA example serializes those terms as JSON. It uses USD SOFR collateral, a flat counterparty credit input, and a dated funding-spread curve:
+The CVA example serializes those terms as JSON. It uses USD SOFR collateral,
+a bootstrapped counterparty credit curve, and a dated funding-spread curve:
 
 ```json
 {
   "collateral_index": "SOFR",
   "collateral_currency": "USD",
+  "variation_margin": true,
+  "counterparty_threshold": 100000.0,
+  "own_threshold": 100000.0,
+  "minimum_transfer_amount": 10000.0,
   "credit_spread": 0.01,
+  "credit_index": {"Credit": "CORPORATE-A"},
   "recovery": 0.4,
   "funding_index": "TermSOFR3m",
   "funding_spread_curve": {
+    "reference_date": "2026-11-11",
     "dates": ["2026-11-11", "2028-11-11", "2030-11-11"],
-    "spreads": [0.004, 0.005, 0.006]
+    "rates": [0.004, 0.005, 0.006],
+    "rate_definition": {"day_counter": "Actual365", "compounding": "Continuous", "frequency": "Annual"},
+    "interpolator": "Linear",
+    "enable_extrapolation": true
   }
 }
 ```
 
-The recovery value converts to loss given default through `1 - recovery`. When a credit or funding index is present, the engine obtains term structure values from the corresponding constructed curve. The explicit funding-spread curve provides dated spreads directly.
+The recovery value converts to loss given default through `1 - recovery`. When a credit or funding index is present, the engine obtains term structure values from the corresponding constructed curve. The explicit funding-spread input reuses `ZeroRateTermStructure`, treating its rates as annualized spread quotes and respecting its reference date, day counter, interpolation, and extrapolation settings. The Python example defines CSA conditions directly in Python and can also pass `TenorBasedZeroRateTermStructure`; no dedicated funding-spread curve type is needed.
+
+Both zero curves support `f64` and `DualFwd` in Rust. Use `to_dual()` to convert
+scalar rates, `with_pillar_labels()` to name sensitivities, and
+`put_pillars_on_tape()` to register rates on the current tape. Their AD versions
+implement `ADCurveElement`; interpolation, discounting, forwards and rolling
+retain the links to the original zero-rate pillars. FVA uses this AD curve
+interface for its explicit funding spreads.
 
 The CSA implies `SingleCurveCSADiscountPolicy::new(collateral_index, collateral_currency)`. Claims denominated in the collateral currency use `collateral_index`. Claims in another currency use `MarketIndex::Collateral(ccy, collateral_currency)`. Every selected index needs a bootstrapped curve and an `LgmModelConfig` so deterministic valuation and path simulation share the same market identity.
 
 Optional fields follow a defined precedence when the engine builds aggregators:
 
-| Field set              | Aggregator                                                                                                                   |
-| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `credit_index`         | `CreditCurveCvaFactory` with pillar survivals from the bootstrapped credit curve (sensitivities labeled `<index>.pillar_i`) |
-| otherwise              | `CvaFactory` with \\(S(t)=e^{-\text{credit\\\_spread}\cdot t}\\)                                                             |
-| `funding_index`        | `FundingCurveFvaFactory` using the spread between the funding curve and the system curve (labels `<funding_index>.<date>`)   |
-| `funding_spread_curve` | `FundingCurveFvaFactory` with the explicit term structure (labels `funding_spread.<date>`)                                   |
-| otherwise              | `FvaFactory` with the flat `funding_spread`                                                                                  |
+| Field set | Aggregator |
+| --- | --- |
+| `credit_index` | `CreditCurveCvaFactory` with bootstrapped survival probabilities and CDS-quote sensitivities |
+| otherwise | `CvaFactory` with $S(t)=e^{-\text{credit\_spread}\,t}$ |
+| `funding_index` | `FundingCurveFvaFactory` with funding/system forward spreads plus any explicit spread overlay |
+| `funding_spread_curve` | `FundingCurveFvaFactory` with dated spreads, labeled `funding_spread.<date>` |
+| otherwise | `FvaFactory` with the flat `funding_spread` |
 
 Curve fields activate market-driven term structures. The flat credit and funding fields provide complete fallback assumptions for a compact setup.
+
+## Variation Margin
+
+`variation_margin` defaults to `false`, preserving the uncollateralized XVA
+behavior of existing configurations. When enabled, the engine maintains one
+signed collateral account per netting set and path. Amounts must be finite
+and non-negative and are expressed in collateral currency, independently of
+the engine's reporting currency.
+
+For raw exposure $V$, the target collateral balance is
+$C^* = \max(V-H_c,0) - \max(-V-H_o,0)$, where $H_c$ and $H_o$ are the
+counterparty and own thresholds. A transfer occurs when
+$|C^*-C| \geq \mathrm{MTA}$, including equality. Otherwise the existing
+balance is retained. Between calls, retained collateral accrues using the
+simulated CSA remuneration-curve interval discount factor. Foreign collateral
+is converted at the simulated FX rate.
+
+XVA aggregators consume $V-C$ after each call. Returned NPV cubes and
+EPE/ENE/EE profiles remain raw, pre-margin exposures. Margin calls occur on
+every simulation date, including the initial date, and settle immediately.
+Separate call frequency, settlement lag, margin period of risk, and initial
+margin are not modeled. Refine the simulation grid when studying call timing.
 
 ## Building claims
 

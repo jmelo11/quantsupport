@@ -15,6 +15,8 @@ Wiley, 2018
 This attribution and license notice must be preserved at the top of this file.
 */
 
+use crate::utils::errors::{QSError, Result};
+
 use std::cell::RefCell;
 
 use crate::{
@@ -22,7 +24,6 @@ use crate::{
     scripting::{
         nodes::node::*,
         parsing::lexer::{Token, Tokenize},
-        utils::errors::{Result, ScriptingError},
     },
     time::{date::Date, daycounter::DayCounter},
 };
@@ -149,20 +150,28 @@ impl Parser {
     }
 
     /// Create a new error for invalid syntax
-    fn invalid_syntax_err(&self, msg: &str) -> ScriptingError {
+    fn invalid_syntax_err(&self, msg: &str) -> QSError {
         let line = *self.line.borrow();
         let column = *self.column.borrow();
-        ScriptingError::InvalidSyntax(format!(
+        QSError::ParsingErr(format!(
             "Error at line {}, column {}: {}",
             line, column, msg
         ))
     }
 
+    fn parsing_context(&self, error: QSError, operation: &str) -> QSError {
+        error.context(format!(
+            "{operation} at line {}, column {}",
+            self.line.borrow(),
+            self.column.borrow()
+        ))
+    }
+
     /// Create a new error for unexpected token
-    fn unexpected_token_err(&self, expected: Token, received: Token) -> ScriptingError {
+    fn unexpected_token_err(&self, expected: Token, received: Token) -> QSError {
         let line = *self.line.borrow();
         let column = *self.column.borrow();
-        ScriptingError::UnexpectedToken(format!(
+        QSError::ParsingErr(format!(
             "Error at line {}, column {}: Expected token {:?}, found {:?}",
             line, column, expected, received
         ))
@@ -258,7 +267,7 @@ impl Parser {
             };
             pay_date = Some(
                 Date::from_str(&date_str, "%Y-%m-%d")
-                    .map_err(|_| self.invalid_syntax_err("Invalid date"))?,
+                    .map_err(|error| self.parsing_context(error, "parsing date"))?,
             );
         }
 
@@ -271,7 +280,7 @@ impl Parser {
             };
             currency = Some(
                 Currency::try_from(ccy_str)
-                    .map_err(|_| self.invalid_syntax_err("Invalid currency"))?,
+                    .map_err(|error| self.parsing_context(error, "parsing currency"))?,
             );
         }
 
@@ -671,8 +680,8 @@ impl Parser {
                 _ => (),
             },
             _ => {
-                return Err(ScriptingError::UnexpectedToken(format!(
-                    "{:?}",
+                return Err(self.invalid_syntax_err(&format!(
+                    "Expected expression, found {:?}",
                     self.current_token()
                 )))
             }
@@ -696,11 +705,11 @@ impl Parser {
                     let s2 = get_str((*b).clone())?;
                     let s3 = get_str((*c).clone())?;
                     Date::from_str(&s1, "%Y-%m-%d")
-                        .map_err(|_| self.invalid_syntax_err("Invalid date"))?;
+                        .map_err(|error| self.parsing_context(error, "parsing date"))?;
                     Date::from_str(&s2, "%Y-%m-%d")
-                        .map_err(|_| self.invalid_syntax_err("Invalid date"))?;
+                        .map_err(|error| self.parsing_context(error, "parsing date"))?;
                     DayCounter::try_from(s3)
-                        .map_err(|_| self.invalid_syntax_err("Invalid day counter"))?;
+                        .map_err(|error| self.parsing_context(error, "parsing day counter"))?;
                 } else {
                     return Err(self.invalid_syntax_err("Invalid number of arguments"));
                 }
@@ -785,7 +794,7 @@ impl Parser {
                 };
                 date = Some(
                     Date::from_str(&date_str, "%Y-%m-%d")
-                        .map_err(|_| self.invalid_syntax_err("Invalid date"))?,
+                        .map_err(|error| self.parsing_context(error, "parsing date"))?,
                 );
             }
             self.expect_token(Token::CloseParen)?;
@@ -800,7 +809,7 @@ impl Parser {
             match self.parse_string()? {
                 Node::String(s) => {
                     second = Currency::try_from(s)
-                        .map_err(|_| self.invalid_syntax_err("Invalid currency"))?;
+                        .map_err(|error| self.parsing_context(error, "parsing currency"))?;
                 }
                 _ => return Err(self.invalid_syntax_err("Invalid argument, expected string")),
             }
@@ -812,7 +821,7 @@ impl Parser {
                 };
                 date = Some(
                     Date::from_str(&date_str, "%Y-%m-%d")
-                        .map_err(|_| self.invalid_syntax_err("Invalid date"))?,
+                        .map_err(|error| self.parsing_context(error, "parsing date"))?,
                 );
             }
         }
@@ -831,7 +840,7 @@ impl Parser {
             _ => return Err(self.invalid_syntax_err("Invalid argument, expected string")),
         };
         let date = Date::from_str(&date_str, "%Y-%m-%d")
-            .map_err(|_| self.invalid_syntax_err("Invalid date"))?;
+            .map_err(|error| self.parsing_context(error, "parsing date"))?;
         let mut curve: Option<String> = None;
         if self.current_token() == Token::Comma {
             self.advance();
@@ -871,9 +880,9 @@ impl Parser {
         self.advance();
 
         let start = Date::from_str(&start_str, "%Y-%m-%d")
-            .map_err(|_| self.invalid_syntax_err("Invalid date"))?;
+            .map_err(|error| self.parsing_context(error, "parsing date"))?;
         let end = Date::from_str(&end_str, "%Y-%m-%d")
-            .map_err(|_| self.invalid_syntax_err("Invalid date"))?;
+            .map_err(|error| self.parsing_context(error, "parsing date"))?;
 
         Ok(Node::new_rate_index(name, start, end))
     }
@@ -991,7 +1000,7 @@ impl Parser {
 }
 
 impl TryFrom<String> for Node {
-    type Error = ScriptingError;
+    type Error = QSError;
 
     fn try_from(script: String) -> Result<Node> {
         let tokens = script.tokenize()?;
@@ -1001,7 +1010,7 @@ impl TryFrom<String> for Node {
 }
 
 impl TryFrom<&str> for Node {
-    type Error = ScriptingError;
+    type Error = QSError;
 
     fn try_from(script: &str) -> Result<Node> {
         let tokens = script.to_string().tokenize()?;
@@ -1015,6 +1024,20 @@ impl TryFrom<&str> for Node {
 mod other_tests {
     use super::*;
     use crate::scripting::parsing::lexer::Lexer;
+
+    #[test]
+    fn malformed_expression_uses_shared_parsing_error() {
+        let error = Node::try_from("value = (1 + );").unwrap_err();
+        assert!(matches!(error.root_cause(), QSError::ParsingErr(_)));
+        assert!(error.to_string().contains("line 1"));
+    }
+
+    #[test]
+    fn invalid_payment_date_preserves_date_parser_error() {
+        let error = Node::try_from("value = 0; value pays 1 on \"invalid\";").unwrap_err();
+        assert!(matches!(error.root_cause(), QSError::DateParsingErr(_)));
+        assert!(error.to_string().contains("parsing date at line 1"));
+    }
 
     #[test]
     fn test_negative_expression() {

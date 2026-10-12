@@ -23,20 +23,23 @@ Each pricer specializes the common contract for one payoff family and one valuat
 
 | Pricer                                                 | Trade type                                                                                                              | Requests                                  | Market data                                                       | Model                                      |
 | ------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------- | ----------------------------------------- | ----------------------------------------------------------------- | ------------------------------------------ |
-| `DiscountedCashflowPricer<I, T>::new()`                | any `T: LegsProvider<DualFwd> + Trade<I>` (swaps, basis swaps, XCCY swaps, bonds, FRNs, deposits, FX forwards via legs) | Value, FairRate, Cashflows, Sensitivities | discount curve per leg index, FX for cross-currency legs, fixings | \\(\sum_i CF_i\\,P(T_i)\\)                 |
+| `DiscountedCashflowPricer<I, T>::new()`                | any linear `T: LegsProvider<DualFwd> + Trade<I>` (swaps, OIS, basis swaps, XCCY swaps, FRNs, deposits) | Value, FairRate, Cashflows, Sensitivities | discount curve per leg index, FX for cross-currency legs, fixings | \\(\sum_i CF_i\\,P(T_i)\\)                 |
+| `BondPricer::new()`                           | `FixedRateBondTrade<DualFwd>`                                                                                           | Value, YieldToMaturity, ModifiedDuration, ZSpread, Cashflows, Sensitivities | discount curve                                                    | deterministic spread discounting             |
+| `TreeBasedBondPricer::new()` / `BackwardFourierEvolutionBondPricer::new()` | `SteppedCouponBondTrade<DualFwd>` | Value, OAS, Cashflows, Sensitivities | discount and forward curves; `PricerConfiguration` and typed model | Hull-White trinomial tree or backward Fourier evolution |
 | `CdsPricer::new()`                                     | `CdsTrade`                                                                                                              | Value, FairRate, Sensitivities            | credit curve `MarketIndex::Credit(name)`, discount curve          | premium/protection legs on survival curve  |
+| `EquityForwardPricer::new()` | `EquityForwardTrade` | Value, FairRate, Sensitivities | evaluation-date spot fixing, forwarding curve, optional dividend curve, policy-selected discount curve | discounted forward payoff |
 | `BlackEuropeanOptionPricer::new()`                     | `EquityEuropeanOptionTrade`                                                                                             | Value, Sensitivities                      | spot, equity surface, discount curve, dividend                    | Black-Scholes                              |
 | `BlackMCEuropeanOptionPricer::new()`                   | `EquityEuropeanOptionTrade`                                                                                             | Value, Sensitivities                      | a `SimulationConfiguration`-generated path set                    | \\(P(T)\\,\mathbb E[\text{payoff}(S_T)]\\) |
 | `FxForwardPricer::new()`                               | `FxForwardTrade`                                                                                                        | Value, FairRate, Sensitivities            | base/quote discount curves, spot                                  | \\(F = S\\,P_{base}/P_{quote}\\)           |
-| `FxOptionPricer::new()`                                | `FxOptionTrade`                                                                                                         | Value, Sensitivities                      | base/quote curves, spot, FX surface                               | Garman-Kohlhagen                           |
+| `FxEuropeanOptionPricer::new()`                                | `FxEuropeanOptionTrade`                                                                                                         | Value, Sensitivities                      | base/quote curves, spot, FX surface                               | Garman-Kohlhagen                           |
 | `ClosedFormBlackCapletPricer::new()`                   | `CapletFloorletTrade`                                                                                                   | Value, Sensitivities                      | forward curve, surface at (fixing, strike)                        | Black-76                                   |
 | `ClosedFormBlackCapPricer::new()`                      | `CapFloorTrade`                                                                                                         | Value, Sensitivities                      | same                                                              | sum of Black-76 caplets                    |
 | `ClosedFormHullWhiteCapletPricer::new(alpha, sigma)`   | `CapletFloorletTrade`                                                                                                   | Value, Sensitivities                      | discount curve                                                    | bond-put representation                    |
 | `ClosedFormHullWhiteCapPricer::new(alpha, sigma)`      | `CapFloorTrade`                                                                                                         | Value, Sensitivities                      | discount curve                                                    | sum of HW caplets                          |
-| `ClosedFormHullWhiteSwaptionPricer::new(alpha, sigma)` | `EuropeanSwaptionTrade<T>`                                                                                              | Value, Sensitivities                      | discount curve                                                    | Jamshidian                                 |
+| `ClosedFormHullWhiteSwaptionPricer::new(alpha, sigma)` / `from_configuration(&config, &index)` | `EuropeanSwaptionTrade<DualFwd>` | Value, Sensitivities | forwarding and policy-selected discount curves; calibrated models also need a surface/cube and quote details | Jamshidian with constant or piecewise sigma |
 | `RateFuturesPricer::new()`                             | `RateFuturesTrade`                                                                                                      | Value, Sensitivities                      | curve of `market_index`                                           | \\(Q = 100 - 100F\\)                       |
 
-The table also shows that market-data needs belong to the valuation method. A closed-form option pricer requests a volatility surface. A Monte Carlo pricer requests simulated paths. `Request::YieldToMaturity` and `Request::ModifiedDuration` are reserved in the request enum for specialized fixed-income implementations.
+The table also shows that market-data needs belong to the valuation method. A closed-form option pricer requests a volatility surface. A Monte Carlo pricer requests simulated paths. Straight fixed-rate bonds own quoted-price conversion, yield, duration, and Z-spread. Callable stepped-coupon bonds own price/OAS conversion and select their numerical engine through `InstrumentType::SteppedCouponBond`. See [Bond Pricing](bonds.md).
 
 ## Discount policies
 
@@ -67,7 +70,7 @@ The installed policy is reused for every leg valued by this pricer. Its explicit
 
 ## Results
 
-`EvaluationResults` collects the outputs produced for a request set. Its accessors expose price, fair rate, sensitivities, and detailed cashflows. A caller should request only the measures needed for that operation, then inspect the corresponding optional result.
+`EvaluationResults` collects the outputs produced for a request set. Its accessors expose price, yield, modified duration, Z-spread, OAS, fair rate, sensitivities, and detailed cashflows. A caller should request only the measures needed for that operation, then inspect the corresponding optional result. Unsupported requests may return `InvalidValueErr` or leave fields empty, depending on the pricer.
 
 Sensitivities come from one reverse sweep from the price to the quote leaves of every curve and volatility object used. The report labels them with market identifiers such as `OIS_USD_SOFR_5Y` and `CapletFloorlet_..._Black`. `SensitivityMap::aggregate()` combines repeated labels that arrive through multiple dependency paths.
 
@@ -78,12 +81,17 @@ A concrete Rust pricer retains its trade type at compile time. A heterogeneous p
 ```rust,ignore
 let mut pricers: HashMap<TypeId, Box<dyn ErasedPricer>> = HashMap::new();
 pricers.insert(TypeId::of::<SwapTrade<DualFwd>>(), Box::new(DiscountedCashflowPricer::<Swap<DualFwd>, SwapTrade<DualFwd>>::new()));
-pricers.insert(TypeId::of::<FxOptionTrade>(), Box::new(FxOptionPricer::new()));
+let mut fx_pricer = FxEuropeanOptionPricer::new();
+fx_pricer.set_discount_policy(Box::new(SingleCurveCSADiscountPolicy::new(
+    MarketIndex::SOFR,
+    Currency::USD,
+)));
+pricers.insert(TypeId::of::<FxEuropeanOptionTrade>(), Box::new(fx_pricer));
 let evaluator = Evaluator::new(pricers);
 let results = evaluator.evaluate(&trade as &dyn Any, &[Request::Value], &context)?;
 ```
 
-At evaluation time, the registry selects the entry matching the concrete trade and delegates the same request set and context. An absent registration becomes an explicit dispatch error. The `examples/evaluator` program shows this pattern with a mixed portfolio.
+At evaluation time, the registry selects the entry matching the concrete trade and delegates the same request set and context. An absent registration becomes an explicit dispatch error. The [Rust API](../getting-started/rust-api.md#static-and-dynamic-dispatch) chapter shows the full registration imports for this pattern.
 
 ## What to remember
 

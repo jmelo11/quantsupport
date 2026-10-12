@@ -27,10 +27,9 @@ use crate::{
     scripting::{
         nodes::{event::EventStream, node::Node},
         runtime::ScriptEngine,
-        utils::errors::{Result, ScriptingError},
     },
     time::date::Date,
-    utils::errors::{QSError, Result as QSResult},
+    utils::errors::{QSError, Result},
     xva::{
         claimevaluationstrategy::ClaimEvaluationStrategy,
         contigentclaim::ContingentClaim,
@@ -91,12 +90,12 @@ impl ScriptedProduct {
         payments.sort_unstable_by_key(|payment| payment.id);
 
         if payments.is_empty() {
-            return Err(ScriptingError::InvalidOperation(
+            return Err(QSError::InvalidValueErr(
                 "a scripted product must contain at least one pays expression".to_string(),
             ));
         }
         if payments.iter().any(|payment| payment.date < reference_date) {
-            return Err(ScriptingError::InvalidOperation(
+            return Err(QSError::InvalidValueErr(
                 "scripted payment dates cannot precede the reference date".to_string(),
             ));
         }
@@ -128,13 +127,13 @@ impl ScriptedProduct {
     ///
     /// # Errors
     /// Returns an error if a contingent claim cannot be built.
-    pub fn contingent_claims(&self) -> QSResult<Vec<ContingentClaim>> {
+    pub fn contingent_claims(&self) -> Result<Vec<ContingentClaim>> {
         self.into_contingent_claims(&self.id)
     }
 }
 
 impl IntoContingentClaims for ScriptedProduct {
-    fn into_contingent_claims(&self, trade_id: &str) -> QSResult<Vec<ContingentClaim>> {
+    fn into_contingent_claims(&self, trade_id: &str) -> Result<Vec<ContingentClaim>> {
         self.payments
             .iter()
             .map(|payment| {
@@ -158,18 +157,28 @@ impl IntoContingentClaims for ScriptedProduct {
 }
 
 impl ScriptedPayoff {
-    pub(crate) fn simulation_requests(&self) -> &[SimulationRequest] {
+    /// Returns the model observations needed to evaluate this payment.
+    pub fn simulation_requests(&self) -> &[SimulationRequest] {
         self.engine.model_requests()
     }
 
-    pub(crate) fn evaluate(
+    /// Evaluates the payment from the supplied simulated market observations.
+    ///
+    /// # Errors
+    /// Returns an error when the script cannot evaluate the requested payment.
+    pub fn evaluate(
         &self,
         valuation_date: Date,
         responses: &[SimulationResponse<DualFwd>],
-    ) -> QSResult<DualFwd> {
+    ) -> Result<DualFwd> {
         self.engine
             .evaluate_payment(self.payment_id, valuation_date, responses)
-            .map_err(|error| QSError::EvaluationErr(error.to_string()))
+            .map_err(|error| {
+                error.context(format!(
+                    "evaluating scripted payment {} on {valuation_date}",
+                    self.payment_id
+                ))
+            })
     }
 }
 
@@ -186,7 +195,7 @@ fn collect_payments(
             }
             payments.push(ScriptPayment {
                 id: data.id.ok_or_else(|| {
-                    ScriptingError::EvaluationError("payment was not indexed".to_string())
+                    QSError::ValueNotSetErr("payment was not indexed".to_string())
                 })?,
                 date: data.date.unwrap_or(event_date),
                 currency: data.currency.unwrap_or(local_currency),
@@ -250,7 +259,7 @@ mod tests {
     };
 
     #[test]
-    fn converts_payments_to_contingent_claims() -> QSResult<()> {
+    fn converts_payments_to_contingent_claims() -> Result<()> {
         let reference_date = Date::new(2025, 1, 1);
         let first_date = Date::new(2026, 1, 1);
         let second_date = Date::new(2027, 1, 1);
@@ -260,16 +269,14 @@ mod tests {
                 first_date,
                 "value pays -25 on \"2027-01-01\" in \"EUR\";".to_string(),
             ),
-        ])
-        .map_err(|error| QSError::EvaluationErr(error.to_string()))?;
+        ])?;
         let product = ScriptedProduct::new(
             "scripted",
             events,
             reference_date,
             Currency::USD,
             MarketIndex::SOFR,
-        )
-        .map_err(|error| QSError::EvaluationErr(error.to_string()))?;
+        )?;
 
         let claims = product.contingent_claims()?;
         assert_eq!(claims.len(), 2);
@@ -285,7 +292,7 @@ mod tests {
     }
 
     #[test]
-    fn xva_engine_values_scripted_contingent_claims() -> QSResult<()> {
+    fn xva_engine_values_scripted_contingent_claims() -> Result<()> {
         let reference_date = Date::new(2025, 1, 1);
         let maturity = Date::new(2026, 1, 1);
         let final_date = Date::new(2027, 1, 1);
@@ -321,20 +328,22 @@ mod tests {
                 "value pays 50;"
             )
             .to_string(),
-        )])
-        .map_err(|error| QSError::EvaluationErr(error.to_string()))?;
+        )])?;
         let product = ScriptedProduct::new(
             "scripted_cashflow",
             events,
             reference_date,
             Currency::USD,
             MarketIndex::SOFR,
-        )
-        .map_err(|error| QSError::EvaluationErr(error.to_string()))?;
+        )?;
 
         let csa = CsaTerms {
             collateral_index: MarketIndex::SOFR,
             collateral_currency: Currency::USD,
+            variation_margin: false,
+            counterparty_threshold: 0.0,
+            own_threshold: 0.0,
+            minimum_transfer_amount: 0.0,
             credit_spread: 0.01,
             recovery: 0.4,
             funding_spread: 0.005,

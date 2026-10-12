@@ -20,20 +20,29 @@ use crate::{
         rates::europeanswaption::{EuropeanSwaptionTrade, SwaptionType},
     },
     math::probability::norm_cdf::norm_cdf,
+    models::{
+        hullwhite::parameters::{hull_white_piecewise_variance, HullWhiteParameters},
+        modelconfiguration::{
+            GaussianRateModelParameters, GaussianRateParameterSource, ModelConfiguration,
+            ParameterSource,
+        },
+    },
     rates::yieldtermstructure::interestratestermstructure::InterestRatesTermStructure,
     time::date::Date,
     utils::errors::{QSError, Result},
+    volatility::modelcalibration::CalibrationSource,
 };
 
 /// Prices European payer and receiver swaptions in the one-factor Hull-White model.
 ///
 /// The pricer uses Jamshidian decomposition to express the option as a portfolio
 /// of zero-coupon bond puts (payer) or calls (receiver). `alpha` is the
-/// mean-reversion speed and `sigma` is the constant short-rate volatility.
+/// mean-reversion speed. Volatility can be supplied directly or resolved by
+/// the shared Hull-White calibration from a surface or cube.
 ///
 /// Curve inputs remain on the AD tape throughout the decomposition, including
 /// the implicit critical-rate solve, so [`Request::Sensitivities`] returns
-/// sensitivities to the requested curve pillars.
+/// sensitivities to the requested curve and calibration volatility pillars.
 ///
 /// When a [`DiscountPolicy`] selects a curve different from the swap's forward
 /// curve, each bond-option component receives the same deterministic
@@ -41,7 +50,7 @@ use crate::{
 /// and caplet pricers.
 pub struct ClosedFormHullWhiteSwaptionPricer {
     alpha: f64,
-    sigma: f64,
+    parameter_source: GaussianRateParameterSource,
     discount_policy: Option<Box<dyn DiscountPolicy>>,
 }
 
@@ -49,7 +58,6 @@ pub struct ClosedFormHullWhiteSwaptionPricer {
 struct JamshidianTerm {
     payment_date: Date,
     coefficient: f64,
-    bond_time: f64,
     b: f64,
     affine_a: DualFwd,
     forward_df: DualFwd,
@@ -61,9 +69,45 @@ impl ClosedFormHullWhiteSwaptionPricer {
     pub fn new(alpha: f64, sigma: f64) -> Self {
         Self {
             alpha,
-            sigma,
+            parameter_source: ParameterSource::Fixed(GaussianRateModelParameters::new(sigma)),
             discount_policy: None,
         }
+    }
+
+    /// Builds the pricer from a fixed or calibrated Hull-White assignment.
+    /// # Errors
+    /// Rejects missing models, incompatible engines and invalid fixed parameters.
+    pub fn from_configuration(
+        configuration: &crate::core::pricerconfiguration::PricerConfiguration,
+        index: &crate::indices::marketindex::MarketIndex,
+    ) -> Result<Self> {
+        use crate::core::pricerconfiguration::{InstrumentType, PricerImplementation};
+        if configuration.instrument_type() != InstrumentType::EuropeanSwaption
+            || !matches!(
+                configuration.pricer(),
+                PricerImplementation::HullWhiteClosedForm
+            )
+        {
+            return Err(QSError::InvalidValueErr(
+                "EuropeanSwaption requires HullWhiteClosedForm".into(),
+            ));
+        }
+        let Some(ModelConfiguration::HullWhite {
+            alpha,
+            parameter_source,
+        }) = configuration.model(index)
+        else {
+            return Err(QSError::InvalidValueErr(format!(
+                "EuropeanSwaption requires a HullWhite model for {index}"
+            )));
+        };
+        let pricer = Self {
+            alpha: *alpha,
+            parameter_source: parameter_source.clone(),
+            discount_policy: None,
+        };
+        pricer.validate_parameters()?;
+        Ok(pricer)
     }
 
     fn validate_parameters(&self) -> Result<()> {
@@ -72,10 +116,8 @@ impl ClosedFormHullWhiteSwaptionPricer {
                 "Hull-White alpha must be finite and positive".into(),
             ));
         }
-        if !self.sigma.is_finite() || self.sigma < 0.0 {
-            return Err(QSError::InvalidValueErr(
-                "Hull-White sigma must be finite and non-negative".into(),
-            ));
+        if let ParameterSource::Fixed(parameters) = &self.parameter_source {
+            parameters.validate()?;
         }
         Ok(())
     }
@@ -85,18 +127,12 @@ impl ClosedFormHullWhiteSwaptionPricer {
         (1.0 - (-self.alpha * (bond_time - option_time)).exp()) / self.alpha
     }
 
-    fn zcb_price_volatility(&self, option_time: f64, bond_time: f64) -> f64 {
-        let b = self.b(option_time, bond_time);
-        self.sigma
-            * b
-            * ((1.0 - (-2.0 * self.alpha * option_time).exp()) / (2.0 * self.alpha)).sqrt()
-    }
-
     /// AD-enabled `A(t,T)` for `P(t,T|r) = A(t,T) * exp(-B(t,T) * r)`.
     fn affine_a(
         &self,
         option_time: f64,
         bond_time: f64,
+        state_variance: DualFwd,
         curve: &dyn InterestRatesTermStructure<DualFwd>,
     ) -> Result<DualFwd> {
         let b = self.b(option_time, bond_time);
@@ -106,10 +142,7 @@ impl ClosedFormHullWhiteSwaptionPricer {
         let h = 1.0 / 365.0;
         let option_df_plus = curve.discount_factor_from_time(option_time + h)?;
         let forward_at_option: DualFwd = (-(option_df_plus / option_df).ln() / h).into();
-        let variance_adjustment = self.sigma * self.sigma / (4.0 * self.alpha)
-            * (1.0 - (-2.0 * self.alpha * option_time).exp())
-            * b
-            * b;
+        let variance_adjustment: DualFwd = (state_variance * (0.5 * b * b)).into();
         let log_a: DualFwd =
             ((bond_df / option_df).ln() + forward_at_option * b - variance_adjustment).into();
         Ok(log_a.exp())
@@ -180,18 +213,14 @@ impl ClosedFormHullWhiteSwaptionPricer {
     }
 
     fn bond_option(
-        &self,
         option_type: SwaptionType,
-        option_time: f64,
-        bond_time: f64,
+        bond_volatility: DualFwd,
         strike: DualFwd,
         option_df: DualFwd,
         bond_df: DualFwd,
     ) -> DualFwd {
         let strike_value: DualFwd = (strike * option_df).into();
-        let bond_volatility = self.zcb_price_volatility(option_time, bond_time);
-
-        if bond_volatility <= 1e-12 {
+        if bond_volatility.value() <= 1e-12 {
             let intrinsic: DualFwd = match option_type {
                 SwaptionType::Payer => (strike_value - bond_df).into(),
                 SwaptionType::Receiver => (bond_df - strike_value).into(),
@@ -204,7 +233,7 @@ impl ClosedFormHullWhiteSwaptionPricer {
         }
 
         let d1: DualFwd = (((bond_df / strike_value).ln()
-            + 0.5 * bond_volatility * bond_volatility)
+            + bond_volatility * bond_volatility * 0.5)
             / bond_volatility)
             .into();
         let d2: DualFwd = (d1 - bond_volatility).into();
@@ -224,6 +253,7 @@ impl ClosedFormHullWhiteSwaptionPricer {
         &self,
         trade: &EuropeanSwaptionTrade<DualFwd>,
         state: &HullWhiteSwaptionState,
+        parameters: &HullWhiteParameters<DualFwd>,
     ) -> Result<DualFwd> {
         let swaption = trade.instrument();
         let forward_index = swaption.market_index();
@@ -235,7 +265,10 @@ impl ClosedFormHullWhiteSwaptionPricer {
         let forward_curve = state.get_discount_curve_element(&forward_index)?.curve();
         let reference_date = forward_curve.reference_date();
         let rate_definition = forward_index.rate_index_details()?.rate_definition();
-        let day_counter = rate_definition.day_counter();
+        let day_counter = parameters
+            .day_counter()
+            .or_else(|| forward_curve.day_counter())
+            .unwrap_or_else(|| rate_definition.day_counter());
         let option_time = day_counter.year_fraction(reference_date, swaption.expiry_date());
         if option_time < 0.0 {
             return Err(QSError::InvalidValueErr(format!(
@@ -243,6 +276,18 @@ impl ClosedFormHullWhiteSwaptionPricer {
                 swaption.expiry_date()
             )));
         }
+        let state_variance = hull_white_piecewise_variance(
+            parameters.alpha(),
+            parameters.sigma_schedule(),
+            0.0,
+            option_time,
+        );
+        // Avoid a singular sqrt derivative for an expired or zero-volatility option.
+        let state_std_dev = if state_variance.value() > 0.0 {
+            state_variance.sqrt()
+        } else {
+            DualFwd::zero()
+        };
 
         let fixed_coupons: Vec<_> = swaption
             .underlying()
@@ -283,9 +328,8 @@ impl ClosedFormHullWhiteSwaptionPricer {
             terms.push(JamshidianTerm {
                 payment_date,
                 coefficient,
-                bond_time,
                 b: self.b(option_time, bond_time),
-                affine_a: self.affine_a(option_time, bond_time, &*forward_curve)?,
+                affine_a: self.affine_a(option_time, bond_time, state_variance, &*forward_curve)?,
                 forward_df: forward_curve.discount_factor(payment_date)?,
             });
         }
@@ -304,10 +348,9 @@ impl ClosedFormHullWhiteSwaptionPricer {
         for term in &terms {
             let exponent: DualFwd = (critical_rate * -term.b).into();
             let bond_strike: DualFwd = (term.affine_a * exponent.exp()).into();
-            let mut component = self.bond_option(
+            let mut component = Self::bond_option(
                 swaption.underlying_type(),
-                option_time,
-                term.bond_time,
+                (state_std_dev * term.b).into(),
                 bond_strike,
                 option_df,
                 term.forward_df,
@@ -349,11 +392,32 @@ impl HandleValue<EuropeanSwaptionTrade<DualFwd>, HullWhiteSwaptionState>
         state: &mut HullWhiteSwaptionState,
     ) -> Result<f64> {
         self.validate_parameters()?;
+        let market = state
+            .market_data
+            .as_ref()
+            .ok_or_else(|| QSError::ValueNotSetErr("Swaption market data".into()))?;
+        let mut parameters = HullWhiteParameters::new(ModelConfiguration::HullWhite {
+            alpha: self.alpha,
+            parameter_source: self.parameter_source.clone(),
+        })?;
+        parameters.resolve_calibration(market, &trade.instrument().market_index())?;
         Tape::start_recording_fwd();
         let value = (|| {
             Tape::set_mark_fwd();
             state.put_pillars_on_tape()?;
-            self.swaption_value(trade, state)
+            let market = state
+                .market_data
+                .as_mut()
+                .ok_or_else(|| QSError::ValueNotSetErr("Swaption market data".into()))?;
+            for cube in market
+                .constructed_elements_mut()
+                .volatility_cubes_mut()
+                .values_mut()
+            {
+                cube.cube_mut().put_pillars_on_tape();
+            }
+            let parameters = parameters.ad_parameters(market)?;
+            self.swaption_value(trade, state, &parameters)
         })();
         Tape::stop_recording_fwd();
 
@@ -383,33 +447,27 @@ impl HandleSensitivities<EuropeanSwaptionTrade<DualFwd>, HullWhiteSwaptionState>
         };
         value.backward_to_mark()?;
 
-        let swaption = trade.instrument();
-        let forward_index = swaption.market_index();
-        let discount_index = if let Some(policy) = &self.discount_policy {
-            policy.accept(swaption)?
-        } else {
-            forward_index.clone()
-        };
         let mut identifiers = Vec::new();
         let mut exposures = Vec::new();
-
-        for (label, pillar) in state
-            .get_discount_curve_element(&discount_index)?
-            .curve()
-            .pillars()
-            .unwrap_or_default()
-        {
-            identifiers.push(label);
-            exposures.push(pillar.adjoint()?.value());
+        let elements = state
+            .market_data
+            .as_ref()
+            .ok_or_else(|| QSError::ValueNotSetErr("Swaption market data".into()))?
+            .constructed_elements();
+        for curve in elements.discount_curves().values() {
+            for (label, pillar) in curve.curve().pillars().into_iter().flatten() {
+                identifiers.push(label);
+                exposures.push(pillar.adjoint()?.value());
+            }
         }
-
-        if forward_index != discount_index {
-            for (label, pillar) in state
-                .get_discount_curve_element(&forward_index)?
-                .curve()
-                .pillars()
-                .unwrap_or_default()
-            {
+        for surface in elements.volatility_surfaces().values() {
+            for (label, pillar) in surface.surface().pillars().into_iter().flatten() {
+                identifiers.push(label);
+                exposures.push(pillar.adjoint()?.value());
+            }
+        }
+        for cube in elements.volatility_cubes().values() {
+            for (label, pillar) in cube.cube().pillars().into_iter().flatten() {
                 identifiers.push(label);
                 exposures.push(pillar.adjoint()?.value());
             }
@@ -478,7 +536,31 @@ impl Pricer for ClosedFormHullWhiteSwaptionPricer {
             }
         }
 
-        Some(MarketDataRequest::default().with_constructed_elements_request(elements))
+        let mut request = MarketDataRequest::default();
+        if let ParameterSource::Calibrated(calibration) = &self.parameter_source {
+            let (index, volatility) = match calibration.source() {
+                CalibrationSource::Surface { market_index } => (
+                    market_index,
+                    ConstructedElementRequest::VolatilitySurface {
+                        market_index: market_index.clone(),
+                    },
+                ),
+                CalibrationSource::Cube { market_index } => (
+                    market_index,
+                    ConstructedElementRequest::VolatilityCube {
+                        market_index: market_index.clone(),
+                    },
+                ),
+            };
+            elements.push(volatility);
+            if seen.insert(index.clone()) {
+                elements.push(ConstructedElementRequest::DiscountCurve {
+                    market_index: index.clone(),
+                });
+            }
+            request = request.with_calibration_request(calibration.clone());
+        }
+        Some(request.with_constructed_elements_request(elements))
     }
 
     fn set_discount_policy(&mut self, policy: Box<Self::Policy>) {
@@ -534,11 +616,275 @@ mod tests {
         utils::errors::Result,
     };
 
+    #[test]
+    fn configuration_accepts_shared_fixed_and_calibrated_models() -> Result<()> {
+        use crate::prelude::PricerConfiguration;
+        let parse = |model: serde_json::Value| -> Result<PricerConfiguration> {
+            serde_json::from_value(serde_json::json!({"instrument_type":"EuropeanSwaption","pricer":"HullWhiteClosedForm",
+                "models":[{"market_index":"SOFR","model":model}]})).map_err(|error|crate::prelude::QSError::InvalidValueErr(error.to_string()))
+        };
+        let fixed = parse(
+            serde_json::json!({"HullWhite":{"alpha":0.1,"parameter_source":{"Fixed":{"sigma":0.01}}}}),
+        )?;
+        assert!(
+            ClosedFormHullWhiteSwaptionPricer::from_configuration(&fixed, &MarketIndex::SOFR)
+                .is_ok()
+        );
+        assert!(
+            ClosedFormHullWhiteSwaptionPricer::from_configuration(&fixed, &MarketIndex::SONIA)
+                .is_err()
+        );
+        let calibrated = parse(
+            serde_json::json!({"HullWhite":{"alpha":0.1,"parameter_source":{"Calibrated":{
+            "source":{"Surface":{"market_index":"SOFR"}},"calibration_basket":{"strike":"Atm"}}}}}),
+        )?;
+        assert!(ClosedFormHullWhiteSwaptionPricer::from_configuration(
+            &calibrated,
+            &MarketIndex::SOFR
+        )
+        .is_ok());
+        Ok(())
+    }
+
     const ALPHA: f64 = 0.1;
     const SIGMA: f64 = 0.01;
     const RATE: f64 = 0.04;
     const STRIKE: f64 = 0.04;
     const NOTIONAL: f64 = 1_000_000.0;
+
+    fn calibrated_context(
+        cube: bool,
+        bump: Option<(&str, f64)>,
+    ) -> Result<(
+        crate::prelude::PricingContext,
+        crate::prelude::PricerConfiguration,
+    )> {
+        use crate::prelude::*;
+        let mut quotes = QuoteStore::new(reference_date());
+        let mut identifiers = Vec::new();
+        for (expiry, volatility) in [("1Y", 0.20), ("2Y", 0.30), ("3Y", 0.40)] {
+            for strike in ["0.02", "0.06"] {
+                let identifier = if cube {
+                    format!("Swaption_USD_SOFR_{expiry}_5Y_Absolute_{strike}_Black")
+                } else {
+                    format!("CapletFloorlet_USD_SOFR_3M_{expiry}_Absolute_{strike}_Straddle_Black")
+                };
+                let amount = bump
+                    .filter(|(label, _)| *label == identifier)
+                    .map_or(0.0, |(_, amount)| amount);
+                quotes.add_quote(Quote::new(
+                    identifier.parse()?,
+                    QuoteLevels::with_mid(volatility + amount),
+                ));
+                identifiers.push(identifier);
+            }
+        }
+        let source = if cube {
+            CalibrationSource::Cube {
+                market_index: MarketIndex::SOFR,
+            }
+        } else {
+            CalibrationSource::Surface {
+                market_index: MarketIndex::SOFR,
+            }
+        };
+        let calibration = ModelCalibrationConfiguration::new(source)
+            .with_calibration_basket(CalibrationBasket::all().with_strike(Strike::Atm));
+        let configuration = PricerConfiguration::new(
+            InstrumentType::EuropeanSwaption,
+            PricerImplementation::HullWhiteClosedForm,
+            vec![PricingModelConfiguration::new(
+                MarketIndex::SOFR,
+                ModelConfiguration::HullWhite {
+                    alpha: ALPHA,
+                    parameter_source: ParameterSource::Calibrated(calibration),
+                },
+            )],
+        );
+        // Deliberately differs from the SOFR index clock: calibration and pricing
+        // must both use the curve's time scale.
+        let curve = FlatForwardTermStructure::new(
+            reference_date(),
+            DualFwd::from(RATE),
+            RateDefinition::new(
+                DayCounter::Actual365,
+                Compounding::Continuous,
+                Frequency::Annual,
+            ),
+        )
+        .with_pillar_label("SOFR_flat".into());
+        let mut elements = ConstructedElementStore::default();
+        elements.discount_curves_mut().insert(
+            MarketIndex::SOFR,
+            DiscountCurveElement::new(MarketIndex::SOFR, Rc::new(RefCell::new(curve))),
+        );
+        let mut context = PricingContext::new()
+            .with_quote_store(quotes)
+            .with_constructed_elements(elements)
+            .with_pricer_configurations(vec![configuration.clone()]);
+        if cube {
+            context = context.with_volatility_cube_configurations(vec![
+                VolatilityCubeConfiguration::new(
+                    MarketIndex::SOFR,
+                    VolatilityType::Black,
+                    SmileType::Strike,
+                    identifiers,
+                ),
+            ]);
+        } else {
+            context = context.with_volatility_surface_configurations(vec![
+                VolatilitySurfaceConfiguration::new(
+                    MarketIndex::SOFR,
+                    VolatilityType::Black,
+                    SmileType::Strike,
+                    identifiers,
+                ),
+            ]);
+        }
+        context.initialize()?;
+        Ok((context, configuration))
+    }
+
+    fn calibrated_trade(option_type: SwaptionType) -> Result<EuropeanSwaptionTrade<DualFwd>> {
+        let expiry = reference_date() + Period::new(30, TimeUnit::Months);
+        let swaption = MakeSwaption::<DualFwd>::default()
+            .with_identifier("CALIBRATED_SWAPTION".into())
+            .with_expiry(expiry)
+            .with_swap_tenor_date(expiry + Period::new(5, TimeUnit::Years))
+            .with_strike(STRIKE)
+            .with_notional(1.0)
+            .with_rate_definition(RateDefinition::default())
+            .with_market_index(MarketIndex::SOFR)
+            .with_currency(Currency::USD)
+            .with_swaption_type(option_type)
+            .with_fixed_leg_frequency(Frequency::Annual)
+            .with_floating_leg_frequency(Frequency::Quarterly)
+            .build()?;
+        Ok(EuropeanSwaptionTrade::new(
+            swaption,
+            reference_date(),
+            NOTIONAL,
+            Side::LongReceive,
+        ))
+    }
+
+    #[test]
+    fn calibrated_surface_and_cube_use_shared_piecewise_variance() -> Result<()> {
+        use crate::models::hullwhite::parameters::HullWhiteParameters;
+        for cube in [false, true] {
+            let (context, configuration) = calibrated_context(cube, None)?;
+            let pricer = ClosedFormHullWhiteSwaptionPricer::from_configuration(
+                &configuration,
+                &MarketIndex::SOFR,
+            )?;
+            for option_type in [SwaptionType::Payer, SwaptionType::Receiver] {
+                let trade = calibrated_trade(option_type)?;
+                let request = pricer.market_data_request(&trade).unwrap();
+                assert!(request.calibration_request().is_some());
+                let market = context.handle_request(&request)?;
+                let mut parameters = HullWhiteParameters::new(
+                    configuration.model(&MarketIndex::SOFR).unwrap().clone(),
+                )?;
+                parameters.resolve_calibration(&market, &MarketIndex::SOFR)?;
+                let schedule = parameters.sigma_schedule();
+                assert_eq!(schedule.len(), 3);
+                assert!((schedule[0].1 - schedule[1].1).abs() > 1e-3);
+                let time = DayCounter::Actual365
+                    .year_fraction(reference_date(), trade.instrument().expiry_date());
+                // Independent interval integration, including the change at 2Y.
+                let boundary = schedule[1].0;
+                let variance = (schedule[0].1.powi(2)
+                    * ((-2.0 * ALPHA * (time - boundary)).exp() - (-2.0 * ALPHA * time).exp())
+                    + schedule[1].1.powi(2) * (1.0 - (-2.0 * ALPHA * (time - boundary)).exp()))
+                    / (2.0 * ALPHA);
+                let effective_sigma =
+                    (variance * 2.0 * ALPHA / (1.0 - (-2.0 * ALPHA * time).exp())).sqrt();
+                let actual = pricer
+                    .evaluate(&trade, &[Request::Value], &context)?
+                    .price()
+                    .unwrap();
+                let expected = ClosedFormHullWhiteSwaptionPricer::new(ALPHA, effective_sigma)
+                    .evaluate(&trade, &[Request::Value], &context)?
+                    .price()
+                    .unwrap();
+                assert!(
+                    (actual - expected).abs() < 1e-8,
+                    "piecewise {actual} != integrated {expected}"
+                );
+                let last_sigma_price = ClosedFormHullWhiteSwaptionPricer::new(ALPHA, schedule[2].1)
+                    .evaluate(&trade, &[Request::Value], &context)?
+                    .price()
+                    .unwrap();
+                assert!((actual - last_sigma_price).abs() > 100.0);
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn calibration_quote_sensitivities_match_bump_and_recalibrate() -> Result<()> {
+        for cube in [false, true] {
+            let (context, configuration) = calibrated_context(cube, None)?;
+            let pricer = ClosedFormHullWhiteSwaptionPricer::from_configuration(
+                &configuration,
+                &MarketIndex::SOFR,
+            )?;
+            let trade = calibrated_trade(SwaptionType::Payer)?;
+            let results =
+                pricer.evaluate(&trade, &[Request::Value, Request::Sensitivities], &context)?;
+            let risk = results.sensitivities().unwrap();
+            let mut nonzero_volatility_pillars = 0;
+            for (label, exposure) in risk.instrument_keys().iter().zip(risk.exposure()) {
+                if !(label.starts_with("Swaption_") || label.starts_with("CapletFloorlet_")) {
+                    continue;
+                }
+                let bump = 1e-5;
+                let mut values = Vec::new();
+                for amount in [bump, -bump] {
+                    let (bumped, _) = calibrated_context(cube, Some((label, amount)))?;
+                    values.push(
+                        pricer
+                            .evaluate(&trade, &[Request::Value], &bumped)?
+                            .price()
+                            .unwrap(),
+                    );
+                }
+                let finite_difference = (values[0] - values[1]) / (2.0 * bump);
+                assert!(
+                    // The shared IFT uses numerical calibration derivatives.
+                    (exposure - finite_difference).abs() < 1e-3 * finite_difference.abs().max(1.0),
+                    "{label}: AD {exposure} != recalibrated {finite_difference}"
+                );
+                if exposure.abs() > 1.0 {
+                    nonzero_volatility_pillars += 1;
+                }
+            }
+            assert_eq!(
+                nonzero_volatility_pillars, 4,
+                "both strikes at 1Y and 2Y must receive risk"
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn calibrated_model_reports_missing_market_data() -> Result<()> {
+        let (_, configuration) = calibrated_context(false, None)?;
+        let pricer = ClosedFormHullWhiteSwaptionPricer::from_configuration(
+            &configuration,
+            &MarketIndex::SOFR,
+        )?;
+        let error = pricer
+            .evaluate(
+                &calibrated_trade(SwaptionType::Payer)?,
+                &[Request::Value],
+                &provider(RATE),
+            )
+            .err()
+            .unwrap();
+        assert!(error.to_string().contains("calibration quote details"));
+        Ok(())
+    }
 
     struct SimpleMarketDataProvider {
         evaluation_date: Date,

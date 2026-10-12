@@ -1,11 +1,7 @@
 use crate::{
     core::{
-        instrument::Instrument,
-        trade::{Side, Trade},
-    },
-    currencies::currency::Currency,
-    indices::marketindex::MarketIndex,
-    time::{date::Date, daycounter::DayCounter},
+        collateral::Discountable, instrument::{AssetClass, Instrument}, trade::{Side, Trade},
+    }, currencies::currency::Currency, indices::marketindex::MarketIndex, time::{date::Date, daycounter::DayCounter},
 };
 
 /// An [`EquityForward`] represents a forward contract on an equity underlying (stock or index).
@@ -121,5 +117,17 @@ impl Trade<EquityForward> for EquityForwardTrade {
 
     fn side(&self) -> Side {
         self.side
+    }
+}
+
+impl Discountable for EquityForward {
+    fn asset_class(&self) -> AssetClass {
+        AssetClass::Equity
+    }
+    fn currency(&self) -> Currency {
+        self.currency
+    }
+    fn discount_index(&self) -> Option<MarketIndex> {
+        Some(self.market_index.clone())
     }
 }

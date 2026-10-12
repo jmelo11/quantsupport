@@ -10,11 +10,7 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     let quote_store = utils::load_quotes(&path)?;
 
     // 2. Collect all quote identifiers for the surface configuration.
-    let quote_ids: Vec<String> = quote_store
-        .quotes()
-        .keys()
-        .cloned()
-        .collect();
+    let quote_ids: Vec<String> = quote_store.quotes().keys().cloned().collect();
 
     println!("Loaded {} caplet vol quotes", quote_ids.len());
 

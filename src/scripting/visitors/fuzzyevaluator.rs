@@ -15,6 +15,8 @@ Wiley, 2018
 This attribution and license notice must be preserved at the top of this file.
 */
 
+use crate::utils::errors::{QSError, Result};
+
 use std::cell::{Cell, RefCell};
 
 use crate::{
@@ -22,7 +24,6 @@ use crate::{
     scripting::{
         data::simulationdata::{Scenario, SimulationData},
         nodes::{node::Node, node::SpotUnderlying, traits::NodeConstVisitor},
-        utils::errors::{Result, ScriptingError},
         visitors::evaluator::{CapturedCashflow, Value},
         NumericType,
     },
@@ -172,10 +173,14 @@ impl<'a> FuzzyEvaluator<'a> {
     pub fn current_market_data(&self) -> Result<&SimulationData> {
         let scenario = self
             .scenario
-            .ok_or(ScriptingError::EvaluationError("No scenario set".into()))?;
-        scenario
-            .get(*self.current_event.borrow())
-            .ok_or(ScriptingError::EvaluationError("Event not found".into()))
+            .ok_or(QSError::ValueNotSetErr("No scenario set".into()))?;
+        scenario.get(*self.current_event.borrow()).ok_or_else(|| {
+            QSError::NotFoundErr(format!(
+                "market data for script event {}; scenario contains {} events",
+                self.current_event.borrow(),
+                scenario.len()
+            ))
+        })
     }
 
     /// Returns the active event index.
@@ -267,13 +272,13 @@ impl<'a> FuzzyEvaluator<'a> {
                 if data.children.len() == 2 {
                     self.const_visit(&data.children[0])?;
                     let left = self.digit_stack.borrow_mut().pop().ok_or_else(|| {
-                        ScriptingError::EvaluationError(
+                        QSError::EvaluationErr(
                             "comparison left side produced no numeric value".into(),
                         )
                     })?;
                     self.const_visit(&data.children[1])?;
                     let right = self.digit_stack.borrow_mut().pop().ok_or_else(|| {
-                        ScriptingError::EvaluationError(
+                        QSError::EvaluationErr(
                             "comparison right side produced no numeric value".into(),
                         )
                     })?;
@@ -285,9 +290,10 @@ impl<'a> FuzzyEvaluator<'a> {
         }
 
         self.const_visit(node)?;
-        let value = self.digit_stack.borrow_mut().pop().ok_or_else(|| {
-            ScriptingError::EvaluationError("comparison produced no numeric value".into())
-        })?;
+        let value =
+            self.digit_stack.borrow_mut().pop().ok_or_else(|| {
+                QSError::EvaluationErr("comparison produced no numeric value".into())
+            })?;
         Ok((value, self.eps))
     }
 }
@@ -311,7 +317,7 @@ impl<'a> NodeConstVisitor for FuzzyEvaluator<'a> {
                     Ok(())
                 } else {
                     match data.id {
-                        None => Err(ScriptingError::EvaluationError(format!(
+                        None => Err(QSError::ValueNotSetErr(format!(
                             "Variable {} not indexed",
                             name
                         ))),
@@ -324,7 +330,7 @@ impl<'a> NodeConstVisitor for FuzzyEvaluator<'a> {
                                 Value::String(v) => self.string_stack.borrow_mut().push(v.clone()),
                                 Value::Array(a) => self.array_stack.borrow_mut().push(a.clone()),
                                 Value::Null => {
-                                    return Err(ScriptingError::EvaluationError(format!(
+                                    return Err(QSError::ValueNotSetErr(format!(
                                         "Variable {} not initialized",
                                         name
                                     )))
@@ -338,12 +344,8 @@ impl<'a> NodeConstVisitor for FuzzyEvaluator<'a> {
             Node::Spot(data) => {
                 let id = data
                     .id
-                    .ok_or(ScriptingError::EvaluationError("Spot not indexed".into()))?;
-                let market_data = self
-                    .scenario
-                    .ok_or(ScriptingError::EvaluationError("No scenario set".into()))?
-                    .get(*self.current_event.borrow())
-                    .ok_or(ScriptingError::EvaluationError("Spot not found".into()))?;
+                    .ok_or(QSError::ValueNotSetErr("Spot not indexed".into()))?;
+                let market_data = self.current_market_data()?;
                 let value = match &data.underlying {
                     SpotUnderlying::Fx { .. } => market_data.get_fx(id)?,
                     SpotUnderlying::Equity(_) => market_data.get_spot(id)?,
@@ -354,26 +356,16 @@ impl<'a> NodeConstVisitor for FuzzyEvaluator<'a> {
             Node::Df(data) => {
                 let id = data
                     .id
-                    .ok_or(ScriptingError::EvaluationError("Df not indexed".into()))?;
-                let market_data = self
-                    .scenario
-                    .ok_or(ScriptingError::EvaluationError("No scenario set".into()))?
-                    .get(*self.current_event.borrow())
-                    .ok_or(ScriptingError::EvaluationError("Df not found".into()))?;
+                    .ok_or(QSError::ValueNotSetErr("Df not indexed".into()))?;
+                let market_data = self.current_market_data()?;
                 self.digit_stack.borrow_mut().push(market_data.get_df(id)?);
                 Ok(())
             }
             Node::RateIndex(data) => {
-                let id = data.id.ok_or(ScriptingError::EvaluationError(
-                    "RateIndex not indexed".into(),
-                ))?;
-                let market_data = self
-                    .scenario
-                    .ok_or(ScriptingError::EvaluationError("No scenario set".into()))?
-                    .get(*self.current_event.borrow())
-                    .ok_or(ScriptingError::EvaluationError(
-                        "RateIndex not found".into(),
-                    ))?;
+                let id = data
+                    .id
+                    .ok_or(QSError::ValueNotSetErr("RateIndex not indexed".into()))?;
+                let market_data = self.current_market_data()?;
                 self.digit_stack.borrow_mut().push(market_data.get_fwd(id)?);
                 Ok(())
             }
@@ -382,7 +374,7 @@ impl<'a> NodeConstVisitor for FuzzyEvaluator<'a> {
                     self.const_visit(child)?;
                 }
                 let current_value = self.digit_stack.borrow_mut().pop().ok_or_else(|| {
-                    ScriptingError::EvaluationError(
+                    QSError::EvaluationErr(
                         "payment expression produced no numeric value".to_string(),
                     )
                 })?;
@@ -405,21 +397,16 @@ impl<'a> NodeConstVisitor for FuzzyEvaluator<'a> {
                     );
                 }
 
-                let market_data = self
-                    .scenario
-                    .ok_or(ScriptingError::EvaluationError("No scenario set".into()))?
-                    .get(*self.current_event.borrow())
-                    .ok_or(ScriptingError::EvaluationError("Event not found".into()))?
-                    .clone();
+                let market_data = self.current_market_data()?.clone();
                 let df_id = data
                     .df_id
-                    .ok_or(ScriptingError::EvaluationError("Pays not indexed".into()))?;
+                    .ok_or(QSError::ValueNotSetErr("Pays not indexed".into()))?;
                 let df = market_data.get_df(df_id)?;
                 let numeraire = market_data.numeraire();
                 let value: NumericType = if data.currency.is_some() {
-                    let fx_id = data.spot_id.ok_or(ScriptingError::EvaluationError(
-                        "Pays FX not indexed".into(),
-                    ))?;
+                    let fx_id = data
+                        .spot_id
+                        .ok_or(QSError::ValueNotSetErr("Pays FX not indexed".into()))?;
                     let fx = market_data.get_fx(fx_id)?;
                     ((current_value * df * fx) / numeraire).into()
                 } else {
@@ -495,7 +482,7 @@ impl<'a> NodeConstVisitor for FuzzyEvaluator<'a> {
 
                 let variable = self.lhs_variable.borrow_mut().clone().unwrap();
                 if let Node::Variable(var_data) = variable {
-                    let id = var_data.id.ok_or(ScriptingError::EvaluationError(format!(
+                    let id = var_data.id.ok_or(QSError::ValueNotSetErr(format!(
                         "Variable {} not indexed",
                         var_data.name
                     )))?;
@@ -511,9 +498,7 @@ impl<'a> NodeConstVisitor for FuzzyEvaluator<'a> {
                     }
                     Ok(())
                 } else {
-                    Err(ScriptingError::EvaluationError(
-                        "Invalid variable assignment".into(),
-                    ))
+                    Err(QSError::EvaluationErr("Invalid variable assignment".into()))
                 }
             }
             Node::UnaryPlus(data) => {
@@ -602,19 +587,15 @@ impl<'a> NodeConstVisitor for FuzzyEvaluator<'a> {
                 *self.is_lhs_variable.borrow_mut() = false;
                 self.const_visit(data.children.get(1).unwrap())?;
 
-                let variable = self.lhs_variable.borrow().clone().ok_or_else(|| {
-                    ScriptingError::EvaluationError("Invalid append target".to_string())
-                })?;
+                let variable =
+                    self.lhs_variable.borrow().clone().ok_or_else(|| {
+                        QSError::EvaluationErr("Invalid append target".to_string())
+                    })?;
                 let Node::Variable(variable) = variable else {
-                    return Err(ScriptingError::EvaluationError(
-                        "Invalid append target".to_string(),
-                    ));
+                    return Err(QSError::EvaluationErr("Invalid append target".to_string()));
                 };
                 let id = variable.id.ok_or_else(|| {
-                    ScriptingError::EvaluationError(format!(
-                        "Variable {} not indexed",
-                        variable.name
-                    ))
+                    QSError::ValueNotSetErr(format!("Variable {} not indexed", variable.name))
                 })?;
                 let value = if !self.boolean_stack.borrow().is_empty() {
                     Value::Bool(self.boolean_stack.borrow_mut().pop().unwrap())
@@ -629,11 +610,7 @@ impl<'a> NodeConstVisitor for FuzzyEvaluator<'a> {
                 match variables.get_mut(id).unwrap() {
                     Value::Array(array) => array.push(value),
                     slot @ Value::Null => *slot = Value::Array(vec![value]),
-                    _ => {
-                        return Err(ScriptingError::EvaluationError(
-                            "Append on non-array".to_string(),
-                        ))
-                    }
+                    _ => return Err(QSError::EvaluationErr("Append on non-array".to_string())),
                 }
                 Ok(())
             }
@@ -650,7 +627,7 @@ impl<'a> NodeConstVisitor for FuzzyEvaluator<'a> {
                     })
                     .collect();
                 if numbers.is_empty() {
-                    return Err(ScriptingError::EvaluationError(
+                    return Err(QSError::EvaluationErr(
                         "statistic of empty array".to_string(),
                     ));
                 }
@@ -712,7 +689,10 @@ impl<'a> NodeConstVisitor for FuzzyEvaluator<'a> {
                 let index = self.digit_stack.borrow_mut().pop().unwrap().value().round() as usize;
                 let values = self.array_stack.borrow_mut().pop().unwrap_or_default();
                 let value = values.get(index).cloned().ok_or_else(|| {
-                    ScriptingError::EvaluationError("Index out of bounds".to_string())
+                    QSError::EvaluationErr(format!(
+                        "Array index {index} is out of bounds for {} elements",
+                        values.len()
+                    ))
                 })?;
                 match value {
                     Value::Bool(value) => self.boolean_stack.borrow_mut().push(value),
@@ -727,7 +707,7 @@ impl<'a> NodeConstVisitor for FuzzyEvaluator<'a> {
                 self.const_visit(&data.node)?;
                 let values = self.array_stack.borrow_mut().pop().unwrap_or_default();
                 let id = data.id.ok_or_else(|| {
-                    ScriptingError::EvaluationError("Loop variable not indexed".to_string())
+                    QSError::ValueNotSetErr("Loop variable not indexed".to_string())
                 })?;
                 for value in values {
                     self.set_variable(id, value);
@@ -896,9 +876,7 @@ impl<'a> NodeConstVisitor for FuzzyEvaluator<'a> {
             }
 
             /* ─────────────── unhandled ─────────────── */
-            _ => Err(ScriptingError::EvaluationError(
-                "Node not implemented".into(),
-            )),
+            _ => Err(QSError::EvaluationErr("Node not implemented".into())),
         }
     }
 }
@@ -920,7 +898,12 @@ impl FuzzyEvaluator<'_> {
             .try_for_each(|(event_index, event)| {
                 self.set_current_event(event_index);
                 *self.current_event_date.borrow_mut() = Some(event.event_date());
-                self.const_visit(event.expr())
+                self.const_visit(event.expr()).map_err(|error| {
+                    error.context(format!(
+                        "evaluating script event {event_index} dated {}",
+                        event.event_date()
+                    ))
+                })
             })?;
 
         let variables = self.variables.borrow();

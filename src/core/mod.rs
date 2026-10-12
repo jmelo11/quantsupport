@@ -20,6 +20,8 @@ pub mod marketdatahandling;
 pub mod pillars;
 /// Pricer module.
 pub mod pricer;
+/// Typed instrument-to-pricer configuration.
+pub mod pricerconfiguration;
 /// Pricer state module.
 pub mod pricerstate;
 /// Pricing data context module.

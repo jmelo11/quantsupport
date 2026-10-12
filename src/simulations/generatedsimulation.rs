@@ -3,7 +3,9 @@
 
 use crate::{
     ad::dual::DualFwd,
-    core::{elements::montecarlosimulationelement::ADMonteCarloSimulationElement, pillars::Pillars},
+    core::{
+        elements::montecarlosimulationelement::ADMonteCarloSimulationElement, pillars::Pillars,
+    },
     indices::marketindex::MarketIndex,
     simulations::simulation::MonteCarloSimulation,
     time::date::Date,
@@ -29,12 +31,7 @@ impl GeneratedMonteCarloSimulation {
     /// `paths[p][i]` is the simulated value of path `p` at `dates[i]`;
     /// `dt` is the average time step in years.
     #[must_use]
-    pub fn new(
-        market_index: MarketIndex,
-        dates: Vec<Date>,
-        paths: Vec<Vec<f64>>,
-        dt: f64,
-    ) -> Self {
+    pub fn new(market_index: MarketIndex, dates: Vec<Date>, paths: Vec<Vec<f64>>, dt: f64) -> Self {
         let n_paths = i64::try_from(paths.len()).unwrap_or(i64::MAX);
         let paths = paths
             .into_iter()

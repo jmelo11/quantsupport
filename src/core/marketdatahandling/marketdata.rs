@@ -1,25 +1,31 @@
 use std::collections::{BTreeMap, HashMap};
 
 use crate::{
-    core::marketdatahandling::{
-        constructedelementrequest::ConstructedElementRequest,
-        constructedelementstore::ConstructedElementStore, fixingrequest::FixingRequest,
-        fxrequest::FxRequest,
+    core::{
+        marketdatahandling::{
+            constructedelementrequest::ConstructedElementRequest,
+            constructedelementstore::ConstructedElementStore, fixingrequest::FixingRequest,
+            fxrequest::FxRequest,
+        },
+        pricerconfiguration::{InstrumentType, PricerConfiguration},
     },
     indices::marketindex::MarketIndex,
-    quotes::fxstore::FxStore,
+    quotes::{fxstore::FxStore, quote::Level, quotestore::QuoteStore},
     time::date::Date,
     utils::errors::Result,
+    volatility::modelcalibration::ModelCalibrationConfiguration,
 };
 
-/// Request for market data, including constructed elements, fixings, and an optional list
-/// of model parameter sets that the provider may inspect when fulfilling the request.
+/// Request for market data, including constructed elements, fixings, FX rates,
+/// and instrument-level pricer configurations.
 #[derive(Default)]
 #[allow(clippy::struct_field_names)]
 pub struct MarketDataRequest {
     constructed_elements_request: Option<Vec<ConstructedElementRequest>>,
     fixings_request: Option<Vec<FixingRequest>>,
     fx_request: Option<Vec<FxRequest>>,
+    pricer_configuration_request: Option<Vec<InstrumentType>>,
+    calibration_request: Option<ModelCalibrationConfiguration>,
 }
 
 impl MarketDataRequest {
@@ -34,6 +40,8 @@ impl MarketDataRequest {
             constructed_elements_request,
             fixings_request,
             fx_request,
+            pricer_configuration_request: None,
+            calibration_request: None,
         }
     }
 
@@ -78,22 +86,52 @@ impl MarketDataRequest {
         self.fx_request = Some(request);
         self
     }
+
+    /// Returns requested instrument-level pricer configurations, if any.
+    #[must_use]
+    pub const fn pricer_configuration_request(&self) -> Option<&Vec<InstrumentType>> {
+        self.pricer_configuration_request.as_ref()
+    }
+
+    /// Requests the typed pricer configurations for the supplied instrument
+    /// families.
+    #[must_use]
+    pub fn with_pricer_configuration_request(mut self, request: Vec<InstrumentType>) -> Self {
+        self.pricer_configuration_request = Some(request);
+        self
+    }
+
+    /// Returns the basket whose instrument quote details are required.
+    #[must_use]
+    pub const fn calibration_request(&self) -> Option<&ModelCalibrationConfiguration> {
+        self.calibration_request.as_ref()
+    }
+
+    /// Requests quote details for a model calibration basket. Its surface or
+    /// cube and calibration curve must also be requested as constructed elements.
+    #[must_use]
+    pub fn with_calibration_request(mut self, request: ModelCalibrationConfiguration) -> Self {
+        self.calibration_request = Some(request);
+        self
+    }
 }
 
-/// Struct representing market data, including fixings, constructed elements, a list of
-/// model parameter sets, and an optional exchange-rate store for FX conversions.
+/// Market-data response containing only the curves, fixings, FX rates, and
+/// pricer configurations requested for one valuation.
 #[derive(Clone, Default)]
 pub struct MarketData {
     fixings: HashMap<MarketIndex, BTreeMap<Date, f64>>,
     fx_store: Option<FxStore>,
     constructed_elements: ConstructedElementStore,
+    pricer_configurations: HashMap<InstrumentType, PricerConfiguration>,
+    calibration_quotes: Option<QuoteStore>,
+    quote_level: Level,
 }
 
 impl MarketData {
-    /// Creates a new [`MarketData`] with the specified fixings, constructed elements, and model
-    /// parameter sets.
+    /// Creates market data with the supplied fixings and constructed elements.
     #[must_use]
-    pub const fn new(
+    pub fn new(
         fixings: HashMap<MarketIndex, BTreeMap<Date, f64>>,
         constructed_elements: ConstructedElementStore,
     ) -> Self {
@@ -101,6 +139,9 @@ impl MarketData {
             fixings,
             constructed_elements,
             fx_store: None,
+            pricer_configurations: HashMap::new(),
+            calibration_quotes: None,
+            quote_level: Level::Mid,
         }
     }
 
@@ -138,6 +179,48 @@ impl MarketData {
     #[must_use]
     pub fn with_fx_store(mut self, store: FxStore) -> Self {
         self.fx_store = Some(store);
+        self
+    }
+
+    /// Returns requested configurations by instrument family.
+    #[must_use]
+    pub const fn pricer_configurations(&self) -> &HashMap<InstrumentType, PricerConfiguration> {
+        &self.pricer_configurations
+    }
+
+    /// Attaches typed instrument-level pricer configurations.
+    #[must_use]
+    pub fn with_pricer_configurations(
+        mut self,
+        configurations: HashMap<InstrumentType, PricerConfiguration>,
+    ) -> Self {
+        self.pricer_configurations = configurations;
+        self
+    }
+
+    /// Returns the selected calibration instruments' market quote details.
+    #[must_use]
+    pub const fn calibration_quotes(&self) -> Option<&QuoteStore> {
+        self.calibration_quotes.as_ref()
+    }
+
+    /// Attaches calibration quote details supplied through the provider.
+    #[must_use]
+    pub fn with_calibration_quotes(mut self, quotes: QuoteStore) -> Self {
+        self.calibration_quotes = Some(quotes);
+        self
+    }
+
+    /// Returns the quote level used to calibrate models for this valuation.
+    #[must_use]
+    pub const fn quote_level(&self) -> Level {
+        self.quote_level
+    }
+
+    /// Sets the quote level used for model calibration. Defaults to mid.
+    #[must_use]
+    pub const fn with_quote_level(mut self, quote_level: Level) -> Self {
+        self.quote_level = quote_level;
         self
     }
 }

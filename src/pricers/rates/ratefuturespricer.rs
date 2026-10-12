@@ -1,8 +1,5 @@
 use crate::{
-    ad::{
-        dual::DualFwd,
-        tape::Tape,
-    },
+    ad::{dual::DualFwd, tape::Tape},
     core::{
         evaluationresults::{EvaluationResults, SensitivityMap},
         instrument::Instrument,
@@ -286,13 +283,8 @@ mod tests {
         let end_date = Date::new(2025, 6, 18);
         let rate = 0.04;
 
-        let results = evaluate_rate_futures(
-            eval_date,
-            start_date,
-            end_date,
-            rate,
-            &[Request::Value],
-        )?;
+        let results =
+            evaluate_rate_futures(eval_date, start_date, end_date, rate, &[Request::Value])?;
         let quote = results
             .price()
             .ok_or_else(|| QSError::UnexpectedErr("Missing price".into()))?;

@@ -72,13 +72,21 @@ impl<'a> BootstrapStepEvaluation<'a> {
                         })?
                         .rate_index_details()?
                         .rate_definition();
-                    let fixing = forward_curve
-                        .ok_or_else(|| QSError::ValueNotSetErr("Missing forward curve".into()))?
-                        .forward_rate(
+                    let forward_curve = forward_curve
+                        .ok_or_else(|| QSError::ValueNotSetErr("Missing forward curve".into()))?;
+                    let fixing = if floating_coupon.overnight_conventions().is_some() {
+                        floating_coupon.overnight_rate(
+                            self.step.reference_date(),
+                            |date| forward_curve.discount_factor(date),
+                            |date| Ok(self.step.fixing(floating_coupon.market_index(), date)),
+                        )?
+                    } else {
+                        forward_curve.forward_rate(
                             floating_coupon.accrual_start_date(),
                             floating_coupon.accrual_end_date(),
                             rate_definition,
-                        )?;
+                        )?
+                    };
 
                     floating_coupon.set_fixing(fixing);
                     pv = (side * floating_coupon.amount()?).mul_add(df, pv);
@@ -91,6 +99,20 @@ impl<'a> BootstrapStepEvaluation<'a> {
             }
         }
         Ok(pv)
+    }
+
+    fn fixed_float_pv(&self, fixed_leg: &Leg<f64>, floating_leg: &Leg<f64>) -> Result<f64> {
+        let pv_fixed = {
+            let disc = self.step.discount_curve_for_leg(fixed_leg)?;
+            let fwd = self.step.forward_curve_for_leg(fixed_leg)?;
+            self.leg_pv(fixed_leg, disc, fwd)?
+        };
+        let pv_float = {
+            let disc = self.step.discount_curve_for_leg(floating_leg)?;
+            let fwd = self.step.forward_curve_for_leg(floating_leg)?;
+            self.leg_pv(floating_leg, disc, fwd)?
+        };
+        Ok(pv_fixed + pv_float)
     }
 
     /// Converts the existing fixed-leg PV into a quoted price (normally 100
@@ -215,17 +237,10 @@ impl CalibrationInstrumentPricer for BootstrapStepEvaluation<'_> {
                 }
             }
             CalibrationInstrumentType::Swap(swap) => {
-                let pv_fixed = {
-                    let disc = self.step.discount_curve_for_leg(swap.fixed_leg())?;
-                    let fwd = self.step.forward_curve_for_leg(swap.fixed_leg())?;
-                    self.leg_pv(swap.fixed_leg(), disc, fwd)?
-                };
-                let pv_float = {
-                    let disc = self.step.discount_curve_for_leg(swap.floating_leg())?;
-                    let fwd = self.step.forward_curve_for_leg(swap.floating_leg())?;
-                    self.leg_pv(swap.floating_leg(), disc, fwd)?
-                };
-                Ok(pv_fixed + pv_float)
+                self.fixed_float_pv(swap.fixed_leg(), swap.floating_leg())
+            }
+            CalibrationInstrumentType::OIS(ois) => {
+                self.fixed_float_pv(ois.fixed_leg(), ois.floating_leg())
             }
             CalibrationInstrumentType::BasisSwap(basis_swap) => {
                 let pv_pay = {
@@ -333,6 +348,7 @@ impl CalibrationInstrumentPricer for BootstrapStepEvaluation<'_> {
                 }
             },
             CalibrationInstrumentType::Swap(swap) => fixed_leg_annuity(swap.fixed_leg(), self.step),
+            CalibrationInstrumentType::OIS(ois) => fixed_leg_annuity(ois.fixed_leg(), self.step),
             CalibrationInstrumentType::BasisSwap(bs) => {
                 floating_leg_annuity(bs.pay_leg(), self.step)
             }

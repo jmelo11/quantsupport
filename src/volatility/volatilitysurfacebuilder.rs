@@ -12,7 +12,7 @@ use crate::{
         volatilitysurfaceconfiguration::VolatilitySurfaceConfiguration,
     },
 };
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// Stateless builder that constructs [`InterpolatedVolatilitySurface`]
 /// instances from [`VolatilitySurfaceConfiguration`] specs and a quote store.
@@ -32,6 +32,7 @@ impl VolatilitySurfaceBuilder {
     /// # Errors
     /// Returns an error when a quote is missing, belongs to another market
     /// index, lacks an expiry or strike, or duplicates an expiry-strike node.
+    /// Empty quote lists and invalid node coordinates or volatilities are rejected.
     /// A second configuration for the same market index also produces an
     /// error.
     pub fn build(
@@ -43,7 +44,14 @@ impl VolatilitySurfaceBuilder {
         let mut surfaces = HashMap::new();
 
         for spec in &self.specs {
-            let (surface, labels) = self.build_one(spec, selector, level, reference_date)?;
+            let (surface, labels) = self
+                .build_one(spec, selector, level, reference_date)
+                .map_err(|error| {
+                    error.context(format!(
+                        "building volatility surface {}",
+                        spec.market_index()
+                    ))
+                })?;
             let surface = surface
                 .with_labels(&labels)
                 .with_calibration_instrument_ids(&labels);
@@ -73,6 +81,13 @@ impl VolatilitySurfaceBuilder {
         level: Level,
         reference_date: Date,
     ) -> Result<(InterpolatedVolatilitySurface<DualFwd>, Vec<String>)> {
+        if spec.quotes().is_empty() {
+            return Err(QSError::InvalidValueErr(format!(
+                "Volatility surface for {} requires at least one quote",
+                spec.market_index(),
+            )));
+        }
+        let mut coordinates = BTreeSet::new();
         let mut points: BTreeMap<Period, BTreeMap<F64Key, DualFwd>> = BTreeMap::new();
         let mut node_labels: BTreeMap<Period, BTreeMap<F64Key, String>> = BTreeMap::new();
 
@@ -80,7 +95,9 @@ impl VolatilitySurfaceBuilder {
             let quote = selector
                 .select(qid)
                 .ok_or_else(|| QSError::NotFoundErr(format!("Quote not found: {qid}")))?;
-            let val = quote.levels().value(level)?;
+            let val = quote.levels().value(level).map_err(|error| {
+                error.context(format!("reading {level:?} volatility quote '{qid}'"))
+            })?;
             let details = quote.details();
             if details.market_index() != Some(spec.market_index()) {
                 return Err(QSError::InvalidValueErr(format!(
@@ -97,18 +114,26 @@ impl VolatilitySurfaceBuilder {
                 .strike()
                 .ok_or_else(|| QSError::InvalidValueErr(format!("Quote {qid} missing strike")))?;
 
-            let key = F64Key::new(strike.resolve(0.0));
-            if node_labels
-                .entry(expiry)
-                .or_default()
-                .insert(key.clone(), qid.clone())
-                .is_some()
+            let coordinate = strike.resolve(0.0);
+            let key = F64Key::new(if coordinate == 0.0 { 0.0 } else { coordinate });
+            if !val.is_finite()
+                || val < 0.0
+                || !key.value().is_finite()
+                || expiry.period_in_year() <= 0.0
             {
                 return Err(QSError::InvalidValueErr(format!(
-                    "Duplicate volatility surface node at expiry {expiry}, key {}",
-                    key.value()
+                    "Invalid volatility surface node {qid}: require positive periods, a finite key, and finite non-negative volatility"
                 )));
             }
+            if !coordinates.insert((F64Key::new(expiry.period_in_year()), key.clone())) {
+                return Err(QSError::InvalidValueErr(format!(
+                    "Duplicate volatility surface coordinates for quote {qid}"
+                )));
+            }
+            node_labels
+                .entry(expiry)
+                .or_default()
+                .insert(key.clone(), qid.clone());
             points
                 .entry(expiry)
                 .or_default()
@@ -128,8 +153,111 @@ impl VolatilitySurfaceBuilder {
             points,
             spec.volatility_type().clone(),
             spec.smile_type(),
-        );
+        )
+        .with_extrapolation_policy(spec.extrapolation_policy());
 
         Ok((surface, labels))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::prelude::{
+        ExtrapolationPolicy, Quote, QuoteLevels, QuoteStore, SmileType, TimeUnit, VolatilityType,
+    };
+
+    const QUOTE: &str = "CapletFloorlet_USD_SOFR_3M_1Y_Absolute_0.03_Straddle_Black";
+
+    fn build(
+        nodes: &[(&str, f64)],
+        policy: ExtrapolationPolicy,
+    ) -> Result<HashMap<MarketIndex, VolatilitySurfaceElement>> {
+        let mut store = QuoteStore::new(Date::new(2025, 1, 1));
+        for &(identifier, value) in nodes {
+            store.add_quote(Quote::new(
+                identifier.parse()?,
+                QuoteLevels::with_mid(value),
+            ));
+        }
+        let configuration = VolatilitySurfaceConfiguration::new(
+            MarketIndex::SOFR,
+            VolatilityType::Black,
+            SmileType::Strike,
+            nodes
+                .iter()
+                .map(|&(identifier, _)| identifier.to_string())
+                .collect(),
+        )
+        .with_extrapolation_policy(policy);
+        VolatilitySurfaceBuilder::new(vec![configuration]).build(&store, Level::Mid)
+    }
+
+    #[test]
+    fn builder_supports_single_quote_and_propagates_extrapolation_policy() -> Result<()> {
+        for policy in [ExtrapolationPolicy::Reject, ExtrapolationPolicy::Flat] {
+            let elements = build(&[(QUOTE, 0.20)], policy)?;
+            let element = elements
+                .get(&MarketIndex::SOFR)
+                .expect("built surface")
+                .surface();
+            assert!(
+                (element
+                    .volatility_from_period(Period::new(1, TimeUnit::Years), 0.03)?
+                    .value()
+                    - 0.20)
+                    .abs()
+                    < 1e-12
+            );
+            let query = element.volatility_from_period(Period::new(2, TimeUnit::Years), 0.04);
+            if policy == ExtrapolationPolicy::Reject {
+                assert!(query.is_err());
+            } else {
+                assert!((query?.value() - 0.20).abs() < 1e-12);
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn builder_rejects_empty_invalid_and_aliased_nodes() {
+        for policy in [ExtrapolationPolicy::Reject, ExtrapolationPolicy::Flat] {
+            assert!(build(&[], policy).is_err());
+            for value in [-0.01, f64::NAN, f64::INFINITY] {
+                assert!(build(&[(QUOTE, value)], policy).is_err());
+            }
+            assert!(build(
+                &[(
+                    "CapletFloorlet_USD_SOFR_3M_0Y_Absolute_0.03_Straddle_Black",
+                    0.20
+                )],
+                policy
+            )
+            .is_err());
+            for nodes in [
+                vec![
+                    (QUOTE, 0.20),
+                    (
+                        "CapletFloorlet_USD_SOFR_3M_12M_Absolute_0.03_Straddle_Black",
+                        0.30,
+                    ),
+                ],
+                vec![
+                    (
+                        "CapletFloorlet_USD_SOFR_3M_1Y_Absolute_0_Straddle_Black",
+                        0.20,
+                    ),
+                    (
+                        "CapletFloorlet_USD_SOFR_3M_1Y_Absolute_-0_Straddle_Black",
+                        0.30,
+                    ),
+                ],
+            ] {
+                let error = build(&nodes, policy)
+                    .err()
+                    .expect("aliased coordinates must fail");
+                assert!(error.to_string().contains("Duplicate"));
+            }
+        }
     }
 }

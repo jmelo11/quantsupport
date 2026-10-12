@@ -129,6 +129,7 @@ next detailed pricing chapter.
 | Asset class  | Instrument                    | Builder                           | Trade                              | Deterministic pricer                                             |
 | ------------ | ----------------------------- | --------------------------------- | ---------------------------------- | ---------------------------------------------------------------- |
 | Rates        | `Swap` (fixed vs float)       | `MakeSwap`                        | `SwapTrade`                        | `DiscountedCashflowPricer`                                       |
+| Rates        | `OvernightIndexSwap`          | `MakeOvernightIndexSwap`          | `OvernightIndexSwapTrade`          | `DiscountedCashflowPricer`                                       |
 | Rates        | `BasisSwap` (float vs float)  | `MakeBasisSwap`                   | `BasisSwapTrade`                   | `DiscountedCashflowPricer`                                       |
 | Rates        | `FixFloatCrossCurrencySwap`   | `MakeFixFloatCrossCurrencySwap`   | `FixFloatCrossCurrencySwapTrade`   | `DiscountedCashflowPricer`                                       |
 | Rates        | `FloatFloatCrossCurrencySwap` | `MakeFloatFloatCrossCurrencySwap` | `FloatFloatCrossCurrencySwapTrade` | `DiscountedCashflowPricer`                                       |
@@ -136,13 +137,14 @@ next detailed pricing chapter.
 | Rates        | `CapletFloorlet`              | — (from quotes)                   | `CapletFloorletTrade`              | `ClosedFormBlackCapletPricer`, `ClosedFormHullWhiteCapletPricer` |
 | Rates        | `EuropeanSwaption`            | `MakeSwaption`                    | `EuropeanSwaptionTrade<DualFwd>`   | `ClosedFormHullWhiteSwaptionPricer`                              |
 | Rates        | `RateFutures`                 | `MakeRateFutures`                 | `RateFuturesTrade`                 | `RateFuturesPricer`                                              |
-| Fixed income | `FixedRateBond`               | `MakeFixedRateBond`               | `FixedRateBondTrade`               | `DiscountedCashflowPricer`                                       |
+| Fixed income | `FixedRateBond`               | `MakeFixedRateBond`               | `FixedRateBondTrade`               | `BondPricer`                                                     |
+| Fixed income | `SteppedCouponBond`           | `MakeSteppedCouponBond`           | `SteppedCouponBondTrade`           | `TreeBasedBondPricer` / `BackwardFourierEvolutionBondPricer`     |
 | Fixed income | `FloatingRateNote`            | `MakeFloatingRateNote`            | `FloatingRateNoteTrade`            | `DiscountedCashflowPricer`                                       |
 | Fixed income | `FixedRateDeposit`            | `MakeFixedRateDeposit`            | `FixedRateDepositTrade`            | `DiscountedCashflowPricer`                                       |
 | FX           | `FxForward`                   | `MakeFxForward`                   | `FxForwardTrade`                   | `FxForwardPricer`                                                |
-| FX           | `FxOption`                    | `MakeFxOption`                    | `FxOptionTrade`                    | `FxOptionPricer` (Garman–Kohlhagen)                              |
-| Equity       | `EquityForward`               | `MakeEquityForward`               | `EquityForwardTrade`               | — (claims / scripting)                                           |
-| Equity       | `EquityEuropeanOption`        | —                                 | `EquityEuropeanOptionTrade`        | `BlackEuropeanOptionPricer`, `BlackMCEuropeanOptionPricer`       |
+| FX           | `FxEuropeanOption`                    | `MakeFxEuropeanOption`                    | `FxEuropeanOptionTrade`                    | `FxEuropeanOptionPricer` (Garman–Kohlhagen)                              |
+| Equity       | `EquityForward`               | `MakeEquityForward`               | `EquityForwardTrade`               | `EquityForwardPricer`                                           |
+| Equity       | `EquityEuropeanOption`        | `MakeEquityEuropeanOption`         | `EquityEuropeanOptionTrade`        | `BlackEuropeanOptionPricer`, `BlackMCEuropeanOptionPricer`       |
 | Equity       | `Futures`                     | `MakeFutures`                     | `FuturesTrade`                     | — (claims / scripting)                                           |
 | Credit       | `CreditDefaultSwap`           | —                                 | `CdsTrade`                         | `CdsPricer`                                                      |
 | Any          | `ScriptedProduct`             | script text                       | —                                  | `ScriptEngine` (Monte Carlo)                                     |
@@ -155,12 +157,12 @@ The generic parameter `T` on rate and fixed-income instruments is `f64` or `Dual
 
 ### Builder conventions
 
-All `Make*` builders follow the same pattern as `MakeSwap` (see [Your First Swap](../getting-started/first-swap.md)):
+Most `Make*` builders follow the same pattern as `MakeSwap` (see [Your First Swap](../getting-started/first-swap.md)):
 
-- `Make*::new()` / `default()` then chained `with_*` setters that take ownership.
+- Most builders start with `default()` and chained `with_*` setters that take ownership. `MakeOvernightIndexSwap::new(index, reference_date, tenor, fixed_rate)` starts with an index-specific convention preset; its setters customize that preset and contract terms.
 - `build()` returns `Result<Instrument>`. Missing mandatory fields produce `QSError::ValueNotSetErr("<Field>")`.
-- Defaults are conservative: `Calendar::NullCalendar`, `BusinessDayConvention::Unadjusted`, `DateGenerationRule::Backward`, `spread = 0.0`, `Side::LongReceive`.
-- Cross-currency builders take two currencies, two notionals or an FX rate, and per-leg indices. `MakeFxForward` and `MakeFxOption` take a currency pair, strike or forward rate, and settlement date. `MakeCapFloor` takes an index, strike, product direction, and schedule parameters. `MakeSwaption` wraps swap terms with expiry and settlement type.
+- Generic leg builders commonly default to `Calendar::NullCalendar`, `BusinessDayConvention::Unadjusted`, `DateGenerationRule::Backward`, `spread = 0.0`, and `Side::LongReceive`. OIS uses the index-specific calendar and adjustment conventions described above.
+- Cross-currency builders take two currencies, two notionals or an FX rate, and per-leg indices. `MakeFxForward` takes a currency pair, strike and settlement date; `MakeFxEuropeanOption` takes a pair, option strike and expiry date. `MakeCapFloor` takes an index, strike, product direction, and schedule parameters. `MakeSwaption` wraps swap terms with expiry and payer-or-receiver direction. `MakeOvernightIndexSwap` constructs daily overnight coupons and coupon-only legs; [Interest Rate Swaps](../pricing/swaps.md#overnight-index-swaps) explains the OIS workflow.
 
 The per-product chapters under [Pricing](../pricing/overview.md) show each builder with its required fields and the requests its pricer supports.
 
@@ -175,3 +177,33 @@ legs organize related payments, instruments define a product, and trades add
 the held position. Deterministic pricers consume trades directly. Simulation
 workflows translate them into contingent claims. Both routes begin
 from the same contractual definition, which keeps pricing and exposure aligned.
+
+## Settlement calendars
+
+SONIA uses London settlement holidays and TONAR uses Japanese bank holidays.
+Use `UnitedKingdom(Settlement)` and `Japan` in serialized configurations.
+London rules include weekend substitutions, moved May holidays and royal
+one-off closures. Japanese rules include substitute and citizens' holidays,
+bank year-end closures, the 2019 accession and the 2020–2021 Olympic moves.
+These rules are checked against the [UK government's published bank holidays](https://www.gov.uk/bank-holidays)
+and the [Japanese Cabinet Office holiday list](https://www8.cao.go.jp/chosei/shukujitsu/gaiyou.html).
+Future Japanese equinox dates are estimates until officially announced, and
+new exceptional holidays require a calendar update or a local holiday override.
+The London recurring rules follow the regime since 1971; Japan's public-holiday
+rules begin in July 1948.
+
+Cross-currency builders accept joint calendars through `with_calendar`:
+
+```rust,ignore
+let settlement = Calendar::try_from(
+    "JointCalendar(JoinHolidays,UnitedKingdom(Settlement),Japan)".to_string(),
+)?;
+let builder = MakeFloatFloatCrossCurrencySwap::<f64>::default()
+    .with_calendar(settlement);
+```
+
+`JoinHolidays` requires all markets to be open. `JoinBusinessDays` requires at
+least one open market. The same canonical strings work in Python's `Calendar`
+and Excel's calendar arguments, and nested joint calendars round-trip through
+JSON. Local holiday overrides participate in joint business-day calculations;
+string/JSON serialization stores the calendar definition, as for other calendars.

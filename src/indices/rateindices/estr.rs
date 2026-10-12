@@ -9,10 +9,7 @@ use crate::{
     },
     rates::{compounding::Compounding, interestrate::RateDefinition},
     time::{
-        calendar::Calendar,
-        calendars::target::TARGET,
-        daycounter::DayCounter,
-        enums::Frequency,
+        calendar::Calendar, calendars::target::TARGET, daycounter::DayCounter, enums::Frequency,
     },
 };
 

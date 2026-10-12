@@ -12,7 +12,7 @@ pub fn new(
     reference_date: Date,
     local_currency: Currency,
     local_discount_index: MarketIndex,
-) -> Result<ScriptEngine, ScriptingError>
+) -> Result<ScriptEngine, QSError>
 ```
 
 `new` then performs the complete static-analysis pipeline:
@@ -160,7 +160,7 @@ Every worker uses the same raw curve data and seed policy, then reports partial 
 
 ## Errors
 
-The evaluation methods return `ScriptingError::EvaluationError` for an unknown result variable, a model with zero paths, a path-generation failure, or an absent requested value in `SimulationResponse`. The error message includes the relevant variable or request. Failures originating in the wider library are wrapped as `ScriptingError::QuantSupport(QSError)`.
+The evaluation methods return the shared `QSError`: `NotFoundErr` for an unknown result variable or missing response, `InvalidValueErr` for a model with zero paths, and `EvaluationErr` for expression failures. Model and AD failures retain their original library variants. Context identifies the path or event that failed, and `error.root_cause()` exposes the original variant beneath that context.
 
 ## What to remember
 

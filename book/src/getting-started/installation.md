@@ -81,7 +81,17 @@ During development, a local mdBook server rebuilds the prose as files change.
 
 - API docs: <https://docs.rs/quantsupport>
 - This book: <https://jmelo11.github.io/quantsupport/> (published from `main` by `.github/workflows/pages.yml`)
-- Local build: `cargo install mdbook --locked && mdbook serve --open`
+- Local build: install mdBook and its Mermaid preprocessor, then install the JavaScript assets before building or serving:
+
+```bash
+cargo install mdbook --version 0.5.2 --locked
+cargo install mdbook-mermaid --version 0.17.0 --locked
+mdbook-mermaid install .
+mdbook build
+mdbook serve --open
+```
+
+These versions match the Pages workflow. Run the asset installation from the repository root; `book.toml` references the generated Mermaid JavaScript files.
 
 ## Installation outcome
 

@@ -17,11 +17,11 @@ use pyo3::prelude::*;
 use quantsupport::prelude::{
     BusinessDayConvention as QsBusinessDayConvention, CapFloorType as QsCapFloorType,
     CapletFloorletType as QsCapletFloorletType, Compounding as QsCompounding,
-    Currency as QsCurrency, DayCounter as QsDayCounter, EuroOptionType as QsEuroOptionType,
-    Frequency as QsFrequency, FxPair, MarketIndex as QsMarketIndex,
-    PaymentStructure as QsPaymentStructure, Request as QsRequest, ScenarioType as QsScenarioType,
-    Side as QsSide, SmileType as QsSmileType, TimeUnit as QsTimeUnit,
-    VolatilityType as QsVolatilityType,
+    Currency as QsCurrency, DateGenerationRule as QsDateGenerationRule, DayCounter as QsDayCounter,
+    EuroOptionType as QsEuroOptionType, Frequency as QsFrequency, FxPair, Level as QsLevel,
+    MarketIndex as QsMarketIndex, PaymentStructure as QsPaymentStructure, Request as QsRequest,
+    ScenarioType as QsScenarioType, Side as QsSide, SmileType as QsSmileType,
+    TimeUnit as QsTimeUnit, VolatilityType as QsVolatilityType,
 };
 
 use crate::conv::{extract_currency, extract_date, qs_err};
@@ -33,7 +33,7 @@ use crate::QuantSupportError;
 macro_rules! mirror_enum {
     ($(#[$meta:meta])* $name:ident, $qs:ty, $pyname:literal, [$($variant:ident),+ $(,)?]) => {
         $(#[$meta])*
-        #[pyclass(name = $pyname, eq, frozen, hash, from_py_object)]
+        #[pyclass(module = "quantsupport", name = $pyname, eq, frozen, hash, from_py_object)]
         #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
         pub enum $name {
             $($variant),+
@@ -71,6 +71,31 @@ macro_rules! mirror_enum {
             }
         }
     };
+}
+
+mirror_enum!(
+    /// Market quote level used for construction and calibration.
+    Level,
+    QsLevel,
+    "Level",
+    [Mid, Bid, Ask]
+);
+
+#[pymethods]
+impl Level {
+    /// Parses a quote level from its name (case-insensitive).
+    #[staticmethod]
+    pub fn parse(s: &str) -> PyResult<Self> {
+        Self::from_name(s)
+    }
+
+    fn __str__(&self) -> String {
+        format!("{self:?}")
+    }
+
+    fn __repr__(&self) -> String {
+        format!("Level.{self:?}")
+    }
 }
 
 mirror_enum!(
@@ -350,6 +375,8 @@ mirror_enum!(
         YieldToMaturity,
         ModifiedDuration,
         Sensitivities,
+        ZSpread,
+        OAS,
         Cashflows,
         FairRate
     ]
@@ -367,6 +394,8 @@ impl Request {
             "FairRate" | "fair_rate" => Ok(Self::FairRate),
             "YieldToMaturity" | "ytm" => Ok(Self::YieldToMaturity),
             "ModifiedDuration" | "modified_duration" => Ok(Self::ModifiedDuration),
+            "ZSpread" | "z_spread" | "zspread" => Ok(Self::ZSpread),
+            "OAS" | "oas" => Ok(Self::OAS),
             other => Self::from_name(other),
         }
     }
@@ -437,7 +466,14 @@ impl SmileType {
 /// (`MarketIndex.SOFR`); parameterised variants are built with
 /// [`MarketIndex.equity`], [`MarketIndex.fx_pair`],
 /// [`MarketIndex.collateral`] and [`MarketIndex.other`].
-#[pyclass(name = "MarketIndex", eq, frozen, hash, from_py_object)]
+#[pyclass(
+    module = "quantsupport",
+    name = "MarketIndex",
+    eq,
+    frozen,
+    hash,
+    from_py_object
+)]
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct MarketIndex {
     pub inner: QsMarketIndex,
@@ -683,5 +719,59 @@ impl PaymentStructure {
 
     fn __repr__(&self) -> String {
         format!("PaymentStructure.{self:?}")
+    }
+}
+
+mirror_enum!(
+    /// Schedule date-generation rule.
+    DateGenerationRule,
+    QsDateGenerationRule,
+    "DateGenerationRule",
+    [
+        Backward,
+        Forward,
+        Zero,
+        ThirdWednesday,
+        ThirdWednesdayInclusive,
+        Twentieth,
+        TwentiethIMM,
+        OldCDS,
+        CDS,
+        CDS2015
+    ]
+);
+#[pymethods]
+impl DateGenerationRule {
+    #[staticmethod]
+    pub fn parse(s: &str) -> PyResult<Self> {
+        Self::from_name(s)
+    }
+    fn __str__(&self) -> String {
+        format!("{self:?}")
+    }
+    fn __repr__(&self) -> String {
+        format!("DateGenerationRule.{self:?}")
+    }
+}
+
+mirror_enum!(
+    /// Payer or receiver European swaption.
+    SwaptionType,
+    quantsupport::prelude::SwaptionType,
+    "SwaptionType",
+    [Payer, Receiver]
+);
+
+#[pymethods]
+impl SwaptionType {
+    #[staticmethod]
+    pub fn parse(s: &str) -> PyResult<Self> {
+        Self::from_name(s)
+    }
+    fn __repr__(&self) -> String {
+        format!("SwaptionType.{self:?}")
+    }
+    fn __str__(&self) -> String {
+        format!("{self:?}")
     }
 }

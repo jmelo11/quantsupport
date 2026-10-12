@@ -17,10 +17,8 @@ This attribution and license notice must be preserved at the top of this file.
 
 use std::cell::{Cell, RefCell};
 
-use crate::scripting::{
-    nodes::{node::Node, traits::NodeVisitor},
-    utils::errors::Result,
-};
+use crate::scripting::nodes::{node::Node, traits::NodeVisitor};
+use crate::utils::errors::Result;
 
 /// Simplified domain representation used for constant propagation.
 #[derive(Clone, Debug, PartialEq)]

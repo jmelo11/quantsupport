@@ -6,3 +6,6 @@ test.ipynb
 .DS_Store
 __pycache__
 book/html/
+*.png
+*.ps1
+

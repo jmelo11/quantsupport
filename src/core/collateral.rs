@@ -109,12 +109,24 @@ impl DiscountPolicy for FixedIncomeDiscountPolicy {
 /// For legs in the same currency as the collateral, the stored discount index
 /// is returned. For cross-currency legs, a [`MarketIndex::Collateral`] index
 /// is returned to request a collateral-adjusted discount curve.
+#[derive(Clone)]
 pub struct SingleCurveCSADiscountPolicy {
     discount_index: MarketIndex,
     currency: Currency,
 }
 
 impl SingleCurveCSADiscountPolicy {
+    /// Returns the collateral remuneration index.
+    #[must_use]
+    pub const fn collateral_index(&self) -> &MarketIndex {
+        &self.discount_index
+    }
+    /// Returns the collateral currency.
+    #[must_use]
+    pub const fn collateral_currency(&self) -> Currency {
+        self.currency
+    }
+
     /// Creates a new [`SingleCurveCSADiscountPolicy`].
     #[must_use]
     pub const fn new(discount_index: MarketIndex, currency: Currency) -> Self {

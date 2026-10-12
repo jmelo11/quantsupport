@@ -4,10 +4,11 @@ use crate::{
     currencies::currency::Currency,
     indices::marketindex::MarketIndex,
     instruments::cashflows::leg::Leg,
-    quotes::fxstore::FxStore,
+    quotes::{fixingstore::FixingStore, fxstore::FxStore},
     rates::bootstrapping::{
         bootstrapdiscountpolicy::BootstrapDiscountPolicy, bootstrappedcurve::BootstrappedCurve,
     },
+    time::date::Date,
     utils::errors::{QSError, Result},
 };
 
@@ -18,6 +19,8 @@ pub struct BootstrapStep<'a> {
     curves: HashMap<MarketIndex, &'a BootstrappedCurve>,
     discount_policy: &'a BootstrapDiscountPolicy,
     fx_store: &'a FxStore,
+    fixing_store: Option<&'a FixingStore>,
+    reference_date: Date,
 }
 
 impl<'a> BootstrapStep<'a> {
@@ -36,7 +39,29 @@ impl<'a> BootstrapStep<'a> {
             curves,
             discount_policy,
             fx_store,
+            fixing_store: None,
+            reference_date: trial.reference_date(),
         }
+    }
+
+    /// Registers optional historical observations for overnight calibration coupons.
+    #[must_use]
+    pub const fn with_fixing_store(mut self, store: Option<&'a FixingStore>) -> Self {
+        self.fixing_store = store;
+        self
+    }
+
+    /// Returns the calibration valuation date.
+    #[must_use]
+    pub const fn reference_date(&self) -> Date {
+        self.reference_date
+    }
+
+    /// Returns an observation when available, without forecasting historical fixings.
+    #[must_use]
+    pub fn fixing(&self, index: &MarketIndex, date: Date) -> Option<f64> {
+        self.fixing_store
+            .and_then(|store| store.fixing(index, date).ok())
     }
 
     /// Looks up a curve by market index.

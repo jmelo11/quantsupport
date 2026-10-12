@@ -1,0 +1,105 @@
+name: Python and Excel bindings
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      ref:
+        description: Commit to build and test
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  python:
+    name: Python ${{ matrix.python }} / ${{ matrix.platform.runner }}
+    runs-on: ${{ matrix.platform.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.9', '3.10', '3.11', '3.12', '3.13', '3.14']
+        platform:
+          - {runner: ubuntu-22.04, target: x86_64}
+          - {runner: windows-latest, target: x64}
+          - {runner: macos-15, target: aarch64}
+          - {runner: macos-15-intel, target: x86_64}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Build wheel
+        uses: PyO3/maturin-action@v1
+        with:
+          target: ${{ matrix.platform.target }}
+          manylinux: '2_28'
+          args: --release --compatibility pypi --manifest-path bindings/python/Cargo.toml --interpreter ${{ matrix.python }} --out dist
+      - name: Install and test the wheel
+        shell: bash
+        run: |
+          python -m pip install dist/*.whl
+          python -m unittest discover -s bindings/python/tests -v
+      - name: Check type hints
+        shell: bash
+        run: |
+          python -m pip install mypy pandas-stubs "typing-extensions>=4.15"
+          python -m mypy bindings/python/python/quantsupport/__init__.pyi --ignore-missing-imports
+          python -m mypy.stubtest quantsupport --ignore-missing-stub
+      - uses: actions/upload-artifact@v6
+        with:
+          name: python-${{ matrix.platform.runner }}-${{ matrix.python }}
+          path: dist/*.whl
+          if-no-files-found: error
+
+  sdist:
+    name: Python source distribution
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Build source distribution
+        uses: PyO3/maturin-action@v1
+        with:
+          command: sdist
+          args: --manifest-path bindings/python/Cargo.toml --out dist
+      - name: Verify the source distribution builds independently
+        run: python -m pip wheel --no-deps dist/*.tar.gz --wheel-dir source-wheels
+      - name: Install and test the wheel built from source
+        run: |
+          python -m pip install source-wheels/*.whl
+          python -m unittest discover -s bindings/python/tests -v
+      - uses: actions/upload-artifact@v6
+        with:
+          name: python-sdist
+          path: dist/*.tar.gz
+          if-no-files-found: error
+
+  excel:
+    name: Windows 64-bit XLL
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+      - name: Install Rust
+        run: rustup toolchain install stable --profile minimal
+      - name: Test worksheet functions and registry
+        run: cargo +stable test -p quantsupport-xll --lib
+      - name: Build and package XLL
+        shell: pwsh
+        run: ./bindings/excel/scripts/build.ps1 -Profile release
+      - uses: actions/upload-artifact@v6
+        with:
+          name: excel-windows-x64
+          path: bindings/excel/dist/quantsupport.xll
+          if-no-files-found: error

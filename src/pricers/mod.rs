@@ -9,6 +9,8 @@ pub mod cashflows;
 pub mod credit;
 /// Equity pricers
 pub mod equity;
+/// Fixed-income security pricers.
+pub mod fixedincome;
 /// FX pricers.
 pub mod fx;
 /// Rates pricers.

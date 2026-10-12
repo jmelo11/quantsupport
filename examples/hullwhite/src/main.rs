@@ -66,7 +66,7 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
 
     let mut hw = HullWhite::new(*alpha, &curve);
 
-    hw.calibrate_with_configuration(&hw_config, &store, &quote_store, &curve, Level::Mid)
+    hw.calibrate_with_configuration(hw_config, &store, &quote_store, &curve, Level::Mid)
         .expect("calibration should converge");
 
     let quality = hw

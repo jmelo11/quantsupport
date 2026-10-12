@@ -20,7 +20,9 @@ use std::cell::Ref;
 
 use crate::{
     ad::dual::DualFwd,
-    core::elements::volatilitysurfaceelement::{ADVolatilitySurfaceElement, VolatilitySurfaceElement},
+    core::elements::volatilitysurfaceelement::{
+        ADVolatilitySurfaceElement, VolatilitySurfaceElement,
+    },
     utils::errors::Result,
 };
 

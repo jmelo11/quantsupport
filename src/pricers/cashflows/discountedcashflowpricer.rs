@@ -335,7 +335,23 @@ where
                         // evaluation date, use the historical fixing from the
                         // store. Otherwise project the forward rate from the
                         // curve.
-                        if coupon.accrual_start_date() < state.eval_date {
+                        if coupon.overnight_conventions().is_some() {
+                            let curve = state.get_discount_curve_element(forward_index)?.curve();
+                            let response = state.get_market_data_reponse().ok_or_else(|| {
+                                QSError::NotFoundErr("MarketDataResponse not available".into())
+                            })?;
+                            let rate = coupon.overnight_rate(
+                                state.eval_date,
+                                |date| curve.discount_factor(date),
+                                |date| {
+                                    Ok(response
+                                        .fixings()
+                                        .get(forward_index)
+                                        .and_then(|values| values.get(&date).copied()))
+                                },
+                            )?;
+                            coupon.set_fixing(rate);
+                        } else if coupon.accrual_start_date() < state.eval_date {
                             let realized = state
                                 .get_fixing(forward_index, coupon.accrual_start_date())
                                 .map(DualFwd::new)?;
@@ -474,7 +490,23 @@ where
                     CashflowType::FloatingRateCoupon(coupon) => {
                         // Use historical fixing when accrual has already
                         // started, otherwise project from the forward curve.
-                        let forward = if coupon.accrual_start_date() < state.eval_date {
+                        let forward = if coupon.overnight_conventions().is_some() {
+                            let response = state.get_market_data_reponse().ok_or_else(|| {
+                                QSError::NotFoundErr("MarketDataResponse not available".into())
+                            })?;
+                            coupon
+                                .overnight_rate(
+                                    state.eval_date,
+                                    |date| forward_curve.discount_factor(date),
+                                    |date| {
+                                        Ok(response
+                                            .fixings()
+                                            .get(forward_index)
+                                            .and_then(|values| values.get(&date).copied()))
+                                    },
+                                )?
+                                .value()
+                        } else if coupon.accrual_start_date() < state.eval_date {
                             state.get_fixing(forward_index, coupon.accrual_start_date())?
                         } else {
                             forward_curve
@@ -548,24 +580,29 @@ where
 
         // Collect fixing requests for floating coupons whose accrual has
         // already started (fixing date < evaluation date).
-        let fixing_requests: Vec<FixingRequest> = trade
-            .legs()
-            .iter()
-            .flat_map(|leg| {
-                let fwd_idx = leg.forward_index();
-                leg.cashflows().iter().filter_map(move |cf| {
-                    if let CashflowType::FloatingRateCoupon(coupon) = cf {
-                        if coupon.accrual_start_date() < eval_date {
-                            let index = fwd_idx
-                                .cloned()
-                                .unwrap_or_else(|| coupon.market_index().clone());
-                            return Some(FixingRequest::new(index, coupon.accrual_start_date()));
+        let mut fixing_requests = Vec::new();
+        for leg in trade.legs() {
+            for cashflow in leg.cashflows() {
+                if let CashflowType::FloatingRateCoupon(coupon) = cashflow {
+                    let index = leg.forward_index().unwrap_or_else(|| coupon.market_index());
+                    if coupon.overnight_conventions().is_some() {
+                        for date in coupon.overnight_fixing_dates(eval_date)? {
+                            let request = FixingRequest::new(index.clone(), date);
+                            fixing_requests.push(if date == eval_date {
+                                request.with_missing_fixing_allowed(true)
+                            } else {
+                                request
+                            });
                         }
+                    } else if coupon.accrual_start_date() < eval_date {
+                        fixing_requests.push(FixingRequest::new(
+                            index.clone(),
+                            coupon.accrual_start_date(),
+                        ));
                     }
-                    None
-                })
-            })
-            .collect();
+                }
+            }
+        }
 
         if !fixing_requests.is_empty() {
             md_request = md_request.with_fixings_request(fixing_requests);
@@ -705,7 +742,9 @@ mod tests {
                 makefixedratedeposit::MakeFixedRateDeposit,
             },
             rates::{
-                fixfloatcrosscurrencyswap::{FixFloatCrossCurrencySwap, FixFloatCrossCurrencySwapTrade},
+                fixfloatcrosscurrencyswap::{
+                    FixFloatCrossCurrencySwap, FixFloatCrossCurrencySwapTrade,
+                },
                 makefixfloatcrosscurrencyswap::MakeFixFloatCrossCurrencySwap,
                 makeswap::MakeSwap,
                 swap::{Swap, SwapTrade},
@@ -829,6 +868,64 @@ mod tests {
             exposures[0]
         );
         println!("Sensitivity to {}: {:.4}", keys[0], exposures[0]);
+    }
+
+    #[test]
+    fn ois_context_prices_historical_and_future_observations() {
+        use crate::prelude::{
+            CurveConfiguration, FixingStore, Interpolator, MakeOvernightIndexSwap,
+            OvernightIndexSwap, OvernightIndexSwapTrade, Period, PricingContext, Quote,
+            QuoteLevels, QuoteStore, TimeUnit,
+        };
+
+        let reference = Date::new(2026, 1, 5);
+        let mut store = QuoteStore::new(reference);
+        let maturity = reference + Period::new(1, TimeUnit::Years);
+        let deposit_rate =
+            (0.04_f64.exp() - 1.0) / DayCounter::Actual360.year_fraction(reference, maturity);
+        store.add_quote(Quote::new(
+            "FixedRateDeposit_USD_SOFR_1Y".parse().unwrap(),
+            QuoteLevels::with_mid(deposit_rate),
+        ));
+        let config = CurveConfiguration::new(
+            MarketIndex::SOFR,
+            DayCounter::Actual365,
+            Interpolator::LogLinear,
+            true,
+            vec!["FixedRateDeposit_USD_SOFR_1Y".into()],
+        );
+        let mut fixings = FixingStore::default();
+        fixings.add_fixing(&MarketIndex::SOFR, Date::new(2026, 1, 2), 0.03);
+        let mut context = PricingContext::new()
+            .with_quote_store(store)
+            .with_curve_configurations(vec![config])
+            .with_fixing_store(fixings);
+        context.initialize().unwrap();
+        let start = Date::new(2026, 1, 2);
+        let end = Date::new(2026, 1, 7);
+        let instrument = MakeOvernightIndexSwap::<DualFwd>::new(
+            MarketIndex::SOFR,
+            reference,
+            Period::new(1, TimeUnit::Years),
+            0.0,
+        )
+        .with_start_date(start)
+        .with_maturity_date(end)
+        .build()
+        .unwrap();
+        let payment = instrument.floating_leg().last_payment_date();
+        let trade = OvernightIndexSwapTrade::new(instrument, reference, 1.0, Side::LongReceive);
+        let pricer = DiscountedCashflowPricer::<
+            OvernightIndexSwap<DualFwd>,
+            OvernightIndexSwapTrade<DualFwd>,
+        >::new();
+        let results = pricer
+            .evaluate(&trade, &[Request::Value, Request::FairRate], &context)
+            .unwrap();
+        let discount = |date| (-0.04 * DayCounter::Actual365.year_fraction(reference, date)).exp();
+        let growth = (1.0 + 0.03 * 3.0 / 360.0) / discount(end) - 1.0;
+        assert!((results.price().unwrap() + growth * discount(payment)).abs() < 1e-12);
+        assert!((results.fair_rate().unwrap() - growth / (5.0 / 360.0)).abs() < 1e-12);
     }
 
     #[test]
