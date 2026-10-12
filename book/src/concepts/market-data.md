@@ -4,39 +4,188 @@ Market data enters the library through three stores: `QuoteStore` (prices), `Fix
 
 ## Quote identifiers
 
-Every quote is identified by an underscore-separated string that is parsed by `QuoteDetails::from_str` into a `QuoteInstrument`. The identifier is what curve configurations, vol configurations and scenarios refer to, and it doubles as the pillar label in sensitivity reports.
+`QuoteDetails` describes the instrument being quoted: its product family, currencies,
+indices, term and any coupon, strike or payment conventions.
 
-The grammar embeds enough information to reconstruct a calibration instrument.
-Reading the table from left to right shows how the instrument family determines
-the remaining fields and why option quotes require more coordinates than rate
-quotes.
+`QuoteDetails` keeps those contract terms together. The observed bid, mid and
+ask values are stored in `QuoteLevels`; `Quote` combines the details and values.
+For example, `FixedRateDeposit_USD_SOFR_6M` describes a six-month USD deposit
+associated with SOFR. A mid value of `0.04` is its quoted rate of 4%.
 
-| Instrument                      | Pattern                                                                                                 | Example                                                                                                            |
-| ------------------------------- | ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| Fixed-rate deposit              | `FixedRateDeposit_<CCY>_<Index>_<Tenor>`                                                                | `FixedRateDeposit_USD_SOFR_1D`                                                                                    |
-| Fixed-rate bond                 | `FixedRateBond_<CCY>_<Index>_<Tenor>[_<PayFreq>]_<CouponRate>[_<CalibrationStrategy>]`                  | `FixedRateBond_USD_CORP_5Y_Semiannual_0.04_AnchorPrice`                                                           |
-| Overnight index swap           | `OIS_<CCY>_<Index>_<Tenor>[_<FixedFreq>[_<OvernightFreq>[...]]]`                                        | `OIS_USD_SOFR_5Y`, `OIS_CLP_ICP_6M`                                                                                |
-| Regular fixed-float swap        | `Swap_<CCY>_<Index>_<Tenor>[_<FixedFreq>[_<FloatFreq>]]`                                                | `Swap_USD_TermSOFR3m_5Y_Semiannual_Quarterly`                                                                        |
-| Tenor basis swap                | `BasisSwap_<CCY>_<PayIndex>_<RecvIndex>_<Tenor>[_<PayFreq>_<RecvFreq>]`                                 | `BasisSwap_USD_SOFR_TermSOFR3m_2Y`                                                                                 |
-| Fix–float cross-currency swap   | `FixFloatCrossCurrencySwap_<FixedCCY>_<FloatIndex>_<FloatCCY>_<Tenor>[..]`                              | `FixFloatCrossCurrencySwap_CLP_SOFR_USD_5Y`                                                                        |
-| Float–float cross-currency swap | `FloatFloatCrossCurrencySwap_<DomCCY>_<DomIndex>_<ForIndex>_<ForCCY>_<Tenor>[..]`                       | `FloatFloatCrossCurrencySwap_USD_SOFR_ESTR_EUR_5Y`                                                                 |
-| FX forward                      | `FxForward_<PAIR>_<Tenor>_<CalibrationStrategy>`                                                        | `FxForward_USDCLP_3M_AnchorForwardPoints`, `FxForward_EURUSD_1Y_AnchorOutrightPrice`                              |
-| Rate future                     | `Future_<CCY>_<Index>_<IMM>`                                                                            | `Future_USD_SOFR_H26`                                                                                              |
-| Convexity adjustment            | `ConvexityAdjustment_<CCY>_<Index>_<IMM>`                                                               |                                                                                                                    |
-| Cap / floor volatility          | `CapFloor_<CCY>_<Index>_<Tenor>_<Freq>_<StrikeKind>_<Strike>_<VolType>`                                 | `CapFloor_USD_SOFR_5Y_Quarterly_Absolute_0.04_Black`                                                               |
-| Caplet / floorlet volatility    | `CapletFloorlet_<CCY>_<Index>_<IndexTenor>_<Expiry>_<StrikeKind>_<Strike>_<Strategy>_<VolType>`         | `CapletFloorlet_USD_SOFR_3M_1Y_Absolute_0.045_Straddle_Black`                                                      |
-| Swaption volatility             | `Swaption_<CCY>_<Index>_<Expiry>_<SwapTenor>[_<FixedFreq>_<FloatFreq>]_<StrikeKind>_<Strike>_<VolType>` | `Swaption_CLP_ICP_1Y_1Y_Absolute_0.045_Black`, `Swaption_USD_SOFR_3M_2Y_Semiannual_Semiannual_Absolute_0.04_Black` |
-| Equity option                   | `EquityCall_<CCY>_<Index>_<Tenor>_<StrikeKind>_<Strike>`, `EquityPut_...`                               | `EquityCall_USD_AAPL_6M_Absolute_150`                                                                              |
-| FX option                       | `FxCall_<PAIR>_<Tenor>_<StrikeKind>_<Strike>`, `FxPut_...`                                              | `FxPut_USDCLP_3M_Absolute_950`                                                                                     |
-| Credit default swap             | `Cds_<Entity>_<CCY>_<Tenor>`                                                                            | `Cds_CORPORATE-A_USD_5Y`                                                                                            |
+```rust
+use quantsupport::prelude::{Quote, QuoteDetails, QuoteLevels};
 
-- `<Tenor>` and `<Expiry>` are `Period` strings (`1D`, `3M`, `5Y`, `1Y6M`).
-- `<StrikeKind>` is `Absolute` (strike follows as a decimal), `Atm`, or `Relative` (offset from ATM).
-- `<VolType>` is `Black` or `Normal`. `<Strategy>` for caplets is `Cap`, `Floor`, or `Straddle`.
-- `<CalibrationStrategy>` is `AnchorYield` or `AnchorPrice` for bonds and defaults to `AnchorYield`. For FX forwards it is required and is either `AnchorForwardPoints` or `AnchorOutrightPrice`. Deposits accept rate quotes only. Strategy aliases without the `Anchor` prefix are rejected.
-- Currency pairs are concatenated ISO codes (`USDCLP` = price of 1 USD in CLP).
+let details: QuoteDetails = "FixedRateDeposit_USD_SOFR_6M".parse()?;
+let quote = Quote::new(details, QuoteLevels::with_mid(0.04));
+# Ok::<(), quantsupport::prelude::QSError>(())
+```
 
-`QuoteInstrument` distinguishes `OIS` from `Swap`, along with the other instrument families in the table. `QuoteDetails` carries the parsed fields. Curve configurations resolve these details into calibration instruments at the selected quote level.
+### Reading an identifier
+
+Identifiers use underscores to separate contract terms. The first word selects
+the product, which determines the meaning of the remaining fields. For example,
+`Swap_USD_TermSOFR3m_5Y_Semiannual_Quarterly` describes a five-year USD swap
+against three-month Term SOFR, with semiannual fixed payments and quarterly
+floating payments.
+
+`CCY` is a currency code such as `USD`; `Index` is a market index such as
+`SOFR`, `ICP` or `TermSOFR3m`. `Tenor` and `Expiry` are periods such as `1D`,
+`3M`, `5Y` or `1Y6M`. Frequency names include `Annual`, `Semiannual`, `Quarterly`
+and `Monthly`. Square brackets mark optional parts of an identifier.
+
+### Parsed fields
+
+`QuoteDetails` exposes the terms through getters. Optional fields return `None`
+when absent or inapplicable to the product. An omitted payment frequency,
+for example, stays unset in the details; the instrument builder supplies its
+default when constructing the contract.
+
+| Getter | Meaning |
+| --- | --- |
+| `identifier()` | Original market label used to find the quote and identify its sensitivity. |
+| `instrument()` | Product family, such as `FixedRateDeposit` or `EuropeanSwaption`. |
+| `currency()`, `market_index()` | Main currency and index for a rate, bond, credit or equity quote. |
+| `secondary_market_index()` | Receive index of a basis swap, or foreign index of a floating cross-currency swap. |
+| `pay_currency()`, `receive_currency()` | Leg currencies of a cross-currency swap, or base and quote currencies of an FX pair. |
+| `tenor()` | Instrument term; for a swaption, the underlying swap's term. |
+| `option_expiry()` | Time to option expiry. |
+| `index_tenor()` | Underlying accrual period of a caplet/floorlet. |
+| `contract_code()` | IMM contract code of a future or convexity-adjustment quote. |
+| `pay_leg_frequency()`, `receive_leg_frequency()` | Payment frequencies supplied in the identifier. |
+| `coupon_rate()`, `strike()`, `vol_type()` | Bond coupon, option strike and volatility quoting convention, where applicable. |
+| `bond_calibration_strategy()` | Whether the bond quote supplies a yield or a price. |
+| `fx_forward_calibration_strategy()` | Whether the FX forward quote supplies forward points or an outright rate. |
+| `option_strategy()` | Caplet/floorlet quote strategy, such as `Straddle`. |
+
+Tenors are relative periods. Builders use the market reference date and the
+instrument's conventions to resolve actual start, expiry and payment dates.
+For `Swaption_USD_SOFR_1Y_5Y_Absolute_0.04_Black`, `option_expiry()` is one year,
+`tenor()` is five years, and `strike()` is 4%. The associated `QuoteLevels`
+supplies the observed implied volatility.
+
+### Rates, bonds and credit
+
+| Identifier | What it describes |
+| --- | --- |
+| `FixedRateDeposit_CCY_Index_Tenor` | A deposit's currency, curve index and term. |
+| `OIS_CCY_Index_Tenor[_OisFields]` | A fixed rate against an overnight index; optional conventions are described under [OIS parameters](#ois-parameters). |
+| `Swap_CCY_Index_Tenor[_FixedFreq[_FloatFreq]]` | A fixed rate against a floating index, with optional fixed and floating payment frequencies. |
+| `FixedRateBond_CCY_Index_Tenor[_PayFreq]_CouponRate[_BondStrategy]` | A bond's currency, curve index, term, coupon and optional payment frequency and calibration strategy. |
+| `Future_CCY_Index_IMM` | An interest-rate futures contract identified by its currency, index and IMM code. |
+| `ConvexityAdjustment_CCY_Index_IMM` | An adjustment quote associated with the specified futures contract. |
+| `Cds_Entity_CCY_Tenor` | A CDS par spread for a credit entity, currency and term. |
+
+Deposit and swap quote values are rates, while CDS quote values are par spreads.
+Rates, coupons and spreads use decimals: `0.04` means 4%.
+
+In `FixedRateBond_USD_CORP_5Y_Semiannual_0.04_AnchorPrice`, the `0.04` in the
+identifier is the coupon. `AnchorPrice` tells calibration to use the observed
+quote as the bond price; `AnchorYield` uses it as yield to maturity and is the
+default if the strategy is omitted. `IMM` is a futures contract code such as `H6`.
+
+### Basis and cross-currency swaps
+
+| Identifier | What it describes |
+| --- | --- |
+| `BasisSwap_CCY_PayIndex_RecvIndex_Tenor[_PayFreq[_RecvFreq]]` | Two floating legs in one currency; the primary index is the pay index and the secondary index is the receive index. |
+| `FixFloatCrossCurrencySwap_DomCCY_FloatIndex_ForCCY_Tenor[_DomFreq[_ForFreq]]` | A fixed domestic-currency leg against a floating foreign-currency leg. |
+| `FloatFloatCrossCurrencySwap_DomCCY_DomIndex_ForIndex_ForCCY_Tenor[_DomFreq[_ForFreq]]` | A domestic floating leg against a foreign floating leg, each with its own index. |
+
+`DomCCY` and `ForCCY` identify the domestic and foreign legs; `DomFreq` and
+`ForFreq` set their payment frequencies. For example,
+`FloatFloatCrossCurrencySwap_USD_SOFR_ICP_CLP_5Y` describes five years of USD
+SOFR cashflows against CLP ICP cashflows.
+
+### FX and equity
+
+| Identifier | What it describes |
+| --- | --- |
+| `FxForward_PAIR_Tenor_ForwardStrategy` | A forward's currency pair, delivery term and choice of forward-points or outright-price quote. |
+| `EquityCall_CCY_Ticker_Expiry_StrikeKind_StrikeValue` | A call on the specified equity, with its currency, expiry and strike. |
+| `EquityPut_CCY_Ticker_Expiry_StrikeKind_StrikeValue` | A put on the specified equity, with its currency, expiry and strike. |
+| `FxCall_PAIR_Expiry_StrikeKind_StrikeValue` | A currency call with the specified pair, expiry and strike. |
+| `FxPut_PAIR_Expiry_StrikeKind_StrikeValue` | A currency put with the specified pair, expiry and strike. |
+
+`PAIR` contains the base currency followed by the quote currency: `EURUSD`
+means USD per EUR. For an FX forward, `AnchorForwardPoints` uses forward points
+as the observed quote and `AnchorOutrightPrice` uses the outright forward rate.
+For example, `FxForward_EURUSD_1M_AnchorOutrightPrice` identifies a one-month
+EUR/USD forward whose quote is the outright rate.
+
+Equity and FX option identifiers accept `Absolute` and `Relative` strike kinds.
+`EquityCall_USD_AAPL_6M_Absolute_150` identifies a six-month USD call on AAPL
+with a strike of 150. A relative strike is an offset from the forward.
+
+### Interest-rate options
+
+| Identifier | What it describes |
+| --- | --- |
+| `CapFloor_CCY_Index_Tenor[_Freq]_Strike_VolType` | A cap/floor volatility quote with the full instrument term and optional coupon frequency. |
+| `CapletFloorlet_CCY_Index_IndexTenor_Expiry_Strike_Strategy_VolType` | A caplet/floorlet volatility quote; index tenor is the underlying accrual period and expiry is the time until it starts. |
+| `Swaption_CCY_Index_Expiry_SwapTenor[_FixedFreq[_FloatFreq]]_Strike_VolType` | A swaption volatility quote; expiry is the exercise term and swap tenor is the length of the underlying swap. |
+
+`Strike` expands to `Absolute_0.04`, `Relative_0.01` or `ATM`. `Absolute` specifies
+the strike itself; `Relative` adds an offset to the forward; `ATM` uses the
+forward and needs no numeric strike. For example,
+`Swaption_USD_SOFR_1Y_5Y_ATM_Black` quotes the volatility of an at-the-money
+option expiring in one year on a five-year SOFR swap.
+
+`VolType` is `Black` for lognormal volatility or `Normal` for absolute-rate
+volatility. Volatilities use decimals: a Black value of
+`0.20` means 20%. The caplet/floorlet `Strategy` field accepts `Straddle`,
+`Strangle`, `RiskReversal` or `Butterfly`, as defined by `OptionStrategy`.
+
+### OIS parameters
+
+OIS quotes can specify settlement, payment schedules, calendars and overnight
+observation rules after the tenor. `OIS_USD_SOFR_1Y` uses the index preset.
+To override a later field while keeping earlier defaults, leave the earlier
+fields empty: `OIS_USD_SOFR_1Y___0_3` keeps both default frequencies, starts
+with zero settlement days and pays three business days after accrual ends.
+Omit any trailing fields you do not need.
+
+| Order | Field | Accepted values / examples | Default |
+| --- | --- | --- | --- |
+| 1 | Fixed frequency | `Frequency`, e.g. `Annual`, `Semiannual` | `Annual` |
+| 2 | Overnight frequency | `Frequency`, e.g. `Annual`, `Quarterly` | `Annual` |
+| 3 | Settlement days | Nonnegative business-day count | SONIA: `0`; CORRA: `1`; other indices: `2` |
+| 4 | Payment lag | Nonnegative business-day count | SOFR / SOFRCompounded: `2`; other indices: `0` |
+| 5 | Fixed day counter | `DayCounter`, e.g. `Actual360`, `Actual365` | Index day counter |
+| 6 | Settlement calendar | Canonical calendar name | Index calendar |
+| 7 | Fixed accrual calendar | Canonical calendar name | Index calendar |
+| 8 | Overnight accrual calendar | Canonical calendar name | Index calendar |
+| 9 | Payment calendar | Canonical calendar name | Index calendar |
+| 10 | Accrual adjustment | Accrual business-day convention, e.g. `Following` | `ModifiedFollowing` |
+| 11 | Termination adjustment | Termination business-day convention | Accrual convention |
+| 12 | Payment adjustment | Payment business-day convention | `Following` |
+| 13 | Schedule generation | e.g. `Backward`, `Forward` | `Backward` |
+| 14 | End of month | `true` or `false` | Inferred from the effective date |
+| 15 | Forward start | `Period`, e.g. `1M` | `0D` (start at spot) |
+| 16 | First coupon date | ISO date, e.g. `2027-01-05` | No explicit front stub |
+| 17 | Penultimate coupon date | ISO date, e.g. `2030-01-05` | No explicit back stub |
+| 18 | Overnight averaging | `Compound` or `Simple` | `Compound` |
+| 19 | Lookback days | Nonnegative business-day observation count | `0` |
+| 20 | Lockout days | Nonnegative business-day observation count | `0` |
+| 21 | Observation shift | `true` or `false` | `false` |
+| 22 | Daily spread compounding | `true` or `false` | `false` |
+| 23 | Calibration pillar | `LastRelevantDate`, `MaturityDate`, `CustomDate(YYYY-MM-DD)` | `LastRelevantDate` |
+
+Calendar values use names such as `UnitedStates(Sofr)` or `TARGET`.
+`OIS_USD_SOFR_2Y_Annual_Annual_2_2_Actual360` specifies annual payments,
+two settlement days, a two-business-day payment lag and ACT/360 fixed coupons.
+`CustomDate(2027-01-06)` selects an explicit calibration pillar; that date must
+lie between the contract's effective and last relevant dates.
+
+### Constructing details
+
+Parse a standard identifier with `str::parse()` or `QuoteDetails::from_str()`.
+`QuoteDetails::parse(identifier, separator)` accepts a different separator.
+For a structured data feed, `QuoteDetails::new` and the `with_*` setters let
+you supply the terms directly.
+
+See [OIS conventions](../curves/bootstrapping.md#ois-conventions) for settlement
+and coupon calculations, and [Volatility Surfaces](../curves/volatility.md) for
+how option quote terms define a surface or cube.
 
 ## `QuoteStore`
 
@@ -59,9 +208,8 @@ store.quotes();                                // &HashMap<String, Quote>
 let mid = store.quote("OIS_USD_SOFR_5Y").and_then(|q| q.levels().mid());
 ```
 
-The store retains the complete `QuoteDetails`, so downstream components use the
-same parsed currency, index, maturity, and strategy information. This avoids
-reinterpreting strings inside individual bootstrappers.
+Each store lookup returns a `Quote`: `details()` gives its contract terms and
+`levels()` gives its observed market values.
 
 `QuoteLevels::with_mid(mid)` sets the mid. `QuoteLevels::new(mid, bid, ask)` takes three `Option<f64>` values. `levels.value(Level::Mid | Bid | Ask)` returns `Result<f64>` and reports an absent level. Bootstrappers and builders take a `Level` argument, so one store can produce a mid curve and bid or ask constructions.
 

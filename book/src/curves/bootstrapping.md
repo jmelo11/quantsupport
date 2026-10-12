@@ -74,32 +74,8 @@ For example, `OIS_USD_SOFR_1Y___0_3` keeps both default frequencies and sets
 settlement days to zero and payment lag to three. Keyword arguments are not
 accepted. Enum values are case-sensitive and use their canonical spellings.
 
-Optional fields, in order after the tenor:
-
-1. Fixed frequency, e.g. `Annual`.
-2. Overnight frequency, e.g. `Quarterly`.
-3. Settlement days, a nonnegative business-day count.
-4. Payment lag, a nonnegative business-day count.
-5. Fixed day counter, e.g. `Actual360`.
-6. Settlement calendar.
-7. Fixed accrual calendar.
-8. Overnight accrual calendar.
-9. Payment calendar.
-10. Accrual business-day convention, e.g. `ModifiedFollowing`.
-11. Termination business-day convention.
-12. Payment business-day convention, e.g. `Following`.
-13. Date generation rule, e.g. `Backward`.
-14. End-of-month flag: `true` or `false`.
-15. Forward-start tenor, e.g. `1M`.
-16. First coupon date, an ISO date.
-17. Penultimate coupon date, an ISO date.
-18. Averaging: `Compound` or `Simple`.
-19. Lookback days, a nonnegative observation count.
-20. Lockout days, a nonnegative observation count.
-21. Observation shift: `true` or `false`.
-22. Daily spread compounding: `true` or `false`.
-23. Pillar: `LastRelevantDate`, `MaturityDate`, or `CustomDate(2027-01-06)`
-    within the instrument's relevant date range.
+The [OIS quote parameters](../concepts/market-data.md#ois-parameters) define the
+available contract overrides and their defaults.
 
 Calendar fields use exact names such as `UnitedStates(Sofr)` or `TARGET`.
 Bare country names are not aliases; `UnitedStates(Settlement)` is a different
