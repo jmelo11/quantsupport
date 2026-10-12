@@ -61,6 +61,8 @@ macro_rules! product_dict_constructors {
 }
 
 product_dict_constructors!(
+    EuropeanSwaption,
+    EquityForward,
     Swap,
     CrossCurrencySwap,
     BasisSwap,
@@ -79,7 +81,7 @@ product_dict_constructors!(
 );
 
 /// A vanilla fixed-vs-floating interest rate swap.
-#[pyclass(name = "Swap", extends = Instrument, from_py_object, subclass, dict, unsendable)]
+#[pyclass(module = "quantsupport", name = "Swap", extends = Instrument, from_py_object, subclass, dict, unsendable)]
 #[derive(Clone)]
 pub struct Swap {
     pub identifier: String,
@@ -265,7 +267,7 @@ impl Swap {
 }
 
 /// A float-vs-float cross-currency swap.
-#[pyclass(name = "CrossCurrencySwap", extends = Instrument, from_py_object, subclass, dict, unsendable)]
+#[pyclass(module = "quantsupport", name = "CrossCurrencySwap", extends = Instrument, from_py_object, subclass, dict, unsendable)]
 #[derive(Clone)]
 pub struct CrossCurrencySwap {
     pub identifier: String,
@@ -455,7 +457,7 @@ impl CrossCurrencySwap {
 }
 
 /// A float-vs-float single-currency basis swap.
-#[pyclass(name = "BasisSwap", extends = Instrument, from_py_object, subclass, dict, unsendable)]
+#[pyclass(module = "quantsupport", name = "BasisSwap", extends = Instrument, from_py_object, subclass, dict, unsendable)]
 #[derive(Clone)]
 pub struct BasisSwap {
     pub identifier: String,
@@ -585,7 +587,7 @@ impl BasisSwap {
 }
 
 /// A fixed-vs-float cross-currency swap.
-#[pyclass(name = "FixFloatCrossCurrencySwap", extends = Instrument, from_py_object, subclass, dict, unsendable)]
+#[pyclass(module = "quantsupport", name = "FixFloatCrossCurrencySwap", extends = Instrument, from_py_object, subclass, dict, unsendable)]
 #[derive(Clone)]
 pub struct FixFloatCrossCurrencySwap {
     pub identifier: String,
@@ -759,7 +761,12 @@ impl FixFloatCrossCurrencySwap {
 }
 
 /// One dated issuer call in a callable bond's schedule.
-#[pyclass(name = "CallScheduleEntry", from_py_object, frozen)]
+#[pyclass(
+    module = "quantsupport",
+    name = "CallScheduleEntry",
+    from_py_object,
+    frozen
+)]
 #[derive(Clone)]
 pub struct CallScheduleEntry {
     pub inner: QsCallScheduleEntry,
@@ -859,7 +866,7 @@ impl CallScheduleEntry {
 }
 
 /// One positional coupon definition in a stepped-coupon schedule.
-#[pyclass(name = "Coupon", from_py_object, frozen)]
+#[pyclass(module = "quantsupport", name = "Coupon", from_py_object, frozen)]
 #[derive(Clone)]
 pub struct Coupon {
     pub inner: QsCashflowType<f64>,
@@ -977,7 +984,7 @@ impl Coupon {
 }
 
 /// A fixed-rate bullet (or amortizing) bond.
-#[pyclass(name = "FixedRateBond", extends = Instrument, from_py_object, subclass, dict, unsendable)]
+#[pyclass(module = "quantsupport", name = "FixedRateBond", extends = Instrument, from_py_object, subclass, dict, unsendable)]
 #[derive(Clone)]
 pub struct FixedRateBond {
     pub identifier: String,
@@ -1185,7 +1192,7 @@ impl FixedRateBond {
 }
 
 /// A callable bond with positional coupon and outstanding-notional schedules.
-#[pyclass(name = "SteppedCouponBond", extends = Instrument, from_py_object, subclass, dict, unsendable)]
+#[pyclass(module = "quantsupport", name = "SteppedCouponBond", extends = Instrument, from_py_object, subclass, dict, unsendable)]
 #[derive(Clone)]
 pub struct SteppedCouponBond {
     pub identifier: String,
@@ -1414,7 +1421,7 @@ impl SteppedCouponBond {
 }
 
 /// A floating-rate note.
-#[pyclass(name = "FloatingRateNote", extends = Instrument, from_py_object, subclass, dict, unsendable)]
+#[pyclass(module = "quantsupport", name = "FloatingRateNote", extends = Instrument, from_py_object, subclass, dict, unsendable)]
 #[derive(Clone)]
 pub struct FloatingRateNote {
     pub identifier: String,
@@ -1531,7 +1538,7 @@ impl FloatingRateNote {
 }
 
 /// A fixed-rate deposit.
-#[pyclass(name = "FixedRateDeposit", extends = Instrument, from_py_object, subclass, dict, unsendable)]
+#[pyclass(module = "quantsupport", name = "FixedRateDeposit", extends = Instrument, from_py_object, subclass, dict, unsendable)]
 #[derive(Clone)]
 pub struct FixedRateDeposit {
     pub identifier: String,
@@ -1658,7 +1665,7 @@ impl FixedRateDeposit {
 }
 
 /// A deliverable or non-deliverable FX forward.
-#[pyclass(name = "FxForward", extends = Instrument, from_py_object, subclass, dict, unsendable)]
+#[pyclass(module = "quantsupport", name = "FxForward", extends = Instrument, from_py_object, subclass, dict, unsendable)]
 #[derive(Clone)]
 pub struct FxForwardPy {
     pub identifier: String,
@@ -1759,7 +1766,7 @@ impl FxForwardPy {
 }
 
 /// A European FX option.
-#[pyclass(name = "FxOption", extends = Instrument, from_py_object, subclass, dict, unsendable)]
+#[pyclass(module = "quantsupport", name = "FxOption", extends = Instrument, from_py_object, subclass, dict, unsendable)]
 #[derive(Clone)]
 pub struct FxOptionPy {
     pub identifier: String,
@@ -1837,7 +1844,7 @@ impl FxOptionPy {
 }
 
 /// A European equity option.
-#[pyclass(name = "EquityOption", extends = Instrument, from_py_object, subclass, dict, unsendable)]
+#[pyclass(module = "quantsupport", name = "EquityOption", extends = Instrument, from_py_object, subclass, dict, unsendable)]
 #[derive(Clone)]
 pub struct EquityOption {
     pub identifier: String,
@@ -1909,7 +1916,7 @@ impl EquityOption {
 }
 
 /// A single-name credit default swap.
-#[pyclass(name = "CreditDefaultSwap", extends = Instrument, from_py_object, subclass, dict, unsendable)]
+#[pyclass(module = "quantsupport", name = "CreditDefaultSwap", extends = Instrument, from_py_object, subclass, dict, unsendable)]
 #[derive(Clone)]
 pub struct CreditDefaultSwapPy {
     pub identifier: String,
@@ -2020,7 +2027,7 @@ impl CreditDefaultSwapPy {
 }
 
 /// An interest-rate cap or floor.
-#[pyclass(name = "CapFloor", extends = Instrument, from_py_object, subclass, dict, unsendable)]
+#[pyclass(module = "quantsupport", name = "CapFloor", extends = Instrument, from_py_object, subclass, dict, unsendable)]
 #[derive(Clone)]
 pub struct CapFloorPy {
     pub identifier: String,
@@ -2117,7 +2124,7 @@ impl CapFloorPy {
 }
 
 /// A single caplet or floorlet.
-#[pyclass(name = "CapletFloorlet", extends = Instrument, from_py_object, subclass, dict, unsendable)]
+#[pyclass(module = "quantsupport", name = "CapletFloorlet", extends = Instrument, from_py_object, subclass, dict, unsendable)]
 #[derive(Clone)]
 pub struct CapletFloorletPy {
     pub identifier: String,
@@ -2209,7 +2216,7 @@ impl CapletFloorletPy {
 }
 
 /// An exchange-traded interest-rate futures position.
-#[pyclass(name = "RateFutures", extends = Instrument, from_py_object, subclass, dict, unsendable)]
+#[pyclass(module = "quantsupport", name = "RateFutures", extends = Instrument, from_py_object, subclass, dict, unsendable)]
 #[derive(Clone)]
 pub struct RateFuturesPy {
     pub identifier: String,
@@ -2285,5 +2292,238 @@ impl RateFuturesPy {
             "RateFutures(identifier='{}', start_date='{}', end_date='{}', futures_price={})",
             self.identifier, self.start_date, self.end_date, self.futures_price
         )
+    }
+}
+
+/// Equity forward contract; its position size belongs to `Trade`.
+#[pyclass(module = "quantsupport", name = "EquityForward", extends = Instrument, from_py_object, subclass, dict, unsendable)]
+#[derive(Clone)]
+pub struct EquityForward {
+    identifier: String,
+    market_index: MarketIndex,
+    delivery_date: Date,
+    strike: f64,
+    currency: Currency,
+    day_counter: DayCounter,
+}
+impl EquityForward {
+    pub fn build_trade(
+        &self,
+        position: &Trade,
+    ) -> PyResult<quantsupport::prelude::EquityForwardTrade> {
+        let instrument = quantsupport::prelude::MakeEquityForward::default()
+            .with_identifier(self.identifier.clone())
+            .with_market_index(self.market_index.clone())
+            .with_delivery_date(self.delivery_date)
+            .with_strike(self.strike)
+            .with_currency(self.currency)
+            .with_day_counter(self.day_counter)
+            .build()
+            .map_err(qs_err)?;
+        Ok(quantsupport::prelude::EquityForwardTrade::new(
+            instrument,
+            position.trade_date(),
+            position.notional().unwrap_or(1.0),
+            position.side(),
+        ))
+    }
+}
+#[pymethods]
+impl EquityForward {
+    #[new]
+    #[pyo3(signature=(identifier, market_index, delivery_date, strike, currency, day_counter=None))]
+    fn new(
+        identifier: String,
+        market_index: &Bound<'_, PyAny>,
+        delivery_date: &Bound<'_, PyAny>,
+        strike: f64,
+        currency: &Bound<'_, PyAny>,
+        day_counter: Option<&Bound<'_, PyAny>>,
+    ) -> PyResult<PyClassInitializer<Self>> {
+        if !strike.is_finite() {
+            return Err(pyo3::exceptions::PyValueError::new_err(
+                "strike must be finite",
+            ));
+        }
+        Ok(
+            PyClassInitializer::from(Instrument::new(identifier.clone())).add_subclass(Self {
+                identifier,
+                market_index: extract_market_index(market_index)?,
+                delivery_date: extract_date(delivery_date)?,
+                strike,
+                currency: extract_currency(currency)?,
+                day_counter: day_counter
+                    .map(extract_day_counter)
+                    .transpose()?
+                    .unwrap_or(DayCounter::Actual360),
+            }),
+        )
+    }
+    #[getter]
+    fn identifier(&self) -> &str {
+        &self.identifier
+    }
+    #[getter]
+    fn strike(&self) -> f64 {
+        self.strike
+    }
+    #[getter]
+    fn delivery_date(&self) -> crate::time::Date {
+        crate::time::Date {
+            inner: self.delivery_date,
+        }
+    }
+}
+
+/// European option to enter a payer or receiver fixed/floating swap at expiry.
+#[pyclass(module = "quantsupport", name = "EuropeanSwaption", extends = Instrument, from_py_object, subclass, dict, unsendable)]
+#[derive(Clone)]
+pub struct EuropeanSwaption {
+    identifier: String,
+    expiry_date: Date,
+    maturity_date: Date,
+    strike: f64,
+    notional: f64,
+    currency: Currency,
+    pub market_index: MarketIndex,
+    swaption_type: quantsupport::prelude::SwaptionType,
+    day_counter: DayCounter,
+    compounding: Compounding,
+    rate_frequency: Frequency,
+    fixed_leg_frequency: Frequency,
+    floating_leg_frequency: Frequency,
+    calendar: Option<Calendar>,
+}
+impl EuropeanSwaption {
+    pub fn build_trade_dual(
+        &self,
+        position: &Trade,
+    ) -> PyResult<quantsupport::prelude::EuropeanSwaptionTrade<DualFwd>> {
+        let amount = position.notional().unwrap_or(self.notional);
+        // Unit underlying: the trade carries the position notional applied by the pricer.
+        let mut builder = quantsupport::prelude::MakeSwaption::<DualFwd>::default()
+            .with_identifier(self.identifier.clone())
+            .with_expiry(self.expiry_date)
+            .with_swap_tenor_date(self.maturity_date)
+            .with_strike(self.strike)
+            .with_notional(1.0)
+            .with_currency(self.currency)
+            .with_market_index(self.market_index.clone())
+            .with_swaption_type(self.swaption_type)
+            .with_rate_definition(RateDefinition::new(
+                self.day_counter,
+                self.compounding,
+                self.rate_frequency,
+            ))
+            .with_fixed_leg_frequency(self.fixed_leg_frequency)
+            .with_floating_leg_frequency(self.floating_leg_frequency);
+        if let Some(calendar) = &self.calendar {
+            builder = builder.with_calendar(calendar.clone());
+        }
+        let instrument = builder.build().map_err(qs_err)?;
+        Ok(quantsupport::prelude::EuropeanSwaptionTrade::new(
+            instrument,
+            position.trade_date(),
+            amount,
+            position.side(),
+        ))
+    }
+}
+#[pymethods]
+impl EuropeanSwaption {
+    #[new]
+    #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature=(identifier, expiry_date, maturity_date, strike, notional, currency, market_index,
+        swaption_type=None, day_counter=None, compounding=None, rate_frequency=None,
+        fixed_leg_frequency=None, floating_leg_frequency=None, calendar=None))]
+    fn new(
+        identifier: String,
+        expiry_date: &Bound<'_, PyAny>,
+        maturity_date: &Bound<'_, PyAny>,
+        strike: f64,
+        notional: f64,
+        currency: &Bound<'_, PyAny>,
+        market_index: &Bound<'_, PyAny>,
+        swaption_type: Option<&Bound<'_, PyAny>>,
+        day_counter: Option<&Bound<'_, PyAny>>,
+        compounding: Option<&Bound<'_, PyAny>>,
+        rate_frequency: Option<&Bound<'_, PyAny>>,
+        fixed_leg_frequency: Option<&Bound<'_, PyAny>>,
+        floating_leg_frequency: Option<&Bound<'_, PyAny>>,
+        calendar: Option<&Bound<'_, PyAny>>,
+    ) -> PyResult<PyClassInitializer<Self>> {
+        let expiry_date = extract_date(expiry_date)?;
+        let maturity_date = extract_date(maturity_date)?;
+        if !strike.is_finite()
+            || !notional.is_finite()
+            || notional < 0.0
+            || expiry_date >= maturity_date
+        {
+            return Err(pyo3::exceptions::PyValueError::new_err("swaption requires finite strike, non-negative finite notional, and maturity after expiry"));
+        }
+        Ok(
+            PyClassInitializer::from(Instrument::new(identifier.clone())).add_subclass(Self {
+                identifier,
+                expiry_date,
+                maturity_date,
+                strike,
+                notional,
+                currency: extract_currency(currency)?,
+                market_index: extract_market_index(market_index)?,
+                swaption_type: swaption_type
+                    .map(crate::conv::extract_swaption_type)
+                    .transpose()?
+                    .unwrap_or(quantsupport::prelude::SwaptionType::Payer),
+                day_counter: day_counter
+                    .map(extract_day_counter)
+                    .transpose()?
+                    .unwrap_or(DayCounter::Actual360),
+                compounding: compounding
+                    .map(extract_compounding)
+                    .transpose()?
+                    .unwrap_or(Compounding::Simple),
+                rate_frequency: rate_frequency
+                    .map(extract_frequency)
+                    .transpose()?
+                    .unwrap_or(Frequency::Annual),
+                fixed_leg_frequency: fixed_leg_frequency
+                    .map(extract_frequency)
+                    .transpose()?
+                    .unwrap_or(Frequency::Annual),
+                floating_leg_frequency: floating_leg_frequency
+                    .map(extract_frequency)
+                    .transpose()?
+                    .unwrap_or(Frequency::Quarterly),
+                calendar: calendar.map(extract_calendar).transpose()?,
+            }),
+        )
+    }
+    #[getter]
+    fn identifier(&self) -> &str {
+        &self.identifier
+    }
+    #[getter]
+    fn notional(&self) -> f64 {
+        self.notional
+    }
+    #[getter]
+    fn strike(&self) -> f64 {
+        self.strike
+    }
+    #[getter]
+    fn swaption_type(&self) -> crate::enums::SwaptionType {
+        self.swaption_type.into()
+    }
+    #[getter]
+    fn expiry_date(&self) -> crate::time::Date {
+        crate::time::Date {
+            inner: self.expiry_date,
+        }
+    }
+    #[getter]
+    fn maturity_date(&self) -> crate::time::Date {
+        crate::time::Date {
+            inner: self.maturity_date,
+        }
     }
 }

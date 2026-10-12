@@ -948,3 +948,231 @@ pub fn qs_trade_rate_future(
     })
     .map_err(value_error)
 }
+
+#[xll_bindgen(
+    name = "QS.TRADE.EQUITY.FORWARD",
+    volatile,
+    category = "QuantSupport - Trades",
+    help = "Creates a native equity-forward trade"
+)]
+#[allow(clippy::too_many_arguments)]
+pub fn qs_trade_equity_forward(
+    name: &str,
+    trade_date: &str,
+    delivery_date: &str,
+    market_index: &str,
+    currency: &str,
+    strike: f64,
+    notional: f64,
+    side: &str,
+    day_counter: &str,
+) -> Result<String, XllError> {
+    if !strike.is_finite() || !notional.is_finite() || notional < 0.0 {
+        return Err(value_error(
+            "strike must be finite and notional finite and non-negative",
+        ));
+    }
+    let definition_key = input_key(&(
+        trade_date,
+        delivery_date,
+        market_index,
+        currency,
+        strike.to_bits(),
+        notional.to_bits(),
+        side,
+        day_counter,
+    ))?;
+    if let Some(handle) = cached_handle(name, "EquityForwardTrade", &definition_key)? {
+        return Ok(handle);
+    }
+    let instrument = quantsupport::prelude::MakeEquityForward::default()
+        .with_identifier(name.to_string())
+        .with_market_index(parse_index(market_index)?)
+        .with_delivery_date(parse_date(delivery_date)?)
+        .with_currency(parse_currency(currency)?)
+        .with_strike(strike)
+        .with_day_counter(parse_day_counter(day_counter)?)
+        .build()
+        .map_err(value_error)?;
+    let trade = quantsupport::prelude::EquityForwardTrade::new(
+        instrument,
+        parse_date(trade_date)?,
+        notional,
+        parse_side(side)?,
+    );
+    with_registry_mut(|registry| {
+        registry.upsert_if_changed(
+            name,
+            QsObject::EquityForwardTrade(Box::new(trade)),
+            definition_key,
+        )
+    })
+    .map_err(value_error)
+}
+
+#[xll_bindgen(
+    name = "QS.TRADE.EUROPEAN.SWAPTION",
+    volatile,
+    category = "QuantSupport - Trades",
+    help = "Creates a European swaption; pricing uses the configured fixed or calibrated HullWhite model"
+)]
+#[allow(clippy::too_many_arguments)]
+pub fn qs_trade_european_swaption(
+    name: &str,
+    trade_date: &str,
+    expiry_date: &str,
+    maturity_date: &str,
+    currency: &str,
+    market_index: &str,
+    strike: f64,
+    notional: f64,
+    swaption_type: &str,
+    side: &str,
+    day_counter: &str,
+    compounding: &str,
+    rate_frequency: &str,
+    fixed_leg_frequency: &str,
+    floating_leg_frequency: &str,
+    calendar: &str,
+) -> Result<String, XllError> {
+    if !strike.is_finite() || !notional.is_finite() || notional < 0.0 {
+        return Err(value_error(
+            "strike must be finite and notional finite and non-negative",
+        ));
+    }
+    let expiry = parse_date(expiry_date)?;
+    let maturity = parse_date(maturity_date)?;
+    if expiry >= maturity {
+        return Err(value_error("swaption maturity must follow expiry"));
+    }
+    let kind = match swaption_type {
+        "Payer" => quantsupport::prelude::SwaptionType::Payer,
+        "Receiver" => quantsupport::prelude::SwaptionType::Receiver,
+        _ => return Err(value_error("swaption_type must be Payer or Receiver")),
+    };
+    // Nest tuples to stay within serde's tuple arity limit.
+    let definition_key = input_key(&(
+        (
+            trade_date,
+            expiry_date,
+            maturity_date,
+            currency,
+            market_index,
+            strike.to_bits(),
+            notional.to_bits(),
+            swaption_type,
+            side,
+        ),
+        (
+            day_counter,
+            compounding,
+            rate_frequency,
+            fixed_leg_frequency,
+            floating_leg_frequency,
+            calendar,
+        ),
+    ))?;
+    if let Some(handle) = cached_handle(name, "EuropeanSwaptionTrade", &definition_key)? {
+        return Ok(handle);
+    }
+    let mut builder = quantsupport::prelude::MakeSwaption::<DualFwd>::default()
+        .with_identifier(name.to_string())
+        .with_expiry(expiry)
+        .with_swap_tenor_date(maturity)
+        .with_currency(parse_currency(currency)?)
+        .with_market_index(parse_index(market_index)?)
+        .with_strike(strike)
+        .with_notional(1.0)
+        .with_swaption_type(kind)
+        .with_rate_definition(RateDefinition::new(
+            parse_day_counter(day_counter)?,
+            parse_compounding(compounding)?,
+            parse_frequency(rate_frequency)?,
+        ))
+        .with_fixed_leg_frequency(parse_frequency(fixed_leg_frequency)?)
+        .with_floating_leg_frequency(parse_frequency(floating_leg_frequency)?);
+    if !calendar.is_empty() {
+        builder = builder.with_calendar(
+            quantsupport::prelude::Calendar::try_from(calendar.to_string()).map_err(value_error)?,
+        );
+    }
+    let instrument = builder.build().map_err(value_error)?;
+    let trade = quantsupport::prelude::EuropeanSwaptionTrade::new(
+        instrument,
+        parse_date(trade_date)?,
+        notional,
+        parse_side(side)?,
+    );
+    with_registry_mut(|registry| {
+        registry.upsert_if_changed(
+            name,
+            QsObject::EuropeanSwaptionTrade(Box::new(trade)),
+            definition_key,
+        )
+    })
+    .map_err(value_error)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn new_trade_constructors_cache_and_revise_contract_inputs() {
+        let forward = |strike| {
+            qs_trade_equity_forward(
+                "TEST-FWD",
+                "2026-01-02",
+                "2027-01-02",
+                "EQ:SPX",
+                "USD",
+                strike,
+                100.0,
+                "LongReceive",
+                "Actual365",
+            )
+            .unwrap()
+        };
+        let first = forward(100.0);
+        assert_eq!(first, forward(100.0));
+        let revised = forward(101.0);
+        assert_ne!(first, revised);
+        assert!(first.starts_with("QSObject:EquityForwardTrade:"));
+        let swaption = |kind| {
+            qs_trade_european_swaption(
+                "TEST-SWPT",
+                "2026-01-02",
+                "2027-01-02",
+                "2032-01-02",
+                "USD",
+                "SOFR",
+                0.04,
+                1000000.0,
+                kind,
+                "LongReceive",
+                "Actual360",
+                "Simple",
+                "Annual",
+                "Annual",
+                "Quarterly",
+                "JointCalendar(JoinHolidays,UnitedKingdom(Settlement),Japan)",
+            )
+            .unwrap()
+        };
+        let first = swaption("Payer");
+        assert_eq!(first, swaption("Payer"));
+        assert_ne!(first, swaption("Receiver"));
+        assert!(first.starts_with("QSObject:EuropeanSwaptionTrade:"));
+        assert!(qs_trade_equity_forward(
+            "INVALID",
+            "2026-01-02",
+            "2027-01-02",
+            "EQ:SPX",
+            "USD",
+            f64::NAN,
+            100.0,
+            "LongReceive",
+            "Actual365"
+        )
+        .is_err());
+    }
+}

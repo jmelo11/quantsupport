@@ -9,11 +9,12 @@ use std::{cell::RefCell, collections::HashMap, error::Error, fmt};
 use quantsupport::prelude::{
     BasisSwapTrade, CapFloorTrade, CapletFloorletTrade, CdsTrade, ConstructedElementStore,
     CreditCurveConfiguration, CurveConfiguration, DiscountCurveElement, DualFwd,
-    EquityEuropeanOptionTrade, FixFloatCrossCurrencySwapTrade, FixedRateBondTrade,
-    FixedRateDepositTrade, FixingStore, FloatFloatCrossCurrencySwapTrade, FloatingRateNoteTrade,
-    FxEuropeanOptionTrade, FxForwardTrade, FxStore, PricerConfiguration, PricingContext,
-    QuoteStore, RateFuturesTrade, Scenario, SimulationConfiguration, SwapTrade,
-    VolatilityCubeConfiguration, VolatilitySurfaceConfiguration,
+    EquityEuropeanOptionTrade, EquityForwardTrade, EuropeanSwaptionTrade,
+    FixFloatCrossCurrencySwapTrade, FixedRateBondTrade, FixedRateDepositTrade, FixingStore,
+    FloatFloatCrossCurrencySwapTrade, FloatingRateNoteTrade, FxEuropeanOptionTrade, FxForwardTrade,
+    FxStore, PricerConfiguration, PricingContext, QuoteStore, RateFuturesTrade, Scenario,
+    SimulationConfiguration, SwapTrade, VolatilityCubeConfiguration,
+    VolatilitySurfaceConfiguration,
 };
 
 const HANDLE_PREFIX: &str = "QSObject";
@@ -68,6 +69,10 @@ pub enum QsObject {
     FxEuropeanOptionTrade(Box<FxEuropeanOptionTrade>),
     /// Equity European option trade.
     EquityEuropeanOptionTrade(Box<EquityEuropeanOptionTrade>),
+    /// Equity-forward position.
+    EquityForwardTrade(Box<EquityForwardTrade>),
+    /// European swaption position.
+    EuropeanSwaptionTrade(Box<EuropeanSwaptionTrade<DualFwd>>),
     /// Credit-default-swap trade.
     CdsTrade(Box<CdsTrade>),
     /// Cap/floor strip trade.
@@ -106,6 +111,8 @@ impl QsObject {
             Self::FloatingRateNoteTrade(_) => "FloatingRateNoteTrade",
             Self::FxEuropeanOptionTrade(_) => "FxEuropeanOptionTrade",
             Self::EquityEuropeanOptionTrade(_) => "EquityEuropeanOptionTrade",
+            Self::EquityForwardTrade(_) => "EquityForwardTrade",
+            Self::EuropeanSwaptionTrade(_) => "EuropeanSwaptionTrade",
             Self::CdsTrade(_) => "CdsTrade",
             Self::CapFloorTrade(_) => "CapFloorTrade",
             Self::CapletFloorletTrade(_) => "CapletFloorletTrade",

@@ -33,7 +33,11 @@ fn rate_definition(
 }
 
 /// A zero-rate curve with dated pillars.
-#[pyclass(name = "ZeroRateTermStructure", from_py_object)]
+#[pyclass(
+    module = "quantsupport",
+    name = "ZeroRateTermStructure",
+    from_py_object
+)]
 #[derive(Clone)]
 pub struct ZeroRateTermStructure {
     pub inner: QsZeroCurve,
@@ -92,7 +96,11 @@ impl ZeroRateTermStructure {
 }
 
 /// A zero-rate curve with tenor pillars.
-#[pyclass(name = "TenorBasedZeroRateTermStructure", from_py_object)]
+#[pyclass(
+    module = "quantsupport",
+    name = "TenorBasedZeroRateTermStructure",
+    from_py_object
+)]
 #[derive(Clone)]
 pub struct TenorBasedZeroRateTermStructure {
     pub inner: QsTenorCurve,

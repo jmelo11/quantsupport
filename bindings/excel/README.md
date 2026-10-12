@@ -218,6 +218,50 @@ already store QuantSupport JSON, the add-in also exposes import functions:
 Pass those handles to `QS.CONTEXT.CREATE`. Optional arguments can be omitted
 with empty argument positions or supplied through blank cells.
 
+## Swaptions, equity forwards, and calibration reports
+
+`QS.TRADE.EQUITY.FORWARD(name, trade_date, delivery_date, market_index,
+currency, strike, notional, side, day_counter)` creates an equity-forward
+position. `market_index` uses the canonical `EQ:SPX` form, and the context needs
+a spot fixing at its evaluation date plus the index's forward curve. An absent
+dividend curve means zero dividends. `QS.PRICE`, `QS.FAIR.RATE`, and
+`QS.SENSITIVITIES` use the shared Rust forward pricer and the CSA discount policy.
+
+`QS.TRADE.EUROPEAN.SWAPTION(name, trade_date, expiry_date, maturity_date,
+currency, market_index, strike, notional, swaption_type, side, day_counter,
+compounding, rate_frequency, fixed_leg_frequency, floating_leg_frequency,
+calendar)` creates a payer or receiver swaption. Use `Payer` or `Receiver` for
+exercise direction and `LongReceive` or `PayShort` for position side. A blank
+calendar uses the Rust builder's default. The context must load an explicit
+`EuropeanSwaption` / `HullWhiteClosedForm` pricer configuration with a
+Hull–White model assigned to the trade's market index. The JSON schema is the
+same as Python's `PricerConfiguration`: `parameter_source` accepts `Calibrated`
+with the same surface/cube source and basket used by callable bonds and
+simulations, or `Fixed` for an explicit sigma. Load the corresponding volatility
+configuration into the context; cube baskets must select one tenor per expiry.
+`QS.PRICE` uses the shared calibrated piecewise volatility schedule, and
+`QS.SENSITIVITIES` includes curve and calibration volatility pillars.
+
+`QS.SIMULATION.CALIBRATION(context, market_index)` spills the Hull–White
+simulation's calibration records, including quote identifiers, market/model
+prices, calibrated sigma, forward and strike, and signed `price_error`. A
+simulation without those diagnostics returns an explanatory worksheet error.
+The eleven columns match Python's `Simulation.calibration_diagnostics()`.
+
+`QS.CALENDAR.IS.BUSINESS.DAY(date, calendar)` checks a market date;
+`QS.CALENDAR.ADJUST(date, calendar, convention)` returns an adjusted ISO date.
+`QS.SCHEDULE.ADJUSTED(start_date, end_date, frequency, calendar, convention)`
+spills an adjusted schedule. `Following`, `ModifiedFollowing`, `Preceding`, and
+other library business-day conventions are accepted.
+
+All calendar inputs accept `UnitedKingdom(Settlement)`, `Japan`, and joint names
+such as `JointCalendar(JoinHolidays,UnitedKingdom(Settlement),Japan)`.
+
+The bindings workflow runs Windows worksheet/registry tests, builds the release
+XLL with `scripts/build.ps1`, and uploads `excel-windows-x64` as a downloadable
+Actions artifact alongside the Python wheels. Native Excel loading still
+requires 64-bit Windows Excel.
+
 ## Add a worksheet function
 
 Functions are split by library area under `src/functions`. A function registers

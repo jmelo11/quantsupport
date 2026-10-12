@@ -6,7 +6,12 @@ use quantsupport::prelude::BondPricingAnchor;
 /// Use one of the named constructors; clean and dirty prices are quoted per
 /// the bond's units. Price anchors imply Z-spread for straight bonds and OAS
 /// for bonds with an issuer-call schedule.
-#[pyclass(name = "BondPricingAnchor", frozen, from_py_object)]
+#[pyclass(
+    module = "quantsupport",
+    name = "BondPricingAnchor",
+    frozen,
+    from_py_object
+)]
 #[derive(Clone)]
 pub struct BondPricingAnchorConfig {
     inner: BondPricingAnchor,

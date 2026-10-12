@@ -74,7 +74,7 @@ fn extract_sensitivities(obj: &Bound<'_, PyAny>) -> PyResult<Vec<(String, f64)>>
 }
 
 /// Results of evaluating a trade.
-#[pyclass(name = "EvaluationResults", subclass, dict)]
+#[pyclass(module = "quantsupport", name = "EvaluationResults", subclass, dict)]
 pub struct EvaluationResults {
     evaluation_date: quantsupport::prelude::Date,
     identifier: String,

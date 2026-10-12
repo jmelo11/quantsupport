@@ -32,7 +32,13 @@ fn python_type_name(value: &Bound<'_, PyAny>) -> String {
 /// example `curve`, `fixing`, or `fx_rate`). The only common contract is an
 /// `evaluation_date`. `PricingContext` is the full built-in provider, while
 /// ordinary Python objects can be used with the standalone `Evaluator`.
-#[pyclass(name = "MarketDataProvider", subclass, dict, unsendable)]
+#[pyclass(
+    module = "quantsupport",
+    name = "MarketDataProvider",
+    subclass,
+    dict,
+    unsendable
+)]
 pub struct MarketDataProvider;
 
 #[pymethods]
@@ -55,7 +61,13 @@ impl MarketDataProvider {
 ///
 /// Subclasses may add arbitrary Python attributes and may override
 /// `identifier`. Plain Python classes can also be registered directly.
-#[pyclass(name = "Instrument", subclass, dict, unsendable)]
+#[pyclass(
+    module = "quantsupport",
+    name = "Instrument",
+    subclass,
+    dict,
+    unsendable
+)]
 pub struct Instrument {
     identifier: String,
 }
@@ -103,7 +115,7 @@ impl Instrument {
 ///
 /// This mirrors the Rust `Trade` contract while remaining subclassable so a
 /// Python trade can carry any product-specific state it needs.
-#[pyclass(name = "Trade", subclass, dict, unsendable)]
+#[pyclass(module = "quantsupport", name = "Trade", subclass, dict, unsendable)]
 pub struct Trade {
     instrument: Py<PyAny>,
     trade_date: quantsupport::prelude::Date,
@@ -311,7 +323,7 @@ impl Trade {
 /// initialized `PricingContext`), so the implementation can resolve curves,
 /// volatility objects, fixings, FX, or quotes through the same boundary used
 /// by built-in pricers.
-#[pyclass(name = "Pricer", subclass, dict, unsendable)]
+#[pyclass(module = "quantsupport", name = "Pricer", subclass, dict, unsendable)]
 pub struct Pricer {
     discount_policy: Option<Py<PyAny>>,
 }
@@ -491,7 +503,7 @@ pub fn call_pricer(
 ///
 /// Registrations are keyed by Python trade type, matching the role of the
 /// Rust `Evaluator`'s `TypeId -> ErasedPricer` map.
-#[pyclass(name = "Evaluator", unsendable)]
+#[pyclass(module = "quantsupport", name = "Evaluator", unsendable)]
 #[derive(Default)]
 pub struct Evaluator {
     registry: PricerRegistry,

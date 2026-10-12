@@ -7,7 +7,12 @@ use quantsupport::prelude::{
 };
 
 /// Collateral currency and remuneration curve used by the single-curve CSA policy.
-#[pyclass(name = "SingleCurveCSADiscountPolicy", frozen, from_py_object)]
+#[pyclass(
+    module = "quantsupport",
+    name = "SingleCurveCSADiscountPolicy",
+    frozen,
+    from_py_object
+)]
 #[derive(Clone)]
 pub struct SingleCurveCSADiscountPolicy {
     collateral_currency: Currency,
@@ -76,7 +81,12 @@ impl SingleCurveCSADiscountPolicy {
 }
 
 /// Per-currency bond discount curves, optionally overridden by the instrument's index.
-#[pyclass(name = "FixedIncomeDiscountPolicy", frozen, from_py_object)]
+#[pyclass(
+    module = "quantsupport",
+    name = "FixedIncomeDiscountPolicy",
+    frozen,
+    from_py_object
+)]
 #[derive(Clone)]
 pub struct FixedIncomeDiscountPolicy {
     risk_free_indices: Vec<(Currency, MarketIndex)>,

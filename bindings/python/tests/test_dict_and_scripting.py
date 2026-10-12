@@ -10,6 +10,54 @@ import quantsupport as qs
 
 
 class DictAndScriptTests(unittest.TestCase):
+    def test_public_type_hints_are_packaged_and_cover_native_classes(self):
+        import ast
+        import inspect
+        module_file = getattr(qs, "__file__", None)
+        if module_file:
+            stub = Path(module_file).with_name("__init__.pyi")
+            self.assertTrue(stub.with_name("py.typed").exists())
+        else:
+            # The Rust contract runner creates the module in memory.
+            stub = Path(__file__).resolve().parents[1] / "quantsupport.pyi"
+        declarations = {node.name: node for node in ast.parse(stub.read_text()).body
+                        if isinstance(node, ast.ClassDef)}
+        exported = {name for name, value in vars(qs).items()
+                    if inspect.isclass(value) and value.__module__ == "quantsupport"}
+        self.assertEqual(exported, set(declarations))
+        for product in ["EuropeanSwaption", "EquityForward"]:
+            methods = {node.name: node for node in declarations[product].body
+                       if isinstance(node, ast.FunctionDef)}
+            self.assertIn("__new__", methods)
+            self.assertEqual(methods["from_dict"].decorator_list[0].id, "classmethod")
+
+    def test_calendars_and_calibration_diagnostics(self):
+        london = qs.Calendar("UnitedKingdom(Settlement)")
+        japan = qs.Calendar("Japan")
+        joint = qs.Calendar("JointCalendar(JoinHolidays,UnitedKingdom(Settlement),Japan)")
+        self.assertFalse(london.is_business_day("2023-05-08"))
+        self.assertFalse(japan.is_business_day("2021-08-09"))
+        self.assertEqual(str(joint.adjust("2019-04-26")), "2019-04-26")
+        self.assertEqual(str(joint.adjust("2019-04-27")), "2019-05-07")
+        self.assertEqual(joint.name(), "JointCalendar(JoinHolidays,UnitedKingdom(Settlement),Japan)")
+        data = Path(__file__).resolve().parents[3] / "examples" / "hullwhite" / "data"
+        quotes = qs.QuoteStore.from_json(str(data / "quotes.json"))
+        curves = qs.CurveConfiguration.from_json(str(data / "curve_specs.json"))
+        surfaces = qs.VolatilitySurfaceConfiguration.from_json(str(data / "vol_specs.json"))
+        simulations = qs.SimulationConfiguration.from_json(str(data / "simulation.json"))
+        with qs.PricingContext(quotes, curves, volatility_surfaces=surfaces,
+                              simulations=simulations) as context:
+            report = context.simulation("SOFR").calibration_diagnostics()
+            self.assertGreater(len(report), 0)
+            self.assertTrue((report["calibrated_sigma"] > 0).all())
+            self.assertLess(report["price_error"].abs().max(), 1e-6)
+            self.assertTrue((report["price_error"] == report["model_price"] - report["market_price"]).all())
+        fixed = qs.SimulationConfiguration.from_dict({"market_index": "SOFR",
+            "model": {"HullWhite": {"alpha": 0.1, "parameter_source": {"Fixed": {"sigma": 0.01}}}},
+            "n_paths": 2, "seed": 1, "horizon": "1Y", "frequency": "Annual"})
+        with qs.PricingContext(quotes, curves, simulations=[fixed]) as context:
+            self.assertIsNone(context.simulation("SOFR").calibration_diagnostics())
+
     def test_sparse_volatility_grids_and_upper_cube_boundaries(self):
         surface_nodes = [
             ("6M", "0.02", 0.20), ("6M", "0.04", 0.30),
@@ -279,6 +327,8 @@ class DictAndScriptTests(unittest.TestCase):
                                  "end_accrual_date": "2027-05-24", "payment_date": "2027-05-24",
                                  "strike": 0.04, "currency": "USD",
                                  "market_index": "SOFR", "payoff_type": "Caplet"}),
+            (qs.EquityForward, {"identifier": "TEST", "market_index": "SOFR", "delivery_date": "2028-02-24", "strike": 100.0, "currency": "USD"}),
+            (qs.EuropeanSwaption, {"identifier": "TEST", "expiry_date": "2027-02-24", "maturity_date": "2032-02-24", "strike": 0.04, "notional": 100.0, "currency": "USD", "market_index": "SOFR"}),
             (qs.RateFutures, {"identifier": "TEST", "start_date": "2027-02-24",
                               "end_date": "2027-05-24", "futures_price": 96.0,
                               "market_index": "SOFR"}),

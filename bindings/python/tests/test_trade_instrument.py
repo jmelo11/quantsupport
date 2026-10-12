@@ -24,6 +24,49 @@ class TradeInstrumentTests(unittest.TestCase):
             csa_policy=qs.SingleCurveCSADiscountPolicy("USD", "SOFR"),
         )
 
+    def test_new_products_price_and_scale_positions(self):
+        data = Path(__file__).resolve().parents[3] / "examples" / "hullwhite" / "data"
+        quotes = qs.QuoteStore.from_json(str(data / "quotes.json"))
+        curves = qs.CurveConfiguration.from_json(str(data / "curve_specs.json"))
+        date = quotes.reference_date
+        fixings = qs.FixingStore()
+        fixings.add("SOFR", date, 100.0)
+        configuration = qs.PricerConfiguration.from_dict({
+            "instrument_type": "EuropeanSwaption", "pricer": "HullWhiteClosedForm",
+            "models": [{"market_index": "SOFR", "model": {"HullWhite": {
+                "alpha": 0.1, "parameter_source": {"Fixed": {"sigma": 0.01}}
+            }}}],
+        })
+        forward = qs.EquityForward.from_dict(dict(identifier="FWD", market_index="SOFR",
+            delivery_date=str(date + "1Y"), strike=100.0, currency="USD"))
+        swaption = qs.EuropeanSwaption.from_dict(dict(identifier="SWPT", expiry_date=str(date + "1Y"),
+            maturity_date=str(date + "5Y"), strike=0.04, notional=1_000_000.0,
+            currency="USD", market_index="SOFR", swaption_type="Payer"))
+        self.assertEqual(swaption.swaption_type, qs.SwaptionType.Payer)
+        with qs.PricingContext(quotes, curves, fixings=fixings, pricer_configurations=[configuration],
+                              csa_policy=qs.SingleCurveCSADiscountPolicy("USD", "SOFR")) as context:
+            for instrument in [forward, swaption]:
+                long = qs.Trade(instrument, date)
+                full = context.evaluate(long, ["Value", "Sensitivities"])
+                self.assertGreater(full.price, 0.0)
+                self.assertGreater(len(full.sensitivities), 0)
+                amount = 0.5 if instrument is forward else 500_000.0
+                short = qs.Trade(instrument, date, "PayShort", notional=amount)
+                self.assertAlmostEqual(context.evaluate(short).price, -0.5 * full.price, places=7)
+                self.assertEqual(context.evaluate(qs.Trade(instrument, date, notional=0.0)).price, 0.0)
+            fair = context.evaluate(qs.Trade(forward, date), ["FairRate"]).fair_rate
+            self.assertGreater(fair, 100.0)
+            at_market = qs.EquityForward("PAR", "SOFR", date + "1Y", fair, "USD")
+            self.assertAlmostEqual(context.evaluate(qs.Trade(at_market, date)).price, 0.0, places=9)
+        with self.make_context() as context:
+            with self.assertRaisesRegex(qs.QuantSupportError, "configuration"):
+                context.evaluate(qs.Trade(swaption, date))
+        for bad in [float("nan"), float("inf")]:
+            with self.assertRaises(ValueError):
+                qs.EquityForward("BAD", "SOFR", date + "1Y", bad, "USD")
+        with self.assertRaises(ValueError):
+            qs.EuropeanSwaption("BAD", date + "5Y", date + "1Y", 0.04, 1.0, "USD", "SOFR")
+
     def test_position_size_does_not_mutate_shared_contract(self):
         instrument = self.make_swap()
         full = qs.Trade(instrument, "2026-02-24")
@@ -39,6 +82,61 @@ class TradeInstrumentTests(unittest.TestCase):
         self.assertEqual(instrument.notional, 1_000_000)
         self.assertIsInstance(instrument, qs.Instrument)
         self.assertIsInstance(half_short, qs.Trade)
+
+    def test_swaptions_use_shared_surface_and_cube_calibration(self):
+        date = qs.Date(2026, 2, 24)
+        option = qs.EuropeanSwaption("CALIBRATED", date + "30M", date + "90M",
+                                    0.04, 1_000_000.0, "USD", "SOFR")
+        trade = qs.Trade(option, date)
+        curve_ids = ["FixedRateDeposit_USD_SOFR_1D", "OIS_USD_SOFR_5Y", "OIS_USD_SOFR_10Y"]
+        curves = [qs.CurveConfiguration.from_dict({"market_index": "SOFR", "quotes": curve_ids})]
+        for source in ["Surface", "Cube"]:
+            records = [{"identifier": identifier, "mid": 0.04, "bid": 0.04, "ask": 0.04}
+                       for identifier in curve_ids]
+            volatility_ids = []
+            for expiry, volatility in [("1Y", 0.2), ("2Y", 0.3), ("3Y", 0.4)]:
+                for strike in [0.02, 0.06]:
+                    identifier = (f"Swaption_USD_SOFR_{expiry}_5Y_Absolute_{strike}_Black"
+                                  if source == "Cube" else
+                                  f"CapletFloorlet_USD_SOFR_3M_{expiry}_Absolute_{strike}_Straddle_Black")
+                    records.append({"identifier": identifier, "mid": volatility,
+                                    "bid": volatility * 0.8, "ask": volatility * 1.2})
+                    volatility_ids.append(identifier)
+            quotes = qs.QuoteStore.from_dict({"reference_date": str(date), "quotes": records})
+            config_type = (qs.VolatilityCubeConfiguration if source == "Cube"
+                           else qs.VolatilitySurfaceConfiguration)
+            volatility = config_type.from_dict({"market_index": "SOFR", "quotes": volatility_ids})
+            inputs = {"volatility_cubes" if source == "Cube" else "volatility_surfaces": [volatility]}
+            model = {"HullWhite": {"alpha": 0.1, "parameter_source": {"Calibrated": {
+                "source": {source: {"market_index": "SOFR"}},
+                "calibration_basket": {"strike": "Atm"},
+            }}}}
+            configuration = qs.PricerConfiguration.from_dict({
+                "instrument_type": "EuropeanSwaption", "pricer": "HullWhiteClosedForm",
+                "models": [{"market_index": "SOFR", "model": model}],
+            })
+            simulation = qs.SimulationConfiguration.from_dict({
+                "market_index": "SOFR", "model": model, "n_paths": 2,
+                "seed": 42, "horizon": "3Y", "frequency": "Annual",
+            })
+            prices = []
+            for level in [None, qs.Level.Bid, qs.Level.Ask]:
+                with self.subTest(source=source, level=level), qs.PricingContext(
+                    quotes, curves, pricer_configurations=[configuration], simulations=[simulation],
+                    csa_policy=qs.SingleCurveCSADiscountPolicy("USD", "SOFR"),
+                    quote_level=level, **inputs
+                ) as context:
+                    result = context.evaluate(trade, ["Value", "Sensitivities"])
+                    prices.append(result.price)
+                    self.assertGreater(result.price, 0.0)
+                    report = context.simulation("SOFR").calibration_diagnostics()
+                    self.assertEqual(len(report), 3)
+                    self.assertGreater(report["calibrated_sigma"].max() - report["calibrated_sigma"].min(), 0.001)
+                    risk = result.sensitivities
+                    self.assertTrue(any(label in volatility_ids for label in risk["pillar"]))
+                    self.assertGreater(risk.loc[risk["pillar"].isin(volatility_ids), "value"].abs().sum(), 1.0)
+            self.assertLess(prices[1], prices[0])
+            self.assertLess(prices[0], prices[2])
 
     def test_position_keywords_do_not_belong_to_instrument_constructors(self):
         spec = dict(identifier="SWAP", start_date="2026-02-24", maturity_date="2031-02-24",

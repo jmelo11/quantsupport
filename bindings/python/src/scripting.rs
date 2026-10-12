@@ -22,7 +22,12 @@ fn default_name() -> String {
 }
 
 /// Dated payoff code evaluated inside an initialized pricing context.
-#[pyclass(name = "ScriptedProduct", from_py_object, frozen)]
+#[pyclass(
+    module = "quantsupport",
+    name = "ScriptedProduct",
+    from_py_object,
+    frozen
+)]
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ScriptedProduct {

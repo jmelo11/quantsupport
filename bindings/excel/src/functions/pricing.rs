@@ -70,6 +70,29 @@ fn evaluate(
                 .evaluate(trade, requests, context)
                 .map_err(|error| error.to_string())
         }
+        QsObject::EquityForwardTrade(trade) => {
+            let mut pricer = quantsupport::prelude::EquityForwardPricer::new();
+            pricer.set_discount_policy(Box::new(context.csa_policy()));
+            pricer
+                .evaluate(trade, requests, context)
+                .map_err(|error| error.to_string())
+        }
+        QsObject::EuropeanSwaptionTrade(trade) => {
+            use quantsupport::prelude::{InstrumentType, Trade};
+            let configuration = context
+                .pricer_configuration(InstrumentType::EuropeanSwaption)
+                .ok_or_else(|| "EuropeanSwaption requires a pricer configuration".to_string())?;
+            let mut pricer =
+                quantsupport::prelude::ClosedFormHullWhiteSwaptionPricer::from_configuration(
+                    configuration,
+                    &trade.instrument().market_index(),
+                )
+                .map_err(|error| error.to_string())?;
+            pricer.set_discount_policy(Box::new(context.csa_policy()));
+            pricer
+                .evaluate(trade, requests, context)
+                .map_err(|error| error.to_string())
+        }
         QsObject::EquityEuropeanOptionTrade(trade) => {
             let mut pricer = BlackEuropeanOptionPricer::new();
             pricer.set_discount_policy(Box::new(SingleCurveCSADiscountPolicy::new(
@@ -355,4 +378,216 @@ pub fn qs_cashflows(trade: &str, context: &str) -> Result<*mut XLOPER12, XllErro
         ));
     }
     Ok(build_multi(cells, rows, COLUMNS))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use quantsupport::prelude::*;
+    use std::{cell::RefCell, rc::Rc};
+
+    #[test]
+    fn registry_swaptions_use_surface_and_cube_calibration() {
+        let date = Date::new(2026, 1, 2);
+        for cube in [false, true] {
+            let mut quotes = QuoteStore::new(date);
+            let mut identifiers = Vec::new();
+            for (expiry, volatility) in [("1Y", 0.2), ("2Y", 0.3), ("3Y", 0.4)] {
+                for strike in ["0.02", "0.06"] {
+                    let identifier = if cube {
+                        format!("Swaption_USD_SOFR_{expiry}_5Y_Absolute_{strike}_Black")
+                    } else {
+                        format!(
+                            "CapletFloorlet_USD_SOFR_3M_{expiry}_Absolute_{strike}_Straddle_Black"
+                        )
+                    };
+                    quotes.add_quote(Quote::new(
+                        identifier.parse().unwrap(),
+                        QuoteLevels::with_mid(volatility),
+                    ));
+                    identifiers.push(identifier);
+                }
+            }
+            let source = if cube { "Cube" } else { "Surface" };
+            let config: PricerConfiguration = serde_json::from_value(serde_json::json!({
+                "instrument_type":"EuropeanSwaption", "pricer":"HullWhiteClosedForm",
+                "models":[{"market_index":"SOFR","model":{"HullWhite":{"alpha":0.1,
+                    "parameter_source":{"Calibrated":{"source":{(source):{"market_index":"SOFR"}},
+                    "calibration_basket":{"strike":"Atm"}}}}}}]
+            }))
+            .unwrap();
+            let curve = FlatForwardTermStructure::new(
+                date,
+                DualFwd::from(0.04),
+                RateDefinition::new(
+                    DayCounter::Actual365,
+                    Compounding::Continuous,
+                    Frequency::Annual,
+                ),
+            )
+            .with_pillar_label("SOFR_flat".into());
+            let mut elements = ConstructedElementStore::default();
+            elements.discount_curves_mut().insert(
+                MarketIndex::SOFR,
+                DiscountCurveElement::new(MarketIndex::SOFR, Rc::new(RefCell::new(curve))),
+            );
+            let mut context = PricingContext::new()
+                .with_quote_store(quotes)
+                .with_constructed_elements(elements)
+                .with_pricer_configurations(vec![config]);
+            if cube {
+                context = context.with_volatility_cube_configurations(vec![
+                    VolatilityCubeConfiguration::new(
+                        MarketIndex::SOFR,
+                        VolatilityType::Black,
+                        SmileType::Strike,
+                        identifiers.clone(),
+                    ),
+                ]);
+            } else {
+                context = context.with_volatility_surface_configurations(vec![
+                    VolatilitySurfaceConfiguration::new(
+                        MarketIndex::SOFR,
+                        VolatilityType::Black,
+                        SmileType::Strike,
+                        identifiers.clone(),
+                    ),
+                ]);
+            }
+            context.initialize().unwrap();
+            let mut registry = Registry::default();
+            let context_handle = registry
+                .upsert_if_changed(
+                    "CALIBRATION-CTX",
+                    QsObject::PricingContext(Box::new(context)),
+                    "context",
+                )
+                .unwrap();
+            let expiry = date + Period::new(30, TimeUnit::Months);
+            let option = MakeSwaption::<DualFwd>::default()
+                .with_identifier("CALIBRATED".into())
+                .with_expiry(expiry)
+                .with_swap_tenor_date(expiry + Period::new(5, TimeUnit::Years))
+                .with_strike(0.04)
+                .with_notional(1.0)
+                .with_currency(Currency::USD)
+                .with_market_index(MarketIndex::SOFR)
+                .with_rate_definition(RateDefinition::default())
+                .build()
+                .unwrap();
+            let trade = EuropeanSwaptionTrade::new(option, date, 1_000_000.0, Side::LongReceive);
+            let handle = registry
+                .upsert_if_changed(
+                    "CALIBRATED-SWPT",
+                    QsObject::EuropeanSwaptionTrade(Box::new(trade)),
+                    "option",
+                )
+                .unwrap();
+            let results = evaluate(
+                &registry,
+                &handle,
+                &context_handle,
+                &[Request::Value, Request::Sensitivities],
+            )
+            .unwrap();
+            assert!(results.price().unwrap() > 0.0);
+            let risk = results.sensitivities().unwrap();
+            assert!(risk
+                .instrument_keys()
+                .iter()
+                .zip(risk.exposure())
+                .any(|(label, value)| identifiers.contains(label) && value.abs() > 1.0));
+        }
+    }
+
+    #[test]
+    fn new_registry_trades_use_native_pricers() {
+        let date = Date::new(2026, 1, 2);
+        let equity = MarketIndex::Equity("SPX".into());
+        let definition = RateDefinition::new(
+            DayCounter::Actual365,
+            Compounding::Continuous,
+            Frequency::Annual,
+        );
+        let mut elements = ConstructedElementStore::default();
+        for index in [equity.clone(), MarketIndex::SOFR] {
+            let curve = FlatForwardTermStructure::new(date, DualFwd::from(0.04), definition)
+                .with_pillar_label(format!("{index}_flat"));
+            elements.discount_curves_mut().insert(
+                index.clone(),
+                DiscountCurveElement::new(index, Rc::new(RefCell::new(curve))),
+            );
+        }
+        let config:PricerConfiguration=serde_json::from_value(serde_json::json!({
+            "instrument_type":"EuropeanSwaption","pricer":"HullWhiteClosedForm",
+            "models":[{"market_index":"SOFR","model":{"HullWhite":{"alpha":0.1,"parameter_source":{"Fixed":{"sigma":0.01}}}}}]
+        })).unwrap();
+        let mut fixings = FixingStore::default();
+        fixings.add_fixing(&equity, date, 100.0);
+        let context = PricingContext::new()
+            .with_quote_store(QuoteStore::new(date))
+            .with_constructed_elements(elements)
+            .with_fixing_store(fixings)
+            .with_pricer_configurations(vec![config]);
+        let mut registry = Registry::default();
+        let context = registry
+            .upsert_if_changed(
+                "TEST-CTX",
+                QsObject::PricingContext(Box::new(context)),
+                "context",
+            )
+            .unwrap();
+        let forward = MakeEquityForward::default()
+            .with_identifier("TEST".into())
+            .with_market_index(equity)
+            .with_delivery_date(Date::new(2027, 1, 2))
+            .with_strike(100.0)
+            .with_currency(Currency::USD)
+            .build()
+            .unwrap();
+        let trade = EquityForwardTrade::new(forward, date, 10.0, Side::PayShort);
+        let handle = registry
+            .upsert_if_changed(
+                "FWD",
+                QsObject::EquityForwardTrade(Box::new(trade)),
+                "forward",
+            )
+            .unwrap();
+        let price = evaluate(&registry, &handle, &context, &[Request::Value])
+            .unwrap()
+            .price()
+            .unwrap();
+        assert!((price + 1000.0 * (1.0 - (-0.04_f64).exp())).abs() < 1e-10);
+        let option = MakeSwaption::<DualFwd>::default()
+            .with_identifier("SWPT".into())
+            .with_expiry(Date::new(2027, 1, 2))
+            .with_swap_tenor_date(Date::new(2032, 1, 2))
+            .with_strike(0.04)
+            .with_notional(1.0)
+            .with_currency(Currency::USD)
+            .with_market_index(MarketIndex::SOFR)
+            .with_rate_definition(RateDefinition::default())
+            .build()
+            .unwrap();
+        let trade = EuropeanSwaptionTrade::new(option, date, 1000000.0, Side::LongReceive);
+        let handle = registry
+            .upsert_if_changed(
+                "SWPT",
+                QsObject::EuropeanSwaptionTrade(Box::new(trade)),
+                "option",
+            )
+            .unwrap();
+        assert!(
+            evaluate(
+                &registry,
+                &handle,
+                &context,
+                &[Request::Value, Request::Sensitivities]
+            )
+            .unwrap()
+            .price()
+            .unwrap()
+                > 0.0
+        );
+    }
 }

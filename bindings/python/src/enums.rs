@@ -33,7 +33,7 @@ use crate::QuantSupportError;
 macro_rules! mirror_enum {
     ($(#[$meta:meta])* $name:ident, $qs:ty, $pyname:literal, [$($variant:ident),+ $(,)?]) => {
         $(#[$meta])*
-        #[pyclass(name = $pyname, eq, frozen, hash, from_py_object)]
+        #[pyclass(module = "quantsupport", name = $pyname, eq, frozen, hash, from_py_object)]
         #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
         pub enum $name {
             $($variant),+
@@ -466,7 +466,14 @@ impl SmileType {
 /// (`MarketIndex.SOFR`); parameterised variants are built with
 /// [`MarketIndex.equity`], [`MarketIndex.fx_pair`],
 /// [`MarketIndex.collateral`] and [`MarketIndex.other`].
-#[pyclass(name = "MarketIndex", eq, frozen, hash, from_py_object)]
+#[pyclass(
+    module = "quantsupport",
+    name = "MarketIndex",
+    eq,
+    frozen,
+    hash,
+    from_py_object
+)]
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct MarketIndex {
     pub inner: QsMarketIndex,
@@ -744,5 +751,27 @@ impl DateGenerationRule {
     }
     fn __repr__(&self) -> String {
         format!("DateGenerationRule.{self:?}")
+    }
+}
+
+mirror_enum!(
+    /// Payer or receiver European swaption.
+    SwaptionType,
+    quantsupport::prelude::SwaptionType,
+    "SwaptionType",
+    [Payer, Receiver]
+);
+
+#[pymethods]
+impl SwaptionType {
+    #[staticmethod]
+    pub fn parse(s: &str) -> PyResult<Self> {
+        Self::from_name(s)
+    }
+    fn __repr__(&self) -> String {
+        format!("SwaptionType.{self:?}")
+    }
+    fn __str__(&self) -> String {
+        format!("{self:?}")
     }
 }

@@ -55,7 +55,13 @@ use crate::QuantSupportError;
 /// with qs.PricingContext(quotes=quotes, curves=curves, csa_policy=csa_policy) as ctx:
 ///     results = ctx.evaluate(trade, requests=["Value", "Sensitivities"])
 /// ```
-#[pyclass(name = "PricingContext", unsendable, subclass, dict)]
+#[pyclass(
+    module = "quantsupport",
+    name = "PricingContext",
+    unsendable,
+    subclass,
+    dict
+)]
 pub struct PricingContext {
     inner: QsPricingContext,
     initialized: bool,
@@ -766,6 +772,31 @@ impl PricingContext {
             pricer.set_discount_policy(Box::new(slf.inner.csa_policy()));
             let res = pricer.evaluate(&t, &reqs, &slf.inner).map_err(qs_err)?;
             return Py::new(py, EvaluationResults::from_qs(&res));
+        }
+        if let Ok(fwd) = instrument.extract::<crate::trades::EquityForward>() {
+            let trade = fwd.build_trade(&position)?;
+            let mut pricer = quantsupport::prelude::EquityForwardPricer::new();
+            pricer.set_discount_policy(Box::new(slf.inner.csa_policy()));
+            let result = pricer.evaluate(&trade, &reqs, &slf.inner).map_err(qs_err)?;
+            return Py::new(py, EvaluationResults::from_qs(&result));
+        }
+        if let Ok(option) = instrument.extract::<crate::trades::EuropeanSwaption>() {
+            let configuration = slf
+                .inner
+                .pricer_configuration(InstrumentType::EuropeanSwaption)
+                .ok_or_else(|| {
+                    QuantSupportError::new_err("EuropeanSwaption requires a pricer configuration")
+                })?;
+            let mut pricer =
+                quantsupport::prelude::ClosedFormHullWhiteSwaptionPricer::from_configuration(
+                    configuration,
+                    &option.market_index,
+                )
+                .map_err(qs_err)?;
+            pricer.set_discount_policy(Box::new(slf.inner.csa_policy()));
+            let trade = option.build_trade_dual(&position)?;
+            let result = pricer.evaluate(&trade, &reqs, &slf.inner).map_err(qs_err)?;
+            return Py::new(py, EvaluationResults::from_qs(&result));
         }
         if let Ok(opt) = instrument.extract::<EquityOption>() {
             let t = opt.build_trade(&position)?;

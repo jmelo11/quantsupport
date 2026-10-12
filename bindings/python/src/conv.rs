@@ -318,3 +318,10 @@ pub fn extract_calendar(obj: &Bound<'_, PyAny>) -> PyResult<Calendar> {
     }
     Calendar::try_from(obj.extract::<String>()?).map_err(qs_err)
 }
+
+enum_extractor!(
+    extract_swaption_type,
+    crate::enums::SwaptionType,
+    quantsupport::prelude::SwaptionType,
+    "swaption type"
+);

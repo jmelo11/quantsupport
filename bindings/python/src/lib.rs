@@ -78,6 +78,9 @@ fn quantsupport(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<extension::Pricer>()?;
     m.add_class::<extension::MarketDataProvider>()?;
     m.add_class::<extension::Evaluator>()?;
+    m.add_class::<enums::SwaptionType>()?;
+    m.add_class::<trades::EquityForward>()?;
+    m.add_class::<trades::EuropeanSwaption>()?;
     // Instruments
     m.add_class::<trades::Swap>()?;
     m.add_class::<trades::CrossCurrencySwap>()?;

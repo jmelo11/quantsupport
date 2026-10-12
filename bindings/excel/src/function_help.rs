@@ -33,6 +33,7 @@ fn describe_argument(function_name: &str, argument_name: &str) -> &'static str {
         ("QS.OBJECT.RESET", "reset_key") => {
             "Configuration version or signature; changing it clears the object exactly once"
         }
+        (_, "swaption_type") => "Swaption exercise direction: Payer (pay fixed) or Receiver (receive fixed)",
         (_, "convention") => "Business-day convention: Following, ModifiedFollowing, Preceding, ModifiedPreceding, or Unadjusted",
         (_, "calendar") => "Canonical calendar, e.g. Japan, UnitedKingdom(Settlement), or JointCalendar(JoinHolidays,TARGET,Japan)",
         (_, "name") => "Workbook-unique object name; unchanged recalculation reuses its current handle",

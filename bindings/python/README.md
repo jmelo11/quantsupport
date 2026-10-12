@@ -114,6 +114,68 @@ case-insensitive names, such as `quote_level="ask"`. It defaults to mid and
 applies to market construction and model calibration. `ctx.quote_level`
 reports the selection. Every consumed quote must provide the requested level.
 
+### European swaptions, equity forwards, and calibration reports
+
+`EquityForward(identifier, market_index, delivery_date, strike, currency)` is a
+native instrument. Its position size defaults to one in `Trade`. Pricing uses
+the evaluation-date spot fixing, the index's forward curve, an optional dividend
+curve (zero dividends when absent), and the context's CSA discount policy.
+`Value`, `FairRate`, and `Sensitivities` use the same Rust pricer as Excel.
+
+```python
+forward = qs.EquityForward("SPX-FWD", "EQ:SPX", "2027-02-24", 5100.0, "USD")
+position = qs.Trade(forward, "2026-02-24", notional=100.0)
+```
+
+`EuropeanSwaption(identifier, expiry_date, maturity_date, strike, notional,
+currency, market_index, swaption_type="Payer")` builds the underlying swap at
+expiry. `SwaptionType.Payer` and `.Receiver` are also accepted. Optional rate
+conventions, payment frequencies, and a calendar configure the underlying
+schedule. Product notional is the default position size; `Trade.notional`
+overrides it. Both products support `from_dict` and `from_json`.
+
+Swaptions require this explicit `PricerConfiguration` in
+`PricingContext(pricer_configurations=[configuration], ...)`:
+
+```python
+configuration = qs.PricerConfiguration.from_dict({
+    "instrument_type": "EuropeanSwaption",
+    "pricer": "HullWhiteClosedForm",
+    "models": [{"market_index": "SOFR", "model": {"HullWhite": {
+        "alpha": 0.1, "parameter_source": {"Calibrated": {
+            "source": {"Surface": {"market_index": "SOFR"}},
+            "calibration_basket": {"strike": "Atm"}
+        }}
+    }}}],
+})
+```
+
+This engine supports `Value` and curve and volatility `Sensitivities`. It uses
+the same Hull–White calibration and piecewise volatility schedule as callable
+bonds and simulations. Supply the source through `volatility_surfaces` or use
+`"source": {"Cube": {"market_index": "SOFR"}}` with `volatility_cubes` and a
+basket selecting one tenor per expiry. The source's curve and calibration quotes
+are requested automatically. `{"Fixed": {"sigma": 0.01}}` remains available
+when calibration is unnecessary.
+
+After building a calibrated Hull–White simulation,
+`ctx.simulation("SOFR").calibration_diagnostics()` returns a DataFrame with
+`identifier`, `expiry`, `t`, `big_t`, `market_vol`, `market_price`, `model_price`,
+`calibrated_sigma`, `forward_rate`, `effective_strike`, and `price_error` (model
+minus market price). Fixed-parameter and other simulation models return `None`.
+
+Calendar strings include `UnitedKingdom(Settlement)`, `Japan`, and
+`JointCalendar(JoinHolidays,UnitedKingdom(Settlement),Japan)`. `JoinHolidays`
+requires every market to be open; `JoinBusinessDays` requires at least one.
+SONIA and TONAR use the local bank calendars in Rust index conventions.
+
+Wheels include the public API stubs and `py.typed` marker. Install
+`quantsupport[typing]` to include the pandas stubs and typing helpers. The bindings workflow
+builds and tests CPython 3.9–3.14 wheels on Linux, Windows, and both Mac
+architectures, and uploads each as a downloadable Actions artifact. To build
+one locally, run `maturin build --release` inside `bindings/python`; no Rust
+compiler is needed when installing the resulting wheel.
+
 ### In-memory product and market schemas
 
 All built-in products support `Product.from_dict(spec)` and
@@ -548,7 +610,7 @@ Pricing:
   - `ctx.volatility_surfaces()` / `ctx.volatility_surface(index)` → `VolatilitySurface`
   - `ctx.volatility_cubes()` / `ctx.volatility_cube(index)` → `VolatilityCube`
   - `ctx.simulations()` / `ctx.simulation(index)` → `Simulation`
-    (`dates()`, `n_paths`, `dt`, `paths()` DataFrame)
+    (`dates()`, `n_paths`, `dt`, `paths()` and `calibration_diagnostics()` DataFrames)
 - `Swap`, `CrossCurrencySwap`, `FixedRateBond`, `SteppedCouponBond` — instrument
     specifications with typed getters; callable stepped bonds use `Coupon` and
   explicit `CallScheduleEntry(date, strike)` terms
