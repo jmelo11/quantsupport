@@ -373,9 +373,12 @@ pricing, and extension examples.
 
 ## Book
 
-The [QuantSupport Book](https://jmelo11.github.io/quantsupport/) covers installation, market construction, pricing, risk, scripting, simulation, and XVA. It is published to GitHub Pages on every push to `main`; the sources live under [`book/src`](book/src/SUMMARY.md). To build it locally, install [mdBook](https://rust-lang.github.io/mdBook/), then from the repository root:
+The [QuantSupport Book](https://jmelo11.github.io/quantsupport/) covers installation, market construction, pricing, risk, scripting, simulation, and XVA. It is published to GitHub Pages on every push to `main`; the sources live under [`book/src`](book/src/SUMMARY.md). To build it locally, install [mdBook](https://rust-lang.github.io/mdBook/) and its Mermaid preprocessor using the versions from the Pages workflow, then install the assets from the repository root:
 
 ```bash
+cargo install mdbook --version 0.5.2 --locked
+cargo install mdbook-mermaid --version 0.17.0 --locked
+mdbook-mermaid install .
 mdbook build
 mdbook serve --open
 ```
