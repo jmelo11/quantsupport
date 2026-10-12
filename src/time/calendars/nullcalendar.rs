@@ -34,6 +34,10 @@ impl ImplCalendar for NullCalendar {
         "NullCalendar".to_string()
     }
 
+    fn is_weekend(&self, _weekday: &crate::time::enums::Weekday) -> bool {
+        false
+    }
+
     fn impl_is_business_day(&self, _date: &Date) -> bool {
         true
     }

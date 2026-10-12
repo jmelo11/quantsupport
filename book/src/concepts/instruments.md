@@ -176,3 +176,33 @@ legs organize related payments, instruments define a product, and trades add
 the held position. Deterministic pricers consume trades directly. Simulation
 workflows translate them into contingent claims. Both routes begin
 from the same contractual definition, which keeps pricing and exposure aligned.
+
+## Settlement calendars
+
+SONIA uses London settlement holidays and TONAR uses Japanese bank holidays.
+Use `UnitedKingdom(Settlement)` and `Japan` in serialized configurations.
+London rules include weekend substitutions, moved May holidays and royal
+one-off closures. Japanese rules include substitute and citizens' holidays,
+bank year-end closures, the 2019 accession and the 2020–2021 Olympic moves.
+These rules are checked against the [UK government's published bank holidays](https://www.gov.uk/bank-holidays)
+and the [Japanese Cabinet Office holiday list](https://www8.cao.go.jp/chosei/shukujitsu/gaiyou.html).
+Future Japanese equinox dates are estimates until officially announced, and
+new exceptional holidays require a calendar update or a local holiday override.
+The London recurring rules follow the regime since 1971; Japan's public-holiday
+rules begin in July 1948.
+
+Cross-currency builders accept joint calendars through `with_calendar`:
+
+```rust,ignore
+let settlement = Calendar::try_from(
+    "JointCalendar(JoinHolidays,UnitedKingdom(Settlement),Japan)".to_string(),
+)?;
+let builder = MakeFloatFloatCrossCurrencySwap::<f64>::default()
+    .with_calendar(settlement);
+```
+
+`JoinHolidays` requires all markets to be open. `JoinBusinessDays` requires at
+least one open market. The same canonical strings work in Python's `Calendar`
+and Excel's calendar arguments, and nested joint calendars round-trip through
+JSON. Local holiday overrides participate in joint business-day calculations;
+string/JSON serialization stores the calendar definition, as for other calendars.

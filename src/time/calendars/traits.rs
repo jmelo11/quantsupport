@@ -74,10 +74,39 @@ pub trait ImplCalendar {
     fn remove_holiday(&mut self, date: Date);
 
     /// Returns a list of holidays between two dates.
-    fn holiday_list(&self, from: Date, to: Date, include_weekends: bool) -> Vec<Date>;
+    fn holiday_list(&self, from: Date, to: Date, include_weekends: bool) -> Vec<Date> {
+        let mut dates = Vec::new();
+        let mut date = from;
+        while date <= to {
+            let holiday = self.added_holidays().contains(&date)
+                || (!self.removed_holidays().contains(&date) && !self.impl_is_business_day(&date));
+            if holiday && (include_weekends || !self.is_weekend(&date.weekday())) {
+                dates.push(date);
+            }
+            if date == to {
+                break;
+            }
+            date += 1;
+        }
+        dates
+    }
 
     /// Returns a list of business days between two dates.
-    fn business_day_list(&self, from: Date, to: Date) -> Vec<Date>;
+    fn business_day_list(&self, from: Date, to: Date) -> Vec<Date> {
+        let holidays: HashSet<_> = self.holiday_list(from, to, true).into_iter().collect();
+        let mut dates = Vec::new();
+        let mut date = from;
+        while date <= to {
+            if !holidays.contains(&date) {
+                dates.push(date);
+            }
+            if date == to {
+                break;
+            }
+            date += 1;
+        }
+        dates
+    }
 
     /// Checks if a given weekday is considered a weekend.
     fn is_weekend(&self, weekday: &Weekday) -> bool {

@@ -8,10 +8,7 @@ use crate::{
         rateindex::RateIndexDetails,
     },
     rates::{compounding::Compounding, interestrate::RateDefinition},
-    time::{
-        calendar::Calendar, calendars::weekendsonly::WeekendsOnly, daycounter::DayCounter,
-        enums::Frequency,
-    },
+    time::{calendar::Calendar, calendars::japan::Japan, daycounter::DayCounter, enums::Frequency},
 };
 
 /// Details for TONAR (Tokyo Overnight Average Rate).
@@ -31,7 +28,7 @@ impl MarketIndexDetails for TONARIndex {
 
 impl RateIndexDetails for TONARIndex {
     fn calendar(&self) -> Calendar {
-        Calendar::WeekendsOnly(WeekendsOnly::new())
+        Calendar::Japan(Japan::new())
     }
 
     fn currency(&self) -> Currency {
@@ -52,5 +49,15 @@ impl RateIndexDetails for TONARIndex {
 
     fn market_index(&self) -> MarketIndex {
         MarketIndex::TONAR
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::time::{calendars::traits::IsCalendar, date::Date};
+    #[test]
+    fn overnight_index_uses_local_bank_holidays() {
+        assert!(TONARIndex.calendar().is_holiday(&Date::new(2026, 5, 6)));
     }
 }

@@ -12,3 +12,10 @@ pub mod traits;
 pub mod unitedstates;
 /// Weekends only calendar implementation.
 pub mod weekendsonly;
+
+/// Japan bank calendar.
+pub mod japan;
+/// Joint calendars for multiple markets.
+pub mod jointcalendar;
+/// London settlement calendar.
+pub mod unitedkingdom;

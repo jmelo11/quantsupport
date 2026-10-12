@@ -264,3 +264,10 @@ pub use crate::{
         },
     },
 };
+
+// Settlement calendars and their combination rule.
+pub use crate::time::calendars::{
+    japan::Japan,
+    jointcalendar::{JointCalendar, JointCalendarRule},
+    unitedkingdom::UnitedKingdom,
+};
