@@ -412,7 +412,7 @@ impl std::str::FromStr for FxForwardCalibrationStrategy {
 /// | 1 | Fixed frequency | `Frequency`, e.g. `Annual`, `Semiannual` | `Annual` |
 /// | 2 | Overnight frequency | `Frequency`, e.g. `Annual`, `Quarterly` | `Annual` |
 /// | 3 | Settlement days | Nonnegative business-day count | SONIA: `0`; CORRA: `1`; other indices: `2` |
-/// | 4 | Payment lag | Nonnegative business-day count | SOFR / SOFRCompounded: `2`; other indices: `0` |
+/// | 4 | Payment lag | Nonnegative business-day count | `SOFR` / `SOFRCompounded`: `2`; other indices: `0` |
 /// | 5 | Fixed day counter | `DayCounter`, e.g. `Actual360`, `Actual365` | Index day counter |
 /// | 6 | Settlement calendar | Canonical calendar name | Index calendar |
 /// | 7 | Fixed accrual calendar | Canonical calendar name | Index calendar |
