@@ -172,9 +172,11 @@ SONIA and TONAR use the local bank calendars in Rust index conventions.
 Wheels include the public API stubs and `py.typed` marker. Install
 `quantsupport[typing]` to include the pandas stubs and typing helpers. The bindings workflow
 builds and tests CPython 3.9–3.14 wheels on Linux, Windows, and both Mac
-architectures, and uploads each as a downloadable Actions artifact. To build
-one locally, run `maturin build --release` inside `bindings/python`; no Rust
-compiler is needed when installing the resulting wheel.
+architectures. Pushes to `main` publish the wheels and a source archive to PyPI
+through the [release workflow](../../README.md#releases), using the same version
+as the Rust crate. Wheels are also available as Actions artifacts and GitHub
+release assets. To build one locally, run `maturin build --release` inside
+`bindings/python`; no Rust compiler is needed when installing the resulting wheel.
 
 ### In-memory product and market schemas
 

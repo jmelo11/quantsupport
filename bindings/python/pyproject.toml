@@ -21,4 +21,5 @@ typing = ["pandas-stubs", "typing-extensions>=4.15"]
 
 [tool.maturin]
 features = ["extension-module"]
-module-name = "quantsupport"
+module-name = "quantsupport.quantsupport"
+python-source = "python"

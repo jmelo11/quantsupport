@@ -319,7 +319,13 @@ curve and volatility inspection, simulation results, portfolio risk, callable
 bonds, scripted payoffs, and XVA. They explain the library concepts and result
 units, with local data-loading helpers and editable model configuration files.
 
-Build it into the active virtual environment from the repository root:
+After a release is published, install a wheel with:
+
+```bash
+python -m pip install quantsupport
+```
+
+To build it into the active virtual environment from the repository root:
 
 ```bash
 python -m pip install maturin
@@ -377,6 +383,46 @@ Generated HTML is written to `book/html/`.
 ## Contributing
 
 Contributions are welcome. For small fixes, feel free to open a pull request directly. For larger changes or design discussions, please open an issue first.
+
+## Releases
+
+Each push to `main` starts the [release workflow](.github/workflows/release.yml).
+It increments the shared patch version in `Cargo.toml`, commits that change to
+`main` with a GitHub signature, and creates a `vX.Y.Z` tag. Rust, Python and Excel
+bindings inherit the same workspace version; Python gets its version from Cargo.
+
+The workflow tests the crate, builds and tests CPython 3.9–3.14 wheels for Linux,
+Windows and both Mac architectures, and verifies that the Python source archive
+can build independently. Once all checks pass, it publishes to crates.io and
+PyPI, then creates a GitHub release containing the wheels, source archive and
+Windows XLL. Pushes queue behind an active release. Each queued run prepares the
+current `main`, including changes pushed while an earlier release was building.
+
+Repository maintainers need to configure publishing once:
+
+1. The GitHub environments `crates-io` and `pypi` are configured for deployments
+   from `main`, without required reviewers. Use those names in the publisher
+   settings below. Create equivalent environments when setting up a fork.
+2. In the `quantsupport` crate's
+   [trusted publisher settings](https://crates.io/docs/trusted-publishing), add
+   owner `jmelo11`, repository `quantsupport`, workflow `release.yml`, and
+   environment `crates-io`.
+3. In PyPI's [pending publisher settings](https://pypi.org/manage/account/publishing/),
+   create project `quantsupport` with owner `jmelo11`, repository `quantsupport`,
+   workflow `release.yml`, and environment `pypi`. For an existing project, add
+   the publisher under that project's publishing settings instead.
+4. This repository's `main` requires pull requests and signed commits. Add the
+   Actions secret `RELEASE_TOKEN`: a fine-grained personal access token from a
+   repository administrator, scoped to this repository with **Contents: read and
+   write**. The administrator must be allowed to bypass the pull-request rule.
+   The workflow creates the version commit through GitHub's signing API. For an
+   unprotected repository, the built-in `GITHUB_TOKEN` is sufficient.
+
+Registry authentication uses trusted publishing; no crates.io or PyPI token
+secrets are needed. The version commit contains `[skip release]` so it does not
+start another release. If a build or upload fails, use **Re-run all jobs** or
+**Re-run failed jobs** on the same Actions run. It reuses the reserved version
+and tag, skips an already-published crate and preserves uploaded PyPI files.
 
 ## License
 

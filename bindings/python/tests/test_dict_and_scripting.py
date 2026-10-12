@@ -19,7 +19,7 @@ class DictAndScriptTests(unittest.TestCase):
             self.assertTrue(stub.with_name("py.typed").exists())
         else:
             # The Rust contract runner creates the module in memory.
-            stub = Path(__file__).resolve().parents[1] / "quantsupport.pyi"
+            stub = Path(__file__).resolve().parents[1] / "python" / "quantsupport" / "__init__.pyi"
         declarations = {node.name: node for node in ast.parse(stub.read_text()).body
                         if isinstance(node, ast.ClassDef)}
         exported = {name for name, value in vars(qs).items()

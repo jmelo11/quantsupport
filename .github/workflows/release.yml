@@ -1,0 +1,124 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-main
+  # Keep every push queued while earlier releases build and publish.
+  queue: max
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    if: ${{ !contains(github.event.head_commit.message, '[skip release]') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      ref: ${{ steps.version.outputs.ref }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Prepare signed version commit and tag
+        id: version
+        run: python .github/scripts/release.py prepare
+        env:
+          # A token allowed to bypass main's PR rule is needed on protected repositories.
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN || github.token }}
+
+  rust:
+    needs: prepare
+    uses: ./.github/workflows/rust.yml
+    with:
+      ref: ${{ needs.prepare.outputs.ref }}
+
+  bindings:
+    needs: prepare
+    uses: ./.github/workflows/bindings.yml
+    with:
+      ref: ${{ needs.prepare.outputs.ref }}
+
+  publish-crate:
+    needs: [prepare, rust, bindings]
+    runs-on: ubuntu-latest
+    environment: crates-io
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.prepare.outputs.ref }}
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Check whether this version is already published
+        id: published
+        run: python .github/scripts/release.py published "$RELEASE_VERSION"
+        env:
+          RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+      - name: Authenticate with crates.io
+        if: steps.published.outputs.exists != 'true'
+        uses: rust-lang/crates-io-auth-action@v1
+        id: auth
+      - name: Publish crate
+        if: steps.published.outputs.exists != 'true'
+        run: cargo publish -p quantsupport
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+
+  publish-python:
+    needs: [prepare, rust, bindings, publish-crate]
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/quantsupport
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v6
+        with:
+          pattern: python-*
+          merge-multiple: true
+          path: dist
+      - name: Publish Python wheels and source distribution
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          skip-existing: true
+
+  github-release:
+    needs: [prepare, publish-crate, publish-python]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v6
+        with:
+          pattern: python-*
+          merge-multiple: true
+          path: dist
+      - uses: actions/download-artifact@v6
+        with:
+          name: excel-windows-x64
+          path: dist
+      - name: Create release and attach packages
+        run: |
+          if ! gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            gh release create "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --generate-notes --title "$RELEASE_TAG"
+          fi
+          gh release upload "$RELEASE_TAG" dist/* --repo "$GITHUB_REPOSITORY" --clobber
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: v${{ needs.prepare.outputs.version }}
