@@ -43,11 +43,56 @@ The equivalent JSON groups observations by index, for example `{"SOFR": [{"date"
 
 The `examples/sensitivity` program demonstrates how projection and discounting combine across several indices. It bootstraps SOFR, Term SOFR 3M, ICP, and the collateralized CLP curve, then prices:
 
-- a SOFR OIS swap,
+- a regular SOFR-indexed swap built with `MakeSwap`,
 - a Term SOFR swap projected on `TermSOFR3m` and discounted on SOFR through `SingleCurveCSADiscountPolicy::new(MarketIndex::SOFR, Currency::USD)`,
 - an ICP (CLP) swap and cross-currency swaps.
 
 The Term SOFR swap's sensitivity table contains both `BasisSwap_USD_SOFR_TermSOFR3m_*` and `OIS_USD_SOFR_*` rows. Its projected coupons depend on the basis curve, and that calibrated curve depends on SOFR through the implicit-function link described in [Curve Bootstrapping](../curves/bootstrapping.md).
+
+## Overnight index swaps
+
+`OvernightIndexSwap<T>` and `OvernightIndexSwapTrade<T>` represent a fixed leg against daily overnight accrual. `MakeOvernightIndexSwap` applies the index's OIS conventions and builds coupon-only legs without principal exchanges. Generic `MakeSwap` retains single-fixing coupons; selecting SOFR as its index does not enable daily overnight compounding.
+
+Build a five-year receive-fixed SOFR OIS with the index preset:
+
+```rust
+use quantsupport::prelude::*;
+
+# fn main() -> Result<()> {
+let rd = Date::new(2026, 1, 2);
+let notional = 10_000_000.0;
+let ois = MakeOvernightIndexSwap::<DualFwd>::new(
+    MarketIndex::SOFR,
+    rd,
+    Period::new(5, TimeUnit::Years),
+    0.04,
+)
+.with_identifier("USD_SOFR_OIS_5Y".to_string())
+.with_notional(notional)
+.with_side(Side::LongReceive)
+.build()?;
+let trade = OvernightIndexSwapTrade::new(ois, rd, notional, Side::LongReceive);
+# Ok(())
+# }
+```
+
+The SOFR preset uses two business days to settlement, annual fixed and overnight schedules, and a two-business-day payment lag. Customize the preset with `with_conventions(OisConventions)` or set explicit start and maturity dates. [Curve Bootstrapping](../curves/bootstrapping.md#ois-conventions) documents the conventions and quote overrides.
+
+Use the same discounted-cashflow engine with the OIS trade type:
+
+```rust,ignore
+let pricer = DiscountedCashflowPricer::<
+    OvernightIndexSwap<DualFwd>,
+    OvernightIndexSwapTrade<DualFwd>,
+>::new();
+let results = pricer.evaluate(
+    &trade,
+    &[Request::Value, Request::FairRate, Request::Cashflows, Request::Sensitivities],
+    &ctx,
+)?;
+```
+
+Standard future compounded coupons use the discount-ratio telescoping formula. Seasoned coupons compound historical business-day observations with weekend and holiday accrual weights, then project the remaining accrual. Supply those observations through `FixingStore`; missing past fixings are errors. Today's observation is used when available and otherwise forecast. Payment lag changes the discounting date while leaving the accrual interval intact. Nonstandard overnight observation conventions are supported in deterministic pricing but rejected by the legacy XVA claim converter.
 
 ## Basis swaps
 
@@ -72,7 +117,7 @@ The builder requires notional, dates, currency, both market indices, and an iden
 
 ## Fixed-income instruments
 
-The cashflow pricer also supports deposits, bonds, floating-rate notes, and listed rate futures through their respective trade wrappers. Their builders differ mainly in required conventions and default payment structures:
+Deposits and floating-rate notes use the cashflow pricer. Straight fixed-rate bonds use `BondPricer`, and listed rate futures use `RateFuturesPricer`, through their respective trade wrappers. Their builders differ mainly in required conventions and default payment structures:
 
 | Builder                   | Required                                                                         | Defaults                                                                          |
 | ------------------------- | -------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |

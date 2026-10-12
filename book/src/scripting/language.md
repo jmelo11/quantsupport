@@ -158,10 +158,14 @@ Parsing, static analysis, and runtime evaluation return the library's `QSError` 
 `QSError::context` attaches operation details while preserving the original error as its source. For example, a parsing error carries its event date, and a model failure carries its path index. Messages from quote, curve, volatility, and simulation construction also identify the operation and relevant resource. Use `std::error::Error::source` to inspect the cause chain and `error.root_cause()` to match the original library variant:
 
 ```rust
+use quantsupport::prelude::QSError;
+
+let error = QSError::ParsingErr("Expected a closing parenthesis".to_string())
+    .context("Parsing event on 2026-01-02");
 match error.root_cause() {
-    QSError::ParsingErr(_) => report_invalid_script(&error),
-    QSError::NotFoundErr(_) => report_missing_data(&error),
-    _ => report_failure(&error),
+    QSError::ParsingErr(_) => println!("Invalid script: {error}"),
+    QSError::NotFoundErr(_) => println!("Missing market data: {error}"),
+    _ => println!("Valuation failed: {error}"),
 }
 ```
 

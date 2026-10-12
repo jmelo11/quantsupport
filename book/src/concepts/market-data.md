@@ -309,7 +309,7 @@ let fx = FxStore::from_records(vec![FxRateRecord { base: Currency::CLP, quote: C
 The example demonstrates all three lookup paths: direct storage, reciprocal
 orientation, and triangulation through an intermediate currency.
 
-`get_fx_rate` returns `DualFwd::one()` for identical currencies and uses a direct lookup for a stored pair. For other connected currencies, it performs breadth-first triangulation, multiplying along `base→quote` edges and dividing along reversed edges. Disconnected currencies produce `NotFoundErr`. `FxStore` implements `Pillars<DualFwd>` with labels such as `"USD/CLP"`, so `put_pillars_on_tape()` registers every stored rate as a tape leaf. `from_records` creates off-tape values with `DualFwd::from`, ready for later registration. The bootstrapper uses the store to build `MarketIndex::Collateral(CLP, USD)` curves from cross-currency quotes. `FxForwardPricer` and `FxOptionPricer` read spot from it.
+`get_fx_rate` returns `DualFwd::one()` for identical currencies and uses a direct lookup for a stored pair. For other connected currencies, it performs breadth-first triangulation, multiplying along `base→quote` edges and dividing along reversed edges. Disconnected currencies produce `NotFoundErr`. `FxStore` implements `Pillars<DualFwd>` with labels such as `"USD/CLP"`, so `put_pillars_on_tape()` registers every stored rate as a tape leaf. `from_records` creates off-tape values with `DualFwd::from`, ready for later registration. The bootstrapper uses the store to build `MarketIndex::Collateral(CLP, USD)` curves from cross-currency quotes. `FxForwardPricer` and `FxEuropeanOptionPricer` read spot from it.
 
 ## Currencies and indices
 

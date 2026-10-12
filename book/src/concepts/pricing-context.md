@@ -119,9 +119,11 @@ pub struct MarketDataRequest {                 // all fields optional
     fixings_request: Option<Vec<FixingRequest>>,
     fx_request: Option<Vec<FxRequest>>,
     pricer_configuration_request: Option<Vec<InstrumentType>>,
+    calibration_request: Option<ModelCalibrationConfiguration>,
 }
 pub enum ConstructedElementRequest {
-    DiscountCurve { market_index }, DividendCurve { market_index }, CreditCurve { market_index },
+    DiscountCurve { market_index }, DividendCurve { market_index },
+    OptionalDividendCurve { market_index }, CreditCurve { market_index },
     VolatilitySurface { market_index }, VolatilityCube { market_index }, Simulation { market_index },
 }
 ```
@@ -130,6 +132,8 @@ When requested, the response also carries the configuration selected by the
 typed `InstrumentType`. This lets a pricer obtain its implementation controls
 and model assignments through the same narrow provider boundary as its curve
 and fixing dependencies.
+
+`OptionalDividendCurve` allows a pricer to treat an absent dividend curve as zero dividends. A calibration request selects source quote details for a model basket. The response exposes them through `MarketData::calibration_quotes()` and carries the context's selected `quote_level()`, together with the requested surface or cube and curves. A custom provider for calibrated pricing must supply these inputs too.
 
 `handle_request` copies the requested elements into a fresh `ConstructedElementStore`, gathers the fixings (`MarketData::fixings()` is a `HashMap<MarketIndex, BTreeMap<Date, f64>>`), and attaches the `FxStore`. A missing element produces `QSError::NotFoundErr("Discount curve not found for index …")` — the most common error when a trade references an index without a curve configuration.
 

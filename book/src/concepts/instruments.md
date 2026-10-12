@@ -129,6 +129,7 @@ next detailed pricing chapter.
 | Asset class  | Instrument                    | Builder                           | Trade                              | Deterministic pricer                                             |
 | ------------ | ----------------------------- | --------------------------------- | ---------------------------------- | ---------------------------------------------------------------- |
 | Rates        | `Swap` (fixed vs float)       | `MakeSwap`                        | `SwapTrade`                        | `DiscountedCashflowPricer`                                       |
+| Rates        | `OvernightIndexSwap`          | `MakeOvernightIndexSwap`          | `OvernightIndexSwapTrade`          | `DiscountedCashflowPricer`                                       |
 | Rates        | `BasisSwap` (float vs float)  | `MakeBasisSwap`                   | `BasisSwapTrade`                   | `DiscountedCashflowPricer`                                       |
 | Rates        | `FixFloatCrossCurrencySwap`   | `MakeFixFloatCrossCurrencySwap`   | `FixFloatCrossCurrencySwapTrade`   | `DiscountedCashflowPricer`                                       |
 | Rates        | `FloatFloatCrossCurrencySwap` | `MakeFloatFloatCrossCurrencySwap` | `FloatFloatCrossCurrencySwapTrade` | `DiscountedCashflowPricer`                                       |
@@ -141,9 +142,9 @@ next detailed pricing chapter.
 | Fixed income | `FloatingRateNote`            | `MakeFloatingRateNote`            | `FloatingRateNoteTrade`            | `DiscountedCashflowPricer`                                       |
 | Fixed income | `FixedRateDeposit`            | `MakeFixedRateDeposit`            | `FixedRateDepositTrade`            | `DiscountedCashflowPricer`                                       |
 | FX           | `FxForward`                   | `MakeFxForward`                   | `FxForwardTrade`                   | `FxForwardPricer`                                                |
-| FX           | `FxOption`                    | `MakeFxOption`                    | `FxOptionTrade`                    | `FxOptionPricer` (Garman–Kohlhagen)                              |
-| Equity       | `EquityForward`               | `MakeEquityForward`               | `EquityForwardTrade`               | — (claims / scripting)                                           |
-| Equity       | `EquityEuropeanOption`        | —                                 | `EquityEuropeanOptionTrade`        | `BlackEuropeanOptionPricer`, `BlackMCEuropeanOptionPricer`       |
+| FX           | `FxEuropeanOption`                    | `MakeFxEuropeanOption`                    | `FxEuropeanOptionTrade`                    | `FxEuropeanOptionPricer` (Garman–Kohlhagen)                              |
+| Equity       | `EquityForward`               | `MakeEquityForward`               | `EquityForwardTrade`               | `EquityForwardPricer`                                           |
+| Equity       | `EquityEuropeanOption`        | `MakeEquityEuropeanOption`         | `EquityEuropeanOptionTrade`        | `BlackEuropeanOptionPricer`, `BlackMCEuropeanOptionPricer`       |
 | Equity       | `Futures`                     | `MakeFutures`                     | `FuturesTrade`                     | — (claims / scripting)                                           |
 | Credit       | `CreditDefaultSwap`           | —                                 | `CdsTrade`                         | `CdsPricer`                                                      |
 | Any          | `ScriptedProduct`             | script text                       | —                                  | `ScriptEngine` (Monte Carlo)                                     |
@@ -156,12 +157,12 @@ The generic parameter `T` on rate and fixed-income instruments is `f64` or `Dual
 
 ### Builder conventions
 
-All `Make*` builders follow the same pattern as `MakeSwap` (see [Your First Swap](../getting-started/first-swap.md)):
+Most `Make*` builders follow the same pattern as `MakeSwap` (see [Your First Swap](../getting-started/first-swap.md)):
 
-- `Make*::new()` / `default()` then chained `with_*` setters that take ownership.
+- Most builders start with `default()` and chained `with_*` setters that take ownership. `MakeOvernightIndexSwap::new(index, reference_date, tenor, fixed_rate)` starts with an index-specific convention preset; its setters customize that preset and contract terms.
 - `build()` returns `Result<Instrument>`. Missing mandatory fields produce `QSError::ValueNotSetErr("<Field>")`.
-- Defaults are conservative: `Calendar::NullCalendar`, `BusinessDayConvention::Unadjusted`, `DateGenerationRule::Backward`, `spread = 0.0`, `Side::LongReceive`.
-- Cross-currency builders take two currencies, two notionals or an FX rate, and per-leg indices. `MakeFxForward` and `MakeFxOption` take a currency pair, strike or forward rate, and settlement date. `MakeCapFloor` takes an index, strike, product direction, and schedule parameters. `MakeSwaption` wraps swap terms with expiry and settlement type.
+- Generic leg builders commonly default to `Calendar::NullCalendar`, `BusinessDayConvention::Unadjusted`, `DateGenerationRule::Backward`, `spread = 0.0`, and `Side::LongReceive`. OIS uses the index-specific calendar and adjustment conventions described above.
+- Cross-currency builders take two currencies, two notionals or an FX rate, and per-leg indices. `MakeFxForward` takes a currency pair, strike and settlement date; `MakeFxEuropeanOption` takes a pair, option strike and expiry date. `MakeCapFloor` takes an index, strike, product direction, and schedule parameters. `MakeSwaption` wraps swap terms with expiry and payer-or-receiver direction. `MakeOvernightIndexSwap` constructs daily overnight coupons and coupon-only legs; [Interest Rate Swaps](../pricing/swaps.md#overnight-index-swaps) explains the OIS workflow.
 
 The per-product chapters under [Pricing](../pricing/overview.md) show each builder with its required fields and the requests its pricer supports.
 

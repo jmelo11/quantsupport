@@ -102,7 +102,7 @@ The query returns a differentiable value, so subsequent pricing retains its link
 
 ### FX orientation
 
-An FX surface is stored for one pair direction because reciprocal pairs describe the same market under a coordinate transformation. `OrientedFxVolSurface::new(&element, inverted)` provides the requested trade orientation. For the inverse pair, it maps the strike according to \\(K \to 1/K\\). `FxOptionPricer` derives the orientation from the trade, which allows one stored surface to serve both `USDCLP` and `CLPUSD` options.
+An FX surface is stored for one pair direction because reciprocal pairs describe the same market under a coordinate transformation. `OrientedFxVolSurface::new(&element, inverted)` provides the requested trade orientation. For the inverse pair, it maps the strike according to \\(K \to 1/K\\). `FxEuropeanOptionPricer` derives the orientation from the trade, which allows one stored surface to serve both `USDCLP` and `CLPUSD` options.
 
 ## Model calibration targets
 

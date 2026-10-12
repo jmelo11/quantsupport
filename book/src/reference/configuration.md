@@ -116,6 +116,39 @@ Volatility specifications define the quote membership and conventions of surface
 
 The surface quote encodes expiry, index tenor, and strike. The cube quote adds the underlying swap tenor. Builders validate these coordinates and preserve the identifiers for interpolation risk and model calibration.
 
+## `pricer_configurations.json` — `Vec<PricerConfiguration>`
+
+Pricer configurations select an implementation for an instrument family and assign typed models by market index. Supply the vector with `PricingContext::with_pricer_configurations()`. Direct Rust pricing still selects its concrete pricer; for swaptions, pass the selected entry to `ClosedFormHullWhiteSwaptionPricer::from_configuration()`.
+
+This example assigns a Hull-White model calibrated to the SOFR swaption cube:
+
+```json
+[
+  {
+    "instrument_type": "EuropeanSwaption",
+    "pricer": "HullWhiteClosedForm",
+    "models": [
+      {
+        "market_index": "SOFR",
+        "model": {
+          "HullWhite": {
+            "alpha": 0.1,
+            "parameter_source": {
+              "Calibrated": {
+                "source": { "Cube": { "market_index": "SOFR" } },
+                "calibration_basket": { "strike": "Atm" }
+              }
+            }
+          }
+        }
+      }
+    ]
+  }
+]
+```
+
+The context also needs the source quotes, matching `VolatilityCubeConfiguration`, and curves before valuation. `ParameterSource::Fixed` supplies a constant sigma instead. Callable-bond configurations use `TreeBased` or `BackwardFourierEvolution` with numerical grid controls, as described in [Bond Pricing](../pricing/bonds.md). OIS uses `instrument_type: "OIS"` and `pricer: "DiscountedCashflow"`, independently of the regular `"Swap"` family.
+
 ## `ModelCalibrationConfiguration`
 
 Model calibration is configured inside the model's `parameter_source` section.

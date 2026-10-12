@@ -6,25 +6,36 @@ A swaption grants the right to enter an interest-rate swap at a future expiry. I
 
 The swaption builder specifies both the option expiry and the maturity date of the underlying swap. It also records the strike, notional, currency, index, and payer-or-receiver direction. The following example creates a one-year option on a five-year payer swap:
 
-```rust,ignore
+```rust
+use quantsupport::prelude::*;
+
+# fn main() -> Result<()> {
+let rd = Date::new(2026, 1, 2);
 let swaption = MakeSwaption::<DualFwd>::default()
     .with_identifier("USD_SOFR_1Y5Y_PAYER".to_string())
     .with_expiry(rd + Period::from_str("1Y")?)
     .with_swap_tenor_date(rd + Period::from_str("6Y")?)      // underlying swap maturity
     .with_strike(0.04)
     .with_notional(10_000_000.0)
+    .with_rate_definition(RateDefinition::new(
+        DayCounter::Actual360,
+        Compounding::Simple,
+        Frequency::Semiannual,
+    ))
     .with_currency(Currency::USD)
     .with_market_index(MarketIndex::SOFR)
     .with_swaption_type(SwaptionType::Payer)                 // default
     .build()?;
 let trade = EuropeanSwaptionTrade::new(swaption, rd, 10_000_000.0, Side::LongReceive);
+# Ok(())
+# }
 ```
 
-The builder requires the strike, expiry, identifier, market index, currency, underlying maturity, and notional. `SwaptionType` selects payer or receiver rights. Frequency settings generate the payment times and accrual fractions of the underlying fixed leg, which the closed-form decomposition uses directly.
+The builder requires the strike, expiry, identifier, market index, currency, underlying maturity, notional, and rate definition. `SwaptionType` selects payer or receiver rights. Frequency settings generate the payment times and accrual fractions of the underlying fixed leg, which the closed-form decomposition uses directly.
 
 ## `ClosedFormHullWhiteSwaptionPricer`
 
-The Hull-White pricer takes the model's mean reversion and short-rate volatility. It supports value and quote sensitivities and requests the curve of the swaption index together with any additional curve selected by the discount policy:
+The fixed-parameter constructor takes the model's mean reversion and constant short-rate volatility. It supports value and quote sensitivities and requests the curve of the swaption index together with any additional curve selected by the discount policy:
 
 ```rust,ignore
 let pricer = ClosedFormHullWhiteSwaptionPricer::new(alpha, sigma);
@@ -44,6 +55,44 @@ The automatic-differentiation graph includes the result of the critical-rate sol
 Market swaption volatilities live in a `VolatilityCubeConfiguration` built from identifiers of the form `Swaption_CCY_Index_Expiry_Tenor_[PayFreq_RecvFreq]_Strike_val_VolType`. [Volatility Surfaces](../curves/volatility.md) explains how those fields become cube coordinates.
 
 `ParameterSource::Calibrated` references the constructed cube through `CalibrationSource::Cube`. Its `calibration_basket` selects the expiry, tenor, and strike rule used to fit an LGM or Hull-White sigma schedule. The ICP configuration in `examples/cva/data/xva_config.json` provides a complete example. Pricing the selected contracts with the Hull-White swaption pricer then provides a direct calibration-quality check.
+
+## Calibrated pricing
+
+`ClosedFormHullWhiteSwaptionPricer::from_configuration()` accepts a typed Hull-White model assignment with either fixed or calibrated parameters. The configuration must select `InstrumentType::EuropeanSwaption` and `PricerImplementation::HullWhiteClosedForm`, with a `ModelConfiguration::HullWhite` assigned to the swaption's index.
+
+This example selects ATM instruments from the SOFR swaption cube:
+
+```rust
+use quantsupport::prelude::*;
+
+# fn main() -> Result<()> {
+let calibration = ModelCalibrationConfiguration::new(CalibrationSource::Cube {
+    market_index: MarketIndex::SOFR,
+})
+.with_calibration_basket(CalibrationBasket::all().with_strike(Strike::Atm));
+
+let configuration = PricerConfiguration::new(
+    InstrumentType::EuropeanSwaption,
+    PricerImplementation::HullWhiteClosedForm,
+    vec![PricingModelConfiguration::new(
+        MarketIndex::SOFR,
+        ModelConfiguration::HullWhite {
+            alpha: 0.1,
+            parameter_source: ParameterSource::Calibrated(calibration),
+        },
+    )],
+);
+let pricer = ClosedFormHullWhiteSwaptionPricer::from_configuration(
+    &configuration,
+    &MarketIndex::SOFR,
+)?;
+# Ok(())
+# }
+```
+
+Evaluate this pricer with the same `evaluate()` call used above. Initialize a context containing the source cube's quote details, its `VolatilityCubeConfiguration`, and the required curves. The pricer requests the constructed cube and calibration quote details, then resolves the piecewise sigma schedule during valuation. `CalibrationSource::Surface` provides the corresponding caplet-surface route. A custom `MarketDataProvider` must supply the calibration quote details as well as the constructed volatility object.
+
+Calibrated volatility sensitivities chain through the calibration Jacobian to the original surface or cube pillars. The current Jacobian includes sigma's response to volatility quotes; it excludes sigma's response to curve quotes and changes in calibration strikes. Direct curve sensitivity still flows through the bond-option decomposition. Cube calibration selects at most one underlying tenor per expiry and must remain within the source domain. See [Configuration](../reference/configuration.md#pricer_configurationsjson--vecpricerconfiguration) for the equivalent JSON shape.
 
 ## What to remember
 

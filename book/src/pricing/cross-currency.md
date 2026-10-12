@@ -9,7 +9,7 @@ QuantSupport provides fixed-versus-floating and floating-versus-floating cross-c
 The builder records each leg's currency, notional, index, and spread. Choosing notionals that are equivalent at the inception spot makes the initial exchange economically balanced. The following example builds a five-year USD/CLP floating-rate swap:
 
 ```rust,ignore
-let xccy = MakeFloatFloatCrossCurrencySwap::<f64>::default()
+let xccy = MakeFloatFloatCrossCurrencySwap::<DualFwd>::default()
     .with_identifier("CLPUSD_XCCY_5Y".to_string())
     .with_start_date(rd)
     .with_maturity_date(rd.advance(5, TimeUnit::Years))

@@ -74,6 +74,8 @@ let sims: HashMap<MarketIndex, MonteCarloSimulationElement> =
 
 `PricingContext::with_simulation_configurations(specs)` schedules this builder during `initialize()`. Curves and volatility objects are constructed first, which makes them available to calibrated models. The path grid advances from the reference date by the configured frequency through the horizon.
 
+For calibrated Hull-White models, the resulting `MonteCarloSimulationElement` retains an instrument-level `HullWhiteCalibrationQuality` report. Read it with `element.calibration_quality()` to inspect calibration targets and fitted prices alongside the generated paths. Fixed-parameter and non-Hull-White simulations return `None`.
+
 ### `GeneratedMonteCarloSimulation`
 
 The generated element stores a rectangular path matrix together with its date and model identity metadata. Its principal constructor and accessors are:
