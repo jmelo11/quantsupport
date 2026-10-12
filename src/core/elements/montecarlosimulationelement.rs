@@ -2,6 +2,7 @@ use crate::{
     ad::dual::DualFwd,
     core::{marketdatahandling::constructedelementstore::SharedElement, pillars::Pillars},
     indices::marketindex::MarketIndex,
+    models::hullwhite::hullwhitecalibrationquality::HullWhiteCalibrationQuality,
     simulations::simulation::MonteCarloSimulation,
 };
 
@@ -21,6 +22,7 @@ pub trait ADMonteCarloSimulationElement:
 pub struct MonteCarloSimulationElement {
     market_index: MarketIndex,
     simulation: SharedElement<dyn ADMonteCarloSimulationElement>,
+    calibration_quality: Option<HullWhiteCalibrationQuality>,
 }
 
 impl MonteCarloSimulationElement {
@@ -33,7 +35,23 @@ impl MonteCarloSimulationElement {
         Self {
             market_index,
             simulation,
+            calibration_quality: None,
         }
+    }
+
+    /// Attaches the diagnostics produced when calibrating the simulation model.
+    #[must_use]
+    pub fn with_calibration_quality(
+        mut self,
+        quality: Option<HullWhiteCalibrationQuality>,
+    ) -> Self {
+        self.calibration_quality = quality;
+        self
+    }
+    /// Calibration diagnostics, or `None` for fixed and non-Hull-White models.
+    #[must_use]
+    pub const fn calibration_quality(&self) -> Option<&HullWhiteCalibrationQuality> {
+        self.calibration_quality.as_ref()
     }
 
     /// Returns the market index associated with the simulation element.

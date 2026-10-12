@@ -271,3 +271,5 @@ pub use crate::time::calendars::{
     jointcalendar::{JointCalendar, JointCalendarRule},
     unitedkingdom::UnitedKingdom,
 };
+
+pub use crate::pricers::equity::equityforwardpricer::EquityForwardPricer;

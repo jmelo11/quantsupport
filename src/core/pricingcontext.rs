@@ -492,6 +492,14 @@ impl MarketDataProvider for PricingContext {
                             .discount_curves_mut()
                             .insert(market_index.clone(), curve.clone());
                     }
+                    ConstructedElementRequest::OptionalDividendCurve { market_index } => {
+                        if let Some(curve) = self.constructed_elements.dividend_curve(market_index)
+                        {
+                            constructed_elements
+                                .dividend_curves_mut()
+                                .insert(market_index.clone(), curve.clone());
+                        }
+                    }
                     ConstructedElementRequest::DividendCurve { market_index } => {
                         let curve = self
                             .constructed_elements

@@ -13,6 +13,11 @@ pub enum ConstructedElementRequest {
         /// Requested market index.
         market_index: MarketIndex,
     },
+    /// Requests a dividend curve when present; absence means zero dividends.
+    OptionalDividendCurve {
+        /// Requested market index.
+        market_index: MarketIndex,
+    },
     /// Request for a credit (survival) curve of a market index.
     CreditCurve {
         /// Requested market index.
