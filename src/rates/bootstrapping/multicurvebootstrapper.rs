@@ -797,7 +797,7 @@ mod tests {
 
     #[test]
     fn ois_bootstrap_recovers_discount_growth_with_different_day_counts() {
-        use crate::prelude::{Cashflow, CashflowType, MakeOvernightIndexSwap, Period};
+        use crate::prelude::{CashflowType, MakeOvernightIndexSwap, Period};
 
         let reference = Date::new(2026, 10, 8);
         let discount = |date| (-0.04 * DayCounter::Actual365.year_fraction(reference, date)).exp();

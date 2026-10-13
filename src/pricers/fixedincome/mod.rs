@@ -9,6 +9,9 @@
 /// Fixed-rate bond pricing from clean-price, dirty-price, or spread anchors.
 pub mod bondpricer;
 
+/// Loan valuation using contractual amortization and market curves.
+pub mod loanpricer;
+
 /// Callable-bond pricing with a recombining short-rate tree.
 pub mod treebasedbondpricer;
 

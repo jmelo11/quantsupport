@@ -14,7 +14,7 @@ use crate::{
 };
 
 macro_rules! euribor_index {
-    ($name:ident, $doc:expr, $display:expr, $variant:ident) => {
+    ($name:ident, $doc:expr, $display:expr, $variant:ident, $frequency:expr) => {
         #[doc = $doc]
         #[derive(Copy, Clone, Serialize, Default, Deserialize)]
         pub struct $name;
@@ -30,6 +30,9 @@ macro_rules! euribor_index {
         }
 
         impl RateIndexDetails for $name {
+            fn frequency(&self) -> Frequency {
+                $frequency
+            }
             fn calendar(&self) -> Calendar {
                 Calendar::TARGET(TARGET::new())
             }
@@ -65,23 +68,27 @@ euribor_index!(
     Euribor1mIndex,
     "Details for the EURIBOR 1-month rate index.",
     "EURIBOR1m",
-    EURIBOR1m
+    EURIBOR1m,
+    Frequency::Monthly
 );
 euribor_index!(
     Euribor3mIndex,
     "Details for the EURIBOR 3-month rate index.",
     "EURIBOR3m",
-    EURIBOR3m
+    EURIBOR3m,
+    Frequency::Quarterly
 );
 euribor_index!(
     Euribor6mIndex,
     "Details for the EURIBOR 6-month rate index.",
     "EURIBOR6m",
-    EURIBOR6m
+    EURIBOR6m,
+    Frequency::Semiannual
 );
 euribor_index!(
     Euribor12mIndex,
     "Details for the EURIBOR 12-month rate index.",
     "EURIBOR12m",
-    EURIBOR12m
+    EURIBOR12m,
+    Frequency::Annual
 );

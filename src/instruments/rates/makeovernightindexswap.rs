@@ -285,7 +285,6 @@ impl<T: Scalar> MakeOvernightIndexSwap<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::instruments::cashflows::cashflow::Cashflow;
 
     #[test]
     fn sofr_ois_settlement_and_payment_lag() {

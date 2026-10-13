@@ -8,6 +8,9 @@ mod curves;
 mod enums;
 mod explore;
 mod extension;
+mod loan;
+mod loanpricer;
+mod loanterms;
 mod market;
 mod results;
 mod scripting;
@@ -83,6 +86,11 @@ fn quantsupport(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<trades::EuropeanSwaption>()?;
     // Instruments
     m.add_class::<trades::Swap>()?;
+    m.add_class::<loan::Loan>()?;
+    m.add_class::<loanpricer::LoanPricer>()?;
+    m.add_class::<loanterms::LoanRateDefinition>()?;
+    m.add_class::<loanterms::LoanRepaymentStructure>()?;
+    m.add_class::<loanterms::PrepaymentModelConfiguration>()?;
     m.add_class::<trades::CrossCurrencySwap>()?;
     m.add_class::<trades::BasisSwap>()?;
     m.add_class::<trades::FixFloatCrossCurrencySwap>()?;

@@ -53,6 +53,7 @@ where
         coupon
             .overnight_conventions
             .clone_from(&self.overnight_conventions);
+        coupon.day_counter = self.day_counter;
         let value = *self.fixing.read().unwrap();
         if let Some(fixing) = value {
             coupon.set_fixing(fixing);
@@ -278,6 +279,13 @@ where
         }
     }
 
+    /// Uses a contractual accrual day counter independently of the index quote.
+    #[must_use]
+    pub const fn with_day_counter(mut self, day_counter: DayCounter) -> Self {
+        self.day_counter = day_counter;
+        self
+    }
+
     /// Installs explicit overnight observation conventions.
     ///
     /// # Errors
@@ -496,6 +504,18 @@ where
         self.day_counter
     }
 
+    /// Contractual principal; it is not an AD input.
+    #[must_use]
+    pub const fn notional(&self) -> f64 {
+        self.notional
+    }
+
+    /// Contractual payment date, independent of the rate scalar type.
+    #[must_use]
+    pub const fn payment_date(&self) -> Date {
+        self.payment_date
+    }
+
     /// Returns the accrual start date.
     pub const fn accrual_start_date(&self) -> Date {
         self.start_date
@@ -605,6 +625,7 @@ impl From<FloatingRateCoupon<f64>> for FloatingRateCoupon<DualFwd> {
             value.payment_date,
         );
         coupon.overnight_conventions = value.overnight_conventions;
+        coupon.day_counter = value.day_counter;
         if let Some(fixing) = fixing {
             coupon.set_fixing(DualFwd::new(fixing.value()));
         }
@@ -625,6 +646,7 @@ impl From<FloatingRateCoupon<DualFwd>> for FloatingRateCoupon<f64> {
             value.payment_date,
         );
         coupon.overnight_conventions = value.overnight_conventions;
+        coupon.day_counter = value.day_counter;
         if let Some(fixing) = fixing {
             coupon.set_fixing(fixing.value());
         }

@@ -18,9 +18,9 @@ use crate::{
 
 macro_rules! sofr_index {
     ($name:ident, $doc:expr, $display:expr, $variant:ident) => {
-        sofr_index!($name, $doc, $display, $variant, true);
+        sofr_index!($name, $doc, $display, $variant, true, Frequency::Daily);
     };
-    ($name:ident, $doc:expr, $display:expr, $variant:ident, $in_arrears:expr) => {
+    ($name:ident, $doc:expr, $display:expr, $variant:ident, $in_arrears:expr, $frequency:expr) => {
         #[doc = $doc]
         #[derive(Copy, Clone, Serialize, Default, Deserialize)]
         pub struct $name;
@@ -36,6 +36,9 @@ macro_rules! sofr_index {
         }
 
         impl RateIndexDetails for $name {
+            fn frequency(&self) -> Frequency {
+                $frequency
+            }
             fn calendar(&self) -> Calendar {
                 Calendar::UnitedStates(UnitedStates::new(Market::Sofr))
             }
@@ -84,26 +87,30 @@ sofr_index!(
     "Details for the Term-SOFR 1-month rate index.",
     "TermSOFR1m",
     TermSOFR1m,
-    false
+    false,
+    Frequency::Monthly
 );
 sofr_index!(
     TermSOFR3mIndex,
     "Details for the Term-SOFR 3-month rate index.",
     "TermSOFR3m",
     TermSOFR3m,
-    false
+    false,
+    Frequency::Quarterly
 );
 sofr_index!(
     TermSOFR6mIndex,
     "Details for the Term-SOFR 6-month rate index.",
     "TermSOFR6m",
     TermSOFR6m,
-    false
+    false,
+    Frequency::Semiannual
 );
 sofr_index!(
     TermSOFR12mIndex,
     "Details for the Term-SOFR 12-month rate index.",
     "TermSOFR12m",
     TermSOFR12m,
-    false
+    false,
+    Frequency::Annual
 );

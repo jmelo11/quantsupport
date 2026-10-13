@@ -1731,7 +1731,7 @@ impl Quote {
     /// # Errors
     /// Rejects custom nodes outside the instrument's relevant date range.
     pub fn calibration_pillar_date(&self, built: &CalibrationInstrumentType<f64>) -> Result<Date> {
-        use crate::instruments::cashflows::{cashflow::Cashflow, cashflowtype::CashflowType};
+        use crate::instruments::cashflows::cashflowtype::CashflowType;
         use crate::time::{
             calendars::traits::IsCalendar, enums::BusinessDayConvention, enums::TimeUnit,
             period::Period,

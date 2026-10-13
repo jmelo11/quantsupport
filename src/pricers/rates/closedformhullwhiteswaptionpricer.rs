@@ -16,7 +16,7 @@ use crate::{
         trade::Trade,
     },
     instruments::{
-        cashflows::{cashflow::Cashflow, cashflowtype::CashflowType},
+        cashflows::cashflowtype::CashflowType,
         rates::europeanswaption::{EuropeanSwaptionTrade, SwaptionType},
     },
     math::probability::norm_cdf::norm_cdf,
@@ -592,7 +592,7 @@ mod tests {
         currencies::currency::Currency,
         indices::marketindex::MarketIndex,
         instruments::{
-            cashflows::{cashflow::Cashflow, cashflowtype::CashflowType},
+            cashflows::cashflowtype::CashflowType,
             rates::{
                 europeanswaption::{EuropeanSwaptionTrade, SwaptionType},
                 makeeuropeanswaption::MakeSwaption,

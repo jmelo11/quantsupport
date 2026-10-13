@@ -228,9 +228,7 @@ mod tests {
     use super::*;
     use crate::{
         instruments::{
-            cashflows::{
-                cashflow::Cashflow, coupons::LinearCoupon, floatingratecoupon::FloatingRateCoupon,
-            },
+            cashflows::floatingratecoupon::FloatingRateCoupon,
             rates::makeovernightindexswap::MakeOvernightIndexSwap,
         },
         time::{enums::TimeUnit, period::Period},

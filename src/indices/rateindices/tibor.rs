@@ -15,7 +15,7 @@ use crate::{
 };
 
 macro_rules! tibor_index {
-    ($name:ident, $doc:expr, $display:expr, $variant:ident) => {
+    ($name:ident, $doc:expr, $display:expr, $variant:ident, $frequency:expr) => {
         #[doc = $doc]
         #[derive(Copy, Clone, Serialize, Default, Deserialize)]
         pub struct $name;
@@ -31,6 +31,9 @@ macro_rules! tibor_index {
         }
 
         impl RateIndexDetails for $name {
+            fn frequency(&self) -> Frequency {
+                $frequency
+            }
             fn calendar(&self) -> Calendar {
                 Calendar::WeekendsOnly(WeekendsOnly::new())
             }
@@ -66,11 +69,13 @@ tibor_index!(
     Tibor3mIndex,
     "Details for the TIBOR 3-month rate index.",
     "TIBOR3m",
-    TIBOR3m
+    TIBOR3m,
+    Frequency::Quarterly
 );
 tibor_index!(
     Tibor6mIndex,
     "Details for the TIBOR 6-month rate index.",
     "TIBOR6m",
-    TIBOR6m
+    TIBOR6m,
+    Frequency::Semiannual
 );

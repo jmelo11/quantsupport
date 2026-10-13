@@ -55,6 +55,18 @@ fn serde_input<'py>(obj: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
     if let Ok(index) = obj.extract::<crate::enums::MarketIndex>() {
         return pythonize::pythonize(obj.py(), &index.inner).map_err(qs_err);
     }
+    macro_rules! loan_terms_input {
+        ($($name:ident),+ $(,)?) => { $(
+            if let Ok(value) = obj.extract::<crate::loanterms::$name>() {
+                return pythonize::pythonize(obj.py(), &value.inner).map_err(qs_err);
+            }
+        )+ };
+    }
+    loan_terms_input!(
+        LoanRateDefinition,
+        LoanRepaymentStructure,
+        PrepaymentModelConfiguration
+    );
     if obj.is_instance_of::<crate::time::Date>() || obj.is_instance_of::<crate::time::Period>() {
         return obj.str().map(Bound::into_any);
     }

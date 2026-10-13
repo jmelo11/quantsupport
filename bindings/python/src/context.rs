@@ -19,9 +19,10 @@ use quantsupport::prelude::{
     FixedIncomeDiscountPolicy, FixedRateDeposit as QsFixedRateDeposit, FixedRateDepositTrade,
     FloatFloatCrossCurrencySwap, FloatFloatCrossCurrencySwapTrade,
     FloatingRateNote as QsFloatingRateNote, FloatingRateNoteTrade, FxEuropeanOptionPricer,
-    FxForwardPricer, InstrumentType, Level, LgmMarketModel, LgmRateModel, ModelConfiguration,
-    Pricer, PricerImplementation, PricingContext as QsPricingContext, RateFuturesPricer, Scalar,
-    ScriptEngine, Swap as QsSwap, SwapTrade, Tape, TreeBasedBondPricer, XvaEngine,
+    FxForwardPricer, InstrumentType, Level, LgmMarketModel, LgmRateModel, LoanPricer,
+    ModelConfiguration, Pricer, PricerImplementation, PricingContext as QsPricingContext,
+    RateFuturesPricer, Scalar, ScriptEngine, Swap as QsSwap, SwapTrade, Tape, TreeBasedBondPricer,
+    XvaEngine,
 };
 
 use crate::collateral::SingleCurveCSADiscountPolicy;
@@ -70,6 +71,15 @@ pub struct PricingContext {
 }
 
 impl PricingContext {
+    pub(crate) fn native_context(&self) -> PyResult<&QsPricingContext> {
+        self.require_initialized()?;
+        Ok(&self.inner)
+    }
+
+    pub(crate) fn loan_discount_policy(&self) -> FixedIncomeDiscountPolicy {
+        self.bond_discount_policy(true)
+    }
+
     fn bond_discount_policy(&self, prefer_instrument_index: bool) -> FixedIncomeDiscountPolicy {
         self.fixed_income_policy.as_ref().map_or_else(
             || {
@@ -500,16 +510,17 @@ impl PricingContext {
         let script = script
             .extract::<ScriptedProduct>()
             .or_else(|_| ScriptedProduct::from_dict(script))?;
-        let discount_index =
-            match script.discount_index() {
-                Some(index) => index.clone(),
-                None if script.currency() == self.inner.base_currency() => {
-                    self.inner.base_index().clone()
-                }
-                None => return Err(QuantSupportError::new_err(
+        let discount_index = match script.discount_index() {
+            Some(index) => index.clone(),
+            None if script.currency() == self.inner.base_currency() => {
+                self.inner.base_index().clone()
+            }
+            None => {
+                return Err(QuantSupportError::new_err(
                     "scripts outside the context base currency require an explicit discount_index",
-                )),
-            };
+                ));
+            }
+        };
         let mut assignments = HashMap::new();
         for configuration in self.inner.pricer_configurations() {
             for index in self.inner.constructed_elements().discount_curves().keys() {
@@ -669,6 +680,14 @@ impl PricingContext {
             )
             })?;
         let instrument = position.instrument_bound(py);
+
+        if let Ok(loan) = instrument.extract::<crate::loan::Loan>() {
+            let trade = loan.build_trade(&position)?;
+            let mut pricer = LoanPricer::new();
+            pricer.set_discount_policy(Box::new(slf.loan_discount_policy()));
+            let result = pricer.evaluate(&trade, &reqs, &slf.inner).map_err(qs_err)?;
+            return Py::new(py, EvaluationResults::from_qs(&result));
+        }
 
         if let Ok(swap) = instrument.extract::<Swap>() {
             let t = swap.build_trade_dual(&position)?;

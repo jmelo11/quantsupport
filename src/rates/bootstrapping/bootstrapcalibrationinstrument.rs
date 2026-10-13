@@ -4,9 +4,7 @@ use crate::{
     },
     core::collateral::Discountable,
     indices::marketindex::MarketIndex,
-    instruments::cashflows::{
-        cashflow::Cashflow, cashflowtype::CashflowType, coupons::LinearCoupon, leg::Leg,
-    },
+    instruments::cashflows::{cashflow::Cashflow, cashflowtype::CashflowType, leg::Leg},
     math::interpolation::interpolator::Interpolator,
     quotes::{
         calibrationinstrument::CalibrationInstrument,
@@ -94,7 +92,7 @@ impl<'a> BootstrapStepEvaluation<'a> {
                 _ => {
                     return Err(QSError::InvalidValueErr(
                         "Unsupported cashflow type for PV calculation".into(),
-                    ))
+                    ));
                 }
             }
         }
@@ -175,7 +173,7 @@ impl<'a> BootstrapStepEvaluation<'a> {
                 _ => {
                     return Err(QSError::InvalidValueErr(
                         "Yield calibration requires a fixed-rate leg".into(),
-                    ))
+                    ));
                 }
             };
             dates.push(date);

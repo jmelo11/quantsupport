@@ -86,9 +86,13 @@ pub use crate::{
             fixedratebond::{FixedRateBond, FixedRateBondTrade},
             fixedratedeposit::{FixedRateDeposit, FixedRateDepositTrade},
             floatingratenote::{FloatingRateNote, FloatingRateNoteTrade},
+            loan::{Loan, LoanTrade},
+            loanratedefinition::LoanRateDefinition,
+            loanrepaymentstructure::LoanRepaymentStructure,
             makefixedratebond::MakeFixedRateBond,
             makefixedratedeposit::MakeFixedRateDeposit,
             makefloatingratenote::MakeFloatingRateNote,
+            makeloan::MakeLoan,
             makesteppedcouponbond::MakeSteppedCouponBond,
             steppedcouponbond::{SteppedCouponBond, SteppedCouponBondTrade},
         },
@@ -150,6 +154,9 @@ pub use crate::{
             LognormalParameterSource, ModelConfiguration, ParameterSource, SimulationConfiguration,
         },
         montecarloengine::{PathGenerator, TimeDependentVolatility},
+        prepaymentmodel::PrepaymentModel,
+        prepaymentmodelconfiguration::PrepaymentModelConfiguration,
+        prepaymentmodelstate::PrepaymentModelState,
     },
     pricers::{
         cashflows::discountedcashflowpricer::DiscountedCashflowPricer,
@@ -160,7 +167,8 @@ pub use crate::{
         },
         fixedincome::{
             backwardfourierevolutionbondpricer::BackwardFourierEvolutionBondPricer,
-            bondpricer::BondPricer, treebasedbondpricer::TreeBasedBondPricer,
+            bondpricer::BondPricer, loanpricer::LoanPricer,
+            treebasedbondpricer::TreeBasedBondPricer,
         },
         fx::{fxeuropeanoptionpricer::FxEuropeanOptionPricer, fxforwardpricer::FxForwardPricer},
         rates::{

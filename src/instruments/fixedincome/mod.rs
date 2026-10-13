@@ -8,12 +8,20 @@ pub mod fixedratebond;
 pub mod fixedratedeposit;
 /// Floating Rate Note Module
 pub mod floatingratenote;
+/// Loan contracts and positions.
+pub mod loan;
+/// Fixed, floating, and mixed loan coupon definitions.
+pub mod loanratedefinition;
+/// Bullet, French, and balloon loan amortization structures.
+pub mod loanrepaymentstructure;
 /// Fixed rate bond builder.
 pub mod makefixedratebond;
 /// Fixed rate deposit builder.
 pub mod makefixedratedeposit;
 /// Floating rate note builder.
 pub mod makefloatingratenote;
+/// Loan contract builder.
+pub mod makeloan;
 /// Stepped-coupon bond builder.
 pub mod makesteppedcouponbond;
 /// Callable stepped-coupon bond instrument and coupon specifications.
