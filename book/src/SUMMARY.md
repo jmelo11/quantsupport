@@ -28,6 +28,7 @@
 
 - [Pricing Overview](pricing/overview.md)
 - [Bond Pricing](pricing/bonds.md)
+- [Mortgage and Loan Payments](pricing/loans.md)
 - [Interest Rate Swaps](pricing/swaps.md)
 - [Cross-Currency Swaps](pricing/cross-currency.md)
 - [Caps and Floors](pricing/caps-floors.md)

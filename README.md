@@ -93,7 +93,7 @@ fn main() -> Result<()> {
 }
 ```
 
-The same program, with a more detailed cashflow report, is available in [`examples/valuation`](examples/valuation).
+The same program, with a more detailed cashflow report, is available in [`examples/valuation/swaps`](examples/valuation/swaps).
 
 ## Architecture and components
 
@@ -286,8 +286,10 @@ All examples below are workspace packages and use local JSON market data where a
 
 | Example | Demonstrates | Run |
 | --- | --- | --- |
-| [`valuation`](examples/valuation) | Flat-curve swap NPV, cashflows, and AAD sensitivity | `cargo run -p valuation` |
-| [`valuation`](examples/valuation) | Callable mixed stepped-coupon bond priced by tree and backward Fourier evolution | `cargo run --manifest-path examples/valuation/Cargo.toml --bin stepped-coupon-bond` |
+| [`valuation/swaps`](examples/valuation/swaps) | Flat-curve swap NPV, cashflows, and AAD sensitivity | `cargo run -p valuation-swaps` |
+| [`valuation/bonds`](examples/valuation/bonds) | Callable mixed stepped-coupon bond priced by tree and backward Fourier evolution | `cargo run -p valuation-bonds` |
+| [`valuation/caps`](examples/valuation/caps) | Black caplet and cap-strip valuation with curve and volatility quote risk | `cargo run -p valuation-caps` |
+| [`valuation/loans`](examples/valuation/loans) | Fixed contractual principal, reset requests, prepayment functions, fair-rate modes, credit and quote risk | `cargo run -p valuation-loans` |
 | [`bootstrap`](examples/bootstrap) | JSON quote loading, USD/CLP multi-curve bootstrapping, and a corporate bond curve | `cargo run -p bootstrap` |
 | [`sensitivity`](examples/sensitivity) | Multi-curve pricing of SOFR, Term SOFR, ICP, and cross-currency swaps with pillar DV01 | `cargo run -p sensitivity` |
 | [`volatilitysurface`](examples/volatilitysurface) | Building and querying an interpolated SOFR caplet Black-volatility surface | `cargo run -p volatilitysurface` |
@@ -360,7 +362,7 @@ Entering `with context:` initializes the market automatically; exiting clears
 the constructed market data and differentiation tape.
 
 See the [Python README](bindings/python/README.md) for API details and the
-[first-swap notebook](bindings/python/examples/valuation/tour.ipynb) to start the walkthrough.
+[first-swap notebook](bindings/python/examples/valuation/swaps/tour.ipynb) to start the walkthrough.
 
 ## Excel bindings
 

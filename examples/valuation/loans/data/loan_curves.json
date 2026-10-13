@@ -1,0 +1,20 @@
+[
+  {
+    "market_index": "ESTR",
+    "quotes": [
+      "FixedRateDeposit_EUR_ESTR_1D",
+      "FixedRateDeposit_EUR_ESTR_1Y",
+      "FixedRateDeposit_EUR_ESTR_2Y",
+      "FixedRateDeposit_EUR_ESTR_3Y"
+    ]
+  },
+  {
+    "market_index": "EURIBOR12m",
+    "quotes": [
+      "FixedRateDeposit_EUR_EURIBOR12m_1D",
+      "FixedRateDeposit_EUR_EURIBOR12m_1Y",
+      "FixedRateDeposit_EUR_EURIBOR12m_2Y",
+      "FixedRateDeposit_EUR_EURIBOR12m_3Y"
+    ]
+  }
+]

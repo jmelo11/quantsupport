@@ -1,0 +1,14 @@
+[
+  {
+    "market_index": {
+      "Credit": "BORROWER"
+    },
+    "currency": "EUR",
+    "discount_index": "ESTR",
+    "recovery": 0.4,
+    "quotes": [
+      "Cds_BORROWER_EUR_1Y",
+      "Cds_BORROWER_EUR_3Y"
+    ]
+  }
+]

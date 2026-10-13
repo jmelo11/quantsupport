@@ -9,7 +9,7 @@ the Rust [`scripting`](../../../../examples/scripting) examples.
 
 [stepped_cashflows.py](stepped_cashflows.py) generates repeated events for this
 tutorial's six-year semiannual note. It omits issuer exercise; the
-[callable-bond example](../valuation/stepped_coupon_bond.ipynb) explains that
+[callable-bond example](../valuation/bonds/stepped_coupon_bond.ipynb) explains that
 separate valuation problem.
 
 The notebook imports its local [market_data.py](market_data.py) directly.

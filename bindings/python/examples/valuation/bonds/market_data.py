@@ -7,15 +7,13 @@ binding.
 """
 
 from dataclasses import dataclass
-import json
 from pathlib import Path
 
 import quantsupport as qs
 
 
-EXAMPLES = Path(__file__).resolve().parents[1]
+EXAMPLES = Path(__file__).resolve().parents[2]
 MARKET_DATA = EXAMPLES.parents[2] / "examples" / "hullwhite" / "data"
-MULTI_CURRENCY_MARKET_DATA = EXAMPLES.parents[2] / "examples" / "bootstrap" / "data"
 
 
 @dataclass
@@ -40,31 +38,8 @@ def load_market():
     )
 
 
-def load_currency_market():
-    """Load USD/CLP curve inputs for the currency-conversion walkthrough."""
-    indices = (
-        "SOFR",
-        "ICP",
-        {"Collateral": ("CLP", "USD")},
-    )
-    curves = qs.CurveConfiguration.from_json(
-        str(MULTI_CURRENCY_MARKET_DATA / "curve_specs.json")
-    )
-    return MarketInputs(
-        quotes=qs.QuoteStore.from_json(
-            str(MULTI_CURRENCY_MARKET_DATA / "quotes.json")
-        ),
-        curves=[curve for curve in curves if curve.to_dict()["market_index"] in indices],
-        volatility_surfaces=[],
-        csa_policy=qs.SingleCurveCSADiscountPolicy(qs.Currency.USD, qs.MarketIndex.SOFR),
-    )
-
-
-def read_configuration(scope, filename):
-    """Read an editable native configuration from one example scope."""
-    return json.loads((EXAMPLES / scope / "data" / filename).read_text(encoding="utf-8"))
-
 
 def load_pricers(filename):
-    """Load the selected bond engine and its calibrated rate-model assignment."""
-    return qs.PricerConfiguration.from_json(str(EXAMPLES / "valuation" / "data" / filename))
+    """Read this bond example's model and engine configuration."""
+    directory = Path(__file__).resolve().parent / "data"
+    return qs.PricerConfiguration.from_json(str(directory / filename))

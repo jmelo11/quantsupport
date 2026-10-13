@@ -1,0 +1,45 @@
+{
+  "reference_date": "2026-02-24",
+  "quotes": [
+    {
+      "identifier": "FixedRateDeposit_EUR_ESTR_1D",
+      "mid": 0.03
+    },
+    {
+      "identifier": "FixedRateDeposit_EUR_ESTR_1Y",
+      "mid": 0.03
+    },
+    {
+      "identifier": "FixedRateDeposit_EUR_ESTR_2Y",
+      "mid": 0.03
+    },
+    {
+      "identifier": "FixedRateDeposit_EUR_ESTR_3Y",
+      "mid": 0.03
+    },
+    {
+      "identifier": "FixedRateDeposit_EUR_EURIBOR12m_1D",
+      "mid": 0.04
+    },
+    {
+      "identifier": "FixedRateDeposit_EUR_EURIBOR12m_1Y",
+      "mid": 0.04
+    },
+    {
+      "identifier": "FixedRateDeposit_EUR_EURIBOR12m_2Y",
+      "mid": 0.04
+    },
+    {
+      "identifier": "FixedRateDeposit_EUR_EURIBOR12m_3Y",
+      "mid": 0.04
+    },
+    {
+      "identifier": "Cds_BORROWER_EUR_1Y",
+      "mid": 0.01
+    },
+    {
+      "identifier": "Cds_BORROWER_EUR_3Y",
+      "mid": 0.012
+    }
+  ]
+}

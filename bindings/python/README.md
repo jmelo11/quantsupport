@@ -21,12 +21,15 @@ They are cataloged under the same scopes as the Rust examples: `bootstrap`,
 | Notebook | Workflow |
 | --- | --- |
 | [Curve bootstrapping](examples/bootstrap/curves.ipynb) | Quote inputs, construction conventions, nodes, pillars, and forwards |
-| [First swap](examples/valuation/tour.ipynb) | Market inputs, dates, context lifecycle, requests, and result units |
-| [Product valuations](examples/valuation/product_valuations.ipynb) | Swaps, straight bonds, caplets and caps; par rates, yields, duration and spreads |
+| [First swap](examples/valuation/swaps/tour.ipynb) | Market inputs, dates, context lifecycle, requests, and result units |
+| [Par swap](examples/valuation/swaps/par_swap.ipynb) | Solve the fixed coupon and reprice at zero PV |
+| [Fixed-rate bond](examples/valuation/bonds/fixed_rate_bond.ipynb) | Price/Z-spread anchors, yield, duration, cashflows and quote risk |
+| [Caps and caplets](examples/valuation/caps/caps_and_caplets.ipynb) | Black option values and curve/volatility quote risk |
+| [Loans](examples/valuation/loans/loans.ipynb) | Contractual principal, reset requests, prepayment functions, fair-rate modes, credit and quote risk |
 | [Curves and volatility](examples/volatilitysurface/curves_and_volatility.ipynb) | Construction, inspection, and their impact on swap and option values |
 | [Simulations](examples/hullwhite/simulations.ipynb) | Calibration, path retrieval, distributions, seeds and sampling error |
 | [Portfolio risk](examples/sensitivity/portfolio_risk.ipynb) | Position aggregation, DV01/vega, cashflow reports, and full-revaluation checks |
-| [Stepped-coupon bond](examples/valuation/stepped_coupon_bond.ipynb) | Callable terms, tree/Fourier engines, OAS and sensitivities |
+| [Stepped-coupon bond](examples/valuation/bonds/stepped_coupon_bond.ipynb) | Callable terms, tree/Fourier engines, OAS and sensitivities |
 | [Scripted cashflows](examples/scripting/scripted_cashflows.ipynb) | Dated payoffs and native/scripted representation checks |
 | [XVA](examples/cva/xva.ipynb) | Netting sets, client terms, exposure profiles and adjustment risk |
 
@@ -83,7 +86,7 @@ with ctx:
 Every enum argument also accepts its string name (`currency="USD"`,
 `side="pay"`, `requests=["Value"]`, ...).
 
-The [currency-conversion walkthrough](examples/valuation/currency_conversion.ipynb)
+The [currency-conversion walkthrough](examples/valuation/swaps/currency_conversion.ipynb)
 values a CLP swap in the USD base currency under a USD CSA, explains FX pair
 direction, and reconciles the native value from converted, discounted cashflows.
 
@@ -418,7 +421,7 @@ Native calibration resolves option prices from the context's market and fits
 the sigma schedule. Missing models, curves, calibration data, invalid event
 order/dates, and script parse/runtime failures raise Python exceptions.
 
-See [examples/valuation/stepped_coupon_bond.ipynb](examples/valuation/stepped_coupon_bond.ipynb)
+See [examples/valuation/bonds/stepped_coupon_bond.ipynb](examples/valuation/bonds/stepped_coupon_bond.ipynb)
 for tree/Fourier pricing and [examples/scripting/scripted_cashflows.ipynb](examples/scripting/scripted_cashflows.ipynb)
 for the native-versus-scripted comparison.
 

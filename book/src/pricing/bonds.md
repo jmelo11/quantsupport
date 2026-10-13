@@ -346,11 +346,11 @@ engines for fixed and mixed capped/floored coupons.
 
 Runnable examples are:
 
-- `cargo run --manifest-path examples/valuation/Cargo.toml --bin stepped-coupon-bond`
+- `cargo run -p valuation-bonds`
   prices the same mixed-coupon instrument with both engines.
 - `cargo run --manifest-path examples/scripting/Cargo.toml --bin stepped-coupon-bond`
   compares the native tree with an equivalent scripted deterministic payoff.
-- `bindings/python/examples/valuation/stepped_coupon_bond.ipynb` constructs and
+- `bindings/python/examples/valuation/bonds/stepped_coupon_bond.ipynb` constructs and
   prices the product from Python with typed terms and auxiliary model settings.
 - `bindings/python/examples/scripting/scripted_cashflows.ipynb` explains the
   scripted underlying and its deterministic native comparison.
