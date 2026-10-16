@@ -1,21 +1,24 @@
 # Loan valuation
 
-| Notebook | Workflow |
-| --- | --- |
-| [loans.ipynb](loans.ipynb) | Typed terms, contractual schedules, cashflow requests, resets, prepayment functions, both fair-rate modes, credit and quote risk |
+[Understanding loan cashflows and value](loans.ipynb) follows a EUR 100,000 loan
+from its first interest accrual to its market value. It explains how the library
+handles day count, French/bullet/balloon repayment, floating resets, introductory
+fixed coupons, coupon bounds, par lending rates, prepayment, and borrower recovery.
+Tables and charts show how those assumptions affect payments, expected principal
+life, income, and exposure to market quotes.
 
-The local [market_data.py](market_data.py) reads the same illustrative
-2026-02-24 EUR discount, EURIBOR12m and borrower CDS inputs as the Rust loan
-package. Those files live in
+The local [market_data.py](market_data.py) reads the illustrative 24 February 2026
+EUR discount, EURIBOR12m, and borrower CDS inputs shared with the Rust example.
+The input files live in
 [examples/valuation/loans/data](../../../../../examples/valuation/loans/data).
-The pricer resolves observations and reports expected receipts through `Request.Cashflows`; contractual principal remains fixed.
 
-Follow the [shared setup](../../README.md#install-and-run), then run this product
-folder from the repository root:
+Follow the [shared setup](../../README.md#install-and-run), then execute the
+walkthrough from the repository root:
 
 ```bash
 python bindings/python/examples/run_notebooks.py valuation/loans
 ```
 
-The [Rust loans package](../../../../../examples/valuation/loans) runs with
-`cargo run -p valuation-loans`. Return to the [valuation catalog](../README.md).
+The [Rust loans example](../../../../../examples/valuation/loans) runs with
+`cargo run -p valuation-loans`. See the [valuation catalog](../README.md) for
+other products.
