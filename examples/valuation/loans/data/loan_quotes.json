@@ -40,6 +40,82 @@
     {
       "identifier": "Cds_BORROWER_EUR_3Y",
       "mid": 0.012
+    },
+    {
+      "identifier": "OIS_EUR_ESTR_5Y",
+      "mid": 0.03
+    },
+    {
+      "identifier": "OIS_EUR_ESTR_10Y",
+      "mid": 0.03
+    },
+    {
+      "identifier": "OIS_EUR_ESTR_15Y",
+      "mid": 0.03
+    },
+    {
+      "identifier": "OIS_EUR_ESTR_20Y",
+      "mid": 0.03
+    },
+    {
+      "identifier": "OIS_EUR_ESTR_25Y",
+      "mid": 0.03
+    },
+    {
+      "identifier": "OIS_EUR_ESTR_30Y",
+      "mid": 0.03
+    },
+    {
+      "identifier": "OIS_EUR_ESTR_35Y",
+      "mid": 0.03
+    },
+    {
+      "identifier": "Swap_EUR_EURIBOR12m_5Y",
+      "mid": 0.04
+    },
+    {
+      "identifier": "Swap_EUR_EURIBOR12m_10Y",
+      "mid": 0.04
+    },
+    {
+      "identifier": "Swap_EUR_EURIBOR12m_15Y",
+      "mid": 0.04
+    },
+    {
+      "identifier": "Swap_EUR_EURIBOR12m_20Y",
+      "mid": 0.04
+    },
+    {
+      "identifier": "Swap_EUR_EURIBOR12m_25Y",
+      "mid": 0.04
+    },
+    {
+      "identifier": "Swap_EUR_EURIBOR12m_30Y",
+      "mid": 0.04
+    },
+    {
+      "identifier": "Swap_EUR_EURIBOR12m_35Y",
+      "mid": 0.04
+    },
+    {
+      "identifier": "Cds_BORROWER_EUR_5Y",
+      "mid": 0.014
+    },
+    {
+      "identifier": "Cds_BORROWER_EUR_10Y",
+      "mid": 0.016
+    },
+    {
+      "identifier": "Cds_BORROWER_EUR_20Y",
+      "mid": 0.018
+    },
+    {
+      "identifier": "Cds_BORROWER_EUR_30Y",
+      "mid": 0.02
+    },
+    {
+      "identifier": "Cds_BORROWER_EUR_35Y",
+      "mid": 0.021
     }
   ]
 }

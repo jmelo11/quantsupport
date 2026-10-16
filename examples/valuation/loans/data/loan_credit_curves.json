@@ -8,7 +8,12 @@
     "recovery": 0.4,
     "quotes": [
       "Cds_BORROWER_EUR_1Y",
-      "Cds_BORROWER_EUR_3Y"
+      "Cds_BORROWER_EUR_3Y",
+      "Cds_BORROWER_EUR_5Y",
+      "Cds_BORROWER_EUR_10Y",
+      "Cds_BORROWER_EUR_20Y",
+      "Cds_BORROWER_EUR_30Y",
+      "Cds_BORROWER_EUR_35Y"
     ]
   }
 ]

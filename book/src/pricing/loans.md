@@ -45,8 +45,8 @@ use quantsupport::time::calendars::target::TARGET;
 let loan = MakeLoan::<DualFwd>::default()
     .with_identifier("EUR-MORTGAGE".into())
     .with_start_date(Date::new(2026, 2, 24))
-    .with_maturity_date(Date::new(2028, 2, 24))
-    .with_notional(100_000.0)
+    .with_maturity_date(Date::new(2056, 2, 24))
+    .with_notional(250_000.0)
     .with_currency(Currency::EUR)
     .with_rate(LoanRateDefinition::Floating {
         index: MarketIndex::EURIBOR12m,
@@ -137,7 +137,7 @@ import quantsupport as qs
 
 loan = qs.Loan(
     identifier="EUR-MORTGAGE", start_date="2026-02-24",
-    maturity_date="2028-02-24", notional=100_000.0,
+    maturity_date="2056-02-24", notional=250_000.0,
     rate=qs.LoanRateDefinition.floating("EURIBOR12m", spread=0.01),
     currency="EUR",
     repayment=qs.LoanRepaymentStructure.french(), amortization_rate=0.05,

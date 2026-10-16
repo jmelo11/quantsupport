@@ -1,4 +1,4 @@
-//! EUR loan contracts and pricer requests. Run: cargo run -p valuation-loans
+//! Thirty-year EUR mortgage contracts and pricer requests. Run: cargo run -p valuation-loans
 use quantsupport::prelude::*;
 use quantsupport::time::calendars::target::TARGET;
 use std::collections::HashSet;
@@ -27,8 +27,8 @@ fn terms(reference: Date, identifier: &str) -> MakeLoan<DualFwd> {
     MakeLoan::default()
         .with_identifier(identifier.into())
         .with_start_date(reference)
-        .with_maturity_date(reference.advance(2, TimeUnit::Years))
-        .with_notional(100_000.0)
+        .with_maturity_date(reference.advance(30, TimeUnit::Years))
+        .with_notional(250_000.0)
         .with_currency(Currency::EUR)
         .with_rate(LoanRateDefinition::Fixed(0.06))
         .with_repayment_structure(LoanRepaymentStructure::French)
@@ -83,7 +83,7 @@ fn main() -> ExampleResult<()> {
     let mixed = terms(reference, "MIXED")
         .with_rate(LoanRateDefinition::Mixed {
             fixed_rate: 0.04,
-            switch_date: reference.advance(1, TimeUnit::Years),
+            switch_date: reference.advance(5, TimeUnit::Years),
             index: MarketIndex::EURIBOR12m,
             spread: 0.01,
         })
@@ -106,7 +106,7 @@ fn main() -> ExampleResult<()> {
             }
         }
     }
-    assert_eq!(seen.len(), 2);
+    assert_eq!(seen.len(), 30);
     let context = market(fixings.clone(), vec![])?;
     let pricer = estr_loan_pricer();
     for loan in [fixed.clone(), floating.clone(), mixed] {
@@ -204,7 +204,7 @@ fn main() -> ExampleResult<()> {
                 Side::LongReceive,
             );
             let pv = price(&pricer, &par, &context)?;
-            assert!((pv - 100_000.0).abs() < 1e-5);
+            assert!((pv - 250_000.0).abs() < 1e-5);
             println!(
                 "{} recompute_schedule={rebuild}: fair coupon/spread {:.6}%, repriced PV EUR {pv:.2}",
                 trade.instrument().identifier(),
