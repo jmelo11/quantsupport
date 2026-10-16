@@ -5,11 +5,14 @@ use crate::{
     core::{marketdatahandling::constructedelementstore::SharedElement, pillars::Pillars},
     indices::marketindex::MarketIndex,
     math::interpolation::interpolator::Interpolator,
-    rates::yieldtermstructure::{
-        discounttermstructure::DiscountTermStructure,
-        interestratestermstructure::InterestRatesTermStructure,
+    rates::{
+        compounding::Compounding,
+        yieldtermstructure::{
+            discounttermstructure::DiscountTermStructure,
+            interestratestermstructure::InterestRatesTermStructure,
+        },
     },
-    time::daycounter::DayCounter,
+    time::{date::Date, daycounter::DayCounter, enums::Frequency},
     utils::errors::{QSError, Result},
 };
 
@@ -36,22 +39,22 @@ pub trait ADCurveElement:
 }
 
 impl InterestRatesTermStructure<DualFwd> for Box<dyn ADCurveElement> {
-    fn reference_date(&self) -> crate::time::date::Date {
+    fn reference_date(&self) -> Date {
         self.as_ref().reference_date()
     }
-    fn discount_factor(&self, date: crate::time::date::Date) -> Result<DualFwd> {
+    fn discount_factor(&self, date: Date) -> Result<DualFwd> {
         self.as_ref().discount_factor(date)
     }
     fn forward_rate(
         &self,
-        start: crate::time::date::Date,
-        end: crate::time::date::Date,
-        comp: crate::rates::compounding::Compounding,
-        freq: crate::time::enums::Frequency,
+        start: Date,
+        end: Date,
+        comp: Compounding,
+        freq: Frequency,
     ) -> Result<DualFwd> {
         self.as_ref().forward_rate(start, end, comp, freq)
     }
-    fn nodes(&self) -> Option<Vec<(crate::time::date::Date, DualFwd)>> {
+    fn nodes(&self) -> Option<Vec<(Date, DualFwd)>> {
         self.as_ref().nodes()
     }
     fn day_counter(&self) -> Option<DayCounter> {

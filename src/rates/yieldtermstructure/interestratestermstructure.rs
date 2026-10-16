@@ -1,3 +1,5 @@
+use std::{cell::RefCell, rc::Rc};
+
 use crate::{
     ad::scalar::Scalar,
     rates::compounding::Compounding,
@@ -54,7 +56,7 @@ where
 }
 
 impl<T: Scalar, C: InterestRatesTermStructure<T> + ?Sized> InterestRatesTermStructure<T>
-    for std::rc::Rc<std::cell::RefCell<C>>
+    for Rc<RefCell<C>>
 {
     fn reference_date(&self) -> Date {
         self.borrow().reference_date()
