@@ -92,9 +92,9 @@ impl LoanPricer {
         ctx: &impl MarketDataProvider,
     ) -> Result<LoanState> {
         self.discount_index(trade.instrument())?;
-        let request = self
-            .market_data_request(trade)
-            .ok_or_else(|| QSError::ValueNotSetErr("Loan refinancing benchmark or discount policy".into()))?;
+        let request = self.market_data_request(trade).ok_or_else(|| {
+            QSError::ValueNotSetErr("Loan refinancing benchmark or discount policy".into())
+        })?;
         let needed_observations = trade
             .instrument()
             .leg()
@@ -578,6 +578,34 @@ struct LoanFairRate<'a> {
     target: f64,
 }
 impl LoanFairRate<'_> {
+    /// Limits the upper trial rate to schedules with admissible amortization.
+    ///
+    /// Long loans with unequal accrual periods can amortize negatively at high
+    /// trial rates even though their par rate has a valid principal schedule.
+    ///
+    /// # Errors
+    /// Propagates trial construction errors at the lower search bound.
+    fn admissible_upper_bound(&self, lower: f64, upper: f64) -> Result<f64> {
+        if !self.pricer.recompute_schedule {
+            return Ok(upper);
+        }
+        self.trial_cashflows(lower)?;
+        if self.trial_cashflows(upper).is_ok() {
+            return Ok(upper);
+        }
+        let mut valid = lower;
+        let mut invalid = upper;
+        for _ in 0..48 {
+            let candidate = f64::midpoint(valid, invalid);
+            if self.trial_cashflows(candidate).is_ok() {
+                valid = candidate;
+            } else {
+                invalid = candidate;
+            }
+        }
+        Ok(valid)
+    }
+
     #[allow(clippy::too_many_lines)]
     fn trial_cashflows(&self, candidate: f64) -> Result<Vec<CashflowType<DualFwd>>> {
         let mut coupons = Vec::new();
@@ -761,7 +789,8 @@ impl HandleFairRate<LoanTrade<DualFwd>, LoanState> for LoanPricer {
             cashflows,
             target,
         };
-        let solution = Bisection::new(-0.05, 0.5, 100)
+        let upper = objective.admissible_upper_bound(-0.05, 0.5)?;
+        let solution = Bisection::new(-0.05, upper, 100)
             .with_ftol(1e-11)
             .solve(&objective)?;
         if !matches!(solution.status, SolutionStatus::Converged) {
@@ -968,11 +997,7 @@ mod tests {
             estr.cashflows().map(|table| table.amounts()),
             euribor.cashflows().map(|table| table.amounts())
         );
-        assert!(trade
-            .instrument()
-            .leg()
-            .discount_index()
-            .is_none());
+        assert!(trade.instrument().leg().discount_index().is_none());
         Ok(())
     }
     fn builder() -> MakeLoan<DualFwd> {
@@ -1119,6 +1144,52 @@ mod tests {
                 .count(),
             12
         );
+        Ok(())
+    }
+
+    #[test]
+    fn fair_rate_rebuilds_thirty_year_mortgages_with_actual_month_lengths() -> Result<()> {
+        let provider = market(0.03, 0.04, 0.0);
+        for floating in [false, true] {
+            let rate = if floating {
+                LoanRateDefinition::Floating {
+                    index: MarketIndex::EURIBOR12m,
+                    spread: 0.01,
+                }
+            } else {
+                LoanRateDefinition::Fixed(0.06)
+            };
+            let builder = builder()
+                .with_maturity_date(Date::new(2056, 1, 1))
+                .with_notional(250_000.0)
+                .with_rate(rate)
+                .with_amortization_rate(if floating { 0.05 } else { 0.06 });
+            let trade = LoanTrade::new(builder.clone().build()?, provider.date, Side::LongReceive);
+            let pricer = estr_loan_pricer().with_recompute_schedule(true);
+            let fair = pricer
+                .evaluate(&trade, &[Request::FairRate], &provider)?
+                .fair_rate()
+                .ok_or_else(|| QSError::ValueNotSetErr("Mortgage fair rate".into()))?;
+            let rate = if floating {
+                LoanRateDefinition::Floating {
+                    index: MarketIndex::EURIBOR12m,
+                    spread: fair,
+                }
+            } else {
+                LoanRateDefinition::Fixed(fair)
+            };
+            let initial_index = 0.04_f64.exp_m1() / (365.0 / 360.0);
+            let par = LoanTrade::new(
+                builder
+                    .with_rate(rate)
+                    .with_amortization_rate(if floating { initial_index + fair } else { fair })
+                    .build()?,
+                provider.date,
+                Side::LongReceive,
+            );
+            let value = value(&pricer, &par, &provider)?;
+            assert!((value - 250_000.0).abs() < 1e-5);
+        }
         Ok(())
     }
 

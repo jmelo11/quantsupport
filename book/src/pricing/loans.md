@@ -195,7 +195,8 @@ with context:
 ```
 
 In Rust, use `LoanPricer::new().with_recompute_schedule(true)` for rebuilding.
-The solver uses the bracket [-5%, 50%] and reports unbracketed solutions as errors.
+The solver searches within [-5%, 50%], reducing the upper bound when a trial
+rate would produce invalid amortization. It reports unbracketed solutions as errors.
 To reprice a preserving-mode solution through the builder, retain the original
 initial amortization rate while changing the coupon/spread. To reprice a
 rebuilding-mode solution, use the candidate all-in rate for amortization.
