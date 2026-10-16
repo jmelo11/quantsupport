@@ -367,6 +367,84 @@ impl PricingContext {
             })
     }
 
+    /// Registers a product of two existing curves under a new market index.
+    ///
+    /// Components are owned snapshots. Call after context initialization and
+    /// repeat in each scenario context, after the source curves are rebuilt.
+    /// Both components must share their reference date and day counter.
+    fn add_composite_curve(
+        &mut self,
+        index: &Bound<'_, PyAny>,
+        base_index: &Bound<'_, PyAny>,
+        spread_index: &Bound<'_, PyAny>,
+    ) -> PyResult<()> {
+        self.require_initialized()?;
+        self.inner
+            .constructed_elements_mut()
+            .add_composite_discount_curve(
+                extract_market_index(index)?,
+                &extract_market_index(base_index)?,
+                &extract_market_index(spread_index)?,
+            )
+            .map_err(qs_err)
+    }
+
+    /// Registers an explicit dated or tenor-based zero-rate curve.
+    ///
+    /// Rates use the supplied curve's conventions. Pillars receive labels of
+    /// the form `index_date` for sensitivity requests. The reference date must
+    /// match the context, and the destination index must be unused.
+    fn add_zero_curve(
+        &mut self,
+        index: &Bound<'_, PyAny>,
+        curve: &Bound<'_, PyAny>,
+    ) -> PyResult<()> {
+        use quantsupport::prelude::DiscountCurveElement;
+        use std::{cell::RefCell, rc::Rc};
+
+        self.require_initialized()?;
+        let index = extract_market_index(index)?;
+        let curve = if let Ok(curve) = curve.extract::<crate::curves::ZeroRateTermStructure>() {
+            curve.inner
+        } else if let Ok(curve) = curve.extract::<crate::curves::TenorBasedZeroRateTermStructure>()
+        {
+            curve.inner.curve().clone()
+        } else {
+            return Err(pyo3::exceptions::PyTypeError::new_err(
+                "curve must be a ZeroRateTermStructure or TenorBasedZeroRateTermStructure",
+            ));
+        };
+        if curve.reference_date() != self.inner.evaluation_date() {
+            return Err(QuantSupportError::new_err(
+                "Zero curve reference date must match the pricing context",
+            ));
+        }
+        if self
+            .inner
+            .constructed_elements()
+            .discount_curve(&index)
+            .is_some()
+        {
+            return Err(QuantSupportError::new_err(format!(
+                "Discount curve {index} already exists"
+            )));
+        }
+        let labels = curve
+            .dates()
+            .iter()
+            .map(|date| format!("{index}_{date}"))
+            .collect();
+        let curve = curve.to_dual().with_pillar_labels(labels).map_err(qs_err)?;
+        self.inner
+            .constructed_elements_mut()
+            .discount_curves_mut()
+            .insert(
+                index.clone(),
+                DiscountCurveElement::new(index, Rc::new(RefCell::new(curve))),
+            );
+        Ok(())
+    }
+
     /// All constructed volatility surfaces, sorted by market index.
     fn volatility_surfaces(&self) -> PyResult<Vec<VolatilitySurface>> {
         self.require_initialized()?;

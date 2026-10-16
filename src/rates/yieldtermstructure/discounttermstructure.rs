@@ -519,6 +519,10 @@ impl InterestRatesTermStructure<DualFwd> for DiscountTermStructure<DualFwd> {
 }
 
 impl ADCurveElement for DiscountTermStructure<DualFwd> {
+    fn clone_curve(&self) -> Result<Box<dyn ADCurveElement>> {
+        Ok(Box::new(self.clone()))
+    }
+
     fn ift_sensitivities(&self) -> Option<&[Vec<f64>]> {
         self.ift_sensitivities.as_deref()
     }

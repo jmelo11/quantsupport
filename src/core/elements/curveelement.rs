@@ -19,9 +19,70 @@ use crate::{
 pub trait ADCurveElement:
     InterestRatesTermStructure<DualFwd> + Pillars<DualFwd> + Send + Sync
 {
+    /// Copies a curve for use as an owned component of another term structure.
+    ///
+    /// # Errors
+    /// Returns an error when the concrete curve does not support owned copies.
+    fn clone_curve(&self) -> Result<Box<dyn ADCurveElement>> {
+        Err(QSError::InvalidValueErr(
+            "This curve does not support owned composition".into(),
+        ))
+    }
+
     /// Returns the IFT sensitivity matrix if available.
     fn ift_sensitivities(&self) -> Option<&[Vec<f64>]> {
         None
+    }
+}
+
+impl InterestRatesTermStructure<DualFwd> for Box<dyn ADCurveElement> {
+    fn reference_date(&self) -> crate::time::date::Date {
+        self.as_ref().reference_date()
+    }
+    fn discount_factor(&self, date: crate::time::date::Date) -> Result<DualFwd> {
+        self.as_ref().discount_factor(date)
+    }
+    fn forward_rate(
+        &self,
+        start: crate::time::date::Date,
+        end: crate::time::date::Date,
+        comp: crate::rates::compounding::Compounding,
+        freq: crate::time::enums::Frequency,
+    ) -> Result<DualFwd> {
+        self.as_ref().forward_rate(start, end, comp, freq)
+    }
+    fn nodes(&self) -> Option<Vec<(crate::time::date::Date, DualFwd)>> {
+        self.as_ref().nodes()
+    }
+    fn day_counter(&self) -> Option<DayCounter> {
+        self.as_ref().day_counter()
+    }
+    fn discount_factor_from_time(&self, time: f64) -> Result<DualFwd> {
+        self.as_ref().discount_factor_from_time(time)
+    }
+    fn forward_rate_from_time(&self, start: f64, end: f64) -> Result<DualFwd> {
+        self.as_ref().forward_rate_from_time(start, end)
+    }
+}
+
+impl Pillars<DualFwd> for Box<dyn ADCurveElement> {
+    fn pillars(&self) -> Option<Vec<(String, &DualFwd)>> {
+        self.as_ref().pillars()
+    }
+    fn pillar_labels(&self) -> Option<Vec<String>> {
+        self.as_ref().pillar_labels()
+    }
+    fn put_pillars_on_tape(&mut self) {
+        self.as_mut().put_pillars_on_tape();
+    }
+}
+
+impl ADCurveElement for Box<dyn ADCurveElement> {
+    fn clone_curve(&self) -> Result<Box<dyn ADCurveElement>> {
+        self.as_ref().clone_curve()
+    }
+    fn ift_sensitivities(&self) -> Option<&[Vec<f64>]> {
+        self.as_ref().ift_sensitivities()
     }
 }
 

@@ -494,6 +494,7 @@ impl HandleValue<LoanTrade<DualFwd>, LoanState> for LoanPricer {
     }
 }
 impl HandleSensitivities<LoanTrade<DualFwd>, LoanState> for LoanPricer {
+    /// Sums distinct pillar adjoints by quote label, counting shared nodes once.
     fn handle_sensitivities(
         &self,
         trade: &LoanTrade<DualFwd>,
@@ -509,8 +510,9 @@ impl HandleSensitivities<LoanTrade<DualFwd>, LoanState> for LoanPricer {
             .ok_or_else(|| QSError::ValueNotSetErr("Loan market data".into()))?;
         let mut keys = Vec::new();
         let mut exposures = Vec::new();
+        let mut positions = HashMap::new();
         let mut seen = HashSet::new();
-        for (key, pillar) in market_data
+        for (key, node, pillar) in market_data
             .constructed_elements()
             .discount_curves()
             .values()
@@ -520,7 +522,13 @@ impl HandleSensitivities<LoanTrade<DualFwd>, LoanState> for LoanPricer {
                     .pillars()
                     .unwrap_or_default()
                     .into_iter()
-                    .map(|(label, pillar)| (label, pillar.adjoint().map(|value| value.value())))
+                    .map(|(label, pillar)| {
+                        (
+                            label,
+                            pillar.node_ptr(),
+                            pillar.adjoint().map(|value| value.value()),
+                        )
+                    })
                     .collect::<Vec<_>>()
             })
             .chain(
@@ -535,15 +543,25 @@ impl HandleSensitivities<LoanTrade<DualFwd>, LoanState> for LoanPricer {
                             .unwrap_or_default()
                             .into_iter()
                             .map(|(label, pillar)| {
-                                (label, pillar.adjoint().map(|value| value.value()))
+                                (
+                                    label,
+                                    pillar.node_ptr(),
+                                    pillar.adjoint().map(|value| value.value()),
+                                )
                             })
                             .collect::<Vec<_>>()
                     }),
             )
         {
-            if seen.insert(key.clone()) {
-                keys.push(key);
-                exposures.push(pillar?);
+            if seen.insert((key.clone(), node)) {
+                let exposure = pillar?;
+                if let Some(&position) = positions.get(&key) {
+                    exposures[position] += exposure;
+                } else {
+                    positions.insert(key.clone(), keys.len());
+                    keys.push(key);
+                    exposures.push(exposure);
+                }
             }
         }
         Ok(SensitivityMap::default()

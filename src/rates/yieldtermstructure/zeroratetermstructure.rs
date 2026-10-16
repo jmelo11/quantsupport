@@ -451,7 +451,11 @@ impl Pillars<DualFwd> for ZeroRateTermStructure<DualFwd> {
     }
 }
 
-impl ADCurveElement for ZeroRateTermStructure<DualFwd> {}
+impl ADCurveElement for ZeroRateTermStructure<DualFwd> {
+    fn clone_curve(&self) -> Result<Box<dyn ADCurveElement>> {
+        Ok(Box::new(self.clone()))
+    }
+}
 
 #[cfg(test)]
 mod tests {
