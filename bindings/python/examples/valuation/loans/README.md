@@ -12,7 +12,10 @@ life, income, and exposure to market quotes.
 The local [market_data.py](market_data.py) reads the illustrative 24 February 2026
 EUR discount, EURIBOR12m, and borrower CDS inputs shared with the Rust example.
 Deposits anchor the short end; ESTR OIS and EURIBOR swaps extend the rate curves
-through 35 years. Funding spreads and credit inputs cover the same horizon.
+through 35 years. EURIBOR swap quotes decline to 3.70% at five years, rise to
+4.50% at twenty years, then decline to 4.15% at thirty-five years. Separate
+coupon-rate and monthly-payment panels show how these inputs affect each reset.
+Funding spreads and credit inputs cover the same horizon.
 The notebook adds an explicit treasury funding spread curve and reprices fixed
 and floating loans under benchmark and funding spread shocks.
 The input files live in

@@ -20,9 +20,10 @@
     "quotes": [
       "FixedRateDeposit_EUR_EURIBOR12m_1D",
       "FixedRateDeposit_EUR_EURIBOR12m_1Y",
-      "FixedRateDeposit_EUR_EURIBOR12m_2Y",
-      "FixedRateDeposit_EUR_EURIBOR12m_3Y",
+      "Swap_EUR_EURIBOR12m_2Y",
+      "Swap_EUR_EURIBOR12m_3Y",
       "Swap_EUR_EURIBOR12m_5Y",
+      "Swap_EUR_EURIBOR12m_7Y",
       "Swap_EUR_EURIBOR12m_10Y",
       "Swap_EUR_EURIBOR12m_15Y",
       "Swap_EUR_EURIBOR12m_20Y",
