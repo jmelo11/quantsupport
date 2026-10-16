@@ -43,7 +43,7 @@ impl Loan {
     #[new]
     #[allow(clippy::too_many_arguments)]
     #[pyo3(signature = (identifier, start_date, maturity_date, notional, rate, currency,
-        discount_index, repayment = None, *, payment_frequency = None, fixing_frequency = None,
+        repayment = None, *, payment_frequency = None, fixing_frequency = None,
         day_counter = None, prepayment = None, credit_index = None, recovery = None,
         fixing_lag = None, index_tenor = None, calendar = None, business_day_convention = None,
         amortization_rate = None))]
@@ -54,7 +54,6 @@ impl Loan {
         notional: f64,
         rate: &Bound<'_, PyAny>,
         currency: &Bound<'_, PyAny>,
-        discount_index: &Bound<'_, PyAny>,
         repayment: Option<&Bound<'_, PyAny>>,
         payment_frequency: Option<&Bound<'_, PyAny>>,
         fixing_frequency: Option<&Bound<'_, PyAny>>,
@@ -78,8 +77,7 @@ impl Loan {
             .with_maturity_date(extract_date(maturity_date)?)
             .with_notional(notional)
             .with_rate(rate)
-            .with_currency(extract_currency(currency)?)
-            .with_discount_index(extract_market_index(discount_index)?);
+            .with_currency(extract_currency(currency)?);
         if let Some(value) = repayment {
             builder = builder.with_repayment_structure(from_py::<LoanRepaymentStructure>(
                 value,

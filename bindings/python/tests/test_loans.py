@@ -11,7 +11,7 @@ REFERENCE = "2026-02-24"
 def loan(**overrides):
     terms = dict(identifier="LOAN", start_date=REFERENCE, maturity_date="2028-02-24",
                  notional=100_000.0, rate=qs.LoanRateDefinition.fixed(0.06),
-                 currency=qs.Currency.EUR, discount_index=qs.MarketIndex.ESTR,
+                 currency=qs.Currency.EUR,
                  day_counter=qs.DayCounter.Actual360, calendar="TARGET", fixing_lag=2,
                  business_day_convention=qs.BusinessDayConvention.Following)
     terms.update(overrides)
@@ -46,6 +46,24 @@ def evaluate(instrument, ctx, requests=None, **pricer_options):
 
 
 class LoanWorkflowTests(unittest.TestCase):
+    def test_discount_curve_is_a_pricing_choice_and_rejected_in_contract_terms(self):
+        instrument = loan()
+        self.assertNotIn("discount_index", instrument.to_dict())
+        self.assertFalse(hasattr(instrument, "discount_index"))
+        with self.assertRaises(TypeError):
+            loan(discount_index=qs.MarketIndex.ESTR)
+        with self.assertRaises(TypeError):
+            qs.Loan.from_dict(dict(instrument.to_dict(), discount_index="ESTR"))
+        contract = instrument.to_dict()
+        with context() as ctx:
+            estr = evaluate(instrument, ctx, ["Value", "Cashflows"],
+                discount_policy=qs.FixedIncomeDiscountPolicy(risk_free_indices={qs.Currency.EUR: qs.MarketIndex.ESTR}))
+            euribor = evaluate(instrument, ctx, ["Value", "Cashflows"],
+                discount_policy=qs.FixedIncomeDiscountPolicy(risk_free_indices={qs.Currency.EUR: qs.MarketIndex.EURIBOR12m}))
+        self.assertLess(euribor.price, estr.price)
+        self.assertEqual(estr.cashflows.amount.tolist(), euribor.cashflows.amount.tolist())
+        self.assertEqual(instrument.to_dict(), contract)
+
     def test_typed_terms_roundtrip_and_serialized_inputs(self):
         rates = [qs.LoanRateDefinition.fixed(0.06),
                  qs.LoanRateDefinition.floating(qs.MarketIndex.EURIBOR12m, 0.01),

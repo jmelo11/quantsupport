@@ -37,7 +37,7 @@ def funding_context(scenarios=None, funding_shift=0):
         quotes, curves, fixings=fixings, scenarios=scenarios,
         csa_policy=qs.SingleCurveCSADiscountPolicy(qs.Currency.EUR, qs.MarketIndex.ESTR),
         fixed_income_policy=qs.FixedIncomeDiscountPolicy(
-            {qs.Currency.EUR: FUNDING}, prefer_instrument_index=False,
+            {qs.Currency.EUR: FUNDING},
         ),
     )
 
@@ -45,7 +45,7 @@ def funding_context(scenarios=None, funding_shift=0):
 def loan(floating=False):
     return qs.Loan(
         identifier="FUNDING", start_date=REFERENCE, maturity_date="2028-02-24",
-        notional=100_000, currency=qs.Currency.EUR, discount_index=qs.MarketIndex.ESTR,
+        notional=100_000, currency=qs.Currency.EUR,
         coupons=[qs.Coupon.floating("EURIBOR12m", 0.01) if floating else qs.Coupon.fixed(0.06)],
         amortization_rate=0.05 if floating else None,
         repayment=qs.LoanRepaymentStructure.french(), payment_frequency=qs.Frequency.Monthly,
@@ -85,7 +85,7 @@ class CompositeLoanFundingTests(unittest.TestCase):
             self.assertAlmostEqual(result.price, expected, places=8)
             self.assertGreater(result.fair_rate, 0.04)
             estr = qs.LoanPricer(discount_policy=qs.FixedIncomeDiscountPolicy(
-                {qs.Currency.EUR: qs.MarketIndex.ESTR}, prefer_instrument_index=False,
+                {qs.Currency.EUR: qs.MarketIndex.ESTR},
             )).evaluate(qs.Trade(instrument, REFERENCE), context, [qs.Request.Value])
             self.assertLess(result.price, estr.price)
 
@@ -126,9 +126,7 @@ class CompositeLoanFundingTests(unittest.TestCase):
                 self.assertFalse(hasattr(context, "add_zero_curve"))
 
     def test_calibration_uses_composite_parents_and_retains_source_risk(self):
-        terms = loan().to_dict()
-        terms["discount_index"] = "EURIBOR3m"
-        instrument = qs.Loan.from_dict(terms)
+        instrument = loan()
 
         def calibrated_value(benchmark_shift=0, spread_shift=0, sensitivities=False):
             specifications = [
@@ -159,7 +157,10 @@ class CompositeLoanFundingTests(unittest.TestCase):
                 csa_policy=qs.SingleCurveCSADiscountPolicy(qs.Currency.EUR, qs.MarketIndex.other("PARENT")),
             ) as context:
                 requests = [qs.Request.Value, qs.Request.Sensitivities] if sensitivities else [qs.Request.Value]
-                return qs.LoanPricer().evaluate(qs.Trade(instrument, REFERENCE), context, requests)
+                pricer = qs.LoanPricer(discount_policy=qs.FixedIncomeDiscountPolicy(
+                    {qs.Currency.EUR: qs.MarketIndex.EURIBOR3m},
+                ))
+                return pricer.evaluate(qs.Trade(instrument, REFERENCE), context, requests)
 
         base = calibrated_value(sensitivities=True)
         epsilon = 1e-6

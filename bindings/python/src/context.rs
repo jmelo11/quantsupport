@@ -77,7 +77,7 @@ impl PricingContext {
     }
 
     pub(crate) fn loan_discount_policy(&self) -> FixedIncomeDiscountPolicy {
-        self.bond_discount_policy(true)
+        self.bond_discount_policy(false)
     }
 
     fn bond_discount_policy(&self, prefer_instrument_index: bool) -> FixedIncomeDiscountPolicy {

@@ -4,7 +4,7 @@
 use crate::{
     ad::{dual::DualFwd, scalar::Scalar, tape::Tape},
     core::{
-        collateral::{DiscountPolicy, Discountable},
+        collateral::DiscountPolicy,
         evaluationresults::{EvaluationResults, SensitivityMap},
         instrument::{AssetClass, Instrument},
         marketdatahandling::{
@@ -48,6 +48,8 @@ use std::collections::{HashMap, HashSet};
 
 /// Prices the existing loan leg.
 ///
+/// Configure a discount policy before valuation; its currency mapping selects
+/// the curve independently of the contract.
 /// Market changes leave contractual notionals fixed.
 /// Prepayment and credit affect projected receipts only. `Request::Cashflows`
 /// uses the shared handler; legs 0/1/2 represent scheduled receipts, prepayment,
@@ -79,22 +81,20 @@ impl LoanPricer {
     }
 
     fn discount_index(&self, loan: &Loan<DualFwd>) -> Result<MarketIndex> {
-        self.discount_policy.as_ref().map_or_else(
-            || {
-                loan.discount_index()
-                    .ok_or_else(|| QSError::ValueNotSetErr("Loan discount index".into()))
-            },
-            |policy| policy.accept(loan),
-        )
+        self.discount_policy
+            .as_ref()
+            .ok_or_else(|| QSError::ValueNotSetErr("Loan discount policy".into()))?
+            .accept(loan)
     }
     fn prepare_state(
         &self,
         trade: &LoanTrade<DualFwd>,
         ctx: &impl MarketDataProvider,
     ) -> Result<LoanState> {
+        self.discount_index(trade.instrument())?;
         let request = self
             .market_data_request(trade)
-            .ok_or_else(|| QSError::ValueNotSetErr("Loan refinancing or discount index".into()))?;
+            .ok_or_else(|| QSError::ValueNotSetErr("Loan refinancing benchmark or discount policy".into()))?;
         let needed_observations = trade
             .instrument()
             .leg()
@@ -438,7 +438,7 @@ impl LoanPricer {
                     id,
                     cashflows,
                     loan.currency(),
-                    loan.discount_index(),
+                    None,
                     None,
                     None,
                     None,
@@ -935,6 +935,46 @@ mod tests {
             date,
         }
     }
+    fn estr_loan_pricer() -> LoanPricer {
+        let mut pricer = LoanPricer::new();
+        pricer.set_discount_policy(Box::new(
+            FixedIncomeDiscountPolicy::new(false)
+                .with_risk_free_index(Currency::EUR, MarketIndex::ESTR),
+        ));
+        pricer
+    }
+    #[test]
+    fn discounting_requires_a_policy_and_can_change_without_changing_the_contract() -> Result<()> {
+        let provider = market(0.03, 0.04, 0.0);
+        let loan = builder().build()?;
+        assert!(loan.discount_index().is_none());
+        assert!(loan.leg().discount_index().is_none());
+        let trade = LoanTrade::new(loan, provider.date, Side::LongReceive);
+        let error = LoanPricer::new()
+            .evaluate(&trade, &[Request::Value], &provider)
+            .err()
+            .ok_or_else(|| QSError::ValueNotSetErr("Expected missing policy error".into()))?;
+        assert!(error.to_string().contains("Loan discount policy"));
+        let mut pricer = estr_loan_pricer();
+        let requests = [Request::Value, Request::Cashflows];
+        let estr = pricer.evaluate(&trade, &requests, &provider)?;
+        pricer.set_discount_policy(Box::new(
+            FixedIncomeDiscountPolicy::new(false)
+                .with_risk_free_index(Currency::EUR, MarketIndex::EURIBOR12m),
+        ));
+        let euribor = pricer.evaluate(&trade, &requests, &provider)?;
+        assert!(euribor.price() < estr.price());
+        assert_eq!(
+            estr.cashflows().map(|table| table.amounts()),
+            euribor.cashflows().map(|table| table.amounts())
+        );
+        assert!(trade
+            .instrument()
+            .leg()
+            .discount_index()
+            .is_none());
+        Ok(())
+    }
     fn builder() -> MakeLoan<DualFwd> {
         MakeLoan::default()
             .with_identifier("LOAN".into())
@@ -942,7 +982,6 @@ mod tests {
             .with_maturity_date(Date::new(2028, 1, 1))
             .with_notional(100_000.0)
             .with_currency(Currency::EUR)
-            .with_discount_index(MarketIndex::ESTR)
             .with_rate(LoanRateDefinition::Fixed(0.06))
             .with_day_counter(DayCounter::Actual360)
     }
@@ -960,7 +999,7 @@ mod tests {
             .build()?;
         let original = loan.leg().cashflows().len();
         let trade = LoanTrade::new(loan, provider.date, Side::LongReceive);
-        let pricer = LoanPricer::new();
+        let pricer = estr_loan_pricer();
         let result = pricer.evaluate(
             &trade,
             &[
@@ -1016,7 +1055,7 @@ mod tests {
             .with_fixing_lag(2)
             .build()?;
         let trade = LoanTrade::new(loan, Date::new(2026, 1, 1), Side::LongReceive);
-        let pricer = LoanPricer::new();
+        let pricer = estr_loan_pricer();
         let mut redemptions = Vec::new();
         for rate in [0.02, 0.06] {
             let result =
@@ -1062,7 +1101,7 @@ mod tests {
         provider.data =
             MarketData::new(HashMap::new(), provider.data.constructed_elements().clone());
         let trade = LoanTrade::new(loan, Date::new(2026, 1, 1), Side::LongReceive);
-        let pricer = LoanPricer::new();
+        let pricer = estr_loan_pricer();
         // The expired first-year reset is absent; today's unpublished fixing may forecast.
         let result = pricer.evaluate(&trade, &[Request::Value, Request::Cashflows], &provider)?;
         let table = result
@@ -1119,7 +1158,7 @@ mod tests {
                 })
                 .collect::<Vec<_>>();
             for rebuild in [false, true] {
-                let pricer = LoanPricer::new().with_recompute_schedule(rebuild);
+                let pricer = estr_loan_pricer().with_recompute_schedule(rebuild);
                 let fair = pricer
                     .evaluate(&trade, &[Request::FairRate], &provider)?
                     .fair_rate()
@@ -1195,7 +1234,7 @@ mod tests {
             .build()?;
         let provider = market(0.03, 0.04, 0.0);
         let trade = LoanTrade::new(loan, provider.date, Side::LongReceive);
-        let result = LoanPricer::new().evaluate(&trade, &[Request::Cashflows], &provider)?;
+        let result = estr_loan_pricer().evaluate(&trade, &[Request::Cashflows], &provider)?;
         let table = result
             .cashflows()
             .ok_or_else(|| QSError::ValueNotSetErr("Cashflows".into()))?;
@@ -1211,7 +1250,7 @@ mod tests {
         let invalid = builder()
             .with_prepayment_function(|_: &PrepaymentModelState<DualFwd>| Ok(DualFwd::scalar(1.1)))
             .build()?;
-        assert!(LoanPricer::new()
+        assert!(estr_loan_pricer()
             .evaluate(
                 &LoanTrade::new(invalid, provider.date, Side::LongReceive),
                 &[Request::Cashflows],
@@ -1237,7 +1276,7 @@ mod tests {
             .build()?;
         let provider = market(0.03, 0.04, 0.01);
         let trade = LoanTrade::new(loan, provider.date, Side::LongReceive);
-        let pricer = LoanPricer::new().with_refinancing_index(MarketIndex::EURIBOR12m);
+        let pricer = estr_loan_pricer().with_refinancing_index(MarketIndex::EURIBOR12m);
         let result = pricer.evaluate(&trade, &[Request::Sensitivities], &provider)?;
         let risk = result
             .sensitivities()

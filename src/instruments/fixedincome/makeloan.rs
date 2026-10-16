@@ -55,7 +55,6 @@ pub struct MakeLoan<T: Scalar = f64> {
     rate: Option<LoanRateDefinition>,
     repayment: Option<LoanRepaymentStructure>,
     currency: Option<Currency>,
-    discount_index: Option<MarketIndex>,
     payment_frequency: Option<Frequency>,
     fixing_frequency: Option<Frequency>,
     day_counter: Option<DayCounter>,
@@ -120,13 +119,6 @@ impl<T: Scalar> MakeLoan<T> {
     #[must_use]
     pub const fn with_currency(mut self, currency: Currency) -> Self {
         self.currency = Some(currency);
-        self
-    }
-
-    /// Sets the default discount curve index.
-    #[must_use]
-    pub fn with_discount_index(mut self, discount_index: MarketIndex) -> Self {
-        self.discount_index = Some(discount_index);
         self
     }
 
@@ -229,7 +221,6 @@ impl<T: Scalar> MakeLoan<T> {
         let end = required(self.maturity_date, "Loan maturity date")?;
         let notional = required(self.notional, "Loan notional")?;
         let currency = required(self.currency, "Loan currency")?;
-        let discount_index = required(self.discount_index, "Loan discount index")?;
         let rate = required(self.rate, "Loan rate definition")?;
         let repayment = self.repayment.unwrap_or(LoanRepaymentStructure::French);
         if identifier.trim().is_empty() || start >= end || !notional.is_finite() || notional <= 0.0
@@ -448,7 +439,7 @@ impl<T: Scalar> MakeLoan<T> {
             0,
             cashflows,
             currency,
-            Some(discount_index),
+            None,
             index.cloned(),
             None,
             None,
@@ -550,7 +541,6 @@ mod tests {
             .with_maturity_date(Date::new(2028, 1, 1))
             .with_notional(100_000.0)
             .with_currency(Currency::EUR)
-            .with_discount_index(MarketIndex::ESTR)
             .with_rate(LoanRateDefinition::Fixed(0.06))
     }
     #[test]

@@ -13,6 +13,8 @@ use crate::{
 };
 
 /// Native loan valuation with optional refinancing and discount-policy overrides.
+/// Discounting uses the context policy unless overridden. Its default maps
+/// the context base currency to its base curve; contracts carry no curve choice.
 #[pyclass(module = "quantsupport", name = "LoanPricer")]
 pub struct LoanPricer {
     refinancing_index: Option<MarketIndex>,

@@ -30,7 +30,6 @@ fn terms(reference: Date, identifier: &str) -> MakeLoan<DualFwd> {
         .with_maturity_date(reference.advance(2, TimeUnit::Years))
         .with_notional(100_000.0)
         .with_currency(Currency::EUR)
-        .with_discount_index(MarketIndex::ESTR)
         .with_rate(LoanRateDefinition::Fixed(0.06))
         .with_repayment_structure(LoanRepaymentStructure::French)
         .with_payment_frequency(Frequency::Monthly)
@@ -38,6 +37,15 @@ fn terms(reference: Date, identifier: &str) -> MakeLoan<DualFwd> {
         .with_calendar(Calendar::TARGET(TARGET::new()))
         .with_business_day_convention(BusinessDayConvention::Following)
         .with_fixing_lag(2)
+}
+/// Selects ESTR discounting for EUR loan valuations.
+fn estr_loan_pricer() -> LoanPricer {
+    let mut pricer = LoanPricer::new();
+    pricer.set_discount_policy(Box::new(
+        FixedIncomeDiscountPolicy::new(false)
+            .with_risk_free_index(Currency::EUR, MarketIndex::ESTR),
+    ));
+    pricer
 }
 fn price(pricer: &LoanPricer, trade: &LoanTrade<DualFwd>, context: &PricingContext) -> Result<f64> {
     pricer
@@ -100,7 +108,7 @@ fn main() -> ExampleResult<()> {
     }
     assert_eq!(seen.len(), 2);
     let context = market(fixings.clone(), vec![])?;
-    let pricer = LoanPricer::new();
+    let pricer = estr_loan_pricer();
     for loan in [fixed.clone(), floating.clone(), mixed] {
         let trade = LoanTrade::new(loan, reference, Side::LongReceive);
         let result = pricer.evaluate(
@@ -160,7 +168,7 @@ fn main() -> ExampleResult<()> {
 
     // Fair-rate calculation can preserve the original schedule or recompute it.
     for rebuild in [false, true] {
-        let pricer = LoanPricer::new().with_recompute_schedule(rebuild);
+        let pricer = estr_loan_pricer().with_recompute_schedule(rebuild);
         for (builder, original_rate, floating) in [
             (fixed_builder.clone(), 0.06, false),
             (floating_builder.clone(), 0.05, true),
@@ -253,7 +261,7 @@ fn main() -> ExampleResult<()> {
             maximum_cpr: 0.4,
         })
         .build()?;
-    let result = LoanPricer::new()
+    let result = estr_loan_pricer()
         .with_refinancing_index(MarketIndex::EURIBOR12m)
         .evaluate(
             &LoanTrade::new(refinancing, reference, Side::LongReceive),

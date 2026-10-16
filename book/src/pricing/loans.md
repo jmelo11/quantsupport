@@ -48,7 +48,6 @@ let loan = MakeLoan::<DualFwd>::default()
     .with_maturity_date(Date::new(2028, 2, 24))
     .with_notional(100_000.0)
     .with_currency(Currency::EUR)
-    .with_discount_index(MarketIndex::ESTR)
     .with_rate(LoanRateDefinition::Floating {
         index: MarketIndex::EURIBOR12m,
         spread: 0.01,
@@ -61,6 +60,11 @@ let loan = MakeLoan::<DualFwd>::default()
     .build()?;
 
 let contractual_cashflows = loan.leg().cashflows();
+let mut pricer = LoanPricer::new();
+pricer.set_discount_policy(Box::new(
+    FixedIncomeDiscountPolicy::new(false)
+        .with_risk_free_index(Currency::EUR, MarketIndex::ESTR),
+));
 ```
 
 ## Coupon Observation Requests
@@ -135,14 +139,16 @@ loan = qs.Loan(
     identifier="EUR-MORTGAGE", start_date="2026-02-24",
     maturity_date="2028-02-24", notional=100_000.0,
     rate=qs.LoanRateDefinition.floating("EURIBOR12m", spread=0.01),
-    currency="EUR", discount_index="ESTR",
+    currency="EUR",
     repayment=qs.LoanRepaymentStructure.french(), amortization_rate=0.05,
     payment_frequency="Monthly", day_counter="Actual360",
     calendar="TARGET", fixing_lag=2,
     prepayment=qs.PrepaymentModelConfiguration.cpr(0.12),
 )
 trade = qs.Trade(loan, reference_date, qs.Side.LongReceive)
-with qs.PricingContext(quotes, curves, fixings=fixings, csa_policy=csa_policy) as context:
+discount_policy = qs.FixedIncomeDiscountPolicy(risk_free_indices={qs.Currency.EUR: qs.MarketIndex.ESTR})
+with qs.PricingContext(quotes, curves, fixings=fixings, csa_policy=csa_policy,
+                      fixed_income_policy=discount_policy) as context:
     result = context.evaluate(trade, ["Value", "Cashflows", "Sensitivities"])
     value = result.price
     expected_receipts = result.cashflows
@@ -156,7 +162,11 @@ unique coupon observations for loading fixings; valuation belongs to the pricer.
 
 `qs.LoanPricer(refinancing_index="EURIBOR12m")` configures a refinancing
 function's market input. An optional `discount_policy` overrides the context's
-fixed-income policy; otherwise the instrument discount index supplies the curve.
+fixed-income policy. Loans carry their payment currency, while the policy selects
+the discount curve. The same contract can therefore be valued against ESTR,
+EURIBOR, or a funding curve by changing the policy. Native Rust valuation requires
+a configured policy. In Python, the default context policy maps its base currency
+to its base curve when no explicit fixed-income policy is supplied.
 
 Sensitivities are derivatives with respect to labelled market pillars. Multiply
 a rate-quote derivative by 0.0001 for the first-order PV change from a one-basis-point

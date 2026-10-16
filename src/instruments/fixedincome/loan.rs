@@ -46,7 +46,8 @@ impl<T: Scalar> Loan<T> {
     ///
     /// # Errors
     /// Rejects invalid principal, inconsistent coupon/redemption schedules,
-    /// missing floating observations, or invalid credit/recovery terms.
+    /// missing floating observations, invalid credit/recovery terms, or a
+    /// discount curve stored on the supplied leg.
     #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
     pub fn new(
         identifier: String,
@@ -58,6 +59,11 @@ impl<T: Scalar> Loan<T> {
         credit_index: Option<MarketIndex>,
         recovery: f64,
     ) -> Result<Self> {
+        if leg.discount_index().is_some() {
+            return Err(QSError::InvalidValueErr(
+                "Loan discount curves belong to the pricing policy".into(),
+            ));
+        }
         if identifier.trim().is_empty()
             || !notional.is_finite()
             || notional <= 0.0
@@ -266,9 +272,6 @@ impl<T: Scalar> LegsProvider<T> for Loan<T> {
 impl<T: Scalar> Discountable for Loan<T> {
     fn asset_class(&self) -> AssetClass {
         AssetClass::FixedIncome
-    }
-    fn discount_index(&self) -> Option<MarketIndex> {
-        self.leg.discount_index()
     }
     fn currency(&self) -> Currency {
         self.leg.currency()
