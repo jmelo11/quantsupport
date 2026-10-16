@@ -56,10 +56,14 @@ class LoanWorkflowTests(unittest.TestCase):
             qs.Loan.from_dict(dict(instrument.to_dict(), discount_index="ESTR"))
         contract = instrument.to_dict()
         with context() as ctx:
-            estr = evaluate(instrument, ctx, ["Value", "Cashflows"],
-                discount_policy=qs.FixedIncomeDiscountPolicy(risk_free_indices={qs.Currency.EUR: qs.MarketIndex.ESTR}))
-            euribor = evaluate(instrument, ctx, ["Value", "Cashflows"],
-                discount_policy=qs.FixedIncomeDiscountPolicy(risk_free_indices={qs.Currency.EUR: qs.MarketIndex.EURIBOR12m}))
+            ctx.fixed_income_policy = qs.FixedIncomeDiscountPolicy(
+                risk_free_indices={qs.Currency.EUR: qs.MarketIndex.ESTR},
+            )
+            estr = evaluate(instrument, ctx, ["Value", "Cashflows"])
+            ctx.fixed_income_policy = qs.FixedIncomeDiscountPolicy(
+                risk_free_indices={qs.Currency.EUR: qs.MarketIndex.EURIBOR12m},
+            )
+            euribor = evaluate(instrument, ctx, ["Value", "Cashflows"])
         self.assertLess(euribor.price, estr.price)
         self.assertEqual(estr.cashflows.amount.tolist(), euribor.cashflows.amount.tolist())
         self.assertEqual(instrument.to_dict(), contract)

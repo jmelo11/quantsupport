@@ -80,7 +80,19 @@ impl SingleCurveCSADiscountPolicy {
     }
 }
 
-/// Per-currency bond discount curves, optionally overridden by the instrument's index.
+/// Select discount curves by the cashflow currency.
+///
+/// Parameters
+/// ----------
+/// risk_free_indices : dict[Currency | str, MarketIndex | str]
+///     Currency-to-curve mapping. Each index must identify a configured curve.
+/// prefer_instrument_index : bool, optional
+///     Use an instrument's discount index when present. Defaults to True.
+///     Loans obtain their discount curve from the currency mapping.
+///
+/// Examples
+/// --------
+/// FixedIncomeDiscountPolicy(risk_free_indices={Currency.EUR: MarketIndex.ESTR})
 #[pyclass(
     module = "quantsupport",
     name = "FixedIncomeDiscountPolicy",

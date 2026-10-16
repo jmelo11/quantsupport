@@ -25,7 +25,9 @@ use quantsupport::prelude::{
     XvaEngine,
 };
 
-use crate::collateral::SingleCurveCSADiscountPolicy;
+use crate::collateral::{
+    FixedIncomeDiscountPolicy as PyFixedIncomeDiscountPolicy, SingleCurveCSADiscountPolicy,
+};
 use crate::conv::{extract_level, extract_market_index, extract_requests, qs_err};
 use crate::explore::{DiscountCurve, Simulation, VolatilityCube, VolatilitySurface};
 use crate::extension::{call_pricer, PricerRegistry};
@@ -45,7 +47,48 @@ use crate::trades::{
 use crate::xva::{NettingSet, XvaConfig, XvaResult};
 use crate::QuantSupportError;
 
-/// Market data context for pricing. Use as a context manager:
+/// Market inputs and policies used to value trades.
+///
+/// Assign public properties to change inputs: scenarios, curve_configurations,
+/// credit_curve_configurations, fixings, quotes, fx, quote_level, csa_policy,
+/// fixed_income_policy, volatility_surface_configurations,
+/// volatility_cube_configurations, simulation_configurations, and
+/// pricer_configurations. Reassigning market inputs rebuilds an initialized context;
+/// otherwise construction happens on the next initialize() or context entry.
+/// Collection getters return copies; assign the updated collection back.
+///
+/// Parameters
+/// ----------
+/// quotes : QuoteStore
+///     Market observations and reference date.
+/// curves : sequence of CurveConfiguration
+///     Calibration inputs, explicit zero rates, and composite curves.
+/// fixings : FixingStore, optional
+///     Published historical index observations.
+/// fx : FxStore, optional
+///     Spot exchange rates.
+/// volatility_surfaces : sequence of VolatilitySurfaceConfiguration, optional
+///     Surface construction inputs.
+/// volatility_cubes : sequence of VolatilityCubeConfiguration, optional
+///     Cube construction inputs.
+/// pricer_configurations : sequence of PricerConfiguration, optional
+///     Instrument pricing models and implementations.
+/// simulations : sequence of SimulationConfiguration, optional
+///     Simulation inputs.
+/// csa_policy : SingleCurveCSADiscountPolicy, optional
+///     Collateral currency and curve used for market construction.
+/// fixed_income_policy : FixedIncomeDiscountPolicy, optional
+///     Currency-to-curve discount policy. Defaults to the context base curve.
+/// scenarios : sequence of Scenario, optional
+///     Quote shocks applied before market construction. Assign [] to restore
+///     the base market; shocks always start from the original quotes.
+/// quote_level : Level or str, optional
+///     Quote level used for calibration. Defaults to Mid.
+/// credit_curves : sequence of CreditCurveConfiguration, optional
+///     Survival curve construction inputs.
+///
+/// Examples
+/// --------
 ///
 /// ```python
 /// quotes = qs.QuoteStore.from_json("quotes.json")
@@ -67,10 +110,25 @@ pub struct PricingContext {
     inner: QsPricingContext,
     initialized: bool,
     python_pricers: PricerRegistry,
-    fixed_income_policy: Option<crate::collateral::FixedIncomeDiscountPolicy>,
+    fixed_income_policy: Option<PyFixedIncomeDiscountPolicy>,
 }
 
 impl PricingContext {
+    /// Rebuilds initialized market data after a public input is reassigned.
+    fn update_market_inputs(
+        &mut self,
+        update: impl FnOnce(QsPricingContext) -> QsPricingContext,
+    ) -> PyResult<()> {
+        let rebuild = self.initialized;
+        self.initialized = false;
+        self.inner = update(std::mem::take(&mut self.inner))
+            .with_constructed_elements(ConstructedElementStore::default());
+        if rebuild {
+            self.initialize()?;
+        }
+        Ok(())
+    }
+
     pub(crate) fn native_context(&self) -> PyResult<&QsPricingContext> {
         self.require_initialized()?;
         Ok(&self.inner)
@@ -88,7 +146,7 @@ impl PricingContext {
                     self.inner.base_index().clone(),
                 )
             },
-            crate::collateral::FixedIncomeDiscountPolicy::build,
+            PyFixedIncomeDiscountPolicy::build,
         )
     }
     pub fn require_initialized(&self) -> PyResult<()> {
@@ -132,7 +190,7 @@ impl PricingContext {
         pricer_configurations: Option<Vec<PricerConfiguration>>,
         simulations: Option<Vec<SimulationConfiguration>>,
         csa_policy: Option<SingleCurveCSADiscountPolicy>,
-        fixed_income_policy: Option<crate::collateral::FixedIncomeDiscountPolicy>,
+        fixed_income_policy: Option<PyFixedIncomeDiscountPolicy>,
         scenarios: Option<Vec<Scenario>>,
         quote_level: Option<&Bound<'_, PyAny>>,
         credit_curves: Option<Vec<CreditCurveConfiguration>>,
@@ -228,7 +286,7 @@ impl PricingContext {
         self.inner.quote_level().into()
     }
 
-    /// The quote store the context was built from.
+    /// Active quote store, including scenario shocks after initialization.
     #[getter]
     fn quotes(&self) -> QuoteStore {
         QuoteStore {
@@ -338,6 +396,152 @@ impl PricingContext {
                 inner: configuration.clone(),
             })
             .collect()
+    }
+
+    /// Quote shocks used at each market construction, starting from base quotes.
+    #[getter]
+    fn scenarios(&self) -> Vec<Scenario> {
+        self.inner
+            .scenarios()
+            .iter()
+            .map(|scenario| Scenario {
+                inner: scenario.clone(),
+            })
+            .collect()
+    }
+
+    #[setter]
+    fn set_scenarios(&mut self, scenarios: Option<Vec<Scenario>>) -> PyResult<()> {
+        self.update_market_inputs(|context| {
+            context.with_scenarios(
+                scenarios
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(|scenario| scenario.inner)
+                    .collect(),
+            )
+        })
+    }
+
+    /// Fixed-income discount policy, or None for the context base-curve policy.
+    #[getter]
+    fn fixed_income_policy(&self) -> Option<PyFixedIncomeDiscountPolicy> {
+        self.fixed_income_policy.clone()
+    }
+
+    #[setter]
+    fn set_fixed_income_policy(&mut self, policy: Option<PyFixedIncomeDiscountPolicy>) {
+        self.fixed_income_policy = policy;
+    }
+
+    #[setter]
+    fn set_quote_level(&mut self, level: &Bound<'_, PyAny>) -> PyResult<()> {
+        let level = extract_level(level)?;
+        self.update_market_inputs(|context| context.with_quote_level(level))
+    }
+
+    #[setter]
+    fn set_csa_policy(&mut self, policy: SingleCurveCSADiscountPolicy) -> PyResult<()> {
+        self.update_market_inputs(|context| context.with_csa_policy(&policy.build()))
+    }
+
+    #[setter]
+    fn set_quotes(&mut self, value: QuoteStore) -> PyResult<()> {
+        self.update_market_inputs(|context| context.with_quote_store(value.inner))
+    }
+
+    #[setter]
+    fn set_fixings(&mut self, value: FixingStore) -> PyResult<()> {
+        self.update_market_inputs(|context| context.with_fixing_store(value.inner))
+    }
+
+    #[setter]
+    fn set_fx(&mut self, value: FxStore) -> PyResult<()> {
+        self.update_market_inputs(|context| context.with_fx_store(value.inner))
+    }
+
+    #[setter]
+    fn set_curve_configurations(&mut self, value: Vec<CurveConfiguration>) -> PyResult<()> {
+        self.update_market_inputs(|context| {
+            context.with_curve_configurations(
+                value
+                    .into_iter()
+                    .map(|configuration| configuration.inner)
+                    .collect(),
+            )
+        })
+    }
+
+    #[setter]
+    fn set_credit_curve_configurations(
+        &mut self,
+        value: Vec<CreditCurveConfiguration>,
+    ) -> PyResult<()> {
+        self.update_market_inputs(|context| {
+            context.with_credit_curve_configurations(
+                value
+                    .into_iter()
+                    .map(|configuration| configuration.inner)
+                    .collect(),
+            )
+        })
+    }
+
+    #[setter]
+    fn set_volatility_surface_configurations(
+        &mut self,
+        value: Vec<VolatilitySurfaceConfiguration>,
+    ) -> PyResult<()> {
+        self.update_market_inputs(|context| {
+            context.with_volatility_surface_configurations(
+                value
+                    .into_iter()
+                    .map(|configuration| configuration.inner)
+                    .collect(),
+            )
+        })
+    }
+
+    #[setter]
+    fn set_volatility_cube_configurations(
+        &mut self,
+        value: Vec<VolatilityCubeConfiguration>,
+    ) -> PyResult<()> {
+        self.update_market_inputs(|context| {
+            context.with_volatility_cube_configurations(
+                value
+                    .into_iter()
+                    .map(|configuration| configuration.inner)
+                    .collect(),
+            )
+        })
+    }
+
+    #[setter]
+    fn set_simulation_configurations(
+        &mut self,
+        value: Vec<SimulationConfiguration>,
+    ) -> PyResult<()> {
+        self.update_market_inputs(|context| {
+            context.with_simulation_configurations(
+                value
+                    .into_iter()
+                    .map(|configuration| configuration.inner)
+                    .collect(),
+            )
+        })
+    }
+
+    #[setter]
+    fn set_pricer_configurations(&mut self, value: Vec<PricerConfiguration>) -> PyResult<()> {
+        self.update_market_inputs(|context| {
+            context.with_pricer_configurations(
+                value
+                    .into_iter()
+                    .map(|configuration| configuration.inner)
+                    .collect(),
+            )
+        })
     }
 
     /// All constructed discount curves, sorted by market index.

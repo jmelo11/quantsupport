@@ -145,11 +145,11 @@ loan = qs.Loan(
     calendar="TARGET", fixing_lag=2,
     prepayment=qs.PrepaymentModelConfiguration.cpr(0.12),
 )
-trade = qs.Trade(loan, reference_date, qs.Side.LongReceive)
+trade = qs.Trade(instrument=loan, trade_date=reference_date, side=qs.Side.LongReceive)
 discount_policy = qs.FixedIncomeDiscountPolicy(risk_free_indices={qs.Currency.EUR: qs.MarketIndex.ESTR})
-with qs.PricingContext(quotes, curves, fixings=fixings, csa_policy=csa_policy,
+with qs.PricingContext(quotes=quotes, curves=curves, fixings=fixings, csa_policy=csa_policy,
                       fixed_income_policy=discount_policy) as context:
-    result = context.evaluate(trade, ["Value", "Cashflows", "Sensitivities"])
+    result = context.evaluate(trade=trade, requests=["Value", "Cashflows", "Sensitivities"])
     value = result.price
     expected_receipts = result.cashflows
     risk = result.sensitivities
