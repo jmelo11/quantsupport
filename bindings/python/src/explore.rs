@@ -14,7 +14,7 @@ use crate::conv::{
 use crate::enums::{DayCounter, MarketIndex, SmileType, VolatilityType};
 use crate::time::Date;
 
-/// A bootstrapped discount curve, as constructed by the pricing context.
+/// A discount curve constructed by the pricing context.
 #[pyclass(module = "quantsupport", name = "DiscountCurve", unsendable)]
 pub struct DiscountCurve {
     pub element: DiscountCurveElement,

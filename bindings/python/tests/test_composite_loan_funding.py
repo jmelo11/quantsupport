@@ -1,5 +1,4 @@
 """Cost-of-funds discounting through the native loan pricer."""
-from contextlib import contextmanager
 import unittest
 
 import quantsupport as qs
@@ -10,7 +9,6 @@ FUNDING = qs.MarketIndex.other("COSTOFFUNDS")
 SPREAD = qs.MarketIndex.other("FUNDINGSPREAD")
 
 
-@contextmanager
 def funding_context(scenarios=None, funding_shift=0):
     inputs = [("ESTR", [0.03] * 4), ("EURIBOR12m", [0.04] * 4)]
     quotes = qs.QuoteStore.from_dict({"reference_date": REFERENCE, "quotes": [
@@ -21,21 +19,27 @@ def funding_context(scenarios=None, funding_shift=0):
         "market_index": index,
         "quotes": [f"FixedRateDeposit_EUR_{index}_{tenor}" for tenor in TENORS],
     }) for index, _ in inputs]
+    curves.extend(qs.CurveConfiguration.from_dict_list([
+        {"market_index": {"Other": "COSTOFFUNDS"}, "construction": {
+            "type": "Composite", "base_index": "EURIBOR12m",
+            "spread_index": {"Other": "FUNDINGSPREAD"},
+        }},
+        {"market_index": {"Other": "FUNDINGSPREAD"}, "interpolator": "Linear",
+         "construction": {
+            "type": "ZeroRate", "pillars": ["0D", "1Y", "2Y", "3Y"],
+            "rates": [rate + funding_shift for rate in [0.005, 0.0075, 0.01, 0.0125]],
+            "compounding": "Continuous", "frequency": "Annual",
+        }},
+    ]))
     fixings = qs.FixingStore()
     fixings.add("EURIBOR12m", "2026-02-20", 0.04)
-    with qs.PricingContext(
+    return qs.PricingContext(
         quotes, curves, fixings=fixings, scenarios=scenarios,
         csa_policy=qs.SingleCurveCSADiscountPolicy(qs.Currency.EUR, qs.MarketIndex.ESTR),
         fixed_income_policy=qs.FixedIncomeDiscountPolicy(
             {qs.Currency.EUR: FUNDING}, prefer_instrument_index=False,
         ),
-    ) as context:
-        context.add_zero_curve(SPREAD, qs.TenorBasedZeroRateTermStructure(
-            REFERENCE, ["0D", "1Y", "2Y", "3Y"],
-            [rate + funding_shift for rate in [0.005, 0.0075, 0.01, 0.0125]],
-            day_counter=qs.DayCounter.Actual360, compounding=qs.Compounding.Continuous,
-        ))
-        yield context
+    )
 
 
 def loan(floating=False):
@@ -52,7 +56,6 @@ def loan(floating=False):
 
 def value(instrument, scenarios=None, requests=None, funding_shift=0):
     with funding_context(scenarios, funding_shift) as context:
-        context.add_composite_curve(FUNDING, "EURIBOR12m", SPREAD)
         return qs.LoanPricer().evaluate(
             qs.Trade(instrument, REFERENCE), context, requests or [qs.Request.Value],
         )
@@ -61,7 +64,6 @@ def value(instrument, scenarios=None, requests=None, funding_shift=0):
 class CompositeLoanFundingTests(unittest.TestCase):
     def test_composite_factors_and_forward_use_both_components(self):
         with funding_context() as context:
-            context.add_composite_curve(FUNDING, "EURIBOR12m", SPREAD)
             curve = context.curve(FUNDING)
             for date in ["2026-03-24", "2027-02-24", "2028-02-24"]:
                 expected = (context.curve("EURIBOR12m").discount_factor(date)
@@ -76,7 +78,6 @@ class CompositeLoanFundingTests(unittest.TestCase):
     def test_native_discount_policy_prices_receipts_and_par_coupon(self):
         instrument = loan()
         with funding_context() as context:
-            context.add_composite_curve(FUNDING, "EURIBOR12m", SPREAD)
             result = qs.LoanPricer().evaluate(qs.Trade(instrument, REFERENCE), context,
                                              [qs.Request.Value, qs.Request.Cashflows, qs.Request.FairRate])
             expected = sum(row.amount * context.curve(FUNDING).discount_factor(row.payment_date)
@@ -114,42 +115,104 @@ class CompositeLoanFundingTests(unittest.TestCase):
                 analytic = risk.loc[risk.pillar.str.contains(selector), "value"].sum()
                 self.assertAlmostEqual(analytic, numerical, delta=max(0.02, abs(numerical) * 1e-6))
 
-    def test_registration_rejects_missing_and_existing_curves(self):
-        with funding_context() as context:
-            with self.assertRaisesRegex(qs.QuantSupportError, "MISSING"):
-                context.add_composite_curve(FUNDING, "EURIBOR12m", qs.MarketIndex.other("MISSING"))
-            with self.assertRaisesRegex(qs.QuantSupportError, "already exists"):
-                context.add_composite_curve("ESTR", "EURIBOR12m", SPREAD)
-            context.add_composite_curve(FUNDING, "EURIBOR12m", SPREAD)
-            with self.assertRaisesRegex(qs.QuantSupportError, "already exists"):
-                context.add_composite_curve(FUNDING, "EURIBOR12m", SPREAD)
+    def test_configured_curves_rebuild_on_context_reentry(self):
+        context = funding_context()
+        for _ in range(2):
+            with context:
+                self.assertEqual(len(context.curves()), 4)
+                factor = context.curve(FUNDING).discount_factor("2028-02-24")
+                self.assertGreater(factor, 0)
+                self.assertFalse(hasattr(context, "add_composite_curve"))
+                self.assertFalse(hasattr(context, "add_zero_curve"))
 
-    def test_zero_curve_registration_checks_context_and_conventions(self):
-        empty = qs.PricingContext(qs.QuoteStore.from_dict({
-            "reference_date": REFERENCE, "quotes": [],
-        }), [])
-        curve = qs.ZeroRateTermStructure(
-            REFERENCE, [REFERENCE, "2029-02-24"], [0.01, 0.01],
-            day_counter=qs.DayCounter.Actual365,
-        )
-        with self.assertRaisesRegex(qs.QuantSupportError, "not initialized"):
-            empty.add_zero_curve(SPREAD, curve)
-        with self.assertRaisesRegex(qs.QuantSupportError, "not initialized"):
-            empty.add_composite_curve(FUNDING, "EURIBOR12m", SPREAD)
-        with funding_context() as context:
-            with self.assertRaises(TypeError):
-                context.add_zero_curve(FUNDING, object())
-            with self.assertRaisesRegex(qs.QuantSupportError, "already exists"):
-                context.add_zero_curve(SPREAD, curve)
-            wrong_date = qs.ZeroRateTermStructure(
-                "2026-02-25", ["2026-02-25", "2029-02-25"], [0.01, 0.01],
+    def test_calibration_uses_composite_parents_and_retains_source_risk(self):
+        terms = loan().to_dict()
+        terms["discount_index"] = "EURIBOR3m"
+        instrument = qs.Loan.from_dict(terms)
+
+        def calibrated_value(benchmark_shift=0, spread_shift=0, sensitivities=False):
+            specifications = [
+                {"market_index": "EURIBOR3m", "quotes": [
+                    f"Swap_EUR_EURIBOR3m_{tenor}" for tenor in ["1Y", "2Y", "3Y"]
+                ]},
+                {"market_index": {"Other": "PARENT"}, "construction": {
+                    "type": "Composite", "base_index": "ESTR",
+                    "spread_index": {"Other": "SPREAD"},
+                }},
+                {"market_index": "ESTR", "quotes": [
+                    f"FixedRateDeposit_EUR_ESTR_{tenor}" for tenor in TENORS
+                ]},
+                {"market_index": {"Other": "SPREAD"}, "interpolator": "Linear",
+                 "construction": {"type": "ZeroRate", "pillars": ["0D", "1Y", "3Y"],
+                    "rates": [rate + spread_shift for rate in [0.005, 0.01, 0.02]],
+                    "compounding": "Continuous", "frequency": "Annual"}},
+            ]
+            quotes = qs.QuoteStore.from_dict({"reference_date": REFERENCE, "quotes": [
+                {"identifier": f"FixedRateDeposit_EUR_ESTR_{tenor}", "mid": 0.03 + benchmark_shift}
+                for tenor in TENORS
+            ] + [
+                {"identifier": f"Swap_EUR_EURIBOR3m_{tenor}", "mid": rate}
+                for tenor, rate in [("1Y", 0.04), ("2Y", 0.045), ("3Y", 0.047)]
+            ]})
+            with qs.PricingContext(
+                quotes, qs.CurveConfiguration.from_dict_list(specifications),
+                csa_policy=qs.SingleCurveCSADiscountPolicy(qs.Currency.EUR, qs.MarketIndex.other("PARENT")),
+            ) as context:
+                requests = [qs.Request.Value, qs.Request.Sensitivities] if sensitivities else [qs.Request.Value]
+                return qs.LoanPricer().evaluate(qs.Trade(instrument, REFERENCE), context, requests)
+
+        base = calibrated_value(sensitivities=True)
+        epsilon = 1e-6
+        for label, bump in [("ESTR", "benchmark_shift"), ("SPREAD", "spread_shift")]:
+            with self.subTest(parent_source=label):
+                numerical = (calibrated_value(**{bump: epsilon}).price
+                             - calibrated_value(**{bump: -epsilon}).price) / (2 * epsilon)
+                risk = base.sensitivities
+                analytic = risk.loc[risk.pillar.str.contains(label), "value"].sum()
+                self.assertGreater(abs(numerical), 0.01)
+                self.assertAlmostEqual(analytic, numerical, delta=max(0.02, abs(numerical) * 1e-5))
+
+    def test_configuration_serialization_and_dependency_validation(self):
+        def empty_context(specifications):
+            return qs.PricingContext(qs.QuoteStore.from_dict({
+                "reference_date": REFERENCE, "quotes": [],
+            }), qs.CurveConfiguration.from_dict_list(specifications))
+
+        zero = {"market_index": {"Other": "SPREAD"}, "interpolator": "Linear",
+                "construction": {"type": "ZeroRate", "pillars": [REFERENCE, "2029-02-24"],
+                                 "rates": [0.005, 0.01], "compounding": "Continuous",
+                                 "frequency": "Annual"}}
+        composite = {"market_index": {"Other": "FUNDS"}, "construction": {
+            "type": "Composite", "base_index": {"Other": "SPREAD"},
+            "spread_index": {"Other": "SPREAD"},
+        }}
+        parsed = qs.CurveConfiguration.from_dict(composite)
+        self.assertEqual(parsed.to_dict()["construction"], composite["construction"])
+        with empty_context([composite, zero]) as context:
+            self.assertAlmostEqual(
+                context.curve(qs.MarketIndex.other("FUNDS")).discount_factor("2028-02-24"),
+                context.curve(qs.MarketIndex.other("SPREAD")).discount_factor("2028-02-24") ** 2,
+                places=13,
             )
-            with self.assertRaisesRegex(qs.QuantSupportError, "reference date"):
-                context.add_zero_curve(FUNDING, wrong_date)
-            context.add_zero_curve(FUNDING, curve)
-            with self.assertRaisesRegex(qs.QuantSupportError, "day counters"):
-                context.add_composite_curve(qs.MarketIndex.other("MISMATCH"),
-                                            "EURIBOR12m", FUNDING)
+        with self.assertRaisesRegex(qs.QuantSupportError, "requires SPREAD"):
+            empty_context([composite]).initialize()
+        with self.assertRaisesRegex(qs.QuantSupportError, "Duplicate curve"):
+            empty_context([zero, zero]).initialize()
+        recursive = {"market_index": {"Other": "SPREAD"}, "construction": {
+            "type": "Composite", "base_index": {"Other": "FUNDS"},
+            "spread_index": {"Other": "FUNDS"},
+        }}
+        with self.assertRaisesRegex(qs.QuantSupportError, "Circular dependency"):
+            empty_context([composite, recursive]).initialize()
+        recursive["construction"]["base_index"] = {"Other": "SPREAD"}
+        with self.assertRaisesRegex(qs.QuantSupportError, "references itself"):
+            empty_context([recursive]).initialize()
+        invalid = dict(zero, quotes=["FixedRateDeposit_EUR_ESTR_1Y"])
+        with self.assertRaisesRegex(qs.QuantSupportError, "calibration quotes"):
+            empty_context([invalid]).initialize()
+        invalid = dict(zero, construction=dict(zero["construction"], rates=[0.005]))
+        with self.assertRaisesRegex(qs.QuantSupportError, "matching non-empty"):
+            empty_context([invalid]).initialize()
 
 
 if __name__ == "__main__":

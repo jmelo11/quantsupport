@@ -11,17 +11,69 @@ use crate::{
         quote::{CalibrationInstrumentType, Level},
         quoteselector::QuoteSelector,
     },
-    rates::bootstrapping::bootstrapdiscountpolicy::BootstrapDiscountPolicy,
-    time::{date::Date, daycounter::DayCounter},
+    rates::{
+        bootstrapping::bootstrapdiscountpolicy::BootstrapDiscountPolicy, compounding::Compounding,
+    },
+    time::{date::Date, daycounter::DayCounter, enums::Frequency, period::Period},
     utils::errors::{QSError, Result},
 };
 
-/// User-defined bootstrap specification for a curve, carrying the quote
-/// identifiers that should be used to calibrate it.
+/// A dated pillar or a tenor measured from the market reference date.
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(untagged)]
+pub enum CurvePillar {
+    /// An explicit calendar date.
+    Date(Date),
+    /// A tenor from the market reference date.
+    Tenor(Period),
+}
+
+impl CurvePillar {
+    /// Resolves the pillar against a market reference date.
+    #[must_use]
+    pub fn date(&self, reference_date: Date) -> Date {
+        match self {
+            Self::Date(date) => *date,
+            Self::Tenor(tenor) => reference_date + *tenor,
+        }
+    }
+}
+
+/// Defines how a configured interest-rate curve is constructed.
+#[derive(Serialize, Deserialize, Clone, Default)]
+#[serde(tag = "type", deny_unknown_fields)]
+pub enum CurveConstruction {
+    /// Calibrate discount factors to the configuration's instrument quotes.
+    #[default]
+    Bootstrapped,
+    /// Interpolate explicit zero rates with the configuration's conventions.
+    ZeroRate {
+        /// Ordered dates or tenors for the zero-rate pillars.
+        pillars: Vec<CurvePillar>,
+        /// Decimal annual zero rates, one per pillar.
+        rates: Vec<f64>,
+        /// Compounding convention for the supplied rates.
+        compounding: Compounding,
+        /// Compounding frequency for the supplied rates.
+        frequency: Frequency,
+    },
+    /// Multiply the discount factors of two configured component curves.
+    Composite {
+        /// Market index of the benchmark curve.
+        base_index: MarketIndex,
+        /// Market index of the spread curve.
+        spread_index: MarketIndex,
+    },
+}
+
+/// Construction specification for a curve, including market identity,
+/// conventions, and either calibration quotes, zero rates, or component indices.
 #[derive(Serialize, Deserialize, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct CurveConfiguration {
     market_index: MarketIndex,
+    #[serde(default)]
+    construction: CurveConstruction,
     #[serde(default = "default_day_counter")]
     day_counter: DayCounter,
     #[serde(default = "default_interpolator")]
@@ -59,6 +111,7 @@ impl CurveConfiguration {
     ) -> Self {
         Self {
             market_index,
+            construction: CurveConstruction::Bootstrapped,
             day_counter,
             interpolator,
             enable_extrapolation,
@@ -66,6 +119,19 @@ impl CurveConfiguration {
             reference_date: None,
             calibration_instruments: None,
         }
+    }
+
+    /// Selects explicit zero rates or composite construction for this curve.
+    #[must_use]
+    pub fn with_construction(mut self, construction: CurveConstruction) -> Self {
+        self.construction = construction;
+        self
+    }
+
+    /// Returns the construction definition for this curve.
+    #[must_use]
+    pub const fn construction(&self) -> &CurveConstruction {
+        &self.construction
     }
 
     /// Returns the market index for this spec.
@@ -88,6 +154,17 @@ impl CurveConfiguration {
     ) -> Result<()> {
         let mut instruments = Vec::new();
         self.reference_date = Some(selector.reference_date());
+
+        if !matches!(self.construction, CurveConstruction::Bootstrapped) {
+            if !self.quotes.is_empty() {
+                return Err(QSError::InvalidValueErr(format!(
+                    "Curve {} supplies calibration quotes for an explicit construction",
+                    self.market_index
+                )));
+            }
+            self.calibration_instruments = Some(instruments);
+            return Ok(());
+        }
 
         for id in &self.quotes {
             let quote = selector
@@ -224,6 +301,24 @@ impl CurveConfiguration {
     pub fn dependencies(&self, policy: &BootstrapDiscountPolicy) -> Result<HashSet<MarketIndex>> {
         let mut set = HashSet::new();
         set.insert(self.market_index.clone());
+        match &self.construction {
+            CurveConstruction::Composite {
+                base_index,
+                spread_index,
+            } => {
+                if base_index == &self.market_index || spread_index == &self.market_index {
+                    return Err(QSError::InvalidValueErr(format!(
+                        "Circular dependency: composite curve {} references itself",
+                        self.market_index
+                    )));
+                }
+                set.insert(base_index.clone());
+                set.insert(spread_index.clone());
+                return Ok(set);
+            }
+            CurveConstruction::ZeroRate { .. } => return Ok(set),
+            CurveConstruction::Bootstrapped => {}
+        }
         let instruments = self.instruments()?;
         if instruments.is_empty() {
             return Err(QSError::NotFoundErr(format!(

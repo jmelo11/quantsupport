@@ -30,9 +30,14 @@ use crate::{
             bootstrappedcurve::BootstrappedCurve,
             bootstrapstep::BootstrapStep,
             bootstraputils::{dependency_order, CrossCurveDep},
-            curveconfiguration::CurveConfiguration,
+            curveconfiguration::{CurveConfiguration, CurveConstruction},
         },
-        yieldtermstructure::discounttermstructure::DiscountTermStructure,
+        interestrate::RateDefinition,
+        yieldtermstructure::{
+            compositetermstructure::CompositeTermStructure,
+            discounttermstructure::DiscountTermStructure,
+            zeroratetermstructure::ZeroRateTermStructure,
+        },
     },
     time::{date::Date, daycounter::DayCounter},
     utils::errors::{QSError, Result},
@@ -153,8 +158,8 @@ impl MultiCurveBootstrapper {
         self
     }
 
-    /// Resolves quotes, determines dependency order, and bootstraps every
-    /// configured curve.
+    /// Resolves quotes and constructs calibrated, explicit zero-rate, and
+    /// composite curves in dependency order.
     ///
     /// ## Parameters
     /// * `selector`: the quote selector to resolve market quotes for the pillar instruments. The selector should be able to build the corresponding `CalibrationInstrumentType`s for each quote ID, as these are needed for bootstrapping.
@@ -183,78 +188,163 @@ impl MultiCurveBootstrapper {
                 None
             };
             resolved_spec.resolve(selector, level, fx_spot)?;
-            resolved.insert(resolved_spec.market_index().clone(), resolved_spec);
+            if resolved
+                .insert(resolved_spec.market_index().clone(), resolved_spec)
+                .is_some()
+            {
+                return Err(QSError::InvalidValueErr(format!(
+                    "Duplicate curve configuration for {}",
+                    spec.market_index()
+                )));
+            }
         }
 
         // 2. Topological sort respecting curve dependencies.
         let order = dependency_order(&resolved, &self.discount_policy)?;
 
-        // 3. Iteratively bootstrap in dependency order.
-        let mut solved_curves: HashMap<MarketIndex, BootstrappedCurve> = HashMap::new();
-        let mut pillar_values: HashMap<MarketIndex, Vec<DualFwd>> = HashMap::new();
-
-        for index in &order {
-            let spec = resolved.get(index).ok_or_else(|| {
-                QSError::NotFoundErr(format!("Missing resolved spec for {index}"))
-            })?;
-            let calibrated = self.bootstrap_next_curve(index, spec, &solved_curves)?;
-            let calibrated_pillar_values = calibrated.pillar_values()?.to_vec();
-            solved_curves.insert(index.clone(), calibrated);
-            pillar_values.insert(index.clone(), calibrated_pillar_values);
-        }
-
-        // 4. Convert to DiscountCurveElements.
+        // 3. Construct every definition in the same dependency order.
+        let mut solved_curves = HashMap::new();
         let mut result = HashMap::new();
         for index in &order {
-            let sc = solved_curves
-                .get(index)
-                .ok_or_else(|| QSError::NotFoundErr(format!("Missing solved curve for {index}")))?;
             let spec = resolved.get(index).ok_or_else(|| {
                 QSError::NotFoundErr(format!("Missing resolved spec for {index}"))
             })?;
-            let pv = pillar_values.get(index).ok_or_else(|| {
-                QSError::NotFoundErr(format!("Missing pillar values for {index}"))
-            })?;
-
-            // Build pillar dates: reference_date followed by each instrument's pillar.
-            let reference_date = spec.reference_date()?;
-            let mut dates = vec![reference_date];
-            dates.extend(spec.pillar_dates());
-
-            // Use IFT-connected AD discount factors when available,
-            // otherwise fall back to unconnected AD nodes.
-            let ad_dfs = sc.output_discount_factors().map_or_else(
-                |_| {
-                    sc.discount_factors()
-                        .iter()
-                        .map(|&df| DualFwd::new(df))
-                        .collect()
-                },
-                <[DualFwd]>::to_vec,
+            let (curve, calibrated) = match spec.construction() {
+                CurveConstruction::Bootstrapped => {
+                    let calibrated = self.bootstrap_next_curve(index, spec, &solved_curves)?;
+                    let curve = Self::calibrated_term_structure(spec, &calibrated)?;
+                    (Box::new(curve) as Box<dyn ADCurveElement>, calibrated)
+                }
+                construction => {
+                    Self::explicit_term_structure(spec, construction, &result, &solved_curves)?
+                }
+            };
+            solved_curves.insert(index.clone(), calibrated);
+            let shared: SharedElement<dyn ADCurveElement> = Rc::new(RefCell::new(curve));
+            result.insert(
+                index.clone(),
+                DiscountCurveElement::new(index.clone(), shared),
             );
-
-            let mut ts = DiscountTermStructure::<DualFwd>::new(
-                dates,
-                ad_dfs,
-                spec.day_counter(),
-                spec.interpolator(),
-                spec.enable_extrapolation(),
-            )?;
-
-            ts = ts.with_pillar_values(pv.clone())?;
-            let labels = sc
-                .pillar_labels()
-                .map_or_else(|| spec.pillar_labels(), <[String]>::to_vec);
-            ts = ts.with_pillar_labels(labels)?;
-            if let Some(ift_sens) = sc.ift_sensitivities() {
-                ts = ts.with_ift_sensitivities(ift_sens.clone());
-            }
-
-            let shared: SharedElement<dyn ADCurveElement> = Rc::new(RefCell::new(ts));
-            let elem = DiscountCurveElement::new(index.clone(), shared);
-            result.insert(index.clone(), elem);
         }
         Ok(result)
+    }
+
+    fn calibrated_term_structure(
+        spec: &CurveConfiguration,
+        calibrated: &BootstrappedCurve,
+    ) -> Result<DiscountTermStructure<DualFwd>> {
+        let mut dates = vec![spec.reference_date()?];
+        dates.extend(spec.pillar_dates());
+        let ad_dfs = calibrated.output_discount_factors().map_or_else(
+            |_| {
+                calibrated
+                    .discount_factors()
+                    .iter()
+                    .map(|&df| DualFwd::new(df))
+                    .collect()
+            },
+            <[DualFwd]>::to_vec,
+        );
+        let mut curve = DiscountTermStructure::<DualFwd>::new(
+            dates,
+            ad_dfs,
+            spec.day_counter(),
+            spec.interpolator(),
+            spec.enable_extrapolation(),
+        )?
+        .with_pillar_values(calibrated.pillar_values()?.to_vec())?
+        .with_pillar_labels(
+            calibrated
+                .pillar_labels()
+                .map_or_else(|| spec.pillar_labels(), <[String]>::to_vec),
+        )?;
+        if let Some(sensitivities) = calibrated.ift_sensitivities() {
+            curve = curve.with_ift_sensitivities(sensitivities.clone());
+        }
+        Ok(curve)
+    }
+
+    fn explicit_term_structure(
+        spec: &CurveConfiguration,
+        construction: &CurveConstruction,
+        curves: &HashMap<MarketIndex, DiscountCurveElement>,
+        solved: &HashMap<MarketIndex, BootstrappedCurve>,
+    ) -> Result<(Box<dyn ADCurveElement>, BootstrappedCurve)> {
+        match construction {
+            CurveConstruction::ZeroRate {
+                pillars,
+                rates,
+                compounding,
+                frequency,
+            } => {
+                let reference_date = spec.reference_date()?;
+                let dates: Vec<_> = pillars
+                    .iter()
+                    .map(|pillar| pillar.date(reference_date))
+                    .collect();
+                let labels = dates
+                    .iter()
+                    .map(|date| format!("{}_{date}", spec.market_index()))
+                    .collect();
+                let curve = ZeroRateTermStructure::new(
+                    reference_date,
+                    dates,
+                    rates.clone(),
+                    RateDefinition::new(spec.day_counter(), *compounding, *frequency),
+                    spec.interpolator(),
+                    spec.enable_extrapolation(),
+                )?
+                .with_pillar_labels(labels)?;
+                let snapshot =
+                    BootstrappedCurve::from_zero_rates(spec.market_index().clone(), curve.clone())?;
+                Ok((Box::new(curve.to_dual()), snapshot))
+            }
+            CurveConstruction::Composite {
+                base_index,
+                spread_index,
+            } => {
+                let component = |index: &MarketIndex| {
+                    curves
+                        .get(index)
+                        .ok_or_else(|| {
+                            QSError::NotFoundErr(format!("Composite component {index}"))
+                        })?
+                        .curve()
+                        .clone_curve()
+                };
+                let base = component(base_index)?;
+                let spread = component(spread_index)?;
+                if base.reference_date() != spread.reference_date()
+                    || base.day_counter() != spread.day_counter()
+                {
+                    return Err(QSError::InvalidValueErr(
+                        "Composite curves require matching reference dates and day counters".into(),
+                    ));
+                }
+                let snapshot = BootstrappedCurve::from_components(
+                    spec.market_index().clone(),
+                    solved
+                        .get(base_index)
+                        .ok_or_else(|| {
+                            QSError::NotFoundErr(format!("Composite component {base_index}"))
+                        })?
+                        .clone(),
+                    solved
+                        .get(spread_index)
+                        .ok_or_else(|| {
+                            QSError::NotFoundErr(format!("Composite component {spread_index}"))
+                        })?
+                        .clone(),
+                )?;
+                Ok((
+                    Box::new(CompositeTermStructure::from_curves(spread, base)),
+                    snapshot,
+                ))
+            }
+            CurveConstruction::Bootstrapped => Err(QSError::InvalidValueErr(
+                "Calibrated curves require bootstrap construction".into(),
+            )),
+        }
     }
 
     /// Bootstraps a single curve by solving for discount factors that
@@ -362,13 +452,32 @@ impl MultiCurveBootstrapper {
         let mut cross_deps: Vec<CrossCurveDep> = Vec::new();
 
         for (parent_idx, parent_curve) in other_curves {
-            let parent_dfs = parent_curve.discount_factors();
-            let parent_n = parent_dfs.len() - 1; // excluding DF(0) = 1
-
-            // Skip parent curves that provide no pillar IFT data
-            let parent_ift = match parent_curve.ift_sensitivities() {
-                Some(ift) => ift.clone(),
-                None => continue,
+            let explicit = parent_curve.has_explicit_source();
+            let parent_inputs: Vec<f64> = if explicit {
+                parent_curve
+                    .pillar_values()?
+                    .iter()
+                    .map(Scalar::value)
+                    .collect()
+            } else {
+                parent_curve.discount_factors()[1..].to_vec()
+            };
+            let parent_n = parent_inputs.len();
+            // Explicit curves are differentiated directly in their source-pillar
+            // coordinates. Calibrated parents retain the existing DF-to-quote IFT.
+            let parent_ift = if explicit {
+                (0..parent_n)
+                    .map(|row| {
+                        (0..parent_n)
+                            .map(|column| f64::from(row == column))
+                            .collect()
+                    })
+                    .collect()
+            } else {
+                match parent_curve.ift_sensitivities() {
+                    Some(ift) => ift.clone(),
+                    None => continue,
+                }
             };
             let parent_labels: Vec<String> = parent_curve.pillar_labels().map_or_else(
                 || {
@@ -380,20 +489,26 @@ impl MultiCurveBootstrapper {
                 <[String]>::to_vec,
             );
 
-            // Compute ∂F/∂z by bumping each parent DF (indices 1..=parent_n)
-            // dF_dz[row][col] = ∂F_row / ∂z_{col+1}
+            // Bump each parent DF or explicit source pillar.
             let mut df_dz = vec![vec![0.0_f64; parent_n]; n];
 
             for m in 0..parent_n {
-                let bump = (parent_dfs[m + 1].abs() * 1e-6).max(1e-10);
+                let coordinate = if explicit { m } else { m + 1 };
+                let bump = (parent_inputs[m].abs() * 1e-6).max(1e-10);
 
-                let (up_res, up_bump) =
-                    bumped_residual(&problem, parent_idx, parent_curve, m + 1, bump, converged_x)?;
+                let (up_res, up_bump) = bumped_residual(
+                    &problem,
+                    parent_idx,
+                    parent_curve,
+                    coordinate,
+                    bump,
+                    converged_x,
+                )?;
                 let (dn_res, dn_bump) = bumped_residual(
                     &problem,
                     parent_idx,
                     parent_curve,
-                    m + 1,
+                    coordinate,
                     -bump,
                     converged_x,
                 )?;
@@ -542,11 +657,16 @@ fn bumped_residual(
     bump: f64,
     x: &[f64],
 ) -> Result<(Vec<f64>, f64)> {
-    let original_df = parent_curve.discount_factors()[parent_df_idx];
-    let bumped_df = (original_df + bump).max(1e-10);
-
     let mut bumped_parent = parent_curve.clone();
-    bumped_parent.discount_factors_mut()[parent_df_idx] = bumped_df;
+    let applied_bump = if parent_curve.has_explicit_source() {
+        bumped_parent.bump_pillar(parent_df_idx, bump)?;
+        bump
+    } else {
+        let original = parent_curve.discount_factors()[parent_df_idx];
+        let bumped = (original + bump).max(1e-10);
+        bumped_parent.discount_factors_mut()[parent_df_idx] = bumped;
+        bumped - original
+    };
 
     let mut bumped_others = problem.other_curves.clone();
     bumped_others.insert(parent_idx.clone(), bumped_parent);
@@ -564,7 +684,7 @@ fn bumped_residual(
         fixing_store: problem.fixing_store,
     };
 
-    Ok((bumped_problem.call(x)?, bumped_df - original_df))
+    Ok((bumped_problem.call(x)?, applied_bump))
 }
 
 /// Maps a trial vector of discount factors into the residual vector used by
@@ -652,6 +772,14 @@ mod tests {
     use std::collections::HashMap;
 
     use crate::{
+        rates::compounding::Compounding,
+        time::{
+            enums::{Frequency, TimeUnit},
+            period::Period,
+        },
+    };
+
+    use crate::{
         ad::dual::DualFwd,
         currencies::currency::Currency,
         indices::marketindex::MarketIndex,
@@ -663,7 +791,8 @@ mod tests {
         },
         rates::bootstrapping::{
             bootstrapdiscountpolicy::BootstrapDiscountPolicy,
-            curveconfiguration::CurveConfiguration, multicurvebootstrapper::MultiCurveBootstrapper,
+            curveconfiguration::{CurveConfiguration, CurveConstruction, CurvePillar},
+            multicurvebootstrapper::MultiCurveBootstrapper,
         },
         time::{date::Date, daycounter::DayCounter},
         utils::errors::Result,
@@ -710,6 +839,71 @@ mod tests {
 
     fn default_policy() -> BootstrapDiscountPolicy {
         BootstrapDiscountPolicy::new(MarketIndex::SOFR, Currency::USD)
+    }
+
+    #[test]
+    fn configured_zero_rates_and_nested_composites_share_curve_construction() -> Result<()> {
+        let mut selector = MapSelector::new(rd());
+        selector.add("FixedRateDeposit_USD_SOFR_1Y", 0.05);
+        let spread_index = MarketIndex::Other("SPREAD".into());
+        let funding_index = MarketIndex::Other("FUNDING".into());
+        let nested_index = MarketIndex::Other("NESTED".into());
+        let configuration = |index| {
+            CurveConfiguration::new(
+                index,
+                DayCounter::Actual360,
+                Interpolator::Linear,
+                true,
+                Vec::new(),
+            )
+        };
+        let benchmark = CurveConfiguration::new(
+            MarketIndex::SOFR,
+            DayCounter::Actual360,
+            Interpolator::LogLinear,
+            true,
+            vec!["FixedRateDeposit_USD_SOFR_1Y".into()],
+        );
+        let spread =
+            configuration(spread_index.clone()).with_construction(CurveConstruction::ZeroRate {
+                pillars: vec![
+                    CurvePillar::Date(rd()),
+                    CurvePillar::Tenor(Period::new(2, TimeUnit::Years)),
+                ],
+                rates: vec![0.005, 0.01],
+                compounding: Compounding::Continuous,
+                frequency: Frequency::Annual,
+            });
+        let funding =
+            configuration(funding_index.clone()).with_construction(CurveConstruction::Composite {
+                base_index: MarketIndex::SOFR,
+                spread_index,
+            });
+        let nested =
+            configuration(nested_index.clone()).with_construction(CurveConstruction::Composite {
+                base_index: funding_index.clone(),
+                spread_index: funding_index.clone(),
+            });
+        let curves =
+            MultiCurveBootstrapper::new(vec![nested, funding, spread, benchmark], default_policy())
+                .bootstrap(&selector, Level::Mid)?;
+        let date = Date::new(2025, 6, 1);
+        let time = DayCounter::Actual360.year_fraction(rd(), date);
+        let expected = (-0.0075 * time).exp() / (1.0 + 0.05 * time);
+        assert!(
+            (curves[&funding_index]
+                .curve()
+                .discount_factor(date)?
+                .value()
+                - expected)
+                .abs()
+                < 1e-12
+        );
+        assert!(
+            (curves[&nested_index].curve().discount_factor(date)?.value() - expected.powi(2)).abs()
+                < 1e-12
+        );
+        Ok(())
     }
 
     #[test]

@@ -2,10 +2,22 @@ use crate::{
     ad::dual::DualFwd,
     indices::marketindex::MarketIndex,
     math::interpolation::interpolator::{Interpolate, Interpolator},
-    rates::interestrate::{InterestRate, RateDefinition},
+    rates::{
+        interestrate::{InterestRate, RateDefinition},
+        yieldtermstructure::{
+            interestratestermstructure::InterestRatesTermStructure,
+            zeroratetermstructure::ZeroRateTermStructure,
+        },
+    },
     time::{date::Date, daycounter::DayCounter},
     utils::errors::{QSError, Result},
 };
+
+#[derive(Clone)]
+enum CurveSource {
+    ZeroRate(Box<ZeroRateTermStructure<f64>>),
+    Composite(Box<BootstrappedCurve>, Box<BootstrappedCurve>),
+}
 
 /// Internally constructed curve representation used during bootstrapping.
 #[derive(Clone)]
@@ -20,6 +32,7 @@ pub struct BootstrappedCurve {
     pillar_labels: Option<Vec<String>>,
     output_discount_factors: Option<Vec<DualFwd>>,
     ift_sensitivities: Option<Vec<Vec<f64>>>,
+    source: Option<CurveSource>,
 }
 
 impl BootstrappedCurve {
@@ -44,7 +57,127 @@ impl BootstrappedCurve {
             pillar_labels: None,
             output_discount_factors: None,
             ift_sensitivities: None,
+            source: None,
         }
+    }
+
+    /// Preserves explicit zero-rate interpolation when the curve is a calibration parent.
+    pub(super) fn from_zero_rates(
+        market_index: MarketIndex,
+        curve: ZeroRateTermStructure<f64>,
+    ) -> Result<Self> {
+        let reference_date = curve.reference_date();
+        let day_counter = curve.rate_definition().day_counter();
+        let mut times = vec![0.0];
+        times.extend(
+            curve
+                .dates()
+                .iter()
+                .map(|date| day_counter.year_fraction(reference_date, *date)),
+        );
+        times.dedup();
+        let discount_factors = times
+            .iter()
+            .map(|time| curve.discount_factor_from_time(*time))
+            .collect::<Result<_>>()?;
+        let values = curve
+            .rates()
+            .iter()
+            .map(|rate| DualFwd::new(*rate))
+            .collect();
+        let labels = curve.labels().unwrap_or_default().to_vec();
+        let mut result = Self::new(
+            market_index,
+            reference_date,
+            times,
+            discount_factors,
+            day_counter,
+            curve.interpolator(),
+        )
+        .with_pillar_values(values)
+        .with_pillar_labels(labels);
+        result.source = Some(CurveSource::ZeroRate(Box::new(curve)));
+        Ok(result)
+    }
+
+    /// Preserves multiplicative discounting when a composite is a calibration parent.
+    pub(super) fn from_components(
+        market_index: MarketIndex,
+        base: Self,
+        spread: Self,
+    ) -> Result<Self> {
+        // Query components directly. Caching only the origin avoids requiring
+        // their outermost pillars to fall within each other's supported domain.
+        let times = vec![0.0];
+        let discount_factors = vec![1.0];
+        let mut values = base.pillar_values()?.to_vec();
+        values.extend_from_slice(spread.pillar_values()?);
+        let mut labels = base.pillar_labels().unwrap_or_default().to_vec();
+        labels.extend_from_slice(spread.pillar_labels().unwrap_or_default());
+        let mut result = Self::new(
+            market_index,
+            base.reference_date,
+            times,
+            discount_factors,
+            base.day_counter,
+            base.interpolator,
+        )
+        .with_pillar_values(values)
+        .with_pillar_labels(labels);
+        result.source = Some(CurveSource::Composite(Box::new(base), Box::new(spread)));
+        Ok(result)
+    }
+
+    /// Whether parent risk should be bumped in source-pillar coordinates.
+    pub(super) const fn has_explicit_source(&self) -> bool {
+        self.source.is_some()
+    }
+
+    /// Bumps one source pillar while retaining its curve's interpolation and composition.
+    pub(super) fn bump_pillar(&mut self, index: usize, bump: f64) -> Result<()> {
+        let bumped = self.pillar_values()?[index].value() + bump;
+        match &mut self.source {
+            Some(CurveSource::ZeroRate(curve)) => {
+                let mut rates = curve.rates().clone();
+                rates[index] += bump;
+                **curve = ZeroRateTermStructure::new(
+                    curve.reference_date(),
+                    curve.dates().clone(),
+                    rates,
+                    curve.rate_definition(),
+                    curve.interpolator(),
+                    curve.enable_extrapolation(),
+                )?;
+            }
+            Some(CurveSource::Composite(base, spread)) => {
+                let base_count = base.pillar_values()?.len();
+                if index < base_count {
+                    base.bump_pillar(index, bump)?;
+                } else {
+                    spread.bump_pillar(index - base_count, bump)?;
+                }
+            }
+            None => {
+                let sensitivities = self.ift_sensitivities.as_ref().ok_or_else(|| {
+                    QSError::ValueNotSetErr("Parent curve IFT sensitivities".into())
+                })?;
+                for (factor, row) in self.discount_factors[1..].iter_mut().zip(sensitivities) {
+                    *factor = row[index].mul_add(bump, *factor);
+                }
+            }
+        }
+        self.pillar_values
+            .as_mut()
+            .ok_or_else(|| QSError::ValueNotSetErr("Parent curve pillars".into()))?[index] =
+            DualFwd::new(bumped);
+        if self.source.is_some() {
+            self.discount_factors = self
+                .times
+                .iter()
+                .map(|time| self.discount_factor_from_time(*time))
+                .collect::<Result<_>>()?;
+        }
+        Ok(())
     }
 
     /// Returns the market index of this curve.
@@ -127,8 +260,19 @@ impl BootstrappedCurve {
     /// Returns an error if the date is out of bounds for the curve's time grid or if interpolation fails for any reason (e.g., NaN inputs, invalid interpolator state). The error message will indicate the nature of the failure to aid in debugging bootstrapping issues.
     pub fn discount_factor(&self, date: Date) -> Result<f64> {
         let year_fraction = self.day_counter.year_fraction(self.reference_date, date);
-        self.interpolator
-            .interpolate(year_fraction, &self.times, &self.discount_factors, true)
+        self.discount_factor_from_time(year_fraction)
+    }
+
+    fn discount_factor_from_time(&self, time: f64) -> Result<f64> {
+        match &self.source {
+            Some(CurveSource::ZeroRate(curve)) => curve.discount_factor_from_time(time),
+            Some(CurveSource::Composite(base, spread)) => Ok(base
+                .discount_factor_from_time(time)?
+                * spread.discount_factor_from_time(time)?),
+            None => self
+                .interpolator
+                .interpolate(time, &self.times, &self.discount_factors, true),
+        }
     }
 
     /// Returns the AD-tracked discount factors at the pillar dates.

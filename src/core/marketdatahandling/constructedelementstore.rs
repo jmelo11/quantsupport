@@ -8,8 +8,6 @@ use crate::{
         volatilitysurfaceelement::VolatilitySurfaceElement,
     },
     indices::{fxpair::FxPair, marketindex::MarketIndex},
-    rates::yieldtermstructure::compositetermstructure::CompositeTermStructure,
-    utils::errors::{QSError, Result},
     volatility::orientedfxvolsurface::OrientedFxVolSurface,
 };
 
@@ -29,48 +27,6 @@ pub struct ConstructedElementStore {
 }
 
 impl ConstructedElementStore {
-    /// Registers a composite curve whose discount factors multiply those of two
-    /// existing curves. Components are owned snapshots; recompose after rebuilding
-    /// either source curve.
-    ///
-    /// # Errors
-    /// Rejects an existing destination index, missing or non-copyable components,
-    /// and different reference dates or day-count conventions.
-    pub fn add_composite_discount_curve(
-        &mut self,
-        index: MarketIndex,
-        base_index: &MarketIndex,
-        spread_index: &MarketIndex,
-    ) -> Result<()> {
-        if self.discount_curves.contains_key(&index) {
-            return Err(QSError::InvalidValueErr(format!(
-                "Discount curve {index} already exists"
-            )));
-        }
-        let component = |source: &MarketIndex| {
-            self.discount_curves
-                .get(source)
-                .ok_or_else(|| QSError::NotFoundErr(format!("Discount curve {source}")))?
-                .curve()
-                .clone_curve()
-        };
-        let base = component(base_index)?;
-        let spread = component(spread_index)?;
-        if base.reference_date() != spread.reference_date()
-            || base.day_counter() != spread.day_counter()
-        {
-            return Err(QSError::InvalidValueErr(
-                "Composite curves require matching reference dates and day counters".into(),
-            ));
-        }
-        let curve = CompositeTermStructure::from_curves(spread, base);
-        self.discount_curves.insert(
-            index.clone(),
-            DiscountCurveElement::new(index, Rc::new(RefCell::new(curve))),
-        );
-        Ok(())
-    }
-
     /// Returns discount curves.
     #[must_use]
     pub const fn discount_curves(&self) -> &HashMap<MarketIndex, DiscountCurveElement> {
