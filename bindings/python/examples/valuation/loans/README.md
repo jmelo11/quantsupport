@@ -3,12 +3,15 @@
 [Understanding loan cashflows and value](loans.ipynb) follows a EUR 100,000 loan
 from its first interest accrual to its market value. It explains how the library
 handles day count, French/bullet/balloon repayment, floating resets, introductory
-fixed coupons, coupon bounds, par lending rates, prepayment, and borrower recovery.
+fixed coupons, coupon bounds, par lending rates, funding through EURIBOR plus a
+spread curve, market scenarios, prepayment, and borrower recovery.
 Tables and charts show how those assumptions affect payments, expected principal
 life, income, and exposure to market quotes.
 
 The local [market_data.py](market_data.py) reads the illustrative 24 February 2026
 EUR discount, EURIBOR12m, and borrower CDS inputs shared with the Rust example.
+The notebook adds an explicit treasury funding spread curve and reprices fixed
+and floating loans under benchmark and funding spread shocks.
 The input files live in
 [examples/valuation/loans/data](../../../../../examples/valuation/loans/data).
 
