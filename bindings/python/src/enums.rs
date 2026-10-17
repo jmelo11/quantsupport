@@ -6,9 +6,8 @@
 //! sync with the library. [`MarketIndex`] (which has data-carrying
 //! variants) is a thin wrapper with constants and constructors instead.
 //!
-//! Every function in the bindings that takes one of these types also
-//! accepts the equivalent string (e.g. `"USD"`, `"SOFR"`, `"Actual360"`)
-//! for convenience.
+//! Financial input converters also accept serialized names such as `"USD"`,
+//! `"SOFR"`, or `"Actual360"`. Typed calendar constructors take their market enums.
 
 // Variant names intentionally mirror the library / ISO conventions.
 #![allow(clippy::upper_case_acronyms, clippy::enum_variant_names)]
@@ -23,6 +22,11 @@ use quantsupport::prelude::{
     PaymentStructure as QsPaymentStructure, Request as QsRequest, ScenarioType as QsScenarioType,
     Side as QsSide, SmileType as QsSmileType, TimeUnit as QsTimeUnit,
     VolatilityType as QsVolatilityType,
+};
+
+use quantsupport::time::calendars::{
+    brazil::Market as QsBrazilMarket, jointcalendar::JointCalendarRule as QsJointCalendarRule,
+    unitedstates::Market as QsUnitedStatesMarket,
 };
 
 use crate::conv::{extract_currency, extract_date, qs_err};
@@ -799,3 +803,54 @@ impl Interpolator {
         format!("Interpolator.{self:?}")
     }
 }
+
+mirror_enum!(
+    /// United States calendar market.
+    UnitedStatesMarket,
+    QsUnitedStatesMarket,
+    "UnitedStatesMarket",
+    [
+        Settlement,
+        LiborImpact,
+        Nyse,
+        GovernmentBond,
+        Nerc,
+        FederalReserve,
+        Sofr
+    ]
+);
+mirror_enum!(
+    /// Brazil calendar market.
+    BrazilMarket,
+    QsBrazilMarket,
+    "BrazilMarket",
+    [Settlement, Exchange]
+);
+mirror_enum!(
+    /// Business-day combination rule for a joint calendar.
+    JointCalendarRule,
+    QsJointCalendarRule,
+    "JointCalendarRule",
+    [JoinHolidays, JoinBusinessDays]
+);
+
+macro_rules! calendar_enum_methods {
+    ($name:ident) => {
+        #[pymethods]
+        impl $name {
+            #[staticmethod]
+            fn parse(s: &str) -> PyResult<Self> {
+                Self::from_name(s)
+            }
+            fn __str__(&self) -> String {
+                format!("{self:?}")
+            }
+            fn __repr__(&self) -> String {
+                format!("{}.{self:?}", stringify!($name))
+            }
+        }
+    };
+}
+calendar_enum_methods!(UnitedStatesMarket);
+calendar_enum_methods!(BrazilMarket);
+calendar_enum_methods!(JointCalendarRule);

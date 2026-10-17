@@ -8,10 +8,16 @@ use quantsupport::prelude::{
     Calendar as QsCalendar, Date as QsDate, ImplCalendar, IsCalendar, Period as QsPeriod,
 };
 
+use quantsupport::time::calendars::{
+    brazil::Brazil, chile::Chile, japan::Japan, jointcalendar::JointCalendar,
+    nullcalendar::NullCalendar, target::TARGET, unitedkingdom::UnitedKingdom,
+    unitedstates::UnitedStates, weekendsonly::WeekendsOnly,
+};
+
 use crate::conv::{
     extract_business_day_convention, extract_date, extract_period, extract_time_unit, qs_err,
 };
-use crate::enums::{Frequency, TimeUnit};
+use crate::enums::{BrazilMarket, Frequency, JointCalendarRule, TimeUnit, UnitedStatesMarket};
 use crate::QuantSupportError;
 
 /// A calendar date.
@@ -227,8 +233,11 @@ impl Period {
 
 /// A business-day calendar.
 ///
-/// Available calendars: `NullCalendar`, `WeekendsOnly`, `TARGET`,
-/// `UnitedStates`, `Brazil`, `Chile`.
+/// Native calendar variants, for example ``Calendar.TARGET``.
+///
+/// Fixed calendars are typed class attributes. UnitedStates and Brazil accept
+/// typed market enums; JointCalendar combines typed calendars and a rule.
+/// The string constructor remains available for loading serialized names.
 #[pyclass(module = "quantsupport", name = "Calendar", from_py_object)]
 #[derive(Clone)]
 pub struct Calendar {
@@ -236,7 +245,100 @@ pub struct Calendar {
 }
 
 #[pymethods]
+#[allow(non_snake_case)]
 impl Calendar {
+    #[classattr]
+    fn NullCalendar() -> Self {
+        Self {
+            inner: QsCalendar::NullCalendar(NullCalendar::new()),
+        }
+    }
+    #[classattr]
+    fn WeekendsOnly() -> Self {
+        Self {
+            inner: QsCalendar::WeekendsOnly(WeekendsOnly::new()),
+        }
+    }
+    #[classattr]
+    fn TARGET() -> Self {
+        Self {
+            inner: QsCalendar::TARGET(TARGET::new()),
+        }
+    }
+    #[classattr]
+    fn UnitedKingdom() -> Self {
+        Self {
+            inner: QsCalendar::UnitedKingdom(UnitedKingdom::new()),
+        }
+    }
+    #[classattr]
+    fn Japan() -> Self {
+        Self {
+            inner: QsCalendar::Japan(Japan::new()),
+        }
+    }
+    #[classattr]
+    fn Chile() -> Self {
+        Self {
+            inner: QsCalendar::Chile(Chile::default()),
+        }
+    }
+
+    /// United States calendar for the selected market.
+    ///
+    /// Parameters
+    /// ----------
+    /// market : UnitedStatesMarket, optional
+    ///     Defaults to Sofr.
+    #[staticmethod]
+    #[pyo3(signature = (*, market = None))]
+    fn UnitedStates(market: Option<UnitedStatesMarket>) -> Self {
+        Self {
+            inner: QsCalendar::UnitedStates(UnitedStates::new(
+                market.unwrap_or(UnitedStatesMarket::Sofr).into(),
+            )),
+        }
+    }
+    /// Brazil calendar for the selected market.
+    ///
+    /// Parameters
+    /// ----------
+    /// market : BrazilMarket, optional
+    ///     Defaults to Settlement.
+    #[staticmethod]
+    #[pyo3(signature = (*, market = None))]
+    fn Brazil(market: Option<BrazilMarket>) -> Self {
+        Self {
+            inner: QsCalendar::Brazil(Brazil::new(
+                market.unwrap_or(BrazilMarket::Settlement).into(),
+            )),
+        }
+    }
+    /// Combine native calendars.
+    ///
+    /// Parameters
+    /// ----------
+    /// calendars : sequence of Calendar
+    ///     At least two constituent calendars.
+    /// rule : JointCalendarRule, optional
+    ///     Defaults to JoinHolidays: every constituent must be open.
+    #[staticmethod]
+    #[pyo3(signature = (*, calendars, rule = None))]
+    fn JointCalendar(calendars: Vec<Self>, rule: Option<JointCalendarRule>) -> PyResult<Self> {
+        Ok(Self {
+            inner: QsCalendar::JointCalendar(
+                JointCalendar::new(
+                    calendars
+                        .into_iter()
+                        .map(|calendar| calendar.inner)
+                        .collect(),
+                    rule.unwrap_or(JointCalendarRule::JoinHolidays).into(),
+                )
+                .map_err(qs_err)?,
+            ),
+        })
+    }
+
     #[new]
     fn new(name: &str) -> PyResult<Self> {
         Ok(Self {

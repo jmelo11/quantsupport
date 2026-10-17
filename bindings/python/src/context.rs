@@ -21,8 +21,8 @@ use quantsupport::prelude::{
     FloatingRateNote as QsFloatingRateNote, FloatingRateNoteTrade, FxEuropeanOptionPricer,
     FxForwardPricer, InstrumentType, Level, LgmMarketModel, LgmRateModel, LoanPricer,
     ModelConfiguration, Pricer, PricerImplementation, PricingContext as QsPricingContext,
-    RateFuturesPricer, Scalar, ScriptEngine, Swap as QsSwap, SwapTrade, Tape, TreeBasedBondPricer,
-    XvaEngine,
+    RateFuturesPricer, Scalar, Scenario as QsScenario, ScriptEngine, Swap as QsSwap, SwapTrade,
+    Tape, TreeBasedBondPricer, XvaEngine,
 };
 
 use crate::collateral::{
@@ -37,6 +37,7 @@ use crate::market::{
     VolatilitySurfaceConfiguration,
 };
 use crate::results::EvaluationResults;
+use crate::scenarios::{enter_context, exit_context};
 use crate::scripting::ScriptedProduct;
 use crate::time::Date;
 use crate::trades::{
@@ -56,6 +57,8 @@ use crate::QuantSupportError;
 /// pricer_configurations. Reassigning market inputs rebuilds an initialized context;
 /// otherwise construction happens on the next initialize() or context entry.
 /// Collection getters return copies; assign the updated collection back.
+/// Use ``with context, scenarios:`` for temporary ``Scenarios`` shocks; the
+/// previous market is restored when the scenario block exits.
 ///
 /// Parameters
 /// ----------
@@ -80,8 +83,8 @@ use crate::QuantSupportError;
 /// fixed_income_policy : FixedIncomeDiscountPolicy, optional
 ///     Currency-to-curve discount policy. Defaults to the context base curve.
 /// scenarios : sequence of Scenario, optional
-///     Quote shocks applied before market construction. Assign [] to restore
-///     the base market; shocks always start from the original quotes.
+///     Default market shocks, applied to original quotes and zero-rate inputs.
+///     Use Scenarios with ``with context, scenarios:`` for temporary shocks.
 /// quote_level : Level or str, optional
 ///     Quote level used for calibration. Defaults to Mid.
 /// credit_curves : sequence of CreditCurveConfiguration, optional
@@ -114,6 +117,34 @@ pub struct PricingContext {
 }
 
 impl PricingContext {
+    /// Builds a temporary shocked market before replacing the active one.
+    /// Failure leaves all previous inputs and constructed elements available.
+    pub(crate) fn begin_scoped_scenarios(
+        &mut self,
+        shocks: &[QsScenario],
+    ) -> PyResult<QsPricingContext> {
+        self.require_initialized()?;
+        let combined = self
+            .inner
+            .scenarios()
+            .iter()
+            .chain(shocks)
+            .cloned()
+            .collect();
+        let mut market = self
+            .inner
+            .clone()
+            .with_scenarios(combined)
+            .with_constructed_elements(ConstructedElementStore::default());
+        market.initialize().map_err(qs_err)?;
+        Ok(std::mem::replace(&mut self.inner, market))
+    }
+
+    pub(crate) fn restore_scoped_market(&mut self, market: QsPricingContext) {
+        self.inner = market;
+        self.initialized = true;
+    }
+
     /// Rebuilds initialized market data after a public input is reassigned.
     fn update_market_inputs(
         &mut self,
@@ -412,7 +443,7 @@ impl PricingContext {
             .collect()
     }
 
-    /// Quote shocks used at each market construction, starting from base quotes.
+    /// Default market shocks, starting from original quotes and zero-rate inputs.
     #[getter]
     fn scenarios(&self) -> Vec<Scenario> {
         self.inner
@@ -699,25 +730,32 @@ impl PricingContext {
         self.python_pricers.pricer_for(py, trade)
     }
 
-    fn __enter__(mut slf: PyRefMut<'_, Self>) -> PyResult<PyRefMut<'_, Self>> {
-        slf.initialize()?;
-        Tape::<ADForward>::start_recording_fwd();
+    fn __enter__(slf: Bound<'_, Self>) -> PyResult<Bound<'_, Self>> {
+        slf.try_borrow_mut()?.initialize()?;
+        if enter_context(&slf) {
+            Tape::<ADForward>::start_recording_fwd();
+        }
         Ok(slf)
     }
 
     #[pyo3(signature = (_exc_type = None, _exc_value = None, _traceback = None))]
     fn __exit__(
-        &mut self,
+        slf: Bound<'_, Self>,
         _exc_type: Option<&Bound<'_, PyAny>>,
         _exc_value: Option<&Bound<'_, PyAny>>,
         _traceback: Option<&Bound<'_, PyAny>>,
-    ) -> bool {
-        Tape::<ADForward>::stop_recording_fwd();
-
-        Tape::<ADForward>::rewind_to_init_fwd();
-        *self.inner.constructed_elements_mut() = ConstructedElementStore::default();
-        self.initialized = false;
-        false // never suppress exceptions
+    ) -> PyResult<bool> {
+        let (same_context_remains, another_context_remains) = exit_context(&slf)?;
+        if !same_context_remains {
+            if !another_context_remains {
+                Tape::<ADForward>::stop_recording_fwd();
+                Tape::<ADForward>::rewind_to_init_fwd();
+            }
+            let mut context = slf.try_borrow_mut()?;
+            *context.inner.constructed_elements_mut() = ConstructedElementStore::default();
+            context.initialized = false;
+        }
+        Ok(false)
     }
 
     /// Evaluates dated payoff code with native LGM models and bootstrapped context curves.

@@ -2,9 +2,9 @@
 
 mod bondpricinganchor;
 mod collateral;
-mod coupons;
 mod context;
 mod conv;
+mod coupons;
 mod curves;
 mod enums;
 mod explore;
@@ -14,6 +14,7 @@ mod loanpricer;
 mod loanterms;
 mod market;
 mod results;
+mod scenarios;
 mod scripting;
 mod time;
 mod trades;
@@ -33,6 +34,9 @@ fn quantsupport(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Enums
     m.add_class::<enums::Level>()?;
     m.add_class::<enums::Interpolator>()?;
+    m.add_class::<enums::UnitedStatesMarket>()?;
+    m.add_class::<enums::BrazilMarket>()?;
+    m.add_class::<enums::JointCalendarRule>()?;
     m.add_class::<enums::Currency>()?;
     m.add_class::<enums::MarketIndex>()?;
     m.add_class::<enums::Side>()?;
@@ -66,6 +70,7 @@ fn quantsupport(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<market::PricerConfiguration>()?;
     m.add_class::<market::SimulationConfiguration>()?;
     m.add_class::<market::Scenario>()?;
+    m.add_class::<scenarios::Scenarios>()?;
     m.add_class::<curves::ZeroRateTermStructure>()?;
     m.add_class::<curves::TenorBasedZeroRateTermStructure>()?;
     // Constructed element views

@@ -15,8 +15,10 @@
 //! Scenarios are typically attached to a
 //! [`PricingContext`](crate::core::pricingcontext::PricingContext) via
 //! `with_scenarios`; on `initialize` the shocks are applied to a copy of the
-//! quote store and all curves, surfaces, cubes and simulations are rebuilt
-//! from the shocked market.
+//! quote store and the explicit zero-rate curve inputs. All curves, surfaces,
+//! cubes and simulations are rebuilt from the shocked market. Explicit zero
+//! pillars use their sensitivity labels, `<index>_<date>`; an index selector
+//! matches every zero-rate pillar of that curve. Base inputs stay unchanged.
 //!
 //! # Example
 //!
@@ -147,6 +149,18 @@ impl Scenario {
     /// # Errors
     /// Returns an error if the target matches no quote in the store.
     pub fn apply(&self, store: &mut QuoteStore) -> Result<usize> {
+        let count = self.apply_matching_quotes(store);
+        if count == 0 {
+            return Err(QSError::NotFoundErr(format!(
+                "Scenario target '{}' matched no quotes in the store",
+                self.target
+            )));
+        }
+        Ok(count)
+    }
+
+    /// Shocks matching quotes, allowing a context to also match explicit curve pillars.
+    pub(crate) fn apply_matching_quotes(&self, store: &mut QuoteStore) -> usize {
         let shocked: Vec<Quote> = store
             .quotes()
             .values()
@@ -162,18 +176,11 @@ impl Scenario {
             })
             .collect();
 
-        if shocked.is_empty() {
-            return Err(QSError::NotFoundErr(format!(
-                "Scenario target '{}' matched no quotes in the store",
-                self.target
-            )));
-        }
-
         let count = shocked.len();
         for quote in shocked {
             store.add_quote(quote);
         }
-        Ok(count)
+        count
     }
 }
 

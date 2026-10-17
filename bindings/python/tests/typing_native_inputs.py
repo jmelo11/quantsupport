@@ -16,7 +16,7 @@ period = qs.Period(length=30, units=qs.TimeUnit.Years)
 assert_type(start + period, qs.Date)
 assert_type((start + period) - start, int)
 assert_type(qs.Period.from_frequency(freq=qs.Frequency.Monthly), qs.Period)
-calendar = qs.Calendar(name="TARGET")
+calendar = qs.Calendar.TARGET
 assert_type(calendar.advance(date=start, period=period), qs.Date)
 assert_type(qs.DayCounter.Actual360.year_fraction(start=start, end=start + period), float)
 payoff = (2 * qs.PayoffOps.Index + 0.005).max(0.02).min(0.09)
@@ -43,3 +43,20 @@ def reconfigure(context: qs.PricingContext, curves: list[qs.CurveConfiguration])
 def inspect_contract(loan: qs.Loan) -> None:
     assert_type(loan.notional, float)
     assert_type(loan.currency, qs.Currency)
+
+assert_type(qs.Calendar.TARGET, qs.Calendar)
+assert_type(qs.Calendar.UnitedStates(market=qs.UnitedStatesMarket.Sofr), qs.Calendar)
+assert_type(qs.Calendar.JointCalendar(
+    calendars=[qs.Calendar.TARGET, qs.Calendar.Japan],
+    rule=qs.JointCalendarRule.JoinHolidays,
+), qs.Calendar)
+
+
+def scoped_market(context: qs.PricingContext) -> None:
+    scenarios = qs.Scenarios(shocks=[qs.Scenario(
+        target="FUNDINGSPREAD", shock=0.0001, scenario_type=qs.ScenarioType.Absolute,
+    )])
+    assert_type(scenarios.shocks, list[qs.Scenario])
+    with context, scenarios as active:
+        assert_type(active, qs.Scenarios)
+        assert_type(context.curve(index=qs.MarketIndex.ESTR), qs.DiscountCurve)

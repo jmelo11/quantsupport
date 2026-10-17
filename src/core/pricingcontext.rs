@@ -35,7 +35,7 @@ use crate::{
 
 /// Manages the context for instrument evaluation, including market data access, quote level preferences,
 /// base currency settings, and a list of model parameter sets for multiple model types.
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct PricingContext {
     /// The quote store provides access to direct market data quotes and reference date information.
     quote_store: QuoteStore,
@@ -70,6 +70,31 @@ pub struct PricingContext {
 }
 
 impl PricingContext {
+    /// Copies market inputs and applies quote and zero-rate pillar shocks together.
+    fn scenario_market_inputs(&self) -> Result<(Option<QuoteStore>, Vec<CurveConfiguration>)> {
+        // Apply shocks to copies of both quoted and explicit curve inputs.
+        let mut curve_configurations = self.curve_configurations.clone();
+        let shocked_quotes = if self.scenarios.is_empty() {
+            None
+        } else {
+            let mut store = self.quote_store.clone();
+            for scenario in &self.scenarios {
+                let mut matched = scenario.apply_matching_quotes(&mut store);
+                for configuration in &mut curve_configurations {
+                    matched += configuration.apply_scenario(scenario, store.reference_date());
+                }
+                if matched == 0 {
+                    return Err(QSError::NotFoundErr(format!(
+                        "Scenario target '{}' matched no quotes or zero-rate pillars",
+                        scenario.target()
+                    )));
+                }
+            }
+            Some(store)
+        };
+        Ok((shocked_quotes, curve_configurations))
+    }
+
     /// Sets the default collateral policy used to construct curves.
     #[must_use]
     pub fn with_csa_policy(
@@ -367,24 +392,12 @@ impl PricingContext {
             }
         }
 
-        // Apply scenario shocks to a copy of the base quote store. All
-        // downstream construction (curves, vols, simulations) then uses the
-        // shocked market.
-        self.shocked_quote_store = if self.scenarios.is_empty() {
-            None
-        } else {
-            let mut store = self.quote_store.clone();
-            for scenario in &self.scenarios {
-                scenario
-                    .apply(&mut store)
-                    .map_err(|error| error.context("applying market scenario"))?;
-            }
-            Some(store)
-        };
+        let (shocked_quotes, curve_configurations) = self.scenario_market_inputs()?;
+        self.shocked_quote_store = shocked_quotes;
 
         // Bootstrap discount curves.
         let policy = BootstrapDiscountPolicy::new(self.base_index.clone(), self.base_currency);
-        let bootstrapper = MultiCurveBootstrapper::new(self.curve_configurations.clone(), policy)
+        let bootstrapper = MultiCurveBootstrapper::new(curve_configurations, policy)
             .with_fx_store(self.fx_store.clone())
             .with_fixing_store(self.fixing_store.clone());
         let curves = bootstrapper
@@ -874,6 +887,56 @@ mod tests {
                 Some(0.30)
             );
         }
+        Ok(())
+    }
+
+    #[test]
+    fn explicit_spread_scenarios_compose_without_changing_base_inputs() -> TestResult {
+        let reference = Date::new(2026, 2, 24);
+        let date = Date::new(2028, 2, 24);
+        let funding = MarketIndex::Other("FUNDING".into());
+        let curves = serde_json::from_value(json!([
+            {"market_index": {"Other": "BENCHMARK"}, "interpolator": "Linear",
+             "construction": {"type": "ZeroRate", "pillars": ["0D", "1Y", "2Y"],
+                 "rates": [0.04, 0.04, 0.04], "compounding": "Continuous", "frequency": "Annual"}},
+            {"market_index": {"Other": "SPREAD"}, "interpolator": "Linear",
+             "construction": {"type": "ZeroRate", "pillars": ["0D", "1Y", "2Y"],
+                 "rates": [0.005, 0.01, 0.015], "compounding": "Continuous", "frequency": "Annual"}},
+            {"market_index": {"Other": "FUNDING"}, "construction": {"type": "Composite",
+                 "base_index": {"Other": "BENCHMARK"}, "spread_index": {"Other": "SPREAD"}}}
+        ]))?;
+        let mut context = PricingContext::new()
+            .with_quote_store(QuoteStore::new(reference))
+            .with_curve_configurations(curves);
+        let base_inputs = serde_json::to_value(context.curve_configurations())?;
+        context.initialize()?;
+        let factor = |context: &PricingContext| -> TestResult<f64> {
+            Ok(context
+                .constructed_elements()
+                .discount_curve(&funding)
+                .ok_or("funding")?
+                .curve()
+                .discount_factor(date)?
+                .value())
+        };
+        let base = factor(&context)?;
+        context = context.with_scenarios(vec![
+            Scenario::new("SPREAD_2028-02-24", 0.01, ScenarioType::Absolute),
+            Scenario::new("SPREAD", 0.10, ScenarioType::Relative),
+        ]);
+        let tau = DayCounter::Actual360.year_fraction(reference, date);
+        let expected = base * (-((0.015 + 0.01) * 1.10 - 0.015) * tau).exp();
+        for _ in 0..2 {
+            context.initialize()?;
+            assert!((factor(&context)? - expected).abs() < 1e-12);
+            assert_eq!(
+                serde_json::to_value(context.curve_configurations())?,
+                base_inputs
+            );
+        }
+        context = context.with_scenarios(vec![]);
+        context.initialize()?;
+        assert!((factor(&context)? - base).abs() < 1e-12);
         Ok(())
     }
 }

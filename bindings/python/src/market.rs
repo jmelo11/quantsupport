@@ -537,17 +537,28 @@ impl FxStore {
     }
 }
 
-/// A shock applied to one or more quotes before bootstrapping.
+/// A shock applied to quoted or explicit zero-rate inputs before construction.
 ///
 /// The target is either a full quote identifier (`"OIS_USD_SOFR_1Y"`) or a
 /// partial underscore-separated selector matched against the identifier
 /// segments of every quote (`"SOFR"` shocks all SOFR quotes — a parallel
-/// shift; `"Swaption_USD"` shocks the USD swaption vol slide).
+/// shift; `"Swaption_USD"` shocks the USD swaption vol slide). Explicit zero-rate
+/// inputs use the sensitivity label ``<index>_<date>``; ``FUNDINGSPREAD`` selects
+/// every pillar of that spread curve.
+///
+/// Parameters
+/// ----------
+/// target : str
+///     Exact pillar identifier or underscore-separated selector.
+/// shock : float
+///     Decimal additive change, or fractional scaling for Relative shocks.
+/// scenario_type : ScenarioType, optional
+///     Absolute by default. Use Scenarios for a temporary pricing scope.
 ///
 /// ```python
-/// bump_all_sofr = qs.Scenario("SOFR", 0.0001, qs.ScenarioType.Absolute)
-/// bump_1y_pillar = qs.Scenario("OIS_USD_SOFR_1Y", 0.0001)  # Absolute default
-/// scale_vols = qs.Scenario("Swaption_USD", 0.10, "Relative")
+/// bump_all_sofr = qs.Scenario(target="SOFR", shock=0.0001, scenario_type=qs.ScenarioType.Absolute)
+/// bump_1y_pillar = qs.Scenario(target="OIS_USD_SOFR_1Y", shock=0.0001)
+/// scale_vols = qs.Scenario(target="Swaption_USD", shock=0.10, scenario_type=qs.ScenarioType.Relative)
 /// ```
 #[pyclass(module = "quantsupport", name = "Scenario", from_py_object)]
 #[derive(Clone)]

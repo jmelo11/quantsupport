@@ -10,6 +10,7 @@ use crate::{
         calibrationinstrument::CalibrationInstrument,
         quote::{CalibrationInstrumentType, Level},
         quoteselector::QuoteSelector,
+        scenario::Scenario,
     },
     rates::{
         bootstrapping::bootstrapdiscountpolicy::BootstrapDiscountPolicy, compounding::Compounding,
@@ -126,6 +127,23 @@ impl CurveConfiguration {
     pub fn with_construction(mut self, construction: CurveConstruction) -> Self {
         self.construction = construction;
         self
+    }
+
+    /// Applies a scenario to explicit zero-rate inputs using their sensitivity labels.
+    /// The caller supplies a copied configuration; base market inputs stay unchanged.
+    pub(crate) fn apply_scenario(&mut self, scenario: &Scenario, reference_date: Date) -> usize {
+        let CurveConstruction::ZeroRate { pillars, rates, .. } = &mut self.construction else {
+            return 0;
+        };
+        let mut count = 0;
+        for (pillar, rate) in pillars.iter().zip(rates) {
+            let label = format!("{}_{}", self.market_index, pillar.date(reference_date));
+            if scenario.matches(&label) {
+                *rate = scenario.shocked_value(*rate);
+                count += 1;
+            }
+        }
+        count
     }
 
     /// Returns the construction definition for this curve.
