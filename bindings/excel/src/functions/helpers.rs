@@ -1,10 +1,11 @@
 use std::{fmt::Display, str::FromStr};
 
+use crate::runtime::registry::with_registry;
 use quantsupport::prelude::{
     CapFloorType, CapletFloorletType, Compounding, Currency, Date, DayCounter, EuroOptionType,
     Frequency, FxPair, Interpolator, MarketIndex, Side,
 };
-use serde::Serialize;
+use serde::{de::DeserializeOwned, Serialize};
 use xll_rs::convert::build_multi;
 use xll_rs::types::{
     XLLError, XllError, XLOPER12, XLTYPE_BOOL, XLTYPE_INT, XLTYPE_MISSING, XLTYPE_MULTI,
@@ -137,15 +138,37 @@ pub fn string_column(values: Vec<String>) -> *mut XLOPER12 {
 }
 
 pub fn string_values(value: *const XLOPER12, argument_name: &str) -> Result<Vec<String>, XllError> {
+    read_string_values(value, argument_name, false)
+}
+
+pub fn optional_string_values(
+    value: *const XLOPER12,
+    argument_name: &str,
+) -> Result<Vec<String>, XllError> {
+    read_string_values(value, argument_name, true)
+}
+
+fn read_string_values(
+    value: *const XLOPER12,
+    argument_name: &str,
+    allow_empty: bool,
+) -> Result<Vec<String>, XllError> {
     if value.is_null() {
         return Err(value_error(format!("{argument_name} cannot be null")));
     }
     let value = unsafe { &*value };
     match value.base_type() {
+        XLTYPE_NIL | XLTYPE_MISSING if allow_empty => Ok(Vec::new()),
         XLTYPE_STR => value
             .as_string()
-            .filter(|text| !text.trim().is_empty())
-            .map(|text| vec![text])
+            .filter(|text| allow_empty || !text.trim().is_empty())
+            .map(|text| {
+                if text.trim().is_empty() {
+                    Vec::new()
+                } else {
+                    vec![text]
+                }
+            })
             .ok_or_else(|| value_error(format!("{argument_name} cannot be blank"))),
         XLTYPE_MULTI => {
             let array = unsafe { &*std::ptr::addr_of!(value.val.array) };
@@ -172,20 +195,60 @@ pub fn string_values(value: *const XLOPER12, argument_name: &str) -> Result<Vec<
                     XLTYPE_NIL | XLTYPE_MISSING => {}
                     _ => {
                         return Err(value_error(format!(
-                            "{argument_name} must be a range containing quote identifier text"
+                            "{argument_name} must be a range containing text"
                         )));
                     }
                 }
             }
-            if values.is_empty() {
+            if values.is_empty() && !allow_empty {
                 return Err(value_error(format!("{argument_name} cannot be blank")));
             }
             Ok(values)
         }
         _ => Err(value_error(format!(
-            "{argument_name} must be a quote identifier or an Excel range of identifiers"
+            "{argument_name} must be text or an Excel range of text"
         ))),
     }
+}
+
+/// Read every numeric cell without dropping blanks and misaligning curve pillars.
+pub fn numeric_values(value: *const XLOPER12, argument_name: &str) -> Result<Vec<f64>, XllError> {
+    if value.is_null() {
+        return Err(value_error(format!("{argument_name} cannot be null")));
+    }
+    let value = unsafe { &*value };
+    let number = |cell: &XLOPER12| {
+        let number = match cell.base_type() {
+            XLTYPE_NUM => unsafe { cell.val.num },
+            XLTYPE_INT => f64::from(unsafe { cell.val.w }),
+            _ => {
+                return Err(value_error(format!(
+                    "{argument_name} must contain only finite numbers; blanks are not allowed"
+                )))
+            }
+        };
+        if !number.is_finite() {
+            return Err(value_error(format!(
+                "{argument_name} must contain only finite numbers"
+            )));
+        }
+        Ok(number)
+    };
+    if value.base_type() != XLTYPE_MULTI {
+        return number(value).map(|number| vec![number]);
+    }
+    let array = unsafe { &*std::ptr::addr_of!(value.val.array) };
+    if array.rows <= 0 || array.columns <= 0 || array.lparray.is_null() {
+        return Err(value_error(format!(
+            "{argument_name} must contain at least one cell"
+        )));
+    }
+    let total = (array.rows as usize)
+        .checked_mul(array.columns as usize)
+        .ok_or_else(|| value_error("Range is too large"))?;
+    (0..total)
+        .map(|index| number(unsafe { &*array.lparray.add(index) }))
+        .collect()
 }
 
 pub fn bool_value(value: *const XLOPER12, argument_name: &str) -> Result<bool, XllError> {
@@ -215,4 +278,35 @@ pub fn string_matrix(values: Vec<Vec<String>>) -> *mut XLOPER12 {
         .map(|value| XLOPER12::from_str(&value))
         .collect();
     build_multi(cells, rows, columns)
+}
+
+pub fn parse_json<T: DeserializeOwned>(json: &str, what: &str) -> Result<T, XllError> {
+    serde_json::from_str(json).map_err(|error| value_error(format!("invalid {what}: {error}")))
+}
+
+pub fn parse_json_list<T: DeserializeOwned>(json: &str, what: &str) -> Result<Vec<T>, XllError> {
+    let value: serde_json::Value = parse_json(json, what)?;
+    let normalized = match value {
+        serde_json::Value::Array(_) => value,
+        serde_json::Value::Object(ref object)
+            if object.len() == 1
+                && object
+                    .values()
+                    .next()
+                    .is_some_and(serde_json::Value::is_array) =>
+        {
+            object
+                .values()
+                .next()
+                .cloned()
+                .ok_or_else(|| value_error(format!("invalid {what}")))?
+        }
+        other => serde_json::Value::Array(vec![other]),
+    };
+    serde_json::from_value(normalized)
+        .map_err(|error| value_error(format!("invalid {what}: {error}")))
+}
+
+pub fn cached_handle(name: &str, kind: &str, key: &str) -> Result<Option<String>, XllError> {
+    with_registry(|registry| registry.handle_if_unchanged(name, kind, key)).map_err(value_error)
 }

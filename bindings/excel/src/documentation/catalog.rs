@@ -11,7 +11,7 @@ use syn::{punctuated::Punctuated, Expr, FnArg, Item, Lit, Meta, Pat, Token};
 mod function_help;
 
 #[cfg(all(test, not(windows)))]
-#[path = "../functions/time.rs"]
+#[path = "../functions/time/mod.rs"]
 mod calendar_computation;
 
 fn string(expr: &Expr) -> Result<String, Box<dyn Error>> {
@@ -30,12 +30,16 @@ fn substitute(tokens: TokenStream, bindings: &[(String, TokenStream)]) -> TokenS
         match token {
             TokenTree::Punct(ref value) if value.as_char() == '$' => {
                 let parameter = tokens.next().expect("macro parameter after $").to_string();
-                let replacement = &bindings.iter().find(|(name, _)| name == &parameter)
-                    .expect("bound worksheet macro parameter").1;
+                let replacement = &bindings
+                    .iter()
+                    .find(|(name, _)| name == &parameter)
+                    .expect("bound worksheet macro parameter")
+                    .1;
                 result.extend(replacement.clone());
             }
             TokenTree::Group(group) => result.extend([TokenTree::Group(Group::new(
-                group.delimiter(), substitute(group.stream(), bindings),
+                group.delimiter(),
+                substitute(group.stream(), bindings),
             ))]),
             token => result.extend([token]),
         }
@@ -44,20 +48,42 @@ fn substitute(tokens: TokenStream, bindings: &[(String, TokenStream)]) -> TokenS
 }
 
 fn function(item: &syn::ItemFn, source: &str) -> Result<Option<Value>, Box<dyn Error>> {
-    let Some(attr) = item.attrs.iter().find(|attr| attr.path().is_ident("xll_bindgen")) else {
+    let Some(attr) = item
+        .attrs
+        .iter()
+        .find(|attr| attr.path().is_ident("xll_bindgen"))
+    else {
         return Ok(None);
     };
-    let mut record = json!({"aliases": [], "threadsafe": false, "volatile": false, "source": source});
+    let mut record =
+        json!({"aliases": [], "threadsafe": false, "volatile": false, "source": source});
     for meta in attr.parse_args_with(Punctuated::<Meta, Token![,]>::parse_terminated)? {
         match meta {
             Meta::NameValue(value) => {
-                let key = value.path.get_ident().ok_or("invalid worksheet metadata key")?.to_string();
+                let key = value
+                    .path
+                    .get_ident()
+                    .ok_or("invalid worksheet metadata key")?
+                    .to_string();
                 record[&key] = if key == "aliases" || key == "arg_help" {
-                    let Expr::Array(values) = value.value else { return Err("expected metadata array".into()); };
-                    json!(values.elems.iter().map(string).collect::<Result<Vec<_>, _>>()?)
-                } else { json!(string(&value.value)?) };
+                    let Expr::Array(values) = value.value else {
+                        return Err("expected metadata array".into());
+                    };
+                    json!(values
+                        .elems
+                        .iter()
+                        .map(string)
+                        .collect::<Result<Vec<_>, _>>()?)
+                } else {
+                    json!(string(&value.value)?)
+                };
             }
-            Meta::Path(path) => record[path.get_ident().ok_or("invalid worksheet flag")?.to_string()] = json!(true),
+            Meta::Path(path) => {
+                record[path
+                    .get_ident()
+                    .ok_or("invalid worksheet flag")?
+                    .to_string()] = json!(true)
+            }
             _ => return Err("unsupported worksheet metadata".into()),
         }
     }
@@ -75,47 +101,87 @@ fn function(item: &syn::ItemFn, source: &str) -> Result<Option<Value>, Box<dyn E
     record["errors"] = json!(errors);
     let mut arguments = Vec::new();
     for arg in &item.sig.inputs {
-        let FnArg::Typed(arg) = arg else { return Err("worksheet function has a receiver".into()); };
-        let Pat::Ident(name) = &*arg.pat else { return Err("worksheet argument must have a name".into()); };
+        let FnArg::Typed(arg) = arg else {
+            return Err("worksheet function has a receiver".into());
+        };
+        let Pat::Ident(name) = &*arg.pat else {
+            return Err("worksheet argument must have a name".into());
+        };
         arguments.push((name.ident.to_string(), arg.ty.to_token_stream().to_string()));
     }
-    let names = arguments.iter().map(|(name, _)| name.as_str()).collect::<Vec<_>>().join(",");
+    let names = arguments
+        .iter()
+        .map(|(name, _)| name.as_str())
+        .collect::<Vec<_>>()
+        .join(",");
     let help = function_help::argument_help(record["name"].as_str().unwrap(), &names);
     let explicit_help = record.get("arg_help").and_then(Value::as_array);
     if explicit_help.is_some_and(|hints| hints.len() != arguments.len()) {
         return Err("worksheet argument help must match the signature".into());
     }
-    record["arguments"] = json!(arguments.iter().enumerate().map(|(i, (name, ty))| json!({
-        "name": name, "type": ty,
-        "help": explicit_help.map_or(help[i], |hints| hints[i].as_str().unwrap()),
-    })).collect::<Vec<_>>());
+    record["arguments"] = json!(arguments
+        .iter()
+        .enumerate()
+        .map(|(i, (name, ty))| json!({
+            "name": name, "type": ty,
+            "help": explicit_help.map_or(help[i], |hints| hints[i].as_str().unwrap()),
+        }))
+        .collect::<Vec<_>>());
     Ok(Some(record))
 }
 
 /// Returns metadata for ordinary functions and functions produced by local macros.
 pub fn exports(root: &Path) -> Result<Vec<Value>, Box<dyn Error>> {
     let mut records = Vec::new();
-    let mut files = fs::read_dir(root)?.map(|entry| entry.map(|entry| entry.path())).collect::<Result<Vec<_>, _>>()?;
+    let mut files = fs::read_dir(root)?
+        .map(|entry| entry.map(|entry| entry.path()))
+        .collect::<Result<Vec<_>, _>>()?;
     files.sort();
     for file in files {
-        if file.is_dir() { records.extend(exports(&file)?); continue; }
-        if file.extension().and_then(|ext| ext.to_str()) != Some("rs") { continue; }
+        if file.is_dir() {
+            records.extend(exports(&file)?);
+            continue;
+        }
+        if file.extension().and_then(|ext| ext.to_str()) != Some("rs") {
+            continue;
+        }
         let parsed = syn::parse_file(&fs::read_to_string(&file)?)?;
-        let source = format!("bindings/excel/src/functions/{}", file.strip_prefix(Path::new(env!("CARGO_MANIFEST_DIR")).join("src/functions"))?.display());
+        let source = format!(
+            "bindings/excel/src/functions/{}",
+            file.strip_prefix(Path::new(env!("CARGO_MANIFEST_DIR")).join("src/functions"))?
+                .display()
+        );
         let mut macros = Vec::new();
         for item in &parsed.items {
             if let Item::Macro(item) = item {
                 if let Some(name) = &item.ident {
                     // Expand the same single-pattern macro used by worksheet registrations.
-                    let groups: Vec<_> = item.mac.tokens.clone().into_iter().filter_map(|token| {
-                        if let TokenTree::Group(group) = token { Some(group) } else { None }
-                    }).collect();
+                    let groups: Vec<_> = item
+                        .mac
+                        .tokens
+                        .clone()
+                        .into_iter()
+                        .filter_map(|token| {
+                            if let TokenTree::Group(group) = token {
+                                Some(group)
+                            } else {
+                                None
+                            }
+                        })
+                        .collect();
                     if groups.len() == 2 && groups[1].stream().to_string().contains("xll_bindgen") {
                         let parameters: Vec<_> = groups[0].stream().into_iter().collect();
-                        let names = parameters.windows(2).filter_map(|pair| match (&pair[0], &pair[1]) {
-                            (TokenTree::Punct(p), TokenTree::Ident(name)) if p.as_char() == '$' => Some(name.to_string()),
-                            _ => None,
-                        }).collect::<Vec<_>>();
+                        let names = parameters
+                            .windows(2)
+                            .filter_map(|pair| match (&pair[0], &pair[1]) {
+                                (TokenTree::Punct(p), TokenTree::Ident(name))
+                                    if p.as_char() == '$' =>
+                                {
+                                    Some(name.to_string())
+                                }
+                                _ => None,
+                            })
+                            .collect::<Vec<_>>();
                         macros.push((name.to_string(), names, groups[1].stream()));
                     }
                 }
@@ -123,17 +189,33 @@ pub fn exports(root: &Path) -> Result<Vec<Value>, Box<dyn Error>> {
         }
         for item in &parsed.items {
             match item {
-                Item::Fn(item) => if let Some(record) = function(item, &source)? { records.push(record); },
+                Item::Fn(item) => {
+                    if let Some(record) = function(item, &source)? {
+                        records.push(record);
+                    }
+                }
                 Item::Macro(item) if item.ident.is_none() => {
                     let name = item.mac.path.to_token_stream().to_string();
-                    if let Some((_, parameters, template)) = macros.iter().find(|(candidate, _, _)| candidate == &name) {
+                    if let Some((_, parameters, template)) =
+                        macros.iter().find(|(candidate, _, _)| candidate == &name)
+                    {
                         let tokens = &item.mac.tokens;
                         let args: syn::ExprTuple = syn::parse2(quote!((#tokens)))?;
-                        if args.elems.len() != parameters.len() { return Err("worksheet macro argument mismatch".into()); }
-                        let bindings = parameters.iter().cloned().zip(args.elems.iter().map(ToTokens::to_token_stream)).collect::<Vec<_>>();
-                        for expanded in syn::parse2::<syn::File>(substitute(template.clone(), &bindings))?.items {
+                        if args.elems.len() != parameters.len() {
+                            return Err("worksheet macro argument mismatch".into());
+                        }
+                        let bindings = parameters
+                            .iter()
+                            .cloned()
+                            .zip(args.elems.iter().map(ToTokens::to_token_stream))
+                            .collect::<Vec<_>>();
+                        for expanded in
+                            syn::parse2::<syn::File>(substitute(template.clone(), &bindings))?.items
+                        {
                             if let Item::Fn(item) = expanded {
-                                if let Some(record) = function(&item, &source)? { records.push(record); }
+                                if let Some(record) = function(&item, &source)? {
+                                    records.push(record);
+                                }
                             }
                         }
                     }
@@ -146,7 +228,9 @@ pub fn exports(root: &Path) -> Result<Vec<Value>, Box<dyn Error>> {
     let mut names = BTreeSet::new();
     for record in &records {
         for name in std::iter::once(&record["name"]).chain(record["aliases"].as_array().unwrap()) {
-            if !names.insert(name.as_str().unwrap().to_string()) { return Err(format!("duplicate worksheet name {name}").into()); }
+            if !names.insert(name.as_str().unwrap().to_string()) {
+                return Err(format!("duplicate worksheet name {name}").into());
+            }
         }
     }
     Ok(records)
@@ -155,12 +239,52 @@ pub fn exports(root: &Path) -> Result<Vec<Value>, Box<dyn Error>> {
 #[cfg(test)]
 mod tests {
     #[test]
+    fn categories_follow_the_python_domain_directories() {
+        let records =
+            super::exports(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/functions"))
+                .unwrap();
+        for record in records {
+            let source = record["source"].as_str().unwrap();
+            let domain = source
+                .strip_prefix("bindings/excel/src/functions/")
+                .unwrap()
+                .split('/')
+                .next()
+                .unwrap();
+            let title = match domain {
+                "time" => "Time",
+                "market" => "Market",
+                "instruments" => "Instruments",
+                "pricing" => "Pricing",
+                "risk" => "Risk",
+                "system" => "System",
+                other => panic!("worksheet function outside a domain: {other}"),
+            };
+            assert_eq!(
+                record["category"],
+                format!("QuantSupport - {title}"),
+                "{}",
+                record["name"]
+            );
+        }
+    }
+
+    #[test]
     fn documents_macro_generated_functions_and_aliases() {
-        let records = super::exports(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/functions")).unwrap();
-        assert_eq!(records.len(), 85);
-        let scenario = records.iter().find(|record| record["name"] == "QS.SCENARIOS.FROM.JSON").unwrap();
+        let records =
+            super::exports(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/functions"))
+                .unwrap();
+        assert_eq!(records.len(), 103);
+        let scenario = records
+            .iter()
+            .find(|record| record["name"] == "QS.SCENARIOS.FROM.JSON")
+            .unwrap();
         assert_eq!(scenario["arguments"][1]["name"], "json");
-        assert!(records.iter().any(|record| record["aliases"].as_array().unwrap().iter().any(|alias| alias == "QS.STORE.RESET")));
+        assert!(records.iter().any(|record| record["aliases"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|alias| alias == "QS.STORE.RESET")));
         for record in records {
             assert!(!record["help"].as_str().unwrap().is_empty());
             assert!(!record["return_type"].as_str().unwrap().is_empty());
@@ -170,10 +294,18 @@ mod tests {
             for argument in record["arguments"].as_array().unwrap() {
                 let help = argument["help"].as_str().unwrap();
                 assert!(!help.is_empty(), "{}: {}", record["name"], argument["name"]);
-                assert_ne!(help, "See the function description and QS.HELP for this argument",
-                    "{}: {}", record["name"], argument["name"]);
+                assert_ne!(
+                    help, "See the function description and QS.HELP for this argument",
+                    "{}: {}",
+                    record["name"], argument["name"]
+                );
                 if argument["type"].as_str().unwrap().contains("Option") {
-                    assert!(help.contains("blank"), "{}: {}", record["name"], argument["name"]);
+                    assert!(
+                        help.contains("blank"),
+                        "{}: {}",
+                        record["name"],
+                        argument["name"]
+                    );
                 }
             }
         }
@@ -181,52 +313,162 @@ mod tests {
 
     #[test]
     fn documents_six_native_calendar_operations() {
-        let records = super::exports(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/functions")).unwrap();
+        let records =
+            super::exports(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/functions"))
+                .unwrap();
         for (name, arguments) in [
             ("QS.CALENDAR.IS.HOLIDAY", &["date", "calendar"][..]),
             ("QS.CALENDAR.END.OF.MONTH", &["date", "calendar"][..]),
             ("QS.CALENDAR.IS.END.OF.MONTH", &["date", "calendar"][..]),
-            ("QS.CALENDAR.BUSINESS.DAYS.BETWEEN", &["from", "to", "calendar", "include_first", "include_last"][..]),
-            ("QS.CALENDAR.HOLIDAYS", &["from", "to", "calendar", "include_weekends"][..]),
+            (
+                "QS.CALENDAR.BUSINESS.DAYS.BETWEEN",
+                &["from", "to", "calendar", "include_first", "include_last"][..],
+            ),
+            (
+                "QS.CALENDAR.HOLIDAYS",
+                &["from", "to", "calendar", "include_weekends"][..],
+            ),
             ("QS.CALENDAR.BUSINESS.DAYS", &["from", "to", "calendar"][..]),
         ] {
-            let record = records.iter().find(|record| record["name"] == name).unwrap();
+            let record = records
+                .iter()
+                .find(|record| record["name"] == name)
+                .unwrap();
             assert_eq!(record["category"], "QuantSupport - Time");
-            assert_eq!(record["source"], "bindings/excel/src/functions/time.rs");
+            assert_eq!(record["source"], "bindings/excel/src/functions/time/mod.rs");
             assert_eq!(record["threadsafe"], true);
-            assert_eq!(record["arguments"].as_array().unwrap().iter().map(|argument| argument["name"].as_str().unwrap()).collect::<Vec<_>>(), arguments);
-            assert!(record["errors"].as_str().unwrap().contains("1902-01-01..2198-12-31"));
+            assert_eq!(
+                record["arguments"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|argument| argument["name"].as_str().unwrap())
+                    .collect::<Vec<_>>(),
+                arguments
+            );
+            assert!(record["errors"]
+                .as_str()
+                .unwrap()
+                .contains("1902-01-01..2198-12-31"));
         }
     }
 
     #[test]
     fn result_metadata_preserves_rust_signatures_and_worksheet_shapes() {
-        let records = super::exports(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/functions")).unwrap();
+        let records =
+            super::exports(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/functions"))
+                .unwrap();
         for record in &records {
             let declaration = record["declaration"].as_str().unwrap();
             let function: syn::ItemFn = syn::parse_str(&format!("{declaration} {{}}")).unwrap();
-            assert_eq!(record["return_type"], serde_json::json!(quote::ToTokens::to_token_stream(&function.sig.output).to_string()));
-            assert_eq!(function.sig.inputs.len(), record["arguments"].as_array().unwrap().len());
+            assert_eq!(
+                record["return_type"],
+                serde_json::json!(
+                    quote::ToTokens::to_token_stream(&function.sig.output).to_string()
+                )
+            );
+            assert_eq!(
+                function.sig.inputs.len(),
+                record["arguments"].as_array().unwrap().len()
+            );
         }
-        let forward = records.iter().find(|record| record["name"] == "QS.CURVE.FORWARD").unwrap();
-        assert_eq!(forward["return_type"], quote::quote!(-> Result<f64, XllError>).to_string());
-        assert!(forward["declaration"].as_str().unwrap().starts_with("fn qs_curve_forward"));
-        let path = records.iter().find(|record| record["name"] == "QS.SIMULATION.PATH").unwrap();
-        assert_eq!(path["return_type"], quote::quote!(-> Result<Vec<f64>, XllError>).to_string());
+        let forward = records
+            .iter()
+            .find(|record| record["name"] == "QS.CURVE.FORWARD")
+            .unwrap();
+        assert_eq!(
+            forward["return_type"],
+            quote::quote!(-> Result<f64, XllError>).to_string()
+        );
+        assert!(forward["declaration"]
+            .as_str()
+            .unwrap()
+            .starts_with("fn qs_curve_forward"));
+        let path = records
+            .iter()
+            .find(|record| record["name"] == "QS.SIMULATION.PATH")
+            .unwrap();
+        assert_eq!(
+            path["return_type"],
+            quote::quote!(-> Result<Vec<f64>, XllError>).to_string()
+        );
         for (name, headers) in [
-            ("QS.CURVE.TABLE", &["Pillar", "Date", "Discount factor", "Zero rate", "Forward from prior node"][..]),
-            ("QS.CASHFLOWS", &["Payment date", "Type", "Amount", "Fixing", "Accrual", "Currency", "Floor", "Cap", "Leg"][..]),
+            (
+                "QS.CURVE.TABLE",
+                &[
+                    "Pillar",
+                    "Date",
+                    "Discount factor",
+                    "Zero rate",
+                    "Forward from prior node",
+                ][..],
+            ),
+            (
+                "QS.CASHFLOWS",
+                &[
+                    "Payment date",
+                    "Type",
+                    "Amount",
+                    "Fixing",
+                    "Accrual",
+                    "Currency",
+                    "Floor",
+                    "Cap",
+                    "Leg",
+                ][..],
+            ),
             ("QS.SENSITIVITIES", &["Risk factor", "Sensitivity"][..]),
             ("QS.BOND.SENSITIVITIES", &["Risk factor", "Sensitivity"][..]),
-            ("QS.FUNCTIONS.DETAILS", &["Function", "Arguments", "Category", "Aliases", "Description"][..]),
-            ("QS.SIMULATION.CALIBRATION", &["identifier", "expiry", "t", "big_t", "market_vol", "market_price", "model_price", "calibrated_sigma", "forward_rate", "effective_strike", "price_error"][..]),
+            (
+                "QS.FUNCTIONS.DETAILS",
+                &[
+                    "Function",
+                    "Arguments",
+                    "Category",
+                    "Aliases",
+                    "Description",
+                ][..],
+            ),
+            (
+                "QS.SIMULATION.CALIBRATION",
+                &[
+                    "identifier",
+                    "expiry",
+                    "t",
+                    "big_t",
+                    "market_vol",
+                    "market_price",
+                    "model_price",
+                    "calibrated_sigma",
+                    "forward_rate",
+                    "effective_strike",
+                    "price_error",
+                ][..],
+            ),
         ] {
-            let record = records.iter().find(|record| record["name"] == name).unwrap();
-            let source = std::fs::read_to_string(std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join(record["source"].as_str().unwrap().strip_prefix("bindings/excel/").unwrap())).unwrap();
+            let record = records
+                .iter()
+                .find(|record| record["name"] == name)
+                .unwrap();
+            let source = std::fs::read_to_string(
+                std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(
+                    record["source"]
+                        .as_str()
+                        .unwrap()
+                        .strip_prefix("bindings/excel/")
+                        .unwrap(),
+                ),
+            )
+            .unwrap();
             for header in headers {
-                assert!(record["returns"].as_str().unwrap().contains(header), "{name}: {header}");
-                assert!(source.contains(&format!("\"{header}\"")), "{name}: {header}");
+                assert!(
+                    record["returns"].as_str().unwrap().contains(header),
+                    "{name}: {header}"
+                );
+                assert!(
+                    source.contains(&format!("\"{header}\"")),
+                    "{name}: {header}"
+                );
             }
         }
     }
@@ -235,24 +477,38 @@ mod tests {
     #[test]
     fn documented_catalog_matches_registered_inventory() {
         std::hint::black_box(quantsupport_xll::xlAutoOpen as extern "system" fn() -> i32);
-        let records = super::exports(
-            &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/functions"),
-        ).unwrap();
+        let records =
+            super::exports(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/functions"))
+                .unwrap();
         let registered: Vec<_> = xll_rs::inventory::iter::<xll_rs::registry::XllExport>
-            .into_iter().collect();
+            .into_iter()
+            .collect();
         assert_eq!(records.len(), registered.len());
         for record in records {
             let name = record["name"].as_str().unwrap();
-            let export = registered.iter().find(|export| export.name == name)
+            let export = registered
+                .iter()
+                .find(|export| export.name == name)
                 .unwrap_or_else(|| panic!("documented function is not registered: {name}"));
             assert_eq!(record["category"], export.category, "{name}");
             assert_eq!(record["help"], export.help, "{name}");
-            assert_eq!(record["aliases"], serde_json::json!(export.aliases), "{name}");
-            let arguments = record["arguments"].as_array().unwrap().iter()
+            assert_eq!(
+                record["aliases"],
+                serde_json::json!(export.aliases),
+                "{name}"
+            );
+            let arguments = record["arguments"]
+                .as_array()
+                .unwrap()
+                .iter()
                 .map(|argument| argument["name"].as_str().unwrap())
                 .collect::<Vec<_>>();
-            let registered_arguments = export.arg_names.split(',').map(str::trim)
-                .filter(|name| !name.is_empty()).collect::<Vec<_>>();
+            let registered_arguments = export
+                .arg_names
+                .split(',')
+                .map(str::trim)
+                .filter(|name| !name.is_empty())
+                .collect::<Vec<_>>();
             assert_eq!(arguments, registered_arguments, "{name}");
         }
     }

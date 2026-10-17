@@ -1,12 +1,14 @@
 #[cfg(windows)]
 use quantsupport::prelude::{MakeSchedule, Period};
 #[cfg(windows)]
+mod datetime;
+#[cfg(windows)]
 use xll_rs::types::XllError;
 #[cfg(windows)]
 use xllgen::xll_bindgen;
 
 #[cfg(windows)]
-use super::helpers::{
+use crate::functions::helpers::{
     bool_value, parse_date, parse_day_counter, parse_frequency, parse_time_unit, value_error,
 };
 
@@ -53,7 +55,7 @@ pub fn qs_schedule(
         .with_frequency(parse_frequency(frequency)?)
         .build()
         .map_err(value_error)?;
-    Ok(super::helpers::string_column(
+    Ok(crate::functions::helpers::string_column(
         schedule.dates().iter().map(ToString::to_string).collect(),
     ))
 }
@@ -162,7 +164,7 @@ pub fn qs_calendar_holidays(
     calendar: &str,
     include_weekends: *const xll_rs::types::XLOPER12,
 ) -> Result<*mut xll_rs::types::XLOPER12, XllError> {
-    Ok(super::helpers::string_column(
+    Ok(crate::functions::helpers::string_column(
         calendar_operations::holidays(
             from,
             to,
@@ -185,7 +187,7 @@ pub fn qs_calendar_business_days(
     to: &str,
     calendar: &str,
 ) -> Result<*mut xll_rs::types::XLOPER12, XllError> {
-    Ok(super::helpers::string_column(
+    Ok(crate::functions::helpers::string_column(
         calendar_operations::business_days(from, to, calendar).map_err(calendar_value_error)?,
     ))
 }
@@ -214,7 +216,7 @@ pub fn qs_schedule_adjusted(
         .with_convention(convention)
         .build()
         .map_err(value_error)?;
-    Ok(super::helpers::string_column(
+    Ok(crate::functions::helpers::string_column(
         schedule.dates().iter().map(ToString::to_string).collect(),
     ))
 }
@@ -317,11 +319,7 @@ mod calendar_operations {
             .collect())
     }
 
-    pub fn business_days(
-        from: &str,
-        to: &str,
-        calendar: &str,
-    ) -> Result<Vec<String>, String> {
+    pub fn business_days(from: &str, to: &str, calendar: &str) -> Result<Vec<String>, String> {
         let (from, to, calendar) = list_inputs(from, to, calendar)?;
         Ok(calendar
             .business_day_list(from, to)

@@ -15,6 +15,16 @@ pub fn argument_help(function_name: &str, argument_names: &str) -> Vec<&'static 
 
 fn describe_argument(function_name: &str, argument_name: &str) -> &'static str {
     match (function_name, argument_name) {
+        (_, "timestamp") => "Required offset-aware RFC 3339 text, e.g. 2026-01-15T16:00:00Z or 2026-01-15T17:00:00+01:00; normalized to UTC; date-only and naive timestamps are rejected",
+        (_, "snapshot") => "Current MarketSnapshot handle from QS.SNAPSHOT.FROM.CONTEXT or QS.SNAPSHOTS.SELECT",
+        (_, "snapshots") => "Range of current MarketSnapshot handles; blank range cells are ignored; an omitted or blank scalar creates an empty archive; duplicate UTC timestamps are rejected",
+        (_, "selector") => "Current SnapshotSelector handle from QS.SNAPSHOT.SELECTOR; selects one complete market, without rolling its valuation date",
+        (_, "rule") => "Optional Exact, Previous, or Closest matching rule; omitted, blank, or empty text defaults to Previous; Closest may select future data, with ties preferring the earlier snapshot",
+        ("QS.SNAPSHOT.SELECTOR", "quote_level") => "Optional Mid, Bid, or Ask; omitted, blank, or empty text defaults to Mid; missing quote sides raise errors; explicit zero rates and FX spots are side-independent",
+        ("QS.SNAPSHOTS.SELECT" | "QS.SNAPSHOTS.TIMESTAMPS" | "QS.SNAPSHOTS.TO.JSON" | "QS.CONTEXT.FROM.SNAPSHOT", "store") => "Current MarketSnapshotStore handle from QS.SNAPSHOTS.CREATE or QS.SNAPSHOTS.FROM.JSON",
+        (_, "pillars") => "Required ordered range of ISO date text (YYYY-MM-DD) or tenors (0D, 1Y, 10Y); each pillar must have one numeric rate; dates must resolve in increasing order",
+        (_, "rates") => "Required numeric range of finite annual decimal zero rates, one per pillar (0.04 means 4%); blanks and text are rejected",
+        (_, "spread_index") => "Market index of the configured spread curve; the composite multiplies its discount factors by the base curve's discount factors",
         ("QS.CALENDAR.IS.HOLIDAY" | "QS.CALENDAR.END.OF.MONTH" | "QS.CALENDAR.IS.END.OF.MONTH", "date") => {
             "ISO date text in YYYY-MM-DD format within 1902-01-01..2198-12-31"
         }
@@ -33,10 +43,10 @@ fn describe_argument(function_name: &str, argument_name: &str) -> &'static str {
         ("QS.CALENDAR.HOLIDAYS", "include_weekends") => {
             "Optional TRUE/FALSE or numeric flag (nonzero is TRUE) including weekend holidays; omitted or blank defaults to FALSE; WeekendsOnly still returns an empty native list"
         }
-        ("QS.CURVE.FORWARD" | "QS.CURVE.TABLE", "compounding") => {
+        ("QS.CURVE.FORWARD" | "QS.CURVE.TABLE" | "QS.CURVE.ZERO.RATE", "compounding") => {
             "Compounding convention; omitted or blank input defaults to Simple"
         }
-        ("QS.CURVE.FORWARD" | "QS.CURVE.TABLE", "frequency") => {
+        ("QS.CURVE.FORWARD" | "QS.CURVE.TABLE" | "QS.CURVE.ZERO.RATE", "frequency") => {
             "Frequency for the rate convention; omitted or blank input defaults to Annual"
         }
         ("QS.CONTEXT.CREATE", "pricer_configurations") => {
@@ -75,7 +85,7 @@ fn describe_argument(function_name: &str, argument_name: &str) -> &'static str {
         ("QS.TRADE.FLOATING.NOTE", "payment_frequency") => {
             "Required coupon frequency such as Annual, Semiannual, Quarterly, or Monthly; the note has bullet principal repayment"
         }
-        ("QS.CURVE.CONFIGS.ADD", "configurations") => {
+        ("QS.CURVE.CONFIGS.ADD" | "QS.CURVE.CONFIGS.ADD.ZERO" | "QS.CURVE.CONFIGS.ADD.COMPOSITE", "configurations") => {
             "Current handle returned by QS.CURVE.CONFIGS.CREATE or a previous QS.CURVE.CONFIGS.ADD"
         }
         ("QS.CURVE.ADD", "elements") => {
@@ -84,7 +94,7 @@ fn describe_argument(function_name: &str, argument_name: &str) -> &'static str {
         ("QS.CURVE.ADD", "curve") => {
             "DiscountCurveElement handle returned by QS.CURVE.FLAT"
         }
-        ("QS.CURVE.DISCOUNT" | "QS.CURVE.FORWARD" | "QS.CURVE.TABLE", "curve") => {
+        ("QS.CURVE.DISCOUNT" | "QS.CURVE.FORWARD" | "QS.CURVE.TABLE" | "QS.CURVE.ZERO.RATE", "curve") => {
             "Discount-curve handle returned by QS.CURVE.GET or QS.CURVE.FLAT"
         }
         ("QS.HELP", "function_name") => {
@@ -206,6 +216,24 @@ fn describe_argument(function_name: &str, argument_name: &str) -> &'static str {
 
 pub fn result_help(function_name: &str) -> Option<(&'static str, &'static str)> {
     let returns = match function_name {
+        "QS.DATETIME.PARSE" => "Offset-aware RFC 3339 timestamp text normalized to UTC, preserving nanoseconds; not an Excel serial datetime.",
+        "QS.DATETIME.DATE" => "ISO date text for the timestamp's UTC calendar day; this is not a market business or valuation date.",
+        "QS.SNAPSHOT.FROM.CONTEXT" => "Revisioned MarketSnapshot handle capturing serializable base observations and configurations. Fixings are excluded. Supplied runtime elements and materialized scenarios cannot be archived; use construction configurations.",
+        "QS.SNAPSHOTS.CREATE" => "Revisioned MarketSnapshotStore handle rebuilt from all supplied snapshot handles. Removed rows disappear; duplicate UTC instants are rejected. Omitted or blank input creates an empty archive.",
+        "QS.SNAPSHOT.SELECTOR" => "Revisioned SnapshotSelector handle. Defaults to Previous and Mid. Closest may choose future data and prefers the earlier snapshot on ties. Selection never rolls the market valuation date.",
+        "QS.SNAPSHOTS.SELECT" => "Revisioned MarketSnapshot handle for one coherent matched market. All curves, FX, volatility, and model configurations come from that single snapshot.",
+        "QS.SNAPSHOT.TIMESTAMP" => "Actual matched observation timestamp as UTC RFC 3339 text, which may differ from the requested timestamp.",
+        "QS.SNAPSHOT.REFERENCE.DATE" => "Market business reference date as ISO text; contexts selected from this snapshot use this valuation date.",
+        "QS.SNAPSHOTS.TIMESTAMPS" => "One-column spill of observation timestamps in ascending UTC order; no header row; an empty archive returns a blank cell.",
+        "QS.SNAPSHOTS.FROM.JSON" => "Revisioned MarketSnapshotStore handle restored from the native JSON snapshot array shared with Python and Rust. Duplicate observation instants are rejected.",
+        "QS.SNAPSHOTS.TO.JSON" => "Native snapshot-array JSON text for Python/Rust interoperability. Includes construction configurations and explicit zero-rate pillars, excluding fixing histories, runtime curves, and AD state.",
+        "QS.CONTEXT.FROM.SNAPSHOT" => "Revisioned initialized PricingContext handle built from the matched complete market and requested quote side. Its valuation date is the matched market business date. Fixings are supplied separately without publication-vintage filtering.",
+        "QS.CONTEXT.EVALUATION.DATE" => "Valuation date as ISO text, from the context quote store reference date.",
+        "QS.CONTEXT.SNAPSHOT.TIMESTAMP" => "Actual matched observation timestamp as UTC RFC 3339 text; empty text for contexts without snapshot provenance.",
+        "QS.CONTEXT.QUOTE.LEVEL" => "Text naming the context construction quote side: Mid, Bid, or Ask.",
+        "QS.CURVE.CONFIGS.ADD.ZERO" => "Current revisioned CurveConfigurations handle after adding or replacing an explicit zero-rate curve. Snapshot-compatible native construction inputs; rate order and curve ranges are validated when constructing the context.",
+        "QS.CURVE.CONFIGS.ADD.COMPOSITE" => "Current revisioned CurveConfigurations handle after adding or replacing a composite curve. Its discount factors multiply those of the configured base and spread curves. Dependencies and cycles are validated during context construction.",
+        "QS.CURVE.ZERO.RATE" => "Numeric zero rate from the curve reference date to the requested date, as a decimal annual rate under the requested compounding and frequency; blank conventions default to Simple and Annual.",
         "QS.VERSION" => "Text containing the linked XLL package version.",
         "QS.FUNCTIONS" => "One-column spill of sorted, distinct registered worksheet names, including aliases; no header row.",
         "QS.FUNCTIONS.DETAILS" => "Five-column spill with headers Function, Arguments, Category, Aliases, Description; one row per primary registered function, sorted by name.",
@@ -294,6 +322,24 @@ pub fn result_help(function_name: &str) -> Option<(&'static str, &'static str)> 
         _ => return None,
     };
     let errors = match function_name {
+        "QS.DATETIME.PARSE" => "#VALUE! for invalid, naive, or date-only input; an explicit RFC 3339 timezone offset is required.",
+        "QS.DATETIME.DATE" => "#VALUE! for invalid, naive, or date-only input; an explicit RFC 3339 timezone offset is required.",
+        "QS.SNAPSHOT.FROM.CONTEXT" => "#VALUE! for invalid timestamps, stale/wrong-type context handles, supplied runtime market elements that cannot be serialized, or registry failures.",
+        "QS.SNAPSHOTS.CREATE" => "#VALUE! for nontext snapshot inputs, stale/wrong-type snapshot handles, duplicate UTC timestamps, or registry failures.",
+        "QS.SNAPSHOT.SELECTOR" => "#VALUE! for invalid or naive timestamps, unknown matching rules or quote levels, or registry failures.",
+        "QS.SNAPSHOTS.SELECT" => "#VALUE! for stale/wrong-type archive or selector handles, no snapshot satisfying the rule, or registry failures.",
+        "QS.SNAPSHOT.TIMESTAMP" => "#VALUE! for a malformed, missing, stale, or wrong-type MarketSnapshot handle.",
+        "QS.SNAPSHOT.REFERENCE.DATE" => "#VALUE! for a malformed, missing, stale, or wrong-type MarketSnapshot handle.",
+        "QS.SNAPSHOTS.TIMESTAMPS" => "#VALUE! for a malformed, missing, stale, or wrong-type MarketSnapshotStore handle.",
+        "QS.SNAPSHOTS.FROM.JSON" => "#VALUE! for invalid native snapshot JSON, duplicate UTC instants, or registry failures.",
+        "QS.SNAPSHOTS.TO.JSON" => "#VALUE! for malformed, missing, stale, or wrong-type archive handles, serialization failures, or JSON exceeding Excel's 32767 UTF-16-unit cell limit.",
+        "QS.CONTEXT.FROM.SNAPSHOT" => "#VALUE! for stale/wrong-type dependencies, no matching snapshot, missing consumed quote sides, market construction/calibration failures, or registry failures. Missing Bid/Ask inputs never fall back to Mid.",
+        "QS.CONTEXT.EVALUATION.DATE" => "#VALUE! for a malformed, missing, stale, or wrong-type PricingContext handle.",
+        "QS.CONTEXT.SNAPSHOT.TIMESTAMP" => "#VALUE! for a malformed, missing, stale, or wrong-type PricingContext handle.",
+        "QS.CONTEXT.QUOTE.LEVEL" => "#VALUE! for a malformed, missing, stale, or wrong-type PricingContext handle.",
+        "QS.CURVE.CONFIGS.ADD.ZERO" => "#VALUE! for invalid index/conventions/pillars, empty or mismatched ranges, nonnumeric/blank/nonfinite rates, or registry failures. Invalid resolved pillar ordering or range constraints fail during context construction.",
+        "QS.CURVE.CONFIGS.ADD.COMPOSITE" => "#VALUE! for invalid indices or configuration handles or registry failures; missing dependencies and cycles fail during context construction.",
+        "QS.CURVE.ZERO.RATE" => "#VALUE! for invalid date/conventions, a stale or wrong-type curve handle, or native zero-rate evaluation failures.",
         "QS.VERSION" | "QS.FUNCTIONS" | "QS.FUNCTIONS.DETAILS" | "QS.OBJECT.COUNT" =>
             "No worksheet-level Result error is returned.",
         "QS.HELP" => "#VALUE! if the requested name or alias is not registered.",
@@ -392,10 +438,16 @@ mod tests {
         let help = argument_help("QS.CURVE.FORWARD", "compounding,frequency");
         assert!(help[0].contains("defaults to Simple"));
         assert!(help[1].contains("defaults to Annual"));
-        let help = argument_help("QS.CURVE.CONFIGS.ADD", "enable_extrapolation,quote_identifiers");
+        let help = argument_help(
+            "QS.CURVE.CONFIGS.ADD",
+            "enable_extrapolation,quote_identifiers",
+        );
         assert!(help[0].contains("blank is rejected"));
         assert!(help[1].contains("at least one identifier is required"));
-        let help = argument_help("QS.CONTEXT.CREATE", "pricer_configurations,quote_level,scenarios");
+        let help = argument_help(
+            "QS.CONTEXT.CREATE",
+            "pricer_configurations,quote_level,scenarios",
+        );
         assert!(help[0].contains("empty configuration collection"));
         assert!(help[1].contains("defaults to Mid"));
         assert!(help[2].contains("blank applies no shocks"));
@@ -403,22 +455,34 @@ mod tests {
 
     #[test]
     fn documents_trade_defaults_without_defaulting_required_conventions() {
-        let help = argument_help("QS.TRADE.EUROPEAN.SWAPTION", "calendar,swaption_type,compounding,rate_frequency");
+        let help = argument_help(
+            "QS.TRADE.EUROPEAN.SWAPTION",
+            "calendar,swaption_type,compounding,rate_frequency",
+        );
         assert!(help[0].contains("empty text"));
         assert!(help[0].contains("unset (None)"));
-        assert!(help[1..].iter().all(|hint| hint.contains("no blank-input default")));
+        assert!(help[1..]
+            .iter()
+            .all(|hint| hint.contains("no blank-input default")));
         let help = argument_help("QS.QUOTES.SET", "mid,bid,ask");
         assert!(help.iter().all(|hint| hint.contains("level absent")));
     }
 
     #[test]
     fn documents_calendar_bounds_flags_and_native_semantics() {
-        let help = argument_help("QS.CALENDAR.BUSINESS.DAYS.BETWEEN", "from,to,include_first,include_last");
-        assert!(help[..2].iter().all(|hint| hint.contains("1902-01-01..2198-12-31")));
+        let help = argument_help(
+            "QS.CALENDAR.BUSINESS.DAYS.BETWEEN",
+            "from,to,include_first,include_last",
+        );
+        assert!(help[..2]
+            .iter()
+            .all(|hint| hint.contains("1902-01-01..2198-12-31")));
         assert!(help[2].contains("blank defaults to TRUE"));
         assert!(help[3].contains("blank defaults to FALSE"));
         let help = argument_help("QS.CALENDAR.HOLIDAYS", "from,to,include_weekends");
-        assert!(help[..2].iter().all(|hint| hint.contains("from must be <= to")));
+        assert!(help[..2]
+            .iter()
+            .all(|hint| hint.contains("from must be <= to")));
         assert!(help[2].contains("blank defaults to FALSE"));
         let (returns, _) = result_help("QS.CALENDAR.IS.END.OF.MONTH").unwrap();
         assert!(returns.contains("non-business days"));

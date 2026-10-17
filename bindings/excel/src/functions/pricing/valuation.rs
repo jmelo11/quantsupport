@@ -15,9 +15,9 @@ use xllgen::xll_bindgen;
 
 use crate::runtime::registry::{with_registry, QsObject, Registry};
 
-use super::helpers::{not_found, value_error};
+use crate::functions::helpers::{not_found, value_error};
 
-fn evaluate(
+pub(crate) fn evaluate(
     registry: &Registry,
     trade_handle: &str,
     context_handle: &str,
@@ -157,7 +157,7 @@ fn evaluate_fixed_rate_bond(
         .map_err(|error| error.to_string())
 }
 
-fn evaluate_bond(
+pub(crate) fn evaluate_bond(
     registry: &Registry,
     trade_handle: &str,
     context_handle: &str,
@@ -210,7 +210,7 @@ pub fn qs_price(trade: &str, context: &str) -> Result<f64, XllError> {
 
 #[xll_bindgen(
     name = "QS.BOND.PRICE",
-    category = "QuantSupport - Fixed Income",
+    category = "QuantSupport - Pricing",
     help = "Prices a straight fixed-rate bond using the trade's pricing anchor"
 )]
 pub fn qs_bond_price(trade: &str, context: &str) -> Result<f64, XllError> {
@@ -222,7 +222,7 @@ pub fn qs_bond_price(trade: &str, context: &str) -> Result<f64, XllError> {
 
 #[xll_bindgen(
     name = "QS.BOND.MODIFIED.DURATION",
-    category = "QuantSupport - Fixed Income",
+    category = "QuantSupport - Pricing",
     help = "Returns straight-bond yield-modified duration using the trade's pricing anchor"
 )]
 pub fn qs_bond_modified_duration(trade: &str, context: &str) -> Result<f64, XllError> {
@@ -234,7 +234,7 @@ pub fn qs_bond_modified_duration(trade: &str, context: &str) -> Result<f64, XllE
 
 #[xll_bindgen(
     name = "QS.BOND.Z.SPREAD",
-    category = "QuantSupport - Fixed Income",
+    category = "QuantSupport - Pricing",
     help = "Returns the Z-spread of a straight bond using the trade's pricing anchor"
 )]
 pub fn qs_bond_z_spread(trade: &str, context: &str) -> Result<f64, XllError> {
@@ -246,7 +246,7 @@ pub fn qs_bond_z_spread(trade: &str, context: &str) -> Result<f64, XllError> {
 
 #[xll_bindgen(
     name = "QS.BOND.OAS",
-    category = "QuantSupport - Fixed Income",
+    category = "QuantSupport - Pricing",
     help = "Returns OAS for an issuer-call bond; straight fixed-rate bond handles are rejected"
 )]
 pub fn qs_bond_oas(trade: &str, context: &str) -> Result<f64, XllError> {
@@ -254,39 +254,6 @@ pub fn qs_bond_oas(trade: &str, context: &str) -> Result<f64, XllError> {
         .map_err(value_error)?
         .oas()
         .ok_or_else(|| not_found("the bond pricer did not return an OAS"))
-}
-
-#[xll_bindgen(
-    name = "QS.BOND.SENSITIVITIES",
-    category = "QuantSupport - Fixed Income",
-    help = "Spills curve and dPV/dZSpread risk in one table for a straight fixed-rate bond"
-)]
-pub fn qs_bond_sensitivities(trade: &str, context: &str) -> Result<*mut XLOPER12, XllError> {
-    let results = with_registry(|registry| {
-        evaluate_bond(
-            registry,
-            trade,
-            context,
-            &[Request::Value, Request::Sensitivities],
-        )
-    })
-    .map_err(value_error)?;
-    let sensitivities = results
-        .sensitivities()
-        .ok_or_else(|| not_found("the bond pricer did not return sensitivities"))?;
-    let rows = sensitivities.instrument_keys().len() + 1;
-    let mut cells = Vec::with_capacity(rows * 2);
-    cells.push(XLOPER12::from_str("Risk factor"));
-    cells.push(XLOPER12::from_str("Sensitivity"));
-    for (key, exposure) in sensitivities
-        .instrument_keys()
-        .iter()
-        .zip(sensitivities.exposure())
-    {
-        cells.push(XLOPER12::from_str(key));
-        cells.push(XLOPER12::from_f64(*exposure));
-    }
-    Ok(build_multi(cells, rows, 2))
 }
 
 #[xll_bindgen(
@@ -299,40 +266,6 @@ pub fn qs_fair_rate(trade: &str, context: &str) -> Result<f64, XllError> {
         .map_err(value_error)?
         .fair_rate()
         .ok_or_else(|| not_found("the selected pricer did not return a fair rate"))
-}
-
-#[xll_bindgen(
-    name = "QS.SENSITIVITIES",
-    category = "QuantSupport - Pricing",
-    help = "Spills sensitivity keys and values for a supported trade/pricer"
-)]
-pub fn qs_sensitivities(trade: &str, context: &str) -> Result<*mut XLOPER12, XllError> {
-    let results = with_registry(|registry| {
-        evaluate(
-            registry,
-            trade,
-            context,
-            &[Request::Value, Request::Sensitivities],
-        )
-    })
-    .map_err(value_error)?;
-    let sensitivities = results
-        .sensitivities()
-        .ok_or_else(|| not_found("the selected pricer did not return sensitivities"))?;
-
-    let rows = sensitivities.instrument_keys().len() + 1;
-    let mut cells = Vec::with_capacity(rows * 2);
-    cells.push(XLOPER12::from_str("Risk factor"));
-    cells.push(XLOPER12::from_str("Sensitivity"));
-    for (key, exposure) in sensitivities
-        .instrument_keys()
-        .iter()
-        .zip(sensitivities.exposure())
-    {
-        cells.push(XLOPER12::from_str(key));
-        cells.push(XLOPER12::from_f64(*exposure));
-    }
-    Ok(build_multi(cells, rows, 2))
 }
 
 #[xll_bindgen(

@@ -18,8 +18,14 @@ from the latest release and follow the [installation guide](https://jmelo11.gith
 The add-in requires 64-bit Windows Excel; Excel for macOS and the browser cannot
 load an XLL.
 
-Worksheet implementations are grouped in `src/functions`; internal handle and
-table code lives in `src/runtime`, and help/catalog code in `src/documentation`.
+Worksheet implementations follow the Python package's domains in
+`src/functions/{time,market,instruments,pricing,risk}`. `system` contains the
+catalog and object lifecycle functions; shared boundary helpers remain in
+`src/functions/helpers.rs`. Owned handles and portable workflow implementations
+live in `src/runtime`, and help/catalog code in `src/documentation`.
+Excel's Function Arguments categories use the same domains. Worksheet function
+names remain compatible with existing workbooks. See the
+[component audit](COMPONENTS.md) for available workflows and remaining gaps.
 See the [API build guide](../../docs/README.md) for local reference builds.
 These require Python 3.11+, Rust, and `docs/requirements.txt`, but not Windows
 or Excel: Sphinx runs the portable Rust catalog exporter. Build the walkthroughs
@@ -320,15 +326,15 @@ pub fn qs_my_function(value: f64) -> f64 {
 Add the module to `src/functions/mod.rs`. Pure scalar functions may be marked
 `threadsafe`; registry and automatic-differentiation functions must remain on
 Excel's main calculation thread. Parameter hints are inferred from argument
-names in `src/function_help.rs`; add a specific description there when a new
+names in `src/documentation/function_help.rs`; add a specific description there when a new
 argument name has domain-specific accepted values.
 
 ## Add another stored library type or pricer
 
 1. Add the actual QuantSupport type as a `QsObject` variant in
-   `src/registry.rs` and give it a stable type tag.
+   `src/runtime/registry.rs` and give it a stable type tag.
 2. Add its constructor in the relevant `src/functions` module.
-3. If it is a trade, add its native pricer branch to `functions/pricing.rs`.
+3. If it is a trade, add its native pricer branch to `functions/pricing/valuation.rs`.
 4. Test its ordinary Rust construction/pricing logic and cross-check the
    Windows target.
 
@@ -357,8 +363,26 @@ NIBOR 1m/3m/6m/12m, and SHIBOR 1d/1w/2w/1m/3m/6m/12m identifiers.
 For example, use `NIBOR3m` as the index text in curve and trade functions.
 
 The historical `MarketSnapshotStore` / `SnapshotSelector` workflow is available
-in Python. The Excel binding currently constructs worksheet pricing contexts
-without an exported historical snapshot archive/selector API.
+in Excel through native snapshot handles. Capture each market with
+`QS.SNAPSHOT.FROM.CONTEXT`, build an archive from the full snapshot-handle range
+with `QS.SNAPSHOTS.CREATE`, choose a timestamp and quote side with
+`QS.SNAPSHOT.SELECTOR`, and price using `QS.CONTEXT.FROM.SNAPSHOT`.
+See [historical pricing](../../book/src/excel/historical-pricing.md) and the
+[example workbook](examples/historical_pricing_example.xlsx).
+
+`QS.CURVE.CONFIGS.ADD.ZERO` accepts ordered ISO date or tenor text and numeric
+zero-rate ranges; `QS.CURVE.CONFIGS.ADD.COMPOSITE` combines two configured curves.
+These save native construction inputs, so snapshots rebuild them reliably.
+`QS.CURVE.ZERO.RATE` queries a constructed curve. Direct `QS.CURVE.FLAT` runtime
+objects cannot be archived; configure a zero curve with a `0D` pillar and
+extrapolation enabled for an equivalent serializable flat curve.
+
+`QS.SNAPSHOTS.FROM.JSON` and `QS.SNAPSHOTS.TO.JSON` exchange the native JSON
+archive schema used by Python and Rust. JSON is worksheet text, not a filename;
+export rejects archives exceeding Excel's 32767 UTF-16-unit cell limit. Snapshots
+exclude fixings: pass their handle separately to `QS.CONTEXT.FROM.SNAPSHOT`.
+The selected context exposes `QS.CONTEXT.EVALUATION.DATE`,
+`QS.CONTEXT.SNAPSHOT.TIMESTAMP`, and `QS.CONTEXT.QUOTE.LEVEL`.
 
 Calendar rules follow QuantLib commit `5f4811e7e03b`; finite holiday tables
 require updates beyond their documented ranges. See

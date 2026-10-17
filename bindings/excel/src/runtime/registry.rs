@@ -12,9 +12,9 @@ use quantsupport::prelude::{
     EquityEuropeanOptionTrade, EquityForwardTrade, EuropeanSwaptionTrade,
     FixFloatCrossCurrencySwapTrade, FixedRateBondTrade, FixedRateDepositTrade, FixingStore,
     FloatFloatCrossCurrencySwapTrade, FloatingRateNoteTrade, FxEuropeanOptionTrade, FxForwardTrade,
-    FxStore, PricerConfiguration, PricingContext, QuoteStore, RateFuturesTrade, Scenario,
-    SimulationConfiguration, SwapTrade, VolatilityCubeConfiguration,
-    VolatilitySurfaceConfiguration,
+    FxStore, MarketSnapshot, MarketSnapshotStore, PricerConfiguration, PricingContext, QuoteStore,
+    RateFuturesTrade, Scenario, SimulationConfiguration, SnapshotSelector, SwapTrade,
+    VolatilityCubeConfiguration, VolatilitySurfaceConfiguration,
 };
 
 const HANDLE_PREFIX: &str = "QSObject";
@@ -49,6 +49,12 @@ pub enum QsObject {
     ConstructedElements(Box<ConstructedElementStore>),
     /// An initialized pricing context.
     PricingContext(Box<PricingContext>),
+    /// Immutable historical market inputs.
+    MarketSnapshot(Box<MarketSnapshot>),
+    /// Complete historical markets indexed by observation timestamp.
+    MarketSnapshotStore(Box<MarketSnapshotStore>),
+    /// Timestamp selection rule and construction quote side.
+    SnapshotSelector(Box<SnapshotSelector>),
     /// Deliverable or non-deliverable FX-forward trade.
     FxForwardTrade(Box<FxForwardTrade>),
     /// Vanilla fixed/floating swap trade.
@@ -101,6 +107,9 @@ impl QsObject {
             Self::DiscountCurve(_) => "DiscountCurveElement",
             Self::ConstructedElements(_) => "ConstructedElementStore",
             Self::PricingContext(_) => "PricingContext",
+            Self::MarketSnapshot(_) => "MarketSnapshot",
+            Self::MarketSnapshotStore(_) => "MarketSnapshotStore",
+            Self::SnapshotSelector(_) => "SnapshotSelector",
             Self::FxForwardTrade(_) => "FxForwardTrade",
             Self::SwapTrade(_) => "SwapTrade",
             Self::BasisSwapTrade(_) => "BasisSwapTrade",
@@ -326,6 +335,24 @@ impl Registry {
         PricingContext,
         PricingContext,
         "PricingContext"
+    );
+    accessor!(
+        market_snapshot,
+        MarketSnapshot,
+        MarketSnapshot,
+        "MarketSnapshot"
+    );
+    accessor!(
+        market_snapshot_store,
+        MarketSnapshotStore,
+        MarketSnapshotStore,
+        "MarketSnapshotStore"
+    );
+    accessor!(
+        snapshot_selector,
+        SnapshotSelector,
+        SnapshotSelector,
+        "SnapshotSelector"
     );
 
     /// Mutates a quote store only when this operation's worksheet inputs changed.

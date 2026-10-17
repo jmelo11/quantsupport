@@ -23,7 +23,8 @@ The native list-method limitations for ``WeekendsOnly`` and ``NullCalendar``
 are documented on the corresponding methods rather than silently changed.
 
 Excel exposes :doc:`calendar queries <excel/functions/section-time-calendars>`,
-schedule generation, and date/accrual queries. Calendar arguments use canonical
+schedule generation, date/accrual queries, and offset-aware timestamp
+normalization with ``QS.DATETIME.*``. Calendar arguments use canonical
 native names, such as ``UnitedStates(Sofr)``, ``Brazil(Exchange)``,
 ``UnitedKingdom(Settlement)``, or ``JointCalendar(JoinHolidays,TARGET,Japan)``.
 Excel does not expose independent holiday-override objects or IMM helpers.
@@ -48,12 +49,15 @@ Market Data and Construction
    * - Quotes, historical fixings, FX
      - ``QuoteStore``, ``FixingStore``, ``FxStore``.
      - ``QS.QUOTES.*``, ``QS.FIXINGS.*``, ``QS.FX.*`` constructors and updates.
+   * - Historical markets
+     - ``MarketSnapshot``, ``MarketSnapshotStore``, ``SnapshotSelector``.
+     - ``QS.SNAPSHOT.*``, ``QS.SNAPSHOTS.*``, ``QS.CONTEXT.FROM.SNAPSHOT``.
    * - Yield and credit bootstrapping
      - ``CurveConfiguration`` / ``CreditCurveConfiguration`` with ``PricingContext``.
      - Configuration handles with ``QS.CONTEXT.CREATE``.
    * - Explicit yield curves
      - ``ZeroRateTermStructure``, ``TenorBasedZeroRateTermStructure`` and curve configurations.
-     - ``QS.CURVE.FLAT``, curve-configuration functions and constructed curve queries.
+     - ``QS.CURVE.CONFIGS.ADD.ZERO`` / ``ADD.COMPOSITE``, ``QS.CURVE.FLAT``, and constructed discount/zero/forward queries.
    * - Volatility construction
      - Surface/cube configurations and read-only constructed views.
      - Surface/cube configuration handles and ``QS.VOL.SURFACE`` / ``QS.VOL.CUBE`` queries.
@@ -112,3 +116,30 @@ registered Excel function is assigned to a domain and focused subsection. The
 documentation build rejects unclassified additions, while binding tests check
 native calendar variants and public exports. This ensures discoverability, but
 does not claim automatic semantic parity with every Rust component.
+Historical Pricing and Package Alignment
+----------------------------------------
+
+Excel source modules and Function Arguments categories follow Python's time,
+market, instruments, pricing, and risk domains. Existing worksheet names are
+preserved. Simulation data belongs to market; contexts and model selection to
+pricing; scenarios and sensitivities to risk. The catalog exporter recursively
+discovers registrations across these directories.
+
+Excel snapshots preserve native construction inputs, including zero-rate and
+composite configurations, FX records, volatility, model/pricer, and simulation
+configurations. Selection matches one complete market and rebuilds consumed
+quotes at the chosen Mid/Bid/Ask side. Explicit zero-rate pillars and FX spots
+are side-independent. Fixings are passed separately without publication-vintage
+filtering. A selected context prices at its snapshot's market reference date,
+not the requested timestamp's calendar date. Closest may select future inputs;
+Previous, the default, never selects a later observation.
+
+``QS.SNAPSHOTS.CREATE`` reconstructs the archive from its full handle range, so
+editing or deleting rows cannot leave old observations behind. Duplicate UTC
+instants are errors. JSON text import/export shares Python/Rust's native schema;
+Excel cell-size limits still apply. Supplied runtime curve objects are rejected
+when capturing a snapshot; use construction configurations instead.
+
+The Excel package's ``COMPONENTS.md`` records the component audit, including the
+remaining IMM/calendar-override, advanced fixed-income policy, loan/callable,
+scripted-product, custom-pricer, and XVA workflow gaps.

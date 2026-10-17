@@ -72,6 +72,7 @@
 
 - [Download and Install](excel/installation.md)
 - [Workbook Workflow](excel/workbook.md)
+- [Historical Pricing](excel/historical-pricing.md)
 - [Worksheet Function Reference](excel/reference.md)
 
 # Reference

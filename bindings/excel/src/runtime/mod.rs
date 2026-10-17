@@ -4,3 +4,6 @@
 pub mod registry;
 #[cfg_attr(not(windows), allow(dead_code))]
 pub mod table;
+
+#[cfg_attr(not(windows), allow(dead_code))]
+pub mod historical;

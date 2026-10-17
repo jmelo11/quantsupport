@@ -13,7 +13,7 @@ use xllgen::xll_bindgen;
 
 use crate::runtime::registry::{with_registry, with_registry_mut, QsObject};
 
-use super::helpers::{
+use crate::functions::helpers::{
     input_key, parse_cap_floor_type, parse_caplet_floorlet_type, parse_compounding, parse_currency,
     parse_date, parse_day_counter, parse_frequency, parse_index, parse_option_type, parse_side,
     value_error,
@@ -26,7 +26,7 @@ fn cached_handle(name: &str, kind: &str, key: &str) -> Result<Option<String>, Xl
 #[xll_bindgen(
     name = "QS.TRADE.FX.FORWARD",
     volatile,
-    category = "QuantSupport - Trades",
+    category = "QuantSupport - Instruments",
     help = "Creates a deliverable FX-forward trade"
 )]
 #[allow(clippy::too_many_arguments)]
@@ -82,7 +82,7 @@ pub fn qs_trade_fx_forward(
 #[xll_bindgen(
     name = "QS.TRADE.SWAP",
     volatile,
-    category = "QuantSupport - Trades",
+    category = "QuantSupport - Instruments",
     help = "Creates a vanilla fixed-versus-floating interest-rate swap trade"
 )]
 #[allow(clippy::too_many_arguments)]
@@ -152,7 +152,7 @@ pub fn qs_trade_swap(
 #[xll_bindgen(
     name = "QS.TRADE.BASIS.SWAP",
     volatile,
-    category = "QuantSupport - Trades",
+    category = "QuantSupport - Instruments",
     help = "Creates a native floating-versus-floating BasisSwapTrade"
 )]
 #[allow(clippy::too_many_arguments)]
@@ -218,7 +218,7 @@ pub fn qs_trade_basis_swap(
 #[xll_bindgen(
     name = "QS.TRADE.XCCY.FLOAT.FLOAT",
     volatile,
-    category = "QuantSupport - Trades",
+    category = "QuantSupport - Instruments",
     help = "Creates a native FloatFloatCrossCurrencySwapTrade"
 )]
 #[allow(clippy::too_many_arguments)]
@@ -297,7 +297,7 @@ pub fn qs_trade_xccy_float_float(
 #[xll_bindgen(
     name = "QS.TRADE.XCCY.FIX.FLOAT",
     volatile,
-    category = "QuantSupport - Trades",
+    category = "QuantSupport - Instruments",
     help = "Creates a native FixFloatCrossCurrencySwapTrade"
 )]
 #[allow(clippy::too_many_arguments)]
@@ -383,7 +383,7 @@ pub fn qs_trade_xccy_fix_float(
 #[xll_bindgen(
     name = "QS.TRADE.FIXED.BOND",
     volatile,
-    category = "QuantSupport - Trades",
+    category = "QuantSupport - Instruments",
     help = "Creates a fixed-rate bond trade"
 )]
 #[allow(clippy::too_many_arguments)]
@@ -467,7 +467,7 @@ pub fn qs_trade_fixed_bond(
 #[xll_bindgen(
     name = "QS.TRADE.FIXED.DEPOSIT",
     volatile,
-    category = "QuantSupport - Trades",
+    category = "QuantSupport - Instruments",
     help = "Creates a fixed-rate deposit trade"
 )]
 #[allow(clippy::too_many_arguments)]
@@ -532,7 +532,7 @@ pub fn qs_trade_fixed_deposit(
 #[xll_bindgen(
     name = "QS.TRADE.FLOATING.NOTE",
     volatile,
-    category = "QuantSupport - Trades",
+    category = "QuantSupport - Instruments",
     help = "Creates a native FloatingRateNoteTrade"
 )]
 #[allow(clippy::too_many_arguments)]
@@ -590,7 +590,7 @@ pub fn qs_trade_floating_note(
 #[xll_bindgen(
     name = "QS.TRADE.FX.OPTION",
     volatile,
-    category = "QuantSupport - Trades",
+    category = "QuantSupport - Instruments",
     help = "Creates a native FxEuropeanOptionTrade"
 )]
 #[allow(clippy::too_many_arguments)]
@@ -648,7 +648,7 @@ pub fn qs_trade_fx_option(
 #[xll_bindgen(
     name = "QS.TRADE.EQUITY.OPTION",
     volatile,
-    category = "QuantSupport - Trades",
+    category = "QuantSupport - Instruments",
     help = "Creates a native EquityEuropeanOptionTrade"
 )]
 #[allow(clippy::too_many_arguments)]
@@ -703,7 +703,7 @@ pub fn qs_trade_equity_option(
 #[xll_bindgen(
     name = "QS.TRADE.CDS",
     volatile,
-    category = "QuantSupport - Trades",
+    category = "QuantSupport - Instruments",
     help = "Creates a native CdsTrade; use a Credit:<entity> market index"
 )]
 #[allow(clippy::too_many_arguments)]
@@ -763,7 +763,7 @@ pub fn qs_trade_cds(
 #[xll_bindgen(
     name = "QS.TRADE.CAP.FLOOR",
     volatile,
-    category = "QuantSupport - Trades",
+    category = "QuantSupport - Instruments",
     help = "Creates a native CapFloorTrade"
 )]
 #[allow(clippy::too_many_arguments)]
@@ -834,7 +834,7 @@ pub fn qs_trade_cap_floor(
 #[xll_bindgen(
     name = "QS.TRADE.CAPLET.FLOORLET",
     volatile,
-    category = "QuantSupport - Trades",
+    category = "QuantSupport - Instruments",
     help = "Creates a native CapletFloorletTrade"
 )]
 #[allow(clippy::too_many_arguments)]
@@ -894,7 +894,7 @@ pub fn qs_trade_caplet_floorlet(
 #[xll_bindgen(
     name = "QS.TRADE.RATE.FUTURE",
     volatile,
-    category = "QuantSupport - Trades",
+    category = "QuantSupport - Instruments",
     help = "Creates an interest-rate futures trade"
 )]
 #[allow(clippy::too_many_arguments)]
@@ -952,7 +952,7 @@ pub fn qs_trade_rate_future(
 #[xll_bindgen(
     name = "QS.TRADE.EQUITY.FORWARD",
     volatile,
-    category = "QuantSupport - Trades",
+    category = "QuantSupport - Instruments",
     help = "Creates a native equity-forward trade"
 )]
 #[allow(clippy::too_many_arguments)]
@@ -1013,7 +1013,7 @@ pub fn qs_trade_equity_forward(
 #[xll_bindgen(
     name = "QS.TRADE.EUROPEAN.SWAPTION",
     volatile,
-    category = "QuantSupport - Trades",
+    category = "QuantSupport - Instruments",
     help = "Creates a European swaption; pricing uses the configured fixed or calibrated HullWhite model"
 )]
 #[allow(clippy::too_many_arguments)]
