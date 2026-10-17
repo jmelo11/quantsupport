@@ -26,8 +26,8 @@ Overlapping shocks compose in their supplied order.
 
 ```python
 scenario = qs.Scenario(shocks=[
-    {"target": "EURIBOR12m", "value": 0.01, "type": qs.ScenarioType.Absolute},
-    {"target": "FUNDINGSPREAD", "value": 0.005, "type": qs.ScenarioType.Absolute},
+    qs.Shock(target="EURIBOR12m", value=0.01, shock_type=qs.ScenarioType.Absolute),
+    qs.Shock(target="FUNDINGSPREAD", value=0.005, shock_type=qs.ScenarioType.Absolute),
 ])
 with context, scenario:
     stressed = pricer.evaluate(trade=trade, context=context, requests=[qs.Request.Value])

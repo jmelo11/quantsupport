@@ -8,7 +8,7 @@ use pyo3::types::{PyDict, PyList, PyTuple};
 use quantsupport::prelude::{
     BusinessDayConvention, Calendar, CapFloorType, CapletFloorletType, Compounding, Currency, Date,
     DateGenerationRule, DayCounter, EuroOptionType, Frequency, Interpolator, Level, MarketIndex,
-    PaymentStructure, Period, Request, ScenarioType, Side, Strike, TimeUnit,
+    PaymentStructure, Period, Request, Side, Strike, TimeUnit,
 };
 use serde::de::DeserializeOwned;
 
@@ -204,12 +204,6 @@ enum_extractor!(
     crate::enums::BusinessDayConvention,
     BusinessDayConvention,
     "business day convention"
-);
-enum_extractor!(
-    extract_scenario_type,
-    crate::enums::ScenarioType,
-    ScenarioType,
-    "scenario type"
 );
 enum_extractor!(
     extract_option_type,

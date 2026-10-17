@@ -4,17 +4,77 @@ use std::cell::RefCell;
 use pyo3::{
     exceptions::{PyRuntimeError, PyValueError},
     prelude::*,
-    types::PyDict,
 };
 use quantsupport::{
     core::marketdatahandling::marketview::{MarketCache, MarketView},
-    prelude::{PricingContext as QsPricingContext, Scenario as QsScenario, Shock},
+    prelude::{PricingContext as QsPricingContext, Scenario as QsScenario, Shock as QsShock},
 };
 
-use crate::{
-    context::PricingContext,
-    conv::{extract_scenario_type, qs_err},
-};
+use crate::{context::PricingContext, conv::qs_err, enums::ScenarioType};
+
+/// A market shock selecting quote identifiers or explicit zero-rate pillars.
+///
+/// Parameters
+/// ----------
+/// target : str
+///     Exact pillar identifier or underscore-separated selector. For example,
+///     EURIBOR12m selects its deposit and swap quotes; FUNDINGSPREAD selects
+///     every explicit zero-rate pillar of that funding-spread curve.
+/// value : float
+///     Additive decimal change for Absolute shocks (0.01 is 100 basis points),
+///     or fractional change for Relative shocks (0.10 increases inputs by 10%).
+/// shock_type : ScenarioType
+///     Absolute or Relative interpretation of the value.
+///
+/// Immutable. Combine shocks in Scenario and enter it after a PricingContext.
+#[pyclass(module = "quantsupport", frozen, from_py_object)]
+#[derive(Clone)]
+pub struct Shock {
+    inner: QsShock,
+}
+
+#[pymethods]
+impl Shock {
+    #[new]
+    #[pyo3(signature = (*, target, value, shock_type))]
+    fn new(target: String, value: f64, shock_type: ScenarioType) -> PyResult<Self> {
+        if target.is_empty() || !value.is_finite() {
+            return Err(PyValueError::new_err(
+                "Market shocks require a nonempty target and a finite value",
+            ));
+        }
+        Ok(Self {
+            inner: QsShock::new(target, value, shock_type.into()),
+        })
+    }
+
+    /// Exact pillar identifier or underscore-separated selector.
+    #[getter]
+    fn target(&self) -> &str {
+        self.inner.target()
+    }
+
+    /// Additive decimal change or fractional relative change.
+    #[getter]
+    fn value(&self) -> f64 {
+        self.inner.value()
+    }
+
+    /// Interpretation of the shock value.
+    #[getter]
+    fn shock_type(&self) -> ScenarioType {
+        self.inner.shock_type().into()
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "Shock(target={:?}, value={}, shock_type=ScenarioType.{:?})",
+            self.inner.target(),
+            self.inner.value(),
+            self.inner.shock_type()
+        )
+    }
+}
 
 struct ActiveScenario {
     context_key: usize,
@@ -104,10 +164,9 @@ pub(crate) fn market_view<'a>(
 ///
 /// Parameters
 /// ----------
-/// shocks : sequence of dict
-///     Each dictionary supplies ``target``, ``value`` and ``type``. Targets select
-///     quote identifiers or explicit zero-rate pillar labels. Absolute values are
-///     additive decimal changes; Relative values are fractional changes.
+/// shocks : sequence of Shock
+///     Typed market shocks, applied in their supplied order. Each Shock supplies
+///     a target selector, value and ScenarioType.
 ///
 /// Enter after a PricingContext. Nested scenarios compose shocks in entry order.
 /// The base context retains its market inputs and constructed objects. Requested
@@ -123,52 +182,20 @@ pub struct Scenario {
 impl Scenario {
     #[new]
     #[pyo3(signature = (*, shocks))]
-    fn new(shocks: Vec<Bound<'_, PyDict>>) -> PyResult<Self> {
-        let shocks = shocks
-            .into_iter()
-            .map(|shock| {
-                for key in shock.keys() {
-                    let key: String = key.extract()?;
-                    if !matches!(key.as_str(), "target" | "value" | "type") {
-                        return Err(PyValueError::new_err(format!(
-                            "Unknown shock field '{key}'"
-                        )));
-                    }
-                }
-                let field = |name| {
-                    shock.get_item(name)?.ok_or_else(|| {
-                        PyValueError::new_err(format!("Missing shock field '{name}'"))
-                    })
-                };
-                let target: String = field("target")?.extract()?;
-                let value: f64 = field("value")?.extract()?;
-                let shock_type = extract_scenario_type(&field("type")?)?;
-                if target.is_empty() || !value.is_finite() {
-                    return Err(PyValueError::new_err(
-                        "Scenario shocks require a nonempty target and a finite value",
-                    ));
-                }
-                Ok(Shock::new(target, value, shock_type))
-            })
-            .collect::<PyResult<Vec<_>>>()?;
-        Ok(Self {
-            inner: QsScenario::new(shocks),
+    fn new(shocks: Vec<Shock>) -> Self {
+        Self {
+            inner: QsScenario::new(shocks.into_iter().map(|shock| shock.inner).collect()),
             active: None,
-        })
+        }
     }
 
     #[getter]
-    fn shocks<'py>(&self, py: Python<'py>) -> PyResult<Vec<Bound<'py, PyDict>>> {
+    fn shocks(&self) -> Vec<Shock> {
         self.inner
             .shocks()
             .iter()
-            .map(|shock| {
-                let fields = PyDict::new(py);
-                fields.set_item("target", shock.target())?;
-                fields.set_item("value", shock.value())?;
-                fields.set_item("type", crate::enums::ScenarioType::from(shock.shock_type()))?;
-                Ok(fields)
-            })
+            .cloned()
+            .map(|inner| Shock { inner })
             .collect()
     }
 

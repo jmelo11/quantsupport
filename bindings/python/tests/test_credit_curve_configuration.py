@@ -129,7 +129,7 @@ class CreditCurveConfigurationTests(unittest.TestCase):
         bump = 1e-5
         prices = []
         for shock in [bump, -bump]:
-            with self.make_context() as context, qs.Scenario(shocks=[{"target": self.cds_quotes[-1], "value": shock, "type": qs.ScenarioType.Absolute}]):
+            with self.make_context() as context, qs.Scenario(shocks=[qs.Shock(target=self.cds_quotes[-1], value=shock, shock_type=qs.ScenarioType.Absolute)]):
                 prices.append(context.evaluate(trade).price)
         finite_difference = (prices[0] - prices[1]) / (2 * bump)
         self.assertAlmostEqual(sensitivity, finite_difference,
@@ -177,8 +177,8 @@ class CreditCurveConfigurationTests(unittest.TestCase):
         self.assertTrue(math.isfinite(sensitivity))
         self.assertGreater(abs(sensitivity), 1.0)
         bump = 1e-5
-        up, _ = run([{"target": self.cds_quotes[-1], "value": bump, "type": qs.ScenarioType.Absolute}])
-        down, _ = run([{"target": self.cds_quotes[-1], "value": -bump, "type": qs.ScenarioType.Absolute}])
+        up, _ = run([qs.Shock(target=self.cds_quotes[-1], value=bump, shock_type=qs.ScenarioType.Absolute)])
+        down, _ = run([qs.Shock(target=self.cds_quotes[-1], value=-bump, shock_type=qs.ScenarioType.Absolute)])
         self.assertTrue(math.isfinite(up) and math.isfinite(down))
         self.assertGreater(abs(up - down), 0.01)
 

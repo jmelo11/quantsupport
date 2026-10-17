@@ -66,9 +66,10 @@ class PythonMarketInputTests(unittest.TestCase):
 
     def test_public_scenario_reuses_the_base_context(self):
         context = context_inputs()
-        scenario = qs.Scenario(shocks=[{
-            "target": "ESTR", "value": 0.01, "type": qs.ScenarioType.Absolute,
-        }])
+        scenario = qs.Scenario(shocks=[qs.Shock(
+                                           target="ESTR", value=0.01,
+                                           shock_type=qs.ScenarioType.Absolute,
+                                       )])
         with context:
             base = context.curve(index=qs.MarketIndex.ESTR).discount_factor("2028-02-24")
             with scenario:
@@ -116,6 +117,9 @@ class PythonMarketInputTests(unittest.TestCase):
             (qs.CurveConstruction.zero_rate, "pillars"),
             (qs.CurveConstruction.composite, "base_index"),
             (qs.FixedIncomeDiscountPolicy, "risk_free_indices"),
+            (qs.Shock, "target"),
+            (qs.Shock, "value"),
+            (qs.Shock, "shock_type"),
             (qs.Scenario, "shocks"),
         ]:
             with self.subTest(constructor=constructor):

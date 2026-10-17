@@ -34,7 +34,7 @@ class QuoteRiskTests(unittest.TestCase):
                                      csa_policy=csa_policy)
 
         def value(trade, label, bump):
-            with context() as ctx, qs.Scenario(shocks=[{"target": label, "value": bump, "type": qs.ScenarioType.Absolute}]):
+            with context() as ctx, qs.Scenario(shocks=[qs.Shock(target=label, value=bump, shock_type=qs.ScenarioType.Absolute)]):
                 return ctx.evaluate(trade, [qs.Request.Value]).price
 
         # Either trade may be the first valuation after __enter__, and a

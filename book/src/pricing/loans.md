@@ -234,7 +234,7 @@ amortization, annual EURIBOR resets, composite cost-of-funds discounting,
 market scenarios, prepayment, credit, and quote sensitivities over thirty years.
 It reuses one context by assigning `context.curves` and `context.fixed_income_policy`.
 Temporary benchmark and funding-spread shocks use `with context, scenario:` with
-`qs.Scenario(shocks=[{"target": ..., "value": ..., "type": ...}])`. Pricing
+`qs.Scenario(shocks=[qs.Shock(target=..., value=..., shock_type=...)])`. Pricing
 constructs requested market objects in an independent view. The base context
 retains its inputs and curves, including when the scope raises an exception.
 

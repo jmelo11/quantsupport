@@ -108,7 +108,7 @@ class CompositeLoanFundingTests(unittest.TestCase):
                 def shifted(sign):
                     if selector == "FUNDINGSPREAD":
                         return value(instrument, funding_shift=sign * epsilon).price
-                    return value(instrument, [{"target": selector, "value": sign * epsilon, "type": qs.ScenarioType.Absolute}]).price
+                    return value(instrument, [qs.Shock(target=selector, value=sign * epsilon, shock_type=qs.ScenarioType.Absolute)]).price
                 numerical = (shifted(1) - shifted(-1)) / (2 * epsilon)
                 risk = base.sensitivities
                 analytic = risk.loc[risk.pillar.str.contains(selector), "value"].sum()

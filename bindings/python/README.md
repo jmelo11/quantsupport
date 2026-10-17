@@ -198,12 +198,12 @@ Market-specific calendars accept enums:
 `qs.Calendar.JointCalendar(calendars=[qs.Calendar.TARGET, qs.Calendar.Japan],
 rule=qs.JointCalendarRule.JoinHolidays)` combines typed calendars.
 
-Combine shock dictionaries in `Scenario` and enter them after the pricing context:
+Combine typed `Shock` objects in `Scenario` and enter them after the pricing context:
 
 ```python
 scenario = qs.Scenario(shocks=[
-    {"target": "EURIBOR12m", "value": 0.01, "type": qs.ScenarioType.Absolute},
-    {"target": "FUNDINGSPREAD", "value": 0.005, "type": qs.ScenarioType.Absolute},
+    qs.Shock(target="EURIBOR12m", value=0.01, shock_type=qs.ScenarioType.Absolute),
+    qs.Shock(target="FUNDINGSPREAD", value=0.005, shock_type=qs.ScenarioType.Absolute),
 ])
 with context, scenario:
     stressed = pricer.evaluate(trade=trade, context=context, requests=[qs.Request.Value])
@@ -647,7 +647,8 @@ Market data & configuration (each with `from_dict` / `from_json`, plus
 
 Pricing:
 
-- `Scenario(shocks=[{"target": ..., "value": ..., "type": ...}])` — temporary shocks in `with context, scenario:`
+- `Shock(target=..., value=..., shock_type=ScenarioType.Absolute)` — typed, immutable market shock
+- `Scenario(shocks=[Shock(...)])` — temporary shocks in `with context, scenario:`
 - `PricingContext(quotes, curves, fixings=None, fx=None, volatility_surfaces=None, volatility_cubes=None, pricer_configurations=None, simulations=None, csa_policy=None, fixed_income_policy=None)` — context manager
 - inputs: `ctx.reference_date` / `ctx.evaluation_date`, `ctx.quotes`,
   `ctx.fixings`, `ctx.fx`, `ctx.base_currency`, `ctx.base_index`,
