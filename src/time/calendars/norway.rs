@@ -1,12 +1,10 @@
-// Adapted from QuantLib ql/time/calendars/norway.cpp at 5f4811e7e03bbd1a3d6d7df31b751fecd5daef5f.
-// Copyright (C) 2000, 2001, 2002, 2003 RiskMap srl
-// Distributed under the QuantLib license; see LICENSE-QuantLib.txt.
+// Adapted from QuantLib ql/time/calendars/norway.cpp.
 
 use super::traits::{ImplCalendar, IsCalendar};
 use crate::time::{date::Date, enums::Weekday};
 use std::collections::HashSet;
 
-/// Norway business-day calendar, following `QuantLib` 5f4811e7e03b.
+/// Norway business-day calendar.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Norway {
     added_holidays: HashSet<Date>,

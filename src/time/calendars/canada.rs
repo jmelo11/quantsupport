@@ -1,7 +1,4 @@
-// Adapted from QuantLib ql/time/calendars/canada.cpp at 5f4811e7e03bbd1a3d6d7df31b751fecd5daef5f.
-// Copyright (C) 2000, 2001, 2002, 2003 RiskMap srl
-// Copyright (C) 2007 StatPro Italia srl
-// Distributed under the QuantLib license; see LICENSE-QuantLib.txt.
+// Adapted from QuantLib ql/time/calendars/canada.cpp.
 
 use super::traits::{ImplCalendar, IsCalendar};
 use crate::time::{date::Date, enums::Weekday};
@@ -17,7 +14,7 @@ pub enum Market {
     TSX,
 }
 
-/// Canada business-day calendar, following `QuantLib` 5f4811e7e03b.
+/// Canada business-day calendar.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Canada {
     market: Market,

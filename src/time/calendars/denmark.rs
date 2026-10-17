@@ -1,13 +1,10 @@
-// Adapted from QuantLib ql/time/calendars/denmark.cpp at 5f4811e7e03bbd1a3d6d7df31b751fecd5daef5f.
-// Copyright (C) 2003 StatPro Italia srl
-// Copyright (C) 2022 Skandinaviska Enskilda Banken AB (publ)
-// Distributed under the QuantLib license; see LICENSE-QuantLib.txt.
+// Adapted from QuantLib ql/time/calendars/denmark.cpp.
 
 use super::traits::{ImplCalendar, IsCalendar};
 use crate::time::{date::Date, enums::Weekday};
 use std::collections::HashSet;
 
-/// Denmark business-day calendar, following `QuantLib` 5f4811e7e03b.
+/// Denmark business-day calendar.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Denmark {
     added_holidays: HashSet<Date>,

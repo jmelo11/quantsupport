@@ -1,8 +1,4 @@
-// Adapted from QuantLib ql/time/calendars/china.cpp at 5f4811e7e03bbd1a3d6d7df31b751fecd5daef5f.
-// Copyright (C) 2004 FIMAT Group
-// Copyright (C) 2007, 2009, 2010, 2011 StatPro Italia srl
-// Distributed under the QuantLib license; see LICENSE-QuantLib.txt.
-
+// Adapted from QuantLib ql/time/calendars/china.cpp.
 use super::traits::{ImplCalendar, IsCalendar};
 use crate::time::{date::Date, enums::Weekday};
 use std::collections::HashSet;
@@ -17,7 +13,7 @@ pub enum Market {
     IB,
 }
 
-/// China business-day calendar, following `QuantLib` 5f4811e7e03b.
+/// China business-day calendar.
 /// Holiday and working-weekend tables cover 2004–2026; later dates use recurring rules only.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct China {
