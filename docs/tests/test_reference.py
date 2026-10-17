@@ -121,7 +121,7 @@ class ExcelReferenceTests(unittest.TestCase):
         cls.records = json.loads(output.stdout)
 
     def test_catalog_has_complete_symbol_and_parameter_details(self):
-        self.assertEqual(len(self.records), 103)
+        self.assertEqual(len(self.records), 109)
         for record in self.records:
             with self.subTest(function=record["name"]):
                 for field in ("name", "category", "help", "return_type", "returns", "errors", "declaration", "source"):
@@ -159,6 +159,27 @@ class ExcelReferenceTests(unittest.TestCase):
         self.assertEqual(excel_section("QS.CALENDAR.HOLIDAYS"), ("Time", "Calendars"))
         self.assertEqual(excel_section("QS.TRADE.FIXED.BOND"), ("Instruments", "Fixed Income"))
 
+    def test_interpolation_methods_have_defaults_and_math_navigation(self):
+        records = {record["name"]: record for record in self.records
+                   if record["name"].startswith("QS.INTERPOLATE")}
+        self.assertCountEqual(records, [
+            "QS.INTERPOLATE", "QS.INTERPOLATE.LINEAR", "QS.INTERPOLATE.LOG.LINEAR",
+            "QS.INTERPOLATE.CUBIC.SPLINE", "QS.INTERPOLATE.BILINEAR", "QS.INTERPOLATE.TRILINEAR",
+        ])
+        for name, record in records.items():
+            with self.subTest(function=name):
+                self.assertEqual(excel_section(name), ("Math", "Interpolation"))
+                self.assertEqual(record["category"], "QuantSupport - Math")
+                self.assertEqual(result_type(record), "number")
+                self.assertIn("#VALUE!", record["errors"])
+                arguments = {argument["name"]: argument for argument in record["arguments"]}
+                policy = arguments.get("extrapolation", arguments.get("enable_extrapolation"))
+                self.assertIn("defaults to", policy["help"])
+                self.assertNotIn("\\", record["source"])
+        method = next(argument for argument in records["QS.INTERPOLATE"]["arguments"]
+                      if argument["name"] == "method")
+        self.assertIn("defaults to Linear", method["help"])
+
 
 class RenderedReferenceTests(unittest.TestCase):
     def test_strict_build_renders_real_signatures_and_fields(self):
@@ -182,7 +203,8 @@ class RenderedReferenceTests(unittest.TestCase):
                             "Chile", "UnitedStates", "Brazil", "JointCalendar"):
                 self.assertIn(variant, calendars.text)
             for path in ("autoapi/quantsupport/time/Schedule.html", "autoapi/quantsupport/time/IMM.html",
-                         "excel/functions/section-time-calendars.html", "coverage.html"):
+                         "excel/functions/section-time-calendars.html",
+                         "excel/functions/section-math-interpolation.html", "coverage.html"):
                 self.assertTrue((output / path).is_file(), path)
             trade = Text((output / "autoapi/quantsupport/pricing/Trade.html").read_text())
             self.assertIn("datetime.date", trade.text)
@@ -192,7 +214,11 @@ class RenderedReferenceTests(unittest.TestCase):
                 self.assertRegex(price.text, field + r"\s*:")
             for error in ("#N/A", "#VALUE!"):
                 self.assertIn(error, price.text)
-            self.assertEqual(len(list((output / "excel/functions").glob("qs-*.html"))), 103)
+            interpolation = Text((output / "excel/functions/qs-interpolate.html").read_text())
+            self.assertIn("defaults to Linear", interpolation.text)
+            self.assertIn("strictly increasing", interpolation.text)
+            self.assertIn("#VALUE!", interpolation.text)
+            self.assertEqual(len(list((output / "excel/functions").glob("qs-*.html"))), 109)
             for index in ("genindex.html", "py-modindex.html", "excel-functionindex.html", "search.html", "objects.inv"):
                 self.assertTrue((output / index).is_file(), index)
 

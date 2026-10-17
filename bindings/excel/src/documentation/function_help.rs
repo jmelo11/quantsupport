@@ -15,6 +15,14 @@ pub fn argument_help(function_name: &str, argument_names: &str) -> Vec<&'static 
 
 fn describe_argument(function_name: &str, argument_name: &str) -> &'static str {
     match (function_name, argument_name) {
+        (name, "point" | "point_x" | "point_y" | "point_z") if name.starts_with("QS.INTERPOLATE") => "Finite numeric query coordinate on the corresponding axis",
+        (name, "x_values") if name.starts_with("QS.INTERPOLATE") => "Required numeric range of at least two strictly increasing finite x coordinates; duplicate coordinates, blanks, text, and booleans are rejected; ranges are read in row-major order",
+        (name, "y_values") if name.starts_with("QS.INTERPOLATE") => "Required finite numeric values aligned with x_values, with the same cell count; log-linear interpolation requires strictly positive values; blanks, text, and booleans are rejected",
+        (name, "x_coordinates" | "y_coordinates" | "z_coordinates") if name.starts_with("QS.INTERPOLATE") => "Required finite numeric coordinate range aligned point-by-point with values in row-major order; all ranges must have the same nonzero cell count; input order may be arbitrary; duplicate full coordinate tuples are rejected",
+        (name, "values") if name.starts_with("QS.INTERPOLATE") => "Required finite numeric point values aligned with every coordinate range; blanks, text, and booleans are rejected; rectangular grids, sparse slices, and singleton axes are supported",
+        ("QS.INTERPOLATE", "method") => "Optional Linear, LogLinear, or CubicSpline; omitted, blank, or empty text defaults to Linear; CubicSpline uses natural boundary conditions",
+        (name, "enable_extrapolation") if name.starts_with("QS.INTERPOLATE") => "Optional TRUE/FALSE or finite numeric flag (nonzero is TRUE); omitted or blank defaults to FALSE; TRUE extends the native end interval (linear, log-linear, or cubic polynomial)",
+        (name, "extrapolation") if name.starts_with("QS.INTERPOLATE") => "Optional Reject or Flat; omitted, blank, or empty text defaults to Reject; Flat clamps each axis within each native slice, including singleton axes",
         (_, "timestamp") => "Required offset-aware RFC 3339 text, e.g. 2026-01-15T16:00:00Z or 2026-01-15T17:00:00+01:00; normalized to UTC; date-only and naive timestamps are rejected",
         (_, "snapshot") => "Current MarketSnapshot handle from QS.SNAPSHOT.FROM.CONTEXT or QS.SNAPSHOTS.SELECT",
         (_, "snapshots") => "Range of current MarketSnapshot handles; blank range cells are ignored; an omitted or blank scalar creates an empty archive; duplicate UTC timestamps are rejected",
@@ -216,6 +224,9 @@ fn describe_argument(function_name: &str, argument_name: &str) -> &'static str {
 
 pub fn result_help(function_name: &str) -> Option<(&'static str, &'static str)> {
     let returns = match function_name {
+        "QS.INTERPOLATE" | "QS.INTERPOLATE.LINEAR" | "QS.INTERPOLATE.LOG.LINEAR" | "QS.INTERPOLATE.CUBIC.SPLINE" => "Finite numeric interpolated value in the input values' units. One-dimensional data requires at least two strictly increasing coordinates; extrapolation is disabled by default. CubicSpline uses a natural spline and falls back to linear interpolation with two points.",
+        "QS.INTERPOLATE.BILINEAR" => "Finite numeric value interpolated along y within each x slice, then along x. Supports rectangular or sparse point ranges and singleton axes; no grid completion or output spill is performed.",
+        "QS.INTERPOLATE.TRILINEAR" => "Finite numeric value interpolated along z within each (x,y) slice, then along y and x. Supports rectangular or sparse point ranges and singleton axes; no grid completion or output spill is performed.",
         "QS.DATETIME.PARSE" => "Offset-aware RFC 3339 timestamp text normalized to UTC, preserving nanoseconds; not an Excel serial datetime.",
         "QS.DATETIME.DATE" => "ISO date text for the timestamp's UTC calendar day; this is not a market business or valuation date.",
         "QS.SNAPSHOT.FROM.CONTEXT" => "Revisioned MarketSnapshot handle capturing serializable base observations and configurations. Fixings are excluded. Supplied runtime elements and materialized scenarios cannot be archived; use construction configurations.",
@@ -322,6 +333,8 @@ pub fn result_help(function_name: &str) -> Option<(&'static str, &'static str)> 
         _ => return None,
     };
     let errors = match function_name {
+        "QS.INTERPOLATE" | "QS.INTERPOLATE.LINEAR" | "QS.INTERPOLATE.LOG.LINEAR" | "QS.INTERPOLATE.CUBIC.SPLINE" => "#VALUE! for invalid methods or flags, blank/text/boolean/nonfinite range cells, mismatched ranges, fewer than two points, unordered or duplicate x coordinates, nonpositive log-linear values, forbidden extrapolation, or a nonfinite result.",
+        "QS.INTERPOLATE.BILINEAR" | "QS.INTERPOLATE.TRILINEAR" => "#VALUE! for an unknown extrapolation policy, empty or mismatched coordinate/value ranges, blank/text/boolean/nonfinite range cells or queries, duplicate coordinate tuples, a query outside any required slice under Reject, or a nonfinite result.",
         "QS.DATETIME.PARSE" => "#VALUE! for invalid, naive, or date-only input; an explicit RFC 3339 timezone offset is required.",
         "QS.DATETIME.DATE" => "#VALUE! for invalid, naive, or date-only input; an explicit RFC 3339 timezone offset is required.",
         "QS.SNAPSHOT.FROM.CONTEXT" => "#VALUE! for invalid timestamps, stale/wrong-type context handles, supplied runtime market elements that cannot be serialized, or registry failures.",

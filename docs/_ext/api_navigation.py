@@ -114,6 +114,8 @@ def generate_python_navigation(app):
 
 
 def excel_section(name):
+    if name == "QS.INTERPOLATE" or name.startswith("QS.INTERPOLATE."):
+        return "Math", "Interpolation"
     if name.startswith("QS.CALENDAR."):
         return "Time", "Calendars"
     if name.startswith("QS.SCHEDULE"):

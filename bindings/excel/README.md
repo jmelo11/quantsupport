@@ -19,7 +19,8 @@ The add-in requires 64-bit Windows Excel; Excel for macOS and the browser cannot
 load an XLL.
 
 Worksheet implementations follow the Python package's domains in
-`src/functions/{time,market,instruments,pricing,risk}`. `system` contains the
+`src/functions/{time,market,instruments,pricing,risk}`; `math` adds native
+interpolation utilities. `system` contains the
 catalog and object lifecycle functions; shared boundary helpers remain in
 `src/functions/helpers.rs`. Owned handles and portable workflow implementations
 live in `src/runtime`, and help/catalog code in `src/documentation`.
@@ -61,6 +62,7 @@ Use `=QS.FUNCTIONS()` for the worksheet-function names,
 current modules cover:
 
 - dates, schedules, and day-count fractions;
+- linear, log-linear, natural cubic-spline, bilinear, and trilinear interpolation;
 - `QuoteStore`, `FixingStore`, and `FxStore` creation, JSON loading, updates,
   and lookup;
 - curve, credit-curve, volatility-surface, volatility-cube, simulation, and
@@ -92,6 +94,56 @@ table. Callable terms are not part of `QS.TRADE.FIXED.BOND`; the separate
 Python APIs. Instrument-level pricer selection and typed model assignments
 are loaded with `QS.PRICER.CONFIGS.FROM.JSON` and passed to
 `QS.CONTEXT.CREATE`.
+
+## Interpolation
+
+Interpolation functions return numeric scalars without creating object handles.
+Put strictly increasing coordinates in `A2:A4` and corresponding values in
+`B2:B4`, for example:
+
+| Row | A: coordinate | B: value |
+| --- | --- | --- |
+| 2 | 0 | 1 |
+| 3 | 1 | 4 |
+| 4 | 2 | 1 |
+
+```text
+=QS.INTERPOLATE(0.5,A2:A4,B2:B4)
+=QS.INTERPOLATE(0.5,A2:A4,B2:B4,"LogLinear",FALSE)
+=QS.INTERPOLATE.LINEAR(0.5,A2:A4,B2:B4)
+=QS.INTERPOLATE.LOG.LINEAR(0.5,A2:A4,B2:B4)
+=QS.INTERPOLATE.CUBIC.SPLINE(0.5,A2:A4,B2:B4)
+```
+
+These return `2.5`, `2`, `2.5`, `2`, and `3.0625`, respectively. The generic
+function defaults to `Linear`; its method can also be `CubicSpline`.
+The final extrapolation flag defaults to `FALSE`. Set it to `TRUE` to extend
+the native end interval: linearly, in log space, or using the endpoint cubic
+polynomial. Cubic splines use natural boundary conditions and reduce to linear
+interpolation with two points. Log-linear values must be strictly positive.
+
+For bilinear interpolation, put point x coordinates in `E2:E5`, y coordinates
+in `F2:F5`, and values in `G2:G5`. For trilinear interpolation, put point x/y/z
+coordinates in `H2:H9`, `I2:I9`, `J2:J9`, and values in `K2:K9`:
+
+```text
+=QS.INTERPOLATE.BILINEAR(0.5,0.5,E2:E5,F2:F5,G2:G5)
+=QS.INTERPOLATE.TRILINEAR(0.5,0.5,0.5,H2:H9,I2:I9,J2:J9,K2:K9)
+```
+
+All coordinate/value ranges must have the same cell count and align
+point-by-point. Ranges are read in row-major order. Multidimensional points
+may be in arbitrary order and can form rectangular grids, sparse slices, or
+singleton axes. Interpolation proceeds along the innermost axis first, then
+outward; it does not fill missing grid points. The optional final policy is
+`"Reject"` by default, or `"Flat"` to clamp within each native slice, including
+singleton axes. It does not provide linear extrapolation.
+
+Blanks, text, booleans, nonfinite inputs/results, mismatched ranges, duplicate
+points, invalid methods/policies, and forbidden extrapolation return `#VALUE!`.
+One-dimensional inputs also require at least two points and strictly increasing
+coordinates. All six functions appear under **QuantSupport - Math** and in
+`QS.HELP` and the generated worksheet reference.
 
 ## Object handles and quote updates
 

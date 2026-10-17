@@ -257,7 +257,7 @@ mod tests {
     }
 
     #[test]
-    fn categories_follow_the_python_domain_directories() {
+    fn categories_follow_the_worksheet_domain_directories() {
         let records =
             super::exports(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/functions"))
                 .unwrap();
@@ -272,6 +272,7 @@ mod tests {
             let title = match domain {
                 "time" => "Time",
                 "market" => "Market",
+                "math" => "Math",
                 "instruments" => "Instruments",
                 "pricing" => "Pricing",
                 "risk" => "Risk",
@@ -292,7 +293,7 @@ mod tests {
         let records =
             super::exports(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/functions"))
                 .unwrap();
-        assert_eq!(records.len(), 103);
+        assert_eq!(records.len(), 109);
         let scenario = records
             .iter()
             .find(|record| record["name"] == "QS.SCENARIOS.FROM.JSON")
@@ -326,6 +327,30 @@ mod tests {
                     );
                 }
             }
+        }
+    }
+
+    #[test]
+    fn documents_native_interpolation_operations() {
+        let records =
+            super::exports(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/functions"))
+                .unwrap();
+        for (name, arguments) in [
+            ("QS.INTERPOLATE", "point,x_values,y_values,method,enable_extrapolation"),
+            ("QS.INTERPOLATE.LINEAR", "point,x_values,y_values,enable_extrapolation"),
+            ("QS.INTERPOLATE.LOG.LINEAR", "point,x_values,y_values,enable_extrapolation"),
+            ("QS.INTERPOLATE.CUBIC.SPLINE", "point,x_values,y_values,enable_extrapolation"),
+            ("QS.INTERPOLATE.BILINEAR", "point_x,point_y,x_coordinates,y_coordinates,values,extrapolation"),
+            ("QS.INTERPOLATE.TRILINEAR", "point_x,point_y,point_z,x_coordinates,y_coordinates,z_coordinates,values,extrapolation"),
+        ] {
+            let record = records.iter().find(|record| record["name"] == name).unwrap();
+            assert_eq!(record["category"], "QuantSupport - Math");
+            assert_eq!(record["source"], "bindings/excel/src/functions/math/mod.rs");
+            assert_eq!(record["threadsafe"], true);
+            assert_eq!(record["arguments"].as_array().unwrap().iter()
+                .map(|argument| argument["name"].as_str().unwrap()).collect::<Vec<_>>(),
+                arguments.split(',').collect::<Vec<_>>());
+            assert!(record["errors"].as_str().unwrap().contains("#VALUE!"));
         }
     }
 
