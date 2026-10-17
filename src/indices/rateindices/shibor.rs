@@ -1,0 +1,84 @@
+//! SHIBOR conventions, checked against QuantLib 5f4811e7e03b.
+
+use crate::time::{
+    calendar::Calendar,
+    calendars::china::{China, Market},
+};
+
+rate_index!(
+    SHIBOR1dIndex,
+    SHIBOR1d,
+    CNY,
+    Calendar::China(China::new(Market::IB)),
+    Actual360,
+    Simple,
+    0,
+    Daily,
+    false
+);
+rate_index!(
+    SHIBOR1wIndex,
+    SHIBOR1w,
+    CNY,
+    Calendar::China(China::new(Market::IB)),
+    Actual360,
+    Simple,
+    1,
+    Weekly,
+    false
+);
+rate_index!(
+    SHIBOR2wIndex,
+    SHIBOR2w,
+    CNY,
+    Calendar::China(China::new(Market::IB)),
+    Actual360,
+    Simple,
+    1,
+    Biweekly,
+    false
+);
+rate_index!(
+    SHIBOR1mIndex,
+    SHIBOR1m,
+    CNY,
+    Calendar::China(China::new(Market::IB)),
+    Actual360,
+    Simple,
+    1,
+    Monthly,
+    false
+);
+rate_index!(
+    SHIBOR3mIndex,
+    SHIBOR3m,
+    CNY,
+    Calendar::China(China::new(Market::IB)),
+    Actual360,
+    Simple,
+    1,
+    Quarterly,
+    false
+);
+rate_index!(
+    SHIBOR6mIndex,
+    SHIBOR6m,
+    CNY,
+    Calendar::China(China::new(Market::IB)),
+    Actual360,
+    Simple,
+    1,
+    Semiannual,
+    false
+);
+rate_index!(
+    SHIBOR12mIndex,
+    SHIBOR12m,
+    CNY,
+    Calendar::China(China::new(Market::IB)),
+    Actual360,
+    Simple,
+    1,
+    Annual,
+    false
+);

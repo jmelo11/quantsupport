@@ -175,8 +175,8 @@ impl<T: Scalar> CashflowType<T> {
                 }
                 Self::FloatingRateCoupon(result)
             }
-            Self::OptionEmbeddedCoupon(coupon) => {
-                Self::OptionEmbeddedCoupon(OptionEmbeddedCoupon::new(
+            Self::OptionEmbeddedCoupon(coupon) => Self::OptionEmbeddedCoupon(
+                OptionEmbeddedCoupon::new(
                     notional,
                     coupon.market_index().clone(),
                     coupon.spread(),
@@ -184,8 +184,9 @@ impl<T: Scalar> CashflowType<T> {
                     end,
                     payment,
                     coupon.payoff_ops().clone(),
-                ))
-            }
+                )
+                .with_day_counter(coupon.day_counter()?),
+            ),
             _ => {
                 return Err(QSError::InvalidValueErr(
                     "Expected a coupon cashflow".into(),

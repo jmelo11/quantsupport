@@ -1,5 +1,5 @@
 use crate::{
-    ad::{constant::Const, dual::DualFwd, scalar::Scalar},
+    ad::{constant::Const, dual::DualFwd, forward::ADForward, scalar::Scalar},
     core::{elements::curveelement::ADCurveElement, pillars::Pillars},
     rates::{
         compounding::Compounding,
@@ -213,7 +213,13 @@ impl InterestRatesTermStructure<DualFwd> for FlatForwardTermStructure<DualFwd> {
     }
 }
 
-impl ADCurveElement for FlatForwardTermStructure<DualFwd> {}
+impl ADCurveElement for FlatForwardTermStructure<DualFwd> {
+    fn clone_curve(&self) -> Result<Box<dyn ADCurveElement>> {
+        let mut curve = self.clone();
+        *curve.rate.rate_mut() = DualFwd::constant(ADForward::constant(self.value().value()));
+        Ok(Box::new(curve))
+    }
+}
 
 #[cfg(test)]
 mod tests {

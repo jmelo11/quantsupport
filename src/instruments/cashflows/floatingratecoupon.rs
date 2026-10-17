@@ -9,6 +9,7 @@ use crate::{
         cashflows::{cashflow::Cashflow, coupons::LinearCoupon},
         rates::oisconventions::{OvernightAveraging, OvernightCouponConventions},
     },
+    rates::interestrate::InterestRate,
     time::{
         calendars::traits::IsCalendar,
         date::Date,
@@ -53,6 +54,7 @@ where
         coupon
             .overnight_conventions
             .clone_from(&self.overnight_conventions);
+        coupon.day_counter = self.day_counter;
         let value = *self.fixing.read().unwrap();
         if let Some(fixing) = value {
             coupon.set_fixing(fixing);
@@ -72,6 +74,21 @@ mod tests {
             .set_overnight_conventions(OvernightCouponConventions::default())
             .unwrap();
         coupon
+    }
+
+    #[test]
+    fn cdi_historical_fixings_compound_effective_annual_rates() {
+        let start = Date::new(2026, 1, 9);
+        let end = Date::new(2026, 1, 13);
+        let mut coupon = FloatingRateCoupon::new(1.0, 0.0, MarketIndex::CDI, start, end, end);
+        coupon
+            .set_overnight_conventions(OvernightCouponConventions::default())
+            .unwrap();
+        let rate = coupon
+            .overnight_rate(end, |_| panic!("fully realized"), |_| Ok(Some(0.15)))
+            .unwrap();
+        coupon.set_fixing(rate);
+        assert!((coupon.amount().unwrap() - (1.15_f64.powf(2.0 / 252.0) - 1.0)).abs() < 1e-14);
     }
 
     #[test]
@@ -278,6 +295,13 @@ where
         }
     }
 
+    /// Uses a contractual accrual day counter independently of the index quote.
+    #[must_use]
+    pub const fn with_day_counter(mut self, day_counter: DayCounter) -> Self {
+        self.day_counter = day_counter;
+        self
+    }
+
     /// Installs explicit overnight observation conventions.
     ///
     /// # Errors
@@ -434,7 +458,22 @@ where
                 None
             };
             let rate = if let Some(rate) = known {
-                T::scalar(rate)
+                // Historical fixings use the index's own quoting convention.
+                // In particular, CDI is an effective annual Business/252 rate.
+                let definition = self.index.rate_index_details()?.rate_definition();
+                let observation_tau = self.day_counter.year_fraction(observation, observation_end);
+                let simple_rate =
+                    if definition.compounding() == crate::rates::compounding::Compounding::Simple {
+                        rate * definition
+                            .day_counter()
+                            .year_fraction(observation, observation_end)
+                            / observation_tau
+                    } else {
+                        let factor = InterestRate::<f64>::from_rate_definition(rate, definition)
+                            .compound_factor(observation, observation_end);
+                        (factor - 1.0) / observation_tau
+                    };
+                T::scalar(simple_rate)
             } else if observation < evaluation_date {
                 return Err(QSError::NotFoundErr(format!(
                     "Missing {} overnight fixing for {observation}",
@@ -470,6 +509,9 @@ where
     }
 
     /// Sets the fixing for the coupon.
+    ///
+    /// # Panics
+    /// Panics if the fixing lock has been poisoned by a panic while held for writing.
     #[allow(clippy::unwrap_used)]
     pub fn set_fixing(&self, fixing: T) {
         *self.fixing.write().unwrap() = Some(fixing);
@@ -486,6 +528,9 @@ where
     }
 
     /// Returns the fixing value if set.
+    ///
+    /// # Panics
+    /// Panics if the fixing lock has been poisoned by a panic while held for writing.
     #[allow(clippy::unwrap_used)]
     pub fn fixing(&self) -> Option<T> {
         *self.fixing.read().unwrap()
@@ -494,6 +539,18 @@ where
     /// Returns the day counter used for year fraction calculations.
     pub const fn day_counter(&self) -> DayCounter {
         self.day_counter
+    }
+
+    /// Contractual principal; it is not an AD input.
+    #[must_use]
+    pub const fn notional(&self) -> f64 {
+        self.notional
+    }
+
+    /// Contractual payment date, independent of the rate scalar type.
+    #[must_use]
+    pub const fn payment_date(&self) -> Date {
+        self.payment_date
     }
 
     /// Returns the accrual start date.
@@ -605,6 +662,7 @@ impl From<FloatingRateCoupon<f64>> for FloatingRateCoupon<DualFwd> {
             value.payment_date,
         );
         coupon.overnight_conventions = value.overnight_conventions;
+        coupon.day_counter = value.day_counter;
         if let Some(fixing) = fixing {
             coupon.set_fixing(DualFwd::new(fixing.value()));
         }
@@ -625,6 +683,7 @@ impl From<FloatingRateCoupon<DualFwd>> for FloatingRateCoupon<f64> {
             value.payment_date,
         );
         coupon.overnight_conventions = value.overnight_conventions;
+        coupon.day_counter = value.day_counter;
         if let Some(fixing) = fixing {
             coupon.set_fixing(fixing.value());
         }

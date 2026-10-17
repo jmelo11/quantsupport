@@ -40,13 +40,13 @@ class CreditCurveConfigurationTests(unittest.TestCase):
         })]
         return quotes, curves
 
-    def make_context(self, scenarios=None, specification=None):
+    def make_context(self, specification=None):
         quotes, curves = self.market()
         configuration = qs.CreditCurveConfiguration.from_dict(
             self.specification() if specification is None else specification
         )
         return qs.PricingContext(
-            quotes, curves, scenarios=scenarios,
+            quotes, curves,
             csa_policy=qs.SingleCurveCSADiscountPolicy("USD", "SOFR"),
             credit_curves=[configuration],
         )
@@ -101,7 +101,7 @@ class CreditCurveConfigurationTests(unittest.TestCase):
         with qs.PricingContext(
             quotes, curves, None, None, None, None, None, None,
             qs.SingleCurveCSADiscountPolicy(
-                "USD", "SOFR"), None, None, qs.Level.Bid,
+                "USD", "SOFR"), None, qs.Level.Bid,
         ) as context:
             self.assertEqual(context.quote_level, qs.Level.Bid)
             self.assertEqual(context.credit_curve_configurations, [])
@@ -129,7 +129,7 @@ class CreditCurveConfigurationTests(unittest.TestCase):
         bump = 1e-5
         prices = []
         for shock in [bump, -bump]:
-            with self.make_context([qs.Scenario(self.cds_quotes[-1], shock)]) as context:
+            with self.make_context() as context, qs.Scenario(shocks=[qs.Shock(target=self.cds_quotes[-1], value=shock, shock_type=qs.ScenarioType.Absolute)]):
                 prices.append(context.evaluate(trade).price)
         finite_difference = (prices[0] - prices[1]) / (2 * bump)
         self.assertAlmostEqual(sensitivity, finite_difference,
@@ -139,8 +139,8 @@ class CreditCurveConfigurationTests(unittest.TestCase):
         missing = "Cds_CLIENT-A_USD_10Y"
         specification = dict(self.specification(), quotes=[missing])
         with self.assertRaisesRegex(qs.QuantSupportError, missing):
-            with self.make_context(specification=specification):
-                pass
+            with self.make_context(specification=specification) as context:
+                context.initialize()
 
     def test_xva_credit_curve_reports_cds_quote_sensitivity(self):
         swap = qs.Swap(
@@ -158,7 +158,7 @@ class CreditCurveConfigurationTests(unittest.TestCase):
         })
 
         def run(scenarios=None):
-            with self.make_context(scenarios) as context:
+            with self.make_context() as context, qs.Scenario(shocks=scenarios or []):
                 result = context.run_xva(config, [netting_set])
                 values = result.xva_values
                 cva = float(values.loc[(values["netting_set"] == "CLIENT-A")
@@ -177,8 +177,8 @@ class CreditCurveConfigurationTests(unittest.TestCase):
         self.assertTrue(math.isfinite(sensitivity))
         self.assertGreater(abs(sensitivity), 1.0)
         bump = 1e-5
-        up, _ = run([qs.Scenario(self.cds_quotes[-1], bump)])
-        down, _ = run([qs.Scenario(self.cds_quotes[-1], -bump)])
+        up, _ = run([qs.Shock(target=self.cds_quotes[-1], value=bump, shock_type=qs.ScenarioType.Absolute)])
+        down, _ = run([qs.Shock(target=self.cds_quotes[-1], value=-bump, shock_type=qs.ScenarioType.Absolute)])
         self.assertTrue(math.isfinite(up) and math.isfinite(down))
         self.assertGreater(abs(up - down), 0.01)
 

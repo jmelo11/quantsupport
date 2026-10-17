@@ -4,8 +4,8 @@ use std::collections::HashMap;
 use crate::utils::errors::QSError;
 use crate::{
     core::{
-        evaluationresults::EvaluationResults, pricer::ErasedPricer, pricingcontext::PricingContext,
-        request::Request,
+        evaluationresults::EvaluationResults, marketdatahandling::marketdata::MarketDataProvider,
+        pricer::ErasedPricer, request::Request,
     },
     utils::errors::Result,
 };
@@ -32,7 +32,7 @@ impl Evaluator {
         &self,
         trade: &dyn Any,
         requests: &[Request],
-        context: &PricingContext,
+        context: &dyn MarketDataProvider,
     ) -> Result<EvaluationResults> {
         let trade_type_id = trade.type_id();
         self.pricers.get(&trade_type_id).map_or_else(

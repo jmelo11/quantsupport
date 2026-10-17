@@ -1,5 +1,6 @@
+use crate::core::marketdatahandling::constructedelementstore::SharedElement;
 use crate::{
-    ad::{dual::DualFwd, scalar::Scalar},
+    ad::{dual::DualFwd, forward::ADForward, scalar::Scalar},
     core::{elements::volatilitysurfaceelement::ADVolatilitySurfaceElement, pillars::Pillars},
     indices::marketindex::MarketIndex,
     math::interpolation::{
@@ -14,6 +15,7 @@ use crate::{
     },
 };
 use std::collections::BTreeMap;
+use std::{cell::RefCell, rc::Rc};
 
 type SurfaceMap<T> = BTreeMap<Period, BTreeMap<F64Key, T>>;
 
@@ -25,6 +27,7 @@ type SurfaceMap<T> = BTreeMap<Period, BTreeMap<F64Key, T>>;
 ///
 /// ## Generics
 /// - `T`: Numeric type for the volatility values (e.g., `f64`, `DualFwd`).
+#[derive(Clone)]
 pub struct InterpolatedVolatilitySurface<T: Scalar> {
     reference_date: Date,
     market_index: MarketIndex,
@@ -169,7 +172,19 @@ impl Pillars<DualFwd> for InterpolatedVolatilitySurface<DualFwd> {
     }
 }
 
-impl ADVolatilitySurfaceElement for InterpolatedVolatilitySurface<DualFwd> {}
+impl ADVolatilitySurfaceElement for InterpolatedVolatilitySurface<DualFwd> {
+    fn clone_surface(&self) -> Result<SharedElement<dyn ADVolatilitySurfaceElement>> {
+        let mut market = self.clone();
+        for value in market
+            .points
+            .values_mut()
+            .flat_map(|values| values.values_mut())
+        {
+            *value = DualFwd::constant(ADForward::constant(value.value()));
+        }
+        Ok(Rc::new(RefCell::new(market)))
+    }
+}
 
 #[cfg(test)]
 mod tests {

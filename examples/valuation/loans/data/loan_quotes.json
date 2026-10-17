@@ -1,0 +1,125 @@
+{
+  "reference_date": "2026-02-24",
+  "quotes": [
+    {
+      "identifier": "FixedRateDeposit_EUR_ESTR_1D",
+      "mid": 0.03
+    },
+    {
+      "identifier": "FixedRateDeposit_EUR_ESTR_1Y",
+      "mid": 0.03
+    },
+    {
+      "identifier": "FixedRateDeposit_EUR_ESTR_2Y",
+      "mid": 0.03
+    },
+    {
+      "identifier": "FixedRateDeposit_EUR_ESTR_3Y",
+      "mid": 0.03
+    },
+    {
+      "identifier": "FixedRateDeposit_EUR_EURIBOR12m_1D",
+      "mid": 0.04
+    },
+    {
+      "identifier": "FixedRateDeposit_EUR_EURIBOR12m_1Y",
+      "mid": 0.04
+    },
+    {
+      "identifier": "Swap_EUR_EURIBOR12m_2Y",
+      "mid": 0.039
+    },
+    {
+      "identifier": "Swap_EUR_EURIBOR12m_3Y",
+      "mid": 0.038
+    },
+    {
+      "identifier": "Cds_BORROWER_EUR_1Y",
+      "mid": 0.01
+    },
+    {
+      "identifier": "Cds_BORROWER_EUR_3Y",
+      "mid": 0.012
+    },
+    {
+      "identifier": "OIS_EUR_ESTR_5Y",
+      "mid": 0.03
+    },
+    {
+      "identifier": "OIS_EUR_ESTR_10Y",
+      "mid": 0.03
+    },
+    {
+      "identifier": "OIS_EUR_ESTR_15Y",
+      "mid": 0.03
+    },
+    {
+      "identifier": "OIS_EUR_ESTR_20Y",
+      "mid": 0.03
+    },
+    {
+      "identifier": "OIS_EUR_ESTR_25Y",
+      "mid": 0.03
+    },
+    {
+      "identifier": "OIS_EUR_ESTR_30Y",
+      "mid": 0.03
+    },
+    {
+      "identifier": "OIS_EUR_ESTR_35Y",
+      "mid": 0.03
+    },
+    {
+      "identifier": "Swap_EUR_EURIBOR12m_5Y",
+      "mid": 0.037
+    },
+    {
+      "identifier": "Swap_EUR_EURIBOR12m_7Y",
+      "mid": 0.0375
+    },
+    {
+      "identifier": "Swap_EUR_EURIBOR12m_10Y",
+      "mid": 0.0405
+    },
+    {
+      "identifier": "Swap_EUR_EURIBOR12m_15Y",
+      "mid": 0.044
+    },
+    {
+      "identifier": "Swap_EUR_EURIBOR12m_20Y",
+      "mid": 0.045
+    },
+    {
+      "identifier": "Swap_EUR_EURIBOR12m_25Y",
+      "mid": 0.0445
+    },
+    {
+      "identifier": "Swap_EUR_EURIBOR12m_30Y",
+      "mid": 0.0425
+    },
+    {
+      "identifier": "Swap_EUR_EURIBOR12m_35Y",
+      "mid": 0.0415
+    },
+    {
+      "identifier": "Cds_BORROWER_EUR_5Y",
+      "mid": 0.014
+    },
+    {
+      "identifier": "Cds_BORROWER_EUR_10Y",
+      "mid": 0.016
+    },
+    {
+      "identifier": "Cds_BORROWER_EUR_20Y",
+      "mid": 0.018
+    },
+    {
+      "identifier": "Cds_BORROWER_EUR_30Y",
+      "mid": 0.02
+    },
+    {
+      "identifier": "Cds_BORROWER_EUR_35Y",
+      "mid": 0.021
+    }
+  ]
+}

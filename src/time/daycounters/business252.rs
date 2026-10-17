@@ -2,7 +2,7 @@ use super::daycount::DayCount;
 use crate::time::calendars::brazil::Market;
 use crate::time::{
     calendar::Calendar,
-    calendars::{brazil::Brazil, traits::ImplCalendar},
+    calendars::{brazil::Brazil, traits::IsCalendar},
     date::Date,
 };
 
@@ -28,13 +28,7 @@ impl DayCount for Business252 {
     fn day_count(start: Date, end: Date) -> i64 {
         let calendar = Calendar::Brazil(Brazil::new(Market::Settlement));
 
-        let count = i64::try_from(calendar.business_day_list(start, end).len())
-            .unwrap_or_else(|_| panic!("business day count should fit in i64"));
-        if end < start {
-            -count
-        } else {
-            count
-        }
+        calendar.business_days_between(start, end, true, false)
     }
 
     fn year_fraction(start: Date, end: Date) -> f64 {
@@ -57,5 +51,16 @@ mod test {
         assert_eq!(Business252::day_count(start, end), 22);
         let yf = Business252::year_fraction(start, end);
         assert!((yf - 22.0 / 252.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn accrual_excludes_end_and_handles_reversed_dates() {
+        let friday = Date::new(2026, 1, 9);
+        let monday = Date::new(2026, 1, 12);
+        assert_eq!(Business252::day_count(friday, monday), 1);
+        assert_eq!(Business252::day_count(monday, friday), -1);
+        assert_eq!(Business252::day_count(friday, friday), 0);
+        assert_eq!(Business252::day_count(monday, monday + 1), 1);
+        assert_eq!(Business252::day_count(monday + 1, monday), -1);
     }
 }

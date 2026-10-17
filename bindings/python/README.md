@@ -3,12 +3,40 @@
 PyO3 bindings for the [quantsupport](https://github.com/jmelo11/quantsupport) Rust
 derivative pricing and risk analytics library.
 
+## API reference
+
+The [Python reference](https://jmelo11.github.io/quantsupport/api/autoapi/quantsupport/index.html)
+has a page per class documenting constructors, methods, and properties by
+domain: `time`, `market`, `instruments`, `pricing`, and `risk`.
+Public classes remain available at the
+package root, so `quantsupport.Swap` and `quantsupport.instruments.Swap` are
+the same class. Contract inputs and results are read-only; context input
+properties have explicit setters.
+
+The [API index](https://jmelo11.github.io/quantsupport/api/index.html) also
+includes the Excel reference. Use the
+[Python walkthrough](https://jmelo11.github.io/quantsupport/python/getting-started.html)
+for a guided introduction. See the [API build guide](../../docs/README.md)
+for local Sphinx builds from the packaged stubs; no native extension is needed
+to build the reference.
+
 ## Install (development)
 
+Source builds require Python 3.9+ and the stable Rust toolchain. From the
+repository root, create and activate a virtual environment, then build with
+Maturin:
+
 ```bash
-pip install maturin
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install "maturin>=1.5,<2.0"
 maturin develop -m bindings/python/Cargo.toml --release
 ```
+
+On Windows, activate `.venv\Scripts\Activate.ps1` instead of using `source`.
+Documentation builds separately require Python 3.11+ and
+`docs/requirements.txt`, followed by `mdbook build` and
+`sphinx-build -W -b html docs book/html/api` as described in the build guide.
 
 ## Guided examples
 
@@ -21,12 +49,15 @@ They are cataloged under the same scopes as the Rust examples: `bootstrap`,
 | Notebook | Workflow |
 | --- | --- |
 | [Curve bootstrapping](examples/bootstrap/curves.ipynb) | Quote inputs, construction conventions, nodes, pillars, and forwards |
-| [First swap](examples/valuation/tour.ipynb) | Market inputs, dates, context lifecycle, requests, and result units |
-| [Product valuations](examples/valuation/product_valuations.ipynb) | Swaps, straight bonds, caplets and caps; par rates, yields, duration and spreads |
+| [First swap](examples/valuation/swaps/tour.ipynb) | Market inputs, dates, context lifecycle, requests, and result units |
+| [Par swap](examples/valuation/swaps/par_swap.ipynb) | Solve the fixed coupon and reprice at zero PV |
+| [Fixed-rate bond](examples/valuation/bonds/fixed_rate_bond.ipynb) | Price/Z-spread anchors, yield, duration, cashflows and quote risk |
+| [Caps and caplets](examples/valuation/caps/caps_and_caplets.ipynb) | Black option values and curve/volatility quote risk |
+| [Loans](examples/valuation/loans/loans.ipynb) | Contractual principal, reset requests, prepayment functions, fair-rate modes, credit and quote risk |
 | [Curves and volatility](examples/volatilitysurface/curves_and_volatility.ipynb) | Construction, inspection, and their impact on swap and option values |
 | [Simulations](examples/hullwhite/simulations.ipynb) | Calibration, path retrieval, distributions, seeds and sampling error |
 | [Portfolio risk](examples/sensitivity/portfolio_risk.ipynb) | Position aggregation, DV01/vega, cashflow reports, and full-revaluation checks |
-| [Stepped-coupon bond](examples/valuation/stepped_coupon_bond.ipynb) | Callable terms, tree/Fourier engines, OAS and sensitivities |
+| [Stepped-coupon bond](examples/valuation/bonds/stepped_coupon_bond.ipynb) | Callable terms, tree/Fourier engines, OAS and sensitivities |
 | [Scripted cashflows](examples/scripting/scripted_cashflows.ipynb) | Dated payoffs and native/scripted representation checks |
 | [XVA](examples/cva/xva.ipynb) | Netting sets, client terms, exposure profiles and adjustment risk |
 
@@ -83,7 +114,7 @@ with ctx:
 Every enum argument also accepts its string name (`currency="USD"`,
 `side="pay"`, `requests=["Value"]`, ...).
 
-The [currency-conversion walkthrough](examples/valuation/currency_conversion.ipynb)
+The [currency-conversion walkthrough](examples/valuation/swaps/currency_conversion.ipynb)
 values a CLP swap in the USD base currency under a USD CSA, explains FX pair
 direction, and reconciles the native value from converted, discounted cashflows.
 
@@ -182,6 +213,69 @@ as the Rust crate. Wheels are also available as Actions artifacts and GitHub
 release assets. To build one locally, run `maturin build --release` inside
 `bindings/python`; no Rust compiler is needed when installing the resulting wheel.
 
+Native enum members, dates, periods, calendars, and coupon/payoff expressions have
+concrete types in the stubs. Editor colours depend on semantic highlighting and
+the selected theme; hover information shows the inferred type. Select the Python
+environment containing the rebuilt wheel in Jupyter to use its updated stubs.
+
+### Calendars, schedules, and IMM
+
+Use native calendar variants directly, such as `calendar = qs.Calendar.TARGET`.
+Market-specific calendars accept enums:
+`qs.Calendar.UnitedStates(market=qs.UnitedStatesMarket.Sofr)`.
+`qs.Calendar.JointCalendar(calendars=[qs.Calendar.TARGET, qs.Calendar.Japan],
+rule=qs.JointCalendarRule.JoinHolidays)` combines typed calendars.
+
+The [calendar catalog](https://jmelo11.github.io/quantsupport/api/python/sections/time/calendars.html)
+lists every native variant. Holiday overrides return independent calendars;
+they never mutate shared values such as `Calendar.TARGET`.
+
+```python
+calendar = qs.Calendar.TARGET.with_added_holiday("2026-01-05")
+month_end = calendar.end_of_month("2026-05-01")
+schedule = qs.Schedule(
+    "2026-01-15", "2027-01-15", "3M",
+    calendar=calendar,
+    convention=qs.BusinessDayConvention.ModifiedFollowing,
+    termination_date_convention=qs.BusinessDayConvention.ModifiedFollowing,
+)
+dates = schedule.dates
+next_roll = qs.IMM.next_date("2026-01-01")
+```
+
+`Schedule` exposes copied dates and interval-regularity flags, immutable generation
+parameters, iteration, and indexing. Its constructor wraps native `MakeSchedule`.
+`IMM` provides monthly or quarterly roll dates and code conversion. See the
+[component coverage](https://jmelo11.github.io/quantsupport/api/coverage.html)
+for configuration-based workflows and Rust components not independently bound.
+
+### Temporary scenarios
+
+Combine typed `Shock` objects in `Scenario` and enter them after the pricing context:
+
+```python
+scenario = qs.Scenario(shocks=[
+    qs.Shock(target="EURIBOR12m", value=0.01, shock_type=qs.ScenarioType.Absolute),
+    qs.Shock(target="FUNDINGSPREAD", value=0.005, shock_type=qs.ScenarioType.Absolute),
+])
+with context, scenario:
+    stressed = pricer.evaluate(trade=trade, context=context, requests=[qs.Request.Value])
+with context:
+    base = pricer.evaluate(trade=trade, context=context, requests=[qs.Request.Value])
+```
+
+The scenario borrows inputs from the innermost active context. Pricing requests
+construct the required market objects and dependencies in a separate cache;
+unrelated curves and simulations remain untouched. Each requested curve has
+independent AD nodes, while unchanged calibration results can be reused. Exiting
+the scope releases its cache, including on exceptions. Nested scenarios compose
+in entry order. The same scenario can be reused with another context.
+Quote identifiers select calibrated market inputs. For explicit zero curves,
+`FUNDINGSPREAD` selects every spread pillar and
+`FUNDINGSPREAD_2031-02-24` selects one dated pillar. These are the same labels
+returned by `Request.Sensitivities`. Multiplying their derivatives by `0.0001`
+gives the approximate EUR value change for a +1 bp funding-spread move.
+
 ### In-memory product and market schemas
 
 All built-in products support `Product.from_dict(spec)` and
@@ -210,7 +304,7 @@ fx = qs.FxStore.from_dict([{"base": "EUR", "quote": "USD", "rate": 1.1}])
 `PricerConfiguration`, and `SimulationConfiguration`. Like `from_json`, it
 accepts a list, one configuration dict, or a single-key object wrapping a list,
 such as `{"curve_specs": [...]}`. `from_dict` on those classes still returns
-one configuration. `QuoteStore`, `FixingStore`, `FxStore`, `Scenario`, and
+one configuration. `QuoteStore`, `FixingStore`, `FxStore`, and
 `SingleCurveCSADiscountPolicy` keep their existing `from_dict` methods.
 
 Market configs use the native Rust serde schemas. For product market-index
@@ -256,9 +350,11 @@ callable_bond = qs.SteppedCouponBond(
     identifier="USD-STEPPED-CALL-2031", start_date=ref, maturity_date=ref + "6Y",
     notional=1_000_000, currency=qs.Currency.USD,
     coupons=[
-        qs.Coupon.fixed(0.045),
-        qs.Coupon.floating(qs.MarketIndex.SOFR, spread=0.006,
-                           floor=0.0, cap=0.06),
+        qs.FixedRateCoupon(rate=qs.InterestRate(rate=0.045)),
+        qs.OptionEmbeddedCoupon(
+            index=qs.MarketIndex.SOFR,
+            payoff=(qs.PayoffOps.Index + 0.006).max(0.0).min(0.06),
+        ),
     ],
     notional_percentages=[1.0, 0.90, 0.75],
     call_schedule=[
@@ -312,9 +408,11 @@ bond_spec = {
     "currency": "USD", "units": 100.0,
     "payment_frequency": "Semiannual", "coupon_day_counter": "Actual365",
     "coupons": [
-        {"Fixed": {"rate": 0.045}},
-        {"Floating": {"index": "SOFR", "spread": 0.006,
-                      "floor": 0.0, "cap": 0.06}},
+        qs.FixedRateCoupon(rate=qs.InterestRate(rate=0.045)).to_dict(),
+        qs.OptionEmbeddedCoupon(
+            index=qs.MarketIndex.SOFR,
+            payoff=(qs.PayoffOps.Index + 0.006).max(0.0).min(0.06),
+        ).to_dict(),
     ],
     "notional_percentages": [1.0, 0.90, 0.75],
     "call_schedule": [
@@ -326,10 +424,11 @@ bond = qs.SteppedCouponBond.from_dict(bond_spec)
 restored = qs.SteppedCouponBond.from_dict(bond.to_dict())
 ```
 
-`Coupon` wraps existing native `CashflowType<f64>` coupon variants; there is
-no additional coupon-definition enum. `Coupon.from_dict` and `Coupon.to_dict`
-retain compact `Fixed`/`Floating` constructor shapes. Input also accepts
-`FixedRateCoupon`, `FloatingRateCoupon`, and `OptionEmbeddedCoupon` tags.
+`FixedRateCoupon`, `FloatingRateCoupon`, and `OptionEmbeddedCoupon` wrap the
+corresponding native cashflows. Each class provides `from_dict` and `to_dict`.
+Serialized tags use those class names, and optional coupons preserve the full
+`PayoffOps` expression tree. Legacy compact `Fixed`/`Floating` input remains
+readable.
 Python enums remain supported in direct constructors and dictionaries,
 including nested configuration dicts. For example, use `qs.Currency.USD`,
 `qs.MarketIndex.SOFR`, `qs.Frequency.Semiannual`, and `qs.Request.Value` in
@@ -418,7 +517,7 @@ Native calibration resolves option prices from the context's market and fits
 the sigma schedule. Missing models, curves, calibration data, invalid event
 order/dates, and script parse/runtime failures raise Python exceptions.
 
-See [examples/valuation/stepped_coupon_bond.ipynb](examples/valuation/stepped_coupon_bond.ipynb)
+See [examples/valuation/bonds/stepped_coupon_bond.ipynb](examples/valuation/bonds/stepped_coupon_bond.ipynb)
 for tree/Fourier pricing and [examples/scripting/scripted_cashflows.ipynb](examples/scripting/scripted_cashflows.ipynb)
 for the native-versus-scripted comparison.
 
@@ -580,7 +679,8 @@ Time:
 - `Date(y, m, d)` / `Date.parse(s)` — arithmetic with days, `Period` or period
   strings (`date + "6M"`), `weekday()`, `end_of_month()`, `to_datetime()`
 - `Period(n, TimeUnit)` / `Period.parse("1Y6M")` / `Period.from_frequency(f)`
-- `Calendar(name)` — `is_business_day`, `adjust`, `advance`,
+- `Calendar.TARGET`, `Calendar.Japan`, `Calendar.WeekendsOnly`, and other native
+  calendar variants — `is_business_day`, `adjust`, `advance`,
   `business_days_between`, `holiday_list`, `business_day_list`
 - `DayCounter.year_fraction(start, end)` / `day_count(start, end)`
 
@@ -600,7 +700,9 @@ Market data & configuration (each with `from_dict` / `from_json`, plus
 
 Pricing:
 
-- `PricingContext(quotes, curves, fixings=None, fx=None, volatility_surfaces=None, volatility_cubes=None, pricer_configurations=None, simulations=None, csa_policy=None, fixed_income_policy=None, scenarios=None)` — context manager
+- `Shock(target=..., value=..., shock_type=ScenarioType.Absolute)` — typed, immutable market shock
+- `Scenario(shocks=[Shock(...)])` — temporary shocks in `with context, scenario:`
+- `PricingContext(quotes, curves, fixings=None, fx=None, volatility_surfaces=None, volatility_cubes=None, pricer_configurations=None, simulations=None, csa_policy=None, fixed_income_policy=None)` — context manager
 - inputs: `ctx.reference_date` / `ctx.evaluation_date`, `ctx.quotes`,
   `ctx.fixings`, `ctx.fx`, `ctx.base_currency`, `ctx.base_index`,
   `ctx.curve_configurations`,
@@ -608,14 +710,15 @@ Pricing:
   `ctx.simulation_configurations`
 - constructed outputs (inside the `with` block, or after an explicit
   `initialize()` when using the context without one):
-  - `ctx.curves()` / `ctx.curve(index)` → `DiscountCurve`
+  - `ctx.discount_curves()` / `ctx.curve(index)` → constructed `DiscountCurve` objects
     (`nodes()`, `pillars()`, `discount_factor(date)`, `forward_rate(...)`)
+  - `ctx.curves = new_curves` → replace curve configurations and rebuild initialized markets
   - `ctx.volatility_surfaces()` / `ctx.volatility_surface(index)` → `VolatilitySurface`
   - `ctx.volatility_cubes()` / `ctx.volatility_cube(index)` → `VolatilityCube`
   - `ctx.simulations()` / `ctx.simulation(index)` → `Simulation`
     (`dates()`, `n_paths`, `dt`, `paths()` and `calibration_diagnostics()` DataFrames)
 - `Swap`, `CrossCurrencySwap`, `FixedRateBond`, `SteppedCouponBond` — instrument
-    specifications with typed getters; callable stepped bonds use `Coupon` and
+    specifications with typed getters; callable stepped bonds use native coupon classes and
   explicit `CallScheduleEntry(date, strike)` terms
 - `ctx.evaluate(trade, requests)` → `EvaluationResults` (`price`, `yield_to_maturity`, `modified_duration`, `z_spread`, `oas`, `fair_rate`, `sensitivities` DataFrame, `cashflows` DataFrame)
 
@@ -648,3 +751,52 @@ Remove position metadata from product constructors and wrap each product in
 The `bond_anchor` evaluation argument has been removed. Replace the former
 `discounting`/`DiscountingConfig` context input with `csa_policy` and
 `SingleCurveCSADiscountPolicy(collateral_currency=..., collateral_index=...)`.
+
+### Regional indices, calendars, and snapshots
+
+Rate indices include Fed Funds, CDI, DESTR, KOFR, ZARONIA, EURIBOR 1W,
+BBSW and BKBM (1/2/3/4/6 months), NIBOR (1/3/6/12 months), and SHIBOR
+(1 day, 1/2 weeks, 1/3/6/12 months). Use typed constants such as
+`qs.MarketIndex.FedFunds` and `qs.MarketIndex.NIBOR3m`, or their exact string
+names in configuration dictionaries and quote identifiers.
+
+Index metadata supplies currency, day count, reset frequency, fixing lag, and
+fixing calendar. Instrument schedule conventions remain explicit; BBSW's
+half-month date-roll rule is not inferred automatically.
+
+Calendars include Australia, Canada, Switzerland, New Zealand, Norway, Sweden,
+Denmark, South Korea, South Africa, and China. Select market variants explicitly:
+
+```python
+canada = qs.Calendar.Canada(market=qs.CanadaMarket.Settlement)
+china_ib = qs.Calendar.China(market=qs.ChinaMarket.IB)
+switzerland = qs.Calendar.Switzerland
+```
+
+`SnapshotSelector` chooses a complete historical market by timestamp and quote
+side. Request an index from the resulting context; the selector itself does not
+filter indices or choose a calendar:
+
+```python
+archive = qs.MarketSnapshotStore.from_json("markets.json")
+selector = qs.SnapshotSelector(
+    qs.DateTime(2026, 1, 15, 10),
+    rule=qs.SnapshotSelectionRule.Previous,
+    level=qs.Level.Mid,
+)
+selected = archive.select(selector)
+with archive.pricing_context(selector) as historical:
+    curve = historical.curve(qs.MarketIndex.NIBOR3m)
+    discount = curve.discount_factor("2027-01-15")
+```
+
+The archive must contain a construction configuration for the requested index
+and any required discount/collateral curves. New identifiers and calendar names
+in OIS quote conventions survive snapshot JSON round-trips. Historical fixings
+are supplied separately through `pricing_context(selector, fixings=...)`.
+
+Calendars use local MIT implementations and MIT-licensed dated holiday data.
+China tables cover 2004–2026; South Korean holidays cover 2004–2050; New Zealand
+Matariki dates cover 2022–2052. New Zealand defaults to Wellington; Auckland is
+an explicit variant. Dates beyond finite tables require updated announcements.
+The data source's MIT notice is retained in the project LICENSE.

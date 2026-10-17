@@ -114,11 +114,9 @@ impl<T: Scalar> MakeOvernightIndexSwap<T> {
     pub fn build(self) -> Result<OvernightIndexSwap<T>> {
         let details = self.index.rate_index_details()?;
         let conventions = &self.conventions;
-        if !details.is_in_arrears()
-            || details.rate_definition().compounding() != Compounding::Simple
-        {
+        if !details.is_in_arrears() || details.frequency() != crate::time::enums::Frequency::Daily {
             return Err(QSError::InvalidValueErr(
-                "OIS requires a simple overnight rate index".into(),
+                "OIS requires a daily overnight rate index".into(),
             ));
         }
         if !self.notional.is_finite()
@@ -285,7 +283,6 @@ impl<T: Scalar> MakeOvernightIndexSwap<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::instruments::cashflows::cashflow::Cashflow;
 
     #[test]
     fn sofr_ois_settlement_and_payment_lag() {

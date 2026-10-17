@@ -45,4 +45,4 @@ def read_configuration(scope, filename):
 
 def load_pricers(filename):
     """Load the selected bond engine and its calibrated rate-model assignment."""
-    return qs.PricerConfiguration.from_json(str(EXAMPLES / "valuation" / "data" / filename))
+    return qs.PricerConfiguration.from_json(str(EXAMPLES / "valuation" / "bonds" / "data" / filename))

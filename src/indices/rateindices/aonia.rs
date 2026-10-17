@@ -9,7 +9,7 @@ use crate::{
     },
     rates::{compounding::Compounding, interestrate::RateDefinition},
     time::{
-        calendar::Calendar, calendars::weekendsonly::WeekendsOnly, daycounter::DayCounter,
+        calendar::Calendar, calendars::australia::Australia, daycounter::DayCounter,
         enums::Frequency,
     },
 };
@@ -31,7 +31,7 @@ impl MarketIndexDetails for AONIAIndex {
 
 impl RateIndexDetails for AONIAIndex {
     fn calendar(&self) -> Calendar {
-        Calendar::WeekendsOnly(WeekendsOnly::new())
+        Calendar::Australia(Australia::default())
     }
 
     fn currency(&self) -> Currency {

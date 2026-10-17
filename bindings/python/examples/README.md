@@ -14,7 +14,10 @@ to that scope.
 | Scope | Catalog | Coverage |
 | --- | --- | --- |
 | `bootstrap` | [Curve construction](bootstrap/README.md) | Quotes, bootstrap configurations, nodes, pillars, and forwards |
-| `valuation` | [Product pricing](valuation/README.md) | First swap, product analytics, base-currency conversion, and callable stepped bonds |
+| `valuation/swaps` | [Swaps](valuation/swaps/README.md) | First valuation, par coupon and base-currency conversion |
+| `valuation/bonds` | [Bonds](valuation/bonds/README.md) | Straight-bond analytics and callable stepped bonds |
+| `valuation/caps` | [Caps and caplets](valuation/caps/README.md) | Black option values and curve/volatility risk |
+| `valuation/loans` | [Loans](valuation/loans/README.md) | Repayment, resets, prepayment, credit, valuation and risk |
 | `volatilitysurface` | [Volatility markets](volatilitysurface/README.md) | Curves, surfaces, and independent rate/volatility valuation shocks |
 | `hullwhite` | [Rate simulations](hullwhite/README.md) | Calibrated model setup and retrieving simulation results |
 | `sensitivity` | [Portfolio and risk](sensitivity/README.md) | Valuation requests, aggregation, quote risk, and scenarios |
@@ -25,18 +28,23 @@ to that scope.
 
 | Order | Notebook | What you will learn |
 | --- | --- | --- |
-| 1 | [From quotes to a swap](valuation/tour.ipynb) | Dates and conventions, product/position terms, market indices, the context lifecycle, requests, and result units |
-| 2 | [Product valuations](valuation/product_valuations.ipynb) | Swap par rate, bond price/yield/duration/Z-spread, caplet and cap valuation, and which requests fit each product |
-| 3 | [Currency conversion](valuation/currency_conversion.ipynb) | Read FX pair direction, value a CLP swap under USD collateral, and reconcile its base-currency PV |
-| 4 | [Curves and volatility](volatilitysurface/curves_and_volatility.ipynb) | Configure and inspect curves and surfaces, query forwards and smiles, and explain rate/volatility shocks through product P&L |
-| 5 | [Simulations and their results](hullwhite/simulations.ipynb) | Model calibration, path count/seed/grid, retrieving paths, date-wise statistics, plots, and sampling error |
-| 6 | [Portfolio valuation and risk](sensitivity/portfolio_risk.ipynb) | Price several trades in one context, aggregate quote risk and payments, distinguish DV01 from vega, and check AAD against full revaluation |
-| 7 | [Callable stepped-coupon bond](valuation/stepped_coupon_bond.ipynb) | Typed coupon/principal/call terms, calibrated tree and Fourier engines, price/OAS anchors, and curve/volatility/OAS risk |
-| 8 | [Scripted cashflows](scripting/scripted_cashflows.ipynb) | Dated observations and payments, path-averaged results, and the native-versus-scripted stepped-bond underlying check |
-| 9 | [Exposure and XVA](cva/xva.ipynb) | Per-client terms, netting sets, EPE/ENE/EE, XVA values and risk, and the effect of netting |
+| 1 | [From quotes to a swap](valuation/swaps/tour.ipynb) | Dates and conventions, product/position terms, market indices, the context lifecycle, requests, and result units |
+| 2 | [Par swap](valuation/swaps/par_swap.ipynb) | Solve the fixed coupon and verify zero PV |
+| 3 | [Fixed-rate bond](valuation/bonds/fixed_rate_bond.ipynb) | Price/Z-spread anchors, yield, duration, payments and quote risk |
+| 4 | [Caps and caplets](valuation/caps/caps_and_caplets.ipynb) | Black option values and separate rate/volatility risk |
+| 5 | [Loans](valuation/loans/loans.ipynb) | Repayment, resets, prepayment, par coupon/spread, credit and risk |
+| 6 | [Currency conversion](valuation/swaps/currency_conversion.ipynb) | Read FX direction, value a CLP swap under USD collateral, and reconcile its base-currency PV |
+| 7 | [Curves and volatility](volatilitysurface/curves_and_volatility.ipynb) | Configure and inspect curves and surfaces, query forwards and smiles, and explain market-shock P&L |
+| 8 | [Simulations and their results](hullwhite/simulations.ipynb) | Model calibration, path count/seed/grid, retrieving paths, seeds and sampling error |
+| 9 | [Portfolio valuation and risk](sensitivity/portfolio_risk.ipynb) | Aggregate quote risk and payments, distinguish DV01 from vega, and check AAD against full revaluation |
+| 10 | [Callable stepped-coupon bond](valuation/bonds/stepped_coupon_bond.ipynb) | Typed terms, calibrated tree/Fourier engines, OAS and risk |
+| 11 | [Scripted cashflows](scripting/scripted_cashflows.ipynb) | Dated observations/payments and the native-versus-scripted bond check |
+| 12 | [Exposure and XVA](cva/xva.ipynb) | Netting sets, client terms, exposure profiles and adjustment risk |
 
 The introduction is the recommended starting point. For a closer look at curve
 construction before pricing, read [bootstrap/curves.ipynb](bootstrap/curves.ipynb).
+For loans, follow [the loan walkthrough](valuation/loans/loans.ipynb) from a fixed
+payment schedule through floating resets, prepayment, valuation and risk.
 The later notebooks repeat their own small setup, so you can also open the
 subject you need directly.
 
@@ -88,8 +96,9 @@ The runner discovers notebooks in every scope and uses a fresh kernel with the
 current interpreter for each notebook. It validates the notebook format and
 fails on any cell error.
 Executed copies preserve the scope folders under `--output-dir`.
-Source notebooks have no stored outputs, so checked-in results cannot be
-mistaken for a run against a different binding version. The callable-bond
+The runner leaves source notebooks unchanged by default. Pass `--write` to
+refresh their stored outputs, or `--kernel NAME` to select a registered kernel
+instead of the current interpreter. The callable-bond
 example uses small teaching grids for its two calibrated numerical valuations
 and OAS inversion; its narrative explains how to refine those grids. Build the
 binding with `--release` as above for interactive pricing. The per-cell timeout
@@ -133,7 +142,7 @@ The notebooks focus on native products and their existing Python entry points.
 | --- | --- |
 | `market_data.py` in each scope folder | Local loader imported directly by its notebooks; reads typed inputs/configurations without hidden pricing |
 | [stepped_cashflows.py](scripting/stepped_cashflows.py) | Translate this tutorial's six-year semiannual note into repetitive script events; no optimal issuer exercise |
-| [valuation/data/bond_tree.json](valuation/data/bond_tree.json), [valuation/data/bond_fourier.json](valuation/data/bond_fourier.json) | Native pricer/model schema and numerical grids |
+| [valuation/bonds/data/bond_tree.json](valuation/bonds/data/bond_tree.json), [valuation/bonds/data/bond_fourier.json](valuation/bonds/data/bond_fourier.json) | Native pricer/model schema and numerical grids |
 | [hullwhite/data/simulation.json](hullwhite/data/simulation.json) | Calibrated Hull–White simulation settings |
 | [cva/data/xva.json](cva/data/xva.json) | Calibrated LGM exposure-engine settings |
 | [run_notebooks.py](run_notebooks.py) | Execute the documentation against an installed binding |
@@ -141,13 +150,16 @@ The notebooks focus on native products and their existing Python entry points.
 Most notebooks use the **illustrative 2026-02-24** snapshot already maintained in
 [`examples/hullwhite/data`](../../../examples/hullwhite/data) at the repository
 root: `quotes.json`, `curve_specs.json`, and `vol_specs.json`. The
-[currency-conversion notebook](valuation/currency_conversion.ipynb) uses the
+[currency-conversion notebook](valuation/swaps/currency_conversion.ipynb) uses the
 USD/CLP quote and curve files in
 [`examples/bootstrap/data`](../../../examples/bootstrap/data) on the same
 reference date, with an explicit illustrative spot rate of 935 CLP per USD.
 Keep the repository layout when running the tutorials; copying only the
 notebooks omits their helpers and source market data. Nothing downloads or
 updates these quotes automatically.
+The [loan notebook](valuation/loans/loans.ipynb) reads a separate illustrative EUR
+snapshot from [`examples/valuation/loans/data`](../../../examples/valuation/loans/data),
+shared with `cargo run -p valuation-loans`.
 
 The market contains a SOFR curve and a Black caplet surface with absolute-strike
 smiles. The simulation and callable-bond examples calibrate a short-rate

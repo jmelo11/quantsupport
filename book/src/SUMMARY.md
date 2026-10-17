@@ -28,6 +28,7 @@
 
 - [Pricing Overview](pricing/overview.md)
 - [Bond Pricing](pricing/bonds.md)
+- [Mortgage and Loan Payments](pricing/loans.md)
 - [Interest Rate Swaps](pricing/swaps.md)
 - [Cross-Currency Swaps](pricing/cross-currency.md)
 - [Caps and Floors](pricing/caps-floors.md)
@@ -62,8 +63,21 @@
 - [CVA, DVA and FVA](xva/cva-dva-fva.md)
 - [XVA Sensitivities](xva/sensitivities.md)
 
+# Python
+
+- [Python Getting Started](python/getting-started.md)
+- [Python API by Domain](python/api.md)
+
+# Excel
+
+- [Download and Install](excel/installation.md)
+- [Workbook Workflow](excel/workbook.md)
+- [Historical Pricing](excel/historical-pricing.md)
+- [Worksheet Function Reference](excel/reference.md)
+
 # Reference
 
 - [Configuration](reference/configuration.md)
 - [Examples](reference/examples.md)
+- [Binding Development](reference/bindings.md)
 - [Glossary](reference/glossary.md)

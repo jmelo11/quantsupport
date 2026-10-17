@@ -16,6 +16,10 @@ pub mod evaluator;
 pub mod instrument;
 /// Market data handling module.
 pub mod marketdatahandling;
+/// Serializable timestamped market inputs.
+pub mod marketsnapshot;
+/// Historical market snapshot archive.
+pub mod marketsnapshotstore;
 /// Pillars module.
 pub mod pillars;
 /// Pricer module.
@@ -28,6 +32,8 @@ pub mod pricerstate;
 pub mod pricingcontext;
 /// Pricing request module.
 pub mod request;
+/// Historical market timestamp and quote-side selection.
+pub mod snapshotselector;
 /// Trade module.
 pub mod trade;
 /// Visitor pattern module.

@@ -72,6 +72,10 @@ Curve specifications assign quote identifiers to rate-curve identities. The file
 }
 ```
 
+The same list also accepts zero-rate and composite definitions through the
+`construction` field. See the [explicit and composite curve configurations](../curves/bootstrapping.md#explicit-zero-rates-and-composite-curves)
+for a EURIBOR-plus-funding-spread example.
+
 SOFR must be available before the dependent Term SOFR and collateral curves can be solved. The multi-curve bootstrapper derives that order from the instruments. [Curve Bootstrapping](../curves/bootstrapping.md) gives the full field list, defaults, and failure behavior.
 
 Credit curves use `CreditCurveConfiguration` because CDS calibration also needs recovery, premium frequency, currency, and a discount index. A representative configuration is:

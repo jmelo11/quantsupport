@@ -8,7 +8,7 @@ This chapter introduces the QuantSupport pricing workflow through a five-year US
 4. Select a compatible pricer and request specific calculations.
 5. Read the requested values from `EvaluationResults`.
 
-The complete program is in [`examples/valuation/src/main.rs`](../../../examples/valuation/src/main.rs). Run it from the workspace root with `cargo run -p valuation`.
+The complete program is in [`examples/valuation/swaps/src/main.rs`](../../../examples/valuation/swaps/src/main.rs). Run it from the workspace root with `cargo run -p valuation-swaps`.
 
 ## Choosing a scalar type
 

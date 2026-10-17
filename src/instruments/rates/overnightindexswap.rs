@@ -9,7 +9,6 @@ use crate::{
     currencies::currency::Currency,
     indices::marketindex::MarketIndex,
     instruments::cashflows::{cashflowtype::CashflowType, leg::Leg},
-    rates::compounding::Compounding,
     time::date::Date,
     utils::errors::{QSError, Result},
     xva::makecontigentclaim::IntoContingentClaims,
@@ -39,11 +38,9 @@ impl<T: Scalar> OvernightIndexSwap<T> {
         currency: Currency,
     ) -> Result<Self> {
         let details = forward_index.rate_index_details()?;
-        if !details.is_in_arrears()
-            || details.rate_definition().compounding() != Compounding::Simple
-        {
+        if !details.is_in_arrears() || details.frequency() != crate::time::enums::Frequency::Daily {
             return Err(QSError::InvalidValueErr(
-                "OIS requires a simple overnight rate index".into(),
+                "OIS requires a daily overnight rate index".into(),
             ));
         }
         if fixed_leg.cashflows().is_empty()
@@ -228,9 +225,7 @@ mod tests {
     use super::*;
     use crate::{
         instruments::{
-            cashflows::{
-                cashflow::Cashflow, coupons::LinearCoupon, floatingratecoupon::FloatingRateCoupon,
-            },
+            cashflows::floatingratecoupon::FloatingRateCoupon,
             rates::makeovernightindexswap::MakeOvernightIndexSwap,
         },
         time::{enums::TimeUnit, period::Period},

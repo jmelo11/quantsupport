@@ -1,3 +1,5 @@
+use std::{cell::RefCell, rc::Rc};
+
 use crate::{
     ad::scalar::Scalar,
     rates::compounding::Compounding,
@@ -51,4 +53,36 @@ where
     /// # Errors
     /// Returns an error if the forward rate cannot be computed for the given time interval.
     fn forward_rate_from_time(&self, start: f64, end: f64) -> Result<T>;
+}
+
+impl<T: Scalar, C: InterestRatesTermStructure<T> + ?Sized> InterestRatesTermStructure<T>
+    for Rc<RefCell<C>>
+{
+    fn reference_date(&self) -> Date {
+        self.borrow().reference_date()
+    }
+    fn discount_factor(&self, date: Date) -> Result<T> {
+        self.borrow().discount_factor(date)
+    }
+    fn forward_rate(
+        &self,
+        start: Date,
+        end: Date,
+        comp: Compounding,
+        freq: Frequency,
+    ) -> Result<T> {
+        self.borrow().forward_rate(start, end, comp, freq)
+    }
+    fn nodes(&self) -> Option<Vec<(Date, T)>> {
+        self.borrow().nodes()
+    }
+    fn day_counter(&self) -> Option<DayCounter> {
+        self.borrow().day_counter()
+    }
+    fn discount_factor_from_time(&self, time: f64) -> Result<T> {
+        self.borrow().discount_factor_from_time(time)
+    }
+    fn forward_rate_from_time(&self, start: f64, end: f64) -> Result<T> {
+        self.borrow().forward_rate_from_time(start, end)
+    }
 }

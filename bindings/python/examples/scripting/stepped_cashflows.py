@@ -35,19 +35,18 @@ calls on the supplied bond are deliberately omitted from the returned script.
         next_outstanding = percentages[min(
             period + 1, len(percentages) - 1)] if period < 11 else 0.0
         principal = terms["notional"] * (outstanding - next_outstanding)
-        if "Fixed" in coupon:
-            rate = str(coupon["Fixed"]["rate"])
-            day_counter = "Actual365"
+        if "FixedRateCoupon" in coupon:
+            rate = str(coupon["FixedRateCoupon"]["rate"]["rate"])
+            day_counter = terms["coupon_day_counter"]
         else:
-            floating = coupon["Floating"]
-            if floating["index"] != "SOFR" or floating["cap"] is None or floating["floor"] is None:
-                raise ValueError(
-                    "The tutorial floating coupon requires SOFR with a cap and floor")
-            rate = (
-                f'max(min(RateIndex("SOFR", "{accrual_start}", "{end}") '
-                f'+ {floating["spread"]}, {floating["cap"]}), {floating["floor"]})'
-            )
-            day_counter = "Actual360"
+            kind = "OptionEmbeddedCoupon" if "OptionEmbeddedCoupon" in coupon else "FloatingRateCoupon"
+            floating = coupon[kind]
+            if floating["index"] != "SOFR":
+                raise ValueError("The tutorial floating coupon requires SOFR")
+            observation = f'RateIndex("SOFR", "{accrual_start}", "{end}")'
+            payoff = _payoff_expression(floating["payoff"], observation) if kind == "OptionEmbeddedCoupon" else observation
+            rate = f'({payoff} + {floating["spread"]})'
+            day_counter = floating["day_counter"]
         initialization = "bond = 0; " if period == 0 else ""
         events.append({
             "date": str(accrual_start),
@@ -62,3 +61,17 @@ calls on the supplied bond are deliberately omitted from the returned script.
         "name": "STEPPED-UNDERLYING", "currency": qs.Currency.USD,
         "result_variable": "bond", "events": events,
     })
+
+
+def _payoff_expression(payoff, observation):
+    """Render native PayoffOps nodes in the library's script syntax."""
+    if payoff == "Index":
+        return observation
+    operation, operands = next(iter(payoff.items()))
+    if operation == "Const":
+        return repr(operands)
+    left, right = [_payoff_expression(node, observation) for node in operands]
+    if operation in ("Min", "Max"):
+        return f"{operation.lower()}({left}, {right})"
+    symbol = {"Plus": "+", "Minus": "-", "Times": "*"}[operation]
+    return f"({left} {symbol} {right})"

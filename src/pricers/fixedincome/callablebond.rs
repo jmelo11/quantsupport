@@ -15,12 +15,12 @@ use crate::{
     utils::errors::{QSError, Result},
     volatility::modelcalibration::CalibrationSource,
 };
-pub(super) struct CallableBondModel<T: Scalar> {
-    pub(super) parameters: HullWhiteParameters<T>,
+pub struct CallableBondModel<T: Scalar> {
+    pub parameters: HullWhiteParameters<T>,
     time_grid: TimeGridConfiguration,
 }
 impl CallableBondModel<f64> {
-    pub(super) fn ad_model(&self, market: &MarketData) -> Result<CallableBondModel<DualFwd>> {
+    pub fn ad_model(&self, market: &MarketData) -> Result<CallableBondModel<DualFwd>> {
         Ok(CallableBondModel {
             parameters: self.parameters.ad_parameters(market)?,
             time_grid: self.time_grid,
@@ -28,7 +28,7 @@ impl CallableBondModel<f64> {
     }
 }
 impl<T: Scalar> CallableBondModel<T> {
-    pub(super) fn events(&self, valuation: &BondValuation<'_, T>) -> Result<BondEventGrid<T>> {
+    pub fn events(&self, valuation: &BondValuation<'_, T>) -> Result<BondEventGrid<T>> {
         bond_event_grid(
             valuation.leg,
             valuation.units,
@@ -39,7 +39,7 @@ impl<T: Scalar> CallableBondModel<T> {
         )
     }
 }
-pub(super) fn pricer_configuration(
+pub fn pricer_configuration(
     trade: &impl BondTerms,
     context: &impl MarketDataProvider,
 ) -> Result<PricerConfiguration> {
@@ -60,7 +60,7 @@ pub(super) fn pricer_configuration(
     configuration.validate()?;
     Ok(configuration)
 }
-pub(super) fn prepare_callable_bond(
+pub fn prepare_callable_bond(
     trade: &impl BondTerms,
     index: &MarketIndex,
     context: &impl MarketDataProvider,

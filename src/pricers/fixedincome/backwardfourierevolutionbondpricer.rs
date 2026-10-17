@@ -164,8 +164,15 @@ fn fourier_curve_shifts<T: Scalar>(
 /// The Gaussian expectation is evaluated spectrally. The mean-reversion map
 /// `x -> exp(-alpha dt) x` is then evaluated by linear interpolation before
 /// discounting and application of the issuer-call obstacle.
+///
+/// # Errors
+/// Returns an error if grid controls, model transitions or discount factors are
+/// invalid, curve evaluation fails, or a Fourier transform fails.
+///
+/// # Panics
+/// Panics if the event grid lacks cashflow or call entries for its steps.
 #[allow(clippy::cast_precision_loss)]
-pub(super) fn backward_fourier_value<T: Scalar>(
+pub fn backward_fourier_value<T: Scalar>(
     discount_factor: impl FnMut(f64) -> Result<T>,
     terms: &BondEventGrid<T>,
     alpha: f64,
@@ -296,19 +303,22 @@ impl_bond_pricer!(
     SteppedCouponBondTrade<DualFwd>
 );
 
+/// Shared fixtures for callable-bond Fourier tests.
 #[cfg(test)]
-pub(super) mod test_support {
+pub mod test_support {
     use super::super::bondpricer::test_support::{policy, provider_with_method, TestProvider};
     use super::BackwardFourierEvolutionBondPricer;
     use crate::prelude::*;
     use crate::rates::yieldtermstructure::flatforwardtermstructure::FlatForwardTermStructure;
 
+    /// Creates a Fourier pricer with the test discount policy.
     pub fn fourier_pricer() -> BackwardFourierEvolutionBondPricer {
         let mut pricer = BackwardFourierEvolutionBondPricer::new();
         pricer.set_discount_policy(policy());
         pricer
     }
 
+    /// Creates a market provider with Fourier controls and a benchmark flat curve.
     pub fn fourier_provider(
         evaluation_date: Date,
         steps_per_year: usize,
@@ -316,6 +326,7 @@ pub(super) mod test_support {
         provider_with_method(evaluation_date, steps_per_year, true)
     }
 
+    /// Returns a bond's Fourier value, panicking if evaluation fails.
     pub fn fourier_value(
         pricer: &BackwardFourierEvolutionBondPricer,
         trade: &SteppedCouponBondTrade<DualFwd>,

@@ -34,9 +34,12 @@ pub use crate::{
             forwardraterequest::ForwardRateRequest,
             fxrequest::FxRequest,
             marketdata::{MarketData, MarketDataProvider, MarketDataRequest},
+            marketview::MarketView,
             pathdependentrequest::PathDependentRequest,
             spotrequest::SpotRequest,
         },
+        marketsnapshot::MarketSnapshot,
+        marketsnapshotstore::MarketSnapshotStore,
         pillars::Pillars,
         pricer::Pricer,
         pricerconfiguration::{
@@ -49,6 +52,7 @@ pub use crate::{
             HandleCashflows, HandleFairRate, HandleModifiedDuration, HandleSensitivities,
             HandleValue, HandleYieldToMaturity, LegsProvider, Request,
         },
+        snapshotselector::{SnapshotSelectionRule, SnapshotSelector},
         trade::{Side, Trade},
         visitable::{Visitable, Visitor},
     },
@@ -86,9 +90,12 @@ pub use crate::{
             fixedratebond::{FixedRateBond, FixedRateBondTrade},
             fixedratedeposit::{FixedRateDeposit, FixedRateDepositTrade},
             floatingratenote::{FloatingRateNote, FloatingRateNoteTrade},
+            loan::{Loan, LoanTrade},
+            loanrepaymentstructure::LoanRepaymentStructure,
             makefixedratebond::MakeFixedRateBond,
             makefixedratedeposit::MakeFixedRateDeposit,
             makefloatingratenote::MakeFloatingRateNote,
+            makeloan::MakeLoan,
             makesteppedcouponbond::MakeSteppedCouponBond,
             steppedcouponbond::{SteppedCouponBond, SteppedCouponBondTrade},
         },
@@ -150,6 +157,9 @@ pub use crate::{
             LognormalParameterSource, ModelConfiguration, ParameterSource, SimulationConfiguration,
         },
         montecarloengine::{PathGenerator, TimeDependentVolatility},
+        prepaymentmodel::PrepaymentModel,
+        prepaymentmodelconfiguration::PrepaymentModelConfiguration,
+        prepaymentmodelstate::PrepaymentModelState,
     },
     pricers::{
         cashflows::discountedcashflowpricer::DiscountedCashflowPricer,
@@ -160,7 +170,8 @@ pub use crate::{
         },
         fixedincome::{
             backwardfourierevolutionbondpricer::BackwardFourierEvolutionBondPricer,
-            bondpricer::BondPricer, treebasedbondpricer::TreeBasedBondPricer,
+            bondpricer::BondPricer, loanpricer::LoanPricer,
+            treebasedbondpricer::TreeBasedBondPricer,
         },
         fx::{fxeuropeanoptionpricer::FxEuropeanOptionPricer, fxforwardpricer::FxForwardPricer},
         rates::{
@@ -179,14 +190,15 @@ pub use crate::{
         },
         quoteselector::QuoteSelector,
         quotestore::{QuoteRecord, QuoteStore, QuoteStoreRecords},
-        scenario::{Scenario, ScenarioType},
+        scenario::{Scenario, ScenarioType, Shock},
     },
     rates::{
         bootstrapping::{
             bootstrapdiscountpolicy::BootstrapDiscountPolicy,
             creditcurvebootstrapper::CreditCurveBootstrapper,
             creditcurveconfiguration::CreditCurveConfiguration,
-            curveconfiguration::CurveConfiguration, multicurvebootstrapper::MultiCurveBootstrapper,
+            curveconfiguration::{CurveConfiguration, CurveConstruction, CurvePillar},
+            multicurvebootstrapper::MultiCurveBootstrapper,
         },
         compounding::Compounding,
         interestrate::{InterestRate, RateDefinition},
@@ -216,6 +228,7 @@ pub use crate::{
         calendar::Calendar,
         calendars::traits::{ImplCalendar, IsCalendar},
         date::{Date, NaiveDateExt},
+        datetime::DateTime,
         daycounter::DayCounter,
         enums::{
             BusinessDayConvention, DateGenerationRule, Frequency, IMMMonth, Month, TimeUnit,
@@ -273,3 +286,10 @@ pub use crate::time::calendars::{
 };
 
 pub use crate::pricers::equity::equityforwardpricer::EquityForwardPricer;
+
+// Additional market calendars.
+pub use crate::time::calendars::{
+    australia::Australia, canada::Canada, china::China, denmark::Denmark, newzealand::NewZealand,
+    norway::Norway, southafrica::SouthAfrica, southkorea::SouthKorea, sweden::Sweden,
+    switzerland::Switzerland,
+};

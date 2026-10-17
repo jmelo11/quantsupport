@@ -70,13 +70,16 @@ The `sensitivity` example prices SOFR, Term SOFR, ICP, and USD/CLP cross-currenc
 
 ## Verifying against bumps
 
-A small quote scenario provides an independent numerical check for a selected row. This example moves the five-year SOFR OIS quote by one basis point, rebuilds the context, and calculates the finite-difference derivative:
+A small quote scenario provides an independent numerical check for a selected row. This example moves the five-year SOFR OIS quote by one basis point, rebuilds the requested curves in a temporary market view, and calculates the finite-difference derivative:
 
 ```rust,ignore
-let base = ctx.evaluate(&trade, &[Request::Value])?.price();
-let mut bumped = base_ctx.with_scenarios(vec![Scenario::new("OIS_USD_SOFR_5Y", 1e-4, ScenarioType::Absolute)]);
-bumped.initialize()?;
-let fd = (bumped.evaluate(&trade, &[Request::Value])?.price() - base) / 1e-4;
+let base = pricer.evaluate(&trade, &[Request::Value], &context)?.price().unwrap();
+let scenario = Scenario::new(vec![
+    Shock::new("OIS_USD_SOFR_5Y", 1e-4, ScenarioType::Absolute),
+]);
+let bumped_market = scenario.apply(&context)?;
+let bumped = pricer.evaluate(&trade, &[Request::Value], &bumped_market)?.price().unwrap();
+let fd = (bumped - base) / 1e-4;
 ```
 
 For a sufficiently small shock, `fd` should match the `OIS_USD_SOFR_5Y` entry to first order. Larger shocks also include curvature and therefore serve as stress tests of the linear sensitivity approximation.

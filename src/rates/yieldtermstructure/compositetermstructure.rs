@@ -1,7 +1,8 @@
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, marker::PhantomData, rc::Rc};
 
 use crate::{
     ad::{dual::DualFwd, scalar::Scalar},
+    core::{elements::curveelement::ADCurveElement, pillars::Pillars},
     rates::{
         compounding::Compounding, interestrate::InterestRate,
         yieldtermstructure::interestratestermstructure::InterestRatesTermStructure,
@@ -20,10 +21,11 @@ use crate::{
 /// Forward rates are derived from the composite discount factors via
 /// [`InterestRate::implied_rate`], ensuring correctness regardless of
 /// the compounding convention.
-pub struct CompositeTermStructure<T: Scalar> {
+pub struct CompositeTermStructure<T: Scalar, C = Rc<RefCell<dyn InterestRatesTermStructure<T>>>> {
     reference_date: Date,
-    spread_curve: Rc<RefCell<dyn InterestRatesTermStructure<T>>>,
-    base_curve: Rc<RefCell<dyn InterestRatesTermStructure<T>>>,
+    spread_curve: C,
+    base_curve: C,
+    scalar: PhantomData<T>,
 }
 
 impl<T: Scalar> CompositeTermStructure<T> {
@@ -34,23 +36,36 @@ impl<T: Scalar> CompositeTermStructure<T> {
         spread_curve: Rc<RefCell<dyn InterestRatesTermStructure<T>>>,
         base_curve: Rc<RefCell<dyn InterestRatesTermStructure<T>>>,
     ) -> Self {
-        let reference_date = base_curve.borrow().reference_date();
+        Self::from_curves(spread_curve, base_curve)
+    }
+}
+
+impl<T: Scalar, C: InterestRatesTermStructure<T>> CompositeTermStructure<T, C> {
+    /// Composes curves held by value, including boxed AD curve elements.
+    ///
+    /// The reference date and day counter come from the base curve. Components
+    /// must share these conventions when using time-based curve methods.
+    pub fn from_curves(spread_curve: C, base_curve: C) -> Self {
+        let reference_date = base_curve.reference_date();
         Self {
             reference_date,
             spread_curve,
             base_curve,
+            scalar: PhantomData,
         }
     }
 }
 
-impl InterestRatesTermStructure<f64> for CompositeTermStructure<f64> {
+impl<C: InterestRatesTermStructure<f64>> InterestRatesTermStructure<f64>
+    for CompositeTermStructure<f64, C>
+{
     fn reference_date(&self) -> Date {
         self.reference_date
     }
 
     fn discount_factor(&self, date: Date) -> Result<f64> {
-        let spread_df = self.spread_curve.borrow().discount_factor(date)?;
-        let base_df = self.base_curve.borrow().discount_factor(date)?;
+        let spread_df = self.spread_curve.discount_factor(date)?;
+        let base_df = self.base_curve.discount_factor(date)?;
         Ok(spread_df * base_df)
     }
 
@@ -74,12 +89,12 @@ impl InterestRatesTermStructure<f64> for CompositeTermStructure<f64> {
     }
 
     fn day_counter(&self) -> Option<DayCounter> {
-        self.base_curve.borrow().day_counter()
+        self.base_curve.day_counter()
     }
 
     fn discount_factor_from_time(&self, t: f64) -> Result<f64> {
-        let spread_df = self.spread_curve.borrow().discount_factor_from_time(t)?;
-        let base_df = self.base_curve.borrow().discount_factor_from_time(t)?;
+        let spread_df = self.spread_curve.discount_factor_from_time(t)?;
+        let base_df = self.base_curve.discount_factor_from_time(t)?;
         Ok(spread_df * base_df)
     }
 
@@ -98,14 +113,16 @@ impl InterestRatesTermStructure<f64> for CompositeTermStructure<f64> {
     }
 }
 
-impl InterestRatesTermStructure<DualFwd> for CompositeTermStructure<DualFwd> {
+impl<C: InterestRatesTermStructure<DualFwd>> InterestRatesTermStructure<DualFwd>
+    for CompositeTermStructure<DualFwd, C>
+{
     fn reference_date(&self) -> Date {
         self.reference_date
     }
 
     fn discount_factor(&self, date: Date) -> Result<DualFwd> {
-        let spread_df = self.spread_curve.borrow().discount_factor(date)?;
-        let base_df = self.base_curve.borrow().discount_factor(date)?;
+        let spread_df = self.spread_curve.discount_factor(date)?;
+        let base_df = self.base_curve.discount_factor(date)?;
         Ok((spread_df * base_df).into())
     }
 
@@ -129,12 +146,12 @@ impl InterestRatesTermStructure<DualFwd> for CompositeTermStructure<DualFwd> {
     }
 
     fn day_counter(&self) -> Option<DayCounter> {
-        self.base_curve.borrow().day_counter()
+        self.base_curve.day_counter()
     }
 
     fn discount_factor_from_time(&self, t: f64) -> Result<DualFwd> {
-        let spread_df = self.spread_curve.borrow().discount_factor_from_time(t)?;
-        let base_df = self.base_curve.borrow().discount_factor_from_time(t)?;
+        let spread_df = self.spread_curve.discount_factor_from_time(t)?;
+        let base_df = self.base_curve.discount_factor_from_time(t)?;
         Ok((spread_df * base_df).into())
     }
 
@@ -150,6 +167,34 @@ impl InterestRatesTermStructure<DualFwd> for CompositeTermStructure<DualFwd> {
         let df_end = self.discount_factor_from_time(e)?;
         let fwd = (df_start / df_end - DualFwd::one()) / DualFwd::new(dt);
         Ok(fwd.into())
+    }
+}
+
+impl<C: Pillars<DualFwd>> Pillars<DualFwd> for CompositeTermStructure<DualFwd, C> {
+    fn pillars(&self) -> Option<Vec<(String, &DualFwd)>> {
+        let mut pillars = self.base_curve.pillars().unwrap_or_default();
+        pillars.extend(self.spread_curve.pillars().unwrap_or_default());
+        Some(pillars)
+    }
+
+    fn pillar_labels(&self) -> Option<Vec<String>> {
+        let mut labels = self.base_curve.pillar_labels().unwrap_or_default();
+        labels.extend(self.spread_curve.pillar_labels().unwrap_or_default());
+        Some(labels)
+    }
+
+    fn put_pillars_on_tape(&mut self) {
+        self.base_curve.put_pillars_on_tape();
+        self.spread_curve.put_pillars_on_tape();
+    }
+}
+
+impl<C: ADCurveElement> ADCurveElement for CompositeTermStructure<DualFwd, C> {
+    fn clone_curve(&self) -> Result<Box<dyn ADCurveElement>> {
+        Ok(Box::new(CompositeTermStructure::from_curves(
+            self.spread_curve.clone_curve()?,
+            self.base_curve.clone_curve()?,
+        )))
     }
 }
 

@@ -9,8 +9,7 @@ use crate::{
     },
     rates::{compounding::Compounding, interestrate::RateDefinition},
     time::{
-        calendar::Calendar, calendars::weekendsonly::WeekendsOnly, daycounter::DayCounter,
-        enums::Frequency,
+        calendar::Calendar, calendars::norway::Norway, daycounter::DayCounter, enums::Frequency,
     },
 };
 
@@ -31,7 +30,7 @@ impl MarketIndexDetails for NOWAIndex {
 
 impl RateIndexDetails for NOWAIndex {
     fn calendar(&self) -> Calendar {
-        Calendar::WeekendsOnly(WeekendsOnly::new())
+        Calendar::Norway(Norway::default())
     }
 
     fn currency(&self) -> Currency {

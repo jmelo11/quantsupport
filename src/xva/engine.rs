@@ -5,7 +5,13 @@ use serde::{Deserialize, Serialize};
 use crate::{
     ad::{dual::DualFwd, scalar::Scalar},
     core::{
-        marketdatahandling::{discountrequest::DiscountRequest, fxrequest::FxRequest},
+        marketdatahandling::{
+            constructedelementrequest::ConstructedElementRequest,
+            constructedelementstore::ConstructedElementStore,
+            discountrequest::DiscountRequest,
+            fxrequest::FxRequest,
+            marketdata::{MarketDataProvider, MarketDataRequest},
+        },
         pillars::Pillars,
         pricingcontext::PricingContext,
     },
@@ -20,7 +26,7 @@ use crate::{
         },
         modelconfiguration::{GaussianRateParameterSource, ParameterSource},
     },
-    quotes::fixingstore::FixingStore,
+    quotes::{fixingstore::FixingStore, quote::Level, quoteselector::QuoteSelector},
     rates::yieldtermstructure::{
         discounttermstructure::DiscountTermStructure,
         interestratestermstructure::InterestRatesTermStructure,
@@ -32,6 +38,7 @@ use crate::{
         schedule::MakeSchedule,
     },
     utils::errors::{QSError, Result},
+    volatility::modelcalibration::CalibrationSource,
     xva::{
         aggregator::{
             CreditCurveCvaFactory, CvaFactory, FundingCurveFvaFactory, FvaFactory,
@@ -183,20 +190,83 @@ impl XvaEngine {
     /// Returns an error if a required discount curve, volatility surface or
     /// cube is missing, if the curve has no nodes, or if calibration fails.
     pub fn new(context: &PricingContext, config: XvaEngineConfig) -> Result<Self> {
-        let store = context.constructed_elements();
+        Self::from_market(
+            context,
+            context.constructed_elements(),
+            context.quote_store(),
+            config,
+        )
+    }
 
+    /// Creates an XVA engine using an independent market-data provider.
+    ///
+    /// Model curves, credit and funding curves are requested without generating
+    /// preconfigured Monte Carlo simulations. Volatility markets are requested
+    /// only when a model calibrates to them.
+    ///
+    /// # Errors
+    /// Returns an error when market construction or model calibration fails.
+    pub fn with_market_provider(
+        context: &PricingContext,
+        provider: &(impl MarketDataProvider + QuoteSelector),
+        config: XvaEngineConfig,
+    ) -> Result<Self> {
+        let mut requests: Vec<_> = context
+            .curve_configurations()
+            .iter()
+            .map(|configuration| ConstructedElementRequest::DiscountCurve {
+                market_index: configuration.market_index().clone(),
+            })
+            .chain(
+                context
+                    .credit_curve_configurations()
+                    .iter()
+                    .map(|configuration| ConstructedElementRequest::CreditCurve {
+                        market_index: configuration.market_index().clone(),
+                    }),
+            )
+            .collect();
+        for model in &config.model_configs {
+            if let Some(ParameterSource::Calibrated(calibration)) = &model.parameter_source {
+                requests.push(match calibration.source() {
+                    CalibrationSource::Surface { market_index } => {
+                        ConstructedElementRequest::VolatilitySurface {
+                            market_index: market_index.clone(),
+                        }
+                    }
+                    CalibrationSource::Cube { market_index } => {
+                        ConstructedElementRequest::VolatilityCube {
+                            market_index: market_index.clone(),
+                        }
+                    }
+                });
+            }
+        }
+        let market = provider.handle_request(
+            &MarketDataRequest::default().with_constructed_elements_request(requests),
+        )?;
+        Self::from_market(context, market.constructed_elements(), provider, config)
+    }
+
+    fn from_market(
+        context: &PricingContext,
+        store: &ConstructedElementStore,
+        selector: &impl QuoteSelector,
+        config: XvaEngineConfig,
+    ) -> Result<Self> {
         let mut curves = HashMap::new();
         let mut model_params = HashMap::new();
 
         // Resolve base models first; derived configs (with a `driver`)
         // inherit the driver's resolved parameters in a second pass.
         for mc in config.model_configs.iter().filter(|mc| mc.driver.is_none()) {
-            let (snapshot, params) = Self::snapshot_model_curve(context, mc)?;
+            let (snapshot, params) =
+                Self::snapshot_model_curve(store, selector, context.quote_level(), mc)?;
             curves.insert(mc.market_index.clone(), snapshot);
             model_params.insert(mc.market_index.clone(), params);
         }
         for mc in config.model_configs.iter().filter(|mc| mc.driver.is_some()) {
-            let (snapshot, params) = Self::snapshot_derived_curve(context, mc, &model_params)?;
+            let (snapshot, params) = Self::snapshot_derived_curve(store, mc, &model_params)?;
             curves.insert(mc.market_index.clone(), snapshot);
             model_params.insert(mc.market_index.clone(), params);
         }
@@ -485,10 +555,12 @@ impl XvaEngine {
     /// Returns an error if the curve is missing or empty, or if sigma
     /// resolution fails.
     fn snapshot_model_curve(
-        context: &PricingContext,
+        store: &ConstructedElementStore,
+        selector: &impl QuoteSelector,
+        level: Level,
         mc: &LgmModelConfig,
     ) -> Result<(CurveSnapshot, LgmResolvedParams)> {
-        let snapshot = Self::snapshot_curve_data(context, &mc.market_index)?;
+        let snapshot = Self::snapshot_curve_data(store, &mc.market_index)?;
 
         // Resolve the short-rate sigma schedule: calibrate against the
         // constructed vol surface/cube when calibrated parameters are
@@ -497,7 +569,9 @@ impl XvaEngine {
         // `d(sigma_i)/d(vol_i)` so the AAD pass can report XVA
         // sensitivities to the market vol quotes.
         let (sigma_schedule, vol_pillars) = Self::resolve_sigma_schedule(
-            context,
+            store,
+            selector,
+            level,
             mc,
             &snapshot.dates,
             &snapshot.discount_factors,
@@ -531,7 +605,7 @@ impl XvaEngine {
     /// `parameter_source`. An error is also returned when the driver is
     /// missing or is itself derived.
     fn snapshot_derived_curve(
-        context: &PricingContext,
+        store: &ConstructedElementStore,
         mc: &LgmModelConfig,
         resolved: &HashMap<MarketIndex, LgmResolvedParams>,
     ) -> Result<(CurveSnapshot, LgmResolvedParams)> {
@@ -552,7 +626,7 @@ impl XvaEngine {
                 mc.market_index
             ))
         })?;
-        let snapshot = Self::snapshot_curve_data(context, &mc.market_index)?;
+        let snapshot = Self::snapshot_curve_data(store, &mc.market_index)?;
         Ok((
             snapshot,
             LgmResolvedParams {
@@ -568,8 +642,10 @@ impl XvaEngine {
     ///
     /// # Errors
     /// Returns an error if the curve is missing or empty.
-    fn snapshot_curve_data(context: &PricingContext, index: &MarketIndex) -> Result<CurveSnapshot> {
-        let store = context.constructed_elements();
+    fn snapshot_curve_data(
+        store: &ConstructedElementStore,
+        index: &MarketIndex,
+    ) -> Result<CurveSnapshot> {
         let elem = store.discount_curve(index).ok_or_else(|| {
             QSError::NotFoundErr(format!("Discount curve not found for index {index:?}"))
         })?;
@@ -610,7 +686,9 @@ impl XvaEngine {
     /// Returns an error if `parameter_source` is missing or calibration
     /// fails.
     fn resolve_sigma_schedule(
-        context: &PricingContext,
+        store: &ConstructedElementStore,
+        selector: &impl QuoteSelector,
+        level: Level,
         mc: &LgmModelConfig,
         dates: &[Date],
         dfs: &[f64],
@@ -642,13 +720,7 @@ impl XvaEngine {
                     ))
                 })?;
                 let mut hw = HullWhite::new(lambda, &curve_f64);
-                hw.calibrate_with_configuration(
-                    calibration,
-                    context.constructed_elements(),
-                    context.quote_store(),
-                    &curve_f64,
-                    context.quote_level(),
-                )?;
+                hw.calibrate_with_configuration(calibration, store, selector, &curve_f64, level)?;
                 let vol_func = hw.vol_func().ok_or_else(|| {
                     QSError::UnexpectedErr("Calibration produced no vol function".into())
                 })?;
@@ -676,7 +748,7 @@ impl XvaEngine {
     /// Snapshots the f64 data of every bootstrapped discount curve in the
     /// store (used for funding-curve FVA lookups).
     fn snapshot_discount_curves(
-        store: &crate::core::marketdatahandling::constructedelementstore::ConstructedElementStore,
+        store: &ConstructedElementStore,
     ) -> HashMap<MarketIndex, CurveSnapshot> {
         let mut snapshots = HashMap::new();
         for (index, element) in store.discount_curves() {

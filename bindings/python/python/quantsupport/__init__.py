@@ -1,5 +1,123 @@
-from .quantsupport import *
+"""QuantSupport: typed quantitative finance backed by Rust.
 
-__doc__ = quantsupport.__doc__
-if hasattr(quantsupport, "__all__"):
-    __all__ = quantsupport.__all__
+Use the domain packages to browse the API. Public classes are also available
+at the package root for compatibility with existing code.
+"""
+
+from . import time as time, market as market, instruments as instruments, pricing as pricing, risk as risk
+from .time import (
+    Date as Date,
+    DateTime as DateTime,
+    Period as Period,
+    Calendar as Calendar,
+    Schedule as Schedule,
+    IMM as IMM,
+    UnitedStatesMarket as UnitedStatesMarket,
+    BrazilMarket as BrazilMarket,
+    AustraliaMarket as AustraliaMarket,
+    CanadaMarket as CanadaMarket,
+    NewZealandMarket as NewZealandMarket,
+    SouthKoreaMarket as SouthKoreaMarket,
+    ChinaMarket as ChinaMarket,
+
+    JointCalendarRule as JointCalendarRule,
+    Compounding as Compounding,
+    Frequency as Frequency,
+    DayCounter as DayCounter,
+    TimeUnit as TimeUnit,
+    BusinessDayConvention as BusinessDayConvention,
+    DateGenerationRule as DateGenerationRule,
+)
+from .market import (
+    Currency as Currency,
+    MarketIndex as MarketIndex,
+    Level as Level,
+    Interpolator as Interpolator,
+    VolatilityType as VolatilityType,
+    SmileType as SmileType,
+    QuoteStore as QuoteStore,
+    SnapshotSelectionRule as SnapshotSelectionRule,
+    SnapshotSelector as SnapshotSelector,
+    MarketSnapshot as MarketSnapshot,
+    MarketSnapshotStore as MarketSnapshotStore,
+    FixingStore as FixingStore,
+    FxStore as FxStore,
+    CurveConstruction as CurveConstruction,
+    CurveConfiguration as CurveConfiguration,
+    CreditCurveConfiguration as CreditCurveConfiguration,
+    VolatilitySurfaceConfiguration as VolatilitySurfaceConfiguration,
+    VolatilityCubeConfiguration as VolatilityCubeConfiguration,
+    SimulationConfiguration as SimulationConfiguration,
+    ZeroRateTermStructure as ZeroRateTermStructure,
+    TenorBasedZeroRateTermStructure as TenorBasedZeroRateTermStructure,
+    DiscountCurve as DiscountCurve,
+    VolatilitySurface as VolatilitySurface,
+    VolatilityCube as VolatilityCube,
+    Simulation as Simulation,
+)
+from .instruments import (
+    Instrument as Instrument,
+    Side as Side,
+    OptionType as OptionType,
+    SwaptionType as SwaptionType,
+    CapFloorType as CapFloorType,
+    CapletFloorletType as CapletFloorletType,
+    PaymentStructure as PaymentStructure,
+    LoanRepaymentStructure as LoanRepaymentStructure,
+    PrepaymentModelConfiguration as PrepaymentModelConfiguration,
+    Loan as Loan,
+    EquityForward as EquityForward,
+    EuropeanSwaption as EuropeanSwaption,
+    Swap as Swap,
+    CrossCurrencySwap as CrossCurrencySwap,
+    BasisSwap as BasisSwap,
+    FixFloatCrossCurrencySwap as FixFloatCrossCurrencySwap,
+    FixedRateBond as FixedRateBond,
+    InterestRate as InterestRate,
+    PayoffOps as PayoffOps,
+    FixedRateCoupon as FixedRateCoupon,
+    FloatingRateCoupon as FloatingRateCoupon,
+    OptionEmbeddedCoupon as OptionEmbeddedCoupon,
+    CallScheduleEntry as CallScheduleEntry,
+    SteppedCouponBond as SteppedCouponBond,
+    FloatingRateNote as FloatingRateNote,
+    FixedRateDeposit as FixedRateDeposit,
+    FxForward as FxForward,
+    FxOption as FxOption,
+    EquityOption as EquityOption,
+    CreditDefaultSwap as CreditDefaultSwap,
+    CapFloor as CapFloor,
+    CapletFloorlet as CapletFloorlet,
+    RateFutures as RateFutures,
+    ScriptedProduct as ScriptedProduct,
+)
+from .pricing import (
+    Request as Request,
+    PricerConfiguration as PricerConfiguration,
+    SingleCurveCSADiscountPolicy as SingleCurveCSADiscountPolicy,
+    FixedIncomeDiscountPolicy as FixedIncomeDiscountPolicy,
+    BondPricingAnchor as BondPricingAnchor,
+    PricingContext as PricingContext,
+    LoanPricer as LoanPricer,
+    Trade as Trade,
+    Pricer as Pricer,
+    MarketDataProvider as MarketDataProvider,
+    Evaluator as Evaluator,
+    EvaluationResults as EvaluationResults,
+)
+from .risk import (
+    ScenarioType as ScenarioType,
+    Shock as Shock,
+    Scenario as Scenario,
+    XvaConfig as XvaConfig,
+    CsaTerms as CsaTerms,
+    NettingSet as NettingSet,
+    XvaResult as XvaResult,
+    ExposureProfile as ExposureProfile,
+)
+from ._exceptions import (
+    QuantSupportError as QuantSupportError,
+)
+
+__all__ = ['DateTime', 'SnapshotSelectionRule', 'SnapshotSelector', 'MarketSnapshot', 'MarketSnapshotStore', 'time', 'market', 'instruments', 'pricing', 'risk', 'Date', 'Period', 'Calendar', 'Schedule', 'IMM', 'UnitedStatesMarket', 'BrazilMarket', 'AustraliaMarket', 'CanadaMarket', 'NewZealandMarket', 'SouthKoreaMarket', 'ChinaMarket', 'JointCalendarRule', 'Compounding', 'Frequency', 'DayCounter', 'TimeUnit', 'BusinessDayConvention', 'DateGenerationRule', 'Currency', 'MarketIndex', 'Level', 'Interpolator', 'VolatilityType', 'SmileType', 'QuoteStore', 'FixingStore', 'FxStore', 'CurveConstruction', 'CurveConfiguration', 'CreditCurveConfiguration', 'VolatilitySurfaceConfiguration', 'VolatilityCubeConfiguration', 'SimulationConfiguration', 'ZeroRateTermStructure', 'TenorBasedZeroRateTermStructure', 'DiscountCurve', 'VolatilitySurface', 'VolatilityCube', 'Simulation', 'Instrument', 'Side', 'OptionType', 'SwaptionType', 'CapFloorType', 'CapletFloorletType',
+           'PaymentStructure', 'LoanRepaymentStructure', 'PrepaymentModelConfiguration', 'Loan', 'EquityForward', 'EuropeanSwaption', 'Swap', 'CrossCurrencySwap', 'BasisSwap', 'FixFloatCrossCurrencySwap', 'FixedRateBond', 'InterestRate', 'PayoffOps', 'FixedRateCoupon', 'FloatingRateCoupon', 'OptionEmbeddedCoupon', 'CallScheduleEntry', 'SteppedCouponBond', 'FloatingRateNote', 'FixedRateDeposit', 'FxForward', 'FxOption', 'EquityOption', 'CreditDefaultSwap', 'CapFloor', 'CapletFloorlet', 'RateFutures', 'ScriptedProduct', 'Request', 'PricerConfiguration', 'SingleCurveCSADiscountPolicy', 'FixedIncomeDiscountPolicy', 'BondPricingAnchor', 'PricingContext', 'LoanPricer', 'Trade', 'Pricer', 'MarketDataProvider', 'Evaluator', 'EvaluationResults', 'ScenarioType', 'Shock', 'Scenario', 'XvaConfig', 'CsaTerms', 'NettingSet', 'XvaResult', 'ExposureProfile', 'QuantSupportError']

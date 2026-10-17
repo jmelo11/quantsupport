@@ -1,54 +1,31 @@
-//! Market scenarios: shocks applied to quotes before curve bootstrapping and
-//! volatility construction.
+//! Combined market shocks applied through an independent, request-driven view.
 //!
-//! A [`Scenario`] assigns a shock (absolute or relative, see
-//! [`ScenarioType`]) to one or more quotes of a [`QuoteStore`]. The target of
-//! the shock is either:
-//!
-//! - a full quote identifier (e.g. `"OIS_USD_SOFR_1Y"`), shocking that single
-//!   quote, or
-//! - a partial, underscore-separated selector whose segments are matched
-//!   against the segments of every quote identifier (e.g. `"SOFR"` shocks all
-//!   SOFR quotes — a parallel curve shift; `"OIS_USD_SOFR"` shocks all USD
-//!   SOFR OIS pillars; `"Swaption_USD"` shocks the USD swaption vol slide).
-//!
-//! Scenarios are typically attached to a
-//! [`PricingContext`](crate::core::pricingcontext::PricingContext) via
-//! `with_scenarios`; on `initialize` the shocks are applied to a copy of the
-//! quote store and all curves, surfaces, cubes and simulations are rebuilt
-//! from the shocked market.
-//!
-//! # Example
+//! A shock target matches an exact identifier or an underscore-separated set of
+//! identifier segments. For example, `EURIBOR12m` selects its deposit and swap
+//! quotes. Explicit zero-rate pillars use `<index>_<date>` labels; `FUNDINGSPREAD`
+//! selects every pillar of that spread curve. Absolute changes use decimal units
+//! (`0.01` means 100 bp). Relative changes multiply by `1 + value`. Overlapping
+//! shocks compose in their supplied order.
 //!
 //! ```
 //! use quantsupport::prelude::*;
-//! use std::str::FromStr;
-//!
-//! let mut store = QuoteStore::new(Date::new(2025, 11, 11));
-//! let details = QuoteDetails::from_str("OIS_USD_SOFR_1Y").expect("valid identifier");
-//! store.add_quote(Quote::new(details, QuoteLevels::with_mid(0.04)));
-//!
-//! // Parallel +100bp shock on every SOFR quote.
-//! let scenario = Scenario::new("SOFR", 0.01, ScenarioType::Absolute);
-//! let shocked = scenario.apply(&mut store).expect("scenario must match");
-//! assert_eq!(shocked, 1);
-//!
-//! let quote = store.quote("OIS_USD_SOFR_1Y").expect("quote exists");
-//! assert!((quote.levels().mid().expect("mid") - 0.05).abs() < 1e-12);
+//! let context = PricingContext::new();
+//! let scenario = Scenario::new(vec![]);
+//! let market = scenario.apply(&context)?;
+//! # Ok::<(), QSError>(())
 //! ```
 
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 
 use crate::{
-    quotes::{
-        quote::{Quote, QuoteLevels},
-        quotestore::QuoteStore,
-    },
+    core::{marketdatahandling::marketview::MarketView, pricingcontext::PricingContext},
+    quotes::quote::{Quote, QuoteLevels},
+    rates::bootstrapping::curveconfiguration::CurveConstruction,
     utils::errors::{QSError, Result},
 };
 
-/// How a [`Scenario`] shock is applied to a quote value.
+/// How a market shock is applied to a quote value.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ScenarioType {
     /// The shock is added to the quote value: `v + shock`.
@@ -73,30 +50,31 @@ impl FromStr for ScenarioType {
     }
 }
 
-/// A shock applied to one or more quotes of a [`QuoteStore`].
+/// A shock targeting quoted inputs or explicit zero-rate pillars.
 ///
 /// The `target` selects the quotes to shock: either a full quote identifier
 /// or a partial underscore-separated selector matched segment-wise against
 /// each quote identifier (see the [module documentation](self)).
 #[derive(Clone, Debug, Serialize, Deserialize)]
-#[allow(clippy::struct_field_names)]
-pub struct Scenario {
+#[serde(deny_unknown_fields)]
+pub struct Shock {
     /// Quote identifier or partial (segment) selector.
     target: String,
     /// Shock size (in rate/vol units for absolute, fraction for relative).
-    shock: f64,
+    value: f64,
     /// How the shock is applied.
-    scenario_type: ScenarioType,
+    #[serde(rename = "type")]
+    kind: ScenarioType,
 }
 
-impl Scenario {
-    /// Creates a new scenario.
+impl Shock {
+    /// Creates a market shock.
     #[must_use]
-    pub fn new(target: impl Into<String>, shock: f64, scenario_type: ScenarioType) -> Self {
+    pub fn new(target: impl Into<String>, value: f64, shock_type: ScenarioType) -> Self {
         Self {
             target: target.into(),
-            shock,
-            scenario_type,
+            value,
+            kind: shock_type,
         }
     }
 
@@ -108,14 +86,14 @@ impl Scenario {
 
     /// Returns the shock size.
     #[must_use]
-    pub const fn shock(&self) -> f64 {
-        self.shock
+    pub const fn value(&self) -> f64 {
+        self.value
     }
 
     /// Returns the shock application type.
     #[must_use]
-    pub const fn scenario_type(&self) -> ScenarioType {
-        self.scenario_type
+    pub const fn shock_type(&self) -> ScenarioType {
+        self.kind
     }
 
     /// Returns `true` if the scenario targets the given quote identifier.
@@ -135,51 +113,114 @@ impl Scenario {
     /// Applies the shock to a single value.
     #[must_use]
     pub fn shocked_value(&self, value: f64) -> f64 {
-        match self.scenario_type {
-            ScenarioType::Absolute => value + self.shock,
-            ScenarioType::Relative => value * (1.0 + self.shock),
+        match self.kind {
+            ScenarioType::Absolute => value + self.value,
+            ScenarioType::Relative => value * (1.0 + self.value),
         }
     }
+}
 
-    /// Applies the scenario to all matching quotes of the store, returning
-    /// the number of shocked quotes.
+/// A combination of ordered market shocks forming one scenario.
+///
+/// Applying a scenario borrows the base inputs and creates an independent cache.
+/// Curves, volatility markets and simulations are resolved only when requested.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Scenario {
+    shocks: Vec<Shock>,
+}
+
+impl Scenario {
+    /// Creates a scenario from ordered shocks. Overlapping shocks compose in order.
+    #[must_use]
+    pub const fn new(shocks: Vec<Shock>) -> Self {
+        Self { shocks }
+    }
+
+    /// Returns the shocks defining this scenario.
+    #[must_use]
+    pub fn shocks(&self) -> &[Shock] {
+        &self.shocks
+    }
+
+    /// Borrows a base context without changing its inputs or constructed market.
     ///
     /// # Errors
-    /// Returns an error if the target matches no quote in the store.
-    pub fn apply(&self, store: &mut QuoteStore) -> Result<usize> {
-        let shocked: Vec<Quote> = store
-            .quotes()
-            .values()
-            .filter(|q| self.matches(&q.details().identifier()))
-            .map(|q| {
-                let levels = q.levels();
-                let shocked_levels = QuoteLevels::new(
-                    levels.mid().map(|v| self.shocked_value(v)),
-                    levels.bid().map(|v| self.shocked_value(v)),
-                    levels.ask().map(|v| self.shocked_value(v)),
+    /// Returns an error for nonfinite values, empty targets or unmatched selectors.
+    pub fn apply<'a>(&self, context: &'a PricingContext) -> Result<MarketView<'a>> {
+        self.validate(context)?;
+        Ok(MarketView::new(context, self.clone()))
+    }
+
+    /// Checks selectors against quotes and configured explicit zero-rate pillars.
+    ///
+    /// # Errors
+    /// Returns an error for an invalid shock or a selector matching no market inputs.
+    pub fn validate(&self, context: &PricingContext) -> Result<()> {
+        for shock in &self.shocks {
+            if shock.target().is_empty() || !shock.value().is_finite() {
+                return Err(QSError::InvalidValueErr(
+                    "Scenario shocks require a nonempty target and a finite value".into(),
+                ));
+            }
+            let quoted = context
+                .quote_store()
+                .quotes()
+                .keys()
+                .any(|id| shock.matches(id));
+            let explicit = context.curve_configurations().iter().any(|configuration| {
+                let CurveConstruction::ZeroRate { pillars, .. } = configuration.construction()
+                else {
+                    return false;
+                };
+                pillars.iter().any(|pillar| {
+                    shock.matches(&format!(
+                        "{}_{}",
+                        configuration.market_index(),
+                        pillar.date(context.evaluation_date())
+                    ))
+                })
+            });
+            if !quoted && !explicit {
+                return Err(QSError::NotFoundErr(format!(
+                    "Scenario target '{}' matched no quotes or zero-rate pillars",
+                    shock.target()
+                )));
+            }
+        }
+        Ok(())
+    }
+
+    /// Applies matching shocks to one quote without copying the market store.
+    #[must_use]
+    pub fn shock_quote(&self, quote: &Quote) -> Quote {
+        let identifier = quote.details().identifier();
+        let mut levels = *quote.levels();
+        for shock in &self.shocks {
+            if shock.matches(&identifier) {
+                levels = QuoteLevels::new(
+                    levels.mid().map(|v| shock.shocked_value(v)),
+                    levels.bid().map(|v| shock.shocked_value(v)),
+                    levels.ask().map(|v| shock.shocked_value(v)),
                 );
-                Quote::new(q.details().clone(), shocked_levels)
-            })
-            .collect();
-
-        if shocked.is_empty() {
-            return Err(QSError::NotFoundErr(format!(
-                "Scenario target '{}' matched no quotes in the store",
-                self.target
-            )));
+            }
         }
+        Quote::new(quote.details().clone(), levels)
+    }
 
-        let count = shocked.len();
-        for quote in shocked {
-            store.add_quote(quote);
-        }
-        Ok(count)
+    /// Returns whether a nonzero shock targets the given identifier.
+    #[must_use]
+    pub fn matches(&self, identifier: &str) -> bool {
+        self.shocks
+            .iter()
+            .any(|shock| shock.value() != 0.0 && shock.matches(identifier))
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{Scenario, ScenarioType};
+    use super::{Scenario, ScenarioType, Shock};
+    use crate::{core::pricingcontext::PricingContext, quotes::quoteselector::QuoteSelector};
     use crate::{
         quotes::{
             quote::{Quote, QuoteDetails, QuoteLevels},
@@ -200,55 +241,73 @@ mod tests {
 
     #[test]
     fn matches_exact_identifier() {
-        let scenario = Scenario::new("OIS_USD_SOFR_1Y", 0.01, ScenarioType::Absolute);
+        let scenario = Shock::new("OIS_USD_SOFR_1Y", 0.01, ScenarioType::Absolute);
         assert!(scenario.matches("OIS_USD_SOFR_1Y"));
         assert!(!scenario.matches("OIS_USD_SOFR_2Y"));
     }
 
     #[test]
     fn matches_segment_subset() {
-        let scenario = Scenario::new("SOFR", 0.01, ScenarioType::Absolute);
+        let scenario = Shock::new("SOFR", 0.01, ScenarioType::Absolute);
         assert!(scenario.matches("OIS_USD_SOFR_1Y"));
         assert!(scenario.matches("OIS_USD_SOFR_10Y"));
         // Distinct index segment must not match.
         assert!(!scenario.matches("BasisSwap_USD_TermSOFR3m_TermSOFR3m_1Y"));
 
-        let partial = Scenario::new("OIS_USD_SOFR", 0.01, ScenarioType::Absolute);
+        let partial = Shock::new("OIS_USD_SOFR", 0.01, ScenarioType::Absolute);
         assert!(partial.matches("OIS_USD_SOFR_2Y"));
         // Deposit has USD and SOFR segments but no OIS segment.
         assert!(!partial.matches("FixedRateDeposit_USD_SOFR_3M"));
     }
 
     #[test]
-    fn applies_absolute_shock() {
-        let mut store = store_with(&[("OIS_USD_SOFR_1Y", 0.04), ("OIS_USD_SOFR_2Y", 0.042)]);
-        let scenario = Scenario::new("SOFR", 0.01, ScenarioType::Absolute);
-        let count = scenario.apply(&mut store).expect("scenario applies");
-        assert_eq!(count, 2);
-        let mid = store
-            .quote("OIS_USD_SOFR_1Y")
-            .and_then(|q| q.levels().mid())
-            .expect("mid exists");
-        assert!((mid - 0.05).abs() < 1e-12);
+    fn applies_absolute_shock_without_changing_base_quotes() {
+        let store = store_with(&[("OIS_USD_SOFR_1Y", 0.04), ("OIS_USD_SOFR_2Y", 0.042)]);
+        let context = PricingContext::new().with_quote_store(store);
+        let scenario = Scenario::new(vec![Shock::new("SOFR", 0.01, ScenarioType::Absolute)]);
+        let market = scenario.apply(&context).expect("scenario applies");
+        for (identifier, expected) in [("OIS_USD_SOFR_1Y", 0.05), ("OIS_USD_SOFR_2Y", 0.052)] {
+            let mid = market
+                .select(identifier)
+                .and_then(|quote| quote.levels().mid())
+                .expect("mid exists");
+            assert!((mid - expected).abs() < 1e-12);
+        }
+        assert_eq!(
+            context
+                .quote_store()
+                .quote("OIS_USD_SOFR_1Y")
+                .and_then(|quote| quote.levels().mid()),
+            Some(0.04)
+        );
     }
 
     #[test]
-    fn applies_relative_shock() {
+    fn applies_relative_shock_to_available_quote_levels() {
         let mut store = store_with(&[("OIS_USD_SOFR_1Y", 0.04)]);
-        let scenario = Scenario::new("OIS_USD_SOFR_1Y", 0.5, ScenarioType::Relative);
-        scenario.apply(&mut store).expect("scenario applies");
-        let mid = store
-            .quote("OIS_USD_SOFR_1Y")
-            .and_then(|q| q.levels().mid())
-            .expect("mid exists");
-        assert!((mid - 0.06).abs() < 1e-12);
+        store.add_quote(Quote::new(
+            "OIS_USD_SOFR_1Y".parse().expect("identifier"),
+            QuoteLevels::new(Some(0.04), Some(0.03), Some(0.05)),
+        ));
+        let context = PricingContext::new().with_quote_store(store);
+        let scenario = Scenario::new(vec![Shock::new(
+            "OIS_USD_SOFR_1Y",
+            0.5,
+            ScenarioType::Relative,
+        )]);
+        let market = scenario.apply(&context).expect("scenario applies");
+        let quote = market.select("OIS_USD_SOFR_1Y").expect("quote");
+        assert!((quote.levels().mid().expect("mid") - 0.06).abs() < 1e-12);
+        assert!((quote.levels().bid().expect("bid") - 0.045).abs() < 1e-12);
+        assert!((quote.levels().ask().expect("ask") - 0.075).abs() < 1e-12);
     }
 
     #[test]
     fn errors_when_no_quote_matches() {
-        let mut store = store_with(&[("OIS_USD_SOFR_1Y", 0.04)]);
-        let scenario = Scenario::new("EURIBOR", 0.01, ScenarioType::Absolute);
-        assert!(scenario.apply(&mut store).is_err());
+        let context =
+            PricingContext::new().with_quote_store(store_with(&[("OIS_USD_SOFR_1Y", 0.04)]));
+        let scenario = Scenario::new(vec![Shock::new("EURIBOR", 0.01, ScenarioType::Absolute)]);
+        assert!(scenario.apply(&context).is_err());
     }
 
     #[test]

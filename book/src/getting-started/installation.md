@@ -66,7 +66,7 @@ loaded and a complete workflow can execute. These three commands exercise
 direct pricing, curve construction, and scripting respectively.
 
 ```bash
-cargo run -p valuation
+cargo run -p valuation-swaps
 cargo run -p bootstrap
 cargo run -p scripting-examples --bin valuation
 ```

@@ -236,3 +236,12 @@ pub trait MarketDataProvider {
     /// Returns provider evaluation date.
     fn evaluation_date(&self) -> Date;
 }
+
+impl<P: MarketDataProvider + ?Sized> MarketDataProvider for &P {
+    fn handle_request(&self, request: &MarketDataRequest) -> Result<MarketData> {
+        (**self).handle_request(request)
+    }
+    fn evaluation_date(&self) -> Date {
+        (**self).evaluation_date()
+    }
+}

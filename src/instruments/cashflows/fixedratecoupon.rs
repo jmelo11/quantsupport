@@ -60,6 +60,12 @@ impl<T: Scalar> FixedRateCoupon<T> {
     pub const fn notional(&self) -> f64 {
         self.notional
     }
+
+    /// Contractual payment date, independent of the rate scalar type.
+    #[must_use]
+    pub const fn payment_date(&self) -> Date {
+        self.payment_date
+    }
 }
 
 impl Cashflow<f64> for FixedRateCoupon<f64> {

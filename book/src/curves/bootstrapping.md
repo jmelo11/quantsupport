@@ -2,7 +2,7 @@
 
 Bootstrapping finds the curve values that make a collection of market instruments reproduce their quoted prices or rates. This chapter follows that process from configuration through numerical solution and risk construction. It also explains how dependencies between curves are ordered, how credit curves use the same broad pattern, and how to interpret common failures.
 
-QuantSupport turns a `CurveConfiguration` into a `DiscountTermStructure<DualFwd>` whose named risk pillars are the original market quotes. Each curve is solved as one global nonlinear system. An implicit-function-theorem step then connects the calibrated discount factors to the quotes on the automatic-differentiation tape.
+A quote-based `CurveConfiguration` produces a `DiscountTermStructure<DualFwd>` whose named risk pillars are the original market quotes. Each curve is solved as one global nonlinear system. An implicit-function-theorem step then connects the calibrated discount factors to the quotes on the automatic-differentiation tape.
 
 ## `CurveConfiguration`
 
@@ -11,6 +11,7 @@ A curve configuration identifies the market being built and the conventions used
 ```rust,ignore
 pub struct CurveConfiguration {
     market_index: MarketIndex,        // required
+    construction: CurveConstruction, // default Bootstrapped
     day_counter: DayCounter,          // default Actual360
     interpolator: Interpolator,       // default LogLinear
     enable_extrapolation: bool,       // default true
@@ -42,6 +43,56 @@ The same information can be supplied through JSON. The following SOFR example us
 ```
 
 The configuration holds identities and conventions until construction begins. `resolve(selector, level, fx_spot)` then looks up every identifier, builds the corresponding calibration instrument at the requested market level, computes its pillar date, and sorts the instruments by maturity. The supported levels are `Mid`, `Bid`, and `Ask`. A missing identifier produces `NotFoundErr("Quote … not found in quotes.")`. Once resolution succeeds, the instruments, pillar dates, labels, and quote values are available to the solver.
+
+### Explicit zero rates and composite curves
+
+The same `CurveConfiguration` list can contain calibrated curves, explicit zero
+rates, and composite curves. `construction` defaults to `{"type": "Bootstrapped"}`
+for existing quote-based specifications. The following entries add a funding
+spread curve and combine it with a configured EURIBOR12m curve:
+
+```json
+[
+  {
+    "market_index": { "Other": "FUNDINGSPREAD" },
+    "day_counter": "Actual360",
+    "interpolator": "Linear",
+    "construction": {
+      "type": "ZeroRate",
+      "pillars": ["0D", "1Y", "2Y", "3Y"],
+      "rates": [0.005, 0.0075, 0.01, 0.0125],
+      "compounding": "Continuous",
+      "frequency": "Annual"
+    }
+  },
+  {
+    "market_index": { "Other": "COSTOFFUNDS" },
+    "construction": {
+      "type": "Composite",
+      "base_index": "EURIBOR12m",
+      "spread_index": { "Other": "FUNDINGSPREAD" }
+    }
+  }
+]
+```
+
+Pass these entries together with the EURIBOR configuration to
+`PricingContext::with_curve_configurations` in Rust or `PricingContext(curves=...)`
+in Python. Construction resolves dependencies automatically, so list order does
+not matter. Each context initialization builds the complete set, including when
+market scenarios rebuild the benchmark curve.
+
+Zero-rate pillars accept tenors from the market reference date or explicit ISO
+dates. Zero rates use the configuration's day count, interpolation, and
+extrapolation choices, together with the stated compounding and frequency. Their
+sensitivity labels have the form `index_date`.
+
+Composite discount factors equal the product of the two component discount
+factors. Components must share their reference date and day counter. Composite
+curves expose their components' risk pillars and can serve as parents during
+calibration of other curves. Missing components, duplicate
+market indices, self references, and dependency cycles produce configuration
+errors. Explicit and composite definitions leave `quotes` empty.
 
 ### OIS conventions
 

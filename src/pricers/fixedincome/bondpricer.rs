@@ -58,8 +58,9 @@ impl BondPricingEngine for BondPricer {
 impl<T: BondTerms> HandleCashflows<T, BondState> for BondPricer {}
 impl_bond_pricer!(BondPricer, FixedRateBondTrade<DualFwd>);
 
+/// Shared fixtures for bond-pricer tests.
 #[cfg(test)]
-pub(super) mod test_support {
+pub mod test_support {
     use super::BondPricer;
     use crate::prelude::*;
     use crate::{
@@ -82,14 +83,19 @@ pub(super) mod test_support {
     };
     use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
+    /// Face value and quote units used by test bonds.
     pub const FACE: f64 = 100.0;
 
+    /// Flat continuously compounded discount rate.
     pub const RATE: f64 = 0.03;
 
+    /// Hull-White mean reversion used by callable-bond tests.
     pub const ALPHA: f64 = 0.05;
 
+    /// Hull-White volatility used by callable-bond tests.
     pub const SIGMA: f64 = 0.01;
 
+    /// Creates a discount policy using the USD SOFR curve.
     pub fn policy() -> Box<dyn DiscountPolicy> {
         Box::new(
             FixedIncomeDiscountPolicy::new(false)
@@ -97,15 +103,19 @@ pub(super) mod test_support {
         )
     }
 
+    /// Creates a straight-bond pricer with the test discount policy.
     pub fn fixed_pricer() -> BondPricer {
         let mut pricer = BondPricer::new();
         pricer.set_discount_policy(policy());
         pricer
     }
 
+    /// Supplies fixed market data to bond-pricer tests.
     #[derive(Clone)]
     pub struct TestProvider {
+        /// Valuation date reported to pricers.
         pub evaluation_date: Date,
+        /// Market data returned for each request.
         pub market_data: MarketData,
     }
 
@@ -119,6 +129,7 @@ pub(super) mod test_support {
         }
     }
 
+    /// Creates a market provider with tree controls and a benchmark flat curve.
     pub fn provider(
         evaluation_date: Date,
         steps_per_year: usize,
@@ -126,6 +137,7 @@ pub(super) mod test_support {
         provider_with_method(evaluation_date, steps_per_year, false)
     }
 
+    /// Creates a market provider with tree or Fourier controls and a benchmark curve.
     pub fn provider_with_method(
         evaluation_date: Date,
         steps_per_year: usize,
@@ -179,6 +191,7 @@ pub(super) mod test_support {
         )
     }
 
+    /// Creates a semiannual USD bullet bond with a zero-spread anchor.
     pub fn fixed_bond(
         evaluation_date: Date,
         maturity_date: Date,
@@ -212,6 +225,7 @@ pub(super) mod test_support {
         )
     }
 
+    /// Returns a straight bond's value, panicking if evaluation fails.
     pub fn fixed_value(
         pricer: &BondPricer,
         trade: &FixedRateBondTrade<DualFwd>,

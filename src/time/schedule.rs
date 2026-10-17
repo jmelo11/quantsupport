@@ -238,6 +238,10 @@ impl MakeSchedule {
     }
 
     /// Sets the tenor from a [`Frequency`].
+    ///
+    /// # Panics
+    /// Panics if `frequency` is [`Frequency::OtherFrequency`], which cannot
+    /// be converted to a [`Period`].
     #[must_use]
     pub fn with_frequency(mut self, frequency: Frequency) -> Self {
         self.tenor =

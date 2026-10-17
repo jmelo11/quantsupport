@@ -1,8 +1,10 @@
+use serde::{Deserialize, Serialize};
+
 use crate::ad::scalar::Scalar;
 use crate::utils::errors::Result;
 
 /// [`PayoffOps`] describes the set of possible mathematical operations that can be used to compute the payoff of a [`NonLinearCoupon`](crate::instruments::cashflows::coupons::NonLinearCoupon).
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub enum PayoffOps {
     /// Max operation.
     Max(Box<Self>, Box<Self>),

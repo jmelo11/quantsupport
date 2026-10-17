@@ -49,8 +49,9 @@ jobs:
         shell: bash
         run: |
           python -m pip install mypy pandas-stubs "typing-extensions>=4.15"
-          python -m mypy bindings/python/python/quantsupport/__init__.pyi --ignore-missing-imports
+          python -m mypy bindings/python/python/quantsupport --ignore-missing-imports
           python -m mypy.stubtest quantsupport --ignore-missing-stub
+          python -m mypy bindings/python/tests/typing_native_inputs.py --ignore-missing-imports
       - uses: actions/upload-artifact@v6
         with:
           name: python-${{ matrix.platform.runner }}-${{ matrix.python }}
@@ -94,7 +95,7 @@ jobs:
       - name: Install Rust
         run: rustup toolchain install stable --profile minimal
       - name: Test worksheet functions and registry
-        run: cargo +stable test -p quantsupport-xll --lib
+        run: cargo +stable test -p quantsupport-xll --lib --example function_catalog
       - name: Build and package XLL
         shell: pwsh
         run: ./bindings/excel/scripts/build.ps1 -Profile release

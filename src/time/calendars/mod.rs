@@ -19,3 +19,33 @@ pub mod japan;
 pub mod jointcalendar;
 /// London settlement calendar.
 pub mod unitedkingdom;
+
+/// Australia business-day calendar.
+pub mod australia;
+
+/// Canada business-day calendar.
+pub mod canada;
+
+/// Switzerland business-day calendar.
+pub mod switzerland;
+
+/// `NewZealand` business-day calendar.
+pub mod newzealand;
+
+/// Norway business-day calendar.
+pub mod norway;
+
+/// Sweden business-day calendar.
+pub mod sweden;
+
+/// Denmark business-day calendar.
+pub mod denmark;
+
+/// `SouthKorea` business-day calendar.
+pub mod southkorea;
+
+/// `SouthAfrica` business-day calendar.
+pub mod southafrica;
+
+/// China business-day calendar.
+pub mod china;

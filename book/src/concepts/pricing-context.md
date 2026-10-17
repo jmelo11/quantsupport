@@ -1,6 +1,6 @@
 # Pricing Context
 
-`PricingContext` is the single object most users interact with. It collects raw market data and configuration, builds every derived market object once in `initialize()`, and then acts as the `MarketDataProvider` that pricers, the scripting engine and the XVA engine query.
+`PricingContext` is the single object most users interact with. It collects raw market data and configuration, constructs derived objects eagerly in `initialize()` or lazily on request, and then acts as the `MarketDataProvider` that pricers, the scripting engine and the XVA engine query.
 
 ## Building a context
 
@@ -23,15 +23,16 @@ let mut ctx = PricingContext::new()
     .with_volatility_surface_configurations(surface_specs)  // Vec<VolatilitySurfaceConfiguration>
     .with_volatility_cube_configurations(cube_specs)        // Vec<VolatilityCubeConfiguration>
     .with_pricer_configurations(pricer_specs)               // Vec<PricerConfiguration>
-    .with_simulation_configurations(sim_specs)              // Vec<SimulationConfiguration>
-    .with_scenarios(vec![Scenario::new("SOFR", 0.0001, ScenarioType::Absolute)]);
+    .with_simulation_configurations(sim_specs);             // Vec<SimulationConfiguration>
 
 ctx.initialize()?;
 ```
 
-Before the final call, the context owns its inputs. Expensive market
-construction begins in `initialize()`, giving an application a clear point at
-which to validate or modify configuration.
+Before the final call, the context owns its inputs. `initialize()` explicitly
+constructs every configured market object. Applications can also pass the context
+directly to pricers: market-data requests then construct and cache only the
+required objects and their dependencies. `validate()` checks configuration
+compatibility and duplicates without calibrating curves or generating paths.
 
 `PricerConfiguration` is keyed by `InstrumentType`, so the same mechanism can
 select an implementation for bonds, swaps, options, or future instrument
@@ -53,16 +54,14 @@ its configured objects.
 ### Read accessors
 
 After construction, accessors expose the inputs and results without
-transferring ownership. The table distinguishes the shocked quote view from
-the original observations and shows where initialized elements are stored.
+transferring ownership. Quotes always describe the base inputs; scenario views
+apply temporary transformations through the provider interface.
 
 | Method                                                                                                                                                              | Returns                                                           |
 | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
-| `quote_store()`                                                                                                                                                     | shocked store if scenarios are attached, otherwise the base store |
-| `base_quote_store()`                                                                                                                                                | the unshocked store                                               |
+| `quote_store()`                                                                                                                                                     | the original quote store |
 | `quote_level()` | selected `Level` for construction and calibration |
 | `fixing_store()`, `fx_store()`                                                                                                                                      | the stores as given                                               |
-| `scenarios()`                                                                                                                                                       | `&Vec<Scenario>`                                                  |
 | `base_currency()`, `base_index()`                                                                                                                                   | CSA currency / index                                              |
 | `curve_configurations()`, `credit_curve_configurations()`, `volatility_surface_configurations()`, `volatility_cube_configurations()`, `pricer_configurations()`, `simulation_configurations()` | the configuration vectors                                         |
 | `constructed_elements()` / `constructed_elements_mut()`                                                                                                             | the `ConstructedElementStore` populated by `initialize()`         |
@@ -83,18 +82,18 @@ pub fn initialize(&mut self) -> Result<()>
 ```
 
 1. **Pricer configuration.** Validate instrument/pricer compatibility, numerical controls, and the one-configuration-per-instrument rule.
-2. **Scenarios.** If `scenarios` is non-empty, clone the quote store and apply each `Scenario` in order. A scenario that matches no quote is an error. Everything below reads the shocked copy.
-3. **Discount curves.** `MultiCurveBootstrapper::new(curve_configurations, BootstrapDiscountPolicy::new(base_index, base_currency)).with_fx_store(fx_store).bootstrap(quote_store, quote_level)`. Each resulting `DiscountCurveElement` is inserted under its `MarketIndex`.
-4. **Credit curves.** `CreditCurveBootstrapper::bootstrap(quote_store, quote_level, discount_curves)` — CDS premium and protection legs are discounted on the curves from step 3.
-5. **Volatility surfaces.** `VolatilitySurfaceBuilder::build(quote_store, quote_level)`.
-6. **Volatility cubes.** `VolatilityCubeBuilder::build(quote_store, quote_level)`.
-7. **Simulations.** `SimulationBuilder::build(constructed_elements, quote_store, fixing_store, quote_level)` — runs last so models can calibrate to the surfaces/cubes and diffuse the bootstrapped curves.
+2. **Discount curves.** `MultiCurveBootstrapper::new(curve_configurations, BootstrapDiscountPolicy::new(base_index, base_currency)).with_fx_store(fx_store).bootstrap(quote_store, quote_level)`. Each resulting `DiscountCurveElement` is inserted under its `MarketIndex`.
+3. **Credit curves.** `CreditCurveBootstrapper::bootstrap(quote_store, quote_level, discount_curves)` — CDS premium and protection legs are discounted on the curves from step 2.
+4. **Volatility surfaces.** `VolatilitySurfaceBuilder::build(quote_store, quote_level)`.
+5. **Volatility cubes.** `VolatilityCubeBuilder::build(quote_store, quote_level)`.
+6. **Simulations.** `SimulationBuilder::build(constructed_elements, quote_store, fixing_store, quote_level)` — runs last so models can calibrate to the surfaces/cubes and diffuse the bootstrapped curves.
 
-Steps 4–7 are skipped when the corresponding configuration vector is empty. Calling `initialize()` twice rebuilds everything from the (possibly shocked) quotes.
+Steps 3–6 are skipped when the corresponding configuration vector is empty. Calling `initialize()` twice rebuilds everything from the original quotes.
 
 This ordering guarantees that every calibrator sees a complete set of its
-dependencies. It also lets a scenario propagate consistently through curves,
-volatility markets, and simulations.
+dependencies. A [scenario](../risk/scenarios.md) returns an independent, request-driven market
+view, preserving the base context. Python enables lazy construction on context
+entry and uses `with context, scenario:` for temporary shocks.
 
 ## Serving market data to pricers
 

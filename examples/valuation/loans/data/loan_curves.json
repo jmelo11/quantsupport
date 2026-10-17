@@ -1,0 +1,35 @@
+[
+  {
+    "market_index": "ESTR",
+    "quotes": [
+      "FixedRateDeposit_EUR_ESTR_1D",
+      "FixedRateDeposit_EUR_ESTR_1Y",
+      "FixedRateDeposit_EUR_ESTR_2Y",
+      "FixedRateDeposit_EUR_ESTR_3Y",
+      "OIS_EUR_ESTR_5Y",
+      "OIS_EUR_ESTR_10Y",
+      "OIS_EUR_ESTR_15Y",
+      "OIS_EUR_ESTR_20Y",
+      "OIS_EUR_ESTR_25Y",
+      "OIS_EUR_ESTR_30Y",
+      "OIS_EUR_ESTR_35Y"
+    ]
+  },
+  {
+    "market_index": "EURIBOR12m",
+    "quotes": [
+      "FixedRateDeposit_EUR_EURIBOR12m_1D",
+      "FixedRateDeposit_EUR_EURIBOR12m_1Y",
+      "Swap_EUR_EURIBOR12m_2Y",
+      "Swap_EUR_EURIBOR12m_3Y",
+      "Swap_EUR_EURIBOR12m_5Y",
+      "Swap_EUR_EURIBOR12m_7Y",
+      "Swap_EUR_EURIBOR12m_10Y",
+      "Swap_EUR_EURIBOR12m_15Y",
+      "Swap_EUR_EURIBOR12m_20Y",
+      "Swap_EUR_EURIBOR12m_25Y",
+      "Swap_EUR_EURIBOR12m_30Y",
+      "Swap_EUR_EURIBOR12m_35Y"
+    ]
+  }
+]

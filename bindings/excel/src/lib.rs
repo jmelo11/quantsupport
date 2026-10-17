@@ -3,16 +3,14 @@
 //! The actual XLL exports only compile on Windows. The object registry remains
 //! portable so its behavior can be unit-tested on any development host.
 
-#[cfg_attr(not(windows), allow(dead_code))]
-mod function_help;
-#[cfg_attr(not(windows), allow(dead_code))]
-mod registry;
+mod documentation;
+mod runtime;
 
 #[cfg(windows)]
 mod functions;
 
 #[cfg(windows)]
-use registry::with_registry_mut;
+use runtime::registry::with_registry_mut;
 #[cfg(windows)]
 use xll_rs::{
     convert::return_xl_error,
@@ -34,7 +32,7 @@ pub extern "system" fn xlAutoOpen() -> i32 {
 
     for function in functions {
         let generated_argument_help =
-            function_help::argument_help(function.name, function.arg_names);
+            documentation::function_help::argument_help(function.name, function.arg_names);
         let argument_help = if function.arg_help.is_empty() {
             generated_argument_help.as_slice()
         } else {

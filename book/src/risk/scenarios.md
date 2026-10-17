@@ -1,61 +1,80 @@
 # Scenarios
 
-Scenario analysis asks how a portfolio behaves under a specified market move. QuantSupport applies those moves to observable quotes before market construction, then rebuilds every dependent curve, surface, calibrated model, and simulation. This chapter explains target matching, context integration, and the main scenario patterns. The implementation spans `src/quotes/scenario.rs` and `src/core/pricingcontext.rs`.
+A `Scenario` combines ordered market shocks. Applying it returns a market view
+that borrows a `PricingContext`; the context retains its original inputs and
+constructed objects. Pricers and `Evaluator` accept this view through
+`MarketDataProvider`.
 
-## `Scenario`
-
-A scenario contains a target expression, a shock size, and an absolute-or-relative interpretation. Its methods expose matching, single-value transformation, and application to a quote store:
-
-```rust,ignore
-pub enum ScenarioType { Absolute, Relative }
-
-pub struct Scenario { target: String, shock: f64, scenario_type: ScenarioType }
-
-impl Scenario {
-    pub fn new(target: impl Into<String>, shock: f64, scenario_type: ScenarioType) -> Self;
-    pub fn matches(&self, identifier: &str) -> bool;
-    pub fn shocked_value(&self, value: f64) -> f64;      // Absolute: v + shock; Relative: v · (1 + shock)
-    pub fn apply(&self, store: &mut QuoteStore) -> Result<usize>;  // number of quotes shocked; error if none
-}
-```
-
-Target matching splits the target and quote identifier on `_`. Every target segment must occur in the quote identifier. This creates a simple hierarchy from one exact instrument to a broad family:
-
-| Target                 | Matches                                                                                                                      |
-| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `OIS_USD_SOFR_5Y`      | exactly that quote                                                                                                           |
-| `SOFR`                 | every quote containing the `SOFR` segment (`OIS_USD_SOFR_*`, `BasisSwap_USD_SOFR_TermSOFR3m_*`, `CapletFloorlet_USD_SOFR_*`) |
-| `USD_OIS`              | all USD OIS quotes regardless of tenor                                                                                       |
-| `CapletFloorlet_Black` | all Black caplet vol quotes                                                                                                  |
-
-When a quote matches, the scenario updates all available levels, including bid, ask, and mid. `apply` returns the number of modified quotes and raises an error when the target matches no quote.
-
-## Using with `PricingContext`
-
-Scenarios become part of market initialization through `with_scenarios`. The example below applies a one-basis-point absolute SOFR shift and a ten-percent relative caplet-volatility move:
+## Applying a scenario in Rust
 
 ```rust,ignore
-let mut ctx = PricingContext::new()
-    .with_quote_store(quotes)
-    .with_curve_configurations(curve_specs)
-    .with_scenarios(vec![
-        Scenario::new("OIS_USD_SOFR", 0.0001, ScenarioType::Absolute),      // +1bp parallel SOFR
-        Scenario::new("CapletFloorlet_USD_SOFR", 0.10, ScenarioType::Relative), // vols ×1.10
-    ]);
-ctx.initialize()?;
+let scenario = Scenario::new(vec![
+    Shock::new("OIS_USD_SOFR", 0.0001, ScenarioType::Absolute),
+    Shock::new("CapletFloorlet_USD_SOFR", 0.10, ScenarioType::Relative),
+]);
+let stressed_market = scenario.apply(&context)?;
+let stressed = pricer.evaluate(&trade, &[Request::Value], &stressed_market)?;
+let base = pricer.evaluate(&trade, &[Request::Value], &context)?;
 ```
 
-During `initialize()`, the context clones the base store, applies scenarios in list order, and stores the transformed result. `ctx.base_quote_store()` retains the original observations. `ctx.quote_store()` supplies the active observations used to build curves, volatility objects, and simulations. With an empty scenario list, both accessors describe the same market.
+The first shock adds one basis point to SOFR OIS quotes. The second multiplies
+matching caplet volatilities by 1.10. Each shock transforms every available quote
+level; the context's selected `Level` determines which level construction uses.
+Overlapping shocks compose in their supplied order.
 
-## Patterns
+## Applying a scenario in Python
 
-Target granularity and shock type combine into several useful workflows:
+```python
+scenario = qs.Scenario(shocks=[
+    qs.Shock(target="EURIBOR12m", value=0.01, shock_type=qs.ScenarioType.Absolute),
+    qs.Shock(target="FUNDINGSPREAD", value=0.005, shock_type=qs.ScenarioType.Absolute),
+])
+with context, scenario:
+    stressed = pricer.evaluate(trade=trade, context=context, requests=[qs.Request.Value])
+with context:
+    base = pricer.evaluate(trade=trade, context=context, requests=[qs.Request.Value])
+```
 
-- **Parallel shift**: one scenario with a partial target, e.g. `"OIS_USD_SOFR"`.
-- **Key-rate ladder**: build one context per pillar target (`OIS_USD_SOFR_1Y`, `_2Y`, ...) and difference the NPVs. This provides a finite-difference check of the AD ladder from [Sensitivities](sensitivities.md).
-- **Stress**: combine several scenarios covering rates, volatilities, and cross-currency basis in one list. Each transformation is applied sequentially to the same store.
-- **Relative FX moves**: target the FX spot quote (`FxSpot_USDCLP`-style identifiers) with `ScenarioType::Relative`.
+The scenario applies to the innermost active context. Nested scenarios compose
+in entry order. Leaving a scope releases its temporary market view, including
+when pricing raises an exception. The same scenario can be reused with another
+context. Scenario definitions belong outside the context constructor.
 
-## What to remember
+## Selecting market inputs
 
-A scenario describes a change in market language and lets normal initialization propagate that change through the full dependency graph. The rebuilt market preserves multi-curve links, collateral relationships, volatility construction, and calibrated-model parameters. Exact targets support focused validation, and partial targets support broad stresses with the same mechanism.
+A target matches an exact identifier or a set of underscore-separated identifier
+segments. Every target segment must occur in the identifier.
+
+| Target | Inputs selected |
+| --- | --- |
+| `OIS_USD_SOFR_5Y` | One SOFR OIS quote |
+| `OIS_USD_SOFR` | Every USD SOFR OIS quote |
+| `CapletFloorlet_Black` | Every Black caplet quote |
+| `FUNDINGSPREAD` | Every explicit zero-rate pillar of that spread curve |
+| `FUNDINGSPREAD_2031-02-24` | One dated funding-spread zero-rate pillar |
+
+Explicit zero-rate pillars have the same labels in scenario targets and
+sensitivity reports. An absolute value of `0.0001` adds one basis point;
+a relative value of `0.10` scales the input by 1.10. Empty targets, nonfinite
+values and selectors matching no quote or explicit pillar produce an error.
+Historical fixings remain unchanged.
+
+## Construction and memory
+
+Entering a scenario validates its shocks without constructing the entire market.
+A pricing request constructs its required curves, volatility markets and
+simulations, following their dependencies. Results remain in a cache for that
+view. For a composite funding curve, a spread shock rebuilds the spread and
+composite while an unchanged benchmark can reuse its calibrated values and
+calibration metadata.
+
+The view borrows quotes, historical fixings and FX inputs. Requested curve and
+volatility objects have independent AD wrappers with detached tape pointers.
+Unchanged simulation paths can be reused; an affected simulation is generated
+when requested, using its configured seed. Unrelated simulations remain
+unconstructed. Broad portfolio requests or shocks affecting many dependencies
+still require the corresponding calibration and simulation work.
+
+A pillar ladder uses separate scenarios against the same context. The resulting
+finite differences can be compared with the labelled derivatives described in
+[Sensitivities](sensitivities.md).

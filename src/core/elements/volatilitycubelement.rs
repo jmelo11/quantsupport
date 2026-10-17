@@ -4,6 +4,7 @@ use crate::{
     ad::dual::DualFwd,
     core::{marketdatahandling::constructedelementstore::SharedElement, pillars::Pillars},
     indices::marketindex::MarketIndex,
+    utils::errors::{QSError, Result},
     volatility::volatilitycube::VolatilityCube,
 };
 
@@ -11,6 +12,15 @@ use crate::{
 pub trait ADVolatilityCubeElement:
     VolatilityCube<DualFwd> + Pillars<DualFwd> + Send + Sync
 {
+    /// Copies numeric inputs into an independent volatility market with detached AD nodes.
+    ///
+    /// # Errors
+    /// Returns an error when the concrete volatility market cannot be copied.
+    fn clone_cube(&self) -> Result<SharedElement<dyn ADVolatilityCubeElement>> {
+        Err(QSError::InvalidValueErr(
+            "This volatility market does not support owned copies".into(),
+        ))
+    }
 }
 
 /// [`VolatilityCubeElement`] is a handle to a particular [`ADVolatilityCubeElement`].

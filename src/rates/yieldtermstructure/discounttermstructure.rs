@@ -1,5 +1,7 @@
+use std::sync::Arc;
+
 use crate::{
-    ad::{constant::Const, dual::DualFwd, expr::FloatExt, scalar::Scalar},
+    ad::{constant::Const, dual::DualFwd, expr::FloatExt, forward::ADForward, scalar::Scalar},
     core::{elements::curveelement::ADCurveElement, pillars::Pillars},
     math::interpolation::interpolator::{Interpolate, Interpolator},
     rates::{
@@ -57,7 +59,7 @@ where
     enable_extrapolation: bool,
     pillar_labels: Option<Vec<String>>,
     pillar_values: Option<Vec<T>>,
-    ift_sensitivities: Option<Vec<Vec<f64>>>,
+    ift_sensitivities: Option<Arc<Vec<Vec<f64>>>>,
 }
 
 impl<T> DiscountTermStructure<T>
@@ -116,7 +118,7 @@ where
     /// rebuild AD-connected discount factors.
     #[must_use]
     pub fn with_ift_sensitivities(mut self, sensitivities: Vec<Vec<f64>>) -> Self {
-        self.ift_sensitivities = Some(sensitivities);
+        self.ift_sensitivities = Some(Arc::new(sensitivities));
         self
     }
 
@@ -519,8 +521,21 @@ impl InterestRatesTermStructure<DualFwd> for DiscountTermStructure<DualFwd> {
 }
 
 impl ADCurveElement for DiscountTermStructure<DualFwd> {
+    fn clone_curve(&self) -> Result<Box<dyn ADCurveElement>> {
+        let mut curve = self.clone();
+        for value in &mut curve.discount_factors {
+            *value = DualFwd::constant(ADForward::constant(value.value()));
+        }
+        if let Some(values) = &mut curve.pillar_values {
+            for value in values {
+                *value = DualFwd::constant(ADForward::constant(value.value()));
+            }
+        }
+        Ok(Box::new(curve))
+    }
+
     fn ift_sensitivities(&self) -> Option<&[Vec<f64>]> {
-        self.ift_sensitivities.as_deref()
+        self.ift_sensitivities.as_deref().map(Vec::as_slice)
     }
 }
 

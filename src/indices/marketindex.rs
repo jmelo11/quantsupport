@@ -8,13 +8,25 @@ use crate::indices::{
     quotetype::QuoteType,
     rateindices::{
         aonia::AONIAIndex,
+        bbsw::{BBSW1mIndex, BBSW2mIndex, BBSW3mIndex, BBSW4mIndex, BBSW6mIndex},
+        bkbm::{BKBM1mIndex, BKBM2mIndex, BKBM3mIndex, BKBM4mIndex, BKBM6mIndex},
+        cdi::CDIIndex,
         corra::CORRAIndex,
+        destr::DESTRIndex,
         estr::ESTRIndex,
+        euribor::Euribor1wIndex,
         euribor::{Euribor12mIndex, Euribor1mIndex, Euribor3mIndex, Euribor6mIndex},
+        fedfunds::FedFundsIndex,
         icp::ICPIndex,
+        kofr::KOFRIndex,
+        nibor::{NIBOR12mIndex, NIBOR1mIndex, NIBOR3mIndex, NIBOR6mIndex},
         nowa::NOWAIndex,
         nzonia::NZONIAIndex,
         saron::SARONIndex,
+        shibor::{
+            SHIBOR12mIndex, SHIBOR1dIndex, SHIBOR1mIndex, SHIBOR1wIndex, SHIBOR2wIndex,
+            SHIBOR3mIndex, SHIBOR6mIndex,
+        },
         sofr::{
             SOFRCompoundedIndex, SOFRIndex, TermSOFR12mIndex, TermSOFR1mIndex, TermSOFR3mIndex,
             TermSOFR6mIndex,
@@ -23,6 +35,7 @@ use crate::indices::{
         swestr::SWESTRIndex,
         tibor::{Tibor3mIndex, Tibor6mIndex},
         tonar::TONARIndex,
+        zaronia::ZARONIAIndex,
     },
 };
 use crate::utils::errors::{QSError, Result};
@@ -30,6 +43,61 @@ use crate::utils::errors::{QSError, Result};
 #[derive(Serialize, Deserialize, Debug, Hash, PartialEq, Eq, Clone)]
 /// Identifier for an observable market index or underlying.
 pub enum MarketIndex {
+    /// `FedFunds` rate index.
+    FedFunds,
+    /// `CDI` rate index.
+    CDI,
+    /// `DESTR` rate index.
+    DESTR,
+    /// `KOFR` rate index.
+    KOFR,
+    /// `ZARONIA` rate index.
+    ZARONIA,
+    /// `BBSW1m` rate index.
+    BBSW1m,
+    /// `BBSW2m` rate index.
+    BBSW2m,
+    /// `BBSW3m` rate index.
+    BBSW3m,
+    /// `BBSW4m` rate index.
+    BBSW4m,
+    /// `BBSW6m` rate index.
+    BBSW6m,
+    /// `BKBM1m` rate index.
+    BKBM1m,
+    /// `BKBM2m` rate index.
+    BKBM2m,
+    /// `BKBM3m` rate index.
+    BKBM3m,
+    /// `BKBM4m` rate index.
+    BKBM4m,
+    /// `BKBM6m` rate index.
+    BKBM6m,
+    /// `NIBOR1m` rate index.
+    NIBOR1m,
+    /// `NIBOR3m` rate index.
+    NIBOR3m,
+    /// `NIBOR6m` rate index.
+    NIBOR6m,
+    /// `NIBOR12m` rate index.
+    NIBOR12m,
+    /// `SHIBOR1d` rate index.
+    SHIBOR1d,
+    /// `SHIBOR1w` rate index.
+    SHIBOR1w,
+    /// `SHIBOR2w` rate index.
+    SHIBOR2w,
+    /// `SHIBOR1m` rate index.
+    SHIBOR1m,
+    /// `SHIBOR3m` rate index.
+    SHIBOR3m,
+    /// `SHIBOR6m` rate index.
+    SHIBOR6m,
+    /// `SHIBOR12m` rate index.
+    SHIBOR12m,
+    /// `EURIBOR1w` rate index.
+    EURIBOR1w,
+
     // ── USD ──────────────────────────────────────────────
     /// SOFR Index (overnight, USD).
     SOFR,
@@ -122,6 +190,34 @@ pub enum MarketIndex {
 impl Display for MarketIndex {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
+            Self::FedFunds => write!(f, "FedFunds"),
+            Self::CDI => write!(f, "CDI"),
+            Self::DESTR => write!(f, "DESTR"),
+            Self::KOFR => write!(f, "KOFR"),
+            Self::ZARONIA => write!(f, "ZARONIA"),
+            Self::BBSW1m => write!(f, "BBSW1m"),
+            Self::BBSW2m => write!(f, "BBSW2m"),
+            Self::BBSW3m => write!(f, "BBSW3m"),
+            Self::BBSW4m => write!(f, "BBSW4m"),
+            Self::BBSW6m => write!(f, "BBSW6m"),
+            Self::BKBM1m => write!(f, "BKBM1m"),
+            Self::BKBM2m => write!(f, "BKBM2m"),
+            Self::BKBM3m => write!(f, "BKBM3m"),
+            Self::BKBM4m => write!(f, "BKBM4m"),
+            Self::BKBM6m => write!(f, "BKBM6m"),
+            Self::NIBOR1m => write!(f, "NIBOR1m"),
+            Self::NIBOR3m => write!(f, "NIBOR3m"),
+            Self::NIBOR6m => write!(f, "NIBOR6m"),
+            Self::NIBOR12m => write!(f, "NIBOR12m"),
+            Self::SHIBOR1d => write!(f, "SHIBOR1d"),
+            Self::SHIBOR1w => write!(f, "SHIBOR1w"),
+            Self::SHIBOR2w => write!(f, "SHIBOR2w"),
+            Self::SHIBOR1m => write!(f, "SHIBOR1m"),
+            Self::SHIBOR3m => write!(f, "SHIBOR3m"),
+            Self::SHIBOR6m => write!(f, "SHIBOR6m"),
+            Self::SHIBOR12m => write!(f, "SHIBOR12m"),
+            Self::EURIBOR1w => write!(f, "EURIBOR1w"),
+
             // USD
             Self::SOFR => write!(f, "SOFR"),
             Self::SOFRCompounded => write!(f, "SOFRCompounded"),
@@ -170,6 +266,34 @@ impl std::str::FromStr for MarketIndex {
 
     fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
         let resutls = match s {
+            "FedFunds" => Self::FedFunds,
+            "CDI" => Self::CDI,
+            "DESTR" => Self::DESTR,
+            "KOFR" => Self::KOFR,
+            "ZARONIA" => Self::ZARONIA,
+            "BBSW1m" => Self::BBSW1m,
+            "BBSW2m" => Self::BBSW2m,
+            "BBSW3m" => Self::BBSW3m,
+            "BBSW4m" => Self::BBSW4m,
+            "BBSW6m" => Self::BBSW6m,
+            "BKBM1m" => Self::BKBM1m,
+            "BKBM2m" => Self::BKBM2m,
+            "BKBM3m" => Self::BKBM3m,
+            "BKBM4m" => Self::BKBM4m,
+            "BKBM6m" => Self::BKBM6m,
+            "NIBOR1m" => Self::NIBOR1m,
+            "NIBOR3m" => Self::NIBOR3m,
+            "NIBOR6m" => Self::NIBOR6m,
+            "NIBOR12m" => Self::NIBOR12m,
+            "SHIBOR1d" => Self::SHIBOR1d,
+            "SHIBOR1w" => Self::SHIBOR1w,
+            "SHIBOR2w" => Self::SHIBOR2w,
+            "SHIBOR1m" => Self::SHIBOR1m,
+            "SHIBOR3m" => Self::SHIBOR3m,
+            "SHIBOR6m" => Self::SHIBOR6m,
+            "SHIBOR12m" => Self::SHIBOR12m,
+            "EURIBOR1w" => Self::EURIBOR1w,
+
             "SOFR" => Self::SOFR,
             "SOFRCompounded" => Self::SOFRCompounded,
             "TermSOFR1m" => Self::TermSOFR1m,
@@ -244,6 +368,34 @@ impl MarketIndex {
     /// Returns an error if the index does not contain market details.
     pub fn details(&self) -> Result<Box<dyn MarketIndexDetails>> {
         match self {
+            Self::FedFunds => Ok(Box::new(FedFundsIndex)),
+            Self::CDI => Ok(Box::new(CDIIndex)),
+            Self::DESTR => Ok(Box::new(DESTRIndex)),
+            Self::KOFR => Ok(Box::new(KOFRIndex)),
+            Self::ZARONIA => Ok(Box::new(ZARONIAIndex)),
+            Self::BBSW1m => Ok(Box::new(BBSW1mIndex)),
+            Self::BBSW2m => Ok(Box::new(BBSW2mIndex)),
+            Self::BBSW3m => Ok(Box::new(BBSW3mIndex)),
+            Self::BBSW4m => Ok(Box::new(BBSW4mIndex)),
+            Self::BBSW6m => Ok(Box::new(BBSW6mIndex)),
+            Self::BKBM1m => Ok(Box::new(BKBM1mIndex)),
+            Self::BKBM2m => Ok(Box::new(BKBM2mIndex)),
+            Self::BKBM3m => Ok(Box::new(BKBM3mIndex)),
+            Self::BKBM4m => Ok(Box::new(BKBM4mIndex)),
+            Self::BKBM6m => Ok(Box::new(BKBM6mIndex)),
+            Self::NIBOR1m => Ok(Box::new(NIBOR1mIndex)),
+            Self::NIBOR3m => Ok(Box::new(NIBOR3mIndex)),
+            Self::NIBOR6m => Ok(Box::new(NIBOR6mIndex)),
+            Self::NIBOR12m => Ok(Box::new(NIBOR12mIndex)),
+            Self::SHIBOR1d => Ok(Box::new(SHIBOR1dIndex)),
+            Self::SHIBOR1w => Ok(Box::new(SHIBOR1wIndex)),
+            Self::SHIBOR2w => Ok(Box::new(SHIBOR2wIndex)),
+            Self::SHIBOR1m => Ok(Box::new(SHIBOR1mIndex)),
+            Self::SHIBOR3m => Ok(Box::new(SHIBOR3mIndex)),
+            Self::SHIBOR6m => Ok(Box::new(SHIBOR6mIndex)),
+            Self::SHIBOR12m => Ok(Box::new(SHIBOR12mIndex)),
+            Self::EURIBOR1w => Ok(Box::new(Euribor1wIndex)),
+
             Self::SOFR => Ok(Box::new(SOFRIndex)),
             Self::SOFRCompounded => Ok(Box::new(SOFRCompoundedIndex)),
             Self::TermSOFR1m => Ok(Box::new(TermSOFR1mIndex)),
@@ -277,6 +429,34 @@ impl MarketIndex {
     /// Returns an error if the index is not a rate index.
     pub fn rate_index_details(&self) -> Result<Box<dyn RateIndexDetails>> {
         match self {
+            Self::FedFunds => Ok(Box::new(FedFundsIndex)),
+            Self::CDI => Ok(Box::new(CDIIndex)),
+            Self::DESTR => Ok(Box::new(DESTRIndex)),
+            Self::KOFR => Ok(Box::new(KOFRIndex)),
+            Self::ZARONIA => Ok(Box::new(ZARONIAIndex)),
+            Self::BBSW1m => Ok(Box::new(BBSW1mIndex)),
+            Self::BBSW2m => Ok(Box::new(BBSW2mIndex)),
+            Self::BBSW3m => Ok(Box::new(BBSW3mIndex)),
+            Self::BBSW4m => Ok(Box::new(BBSW4mIndex)),
+            Self::BBSW6m => Ok(Box::new(BBSW6mIndex)),
+            Self::BKBM1m => Ok(Box::new(BKBM1mIndex)),
+            Self::BKBM2m => Ok(Box::new(BKBM2mIndex)),
+            Self::BKBM3m => Ok(Box::new(BKBM3mIndex)),
+            Self::BKBM4m => Ok(Box::new(BKBM4mIndex)),
+            Self::BKBM6m => Ok(Box::new(BKBM6mIndex)),
+            Self::NIBOR1m => Ok(Box::new(NIBOR1mIndex)),
+            Self::NIBOR3m => Ok(Box::new(NIBOR3mIndex)),
+            Self::NIBOR6m => Ok(Box::new(NIBOR6mIndex)),
+            Self::NIBOR12m => Ok(Box::new(NIBOR12mIndex)),
+            Self::SHIBOR1d => Ok(Box::new(SHIBOR1dIndex)),
+            Self::SHIBOR1w => Ok(Box::new(SHIBOR1wIndex)),
+            Self::SHIBOR2w => Ok(Box::new(SHIBOR2wIndex)),
+            Self::SHIBOR1m => Ok(Box::new(SHIBOR1mIndex)),
+            Self::SHIBOR3m => Ok(Box::new(SHIBOR3mIndex)),
+            Self::SHIBOR6m => Ok(Box::new(SHIBOR6mIndex)),
+            Self::SHIBOR12m => Ok(Box::new(SHIBOR12mIndex)),
+            Self::EURIBOR1w => Ok(Box::new(Euribor1wIndex)),
+
             Self::SOFR => Ok(Box::new(SOFRIndex)),
             Self::SOFRCompounded => Ok(Box::new(SOFRCompoundedIndex)),
             Self::TermSOFR1m => Ok(Box::new(TermSOFR1mIndex)),

@@ -9,6 +9,8 @@ pub mod calendar;
 pub mod calendars;
 /// Date module.
 pub mod date;
+/// UTC datetime module.
+pub mod datetime;
 /// Day counter module.
 pub mod daycounter;
 /// Day counters module.
