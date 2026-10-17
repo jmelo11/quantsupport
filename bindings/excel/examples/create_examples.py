@@ -1,0 +1,379 @@
+"""Generate the Excel example workbooks with Python.
+
+Install: python -m pip install -r bindings/excel/examples/requirements.txt
+Run: python bindings/excel/examples/create_examples.py
+Generation works without Excel or the XLL. Open the workbooks in Windows Excel
+with quantsupport.xll loaded and press Ctrl+Alt+F9 to calculate their formulas.
+Use --xll-path on Windows for optional native Excel validation (requires pywin32).
+"""
+
+import argparse
+from datetime import datetime
+import math
+from pathlib import Path
+import sys
+from tempfile import TemporaryDirectory
+
+import xlsxwriter
+
+
+def formula(name, *arguments):
+    return "=" + name + "(" + ",".join(arguments) + ")"
+
+def historical_cells():
+    cells = {
+        "A1": "Market reference date", "A2": "Observation timestamp (UTC)",
+        "A4": "Pillar", "B4": "Zero rate: first market", "C4": "Zero rate: second market",
+        "A5": "0D", "A6": "1Y", "A7": "10Y", "A9": "Quote store (reference date)",
+        "A10": "Curve configuration store", "A11": "Explicit zero-rate configuration",
+        "A12": "Base market context", "A13": "Captured market snapshot",
+        "A15": "Complete snapshot archive", "A17": "One unchanged swap trade",
+        "A19": "Requested timestamp", "A20": "Native snapshot selector",
+        "A21": "Selected historical context", "A22": "Actual matched timestamp",
+        "A23": "Actual valuation date", "A24": "Swap present value",
+        "A25": "Construction quote side",
+        "A27": "Edit B5:C7 to reprice. Rates are decimals; cells display percentages.",
+        "A28": "The swap starts after both valuation dates, so this example requires no historical fixings.",
+        "A29": "Change Exact to Previous in a selector to query a timestamp absent from the archive.",
+        "A30": "Previous preserves the matched market's valuation date; it does not roll curves to the requested date.",
+        "B15": '=QS.SNAPSHOTS.CREATE("history_archive",B13:C13)',
+        "B17": '=QS.TRADE.SWAP("history_swap","2026-01-15","2026-01-19","2031-01-19","USD","SOFR",1000000,0.04,0,"Receive","Actual360","Simple","Semiannual","Semiannual","Quarterly")',
+    }
+    for column, day, rates in [("B", 15, [0.040, 0.039, 0.038]), ("C", 16, [0.041, 0.040, 0.039])]:
+        date = f"2026-01-{day}"
+        cells[f"{column}1"] = date
+        cells[f"{column}2"] = date + "T16:00:00Z"
+        for row, rate in enumerate(rates, 5):
+            cells[f"{column}{row}"] = rate
+        cells[f"{column}9"] = formula("QS.QUOTES.CREATE", f'"history_quotes_"&{column}$1', f"{column}$1")
+        cells[f"{column}10"] = formula("QS.CURVE.CONFIGS.CREATE", f'"history_curves_"&{column}$1')
+        cells[f"{column}11"] = formula("QS.CURVE.CONFIGS.ADD.ZERO", f"{column}10", '"SOFR"', '"Actual365"', '"Linear"', "FALSE", "$A$5:$A$7", f"{column}5:{column}7", '"Continuous"', '"Annual"')
+        cells[f"{column}12"] = formula("QS.CONTEXT.CREATE", f'"history_market_"&{column}$1', f"{column}9", f"{column}11", *([""] * 9), '"USD"', '"SOFR"')
+        cells[f"{column}13"] = formula("QS.SNAPSHOT.FROM.CONTEXT", f'"history_snapshot_"&{column}$1', f"{column}2", f"{column}12")
+        cells[f"{column}19"] = date + "T16:00:00Z"
+        cells[f"{column}20"] = formula("QS.SNAPSHOT.SELECTOR", f'"history_selector_"&{column}$1', f"{column}19", '"Exact"', '"Mid"')
+        cells[f"{column}21"] = formula("QS.CONTEXT.FROM.SNAPSHOT", f'"history_selected_"&{column}$1', "$B$15", f"{column}20", "")
+        cells[f"{column}22"] = formula("QS.CONTEXT.SNAPSHOT.TIMESTAMP", f"{column}21")
+        cells[f"{column}23"] = formula("QS.CONTEXT.EVALUATION.DATE", f"{column}21")
+        cells[f"{column}24"] = formula("QS.PRICE", "$B$17", f"{column}21")
+        cells[f"{column}25"] = formula("QS.CONTEXT.QUOTE.LEVEL", f"{column}21")
+    return cells
+
+
+def formats(workbook):
+    common = {"font_name": "Calibri", "font_size": 11, "text_wrap": True, "valign": "top"}
+    variants = {
+        "text": {},
+        "title": {"bold": True, "font_size": 18, "font_color": "white", "bg_color": "#003070"},
+        "header": {"bold": True, "font_color": "white", "bg_color": "#2C5AA0", "border": 1},
+        "section": {"bold": True, "font_color": "#003070", "bg_color": "#CFD9E8"},
+        "input": {"bg_color": "#D6E4FC", "border": 1},
+        "input_rate": {"bg_color": "#D6E4FC", "border": 1, "num_format": "0.0000%"},
+        "input_number": {"bg_color": "#D6E4FC", "border": 1, "num_format": "#,##0.00"},
+        "rate": {"num_format": "0.0000%"},
+        "number": {"num_format": "#,##0.00"},
+        "factor": {"num_format": "0.000000"},
+    }
+    return {name: workbook.add_format(common | properties) for name, properties in variants.items()}
+
+
+def write(sheet, cell, value, cell_format=None):
+    if isinstance(value, str) and value.startswith("="):
+        if value.startswith("=QS."):
+            # Match Excel's Formula2 storage for XLL functions and preserve spills.
+            sheet.write_dynamic_array_formula(cell, value.replace("=QS.", "=_xll.QS.", 1), cell_format)
+        else:
+            sheet.write_formula(cell, value, cell_format)
+    else:
+        sheet.write(cell, value, cell_format)
+
+
+def heading(sheet, cell_range, text, cell_format):
+    sheet.merge_range(cell_range, text, cell_format)
+    if cell_range.startswith("A1:"):
+        sheet.set_row(0, 28)
+
+
+def new_workbook(path):
+    workbook = xlsxwriter.Workbook(path)
+    workbook.set_properties({"title": "QuantSupport Excel examples", "created": datetime(2026, 1, 1)})
+    workbook.set_calc_mode("auto")
+    return workbook
+
+
+def create_historical(path):
+    with new_workbook(path) as workbook:
+        style = formats(workbook)
+        sheet = workbook.add_worksheet("Historical Pricing")
+        sheet.hide_gridlines(2)
+        sheet.freeze_panes(4, 1)
+        sheet.set_column("A:A", 38, style["text"])
+        sheet.set_column("B:C", 55, style["text"])
+        for address, value in historical_cells().items():
+            row = int(address[1:])
+            kind = "header" if row in (1, 4, 19) else "text"
+            if address[0] != "A":
+                if row in (5, 6, 7):
+                    kind = "input_rate"
+                elif row == 24:
+                    kind = "number"
+                elif row in (1, 2, 19):
+                    kind = "input"
+            write(sheet, address, value, style[kind])
+
+
+SOFR_QUOTES = [
+    ("FixedRateDeposit_USD_SOFR_1D", 0.04500),
+    ("OIS_USD_SOFR_1Y", 0.04837), ("OIS_USD_SOFR_2Y", 0.04528),
+    ("OIS_USD_SOFR_3Y", 0.04260), ("OIS_USD_SOFR_5Y", 0.04077),
+    ("OIS_USD_SOFR_7Y", 0.04033), ("OIS_USD_SOFR_10Y", 0.03898),
+    ("OIS_USD_SOFR_30Y", 0.03738),
+]
+ESTR_QUOTES = [
+    ("FixedRateDeposit_EUR_ESTR_1D", 0.02900),
+    ("OIS_EUR_ESTR_3M", 0.02880), ("OIS_EUR_ESTR_6M", 0.02800),
+    ("OIS_EUR_ESTR_1Y", 0.02650), ("OIS_EUR_ESTR_2Y", 0.02500),
+    ("OIS_EUR_ESTR_3Y", 0.02450), ("OIS_EUR_ESTR_4Y", 0.02430),
+    ("OIS_EUR_ESTR_5Y", 0.02420), ("OIS_EUR_ESTR_7Y", 0.02450),
+    ("OIS_EUR_ESTR_10Y", 0.02520), ("OIS_EUR_ESTR_15Y", 0.02580),
+    ("OIS_EUR_ESTR_20Y", 0.02550), ("OIS_EUR_ESTR_30Y", 0.02400),
+]
+
+
+def create_swap(path):
+    with new_workbook(path) as workbook:
+        style = formats(workbook)
+        sheets = {name: workbook.add_worksheet(name) for name in (
+            "README", "Curve Setup", "Trade Inputs", "Pricing", "Curve Results", "Outputs", "Function Help",
+        )}
+        for sheet in sheets.values():
+            sheet.hide_gridlines(2)
+            sheet.set_column("A:N", 18, style["text"])
+            sheet.freeze_panes(3, 0)
+
+        readme = sheets["README"]
+        heading(readme, "A1:F1", "QuantSupport: SOFR and ESTR Curve Construction", style["title"])
+        heading(readme, "A3:F3", "How to use this workbook", style["section"])
+        instructions = {
+            4: "1. Build and load bindings/excel/dist/quantsupport.xll in 64-bit Windows Excel.",
+            5: "2. Open this workbook after the add-in is loaded, then press Ctrl+Alt+F9 once.",
+            6: "3. Change the blue SOFR or ESTR quotes on Curve Setup, or edit Trade Inputs. Curves and prices recalculate.",
+            7: "4. Pricing shows the object chain. Curve Results shows both curves. Outputs shows cashflows and sensitivities.",
+            10: "Curve Setup contains USD SOFR and EUR ESTR deposit/OIS quotes plus interpolation, day count, extrapolation, and pillars.",
+            11: "The QuoteStore chain loads SOFR from A6:A13, then ESTR from H6:H18. The configuration chain adds both curves.",
+            12: "QS.CONTEXT.CREATE bootstraps both curves from worksheet handles. No JSON or external curve file is used.",
+            13: "Pressing F9 with unchanged inputs reuses every object handle. Edited quotes or trade inputs advance revisions.",
+            15: "Excel's Function Arguments dialog shows guidance for every parameter.",
+            16: 'Use =QS.HELP("QS.CURVE.CONFIGS.ADD") or =QS.FUNCTIONS.DETAILS() for an in-sheet reference.',
+        }
+        for row, text in instructions.items():
+            readme.write_string(f"A{row}", text, style["text"])
+            readme.set_row(row - 1, 32)
+        heading(readme, "A9:F9", "Both curves are configured in this workbook", style["section"])
+        heading(readme, "A14:F14", "Function guidance", style["section"])
+        readme.set_column("A:A", 115)
+
+        curve = sheets["Curve Setup"]
+        heading(curve, "A1:M1", "USD SOFR and EUR ESTR curve setup", style["title"])
+        curve.write("A3", "Valuation date")
+        curve.write("B3", "2026-02-24", style["input"])
+        curve.write("E3", "Initial quote store")
+        write(curve, "F3", '=QS.QUOTES.CREATE("SwapExample.Quotes",B3)')
+        for columns, quotes, upstream in [("ABC", SOFR_QUOTES, "$F$3"), ("HIJ", ESTR_QUOTES, "$C$13")]:
+            identifier_column, rate_column, handle_column = columns
+            for column, label in zip(columns, ["Quote identifier / calibration instrument", "Mid", "QuoteStore revision"]):
+                curve.write(f"{column}5", label, style["header"])
+            for row, (identifier, rate) in enumerate(quotes, 6):
+                curve.write(f"{identifier_column}{row}", identifier)
+                curve.write(f"{rate_column}{row}", rate, style["input_rate"])
+                previous = upstream if row == 6 else f"{handle_column}{row - 1}"
+                write(curve, f"{handle_column}{row}", formula("QS.QUOTES.SET", previous, f"{identifier_column}{row}", f"{rate_column}{row}", "", ""))
+        for label_column, value_column, index in [("E", "F", "SOFR"), ("L", "M", "ESTR")]:
+            curve.write(f"{label_column}5", "Curve parameter", style["header"])
+            curve.write(f"{value_column}5", "Value / handle", style["header"])
+            for row, label, value in [(6, "Market index", index), (7, "Day counter", "Actual360"), (8, "Interpolator", "LogLinear"), (9, "Enable extrapolation", True)]:
+                curve.write(f"{label_column}{row}", label)
+                curve.write(f"{value_column}{row}", value, style["input"])
+        for cell, value in {
+            "E10": "Configuration store", "F10": '=QS.CURVE.CONFIGS.CREATE("SwapExample.Curves")',
+            "E11": "Configured SOFR curve", "F11": "=QS.CURVE.CONFIGS.ADD(F10,F6,F7,F8,F9,A6:A13)",
+            "L10": "SOFR configuration input", "M10": "=F11",
+            "L11": "Configured ESTR curve", "M11": "=QS.CURVE.CONFIGS.ADD(M10,M6,M7,M8,M9,H6:H18)",
+        }.items():
+            write(curve, cell, value)
+        for columns, width in [("A:A", 42), ("B:B", 14), ("C:C", 48), ("D:D", 3), ("E:E", 24), ("F:F", 50), ("G:G", 3), ("H:H", 42), ("I:I", 14), ("J:J", 48), ("K:K", 3), ("L:L", 24), ("M:M", 50)]:
+            curve.set_column(columns, width, style["text"])
+
+        inputs = sheets["Trade Inputs"]
+        heading(inputs, "A1:D1", "Swap inputs", style["title"])
+        inputs.write("A3", "Parameter", style["header"])
+        inputs.write("B3", "Value", style["header"])
+        values = [
+            ("Notional", 10000000), ("Fixed coupon", 0.0425),
+            ("Start date", "2026-02-24"), ("Maturity date", "2031-02-24"),
+            ("Currency", "USD"), ("Market index", "SOFR"), ("Side", "Receive"),
+            ("Day counter", "Actual360"), ("Coupon compounding", "Simple"),
+            ("Rate frequency", "Semiannual"), ("Fixed-leg frequency", "Semiannual"),
+            ("Floating-leg frequency", "Quarterly"),
+        ]
+        for row, (label, value) in enumerate(values, 4):
+            inputs.write(f"A{row}", label)
+            kind = "input_number" if row == 4 else "input_rate" if row == 5 else "input"
+            inputs.write(f"B{row}", value, style[kind])
+        inputs.write("D3", "Rates are decimals: 0.03 = 3%. Dates are ISO text (YYYY-MM-DD).")
+        for columns, width in [("A:A", 27), ("B:B", 23), ("D:D", 42)]:
+            inputs.set_column(columns, width, style["text"])
+
+        pricing = sheets["Pricing"]
+        heading(pricing, "A1:D1", "Pricing chain", style["title"])
+        for cell, label in [("A3", "Step"), ("B3", "Result"), ("C3", "Purpose")]:
+            pricing.write(cell, label, style["header"])
+        steps = [
+            ("1. Quote store", "='Curve Setup'!J18", "Latest revision after loading SOFR and ESTR quotes"),
+            ("2. Curve configurations", "='Curve Setup'!M11", "Both curves' conventions and pillar ranges"),
+            ("3. Pricing context", formula("QS.CONTEXT.CREATE", '"SwapExample.Context"', "B4", "B5", *([""] * 9), '"USD"', '"SOFR"'), "Bootstraps the configured curves"),
+            ("4. Swap trade", '=QS.TRADE.SWAP("SwapExample.Swap",\'Curve Setup\'!B3,\'Trade Inputs\'!B6,\'Trade Inputs\'!B7,\'Trade Inputs\'!B8,\'Trade Inputs\'!B9,\'Trade Inputs\'!B4,\'Trade Inputs\'!B5,0,\'Trade Inputs\'!B10,\'Trade Inputs\'!B11,\'Trade Inputs\'!B12,\'Trade Inputs\'!B13,\'Trade Inputs\'!B14,\'Trade Inputs\'!B15)', "Receive-fixed USD SOFR swap"),
+            ("5. Present value", "=QS.PRICE(B7,B6)", "Swap NPV in USD"),
+            ("6. Fair fixed rate", "=QS.FAIR.RATE(B7,B6)", "Par coupon implied by the curve"),
+            ("7. SOFR curve", "=QS.CURVE.GET(B6,'Trade Inputs'!B9)", "Reusable bootstrapped SOFR curve handle"),
+            ("8. SOFR maturity discount", "=QS.CURVE.DISCOUNT(B10,'Trade Inputs'!B7)", "SOFR discount factor at maturity"),
+            ("9. ESTR curve", '=QS.CURVE.GET(B6,"ESTR")', "Reusable bootstrapped ESTR curve handle"),
+            ("10. ESTR maturity discount", "=QS.CURVE.DISCOUNT(B12,'Trade Inputs'!B7)", "ESTR discount factor at maturity"),
+        ]
+        for row, (label, expression, purpose) in enumerate(steps, 4):
+            pricing.write(f"A{row}", label)
+            kind = "number" if row == 8 else "rate" if row == 9 else "factor" if row in (11, 13) else "text"
+            write(pricing, f"B{row}", expression, style[kind])
+            pricing.write(f"C{row}", purpose)
+        for columns, width in [("A:A", 24), ("B:B", 58), ("C:C", 40)]:
+            pricing.set_column(columns, width, style["text"])
+        pricing.activate()
+        pricing.set_selection("A4")
+
+        results = sheets["Curve Results"]
+        heading(results, "A1:N1", "Bootstrapped SOFR and ESTR discount curves", style["title"])
+        for area, cell, index_cell, label in [("A3:E3", "A4", "B10", "SOFR curve nodes"), ("G3:K3", "G4", "B12", "ESTR curve nodes")]:
+            heading(results, area, label, style["section"])
+            write(results, cell, f'=QS.CURVE.TABLE(Pricing!{index_cell},"Simple","Annual")')
+        for columns, width, kind in [("A:A", 38, "text"), ("B:B", 16, "text"), ("C:C", 20, "factor"), ("D:E", 20, "rate"), ("G:G", 38, "text"), ("H:H", 16, "text"), ("I:I", 20, "factor"), ("J:K", 20, "rate"), ("M:M", 22, "text"), ("N:N", 58, "text")]:
+            results.set_column(columns, width, style[kind])
+        heading(results, "M3:N3", "Point queries", style["section"])
+        queries = [
+            ("SOFR curve handle", "=Pricing!B10", "text"),
+            ("Discount date", "='Trade Inputs'!B7", "text"),
+            ("SOFR discount factor", "=QS.CURVE.DISCOUNT(Pricing!B10,N5)", "factor"),
+            ("ESTR curve handle", "=Pricing!B12", "text"),
+            ("ESTR discount factor", "=QS.CURVE.DISCOUNT(Pricing!B12,N5)", "factor"),
+            ("Forward start", "='Trade Inputs'!B6", "text"),
+            ("Forward end", "='Trade Inputs'!B7", "text"),
+            ("SOFR forward rate", '=QS.CURVE.FORWARD(Pricing!B10,N9,N10,"Simple","Annual")', "rate"),
+            ("ESTR forward rate", '=QS.CURVE.FORWARD(Pricing!B12,N9,N10,"Simple","Annual")', "rate"),
+        ]
+        for row, (label, expression, kind) in enumerate(queries, 4):
+            results.write(f"M{row}", label)
+            write(results, f"N{row}", expression, style[kind])
+
+        outputs = sheets["Outputs"]
+        heading(outputs, "A1:L1", "Swap outputs", style["title"])
+        heading(outputs, "A3:I3", "Cashflows", style["section"])
+        write(outputs, "A4", "=QS.CASHFLOWS(Pricing!B7,Pricing!B6)")
+        heading(outputs, "K3:L3", "Sensitivities", style["section"])
+        write(outputs, "K4", "=QS.SENSITIVITIES(Pricing!B7,Pricing!B6)")
+
+        help_sheet = sheets["Function Help"]
+        heading(help_sheet, "A1:H1", "Live worksheet-function help", style["title"])
+        for area, cell, label, function_name in [("A3:B3", "A4", "Curve construction", "QS.CURVE.CONFIGS.ADD"), ("D3:E3", "D4", "Swap construction", "QS.TRADE.SWAP"), ("G3:H3", "G4", "Curve inspection", "QS.CURVE.TABLE")]:
+            heading(help_sheet, area, label, style["section"])
+            write(help_sheet, cell, f'=QS.HELP("{function_name}")')
+        for columns, width in [("A:A", 25), ("B:B", 76), ("D:D", 25), ("E:E", 76), ("G:G", 25), ("H:H", 76)]:
+            help_sheet.set_column(columns, width, style["text"])
+
+
+def validate_in_excel(path, xll_path):
+    """Check the optional live XLL workflow and unchanged F9 recalculation."""
+    from win32com.client import DispatchEx
+
+    excel = DispatchEx("Excel.Application")
+    workbook = None
+    try:
+        excel.Visible = False
+        excel.DisplayAlerts = False
+        if not excel.RegisterXLL(str(xll_path)):
+            raise RuntimeError(f"Excel could not load {xll_path}")
+        workbook = excel.Workbooks.Open(str(path.resolve()), UpdateLinks=0, ReadOnly=True)
+        workbook.ForceFullCalculation = True
+        excel.CalculateFullRebuild()
+        historical = "Historical Pricing" in [sheet.Name for sheet in workbook.Worksheets]
+        if historical:
+            sheet = workbook.Worksheets("Historical Pricing")
+            handles = [sheet.Range(f"{column}{row}") for column in "BC" for row in (9, 11, 12, 13, 20, 21)]
+            prices = [sheet.Range(f"{column}24") for column in "BC"]
+            for column in "BC":
+                if sheet.Range(f"{column}23").Value2 != sheet.Range(f"{column}1").Value2:
+                    raise RuntimeError("Historical valuation date does not match its market")
+        else:
+            sheet = workbook.Worksheets("Pricing")
+            handles = [sheet.Range(f"B{row}") for row in (4, 5, 6, 7, 10, 12)]
+            prices = [sheet.Range(f"B{row}") for row in (8, 9, 11, 13)]
+            results = workbook.Worksheets("Curve Results")
+            numeric = [results.Range(cell).Value2 for cell in ("C5", "E6", "N6", "N8", "N11", "N12")]
+            for value in numeric:
+                if not isinstance(value, float) or not math.isfinite(value):
+                    raise RuntimeError(f"Curve query did not return a finite number: {value!r}")
+            if numeric[0] != 1.0 or abs(numeric[2] - prices[2].Value2) > 1e-8:
+                raise RuntimeError("Curve table and point-query discount factors disagree")
+            for output_sheet, cell in [("Outputs", "A4"), ("Outputs", "K4"), ("Function Help", "A4")]:
+                if not isinstance(workbook.Worksheets(output_sheet).Range(cell).Value2, str):
+                    raise RuntimeError(f"{output_sheet}!{cell} did not spill a header")
+        before = [cell.Value2 for cell in handles]
+        if not all(isinstance(value, str) and value.startswith("QSObject:") for value in before):
+            raise RuntimeError(f"Expected native object handles: {before!r}")
+        values = [cell.Value2 for cell in prices]
+        if not all(isinstance(value, float) and math.isfinite(value) for value in values):
+            raise RuntimeError(f"Pricing did not return finite numbers: {values!r}")
+        if not historical:
+            notional = workbook.Worksheets("Trade Inputs").Range("B4").Value2
+            if abs(values[0]) > notional or abs(values[1]) > 0.5:
+                raise RuntimeError("Swap price or fair rate is implausible for the example")
+            if not all(0.0 < discount <= 1.5 for discount in values[2:]):
+                raise RuntimeError("Maturity discount factors are outside the example's expected range")
+            if any(abs(forward) > 0.5 for forward in numeric[4:]):
+                raise RuntimeError("Curve point forwards are outside the example's expected range")
+        excel.Calculate()
+        if [cell.Value2 for cell in handles] != before:
+            raise RuntimeError("Unchanged F9 recalculation changed object handles")
+        if any(abs(cell.Value2 - value) > 1e-8 for cell, value in zip(prices, values)):
+            raise RuntimeError("Unchanged F9 recalculation changed prices")
+    finally:
+        if workbook is not None:
+            workbook.Close(SaveChanges=False)
+        excel.Quit()
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--example", choices=("all", "swap", "historical"), default="all")
+    parser.add_argument("--output-dir", type=Path, default=Path(__file__).resolve().parent)
+    parser.add_argument("--xll-path", type=Path, help="Validate with native Windows Excel; requires pywin32")
+    args = parser.parse_args()
+    if args.xll_path:
+        if sys.platform != "win32":
+            parser.error("--xll-path requires Windows Excel")
+        args.xll_path = args.xll_path.resolve()
+        if not args.xll_path.is_file():
+            parser.error(f"XLL file does not exist: {args.xll_path}")
+    args.output_dir.mkdir(parents=True, exist_ok=True)
+    for name, filename, generate in [("swap", "swap_pricing_example.xlsx", create_swap), ("historical", "historical_pricing_example.xlsx", create_historical)]:
+        if args.example not in ("all", name):
+            continue
+        with TemporaryDirectory(dir=args.output_dir) as temporary:
+            path = Path(temporary) / filename
+            generate(path)
+            if args.xll_path:
+                validate_in_excel(path, args.xll_path)
+            path.replace(args.output_dir / filename)
+        print(f"Created {args.output_dir / filename}")
+
+
+if __name__ == "__main__":
+    main()

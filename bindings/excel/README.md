@@ -216,11 +216,21 @@ functions were removed because they duplicated this API. Likewise, construct
 a flat curve with `QS.CURVE.FLAT` and add it with `QS.CURVE.ADD`; the redundant
 combined flat-add function is no longer registered.
 
-The checked-in workbook can be regenerated after building the XLL:
+Regenerate both checked-in workbooks with Python on any platform:
 
-```powershell
-powershell -ExecutionPolicy Bypass -File bindings/excel/examples/create_swap_example.ps1
+```sh
+python -m pip install -r bindings/excel/examples/requirements.txt
+python bindings/excel/examples/create_examples.py
 ```
+
+Use `--example swap` or `--example historical` to generate one workbook, and
+`--output-dir PATH` to choose an output directory. Generation stores inputs and
+formulas; load the XLL in Windows Excel and press **Ctrl+Alt+F9** to calculate.
+For optional live validation on Windows, install `pywin32` and pass
+`--xll-path bindings/excel/dist/quantsupport.xll`. This checks pricing, spills,
+and handle/price stability after an unchanged F9 recalculation. The portable
+Rust catalog exporter lives in `tools/function_catalog.rs`; it is documentation
+tooling, separate from the Python workbook generator.
 
 ## Optional JSON imports
 

@@ -3,7 +3,9 @@
 Price one unchanged trade against multiple complete historical markets using
 the same native snapshot archive and selector as Python. Load the XLL before
 opening [the example workbook](https://github.com/jmelo11/quantsupport/blob/main/bindings/excel/examples/historical_pricing_example.xlsx),
-then press **Ctrl+Alt+F9** to reconstruct its objects. It uses explicit zero
+then press **Ctrl+Alt+F9** to reconstruct its objects. Regenerate both Excel
+examples with `python bindings/excel/examples/create_examples.py` after installing
+`bindings/excel/examples/requirements.txt`. The historical workbook uses explicit zero
 rates; the same snapshot workflow accepts bootstrapped markets, volatility,
 FX, simulation, and model configurations.
 
