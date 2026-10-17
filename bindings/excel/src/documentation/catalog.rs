@@ -149,7 +149,8 @@ pub fn exports(root: &Path) -> Result<Vec<Value>, Box<dyn Error>> {
         let source = format!(
             "bindings/excel/src/functions/{}",
             file.strip_prefix(Path::new(env!("CARGO_MANIFEST_DIR")).join("src/functions"))?
-                .display()
+                .to_string_lossy()
+                .replace('\\', "/")
         );
         let mut macros = Vec::new();
         for item in &parsed.items {
@@ -238,6 +239,23 @@ pub fn exports(root: &Path) -> Result<Vec<Value>, Box<dyn Error>> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn source_paths_use_forward_slashes() {
+        let records =
+            super::exports(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/functions"))
+                .unwrap();
+        assert!(!records.is_empty());
+        for record in records {
+            let source = record["source"].as_str().unwrap();
+            assert!(
+                source.starts_with("bindings/excel/src/functions/"),
+                "{source}"
+            );
+            assert!(source.ends_with(".rs"), "{source}");
+            assert!(!source.contains('\\'), "{source}");
+        }
+    }
+
     #[test]
     fn categories_follow_the_python_domain_directories() {
         let records =
