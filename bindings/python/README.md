@@ -185,6 +185,11 @@ as the Rust crate. Wheels are also available as Actions artifacts and GitHub
 release assets. To build one locally, run `maturin build --release` inside
 `bindings/python`; no Rust compiler is needed when installing the resulting wheel.
 
+Native enum members, dates, periods, calendars, and coupon/payoff expressions have
+concrete types in the stubs. Editor colours depend on semantic highlighting and
+the selected theme; hover information shows the inferred type. Select the Python
+environment containing the rebuilt wheel in Jupyter to use its updated stubs.
+
 ### In-memory product and market schemas
 
 All built-in products support `Product.from_dict(spec)` and
@@ -259,9 +264,11 @@ callable_bond = qs.SteppedCouponBond(
     identifier="USD-STEPPED-CALL-2031", start_date=ref, maturity_date=ref + "6Y",
     notional=1_000_000, currency=qs.Currency.USD,
     coupons=[
-        qs.Coupon.fixed(0.045),
-        qs.Coupon.floating(qs.MarketIndex.SOFR, spread=0.006,
-                           floor=0.0, cap=0.06),
+        qs.FixedRateCoupon(rate=qs.InterestRate(rate=0.045)),
+        qs.OptionEmbeddedCoupon(
+            index=qs.MarketIndex.SOFR,
+            payoff=(qs.PayoffOps.Index + 0.006).max(0.0).min(0.06),
+        ),
     ],
     notional_percentages=[1.0, 0.90, 0.75],
     call_schedule=[
@@ -315,9 +322,11 @@ bond_spec = {
     "currency": "USD", "units": 100.0,
     "payment_frequency": "Semiannual", "coupon_day_counter": "Actual365",
     "coupons": [
-        {"Fixed": {"rate": 0.045}},
-        {"Floating": {"index": "SOFR", "spread": 0.006,
-                      "floor": 0.0, "cap": 0.06}},
+        qs.FixedRateCoupon(rate=qs.InterestRate(rate=0.045)).to_dict(),
+        qs.OptionEmbeddedCoupon(
+            index=qs.MarketIndex.SOFR,
+            payoff=(qs.PayoffOps.Index + 0.006).max(0.0).min(0.06),
+        ).to_dict(),
     ],
     "notional_percentages": [1.0, 0.90, 0.75],
     "call_schedule": [
@@ -329,10 +338,11 @@ bond = qs.SteppedCouponBond.from_dict(bond_spec)
 restored = qs.SteppedCouponBond.from_dict(bond.to_dict())
 ```
 
-`Coupon` wraps existing native `CashflowType<f64>` coupon variants; there is
-no additional coupon-definition enum. `Coupon.from_dict` and `Coupon.to_dict`
-retain compact `Fixed`/`Floating` constructor shapes. Input also accepts
-`FixedRateCoupon`, `FloatingRateCoupon`, and `OptionEmbeddedCoupon` tags.
+`FixedRateCoupon`, `FloatingRateCoupon`, and `OptionEmbeddedCoupon` wrap the
+corresponding native cashflows. Each class provides `from_dict` and `to_dict`.
+Serialized tags use those class names, and optional coupons preserve the full
+`PayoffOps` expression tree. Legacy compact `Fixed`/`Floating` input remains
+readable.
 Python enums remain supported in direct constructors and dictionaries,
 including nested configuration dicts. For example, use `qs.Currency.USD`,
 `qs.MarketIndex.SOFR`, `qs.Frequency.Semiannual`, and `qs.Request.Value` in
@@ -611,14 +621,15 @@ Pricing:
   `ctx.simulation_configurations`
 - constructed outputs (inside the `with` block, or after an explicit
   `initialize()` when using the context without one):
-  - `ctx.curves()` / `ctx.curve(index)` → `DiscountCurve`
+  - `ctx.discount_curves()` / `ctx.curve(index)` → constructed `DiscountCurve` objects
     (`nodes()`, `pillars()`, `discount_factor(date)`, `forward_rate(...)`)
+  - `ctx.curves = new_curves` → replace curve configurations and rebuild initialized markets
   - `ctx.volatility_surfaces()` / `ctx.volatility_surface(index)` → `VolatilitySurface`
   - `ctx.volatility_cubes()` / `ctx.volatility_cube(index)` → `VolatilityCube`
   - `ctx.simulations()` / `ctx.simulation(index)` → `Simulation`
     (`dates()`, `n_paths`, `dt`, `paths()` and `calibration_diagnostics()` DataFrames)
 - `Swap`, `CrossCurrencySwap`, `FixedRateBond`, `SteppedCouponBond` — instrument
-    specifications with typed getters; callable stepped bonds use `Coupon` and
+    specifications with typed getters; callable stepped bonds use native coupon classes and
   explicit `CallScheduleEntry(date, strike)` terms
 - `ctx.evaluate(trade, requests)` → `EvaluationResults` (`price`, `yield_to_maturity`, `modified_duration`, `z_spread`, `oas`, `fair_rate`, `sensitivities` DataFrame, `cashflows` DataFrame)
 
