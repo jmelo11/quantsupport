@@ -11,9 +11,9 @@ use crate::common::conversion::{extract_date, from_py, qs_err};
 /// French amortization, bullet repayment, or a residual balloon.
 #[pyclass(module = "quantsupport", frozen, from_py_object)]
 #[derive(Clone)]
-pub(crate) struct LoanRepaymentStructure {
+pub struct LoanRepaymentStructure {
     /// Native principal amortization terms serialized by the Python wrapper.
-    pub(crate) inner: QsLoanRepaymentStructure,
+    pub inner: QsLoanRepaymentStructure,
 }
 
 #[pymethods]
@@ -53,9 +53,9 @@ impl LoanRepaymentStructure {
 /// Conditional prepayment model; annual CPR values are decimal fractions.
 #[pyclass(module = "quantsupport", frozen, from_py_object)]
 #[derive(Clone)]
-pub(crate) struct PrepaymentModelConfiguration {
+pub struct PrepaymentModelConfiguration {
     /// Native annual CPR parameters serialized by the Python wrapper.
-    pub(crate) inner: QsPrepaymentModelConfiguration,
+    pub inner: QsPrepaymentModelConfiguration,
 }
 
 #[pymethods]

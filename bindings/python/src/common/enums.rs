@@ -43,7 +43,7 @@ macro_rules! mirror_enum {
         $(#[$meta])*
         #[pyclass(module = "quantsupport", name = $pyname, eq, frozen, hash, from_py_object)]
         #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-        pub(crate) enum $name {
+        pub enum $name {
             $($variant),+
         }
 
@@ -65,7 +65,7 @@ macro_rules! mirror_enum {
 
         impl $name {
             /// Parses the enum from its variant name (case-insensitive).
-            pub(crate) fn from_name(s: &str) -> PyResult<Self> {
+            pub fn from_name(s: &str) -> PyResult<Self> {
                 $(
                     if s.eq_ignore_ascii_case(stringify!($variant)) {
                         return Ok(Self::$variant);
@@ -93,7 +93,7 @@ mirror_enum!(
 impl Level {
     /// Parses a quote level from its name (case-insensitive).
     #[staticmethod]
-    pub(crate) fn parse(s: &str) -> PyResult<Self> {
+    pub fn parse(s: &str) -> PyResult<Self> {
         Self::from_name(s)
     }
 
@@ -121,7 +121,7 @@ mirror_enum!(
 impl Currency {
     /// Parses a currency from its alphabetic code (e.g. `"USD"`).
     #[staticmethod]
-    pub(crate) fn parse(s: &str) -> PyResult<Self> {
+    pub fn parse(s: &str) -> PyResult<Self> {
         Self::from_name(s)
     }
 
@@ -177,7 +177,7 @@ impl Side {
     /// Parses a side; accepts `"LongReceive"`/`"Long"`/`"Receive"` and
     /// `"PayShort"`/`"Pay"`/`"Short"`.
     #[staticmethod]
-    pub(crate) fn parse(s: &str) -> PyResult<Self> {
+    pub fn parse(s: &str) -> PyResult<Self> {
         if ["longreceive", "long", "receive"].contains(&s.to_ascii_lowercase().as_str()) {
             Ok(Self::LongReceive)
         } else if ["payshort", "pay", "short"].contains(&s.to_ascii_lowercase().as_str()) {
@@ -221,7 +221,7 @@ mirror_enum!(
 impl Compounding {
     /// Parses a compounding convention from its name.
     #[staticmethod]
-    pub(crate) fn parse(s: &str) -> PyResult<Self> {
+    pub fn parse(s: &str) -> PyResult<Self> {
         Self::from_name(s)
     }
 
@@ -260,7 +260,7 @@ mirror_enum!(
 impl Frequency {
     /// Parses a frequency from its name.
     #[staticmethod]
-    pub(crate) fn parse(s: &str) -> PyResult<Self> {
+    pub fn parse(s: &str) -> PyResult<Self> {
         Self::from_name(s)
     }
 
@@ -292,7 +292,7 @@ mirror_enum!(
 impl DayCounter {
     /// Parses a day counter from its name.
     #[staticmethod]
-    pub(crate) fn parse(s: &str) -> PyResult<Self> {
+    pub fn parse(s: &str) -> PyResult<Self> {
         Self::from_name(s)
     }
 
@@ -327,7 +327,7 @@ mirror_enum!(
 impl TimeUnit {
     /// Parses a time unit from its name.
     #[staticmethod]
-    pub(crate) fn parse(s: &str) -> PyResult<Self> {
+    pub fn parse(s: &str) -> PyResult<Self> {
         Self::from_name(s)
     }
 
@@ -360,7 +360,7 @@ mirror_enum!(
 impl BusinessDayConvention {
     /// Parses a convention from its name.
     #[staticmethod]
-    pub(crate) fn parse(s: &str) -> PyResult<Self> {
+    pub fn parse(s: &str) -> PyResult<Self> {
         Self::from_name(s)
     }
 
@@ -394,7 +394,7 @@ mirror_enum!(
 impl Request {
     /// Parses a request from its name.
     #[staticmethod]
-    pub(crate) fn parse(s: &str) -> PyResult<Self> {
+    pub fn parse(s: &str) -> PyResult<Self> {
         match s {
             "Value" | "value" | "npv" => Ok(Self::Value),
             "Sensitivities" | "sensitivities" => Ok(Self::Sensitivities),
@@ -429,7 +429,7 @@ mirror_enum!(
 impl VolatilityType {
     /// Parses a volatility type from its name.
     #[staticmethod]
-    pub(crate) fn parse(s: &str) -> PyResult<Self> {
+    pub fn parse(s: &str) -> PyResult<Self> {
         Self::from_name(s)
     }
 
@@ -454,7 +454,7 @@ mirror_enum!(
 impl SmileType {
     /// Parses a smile type from its name.
     #[staticmethod]
-    pub(crate) fn parse(s: &str) -> PyResult<Self> {
+    pub fn parse(s: &str) -> PyResult<Self> {
         Self::from_name(s)
     }
 
@@ -483,8 +483,8 @@ impl SmileType {
     from_py_object
 )]
 #[derive(Clone, PartialEq, Eq, Hash)]
-pub(crate) struct MarketIndex {
-    pub(crate) inner: QsMarketIndex,
+pub struct MarketIndex {
+    pub inner: QsMarketIndex,
 }
 
 /// Declares a class constant per fieldless `MarketIndex` variant.
@@ -644,7 +644,7 @@ mirror_enum!(
 impl ScenarioType {
     /// Parses a scenario type from its name.
     #[staticmethod]
-    pub(crate) fn parse(s: &str) -> PyResult<Self> {
+    pub fn parse(s: &str) -> PyResult<Self> {
         Self::from_name(s)
     }
 
@@ -669,7 +669,7 @@ mirror_enum!(
 impl OptionType {
     /// Parses an option type from its name.
     #[staticmethod]
-    pub(crate) fn parse(s: &str) -> PyResult<Self> {
+    pub fn parse(s: &str) -> PyResult<Self> {
         Self::from_name(s)
     }
 
@@ -694,7 +694,7 @@ mirror_enum!(
 impl CapFloorType {
     /// Parses a cap/floor type from its name.
     #[staticmethod]
-    pub(crate) fn parse(s: &str) -> PyResult<Self> {
+    pub fn parse(s: &str) -> PyResult<Self> {
         Self::from_name(s)
     }
 
@@ -719,7 +719,7 @@ mirror_enum!(
 impl CapletFloorletType {
     /// Parses a caplet/floorlet type from its name.
     #[staticmethod]
-    pub(crate) fn parse(s: &str) -> PyResult<Self> {
+    pub fn parse(s: &str) -> PyResult<Self> {
         Self::from_name(s)
     }
 
@@ -744,7 +744,7 @@ mirror_enum!(
 impl PaymentStructure {
     /// Parses a payment structure from its name.
     #[staticmethod]
-    pub(crate) fn parse(s: &str) -> PyResult<Self> {
+    pub fn parse(s: &str) -> PyResult<Self> {
         Self::from_name(s)
     }
 
@@ -778,7 +778,7 @@ mirror_enum!(
 #[pymethods]
 impl DateGenerationRule {
     #[staticmethod]
-    pub(crate) fn parse(s: &str) -> PyResult<Self> {
+    pub fn parse(s: &str) -> PyResult<Self> {
         Self::from_name(s)
     }
     fn __str__(&self) -> String {
@@ -800,7 +800,7 @@ mirror_enum!(
 #[pymethods]
 impl SwaptionType {
     #[staticmethod]
-    pub(crate) fn parse(s: &str) -> PyResult<Self> {
+    pub fn parse(s: &str) -> PyResult<Self> {
         Self::from_name(s)
     }
     fn __repr__(&self) -> String {
@@ -823,7 +823,7 @@ mirror_enum!(
 impl Interpolator {
     /// Parses an interpolation rule by its name.
     #[staticmethod]
-    pub(crate) fn parse(s: &str) -> PyResult<Self> {
+    pub fn parse(s: &str) -> PyResult<Self> {
         Self::from_name(s)
     }
     fn __str__(&self) -> String {

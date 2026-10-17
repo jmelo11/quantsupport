@@ -108,7 +108,7 @@ use crate::QuantSupportError;
     subclass,
     dict
 )]
-pub(crate) struct PricingContext {
+pub struct PricingContext {
     inner: QsPricingContext,
     initialized: bool,
     fully_constructed: bool,
@@ -118,7 +118,7 @@ pub(crate) struct PricingContext {
 }
 
 impl PricingContext {
-    pub(crate) fn from_snapshot_context(
+    pub fn from_snapshot_context(
         inner: QsPricingContext,
         fixed_income_policy: Option<PyFixedIncomeDiscountPolicy>,
     ) -> Self {
@@ -132,19 +132,19 @@ impl PricingContext {
         }
     }
 
-    pub(crate) fn key(&self) -> usize {
+    pub fn key(&self) -> usize {
         std::ptr::from_ref(self) as usize
     }
 
-    pub(crate) const fn generation(&self) -> u64 {
+    pub const fn generation(&self) -> u64 {
         self.generation
     }
 
-    pub(crate) const fn base_context(&self) -> &QsPricingContext {
+    pub const fn base_context(&self) -> &QsPricingContext {
         &self.inner
     }
 
-    pub(crate) fn market_view(&self) -> PyResult<MarketView<'_>> {
+    pub fn market_view(&self) -> PyResult<MarketView<'_>> {
         self.require_initialized()?;
         crate::market::scenario::market_view(self, self.generation, &self.inner)
     }
@@ -177,7 +177,7 @@ impl PricingContext {
 
     /// Builds the configured fixed-income policy, using the context base curve
     /// when no explicit currency mapping was supplied.
-    pub(crate) fn build_loan_discount_policy(&self) -> FixedIncomeDiscountPolicy {
+    pub fn build_loan_discount_policy(&self) -> FixedIncomeDiscountPolicy {
         self.bond_discount_policy(false)
     }
 
@@ -200,7 +200,7 @@ impl PricingContext {
     ///
     /// # Errors
     /// Returns `QuantSupportError` until `initialize()` or context entry succeeds.
-    pub(crate) fn require_initialized(&self) -> PyResult<()> {
+    pub fn require_initialized(&self) -> PyResult<()> {
         if self.initialized {
             Ok(())
         } else {

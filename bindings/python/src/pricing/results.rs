@@ -75,7 +75,7 @@ fn extract_sensitivities(obj: &Bound<'_, PyAny>) -> PyResult<Vec<(String, f64)>>
 
 /// Results of evaluating a trade.
 #[pyclass(module = "quantsupport", name = "EvaluationResults", subclass, dict)]
-pub(crate) struct EvaluationResults {
+pub struct EvaluationResults {
     evaluation_date: quantsupport::prelude::Date,
     identifier: String,
     price: Option<f64>,
@@ -89,7 +89,7 @@ pub(crate) struct EvaluationResults {
 }
 
 impl EvaluationResults {
-    pub(crate) fn from_qs(res: &QsEvaluationResults) -> Self {
+    pub fn from_qs(res: &QsEvaluationResults) -> Self {
         let sensitivities = res.sensitivities().map(|s| {
             s.instrument_keys()
                 .iter()

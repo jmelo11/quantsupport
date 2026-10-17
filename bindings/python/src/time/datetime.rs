@@ -9,12 +9,12 @@ use crate::{common::conversion::qs_err, time::Date};
 /// Parsing accepts offset-aware RFC 3339 timestamps and preserves nanoseconds.
 #[pyclass(module = "quantsupport", eq, ord, frozen, hash, from_py_object)]
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub(crate) struct DateTime {
-    pub(crate) inner: QsDateTime,
+pub struct DateTime {
+    pub inner: QsDateTime,
 }
 
 /// Accepts the native value, an RFC 3339 string, or an aware Python datetime.
-pub(crate) fn extract_datetime(value: &Bound<'_, PyAny>) -> PyResult<QsDateTime> {
+pub fn extract_datetime(value: &Bound<'_, PyAny>) -> PyResult<QsDateTime> {
     if let Ok(datetime) = value.extract::<DateTime>() {
         return Ok(datetime.inner);
     }

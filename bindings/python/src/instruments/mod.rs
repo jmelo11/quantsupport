@@ -1,7 +1,7 @@
 //! Instruments bindings and crate-internal implementation.
 
-pub(crate) mod products;
-pub(crate) mod coupons;
-pub(crate) mod loan;
-pub(crate) mod loan_terms;
-pub(crate) mod scripting;
+pub mod products;
+pub mod coupons;
+pub mod loan;
+pub mod loan_terms;
+pub mod scripting;

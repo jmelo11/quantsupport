@@ -10,7 +10,7 @@ use crate::common::conversion::{from_json_file, from_py, qs_err};
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct ScriptEvent {
+pub struct ScriptEvent {
     #[serde(alias = "event_date")]
     date: Date,
     #[serde(alias = "script")]
@@ -30,7 +30,7 @@ fn default_name() -> String {
 )]
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct ScriptedProduct {
+pub struct ScriptedProduct {
     #[serde(default = "default_name", alias = "identifier")]
     name: String,
     events: Vec<ScriptEvent>,
@@ -44,23 +44,23 @@ pub(crate) struct ScriptedProduct {
 }
 
 impl ScriptedProduct {
-    pub(crate) const fn currency(&self) -> Currency {
+    pub const fn currency(&self) -> Currency {
         self.currency
     }
 
-    pub(crate) const fn discount_index(&self) -> Option<&MarketIndex> {
+    pub const fn discount_index(&self) -> Option<&MarketIndex> {
         self.discount_index.as_ref()
     }
 
-    pub(crate) fn result_variable(&self) -> Option<&str> {
+    pub fn result_variable(&self) -> Option<&str> {
         self.result_variable.as_deref()
     }
 
-    pub(crate) fn models(&self) -> &[PricingModelConfiguration] {
+    pub fn models(&self) -> &[PricingModelConfiguration] {
         &self.models
     }
 
-    pub(crate) fn event_stream(&self) -> PyResult<EventStream> {
+    pub fn event_stream(&self) -> PyResult<EventStream> {
         if self.events.is_empty() {
             return Err(pyo3::exceptions::PyValueError::new_err(
                 "a script must contain at least one event",
@@ -94,7 +94,7 @@ impl ScriptedProduct {
 impl ScriptedProduct {
     /// Builds a script from events [{date, code}], currency, and optional model assignments.
     #[staticmethod]
-    pub(crate) fn from_dict(obj: &Bound<'_, PyAny>) -> PyResult<Self> {
+    pub fn from_dict(obj: &Bound<'_, PyAny>) -> PyResult<Self> {
         let product: Self = from_py(obj, "scripted product")?;
         product.validate()?;
         Ok(product)

@@ -30,7 +30,7 @@ use crate::common::{conversion::qs_err, enums::ScenarioType};
 /// Immutable. Combine shocks in Scenario and enter it after a PricingContext.
 #[pyclass(module = "quantsupport", frozen, from_py_object)]
 #[derive(Clone)]
-pub(crate) struct Shock {
+pub struct Shock {
     inner: QsShock,
 }
 
@@ -90,7 +90,7 @@ thread_local! {
     static ACTIVE_CONTEXTS: RefCell<Vec<Py<PricingContext>>> = const { RefCell::new(Vec::new()) };
 }
 
-pub(crate) fn enter_context(context: &Bound<'_, PricingContext>) -> bool {
+pub fn enter_context(context: &Bound<'_, PricingContext>) -> bool {
     ACTIVE_CONTEXTS.with(|contexts| {
         let mut contexts = contexts.borrow_mut();
         let first = contexts.is_empty();
@@ -100,7 +100,7 @@ pub(crate) fn enter_context(context: &Bound<'_, PricingContext>) -> bool {
 }
 
 /// Removes the current scope; returns whether the same or another context remains active.
-pub(crate) fn exit_context(context: &Bound<'_, PricingContext>) -> PyResult<(bool, bool)> {
+pub fn exit_context(context: &Bound<'_, PricingContext>) -> PyResult<(bool, bool)> {
     ACTIVE_CONTEXTS.with(|contexts| {
         let mut contexts = contexts.borrow_mut();
         if let Some(current) = contexts.last() {
@@ -134,7 +134,7 @@ fn active_context(py: Python<'_>) -> PyResult<Py<PricingContext>> {
     })
 }
 
-pub(crate) fn market_view<'a>(
+pub fn market_view<'a>(
     context: &PricingContext,
     generation: u64,
     base: &'a QsPricingContext,
@@ -174,7 +174,7 @@ pub(crate) fn market_view<'a>(
 /// curves and volatility markets have independent AD state. Leaving the scope,
 /// including through an exception, discards the temporary view. Reusable.
 #[pyclass(module = "quantsupport", unsendable)]
-pub(crate) struct Scenario {
+pub struct Scenario {
     inner: QsScenario,
     active: Option<(Py<PricingContext>, usize)>,
 }

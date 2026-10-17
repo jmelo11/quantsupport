@@ -50,8 +50,8 @@ macro_rules! config_wrapper {
         $(#[$docs])*
         #[pyclass(module = "quantsupport", name = $pyname, from_py_object)]
         #[derive(Clone)]
-        pub(crate) struct $name {
-            pub(crate) inner: $inner,
+        pub struct $name {
+            pub inner: $inner,
         }
 
         #[pymethods]
@@ -134,8 +134,8 @@ config_wrapper!(
 /// Each rule wraps the corresponding native CurveConstruction variant.
 #[pyclass(module = "quantsupport", frozen, from_py_object)]
 #[derive(Clone)]
-pub(crate) struct CurveConstruction {
-    pub(crate) inner: QsCurveConstruction,
+pub struct CurveConstruction {
+    pub inner: QsCurveConstruction,
 }
 
 #[pymethods]
@@ -288,8 +288,8 @@ config_wrapper!(
 /// Created from `{"reference_date": "YYYY-MM-DD", "quotes": [{"identifier": ..., "mid": ...}]}`.
 #[pyclass(module = "quantsupport", name = "QuoteStore", from_py_object)]
 #[derive(Clone)]
-pub(crate) struct QuoteStore {
-    pub(crate) inner: QsQuoteStore,
+pub struct QuoteStore {
+    pub inner: QsQuoteStore,
 }
 
 #[pymethods]
@@ -402,8 +402,8 @@ impl QuoteStore {
 /// Historical index fixings.
 #[pyclass(module = "quantsupport", name = "FixingStore", from_py_object)]
 #[derive(Clone)]
-pub(crate) struct FixingStore {
-    pub(crate) inner: QsFixingStore,
+pub struct FixingStore {
+    pub inner: QsFixingStore,
 }
 
 #[pymethods]
@@ -479,8 +479,8 @@ impl FixingStore {
 /// meaning 1 base = rate quote.
 #[pyclass(module = "quantsupport", name = "FxStore", from_py_object)]
 #[derive(Clone, Default)]
-pub(crate) struct FxStore {
-    pub(crate) inner: QsFxStore,
+pub struct FxStore {
+    pub inner: QsFxStore,
 }
 
 #[pymethods]

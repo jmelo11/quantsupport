@@ -82,20 +82,20 @@ product_dict_constructors!(
 /// A vanilla fixed-vs-floating interest rate swap.
 #[pyclass(module = "quantsupport", name = "Swap", extends = Instrument, from_py_object, subclass, dict, unsendable)]
 #[derive(Clone)]
-pub(crate) struct Swap {
-    pub(crate) identifier: String,
-    pub(crate) start_date: Date,
-    pub(crate) maturity_date: Date,
-    pub(crate) notional: f64,
-    pub(crate) fixed_rate: f64,
-    pub(crate) spread: Option<f64>,
-    pub(crate) currency: Currency,
-    pub(crate) market_index: MarketIndex,
-    pub(crate) day_counter: DayCounter,
-    pub(crate) compounding: Compounding,
-    pub(crate) rate_frequency: Frequency,
-    pub(crate) fixed_leg_frequency: Frequency,
-    pub(crate) floating_leg_frequency: Frequency,
+pub struct Swap {
+    pub identifier: String,
+    pub start_date: Date,
+    pub maturity_date: Date,
+    pub notional: f64,
+    pub fixed_rate: f64,
+    pub spread: Option<f64>,
+    pub currency: Currency,
+    pub market_index: MarketIndex,
+    pub day_counter: DayCounter,
+    pub compounding: Compounding,
+    pub rate_frequency: Frequency,
+    pub fixed_leg_frequency: Frequency,
+    pub floating_leg_frequency: Frequency,
 }
 
 macro_rules! build_swap_instrument {
@@ -125,7 +125,7 @@ macro_rules! build_swap_instrument {
 
 impl Swap {
     /// Builds an AD-enabled trade for pricing.
-    pub(crate) fn build_trade_dual(&self, position: &Trade) -> PyResult<SwapTrade<DualFwd>> {
+    pub fn build_trade_dual(&self, position: &Trade) -> PyResult<SwapTrade<DualFwd>> {
         let instrument: QsSwap<DualFwd> = build_swap_instrument!(self, position, DualFwd)?;
         Ok(SwapTrade::new(
             instrument,
@@ -136,7 +136,7 @@ impl Swap {
     }
 
     /// Decomposes the trade into contingent claims for XVA.
-    pub(crate) fn claims(&self, position: &Trade) -> PyResult<Vec<ContingentClaim>> {
+    pub fn claims(&self, position: &Trade) -> PyResult<Vec<ContingentClaim>> {
         let instrument: QsSwap<f64> = build_swap_instrument!(self, position, f64)?;
         let trade = SwapTrade::new(
             instrument,
@@ -268,20 +268,20 @@ impl Swap {
 /// A float-vs-float cross-currency swap.
 #[pyclass(module = "quantsupport", name = "CrossCurrencySwap", extends = Instrument, from_py_object, subclass, dict, unsendable)]
 #[derive(Clone)]
-pub(crate) struct CrossCurrencySwap {
-    pub(crate) identifier: String,
-    pub(crate) start_date: Date,
-    pub(crate) maturity_date: Date,
-    pub(crate) domestic_notional: f64,
-    pub(crate) foreign_notional: f64,
-    pub(crate) domestic_spread: f64,
-    pub(crate) foreign_spread: f64,
-    pub(crate) domestic_currency: Currency,
-    pub(crate) foreign_currency: Currency,
-    pub(crate) domestic_market_index: MarketIndex,
-    pub(crate) foreign_market_index: MarketIndex,
-    pub(crate) domestic_leg_frequency: Frequency,
-    pub(crate) foreign_leg_frequency: Frequency,
+pub struct CrossCurrencySwap {
+    pub identifier: String,
+    pub start_date: Date,
+    pub maturity_date: Date,
+    pub domestic_notional: f64,
+    pub foreign_notional: f64,
+    pub domestic_spread: f64,
+    pub foreign_spread: f64,
+    pub domestic_currency: Currency,
+    pub foreign_currency: Currency,
+    pub domestic_market_index: MarketIndex,
+    pub foreign_market_index: MarketIndex,
+    pub domestic_leg_frequency: Frequency,
+    pub foreign_leg_frequency: Frequency,
 }
 
 macro_rules! build_xccy_instrument {
@@ -316,7 +316,7 @@ macro_rules! build_xccy_instrument {
 
 impl CrossCurrencySwap {
     /// Builds an AD-enabled trade for pricing.
-    pub(crate) fn build_trade_dual(
+    pub fn build_trade_dual(
         &self,
         position: &Trade,
     ) -> PyResult<FloatFloatCrossCurrencySwapTrade<DualFwd>> {
@@ -334,7 +334,7 @@ impl CrossCurrencySwap {
     }
 
     /// Decomposes the trade into contingent claims for XVA.
-    pub(crate) fn claims(&self, position: &Trade) -> PyResult<Vec<ContingentClaim>> {
+    pub fn claims(&self, position: &Trade) -> PyResult<Vec<ContingentClaim>> {
         let instrument: FloatFloatCrossCurrencySwap<f64> =
             build_xccy_instrument!(self, position, f64)?;
         instrument
@@ -458,18 +458,18 @@ impl CrossCurrencySwap {
 /// A float-vs-float single-currency basis swap.
 #[pyclass(module = "quantsupport", name = "BasisSwap", extends = Instrument, from_py_object, subclass, dict, unsendable)]
 #[derive(Clone)]
-pub(crate) struct BasisSwap {
-    pub(crate) identifier: String,
-    pub(crate) start_date: Date,
-    pub(crate) maturity_date: Date,
-    pub(crate) notional: f64,
-    pub(crate) currency: Currency,
-    pub(crate) pay_market_index: MarketIndex,
-    pub(crate) receive_market_index: MarketIndex,
-    pub(crate) pay_spread: Option<f64>,
-    pub(crate) receive_spread: Option<f64>,
-    pub(crate) pay_leg_frequency: Frequency,
-    pub(crate) receive_leg_frequency: Frequency,
+pub struct BasisSwap {
+    pub identifier: String,
+    pub start_date: Date,
+    pub maturity_date: Date,
+    pub notional: f64,
+    pub currency: Currency,
+    pub pay_market_index: MarketIndex,
+    pub receive_market_index: MarketIndex,
+    pub pay_spread: Option<f64>,
+    pub receive_spread: Option<f64>,
+    pub pay_leg_frequency: Frequency,
+    pub receive_leg_frequency: Frequency,
 }
 
 macro_rules! build_basis_swap_instrument {
@@ -497,7 +497,7 @@ macro_rules! build_basis_swap_instrument {
 
 impl BasisSwap {
     /// Builds an AD-enabled trade for pricing.
-    pub(crate) fn build_trade_dual(&self, position: &Trade) -> PyResult<BasisSwapTrade<DualFwd>> {
+    pub fn build_trade_dual(&self, position: &Trade) -> PyResult<BasisSwapTrade<DualFwd>> {
         let instrument: QsBasisSwap<DualFwd> =
             build_basis_swap_instrument!(self, position, DualFwd)?;
         Ok(BasisSwapTrade::new(
@@ -509,7 +509,7 @@ impl BasisSwap {
     }
 
     /// Decomposes the trade into contingent claims for XVA.
-    pub(crate) fn claims(&self, position: &Trade) -> PyResult<Vec<ContingentClaim>> {
+    pub fn claims(&self, position: &Trade) -> PyResult<Vec<ContingentClaim>> {
         let instrument: QsBasisSwap<f64> = build_basis_swap_instrument!(self, position, f64)?;
         instrument
             .legs()
@@ -588,22 +588,22 @@ impl BasisSwap {
 /// A fixed-vs-float cross-currency swap.
 #[pyclass(module = "quantsupport", name = "FixFloatCrossCurrencySwap", extends = Instrument, from_py_object, subclass, dict, unsendable)]
 #[derive(Clone)]
-pub(crate) struct FixFloatCrossCurrencySwap {
-    pub(crate) identifier: String,
-    pub(crate) start_date: Date,
-    pub(crate) maturity_date: Date,
-    pub(crate) domestic_notional: f64,
-    pub(crate) foreign_notional: f64,
-    pub(crate) fixed_rate: f64,
-    pub(crate) spread: Option<f64>,
-    pub(crate) domestic_currency: Currency,
-    pub(crate) foreign_currency: Currency,
-    pub(crate) floating_index: MarketIndex,
-    pub(crate) day_counter: DayCounter,
-    pub(crate) compounding: Compounding,
-    pub(crate) rate_frequency: Frequency,
-    pub(crate) domestic_leg_frequency: Frequency,
-    pub(crate) foreign_leg_frequency: Frequency,
+pub struct FixFloatCrossCurrencySwap {
+    pub identifier: String,
+    pub start_date: Date,
+    pub maturity_date: Date,
+    pub domestic_notional: f64,
+    pub foreign_notional: f64,
+    pub fixed_rate: f64,
+    pub spread: Option<f64>,
+    pub domestic_currency: Currency,
+    pub foreign_currency: Currency,
+    pub floating_index: MarketIndex,
+    pub day_counter: DayCounter,
+    pub compounding: Compounding,
+    pub rate_frequency: Frequency,
+    pub domestic_leg_frequency: Frequency,
+    pub foreign_leg_frequency: Frequency,
 }
 
 macro_rules! build_fix_float_xccy_instrument {
@@ -643,7 +643,7 @@ macro_rules! build_fix_float_xccy_instrument {
 
 impl FixFloatCrossCurrencySwap {
     /// Builds an AD-enabled trade for pricing.
-    pub(crate) fn build_trade_dual(
+    pub fn build_trade_dual(
         &self,
         position: &Trade,
     ) -> PyResult<FixFloatCrossCurrencySwapTrade<DualFwd>> {
@@ -661,7 +661,7 @@ impl FixFloatCrossCurrencySwap {
     }
 
     /// Decomposes the trade into contingent claims for XVA.
-    pub(crate) fn claims(&self, position: &Trade) -> PyResult<Vec<ContingentClaim>> {
+    pub fn claims(&self, position: &Trade) -> PyResult<Vec<ContingentClaim>> {
         let instrument: QsFixFloatXccy<f64> =
             build_fix_float_xccy_instrument!(self, position, f64)?;
         instrument
@@ -767,8 +767,8 @@ impl FixFloatCrossCurrencySwap {
     frozen
 )]
 #[derive(Clone)]
-pub(crate) struct CallScheduleEntry {
-    pub(crate) inner: QsCallScheduleEntry,
+pub struct CallScheduleEntry {
+    pub inner: QsCallScheduleEntry,
 }
 
 #[pymethods]
@@ -867,24 +867,24 @@ impl CallScheduleEntry {
 /// A fixed-rate bullet (or amortizing) bond.
 #[pyclass(module = "quantsupport", name = "FixedRateBond", extends = Instrument, from_py_object, subclass, dict, unsendable)]
 #[derive(Clone)]
-pub(crate) struct FixedRateBond {
-    pub(crate) identifier: String,
-    pub(crate) start_date: Date,
-    pub(crate) maturity_date: Date,
-    pub(crate) notional: f64,
-    pub(crate) rate: f64,
-    pub(crate) currency: Currency,
-    pub(crate) discount_index: Option<MarketIndex>,
-    pub(crate) day_counter: DayCounter,
-    pub(crate) compounding: Compounding,
-    pub(crate) rate_frequency: Frequency,
-    pub(crate) payment_frequency: Frequency,
-    pub(crate) payment_structure: PaymentStructure,
-    pub(crate) calendar: Option<Calendar>,
-    pub(crate) business_day_convention: Option<BusinessDayConvention>,
-    pub(crate) date_generation_rule: Option<DateGenerationRule>,
-    pub(crate) end_of_month: Option<bool>,
-    pub(crate) first_coupon_date: Option<Date>,
+pub struct FixedRateBond {
+    pub identifier: String,
+    pub start_date: Date,
+    pub maturity_date: Date,
+    pub notional: f64,
+    pub rate: f64,
+    pub currency: Currency,
+    pub discount_index: Option<MarketIndex>,
+    pub day_counter: DayCounter,
+    pub compounding: Compounding,
+    pub rate_frequency: Frequency,
+    pub payment_frequency: Frequency,
+    pub payment_structure: PaymentStructure,
+    pub calendar: Option<Calendar>,
+    pub business_day_convention: Option<BusinessDayConvention>,
+    pub date_generation_rule: Option<DateGenerationRule>,
+    pub end_of_month: Option<bool>,
+    pub first_coupon_date: Option<Date>,
 }
 
 macro_rules! build_fixed_rate_bond_instrument {
@@ -927,7 +927,7 @@ macro_rules! build_fixed_rate_bond_instrument {
 
 impl FixedRateBond {
     /// Builds an AD-enabled trade for pricing.
-    pub(crate) fn build_trade_dual(&self, position: &Trade) -> PyResult<FixedRateBondTrade<DualFwd>> {
+    pub fn build_trade_dual(&self, position: &Trade) -> PyResult<FixedRateBondTrade<DualFwd>> {
         let instrument: QsFixedRateBond<DualFwd> =
             build_fixed_rate_bond_instrument!(self, position, DualFwd)?;
         let mut trade = FixedRateBondTrade::new(
@@ -947,7 +947,7 @@ impl FixedRateBond {
     }
 
     /// Decomposes the trade into contingent claims for XVA.
-    pub(crate) fn claims(&self, position: &Trade) -> PyResult<Vec<ContingentClaim>> {
+    pub fn claims(&self, position: &Trade) -> PyResult<Vec<ContingentClaim>> {
         let instrument: QsFixedRateBond<f64> =
             build_fixed_rate_bond_instrument!(self, position, f64)?;
         FixedRateBondTrade::new(
@@ -1075,30 +1075,30 @@ impl FixedRateBond {
 /// A callable bond with positional coupon and outstanding-notional schedules.
 #[pyclass(module = "quantsupport", name = "SteppedCouponBond", extends = Instrument, from_py_object, subclass, dict, unsendable)]
 #[derive(Clone)]
-pub(crate) struct SteppedCouponBond {
-    pub(crate) identifier: String,
-    pub(crate) start_date: Date,
-    pub(crate) maturity_date: Date,
-    pub(crate) notional: f64,
-    pub(crate) units: f64,
-    pub(crate) currency: Currency,
-    pub(crate) payment_frequency: Frequency,
-    pub(crate) coupon_day_counter: DayCounter,
-    pub(crate) coupons: Vec<CouponDefinition>,
-    pub(crate) notional_percentages: Vec<f64>,
-    pub(crate) call_schedule: Vec<CallScheduleEntry>,
-    pub(crate) calendar: Option<Calendar>,
-    pub(crate) business_day_convention: Option<BusinessDayConvention>,
-    pub(crate) date_generation_rule: Option<DateGenerationRule>,
-    pub(crate) end_of_month: Option<bool>,
-    pub(crate) first_coupon_date: Option<Date>,
-    pub(crate) next_to_last_coupon_date: Option<Date>,
-    pub(crate) termination_date_convention: Option<BusinessDayConvention>,
+pub struct SteppedCouponBond {
+    pub identifier: String,
+    pub start_date: Date,
+    pub maturity_date: Date,
+    pub notional: f64,
+    pub units: f64,
+    pub currency: Currency,
+    pub payment_frequency: Frequency,
+    pub coupon_day_counter: DayCounter,
+    pub coupons: Vec<CouponDefinition>,
+    pub notional_percentages: Vec<f64>,
+    pub call_schedule: Vec<CallScheduleEntry>,
+    pub calendar: Option<Calendar>,
+    pub business_day_convention: Option<BusinessDayConvention>,
+    pub date_generation_rule: Option<DateGenerationRule>,
+    pub end_of_month: Option<bool>,
+    pub first_coupon_date: Option<Date>,
+    pub next_to_last_coupon_date: Option<Date>,
+    pub termination_date_convention: Option<BusinessDayConvention>,
 }
 
 impl SteppedCouponBond {
     /// Builds the AD-enabled native trade consumed by the callable engines.
-    pub(crate) fn build_trade_dual(&self, position: &Trade) -> PyResult<SteppedCouponBondTrade<DualFwd>> {
+    pub fn build_trade_dual(&self, position: &Trade) -> PyResult<SteppedCouponBondTrade<DualFwd>> {
         let mut builder = MakeSteppedCouponBond::<DualFwd>::default()
             .with_identifier(self.identifier.clone())
             .with_start_date(self.start_date)
@@ -1304,16 +1304,16 @@ impl SteppedCouponBond {
 /// A floating-rate note.
 #[pyclass(module = "quantsupport", name = "FloatingRateNote", extends = Instrument, from_py_object, subclass, dict, unsendable)]
 #[derive(Clone)]
-pub(crate) struct FloatingRateNote {
-    pub(crate) identifier: String,
-    pub(crate) start_date: Date,
-    pub(crate) maturity_date: Date,
-    pub(crate) notional: f64,
-    pub(crate) spread: f64,
-    pub(crate) forward_index: MarketIndex,
-    pub(crate) currency: Currency,
-    pub(crate) payment_frequency: Frequency,
-    pub(crate) payment_structure: PaymentStructure,
+pub struct FloatingRateNote {
+    pub identifier: String,
+    pub start_date: Date,
+    pub maturity_date: Date,
+    pub notional: f64,
+    pub spread: f64,
+    pub forward_index: MarketIndex,
+    pub currency: Currency,
+    pub payment_frequency: Frequency,
+    pub payment_structure: PaymentStructure,
 }
 
 macro_rules! build_frn_instrument {
@@ -1336,7 +1336,7 @@ macro_rules! build_frn_instrument {
 
 impl FloatingRateNote {
     /// Builds an AD-enabled trade for pricing.
-    pub(crate) fn build_trade_dual(&self, position: &Trade) -> PyResult<FloatingRateNoteTrade<DualFwd>> {
+    pub fn build_trade_dual(&self, position: &Trade) -> PyResult<FloatingRateNoteTrade<DualFwd>> {
         let instrument: QsFloatingRateNote<DualFwd> =
             build_frn_instrument!(self, position, DualFwd)?;
         Ok(FloatingRateNoteTrade::new(
@@ -1348,7 +1348,7 @@ impl FloatingRateNote {
     }
 
     /// Decomposes the trade into contingent claims for XVA.
-    pub(crate) fn claims(&self, position: &Trade) -> PyResult<Vec<ContingentClaim>> {
+    pub fn claims(&self, position: &Trade) -> PyResult<Vec<ContingentClaim>> {
         let instrument: QsFloatingRateNote<f64> = build_frn_instrument!(self, position, f64)?;
         instrument
             .legs()
@@ -1421,17 +1421,17 @@ impl FloatingRateNote {
 /// A fixed-rate deposit.
 #[pyclass(module = "quantsupport", name = "FixedRateDeposit", extends = Instrument, from_py_object, subclass, dict, unsendable)]
 #[derive(Clone)]
-pub(crate) struct FixedRateDeposit {
-    pub(crate) identifier: String,
-    pub(crate) start_date: Date,
-    pub(crate) maturity_date: Date,
-    pub(crate) notional: f64,
-    pub(crate) rate: f64,
-    pub(crate) currency: Currency,
-    pub(crate) discount_index: Option<MarketIndex>,
-    pub(crate) day_counter: DayCounter,
-    pub(crate) compounding: Compounding,
-    pub(crate) rate_frequency: Frequency,
+pub struct FixedRateDeposit {
+    pub identifier: String,
+    pub start_date: Date,
+    pub maturity_date: Date,
+    pub notional: f64,
+    pub rate: f64,
+    pub currency: Currency,
+    pub discount_index: Option<MarketIndex>,
+    pub day_counter: DayCounter,
+    pub compounding: Compounding,
+    pub rate_frequency: Frequency,
 }
 
 macro_rules! build_deposit_instrument {
@@ -1457,7 +1457,7 @@ macro_rules! build_deposit_instrument {
 
 impl FixedRateDeposit {
     /// Builds an AD-enabled trade for pricing.
-    pub(crate) fn build_trade_dual(&self, position: &Trade) -> PyResult<FixedRateDepositTrade<DualFwd>> {
+    pub fn build_trade_dual(&self, position: &Trade) -> PyResult<FixedRateDepositTrade<DualFwd>> {
         let instrument: QsFixedRateDeposit<DualFwd> =
             build_deposit_instrument!(self, position, DualFwd)?;
         Ok(FixedRateDepositTrade::new(
@@ -1469,7 +1469,7 @@ impl FixedRateDeposit {
     }
 
     /// Decomposes the trade into contingent claims for XVA.
-    pub(crate) fn claims(&self, position: &Trade) -> PyResult<Vec<ContingentClaim>> {
+    pub fn claims(&self, position: &Trade) -> PyResult<Vec<ContingentClaim>> {
         let instrument: QsFixedRateDeposit<f64> = build_deposit_instrument!(self, position, f64)?;
         instrument
             .legs()
@@ -1548,21 +1548,21 @@ impl FixedRateDeposit {
 /// A deliverable or non-deliverable FX forward.
 #[pyclass(module = "quantsupport", name = "FxForward", extends = Instrument, from_py_object, subclass, dict, unsendable)]
 #[derive(Clone)]
-pub(crate) struct FxForwardPy {
-    pub(crate) identifier: String,
-    pub(crate) delivery_date: Date,
-    pub(crate) base_currency: Currency,
-    pub(crate) quote_currency: Currency,
-    pub(crate) forward_price: Option<f64>,
-    pub(crate) forward_points: Option<f64>,
-    pub(crate) day_counter: Option<DayCounter>,
-    pub(crate) fixing_date: Option<Date>,
-    pub(crate) settlement_currency: Option<Currency>,
+pub struct FxForwardPy {
+    pub identifier: String,
+    pub delivery_date: Date,
+    pub base_currency: Currency,
+    pub quote_currency: Currency,
+    pub forward_price: Option<f64>,
+    pub forward_points: Option<f64>,
+    pub day_counter: Option<DayCounter>,
+    pub fixing_date: Option<Date>,
+    pub settlement_currency: Option<Currency>,
 }
 
 impl FxForwardPy {
     /// Builds the trade for pricing.
-    pub(crate) fn build_trade(&self, position: &Trade) -> PyResult<FxForwardTrade> {
+    pub fn build_trade(&self, position: &Trade) -> PyResult<FxForwardTrade> {
         let mut mk = MakeFxForward::default()
             .with_identifier(self.identifier.clone())
             .with_delivery_date(self.delivery_date)
@@ -1649,18 +1649,18 @@ impl FxForwardPy {
 /// A European FX option.
 #[pyclass(module = "quantsupport", name = "FxOption", extends = Instrument, from_py_object, subclass, dict, unsendable)]
 #[derive(Clone)]
-pub(crate) struct FxOptionPy {
-    pub(crate) identifier: String,
-    pub(crate) expiry_date: Date,
-    pub(crate) strike: f64,
-    pub(crate) option_type: EuroOptionType,
-    pub(crate) base_currency: Currency,
-    pub(crate) quote_currency: Currency,
+pub struct FxOptionPy {
+    pub identifier: String,
+    pub expiry_date: Date,
+    pub strike: f64,
+    pub option_type: EuroOptionType,
+    pub base_currency: Currency,
+    pub quote_currency: Currency,
 }
 
 impl FxOptionPy {
     /// Builds the trade for pricing.
-    pub(crate) fn build_trade(&self, position: &Trade) -> PyResult<FxEuropeanOptionTrade> {
+    pub fn build_trade(&self, position: &Trade) -> PyResult<FxEuropeanOptionTrade> {
         let instrument = MakeFxEuropeanOption::default()
             .with_identifier(self.identifier.clone())
             .with_expiry_date(self.expiry_date)
@@ -1727,17 +1727,17 @@ impl FxOptionPy {
 /// A European equity option.
 #[pyclass(module = "quantsupport", name = "EquityOption", extends = Instrument, from_py_object, subclass, dict, unsendable)]
 #[derive(Clone)]
-pub(crate) struct EquityOption {
-    pub(crate) identifier: String,
-    pub(crate) market_index: MarketIndex,
-    pub(crate) expiry_date: Date,
-    pub(crate) strike: Strike,
-    pub(crate) option_type: EuroOptionType,
+pub struct EquityOption {
+    pub identifier: String,
+    pub market_index: MarketIndex,
+    pub expiry_date: Date,
+    pub strike: Strike,
+    pub option_type: EuroOptionType,
 }
 
 impl EquityOption {
     /// Builds the trade for pricing.
-    pub(crate) fn build_trade(&self, position: &Trade) -> PyResult<EquityEuropeanOptionTrade> {
+    pub fn build_trade(&self, position: &Trade) -> PyResult<EquityEuropeanOptionTrade> {
         let instrument = QsEquityEuropeanOption::new(
             self.market_index.clone(),
             self.expiry_date,
@@ -1799,22 +1799,22 @@ impl EquityOption {
 /// A single-name credit default swap.
 #[pyclass(module = "quantsupport", name = "CreditDefaultSwap", extends = Instrument, from_py_object, subclass, dict, unsendable)]
 #[derive(Clone)]
-pub(crate) struct CreditDefaultSwapPy {
-    pub(crate) identifier: String,
-    pub(crate) credit_index: MarketIndex,
-    pub(crate) discount_index: MarketIndex,
-    pub(crate) currency: Currency,
-    pub(crate) start_date: Date,
-    pub(crate) maturity_date: Date,
-    pub(crate) spread: f64,
-    pub(crate) recovery: f64,
-    pub(crate) premium_frequency: Frequency,
-    pub(crate) day_counter: DayCounter,
+pub struct CreditDefaultSwapPy {
+    pub identifier: String,
+    pub credit_index: MarketIndex,
+    pub discount_index: MarketIndex,
+    pub currency: Currency,
+    pub start_date: Date,
+    pub maturity_date: Date,
+    pub spread: f64,
+    pub recovery: f64,
+    pub premium_frequency: Frequency,
+    pub day_counter: DayCounter,
 }
 
 impl CreditDefaultSwapPy {
     /// Builds the trade for pricing.
-    pub(crate) fn build_trade(&self, position: &Trade) -> PyResult<CdsTrade> {
+    pub fn build_trade(&self, position: &Trade) -> PyResult<CdsTrade> {
         let instrument = QsCreditDefaultSwap::new(
             self.identifier.clone(),
             self.credit_index.clone(),
@@ -1910,21 +1910,21 @@ impl CreditDefaultSwapPy {
 /// An interest-rate cap or floor.
 #[pyclass(module = "quantsupport", name = "CapFloor", extends = Instrument, from_py_object, subclass, dict, unsendable)]
 #[derive(Clone)]
-pub(crate) struct CapFloorPy {
-    pub(crate) identifier: String,
-    pub(crate) start_date: Date,
-    pub(crate) maturity_date: Date,
-    pub(crate) strike: f64,
-    pub(crate) notional: f64,
-    pub(crate) market_index: MarketIndex,
-    pub(crate) currency: Currency,
-    pub(crate) cap_floor_type: CapFloorType,
-    pub(crate) frequency: Frequency,
+pub struct CapFloorPy {
+    pub identifier: String,
+    pub start_date: Date,
+    pub maturity_date: Date,
+    pub strike: f64,
+    pub notional: f64,
+    pub market_index: MarketIndex,
+    pub currency: Currency,
+    pub cap_floor_type: CapFloorType,
+    pub frequency: Frequency,
 }
 
 impl CapFloorPy {
     /// Builds the trade for pricing.
-    pub(crate) fn build_trade(&self, position: &Trade) -> PyResult<CapFloorTrade> {
+    pub fn build_trade(&self, position: &Trade) -> PyResult<CapFloorTrade> {
         let instrument: QsCapFloor = MakeCapFloor::default()
             .with_identifier(self.identifier.clone())
             .with_start_date(self.start_date)
@@ -2007,21 +2007,21 @@ impl CapFloorPy {
 /// A single caplet or floorlet.
 #[pyclass(module = "quantsupport", name = "CapletFloorlet", extends = Instrument, from_py_object, subclass, dict, unsendable)]
 #[derive(Clone)]
-pub(crate) struct CapletFloorletPy {
-    pub(crate) identifier: String,
-    pub(crate) market_index: MarketIndex,
-    pub(crate) currency: Currency,
-    pub(crate) fixing_date: Date,
-    pub(crate) start_accrual_date: Date,
-    pub(crate) end_accrual_date: Date,
-    pub(crate) payment_date: Date,
-    pub(crate) payoff_type: CapletFloorletType,
-    pub(crate) strike: Strike,
+pub struct CapletFloorletPy {
+    pub identifier: String,
+    pub market_index: MarketIndex,
+    pub currency: Currency,
+    pub fixing_date: Date,
+    pub start_accrual_date: Date,
+    pub end_accrual_date: Date,
+    pub payment_date: Date,
+    pub payoff_type: CapletFloorletType,
+    pub strike: Strike,
 }
 
 impl CapletFloorletPy {
     /// Builds the trade for pricing.
-    pub(crate) fn build_trade(&self, position: &Trade) -> PyResult<CapletFloorletTrade> {
+    pub fn build_trade(&self, position: &Trade) -> PyResult<CapletFloorletTrade> {
         let instrument = QsCapletFloorlet::new(
             self.identifier.clone(),
             self.market_index.clone(),
@@ -2099,18 +2099,18 @@ impl CapletFloorletPy {
 /// An exchange-traded interest-rate futures position.
 #[pyclass(module = "quantsupport", name = "RateFutures", extends = Instrument, from_py_object, subclass, dict, unsendable)]
 #[derive(Clone)]
-pub(crate) struct RateFuturesPy {
-    pub(crate) identifier: String,
-    pub(crate) market_index: MarketIndex,
-    pub(crate) start_date: Date,
-    pub(crate) end_date: Date,
-    pub(crate) futures_price: f64,
-    pub(crate) contract_size: Option<f64>,
+pub struct RateFuturesPy {
+    pub identifier: String,
+    pub market_index: MarketIndex,
+    pub start_date: Date,
+    pub end_date: Date,
+    pub futures_price: f64,
+    pub contract_size: Option<f64>,
 }
 
 impl RateFuturesPy {
     /// Builds the trade for pricing.
-    pub(crate) fn build_trade(&self, position: &Trade) -> PyResult<RateFuturesTrade> {
+    pub fn build_trade(&self, position: &Trade) -> PyResult<RateFuturesTrade> {
         let mut mk = MakeRateFutures::default()
             .with_identifier(self.identifier.clone())
             .with_market_index(self.market_index.clone())
@@ -2179,7 +2179,7 @@ impl RateFuturesPy {
 /// Equity forward contract; its position size belongs to `Trade`.
 #[pyclass(module = "quantsupport", name = "EquityForward", extends = Instrument, from_py_object, subclass, dict, unsendable)]
 #[derive(Clone)]
-pub(crate) struct EquityForward {
+pub struct EquityForward {
     identifier: String,
     market_index: MarketIndex,
     delivery_date: Date,
@@ -2188,7 +2188,7 @@ pub(crate) struct EquityForward {
     day_counter: DayCounter,
 }
 impl EquityForward {
-    pub(crate) fn build_trade(
+    pub fn build_trade(
         &self,
         position: &Trade,
     ) -> PyResult<quantsupport::prelude::EquityForwardTrade> {
@@ -2259,14 +2259,14 @@ impl EquityForward {
 /// European option to enter a payer or receiver fixed/floating swap at expiry.
 #[pyclass(module = "quantsupport", name = "EuropeanSwaption", extends = Instrument, from_py_object, subclass, dict, unsendable)]
 #[derive(Clone)]
-pub(crate) struct EuropeanSwaption {
+pub struct EuropeanSwaption {
     identifier: String,
     expiry_date: Date,
     maturity_date: Date,
     strike: f64,
     notional: f64,
     currency: Currency,
-    pub(crate) market_index: MarketIndex,
+    pub market_index: MarketIndex,
     swaption_type: quantsupport::prelude::SwaptionType,
     day_counter: DayCounter,
     compounding: Compounding,
@@ -2276,7 +2276,7 @@ pub(crate) struct EuropeanSwaption {
     calendar: Option<Calendar>,
 }
 impl EuropeanSwaption {
-    pub(crate) fn build_trade_dual(
+    pub fn build_trade_dual(
         &self,
         position: &Trade,
     ) -> PyResult<quantsupport::prelude::EuropeanSwaptionTrade<DualFwd>> {

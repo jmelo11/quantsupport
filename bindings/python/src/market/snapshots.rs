@@ -17,7 +17,7 @@ use crate::{
 /// Timestamp matching policy. Previous never selects a later observation.
 #[pyclass(module = "quantsupport", eq, eq_int, from_py_object)]
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub(crate) enum SnapshotSelectionRule {
+pub enum SnapshotSelectionRule {
     Exact,
     Closest,
     Previous,
@@ -61,7 +61,7 @@ fn selection_rule(value: &Bound<'_, PyAny>) -> PyResult<QsSnapshotSelectionRule>
 /// Closest may select future data; ties prefer the earlier snapshot.
 #[pyclass(module = "quantsupport", frozen, from_py_object)]
 #[derive(Clone)]
-pub(crate) struct SnapshotSelector {
+pub struct SnapshotSelector {
     inner: QsSnapshotSelector,
 }
 
@@ -104,7 +104,7 @@ impl SnapshotSelector {
 /// Curves are rebuilt from configurations; runtime curves are not pickled.
 #[pyclass(module = "quantsupport", frozen, from_py_object)]
 #[derive(Clone)]
-pub(crate) struct MarketSnapshot {
+pub struct MarketSnapshot {
     inner: QsMarketSnapshot,
 }
 
@@ -162,7 +162,7 @@ impl MarketSnapshot {
 
 /// Archive coherent markets by observation instant, with JSON persistence.
 #[pyclass(module = "quantsupport")]
-pub(crate) struct MarketSnapshotStore {
+pub struct MarketSnapshotStore {
     inner: QsMarketSnapshotStore,
 }
 

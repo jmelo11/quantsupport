@@ -33,7 +33,7 @@ use crate::{
 /// repayment structure and initial trial all-in rate. It does not change the
 /// original loan or principal used for Value/Sensitivities calculations.
 #[pyclass(module = "quantsupport", name = "LoanPricer")]
-pub(crate) struct LoanPricer {
+pub struct LoanPricer {
     refinancing_benchmark_index: Option<MarketIndex>,
     discount_policy: Option<FixedIncomeDiscountPolicy>,
     rebuild_amortization_for_fair_rate: bool,

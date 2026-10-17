@@ -20,7 +20,7 @@ use crate::{
 /// A native date schedule with immutable parameters and copied sequence views.
 #[pyclass(module = "quantsupport", name = "Schedule", frozen, from_py_object)]
 #[derive(Clone)]
-pub(crate) struct Schedule {
+pub struct Schedule {
     inner: QsSchedule,
 }
 

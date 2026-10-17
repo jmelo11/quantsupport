@@ -33,8 +33,8 @@ use quantsupport::prelude::{
 ///     Defaults to Annual.
 #[pyclass(module = "quantsupport", frozen, from_py_object)]
 #[derive(Clone)]
-pub(crate) struct InterestRate {
-    pub(crate) inner: QsRate<f64>,
+pub struct InterestRate {
+    pub inner: QsRate<f64>,
 }
 #[pymethods]
 impl InterestRate {
@@ -119,8 +119,8 @@ fn finite(value: f64) -> PyResult<()> {
 /// OptionEmbeddedCoupon pays notional * accrual * (payoff.eval(fixing) + spread).
 #[pyclass(module = "quantsupport", frozen, from_py_object)]
 #[derive(Clone)]
-pub(crate) struct PayoffOps {
-    pub(crate) inner: QsPayoff,
+pub struct PayoffOps {
+    pub inner: QsPayoff,
 }
 impl PayoffOps {
     fn extract(obj: &Bound<'_, PyAny>) -> PyResult<Self> {
@@ -254,8 +254,8 @@ impl PayoffOps {
 ///     Supply all three to create a dated coupon. Builders supply generated dates.
 #[pyclass(module = "quantsupport", frozen, from_py_object)]
 #[derive(Clone)]
-pub(crate) struct FixedRateCoupon {
-    pub(crate) inner: QsFixed<f64>,
+pub struct FixedRateCoupon {
+    pub inner: QsFixed<f64>,
 }
 #[pymethods]
 impl FixedRateCoupon {
@@ -313,8 +313,8 @@ impl FixedRateCoupon {
 ///     Resolved observation for a standalone dated coupon.
 #[pyclass(module = "quantsupport", frozen, from_py_object)]
 #[derive(Clone)]
-pub(crate) struct FloatingRateCoupon {
-    pub(crate) inner: QsFloating<f64>,
+pub struct FloatingRateCoupon {
+    pub inner: QsFloating<f64>,
 }
 #[pymethods]
 impl FloatingRateCoupon {
@@ -393,8 +393,8 @@ impl FloatingRateCoupon {
 ///     Resolved observation for a standalone dated coupon.
 #[pyclass(module = "quantsupport", frozen, from_py_object)]
 #[derive(Clone)]
-pub(crate) struct OptionEmbeddedCoupon {
-    pub(crate) inner: QsOption<f64>,
+pub struct OptionEmbeddedCoupon {
+    pub inner: QsOption<f64>,
 }
 #[pymethods]
 impl OptionEmbeddedCoupon {
@@ -567,12 +567,12 @@ coupon_methods!(OptionEmbeddedCoupon, OptionEmbeddedCoupon);
 
 /// Serialization adapter around the library's native cashflow enum.
 #[derive(Clone)]
-pub(crate) struct CouponDefinition {
-    pub(crate) inner: CashflowType<f64>,
+pub struct CouponDefinition {
+    pub inner: CashflowType<f64>,
 }
 impl CouponDefinition {
     /// Returns an independent Python coupon with the native contractual terms.
-    pub(crate) fn to_python(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+    pub fn to_python(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         match &self.inner {
             CashflowType::FixedRateCoupon(inner) =>
                 Py::new(py, FixedRateCoupon { inner: inner.clone() }).map(Py::into_any),
@@ -584,7 +584,7 @@ impl CouponDefinition {
         }
     }
 
-    pub(crate) fn from_py(obj: &Bound<'_, PyAny>) -> PyResult<Self> {
+    pub fn from_py(obj: &Bound<'_, PyAny>) -> PyResult<Self> {
         if let Ok(c) = obj.extract::<FixedRateCoupon>() {
             return Ok(Self {
                 inner: CashflowType::FixedRateCoupon(c.inner),
@@ -659,7 +659,7 @@ impl CouponDefinition {
         };
         Self::from_py(&value)
     }
-    pub(crate) fn specification(&self) -> PyResult<serde_json::Value> {
+    pub fn specification(&self) -> PyResult<serde_json::Value> {
         let (kind, mut terms) = match &self.inner {
             CashflowType::FixedRateCoupon(c) => (
                 "FixedRateCoupon",

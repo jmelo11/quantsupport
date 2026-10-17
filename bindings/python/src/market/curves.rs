@@ -41,8 +41,8 @@ fn rate_definition(
     from_py_object
 )]
 #[derive(Clone)]
-pub(crate) struct ZeroRateTermStructure {
-    pub(crate) inner: QsZeroCurve,
+pub struct ZeroRateTermStructure {
+    pub inner: QsZeroCurve,
 }
 
 impl ZeroRateTermStructure {
@@ -107,8 +107,8 @@ impl ZeroRateTermStructure {
     from_py_object
 )]
 #[derive(Clone)]
-pub(crate) struct TenorBasedZeroRateTermStructure {
-    pub(crate) inner: QsTenorCurve,
+pub struct TenorBasedZeroRateTermStructure {
+    pub inner: QsTenorCurve,
 }
 
 impl TenorBasedZeroRateTermStructure {
@@ -280,7 +280,7 @@ macro_rules! curve_methods {
 curve_methods!(ZeroRateTermStructure);
 curve_methods!(TenorBasedZeroRateTermStructure);
 
-pub(crate) fn extract_zero_curve(obj: &Bound<'_, PyAny>) -> PyResult<QsZeroCurve> {
+pub fn extract_zero_curve(obj: &Bound<'_, PyAny>) -> PyResult<QsZeroCurve> {
     if let Ok(curve) = obj.extract::<ZeroRateTermStructure>() {
         return Ok(curve.inner);
     }

@@ -1,10 +1,10 @@
 //! Date, period and calendar functionality, wrapping the library's
 //! `time` module.
 
-pub(crate) mod datetime;
-pub(crate) mod imm;
-pub(crate) mod schedule;
-pub(crate) use datetime::DateTime;
+pub mod datetime;
+pub mod imm;
+pub mod schedule;
+pub use datetime::DateTime;
 
 use pyo3::prelude::*;
 use pyo3::types::PyDate;
@@ -44,8 +44,8 @@ use crate::QuantSupportError;
     from_py_object
 )]
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub(crate) struct Date {
-    pub(crate) inner: QsDate,
+pub struct Date {
+    pub inner: QsDate,
 }
 
 #[pymethods]
@@ -188,8 +188,8 @@ impl Date {
 /// may be passed.
 #[pyclass(module = "quantsupport", name = "Period", eq, frozen, from_py_object)]
 #[derive(Clone, PartialEq, Eq)]
-pub(crate) struct Period {
-    pub(crate) inner: QsPeriod,
+pub struct Period {
+    pub inner: QsPeriod,
 }
 
 #[pymethods]
@@ -251,8 +251,8 @@ impl Period {
 /// The string constructor remains available for loading serialized names.
 #[pyclass(module = "quantsupport", name = "Calendar", from_py_object)]
 #[derive(Clone)]
-pub(crate) struct Calendar {
-    pub(crate) inner: QsCalendar,
+pub struct Calendar {
+    pub inner: QsCalendar,
 }
 
 #[pymethods]

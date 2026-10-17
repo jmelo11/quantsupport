@@ -16,8 +16,8 @@ use crate::time::Date;
 
 /// A discount curve constructed by the pricing context.
 #[pyclass(module = "quantsupport", name = "DiscountCurve", unsendable)]
-pub(crate) struct DiscountCurve {
-    pub(crate) element: DiscountCurveElement,
+pub struct DiscountCurve {
+    pub element: DiscountCurveElement,
 }
 
 #[pymethods]
@@ -121,8 +121,8 @@ impl DiscountCurve {
 
 /// A constructed volatility surface.
 #[pyclass(module = "quantsupport", name = "VolatilitySurface", unsendable)]
-pub(crate) struct VolatilitySurface {
-    pub(crate) element: VolatilitySurfaceElement,
+pub struct VolatilitySurface {
+    pub element: VolatilitySurfaceElement,
 }
 
 #[pymethods]
@@ -197,8 +197,8 @@ impl VolatilitySurface {
 
 /// A constructed volatility cube (expiry x underlying maturity x smile).
 #[pyclass(module = "quantsupport", name = "VolatilityCube", unsendable)]
-pub(crate) struct VolatilityCube {
-    pub(crate) element: VolatilityCubeElement,
+pub struct VolatilityCube {
+    pub element: VolatilityCubeElement,
 }
 
 #[pymethods]
@@ -279,8 +279,8 @@ impl VolatilityCube {
 
 /// A constructed Monte Carlo simulation.
 #[pyclass(module = "quantsupport", name = "Simulation", unsendable)]
-pub(crate) struct Simulation {
-    pub(crate) element: MonteCarloSimulationElement,
+pub struct Simulation {
+    pub element: MonteCarloSimulationElement,
 }
 
 #[pymethods]

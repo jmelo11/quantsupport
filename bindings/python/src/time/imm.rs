@@ -8,7 +8,7 @@ use crate::{common::conversion::extract_date, QuantSupportError};
 
 /// Static IMM date/code utilities. Main-cycle months are March, June, September and December.
 #[pyclass(module = "quantsupport", name = "IMM")]
-pub(crate) struct IMM;
+pub struct IMM;
 
 fn valid_code(code: &str, main_cycle: bool) -> bool {
     code.is_ascii() && QsIMM::is_imm_code(code, main_cycle)

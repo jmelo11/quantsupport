@@ -14,7 +14,7 @@ use quantsupport::prelude::{
     from_py_object
 )]
 #[derive(Clone)]
-pub(crate) struct SingleCurveCSADiscountPolicy {
+pub struct SingleCurveCSADiscountPolicy {
     collateral_currency: Currency,
     collateral_index: MarketIndex,
 }
@@ -28,7 +28,7 @@ impl From<QsCsaPolicy> for SingleCurveCSADiscountPolicy {
 }
 
 impl SingleCurveCSADiscountPolicy {
-    pub(crate) fn build(&self) -> QsCsaPolicy {
+    pub fn build(&self) -> QsCsaPolicy {
         QsCsaPolicy::new(self.collateral_index.clone(), self.collateral_currency)
     }
 }
@@ -100,12 +100,12 @@ impl SingleCurveCSADiscountPolicy {
     from_py_object
 )]
 #[derive(Clone)]
-pub(crate) struct FixedIncomeDiscountPolicy {
+pub struct FixedIncomeDiscountPolicy {
     risk_free_indices: Vec<(Currency, MarketIndex)>,
     prefer_instrument_index: bool,
 }
 impl FixedIncomeDiscountPolicy {
-    pub(crate) fn build(&self) -> QsFixedIncomePolicy {
+    pub fn build(&self) -> QsFixedIncomePolicy {
         self.risk_free_indices.iter().fold(
             QsFixedIncomePolicy::new(self.prefer_instrument_index),
             |policy, (currency, index)| policy.with_risk_free_index(*currency, index.clone()),

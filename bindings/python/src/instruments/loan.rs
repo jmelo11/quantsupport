@@ -74,9 +74,9 @@ use crate::pricing::extension::{Instrument, Trade};
 ///     coupon lists are empty/oversized or resets do not align with accrual dates.
 #[pyclass(module = "quantsupport", extends = Instrument, subclass, dict, unsendable, from_py_object)]
 #[derive(Clone)]
-pub(crate) struct Loan {
+pub struct Loan {
     /// Native contractual cashflows and prepayment/credit terms used in valuation.
-    pub(crate) inner: QsLoan<DualFwd>,
+    pub inner: QsLoan<DualFwd>,
     builder: MakeLoan<DualFwd>,
     construction_parameters: serde_json::Value,
 }
@@ -89,7 +89,7 @@ impl Loan {
     ///
     /// # Errors
     /// Propagates invalid overridden principal or contractual construction terms.
-    pub(crate) fn build_native_loan_trade(&self, position: &Trade) -> PyResult<LoanTrade<DualFwd>> {
+    pub fn build_native_loan_trade(&self, position: &Trade) -> PyResult<LoanTrade<DualFwd>> {
         let loan = match position.notional() {
             Some(notional) => self
                 .builder

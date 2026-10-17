@@ -1,7 +1,7 @@
 //! Market bindings and crate-internal implementation.
 
-pub(crate) mod curves;
-pub(crate) mod scenario;
-pub(crate) mod snapshots;
-pub(crate) mod stores;
-pub(crate) mod views;
+pub mod curves;
+pub mod scenario;
+pub mod snapshots;
+pub mod stores;
+pub mod views;

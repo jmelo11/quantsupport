@@ -39,7 +39,7 @@ fn python_type_name(value: &Bound<'_, PyAny>) -> String {
     dict,
     unsendable
 )]
-pub(crate) struct MarketDataProvider;
+pub struct MarketDataProvider;
 
 #[pymethods]
 impl MarketDataProvider {
@@ -68,12 +68,12 @@ impl MarketDataProvider {
     dict,
     unsendable
 )]
-pub(crate) struct Instrument {
+pub struct Instrument {
     identifier: String,
 }
 
 impl Instrument {
-    pub(crate) fn new(identifier: String) -> Self {
+    pub fn new(identifier: String) -> Self {
         Self { identifier }
     }
 }
@@ -116,7 +116,7 @@ impl Instrument {
 /// This mirrors the Rust `Trade` contract while remaining subclassable so a
 /// Python trade can carry any product-specific state it needs.
 #[pyclass(module = "quantsupport", name = "Trade", subclass, dict, unsendable)]
-pub(crate) struct Trade {
+pub struct Trade {
     instrument: Py<PyAny>,
     trade_date: quantsupport::prelude::Date,
     side: quantsupport::prelude::Side,
@@ -130,47 +130,47 @@ pub(crate) struct Trade {
 }
 
 impl Trade {
-    pub(crate) const fn trade_date(&self) -> quantsupport::prelude::Date {
+    pub const fn trade_date(&self) -> quantsupport::prelude::Date {
         self.trade_date
     }
 
-    pub(crate) const fn side(&self) -> quantsupport::prelude::Side {
+    pub const fn side(&self) -> quantsupport::prelude::Side {
         self.side
     }
 
-    pub(crate) const fn notional(&self) -> Option<f64> {
+    pub const fn notional(&self) -> Option<f64> {
         self.notional
     }
 
-    pub(crate) const fn domestic_notional(&self) -> Option<f64> {
+    pub const fn domestic_notional(&self) -> Option<f64> {
         self.domestic_notional
     }
 
-    pub(crate) const fn foreign_notional(&self) -> Option<f64> {
+    pub const fn foreign_notional(&self) -> Option<f64> {
         self.foreign_notional
     }
 
-    pub(crate) const fn num_contracts(&self) -> f64 {
+    pub const fn num_contracts(&self) -> f64 {
         self.num_contracts
     }
 
-    pub(crate) const fn pricing_anchor(&self) -> Option<quantsupport::prelude::BondPricingAnchor> {
+    pub const fn pricing_anchor(&self) -> Option<quantsupport::prelude::BondPricingAnchor> {
         self.pricing_anchor
     }
 
-    pub(crate) const fn settlement_date(&self) -> Option<quantsupport::prelude::Date> {
+    pub const fn settlement_date(&self) -> Option<quantsupport::prelude::Date> {
         self.settlement_date
     }
 
-    pub(crate) const fn spread_day_counter(&self) -> Option<quantsupport::prelude::DayCounter> {
+    pub const fn spread_day_counter(&self) -> Option<quantsupport::prelude::DayCounter> {
         self.spread_day_counter
     }
 
-    pub(crate) fn instrument_bound<'py>(&self, py: Python<'py>) -> &Bound<'py, PyAny> {
+    pub fn instrument_bound<'py>(&self, py: Python<'py>) -> &Bound<'py, PyAny> {
         self.instrument.bind(py)
     }
 
-    pub(crate) fn bond_anchor(&self) -> PyResult<quantsupport::prelude::BondPricingAnchor> {
+    pub fn bond_anchor(&self) -> PyResult<quantsupport::prelude::BondPricingAnchor> {
         self.pricing_anchor().ok_or_else(|| {
             pyo3::exceptions::PyValueError::new_err("bond Trade requires pricing_anchor")
         })
@@ -324,7 +324,7 @@ impl Trade {
 /// volatility objects, fixings, FX, or quotes through the same boundary used
 /// by built-in pricers.
 #[pyclass(module = "quantsupport", name = "Pricer", subclass, dict, unsendable)]
-pub(crate) struct Pricer {
+pub struct Pricer {
     discount_policy: Option<Py<PyAny>>,
 }
 
@@ -374,13 +374,13 @@ struct Registration {
 
 /// Shared implementation used by standalone evaluators and pricing contexts.
 #[derive(Default)]
-pub(crate) struct PricerRegistry {
+pub struct PricerRegistry {
     registrations: Vec<Registration>,
 }
 
 impl PricerRegistry {
     /// Registers or replaces the pricer associated with an exact Python type.
-    pub(crate) fn register(
+    pub fn register(
         &mut self,
         py: Python<'_>,
         trade_type: &Bound<'_, PyType>,
@@ -414,7 +414,7 @@ impl PricerRegistry {
     }
 
     /// Removes the registration for an exact Python type.
-    pub(crate) fn unregister(&mut self, py: Python<'_>, trade_type: &Bound<'_, PyType>) -> bool {
+    pub fn unregister(&mut self, py: Python<'_>, trade_type: &Bound<'_, PyType>) -> bool {
         let before = self.registrations.len();
         self.registrations
             .retain(|entry| !entry.trade_type.bind(py).is(trade_type));
@@ -423,7 +423,7 @@ impl PricerRegistry {
 
     /// Resolves the closest registered type in the trade's method-resolution
     /// order, then falls back to virtual/structural `isinstance` matches.
-    pub(crate) fn resolve(&self, py: Python<'_>, trade: &Bound<'_, PyAny>) -> PyResult<Option<Py<PyAny>>> {
+    pub fn resolve(&self, py: Python<'_>, trade: &Bound<'_, PyAny>) -> PyResult<Option<Py<PyAny>>> {
         let actual_type = trade.get_type();
         let mro = actual_type.getattr("__mro__")?;
         for class in mro.try_iter()? {
@@ -449,7 +449,7 @@ impl PricerRegistry {
     }
 
     /// Returns the registered pricer for a trade, if any.
-    pub(crate) fn pricer_for(
+    pub fn pricer_for(
         &self,
         py: Python<'_>,
         trade: &Bound<'_, PyAny>,
@@ -458,7 +458,7 @@ impl PricerRegistry {
     }
 
     /// Number of exact type registrations.
-    pub(crate) const fn len(&self) -> usize {
+    pub const fn len(&self) -> usize {
         self.registrations.len()
     }
 }
@@ -480,7 +480,7 @@ fn requests_for_python(requests: &[QsRequest]) -> Vec<crate::common::enums::Requ
 }
 
 /// Calls a resolved Python pricer and validates its result.
-pub(crate) fn call_pricer(
+pub fn call_pricer(
     py: Python<'_>,
     pricer: &Py<PyAny>,
     trade: &Bound<'_, PyAny>,
@@ -505,7 +505,7 @@ pub(crate) fn call_pricer(
 /// Rust `Evaluator`'s `TypeId -> ErasedPricer` map.
 #[pyclass(module = "quantsupport", name = "Evaluator", unsendable)]
 #[derive(Default)]
-pub(crate) struct Evaluator {
+pub struct Evaluator {
     registry: PricerRegistry,
 }
 

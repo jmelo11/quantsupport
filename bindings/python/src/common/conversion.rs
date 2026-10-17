@@ -15,12 +15,12 @@ use serde::de::DeserializeOwned;
 use crate::QuantSupportError;
 
 /// Maps any library error into the Python `QuantSupportError` exception.
-pub(crate) fn qs_err<E: std::fmt::Display>(e: E) -> PyErr {
+pub fn qs_err<E: std::fmt::Display>(e: E) -> PyErr {
     QuantSupportError::new_err(e.to_string())
 }
 
 /// Deserializes a JSON-compatible Python object (dict/list/str/...) into `T`.
-pub(crate) fn from_py<T: DeserializeOwned>(obj: &Bound<'_, PyAny>, what: &str) -> PyResult<T> {
+pub fn from_py<T: DeserializeOwned>(obj: &Bound<'_, PyAny>, what: &str) -> PyResult<T> {
     pythonize::depythonize(&serde_input(obj)?)
         .map_err(|e| QuantSupportError::new_err(format!("invalid {what}: {e}")))
 }
@@ -108,7 +108,7 @@ fn serde_input<'py>(obj: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
 }
 
 /// Reads a JSON file and deserializes it into `T`.
-pub(crate) fn from_json_file<T: DeserializeOwned>(path: &str, what: &str) -> PyResult<T> {
+pub fn from_json_file<T: DeserializeOwned>(path: &str, what: &str) -> PyResult<T> {
     let text = std::fs::read_to_string(path).map_err(|e| {
         QuantSupportError::new_err(format!("cannot read {what} file '{path}': {e}"))
     })?;
@@ -117,7 +117,7 @@ pub(crate) fn from_json_file<T: DeserializeOwned>(path: &str, what: &str) -> PyR
 }
 
 /// Builds a `pandas.DataFrame` from named columns.
-pub(crate) fn dataframe<'py>(
+pub fn dataframe<'py>(
     py: Python<'py>,
     columns: &[(&str, Bound<'py, PyAny>)],
 ) -> PyResult<Bound<'py, PyAny>> {
@@ -132,7 +132,7 @@ pub(crate) fn dataframe<'py>(
 }
 
 /// Parses a plain string into a serde-deserializable enum (e.g. `"USD"` → `Currency::USD`).
-pub(crate) fn parse_str_enum<T: DeserializeOwned>(s: &str, what: &str) -> PyResult<T> {
+pub fn parse_str_enum<T: DeserializeOwned>(s: &str, what: &str) -> PyResult<T> {
     serde_json::from_value(serde_json::Value::String(s.to_string()))
         .map_err(|e| QuantSupportError::new_err(format!("invalid {what} '{s}': {e}")))
 }
@@ -142,7 +142,7 @@ pub(crate) fn parse_str_enum<T: DeserializeOwned>(s: &str, what: &str) -> PyResu
 macro_rules! enum_extractor {
     ($fn_name:ident, $py:ty, $qs:ty, $what:literal) => {
         #[doc = concat!("Extracts a `", $what, "` from a mirror enum or string.")]
-        pub(crate) fn $fn_name(obj: &Bound<'_, PyAny>) -> PyResult<$qs> {
+        pub fn $fn_name(obj: &Bound<'_, PyAny>) -> PyResult<$qs> {
             if let Ok(v) = obj.extract::<$py>() {
                 return Ok(v.into());
             }
@@ -239,7 +239,7 @@ enum_extractor!(
 );
 
 /// Extracts a `Strike` from a float, `"ATM"`, or the native tagged schema.
-pub(crate) fn extract_strike(obj: &Bound<'_, PyAny>) -> PyResult<Strike> {
+pub fn extract_strike(obj: &Bound<'_, PyAny>) -> PyResult<Strike> {
     if let Ok(v) = obj.extract::<f64>() {
         return Ok(Strike::Absolute(v));
     }
@@ -259,7 +259,7 @@ pub(crate) fn extract_strike(obj: &Bound<'_, PyAny>) -> PyResult<Strike> {
 
 /// Extracts a `MarketIndex` from the wrapper class or a plain rate-index
 /// string (e.g. `"SOFR"`).
-pub(crate) fn extract_market_index(obj: &Bound<'_, PyAny>) -> PyResult<MarketIndex> {
+pub fn extract_market_index(obj: &Bound<'_, PyAny>) -> PyResult<MarketIndex> {
     if let Ok(v) = obj.extract::<crate::common::enums::MarketIndex>() {
         return Ok(v.inner);
     }
@@ -277,7 +277,7 @@ pub(crate) fn extract_market_index(obj: &Bound<'_, PyAny>) -> PyResult<MarketInd
 
 /// Extracts a `Date` from a `Date` object, an ISO string (`"YYYY-MM-DD"`)
 /// or a `datetime.date`.
-pub(crate) fn extract_date(obj: &Bound<'_, PyAny>) -> PyResult<Date> {
+pub fn extract_date(obj: &Bound<'_, PyAny>) -> PyResult<Date> {
     if let Ok(d) = obj.extract::<crate::time::Date>() {
         return Ok(d.inner);
     }
@@ -299,7 +299,7 @@ pub(crate) fn extract_date(obj: &Bound<'_, PyAny>) -> PyResult<Date> {
 }
 
 /// Extracts a `Period` from a `Period` object or a string like `"5Y"`.
-pub(crate) fn extract_period(obj: &Bound<'_, PyAny>) -> PyResult<Period> {
+pub fn extract_period(obj: &Bound<'_, PyAny>) -> PyResult<Period> {
     if let Ok(p) = obj.extract::<crate::time::Period>() {
         return Ok(p.inner);
     }
@@ -313,7 +313,7 @@ pub(crate) fn extract_period(obj: &Bound<'_, PyAny>) -> PyResult<Period> {
 }
 
 /// Extracts evaluation requests from `Request` enums or strings.
-pub(crate) fn extract_requests(reqs: &[Bound<'_, PyAny>]) -> PyResult<Vec<Request>> {
+pub fn extract_requests(reqs: &[Bound<'_, PyAny>]) -> PyResult<Vec<Request>> {
     reqs.iter()
         .map(|obj| {
             if let Ok(r) = obj.extract::<crate::common::enums::Request>() {
@@ -337,7 +337,7 @@ enum_extractor!(
     "date generation rule"
 );
 /// Accepts a Python Calendar object or a native calendar name.
-pub(crate) fn extract_calendar(obj: &Bound<'_, PyAny>) -> PyResult<Calendar> {
+pub fn extract_calendar(obj: &Bound<'_, PyAny>) -> PyResult<Calendar> {
     if let Ok(calendar) = obj.extract::<crate::time::Calendar>() {
         return Ok(calendar.inner);
     }

@@ -13,7 +13,7 @@ use quantsupport::prelude::BondPricingAnchor;
     from_py_object
 )]
 #[derive(Clone)]
-pub(crate) struct BondPricingAnchorConfig {
+pub struct BondPricingAnchorConfig {
     inner: BondPricingAnchor,
 }
 
@@ -60,7 +60,7 @@ impl BondPricingAnchorConfig {
 }
 
 impl BondPricingAnchorConfig {
-    pub(crate) fn extract(obj: &Bound<'_, PyAny>) -> PyResult<BondPricingAnchor> {
+    pub fn extract(obj: &Bound<'_, PyAny>) -> PyResult<BondPricingAnchor> {
         let anchor = if let Ok(value) = obj.extract::<Self>() {
             value.inner
         } else {

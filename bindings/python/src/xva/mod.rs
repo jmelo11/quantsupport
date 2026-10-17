@@ -27,8 +27,8 @@ use crate::QuantSupportError;
 /// config — they are per client, see [`CsaTerms`].
 #[pyclass(module = "quantsupport", name = "XvaConfig", from_py_object)]
 #[derive(Clone)]
-pub(crate) struct XvaConfig {
-    pub(crate) inner: QsXvaEngineConfig,
+pub struct XvaConfig {
+    pub inner: QsXvaEngineConfig,
 }
 
 #[pymethods]
@@ -62,8 +62,8 @@ impl XvaConfig {
 /// Per-client CSA terms: collateral treatment and credit/funding parameters.
 #[pyclass(module = "quantsupport", name = "CsaTerms", from_py_object)]
 #[derive(Clone)]
-pub(crate) struct CsaTerms {
-    pub(crate) inner: QsCsaTerms,
+pub struct CsaTerms {
+    pub inner: QsCsaTerms,
 }
 
 #[pymethods]
@@ -231,7 +231,7 @@ impl CsaTerms {
 /// A group of trades under a single netting agreement (one client),
 /// carrying the client's [`CsaTerms`].
 #[pyclass(module = "quantsupport", name = "NettingSet")]
-pub(crate) struct NettingSet {
+pub struct NettingSet {
     name: String,
     trades: Vec<Py<crate::pricing::extension::Trade>>,
     csa: QsCsaTerms,
@@ -239,7 +239,7 @@ pub(crate) struct NettingSet {
 
 impl NettingSet {
     /// Builds the library netting set (claims + CSA terms).
-    pub(crate) fn build(&self, py: Python<'_>) -> PyResult<QsNettingSet> {
+    pub fn build(&self, py: Python<'_>) -> PyResult<QsNettingSet> {
         let mut claims = Vec::new();
         for position in &self.trades {
             claims.extend(Self::claims(&position.borrow(py), py)?);
@@ -273,7 +273,7 @@ impl NettingSet {
         }
     }
 
-    pub(crate) fn name(&self) -> &str {
+    pub fn name(&self) -> &str {
         &self.name
     }
 }
@@ -321,13 +321,13 @@ impl NettingSet {
 /// Per-netting-set exposure profile (EPE / ENE / EE by date).
 #[pyclass(module = "quantsupport", name = "ExposureProfile", from_py_object)]
 #[derive(Clone)]
-pub(crate) struct ExposureProfile {
+pub struct ExposureProfile {
     #[pyo3(get)]
-    pub(crate) netting_set: String,
-    pub(crate) dates: Vec<String>,
-    pub(crate) epe: Vec<f64>,
-    pub(crate) ene: Vec<f64>,
-    pub(crate) ee: Vec<f64>,
+    pub netting_set: String,
+    pub dates: Vec<String>,
+    pub epe: Vec<f64>,
+    pub ene: Vec<f64>,
+    pub ee: Vec<f64>,
 }
 
 #[pymethods]
@@ -356,14 +356,14 @@ impl ExposureProfile {
 
 /// Result of an XVA engine run.
 #[pyclass(module = "quantsupport", name = "XvaResult")]
-pub(crate) struct XvaResult {
+pub struct XvaResult {
     xva_values: Vec<(String, String, f64)>,
     sensitivities: Vec<(String, f64)>,
     exposures: Vec<ExposureProfile>,
 }
 
 impl XvaResult {
-    pub(crate) fn from_qs(res: &ExposureResult) -> Self {
+    pub fn from_qs(res: &ExposureResult) -> Self {
         let exposures = res
             .cubes
             .iter()
