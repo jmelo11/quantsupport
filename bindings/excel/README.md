@@ -215,6 +215,12 @@ already store QuantSupport JSON, the add-in also exposes import functions:
 =QS.SCENARIOS.FROM.JSON("scenario", scenario_json)
 ```
 
+A scenario JSON record contains its ordered shocks, for example
+`{"shocks": [{"target": "SOFR", "value": 0.0001, "type": "Absolute"}]}`.
+The worksheet context constructor materializes a new market snapshot when a
+scenario handle is supplied. Rust and Python apply scenarios through borrowed
+market views.
+
 Pass those handles to `QS.CONTEXT.CREATE`. Optional arguments can be omitted
 with empty argument positions or supplied through blank cells.
 

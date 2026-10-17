@@ -213,7 +213,10 @@ Each store lookup returns a `Quote`: `details()` gives its contract terms and
 
 `QuoteLevels::with_mid(mid)` sets the mid. `QuoteLevels::new(mid, bid, ask)` takes three `Option<f64>` values. `levels.value(Level::Mid | Bid | Ask)` returns `Result<f64>` and reports an absent level. Bootstrappers and builders take a `Level` argument, so one store can produce a mid curve and bid or ask constructions.
 
-`QuoteStore` implements `QuoteSelector`, the trait bootstrappers read from. `PricingContext::quote_store()` returns the shocked copy when scenarios are attached and the base store otherwise (`base_quote_store()` always returns the original).
+`QuoteStore` implements `QuoteSelector`, the trait bootstrappers read from.
+`PricingContext::quote_store()` returns the original observations. A
+`scenario.apply(&context)?` market view also implements `QuoteSelector`; it
+transforms each requested quote while borrowing the original store.
 
 ### JSON
 

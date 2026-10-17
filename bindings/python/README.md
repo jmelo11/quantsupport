@@ -198,22 +198,25 @@ Market-specific calendars accept enums:
 `qs.Calendar.JointCalendar(calendars=[qs.Calendar.TARGET, qs.Calendar.Japan],
 rule=qs.JointCalendarRule.JoinHolidays)` combines typed calendars.
 
-Group shocks in `Scenarios` and enter them after the pricing context:
+Combine shock dictionaries in `Scenario` and enter them after the pricing context:
 
 ```python
-scenarios = qs.Scenarios(shocks=[
-    qs.Scenario(target="EURIBOR12m", shock=0.01, scenario_type=qs.ScenarioType.Absolute),
-    qs.Scenario(target="FUNDINGSPREAD", shock=0.005, scenario_type=qs.ScenarioType.Absolute),
+scenario = qs.Scenario(shocks=[
+    {"target": "EURIBOR12m", "value": 0.01, "type": qs.ScenarioType.Absolute},
+    {"target": "FUNDINGSPREAD", "value": 0.005, "type": qs.ScenarioType.Absolute},
 ])
-with context, scenarios:
+with context, scenario:
     stressed = pricer.evaluate(trade=trade, context=context, requests=[qs.Request.Value])
 with context:
     base = pricer.evaluate(trade=trade, context=context, requests=[qs.Request.Value])
 ```
 
-The guard rebuilds the innermost active context and restores its previous market
-on exit, including exceptions. Nested scenario guards compose in entry order.
-Reusing a guard applies its shocks once to each block's base market.
+The scenario borrows inputs from the innermost active context. Pricing requests
+construct the required market objects and dependencies in a separate cache;
+unrelated curves and simulations remain untouched. Each requested curve has
+independent AD nodes, while unchanged calibration results can be reused. Exiting
+the scope releases its cache, including on exceptions. Nested scenarios compose
+in entry order. The same scenario can be reused with another context.
 Quote identifiers select calibrated market inputs. For explicit zero curves,
 `FUNDINGSPREAD` selects every spread pillar and
 `FUNDINGSPREAD_2031-02-24` selects one dated pillar. These are the same labels
@@ -248,7 +251,7 @@ fx = qs.FxStore.from_dict([{"base": "EUR", "quote": "USD", "rate": 1.1}])
 `PricerConfiguration`, and `SimulationConfiguration`. Like `from_json`, it
 accepts a list, one configuration dict, or a single-key object wrapping a list,
 such as `{"curve_specs": [...]}`. `from_dict` on those classes still returns
-one configuration. `QuoteStore`, `FixingStore`, `FxStore`, `Scenario`, and
+one configuration. `QuoteStore`, `FixingStore`, `FxStore`, and
 `SingleCurveCSADiscountPolicy` keep their existing `from_dict` methods.
 
 Market configs use the native Rust serde schemas. For product market-index
@@ -644,8 +647,8 @@ Market data & configuration (each with `from_dict` / `from_json`, plus
 
 Pricing:
 
-- `Scenarios(shocks=[Scenario(...)])` — temporary market shocks in `with context, scenarios:`
-- `PricingContext(quotes, curves, fixings=None, fx=None, volatility_surfaces=None, volatility_cubes=None, pricer_configurations=None, simulations=None, csa_policy=None, fixed_income_policy=None, scenarios=None)` — context manager
+- `Scenario(shocks=[{"target": ..., "value": ..., "type": ...}])` — temporary shocks in `with context, scenario:`
+- `PricingContext(quotes, curves, fixings=None, fx=None, volatility_surfaces=None, volatility_cubes=None, pricer_configurations=None, simulations=None, csa_policy=None, fixed_income_policy=None)` — context manager
 - inputs: `ctx.reference_date` / `ctx.evaluation_date`, `ctx.quotes`,
   `ctx.fixings`, `ctx.fx`, `ctx.base_currency`, `ctx.base_index`,
   `ctx.curve_configurations`,

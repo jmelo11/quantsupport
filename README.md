@@ -161,22 +161,17 @@ let mut context = PricingContext::new()
 context.initialize()?;
 ```
 
-Attaching a scenario uses the same construction path. Here every quote whose
-identifier contains the `SOFR` segment is shifted up by one basis point before
-the dependent market is rebuilt:
+A scenario borrows the context and builds an independent market view. Here
+SOFR quote inputs rise by one basis point. Pricing requests construct the
+required curves and their dependencies; the base market stays available:
 
 ```rust,ignore
-let mut shocked_context = PricingContext::new()
-    .with_quote_store(quotes)
-    .with_fixing_store(fixings)
-    .with_curve_configurations(curve_configs)
-    .with_scenarios(vec![Scenario::new(
-        "SOFR",
-        0.0001,
-        ScenarioType::Absolute,
-    )]);
-
-shocked_context.initialize()?;
+let scenario = Scenario::new(vec![
+    Shock::new("SOFR", 0.0001, ScenarioType::Absolute),
+]);
+let shocked_market = scenario.apply(&context)?;
+let stressed = pricer.evaluate(&trade, &[Request::Value], &shocked_market)?;
+let base = pricer.evaluate(&trade, &[Request::Value], &context)?;
 ```
 
 See [`examples/bootstrap`](examples/bootstrap) for configuration loading and

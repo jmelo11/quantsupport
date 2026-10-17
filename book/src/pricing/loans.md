@@ -233,8 +233,14 @@ Both use the illustrative EUR and borrower-credit inputs in
 amortization, annual EURIBOR resets, composite cost-of-funds discounting,
 market scenarios, prepayment, credit, and quote sensitivities over thirty years.
 It reuses one context by assigning `context.curves` and `context.fixed_income_policy`.
-Temporary benchmark and funding-spread shocks use `with context, scenarios:` with
-`qs.Scenarios(shocks=[...])`; exiting restores the prior market even on exceptions.
+Temporary benchmark and funding-spread shocks use `with context, scenario:` with
+`qs.Scenario(shocks=[{"target": ..., "value": ..., "type": ...}])`. Pricing
+constructs requested market objects in an independent view. The base context
+retains its inputs and curves, including when the scope raises an exception.
+
+In Rust, `Scenario::new(vec![Shock::new(target, value, ScenarioType::Absolute)])`
+creates the same combination. `scenario.apply(&context)?` returns a borrowed
+`MarketDataProvider` accepted by pricers and `Evaluator`; the context stays unchanged.
 Funding-spread sensitivities use the explicit zero-rate pillar labels
 `FUNDINGSPREAD_<date>`. The notebook isolates those derivatives by funding tenor,
 reports EUR changes for +1 bp, and compares the parallel funding exposure with
