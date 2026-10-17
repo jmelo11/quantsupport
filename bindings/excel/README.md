@@ -384,6 +384,6 @@ exclude fixings: pass their handle separately to `QS.CONTEXT.FROM.SNAPSHOT`.
 The selected context exposes `QS.CONTEXT.EVALUATION.DATE`,
 `QS.CONTEXT.SNAPSHOT.TIMESTAMP`, and `QS.CONTEXT.QUOTE.LEVEL`.
 
-Calendar rules follow QuantLib commit `5f4811e7e03b`; finite holiday tables
-require updates beyond their documented ranges. See
-[the QuantLib notice](../../LICENSE-QuantLib.txt) for the calendar adaptations.
+Calendars use local MIT implementations and MIT-licensed dated holiday data.
+Finite tables require updates beyond their documented ranges.
+The data source's MIT notice is retained in the project LICENSE.

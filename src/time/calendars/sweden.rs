@@ -1,5 +1,10 @@
-// Adapted from QuantLib ql/time/calendars/sweden.cpp.
+//! Sweden holiday calendar.
 
+use super::traits::{
+    business_day,
+    Holiday::{Easter, Fixed, WeekdayOnOrAfter},
+    Observance::Exact,
+};
 use super::traits::{ImplCalendar, IsCalendar};
 use crate::time::{date::Date, enums::Weekday};
 use std::collections::HashSet;
@@ -12,33 +17,10 @@ pub struct Sweden {
 }
 
 impl Sweden {
-    /// Creates the calendar with empty holiday overrides.
+    /// Creates a calendar with empty holiday overrides.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
-    }
-
-    fn business_day(date: Date) -> bool {
-        let w = date.weekday();
-        let d = date.day();
-        let m = date.month();
-        let y = date.year();
-        let dd = date.day_of_year();
-        let em = super::traits::easter_monday(date.year());
-        !(matches!(w, Weekday::Saturday | Weekday::Sunday)
-            || (dd == em - 3)
-            || (dd == em)
-            || (dd == em + 38)
-            || (dd == em + 49 && y < 2005)
-            || (d == 1 && m == 1)
-            || (d == 6 && m == 1)
-            || (d == 1 && m == 5)
-            || (d == 6 && m == 6 && y >= 2005)
-            || (w == Weekday::Friday && ((19..=25).contains(&d)) && m == 6)
-            || (d == 24 && m == 12)
-            || (d == 25 && m == 12)
-            || (d == 26 && m == 12)
-            || (d == 31 && m == 12))
     }
 }
 
@@ -46,19 +28,43 @@ impl ImplCalendar for Sweden {
     fn impl_name(&self) -> String {
         "Sweden".into()
     }
+
     fn impl_is_business_day(&self, date: &Date) -> bool {
-        Self::business_day(*date)
+        business_day(
+            *date,
+            &[
+                Fixed(1, 1, Exact),
+                Fixed(1, 6, Exact),
+                Fixed(5, 1, Exact),
+                Easter(-2),
+                Easter(1),
+                Easter(39),
+                WeekdayOnOrAfter(6, 19, Weekday::Friday), // Midsummer Eve
+                Fixed(12, 24, Exact),
+                Fixed(12, 25, Exact),
+                Fixed(12, 26, Exact),
+                Fixed(12, 31, Exact),
+            ],
+        ) && !if date.year() >= 2005 {
+            Fixed(6, 6, Exact).contains(*date)
+        } else {
+            Easter(50).contains(*date)
+        }
     }
+
     fn added_holidays(&self) -> HashSet<Date> {
         self.added_holidays.clone()
     }
+
     fn removed_holidays(&self) -> HashSet<Date> {
         self.removed_holidays.clone()
     }
+
     fn add_holiday(&mut self, date: Date) {
         self.removed_holidays.remove(&date);
         self.added_holidays.insert(date);
     }
+
     fn remove_holiday(&mut self, date: Date) {
         self.added_holidays.remove(&date);
         self.removed_holidays.insert(date);
