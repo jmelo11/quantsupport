@@ -12,6 +12,13 @@ struct VolatilityFile {
     volatility_surfaces: Vec<VolatilitySurfaceConfiguration>,
 }
 
+/// Prices a SOFR cap and caplet with the example's curves and volatility surface.
+///
+/// # Errors
+/// Propagates input decoding, contract, market construction, and pricing errors.
+///
+/// # Panics
+/// Panics if the cap/caplet PV checks fail.
 fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     // These illustrative inputs are also used by the Python caps walkthrough.
     let records: QuoteStoreRecords =

@@ -30,6 +30,7 @@ macro_rules! euribor_index {
         }
 
         impl RateIndexDetails for $name {
+            /// Returns the EURIBOR observation tenor, independently of compounding.
             fn frequency(&self) -> Frequency {
                 $frequency
             }

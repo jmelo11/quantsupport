@@ -36,9 +36,11 @@ macro_rules! sofr_index {
         }
 
         impl RateIndexDetails for $name {
+            /// Returns daily overnight or term-SOFR tenor frequency for loan resets.
             fn frequency(&self) -> Frequency {
                 $frequency
             }
+
             fn calendar(&self) -> Calendar {
                 Calendar::UnitedStates(UnitedStates::new(Market::Sofr))
             }

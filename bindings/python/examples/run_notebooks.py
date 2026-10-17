@@ -13,6 +13,13 @@ EXAMPLES = Path(__file__).resolve().parent
 
 
 def execute_notebook(path, *, kernel=None, timeout=600, output=None):
+    """Execute a notebook in its directory and return the number of code cells.
+
+    Each call uses a fresh kernel. Without ``kernel``, use this interpreter;
+    otherwise use the named kernelspec. ``timeout`` is the per-cell limit in
+    seconds. Write executed outputs only when an ``output`` path is supplied.
+    Validation and execution errors propagate; the kernel is shut down on exit.
+    """
     notebook = nbformat.read(path, as_version=4)
     nbformat.validate(notebook)
     manager = KernelManager(kernel_name=kernel or "python3")
@@ -38,6 +45,12 @@ def execute_notebook(path, *, kernel=None, timeout=600, output=None):
 
 
 def main():
+    """Run selected notebooks/scopes, optionally saving outputs as the CLI directs.
+
+    Paths are relative to the examples directory. Omitted selectors run every
+    notebook; overlapping selections are deduplicated and checkpoints skipped.
+    Invalid paths terminate with an argparse error and execution failures propagate.
+    """
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("notebooks", nargs="*", help="Notebook or scope-directory paths relative to bindings/python/examples")
     parser.add_argument("--kernel", help="Use this named Jupyter kernel instead of the current interpreter")

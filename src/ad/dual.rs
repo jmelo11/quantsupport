@@ -31,7 +31,7 @@ unsafe impl<T: Send> Send for Dual<T> {}
 unsafe impl<T: Sync> Sync for Dual<T> {}
 
 impl<T> Dual<T> {
-    /// Low-level constructor used by [`flatten`](crate::ad::expr::flatten).
+    /// Low-level constructor used by [`flatten`].
     #[inline]
     pub const fn from_raw(val: T, node: Option<NonNull<TapeNode<T>>>) -> Self {
         Self { val, node }

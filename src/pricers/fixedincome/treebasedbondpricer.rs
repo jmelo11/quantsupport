@@ -25,6 +25,7 @@ use crate::{
     models::hullwhite::parameters::transition_variances, utils::errors::QSError,
 };
 use std::collections::{BTreeMap, BTreeSet};
+
 /// Callable bond pricer with a recombining trinomial tree.
 #[derive(Default)]
 pub struct TreeBasedBondPricer {

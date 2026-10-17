@@ -31,9 +31,11 @@ macro_rules! tibor_index {
         }
 
         impl RateIndexDetails for $name {
+            /// Returns the TIBOR observation tenor, independently of compounding.
             fn frequency(&self) -> Frequency {
                 $frequency
             }
+
             fn calendar(&self) -> Calendar {
                 Calendar::WeekendsOnly(WeekendsOnly::new())
             }

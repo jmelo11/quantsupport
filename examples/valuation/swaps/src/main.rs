@@ -68,6 +68,10 @@ fn create_pricing_context() -> PricingContext {
         .with_constructed_elements(constructed_elements)
 }
 
+/// Prices the example swap and reports fair rate, cashflows, and curve sensitivities.
+///
+/// # Errors
+/// Propagates market-input, instrument construction, and valuation errors.
 fn main() -> Result<()> {
     // ── 1. Set up the trade and context ───────────────────────────────
     let trade = create_swap();

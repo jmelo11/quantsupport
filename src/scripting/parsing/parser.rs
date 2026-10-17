@@ -343,7 +343,7 @@ impl Parser {
         }))
     }
 
-    /// Parse a for-each loop: for <var> in <expr> { <body> }
+    /// Parse a for-each loop: `for <var> in <expr> { <body> }`.
     fn parse_for(&self) -> Result<Node> {
         self.expect_token(Token::For)?;
         self.advance();

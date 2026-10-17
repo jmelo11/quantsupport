@@ -391,7 +391,7 @@ impl<'a, T: Scalar> LgmMarketModel<'a, T> {
     ///    `s_1` (2N+1), ..., `s_M` (2N+M)]
     ///
     /// Returns (`rate_indices`, `fx_currencies`, `equity_names`) where
-    /// `rate_indices`[0] = domestic. Equity names are sorted for determinism.
+    /// `rate_indices[0]` = domestic. Equity names are sorted for determinism.
     fn build_factor_ordering(&self) -> (Vec<MarketIndex>, Vec<Currency>, Vec<String>) {
         let mut rate_indices = vec![self.domestic_index.clone()];
         let mut fx_currencies: Vec<Currency> = self.fx_models.keys().copied().collect();

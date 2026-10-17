@@ -7,10 +7,15 @@ use quantsupport::prelude::*;
 const FACE: f64 = 1_000_000.0;
 const OAS: f64 = 0.0075;
 
+/// Returns the valuation/origination date used by the bond and flat market curve.
 fn reference_date() -> Date {
     Date::new(2025, 1, 1)
 }
 
+/// Constructs the amortizing fixed-to-floating callable bond with an OAS anchor.
+///
+/// # Errors
+/// Propagates schedule or contractual coupon/principal validation errors.
 fn trade() -> Result<SteppedCouponBondTrade<DualFwd>> {
     let instrument = MakeSteppedCouponBond::<DualFwd>::default()
         .with_identifier("USD-STEP-CALL-2031".into())
@@ -43,6 +48,7 @@ fn trade() -> Result<SteppedCouponBondTrade<DualFwd>> {
     ))
 }
 
+/// Supplies a flat 3% SOFR curve and fixed Hull-White parameters for the chosen engine.
 fn context(pricer: PricerImplementation) -> PricingContext {
     let rate_definition = RateDefinition::new(
         DayCounter::Actual365,
@@ -77,6 +83,11 @@ fn context(pricer: PricerImplementation) -> PricingContext {
         .with_base_index(MarketIndex::SOFR)
 }
 
+/// Compares tree and Fourier bond values, OAS, and sensitivities on a shared market.
+///
+/// # Errors
+/// Propagates construction/pricing errors, missing results, and engine differences
+/// outside the example's numerical tolerance.
 fn main() -> Result<()> {
     let trade = trade()?;
     let time_grid = TimeGridConfiguration::new(96, 4096, DayCounter::Actual365);
