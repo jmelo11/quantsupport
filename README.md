@@ -1,20 +1,17 @@
 # QuantSupport
 
-QuantSupport is a quantitative-finance library written in Rust, with Python bindings provided in the same repository. It combines instrument construction, market-data bootstrapping, pricing, automatic differentiation, payoff scripting, Monte Carlo exposure simulation, and XVA in one toolkit.
-
-## Documentation and downloads
-
-- [QuantSupport Book](https://jmelo11.github.io/quantsupport/): concepts and pricing workflows.
-- [Rust API](https://docs.rs/quantsupport): native types and traits.
-- [Python API](https://jmelo11.github.io/quantsupport/python/api.html): categorized classes, signatures, properties, and methods.
-- [Excel reference](https://jmelo11.github.io/quantsupport/excel/reference.html): worksheet functions and parameter help.
-- [Download the Excel XLL](https://github.com/jmelo11/quantsupport/releases/latest/download/quantsupport.xll): 64-bit Windows Excel add-in.
+QuantSupport is a quantitative-finance library written in Rust, with Python and Excel bindings provided in the same repository. It combines instrument construction, market-data bootstrapping, pricing, automatic differentiation, payoff scripting, Monte Carlo exposure simulation, and XVA in one toolkit.
 
 A crate is available for usage in your project:
 
 ```rust
 cargo add quantsupport
 ```
+
+## Bindings
+
+- **Python:** typed instruments, market data, pricing, and risk analytics. See the [Python README](bindings/python/README.md) for installation, build instructions, examples, and the API reference.
+- **Excel:** a native XLL for 64-bit Windows Excel. See the [Excel README](bindings/excel/README.md) for downloads, installation, build instructions, and the worksheet API reference.
 
 ## Quick start: price and risk a swap
 
@@ -308,87 +305,6 @@ The `plot` Cargo feature enables the library's plotting helpers:
 ```bash
 cargo add quantsupport --features plot
 ```
-
-## Python bindings
-
-The Python package exposes typed dates and enums, market-data/configuration
-objects, curve/volatility/simulation exploration, native trade specifications,
-pricing results as pandas tables, quote scenarios, and the high-level XVA
-workflow. Python applications can also define their own instruments, trades,
-pricers, and market-data providers and register them by trade type with
-`PricingContext` or `Evaluator`.
-
-The [Python examples guide](bindings/python/examples/README.md) provides nine
-independently runnable notebooks, from a first swap through product valuations,
-curve and volatility inspection, simulation results, portfolio risk, callable
-bonds, scripted payoffs, and XVA. They explain the library concepts and result
-units, with local data-loading helpers and editable model configuration files.
-
-After a release is published, install a wheel with:
-
-```bash
-python -m pip install quantsupport
-```
-
-To build it into the active virtual environment from the repository root:
-
-```bash
-python -m pip install maturin
-maturin develop -m bindings/python/Cargo.toml --release
-```
-
-Minimal usage:
-
-```python
-import quantsupport as qs
-
-quotes = qs.QuoteStore.from_json("quotes.json")
-curves = qs.CurveConfiguration.from_json("curve_specs.json")
-csa_policy = qs.SingleCurveCSADiscountPolicy(
-    collateral_currency=qs.Currency.USD,
-    collateral_index=qs.MarketIndex.SOFR,
-)
-
-context = qs.PricingContext(
-    quotes=quotes,
-    curves=curves,
-    csa_policy=csa_policy,
-)
-
-with context:
-    sofr = context.curve(qs.MarketIndex.SOFR)
-    print(sofr.nodes())
-    print(sofr.discount_factor(quotes.reference_date + "5Y"))
-```
-
-Entering `with context:` initializes the market automatically; exiting clears
-the constructed market data and differentiation tape.
-
-See the [Python README](bindings/python/README.md) for API details and the
-[first-swap notebook](bindings/python/examples/valuation/swaps/tour.ipynb) to start the walkthrough.
-
-## Excel bindings
-
-The [`bindings/excel`](bindings/excel) crate is a native 64-bit Windows XLL. It
-stores the library's own quote, fixing, FX, configuration, context, curve, and
-trade types behind revisioned Excel handles, invokes the native QuantSupport
-pricers, and discovers worksheet-function registrations by module. See the
-[Excel README](bindings/excel/README.md) for build, formula, quote-update,
-pricing, and extension examples.
-
-## Book
-
-The [QuantSupport Book](https://jmelo11.github.io/quantsupport/) covers installation, market construction, pricing, risk, scripting, simulation, and XVA. It is published to GitHub Pages on every push to `main`; the sources live under [`book/src`](book/src/SUMMARY.md). To build it locally, install [mdBook](https://rust-lang.github.io/mdBook/) and its Mermaid preprocessor using the versions from the Pages workflow, then install the assets from the repository root:
-
-```bash
-cargo install mdbook --version 0.5.2 --locked
-cargo install mdbook-mermaid --version 0.17.0 --locked
-mdbook-mermaid install .
-mdbook build
-mdbook serve --open
-```
-
-Generated HTML is written to `book/html/`.
 
 ## Contributing
 

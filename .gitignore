@@ -6,6 +6,10 @@ test.ipynb
 .DS_Store
 __pycache__
 book/html/
+docs/_build/
+docs/autoapi/
+docs/excel/functions/
+docs/python/sections/
 .venv-docs/
 mermaid.min.js
 mermaid-init.js

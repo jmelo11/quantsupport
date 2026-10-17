@@ -27,9 +27,9 @@ jobs:
         with:
           python-version: '3.12'
       - name: Install binding documentation dependencies
-        run: python -m pip install -r book/requirements.txt
+        run: python -m pip install -r docs/requirements.txt
       - name: Test binding reference generation
-        run: python -m unittest discover -s book/tests -v
+        run: python -m unittest discover -s docs/tests -v
       - name: Install mdBook
         run: cargo install mdbook --version 0.5.2 --locked
       - name: Install mdBook Mermaid
@@ -38,6 +38,8 @@ jobs:
         run: mdbook-mermaid install .
       - name: Build book
         run: mdbook build
+      - name: Build API reference
+        run: sphinx-build -W -b html docs book/html/api
       - name: Configure Pages
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         uses: actions/configure-pages@v5

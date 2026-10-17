@@ -5,21 +5,38 @@ derivative pricing and risk analytics library.
 
 ## API reference
 
-The [Python reference](https://jmelo11.github.io/quantsupport/python/api.html)
-documents constructors, methods, and properties by domain: `time`, `market`,
-`instruments`, `pricing`, and `risk`. Public classes remain available at the
+The [Python reference](https://jmelo11.github.io/quantsupport/api/autoapi/quantsupport/index.html)
+has a page per class documenting constructors, methods, and properties by
+domain: `time`, `market`, `instruments`, `pricing`, and `risk`.
+Public classes remain available at the
 package root, so `quantsupport.Swap` and `quantsupport.instruments.Swap` are
 the same class. Contract inputs and results are read-only; context input
 properties have explicit setters.
 
-See the [book build guide](../../book/README.md) for local builds.
+The [API index](https://jmelo11.github.io/quantsupport/api/index.html) also
+includes the Excel reference. Use the
+[Python walkthrough](https://jmelo11.github.io/quantsupport/python/getting-started.html)
+for a guided introduction. See the [API build guide](../../docs/README.md)
+for local Sphinx builds from the packaged stubs; no native extension is needed
+to build the reference.
 
 ## Install (development)
 
+Source builds require Python 3.9+ and the stable Rust toolchain. From the
+repository root, create and activate a virtual environment, then build with
+Maturin:
+
 ```bash
-pip install maturin
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install "maturin>=1.5,<2.0"
 maturin develop -m bindings/python/Cargo.toml --release
 ```
+
+On Windows, activate `.venv\Scripts\Activate.ps1` instead of using `source`.
+Documentation builds separately require Python 3.11+ and
+`docs/requirements.txt`, followed by `mdbook build` and
+`sphinx-build -W -b html docs book/html/api` as described in the build guide.
 
 ## Guided examples
 
@@ -201,13 +218,38 @@ concrete types in the stubs. Editor colours depend on semantic highlighting and
 the selected theme; hover information shows the inferred type. Select the Python
 environment containing the rebuilt wheel in Jupyter to use its updated stubs.
 
-### Typed calendars and temporary scenarios
+### Calendars, schedules, and IMM
 
 Use native calendar variants directly, such as `calendar = qs.Calendar.TARGET`.
 Market-specific calendars accept enums:
 `qs.Calendar.UnitedStates(market=qs.UnitedStatesMarket.Sofr)`.
 `qs.Calendar.JointCalendar(calendars=[qs.Calendar.TARGET, qs.Calendar.Japan],
 rule=qs.JointCalendarRule.JoinHolidays)` combines typed calendars.
+
+The [calendar catalog](https://jmelo11.github.io/quantsupport/api/python/sections/time/calendars.html)
+lists every native variant. Holiday overrides return independent calendars;
+they never mutate shared values such as `Calendar.TARGET`.
+
+```python
+calendar = qs.Calendar.TARGET.with_added_holiday("2026-01-05")
+month_end = calendar.end_of_month("2026-05-01")
+schedule = qs.Schedule(
+    "2026-01-15", "2027-01-15", "3M",
+    calendar=calendar,
+    convention=qs.BusinessDayConvention.ModifiedFollowing,
+    termination_date_convention=qs.BusinessDayConvention.ModifiedFollowing,
+)
+dates = schedule.dates
+next_roll = qs.IMM.next_date("2026-01-01")
+```
+
+`Schedule` exposes copied dates and interval-regularity flags, immutable generation
+parameters, iteration, and indexing. Its constructor wraps native `MakeSchedule`.
+`IMM` provides monthly or quarterly roll dates and code conversion. See the
+[component coverage](https://jmelo11.github.io/quantsupport/api/coverage.html)
+for configuration-based workflows and Rust components not independently bound.
+
+### Temporary scenarios
 
 Combine typed `Shock` objects in `Scenario` and enter them after the pricing context:
 

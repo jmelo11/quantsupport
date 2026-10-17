@@ -1,33 +1,30 @@
 # Build the QuantSupport Book
 
-The Rust guides, Python API, and Excel worksheet reference share one mdBook site,
-sidebar, theme, and search index. The Excel installation chapter links directly
-to the latest released `quantsupport.xll`.
+mdBook contains the Rust, Python, and Excel walkthroughs. The separate
+[Sphinx API reference](https://jmelo11.github.io/quantsupport/api/index.html)
+provides per-class Python and per-function Excel pages under `/api/` in the
+same GitHub Pages deployment. Each site has its own navigation and search.
+The Excel installation chapter links to the latest released `quantsupport.xll`.
 
-Python 3.11+, Rust, mdBook 0.5.2, and mdbook-mermaid 0.17.0 are required.
-From the repository root:
+To build just the walkthroughs, install Rust, mdBook 0.5.2, and
+mdbook-mermaid 0.17.0. From the repository root:
 
 ```sh
-python3 -m venv .venv-docs
-.venv-docs/bin/python -m pip install -r book/requirements.txt
 cargo install mdbook --version 0.5.2 --locked
 cargo install mdbook-mermaid --version 0.17.0 --locked
 mdbook-mermaid install .
-PATH="$PWD/.venv-docs/bin:$PATH" mdbook build
+mdbook build
 ```
 
-On Windows, activate `.venv-docs\Scripts\Activate.ps1` before `mdbook build`.
-Open `book/html/index.html`, or run `mdbook serve` with the same environment.
-No Sphinx installation, native Python extension, or Excel installation is needed.
+Open `book/html/index.html`, or run `mdbook serve` to preview the walkthroughs.
+The book alone needs no Python environment, Sphinx, native Python extension,
+or Excel installation.
 
-The bindings preprocessor reads the categorized `.pyi` files and runs the
-portable Rust Excel catalog exporter. It adds reference chapters in memory;
-generated Markdown files are not committed. To test the generator:
-
-```sh
-.venv-docs/bin/python -m unittest discover -s book/tests -v
-```
+For the complete site, follow the [API build guide](../docs/README.md): install
+`docs/requirements.txt`, build mdBook first, then run
+`sphinx-build -W -b html docs book/html/api`. Rebuild Sphinx after each mdBook
+build because mdBook replaces its output tree.
 
 See [Binding Development](src/reference/bindings.md) for visibility conventions
-and the publication workflow. Pull requests validate the full book; pushes to
-`main` and manual runs on `main` deploy it through GitHub Pages.
+and the publication workflow. Pull requests validate both sites; pushes to
+`main` and manual runs on `main` deploy the combined tree through GitHub Pages.

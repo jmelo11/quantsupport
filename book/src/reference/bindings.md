@@ -14,8 +14,9 @@ product inputs remain read-only; context inputs are explicitly mutable.
 
 When adding an API, update its domain `__init__.py`, `__init__.pyi`, root
 re-exports, and `__all__`. Document the stub's classes and public members;
-the book reads these signatures and docstrings without loading the native
-extension. Keep matching Rust documentation for runtime `help()`.
+Sphinx AutoAPI reads these signatures and docstrings without loading the
+native extension and gives each public class its own page. Keep matching
+Rust documentation for runtime `help()`.
 
 Binding CI checks the installed package against its stubs. Regression tests
 also verify domain/root export parity and public member documentation.
@@ -33,39 +34,44 @@ exporter parses these attributes with `syn`, expands the local worksheet macros,
 and calls the same parameter-help function as the XLL. Windows tests compare
 the generated catalog against the registered inventory.
 
-## Build the Book
+## Build the Documentation
 
 Python 3.11 or later, Rust, mdBook 0.5.2, and mdbook-mermaid 0.17.0 are required.
 From the repository root:
 
 ```sh
 python3 -m venv .venv-docs
-.venv-docs/bin/python -m pip install -r book/requirements.txt
+.venv-docs/bin/python -m pip install -r docs/requirements.txt
 cargo install mdbook --version 0.5.2 --locked
 cargo install mdbook-mermaid --version 0.17.0 --locked
 mdbook-mermaid install .
-PATH="$PWD/.venv-docs/bin:$PATH" mdbook build
+.venv-docs/bin/python -m unittest discover -s docs/tests -v
+mdbook build
+.venv-docs/bin/sphinx-build -W -b html docs book/html/api
 ```
 
-On Windows, activate `.venv-docs\Scripts\Activate.ps1` before `mdbook build`.
-The first build compiles the portable Excel catalog exporter. Excel and the
-Python native extension are not required to build documentation.
+On Windows, activate `.venv-docs\Scripts\Activate.ps1` and use `python` and
+`sphinx-build` for the environment commands above. The Sphinx build compiles
+the portable Excel catalog exporter; Excel and the native Python extension
+are not required.
 
-`book/bindings.py` is an mdBook preprocessor: it adds the five Python domain
-chapters and the Excel category chapters in memory. Generated references use
-the book's sidebar, theme, and search index; no generated Markdown is committed.
-Python docstrings are parsed by `docstring-parser` and signatures by the standard
-AST parser. Test the generator with:
-
-```sh
-.venv-docs/bin/python -m unittest discover -s book/tests -v
-```
+mdBook builds the walkthroughs, and Sphinx builds the
+[API reference](https://jmelo11.github.io/quantsupport/api/index.html) under
+`book/html/api`. Build in that order: a subsequent mdBook build replaces its
+output tree. Sphinx provides separate navigation and search for the per-class
+[Python reference](https://jmelo11.github.io/quantsupport/api/autoapi/quantsupport/index.html)
+and per-function [Excel reference](https://jmelo11.github.io/quantsupport/api/excel/index.html).
+Generated API sources and HTML are not committed. See the
+[API build guide](https://github.com/jmelo11/quantsupport/blob/main/docs/README.md)
+for standalone builds and the combined-tree link requirements.
 
 ## Publish and Download
 
-The documentation workflow validates the complete book on pull requests and
-deploys it to [GitHub Pages](https://jmelo11.github.io/quantsupport/) on pushes
-to `main` or manual runs on `main`. The Pages environment allows deployment
+The documentation workflow tests the API generators and builds both mdBook
+and Sphinx with warnings treated as errors for Sphinx. Pull requests validate
+the combined tree without deploying. Pushes to `main` and manual runs on
+`main` deploy it to [GitHub Pages](https://jmelo11.github.io/quantsupport/),
+with the API reference under `/api/`. The Pages environment allows deployment
 from `main` only.
 
 The Excel chapter links to the XLL attached by the release workflow. Publishing

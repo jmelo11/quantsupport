@@ -2,9 +2,10 @@
 
 QuantSupport is a Rust library for building market data, pricing derivatives, measuring risk with automatic differentiation, simulating exposure, and computing XVA.
 
-The book includes the [Python API](python/api.md),
-[Excel worksheet reference](excel/reference.md), and
-[Excel download and installation](excel/installation.md). The
+The book provides component walkthroughs, including
+[Excel download and installation](excel/installation.md). The separate
+[Python API](api/autoapi/quantsupport/index.html) and
+[Excel worksheet API](api/excel/index.html) document declarations and parameters. The
 [Rust API](https://docs.rs/quantsupport) documents native types and traits.
 
 Everything is organised around one flow:

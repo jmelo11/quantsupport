@@ -9,10 +9,6 @@ src = "book/src"
 build-dir = "book/html"
 create-missing = false
 
-[preprocessor.bindings]
-command = "python3 book/bindings.py"
-before = ["links"]
-
 [preprocessor.mermaid]
 command = "mdbook-mermaid"
 
