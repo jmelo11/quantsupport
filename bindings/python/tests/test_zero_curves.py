@@ -39,13 +39,13 @@ class ZeroCurveTests(unittest.TestCase):
             day_counter=qs.DayCounter.Actual365,
             compounding=qs.Compounding.Simple,
             frequency=qs.Frequency.Annual,
-            interpolator="LogLinear",
+            interpolator=qs.Interpolator.LogLinear,
         )
         self.assertAlmostEqual(curve.zero_rate(self.dates[1]), 0.004)
         self.assertAlmostEqual(
             curve.discount_factor(self.dates[1]), 1.0 / 1.004)
         self.assertEqual(curve.compounding, qs.Compounding.Simple)
-        self.assertEqual(curve.interpolator, "LogLinear")
+        self.assertEqual(curve.interpolator, qs.Interpolator.LogLinear)
 
     def test_curve_round_trip_and_csa_accept_both_curve_classes(self):
         curves = [

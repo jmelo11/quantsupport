@@ -2,13 +2,15 @@
 
 use pyo3::prelude::*;
 use quantsupport::prelude::{
-    Compounding, DayCounter, Frequency, InterestRatesTermStructure, RateDefinition,
+    Compounding, DayCounter, Frequency, InterestRatesTermStructure, Interpolator, RateDefinition,
     TenorBasedZeroRateTermStructure as QsTenorCurve, ZeroRateTermStructure as QsZeroCurve,
 };
 
+use crate::enums::Interpolator as PyInterpolator;
+
 use crate::conv::{
-    extract_compounding, extract_date, extract_day_counter, extract_frequency, extract_period,
-    from_json_file, from_py, parse_str_enum, qs_err,
+    extract_compounding, extract_date, extract_day_counter, extract_frequency,
+    extract_interpolator, extract_period, from_json_file, from_py, qs_err,
 };
 
 fn rate_definition(
@@ -52,7 +54,7 @@ impl ZeroRateTermStructure {
 #[pymethods]
 impl ZeroRateTermStructure {
     #[new]
-    #[pyo3(signature = (reference_date, dates, rates, *, day_counter = None, compounding = None, frequency = None, interpolator = "Linear", enable_extrapolation = false))]
+    #[pyo3(signature = (reference_date, dates, rates, *, day_counter = None, compounding = None, frequency = None, interpolator = None, enable_extrapolation = false))]
     #[allow(clippy::too_many_arguments)]
     fn new(
         reference_date: &Bound<'_, PyAny>,
@@ -61,7 +63,7 @@ impl ZeroRateTermStructure {
         day_counter: Option<&Bound<'_, PyAny>>,
         compounding: Option<&Bound<'_, PyAny>>,
         frequency: Option<&Bound<'_, PyAny>>,
-        interpolator: &str,
+        interpolator: Option<&Bound<'_, PyAny>>,
         enable_extrapolation: bool,
     ) -> PyResult<Self> {
         Ok(Self {
@@ -73,7 +75,10 @@ impl ZeroRateTermStructure {
                     .collect::<PyResult<Vec<_>>>()?,
                 rates,
                 rate_definition(day_counter, compounding, frequency)?,
-                parse_str_enum(interpolator, "interpolator")?,
+                interpolator
+                    .map(extract_interpolator)
+                    .transpose()?
+                    .unwrap_or(Interpolator::Linear),
                 enable_extrapolation,
             )
             .map_err(qs_err)?,
@@ -115,7 +120,7 @@ impl TenorBasedZeroRateTermStructure {
 #[pymethods]
 impl TenorBasedZeroRateTermStructure {
     #[new]
-    #[pyo3(signature = (reference_date, tenors, rates, *, day_counter = None, compounding = None, frequency = None, interpolator = "Linear", enable_extrapolation = false))]
+    #[pyo3(signature = (reference_date, tenors, rates, *, day_counter = None, compounding = None, frequency = None, interpolator = None, enable_extrapolation = false))]
     #[allow(clippy::too_many_arguments)]
     fn new(
         reference_date: &Bound<'_, PyAny>,
@@ -124,7 +129,7 @@ impl TenorBasedZeroRateTermStructure {
         day_counter: Option<&Bound<'_, PyAny>>,
         compounding: Option<&Bound<'_, PyAny>>,
         frequency: Option<&Bound<'_, PyAny>>,
-        interpolator: &str,
+        interpolator: Option<&Bound<'_, PyAny>>,
         enable_extrapolation: bool,
     ) -> PyResult<Self> {
         Ok(Self {
@@ -136,7 +141,10 @@ impl TenorBasedZeroRateTermStructure {
                     .collect::<PyResult<Vec<_>>>()?,
                 rates,
                 rate_definition(day_counter, compounding, frequency)?,
-                parse_str_enum(interpolator, "interpolator")?,
+                interpolator
+                    .map(extract_interpolator)
+                    .transpose()?
+                    .unwrap_or(Interpolator::Linear),
                 enable_extrapolation,
             )
             .map_err(qs_err)?,
@@ -194,8 +202,8 @@ macro_rules! curve_methods {
             }
 
             #[getter]
-            fn interpolator(&self) -> String {
-                format!("{:?}", self.curve().interpolator())
+            fn interpolator(&self) -> PyInterpolator {
+                self.curve().interpolator().into()
             }
 
             #[getter]

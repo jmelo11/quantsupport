@@ -18,7 +18,7 @@ pub enum PrepaymentModelConfiguration {
     Cpr(f64),
     /// Annual CPR by effective date; zero before the first date, flat afterwards.
     CprCurve(Vec<(Date, f64)>),
-    /// Base annual CPR plus sensitivity to positive client-minus-refinancing rate.
+    /// Base annual CPR plus sensitivity to coupon minus refinancing benchmark.
     Refinancing {
         /// Annual CPR absent a positive refinancing incentive.
         base_cpr: f64,
@@ -35,7 +35,7 @@ impl PrepaymentModelConfiguration {
     /// # Errors
     /// Rejects nonfinite values, CPRs outside [0, 1], unsorted or duplicate
     /// curve dates, and invalid refinancing incentive parameters.
-    pub fn validate(&self) -> Result<()> {
+    pub fn validate_parameters(&self) -> Result<()> {
         let valid_cpr = |rate: f64| rate.is_finite() && (0.0..=1.0).contains(&rate);
         let valid = match self {
             Self::None => true,
@@ -66,14 +66,26 @@ impl PrepaymentModelConfiguration {
 }
 
 impl<T: Scalar> PrepaymentModel<T> for PrepaymentModelConfiguration {
-    fn requires_refinancing(&self) -> bool {
+    /// Requests a market refinancing observation only for the incentive model.
+    fn requires_refinancing_benchmark(&self) -> bool {
         matches!(self, Self::Refinancing { .. })
     }
-    fn probability(&self, state: &PrepaymentModelState<T>) -> Result<T> {
-        self.validate()?;
-        if !state.year_fraction().is_finite()
-            || state.year_fraction() < 0.0
-            || state.end() <= state.start()
+    /// Converts the applicable annual CPR to this interval's conditional probability.
+    ///
+    /// Uses `1 - (1 - CPR)^year_fraction`, returning zero for a zero-length year
+    /// fraction and one for CPR 1 over a positive interval. Dated CPRs use the
+    /// latest point at/before the interval start, or zero before the first point.
+    /// Refinancing CPR is capped base CPR plus the multiplier times positive
+    /// contractual coupon minus refinancing benchmark; AD dependencies are retained.
+    ///
+    /// # Errors
+    /// Rejects invalid configuration, nonfinite/negative year fractions,
+    /// non-increasing interval dates, and nonfinite calculated probabilities.
+    fn conditional_prepayment_probability(&self, state: &PrepaymentModelState<T>) -> Result<T> {
+        self.validate_parameters()?;
+        if !state.interval_year_fraction().is_finite()
+            || state.interval_year_fraction() < 0.0
+            || state.interval_end_date() <= state.interval_start_date()
         {
             return Err(QSError::InvalidValueErr(
                 "Invalid prepayment interval".into(),
@@ -86,7 +98,7 @@ impl<T: Scalar> PrepaymentModel<T> for PrepaymentModelConfiguration {
                 points
                     .iter()
                     .rev()
-                    .find(|(date, _)| *date <= state.start())
+                    .find(|(date, _)| *date <= state.interval_start_date())
                     .map_or(0.0, |(_, rate)| *rate),
             ),
             Self::Refinancing {
@@ -96,19 +108,19 @@ impl<T: Scalar> PrepaymentModel<T> for PrepaymentModelConfiguration {
             } => T::scalar(*base_cpr)
                 .add_val(
                     state
-                        .client_rate()
-                        .sub_val(state.refinancing_rate())
+                        .contractual_coupon_rate()
+                        .sub_val(state.refinancing_benchmark_rate())
                         .max_val(T::zero())
                         .mul_val(T::scalar(*incentive_multiplier)),
                 )
                 .min_val(T::scalar(*maximum_cpr)),
         };
-        let probability = if state.year_fraction() == 0.0 {
+        let probability = if state.interval_year_fraction() == 0.0 {
             T::zero()
         } else if cpr.value() >= 1.0 {
             T::one()
         } else {
-            T::one().sub_val(T::one().sub_val(cpr).powf(state.year_fraction()))
+            T::one().sub_val(T::one().sub_val(cpr).powf(state.interval_year_fraction()))
         };
         if !probability.value().is_finite() {
             return Err(QSError::InvalidValueErr(
@@ -122,7 +134,7 @@ impl<T: Scalar> PrepaymentModel<T> for PrepaymentModelConfiguration {
 #[cfg(test)]
 mod tests {
     use super::*;
-    fn state() -> PrepaymentModelState<f64> {
+    fn sample_monthly_prepayment_state() -> PrepaymentModelState<f64> {
         PrepaymentModelState::new(
             Date::new(2026, 1, 1),
             Date::new(2026, 2, 1),
@@ -134,7 +146,8 @@ mod tests {
     }
     #[test]
     fn annual_cpr_converts_to_conditional_monthly_probability() -> Result<()> {
-        let probability = PrepaymentModelConfiguration::Cpr(0.12).probability(&state())?;
+        let probability = PrepaymentModelConfiguration::Cpr(0.12)
+            .conditional_prepayment_probability(&sample_monthly_prepayment_state())?;
         assert!((probability - (1.0 - 0.88_f64.powf(1.0 / 12.0))).abs() < 1e-14);
         Ok(())
     }
@@ -146,16 +159,17 @@ mod tests {
             (Date::new(2026, 2, 1), 0.24),
         ]);
         assert_eq!(
-            curve.probability(&state())?,
-            PrepaymentModelConfiguration::Cpr(0.12).probability(&state())?
+            curve.conditional_prepayment_probability(&sample_monthly_prepayment_state())?,
+            PrepaymentModelConfiguration::Cpr(0.12)
+                .conditional_prepayment_probability(&sample_monthly_prepayment_state())?
         );
         assert!(
             PrepaymentModelConfiguration::CprCurve(vec![(date, 0.1), (date, 0.2)])
-                .probability(&state())
+                .conditional_prepayment_probability(&sample_monthly_prepayment_state())
                 .is_err()
         );
         assert!(PrepaymentModelConfiguration::Cpr(f64::NAN)
-            .probability(&state())
+            .conditional_prepayment_probability(&sample_monthly_prepayment_state())
             .is_err());
         Ok(())
     }
@@ -167,11 +181,13 @@ mod tests {
             maximum_cpr: 1.0,
         };
         assert!(
-            model.probability(&state())?
-                > PrepaymentModelConfiguration::Cpr(0.05).probability(&state())?
+            model.conditional_prepayment_probability(&sample_monthly_prepayment_state())?
+                > PrepaymentModelConfiguration::Cpr(0.05)
+                    .conditional_prepayment_probability(&sample_monthly_prepayment_state())?
         );
         assert_eq!(
-            PrepaymentModelConfiguration::Cpr(1.0).probability(&state())?,
+            PrepaymentModelConfiguration::Cpr(1.0)
+                .conditional_prepayment_probability(&sample_monthly_prepayment_state())?,
             1.0
         );
         Ok(())

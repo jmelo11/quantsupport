@@ -2,7 +2,7 @@ use crate::{
     ad::{dual::DualFwd, scalar::Scalar},
     indices::marketindex::MarketIndex,
     instruments::cashflows::{coupons::NonLinearCoupon, payoffops::PayoffOps},
-    time::date::Date,
+    time::{date::Date, daycounter::DayCounter},
     utils::errors::{QSError, Result},
 };
 
@@ -21,6 +21,7 @@ pub struct OptionEmbeddedCoupon<T: Scalar> {
     accrual_end_date: Date,
     payment_date: Date,
     payoff: PayoffOps,
+    day_counter: Option<DayCounter>,
 }
 
 impl<T: Scalar> OptionEmbeddedCoupon<T> {
@@ -44,6 +45,7 @@ impl<T: Scalar> OptionEmbeddedCoupon<T> {
             accrual_end_date,
             payment_date,
             payoff,
+            day_counter: None,
         }
     }
 
@@ -80,6 +82,54 @@ impl<T: Scalar> OptionEmbeddedCoupon<T> {
     /// Returns the payoff operations.
     pub const fn payoff_ops(&self) -> &PayoffOps {
         &self.payoff
+    }
+
+    /// Overrides contractual interest accrual independently of the index quote.
+    #[must_use]
+    pub const fn with_day_counter(mut self, day_counter: DayCounter) -> Self {
+        self.day_counter = Some(day_counter);
+        self
+    }
+
+    /// Returns the explicit accrual basis or the index's default basis.
+    ///
+    /// # Errors
+    /// Propagates unavailable index conventions when no override was supplied.
+    pub fn day_counter(&self) -> Result<DayCounter> {
+        self.day_counter.map_or_else(
+            || {
+                Ok(self
+                    .index
+                    .rate_index_details()?
+                    .rate_definition()
+                    .day_counter())
+            },
+            Ok,
+        )
+    }
+
+    /// Returns the contractual principal used by this coupon.
+    #[must_use]
+    pub const fn notional(&self) -> f64 {
+        self.notional
+    }
+
+    /// Returns the contractual accrual start date.
+    #[must_use]
+    pub const fn accrual_start_date(&self) -> Date {
+        self.accrual_start_date
+    }
+
+    /// Returns the contractual accrual end date.
+    #[must_use]
+    pub const fn accrual_end_date(&self) -> Date {
+        self.accrual_end_date
+    }
+
+    /// Returns the contractual payment date.
+    #[must_use]
+    pub const fn payment_date(&self) -> Date {
+        self.payment_date
     }
 }
 
@@ -119,12 +169,7 @@ impl NonLinearCoupon<f64> for OptionEmbeddedCoupon<f64> {
             .fixing
             .ok_or_else(|| QSError::NotFoundErr("Fixing not set".into()))?;
 
-        let year_fraction = self
-            .index
-            .rate_index_details()?
-            .rate_definition()
-            .day_counter()
-            .year_fraction(start_date, end_date);
+        let year_fraction = self.day_counter()?.year_fraction(start_date, end_date);
 
         let resuling_rate = self.payoff.eval(fixing)?;
         let coupon_rate = self.spread + resuling_rate;
@@ -158,12 +203,7 @@ impl NonLinearCoupon<DualFwd> for OptionEmbeddedCoupon<DualFwd> {
             .fixing
             .ok_or_else(|| QSError::NotFoundErr("Fixing not set".into()))?;
 
-        let year_fraction = self
-            .index
-            .rate_index_details()?
-            .rate_definition()
-            .day_counter()
-            .year_fraction(start_date, end_date);
+        let year_fraction = self.day_counter()?.year_fraction(start_date, end_date);
 
         let resuling_rate = self.payoff.eval(fixing)?;
         let coupon_rate: DualFwd = (self.spread + resuling_rate).into();
@@ -194,6 +234,7 @@ impl From<OptionEmbeddedCoupon<f64>> for OptionEmbeddedCoupon<DualFwd> {
             accrual_end_date: value.accrual_end_date,
             payment_date: value.payment_date,
             payoff: value.payoff,
+            day_counter: value.day_counter,
         }
     }
 }
@@ -209,6 +250,7 @@ impl From<OptionEmbeddedCoupon<DualFwd>> for OptionEmbeddedCoupon<f64> {
             accrual_end_date: value.accrual_end_date,
             payment_date: value.payment_date,
             payoff: value.payoff,
+            day_counter: value.day_counter,
         }
     }
 }

@@ -1,7 +1,7 @@
 //! Python-facing enums mirroring the library's Rust enums.
 //!
 //! Fieldless library enums are mirrored one-to-one through the
-//! [`mirror_enum!`] macro: the exhaustive `match` in both `From`
+//! `mirror_enum!` macro: the exhaustive `match` in both `From`
 //! conversions guarantees at compile time that the Python enum stays in
 //! sync with the library. [`MarketIndex`] (which has data-carrying
 //! variants) is a thin wrapper with constants and constructors instead.
@@ -18,10 +18,11 @@ use quantsupport::prelude::{
     BusinessDayConvention as QsBusinessDayConvention, CapFloorType as QsCapFloorType,
     CapletFloorletType as QsCapletFloorletType, Compounding as QsCompounding,
     Currency as QsCurrency, DateGenerationRule as QsDateGenerationRule, DayCounter as QsDayCounter,
-    EuroOptionType as QsEuroOptionType, Frequency as QsFrequency, FxPair, Level as QsLevel,
-    MarketIndex as QsMarketIndex, PaymentStructure as QsPaymentStructure, Request as QsRequest,
-    ScenarioType as QsScenarioType, Side as QsSide, SmileType as QsSmileType,
-    TimeUnit as QsTimeUnit, VolatilityType as QsVolatilityType,
+    EuroOptionType as QsEuroOptionType, Frequency as QsFrequency, FxPair,
+    Interpolator as QsInterpolator, Level as QsLevel, MarketIndex as QsMarketIndex,
+    PaymentStructure as QsPaymentStructure, Request as QsRequest, ScenarioType as QsScenarioType,
+    Side as QsSide, SmileType as QsSmileType, TimeUnit as QsTimeUnit,
+    VolatilityType as QsVolatilityType,
 };
 
 use crate::conv::{extract_currency, extract_date, qs_err};
@@ -464,8 +465,8 @@ impl SmileType {
 ///
 /// Plain rate indices are available as class constants
 /// (`MarketIndex.SOFR`); parameterised variants are built with
-/// [`MarketIndex.equity`], [`MarketIndex.fx_pair`],
-/// [`MarketIndex.collateral`] and [`MarketIndex.other`].
+/// `MarketIndex.equity`, `MarketIndex.fx_pair`,
+/// `MarketIndex.collateral` and `MarketIndex.other`.
 #[pyclass(
     module = "quantsupport",
     name = "MarketIndex",
@@ -773,5 +774,28 @@ impl SwaptionType {
     }
     fn __str__(&self) -> String {
         format!("{self:?}")
+    }
+}
+
+mirror_enum!(
+    /// Interpolation rule for curve pillars.
+    Interpolator,
+    QsInterpolator,
+    "Interpolator",
+    [Linear, LogLinear, CubicSpline]
+);
+
+#[pymethods]
+impl Interpolator {
+    /// Parses an interpolation rule by its name.
+    #[staticmethod]
+    pub fn parse(s: &str) -> PyResult<Self> {
+        Self::from_name(s)
+    }
+    fn __str__(&self) -> String {
+        format!("{self:?}")
+    }
+    fn __repr__(&self) -> String {
+        format!("Interpolator.{self:?}")
     }
 }

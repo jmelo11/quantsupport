@@ -10,8 +10,6 @@ pub mod fixedratedeposit;
 pub mod floatingratenote;
 /// Loan contracts and positions.
 pub mod loan;
-/// Fixed, floating, and mixed loan coupon definitions.
-pub mod loanratedefinition;
 /// Bullet, French, and balloon loan amortization structures.
 pub mod loanrepaymentstructure;
 /// Fixed rate bond builder.

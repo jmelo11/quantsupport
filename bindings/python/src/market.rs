@@ -18,7 +18,7 @@ use serde::de::DeserializeOwned;
 
 use crate::conv::{
     extract_compounding, extract_currency, extract_date, extract_day_counter, extract_frequency,
-    extract_market_index, extract_period, from_json_file, from_py, parse_str_enum, qs_err,
+    extract_interpolator, extract_market_index, extract_period, from_json_file, from_py, qs_err,
 };
 use crate::QuantSupportError;
 
@@ -118,7 +118,7 @@ config_wrapper!(
     ///     Defaults to bootstrapped construction.
     /// day_counter : DayCounter or str, optional
     ///     Curve time basis. Defaults to Actual360.
-    /// interpolator : str, optional
+    /// interpolator : Interpolator or str, optional
     ///     Linear, LogLinear, or CubicSpline. Defaults to LogLinear.
     /// enable_extrapolation : bool, optional
     ///     Allow evaluation beyond the supplied pillars. Defaults to True.
@@ -225,13 +225,13 @@ impl CurveConfiguration {
     #[new]
     #[allow(clippy::too_many_arguments)]
     #[pyo3(signature = (*, market_index, quotes = None, construction = None,
-        day_counter = None, interpolator = "LogLinear", enable_extrapolation = true))]
+        day_counter = None, interpolator = None, enable_extrapolation = true))]
     fn new(
         market_index: &Bound<'_, PyAny>,
         quotes: Option<Vec<String>>,
         construction: Option<CurveConstruction>,
         day_counter: Option<&Bound<'_, PyAny>>,
-        interpolator: &str,
+        interpolator: Option<&Bound<'_, PyAny>>,
         enable_extrapolation: bool,
     ) -> PyResult<Self> {
         Ok(Self {
@@ -241,7 +241,10 @@ impl CurveConfiguration {
                     .map(extract_day_counter)
                     .transpose()?
                     .unwrap_or(DayCounter::Actual360),
-                parse_str_enum::<Interpolator>(interpolator, "interpolator")?,
+                interpolator
+                    .map(extract_interpolator)
+                    .transpose()?
+                    .unwrap_or(Interpolator::LogLinear),
                 enable_extrapolation,
                 quotes.unwrap_or_default(),
             )

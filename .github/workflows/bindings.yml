@@ -51,6 +51,7 @@ jobs:
           python -m pip install mypy pandas-stubs "typing-extensions>=4.15"
           python -m mypy bindings/python/python/quantsupport/__init__.pyi --ignore-missing-imports
           python -m mypy.stubtest quantsupport --ignore-missing-stub
+          python -m mypy bindings/python/tests/typing_native_inputs.py --ignore-missing-imports
       - uses: actions/upload-artifact@v6
         with:
           name: python-${{ matrix.platform.runner }}-${{ matrix.python }}

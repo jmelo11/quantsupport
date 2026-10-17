@@ -49,7 +49,7 @@ use crate::QuantSupportError;
 
 /// Market inputs and policies used to value trades.
 ///
-/// Assign public properties to change inputs: scenarios, curve_configurations,
+/// Assign public properties to change inputs: scenarios, curves, curve_configurations,
 /// credit_curve_configurations, fixings, quotes, fx, quote_level, csa_policy,
 /// fixed_income_policy, volatility_surface_configurations,
 /// volatility_cube_configurations, simulation_configurations, and
@@ -129,15 +129,25 @@ impl PricingContext {
         Ok(())
     }
 
+    /// Borrows the native context after checking market initialization.
+    ///
+    /// # Errors
+    /// Returns `QuantSupportError` if the context has not been initialized.
     pub(crate) fn native_context(&self) -> PyResult<&QsPricingContext> {
         self.require_initialized()?;
         Ok(&self.inner)
     }
 
-    pub(crate) fn loan_discount_policy(&self) -> FixedIncomeDiscountPolicy {
+    /// Builds the configured fixed-income policy, using the context base curve
+    /// when no explicit currency mapping was supplied.
+    pub(crate) fn build_loan_discount_policy(&self) -> FixedIncomeDiscountPolicy {
         self.bond_discount_policy(false)
     }
 
+    /// Builds an explicit fixed-income policy or a default backed by the base curve.
+    ///
+    /// `prefer_instrument_index` affects only the default policy; an explicit
+    /// context policy supplies its own preference and currency/index mappings.
     fn bond_discount_policy(&self, prefer_instrument_index: bool) -> FixedIncomeDiscountPolicy {
         self.fixed_income_policy.as_ref().map_or_else(
             || {
@@ -149,6 +159,10 @@ impl PricingContext {
             PyFixedIncomeDiscountPolicy::build,
         )
     }
+    /// Checks that curves and other configured market elements are initialized.
+    ///
+    /// # Errors
+    /// Returns `QuantSupportError` until `initialize()` or context entry succeeds.
     pub fn require_initialized(&self) -> PyResult<()> {
         if self.initialized {
             Ok(())
@@ -544,8 +558,19 @@ impl PricingContext {
         })
     }
 
+    /// Curve construction inputs. Assign a new collection to rebuild the market.
+    #[getter]
+    fn curves(&self) -> Vec<CurveConfiguration> {
+        self.curve_configurations()
+    }
+
+    #[setter]
+    fn set_curves(&mut self, value: Vec<CurveConfiguration>) -> PyResult<()> {
+        self.set_curve_configurations(value)
+    }
+
     /// All constructed discount curves, sorted by market index.
-    fn curves(&self) -> PyResult<Vec<DiscountCurve>> {
+    fn discount_curves(&self) -> PyResult<Vec<DiscountCurve>> {
         self.require_initialized()?;
         let mut curves: Vec<_> = self
             .inner
@@ -884,9 +909,9 @@ impl PricingContext {
         let instrument = position.instrument_bound(py);
 
         if let Ok(loan) = instrument.extract::<crate::loan::Loan>() {
-            let trade = loan.build_trade(&position)?;
+            let trade = loan.build_native_loan_trade(&position)?;
             let mut pricer = LoanPricer::new();
-            pricer.set_discount_policy(Box::new(slf.loan_discount_policy()));
+            pricer.set_discount_policy(Box::new(slf.build_loan_discount_policy()));
             let result = pricer.evaluate(&trade, &reqs, &slf.inner).map_err(qs_err)?;
             return Py::new(py, EvaluationResults::from_qs(&result));
         }

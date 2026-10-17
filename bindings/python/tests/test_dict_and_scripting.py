@@ -140,7 +140,7 @@ class DictAndScriptTests(unittest.TestCase):
                      payment_frequency=qs.Frequency.Annual,
                      coupon_day_counter=qs.DayCounter.Actual365,
                      start_date=qs.Date(2026, 2, 24))
-        enums["coupons"] = [qs.Coupon.fixed(0.04), {
+        enums["coupons"] = [qs.FixedRateCoupon(rate=qs.InterestRate(rate=0.04)), {
             "FloatingRateCoupon": {"index": qs.MarketIndex.SOFR, "spread": 0.005,
                                    "floor": 0.0, "cap": 0.06},
         }]
@@ -148,8 +148,8 @@ class DictAndScriptTests(unittest.TestCase):
                          qs.SteppedCouponBond.from_dict(specification).to_dict())
         self.assertEqual(qs.SteppedCouponBond(**enums).to_dict(),
                          qs.SteppedCouponBond.from_dict(specification).to_dict())
-        self.assertEqual(qs.Coupon.from_dict({"FixedRateCoupon": {"rate": 0.04}}).to_dict(),
-                         qs.Coupon.fixed(0.04).to_dict())
+        self.assertEqual(qs.FixedRateCoupon.from_dict({"FixedRateCoupon": {"rate": 0.04}}).to_dict(),
+                         qs.FixedRateCoupon(rate=qs.InterestRate(rate=0.04)).to_dict())
         curve = {"market_index": qs.MarketIndex.SOFR, "quotes": []}
         self.assertEqual(qs.CurveConfiguration.from_dict(
             curve).to_dict()["market_index"], "SOFR")
@@ -363,8 +363,10 @@ class DictAndScriptTests(unittest.TestCase):
         self.assertNotIn("discount_index", spec)
         self.assertEqual(qs.SteppedCouponBond.from_dict(spec).to_dict(), spec)
         self.assertEqual(spec["call_schedule"][0]["start_date"], "2028-02-24")
-        spec["coupons"] = [qs.Coupon.from_dict(
-            coupon) for coupon in spec["coupons"]]
+        spec["coupons"] = [
+            qs.FixedRateCoupon.from_dict(spec["coupons"][0]),
+            qs.OptionEmbeddedCoupon.from_dict(spec["coupons"][1]),
+        ]
         spec["call_schedule"] = [qs.CallScheduleEntry.from_dict(
             call) for call in spec["call_schedule"]]
         self.assertEqual(qs.SteppedCouponBond(
@@ -402,7 +404,7 @@ class DictAndScriptTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             qs.CallScheduleEntry(date="2028-01-01", start_date="2028-01-01")
         with self.assertRaises(qs.QuantSupportError):
-            qs.Coupon.from_dict({"Floating": {"index": "SOFR", "spread": 0.0,
+            qs.OptionEmbeddedCoupon.from_dict({"Floating": {"index": "SOFR", "spread": 0.0,
                                               "floor": 0.06, "cap": 0.02}})
 
     def test_bond_anchor_is_required_and_owned_by_trade(self):

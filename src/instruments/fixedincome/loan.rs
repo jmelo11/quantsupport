@@ -94,7 +94,7 @@ impl<T: Scalar> Loan<T> {
                             "Fixed coupons cannot require index observations".into(),
                         ));
                     }
-                    validate_coupon(
+                    validate_coupon_balance_and_accrual_dates(
                         balance,
                         coupon.notional(),
                         coupon.accrual_start_date(),
@@ -125,7 +125,39 @@ impl<T: Scalar> Loan<T> {
                             "Invalid loan index observation".into(),
                         ));
                     }
-                    validate_coupon(
+                    validate_coupon_balance_and_accrual_dates(
+                        balance,
+                        coupon.notional(),
+                        coupon.accrual_start_date(),
+                        coupon.accrual_end_date(),
+                        previous_end,
+                    )?;
+                    previous_end = Some(coupon.accrual_end_date());
+                    redemption_date = Some(coupon.payment_date());
+                    coupon_count += 1;
+                }
+                CashflowType::OptionEmbeddedCoupon(coupon) => {
+                    cashflow.validate_coupon()?;
+                    let request = observations
+                        .get(coupon_count)
+                        .and_then(Option::as_ref)
+                        .ok_or_else(|| {
+                            QSError::InvalidValueErr(
+                                "Bounded floating loan coupon requires an observation request"
+                                    .into(),
+                            )
+                        })?;
+                    if request.market_index() != *coupon.market_index()
+                        || request
+                            .start_date()
+                            .zip(request.end_date())
+                            .is_none_or(|(start, end)| end <= start)
+                    {
+                        return Err(QSError::InvalidValueErr(
+                            "Invalid loan index observation".into(),
+                        ));
+                    }
+                    validate_coupon_balance_and_accrual_dates(
                         balance,
                         coupon.notional(),
                         coupon.accrual_start_date(),
@@ -196,32 +228,32 @@ impl<T: Scalar> Loan<T> {
     }
     /// Contractual cashflows, unaffected by prepayment or valuation.
     #[must_use]
-    pub const fn leg(&self) -> &Leg<T> {
+    pub const fn contractual_leg(&self) -> &Leg<T> {
         &self.leg
     }
     /// Coupon observations; consecutive coupons may share an annual reset.
     #[must_use]
-    pub fn observations(&self) -> &[Option<ForwardRateRequest>] {
+    pub fn coupon_rate_observations(&self) -> &[Option<ForwardRateRequest>] {
         &self.observations
     }
     /// Prepayment function evaluated on the pricer's market and balance state.
     #[must_use]
-    pub fn prepayment(&self) -> &dyn PrepaymentModel<DualFwd> {
+    pub fn prepayment_model(&self) -> &dyn PrepaymentModel<DualFwd> {
         self.prepayment.as_ref()
     }
     /// Builder-provided structure for optional fair-rate schedule rebuilding.
     #[must_use]
-    pub const fn repayment(&self) -> Option<&LoanRepaymentStructure> {
+    pub const fn repayment_structure(&self) -> Option<&LoanRepaymentStructure> {
         self.repayment.as_ref()
     }
     /// Optional survival curve.
     #[must_use]
-    pub const fn credit_index(&self) -> Option<&MarketIndex> {
+    pub const fn credit_curve_index(&self) -> Option<&MarketIndex> {
         self.credit_index.as_ref()
     }
     /// Recovery fraction on default.
     #[must_use]
-    pub const fn recovery(&self) -> f64 {
+    pub const fn recovery_fraction(&self) -> f64 {
         self.recovery
     }
     /// Initial principal advance date.
@@ -241,7 +273,12 @@ impl<T: Scalar> Loan<T> {
     }
 }
 
-fn validate_coupon(
+/// Checks that a coupon uses the contractual opening balance and contiguous dates.
+///
+/// # Errors
+/// Rejects nonpositive/nonfinite coupon notionals, a balance mismatch beyond
+/// relative tolerance 1e-10, empty/reversed accrual intervals, or a gap/overlap.
+fn validate_coupon_balance_and_accrual_dates(
     balance: f64,
     notional: f64,
     start: Date,
@@ -260,19 +297,23 @@ fn validate_coupon(
 }
 
 impl<T: Scalar> Instrument for Loan<T> {
+    /// Returns an owned copy of the contract identifier.
     fn identifier(&self) -> String {
         self.identifier.clone()
     }
 }
 impl<T: Scalar> LegsProvider<T> for Loan<T> {
+    /// Returns the single contractual leg, including the initial advance.
     fn legs(&self) -> &[Leg<T>] {
         std::slice::from_ref(&self.leg)
     }
 }
 impl<T: Scalar> Discountable for Loan<T> {
+    /// Classifies the loan as fixed income for discount-policy selection.
     fn asset_class(&self) -> AssetClass {
         AssetClass::FixedIncome
     }
+    /// Returns the payment currency of the contractual leg.
     fn currency(&self) -> Currency {
         self.leg.currency()
     }
@@ -287,6 +328,10 @@ pub struct LoanTrade<T: Scalar = f64> {
 }
 impl<T: Scalar> LoanTrade<T> {
     /// Creates a loan position.
+    ///
+    /// `trade_date` records the position's execution date; the market provider
+    /// supplies the valuation date. `side` signs projected receipts without
+    /// changing the contract's principal or cashflows.
     #[must_use]
     pub const fn new(instrument: Loan<T>, trade_date: Date, side: Side) -> Self {
         Self {
@@ -297,17 +342,21 @@ impl<T: Scalar> LoanTrade<T> {
     }
 }
 impl<T: Scalar> Trade<Loan<T>> for LoanTrade<T> {
+    /// Returns the underlying loan contract.
     fn instrument(&self) -> &Loan<T> {
         &self.instrument
     }
+    /// Returns the position's execution date.
     fn trade_date(&self) -> Date {
         self.trade_date
     }
+    /// Returns the direction used to sign the loan's projected receipts.
     fn side(&self) -> Side {
         self.side
     }
 }
 impl<T: Scalar> LegsProvider<T> for LoanTrade<T> {
+    /// Exposes contractual cashflows; projected receipts belong to pricing state.
     fn legs(&self) -> &[Leg<T>] {
         self.instrument.legs()
     }
@@ -316,6 +365,7 @@ impl<T: Scalar> LegsProvider<T> for LoanTrade<T> {
 macro_rules! convert_loan {
     ($from:ty, $to:ty) => {
         impl From<Loan<$from>> for Loan<$to> {
+            /// Converts coupon scalars while retaining principal and loan terms.
             fn from(value: Loan<$from>) -> Self {
                 Self {
                     identifier: value.identifier,
@@ -330,6 +380,7 @@ macro_rules! convert_loan {
             }
         }
         impl From<LoanTrade<$from>> for LoanTrade<$to> {
+            /// Converts the loan's scalar representation, preserving date and side.
             fn from(value: LoanTrade<$from>) -> Self {
                 Self::new(value.instrument.into(), value.trade_date, value.side)
             }

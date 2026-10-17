@@ -15,7 +15,7 @@ def zero_curve(index, rates):
     return qs.CurveConfiguration(
         market_index=index,
         day_counter=qs.DayCounter.Actual360,
-        interpolator="Linear",
+        interpolator=qs.Interpolator.Linear,
         construction=qs.CurveConstruction.zero_rate(
             pillars=[qs.Period.parse("0D"), date(2027, 2, 24), "2029-02-24"],
             rates=rates,
@@ -47,7 +47,7 @@ def context_inputs():
 class PythonMarketInputTests(unittest.TestCase):
     def test_typed_curves_price_composition_with_dates_and_tenors(self):
         context = context_inputs()
-        context.curve_configurations += [
+        context.curves += [
             qs.CurveConfiguration(
                 market_index=FUNDING,
                 construction=qs.CurveConstruction.composite(
@@ -86,23 +86,23 @@ class PythonMarketInputTests(unittest.TestCase):
 
     def test_curve_reassignment_rebuilds_and_failed_input_cannot_use_stale_market(self):
         context = context_inputs()
-        original = context.curve_configurations
+        original = context.curves
         with context:
-            context.curve_configurations = original + [zero_curve(SPREAD, [0.01] * 3)]
+            context.curves = original + [zero_curve(SPREAD, [0.01] * 3)]
             before = context.curve(SPREAD).discount_factor("2028-02-24")
-            context.curve_configurations = original + [zero_curve(SPREAD, [0.02] * 3)]
+            context.curves = original + [zero_curve(SPREAD, [0.02] * 3)]
             after = context.curve(SPREAD).discount_factor("2028-02-24")
             self.assertAlmostEqual(after, before ** 2)
             with self.assertRaisesRegex(qs.QuantSupportError, "requires SPREAD"):
-                context.curve_configurations = original + [qs.CurveConfiguration(
+                context.curves = original + [qs.CurveConfiguration(
                     market_index=FUNDING,
                     construction=qs.CurveConstruction.composite(base_index="ESTR", spread_index=SPREAD),
                 )]
             with self.assertRaisesRegex(qs.QuantSupportError, "not initialized"):
                 context.curve("ESTR")
-            context.curve_configurations = original
+            context.curves = original
             context.initialize()
-            self.assertEqual(len(context.curves()), 1)
+            self.assertEqual(len(context.discount_curves()), 1)
 
     def test_public_fixings_and_policy_are_available_after_reassignment(self):
         context = context_inputs()

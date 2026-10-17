@@ -87,7 +87,6 @@ pub use crate::{
             fixedratedeposit::{FixedRateDeposit, FixedRateDepositTrade},
             floatingratenote::{FloatingRateNote, FloatingRateNoteTrade},
             loan::{Loan, LoanTrade},
-            loanratedefinition::LoanRateDefinition,
             loanrepaymentstructure::LoanRepaymentStructure,
             makefixedratebond::MakeFixedRateBond,
             makefixedratedeposit::MakeFixedRateDeposit,

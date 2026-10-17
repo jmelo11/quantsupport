@@ -7,7 +7,7 @@ use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList, PyTuple};
 use quantsupport::prelude::{
     BusinessDayConvention, Calendar, CapFloorType, CapletFloorletType, Compounding, Currency, Date,
-    DateGenerationRule, DayCounter, EuroOptionType, Frequency, Level, MarketIndex,
+    DateGenerationRule, DayCounter, EuroOptionType, Frequency, Interpolator, Level, MarketIndex,
     PaymentStructure, Period, Request, ScenarioType, Side, Strike, TimeUnit,
 };
 use serde::de::DeserializeOwned;
@@ -25,6 +25,13 @@ pub fn from_py<T: DeserializeOwned>(obj: &Bound<'_, PyAny>, what: &str) -> PyRes
         .map_err(|e| QuantSupportError::new_err(format!("invalid {what}: {e}")))
 }
 
+/// Recursively normalizes typed terms, dates, enums, and containers for serde.
+///
+/// Converts loan term wrappers through their native tagged representations,
+/// allowing typed and plain serialized inputs to share the same deserializer.
+///
+/// # Errors
+/// Propagates Python attribute/container access and serialization errors.
 fn serde_input<'py>(obj: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
     macro_rules! enum_input {
         ($($name:ident),+ $(,)?) => { $(
@@ -35,6 +42,7 @@ fn serde_input<'py>(obj: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
     }
     enum_input!(
         Level,
+        Interpolator,
         Currency,
         Side,
         Compounding,
@@ -62,11 +70,7 @@ fn serde_input<'py>(obj: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
             }
         )+ };
     }
-    loan_terms_input!(
-        LoanRateDefinition,
-        LoanRepaymentStructure,
-        PrepaymentModelConfiguration
-    );
+    loan_terms_input!(LoanRepaymentStructure, PrepaymentModelConfiguration);
     if obj.is_instance_of::<crate::time::Date>() || obj.is_instance_of::<crate::time::Period>() {
         return obj.str().map(Bound::into_any);
     }
@@ -155,6 +159,13 @@ macro_rules! enum_extractor {
         }
     };
 }
+
+enum_extractor!(
+    extract_interpolator,
+    crate::enums::Interpolator,
+    Interpolator,
+    "interpolator"
+);
 
 enum_extractor!(extract_level, crate::enums::Level, Level, "quote level");
 enum_extractor!(

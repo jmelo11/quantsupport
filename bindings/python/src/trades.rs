@@ -6,20 +6,19 @@ use pyo3::types::{PyDict, PyType};
 use quantsupport::prelude::{
     BasisSwap as QsBasisSwap, BasisSwapTrade, BusinessDayConvention, Calendar,
     CallScheduleEntry as QsCallScheduleEntry, CapFloor as QsCapFloor, CapFloorTrade, CapFloorType,
-    CapletFloorlet as QsCapletFloorlet, CapletFloorletTrade, CapletFloorletType,
-    CashflowType as QsCashflowType, CdsTrade, Compounding, ContingentClaim,
-    CreditDefaultSwap as QsCreditDefaultSwap, Currency, Date, DateGenerationRule, DayCounter,
-    DualFwd, EquityEuropeanOption as QsEquityEuropeanOption, EquityEuropeanOptionTrade,
-    EuroOptionType, FixFloatCrossCurrencySwap as QsFixFloatXccy, FixFloatCrossCurrencySwapTrade,
-    FixedRateBond as QsFixedRateBond, FixedRateBondTrade, FixedRateDeposit as QsFixedRateDeposit,
-    FixedRateDepositTrade, FloatFloatCrossCurrencySwap, FloatFloatCrossCurrencySwapTrade,
-    FloatingRateNote as QsFloatingRateNote, FloatingRateNoteTrade, Frequency,
-    FxEuropeanOptionTrade, FxForwardTrade, IntoContingentClaims, LegsProvider, MakeBasisSwap,
-    MakeCapFloor, MakeFixFloatCrossCurrencySwap, MakeFixedRateBond, MakeFixedRateDeposit,
-    MakeFloatFloatCrossCurrencySwap, MakeFloatingRateNote, MakeFxEuropeanOption, MakeFxForward,
-    MakeRateFutures, MakeSteppedCouponBond, MakeSwap, MarketIndex, PaymentStructure,
-    RateDefinition, RateFutures as QsRateFutures, RateFuturesTrade, SteppedCouponBondTrade, Strike,
-    Swap as QsSwap, SwapTrade,
+    CapletFloorlet as QsCapletFloorlet, CapletFloorletTrade, CapletFloorletType, CdsTrade,
+    Compounding, ContingentClaim, CreditDefaultSwap as QsCreditDefaultSwap, Currency, Date,
+    DateGenerationRule, DayCounter, DualFwd, EquityEuropeanOption as QsEquityEuropeanOption,
+    EquityEuropeanOptionTrade, EuroOptionType, FixFloatCrossCurrencySwap as QsFixFloatXccy,
+    FixFloatCrossCurrencySwapTrade, FixedRateBond as QsFixedRateBond, FixedRateBondTrade,
+    FixedRateDeposit as QsFixedRateDeposit, FixedRateDepositTrade, FloatFloatCrossCurrencySwap,
+    FloatFloatCrossCurrencySwapTrade, FloatingRateNote as QsFloatingRateNote,
+    FloatingRateNoteTrade, Frequency, FxEuropeanOptionTrade, FxForwardTrade, IntoContingentClaims,
+    LegsProvider, MakeBasisSwap, MakeCapFloor, MakeFixFloatCrossCurrencySwap, MakeFixedRateBond,
+    MakeFixedRateDeposit, MakeFloatFloatCrossCurrencySwap, MakeFloatingRateNote,
+    MakeFxEuropeanOption, MakeFxForward, MakeRateFutures, MakeSteppedCouponBond, MakeSwap,
+    MarketIndex, PaymentStructure, RateDefinition, RateFutures as QsRateFutures, RateFuturesTrade,
+    SteppedCouponBondTrade, Strike, Swap as QsSwap, SwapTrade,
 };
 
 use crate::conv::{
@@ -29,7 +28,7 @@ use crate::conv::{
     extract_option_type, extract_payment_structure, extract_strike, from_py, qs_err,
 };
 
-use quantsupport::instruments::cashflows::payoffops::PayoffOps;
+use crate::coupons::CouponDefinition;
 
 macro_rules! product_dict_constructors {
     ($($name:ty),+ $(,)?) => {
@@ -865,124 +864,6 @@ impl CallScheduleEntry {
     }
 }
 
-/// One positional coupon definition in a stepped-coupon schedule.
-#[pyclass(module = "quantsupport", name = "Coupon", from_py_object, frozen)]
-#[derive(Clone)]
-pub struct Coupon {
-    pub inner: QsCashflowType<f64>,
-}
-
-impl Coupon {
-    fn specification(&self) -> serde_json::Value {
-        match &self.inner {
-            QsCashflowType::FixedRateCoupon(coupon) => {
-                serde_json::json!({"Fixed": {"rate": coupon.rate().rate()}})
-            }
-            QsCashflowType::FloatingRateCoupon(coupon) => serde_json::json!({"Floating": {
-                "index": coupon.market_index(), "spread": coupon.spread(), "floor": null, "cap": null,
-            }}),
-            QsCashflowType::OptionEmbeddedCoupon(coupon) => {
-                let spread = coupon.spread();
-                let (capped, floor) = match coupon.payoff_ops() {
-                    PayoffOps::Max(inner, lower) => (
-                        &**inner,
-                        match &**lower {
-                            PayoffOps::Const(value) => Some(value + spread),
-                            _ => None,
-                        },
-                    ),
-                    other => (other, None),
-                };
-                let cap = match capped {
-                    PayoffOps::Min(_, upper) => match &**upper {
-                        PayoffOps::Const(value) => Some(value + spread),
-                        _ => None,
-                    },
-                    _ => None,
-                };
-                serde_json::json!({"Floating": {"index": coupon.market_index(), "spread": spread, "floor": floor, "cap": cap}})
-            }
-            _ => unreachable!("Coupon wrappers contain only coupon cashflows"),
-        }
-    }
-}
-
-#[pymethods]
-impl Coupon {
-    /// Creates a fixed coupon definition.
-    #[staticmethod]
-    fn fixed(rate: f64) -> PyResult<Self> {
-        let coupon_type = QsCashflowType::fixed(rate);
-        coupon_type.validate_coupon().map_err(qs_err)?;
-        Ok(Self { inner: coupon_type })
-    }
-
-    /// Creates a floating coupon whose all-in rate may be capped or floored.
-    #[staticmethod]
-    #[pyo3(signature = (index, spread = 0.0, floor = None, cap = None))]
-    fn floating(
-        index: &Bound<'_, PyAny>,
-        spread: f64,
-        floor: Option<f64>,
-        cap: Option<f64>,
-    ) -> PyResult<Self> {
-        let coupon_type =
-            QsCashflowType::floating(extract_market_index(index)?, spread, floor, cap);
-        coupon_type.validate_coupon().map_err(qs_err)?;
-        Ok(Self { inner: coupon_type })
-    }
-
-    /// Builds existing coupon cashflows from compact dictionary terms.
-    #[staticmethod]
-    fn from_dict(obj: &Bound<'_, PyAny>) -> PyResult<Self> {
-        let specification = obj.cast::<PyDict>()?;
-        if specification.len() != 1 {
-            return Err(pyo3::exceptions::PyValueError::new_err(
-                "A coupon dict requires exactly one coupon kind",
-            ));
-        }
-        let (kind, terms) = specification
-            .iter()
-            .next()
-            .ok_or_else(|| pyo3::exceptions::PyValueError::new_err("Missing coupon kind"))?;
-        let kind: String = kind.extract()?;
-        let terms = terms.cast::<PyDict>()?;
-        match kind.as_str() {
-            "Fixed" | "FixedRateCoupon" => obj
-                .py()
-                .get_type::<Self>()
-                .getattr("fixed")?
-                .call((), Some(terms))?
-                .extract()
-                .map_err(Into::into),
-            "Floating" | "FloatingRateCoupon" | "OptionEmbeddedCoupon" => obj
-                .py()
-                .get_type::<Self>()
-                .getattr("floating")?
-                .call((), Some(terms))?
-                .extract()
-                .map_err(Into::into),
-            _ => Err(pyo3::exceptions::PyValueError::new_err(format!(
-                "Unsupported coupon cashflow kind '{kind}'"
-            ))),
-        }
-    }
-
-    /// Returns compact constructor terms for the existing coupon cashflow.
-    fn to_dict<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        pythonize::pythonize(py, &self.specification()).map_err(qs_err)
-    }
-
-    fn __repr__(&self) -> String {
-        match &self.inner {
-            QsCashflowType::FixedRateCoupon(coupon) => {
-                format!("Coupon.fixed(rate={})", coupon.rate().rate())
-            }
-            _ => format!("Coupon({})", self.specification()),
-        }
-    }
-}
-
 /// A fixed-rate bullet (or amortizing) bond.
 #[pyclass(module = "quantsupport", name = "FixedRateBond", extends = Instrument, from_py_object, subclass, dict, unsendable)]
 #[derive(Clone)]
@@ -1203,7 +1084,7 @@ pub struct SteppedCouponBond {
     pub currency: Currency,
     pub payment_frequency: Frequency,
     pub coupon_day_counter: DayCounter,
-    pub coupons: Vec<Coupon>,
+    pub coupons: Vec<CouponDefinition>,
     pub notional_percentages: Vec<f64>,
     pub call_schedule: Vec<CallScheduleEntry>,
     pub calendar: Option<Calendar>,
@@ -1330,7 +1211,7 @@ impl SteppedCouponBond {
         }
         let coupons = coupons
             .iter()
-            .map(|obj| obj.extract::<Coupon>().or_else(|_| Coupon::from_dict(obj)))
+            .map(CouponDefinition::from_py)
             .collect::<PyResult<Vec<_>>>()?;
         let call_schedule = call_schedule
             .unwrap_or_default()
@@ -1387,7 +1268,7 @@ impl SteppedCouponBond {
             "currency": self.currency,
             "payment_frequency": self.payment_frequency,
             "coupon_day_counter": self.coupon_day_counter,
-            "coupons": self.coupons.iter().map(Coupon::specification).collect::<Vec<_>>(),
+            "coupons": self.coupons.iter().map(CouponDefinition::specification).collect::<PyResult<Vec<_>>>()?,
             "notional_percentages": self.notional_percentages,
             "call_schedule": self.call_schedule.iter().map(|call| call.inner).collect::<Vec<_>>(),
             "calendar": self.calendar,

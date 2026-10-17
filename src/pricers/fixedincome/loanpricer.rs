@@ -29,10 +29,11 @@ use crate::{
             fixedratecoupon::FixedRateCoupon,
             floatingratecoupon::FloatingRateCoupon,
             leg::Leg,
+            optionembeddedcoupon::OptionEmbeddedCoupon,
         },
         fixedincome::{
             loan::{Loan, LoanTrade},
-            makeloan::amortization_schedule,
+            makeloan::calculate_contractual_opening_balances,
         },
     },
     math::solvers::{
@@ -57,8 +58,8 @@ use std::collections::{HashMap, HashSet};
 #[derive(Default)]
 pub struct LoanPricer {
     discount_policy: Option<Box<dyn DiscountPolicy>>,
-    refinancing_index: Option<MarketIndex>,
-    recompute_schedule: bool,
+    refinancing_benchmark_index: Option<MarketIndex>,
+    rebuild_amortization_for_fair_rate: bool,
 }
 impl LoanPricer {
     /// Creates a pricer that preserves contractual amortization in fair-rate trials.
@@ -66,46 +67,73 @@ impl LoanPricer {
     pub fn new() -> Self {
         Self::default()
     }
-    /// Configures the market rate observed by refinancing-dependent prepayment.
+
+    /// Selects the index benchmark used by refinancing-incentive prepayment.
+    ///
+    /// Required when the loan's prepayment model requests refinancing data.
+    /// The index metadata supplies the observation tenor and quote convention;
+    /// this index does not replace the contractual coupon's floating index.
+    /// The observed benchmark excludes replacement-loan spreads and costs.
     #[must_use]
-    pub fn with_refinancing_index(mut self, index: MarketIndex) -> Self {
-        self.refinancing_index = Some(index);
-        self
-    }
-    /// Controls `FairRate` trials: preserve existing principal, or regenerate
-    /// the builder's repayment schedule for each candidate rate/spread.
-    #[must_use]
-    pub const fn with_recompute_schedule(mut self, enabled: bool) -> Self {
-        self.recompute_schedule = enabled;
+    pub fn with_refinancing_benchmark_index(mut self, index: MarketIndex) -> Self {
+        self.refinancing_benchmark_index = Some(index);
         self
     }
 
-    fn discount_index(&self, loan: &Loan<DualFwd>) -> Result<MarketIndex> {
+    /// Controls `FairRate` trials: preserve existing principal, or regenerate
+    /// the builder's repayment schedule for each candidate rate/spread.
+    ///
+    /// Defaults to `false`. Rebuilding requires repayment metadata and uses
+    /// the candidate fixed coupon or first index fixing plus candidate spread
+    /// as the initial amortization rate. Neither mode changes the instrument
+    /// or the principal schedule used by `Value` and `Sensitivities`.
+    #[must_use]
+    pub const fn with_fair_rate_amortization_rebuild(mut self, enabled: bool) -> Self {
+        self.rebuild_amortization_for_fair_rate = enabled;
+        self
+    }
+
+    /// Selects the discount curve exclusively through the configured policy.
+    ///
+    /// # Errors
+    /// Rejects an unconfigured policy and propagates policy resolution errors.
+    fn select_discount_curve_index(&self, loan: &Loan<DualFwd>) -> Result<MarketIndex> {
         self.discount_policy
             .as_ref()
             .ok_or_else(|| QSError::ValueNotSetErr("Loan discount policy".into()))?
             .accept(loan)
     }
-    fn prepare_state(
+
+    /// Loads curves and historical resets needed by unpaid coupons into a new state.
+    ///
+    /// Past fixing dates require stored observations. A fixing on the evaluation
+    /// date may be absent and forecast instead; already paid coupons do not
+    /// require historical fixings. Future rates are read from projection curves.
+    ///
+    /// # Errors
+    /// Rejects missing discount policies/refinancing indices and propagates market-data
+    /// errors, including missing historical fixings for unpaid coupons.
+    fn load_loan_valuation_state(
         &self,
         trade: &LoanTrade<DualFwd>,
         ctx: &impl MarketDataProvider,
-    ) -> Result<LoanState> {
-        self.discount_index(trade.instrument())?;
+    ) -> Result<LoanValuationState> {
+        self.select_discount_curve_index(trade.instrument())?;
         let request = self.market_data_request(trade).ok_or_else(|| {
             QSError::ValueNotSetErr("Loan refinancing benchmark or discount policy".into())
         })?;
         let needed_observations = trade
             .instrument()
-            .leg()
+            .contractual_leg()
             .cashflows()
             .iter()
             .filter_map(|cashflow| match cashflow {
                 CashflowType::FixedRateCoupon(coupon) => Some(coupon.payment_date()),
                 CashflowType::FloatingRateCoupon(coupon) => Some(coupon.payment_date()),
+                CashflowType::OptionEmbeddedCoupon(coupon) => Some(coupon.payment_date()),
                 _ => None,
             })
-            .zip(trade.instrument().observations())
+            .zip(trade.instrument().coupon_rate_observations())
             .filter(|(payment, _)| *payment > ctx.evaluation_date())
             .filter_map(|(_, observation)| observation.as_ref())
             .map(|request| (request.market_index(), request.fixing_date()))
@@ -126,14 +154,27 @@ impl LoanPricer {
             })
             .collect();
         let request = request.with_fixings_request(fixings);
-        Ok(LoanState {
+        Ok(LoanValuationState {
             market_data: Some(ctx.handle_request(&request)?),
             evaluation_date: ctx.evaluation_date(),
             value: None,
             legs: Vec::new(),
         })
     }
-    fn forecast(state: &LoanState, request: &ForwardRateRequest) -> Result<DualFwd> {
+
+    /// Resolves an index observation with its own tenor and quote convention.
+    ///
+    /// Historical dates use exact fixings. Today's fixing takes precedence over
+    /// a forecast; future observations use the index curve's discount-factor
+    /// ratio over the requested start/end dates. Stored fixings have no AD risk.
+    ///
+    /// # Errors
+    /// Propagates missing historical fixings, incomplete observation dates,
+    /// unavailable index curves/conventions, and implied-rate conversion errors.
+    fn resolve_index_rate_observation(
+        state: &LoanValuationState,
+        request: &ForwardRateRequest,
+    ) -> Result<DualFwd> {
         let index = request.market_index();
         if request.fixing_date() < state.evaluation_date {
             return state
@@ -165,69 +206,115 @@ impl LoanPricer {
         )?
         .rate())
     }
-    fn resolve(loan: &Loan<DualFwd>, state: &LoanState) -> Result<Vec<CashflowType<DualFwd>>> {
-        let cashflows = loan.leg().cashflows().to_vec();
-        let mut observations = loan.observations().iter();
+
+    /// Clones the contractual cashflows and installs fixings on unpaid coupons.
+    ///
+    /// Coupons sharing an index, fixing date, and observation interval reuse one
+    /// resolved rate. The loan's cashflows, notionals, and observations are kept.
+    ///
+    /// # Errors
+    /// Rejects missing floating observation entries and propagates forecast errors.
+    fn clone_cashflows_with_resolved_fixings(
+        loan: &Loan<DualFwd>,
+        state: &LoanValuationState,
+    ) -> Result<Vec<CashflowType<DualFwd>>> {
+        let mut cashflows = loan.contractual_leg().cashflows().to_vec();
+        let mut observations = loan.coupon_rate_observations().iter();
         let mut resolved = HashMap::new();
-        for cashflow in &cashflows {
-            match cashflow {
+        for cashflow in &mut cashflows {
+            let payment_date = match cashflow {
                 CashflowType::FixedRateCoupon(_) => {
                     observations.next();
+                    continue;
                 }
-                CashflowType::FloatingRateCoupon(coupon) => {
-                    let request = observations
-                        .next()
-                        .and_then(Option::as_ref)
-                        .ok_or_else(|| QSError::ValueNotSetErr("Loan coupon observation".into()))?;
-                    if coupon.payment_date() <= state.evaluation_date {
-                        continue;
-                    }
-                    let key = (
-                        request.market_index(),
-                        request.fixing_date(),
-                        request.start_date(),
-                        request.end_date(),
-                    );
-                    let rate = if let Some(rate) = resolved.get(&key) {
-                        *rate
-                    } else {
-                        let rate = Self::forecast(state, request)?;
-                        resolved.insert(key, rate);
-                        rate
-                    };
-                    coupon.set_fixing(rate);
-                }
+                CashflowType::FloatingRateCoupon(coupon) => coupon.payment_date(),
+                CashflowType::OptionEmbeddedCoupon(coupon) => coupon.payment_date(),
+                _ => continue,
+            };
+            let request = observations
+                .next()
+                .and_then(Option::as_ref)
+                .ok_or_else(|| QSError::ValueNotSetErr("Loan coupon observation".into()))?;
+            if payment_date <= state.evaluation_date {
+                continue;
+            }
+            let key = (
+                request.market_index(),
+                request.fixing_date(),
+                request.start_date(),
+                request.end_date(),
+            );
+            let rate = if let Some(rate) = resolved.get(&key) {
+                *rate
+            } else {
+                let rate = Self::resolve_index_rate_observation(state, request)?;
+                resolved.insert(key, rate);
+                rate
+            };
+            match cashflow {
+                CashflowType::FloatingRateCoupon(coupon) => coupon.set_fixing(rate),
+                CashflowType::OptionEmbeddedCoupon(coupon) => coupon.set_fixing(rate),
                 _ => {}
             }
         }
         Ok(cashflows)
     }
-    fn refinancing_rate(&self, state: &LoanState, date: Date) -> Result<DualFwd> {
+
+    /// Resolves the configured refinancing benchmark from `date` over its index tenor.
+    ///
+    /// This is an index observation used for the prepayment incentive, rather
+    /// than an all-in replacement-loan quote; spreads and fees are excluded.
+    ///
+    /// # Errors
+    /// Rejects an unset refinancing index or unsupported index frequency, and
+    /// propagates observation-resolution errors.
+    fn observe_refinancing_benchmark_rate(
+        &self,
+        state: &LoanValuationState,
+        date: Date,
+    ) -> Result<DualFwd> {
         let index = self
-            .refinancing_index
+            .refinancing_benchmark_index
             .as_ref()
-            .ok_or_else(|| QSError::ValueNotSetErr("Loan refinancing index".into()))?;
-        let tenor = Period::from_frequency(index.rate_index_details()?.frequency())
-            .ok_or_else(|| QSError::InvalidValueErr("Refinancing index frequency".into()))?;
+            .ok_or_else(|| QSError::ValueNotSetErr("Loan refinancing benchmark index".into()))?;
+        let tenor =
+            Period::from_frequency(index.rate_index_details()?.frequency()).ok_or_else(|| {
+                QSError::InvalidValueErr("Refinancing benchmark index frequency".into())
+            })?;
         let request = ForwardRateRequest::new(index.clone(), date)
             .with_start_date(date)
             .with_end_date(date.advance(tenor.length(), tenor.units()));
-        Self::forecast(state, &request)
+        Self::resolve_index_rate_observation(state, &request)
     }
 
-    /// Resolves coupons and projects expected receipts on cloned legs.
+    /// Projects expected receipts from resolved coupons into separate reporting legs.
+    ///
+    /// Processes resolved coupons strictly after the evaluation date. Scheduled
+    /// principal is paid before conditional prepayment; default recovery uses
+    /// opening principal and is paid at the period's payment date. Survival is
+    /// conditional on the evaluation date. A full monthly prepayment interval
+    /// uses 1/12 year; partial and irregular intervals use Actual/365.
+    ///
+    /// Returns signed receipt PV, excluding the initial advance, and reporting
+    /// legs 0/1/2 for scheduled receipts, prepayments, and recoveries. PV retains
+    /// AD dependencies in survival and prepayment weights; reporting notionals
+    /// and principal amounts are their signed `f64` values.
+    ///
+    /// # Errors
+    /// Propagates unavailable rates/curves, rejects invalid survival or
+    /// prepayment probabilities, and rejects a nonfinite projected value.
     #[allow(clippy::too_many_lines)]
-    fn project(
+    fn calculate_expected_receipts_and_present_value(
         &self,
         trade: &LoanTrade<DualFwd>,
-        state: &LoanState,
+        state: &LoanValuationState,
         cashflows: &[CashflowType<DualFwd>],
     ) -> Result<(DualFwd, Vec<Leg<DualFwd>>)> {
         let loan = trade.instrument();
-        let curve = state.get_discount_curve_element(&self.discount_index(loan)?)?;
+        let curve = state.get_discount_curve_element(&self.select_discount_curve_index(loan)?)?;
         let anchor = curve.curve().discount_factor(state.evaluation_date)?;
         let credit = loan
-            .credit_index()
+            .credit_curve_index()
             .map(|index| state.get_credit_curve_element(index))
             .transpose()?;
         let credit_anchor = credit
@@ -280,6 +367,9 @@ impl LoanPricer {
                 CashflowType::FloatingRateCoupon(coupon) => {
                     coupon.payment_date() <= state.evaluation_date
                 }
+                CashflowType::OptionEmbeddedCoupon(coupon) => {
+                    coupon.payment_date() <= state.evaluation_date
+                }
                 _ => true,
             };
             if past {
@@ -307,6 +397,20 @@ impl LoanPricer {
                         .add_val(coupon.spread()),
                     coupon.amount()?,
                 ),
+                CashflowType::OptionEmbeddedCoupon(coupon) => {
+                    let fixing = coupon
+                        .fixing()
+                        .ok_or_else(|| QSError::ValueNotSetErr("Loan fixing".into()))?;
+                    (
+                        coupon.accrual_start_date(),
+                        coupon.accrual_end_date(),
+                        coupon.payment_date(),
+                        coupon.notional(),
+                        coupon.day_counter()?,
+                        coupon.payoff_ops().eval(fixing)?.add_val(coupon.spread()),
+                        coupon.amount()?,
+                    )
+                }
                 _ => continue,
             };
             let principal = principal_by_date.get(&payment).copied().unwrap_or(0.0);
@@ -330,11 +434,15 @@ impl LoanPricer {
             let probability = if remaining == 0.0 || end <= state.evaluation_date {
                 DualFwd::zero()
             } else {
-                let refinance = if loan.prepayment().requires_refinancing() {
-                    self.refinancing_rate(state, start.max(state.evaluation_date))?
-                } else {
-                    DualFwd::zero()
-                };
+                let refinancing_benchmark_rate =
+                    if loan.prepayment_model().requires_refinancing_benchmark() {
+                        self.observe_refinancing_benchmark_rate(
+                            state,
+                            start.max(state.evaluation_date),
+                        )?
+                    } else {
+                        DualFwd::zero()
+                    };
                 let prepayment_start = start.max(state.evaluation_date);
                 let period_fraction =
                     if prepayment_start.advance(1, crate::time::enums::TimeUnit::Months) == end {
@@ -342,14 +450,16 @@ impl LoanPricer {
                     } else {
                         DayCounter::Actual365.year_fraction(prepayment_start, end)
                     };
-                loan.prepayment().probability(&PrepaymentModelState::new(
-                    prepayment_start,
-                    end,
-                    period_fraction,
-                    DualFwd::scalar(remaining).mul_val(factor),
-                    rate,
-                    refinance,
-                ))?
+                loan.prepayment_model().conditional_prepayment_probability(
+                    &PrepaymentModelState::new(
+                        prepayment_start,
+                        end,
+                        period_fraction,
+                        DualFwd::scalar(remaining).mul_val(factor),
+                        rate,
+                        refinancing_benchmark_rate,
+                    ),
+                )?
             };
             if !probability.value().is_finite() || !(0.0..=1.0).contains(&probability.value()) {
                 return Err(QSError::InvalidValueErr(
@@ -364,7 +474,7 @@ impl LoanPricer {
                 .mul_val(weighted);
             let recovery = previous_survival
                 .sub_val(survival)
-                .mul_val(DualFwd::scalar(opening * loan.recovery()))
+                .mul_val(DualFwd::scalar(opening * loan.recovery_fraction()))
                 .mul_val(factor);
             let discount = curve.curve().discount_factor(payment)?.div_val(anchor);
             value = value.add_val(
@@ -403,6 +513,25 @@ impl LoanPricer {
                             .ok_or_else(|| QSError::ValueNotSetErr("Loan fixing".into()))?,
                     );
                     scheduled.push(CashflowType::FloatingRateCoupon(projected));
+                }
+                CashflowType::OptionEmbeddedCoupon(coupon) => {
+                    scheduled.push(CashflowType::OptionEmbeddedCoupon(
+                        OptionEmbeddedCoupon::new(
+                            reporting_notional,
+                            coupon.market_index().clone(),
+                            coupon.spread(),
+                            start,
+                            end,
+                            payment,
+                            coupon.payoff_ops().clone(),
+                        )
+                        .with_day_counter(day_counter)
+                        .with_fixing(
+                            coupon
+                                .fixing()
+                                .ok_or_else(|| QSError::ValueNotSetErr("Loan fixing".into()))?,
+                        ),
+                    ));
                 }
                 _ => {}
             }
@@ -454,28 +583,51 @@ impl LoanPricer {
     }
 }
 
-struct LoanState {
+/// Market observations and cached expected receipts for one evaluation.
+///
+/// The value retains the AD graph used by sensitivities; the legs supply the
+/// shared cashflow-reporting handler without modifying the contractual loan.
+struct LoanValuationState {
     market_data: Option<MarketData>,
     evaluation_date: Date,
     value: Option<DualFwd>,
     legs: Vec<Leg<DualFwd>>,
 }
-impl PricerState for LoanState {
+
+impl PricerState for LoanValuationState {
+    /// Returns the market data loaded for this evaluation, if available.
     fn get_market_data_reponse(&self) -> Option<&MarketData> {
         self.market_data.as_ref()
     }
+    /// Allows shared state handlers to update the loaded market data.
     fn get_market_data_reponse_mut(&mut self) -> Option<&mut MarketData> {
         self.market_data.as_mut()
     }
 }
-impl LegsProvider<DualFwd> for LoanState {
+
+impl LegsProvider<DualFwd> for LoanValuationState {
+    /// Returns projected scheduled, prepayment, and recovery reporting legs.
     fn legs(&self) -> &[Leg<DualFwd>] {
         &self.legs
     }
 }
-impl HandleCashflows<LoanTrade<DualFwd>, LoanState> for LoanPricer {}
-impl HandleValue<LoanTrade<DualFwd>, LoanState> for LoanPricer {
-    fn handle_value(&self, trade: &LoanTrade<DualFwd>, state: &mut LoanState) -> Result<f64> {
+
+impl HandleCashflows<LoanTrade<DualFwd>, LoanValuationState> for LoanPricer {}
+
+impl HandleValue<LoanTrade<DualFwd>, LoanValuationState> for LoanPricer {
+    /// Computes signed receipt PV once and caches the value and reporting legs.
+    ///
+    /// Records market pillars and projection operations on the forward AD tape
+    /// so subsequent sensitivity requests can reuse the cached graph. Recording
+    /// is stopped after the computation, including when it returns an error.
+    ///
+    /// # Errors
+    /// Propagates missing pillars, observation-resolution, and projection errors.
+    fn handle_value(
+        &self,
+        trade: &LoanTrade<DualFwd>,
+        state: &mut LoanValuationState,
+    ) -> Result<f64> {
         if let Some(value) = state.value {
             return Ok(value.value());
         }
@@ -483,8 +635,9 @@ impl HandleValue<LoanTrade<DualFwd>, LoanState> for LoanPricer {
         Tape::set_mark_fwd();
         let result = (|| {
             state.put_pillars_on_tape()?;
-            let cashflows = Self::resolve(trade.instrument(), state)?;
-            let (value, legs) = self.project(trade, state, &cashflows)?;
+            let cashflows = Self::clone_cashflows_with_resolved_fixings(trade.instrument(), state)?;
+            let (value, legs) =
+                self.calculate_expected_receipts_and_present_value(trade, state, &cashflows)?;
             state.value = Some(value);
             state.legs = legs;
             Ok(value.value())
@@ -493,12 +646,21 @@ impl HandleValue<LoanTrade<DualFwd>, LoanState> for LoanPricer {
         result
     }
 }
-impl HandleSensitivities<LoanTrade<DualFwd>, LoanState> for LoanPricer {
-    /// Sums distinct pillar adjoints by quote label, counting shared nodes once.
+
+impl HandleSensitivities<LoanTrade<DualFwd>, LoanValuationState> for LoanPricer {
+    /// Differentiates cached receipt PV with respect to labelled market pillars.
+    ///
+    /// Shared pillar nodes are counted once; distinct nodes with the same quote
+    /// label contribute to one exposure. Exposures
+    /// are raw derivatives per unit pillar change, including differentiable
+    /// prepayment and survival weights; contractual amortization stays fixed.
+    ///
+    /// # Errors
+    /// Propagates valuation, AD backpropagation, and missing pillar-adjoint errors.
     fn handle_sensitivities(
         &self,
         trade: &LoanTrade<DualFwd>,
-        state: &mut LoanState,
+        state: &mut LoanValuationState,
     ) -> Result<SensitivityMap> {
         self.handle_value(trade, state)?;
         state
@@ -570,14 +732,16 @@ impl HandleSensitivities<LoanTrade<DualFwd>, LoanState> for LoanPricer {
     }
 }
 
-struct LoanFairRate<'a> {
+/// Fair-rate objective holding resolved coupons and the discounted advance target.
+struct LoanFairRateObjective<'a> {
     pricer: &'a LoanPricer,
     trade: &'a LoanTrade<DualFwd>,
-    state: &'a LoanState,
+    state: &'a LoanValuationState,
     cashflows: Vec<CashflowType<DualFwd>>,
     target: f64,
 }
-impl LoanFairRate<'_> {
+
+impl LoanFairRateObjective<'_> {
     /// Limits the upper trial rate to schedules with admissible amortization.
     ///
     /// Long loans with unequal accrual periods can amortize negatively at high
@@ -586,18 +750,24 @@ impl LoanFairRate<'_> {
     /// # Errors
     /// Propagates trial construction errors at the lower search bound.
     fn admissible_upper_bound(&self, lower: f64, upper: f64) -> Result<f64> {
-        if !self.pricer.recompute_schedule {
+        if !self.pricer.rebuild_amortization_for_fair_rate {
             return Ok(upper);
         }
-        self.trial_cashflows(lower)?;
-        if self.trial_cashflows(upper).is_ok() {
+        self.build_cashflows_for_trial_coupon_or_spread(lower)?;
+        if self
+            .build_cashflows_for_trial_coupon_or_spread(upper)
+            .is_ok()
+        {
             return Ok(upper);
         }
         let mut valid = lower;
         let mut invalid = upper;
         for _ in 0..48 {
             let candidate = f64::midpoint(valid, invalid);
-            if self.trial_cashflows(candidate).is_ok() {
+            if self
+                .build_cashflows_for_trial_coupon_or_spread(candidate)
+                .is_ok()
+            {
                 valid = candidate;
             } else {
                 invalid = candidate;
@@ -606,8 +776,20 @@ impl LoanFairRate<'_> {
         Ok(valid)
     }
 
+    /// Creates trial coupons for a candidate fixed annual rate or floating spread.
+    ///
+    /// Existing index fixings are retained. By default, principal cashflows and
+    /// coupon notionals are preserved; recompute mode regenerates amortization
+    /// from repayment metadata and the first trial coupon's all-in rate.
+    ///
+    /// # Errors
+    /// Rejects missing fixings/coupons, missing repayment metadata in recompute
+    /// mode, and invalid trial amortization rates or principal schedules.
     #[allow(clippy::too_many_lines)]
-    fn trial_cashflows(&self, candidate: f64) -> Result<Vec<CashflowType<DualFwd>>> {
+    fn build_cashflows_for_trial_coupon_or_spread(
+        &self,
+        candidate: f64,
+    ) -> Result<Vec<CashflowType<DualFwd>>> {
         let mut coupons = Vec::new();
         for cashflow in &self.cashflows {
             match cashflow {
@@ -643,7 +825,7 @@ impl LoanFairRate<'_> {
                 _ => {}
             }
         }
-        if !self.pricer.recompute_schedule {
+        if !self.pricer.rebuild_amortization_for_fair_rate {
             let mut coupons = coupons.into_iter();
             return self
                 .cashflows
@@ -658,11 +840,15 @@ impl LoanFairRate<'_> {
                 })
                 .collect();
         }
-        let repayment = self.trade.instrument().repayment().ok_or_else(|| {
-            QSError::InvalidValueErr(
+        let repayment =
+            self.trade
+                .instrument()
+                .repayment_structure()
+                .ok_or_else(|| {
+                    QSError::InvalidValueErr(
                 "Custom loan schedules require repayment metadata to recompute amortization".into(),
             )
-        })?;
+                })?;
         let initial_rate = match coupons.first() {
             Some(CashflowType::FixedRateCoupon(coupon)) => coupon.rate().rate().value(),
             Some(CashflowType::FloatingRateCoupon(coupon)) => {
@@ -693,8 +879,11 @@ impl LoanFairRate<'_> {
                 _ => 0.0,
             })
             .collect::<Vec<_>>();
-        let notionals =
-            amortization_schedule(self.trade.instrument().notional(), &period_rates, repayment)?;
+        let notionals = calculate_contractual_opening_balances(
+            self.trade.instrument().notional(),
+            &period_rates,
+            repayment,
+        )?;
         let mut trial = vec![CashflowType::Disbursement(SimpleCashflow::new(
             self.trade.instrument().notional(),
             self.trade.instrument().start_date(),
@@ -745,22 +934,70 @@ impl LoanFairRate<'_> {
         Ok(trial)
     }
 }
-impl ContFunc<f64> for LoanFairRate<'_> {
+
+impl ContFunc<f64> for LoanFairRateObjective<'_> {
+    /// Returns unsigned trial receipt PV divided by advance PV, minus one.
+    ///
+    /// A zero residual represents par funding, independently of the trade side.
+    ///
+    /// # Errors
+    /// Propagates trial-cashflow construction and receipt-projection errors.
     fn call(&self, candidate: &f64) -> Result<f64> {
-        let trial = self.trial_cashflows(*candidate)?;
-        let (value, _) = self.pricer.project(self.trade, self.state, &trial)?;
+        let trial = self.build_cashflows_for_trial_coupon_or_spread(*candidate)?;
+        let (value, _) = self
+            .pricer
+            .calculate_expected_receipts_and_present_value(self.trade, self.state, &trial)?;
         Ok(value.value() * self.trade.side().sign() / self.target - 1.0)
     }
 }
-impl HandleFairRate<LoanTrade<DualFwd>, LoanState> for LoanPricer {
-    fn handle_fair_rate(&self, trade: &LoanTrade<DualFwd>, state: &mut LoanState) -> Result<f64> {
+
+impl HandleFairRate<LoanTrade<DualFwd>, LoanValuationState> for LoanPricer {
+    /// Solves the annual fixed coupon or floating spread that funds the advance.
+    ///
+    /// Matches receipt PV to original principal discounted from origination to
+    /// the evaluation date. Bisection searches within [-0.05, 0.50], narrowing
+    /// the upper bound when rebuilding would produce invalid amortization.
+    /// It uses at most 100 iterations and a funding-residual tolerance of 1e-11.
+    ///
+    /// # Errors
+    /// Rejects valuation after origination, mixed or stepped rates/spreads, and
+    /// bounded coupons: these need an explicitly selected adjustable segment.
+    /// Propagates market/trial errors and reports unbracketed or unconverged solves.
+    fn handle_fair_rate(
+        &self,
+        trade: &LoanTrade<DualFwd>,
+        state: &mut LoanValuationState,
+    ) -> Result<f64> {
         if state.evaluation_date > trade.instrument().start_date() {
             return Err(QSError::InvalidValueErr(
                 "Loan fair rate requires valuation at or before origination".into(),
             ));
         }
         Tape::stop_recording_fwd();
-        let cashflows = Self::resolve(trade.instrument(), state)?;
+        let cashflows = Self::clone_cashflows_with_resolved_fixings(trade.instrument(), state)?;
+        if cashflows
+            .iter()
+            .any(|coupon| matches!(coupon, CashflowType::OptionEmbeddedCoupon(_)))
+        {
+            return Err(QSError::InvalidValueErr(
+                "Loan fair rate does not support bounded coupons".into(),
+            ));
+        }
+        let coupon_rates = cashflows
+            .iter()
+            .filter_map(|coupon| match coupon {
+                CashflowType::FixedRateCoupon(coupon) => {
+                    Some(coupon.rate().rate().value().to_bits())
+                }
+                CashflowType::FloatingRateCoupon(coupon) => Some(coupon.spread().value().to_bits()),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        if coupon_rates.windows(2).any(|rates| rates[0] != rates[1]) {
+            return Err(QSError::InvalidValueErr(
+                "Loan fair rate requires uniform coupons/spreads; specify an adjustable segment for stepped coupons".into(),
+            ));
+        }
         let fixed = cashflows
             .iter()
             .any(|cashflow| matches!(cashflow, CashflowType::FixedRateCoupon(_)));
@@ -772,7 +1009,8 @@ impl HandleFairRate<LoanTrade<DualFwd>, LoanState> for LoanPricer {
                 "Mixed loans need a specified adjustable coupon segment".into(),
             ));
         }
-        let curve = state.get_discount_curve_element(&self.discount_index(trade.instrument())?)?;
+        let curve = state
+            .get_discount_curve_element(&self.select_discount_curve_index(trade.instrument())?)?;
         let target = trade.instrument().notional()
             * curve
                 .curve()
@@ -782,7 +1020,7 @@ impl HandleFairRate<LoanTrade<DualFwd>, LoanState> for LoanPricer {
                 .curve()
                 .discount_factor(state.evaluation_date)?
                 .value();
-        let objective = LoanFairRate {
+        let objective = LoanFairRateObjective {
             pricer: self,
             trade,
             state,
@@ -801,16 +1039,25 @@ impl HandleFairRate<LoanTrade<DualFwd>, LoanState> for LoanPricer {
         Ok(solution.x)
     }
 }
+
 impl Pricer for LoanPricer {
     type Item = LoanTrade<DualFwd>;
     type Policy = dyn DiscountPolicy;
+    /// Evaluates requested results against a fresh market-data state.
+    ///
+    /// Supports `Value`, `Cashflows`, `Sensitivities`, and `FairRate` in the
+    /// caller's order. Repeated value/cashflow requests share a cached projection.
+    ///
+    /// # Errors
+    /// Rejects a missing discount policy or unsupported result requests, and
+    /// propagates data/handler errors.
     fn evaluate(
         &self,
         trade: &Self::Item,
         requests: &[Request],
         ctx: &impl MarketDataProvider,
     ) -> Result<EvaluationResults> {
-        let mut state = self.prepare_state(trade, ctx)?;
+        let mut state = self.load_loan_valuation_state(trade, ctx)?;
         let mut results =
             EvaluationResults::new(ctx.evaluation_date(), trade.instrument().identifier());
         for request in requests {
@@ -835,17 +1082,22 @@ impl Pricer for LoanPricer {
         }
         Ok(results)
     }
+    /// Collects deduplicated discount, coupon-index, refinancing, and credit curves.
+    ///
+    /// Coupon fixing requests are initially optional; `load_loan_valuation_state` requires
+    /// historical observations only for unpaid coupons. Returns `None` if the
+    /// discount index cannot be selected or required refinancing is unconfigured.
     fn market_data_request(&self, trade: &Self::Item) -> Option<MarketDataRequest> {
         let loan = trade.instrument();
-        let mut indices = vec![self.discount_index(loan).ok()?];
+        let mut indices = vec![self.select_discount_curve_index(loan).ok()?];
         indices.extend(
-            loan.observations()
+            loan.coupon_rate_observations()
                 .iter()
                 .flatten()
                 .map(ForwardRateRequest::market_index),
         );
-        if loan.prepayment().requires_refinancing() {
-            indices.push(self.refinancing_index.clone()?);
+        if loan.prepayment_model().requires_refinancing_benchmark() {
+            indices.push(self.refinancing_benchmark_index.clone()?);
         }
         let mut seen = HashSet::new();
         let mut elements = indices
@@ -853,14 +1105,14 @@ impl Pricer for LoanPricer {
             .filter(|index| seen.insert(index.clone()))
             .map(|market_index| ConstructedElementRequest::DiscountCurve { market_index })
             .collect::<Vec<_>>();
-        if let Some(index) = loan.credit_index() {
+        if let Some(index) = loan.credit_curve_index() {
             elements.push(ConstructedElementRequest::CreditCurve {
                 market_index: index.clone(),
             });
         }
         let mut seen_fixings = HashSet::new();
         let fixings = loan
-            .observations()
+            .coupon_rate_observations()
             .iter()
             .flatten()
             .filter(|request| seen_fixings.insert((request.market_index(), request.fixing_date())))
@@ -875,9 +1127,11 @@ impl Pricer for LoanPricer {
                 .with_fixings_request(fixings),
         )
     }
+    /// Installs a policy used to select the loan's discount curve.
     fn set_discount_policy(&mut self, policy: Box<Self::Policy>) {
         self.discount_policy = Some(policy);
     }
+    /// Returns the configured policy; pricing requires a policy to be present.
     fn discount_policy(&self) -> Option<&Self::Policy> {
         self.discount_policy.as_deref()
     }
@@ -918,7 +1172,7 @@ mod tests {
             Ok(self.data.clone())
         }
     }
-    fn market(discount: f64, forward: f64, hazard: f64) -> Provider {
+    fn build_test_market(discount: f64, forward: f64, hazard: f64) -> Provider {
         let date = Date::new(2026, 1, 1);
         let mut elements = ConstructedElementStore::default();
         for (index, rate, label) in [
@@ -974,10 +1228,10 @@ mod tests {
     }
     #[test]
     fn discounting_requires_a_policy_and_can_change_without_changing_the_contract() -> Result<()> {
-        let provider = market(0.03, 0.04, 0.0);
-        let loan = builder().build()?;
+        let provider = build_test_market(0.03, 0.04, 0.0);
+        let loan = default_loan_builder().build()?;
         assert!(loan.discount_index().is_none());
-        assert!(loan.leg().discount_index().is_none());
+        assert!(loan.contractual_leg().discount_index().is_none());
         let trade = LoanTrade::new(loan, provider.date, Side::LongReceive);
         let error = LoanPricer::new()
             .evaluate(&trade, &[Request::Value], &provider)
@@ -997,20 +1251,28 @@ mod tests {
             estr.cashflows().map(|table| table.amounts()),
             euribor.cashflows().map(|table| table.amounts())
         );
-        assert!(trade.instrument().leg().discount_index().is_none());
+        assert!(trade
+            .instrument()
+            .contractual_leg()
+            .discount_index()
+            .is_none());
         Ok(())
     }
-    fn builder() -> MakeLoan<DualFwd> {
+    fn default_loan_builder() -> MakeLoan<DualFwd> {
         MakeLoan::default()
             .with_identifier("LOAN".into())
             .with_start_date(Date::new(2026, 1, 1))
             .with_maturity_date(Date::new(2028, 1, 1))
             .with_notional(100_000.0)
             .with_currency(Currency::EUR)
-            .with_rate(LoanRateDefinition::Fixed(0.06))
+            .with_coupons(vec![CashflowType::fixed(0.06)])
             .with_day_counter(DayCounter::Actual360)
     }
-    fn value(pricer: &LoanPricer, trade: &LoanTrade<DualFwd>, market: &Provider) -> Result<f64> {
+    fn evaluate_loan_receipt_present_value(
+        pricer: &LoanPricer,
+        trade: &LoanTrade<DualFwd>,
+        market: &Provider,
+    ) -> Result<f64> {
         pricer
             .evaluate(trade, &[Request::Value], market)?
             .price()
@@ -1018,11 +1280,11 @@ mod tests {
     }
     #[test]
     fn shared_cashflow_request_matches_pv_and_request_order_is_stable() -> Result<()> {
-        let provider = market(0.03, 0.04, 0.0);
-        let loan = builder()
-            .with_prepayment(PrepaymentModelConfiguration::Cpr(0.25))
+        let provider = build_test_market(0.03, 0.04, 0.0);
+        let loan = default_loan_builder()
+            .with_prepayment_configuration(PrepaymentModelConfiguration::Cpr(0.25))
             .build()?;
-        let original = loan.leg().cashflows().len();
+        let original = loan.contractual_leg().cashflows().len();
         let trade = LoanTrade::new(loan, provider.date, Side::LongReceive);
         let pricer = estr_loan_pricer();
         let result = pricer.evaluate(
@@ -1061,30 +1323,42 @@ mod tests {
             .map(|(amount, _)| amount)
             .sum();
         assert!((principal - 100_000.0).abs() < 1e-7);
-        assert_eq!(trade.instrument().leg().cashflows().len(), original);
+        assert_eq!(
+            trade.instrument().contractual_leg().cashflows().len(),
+            original
+        );
         let short = LoanTrade::new(trade.instrument().clone(), provider.date, Side::PayShort);
-        assert!((value(&pricer, &short, &provider)? + expected).abs() < 1e-7);
+        assert!(
+            (evaluate_loan_receipt_present_value(&pricer, &short, &provider)? + expected).abs()
+                < 1e-7
+        );
         Ok(())
     }
+
     #[test]
     fn floating_market_changes_preserve_principal_and_exact_reset_fixings() -> Result<()> {
-        let loan = builder()
-            .with_rate(LoanRateDefinition::Floating {
-                index: MarketIndex::EURIBOR12m,
-                spread: 0.01,
-            })
-            .with_amortization_rate(0.05)
+        let loan = default_loan_builder()
+            .with_coupons(vec![CashflowType::floating(
+                MarketIndex::EURIBOR12m,
+                0.01,
+                None,
+                None,
+            )])
+            .with_initial_amortization_rate(0.05)
             .with_calendar(Calendar::TARGET(
                 crate::time::calendars::target::TARGET::new(),
             ))
-            .with_fixing_lag(2)
+            .with_fixing_lag_business_days(2)
             .build()?;
         let trade = LoanTrade::new(loan, Date::new(2026, 1, 1), Side::LongReceive);
         let pricer = estr_loan_pricer();
         let mut redemptions = Vec::new();
         for rate in [0.02, 0.06] {
-            let result =
-                pricer.evaluate(&trade, &[Request::Cashflows], &market(0.03, rate, 0.0))?;
+            let result = pricer.evaluate(
+                &trade,
+                &[Request::Cashflows],
+                &build_test_market(0.03, rate, 0.0),
+            )?;
             let table = result
                 .cashflows()
                 .ok_or_else(|| QSError::ValueNotSetErr("Cashflows".into()))?;
@@ -1105,23 +1379,26 @@ mod tests {
                 .all(|fixing| (*fixing - 0.04).abs() < 1e-14));
         }
         assert_eq!(redemptions[0], redemptions[1]);
-        let mut missing = market(0.03, 0.04, 0.0);
+        let mut missing = build_test_market(0.03, 0.04, 0.0);
         missing.data = MarketData::new(HashMap::new(), missing.data.constructed_elements().clone());
         assert!(pricer
             .evaluate(&trade, &[Request::Value], &missing)
             .is_err());
         Ok(())
     }
+
     #[test]
     fn seasoned_cashflows_request_only_observations_needed_by_future_coupons() -> Result<()> {
-        let loan = builder()
-            .with_rate(LoanRateDefinition::Floating {
-                index: MarketIndex::EURIBOR12m,
-                spread: 0.01,
-            })
-            .with_amortization_rate(0.05)
+        let loan = default_loan_builder()
+            .with_coupons(vec![CashflowType::floating(
+                MarketIndex::EURIBOR12m,
+                0.01,
+                None,
+                None,
+            )])
+            .with_initial_amortization_rate(0.05)
             .build()?;
-        let mut provider = market(0.03, 0.04, 0.0);
+        let mut provider = build_test_market(0.03, 0.04, 0.0);
         provider.date = Date::new(2027, 1, 1);
         provider.data =
             MarketData::new(HashMap::new(), provider.data.constructed_elements().clone());
@@ -1149,45 +1426,43 @@ mod tests {
 
     #[test]
     fn fair_rate_rebuilds_thirty_year_mortgages_with_actual_month_lengths() -> Result<()> {
-        let provider = market(0.03, 0.04, 0.0);
+        let provider = build_test_market(0.03, 0.04, 0.0);
         for floating in [false, true] {
             let rate = if floating {
-                LoanRateDefinition::Floating {
-                    index: MarketIndex::EURIBOR12m,
-                    spread: 0.01,
-                }
+                CashflowType::floating(MarketIndex::EURIBOR12m, 0.01, None, None)
             } else {
-                LoanRateDefinition::Fixed(0.06)
+                CashflowType::fixed(0.06)
             };
-            let builder = builder()
+            let builder = default_loan_builder()
                 .with_maturity_date(Date::new(2056, 1, 1))
                 .with_notional(250_000.0)
-                .with_rate(rate)
-                .with_amortization_rate(if floating { 0.05 } else { 0.06 });
+                .with_coupons(vec![rate])
+                .with_initial_amortization_rate(if floating { 0.05 } else { 0.06 });
             let trade = LoanTrade::new(builder.clone().build()?, provider.date, Side::LongReceive);
-            let pricer = estr_loan_pricer().with_recompute_schedule(true);
+            let pricer = estr_loan_pricer().with_fair_rate_amortization_rebuild(true);
             let fair = pricer
                 .evaluate(&trade, &[Request::FairRate], &provider)?
                 .fair_rate()
                 .ok_or_else(|| QSError::ValueNotSetErr("Mortgage fair rate".into()))?;
             let rate = if floating {
-                LoanRateDefinition::Floating {
-                    index: MarketIndex::EURIBOR12m,
-                    spread: fair,
-                }
+                CashflowType::floating(MarketIndex::EURIBOR12m, fair, None, None)
             } else {
-                LoanRateDefinition::Fixed(fair)
+                CashflowType::fixed(fair)
             };
             let initial_index = 0.04_f64.exp_m1() / (365.0 / 360.0);
             let par = LoanTrade::new(
                 builder
-                    .with_rate(rate)
-                    .with_amortization_rate(if floating { initial_index + fair } else { fair })
+                    .with_coupons(vec![rate])
+                    .with_initial_amortization_rate(if floating {
+                        initial_index + fair
+                    } else {
+                        fair
+                    })
                     .build()?,
                 provider.date,
                 Side::LongReceive,
             );
-            let value = value(&pricer, &par, &provider)?;
+            let value = evaluate_loan_receipt_present_value(&pricer, &par, &provider)?;
             assert!((value - 250_000.0).abs() < 1e-5);
         }
         Ok(())
@@ -1196,20 +1471,17 @@ mod tests {
     #[test]
     #[allow(clippy::too_many_lines)]
     fn fair_rate_preserves_or_recomputes_existing_schedule() -> Result<()> {
-        let provider = market(0.03, 0.04, 0.0);
+        let provider = build_test_market(0.03, 0.04, 0.0);
         for floating in [false, true] {
             let rate = if floating {
-                LoanRateDefinition::Floating {
-                    index: MarketIndex::EURIBOR12m,
-                    spread: 0.01,
-                }
+                CashflowType::floating(MarketIndex::EURIBOR12m, 0.01, None, None)
             } else {
-                LoanRateDefinition::Fixed(0.09)
+                CashflowType::fixed(0.09)
             };
             let original_rate = if floating { 0.05 } else { 0.09 };
-            let original_builder = builder()
-                .with_rate(rate)
-                .with_amortization_rate(original_rate);
+            let original_builder = default_loan_builder()
+                .with_coupons(vec![rate])
+                .with_initial_amortization_rate(original_rate);
             let trade = LoanTrade::new(
                 original_builder.clone().build()?,
                 provider.date,
@@ -1217,7 +1489,7 @@ mod tests {
             );
             let snapshot = trade
                 .instrument()
-                .leg()
+                .contractual_leg()
                 .cashflows()
                 .iter()
                 .filter_map(|cashflow| {
@@ -1229,18 +1501,15 @@ mod tests {
                 })
                 .collect::<Vec<_>>();
             for rebuild in [false, true] {
-                let pricer = estr_loan_pricer().with_recompute_schedule(rebuild);
+                let pricer = estr_loan_pricer().with_fair_rate_amortization_rebuild(rebuild);
                 let fair = pricer
                     .evaluate(&trade, &[Request::FairRate], &provider)?
                     .fair_rate()
                     .ok_or_else(|| QSError::ValueNotSetErr("Fair rate".into()))?;
                 let rate = if floating {
-                    LoanRateDefinition::Floating {
-                        index: MarketIndex::EURIBOR12m,
-                        spread: fair,
-                    }
+                    CashflowType::floating(MarketIndex::EURIBOR12m, fair, None, None)
                 } else {
-                    LoanRateDefinition::Fixed(fair)
+                    CashflowType::fixed(fair)
                 };
                 let initial_index = 0.04_f64.exp_m1() / (365.0 / 360.0);
                 let amortization_rate = if rebuild {
@@ -1255,16 +1524,21 @@ mod tests {
                 let candidate = LoanTrade::new(
                     original_builder
                         .clone()
-                        .with_rate(rate)
-                        .with_amortization_rate(amortization_rate)
+                        .with_coupons(vec![rate])
+                        .with_initial_amortization_rate(amortization_rate)
                         .build()?,
                     provider.date,
                     Side::LongReceive,
                 );
-                assert!((value(&pricer, &candidate, &provider)? - 100_000.0).abs() < 1e-5);
+                assert!(
+                    (evaluate_loan_receipt_present_value(&pricer, &candidate, &provider)?
+                        - 100_000.0)
+                        .abs()
+                        < 1e-5
+                );
                 let candidate_schedule = candidate
                     .instrument()
-                    .leg()
+                    .contractual_leg()
                     .cashflows()
                     .iter()
                     .filter_map(|cashflow| {
@@ -1283,7 +1557,7 @@ mod tests {
             }
             let after = trade
                 .instrument()
-                .leg()
+                .contractual_leg()
                 .cashflows()
                 .iter()
                 .filter_map(|cashflow| {
@@ -1300,10 +1574,10 @@ mod tests {
     }
     #[test]
     fn custom_prepayment_function_is_used_and_invalid_probabilities_fail() -> Result<()> {
-        let loan = builder()
-            .with_prepayment_function(|_: &PrepaymentModelState<DualFwd>| Ok(DualFwd::one()))
+        let loan = default_loan_builder()
+            .with_custom_prepayment_model(|_: &PrepaymentModelState<DualFwd>| Ok(DualFwd::one()))
             .build()?;
-        let provider = market(0.03, 0.04, 0.0);
+        let provider = build_test_market(0.03, 0.04, 0.0);
         let trade = LoanTrade::new(loan, provider.date, Side::LongReceive);
         let result = estr_loan_pricer().evaluate(&trade, &[Request::Cashflows], &provider)?;
         let table = result
@@ -1318,8 +1592,10 @@ mod tests {
                 .len(),
             1
         );
-        let invalid = builder()
-            .with_prepayment_function(|_: &PrepaymentModelState<DualFwd>| Ok(DualFwd::scalar(1.1)))
+        let invalid = default_loan_builder()
+            .with_custom_prepayment_model(|_: &PrepaymentModelState<DualFwd>| {
+                Ok(DualFwd::scalar(1.1))
+            })
             .build()?;
         assert!(estr_loan_pricer()
             .evaluate(
@@ -1332,39 +1608,43 @@ mod tests {
     }
     #[test]
     fn discount_forward_credit_and_refinancing_risk_match_bumps() -> Result<()> {
-        let loan = builder()
-            .with_rate(LoanRateDefinition::Floating {
-                index: MarketIndex::EURIBOR12m,
-                spread: 0.02,
-            })
-            .with_amortization_rate(0.06)
-            .with_credit_index(MarketIndex::Credit("BORROWER".into()))
-            .with_prepayment(PrepaymentModelConfiguration::Refinancing {
+        let loan = default_loan_builder()
+            .with_coupons(vec![CashflowType::floating(
+                MarketIndex::EURIBOR12m,
+                0.02,
+                None,
+                None,
+            )])
+            .with_initial_amortization_rate(0.06)
+            .with_credit_curve_index(MarketIndex::Credit("BORROWER".into()))
+            .with_prepayment_configuration(PrepaymentModelConfiguration::Refinancing {
                 base_cpr: 0.02,
                 incentive_multiplier: 4.0,
                 maximum_cpr: 0.4,
             })
             .build()?;
-        let provider = market(0.03, 0.04, 0.01);
+        let provider = build_test_market(0.03, 0.04, 0.01);
         let trade = LoanTrade::new(loan, provider.date, Side::LongReceive);
-        let pricer = estr_loan_pricer().with_refinancing_index(MarketIndex::EURIBOR12m);
+        let pricer = estr_loan_pricer().with_refinancing_benchmark_index(MarketIndex::EURIBOR12m);
         let result = pricer.evaluate(&trade, &[Request::Sensitivities], &provider)?;
         let risk = result
             .sensitivities()
             .ok_or_else(|| QSError::ValueNotSetErr("Risk".into()))?;
         for (label, derivative) in risk.instrument_keys().iter().zip(risk.exposure()) {
             let bump = 1e-6;
-            let up = market(
+            let up = build_test_market(
                 0.03 + if label == "DISCOUNT" { bump } else { 0.0 },
                 0.04 + if label == "FORWARD" { bump } else { 0.0 },
                 0.01 + if label == "CREDIT" { bump } else { 0.0 },
             );
-            let down = market(
+            let down = build_test_market(
                 0.03 - if label == "DISCOUNT" { bump } else { 0.0 },
                 0.04 - if label == "FORWARD" { bump } else { 0.0 },
                 0.01 - if label == "CREDIT" { bump } else { 0.0 },
             );
-            let fd = (value(&pricer, &trade, &up)? - value(&pricer, &trade, &down)?) / (2.0 * bump);
+            let fd = (evaluate_loan_receipt_present_value(&pricer, &trade, &up)?
+                - evaluate_loan_receipt_present_value(&pricer, &trade, &down)?)
+                / (2.0 * bump);
             assert!(
                 (fd - derivative).abs() < derivative.abs().mul_add(1e-5, 0.1),
                 "{label}: AD {derivative}, FD {fd}"

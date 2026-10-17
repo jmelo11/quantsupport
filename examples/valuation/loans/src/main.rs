@@ -5,7 +5,15 @@ use std::collections::HashSet;
 
 type ExampleResult<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
-fn market(fixings: FixingStore, scenarios: Vec<Scenario>) -> ExampleResult<PricingContext> {
+/// Loads shared EUR quotes/curve specs and initializes them with supplied fixings
+/// and scenarios, using ESTR as the base discount curve.
+///
+/// # Errors
+/// Propagates JSON decoding, quote conversion, and market construction errors.
+fn build_initialized_loan_market(
+    fixings: FixingStore,
+    scenarios: Vec<Scenario>,
+) -> ExampleResult<PricingContext> {
     let records: QuoteStoreRecords =
         serde_json::from_str(include_str!("../data/loan_quotes.json"))?;
     let curves: Vec<CurveConfiguration> =
@@ -23,20 +31,22 @@ fn market(fixings: FixingStore, scenarios: Vec<Scenario>) -> ExampleResult<Prici
     context.initialize()?;
     Ok(context)
 }
-fn terms(reference: Date, identifier: &str) -> MakeLoan<DualFwd> {
+/// Supplies common 30-year EUR mortgage terms: 250,000 principal, 6% fixed coupon,
+/// monthly French payments, Actual/360, TARGET, and a two-business-day fixing lag.
+fn default_loan_terms(reference: Date, identifier: &str) -> MakeLoan<DualFwd> {
     MakeLoan::default()
         .with_identifier(identifier.into())
         .with_start_date(reference)
         .with_maturity_date(reference.advance(30, TimeUnit::Years))
         .with_notional(250_000.0)
         .with_currency(Currency::EUR)
-        .with_rate(LoanRateDefinition::Fixed(0.06))
+        .with_coupons(vec![CashflowType::fixed(0.06)])
         .with_repayment_structure(LoanRepaymentStructure::French)
         .with_payment_frequency(Frequency::Monthly)
         .with_day_counter(DayCounter::Actual360)
         .with_calendar(Calendar::TARGET(TARGET::new()))
         .with_business_day_convention(BusinessDayConvention::Following)
-        .with_fixing_lag(2)
+        .with_fixing_lag_business_days(2)
 }
 /// Selects ESTR discounting for EUR loan valuations.
 fn estr_loan_pricer() -> LoanPricer {
@@ -47,13 +57,32 @@ fn estr_loan_pricer() -> LoanPricer {
     ));
     pricer
 }
-fn price(pricer: &LoanPricer, trade: &LoanTrade<DualFwd>, context: &PricingContext) -> Result<f64> {
+/// Extracts signed receipt PV from a Value request on an initialized context.
+///
+/// # Errors
+/// Propagates pricing errors or a missing Value result.
+fn evaluate_loan_receipt_present_value(
+    pricer: &LoanPricer,
+    trade: &LoanTrade<DualFwd>,
+    context: &PricingContext,
+) -> Result<f64> {
     pricer
         .evaluate(trade, &[Request::Value], context)?
         .price()
         .ok_or_else(|| QSError::ValueNotSetErr("Loan value".into()))
 }
-fn reconcile(result: &EvaluationResults, context: &PricingContext) -> Result<()> {
+/// Verifies that expected cashflow receipts discounted on ESTR reproduce Value.
+///
+/// # Errors
+/// Rejects missing cashflow results or an absent ESTR curve, and propagates
+/// discount-factor errors.
+///
+/// # Panics
+/// Panics when discounted receipts differ from Value by at least 1e-6.
+fn assert_discounted_receipts_match_value(
+    result: &EvaluationResults,
+    context: &PricingContext,
+) -> Result<()> {
     let table = result
         .cashflows()
         .ok_or_else(|| QSError::ValueNotSetErr("Loan cashflows".into()))?;
@@ -69,23 +98,36 @@ fn reconcile(result: &EvaluationResults, context: &PricingContext) -> Result<()>
     assert!((pv - result.price().unwrap_or_default()).abs() < 1e-6);
     Ok(())
 }
+/// Runs loan construction, fixing, prepayment, credit, fair-rate, and risk examples.
+///
+/// # Errors
+/// Propagates contract, market-data, and valuation errors.
+///
+/// # Panics
+/// Panics if the example's principal, receipt PV, fair-rate, or risk checks fail.
 fn main() -> ExampleResult<()> {
     let reference = Date::new(2026, 2, 24);
-    let fixed_builder = terms(reference, "FIXED");
-    let floating_builder = terms(reference, "FLOATING")
-        .with_rate(LoanRateDefinition::Floating {
-            index: MarketIndex::EURIBOR12m,
-            spread: 0.01,
-        })
-        .with_amortization_rate(0.05); // Initial all-in rate sets a fixed principal schedule.
+    let fixed_builder = default_loan_terms(reference, "FIXED");
+    let floating_builder = default_loan_terms(reference, "FLOATING")
+        .with_coupons(vec![CashflowType::floating(
+            MarketIndex::EURIBOR12m,
+            0.01,
+            None,
+            None,
+        )])
+        .with_initial_amortization_rate(0.05); // Initial all-in rate sets a fixed principal schedule.
     let fixed = fixed_builder.clone().build()?;
     let floating = floating_builder.clone().build()?;
-    let mixed = terms(reference, "MIXED")
-        .with_rate(LoanRateDefinition::Mixed {
-            fixed_rate: 0.04,
-            switch_date: reference.advance(5, TimeUnit::Years),
-            index: MarketIndex::EURIBOR12m,
-            spread: 0.01,
+    let mixed = default_loan_terms(reference, "MIXED")
+        .with_coupons({
+            let mut coupons = vec![CashflowType::fixed(0.04); 60];
+            coupons.push(CashflowType::floating(
+                MarketIndex::EURIBOR12m,
+                0.01,
+                None,
+                None,
+            ));
+            coupons
         })
         .build()?;
 
@@ -93,7 +135,7 @@ fn main() -> ExampleResult<()> {
     // Reset frequency comes from index metadata, separately from compounding.
     let mut seen = HashSet::new();
     let mut fixings = FixingStore::default();
-    for observation in floating.observations().iter().flatten() {
+    for observation in floating.coupon_rate_observations().iter().flatten() {
         if seen.insert(observation.fixing_date()) {
             println!(
                 "EURIBOR12m fixing {}: {:?} to {:?}",
@@ -107,7 +149,7 @@ fn main() -> ExampleResult<()> {
         }
     }
     assert_eq!(seen.len(), 30);
-    let context = market(fixings.clone(), vec![])?;
+    let context = build_initialized_loan_market(fixings.clone(), vec![])?;
     let pricer = estr_loan_pricer();
     for loan in [fixed.clone(), floating.clone(), mixed] {
         let trade = LoanTrade::new(loan, reference, Side::LongReceive);
@@ -116,7 +158,7 @@ fn main() -> ExampleResult<()> {
             &[Request::Value, Request::Cashflows, Request::Sensitivities],
             &context,
         )?;
-        reconcile(&result, &context)?;
+        assert_discounted_receipts_match_value(&result, &context)?;
         println!(
             "{} receipt PV: EUR {:.2}",
             trade.instrument().identifier(),
@@ -128,10 +170,10 @@ fn main() -> ExampleResult<()> {
     let prepaying = fixed_builder
         .clone()
         .with_identifier("CPR".into())
-        .with_prepayment(PrepaymentModelConfiguration::Cpr(0.25))
+        .with_prepayment_configuration(PrepaymentModelConfiguration::Cpr(0.25))
         .build()?;
     let fixed_redemptions = |loan: &Loan<DualFwd>| {
-        loan.leg()
+        loan.contractual_leg()
             .cashflows()
             .iter()
             .filter_map(|cashflow| {
@@ -149,7 +191,7 @@ fn main() -> ExampleResult<()> {
         &[Request::Value, Request::Cashflows],
         &context,
     )?;
-    reconcile(&result, &context)?;
+    assert_discounted_receipts_match_value(&result, &context)?;
     let table = result
         .cashflows()
         .ok_or_else(|| QSError::ValueNotSetErr("CPR receipts".into()))?;
@@ -168,7 +210,7 @@ fn main() -> ExampleResult<()> {
 
     // Fair-rate calculation can preserve the original schedule or recompute it.
     for rebuild in [false, true] {
-        let pricer = estr_loan_pricer().with_recompute_schedule(rebuild);
+        let pricer = estr_loan_pricer().with_fair_rate_amortization_rebuild(rebuild);
         for (builder, original_rate, floating) in [
             (fixed_builder.clone(), 0.06, false),
             (floating_builder.clone(), 0.05, true),
@@ -179,12 +221,9 @@ fn main() -> ExampleResult<()> {
                 .fair_rate()
                 .ok_or_else(|| QSError::ValueNotSetErr("Fair rate".into()))?;
             let rate = if floating {
-                LoanRateDefinition::Floating {
-                    index: MarketIndex::EURIBOR12m,
-                    spread: fair,
-                }
+                CashflowType::floating(MarketIndex::EURIBOR12m, fair, None, None)
             } else {
-                LoanRateDefinition::Fixed(fair)
+                CashflowType::fixed(fair)
             };
             let amortization_rate = if rebuild {
                 if floating {
@@ -197,16 +236,16 @@ fn main() -> ExampleResult<()> {
             };
             let par = LoanTrade::new(
                 builder
-                    .with_rate(rate)
-                    .with_amortization_rate(amortization_rate)
+                    .with_coupons(vec![rate])
+                    .with_initial_amortization_rate(amortization_rate)
                     .build()?,
                 reference,
                 Side::LongReceive,
             );
-            let pv = price(&pricer, &par, &context)?;
+            let pv = evaluate_loan_receipt_present_value(&pricer, &par, &context)?;
             assert!((pv - 250_000.0).abs() < 1e-5);
             println!(
-                "{} recompute_schedule={rebuild}: fair coupon/spread {:.6}%, repriced PV EUR {pv:.2}",
+                "{} rebuild_amortization_for_fair_rate={rebuild}: fair coupon/spread {:.6}%, repriced PV EUR {pv:.2}",
                 trade.instrument().identifier(),
                 fair * 100.0
             );
@@ -225,50 +264,52 @@ fn main() -> ExampleResult<()> {
         .max_by(|a, b| a.1.abs().total_cmp(&b.1.abs()))
         .ok_or_else(|| QSError::ValueNotSetErr("Risk pillar".into()))?;
     let bump = 1e-5;
-    let up = market(
+    let up = build_initialized_loan_market(
         fixings.clone(),
         vec![Scenario::new(pillar, bump, ScenarioType::Absolute)],
     )?;
-    let down = market(
+    let down = build_initialized_loan_market(
         fixings.clone(),
         vec![Scenario::new(pillar, -bump, ScenarioType::Absolute)],
     )?;
-    let fd = (price(&pricer, &trade, &up)? - price(&pricer, &trade, &down)?) / (2.0 * bump);
+    let fd = (evaluate_loan_receipt_present_value(&pricer, &trade, &up)?
+        - evaluate_loan_receipt_present_value(&pricer, &trade, &down)?)
+        / (2.0 * bump);
     assert!((fd - derivative).abs() < 0.1 + derivative.abs() * 1e-3);
     println!("{pillar}: AAD {derivative:.4}, central difference {fd:.4}");
 
     let credit = fixed_builder
         .clone()
         .with_identifier("CREDIT".into())
-        .with_credit_index(MarketIndex::Credit("BORROWER".into()))
-        .with_recovery(0.4)
+        .with_credit_curve_index(MarketIndex::Credit("BORROWER".into()))
+        .with_recovery_fraction(0.4)
         .build()?;
     let result = pricer.evaluate(
         &LoanTrade::new(credit, reference, Side::LongReceive),
         &[Request::Value, Request::Cashflows],
         &context,
     )?;
-    reconcile(&result, &context)?;
+    assert_discounted_receipts_match_value(&result, &context)?;
     println!(
         "Credit receipt PV: EUR {:.2}",
         result.price().unwrap_or_default()
     );
     let refinancing = fixed_builder
         .with_identifier("REFINANCING".into())
-        .with_prepayment(PrepaymentModelConfiguration::Refinancing {
+        .with_prepayment_configuration(PrepaymentModelConfiguration::Refinancing {
             base_cpr: 0.02,
             incentive_multiplier: 4.0,
             maximum_cpr: 0.4,
         })
         .build()?;
     let result = estr_loan_pricer()
-        .with_refinancing_index(MarketIndex::EURIBOR12m)
+        .with_refinancing_benchmark_index(MarketIndex::EURIBOR12m)
         .evaluate(
             &LoanTrade::new(refinancing, reference, Side::LongReceive),
             &[Request::Value, Request::Cashflows],
             &context,
         )?;
-    reconcile(&result, &context)?;
+    assert_discounted_receipts_match_value(&result, &context)?;
     println!(
         "Refinancing-sensitive receipt PV: EUR {:.2}",
         result.price().unwrap_or_default()

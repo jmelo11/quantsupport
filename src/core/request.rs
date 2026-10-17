@@ -1,11 +1,8 @@
 use crate::ad::{dual::DualFwd, scalar::Scalar};
 use crate::core::collateral::Discountable;
-use crate::time::daycounter::DayCounter;
 use crate::{
     core::evaluationresults::{CashflowsTable, SensitivityMap},
-    instruments::cashflows::{
-        cashflow::Cashflow, cashflowtype::CashflowType, coupons::NonLinearCoupon, leg::Leg,
-    },
+    instruments::cashflows::{cashflow::Cashflow, cashflowtype::CashflowType, leg::Leg},
     utils::errors::Result,
 };
 
@@ -176,7 +173,7 @@ where
                         let payment_date = coupon.payment_date();
                         let accrual_start = coupon.accrual_start_date();
                         let accrual_end = coupon.accrual_end_date();
-                        let day_counter = DayCounter::Actual360;
+                        let day_counter = coupon.day_counter()?;
                         let accrual_period = day_counter.year_fraction(accrual_start, accrual_end);
                         let fixing = coupon.fixing().map(|f| f.value());
 

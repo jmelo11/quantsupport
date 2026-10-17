@@ -2,6 +2,7 @@
 
 mod bondpricinganchor;
 mod collateral;
+mod coupons;
 mod context;
 mod conv;
 mod curves;
@@ -31,6 +32,7 @@ pyo3::create_exception!(
 fn quantsupport(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Enums
     m.add_class::<enums::Level>()?;
+    m.add_class::<enums::Interpolator>()?;
     m.add_class::<enums::Currency>()?;
     m.add_class::<enums::MarketIndex>()?;
     m.add_class::<enums::Side>()?;
@@ -89,14 +91,17 @@ fn quantsupport(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<trades::Swap>()?;
     m.add_class::<loan::Loan>()?;
     m.add_class::<loanpricer::LoanPricer>()?;
-    m.add_class::<loanterms::LoanRateDefinition>()?;
     m.add_class::<loanterms::LoanRepaymentStructure>()?;
     m.add_class::<loanterms::PrepaymentModelConfiguration>()?;
     m.add_class::<trades::CrossCurrencySwap>()?;
     m.add_class::<trades::BasisSwap>()?;
     m.add_class::<trades::FixFloatCrossCurrencySwap>()?;
     m.add_class::<trades::FixedRateBond>()?;
-    m.add_class::<trades::Coupon>()?;
+    m.add_class::<coupons::InterestRate>()?;
+    m.add_class::<coupons::PayoffOps>()?;
+    m.add_class::<coupons::FixedRateCoupon>()?;
+    m.add_class::<coupons::FloatingRateCoupon>()?;
+    m.add_class::<coupons::OptionEmbeddedCoupon>()?;
     m.add_class::<trades::CallScheduleEntry>()?;
     m.add_class::<trades::SteppedCouponBond>()?;
     m.add_class::<trades::FloatingRateNote>()?;
