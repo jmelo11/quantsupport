@@ -22,7 +22,7 @@ const MAX_OBJECT_NAME_UTF16: usize = 128;
 const RESET_OPERATION_ID: &str = "__registry_reset__";
 
 /// QuantSupport components and trades that can be referenced by an Excel cell.
-pub(crate) enum QsObject {
+pub enum QsObject {
     /// Market quote collection.
     QuoteStore(Box<QuoteStore>),
     /// Historical fixing collection.
@@ -86,7 +86,7 @@ pub(crate) enum QsObject {
 impl QsObject {
     /// Stable type tag embedded in object handles.
     #[must_use]
-    pub(crate) const fn kind(&self) -> &'static str {
+    pub const fn kind(&self) -> &'static str {
         match self {
             Self::QuoteStore(_) => "QuoteStore",
             Self::FixingStore(_) => "FixingStore",
@@ -130,7 +130,7 @@ struct RegistryEntry {
 
 /// Error returned when an object handle cannot be used.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum RegistryError {
+pub enum RegistryError {
     /// The handle did not have the expected shape.
     InvalidHandle(String),
     /// The caller supplied an invalid object name.
@@ -192,13 +192,13 @@ impl Error for RegistryError {}
 
 /// Registry of live objects for the current Excel calculation thread.
 #[derive(Default)]
-pub(crate) struct Registry {
+pub struct Registry {
     objects: HashMap<String, RegistryEntry>,
 }
 
 macro_rules! accessor {
     ($name:ident, $variant:ident, $type:ty, $label:literal) => {
-        pub(crate) fn $name(&self, handle: &str) -> Result<&$type, RegistryError> {
+        pub fn $name(&self, handle: &str) -> Result<&$type, RegistryError> {
             match &self.entry(handle)?.object {
                 QsObject::$variant(value) => Ok(value.as_ref()),
                 object => Err(wrong_type($label, object)),
@@ -209,7 +209,7 @@ macro_rules! accessor {
 
 macro_rules! collection_accessor {
     ($name:ident, $variant:ident, $type:ty, $label:literal) => {
-        pub(crate) fn $name(&self, handle: &str) -> Result<&Vec<$type>, RegistryError> {
+        pub fn $name(&self, handle: &str) -> Result<&Vec<$type>, RegistryError> {
             match &self.entry(handle)?.object {
                 QsObject::$variant(value) => Ok(value),
                 object => Err(wrong_type($label, object)),
@@ -220,7 +220,7 @@ macro_rules! collection_accessor {
 
 impl Registry {
     /// Returns the current handle when a constructor's defining inputs match.
-    pub(crate) fn handle_if_unchanged(
+    pub fn handle_if_unchanged(
         &self,
         name: &str,
         kind: &str,
@@ -238,7 +238,7 @@ impl Registry {
     ///
     /// Mutations made after construction are retained when Excel recalculates
     /// the constructor with the same key.
-    pub(crate) fn upsert_if_changed(
+    pub fn upsert_if_changed(
         &mut self,
         name: &str,
         object: QsObject,
@@ -329,7 +329,7 @@ impl Registry {
     );
 
     /// Mutates a quote store only when this operation's worksheet inputs changed.
-    pub(crate) fn update_quote_store_if_changed(
+    pub fn update_quote_store_if_changed(
         &mut self,
         handle: &str,
         operation_id: &str,
@@ -346,7 +346,7 @@ impl Registry {
     }
 
     /// Mutates a fixing store only when this operation's worksheet inputs changed.
-    pub(crate) fn update_fixing_store_if_changed(
+    pub fn update_fixing_store_if_changed(
         &mut self,
         handle: &str,
         operation_id: &str,
@@ -363,7 +363,7 @@ impl Registry {
     }
 
     /// Mutates an FX store only when this operation's worksheet inputs changed.
-    pub(crate) fn update_fx_store_if_changed(
+    pub fn update_fx_store_if_changed(
         &mut self,
         handle: &str,
         operation_id: &str,
@@ -380,7 +380,7 @@ impl Registry {
     }
 
     /// Mutates curve configurations only when this operation's inputs changed.
-    pub(crate) fn update_curve_configurations_if_changed(
+    pub fn update_curve_configurations_if_changed(
         &mut self,
         handle: &str,
         operation_id: &str,
@@ -397,7 +397,7 @@ impl Registry {
     }
 
     /// Mutates constructed elements only when this operation's inputs changed.
-    pub(crate) fn update_constructed_elements_if_changed(
+    pub fn update_constructed_elements_if_changed(
         &mut self,
         handle: &str,
         operation_id: &str,
@@ -414,17 +414,17 @@ impl Registry {
     }
 
     /// Retrieves any object by a current handle for pricer dispatch.
-    pub(crate) fn object(&self, handle: &str) -> Result<&QsObject, RegistryError> {
+    pub fn object(&self, handle: &str) -> Result<&QsObject, RegistryError> {
         Ok(&self.entry(handle)?.object)
     }
 
     /// Returns the type tag of a live object.
-    pub(crate) fn object_type(&self, handle: &str) -> Result<&'static str, RegistryError> {
+    pub fn object_type(&self, handle: &str) -> Result<&'static str, RegistryError> {
         Ok(self.entry(handle)?.object.kind())
     }
 
     /// Removes an object if the supplied handle is current.
-    pub(crate) fn remove(&mut self, handle: &str) -> Result<bool, RegistryError> {
+    pub fn remove(&mut self, handle: &str) -> Result<bool, RegistryError> {
         let parsed = ParsedHandle::parse(handle)?;
         let identity = parsed.identity();
         let Some(entry) = self.objects.get(&identity) else {
@@ -442,7 +442,7 @@ impl Registry {
     /// mutators, an older revision of the same object identity is accepted;
     /// Excel mutation chains commonly retain their original constructor
     /// handle between recalculations.
-    pub(crate) fn reset_if_changed(
+    pub fn reset_if_changed(
         &mut self,
         handle: &str,
         reset_key: &str,
@@ -477,12 +477,12 @@ impl Registry {
 
     /// Returns the number of live object identities.
     #[must_use]
-    pub(crate) fn len(&self) -> usize {
+    pub fn len(&self) -> usize {
         self.objects.len()
     }
 
     /// Drops every live object.
-    pub(crate) fn clear(&mut self) {
+    pub fn clear(&mut self) {
         self.objects.clear();
     }
 
@@ -636,12 +636,12 @@ thread_local! {
 }
 
 /// Borrows the current thread's registry.
-pub(crate) fn with_registry<R>(operation: impl FnOnce(&Registry) -> R) -> R {
+pub fn with_registry<R>(operation: impl FnOnce(&Registry) -> R) -> R {
     REGISTRY.with(|registry| operation(&registry.borrow()))
 }
 
 /// Mutably borrows the current thread's registry.
-pub(crate) fn with_registry_mut<R>(operation: impl FnOnce(&mut Registry) -> R) -> R {
+pub fn with_registry_mut<R>(operation: impl FnOnce(&mut Registry) -> R) -> R {
     REGISTRY.with(|registry| operation(&mut registry.borrow_mut()))
 }
 

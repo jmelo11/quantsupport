@@ -93,7 +93,7 @@ fn function(item: &syn::ItemFn, source: &str) -> Result<Option<Value>, Box<dyn E
 }
 
 /// Returns metadata for ordinary functions and functions produced by local macros.
-pub(crate) fn exports(root: &Path) -> Result<Vec<Value>, Box<dyn Error>> {
+pub fn exports(root: &Path) -> Result<Vec<Value>, Box<dyn Error>> {
     let mut records = Vec::new();
     let mut files = fs::read_dir(root)?.map(|entry| entry.map(|entry| entry.path())).collect::<Result<Vec<_>, _>>()?;
     files.sort();

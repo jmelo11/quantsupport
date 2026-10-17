@@ -4,7 +4,7 @@ use std::collections::{HashMap, HashSet};
 
 /// A worksheet cell retaining its original value type, including blanks.
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) enum Cell {
+pub enum Cell {
     /// An empty worksheet cell.
     Blank,
     /// Text to trim when read, without coercing it to a number.
@@ -17,7 +17,7 @@ pub(crate) enum Cell {
 
 /// Nonempty rectangular input indexed by unique, normalized column names.
 #[derive(Debug)]
-pub(crate) struct Table {
+pub struct Table {
     columns: HashMap<String, usize>,
     rows: Vec<Vec<Cell>>,
 }
@@ -48,7 +48,7 @@ impl Table {
     /// Rejects empty tables, unknown or duplicate columns (including alias
     /// collisions), absent required columns, ragged rows, and rows of blank cells.
     /// Row numbers in error messages are one-based data-row positions.
-    pub(crate) fn new(
+    pub fn new(
         headers: Vec<String>,
         rows: Vec<Vec<Cell>>,
         allowed: &[&str],
@@ -90,7 +90,7 @@ impl Table {
     }
 
     /// Returns the number of validated data rows, excluding headers.
-    pub(crate) fn row_count(&self) -> usize {
+    pub fn row_count(&self) -> usize {
         self.rows.len()
     }
 
@@ -98,7 +98,7 @@ impl Table {
     ///
     /// # Panics
     /// Panics if the column exists and `row` is outside the table's data rows.
-    pub(crate) fn cell_or_blank(&self, row: usize, name: &str) -> &Cell {
+    pub fn cell_or_blank(&self, row: usize, name: &str) -> &Cell {
         self.columns
             .get(name)
             .map_or(&Cell::Blank, |column| &self.rows[row][*column])
@@ -111,7 +111,7 @@ impl Table {
     ///
     /// # Panics
     /// Panics if the column exists and `row` is outside the table's data rows.
-    pub(crate) fn read_optional_text(
+    pub fn read_optional_text(
         &self,
         row: usize,
         name: &str,
@@ -131,7 +131,7 @@ impl Table {
     ///
     /// # Panics
     /// Panics if the column exists and `row` is outside the table's data rows.
-    pub(crate) fn read_optional_number(
+    pub fn read_optional_number(
         &self,
         row: usize,
         name: &str,

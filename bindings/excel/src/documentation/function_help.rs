@@ -4,7 +4,7 @@
 //! by this crate does not populate it.  The XLL therefore derives consistent
 //! help text from the registered argument names when it calls `xlfRegister`.
 
-pub(crate) fn argument_help(function_name: &str, argument_names: &str) -> Vec<&'static str> {
+pub fn argument_help(function_name: &str, argument_names: &str) -> Vec<&'static str> {
     argument_names
         .split(',')
         .map(str::trim)
@@ -204,7 +204,7 @@ fn describe_argument(function_name: &str, argument_name: &str) -> &'static str {
     }
 }
 
-pub(crate) fn result_help(function_name: &str) -> Option<(&'static str, &'static str)> {
+pub fn result_help(function_name: &str) -> Option<(&'static str, &'static str)> {
     let returns = match function_name {
         "QS.VERSION" => "Text containing the linked XLL package version.",
         "QS.FUNCTIONS" => "One-column spill of sorted, distinct registered worksheet names, including aliases; no header row.",

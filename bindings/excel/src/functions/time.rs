@@ -270,22 +270,22 @@ mod calendar_operations {
         Ok((from, to, calendar))
     }
 
-    pub(super) fn is_holiday(value: &str, calendar: &str) -> Result<bool, String> {
+    pub fn is_holiday(value: &str, calendar: &str) -> Result<bool, String> {
         let (date, calendar) = inputs(value, calendar)?;
         Ok(calendar.is_holiday(&date))
     }
 
-    pub(super) fn end_of_month(value: &str, calendar: &str) -> Result<String, String> {
+    pub fn end_of_month(value: &str, calendar: &str) -> Result<String, String> {
         let (date, calendar) = inputs(value, calendar)?;
         Ok(calendar.end_of_month(date).to_string())
     }
 
-    pub(super) fn is_end_of_month(value: &str, calendar: &str) -> Result<bool, String> {
+    pub fn is_end_of_month(value: &str, calendar: &str) -> Result<bool, String> {
         let (date, calendar) = inputs(value, calendar)?;
         Ok(calendar.is_end_of_month(&date))
     }
 
-    pub(super) fn business_days_between(
+    pub fn business_days_between(
         from: &str,
         to: &str,
         calendar: &str,
@@ -303,7 +303,7 @@ mod calendar_operations {
         .map_err(|error| error.to_string())
     }
 
-    pub(super) fn holidays(
+    pub fn holidays(
         from: &str,
         to: &str,
         calendar: &str,
@@ -317,7 +317,7 @@ mod calendar_operations {
             .collect())
     }
 
-    pub(super) fn business_days(
+    pub fn business_days(
         from: &str,
         to: &str,
         calendar: &str,
