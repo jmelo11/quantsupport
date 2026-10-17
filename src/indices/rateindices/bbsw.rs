@@ -1,0 +1,59 @@
+//! BBSW conventions, checked against QuantLib 5f4811e7e03b.
+
+use crate::time::{calendar::Calendar, calendars::australia::Australia};
+
+rate_index!(
+    BBSW1mIndex,
+    BBSW1m,
+    AUD,
+    Calendar::Australia(Australia::default()),
+    Actual365,
+    Simple,
+    0,
+    Monthly,
+    false
+);
+rate_index!(
+    BBSW2mIndex,
+    BBSW2m,
+    AUD,
+    Calendar::Australia(Australia::default()),
+    Actual365,
+    Simple,
+    0,
+    Bimonthly,
+    false
+);
+rate_index!(
+    BBSW3mIndex,
+    BBSW3m,
+    AUD,
+    Calendar::Australia(Australia::default()),
+    Actual365,
+    Simple,
+    0,
+    Quarterly,
+    false
+);
+rate_index!(
+    BBSW4mIndex,
+    BBSW4m,
+    AUD,
+    Calendar::Australia(Australia::default()),
+    Actual365,
+    Simple,
+    0,
+    EveryFourthMonth,
+    false
+);
+rate_index!(
+    BBSW6mIndex,
+    BBSW6m,
+    AUD,
+    Calendar::Australia(Australia::default()),
+    Actual365,
+    Simple,
+    0,
+    Semiannual,
+    false
+);

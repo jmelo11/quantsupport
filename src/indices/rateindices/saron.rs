@@ -9,7 +9,7 @@ use crate::{
     },
     rates::{compounding::Compounding, interestrate::RateDefinition},
     time::{
-        calendar::Calendar, calendars::weekendsonly::WeekendsOnly, daycounter::DayCounter,
+        calendar::Calendar, calendars::switzerland::Switzerland, daycounter::DayCounter,
         enums::Frequency,
     },
 };
@@ -31,7 +31,7 @@ impl MarketIndexDetails for SARONIndex {
 
 impl RateIndexDetails for SARONIndex {
     fn calendar(&self) -> Calendar {
-        Calendar::WeekendsOnly(WeekendsOnly::new())
+        Calendar::Switzerland(Switzerland::default())
     }
 
     fn currency(&self) -> Currency {

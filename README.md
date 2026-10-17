@@ -317,3 +317,9 @@ QuantSupport is released under the [MIT License](LICENSE).
 ## Contact
 
 For business inquiries, contact <jmelo@live.cl>.
+
+## Licenses
+
+QuantSupport code is licensed under MIT. Calendar implementations adapted from
+QuantLib retain its BSD 3-clause license and attribution; see
+[LICENSE-QuantLib.txt](LICENSE-QuantLib.txt).

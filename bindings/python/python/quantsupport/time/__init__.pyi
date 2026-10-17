@@ -8,7 +8,7 @@ _DateLike = Date | str | PythonDate
 _DateTimeLike = DateTime | str | PythonDateTime
 _PeriodLike = Period | str
 
-__all__ = ['DateTime', 'Date', 'Period', 'Calendar', 'Schedule', 'IMM', 'UnitedStatesMarket', 'BrazilMarket', 'JointCalendarRule', 'Compounding', 'Frequency', 'DayCounter', 'TimeUnit', 'BusinessDayConvention', 'DateGenerationRule']
+__all__ = ['DateTime', 'Date', 'Period', 'Calendar', 'Schedule', 'IMM', 'UnitedStatesMarket', 'BrazilMarket', 'AustraliaMarket', 'CanadaMarket', 'NewZealandMarket', 'SouthKoreaMarket', 'ChinaMarket', 'JointCalendarRule', 'Compounding', 'Frequency', 'DayCounter', 'TimeUnit', 'BusinessDayConvention', 'DateGenerationRule']
 
 @final
 class DateTime:
@@ -1155,7 +1155,7 @@ class Calendar:
     """Holiday and weekend rules for business-day calculations.
 
     Fixed calendars are available as typed attributes, including ``TARGET``,
-    ``WeekendsOnly``, and ``NullCalendar``. United States and Brazil factories
+    ``WeekendsOnly``, and ``NullCalendar``. Country and regional calendar factories
     take typed market selectors; joint calendars combine existing calendars.
     The string constructor accepts exact native calendar names.
     Holiday overrides return independent calendars and never mutate shared
@@ -1163,11 +1163,91 @@ class Calendar:
     """
     NullCalendar: ClassVar[Calendar]
     WeekendsOnly: ClassVar[Calendar]
+    Switzerland: ClassVar[Calendar]
+    Norway: ClassVar[Calendar]
+    Sweden: ClassVar[Calendar]
+    Denmark: ClassVar[Calendar]
+    SouthAfrica: ClassVar[Calendar]
     TARGET: ClassVar[Calendar]
     UnitedKingdom: ClassVar[Calendar]
     Japan: ClassVar[Calendar]
     Chile: ClassVar[Calendar]
 
+    @staticmethod
+    def Australia(*, market: AustraliaMarket | None = ...) -> Calendar:
+        """Create an Australian calendar.
+
+        Parameters
+        ----------
+        market : AustraliaMarket or None, optional
+            Typed market or regional selector. None selects ``Settlement``.
+
+        Returns
+        -------
+        Calendar
+            Calendar observing the selected market's holidays.
+        """
+        ...
+    @staticmethod
+    def Canada(*, market: CanadaMarket | None = ...) -> Calendar:
+        """Create a Canadian calendar.
+
+        Parameters
+        ----------
+        market : CanadaMarket or None, optional
+            Typed market or regional selector. None selects ``Settlement``.
+
+        Returns
+        -------
+        Calendar
+            Calendar observing the selected market's holidays.
+        """
+        ...
+    @staticmethod
+    def NewZealand(*, market: NewZealandMarket | None = ...) -> Calendar:
+        """Create a New Zealand calendar.
+
+        Parameters
+        ----------
+        market : NewZealandMarket or None, optional
+            Typed market or regional selector. None selects ``Wellington``.
+
+        Returns
+        -------
+        Calendar
+            Calendar observing the selected market's holidays.
+        """
+        ...
+    @staticmethod
+    def SouthKorea(*, market: SouthKoreaMarket | None = ...) -> Calendar:
+        """Create a South Korean calendar.
+
+        Parameters
+        ----------
+        market : SouthKoreaMarket or None, optional
+            Typed market or regional selector. None selects ``Settlement``.
+
+        Returns
+        -------
+        Calendar
+            Calendar observing the selected market's holidays.
+        """
+        ...
+    @staticmethod
+    def China(*, market: ChinaMarket | None = ...) -> Calendar:
+        """Create a Chinese calendar.
+
+        Parameters
+        ----------
+        market : ChinaMarket or None, optional
+            Typed market or regional selector. None selects ``SSE``.
+
+        Returns
+        -------
+        Calendar
+            Calendar observing the selected market's holidays.
+        """
+        ...
     @staticmethod
     def UnitedStates(*, market: UnitedStatesMarket | None=...) -> Calendar:
         """Create a United States market calendar.
@@ -1503,3 +1583,118 @@ class Calendar:
             Advanced, business-day-adjusted date.
         """
         ...
+
+@final
+class AustraliaMarket:
+    """Australia market or regional calendar selection."""
+    Settlement: ClassVar[AustraliaMarket]
+    ASX: ClassVar[AustraliaMarket]
+    @staticmethod
+    def parse(s: str) -> AustraliaMarket:
+        """Parse a market name, case-insensitively.
+
+        Parameters
+        ----------
+        s : str
+            Market or regional variant name.
+
+        Returns
+        -------
+        AustraliaMarket
+            Matching typed market selector.
+        """
+        ...
+    def __str__(self) -> str: ...
+    def __repr__(self) -> str: ...
+
+@final
+class CanadaMarket:
+    """Canada market or regional calendar selection."""
+    Settlement: ClassVar[CanadaMarket]
+    TSX: ClassVar[CanadaMarket]
+    @staticmethod
+    def parse(s: str) -> CanadaMarket:
+        """Parse a market name, case-insensitively.
+
+        Parameters
+        ----------
+        s : str
+            Market or regional variant name.
+
+        Returns
+        -------
+        CanadaMarket
+            Matching typed market selector.
+        """
+        ...
+    def __str__(self) -> str: ...
+    def __repr__(self) -> str: ...
+
+@final
+class NewZealandMarket:
+    """NewZealand market or regional calendar selection."""
+    Wellington: ClassVar[NewZealandMarket]
+    Auckland: ClassVar[NewZealandMarket]
+    @staticmethod
+    def parse(s: str) -> NewZealandMarket:
+        """Parse a market name, case-insensitively.
+
+        Parameters
+        ----------
+        s : str
+            Market or regional variant name.
+
+        Returns
+        -------
+        NewZealandMarket
+            Matching typed market selector.
+        """
+        ...
+    def __str__(self) -> str: ...
+    def __repr__(self) -> str: ...
+
+@final
+class SouthKoreaMarket:
+    """SouthKorea market or regional calendar selection."""
+    Settlement: ClassVar[SouthKoreaMarket]
+    KRX: ClassVar[SouthKoreaMarket]
+    @staticmethod
+    def parse(s: str) -> SouthKoreaMarket:
+        """Parse a market name, case-insensitively.
+
+        Parameters
+        ----------
+        s : str
+            Market or regional variant name.
+
+        Returns
+        -------
+        SouthKoreaMarket
+            Matching typed market selector.
+        """
+        ...
+    def __str__(self) -> str: ...
+    def __repr__(self) -> str: ...
+
+@final
+class ChinaMarket:
+    """China market or regional calendar selection."""
+    SSE: ClassVar[ChinaMarket]
+    IB: ClassVar[ChinaMarket]
+    @staticmethod
+    def parse(s: str) -> ChinaMarket:
+        """Parse a market name, case-insensitively.
+
+        Parameters
+        ----------
+        s : str
+            Market or regional variant name.
+
+        Returns
+        -------
+        ChinaMarket
+            Matching typed market selector.
+        """
+        ...
+    def __str__(self) -> str: ...
+    def __repr__(self) -> str: ...

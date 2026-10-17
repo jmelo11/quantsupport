@@ -25,7 +25,7 @@ name = "quantsupport"
 version.workspace = true
 edition = "2021"
 
-license = "MIT"
+license = "MIT AND BSD-3-Clause"
 repository = "https://github.com/jmelo11/quantsupport"
 description = "Rust quantitative finance library for derivatives pricing, yield-curve bootstrapping, AAD risk, Monte Carlo exposure, and XVA."
 keywords = [

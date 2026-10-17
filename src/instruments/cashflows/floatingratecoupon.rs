@@ -9,6 +9,7 @@ use crate::{
         cashflows::{cashflow::Cashflow, coupons::LinearCoupon},
         rates::oisconventions::{OvernightAveraging, OvernightCouponConventions},
     },
+    rates::interestrate::InterestRate,
     time::{
         calendars::traits::IsCalendar,
         date::Date,
@@ -73,6 +74,21 @@ mod tests {
             .set_overnight_conventions(OvernightCouponConventions::default())
             .unwrap();
         coupon
+    }
+
+    #[test]
+    fn cdi_historical_fixings_compound_effective_annual_rates() {
+        let start = Date::new(2026, 1, 9);
+        let end = Date::new(2026, 1, 13);
+        let mut coupon = FloatingRateCoupon::new(1.0, 0.0, MarketIndex::CDI, start, end, end);
+        coupon
+            .set_overnight_conventions(OvernightCouponConventions::default())
+            .unwrap();
+        let rate = coupon
+            .overnight_rate(end, |_| panic!("fully realized"), |_| Ok(Some(0.15)))
+            .unwrap();
+        coupon.set_fixing(rate);
+        assert!((coupon.amount().unwrap() - (1.15_f64.powf(2.0 / 252.0) - 1.0)).abs() < 1e-14);
     }
 
     #[test]
@@ -442,7 +458,22 @@ where
                 None
             };
             let rate = if let Some(rate) = known {
-                T::scalar(rate)
+                // Historical fixings use the index's own quoting convention.
+                // In particular, CDI is an effective annual Business/252 rate.
+                let definition = self.index.rate_index_details()?.rate_definition();
+                let observation_tau = self.day_counter.year_fraction(observation, observation_end);
+                let simple_rate =
+                    if definition.compounding() == crate::rates::compounding::Compounding::Simple {
+                        rate * definition
+                            .day_counter()
+                            .year_fraction(observation, observation_end)
+                            / observation_tau
+                    } else {
+                        let factor = InterestRate::<f64>::from_rate_definition(rate, definition)
+                            .compound_factor(observation, observation_end);
+                        (factor - 1.0) / observation_tau
+                    };
+                T::scalar(simple_rate)
             } else if observation < evaluation_date {
                 return Err(QSError::NotFoundErr(format!(
                     "Missing {} overnight fixing for {observation}",

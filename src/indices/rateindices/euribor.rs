@@ -93,3 +93,11 @@ euribor_index!(
     EURIBOR12m,
     Frequency::Annual
 );
+
+euribor_index!(
+    Euribor1wIndex,
+    "Details for the EURIBOR 1-week rate index.",
+    "EURIBOR1w",
+    EURIBOR1w,
+    Frequency::Weekly
+);

@@ -95,7 +95,7 @@ fn describe_argument(function_name: &str, argument_name: &str) -> &'static str {
         }
         (_, "swaption_type") => "Swaption exercise direction: Payer (pay fixed) or Receiver (receive fixed)",
         (_, "convention") => "Business-day convention: Following, ModifiedFollowing, Preceding, ModifiedPreceding, or Unadjusted",
-        (_, "calendar") => "Canonical calendar, e.g. Japan, UnitedKingdom(Settlement), or JointCalendar(JoinHolidays,TARGET,Japan)",
+        (_, "calendar") => "Canonical calendar, e.g. Canada(Settlement), Switzerland, China(IB), or JointCalendar(JoinHolidays,TARGET,Japan)",
         (_, "name") => "Workbook-unique object name; unchanged recalculation reuses its current handle",
         (_, "handle") => "Current QuantSupport object handle returned by a QS constructor or mutator",
         (_, "store") => "Current store handle returned by the matching QS create, JSON, or set function",

@@ -1,0 +1,102 @@
+{
+  "quantlib_commit": "5f4811e7e03bbd1a3d6d7df31b751fecd5daef5f",
+  "hash": "FNV-1a 64 over daily business flags (0/1), inclusive dates",
+  "calendars": [
+    {
+      "calendar": "Australia(Settlement)",
+      "start_year": 1901,
+      "end_year": 2199,
+      "business_day_hash": "f7a10c9668d2ac7c"
+    },
+    {
+      "calendar": "Australia(ASX)",
+      "start_year": 1901,
+      "end_year": 2199,
+      "business_day_hash": "1ad4b8c019a20d10"
+    },
+    {
+      "calendar": "Canada(Settlement)",
+      "start_year": 1901,
+      "end_year": 2199,
+      "business_day_hash": "dd8c96dd2ecdbe86"
+    },
+    {
+      "calendar": "Canada(TSX)",
+      "start_year": 1901,
+      "end_year": 2199,
+      "business_day_hash": "ad68b6100b9c8e30"
+    },
+    {
+      "calendar": "Brazil(Settlement)",
+      "start_year": 1901,
+      "end_year": 2199,
+      "business_day_hash": "6056180d40e3c6ed"
+    },
+    {
+      "calendar": "Switzerland",
+      "start_year": 1901,
+      "end_year": 2199,
+      "business_day_hash": "5e7829ea8d93b5ba"
+    },
+    {
+      "calendar": "NewZealand(Wellington)",
+      "start_year": 1901,
+      "end_year": 2052,
+      "business_day_hash": "ffb9579dbdccbe29"
+    },
+    {
+      "calendar": "NewZealand(Auckland)",
+      "start_year": 1901,
+      "end_year": 2052,
+      "business_day_hash": "46cbd95ab62f2301"
+    },
+    {
+      "calendar": "Norway",
+      "start_year": 1901,
+      "end_year": 2199,
+      "business_day_hash": "808b874c9047a7ca"
+    },
+    {
+      "calendar": "Sweden",
+      "start_year": 1901,
+      "end_year": 2199,
+      "business_day_hash": "88d50cd1df3eb55b"
+    },
+    {
+      "calendar": "Denmark",
+      "start_year": 1901,
+      "end_year": 2199,
+      "business_day_hash": "4378854972bb1c4c"
+    },
+    {
+      "calendar": "SouthKorea(Settlement)",
+      "start_year": 2004,
+      "end_year": 2050,
+      "business_day_hash": "7d4ba7008f7604eb"
+    },
+    {
+      "calendar": "SouthKorea(KRX)",
+      "start_year": 2004,
+      "end_year": 2050,
+      "business_day_hash": "5aa157fcd055f3f2"
+    },
+    {
+      "calendar": "SouthAfrica",
+      "start_year": 1901,
+      "end_year": 2199,
+      "business_day_hash": "456e0ecdecee4e8d"
+    },
+    {
+      "calendar": "China(SSE)",
+      "start_year": 2004,
+      "end_year": 2026,
+      "business_day_hash": "fb2b9061a794065e"
+    },
+    {
+      "calendar": "China(IB)",
+      "start_year": 2004,
+      "end_year": 2026,
+      "business_day_hash": "c23d0d111272dd58"
+    }
+  ]
+}

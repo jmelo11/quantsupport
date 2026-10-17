@@ -286,3 +286,10 @@ pub use crate::time::calendars::{
 };
 
 pub use crate::pricers::equity::equityforwardpricer::EquityForwardPricer;
+
+// Additional market calendars.
+pub use crate::time::calendars::{
+    australia::Australia, canada::Canada, china::China, denmark::Denmark, newzealand::NewZealand,
+    norway::Norway, southafrica::SouthAfrica, southkorea::SouthKorea, sweden::Sweden,
+    switzerland::Switzerland,
+};

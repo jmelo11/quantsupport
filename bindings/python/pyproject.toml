@@ -6,7 +6,7 @@ build-backend = "maturin"
 name = "quantsupport"
 description = "Derivative pricing and risk analytics (Rust core with Python bindings)."
 readme = "README.md"
-license = { text = "MIT" }
+license = { text = "MIT AND BSD-3-Clause" }
 requires-python = ">=3.9"
 dynamic = ["version"]
 dependencies = ["pandas"]

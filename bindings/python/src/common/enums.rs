@@ -25,7 +25,10 @@ use quantsupport::prelude::{
 };
 
 use quantsupport::time::calendars::{
-    brazil::Market as QsBrazilMarket, jointcalendar::JointCalendarRule as QsJointCalendarRule,
+    australia::Market as QsAustraliaMarket, brazil::Market as QsBrazilMarket,
+    canada::Market as QsCanadaMarket, china::Market as QsChinaMarket,
+    jointcalendar::JointCalendarRule as QsJointCalendarRule,
+    newzealand::Market as QsNewZealandMarket, southkorea::Market as QsSouthKoreaMarket,
     unitedstates::Market as QsUnitedStatesMarket,
 };
 
@@ -517,6 +520,33 @@ macro_rules! market_index_constants {
 }
 
 market_index_constants!(
+    FedFunds,
+    CDI,
+    DESTR,
+    KOFR,
+    ZARONIA,
+    BBSW1m,
+    BBSW2m,
+    BBSW3m,
+    BBSW4m,
+    BBSW6m,
+    BKBM1m,
+    BKBM2m,
+    BKBM3m,
+    BKBM4m,
+    BKBM6m,
+    NIBOR1m,
+    NIBOR3m,
+    NIBOR6m,
+    NIBOR12m,
+    SHIBOR1d,
+    SHIBOR1w,
+    SHIBOR2w,
+    SHIBOR1m,
+    SHIBOR3m,
+    SHIBOR6m,
+    SHIBOR12m,
+    EURIBOR1w,
     SOFR,
     SOFRCompounded,
     TermSOFR1m,
@@ -854,3 +884,44 @@ macro_rules! calendar_enum_methods {
 calendar_enum_methods!(UnitedStatesMarket);
 calendar_enum_methods!(BrazilMarket);
 calendar_enum_methods!(JointCalendarRule);
+
+mirror_enum!(
+    /// Australia calendar market.
+    AustraliaMarket,
+    QsAustraliaMarket,
+    "AustraliaMarket",
+    [Settlement, ASX]
+);
+calendar_enum_methods!(AustraliaMarket);
+mirror_enum!(
+    /// Canada calendar market.
+    CanadaMarket,
+    QsCanadaMarket,
+    "CanadaMarket",
+    [Settlement, TSX]
+);
+calendar_enum_methods!(CanadaMarket);
+mirror_enum!(
+    /// NewZealand calendar market.
+    NewZealandMarket,
+    QsNewZealandMarket,
+    "NewZealandMarket",
+    [Wellington, Auckland]
+);
+calendar_enum_methods!(NewZealandMarket);
+mirror_enum!(
+    /// SouthKorea calendar market.
+    SouthKoreaMarket,
+    QsSouthKoreaMarket,
+    "SouthKoreaMarket",
+    [Settlement, KRX]
+);
+calendar_enum_methods!(SouthKoreaMarket);
+mirror_enum!(
+    /// China calendar market.
+    ChinaMarket,
+    QsChinaMarket,
+    "ChinaMarket",
+    [SSE, IB]
+);
+calendar_enum_methods!(ChinaMarket);

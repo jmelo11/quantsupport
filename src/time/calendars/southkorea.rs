@@ -1,0 +1,268 @@
+// Adapted from QuantLib ql/time/calendars/southkorea.cpp at 5f4811e7e03bbd1a3d6d7df31b751fecd5daef5f.
+// Copyright (C) 2004 FIMAT Group
+// Copyright (C) 2007, 2011 StatPro Italia srl
+// Copyright (C) 2008, 2011 Charles Chongseok Hyun
+// Copyright (C) 2015 Riccardo Barone
+// Copyright (C) 2015 Paolo Mazzocchi
+// Copyright (C) 2023 Skandinaviska Enskilda Banken AB (publ)
+// Copyright (C) 2023 Jonghee Lee
+// Distributed under the QuantLib license; see LICENSE-QuantLib.txt.
+
+use super::traits::{ImplCalendar, IsCalendar};
+use crate::time::{date::Date, enums::Weekday};
+use std::collections::HashSet;
+
+/// Calendar market or regional variant.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Market {
+    /// Settlement calendar.
+    #[default]
+    Settlement,
+    /// KRX calendar.
+    KRX,
+}
+
+/// `SouthKorea` business-day calendar, following `QuantLib` 5f4811e7e03b.
+/// Lunar holiday tables cover 2004–2050; exceptional closures follow the pinned source.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct SouthKorea {
+    market: Market,
+    added_holidays: HashSet<Date>,
+    removed_holidays: HashSet<Date>,
+}
+
+impl SouthKorea {
+    /// Creates the calendar with empty holiday overrides.
+    #[must_use]
+    pub fn new(market: Market) -> Self {
+        Self {
+            market,
+            ..Self::default()
+        }
+    }
+
+    // Keep the dated holiday rules together for comparison with QuantLib.
+    #[allow(clippy::too_many_lines)]
+    fn settlement_business_day(date: Date) -> bool {
+        let w = date.weekday();
+        let d = date.day();
+        let m = date.month();
+        let y = date.year();
+        !(matches!(w, Weekday::Saturday | Weekday::Sunday)
+            || (d == 1 && m == 1)
+            || (d == 1 && m == 3)
+            || (w == Weekday::Monday && (d == 2 || d == 3) && m == 3 && y > 2021)
+            || (d == 5 && m == 4 && y <= 2005)
+            || (d == 1 && m == 5)
+            || (d == 5 && m == 5)
+            || (w == Weekday::Monday && (d == 6 || d == 7) && m == 5 && y > 2013)
+            || (d == 6 && m == 6)
+            || (d == 17 && m == 7 && y <= 2007)
+            || (d == 15 && m == 8)
+            || (w == Weekday::Monday && (d == 16 || d == 17) && m == 8 && y > 2020)
+            || (d == 3 && m == 10)
+            || (w == Weekday::Monday && (d == 4 || d == 5) && m == 10 && y > 2020)
+            || (d == 25 && m == 12)
+            || (w == Weekday::Monday && (d == 26 || d == 27) && m == 12 && y > 2022)
+            || ((d == 21 || d == 22 || d == 23) && m == 1 && y == 2004)
+            || ((d == 8 || d == 9 || d == 10) && m == 2 && y == 2005)
+            || ((d == 28 || d == 29 || d == 30) && m == 1 && y == 2006)
+            || (d == 19 && m == 2 && y == 2007)
+            || ((d == 6 || d == 7 || d == 8) && m == 2 && y == 2008)
+            || ((d == 25 || d == 26 || d == 27) && m == 1 && y == 2009)
+            || ((d == 13 || d == 14 || d == 15) && m == 2 && y == 2010)
+            || ((d == 2 || d == 3 || d == 4) && m == 2 && y == 2011)
+            || ((d == 23 || d == 24) && m == 1 && y == 2012)
+            || (d == 11 && m == 2 && y == 2013)
+            || ((d == 30 || d == 31) && m == 1 && y == 2014)
+            || ((d == 18 || d == 19 || d == 20) && m == 2 && y == 2015)
+            || (((7..=10).contains(&d)) && m == 2 && y == 2016)
+            || (((27..=30).contains(&d)) && m == 1 && y == 2017)
+            || ((d == 15 || d == 16 || d == 17) && m == 2 && y == 2018)
+            || ((d == 4 || d == 5 || d == 6) && m == 2 && y == 2019)
+            || (((24..=27).contains(&d)) && m == 1 && y == 2020)
+            || ((d == 11 || d == 12 || d == 13) && m == 2 && y == 2021)
+            || (((d == 31 && m == 1) || ((d == 1 || d == 2) && m == 2)) && y == 2022)
+            || ((d == 23 || d == 24) && m == 1 && y == 2023)
+            || (((9..=12).contains(&d)) && m == 2 && y == 2024)
+            || ((d == 28 || d == 29 || d == 30) && m == 1 && y == 2025)
+            || ((d == 16 || d == 17 || d == 18) && m == 2 && y == 2026)
+            || ((d == 8 || d == 9) && m == 2 && y == 2027)
+            || ((d == 26 || d == 27 || d == 28) && m == 1 && y == 2028)
+            || ((d == 12 || d == 13 || d == 14) && m == 2 && y == 2029)
+            || ((d == 4 || d == 5) && m == 2 && y == 2030)
+            || ((d == 22 || d == 23 || d == 24) && m == 1 && y == 2031)
+            || ((d == 10 || d == 11 || d == 12) && m == 2 && y == 2032)
+            || (((d == 31 && m == 1) || ((d == 1 || d == 2) && m == 2)) && y == 2033)
+            || ((d == 20 || d == 21) && m == 2 && y == 2034)
+            || ((d == 7 || d == 8 || d == 9) && m == 2 && y == 2035)
+            || ((d == 28 || d == 29 || d == 30) && m == 1 && y == 2036)
+            || ((d == 16 || d == 17) && m == 2 && y == 2037)
+            || ((d == 3 || d == 4 || d == 5) && m == 2 && y == 2038)
+            || ((d == 24 || d == 25 || d == 26) && m == 1 && y == 2039)
+            || ((d == 13 || d == 14) && m == 2 && y == 2040)
+            || (((d == 31 && m == 1) || ((d == 1 || d == 2) && m == 2)) && y == 2041)
+            || ((d == 21 || d == 22 || d == 23) && m == 1 && y == 2042)
+            || ((d == 9 || d == 10 || d == 11) && m == 2 && y == 2043)
+            || ((((d == 29 || d == 30 || d == 31) && m == 1) || (d == 1 && m == 2)) && y == 2044)
+            || ((d == 16 || d == 17 || d == 18) && m == 2 && y == 2045)
+            || ((d == 5 || d == 6 || d == 7) && m == 2 && y == 2046)
+            || (((25..=28).contains(&d)) && m == 1 && y == 2047)
+            || ((d == 13 || d == 14 || d == 15) && m == 2 && y == 2048)
+            || ((d == 1 || d == 2 || d == 3) && m == 2 && y == 2049)
+            || ((d == 24 || d == 25) && m == 1 && y == 2050)
+            || (d == 15 && m == 4 && y == 2004)
+            || (d == 31 && m == 5 && y == 2006)
+            || (d == 19 && m == 12 && y == 2007)
+            || (d == 9 && m == 4 && y == 2008)
+            || (d == 2 && m == 6 && y == 2010)
+            || (d == 11 && m == 4 && y == 2012)
+            || (d == 19 && m == 12 && y == 2012)
+            || (d == 4 && m == 6 && y == 2014)
+            || (d == 13 && m == 4 && y == 2016)
+            || (d == 9 && m == 5 && y == 2017)
+            || (d == 13 && m == 6 && y == 2018)
+            || (d == 15 && m == 4 && y == 2020)
+            || (d == 9 && m == 3 && y == 2022)
+            || (d == 1 && m == 6 && y == 2022)
+            || (d == 10 && m == 4 && y == 2024)
+            || (d == 26 && m == 5 && y == 2004)
+            || (d == 15 && m == 5 && y == 2005)
+            || (d == 5 && m == 5 && y == 2006)
+            || (d == 24 && m == 5 && y == 2007)
+            || (d == 12 && m == 5 && y == 2008)
+            || (d == 2 && m == 5 && y == 2009)
+            || (d == 21 && m == 5 && y == 2010)
+            || (d == 10 && m == 5 && y == 2011)
+            || (d == 28 && m == 5 && y == 2012)
+            || (d == 17 && m == 5 && y == 2013)
+            || (d == 6 && m == 5 && y == 2014)
+            || (d == 25 && m == 5 && y == 2015)
+            || (d == 14 && m == 5 && y == 2016)
+            || (d == 3 && m == 5 && y == 2017)
+            || (d == 22 && m == 5 && y == 2018)
+            || (d == 12 && m == 5 && y == 2019)
+            || (d == 30 && m == 4 && y == 2020)
+            || (d == 19 && m == 5 && y == 2021)
+            || (d == 8 && m == 5 && y == 2022)
+            || (d == 29 && m == 5 && y == 2023)
+            || (d == 15 && m == 5 && y == 2024)
+            || (d == 6 && m == 5 && y == 2025)
+            || (d == 25 && m == 5 && y == 2026)
+            || (d == 13 && m == 5 && y == 2027)
+            || (d == 2 && m == 5 && y == 2028)
+            || (d == 21 && m == 5 && y == 2029)
+            || (d == 9 && m == 5 && y == 2030)
+            || (d == 28 && m == 5 && y == 2031)
+            || (d == 17 && m == 5 && y == 2032)
+            || (d == 6 && m == 5 && y == 2033)
+            || (d == 25 && m == 5 && y == 2034)
+            || (d == 15 && m == 5 && y == 2035)
+            || (d == 6 && m == 5 && y == 2036)
+            || (d == 22 && m == 5 && y == 2037)
+            || (d == 11 && m == 5 && y == 2038)
+            || (d == 2 && m == 5 && y == 2039)
+            || (d == 18 && m == 5 && y == 2040)
+            || (d == 7 && m == 5 && y == 2041)
+            || (d == 26 && m == 5 && y == 2042)
+            || (d == 18 && m == 5 && y == 2043)
+            || (d == 6 && m == 5 && y == 2044)
+            || (d == 24 && m == 5 && y == 2045)
+            || (d == 14 && m == 5 && y == 2046)
+            || (d == 2 && m == 5 && y == 2047)
+            || (d == 20 && m == 5 && y == 2048)
+            || (d == 10 && m == 5 && y == 2049)
+            || (d == 30 && m == 5 && y == 2050)
+            || (d == 14 && m == 8 && y == 2015)
+            || (d == 17 && m == 8 && y == 2020)
+            || (d == 2 && m == 10 && y == 2023)
+            || (d == 1 && m == 10 && y == 2024)
+            || (d == 27 && m == 1 && y == 2025)
+            || ((d == 27 || d == 28 || d == 29) && m == 9 && y == 2004)
+            || ((d == 17 || d == 18 || d == 19) && m == 9 && y == 2005)
+            || ((d == 5 || d == 6 || d == 7) && m == 10 && y == 2006)
+            || ((d == 24 || d == 25 || d == 26) && m == 9 && y == 2007)
+            || ((d == 13 || d == 14 || d == 15) && m == 9 && y == 2008)
+            || ((d == 2 || d == 3 || d == 4) && m == 10 && y == 2009)
+            || ((d == 21 || d == 22 || d == 23) && m == 9 && y == 2010)
+            || ((d == 12 || d == 13) && m == 9 && y == 2011)
+            || ((d == 1) && m == 10 && y == 2012)
+            || ((d == 18 || d == 19 || d == 20) && m == 9 && y == 2013)
+            || ((d == 8 || d == 9 || d == 10) && m == 9 && y == 2014)
+            || ((d == 28 || d == 29) && m == 9 && y == 2015)
+            || ((d == 14 || d == 15 || d == 16) && m == 9 && y == 2016)
+            || (((3..=6).contains(&d)) && m == 10 && y == 2017)
+            || (((23..=26).contains(&d)) && m == 9 && y == 2018)
+            || ((d == 12 || d == 13 || d == 14) && m == 9 && y == 2019)
+            || (((d == 30 && m == 9) || ((d == 1 || d == 2) && m == 10)) && y == 2020)
+            || ((d == 20 || d == 21 || d == 22) && m == 9 && y == 2021)
+            || ((d == 9 || d == 10 || d == 11) && m == 9 && y == 2022)
+            || (((9..=12).contains(&d)) && m == 9 && y == 2022)
+            || ((d == 28 || d == 29 || d == 30) && m == 9 && y == 2023)
+            || ((d == 16 || d == 17 || d == 18) && m == 9 && y == 2024)
+            || ((d == 6 || d == 7 || d == 8) && m == 10 && y == 2025)
+            || ((d == 24 || d == 25 || d == 26) && m == 9 && y == 2026)
+            || ((d == 14 || d == 15 || d == 16) && m == 9 && y == 2027)
+            || (((2..=5).contains(&d)) && m == 10 && y == 2028)
+            || (((21..=24).contains(&d)) && m == 9 && y == 2029)
+            || ((d == 11 || d == 12 || d == 13) && m == 9 && y == 2030)
+            || (((d == 30 && m == 9) || ((d == 1 || d == 2) && m == 10)) && y == 2031)
+            || ((d == 20 || d == 21) && m == 9 && y == 2032)
+            || ((d == 7 || d == 8 || d == 9) && m == 9 && y == 2033)
+            || ((d == 26 || d == 27 || d == 28) && m == 9 && y == 2034)
+            || ((d == 17 || d == 18) && m == 9 && y == 2035)
+            || (((3..=7).contains(&d)) && m == 10 && y == 2036)
+            || ((d == 23 || d == 24 || d == 25) && m == 9 && y == 2037)
+            || ((d == 13 || d == 14 || d == 15) && m == 9 && y == 2038)
+            || ((d == 3 || d == 4 || d == 5) && m == 10 && y == 2039)
+            || ((d == 20 || d == 21 || d == 22) && m == 9 && y == 2040)
+            || ((d == 9 || d == 10 || d == 11) && m == 9 && y == 2041)
+            || ((d == 29 || d == 30) && m == 9 && y == 2042)
+            || ((d == 16 || d == 17 || d == 18) && m == 9 && y == 2043)
+            || ((d == 4 || d == 5 || d == 6) && m == 10 && y == 2044)
+            || ((d == 25 || d == 26 || d == 27) && m == 9 && y == 2045)
+            || (((14..=17).contains(&d)) && m == 9 && y == 2046)
+            || ((d == 4 || d == 5 || d == 7) && m == 10 && y == 2047)
+            || ((d == 21 || d == 22 || d == 23) && m == 9 && y == 2048)
+            || (((10..=13).contains(&d)) && m == 9 && y == 2049)
+            || ((((d == 29 || d == 30) && m == 9) || (d == 1 && m == 10)) && y == 2050)
+            || (d == 9 && m == 10 && y >= 2013)
+            || (w == Weekday::Monday && (d == 10 || d == 11) && m == 10 && y > 2020))
+    }
+    fn krx_business_day(date: Date) -> bool {
+        let w = date.weekday();
+        let d = date.day();
+        let m = date.month();
+        let y = date.year();
+        Self::settlement_business_day(date)
+            && !((((d == 29 || d == 30) && w == Weekday::Friday) || d == 31) && m == 12)
+            && !((d == 6 && m == 5 && y == 2016) || (d == 2 && m == 10 && y == 2017))
+    }
+}
+
+impl ImplCalendar for SouthKorea {
+    fn impl_name(&self) -> String {
+        format!("SouthKorea({:?})", self.market)
+    }
+    fn impl_is_business_day(&self, date: &Date) -> bool {
+        match self.market {
+            Market::Settlement => Self::settlement_business_day(*date),
+            Market::KRX => Self::krx_business_day(*date),
+        }
+    }
+    fn added_holidays(&self) -> HashSet<Date> {
+        self.added_holidays.clone()
+    }
+    fn removed_holidays(&self) -> HashSet<Date> {
+        self.removed_holidays.clone()
+    }
+    fn add_holiday(&mut self, date: Date) {
+        self.removed_holidays.remove(&date);
+        self.added_holidays.insert(date);
+    }
+    fn remove_holiday(&mut self, date: Date) {
+        self.added_holidays.remove(&date);
+        self.removed_holidays.insert(date);
+    }
+}
+impl IsCalendar for SouthKorea {}

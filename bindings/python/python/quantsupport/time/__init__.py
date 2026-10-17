@@ -9,6 +9,12 @@ from ..quantsupport import (
     IMM as IMM,
     UnitedStatesMarket as UnitedStatesMarket,
     BrazilMarket as BrazilMarket,
+    AustraliaMarket as AustraliaMarket,
+    CanadaMarket as CanadaMarket,
+    NewZealandMarket as NewZealandMarket,
+    SouthKoreaMarket as SouthKoreaMarket,
+    ChinaMarket as ChinaMarket,
+
     JointCalendarRule as JointCalendarRule,
     Compounding as Compounding,
     Frequency as Frequency,
@@ -18,4 +24,4 @@ from ..quantsupport import (
     DateGenerationRule as DateGenerationRule,
 )
 
-__all__ = ['DateTime', 'Date', 'Period', 'Calendar', 'Schedule', 'IMM', 'UnitedStatesMarket', 'BrazilMarket', 'JointCalendarRule', 'Compounding', 'Frequency', 'DayCounter', 'TimeUnit', 'BusinessDayConvention', 'DateGenerationRule']
+__all__ = ['DateTime', 'Date', 'Period', 'Calendar', 'Schedule', 'IMM', 'UnitedStatesMarket', 'BrazilMarket', 'AustraliaMarket', 'CanadaMarket', 'NewZealandMarket', 'SouthKoreaMarket', 'ChinaMarket', 'JointCalendarRule', 'Compounding', 'Frequency', 'DayCounter', 'TimeUnit', 'BusinessDayConvention', 'DateGenerationRule']

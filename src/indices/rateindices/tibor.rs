@@ -8,10 +8,7 @@ use crate::{
         rateindex::RateIndexDetails,
     },
     rates::{compounding::Compounding, interestrate::RateDefinition},
-    time::{
-        calendar::Calendar, calendars::weekendsonly::WeekendsOnly, daycounter::DayCounter,
-        enums::Frequency,
-    },
+    time::{calendar::Calendar, calendars::japan::Japan, daycounter::DayCounter, enums::Frequency},
 };
 
 macro_rules! tibor_index {
@@ -37,7 +34,7 @@ macro_rules! tibor_index {
             }
 
             fn calendar(&self) -> Calendar {
-                Calendar::WeekendsOnly(WeekendsOnly::new())
+                Calendar::Japan(Japan::default())
             }
 
             fn currency(&self) -> Currency {

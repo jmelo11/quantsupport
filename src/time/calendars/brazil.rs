@@ -134,6 +134,8 @@ impl Brazil {
                     || Self::is_all_souls_day(day, month)
                     || Self::is_republic_day(day, month)
                     || Self::is_christmas(day, month)
+                    // National holiday since Law 14,759/2023, effective in 2024.
+                    || (Self::is_black_consciousness_day(day, month, year) && year >= 2024)
                     || Self::is_passion_of_christ(day, month, year)
                     || Self::is_carnival(day, month, year)
                     || Self::is_corpus_christi(day, month, year))

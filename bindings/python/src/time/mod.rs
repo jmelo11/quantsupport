@@ -14,8 +14,10 @@ use quantsupport::prelude::{
 };
 
 use quantsupport::time::calendars::{
-    brazil::Brazil, chile::Chile, japan::Japan, jointcalendar::JointCalendar,
-    nullcalendar::NullCalendar, target::TARGET, unitedkingdom::UnitedKingdom,
+    australia::Australia, brazil::Brazil, canada::Canada, chile::Chile, china::China,
+    denmark::Denmark, japan::Japan, jointcalendar::JointCalendar, newzealand::NewZealand,
+    norway::Norway, nullcalendar::NullCalendar, southafrica::SouthAfrica, southkorea::SouthKorea,
+    sweden::Sweden, switzerland::Switzerland, target::TARGET, unitedkingdom::UnitedKingdom,
     unitedstates::UnitedStates, weekendsonly::WeekendsOnly,
 };
 
@@ -23,7 +25,8 @@ use crate::common::conversion::{
     extract_business_day_convention, extract_date, extract_period, extract_time_unit, qs_err,
 };
 use crate::common::enums::{
-    BrazilMarket, Frequency, JointCalendarRule, TimeUnit, UnitedStatesMarket,
+    AustraliaMarket, BrazilMarket, CanadaMarket, ChinaMarket, Frequency, JointCalendarRule,
+    NewZealandMarket, SouthKoreaMarket, TimeUnit, UnitedStatesMarket,
 };
 use crate::QuantSupportError;
 
@@ -243,8 +246,8 @@ impl Period {
 ///
 /// Native calendar variants, for example ``Calendar.TARGET``.
 ///
-/// Fixed calendars are typed class attributes. UnitedStates and Brazil accept
-/// typed market enums; JointCalendar combines typed calendars and a rule.
+/// Fixed calendars are typed class attributes. Calendars with market or regional
+/// variants accept typed market enums; JointCalendar combines calendars and a rule.
 /// The string constructor remains available for loading serialized names.
 #[pyclass(module = "quantsupport", name = "Calendar", from_py_object)]
 #[derive(Clone)]
@@ -255,6 +258,112 @@ pub(crate) struct Calendar {
 #[pymethods]
 #[allow(non_snake_case)]
 impl Calendar {
+    /// Creates the Australia calendar with an optional typed market variant.
+    ///
+    /// Parameters
+    /// ----------
+    /// market : AustraliaMarket or None, optional
+    ///     Typed market or regional selector; None selects the native default.
+    #[staticmethod]
+    #[pyo3(signature = (*, market = None))]
+    fn Australia(market: Option<AustraliaMarket>) -> Self {
+        Self {
+            inner: QsCalendar::Australia(Australia::new(
+                market.map(Into::into).unwrap_or_default(),
+            )),
+        }
+    }
+    /// Creates the Canada calendar with an optional typed market variant.
+    ///
+    /// Parameters
+    /// ----------
+    /// market : CanadaMarket or None, optional
+    ///     Typed market or regional selector; None selects the native default.
+    #[staticmethod]
+    #[pyo3(signature = (*, market = None))]
+    fn Canada(market: Option<CanadaMarket>) -> Self {
+        Self {
+            inner: QsCalendar::Canada(Canada::new(market.map(Into::into).unwrap_or_default())),
+        }
+    }
+    /// The Switzerland business-day calendar.
+    #[classattr]
+    fn Switzerland() -> Self {
+        Self {
+            inner: QsCalendar::Switzerland(Switzerland::new()),
+        }
+    }
+    /// Creates the NewZealand calendar with an optional typed market variant.
+    ///
+    /// Parameters
+    /// ----------
+    /// market : NewZealandMarket or None, optional
+    ///     Typed market or regional selector; None selects the native default.
+    #[staticmethod]
+    #[pyo3(signature = (*, market = None))]
+    fn NewZealand(market: Option<NewZealandMarket>) -> Self {
+        Self {
+            inner: QsCalendar::NewZealand(NewZealand::new(
+                market.map(Into::into).unwrap_or_default(),
+            )),
+        }
+    }
+    /// The Norway business-day calendar.
+    #[classattr]
+    fn Norway() -> Self {
+        Self {
+            inner: QsCalendar::Norway(Norway::new()),
+        }
+    }
+    /// The Sweden business-day calendar.
+    #[classattr]
+    fn Sweden() -> Self {
+        Self {
+            inner: QsCalendar::Sweden(Sweden::new()),
+        }
+    }
+    /// The Denmark business-day calendar.
+    #[classattr]
+    fn Denmark() -> Self {
+        Self {
+            inner: QsCalendar::Denmark(Denmark::new()),
+        }
+    }
+    /// Creates the SouthKorea calendar with an optional typed market variant.
+    ///
+    /// Parameters
+    /// ----------
+    /// market : SouthKoreaMarket or None, optional
+    ///     Typed market or regional selector; None selects the native default.
+    #[staticmethod]
+    #[pyo3(signature = (*, market = None))]
+    fn SouthKorea(market: Option<SouthKoreaMarket>) -> Self {
+        Self {
+            inner: QsCalendar::SouthKorea(SouthKorea::new(
+                market.map(Into::into).unwrap_or_default(),
+            )),
+        }
+    }
+    /// The SouthAfrica business-day calendar.
+    #[classattr]
+    fn SouthAfrica() -> Self {
+        Self {
+            inner: QsCalendar::SouthAfrica(SouthAfrica::new()),
+        }
+    }
+    /// Creates the China calendar with an optional typed market variant.
+    ///
+    /// Parameters
+    /// ----------
+    /// market : ChinaMarket or None, optional
+    ///     Typed market or regional selector; None selects the native default.
+    #[staticmethod]
+    #[pyo3(signature = (*, market = None))]
+    fn China(market: Option<ChinaMarket>) -> Self {
+        Self {
+            inner: QsCalendar::China(China::new(market.map(Into::into).unwrap_or_default())),
+        }
+    }
     #[classattr]
     fn NullCalendar() -> Self {
         Self {
@@ -531,6 +640,17 @@ mod tests {
         Python::attach(|py| {
             let class = py.get_type::<Calendar>();
             let calendars = [
+                QsCalendar::Australia(Australia::default()),
+                QsCalendar::Canada(Canada::default()),
+                QsCalendar::Switzerland(Switzerland::default()),
+                QsCalendar::NewZealand(NewZealand::default()),
+                QsCalendar::Norway(Norway::default()),
+                QsCalendar::Sweden(Sweden::default()),
+                QsCalendar::Denmark(Denmark::default()),
+                QsCalendar::SouthKorea(SouthKorea::default()),
+                QsCalendar::SouthAfrica(SouthAfrica::default()),
+                QsCalendar::China(China::default()),
+
                 QsCalendar::NullCalendar(NullCalendar::new()),
                 QsCalendar::WeekendsOnly(WeekendsOnly::new()),
                 QsCalendar::TARGET(TARGET::new()),
@@ -546,6 +666,17 @@ mod tests {
             ];
             for native in calendars {
                 let wrapped = match &native {
+                    QsCalendar::Australia(_) => class.call_method0("Australia")?,
+                    QsCalendar::Canada(_) => class.call_method0("Canada")?,
+                    QsCalendar::Switzerland(_) => class.getattr("Switzerland")?,
+                    QsCalendar::NewZealand(_) => class.call_method0("NewZealand")?,
+                    QsCalendar::Norway(_) => class.getattr("Norway")?,
+                    QsCalendar::Sweden(_) => class.getattr("Sweden")?,
+                    QsCalendar::Denmark(_) => class.getattr("Denmark")?,
+                    QsCalendar::SouthKorea(_) => class.call_method0("SouthKorea")?,
+                    QsCalendar::SouthAfrica(_) => class.getattr("SouthAfrica")?,
+                    QsCalendar::China(_) => class.call_method0("China")?,
+
                     QsCalendar::NullCalendar(_) => class.getattr("NullCalendar")?,
                     QsCalendar::WeekendsOnly(_) => class.getattr("WeekendsOnly")?,
                     QsCalendar::TARGET(_) => class.getattr("TARGET")?,

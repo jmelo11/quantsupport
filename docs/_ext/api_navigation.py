@@ -11,7 +11,7 @@ from python_api import declarations
 PYTHON_SECTIONS = {
     "time": {
         "Dates and Periods": "Date DateTime Period TimeUnit",
-        "Calendars": "Calendar UnitedStatesMarket BrazilMarket JointCalendarRule",
+        "Calendars": "Calendar UnitedStatesMarket BrazilMarket AustraliaMarket CanadaMarket NewZealandMarket SouthKoreaMarket ChinaMarket JointCalendarRule",
         "Schedules and IMM": "Schedule IMM DateGenerationRule BusinessDayConvention",
         "Accrual and Frequency": "DayCounter Compounding Frequency",
     },
@@ -80,7 +80,7 @@ def generate_python_navigation(app):
             lines.extend(f"   {name}" for name in classes)
             if domain == "time" and title == "Calendars":
                 lines.extend(["", "Native Calendar Variants", "------------------------", "",
-                              "All nine native calendar variants are available through :py:class:`quantsupport.time.Calendar`.",
+                              "All native calendar variants are available through :py:class:`quantsupport.time.Calendar`.",
                               "Country calendars are values of this class, not separate Python classes.", "",
                               ".. list-table::", "   :header-rows: 1", "", "   * - Rust calendar", "     - Python declaration"])
                 for native, expression in (
@@ -89,6 +89,16 @@ def generate_python_navigation(app):
                     ("Japan", "Calendar.Japan"), ("Chile", "Calendar.Chile"),
                     ("UnitedStates", "Calendar.UnitedStates(market=UnitedStatesMarket.Sofr)"),
                     ("Brazil", "Calendar.Brazil(market=BrazilMarket.Settlement)"),
+                    ("Australia", "Calendar.Australia(market=AustraliaMarket.Settlement)"),
+                    ("Canada", "Calendar.Canada(market=CanadaMarket.Settlement)"),
+                    ("NewZealand", "Calendar.NewZealand(market=NewZealandMarket.Wellington)"),
+                    ("SouthKorea", "Calendar.SouthKorea(market=SouthKoreaMarket.Settlement)"),
+                    ("China", "Calendar.China(market=ChinaMarket.IB)"),
+                    ("Switzerland", "Calendar.Switzerland"),
+                    ("Norway", "Calendar.Norway"),
+                    ("Sweden", "Calendar.Sweden"),
+                    ("Denmark", "Calendar.Denmark"),
+                    ("SouthAfrica", "Calendar.SouthAfrica"),
                     ("JointCalendar", "Calendar.JointCalendar(calendars=[Calendar.TARGET, Calendar.Japan])"),
                 ):
                     lines.extend([f"   * - {native}", f"     - ``{expression}``"])

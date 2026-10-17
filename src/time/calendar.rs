@@ -1,11 +1,21 @@
 use serde::Serialize;
 
 use super::calendars::{
+    australia::Australia,
     brazil::Brazil,
+    canada::Canada,
     chile::Chile,
+    china::China,
+    denmark::Denmark,
     japan::Japan,
     jointcalendar::{JointCalendar, JointCalendarRule},
+    newzealand::NewZealand,
+    norway::Norway,
     nullcalendar::NullCalendar,
+    southafrica::SouthAfrica,
+    southkorea::SouthKorea,
+    sweden::Sweden,
+    switzerland::Switzerland,
     target::TARGET,
     traits::{ImplCalendar, IsCalendar},
     unitedkingdom::UnitedKingdom,
@@ -27,6 +37,27 @@ use std::collections::HashSet;
 /// * [`Self::UnitedStates`] - A calendar for the United States.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Calendar {
+    /// Australia calendar.
+    Australia(Australia),
+    /// Canada calendar.
+    Canada(Canada),
+    /// Switzerland calendar.
+    Switzerland(Switzerland),
+    /// `NewZealand` calendar.
+    NewZealand(NewZealand),
+    /// Norway calendar.
+    Norway(Norway),
+    /// Sweden calendar.
+    Sweden(Sweden),
+    /// Denmark calendar.
+    Denmark(Denmark),
+    /// `SouthKorea` calendar.
+    SouthKorea(SouthKorea),
+    /// `SouthAfrica` calendar.
+    SouthAfrica(SouthAfrica),
+    /// China calendar.
+    China(China),
+
     /// A null calendar that considers all days as business days.
     NullCalendar(NullCalendar),
     /// A calendar that considers only weekends as non-business days.
@@ -53,6 +84,16 @@ impl Serialize for Calendar {
         S: serde::Serializer,
     {
         let s = match self {
+            Self::Australia(cal) => cal.impl_name(),
+            Self::Canada(cal) => cal.impl_name(),
+            Self::Switzerland(cal) => cal.impl_name(),
+            Self::NewZealand(cal) => cal.impl_name(),
+            Self::Norway(cal) => cal.impl_name(),
+            Self::Sweden(cal) => cal.impl_name(),
+            Self::Denmark(cal) => cal.impl_name(),
+            Self::SouthKorea(cal) => cal.impl_name(),
+            Self::SouthAfrica(cal) => cal.impl_name(),
+            Self::China(cal) => cal.impl_name(),
             Self::NullCalendar(cal) => cal.impl_name(),
             Self::WeekendsOnly(cal) => cal.impl_name(),
             Self::TARGET(cal) => cal.impl_name(),
@@ -82,6 +123,44 @@ impl TryFrom<String> for Calendar {
 
     fn try_from(s: String) -> Result<Self> {
         match s.as_str() {
+            "Australia(Settlement)" => Ok(Self::Australia(Australia::new(
+                super::calendars::australia::Market::Settlement,
+            ))),
+            "Australia(ASX)" => Ok(Self::Australia(Australia::new(
+                super::calendars::australia::Market::ASX,
+            ))),
+            "Australia" => Ok(Self::Australia(Australia::default())),
+            "Canada(Settlement)" => Ok(Self::Canada(Canada::new(
+                super::calendars::canada::Market::Settlement,
+            ))),
+            "Canada(TSX)" => Ok(Self::Canada(Canada::new(
+                super::calendars::canada::Market::TSX,
+            ))),
+            "Canada" => Ok(Self::Canada(Canada::default())),
+            "Switzerland" => Ok(Self::Switzerland(Switzerland::new())),
+            "NewZealand(Wellington)" => Ok(Self::NewZealand(NewZealand::new(
+                super::calendars::newzealand::Market::Wellington,
+            ))),
+            "NewZealand(Auckland)" => Ok(Self::NewZealand(NewZealand::new(
+                super::calendars::newzealand::Market::Auckland,
+            ))),
+            "NewZealand" => Ok(Self::NewZealand(NewZealand::default())),
+            "Norway" => Ok(Self::Norway(Norway::new())),
+            "Sweden" => Ok(Self::Sweden(Sweden::new())),
+            "Denmark" => Ok(Self::Denmark(Denmark::new())),
+            "SouthKorea(Settlement)" => Ok(Self::SouthKorea(SouthKorea::new(
+                super::calendars::southkorea::Market::Settlement,
+            ))),
+            "SouthKorea(KRX)" => Ok(Self::SouthKorea(SouthKorea::new(
+                super::calendars::southkorea::Market::KRX,
+            ))),
+            "SouthKorea" => Ok(Self::SouthKorea(SouthKorea::default())),
+            "SouthAfrica" => Ok(Self::SouthAfrica(SouthAfrica::new())),
+            "China(SSE)" => Ok(Self::China(China::new(
+                super::calendars::china::Market::SSE,
+            ))),
+            "China(IB)" => Ok(Self::China(China::new(super::calendars::china::Market::IB))),
+            "China" => Ok(Self::China(China::default())),
             "UnitedKingdom(Settlement)" => Ok(Self::UnitedKingdom(UnitedKingdom::new())),
             "Japan" => Ok(Self::Japan(Japan::new())),
             name if name.starts_with("JointCalendar(") => parse_joint_calendar(name),
@@ -165,6 +244,16 @@ impl From<Calendar> for String {
 impl ImplCalendar for Calendar {
     fn impl_name(&self) -> String {
         match self {
+            Self::Australia(cal) => cal.impl_name(),
+            Self::Canada(cal) => cal.impl_name(),
+            Self::Switzerland(cal) => cal.impl_name(),
+            Self::NewZealand(cal) => cal.impl_name(),
+            Self::Norway(cal) => cal.impl_name(),
+            Self::Sweden(cal) => cal.impl_name(),
+            Self::Denmark(cal) => cal.impl_name(),
+            Self::SouthKorea(cal) => cal.impl_name(),
+            Self::SouthAfrica(cal) => cal.impl_name(),
+            Self::China(cal) => cal.impl_name(),
             Self::NullCalendar(cal) => cal.impl_name(),
             Self::WeekendsOnly(cal) => cal.impl_name(),
             Self::TARGET(cal) => cal.impl_name(),
@@ -179,6 +268,16 @@ impl ImplCalendar for Calendar {
 
     fn impl_is_business_day(&self, date: &Date) -> bool {
         match self {
+            Self::Australia(cal) => cal.impl_is_business_day(date),
+            Self::Canada(cal) => cal.impl_is_business_day(date),
+            Self::Switzerland(cal) => cal.impl_is_business_day(date),
+            Self::NewZealand(cal) => cal.impl_is_business_day(date),
+            Self::Norway(cal) => cal.impl_is_business_day(date),
+            Self::Sweden(cal) => cal.impl_is_business_day(date),
+            Self::Denmark(cal) => cal.impl_is_business_day(date),
+            Self::SouthKorea(cal) => cal.impl_is_business_day(date),
+            Self::SouthAfrica(cal) => cal.impl_is_business_day(date),
+            Self::China(cal) => cal.impl_is_business_day(date),
             Self::NullCalendar(cal) => cal.impl_is_business_day(date),
             Self::WeekendsOnly(cal) => cal.impl_is_business_day(date),
             Self::TARGET(cal) => cal.impl_is_business_day(date),
@@ -193,6 +292,16 @@ impl ImplCalendar for Calendar {
 
     fn is_weekend(&self, weekday: &crate::time::enums::Weekday) -> bool {
         match self {
+            Self::Australia(cal) => cal.is_weekend(weekday),
+            Self::Canada(cal) => cal.is_weekend(weekday),
+            Self::Switzerland(cal) => cal.is_weekend(weekday),
+            Self::NewZealand(cal) => cal.is_weekend(weekday),
+            Self::Norway(cal) => cal.is_weekend(weekday),
+            Self::Sweden(cal) => cal.is_weekend(weekday),
+            Self::Denmark(cal) => cal.is_weekend(weekday),
+            Self::SouthKorea(cal) => cal.is_weekend(weekday),
+            Self::SouthAfrica(cal) => cal.is_weekend(weekday),
+            Self::China(cal) => cal.is_weekend(weekday),
             Self::NullCalendar(cal) => cal.is_weekend(weekday),
             Self::WeekendsOnly(cal) => cal.is_weekend(weekday),
             Self::TARGET(cal) => cal.is_weekend(weekday),
@@ -207,6 +316,16 @@ impl ImplCalendar for Calendar {
 
     fn added_holidays(&self) -> HashSet<Date> {
         match self {
+            Self::Australia(cal) => cal.added_holidays(),
+            Self::Canada(cal) => cal.added_holidays(),
+            Self::Switzerland(cal) => cal.added_holidays(),
+            Self::NewZealand(cal) => cal.added_holidays(),
+            Self::Norway(cal) => cal.added_holidays(),
+            Self::Sweden(cal) => cal.added_holidays(),
+            Self::Denmark(cal) => cal.added_holidays(),
+            Self::SouthKorea(cal) => cal.added_holidays(),
+            Self::SouthAfrica(cal) => cal.added_holidays(),
+            Self::China(cal) => cal.added_holidays(),
             Self::NullCalendar(cal) => cal.added_holidays(),
             Self::WeekendsOnly(cal) => cal.added_holidays(),
             Self::TARGET(cal) => cal.added_holidays(),
@@ -221,6 +340,16 @@ impl ImplCalendar for Calendar {
 
     fn removed_holidays(&self) -> HashSet<Date> {
         match self {
+            Self::Australia(cal) => cal.removed_holidays(),
+            Self::Canada(cal) => cal.removed_holidays(),
+            Self::Switzerland(cal) => cal.removed_holidays(),
+            Self::NewZealand(cal) => cal.removed_holidays(),
+            Self::Norway(cal) => cal.removed_holidays(),
+            Self::Sweden(cal) => cal.removed_holidays(),
+            Self::Denmark(cal) => cal.removed_holidays(),
+            Self::SouthKorea(cal) => cal.removed_holidays(),
+            Self::SouthAfrica(cal) => cal.removed_holidays(),
+            Self::China(cal) => cal.removed_holidays(),
             Self::NullCalendar(cal) => cal.removed_holidays(),
             Self::WeekendsOnly(cal) => cal.removed_holidays(),
             Self::TARGET(cal) => cal.removed_holidays(),
@@ -235,6 +364,16 @@ impl ImplCalendar for Calendar {
 
     fn add_holiday(&mut self, date: Date) {
         match self {
+            Self::Australia(cal) => cal.add_holiday(date),
+            Self::Canada(cal) => cal.add_holiday(date),
+            Self::Switzerland(cal) => cal.add_holiday(date),
+            Self::NewZealand(cal) => cal.add_holiday(date),
+            Self::Norway(cal) => cal.add_holiday(date),
+            Self::Sweden(cal) => cal.add_holiday(date),
+            Self::Denmark(cal) => cal.add_holiday(date),
+            Self::SouthKorea(cal) => cal.add_holiday(date),
+            Self::SouthAfrica(cal) => cal.add_holiday(date),
+            Self::China(cal) => cal.add_holiday(date),
             Self::NullCalendar(cal) => cal.add_holiday(date),
             Self::WeekendsOnly(cal) => cal.add_holiday(date),
             Self::TARGET(cal) => cal.add_holiday(date),
@@ -249,6 +388,16 @@ impl ImplCalendar for Calendar {
 
     fn remove_holiday(&mut self, date: Date) {
         match self {
+            Self::Australia(cal) => cal.remove_holiday(date),
+            Self::Canada(cal) => cal.remove_holiday(date),
+            Self::Switzerland(cal) => cal.remove_holiday(date),
+            Self::NewZealand(cal) => cal.remove_holiday(date),
+            Self::Norway(cal) => cal.remove_holiday(date),
+            Self::Sweden(cal) => cal.remove_holiday(date),
+            Self::Denmark(cal) => cal.remove_holiday(date),
+            Self::SouthKorea(cal) => cal.remove_holiday(date),
+            Self::SouthAfrica(cal) => cal.remove_holiday(date),
+            Self::China(cal) => cal.remove_holiday(date),
             Self::NullCalendar(cal) => cal.remove_holiday(date),
             Self::WeekendsOnly(cal) => cal.remove_holiday(date),
             Self::TARGET(cal) => cal.remove_holiday(date),
@@ -263,6 +412,16 @@ impl ImplCalendar for Calendar {
 
     fn holiday_list(&self, from: Date, to: Date, include_weekends: bool) -> Vec<Date> {
         match self {
+            Self::Australia(cal) => cal.holiday_list(from, to, include_weekends),
+            Self::Canada(cal) => cal.holiday_list(from, to, include_weekends),
+            Self::Switzerland(cal) => cal.holiday_list(from, to, include_weekends),
+            Self::NewZealand(cal) => cal.holiday_list(from, to, include_weekends),
+            Self::Norway(cal) => cal.holiday_list(from, to, include_weekends),
+            Self::Sweden(cal) => cal.holiday_list(from, to, include_weekends),
+            Self::Denmark(cal) => cal.holiday_list(from, to, include_weekends),
+            Self::SouthKorea(cal) => cal.holiday_list(from, to, include_weekends),
+            Self::SouthAfrica(cal) => cal.holiday_list(from, to, include_weekends),
+            Self::China(cal) => cal.holiday_list(from, to, include_weekends),
             Self::NullCalendar(cal) => cal.holiday_list(from, to, include_weekends),
             Self::WeekendsOnly(cal) => cal.holiday_list(from, to, include_weekends),
             Self::TARGET(cal) => cal.holiday_list(from, to, include_weekends),
@@ -277,6 +436,16 @@ impl ImplCalendar for Calendar {
 
     fn business_day_list(&self, from: Date, to: Date) -> Vec<Date> {
         match self {
+            Self::Australia(cal) => cal.business_day_list(from, to),
+            Self::Canada(cal) => cal.business_day_list(from, to),
+            Self::Switzerland(cal) => cal.business_day_list(from, to),
+            Self::NewZealand(cal) => cal.business_day_list(from, to),
+            Self::Norway(cal) => cal.business_day_list(from, to),
+            Self::Sweden(cal) => cal.business_day_list(from, to),
+            Self::Denmark(cal) => cal.business_day_list(from, to),
+            Self::SouthKorea(cal) => cal.business_day_list(from, to),
+            Self::SouthAfrica(cal) => cal.business_day_list(from, to),
+            Self::China(cal) => cal.business_day_list(from, to),
             Self::NullCalendar(cal) => cal.business_day_list(from, to),
             Self::WeekendsOnly(cal) => cal.business_day_list(from, to),
             Self::TARGET(cal) => cal.business_day_list(from, to),

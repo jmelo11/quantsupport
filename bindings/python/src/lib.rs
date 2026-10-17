@@ -23,6 +23,12 @@ fn quantsupport(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<common::enums::Interpolator>()?;
     m.add_class::<common::enums::UnitedStatesMarket>()?;
     m.add_class::<common::enums::BrazilMarket>()?;
+    m.add_class::<common::enums::AustraliaMarket>()?;
+    m.add_class::<common::enums::CanadaMarket>()?;
+    m.add_class::<common::enums::NewZealandMarket>()?;
+    m.add_class::<common::enums::SouthKoreaMarket>()?;
+    m.add_class::<common::enums::ChinaMarket>()?;
+
     m.add_class::<common::enums::JointCalendarRule>()?;
     m.add_class::<common::enums::Currency>()?;
     m.add_class::<common::enums::MarketIndex>()?;
