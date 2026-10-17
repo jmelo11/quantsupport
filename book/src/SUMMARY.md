@@ -63,8 +63,20 @@
 - [CVA, DVA and FVA](xva/cva-dva-fva.md)
 - [XVA Sensitivities](xva/sensitivities.md)
 
+# Python
+
+- [Python Getting Started](python/getting-started.md)
+- [Python API by Domain](python/api.md)
+
+# Excel
+
+- [Download and Install](excel/installation.md)
+- [Workbook Workflow](excel/workbook.md)
+- [Worksheet Function Reference](excel/reference.md)
+
 # Reference
 
 - [Configuration](reference/configuration.md)
 - [Examples](reference/examples.md)
+- [Binding Development](reference/bindings.md)
 - [Glossary](reference/glossary.md)

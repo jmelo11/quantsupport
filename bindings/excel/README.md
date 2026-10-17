@@ -7,6 +7,19 @@ Windows. The Excel layer stores and composes the library's real types:
 trades, and calls to the native pricers. It does not define a parallel market
 model.
 
+## Reference and download
+
+Browse the [worksheet reference](https://jmelo11.github.io/quantsupport/excel/reference.html)
+for function signatures, aliases, categories, and parameter help generated from
+the XLL registration metadata. [Download quantsupport.xll](https://github.com/jmelo11/quantsupport/releases/latest/download/quantsupport.xll)
+from the latest release and follow the [installation guide](https://jmelo11.github.io/quantsupport/excel/installation.html).
+The add-in requires 64-bit Windows Excel; Excel for macOS and the browser cannot
+load an XLL.
+
+Worksheet implementations are grouped in `src/functions`; internal handle and
+table code lives in `src/runtime`, and help/catalog code in `src/documentation`.
+See the [book build guide](../../book/README.md) for local builds.
+
 ## Build and load
 
 From a Windows PowerShell prompt with the 64-bit MSVC Rust toolchain and Visual

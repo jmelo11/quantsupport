@@ -6,6 +6,11 @@ test.ipynb
 .DS_Store
 __pycache__
 book/html/
+.venv-docs/
+mermaid.min.js
+mermaid-init.js
+bindings/python/python/quantsupport/*.so
+bindings/python/python/quantsupport/*.pyd
 *.png
 *.ps1
 

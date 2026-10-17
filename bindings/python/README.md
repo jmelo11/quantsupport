@@ -3,6 +3,17 @@
 PyO3 bindings for the [quantsupport](https://github.com/jmelo11/quantsupport) Rust
 derivative pricing and risk analytics library.
 
+## API reference
+
+The [Python reference](https://jmelo11.github.io/quantsupport/python/api.html)
+documents constructors, methods, and properties by domain: `time`, `market`,
+`instruments`, `pricing`, and `risk`. Public classes remain available at the
+package root, so `quantsupport.Swap` and `quantsupport.instruments.Swap` are
+the same class. Contract inputs and results are read-only; context input
+properties have explicit setters.
+
+See the [book build guide](../../book/README.md) for local builds.
+
 ## Install (development)
 
 ```bash

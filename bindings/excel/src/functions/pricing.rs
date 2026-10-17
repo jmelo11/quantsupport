@@ -13,7 +13,7 @@ use xll_rs::{
 };
 use xllgen::xll_bindgen;
 
-use crate::registry::{with_registry, QsObject, Registry};
+use crate::runtime::registry::{with_registry, QsObject, Registry};
 
 use super::helpers::{not_found, value_error};
 

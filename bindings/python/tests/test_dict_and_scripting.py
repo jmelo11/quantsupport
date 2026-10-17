@@ -20,11 +20,32 @@ class DictAndScriptTests(unittest.TestCase):
         else:
             # The Rust contract runner creates the module in memory.
             stub = Path(__file__).resolve().parents[1] / "python" / "quantsupport" / "__init__.pyi"
-        declarations = {node.name: node for node in ast.parse(stub.read_text()).body
-                        if isinstance(node, ast.ClassDef)}
+        declarations = {}
+        for stub_file in stub.parent.rglob("*.pyi"):
+            for node in ast.parse(stub_file.read_text(encoding="utf-8")).body:
+                if isinstance(node, ast.ClassDef):
+                    self.assertNotIn(node.name, declarations)
+                    self.assertTrue(ast.get_docstring(node), node.name)
+                    for member in node.body:
+                        if isinstance(member, ast.FunctionDef) and not member.name.startswith("_"):
+                            self.assertTrue(ast.get_docstring(member), f"{node.name}.{member.name}")
+                    declarations[node.name] = node
         exported = {name for name, value in vars(qs).items()
                     if inspect.isclass(value) and value.__module__ == "quantsupport"}
         self.assertEqual(exported, set(declarations))
+        if module_file:
+            for module in [qs, qs.time, qs.market, qs.instruments, qs.pricing, qs.risk]:
+                with self.subTest(module=module.__name__):
+                    module_stub = Path(module.__file__).with_suffix(".pyi")
+                    stub_exports = next(ast.literal_eval(node.value)
+                                        for node in ast.parse(module_stub.read_text(encoding="utf-8")).body
+                                        if isinstance(node, ast.Assign)
+                                        and any(isinstance(target, ast.Name) and target.id == "__all__"
+                                                for target in node.targets))
+                    self.assertCountEqual(module.__all__, stub_exports)
+                    for name in module.__all__:
+                        self.assertFalse(name.startswith("_"))
+                        self.assertIs(getattr(module, name), getattr(qs, name))
         for product in ["EuropeanSwaption", "EquityForward"]:
             methods = {node.name: node for node in declarations[product].body
                        if isinstance(node, ast.FunctionDef)}

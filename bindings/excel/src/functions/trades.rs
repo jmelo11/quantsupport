@@ -11,7 +11,7 @@ use quantsupport::prelude::{
 use xll_rs::types::XllError;
 use xllgen::xll_bindgen;
 
-use crate::registry::{with_registry, with_registry_mut, QsObject};
+use crate::runtime::registry::{with_registry, with_registry_mut, QsObject};
 
 use super::helpers::{
     input_key, parse_cap_floor_type, parse_caplet_floorlet_type, parse_compounding, parse_currency,

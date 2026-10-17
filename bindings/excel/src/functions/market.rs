@@ -10,7 +10,7 @@ use serde::de::DeserializeOwned;
 use xll_rs::types::{XllError, XLOPER12};
 use xllgen::xll_bindgen;
 
-use crate::registry::{with_registry, with_registry_mut, QsObject};
+use crate::runtime::registry::{with_registry, with_registry_mut, QsObject};
 
 use super::helpers::{
     bool_value, input_key, not_found, parse_currency, parse_date, parse_day_counter, parse_index,
@@ -494,7 +494,7 @@ pub fn qs_context_create(
         return Ok(handle);
     }
     let components = with_registry(|registry| {
-        Ok::<_, crate::registry::RegistryError>((
+        Ok::<_, crate::runtime::registry::RegistryError>((
             registry.quote_store(quotes)?.clone(),
             curve_configurations
                 .as_deref()
@@ -669,7 +669,7 @@ pub fn qs_context_curves(context: &str) -> Result<*mut xll_rs::types::XLOPER12, 
             .map(ToString::to_string)
             .collect();
         indices.sort();
-        Ok::<Vec<String>, crate::registry::RegistryError>(indices)
+        Ok::<Vec<String>, crate::runtime::registry::RegistryError>(indices)
     })
     .map(super::helpers::string_column)
     .map_err(value_error)
@@ -690,7 +690,7 @@ pub fn qs_context_vol_surfaces(context: &str) -> Result<*mut xll_rs::types::XLOP
             .map(ToString::to_string)
             .collect();
         indices.sort();
-        Ok::<Vec<String>, crate::registry::RegistryError>(indices)
+        Ok::<Vec<String>, crate::runtime::registry::RegistryError>(indices)
     })
     .map(super::helpers::string_column)
     .map_err(value_error)
@@ -711,7 +711,7 @@ pub fn qs_context_vol_cubes(context: &str) -> Result<*mut xll_rs::types::XLOPER1
             .map(ToString::to_string)
             .collect();
         indices.sort();
-        Ok::<Vec<String>, crate::registry::RegistryError>(indices)
+        Ok::<Vec<String>, crate::runtime::registry::RegistryError>(indices)
     })
     .map(super::helpers::string_column)
     .map_err(value_error)
@@ -732,7 +732,7 @@ pub fn qs_context_simulations(context: &str) -> Result<*mut xll_rs::types::XLOPE
             .map(ToString::to_string)
             .collect();
         indices.sort();
-        Ok::<Vec<String>, crate::registry::RegistryError>(indices)
+        Ok::<Vec<String>, crate::runtime::registry::RegistryError>(indices)
     })
     .map(super::helpers::string_column)
     .map_err(value_error)

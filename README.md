@@ -2,6 +2,14 @@
 
 QuantSupport is a quantitative-finance library written in Rust, with Python bindings provided in the same repository. It combines instrument construction, market-data bootstrapping, pricing, automatic differentiation, payoff scripting, Monte Carlo exposure simulation, and XVA in one toolkit.
 
+## Documentation and downloads
+
+- [QuantSupport Book](https://jmelo11.github.io/quantsupport/): concepts and pricing workflows.
+- [Rust API](https://docs.rs/quantsupport): native types and traits.
+- [Python API](https://jmelo11.github.io/quantsupport/python/api.html): categorized classes, signatures, properties, and methods.
+- [Excel reference](https://jmelo11.github.io/quantsupport/excel/reference.html): worksheet functions and parameter help.
+- [Download the Excel XLL](https://github.com/jmelo11/quantsupport/releases/latest/download/quantsupport.xll): 64-bit Windows Excel add-in.
+
 A crate is available for usage in your project:
 
 ```rust

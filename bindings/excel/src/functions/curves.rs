@@ -9,7 +9,7 @@ use xll_rs::{
 };
 use xllgen::xll_bindgen;
 
-use crate::registry::{with_registry, with_registry_mut, QsObject};
+use crate::runtime::registry::{with_registry, with_registry_mut, QsObject};
 
 use super::helpers::{
     input_key, parse_compounding, parse_date, parse_day_counter, parse_frequency, parse_index,

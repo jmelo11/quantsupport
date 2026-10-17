@@ -2,7 +2,7 @@ use quantsupport::prelude::{Period, Scalar};
 use xll_rs::types::XllError;
 use xllgen::xll_bindgen;
 
-use crate::registry::with_registry;
+use crate::runtime::registry::with_registry;
 
 use super::helpers::{parse_date, parse_index, parse_time_unit, string_column, value_error};
 

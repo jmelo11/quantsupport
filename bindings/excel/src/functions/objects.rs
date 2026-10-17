@@ -1,7 +1,7 @@
 use xll_rs::types::XllError;
 use xllgen::xll_bindgen;
 
-use crate::registry::{with_registry, with_registry_mut};
+use crate::runtime::registry::{with_registry, with_registry_mut};
 
 use super::helpers::{not_found, value_error};
 

@@ -11,23 +11,23 @@ use xll_rs::types::{
     XLTYPE_NIL, XLTYPE_NUM, XLTYPE_STR,
 };
 
-pub fn value_error(error: impl Display) -> XllError {
+pub(crate) fn value_error(error: impl Display) -> XllError {
     XllError::msg(XLLError::VALUE, error.to_string())
 }
 
-pub fn not_found(error: impl Display) -> XllError {
+pub(crate) fn not_found(error: impl Display) -> XllError {
     XllError::msg(XLLError::NA, error.to_string())
 }
 
-pub fn parse_date(value: &str) -> Result<Date, XllError> {
+pub(crate) fn parse_date(value: &str) -> Result<Date, XllError> {
     Date::from_str(value.trim(), "%Y-%m-%d").map_err(value_error)
 }
 
-pub fn parse_currency(value: &str) -> Result<Currency, XllError> {
+pub(crate) fn parse_currency(value: &str) -> Result<Currency, XllError> {
     Currency::from_str(value.trim().to_ascii_uppercase().as_str()).map_err(value_error)
 }
 
-pub fn parse_index(value: &str) -> Result<MarketIndex, XllError> {
+pub(crate) fn parse_index(value: &str) -> Result<MarketIndex, XllError> {
     let value = value.trim();
     if let Some(name) = value.strip_prefix("Equity:") {
         return Ok(MarketIndex::Equity(name.to_string()));
@@ -55,24 +55,24 @@ pub fn parse_index(value: &str) -> Result<MarketIndex, XllError> {
     Ok(MarketIndex::from_str(value).unwrap_or_else(|never| match never {}))
 }
 
-pub fn parse_day_counter(value: &str) -> Result<DayCounter, XllError> {
+pub(crate) fn parse_day_counter(value: &str) -> Result<DayCounter, XllError> {
     DayCounter::try_from(value.trim().to_string()).map_err(value_error)
 }
 
-pub fn parse_compounding(value: &str) -> Result<Compounding, XllError> {
+pub(crate) fn parse_compounding(value: &str) -> Result<Compounding, XllError> {
     Compounding::try_from(value.trim().to_string()).map_err(value_error)
 }
 
-pub fn parse_frequency(value: &str) -> Result<Frequency, XllError> {
+pub(crate) fn parse_frequency(value: &str) -> Result<Frequency, XllError> {
     Frequency::from_str(value.trim()).map_err(value_error)
 }
 
-pub fn input_key<T: Serialize>(inputs: &T) -> Result<String, XllError> {
+pub(crate) fn input_key<T: Serialize>(inputs: &T) -> Result<String, XllError> {
     serde_json::to_string(inputs)
         .map_err(|error| value_error(format!("could not fingerprint worksheet inputs: {error}")))
 }
 
-pub fn parse_interpolator(value: &str) -> Result<Interpolator, XllError> {
+pub(crate) fn parse_interpolator(value: &str) -> Result<Interpolator, XllError> {
     match value.trim().to_ascii_lowercase().as_str() {
         "linear" => Ok(Interpolator::Linear),
         "loglinear" | "log-linear" | "log linear" => Ok(Interpolator::LogLinear),
@@ -83,11 +83,11 @@ pub fn parse_interpolator(value: &str) -> Result<Interpolator, XllError> {
     }
 }
 
-pub fn parse_time_unit(value: &str) -> Result<quantsupport::prelude::TimeUnit, XllError> {
+pub(crate) fn parse_time_unit(value: &str) -> Result<quantsupport::prelude::TimeUnit, XllError> {
     quantsupport::prelude::TimeUnit::try_from(value.trim().to_string()).map_err(value_error)
 }
 
-pub fn parse_side(value: &str) -> Result<Side, XllError> {
+pub(crate) fn parse_side(value: &str) -> Result<Side, XllError> {
     match value.trim().to_ascii_lowercase().as_str() {
         "longreceive" | "receive" | "long" | "buy" => Ok(Side::LongReceive),
         "payshort" | "pay" | "short" | "sell" => Ok(Side::PayShort),
@@ -97,7 +97,7 @@ pub fn parse_side(value: &str) -> Result<Side, XllError> {
     }
 }
 
-pub fn parse_option_type(value: &str) -> Result<EuroOptionType, XllError> {
+pub(crate) fn parse_option_type(value: &str) -> Result<EuroOptionType, XllError> {
     match value.trim().to_ascii_lowercase().as_str() {
         "call" => Ok(EuroOptionType::Call),
         "put" => Ok(EuroOptionType::Put),
@@ -107,7 +107,7 @@ pub fn parse_option_type(value: &str) -> Result<EuroOptionType, XllError> {
     }
 }
 
-pub fn parse_cap_floor_type(value: &str) -> Result<CapFloorType, XllError> {
+pub(crate) fn parse_cap_floor_type(value: &str) -> Result<CapFloorType, XllError> {
     match value.trim().to_ascii_lowercase().as_str() {
         "cap" => Ok(CapFloorType::Cap),
         "floor" => Ok(CapFloorType::Floor),
@@ -117,7 +117,7 @@ pub fn parse_cap_floor_type(value: &str) -> Result<CapFloorType, XllError> {
     }
 }
 
-pub fn parse_caplet_floorlet_type(value: &str) -> Result<CapletFloorletType, XllError> {
+pub(crate) fn parse_caplet_floorlet_type(value: &str) -> Result<CapletFloorletType, XllError> {
     match value.trim().to_ascii_lowercase().as_str() {
         "caplet" | "cap" => Ok(CapletFloorletType::Caplet),
         "floorlet" | "floor" => Ok(CapletFloorletType::Floorlet),
@@ -127,7 +127,7 @@ pub fn parse_caplet_floorlet_type(value: &str) -> Result<CapletFloorletType, Xll
     }
 }
 
-pub fn string_column(values: Vec<String>) -> *mut XLOPER12 {
+pub(crate) fn string_column(values: Vec<String>) -> *mut XLOPER12 {
     let rows = values.len();
     let cells = values
         .iter()
@@ -136,7 +136,7 @@ pub fn string_column(values: Vec<String>) -> *mut XLOPER12 {
     build_multi(cells, rows, 1)
 }
 
-pub fn string_values(value: *const XLOPER12, argument_name: &str) -> Result<Vec<String>, XllError> {
+pub(crate) fn string_values(value: *const XLOPER12, argument_name: &str) -> Result<Vec<String>, XllError> {
     if value.is_null() {
         return Err(value_error(format!("{argument_name} cannot be null")));
     }
@@ -188,7 +188,7 @@ pub fn string_values(value: *const XLOPER12, argument_name: &str) -> Result<Vec<
     }
 }
 
-pub fn bool_value(value: *const XLOPER12, argument_name: &str) -> Result<bool, XllError> {
+pub(crate) fn bool_value(value: *const XLOPER12, argument_name: &str) -> Result<bool, XllError> {
     if value.is_null() {
         return Err(value_error(format!("{argument_name} cannot be null")));
     }
@@ -203,7 +203,7 @@ pub fn bool_value(value: *const XLOPER12, argument_name: &str) -> Result<bool, X
     }
 }
 
-pub fn string_matrix(values: Vec<Vec<String>>) -> *mut XLOPER12 {
+pub(crate) fn string_matrix(values: Vec<Vec<String>>) -> *mut XLOPER12 {
     let rows = values.len();
     let columns = values.iter().map(Vec::len).max().unwrap_or(0);
     let cells = values

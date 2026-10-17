@@ -88,7 +88,7 @@ pub fn qs_help(function_name: &str) -> Result<*mut xll_rs::types::XLOPER12, XllE
         .filter(|name| !name.is_empty())
         .collect();
     let generated_argument_help =
-        crate::function_help::argument_help(export.name, export.arg_names);
+        crate::documentation::function_help::argument_help(export.name, export.arg_names);
     let argument_help = if export.arg_help.is_empty() {
         generated_argument_help.as_slice()
     } else {
