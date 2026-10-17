@@ -119,11 +119,13 @@ impl DateTime {
         )
     }
 
-    /// Converts to an aware Python datetime (microsecond precision).
+    /// Converts to an aware Python datetime, truncating to microseconds.
     fn to_datetime<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        // Python 3.9/3.10 reject fractions with more than six digits.
+        let timestamp = self.inner.to_str("%Y-%m-%dT%H:%M:%S%.6f%:z");
         py.import("datetime")?
             .getattr("datetime")?
-            .call_method1("fromisoformat", (self.inner.to_string(),))
+            .call_method1("fromisoformat", (timestamp,))
     }
 
     fn __str__(&self) -> String {

@@ -42,6 +42,25 @@ class DateTimeTests(unittest.TestCase):
         self.assertEqual(qs.DateTime.parse("2025-01-15 10:30:45 +0000", "%Y-%m-%d %H:%M:%S %z"), instant)
         self.assertEqual(instant.to_str("%Y-%m-%d %H:%M"), "2025-01-15 10:30")
 
+    def test_to_datetime_truncates_fractional_seconds_in_utc(self):
+        for fraction, nanosecond in [
+            ("", 0),
+            (".123", 123000000),
+            (".123456", 123456000),
+            (".123456789", 123456789),
+            (".000000001", 1),
+            (".000001999", 1999),
+            (".999999999", 999999999),
+        ]:
+            with self.subTest(fraction=fraction):
+                instant = qs.DateTime.parse(f"2025-01-16T00:30:45{fraction}+02:00")
+                expected = datetime(2025, 1, 15, 22, 30, 45, nanosecond // 1000, tzinfo=timezone.utc)
+                converted = instant.to_datetime()
+                self.assertEqual(converted, expected)
+                self.assertIs(converted.tzinfo, timezone.utc)
+                self.assertEqual(qs.DateTime.from_datetime(converted).nanosecond, nanosecond // 1000 * 1000)
+                self.assertEqual(instant.nanosecond, nanosecond)
+
     def test_invalid_dates_and_naive_inputs_fail(self):
         for components in [(2025, 2, 29), (2025, 1, 15, 24)]:
             with self.assertRaises(qs.QuantSupportError):
