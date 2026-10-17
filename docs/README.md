@@ -12,7 +12,8 @@ contains the Sphinx site under `/api/`, with its own navigation and search.
 - mdBook 0.5.2 and mdbook-mermaid 0.17.0 for the combined site.
 
 Sphinx AutoAPI reads the packaged Python `.pyi` signatures and docstrings.
-The Excel extension runs the portable Rust `function_catalog` example to
+The Excel extension runs the portable Rust `function_catalog` tool in
+`bindings/excel/tools/function_catalog.rs` to
 generate a page for each registered function, including aliases and parameter
 help. Neither the native Python extension nor Windows or Excel is required.
 The first API build compiles the catalog exporter.
