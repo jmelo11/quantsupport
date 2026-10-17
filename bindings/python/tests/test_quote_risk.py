@@ -29,12 +29,12 @@ class QuoteRiskTests(unittest.TestCase):
         # also verifies an economically material derivative independently.
         labels = ["FixedRateDeposit_USD_SOFR_1D", "OIS_USD_SOFR_5Y"]
 
-        def context(scenarios=None):
+        def context():
             return qs.PricingContext(quotes=quotes, curves=curves,
-                                     csa_policy=csa_policy, scenarios=scenarios)
+                                     csa_policy=csa_policy)
 
         def value(trade, label, bump):
-            with context([qs.Scenario(label, bump)]) as ctx:
+            with context() as ctx, qs.Scenario(shocks=[{"target": label, "value": bump, "type": qs.ScenarioType.Absolute}]):
                 return ctx.evaluate(trade, [qs.Request.Value]).price
 
         # Either trade may be the first valuation after __enter__, and a

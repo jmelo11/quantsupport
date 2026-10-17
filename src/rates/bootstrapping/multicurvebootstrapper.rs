@@ -1,4 +1,4 @@
-use std::{cell::RefCell, collections::HashMap, rc::Rc};
+use std::{borrow::Cow, cell::RefCell, collections::HashMap, rc::Rc};
 
 use nalgebra::{DMatrix, DVector};
 
@@ -121,14 +121,14 @@ use crate::{
 /// let result = bootstrapper.bootstrap(&selector, Level::Mid);
 /// assert!(result.is_ok(), "Bootstrap failed: {:?}", result.err());
 /// ```
-pub struct MultiCurveBootstrapper {
+pub struct MultiCurveBootstrapper<'a> {
     curve_specs: Vec<CurveConfiguration>,
     discount_policy: BootstrapDiscountPolicy,
-    fx_store: FxStore,
-    fixing_store: Option<FixingStore>,
+    fx_store: Cow<'a, FxStore>,
+    fixing_store: Option<Cow<'a, FixingStore>>,
 }
 
-impl MultiCurveBootstrapper {
+impl<'a> MultiCurveBootstrapper<'a> {
     /// Creates a bootstrapper from a set of curve specifications.
     #[must_use]
     pub fn new(
@@ -138,7 +138,7 @@ impl MultiCurveBootstrapper {
         Self {
             curve_specs,
             discount_policy,
-            fx_store: FxStore::new(),
+            fx_store: Cow::Owned(FxStore::new()),
             fixing_store: None,
         }
     }
@@ -147,14 +147,22 @@ impl MultiCurveBootstrapper {
     /// instruments referencing multiple currencies (e.g. cross-currency swaps, FX forwards).
     #[must_use]
     pub fn with_fx_store(mut self, store: FxStore) -> Self {
-        self.fx_store = store;
+        self.fx_store = Cow::Owned(store);
         self
     }
 
     /// Registers historical observations for seasoned or lookback OIS calibration coupons.
     #[must_use]
     pub fn with_fixing_store(mut self, store: FixingStore) -> Self {
-        self.fixing_store = Some(store);
+        self.fixing_store = Some(Cow::Owned(store));
+        self
+    }
+
+    /// Borrows FX rates and historical observations during construction.
+    #[must_use]
+    pub fn with_market_stores(mut self, fx: &'a FxStore, fixings: &'a FixingStore) -> Self {
+        self.fx_store = Cow::Borrowed(fx);
+        self.fixing_store = Some(Cow::Borrowed(fixings));
         self
     }
 
@@ -173,6 +181,18 @@ impl MultiCurveBootstrapper {
         selector: &impl QuoteSelector,
         level: Level,
     ) -> Result<HashMap<MarketIndex, DiscountCurveElement>> {
+        self.bootstrap_with_snapshots(selector, level)
+            .map(|(curves, _)| curves)
+    }
+
+    pub(crate) fn bootstrap_with_snapshots(
+        &self,
+        selector: &impl QuoteSelector,
+        level: Level,
+    ) -> Result<(
+        HashMap<MarketIndex, DiscountCurveElement>,
+        HashMap<MarketIndex, BootstrappedCurve>,
+    )> {
         // 1. Resolve all curve specs into concrete instruments.
         let mut resolved = HashMap::new();
         for spec in &self.curve_specs {
@@ -209,24 +229,30 @@ impl MultiCurveBootstrapper {
             let spec = resolved.get(index).ok_or_else(|| {
                 QSError::NotFoundErr(format!("Missing resolved spec for {index}"))
             })?;
-            let (curve, calibrated) = match spec.construction() {
-                CurveConstruction::Bootstrapped => {
-                    let calibrated = self.bootstrap_next_curve(index, spec, &solved_curves)?;
-                    let curve = Self::calibrated_term_structure(spec, &calibrated)?;
-                    (Box::new(curve) as Box<dyn ADCurveElement>, calibrated)
-                }
-                construction => {
-                    Self::explicit_term_structure(spec, construction, &result, &solved_curves)?
-                }
-            };
+            let (element, calibrated) = self.construct_curve(spec, &result, &solved_curves)?;
             solved_curves.insert(index.clone(), calibrated);
-            let shared: SharedElement<dyn ADCurveElement> = Rc::new(RefCell::new(curve));
-            result.insert(
-                index.clone(),
-                DiscountCurveElement::new(index.clone(), shared),
-            );
+            result.insert(index.clone(), element);
         }
-        Ok(result)
+        Ok((result, solved_curves))
+    }
+
+    pub(crate) fn construct_curve(
+        &self,
+        spec: &CurveConfiguration,
+        curves: &HashMap<MarketIndex, DiscountCurveElement>,
+        solved: &HashMap<MarketIndex, BootstrappedCurve>,
+    ) -> Result<(DiscountCurveElement, BootstrappedCurve)> {
+        let index = spec.market_index();
+        let (curve, calibrated) = match spec.construction() {
+            CurveConstruction::Bootstrapped => {
+                let calibrated = self.bootstrap_next_curve(index, spec, solved)?;
+                let curve = Self::calibrated_term_structure(spec, &calibrated)?;
+                (Box::new(curve) as Box<dyn ADCurveElement>, calibrated)
+            }
+            construction => Self::explicit_term_structure(spec, construction, curves, solved)?,
+        };
+        let shared: SharedElement<dyn ADCurveElement> = Rc::new(RefCell::new(curve));
+        Ok((DiscountCurveElement::new(index.clone(), shared), calibrated))
     }
 
     fn calibrated_term_structure(
@@ -385,7 +411,7 @@ impl MultiCurveBootstrapper {
             other_curves,
             discount_policy: &self.discount_policy,
             fx_store: &self.fx_store,
-            fixing_store: self.fixing_store.as_ref(),
+            fixing_store: self.fixing_store.as_deref(),
         };
 
         // Solve.

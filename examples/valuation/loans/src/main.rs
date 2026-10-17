@@ -6,14 +6,11 @@ use std::collections::HashSet;
 type ExampleResult<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 /// Loads shared EUR quotes/curve specs and initializes them with supplied fixings
-/// and scenarios, using ESTR as the base discount curve.
+/// using ESTR as the base discount curve.
 ///
 /// # Errors
 /// Propagates JSON decoding, quote conversion, and market construction errors.
-fn build_initialized_loan_market(
-    fixings: FixingStore,
-    scenarios: Vec<Scenario>,
-) -> ExampleResult<PricingContext> {
+fn build_initialized_loan_market(fixings: FixingStore) -> ExampleResult<PricingContext> {
     let records: QuoteStoreRecords =
         serde_json::from_str(include_str!("../data/loan_quotes.json"))?;
     let curves: Vec<CurveConfiguration> =
@@ -25,7 +22,6 @@ fn build_initialized_loan_market(
         .with_curve_configurations(curves)
         .with_credit_curve_configurations(credit)
         .with_fixing_store(fixings)
-        .with_scenarios(scenarios)
         .with_base_currency(Currency::EUR)
         .with_base_index(MarketIndex::ESTR);
     context.initialize()?;
@@ -64,7 +60,7 @@ fn estr_loan_pricer() -> LoanPricer {
 fn evaluate_loan_receipt_present_value(
     pricer: &LoanPricer,
     trade: &LoanTrade<DualFwd>,
-    context: &PricingContext,
+    context: &impl MarketDataProvider,
 ) -> Result<f64> {
     pricer
         .evaluate(trade, &[Request::Value], context)?
@@ -149,7 +145,7 @@ fn main() -> ExampleResult<()> {
         }
     }
     assert_eq!(seen.len(), 30);
-    let context = build_initialized_loan_market(fixings.clone(), vec![])?;
+    let context = build_initialized_loan_market(fixings.clone())?;
     let pricer = estr_loan_pricer();
     for loan in [fixed.clone(), floating.clone(), mixed] {
         let trade = LoanTrade::new(loan, reference, Side::LongReceive);
@@ -264,14 +260,10 @@ fn main() -> ExampleResult<()> {
         .max_by(|a, b| a.1.abs().total_cmp(&b.1.abs()))
         .ok_or_else(|| QSError::ValueNotSetErr("Risk pillar".into()))?;
     let bump = 1e-5;
-    let up = build_initialized_loan_market(
-        fixings.clone(),
-        vec![Scenario::new(pillar, bump, ScenarioType::Absolute)],
-    )?;
-    let down = build_initialized_loan_market(
-        fixings.clone(),
-        vec![Scenario::new(pillar, -bump, ScenarioType::Absolute)],
-    )?;
+    let up_scenario = Scenario::new(vec![Shock::new(pillar, bump, ScenarioType::Absolute)]);
+    let down_scenario = Scenario::new(vec![Shock::new(pillar, -bump, ScenarioType::Absolute)]);
+    let up = up_scenario.apply(&context)?;
+    let down = down_scenario.apply(&context)?;
     let fd = (evaluate_loan_receipt_present_value(&pricer, &trade, &up)?
         - evaluate_loan_receipt_present_value(&pricer, &trade, &down)?)
         / (2.0 * bump);
@@ -314,6 +306,75 @@ fn main() -> ExampleResult<()> {
         "Refinancing-sensitive receipt PV: EUR {:.2}",
         result.price().unwrap_or_default()
     );
-    println!("Contract, cashflow, fair-rate and sensitivity checks passed.");
+    // Treasury discounts the mortgage using EURIBOR plus its term funding spread.
+    let spread_index = MarketIndex::Other("FUNDINGSPREAD".into());
+    let funding_index = MarketIndex::Other("COSTOFFUNDS".into());
+    let mut configurations = context.curve_configurations().clone();
+    configurations.push(
+        CurveConfiguration::new(
+            spread_index.clone(),
+            DayCounter::Actual360,
+            Interpolator::Linear,
+            false,
+            vec![],
+        )
+        .with_construction(CurveConstruction::ZeroRate {
+            pillars: ["0D", "1Y", "5Y", "10Y", "20Y", "30Y", "35Y"]
+                .iter()
+                .map(|tenor| tenor.parse().map(CurvePillar::Tenor))
+                .collect::<Result<_>>()?,
+            rates: vec![0.005, 0.006, 0.008, 0.01, 0.012, 0.013, 0.0135],
+            compounding: Compounding::Continuous,
+            frequency: Frequency::Annual,
+        }),
+    );
+    configurations.push(
+        CurveConfiguration::new(
+            funding_index.clone(),
+            DayCounter::Actual360,
+            Interpolator::Linear,
+            false,
+            vec![],
+        )
+        .with_construction(CurveConstruction::Composite {
+            base_index: MarketIndex::EURIBOR12m,
+            spread_index,
+        }),
+    );
+    let funding_context = context.with_curve_configurations(configurations);
+    let mut funding_pricer = LoanPricer::new();
+    funding_pricer.set_discount_policy(Box::new(
+        FixedIncomeDiscountPolicy::new(false).with_risk_free_index(Currency::EUR, funding_index),
+    ));
+    let base = funding_pricer.evaluate(
+        &trade,
+        &[Request::Value, Request::Sensitivities],
+        &funding_context,
+    )?;
+    println!(
+        "Floating mortgage, cost-of-funds value: EUR {:.2}",
+        base.price().unwrap_or_default()
+    );
+    if let Some(risk) = base.sensitivities() {
+        for (pillar, exposure) in risk
+            .instrument_keys()
+            .iter()
+            .zip(risk.exposure())
+            .filter(|(pillar, _)| pillar.starts_with("FUNDINGSPREAD_"))
+        {
+            println!("  {pillar}: EUR {:.2} per +1 bp", exposure * 0.0001);
+        }
+    }
+    let scenario = Scenario::new(vec![
+        Shock::new("EURIBOR12m", 0.01, ScenarioType::Absolute),
+        Shock::new("FUNDINGSPREAD", 0.005, ScenarioType::Absolute),
+    ]);
+    let stressed_market = scenario.apply(&funding_context)?;
+    let stressed = funding_pricer.evaluate(&trade, &[Request::Value], &stressed_market)?;
+    println!(
+        "EURIBOR +100 bp and funding +50 bp: value EUR {:.2}, change EUR {:.2}",
+        stressed.price().unwrap_or_default(),
+        stressed.price().unwrap_or_default() - base.price().unwrap_or_default()
+    );
     Ok(())
 }

@@ -22,7 +22,8 @@ use crate::{
 pub trait ADCurveElement:
     InterestRatesTermStructure<DualFwd> + Pillars<DualFwd> + Send + Sync
 {
-    /// Copies a curve for use as an owned component of another term structure.
+    /// Copies a curve with independent numeric pillars and detached AD nodes.
+    /// Immutable calibration metadata may be shared between copies.
     ///
     /// # Errors
     /// Returns an error when the concrete curve does not support owned copies.

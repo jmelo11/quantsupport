@@ -9,8 +9,8 @@ use quantsupport::prelude::{
     CurveConfiguration as QsCurveConfiguration, CurveConstruction as QsCurveConstruction,
     CurvePillar, DayCounter, DualFwd, FixingStore as QsFixingStore, Frequency, FxRateRecord,
     FxStore as QsFxStore, Interpolator, PricerConfiguration as QsPricerConfiguration,
-    QuoteStore as QsQuoteStore, QuoteStoreRecords, Scenario as QsScenario,
-    ScenarioType as QsScenarioType, SimulationConfiguration as QsSimulationConfiguration,
+    QuoteStore as QsQuoteStore, QuoteStoreRecords,
+    SimulationConfiguration as QsSimulationConfiguration,
     VolatilityCubeConfiguration as QsVolatilityCubeConfiguration,
     VolatilitySurfaceConfiguration as QsVolatilitySurfaceConfiguration,
 };
@@ -534,85 +534,5 @@ impl FxStore {
 
     fn __repr__(&self) -> String {
         "FxStore(...)".to_string()
-    }
-}
-
-/// A shock applied to quoted or explicit zero-rate inputs before construction.
-///
-/// The target is either a full quote identifier (`"OIS_USD_SOFR_1Y"`) or a
-/// partial underscore-separated selector matched against the identifier
-/// segments of every quote (`"SOFR"` shocks all SOFR quotes — a parallel
-/// shift; `"Swaption_USD"` shocks the USD swaption vol slide). Explicit zero-rate
-/// inputs use the sensitivity label ``<index>_<date>``; ``FUNDINGSPREAD`` selects
-/// every pillar of that spread curve.
-///
-/// Parameters
-/// ----------
-/// target : str
-///     Exact pillar identifier or underscore-separated selector.
-/// shock : float
-///     Decimal additive change, or fractional scaling for Relative shocks.
-/// scenario_type : ScenarioType, optional
-///     Absolute by default. Use Scenarios for a temporary pricing scope.
-///
-/// ```python
-/// bump_all_sofr = qs.Scenario(target="SOFR", shock=0.0001, scenario_type=qs.ScenarioType.Absolute)
-/// bump_1y_pillar = qs.Scenario(target="OIS_USD_SOFR_1Y", shock=0.0001)
-/// scale_vols = qs.Scenario(target="Swaption_USD", shock=0.10, scenario_type=qs.ScenarioType.Relative)
-/// ```
-#[pyclass(module = "quantsupport", name = "Scenario", from_py_object)]
-#[derive(Clone)]
-pub struct Scenario {
-    pub inner: QsScenario,
-}
-
-#[pymethods]
-impl Scenario {
-    #[new]
-    #[pyo3(signature = (target, shock, scenario_type = None))]
-    fn new(target: String, shock: f64, scenario_type: Option<&Bound<'_, PyAny>>) -> PyResult<Self> {
-        let scenario_type = scenario_type
-            .map(crate::conv::extract_scenario_type)
-            .transpose()?
-            .unwrap_or(QsScenarioType::Absolute);
-        Ok(Self {
-            inner: QsScenario::new(target, shock, scenario_type),
-        })
-    }
-
-    /// Builds a scenario from a dict
-    /// `{"target": ..., "shock": ..., "scenario_type": ...}`.
-    #[staticmethod]
-    fn from_dict(obj: &Bound<'_, PyAny>) -> PyResult<Self> {
-        Ok(Self {
-            inner: from_py(obj, "scenario")?,
-        })
-    }
-
-    /// Quote identifier or partial (segment) selector.
-    #[getter]
-    fn target(&self) -> &str {
-        self.inner.target()
-    }
-
-    /// Shock size.
-    #[getter]
-    fn shock(&self) -> f64 {
-        self.inner.shock()
-    }
-
-    /// How the shock is applied.
-    #[getter]
-    fn scenario_type(&self) -> crate::enums::ScenarioType {
-        self.inner.scenario_type().into()
-    }
-
-    fn __repr__(&self) -> String {
-        format!(
-            "Scenario(target='{}', shock={}, scenario_type={:?})",
-            self.inner.target(),
-            self.inner.shock(),
-            self.inner.scenario_type()
-        )
     }
 }

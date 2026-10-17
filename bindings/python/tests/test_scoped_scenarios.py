@@ -1,5 +1,6 @@
 """Temporary quoted and explicit-pillar shocks on reusable pricing contexts."""
 import unittest
+import math
 from pathlib import Path
 
 import quantsupport as qs
@@ -33,14 +34,65 @@ class TypedCalendarTests(unittest.TestCase):
 
 
 class ScopedScenarioTests(unittest.TestCase):
+    def test_single_public_class_and_typed_shock_dictionaries(self):
+        self.assertFalse(hasattr(qs, "Scenarios"))
+        shock = {"target": "ESTR", "value": 0.01, "type": qs.ScenarioType.Absolute}
+        scenario = qs.Scenario(shocks=[shock])
+        shock["value"] = 0.02
+        self.assertEqual(scenario.shocks[0]["value"], 0.01)
+        copied = scenario.shocks
+        copied[0]["value"] = 0.03
+        self.assertEqual(scenario.shocks[0]["value"], 0.01)
+        for invalid in [
+            {"target": "ESTR", "value": 0.01},
+            {"target": "", "value": 0.01, "type": qs.ScenarioType.Absolute},
+            {"target": "ESTR", "value": float("inf"), "type": qs.ScenarioType.Absolute},
+            {"target": "ESTR", "value": 0.01, "type": qs.ScenarioType.Absolute, "name": "unused"},
+        ]:
+            with self.subTest(shock=invalid), self.assertRaises(ValueError):
+                qs.Scenario(shocks=[invalid])
+
+    def test_unrelated_invalid_curves_and_simulations_are_not_constructed(self):
+        context = context_inputs()
+        context.curves += [qs.CurveConfiguration(
+            market_index=qs.MarketIndex.other(name="UNRELATED"), quotes=["MISSING_QUOTE"],
+        )]
+        context.simulation_configurations = [qs.SimulationConfiguration.from_dict({
+            "market_index": {"Other": "MISSING_SIMULATION_CURVE"},
+            "model": {"HullWhite": {"alpha": 0.1, "parameter_source": {"Fixed": {"sigma": 0.01}}}},
+            "n_paths": 1_000_000, "horizon": "30Y",
+        })]
+        scenario = qs.Scenario(shocks=[{"target": "ESTR", "value": 0.01, "type": qs.ScenarioType.Absolute}])
+        with context:
+            base_curve = context.curve(index=qs.MarketIndex.ESTR)
+            base = self.factor(context)
+            with scenario:
+                self.assertLess(self.factor(context), base)
+                self.assertAlmostEqual(base_curve.discount_factor(date="2028-02-24"), base)
+            self.assertAlmostEqual(self.factor(context), base)
+            with self.assertRaisesRegex(qs.QuantSupportError, "MISSING_QUOTE"):
+                context.curve(index=qs.MarketIndex.other(name="UNRELATED"))
+
+    def test_active_scenario_cache_tracks_public_input_reassignment(self):
+        context = funding_context()
+        replacement = funding_context(funding_shift=0.002).curves
+        scenario = qs.Scenario(shocks=[{"target": "FUNDINGSPREAD", "value": 0.005, "type": qs.ScenarioType.Absolute}])
+        with context, scenario:
+            before = context.curve(index=FUNDING).discount_factor(date="2028-02-24")
+            context.curves = replacement
+            after = context.curve(index=FUNDING).discount_factor(date="2028-02-24")
+            tau = qs.DayCounter.Actual360.year_fraction(start="2026-02-24", end="2028-02-24")
+            self.assertAlmostEqual(after / before, math.exp(-0.002 * tau))
+        self.assertEqual([curve.to_dict() for curve in context.curves], [curve.to_dict() for curve in replacement])
+
     def factor(self, context):
         return context.curve(index=qs.MarketIndex.ESTR).discount_factor(date="2028-02-24")
 
     def test_reuse_restores_quotes_inputs_and_composite_curves(self):
         context = funding_context()
-        scenarios = qs.Scenarios(shocks=[
-            qs.Scenario(target="EURIBOR12m", shock=0.01),
-            qs.Scenario(target="FUNDINGSPREAD", shock=0.005),
+        scenarios = qs.Scenario(shocks=[
+            {"target": "EURIBOR12m", "value": 0.01, "type": qs.ScenarioType.Absolute},
+            {"target": "FUNDINGSPREAD", "value": 0.005, "type": qs.ScenarioType.Absolute},
         ])
         original = [curve.to_dict() for curve in context.curves]
         for _ in range(2):
@@ -53,50 +105,45 @@ class ScopedScenarioTests(unittest.TestCase):
                 self.assertAlmostEqual(context.curve(index=FUNDING).discount_factor(date="2028-02-24"), base)
                 self.assertAlmostEqual(context.quotes.value("FixedRateDeposit_EUR_EURIBOR12m_1Y"), 0.04)
                 self.assertEqual([curve.to_dict() for curve in context.curves], original)
-                self.assertEqual(context.scenarios, [])
             with context, scenarios:
                 self.assertAlmostEqual(context.curve(index=FUNDING).discount_factor(date="2028-02-24"), shocked)
-            self.assertEqual(context.scenarios, [])
 
     def test_exception_and_failed_entry_leave_previous_market_usable(self):
         context = context_inputs()
         with context:
             base = self.factor(context)
             with self.assertRaisesRegex(ValueError, "body failure"):
-                with qs.Scenarios(shocks=[qs.Scenario(target="ESTR", shock=0.01)]):
+                with qs.Scenario(shocks=[{"target": "ESTR", "value": 0.01, "type": qs.ScenarioType.Absolute}]):
                     self.assertLess(self.factor(context), base)
                     raise ValueError("body failure")
             self.assertAlmostEqual(self.factor(context), base)
             for target in ["MISSING", "ESTR"]:
                 shock = 0.01 if target == "MISSING" else float("nan")
-                with self.assertRaises(qs.QuantSupportError):
-                    with qs.Scenarios(shocks=[qs.Scenario(target=target, shock=shock)]):
+                with self.assertRaises((qs.QuantSupportError, ValueError)):
+                    with qs.Scenario(shocks=[{"target": target, "value": shock, "type": qs.ScenarioType.Absolute}]):
                         self.fail("invalid scenario entered")
                 self.assertAlmostEqual(self.factor(context), base)
-                self.assertEqual(context.scenarios, [])
 
     def test_nested_scopes_compose_and_restore_parent_assumptions(self):
         context = context_inputs()
-        context.scenarios = [qs.Scenario(target="ESTR", shock=0.001)]
-        outer = qs.Scenarios(shocks=[qs.Scenario(target="ESTR", shock=0.01)])
-        inner = qs.Scenarios(shocks=[qs.Scenario(target="ESTR", shock=0.10, scenario_type=qs.ScenarioType.Relative)])
+        outer = qs.Scenario(shocks=[{"target": "ESTR", "value": 0.01, "type": qs.ScenarioType.Absolute}])
+        inner = qs.Scenario(shocks=[{"target": "ESTR", "value": 0.10, "type": qs.ScenarioType.Relative}])
         with context:
             base = self.factor(context)
             with outer:
                 outer_factor = self.factor(context)
                 with inner:
-                    self.assertAlmostEqual(context.quotes.value("FixedRateDeposit_EUR_ESTR_1Y"), 0.041 * 1.10)
+                    self.assertAlmostEqual(context.quotes.value("FixedRateDeposit_EUR_ESTR_1Y"), 0.04 * 1.10)
                     self.assertLess(self.factor(context), outer_factor)
                 self.assertAlmostEqual(self.factor(context), outer_factor)
                 with context:
                     self.assertAlmostEqual(self.factor(context), outer_factor)
                 self.assertAlmostEqual(self.factor(context), outer_factor)
             self.assertAlmostEqual(self.factor(context), base)
-            self.assertAlmostEqual(context.quotes.value("FixedRateDeposit_EUR_ESTR_1Y"), 0.031)
-        self.assertEqual(len(context.scenarios), 1)
+            self.assertAlmostEqual(context.quotes.value("FixedRateDeposit_EUR_ESTR_1Y"), 0.03)
 
     def test_shocks_bind_to_innermost_context_and_require_an_active_scope(self):
-        scenarios = qs.Scenarios(shocks=[qs.Scenario(target="ESTR", shock=0.01)])
+        scenarios = qs.Scenario(shocks=[{"target": "ESTR", "value": 0.01, "type": qs.ScenarioType.Absolute}])
         with self.assertRaisesRegex(RuntimeError, "active PricingContext"):
             with scenarios:
                 self.fail("unbound scenarios entered")
@@ -121,9 +168,9 @@ class ScopedScenarioTests(unittest.TestCase):
         requests = [qs.Request.Value, qs.Request.Sensitivities]
         with context:
             base = pricer.evaluate(trade=trade, context=context, requests=requests)
-            with qs.Scenarios(shocks=[
-                qs.Scenario(target="EURIBOR12m", shock=0.01),
-                qs.Scenario(target="FUNDINGSPREAD", shock=0.005),
+            with qs.Scenario(shocks=[
+                {"target": "EURIBOR12m", "value": 0.01, "type": qs.ScenarioType.Absolute},
+                {"target": "FUNDINGSPREAD", "value": 0.005, "type": qs.ScenarioType.Absolute},
             ]):
                 stressed = pricer.evaluate(trade=trade, context=context, requests=requests)
                 self.assertNotAlmostEqual(stressed.price, base.price)
@@ -149,7 +196,7 @@ class ScopedScenarioTests(unittest.TestCase):
                 for row in funding_risk.itertuples(index=False):
                     prices = []
                     for shift in [-epsilon, epsilon]:
-                        with qs.Scenarios(shocks=[qs.Scenario(target=row.pillar, shock=shift)]):
+                        with qs.Scenario(shocks=[{"target": row.pillar, "value": shift, "type": qs.ScenarioType.Absolute}]):
                             result = pricer.evaluate(trade=trade, context=context,
                                 requests=[qs.Request.Value, qs.Request.Cashflows])
                             prices.append(result.price)

@@ -9,7 +9,7 @@ FUNDING = qs.MarketIndex.other("COSTOFFUNDS")
 SPREAD = qs.MarketIndex.other("FUNDINGSPREAD")
 
 
-def funding_context(scenarios=None, funding_shift=0):
+def funding_context(funding_shift=0):
     inputs = [("ESTR", [0.03] * 4), ("EURIBOR12m", [0.04] * 4)]
     quotes = qs.QuoteStore.from_dict({"reference_date": REFERENCE, "quotes": [
         {"identifier": f"FixedRateDeposit_EUR_{index}_{tenor}", "mid": rate}
@@ -34,7 +34,7 @@ def funding_context(scenarios=None, funding_shift=0):
     fixings = qs.FixingStore()
     fixings.add("EURIBOR12m", "2026-02-20", 0.04)
     return qs.PricingContext(
-        quotes, curves, fixings=fixings, scenarios=scenarios,
+        quotes, curves, fixings=fixings,
         csa_policy=qs.SingleCurveCSADiscountPolicy(qs.Currency.EUR, qs.MarketIndex.ESTR),
         fixed_income_policy=qs.FixedIncomeDiscountPolicy(
             {qs.Currency.EUR: FUNDING},
@@ -55,7 +55,7 @@ def loan(floating=False):
 
 
 def value(instrument, scenarios=None, requests=None, funding_shift=0):
-    with funding_context(scenarios, funding_shift) as context:
+    with funding_context(funding_shift=funding_shift) as context, qs.Scenario(shocks=scenarios or []):
         return qs.LoanPricer().evaluate(
             qs.Trade(instrument, REFERENCE), context, requests or [qs.Request.Value],
         )
@@ -108,8 +108,7 @@ class CompositeLoanFundingTests(unittest.TestCase):
                 def shifted(sign):
                     if selector == "FUNDINGSPREAD":
                         return value(instrument, funding_shift=sign * epsilon).price
-                    return value(instrument, [qs.Scenario(selector, sign * epsilon,
-                                                        qs.ScenarioType.Absolute)]).price
+                    return value(instrument, [{"target": selector, "value": sign * epsilon, "type": qs.ScenarioType.Absolute}]).price
                 numerical = (shifted(1) - shifted(-1)) / (2 * epsilon)
                 risk = base.sensitivities
                 analytic = risk.loc[risk.pillar.str.contains(selector), "value"].sum()

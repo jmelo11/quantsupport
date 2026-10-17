@@ -1,5 +1,5 @@
 use crate::{
-    ad::{dual::DualFwd, expr::FloatExt, scalar::Scalar},
+    ad::{dual::DualFwd, expr::FloatExt, forward::ADForward, scalar::Scalar},
     core::{elements::curveelement::ADCurveElement, pillars::Pillars},
     math::interpolation::interpolator::{Interpolate, Interpolator},
     rates::{
@@ -26,6 +26,7 @@ use crate::{
 ///
 /// When built with `T = DualFwd`, the spread values live on the AD tape and
 /// sensitivities to the spread can be extracted via the [`Pillars`] trait.
+#[derive(Clone)]
 pub struct SpreadTermStructure<T: Scalar> {
     reference_date: Date,
     year_fractions: Vec<f64>,
@@ -291,7 +292,15 @@ impl Pillars<DualFwd> for SpreadTermStructure<DualFwd> {
     }
 }
 
-impl ADCurveElement for SpreadTermStructure<DualFwd> {}
+impl ADCurveElement for SpreadTermStructure<DualFwd> {
+    fn clone_curve(&self) -> Result<Box<dyn ADCurveElement>> {
+        let mut curve = self.clone();
+        for value in &mut curve.spreads {
+            *value = DualFwd::constant(ADForward::constant(value.value()));
+        }
+        Ok(Box::new(curve))
+    }
+}
 
 #[cfg(test)]
 mod tests {

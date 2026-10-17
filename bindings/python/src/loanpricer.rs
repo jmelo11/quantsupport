@@ -82,7 +82,7 @@ impl LoanPricer {
         context: PyRef<'py, PricingContext>,
         requests: Option<Vec<Bound<'py, PyAny>>>,
     ) -> PyResult<Py<EvaluationResults>> {
-        let native_context = context.native_context()?;
+        let native_context = context.market_view()?;
         Tape::<ADForward>::stop_recording_fwd();
         let instrument = trade.instrument_bound(py).extract::<Loan>().map_err(|_| {
             pyo3::exceptions::PyTypeError::new_err(
@@ -104,7 +104,7 @@ impl LoanPricer {
             FixedIncomeDiscountPolicy::build,
         )));
         let result = pricer
-            .evaluate(&trade, &requests, native_context)
+            .evaluate(&trade, &requests, &native_context)
             .map_err(qs_err)?;
         Py::new(py, EvaluationResults::from_qs(&result))
     }

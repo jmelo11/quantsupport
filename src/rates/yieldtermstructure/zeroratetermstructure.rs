@@ -3,7 +3,7 @@ use std::rc::Rc;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    ad::{dual::DualFwd, scalar::Scalar},
+    ad::{dual::DualFwd, forward::ADForward, scalar::Scalar},
     core::{elements::curveelement::ADCurveElement, pillars::Pillars},
     math::interpolation::interpolator::{Interpolate, Interpolator},
     rates::{
@@ -453,7 +453,11 @@ impl Pillars<DualFwd> for ZeroRateTermStructure<DualFwd> {
 
 impl ADCurveElement for ZeroRateTermStructure<DualFwd> {
     fn clone_curve(&self) -> Result<Box<dyn ADCurveElement>> {
-        Ok(Box::new(self.clone()))
+        let mut curve = self.clone();
+        for value in &mut curve.rates {
+            *value = DualFwd::constant(ADForward::constant(value.value()));
+        }
+        Ok(Box::new(curve))
     }
 }
 

@@ -4,7 +4,6 @@ use crate::{
     core::{
         evaluationresults::EvaluationResults,
         marketdatahandling::marketdata::{MarketDataProvider, MarketDataRequest},
-        pricingcontext::PricingContext,
         request::Request,
     },
     utils::errors::{QSError, Result},
@@ -75,7 +74,7 @@ pub trait ErasedPricer: Send + Sync {
         &self,
         trade: &dyn Any,
         requests: &[Request],
-        ctx: &PricingContext,
+        ctx: &dyn MarketDataProvider,
     ) -> Result<EvaluationResults>;
 }
 
@@ -95,7 +94,7 @@ where
         &self,
         trade: &dyn Any,
         requests: &[Request],
-        ctx: &PricingContext,
+        ctx: &dyn MarketDataProvider,
     ) -> Result<EvaluationResults> {
         let typed_trade = trade.downcast_ref::<P::Item>().ok_or_else(|| {
             QSError::InvalidValueErr(format!(
@@ -104,6 +103,6 @@ where
                 trade.type_id()
             ))
         })?;
-        self.evaluate(typed_trade, requests, ctx)
+        self.evaluate(typed_trade, requests, &ctx)
     }
 }

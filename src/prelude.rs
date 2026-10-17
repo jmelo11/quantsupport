@@ -34,6 +34,7 @@ pub use crate::{
             forwardraterequest::ForwardRateRequest,
             fxrequest::FxRequest,
             marketdata::{MarketData, MarketDataProvider, MarketDataRequest},
+            marketview::MarketView,
             pathdependentrequest::PathDependentRequest,
             spotrequest::SpotRequest,
         },
@@ -186,7 +187,7 @@ pub use crate::{
         },
         quoteselector::QuoteSelector,
         quotestore::{QuoteRecord, QuoteStore, QuoteStoreRecords},
-        scenario::{Scenario, ScenarioType},
+        scenario::{Scenario, ScenarioType, Shock},
     },
     rates::{
         bootstrapping::{

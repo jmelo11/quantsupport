@@ -1,5 +1,6 @@
+use crate::core::marketdatahandling::constructedelementstore::SharedElement;
 use crate::{
-    ad::{dual::DualFwd, scalar::Scalar},
+    ad::{dual::DualFwd, forward::ADForward, scalar::Scalar},
     core::{elements::volatilitycubelement::ADVolatilityCubeElement, pillars::Pillars},
     indices::marketindex::MarketIndex,
     math::interpolation::{
@@ -14,6 +15,7 @@ use crate::{
     },
 };
 use std::collections::BTreeMap;
+use std::{cell::RefCell, rc::Rc};
 
 use crate::math::interpolation::bilinear::BilinearValue;
 
@@ -27,6 +29,7 @@ type CubeMap<T> = BTreeMap<Period, BTreeMap<Period, BTreeMap<F64Key, T>>>;
 /// and expiry interpolation. Slices may have different inner grids.
 /// Out-of-range queries are rejected unless [`Self::with_extrapolation_policy`]
 /// selects flat extrapolation.
+#[derive(Clone)]
 pub struct InterpolatedVolatilityCube<T: Scalar> {
     reference_date: Date,
     market_index: MarketIndex,
@@ -185,7 +188,20 @@ impl Pillars<DualFwd> for InterpolatedVolatilityCube<DualFwd> {
     }
 }
 
-impl ADVolatilityCubeElement for InterpolatedVolatilityCube<DualFwd> {}
+impl ADVolatilityCubeElement for InterpolatedVolatilityCube<DualFwd> {
+    fn clone_cube(&self) -> Result<SharedElement<dyn ADVolatilityCubeElement>> {
+        let mut market = self.clone();
+        for value in market
+            .points
+            .values_mut()
+            .flat_map(|values| values.values_mut())
+            .flat_map(|values| values.values_mut())
+        {
+            *value = DualFwd::constant(ADForward::constant(value.value()));
+        }
+        Ok(Rc::new(RefCell::new(market)))
+    }
+}
 
 #[cfg(test)]
 mod tests {

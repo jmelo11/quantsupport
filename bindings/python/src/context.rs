@@ -3,26 +3,28 @@
 //!
 //! All market data and configurations are passed as typed objects
 //! ([`crate::market`]); the base-curve definition lives in a dedicated
-//! [`SingleCurveCSADiscountPolicy`]. Entering the `with` block bootstraps curves /
-//! volatility surfaces / cubes / simulations and starts the AD tape;
+//! [`SingleCurveCSADiscountPolicy`]. Entering the `with` block enables request-driven market construction;
 //! leaving it stops the tape and releases all constructed market data.
 
 use std::collections::HashMap;
 
 use pyo3::prelude::*;
 use pyo3::types::PyType;
+use quantsupport::core::marketdatahandling::marketview::MarketView;
 use quantsupport::prelude::{
     ADForward, BackwardFourierEvolutionBondPricer, BasisSwap as QsBasisSwap, BasisSwapTrade,
-    BlackEuropeanOptionPricer, BondPricer, CdsPricer, ClosedFormBlackCapPricer,
-    ClosedFormBlackCapletPricer, ConstructedElementStore, DayCounter, DiscountedCashflowPricer,
-    DualFwd, FixFloatCrossCurrencySwap as QsFixFloatXccy, FixFloatCrossCurrencySwapTrade,
-    FixedIncomeDiscountPolicy, FixedRateDeposit as QsFixedRateDeposit, FixedRateDepositTrade,
-    FloatFloatCrossCurrencySwap, FloatFloatCrossCurrencySwapTrade,
-    FloatingRateNote as QsFloatingRateNote, FloatingRateNoteTrade, FxEuropeanOptionPricer,
-    FxForwardPricer, InstrumentType, Level, LgmMarketModel, LgmRateModel, LoanPricer,
-    ModelConfiguration, Pricer, PricerImplementation, PricingContext as QsPricingContext,
-    RateFuturesPricer, Scalar, Scenario as QsScenario, ScriptEngine, Swap as QsSwap, SwapTrade,
-    Tape, TreeBasedBondPricer, XvaEngine,
+    BlackEuropeanOptionPricer, BondPricer, CalibrationSource, CdsPricer, ClosedFormBlackCapPricer,
+    ClosedFormBlackCapletPricer, ConstructedElementRequest, ConstructedElementStore, DayCounter,
+    DiscountedCashflowPricer, DualFwd, FixFloatCrossCurrencySwap as QsFixFloatXccy,
+    FixFloatCrossCurrencySwapTrade, FixedIncomeDiscountPolicy,
+    FixedRateDeposit as QsFixedRateDeposit, FixedRateDepositTrade, FloatFloatCrossCurrencySwap,
+    FloatFloatCrossCurrencySwapTrade, FloatingRateNote as QsFloatingRateNote,
+    FloatingRateNoteTrade, FxEuropeanOptionPricer, FxForwardPricer, InstrumentType, Level,
+    LgmMarketModel, LgmRateModel, LoanPricer, MarketData, MarketDataProvider, MarketDataRequest,
+    ModelConfiguration, ParameterSource, Pricer, PricerImplementation,
+    PricingContext as QsPricingContext, QuoteSelector, QuoteStore as QsQuoteStore,
+    RateFuturesPricer, Scalar, ScriptEngine, Swap as QsSwap, SwapTrade, Tape, TreeBasedBondPricer,
+    XvaEngine,
 };
 
 use crate::collateral::{
@@ -33,11 +35,11 @@ use crate::explore::{DiscountCurve, Simulation, VolatilityCube, VolatilitySurfac
 use crate::extension::{call_pricer, PricerRegistry};
 use crate::market::{
     CreditCurveConfiguration, CurveConfiguration, FixingStore, FxStore, PricerConfiguration,
-    QuoteStore, Scenario, SimulationConfiguration, VolatilityCubeConfiguration,
+    QuoteStore, SimulationConfiguration, VolatilityCubeConfiguration,
     VolatilitySurfaceConfiguration,
 };
 use crate::results::EvaluationResults;
-use crate::scenarios::{enter_context, exit_context};
+use crate::scenario::{enter_context, exit_context};
 use crate::scripting::ScriptedProduct;
 use crate::time::Date;
 use crate::trades::{
@@ -50,15 +52,15 @@ use crate::QuantSupportError;
 
 /// Market inputs and policies used to value trades.
 ///
-/// Assign public properties to change inputs: scenarios, curves, curve_configurations,
+/// Assign public properties to change inputs: curves, curve_configurations,
 /// credit_curve_configurations, fixings, quotes, fx, quote_level, csa_policy,
 /// fixed_income_policy, volatility_surface_configurations,
 /// volatility_cube_configurations, simulation_configurations, and
-/// pricer_configurations. Reassigning market inputs rebuilds an initialized context;
-/// otherwise construction happens on the next initialize() or context entry.
+/// pricer_configurations. Reassigning market inputs invalidates constructed data;
+/// construction follows subsequent market-data requests.
 /// Collection getters return copies; assign the updated collection back.
-/// Use ``with context, scenarios:`` for temporary ``Scenarios`` shocks; the
-/// previous market is restored when the scenario block exits.
+/// Use ``with context, scenario:`` for temporary ``Scenario`` shocks;
+/// the base market remains available when the scenario block exits.
 ///
 /// Parameters
 /// ----------
@@ -82,9 +84,6 @@ use crate::QuantSupportError;
 ///     Collateral currency and curve used for market construction.
 /// fixed_income_policy : FixedIncomeDiscountPolicy, optional
 ///     Currency-to-curve discount policy. Defaults to the context base curve.
-/// scenarios : sequence of Scenario, optional
-///     Default market shocks, applied to original quotes and zero-rate inputs.
-///     Use Scenarios with ``with context, scenarios:`` for temporary shocks.
 /// quote_level : Level or str, optional
 ///     Quote level used for calibration. Defaults to Mid.
 /// credit_curves : sequence of CreditCurveConfiguration, optional
@@ -112,37 +111,36 @@ use crate::QuantSupportError;
 pub struct PricingContext {
     inner: QsPricingContext,
     initialized: bool,
+    fully_constructed: bool,
+    generation: u64,
     python_pricers: PricerRegistry,
     fixed_income_policy: Option<PyFixedIncomeDiscountPolicy>,
 }
 
 impl PricingContext {
-    /// Builds a temporary shocked market before replacing the active one.
-    /// Failure leaves all previous inputs and constructed elements available.
-    pub(crate) fn begin_scoped_scenarios(
-        &mut self,
-        shocks: &[QsScenario],
-    ) -> PyResult<QsPricingContext> {
-        self.require_initialized()?;
-        let combined = self
-            .inner
-            .scenarios()
-            .iter()
-            .chain(shocks)
-            .cloned()
-            .collect();
-        let mut market = self
-            .inner
-            .clone()
-            .with_scenarios(combined)
-            .with_constructed_elements(ConstructedElementStore::default());
-        market.initialize().map_err(qs_err)?;
-        Ok(std::mem::replace(&mut self.inner, market))
+    pub(crate) fn key(&self) -> usize {
+        std::ptr::from_ref(self) as usize
     }
 
-    pub(crate) fn restore_scoped_market(&mut self, market: QsPricingContext) {
-        self.inner = market;
-        self.initialized = true;
+    pub(crate) const fn generation(&self) -> u64 {
+        self.generation
+    }
+
+    pub(crate) const fn base_context(&self) -> &QsPricingContext {
+        &self.inner
+    }
+
+    pub(crate) fn market_view(&self) -> PyResult<MarketView<'_>> {
+        self.require_initialized()?;
+        crate::scenario::market_view(self, self.generation, &self.inner)
+    }
+
+    fn request_elements(&self, elements: Vec<ConstructedElementRequest>) -> PyResult<MarketData> {
+        self.market_view()?
+            .handle_request(
+                &MarketDataRequest::default().with_constructed_elements_request(elements),
+            )
+            .map_err(qs_err)
     }
 
     /// Rebuilds initialized market data after a public input is reassigned.
@@ -152,21 +150,15 @@ impl PricingContext {
     ) -> PyResult<()> {
         let rebuild = self.initialized;
         self.initialized = false;
+        self.fully_constructed = false;
+        self.generation += 1;
         self.inner = update(std::mem::take(&mut self.inner))
             .with_constructed_elements(ConstructedElementStore::default());
         if rebuild {
-            self.initialize()?;
+            self.inner.validate().map_err(qs_err)?;
+            self.initialized = true;
         }
         Ok(())
-    }
-
-    /// Borrows the native context after checking market initialization.
-    ///
-    /// # Errors
-    /// Returns `QuantSupportError` if the context has not been initialized.
-    pub(crate) fn native_context(&self) -> PyResult<&QsPricingContext> {
-        self.require_initialized()?;
-        Ok(&self.inner)
     }
 
     /// Builds the configured fixed-income policy, using the context base curve
@@ -221,7 +213,6 @@ impl PricingContext {
         simulations = None,
         csa_policy = None,
         fixed_income_policy = None,
-        scenarios = None,
         quote_level = None,
         credit_curves = None,
     ))]
@@ -236,7 +227,6 @@ impl PricingContext {
         simulations: Option<Vec<SimulationConfiguration>>,
         csa_policy: Option<SingleCurveCSADiscountPolicy>,
         fixed_income_policy: Option<PyFixedIncomeDiscountPolicy>,
-        scenarios: Option<Vec<Scenario>>,
         quote_level: Option<&Bound<'_, PyAny>>,
         credit_curves: Option<Vec<CreditCurveConfiguration>>,
     ) -> PyResult<Self> {
@@ -277,9 +267,6 @@ impl PricingContext {
         if let Some(d) = csa_policy {
             ctx = ctx.with_csa_policy(&d.build());
         }
-        if let Some(s) = scenarios {
-            ctx = ctx.with_scenarios(s.into_iter().map(|s| s.inner).collect());
-        }
         if let Some(configurations) = credit_curves {
             ctx = ctx.with_credit_curve_configurations(
                 configurations
@@ -292,6 +279,8 @@ impl PricingContext {
         Ok(Self {
             inner: ctx,
             initialized: false,
+            fully_constructed: false,
+            generation: 0,
             python_pricers: PricerRegistry::default(),
             fixed_income_policy,
         })
@@ -299,11 +288,13 @@ impl PricingContext {
 
     /// Constructs curves, volatility surfaces/cubes, and simulations.
     ///
-    /// Called automatically by `__enter__`; only needed when not using a
-    /// `with` block.
+    /// Explicitly constructs every configured object. Context entry enables
+    /// lazy construction of requested market objects instead.
     fn initialize(&mut self) -> PyResult<()> {
-        if !self.initialized {
+        if !self.fully_constructed {
+            self.initialized = false;
             self.inner.initialize().map_err(qs_err)?;
+            self.fully_constructed = true;
             self.initialized = true;
         }
         Ok(())
@@ -331,12 +322,22 @@ impl PricingContext {
         self.inner.quote_level().into()
     }
 
-    /// Active quote store, including scenario shocks after initialization.
+    /// Snapshot of quote inputs in the active base or scenario market view.
     #[getter]
-    fn quotes(&self) -> QuoteStore {
-        QuoteStore {
-            inner: self.inner.quote_store().clone(),
+    fn quotes(&self) -> PyResult<QuoteStore> {
+        if !self.initialized {
+            return Ok(QuoteStore {
+                inner: self.inner.quote_store().clone(),
+            });
         }
+        let view = self.market_view()?;
+        let mut quotes = QsQuoteStore::new(self.inner.evaluation_date());
+        for identifier in self.inner.quote_store().quotes().keys() {
+            if let Some(quote) = view.select(identifier) {
+                quotes.add_quote(quote);
+            }
+        }
+        Ok(QuoteStore { inner: quotes })
     }
 
     /// Historical fixings available to built-in and Python pricers.
@@ -441,31 +442,6 @@ impl PricingContext {
                 inner: configuration.clone(),
             })
             .collect()
-    }
-
-    /// Default market shocks, starting from original quotes and zero-rate inputs.
-    #[getter]
-    fn scenarios(&self) -> Vec<Scenario> {
-        self.inner
-            .scenarios()
-            .iter()
-            .map(|scenario| Scenario {
-                inner: scenario.clone(),
-            })
-            .collect()
-    }
-
-    #[setter]
-    fn set_scenarios(&mut self, scenarios: Option<Vec<Scenario>>) -> PyResult<()> {
-        self.update_market_inputs(|context| {
-            context.with_scenarios(
-                scenarios
-                    .unwrap_or_default()
-                    .into_iter()
-                    .map(|scenario| scenario.inner)
-                    .collect(),
-            )
-        })
     }
 
     /// Fixed-income discount policy, or None for the context base-curve policy.
@@ -600,109 +576,159 @@ impl PricingContext {
         self.set_curve_configurations(value)
     }
 
-    /// All constructed discount curves, sorted by market index.
+    /// Resolves all configured discount curves in the active market view.
     fn discount_curves(&self) -> PyResult<Vec<DiscountCurve>> {
-        self.require_initialized()?;
-        let mut curves: Vec<_> = self
+        let requests = self
             .inner
+            .curve_configurations()
+            .iter()
+            .map(|configuration| ConstructedElementRequest::DiscountCurve {
+                market_index: configuration.market_index().clone(),
+            })
+            .collect();
+        let market = self.request_elements(requests)?;
+        let mut elements: Vec<_> = market
             .constructed_elements()
             .discount_curves()
             .values()
-            .map(|e| DiscountCurve { element: e.clone() })
+            .map(|element| DiscountCurve {
+                element: element.clone(),
+            })
             .collect();
-        curves.sort_by_key(|c| c.element.market_index().to_string());
-        Ok(curves)
+        elements.sort_by_key(|item| item.element.market_index().to_string());
+        Ok(elements)
     }
 
-    /// A constructed discount curve by market index.
+    /// Resolves one DiscountCurve in the active market view.
     fn curve(&self, index: &Bound<'_, PyAny>) -> PyResult<DiscountCurve> {
-        self.require_initialized()?;
         let idx = extract_market_index(index)?;
-        self.inner
+        let market = self.request_elements(vec![ConstructedElementRequest::DiscountCurve {
+            market_index: idx.clone(),
+        }])?;
+        market
             .constructed_elements()
             .discount_curve(&idx)
-            .map(|e| DiscountCurve { element: e.clone() })
-            .ok_or_else(|| QuantSupportError::new_err(format!("no curve for index '{idx}'")))
+            .map(|element| DiscountCurve {
+                element: element.clone(),
+            })
+            .ok_or_else(|| QuantSupportError::new_err(format!("No DiscountCurve for '{idx}'")))
     }
 
-    /// All constructed volatility surfaces, sorted by market index.
+    /// Resolves all configured volatility surfaces in the active market view.
     fn volatility_surfaces(&self) -> PyResult<Vec<VolatilitySurface>> {
-        self.require_initialized()?;
-        let mut surfaces: Vec<_> = self
+        let requests = self
             .inner
+            .volatility_surface_configurations()
+            .iter()
+            .map(
+                |configuration| ConstructedElementRequest::VolatilitySurface {
+                    market_index: configuration.market_index().clone(),
+                },
+            )
+            .collect();
+        let market = self.request_elements(requests)?;
+        let mut elements: Vec<_> = market
             .constructed_elements()
             .volatility_surfaces()
             .values()
-            .map(|e| VolatilitySurface { element: e.clone() })
+            .map(|element| VolatilitySurface {
+                element: element.clone(),
+            })
             .collect();
-        surfaces.sort_by_key(|s| s.element.market_index().to_string());
-        Ok(surfaces)
+        elements.sort_by_key(|item| item.element.market_index().to_string());
+        Ok(elements)
     }
 
-    /// A constructed volatility surface by market index.
+    /// Resolves one VolatilitySurface in the active market view.
     fn volatility_surface(&self, index: &Bound<'_, PyAny>) -> PyResult<VolatilitySurface> {
-        self.require_initialized()?;
         let idx = extract_market_index(index)?;
-        self.inner
+        let market = self.request_elements(vec![ConstructedElementRequest::VolatilitySurface {
+            market_index: idx.clone(),
+        }])?;
+        market
             .constructed_elements()
             .volatility_surface(&idx)
-            .map(|e| VolatilitySurface { element: e.clone() })
-            .ok_or_else(|| {
-                QuantSupportError::new_err(format!("no volatility surface for index '{idx}'"))
+            .map(|element| VolatilitySurface {
+                element: element.clone(),
             })
+            .ok_or_else(|| QuantSupportError::new_err(format!("No VolatilitySurface for '{idx}'")))
     }
 
-    /// All constructed volatility cubes, sorted by market index.
+    /// Resolves all configured volatility cubes in the active market view.
     fn volatility_cubes(&self) -> PyResult<Vec<VolatilityCube>> {
-        self.require_initialized()?;
-        let mut cubes: Vec<_> = self
+        let requests = self
             .inner
+            .volatility_cube_configurations()
+            .iter()
+            .map(|configuration| ConstructedElementRequest::VolatilityCube {
+                market_index: configuration.market_index().clone(),
+            })
+            .collect();
+        let market = self.request_elements(requests)?;
+        let mut elements: Vec<_> = market
             .constructed_elements()
             .volatility_cubes()
             .values()
-            .map(|e| VolatilityCube { element: e.clone() })
+            .map(|element| VolatilityCube {
+                element: element.clone(),
+            })
             .collect();
-        cubes.sort_by_key(|c| c.element.market_index().to_string());
-        Ok(cubes)
+        elements.sort_by_key(|item| item.element.market_index().to_string());
+        Ok(elements)
     }
 
-    /// A constructed volatility cube by market index.
+    /// Resolves one VolatilityCube in the active market view.
     fn volatility_cube(&self, index: &Bound<'_, PyAny>) -> PyResult<VolatilityCube> {
-        self.require_initialized()?;
         let idx = extract_market_index(index)?;
-        self.inner
+        let market = self.request_elements(vec![ConstructedElementRequest::VolatilityCube {
+            market_index: idx.clone(),
+        }])?;
+        market
             .constructed_elements()
             .volatility_cube(&idx)
-            .map(|e| VolatilityCube { element: e.clone() })
-            .ok_or_else(|| {
-                QuantSupportError::new_err(format!("no volatility cube for index '{idx}'"))
+            .map(|element| VolatilityCube {
+                element: element.clone(),
             })
+            .ok_or_else(|| QuantSupportError::new_err(format!("No VolatilityCube for '{idx}'")))
     }
 
-    /// All constructed Monte Carlo simulations, sorted by market index.
+    /// Resolves all configured simulations in the active market view.
     fn simulations(&self) -> PyResult<Vec<Simulation>> {
-        self.require_initialized()?;
-        let mut sims: Vec<_> = self
+        let requests = self
             .inner
+            .simulation_configurations()
+            .iter()
+            .map(|configuration| ConstructedElementRequest::Simulation {
+                market_index: configuration.market_index().clone(),
+            })
+            .collect();
+        let market = self.request_elements(requests)?;
+        let mut elements: Vec<_> = market
             .constructed_elements()
             .simulations()
             .values()
-            .map(|e| Simulation { element: e.clone() })
+            .map(|element| Simulation {
+                element: element.clone(),
+            })
             .collect();
-        sims.sort_by_key(|s| s.element.market_index().to_string());
-        Ok(sims)
+        elements.sort_by_key(|item| item.element.market_index().to_string());
+        Ok(elements)
     }
 
-    /// A constructed Monte Carlo simulation by market index.
+    /// Resolves one Simulation in the active market view.
     fn simulation(&self, index: &Bound<'_, PyAny>) -> PyResult<Simulation> {
-        self.require_initialized()?;
         let idx = extract_market_index(index)?;
-        self.inner
+        let market = self.request_elements(vec![ConstructedElementRequest::Simulation {
+            market_index: idx.clone(),
+        }])?;
+        market
             .constructed_elements()
             .simulations()
             .get(&idx)
-            .map(|e| Simulation { element: e.clone() })
-            .ok_or_else(|| QuantSupportError::new_err(format!("no simulation for index '{idx}'")))
+            .map(|element| Simulation {
+                element: element.clone(),
+            })
+            .ok_or_else(|| QuantSupportError::new_err(format!("No Simulation for '{idx}'")))
     }
 
     /// Registers (or replaces) a Python pricer for a Python trade class.
@@ -731,7 +757,11 @@ impl PricingContext {
     }
 
     fn __enter__(slf: Bound<'_, Self>) -> PyResult<Bound<'_, Self>> {
-        slf.try_borrow_mut()?.initialize()?;
+        {
+            let mut context = slf.try_borrow_mut()?;
+            context.inner.validate().map_err(qs_err)?;
+            context.initialized = true;
+        }
         if enter_context(&slf) {
             Tape::<ADForward>::start_recording_fwd();
         }
@@ -754,6 +784,8 @@ impl PricingContext {
             let mut context = slf.try_borrow_mut()?;
             *context.inner.constructed_elements_mut() = ConstructedElementStore::default();
             context.initialized = false;
+            context.fully_constructed = false;
+            context.generation += 1;
         }
         Ok(false)
     }
@@ -788,7 +820,8 @@ impl PricingContext {
         };
         let mut assignments = HashMap::new();
         for configuration in self.inner.pricer_configurations() {
-            for index in self.inner.constructed_elements().discount_curves().keys() {
+            for definition in self.inner.curve_configurations() {
+                let index = definition.market_index();
                 if let Some(model) = configuration.model(index) {
                     if matches!(
                         model,
@@ -823,24 +856,56 @@ impl PricingContext {
         }
         let mut assignments: Vec<_> = assignments.into_iter().collect();
         assignments.sort_by_key(|(index, _)| index.to_string());
+        let view = self.market_view()?;
+        let mut dependencies: Vec<_> = assignments
+            .iter()
+            .map(|(index, _)| ConstructedElementRequest::DiscountCurve {
+                market_index: index.clone(),
+            })
+            .collect();
+        for (_, model) in &assignments {
+            if let ModelConfiguration::Lgm {
+                parameter_source: ParameterSource::Calibrated(configuration),
+                ..
+            }
+            | ModelConfiguration::HullWhite {
+                parameter_source: ParameterSource::Calibrated(configuration),
+                ..
+            } = model
+            {
+                dependencies.push(match configuration.source() {
+                    CalibrationSource::Surface { market_index } => {
+                        ConstructedElementRequest::VolatilitySurface {
+                            market_index: market_index.clone(),
+                        }
+                    }
+                    CalibrationSource::Cube { market_index } => {
+                        ConstructedElementRequest::VolatilityCube {
+                            market_index: market_index.clone(),
+                        }
+                    }
+                });
+            }
+        }
+        let market = view
+            .handle_request(
+                &MarketDataRequest::default().with_constructed_elements_request(dependencies),
+            )
+            .map_err(qs_err)?;
+        let store = market.constructed_elements();
         let elements = assignments
             .iter()
             .map(|(index, _)| {
-                self.inner
-                    .constructed_elements()
-                    .discount_curve(index)
-                    .ok_or_else(|| {
-                        QuantSupportError::new_err(format!(
-                            "no bootstrapped curve for script model '{index}'"
-                        ))
-                    })
+                store.discount_curve(index).ok_or_else(|| {
+                    QuantSupportError::new_err(format!(
+                        "no bootstrapped curve for script model '{index}'"
+                    ))
+                })
             })
             .collect::<PyResult<Vec<_>>>()?;
         let curves: Vec<_> = elements.iter().map(|element| element.curve()).collect();
         let reference_date = self.inner.evaluation_date();
-        let day_counter = self
-            .inner
-            .constructed_elements()
+        let day_counter = store
             .discount_curve(&discount_index)
             .ok_or_else(|| {
                 QuantSupportError::new_err(format!("no script discount curve '{discount_index}'"))
@@ -883,8 +948,8 @@ impl PricingContext {
             let resolved = LgmRateModel::from_configuration(
                 &configuration,
                 &plain_curve,
-                self.inner.constructed_elements(),
-                self.inner.quote_store(),
+                store,
+                &view,
                 self.inner.quote_level(),
             )
             .map_err(qs_err)?;
@@ -931,6 +996,8 @@ impl PricingContext {
             return call_pricer(py, &pricer, trade, &reqs, context.as_any());
         }
 
+        let market = slf.market_view()?;
+
         // Native pricers start a fresh tape and attach their market pillars.
         // Build contractual amounts/rates without tape nodes: recording them
         // here would leave pointers into storage reused by that fresh tape,
@@ -950,7 +1017,7 @@ impl PricingContext {
             let trade = loan.build_native_loan_trade(&position)?;
             let mut pricer = LoanPricer::new();
             pricer.set_discount_policy(Box::new(slf.build_loan_discount_policy()));
-            let result = pricer.evaluate(&trade, &reqs, &slf.inner).map_err(qs_err)?;
+            let result = pricer.evaluate(&trade, &reqs, &market).map_err(qs_err)?;
             return Py::new(py, EvaluationResults::from_qs(&result));
         }
 
@@ -958,7 +1025,7 @@ impl PricingContext {
             let t = swap.build_trade_dual(&position)?;
             let mut pricer = DiscountedCashflowPricer::<QsSwap<DualFwd>, SwapTrade<DualFwd>>::new();
             pricer.set_discount_policy(Box::new(slf.inner.csa_policy()));
-            let res = pricer.evaluate(&t, &reqs, &slf.inner).map_err(qs_err)?;
+            let res = pricer.evaluate(&t, &reqs, &market).map_err(qs_err)?;
             return Py::new(py, EvaluationResults::from_qs(&res));
         }
         if let Ok(xccy) = instrument.extract::<CrossCurrencySwap>() {
@@ -968,7 +1035,7 @@ impl PricingContext {
                 FloatFloatCrossCurrencySwapTrade<DualFwd>,
             >::new();
             pricer.set_discount_policy(Box::new(slf.inner.csa_policy()));
-            let res = pricer.evaluate(&t, &reqs, &slf.inner).map_err(qs_err)?;
+            let res = pricer.evaluate(&t, &reqs, &market).map_err(qs_err)?;
             return Py::new(py, EvaluationResults::from_qs(&res));
         }
         if let Ok(basis) = instrument.extract::<BasisSwap>() {
@@ -976,7 +1043,7 @@ impl PricingContext {
             let mut pricer =
                 DiscountedCashflowPricer::<QsBasisSwap<DualFwd>, BasisSwapTrade<DualFwd>>::new();
             pricer.set_discount_policy(Box::new(slf.inner.csa_policy()));
-            let res = pricer.evaluate(&t, &reqs, &slf.inner).map_err(qs_err)?;
+            let res = pricer.evaluate(&t, &reqs, &market).map_err(qs_err)?;
             return Py::new(py, EvaluationResults::from_qs(&res));
         }
         if let Ok(xccy) = instrument.extract::<FixFloatCrossCurrencySwap>() {
@@ -986,14 +1053,14 @@ impl PricingContext {
                 FixFloatCrossCurrencySwapTrade<DualFwd>,
             >::new();
             pricer.set_discount_policy(Box::new(slf.inner.csa_policy()));
-            let res = pricer.evaluate(&t, &reqs, &slf.inner).map_err(qs_err)?;
+            let res = pricer.evaluate(&t, &reqs, &market).map_err(qs_err)?;
             return Py::new(py, EvaluationResults::from_qs(&res));
         }
         if let Ok(bond) = instrument.extract::<FixedRateBond>() {
             let t = bond.build_trade_dual(&position)?;
             let mut pricer = BondPricer::new();
             pricer.set_discount_policy(Box::new(slf.bond_discount_policy(true)));
-            let res = pricer.evaluate(&t, &reqs, &slf.inner).map_err(qs_err)?;
+            let res = pricer.evaluate(&t, &reqs, &market).map_err(qs_err)?;
             return Py::new(py, EvaluationResults::from_qs(&res));
         }
         if let Ok(bond) = instrument.extract::<SteppedCouponBond>() {
@@ -1006,12 +1073,12 @@ impl PricingContext {
                 Some(PricerImplementation::BackwardFourierEvolution { .. }) => {
                     let mut pricer = BackwardFourierEvolutionBondPricer::new();
                     pricer.set_discount_policy(Box::new(slf.bond_discount_policy(false)));
-                    pricer.evaluate(&t, &reqs, &slf.inner)
+                    pricer.evaluate(&t, &reqs, &market)
                 }
                 Some(PricerImplementation::TreeBased { .. }) => {
                     let mut pricer = TreeBasedBondPricer::new();
                     pricer.set_discount_policy(Box::new(slf.bond_discount_policy(false)));
-                    pricer.evaluate(&t, &reqs, &slf.inner)
+                    pricer.evaluate(&t, &reqs, &market)
                 }
                 Some(other) => Err(quantsupport::prelude::QSError::InvalidValueErr(format!(
                     "Configured pricer {other:?} cannot price a stepped-coupon bond"
@@ -1030,7 +1097,7 @@ impl PricingContext {
                 FloatingRateNoteTrade<DualFwd>,
             >::new();
             pricer.set_discount_policy(Box::new(slf.bond_discount_policy(true)));
-            let res = pricer.evaluate(&t, &reqs, &slf.inner).map_err(qs_err)?;
+            let res = pricer.evaluate(&t, &reqs, &market).map_err(qs_err)?;
             return Py::new(py, EvaluationResults::from_qs(&res));
         }
         if let Ok(deposit) = instrument.extract::<FixedRateDeposit>() {
@@ -1040,28 +1107,28 @@ impl PricingContext {
                 FixedRateDepositTrade<DualFwd>,
             >::new();
             pricer.set_discount_policy(Box::new(slf.bond_discount_policy(true)));
-            let res = pricer.evaluate(&t, &reqs, &slf.inner).map_err(qs_err)?;
+            let res = pricer.evaluate(&t, &reqs, &market).map_err(qs_err)?;
             return Py::new(py, EvaluationResults::from_qs(&res));
         }
         if let Ok(fwd) = instrument.extract::<FxForwardPy>() {
             let t = fwd.build_trade(&position)?;
             let mut pricer = FxForwardPricer::new();
             pricer.set_discount_policy(Box::new(slf.inner.csa_policy()));
-            let res = pricer.evaluate(&t, &reqs, &slf.inner).map_err(qs_err)?;
+            let res = pricer.evaluate(&t, &reqs, &market).map_err(qs_err)?;
             return Py::new(py, EvaluationResults::from_qs(&res));
         }
         if let Ok(opt) = instrument.extract::<FxOptionPy>() {
             let t = opt.build_trade(&position)?;
             let mut pricer = FxEuropeanOptionPricer::new();
             pricer.set_discount_policy(Box::new(slf.inner.csa_policy()));
-            let res = pricer.evaluate(&t, &reqs, &slf.inner).map_err(qs_err)?;
+            let res = pricer.evaluate(&t, &reqs, &market).map_err(qs_err)?;
             return Py::new(py, EvaluationResults::from_qs(&res));
         }
         if let Ok(fwd) = instrument.extract::<crate::trades::EquityForward>() {
             let trade = fwd.build_trade(&position)?;
             let mut pricer = quantsupport::prelude::EquityForwardPricer::new();
             pricer.set_discount_policy(Box::new(slf.inner.csa_policy()));
-            let result = pricer.evaluate(&trade, &reqs, &slf.inner).map_err(qs_err)?;
+            let result = pricer.evaluate(&trade, &reqs, &market).map_err(qs_err)?;
             return Py::new(py, EvaluationResults::from_qs(&result));
         }
         if let Ok(option) = instrument.extract::<crate::trades::EuropeanSwaption>() {
@@ -1079,41 +1146,41 @@ impl PricingContext {
                 .map_err(qs_err)?;
             pricer.set_discount_policy(Box::new(slf.inner.csa_policy()));
             let trade = option.build_trade_dual(&position)?;
-            let result = pricer.evaluate(&trade, &reqs, &slf.inner).map_err(qs_err)?;
+            let result = pricer.evaluate(&trade, &reqs, &market).map_err(qs_err)?;
             return Py::new(py, EvaluationResults::from_qs(&result));
         }
         if let Ok(opt) = instrument.extract::<EquityOption>() {
             let t = opt.build_trade(&position)?;
             let mut pricer = BlackEuropeanOptionPricer::new();
             pricer.set_discount_policy(Box::new(slf.inner.csa_policy()));
-            let res = pricer.evaluate(&t, &reqs, &slf.inner).map_err(qs_err)?;
+            let res = pricer.evaluate(&t, &reqs, &market).map_err(qs_err)?;
             return Py::new(py, EvaluationResults::from_qs(&res));
         }
         if let Ok(cds) = instrument.extract::<CreditDefaultSwapPy>() {
             let t = cds.build_trade(&position)?;
             let mut pricer = CdsPricer::new();
             pricer.set_discount_policy(Box::new(slf.inner.csa_policy()));
-            let res = pricer.evaluate(&t, &reqs, &slf.inner).map_err(qs_err)?;
+            let res = pricer.evaluate(&t, &reqs, &market).map_err(qs_err)?;
             return Py::new(py, EvaluationResults::from_qs(&res));
         }
         if let Ok(cap) = instrument.extract::<CapFloorPy>() {
             let t = cap.build_trade(&position)?;
             let mut pricer = ClosedFormBlackCapPricer::new();
             pricer.set_discount_policy(Box::new(slf.inner.csa_policy()));
-            let res = pricer.evaluate(&t, &reqs, &slf.inner).map_err(qs_err)?;
+            let res = pricer.evaluate(&t, &reqs, &market).map_err(qs_err)?;
             return Py::new(py, EvaluationResults::from_qs(&res));
         }
         if let Ok(caplet) = instrument.extract::<CapletFloorletPy>() {
             let t = caplet.build_trade(&position)?;
             let mut pricer = ClosedFormBlackCapletPricer::new();
             pricer.set_discount_policy(Box::new(slf.inner.csa_policy()));
-            let res = pricer.evaluate(&t, &reqs, &slf.inner).map_err(qs_err)?;
+            let res = pricer.evaluate(&t, &reqs, &market).map_err(qs_err)?;
             return Py::new(py, EvaluationResults::from_qs(&res));
         }
         if let Ok(futures) = instrument.extract::<RateFuturesPy>() {
             let t = futures.build_trade(&position)?;
             let pricer = RateFuturesPricer::new();
-            let res = pricer.evaluate(&t, &reqs, &slf.inner).map_err(qs_err)?;
+            let res = pricer.evaluate(&t, &reqs, &market).map_err(qs_err)?;
             return Py::new(py, EvaluationResults::from_qs(&res));
         }
 
@@ -1150,7 +1217,9 @@ impl PricingContext {
             sets.insert(ns.name().to_string(), ns.build(py)?);
         }
 
-        let mut engine = XvaEngine::new(&self.inner, config.inner).map_err(qs_err)?;
+        let mut engine =
+            XvaEngine::with_market_provider(&self.inner, &self.market_view()?, config.inner)
+                .map_err(qs_err)?;
         let result = engine.run(&mut sets).map_err(qs_err)?;
         Ok(XvaResult::from_qs(&result))
     }

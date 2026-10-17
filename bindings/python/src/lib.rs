@@ -14,7 +14,7 @@ mod loanpricer;
 mod loanterms;
 mod market;
 mod results;
-mod scenarios;
+mod scenario;
 mod scripting;
 mod time;
 mod trades;
@@ -69,8 +69,7 @@ fn quantsupport(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<market::VolatilityCubeConfiguration>()?;
     m.add_class::<market::PricerConfiguration>()?;
     m.add_class::<market::SimulationConfiguration>()?;
-    m.add_class::<market::Scenario>()?;
-    m.add_class::<scenarios::Scenarios>()?;
+    m.add_class::<scenario::Scenario>()?;
     m.add_class::<curves::ZeroRateTermStructure>()?;
     m.add_class::<curves::TenorBasedZeroRateTermStructure>()?;
     // Constructed element views

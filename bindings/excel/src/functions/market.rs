@@ -1,10 +1,10 @@
 use std::str::FromStr;
 
 use quantsupport::prelude::{
-    CreditCurveConfiguration, CurveConfiguration, DualFwd, FixingStore, FxRateRecord, FxStore,
-    Level, PricerConfiguration, PricingContext, Quote, QuoteDetails, QuoteLevels, QuoteStore,
-    QuoteStoreRecords, Scenario, SimulationConfiguration, VolatilityCubeConfiguration,
-    VolatilitySurfaceConfiguration,
+    ConstructedElementRequest, CreditCurveConfiguration, CurveConfiguration, DualFwd, FixingStore,
+    FxRateRecord, FxStore, Level, MarketDataProvider, MarketDataRequest, PricerConfiguration,
+    PricingContext, Quote, QuoteDetails, QuoteLevels, QuoteSelector, QuoteStore, QuoteStoreRecords,
+    Scenario, SimulationConfiguration, VolatilityCubeConfiguration, VolatilitySurfaceConfiguration,
 };
 use serde::de::DeserializeOwned;
 use xll_rs::types::{XllError, XLOPER12};
@@ -584,10 +584,65 @@ pub fn qs_context_create(
     if let Some(value) = elements {
         context = context.with_constructed_elements(value);
     }
-    if let Some(value) = scenarios {
-        context = context.with_scenarios(value);
-    }
     context.initialize().map_err(value_error)?;
+    if let Some(definitions) = scenarios {
+        // CONTEXT.CREATE produces an owned worksheet snapshot. Native and Python
+        // valuations use borrowed scenario views directly.
+        let scenario = Scenario::new(
+            definitions
+                .into_iter()
+                .flat_map(|definition| definition.shocks().to_vec())
+                .collect(),
+        );
+        let view = scenario.apply(&context).map_err(value_error)?;
+        let elements = context.constructed_elements();
+        let requests = elements
+            .discount_curves()
+            .keys()
+            .map(|index| ConstructedElementRequest::DiscountCurve {
+                market_index: index.clone(),
+            })
+            .chain(elements.credit_curves().keys().map(|index| {
+                ConstructedElementRequest::CreditCurve {
+                    market_index: index.clone(),
+                }
+            }))
+            .chain(elements.volatility_surfaces().keys().map(|index| {
+                ConstructedElementRequest::VolatilitySurface {
+                    market_index: index.clone(),
+                }
+            }))
+            .chain(elements.volatility_cubes().keys().map(|index| {
+                ConstructedElementRequest::VolatilityCube {
+                    market_index: index.clone(),
+                }
+            }))
+            .chain(elements.simulations().keys().map(|index| {
+                ConstructedElementRequest::Simulation {
+                    market_index: index.clone(),
+                }
+            }))
+            .chain(elements.dividend_curves().keys().map(|index| {
+                ConstructedElementRequest::DividendCurve {
+                    market_index: index.clone(),
+                }
+            }))
+            .collect();
+        let market = view
+            .handle_request(
+                &MarketDataRequest::default().with_constructed_elements_request(requests),
+            )
+            .map_err(value_error)?;
+        let mut quotes = QuoteStore::new(context.evaluation_date());
+        for identifier in context.quote_store().quotes().keys() {
+            if let Some(quote) = view.select(identifier) {
+                quotes.add_quote(quote);
+            }
+        }
+        context = context
+            .with_quote_store(quotes)
+            .with_constructed_elements(market.constructed_elements().clone());
+    }
 
     with_registry_mut(|registry| {
         registry.upsert_if_changed(

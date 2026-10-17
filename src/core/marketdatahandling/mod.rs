@@ -12,6 +12,8 @@ pub mod forwardraterequest;
 pub mod fxrequest;
 /// Market data provider module.
 pub mod marketdata;
+/// Request-driven views over borrowed base market inputs.
+pub mod marketview;
 /// Path-dependent request module.
 pub mod pathdependentrequest;
 /// Spot rate request module.

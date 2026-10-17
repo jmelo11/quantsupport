@@ -10,7 +10,7 @@ use crate::{
         calibrationinstrument::CalibrationInstrument,
         quote::{CalibrationInstrumentType, Level},
         quoteselector::QuoteSelector,
-        scenario::Scenario,
+        scenario::Shock,
     },
     rates::{
         bootstrapping::bootstrapdiscountpolicy::BootstrapDiscountPolicy, compounding::Compounding,
@@ -129,17 +129,20 @@ impl CurveConfiguration {
         self
     }
 
-    /// Applies a scenario to explicit zero-rate inputs using their sensitivity labels.
+    /// Applies a shock to explicit zero-rate inputs using their sensitivity labels.
     /// The caller supplies a copied configuration; base market inputs stay unchanged.
-    pub(crate) fn apply_scenario(&mut self, scenario: &Scenario, reference_date: Date) -> usize {
+    pub(crate) fn apply_shock(&mut self, shock: &Shock, reference_date: Date) -> usize {
+        if shock.value() == 0.0 {
+            return 0;
+        }
         let CurveConstruction::ZeroRate { pillars, rates, .. } = &mut self.construction else {
             return 0;
         };
         let mut count = 0;
         for (pillar, rate) in pillars.iter().zip(rates) {
             let label = format!("{}_{}", self.market_index, pillar.date(reference_date));
-            if scenario.matches(&label) {
-                *rate = scenario.shocked_value(*rate);
+            if shock.matches(&label) {
+                *rate = shock.shocked_value(*rate);
                 count += 1;
             }
         }
@@ -150,6 +153,12 @@ impl CurveConfiguration {
     #[must_use]
     pub const fn construction(&self) -> &CurveConstruction {
         &self.construction
+    }
+
+    /// Returns the configured calibration quote identifiers.
+    #[must_use]
+    pub fn quotes(&self) -> &[String] {
+        &self.quotes
     }
 
     /// Returns the market index for this spec.

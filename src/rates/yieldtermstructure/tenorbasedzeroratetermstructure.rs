@@ -173,7 +173,11 @@ impl Pillars<DualFwd> for TenorBasedZeroRateTermStructure<DualFwd> {
     }
 }
 
-impl ADCurveElement for TenorBasedZeroRateTermStructure<DualFwd> {}
+impl ADCurveElement for TenorBasedZeroRateTermStructure<DualFwd> {
+    fn clone_curve(&self) -> Result<Box<dyn ADCurveElement>> {
+        self.curve.clone_curve()
+    }
+}
 
 #[cfg(test)]
 mod tests {

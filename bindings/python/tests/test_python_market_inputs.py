@@ -64,25 +64,20 @@ class PythonMarketInputTests(unittest.TestCase):
                 benchmark * math.exp(-0.01 * tau), places=13,
             )
 
-    def test_public_scenarios_rebuild_from_base_quotes_and_reset(self):
+    def test_public_scenario_reuses_the_base_context(self):
         context = context_inputs()
+        scenario = qs.Scenario(shocks=[{
+            "target": "ESTR", "value": 0.01, "type": qs.ScenarioType.Absolute,
+        }])
         with context:
             base = context.curve(index=qs.MarketIndex.ESTR).discount_factor("2028-02-24")
-            shock = qs.Scenario(target="ESTR", shock=0.01, scenario_type=qs.ScenarioType.Absolute)
-            context.scenarios = [shock]
-            stressed = context.curve(index=qs.MarketIndex.ESTR).discount_factor("2028-02-24")
-            self.assertLess(stressed, base)
-            context.scenarios = [shock]
-            self.assertAlmostEqual(context.curve("ESTR").discount_factor("2028-02-24"), stressed)
-            self.assertAlmostEqual(context.quotes.value("FixedRateDeposit_EUR_ESTR_1Y"), 0.04)
-            context.scenarios = []
+            with scenario:
+                stressed = context.curve(index=qs.MarketIndex.ESTR).discount_factor("2028-02-24")
+                self.assertLess(stressed, base)
+                self.assertAlmostEqual(context.quotes.value("FixedRateDeposit_EUR_ESTR_1Y"), 0.04)
             self.assertAlmostEqual(context.curve("ESTR").discount_factor("2028-02-24"), base)
-        context.scenarios = [shock]
-        with context:
-            self.assertAlmostEqual(context.curve("ESTR").discount_factor("2028-02-24"), stressed)
-        context.scenarios = None
-        with context:
-            self.assertAlmostEqual(context.curve("ESTR").discount_factor("2028-02-24"), base)
+            with scenario:
+                self.assertAlmostEqual(context.curve("ESTR").discount_factor("2028-02-24"), stressed)
 
     def test_curve_reassignment_rebuilds_and_failed_input_cannot_use_stale_market(self):
         context = context_inputs()
@@ -93,13 +88,12 @@ class PythonMarketInputTests(unittest.TestCase):
             context.curves = original + [zero_curve(SPREAD, [0.02] * 3)]
             after = context.curve(SPREAD).discount_factor("2028-02-24")
             self.assertAlmostEqual(after, before ** 2)
-            with self.assertRaisesRegex(qs.QuantSupportError, "requires SPREAD"):
-                context.curves = original + [qs.CurveConfiguration(
-                    market_index=FUNDING,
-                    construction=qs.CurveConstruction.composite(base_index="ESTR", spread_index=SPREAD),
-                )]
-            with self.assertRaisesRegex(qs.QuantSupportError, "not initialized"):
-                context.curve("ESTR")
+            context.curves = original + [qs.CurveConfiguration(
+                market_index=FUNDING,
+                construction=qs.CurveConstruction.composite(base_index="ESTR", spread_index=SPREAD),
+            )]
+            with self.assertRaisesRegex(qs.QuantSupportError, "SPREAD"):
+                context.curve(FUNDING)
             context.curves = original
             context.initialize()
             self.assertEqual(len(context.discount_curves()), 1)
@@ -122,7 +116,7 @@ class PythonMarketInputTests(unittest.TestCase):
             (qs.CurveConstruction.zero_rate, "pillars"),
             (qs.CurveConstruction.composite, "base_index"),
             (qs.FixedIncomeDiscountPolicy, "risk_free_indices"),
-            (qs.PricingContext, "scenarios"),
+            (qs.Scenario, "shocks"),
         ]:
             with self.subTest(constructor=constructor):
                 self.assertIn(parameter, inspect.signature(constructor).parameters)
