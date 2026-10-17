@@ -68,9 +68,9 @@ deprecated = "deny"
 
 [lints.clippy]
 unreadable_literal = "allow"
-missing_panics_doc = "allow"
 struct_excessive_bools = "allow"
-should_panic_without_expect = "allow"
+missing_panics_doc = "deny"
+should_panic_without_expect = "deny"
 clone_on_copy = "forbid"
 unwrap_used = "deny"
 expect_used = "deny"
