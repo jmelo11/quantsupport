@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "quantsupport"
-description = "Derivative pricing and risk analytics (Rust core with Python bindings)."
+description = "Python bindings of QuantSupport, a Rust-based quant-finance library."
 readme = "README.md"
 license = { file = "../../LICENSE" }
 requires-python = ">=3.9"
