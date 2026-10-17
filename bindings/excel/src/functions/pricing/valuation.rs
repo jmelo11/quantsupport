@@ -17,7 +17,11 @@ use crate::runtime::registry::{with_registry, QsObject, Registry};
 
 use crate::functions::helpers::{not_found, value_error};
 
-pub(crate) fn evaluate(
+/// Evaluates a stored trade using the selected pricing context and requests.
+///
+/// # Errors
+/// Returns an error for missing handles, unsupported trades or pricing failures.
+pub fn evaluate(
     registry: &Registry,
     trade_handle: &str,
     context_handle: &str,
@@ -157,7 +161,11 @@ fn evaluate_fixed_rate_bond(
         .map_err(|error| error.to_string())
 }
 
-pub(crate) fn evaluate_bond(
+/// Evaluates a stored fixed-rate bond using its pricing anchor.
+///
+/// # Errors
+/// Returns an error for missing handles, a non-bond trade or pricing failures.
+pub fn evaluate_bond(
     registry: &Registry,
     trade_handle: &str,
     context_handle: &str,

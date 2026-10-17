@@ -2,4 +2,5 @@
 
 mod configurations;
 mod context;
-pub(crate) mod valuation;
+/// Trade evaluation and valuation worksheet functions.
+pub mod valuation;

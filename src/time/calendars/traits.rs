@@ -34,25 +34,37 @@ pub fn easter_monday(y: i32) -> i32 {
     (Date::new(y, month, day) + 1).day_of_year()
 }
 
+/// Weekend observance for a fixed-date holiday.
 #[derive(Clone, Copy)]
-pub(super) enum Observance {
+pub enum Observance {
+    /// Observe the holiday on its calendar date.
     Exact,
+    /// Also observe a weekend holiday on the following Monday.
     NextMonday,
+    /// Also observe a Sunday holiday on the following Monday.
     SundayToMonday,
-    // For consecutive holidays, each weekend date moves forward two days.
+    /// Move each weekend date in a consecutive holiday pair forward two days.
     Paired,
 }
 
+/// A recurring holiday date rule.
 #[derive(Clone, Copy)]
-pub(super) enum Holiday {
+pub enum Holiday {
+    /// A month, day and weekend-observance rule.
     Fixed(u32, u32, Observance),
+    /// The first given weekday on or after a month and day.
     WeekdayOnOrAfter(u32, u32, Weekday),
-    // Offset from Easter Sunday, e.g. Good Friday = -2, Whit Monday = 50.
+    /// An offset from Easter Sunday, e.g. Good Friday = -2, Whit Monday = 50.
     Easter(i32),
 }
 
 impl Holiday {
-    pub(super) fn contains(self, date: Date) -> bool {
+    /// Returns whether this holiday rule includes the date.
+    ///
+    /// # Panics
+    /// Panics for invalid rule date components or an Easter year outside 1–9999.
+    #[must_use]
+    pub fn contains(self, date: Date) -> bool {
         match self {
             Self::Fixed(month, day, observance) => {
                 let actual = Date::new(date.year(), month, day);
@@ -76,15 +88,27 @@ impl Holiday {
     }
 }
 
-pub(super) fn weekday(date: Date) -> bool {
+/// Returns whether the date falls on Monday through Friday.
+#[must_use]
+pub fn weekday(date: Date) -> bool {
     !matches!(date.weekday(), Weekday::Saturday | Weekday::Sunday)
 }
 
-pub(super) fn business_day(date: Date, holidays: &[Holiday]) -> bool {
+/// Returns whether the date is a weekday outside the supplied holiday rules.
+///
+/// # Panics
+/// Panics for invalid rule date components or an Easter year outside 1–9999.
+#[must_use]
+pub fn business_day(date: Date, holidays: &[Holiday]) -> bool {
     weekday(date) && !holidays.iter().any(|holiday| holiday.contains(date))
 }
 
-pub(super) fn dated_holiday(date: Date, dates: &[i32]) -> bool {
+/// Checks the date against a sorted slice of YYYYMMDD values.
+///
+/// # Panics
+/// Panics if the year cannot be encoded as an `i32` YYYYMMDD value.
+#[must_use]
+pub fn dated_holiday(date: Date, dates: &[i32]) -> bool {
     let key = date.year() * 10_000
         + i32::try_from(date.month() * 100 + date.day())
             .unwrap_or_else(|_| unreachable!("month and day fit in i32"));
