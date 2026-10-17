@@ -24,6 +24,10 @@ type SurfaceMap<T> = BTreeMap<Period, BTreeMap<F64Key, T>>;
 /// Interpolates each expiry's smile before interpolating along expiry. Smiles
 /// may have different strike grids. Out-of-range queries are rejected unless
 /// [`Self::with_extrapolation_policy`] selects flat extrapolation.
+/// Interpolation is linear in volatility, not total variance. Expiry coordinates
+/// use `Period::period_in_year`; date queries consequently use calendar days/365.
+/// Smile keys are used as supplied: metadata does not convert strikes to delta
+/// or log-moneyness.
 ///
 /// ## Generics
 /// - `T`: Numeric type for the volatility values (e.g., `f64`, `DualFwd`).

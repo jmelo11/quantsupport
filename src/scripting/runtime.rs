@@ -144,8 +144,11 @@ pub struct ParallelScriptEvaluation {
     /// First-order adjoints keyed by the labels supplied by
     /// [`ScriptModelSetup::with_model`].
     pub sensitivities: Vec<(String, f64)>,
-    /// Path-averaged expected cashflows ordered by payment date. The
-    /// discounted values decompose the script price by payment date.
+    /// Unadjusted path-averaged payments ordered by payment date.
+    ///
+    /// Their discounted sum estimates total emitted payments. The selected
+    /// result variable may instead use control variates, so the two estimators
+    /// need not coincide at finite path counts.
     pub cashflows: Vec<ExpectedCashflow>,
 }
 
@@ -159,9 +162,10 @@ pub struct ExpectedCashflow {
     pub currency: Currency,
     /// Path-averaged undiscounted amount in the payment currency.
     pub amount: f64,
-    /// Path-averaged discounted, numeraire-deflated value in the local
-    /// currency. Summing this field over all cashflows reproduces the
-    /// script's Monte Carlo price.
+    /// Unadjusted path-averaged discounted, numeraire-deflated value in the
+    /// local currency. Summing this field estimates all emitted payments;
+    /// it need not equal an arbitrary selected result variable or its
+    /// control-variate-adjusted estimate.
     pub present_value: f64,
 }
 
@@ -208,7 +212,9 @@ impl ScriptEngine {
     /// Indexes an event stream and compiles its market-data requests.
     ///
     /// # Errors
-    /// Returns an error if a financial expression cannot be indexed.
+    /// Returns an error for an empty stream, an event before the reference
+    /// date, decreasing event dates, or a financial expression that cannot
+    /// be indexed. Events on the same date are permitted.
     pub fn new(
         mut events: EventStream,
         reference_date: Date,
@@ -350,10 +356,15 @@ impl ScriptEngine {
     /// `d(mean result)/d(leaf)` through [`adjoint`](DualFwd::adjoint).
     /// Callers must NOT run their own backward pass.
     ///
+    /// When eligible rate observations are present, the selected result uses
+    /// martingale control variates fitted on separate pilot paths. The fitted
+    /// coefficients are held constant during differentiation. Other variables
+    /// and reported cashflows retain their unadjusted sample averages.
+    ///
     /// # Errors
     /// Returns an error when `result_variable` is not defined by the script,
     /// path generation, response extraction or evaluation fails, or adjoint
-    /// propagation fails.
+    /// propagation fails, or the model supplies zero paths.
     pub fn evaluate(
         &self,
         model: &mut dyn MarketModel<DualFwd>,
@@ -363,9 +374,11 @@ impl ScriptEngine {
             .map(|(values, _)| values)
     }
 
-    /// Same as [`evaluate`](Self::evaluate) but additionally returns the
-    /// path-averaged expected cashflows ordered by payment date. The
-    /// discounted cashflow values decompose the price by payment date.
+    /// Returns variable estimates and unadjusted expected payments ordered by date.
+    ///
+    /// Payments are merged by date and currency. Their discounted sum is a
+    /// separate estimator from a control-adjusted selected result; exact
+    /// finite-sample equality is not guaranteed.
     ///
     /// # Errors
     /// Returns an error under the same conditions as

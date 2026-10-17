@@ -37,7 +37,8 @@ use crate::{
 ///
 /// The pricer uses Jamshidian decomposition to express the option as a portfolio
 /// of zero-coupon bond puts (payer) or calls (receiver). `alpha` is the
-/// mean-reversion speed. Volatility can be supplied directly or resolved by
+/// mean-reversion speed in inverse years. Sigma is absolute rate volatility
+/// per square-root year. Volatility can be supplied directly or resolved by
 /// the shared Hull-White calibration from a surface or cube.
 ///
 /// Curve inputs remain on the AD tape throughout the decomposition, including

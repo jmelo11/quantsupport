@@ -2,11 +2,13 @@ use crate::calibration::calibrationpricer::CalibrationInstrumentPricer;
 use crate::quotes::calibrationinstrument::CalibrationInstrument;
 use crate::utils::errors::Result;
 
-/// A calibration process computes residuals (model − market) for a set of
-/// calibration instruments. The default implementation delegates all
-/// instrument-specific interpretation to the pricer.
+/// Computes zero-target residuals for calibration instruments.
+///
+/// The default implementation collects each pricer's `price()` output without
+/// subtracting a market value. The pricer must already return the desired
+/// residual, or the process must override this method.
 pub trait CalibrationProcess: CalibrationInstrumentPricer {
-    /// Computes the residual (model − market) for each calibration instrument.
+    /// Collects pricer outputs as residuals, without further model/market subtraction.
     ///
     /// # Errors
     /// Returns an error if pricing any instrument fails.

@@ -17,18 +17,22 @@ pub trait Pricer: Send + Sync {
     /// The discount policy type supported by this pricer.
     type Policy: ?Sized + Send + Sync;
 
-    /// Evaluates the instrument over a [`Request`] given a [`MarketDataProvider`].
+    /// Evaluates a position for the requested result measures using a market provider.
     ///
     /// ## Arguments
-    /// * `trade`: the associated instrument that this pricer is capable of handeling.
-    /// * `requests`: a slice containing the different [`Request`] that being required to resolve.
-    /// * `ctx`: an implementation of [`MarketDataProvider`] that can be used to resolve market data requests and access constructed market data elements during the evaluation process.
+    /// * `trade`: the position type accepted by this pricer.
+    /// * `requests`: result measures, such as value or sensitivities. Support is
+    ///   specific to the implementation; these are not market-data requests.
+    /// * `ctx`: provider of the evaluation date and required market inputs.
     ///
     /// ## Returns
-    /// Returns [`EvaluationResults`] if the evaluation succeded.
+    /// Returns [`EvaluationResults`]. Check its optional fields rather than
+    /// interpreting an absent measure as zero.
     ///
     /// ## Errors
-    /// Returns an error if the evaluation fails.
+    /// Propagates invalid-contract, missing-market-data, calibration, and
+    /// numerical errors encountered by the implementation. Unsupported result
+    /// requests may be rejected or left absent; consult the concrete pricer.
     fn evaluate(
         &self,
         trade: &Self::Item,
@@ -39,7 +43,7 @@ pub trait Pricer: Send + Sync {
     /// Returns a [`MarketDataRequest`] containing the market data elements required to evaluate the instrument.
     ///
     /// ## Arguments
-    /// * `trade`: the associated instrument that this pricer is capable of handeling.
+    /// * `trade`: the position whose dependencies are required.
     ///
     /// ## Returns
     /// Returns a [`MarketDataRequest`] if the pricer requires market data to evaluate the instrument, otherwise returns `None`.
@@ -65,7 +69,7 @@ pub trait ErasedPricer: Send + Sync {
     ///
     /// ## Arguments
     /// * `trade`: a reference to the trade to be evaluated, provided as a trait object of type `dyn Any`.
-    /// * `requests`: a slice of market data requests that may be needed to perform the evaluation.
+    /// * `requests`: result measures to compute, not market-data requests.
     /// * `ctx`: a reference to the pricing context, which provides access to market data and other relevant information needed for the evaluation.
     ///
     /// ## Returns

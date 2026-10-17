@@ -1,4 +1,4 @@
-# Loan Contracts and Pricing Requests
+# Loans, prepayment and credit
 
 `Loan<T>` owns a contractual `Leg<T>` containing the existing `FixedRateCoupon`,
 `FloatingRateCoupon`, `OptionEmbeddedCoupon`, `Redemption`, and `Disbursement` cashflow types. Coupon
@@ -28,21 +28,30 @@ Serialization preserves the complete expression tree.
 ## Contractual Principal
 
 The builder computes principal before considering any prepayment function.
-For opening balance B, annual initial amortization rate r, and accrual interval k:
+For initial principal \\(B\\) and annual amortization rate \\(r\\), let
+\\(\tau_k\\) be the contractual day-count fraction and \\(B_f\\) the
+final balloon. With \\(B_{k-1}\\) the opening scheduled balance,
 
-```text
-tau[k] = day_counter.year_fraction(accrual_start[k], accrual_end[k])
-i[k] = r * tau[k]
-D[k] = product(1 / (1 + i[j]), j = 1..k)
-A = (B - final_balloon * D[n]) / sum(D[k], k = 1..n)
-interest[k] = opening_balance[k] * i[k]
-scheduled_principal[k] = A - interest[k]
-```
+\\[
+i_k=r\tau_k,\qquad
+D_k=\prod_{j=1}^{k}(1+i_j)^{-1},\qquad
+A=\frac{B-B_fD_n}{\sum_{k=1}^{n}D_k},
+\\]
+\\[
+I_k=B_{k-1}i_k,\qquad
+R_k=A-I_k.
+\\]
+
+Here \\(A\\) is the constant scheduled instalment, \\(I_k\\) interest and
+\\(R_k\\) scheduled principal.
 
 These annuity factors use contractual interest accrual; they are independent of
 market discount curves. Unequal intervals and final stubs use their own
-fractions. For equal monthly Thirty/360 intervals, a 100,000 principal, 6% coupon,
-and 360 payments produce an instalment of 599.550525. At zero interest and no
+fractions. If every contractual fraction is exactly \\(1/12\\), a 100,000
+principal, 6% coupon and 360 payments produce an instalment of 599.550525.
+This is an equal-fraction annuity calculation, not a claim that every named
+30/360 implementation produces those fractions on every date pair.
+At zero interest and no
 balloon, the instalment is principal divided by the number of periods.
 
 French and balloon loans whose first coupon is floating require an explicit initial
@@ -52,6 +61,9 @@ changing contractual coupon notionals or redemptions. Otherwise the first fixed
 coupon supplies the initial amortization rate for every principal period;
 later coupon steps do not automatically recast principal. Bullet loans repay
 principal at maturity.
+
+The following Rust fragment builds a floating mortgage; its market and trade
+are supplied by the surrounding application.
 
 ```rust,ignore
 use quantsupport::prelude::*;
@@ -106,8 +118,9 @@ leaving the instrument unchanged.
 
 A loan carries a `PrepaymentModel<DualFwd>` function independently of its
 contractual cashflows. `PrepaymentModelConfiguration::Cpr`, `CprCurve`, and
-`Refinancing` implement that function. The builder can also attach a custom
-function:
+`Refinancing` implement that function. For a builder already containing the
+contract terms, a custom function can be
+attached as in this Rust fragment:
 
 ```rust,ignore
 let loan = builder.with_custom_prepayment_model(

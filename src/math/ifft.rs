@@ -1,7 +1,7 @@
 //! Inverse Fast Fourier Transform (with 1/N normalisation).
 //!
 //! Operates **in-place** on slices of [`Complex<T>`] whose length
-//! is a power of two.
+//! is a power of two; empty and singleton slices are accepted as no-ops.
 //!
 //! # Example
 //! ```
@@ -25,10 +25,10 @@ use crate::utils::errors::{QSError, Result};
 
 /// Computes the inverse DFT in-place (with 1/N normalisation).
 ///
-/// `data.len()` **must** be a power of two.
+/// Lengths greater than one must be powers of two. Empty and singleton slices are no-ops.
 ///
 /// # Errors
-/// Returns [`QSError::InvalidValueErr`] when the length is not a power of two.
+/// Returns [`QSError::InvalidValueErr`] when a length greater than one is not a power of two.
 #[allow(clippy::cast_precision_loss)]
 pub fn ifft<T: Scalar>(data: &mut [Complex<T>]) -> Result<()> {
     let n = data.len();

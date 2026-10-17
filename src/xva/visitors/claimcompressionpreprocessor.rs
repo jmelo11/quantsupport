@@ -30,6 +30,8 @@ impl ClaimCompressionPreprocessor {
     /// **not** assigned here — that happens in the
     /// [`PreprocessorExecutor`](super::preprocessorexecutor::PreprocessorExecutor)
     /// visit pass that follows.
+    /// Merged claims use trade id `"compressed"` and leg id zero, so original
+    /// trade/leg attribution is lost. Use only where that attribution is unnecessary.
     pub fn compress(claims: &mut Vec<ContingentClaim>) {
         type Key = (Date, Currency, Option<Currency>);
 

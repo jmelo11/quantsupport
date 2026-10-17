@@ -9,12 +9,28 @@ corresponding to the Rust [`sensitivity`](../../../../examples/sensitivity) exam
 
 The notebook imports its local [market_data.py](market_data.py) directly.
 
+Rate and volatility derivatives are checked with separate central revaluations.
+Swap cashflows receive explicit trade/leg signs before aggregation; the signed
+payment PV report reconciles the swap and bond rather than adding both swap
+legs as receipts. The finite stress illustrates nonlinear hedge residuals.
+
+For the separate historical ORE/CurveEngine study and its optional dependencies,
+see [the external benchmark](../../../../examples/sensitivity/bechmark/sensitivity.ipynb):
+
+```bash
+python bindings/python/examples/run_notebooks.py benchmark
+```
+
 Follow the [shared setup](../README.md#install-and-run). Run this scope from the
 repository root with:
 
 ```bash
 python bindings/python/examples/run_notebooks.py sensitivity/portfolio_risk.ipynb
 ```
+
+That benchmark matches recorded curve, PV and rate-risk results, while
+deliberately displaying a remaining FX-risk-definition disagreement rather
+than masking it with a larger tolerance.
 
 For contract-level analytics, see [valuation](../valuation/README.md). For
 legal netting and future exposure, see [CVA/XVA](../cva/README.md).

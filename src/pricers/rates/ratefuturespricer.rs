@@ -20,6 +20,9 @@ use crate::{
 ///
 /// The model quote is computed as `100 - 100 * F`, where `F` is the forward
 /// rate implied by the reference discount curve over the contract accrual period.
+/// Value is a quoted price, not currency P&L: trade side, number of contracts,
+/// contract multiplier, and the stored entry price do not scale it. No
+/// futures/forward convexity adjustment is applied.
 ///
 /// ## Example
 /// ```rust
@@ -37,9 +40,10 @@ use crate::{
 ///     .build()
 ///     .expect("failed to build rate futures");
 ///
-/// // Wrap in a trade and evaluate with a MarketDataProvider:
-/// //   let trade = RateFuturesTrade::new(rate_futures, Date::new(2024, 1, 1), 1.0);
-/// //   let results = pricer.evaluate(&trade, &[Request::Value], &ctx);
+/// let trade = RateFuturesTrade::new(
+///     rate_futures, Date::new(2024, 1, 1), 1.0, Side::LongReceive,
+/// );
+/// assert_eq!(trade.num_contracts(), 1.0);
 /// ```
 #[derive(Debug, Clone, Default)]
 pub struct RateFuturesPricer;

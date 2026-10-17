@@ -1,4 +1,4 @@
-# Bond Pricing
+# Bonds and issuer optionality
 
 QuantSupport keeps straight fixed-rate debt separate from callable
 stepped-coupon debt. This distinction prevents call-model terms from leaking
@@ -38,10 +38,15 @@ Only coupons and principal strictly after settlement enter valuation. A clean
 quote is converted to dirty value by adding accrued interest. Z-spread `z`
 solves
 
-```text
-dirty value = sum_i CF_i P(0,t_i) / P(0,S)
-                       exp(-z year_fraction(S,t_i)).
-```
+\\[
+B_{\rm dirty}(S;z)=\sum_{T_i>S}CF_i
+\frac{P(0,T_i)}{P(0,S)}
+\exp\\!\left[-z\\,\tau(S,T_i)\right].
+\\]
+
+Here \\(S\\) is settlement and \\(\tau\\) uses the spread day counter.
+Quoted prices are normalized to the bond's units; the expression above is
+the settlement value before that normalization.
 
 The solver expands a bracket and bisects inside it. Yield to maturity is
 solved independently under the fixed bond's day-count, frequency, and
@@ -94,9 +99,9 @@ OptionEmbeddedCoupon(OptionEmbeddedCoupon<T>)
 
 For a floating fixing `L`, the all-in coupon rate is
 
-```text
-R = min(max(L + spread, floor), cap),
-```
+\\[
+R=\min\\!\left(\max(L+\text{spread},\text{floor}),\text{cap}\right),
+\\]
 
 with a missing floor interpreted as negative infinity and a missing cap as
 positive infinity. Fixed coupons use the bond's coupon day counter. Floating
@@ -111,6 +116,9 @@ same date. During backward valuation the engine first discounts continuation,
 then applies the issuer obstacle `min(V, K)`, then adds contractual cashflows
 mapped to that date. Consequently, same-day coupon and scheduled amortization
 are paid before the remaining bond is called.
+
+The following Rust fragment illustrates the contract and position terms.
+Its context and market configuration are supplied separately.
 
 ```rust,ignore
 let bond = MakeSteppedCouponBond::<DualFwd>::default()
@@ -150,24 +158,16 @@ let mut pricer = TreeBasedBondPricer::new();
   ));
 ```
 
-  The stepped bond and its builder have no discount index. Discounting is a
-  pricing choice, resolved exclusively by the pricer's `DiscountPolicy`.
-  Straight-bond pricing also requires a policy; an embedded instrument index
-  does not bypass it. A policy can explicitly choose whether to prefer such
-  legacy indices. `CashflowType::fixed` and `CashflowType::floating` are
-  conveniences for creating templates, not another coupon type hierarchy.
-  The builder rebinds existing coupon cashflows to the generated dates and
-  outstanding notional, preserving rates, spreads, payoff operations, and
-  fixed-rate conventions unless a coupon day counter is explicitly overridden.
+The stepped bond and its builder have no discount index. Discounting is a
+pricing choice resolved by the pricer's `DiscountPolicy`. Straight-bond
+pricing also requires a policy; an embedded instrument index does not bypass
+it. A policy can explicitly choose whether to prefer legacy instrument
+indices.
 
-The numerical implementations live in separate modules:
-`treebasedbondpricer` and `backwardfourierevolutionbondpricer`.
-Common settlement, quote conversion, spread solving and risk reporting live in
-`bondanalytics`; contract-to-grid mapping lives in `bondevents`. Each engine
-prepares its own numerical controls and implements its valuation function.
-Hull–White parameter resolution, calibration state and transition variance live
-under `models/hullwhite`. `BondPricingAnchor` is exported from
-`instruments/fixedincome/bondpricinganchor` and the prelude.
+`CashflowType::fixed` and `CashflowType::floating` create templates rather
+than another coupon hierarchy. The builder rebinds existing cashflows to the
+generated dates and outstanding notional, preserving rates, spreads, payoff
+operations and fixed-rate conventions unless a day counter is overridden.
 
 ## Floating-coupon projection convention
 
@@ -255,17 +255,17 @@ engine.
 
 Both callable engines use the one-factor Hull-White state
 
-```text
-dx_t = -alpha x_t dt + sigma dW_t,
-r_t = x_t + phi(t).
-```
+\\[
+dx_t=-\alpha x_t\\,dt+\sigma\\,dW_t,\qquad r_t=x_t+\phi(t).
+\\]
 
 For one interval `dt`, the exact transition is
 
-```text
-E[x_(t+dt) | x_t=x] = exp(-alpha dt) x,
-Var[x_(t+dt) | x_t] = sigma^2 (1-exp(-2 alpha dt)) / (2 alpha),
-```
+\\[
+E[x_{t+\Delta}\mid x_t=x]=e^{-\alpha\Delta}x,\qquad
+\operatorname{Var}[x_{t+\Delta}\mid x_t]
+=\sigma^2\frac{1-e^{-2\alpha\Delta}}{2\alpha},
+\\]
 
 with limit `sigma^2 dt` when `alpha` is zero. The deterministic shift
 `phi(t)` fits the initial discount curve. OAS is added to the short rate after
@@ -292,13 +292,19 @@ the call obstacle.
 ### Backward Fourier evolution
 
 `BackwardFourierEvolutionBondPricer` uses a uniform state grid. If
-`V_(i+1)(x)` is the next-step value, its conditional Gaussian expectation is
-a convolution. In Fourier space,
+\\(V_{i+1}(x)\\) is the next-step value and \\(\eta\\) the Gaussian
+innovation, first form the convolution
 
-```text
-F[E[V_(i+1)(x exp(-alpha dt) + eta)]](k)
-    = F[V_(i+1)](k) exp(-0.5 Var[eta] k^2).
-```
+\\[
+g_i(y)=\mathcal F^{-1}\\!\left(
+\mathcal F(V_{i+1})(k)
+e^{-\tfrac12\operatorname{Var}(\eta)k^2}\right)(y).
+\\]
+
+The conditional expectation is then
+\\(E[V_{i+1}(e^{-\alpha\Delta}x+\eta)]=g_i(e^{-\alpha\Delta}x)\\).
+Separating convolution from evaluation at the mean avoids confusing the
+Fourier multiplier with the mean-reversion coordinate transformation.
 
 The implementation performs an FFT, multiplies by the Gaussian characteristic
 function, and performs an inverse FFT. It interpolates at the mean-reverted
@@ -313,10 +319,11 @@ grid.
 The Fourier curve fit uses Gaussian integrated-state variance. With
 `I_n = dt sum_(i<n) x_i`, Gaussianity gives
 
-```text
-E[exp(-I_n)] = exp(0.5 Var[I_n]),
-sum_(i<n) phi_i dt = -log(P(0,t_n)) + 0.5 Var[I_n].
-```
+\\[
+E[e^{-I_n}]=e^{\tfrac12\operatorname{Var}(I_n)},\qquad
+\sum_{i<n}\phi_i\Delta=-\log P(0,t_n)
++\tfrac12\operatorname{Var}(I_n).
+\\]
 
 This supplies an independent numerical construction of the same initial-curve
 fit used by the tree.
@@ -363,7 +370,9 @@ the configured step density and maximum steps. Callable valuation currently
 requires settlement to equal the context evaluation date.
 
 Volatility sensitivities chain the calibration Jacobian through sampled
-surface or cube quotes to their original risk pillars. The current calibrator
-supplies the volatility Jacobian only: sigma's response to curve quotes and
+surface or cube quotes to their original risk pillars. That schedule assembles
+independent constant-sigma fits, not a joint repricing calibration. The
+diagonal forward-difference Jacobian includes volatility inputs only:
+sigma's response to curve quotes and
 changes in calibration strikes is not included. Cube calibration must select
 at most one underlying tenor per expiry and stay within the source domain.

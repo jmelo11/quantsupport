@@ -29,11 +29,15 @@ use std::collections::HashSet;
 ///   \text{Caplet}(0) = (1 + \tau K)\,\text{BondPut}(0;\, T,\, S,\, X)
 /// $$
 ///
-/// where $T$ is the reset date, $S$ is the payment date, $\tau = S - T$,
+/// where $T$ is the accrual start, $S$ is the payment date,
+/// $\tau$ is the index-day-count fraction from accrual start to accrual end,
 /// $K$ is the strike, and $X = 1/(1+\tau K)$.
 ///
-/// The model parameters `alpha` (mean-reversion) and `sigma` (volatility)
-/// are provided at construction time.
+/// `alpha` is in inverse years and `sigma` is absolute rate volatility per
+/// square-root year. Times are measured from trade date using index metadata,
+/// not the instrument's separate fixing date. Relative strikes mean
+/// `F * (1 + p)`. Parameters are not validated: zero alpha or zero bond-option
+/// volatility can produce nonfinite outputs; no limiting branch is provided.
 ///
 /// When a [`DiscountPolicy`] is set and yields a different discount index,
 /// the pricer applies a deterministic ratio adjustment:

@@ -33,8 +33,9 @@ pub trait TapeHolder:
 ///
 /// The tape is implemented as a bump arena for efficient allocation and
 /// deallocation of nodes, and a book (vector) of pointers to the nodes for
-/// indexing and propagation.  The tape supports marking and rewinding to
-/// enable nested operations without interference.
+/// indexing and propagation. A single reusable mark separates persistent
+/// model state from temporary path operations. Rewinding invalidates pointers
+/// to discarded nodes; callers must not retain or use AD values for those nodes.
 ///
 /// The default type parameter `T = f64` preserves backward compatibility:
 /// `Tape` (without turbofish) is `Tape<f64>`.
@@ -164,6 +165,8 @@ impl<T: TapeHolder> Tape<T> {
     // -- Generic static conveniences (work for any TapeHolder T) ------------
 
     /// Clears the thread-local tape for `T` and begins recording.
+    ///
+    /// All node pointers from the previous recording become invalid.
     pub fn start_recording_for() {
         T::with_tape(Self::start_inner);
     }
@@ -224,6 +227,8 @@ thread_local! {
 /// `Tape::stop_recording()`, etc. continue to work without turbofish.
 impl Tape<f64> {
     /// Clears the tape and begins recording nodes in the thread-local tape.
+    ///
+    /// All node pointers from the previous recording become invalid.
     pub fn start_recording() {
         TAPE.with(|tc| tc.borrow_mut().start_inner());
     }

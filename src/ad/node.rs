@@ -16,8 +16,8 @@ const INLINE_CAP: usize = 4;
 /// backward-mode AD, or [`ADForward`](crate::ad::forward::ADForward) for
 /// mixed backward+forward second-order AD.
 ///
-/// Children and their local derivatives are stored inline (up to
-/// `INLINE_CAP`) so that recording a node performs no heap allocation.
+/// Up to four children and their local derivatives are stored inline.
+/// Longer fused expressions allocate overflow storage.
 #[derive(Clone)]
 pub struct TapeNode<T> {
     /// Inline child pointers; the first `min(len, INLINE_CAP)` are valid.

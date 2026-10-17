@@ -27,8 +27,11 @@ use std::collections::HashSet;
 /// See [`super::closedformhullwhitecapletpricer::ClosedFormHullWhiteCapletPricer`]
 /// for the single-period formula.
 ///
-/// The model parameters `alpha` (mean-reversion) and `sigma` (volatility)
-/// are provided at construction time.
+/// `alpha` is in inverse years and `sigma` is absolute rate volatility per
+/// square-root year. Index metadata supplies accrual/rate conventions.
+/// Option times run from trade date to accrual start and relative strikes
+/// mean `F * (1 + p)`. Zero alpha and zero bond-option volatility have no
+/// explicit limiting branch; construction does not validate parameters.
 pub struct ClosedFormHullWhiteCapPricer {
     alpha: f64,
     sigma: f64,

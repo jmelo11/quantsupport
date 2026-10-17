@@ -15,6 +15,10 @@
 //!
 //! The adapter applies `K → 1/K` when the pair orientation is inverted with
 //! respect to storage. Callers (instruments, pricers) never see the inversion.
+//!
+//! This parity applies to Black absolute-strike surfaces. The adapter does not
+//! validate volatility/smile metadata or convert normal-volatility, delta, or
+//! log-moneyness grids; those conventions require separate treatment.
 
 use std::cell::Ref;
 
@@ -59,7 +63,7 @@ impl<'a> OrientedFxVolSurface<'a> {
         self.inverted
     }
 
-    /// Borrow the inner surface.
+    /// Borrows the raw stored surface without applying the orientation transform.
     #[must_use]
     pub fn surface(&self) -> Ref<'_, dyn ADVolatilitySurfaceElement> {
         self.element.surface()

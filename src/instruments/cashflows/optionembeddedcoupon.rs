@@ -11,6 +11,11 @@ use crate::{
 /// The payoff is determined by a specified payoff function. For example, this could
 /// represent a floored or capped coupon, where the payoff is determined by the
 /// underlying index and the specified floor or cap.
+///
+/// Amount is `notional * accrual_year_fraction * (payoff(fixing) + spread)`.
+/// A directly supplied payoff therefore bounds the fixing before spread is
+/// added. The `floating_cashflow` factory instead adjusts its payoff so its
+/// requested bounds apply to the all-in coupon rate.
 #[derive(Clone)]
 pub struct OptionEmbeddedCoupon<T: Scalar> {
     notional: f64,

@@ -12,6 +12,12 @@ tutorial's six-year semiannual note. It omits issuer exercise; the
 [callable-bond example](../valuation/bonds/stepped_coupon_bond.ipynb) explains that
 separate valuation problem.
 
+The notebook verifies deterministic native/scripted equivalence at matching
+assumptions and reports repeated-seed stochastic estimates. The selected
+result variable may use a fitted martingale control; raw payment PV sums are
+not an exact finite-path identity for the adjusted result. Other returned
+variables, such as observed rates, are not necessarily PVs.
+
 The notebook imports its local [market_data.py](market_data.py) directly.
 
 Follow the [shared setup](../README.md#install-and-run). Run this scope from the

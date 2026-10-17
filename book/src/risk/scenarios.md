@@ -1,11 +1,35 @@
-# Scenarios
+# Scenarios and full revaluation
 
-A `Scenario` combines ordered market shocks. Applying it returns a market view
-that borrows a `PricingContext`; the context retains its original inputs and
-constructed objects. Pricers and `Evaluator` accept this view through
-`MarketDataProvider`.
+A sensitivity linearizes a valuation near one market. A scenario changes the
+inputs and evaluates the actual construction/pricing composition again:
 
-## Applying a scenario in Rust
+\\[
+\Delta V=V(q+\Delta q)-V(q),\qquad
+\Delta V_{\rm linear}=\sum_j
+\frac{\partial V}{\partial q_j}\Delta q_j.
+\\]
+
+Their difference includes curvature, changed active branches and differences
+between fully recalibrated behavior and deliberately partial model Jacobians.
+It is not automatically an AD defect.
+
+## Ordered input transformations
+
+A `Scenario` contains ordered `Shock` definitions. An absolute shock adds its
+value; a relative shock multiplies by one plus its value. The target matches
+an exact identifier or requires every underscore-separated target segment to
+occur in the input identifier. Segment order and multiplicity are ignored.
+The exact-string branch does not prevent that same target from matching other
+identifiers through the segment rule.
+
+A fully qualified identifier is therefore not a universal exact-only selector.
+Repeated tenor/expiry tokens can make targets overlap, so constructing one
+shock per full quote identifier can move some quotes more than once. For a
+parallel family stress, prefer one family selector and verify the transformed
+values of every affected quote. An isolated finite-difference bump requires
+checking the actual matched set rather than assuming the target is unique.
+
+This fragment assumes an existing `context`, `trade` and compatible `pricer`:
 
 ```rust,ignore
 let scenario = Scenario::new(vec![
@@ -14,67 +38,47 @@ let scenario = Scenario::new(vec![
 ]);
 let stressed_market = scenario.apply(&context)?;
 let stressed = pricer.evaluate(&trade, &[Request::Value], &stressed_market)?;
-let base = pricer.evaluate(&trade, &[Request::Value], &context)?;
 ```
 
-The first shock adds one basis point to SOFR OIS quotes. The second multiplies
-matching caplet volatilities by 1.10. Each shock transforms every available quote
-level; the context's selected `Level` determines which level construction uses.
-Overlapping shocks compose in their supplied order.
+The first change adds one basis point to matching OIS rate quotes; the second
+scales matching optionlet volatilities by 1.10. Overlapping transformations
+compose in supplied order. All available quote levels are transformed, then
+the context's selected bid/mid/ask level is consumed.
 
-## Applying a scenario in Python
+Explicit zero-rate pillars can also be targeted. A funding spread curve may
+expose `FUNDINGSPREAD_<date>` labels; targeting `FUNDINGSPREAD` changes its
+whole explicit ladder. Historical fixings and spot FX are not implied targets
+of this quote/explicit-pillar mechanism. Empty targets, nonfinite shocks and
+unmatched selectors are errors.
 
-```python
-scenario = qs.Scenario(shocks=[
-    qs.Shock(target="EURIBOR12m", value=0.01, shock_type=qs.ScenarioType.Absolute),
-    qs.Shock(target="FUNDINGSPREAD", value=0.005, shock_type=qs.ScenarioType.Absolute),
-])
-with context, scenario:
-    stressed = pricer.evaluate(trade=trade, context=context, requests=[qs.Request.Value])
-with context:
-    base = pricer.evaluate(trade=trade, context=context, requests=[qs.Request.Value])
-```
+## Independent views and construction
 
-The scenario applies to the innermost active context. Nested scenarios compose
-in entry order. Leaving a scope releases its temporary market view, including
-when pricing raises an exception. The same scenario can be reused with another
-context. Scenario definitions belong outside the context constructor.
+`scenario.apply(&context)` returns a borrowed `MarketDataProvider` with an
+independent cache. The base observations and constructed objects remain
+unchanged. Requests rebuild affected dependencies; unrelated simulations are
+not generated. Unchanged calibrated data can be reused with detached AD
+wrappers. An affected simulation uses its configured seed when rebuilt.
 
-## Selecting market inputs
+In Python, the corresponding scope is `with context, scenario:`. The innermost
+active context supplies the base market, nested scenarios compose in entry
+order, and scope exit releases temporary state even on exceptions. Define
+scenarios separately from the context constructor.
 
-A target matches an exact identifier or a set of underscore-separated identifier
-segments. Every target segment must occur in the identifier.
+## Local validation and stress interpretation
 
-| Target | Inputs selected |
-| --- | --- |
-| `OIS_USD_SOFR_5Y` | One SOFR OIS quote |
-| `OIS_USD_SOFR` | Every USD SOFR OIS quote |
-| `CapletFloorlet_Black` | Every Black caplet quote |
-| `FUNDINGSPREAD` | Every explicit zero-rate pillar of that spread curve |
-| `FUNDINGSPREAD_2031-02-24` | One dated funding-spread zero-rate pillar |
+For one input, a central comparison uses
 
-Explicit zero-rate pillars have the same labels in scenario targets and
-sensitivity reports. An absolute value of `0.0001` adds one basis point;
-a relative value of `0.10` scales the input by 1.10. Empty targets, nonfinite
-values and selectors matching no quote or explicit pillar produce an error.
-Historical fixings remain unchanged.
+\\[
+\frac{V(q+h)-V(q-h)}{2h}.
+\\]
 
-## Construction and memory
+Use identical seeds, grids, policies, payment selection and quote levels.
+Check that only the intended target moved. Vary \\(h\\) to distinguish
+curvature from solver/sampling noise; one finite difference is not a universal
+truth about a derivative.
 
-Entering a scenario validates its shocks without constructing the entire market.
-A pricing request constructs its required curves, volatility markets and
-simulations, following their dependencies. Results remain in a cache for that
-view. For a composite funding curve, a spread shock rebuilds the spread and
-composite while an unchanged benchmark can reuse its calibrated values and
-calibration metadata.
-
-The view borrows quotes, historical fixings and FX inputs. Requested curve and
-volatility objects have independent AD wrappers with detached tape pointers.
-Unchanged simulation paths can be reused; an affected simulation is generated
-when requested, using its configured seed. Unrelated simulations remain
-unconstructed. Broad portfolio requests or shocks affecting many dependencies
-still require the corresponding calibration and simulation work.
-
-A pillar ladder uses separate scenarios against the same context. The resulting
-finite differences can be compared with the labelled derivatives described in
-[Sensitivities](sensitivities.md).
+For a broad stress, report the full revalued change and the assumptions it
+reconstructs. A large parallel funding shock can change the whole composite
+discount curve, whereas a derivative row is local to one rate pillar. Credit,
+prepayment and smoothed script behavior can also make stress results depart
+substantially from a linear ladder.

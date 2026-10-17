@@ -135,7 +135,7 @@ pub trait ImplCalendar {
     /// Removes a holiday from the calendar.
     fn remove_holiday(&mut self, date: Date);
 
-    /// Returns a list of holidays between two dates.
+    /// Returns holidays between two dates, including both endpoints.
     fn holiday_list(&self, from: Date, to: Date, include_weekends: bool) -> Vec<Date> {
         let mut dates = Vec::new();
         let mut date = from;
@@ -153,7 +153,7 @@ pub trait ImplCalendar {
         dates
     }
 
-    /// Returns a list of business days between two dates.
+    /// Returns business days between two dates, including both endpoints.
     fn business_day_list(&self, from: Date, to: Date) -> Vec<Date> {
         let holidays: HashSet<_> = self.holiday_list(from, to, true).into_iter().collect();
         let mut dates = Vec::new();
@@ -207,7 +207,9 @@ pub trait IsCalendar: ImplCalendar {
         )
     }
 
-    /// Checks if the given date is the last business day of its month.
+    /// Checks whether following adjustment of the next calendar day enters
+    /// another month. This also includes non-business days after the month's
+    /// last business day.
     fn is_end_of_month(&self, date: &Date) -> bool {
         let d1 = self.adjust(*date + 1, None);
         d1.month() != date.month()
@@ -219,6 +221,10 @@ pub trait IsCalendar: ImplCalendar {
     }
 
     /// Counts the number of business days between two dates.
+    ///
+    /// Endpoint flags apply to `from` and `to` respectively. Reversing dates
+    /// reverses the sign and swaps the endpoint flags. Equal endpoints count
+    /// one only when both flags are true and the date is a business day.
     fn business_days_between(
         &self,
         from: Date,
@@ -236,6 +242,11 @@ pub trait IsCalendar: ImplCalendar {
     }
 
     /// Adjusts a date to a business day according to the given convention.
+    ///
+    /// `None` means Following. Nearest resolves equal-distance ties forward.
+    ///
+    /// # Panics
+    /// Panics for an empty date.
     fn adjust(&self, date: Date, convention: Option<BusinessDayConvention>) -> Date {
         assert!(date != Date::empty(), "null date");
 
@@ -307,6 +318,13 @@ pub trait IsCalendar: ImplCalendar {
     }
 
     /// Advances a date by a given period, adjusting for business days.
+    ///
+    /// Days count business days, unlike `Date` arithmetic; zero days leaves
+    /// the date unchanged. Other units advance calendar periods and then apply
+    /// the convention (`None` means Following), with optional month-end handling.
+    ///
+    /// # Panics
+    /// Panics for an empty date.
     fn advance(
         &self,
         date: Date,

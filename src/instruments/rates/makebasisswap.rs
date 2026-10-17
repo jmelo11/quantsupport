@@ -129,7 +129,8 @@ where
         self
     }
 
-    /// Sets the side.
+    /// Stores a compatibility side that `build` does not use; the generated
+    /// pay/receive legs retain their prescribed directions.
     #[must_use]
     pub const fn with_side(mut self, side: Side) -> Self {
         self.side = Some(side);

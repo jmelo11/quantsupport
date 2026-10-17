@@ -8,6 +8,11 @@ use crate::{
 
 /// # `LogLinearInterpolator`
 /// Log-linear interpolator.
+///
+/// Requires matching arrays, at least two strictly increasing knots, and
+/// positive ordinates. Inputs are not validated; malformed arrays can panic
+/// and invalid logarithms can yield nonfinite values. Extrapolation extends
+/// the endpoint segment in log-value space.
 #[derive(Clone)]
 pub struct LogLinearInterpolator {}
 

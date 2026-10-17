@@ -7,6 +7,10 @@ use crate::{
 };
 
 /// Basic linear interpolator.
+///
+/// Knots must be strictly increasing, with at least two points and matching
+/// coordinate/value lengths. These preconditions are not validated; malformed
+/// arrays can panic. Enabled extrapolation extends the nearest endpoint segment.
 #[derive(Clone)]
 pub struct LinearInterpolator {}
 

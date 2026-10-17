@@ -5,7 +5,7 @@ from typing_extensions import Self, disjoint_base
 from pandas import DataFrame
 from ..time import Date, DateTime, _DateLike
 from ..market import CreditCurveConfiguration, Currency, CurveConfiguration, DiscountCurve, FixingStore, FxStore, Level, MarketIndex, QuoteStore, Simulation, SimulationConfiguration, VolatilityCube, VolatilityCubeConfiguration, VolatilitySurface, VolatilitySurfaceConfiguration, _CurrencyLike, _IndexLike
-from ..instruments import Instrument, Side
+from ..instruments import Instrument, ScriptedProduct, Side
 from ..risk import XvaResult
 __all__ = ['Request', 'PricerConfiguration', 'SingleCurveCSADiscountPolicy', 'FixedIncomeDiscountPolicy', 'BondPricingAnchor',
            'PricingContext', 'LoanPricer', 'Trade', 'Pricer', 'MarketDataProvider', 'Evaluator', 'EvaluationResults']
@@ -735,17 +735,16 @@ RuntimeError
 """
         ...
 
-    def evaluate_script(self, script: str, n_paths: int = ..., seed: int = ...) -> Any:
+    def evaluate_script(self, script: ScriptedProduct | Mapping[str, Any], n_paths: int = ..., seed: int = ...) -> dict[str, float]:
         """Evaluate dated payoff code using native LGM market models.
 
 Parameters
 ----------
 script : ScriptedProduct or mapping
     Dated payoff product or its native serialized mapping, including currency,
-    events, and result variable. The binding extracts a ScriptedProduct, not a
-    bare source-code string, despite the retained stub annotation. An explicit
-    discount_index is required outside the context base currency. Product model
-    assignments override context simulation and pricer model assignments.
+    events, and result variable. A bare source-code string is not accepted.
+    An explicit discount_index is required outside the context base currency.
+    Product model assignments override context simulation and pricer assignments.
 n_paths : int, optional
     Positive Monte Carlo path count. Defaults to 1000.
 seed : int, optional
@@ -755,6 +754,14 @@ Returns
 -------
 dict[str, float]
     Named numeric results returned by the native script engine.
+
+Notes
+-----
+This bridge returns values, not cashflow or sensitivity tables. Native
+cashflow diagnostics accumulate raw sampled payments, while pilot-fitted
+martingale controls adjust only the selected result variable. At finite paths
+their summed present values need not equal that reported variable, and an
+arbitrary selected numeric variable need not represent payments at all.
 
 Raises
 ------

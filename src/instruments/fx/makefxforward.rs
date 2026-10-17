@@ -119,7 +119,9 @@ impl MakeFxForward {
         self
     }
 
-    /// Sets the side (defaults to `LongReceive` — buying base currency).
+    /// Stores a compatibility side that `build` does not use.
+    ///
+    /// Set the direction on `FxForwardTrade` instead.
     #[must_use]
     pub const fn with_side(mut self, side: Side) -> Self {
         self.side = Some(side);

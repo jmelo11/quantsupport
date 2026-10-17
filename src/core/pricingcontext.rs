@@ -35,8 +35,21 @@ use crate::{
     },
 };
 
-/// Manages the context for instrument evaluation, including market data access, quote level preferences,
-/// base currency settings, and a list of model parameter sets for multiple model types.
+/// Market inputs, construction configuration, and cached valuation dependencies.
+///
+/// The quote store's reference date is the evaluation date. [`Self::new`] uses
+/// mid quotes, USD as base currency, and SOFR as the base collateral index;
+/// callers must supply the observations or runtime objects needed for pricing.
+///
+/// A pricer's market-data request constructs only its required dependencies
+/// through a cached [`MarketView`]. [`Self::initialize`] instead validates the
+/// configuration and eagerly builds all configured objects. Neither operation
+/// makes this context the owner of an AD tape: recording is thread-local and
+/// managed by valuation engines.
+///
+/// Input-setting methods invalidate constructed caches and the selected snapshot
+/// timestamp. Cloning a context copies its inputs but can share reference-counted
+/// runtime objects and caches; a clone is not a guarantee of independent AD state.
 #[derive(Clone, Default)]
 pub struct PricingContext {
     /// The quote store provides access to direct market data quotes and reference date information.
@@ -340,7 +353,10 @@ impl PricingContext {
         self.quote_store.reference_date()
     }
 
-    /// Returns the constructed elements store.
+    /// Returns explicitly supplied and eagerly initialized market objects.
+    ///
+    /// Objects constructed by lazy requests live in [`Self::request_cache`];
+    /// this accessor is not an inventory of everything requested so far.
     #[must_use]
     pub const fn constructed_elements(&self) -> &ConstructedElementStore {
         &self.constructed_elements
@@ -365,8 +381,14 @@ impl PricingContext {
         &self.base_index
     }
 
-    /// Validates pricing configuration and constructs all configured market
-    /// objects in dependency order.
+    /// Validates pricing configuration and eagerly constructs all configured
+    /// market objects in dependency order.
+    ///
+    /// Discount/forward curves precede credit curves, volatility grids, and
+    /// stored simulations. Existing constructed state is reset to explicitly
+    /// supplied elements before construction. Failure can therefore leave a
+    /// partially rebuilt store; it does not restore the previous market.
+    /// A successful call seeds the request cache for subsequent lazy valuations.
     ///
     /// # Errors
     /// Returns an error for duplicate or incompatible configuration or failed

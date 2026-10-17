@@ -29,7 +29,7 @@ use crate::{
 ///     "credit_spread": 0.01,
 ///     "recovery": 0.4,
 ///     "funding_spread": 0.005,
-///     "credit_index": "Credit(CORPORATE-A)"
+///     "credit_index": {"Credit": "CORPORATE-A"}
 /// }
 /// ```
 ///
@@ -73,11 +73,12 @@ pub struct CsaTerms {
     #[serde(default)]
     pub minimum_transfer_amount: f64,
     /// Counterparty credit spread used for CVA when no bootstrapped credit
-    /// curve is assigned (see [`Self::credit_index`]).
+    /// curve is assigned (see [`Self::credit_index`]). This is an annual
+    /// decimal spread; flat hazard is `credit_spread / (1 - recovery)`.
     pub credit_spread: f64,
-    /// Counterparty recovery rate used for CVA.
+    /// Counterparty recovery fraction used for CVA, e.g. `0.4` for 40%.
     pub recovery: f64,
-    /// Flat funding spread used for FVA. Ignored when
+    /// Annual decimal flat funding spread used for signed-NPV FVA. Ignored when
     /// [`Self::funding_spread_curve`] or [`Self::funding_index`] is set.
     #[serde(default)]
     pub funding_spread: f64,

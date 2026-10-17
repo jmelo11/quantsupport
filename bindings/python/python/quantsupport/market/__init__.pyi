@@ -656,7 +656,14 @@ class QuoteStore:
 
 @final
 class FixingStore:
-    """Historical index fixings."""
+    """Stored historical index observations.
+
+    Missing observations raise an error on lookup. Neither automatic
+    forecasting nor validated missing-fixing interpolation is part of this
+    interface. The native fill_missing_fixings routine is not exposed here
+    and currently uses reversed interpolation coordinates; it must not be
+    treated as reliable historical-data imputation.
+    """
 
     def __new__(cls) -> Self:
         """Create an empty historical-fixing store."""
@@ -2012,6 +2019,9 @@ class Simulation:
 
     Path values are model outputs, not trade valuations or exposure profiles.
     Queries return materialized numeric data, not AD objects.
+    Generated paths expose no market pillars and do not retain differentiated
+    calibration, spot, or volatility replay. This differs from model-backed
+    LGM paths used by native scripting and XVA.
     """
 
     def __repr__(self) -> str:

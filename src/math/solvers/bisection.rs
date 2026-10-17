@@ -28,7 +28,7 @@ where
         }
     }
 
-    /// Sets the convergence tolerance.
+    /// Sets the absolute residual tolerance `abs(f(x))`; the default is `1e-12`.
     #[must_use]
     pub const fn with_ftol(mut self, ftol: f64) -> Self {
         self.ftol = ftol;
@@ -52,7 +52,9 @@ where
     /// Solves the problem using bisection.
     ///
     /// ## Errors
-    /// Returns an error if the function does not change sign over the interval or if the solver fails to converge within the maximum number of iterations.
+    /// Returns an error if the function does not change sign over the interval
+    /// or function evaluation fails. Exhausting the iteration budget returns
+    /// `Ok(OptimizerSolution)` with `SolutionStatus::NotConverged`.
     pub fn solve(&self, f: &P) -> Result<OptimizerSolution<f64>> {
         let mut low = self.lower;
         let mut high = self.upper;

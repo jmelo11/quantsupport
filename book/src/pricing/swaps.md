@@ -1,133 +1,114 @@
-# Interest Rate Swaps
+# Swaps and discounted cashflows
 
-An interest-rate swap exchanges cashflows calculated under two rate conventions. Its valuation illustrates the central mechanics of the library: schedule construction, fixing lookup, forward projection, discount-policy selection, and quote-level sensitivity. This chapter develops those mechanics for fixed-versus-floating swaps, basis swaps, and related fixed-income instruments.
-
-`Swap<T>` contains two `Leg` values. Leg zero is fixed and leg one is floating. `MakeSwap` constructs the schedules and coupons, `SwapTrade::new` adds trade metadata and direction, and `DiscountedCashflowPricer` performs valuation. [Your First Swap](../getting-started/first-swap.md) gives a complete introductory construction example.
-
-## Valuation
-
-The pricer values each future coupon in its own leg and applies the sign implied by the trade direction. At an evaluation date, the total present value is
+Discounted-cashflow valuation combines contractual amounts, observed/projected
+rates, direction, currency conversion and a discount policy. For appropriately
+chosen live payments, its financial form is
 
 \\[
-\text{NPV} = \sum_{\text{legs}} \text{sign}(\text{leg}) \sum_i N\\,r_i\\,\tau_i\\,P_{d}(T_i)
+V=\sum_{\ell}s_\ell\sum_i
+C_{\ell i}\\,P_{d,\ell}(0,T_{\ell i})\\,X_{\ell i}.
 \\]
 
-- Fixed coupons: \\(r_i\\) from the `RateDefinition` (day counter, compounding, frequency).
-- Floating coupons use a historical fixing when `accrual_start < evaluation_date`. Future coupons are projected from the forward curve of the leg's `market_index` with `forward_rate(start, end, Simple, frequency)`, after which the contractual spread is added.
-- \\(P_d\\) is the discount factor of the curve selected by the discount policy (defaults to the leg's own index).
+Here \\(s_\ell\\) is leg direction and \\(X_{\ell i}\\) is the applicable
+conversion factor when the pricing policy calls for conversion. This formula
+describes the financial operation, not a promise that the generic implementation
+automatically selects live payments or a universal reporting currency.
 
-The formula separates projection from discounting. A floating coupon may obtain its rate from one curve and its present value from another curve chosen by the discount policy. This distinction is essential in a multi-curve market.
+## Regular fixed–floating swaps
 
-`Request::FairRate` returns the fixed rate that sets NPV to zero:
+`MakeSwap` builds fixed leg zero and floating leg one; `SwapTrade` supplies
+position metadata. A receive-fixed contract uses `LongReceive` on its fixed
+side. For simple fixed coupons, \\(C_i=NK\tau_i\\); other compounding
+conventions use the coupon's compound factor instead.
+
+A regular floating coupon has a single observation. The pricer uses required
+historical fixings for past observations and otherwise projects from the
+forward curve. The spread is then added under the coupon's conventions.
+Missing required history is an error. Choosing `SOFR` as the index does not
+change this into overnight daily accrual.
+
+Projection and discounting are separate. A Term SOFR coupon can project from
+`TermSOFR3m` while a USD CSA discounts it on `SOFR`. Without an explicit
+discount policy, the generic pricer attempts to infer curves from leg
+identities; ambiguous choices can fail. Production multi-curve setups should
+make collateral assumptions explicit.
+
+## Payment selection and reporting
+
+The generic `DiscountedCashflowPricer` iterates the cashflows supplied by the
+instrument; it does not apply a universal `payment_date > evaluation_date`
+filter. Do not use it as an implicit settlement/seasoning filter for an
+arbitrary existing leg. Specialized bond and loan pricers apply their own
+payment-selection conventions.
+
+Likewise, default `HandleCashflows` reports underlying unsigned amounts before
+leg-side multiplication. Principal and initial disbursement rows can be
+present. The table has no discounted-PV column. Its payment dates, leg indices,
+currencies and observations explain the contract but cannot be naively summed
+as signed PV.
+
+These distinctions are visible in the [first valuation](../getting-started/first-swap.md):
+the regular builder produces principal exchanges on both sides, and the raw
+24-row report is not a series of 24 positive receipts.
+
+## Fair fixed rate
+
+For a vanilla fixed-versus-floating coupon swap under a specified market,
+the familiar expression is
 
 \\[
-K^{\ast} = \frac{\text{PV}_{\text{float}}}{\text{Annuity}},\qquad \text{Annuity}=\sum_i N\\,\tau_i\\,P_d(T_i).
+K^\ast=\frac{PV_{\rm float}}{A},\qquad
+A=\sum_iN_i\tau_iP_d(0,T_i).
 \\]
 
-The fair rate is the floating-leg present value divided by the fixed-leg annuity. `Request::Cashflows` returns one `CashflowsTable` row per coupon, and `leg_indices()` identifies the fixed and floating legs.
-
-## Fixings
-
-Once a coupon has started accruing, its observed rate belongs to historical market data. `FixingStore` records those dated observations and can optionally interpolate gaps under an explicit rule. The following example supplies one SOFR fixing and attaches the store to a context:
-
-```rust,ignore
-let mut fixings = FixingStore::default();
-fixings.add_fixing(&MarketIndex::SOFR, Date::new(2025, 5, 12), 0.0428);
-fixings.fill_missing_fixings(Interpolator::Linear)?;   // optional gap filling
-let ctx = PricingContext::new().with_fixing_store(fixings) /* ... */;
-```
-
-The equivalent JSON groups observations by index, for example `{"SOFR": [{"date": "2025-05-12", "rate": 0.0428}]}`. A seasoned swap whose current coupon began before the evaluation date returns `NotFoundErr` when the required fixing is absent. This failure prevents an observed coupon from being silently replaced with a forecast.
-
-## Multi-curve swaps
-
-The `examples/sensitivity` program demonstrates how projection and discounting combine across several indices. It bootstraps SOFR, Term SOFR 3M, ICP, and the collateralized CLP curve, then prices:
-
-- a regular SOFR-indexed swap built with `MakeSwap`,
-- a Term SOFR swap projected on `TermSOFR3m` and discounted on SOFR through `SingleCurveCSADiscountPolicy::new(MarketIndex::SOFR, Currency::USD)`,
-- an ICP (CLP) swap and cross-currency swaps.
-
-The Term SOFR swap's sensitivity table contains both `BasisSwap_USD_SOFR_TermSOFR3m_*` and `OIS_USD_SOFR_*` rows. Its projected coupons depend on the basis curve, and that calibrated curve depends on SOFR through the implicit-function link described in [Curve Bootstrapping](../curves/bootstrapping.md).
+The current generic `FairRate` handler constructs fixed-coupon annuity and
+floating amounts using its first resolved forward curve and ignores principal
+flows. This is a useful vanilla fixed–floating rate, not a general solver for
+arbitrary multi-leg, cross-currency, optional or amortizing-contract breakeven.
+More complex products need their own defined adjustable term and methodology.
 
 ## Overnight index swaps
 
-`OvernightIndexSwap<T>` and `OvernightIndexSwapTrade<T>` represent a fixed leg against daily overnight accrual. `MakeOvernightIndexSwap` applies the index's OIS conventions and builds coupon-only legs without principal exchanges. Generic `MakeSwap` retains single-fixing coupons; selecting SOFR as its index does not enable daily overnight compounding.
-
-Build a five-year receive-fixed SOFR OIS with the index preset:
+`MakeOvernightIndexSwap` constructs `OvernightIndexSwap` with coupon-only legs
+and index-specific overnight conventions:
 
 ```rust
+# extern crate quantsupport;
 use quantsupport::prelude::*;
 
-# fn main() -> Result<()> {
 let rd = Date::new(2026, 1, 2);
-let notional = 10_000_000.0;
 let ois = MakeOvernightIndexSwap::<DualFwd>::new(
-    MarketIndex::SOFR,
-    rd,
-    Period::new(5, TimeUnit::Years),
-    0.04,
+    MarketIndex::SOFR, rd, Period::new(5, TimeUnit::Years), 0.04,
 )
-.with_identifier("USD_SOFR_OIS_5Y".to_string())
-.with_notional(notional)
+.with_identifier("USD_SOFR_OIS_5Y".into())
+.with_notional(10_000_000.0)
 .with_side(Side::LongReceive)
 .build()?;
-let trade = OvernightIndexSwapTrade::new(ois, rd, notional, Side::LongReceive);
-# Ok(())
-# }
+let _trade = OvernightIndexSwapTrade::new(
+    ois, rd, 10_000_000.0, Side::LongReceive,
+);
+# Ok::<(), QSError>(())
 ```
 
-The SOFR preset uses two business days to settlement, annual fixed and overnight schedules, and a two-business-day payment lag. Customize the preset with `with_conventions(OisConventions)` or set explicit start and maturity dates. [Curve Bootstrapping](../curves/bootstrapping.md#ois-conventions) documents the conventions and quote overrides.
+For standard future compounding the overnight accumulation telescopes to a
+discount-factor ratio. Seasoned periods combine weighted historical daily
+observations with projected remainder. Lookback, lockout, observation shift,
+daily spread treatment and payment lag are separate inputs; the
+[calibration chapter](../curves/bootstrapping.md) explains their market presets
+and the legacy XVA conversion limit.
 
-Use the same discounted-cashflow engine with the OIS trade type:
+Basis swaps extend the same logic to two floating indices. Their value and
+quote risk depend on both projection curves and the policy-selected discount
+curve. They are also calibration instruments, so a basis curve's derivative
+can carry parent OIS risk through the IFT.
 
-```rust,ignore
-let pricer = DiscountedCashflowPricer::<
-    OvernightIndexSwap<DualFwd>,
-    OvernightIndexSwapTrade<DualFwd>,
->::new();
-let results = pricer.evaluate(
-    &trade,
-    &[Request::Value, Request::FairRate, Request::Cashflows, Request::Sensitivities],
-    &ctx,
-)?;
-```
+## Related linear products
 
-Standard future compounded coupons use the discount-ratio telescoping formula. Seasoned coupons compound historical business-day observations with weekend and holiday accrual weights, then project the remaining accrual. Supply those observations through `FixingStore`; missing past fixings are errors. Today's observation is used when available and otherwise forecast. Payment lag changes the discounting date while leaving the accrual interval intact. Nonstandard overnight observation conventions are supported in deterministic pricing but rejected by the legacy XVA claim converter.
-
-## Basis swaps
-
-A basis swap exchanges two floating indices and can carry a spread on either leg. It is both a trade in its own right and a common calibration instrument for projection curves. This example receives Term SOFR 3M plus its configured spread against SOFR:
-
-```rust,ignore
-let basis = MakeBasisSwap::<DualFwd>::default()
-    .with_identifier("USD_SOFR_TSOFR3M_2Y".into())
-    .with_start_date(rd).with_maturity_date(rd + Period::from_str("2Y")?)
-    .with_notional(10_000_000.0)
-    .with_currency(Currency::USD)
-    .with_pay_market_index(MarketIndex::SOFR)
-    .with_receive_market_index(MarketIndex::TermSOFR3m)
-    .with_pay_spread(0.0).with_receive_spread(-0.0012)
-    .with_pay_leg_frequency(Frequency::Quarterly)
-    .with_receive_leg_frequency(Frequency::Quarterly)
-    .build()?;
-let trade = BasisSwapTrade::new(basis, rd, 10_000_000.0, Side::LongReceive);
-```
-
-The builder requires notional, dates, currency, both market indices, and an identifier. Spreads default to zero, both frequencies default to quarterly, and the side defaults to `LongReceive`. `DiscountedCashflowPricer` values the two generated legs under the chosen discount policy.
-
-## Fixed-income instruments
-
-Deposits and floating-rate notes use the cashflow pricer. Straight fixed-rate bonds use `BondPricer`, and listed rate futures use `RateFuturesPricer`, through their respective trade wrappers. Their builders differ mainly in required conventions and default payment structures:
-
-| Builder                   | Required                                                                         | Defaults                                                                          |
-| ------------------------- | -------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
-| `MakeFixedRateBond<T>`    | notional, start_date, maturity_date, rate, rate_definition, currency, identifier | units 100, side LongReceive, frequency Semiannual, `PaymentStructure::Bullet`     |
-| `MakeFloatingRateNote<T>` | notional, start_date, maturity_date, forward_index, currency, identifier         | spread 0, units 100, frequency Quarterly, Bullet                                  |
-| `MakeFixedRateDeposit<T>` | notional, start_date, maturity_date, rate, rate_definition, currency, identifier | units 100, single payment                                                         |
-| `MakeRateFutures`         | identifier, market_index, start_date, end_date, futures_price                    | contract size 2500 and rate definition from the index. Uses `RateFuturesPricer`   |
-
-`PaymentStructure` determines how principal is repaid and provides `Bullet`, `EqualPayments`, `EqualRedemptions`, `Zero`, and `Other`. A bond may also declare its own `discount_index`. `FixedIncomeDiscountPolicy` can give that issuer curve priority or select a configured risk-free curve.
-
-## What to remember
-
-Swap valuation is a sequence of explicit decisions. Contract schedules determine the cashflows, fixing dates determine whether rates are observed or projected, market indices choose projection curves, and the discount policy chooses present-value curves. Because all of those inputs retain their quote links, the resulting risk report explains both direct and cross-curve exposure.
+Deposits and floating-rate notes share leg-based mechanics. Straight bonds
+require settlement, quote anchors and yield/spread analytics and therefore
+have a specialized [bond pricer](bonds.md). Listed rate futures use
+`RateFuturesPricer`: implied rate is the decimal
+\\((100-Q)/100\\), and contract size is value per futures **price point**, not
+per basis point. A one-basis-point rate change changes a `100-100r` quote by
+0.01 price points. These unit distinctions are essential before comparing
+their risk with swap sensitivities.

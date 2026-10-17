@@ -96,10 +96,11 @@ where
         self.interpolator
     }
 
-    /// Returns the reference date of the term structure.
+    /// Labels each exposed pillar value, or each discount factor if no
+    /// separate source-pillar values have been supplied.
     ///
     /// ## Errors
-    /// Returns an error if the reference date is not set.
+    /// Returns an error if the label count differs from the exposed value count.
     pub fn with_pillar_labels(mut self, pillar_labels: Vec<String>) -> Result<Self> {
         let expected_len = self
             .pillar_values
@@ -116,6 +117,11 @@ where
 
     /// Stores the IFT sensitivity matrix so that `put_pillars_on_tape` can
     /// rebuild AD-connected discount factors.
+    ///
+    /// Rows correspond to discount-factor nodes excluding the reference node;
+    /// columns correspond to exposed source pillars. The matrix may be
+    /// rectangular. Dimensions are unchecked; malformed rows can panic when
+    /// the AD curve is reconstructed.
     #[must_use]
     pub fn with_ift_sensitivities(mut self, sensitivities: Vec<Vec<f64>>) -> Self {
         self.ift_sensitivities = Some(Arc::new(sensitivities));
@@ -125,7 +131,8 @@ where
     /// Overrides the values exposed through the [`Pillars`] interface.
     ///
     /// # Errors
-    /// Returns an error if the provided values do not match the number of curve nodes.
+    /// Returns an error for empty values or a mismatch with existing labels.
+    /// Source-pillar count need not equal curve-node count.
     pub fn with_pillar_values(mut self, pillar_values: Vec<T>) -> Result<Self> {
         if let Some(pillar_labels) = &self.pillar_labels {
             if pillar_values.len() != pillar_labels.len() {
@@ -157,7 +164,13 @@ impl DiscountTermStructure<f64> {
     ///
     /// ## Errors
     ///
-    /// Returns an error if dates and discount factors have different lengths or if the first discount factor is not 1.0.
+    /// Dates and discount factors are sorted together; the earliest date is
+    /// the reference date. Returns an error for different lengths or if the
+    /// earliest discount factor differs from one by more than `1e-12`.
+    ///
+    /// # Panics
+    /// Panics for equally empty inputs. Interpolation also requires a valid
+    /// knot grid; linear/loglinear queries generally require at least two nodes.
     pub fn new(
         dates: Vec<Date>,
         discount_factors: Vec<f64>,
@@ -217,7 +230,13 @@ impl DiscountTermStructure<DualFwd> {
     ///
     /// # Errors
     ///
-    /// Returns an error if dates and discount factors have different lengths or if the first discount factor is not 1.0.
+    /// Dates and discount factors are sorted together; the earliest date is
+    /// the reference date. Returns an error for different lengths or if the
+    /// earliest discount factor differs from one by more than `1e-12`.
+    ///
+    /// # Panics
+    /// Panics for equally empty inputs. Interpolation also requires a valid
+    /// knot grid; linear/loglinear queries generally require at least two nodes.
     pub fn new(
         dates: Vec<Date>,
         discount_factors: Vec<DualFwd>,

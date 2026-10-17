@@ -21,14 +21,17 @@ use crate::{
 
 /// A full Monte Carlo path: one `Vec<SimulationResponse<T>>` per simulation date.
 ///
-/// `scenario[d][i]` is the response for request slot `i` at simulation date `d`.
+/// In full layout, `scenario[d][i]` is the response for request slot `i` at
+/// simulation date `d`. Compact dated layouts contain only that date's active
+/// request mapping, preserving global request order.
 pub type PathScenario<T> = Vec<Vec<SimulationResponse<T>>>;
 
 /// Market data produced by a [`MarketModel`] for a single claim at a single
 /// simulation date.
 ///
 /// Each field corresponds to a request category in [`SimulationRequest`].
-/// Fields are `None` when the claim did not request that data category.
+/// Fields can be `None` for unrequested, inactive, or unsupported categories;
+/// absence does not establish that no corresponding request was supplied.
 pub struct SimulationResponse<T: Scalar> {
     /// Simulated discount factor.
     pub discounts: Option<T>,
@@ -76,16 +79,18 @@ where
 /// * [`set_requests`](Self::set_requests) — configures the data produced at each date.
 /// * Individual `resolve_*` methods for each market data category.
 ///
-/// A default [`resolve_request`](Self::resolve_request) implementation dispatches
-/// to the individual resolvers.
+/// The default [`resolve_request`](Self::resolve_request) dispatches forward,
+/// FX, spot, and path-dependent requests only. Models must override it or
+/// populate responses separately to provide discount factors or numeraires.
 pub trait MarketModel<T: Scalar>: Send + Sync {
     /// Returns the number of Monte Carlo paths.
     fn n_paths(&self) -> usize;
 
     /// Generates a single path for the given path index.
     ///
-    /// Each index should produce a deterministic, independent path
-    /// (e.g. by deriving the RNG seed from `index`).
+    /// Each index should select a deterministic path for a fixed setup.
+    /// Paths need not be independent: LGM pairs consecutive Sobol paths
+    /// antithetically.
     ///
     /// # Errors
     /// Returns an error when path generation or request resolution fails.
@@ -112,8 +117,13 @@ pub trait MarketModel<T: Scalar>: Send + Sync {
         false
     }
 
-    /// Resolves a full [`SimulationRequest`] into a [`SimulationResponse`]
-    /// by dispatching to the individual `resolve_*` methods.
+    /// Resolves the supported categories of a [`SimulationRequest`] into a
+    /// [`SimulationResponse`] through the individual `resolve_*` methods.
+    ///
+    /// The default resolves forwards, FX, spots, and path observations only.
+    /// It never calls `resolve_discount_request` and leaves discount factors
+    /// and numeraires unset. Override this method, or populate responses
+    /// separately during path generation, when those quantities are required.
     ///
     /// # Errors
     /// Returns an error if any of the individual resolvers fail.

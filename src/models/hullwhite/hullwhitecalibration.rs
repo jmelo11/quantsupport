@@ -29,6 +29,9 @@ use super::{
 };
 
 /// Piecewise-constant time-dependent volatility for the Hull-White model.
+///
+/// The first value applies before the first schedule time and the last value
+/// applies thereafter. Construction does not validate order or sigma values.
 #[derive(Clone, Default)]
 pub struct HullWhiteTimeDependentVolatility<T: Scalar> {
     schedule: Vec<(f64, T)>,
@@ -39,6 +42,9 @@ pub struct HullWhiteTimeDependentVolatility<T: Scalar> {
 impl HullWhiteTimeDependentVolatility<f64> {
     /// Creates a new time-dependent volatility function from a schedule of
     /// `(year_fraction, sigma)` pairs.
+    ///
+    /// Times use years and sigma uses absolute rate units per square-root year.
+    /// An empty schedule is stored but panics when `vol()` is called.
     #[must_use]
     pub const fn new(schedule: Vec<(f64, f64)>) -> Self {
         Self {
@@ -55,7 +61,10 @@ impl HullWhiteTimeDependentVolatility<f64> {
         self
     }
 
-    /// Attaches the IFT sensitivity matrix `d(sigma_HW_i) / d(vol_quote_j)`.
+    /// Attaches the sensitivity matrix `d(sigma_HW_i) / d(vol_quote_j)`.
+    ///
+    /// The built-in calibrator supplies diagonal forward-difference estimates,
+    /// not an analytical Jacobian of a joint piecewise-volatility bootstrap.
     #[must_use]
     pub fn with_ift_sensitivities(mut self, sens: Vec<Vec<f64>>) -> Self {
         self.ift_sensitivities = Some(sens);
@@ -413,7 +422,11 @@ fn build_calibration_instruments(
 }
 
 impl HullWhite<'_, f64> {
-    /// Calibrates time-dependent volatility to the selected market quotes.
+    /// Fits an independent constant sigma to each selected instrument and
+    /// assembles the results into a piecewise-constant schedule.
+    ///
+    /// Diagnostics report the individual constant-sigma fits, not a joint
+    /// repricing of all instruments under the assembled schedule.
     ///
     /// # Errors
     /// Returns an error for missing quotes, unsupported instruments or failed calibration.
@@ -433,6 +446,11 @@ impl HullWhite<'_, f64> {
     /// Calibrates the short-rate volatility sigma(t) to market vols read from
     /// a constructed volatility surface or cube, as specified by the
     /// configuration's [`CalibrationSource`].
+    ///
+    /// Each instrument is fitted independently with a constant sigma, then
+    /// those values form a schedule; this does not jointly bootstrap forward
+    /// sigma intervals. Quote-volatility sensitivities are diagonal forward
+    /// differences with a `1e-6` absolute volatility bump.
     ///
     /// The surface or cube provides the available option instrument
     /// identifiers. The calibration basket selects a subset of those
@@ -539,9 +557,8 @@ impl HullWhite<'_, f64> {
         self.calibrate_to_instruments(&cal_instruments, reference_date, curve)
     }
 
-    /// Core calibration routine: bootstraps a piecewise-constant sigma(t)
-    /// schedule by solving, for each instrument, the sigma that reprices the
-    /// instrument's market vol.
+    /// Fits a constant sigma separately to each instrument, then assembles
+    /// those values into a piecewise-constant schedule at instrument expiries.
     fn calibrate_to_instruments(
         &mut self,
         cal_instruments: &[CalibrationInstrument],

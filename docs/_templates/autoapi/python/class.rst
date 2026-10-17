@@ -4,7 +4,7 @@
 {{ "=" * obj.short_name | length }}
 
 {% endif %}
-.. py:{{ obj.type }}:: {{ obj.id if is_own_page else obj.short_name }}({{ obj|constructor_signature }})
+.. py:{{ obj.type }}:: {{ obj.id if is_own_page else obj.short_name }}{{ obj|class_declaration }}
 
 {% if obj.bases %}
    Bases: {% for base in obj.bases %}{{ base|link_objs }}{% if not loop.last %}, {% endif %}{% endfor %}
@@ -12,6 +12,10 @@
 {% endif %}
 {% if obj.docstring %}
    {{ obj.docstring|indent(3) }}
+
+{% endif %}
+{% if obj|construction_note %}
+   {{ obj|construction_note }}
 
 {% endif %}
    `Source declaration <{{ obj|declaration_source }}>`_

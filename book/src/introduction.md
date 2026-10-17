@@ -1,82 +1,74 @@
-# Introduction
+# QuantSupport
 
-QuantSupport is a Rust library for building market data, pricing derivatives, measuring risk with automatic differentiation, simulating exposure, and computing XVA.
+QuantSupport is a quantitative-finance library implemented in Rust and used
+directly, through Python, or through an Excel add-in. Its subject is the
+construction of a market and the valuation of contracts against that market:
+interest-rate and credit curves, volatility markets, deterministic pricing,
+market sensitivities, stochastic payoffs, exposure and valuation adjustments.
+These are not independent calculators. They share contract representations,
+market identities and numerical conventions.
 
-The book provides component walkthroughs, including
-[Excel download and installation](excel/installation.md). The separate
-[Python API](api/autoapi/quantsupport/index.html) and
-[Excel worksheet API](api/excel/index.html) document declarations and parameters. The
-[Rust API](https://docs.rs/quantsupport) documents native types and traits.
+The central distinction is between an **observation** and a **model of the
+market**. A swap quote is an observed par rate; a discount factor is a calibrated
+quantity that lets the library price payments between quoted maturities.
+Similarly, an implied-volatility surface represents option observations, whereas
+a short-rate model specifies how future rates evolve. Keeping these roles
+separate makes both calibration and risk interpretable.
 
-Everything is organised around one flow:
+For observations \\(q\\), a constructed market \\(M(q)\\), and a position \\(c\\),
+valuation can be written schematically as
 
-1. Load observable **quotes**, **fixings**, and **FX rates** into `QuoteStore`, `FixingStore`, and `FxStore`.
-2. Describe **curves**, **credit curves**, **volatility surfaces/cubes**, and **simulations** with serializable configuration structs (`CurveConfiguration`, `CreditCurveConfiguration`, `VolatilitySurfaceConfiguration`, `VolatilityCubeConfiguration`, `SimulationConfiguration`).
-3. Put them into a [`PricingContext`](concepts/pricing-context.md) and call `initialize()`, which bootstraps and builds every object in dependency order.
-4. Build an **instrument** with a `Make*` builder and wrap it in a **trade** (`SwapTrade`, `FxForwardTrade`, …) that carries notional and side.
-5. Ask a **pricer** (`DiscountedCashflowPricer`, `ClosedFormBlackCapPricer`, `FxEuropeanOptionPricer`, …) for `Request::Value`, `FairRate`, `Cashflows`, or `Sensitivities`.
-6. Reuse the same market for **scenarios** (`Scenario`), **scripted payoffs** (`ScriptEngine`), **simulation** (`LgmMarketModel`, `HullWhite`), and **XVA** (`XvaEngine`).
+\\[
+V(c;q)=\mathcal P(c,M(q)).
+\\]
 
-Curves, instruments, and pricers use the generic scalar parameter `T: Scalar`. `T = f64` carries plain numerical values. `T = DualFwd`, a reverse-mode tape over a second-order forward type, makes each price differentiable with respect to the quotes that built the market.
+The construction map includes interpolation and numerical calibration.
+Sensitivities must therefore account for its effect as well as the direct
+pricing formula. Scenarios evaluate the composition again at changed inputs.
+Simulation extends the same construction into future market states; claim
+aggregation then adds netting, collateral, credit and funding assumptions.
 
-## Crate layout
+This book develops that connected system rather than cataloging declarations.
+The opening chapters explain the three interfaces and a complete valuation.
+Contracts and market-state chapters establish the shared vocabulary. Curve and
+volatility construction lead into product valuation and risk. The remaining
+chapters connect stochastic models and dated payoff programs to exposure and
+XVA. Configuration and executable examples support the discussion without
+replacing it.
 
-The library is divided by responsibility so that users can locate a concept
-before they need to understand its implementation. The following map starts
-with numerical foundations, moves through market construction and pricing,
-and ends with the portfolio workflows that reuse those components.
+## One core, different working environments
 
-| Module                  | Contents                                                                                                                                         |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `ad`                    | `Tape`, `Dual<T>`, `Fwd<T>`, `DualFwd` and the `Scalar` trait                                                                                    |
-| `core`                  | `PricingContext`, `ConstructedElementStore`, `Request`, `EvaluationResults`, `Trade`, `Side`, `Pricer`, `Evaluator`, discount policies           |
-| `currencies`, `indices` | `Currency` and `MarketIndex` enums                                                                                                               |
-| `quotes`                | `Quote`, `QuoteDetails`, `QuoteInstrument`, `QuoteStore`, `Scenario`, `FixingStore`, `FxStore`                                                   |
-| `rates`                 | `DiscountTermStructure`, `FlatForwardTermStructure`, `RateDefinition`, `MultiCurveBootstrapper`, `CreditCurveBootstrapper`, curve configurations |
-| `volatility`            | Surfaces, cubes, `VolatilityType`, `SmileType`, `Strike`, volatility sources                                                                     |
-| `instruments`           | Instruments and `Make*` builders                                                                                                                 |
-| `pricers`               | Concrete pricers                                                                                                                                 |
-| `models`                | `HullWhite`, LGM components and `LgmMarketModel`, Brownian motion, Monte Carlo engine                                                            |
-| `simulations`           | `SimulationConfiguration`, `SimulationBuilder`, `GeneratedMonteCarloSimulation`                                                                  |
-| `scripting`             | Payoff language, `ScriptEngine`, `ScriptedProduct`                                                                                               |
-| `xva`                   | Contingent claims, netting sets, CSA, `XvaEngine`, aggregators                                                                                   |
-| `time`, `math`, `utils` | `Date`, `Period`, `Calendar`, schedules, interpolation, solvers, errors                                                                          |
+Rust exposes ownership, numerical scalar types and trait boundaries directly.
+It is the natural interface for extending a pricer, market provider or simulation
+model. Python provides native financial objects, typed construction inputs,
+context-managed market lifetimes and pandas reporting. Excel expresses
+construction and valuation as a worksheet dependency graph whose cells carry
+revisioned handles to native objects.
 
-`quantsupport::prelude::*` re-exports the types used in this book.
+These interfaces share a core, but their capabilities are not identical. The
+Python scripting service, for example, returns averaged variables rather than
+every low-level Rust scripting output. Excel's process-local handles are not
+serialized markets. Likewise, not every simulation stored in a `DualFwd`
+container retains derivatives of the model that generated it. Those boundaries
+are stated where they affect interpretation.
 
-This division is also an architectural guide. Data stores own observations,
-constructed elements own calibrated market objects, instruments own contract
-terms, and pricers connect contracts to markets. Keeping those responsibilities
-visible makes larger workflows easier to reason about.
+## Numerical interpretation
 
-## What the book covers
+Rates and spreads normally use decimal units: `0.04` means 4%, and `0.0001`
+means one basis point. A quoted rate is incomplete without its day count and
+compounding convention. Payment dates, fixing dates, observation periods,
+collateral currency and position direction are also valuation inputs, not
+presentation choices.
 
-The chapters follow the same order in which a valuation system is normally
-built. A new reader can proceed from installation to a first price, then add
-market construction, risk, simulation, and XVA as those concerns become
-relevant.
+The library's generic `Scalar` abstraction permits ordinary numerical values
+and automatic-differentiation values in many mathematical components. Standard
+market construction and deterministic pricing are predominantly
+`DualFwd`-oriented. Automatic differentiation follows the implemented numerical
+program; it does not supply omitted model dependencies, remove discretization
+error or make discontinuous payoffs smooth.
 
-- **Getting Started** installs the crate and prices a first swap in Rust and Python.
-- **Core Concepts** explains the market-data model, `PricingContext::initialize`, and how instruments, trades, pricers and results relate.
-- **Curves and Market Data** covers term structures, multi-curve bootstrapping with dependencies, FX-implied collateral curves, and volatility objects.
-- **Pricing** documents each pricer: which `Request`s it supports, the formulas it implements, and the builder fields it needs.
-- **Risk** describes the AD machinery, quote-pillar sensitivities, and scenario shocks.
-- **Scripting** documents the payoff language, event streams, `ScriptEngine`, and scripted products in XVA.
-- **Models and Simulation** covers Hull-White and LGM calibration and Monte Carlo generation.
-- **XVA** covers contingent-claim decomposition, netting sets and CSA terms, CVA/DVA/FVA, and AAD sensitivities of XVA measures.
-- **Reference** lists the JSON schemas, the runnable examples, and a glossary.
-
-Rust snippets marked `rust,ignore` illustrate focused parts of the library and example packages. The complete compiled programs are listed in [Examples](reference/examples.md).
-
-## How to use this book
-
-Readers building an application should begin with [Installation](getting-started/installation.md)
-and [Your First Swap](getting-started/first-swap.md). Readers extending the
-library can use the architecture and Rust API chapters to find the appropriate
-trait boundary before moving to the domain-specific chapters. The reference
-section is most useful after the concepts behind each configuration file are
-understood.
-
-By the end of the book, the opening six-step flow should read as one connected
-system: observable data becomes a constructed market, the market supports
-pricing and risk, and the same objects feed simulation and XVA.
+The book distinguishes implemented behavior from idealized formulas. In
+particular, it identifies fixed calibration assumptions, numerical-path
+limitations, and approximations in exposure and funding calculations. This
+discipline is necessary before a computed number can become a price or a useful
+risk measure.

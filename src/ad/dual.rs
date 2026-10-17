@@ -17,10 +17,17 @@ use crate::utils::errors::{QSError, Result};
 /// A number that participates in reverse-mode automatic differentiation.
 ///
 /// * `Dual<f64>` — first-order backward-mode AD.
-/// * `Dual<ADForward>` (aka [`DualFwd`]) — mixed backward (1st) + forward (2nd) order AD.
+/// * `Dual<ADForward>` (aka [`DualFwd`]) — reverse mode over a nested
+///   second-order forward scalar. Directional higher derivatives require
+///   explicitly seeded forward components; wrapping a constant does not seed them.
 ///
 /// Operations return lazy expression types (`BinExpr`, `UnExpr`). Call
 /// `.into()` to flatten them into a single tape node.
+///
+/// Recorded values borrow node storage from the current thread's tape without
+/// a Rust lifetime parameter. Use them only on that thread while their nodes
+/// remain live. Starting a new recording, replacing the tape, or rewinding past
+/// a node invalidates that node and any copies of the value that reference it.
 #[derive(Clone, Copy)]
 pub struct Dual<T> {
     pub(crate) val: T,
@@ -114,10 +121,13 @@ impl<T: TapeHolder + InnerScalar> Dual<T> {
         Self::constant(T::one())
     }
 
-    /// Returns the adjoint after a backward pass.
+    /// Returns the accumulated adjoint of a live node after a backward pass.
+    ///
+    /// The node must still belong to the current recording. This method does
+    /// not validate a stored pointer against tape rewinds or replacement.
     ///
     /// # Errors
-    /// Returns [`QSError::NodeNotIndexedInTapeErr`] if this node is not on the tape.
+    /// Returns [`QSError::NodeNotIndexedInTapeErr`] if this value has no node.
     #[inline]
     pub fn adjoint(&self) -> Result<T> {
         self.node
@@ -174,14 +184,20 @@ impl<T: TapeHolder + InnerScalar> Dual<T> {
         })
     }
 
-    /// Attaches this value to the current tape.
+    /// Replaces this value's node with a new leaf when recording is active.
+    ///
+    /// When recording is disabled, the value becomes detached.
     pub fn put_on_tape(&mut self) {
         T::with_tape(|tape| {
             self.node = tape.new_leaf();
         });
     }
 
-    /// Returns a copy ensured to be on the tape.
+    /// Returns this value unchanged if it has a node, otherwise attempts to
+    /// attach a copy to the active tape.
+    ///
+    /// Recording must be active to attach a detached value. An existing node
+    /// pointer is not checked for validity after a rewind or tape replacement.
     #[must_use]
     pub fn ensure_on_tape(&self) -> Self {
         if self.node.is_some() {
@@ -192,7 +208,7 @@ impl<T: TapeHolder + InnerScalar> Dual<T> {
         r
     }
 
-    /// Check if recorded on a tape.
+    /// Returns whether a node pointer is present, not whether it is still live.
     #[must_use]
     pub const fn is_on_tape(&self) -> bool {
         self.node.is_some()

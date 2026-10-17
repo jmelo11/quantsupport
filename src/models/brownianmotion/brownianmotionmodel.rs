@@ -11,7 +11,11 @@ use crate::{
     utils::errors::{QSError, Result},
 };
 
-/// Brownian Motion (GBM / Black-Scholes) model.
+/// Geometric Brownian motion with continuous rate and dividend-yield inputs.
+///
+/// The associated Black pricing helpers take a forward, strike, annualized
+/// decimal lognormal volatility, and expiry in years directly. They do not use
+/// the instance's spot or rates and do not apply discounting.
 pub struct BrownianMotion<T: Scalar> {
     spot: T,
     rate: T,
@@ -20,7 +24,11 @@ pub struct BrownianMotion<T: Scalar> {
 }
 
 impl<T: Scalar> BrownianMotion<T> {
-    /// Creates a new [`BrownianMotion`].
+    /// Creates a GBM model without validating its inputs.
+    ///
+    /// `rate` and `dividend_rate` are continuously compounded annual decimals;
+    /// `None` means zero dividend yield. `vol_func` supplies lognormal volatility
+    /// per square-root year, so `0.20` means 20% annualized volatility.
     #[must_use]
     pub fn new(
         spot: T,
@@ -42,13 +50,13 @@ impl<T: Scalar> BrownianMotion<T> {
         self.spot
     }
 
-    /// Returns the risk-free rate.
+    /// Returns the continuously compounded annual risk-free rate as a decimal.
     #[must_use]
     pub const fn rate(&self) -> T {
         self.rate
     }
 
-    /// Returns the continuous dividend rate.
+    /// Returns the continuous annual dividend yield; `None` means zero in path generation.
     #[must_use]
     pub const fn dividend_rate(&self) -> Option<&T> {
         self.dividend_rate.as_ref()
@@ -56,10 +64,16 @@ impl<T: Scalar> BrownianMotion<T> {
 }
 
 impl BrownianMotion<f64> {
-    ///  Black call/put price from a forward (AD-enabled).
+    /// Undiscounted Black call (`is_call = true`) or put price from a forward.
+    ///
+    /// `fwd` and `strike` share price or rate units; `vol` is annualized decimal
+    /// lognormal volatility and `tau` is expiry in years. Multiply the result by
+    /// the appropriate discount factor and contract scale separately.
+    /// No zero-volatility or zero-expiry intrinsic-value branch is provided.
     ///
     /// # Errors
     /// Returns an error if strike, volatility, or time to expiry are non-positive.
+    /// Forward positivity and input finiteness are not validated; see [`d1_d2`].
     pub fn closed_form_price(
         fwd: f64,
         strike: f64,
@@ -74,10 +88,23 @@ impl BrownianMotion<f64> {
         }
     }
 
-    /// Black-Scholes delta: ∂V/∂F (forward delta).
+    /// Undiscounted forward-delta magnitude: `N(d1)` for calls, `N(-d1)` for puts.
+    ///
+    /// The put result is positive: negate it to obtain the signed derivative
+    /// of the undiscounted put price with respect to the forward. Neither
+    /// discounting nor spot-to-forward scaling is included.
+    ///
+    /// ```
+    /// use quantsupport::models::brownianmotion::brownianmotionmodel::BrownianMotion;
+    ///
+    /// let call = BrownianMotion::<f64>::delta(100.0, 100.0, 0.20, 1.0, true)?;
+    /// let put_magnitude = BrownianMotion::<f64>::delta(100.0, 100.0, 0.20, 1.0, false)?;
+    /// assert!((call + put_magnitude - 1.0).abs() < 1e-12);
+    /// # Ok::<(), quantsupport::utils::errors::QSError>(())
+    /// ```
     ///
     /// # Errors
-    /// Returns an error if d₁/d₂ computation fails.
+    /// Propagates [`d1_d2`] validation errors.
     pub fn delta(fwd: f64, strike: f64, vol: f64, tau: f64, is_call: bool) -> Result<f64> {
         let (d1, _) = d1_d2(fwd, strike, vol, tau)?;
         if is_call {
@@ -87,20 +114,28 @@ impl BrownianMotion<f64> {
         }
     }
 
-    /// Black-Scholes vega: ∂V/∂σ = F · φ(d₁) · √τ.
+    /// Undiscounted Black vega: `dV/dvol = F * phi(d1) * sqrt(tau)`.
+    ///
+    /// This is per full unit of decimal volatility, not per percentage point
+    /// or basis point. Multiply by `0.01` for a one-percentage-point change.
     ///
     /// # Errors
-    /// Returns an error if d₁/d₂ computation fails.
+    /// Propagates [`d1_d2`] validation errors.
     pub fn vega(fwd: f64, strike: f64, vol: f64, tau: f64) -> Result<f64> {
         let (d1, _) = d1_d2(fwd, strike, vol, tau)?;
         let pdf_d1 = (-0.5 * d1 * d1).exp() * FRAC_1_SQRT_2PI;
         Ok(fwd * pdf_d1 * tau.sqrt())
     }
 
-    /// Black-Scholes rho: ∂V/∂r = K · τ · N(±d₂).
+    /// Returns the legacy rho expression: `K * tau * N(d2)` for calls,
+    /// `-K * tau * N(-d2)` for puts.
+    ///
+    /// No interest rate or discount factor enters this helper. This is not
+    /// the rate derivative of the undiscounted Black value at fixed forward,
+    /// nor does it include the discount factor required for a PV rho.
     ///
     /// # Errors
-    /// Returns an error if d₁/d₂ computation fails.
+    /// Propagates [`d1_d2`] validation errors.
     pub fn rho(fwd: f64, strike: f64, vol: f64, tau: f64, is_call: bool) -> Result<f64> {
         let (_, d2) = d1_d2(fwd, strike, vol, tau)?;
         if is_call {
@@ -110,10 +145,16 @@ impl BrownianMotion<f64> {
         }
     }
 
-    /// Black-Scholes theta: ∂V/∂τ.
+    /// Returns the legacy theta expression
+    /// `-F * phi(d1) * vol / (2 * sqrt(tau))`, plus `K * N(d2)` for calls
+    /// or minus `K * N(-d2)` for puts.
+    ///
+    /// No rate, dividend, or discount factor is included. This expression is
+    /// neither `dV/dtau` of the undiscounted Black price nor standard
+    /// discounted-price calendar theta; do not interpret it as PV per year.
     ///
     /// # Errors
-    /// Returns an error if d₁/d₂ computation fails.
+    /// Propagates [`d1_d2`] validation errors.
     pub fn theta(fwd: f64, strike: f64, vol: f64, tau: f64, is_call: bool) -> Result<f64> {
         let (d1, d2) = d1_d2(fwd, strike, vol, tau)?;
         let pdf_d1 = (-0.5 * d1 * d1).exp() * FRAC_1_SQRT_2PI;
@@ -129,8 +170,13 @@ impl BrownianMotion<f64> {
 impl BrownianMotion<DualFwd> {
     /// Undiscounted Black call/put price from a forward (AD-enabled).
     ///
+    /// `fwd` and `vol` retain AD dependencies; strike and expiry are constants.
+    /// Units are the same as for the `f64` helper. No discounting or explicit
+    /// zero-volatility/zero-expiry limiting branch is provided.
+    ///
     /// # Errors
     /// Returns an error if strike or time to expiry are non-positive.
+    /// Forward, volatility, and finiteness are not validated; see [`d1_d2_ad`].
     pub fn closed_form_price(
         fwd: DualFwd,
         strike: f64,
@@ -145,10 +191,14 @@ impl BrownianMotion<DualFwd> {
         }
     }
 
-    /// Black-Scholes delta: ∂V/∂F (AD-enabled).
+    /// AD-enabled undiscounted forward-delta magnitude:
+    /// `N(d1)` for calls, positive `N(-d1)` for puts.
+    ///
+    /// Negate the put result for its signed forward derivative. Discounting
+    /// and spot-to-forward scaling are not included.
     ///
     /// # Errors
-    /// Returns an error if d₁/d₂ computation fails.
+    /// Propagates [`d1_d2_ad`] validation errors.
     pub fn delta(
         fwd: DualFwd,
         strike: f64,
@@ -165,20 +215,27 @@ impl BrownianMotion<DualFwd> {
         }
     }
 
-    /// Black-Scholes vega: ∂V/∂σ = F · φ(d₁) · √τ (AD-enabled).
+    /// AD-enabled undiscounted Black vega: `F * phi(d1) * sqrt(tau)`.
+    ///
+    /// The result is per full unit of decimal volatility, not per percentage
+    /// point or basis point.
     ///
     /// # Errors
-    /// Returns an error if d₁/d₂ computation fails.
+    /// Propagates [`d1_d2_ad`] validation errors.
     pub fn vega(fwd: DualFwd, strike: f64, vol: DualFwd, tau: f64) -> Result<DualFwd> {
         let (d1, _) = d1_d2_ad(fwd, strike, vol, tau)?;
         let pdf_d1 = (-d1 * d1 * 0.5).exp() * FRAC_1_SQRT_2PI;
         Ok((fwd * pdf_d1 * tau.sqrt()).into())
     }
 
-    /// Black-Scholes rho: ∂V/∂r = K · τ · N(±d₂) (AD-enabled).
+    /// AD-enabled legacy rho expression: `K * tau * N(d2)` for calls,
+    /// `-K * tau * N(-d2)` for puts.
+    ///
+    /// No interest rate or discount factor enters this helper. It is not the
+    /// rate derivative at fixed forward or a discounted PV rho.
     ///
     /// # Errors
-    /// Returns an error if d₁/d₂ computation fails.
+    /// Propagates [`d1_d2_ad`] validation errors.
     pub fn rho(
         fwd: DualFwd,
         strike: f64,
@@ -196,10 +253,16 @@ impl BrownianMotion<DualFwd> {
         }
     }
 
-    /// Black-Scholes theta: ∂V/∂τ (AD-enabled).
+    /// AD-enabled legacy theta expression:
+    /// `-F * phi(d1) * vol / (2 * sqrt(tau))`, plus `K * N(d2)` for calls
+    /// or minus `K * N(-d2)` for puts.
+    ///
+    /// This is not a time derivative of the Black price or standard
+    /// discounted-price calendar theta. No rate or discount factor is included;
+    /// do not interpret the output as PV per year.
     ///
     /// # Errors
-    /// Returns an error if d₁/d₂ computation fails.
+    /// Propagates [`d1_d2_ad`] validation errors.
     pub fn theta(
         fwd: DualFwd,
         strike: f64,
@@ -220,6 +283,14 @@ impl BrownianMotion<DualFwd> {
 }
 
 impl PathGenerator<f64> for BrownianMotion<f64> {
+    /// Evolves GBM from time zero, sampling volatility at each step's end.
+    ///
+    /// Times are year fractions and draws are standard normals. Nonnegative,
+    /// increasing times are the caller's responsibility; ordering is not
+    /// validated and a negative step can produce nonfinite values.
+    ///
+    /// # Errors
+    /// Rejects mismatched buffer lengths and propagates volatility lookup errors.
     fn generate(&self, times: &[f64], draws: &[f64], scenario: &mut [f64]) -> Result<()> {
         if times.len() != draws.len() || times.len() != scenario.len() {
             return Err(QSError::InvalidValueErr(

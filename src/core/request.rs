@@ -8,25 +8,27 @@ use crate::{
 
 /// A requested instrument result.
 ///
-/// Supported measures include value, yield, duration, spreads,
-/// sensitivities, cashflows, and fair rate.
+/// Each variant selects an output measure, not a market-data dependency.
+/// Availability is specific to the pricer. Unsupported variants may produce an
+/// error or leave the corresponding [`EvaluationResults`](crate::core::evaluationresults::EvaluationResults)
+/// field absent; requesting a variant does not guarantee support.
 #[allow(clippy::upper_case_acronyms)]
 pub enum Request {
-    /// Price
+    /// Monetary present value in the pricer's currency and normalization.
     Value,
-    /// Yield to maturity
+    /// Decimal annual yield under the position's yield convention.
     YieldToMaturity,
-    /// Modified Duration
+    /// Modified duration with respect to the position's decimal yield.
     ModifiedDuration,
     /// Continuously compounded zero-volatility spread over the discount curve.
     ZSpread,
     /// Option-adjusted spread produced by an issuer-call bond model.
     OAS,
-    /// Sensitivities
+    /// Raw first-order value derivatives keyed by market-pillar labels.
     Sensitivities,
-    /// Cashflows
+    /// Undiscounted cashflow report; directions and columns depend on the pricer.
     Cashflows,
-    /// Fair rate (par rate / breakeven rate for swaps and similar instruments)
+    /// Breakeven contract quote, such as a decimal swap coupon or forward price.
     FairRate,
 }
 
@@ -102,19 +104,23 @@ where
     fn legs(&self) -> &[Leg<T>];
 }
 
-/// The [`HandleCashflows`] trait defines a method for handling a cashflows request.
+/// Default cashflow reporting from resolved legs supplied by pricing state.
 ///
-/// The generic type parameter `T` represents the type of trade, and `S` represents the state or context in which the cashflows are evaluated.
-/// As cashflows often depend on current evaluation and market conditions, the mutable state is responsable
-/// for proving the a resolved instance of the legs and underlying cashflows.
+/// `T` is the position and `S` supplies its legs. Floating fixings must already
+/// have been resolved by the pricer. The report preserves leg/cashflow order,
+/// does not filter payment dates, and does not apply leg-side signs or discounting.
 pub trait HandleCashflows<T, S>
 where
     S: LegsProvider<DualFwd>,
 {
-    /// Handles cashflow-related operations and returns a vector of cashflows.
+    /// Returns parallel cashflow columns in each leg's currency.
     ///
     /// ## Errors
     /// Returns an error if the evaluation fails.
+    ///
+    /// # Panics
+    /// Panics for [`CashflowType::OptionEmbeddedCashflow`], which the default
+    /// reporting implementation does not support.
     #[allow(clippy::too_many_lines)]
     fn handle_cashflows(&self, _trade: &T, state: &mut S) -> Result<CashflowsTable> {
         let mut cashflows_table = CashflowsTable::new();

@@ -10,6 +10,11 @@ examples.
 
 The notebook imports its local [market_data.py](market_data.py) directly.
 
+Independent checks reprice the short deposit and recover a simple forward from
+two discount factors. The resulting zero-rate table distinguishes zero rates
+from par market quotes; positive-rate discount-factor behavior is identified
+as snapshot-specific, not a universal restriction.
+
 Follow the [shared setup](../README.md#install-and-run), then open the notebook
 in a fresh kernel. Run this scope from the repository root with:
 

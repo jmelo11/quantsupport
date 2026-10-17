@@ -82,7 +82,9 @@ impl MakeCapFloor {
         self
     }
 
-    /// Sets the notional amount.
+    /// Supplies the required compatibility notional; `build` does not store its value.
+    ///
+    /// Position sizing belongs to `CapFloorTrade`.
     #[must_use]
     pub const fn with_notional(mut self, notional: f64) -> Self {
         self.notional = Some(notional);
@@ -96,7 +98,7 @@ impl MakeCapFloor {
         self
     }
 
-    /// Sets the rate definition for the caplet/floorlet strip.
+    /// Stores a compatibility rate definition that `build` does not use.
     #[must_use]
     pub const fn with_rate_definition(mut self, rate_definition: RateDefinition) -> Self {
         self.rate_definition = Some(rate_definition);
@@ -117,7 +119,7 @@ impl MakeCapFloor {
         self
     }
 
-    /// Sets the side (buyer or seller of the cap/floor).
+    /// Stores a compatibility side that `build` does not use.
     #[must_use]
     pub const fn with_side(mut self, side: Side) -> Self {
         self.side = Some(side);

@@ -36,7 +36,34 @@ pub struct NpvCube {
 }
 
 impl NpvCube {
-    /// Expected positive, negative, and unconditional exposure at each date.
+    /// Returns pointwise `(EPE, ENE, EE)` path averages.
+    ///
+    /// At each date these are `mean(max(V, 0))`, `mean(min(V, 0))`, and
+    /// `mean(V)`. ENE is signed (nonpositive), so `EE = EPE + ENE`.
+    /// These are neither time-averaged regulatory exposure measures nor PFE
+    /// quantiles. An empty path set returns zero profiles.
+    ///
+    /// Each path must have exactly [`Self::dates`]'s length.
+    ///
+    /// # Panics
+    /// Panics if a path contains more entries than the date grid.
+    ///
+    /// # Example
+    /// ```
+    /// use quantsupport::{
+    ///     time::date::Date,
+    ///     xva::visitors::exposureevaluator::NpvCube,
+    /// };
+    /// let cube = NpvCube {
+    ///     trade_id: "position".into(),
+    ///     dates: vec![Date::new(2026, 1, 2), Date::new(2027, 1, 2)],
+    ///     npvs: vec![vec![10.0, -4.0], vec![-6.0, 2.0]],
+    /// };
+    /// let (positive, negative, mean) = cube.exposure_profiles();
+    /// assert_eq!(positive, vec![5.0, 1.0]);
+    /// assert_eq!(negative, vec![-3.0, -2.0]);
+    /// assert_eq!(mean, vec![2.0, -1.0]);
+    /// ```
     #[must_use]
     pub fn exposure_profiles(&self) -> (Vec<f64>, Vec<f64>, Vec<f64>) {
         let n_dates = self.dates.len();
@@ -67,19 +94,19 @@ impl NpvCube {
         (epe, ene, ee)
     }
 
-    /// Expected Positive Exposure at each date, averaged over paths.
+    /// Pointwise `mean(max(V, 0))`, not a time average or quantile.
     #[must_use]
     pub fn epe(&self) -> Vec<f64> {
         self.exposure_profiles().0
     }
 
-    /// Expected Negative Exposure at each date, averaged over paths.
+    /// Pointwise signed `mean(min(V, 0))`, which is nonpositive.
     #[must_use]
     pub fn ene(&self) -> Vec<f64> {
         self.exposure_profiles().1
     }
 
-    /// Expected Exposure (unconditional mean) at each date, averaged over paths.
+    /// Pointwise unconditional mean NPV, equal to EPE plus signed ENE.
     #[must_use]
     pub fn ee(&self) -> Vec<f64> {
         self.exposure_profiles().2
@@ -93,7 +120,11 @@ pub struct XvaValue {
     pub netting_set: String,
     /// Measure name (e.g. `"CVA"`, `"FVA"`).
     pub measure: String,
-    /// Value of the measure.
+    /// Value in the simulation's reporting currency.
+    ///
+    /// CVA and DVA aggregators return positive magnitudes for positive default
+    /// probabilities; FVA retains the sign of the funding-weighted exposure.
+    /// No automatic clean-price adjustment is applied to a trade's NPV.
     pub value: f64,
 }
 
@@ -102,9 +133,11 @@ pub struct ExposureResult {
     /// Raw NPV cubes, before variation margin. XVA values use net-of-margin
     /// exposures when the engine's CSA terms enable variation margin.
     pub cubes: Vec<NpvCube>,
-    /// Optional per-netting-set XVA values (populated only by `evaluate_with_xva`).
+    /// Per-netting-set adjustments, populated by [`evaluate_with_xva`] and
+    /// [`evaluate_with_margin`], absent for cube-only evaluation.
     pub xva_values: Option<Vec<XvaValue>>,
-    /// Optional sensitivities (populated only by `evaluate_with_xva`).
+    /// Raw adjustment derivatives, populated by [`evaluate_with_xva`] and
+    /// [`evaluate_with_margin`], absent for cube-only evaluation.
     pub sensitivities: Option<Vec<(String, f64)>>,
 }
 

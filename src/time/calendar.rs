@@ -32,7 +32,7 @@ use std::collections::HashSet;
 ///
 /// ## Enums
 /// * [`Self::NullCalendar`] - A calendar that considers all days as business days.
-/// * [`Self::WeekendsOnly`] - A calendar that considers only weekends as business days.
+/// * [`Self::WeekendsOnly`] - A calendar whose only non-business days are weekends.
 /// * [`Self::TARGET`] - A calendar that considers only TARGET business days as business days.
 /// * [`Self::UnitedStates`] - A calendar for the United States.
 #[derive(Clone, Debug, PartialEq, Eq)]

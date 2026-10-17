@@ -22,6 +22,13 @@ use crate::{
 
 /// A [`FloatingRateCoupon`] represents a cash flow from a floating-rate bond or loan,
 /// where the interest rate is determined by a market index plus a spread.
+///
+/// Amount is `notional * (fixing + spread) * accrual_year_fraction`.
+/// Construction leaves the fixing unset and does not install overnight
+/// observation conventions. The default accrual day count comes from index
+/// metadata, falling back to Actual360 when that metadata is unavailable.
+/// `overnight_rate()` computes an equivalent fixing; callers must install it
+/// before requesting the coupon amount.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct FloatingRateCoupon<T: Scalar> {
     notional: f64,

@@ -25,7 +25,7 @@ fn flat_curve(ref_date: Date, rate: f64, max_years: u32) -> DiscountTermStructur
         .expect("Failed to build flat curve")
 }
 
-/// Build N vanilla 5Y USD IRS trades (receive fixed, pay SOFR).
+/// Builds USD IRS trades with alternating sides and 2/3/5/7/10-year maturities.
 fn create_swaps(n: usize, ref_date: Date) -> Vec<SwapTrade<f64>> {
     let maturities = [2, 3, 5, 7, 10]; // years
     let fixed_rates = [0.025, 0.030, 0.035, 0.0378, 0.042];
@@ -125,7 +125,7 @@ fn run_pfe(
 
     model.add_curve_model(MarketIndex::SOFR, usd_rate);
 
-    // 4. Evaluation dates (monthly out to 5Y)
+    // 4. Evaluation dates (monthly out to 10Y)
     let max_maturity = ref_date.advance(10, TimeUnit::Years);
     let schedule = MakeSchedule::new(ref_date, max_maturity)
         .with_frequency(Frequency::Monthly)

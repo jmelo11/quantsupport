@@ -14,7 +14,7 @@ use crate::{
     xva::makecontigentclaim::IntoContingentClaims,
 };
 
-/// A fixed-rate versus daily-compounded overnight indexed swap.
+/// A fixed-rate versus overnight indexed swap with compounded or simple averaging.
 #[derive(Clone)]
 pub struct OvernightIndexSwap<T: Scalar> {
     identifier: String,

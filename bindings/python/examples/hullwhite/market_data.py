@@ -21,8 +21,8 @@ class MarketInputs:
     """Unconstructed inputs; a PricingContext turns them into market objects."""
 
     quotes: qs.QuoteStore
-    curves: list
-    volatility_surfaces: list
+    curves: list[qs.CurveConfiguration]
+    volatility_surfaces: list[qs.VolatilitySurfaceConfiguration]
     csa_policy: qs.SingleCurveCSADiscountPolicy
 
 
@@ -41,8 +41,3 @@ def load_market():
 def read_configuration(scope, filename):
     """Read an editable native configuration from one example scope."""
     return json.loads((EXAMPLES / scope / "data" / filename).read_text(encoding="utf-8"))
-
-
-def load_pricers(filename):
-    """Load the selected bond engine and its calibrated rate-model assignment."""
-    return qs.PricerConfiguration.from_json(str(EXAMPLES / "valuation" / "data" / filename))

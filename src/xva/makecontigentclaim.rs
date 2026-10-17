@@ -24,7 +24,11 @@ use crate::{
 /// Uses the same `with_*` + `build()` pattern as [`MakeLeg`](crate::instruments::cashflows::makeleg::MakeLeg) and [`MakeSwap`](crate::instruments::rates::makeswap::MakeSwap).
 ///
 /// ## Example
-/// ```ignore
+/// ```
+/// use quantsupport::prelude::*;
+/// use quantsupport::xva::claimevaluationstrategy::ClaimEvaluationStrategy;
+/// use quantsupport::xva::makecontigentclaim::MakeContingentClaim;
+///
 /// let claim = MakeContingentClaim::default()
 ///     .with_trade_id("swap_1".into())
 ///     .with_leg_id(0)
@@ -32,9 +36,10 @@ use crate::{
 ///     .with_currency(Currency::USD)
 ///     .with_notional(1_000_000.0)
 ///     .with_side(Side::LongReceive)
-///     .with_evaluation_strategy(ClaimEvaluationStrategy::Deterministic { amount: 15_000.0 })
+///     .with_evaluation_strategy(ClaimEvaluationStrategy::Deterministic { amount: 0.015 })
 ///     .build()
 ///     .expect("failed to build claim");
+/// assert_eq!(claim.notional(), 1_000_000.0);
 /// ```
 #[derive(Default)]
 pub struct MakeContingentClaim {
@@ -95,7 +100,7 @@ impl MakeContingentClaim {
         self
     }
 
-    /// Sets the domestic currency.
+    /// Sets the claim's payment currency.
     #[must_use]
     pub const fn with_currency(mut self, currency: Currency) -> Self {
         self.currency = Some(currency);

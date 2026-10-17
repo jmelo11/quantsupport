@@ -41,25 +41,14 @@ impl PricerState for EquityOptionState {
 ///
 /// It calculates the option price and sensitivities based on the spot price,
 /// volatility surface, discount curve, and dividend curve obtained from the market data.
+/// Spot is observed on the trade date, and option time runs from trade date
+/// to expiry. A missing dividend curve means zero dividends. The surface key
+/// is `strike.resolve(0.0)`, whereas the payoff strike is resolved using the
+/// computed forward; these differ for ATM/relative strikes.
 ///
 /// When a [`DiscountPolicy`] is set, the pricer uses the CSA discount curve
 /// for payment discounting instead of the instrument's `market_index` curve.
 ///
-/// ## Example
-/// ```rust
-/// use quantsupport::prelude::*;
-///
-/// let pricer = BlackEuropeanOptionPricer::new();
-///
-/// // Build an equity European option trade and evaluate:
-/// //   let option = EquityEuropeanOption::new(...);
-/// //   let trade = EquityEuropeanOptionTrade::new(option, eval_date, notional);
-/// //   let results = pricer.evaluate(
-/// //       &trade,
-/// //       &[Request::Value, Request::Sensitivities],
-/// //       &ctx,
-/// //   );
-/// ```
 pub struct BlackEuropeanOptionPricer {
     discount_policy: Option<Box<dyn DiscountPolicy>>,
 }

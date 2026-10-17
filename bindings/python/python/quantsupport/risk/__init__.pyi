@@ -46,7 +46,10 @@ class Shock:
 Parameters
 ----------
 target : str
-    Nonempty exact pillar identifier or underscore-separated selector. For example,
+    Nonempty case-sensitive underscore-token selector. Exact identifier equality
+    succeeds first; otherwise all target tokens must occur in the identifier.
+    Token order and repeated-token counts are ignored, so supplying a full
+    identifier does not make the match exact-only. For example,
     EURIBOR12m selects its deposit and swap quotes; FUNDINGSPREAD selects
     every explicit zero-rate pillar of that funding-spread curve.
 value : float
@@ -65,7 +68,11 @@ ValueError
 
 Notes
 -----
-Immutable. Combine shocks in Scenario and enter it after a PricingContext."""
+Immutable. Combine shocks in Scenario and enter it after a PricingContext.
+Overlapping selectors apply independently in order, without deduplication.
+Repeated tenor/expiry tokens can cause a full quote identifier to match
+additional quotes. Use one family selector for one family-wide move and verify
+the selected inputs, rather than assuming one shock per full ID bumps once."""
 
     def __new__(cls, *, target: str, value: float, shock_type: ScenarioType) -> Self:
         ...
@@ -75,7 +82,7 @@ Immutable. Combine shocks in Scenario and enter it after a PricingContext."""
 
     @property
     def target(self) -> str:
-        """Exact pillar identifier or underscore-separated selector."""
+        """Case-sensitive underscore-token selector, with no exact-only mode."""
         ...
 
     @property
@@ -102,6 +109,8 @@ shocks : sequence of Shock
 Notes
 -----
 Enter after a PricingContext. Nested scenarios compose shocks in entry order.
+Overlapping shocks also compose without deduplication; fully qualified targets
+are still token selectors and can select more than one quote.
 The base context retains its market inputs and constructed objects. Requested
 curves and volatility markets have independent AD state. Leaving the scope,
 including through an exception, discards the temporary view. Reusable.
@@ -253,7 +262,9 @@ funding_spread : float, optional
     Ignored if funding_spread_curve or funding_index is supplied.
 credit_index : MarketIndex or str, optional
     Counterparty credit-curve index, default None. When present, CVA uses its
-    survival probabilities and CDS-quote sensitivities instead of credit_spread.
+    survival probabilities instead of credit_spread. The aggregator tracks
+    independent survival-pillar derivatives, not original CDS-spread risk;
+    the credit bootstrap Jacobian is not replayed along this path.
     A data-carrying index may be supplied as a typed MarketIndex or native tagged
     mapping, for example ``{"Credit": "CLIENT-A"}``, not its display string.
 funding_spread_curve : ZeroRateTermStructure or mapping, optional
@@ -266,6 +277,8 @@ funding_index : MarketIndex or str, optional
     Bootstrapped funding discount-curve index, default None. FVA uses forward
     spreads of this curve over the engine system/base curve at simulation
     dates, plus any funding_spread_curve overlay. Replaces funding_spread.
+    Aggregator risk tracks independent derived spread pillars, not original
+    funding-curve quote risk; this path does not replay funding calibration.
 variation_margin : bool, optional
     Defaults to False for uncollateralized exposure. True enables margin calls
     at each simulation date using the thresholds and minimum transfer amount.
@@ -447,7 +460,13 @@ QuantSupportError
 
 @final
 class XvaResult:
-    """Result of an XVA engine run."""
+    """Result of an XVA engine run.
+
+The high-level Python engine constructs CVA and FVA aggregators. Native DVA
+aggregators are lower-level components, not an additional result guaranteed
+by PricingContext.run_xva(). Exposure profiles remain pre-margin pointwise
+means even when variation margin affects the adjustment calculation.
+"""
 
     def __repr__(self) -> str:
         ...
@@ -497,6 +516,20 @@ pandas.DataFrame
     ``"clientA.CVA.credit_spread"``. Values are derivatives per unit parameter
     change, not basis-point-scaled. The runtime returns an empty frame when no
     sensitivities are present, not None, despite the retained optional annotation.
+
+Notes
+-----
+Curve-driven CVA aggregator inputs are independent survival-probability
+pillars, even when their CVA-prefixed labels resemble CDS quote identifiers.
+Curve-driven FVA inputs are independent derived funding-spread pillars.
+Neither aggregator path replays the original curve-bootstrap Jacobian;
+these rows are not original CDS/funding-quote sensitivities. Flat
+credit_spread/funding_spread parameters retain their own decimal-rate units.
+Direct deterministic CDS valuation follows a different differentiation graph.
+System/base discount factors supplied to adjustment aggregators are numerical
+snapshots held fixed in their weights. Calibrated sigma omits curve/strike
+recalibration terms; differentiable paths do not restore these dependencies.
+These are partial risks, not complete recalibrated market-quote derivatives.
 
 Raises
 ------

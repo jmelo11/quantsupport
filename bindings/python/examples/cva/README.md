@@ -19,18 +19,35 @@ using [data/credit_curves.json](data/credit_curves.json). A reusable
 variation-margin effects using identical market paths.
 
 The ATM calibration basket stops at the portfolio's three-year horizon.
-Some longer-expiry ATM strikes are outside the shared surface's quoted smile;
-extending the basket requires market quotes covering those strikes.
+When extending it, verify that the new effective strikes remain inside the
+shared surface's quoted smile, or choose an explicit extrapolation policy.
 
 Thresholds and minimum transfer amount are in collateral currency. Calls
 settle on simulation dates; no settlement lag, margin period of risk, or
 initial margin is modeled. Returned exposure profiles are raw, pre-margin;
-CVA and FVA use post-margin pathwise exposures.
+CVA and FVA use post-margin pathwise exposures. ENE is signed nonpositive and
+`EE = EPE + ENE` at each date. FVA integrates signed exposure with right-endpoint
+Actual/365 intervals, so netting need not reduce its magnitude. The high-level
+example computes CVA/FVA, not DVA or PFE quantiles.
+
+Risk coordinates need care: credit curves are snapshotted as numerical
+survival pillars. Rows labelled `CVA.Cds_...` differentiate independent
+**survival probabilities**, not the original CDS spreads; the credit bootstrap
+Jacobian is not replayed. Funding-curve rows similarly differentiate derived
+spread pillars without replaying the source curve calibration. This example
+supplies dated funding spreads directly, in annual decimals. The notebook
+annotates its risk table so quote-like labels cannot imply validated CDS hedges.
 
 The notebook imports its local [market_data.py](market_data.py) directly.
 
 Follow the [shared setup](../README.md#install-and-run). Open
-[xva.ipynb](xva.ipynb) in VS Code, select the Python environment containing the
-rebuilt binding as its kernel, and run all cells. The notebook has been
-validated with the `alm` Python 3.14 environment. An unrelated default
-Jupyter kernel can load incompatible NumPy or binding versions.
+[xva.ipynb](xva.ipynb), select the environment containing the checkout-built
+binding, and run all cells. To run without a browser:
+
+```bash
+python bindings/python/examples/run_notebooks.py cva/xva.ipynb
+```
+
+Assertions check profile signs/identities, raw netting, and unchanged raw
+profiles when variation margin is disabled; the numerical comparison explains
+why the corresponding XVA values still change.

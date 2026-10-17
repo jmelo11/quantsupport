@@ -1,5 +1,10 @@
 //! Common Black-Scholes / Black-76 / Bachelier pricing functions shared
 //! across models.
+//!
+//! Option values are undiscounted, in the same units as the forward and strike.
+//! Times are in years. Black volatility is an annualized decimal lognormal
+//! volatility; Bachelier volatility has forward units per square-root year.
+//! Apply payment discounting and contract scaling separately.
 
 use crate::{
     ad::{dual::DualFwd, expr::FloatExt},
@@ -16,10 +21,16 @@ use crate::{
 // f64 variants
 // ---------------------------------------------------------------------------
 
-/// Black-Scholes d₁ and d₂.
+/// Black forward-price `d1` and `d2`.
+///
+/// Uses `d1 = ln(fwd/strike)/(vol*sqrt(tau)) + vol*sqrt(tau)/2` and
+/// `d2 = d1 - vol*sqrt(tau)`. Inputs should be finite and strictly positive.
+/// There is no explicit zero-volatility or zero-expiry limiting branch.
 ///
 /// # Errors
 /// Returns an error if `strike`, `tau`, or `vol` are non-positive.
+/// Forward positivity and input finiteness are not checked; invalid inputs
+/// can produce nonfinite outputs rather than errors.
 pub fn d1_d2(fwd: f64, strike: f64, vol: f64, tau: f64) -> Result<(f64, f64)> {
     if strike <= 0.0 {
         return Err(QSError::InvalidValueErr("strike must be positive".into()));
@@ -63,9 +74,12 @@ pub fn black_put(fwd: f64, strike: f64, vol: f64, tau: f64) -> Result<f64> {
 ///
 /// Used to price instruments quoted with a Normal volatility. Unlike Black's
 /// formula, forwards and strikes may be zero or negative.
+/// `vol` is in the same units as `fwd` per square-root year, not a lognormal
+/// percentage. No zero-volatility or zero-expiry limiting branch is provided.
 ///
 /// # Errors
 /// Returns an error if `tau` or `vol` are non-positive.
+/// Input finiteness is not validated.
 pub fn bachelier_call(fwd: f64, strike: f64, vol: f64, tau: f64) -> Result<f64> {
     if tau <= 0.0 {
         return Err(QSError::InvalidValueErr(
@@ -86,13 +100,17 @@ pub fn bachelier_call(fwd: f64, strike: f64, vol: f64, tau: f64) -> Result<f64> 
 // DualFwd (AD-enabled) variants
 // ---------------------------------------------------------------------------
 
-/// Black-Scholes d₁ and d₂ (AD-enabled).
+/// Black forward-price `d1` and `d2` (AD-enabled).
 ///
 /// `fwd` and `vol` carry derivative information; `strike` and `tau` are
-/// constants.
+/// constants. Uses the same formula and positive finite input domain as
+/// [`d1_d2`], but unlike that helper does not reject non-positive volatility.
+/// There is no explicit zero-volatility or zero-expiry limiting branch.
 ///
 /// # Errors
 /// Returns an error if `strike` or `tau` are non-positive.
+/// Forward, volatility, and input finiteness are not checked; invalid inputs
+/// can produce nonfinite outputs rather than errors.
 pub fn d1_d2_ad(fwd: DualFwd, strike: f64, vol: DualFwd, tau: f64) -> Result<(DualFwd, DualFwd)> {
     if strike <= 0.0 {
         return Err(QSError::InvalidValueErr("strike must be positive".into()));
@@ -113,7 +131,7 @@ pub fn d1_d2_ad(fwd: DualFwd, strike: f64, vol: DualFwd, tau: f64) -> Result<(Du
 /// ## Arguments
 /// * `fwd` - Forward price (AD-enabled).
 /// * `strike` - Strike price.
-/// * `vol` - Volatility (AD-enabled).
+/// * `vol` - Annualized decimal lognormal volatility (AD-enabled).
 /// * `tau` - Time to expiry in years.
 ///
 /// # Errors
@@ -128,7 +146,7 @@ pub fn black_call_ad(fwd: DualFwd, strike: f64, vol: DualFwd, tau: f64) -> Resul
 /// ## Arguments
 /// * `fwd` - Forward price (AD-enabled).
 /// * `strike` - Strike price.
-/// * `vol` - Volatility (AD-enabled).
+/// * `vol` - Annualized decimal lognormal volatility (AD-enabled).
 /// * `tau` - Time to expiry in years.
 ///
 /// # Errors

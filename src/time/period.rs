@@ -315,7 +315,9 @@ impl Period {
         Ok(Self::new(length, units))
     }
 
-    /// Returns the fraction of a year represented by this Period.
+    /// Returns an approximate tenor in years: years, months/12, weeks/52, or days/365.
+    ///
+    /// This is not a date-based day-count accrual calculation.
     ///
     /// ## Example
     /// ```

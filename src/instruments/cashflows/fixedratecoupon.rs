@@ -9,6 +9,9 @@ use crate::{
 };
 
 /// A [`FixedRateCoupon`] represents a cash flow from a fixed-rate bond or loan.
+///
+/// Amount is `notional * rate * year_fraction`. The rate's day counter
+/// determines accrual; its compounding and frequency do not compound coupon interest.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FixedRateCoupon<T: Scalar> {
     notional: f64,

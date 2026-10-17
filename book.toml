@@ -1,7 +1,7 @@
 [book]
 title = "The QuantSupport Book"
 authors = ["QuantSupport contributors"]
-description = "A practical guide to derivatives pricing, risk, simulation, and XVA with QuantSupport."
+description = "Contracts, market construction, valuation, numerical risk, simulation and XVA in Rust, Python and Excel."
 language = "en"
 src = "book/src"
 
@@ -18,6 +18,24 @@ edit-url-template = "https://github.com/jmelo11/quantsupport/edit/main/{path}"
 site-url = "/quantsupport/"
 mathjax-support = true
 additional-js = ["mermaid.min.js", "mermaid-init.js"]
+
+[output.html.redirect]
+"concepts/architecture.html" = "../concepts/pricing-context.html"
+"curves/multi-curve.html" = "../curves/bootstrapping.html"
+"pricing/overview.html" = "../pricing/swaps.html"
+"pricing/swaptions.html" = "../pricing/caps-floors.html"
+"risk/sensitivities.html" = "../risk/aad.html"
+"scripting/overview.html" = "../scripting/language.html"
+"scripting/events-products.html" = "../scripting/engine.html"
+"scripting/xva.html" = "../scripting/engine.html"
+"simulation/hull-white.html" = "../simulation/monte-carlo.html"
+"simulation/lgm.html" = "../simulation/monte-carlo.html"
+"xva/overview.html" = "../simulation/exposure.html"
+"xva/sensitivities.html" = "../xva/cva-dva-fva.html"
+"python/api.html" = "../python/getting-started.html"
+"excel/reference.html" = "../excel/workbook.html"
+"reference/bindings.html" = "../getting-started/installation.html"
+"reference/glossary.html" = "../concepts/instruments.html"
 
 [output.html.fold]
 enable = true

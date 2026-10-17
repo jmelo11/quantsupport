@@ -37,15 +37,16 @@ pub enum RateType {
 /// Payment structure for the leg.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum PaymentStructure {
-    /// Bullet structure: all principal is paid at maturity, with regular coupons.
+    /// Initial disbursement, regular coupons, and full principal redemption at maturity.
     Bullet,
-    /// Equal payments structure: each payment (coupon + principal) is the same, with principal amortizing over time.
+    /// Fixed-rate equal coupon-plus-principal payments; floating rates are rejected.
     EqualPayments,
     /// Equal redemptions structure: principal is amortized in equal amounts over the payment schedule, with coupons calculated on the outstanding notional.
     EqualRedemptions,
-    /// Zero structure: no coupons, only a single payment at maturity for the notional amount.
+    /// Initial disbursement and principal redemption at maturity, without coupons.
     Zero,
-    /// Other structure: allows for arbitrary cash flow patterns defined by the user, with disbursements and redemptions specified as date-amount pairs.
+    /// Coupons plus the supplied disbursement/redemption date-amount maps;
+    /// this is not an arbitrary payoff-program interface.
     Other,
 }
 

@@ -13,9 +13,22 @@ cargo add quantsupport
 - **Python:** typed instruments, market data, pricing, and risk analytics. See the [Python README](bindings/python/README.md) for installation, build instructions, examples, and the API reference.
 - **Excel:** a native XLL for 64-bit Windows Excel. See the [Excel README](bindings/excel/README.md) for downloads, installation, build instructions, and the worksheet API reference.
 
+## Documentation
+
+| Reading purpose | Entry point |
+| --- | --- |
+| Financial concepts, architecture, conventions, and all three interfaces | [QuantSupport Book](https://jmelo11.github.io/quantsupport/) |
+| Exact native Rust signatures, errors, and numerical contracts | [Rust API reference](https://docs.rs/quantsupport/latest/quantsupport/) |
+| Independently usable binding guides and declarations | [Python documentation](https://jmelo11.github.io/quantsupport/api/python/) and [Excel documentation](https://jmelo11.github.io/quantsupport/api/excel/) |
+| Executable quantitative-finance studies | [Notebook collection](bindings/python/examples/README.md) |
+
 ## Quick start: price and risk a swap
 
-This complete example values a five-year receive-fixed USD swap against a flat SOFR curve and asks for NPV, par rate, cashflows, and curve sensitivity.
+This example values a five-year receive-fixed USD swap and asks for NPV, par
+rate, cashflows, and curve sensitivity. The fixed coupon is a simple ACT/360
+rate; the flat curve uses continuous ACT/360 compounding. Equal numeric rates
+therefore do not imply a par swap. SOFR identifies the curve here, but this
+`Swap` uses term-style floating coupons rather than daily-compounded OIS coupons.
 
 ```rust
 use std::{cell::RefCell, rc::Rc};
@@ -78,15 +91,17 @@ fn main() -> Result<()> {
     ];
     let results = pricer.evaluate(&trade, &requests, &context)?;
 
-    println!("NPV: {:.2}", results.price().unwrap_or_default());
-    println!(
-        "Par rate: {:.6}",
-        results.fair_rate().unwrap_or_default()
-    );
+    let npv = results.price()
+        .ok_or_else(|| QSError::ValueNotSetErr("swap NPV".into()))?;
+    let par_rate = results.fair_rate()
+        .ok_or_else(|| QSError::ValueNotSetErr("swap par rate".into()))?;
+    println!("NPV (USD): {npv:.2}");
+    println!("Par coupon (decimal): {par_rate:.6}");
 
     if let Some(risk) = results.sensitivities() {
         for (pillar, exposure) in risk.instrument_keys().iter().zip(risk.exposure()) {
-            println!("dPV/dQuote {pillar}: {exposure:.4}");
+            println!("dPV/dPillar {pillar}: {exposure:.4}");
+            println!("Approximate USD P&L for +1 bp: {:.2}", exposure * 1e-4);
         }
     }
 
@@ -98,7 +113,14 @@ fn main() -> Result<()> {
 }
 ```
 
-The same program, with a more detailed cashflow report, is available in [`examples/valuation/swaps`](examples/valuation/swaps).
+A related program with a detailed cashflow report is available in
+[`examples/valuation/swaps`](examples/valuation/swaps).
+
+The NPV is approximately -10,723.59 USD and the flat-rate derivative is
+-47,405,484.05 USD per unit decimal rate, corresponding to about -4,740.55 USD
+for a one-basis-point increase. This is risk to the supplied flat curve, not
+to bootstrapping instruments. Raw cashflow rows are undiscounted and omit leg
+directions; they cannot be summed directly to reproduce NPV.
 
 ## Architecture and components
 
@@ -117,7 +139,7 @@ flowchart LR
     F --> G[NPV, cashflows, fair values, and sensitivities]
     E --> H[Exposure and XVA engine]
     D --> H
-    H --> I[EPE, ENE, CVA, DVA, and FVA]
+    H --> I[EPE, ENE, CVA, and FVA]
 ```
 
 ### Market inputs and conventions
@@ -145,9 +167,9 @@ the dependency graph in order:
 
 The resulting `ConstructedElementStore` is shared by all downstream engines.
 Pricers request only the curves, fixings, FX rates, volatility objects, or paths
-needed by a particular trade. See the [architecture](book/src/concepts/architecture.md)
-and [pricing context](book/src/concepts/pricing-context.md) chapters for the
-detailed object model.
+needed by a particular trade. The [market lifecycle](book/src/concepts/pricing-context.md)
+chapter develops the distinction between observations, construction, and
+valuation dependencies.
 
 For example, a production context can be assembled from JSON-backed stores and
 configuration, then initialized once before pricing a portfolio:
@@ -200,8 +222,8 @@ There are two ways to represent a product:
 Native products are the preferred path when a standard cashflow or closed-form
 model exists. Scripting is intended for structured coupons, digitals, range
 accruals, autocallables, and products whose terms change more quickly than the
-library API. The [scripting guide](book/src/scripting/overview.md) documents the
-language and runtime.
+library API. The [scripting language](book/src/scripting/language.md) and
+[model-backed runtime](book/src/scripting/engine.md) chapters explain this route.
 
 A scripted product is a dated financial event stream. For example, the following event observes SOFR for one
 accrual period and adds the discounted coupon to the `note` variable, which would represent the value of the product:
@@ -228,7 +250,7 @@ let (values, cashflows) =
     engine.evaluate_with_cashflows(&mut market_model, Some("note"))?;
 ```
 
-Interoperability between engines is possible under QuantSupport. In this example, the same `EventStream` can be wrapped in `ScriptedProduct` and converted to
+The same `EventStream` can be wrapped in `ScriptedProduct` and converted to
 contingent claims for XVA. [`examples/scripting`](examples/scripting) compares
 this path with a native swap for NPV, pillar sensitivities, and exposure.
 
@@ -236,21 +258,29 @@ this path with a native swap for NPV, pillar sensitivities, and exposure.
 
 Pricers combine a trade with the market objects supplied by `PricingContext`.
 Cashflow products use generic discounting, while options and optional rates
-products can use Black, Hull-White, LGM, or Monte Carlo engines. Every call to a pricer
-returns an `EvaluationResults` object containing the outputs requested by the
-caller, such as NPV, fair rate, cashflows, or sensitivities.
+products can use Black, Hull-White, LGM, or Monte Carlo engines. A successful
+valuation returns an `EvaluationResults` object. Its optional fields contain
+the measures requested and supported by that engine; an absent measure is not
+a zero value.
 
 Automatic differentiation runs through market construction and valuation.
-Quotes become labelled leaves on the AAD tape, so a reverse sweep maps a result back
-to the curve or volatility quotes that produced it. This is the common risk
+Market pillars become labelled leaves on the AAD tape, and calibrated curves
+reconnect first-order risk through numerical calibration Jacobians. Reported
+derivatives apply to the inputs actually differentiated by each engine;
+stored `f64`-generated paths do not acquire model or volatility risk merely
+because their values are wrapped in AD scalars. This is the common risk
 mechanism for native pricers, scripted payoffs, and XVA. Full revaluation under
 quote scenarios complements AAD for stress tests and non-linear moves.
 
 ### Exposure and XVA
 
-Trades and scripted products can both be converted into contingent claims. A contigent claim in QuantSupport represents a single cashflow inside a product. The exposure engine evaluates those claims across simulated paths and aggregates them by netting set and CSA. The same workflow produces NPV cubes and exposure
-profiles, then CVA, DVA, and FVA with sensitivities to the original market
-quotes.
+Supported trades and scripted products can be converted into contingent claims,
+each representing a payment. The exposure engine evaluates them across simulated
+paths and aggregates them by netting set and CSA. The high-level XVA engine
+produces pre-margin NPV cubes, pointwise exposure profiles, and CVA/FVA from
+net-of-margin exposures when variation margin is enabled. DVA is available
+through the lower-level aggregator interface. FVA uses signed exposure; ENE
+profiles are likewise signed, not absolute loss magnitudes.
 
 ## Installation
 

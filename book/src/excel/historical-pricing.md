@@ -101,5 +101,7 @@ not filenames; export fails above Excel's 32767 UTF-16-unit cell limit.
 
 The archive captures base market configurations. Materialized scenario contexts
 with supplied runtime elements are rejected; capture the original base context.
-For workflow differences outside historical pricing, see the Excel package's
-`COMPONENTS.md` and the API's Rust component coverage page.
+The [workbook chapter](workbook.md) relates these handles to ordinary valuation
+and recalculation. Optional
+[worksheet reference](https://jmelo11.github.io/quantsupport/api/excel/functions/index.html)
+provides exact argument lists.

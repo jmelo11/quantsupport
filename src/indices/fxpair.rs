@@ -14,9 +14,9 @@ use crate::utils::errors::{QSError, Result};
 
 /// A directed FX currency pair.
 ///
-/// `base` is the currency being bought (numerator in the FX rate);
-/// `quote` is the currency being sold (denominator).
-/// For example, `FxPair { base: EUR, quote: USD }` means "EUR/USD".
+/// A numeric rate is quote-currency units per one base-currency unit:
+/// EURUSD at `1.10` means 1 EUR = 1.10 USD. Pair orientation does not specify
+/// whether a trade buys or sells either currency.
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct FxPair {
     base: Currency,

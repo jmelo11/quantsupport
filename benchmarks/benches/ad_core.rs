@@ -1,17 +1,16 @@
 //! Micro-benchmarks for the AD library, designed to isolate suspected
 //! bottlenecks:
 //!
-//! 1. `ad_record`   — tape recording throughput (per-node `Vec` allocations in
-//!    `TapeNode::childs`/`derivs` show up here). Compared against a plain
-//!    `f64` baseline to expose the AD overhead factor.
-//! 2. `ad_backward` — backward-pass throughput (the per-node `TapeNode::clone()`
-//!    inside `Tape::propagate_*` and the O(n) `index_of` scans show up here).
+//! 1. `ad_record`   — tape recording throughput compared against a plain
+//!    `f64` baseline. Nodes store child pointers and derivatives inline.
+//! 2. `ad_backward` — adjoint reset and backward propagation on a prebuilt
+//!    tape. Root lookup uses the node's stored index, not a linear scan.
 //! 3. `ad_full_grad` — realistic record + backward + adjoint readout for a
 //!    dot-product style workload with many independent leaves.
 //! 4. `ad_second_order` — mixed-mode (`Dual<ADForward>`) Black-Scholes pricing,
 //!    the realistic 2nd-order workload.
 //!
-//! Scaling across sizes (1k/10k/100k nodes) reveals whether per-node cost is
+//! Scaling across chain/workload sizes (1k/10k/100k iterations) reveals whether cost is
 //! flat (O(n) total) or grows (accidental O(n^2)).
 
 use std::hint::black_box;

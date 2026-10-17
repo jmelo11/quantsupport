@@ -11,11 +11,16 @@ and [data/bond_fourier.json](data/bond_fourier.json) own the callable-bond model
 and grids. Contract terms remain in the notebooks.
 
 The callable-bond teaching grids use 48 time steps per year and 256 Fourier
-points. Each engine's price differs by less than 0.01 per 100 principal from
-its value with 96 steps per year and 512 Fourier points on this snapshot.
-Refine both grids when adapting the example to a pricing tolerance. Only the
+points. The notebook actually revalues at 96 steps and 512 points and reports
+the observed changes; this is a diagnostic, not proof of convergence.
+Refine both grids and state width when adapting the example to a tolerance. Only the
 tree risk report requests sensitivities; Fourier comparisons and OAS inversion
 request value and OAS.
+
+The straight-bond study reconstructs spread- and yield-discounted receipts and
+checks duration/spread risk with independent bumps. The callable study verifies
+its OAS inversion and compares the callable note with its matching noncallable
+underlying under the same model and spread.
 
 Follow the [shared setup](../../README.md#install-and-run), then run this product
 folder from the repository root:

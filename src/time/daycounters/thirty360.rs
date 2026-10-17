@@ -46,14 +46,15 @@ impl DayCount for Thirty360 {
 
 /// # `Thirty360US`
 ///
-/// convention: if the starting date is the 31st of a month or
-/// the last day of February, it becomes equal to the 30th of the
-/// same month.  If the ending date is the 31st of a month and the
-/// starting date is the 30th or 31th of a month, the ending date
-/// becomes equal to the 30th.  If the ending date is the last of
-/// February and the starting date is also the last of February,
-/// the ending date becomes equal to the 30th.
-/// Also known as "30/360" or "360/360".
+/// The implemented adjustments are applied in this order:
+/// 1. Replace a starting 31st by 30.
+/// 2. Replace an ending 31st by 30 when the adjusted starting day is at least 30.
+/// 3. Independently replace each February month-end by day 30.
+///
+/// The result is `360*(end_year-start_year) + 30*(end_month-start_month)
+/// + adjusted_end_day - adjusted_start_day`, divided by 360 for year fractions.
+/// The independent February adjustment and its ordering differ from common
+/// US/NASD specifications; no general equivalence to those conventions is promised.
 ///
 /// ## Example
 /// ```

@@ -1,10 +1,15 @@
-Rust Component Coverage
-=======================
+Capabilities and Interface Boundaries
+=====================================
 
 The bindings are task-oriented interfaces to the Rust library, not a one-to-one
 export of every public Rust struct or trait. A component can be available through
 configuration and valuation even when its implementation type is not a binding
 class. The following distinctions describe the current public surfaces.
+
+For complete local workflows, use the :doc:`Python guide <python/guide/index>`,
+:doc:`Excel guide <excel/guide/index>`, and
+:doc:`computational studies <python/studies/index>`. The reference inventories
+symbols; the guides explain what financial problem each interface solves.
 
 Time and Calendars
 ------------------
@@ -103,6 +108,26 @@ load scenarios for context construction, but has no public netting-set, exposure
 or XVA worksheet workflow. Low-level contingent-claim visitors and custom XVA
 aggregator implementations remain Rust APIs.
 
+The high-level Python XVA engine constructs CVA and FVA measures; native DVA
+aggregators are lower-level components, not another promised high-level result.
+Exposures are pointwise pre-margin means: EPE is nonnegative, ENE retains its
+negative sign, and EE = EPE + ENE. They are not PFE quantiles or time averages.
+Only the documented native contingent-claim instrument subset can enter
+Python ``NettingSet``; ordinary pricing support does not imply XVA support.
+
+Curve-driven CVA aggregator derivatives are independent survival-pillar risk;
+curve-driven FVA aggregator derivatives are derived funding-spread-pillar risk.
+These paths do not replay the original credit/funding bootstrap Jacobians,
+even when labels resemble original quote identifiers. They must not be
+presented as CDS/funding-quote sensitivities or conflated with direct
+deterministic CDS valuation.
+
+Generated simulation paths expose no market pillars and do not retain
+differentiated calibration replay. This differs from model-backed LGM paths
+used by scripting/XVA. The Python scripting bridge returns numeric variables,
+not cashflow/sensitivity tables. Finite-path raw payment PVs need not equal
+the control-adjusted selected result variable.
+
 Python ``ScriptedProduct`` uses the native payoff engine. Its parser, AST nodes,
 and step-by-step runtime are not separately exposed. Numerical solvers, raw AD
 tapes/scalars, FFT routines, and generic visitor infrastructure also remain Rust
@@ -116,6 +141,7 @@ registered Excel function is assigned to a domain and focused subsection. The
 documentation build rejects unclassified additions, while binding tests check
 native calendar variants and public exports. This ensures discoverability, but
 does not claim automatic semantic parity with every Rust component.
+
 Historical Pricing and Package Alignment
 ----------------------------------------
 
@@ -140,6 +166,8 @@ instants are errors. JSON text import/export shares Python/Rust's native schema;
 Excel cell-size limits still apply. Supplied runtime curve objects are rejected
 when capturing a snapshot; use construction configurations instead.
 
-The Excel package's ``COMPONENTS.md`` records the component audit, including the
-remaining IMM/calendar-override, advanced fixed-income policy, loan/callable,
-scripted-product, custom-pricer, and XVA workflow gaps.
+The remaining Excel gaps include IMM/calendar overrides, advanced fixed-income
+policy controls, loans/callable products, scripting, custom-pricer registration,
+and XVA. The registered ``QS.BOND.OAS`` function currently has no successful
+workflow through the available straight-bond constructors. These are interface
+boundaries, not instructions to substitute economically different instruments.

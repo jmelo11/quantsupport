@@ -202,7 +202,19 @@ class Frequency:
 
 @final
 class DayCounter:
-    """Day count convention."""
+    """Native day-count selector, with implementation-specific restrictions.
+
+    Notes
+    -----
+    ActualActual year fractions split same/adjacent calendar years, but omit
+    one complete intervening year when endpoint years differ by at least two.
+    Do not treat this as a general long-span ISDA Actual/Actual implementation.
+
+    Thirty360US first adjusts a starting 31st to 30, then an ending 31st when
+    the adjusted starting day is at least 30, then independently changes each
+    February month-end to day 30. This ordering differs from common
+    US/NASD/BondBasis rules; its name does not guarantee conformity.
+    """
 
     def __repr__(self) -> str:
         ...
@@ -258,7 +270,8 @@ class DayCounter:
         Returns
         -------
         float
-            Year fraction under this day-count convention.
+            Native year fraction, subject to the ActualActual long-span and
+            Thirty360US February restrictions documented on DayCounter.
         """
         ...
     Actual360: ClassVar[DayCounter]

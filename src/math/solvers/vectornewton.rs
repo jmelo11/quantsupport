@@ -8,6 +8,9 @@ use nalgebra::{DMatrix, DVector};
 ///
 /// This solver operates on `f64` vectors and relies on the
 /// [`JacobianFunc`] interface for residual and Jacobian evaluation.
+/// Trial iterates must be finite and strictly positive in every component;
+/// this is not an unconstrained Newton solver. Steps are halved up to 12 times
+/// to obtain an admissible iterate. Convergence uses the residual infinity norm.
 pub struct VectorNewton<P> {
     _p: std::marker::PhantomData<P>,
     tol: f64,
@@ -31,8 +34,10 @@ where
     /// Solves the vector system.
     ///
     /// # Errors
-    /// Returns an error if dimensions mismatch, Jacobian is singular, or the
-    /// solver does not converge.
+    /// Returns an error for inconsistent dimensions, a singular Jacobian,
+    /// failed residual/Jacobian evaluation, or an inadmissible line-search step.
+    /// Iteration exhaustion instead returns `Ok(OptimizerSolution)` with
+    /// `SolutionStatus::NotConverged`.
     pub fn solve(&self, problem: &P, x0: &[f64]) -> Result<OptimizerSolution<Vec<f64>>> {
         let mut x = x0.to_vec();
         let mut terminal_jacobian = None;

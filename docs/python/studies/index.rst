@@ -1,0 +1,150 @@
+Computational Studies
+=====================
+
+These are the official worked investigations, organized by the financial
+question rather than the source-module layout. Read the
+:doc:`Python guide <../guide/index>` for the conventions shared by the studies,
+and use the :doc:`reference <../../autoapi/quantsupport/index>` when a declaration
+needs clarification. Each study states its assumptions and shows the code,
+tables, and figures available in the canonical notebook.
+
+The pages render saved notebook outputs without executing Python during a
+documentation build. A saved result is evidence for the stated market and
+implementation, not a universal price or an independently validated model.
+Reproduce a study with a binding built from the same checkout; stale installed
+wheels can lack newer classes even when the documentation builds correctly.
+
+Curve Construction
+------------------
+
+How do quotes and conventions determine discount factors, and what changes
+when construction assumptions change?
+
+.. toctree::
+   :maxdepth: 1
+
+   notebooks/curves
+
+Swaps and Collateral Currencies
+-----------------------------------
+
+These studies progress from a receive-fixed position to par-rate solving and
+then to cashflows, FX direction, and collateral-dependent currency conversion.
+
+.. toctree::
+   :maxdepth: 1
+
+   notebooks/first-swap
+   notebooks/par-swap
+   notebooks/currency-conversion
+
+Fixed Income and Loans
+--------------------------
+
+Bond quotation anchors, issuer calls, contractual amortization, and borrower
+prepayment are different economic problems. The studies keep their price and
+cashflow conventions separate.
+
+.. toctree::
+   :maxdepth: 1
+
+   notebooks/fixed-rate-bond
+   notebooks/callable-bond
+   notebooks/loans
+
+Rate Options and Volatility
+-------------------------------
+
+Inspect option inputs before interpreting a price: a rate strike, a quoted
+Black volatility, and a calibrated short-rate sigma are not interchangeable.
+
+.. toctree::
+   :maxdepth: 1
+
+   notebooks/caps-and-caplets
+   notebooks/curves-and-volatility
+
+Short-Rate Simulation
+---------------------
+
+The simulation study examines calibration, stored paths, seeds, and sampling
+uncertainty. Materialized simulation paths do not by themselves carry
+calibration or volatility sensitivities.
+
+.. toctree::
+   :maxdepth: 1
+
+   notebooks/simulations
+
+Portfolio Risk and Benchmarking
+-----------------------------------
+
+Reconcile sensitivities with full revaluation before aggregation. The legacy
+benchmark is an optional external comparison, not an additional pricing API:
+its ORE/CurveEngine prerequisites are separate from QuantSupport and are not
+required to build this documentation or run the main tutorial sequence.
+Its reported agreements for curves, PV, and rate risk do not establish a
+validated FX hedge: fully propagated FX spot risk differs from the historical
+JSON's ``-V/S`` rescaling derivative. The study reports that disagreement
+explicitly rather than hiding it with a comparison tolerance.
+
+.. toctree::
+   :maxdepth: 1
+
+   notebooks/portfolio-risk
+   notebooks/sensitivity-benchmark
+
+Scripted Payoffs
+--------------------
+
+The scripting study compares compatible native and scripted representations.
+Distinguish deterministic checks from finite-path estimators and from
+control-adjusted selected result variables.
+
+.. toctree::
+   :maxdepth: 1
+
+   notebooks/scripted-cashflows
+
+Exposure and XVA
+----------------
+
+Compare netting and collateral assumptions, signed exposure means, and CVA/FVA.
+An exposure profile is neither a potential-future-exposure quantile nor a
+time-averaged exposure measure.
+
+.. toctree::
+   :maxdepth: 1
+
+   notebooks/xva
+
+Reproduction
+------------
+
+From the repository root, install the example dependencies into the environment
+containing the freshly built native package, then run:
+
+.. code-block:: console
+
+   python -m bindings.python.examples.run_notebooks
+   python -m bindings.python.examples.run_notebooks valuation/swaps --write
+
+The runner starts a clean kernel for each selected study and uses that
+interpreter unless a kernelspec is explicitly selected. The first command
+validates without modifying source notebooks; ``--write`` refreshes stored
+outputs. Before running cells it probes the actual kernel and binding exports,
+rejecting stale bindings. Saved ``execution_environment`` metadata records
+sanitized Python/package versions and whether the kernel matched its caller;
+inspect this provenance rather than inferring identity from a launch command.
+The legacy external benchmark lives outside that runner's directory
+but is available through its ``benchmark`` selector. To validate all fourteen,
+install the benchmark's optional requirements and include it explicitly:
+
+.. code-block:: console
+
+   python -m pip install -r bindings/python/examples/requirements-benchmark.txt
+   python -m bindings.python.examples.run_notebooks --include-benchmark
+
+Every rendered study links its canonical source
+and companion-file directory so a downloaded notebook is not mistaken for a
+self-contained market-data bundle.

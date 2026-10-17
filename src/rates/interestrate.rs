@@ -8,7 +8,9 @@ use crate::{
 
 use super::compounding::Compounding;
 
-/// Struct that defines a rate.
+/// Day count, compounding, and frequency used to interpret a decimal rate.
+///
+/// The default is Actual360, Simple compounding, and Annual frequency.
 ///
 /// # Example
 /// ```
@@ -70,7 +72,9 @@ impl Default for RateDefinition {
     }
 }
 
-/// Struct that defines an interest rate.
+/// Decimal interest-rate value with its day-count and compounding conventions.
+///
+/// For example, `0.05` denotes 5%.
 ///
 /// ## Example
 /// ```
@@ -126,7 +130,7 @@ where
         &self.rate
     }
 
-    /// Returns the rate definition of this interest rate.
+    /// Returns a mutable reference to the decimal rate value.
     #[must_use]
     pub const fn rate_mut(&mut self) -> &mut T {
         &mut self.rate
@@ -272,7 +276,10 @@ impl InterestRate<f64> {
         1.0 / self.compound_factor(start, end)
     }
 
-    /// Calculates the forward rate between two dates with specified compounding and frequency.
+    /// Returns the stored decimal rate unchanged.
+    ///
+    /// Dates, compounding, and frequency are ignored; this compatibility
+    /// accessor does not derive a curve forward or convert rate conventions.
     #[must_use]
     pub const fn forward_rate(
         &self,
@@ -395,7 +402,10 @@ impl InterestRate<DualFwd> {
         (Const::one() / self.compound_factor(start, end)).into()
     }
 
-    /// Calculates the forward rate between two dates with specified compounding and frequency.
+    /// Returns the stored decimal AD rate unchanged.
+    ///
+    /// Dates, compounding, and frequency are ignored; no forward-rate or
+    /// convention conversion is performed.
     #[must_use]
     pub const fn forward_rate(
         &self,

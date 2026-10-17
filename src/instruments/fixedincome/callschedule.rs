@@ -54,7 +54,7 @@ impl CallScheduleEntry {
         self.date <= date && date <= self.end_date()
     }
 
-    /// Returns the issuer call date.
+    /// Returns the first eligible exercise date, or the single discrete call date.
     #[must_use]
     pub const fn date(&self) -> Date {
         self.date
@@ -66,10 +66,11 @@ impl CallScheduleEntry {
         self.strike
     }
 
-    /// Checks that the strike is finite and strictly positive.
+    /// Checks window ordering and a finite, strictly positive strike.
     ///
     /// # Errors
-    /// Returns an error unless the strike is finite and strictly positive.
+    /// Returns an error for an end date before the start date, or a strike
+    /// that is nonfinite or nonpositive.
     pub fn validate(&self) -> Result<()> {
         if self.end_date() < self.date {
             return Err(QSError::InvalidValueErr(

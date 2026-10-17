@@ -116,6 +116,10 @@ pub enum InstrumentType {
 }
 
 /// Uniform contractual-time grid shared by the callable-bond engines.
+///
+/// Defaults are 48 target intervals per year, at most 2,048 total intervals,
+/// and ACT/365 model time. These are numerical controls, not coupon frequency
+/// or payment-date conventions.
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TimeGridConfiguration {
@@ -184,6 +188,9 @@ impl Default for TimeGridConfiguration {
 }
 
 /// Spatial grid used by backward Fourier evolution.
+///
+/// Defaults are 1,024 state points and a half-width of ten terminal standard
+/// deviations. Validation requires a power-of-two count of at least eight.
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct FourierGridConfiguration {

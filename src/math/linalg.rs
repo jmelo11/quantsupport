@@ -1,7 +1,12 @@
-/// Cholesky decomposition of a symmetric positive-definite matrix.
+/// Lower-triangular Cholesky-style factorization using the input's lower triangle.
 ///
-/// Returns the lower-triangular factor **L** such that `A = L * Lᵀ`.
-/// Negative diagonal remainders are clamped to zero for numerical safety.
+/// For a valid symmetric positive-definite matrix, returns `L` with
+/// `A = L * Lᵀ` up to roundoff. Symmetry and definiteness are not validated.
+/// Negative diagonal remainders are clamped to zero, so invalid inputs need
+/// not reconstruct the original matrix.
+///
+/// # Panics
+/// Panics if a row is too short for the accessed lower-triangular entries.
 #[must_use]
 pub fn cholesky(matrix: &[Vec<f64>]) -> Vec<Vec<f64>> {
     let n = matrix.len();

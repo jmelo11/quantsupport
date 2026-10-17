@@ -73,17 +73,24 @@ fn parse_strike(id: &str, kind: &str, value: &str) -> Result<Strike> {
 /// Quote level enumeration.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Level {
-    /// Mid (average between Bid and Ask) price.
+    /// Explicitly supplied mid level; no bid/ask average is inferred.
     #[default]
     Mid,
-    /// Bid (buy) price.
+    /// Dealer's buying price.
     Bid,
-    /// Ask (sell) price.
+    /// Dealer's selling price.
     Ask,
 }
 
 /// Quote levels associated with an instrument identifier. The requested level
 /// must be present; missing levels are not inferred from other prices.
+///
+/// Units depend on the instrument: rates/spreads are decimals, futures use
+/// price points (e.g. `95.25`), and bond prices use their configured quote units
+/// (commonly 100). Black volatilities are annualized decimals; normal
+/// volatilities use underlying rate/price units per square-root year. FX
+/// outrights use quote currency per base currency; FX points are raw
+/// forward-minus-spot differences, not pip counts.
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize)]
 pub struct QuoteLevels {
     /// Mid price/level.

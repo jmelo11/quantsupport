@@ -49,11 +49,28 @@ impl PricerState for DCFState<'_> {
     }
 }
 
-/// Generic cashflow discounting pricer for any trade with linear cashflows.
-/// Works directly with legs and their cashflows, properly handling:
-/// - Floating rate coupons (forward rates are set via market data resolution)
-/// - Multi-currency trades (uses FX parity from legs at valuation date)
-/// - Automatic discount curve requests based on leg currencies/indices
+/// Discounts resolved linear cashflows with each leg's direction.
+///
+/// Supports fixed and floating coupons, redemptions, and disbursements; embedded
+/// options and other nonlinear cashflows are rejected. Historical observations
+/// resolve started coupons, while future coupons use their forwarding curves.
+/// A discount policy can select separate collateral curves. Cross-currency
+/// collateral discounting converts leg amounts at spot into collateral currency;
+/// without such a policy, this pricer does not provide a general reporting-
+/// currency conversion.
+///
+/// Supplied legs must represent the intended remaining contract: valuation
+/// iterates every cashflow without excluding payment dates at or before the
+/// evaluation date. Default cashflow reports are undiscounted and do not apply
+/// the leg signs used in NPV.
+///
+/// Supported requests are value, sensitivities, cashflows, and fair rate.
+/// Other requests leave their result fields absent. Fair rate is the ratio of
+/// floating-coupon PV to fixed-coupon annuity using the first forwarding curve;
+/// it ignores principal exchanges and is intended for vanilla fixed-versus-
+/// floating swaps, not a general multi-leg breakeven calculation.
+/// Missing or ambiguous curve selection, missing required fixings, and
+/// unsupported payoffs produce errors.
 ///
 /// ## Example
 /// ```rust

@@ -8,8 +8,10 @@ use crate::time::{
 
 /// # `Business252`
 ///
-/// Business/252 day count convention.
-/// Calculates the number of business days between two dates.
+/// Business/252 using the Brazil Settlement calendar.
+///
+/// Counts business days in `[start, end)` and divides by 252 for the year
+/// fraction; this implementation does not accept an arbitrary calendar.
 ///
 /// ## Example
 /// ```

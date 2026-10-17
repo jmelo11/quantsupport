@@ -22,11 +22,21 @@ use std::collections::HashSet;
 
 /// Prices a caplet or floorlet using the Black (log-normal) model.
 ///
-/// The forward rate for the period is derived from the discount curve using
-/// the conventions specified in the caplet's rate definition.
+/// The projection curve is selected by the caplet's market index. Accrual and
+/// forward-rate conventions come from that index's `rate_index_details()`,
+/// not from a separately supplied coupon rate definition. Rates and strikes
+/// are decimals; Black volatility is annualized relative volatility.
+///
+/// This implementation measures option time from the trade date to the
+/// accrual start under the index day counter. It is not automatically rolled
+/// to the market provider's evaluation date and does not settle a past fixing
+/// from the historical fixing store.
 ///
 /// The effective strike is resolved from the instrument's [`Strike`] before
 /// querying the volatility surface.
+/// This pricer interprets `Strike::Relative(p)` multiplicatively as
+/// `K = F * (1+p)`, unlike [`Strike::resolve`]'s additive convention.
+/// Use [`Strike::Absolute`] when the contract specifies a strike rate directly.
 ///
 /// When a [`DiscountPolicy`] is set, the pricer uses the CSA discount curve
 /// for payment discounting instead of the instrument's `market_index` curve.

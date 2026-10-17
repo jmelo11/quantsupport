@@ -1,167 +1,104 @@
-# Script Engine
+# Script valuation and claim integration
 
-`ScriptEngine`, implemented in `src/scripting/runtime.rs`, turns an `EventStream` into an executable payoff. It derives market requests before simulation, evaluates the program over Monte Carlo paths, and bounds automatic-differentiation memory to one path at a time. This chapter explains engine construction, single-threaded and parallel evaluation, conditional handling, variance reduction, and runtime errors.
+`ScriptEngine` turns dated payoff code into an analyzed program and evaluates
+it over model-backed paths. Its preparation separates semantic reasoning from
+the repeated numerical work: parsing is done once, observations are declared
+before simulation, and AD memory is bounded by rewinding temporary path nodes.
 
-## Construction
+## Preparing the program
 
-Construction receives the parsed event stream together with the valuation reference date and the local discounting convention. The signature is:
+Construction receives an `EventStream`, reference date, local currency and
+local discount index. Variable indexing assigns storage slots and payment
+identities. Market calls become per-event `SimulationDataRequest` values and
+flattened model requests with observation dates. Conditional transformation,
+branch analysis and domain processing prepare the evaluator and remove
+statically impossible branches.
 
-```rust,ignore
-pub fn new(
-    events: EventStream,
-    reference_date: Date,
-    local_currency: Currency,
-    local_discount_index: MarketIndex,
-) -> Result<ScriptEngine, QSError>
-```
+The program's horizon includes requested observations and payments, not only
+source-event dates. This is important for a fixing event that declares a much
+later settlement. The model must be configured for the complete requested
+timeline.
 
-`new` then performs the complete static-analysis pipeline:
-
-1. **Validation** checks that the stream contains events, every event is on or after `reference_date`, and dates are ordered.
-2. **`VarIndexer`** assigns a slot to each variable, numbers every `pays`, `Df`, `RateIndex`, and `Spot` node, and produces one `SimulationDataRequest` per event. Default discounting uses `local_discount_index`, and default payment currency uses `local_currency`.
-3. **Request flattening** – the per-event requests are flattened into the `Vec<SimulationRequest>` format consumed by `MarketModel::set_requests`, along with the observation date of each request and a map back to the script nodes.
-4. **`IfConditionTransform`** – rewrites every comparison into the canonical `(lhs - rhs) > 0` form used by the smoothing evaluator.
-5. **`IfProcessor`** – computes the maximum `if` nesting depth (`max_nested_ifs`) and the set of variables written inside each branch.
-6. **`DomainProcessor`** propagates value domains through the tree, folds constants, and removes impossible branches.
-
-At the end of construction, the engine knows the program's variable layout, observation schedule, payment schedule, and model requests. This preparation keeps path evaluation focused on numerical work.
-
-### Accessors
-
-Accessors expose the analyzed program and the information needed to configure a market model or validate a caller's requested output:
-
-| Method                                     | Returns                                                                                      |
-| ------------------------------------------ | -------------------------------------------------------------------------------------------- |
-| `events() -> &EventStream`                 | The indexed and transformed stream                                                           |
-| `requests() -> &[SimulationDataRequest]`   | One request bundle per event (`dfs()`, `fwds()`, `fxs()`, `spots()`, `requires_numeraire()`) |
-| `model_requests() -> &[SimulationRequest]` | Flattened requests for a `MarketModel`                                                       |
-| `reference_date() -> Date`                 |                                                                                              |
-| `maturity() -> Date`                       | Latest of all event dates and all requested observation/payment dates                        |
-| `has_variable(&str) -> bool`               | Whether the script defines a variable, useful to validate a `result_variable` before running |
-| `local_currency() -> Currency`             |                                                                                              |
-
-The `requests` view preserves event grouping for inspection. `model_requests` is the flattened form passed to `MarketModel`, and `maturity` covers events together with every requested observation and payment date.
-
-## Evaluation on a single tape
-
-The direct evaluation methods accept any differentiable market model. One returns path-averaged variables, and the other also returns the expected cashflows generated by `pays` statements:
+The following fragment assumes an existing event stream and differentiable
+market model:
 
 ```rust,ignore
-pub fn evaluate(
-    &self,
-    model: &mut dyn MarketModel<DualFwd>,
-    result_variable: Option<&str>,
-) -> Result<HashMap<String, f64>>
-
-pub fn evaluate_with_cashflows(
-    &self,
-    model: &mut dyn MarketModel<DualFwd>,
-    result_variable: Option<&str>,
-) -> Result<(HashMap<String, f64>, Vec<ExpectedCashflow>)>
+let engine = ScriptEngine::new(
+    events, reference_date, Currency::USD, MarketIndex::SOFR,
+)?;
+let values = engine.evaluate(&mut model, Some("swap"))?;
+let value = values.get("swap");
 ```
 
-Both methods follow the same path loop:
+The selected variable identifies the result whose weighted adjoints are
+propagated; returned averaged variables are not limited to that one name.
+Without conditionals the engine uses exact expression evaluation. Conditional
+programs use the smoothed evaluator described in the language chapter.
 
-- Configure the model with the event dates and flattened requests discovered during construction.
-- Read numeraires at event dates and prepare the control-variate expectations described below.
-- For each path, rewind to the tape mark, generate responses, build the script scenario, run the evaluator, and accumulate every numeric variable with weight `1 / n_paths`.
-- When `result_variable` is present, propagate its weighted adjoint to the mark on each path. After the loop, propagate the accumulated adjoints from the mark to the beginning of the tape.
+## Pathwise AD and reporting
 
-Any `DualFwd` leaf recorded **before** `evaluate`, such as curve pillars registered by `curve.put_pillars_on_tape()` or model parameters created with `DualFwd::new`, exposes `d(mean result)/d(leaf)` through `.adjoint()`. The engine completes the reverse propagation before returning, so those adjoints are ready to read. Its mark-and-rewind cycle keeps peak trade-level tape memory at one path, independent of `n_paths`. The XVA exposure evaluator uses the same lifecycle.
+Curve pillars and model inputs must be registered on the current tape before
+evaluation. For each path the engine rewinds to its mark, generates requested
+responses, evaluates the program and accumulates its contribution. It
+propagates the selected weighted result back to pre-mark dependencies before
+discarding path-local nodes. After the path loop, adjoints reach the registered
+leaves.
 
-`evaluate_with_cashflows` also captures every executed `pays` statement and returns path-averaged `ExpectedCashflow` values sorted by date. The structure distinguishes contractual amount from discounted local-currency value:
+This bounds temporary tape memory to one path rather than all paths at once.
+Parallel evaluation constructs a model and tape per worker through
+`ScriptModelSetup`, returning partial values, labeled sensitivities and
+cashflows. The total path count determines normalization. Reproducible path
+indices do not promise bitwise identical floating-point reductions across
+arbitrary thread layouts.
 
-```rust,ignore
-pub struct ExpectedCashflow {
-    pub date: Date,
-    pub currency: Currency,   // payment currency (local currency when not named)
-    pub amount: f64,          // path-averaged undiscounted amount in `currency`
-    pub present_value: f64,   // path-averaged discounted, numeraire-deflated value in local currency
-}
-```
+`evaluate_with_cashflows` additionally collects executed payments. Each
+`ExpectedCashflow` distinguishes mean undiscounted amount in payment currency
+from mean discounted, numeraire-deflated present value in local currency.
+These are raw sampled payments.
 
-Summing `present_value` across the vector reproduces the script price. The vector is therefore a dated decomposition of NPV, and `amount` remains expressed in the payment currency.
+## Martingale controls and reconciliation
 
-### Choice of evaluator
+For a selected result, at least 16 paths and eligible discount/forward requests,
+the engine estimates martingale control coefficients on a separate pilot
+sample of up to 64 paths. Known initial-curve expectations anchor discounted
+bond/forward controls. The main estimator is schematically
 
-`ScriptEngine` selects an evaluator from the payoff structure:
+\\[
+\widehat V_{\rm controlled}
+=\frac1n\sum_p\left[Y_p-
+\widehat\beta^\mathsf T(C_p-E[C])\right].
+\\]
 
-- A program with `max_nested_ifs == 0` uses `SingleScenarioEvaluator` for direct expression evaluation.
-- A program containing conditionals uses `FuzzyEvaluator::new(n_variables, max_nested_ifs)` with automatic comparison scaling. Digital payoffs then receive finite pathwise sensitivities as described in [Script Language](language.md#conditionals-and-smoothing).
+The fitted coefficients are held fixed during differentiation. This reduces
+variance but does not eliminate all Monte Carlo error or turn a nonlinear
+payoff into a deterministic one.
 
-### Control variates
+Only the selected result variable receives this adjustment. Expected cashflow
+present values remain unadjusted sampled payments. Consequently their sum need
+not equal the reported controlled result at finite path count. Equality also
+requires that the selected variable actually represents the total payment
+accumulator rather than another state quantity. Deterministic one-path
+comparisons and particular regression assertions must not be generalized to
+all stochastic script outputs.
 
-For a named result variable, at least 16 paths, and a payoff that requests discount factors or forward rates, the engine applies martingale control variates. A pilot set of `min(n_paths, 64)` extra paths estimates two coefficients using discounted zero-coupon bonds and discounted forward payoffs. Their expectations are known from the initial curve. The reported path set is disjoint from this pilot set.
+## From payments to exposure claims
 
-The main pass subtracts `β·(control − E[control])` from the payoff. The estimated coefficients remain fixed during automatic differentiation. This treatment anchors the payoff's linear-rate component to the curve. In the examples, the scripted swap matches the analytic value to `1e-8` with one deterministic path and retains tight error with 1,000 stochastic XVA paths.
+`ScriptedProduct::contingent_claims` creates one claim per payment identity.
+Each uses unit notional and `LongReceive`, because scale and direction already
+belong to the script expression. Claims share one compiled engine.
 
-## Parallel evaluation
+At an exposure date, a scripted claim replays the required program against its
+response block and returns that payment's value. The live-claim schedule
+controls which payments remain. Required discount, rate, FX and spot requests
+must all be supported by the market model; the claim bridge does not create
+missing dynamics.
 
-Parallel evaluation requires each worker to own its market model and AD tape. `ScriptModelSetup` acts as the worker-local factory, and `ParallelScriptEvaluation` collects normalized values, labeled sensitivities, and expected cashflows:
+These claims can share a netting set with native products. This gives bespoke
+and standard payments a common exposure interface, but it is not a general
+optimal-stopping engine for arbitrary scripted callability. A program that
+describes an exercise rule is responsible for what that rule means.
 
-```rust,ignore
-pub trait ScriptModelSetup: Send + Sync {
-    fn n_paths(&self) -> usize;
-    fn with_model<R>(&self, callback: &mut ScriptModelCallback<'_, R>) -> Result<R>;
-}
-pub type ScriptModelCallback<'a, R> =
-    dyn FnMut(&mut dyn MarketModel<DualFwd>, &[(String, DualFwd)]) -> Result<R> + 'a;
-
-pub fn evaluate_parallel<S: ScriptModelSetup>(
-    &self,
-    setup: &S,
-    result_variable: Option<&str>,
-) -> Result<ParallelScriptEvaluation>
-
-pub struct ParallelScriptEvaluation {
-    pub values: HashMap<String, f64>,          // path-averaged script variables
-    pub sensitivities: Vec<(String, f64)>,     // adjoints of the leaves supplied by `with_model`, sorted by label
-    pub cashflows: Vec<ExpectedCashflow>,
-}
-```
-
-A `DualFwd` holds a pointer into a **thread-local** tape. Each Rayon worker therefore builds its own curves and model through `ScriptModelSetup::with_model`, registers the required pillars and parameters on that worker's tape, and supplies them as labeled `leaves`. The engine then:
-
-1. Splits `0..n_paths` into `rayon::current_num_threads()` contiguous ranges.
-2. Resets and starts a fresh tape on each worker, calls `with_model`, configures the model, evaluates the range, and reads `leaf.adjoint()` for every supplied leaf.
-3. sums values, adjoints and cashflows across workers. Normalization always uses the total path count, so results are independent of the number of threads and deterministic for a fixed seed.
-
-The following setup illustrates the worker-local construction for a SOFR curve and LGM model:
-
-```rust,ignore
-struct SofrSetup { ref_date: Date, dfs: Vec<(Date, f64, String)>, n_paths: usize }
-
-impl ScriptModelSetup for SofrSetup {
-    fn n_paths(&self) -> usize { self.n_paths }
-    fn with_model<R>(&self, callback: &mut ScriptModelCallback<'_, R>) -> Result<R> {
-        let mut curve = DiscountTermStructure::<DualFwd>::new(
-            self.dfs.iter().map(|(d, _, _)| *d).collect(),
-            self.dfs.iter().map(|(_, df, _)| DualFwd::from(*df)).collect(),
-            DayCounter::Actual360, Interpolator::LogLinear, true,
-        )?.with_pillar_labels(self.dfs.iter().map(|(_, _, l)| l.clone()).collect())?;
-        curve.put_pillars_on_tape();
-        let leaves: Vec<(String, DualFwd)> = curve.pillars().unwrap_or_default();
-
-        let rate_model = LgmRateModel::new(DualFwd::scalar(0.05), DualFwd::scalar(0.01), &curve);
-        let mut model = LgmMarketModel::new(Currency::USD, MarketIndex::SOFR, self.ref_date, DayCounter::Actual360)
-            .with_n_paths(self.n_paths)
-            .with_seed(42);
-        model.add_curve_model(MarketIndex::SOFR, rate_model);
-        callback(&mut model, &leaves)
-    }
-}
-
-let result = engine.evaluate_parallel(&setup, Some("swap"))?;
-println!("NPV = {}", result.values["swap"]);
-for (pillar, dv) in &result.sensitivities { println!("{pillar}: {dv}"); }
-```
-
-Every worker uses the same raw curve data and seed policy, then reports partial sums to the engine. Normalizing once by the total path count makes results reproducible across thread counts for a fixed seed.
-
-## Errors
-
-The evaluation methods return the shared `QSError`: `NotFoundErr` for an unknown result variable or missing response, `InvalidValueErr` for a model with zero paths, and `EvaluationErr` for expression failures. Model and AD failures retain their original library variants. Context identifies the path or event that failed, and `error.root_cause()` exposes the original variant beneath that context.
-
-## What to remember
-
-`ScriptEngine` performs expensive reasoning once during construction and leaves a compact indexed program for path evaluation. Its request list configures the model precisely, its tape marks bound memory, its controls reduce sampling error, and its worker factory makes parallel AD safe. The returned variables, sensitivities, and expected cashflows all come from that single analyzed payoff definition.
+The Rust examples compare native and scripted swaps under controlled matching
+setups. Python's `evaluate_script` is a narrower averaged-variable service,
+described in [Working in Python](../python/getting-started.md); it does not
+expose every cashflow, path or claim-bridge facility available in Rust.

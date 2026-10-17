@@ -7,6 +7,12 @@
 //! 3. resolves or calibrates the model volatility,
 //! 4. generates the paths, and
 //! 5. wraps them in a [`MonteCarloSimulationElement`] keyed by market index.
+//!
+//! Curves and model paths are evaluated with `f64` using seeded pseudorandom
+//! normal draws. Stored AD wrappers do not retain path-generation sensitivities.
+//! Dates exclude the reference date. For Brownian motion, the constant drift
+//! rate is the continuously compounded curve rate to the simulation horizon,
+//! not a time-varying curve drift.
 
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 

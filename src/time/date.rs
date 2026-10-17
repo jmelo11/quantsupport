@@ -327,7 +327,9 @@ impl Date {
         Self::from(base_date)
     }
 
-    /// Returns the next occurrence of the specified weekday after the given date.
+    /// Returns the specified weekday on or after the given date.
+    ///
+    /// If the date already has that weekday, it is returned unchanged.
     #[must_use]
     pub fn next_weekday(date: Self, weekday: Weekday) -> Self {
         let wd = date.weekday();

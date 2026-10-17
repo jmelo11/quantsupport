@@ -1,0 +1,4 @@
+# Optional historical ORE/CurveEngine benchmark; not needed by the 13 binding studies.
+-r requirements.txt
+open-source-risk-engine==1.8.14.1
+curveengine==1.1.6

@@ -40,7 +40,7 @@ use crate::{
     },
 };
 
-/// Converts a year fraction into a [`Period`] expressed in days.
+/// Converts a year fraction to a day [`Period`] by rounding `365 * t`.
 ///
 /// # Errors
 /// Returns an error if `t` is negative or too large to represent.
@@ -260,6 +260,8 @@ pub fn bootstrap_black_term_volatility(
 ///
 /// `vol(t)` bilinearly interpolates the surface at expiry `t` (in years) and
 /// the configured key.
+/// Time is rounded to whole days. This samples implied term volatility;
+/// it does not strip instantaneous/forward volatility for path evolution.
 #[derive(Clone)]
 pub struct SurfaceTermVolatility {
     element: VolatilitySurfaceElement,
@@ -299,6 +301,8 @@ impl TimeDependentVolatility<DualFwd> for SurfaceTermVolatility {
 ///
 /// `vol(t)` trilinearly interpolates the cube at expiry `t` (in years), the
 /// configured tenor, and the configured key.
+/// Time is rounded to whole days. This samples implied term volatility,
+/// rather than converting total variance into instantaneous volatility.
 #[derive(Clone)]
 pub struct CubeTermVolatility {
     element: VolatilityCubeElement,

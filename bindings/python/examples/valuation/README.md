@@ -20,7 +20,13 @@ python bindings/python/examples/run_notebooks.py valuation
 
 A folder selection includes its notebooks recursively. Every notebook starts
 with a fresh kernel in its own folder, so loaders resolve their inputs locally.
-Use `--output-dir /tmp/quantsupport-notebooks` to save executed copies.
+Use `--output-dir artifacts/notebooks` to save executed copies outside the
+canonical notebook folders. Add `--write` to persist real outputs in the source.
+
+Each study specifies its cashflow conventions and verifies a separate financial
+relationship: swap annuities, signed FX/PV conversion, bond spread/yield
+discounting, Black option parity/strip decomposition, or loan receipt accounting.
+Position PV, clean price, par rate and undiscounted payments are different units.
 
 Next: [portfolio sensitivity](../sensitivity/README.md) or
 [scripted payoffs](../scripting/README.md).

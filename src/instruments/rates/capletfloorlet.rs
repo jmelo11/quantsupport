@@ -21,12 +21,12 @@ pub enum CapletFloorletType {
     Floorlet,
 }
 
-/// Represents a single caplet or floorlet instrument under the Black model.
+/// Model-independent single-period option on a floating-rate fixing.
 ///
-/// A caplet covers one period of an interest rate cap. It pays
-/// $max(L(T_\text{start}) - K, 0) * \alpha * N$ at $T_\text{pay}$, where $L$ is the floating
-/// rate fixing at `start_date`, $K$ is the strike, $\alpha$ is the accrual factor
-/// for the period `[start_date, end_date]`, and `N` is the notional.
+/// A caplet pays `N * alpha * max(L - K, 0)`; a floorlet pays
+/// `N * alpha * max(K - L, 0)` at `payment_date`. The rate is observed on the
+/// separate `fixing_date`, and `alpha` accrues over `[start_date, end_date]`.
+/// Notional `N` belongs to the trade, not this instrument.
 ///
 /// Collateralization and payment discounting conventions are determined at the
 /// context / `MarketDataProvider` level, not on the instrument itself.
@@ -42,7 +42,7 @@ pub struct CapletFloorlet {
     start_accrual_date: Date,
     /// End of the accrual period.
     end_accrual_date: Date,
-    /// Payment date (defaults to `end_date`).
+    /// Explicit payment date, which may differ from accrual end.
     payment_date: Date,
     /// Caplet or floorlet direction.
     payoff_type: CapletFloorletType,
@@ -84,7 +84,7 @@ impl CapletFloorlet {
         self.market_index.clone()
     }
 
-    /// Returns the fixing / expiry date of the option.
+    /// Returns the accrual start date, not necessarily the fixing/expiry date.
     #[must_use]
     pub const fn start_accrual_date(&self) -> Date {
         self.start_accrual_date
