@@ -4,6 +4,8 @@ from ..quantsupport import (
     Date as Date,
     Period as Period,
     Calendar as Calendar,
+    Schedule as Schedule,
+    IMM as IMM,
     UnitedStatesMarket as UnitedStatesMarket,
     BrazilMarket as BrazilMarket,
     JointCalendarRule as JointCalendarRule,
@@ -15,4 +17,4 @@ from ..quantsupport import (
     DateGenerationRule as DateGenerationRule,
 )
 
-__all__ = ['Date', 'Period', 'Calendar', 'UnitedStatesMarket', 'BrazilMarket', 'JointCalendarRule', 'Compounding', 'Frequency', 'DayCounter', 'TimeUnit', 'BusinessDayConvention', 'DateGenerationRule']
+__all__ = ['Date', 'Period', 'Calendar', 'Schedule', 'IMM', 'UnitedStatesMarket', 'BrazilMarket', 'JointCalendarRule', 'Compounding', 'Frequency', 'DayCounter', 'TimeUnit', 'BusinessDayConvention', 'DateGenerationRule']

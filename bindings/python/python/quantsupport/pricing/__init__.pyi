@@ -21,7 +21,26 @@ class Request:
 
     @staticmethod
     def parse(s: str) -> Request:
-        """Parses a request from its name."""
+        """Parse an evaluation request by its case-insensitive variant name.
+
+Parameters
+----------
+s : str
+    One of ``Value``, ``YieldToMaturity``, ``ModifiedDuration``,
+    ``Sensitivities``, ``ZSpread``, ``OAS``, ``Cashflows``, or ``FairRate``.
+    Variant names are case-insensitive. Additional exact aliases are ``npv``,
+    ``ytm``, ``fair_rate``, ``modified_duration``, ``z_spread``, and ``zspread``.
+
+Returns
+-------
+Request
+    Corresponding request; support depends on the selected pricer.
+
+Raises
+------
+QuantSupportError
+    If the name is not a recognized request.
+"""
         ...
     Value: ClassVar[Request]
     YieldToMaturity: ClassVar[Request]
@@ -34,35 +53,124 @@ class Request:
 
 @final
 class PricerConfiguration:
-    """Wrapper around the library's `QsPricerConfiguration`."""
+    """Select a native pricing implementation and its index-keyed models.
+
+Load configurations through from_dict(), from_dict_list(), or from_json().
+They select an engine for an instrument family; they are not Python-pricer
+registrations. Native compatibility checks run when the context is validated.
+"""
 
     def __repr__(self) -> str:
         ...
 
     @staticmethod
     def from_dict(obj: Mapping[str, Any]) -> PricerConfiguration:
-        """Builds a single configuration from a dict."""
+        """Deserialize one instrument-level pricing configuration.
+
+Parameters
+----------
+obj : mapping
+    Native configuration with required ``instrument_type`` and ``pricer``
+    fields. ``models`` defaults to an empty list; each supplied entry requires
+    ``market_index`` and a native tagged ``model``. Unit pricer variants use
+    strings, for example ``"Bond"``; data-carrying variants use tagged mappings,
+    for example ``{"TreeBased": {}}``. Unknown configuration fields are rejected.
+
+Returns
+-------
+PricerConfiguration
+    Deserialized configuration. Loading does not itself validate the selected
+    instrument/pricer pairing or numerical grids.
+
+Raises
+------
+QuantSupportError
+    If the configuration cannot be deserialized.
+"""
         ...
 
     @staticmethod
     def from_dict_list(obj: Mapping[str, Any]) -> list[PricerConfiguration]:
-        """Builds configurations from a list, single dict, or wrapped list."""
+        """Deserialize one or more native pricing configurations.
+
+Parameters
+----------
+obj : mapping or list of mappings
+    One configuration in the from_dict() schema, a list of configurations,
+    or a one-key mapping whose sole value is that list, for example
+    ``{"pricers": [...]}``. The wrapper key is arbitrary; it must be the only
+    key. Runtime also accepts the list form despite the retained annotation.
+
+Returns
+-------
+list of PricerConfiguration
+    Configurations in input order, even for a single input configuration.
+
+Raises
+------
+QuantSupportError
+    If the container or any contained configuration cannot be deserialized.
+"""
         ...
 
     @staticmethod
     def from_json(path: str) -> list[PricerConfiguration]:
-        """Loads configurations from a JSON file. Accepts a list, a
-single object, or an object wrapping a single list (e.g.
-`{"curve_specs": [...]}`). Always returns a list."""
+        """Load instrument-level pricing configurations from a JSON file.
+
+Parameters
+----------
+path : str
+    Filesystem path, relative to the current working directory or absolute.
+    The UTF-8 file must contain one from_dict() configuration, a list of them,
+    or an object with exactly one key whose value is such a list. This is a
+    file path, not inline JSON text.
+
+Returns
+-------
+list of PricerConfiguration
+    Configurations in file order; a single object still produces a list.
+
+Raises
+------
+QuantSupportError
+    If the file cannot be read or its JSON/configuration schema is invalid.
+"""
         ...
 
     def to_dict(self) -> dict[str, Any]:
-        """Returns the configuration as a dict."""
+        """Serialize the native pricing configuration.
+
+Returns
+-------
+dict[str, Any]
+    Native instrument_type, pricer, and models fields, including serde enum
+    tags. Suitable as input to from_dict(), not a display-only description.
+
+Raises
+------
+QuantSupportError
+    If serialization to Python objects fails.
+"""
         ...
 
 @final
 class SingleCurveCSADiscountPolicy:
-    """Collateral currency and remuneration curve used by the single-curve CSA policy."""
+    """Collateral currency and remuneration curve for a single-curve CSA.
+
+Parameters
+----------
+collateral_currency : Currency or str
+    Currency in which collateral is posted, as a typed currency or its ISO
+    alphabetic code, for example ``Currency.USD`` or ``"USD"``.
+collateral_index : MarketIndex or str
+    Collateral remuneration index, as a typed index or its serialized name,
+    for example ``MarketIndex.SOFR`` or ``"SOFR"``. The context must be able
+    to construct the associated discount curve when it is requested.
+
+Notes
+-----
+Both arguments are required. The resulting policy is immutable.
+"""
 
     def __new__(cls, collateral_currency: _CurrencyLike, collateral_index: _IndexLike) -> Self:
         ...
@@ -72,11 +180,42 @@ class SingleCurveCSADiscountPolicy:
 
     @staticmethod
     def from_dict(obj: Mapping[str, Any]) -> SingleCurveCSADiscountPolicy:
-        """Builds a policy from collateral_currency and collateral_index."""
+        """Deserialize a single-curve collateral policy.
+
+Parameters
+----------
+obj : mapping
+    Native serialized policy with required ``collateral_currency`` and
+    ``collateral_index`` fields. Currency and index values must use their
+    native serde representation, not arbitrary display strings. Unknown
+    fields are rejected.
+
+Returns
+-------
+SingleCurveCSADiscountPolicy
+    Immutable collateral policy.
+
+Raises
+------
+QuantSupportError
+    If the mapping cannot be deserialized as a collateral policy.
+"""
         ...
 
     def to_dict(self) -> dict[str, Any]:
-        """Return the native JSON-compatible representation."""
+        """Serialize the collateral policy.
+
+Returns
+-------
+dict[str, Any]
+    Native collateral_currency and collateral_index fields, suitable for
+    from_dict(). Data-carrying index variants retain their serde tags.
+
+Raises
+------
+QuantSupportError
+    If serialization to Python objects fails.
+"""
         ...
 
     @property
@@ -119,31 +258,108 @@ for bonds with an issuer-call schedule."""
 
     @staticmethod
     def clean_price(value: float) -> Any:
-        """Anchors the trade to a clean price."""
+        """Anchor the trade to a clean price, excluding accrued interest.
+
+Parameters
+----------
+value : float
+    Clean price in the bond's quotation units, not a decimal interest rate.
+    Use the same price convention as the instrument being valued.
+
+Returns
+-------
+BondPricingAnchor
+    Clean-price anchor; spread inversion is performed by the bond pricer.
+"""
         ...
 
     @staticmethod
     def dirty_price(value: float) -> Any:
-        """Anchors the trade to a dirty price."""
+        """Anchor the trade to a dirty price, including accrued interest.
+
+Parameters
+----------
+value : float
+    Dirty price in the bond's quotation units, using the same price
+    convention as the instrument being valued.
+
+Returns
+-------
+BondPricingAnchor
+    Dirty-price anchor; spread inversion is performed by the bond pricer.
+"""
         ...
 
     @staticmethod
     def z_spread(value: float) -> Any:
-        """Anchors a straight bond to a continuously compounded Z-spread."""
+        """Anchor a straight bond to a continuously compounded Z-spread.
+
+Parameters
+----------
+value : float
+    Spread in decimal annual rate units; 0.01 represents 100 basis points.
+
+Returns
+-------
+BondPricingAnchor
+    Z-spread anchor for straight-bond pricing.
+"""
         ...
 
     @staticmethod
     def OAS(value: float) -> Any:
-        """Anchors an issuer-call bond to an OAS."""
+        """Anchor an issuer-call bond to an option-adjusted spread.
+
+Parameters
+----------
+value : float
+    Option-adjusted spread in decimal annual rate units; 0.01 represents
+    100 basis points.
+
+Returns
+-------
+BondPricingAnchor
+    OAS anchor for pricing a bond with an issuer-call schedule.
+"""
         ...
 
     @staticmethod
     def from_dict(obj: Mapping[str, Any]) -> BondPricingAnchor:
-        """Loads an anchor such as {"CleanPrice": 99.5} or {"OAS": 0.0075}."""
+        """Deserialize and validate a bond price or spread anchor.
+
+Parameters
+----------
+obj : mapping
+    Native externally tagged anchor, such as ``{"CleanPrice": 99.5}``,
+    ``{"DirtyPrice": 100.0}``, ``{"ZSpread": 0.01}``, or ``{"OAS": 0.0075}``.
+    Prices use the bond's quotation units; spreads are decimal annual rates.
+
+Returns
+-------
+BondPricingAnchor
+    Validated native anchor.
+
+Raises
+------
+QuantSupportError
+    If deserialization or native anchor validation fails.
+"""
         ...
 
     def to_dict(self) -> dict[str, Any]:
-        """Serializes the native anchor enum."""
+        """Serialize the native bond-anchor enum.
+
+Returns
+-------
+dict[str, Any]
+    Single tagged price/spread value, for example ``{"OAS": 0.0075}``.
+    Serialization does not perform the extraction-time validation of from_dict().
+
+Raises
+------
+QuantSupportError
+    If serialization to Python objects fails.
+"""
         ...
 
 @disjoint_base
@@ -163,29 +379,48 @@ the base market remains available when the scenario block exits.
 Parameters
 ----------
 quotes : QuoteStore
-    Market observations and reference date.
+    Typed market observations, copied into the context. The store's reference
+    date determines the context evaluation date.
 curves : sequence of CurveConfiguration
-    Calibration inputs, explicit zero rates, and composite curves.
+    Typed bootstrap, explicit zero-rate, or composite-curve configurations.
+    These are construction inputs, not already constructed DiscountCurve views.
 fixings : FixingStore, optional
-    Published historical index observations.
+    Published historical index observations. Defaults to None, retaining the
+    native context's empty fixing store.
 fx : FxStore, optional
-    Spot exchange rates.
+    Spot exchange rates. Defaults to None, retaining the native empty FX store.
 volatility_surfaces : sequence of VolatilitySurfaceConfiguration, optional
-    Surface construction inputs.
+    Surface construction inputs. None, the default, configures no surfaces.
 volatility_cubes : sequence of VolatilityCubeConfiguration, optional
-    Cube construction inputs.
+    Cube construction inputs. None, the default, configures no cubes.
 pricer_configurations : sequence of PricerConfiguration, optional
-    Instrument pricing models and implementations.
+    Instrument pricing models and implementations. None, the default, adds no
+    instrument-specific configurations; pricers requiring one fail at evaluation.
 simulations : sequence of SimulationConfiguration, optional
-    Simulation inputs.
+    Simulation construction inputs. None, the default, configures no simulations.
 csa_policy : SingleCurveCSADiscountPolicy, optional
-    Collateral currency and curve used for market construction.
+    Collateral currency and remuneration curve used for market construction and
+    derivative discounting. None, the default, keeps USD collateral with SOFR
+    remuneration; it does not infer a policy from the supplied curve list.
 fixed_income_policy : FixedIncomeDiscountPolicy, optional
-    Currency-to-curve discount policy. Defaults to the context base curve.
+    Currency-to-curve discount policy. None, the default, maps the context base
+    currency to its base curve. Straight bonds, notes, and deposits may prefer
+    their instrument discount index; loans use the currency mapping.
 quote_level : Level or str, optional
-    Quote level used for calibration. Defaults to Mid.
+    Calibration quote level: Mid, Bid, or Ask, as an enum or case-insensitive
+    variant name. None, the default, selects Level.Mid.
 credit_curves : sequence of CreditCurveConfiguration, optional
-    Survival curve construction inputs.
+    Survival-curve construction inputs. None, the default, configures no credit
+    curves.
+
+Notes
+-----
+Construction stores inputs without initializing the market. Enter the context
+for lazy construction, or call initialize() to construct all configured objects.
+The context is thread-confined. Scenario stacks and AD recording are local to
+the current thread; enter and exit scopes on that same thread in reverse order.
+Context exit releases constructed market data when its last matching scope ends.
+Do not rely on AD-backed market views outside the scope that created them.
 
 Examples
 --------
@@ -208,11 +443,30 @@ Examples
         """Constructs curves, volatility surfaces/cubes, and simulations.
 
 Explicitly constructs every configured object. Context entry enables
-lazy construction of requested market objects instead."""
+lazy construction of requested market objects instead. Repeated calls do
+nothing until market inputs are reassigned or the context is exited.
+
+Raises
+------
+QuantSupportError
+    If validation, calibration, or market construction fails.
+"""
         ...
 
     def discount_curves(self) -> list[DiscountCurve]:
-        """Resolves all configured discount curves in the active market view."""
+        """Resolve all configured discount curves in the active market view.
+
+Returns
+-------
+list of DiscountCurve
+    Curves sorted by market-index display name, constructed lazily if needed.
+    Within a scenario these are the shocked views, not base-market replacements.
+
+Raises
+------
+QuantSupportError
+    If the context is uninitialized or curve construction fails.
+"""
         ...
 
     @property
@@ -222,35 +476,150 @@ lazy construction of requested market objects instead."""
 
     @curves.setter
     def curves(self, value: Sequence[CurveConfiguration]) -> None:
-        """Curve construction inputs. Assign a new collection to rebuild the market."""
+        """Replace curve inputs and invalidate constructed market data.
+
+        Parameters
+        ----------
+        value : Sequence[CurveConfiguration]
+            New curve definitions; equivalent to assigning curve_configurations.
+        """
         ...
 
     def curve(self, index: _IndexLike) -> DiscountCurve:
-        """Resolves one DiscountCurve in the active market view."""
+        """Resolve one discount curve in the active base or scenario market.
+
+Parameters
+----------
+index : MarketIndex or str
+    Curve's configured market index, as a typed index or native serialized name.
+
+Returns
+-------
+DiscountCurve
+    Requested curve view, constructed on demand. Use AD-backed views within
+    the context or scenario lifetime that produced them.
+
+Raises
+------
+QuantSupportError
+    If the context is uninitialized, the index is invalid, construction fails,
+    or no discount curve can be resolved for the index.
+"""
         ...
 
     def volatility_surfaces(self) -> list[VolatilitySurface]:
-        """Resolves all configured volatility surfaces in the active market view."""
+        """Resolve all configured volatility surfaces in the active market view.
+
+Returns
+-------
+list of VolatilitySurface
+    Surfaces sorted by market-index display name, constructed lazily if needed.
+    An empty configuration yields an empty list. Scenario scopes return shocked
+    views; use AD-backed data within the originating scope.
+
+Raises
+------
+QuantSupportError
+    If the context is uninitialized or market construction fails.
+"""
         ...
 
     def volatility_surface(self, index: _IndexLike) -> VolatilitySurface:
-        """Resolves one VolatilitySurface in the active market view."""
+        """Resolve one volatility surface in the active market view.
+
+Parameters
+----------
+index : MarketIndex or str
+    Surface's configured market index, as a typed index or serialized name.
+
+Returns
+-------
+VolatilitySurface
+    Surface constructed on demand from the active base or scenario inputs.
+    Use its AD-backed data within the originating context or scenario scope.
+
+Raises
+------
+QuantSupportError
+    If the context is uninitialized, index conversion or construction fails,
+    or no surface is available for the index.
+"""
         ...
 
     def volatility_cubes(self) -> list[VolatilityCube]:
-        """Resolves all configured volatility cubes in the active market view."""
+        """Resolve all configured volatility cubes in the active market view.
+
+Returns
+-------
+list of VolatilityCube
+    Cubes sorted by market-index display name, constructed lazily if needed.
+    An empty configuration yields an empty list. Scenario scopes return shocked
+    views; use AD-backed data within the originating scope.
+
+Raises
+------
+QuantSupportError
+    If the context is uninitialized or market construction fails.
+"""
         ...
 
     def volatility_cube(self, index: _IndexLike) -> VolatilityCube:
-        """Resolves one VolatilityCube in the active market view."""
+        """Resolve one volatility cube in the active market view.
+
+Parameters
+----------
+index : MarketIndex or str
+    Cube's configured market index, as a typed index or serialized name.
+
+Returns
+-------
+VolatilityCube
+    Cube constructed on demand from the active base or scenario inputs.
+    Use its AD-backed data within the originating context or scenario scope.
+
+Raises
+------
+QuantSupportError
+    If the context is uninitialized, index conversion or construction fails,
+    or no cube is available for the index.
+"""
         ...
 
     def simulations(self) -> list[Simulation]:
-        """Resolves all configured simulations in the active market view."""
+        """Resolve all configured simulations in the active market view.
+
+Returns
+-------
+list of Simulation
+    Simulations sorted by market-index display name, constructed on demand
+    from active inputs. An empty configuration yields an empty list.
+
+Raises
+------
+QuantSupportError
+    If the context is uninitialized or market construction fails.
+"""
         ...
 
     def simulation(self, index: _IndexLike) -> Simulation:
-        """Resolves one Simulation in the active market view."""
+        """Resolve one simulation in the active market view.
+
+Parameters
+----------
+index : MarketIndex or str
+    Simulation's configured market index, as a typed index or serialized name.
+
+Returns
+-------
+Simulation
+    Requested simulation, constructed on demand from active market inputs.
+
+Raises
+------
+QuantSupportError
+    If the context is uninitialized, index conversion or construction fails,
+    or no simulation is available for the index.
+"""
         ...
 
     def register_pricer(self, trade_type: Any, pricer: Any) -> Any:
@@ -258,62 +627,246 @@ lazy construction of requested market objects instead."""
 
 The most specific exact type is selected first; registered base classes
 also handle their subclasses. Python registrations take precedence over
-built-in dispatch, which makes built-in trade classes overridable too."""
+built-in dispatch, which makes built-in trade classes overridable too.
+
+Parameters
+----------
+trade_type : type
+    Python class of positions to handle, not an instrument instance. Exact
+    types and then registered bases in the trade's MRO are considered first;
+    virtual-subclass matches fall back to the newest matching registration.
+pricer : object
+    Object exposing callable ``evaluate(trade, requests, context)`` and returning
+    EvaluationResults. Inheritance from Pricer is not required. Replaces any
+    existing registration for the exact same trade_type.
+
+Returns
+-------
+None
+    Registration is stored on this context only.
+
+Raises
+------
+QuantSupportError
+    If pricer has no callable evaluate attribute.
+"""
         ...
 
     def unregister_pricer(self, trade_type: Any) -> Any:
-        """Removes the Python pricer registered for an exact trade class."""
+        """Remove the Python pricer registered for an exact trade class.
+
+Parameters
+----------
+trade_type : type
+    Exact Python class whose registration is removed. Registrations for its
+    bases and subclasses are left unchanged.
+
+Returns
+-------
+bool
+    True if a registration was removed; False if none existed for that class.
+"""
         ...
 
     def pricer_for(self, trade: Trade) -> Any:
         """Returns the Python pricer selected for a trade, or `None` when built-in
-dispatch will be used."""
+dispatch will be used.
+
+Parameters
+----------
+trade : Trade
+    Position instance whose Python type, MRO, and virtual-subclass matches are
+    checked against this context's registrations.
+
+Returns
+-------
+object or None
+    Closest registered Python pricer. None means no Python override, not that
+    native pricing of this instrument is necessarily supported.
+"""
         ...
 
     def __enter__(self) -> Self:
+        """Activate this thread's context scope and validate market inputs.
+
+Returns
+-------
+PricingContext
+    This context, ready for request-driven market construction. The first
+    active context on the thread starts forward AD recording.
+
+Raises
+------
+QuantSupportError
+    If native context validation fails.
+"""
         ...
 
     def __exit__(self, _exc_type: Any | None=..., _exc_value: Any | None=..., _traceback: Any | None=...) -> bool:
+        """Leave a context scope without suppressing an exception.
+
+Parameters
+----------
+_exc_type : type or None, optional
+    Exception class supplied by the with statement; defaults to None. Ignored.
+_exc_value : BaseException or None, optional
+    Exception instance supplied by the with statement; defaults to None. Ignored.
+_traceback : traceback or None, optional
+    Exception traceback supplied by the with statement; defaults to None. Ignored.
+
+Returns
+-------
+bool
+    Always False. After this context's last matching scope exits, its constructed
+    data are cleared and it becomes uninitialized. When no context remains on
+    the thread, AD recording stops and its tape is rewound.
+
+Raises
+------
+RuntimeError
+    If active pricing contexts are exited out of reverse entry order.
+"""
         ...
 
     def evaluate_script(self, script: str, n_paths: int=..., seed: int=...) -> Any:
-        """Evaluates dated payoff code with native LGM models and bootstrapped context curves."""
+        """Evaluate dated payoff code using native LGM market models.
+
+Parameters
+----------
+script : ScriptedProduct or mapping
+    Dated payoff product or its native serialized mapping, including currency,
+    events, and result variable. The binding extracts a ScriptedProduct, not a
+    bare source-code string, despite the retained stub annotation. An explicit
+    discount_index is required outside the context base currency. Product model
+    assignments override context simulation and pricer model assignments.
+n_paths : int, optional
+    Positive Monte Carlo path count. Defaults to 1000.
+seed : int, optional
+    Unsigned 64-bit random seed. Defaults to 42.
+
+Returns
+-------
+dict[str, float]
+    Named numeric results returned by the native script engine.
+
+Raises
+------
+ValueError
+    If n_paths is zero.
+QuantSupportError
+    If the context is uninitialized, product decoding fails, discount/model
+    dependencies are unavailable, mean reversion is invalid, or execution fails.
+"""
         ...
 
     def evaluate(self, trade: Trade, requests: Sequence[Request | str] | None=...) -> EvaluationResults:
-        """Evaluates a trade.
+        """Evaluate a position against the active base or scenario market.
 
-``requests`` contains :class:`Request` values or their string names.
-Defaults to ``[Request.Value]``."""
+Parameters
+----------
+trade : Trade
+    Position wrapping a supported native instrument, including direction and
+    position-size overrides. A bare instrument is not accepted by native
+    dispatch. A registered Python pricer can instead handle its registered
+    Python trade types and takes precedence over native pricing.
+requests : sequence of Request or str, optional
+    Requested outputs: Value, YieldToMaturity, ModifiedDuration, Sensitivities,
+    ZSpread, OAS, Cashflows, or FairRate, as enums or case-insensitive names.
+    None, the default, requests only Value. An explicit empty sequence is not
+    replaced by Value. Supported requests depend on the instrument and pricer.
+
+Returns
+-------
+EvaluationResults
+    As-of-date results with optional scalar, sensitivity, and cashflow fields.
+    Native results are copied out of AD state. Sensitivities are raw derivatives
+    per unit pillar change, not pre-scaled basis-point changes. Python pricers
+    receive ``evaluate(trade, requests, context)`` with typed Request values and
+    must return EvaluationResults.
+
+Raises
+------
+TypeError
+    If native dispatch receives a bare instrument rather than a Trade.
+ValueError
+    If a native bond position requires a pricing anchor but none was supplied.
+QuantSupportError
+    If the context is uninitialized, a request is invalid or unsupported,
+    market data or required model configuration are missing, no native pricer
+    supports the instrument, valuation fails, or a Python pricer returns the
+    wrong result type. Exceptions raised by a Python pricer propagate unchanged.
+"""
         ...
 
     def run_xva(self, config: Any, netting_sets: Any) -> XvaResult:
-        """Runs the XVA engine.
+        """Run native exposure simulation and XVA on the active market view.
 
-``config`` is a :class:`quantsupport.risk.XvaConfig` defining models,
-paths, seed, and frequency. ``netting_sets`` contains
-:class:`quantsupport.risk.NettingSet` objects, each carrying its client's
-:class:`quantsupport.risk.CsaTerms` for collateral, credit, and funding."""
+Parameters
+----------
+config : XvaConfig
+    Typed engine configuration specifying rate models, paths, random seed,
+    and simulation-grid frequency. Credit, funding, and collateral
+    assumptions belong to each netting set's CsaTerms, not this configuration.
+netting_sets : sequence of NettingSet
+    Typed client portfolios with distinct names and their own CSA terms.
+    Only instruments supported by NettingSet's native claim conversion are
+    accepted; Python pricer registrations are not used for this conversion.
+
+Returns
+-------
+XvaResult
+    Copied exposure profiles and pandas-backed XVA and sensitivity tables.
+    Simulation uses the active scenario when one is entered on this thread.
+    Profiles report pre-margin exposures; enabled variation margin affects the
+    XVA aggregation, not those profiles. Adjustments are discounted to present
+    value using the system/base curve.
+
+Raises
+------
+QuantSupportError
+    If the context is uninitialized, netting-set names are duplicated, claim
+    conversion fails, model or market dependencies are missing, or engine
+    construction or execution fails.
+"""
         ...
 
     @property
     def curve_configurations(self) -> list[CurveConfiguration]:
-        """The original curve configurations (bootstrap inputs)."""
+        """Copied curve inputs, including bootstrap, explicit-rate, and composite definitions.
+
+Assign a new sequence to replace the inputs and invalidate constructed market
+data. Mutating the returned list does not update this context. Alias: curves.
+"""
         ...
 
     @curve_configurations.setter
     def curve_configurations(self, value: Sequence[CurveConfiguration]) -> None:
-        """The original curve configurations (bootstrap inputs)."""
+        """Replace curve inputs and invalidate constructed market data.
+
+        Parameters
+        ----------
+        value : Sequence[CurveConfiguration]
+            New bootstrap, explicit-rate, or composite curve definitions.
+        """
         ...
 
     @property
     def simulation_configurations(self) -> list[SimulationConfiguration]:
-        """The original simulation configurations."""
+        """Copied simulation inputs. Assign a new sequence to replace them.
+
+Reassignment invalidates constructed market data; editing the copy does not.
+"""
         ...
 
     @simulation_configurations.setter
     def simulation_configurations(self, value: Sequence[SimulationConfiguration]) -> None:
-        """The original simulation configurations."""
+        """Replace simulation inputs and invalidate constructed market data.
+
+        Parameters
+        ----------
+        value : Sequence[SimulationConfiguration]
+            New simulation definitions to construct on the next initialization.
+        """
         ...
 
     @property
@@ -323,52 +876,100 @@ paths, seed, and frequency. ``netting_sets`` contains
 
     @property
     def quotes(self) -> QuoteStore:
-        """Snapshot of quote inputs in the active base or scenario market view."""
+        """Copied quotes from the active base or scenario market view.
+
+Before initialization, returns base inputs. Assign a QuoteStore to replace
+the base quotes and evaluation date and invalidate constructed market data;
+editing a returned snapshot does not update the context or its scenarios.
+"""
         ...
 
     @quotes.setter
     def quotes(self, value: QuoteStore) -> None:
-        """Snapshot of quote inputs in the active base or scenario market view."""
+        """Replace base quotes and invalidate constructed market data.
+
+        Parameters
+        ----------
+        value : QuoteStore
+            New base quote store, including the evaluation reference date.
+        """
         ...
 
     @property
     def csa_policy(self) -> SingleCurveCSADiscountPolicy:
-        """Default collateral policy used for curve construction and derivative valuation."""
+        """Collateral policy for market construction and derivative discounting.
+
+Assign a SingleCurveCSADiscountPolicy to replace the base currency/index and
+invalidate constructed market data. The initial default is USD/SOFR.
+"""
         ...
 
     @csa_policy.setter
     def csa_policy(self, value: SingleCurveCSADiscountPolicy) -> None:
-        """Default collateral policy used for curve construction and derivative valuation."""
+        """Replace collateral policy and invalidate constructed market data.
+
+        Parameters
+        ----------
+        value : SingleCurveCSADiscountPolicy
+            New base collateral currency and remuneration index policy.
+        """
         ...
 
     @property
     def volatility_surface_configurations(self) -> list[VolatilitySurfaceConfiguration]:
-        """The original volatility surface configurations."""
+        """Copied volatility-surface inputs. Assign a new sequence to replace them.
+
+Reassignment invalidates constructed market data; editing the copy does not.
+"""
         ...
 
     @volatility_surface_configurations.setter
     def volatility_surface_configurations(self, value: Sequence[VolatilitySurfaceConfiguration]) -> None:
-        """The original volatility surface configurations."""
+        """Replace surface inputs and invalidate constructed market data.
+
+        Parameters
+        ----------
+        value : Sequence[VolatilitySurfaceConfiguration]
+            New volatility surface definitions for subsequent initialization.
+        """
         ...
 
     @property
     def volatility_cube_configurations(self) -> list[VolatilityCubeConfiguration]:
-        """The original volatility cube configurations."""
+        """Copied volatility-cube inputs. Assign a new sequence to replace them.
+
+Reassignment invalidates constructed market data; editing the copy does not.
+"""
         ...
 
     @volatility_cube_configurations.setter
     def volatility_cube_configurations(self, value: Sequence[VolatilityCubeConfiguration]) -> None:
-        """The original volatility cube configurations."""
+        """Replace cube inputs and invalidate constructed market data.
+
+        Parameters
+        ----------
+        value : Sequence[VolatilityCubeConfiguration]
+            New volatility cube definitions for subsequent initialization.
+        """
         ...
 
     @property
     def credit_curve_configurations(self) -> list[CreditCurveConfiguration]:
-        """The original credit curve configurations (bootstrap inputs)."""
+        """Copied survival-curve bootstrap inputs. Assign a new sequence to replace them.
+
+Reassignment invalidates constructed market data; editing the copy does not.
+"""
         ...
 
     @credit_curve_configurations.setter
     def credit_curve_configurations(self, value: Sequence[CreditCurveConfiguration]) -> None:
-        """The original credit curve configurations (bootstrap inputs)."""
+        """Replace survival-curve inputs and invalidate constructed market data.
+
+        Parameters
+        ----------
+        value : Sequence[CreditCurveConfiguration]
+            New credit-curve bootstrap definitions for subsequent initialization.
+        """
         ...
 
     @property
@@ -383,22 +984,42 @@ paths, seed, and frequency. ``netting_sets`` contains
 
     @property
     def quote_level(self) -> Level:
-        """Quote level used for construction and calibration; defaults to `Level.Mid`."""
+        """Construction/calibration quote level, initially Level.Mid.
+
+Assign Level.Mid, Level.Bid, Level.Ask, or a case-insensitive variant name to
+invalidate constructed market data and use that level on subsequent requests.
+"""
         ...
 
     @quote_level.setter
     def quote_level(self, value: Level | str) -> None:
-        """Quote level used for construction and calibration; defaults to `Level.Mid`."""
+        """Replace construction quote level and invalidate constructed market data.
+
+        Parameters
+        ----------
+        value : Level or str
+            Mid, Bid, or Ask enum or case-insensitive variant name.
+        """
         ...
 
     @property
     def pricer_configurations(self) -> list[PricerConfiguration]:
-        """Instrument-level pricer selections and typed model assignments."""
+        """Copied instrument-level pricer selections and typed model assignments.
+
+Assign a new sequence to replace selections and invalidate constructed market
+data. Editing the returned list does not update the context.
+"""
         ...
 
     @pricer_configurations.setter
     def pricer_configurations(self, value: Sequence[PricerConfiguration]) -> None:
-        """Instrument-level pricer selections and typed model assignments."""
+        """Replace pricing selections and invalidate constructed market data.
+
+        Parameters
+        ----------
+        value : Sequence[PricerConfiguration]
+            New instrument-level pricer and typed model assignments.
+        """
         ...
 
     @property
@@ -408,44 +1029,122 @@ paths, seed, and frequency. ``netting_sets`` contains
 
     @property
     def fixings(self) -> FixingStore:
-        """Historical fixings available to built-in and Python pricers."""
+        """Copied historical fixing store for native and Python pricers.
+
+Assign a FixingStore to replace observations and invalidate constructed market
+data. Editing the returned store does not update this context.
+"""
         ...
 
     @fixings.setter
     def fixings(self, value: FixingStore) -> None:
-        """Historical fixings available to built-in and Python pricers."""
+        """Replace historical fixings and invalidate constructed market data.
+
+        Parameters
+        ----------
+        value : FixingStore
+            New historical observations supplied to native and Python pricers.
+        """
         ...
 
     @property
     def fx(self) -> FxStore:
-        """FX spot store available to built-in and Python pricers."""
+        """Copied FX spot store for native and Python pricers.
+
+Assign an FxStore to replace spot rates and invalidate constructed market data.
+Editing the returned store does not update this context.
+"""
         ...
 
     @fx.setter
     def fx(self, value: FxStore) -> None:
-        """FX spot store available to built-in and Python pricers."""
+        """Replace FX spots and invalidate constructed market data.
+
+        Parameters
+        ----------
+        value : FxStore
+            New currency-pair spot rates supplied to native and Python pricers.
+        """
         ...
 
     @property
     def fixed_income_policy(self) -> FixedIncomeDiscountPolicy | None:
-        """Fixed-income discount policy, or None for the context base-curve policy."""
+        """Fixed-income discount override, or None for the context base-curve policy.
+
+Assign a FixedIncomeDiscountPolicy or None to change subsequent fixed-income
+valuations. Unlike market-input reassignment, this does not rebuild market data.
+"""
         ...
 
     @fixed_income_policy.setter
     def fixed_income_policy(self, value: FixedIncomeDiscountPolicy | None) -> None:
-        """Fixed-income discount policy, or None for the context base-curve policy."""
+        """Replace the discount override without rebuilding constructed market data.
+
+        Parameters
+        ----------
+        value : FixedIncomeDiscountPolicy or None
+            New fixed-income discount override; None restores the base-curve policy.
+        """
         ...
 
 @final
 class LoanPricer:
-    """Signed receipt PV, expected cashflows, raw pillar sensitivities, and fair rates."""
+    """Native loan valuation with refinancing and discount-policy overrides.
+
+Parameters
+----------
+refinancing_benchmark_index : MarketIndex or str, optional
+    Benchmark index for refinancing-incentive prepayment. Its metadata supplies
+    observation tenor and quote convention; it excludes replacement-loan lending
+    spreads and fees. None, the default, supplies no override, so refinancing-
+    incentive prepayment requires an explicitly configured benchmark.
+discount_policy : FixedIncomeDiscountPolicy, optional
+    Loan discount-curve override. None, the default, uses the context's fixed-
+    income policy, which by default maps its base currency to its base curve.
+rebuild_amortization_for_fair_rate : bool, optional
+    Defaults to False, preserving contractual principal in FairRate trials.
+    True rebuilds amortization for each candidate from its repayment structure
+    and initial all-in rate. Neither setting changes the original loan or the
+    principal used for Value and Sensitivities.
+"""
 
     def __new__(cls, *, refinancing_benchmark_index: _IndexLike | None=..., discount_policy: FixedIncomeDiscountPolicy | None=..., rebuild_amortization_for_fair_rate: bool=...) -> Self:
         """Configure refinancing/discount overrides and whether FairRate trials rebuild amortization."""
         ...
 
     def evaluate(self, trade: Trade, context: PricingContext, requests: Sequence[Request | str] | None=...) -> EvaluationResults:
-        """Evaluate Trade(Loan(...)) in an initialized context; default to Value, excluding the advance."""
+        """Value a loan's signed expected receipts, excluding its initial advance.
+
+Parameters
+----------
+trade : Trade
+    Position wrapping a Loan. A notional override rebuilds the contractual
+    principal schedule at that amount; side controls receipt direction.
+context : PricingContext
+    Initialized native context, entered on its owning thread or initialized
+    explicitly. Market inputs are resolved from its active scenario view.
+requests : sequence of Request or str, optional
+    Value, Cashflows, Sensitivities, or FairRate, as typed requests or names.
+    None, the default, selects Value. Sensitivities are derivatives per unit
+    market-pillar change. FairRate solves an annual fixed coupon or floating
+    spread at or before origination over [-0.05, 0.50]; mixed, stepped, and
+    bounded coupon schedules are unsupported.
+
+Returns
+-------
+EvaluationResults
+    Signed receipt PV, raw pillar derivatives, annual decimal fair rate, and/or
+    expected future receipts. Cashflow leg indices 0, 1, and 2 identify scheduled
+    payments, prepayment, and recovery respectively.
+
+Raises
+------
+TypeError
+    If trade does not wrap a Loan.
+QuantSupportError
+    If the context is uninitialized, observations or projection terms are
+    unavailable/invalid, a request is unsupported, or the fair-rate solve fails.
+"""
         ...
 
 @disjoint_base
@@ -453,7 +1152,53 @@ class Trade:
     """Generic position in an instrument.
 
 This mirrors the Rust `Trade` contract while remaining subclassable so a
-Python trade can carry any product-specific state it needs."""
+Python trade can carry any product-specific state it needs.
+
+Parameters
+----------
+instrument : Instrument
+    Contract held by the position. Python objects may also be carried for
+    registered Python pricers; native evaluation requires a supported product.
+trade_date : Date, datetime.date, or str
+    Execution date; strings use ISO ``YYYY-MM-DD`` format.
+side : Side or str, optional
+    Direction, defaulting to Side.LongReceive when None. Strings accept
+    LongReceive, Long, Receive, PayShort, Pay, or Short, case-insensitively.
+    Use side, not a negative amount, to reverse a position.
+notional : float, optional
+    Finite non-negative position amount in the instrument's notional currency.
+    None, the default, leaves the contractual amount unchanged.
+domestic_notional : float, optional
+    Finite non-negative domestic-leg amount in domestic currency units. None,
+    the default, leaves the instrument's domestic amount unchanged.
+foreign_notional : float, optional
+    Finite non-negative foreign-leg amount in foreign currency units. None,
+    the default, leaves the instrument's foreign amount unchanged.
+num_contracts : float, optional
+    Finite non-negative futures position size in contracts. Defaults to 1.0.
+pricing_anchor : BondPricingAnchor or mapping, optional
+    Bond price/spread anchor, as a typed anchor or its native externally tagged
+    mapping. None, the default, supplies no anchor; native bond pricing requires
+    one. Prices use the bond's units and spreads use decimal annual rates.
+settlement_date : Date, datetime.date, or str, optional
+    Bond settlement-date override; strings use ISO ``YYYY-MM-DD``. None, the
+    default, leaves settlement selection to the instrument's native pricer.
+spread_day_counter : DayCounter or str, optional
+    Bond spread day-count override, as an enum or case-insensitive variant
+    name. None, the default, leaves the native spread convention unchanged.
+
+Raises
+------
+ValueError
+    If a position amount or num_contracts is negative or non-finite.
+QuantSupportError
+    If a date, direction, day counter, or pricing anchor cannot be converted
+    or the supplied anchor fails native validation.
+
+Notes
+-----
+Positions retain a reference to the instrument and are thread-confined.
+"""
 
     def __new__(cls, instrument: Instrument, trade_date: _DateLike, side: Side | str | None=..., *, notional: float | None=..., domestic_notional: float | None=..., foreign_notional: float | None=..., num_contracts: float=..., pricing_anchor: Any | None=..., settlement_date: _DateLike | None=..., spread_day_counter: Any | None=...) -> Self:
         ...
@@ -462,7 +1207,25 @@ Python trade can carry any product-specific state it needs."""
         ...
 
     def with_pricing_anchor(self, anchor: Any) -> Any:
-        """Returns another position in the same instrument with a different bond anchor."""
+        """Copy the native position fields with a replacement bond anchor.
+
+Parameters
+----------
+anchor : BondPricingAnchor or mapping
+    New typed bond anchor or native tagged mapping, for example
+    ``{"ZSpread": 0.01}``. None is not a request to remove the anchor.
+
+Returns
+-------
+Trade
+    New base Trade sharing the original instrument and preserving dates,
+    direction, and size. Python-subclass attributes are not copied.
+
+Raises
+------
+QuantSupportError
+    If anchor decoding or native validation fails.
+"""
         ...
 
     @property
@@ -523,22 +1286,73 @@ Override `evaluate(trade, requests, context)` and return an
 `EvaluationResults`. The `context` is a market-data provider (normally an
 initialized `PricingContext`), so the implementation can resolve curves,
 volatility objects, fixings, FX, or quotes through the same boundary used
-by built-in pricers."""
+by built-in pricers.
+
+Notes
+-----
+The native base object is thread-confined and initially has no discount policy.
+"""
 
     def __new__(cls) -> Self:
         ...
 
     def evaluate(self, _trade: Any, _requests: Any, _context: Any) -> EvaluationResults:
-        """Evaluates a trade. Subclasses must override this method."""
+        """Evaluate a Python trade; subclasses must implement this operation.
+
+Parameters
+----------
+_trade : object
+    Registered Python trade instance supplied unchanged by the dispatcher.
+_requests : sequence of Request
+    Typed output requests supplied by the dispatcher, already converted from
+    names and with its default Value request applied when requests was None.
+_context : object
+    Market-data provider supplied by the caller, normally an initialized
+    PricingContext. Query only the provider operations the implementation needs.
+
+Returns
+-------
+EvaluationResults
+    Required result type for an override; the dispatcher validates this type.
+
+Raises
+------
+NotImplementedError
+    Always raised by the base implementation.
+"""
         ...
 
     def market_data_request(self, _trade: Any) -> Any:
         """Describes required market data, if the implementation uses an explicit
-request object. Python pricers may also query the context directly."""
+request object. Python pricers may also query the context directly.
+
+Parameters
+----------
+_trade : object
+    Position whose market dependencies a subclass may describe.
+
+Returns
+-------
+object or None
+    Base implementation returns None. The Python dispatcher calls evaluate()
+    directly and does not consume this optional dependency description.
+"""
         ...
 
     def set_discount_policy(self, policy: Any) -> Any:
-        """Installs a custom discount policy object for the Python pricer."""
+        """Store a discount-policy object for a Python pricer's own use.
+
+Parameters
+----------
+policy : object
+    Arbitrary Python policy retained by reference and exposed by discount_policy.
+    No policy interface is validated and native context policies are unaffected.
+
+Returns
+-------
+None
+    Replaces the stored policy; the base pricer initially has no policy.
+"""
         ...
 
     @property
@@ -553,14 +1367,22 @@ class MarketDataProvider:
 A provider may expose whichever query methods its pricers need (for
 example `curve`, `fixing`, or `fx_rate`). The only common contract is an
 `evaluation_date`. `PricingContext` is the full built-in provider, while
-ordinary Python objects can be used with the standalone `Evaluator`."""
+ordinary Python objects can be used with the standalone `Evaluator`.
+The native base object is thread-confined; it supplies no market data itself.
+"""
 
     def __new__(cls) -> Self:
         ...
 
     @property
     def evaluation_date(self) -> Date:
-        """Reference date supplied by a concrete provider."""
+        """Reference date supplied by a concrete provider.
+
+Raises
+------
+NotImplementedError
+    Always raised by the base property; a concrete provider must implement it.
+"""
         ...
 
 @final
@@ -568,7 +1390,10 @@ class Evaluator:
     """Runtime dispatcher for heterogeneous Python trade collections.
 
 Registrations are keyed by Python trade type, matching the role of the
-Rust `Evaluator`'s `TypeId -> ErasedPricer` map."""
+Rust `Evaluator`'s `TypeId -> ErasedPricer` map. Each evaluator starts with an
+empty registry and is thread-confined. Registrations retain their classes and
+pricer objects; len(evaluator) counts exact registered classes, not trades.
+"""
 
     def __repr__(self) -> str:
         ...
@@ -577,24 +1402,142 @@ Rust `Evaluator`'s `TypeId -> ErasedPricer` map."""
         ...
 
     def register(self, trade_type: Any, pricer: Any) -> Any:
-        """Associates a Python trade class with a pricer object."""
+        """Associate a Python trade class with a pricer object.
+
+Parameters
+----------
+trade_type : type
+    Exact Python position class to register. Matching follows the trade's MRO,
+    then virtual-subclass matches, with the newest virtual match preferred.
+pricer : object
+    Object with callable ``evaluate(trade, requests, context)`` returning
+    EvaluationResults. Replaces the registration for the exact same class;
+    inheritance from Pricer is not required.
+
+Returns
+-------
+None
+    Registration is stored on this evaluator.
+
+Raises
+------
+QuantSupportError
+    If pricer has no callable evaluate attribute.
+"""
         ...
 
     def unregister(self, trade_type: Any) -> Any:
-        """Removes the registration for an exact Python trade class."""
+        """Remove a registration without altering related classes.
+
+Parameters
+----------
+trade_type : type
+    Exact Python position class whose registration is to be removed.
+
+Returns
+-------
+bool
+    True if a registration was removed, otherwise False.
+"""
         ...
 
     def pricer_for(self, trade: Trade) -> Any:
-        """Returns the pricer selected for a trade, or `None`."""
+        """Look up the closest registered pricer for a position.
+
+Parameters
+----------
+trade : Trade
+    Position instance to match against registered classes, its MRO first and
+    then virtual-subclass registrations.
+
+Returns
+-------
+object or None
+    Selected pricer, or None when no class matches. This evaluator has no
+    native-pricer fallback.
+"""
         ...
 
     def evaluate(self, trade: Trade, context: Any, requests: Sequence[Request | str] | None=...) -> Any:
-        """Evaluates a registered trade against a market-data provider."""
+        """Evaluate a registered Python trade against a market-data provider.
+
+Parameters
+----------
+trade : Trade
+    Position instance handled by a registered Python pricer. Any registered
+    Python trade type can be dispatched; native instrument dispatch is not used.
+context : object
+    Provider passed unchanged to the pricer. A PricingContext must already be
+    initialized and used on its owning thread. Other Python providers need only
+    expose the operations consumed by the selected pricer.
+requests : sequence of Request or str, optional
+    Output requests as enums or names accepted by Request.parse(). None, the
+    default, selects Value. An empty sequence remains empty. The pricer receives
+    a list of typed Request values as its second argument, before context.
+
+Returns
+-------
+EvaluationResults
+    Result returned by the selected Python pricer, checked by the dispatcher.
+
+Raises
+------
+QuantSupportError
+    If no pricer matches, requests cannot be parsed, a supplied PricingContext
+    is uninitialized, or the pricer returns something other than EvaluationResults.
+    Exceptions raised by the Python pricer itself propagate unchanged.
+"""
         ...
 
 @disjoint_base
 class EvaluationResults:
-    """Results of evaluating a trade."""
+    """Detached valuation outputs, also constructible by Python pricers.
+
+Parameters
+----------
+evaluation_date : Date, datetime.date, or str
+    As-of date of the evaluation; strings use ISO ``YYYY-MM-DD`` format.
+identifier : str
+    Instrument identifier used to label this result.
+price : float, optional
+    Signed present value in the pricer's valuation currency. Defaults to None;
+    the constructor stores the supplied scalar without computing a value.
+yield_to_maturity : float, optional
+    Yield in decimal annual rate units under the pricer's convention. Defaults
+    to None. The ytm property aliases this field.
+modified_duration : float, optional
+    Modified duration under the pricer's yield/time convention. Defaults to None.
+z_spread : float, optional
+    Continuously compounded Z-spread in decimal annual rate units; 0.01 is
+    100 basis points. Defaults to None.
+oas : float, optional
+    Option-adjusted spread in decimal annual rate units. Defaults to None.
+fair_rate : float, optional
+    Par coupon or spread in decimal annual rate units, as defined by the pricer.
+    Defaults to None.
+sensitivities : mapping or sequence of (str, float), optional
+    Raw pillar labels and exposures, normally derivatives per unit input change.
+    Pair sequences preserve order and duplicates; mappings are sorted by label.
+    None, the default, means no sensitivity output. The DataFrame property sums
+    duplicate labels and sorts them; raw_sensitivities retains the stored pairs.
+cashflows : sequence of mappings, optional
+    Rows requiring string ``payment_date``, ``type`` (or ``cashflow_type``),
+    numeric ``amount``, and string ``currency``. Optional ``fixing``,
+    ``caplet_strike``, and ``floorlet_strike`` default to None; ``accrual_period``
+    and ``leg_index`` default to 0.0 and 0. Amounts are in the row's currency,
+    rates/strikes are decimal rates, and accrual periods are year fractions.
+    None, the default, means no cashflow output; an empty list is distinct.
+
+Raises
+------
+QuantSupportError
+    If the date, sensitivities, or cashflow rows cannot be converted.
+
+Notes
+-----
+Scalar fields are stored as supplied; no consistency checks or valuation are
+performed. Table properties construct new pandas DataFrames on access.
+"""
 
     def __new__(cls, evaluation_date: _DateLike, identifier: str, *, price: Any | None=..., yield_to_maturity: Any | None=..., modified_duration: Any | None=..., z_spread: Any | None=..., oas: Any | None=..., fair_rate: Any | None=..., sensitivities: Any | None=..., cashflows: Any | None=...) -> Self:
         ...
@@ -644,13 +1587,41 @@ class EvaluationResults:
 
     @property
     def sensitivities(self) -> DataFrame | None:
-        """Sensitivities as a DataFrame with columns pillar/value (duplicated
-pillars summed, sorted by pillar), if `"Sensitivities"` was requested."""
+        """Return aggregated pillar derivatives as a fresh pandas table.
+
+Returns
+-------
+pandas.DataFrame or None
+    Columns ``pillar`` (string label) and ``value`` (raw exposure per unit input
+    change), with duplicates summed and rows sorted by pillar. None means no
+    sensitivity output; supplied empty sensitivities produce an empty frame.
+
+Raises
+------
+QuantSupportError
+    If pandas is unavailable. Pandas construction errors propagate unchanged.
+"""
         ...
 
     @property
     def cashflows(self) -> DataFrame | None:
-        """Cashflow table as a DataFrame, if `"Cashflows"` was requested."""
+        """Return contractual or expected cashflow rows as a fresh pandas table.
+
+Returns
+-------
+pandas.DataFrame or None
+    Columns ``payment_date``, ``type``, ``amount``, ``fixing``, ``accrual_period``,
+    ``currency``, ``caplet_strike``, ``floorlet_strike``, and ``leg_index``.
+    Dates and currency codes are strings; amounts use the row currency, rates
+    use decimal units, and accrual_period is a year fraction. Optional observations
+    may be missing. Row order is preserved. None means no cashflow output;
+    supplied empty rows produce an empty frame with the same columns.
+
+Raises
+------
+QuantSupportError
+    If pandas is unavailable. Pandas construction errors propagate unchanged.
+"""
         ...
 
     @property
@@ -660,5 +1631,9 @@ pillars summed, sorted by pillar), if `"Sensitivities"` was requested."""
 
     @property
     def raw_sensitivities(self) -> Any:
-        """Raw sensitivities as an ordered list of `(pillar_label, exposure)` tuples."""
+        """Return copied raw (pillar_label, exposure) pairs, or None if absent.
+
+Stored ordering and duplicate labels are preserved. Exposures are not scaled
+to basis points; the aggregated sensitivities property sums duplicate labels.
+"""
         ...

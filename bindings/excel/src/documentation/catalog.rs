@@ -10,6 +10,10 @@ use syn::{punctuated::Punctuated, Expr, FnArg, Item, Lit, Meta, Pat, Token};
 #[path = "function_help.rs"]
 mod function_help;
 
+#[cfg(all(test, not(windows)))]
+#[path = "../functions/time.rs"]
+mod calendar_computation;
+
 fn string(expr: &Expr) -> Result<String, Box<dyn Error>> {
     if let Expr::Lit(value) = expr {
         if let Lit::Str(value) = &value.lit {
@@ -62,6 +66,13 @@ fn function(item: &syn::ItemFn, source: &str) -> Result<Option<Value>, Box<dyn E
             return Err(format!("missing {required} in {}", item.sig.ident).into());
         }
     }
+    record["return_type"] = json!(item.sig.output.to_token_stream().to_string());
+    record["declaration"] = json!(item.sig.to_token_stream().to_string());
+    let name = record["name"].as_str().unwrap();
+    let (returns, errors) = function_help::result_help(name)
+        .ok_or_else(|| format!("missing worksheet result help for {name}"))?;
+    record["returns"] = json!(returns);
+    record["errors"] = json!(errors);
     let mut arguments = Vec::new();
     for arg in &item.sig.inputs {
         let FnArg::Typed(arg) = arg else { return Err("worksheet function has a receiver".into()); };
@@ -146,12 +157,77 @@ mod tests {
     #[test]
     fn documents_macro_generated_functions_and_aliases() {
         let records = super::exports(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/functions")).unwrap();
+        assert_eq!(records.len(), 85);
         let scenario = records.iter().find(|record| record["name"] == "QS.SCENARIOS.FROM.JSON").unwrap();
         assert_eq!(scenario["arguments"][1]["name"], "json");
         assert!(records.iter().any(|record| record["aliases"].as_array().unwrap().iter().any(|alias| alias == "QS.STORE.RESET")));
         for record in records {
             assert!(!record["help"].as_str().unwrap().is_empty());
-            assert!(record["arguments"].as_array().unwrap().iter().all(|arg| !arg["help"].as_str().unwrap().is_empty()));
+            assert!(!record["return_type"].as_str().unwrap().is_empty());
+            assert!(!record["declaration"].as_str().unwrap().is_empty());
+            assert!(!record["returns"].as_str().unwrap().is_empty());
+            assert!(!record["errors"].as_str().unwrap().is_empty());
+            for argument in record["arguments"].as_array().unwrap() {
+                let help = argument["help"].as_str().unwrap();
+                assert!(!help.is_empty(), "{}: {}", record["name"], argument["name"]);
+                assert_ne!(help, "See the function description and QS.HELP for this argument",
+                    "{}: {}", record["name"], argument["name"]);
+                if argument["type"].as_str().unwrap().contains("Option") {
+                    assert!(help.contains("blank"), "{}: {}", record["name"], argument["name"]);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn documents_six_native_calendar_operations() {
+        let records = super::exports(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/functions")).unwrap();
+        for (name, arguments) in [
+            ("QS.CALENDAR.IS.HOLIDAY", &["date", "calendar"][..]),
+            ("QS.CALENDAR.END.OF.MONTH", &["date", "calendar"][..]),
+            ("QS.CALENDAR.IS.END.OF.MONTH", &["date", "calendar"][..]),
+            ("QS.CALENDAR.BUSINESS.DAYS.BETWEEN", &["from", "to", "calendar", "include_first", "include_last"][..]),
+            ("QS.CALENDAR.HOLIDAYS", &["from", "to", "calendar", "include_weekends"][..]),
+            ("QS.CALENDAR.BUSINESS.DAYS", &["from", "to", "calendar"][..]),
+        ] {
+            let record = records.iter().find(|record| record["name"] == name).unwrap();
+            assert_eq!(record["category"], "QuantSupport - Time");
+            assert_eq!(record["source"], "bindings/excel/src/functions/time.rs");
+            assert_eq!(record["threadsafe"], true);
+            assert_eq!(record["arguments"].as_array().unwrap().iter().map(|argument| argument["name"].as_str().unwrap()).collect::<Vec<_>>(), arguments);
+            assert!(record["errors"].as_str().unwrap().contains("1902-01-01..2198-12-31"));
+        }
+    }
+
+    #[test]
+    fn result_metadata_preserves_rust_signatures_and_worksheet_shapes() {
+        let records = super::exports(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/functions")).unwrap();
+        for record in &records {
+            let declaration = record["declaration"].as_str().unwrap();
+            let function: syn::ItemFn = syn::parse_str(&format!("{declaration} {{}}")).unwrap();
+            assert_eq!(record["return_type"], serde_json::json!(quote::ToTokens::to_token_stream(&function.sig.output).to_string()));
+            assert_eq!(function.sig.inputs.len(), record["arguments"].as_array().unwrap().len());
+        }
+        let forward = records.iter().find(|record| record["name"] == "QS.CURVE.FORWARD").unwrap();
+        assert_eq!(forward["return_type"], quote::quote!(-> Result<f64, XllError>).to_string());
+        assert!(forward["declaration"].as_str().unwrap().starts_with("fn qs_curve_forward"));
+        let path = records.iter().find(|record| record["name"] == "QS.SIMULATION.PATH").unwrap();
+        assert_eq!(path["return_type"], quote::quote!(-> Result<Vec<f64>, XllError>).to_string());
+        for (name, headers) in [
+            ("QS.CURVE.TABLE", &["Pillar", "Date", "Discount factor", "Zero rate", "Forward from prior node"][..]),
+            ("QS.CASHFLOWS", &["Payment date", "Type", "Amount", "Fixing", "Accrual", "Currency", "Floor", "Cap", "Leg"][..]),
+            ("QS.SENSITIVITIES", &["Risk factor", "Sensitivity"][..]),
+            ("QS.BOND.SENSITIVITIES", &["Risk factor", "Sensitivity"][..]),
+            ("QS.FUNCTIONS.DETAILS", &["Function", "Arguments", "Category", "Aliases", "Description"][..]),
+            ("QS.SIMULATION.CALIBRATION", &["identifier", "expiry", "t", "big_t", "market_vol", "market_price", "model_price", "calibrated_sigma", "forward_rate", "effective_strike", "price_error"][..]),
+        ] {
+            let record = records.iter().find(|record| record["name"] == name).unwrap();
+            let source = std::fs::read_to_string(std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join(record["source"].as_str().unwrap().strip_prefix("bindings/excel/").unwrap())).unwrap();
+            for header in headers {
+                assert!(record["returns"].as_str().unwrap().contains(header), "{name}: {header}");
+                assert!(source.contains(&format!("\"{header}\"")), "{name}: {header}");
+            }
         }
     }
 

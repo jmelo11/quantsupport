@@ -1,6 +1,9 @@
 //! Date, period and calendar functionality, wrapping the library's
 //! `time` module.
 
+pub(crate) mod imm;
+pub(crate) mod schedule;
+
 use pyo3::prelude::*;
 use pyo3::types::PyDate;
 use pyo3::IntoPyObjectExt;
@@ -17,7 +20,9 @@ use quantsupport::time::calendars::{
 use crate::common::conversion::{
     extract_business_day_convention, extract_date, extract_period, extract_time_unit, qs_err,
 };
-use crate::common::enums::{BrazilMarket, Frequency, JointCalendarRule, TimeUnit, UnitedStatesMarket};
+use crate::common::enums::{
+    BrazilMarket, Frequency, JointCalendarRule, TimeUnit, UnitedStatesMarket,
+};
 use crate::QuantSupportError;
 
 /// A calendar date.
@@ -194,7 +199,8 @@ impl Period {
     /// Parses a period string such as `"5Y"`, `"6M"` or `"1Y6M"`.
     #[staticmethod]
     fn parse(s: &str) -> PyResult<Self> {
-        crate::common::conversion::parse_str_enum::<QsPeriod>(s, "period").map(|inner| Self { inner })
+        crate::common::conversion::parse_str_enum::<QsPeriod>(s, "period")
+            .map(|inner| Self { inner })
     }
 
     /// Builds the period equivalent to a [`Frequency`].
@@ -361,6 +367,54 @@ impl Calendar {
         Ok(self.inner.is_holiday(&extract_date(date)?))
     }
 
+    /// Returns a separate calendar with `date` marked as a holiday.
+    fn with_added_holiday(&self, date: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let mut calendar = self.clone();
+        calendar.inner.add_holiday(calendar_date(date)?);
+        Ok(calendar)
+    }
+
+    /// Returns a separate calendar with a native removed-holiday override.
+    /// Added holidays take precedence if both override sets contain the date.
+    fn with_removed_holiday(&self, date: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let mut calendar = self.clone();
+        calendar.inner.remove_holiday(calendar_date(date)?);
+        Ok(calendar)
+    }
+
+    /// A sorted copy of explicitly added holidays.
+    #[getter]
+    fn added_holidays(&self) -> Vec<Date> {
+        let mut dates: Vec<_> = self.inner.added_holidays().into_iter().collect();
+        dates.sort_unstable();
+        dates.into_iter().map(|inner| Date { inner }).collect()
+    }
+
+    /// A sorted copy of explicitly removed holidays.
+    #[getter]
+    fn removed_holidays(&self) -> Vec<Date> {
+        let mut dates: Vec<_> = self.inner.removed_holidays().into_iter().collect();
+        dates.sort_unstable();
+        dates.into_iter().map(|inner| Date { inner }).collect()
+    }
+
+    /// Last business day in the month containing `date`, using Preceding.
+    fn end_of_month(&self, date: &Bound<'_, PyAny>) -> PyResult<Date> {
+        Ok(Date {
+            inner: self.inner.end_of_month(calendar_date(date)?),
+        })
+    }
+
+    /// Whether following adjustment of the next day crosses a month boundary.
+    fn is_end_of_month(&self, date: &Bound<'_, PyAny>) -> PyResult<bool> {
+        Ok(self.inner.is_end_of_month(&calendar_date(date)?))
+    }
+
+    /// Whether the weekday of `date` is a weekend under this calendar's rule.
+    fn is_weekend(&self, date: &Bound<'_, PyAny>) -> PyResult<bool> {
+        Ok(self.inner.is_weekend(&extract_date(date)?.weekday()))
+    }
+
     /// Adjusts a date to a business day under the given convention
     /// (default `Following`).
     #[pyo3(signature = (date, convention = None))]
@@ -448,5 +502,100 @@ impl Calendar {
 
     fn __repr__(&self) -> String {
         format!("Calendar('{}')", self.inner.name())
+    }
+}
+
+fn calendar_date(value: &Bound<'_, PyAny>) -> PyResult<QsDate> {
+    let date = extract_date(value)?;
+    if !(1902..=2198).contains(&date.year()) {
+        return Err(QuantSupportError::new_err(
+            "calendar dates must be in 1902..2198",
+        ));
+    }
+    Ok(date)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pyo3::types::PyDict;
+    use quantsupport::time::calendars::{
+        brazil::Market as BrMarket, unitedstates::Market as UsMarket,
+    };
+
+    #[test]
+    fn native_calendar_variant_parity() -> PyResult<()> {
+        Python::initialize();
+        Python::attach(|py| {
+            let class = py.get_type::<Calendar>();
+            let calendars = [
+                QsCalendar::NullCalendar(NullCalendar::new()),
+                QsCalendar::WeekendsOnly(WeekendsOnly::new()),
+                QsCalendar::TARGET(TARGET::new()),
+                QsCalendar::UnitedKingdom(UnitedKingdom::new()),
+                QsCalendar::Japan(Japan::new()),
+                QsCalendar::Chile(Chile::default()),
+                QsCalendar::UnitedStates(UnitedStates::default()),
+                QsCalendar::Brazil(Brazil::default()),
+                QsCalendar::JointCalendar(JointCalendar::new(
+                    vec![Calendar::TARGET().inner, Calendar::Japan().inner],
+                    quantsupport::time::calendars::jointcalendar::JointCalendarRule::JoinHolidays,
+                ).map_err(qs_err)?),
+            ];
+            for native in calendars {
+                let wrapped = match &native {
+                    QsCalendar::NullCalendar(_) => class.getattr("NullCalendar")?,
+                    QsCalendar::WeekendsOnly(_) => class.getattr("WeekendsOnly")?,
+                    QsCalendar::TARGET(_) => class.getattr("TARGET")?,
+                    QsCalendar::UnitedKingdom(_) => class.getattr("UnitedKingdom")?,
+                    QsCalendar::Japan(_) => class.getattr("Japan")?,
+                    QsCalendar::Chile(_) => class.getattr("Chile")?,
+                    QsCalendar::UnitedStates(_) => class.call_method0("UnitedStates")?,
+                    QsCalendar::Brazil(_) => class.call_method0("Brazil")?,
+                    QsCalendar::JointCalendar(_) => {
+                        let kwargs = PyDict::new(py);
+                        kwargs
+                            .set_item("calendars", vec![Calendar::TARGET(), Calendar::Japan()])?;
+                        class.call_method("JointCalendar", (), Some(&kwargs))?
+                    }
+                }
+                .extract::<Calendar>()?;
+                assert_eq!(wrapped.inner, native);
+            }
+            for market in [
+                UsMarket::Settlement,
+                UsMarket::LiborImpact,
+                UsMarket::Nyse,
+                UsMarket::GovernmentBond,
+                UsMarket::Nerc,
+                UsMarket::FederalReserve,
+                UsMarket::Sofr,
+            ] {
+                let selector = py
+                    .get_type::<UnitedStatesMarket>()
+                    .getattr(format!("{market:?}"))?;
+                let kwargs = PyDict::new(py);
+                kwargs.set_item("market", selector)?;
+                let wrapped = class
+                    .call_method("UnitedStates", (), Some(&kwargs))?
+                    .extract::<Calendar>()?;
+                assert_eq!(
+                    wrapped.inner,
+                    QsCalendar::UnitedStates(UnitedStates::new(market))
+                );
+            }
+            for market in [BrMarket::Settlement, BrMarket::Exchange] {
+                let selector = py
+                    .get_type::<BrazilMarket>()
+                    .getattr(format!("{market:?}"))?;
+                let kwargs = PyDict::new(py);
+                kwargs.set_item("market", selector)?;
+                let wrapped = class
+                    .call_method("Brazil", (), Some(&kwargs))?
+                    .extract::<Calendar>()?;
+                assert_eq!(wrapped.inner, QsCalendar::Brazil(Brazil::new(market)));
+            }
+            Ok(())
+        })
     }
 }

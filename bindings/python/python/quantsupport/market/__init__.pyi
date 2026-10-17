@@ -22,7 +22,18 @@ class Level:
 
     @staticmethod
     def parse(s: str) -> Level:
-        """Parses a quote level from its name (case-insensitive)."""
+        """Parse the quote side used for construction or calibration.
+
+        Parameters
+        ----------
+        s : str
+            Case-insensitive name: ``Mid``, ``Bid``, or ``Ask``.
+
+        Returns
+        -------
+        Level
+            Matching quote-level selector.
+        """
         ...
     Mid: ClassVar[Level]
     Bid: ClassVar[Level]
@@ -40,7 +51,19 @@ class Currency:
 
     @staticmethod
     def parse(s: str) -> Currency:
-        """Parses a currency from its alphabetic code (e.g. `"USD"`)."""
+        """Parse a supported ISO currency code.
+
+        Parameters
+        ----------
+        s : str
+            Case-insensitive alphabetic code of a supported ``Currency``
+            member, such as ``"USD"`` or ``"EUR"``; not a name or symbol.
+
+        Returns
+        -------
+        Currency
+            Matching currency.
+        """
         ...
 
     @property
@@ -111,34 +134,107 @@ Plain rate indices are available as class constants
 
     @staticmethod
     def equity(name: str) -> MarketIndex:
-        """An equity underlying identified by name."""
+        """Identify an equity underlying.
+
+        Parameters
+        ----------
+        name : str
+            Equity identifier retained verbatim for market-data lookup.
+
+        Returns
+        -------
+        MarketIndex
+            Equity index carrying the supplied identifier.
+        """
         ...
 
     @staticmethod
     def fx_pair(base: _CurrencyLike, quote: _CurrencyLike) -> MarketIndex:
-        """A directed FX spot pair (1 base = x quote)."""
+        """Identify a directed FX pair.
+
+        Parameters
+        ----------
+        base : Currency or str
+            Base currency as an enum or case-insensitive supported ISO code.
+        quote : Currency or str
+            Quote currency as an enum or case-insensitive supported ISO code;
+            must differ from ``base``.
+
+        Returns
+        -------
+        MarketIndex
+            Pair whose spot is quote-currency units per one base-currency unit.
+        """
         ...
 
     @staticmethod
     def collateral(currency: _CurrencyLike, collateral_currency: _CurrencyLike) -> MarketIndex:
-        """Collateral discount curve for cashflows in `currency` posted under a
-CSA denominated in `collateral_currency`."""
+        """Identify a collateral-dependent discount curve.
+
+        Parameters
+        ----------
+        currency : Currency or str
+            Cashflow currency, as an enum or case-insensitive supported ISO code.
+        collateral_currency : Currency or str
+            CSA collateral currency, as an enum or case-insensitive supported
+            ISO code.
+
+        Returns
+        -------
+        MarketIndex
+            Curve identity for cashflows in ``currency`` collateralized in
+            ``collateral_currency``.
+        """
         ...
 
     @staticmethod
     def credit(name: str) -> MarketIndex:
-        """Credit curve of a reference entity, identified by name."""
+        """Identify a reference entity's credit curve.
+
+        Parameters
+        ----------
+        name : str
+            Reference-entity identifier, retained verbatim.
+
+        Returns
+        -------
+        MarketIndex
+            Credit index for the named entity.
+        """
         ...
 
     @staticmethod
     def other(name: str) -> MarketIndex:
-        """A custom index identified by name."""
+        """Identify a custom market-data index.
+
+        Parameters
+        ----------
+        name : str
+            Custom lookup identifier, retained verbatim.
+
+        Returns
+        -------
+        MarketIndex
+            Custom index carrying the supplied name.
+        """
         ...
 
     @staticmethod
     def parse(s: str) -> MarketIndex:
-        """Parses a plain rate index from its name (e.g. `"SOFR"`),
-case-insensitively."""
+        """Parse a fieldless market-index member.
+
+        Parameters
+        ----------
+        s : str
+            Case-insensitive class-constant name, such as ``"SOFR"`` or
+            ``"EURIBOR3m"``. Parameterized equity, credit, FX, collateral,
+            and custom variants must be built with their dedicated factories.
+
+        Returns
+        -------
+        MarketIndex
+            Matching fieldless index.
+        """
         ...
     SOFR: ClassVar[MarketIndex]
     SOFRCompounded: ClassVar[MarketIndex]
@@ -173,7 +269,18 @@ class Interpolator:
 
     @staticmethod
     def parse(s: str) -> Interpolator:
-        """Parses an interpolation rule by its name."""
+        """Parse an interpolation rule.
+
+        Parameters
+        ----------
+        s : str
+            Case-insensitive name: ``Linear``, ``LogLinear``, or ``CubicSpline``.
+
+        Returns
+        -------
+        Interpolator
+            Matching interpolation method.
+        """
         ...
 
     def __str__(self) -> str:
@@ -194,7 +301,18 @@ class VolatilityType:
 
     @staticmethod
     def parse(s: str) -> VolatilityType:
-        """Parses a volatility type from its name."""
+        """Parse a volatility quotation convention.
+
+        Parameters
+        ----------
+        s : str
+            Case-insensitive ``Black`` (lognormal) or ``Normal`` (absolute).
+
+        Returns
+        -------
+        VolatilityType
+            Convention determining how quoted volatilities are interpreted.
+        """
         ...
     Black: ClassVar[VolatilityType]
     Normal: ClassVar[VolatilityType]
@@ -211,7 +329,18 @@ class SmileType:
 
     @staticmethod
     def parse(s: str) -> SmileType:
-        """Parses a smile type from its name."""
+        """Parse the coordinate used along a volatility smile.
+
+        Parameters
+        ----------
+        s : str
+            Case-insensitive name: ``Strike``, ``Delta``, or ``LogMoneyness``.
+
+        Returns
+        -------
+        SmileType
+            Matching smile-axis convention.
+        """
         ...
     Strike: ClassVar[SmileType]
     Delta: ClassVar[SmileType]
@@ -219,9 +348,11 @@ class SmileType:
 
 @final
 class QuoteStore:
-    """Market quotes with a reference date.
+    """Observable market quotes indexed by identifier and tied to a reference date.
 
-Created from `{"reference_date": "YYYY-MM-DD", "quotes": [{"identifier": ..., "mid": ...}]}`."""
+    Quote values retain their instrument-specific units; the store does not
+    convert percentages, basis points, prices, or volatilities.
+    """
 
     def __repr__(self) -> str:
         ...
@@ -231,29 +362,99 @@ Created from `{"reference_date": "YYYY-MM-DD", "quotes": [{"identifier": ..., "m
 
     @staticmethod
     def from_dict(obj: Mapping[str, Any]) -> QuoteStore:
-        """Builds a quote store from a dict."""
+        """Construct a quote store from native quote records.
+
+        Parameters
+        ----------
+        obj : mapping
+            Native quote-store records with ``reference_date`` and ``quotes``.
+            Each quote record identifies the quote with a native parseable
+            ``identifier`` and supplies its available ``mid``, ``bid``, and
+            ``ask`` levels; omitted levels are absent, not inferred. Identifiers
+            must follow the library's instrument-quote syntax, not arbitrary labels.
+            ISO date strings use ``YYYY-MM-DD``; ``Date`` values are normalized
+            by the Python input converter.
+
+        Returns
+        -------
+        QuoteStore
+            Store containing the supplied quote records.
+        """
         ...
 
     @staticmethod
     def from_json(path: str) -> QuoteStore:
-        """Loads a quote store from a JSON file."""
+        """Load native quote-store records from disk.
+
+        Parameters
+        ----------
+        path : str
+            JSON file path, not JSON text. The file contains ``reference_date``
+            and a ``quotes`` array in the native quote-store schema.
+
+        Returns
+        -------
+        QuoteStore
+            Loaded market quotes and their reference date.
+        """
         ...
 
     def identifiers(self) -> list[str]:
-        """Sorted quote identifiers."""
+        """List the available quote identifiers.
+
+        Returns
+        -------
+        list of str
+            Identifiers sorted lexicographically.
+        """
         ...
 
     def value(self, identifier: str, level: str=...) -> float:
-        """Returns one quote level by identifier (`"mid"`, `"bid"`, or `"ask"`)."""
+        """Retrieve one observed quote level.
+
+        Parameters
+        ----------
+        identifier : str
+            Exact identifier of the stored market quote.
+        level : str, optional
+            Case-insensitive ``"mid"``, ``"bid"``, or ``"ask"``; defaults to
+            ``"mid"``. This method accepts a string, not a ``Level`` object.
+
+        Returns
+        -------
+        float
+            Stored value in the quote's native units. Missing identifiers or
+            unavailable levels raise an error rather than returning a fallback.
+        """
         ...
 
     def levels(self, identifier: str) -> Any:
-        """Returns `(mid, bid, ask)` for one quote identifier."""
+        """Retrieve all three levels for one quote.
+
+        Parameters
+        ----------
+        identifier : str
+            Exact identifier of the stored market quote.
+
+        Returns
+        -------
+        tuple of float or None
+            ``(mid, bid, ask)`` in native quote units, with ``None`` for an
+            unavailable level. A missing identifier raises an error.
+        """
         ...
 
     def to_dataframe(self) -> DataFrame:
-        """All quotes as a DataFrame with columns `identifier`, `mid`, `bid`,
-`ask`, sorted by identifier."""
+        """Tabulate all observed quotes.
+
+        Returns
+        -------
+        pandas.DataFrame
+            One row per quote, sorted by ``identifier``. ``identifier`` is the
+            lookup label; ``mid``, ``bid``, and ``ask`` contain the available
+            levels in each quote's native units. Unavailable levels become
+            missing pandas values.
+        """
         ...
 
     @property
@@ -266,6 +467,7 @@ class FixingStore:
     """Historical index fixings."""
 
     def __new__(cls) -> Self:
+        """Create an empty historical-fixing store."""
         ...
 
     def __repr__(self) -> str:
@@ -273,24 +475,93 @@ class FixingStore:
 
     @staticmethod
     def from_dict(obj: Mapping[str, Any]) -> FixingStore:
-        """Builds a fixing store from a dict."""
+        """Deserialize historical fixings.
+
+        Parameters
+        ----------
+        obj : mapping
+            Native ``FixingStore`` object with a ``values`` mapping from native
+            fieldless index names to date/value mappings, such as
+            ``{"values": {"SOFR": {"2025-01-02": 0.05}}}``. Index names are
+            case-sensitive, dates use ``YYYY-MM-DD``, and observations retain
+            their native units. This is not a single fixing record or DataFrame.
+
+        Returns
+        -------
+        FixingStore
+            Historical observations grouped by market index.
+        """
         ...
 
     @staticmethod
     def from_json(path: str) -> FixingStore:
-        """Loads a fixing store from a JSON file."""
+        """Load historical fixings from disk.
+
+        Parameters
+        ----------
+        path : str
+            Path to a JSON file in the native ``FixingStore`` schema,
+            not an inline JSON document.
+
+        Returns
+        -------
+        FixingStore
+            Loaded historical observations.
+        """
         ...
 
     def add(self, index: _IndexLike, date: _DateLike, value: float) -> None:
-        """Adds or replaces a fixing."""
+        """Insert or replace an index observation on a date.
+
+        Parameters
+        ----------
+        index : MarketIndex, str, or mapping
+            Typed index, native fieldless index name such as ``"SOFR"``,
+            or native tagged index mapping. String names are case-sensitive
+            on this conversion path; use typed factories for parameterized indices.
+        date : Date, datetime.date, or str
+            Observation date; strings use ``YYYY-MM-DD``.
+        value : float
+            Observed value in the index's native units, such as an annual
+            decimal rate (``0.05`` for 5%). No unit conversion is applied.
+        """
         ...
 
     def fixing(self, index: _IndexLike, date: _DateLike) -> float:
-        """Returns one historical fixing."""
+        """Look up an observed historical fixing.
+
+        Parameters
+        ----------
+        index : MarketIndex, str, or mapping
+            Typed index, case-sensitive native fieldless name, or native
+            tagged index mapping, as accepted by ``add``.
+        date : Date, datetime.date, or str
+            Observation date; strings use ``YYYY-MM-DD``.
+
+        Returns
+        -------
+        float
+            Stored observation in the index's native units. Missing index/date
+            observations raise an error; this query does not forecast a fixing.
+        """
         ...
 
     def to_dataframe(self, index: _IndexLike) -> DataFrame:
-        """All fixings for an index as a DataFrame with `date` and `value` columns."""
+        """Tabulate the historical observations for one index.
+
+        Parameters
+        ----------
+        index : MarketIndex, str, or mapping
+            Typed index, case-sensitive native fieldless name, or native
+            tagged index mapping.
+
+        Returns
+        -------
+        pandas.DataFrame
+            ``date`` contains ISO observation-date strings; ``value`` contains
+            fixings in the index's native units, sorted chronologically.
+            No interpolation is performed; a missing index raises an error.
+        """
         ...
 
 @final
@@ -299,6 +570,7 @@ class FxStore:
 meaning 1 base = rate quote."""
 
     def __new__(cls) -> Self:
+        """Create an empty FX spot-rate store."""
         ...
 
     def __repr__(self) -> str:
@@ -306,20 +578,70 @@ meaning 1 base = rate quote."""
 
     @staticmethod
     def from_dict(obj: Mapping[str, Any]) -> FxStore:
-        """Builds an FX store from a list of rate records."""
+        """Deserialize a sequence of directed FX spot records.
+
+        Parameters
+        ----------
+        obj : sequence of mappings
+            Native record list, despite the method's name. Each record has
+            ``base``, ``quote``, and ``rate``: one base-currency unit equals
+            ``rate`` quote-currency units. Currency codes in serialized records
+            use native enum names such as ``"USD"`` and ``"EUR"``.
+
+        Returns
+        -------
+        FxStore
+            Store built from the supplied directed rates.
+        """
         ...
 
     @staticmethod
     def from_json(path: str) -> FxStore:
-        """Loads FX rate records from a JSON file (a list of records)."""
+        """Load directed FX spot records from disk.
+
+        Parameters
+        ----------
+        path : str
+            JSON file path, not JSON text. The root is a list of records with
+            ``base``, ``quote``, and ``rate`` fields, not a wrapping object.
+
+        Returns
+        -------
+        FxStore
+            Loaded FX spots, quoted as quote units per base unit.
+        """
         ...
 
     def add(self, base: Any, quote: Any, rate: float) -> None:
-        """Adds a spot rate: 1 `base` = `rate` `quote`."""
+        """Insert a directed FX spot rate.
+
+        Parameters
+        ----------
+        base : Currency or str
+            Base currency enum or case-insensitive supported ISO code.
+        quote : Currency or str
+            Quote currency enum or case-insensitive supported ISO code.
+        rate : float
+            Quote-currency units exchanged for one base-currency unit.
+        """
         ...
 
     def rate(self, base: Any, quote: Any) -> float:
-        """Returns a direct, inverse, or triangulated FX rate."""
+        """Resolve an FX conversion rate.
+
+        Parameters
+        ----------
+        base : Currency or str
+            Source currency enum or case-insensitive supported ISO code.
+        quote : Currency or str
+            Destination currency enum or case-insensitive supported ISO code.
+
+        Returns
+        -------
+        float
+            Quote-currency units per base-currency unit, obtained from a direct,
+            inverse, or triangulated rate. A missing conversion raises an error.
+        """
         ...
 
 @final
@@ -328,42 +650,92 @@ class CurveConstruction:
 
     @staticmethod
     def bootstrapped() -> CurveConstruction:
-        """Calibrate the curve to the quote identifiers in CurveConfiguration.quotes."""
+        """Select calibration to configured market quote identifiers.
+
+        Returns
+        -------
+        CurveConstruction
+            Bootstrapping rule using ``CurveConfiguration.quotes`` when the
+            pricing context constructs the curve; this call does not calibrate.
+        """
         ...
 
     @staticmethod
     def zero_rate(*, pillars: Sequence[_DateLike | _PeriodLike], rates: Sequence[float], compounding: Compounding | str | None=..., frequency: Frequency | str | None=...) -> CurveConstruction:
-        """Interpolate annual decimal rates at dates or reference-date tenors."""
+        """Define construction from explicit annual zero-rate pillars.
+
+        Parameters
+        ----------
+        pillars : sequence of Date, datetime.date, Period, or str
+            Ordered pillar dates or tenors measured from the pricing context's
+            reference date. Strings may be ISO dates or tenors such as ``"6M"``.
+        rates : sequence of float
+            Annual decimal zero rates, one per pillar; ``0.01`` means 1%.
+        compounding : Compounding, str, or None, optional
+            Typed convention or case-insensitive member name. Omitted or
+            ``None`` uses ``Continuous``.
+        frequency : Frequency, str, or None, optional
+            Typed frequency or case-insensitive member name. Omitted or
+            ``None`` uses ``Annual``; relevant for periodic compounding.
+
+        Returns
+        -------
+        CurveConstruction
+            Zero-rate construction rule. Time basis, interpolation, and
+            extrapolation are supplied by the enclosing ``CurveConfiguration``.
+        """
         ...
 
     @staticmethod
     def composite(*, base_index: _IndexLike, spread_index: _IndexLike) -> CurveConstruction:
-        """Multiply benchmark and spread discount factors."""
+        """Combine benchmark and spread curves by multiplying discount factors.
+
+        Parameters
+        ----------
+        base_index : MarketIndex, str, or mapping
+            Benchmark curve identity in the context: typed index, case-sensitive
+            native fieldless name, or native tagged index mapping.
+        spread_index : MarketIndex, str, or mapping
+            Spread curve identity in the same context, in the same accepted
+            formats. Continuous zero spreads add to benchmark continuous rates.
+
+        Returns
+        -------
+        CurveConstruction
+            Composition rule referencing the two configured curves.
+        """
         ...
 
 @final
 class CurveConfiguration:
-    """Wrapper around the library's `QsCurveConfiguration`.
-Define a curve for construction by PricingContext.
+    """Inputs for a projection or discount curve built by ``PricingContext``.
 
-Parameters
-----------
-market_index : MarketIndex or str
-    Identity used to request the curve for projection or discounting.
-quotes : sequence of str, optional
-    Calibration quote identifiers. Used with bootstrapped construction.
-construction : CurveConstruction, optional
-    Bootstrapped, explicit zero-rate, or composite construction rule.
-    Defaults to bootstrapped construction.
-day_counter : DayCounter or str, optional
-    Curve time basis. Defaults to Actual360.
-interpolator : Interpolator or str, optional
-    Linear, LogLinear, or CubicSpline. Defaults to LogLinear.
-enable_extrapolation : bool, optional
-    Allow evaluation beyond the supplied pillars. Defaults to True."""
+    Construction may calibrate to observed quotes, interpolate explicit zero
+    rates, or compose two other configured curves.
+    """
 
     def __new__(cls, *, market_index: _IndexLike, quotes: Sequence[str] | None=..., construction: CurveConstruction | None=..., day_counter: DayCounter | str | None=..., interpolator: Interpolator | str | None=..., enable_extrapolation: bool=...) -> Self:
-        """Configure a curve; construction defaults to calibration from quotes."""
+        """Configure a curve for later construction by a pricing context.
+
+        Parameters
+        ----------
+        market_index : MarketIndex, str, or mapping
+            Curve lookup identity: typed index, case-sensitive native fieldless
+            name such as ``"SOFR"``, or native tagged index mapping.
+        quotes : sequence of str or None, optional
+            Calibration quote identifiers for bootstrapped construction.
+            Omitted or ``None`` supplies an empty list, not inferred quotes.
+        construction : CurveConstruction or None, optional
+            Construction rule. Omitted or ``None`` selects ``bootstrapped()``.
+        day_counter : DayCounter, str, or None, optional
+            Curve time basis as an enum or case-insensitive name. Omitted or
+            ``None`` uses ``Actual360``.
+        interpolator : Interpolator, str, or None, optional
+            Enum or case-insensitive ``Linear``, ``LogLinear``, or
+            ``CubicSpline``. Omitted or ``None`` uses ``LogLinear``.
+        enable_extrapolation : bool, optional
+            Allow evaluation outside the pillar range. Defaults to ``True``.
+        """
         ...
 
     def __repr__(self) -> str:
@@ -371,142 +743,424 @@ enable_extrapolation : bool, optional
 
     @staticmethod
     def from_dict(obj: Mapping[str, Any]) -> CurveConfiguration:
-        """Builds a single configuration from a dict."""
+        """Deserialize one native curve configuration.
+
+        Parameters
+        ----------
+        obj : mapping
+            Required ``market_index`` and optional native construction fields.
+            Omitted ``construction`` is ``{"type": "Bootstrapped"}``;
+            ``day_counter``, ``interpolator``, ``enable_extrapolation``, and
+            ``quotes`` default to ``"Actual360"``, ``"LogLinear"``, ``True``,
+            and an empty list. Explicit construction uses a mapping tagged by
+            ``type`` (``Bootstrapped``, ``ZeroRate``, or ``Composite``), not a
+            ``CurveConstruction`` wrapper object. Typed supported enums and
+            indices are normalized; serialized values use native case-sensitive
+            names and tags. Unknown fields are rejected. Defaults apply to
+            omitted fields, not explicit ``None`` in non-nullable fields.
+
+        Returns
+        -------
+        CurveConfiguration
+            Single configuration; no curve is built until context initialization.
+        """
         ...
 
     @staticmethod
     def from_dict_list(obj: Mapping[str, Any]) -> list[CurveConfiguration]:
-        """Builds configurations from a list, single dict, or wrapped list."""
+        """Deserialize one or more curve configurations.
+
+        Parameters
+        ----------
+        obj : mapping or sequence of mappings
+            One native curve configuration, a list of configurations, or an
+            object with exactly one key whose value is that list. Each item
+            follows the schema accepted by ``from_dict``.
+
+        Returns
+        -------
+        list of CurveConfiguration
+            Configurations in input order, including a one-element list for
+            a single unwrapped configuration.
+        """
         ...
 
     @staticmethod
     def from_json(path: str) -> list[CurveConfiguration]:
-        """Loads configurations from a JSON file. Accepts a list, a
-single object, or an object wrapping a single list (e.g.
-`{"curve_specs": [...]}`). Always returns a list."""
+        """Load curve configurations from disk.
+
+        Parameters
+        ----------
+        path : str
+            JSON file path, not inline JSON. The root may be one native
+            configuration, an array, or an object with exactly one key
+            wrapping an array. Items use the schema described by ``from_dict``.
+
+        Returns
+        -------
+        list of CurveConfiguration
+            Loaded configurations; the result is always a list.
+        """
         ...
 
     def to_dict(self) -> dict[str, Any]:
-        """Returns the configuration as a dict."""
+        """Serialize the curve definition without building a curve.
+
+        Returns
+        -------
+        dict
+            Native serialized configuration, with enum names and tagged
+            parameterized variants rather than Python wrapper objects.
+        """
         ...
 
 @final
 class CreditCurveConfiguration:
-    """Wrapper around the library's `QsCreditCurveConfiguration`."""
+    """CDS calibration inputs for a reference entity's survival curve.
+
+    The configuration identifies the credit and discount curves, quote currency,
+    assumed recovery, and premium-leg conventions. It does not itself build
+    a hazard-rate or survival curve.
+    """
 
     def __repr__(self) -> str:
         ...
 
     @staticmethod
     def from_dict(obj: Mapping[str, Any]) -> CreditCurveConfiguration:
-        """Builds a single configuration from a dict."""
+        """Deserialize one CDS-based credit-curve definition.
+
+        Parameters
+        ----------
+        obj : mapping
+            Required fields are ``market_index`` (credit identity), ``currency``,
+            ``discount_index``, and ``recovery`` (fraction, e.g. ``0.4`` for 40%).
+            Use a typed ``MarketIndex.credit`` value or the native tagged credit
+            mapping, not its display string. Omitted fields default to
+            ``day_counter="Actual360"``, ``premium_frequency="Quarterly"``,
+            ``interpolator="LogLinear"``, ``enable_extrapolation=True``, and
+            an empty ``quotes`` list of CDS par-spread identifiers. Typed enums
+            are normalized; serialized enum names are case-sensitive.
+
+        Returns
+        -------
+        CreditCurveConfiguration
+            Definition to be calibrated during pricing-context initialization.
+        """
         ...
 
     @staticmethod
     def from_dict_list(obj: Mapping[str, Any]) -> list[CreditCurveConfiguration]:
-        """Builds configurations from a list, single dict, or wrapped list."""
+        """Deserialize a collection of credit-curve definitions.
+
+        Parameters
+        ----------
+        obj : mapping or sequence of mappings
+            One definition accepted by ``from_dict``, a list of such definitions,
+            or an object with exactly one key wrapping that list.
+
+        Returns
+        -------
+        list of CreditCurveConfiguration
+            Definitions in input order; a single definition becomes a one-item list.
+        """
         ...
 
     @staticmethod
     def from_json(path: str) -> list[CreditCurveConfiguration]:
-        """Loads configurations from a JSON file. Accepts a list, a
-single object, or an object wrapping a single list (e.g.
-`{"curve_specs": [...]}`). Always returns a list."""
+        """Load credit-curve definitions from disk.
+
+        Parameters
+        ----------
+        path : str
+            JSON file path. The root may be a native definition, an array,
+            or an object with exactly one key wrapping an array. Each item uses
+            the fields and defaults described by ``from_dict``; parameterized
+            indices use native tagged JSON, not display strings.
+
+        Returns
+        -------
+        list of CreditCurveConfiguration
+            Loaded definitions; always a list.
+        """
         ...
 
     def to_dict(self) -> dict[str, Any]:
-        """Returns the configuration as a dict."""
+        """Serialize the credit calibration inputs.
+
+        Returns
+        -------
+        dict
+            Native definition including recovery, premium conventions, quote
+            identifiers, and tagged credit-index data, not calibrated hazards.
+        """
         ...
 
 @final
 class VolatilitySurfaceConfiguration:
-    """Wrapper around the library's `QsVolatilitySurfaceConfiguration`."""
+    """Quote selection and conventions for an expiry-by-smile volatility surface."""
 
     def __repr__(self) -> str:
         ...
 
     @staticmethod
     def from_dict(obj: Mapping[str, Any]) -> VolatilitySurfaceConfiguration:
-        """Builds a single configuration from a dict."""
+        """Deserialize one volatility-surface definition.
+
+        Parameters
+        ----------
+        obj : mapping
+            Required ``market_index`` and ``quotes`` (quote identifiers), plus
+            optional ``volatility_type`` (defaults to ``"Black"``),
+            ``smile_type`` (defaults to ``"Strike"``), and
+            ``extrapolation_policy`` (defaults to ``"Reject"``).
+            ``"Flat"`` clamps out-of-grid queries to the boundary. Typed index
+            and volatility/smile enums are normalized; serialized values use
+            native case-sensitive names. Unknown fields are rejected.
+
+        Returns
+        -------
+        VolatilitySurfaceConfiguration
+            Surface definition for construction during context initialization.
+        """
         ...
 
     @staticmethod
     def from_dict_list(obj: Mapping[str, Any]) -> list[VolatilitySurfaceConfiguration]:
-        """Builds configurations from a list, single dict, or wrapped list."""
+        """Deserialize a collection of surface definitions.
+
+        Parameters
+        ----------
+        obj : mapping or sequence of mappings
+            One definition accepted by ``from_dict``, a list of definitions,
+            or an object with exactly one key wrapping that list.
+
+        Returns
+        -------
+        list of VolatilitySurfaceConfiguration
+            Definitions in input order, always returned as a list.
+        """
         ...
 
     @staticmethod
     def from_json(path: str) -> list[VolatilitySurfaceConfiguration]:
-        """Loads configurations from a JSON file. Accepts a list, a
-single object, or an object wrapping a single list (e.g.
-`{"curve_specs": [...]}`). Always returns a list."""
+        """Load volatility-surface definitions from disk.
+
+        Parameters
+        ----------
+        path : str
+            JSON file path. The root may be one native definition, an array,
+            or an object with exactly one key wrapping an array. Items use
+            ``from_dict`` fields and native serialized enum/index formats.
+
+        Returns
+        -------
+        list of VolatilitySurfaceConfiguration
+            Loaded definitions; always a list, not a constructed surface.
+        """
         ...
 
     def to_dict(self) -> dict[str, Any]:
-        """Returns the configuration as a dict."""
+        """Serialize the surface's construction inputs.
+
+        Returns
+        -------
+        dict
+            Native index, quote identifiers, volatility and smile conventions,
+            and extrapolation policy, not interpolated volatility values.
+        """
         ...
 
 @final
 class VolatilityCubeConfiguration:
-    """Wrapper around the library's `QsVolatilityCubeConfiguration`."""
+    """Quote selection and conventions for an expiry-by-tenor-by-smile cube."""
 
     def __repr__(self) -> str:
         ...
 
     @staticmethod
     def from_dict(obj: Mapping[str, Any]) -> VolatilityCubeConfiguration:
-        """Builds a single configuration from a dict."""
+        """Deserialize one volatility-cube definition.
+
+        Parameters
+        ----------
+        obj : mapping
+            Required ``market_index`` and ``quotes`` (quote identifiers across
+            expiries, underlying tenors, and smile coordinates). Optional
+            ``volatility_type`` defaults to ``"Black"``, ``smile_type`` to
+            ``"Strike"``, and ``extrapolation_policy`` to ``"Reject"``;
+            ``"Flat"`` clamps queries at the grid boundary. Typed index and
+            volatility/smile enums are normalized; serialized values use native
+            case-sensitive names. Unknown fields are rejected.
+
+        Returns
+        -------
+        VolatilityCubeConfiguration
+            Cube definition for construction during context initialization.
+        """
         ...
 
     @staticmethod
     def from_dict_list(obj: Mapping[str, Any]) -> list[VolatilityCubeConfiguration]:
-        """Builds configurations from a list, single dict, or wrapped list."""
+        """Deserialize a collection of cube definitions.
+
+        Parameters
+        ----------
+        obj : mapping or sequence of mappings
+            One definition accepted by ``from_dict``, a list of definitions,
+            or an object with exactly one key wrapping that list.
+
+        Returns
+        -------
+        list of VolatilityCubeConfiguration
+            Definitions in input order, always returned as a list.
+        """
         ...
 
     @staticmethod
     def from_json(path: str) -> list[VolatilityCubeConfiguration]:
-        """Loads configurations from a JSON file. Accepts a list, a
-single object, or an object wrapping a single list (e.g.
-`{"curve_specs": [...]}`). Always returns a list."""
+        """Load volatility-cube definitions from disk.
+
+        Parameters
+        ----------
+        path : str
+            JSON file path. The root may be one native definition, an array,
+            or an object with exactly one key wrapping an array. Items use
+            ``from_dict`` fields and native serialized enum/index formats.
+
+        Returns
+        -------
+        list of VolatilityCubeConfiguration
+            Loaded definitions; always a list, not a constructed cube.
+        """
         ...
 
     def to_dict(self) -> dict[str, Any]:
-        """Returns the configuration as a dict."""
+        """Serialize the cube's construction inputs.
+
+        Returns
+        -------
+        dict
+            Native index, quote identifiers, volatility and smile conventions,
+            and extrapolation policy, not interpolated volatility values.
+        """
         ...
 
 @final
 class SimulationConfiguration:
-    """Wrapper around the library's `QsSimulationConfiguration`."""
+    """Stochastic model and date-grid inputs for Monte Carlo path generation."""
 
     def __repr__(self) -> str:
         ...
 
     @staticmethod
     def from_dict(obj: Mapping[str, Any]) -> SimulationConfiguration:
-        """Builds a single configuration from a dict."""
+        """Deserialize one Monte Carlo simulation definition.
+
+        Parameters
+        ----------
+        obj : mapping
+            Required ``market_index``, native tagged ``model``, and ``horizon``
+            tenor such as ``"5Y"``. Model variants are ``HullWhite``,
+            ``BrownianMotion``, and ``Lgm``, with native tagged ``Fixed`` or
+            ``Calibrated`` parameter sources. Fixed Gaussian ``sigma`` is in
+            rate units per square-root year; fixed lognormal ``volatility``
+            is a decimal per square-root year. Omitted ``n_paths``, ``seed``,
+            ``frequency``, and ``day_counter`` default to 1000, 42,
+            ``"Monthly"``, and ``"Actual365"``, respectively. Typed indices,
+            periods, and supported enums are normalized; serialized variants
+            must use native names and tags, not display strings.
+
+        Returns
+        -------
+        SimulationConfiguration
+            Definition to be resolved and simulated by a pricing context.
+        """
         ...
 
     @staticmethod
     def from_dict_list(obj: Mapping[str, Any]) -> list[SimulationConfiguration]:
-        """Builds configurations from a list, single dict, or wrapped list."""
+        """Deserialize a collection of simulation definitions.
+
+        Parameters
+        ----------
+        obj : mapping or sequence of mappings
+            One definition accepted by ``from_dict``, a list of definitions,
+            or an object with exactly one key wrapping that list.
+
+        Returns
+        -------
+        list of SimulationConfiguration
+            Definitions in input order, always returned as a list.
+        """
         ...
 
     @staticmethod
     def from_json(path: str) -> list[SimulationConfiguration]:
-        """Loads configurations from a JSON file. Accepts a list, a
-single object, or an object wrapping a single list (e.g.
-`{"curve_specs": [...]}`). Always returns a list."""
+        """Load Monte Carlo simulation definitions from disk.
+
+        Parameters
+        ----------
+        path : str
+            JSON file path. The root may be one native definition, an array,
+            or an object with exactly one key wrapping an array. Each item uses
+            ``from_dict`` fields, including the native tagged model definition.
+
+        Returns
+        -------
+        list of SimulationConfiguration
+            Loaded definitions; always a list. No paths are generated here.
+        """
         ...
 
     def to_dict(self) -> dict[str, Any]:
-        """Returns the configuration as a dict."""
+        """Serialize the stochastic model and simulation-grid inputs.
+
+        Returns
+        -------
+        dict
+            Native model and parameter-source tags, index, path count, seed,
+            horizon, frequency, and day counter, not simulated paths.
+        """
         ...
 
 @final
 class ZeroRateTermStructure:
-    """A zero-rate curve with dated pillars."""
+    """Interpolate annual zero rates on explicitly dated pillars.
+
+    Rates retain their specified compounding and frequency. Discount factors
+    are calculated from those rates using the curve's day-count basis.
+    """
 
     def __new__(cls, reference_date: _DateLike, dates: Sequence[_DateLike], rates: Sequence[float], *, day_counter: DayCounter | str | None=..., compounding: Compounding | str | None=..., frequency: Frequency | str | None=..., interpolator: Interpolator | str | None=..., enable_extrapolation: bool=...) -> Self:
+        """Create a dated zero-rate curve.
+
+        Parameters
+        ----------
+        reference_date : Date, datetime.date, or str
+            Origin for discount factors and curve times; strings use ``YYYY-MM-DD``.
+        dates : sequence of Date, datetime.date, or str
+            Nonempty, strictly increasing pillar dates on or after the reference
+            date; strings use ``YYYY-MM-DD``. Resulting curve times must also
+            increase strictly under ``day_counter``.
+        rates : sequence of float
+            Finite annual decimal zero rates, one per date; ``0.05`` means 5%.
+        day_counter : DayCounter, str, or None, optional
+            Typed convention or case-insensitive member name. Omitted or
+            ``None`` uses ``Actual365``.
+        compounding : Compounding, str, or None, optional
+            Convention for the zero rates, as an enum or case-insensitive name.
+            Omitted or ``None`` uses ``Continuous``.
+        frequency : Frequency, str, or None, optional
+            Compounding frequency as an enum or case-insensitive name. Omitted
+            or ``None`` uses ``Annual``; relevant for periodic compounding.
+        interpolator : Interpolator, str, or None, optional
+            Enum or case-insensitive ``Linear``, ``LogLinear``, or ``CubicSpline``.
+            Omitted or ``None`` uses ``Linear``; interpolation is on zero rates.
+        enable_extrapolation : bool, optional
+            Allow zero-rate queries outside the pillar-time range. Defaults to
+            ``False``. Negative curve times remain invalid.
+        """
         ...
 
     def __repr__(self) -> str:
@@ -514,40 +1168,167 @@ class ZeroRateTermStructure:
 
     @staticmethod
     def from_dict(obj: Mapping[str, Any]) -> ZeroRateTermStructure:
-        """Construct from a mapping in the native QuantSupport serialization format."""
+        """Deserialize an explicitly dated zero-rate curve.
+
+        Parameters
+        ----------
+        obj : mapping
+            Native fields ``reference_date``, ``dates``, ``rates``,
+            ``rate_definition`` (``day_counter``, ``compounding``, ``frequency``),
+            ``interpolator``, and ``enable_extrapolation``, with optional
+            ``pillar_labels``. These required fields do not inherit the Python
+            constructor's defaults. Typed dates and supported enums are
+            normalized; serialized names use native case-sensitive variants.
+
+        Returns
+        -------
+        ZeroRateTermStructure
+            Validated dated curve with the supplied conventions.
+        """
         ...
 
     @staticmethod
     def from_json(path: str) -> ZeroRateTermStructure:
-        """Load from a JSON file path using the native QuantSupport schema."""
+        """Load an explicitly dated zero-rate curve from disk.
+
+        Parameters
+        ----------
+        path : str
+            JSON file path, not JSON text. The root is one dated curve object
+            using the required native fields described by ``from_dict``.
+
+        Returns
+        -------
+        ZeroRateTermStructure
+            Validated curve loaded from the file.
+        """
         ...
 
     def zero_rate(self, date: _DateLike) -> float:
-        """Interpolated decimal zero rate at a date, under the curve's rate conventions."""
+        """Interpolate the zero rate at a calendar date.
+
+        Parameters
+        ----------
+        date : Date, datetime.date, or str
+            Query date on or after the reference date; strings use ``YYYY-MM-DD``.
+            Dates outside the pillar range require extrapolation to be enabled.
+
+        Returns
+        -------
+        float
+            Annual decimal zero rate under the curve's compounding and
+            frequency, not necessarily a continuously compounded rate.
+        """
         ...
 
     def zero_rate_from_time(self, time: float) -> float:
-        """Interpolated decimal zero rate at a year fraction from the reference date."""
+        """Interpolate the zero rate at a curve time.
+
+        Parameters
+        ----------
+        time : float
+            Finite, nonnegative year fraction from the reference date, measured
+            on the curve's day-count basis. Outside-pillar queries require
+            extrapolation to be enabled.
+
+        Returns
+        -------
+        float
+            Annual decimal zero rate under the curve's compounding and frequency.
+        """
         ...
 
     def discount_factor(self, date: _DateLike) -> float:
-        """Discount factor from the reference date to the supplied date."""
+        """Calculate a discount factor to a calendar date.
+
+        Parameters
+        ----------
+        date : Date, datetime.date, or str
+            Cashflow date; strings use ``YYYY-MM-DD``. Nonzero curve times must
+            be in range unless extrapolation is enabled.
+
+        Returns
+        -------
+        float
+            Dimensionless reference-date value of one unit paid on ``date``.
+            The reference-date factor is 1, even if it precedes the first pillar.
+        """
         ...
 
     def discount_factor_from_time(self, time: float) -> float:
-        """Discount factor at a year fraction from the reference date."""
+        """Calculate a discount factor at a curve time.
+
+        Parameters
+        ----------
+        time : float
+            Finite, nonnegative year fraction from the reference date on the
+            curve's day-count basis. Nonzero outside-pillar queries require
+            extrapolation to be enabled.
+
+        Returns
+        -------
+        float
+            Positive, dimensionless discount factor; exactly 1 at time zero.
+        """
         ...
 
     def forward_rate(self, start_date: _DateLike, end_date: _DateLike, compounding: Compounding | str | None=..., frequency: Frequency | str | None=...) -> float:
-        """Decimal forward rate between dates; omitted conventions use the curve's compounding and frequency."""
+        """Derive a forward rate from the ratio of two discount factors.
+
+        Parameters
+        ----------
+        start_date : Date, datetime.date, or str
+            Start of the forward interval; strings use ``YYYY-MM-DD``.
+        end_date : Date, datetime.date, or str
+            End of the interval, strictly after ``start_date``; ISO date strings
+            use ``YYYY-MM-DD``. Endpoint discount factors must be evaluable.
+        compounding : Compounding, str, or None, optional
+            Output convention as an enum or case-insensitive name. Omitted or
+            ``None`` uses this curve's zero-rate compounding convention.
+        frequency : Frequency, str, or None, optional
+            Output compounding frequency as an enum or case-insensitive name.
+            Omitted or ``None`` uses this curve's zero-rate frequency.
+
+        Returns
+        -------
+        float
+            Annual decimal forward rate using the curve's day-count basis and
+            requested output compounding/frequency.
+        """
         ...
 
     def forward_rate_from_time(self, start: float, end: float) -> float:
-        """Forward rate between two year fractions measured from the reference date."""
+        """Derive a simple forward rate between two curve times.
+
+        Parameters
+        ----------
+        start : float
+            Finite, nonnegative starting year fraction from the reference date
+            on the curve's day-count basis.
+        end : float
+            Ending year fraction, not less than ``start``. Endpoint discount
+            factors must be evaluable. An effectively zero interval is evaluated
+            using a small positive time increment.
+
+        Returns
+        -------
+        float
+            Simple annualized decimal forward, ``(D(start)/D(end)-1)/(end-start)``
+            for a nonzero interval. Unlike ``forward_rate``, this query does not
+            inherit the zero-rate compounding convention.
+        """
         ...
 
     def to_dict(self) -> dict[str, Any]:
-        """Exports the equivalent dated curve."""
+        """Serialize the dated zero-rate curve.
+
+        Returns
+        -------
+        dict
+            Native ``reference_date``, ``dates``, ``rates``, ``rate_definition``,
+            ``interpolator``, and ``enable_extrapolation``, plus ``pillar_labels``
+            when present. Dates and enums are serialized values, not wrappers.
+        """
         ...
 
     @property
@@ -592,40 +1373,172 @@ class ZeroRateTermStructure:
 
 @final
 class TenorBasedZeroRateTermStructure:
-    """A zero-rate curve with tenor pillars."""
+    """Interpolate annual zero rates at tenors from a fixed reference date.
+
+    Pillar dates are resolved by calendar-date addition, without a business-day
+    calendar. Queries use the resulting dated zero-rate curve.
+    """
 
     def __new__(cls, reference_date: _DateLike, tenors: Sequence[_PeriodLike], rates: Sequence[float], *, day_counter: DayCounter | str | None=..., compounding: Compounding | str | None=..., frequency: Frequency | str | None=..., interpolator: Interpolator | str | None=..., enable_extrapolation: bool=...) -> Self:
+        """Create a zero-rate curve from reference-date tenors.
+
+        Parameters
+        ----------
+        reference_date : Date, datetime.date, or str
+            Origin for tenors, curve times, and discount factors. Strings use
+            ``YYYY-MM-DD``.
+        tenors : sequence of Period or str
+            Nonempty pillar intervals, such as ``"6M"`` and ``"5Y"``. Resolved
+            dates must increase strictly, remain on or after the reference date,
+            and yield strictly increasing curve times. No holiday adjustment occurs.
+        rates : sequence of float
+            Finite annual decimal zero rates, one per tenor; ``0.05`` means 5%.
+        day_counter : DayCounter, str, or None, optional
+            Typed convention or case-insensitive member name. Omitted or
+            ``None`` uses ``Actual365``.
+        compounding : Compounding, str, or None, optional
+            Convention for the supplied zero rates, as an enum or case-insensitive
+            member name. Omitted or ``None`` uses ``Continuous``.
+        frequency : Frequency, str, or None, optional
+            Compounding frequency as an enum or case-insensitive member name.
+            Omitted or ``None`` uses ``Annual``; relevant for periodic compounding.
+        interpolator : Interpolator, str, or None, optional
+            Enum or case-insensitive ``Linear``, ``LogLinear``, or ``CubicSpline``.
+            Omitted or ``None`` uses ``Linear``; interpolation is on zero rates.
+        enable_extrapolation : bool, optional
+            Allow zero-rate queries outside the pillar-time range. Defaults to
+            ``False``. Negative curve times remain invalid.
+        """
         ...
 
     def __repr__(self) -> str:
         ...
 
     def zero_rate(self, date: _DateLike) -> float:
-        """Interpolated decimal zero rate at a date, under the curve's rate conventions."""
+        """Interpolate the zero rate at a calendar date.
+
+        Parameters
+        ----------
+        date : Date, datetime.date, or str
+            Query date on or after the reference date; strings use ``YYYY-MM-DD``.
+            Outside-pillar queries require extrapolation to be enabled.
+
+        Returns
+        -------
+        float
+            Annual decimal zero rate under the curve's compounding and frequency.
+        """
         ...
 
     def zero_rate_from_time(self, time: float) -> float:
-        """Interpolated decimal zero rate at a year fraction from the reference date."""
+        """Interpolate the zero rate at a curve time.
+
+        Parameters
+        ----------
+        time : float
+            Finite, nonnegative year fraction from the reference date on the
+            curve's day-count basis. Outside-pillar queries require extrapolation.
+
+        Returns
+        -------
+        float
+            Annual decimal zero rate under the curve's compounding and frequency.
+        """
         ...
 
     def discount_factor(self, date: _DateLike) -> float:
-        """Discount factor from the reference date to the supplied date."""
+        """Calculate a discount factor to a calendar date.
+
+        Parameters
+        ----------
+        date : Date, datetime.date, or str
+            Cashflow date; strings use ``YYYY-MM-DD``. Nonzero curve times must
+            be in range unless extrapolation is enabled.
+
+        Returns
+        -------
+        float
+            Dimensionless reference-date value of one unit paid on ``date``.
+            The reference-date factor is 1, even if it precedes the first pillar.
+        """
         ...
 
     def discount_factor_from_time(self, time: float) -> float:
-        """Discount factor at a year fraction from the reference date."""
+        """Calculate a discount factor at a curve time.
+
+        Parameters
+        ----------
+        time : float
+            Finite, nonnegative year fraction from the reference date on the
+            curve's day-count basis. Nonzero outside-pillar queries require
+            extrapolation to be enabled.
+
+        Returns
+        -------
+        float
+            Positive, dimensionless discount factor; exactly 1 at time zero.
+        """
         ...
 
     def forward_rate(self, start_date: _DateLike, end_date: _DateLike, compounding: Compounding | str | None=..., frequency: Frequency | str | None=...) -> float:
-        """Decimal forward rate between dates; omitted conventions use the curve's compounding and frequency."""
+        """Derive a forward rate from the ratio of two discount factors.
+
+        Parameters
+        ----------
+        start_date : Date, datetime.date, or str
+            Start of the forward interval; strings use ``YYYY-MM-DD``.
+        end_date : Date, datetime.date, or str
+            End of the interval, strictly after ``start_date``; strings use
+            ``YYYY-MM-DD``. Endpoint discount factors must be evaluable.
+        compounding : Compounding, str, or None, optional
+            Output convention as an enum or case-insensitive name. Omitted or
+            ``None`` uses the curve's zero-rate compounding convention.
+        frequency : Frequency, str, or None, optional
+            Output compounding frequency as an enum or case-insensitive name.
+            Omitted or ``None`` uses the curve's zero-rate frequency.
+
+        Returns
+        -------
+        float
+            Annual decimal forward rate under the curve's day-count basis and
+            requested output compounding/frequency.
+        """
         ...
 
     def forward_rate_from_time(self, start: float, end: float) -> float:
-        """Forward rate between two year fractions measured from the reference date."""
+        """Derive a simple forward rate between two curve times.
+
+        Parameters
+        ----------
+        start : float
+            Finite, nonnegative starting year fraction from the reference date
+            on the curve's day-count basis.
+        end : float
+            Ending year fraction, not less than ``start``. Endpoint discount
+            factors must be evaluable. An effectively zero interval is evaluated
+            using a small positive time increment.
+
+        Returns
+        -------
+        float
+            Simple annualized decimal forward, ``(D(start)/D(end)-1)/(end-start)``
+            for a nonzero interval. This query does not inherit the curve's
+            zero-rate compounding convention.
+        """
         ...
 
     def to_dict(self) -> dict[str, Any]:
-        """Exports the equivalent dated curve."""
+        """Serialize the equivalent dated zero-rate curve.
+
+        Returns
+        -------
+        dict
+            Native dated curve with ``reference_date``, resolved ``dates``,
+            decimal ``rates``, ``rate_definition``, ``interpolator``, and
+            ``enable_extrapolation``, plus ``pillar_labels`` when present.
+            Tenors are not retained in this representation; it can be loaded
+            with ``ZeroRateTermStructure.from_dict``.
+        """
         ...
 
     @property
@@ -675,26 +1588,80 @@ class TenorBasedZeroRateTermStructure:
 
 @final
 class DiscountCurve:
-    """A discount curve constructed by the pricing context."""
+    """Read-only view of an interest-rate curve built by a pricing context.
+
+    This view exposes numeric discount and forward queries, not automatic
+    differentiation objects or an independently mutable set of nodes.
+    """
 
     def __repr__(self) -> str:
         ...
 
     def discount_factor(self, date: _DateLike) -> float:
-        """Discount factor at a date."""
+        """Evaluate the curve's discount factor at a date.
+
+        Parameters
+        ----------
+        date : Date, datetime.date, or str
+            Cashflow date; strings use ``YYYY-MM-DD``. Valid range and
+            extrapolation behavior depend on the constructed curve.
+
+        Returns
+        -------
+        float
+            Dimensionless reference-date value of one unit paid on ``date``.
+        """
         ...
 
     def forward_rate(self, start: _DateLike, end: _DateLike, compounding: Compounding | str | None=..., frequency: Frequency | str | None=...) -> float:
-        """Forward rate between two dates (default Simple / Annual)."""
+        """Derive a forward interest rate between calendar dates.
+
+        Parameters
+        ----------
+        start : Date, datetime.date, or str
+            Initial forward date; strings use ``YYYY-MM-DD``.
+        end : Date, datetime.date, or str
+            Final forward date; strings use ``YYYY-MM-DD``. Endpoints must be
+            evaluable by the underlying curve.
+        compounding : Compounding, str, or None, optional
+            Output convention as an enum or case-insensitive name. Omitted or
+            ``None`` uses ``Simple``, not the curve's zero-rate convention.
+        frequency : Frequency, str, or None, optional
+            Output compounding frequency as an enum or case-insensitive name.
+            Omitted or ``None`` uses ``Annual``.
+
+        Returns
+        -------
+        float
+            Annual decimal forward rate implied by the endpoint discount-factor
+            ratio, under the requested conventions and the curve's time basis.
+            ``0.05`` denotes 5%, not 5 basis points.
+        """
         ...
 
     def nodes(self) -> DataFrame:
-        """Curve nodes as a DataFrame with columns `date` and `discount_factor`."""
+        """Tabulate the curve's exposed discount-factor nodes.
+
+        Returns
+        -------
+        pandas.DataFrame
+            ``date`` contains ISO node-date strings; ``discount_factor`` is the
+            dimensionless factor from the curve reference date to that node.
+            Empty with these columns when the underlying curve exposes no nodes.
+        """
         ...
 
     def pillars(self) -> DataFrame:
-        """Curve pillars (bootstrap instruments) as a DataFrame with columns
-`label` and `value`."""
+        """Tabulate the curve's native labeled pillars.
+
+        Returns
+        -------
+        pandas.DataFrame
+            ``label`` identifies a native curve pillar; ``value`` is its current
+            numeric value in the underlying curve's pillar units. Pillar values
+            are not universally market quote rates: they depend on the curve
+            representation. Empty with these columns if no pillars are exposed.
+        """
         ...
 
     @property
@@ -709,33 +1676,63 @@ class DiscountCurve:
 
     @property
     def market_index(self) -> MarketIndex:
-        """Market index the curve discounts."""
+        """Read-only identity used to look up this projection or discount curve."""
         ...
 
 @final
 class VolatilitySurface:
-    """A constructed volatility surface."""
+    """Read-only expiry-by-smile volatility surface built by a pricing context."""
 
     def __repr__(self) -> str:
         ...
 
     def volatility(self, expiry: Any, key: float) -> float:
-        """Volatility at an expiry (`Date`, ISO string, `Period` or period
-string) and smile coordinate `key`."""
+        """Interpolate an implied volatility at an expiry and smile coordinate.
+
+        Parameters
+        ----------
+        expiry : Date, datetime.date, Period, or str
+            Option expiry as an absolute date or a tenor from the surface's
+            reference date. Strings use ``YYYY-MM-DD`` or native period text
+            such as ``"6M"``. A numeric year fraction is not accepted here.
+        key : float
+            Coordinate in the surface's ``smile_type``: absolute strike in the
+            underlying's quote units, delta, or dimensionless log-moneyness.
+            Match the quote grid's convention and scale; this method does not
+            convert strikes to deltas or reinterpret the coordinate.
+
+        Returns
+        -------
+        float
+            Annualized volatility under ``volatility_type``. ``Black`` uses
+            decimal lognormal volatility (``0.20`` for 20% per square-root year);
+            ``Normal`` uses absolute underlying quote units per square-root year
+            (for decimal rates, ``0.01`` is 100 bp per square-root year).
+            Out-of-grid behavior follows the configured extrapolation policy.
+        """
         ...
 
     def pillars(self) -> DataFrame:
-        """Surface pillars as a DataFrame with columns `label` and `value`."""
+        """Tabulate the surface's native labeled volatility pillars.
+
+        Returns
+        -------
+        pandas.DataFrame
+            ``label`` is the native pillar identifier; ``value`` is the numeric
+            volatility pillar in the surface's Black or Normal quotation units.
+            Empty with these columns when no pillars are exposed. The table is
+            not an expiry-by-strike pivot or a set of option prices.
+        """
         ...
 
     @property
     def smile_type(self) -> Any:
-        """Smile axis (Strike, Delta or LogMoneyness)."""
+        """Read-only ``SmileType`` defining the query key: Strike, Delta, or LogMoneyness."""
         ...
 
     @property
     def volatility_type(self) -> Any:
-        """Volatility quotation convention (Black or Normal)."""
+        """Read-only ``VolatilityType``: Black lognormal or Normal absolute volatility."""
         ...
 
     @property
@@ -750,28 +1747,61 @@ string) and smile coordinate `key`."""
 
 @final
 class VolatilityCube:
-    """A constructed volatility cube (expiry x underlying maturity x smile)."""
+    """Read-only expiry-by-underlying-tenor-by-smile volatility cube."""
 
     def __repr__(self) -> str:
         ...
 
     def volatility(self, expiry: Any, maturity: _PeriodLike, key: float) -> float:
-        """Volatility at an expiry (`Date` or `Period`), underlying maturity
-(`Period`) and smile coordinate `key`."""
+        """Interpolate implied volatility for an expiry and underlying tenor.
+
+        Parameters
+        ----------
+        expiry : Date, datetime.date, Period, or str
+            Option expiry as an absolute date or a tenor from the cube's reference
+            date. Strings use ``YYYY-MM-DD`` or native period text such as ``"1Y"``;
+            numeric year fractions are not accepted.
+        maturity : Period or str
+            Underlying instrument's tenor, such as ``"5Y"`` for a five-year swap,
+            not an absolute maturity date or an option-expiry year fraction.
+        key : float
+            Coordinate in the cube's ``smile_type``: absolute strike in underlying
+            quote units, delta, or dimensionless log-moneyness. Its convention
+            and scale must match the configured quote grid; no axis conversion
+            is performed by this method.
+
+        Returns
+        -------
+        float
+            Annualized volatility under ``volatility_type``: decimal lognormal
+            volatility for ``Black`` (``0.20`` for 20% per square-root year), or
+            absolute underlying quote units per square-root year for ``Normal``.
+            Normal rate volatility of ``0.01`` is 100 bp per square-root year.
+            Out-of-grid behavior follows the configured extrapolation policy.
+        """
         ...
 
     def pillars(self) -> DataFrame:
-        """Cube pillars as a DataFrame with columns `label` and `value`."""
+        """Tabulate the cube's native labeled volatility pillars.
+
+        Returns
+        -------
+        pandas.DataFrame
+            ``label`` identifies a native cube pillar; ``value`` is its numeric
+            volatility in the cube's Black or Normal quotation units. Empty with
+            these columns if no pillars are exposed. This is a two-column pillar
+            table, not a three-dimensional reshaping of the cube.
+        """
         ...
 
     @property
     def smile_type(self) -> Any:
-        """Smile axis (Strike, Delta or LogMoneyness)."""
+        """Read-only ``SmileType`` defining the query key: Strike, Delta, or LogMoneyness."""
         ...
 
     @property
     def volatility_type(self) -> Any:
-        """Volatility quotation convention (Black or Normal)."""
+        """Read-only ``VolatilityType``: Black lognormal or Normal absolute volatility."""
         ...
 
     @property
@@ -786,28 +1816,72 @@ class VolatilityCube:
 
 @final
 class Simulation:
-    """A constructed Monte Carlo simulation."""
+    """Read-only view of Monte Carlo paths generated by a pricing context.
+
+    Path values are model outputs, not trade valuations or exposure profiles.
+    Queries return materialized numeric data, not AD objects.
+    """
 
     def __repr__(self) -> str:
         ...
 
     def calibration_diagnostics(self) -> DataFrame | None:
-        """Hull-White calibration records as a DataFrame, or `None` for an uncalibrated model.
-Columns include market/model prices, sigma and the signed price error."""
+        """Tabulate available Hull-White option-calibration records.
+
+        Returns
+        -------
+        pandas.DataFrame or None
+            One row per recorded calibration instrument. ``identifier`` is the
+            quote label and ``expiry`` its tenor string. ``t`` is time to expiry
+            in years; ``big_t`` is time to caplet payment or the swap's last date
+            in years. ``market_vol`` is the quoted Black or Normal volatility;
+            ``market_price`` is the target option price implied by that quote,
+            and ``model_price`` is the model price on the same pricing basis.
+            ``calibrated_sigma`` is absolute short-rate volatility in rate units
+            per square-root year. ``forward_rate`` and ``effective_strike`` are
+            decimal rates, with ATM or relative strikes already resolved.
+            ``price_error`` equals ``model_price - market_price``, not an absolute
+            or relative error. Returns ``None`` whenever no Hull-White quality
+            record is attached, including fixed-parameter and other-model runs;
+            ``None`` does not universally mean the model was uncalibrated.
+        """
         ...
 
     def dates(self) -> list[Date]:
-        """Simulation dates."""
+        """Return the date grid associated with path columns.
+
+        Returns
+        -------
+        list of Date
+            Simulation dates in path-column order, strictly after the context's
+            reference date. A fresh list is returned; changing it does not
+            alter the simulation.
+        """
         ...
 
     def paths(self) -> DataFrame:
-        """Simulated paths as a DataFrame: one row per path, one column per
-simulation date (ISO strings)."""
+        """Tabulate the generated model paths.
+
+        Returns
+        -------
+        pandas.DataFrame
+            One row per Monte Carlo path and one column per simulation date.
+            Column labels are ISO ``YYYY-MM-DD`` strings in ``dates()`` order;
+            cells contain numeric model outputs at those dates in the model's
+            native units. These are not discount factors, cashflows, trade PVs,
+            or exposure quantiles unless the model output itself has that meaning.
+            The table contains no reference-date column or path-probability column.
+        """
         ...
 
     @property
     def dt(self) -> float:
-        """Time step between simulation dates, in years."""
+        """Read-only average simulation step in years.
+
+        Calculated as the last grid time from the reference date divided by
+        the number of simulation dates. Calendar intervals may have unequal
+        year fractions; this scalar does not describe every adjacent interval.
+        """
         ...
 
     @property

@@ -46,6 +46,8 @@ fn quantsupport(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<time::Date>()?;
     m.add_class::<time::Period>()?;
     m.add_class::<time::Calendar>()?;
+    m.add_class::<time::schedule::Schedule>()?;
+    m.add_class::<time::imm::IMM>()?;
     // Market data & configurations
     m.add_class::<market::stores::QuoteStore>()?;
     m.add_class::<market::stores::FixingStore>()?;
