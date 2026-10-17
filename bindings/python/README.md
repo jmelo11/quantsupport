@@ -795,8 +795,8 @@ and any required discount/collateral curves. New identifiers and calendar names
 in OIS quote conventions survive snapshot JSON round-trips. Historical fixings
 are supplied separately through `pricing_context(selector, fixings=...)`.
 
-Calendar rules follow QuantLib commit `5f4811e7e03b`. China tables extend through
-2026; South Korean lunar dates through 2050; New Zealand Matariki dates through
-2052. New Zealand defaults to Wellington for QuantLib parity; regional variants
-are explicit. Dates beyond finite tables require updated holiday announcements.
-QuantLib calendar notices are included in `quantsupport/licenses/QuantLib.txt`.
+Calendars use local MIT implementations and MIT-licensed dated holiday data.
+China tables cover 2004–2026; South Korean holidays cover 2004–2050; New Zealand
+Matariki dates cover 2022–2052. New Zealand defaults to Wellington; Auckland is
+an explicit variant. Dates beyond finite tables require updated announcements.
+The data source's MIT notice is retained in the project LICENSE.

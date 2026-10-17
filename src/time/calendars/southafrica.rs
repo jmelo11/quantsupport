@@ -1,7 +1,12 @@
-// Adapted from QuantLib ql/time/calendars/southafrica.cpp.
+//! `SouthAfrica` holiday calendar.
 
+use super::traits::{
+    business_day,
+    Holiday::{Easter, Fixed},
+    Observance::SundayToMonday,
+};
 use super::traits::{ImplCalendar, IsCalendar};
-use crate::time::{date::Date, enums::Weekday};
+use crate::time::date::Date;
 use std::collections::HashSet;
 
 /// `SouthAfrica` business-day calendar.
@@ -12,40 +17,10 @@ pub struct SouthAfrica {
 }
 
 impl SouthAfrica {
-    /// Creates the calendar with empty holiday overrides.
+    /// Creates a calendar with empty holiday overrides.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
-    }
-
-    fn business_day(date: Date) -> bool {
-        let w = date.weekday();
-        let d = date.day();
-        let m = date.month();
-        let y = date.year();
-        let dd = date.day_of_year();
-        let em = super::traits::easter_monday(date.year());
-        !(matches!(w, Weekday::Saturday | Weekday::Sunday)
-            || ((d == 1 || (d == 2 && w == Weekday::Monday)) && m == 1)
-            || (dd == em - 3)
-            || (dd == em)
-            || ((d == 21 || (d == 22 && w == Weekday::Monday)) && m == 3)
-            || ((d == 27 || (d == 28 && w == Weekday::Monday)) && m == 4)
-            || ((d == 1 || (d == 2 && w == Weekday::Monday)) && m == 5)
-            || ((d == 16 || (d == 17 && w == Weekday::Monday)) && m == 6)
-            || ((d == 9 || (d == 10 && w == Weekday::Monday)) && m == 8)
-            || ((d == 24 || (d == 25 && w == Weekday::Monday)) && m == 9)
-            || ((d == 16 || (d == 17 && w == Weekday::Monday)) && m == 12)
-            || (d == 25 && m == 12)
-            || ((d == 26 || (d == 27 && w == Weekday::Monday)) && m == 12)
-            || (d == 14 && m == 4 && y == 2004)
-            || (d == 22 && m == 4 && y == 2009)
-            || (d == 3 && m == 8 && y == 2016)
-            || (d == 1 && m == 11 && y == 2021)
-            || (d == 29 && m == 5 && y == 2024)
-            || (d == 4 && m == 11 && y == 2026)
-            || (d == 27 && m == 12 && y == 2022)
-            || (d == 15 && m == 12 && y == 2023))
     }
 }
 
@@ -53,22 +28,64 @@ impl ImplCalendar for SouthAfrica {
     fn impl_name(&self) -> String {
         "SouthAfrica".into()
     }
+
     fn impl_is_business_day(&self, date: &Date) -> bool {
-        Self::business_day(*date)
+        business_day(
+            *date,
+            &[
+                Fixed(1, 1, SundayToMonday),
+                Fixed(3, 21, SundayToMonday),
+                Fixed(4, 27, SundayToMonday),
+                Fixed(5, 1, SundayToMonday),
+                Fixed(6, 16, SundayToMonday),
+                Fixed(8, 9, SundayToMonday),
+                Fixed(9, 24, SundayToMonday),
+                Fixed(12, 16, SundayToMonday),
+                Fixed(12, 25, SundayToMonday),
+                Fixed(12, 26, SundayToMonday),
+                Easter(-2),
+                Easter(1),
+            ],
+        ) && !super::traits::dated_holiday(*date, SOUTH_AFRICA_SPECIAL)
     }
+
     fn added_holidays(&self) -> HashSet<Date> {
         self.added_holidays.clone()
     }
+
     fn removed_holidays(&self) -> HashSet<Date> {
         self.removed_holidays.clone()
     }
+
     fn add_holiday(&mut self, date: Date) {
         self.removed_holidays.remove(&date);
         self.added_holidays.insert(date);
     }
+
     fn remove_holiday(&mut self, date: Date) {
         self.added_holidays.remove(&date);
         self.removed_holidays.insert(date);
     }
 }
 impl IsCalendar for SouthAfrica {}
+
+// Dated data from holidays 0.106 (MIT): https://github.com/vacanza/holidays/tree/v0.106
+// Upstream copyright and permission notice are retained in LICENSE.
+#[rustfmt::skip]
+const SOUTH_AFRICA_SPECIAL: &[i32] = &[
+    19990602, 19991231,
+    20000102,
+    20040414,
+    20060301,
+    20080502,
+    20090422,
+    20110518, 20111227,
+    20140507,
+    20160803, 20161227,
+    20190508,
+    20211101,
+    20221227,
+    20231215,
+    20240529,
+    20261104,
+];
