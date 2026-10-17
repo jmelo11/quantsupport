@@ -1,13 +1,131 @@
 """Dates, tenors, calendars, and accrual conventions."""
-from datetime import date as PythonDate
+from datetime import date as PythonDate, datetime as PythonDateTime
 from typing import Any, ClassVar, Iterator, Mapping, Sequence, final, overload
 from typing_extensions import Self, disjoint_base
 from pandas import DataFrame
 
 _DateLike = Date | str | PythonDate
+_DateTimeLike = DateTime | str | PythonDateTime
 _PeriodLike = Period | str
 
-__all__ = ['Date', 'Period', 'Calendar', 'Schedule', 'IMM', 'UnitedStatesMarket', 'BrazilMarket', 'JointCalendarRule', 'Compounding', 'Frequency', 'DayCounter', 'TimeUnit', 'BusinessDayConvention', 'DateGenerationRule']
+__all__ = ['DateTime', 'Date', 'Period', 'Calendar', 'Schedule', 'IMM', 'UnitedStatesMarket', 'BrazilMarket', 'JointCalendarRule', 'Compounding', 'Frequency', 'DayCounter', 'TimeUnit', 'BusinessDayConvention', 'DateGenerationRule']
+
+@final
+class DateTime:
+    """A UTC instant backed by the library's chrono datetime wrapper.
+
+    Parameters
+    ----------
+    year : int
+        UTC calendar year.
+    month : int
+        UTC calendar month, 1 through 12.
+    day : int
+        UTC calendar day of the month.
+    hour : int, optional
+        UTC hour, 0 through 23. Defaults to zero.
+    minute : int, optional
+        UTC minute, 0 through 59. Defaults to zero.
+    second : int, optional
+        UTC second, 0 through 59. Defaults to zero.
+
+    Notes
+    -----
+    Invalid components raise QuantSupportError. Parsed offsets are normalized
+    to UTC; naive timestamps are rejected. Values are immutable, comparable,
+    and hashable. Native and serialized values retain nanosecond precision.
+    """
+    def __new__(cls, year: int, month: int, day: int, hour: int = ..., minute: int = ..., second: int = ...) -> Self: ...
+    @staticmethod
+    def parse(s: str, fmt: str | None = ...) -> DateTime:
+        """Parse an offset-aware timestamp.
+
+        Parameters
+        ----------
+        s : str
+            RFC 3339 timestamp, including Z or a numeric timezone offset.
+        fmt : str or None, optional
+            Chrono strftime format including an offset; None uses RFC 3339.
+        """
+        ...
+    @staticmethod
+    def from_date(date: _DateLike, hour: int = ..., minute: int = ..., second: int = ...) -> DateTime:
+        """Combine a calendar date with a UTC clock time.
+
+        Parameters
+        ----------
+        date : Date, datetime.date, or str
+            Calendar date interpreted in UTC.
+        hour : int, optional
+            UTC hour, default zero.
+        minute : int, optional
+            UTC minute, default zero.
+        second : int, optional
+            UTC second, default zero.
+        """
+        ...
+    @staticmethod
+    def from_datetime(value: _DateTimeLike) -> DateTime:
+        """Convert an aware datetime, library DateTime, or RFC 3339 string.
+
+        Parameters
+        ----------
+        value : DateTime, datetime.datetime, or str
+            Offset-aware instant, normalized to UTC.
+        """
+        ...
+    def to_datetime(self) -> PythonDateTime:
+        """Return an aware UTC Python datetime, truncating to microseconds."""
+        ...
+    def to_str(self, fmt: str | None = ...) -> str:
+        """Format the UTC instant.
+
+        Parameters
+        ----------
+        fmt : str or None, optional
+            Chrono strftime format; None produces RFC 3339 with full precision.
+        """
+        ...
+    @property
+    def date(self) -> Date:
+        """UTC calendar date as a library Date."""
+        ...
+    @property
+    def year(self) -> int:
+        """UTC calendar year."""
+        ...
+    @property
+    def month(self) -> int:
+        """UTC calendar month, 1 through 12."""
+        ...
+    @property
+    def day(self) -> int:
+        """UTC calendar day of the month."""
+        ...
+    @property
+    def hour(self) -> int:
+        """UTC hour, 0 through 23."""
+        ...
+    @property
+    def minute(self) -> int:
+        """UTC minute, 0 through 59."""
+        ...
+    @property
+    def second(self) -> int:
+        """UTC second, 0 through 59."""
+        ...
+    @property
+    def nanosecond(self) -> int:
+        """Fractional second in nanoseconds, including chrono leap seconds."""
+        ...
+    def __str__(self) -> str: ...
+    def __repr__(self) -> str: ...
+    def __eq__(self, other: object, /) -> bool: ...
+    def __lt__(self, other: DateTime, /) -> bool: ...
+    def __le__(self, other: DateTime, /) -> bool: ...
+    def __gt__(self, other: DateTime, /) -> bool: ...
+    def __ge__(self, other: DateTime, /) -> bool: ...
+    def __hash__(self) -> int: ...
 
 @final
 class Compounding:

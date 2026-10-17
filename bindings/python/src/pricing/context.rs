@@ -118,6 +118,20 @@ pub(crate) struct PricingContext {
 }
 
 impl PricingContext {
+    pub(crate) fn from_snapshot_context(
+        inner: QsPricingContext,
+        fixed_income_policy: Option<PyFixedIncomeDiscountPolicy>,
+    ) -> Self {
+        Self {
+            inner,
+            initialized: false,
+            fully_constructed: false,
+            generation: 0,
+            python_pricers: PricerRegistry::default(),
+            fixed_income_policy,
+        }
+    }
+
     pub(crate) fn key(&self) -> usize {
         std::ptr::from_ref(self) as usize
     }
@@ -314,6 +328,12 @@ impl PricingContext {
         Date {
             inner: self.inner.evaluation_date(),
         }
+    }
+
+    /// Selected observation instant as a DateTime, or None after inputs change.
+    #[getter]
+    fn snapshot_timestamp(&self) -> Option<crate::time::DateTime> {
+        self.inner.snapshot_timestamp().map(|inner| crate::time::DateTime { inner })
     }
 
     /// Quote level used for construction and calibration; defaults to `Level.Mid`.

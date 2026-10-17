@@ -25,7 +25,7 @@ use crate::{
         multicurvebootstrapper::MultiCurveBootstrapper,
     },
     simulations::simulationbuilder::SimulationBuilder,
-    time::date::Date,
+    time::{date::Date, datetime::DateTime},
     utils::errors::{QSError, Result},
     volatility::{
         volatilitycubebuilder::VolatilityCubeBuilder,
@@ -63,6 +63,7 @@ pub struct PricingContext {
     constructed_elements: ConstructedElementStore,
     request_cache: MarketCache,
     supplied_elements: ConstructedElementStore,
+    snapshot_timestamp: Option<DateTime>,
     /// The base currency for pricing and reporting results.
     base_currency: Currency,
     /// Base remuneration index
@@ -71,6 +72,7 @@ pub struct PricingContext {
 
 impl PricingContext {
     fn invalidate_market(&mut self) {
+        self.snapshot_timestamp = None;
         self.request_cache = MarketCache::default();
         self.constructed_elements = self.supplied_elements.clone();
     }
@@ -107,6 +109,7 @@ impl PricingContext {
             constructed_elements: ConstructedElementStore::default(),
             request_cache: MarketCache::default(),
             supplied_elements: ConstructedElementStore::default(),
+            snapshot_timestamp: None,
             base_currency: Currency::USD, // Default base currency
             base_index: MarketIndex::SOFR,
         }
@@ -116,6 +119,21 @@ impl PricingContext {
     #[must_use]
     pub const fn quote_store(&self) -> &QuoteStore {
         &self.quote_store
+    }
+
+    /// Returns the selected observation instant, or none after inputs change.
+    #[must_use]
+    pub const fn snapshot_timestamp(&self) -> Option<DateTime> {
+        self.snapshot_timestamp
+    }
+
+    pub(crate) const fn with_snapshot_timestamp(mut self, timestamp: DateTime) -> Self {
+        self.snapshot_timestamp = Some(timestamp);
+        self
+    }
+
+    pub(crate) fn has_supplied_elements(&self) -> bool {
+        !self.supplied_elements.is_empty()
     }
 
     pub(crate) const fn request_cache(&self) -> &MarketCache {
@@ -196,6 +214,7 @@ impl PricingContext {
         mut self,
         constructed_elements: ConstructedElementStore,
     ) -> Self {
+        self.snapshot_timestamp = None;
         self.request_cache = MarketCache::default();
         self.supplied_elements = constructed_elements.clone();
         self.constructed_elements = constructed_elements;
@@ -321,6 +340,7 @@ impl PricingContext {
 
     /// Returns a mutable reference to the constructed elements store.
     pub fn constructed_elements_mut(&mut self) -> &mut ConstructedElementStore {
+        self.snapshot_timestamp = None;
         self.request_cache.clear();
         &mut self.constructed_elements
     }

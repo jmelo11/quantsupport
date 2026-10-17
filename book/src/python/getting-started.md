@@ -56,6 +56,46 @@ side, and optional notional overrides. Bond positions also require an explicit
 `BondPricingAnchor`. Market objects are constructed on demand inside the context
 manager. Retain results rather than live market views after leaving it.
 
+## Historical Markets
+
+`DateTime` is a library value backed by chrono, like `Date`. Its components are
+UTC; parsing an offset-aware timestamp normalizes it to UTC. Snapshot properties
+return `DateTime` values, not strings. JSON stores them as RFC 3339 strings.
+
+```python
+archive = qs.MarketSnapshotStore()
+archive.insert(qs.MarketSnapshot.from_context(
+  qs.DateTime(2026, 1, 2, 16, 30), context,
+))
+archive.to_json("markets.json")
+
+archive = qs.MarketSnapshotStore.from_json("markets.json")
+selector = qs.SnapshotSelector(
+  qs.DateTime(2026, 1, 2, 17),
+  rule=qs.SnapshotSelectionRule.Previous,
+  level=qs.Level.Mid,
+)
+with archive.pricing_context(selector) as historical:
+  print(historical.snapshot_timestamp)
+  print(historical.evaluation_date)
+  print(historical.evaluate(position, [qs.Request.Value]).price)
+```
+
+`Exact` requires the observation instant to exist. `Closest` chooses the nearest
+instant and prefers the earlier one on ties, but can select future data.
+`Previous`, the default, never selects an observation later than requested.
+Pricing uses the matched snapshot's market business date, not the requested
+timestamp's calendar date. One complete snapshot is selected; inputs from
+different instants are not mixed.
+
+Archives save quote observations, FX, and construction configurations, including
+explicit zero-rate pillars. They rebuild curves for the selected bid/mid/ask
+level; missing consumed quote sides raise errors. FX spots and explicit curve
+pillars remain side-independent. Runtime AD objects are not serialized.
+Pass historical fixings separately with `pricing_context(selector, fixings=...)`.
+Fixing publication vintages, Python pricer registrations, and Python fixed-income
+policies are not archived; supply those separately where needed.
+
 ## Properties, Methods, and Mutability
 
 - Contract terms and evaluation results are read-only properties, such as

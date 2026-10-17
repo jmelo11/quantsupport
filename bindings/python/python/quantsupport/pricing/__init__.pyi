@@ -3,11 +3,13 @@ from datetime import date as PythonDate
 from typing import Any, ClassVar, Mapping, Sequence, final, overload
 from typing_extensions import Self, disjoint_base
 from pandas import DataFrame
-from ..time import Date, _DateLike
+from ..time import Date, DateTime, _DateLike
 from ..market import CreditCurveConfiguration, Currency, CurveConfiguration, DiscountCurve, FixingStore, FxStore, Level, MarketIndex, QuoteStore, Simulation, SimulationConfiguration, VolatilityCube, VolatilityCubeConfiguration, VolatilitySurface, VolatilitySurfaceConfiguration, _CurrencyLike, _IndexLike
 from ..instruments import Instrument, Side
 from ..risk import XvaResult
-__all__ = ['Request', 'PricerConfiguration', 'SingleCurveCSADiscountPolicy', 'FixedIncomeDiscountPolicy', 'BondPricingAnchor', 'PricingContext', 'LoanPricer', 'Trade', 'Pricer', 'MarketDataProvider', 'Evaluator', 'EvaluationResults']
+__all__ = ['Request', 'PricerConfiguration', 'SingleCurveCSADiscountPolicy', 'FixedIncomeDiscountPolicy', 'BondPricingAnchor',
+           'PricingContext', 'LoanPricer', 'Trade', 'Pricer', 'MarketDataProvider', 'Evaluator', 'EvaluationResults']
+
 
 @final
 class Request:
@@ -50,6 +52,7 @@ QuantSupportError
     OAS: ClassVar[Request]
     Cashflows: ClassVar[Request]
     FairRate: ClassVar[Request]
+
 
 @final
 class PricerConfiguration:
@@ -153,6 +156,7 @@ QuantSupportError
 """
         ...
 
+
 @final
 class SingleCurveCSADiscountPolicy:
     """Collateral currency and remuneration curve for a single-curve CSA.
@@ -228,6 +232,7 @@ QuantSupportError
         """Read-only market index of the collateral remuneration curve."""
         ...
 
+
 @final
 class FixedIncomeDiscountPolicy:
     """Select discount curves by the cashflow currency.
@@ -244,9 +249,10 @@ Examples
 --------
 FixedIncomeDiscountPolicy(risk_free_indices={Currency.EUR: MarketIndex.ESTR})"""
 
-    def __new__(cls, risk_free_indices: Mapping[_CurrencyLike, _IndexLike], prefer_instrument_index: bool=...) -> Self:
+    def __new__(cls, risk_free_indices: Mapping[_CurrencyLike, _IndexLike], prefer_instrument_index: bool = ...) -> Self:
         """Map each cashflow currency to its discount curve's market index."""
         ...
+
 
 @final
 class BondPricingAnchor:
@@ -362,6 +368,7 @@ QuantSupportError
 """
         ...
 
+
 @disjoint_base
 class PricingContext:
     """Market inputs and policies used to value trades.
@@ -436,7 +443,7 @@ Examples
        results = ctx.evaluate(trade, requests=["Value", "Sensitivities"])
 """
 
-    def __new__(cls, quotes: QuoteStore, curves: Sequence[CurveConfiguration], fixings: FixingStore | None=..., fx: FxStore | None=..., volatility_surfaces: Sequence[VolatilitySurfaceConfiguration] | None=..., volatility_cubes: Sequence[VolatilityCubeConfiguration] | None=..., pricer_configurations: Sequence[PricerConfiguration] | None=..., simulations: Sequence[SimulationConfiguration] | None=..., csa_policy: SingleCurveCSADiscountPolicy | None=..., fixed_income_policy: FixedIncomeDiscountPolicy | None=..., quote_level: Level | str | None=..., credit_curves: Sequence[CreditCurveConfiguration] | None=...) -> Self:
+    def __new__(cls, quotes: QuoteStore, curves: Sequence[CurveConfiguration], fixings: FixingStore | None = ..., fx: FxStore | None = ..., volatility_surfaces: Sequence[VolatilitySurfaceConfiguration] | None = ..., volatility_cubes: Sequence[VolatilityCubeConfiguration] | None = ..., pricer_configurations: Sequence[PricerConfiguration] | None = ..., simulations: Sequence[SimulationConfiguration] | None = ..., csa_policy: SingleCurveCSADiscountPolicy | None = ..., fixed_income_policy: FixedIncomeDiscountPolicy | None = ..., quote_level: Level | str | None = ..., credit_curves: Sequence[CreditCurveConfiguration] | None = ...) -> Self:
         ...
 
     def initialize(self) -> None:
@@ -702,7 +709,7 @@ QuantSupportError
 """
         ...
 
-    def __exit__(self, _exc_type: Any | None=..., _exc_value: Any | None=..., _traceback: Any | None=...) -> bool:
+    def __exit__(self, _exc_type: Any | None = ..., _exc_value: Any | None = ..., _traceback: Any | None = ...) -> bool:
         """Leave a context scope without suppressing an exception.
 
 Parameters
@@ -728,7 +735,7 @@ RuntimeError
 """
         ...
 
-    def evaluate_script(self, script: str, n_paths: int=..., seed: int=...) -> Any:
+    def evaluate_script(self, script: str, n_paths: int = ..., seed: int = ...) -> Any:
         """Evaluate dated payoff code using native LGM market models.
 
 Parameters
@@ -759,7 +766,7 @@ QuantSupportError
 """
         ...
 
-    def evaluate(self, trade: Trade, requests: Sequence[Request | str] | None=...) -> EvaluationResults:
+    def evaluate(self, trade: Trade, requests: Sequence[Request | str] | None = ...) -> EvaluationResults:
         """Evaluate a position against the active base or scenario market.
 
 Parameters
@@ -978,6 +985,11 @@ Reassignment invalidates constructed market data; editing the copy does not.
         ...
 
     @property
+    def snapshot_timestamp(self) -> DateTime | None:
+        """Selected observation instant, or None after market inputs are changed."""
+        ...
+
+    @property
     def base_currency(self) -> Currency:
         """Base collateral currency used for curve construction."""
         ...
@@ -1087,6 +1099,7 @@ valuations. Unlike market-input reassignment, this does not rebuild market data.
         """
         ...
 
+
 @final
 class LoanPricer:
     """Native loan valuation with refinancing and discount-policy overrides.
@@ -1108,11 +1121,11 @@ rebuild_amortization_for_fair_rate : bool, optional
     principal used for Value and Sensitivities.
 """
 
-    def __new__(cls, *, refinancing_benchmark_index: _IndexLike | None=..., discount_policy: FixedIncomeDiscountPolicy | None=..., rebuild_amortization_for_fair_rate: bool=...) -> Self:
+    def __new__(cls, *, refinancing_benchmark_index: _IndexLike | None = ..., discount_policy: FixedIncomeDiscountPolicy | None = ..., rebuild_amortization_for_fair_rate: bool = ...) -> Self:
         """Configure refinancing/discount overrides and whether FairRate trials rebuild amortization."""
         ...
 
-    def evaluate(self, trade: Trade, context: PricingContext, requests: Sequence[Request | str] | None=...) -> EvaluationResults:
+    def evaluate(self, trade: Trade, context: PricingContext, requests: Sequence[Request | str] | None = ...) -> EvaluationResults:
         """Value a loan's signed expected receipts, excluding its initial advance.
 
 Parameters
@@ -1146,6 +1159,7 @@ QuantSupportError
     unavailable/invalid, a request is unsupported, or the fair-rate solve fails.
 """
         ...
+
 
 @disjoint_base
 class Trade:
@@ -1200,7 +1214,7 @@ Notes
 Positions retain a reference to the instrument and are thread-confined.
 """
 
-    def __new__(cls, instrument: Instrument, trade_date: _DateLike, side: Side | str | None=..., *, notional: float | None=..., domestic_notional: float | None=..., foreign_notional: float | None=..., num_contracts: float=..., pricing_anchor: Any | None=..., settlement_date: _DateLike | None=..., spread_day_counter: Any | None=...) -> Self:
+    def __new__(cls, instrument: Instrument, trade_date: _DateLike, side: Side | str | None = ..., *, notional: float | None = ..., domestic_notional: float | None = ..., foreign_notional: float | None = ..., num_contracts: float = ..., pricing_anchor: Any | None = ..., settlement_date: _DateLike | None = ..., spread_day_counter: Any | None = ...) -> Self:
         ...
 
     def __repr__(self) -> str:
@@ -1277,6 +1291,7 @@ QuantSupportError
     def domestic_notional(self) -> float | None:
         """Read-only domestic-currency leg amount override; None keeps the contract amount."""
         ...
+
 
 @disjoint_base
 class Pricer:
@@ -1360,6 +1375,7 @@ None
         """Currently installed custom discount policy object."""
         ...
 
+
 @disjoint_base
 class MarketDataProvider:
     """Optional base class for Python market-data providers.
@@ -1384,6 +1400,7 @@ NotImplementedError
     Always raised by the base property; a concrete provider must implement it.
 """
         ...
+
 
 @final
 class Evaluator:
@@ -1458,7 +1475,7 @@ object or None
 """
         ...
 
-    def evaluate(self, trade: Trade, context: Any, requests: Sequence[Request | str] | None=...) -> Any:
+    def evaluate(self, trade: Trade, context: Any, requests: Sequence[Request | str] | None = ...) -> Any:
         """Evaluate a registered Python trade against a market-data provider.
 
 Parameters
@@ -1488,6 +1505,7 @@ QuantSupportError
     Exceptions raised by the Python pricer itself propagate unchanged.
 """
         ...
+
 
 @disjoint_base
 class EvaluationResults:
@@ -1539,7 +1557,7 @@ Scalar fields are stored as supplied; no consistency checks or valuation are
 performed. Table properties construct new pandas DataFrames on access.
 """
 
-    def __new__(cls, evaluation_date: _DateLike, identifier: str, *, price: Any | None=..., yield_to_maturity: Any | None=..., modified_duration: Any | None=..., z_spread: Any | None=..., oas: Any | None=..., fair_rate: Any | None=..., sensitivities: Any | None=..., cashflows: Any | None=...) -> Self:
+    def __new__(cls, evaluation_date: _DateLike, identifier: str, *, price: Any | None = ..., yield_to_maturity: Any | None = ..., modified_duration: Any | None = ..., z_spread: Any | None = ..., oas: Any | None = ..., fair_rate: Any | None = ..., sensitivities: Any | None = ..., cashflows: Any | None = ...) -> Self:
         ...
 
     def __repr__(self) -> str:

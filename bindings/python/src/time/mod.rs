@@ -1,8 +1,10 @@
 //! Date, period and calendar functionality, wrapping the library's
 //! `time` module.
 
+pub(crate) mod datetime;
 pub(crate) mod imm;
 pub(crate) mod schedule;
+pub(crate) use datetime::DateTime;
 
 use pyo3::prelude::*;
 use pyo3::types::PyDate;

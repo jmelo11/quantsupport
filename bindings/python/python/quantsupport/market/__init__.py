@@ -8,6 +8,10 @@ from ..quantsupport import (
     VolatilityType as VolatilityType,
     SmileType as SmileType,
     QuoteStore as QuoteStore,
+    SnapshotSelectionRule as SnapshotSelectionRule,
+    SnapshotSelector as SnapshotSelector,
+    MarketSnapshot as MarketSnapshot,
+    MarketSnapshotStore as MarketSnapshotStore,
     FixingStore as FixingStore,
     FxStore as FxStore,
     CurveConstruction as CurveConstruction,
@@ -24,4 +28,4 @@ from ..quantsupport import (
     Simulation as Simulation,
 )
 
-__all__ = ['Currency', 'MarketIndex', 'Level', 'Interpolator', 'VolatilityType', 'SmileType', 'QuoteStore', 'FixingStore', 'FxStore', 'CurveConstruction', 'CurveConfiguration', 'CreditCurveConfiguration', 'VolatilitySurfaceConfiguration', 'VolatilityCubeConfiguration', 'SimulationConfiguration', 'ZeroRateTermStructure', 'TenorBasedZeroRateTermStructure', 'DiscountCurve', 'VolatilitySurface', 'VolatilityCube', 'Simulation']
+__all__ = ['SnapshotSelectionRule', 'SnapshotSelector', 'MarketSnapshot', 'MarketSnapshotStore', 'Currency', 'MarketIndex', 'Level', 'Interpolator', 'VolatilityType', 'SmileType', 'QuoteStore', 'FixingStore', 'FxStore', 'CurveConstruction', 'CurveConfiguration', 'CreditCurveConfiguration', 'VolatilitySurfaceConfiguration', 'VolatilityCubeConfiguration', 'SimulationConfiguration', 'ZeroRateTermStructure', 'TenorBasedZeroRateTermStructure', 'DiscountCurve', 'VolatilitySurface', 'VolatilityCube', 'Simulation']

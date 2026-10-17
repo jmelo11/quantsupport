@@ -38,6 +38,8 @@ pub use crate::{
             pathdependentrequest::PathDependentRequest,
             spotrequest::SpotRequest,
         },
+        marketsnapshot::MarketSnapshot,
+        marketsnapshotstore::MarketSnapshotStore,
         pillars::Pillars,
         pricer::Pricer,
         pricerconfiguration::{
@@ -50,6 +52,7 @@ pub use crate::{
             HandleCashflows, HandleFairRate, HandleModifiedDuration, HandleSensitivities,
             HandleValue, HandleYieldToMaturity, LegsProvider, Request,
         },
+        snapshotselector::{SnapshotSelectionRule, SnapshotSelector},
         trade::{Side, Trade},
         visitable::{Visitable, Visitor},
     },
@@ -225,6 +228,7 @@ pub use crate::{
         calendar::Calendar,
         calendars::traits::{ImplCalendar, IsCalendar},
         date::{Date, NaiveDateExt},
+        datetime::DateTime,
         daycounter::DayCounter,
         enums::{
             BusinessDayConvention, DateGenerationRule, Frequency, IMMMonth, Month, TimeUnit,

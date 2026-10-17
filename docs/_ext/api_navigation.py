@@ -10,7 +10,7 @@ from python_api import declarations
 
 PYTHON_SECTIONS = {
     "time": {
-        "Dates and Periods": "Date Period TimeUnit",
+        "Dates and Periods": "Date DateTime Period TimeUnit",
         "Calendars": "Calendar UnitedStatesMarket BrazilMarket JointCalendarRule",
         "Schedules and IMM": "Schedule IMM DateGenerationRule BusinessDayConvention",
         "Accrual and Frequency": "DayCounter Compounding Frequency",
@@ -18,6 +18,7 @@ PYTHON_SECTIONS = {
     "market": {
         "Currencies and Indices": "Currency MarketIndex",
         "Quotes, Fixings, and FX": "QuoteStore FixingStore FxStore Level",
+        "Historical Snapshots": "SnapshotSelectionRule SnapshotSelector MarketSnapshot MarketSnapshotStore",
         "Curve Construction": "CurveConfiguration CreditCurveConfiguration CurveConstruction Interpolator",
         "Yield Curves": "DiscountCurve ZeroRateTermStructure TenorBasedZeroRateTermStructure",
         "Volatility": "VolatilitySurface VolatilityCube VolatilitySurfaceConfiguration VolatilityCubeConfiguration VolatilityType SmileType",

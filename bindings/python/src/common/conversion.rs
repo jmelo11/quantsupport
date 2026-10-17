@@ -71,7 +71,10 @@ fn serde_input<'py>(obj: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
         )+ };
     }
     loan_terms_input!(LoanRepaymentStructure, PrepaymentModelConfiguration);
-    if obj.is_instance_of::<crate::time::Date>() || obj.is_instance_of::<crate::time::Period>() {
+    if obj.is_instance_of::<crate::time::Date>()
+        || obj.is_instance_of::<crate::time::Period>()
+        || obj.is_instance_of::<crate::time::DateTime>()
+    {
         return obj.str().map(Bound::into_any);
     }
     if let Ok(curve) = obj.extract::<crate::market::curves::ZeroRateTermStructure>() {
@@ -167,7 +170,12 @@ enum_extractor!(
     "interpolator"
 );
 
-enum_extractor!(extract_level, crate::common::enums::Level, Level, "quote level");
+enum_extractor!(
+    extract_level,
+    crate::common::enums::Level,
+    Level,
+    "quote level"
+);
 enum_extractor!(
     extract_currency,
     crate::common::enums::Currency,

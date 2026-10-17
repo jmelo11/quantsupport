@@ -1,14 +1,13 @@
 //! Python bindings for the quantsupport derivative pricing library.
 
 mod common;
-mod market;
 mod instruments;
+mod market;
 mod pricing;
 mod time;
 mod xva;
 
 use pyo3::prelude::*;
-
 
 pyo3::create_exception!(
     quantsupport,
@@ -44,6 +43,7 @@ fn quantsupport(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<common::enums::PaymentStructure>()?;
     // Time
     m.add_class::<time::Date>()?;
+    m.add_class::<time::DateTime>()?;
     m.add_class::<time::Period>()?;
     m.add_class::<time::Calendar>()?;
     m.add_class::<time::schedule::Schedule>()?;
@@ -52,6 +52,10 @@ fn quantsupport(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<market::stores::QuoteStore>()?;
     m.add_class::<market::stores::FixingStore>()?;
     m.add_class::<market::stores::FxStore>()?;
+    m.add_class::<market::snapshots::SnapshotSelectionRule>()?;
+    m.add_class::<market::snapshots::SnapshotSelector>()?;
+    m.add_class::<market::snapshots::MarketSnapshot>()?;
+    m.add_class::<market::snapshots::MarketSnapshotStore>()?;
     m.add_class::<market::stores::CurveConstruction>()?;
     m.add_class::<market::stores::CurveConfiguration>()?;
     m.add_class::<market::stores::CreditCurveConfiguration>()?;

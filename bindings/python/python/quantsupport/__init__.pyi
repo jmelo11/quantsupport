@@ -7,6 +7,7 @@ at the package root for compatibility with existing code.
 from . import time as time, market as market, instruments as instruments, pricing as pricing, risk as risk
 from .time import (
     Date as Date,
+    DateTime as DateTime,
     Period as Period,
     Calendar as Calendar,
     Schedule as Schedule,
@@ -29,6 +30,10 @@ from .market import (
     VolatilityType as VolatilityType,
     SmileType as SmileType,
     QuoteStore as QuoteStore,
+    SnapshotSelectionRule as SnapshotSelectionRule,
+    SnapshotSelector as SnapshotSelector,
+    MarketSnapshot as MarketSnapshot,
+    MarketSnapshotStore as MarketSnapshotStore,
     FixingStore as FixingStore,
     FxStore as FxStore,
     CurveConstruction as CurveConstruction,
@@ -108,4 +113,4 @@ from ._exceptions import (
     QuantSupportError as QuantSupportError,
 )
 
-__all__ = ['time', 'market', 'instruments', 'pricing', 'risk', 'Date', 'Period', 'Calendar', 'Schedule', 'IMM', 'UnitedStatesMarket', 'BrazilMarket', 'JointCalendarRule', 'Compounding', 'Frequency', 'DayCounter', 'TimeUnit', 'BusinessDayConvention', 'DateGenerationRule', 'Currency', 'MarketIndex', 'Level', 'Interpolator', 'VolatilityType', 'SmileType', 'QuoteStore', 'FixingStore', 'FxStore', 'CurveConstruction', 'CurveConfiguration', 'CreditCurveConfiguration', 'VolatilitySurfaceConfiguration', 'VolatilityCubeConfiguration', 'SimulationConfiguration', 'ZeroRateTermStructure', 'TenorBasedZeroRateTermStructure', 'DiscountCurve', 'VolatilitySurface', 'VolatilityCube', 'Simulation', 'Instrument', 'Side', 'OptionType', 'SwaptionType', 'CapFloorType', 'CapletFloorletType', 'PaymentStructure', 'LoanRepaymentStructure', 'PrepaymentModelConfiguration', 'Loan', 'EquityForward', 'EuropeanSwaption', 'Swap', 'CrossCurrencySwap', 'BasisSwap', 'FixFloatCrossCurrencySwap', 'FixedRateBond', 'InterestRate', 'PayoffOps', 'FixedRateCoupon', 'FloatingRateCoupon', 'OptionEmbeddedCoupon', 'CallScheduleEntry', 'SteppedCouponBond', 'FloatingRateNote', 'FixedRateDeposit', 'FxForward', 'FxOption', 'EquityOption', 'CreditDefaultSwap', 'CapFloor', 'CapletFloorlet', 'RateFutures', 'ScriptedProduct', 'Request', 'PricerConfiguration', 'SingleCurveCSADiscountPolicy', 'FixedIncomeDiscountPolicy', 'BondPricingAnchor', 'PricingContext', 'LoanPricer', 'Trade', 'Pricer', 'MarketDataProvider', 'Evaluator', 'EvaluationResults', 'ScenarioType', 'Shock', 'Scenario', 'XvaConfig', 'CsaTerms', 'NettingSet', 'XvaResult', 'ExposureProfile', 'QuantSupportError']
+__all__ = ['DateTime', 'SnapshotSelectionRule', 'SnapshotSelector', 'MarketSnapshot', 'MarketSnapshotStore', 'time', 'market', 'instruments', 'pricing', 'risk', 'Date', 'Period', 'Calendar', 'Schedule', 'IMM', 'UnitedStatesMarket', 'BrazilMarket', 'JointCalendarRule', 'Compounding', 'Frequency', 'DayCounter', 'TimeUnit', 'BusinessDayConvention', 'DateGenerationRule', 'Currency', 'MarketIndex', 'Level', 'Interpolator', 'VolatilityType', 'SmileType', 'QuoteStore', 'FixingStore', 'FxStore', 'CurveConstruction', 'CurveConfiguration', 'CreditCurveConfiguration', 'VolatilitySurfaceConfiguration', 'VolatilityCubeConfiguration', 'SimulationConfiguration', 'ZeroRateTermStructure', 'TenorBasedZeroRateTermStructure', 'DiscountCurve', 'VolatilitySurface', 'VolatilityCube', 'Simulation', 'Instrument', 'Side', 'OptionType', 'SwaptionType', 'CapFloorType', 'CapletFloorletType', 'PaymentStructure', 'LoanRepaymentStructure', 'PrepaymentModelConfiguration', 'Loan', 'EquityForward', 'EuropeanSwaption', 'Swap', 'CrossCurrencySwap', 'BasisSwap', 'FixFloatCrossCurrencySwap', 'FixedRateBond', 'InterestRate', 'PayoffOps', 'FixedRateCoupon', 'FloatingRateCoupon', 'OptionEmbeddedCoupon', 'CallScheduleEntry', 'SteppedCouponBond', 'FloatingRateNote', 'FixedRateDeposit', 'FxForward', 'FxOption', 'EquityOption', 'CreditDefaultSwap', 'CapFloor', 'CapletFloorlet', 'RateFutures', 'ScriptedProduct', 'Request', 'PricerConfiguration', 'SingleCurveCSADiscountPolicy', 'FixedIncomeDiscountPolicy', 'BondPricingAnchor', 'PricingContext', 'LoanPricer', 'Trade', 'Pricer', 'MarketDataProvider', 'Evaluator', 'EvaluationResults', 'ScenarioType', 'Shock', 'Scenario', 'XvaConfig', 'CsaTerms', 'NettingSet', 'XvaResult', 'ExposureProfile', 'QuantSupportError']

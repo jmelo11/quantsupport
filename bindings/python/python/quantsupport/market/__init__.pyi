@@ -3,12 +3,177 @@ from datetime import date as PythonDate
 from typing import Any, ClassVar, Mapping, Sequence, final, overload
 from typing_extensions import Self, disjoint_base
 from pandas import DataFrame
-from ..time import Compounding, Date, DayCounter, Frequency, Period, _DateLike, _PeriodLike
+from ..time import Compounding, Date, DateTime, DayCounter, Frequency, Period, _DateLike, _DateTimeLike, _PeriodLike
+import quantsupport.pricing as _pricing
 
 _CurrencyLike = Currency | str
 _IndexLike = MarketIndex | str | Mapping[str, Any]
 
-__all__ = ['Currency', 'MarketIndex', 'Level', 'Interpolator', 'VolatilityType', 'SmileType', 'QuoteStore', 'FixingStore', 'FxStore', 'CurveConstruction', 'CurveConfiguration', 'CreditCurveConfiguration', 'VolatilitySurfaceConfiguration', 'VolatilityCubeConfiguration', 'SimulationConfiguration', 'ZeroRateTermStructure', 'TenorBasedZeroRateTermStructure', 'DiscountCurve', 'VolatilitySurface', 'VolatilityCube', 'Simulation']
+__all__ = ['SnapshotSelectionRule', 'SnapshotSelector', 'MarketSnapshot', 'MarketSnapshotStore', 'Currency', 'MarketIndex', 'Level', 'Interpolator', 'VolatilityType', 'SmileType', 'QuoteStore', 'FixingStore', 'FxStore', 'CurveConstruction', 'CurveConfiguration', 'CreditCurveConfiguration', 'VolatilitySurfaceConfiguration', 'VolatilityCubeConfiguration', 'SimulationConfiguration', 'ZeroRateTermStructure', 'TenorBasedZeroRateTermStructure', 'DiscountCurve', 'VolatilitySurface', 'VolatilityCube', 'Simulation']
+
+@final
+class SnapshotSelectionRule:
+    """Timestamp matching: Exact, Closest, or Previous (never selects future data).
+
+    Closest can select later data. Equidistant timestamps prefer the earlier one.
+    """
+    Exact: ClassVar[SnapshotSelectionRule]
+    Closest: ClassVar[SnapshotSelectionRule]
+    Previous: ClassVar[SnapshotSelectionRule]
+
+@final
+class SnapshotSelector:
+    """Select one coherent historical market and calibration quote side.
+
+    Parameters
+    ----------
+    timestamp : DateTime, datetime.datetime, or str
+        Requested instant. External datetimes and RFC 3339 strings need offsets.
+    rule : SnapshotSelectionRule or str, optional
+        Exact, Closest, or Previous. Defaults to Previous.
+    level : Level or str, optional
+        Mid, Bid, or Ask. Defaults to Mid; missing consumed sides are errors.
+    """
+    def __new__(cls, timestamp: _DateTimeLike, *, rule: SnapshotSelectionRule | str | None = ..., level: Level | str | None = ...) -> Self: ...
+    @property
+    def timestamp(self) -> DateTime:
+        """Requested UTC instant as a library DateTime."""
+        ...
+    @property
+    def rule(self) -> SnapshotSelectionRule:
+        """Timestamp matching policy."""
+        ...
+    @property
+    def level(self) -> Level:
+        """Quote side used for construction and model calibration."""
+        ...
+
+@final
+class MarketSnapshot:
+    """Timestamped market inputs, including curve construction configurations.
+
+    Curves are rebuilt from configurations, including explicit zero-rate pillars.
+    Runtime AD objects, fixings, temporary scenarios, Python pricer registrations,
+    and Python fixed-income policies are not archived. FX and explicit zero-rate
+    pillars are side-independent. Use from_context or from_dict to construct.
+    """
+    @staticmethod
+    def from_context(timestamp: _DateTimeLike, context: _pricing.PricingContext) -> MarketSnapshot:
+        """Capture the context's base inputs, excluding temporary scenarios.
+
+        Parameters
+        ----------
+        timestamp : DateTime, datetime.datetime, or str
+            Offset-aware observation instant, distinct from the business date.
+        context : PricingContext
+            Market whose serializable inputs should be captured. Externally
+            supplied runtime market objects raise QuantSupportError.
+        """
+        ...
+    @staticmethod
+    def from_dict(value: Mapping[str, Any]) -> MarketSnapshot:
+        """Restore one native serialized market snapshot.
+
+        Parameters
+        ----------
+        value : mapping
+            Native schema returned by to_dict; timestamp also accepts DateTime.
+        """
+        ...
+    def to_dict(self) -> dict[str, Any]:
+        """Native serialized inputs; timestamp is an RFC 3339 string."""
+        ...
+    @property
+    def timestamp(self) -> DateTime:
+        """Actual observation instant as a library DateTime."""
+        ...
+    @property
+    def reference_date(self) -> Date:
+        """Market business date used as the pricing evaluation date."""
+        ...
+    @property
+    def quotes(self) -> QuoteStore:
+        """Copy of the market's quote observations."""
+        ...
+
+@final
+class MarketSnapshotStore:
+    """Archive coherent historical markets by DateTime with JSON persistence."""
+    def __new__(cls) -> Self: ...
+    def insert(self, snapshot: MarketSnapshot) -> None:
+        """Insert without overwriting; duplicate instants are errors.
+
+        Parameters
+        ----------
+        snapshot : MarketSnapshot
+            Timestamped set of market inputs.
+        """
+        ...
+    @property
+    def timestamps(self) -> list[DateTime]:
+        """Available instants in ascending order, as library DateTime values."""
+        ...
+    def select(self, selector: SnapshotSelector) -> MarketSnapshot:
+        """Resolve one complete market or raise QuantSupportError.
+
+        Parameters
+        ----------
+        selector : SnapshotSelector
+            Requested observation instant and matching rule. Inspect the returned
+            snapshot's timestamp to see the actual selected instant.
+        """
+        ...
+    def pricing_context(self, selector: SnapshotSelector, *, fixings: FixingStore | None = ..., fixed_income_policy: _pricing.FixedIncomeDiscountPolicy | None = ...) -> _pricing.PricingContext:
+        """Create a fresh context using the matched market's business date.
+
+        Parameters
+        ----------
+        selector : SnapshotSelector
+            Requested timestamp, matching rule, and quote side.
+        fixings : FixingStore or None, optional
+            Historical fixing dataset. Publication vintages are not filtered.
+        fixed_income_policy : FixedIncomeDiscountPolicy or None, optional
+            Explicit policy for the new context; otherwise uses its base curve.
+
+        Notes
+        -----
+        Context construction is lazy. Dates and sides never share built curves
+        or AD state. The requested instant does not roll the matched curves to
+        a different evaluation date. Runtime provenance is snapshot_timestamp.
+        """
+        ...
+    @staticmethod
+    def from_json(path: str) -> MarketSnapshotStore:
+        """Load a timestamp-ordered JSON array, rejecting duplicate instants.
+
+        Parameters
+        ----------
+        path : str
+            Path to an archive written by to_json.
+        """
+        ...
+    def to_json(self, path: str) -> None:
+        """Save observations and configurations, excluding runtime AD objects.
+
+        Parameters
+        ----------
+        path : str
+            Destination file path; an existing file is overwritten.
+        """
+        ...
+    @staticmethod
+    def from_dict(value: Sequence[Mapping[str, Any]]) -> MarketSnapshotStore:
+        """Load a native snapshot array, rejecting duplicate instants.
+
+        Parameters
+        ----------
+        value : sequence of mappings
+            Native snapshot dictionaries, as returned by to_dict.
+        """
+        ...
+    def to_dict(self) -> list[dict[str, Any]]:
+        """Native snapshot array in timestamp order, with RFC 3339 strings."""
+        ...
 
 @final
 class Level:

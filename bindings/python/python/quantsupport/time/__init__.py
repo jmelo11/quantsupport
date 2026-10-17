@@ -2,6 +2,7 @@
 
 from ..quantsupport import (
     Date as Date,
+    DateTime as DateTime,
     Period as Period,
     Calendar as Calendar,
     Schedule as Schedule,
@@ -17,4 +18,4 @@ from ..quantsupport import (
     DateGenerationRule as DateGenerationRule,
 )
 
-__all__ = ['Date', 'Period', 'Calendar', 'Schedule', 'IMM', 'UnitedStatesMarket', 'BrazilMarket', 'JointCalendarRule', 'Compounding', 'Frequency', 'DayCounter', 'TimeUnit', 'BusinessDayConvention', 'DateGenerationRule']
+__all__ = ['DateTime', 'Date', 'Period', 'Calendar', 'Schedule', 'IMM', 'UnitedStatesMarket', 'BrazilMarket', 'JointCalendarRule', 'Compounding', 'Frequency', 'DayCounter', 'TimeUnit', 'BusinessDayConvention', 'DateGenerationRule']

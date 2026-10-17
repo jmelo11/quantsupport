@@ -59,6 +59,16 @@ impl Pillars<DualFwd> for FxStore {
 }
 
 impl FxStore {
+    /// Exports side-independent spot observations without runtime AD state.
+    #[must_use]
+    pub fn records(&self) -> Vec<FxRateRecord> {
+        self.exchange_rate_map.iter().map(|(&(base, quote), rate)| FxRateRecord {
+            base,
+            quote,
+            rate: rate.value(),
+        }).collect()
+    }
+
     /// Creates an empty store.
     #[must_use]
     pub fn new() -> Self {
