@@ -1,5 +1,8 @@
 # Workbook Workflow
 
+For pricing one trade across market dates, follow [Historical Pricing](historical-pricing.md).
+Excel exposes the same native snapshot store and timestamp selector as Python.
+
 Constructors return revisioned handles such as
 `QSObject:QuoteStore:usd_quotes:3`. The underlying object is owned by the
 add-in. Handles are process-local and are recreated from workbook formulas

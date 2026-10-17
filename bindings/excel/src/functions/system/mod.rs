@@ -26,7 +26,7 @@ pub fn qs_functions() -> *mut xll_rs::types::XLOPER12 {
         .collect();
     names.sort();
     names.dedup();
-    super::helpers::string_column(names)
+    crate::functions::helpers::string_column(names)
 }
 
 #[xll_bindgen(
@@ -56,7 +56,7 @@ pub fn qs_functions_details() -> *mut xll_rs::types::XLOPER12 {
             export.help.to_string(),
         ]
     }));
-    super::helpers::string_matrix(rows)
+    crate::functions::helpers::string_matrix(rows)
 }
 
 #[xll_bindgen(
@@ -76,7 +76,7 @@ pub fn qs_help(function_name: &str) -> Result<*mut xll_rs::types::XLOPER12, XllE
                     .any(|alias| alias.eq_ignore_ascii_case(requested_name))
         })
         .ok_or_else(|| {
-            super::helpers::value_error(format!(
+            crate::functions::helpers::value_error(format!(
                 "unknown worksheet function '{requested_name}'; use QS.FUNCTIONS() to list names"
             ))
         })?;
@@ -109,7 +109,7 @@ pub fn qs_help(function_name: &str) -> Result<*mut xll_rs::types::XLOPER12, XllE
             .zip(argument_help)
             .map(|(name, help)| vec![name.to_string(), help.to_string()]),
     );
-    Ok(super::helpers::string_matrix(rows))
+    Ok(crate::functions::helpers::string_matrix(rows))
 }
 
 #[cfg(test)]
@@ -140,3 +140,5 @@ mod tests {
         }
     }
 }
+
+mod objects;

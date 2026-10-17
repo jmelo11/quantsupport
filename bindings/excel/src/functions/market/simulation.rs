@@ -1,73 +1,14 @@
-use quantsupport::prelude::{Period, Scalar};
+use quantsupport::prelude::Scalar;
 use xll_rs::types::XllError;
 use xllgen::xll_bindgen;
 
 use crate::runtime::registry::with_registry;
 
-use super::helpers::{parse_date, parse_index, parse_time_unit, string_column, value_error};
-
-#[xll_bindgen(
-    name = "QS.VOL.SURFACE",
-    category = "QuantSupport - Volatility",
-    help = "Returns volatility from a surface constructed in a PricingContext"
-)]
-pub fn qs_vol_surface(
-    context: &str,
-    market_index: &str,
-    expiry_date: &str,
-    key: f64,
-) -> Result<f64, XllError> {
-    let index = parse_index(market_index)?;
-    let expiry = parse_date(expiry_date)?;
-    with_registry(|registry| {
-        registry
-            .pricing_context(context)
-            .map_err(|error| error.to_string())?
-            .constructed_elements()
-            .volatility_surface(&index)
-            .ok_or_else(|| format!("volatility surface '{index}' was not constructed"))?
-            .surface()
-            .volatility_from_date(expiry, key)
-            .map(|value| value.value())
-            .map_err(|error| error.to_string())
-    })
-    .map_err(value_error)
-}
-
-#[xll_bindgen(
-    name = "QS.VOL.CUBE",
-    category = "QuantSupport - Volatility",
-    help = "Returns volatility from a cube constructed in a PricingContext"
-)]
-pub fn qs_vol_cube(
-    context: &str,
-    market_index: &str,
-    expiry_date: &str,
-    maturity_length: i32,
-    maturity_unit: &str,
-    key: f64,
-) -> Result<f64, XllError> {
-    let index = parse_index(market_index)?;
-    let expiry = parse_date(expiry_date)?;
-    let maturity = Period::new(maturity_length, parse_time_unit(maturity_unit)?);
-    with_registry(|registry| {
-        registry
-            .pricing_context(context)
-            .map_err(|error| error.to_string())?
-            .constructed_elements()
-            .volatility_cube(&index)
-            .ok_or_else(|| format!("volatility cube '{index}' was not constructed"))?
-            .cube()
-            .volatility_from_date(expiry, maturity, key)
-            .map(|value| value.value())
-            .map_err(|error| error.to_string())
-    })
-    .map_err(value_error)
-}
+use crate::functions::helpers::{parse_index, string_column, value_error};
 
 #[xll_bindgen(
     name = "QS.SIMULATION.NPATHS",
-    category = "QuantSupport - Simulations",
+    category = "QuantSupport - Market",
     help = "Returns the number of paths in a context simulation"
 )]
 pub fn qs_simulation_n_paths(context: &str, market_index: &str) -> Result<i32, XllError> {
@@ -88,7 +29,7 @@ pub fn qs_simulation_n_paths(context: &str, market_index: &str) -> Result<i32, X
 
 #[xll_bindgen(
     name = "QS.SIMULATION.DT",
-    category = "QuantSupport - Simulations",
+    category = "QuantSupport - Market",
     help = "Returns the time step of a context simulation"
 )]
 pub fn qs_simulation_dt(context: &str, market_index: &str) -> Result<f64, XllError> {
@@ -108,7 +49,7 @@ pub fn qs_simulation_dt(context: &str, market_index: &str) -> Result<f64, XllErr
 
 #[xll_bindgen(
     name = "QS.SIMULATION.DATES",
-    category = "QuantSupport - Simulations",
+    category = "QuantSupport - Market",
     help = "Spills the dates of a context simulation"
 )]
 pub fn qs_simulation_dates(
@@ -140,7 +81,7 @@ pub fn qs_simulation_dates(
 
 #[xll_bindgen(
     name = "QS.SIMULATION.PATH",
-    category = "QuantSupport - Simulations",
+    category = "QuantSupport - Market",
     help = "Spills one zero-based path from a context simulation"
 )]
 pub fn qs_simulation_path(
@@ -172,7 +113,7 @@ pub fn qs_simulation_path(
 
 #[xll_bindgen(
     name = "QS.SIMULATION.CALIBRATION",
-    category = "QuantSupport - Simulations",
+    category = "QuantSupport - Market",
     help = "Spills Hull-White calibration quotes, fitted parameters and pricing residuals"
 )]
 pub fn qs_simulation_calibration(
@@ -230,4 +171,26 @@ pub fn qs_simulation_calibration(
         }
     }
     Ok(build_multi(cells, rows, headers.len()))
+}
+
+use crate::functions::helpers::{cached_handle, parse_json_list};
+use crate::runtime::registry::{with_registry_mut, QsObject};
+use quantsupport::prelude::SimulationConfiguration;
+
+#[xll_bindgen(
+    name = "QS.SIMULATION.CONFIGS.FROM.JSON",
+    volatile,
+    category = "QuantSupport - Market",
+    help = "Stores native QuantSupport SimulationConfiguration values parsed from JSON"
+)]
+pub fn qs_simulation_configs_from_json(name: &str, json: &str) -> Result<String, XllError> {
+    if let Some(handle) = cached_handle(name, "SimulationConfigurations", json)? {
+        return Ok(handle);
+    }
+    let values: Vec<SimulationConfiguration> =
+        parse_json_list(json, "SimulationConfiguration values")?;
+    with_registry_mut(|registry| {
+        registry.upsert_if_changed(name, QsObject::SimulationConfigurations(values), json)
+    })
+    .map_err(value_error)
 }

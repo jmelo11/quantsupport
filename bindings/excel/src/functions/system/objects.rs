@@ -3,11 +3,11 @@ use xllgen::xll_bindgen;
 
 use crate::runtime::registry::{with_registry, with_registry_mut};
 
-use super::helpers::{not_found, value_error};
+use crate::functions::helpers::{not_found, value_error};
 
 #[xll_bindgen(
     name = "QS.OBJECT.TYPE",
-    category = "QuantSupport - Objects",
+    category = "QuantSupport - System",
     help = "Returns the type stored behind a QuantSupport object handle"
 )]
 pub fn qs_object_type(handle: &str) -> Result<String, XllError> {
@@ -16,7 +16,7 @@ pub fn qs_object_type(handle: &str) -> Result<String, XllError> {
 
 #[xll_bindgen(
     name = "QS.OBJECT.COUNT",
-    category = "QuantSupport - Objects",
+    category = "QuantSupport - System",
     help = "Returns the number of live object identities in this Excel thread"
 )]
 pub fn qs_object_count() -> i32 {
@@ -25,7 +25,7 @@ pub fn qs_object_count() -> i32 {
 
 #[xll_bindgen(
     name = "QS.OBJECT.REMOVE",
-    category = "QuantSupport - Objects",
+    category = "QuantSupport - System",
     help = "Removes the object referenced by a current handle"
 )]
 pub fn qs_object_remove(handle: &str) -> Result<bool, XllError> {
@@ -35,7 +35,7 @@ pub fn qs_object_remove(handle: &str) -> Result<bool, XllError> {
 #[xll_bindgen(
     name = "QS.OBJECT.RESET",
     aliases = ["QS.STORE.RESET"],
-    category = "QuantSupport - Objects",
+    category = "QuantSupport - System",
     help = "Clears a mutable store or configuration collection when the reset key changes and returns its new handle"
 )]
 pub fn qs_object_reset(handle: &str, reset_key: &str) -> Result<String, XllError> {

@@ -11,7 +11,7 @@ use xllgen::xll_bindgen;
 
 use crate::runtime::registry::{with_registry, with_registry_mut, QsObject};
 
-use super::helpers::{
+use crate::functions::helpers::{
     input_key, parse_compounding, parse_date, parse_day_counter, parse_frequency, parse_index,
     value_error,
 };
@@ -74,7 +74,7 @@ fn flat_curve_element(
 #[xll_bindgen(
     name = "QS.CURVE.FLAT",
     volatile,
-    category = "QuantSupport - Curves",
+    category = "QuantSupport - Market",
     help = "Creates a flat DiscountCurveElement; add its handle to an elements store with QS.CURVE.ADD"
 )]
 #[allow(clippy::too_many_arguments)]
@@ -119,7 +119,7 @@ pub fn qs_curve_flat(
 
 #[xll_bindgen(
     name = "QS.CURVE.GET",
-    category = "QuantSupport - Curves",
+    category = "QuantSupport - Market",
     help = "Returns a reusable discount-curve handle from an initialized PricingContext"
 )]
 pub fn qs_curve_get(context: &str, market_index: &str) -> Result<String, XllError> {
@@ -151,7 +151,7 @@ pub fn qs_curve_get(context: &str, market_index: &str) -> Result<String, XllErro
 
 #[xll_bindgen(
     name = "QS.CURVE.DISCOUNT",
-    category = "QuantSupport - Curves",
+    category = "QuantSupport - Market",
     help = "Returns a DiscountCurveElement discount factor at a date"
 )]
 pub fn qs_curve_discount(curve: &str, date: &str) -> Result<f64, XllError> {
@@ -169,8 +169,34 @@ pub fn qs_curve_discount(curve: &str, date: &str) -> Result<f64, XllError> {
 }
 
 #[xll_bindgen(
+    name = "QS.CURVE.ZERO.RATE",
+    category = "QuantSupport - Market",
+    help = "Returns the zero rate from the curve reference date to a date; defaults to Simple and Annual"
+)]
+pub fn qs_curve_zero_rate(
+    curve: &str,
+    date: &str,
+    compounding: Option<String>,
+    frequency: Option<String>,
+) -> Result<f64, XllError> {
+    let date = parse_date(date)?;
+    let (compounding, frequency) = rate_convention(compounding, frequency)?;
+    with_registry(|registry| {
+        let element = registry
+            .discount_curve(curve)
+            .map_err(|error| error.to_string())?;
+        let curve = element.curve();
+        curve
+            .forward_rate(curve.reference_date(), date, compounding, frequency)
+            .map(|value| value.value())
+            .map_err(|error| error.to_string())
+    })
+    .map_err(value_error)
+}
+
+#[xll_bindgen(
     name = "QS.CURVE.FORWARD",
-    category = "QuantSupport - Curves",
+    category = "QuantSupport - Market",
     help = "Returns a DiscountCurveElement forward rate between two dates"
 )]
 pub fn qs_curve_forward(
@@ -197,7 +223,7 @@ pub fn qs_curve_forward(
 
 #[xll_bindgen(
     name = "QS.CURVE.TABLE",
-    category = "QuantSupport - Curves",
+    category = "QuantSupport - Market",
     help = "Spills a curve's pillar dates, discount factors, zero rates, and forwards; rate convention defaults to Simple/Annual"
 )]
 pub fn qs_curve_table(
@@ -270,7 +296,7 @@ pub fn qs_curve_table(
 #[xll_bindgen(
     name = "QS.ELEMENTS.CREATE",
     volatile,
-    category = "QuantSupport - Curves",
+    category = "QuantSupport - Market",
     help = "Creates a QuantSupport ConstructedElementStore"
 )]
 pub fn qs_elements_create(name: &str) -> Result<String, XllError> {
@@ -285,7 +311,7 @@ pub fn qs_elements_create(name: &str) -> Result<String, XllError> {
 
 #[xll_bindgen(
     name = "QS.CURVE.ADD",
-    category = "QuantSupport - Curves",
+    category = "QuantSupport - Market",
     help = "Adds a curve from QS.CURVE.FLAT to an elements store and returns the updated store handle"
 )]
 pub fn qs_elements_add_discount_curve(elements: &str, curve: &str) -> Result<String, XllError> {

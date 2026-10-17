@@ -118,7 +118,7 @@ def excel_section(name):
         return "Time", "Calendars"
     if name.startswith("QS.SCHEDULE"):
         return "Time", "Schedules"
-    if name in ("QS.DATE.ADVANCE", "QS.YEAR.FRACTION"):
+    if name.startswith("QS.DATETIME.") or name in ("QS.DATE.ADVANCE", "QS.YEAR.FRACTION"):
         return "Time", "Dates and Accrual"
     if name.startswith("QS.TRADE."):
         product = name.removeprefix("QS.TRADE.")
@@ -131,12 +131,16 @@ def excel_section(name):
         if product == "CDS":
             return "Instruments", "Credit"
         return "Instruments", "Interest Rates"
+    if name in ("QS.SENSITIVITIES", "QS.BOND.SENSITIVITIES"):
+        return "Risk", "Sensitivities"
     if name.startswith("QS.BOND."):
         return "Pricing", "Bond Analytics"
     if name in ("QS.PRICE", "QS.FAIR.RATE", "QS.CASHFLOWS", "QS.SENSITIVITIES"):
         return "Pricing", "Valuation and Risk"
     if name.startswith("QS.CONTEXT."):
-        return "Market Data", "Contexts and Constructed Objects"
+        return "Pricing", "Contexts and Constructed Objects"
+    if name.startswith(("QS.SNAPSHOT.", "QS.SNAPSHOTS.")):
+        return "Market Data", "Historical Snapshots"
     if name.startswith(("QS.QUOTES.", "QS.FIXINGS.", "QS.FX.")):
         return "Market Data", "Quotes, Fixings, and FX"
     if name.startswith(("QS.CURVE.", "QS.CREDIT.CURVE.", "QS.ELEMENTS.")):
@@ -144,9 +148,11 @@ def excel_section(name):
     if name.startswith("QS.VOL."):
         return "Market Data", "Volatility"
     if name.startswith("QS.SIMULATION."):
-        return "Simulation", "Configuration" if ".CONFIGS." in name else "Paths and Calibration"
-    if name.startswith(("QS.PRICER.", "QS.SCENARIOS.")):
-        return "Pricing", "Pricers and Scenarios"
+        return "Market Data", "Simulation"
+    if name.startswith("QS.PRICER."):
+        return "Pricing", "Pricer Configuration"
+    if name.startswith("QS.SCENARIOS."):
+        return "Risk", "Scenarios"
     if name.startswith("QS.OBJECT."):
         return "System", "Object Lifecycle"
     if name in ("QS.FUNCTIONS", "QS.FUNCTIONS.DETAILS", "QS.HELP", "QS.VERSION"):

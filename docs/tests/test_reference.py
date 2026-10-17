@@ -121,7 +121,7 @@ class ExcelReferenceTests(unittest.TestCase):
         cls.records = json.loads(output.stdout)
 
     def test_catalog_has_complete_symbol_and_parameter_details(self):
-        self.assertEqual(len(self.records), 85)
+        self.assertEqual(len(self.records), 103)
         for record in self.records:
             with self.subTest(function=record["name"]):
                 for field in ("name", "category", "help", "return_type", "returns", "errors", "declaration", "source"):
@@ -192,7 +192,7 @@ class RenderedReferenceTests(unittest.TestCase):
                 self.assertRegex(price.text, field + r"\s*:")
             for error in ("#N/A", "#VALUE!"):
                 self.assertIn(error, price.text)
-            self.assertEqual(len(list((output / "excel/functions").glob("qs-*.html"))), 85)
+            self.assertEqual(len(list((output / "excel/functions").glob("qs-*.html"))), 103)
             for index in ("genindex.html", "py-modindex.html", "excel-functionindex.html", "search.html", "objects.inv"):
                 self.assertTrue((output / index).is_file(), index)
 
