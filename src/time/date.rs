@@ -211,6 +211,10 @@ impl<'de> Deserialize<'de> for Date {
 
 impl Date {
     /// Creates a new [`Date`] from the given year, month, and day.
+    ///
+    /// # Panics
+    /// Panics if the components do not form a valid date in the range supported
+    /// by [`NaiveDate`].
     #[must_use]
     pub fn new(year: i32, month: u32, day: u32) -> Self {
         let base_date = NaiveDate::from_ymd_opt(year, month, day);
@@ -303,6 +307,11 @@ impl Date {
     }
 
     /// Returns the nth occurrence of the specified weekday in the given month and year.
+    ///
+    /// # Panics
+    /// Panics if `n` is not positive, if `month` or `year` is invalid,
+    /// or if the requested occurrence does not exist in the month. Integer
+    /// overflow while computing the day can also panic.
     #[must_use]
     pub fn nth_weekday(n: i32, day_of_week: Weekday, month: u32, year: i32) -> Self {
         let base_date = Self::new(year, month, 1);

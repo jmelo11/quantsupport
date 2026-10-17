@@ -509,6 +509,9 @@ where
     }
 
     /// Sets the fixing for the coupon.
+    ///
+    /// # Panics
+    /// Panics if the fixing lock has been poisoned by a panic while held for writing.
     #[allow(clippy::unwrap_used)]
     pub fn set_fixing(&self, fixing: T) {
         *self.fixing.write().unwrap() = Some(fixing);
@@ -525,6 +528,9 @@ where
     }
 
     /// Returns the fixing value if set.
+    ///
+    /// # Panics
+    /// Panics if the fixing lock has been poisoned by a panic while held for writing.
     #[allow(clippy::unwrap_used)]
     pub fn fixing(&self) -> Option<T> {
         *self.fixing.read().unwrap()

@@ -26,6 +26,9 @@ pub struct BlockList<T> {
 
 impl<T> BlockList<T> {
     /// Creates an empty `BlockList` with the given per-block capacity.
+    ///
+    /// # Panics
+    /// Panics if `block_cap` is zero.
     #[must_use]
     pub fn new(block_cap: usize) -> Self {
         assert!(block_cap > 0, "block_cap must be > 0");
@@ -121,6 +124,10 @@ impl<T> BlockList<T> {
     /// Drops elements in `[mark .. len)` and sets `len = mark`.
     ///
     /// Blocks are kept for reuse — no heap deallocation occurs.
+    ///
+    /// # Panics
+    /// Panics if `mark` exceeds the number of live elements or if a removed
+    /// element's destructor panics.
     pub fn rewind_to(&mut self, mark: usize) {
         assert!(mark <= self.len, "mark {mark} exceeds len {}", self.len);
         // Drop elements in reverse order (matches stack-like semantics).

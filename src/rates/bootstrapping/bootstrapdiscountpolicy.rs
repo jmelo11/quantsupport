@@ -36,6 +36,9 @@ impl BootstrapDiscountPolicy {
     }
 
     /// Returns the primary CSA curve index.
+    ///
+    /// # Panics
+    /// Panics if the underlying CSA discount policy contains no discount indices.
     #[allow(clippy::unwrap_used)]
     #[must_use]
     pub fn csa_index(&self) -> MarketIndex {
