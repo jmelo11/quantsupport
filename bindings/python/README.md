@@ -190,6 +190,36 @@ concrete types in the stubs. Editor colours depend on semantic highlighting and
 the selected theme; hover information shows the inferred type. Select the Python
 environment containing the rebuilt wheel in Jupyter to use its updated stubs.
 
+### Typed calendars and temporary scenarios
+
+Use native calendar variants directly, such as `calendar = qs.Calendar.TARGET`.
+Market-specific calendars accept enums:
+`qs.Calendar.UnitedStates(market=qs.UnitedStatesMarket.Sofr)`.
+`qs.Calendar.JointCalendar(calendars=[qs.Calendar.TARGET, qs.Calendar.Japan],
+rule=qs.JointCalendarRule.JoinHolidays)` combines typed calendars.
+
+Group shocks in `Scenarios` and enter them after the pricing context:
+
+```python
+scenarios = qs.Scenarios(shocks=[
+    qs.Scenario(target="EURIBOR12m", shock=0.01, scenario_type=qs.ScenarioType.Absolute),
+    qs.Scenario(target="FUNDINGSPREAD", shock=0.005, scenario_type=qs.ScenarioType.Absolute),
+])
+with context, scenarios:
+    stressed = pricer.evaluate(trade=trade, context=context, requests=[qs.Request.Value])
+with context:
+    base = pricer.evaluate(trade=trade, context=context, requests=[qs.Request.Value])
+```
+
+The guard rebuilds the innermost active context and restores its previous market
+on exit, including exceptions. Nested scenario guards compose in entry order.
+Reusing a guard applies its shocks once to each block's base market.
+Quote identifiers select calibrated market inputs. For explicit zero curves,
+`FUNDINGSPREAD` selects every spread pillar and
+`FUNDINGSPREAD_2031-02-24` selects one dated pillar. These are the same labels
+returned by `Request.Sensitivities`. Multiplying their derivatives by `0.0001`
+gives the approximate EUR value change for a +1 bp funding-spread move.
+
 ### In-memory product and market schemas
 
 All built-in products support `Product.from_dict(spec)` and
@@ -593,7 +623,8 @@ Time:
 - `Date(y, m, d)` / `Date.parse(s)` — arithmetic with days, `Period` or period
   strings (`date + "6M"`), `weekday()`, `end_of_month()`, `to_datetime()`
 - `Period(n, TimeUnit)` / `Period.parse("1Y6M")` / `Period.from_frequency(f)`
-- `Calendar(name)` — `is_business_day`, `adjust`, `advance`,
+- `Calendar.TARGET`, `Calendar.Japan`, `Calendar.WeekendsOnly`, and other native
+  calendar variants — `is_business_day`, `adjust`, `advance`,
   `business_days_between`, `holiday_list`, `business_day_list`
 - `DayCounter.year_fraction(start, end)` / `day_count(start, end)`
 
@@ -613,6 +644,7 @@ Market data & configuration (each with `from_dict` / `from_json`, plus
 
 Pricing:
 
+- `Scenarios(shocks=[Scenario(...)])` — temporary market shocks in `with context, scenarios:`
 - `PricingContext(quotes, curves, fixings=None, fx=None, volatility_surfaces=None, volatility_cubes=None, pricer_configurations=None, simulations=None, csa_policy=None, fixed_income_policy=None, scenarios=None)` — context manager
 - inputs: `ctx.reference_date` / `ctx.evaluation_date`, `ctx.quotes`,
   `ctx.fixings`, `ctx.fx`, `ctx.base_currency`, `ctx.base_index`,

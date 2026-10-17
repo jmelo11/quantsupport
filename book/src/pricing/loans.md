@@ -162,7 +162,7 @@ loan = qs.Loan(
     currency=qs.Currency.EUR,
     repayment=qs.LoanRepaymentStructure.french(), amortization_rate=0.05,
     payment_frequency=qs.Frequency.Monthly, day_counter=qs.DayCounter.Actual360,
-    calendar=qs.Calendar(name="TARGET"), fixing_lag=2,
+    calendar=qs.Calendar.TARGET, fixing_lag=2,
     prepayment=qs.PrepaymentModelConfiguration.constant_annual_cpr(cpr=0.12),
 )
 trade = qs.Trade(instrument=loan, trade_date=reference_date, side=qs.Side.LongReceive)
@@ -232,5 +232,10 @@ Both use the illustrative EUR and borrower-credit inputs in
 `examples/valuation/loans/data/loan_*.json`. The mortgage notebook develops
 amortization, annual EURIBOR resets, composite cost-of-funds discounting,
 market scenarios, prepayment, credit, and quote sensitivities over thirty years.
-It reuses one context by assigning `context.curves`, `context.fixed_income_policy`,
-and `context.scenarios` as the financial assumptions change.
+It reuses one context by assigning `context.curves` and `context.fixed_income_policy`.
+Temporary benchmark and funding-spread shocks use `with context, scenarios:` with
+`qs.Scenarios(shocks=[...])`; exiting restores the prior market even on exceptions.
+Funding-spread sensitivities use the explicit zero-rate pillar labels
+`FUNDINGSPREAD_<date>`. The notebook isolates those derivatives by funding tenor,
+reports EUR changes for +1 bp, and compares the parallel funding exposure with
+fully repriced funding stress.
