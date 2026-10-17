@@ -340,3 +340,26 @@ Bond anchors are trade inputs: `QS.TRADE.FIXED.BOND` requires trailing
 `pricing_anchor` (`CleanPrice`, `DirtyPrice`, or `ZSpread`) and `anchor_value`
 arguments. The `QS.BOND.*` valuation functions accept only the stored trade
 and context handles. Side is stored on the trade and applied once in valuation.
+
+## Regional conventions
+
+Calendar arguments accept canonical Rust names, including
+`Australia(Settlement)`, `Australia(ASX)`, `Canada(Settlement)`, `Canada(TSX)`,
+`Switzerland`, `NewZealand(Wellington)`, `NewZealand(Auckland)`, `Norway`,
+`Sweden`, `Denmark`, `SouthKorea(Settlement)`, `SouthKorea(KRX)`, `SouthAfrica`,
+`China(SSE)`, and `China(IB)`. Joint calendars can combine these names.
+For example, `QS.CALENDAR.IS.BUSINESS.DAY("2026-02-14", "China(IB)")`
+returns TRUE for an announced interbank working Saturday.
+
+Market-index inputs and JSON configurations also accept `FedFunds`, `CDI`,
+`DESTR`, `KOFR`, `ZARONIA`, `EURIBOR1w`, BBSW/BKBM 1m/2m/3m/4m/6m,
+NIBOR 1m/3m/6m/12m, and SHIBOR 1d/1w/2w/1m/3m/6m/12m identifiers.
+For example, use `NIBOR3m` as the index text in curve and trade functions.
+
+The historical `MarketSnapshotStore` / `SnapshotSelector` workflow is available
+in Python. The Excel binding currently constructs worksheet pricing contexts
+without an exported historical snapshot archive/selector API.
+
+Calendar rules follow QuantLib commit `5f4811e7e03b`; finite holiday tables
+require updates beyond their documented ranges. See
+[the QuantLib notice](../../LICENSE-QuantLib.txt) for the calendar adaptations.

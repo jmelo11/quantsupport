@@ -751,3 +751,52 @@ Remove position metadata from product constructors and wrap each product in
 The `bond_anchor` evaluation argument has been removed. Replace the former
 `discounting`/`DiscountingConfig` context input with `csa_policy` and
 `SingleCurveCSADiscountPolicy(collateral_currency=..., collateral_index=...)`.
+
+### Regional indices, calendars, and snapshots
+
+Rate indices include Fed Funds, CDI, DESTR, KOFR, ZARONIA, EURIBOR 1W,
+BBSW and BKBM (1/2/3/4/6 months), NIBOR (1/3/6/12 months), and SHIBOR
+(1 day, 1/2 weeks, 1/3/6/12 months). Use typed constants such as
+`qs.MarketIndex.FedFunds` and `qs.MarketIndex.NIBOR3m`, or their exact string
+names in configuration dictionaries and quote identifiers.
+
+Index metadata supplies currency, day count, reset frequency, fixing lag, and
+fixing calendar. Instrument schedule conventions remain explicit; BBSW's
+half-month date-roll rule is not inferred automatically.
+
+Calendars include Australia, Canada, Switzerland, New Zealand, Norway, Sweden,
+Denmark, South Korea, South Africa, and China. Select market variants explicitly:
+
+```python
+canada = qs.Calendar.Canada(market=qs.CanadaMarket.Settlement)
+china_ib = qs.Calendar.China(market=qs.ChinaMarket.IB)
+switzerland = qs.Calendar.Switzerland
+```
+
+`SnapshotSelector` chooses a complete historical market by timestamp and quote
+side. Request an index from the resulting context; the selector itself does not
+filter indices or choose a calendar:
+
+```python
+archive = qs.MarketSnapshotStore.from_json("markets.json")
+selector = qs.SnapshotSelector(
+    qs.DateTime(2026, 1, 15, 10),
+    rule=qs.SnapshotSelectionRule.Previous,
+    level=qs.Level.Mid,
+)
+selected = archive.select(selector)
+with archive.pricing_context(selector) as historical:
+    curve = historical.curve(qs.MarketIndex.NIBOR3m)
+    discount = curve.discount_factor("2027-01-15")
+```
+
+The archive must contain a construction configuration for the requested index
+and any required discount/collateral curves. New identifiers and calendar names
+in OIS quote conventions survive snapshot JSON round-trips. Historical fixings
+are supplied separately through `pricing_context(selector, fixings=...)`.
+
+Calendar rules follow QuantLib commit `5f4811e7e03b`. China tables extend through
+2026; South Korean lunar dates through 2050; New Zealand Matariki dates through
+2052. New Zealand defaults to Wellington for QuantLib parity; regional variants
+are explicit. Dates beyond finite tables require updated holiday announcements.
+QuantLib calendar notices are included in `quantsupport/licenses/QuantLib.txt`.
