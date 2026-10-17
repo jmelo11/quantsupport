@@ -62,7 +62,10 @@ impl BootstrappedCurve {
     }
 
     /// Preserves explicit zero-rate interpolation when the curve is a calibration parent.
-    pub(super) fn from_zero_rates(
+    ///
+    /// # Errors
+    /// Returns an error if a pillar discount factor cannot be evaluated.
+    pub fn from_zero_rates(
         market_index: MarketIndex,
         curve: ZeroRateTermStructure<f64>,
     ) -> Result<Self> {
@@ -101,11 +104,10 @@ impl BootstrappedCurve {
     }
 
     /// Preserves multiplicative discounting when a composite is a calibration parent.
-    pub(super) fn from_components(
-        market_index: MarketIndex,
-        base: Self,
-        spread: Self,
-    ) -> Result<Self> {
+    ///
+    /// # Errors
+    /// Returns an error if either component has no pillar values.
+    pub fn from_components(market_index: MarketIndex, base: Self, spread: Self) -> Result<Self> {
         // Query components directly. Caching only the origin avoids requiring
         // their outermost pillars to fall within each other's supported domain.
         let times = vec![0.0];
@@ -129,12 +131,20 @@ impl BootstrappedCurve {
     }
 
     /// Whether parent risk should be bumped in source-pillar coordinates.
-    pub(super) const fn has_explicit_source(&self) -> bool {
+    #[must_use]
+    pub const fn has_explicit_source(&self) -> bool {
         self.source.is_some()
     }
 
     /// Bumps one source pillar while retaining its curve's interpolation and composition.
-    pub(super) fn bump_pillar(&mut self, index: usize, bump: f64) -> Result<()> {
+    ///
+    /// # Errors
+    /// Returns an error if pillar values or required sensitivities are missing,
+    /// or rebuilding the bumped curve fails.
+    ///
+    /// # Panics
+    /// Panics if `index` is outside the available pillars or sensitivities.
+    pub fn bump_pillar(&mut self, index: usize, bump: f64) -> Result<()> {
         let bumped = self.pillar_values()?[index].value() + bump;
         match &mut self.source {
             Some(CurveSource::ZeroRate(curve)) => {

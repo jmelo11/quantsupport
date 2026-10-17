@@ -130,8 +130,11 @@ impl CurveConfiguration {
     }
 
     /// Applies a shock to explicit zero-rate inputs using their sensitivity labels.
-    /// The caller supplies a copied configuration; base market inputs stay unchanged.
-    pub(crate) fn apply_shock(&mut self, shock: &Shock, reference_date: Date) -> usize {
+    ///
+    /// Returns the number of matching pillars, or zero for other construction
+    /// types or a zero-valued shock. Clone the configuration first to preserve
+    /// the base market inputs.
+    pub fn apply_shock(&mut self, shock: &Shock, reference_date: Date) -> usize {
         if shock.value() == 0.0 {
             return 0;
         }

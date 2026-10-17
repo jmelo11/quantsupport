@@ -73,11 +73,14 @@ impl SnapshotSelector {
         self.level
     }
 
-    pub(crate) fn matches(
-        &self,
-        earlier: Option<DateTime>,
-        later: Option<DateTime>,
-    ) -> Option<DateTime> {
+    /// Selects a timestamp from the nearest observations on either side of the request.
+    ///
+    /// `earlier` must be at or before the requested instant and `later` at or
+    /// after it. Exact selection requires an equal `earlier` timestamp; previous
+    /// selection uses `earlier`. Closest selection prefers `earlier` on ties and
+    /// uses the available timestamp when only one side is present.
+    #[must_use]
+    pub fn matches(&self, earlier: Option<DateTime>, later: Option<DateTime>) -> Option<DateTime> {
         match self.rule {
             SnapshotSelectionRule::Exact => earlier.filter(|instant| *instant == self.timestamp),
             SnapshotSelectionRule::Previous => earlier,

@@ -127,16 +127,24 @@ impl PricingContext {
         self.snapshot_timestamp
     }
 
-    pub(crate) const fn with_snapshot_timestamp(mut self, timestamp: DateTime) -> Self {
+    /// Sets the observation instant associated with this context's inputs.
+    ///
+    /// Changing market inputs clears this timestamp.
+    #[must_use]
+    pub const fn with_snapshot_timestamp(mut self, timestamp: DateTime) -> Self {
         self.snapshot_timestamp = Some(timestamp);
         self
     }
 
-    pub(crate) fn has_supplied_elements(&self) -> bool {
+    /// Returns whether runtime market objects were supplied directly.
+    #[must_use]
+    pub fn has_supplied_elements(&self) -> bool {
         !self.supplied_elements.is_empty()
     }
 
-    pub(crate) const fn request_cache(&self) -> &MarketCache {
+    /// Returns the cache shared by base-market request views.
+    #[must_use]
+    pub const fn request_cache(&self) -> &MarketCache {
         &self.request_cache
     }
 
@@ -520,8 +528,16 @@ impl PricingContext {
         Ok(())
     }
 
+    /// Resolves a request using the supplied constructed objects and quote selector.
+    ///
+    /// Fixings, FX rates, pricer configurations and the quote level come from this
+    /// context. Required constructed objects must already exist in `store`.
+    ///
+    /// # Errors
+    /// Returns an error if required constructed objects, fixings, FX rates,
+    /// pricer configurations or calibration quotes are unavailable.
     #[allow(clippy::too_many_lines)]
-    pub(crate) fn resolve_request(
+    pub fn resolve_request(
         &self,
         request: &MarketDataRequest,
         store: &ConstructedElementStore,

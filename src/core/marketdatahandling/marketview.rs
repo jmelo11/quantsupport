@@ -59,7 +59,11 @@ impl MarketCache {
         *self.0.borrow_mut() = CachedMarket::default();
     }
 
-    pub(crate) fn seed(
+    /// Replaces the cache with constructed objects and curve calibration snapshots.
+    ///
+    /// Supplied curves and volatility markets are marked as unaffected by shocks.
+    /// The caller must ensure they match the view's base inputs and scenario.
+    pub fn seed(
         &self,
         elements: ConstructedElementStore,
         snapshots: HashMap<MarketIndex, BootstrappedCurve>,

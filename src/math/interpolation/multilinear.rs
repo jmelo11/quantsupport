@@ -3,7 +3,7 @@ use super::{bilinear::BilinearValue, extrapolation::ExtrapolationPolicy};
 // The outer axes select slices; each slice owns its inner coordinates. This
 // gives ordinary multilinear interpolation on rectangular grids and supports
 // different strike sets at each expiry/tenor without inventing missing nodes.
-pub(super) fn interpolate<T: BilinearValue, const N: usize>(
+pub fn interpolate<T: BilinearValue, const N: usize>(
     query: [f64; N],
     mut points: Vec<([f64; N], T)>,
     extrapolation: ExtrapolationPolicy,

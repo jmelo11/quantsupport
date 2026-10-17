@@ -152,7 +152,14 @@ fn lattice_transitions<T: Scalar>(
 #[allow(clippy::too_many_lines)]
 /// Fits the tree to the discount curve through state prices and performs
 /// backward induction with OAS discounting and issuer-call obstacles.
-pub(super) fn lattice_value<T: Scalar>(
+///
+/// # Errors
+/// Returns an error if model transitions, step counts or discount factors are
+/// invalid, curve evaluation fails, or required lattice nodes are missing.
+///
+/// # Panics
+/// Panics if the event grid lacks cashflow or call entries for its steps.
+pub fn lattice_value<T: Scalar>(
     mut discount_factor: impl FnMut(f64) -> Result<T>,
     terms: &BondEventGrid<T>,
     alpha: f64,
@@ -332,8 +339,9 @@ impl BondPricingEngine for TreeBasedBondPricer {
 impl<T: BondTerms> HandleCashflows<T, BondState> for TreeBasedBondPricer {}
 impl_bond_pricer!(TreeBasedBondPricer, SteppedCouponBondTrade<DualFwd>);
 
+/// Shared fixtures for callable-bond tree tests.
 #[cfg(test)]
-pub(super) mod test_support {
+pub mod test_support {
     use super::super::bondpricer::test_support::{policy, TestProvider, FACE};
     use super::TreeBasedBondPricer;
     use crate::prelude::*;
@@ -348,12 +356,14 @@ pub(super) mod test_support {
         time::enums::Frequency,
     };
 
+    /// Creates a tree pricer with the test discount policy.
     pub fn tree_pricer() -> TreeBasedBondPricer {
         let mut pricer = TreeBasedBondPricer::new();
         pricer.set_discount_policy(policy());
         pricer
     }
 
+    /// Creates a semiannual bullet bond with the supplied issuer-call schedule.
     pub fn bond(
         evaluation_date: Date,
         maturity_date: Date,
@@ -388,6 +398,7 @@ pub(super) mod test_support {
         )
     }
 
+    /// Returns a bond's tree value, panicking if evaluation fails.
     pub fn value(
         pricer: &TreeBasedBondPricer,
         trade: &SteppedCouponBondTrade<DualFwd>,

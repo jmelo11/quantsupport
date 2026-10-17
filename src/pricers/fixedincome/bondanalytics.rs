@@ -39,7 +39,7 @@ use crate::{
 use std::collections::HashSet;
 
 /// Common contract exposed by straight and stepped-coupon bond trades.
-pub(super) trait BondTerms: LegsProvider<DualFwd> {
+pub trait BondTerms: LegsProvider<DualFwd> {
     fn pricing_anchor(&self) -> BondPricingAnchor;
     fn settlement_date(&self) -> Option<Date>;
     fn spread_day_counter(&self) -> Option<DayCounter>;
@@ -154,12 +154,12 @@ fn discount_index(
 }
 
 #[derive(Clone, Copy)]
-pub(super) struct ResolvedCashflow<T> {
-    pub(super) payment_date: Date,
-    pub(super) amount: T,
+pub struct ResolvedCashflow<T> {
+    pub payment_date: Date,
+    pub amount: T,
 }
 
-pub(super) struct BondState {
+pub struct BondState {
     value: Option<DualFwd>,
     market_data: Option<MarketData>,
     legs: Vec<Leg<DualFwd>>,
@@ -577,7 +577,7 @@ fn solve_yield(
 }
 
 /// Engine-specific preparation and valuation. Analytics do not dispatch by method.
-pub(super) trait BondPricingEngine {
+pub trait BondPricingEngine {
     type Model<T: Scalar>;
     fn policy(&self) -> Option<&dyn DiscountPolicy>;
     fn prepare(
@@ -599,21 +599,18 @@ pub(super) trait BondPricingEngine {
     ) -> Result<T>;
 }
 
-pub(super) struct BondValuation<'a, T: Scalar> {
-    pub(super) curve: &'a dyn InterestRatesTermStructure<T>,
-    pub(super) cashflows: &'a [ResolvedCashflow<T>],
-    pub(super) leg: &'a Leg<DualFwd>,
-    pub(super) units: f64,
-    pub(super) calls: &'a [CallScheduleEntry],
-    pub(super) reference_date: Date,
-    pub(super) spread_day_counter: DayCounter,
+pub struct BondValuation<'a, T: Scalar> {
+    pub curve: &'a dyn InterestRatesTermStructure<T>,
+    pub cashflows: &'a [ResolvedCashflow<T>],
+    pub leg: &'a Leg<DualFwd>,
+    pub units: f64,
+    pub calls: &'a [CallScheduleEntry],
+    pub reference_date: Date,
+    pub spread_day_counter: DayCounter,
 }
 
 /// Discounts contractual cashflows for a bond without issuer exercise.
-pub(super) fn discounted_value<T: Scalar>(
-    valuation: &BondValuation<'_, T>,
-    spread: T,
-) -> Result<T> {
+pub fn discounted_value<T: Scalar>(valuation: &BondValuation<'_, T>, spread: T) -> Result<T> {
     let reference_discount = valuation.curve.discount_factor(valuation.reference_date)?;
     if reference_discount.value() <= 0.0 {
         return Err(QSError::InvalidValueErr(
@@ -641,7 +638,7 @@ pub(super) fn discounted_value<T: Scalar>(
 }
 
 /// Requests contractual discount/forward curves and past coupon fixings.
-pub(super) fn contractual_market_request(
+pub fn contractual_market_request(
     trade: &impl BondTerms,
     discount_index: &MarketIndex,
     evaluation_date: Date,
@@ -775,7 +772,7 @@ fn sensitivities(state: &BondState) -> Result<SensitivityMap> {
 /// Runs quote conversion, spread solving, valuation, analytics, and risk for
 /// either callable-bond numerical engine.
 #[allow(clippy::too_many_lines)]
-pub(super) fn evaluate_bond<E, T>(
+pub fn evaluate_bond<E, T>(
     engine: &E,
     trade: &T,
     requests: &[Request],
@@ -973,7 +970,7 @@ where
 
 /// Requests contractual curves and the engine configuration. Evaluation adds
 /// historical fixings and any dependencies required by model preparation.
-pub(super) fn bond_market_data_request(
+pub fn bond_market_data_request(
     policy: Option<&dyn DiscountPolicy>,
     trade: &impl BondTerms,
 ) -> Option<MarketDataRequest> {
@@ -1003,6 +1000,8 @@ pub(super) fn bond_market_data_request(
     Some(request)
 }
 
+/// Implements the common pricer methods for a bond pricing engine.
+#[macro_export]
 macro_rules! impl_bond_pricer {
     ($pricer:ty, $item:ty) => {
         impl Pricer for $pricer {
@@ -1033,4 +1032,4 @@ macro_rules! impl_bond_pricer {
     };
 }
 
-pub(super) use impl_bond_pricer;
+pub use impl_bond_pricer;

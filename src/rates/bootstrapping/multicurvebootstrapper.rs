@@ -185,7 +185,13 @@ impl<'a> MultiCurveBootstrapper<'a> {
             .map(|(curves, _)| curves)
     }
 
-    pub(crate) fn bootstrap_with_snapshots(
+    /// Constructs curves and returns their calibration snapshots, both keyed by index.
+    ///
+    /// # Errors
+    /// Returns an error if quote resolution fails, configurations are duplicated,
+    /// dependencies are missing or cyclic, curve inputs are invalid, or calibration
+    /// fails to converge.
+    pub fn bootstrap_with_snapshots(
         &self,
         selector: &impl QuoteSelector,
         level: Level,
@@ -236,7 +242,16 @@ impl<'a> MultiCurveBootstrapper<'a> {
         Ok((result, solved_curves))
     }
 
-    pub(crate) fn construct_curve(
+    /// Constructs one resolved curve configuration and its calibration snapshot.
+    ///
+    /// `curves` and `solved` supply the already constructed dependency curves
+    /// and their calibration snapshots. Resolve `spec` with the desired quote
+    /// selector and level before calling this method.
+    ///
+    /// # Errors
+    /// Returns an error if required dependencies or resolved inputs are missing,
+    /// curve inputs are invalid, or calibration fails.
+    pub fn construct_curve(
         &self,
         spec: &CurveConfiguration,
         curves: &HashMap<MarketIndex, DiscountCurveElement>,

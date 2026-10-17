@@ -11,22 +11,22 @@ use crate::{
     utils::errors::{QSError, Result},
 };
 #[derive(Clone, Copy)]
-pub(super) struct CallStep {
-    pub(super) call_price: Option<f64>,
+pub struct CallStep {
+    pub call_price: Option<f64>,
 }
 
 impl CallStep {
     /// Creates a grid point without an issuer-call obstacle.
-    pub(super) const fn new() -> Self {
+    pub const fn new() -> Self {
         Self { call_price: None }
     }
 }
 
-pub(super) struct BondEventGrid<T> {
-    pub(super) maturity_time: f64,
-    pub(super) steps: usize,
-    pub(super) cashflows: Vec<T>,
-    pub(super) calls: Vec<CallStep>,
+pub struct BondEventGrid<T> {
+    pub maturity_time: f64,
+    pub steps: usize,
+    pub cashflows: Vec<T>,
+    pub calls: Vec<CallStep>,
 }
 
 /// Returns principal cancelled when an issuer call terminates the bond.
@@ -49,7 +49,7 @@ fn call_principal(leg: &Leg<DualFwd>, call_date: Date) -> Result<f64> {
 )]
 /// Maps contractual cashflows and issuer calls to the nearest points of a
 /// uniform time grid shared by the two callable engines.
-pub(super) fn bond_event_grid<T: Scalar>(
+pub fn bond_event_grid<T: Scalar>(
     leg: &Leg<DualFwd>,
     units: f64,
     call_schedule: &[CallScheduleEntry],

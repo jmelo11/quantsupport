@@ -192,7 +192,8 @@ impl Scenario {
     }
 
     /// Applies matching shocks to one quote without copying the market store.
-    pub(crate) fn shock_quote(&self, quote: &Quote) -> Quote {
+    #[must_use]
+    pub fn shock_quote(&self, quote: &Quote) -> Quote {
         let identifier = quote.details().identifier();
         let mut levels = *quote.levels();
         for shock in &self.shocks {
@@ -207,7 +208,9 @@ impl Scenario {
         Quote::new(quote.details().clone(), levels)
     }
 
-    pub(crate) fn matches(&self, identifier: &str) -> bool {
+    /// Returns whether a nonzero shock targets the given identifier.
+    #[must_use]
+    pub fn matches(&self, identifier: &str) -> bool {
         self.shocks
             .iter()
             .any(|shock| shock.value() != 0.0 && shock.matches(identifier))

@@ -526,7 +526,7 @@ fn require_positive_schedule_period(frequency: Frequency) -> Result<Period> {
 /// Rejects empty schedules, nonpositive/nonfinite principal, nonfinite period
 /// rates or rates at/below -1, invalid balloon fractions, invalid annuity factors,
 /// and principal schedules that become nonpositive or increase.
-pub(crate) fn calculate_contractual_opening_balances(
+pub fn calculate_contractual_opening_balances(
     principal: f64,
     period_rates: &[f64],
     repayment: &LoanRepaymentStructure,
