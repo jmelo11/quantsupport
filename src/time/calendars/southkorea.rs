@@ -1,12 +1,4 @@
-// Adapted from QuantLib ql/time/calendars/southkorea.cpp at 5f4811e7e03bbd1a3d6d7df31b751fecd5daef5f.
-// Copyright (C) 2004 FIMAT Group
-// Copyright (C) 2007, 2011 StatPro Italia srl
-// Copyright (C) 2008, 2011 Charles Chongseok Hyun
-// Copyright (C) 2015 Riccardo Barone
-// Copyright (C) 2015 Paolo Mazzocchi
-// Copyright (C) 2023 Skandinaviska Enskilda Banken AB (publ)
-// Copyright (C) 2023 Jonghee Lee
-// Distributed under the QuantLib license; see LICENSE-QuantLib.txt.
+// Adapted from QuantLib ql/time/calendars/southkorea.cpp.
 
 use super::traits::{ImplCalendar, IsCalendar};
 use crate::time::{date::Date, enums::Weekday};
@@ -22,7 +14,7 @@ pub enum Market {
     KRX,
 }
 
-/// `SouthKorea` business-day calendar, following `QuantLib` 5f4811e7e03b.
+/// `SouthKorea` business-day calendar.
 /// Lunar holiday tables cover 2004–2050; exceptional closures follow the pinned source.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct SouthKorea {
