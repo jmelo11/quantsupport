@@ -92,8 +92,8 @@ def generate(app):
                     f"{{download}}`Download this notebook <{slug}.ipynb>`.\n\n",
                     "This page renders saved outputs; the documentation build does not execute it. "
                     "Run the canonical notebook from its own directory with the checkout-built "
-                    "binding to reproduce the computation. Parameter choices and finite-sample "
-                    "results are illustrative, not investment advice.\n",
+                    "binding to reproduce the computation. Each study records its market inputs "
+                    "and numerical assumptions.\n",
                 ],
             }
             cells = notebook.get("cells", [])

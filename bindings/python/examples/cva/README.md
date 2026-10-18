@@ -1,9 +1,10 @@
 # CVA, exposure, and XVA
 
-Scope: netting-set exposure and valuation adjustments, corresponding to the
-Rust [`cva`](../../../../examples/cva) and [`pfe`](../../../../examples/pfe) examples.
-The Python walkthrough uses the summaries exposed by the XVA binding; it does
-not imply that raw NPV cubes or PFE percentiles are exposed by that API.
+The XVA study compares two offsetting swaps under shared and separate netting
+agreements, then examines variation margin and credit/funding adjustments.
+It follows the Rust [`cva`](../../../../examples/cva) and
+[`pfe`](../../../../examples/pfe) examples using the exposure summaries
+available through Python.
 
 | Example | Financial question | Library concepts |
 | --- | --- | --- |

@@ -1,6 +1,7 @@
 # Hull–White simulations
 
-Scope: calibrated rate models and simulation results, corresponding to the Rust
+The simulation study calibrates a Gaussian short-rate model, generates paths
+and examines their distribution and sampling precision. It follows the Rust
 [`hullwhite`](../../../../examples/hullwhite) examples.
 
 | Example | Financial question | Library concepts |

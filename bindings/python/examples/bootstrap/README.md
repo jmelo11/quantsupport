@@ -1,8 +1,8 @@
 # Bootstrap
 
-Scope: quote inputs, curve configurations, and constructed discount/forward
-curves, corresponding to the Rust [`bootstrap`](../../../../examples/bootstrap)
-examples.
+This example constructs discount factors and forwards from deposit and
+OIS quotes, then checks deposit repricing and the forward-rate identity.
+It follows the Rust [`bootstrap`](../../../../examples/bootstrap) examples.
 
 | Example | Financial question | Library concepts |
 | --- | --- | --- |

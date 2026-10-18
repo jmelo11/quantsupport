@@ -1,7 +1,8 @@
 # Sensitivity and portfolio requests
 
-Scope: portfolio valuation, market-quote derivatives, and scenarios,
-corresponding to the Rust [`sensitivity`](../../../../examples/sensitivity) examples.
+The portfolio study combines a swap, bond and caplet, aggregates their quote
+sensitivities and compares linear P&L with scenario revaluation. It follows the
+Rust [`sensitivity`](../../../../examples/sensitivity) examples.
 
 | Example | Financial question | Library concepts |
 | --- | --- | --- |
@@ -28,9 +29,8 @@ repository root with:
 python bindings/python/examples/run_notebooks.py sensitivity/portfolio_risk.ipynb
 ```
 
-That benchmark matches recorded curve, PV and rate-risk results, while
-deliberately displaying a remaining FX-risk-definition disagreement rather
-than masking it with a larger tolerance.
+The benchmark compares recorded curve, PV and rate-risk results with explicit
+tolerances and reports a remaining FX-risk-definition discrepancy separately.
 
 For contract-level analytics, see [valuation](../valuation/README.md). For
 legal netting and future exposure, see [CVA/XVA](../cva/README.md).

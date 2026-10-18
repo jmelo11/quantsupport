@@ -1,12 +1,13 @@
 # Computational finance studies in Python
 
-These notebooks assume familiarity with the financial products, but no prior
-knowledge of QuantSupport. Thirteen studies follow financial questions through
-assumptions, mathematical relationships, explicit Python calculations, native
-valuation, independent checks, and interpretation. A fourteenth, optional
-historical benchmark compares ORE/CurveEngine with recorded Rust results.
-Run cells from top to bottom in a fresh kernel. Stored outputs are actual
-executions, not illustrative values inserted into the files.
+These notebooks develop quantitative finance calculations using QuantSupport.
+Each study introduces a contract or market problem, states its assumptions and
+uses Python calculations to interpret the native results. They assume
+familiarity with the products and introduce the library as it is used.
+
+Thirteen studies cover the Python binding. A fourteenth historical benchmark
+compares ORE/CurveEngine with recorded Rust results. Run cells in order in a
+fresh kernel; saved outputs are retained for publication.
 
 ## Catalog by Rust example scope
 
@@ -224,10 +225,9 @@ model's absolute sigma are different quantities.
 - `sensitivities.value` is a derivative per unit input quote. Multiply by the
   appropriate move before reporting DV01 or vega. The notebooks retain signs.
 - Cashflow amounts are undiscounted payments, with currency and leg labels.
-  Native swap/bond reports contain unsigned leg amounts: the swap studies
-  apply explicit trade and leg directions before summing. Loan expected-receipt
-  reports already contain position signs. Do not apply one sign rule blindly
-  across products.
+  Native swap/bond and loan expected-receipt reports include position signs:
+  receipts are positive and payments are negative. Discount these amounts and
+  convert currencies as needed to reconcile PV; do not apply direction again.
 - Missing/unrequested analytics are not zero and should not be silently filled
   when reporting product-level measures.
 

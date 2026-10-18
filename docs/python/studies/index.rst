@@ -1,31 +1,31 @@
-Computational Studies
+Computational studies
 =====================
 
-These are the official worked investigations, organized by the financial
-question rather than the source-module layout. Read the
+These notebooks develop curve construction, valuation and risk calculations
+using the Python binding. Each study introduces a financial problem, states
+its assumptions and interprets the calculated results. Read the
 :doc:`Python guide <../guide/index>` for the conventions shared by the studies,
 and use the :doc:`reference <../../autoapi/quantsupport/index>` when a declaration
-needs clarification. Each study states its assumptions and shows the code,
-tables, and figures available in the canonical notebook.
+needs clarification. The pages include the code, tables and figures saved
+in each canonical notebook.
 
 The pages render saved notebook outputs without executing Python during a
-documentation build. A saved result is evidence for the stated market and
-implementation, not a universal price or an independently validated model.
-Reproduce a study with a binding built from the same checkout; stale installed
-wheels can lack newer classes even when the documentation builds correctly.
+documentation build. To reproduce the saved results, use the companion inputs and a binding built
+from the same checkout. The notebooks record their numerical assumptions,
+including grids, random seeds and comparison tolerances.
 
-Curve Construction
+Curve construction
 ------------------
 
-How do quotes and conventions determine discount factors, and what changes
-when construction assumptions change?
+Construct a discount curve from market quotes and examine its forwards,
+zero rates and repricing checks.
 
 .. toctree::
    :maxdepth: 1
 
    notebooks/curves
 
-Swaps and Collateral Currencies
+Swaps and collateral currencies
 -----------------------------------
 
 These studies progress from a receive-fixed position to par-rate solving and
@@ -38,7 +38,7 @@ then to cashflows, FX direction, and collateral-dependent currency conversion.
    notebooks/par-swap
    notebooks/currency-conversion
 
-Fixed Income and Loans
+Fixed income and loans
 --------------------------
 
 Bond quotation anchors, issuer calls, contractual amortization, and borrower
@@ -52,7 +52,7 @@ cashflow conventions separate.
    notebooks/callable-bond
    notebooks/loans
 
-Rate Options and Volatility
+Rate options and volatility
 -------------------------------
 
 Inspect option inputs before interpreting a price: a rate strike, a quoted
@@ -64,7 +64,7 @@ Black volatility, and a calibrated short-rate sigma are not interchangeable.
    notebooks/caps-and-caplets
    notebooks/curves-and-volatility
 
-Short-Rate Simulation
+Short-rate simulation
 ---------------------
 
 The simulation study examines calibration, stored paths, seeds, and sampling
@@ -76,7 +76,7 @@ calibration or volatility sensitivities.
 
    notebooks/simulations
 
-Portfolio Risk and Benchmarking
+Portfolio risk and benchmarking
 -----------------------------------
 
 Reconcile sensitivities with full revaluation before aggregation. The legacy
@@ -94,7 +94,7 @@ explicitly rather than hiding it with a comparison tolerance.
    notebooks/portfolio-risk
    notebooks/sensitivity-benchmark
 
-Scripted Payoffs
+Scripted payoffs
 --------------------
 
 The scripting study compares compatible native and scripted representations.

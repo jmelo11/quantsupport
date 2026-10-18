@@ -1,8 +1,8 @@
 # Volatility surfaces
 
-Scope: constructed option-volatility markets and their pricing impact,
-corresponding to the Rust [`volatilitysurface`](../../../../examples/volatilitysurface)
-examples.
+The volatility study inspects a curve and Black surface, then isolates the
+rate and volatility drivers of swap and caplet value. It follows the Rust
+[`volatilitysurface`](../../../../examples/volatilitysurface) examples.
 
 | Example | Financial question | Library concepts |
 | --- | --- | --- |

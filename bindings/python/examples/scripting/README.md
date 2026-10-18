@@ -1,7 +1,8 @@
 # Scripting
 
-Scope: dated payoff events and native/scripted comparisons, corresponding to
-the Rust [`scripting`](../../../../examples/scripting) examples.
+The scripting study expresses caplet and note payments as dated payoff events,
+then compares matching native and scripted representations. It follows the
+Rust [`scripting`](../../../../examples/scripting) examples.
 
 | Example | Financial question | Library concepts |
 | --- | --- | --- |
