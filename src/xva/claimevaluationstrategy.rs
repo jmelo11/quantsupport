@@ -48,7 +48,7 @@ pub enum PathAggregator {
 pub enum ClaimEvaluationStrategy {
     /// Known amount (fixed coupons, redemptions, disbursements).
     Deterministic {
-            /// Raw amount per claim notional; claim evaluation multiplies by notional again.
+        /// Raw amount per claim notional; claim evaluation multiplies by notional again.
         amount: f64,
     },
 

@@ -1,24 +1,29 @@
-//! Derivatives valuation, market construction, and risk in Rust.
+//! Quantitative finance library for pricing, market construction and risk.
 //!
-//! QuantSupport separates observable quotes and fixings from constructed curves,
-//! contractual instruments from positions, and valuation methods from market-data
-//! access. [`PricingContext`](crate::core::pricingcontext::PricingContext) supplies
-//! a pricer's dependencies either on request or through explicit initialization.
-//! Native pricers, model-backed payoff scripts, and exposure calculations share
-//! market-data representations and automatic-differentiation infrastructure.
+//! QuantSupport (QS) is written in Rust, with Python and Excel bindings. It
+//! supports instrument valuation across several asset classes, sensitivities
+//! using automatic differentiation, interest-rate and credit curve construction,
+//! volatility markets, Monte Carlo simulation and valuation adjustments.
 //!
-//! This is the native API reference. The [Book](https://jmelo11.github.io/quantsupport/)
-//! develops the financial and computational concepts for all interfaces;
-//! the [binding documentation](https://jmelo11.github.io/quantsupport/api/)
-//! contains independent Python and Excel guides and references. Rust functionality
-//! is not necessarily exposed by either binding.
+//! Observable market data, such as quotes and fixings, are stored separately
+//! from constructed objects such as bootstrapped curves and volatility surfaces.
+//! Instruments define contractual terms, while trades add position details.
+//! A pricer combines the trade with its required market data to calculate the
+//! requested measures.
 //!
-//! # Receive-fixed swap under a flat curve
+//! This reference describes the native Rust API. The
+//! [Book](https://jmelo11.github.io/quantsupport/) explains financial concepts
+//! and workflows across the three interfaces. The
+//! [binding documentation](https://jmelo11.github.io/quantsupport/api/)
+//! provides detailed Python and Excel guides and references.
 //!
-//! A five-year USD swap receives a 3% simple ACT/360 coupon and pays a projected
-//! floating coupon semiannually. Its projection and discounting curve is flat at
-//! 3% continuously compounded on ACT/360. These two rate conventions differ:
-//! equal numeric rates do not make this swap par.
+//! # Quick example: a receive-fixed swap
+//!
+//! Consider a five-year USD swap that receives a fixed coupon of 3%, using
+//! simple compounding and ACT/360 accrual, and pays a floating coupon every six
+//! months. We define the contract with `MakeSwap`, wrap it in a trade and supply
+//! a flat, continuously compounded 3% curve for projection and discounting.
+//! The pricer then returns value, par coupon and market sensitivities.
 //!
 //! ```
 //! use std::{cell::RefCell, rc::Rc};
@@ -86,11 +91,12 @@
 //! # }
 //! ```
 //!
-//! The value is in USD. Here the sensitivity is with respect to the supplied
-//! flat decimal rate, not a bootstrapped market quote; multiplying by `1e-4`
-//! estimates the P&L for a one-basis-point increase. Bootstrapped curves instead
-//! reconnect pillar risk to their calibration quotes. Their labels and native
-//! quote units determine how a reported derivative should be scaled.
+//! The value is in USD. The receive-fixed position has negative value because
+//! the continuous curve implies simple forward coupons above 3%. Its
+//! sensitivity measures the response to the supplied flat decimal rate;
+//! multiplying by `1e-4` estimates the P&L for a one-basis-point increase.
+//! Bootstrapped curves connect risk to their original calibration quotes, whose
+//! labels and units determine how to scale each derivative.
 //!
 //! # API entry points
 //!

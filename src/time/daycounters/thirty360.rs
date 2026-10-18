@@ -6,7 +6,7 @@ use crate::time::{date::Date, daycounters::daycount::DayCount};
 /// month, it becomes equal to the 30th of the same month.
 ///
 /// If the ending date is the 31st of a month and the starting
-/// date is the 30th or 31th of a month, the ending date
+/// date is the 30th or 31st of a month, the ending date
 /// also becomes equal to the 30th of the month.
 ///
 /// ## Example

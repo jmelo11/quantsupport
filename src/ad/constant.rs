@@ -10,8 +10,6 @@ use crate::ad::scalar::{InnerScalar, Scalar};
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Debug)]
 pub struct Const<T = f64>(pub T);
 
-// -- Scalar impl  -----------------------------------------------------------
-
 impl<T: InnerScalar> Scalar for Const<T> {
     #[inline]
     fn scalar(v: f64) -> Self {
@@ -118,8 +116,6 @@ impl From<Const<Self>> for f64 {
         c.0
     }
 }
-
-// -- Default / Display / comparison with f64 ---------------------------------
 
 impl<T: InnerScalar> Default for Const<T> {
     fn default() -> Self {

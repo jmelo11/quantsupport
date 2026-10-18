@@ -9,10 +9,6 @@ use crate::ad::blocklist::BlockList;
 use crate::utils::errors::Result;
 use crate::{ad::node::TapeNode, utils::errors::QSError};
 
-// ---------------------------------------------------------------------------
-// TapeHolder — the trait that links an inner scalar to its thread-local tape
-// ---------------------------------------------------------------------------
-
 /// Trait implemented by types that can serve as the inner scalar of a
 /// [`Dual`](crate::ad::dual::Dual).
 ///
@@ -24,10 +20,6 @@ pub trait TapeHolder:
     /// Execute `f` with a mutable borrow of the thread-local tape for `Self`.
     fn with_tape<R>(f: impl FnOnce(&mut Tape<Self>) -> R) -> R;
 }
-
-// ---------------------------------------------------------------------------
-// Tape<T>
-// ---------------------------------------------------------------------------
 
 /// A tape holding all recorded nodes for reverse-mode differentiation.
 ///
@@ -49,8 +41,6 @@ pub struct Tape<T = f64> {
     /// Whether the tape is currently recording.
     pub active: bool,
 }
-
-// -- Generic methods (work for any TapeHolder T) -----------------------------
 
 impl<T: TapeHolder> Tape<T> {
     /// Creates an empty tape with recording disabled.
@@ -197,10 +187,6 @@ impl<T: TapeHolder> Default for Tape<T> {
         Self::new()
     }
 }
-
-// ---------------------------------------------------------------------------
-// f64 TapeHolder + Tape<f64> static methods  (backward compat)
-// ---------------------------------------------------------------------------
 
 impl TapeHolder for f64 {
     fn with_tape<R>(f: impl FnOnce(&mut Tape<Self>) -> R) -> R {

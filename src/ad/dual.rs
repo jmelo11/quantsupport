@@ -281,8 +281,6 @@ impl<T: TapeHolder + InnerScalar> Dual<T> {
     }
 }
 
-//  Scalar impl for Dual<T>
-
 impl<T: TapeHolder + InnerScalar> Scalar for Dual<T> {
     #[inline]
     fn scalar(v: f64) -> Self {

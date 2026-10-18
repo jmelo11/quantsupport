@@ -1,10 +1,9 @@
 //! FX currency-pair type with canonical-form support.
 //!
 //! [`FxPair`] encodes a directed foreign-exchange pair (base / quote).
-//! The canonical form uses a deterministic lexicographic ordering of the
-//! ISO 4217 codes so that *EURUSD* and *USDEUR* map to the same canonical
-//! key — enabling parity-agnostic storage while preserving the instrument's
-//! natural orientation.
+//! Canonical keys order currencies lexicographically by ISO code, so EURUSD
+//! and USDEUR share a storage key. [`FxPair::canonical`] also returns an
+//! inversion flag to preserve the requested orientation.
 
 use serde::{Deserialize, Serialize};
 use std::fmt;

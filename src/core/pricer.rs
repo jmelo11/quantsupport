@@ -9,10 +9,9 @@ use crate::{
     utils::errors::{QSError, Result},
 };
 
-/// The [`Pricer`] trait should be implemented by any instrument pricing methodology. Implementers
-/// must also implement [`Send`] and [`Sync`].
+/// Valuation method for an associated position type.
 pub trait Pricer: Send + Sync {
-    /// The associated instrument to be priced.
+    /// Position type accepted by this pricer.
     type Item;
     /// The discount policy type supported by this pricer.
     type Policy: ?Sized + Send + Sync;
@@ -57,23 +56,20 @@ pub trait Pricer: Send + Sync {
     fn discount_policy(&self) -> Option<&Self::Policy>;
 }
 
-/// The [`ErasedPricer`] trait provides a type-erased interface for evaluating trades.
-///
-/// It removes the need for compile-time knowledge of the specific pricer type,
-/// allowing dynamic dispatch based on the trade type being evaluated.
+/// Type-erased valuation interface for runtime trade dispatch.
 pub trait ErasedPricer: Send + Sync {
-    /// Evaluates the given trade using the pricer's logic, without requiring knowledge of the specific trade type at compile time.
+    /// Evaluates a type-erased trade for the requested measures.
     ///
     /// # Errors
     /// Returns an error if the trade type is unsupported or evaluation fails.
     ///
     /// ## Arguments
-    /// * `trade`: a reference to the trade to be evaluated, provided as a trait object of type `dyn Any`.
+    /// * `trade`: position to downcast to the concrete pricer's item type.
     /// * `requests`: result measures to compute, not market-data requests.
-    /// * `ctx`: a reference to the pricing context, which provides access to market data and other relevant information needed for the evaluation.
+    /// * `ctx`: provider of the evaluation date and required market data.
     ///
     /// ## Returns
-    /// Returns an [`EvaluationResults`] object containing the results of the evaluation if successful, or an error if the evaluation fails.
+    /// Returns [`EvaluationResults`] with the measures produced by the pricer.
     fn evaluate_erased(
         &self,
         trade: &dyn Any,
