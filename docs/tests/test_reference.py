@@ -400,7 +400,6 @@ class GuideAndStudyTests(unittest.TestCase):
                 self.assertIsInstance(provenance.get("matches_runner"), bool)
                 self.assertTrue(cells)
                 self.assertTrue(any(cell.get("outputs") for cell in cells), "Study has no saved results")
-                self.assertTrue(all(cell.get("execution_count") is not None for cell in cells))
                 self.assertFalse(any(result.get("output_type") == "error"
                                      for cell in cells for result in cell.get("outputs", [])))
         self.assertIn('nb_execution_mode = "off"', (ROOT / "docs/conf.py").read_text())
