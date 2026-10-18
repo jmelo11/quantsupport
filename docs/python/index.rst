@@ -1,9 +1,11 @@
 Python
 ======
 
-The Python interface separates contractual instruments from positions and
-market inputs from constructed pricing objects. Begin with a complete
-valuation, then study construction, model choice, and risk interpretation.
+The Python package provides native QuantSupport instruments, market
+construction, valuation and risk calculations. Define the contract and position,
+configure the market, then request values, cashflows or sensitivities from a
+pricing context. The user guide develops this workflow with complete examples;
+the studies apply it to larger quantitative finance calculations.
 
 .. toctree::
    :maxdepth: 2
@@ -16,8 +18,7 @@ Each class has its own declaration page with constructors, parameter details,
 methods, properties, and class attributes. Domain packages group related types;
 the package root re-exports the same class objects for compatibility. Each domain
 is divided into focused subsections, such as Calendars, Yield Curves, Fixed
-Income, and Collateral and Netting. See :doc:`../coverage` for the distinction
-between direct wrappers, configuration-based access, and Rust-only components.
+Income, and Collateral and Netting.
 
 Conventions
 -----------
@@ -49,4 +50,4 @@ Exceptions
 Installation, a first valuation, protocols, and reproducibility are explained
 locally in :doc:`guide/first-valuation`. The
 `binding README <https://github.com/jmelo11/quantsupport/blob/main/bindings/python/README.md>`_
-is an additional source-distribution entry point, not a prerequisite.
+also contains source-build instructions and development checks.

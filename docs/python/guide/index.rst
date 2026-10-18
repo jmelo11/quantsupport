@@ -1,17 +1,17 @@
-Python User Guide
+Python user guide
 =================
 
-This guide develops a valuation from its economic inputs rather than from a
-list of classes. A contract specifies promised payments, a trade specifies the
-position held, and a market supplies the observations and conventions needed
-to value that position. Keeping these three objects separate is essential for
-reproducible prices, sensitivities, and comparisons between scenarios.
+A Python valuation begins with a contract, a position and a market. The
+contract defines the payments, the trade records the position held, and the
+market supplies quotes, curves and historical observations. A pricer combines
+these inputs to calculate the requested results.
 
-The examples use explicit dates and small in-memory markets. No Book chapter,
-spreadsheet, downloaded quote file, or notebook is required to follow them.
-The :doc:`computational studies <../studies/index>` extend the same ideas to
-larger investigations; the :doc:`API reference <../../autoapi/quantsupport/index>`
-remains the authority for individual declarations and supported argument types.
+This guide builds that workflow using explicit dates and small in-memory
+markets. It explains the conventions needed to interpret prices and
+sensitivities, then develops product-specific valuation and risk calculations.
+The :doc:`computational studies <../studies/index>` provide larger examples,
+and the :doc:`API reference <../../autoapi/quantsupport/index>` describes
+individual classes, methods and accepted argument types.
 
 .. toctree::
    :maxdepth: 2
@@ -21,11 +21,11 @@ remains the authority for individual declarations and supported argument types.
    valuation
    risk
 
-Reading Path
+Reading path
 ------------
 
-Begin with :doc:`first-valuation`, even if familiar with derivatives. Its unit,
-direction, and lifecycle conventions apply throughout the interface. Continue
+Begin with :doc:`first-valuation` for installation, position direction,
+result units and context lifetime. Continue
 with :doc:`markets` before changing curve or calibration assumptions.
 :doc:`valuation` distinguishes instrument-specific quotation and model choices;
 :doc:`risk` develops scenario checks, netting, and extension interfaces.

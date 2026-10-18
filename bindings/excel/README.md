@@ -1,7 +1,11 @@
 # QuantSupport Excel XLL
 
-Native QuantSupport market construction, trades, valuation, and risk for
-**64-bit Windows Excel**. Excel for macOS and the browser cannot load this XLL.
+The QuantSupport add-in provides worksheet functions for market construction,
+trade definition, valuation and risk in **64-bit Windows Excel**. Formulas
+connect quotes and contractual inputs to native objects, allowing dependent
+prices and sensitivities to recalculate when inputs change.
+
+Excel for macOS and the browser cannot load the XLL.
 
 ## Guides, reference, and download
 
@@ -10,11 +14,10 @@ Native QuantSupport market construction, trades, valuation, and risk for
 - [Market assumptions and product workflows](https://jmelo11.github.io/quantsupport/api/excel/guide/markets-and-products.html)
 - [Risk, scenarios, and historical markets](https://jmelo11.github.io/quantsupport/api/excel/guide/risk-and-history.html)
 - [Exact worksheet reference](https://jmelo11.github.io/quantsupport/api/excel/functions/index.html)
-- [Capabilities and interface boundaries](https://jmelo11.github.io/quantsupport/api/coverage.html)
 - [Download quantsupport.xll](https://jmelo11.github.io/quantsupport/downloads/quantsupport.xll)
 
-The guide explains essential financial conventions locally; the Book and Python
-studies are optional additional learning paths. Registration metadata supplies
+The guide explains the financial conventions alongside complete worksheet
+calculations. The Book and Python studies provide further examples. Registration metadata supplies
 function names, argument order, aliases, categories, and per-parameter help.
 
 ## Build and load
@@ -38,7 +41,7 @@ Load the add-in before the workbook, or press **Ctrl+Alt+F9** afterwards.
 =QS.HELP("QS.TRADE.SWAP")
 ```
 
-The checked-in [swap workbook](https://jmelo11.github.io/quantsupport/downloads/swap_pricing_example.xlsx) and
+The [swap workbook](https://jmelo11.github.io/quantsupport/downloads/swap_pricing_example.xlsx) and
 [historical workbook](https://jmelo11.github.io/quantsupport/downloads/historical_pricing_example.xlsx) contain inputs
 and formulas; Windows Excel calculates them after the XLL is loaded.
 
@@ -86,8 +89,8 @@ stores/configuration collections, not immutable curves, contexts, or trades.
 Workbooks must preserve formulas and inputs; handles do not serialize objects.
 
 `QS.PRICE` is monetary PV under the selected pricer. Generic swap cashflow
-spills contain unsigned underlying leg amounts and no PV column; apply product
-leg signs, discounting, size, and any conversion explicitly before reconciliation.
+spills contain signed amounts, positive for receipts and negative for payments,
+and no PV column; apply discounting and any currency conversion before reconciliation.
 Generic discounted-cashflow valuation does not itself filter past payments.
 `QS.FAIR.RATE` should not be described as an arbitrary multi-leg breakeven solver.
 

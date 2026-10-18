@@ -494,7 +494,7 @@ class RenderedReferenceTests(unittest.TestCase):
                 self.assertIn(variant, calendars.text)
             for path in ("autoapi/quantsupport/time/Schedule.html", "autoapi/quantsupport/time/IMM.html",
                          "excel/functions/section-time-calendars.html",
-                         "excel/functions/section-math-interpolation.html", "coverage.html"):
+                         "excel/functions/section-math-interpolation.html"):
                 self.assertTrue((output / path).is_file(), path)
             trade = Text((output / "autoapi/quantsupport/pricing/Trade.html").read_text())
             self.assertIn("datetime.date", trade.text)
@@ -534,7 +534,7 @@ class RenderedReferenceTests(unittest.TestCase):
                 self.assertIn(alias, function_index.text)
 
     def check_guides_and_studies(self, output):
-        paths = [output / "index.html", output / "coverage.html",
+        paths = [output / "index.html",
                  output / "python/index.html", output / "excel/index.html",
                  output / "python/studies/index.html",
                  *(output / "python/guide").glob("*.html"),

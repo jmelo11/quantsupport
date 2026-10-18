@@ -1,14 +1,13 @@
-Building a Reproducible Pricing Workbook
+Building a reproducible pricing workbook
 ============================================
 
-Install and Load the Add-In
+Install and load the add-in
 -------------------------------
 
-Use 64-bit Windows Excel and the matching
-`quantsupport.xll release <https://jmelo11.github.io/quantsupport/downloads/quantsupport.xll>`_.
-Excel for macOS and Excel in a browser cannot load this native XLL. Follow your
-organization's policy for downloaded add-ins and trusted locations; if Windows
-marks the downloaded file as blocked, review its source before unblocking it.
+Use 64-bit Windows Excel and the matching `quantsupport.xll release <https://jmelo11.github.io/quantsupport/downloads/quantsupport.xll>`_. Excel for macOS and
+Excel in a browser cannot load this native XLL. Follow your organization's
+policy for downloaded add-ins and trusted locations; if Windows marks the
+downloaded file as blocked, review its source before unblocking it.
 
 In Excel open **File → Options → Add-ins**, choose **Excel Add-ins**, select
 **Go**, and browse to the XLL. Keep the file at a stable location. Load the
@@ -44,7 +43,7 @@ Function Arguments provides parameter hints. Formula examples below use commas
 as separators and decimal points; adapt separators to your Excel locale without
 changing financial units.
 
-A Complete Curve-to-Swap Chain
+A complete curve-to-swap chain
 ----------------------------------
 
 Create a new worksheet. Set ``B1`` to the ISO text ``2026-02-24``; format it as
@@ -92,16 +91,14 @@ Create the store and chain quote updates in column C:
    H4 =QS.CURVE.CONFIGS.ADD(H3,"SOFR","Actual360","LogLinear",FALSE,A4:A7)
    H5 =QS.CONTEXT.CREATE("guide.usd.context",C7,H4,,,,,,,,,,"USD","SOFR","Mid")
 
-The nine optional component positions between the curve configuration and base
-currency are intentionally empty. In
-:excel:func:`QS.CONTEXT.CREATE`, base currency and base index are arguments
-**13 and 14**, followed by the optional quote level. Moving either string one
-position to the left is not a shortcut: it changes the meaning of the formula.
+In :excel:func:`QS.CONTEXT.CREATE`, base currency and base index are arguments
+**13 and 14**, followed by the optional quote level. Keep the nine intervening
+optional component arguments empty, as shown in the formula.
 
 The quote update chain supplies Mid values; blank Bid/Ask arguments remain
 absent rather than copying Mid. The context constructs/calibrates the supplied
-market. A missing consumed quote, missing selected side, unsupported convention,
-or failed calibration is an error—not an automatic flat-curve fallback.
+market. Construction reports an error for a missing consumed quote or selected side,
+an unsupported convention, or failed calibration.
 
 Create a five-year receive-fixed position and request value and par coupon:
 
@@ -114,17 +111,17 @@ Create a five-year receive-fixed position and request value and par coupon:
 
 The position receives fixed and pays floating on ten million USD. ``H7`` is
 monetary PV under this pricer's conventions; ``H8`` is an annual decimal fixed
-coupon. A negative PV is possible when the contracted coupon is below the
-market-implied coupon; it is not corrected by changing display format.
+coupon. A receive-fixed position can have negative PV when its contracted coupon
+is below the market-implied coupon.
 
 The current generic ``FairRate`` calculation is appropriate to the vanilla
-fixed-versus-floating problem: it uses fixed coupon annuity and floating amounts
-from the first forward curve, ignoring principal flows. Do not advertise the
-same function as an arbitrary multi-leg, basis, or cross-currency breakeven
-solver merely because those trades can be priced.
+fixed-versus-floating problem: it uses fixed coupon annuity and floating
+amounts from the first forward curve, ignoring principal flows. Basis,
+cross-currency and other multi-leg breakeven problems require their own
+definition of the adjustable term and calculation.
 
-Inspect, Then Interpret
----------------------------
+Inspecting the results
+----------------------
 
 Extract the curve once and leave room for spilled results:
 
@@ -146,11 +143,11 @@ request even when its scalar discount query succeeds.
 
 The cashflow spill has Payment date, Type, Amount, Fixing, Accrual, Currency,
 Floor, Cap, and Leg columns. For the generic discounted-cashflow pricer,
-Amount is the underlying unsigned cashflow amount before applying leg side.
-Principal exchanges can appear on both legs. It is not a signed discounted
-ledger and contains no PV column. To reconcile price, apply the particular
-product's leg signs, position scale, discounting, and any required FX conversion
-explicitly. Do not sum Amount and call it NPV.
+Amount includes leg direction and reversed disbursements: receipts are positive
+and payments are negative.
+Principal exchanges can appear on both legs. To reconcile the amounts to
+price, apply discounting and any
+required FX conversion. The spill itself has no PV column.
 
 The generic discounted-cashflow value path does not itself remove past-dated
 payments. This example uses inception-date valuation; a seasoned-trade workflow
@@ -162,7 +159,7 @@ decimal-rate quote, multiplying by ``0.0001`` estimates the value change for a
 +1 bp move. This is not a universal conversion for futures prices, FX spots,
 or volatility quotes. Keep risk labels and units with the table.
 
-Handles, Revisions, and Calculation
+Handles, revisions, and calculation
 -----------------------------------
 
 Constructors return tokens such as ``QSObject:QuoteStore:guide.usd.quotes:3``.
@@ -198,7 +195,7 @@ collections, not immutable curves, contexts, or trades. :excel:func:`QS.STORE.RE
 an alias. Use the reset chain instead of retaining deleted observations by
 accident.
 
-Diagnosing Errors
+Diagnosing errors
 -----------------
 
 ``#VALUE!`` generally means invalid input, an invalid/stale handle, or failed

@@ -1,7 +1,7 @@
-A Position, a Market, and a Valuation
+A position, a market, and a valuation
 =========================================
 
-Installation and Reproducibility
+Installation and reproducibility
 ------------------------------------
 
 Install a released wheel into the interpreter used by your application or
@@ -23,12 +23,11 @@ environment, install Maturin, and compile the checkout:
    maturin develop -m bindings/python/Cargo.toml --release
 
 On Windows activate ``.venv\Scripts\Activate.ps1`` instead. Source builds require
-the stable Rust toolchain. A source checkout and an older installed wheel are
-not interchangeable: inspect the selected interpreter before diagnosing a
-missing class. Market data, conventions, package revision, and model parameters
-are part of the reproducibility record, not merely the final price.
+the stable Rust toolchain. Select the same interpreter in your application or
+notebook so that it loads the checkout-built binding. To reproduce a valuation,
+retain the market data, conventions, package revision and model parameters.
 
-Contract and Position
+Contract and position
 ---------------------
 
 A :py:class:`~quantsupport.instruments.Swap` describes contractual terms.
@@ -42,10 +41,10 @@ For a vanilla swap, ``LongReceive`` receives fixed and pays floating;
 direction through ``side``. A product dictionary contains constructor terms,
 not ``side``, ``trade_date``, bond anchors, or futures contract counts.
 
-The following complete example values a five-year USD receive-fixed swap.
-It deliberately uses an explicit flat *continuous* zero-rate curve, not a
-calibrated market quote. Two identical rate pillars make its construction
-transparent. A 3% continuous zero rate does not make a 3% simple coupon par.
+Consider a five-year USD swap that receives a fixed coupon of 3% and pays a
+floating coupon on a notional of USD 10 million. We define the instrument,
+wrap it in a trade and value it against a flat, continuously compounded 3%
+zero-rate curve. Two equal rate pillars specify that curve explicitly.
 
 .. code-block:: python
    :name: guide-python-swap
@@ -89,11 +88,11 @@ transparent. A 3% continuous zero rate does not make a 3% simple coupon par.
        assert result.fair_rate > swap.fixed_rate
        assert 0 < discount < 1
 
-The negative PV is not a sign error: coupon accrual, payment frequency, and
-compounding differ from the continuous curve quotation. ``fair_rate`` is an
-annual decimal fixed coupon under the swap's conventions, not a price or
-spread in basis points. The position's monetary scale is ten million USD;
-neither the rate ``0.03`` nor a returned sensitivity is multiplied by 100.
+The receive-fixed position has a negative PV because the continuous curve
+implies floating coupons above the simple fixed coupon. The result's
+``fair_rate`` is the annual decimal fixed coupon that balances the vanilla
+swap under these conventions. Monetary values use the position's notional of
+ten million USD; rates retain decimal units.
 
 For a single-currency fixed-versus-floating swap the economic decomposition is
 
@@ -110,7 +109,7 @@ fixed coupon annuity, and floating amounts, and ignores principal flows.
 Do not treat it as a general multi-leg breakeven solver for basis or
 cross-currency positions.
 
-Interpreting Results
+Interpreting results
 --------------------
 
 An :py:class:`~quantsupport.pricing.EvaluationResults` holds optional measures:
@@ -119,37 +118,37 @@ PV, not a clean bond quote. ``Sensitivities`` returns a pandas table with
 ``pillar`` and ``value`` columns. Rows are raw derivatives with respect to
 their named input, not automatically DV01 or vega-per-volatility-point.
 
-For a decimal-rate risk factor :math:`q`, the first-order change for a +1 bp
-move is :math:`(\partial V/\partial q)10^{-4}`. The explicit curve above has
-two independently labeled zero-rate inputs; summing their derivatives estimates
-a parallel zero-rate move. That sum is not a sensitivity to a calibrated OIS
-quote. See :doc:`risk` for a full-revaluation check.
+For a decimal-rate risk factor :math:`q`, the first-order change for a +1
+bp move is :math:`(\partial V/\partial q)10^{-4}`. The explicit curve above has two independently
+labelled zero-rate inputs. Summing their derivatives estimates the effect of a
+parallel move in those zero rates. A bootstrapped market reports derivatives
+with respect to its calibration quotes instead. See :doc:`risk` for a
+full-revaluation check.
 
 ``cashflows`` contains ``payment_date``, ``type``, ``amount``, ``fixing``,
 ``accrual_period``, ``currency``, ``caplet_strike``, ``floorlet_strike``, and
-``leg_index``. For the generic discounted-cashflow pricer these are underlying
-cashflow amounts before leg-side multiplication, not a signed PV ledger.
+``leg_index``. For the generic discounted-cashflow pricer, amounts include leg
+direction and reversed disbursements: receipts are positive and payments are negative.
 The table may include initial disbursements and redemptions on both legs.
 Summing ``amount`` therefore does not reproduce the swap PV. A reconciliation
-must apply the particular product's leg signs, discounting, FX conversion where
-applicable, and position conventions explicitly.
+must apply discounting and FX conversion where applicable. The table already
+includes the position's cashflow signs.
 
-The generic discounted-cashflow value path iterates all supplied cashflows; it
-does not itself filter them by payment date. The example is valued at inception
-so no past-payment assumption is hidden. Do not roll this contract into the
-past and assume settled payments disappear automatically. Other pricers may
-have different cashflow filtering and reporting rules.
+The generic discounted-cashflow pricer includes all supplied cashflows,
+including any with past payment dates. This example is valued at inception.
+When valuing a seasoned contract, select payments according to the required
+valuation convention. Specialized pricers have their own payment-selection
+and reporting rules.
 
-Context Lifetime
+Context lifetime
 ----------------
 
 Constructing :py:class:`~quantsupport.pricing.PricingContext` stores inputs.
-Entering ``with context:`` validates them, activates the scope, and enables
-lazy construction of requested curves, volatility objects, models, and
-simulations. Merely entering does not build every configured object.
-``context.initialize()`` explicitly constructs all configured objects when
-eager construction is wanted; it is not equivalent to entering a scenario
-scope or a general promise to start AD recording.
+Entering ``with context:`` validates them, activates the scope and enables
+construction of requested curves, volatility objects, models and simulations.
+Call ``context.initialize()`` to construct all configured objects eagerly.
+Valuation services manage their differentiation recording within this
+lifecycle.
 
 Read constructed views inside their active scope. Final scope exit releases
 constructed market data and performs the context's AD cleanup, including when
@@ -159,12 +158,11 @@ copied result tables can be retained, but an AD-backed curve view should not
 be used after its context or scenario ends.
 
 Public context input setters invalidate dependent construction. Store and
-configuration getters return copies: mutate a copy and assign it back, rather
-than assuming ``context.quotes`` is a live shared market object. These semantics
-allow a second valuation to change market assumptions without mutating the
-contract or retaining obsolete constructed objects.
+configuration getters return copies. To change an input, edit the copy and
+assign it back to the context; dependent objects are then rebuilt for the next
+valuation. The contract remains available for comparison across markets.
 
-Dates, Types, and Protocols
+Dates, types, and protocols
 -------------------------------
 
 Financial dates accept the documented ``Date``, ISO text, or Python
@@ -174,13 +172,12 @@ supplies that adjustment. ``Schedule`` supports iteration and indexing and
 returns copied dates and regularity flags; coupon accrual conventions are
 separate from schedule generation.
 
-Day-count names are selectors, not a general conformity guarantee.
-The current ``ActualActual.year_fraction`` omits one complete intervening
-year when endpoint years differ by at least two; same/adjacent-year handling
-does not establish general ISDA correctness. ``Thirty360US`` adjusts 31sts
-before independently mapping each February month-end to day 30, differing
-from common US/NASD/BondBasis rules. The verified workflows here use
-Actual360/Actual365 rather than either restricted convention.
+The examples use Actual360 or Actual365. Two other day counters have current
+implementation restrictions: ``ActualActual.year_fraction`` omits one complete
+intervening year when endpoint years differ by at least two, and
+``Thirty360US`` adjusts February month-ends independently after adjusting 31sts.
+The latter ordering differs from common US/NASD/BondBasis rules. Validate
+these conventions against the required contractual dates before using them.
 
 Timestamps are different: ``DateTime`` requires offset-aware input, normalizes
 to UTC, and retains native nanoseconds; conversion to Python datetime truncates
@@ -195,6 +192,5 @@ labels such as ``"EQ:SPX"``. The reference shows precise accepted forms.
 
 Native failures generally raise ``QuantSupportError``; Python argument and
 scope checks can instead raise ``TypeError``, ``ValueError``, or
-``RuntimeError``. A failed construction is information about the requested
-market, not a reason to silently substitute another calendar, quote side,
-volatility convention, or extrapolation policy.
+``RuntimeError``. Use the error context to identify the missing input or incompatible
+convention before changing the market specification.

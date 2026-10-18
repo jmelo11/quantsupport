@@ -1,20 +1,23 @@
-Valuation, Quotation, and Model Choice
+Valuation, quotation, and model choice
 ==========================================
 
-A request has meaning only in conjunction with a product and its pricer.
-``Value`` is a monetary valuation, ``FairRate`` is an instrument-specific
-rate or price, and a bond spread is neither. This chapter uses the in-memory
-``reference`` and ``context`` from :doc:`first-valuation`; the context can be
-entered again after the earlier block has finished.
+Each product has its own quotation conventions and supported analytics.
+``Value`` requests monetary PV, while ``FairRate`` requests the product's
+breakeven rate or price. Bonds additionally use price or spread anchors to
+specify the valuation.
 
-Rates and Direction
+The examples below reuse ``reference`` and ``context`` from
+:doc:`first-valuation`. Enter the context again for each calculation; its
+market objects are reconstructed as needed.
+
+Rates and direction
 -------------------
 
 Vanilla swaps, basis swaps, both cross-currency swap forms, deposits, and
 floating-rate notes expose contractual schedules and rate conventions.
 Their projections require the appropriate index curves and any historical
-fixings. A receive-fixed swap is not the same directional object as a
-receive-leg basis swap; inspect each constructor's leg definitions.
+fixings. Each constructor defines its leg ordering and the meaning of receive/pay
+side. Use those definitions when assigning the position's direction.
 
 ``Trade.notional`` overrides the position size without modifying the shared
 instrument. Cross-currency positions have domestic and foreign overrides;
@@ -33,7 +36,7 @@ An ``InterestRate`` stores one rate and its quotation conventions, not a term
 structure. Use its compound/discount factor operations for that stored
 quotation and a constructed curve's forward query for market-dependent forwards.
 
-Straight Bonds: Price Is a Quotation Convention
+Straight bonds: price is a quotation convention
 ---------------------------------------------------
 
 Bond terms describe coupon, principal, schedule, and currency. The position
@@ -81,18 +84,16 @@ second independently observed market quote.
 The context's fixed-income discount policy maps currency to curve. When
 ``prefer_instrument_index=True``, straight products with an explicit contractual
 discount index can take precedence; setting it False enforces the mapping.
-An unmapped currency is an error, not permission to discount with an unrelated
-curve.
+The pricer reports an error for an unmapped payment currency.
 
-Issuer-Callable Stepped Bonds
+Issuer-callable stepped bonds
 ---------------------------------
 
-``SteppedCouponBond`` represents a different product, not a callable flag on
-``FixedRateBond``. Coupon templates and outstanding-notional percentages are
-positional, and their last entries repeat through subsequent periods.
-``PayoffOps`` represents native coupon algebra, for example a geared floating
-coupon with floor and cap. Serialized coupon objects retain this expression
-tree.
+Use ``SteppedCouponBond`` for stepped coupons, amortization and issuer calls. Coupon
+templates and outstanding-notional percentages are positional, and their last
+entries repeat through subsequent periods. ``PayoffOps`` represents native
+coupon algebra, for example a geared floating coupon with floor and cap.
+Serialized coupon objects retain this expression tree.
 
 Calls are issuer calls with explicit strikes and either a discrete date or an
 inclusive date window. On an exercise date, same-day contractual coupons and
@@ -101,8 +102,8 @@ is quoted in the bond's units, not as a decimal interest rate.
 
 Choose ``TreeBased`` or ``BackwardFourierEvolution`` through a
 ``PricerConfiguration`` with an appropriate Hull–White model. For example, the
-configuration below is a complete fixed-parameter tree specification; it
-deliberately makes no calibration claim.
+configuration below specifies a tree with fixed mean reversion and short-rate
+volatility.
 
 .. code-block:: python
 
@@ -126,7 +127,7 @@ the valuation record. The
 :doc:`callable-bond study <../studies/notebooks/callable-bond>` works through
 these choices.
 
-Loans: Contractual Principal and Expected Receipts
+Loans: contractual principal and expected receipts
 ------------------------------------------------------
 
 A loan separates the contractual repayment schedule from the valuation of
@@ -171,15 +172,15 @@ fees. Payment frequency, reset frequency, fixing lag, and observation tenor are
 independent contractual inputs. ``coupon_fixing_requests()`` identifies required
 historical observations, not a promise that missing fixings will be projected.
 
-``FairRate`` solves a fixed coupon or floating spread at or before origination.
-The current search interval is [-5%, 50%]; mixed, stepped, or bounded coupon
-schedules are not a general supported fair-rate problem.
-``rebuild_amortization_for_fair_rate=False`` preserves principal during trial
-rates; True reconstructs trial amortization without changing the original
-contract. These are different economic experiments, not interchangeable solver
-settings. The :doc:`loan study <../studies/notebooks/loans>` reconciles them.
+``FairRate`` solves a fixed coupon or floating spread at or before
+origination. The current search interval is [-5%, 50%]; mixed, stepped, or
+bounded coupon schedules are not a general supported fair-rate problem.
+``rebuild_amortization_for_fair_rate=False`` preserves principal during trial rates; True reconstructs trial
+amortization without changing the original contract. Choose the setting that
+matches whether the proposed new coupon should also change contractual
+principal repayments. The :doc:`loan study <../studies/notebooks/loans>` reconciles them.
 
-Options, Calibration, and Simulation
+Options, calibration, and simulation
 ------------------------------------
 
 Caps/floors, caplets/floorlets, European equity/FX options, and European
@@ -216,8 +217,8 @@ quoted volatility surface.
 For calibration replace the fixed parameter source with ``Calibrated``,
 specifying ``Surface`` or ``Cube`` and an explicit calibration basket, and
 supply that source's quotes/configuration to the context. Cube baskets select
-one tenor per expiry. Quote side and strike-domain policies matter during
-calibration, not merely during later volatility lookup.
+one tenor per expiry. Quote side and strike-domain policies apply during calibration as well as
+later volatility queries.
 
 Prefer absolute numeric option strikes, as in the example. A serialized
 ``Relative`` strike does not have one library-wide financial interpretation:
@@ -237,13 +238,12 @@ market). Fixed-parameter or other model simulations can return no diagnostics.
 Generated simulation paths are materialized from numeric inputs; their storage
 does not retain calibration pillars or imply differentiated spot/volatility
 paths. This differs from model-backed ``LgmMarketModel`` computations used by
-scripting and XVA. The standalone Hull–White path generator uses Euler state
-evolution, not exact OU stepping. Positive alpha is required by its low-level
-formulas; do not assume the LGM zero-lambda limit is implemented there.
-Seeds control reproducibility within the specified implementation; neither a
-fixed seed nor an even path count proves numerical accuracy.
+scripting and XVA. The standalone Hull–White path generator uses Euler state evolution and
+requires positive alpha. Assess its discretization by refining the grid and
+its sampling precision by comparing path counts and seeds. Direct LGM dynamics
+support a separate zero-lambda limit.
 
-FX, Equity, and Credit
+FX, equity, and credit
 --------------------------
 
 Use ``MarketIndex.equity("SPX")`` for a typed equity identity and
@@ -265,13 +265,13 @@ as ``credit_curves`` to the context. Recovery and spread units are explicit
 inputs; a flat-spread hazard approximation is not the same model as a
 bootstrapped survival term structure.
 
-Scripted Payoffs
+Scripted payoffs
 --------------------
 
-Python's scripting bridge invokes the native event/payoff engine directly.
-It does not launch Cargo, a subprocess, or an external evaluator. The next
-deterministic illustration pays 100 USD in two years and checks its discounted
-value against the same context curve.
+Python's scripting bridge evaluates dated payoff events through the native
+engine. A script can retain state across events and declare payments that are
+discounted by its market model. The example below pays 100 USD in two years
+under a zero-volatility model and compares its value with the context curve.
 
 .. code-block:: python
    :name: guide-python-script
@@ -300,13 +300,12 @@ then by inline script assignments. A script in a non-base currency requires
 an explicit discount index. This bridge currently assembles rate models, not a
 general correlated FX/equity-factor system.
 
-The deterministic check above is deliberately stronger than a stochastic
-representation comparison. Native cashflow diagnostics accumulate raw sampled
-payments, while pilot-fitted martingale controls adjust only the selected result
-variable. At finite paths, summed raw cashflow PVs need not equal the
-control-adjusted result, and an arbitrary numeric variable need not represent
-payments at all. State the estimator, sampling error, and comparison tolerance
-before asserting stochastic parity.
+With stochastic models, comparisons also depend on the estimator. Martingale
+controls can adjust the selected result variable, while native cashflow
+diagnostics retain raw sampled payment PVs. Their sum can therefore differ
+from the controlled result at finite path counts. Select a variable that
+accumulates the intended payments and assess differences using the sampling
+error and comparison tolerance.
 
 Continue with :doc:`risk` for full-revaluation checks and exposure aggregation,
 or consult the :doc:`official studies <../studies/index>` for larger product

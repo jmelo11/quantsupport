@@ -1,13 +1,17 @@
-Risk Checks and Historical Repricing
+Risk checks and historical repricing
 ====================================
 
-A reproducible comparison changes one stated assumption while preserving
-everything else. This chapter continues the handles from :doc:`workbook`:
-``H5`` is the base context, ``H6`` the swap, ``C7`` the final quote handle,
-and ``H4`` the curve configuration. Examples use additional clear cells;
-retain upstream references when moving them to dedicated sheets.
+Sensitivities estimate the effect of a small market move, while scenarios
+rebuild and reprice the market under changed inputs. Historical snapshots
+provide a third comparison: the same trade valued against recorded markets.
+Each calculation needs consistent position, currency and quotation conventions.
 
-From Raw Derivatives to a Risk Report
+The examples continue the handles from :doc:`workbook`: ``H5`` is the base
+context, ``H6`` the swap, ``C7`` the final quote handle and ``H4`` the curve
+configuration. Place additional formulas in clear cells and retain upstream
+references when moving them to dedicated sheets.
+
+From raw derivatives to a risk report
 ----------------------------------------
 
 :excel:func:`QS.SENSITIVITIES` and
@@ -19,12 +23,13 @@ derivative uses price points; a volatility quote and FX spot have their own
 units. Preserve the factor label and scaling convention in any hedge report.
 
 For a portfolio, sum only compatible values and risk factors under the same
-market and currency assumptions. Do not aggregate the unsigned Amount column
-from generic swap cashflow reports as though it were a signed exposure or PV.
+market and currency assumptions. The signed Amount column in generic swap
+cashflow reports contains undiscounted receipts and payments; discount and
+convert currencies before reconciling it to PV.
 Cashflows, quote sensitivities, and future-exposure profiles are different
 objects; the worksheet interface does not expose the latter.
 
-A Scenario Is a New Constructed Market
+A scenario is a new constructed market
 --------------------------------------
 
 Put this complete scenario array in ``BB1``:
@@ -48,11 +53,12 @@ Load and price the stressed context:
    BB3 =QS.CONTEXT.CREATE("guide.stressed.context",C7,H4,,,,,,,,,BB2,"USD","SOFR","Mid")
    BB4 =QS.PRICE(H6,BB3)
 
-The scenario occupies argument 12. An Absolute shock adds in the input's units;
-Relative multiplies by ``1 + value``. The selector ``SOFR`` matches the native
-SOFR quote/pillar set; it is not an instruction to add one basis point to every
-cashflow. Excel materializes the scenario in a separate context snapshot,
-unlike Python's scoped borrowed market views.
+The scenario occupies argument 12. An Absolute shock adds in the input's
+units; Relative multiplies by ``1 + value``. The selector ``SOFR``
+changes matching market quotes and explicit pillars; reconstruction then
+determines the effect on projected payments and value. Excel materializes the
+scenario in a separate context snapshot, unlike Python's scoped borrowed
+market views.
 
 Shock targets are case-sensitive underscore-token selectors, not a guaranteed
 exact-match mode. After checking identifier equality, matching ignores token
@@ -75,13 +81,12 @@ an otherwise identical scenario with value ``-0.0001`` and compare
    \quad\hbox{with}\quad
    \sum_{k\ \mathrm{selected}}\frac{\partial V}{\partial q_k}.
 
-Repeat at smaller and larger steps instead of treating one finite difference
-as proof of accuracy. Inspect the selected factors and unchanged-base value.
-There is no automatic DV01 normalization and no general guarantee that every
-possible native request is supported by every worksheet trade.
+Compare several step sizes to assess curvature and numerical noise. Inspect
+the selected inputs and confirm that the base value remains unchanged.
+Request support follows the selected product and pricer.
 
-What Simulation Queries Do and Do Not Show
-------------------------------------------
+Inspecting simulations
+----------------------
 
 With a configured simulation in a context, ``QS.SIMULATION.NPATHS``, ``DT``,
 ``DATES``, ``PATH``, and ``CALIBRATION`` inspect its generated state.
@@ -89,21 +94,19 @@ Path indices are zero-based, and a path vector aligns with the spilled date
 grid. ``DT`` is the reported year step, which can be an average for a generated
 grid. Inspect diagnostics before interpreting a calibrated path distribution.
 
-Generated paths are materialized from numeric inputs and expose no market
-pillars. Their storage type does not imply replayable differentiated
-spot/volatility/calibration paths. The standalone Hull–White generator uses
-Euler evolution; a fine grid or a fixed random seed is not a convergence
-guarantee. These queries are not a worksheet XVA engine, PFE calculation, or a
-general portfolio exposure workflow.
+Generated paths use numeric inputs and expose no market risk pillars.
+The Hull–White generator uses Euler evolution, so assess time-grid error and
+sampling precision separately. These worksheet queries inspect the stored
+simulation; portfolio exposure and XVA workflows are available through other
+interfaces.
 
-Archiving a Coherent Market
+Archiving a coherent market
 ---------------------------
 
-A snapshot captures serializable market observations and construction inputs.
-It is not a saved handle, a live pointer to a quote store, or a collection of
-independently chosen latest components. Capture one ordinary, unshocked context
-for each recorded market and keep distinct object names for the archived
-observations.
+A snapshot records the observations and construction inputs needed to rebuild
+one market. Capture a base context for each observation instant, using distinct
+object names. This preserves the recorded inputs as other worksheet markets
+change.
 
 For a minimal example using the base market, place the first formula in ``BD2``:
 
@@ -113,7 +116,7 @@ For a minimal example using the base market, place the first formula in ``BD2``:
    BD2 =QS.SNAPSHOT.FROM.CONTEXT("guide.close.20260224","2026-02-24T16:00:00Z",H5)
    BD4 =QS.SNAPSHOTS.CREATE("guide.archive",BD2:BD2)
    BD5 =QS.SNAPSHOT.SELECTOR("guide.selection","2026-02-25T08:00:00Z","Previous","Mid")
-   BD6 =QS.SNAPSHOTS.SELECT(BD4,BD5)
+   BD6 =QS.SNAPSHOTS.SELECT("guide.matched.snapshot",BD4,BD5)
    BD7 =QS.CONTEXT.FROM.SNAPSHOT("guide.historical.context",BD4,BD5,)
    BD8 =QS.CONTEXT.EVALUATION.DATE(BD7)
    BD9 =QS.CONTEXT.SNAPSHOT.TIMESTAMP(BD7)
@@ -138,7 +141,7 @@ toward the earlier instant. All selection inputs require timezone-aware text;
 date-only or naive timestamps are rejected. A backtest should normally prefer
 Previous and record the actual match, not silently accept look-ahead.
 
-Quote Sides, Fixings, and Snapshot Limits
+Quote sides, fixings, and snapshot limits
 --------------------------------------------
 
 The selector chooses Mid, Bid, or Ask for construction and model calibration.
@@ -161,7 +164,7 @@ but Excel exchanges cell text rather than filenames and rejects exports beyond
 the 32767 UTF-16-unit cell limit. Saving only handles does not preserve a market
 between Excel processes.
 
-Interpolation as a Controlled Numerical Operation
+Interpolation as a controlled numerical operation
 -------------------------------------------------
 
 Interpolation utilities are numeric scalar functions, not market-object
@@ -190,5 +193,4 @@ These are general numerical operations. Their units and economic suitability
 come from the values supplied by the workbook, not from the function name.
 
 Use the :doc:`worksheet reference <../functions/index>` to check precise
-signatures and errors. The :doc:`capability map <../../coverage>` states which
-native and Python workflows have no corresponding worksheet interface.
+signatures and errors.

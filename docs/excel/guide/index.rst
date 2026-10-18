@@ -1,17 +1,17 @@
-Excel User Guide
+Excel user guide
 ================
 
-The add-in turns worksheet inputs into native market objects and trade
-positions. A cell containing a handle is a dependency on an owned object, not
-its serialized contents. A reliable workbook therefore records the market
-inputs, construction assumptions, position terms, and valuation requests as an
-explicit calculation chain.
+The Excel add-in provides worksheet functions for market construction,
+trade definition, valuation and risk. A pricing workbook records the inputs
+and connects them through formulas, so changing a quote recalculates the
+market and its dependent valuations. Handles returned by construction
+functions refer to native objects owned by the add-in.
 
-This guide is self-contained. It explains installation and a complete
-worksheet-native valuation before developing product, risk, and historical
-workflows. No Book chapter, Python installation, or JSON file is needed for the
-first workbook. Consult the :doc:`worksheet reference <../functions/index>`
-for exact argument order, defaults, spill schemas, aliases, and error codes.
+This guide begins with installation and a complete curve-to-swap calculation,
+then develops product, risk and historical workflows. The first workbook uses
+visible worksheet inputs. Consult the
+:doc:`worksheet reference <../functions/index>` for argument order, defaults,
+result schemas, aliases and error codes.
 
 .. toctree::
    :maxdepth: 2
@@ -20,9 +20,5 @@ for exact argument order, defaults, spill schemas, aliases, and error codes.
    markets-and-products
    risk-and-history
 
-Excel is a Windows XLL interface, not a Python runtime. It exposes a deliberate
-subset of the native library: :doc:`../../coverage` distinguishes configured
-access from products or operations that have no worksheet workflow.
-The :doc:`Python computational studies <../../python/studies/index>` are
-optional investigations of related financial questions, not prerequisites for
-using these formulas.
+The XLL requires Windows desktop Excel. For related numerical studies, see the
+:doc:`Python notebooks <../../python/studies/index>`.

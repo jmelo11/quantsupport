@@ -1,4 +1,4 @@
-Market Assumptions and Product Workflows
+Market assumptions and product workflows
 ========================================
 
 The first :doc:`workbook` constructed a curve from visible quotes. This chapter
@@ -6,8 +6,8 @@ continues with its reference date in ``B1``, quote handle in ``C7``, context in
 ``H5``, and swap in ``H6``. Place additional spill formulas in clear worksheet
 areas, or adjust references when separating inputs and outputs across sheets.
 
-Accrual Dates Are Not Observation Times
----------------------------------------
+Dates, accrual and observations
+-------------------------------
 
 Use ISO date text for financial dates. ``QS.DATE.ADVANCE`` adds a period without
 business-day adjustment; ``QS.CALENDAR.ADJUST`` applies a specified convention.
@@ -46,7 +46,7 @@ Observation timestamps instead require offset-aware RFC 3339 text.
 ``QS.DATETIME.PARSE`` normalizes to UTC; ``QS.DATETIME.DATE`` returns the UTC
 calendar day, not a market business date or a rolled valuation date.
 
-Explicit Zero Rates and Composite Funding
+Explicit zero rates and composite funding
 -----------------------------------------
 
 An explicit zero curve is useful for an assumption-driven valuation or a
@@ -95,7 +95,7 @@ It need not expose interpolation nodes and cannot be captured in a serializable
 market snapshot. Prefer construction configurations for historical workflows;
 a flat zero-rate configuration is an explicit, archivable alternative.
 
-Bond Anchors and Monetary Value
+Bond anchors and monetary value
 -------------------------------
 
 The straight fixed-rate bond constructor takes a position and its quotation
@@ -118,15 +118,14 @@ monetary PV, not the clean/dirty quote per 100 units. Modified duration is
 yield-modified duration in years; it is not a raw curve-quote sensitivity.
 The risk spill can include both curve inputs and ``dPV/dZSpread``.
 
-Callable debt is not a flag on this constructor. Excel does not currently
-construct ``SteppedCouponBond`` or expose its tree/Fourier workflow.
-Although :excel:func:`QS.BOND.OAS` is registered, its current path accepts only
-straight fixed-rate bonds and rejects their OAS request. There is no successful
-worksheet OAS workflow through the available constructors. Use the actual
-capability boundary rather than replacing an issuer-call instrument with a
-straight bond.
+The worksheet constructor supports straight fixed-rate bonds. Callable
+``SteppedCouponBond`` construction and its tree/Fourier workflow are available through
+Rust and Python. Although :excel:func:`QS.BOND.OAS` is registered, its current path
+accepts only straight fixed-rate bonds and rejects their OAS request. There is
+no successful worksheet OAS workflow through the available constructors. Use a
+supported callable-bond interface for issuer-call valuation.
 
-Options and Model Configuration
+Options and model configuration
 -------------------------------
 
 Caps/floors and caplets/floorlets use the native Black rate-option workflows.
@@ -187,7 +186,7 @@ diagnostics; the eleven columns include market/model prices, calibrated sigma,
 forward, strike, and signed model-minus-market price error. A simulation
 without those diagnostics returns an explanatory error.
 
-FX, Equity, and Credit Inputs
+FX, equity, and credit inputs
 -----------------------------
 
 Use the worksheet boundary's explicit parameterized index names:
@@ -203,10 +202,10 @@ an evaluation-date spot fixing and its forward curve; an absent dividend
 curve means zero dividends. A CDS needs credit/survival inputs and recovery.
 Quote-store observations are not a replacement for historical index fixings.
 Worksheet fixing queries return stored observations, not interpolated ones.
-The native missing-fixing fill routine uses reversed interpolation coordinates
-and is not reliable imputation; there is no worksheet interpolation operation
-that repairs this. Supply verified observations or an explicitly validated
-external preprocessing policy.
+Supply verified historical observations or handle gaps through an explicitly
+validated external preprocessing policy. The native missing-fixing fill
+routine uses reversed interpolation coordinates and is unavailable as a
+worksheet operation.
 
 Do not assume identical FX carry formulas across product pricers. The current
 FX-forward implementation uses spot times quote/base discount factors, while
@@ -214,7 +213,7 @@ the FX-option path implements its separate base/quote convention.
 Similarly, accepting a context base currency does not promise automatic
 reporting-currency conversion of every price or cashflow table.
 
-JSON Imports and Capability Boundaries
+JSON imports and capability boundaries
 --------------------------------------
 
 JSON import functions take **text**, not filenames. Quote stores use the native

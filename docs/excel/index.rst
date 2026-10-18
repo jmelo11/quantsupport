@@ -14,7 +14,7 @@ from the add-in's registration attributes, including macro-generated functions.
    guide/index
    Worksheet reference <functions/index>
 
-Handles and Calculation
+Handles and calculation
 -----------------------
 
 Object constructors return revisioned text handles, such as

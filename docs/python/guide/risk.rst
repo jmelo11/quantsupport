@@ -1,15 +1,17 @@
-Risk, Netting, and Extensibility
+Risk, netting, and extensibility
 ================================
 
-Sensitivity Labels Define the Experiment
+Sensitivity labels define the experiment
 ----------------------------------------
 
-A sensitivity is a derivative with respect to a specified input, not a
-unit-free measure of importance. In ordinary direct pricing under a bootstrapped
-market that input can be a deposit, swap, or volatility quote. In an explicit
-zero curve it is a dated rate pillar. A bond's Z-spread or OAS is another
-coordinate. Aggregate labels
-only after checking their units, economic meaning, and valuation currency.
+A sensitivity measures how a valuation changes locally with one market input.
+Under a bootstrapped market, that input can be a deposit, swap or volatility
+quote. For an explicit zero curve, it is a dated rate pillar. A bond spread
+can also be registered as an independent input.
+
+The pillar label identifies the input, and its units determine how to scale
+the derivative into a monetary change. Check those units and the valuation
+currency before aggregating a portfolio risk report.
 
 For a small input move,
 
@@ -21,9 +23,9 @@ Decimal-rate derivatives become approximate +1 bp currency changes by
 multiplication by :math:`10^{-4}`. A lognormal volatility quoted as a decimal
 typically moves by 0.01 for one absolute volatility percentage point; a
 futures price uses price points instead. Neither conversion should be applied
-to every row automatically. Curve construction also introduces numerical
-calibration differentiation; a reported derivative is not proof of an exact
-symbolic calibration Jacobian.
+to every row automatically. Curve sensitivities also include numerical calibration differentiation.
+Compare selected derivatives with full revaluation to assess that local
+approximation.
 
 The following check reuses ``context`` and ``trade`` from
 :doc:`first-valuation`. It shifts both explicit SOFR zero-rate pillars and
@@ -54,12 +56,12 @@ compares their summed derivative with central full revaluation.
    assert math.isclose(restored_value, base_result.price, abs_tol=1e-8)
    print("Approximate +1bp change:", parallel_derivative * 0.0001)
 
-``Scenario`` binds to the innermost entered context, not merely one previously
-initialized. Requested shocked objects and their dependencies are constructed
-in an independent cache. Nested scenarios compose in entry order; exit restores
-the parent market, including after exceptions. The same inactive scenario can
-be reused with another context. Do not retain a shocked AD-backed market view
-after its scope ends.
+Enter a context before its ``Scenario`` scope. The innermost active context
+supplies the scenario's base market. Requested shocked objects and their
+dependencies are constructed in an independent cache. Nested scenarios compose
+in entry order; exit restores the parent market, including after exceptions.
+The same inactive scenario can be reused with another context. Do not retain a
+shocked AD-backed market view after its scope ends.
 
 An Absolute shock adds a value in the target's units; a Relative shock
 multiplies by ``1 + value``. Targets use case-sensitive set membership of
@@ -79,7 +81,7 @@ unexpected matches, and verify each intended input changes once before
 interpreting a stress as a parallel market move. An aggregate NPV difference
 alone cannot reveal a duplicated or unintended input move.
 
-Portfolio Aggregation
+Portfolio aggregation
 ---------------------
 
 Value each explicit ``Trade`` under the same market assumptions, then aggregate
@@ -96,7 +98,7 @@ prediction with a common full-revaluation scenario. Large shocks, options,
 calibration changes, and exercise boundaries make linear predictions less
 reliable.
 
-Exposure Profiles and Netting
+Exposure profiles and netting
 -----------------------------
 
 ``NettingSet`` groups trade positions under one client's ``CsaTerms``.
@@ -120,8 +122,9 @@ time averages. Their values are in the engine's base currency as of each future
 simulation date, before variation margin; they are not already discounted
 adjustment PVs.
 
-The next calculation uses a small path count to demonstrate the interface,
-not to establish a statistically converged adjustment.
+The example below groups the swap into a netting set and runs an XVA
+calculation with variation margin. Its eight paths keep the example quick;
+increase the path count and compare seeds for a numerical study.
 
 .. code-block:: python
    :name: guide-python-xva
@@ -197,12 +200,11 @@ quote-like label as a complete recalibrated market-quote derivative.
 
 Thresholds, minimum transfer amount, recovery, credit/funding indices, and the
 model/path/date grid are economic and numerical assumptions. Netting-set names
-must be unique in one run. Fixed seeds make a run reproducible, not unbiased
-or converged; compare path counts and seeds before interpreting a client-level
-change as material. The
+must be unique in one run. Fixed seeds allow reproducible comparisons. Vary path counts and seeds to
+assess whether a client-level change exceeds sampling variation. The
 :doc:`XVA study <../studies/notebooks/xva>` develops the comparison.
 
-Extending Valuation in Python
+Extending valuation in Python
 -----------------------------
 
 The binding exposes extension interfaces rather than requiring new native
@@ -255,6 +257,6 @@ native instrument still uses native pricing. A standalone ``Evaluator`` can
 instead use a custom provider; it is not necessary to subclass every supplied
 base interface.
 
-This example returns Value only. It does not claim that native AD differentiates
-arbitrary Python arithmetic or that its receipt can enter native XVA.
-Implement and validate any additional requested measures explicitly.
+The custom pricer returns Value. Additional measures require their own
+implementation and validation: arbitrary Python arithmetic is outside native
+AD, and native XVA requires a supported claim conversion.

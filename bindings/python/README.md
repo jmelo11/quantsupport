@@ -1,14 +1,17 @@
 # QuantSupport for Python
 
-Python bindings for the native QuantSupport pricing and risk library. Contracts,
-positions, market inputs, and valuation methods remain separate objects.
+This Python package provides QuantSupport's native instruments, market
+construction, valuation and risk calculations. Define a contract and trade,
+configure its market, then evaluate the position inside a pricing context.
+Results are available as scalar properties and pandas tables.
 
 ## Documentation and computational studies
 
 The [Python user guide](https://jmelo11.github.io/quantsupport/api/python/guide/index.html)
 is self-contained: installation, a complete valuation, financial conventions,
 market construction, product/model selection, scenarios, and exposure/XVA.
-Essential explanations do not require visiting the Book.
+Each workflow includes the financial conventions needed to interpret its
+results.
 
 - [First valuation and lifecycle](https://jmelo11.github.io/quantsupport/api/python/guide/first-valuation.html)
 - [Curves, market data, calibration, and history](https://jmelo11.github.io/quantsupport/api/python/guide/markets.html)
@@ -18,7 +21,6 @@ Essential explanations do not require visiting the Book.
   rendered notebooks organized by financial topic
 - [Exact API reference](https://jmelo11.github.io/quantsupport/api/autoapi/quantsupport/index.html):
   constructors/factories, parameters, defaults, properties, protocols, and errors
-- [Interface capabilities and limitations](https://jmelo11.github.io/quantsupport/api/coverage.html)
 
 Public classes are grouped in `quantsupport.time`, `.market`, `.instruments`,
 `.pricing`, and `.risk`, and re-exported at the root for compatibility.
@@ -48,8 +50,8 @@ installed wheel can lack classes present in the checkout.
 
 ## An in-memory valuation
 
-This example needs no downloaded market files. Its curve is an explicit
-continuous zero-rate assumption, not a bootstrapped market quote:
+This example defines a five-year receive-fixed swap and an explicit flat
+continuous zero-rate curve using in-memory inputs:
 
 ```python
 import quantsupport as qs
@@ -79,14 +81,15 @@ with context:
     print(result.sensitivities)
 ```
 
-A 3% continuous zero curve does not imply a 3% contractual par coupon.
-Rates/spreads are annual decimals unless explicitly stated otherwise. Risk
-values are raw derivatives; multiply decimal-rate derivatives by `0.0001`
-for an approximate +1 bp monetary change, not every sensitivity indiscriminately.
-Generic swap cashflow tables report underlying amounts before leg-side
-multiplication and contain no PV column.
+The continuous curve implies simple forwards slightly above 3%, so the
+receive-fixed swap has a small negative value. Rates and spreads use annual
+decimals unless specified otherwise. Risk values are derivatives per unit
+input; multiply decimal-rate derivatives by `0.0001` for the approximate
+monetary change from a one-basis-point increase.
+Generic swap cashflow tables report signed amounts, positive for receipts and
+negative for payments, including initial advances. They contain no PV column.
 
-## Important contracts
+## Interface conventions
 
 - Built-in instruments contain terms, not positions. `Trade` owns execution
   date, side, size overrides, and bond anchors. `evaluate()` and `NettingSet`

@@ -1,9 +1,8 @@
 # Build the guides, computational studies, and reference
 
-Sphinx builds independent Python and Excel user guides, rendered official
-computational studies, and symbol-level API references. The complete Sphinx
-site works alone; Book links are optional. Publication places it under `/api/`
-beside the independently useful mdBook site.
+Sphinx builds the Python and Excel user guides, rendered notebooks and API
+references. The site can be read independently or published under `/api/`
+alongside the QuantSupport Book.
 
 ## Standalone build
 
@@ -26,8 +25,8 @@ The first build compiles the portable Excel catalog exporter.
 
 ## Authored and generated sources
 
-- `docs/python/guide/` and `docs/excel/guide/` contain connected financial
-  workflows, not generated module summaries.
+- `docs/python/guide/` and `docs/excel/guide/` contain authored financial
+  workflows and explanations.
 - AutoAPI reads packaged `.pyi` declarations/docstrings in
   `bindings/python/python/quantsupport`. `docs/_ext/python_api.py` prepares
   public signatures, constructors/factories, and source links.

@@ -1,14 +1,17 @@
-Constructing and Selecting a Market
+Constructing and selecting a market
 ===================================
 
-From Observations to Curves
+From observations to curves
 -------------------------------
 
-A quote store records observations and a reference date; it is not a discount
-curve. A construction configuration determines how those observations become
-pricing objects. This distinction matters in risk: differentiating a
-bootstrapped price with respect to an OIS quote is not the same experiment as
-moving an interpolated zero rate.
+Curve construction translates observed prices and rates into discount
+factors and forwards. A quote store holds the observations and reference date;
+a curve configuration selects the calibration instruments and numerical
+conventions. The constructed curve can then be queried or used for valuation.
+
+This connection also determines risk reporting. A bootstrapped valuation can
+report sensitivities to its OIS quotes, while an explicit zero-rate curve
+reports sensitivities to the rates supplied at its pillars.
 
 The example below bootstraps a USD SOFR curve from a deposit and OIS quotes.
 The identifiers encode instrument and market conventions understood by the
@@ -50,11 +53,11 @@ native quote parser. They are not arbitrary maturity labels.
        assert forward > 0
        assert curve.discount_factor("2028-02-24") < 1
 
-``nodes()`` describes the curve's interpolation dates and discount factors.
-``pillars()`` describes labeled market inputs where available. Neither should
-be mistaken for a complete historical quote table. Construction may require
-other configured projection or collateral curves; a missing dependency is an
-error, not a request to substitute a nearby index.
+``nodes()`` reports interpolation dates and discount factors; ``pillars()``
+reports labelled market inputs where available. Together they show how the
+curve is represented and which inputs determine its sensitivities.
+Construction may also need other projection or collateral curves. Supply
+those dependencies under their configured market indices.
 
 For a simple forward under the curve's time basis,
 
@@ -69,11 +72,11 @@ Log-linear discount-factor interpolation preserves a different curve shape
 from linear zero-rate interpolation. Extrapolation is a modeling choice and
 must be recorded explicitly.
 
-Native OIS quote bootstrapping is available, but the Python binding does not
-expose a standalone ``OvernightIndexSwap`` instrument. A vanilla ``Swap`` is
-not a substitute for an OIS contract with different compounding semantics.
+The bootstrap uses native OIS calibration instruments with compounded
+overnight coupons. Python's standalone ``Swap`` uses regular single-fixing
+coupons; a standalone ``OvernightIndexSwap`` wrapper is currently unavailable.
 
-Explicit and Composite Construction
+Explicit and composite construction
 -----------------------------------
 
 :doc:`first-valuation` used ``CurveConstruction.zero_rate``. Its dates or tenors
@@ -109,7 +112,7 @@ explicit spread curve identified by ``MarketIndex.other("FUNDINGSPREAD")``,
 and their composite. Choose the composite through the fixed-income discount
 policy rather than adding a discount index to the loan contract.
 
-Quotes, Fixings, FX, and Policies
+Quotes, fixings, FX, and policies
 -------------------------------------
 
 Quote levels are selected with ``quote_level=Level.Mid``, ``Bid``, or ``Ask``.
@@ -125,12 +128,10 @@ that observation is missing; a zero fixing is not an acceptable substitute.
 Read the product's fixing calendar and lag independently of its payment
 schedule.
 
-Missing historical observations require an explicit data-quality decision,
-not a silent interpolation assumption. The native ``fill_missing_fixings``
-routine is not a Python binding operation and currently uses reversed
-interpolation coordinates. It is not a reliable reference for imputation;
-supply verified observations or document an independently validated
-preprocessing policy.
+Supply verified historical observations. If the source has gaps, handle them
+through an explicitly validated preprocessing policy. The native
+``fill_missing_fixings`` routine uses reversed interpolation coordinates and
+is unavailable through Python.
 
 ``FxStore`` stores rates in quote-currency units per base-currency unit.
 For example ``{"base": "EUR", "quote": "USD", "rate": 1.1}`` means
@@ -146,12 +147,12 @@ index takes precedence. ``CsaTerms`` instead describes one netting agreement's
 credit, funding, and collateral terms. These three choices answer different
 financial questions.
 
-Python and Excel share native components, but their exposed policy controls
-are not identical. Document the actual pricer/policy path before comparing
-cross-interface prices; do not infer universal reporting conversion or
-discount-policy parity merely because both interfaces accept a base currency.
+When comparing Python and Excel valuations, use matching pricers, discount
+policies and reporting currencies. The bindings expose different policy
+controls, so a common base currency alone is insufficient to establish those
+assumptions.
 
-Volatility and Calibration Inputs
+Volatility and calibration inputs
 ---------------------------------
 
 A volatility configuration identifies quote inputs, smile coordinates, and
@@ -165,12 +166,11 @@ normal volatility or an absolute short-rate sigma. Inspect ``volatility_type``
 and ``smile_type`` before interpreting a surface lookup. For a cube, expiry
 and underlying tenor are separate coordinates.
 
-Native multidimensional construction can retain sparse slices and singleton
-axes. It does not manufacture a complete grid. The default native surface
-extrapolation policy is ``Reject``; an ATM calibration basket can fall outside
-a quoted strike slice even when all expiry dates look valid. Either choose an
-in-domain basket or specify and explain an explicit ``Flat`` policy. Silently
-clamping an out-of-domain calibration is a different model assumption.
+Surface and cube construction supports sparse slices and singleton axes.
+The default extrapolation policy is ``Reject``, so each query must lie within
+the selected slices. An ATM calibration strike can fall outside a smile even
+when its expiry is covered. Choose an in-domain basket or an explicit ``Flat``
+policy consistent with the intended boundary behavior.
 
 ``PricerConfiguration`` selects an instrument pricing implementation and
 index-specific model assignments. ``SimulationConfiguration`` describes a
@@ -179,7 +179,7 @@ quote side and configured volatility source. A calibrated sigma schedule is an
 output of that fit; fixed ``sigma`` is an input in absolute short-rate units,
 not an option-market volatility percentage.
 
-Native Serialization
+Native serialization
 --------------------
 
 Configuration ``from_dict`` returns one configuration; ``from_dict_list`` and
@@ -193,7 +193,7 @@ objects such as ``{"Equity": "SPX"}``, ``{"Credit": "ACME"}``, or
 ``{"FxPair": ["EUR", "USD"]}``; typed Python factories avoid reliance on
 display-label parsing.
 
-Historical Repricing Without Look-Ahead
+Historical repricing without look-ahead
 ---------------------------------------
 
 A historical snapshot captures one coherent market: quotes and construction,
@@ -244,10 +244,9 @@ reporting the requested timestamp as though it were observed data.
 
 Snapshots rebuild from construction inputs rather than serializing runtime
 curves, caches, or AD state. Explicit zero rates and FX spots are
-side-independent. Fixings are supplied separately to
-``archive.pricing_context(selector, fixings=...)``; there is no automatic
-publication-vintage filtering. A rigorous backtest must supply the fixing set
-that was actually known at each historical observation.
+side-independent. Fixings are supplied separately to ``archive.pricing_context(selector, fixings=...)``; there is
+no automatic publication-vintage filtering. For a historical backtest, supply
+the fixing set that was known at each observation instant.
 
 Continue with :doc:`valuation` to choose product-specific requests and models,
 or study the :doc:`curve notebook <../studies/notebooks/curves>` for a larger
