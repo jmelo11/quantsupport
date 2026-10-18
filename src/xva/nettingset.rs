@@ -124,7 +124,7 @@ mod tests {
         time::{date::Date, daycounter::DayCounter, enums::Frequency},
         utils::errors::{QSError, Result},
         xva::{
-            aggregator::{CvaAggregator, PfeAggregator},
+            aggregator::{CvaAggregator, XvaAggregator},
             claimevaluationstrategy::ClaimEvaluationStrategy,
             engine::{LgmModelConfig, XvaEngine, XvaEngineConfig},
             visitors::exposureevaluator::ExposureResult,

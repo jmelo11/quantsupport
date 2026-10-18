@@ -18,7 +18,7 @@ use crate::{
     time::date::Date,
     utils::errors::{QSError, Result},
     xva::{
-        aggregator::{AggregatorBundle, PfeAggregatorFactory},
+        aggregator::{AggregatorBundle, XvaAggregatorFactory},
         contigentclaim::ContingentClaim,
         csa::{CsaTerms, VariationMarginAccount},
         visitors::marketmodel::{MarketModel, PathScenario},
@@ -388,7 +388,7 @@ impl VariationMarginSimulation {
 pub fn evaluate_with_xva<S, H1, H2>(
     dates: &[Date],
     trades: &HashMap<String, &[ContingentClaim], H1>,
-    factories: &HashMap<String, Vec<Box<dyn PfeAggregatorFactory>>, H2>,
+    factories: &HashMap<String, Vec<Box<dyn XvaAggregatorFactory>>, H2>,
     model_setup: &S,
 ) -> Result<ExposureResult>
 where
@@ -415,7 +415,7 @@ where
 pub fn evaluate_with_margin<S, H1, H2, H3>(
     dates: &[Date],
     trades: &HashMap<String, &[ContingentClaim], H1>,
-    factories: &HashMap<String, Vec<Box<dyn PfeAggregatorFactory>>, H2>,
+    factories: &HashMap<String, Vec<Box<dyn XvaAggregatorFactory>>, H2>,
     margins: &HashMap<String, VariationMarginSimulation, H3>,
     model_setup: &S,
 ) -> Result<ExposureResult>
@@ -432,7 +432,7 @@ where
     let ns_ids = &ns_ids;
 
     // Per-netting-set factory slices, aligned with `ns_ids`.
-    let ns_factories: Vec<&[Box<dyn PfeAggregatorFactory>]> = ns_ids
+    let ns_factories: Vec<&[Box<dyn XvaAggregatorFactory>]> = ns_ids
         .iter()
         .map(|id| factories.get(id).map_or(&[][..], Vec::as_slice))
         .collect();
@@ -571,7 +571,7 @@ where
 fn reduce_chunk_results(
     chunk_results: &[ChunkResult],
     ns_ids: &[String],
-    ns_factories: &[&[Box<dyn PfeAggregatorFactory>]],
+    ns_factories: &[&[Box<dyn XvaAggregatorFactory>]],
     dates: &[Date],
 ) -> ExposureResult {
     let mut total_xva: Vec<Vec<f64>> = ns_factories
@@ -798,7 +798,7 @@ mod tests {
             schedule::MakeSchedule,
         },
         xva::{
-            aggregator::{CvaAggregator, CvaFactory, PfeAggregator, PfeAggregatorFactory},
+            aggregator::{CvaAggregator, CvaFactory, XvaAggregator, XvaAggregatorFactory},
             nettingset::NettingSet,
             visitors::preprocessorexecutor::PreprocessorExecutor,
         },
@@ -1118,7 +1118,7 @@ mod tests {
             n_paths,
             system_dfs: None,
         };
-        let mut factories: HashMap<String, Vec<Box<dyn PfeAggregatorFactory>>> = HashMap::new();
+        let mut factories: HashMap<String, Vec<Box<dyn XvaAggregatorFactory>>> = HashMap::new();
         factories.insert("USD_IRS_5Y".to_string(), vec![Box::new(cva_factory)]);
         let mut trades: HashMap<String, &[_]> = HashMap::new();
         trades.insert("USD_IRS_5Y".to_string(), td.claims.as_slice());

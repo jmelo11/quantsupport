@@ -42,7 +42,7 @@ use crate::{
     xva::{
         aggregator::{
             CreditCurveCvaFactory, CvaFactory, FundingCurveFvaFactory, FvaFactory,
-            PfeAggregatorFactory,
+            XvaAggregatorFactory,
         },
         contigentclaim::ContingentClaim,
         csa::CsaTerms,
@@ -428,7 +428,7 @@ impl XvaEngine {
             .collect::<Result<Vec<f64>>>()?;
 
         // 4. Per-netting-set aggregator factories from each client's CSA terms.
-        let mut factories: HashMap<String, Vec<Box<dyn PfeAggregatorFactory>>> = HashMap::new();
+        let mut factories: HashMap<String, Vec<Box<dyn XvaAggregatorFactory>>> = HashMap::new();
         for (id, ns) in netting_sets.iter() {
             let csa = ns.csa_terms().ok_or_else(|| {
                 QSError::InvalidValueErr(format!(
@@ -437,7 +437,7 @@ impl XvaEngine {
             })?;
 
             // CVA: bootstrapped credit curve when assigned, flat spread otherwise.
-            let cva_factory: Box<dyn PfeAggregatorFactory> =
+            let cva_factory: Box<dyn XvaAggregatorFactory> =
                 if let Some(credit_index) = &csa.credit_index {
                     let snapshot = self.credit_curves.get(credit_index).ok_or_else(|| {
                         QSError::NotFoundErr(format!(
@@ -782,7 +782,7 @@ impl XvaEngine {
         system_ts: &DiscountTermStructure<f64>,
         system_dfs: &[f64],
         sim_dates: &[Date],
-    ) -> Result<Box<dyn PfeAggregatorFactory>> {
+    ) -> Result<Box<dyn XvaAggregatorFactory>> {
         if let Some(curve) = &csa.funding_spread_curve {
             for date in sim_dates {
                 let spread = curve.zero_rate(*date)?;

@@ -45,8 +45,9 @@ ENE_k=\frac1n\sum_p\min(V_{p,k},0).
 
 ENE is signed and nonpositive. These are **pointwise date profiles**; the
 methods do not calculate a time-average EPE or a PFE quantile.
-Despite its name, `PfeAggregator` is an extension point for reducing each
-path into adjustment measures, not a percentile estimator.
+`XvaAggregator` reduces each path into an adjustment contribution, with
+implementations for CVA, DVA and FVA. Contributions are normalized by the
+total path count and summed across paths.
 
 Returned cubes and these profiles remain raw, pre-margin values. Adjustment
 aggregators can consume netted, post-margin exposure instead. A sum of

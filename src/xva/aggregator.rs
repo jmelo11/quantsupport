@@ -1,8 +1,7 @@
 //! Pathwise CVA, DVA, and signed funding-adjustment estimators.
 //!
-//! Despite its historical name, [`PfeAggregator`] does not compute a
-//! potential-future-exposure quantile. It reduces dated NPVs from one path
-//! to a scalar contribution suitable for a backward differentiation pass.
+//! [`XvaAggregator`] reduces dated NPVs from one path to a scalar
+//! adjustment contribution suitable for a backward differentiation pass.
 //! Contributions are normalized by the supplied total path count and must
 //! be summed across paths, not averaged a second time.
 
@@ -18,7 +17,7 @@ use crate::{
 /// `T`-typed fields (credit spread, recovery, survival probabilities, etc.)
 /// become pre-mark tape leaves.  [`aggregate_path`](Self::aggregate_path) is
 /// called **after** the mark inside each path iteration.
-pub trait PfeAggregator<T: Scalar>: Send + Sync {
+pub trait XvaAggregator<T: Scalar>: Send + Sync {
     /// Human-readable name for this measure (e.g. `"CVA"`, `"DVA"`).
     fn name(&self) -> &'static str;
 
@@ -29,24 +28,24 @@ pub trait PfeAggregator<T: Scalar>: Send + Sync {
     fn aggregate_path(&self, npvs: &[T], dates: &[Date]) -> T;
 }
 
-/// Bundle returned by an [`PfeAggregatorFactory`]: the aggregator together
+/// Bundle returned by an [`XvaAggregatorFactory`]: the aggregator together
 /// with tracked `DualFwd` leaves whose adjoints carry sensitivities after
 /// the backward pass.
 pub struct AggregatorBundle {
     /// The aggregator instance (lives on the current thread's tape).
-    pub aggregator: Box<dyn PfeAggregator<DualFwd>>,
+    pub aggregator: Box<dyn XvaAggregator<DualFwd>>,
     /// Tracked leaves: `(label, leaf)` pairs whose `.adjoint()` can be read
     /// after `propagate_mark_to_start`.
     pub leaves: Vec<(String, DualFwd)>,
 }
 
-/// Factory for creating per-thread [`PfeAggregator`] instances.
+/// Factory for creating per-thread [`XvaAggregator`] instances.
 ///
 /// Each rayon thread calls [`create_aggregator`](Self::create_aggregator) to
 /// build its own aggregator with `DualFwd` leaves on the thread-local tape
 /// (pre-mark).
-pub trait PfeAggregatorFactory: Send + Sync {
-    /// Human-readable name for the Pfe measure (e.g. `"CVA"`).
+pub trait XvaAggregatorFactory: Send + Sync {
+    /// Human-readable name for the XVA measure (e.g. `"CVA"`).
     fn name(&self) -> &'static str;
 
     /// Creates an aggregator and its tracked leaves on the current thread's
@@ -137,7 +136,7 @@ impl<T: Scalar> CvaAggregator<T> {
     }
 }
 
-impl<T: Scalar> PfeAggregator<T> for CvaAggregator<T> {
+impl<T: Scalar> XvaAggregator<T> for CvaAggregator<T> {
     fn name(&self) -> &'static str {
         "CVA"
     }
@@ -208,7 +207,7 @@ impl<T: Scalar> DvaAggregator<T> {
     }
 }
 
-impl<T: Scalar> PfeAggregator<T> for DvaAggregator<T> {
+impl<T: Scalar> XvaAggregator<T> for DvaAggregator<T> {
     fn name(&self) -> &'static str {
         "DVA"
     }
@@ -288,7 +287,7 @@ impl<T: Scalar> FvaAggregator<T> {
     }
 }
 
-impl<T: Scalar> PfeAggregator<T> for FvaAggregator<T> {
+impl<T: Scalar> XvaAggregator<T> for FvaAggregator<T> {
     fn name(&self) -> &'static str {
         "FVA"
     }
@@ -324,7 +323,7 @@ pub struct CvaFactory {
     pub system_dfs: Option<Vec<f64>>,
 }
 
-impl PfeAggregatorFactory for CvaFactory {
+impl XvaAggregatorFactory for CvaFactory {
     fn name(&self) -> &'static str {
         "CVA"
     }
@@ -419,7 +418,7 @@ impl CreditCurveCvaFactory {
     }
 }
 
-impl PfeAggregatorFactory for CreditCurveCvaFactory {
+impl XvaAggregatorFactory for CreditCurveCvaFactory {
     fn name(&self) -> &'static str {
         "CVA"
     }
@@ -477,7 +476,7 @@ pub struct DvaFactory {
     pub n_paths: usize,
 }
 
-impl PfeAggregatorFactory for DvaFactory {
+impl XvaAggregatorFactory for DvaFactory {
     fn name(&self) -> &'static str {
         "DVA"
     }
@@ -506,7 +505,7 @@ pub struct FvaFactory {
     pub system_dfs: Option<Vec<f64>>,
 }
 
-impl PfeAggregatorFactory for FvaFactory {
+impl XvaAggregatorFactory for FvaFactory {
     fn name(&self) -> &'static str {
         "FVA"
     }
@@ -574,7 +573,7 @@ impl FundingCurveFvaFactory {
     }
 }
 
-impl PfeAggregatorFactory for FundingCurveFvaFactory {
+impl XvaAggregatorFactory for FundingCurveFvaFactory {
     fn name(&self) -> &'static str {
         "FVA"
     }
