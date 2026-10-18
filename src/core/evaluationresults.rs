@@ -7,10 +7,10 @@ use crate::{currencies::currency::Currency, time::date::Date};
 /// Each position across the columns describes one cashflow in its own currency;
 /// row order follows the reporting pricer and need not be chronological.
 /// The default [`HandleCashflows`](crate::core::request::HandleCashflows)
-/// implementation reports amounts before applying leg-side signs and does not
-/// negate disbursement amounts. Consequently,
-/// summing this table does not reconstruct signed NPV without the trade's
-/// directions, principal-flow signs, FX conversion, and discount factors.
+/// implementation applies leg-side signs and reverses disbursement amounts:
+/// positive amounts are receipts and negative amounts are payments.
+/// Reconciling this table to NPV also requires the pricer's payment selection,
+/// any FX conversion, and discount factors.
 #[derive(Clone, Debug)]
 pub struct CashflowsTable {
     payment_dates: Vec<Date>,
@@ -53,7 +53,7 @@ impl CashflowsTable {
         &self.cashflow_types
     }
 
-    /// Returns undiscounted amounts in each row's currency.
+    /// Returns signed, undiscounted amounts in each row's currency.
     #[must_use]
     pub fn amounts(&self) -> &[f64] {
         &self.amount

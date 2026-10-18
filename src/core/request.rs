@@ -26,7 +26,7 @@ pub enum Request {
     OAS,
     /// Raw first-order value derivatives keyed by market-pillar labels.
     Sensitivities,
-    /// Undiscounted cashflow report; directions and columns depend on the pricer.
+    /// Signed, undiscounted cashflow report; payment selection depends on the pricer.
     Cashflows,
     /// Breakeven contract quote, such as a decimal swap coupon or forward price.
     FairRate,
@@ -108,12 +108,14 @@ where
 ///
 /// `T` is the position and `S` supplies its legs. Floating fixings must already
 /// have been resolved by the pricer. The report preserves leg/cashflow order,
-/// does not filter payment dates, and does not apply leg-side signs or discounting.
+/// applies leg-side signs and reverses disbursements. Positive amounts are
+/// receipts and negative amounts are payments. It does not filter payment dates
+/// or apply discounting.
 pub trait HandleCashflows<T, S>
 where
     S: LegsProvider<DualFwd>,
 {
-    /// Returns parallel cashflow columns in each leg's currency.
+    /// Returns parallel cashflow columns with signed amounts in each leg's currency.
     ///
     /// ## Errors
     /// Returns an error if the evaluation fails.
@@ -127,11 +129,12 @@ where
 
         for (leg_index, leg) in state.legs().iter().enumerate() {
             let currency = leg.currency();
+            let side = leg.side().sign();
 
             for cashflow in leg.cashflows() {
                 match cashflow {
                     CashflowType::FixedRateCoupon(coupon) => {
-                        let amount = coupon.amount()?.value();
+                        let amount = coupon.amount()?.value() * side;
                         let payment_date = coupon.payment_date();
                         let accrual_start = coupon.accrual_start_date();
                         let accrual_end = coupon.accrual_end_date();
@@ -153,7 +156,7 @@ where
                         );
                     }
                     CashflowType::FloatingRateCoupon(coupon) => {
-                        let amount = coupon.amount()?.value();
+                        let amount = coupon.amount()?.value() * side;
                         let payment_date = coupon.payment_date();
                         let accrual_start = coupon.accrual_start_date();
                         let accrual_end = coupon.accrual_end_date();
@@ -175,7 +178,7 @@ where
                         );
                     }
                     CashflowType::OptionEmbeddedCoupon(coupon) => {
-                        let amount = coupon.amount()?.value();
+                        let amount = coupon.amount()?.value() * side;
                         let payment_date = coupon.payment_date();
                         let accrual_start = coupon.accrual_start_date();
                         let accrual_end = coupon.accrual_end_date();
@@ -196,7 +199,7 @@ where
                         );
                     }
                     CashflowType::Redemption(cashflow) => {
-                        let amount = cashflow.amount()?.value();
+                        let amount = cashflow.amount()?.value() * side;
                         let payment_date = cashflow.payment_date();
 
                         cashflows_table.add_cashflow(
@@ -212,7 +215,7 @@ where
                         );
                     }
                     CashflowType::Disbursement(cashflow) => {
-                        let amount = cashflow.amount()?.value();
+                        let amount = -cashflow.amount()?.value() * side;
                         let payment_date = cashflow.payment_date();
 
                         cashflows_table.add_cashflow(
@@ -228,7 +231,7 @@ where
                         );
                     }
                     CashflowType::ConstantAmount(cashflow) => {
-                        let amount = cashflow.amount()?.value();
+                        let amount = cashflow.amount()?.value() * side;
                         let payment_date = cashflow.payment_date();
 
                         cashflows_table.add_cashflow(
@@ -263,8 +266,11 @@ mod tests {
         ad::dual::DualFwd,
         core::{instrument::AssetClass, trade::Side},
         currencies::currency::Currency,
+        indices::marketindex::MarketIndex,
         instruments::cashflows::{
-            cashflow::SimpleCashflow, fixedratecoupon::FixedRateCoupon, leg::Leg,
+            cashflow::SimpleCashflow, fixedratecoupon::FixedRateCoupon,
+            floatingratecoupon::FloatingRateCoupon, leg::Leg,
+            optionembeddedcoupon::OptionEmbeddedCoupon, payoffops::PayoffOps,
         },
         rates::interestrate::InterestRate,
         time::{date::Date, daycounter::DayCounter, enums::Frequency},
@@ -298,6 +304,97 @@ mod tests {
                 Frequency::Annual,
             ),
         )
+    }
+
+    #[test]
+    fn cashflow_amounts_follow_leg_direction_and_reverse_disbursements() -> Result<()> {
+        let start = Date::new(2024, 1, 1);
+        let end = Date::new(2024, 4, 1);
+        let floating = FloatingRateCoupon::new(
+            100_000.0,
+            DualFwd::new(0.01),
+            MarketIndex::SOFR,
+            start,
+            end,
+            end,
+        );
+        floating.set_fixing(DualFwd::new(0.04));
+        let negative_coupon = FloatingRateCoupon::new(
+            100_000.0,
+            DualFwd::new(0.0),
+            MarketIndex::SOFR,
+            start,
+            end,
+            end,
+        );
+        negative_coupon.set_fixing(DualFwd::new(-0.02));
+        let cashflows = vec![
+            CashflowType::FixedRateCoupon(FixedRateCoupon::new(
+                100_000.0,
+                Box::new(create_test_rate()),
+                start,
+                end,
+                end,
+            )),
+            CashflowType::FloatingRateCoupon(floating),
+            CashflowType::OptionEmbeddedCoupon(
+                OptionEmbeddedCoupon::new(
+                    100_000.0,
+                    MarketIndex::SOFR,
+                    DualFwd::new(0.0),
+                    start,
+                    end,
+                    end,
+                    PayoffOps::Index,
+                )
+                .with_fixing(DualFwd::new(0.05)),
+            ),
+            CashflowType::Redemption(SimpleCashflow::new(100_000.0, end)),
+            CashflowType::Disbursement(SimpleCashflow::new(100_000.0, start)),
+            CashflowType::ConstantAmount(SimpleCashflow::new(100_000.0, end)),
+            CashflowType::FloatingRateCoupon(negative_coupon),
+            CashflowType::ConstantAmount(SimpleCashflow::new(-25.0, end)),
+            CashflowType::ConstantAmount(SimpleCashflow::new(0.0, end)),
+        ];
+        let accrual = DayCounter::Actual360.year_fraction(start, end);
+        let interest = 100_000.0 * 0.05 * accrual;
+        let expected_receipts = [
+            interest,
+            interest,
+            interest,
+            100_000.0,
+            -100_000.0,
+            100_000.0,
+            -100_000.0 * 0.02 * accrual,
+            -25.0,
+            0.0,
+        ];
+        for side in [Side::LongReceive, Side::PayShort] {
+            let leg = Leg::new(
+                0,
+                cashflows.clone(),
+                Currency::USD,
+                None,
+                None,
+                None,
+                None,
+                side,
+                true,
+                AssetClass::InterestRate,
+                start,
+                end,
+            );
+            let mut state = MockState { legs: vec![leg] };
+            let table = MockHandler.handle_cashflows(&MockTrade, &mut state)?;
+            assert_eq!(table.amounts().len(), expected_receipts.len());
+            for (amount, receipt) in table.amounts().iter().zip(expected_receipts) {
+                assert!((amount - receipt * side.sign()).abs() < 1e-10);
+            }
+            assert_eq!(table.fixing()[1], Some(0.04));
+            assert_eq!(table.fixing()[2], Some(0.05));
+            assert_eq!(table.fixing()[6], Some(-0.02));
+        }
+        Ok(())
     }
 
     #[test]
@@ -350,8 +447,8 @@ mod tests {
             "Cashflow type should be FixedRateCoupon"
         );
         assert!(
-            table.amounts()[0] > 0.0,
-            "Amount should be positive for a coupon"
+            table.amounts()[0] < 0.0,
+            "A positive-rate coupon on a pay leg should be negative"
         );
     }
 
@@ -386,7 +483,7 @@ mod tests {
         let table = result.unwrap();
         assert_eq!(table.payment_dates().len(), 1);
         assert_eq!(table.cashflow_types()[0], "Redemption");
-        assert_eq!(table.amounts()[0], 100_000.0);
+        assert_eq!(table.amounts()[0], -100_000.0);
     }
 
     #[test]
@@ -532,7 +629,7 @@ mod tests {
             2,
             "Table should have cashflows from both legs"
         );
-        assert_eq!(table.amounts()[0], 50_000.0);
+        assert_eq!(table.amounts()[0], -50_000.0);
         assert_eq!(table.amounts()[1], 50_000.0);
         assert_eq!(table.currencies()[0], Currency::USD);
         assert_eq!(table.currencies()[1], Currency::EUR);

@@ -348,7 +348,7 @@ class ExcelReferenceTests(unittest.TestCase):
         size = next(argument for argument in futures["arguments"]
                     if argument["name"] == "contract_size")
         self.assertIn("per one futures price point", size["help"])
-        self.assertIn("before leg-side multiplication", records["QS.CASHFLOWS"]["returns"])
+        self.assertIn("positive for receipts and negative for payments", records["QS.CASHFLOWS"]["returns"])
         self.assertIn("tenor text", records["QS.SIMULATION.CALIBRATION"]["returns"])
         self.assertIn("omits one intervening year", records["QS.YEAR.FRACTION"]["returns"])
         self.assertIn("no unit conversion, interpolation", records["QS.FIXINGS.GET"]["returns"])

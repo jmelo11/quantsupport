@@ -717,7 +717,7 @@ fn build_ad_value<E: BondPricingEngine>(
             .value(&ad_model, &valuation, spread)?
             .mul_val(DualFwd::scalar(trade.side().sign()));
         drop(curve);
-        state.legs = vec![resolved_leg];
+        state.legs = vec![resolved_leg.with_side(trade.side())];
         state.value = Some(value);
         state.spread_node = Some(spread);
         Ok(value.value())
