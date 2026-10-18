@@ -1,7 +1,7 @@
 Excel
 =====
 
-`Download quantsupport.xll for 64-bit Windows Excel <https://github.com/jmelo11/quantsupport/releases/latest/download/quantsupport.xll>`_
+`Download quantsupport.xll for 64-bit Windows Excel <https://jmelo11.github.io/quantsupport/downloads/quantsupport.xll>`_
 
 Every function has a separate declaration page with ordered parameters,
 worksheet input types, blank/default behavior, results, errors, aliases, and

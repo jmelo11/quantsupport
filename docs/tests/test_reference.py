@@ -471,6 +471,13 @@ class RenderedReferenceTests(unittest.TestCase):
                                      "-b", "html", "docs", temporary], cwd=ROOT, text=True, capture_output=True)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             output = Path(temporary)
+            excel = Text((output / "excel/index.html").read_text())
+            workbook = Text((output / "excel/guide/workbook.html").read_text())
+            downloads = "https://jmelo11.github.io/quantsupport/downloads/"
+            self.assertIn(downloads + "quantsupport.xll", excel.hrefs)
+            for name in ("quantsupport.xll", "swap_pricing_example.xlsx",
+                         "historical_pricing_example.xlsx"):
+                self.assertIn(downloads + name, workbook.hrefs)
             swap = Text((output / "autoapi/quantsupport/instruments/Swap.html").read_text())
             self.assertIn("fixed_rate", swap.text)
             self.assertIn("default None uses Semiannual", swap.text)

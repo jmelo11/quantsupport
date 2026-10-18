@@ -80,7 +80,7 @@ class BookStructureTests(unittest.TestCase):
                 text = (SOURCE / relative).read_text()
                 self.assertGreater(len(prose(text).split()), 350)
                 self.assertNotIn("](../api/", text)
-        self.assertIn("releases/latest/download/quantsupport.xll",
+        self.assertIn("https://jmelo11.github.io/quantsupport/downloads/quantsupport.xll",
                       (SOURCE / "excel/installation.md").read_text())
 
     def test_runnable_rust_has_a_crate_harness(self):

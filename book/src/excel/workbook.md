@@ -28,7 +28,7 @@ A9 =QS.CURVE.TABLE(A8)
 This is a worksheet fragment, not a complete market: `E2:E10` must contain
 matching quote identifiers, and `D2` must contain a trade handle such as one
 constructed by `QS.TRADE.SWAP`. The
-[bundled workbook](https://github.com/jmelo11/quantsupport/blob/main/bindings/excel/examples/swap_pricing_example.xlsx)
+[bundled workbook](https://jmelo11.github.io/quantsupport/downloads/swap_pricing_example.xlsx)
 supplies the complete inputs.
 
 Unchanged recalculation reuses cached objects. A changed quote advances its

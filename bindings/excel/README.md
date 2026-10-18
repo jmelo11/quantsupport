@@ -11,7 +11,7 @@ Native QuantSupport market construction, trades, valuation, and risk for
 - [Risk, scenarios, and historical markets](https://jmelo11.github.io/quantsupport/api/excel/guide/risk-and-history.html)
 - [Exact worksheet reference](https://jmelo11.github.io/quantsupport/api/excel/functions/index.html)
 - [Capabilities and interface boundaries](https://jmelo11.github.io/quantsupport/api/coverage.html)
-- [Download quantsupport.xll](https://github.com/jmelo11/quantsupport/releases/latest/download/quantsupport.xll)
+- [Download quantsupport.xll](https://jmelo11.github.io/quantsupport/downloads/quantsupport.xll)
 
 The guide explains essential financial conventions locally; the Book and Python
 studies are optional additional learning paths. Registration metadata supplies
@@ -38,8 +38,8 @@ Load the add-in before the workbook, or press **Ctrl+Alt+F9** afterwards.
 =QS.HELP("QS.TRADE.SWAP")
 ```
 
-The checked-in [swap workbook](examples/swap_pricing_example.xlsx) and
-[historical workbook](examples/historical_pricing_example.xlsx) contain inputs
+The checked-in [swap workbook](https://jmelo11.github.io/quantsupport/downloads/swap_pricing_example.xlsx) and
+[historical workbook](https://jmelo11.github.io/quantsupport/downloads/historical_pricing_example.xlsx) contain inputs
 and formulas; Windows Excel calculates them after the XLL is loaded.
 
 ## A visible market-to-price chain

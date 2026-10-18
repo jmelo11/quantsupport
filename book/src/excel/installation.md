@@ -1,8 +1,7 @@
 # Download and Install
 
-**[Download quantsupport.xll for 64-bit Windows Excel](https://github.com/jmelo11/quantsupport/releases/latest/download/quantsupport.xll)**
+**[Download quantsupport.xll for 64-bit Windows Excel](https://jmelo11.github.io/quantsupport/downloads/quantsupport.xll)**
 
-The download is attached to the latest published GitHub release.
 [Release history](https://github.com/jmelo11/quantsupport/releases) provides
 versioned downloads. Excel for macOS and Excel in the browser cannot load an XLL.
 
@@ -10,7 +9,7 @@ versioned downloads. Excel for macOS and Excel in the browser cannot load an XLL
 2. In Excel open **File > Options > Add-ins**.
 3. Select **Excel Add-ins**, click **Go**, then **Browse**, and choose the XLL.
 4. Enter `=QS.VERSION()` to check that it loaded.
-5. Open the [swap example workbook](https://github.com/jmelo11/quantsupport/raw/refs/heads/main/bindings/excel/examples/swap_pricing_example.xlsx)
+5. Open the [swap example workbook](https://jmelo11.github.io/quantsupport/downloads/swap_pricing_example.xlsx)
    and press **Ctrl+Alt+F9** to rebuild its object handles.
 
 The workbook includes pricing, curve tables, cashflows, and sensitivities.

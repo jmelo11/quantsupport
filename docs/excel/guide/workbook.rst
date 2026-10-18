@@ -5,7 +5,7 @@ Install and Load the Add-In
 -------------------------------
 
 Use 64-bit Windows Excel and the matching
-`quantsupport.xll release <https://github.com/jmelo11/quantsupport/releases/latest/download/quantsupport.xll>`_.
+`quantsupport.xll release <https://jmelo11.github.io/quantsupport/downloads/quantsupport.xll>`_.
 Excel for macOS and Excel in a browser cannot load this native XLL. Follow your
 organization's policy for downloaded add-ins and trusted locations; if Windows
 marks the downloaded file as blocked, review its source before unblocking it.
@@ -14,6 +14,9 @@ In Excel open **File → Options → Add-ins**, choose **Excel Add-ins**, select
 **Go**, and browse to the XLL. Keep the file at a stable location. Load the
 add-in before opening the pricing workbook, or press **Ctrl+Alt+F9** after
 loading to rebuild all formula dependencies.
+
+Download the `swap example workbook <https://jmelo11.github.io/quantsupport/downloads/swap_pricing_example.xlsx>`_
+or the `historical pricing workbook <https://jmelo11.github.io/quantsupport/downloads/historical_pricing_example.xlsx>`_.
 
 To compile from the checkout, use a Windows PowerShell prompt with the
 64-bit MSVC Rust toolchain and Visual Studio Build Tools:
