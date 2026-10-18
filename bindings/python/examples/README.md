@@ -93,14 +93,16 @@ python bindings/python/examples/run_notebooks.py
 
 This runs the thirteen binding studies. The historical benchmark additionally
 requires the optional `ORE` and `curveengine` packages; it uses its own adjacent
-configuration and recorded-results JSON files, not the current tutorial market.
-Its plots use Matplotlib, not Plotly. The validated optional distributions are
-`open-source-risk-engine==1.8.14.1` and `curveengine==1.1.6`, recorded separately
-in [requirements-benchmark.txt](requirements-benchmark.txt). Install them into
-the same isolated environment only if running that study:
+configuration and recorded-results JSON files. The benchmark uses ORE
+1.8.14.1 and CurveEngine source revision
+[`d7e000d`](https://github.com/jmelo11/curveengine/commit/d7e000da626e08ff2be5d34561597065340b017e),
+which supports its `OvernightIborBasis` helpers. The published CurveEngine
+1.1.6 package rejects that helper type despite sharing the source's version
+number. Use Python 3.11 and install these optional dependencies into the study
+environment:
 
 ```bash
-python -m pip install -r bindings/python/examples/requirements-benchmark.txt
+python -m pip install "open-source-risk-engine==1.8.14.1" "curveengine @ git+https://github.com/jmelo11/curveengine.git@d7e000da626e08ff2be5d34561597065340b017e"
 ```
 
 To run all fourteen, or only that benchmark:

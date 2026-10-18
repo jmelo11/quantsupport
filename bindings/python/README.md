@@ -140,7 +140,7 @@ prerequisites and is not part of that runner's default directory. To validate
 all fourteen studies:
 
 ```sh
-python -m pip install -r bindings/python/examples/requirements-benchmark.txt
+python -m pip install "open-source-risk-engine==1.8.14.1" "curveengine @ git+https://github.com/jmelo11/curveengine.git@d7e000da626e08ff2be5d34561597065340b017e"
 python -m bindings.python.examples.run_notebooks --include-benchmark
 ```
 
