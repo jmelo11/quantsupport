@@ -51,8 +51,10 @@ impl DayCount for Thirty360 {
 /// 2. Replace an ending 31st by 30 when the adjusted starting day is at least 30.
 /// 3. Independently replace each February month-end by day 30.
 ///
-/// The result is `360*(end_year-start_year) + 30*(end_month-start_month)
-/// + adjusted_end_day - adjusted_start_day`, divided by 360 for year fractions.
+/// The result is
+/// `360*(end_year-start_year) + 30*(end_month-start_month) + adjusted_end_day - adjusted_start_day`,
+/// divided by 360 for year fractions.
+///
 /// The independent February adjustment and its ordering differ from common
 /// US/NASD specifications; no general equivalence to those conventions is promised.
 ///

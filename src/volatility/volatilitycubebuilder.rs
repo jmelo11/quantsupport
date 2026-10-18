@@ -16,6 +16,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 /// Stateless builder that constructs [`InterpolatedVolatilityCube`]
 /// instances from [`VolatilityCubeConfiguration`] specs and a quote store.
+///
 /// Cubes are typically used for swaption volatilities.
 /// Node keys use `strike.resolve(0.0)`; smile metadata does not perform
 /// forward-dependent strike, delta, or log-moneyness conversion.

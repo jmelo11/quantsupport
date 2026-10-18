@@ -156,7 +156,7 @@ pub struct XvaEngineConfig {
 ///
 /// [`Self::run`] accepts a mutable map of netting-set identifiers to
 /// [`NettingSet`] values, each constructed with CSA terms; it does not accept
-/// raw trades. Curves are rebuilt from node snapshots with LogLinear
+/// raw trades. Curves are rebuilt from node snapshots with `LogLinear`
 /// interpolation. Deterministic system-curve discount factors applied to XVA
 /// aggregators are frozen `f64` inputs and contribute no AD discounting risk.
 pub struct XvaEngine {

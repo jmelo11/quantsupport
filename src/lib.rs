@@ -1,6 +1,6 @@
 //! Quantitative finance library for pricing, market construction and risk.
 //!
-//! QuantSupport (QS) is written in Rust, with Python and Excel bindings. It
+//! `QuantSupport` (QS) is written in Rust, with Python and Excel bindings. It
 //! supports instrument valuation across several asset classes, sensitivities
 //! using automatic differentiation, interest-rate and credit curve construction,
 //! volatility markets, Monte Carlo simulation and valuation adjustments.
