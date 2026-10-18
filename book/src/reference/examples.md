@@ -73,16 +73,17 @@ Their formulas, not saved handle strings, are the reproducible workflow.
 ## Checking examples and prose
 
 `cargo test -p quantsupport` runs the native tests and doctests. The book's
-self-contained Rust fences can be checked after building the library:
+self-contained Rust fences can be built and checked with:
 
 ```sh
-cargo +stable build -p quantsupport
-RUSTUP_TOOLCHAIN=stable mdbook test -L target/debug/deps
+RUSTUP_TOOLCHAIN=stable python book/test_rust.py
 python -m unittest discover -s book/tests -v
 ```
 
-The build and rustdoc harness must use the same compiler toolchain. Selecting
-stable explicitly also retains the dependency-library layout assumed by `-L`.
+The runner builds the library and selects the artifacts reported by Cargo,
+then gives mdBook a temporary library search directory. Cached builds with
+different features cannot introduce duplicate crate candidates. The build and
+rustdoc harness use the same compiler toolchain, selected explicitly above.
 
 Runnable book snippets include the hidden crate declaration required by
 mdBook's rustdoc harness. Fences marked `rust,ignore` are explicitly described

@@ -28,14 +28,15 @@ build because mdBook replaces its output tree.
 
 ```sh
 python -m unittest discover -s book/tests -v
-cargo +stable build -p quantsupport
-RUSTUP_TOOLCHAIN=stable mdbook test -L target/debug/deps
+RUSTUP_TOOLCHAIN=stable python book/test_rust.py
 mdbook build
 ```
 
-Use the same compiler toolchain for the Cargo build and mdBook's rustdoc
-process. The explicit stable selection also avoids experimental nightly
-artifact layouts that no longer place dependency libraries under `debug/deps`.
+The runner builds the library and reads Cargo's artifact list. It exposes only
+the selected libraries to mdBook through a temporary directory, so cached
+builds with other features or compiler settings cannot make crate lookup
+ambiguous. Use the same compiler toolchain for Cargo and mdBook's rustdoc
+process; the command above selects stable for both.
 
 Runnable Rust fences include hidden `extern crate quantsupport` declarations
 because mdBook's rustdoc harness does not add Cargo's `--extern` flags.

@@ -50,9 +50,7 @@ jobs:
       - name: Build book
         run: mdbook build
       - name: Test Rust Book examples
-        run: |
-          cargo build -p quantsupport
-          mdbook test -L target/debug/deps
+        run: python book/test_rust.py
       - name: Check Rust API reference
         run: RUSTDOCFLAGS='-D warnings' cargo doc -p quantsupport --no-deps
       - name: Build API reference
