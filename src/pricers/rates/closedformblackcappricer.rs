@@ -20,13 +20,17 @@ use crate::{
 };
 use std::collections::HashSet;
 
-/// Prices a caplet or floorlet using the Black (log-normal) model.
+/// Prices a cap/floor strip by summing Black caplet/floorlet values.
 ///
 /// The forward rate for the period is derived from the discount curve using
-/// the conventions specified in the caplet's rate definition.
+/// the rate conventions in the market index metadata, not an instrument-level
+/// rate definition. Accrual uses that index's day count. Black expiry is measured
+/// from trade date to accrual start; volatility lookup uses the fixing date.
 ///
 /// The effective strike is resolved from the instrument's [`Strike`] before
 /// querying the volatility surface.
+/// `Strike::Relative(p)` means `F * (1 + p)` here, unlike the additive
+/// `Strike::resolve` helper.
 ///
 /// When a [`DiscountPolicy`] is set, the pricer uses the CSA discount curve
 /// for payment discounting instead of the instrument's `market_index` curve.
@@ -51,9 +55,10 @@ use std::collections::HashSet;
 ///     .build()
 ///     .expect("failed to build cap");
 ///
-/// // Each caplet in the strip is priced individually:
-/// //   let caplet_trade = CapFloorTrade::new(caplet, eval_date, notional);
-/// //   let results = pricer.evaluate(&caplet_trade, &[Request::Value], &ctx);
+/// let trade = CapFloorTrade::new(
+///     cap, Date::new(2023, 12, 29), 5_000_000.0, Side::LongReceive,
+/// );
+/// assert_eq!(trade.notional(), 5_000_000.0);
 /// ```
 pub struct ClosedFormBlackCapPricer {
     discount_policy: Option<Box<dyn DiscountPolicy>>,

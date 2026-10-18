@@ -1,280 +1,155 @@
-# Configuration Files
+# Serializable configuration
 
-Configuration files separate changing market and model choices from the Rust code that executes them. QuantSupport derives `serde::Deserialize` for its configuration types, so applications can construct the same values in code or load them from JSON. This chapter introduces each file by its role in the market lifecycle and explains how its fields connect to the objects built by `PricingContext` and `XvaEngine`.
+Configuration records the observations and construction rules needed to
+rebuild a market. Rust uses Serde for the native types, Python accepts typed
+definitions and supported dictionaries, and Excel constructors create the
+corresponding native configurations. Applications load and save these inputs
+using their own file conventions.
 
-Across all files, dates use `YYYY-MM-DD`, periods use forms such as `1W`, `3M`, and `5Y`, and enums use their Rust variant names. Structured enum variants use the standard externally tagged Serde representation shown below.
+## Observations and curve membership
 
-## `quotes.json`
-
-The quote file establishes the market reference date and the observable values available on that date. Each identifier encodes an instrument and its coordinates, as explained in [Market Data](../concepts/market-data.md). A quote may provide mid, bid, ask, or any useful combination of those levels:
+The quote-record form combines one reference date with identifier/level
+records:
 
 ```json
 {
   "reference_date": "2026-02-24",
   "quotes": [
-    { "identifier": "OIS_USD_SOFR_1Y", "mid": 0.0422,
-      "bid": 0.0421, "ask": 0.0423 },
-    { "identifier": "CapletFloorlet_USD_SOFR_3M_1Y_Absolute_0.045_Straddle_Black",
-      "mid": 0.32 },
-    { "identifier": "Swaption_CLP_ICP_1Y_2Y_Absolute_0.045_Black",
-      "mid": 0.26 },
-    { "identifier": "Cds_CORPORATE-A_USD_5Y", "mid": 0.01 }
+    {"identifier": "FixedRateDeposit_USD_SOFR_1D", "mid": 0.04},
+    {"identifier": "OIS_USD_SOFR_1Y", "mid": 0.042, "bid": 0.0419, "ask": 0.0421}
   ]
 }
 ```
 
-Deserialize this shape as `QuoteStoreRecords`, then convert it with `QuoteStore::try_from`. Example packages sometimes use an equivalent local loader. Builders read values at `Level::Bid`, `Level::Mid`, or `Level::Ask`, and a missing requested level produces an error.
+Rust deserializes this as `QuoteStoreRecords` and converts with
+`QuoteStore::try_from`. The selected `Level` is consumed consistently by
+construction/calibration. Fixing JSON separately maps index names to dated
+rate arrays. No file-level quote reference date substitutes for an observation's
+actual fixing date.
 
-Choose the level in context setup with `PricingContext::new().with_quote_level(Level::Bid)`
-in Rust or `qs.PricingContext(quotes=quotes, curves=curves, quote_level=qs.Level.Bid)`
-in Python. It applies to market construction and model calibration; omitting it
-preserves the mid default.
-
-## `fixings.json`
-
-Fixings record historical index observations used by coupons whose fixing date has passed. The top-level keys are `MarketIndex` names and each value is a dated rate series:
-
-```json
-{
-  "SOFR": [{ "date": "2025-05-12", "rate": 0.0428 }],
-  "ICP": [{ "date": "2025-05-12", "rate": 0.0575 }]
-}
-```
-
-Deserialize this file as `FixingStore`. Applications can call `fill_missing_fixings` under an explicit interpolation rule when their data policy permits gap filling.
-
-## `curve_specs.json` — `Vec<CurveConfiguration>`
-
-Curve specifications assign quote identifiers to rate-curve identities. The file format used by the examples wraps the vector in `curve_specs`. Currency and instrument conventions come from the structured quote identifiers, and interpolation choices belong to each curve configuration:
-
-```json
-{
-  "curve_specs": [
-    {
-      "market_index": "SOFR",
-      "day_counter": "Actual360",
-      "interpolator": "LogLinear",
-      "quotes": [
-        "FixedRateDeposit_USD_SOFR_1D",
-        "OIS_USD_SOFR_1Y",
-        "OIS_USD_SOFR_5Y"
-      ]
-    },
-    {
-      "market_index": "TermSOFR3m",
-      "quotes": ["BasisSwap_USD_SOFR_TermSOFR3m_1Y"]
-    },
-    {
-      "market_index": { "Collateral": ["CLP", "USD"] },
-      "quotes": ["FixFloatCrossCurrencySwap_CLP_SOFR_USD_1Y"]
-    }
-  ]
-}
-```
-
-The same list also accepts zero-rate and composite definitions through the
-`construction` field. See the [explicit and composite curve configurations](../curves/bootstrapping.md#explicit-zero-rates-and-composite-curves)
-for a EURIBOR-plus-funding-spread example.
-
-SOFR must be available before the dependent Term SOFR and collateral curves can be solved. The multi-curve bootstrapper derives that order from the instruments. [Curve Bootstrapping](../curves/bootstrapping.md) gives the full field list, defaults, and failure behavior.
-
-Credit curves use `CreditCurveConfiguration` because CDS calibration also needs recovery, premium frequency, currency, and a discount index. A representative configuration is:
-
-```json
-{
-  "market_index": { "Credit": "CORPORATE-A" },
-  "currency": "USD",
-  "discount_index": "SOFR",
-  "recovery": 0.4,
-  "premium_frequency": "Quarterly",
-  "quotes": ["Cds_CORPORATE-A_USD_1Y", "Cds_CORPORATE-A_USD_5Y"]
-}
-```
-
-`CreditCurveBootstrapper` consumes a vector of these configurations after the rate curves have been constructed.
-
-## `vol_specs.json`
-
-Volatility specifications define the quote membership and conventions of surfaces and cubes. The wrapper used by the examples keeps the two collections together:
-
-```json
-{
-  "volatility_surfaces": [
-    {
-      "market_index": "SOFR",
-      "volatility_type": "Black",
-      "smile_type": "Strike",
-      "quotes": ["CapletFloorlet_USD_SOFR_3M_6M_Absolute_0.035_Straddle_Black"]
-    }
-  ],
-  "volatility_cubes": [
-    {
-      "market_index": "ICP",
-      "volatility_type": "Black",
-      "smile_type": "Strike",
-      "quotes": ["Swaption_CLP_ICP_1Y_2Y_Absolute_0.045_Black"]
-    }
-  ]
-}
-```
-
-The surface quote encodes expiry, index tenor, and strike. The cube quote adds the underlying swap tenor. Builders validate these coordinates and preserve the identifiers for interpolation risk and model calibration.
-
-## `pricer_configurations.json` — `Vec<PricerConfiguration>`
-
-Pricer configurations select an implementation for an instrument family and assign typed models by market index. Supply the vector with `PricingContext::with_pricer_configurations()`. Direct Rust pricing still selects its concrete pricer; for swaptions, pass the selected entry to `ClosedFormHullWhiteSwaptionPricer::from_configuration()`.
-
-This example assigns a Hull-White model calibrated to the SOFR swaption cube:
-
-```json
-[
-  {
-    "instrument_type": "EuropeanSwaption",
-    "pricer": "HullWhiteClosedForm",
-    "models": [
-      {
-        "market_index": "SOFR",
-        "model": {
-          "HullWhite": {
-            "alpha": 0.1,
-            "parameter_source": {
-              "Calibrated": {
-                "source": { "Cube": { "market_index": "SOFR" } },
-                "calibration_basket": { "strike": "Atm" }
-              }
-            }
-          }
-        }
-      }
-    ]
-  }
-]
-```
-
-The context also needs the source quotes, matching `VolatilityCubeConfiguration`, and curves before valuation. `ParameterSource::Fixed` supplies a constant sigma instead. Callable-bond configurations use `TreeBased` or `BackwardFourierEvolution` with numerical grid controls, as described in [Bond Pricing](../pricing/bonds.md). OIS uses `instrument_type: "OIS"` and `pricer: "DiscountedCashflow"`, independently of the regular `"Swap"` family.
-
-## `ModelCalibrationConfiguration`
-
-Model calibration is configured inside the model's `parameter_source` section.
-`vol_specs.json` defines the quote membership of each volatility market. The
-model's `calibration_basket` selects instruments from that constructed market.
-This fragment selects ATM caplets at three expiries with a three-month index
-tenor:
-
-```json
-{
-  "source": { "Surface": { "market_index": "SOFR" } },
-  "calibration_basket": {
-    "expiries": ["1Y", "2Y", "5Y"],
-    "tenors": ["3M"],
-    "strike": "Atm"
-  }
-}
-```
-
-Omitting `expiries` or `tenors` selects every available value on that axis. Every explicitly supplied value must occur in the source quote identifiers and participate in an instrument that also satisfies the other axis. Resolution returns `NotFoundErr` before calibration when an expiry or tenor is absent. On a surface, tenor means the floating-rate index tenor. On a cube, tenor means the underlying swap tenor.
-
-The source object retains the option identifiers used for basket selection. Its AD pillars provide the labels used in sensitivity reports. An interpolated quote grid commonly uses the same identifiers for both roles. A parametrized volatility representation can retain option identifiers for calibration and expose fitted parameters as its AD pillars.
-
-## `simulation.json` — `SimulationConfiguration`
-
-A simulation configuration joins one market index to a dynamics model and a reproducible date grid. This example uses fixed Hull-White volatility and therefore requires no volatility surface during construction:
+Examples often wrap a vector of curve configurations in `{"curve_specs":[...]}`.
+That wrapper belongs to their loader; the native configuration is one entry:
 
 ```json
 {
   "market_index": "SOFR",
-  "model": {
-    "HullWhite": {
-      "alpha": 0.1,
-      "parameter_source": { "Fixed": { "sigma": 0.01 } }
-    }
-  },
-  "n_paths": 1000,
-  "seed": 42,
-  "horizon": "5Y",
-  "frequency": "Monthly",
-  "day_counter": "Actual365"
+  "day_counter": "Actual360",
+  "interpolator": "LogLinear",
+  "enable_extrapolation": true,
+  "quotes": ["FixedRateDeposit_USD_SOFR_1D", "OIS_USD_SOFR_1Y"]
 }
 ```
 
-Rate-model variants are `HullWhite { alpha, parameter_source }` and
-`Lgm { lambda, parameter_source }`, where `parameter_source` accepts
-`Fixed { sigma }` or `Calibrated { source, calibration_basket }`.
-`BrownianMotion { parameter_source, dividend_rate? }` accepts
-`Fixed { volatility }` or
-`Calibrated { source, calibration_basket }`.
-
-For rate models, sigma is an absolute short-rate volatility expressed in rate units per square-root year. A value of `0.01` means 100 basis points per square-root year. Calibrated configurations derive a model-specific parameter schedule from the selected option instruments.
-
-## `xva_config.json` — `XvaEngineConfig`
-
-XVA configuration describes all rate and FX factors simulated together. A driver entry reuses another rate factor for an additional curve identity. The example below gives Term SOFR the SOFR driver and adds a CLP FX factor:
-
-```json
-{
-  "model_configs": [
-    { "market_index": "SOFR", "lambda": 0.05,
-      "parameter_source": { "Fixed": { "sigma": 0.01 } } },
-    { "market_index": "TermSOFR3m", "driver": "SOFR" }
-  ],
-  "fx_configs": [{ "foreign_currency": "CLP", "fx_vol": 0.12, "rho": 0.0 }],
-  "n_paths": 2000,
-  "seed": 42,
-  "frequency": "Monthly"
-}
-```
-
-Every discount or projection index selected by claims and CSA policies needs a model configuration or a valid driver mapping. The path count must be even because the LGM market model uses antithetic pairing. The seed fixes the Sobol scrambling, and frequency defines the exposure dates.
-
-## `csa_terms.json` — `CsaTerms`
-
-CSA terms describe collateral discounting and the credit and funding inputs for one netting set. This example uses SOFR collateral, a credit curve, and a Term SOFR funding curve with an explicit spread term structure:
-
-```json
-{
-  "collateral_index": "SOFR",
-  "collateral_currency": "USD",
-  "credit_spread": 0.01,
-  "recovery": 0.4,
-  "funding_spread": 0.0,
-  "funding_index": "TermSOFR3m",
-  "funding_spread_curve": {
-    "reference_date": "2026-11-11",
-    "dates": ["2026-11-11", "2028-11-11"],
-    "rates": [0.004, 0.005],
-    "rate_definition": {"day_counter": "Actual365", "compounding": "Continuous", "frequency": "Annual"},
-    "interpolator": "Linear",
-    "enable_extrapolation": true
-  },
-  "credit_index": { "Credit": "CORPORATE-A" }
-}
-```
-
-When `credit_index` is present, CVA reads survival probabilities from that constructed credit curve. `funding_index` derives funding spreads relative to the system curve, and `funding_spread_curve` supplies dated spread values. Flat `credit_spread` and `funding_spread` fields support configurations that use scalar assumptions.
-
-## Scripted products — `Vec<CodedEvent>`
-
-A scripted-product file stores the event date and source program for each step in the payoff timeline. Variable state carries forward in array order. The following two events observe a rate and later pay a caplet-style amount:
+Missing optional fields use native defaults. `construction` defaults to
+bootstrapped construction. Explicit zero and composite curves instead leave
+quote membership empty:
 
 ```json
 [
   {
-    "event_date": "2026-06-15",
-    "script": "libor = RateIndex(\"SOFR\", \"2026-06-15\", \"2026-12-15\");"
+    "market_index": {"Other": "FUNDINGSPREAD"},
+    "day_counter": "Actual360",
+    "interpolator": "Linear",
+    "construction": {
+      "type": "ZeroRate",
+      "pillars": ["0D", "1Y", "5Y"],
+      "rates": [0.005, 0.0075, 0.01],
+      "compounding": "Continuous",
+      "frequency": "Annual"
+    }
   },
   {
-    "event_date": "2026-12-15",
-    "script": "coupon = 0; coupon pays max(libor - 0.03, 0) * 0.5;"
+    "market_index": {"Other": "COSTOFFUNDS"},
+    "construction": {
+      "type": "Composite",
+      "base_index": "EURIBOR12m",
+      "spread_index": {"Other": "FUNDINGSPREAD"}
+    }
   }
 ]
 ```
 
-Deserialize the array as `Vec<CodedEvent>` and convert it with `EventStream::try_from`. [Events and Products](../scripting/events-products.md) explains ordering, payment discovery, and validation.
+The benchmark curve must also be configured. Zero pillars can use tenors or
+ISO dates; components must share their reference date and day counter.
+Dependency resolution does not depend on list order.
 
-## `MarketIndex` spelling
+Credit configurations additionally need currency, discount index, recovery and
+CDS quote membership. They construct survival rather than discount factors.
+Volatility configurations select market identity, Black/Normal convention,
+smile coordinates, source quotes and extrapolation policy. `Reject` is the
+default; use explicit `Flat` only when that continuation is intended.
 
-Plain indices are bare strings such as `"SOFR"`, `"ICP"`, `"TermSOFR3m"`, and `"ESTR"`. Structured variants are tagged objects. `{"Collateral": ["CLP", "USD"]}` identifies a CLP curve under USD collateral, `{"Credit": "NAME"}` identifies a credit name, and `{"Equity": "AAPL"}` identifies an equity factor. The same spelling must be used in quotes, curve configurations, model configurations, and trades so their identities resolve consistently.
+## Typed models and calibration sources
 
-## What to remember
+Models use externally tagged variants rather than arbitrary strings. Fixed
+Hull–White parameters, for example, are:
 
-The files follow the order of market construction. Quotes and fixings provide observations, curve and volatility specifications construct queryable markets, model parameter sources resolve dynamics, and XVA plus CSA files define the exposure calculation. Stable `MarketIndex` values and quote identifiers connect every stage. Loading each file into its named Rust type keeps validation close to the component that understands its meaning.
+```json
+{
+  "HullWhite": {
+    "alpha": 0.1,
+    "parameter_source": {"Fixed": {"sigma": 0.01}}
+  }
+}
+```
+
+LGM uses `lambda` and Gaussian sigma. Brownian motion uses lognormal
+`volatility` and optional dividend rate. A calibrated parameter source replaces
+`Fixed` with a source and semantic basket:
+
+```json
+{
+  "Calibrated": {
+    "source": {"Surface": {"market_index": "SOFR"}},
+    "calibration_basket": {
+      "expiries": ["1Y", "2Y"],
+      "tenors": ["3M"],
+      "strike": "Atm"
+    }
+  }
+}
+```
+
+The source volatility configuration owns quote membership. The basket selects
+contracts already available there; absent requested coordinates are errors,
+not instructions to fabricate an interpolated calibration contract.
+
+`PricerConfiguration` selects an instrument family, implementation and model
+assignments. Swaptions can select `HullWhiteClosedForm`; callable bonds select
+`TreeBased` or `BackwardFourierEvolution` with numerical grids. Direct Rust
+callers still construct the concrete pricer. A simulation configuration
+separately supplies index, model, paths, seed, horizon, frequency and time basis.
+
+## XVA, CSA and payoff inputs
+
+`XvaEngineConfig` contains rate-model definitions/driver mappings, FX
+definitions and path/grid controls. `CsaTerms` contains legal-group collateral,
+margin, credit and funding assumptions. Specify these agreement inputs
+separately from the rate model. See [Netting and
+collateral](../xva/netting-csa.md) for field precedence and timing limits.
+
+A scripted-product input is an ordered array of date/source pairs:
+
+```json
+[
+  {
+    "event_date": "2027-03-09",
+    "script": "deal = 0; deal pays 1000 on \"2027-06-09\" in \"USD\";"
+  }
+]
+```
+
+Deserialize it as `Vec<CodedEvent>` and parse an `EventStream`; source strings
+do not bypass language or date validation.
+
+Across these types, dates use `YYYY-MM-DD`, periods use forms such as `3M`
+and `5Y`, and enum spelling follows canonical native variants. Standard
+`MarketIndex` variants serialize as strings; structured forms include
+`{"Collateral":["CLP","USD"]}`, `{"Credit":"NAME"}` and
+`{"Equity":"AAPL"}`. A supported Python string conversion is not necessarily
+an alias accepted by a serialized Rust enum.
+
+Historical snapshot archives preserve complete native construction inputs using
+this discipline. They exclude runtime AD state, fixing histories and
+binding-only registrations. Preserve those external assumptions separately when
+recording a reproducible valuation.

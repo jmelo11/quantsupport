@@ -31,7 +31,7 @@ use super::{
 /// [`MarketModel`](super::marketmodel::MarketModel).
 #[derive(Default, Clone)]
 pub struct SimulationRequest {
-    /// Exclusive date after which this request is no longer needed.
+    /// Exclusive cutoff: inactive on and after this date.
     pub expiration_date: Option<Date>,
     /// Discount factor request.
     pub discount_request: Option<DiscountRequest>,
@@ -116,6 +116,9 @@ impl PreprocessorExecutor {
     /// 3. Discount resolution via the netting set's own
     ///    [`DiscountPolicy`](crate::core::collateral::DiscountPolicy).
     /// 4. Global index assignment.
+    ///
+    /// Discount-policy errors are not propagated: the request then has no
+    /// discount factor. Claim evaluation defaults a missing discount to one.
     pub fn visit<'a>(&mut self, netting_sets: impl IntoIterator<Item = &'a mut NettingSet>) {
         self.requests.clear();
         let mut global_idx = 0;

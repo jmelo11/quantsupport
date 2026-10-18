@@ -31,3 +31,10 @@ python bindings/python/examples/run_notebooks.py valuation/loans
 The [Rust loans example](../../../../../examples/valuation/loans) runs with
 `cargo run -p valuation-loans`. See the [valuation catalog](../README.md) for
 other products.
+
+The final verification section reconstructs the French payment independently,
+checks principal conservation with prepayment, discounts expected receipts to
+their native PVs, reconstructs par fixed agreements under both amortization
+assumptions, and checks funding-spread PV01 with central revaluation. These are
+projected/expected-receipt valuations: coupon bounds do not include option time
+value, and borrower CDS quotes are an illustrative credit proxy.

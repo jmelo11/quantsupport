@@ -14,9 +14,11 @@ use crate::{
 /// A materialized Monte Carlo simulation: a set of paths simulated on a fixed
 /// date grid by a configured model (Hull-White, Brownian motion, ...).
 ///
-/// Paths are stored as [`DualFwd`] constants so they can be combined with
-/// AD-enabled market data during pricing; the simulation itself carries no
-/// pillars.
+/// Paths are generated as `f64` and then wrapped in [`DualFwd`], without
+/// retaining derivatives through model inputs, calibration, or path generation.
+/// The simulation exposes no pillars. Wrapping a value does not create
+/// spot/volatility risk; the constructor may create unrelated tape leaves
+/// when recording is active.
 pub struct GeneratedMonteCarloSimulation {
     market_index: MarketIndex,
     dates: Vec<Date>,

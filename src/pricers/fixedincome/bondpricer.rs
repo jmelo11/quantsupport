@@ -344,7 +344,12 @@ mod tests {
         .with_settlement_date(settlement)
         .with_spread_day_counter(DayCounter::Actual360);
         let pricer = fixed_pricer();
-        let requests = [Request::Value, Request::ZSpread, Request::Sensitivities];
+        let requests = [
+            Request::Value,
+            Request::ZSpread,
+            Request::Sensitivities,
+            Request::Cashflows,
+        ];
         let long_result = pricer.evaluate(&roundtrip, &requests, &provider)?;
         let short_result = pricer.evaluate(&short, &requests, &provider)?;
         assert!(
@@ -353,6 +358,27 @@ mod tests {
                 < 1.0e-10
         );
         assert_eq!(long_result.z_spread(), short_result.z_spread());
+        let long_cashflows = long_result
+            .cashflows()
+            .ok_or_else(|| QSError::ValueNotSetErr("Long cashflows".into()))?;
+        let short_cashflows = short_result
+            .cashflows()
+            .ok_or_else(|| QSError::ValueNotSetErr("Short cashflows".into()))?;
+        assert_eq!(
+            long_cashflows.payment_dates(),
+            short_cashflows.payment_dates()
+        );
+        assert_eq!(
+            long_cashflows.amounts().len(),
+            short_cashflows.amounts().len()
+        );
+        for (long, short) in long_cashflows
+            .amounts()
+            .iter()
+            .zip(short_cashflows.amounts())
+        {
+            assert!((long + short).abs() < 1e-10);
+        }
         let spread = long_result
             .z_spread()
             .ok_or_else(|| QSError::ValueNotSetErr("Z-spread".into()))?;

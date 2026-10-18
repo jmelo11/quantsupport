@@ -67,8 +67,11 @@ impl Discountable for CurrencyDiscountable {
 /// The NPV is then
 /// `NPV = DF_quote(T) * BlackPrice(F, K, σ, τ) * N * side`.
 ///
-/// When a [`DiscountPolicy`] is set, the pricer uses the policy-resolved
-/// discount curves for both the base and quote currencies.
+/// A [`DiscountPolicy`] is required and resolves curves for both currencies.
+/// Spot/strike are quote currency per base unit; notional is in base units.
+/// Expiry time uses the instrument day count from trade date, not the context
+/// evaluation date. Black pricing requires a positive-forward/strike domain;
+/// the volatility surface is not automatically converted from normal quotes.
 pub struct FxEuropeanOptionPricer {
     discount_policy: Option<Box<dyn DiscountPolicy>>,
 }

@@ -292,6 +292,8 @@ impl<'a, T: Scalar> LgmMarketModel<'a, T> {
     ///
     /// The matrix is decomposed when the path layout is rebuilt after models
     /// or evaluation dates are registered.
+    /// These matrix requirements are not validated; dimension mismatches can
+    /// panic and invalid covariance inputs need not produce valid correlations.
     #[must_use]
     pub fn with_correlation_matrix(mut self, corr: Matrix<f64>) -> Self {
         self.correlation_matrix = Some(corr);

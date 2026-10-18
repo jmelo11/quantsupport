@@ -14,8 +14,11 @@ use crate::{
 /// Type alias for a shared element using reference counting and interior mutability.
 pub type SharedElement<T> = Rc<RefCell<T>>;
 
-/// Struct representing a store for constructed market data elements, including discount curves, dividend curves,
-/// volatility surfaces, volatility cubes, and simulations.
+/// Constructed discount, dividend, and credit curves, volatility grids, and paths.
+///
+/// Elements use reference counting and interior mutability. Cloning this store
+/// shares its underlying market objects; it does not deep-copy their pillars or
+/// detach their AD nodes.
 #[derive(Clone, Default)]
 pub struct ConstructedElementStore {
     discount_curves: HashMap<MarketIndex, DiscountCurveElement>,

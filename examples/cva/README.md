@@ -38,10 +38,8 @@ risk, or settlement lag.
 
 ## Calibration
 
-Both LGM calibrations remain enabled. The SOFR ATM caplet basket explicitly
+The rate factors use calibrated LGM volatility schedules. The SOFR ATM caplet basket explicitly
 uses the available 6M, 1Y, 2Y, 3Y and 4Y expiries. The ICP ATM swaption basket
-uses 6M, 1Y, 2Y and 3Y expiries with a 1Y tenor. These queries run within the
-existing strike and expiry grids; no volatility extrapolation or additional
-cube-boundary workaround is introduced. Calibration ends before the 5Y
+uses 6M, 1Y, 2Y and 3Y expiries with a 1Y tenor. The selected strikes and expiries lie within the supplied volatility grids. Calibration ends before the 5Y
 portfolio maturity, so the final calibrated sigma bucket governs the
 remaining horizon.

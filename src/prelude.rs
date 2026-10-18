@@ -260,7 +260,7 @@ pub use crate::{
     xva::{
         aggregator::{
             CreditCurveCvaFactory, CvaAggregator, CvaFactory, DvaAggregator, DvaFactory,
-            FundingCurveFvaFactory, FvaAggregator, FvaFactory, PfeAggregator, PfeAggregatorFactory,
+            FundingCurveFvaFactory, FvaAggregator, FvaFactory, XvaAggregator, XvaAggregatorFactory,
         },
         contigentclaim::ContingentClaim,
         csa::CsaTerms,

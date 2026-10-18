@@ -45,7 +45,7 @@ pub enum Currency {
     SEK,
     /// Peruvian Sol
     PEN,
-    /// Chinese Yuan (offshore)
+    /// Offshore Chinese yuan market identifier; not a separate ISO 4217 currency.
     CNH,
     /// Indian Rupee
     INR,
@@ -63,7 +63,8 @@ pub enum Currency {
 
 impl Currency {
     /// Returns static metadata about the currency as
-    /// (alphabetic code, display name, symbol, decimal precision, numeric ISO 4217 code).
+    /// (alphabetic identifier, display name, symbol, decimal precision, numeric code).
+    /// CNH is a market identifier and shares CNY's numeric code 156.
     #[must_use]
     pub const fn details(self) -> (&'static str, &'static str, &'static str, u8, u16) {
         match self {
@@ -110,7 +111,7 @@ impl Currency {
     pub const fn symbol(self) -> &'static str {
         self.details().2
     }
-    /// Returns the decimal precision of the currency.
+    /// Returns display precision metadata; calculations are not rounded automatically.
     #[must_use]
     pub const fn precision(self) -> u8 {
         self.details().3

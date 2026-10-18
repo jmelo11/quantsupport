@@ -20,8 +20,7 @@ use crate::utils::errors::{QSError, Result};
 use crate::{scripting::nodes::node::Node, time::date::Date};
 use serde::{Deserialize, Serialize};
 
-/// # CodedEvent
-/// A coded event is a combination of a reference date and a coded expression. Its a precompiled version of an event.
+/// Dated script source, before parsing or market-data indexing.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CodedEvent {
     event_date: Date,
@@ -45,8 +44,10 @@ impl CodedEvent {
     }
 }
 
-/// # Event
-/// An event is a combination of a reference date and an expression tree. Represents a future action that will happen at a specific date.
+/// Dated, parsed expression tree.
+///
+/// Parsing does not assign market-response indices; compilation by
+/// [`ScriptEngine`](crate::scripting::runtime::ScriptEngine) performs that step.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Event {
     event_date: Date,
@@ -86,8 +87,10 @@ impl TryFrom<CodedEvent> for Event {
     }
 }
 
-/// # EventStream
-/// An event stream is a collection of events that will happen in the future. An event stream could represent a series of cash flows, for example.
+/// Script events in their supplied execution order.
+///
+/// Construction and mutation do not sort events. The script engine checks that
+/// dates are nondecreasing and do not precede its reference date.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct EventStream {
     id: Option<usize>,

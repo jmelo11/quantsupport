@@ -17,7 +17,7 @@ pub struct FixingStore {
 }
 
 impl FixingStore {
-    /// Returns the fixing rate for a given date.
+    /// Returns the stored fixing for a date, in the index's native quote units.
     ///
     /// ## Errors
     /// Returns [`QSError`] if the fixing is unavailable for the requested date.
@@ -47,7 +47,12 @@ impl FixingStore {
             .insert(date, value);
     }
 
-    /// Fill missing fixings using interpolation.
+    /// Fills missing calendar dates between the first and last stored fixings.
+    ///
+    /// Existing values are preserved. The current implementation queries at
+    /// `last_date - date` against knots measured from the first date: inserted
+    /// values therefore use a reversed time coordinate, not conventional
+    /// chronological interpolation. No business-day filtering is applied.
     ///
     /// ## Errors
     /// Returns an error if interpolation fails during the filling process.

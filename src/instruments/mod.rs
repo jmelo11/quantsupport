@@ -9,9 +9,9 @@ pub mod cashflows;
 pub mod credit;
 /// Equity instruments module.
 pub mod equity;
-/// Fixed Rate Bond Module
+/// Bonds, deposits, floating-rate notes and loans.
 pub mod fixedincome;
-/// Fx instruments module.
+/// FX instruments.
 pub mod fx;
 /// Rates instruments module.
 pub mod rates;

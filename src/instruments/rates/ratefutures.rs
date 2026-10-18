@@ -11,7 +11,7 @@ use crate::{
 /// A [`RateFutures`] represents an exchange-traded interest rate futures contract.
 ///
 /// Examples include SOFR futures and Euribor futures. The contract price is quoted as
-/// $100 - \text{implied rate}$, so a price of 95.00 implies a 5% rate.
+/// `100 - 100 * decimal_rate`, so a price of 95.00 implies a 5% rate.
 ///
 /// The contract settles at expiry based on the realised fixing of the reference
 /// rate over the accrual period `[start_date, end_date]`.
@@ -25,7 +25,7 @@ pub struct RateFutures {
     end_date: Date,
     /// Futures price (e.g. 95.25).
     futures_price: f64,
-    /// Contract notional per basis point (e.g. $25 for CME SOFR 3M futures).
+    /// Currency per quoted price point (2500 per point corresponds to 25 per bp).
     contract_size: f64,
     /// Rate definition for the underlying rate (day counter, compounding, frequency).
     rate_definition: RateDefinition,
@@ -78,13 +78,15 @@ impl RateFutures {
         self.futures_price
     }
 
-    /// Returns the implied rate as $100 - \text{price}$ (in percentage points).
+    /// Returns the decimal implied rate `(100 - price) / 100`.
+    ///
+    /// For example, a futures price of `95.25` implies `0.0475` (4.75%).
     #[must_use]
     pub fn implied_rate(&self) -> f64 {
         (100.0 - self.futures_price) / 100.0
     }
 
-    /// Returns the contract size (notional per basis point).
+    /// Returns currency per quoted price point, not currency per basis point.
     #[must_use]
     pub const fn contract_size(&self) -> f64 {
         self.contract_size
@@ -142,7 +144,10 @@ impl RateFuturesTrade {
         self.num_contracts
     }
 
-    /// Returns the total notional exposure.
+    /// Returns contracts times the price-point multiplier, not face principal.
+    ///
+    /// Multiplying this value by a change in quoted futures price gives the
+    /// corresponding unsigned currency change.
     #[must_use]
     pub fn notional(&self) -> f64 {
         self.num_contracts * self.instrument.contract_size()

@@ -15,10 +15,6 @@ use crate::ad::tape::TapeHolder;
 use super::constant::Const;
 use super::dual::Dual;
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Sealed trait — prevents external crates from implementing Expr
-// ═══════════════════════════════════════════════════════════════════════════
-
 mod sealed {
     pub trait Sealed {}
     impl<T> Sealed for super::Dual<T> {}
@@ -26,10 +22,6 @@ mod sealed {
     impl<T, L, R, O> Sealed for super::BinExpr<T, L, R, O> {}
     impl<T, A, O> Sealed for super::UnExpr<T, A, O> {}
 }
-
-// ═══════════════════════════════════════════════════════════════════════════
-//  Expr, BinOp, UnOp traits
-// ═══════════════════════════════════════════════════════════════════════════
 
 /// A differentiable expression node in the expression-template tree.
 ///
@@ -65,10 +57,6 @@ pub trait UnOp<T> {
     /// Derivative of the operation. `x` is the original input, `v` is `eval(x)`.
     fn deriv(x: T, v: T) -> T;
 }
-
-// ═══════════════════════════════════════════════════════════════════════════
-//  Binary op structs
-// ═══════════════════════════════════════════════════════════════════════════
 
 /// Binary addition operator.
 #[derive(Clone, Copy, Debug)]
@@ -212,10 +200,6 @@ impl<T: InnerScalar> BinOp<T> for MinOp {
     }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Unary op structs (macro-generated)
-// ═══════════════════════════════════════════════════════════════════════════
-
 macro_rules! un_op {
     ($name:ident, $doc:expr, $eval:expr, $d:expr) => {
         #[doc = $doc]
@@ -281,10 +265,6 @@ un_op!(
     }
 );
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  BinExpr
-// ═══════════════════════════════════════════════════════════════════════════
-
 /// A lazy binary expression over two child expressions.
 #[derive(Clone, Copy)]
 pub struct BinExpr<T, L, R, O> {
@@ -321,10 +301,6 @@ impl<T: InnerScalar, L: Expr<T>, R: Expr<T>, O: BinOp<T> + Clone> Expr<T> for Bi
     }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  UnExpr
-// ═══════════════════════════════════════════════════════════════════════════
-
 /// A lazy unary expression over a child expression.
 #[derive(Clone, Copy)]
 pub struct UnExpr<T, A, O> {
@@ -357,10 +333,6 @@ impl<T: InnerScalar, A: Expr<T>, O: UnOp<T> + Clone> Expr<T> for UnExpr<T, A, O>
     }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  flatten — records an expression tree into one tape node
-// ═══════════════════════════════════════════════════════════════════════════
-
 /// Records an expression tree into one tape node, returning a [`Dual<T>`].
 pub fn flatten<T: TapeHolder + InnerScalar, E: Expr<T>>(e: &E) -> Dual<T> {
     let mut node = TapeNode::default();
@@ -368,10 +340,6 @@ pub fn flatten<T: TapeHolder + InnerScalar, E: Expr<T>>(e: &E) -> Dual<T> {
     let ptr_opt = T::with_tape(|tape| tape.record(node));
     Dual::from_raw(e.inner_value(), ptr_opt)
 }
-
-// ═══════════════════════════════════════════════════════════════════════════
-//  Expr<T> for Dual<T>
-// ═══════════════════════════════════════════════════════════════════════════
 
 impl<T: TapeHolder + InnerScalar> Expr<T> for Dual<T> {
     #[inline]
@@ -385,10 +353,6 @@ impl<T: TapeHolder + InnerScalar> Expr<T> for Dual<T> {
     }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Expr<T> for Const<T>
-// ═══════════════════════════════════════════════════════════════════════════
-
 impl<T: InnerScalar> Expr<T> for Const<T> {
     #[inline]
     fn inner_value(&self) -> T {
@@ -397,10 +361,6 @@ impl<T: InnerScalar> Expr<T> for Const<T> {
     #[inline]
     fn push_adj(&self, _: &mut TapeNode<T>, _: T) {}
 }
-
-// ═══════════════════════════════════════════════════════════════════════════
-//  Operator impls — expression-template style  (Dual, Const, BinExpr, UnExpr)
-// ═══════════════════════════════════════════════════════════════════════════
 
 macro_rules! impl_bin_ops_for {
     (simple $Self:ty, $T:ident) => {
@@ -491,8 +451,6 @@ macro_rules! impl_bin_ops_for {
 impl_bin_ops_for!(simple Dual<T>, T);
 impl_bin_ops_for!(simple Const<T>, T);
 
-// -- BinExpr operators -------------------------------------------------------
-
 impl<T: TapeHolder + InnerScalar, L, R, O, Rhs> Add<Rhs> for BinExpr<T, L, R, O>
 where
     Rhs: Expr<T> + Clone,
@@ -578,8 +536,6 @@ where
         BinExpr::new(Const(T::zero()), self)
     }
 }
-
-// -- UnExpr operators --------------------------------------------------------
 
 impl<T: TapeHolder + InnerScalar, A, O2, Rhs> Add<Rhs> for UnExpr<T, A, O2>
 where
@@ -667,10 +623,6 @@ where
     }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Comparison for BinExpr / UnExpr
-// ═══════════════════════════════════════════════════════════════════════════
-
 impl<T: InnerScalar, L, R, O> PartialEq for BinExpr<T, L, R, O>
 where
     L: Expr<T>,
@@ -752,10 +704,6 @@ where
     }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  FloatExt — lazy transcendentals for any expression
-// ═══════════════════════════════════════════════════════════════════════════
-
 /// Lazy transcendental methods available on any expression-template node.
 pub trait FloatExt<T: InnerScalar>: Expr<T> + Clone + Sized {
     /// Returns `e^x` lazily.
@@ -812,10 +760,6 @@ pub trait FloatExt<T: InnerScalar>: Expr<T> + Clone + Sized {
 
 impl<T: InnerScalar, E: Expr<T> + Clone> FloatExt<T> for E {}
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Assign ops  (flatten + assign)
-// ═══════════════════════════════════════════════════════════════════════════
-
 macro_rules! impl_assign {
     ($Trait:ident, $func:ident, $Op:ident, $sym:tt) => {
         impl<T: TapeHolder + InnerScalar, E: Expr<T> + Clone> $Trait<E> for Dual<T> {
@@ -835,10 +779,6 @@ impl_assign!(AddAssign, add_assign, AddOp, +);
 impl_assign!(SubAssign, sub_assign, SubOp, -);
 impl_assign!(MulAssign, mul_assign, MulOp, *);
 impl_assign!(DivAssign, div_assign, DivOp, /);
-
-// ═══════════════════════════════════════════════════════════════════════════
-//  From conversions — flattening expressions into Dual<T>
-// ═══════════════════════════════════════════════════════════════════════════
 
 impl<T, L, R, O> From<BinExpr<T, L, R, O>> for Dual<T>
 where
@@ -875,10 +815,6 @@ impl<T: TapeHolder + InnerScalar> From<Const<T>> for Dual<T> {
     }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Rem (expression-template compatible)
-// ═══════════════════════════════════════════════════════════════════════════
-
 impl<T: TapeHolder + InnerScalar> std::ops::Rem for Dual<T> {
     type Output = Self;
     fn rem(self, r: Self) -> Self {
@@ -891,10 +827,6 @@ impl<T: TapeHolder + InnerScalar> std::ops::Rem<f64> for Dual<T> {
         Self::constant(T::scalar(self.value() % r))
     }
 }
-
-// ═══════════════════════════════════════════════════════════════════════════
-//  Free-standing transcendental functions
-// ═══════════════════════════════════════════════════════════════════════════
 
 /// Returns the exponential of an expression.
 #[inline]

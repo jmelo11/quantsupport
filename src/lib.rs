@@ -1,187 +1,112 @@
-//! `QuantSupport` is a Rust library for financial calculations and analysis.
+//! Quantitative finance library for pricing, market construction and risk.
 //!
-//! This library provides tools for computing prices, sensitivities and other
-//! metrics of financial products.
+//! `QuantSupport` (QS) is written in Rust, with Python and Excel bindings. It
+//! supports instrument valuation across several asset classes, sensitivities
+//! using automatic differentiation, interest-rate and credit curve construction,
+//! volatility markets, Monte Carlo simulation and valuation adjustments.
 //!
-//! # Quick-start example
+//! Observable market data, such as quotes and fixings, are stored separately
+//! from constructed objects such as bootstrapped curves and volatility surfaces.
+//! Instruments define contractual terms, while trades add position details.
+//! A pricer combines the trade with its required market data to calculate the
+//! requested measures.
 //!
-//! The snippet below prices a 5-year receive-fixed / pay-floating USD IRS,
-//! retrieves its NPV, cashflow schedule and curve sensitivities.
-//! A complete, runnable version lives in `examples/valuation/`.
+//! This reference describes the native Rust API. The
+//! [Book](https://jmelo11.github.io/quantsupport/) explains financial concepts
+//! and workflows across the three interfaces. The
+//! [binding documentation](https://jmelo11.github.io/quantsupport/api/)
+//! provides detailed Python and Excel guides and references.
 //!
-//! ## 1 — Imports
+//! # Quick example: a receive-fixed swap
 //!
-//! Everything needed is re-exported through the [`prelude`] module.
+//! Consider a five-year USD swap that receives a fixed coupon of 3%, using
+//! simple compounding and ACT/360 accrual, and pays a floating coupon every six
+//! months. We define the contract with `MakeSwap`, wrap it in a trade and supply
+//! a flat, continuously compounded 3% curve for projection and discounting.
+//! The pricer then returns value, par coupon and market sensitivities.
 //!
-//! ```ignore
+//! ```
 //! use std::{cell::RefCell, rc::Rc};
 //! use quantsupport::prelude::*;
-//! ```
-//!
-//! ## 2 — Build the swap trade
-//!
-//! Use [`MakeSwap`](crate::instruments::rates::makeswap::MakeSwap) to
-//! configure the instrument, then wrap it in a
-//! [`SwapTrade`](crate::instruments::rates::swap::SwapTrade) that carries
-//! trade-level metadata (trade date, notional, side).
-//!
-//! ```ignore
-//! # use std::{cell::RefCell, rc::Rc};
-//! # use quantsupport::prelude::*;
-//! let start_date    = Date::new(2024, 1, 15);
-//! let maturity_date = Date::new(2029, 1, 15);
-//! let notional      = 10_000_000.0;
-//! let fixed_rate    = 0.030; // 3.0%
-//!
-//! // Day-count / compounding convention for the fixed leg coupon rate.
-//! let rate_definition = RateDefinition::new(
-//!     DayCounter::Actual360,
-//!     Compounding::Simple,
-//!     Frequency::Semiannual,
-//! );
-//!
+//! # fn main() -> Result<()> {
+//! let valuation_date = Date::new(2024, 1, 15);
+//! let notional = 10_000_000.0;
 //! let swap = MakeSwap::<DualFwd>::default()
 //!     .with_identifier("USD_IRS_5Y".to_string())
-//!     .with_start_date(start_date)
-//!     .with_maturity_date(maturity_date)
-//!     .with_fixed_rate(fixed_rate)
+//!     .with_start_date(valuation_date)
+//!     .with_maturity_date(Date::new(2029, 1, 15))
+//!     .with_fixed_rate(0.03)
 //!     .with_notional(notional)
-//!     .with_rate_definition(rate_definition)
+//!     .with_rate_definition(RateDefinition::new(
+//!         DayCounter::Actual360,
+//!         Compounding::Simple,
+//!         Frequency::Semiannual,
+//!     ))
 //!     .with_currency(Currency::USD)
 //!     .with_market_index(MarketIndex::SOFR)
-//!     .with_side(Side::LongReceive)               // receive fixed, pay floating
+//!     .with_side(Side::LongReceive)
 //!     .with_fixed_leg_frequency(Frequency::Semiannual)
 //!     .with_floating_leg_frequency(Frequency::Semiannual)
-//!     .build()
-//!     .expect("Failed to build swap");
+//!     .build()?;
+//! let trade = SwapTrade::new(swap, valuation_date, notional, Side::LongReceive);
 //!
-//! let trade = SwapTrade::new(swap, start_date, notional, Side::LongReceive);
-//! ```
-//!
-//! ## 3 — Set up the pricing context
-//!
-//! A `ContextManager` holds
-//! market data (discount curves, quote / fixing stores) that pricers consult
-//! during evaluation.  Here we create a flat SOFR discount curve at 3.0%.
-//!
-//! ```ignore
-//! # use std::{cell::RefCell, rc::Rc};
-//! # use quantsupport::prelude::*;
-//! let evaluation_date = Date::new(2024, 1, 15);
-//! let discount_rate   = 0.03; // 3.0% flat curve
-//!
-//! // Curve rate convention: continuous compounding, ACT/360.
-//! let curve_definition = RateDefinition::new(
-//!     DayCounter::Actual360,
-//!     Compounding::Continuous,
-//!     Frequency::Annual,
-//! );
-//!
-//! // Build the flat-forward term structure.
-//! let discount_curve = FlatForwardTermStructure::new(
-//!     evaluation_date,
-//!     DualFwd::from(discount_rate),
-//!     curve_definition,
+//! let curve = FlatForwardTermStructure::new(
+//!     valuation_date,
+//!     DualFwd::from(0.03),
+//!     RateDefinition::new(
+//!         DayCounter::Actual360,
+//!         Compounding::Continuous,
+//!         Frequency::Annual,
+//!     ),
 //! )
 //! .with_pillar_label("SOFR_flat".to_string());
-//!
-//! // Register the curve as the SOFR discount curve.
-//! let mut constructed_elements = ConstructedElementStore::default();
-//! constructed_elements.discount_curves_mut().insert(
+//! let mut elements = ConstructedElementStore::default();
+//! elements.discount_curves_mut().insert(
 //!     MarketIndex::SOFR,
-//!     DiscountCurveElement::new(
-//!         MarketIndex::SOFR,
-//!         Rc::new(RefCell::new(discount_curve)),
-//!     ),
+//!     DiscountCurveElement::new(MarketIndex::SOFR, Rc::new(RefCell::new(curve))),
 //! );
+//! let context = PricingContext::new()
+//!     .with_quote_store(QuoteStore::new(valuation_date))
+//!     .with_constructed_elements(elements);
 //!
-//! // Empty stores — no live quotes or historical fixings in this example.
-//! let quote_store  = QuoteStore::new(evaluation_date);
-//! let fixing_store = FixingStore::default();
+//! let pricer = DiscountedCashflowPricer::<Swap<DualFwd>, SwapTrade<DualFwd>>::new();
+//! let results = pricer.evaluate(
+//!     &trade,
+//!     &[Request::Value, Request::FairRate, Request::Sensitivities],
+//!     &context,
+//! )?;
+//! let npv = results.price()
+//!     .ok_or_else(|| QSError::ValueNotSetErr("swap NPV".into()))?;
+//! let par_rate = results.fair_rate()
+//!     .ok_or_else(|| QSError::ValueNotSetErr("swap par rate".into()))?;
+//! assert!(npv < 0.0);
+//! assert!(par_rate > 0.03);
 //!
-//! let context = ContextManager::new(quote_store, fixing_store)
-//!     .with_base_currency(Currency::USD)
-//!     .with_constructed_elements(constructed_elements);
+//! let risk = results.sensitivities()
+//!     .ok_or_else(|| QSError::ValueNotSetErr("swap sensitivities".into()))?;
+//! assert_eq!(risk.instrument_keys(), &["SOFR_flat".to_string()]);
+//! let approximate_one_bp_change = risk.exposure()[0] * 1e-4;
+//! assert!(approximate_one_bp_change < 0.0);
+//! # Ok(())
+//! # }
 //! ```
 //!
-//! ## 4 — Price the swap and read results
+//! The value is in USD. The receive-fixed position has negative value because
+//! the continuous curve implies simple forward coupons above 3%. Its
+//! sensitivity measures the response to the supplied flat decimal rate;
+//! multiplying by `1e-4` estimates the P&L for a one-basis-point increase.
+//! Bootstrapped curves connect risk to their original calibration quotes, whose
+//! labels and units determine how to scale each derivative.
 //!
-//! Create a [`DiscountedCashflowPricer`](crate::pricers::cashflows::discountedcashflowpricer::DiscountedCashflowPricer),
-//! choose which outputs you need via [`Request`](crate::core::request::Request),
-//! and call `evaluate`.
+//! # API entry points
 //!
-//! ```ignore
-//! # use std::{cell::RefCell, rc::Rc};
-//! # use quantsupport::prelude::*;
-//! # let start_date    = Date::new(2024, 1, 15);
-//! # let maturity_date = Date::new(2029, 1, 15);
-//! # let notional      = 10_000_000.0;
-//! # let fixed_rate    = 0.030;
-//! # let rate_definition = RateDefinition::new(
-//! #     DayCounter::Actual360, Compounding::Simple, Frequency::Semiannual);
-//! # let swap = MakeSwap::<DualFwd>::default()
-//! #     .with_identifier("USD_IRS_5Y".to_string())
-//! #     .with_start_date(start_date).with_maturity_date(maturity_date)
-//! #     .with_fixed_rate(fixed_rate).with_notional(notional)
-//! #     .with_rate_definition(rate_definition)
-//! #     .with_currency(Currency::USD).with_market_index(MarketIndex::SOFR)
-//! #     .with_side(Side::LongReceive)
-//! #     .with_fixed_leg_frequency(Frequency::Semiannual)
-//! #     .with_floating_leg_frequency(Frequency::Semiannual)
-//! #     .build().unwrap();
-//! # let trade = SwapTrade::new(swap, start_date, notional, Side::LongReceive);
-//! # let evaluation_date = Date::new(2024, 1, 15);
-//! # let curve_definition = RateDefinition::new(
-//! #     DayCounter::Actual360, Compounding::Continuous, Frequency::Annual);
-//! # let discount_curve = FlatForwardTermStructure::new(
-//! #     evaluation_date, DualFwd::from(0.03), curve_definition)
-//! #     .with_pillar_label("SOFR_flat".to_string());
-//! # let mut constructed_elements = ConstructedElementStore::default();
-//! # constructed_elements.discount_curves_mut().insert(
-//! #     MarketIndex::SOFR, DiscountCurveElement::new(
-//! #         MarketIndex::SOFR,
-//! #         Rc::new(RefCell::new(discount_curve))));
-//! # let quote_store  = QuoteStore::new(evaluation_date);
-//! # let fixing_store = FixingStore::default();
-//! # let context = ContextManager::new(quote_store, fixing_store)
-//! #     .with_base_currency(Currency::USD)
-//! #     .with_constructed_elements(constructed_elements);
-//! let pricer   = CashflowDiscountPricer::<Swap<DualFwd>, SwapTrade<DualFwd>>::new();
-//! let requests = vec![Request::Value, Request::Cashflows, Request::Sensitivities];
-//! let results  = pricer.evaluate(&trade, &requests, &context).expect("pricing failed");
-//!
-//! // --- NPV ---
-//! if let Some(price) = results.price() {
-//!     println!("Swap NPV = {price:.2}");
-//! }
-//!
-//! // --- Sensitivities (dV/dQuote per curve pillar) ---
-//! if let Some(sensitivities) = results.sensitivities() {
-//!     println!("\nSensitivities:");
-//!     for (key, exposure) in sensitivities.instrument_keys()
-//!         .iter()
-//!         .zip(sensitivities.exposure().iter())
-//!     {
-//!         println!("  {key}: {exposure:.4}");
-//!     }
-//! }
-//!
-//! // --- Cashflow schedule ---
-//! if let Some(cashflows) = results.cashflows() {
-//!     let dates      = cashflows.payment_dates();
-//!     let types      = cashflows.cashflow_types();
-//!     let amounts    = cashflows.amounts();
-//!     let currencies = cashflows.currencies();
-//!
-//!     println!("\nCashflows ({} rows):", dates.len());
-//!     for i in 0..dates.len() {
-//!         println!(
-//!             "  {} | {:<20} | {:>14.2} {}",
-//!             dates[i], types[i], amounts[i], currencies[i]
-//!         );
-//!     }
-//! }
-//! ```
+//! [`prelude`] re-exports the principal workflow types. [`time`] and [`rates`]
+//! specify date, accrual, compounding, and term-structure conventions;
+//! [`instruments`] defines contracts and positions. [`core`] contains result
+//! requests, market providers, pricing policies, and historical snapshots.
+//! [`pricers`] implements deterministic, analytic, and numerical valuation.
+//! [`ad`] supports differentiation, while [`scripting`], [`models`], and [`xva`]
+//! supply model-backed payoffs, stochastic dynamics, and exposure aggregation.
 
 pub mod ad;
 pub mod calibration;

@@ -23,6 +23,8 @@ use crate::{
 /// ```text
 ///   DF_spread(t) = exp(-s(t) * t)
 /// ```
+/// Spread interpolation permits extrapolation. Discount factors at nonpositive
+/// times are one.
 ///
 /// When built with `T = DualFwd`, the spread values live on the AD tape and
 /// sensitivities to the spread can be extracted via the [`Pillars`] trait.
@@ -95,7 +97,7 @@ impl SpreadTermStructure<f64> {
     /// zero-rate difference between `target_curve` and `base_curve`.
     ///
     /// # Errors
-    /// Returns an error if any tenor date is before the reference date or if a
+    /// Returns an error if any tenor date is on or before the reference date or if a
     /// discount factor cannot be computed.
     pub fn from_curves(
         target_curve: &dyn InterestRatesTermStructure<f64>,

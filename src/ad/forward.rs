@@ -1,7 +1,7 @@
 //! Forward-mode automatic differentiation: the generic, nestable [`Fwd`].
 //!
 //! `Fwd<T>` carries a value and a first-order derivative seed of type `T`.
-//! Nesting multiplies the derivative order:
+//! Each nesting level adds one derivative order:
 //!
 //! * [`Fwd1`] = `Fwd<f64>` — 1st order
 //! * [`Fwd2`] = `Fwd<Fwd<f64>>` — 2nd order (alias [`ADForward`])
@@ -71,10 +71,6 @@ impl<T: FwdSeed> FwdSeed for Fwd<T> {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Constructors & accessors
-// ---------------------------------------------------------------------------
-
 impl<T: InnerScalar> Fwd<T> {
     /// Constant (no derivative seeds).
     #[inline]
@@ -128,10 +124,6 @@ impl<U: InnerScalar> Fwd<Fwd<Fwd<U>>> {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Comparisons, formatting, conversions
-// ---------------------------------------------------------------------------
-
 impl<T: fmt::Debug> fmt::Debug for Fwd<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Fwd({:?}, d:{:?})", self.val, self.dot)
@@ -167,8 +159,6 @@ impl<T: InnerScalar> From<f64> for Fwd<T> {
         Self::constant(v)
     }
 }
-
-// -- Fwd<T> arithmetic --------------------------------------------------------
 
 impl<T: InnerScalar> Add for Fwd<T> {
     type Output = Self;
@@ -348,11 +338,6 @@ impl<T: InnerScalar> Rem<f64> for Fwd<T> {
     }
 }
 
-// -- Scalar impl for Fwd<T> ---------------------------------------------------
-//
-// Chain rules are written first-order in the inner scalar `T`; nesting the
-// type recursively yields exact higher-order derivatives.
-
 impl<T: InnerScalar> Scalar for Fwd<T> {
     #[inline]
     fn scalar(v: f64) -> Self {
@@ -479,8 +464,6 @@ impl<T: InnerScalar> num_traits::Num for Fwd<T> {
     }
 }
 
-// -- TapeHolder for forward types ----------------------------------------------
-
 /// Implements [`TapeHolder`] for a concrete forward type with its own
 /// thread-local tape, enabling `Dual<$ty>` (backward-over-forward AD).
 macro_rules! impl_fwd_tape_holder {
@@ -575,10 +558,6 @@ impl Tape<ADForward> {
         TAPE_FWD.with(|tc| tc.borrow_mut().propagate_mark_to_start());
     }
 }
-
-// ═══════════════════════════════════════════════════════════════════════════
-//  Tests
-// ═══════════════════════════════════════════════════════════════════════════
 
 #[cfg(test)]
 mod tests {

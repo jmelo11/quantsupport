@@ -428,11 +428,18 @@ impl ContingentClaim {
         }
     }
 
-    /// Evaluates the value of a single claim at a given evaluation date using
-    /// the simulated market data in the [`SimulationResponse`].
+    /// Evaluates `raw_payoff * discount * FX * side.sign() * notional`
+    /// using a resolved [`SimulationResponse`].
+    ///
+    /// Missing discount/FX factors default to one and missing rate/spot/path
+    /// observations to zero. Payoff-operation errors are replaced by zero.
+    /// Separate strategy strike/aggregator metadata is not executed here;
+    /// `PayoffOps` defines the actual payoff. Exercise wrappers unconditionally
+    /// evaluate their inner claim, including its scaling, then apply outer scaling.
     ///
     /// # Errors
-    /// Returns an error if the evaluation strategy fails to compute a value.
+    /// Returns an error for scripted strategies, which require
+    /// `evaluate_dualfwd`, or propagates an inner claim's error.
     pub fn evaluate<T: Scalar + 'static>(&self, response: &SimulationResponse<T>) -> Result<T> {
         let sign = self.side().sign();
         let notional = self.notional();

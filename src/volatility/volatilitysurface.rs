@@ -54,9 +54,9 @@ pub trait VolatilitySurface<T: Scalar> {
     /// for `calibration_basket` selection. [`Pillars`](crate::core::pillars::Pillars)
     /// exposes the differentiable values whose adjoints appear in sensitivity
     /// reports. An interpolated grid commonly uses source quote volatilities
-    /// as its pillars. A parametrised surface such as SABR can retain the
-    /// source option identifiers here while exposing `alpha`, `beta`, `rho`,
-    /// and `nu` through `Pillars`.
+    /// as its pillars. A custom implementation can retain source option
+    /// identifiers here while exposing a different set of differentiable
+    /// values through `Pillars`.
     #[must_use]
     fn calibration_instrument_ids(&self) -> Option<Vec<String>> {
         None

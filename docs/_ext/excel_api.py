@@ -44,6 +44,10 @@ class WorksheetFunction(ObjectDescription):
         self.state.document.note_explicit_target(signode)
         self.env.get_domain("excel").note_function(name, self.env.docname, target)
         self.indexnode["entries"].append(("single", name, target, "", None))
+        aliases = self.env.config.excel_function_aliases.get(name, [])
+        for alias in aliases:
+            self.env.get_domain("excel").note_function(alias, self.env.docname, target)
+            self.indexnode["entries"].append(("single", alias, target, "", None))
 
 
 class FunctionIndex(Index):
@@ -84,8 +88,8 @@ class WorksheetDomain(Domain):
             yield name, name, "function", docname, target, 1
 
     def resolve_xref(self, env, fromdocname, builder, typ, target, node, contnode):
-        if target in self.data["functions"]:
-            docname, anchor = self.data["functions"][target]
+        if target.upper() in self.data["functions"]:
+            docname, anchor = self.data["functions"][target.upper()]
             return make_refnode(builder, fromdocname, docname, anchor, contnode, target)
         return None
 
@@ -127,6 +131,7 @@ def function_page(record):
     declaration = ", ".join(f"{argument['name']}: {worksheet_type(argument['type'])}"
                             for argument in record["arguments"])
     lines = [name, "=" * len(name), "", record["help"], "",
+             f"Category: **{record['category']}**.", "",
              f".. excel:function:: {name}({declaration}) -> {result_type(record)}", ""]
     for argument in record["arguments"]:
         lines.extend([f"   :param {argument['name']}: {argument['help']}",
@@ -138,7 +143,7 @@ def function_page(record):
     lines.extend(["Formula", "-------", "", ".. code-block:: text", "",
                   f"   ={name}({', '.join(argument['name'] for argument in record['arguments'])})", "",
                   "Calculation", "-----------", "",
-                  "Thread-safe scalar function." if record["threadsafe"] else "Runs on Excel's main calculation thread.", ""])
+                  "Thread-safe worksheet function." if record["threadsafe"] else "Runs on Excel's main calculation thread.", ""])
     if record["volatile"]:
         lines.extend(["Volatile registration. Unchanged inputs reuse the current cached object; changed inputs advance its revision.", ""])
     lines.extend(["Native Declaration", "------------------", "", ".. code-block:: rust", "",
@@ -156,6 +161,7 @@ def generate(app):
     records = json.loads(result.stdout)
     if not records:
         raise ExtensionError("The Excel function catalog is empty")
+    app.config.excel_function_aliases = {record["name"]: record["aliases"] for record in records}
     output = Path(app.srcdir) / "excel" / "functions"
     output.mkdir(parents=True, exist_ok=True)
     for previous in output.glob("*.rst"):
@@ -171,5 +177,6 @@ def generate(app):
 
 def setup(app):
     app.add_domain(WorksheetDomain)
+    app.add_config_value("excel_function_aliases", {}, "env")
     app.connect("builder-inited", generate)
     return {"version": "1", "parallel_read_safe": True, "parallel_write_safe": True}

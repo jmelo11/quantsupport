@@ -1,209 +1,85 @@
-# Instruments and Trades
+# Cashflows, contracts and positions
 
-QuantSupport models a contract at three levels: **cashflows** grouped into **legs**, an **instrument** that owns one or more legs (or an option payoff), and a **trade** that adds the economic position. This chapter documents the building blocks and lists every instrument in the library with its builder and trade type.
+QuantSupport represents many financial contracts as cashflows grouped into
+legs. An instrument collects contractual terms, including payment amounts,
+dates and observation rules. A trade adds the position held in that instrument.
+Pricers use these objects for valuation, and supported trades can also be
+converted into claims for exposure simulation.
 
-## Cashflows
+## Amounts and signs
 
-Cashflows are the smallest contractual units in the library. Every cashflow
-knows when it pays. Its variant determines how the amount is obtained.
-The trait and enum below show the common interface and the supported economic
-rules.
+A fixed coupon combines notional \\(N\\), a rate \\(r\\), and a rate definition.
+Its general amount is \\(N(C(r,\tau)-1)\\), where \\(C\\) is the compound factor.
+Only simple compounding reduces this to \\(Nr\tau\\). A floating coupon combines
+an observed or projected index rate with spread and accrual conventions.
+Optional coupon variants retain a cap, floor or more general payoff expression.
+Redemptions and disbursements represent principal movements separately.
 
-```rust,ignore
-pub trait Cashflow<T: Scalar> {
-    fn amount(&self) -> Result<T>;
-    fn payment_date(&self) -> Date;
-}
+A leg shares currency, side, projection identity and optional discount
+identity. Its side is `LongReceive` or `PayShort`, with signs \\(+1\\) and \\(-1\\).
+For a regular swap, leg zero is fixed and leg one is floating; the builder
+assigns opposite directions. Product-specific pricers and claim converters
+apply position direction according to their own contract/trade conventions.
+Do not multiply signs twice because both an instrument and a trade expose
+direction-related fields.
 
-pub enum CashflowType<T: Scalar> {
-    FixedRateCoupon(FixedRateCoupon<T>),            // notional × (compound(rate, accrual) − 1)
-    FloatingRateCoupon(FloatingRateCoupon<T>),      // notional × (fixing + spread) × accrual
-    OptionEmbeddedCoupon(OptionEmbeddedCoupon<T>),  // floating coupon with caplet/floorlet strikes
-    Redemption(SimpleCashflow<f64>),                // principal repayment
-    Disbursement(SimpleCashflow<f64>),              // principal paid out at start (loans/bonds)
-    ConstantAmount(SimpleCashflow<f64>),
-    OptionEmbeddedCashflow(OptionEmbeddedCashflow<T>),
-}
-```
+Cashflow reports show signed amounts: receipts are positive and payments are
+negative. The generic report applies leg direction and reverses disbursements,
+so an initial advance has the opposite sign to principal repayment. The loan
+pricer reports projected signed receipts after prepayment and credit adjustments.
 
-The enum keeps product-specific amount logic typed. A pricer can therefore
-visit fixed, floating, optional, and principal cashflows and retain the
-information needed to resolve rates or option payoffs.
+## Schedules are economic inputs
 
-`FixedRateCoupon` carries an `InterestRate<T>`, whose `RateDefinition` provides the day counter, compounding, and frequency. Its `amount()` is `notional × (compound_factor − 1)`. `FloatingRateCoupon` stores fixing and accrual dates, the forward index, and a spread. Its `amount()` returns `Result` because the pricer must first supply a fixing or projection. `CashflowType<f64>` and `CashflowType<DualFwd>` convert into each other with `.into()`, allowing instruments built in `f64` to enter AAD pricing.
+`MakeSchedule` and product builders convert start/maturity dates, payment
+frequency, calendar, business-day convention and generation rule into dated
+obligations. Front and back stubs, end-of-month behavior and termination-date
+adjustment can change amounts as well as payment dates.
 
-## Legs
+A coupon has an accrual interval, an observation date or schedule, and a
+payment date. These dates serve different purposes. For example, a loan can
+pay monthly while resetting against EURIBOR annually. An OIS coupon compounds
+daily overnight observations with the appropriate accrual weights. Its
+observation rules determine which fixings enter the coupon, while payment lag
+determines when the resulting amount is paid.
 
-`Leg<T>` groups cashflows that share a currency, side and set of indices:
+`DayCounter` converts dates into accrual fractions. Curve interpolation can use
+a different day counter from the coupon; the equivalent projected rate must
+still be expressed on the coupon's basis. Calendar adjustment also differs from
+day-count measurement. Neither can be inferred from a displayed rate alone.
 
-The shared fields explain how a stream is projected, discounted, signed, and
-reported. They also let a pricer prepare market data once for the complete
-stream.
+## Calendars
 
-| Field                                                         | Meaning                                                              |
-| ------------------------------------------------------------- | -------------------------------------------------------------------- |
-| `id: usize`                                                   | leg identifier used by pricers (`CashflowsTable` rows, XVA `leg_id`) |
-| `cashflows: Vec<CashflowType<T>>`                             | ordered cashflows                                                    |
-| `currency: Currency`                                          | payment currency                                                     |
-| `discount_index: Option<MarketIndex>`                         | explicit discount curve override                                     |
-| `forward_index: Option<MarketIndex>`                          | index fixing floating coupons                                        |
-| `spread: Option<T>`, `interest_rate: Option<InterestRate<T>>` | floating spread / fixed rate                                         |
-| `side: Side`                                                  | `PayShort` or `LongReceive`                                          |
-| `is_linear: bool`                                             | `false` when option-embedded coupons are present                     |
-| `asset_class: AssetClass`                                     | `FixedIncome, InterestRate, Equity, Fx, Credit, Other`               |
-| `first_payment_date`, `last_payment_date`                     | used by bootstrappers to order pillars                               |
+Generic builders often default to a null calendar and unadjusted dates;
+market-specific builders may apply presets. SOFR OIS uses its index calendar,
+while SONIA and TONAR use London and Japanese settlement holidays. Canonical
+serialized forms include `UnitedKingdom(Settlement)` and `Japan`.
 
-Together, these fields turn individual payments into a coherent side of a
-contract. Multi-leg products then combine streams with complementary signs and
-possibly different currencies or indices.
+Joint calendars encode which markets must be open. `JoinHolidays` requires all
+components to be business days; `JoinBusinessDays` requires at least one.
+Canonical nested definitions round-trip through JSON. Local holiday overrides
+participate in calculations, but serialization stores the calendar definition,
+not an independently complete record of mutable overrides.
 
-### `MakeLeg`
+Holiday rules are historical models too. London recurring rules follow the
+regime since 1971; Japan's public-holiday rules begin in July 1948. Future
+Japanese equinox dates remain estimates until announced, and exceptional
+closures require updates or explicit local overrides.
 
-Every multi-leg instrument builder delegates to `MakeLeg<T>`. The builder is
-shown in detail because its scheduling and payment choices also explain the
-behavior of swap, bond, and cross-currency builders.
+## Builders and positions
 
-```rust,ignore
-let leg = MakeLeg::<DualFwd>::default()
-    .with_start_date(Date::new(2024, 1, 1))
-    .with_end_date(Date::new(2025, 1, 1))        // or .with_tenor(Period::from_str("1Y")?)
-    .with_notional(100_000.0)
-    .with_rate(InterestRate::from_rate_definition(DualFwd::new(0.05),
-        RateDefinition::new(DayCounter::Actual360, Compounding::Simple, Frequency::Annual)))
-    .with_rate_type(RateType::Fixed)              // or RateType::Floating + with_forward_index / with_spread
-    .with_side(Side::PayShort)
-    .with_currency(Currency::USD)
-    .with_payment_frequency(Frequency::Semiannual)
-    .with_calendar(Some(Calendar::NullCalendar))
-    .with_business_day_convention(Some(BusinessDayConvention::ModifiedFollowing))
-    .with_date_generation_rule(Some(DateGenerationRule::Backward))
-    .with_discount_index(Some(MarketIndex::SOFR))
-    .bullet()
-.build()?;
-```
+`Make*` builders validate required terms and construct the instrument. Check
+their defaults against the contract's market conventions. `MakeSwap` produces
+regular single-fixing coupons; `MakeOvernightIndexSwap` starts from index-specific
+overnight conventions. Bond and loan builders have distinct principal,
+schedule and optionality responsibilities.
 
-The chain separates contractual choices from schedule generation. Required
-fields define the economics. Calendar and date-generation fields control
-how those economics are placed on actual dates.
+A trade adds date, side and position sizing as supported by the product.
+Bond positions additionally carry a clean/dirty price or spread anchor.
+Discounting remains a pricing policy rather than a general contractual promise
+embedded in every instrument.
 
-Payment structures (`PaymentStructure`):
-
-| Method                 | Structure                                                                              | Notes                               |
-| ---------------------- | -------------------------------------------------------------------------------------- | ----------------------------------- |
-| `.bullet()`            | coupons + single redemption at maturity                                                | default for swaps                   |
-| `.equal_redemptions()` | principal amortised in equal amounts, coupons on outstanding notional                  |                                     |
-| `.equal_payments()`    | constant coupon + principal instalments                                                | fixed legs only (error on floating) |
-| `.zero()`              | one payment at maturity                                                                | forces `Frequency::Once`            |
-| `.other()`             | custom `with_disbursements(HashMap<Date,f64>)` / `with_redemptions(HashMap<Date,f64>)` | forces `Frequency::OtherFrequency`  |
-
-Optional settings include `with_first_coupon_date`, `with_end_of_month`, `with_leg_id`, `with_asset_class`, `with_caplet_strike`, and `with_floorlet_strike`. Strike settings create option-embedded floating coupons. `build()` returns `ValueNotSetErr("Rate type")` and similar messages for a missing required field, and `InvalidValueErr` for an inconsistent combination.
-
-## Instruments and trades
-
-An instrument holds the legs and static terms. A trade wraps it with `trade_date`, `notional`, and `Side`:
-
-```rust,ignore
-pub struct Swap<T: Scalar> { fixed_leg, floating_leg, forward_index, currency, ... }
-impl<T: Scalar> Swap<T> {
-    pub fn fixed_leg(&self) -> &Leg<T>;
-    pub fn floating_leg(&self) -> &Leg<T>;
-    pub fn forward_index(&self) -> MarketIndex;
-    pub const fn currency(&self) -> Currency;
-}
-
-pub struct SwapTrade<T: Scalar> { instrument: Swap<T>, trade_date: Date, notional: f64, side: Side }
-impl<T: Scalar> SwapTrade<T> {
-    pub const fn new(instrument: Swap<T>, trade_date: Date, notional: f64, side: Side) -> Self;
-    pub const fn notional(&self) -> f64;
-}
-```
-
-For a swap, `Side::LongReceive` receives the fixed leg and `Side::PayShort` pays it. `Side::sign()` returns `+1.0` or `-1.0`, which pricers apply to value. Trades implement `Instrument`, `Discountable`, and `IntoContingentClaims` for exposure simulation.
-
-### Catalogue
-
-The catalogue connects each contract representation to its normal builder,
-trade wrapper, and deterministic valuation route. It is a map for choosing the
-next detailed pricing chapter.
-
-| Asset class  | Instrument                    | Builder                           | Trade                              | Deterministic pricer                                             |
-| ------------ | ----------------------------- | --------------------------------- | ---------------------------------- | ---------------------------------------------------------------- |
-| Rates        | `Swap` (fixed vs float)       | `MakeSwap`                        | `SwapTrade`                        | `DiscountedCashflowPricer`                                       |
-| Rates        | `OvernightIndexSwap`          | `MakeOvernightIndexSwap`          | `OvernightIndexSwapTrade`          | `DiscountedCashflowPricer`                                       |
-| Rates        | `BasisSwap` (float vs float)  | `MakeBasisSwap`                   | `BasisSwapTrade`                   | `DiscountedCashflowPricer`                                       |
-| Rates        | `FixFloatCrossCurrencySwap`   | `MakeFixFloatCrossCurrencySwap`   | `FixFloatCrossCurrencySwapTrade`   | `DiscountedCashflowPricer`                                       |
-| Rates        | `FloatFloatCrossCurrencySwap` | `MakeFloatFloatCrossCurrencySwap` | `FloatFloatCrossCurrencySwapTrade` | `DiscountedCashflowPricer`                                       |
-| Rates        | `CapFloor`                    | `MakeCapFloor`                    | `CapFloorTrade`                    | `ClosedFormBlackCapPricer`, `ClosedFormHullWhiteCapPricer`       |
-| Rates        | `CapletFloorlet`              | — (from quotes)                   | `CapletFloorletTrade`              | `ClosedFormBlackCapletPricer`, `ClosedFormHullWhiteCapletPricer` |
-| Rates        | `EuropeanSwaption`            | `MakeSwaption`                    | `EuropeanSwaptionTrade<DualFwd>`   | `ClosedFormHullWhiteSwaptionPricer`                              |
-| Rates        | `RateFutures`                 | `MakeRateFutures`                 | `RateFuturesTrade`                 | `RateFuturesPricer`                                              |
-| Fixed income | `FixedRateBond`               | `MakeFixedRateBond`               | `FixedRateBondTrade`               | `BondPricer`                                                     |
-| Fixed income | `SteppedCouponBond`           | `MakeSteppedCouponBond`           | `SteppedCouponBondTrade`           | `TreeBasedBondPricer` / `BackwardFourierEvolutionBondPricer`     |
-| Fixed income | `FloatingRateNote`            | `MakeFloatingRateNote`            | `FloatingRateNoteTrade`            | `DiscountedCashflowPricer`                                       |
-| Fixed income | `FixedRateDeposit`            | `MakeFixedRateDeposit`            | `FixedRateDepositTrade`            | `DiscountedCashflowPricer`                                       |
-| FX           | `FxForward`                   | `MakeFxForward`                   | `FxForwardTrade`                   | `FxForwardPricer`                                                |
-| FX           | `FxEuropeanOption`                    | `MakeFxEuropeanOption`                    | `FxEuropeanOptionTrade`                    | `FxEuropeanOptionPricer` (Garman–Kohlhagen)                              |
-| Equity       | `EquityForward`               | `MakeEquityForward`               | `EquityForwardTrade`               | `EquityForwardPricer`                                           |
-| Equity       | `EquityEuropeanOption`        | `MakeEquityEuropeanOption`         | `EquityEuropeanOptionTrade`        | `BlackEuropeanOptionPricer`, `BlackMCEuropeanOptionPricer`       |
-| Equity       | `Futures`                     | `MakeFutures`                     | `FuturesTrade`                     | — (claims / scripting)                                           |
-| Credit       | `CreditDefaultSwap`           | —                                 | `CdsTrade`                         | `CdsPricer`                                                      |
-| Any          | `ScriptedProduct`             | script text                       | —                                  | `ScriptEngine` (Monte Carlo)                                     |
-
-Products without a deterministic pricer still participate in claim-based or
-scripted workflows. The final column records the currently implemented route
-for each contract.
-
-The generic parameter `T` on rate and fixed-income instruments is `f64` or `DualFwd`. Use `f64` for value calculations and convert with `.into()` for AAD pricing. FX, equity, cap, floor, and credit instruments use `DualFwd` internally.
-
-### Builder conventions
-
-Most `Make*` builders follow the same pattern as `MakeSwap` (see [Your First Swap](../getting-started/first-swap.md)):
-
-- Most builders start with `default()` and chained `with_*` setters that take ownership. `MakeOvernightIndexSwap::new(index, reference_date, tenor, fixed_rate)` starts with an index-specific convention preset; its setters customize that preset and contract terms.
-- `build()` returns `Result<Instrument>`. Missing mandatory fields produce `QSError::ValueNotSetErr("<Field>")`.
-- Generic leg builders commonly default to `Calendar::NullCalendar`, `BusinessDayConvention::Unadjusted`, `DateGenerationRule::Backward`, `spread = 0.0`, and `Side::LongReceive`. OIS uses the index-specific calendar and adjustment conventions described above.
-- Cross-currency builders take two currencies, two notionals or an FX rate, and per-leg indices. `MakeFxForward` takes a currency pair, strike and settlement date; `MakeFxEuropeanOption` takes a pair, option strike and expiry date. `MakeCapFloor` takes an index, strike, product direction, and schedule parameters. `MakeSwaption` wraps swap terms with expiry and payer-or-receiver direction. `MakeOvernightIndexSwap` constructs daily overnight coupons and coupon-only legs; [Interest Rate Swaps](../pricing/swaps.md#overnight-index-swaps) explains the OIS workflow.
-
-The per-product chapters under [Pricing](../pricing/overview.md) show each builder with its required fields and the requests its pricer supports.
-
-## Contingent claims
-
-For simulation-based pricing, every trade is decomposed into `ContingentClaim` values. Each claim is an atomic payment with a payment date, currency, leg id, side, and a `ClaimEvaluationStrategy` such as a fixed amount, forward-rate coupon, option payoff, or scripted payoff. `IntoContingentClaims::into_contingent_claims(&self, trade_id: &str) -> Result<Vec<ContingentClaim>>` performs the decomposition. The XVA engine, scripting engine, and `LgmMarketModel` consume this common claim representation. See [Exposure](../simulation/exposure.md).
-
-## From contract to valuation
-
-The hierarchy now has a clear direction. Cashflows define amounts and dates,
-legs organize related payments, instruments define a product, and trades add
-the held position. Deterministic pricers consume trades directly. Simulation
-workflows translate them into contingent claims. Both routes begin
-from the same contractual definition, which keeps pricing and exposure aligned.
-
-## Settlement calendars
-
-SONIA uses London settlement holidays and TONAR uses Japanese bank holidays.
-Use `UnitedKingdom(Settlement)` and `Japan` in serialized configurations.
-London rules include weekend substitutions, moved May holidays and royal
-one-off closures. Japanese rules include substitute and citizens' holidays,
-bank year-end closures, the 2019 accession and the 2020–2021 Olympic moves.
-These rules are checked against the [UK government's published bank holidays](https://www.gov.uk/bank-holidays)
-and the [Japanese Cabinet Office holiday list](https://www8.cao.go.jp/chosei/shukujitsu/gaiyou.html).
-Future Japanese equinox dates are estimates until officially announced, and
-new exceptional holidays require a calendar update or a local holiday override.
-The London recurring rules follow the regime since 1971; Japan's public-holiday
-rules begin in July 1948.
-
-Cross-currency builders accept joint calendars through `with_calendar`:
-
-```rust,ignore
-let settlement = Calendar::try_from(
-    "JointCalendar(JoinHolidays,UnitedKingdom(Settlement),Japan)".to_string(),
-)?;
-let builder = MakeFloatFloatCrossCurrencySwap::<f64>::default()
-    .with_calendar(settlement);
-```
-
-`JoinHolidays` requires all markets to be open. `JoinBusinessDays` requires at
-least one open market. The same canonical strings work in Python's `Calendar`
-and Excel's calendar arguments, and nested joint calendars round-trip through
-JSON. Local holiday overrides participate in joint business-day calculations;
-string/JSON serialization stores the calendar definition, as for other calendars.
+For simulation, supported trades implement `IntoContingentClaims`. Each claim
+represents a scheduled payment with evaluation instructions and stable trade
+and leg identifiers. Conversion checks whether the exposure implementation
+supports the contract's features. The legacy claim converter, for example,
+rejects nonstandard overnight conventions.

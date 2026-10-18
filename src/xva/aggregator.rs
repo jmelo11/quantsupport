@@ -1,8 +1,9 @@
-//! Pfe aggregator trait and implementations.
+//! Pathwise CVA, DVA, and signed funding-adjustment estimators.
 //!
-//! An [`PfeAggregator`] takes per-date NPVs from a single MC path and
-//! combines them into a single Pfe contribution scalar that can be used
-//! as the backward-pass root.
+//! [`XvaAggregator`] reduces dated NPVs from one path to a scalar
+//! adjustment contribution suitable for a backward differentiation pass.
+//! Contributions are normalized by the supplied total path count and must
+//! be summed across paths, not averaged a second time.
 
 use crate::{
     ad::{dual::DualFwd, scalar::Scalar},
@@ -10,41 +11,41 @@ use crate::{
     time::{date::Date, daycounter::DayCounter},
 };
 
-/// Aggregates per-date NPVs from one MC path into a single Pfe contribution.
+/// Aggregates dated NPVs from one path into one normalized adjustment contribution.
 ///
 /// Implementations are constructed **before** `set_mark` so that their
 /// `T`-typed fields (credit spread, recovery, survival probabilities, etc.)
 /// become pre-mark tape leaves.  [`aggregate_path`](Self::aggregate_path) is
 /// called **after** the mark inside each path iteration.
-pub trait PfeAggregator<T: Scalar>: Send + Sync {
+pub trait XvaAggregator<T: Scalar>: Send + Sync {
     /// Human-readable name for this measure (e.g. `"CVA"`, `"DVA"`).
     fn name(&self) -> &'static str;
 
-    /// Combine per-date NPVs into a single Pfe contribution for one path.
+    /// Combines dated NPVs into one contribution for the implementing measure.
     ///
     /// `npvs[d]` is the portfolio NPV at `dates[d]`.
     /// The returned `T` is the root for `backward_to_mark()`.
     fn aggregate_path(&self, npvs: &[T], dates: &[Date]) -> T;
 }
 
-/// Bundle returned by an [`PfeAggregatorFactory`]: the aggregator together
+/// Bundle returned by an [`XvaAggregatorFactory`]: the aggregator together
 /// with tracked `DualFwd` leaves whose adjoints carry sensitivities after
 /// the backward pass.
 pub struct AggregatorBundle {
     /// The aggregator instance (lives on the current thread's tape).
-    pub aggregator: Box<dyn PfeAggregator<DualFwd>>,
+    pub aggregator: Box<dyn XvaAggregator<DualFwd>>,
     /// Tracked leaves: `(label, leaf)` pairs whose `.adjoint()` can be read
     /// after `propagate_mark_to_start`.
     pub leaves: Vec<(String, DualFwd)>,
 }
 
-/// Factory for creating per-thread [`PfeAggregator`] instances.
+/// Factory for creating per-thread [`XvaAggregator`] instances.
 ///
 /// Each rayon thread calls [`create_aggregator`](Self::create_aggregator) to
 /// build its own aggregator with `DualFwd` leaves on the thread-local tape
 /// (pre-mark).
-pub trait PfeAggregatorFactory: Send + Sync {
-    /// Human-readable name for the Pfe measure (e.g. `"CVA"`).
+pub trait XvaAggregatorFactory: Send + Sync {
+    /// Human-readable name for the XVA measure (e.g. `"CVA"`).
     fn name(&self) -> &'static str;
 
     /// Creates an aggregator and its tracked leaves on the current thread's
@@ -52,7 +53,13 @@ pub trait PfeAggregatorFactory: Send + Sync {
     fn create_aggregator(&self, ref_date: Date, dates: &[Date]) -> AggregatorBundle;
 }
 
-/// Unilateral CVA aggregator.
+/// Unilateral CVA loss magnitude using right-endpoint positive exposure.
+///
+/// One path contributes
+/// `(1-R)/n_paths * sum(d=1.., max(V[d],0) * (S[d-1]-S[d]) * DF[d])`.
+/// Discount factors are one unless explicitly supplied. Default probabilities
+/// and discount factors are deterministic; this is not a joint default/exposure
+/// model and does not model wrong-way risk.
 pub struct CvaAggregator<T: Scalar> {
     /// Loss-given-default: `1 − R`.
     lgd: T,
@@ -66,7 +73,14 @@ pub struct CvaAggregator<T: Scalar> {
 }
 
 impl<T: Scalar> CvaAggregator<T> {
-    /// Creates a new CVA aggregator.
+    /// Creates a flat-hazard CVA estimator from an annual decimal credit spread.
+    ///
+    /// `credit_spread` is not the hazard rate: the implementation sets
+    /// `hazard = credit_spread / (1-recovery)` and
+    /// `S(t) = exp(-hazard * ACT/365(ref_date,t))`. Recovery is a fraction,
+    /// for example `0.4`, and `n_paths` must be positive. Callers must supply
+    /// finite inputs with `0 <= recovery < 1` and nonnegative spread; this
+    /// constructor does not validate them.
     ///
     /// If `credit_spread` and `recovery` are `DualFwd` leaves on the tape,
     /// credit sensitivities propagate automatically.  For no credit
@@ -96,8 +110,11 @@ impl<T: Scalar> CvaAggregator<T> {
         }
     }
 
-    /// Creates a CVA aggregator directly from survival probabilities at each
-    /// simulation date (e.g. interpolated from a bootstrapped credit curve).
+    /// Creates a CVA estimator from survival probabilities aligned with the
+    /// full simulation date grid, including its first date.
+    ///
+    /// Callers must supply a positive path count and valid nonincreasing
+    /// survival probabilities. Input lengths and domains are not validated.
     pub fn from_survival_probs(recovery: T, survival_probs: Vec<T>, n_paths: usize) -> Self {
         Self {
             lgd: T::one().sub_val(recovery),
@@ -109,6 +126,9 @@ impl<T: Scalar> CvaAggregator<T> {
 
     /// Sets the system-curve discount factors `DF(0, t_d)` applied to the
     /// exposures so that CVA is expressed in present-value terms.
+    ///
+    /// Provide one factor per simulation date. These `f64` factors do not
+    /// propagate discount-curve sensitivities through this multiplication.
     #[must_use]
     pub fn with_system_discounts(mut self, discounts: Vec<f64>) -> Self {
         self.system_discounts = Some(discounts);
@@ -116,7 +136,7 @@ impl<T: Scalar> CvaAggregator<T> {
     }
 }
 
-impl<T: Scalar> PfeAggregator<T> for CvaAggregator<T> {
+impl<T: Scalar> XvaAggregator<T> for CvaAggregator<T> {
     fn name(&self) -> &'static str {
         "CVA"
     }
@@ -136,7 +156,10 @@ impl<T: Scalar> PfeAggregator<T> for CvaAggregator<T> {
     }
 }
 
-/// Unilateral DVA aggregator (own-default).
+/// Unilateral DVA benefit magnitude from right-endpoint `max(-V, 0)`.
+///
+/// The formula mirrors [`CvaAggregator`] using own-default probabilities. The
+/// returned positive magnitude is not automatically added to a clean value.
 pub struct DvaAggregator<T: Scalar> {
     lgd: T,
     survival_probs: Vec<T>,
@@ -145,7 +168,11 @@ pub struct DvaAggregator<T: Scalar> {
 }
 
 impl<T: Scalar> DvaAggregator<T> {
-    /// Creates a unilateral DVA estimator from a flat own-credit spread and recovery rate.
+    /// Creates a DVA estimator with `hazard = own_spread / (1-own_recovery)`.
+    ///
+    /// Spreads are annual decimals, recovery is a fraction, and survival time
+    /// uses ACT/365. A positive path count and valid finite inputs are required
+    /// but not checked; in particular, own recovery must be less than one.
     pub fn new(
         own_spread: T,
         own_recovery: T,
@@ -180,7 +207,7 @@ impl<T: Scalar> DvaAggregator<T> {
     }
 }
 
-impl<T: Scalar> PfeAggregator<T> for DvaAggregator<T> {
+impl<T: Scalar> XvaAggregator<T> for DvaAggregator<T> {
     fn name(&self) -> &'static str {
         "DVA"
     }
@@ -209,7 +236,13 @@ enum FundingSpreadTerm<T> {
     PerDate(Vec<T>),
 }
 
-/// Funding valuation adjustment aggregator.
+/// Signed funding adjustment using right-endpoint exposure and ACT/365 buckets.
+///
+/// One path contributes
+/// `sum(d=1.., V[d] * spread[d] * ACT/365(dates[d-1],dates[d]) * DF[d]) / n_paths`.
+/// Unlike CVA, this does not replace exposure with its positive part and does
+/// not multiply by a survival probability. Negative exposure can therefore
+/// produce negative FVA. Discount factors default to one.
 pub struct FvaAggregator<T: Scalar> {
     spread: FundingSpreadTerm<T>,
     system_discounts: Option<Vec<f64>>,
@@ -217,7 +250,10 @@ pub struct FvaAggregator<T: Scalar> {
 }
 
 impl<T: Scalar> FvaAggregator<T> {
-    /// Creates an FVA aggregator with a flat funding spread.
+    /// Creates an FVA estimator with a flat annual decimal funding spread.
+    ///
+    /// `0.005` denotes 50 bp. The caller must supply a positive path count;
+    /// this constructor does not validate it.
     pub fn new(funding_spread: T, n_paths: usize) -> Self {
         Self {
             spread: FundingSpreadTerm::Flat(funding_spread),
@@ -230,7 +266,9 @@ impl<T: Scalar> FvaAggregator<T> {
     ///
     /// `spreads[d]` is the spread applied over the accrual bucket ending at
     /// simulation date `d` (one entry per simulation date, e.g. interpolated
-    /// from a funding spread curve).
+    /// from a funding spread curve). Spreads are annual decimals. Index zero
+    /// is retained for grid alignment but is not used in the bucket sum.
+    /// Lengths and the required positive path count are not validated.
     #[must_use]
     pub fn from_spreads(spreads: Vec<T>, n_paths: usize) -> Self {
         Self {
@@ -249,7 +287,7 @@ impl<T: Scalar> FvaAggregator<T> {
     }
 }
 
-impl<T: Scalar> PfeAggregator<T> for FvaAggregator<T> {
+impl<T: Scalar> XvaAggregator<T> for FvaAggregator<T> {
     fn name(&self) -> &'static str {
         "FVA"
     }
@@ -285,7 +323,7 @@ pub struct CvaFactory {
     pub system_dfs: Option<Vec<f64>>,
 }
 
-impl PfeAggregatorFactory for CvaFactory {
+impl XvaAggregatorFactory for CvaFactory {
     fn name(&self) -> &'static str {
         "CVA"
     }
@@ -311,15 +349,20 @@ impl PfeAggregatorFactory for CvaFactory {
 ///
 /// Survival probabilities at the simulation dates are log-linearly
 /// interpolated between the curve pillars (flat-hazard extrapolation beyond
-/// the last pillar). The pillar survivals become tracked tape leaves so that
-/// the backward pass yields CVA sensitivities to the original CDS quotes
-/// (labels are prefixed with `"CVA."`).
+/// the last pillar). Numerical pillar survivals become independent tracked
+/// leaves. Their derivatives are CVA per unit survival probability, not per
+/// unit CDS spread: this factory does not replay the original credit-curve
+/// calibration, even when a label resembles a CDS quote identifier.
+///
+/// Labels are prefixed with `"CVA."`; recovery is a separate leaf. Optional
+/// numerical system discount factors are held fixed during differentiation.
 pub struct CreditCurveCvaFactory {
     /// Pillar dates of the credit curve (strictly after the reference date).
     pub pillar_dates: Vec<Date>,
     /// Survival probabilities at the pillar dates.
     pub pillar_survivals: Vec<f64>,
-    /// Labels of the pillar quotes (e.g. CDS quote identifiers).
+    /// Labels for survival leaves, possibly inherited from CDS quote identifiers.
+    /// The label does not change the leaf's survival-probability units.
     pub pillar_labels: Vec<String>,
     /// Counterparty recovery rate.
     pub recovery: f64,
@@ -375,7 +418,7 @@ impl CreditCurveCvaFactory {
     }
 }
 
-impl PfeAggregatorFactory for CreditCurveCvaFactory {
+impl XvaAggregatorFactory for CreditCurveCvaFactory {
     fn name(&self) -> &'static str {
         "CVA"
     }
@@ -433,7 +476,7 @@ pub struct DvaFactory {
     pub n_paths: usize,
 }
 
-impl PfeAggregatorFactory for DvaFactory {
+impl XvaAggregatorFactory for DvaFactory {
     fn name(&self) -> &'static str {
         "DVA"
     }
@@ -462,7 +505,7 @@ pub struct FvaFactory {
     pub system_dfs: Option<Vec<f64>>,
 }
 
-impl PfeAggregatorFactory for FvaFactory {
+impl XvaAggregatorFactory for FvaFactory {
     fn name(&self) -> &'static str {
         "FVA"
     }
@@ -484,15 +527,18 @@ impl PfeAggregatorFactory for FvaFactory {
 ///
 /// Curve-implied spreads use linear interpolation with flat extrapolation.
 /// An explicit zero-rate curve uses its own interpolation and conventions.
-/// The pillar spreads become
-/// tracked tape leaves so that the backward pass yields FVA sensitivities
-/// to the individual pillars (labels are prefixed with `"FVA."`).
+/// Numerical pillar spreads become independent tracked leaves, labeled with
+/// `"FVA."` prefixes. If the spreads were derived from funding and system
+/// curves, this factory does not replay that derivation or either curve's
+/// original quote calibration. The derivatives are per unit decimal spread.
+/// An explicit spread curve contributes separate dated zero-rate leaves.
+/// Optional numerical system discount factors are held fixed during AD.
 pub struct FundingCurveFvaFactory {
     /// Pillar dates of the funding spread curve.
     pub pillar_dates: Vec<Date>,
     /// Funding spreads at the pillar dates.
     pub pillar_spreads: Vec<f64>,
-    /// Labels of the pillar spreads (e.g. funding curve quote identifiers).
+    /// Labels for independent spread leaves, possibly inherited from curve quotes.
     pub pillar_labels: Vec<String>,
     /// Reusable curve of annualized spreads, optionally added to the
     /// funding-index basis. Validate it at simulation dates before use.
@@ -527,7 +573,7 @@ impl FundingCurveFvaFactory {
     }
 }
 
-impl PfeAggregatorFactory for FundingCurveFvaFactory {
+impl XvaAggregatorFactory for FundingCurveFvaFactory {
     fn name(&self) -> &'static str {
         "FVA"
     }

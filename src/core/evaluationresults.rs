@@ -2,7 +2,15 @@ use std::collections::HashMap;
 
 use crate::{currencies::currency::Currency, time::date::Date};
 
-/// Contains the cashflow structure of the instrument.
+/// Column-oriented, undiscounted cashflow report.
+///
+/// Each position across the columns describes one cashflow in its own currency;
+/// row order follows the reporting pricer and need not be chronological.
+/// The default [`HandleCashflows`](crate::core::request::HandleCashflows)
+/// implementation applies leg-side signs and reverses disbursement amounts:
+/// positive amounts are receipts and negative amounts are payments.
+/// Reconciling this table to NPV also requires the pricer's payment selection,
+/// any FX conversion, and discount factors.
 #[derive(Clone, Debug)]
 pub struct CashflowsTable {
     payment_dates: Vec<Date>,
@@ -45,19 +53,22 @@ impl CashflowsTable {
         &self.cashflow_types
     }
 
-    /// Returns the amounts.
+    /// Returns signed, undiscounted amounts in each row's currency.
     #[must_use]
     pub fn amounts(&self) -> &[f64] {
         &self.amount
     }
 
-    /// Returns the fixing values.
+    /// Returns resolved floating coupon rates, or `None` for non-floating rows.
+    ///
+    /// Rate values are decimal, not percentage points.
     #[must_use]
     pub fn fixing(&self) -> &[Option<f64>] {
         &self.fixing
     }
 
-    /// Returns the accrual periods.
+    /// Returns coupon year fractions under their day counters, or zero for
+    /// non-accruing cashflows in the default report.
     #[must_use]
     pub fn accrual_periods(&self) -> &[f64] {
         &self.accrual_periods
@@ -81,7 +92,7 @@ impl CashflowsTable {
         &self.caplet_strike
     }
 
-    /// Returns the leg indices.
+    /// Returns zero-based indices into the trade's reported legs.
     #[must_use]
     pub fn leg_indices(&self) -> &[usize] {
         &self.leg_indices
@@ -119,7 +130,17 @@ impl Default for CashflowsTable {
     }
 }
 
-/// Maps sensitivity keys to values.
+/// Labelled first-order derivatives of the reported value with respect to pillars.
+///
+/// A label identifies the risk variable exposed by the corresponding market
+/// object, not necessarily a rate or a quoted calibration instrument. Exposures
+/// are raw derivatives per unit of that variable, in value units per pillar
+/// unit; they are not automatically DV01 or one-percent vega.
+/// For a decimal-rate pillar, `exposure * 1e-4` estimates the value change for
+/// a positive one-basis-point move. Other quote types require their own scaling.
+///
+/// Callers constructing a map must supply equally sized, positionally aligned
+/// key and exposure arrays.
 #[derive(Default, Debug)]
 pub struct SensitivityMap {
     instrument_key: Vec<String>,
@@ -133,7 +154,7 @@ impl SensitivityMap {
         &self.instrument_key
     }
 
-    /// Returns exposures.
+    /// Returns raw derivatives aligned with [`Self::instrument_keys`].
     #[must_use]
     pub fn exposure(&self) -> &[f64] {
         &self.exposure
@@ -179,7 +200,17 @@ impl SensitivityMap {
     }
 }
 
-/// Holds the results of an instrument evaluation, including price, sensitivities, among others.
+/// Optional measures returned by a pricer for one position and evaluation date.
+///
+/// A field is populated only when the selected pricer supplies that measure.
+/// `None` is not a zero result: the measure may not have been requested or may
+/// not be supported. Some pricers reject unsupported requests; others leave the
+/// field absent, so callers should check the relevant accessor.
+///
+/// Value currency, quotation units, and supported measures are pricer-specific.
+/// The result does not itself carry a reporting currency. Built-in position
+/// values are monetary present values, not necessarily clean bond prices or
+/// prices normalized per 100 nominal.
 pub struct EvaluationResults {
     /// Reference or as-of date of the results.
     evaluation_date: Date,
@@ -240,31 +271,45 @@ impl EvaluationResults {
         self
     }
 
-    /// Returns the price or present value.
+    /// Returns the requested value in the selected pricer's value units.
+    ///
+    /// Do not assume that the context's base currency automatically converts
+    /// every pricer's output; the instrument and discount policy determine it.
     #[must_use]
     pub const fn price(&self) -> Option<f64> {
         self.price
     }
 
-    /// Returns the yield to maturity, if available.
+    /// Returns yield to maturity as a decimal annual rate, if available.
+    ///
+    /// Built-in bond pricers use the trade's yield compounding, frequency, and
+    /// day-count definition. `0.05` denotes 5%, not five basis points.
     #[must_use]
     pub const fn ytm(&self) -> Option<f64> {
         self.ytm
     }
 
-    /// Returns the modified duration, if available.
+    /// Returns modified duration `-(dP/dy)/P`, if available.
+    ///
+    /// The derivative is with respect to the bond's decimal yield under its
+    /// yield convention, not a parallel market-curve shift.
     #[must_use]
     pub const fn modified_duration(&self) -> Option<f64> {
         self.modified_duration
     }
 
-    /// Returns the Z-spread, if available.
+    /// Returns the continuously compounded Z-spread as an annual decimal rate.
+    ///
+    /// Built-in bond pricers apply the trade's spread day counter.
     #[must_use]
     pub const fn z_spread(&self) -> Option<f64> {
         self.z_spread
     }
 
-    /// Returns the option-adjusted spread, if available.
+    /// Returns the issuer-call bond's option-adjusted spread, if available.
+    ///
+    /// Built-in bond engines use a continuously compounded annual decimal
+    /// spread under the trade's spread day counter, not a basis-point number.
     #[must_use]
     pub const fn oas(&self) -> Option<f64> {
         self.oas
@@ -345,7 +390,11 @@ impl EvaluationResults {
         self
     }
 
-    /// Returns the fair rate if available.
+    /// Returns the par or breakeven quote, if available.
+    ///
+    /// Its meaning depends on the product: a swap coupon is an annual decimal
+    /// rate, whereas an equity or FX forward returns a delivery price or
+    /// exchange rate in the contract's quotation units.
     #[must_use]
     pub const fn fair_rate(&self) -> Option<f64> {
         self.fair_rate

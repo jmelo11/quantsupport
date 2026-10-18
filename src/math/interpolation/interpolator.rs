@@ -20,7 +20,7 @@ where
     /// * `enable_extrapolation` - Whether to allow extrapolation beyond the data range
     ///
     /// ## Returns
-    /// * [`Result<f64>`] - The interpolated value or an error
+    /// * `Result<T>` - The interpolated value or an error
     ///
     /// ## Errors
     /// Returns an error if interpolation fails.
@@ -65,7 +65,7 @@ where
     /// * `enable_extrapolation` - Whether to allow extrapolation beyond the data range
     ///
     /// ## Returns
-    /// * [`Result<f64>`] - The interpolated value or an error
+    /// * `Result<T>` - The interpolated value or an error
     ///
     /// ## Errors
     /// Returns an error if interpolation fails.

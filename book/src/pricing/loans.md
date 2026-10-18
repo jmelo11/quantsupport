@@ -1,49 +1,61 @@
-# Loan Contracts and Pricing Requests
+# Loans, prepayment and credit
 
-`Loan<T>` owns a contractual `Leg<T>` containing the existing `FixedRateCoupon`,
-`FloatingRateCoupon`, `OptionEmbeddedCoupon`, `Redemption`, and `Disbursement` cashflow types. Coupon
-notionals and principal redemptions are `f64` contractual amounts. The instrument
-can accept an explicitly constructed leg; it does not select an amortization
-structure or infer defaults.
+A loan promises interest and principal payments according to a contractual
+repayment schedule. Its value also depends on expected prepayment and default.
+QuantSupport keeps the contractual schedule fixed while the pricer projects
+these expected receipts under the chosen market assumptions.
 
-`MakeLoan<T>` generates that leg. Its defaults are monthly payments, French
+`Loan<T>` stores the contract as a `Leg<T>` of coupons, redemptions and the
+initial advance. Coupon notionals and principal redemptions are contractual
+`f64` amounts. Supply a leg directly or use `MakeLoan<T>` to generate it from
+repayment and schedule terms.
+
+The builder defaults to monthly payments, French
 amortization, Actual/365 accrual, a null calendar, unadjusted payments, zero
 fixing lag, no prepayment or credit, and 40% recovery. Set the calendar, fixing
 lag, and payment convention to the contract's actual terms.
 
 Coupons use the same positional list as `SteppedCouponBond`: Rust accepts
-`with_coupons(Vec<CashflowType<T>>)` and Python accepts the corresponding `FixedRateCoupon`, `FloatingRateCoupon`, and
-`OptionEmbeddedCoupon` objects in `coupons=[...]`.
-The final supplied coupon repeats through maturity. For monthly payments,
-`[qs.FixedRateCoupon(rate=qs.InterestRate(rate=0.04))] * 12` followed by
-`[qs.FloatingRateCoupon(index=qs.MarketIndex.EURIBOR12m, spread=0.01)]` defines
-twelve fixed periods followed by floating periods. Lists can also step fixed coupons,
-spreads, or floating indices. Empty lists, non-coupon entries, and lists longer
-than the generated payment schedule are rejected. Python uses the same native coupon classes as stepped-coupon bonds.
-`OptionEmbeddedCoupon` accepts a native `PayoffOps` expression, such as
-`(2 * qs.PayoffOps.Index + 0.005).max(0.02).min(0.09)`. The expression evaluates
-the observed index; the coupon's separate spread is added afterward.
-Serialization preserves the complete expression tree.
+`with_coupons(Vec<CashflowType<T>>)` and Python accepts the corresponding
+`FixedRateCoupon`, `FloatingRateCoupon`, and `OptionEmbeddedCoupon` objects in
+`coupons=[...]`. The final supplied coupon repeats through maturity. For monthly
+payments, `[qs.FixedRateCoupon(rate=qs.InterestRate(rate=0.04))] * 12` followed
+by `[qs.FloatingRateCoupon(index=qs.MarketIndex.EURIBOR12m, spread=0.01)]`
+defines twelve fixed periods followed by floating periods. Lists can also step
+fixed coupons, spreads or floating indices. Empty lists, non-coupon entries and
+lists longer than the generated schedule are rejected. `OptionEmbeddedCoupon`
+accepts a native `PayoffOps` expression, such as `(2 * qs.PayoffOps.Index +
+0.005).max(0.02).min(0.09)`. The expression evaluates the observed index; the
+coupon's separate spread is added afterward. Serialization preserves the
+complete expression tree.
 
-## Contractual Principal
+## Contractual principal
 
 The builder computes principal before considering any prepayment function.
-For opening balance B, annual initial amortization rate r, and accrual interval k:
+For initial principal \\(B\\) and annual amortization rate \\(r\\), let
+\\(\tau_k\\) be the contractual day-count fraction and \\(B_f\\) the
+final balloon. With \\(B_{k-1}\\) the opening scheduled balance,
 
-```text
-tau[k] = day_counter.year_fraction(accrual_start[k], accrual_end[k])
-i[k] = r * tau[k]
-D[k] = product(1 / (1 + i[j]), j = 1..k)
-A = (B - final_balloon * D[n]) / sum(D[k], k = 1..n)
-interest[k] = opening_balance[k] * i[k]
-scheduled_principal[k] = A - interest[k]
-```
+\\[
+i_k=r\tau_k,\qquad
+D_k=\prod_{j=1}^{k}(1+i_j)^{-1},\qquad
+A=\frac{B-B_fD_n}{\sum_{k=1}^{n}D_k},
+\\]
+\\[
+I_k=B_{k-1}i_k,\qquad
+R_k=A-I_k.
+\\]
+
+Here \\(A\\) is the constant scheduled instalment, \\(I_k\\) interest and
+\\(R_k\\) scheduled principal.
 
 These annuity factors use contractual interest accrual; they are independent of
 market discount curves. Unequal intervals and final stubs use their own
-fractions. For equal monthly Thirty/360 intervals, a 100,000 principal, 6% coupon,
-and 360 payments produce an instalment of 599.550525. At zero interest and no
-balloon, the instalment is principal divided by the number of periods.
+fractions. If every contractual fraction is exactly \\(1/12\\), a 100,000
+principal, 6% coupon and 360 payments produce an instalment of 599.550525.
+This numerical example assumes equal accrual fractions. Actual schedule
+fractions depend on the payment dates and day counter. At zero interest and
+with no balloon, the instalment is principal divided by the number of periods.
 
 French and balloon loans whose first coupon is floating require an explicit initial
 all-in `amortization_rate`. The builder uses it to fix the principal schedule.
@@ -52,6 +64,9 @@ changing contractual coupon notionals or redemptions. Otherwise the first fixed
 coupon supplies the initial amortization rate for every principal period;
 later coupon steps do not automatically recast principal. Bullet loans repay
 principal at maturity.
+
+The following Rust fragment builds a floating mortgage; its market and trade
+are supplied by the surrounding application.
 
 ```rust,ignore
 use quantsupport::prelude::*;
@@ -79,7 +94,7 @@ pricer.set_discount_policy(Box::new(
 ));
 ```
 
-## Coupon Observation Requests
+## Coupon observation requests
 
 Payment frequency, reset frequency, and index tenor are independent.
 `RateIndexDetails::frequency()` defines the index observation frequency, separately
@@ -102,12 +117,13 @@ fixing is used when present and forecast otherwise. Future observations use the
 index curve and its quote convention. It installs fixings on a cloned leg,
 leaving the instrument unchanged.
 
-## Prepayment Functions
+## Prepayment functions
 
 A loan carries a `PrepaymentModel<DualFwd>` function independently of its
 contractual cashflows. `PrepaymentModelConfiguration::Cpr`, `CprCurve`, and
-`Refinancing` implement that function. The builder can also attach a custom
-function:
+`Refinancing` implement that function. For a builder already containing the
+contract terms, a custom function can be
+attached as in this Rust fragment:
 
 ```rust,ignore
 let loan = builder.with_custom_prepayment_model(
@@ -134,7 +150,7 @@ it as `refinancing_benchmark_rate()`, alongside `contractual_coupon_rate()` and
 `conditional_prepayment_probability()`. Native prepayment functions can retain
 AD dependencies on market rates without changing the cashflows' `f64` notionals.
 
-## Valuation and Cashflows
+## Valuation and cashflows
 
 `LoanPricer` implements the standard request handlers. `Request::Cashflows`
 uses `HandleCashflows` over projected legs containing existing cashflow variants:
@@ -180,20 +196,21 @@ and `from_json` serialize construction parameters. Typed definitions and their
 plain serialized dictionaries are both accepted. `loan.coupon_fixing_requests()` lists
 unique coupon observations for loading fixings; valuation belongs to the pricer.
 
-`qs.LoanPricer(refinancing_benchmark_index=qs.MarketIndex.EURIBOR12m)` selects the benchmark
-for a refinancing-incentive model. An optional `discount_policy` overrides the context's
-fixed-income policy. Loans carry their payment currency, while the policy selects
-the discount curve. The same contract can therefore be valued against ESTR,
-EURIBOR, or a funding curve by changing the policy. Native Rust valuation requires
-a configured policy. In Python, the default context policy maps its base currency
-to its base curve when no explicit fixed-income policy is supplied.
+`qs.LoanPricer(refinancing_benchmark_index=qs.MarketIndex.EURIBOR12m)` selects
+the benchmark for a refinancing-incentive model. An optional `discount_policy`
+overrides the context's fixed-income policy. Loans carry their payment currency,
+while the policy selects the discount curve. The same contract can therefore be
+valued against ESTR, EURIBOR, or a funding curve by changing the policy. Native
+Rust valuation requires a configured policy. In Python, the default context
+policy maps its base currency to its base curve when no explicit fixed-income
+policy is supplied.
 
 Sensitivities are derivatives with respect to labelled market pillars. Multiply
 a rate-quote derivative by 0.0001 for the first-order PV change from a one-basis-point
 increase. Native refinancing and survival weights participate in AD; contractual
 principal schedules stay fixed during market sensitivity calculations.
 
-## Fair Rate and Schedule Choice
+## Fair rate and schedule choice
 
 `FairRate` solves a fixed coupon or floating spread that makes receipt PV equal
 the PV of the original advance. It is defined at or before origination for
@@ -201,12 +218,12 @@ uniform fixed coupons or a uniform floating spread. Mixed, stepped, and bounded
 coupons require a specified adjustable segment and are currently rejected by
 `FairRate`; their Value, Cashflows, and Sensitivities requests remain supported.
 
-The pricer's `rebuild_amortization_for_fair_rate` parameter controls how solver trials treat
-principal. The default `false` preserves the already created amortization
-schedule. With `true`, each trial regenerates the builder's French, bullet, or
-balloon schedule using the candidate fixed coupon or the first observed index
-rate plus candidate spread. A custom leg needs explicit repayment metadata to
-use this mode. Neither mode changes the original instrument.
+The pricer's `rebuild_amortization_for_fair_rate` parameter controls how solver
+trials treat principal. The default `false` preserves the already created
+amortization schedule. With `true`, each trial regenerates the builder's French,
+bullet, or balloon schedule using the candidate fixed coupon or the first
+observed index rate plus candidate spread. A custom leg needs explicit repayment
+metadata to use this mode. Neither mode changes the original instrument.
 
 ```python
 preserve = qs.LoanPricer(rebuild_amortization_for_fair_rate=False)
@@ -216,12 +233,13 @@ with context:
     fair_with_new_amortization = rebuild.evaluate(trade=trade, context=context, requests=[qs.Request.FairRate]).fair_rate
 ```
 
-In Rust, use `LoanPricer::new().with_fair_rate_amortization_rebuild(true)` for rebuilding.
-The solver searches within [-5%, 50%], reducing the upper bound when a trial
-rate would produce invalid amortization. It reports unbracketed solutions as errors.
-To reprice a preserving-mode solution through the builder, retain the original
-initial amortization rate while changing the coupon/spread. To reprice a
-rebuilding-mode solution, use the candidate all-in rate for amortization.
+In Rust, use `LoanPricer::new().with_fair_rate_amortization_rebuild(true)` for
+rebuilding. The solver searches within [-5%, 50%], reducing the upper bound when
+a trial rate would produce invalid amortization. It reports unbracketed
+solutions as errors. To reprice a preserving-mode solution through the builder,
+retain the original initial amortization rate while changing the coupon/spread.
+To reprice a rebuilding-mode solution, use the candidate all-in rate for
+amortization.
 
 Runnable examples remain in their separate product directories:
 

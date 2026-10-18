@@ -1,83 +1,56 @@
-<!-- markdownlint-disable MD025 -->
-
 # Summary
 
-[Introduction](introduction.md)
+[QuantSupport](introduction.md)
 
-# Getting Started
+# Using the library
 
 - [Installation](getting-started/installation.md)
-- [Your First Swap](getting-started/first-swap.md)
-- [Rust API](getting-started/rust-api.md)
+- [A first valuation](getting-started/first-swap.md)
+- [Working in Rust](getting-started/rust-api.md)
+- [Working in Python](python/getting-started.md)
+- [Installing the Excel add-in](excel/installation.md)
+- [Working in Excel](excel/workbook.md)
+- [Historical valuation in Excel](excel/historical-pricing.md)
 
-# Core Concepts
+# Contracts and market state
 
-- [Architecture](concepts/architecture.md)
-- [Market Data](concepts/market-data.md)
-- [Pricing Context](concepts/pricing-context.md)
-- [Instruments and Trades](concepts/instruments.md)
+- [Cashflows, contracts and positions](concepts/instruments.md)
+- [Observations and historical markets](concepts/market-data.md)
+- [Constructing and querying a market](concepts/pricing-context.md)
 
-# Curves and Market Data
+# Market construction
 
-- [Yield Curves](curves/overview.md)
-- [Curve Bootstrapping](curves/bootstrapping.md)
-- [Multi-Curve Pricing](curves/multi-curve.md)
-- [Volatility Surfaces](curves/volatility.md)
+- [Discount factors and rate conventions](curves/overview.md)
+- [Calibration and dependent curves](curves/bootstrapping.md)
+- [Volatility markets and model calibration](curves/volatility.md)
 
-# Pricing
+# Valuation
 
-- [Pricing Overview](pricing/overview.md)
-- [Bond Pricing](pricing/bonds.md)
-- [Mortgage and Loan Payments](pricing/loans.md)
-- [Interest Rate Swaps](pricing/swaps.md)
-- [Cross-Currency Swaps](pricing/cross-currency.md)
-- [Caps and Floors](pricing/caps-floors.md)
-- [Swaptions](pricing/swaptions.md)
-- [FX and Equity Options](pricing/options.md)
+- [Swaps and discounted cashflows](pricing/swaps.md)
+- [Cross-currency contracts](pricing/cross-currency.md)
+- [Bonds and issuer optionality](pricing/bonds.md)
+- [Loans, prepayment and credit](pricing/loans.md)
+- [Interest-rate options](pricing/caps-floors.md)
+- [Equity and FX options](pricing/options.md)
 
 # Risk
 
-- [Automatic Differentiation](risk/aad.md)
-- [Market Quote Sensitivities](risk/sensitivities.md)
-- [Scenario Analysis](risk/scenarios.md)
+- [Differentiation and market sensitivities](risk/aad.md)
+- [Scenarios and full revaluation](risk/scenarios.md)
 
-# Scripting
+# Models and payoff programs
 
-- [Scripting Overview](scripting/overview.md)
-- [Script Language](scripting/language.md)
-- [Events and Scripted Products](scripting/events-products.md)
-- [Script Engine](scripting/engine.md)
-- [Scripted Products in XVA](scripting/xva.md)
+- [Stochastic models and simulation](simulation/monte-carlo.md)
+- [Dated payoff programs](scripting/language.md)
+- [Script valuation and claim integration](scripting/engine.md)
 
-# Models and Simulation
+# Exposure and valuation adjustments
 
-- [Monte Carlo](simulation/monte-carlo.md)
-- [Hull-White](simulation/hull-white.md)
-- [LGM](simulation/lgm.md)
-- [Exposure Simulation](simulation/exposure.md)
+- [Claims, exposure and the XVA engine](simulation/exposure.md)
+- [Netting and collateral](xva/netting-csa.md)
+- [Credit, funding and XVA risk](xva/cva-dva-fva.md)
 
-# XVA
+# Supporting material
 
-- [XVA Overview](xva/overview.md)
-- [Netting and CSA](xva/netting-csa.md)
-- [CVA, DVA and FVA](xva/cva-dva-fva.md)
-- [XVA Sensitivities](xva/sensitivities.md)
-
-# Python
-
-- [Python Getting Started](python/getting-started.md)
-- [Python API by Domain](python/api.md)
-
-# Excel
-
-- [Download and Install](excel/installation.md)
-- [Workbook Workflow](excel/workbook.md)
-- [Historical Pricing](excel/historical-pricing.md)
-- [Worksheet Function Reference](excel/reference.md)
-
-# Reference
-
-- [Configuration](reference/configuration.md)
-- [Examples](reference/examples.md)
-- [Binding Development](reference/bindings.md)
-- [Glossary](reference/glossary.md)
+- [Serializable configuration](reference/configuration.md)
+- [Executable reading route](reference/examples.md)

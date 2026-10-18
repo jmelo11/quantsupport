@@ -49,77 +49,31 @@ use crate::{
 /// will determine how to bootstrap each curve. It resolves dependencies between [`CurveConfiguration`].
 ///
 /// ## Parameters
-/// * `curve_specs`: the list of curve specifications to bootstrap. Each spec includes the market index, currency, day count convention, interpolation method, and the list of pillar instruments (identified by their quote IDs).
+/// * `curve_specs`: curve specifications containing the market index, day count,
+///   interpolation, extrapolation setting, and pillar quote identifiers.
 /// * `discount_policy`: the discount policy defines how to determine the discount curve for each instrument during bootstrapping, including handling of cross-currency instruments and collateralization. See [`BootstrapDiscountPolicy`] for details.
 ///
 /// ## Example
-/// ```ignore
+/// ```
 /// use quantsupport::prelude::*;
-/// use std::collections::HashMap;
 ///
-/// // We create a simple QuoteSelector that holds the market quotes in a HashMap.
-/// struct MapSelector {
-///     reference_date: Date,
-///     quotes: HashMap<String, f64>,
+/// let mut quotes = QuoteStore::new(Date::new(2024, 6, 3));
+/// let identifiers = ["FixedRateDeposit_USD_SOFR_3M", "FixedRateDeposit_USD_SOFR_6M"];
+/// for (identifier, rate) in identifiers.iter().zip([0.05, 0.051]) {
+///     quotes.add_quote(Quote::new(identifier.parse()?, QuoteLevels::with_mid(rate)));
 /// }
-///
-/// impl MapSelector {
-///     fn new(reference_date: Date) -> Self {
-///         Self {
-///             reference_date,
-///             quotes: HashMap::new(),
-///         }
-///     }
-///
-///     fn add(&mut self, id: &str, rate: f64) {
-///         self.quotes.insert(id.to_string(), rate);
-///     }
-/// }
-///
-/// impl QuoteSelector for MapSelector {
-///         fn select(&self, identifier: &str) -> Option<Quote> {
-///             let rate = self.quotes.get(identifier)?;
-///             let det: QuoteDetails = identifier.parse().ok()?;
-///             let q = Quote::new(det, QuoteLevels::with_mid(*rate));
-///             if q.build_instrument(self.reference_date, Level::Mid, None).is_ok() {
-///                 Some(q)
-///             } else {
-///                 None
-///             }
-///         }
-///         fn reference_date(&self) -> Date {
-///             self.reference_date
-///         }
-///     }
-///
-/// // We pass the market data to the selector
-/// let rd = Date::new(2024, 6, 1);
-/// let mut selector = MapSelector::new(rd);
-/// selector.add("FixedRateDeposit_USD_SOFR_3M", 0.05);
-/// selector.add("FixedRateDeposit_USD_SOFR_6M", 0.051);
-/// selector.add("OIS_USD_SOFR_1Y", 0.048);
-/// selector.add("OIS_USD_SOFR_2Y", 0.045);
-///
-/// // We configure a single curve for the SOFR index, with 4 pillars.
 /// let spec = CurveConfiguration::new(
 ///     MarketIndex::SOFR,
-///     Currency::USD,
 ///     DayCounter::Actual360,
 ///     Interpolator::LogLinear,
 ///     true,
-///     vec![
-///         "FixedRateDeposit_USD_SOFR_3M".into(),
-///         "FixedRateDeposit_USD_SOFR_6M".into(),
-///         "OIS_USD_SOFR_1Y".into(),
-///         "OIS_USD_SOFR_2Y".into(),
-///     ],
+///     identifiers.iter().map(|id| id.to_string()).collect(),
 /// );
-///
-/// // Setup the discount policy and bootstrap.
 /// let policy = BootstrapDiscountPolicy::new(MarketIndex::SOFR, Currency::USD);
 /// let bootstrapper = MultiCurveBootstrapper::new(vec![spec], policy);
-/// let result = bootstrapper.bootstrap(&selector, Level::Mid);
-/// assert!(result.is_ok(), "Bootstrap failed: {:?}", result.err());
+/// let curves = bootstrapper.bootstrap(&quotes, Level::Mid)?;
+/// assert!(curves.contains_key(&MarketIndex::SOFR));
+/// # Ok::<(), quantsupport::utils::errors::QSError>(())
 /// ```
 pub struct MultiCurveBootstrapper<'a> {
     curve_specs: Vec<CurveConfiguration>,

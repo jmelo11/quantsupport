@@ -9,10 +9,6 @@ use crate::ad::blocklist::BlockList;
 use crate::utils::errors::Result;
 use crate::{ad::node::TapeNode, utils::errors::QSError};
 
-// ---------------------------------------------------------------------------
-// TapeHolder — the trait that links an inner scalar to its thread-local tape
-// ---------------------------------------------------------------------------
-
 /// Trait implemented by types that can serve as the inner scalar of a
 /// [`Dual`](crate::ad::dual::Dual).
 ///
@@ -25,16 +21,13 @@ pub trait TapeHolder:
     fn with_tape<R>(f: impl FnOnce(&mut Tape<Self>) -> R) -> R;
 }
 
-// ---------------------------------------------------------------------------
-// Tape<T>
-// ---------------------------------------------------------------------------
-
 /// A tape holding all recorded nodes for reverse-mode differentiation.
 ///
 /// The tape is implemented as a bump arena for efficient allocation and
 /// deallocation of nodes, and a book (vector) of pointers to the nodes for
-/// indexing and propagation.  The tape supports marking and rewinding to
-/// enable nested operations without interference.
+/// indexing and propagation. A single reusable mark separates persistent
+/// model state from temporary path operations. Rewinding invalidates pointers
+/// to discarded nodes; callers must not retain or use AD values for those nodes.
 ///
 /// The default type parameter `T = f64` preserves backward compatibility:
 /// `Tape` (without turbofish) is `Tape<f64>`.
@@ -48,8 +41,6 @@ pub struct Tape<T = f64> {
     /// Whether the tape is currently recording.
     pub active: bool,
 }
-
-// -- Generic methods (work for any TapeHolder T) -----------------------------
 
 impl<T: TapeHolder> Tape<T> {
     /// Creates an empty tape with recording disabled.
@@ -164,6 +155,8 @@ impl<T: TapeHolder> Tape<T> {
     // -- Generic static conveniences (work for any TapeHolder T) ------------
 
     /// Clears the thread-local tape for `T` and begins recording.
+    ///
+    /// All node pointers from the previous recording become invalid.
     pub fn start_recording_for() {
         T::with_tape(Self::start_inner);
     }
@@ -195,10 +188,6 @@ impl<T: TapeHolder> Default for Tape<T> {
     }
 }
 
-// ---------------------------------------------------------------------------
-// f64 TapeHolder + Tape<f64> static methods  (backward compat)
-// ---------------------------------------------------------------------------
-
 impl TapeHolder for f64 {
     fn with_tape<R>(f: impl FnOnce(&mut Tape<Self>) -> R) -> R {
         TAPE.with(|tc| {
@@ -224,6 +213,8 @@ thread_local! {
 /// `Tape::stop_recording()`, etc. continue to work without turbofish.
 impl Tape<f64> {
     /// Clears the tape and begins recording nodes in the thread-local tape.
+    ///
+    /// All node pointers from the previous recording become invalid.
     pub fn start_recording() {
         TAPE.with(|tc| tc.borrow_mut().start_inner());
     }

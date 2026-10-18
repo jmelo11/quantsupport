@@ -20,7 +20,9 @@ use crate::{
     utils::errors::{QSError, Result},
 };
 
-/// Builder for fixed versus daily-compounded overnight swaps without principal exchanges.
+/// Builder for fixed versus overnight swaps without principal exchanges.
+///
+/// Overnight conventions select daily compounding or simple averaging.
 pub struct MakeOvernightIndexSwap<T: Scalar> {
     index: MarketIndex,
     reference_date: Date,

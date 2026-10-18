@@ -44,11 +44,18 @@ where
 
     /// Calculates the discount factor for a given year fraction from the reference date.
     ///
+    /// Times must use the curve's day-count convention.
+    ///
     /// # Errors
     /// Returns an error if the discount factor cannot be computed for the given time.
     fn discount_factor_from_time(&self, t: f64) -> Result<T>;
 
     /// Calculates the forward rate between two year fractions.
+    ///
+    /// Times use the curve's reference date and day count. The supplied curve
+    /// implementations return the simple annualized rate
+    /// `(DF(start) / DF(end) - 1) / (end - start)`, using a short finite
+    /// interval when the endpoints coincide; no compounding convention is selected here.
     ///
     /// # Errors
     /// Returns an error if the forward rate cannot be computed for the given time interval.

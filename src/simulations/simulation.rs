@@ -13,10 +13,12 @@ where
     fn path(&self) -> &Matrix<T>;
     /// Returns the number of simulated paths in the Monte Carlo simulation.
     fn n_paths(&self) -> i64;
-    /// Returns the number of simulation dates in the Monte Carlo simulation.
+    /// Returns the simulation date grid.
     fn dates(&self) -> &[Date];
     /// Returns the time step (dt) used in the Monte Carlo simulation, which is typically the
     /// time interval between simulation dates expressed in years.
+    /// Materialized simulations built by `SimulationBuilder` return the
+    /// average grid step; individual date intervals can differ.
     fn dt(&self) -> f64;
     /// Returns the market index associated with the Monte Carlo simulation, which is used to determine
     /// the underlying asset for the simulation.

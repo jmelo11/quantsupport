@@ -16,6 +16,10 @@ use std::collections::{BTreeMap, BTreeSet};
 
 /// Stateless builder that constructs [`InterpolatedVolatilitySurface`]
 /// instances from [`VolatilitySurfaceConfiguration`] specs and a quote store.
+///
+/// Node coordinates use `quote.strike().resolve(0.0)`: ATM maps to zero and
+/// relative strikes to their payload. No forward-dependent coordinate
+/// conversion is performed from the configured smile metadata.
 pub struct VolatilitySurfaceBuilder {
     specs: Vec<VolatilitySurfaceConfiguration>,
 }

@@ -1,11 +1,13 @@
 use crate::{currencies::currency::Currency, time::date::Date};
 
-/// Request for an FX rate involving one or two currencies.
+/// Coordinates for an FX observation; interpretation belongs to the consumer.
 ///
-/// - **Two currencies** (`base` + `quote`): explicit pair (e.g. USD/EUR for an FX forward).
-///   The context will triangulate to the reporting currency if needed.
-/// - **One currency** (`base` only, `quote = None`): the cashflow pays in `base`.
-///   The context resolves the conversion to the reporting currency.
+/// An explicit pair requests quote-currency units per one base-currency unit.
+/// [`PricingContext`](crate::core::pricingcontext::PricingContext) resolves
+/// such pairs from its spot FX store, including available triangulation paths.
+/// It does not use [`Self::date`] to construct a forward FX rate and does not
+/// resolve single-currency requests. A simulation model may instead interpret
+/// the date and a single currency relative to its own domestic currency.
 #[derive(Clone)]
 pub struct FxRequest {
     base: Currency,
@@ -14,8 +16,9 @@ pub struct FxRequest {
 }
 
 impl FxRequest {
-    /// Creates a new [`FxRequest`] with a single currency.
-    /// The context will resolve conversion to the reporting currency.
+    /// Creates a single-currency request for consumers with a domestic currency.
+    ///
+    /// A pricing context alone does not resolve this form.
     #[must_use]
     pub const fn single(base: Currency) -> Self {
         Self {
@@ -25,8 +28,7 @@ impl FxRequest {
         }
     }
 
-    /// Creates a new [`FxRequest`] with an explicit base/quote pair.
-    /// The context will triangulate both to the reporting currency.
+    /// Requests quote-currency units per base-currency unit.
     #[must_use]
     pub const fn pair(base: Currency, quote: Currency) -> Self {
         Self {
@@ -36,7 +38,9 @@ impl FxRequest {
         }
     }
 
-    /// Sets the request date, if any.
+    /// Sets an observation date for model-backed consumers.
+    ///
+    /// The pricing context's spot-store resolution ignores this date.
     #[must_use]
     pub const fn with_date(mut self, date: Date) -> Self {
         self.date = Some(date);

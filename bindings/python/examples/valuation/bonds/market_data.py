@@ -21,8 +21,8 @@ class MarketInputs:
     """Unconstructed inputs; a PricingContext turns them into market objects."""
 
     quotes: qs.QuoteStore
-    curves: list
-    volatility_surfaces: list
+    curves: list[qs.CurveConfiguration]
+    volatility_surfaces: list[qs.VolatilitySurfaceConfiguration]
     csa_policy: qs.SingleCurveCSADiscountPolicy
 
 
@@ -36,7 +36,6 @@ def load_market():
         ),
         csa_policy=qs.SingleCurveCSADiscountPolicy(qs.Currency.USD, qs.MarketIndex.SOFR),
     )
-
 
 
 def load_pricers(filename):

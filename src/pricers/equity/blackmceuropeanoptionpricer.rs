@@ -46,6 +46,12 @@ impl PricerState for MonteCarloState {
 /// from a model configuration, e.g. Brownian motion with a constant or
 /// surface-implied volatility) and averages the discounted payoff over the
 /// simulated spot levels at the simulation date closest to expiry.
+/// The strike for ATM/relative specifications is resolved from the mean
+/// terminal spot. Discounting still uses the exact expiry date.
+///
+/// Sensitivities report discount-curve pillars only. Materialized paths do
+/// not retain derivatives through spot, model volatility, or calibration;
+/// storing them as `DualFwd` does not provide those risks.
 ///
 /// When a [`DiscountPolicy`] is set, the pricer uses the CSA discount curve
 /// for payment discounting instead of the instrument's `market_index` curve.

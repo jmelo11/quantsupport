@@ -5,6 +5,10 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_run:
+    workflows: [Release]
+    branches: [main]
+    types: [completed]
   workflow_dispatch:
 
 permissions:
@@ -16,6 +20,7 @@ concurrency:
 
 jobs:
   build:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
@@ -28,6 +33,12 @@ jobs:
           python-version: '3.12'
       - name: Install binding documentation dependencies
         run: python -m pip install -r docs/requirements.txt
+      - name: Install checkout Python bindings for guide examples
+        run: python -m pip install ./bindings/python
+      - name: Test notebook kernel selection and execution
+        run: python -m unittest discover -s bindings/python/examples -p test_run_notebooks.py -v
+      - name: Test Book structure and navigation
+        run: python -m unittest discover -s book/tests -v
       - name: Test binding reference generation
         run: python -m unittest discover -s docs/tests -v
       - name: Install mdBook
@@ -38,8 +49,19 @@ jobs:
         run: mdbook-mermaid install .
       - name: Build book
         run: mdbook build
+      - name: Test Rust Book examples
+        run: python book/test_rust.py
+      - name: Check Rust API reference
+        run: RUSTDOCFLAGS='-D warnings' cargo doc -p quantsupport --no-deps
       - name: Build API reference
         run: sphinx-build -W -b html docs book/html/api
+      - name: Stage Excel downloads
+        run: |
+          mkdir -p book/html/downloads
+          gh release download --repo "$GITHUB_REPOSITORY" --pattern quantsupport.xll --dir book/html/downloads
+          cp bindings/excel/examples/*.xlsx book/html/downloads/
+        env:
+          GH_TOKEN: ${{ github.token }}
       - name: Configure Pages
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         uses: actions/configure-pages@v5

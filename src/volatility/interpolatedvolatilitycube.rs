@@ -29,6 +29,9 @@ type CubeMap<T> = BTreeMap<Period, BTreeMap<Period, BTreeMap<F64Key, T>>>;
 /// and expiry interpolation. Slices may have different inner grids.
 /// Out-of-range queries are rejected unless [`Self::with_extrapolation_policy`]
 /// selects flat extrapolation.
+/// Interpolation is linear in volatility, not total variance. Expiry and tenor
+/// coordinates use `Period::period_in_year`; date expiries use calendar days/365.
+/// Smile-axis metadata does not convert the supplied numeric keys.
 #[derive(Clone)]
 pub struct InterpolatedVolatilityCube<T: Scalar> {
     reference_date: Date,

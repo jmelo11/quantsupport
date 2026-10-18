@@ -1,6 +1,7 @@
 # Hull–White simulations
 
-Scope: calibrated rate models and simulation results, corresponding to the Rust
+The simulation study calibrates a Gaussian short-rate model, generates paths
+and examines their distribution and sampling precision. It follows the Rust
 [`hullwhite`](../../../../examples/hullwhite) examples.
 
 | Example | Financial question | Library concepts |
@@ -9,6 +10,12 @@ Scope: calibrated rate models and simulation results, corresponding to the Rust
 
 [data/simulation.json](data/simulation.json) contains the model assignment,
 calibration source, and path-generation settings explained in the notebook.
+
+The study reports calibration diagnostics and distinguishes Black quote
+volatility from absolute model sigma. It reconstructs Gaussian mean/variance
+recursions, checks repeated seeds, and separates sampling error from Euler
+time-grid bias. Positive mean reversion is required here. Exported numerical
+paths have no quote-risk pillars and are not differentiated exposure paths.
 
 The notebook imports its local [market_data.py](market_data.py) directly.
 

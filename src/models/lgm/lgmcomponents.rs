@@ -15,7 +15,9 @@
 //!
 //! The Gaussian state follows `dz(t) = alpha(t) dW(t)` under the LGM numeraire
 //! measure and starts at `z(0) = 0`. The short rate is obtained from
-//! `r(t) = f(0,t) + H'(t) * (H(t) * zeta(t) + z(t))`. Bond prices combine this
+//! `r(t) = g(0,t) + H'(t) * (H(t) * zeta(t) + z(t))`, where `g(0,t)` is
+//! the curve's `forward_rate_from_time(0,t)` result (generally a simple
+//! period forward, not the initial instantaneous forward). Bond prices combine this
 //! state with the initial curve, giving an exact time-zero fit for every
 //! `lambda` and `sigma`.
 //!
@@ -140,6 +142,8 @@ impl<'a> LgmRateModel<'a, f64> {
     /// piecewise-constant sigma schedule is transferred to the LGM model.
     /// Market Black or normal volatilities define instrument-price calibration
     /// targets, and calibration solves the corresponding LGM sigma values.
+    /// The shared calibrator fits constant sigma separately for each instrument;
+    /// the transferred schedule is not a joint forward-sigma bootstrap.
     ///
     /// # Arguments
     ///
@@ -384,7 +388,7 @@ impl<T: Scalar> LgmRateModel<'_, T> {
         Ok(exponent.exp().div_val(p0_t))
     }
 
-    /// Computes the instantaneous forward rate `f(t, maturity | z_t)`.
+    /// Computes the implemented LGM forward-rate expression.
     ///
     /// # Arguments
     ///
@@ -392,8 +396,10 @@ impl<T: Scalar> LgmRateModel<'_, T> {
     /// - `T` — forward maturity time in the same convention.
     /// - `z_t` — Gaussian LGM state at `t`.
     ///
-    /// The initial curve supplies `f(0, T)`; the remaining terms apply the
-    /// stochastic LGM displacement.
+    /// The initial term is `curve.forward_rate_from_time(0, T)`, generally a
+    /// simple forward over `[0, T]`, plus `H_dot(T) * (H(T)*zeta(t) + z_t)`.
+    /// Thus this is not generally the maturity derivative of the model's
+    /// log discount factor, despite the method's instantaneous-rate name.
     ///
     /// # Errors
     /// Returns an error if forward rate lookup fails.
@@ -693,8 +699,9 @@ impl<T: Scalar> LgmFxModel<'_, T> {
 /// replaced by the dividend yield `q`: under the domestic measure the spot
 /// drift is `rho·α₀·H₀·σ + r_dom(t) − q`.
 ///
-/// `vol` and `dividend_yield` are continuously compounded annualized decimals.
-/// The spot remains positive because it is advanced with log-Euler steps.
+/// `vol` is decimal lognormal volatility per square-root year;
+/// `dividend_yield` is a continuously compounded annual decimal rate.
+/// Positive input spots remain positive under finite log-Euler steps.
 pub struct LgmEquityModel<'a, T: Scalar> {
     domestic: &'a LgmRateModel<'a, T>,
     vol: T,

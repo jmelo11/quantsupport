@@ -1,14 +1,19 @@
 # Bootstrap
 
-Scope: quote inputs, curve configurations, and constructed discount/forward
-curves, corresponding to the Rust [`bootstrap`](../../../../examples/bootstrap)
-examples.
+This example constructs discount factors and forwards from deposit and
+OIS quotes, then checks deposit repricing and the forward-rate identity.
+It follows the Rust [`bootstrap`](../../../../examples/bootstrap) examples.
 
 | Example | Financial question | Library concepts |
 | --- | --- | --- |
 | [curves.ipynb](curves.ipynb) | How do deposit/OIS quotes become discount factors and forward rates? | QuoteStore, CurveConfiguration, MarketIndex, context lifecycle, nodes and pillars |
 
 The notebook imports its local [market_data.py](market_data.py) directly.
+
+Independent checks reprice the short deposit and recover a simple forward from
+two discount factors. The resulting zero-rate table distinguishes zero rates
+from par market quotes; positive-rate discount-factor behavior is identified
+as snapshot-specific, not a universal restriction.
 
 Follow the [shared setup](../README.md#install-and-run), then open the notebook
 in a fresh kernel. Run this scope from the repository root with:

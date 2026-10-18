@@ -1,7 +1,8 @@
 # Scripting
 
-Scope: dated payoff events and native/scripted comparisons, corresponding to
-the Rust [`scripting`](../../../../examples/scripting) examples.
+The scripting study expresses caplet and note payments as dated payoff events,
+then compares matching native and scripted representations. It follows the
+Rust [`scripting`](../../../../examples/scripting) examples.
 
 | Example | Financial question | Library concepts |
 | --- | --- | --- |
@@ -11,6 +12,12 @@ the Rust [`scripting`](../../../../examples/scripting) examples.
 tutorial's six-year semiannual note. It omits issuer exercise; the
 [callable-bond example](../valuation/bonds/stepped_coupon_bond.ipynb) explains that
 separate valuation problem.
+
+The notebook verifies deterministic native/scripted equivalence at matching
+assumptions and reports repeated-seed stochastic estimates. The selected
+result variable may use a fitted martingale control; raw payment PV sums are
+not an exact finite-path identity for the adjusted result. Other returned
+variables, such as observed rates, are not necessarily PVs.
 
 The notebook imports its local [market_data.py](market_data.py) directly.
 

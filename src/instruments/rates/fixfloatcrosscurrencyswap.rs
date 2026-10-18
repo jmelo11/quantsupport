@@ -15,9 +15,8 @@ use crate::{
 
 /// A [`FixFloatCrossCurrencySwap`] represents a swap with legs in different currencies.
 ///
-/// Typically one leg pays a fixed (or floating) rate in one currency while the
-/// other pays a floating (or fixed) rate in a second currency, with notional exchanges at
-/// inception and maturity.
+/// The domestic leg is fixed and the foreign leg is floating, with principal
+/// exchanges according to the supplied legs.
 #[derive(Clone)]
 pub struct FixFloatCrossCurrencySwap<T: Scalar> {
     identifier: String,
@@ -77,7 +76,7 @@ where
         self.foreign_currency
     }
 
-    /// Returns the domestic market index.
+    /// Returns the foreign floating leg's forward-rate index.
     #[must_use]
     pub fn forward_index(&self) -> MarketIndex {
         self.forward_index.clone()

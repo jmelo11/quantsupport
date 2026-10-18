@@ -1,11 +1,19 @@
 //! Combined market shocks applied through an independent, request-driven view.
 //!
-//! A shock target matches an exact identifier or an underscore-separated set of
-//! identifier segments. For example, `EURIBOR12m` selects its deposit and swap
-//! quotes. Explicit zero-rate pillars use `<index>_<date>` labels; `FUNDINGSPREAD`
-//! selects every pillar of that spread curve. Absolute changes use decimal units
-//! (`0.01` means 100 bp). Relative changes multiply by `1 + value`. Overlapping
-//! shocks compose in their supplied order.
+//! A shock target first checks identifier equality, then falls back to
+//! case-sensitive, underscore-separated token membership. Every target token
+//! must occur in the identifier, but token order and multiplicity are ignored.
+//! Supplying a full identifier does not restrict matching to that exact quote:
+//! a repeated `3M` tenor/expiry token can also match a `3M`/`6M` identifier.
+//! For example, `EURIBOR12m` selects its deposit and swap quotes.
+//! Explicit zero-rate pillars use `<index>_<date>` labels; `FUNDINGSPREAD`
+//! selects every pillar of that spread curve. Absolute changes use native input
+//! units: `0.01` means 100 bp for decimal rates, but is a price-point change
+//! for futures or a raw FX-point change for FX points. Relative changes
+//! multiply by `1 + value`. Overlapping
+//! shocks compose in their supplied order without deduplication. One shock per
+//! full identifier can therefore bump a quote repeatedly when token sets
+//! overlap; use one family selector when a single family-wide bump is intended.
 //!
 //! ```
 //! use quantsupport::prelude::*;
@@ -52,15 +60,15 @@ impl FromStr for ScenarioType {
 
 /// A shock targeting quoted inputs or explicit zero-rate pillars.
 ///
-/// The `target` selects the quotes to shock: either a full quote identifier
-/// or a partial underscore-separated selector matched segment-wise against
-/// each quote identifier (see the [module documentation](self)).
+/// The `target` is an underscore-token selector, even when it contains a full
+/// quote identifier. Exact equality succeeds immediately; otherwise matching
+/// ignores token order and multiplicity (see the [module documentation](self)).
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Shock {
-    /// Quote identifier or partial (segment) selector.
+    /// Underscore-token selector; a full identifier is not an exact-only selector.
     target: String,
-    /// Shock size (in rate/vol units for absolute, fraction for relative).
+    /// Shock size: native input units for absolute, fraction for relative.
     value: f64,
     /// How the shock is applied.
     #[serde(rename = "type")]
@@ -78,7 +86,7 @@ impl Shock {
         }
     }
 
-    /// Returns the target selector.
+    /// Returns the underscore-token selector, which has no exact-only mode.
     #[must_use]
     pub fn target(&self) -> &str {
         &self.target
@@ -98,9 +106,31 @@ impl Shock {
 
     /// Returns `true` if the scenario targets the given quote identifier.
     ///
-    /// A quote matches when every underscore-separated segment of the target
-    /// appears among the underscore-separated segments of the identifier
-    /// (exact identifiers therefore always match themselves).
+    /// Exact string equality succeeds first. Otherwise every underscore-separated
+    /// target token must occur in the identifier, case-sensitively. Order and
+    /// repeated-token counts are ignored, so a full identifier can match other
+    /// identifiers too. Overlapping shocks are applied separately, not deduplicated.
+    ///
+    /// ```
+    /// use quantsupport::quotes::{
+    ///     quote::{Quote, QuoteDetails, QuoteLevels},
+    ///     scenario::{Scenario, ScenarioType, Shock},
+    /// };
+    ///
+    /// let short = "CapletFloorlet_USD_TermSOFR3m_3M_3M_Absolute_0.010_Straddle_Black";
+    /// let longer = "CapletFloorlet_USD_TermSOFR3m_3M_6M_Absolute_0.010_Straddle_Black";
+    /// let short_shock = Shock::new(short, 0.01, ScenarioType::Absolute);
+    /// assert!(short_shock.matches(short));
+    /// assert!(short_shock.matches(longer)); // One `3M` satisfies both target tokens.
+    /// let quote = Quote::new(longer.parse::<QuoteDetails>()?, QuoteLevels::with_mid(0.20));
+    /// let scenario = Scenario::new(vec![
+    ///     short_shock,
+    ///     Shock::new(longer, 0.01, ScenarioType::Absolute),
+    /// ]);
+    /// let shocked = scenario.shock_quote(&quote);
+    /// assert!((shocked.levels().mid().unwrap() - 0.22).abs() < 1e-12);
+    /// # Ok::<(), quantsupport::utils::errors::QSError>(())
+    /// ```
     #[must_use]
     pub fn matches(&self, identifier: &str) -> bool {
         if self.target == identifier {

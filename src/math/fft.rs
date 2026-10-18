@@ -1,7 +1,8 @@
 //! Radix-2 Cooley–Tukey Fast Fourier Transform (forward DFT).
 //!
 //! Operates **in-place** on slices of [`Complex<T>`] whose length
-//! is a power of two.  The scalar `T` must implement [`Scalar`].
+//! is a power of two, with empty and singleton slices accepted as no-ops.
+//! The scalar `T` must implement [`Scalar`].
 //!
 //! # Example
 //! ```
@@ -100,15 +101,18 @@ impl<T: Scalar> std::ops::Mul<T> for Complex<T> {
 
 /// Computes the forward DFT in-place using the Cooley–Tukey radix-2 algorithm.
 ///
-/// `data.len()` **must** be a power of two.
+/// Lengths greater than one must be powers of two. Empty and singleton slices are no-ops.
 ///
 /// # Errors
-/// Returns [`QSError::InvalidValueErr`] when the length is not a power of two.
+/// Returns [`QSError::InvalidValueErr`] when a length greater than one is not a power of two.
 pub fn fft<T: Scalar>(data: &mut [Complex<T>]) -> Result<()> {
     fft_core(data, true)
 }
 
 /// Shared core for forward / inverse FFT.
+///
+/// `forward = false` selects the inverse sign but does not normalize by length;
+/// [`ifft`](crate::math::ifft::ifft) performs that normalization.
 ///
 /// # Errors
 /// Returns an error when a length greater than one is not a power of two.

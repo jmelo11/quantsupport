@@ -3,10 +3,6 @@
 use core::fmt;
 use std::ops::{Add, AddAssign, Div, Mul, MulAssign, Neg, Sub, SubAssign};
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Scalar trait  (replaces the old IsReal)
-// ═══════════════════════════════════════════════════════════════════════════
-
 /// Trait unifying plain `f64`, [`ADForward`](super::forward::ADForward), and
 /// [`Dual<T>`](super::dual::Dual) so that pricing / math code can be written
 /// generically over the scalar type.
@@ -94,8 +90,6 @@ pub trait Scalar:
 pub trait IsReal: Scalar {}
 impl<T: Scalar> IsReal for T {}
 
-// -- Scalar impl for f64 ----------------------------------------------------
-
 impl Scalar for f64 {
     #[inline]
     fn scalar(v: f64) -> Self {
@@ -174,10 +168,6 @@ impl Scalar for f64 {
         -self
     }
 }
-
-// ═══════════════════════════════════════════════════════════════════════════
-//  InnerScalar — Scalar + arithmetic ops (only f64 and ADForward)
-// ═══════════════════════════════════════════════════════════════════════════
 
 /// A [`Scalar`] that also supports the standard arithmetic operators.
 ///

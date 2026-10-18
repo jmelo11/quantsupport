@@ -168,7 +168,9 @@ pub enum ModelConfiguration {
     Lgm {
         /// Mean-reversion speed in inverse years. Larger positive values
         /// reduce the effect of a factor shock on distant maturities. Zero is
-        /// supported and selects the non-mean-reverting limit.
+        /// supported by the direct LGM dynamics and selects the non-mean-reverting
+        /// limit. Calibration delegates to Hull-White formulas and does not
+        /// provide the same zero-mean-reversion guarantee.
         lambda: f64,
         /// Short-rate volatility supplied directly or fitted to option prices.
         parameter_source: GaussianRateParameterSource,

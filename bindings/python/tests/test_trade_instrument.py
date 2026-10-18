@@ -83,6 +83,29 @@ class TradeInstrumentTests(unittest.TestCase):
         self.assertIsInstance(instrument, qs.Instrument)
         self.assertIsInstance(half_short, qs.Trade)
 
+    def test_swap_cashflows_are_signed_and_scale_with_position(self):
+        instrument = self.make_swap()
+        long = qs.Trade(instrument, "2026-02-24")
+        short = qs.Trade(instrument, "2026-02-24", "PayShort", notional=500_000)
+        zero = qs.Trade(instrument, "2026-02-24", notional=0.0)
+        with self.make_context() as context:
+            result = context.evaluate(long, ["Cashflows", "Value"])
+            table = result.cashflows
+            curve = context.curve("SOFR")
+            reported_pv = sum(row.amount * curve.discount_factor(row.payment_date)
+                              for row in table.itertuples(index=False))
+            self.assertAlmostEqual(reported_pv, result.price, places=7)
+            for row in table.itertuples(index=False):
+                receipt = (row.leg_index == 0) != (row.type == "Disbursement")
+                self.assertEqual(row.amount > 0, receipt)
+            short_table = context.evaluate(short, ["Cashflows"]).cashflows
+            self.assertEqual(len(short_table), len(table))
+            for amount, short_amount in zip(table.amount, short_table.amount):
+                self.assertAlmostEqual(short_amount, -0.5 * amount, places=7)
+            zero_table = context.evaluate(zero, ["Cashflows"]).cashflows
+            self.assertTrue((zero_table.amount == 0.0).all())
+        self.assertEqual(instrument.notional, 1_000_000)
+
     def test_swaptions_use_shared_surface_and_cube_calibration(self):
         date = qs.Date(2026, 2, 24)
         option = qs.EuropeanSwaption("CALIBRATED", date + "30M", date + "90M",

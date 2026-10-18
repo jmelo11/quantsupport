@@ -1,71 +1,92 @@
-# CVA, DVA and FVA
+# Credit, funding and XVA risk
 
-Exposure profiles become valuation adjustments after they are combined with default, recovery, funding, and discount information. QuantSupport implements this final integration through aggregators in `src/xva/aggregator.rs`. Each aggregator consumes the netted `NpvCube`, returns one measure, and preserves automatic-differentiation adjoints. This chapter defines the measures, explains their input factories, and shows how to read the results.
+Credit and funding adjustments combine future exposure with counterparty,
+own-credit or funding assumptions. QuantSupport first generates market paths
+and values the portfolio, then applies a measure-specific aggregator to each
+path. Netting and variation margin determine the exposure supplied to that
+aggregator.
 
-## Definitions
+The formulas below describe the implemented integration and the inputs held
+fixed when its sensitivities are calculated.
 
-Let \\(V\_k^p\\) be netted NPV on path \\(p\\) at grid date \\(t\_k\\), let \\(n\\) be the path count, and let \\(P(0,t\_k)\\) be the system discount factor. Expected positive and negative exposure are
+Let \\(U_{p,k}\\) be exposure after the netting/collateral rules applied for
+the adjustment, \\(D_k\\) the numerical system discount factor, and
+\\(\Delta t_k\\) the ACT/365 year fraction between consecutive grid dates.
+The implemented integration uses right-endpoint exposure.
+
+## CVA and DVA
+
+For counterparty survival \\(Q_k\\) and recovery \\(R\\),
 
 \\[
-\\text{EPE}\_k=\\frac1n\\sum\_p \\max(V\_k^p,0),\\qquad
-\\text{ENE}\_k=\\frac1n\\sum\_p \\min(V\_k^p,0).
+\mathrm{CVA}=(1-R)\frac1n
+\sum_p\sum_{k=1}^{m}D_k\max(U_{p,k},0)(Q_{k-1}-Q_k).
 \\]
 
-The aggregators apply these profiles to the following discrete-time formulas:
+Flat spread \\(s\\) is converted to hazard \\(\lambda=s/(1-R)\\), then
+\\(Q(t)=e^{-\lambda t}\\). With a credit curve, survival comes from
+log-linear survival interpolation and the implemented terminal hazard
+continuation. A credit spread is not interchangeable with hazard, and recovery
+can affect both the flat hazard and the loss multiplier.
 
-| Aggregator                   | Formula                                                                                                           | Economic inputs                                                        |
-| ---------------------------- | ----------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
-| `CvaAggregator { lgd, ... }` | \\(\\text{CVA}=\\text{LGD}\\sum\_k P(0,t\_k)\\,\\text{EPE}\_k\\,[S(t\_{k-1})-S(t\_k)]\\)                                  | counterparty survival \\(S\\) and loss given default                    |
-| `DvaAggregator`              | \\(\\text{DVA}=\\text{LGD}\_{own}\\sum\_k P(0,t\_k)\\,(-\\text{ENE}\_k)\\,[S\_{own}(t\_{k-1})-S\_{own}(t\_k)]\\)             | own survival curve and own loss given default                          |
-| `FvaAggregator`              | \\(\\text{FVA}=\\sum\_k P(0,t\_k)\\,\\text{EPE}\_k\\,s\_f(t\_k)\\,\\Delta t\_k\\)                                         | funding spread \\(s\_f\\) as a flat value or term structure             |
+DVA uses own-credit survival/recovery and \\(\max(-U,0)\\). It therefore
+turns a negative exposure into a positive own-default benefit measure.
+`DvaAggregator` and its factory are lower-level facilities. `XvaEngine::run`
+automatically constructs CVA and FVA, not a fully specified bilateral
+CVA/DVA model.
 
-CVA weights positive exposure by the counterparty default probability over each interval and by the loss incurred at default. DVA applies the corresponding own-credit logic to negative exposure. FVA integrates positive funding needs against the applicable spread.
+The aggregators produce named measures; they do not prescribe a universal
+accounting sign for adding/subtracting those measures from a clean price.
+State that convention at the application boundary.
 
-For a flat credit spread, survival is \\(S(t)=e^{-\\lambda t}\\), where \\(\\lambda\\) is `credit_spread`. When `credit_index` is configured, `CreditCurveCvaFactory` obtains survival probabilities from the bootstrapped credit curve. Exposure is calculated after netting and currency conversion, so the CSA policy directly influences every measure.
+## Signed funding integration
 
-## Factories
+The implemented FVA is
 
-An aggregator factory creates the measure implementation appropriate for one netting set. Flat factories take scalar assumptions, and curve factories take dated pillars with labels for risk reporting:
+\\[
+\mathrm{FVA}=\frac1n\sum_p\sum_{k=1}^{m}
+D_k\\,U_{p,k}\\,s_f(t_k)\\,\Delta t_k.
+\\]
 
-| Factory                  | Inputs                                                                                                  |
-| ------------------------ | ------------------------------------------------------------------------------------------------------- |
-| `CvaFactory`             | `credit_spread`, `recovery`, `n_paths`, and `system_dfs`                                                |
-| `CreditCurveCvaFactory`  | survival dates, values, labels, recovery, path count, day counter, and `system_dfs`                     |
-| `FvaFactory`             | flat `funding_spread`                                                                                   |
-| `FundingCurveFvaFactory` | dated spreads from `funding_spread_curve` or from a funding curve relative to the system curve         |
-| `DvaFactory`             | own-credit inputs for direct use with `AggregatorBundle`                                                |
+This symmetric funding convention uses signed exposure, so positive and
+negative contributions can cancel. It uses one spread for both directions;
+separate borrowing and lending spreads are outside this model. As a result,
+a reduction in EPE alone does not determine the change in FVA.
 
-`XvaEngine::run` creates CVA and FVA factories from each set's `CsaTerms`. `DvaFactory` is available through the lower-level `AggregatorBundle` API for workflows that explicitly supply own-credit terms.
+Funding inputs can be flat, dated explicit spreads, or spreads derived from
+a configured funding curve relative to the system curve. System discount
+factors are optional at lower levels; high-level construction supplies them.
+Without them, aggregation is not automatically present-valued by another
+hidden discounting stage.
 
-## Reading results
+## What the returned sensitivities mean
 
-`ExposureResult::xva_values` contains the netting-set name, measure name, and scalar value. A caller can display every produced measure as follows:
+The engine returns one aggregated list of labeled derivatives across the run.
+Rate-path leaves can retain original curve calibration/IFT dependencies.
+Fixed model lambda and configured correlations are not automatically
+independent risk factors. Calibrated Gaussian sigma includes the supplied
+volatility Jacobian but omits curve/strike-induced recalibration.
 
-```rust,ignore
-let result = engine.run(&mut netting_sets)?;
-for v in result.xva_values.iter().flatten() {
-    println!("{:<10} {:<4} {:>14.2}", v.netting_set, v.measure, v.value);
-}
-```
+The numerical system discount sequence \\(D_k\\) is held fixed during AD.
+A quote scenario that recalculates it can therefore disagree with the
+reported partial derivative for a legitimate reason.
 
-The `cva` example prints a table with this shape:
+Credit-curve CVA has another important boundary. High-level construction
+snapshots numerical survival pillars and their labels; `CreditCurveCvaFactory`
+creates independent survival leaves. A label such as `CVA.<quote-like label>`
+therefore describes a derivative with respect to a **survival pillar**, not a
+replayed original CDS-spread calibration derivative. Recovery is separately
+labeled. Quote-like text does not change a leaf's numerical units.
 
-```text
-netting_set  measure  value
-CLIENT_A     CVA      12345.67
-CLIENT_A     FVA       4567.89
-```
+Similarly, funding-index construction snapshots derived forward spreads.
+`FundingCurveFvaFactory` creates independent spread leaves, generally labeled
+with `FVA.` prefixes, rather than differentiating their derivation from all
+funding/system curve quotes. Explicit funding-spread curves can contribute
+their own dated zero-rate leaves. Distinguish these factory risks from direct
+deterministic credit/funding-curve sensitivities.
 
-The measure name comes from each aggregator's `name()` implementation. Values use the reporting currency implied by the domestic model and netting-set conversion rules.
-
-## Credit curves for CVA
-
-A credit curve is bootstrapped from CDS quotes under a credit `MarketIndex`, as explained in [Curve Bootstrapping](../curves/bootstrapping.md). Setting `credit_index` in `CsaTerms` directs `CreditCurveCvaFactory` to read its survival pillars. CVA sensitivities then contain one entry per credit quote or pillar label, alongside the rate and model risks generated by exposure.
-
-## Exposure metrics
-
-`NpvCube::epe()`, `ene()`, and `ee()` return per-date profiles. `PfeAggregator` adds a positive-exposure quantile for limit monitoring, as demonstrated by the `pfe` example. These profiles remain available in `result.cubes` and provide the intermediate data used to interpret each scalar adjustment.
-
-## What to remember
-
-CVA, DVA, and FVA are integrations of simulated net exposure against distinct economic inputs. Factories translate CSA fields and constructed curves into those inputs, and aggregators reuse the same NPV cube for each measure. Because the calculations remain differentiable, their sensitivities identify the market quotes, credit assumptions, and funding terms that drive the final adjustment.
+Value and gradient share simulated paths and sampling noise. Validate selected
+dependencies with same-seed runs and carefully specified bumps, but compare
+like with like: a full quote shock reconstructs more than a partial
+survival/spread/model derivative may include. Reporting the leaf meaning,
+units and held-fixed assumptions is as important as reporting the number.

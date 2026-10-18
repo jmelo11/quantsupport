@@ -1,128 +1,136 @@
-# Monte Carlo Framework
+# Stochastic models and simulation
 
-Monte Carlo simulation represents future market states as a collection of reproducible paths. QuantSupport uses those paths for option pricing, scripted payoffs, exposure profiles, and XVA. This chapter explains the two simulation interfaces, their configuration, path storage, random-number generation, and the market-model contract.
+Simulation provides the future rates, spot prices and discount factors needed
+for stochastic payoffs and exposure calculations. A model specifies their
+dynamics, while the date grid, path count and random seed control the numerical
+experiment.
 
-Two layers serve different scopes:
+QuantSupport supports stored path sets generated from a
+`SimulationConfiguration` and model-backed observations supplied by a
+`MarketModel` to scripting and exposure services. Stored paths are useful for
+inspection and numerical payoff valuation. The model-backed services also
+retain the path-construction dependencies used for automatic differentiation.
 
-1. **Single-index path sets** (`SimulationConfiguration` → `SimulationBuilder` → `GeneratedMonteCarloSimulation`) stored in the `PricingContext` and consumed by pricers such as `BlackMCEuropeanOptionPricer`.
-2. **Multi-asset market models** (`LgmMarketModel`, the `MarketModel<T>` trait) that drive exposure and XVA engines and the scripting engine ([Scripting](../scripting/overview.md)).
+## Materialized numerical paths
 
-The single-index layer is convenient for a pricer that needs one simulated factor. The market-model layer coordinates several curves, FX rates, and assets under a common path and numeraire.
+`SimulationBuilder` constructs a date grid strictly after the market reference
+date through the configured horizon. Model inputs include index, path count,
+seed, frequency and day counter. It converts required curves to `f64` and
+generates Hull–White, LGM or lognormal Brownian paths using standard-normal
+draws from seeded `StdRng`. This route does not inherit the Sobol/antithetic
+construction of `LgmMarketModel`.
 
-## `SimulationConfiguration`
+`GeneratedMonteCarloSimulation` stores the resulting values in `DualFwd`
+containers with generation inputs held fixed. It exposes no simulation
+pillars, so subsequent differentiation covers only the operations performed
+on the stored values. The
+[MC equity pricer](../pricing/options.md#materialized-monte-carlo-valuation)
+can differentiate its subsequent discounting without providing path-generation
+delta or vega.
 
-A simulation configuration identifies the factor, its dynamics model, and the numerical path grid. The Rust structure records the complete set of choices and their defaults:
+For lognormal Brownian motion, the interval step has the exponential form
 
-```rust,ignore
-pub struct SimulationConfiguration {
-    market_index: MarketIndex,
-    model: ModelConfiguration,
-    n_paths: usize,          // default 1000
-    seed: u64,               // default 42
-    horizon: Period,
-    frequency: Frequency,    // default Monthly
-    day_counter: DayCounter, // default Actual365
-}
-SimulationConfiguration::new(market_index, model, n_paths, seed, horizon, frequency)
-```
+\\[
+S_{t+\Delta}=S_t\exp\left[
+(r-q-\tfrac12\sigma^2)\Delta+\sigma\sqrt{\Delta}Z\right].
+\\]
 
-The same configuration can be loaded from JSON. This example simulates monthly SOFR short rates for five years under Hull-White with fixed parameters:
+Here \\(\sigma\\) is sampled at the interval endpoint. The step does not
+integrate time-dependent variance across sigma boundaries; aligning or refining
+the grid matters when the volatility schedule changes.
+Calibrated term-volatility stripping matches accumulated variance at its
+selected expiries, but does not change that path-stepping rule.
+Spot comes from the reference-date fixing. The builder's
+rate is obtained from the terminal discount factor; a general term structure
+does not thereby become a fully time-dependent equity carry model.
 
-```json
-{
-  "market_index": "SOFR",
-  "model": {
-    "HullWhite": {
-      "alpha": 0.1,
-      "parameter_source": { "Fixed": { "sigma": 0.01 } }
-    }
-  },
-  "n_paths": 2000,
-  "seed": 7,
-  "horizon": "5Y",
-  "frequency": "Monthly"
-}
-```
+## Hull–White representation
 
-The market index links the generated paths to downstream requests. The seed makes the sample reproducible, and the horizon and frequency determine the dates stored in each path.
+The one-factor Gaussian short-rate model is conventionally written
 
-### `ModelConfiguration`
+\\[
+dr_t=(\theta(t)-a r_t)\\,dt+\sigma(t)\\,dW_t.
+\\]
 
-`ModelConfiguration` selects the stochastic dynamics and its model-specific inputs. The current variants are:
+Its affine bond representation uses
+\\(P(t,T\mid r)=A(t,T)e^{-B(t,T)r}\\), with
+\\(B(t,T)=(1-e^{-a(T-t)})/a\\). Model calibration converts caplet or swaption
+prices into a piecewise-constant sigma schedule and retains instrument-level
+quality records. Selected-source domain and calibration-Jacobian limitations
+are described in [Volatility markets](../curves/volatility.md).
 
-| Variant                                        | Fields                                          | Dynamics                                        |
-| ---------------------------------------------- | ----------------------------------------------- | ----------------------------------------------- |
-| `HullWhite { alpha, parameter_source }`              | fixed or calibrated Gaussian parameters         | \\(dr = (\theta(t)-\alpha r)dt + \sigma(t)dW\\) |
-| `BrownianMotion { parameter_source, dividend_rate }` | fixed or calibrated lognormal parameters        | \\(dS = (r-q)S\\,dt + \sigma(t)S\\,dW\\)        |
-| `Lgm { lambda, parameter_source }`                   | fixed or calibrated Gaussian parameters         | see [LGM](lgm.md)                               |
+The low-level materialized Hull–White path generator is **Euler-discretized**:
 
-Every model uses `ParameterSource::{Fixed, Calibrated}`. Hull-White and LGM use
-`GaussianRateModelParameters { sigma }`. Brownian motion uses
-`LognormalModelParameters { volatility }`. A calibrated configuration names a
-surface or cube and selects its instruments through `calibration_basket`.
+\\[
+x_{i+1}=x_i-a x_i\Delta_i+
+\sigma(t_{i+1})\sqrt{\Delta_i}Z_i.
+\\]
 
-This common parameter-source shape lets a caller supply an explicit model or ask construction to infer its parameters from a volatility market. Each model retains its own parameter type and calibration procedure.
+The generator updates a variance estimate and adds a curve-derived shift to
+the state. Its Euler discretization differs from the exact OU transitions
+used in callable-bond valuation. Refine the grid to assess discretization
+bias and increase path count to assess sampling precision.
 
-## Building
+Several low-level Hull–White formulas divide by mean reversion and do not
+implement a zero-alpha limit. Do not infer zero-alpha support from the formal
+continuous mathematical limit. LGM, described below, explicitly handles zero
+lambda.
 
-`SimulationBuilder` converts configurations into generated path sets using the curves, volatilities, quotes, and fixings already available in the market stores:
+## LGM rates and numeraire
 
-```rust,ignore
-let sims: HashMap<MarketIndex, MonteCarloSimulationElement> =
-    SimulationBuilder::new(specs).build(&constructed_store, &quote_store, &fixing_store, Level::Mid)?;
-```
+`LgmRateModel` expresses a rate factor through loading \\(H\\), volatility
+loading \\(\alpha\\), and accumulated variance \\(\zeta\\):
 
-`PricingContext::with_simulation_configurations(specs)` schedules this builder during `initialize()`. Curves and volatility objects are constructed first, which makes them available to calibrated models. The path grid advances from the reference date by the configured frequency through the horizon.
+\\[
+H(t)=\frac{1-e^{-\lambda t}}{\lambda},\quad
+H(t)=t\ \text{when }\lambda=0,\qquad
+\alpha(t)=\sigma(t)e^{\lambda t},\quad
+\zeta(t)=\int_0^t\alpha(u)^2\\,du.
+\\]
 
-For calibrated Hull-White models, the resulting `MonteCarloSimulationElement` retains an instrument-level `HullWhiteCalibrationQuality` report. Read it with `element.calibration_quality()` to inspect calibration targets and fitted prices alongside the generated paths. Fixed-parameter and non-Hull-White simulations return `None`.
+The zero-lambda limit applies to direct LGM dynamics. Its calibrated
+construction delegates to the low-level Hull–White calibrator, whose
+zero-alpha singularities remain; zero-lambda calibration is not implied.
 
-### `GeneratedMonteCarloSimulation`
+For its Gaussian state \\(z\\), the implemented discount factor and reference
+numeraire are
 
-The generated element stores a rectangular path matrix together with its date and model identity metadata. Its principal constructor and accessors are:
+\\[
+P(t,T;z)=\frac{P(0,T)}{P(0,t)}
+\exp\left[-(H(T)-H(t))z
+-\tfrac12(H(T)^2-H(t)^2)\zeta(t)\right],
+\\]
+\\[
+N(t,z)=\frac{\exp(H(t)z+\tfrac12H(t)^2\zeta(t))}{P(0,t)}.
+\\]
 
-```rust,ignore
-pub fn new(market_index: MarketIndex, dates: Vec<Date>, paths: Vec<Vec<f64>>, dt: f64) -> Self;
-fn path(&self) -> &Vec<Vec<DualFwd>>;   // paths[path][date]
-fn n_paths(&self) -> i64;
-fn dates(&self) -> &[Date];
-fn dt(&self) -> f64;                    // average step in years
-fn market_index(&self) -> MarketIndex;
-```
+The reference numeraire defines the measure under which the domestic factor
+is driftless. Foreign rate factors receive measure-change drift
+terms involving domestic-rate and FX correlations.
 
-The outer path index identifies a scenario and the inner date index identifies a point on its timeline. Values are stored as `DualFwd`, allowing an averaged payoff to retain sensitivities to spot, curve, and volatility leaves.
+`LgmMarketModel` combines rate factors with supported FX/equity components.
+FX component spot is domestic currency per foreign unit. Curve-driver mappings
+let another curve reuse a factor without claiming that the two initial curves
+are identical. The state vector orders rates, FX log spots and equity log
+spots; correlation input must match that ordering.
 
-## `BrownianMotion`
+Path construction uses Owen-scrambled Sobol draws, antithetic pairing and
+Cholesky correlation. Consecutive paths share opposite-sign normal draws.
+Even counts preserve complete pairs; odd counts, including one path, are
+also supported. Reproducing a run requires matching the seed, grid, model and
+indices. Path count controls sampling, while volatility and model inputs
+determine whether the dynamics are stochastic.
 
-`BrownianMotion` provides lognormal dynamics for equity-like factors. Construction supplies spot, rate, a possibly time-dependent volatility function, and an optional dividend rate:
+## Model-backed observations
 
-```rust,ignore
-BrownianMotion::new(spot, rate, Box<dyn TimeDependentVolatility<T>>, dividend_rate: Option<T>)
-```
+`MarketModel<T>` configures evaluation dates and typed simulation requests,
+then returns fallible path scenarios. Responses contain requested discounts,
+forwards, FX, spots, path-dependent observations and numeraires. Its
+`generate_path` and `resolve_request` return `Result`, so failures retain their
+market/model categories instead of becoming silently absent paths.
 
-The process uses exact lognormal stepping over each interval,
-\\(S_{t+\Delta} = S_t\exp\bigl((r-q-\tfrac12\sigma^2)\Delta + \sigma\sqrt\Delta Z\bigr)\\).
-Static helpers for price, delta, vega, rho, and theta provide analytic references for European payoff tests.
-
-## Random numbers
-
-Random-number policy determines reproducibility and convergence behavior. Single-index simulations use `rand` with the configured seed. `LgmMarketModel` uses Owen-scrambled Sobol sequences from `sobol_burley`, antithetic pairing, and a Cholesky factor of the configured correlation matrix. Antithetic pairing requires an even path count. Reusing a seed reproduces the same sample.
-
-## `MarketModel<T>` trait
-
-Exposure and scripting components request simulated observables through `MarketModel<T>`. The trait configures dates and requests before generating a path, then resolves typed responses at each evaluation date:
-
-```rust,ignore
-pub trait MarketModel<T: Scalar> {
-    fn n_paths(&self) -> usize;
-    fn set_evaluation_dates(&mut self, dates: Vec<Date>);
-    fn set_requests(&mut self, requests: Vec<SimulationRequest>);
-    fn generate_path(&self, index: usize) -> Option<PathScenario<T>>;
-    fn resolve_request(&self, eval_date: Date, request: &SimulationRequest) -> SimulationResponse<T>;
-}
-```
-
-`SimulationResponse` carries discount factors, forward rates, FX rates, spots, path-dependent observations, and the numeraire at each evaluation date. Exposure components ask `resolve_request` for the quantities declared by each claim. This request boundary gives `ScriptEngine` and `XvaEngine` access to any model that implements the trait.
-
-## What to remember
-
-Simulation configuration defines a model and a reproducible path grid. Generated path sets serve focused pricing tasks, and `MarketModel<T>` serves multi-factor exposure workflows through typed requests and responses. Keeping paths in `DualFwd` connects Monte Carlo outputs to the same quote and parameter sensitivities used by deterministic pricing.
+Scripting and XVA operate on these model responses in `DualFwd`. They can
+propagate through registered model/curve inputs while rewinding temporary
+path nodes. The resulting sensitivities remain subject to fixed correlations, partial
+calibration Jacobians and payoff smoothing. Stored numerical simulations
+retain the more limited risk dependencies described above.

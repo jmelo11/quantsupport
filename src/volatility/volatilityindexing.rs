@@ -4,29 +4,35 @@ use serde::{Deserialize, Serialize};
 
 use crate::utils::errors::QSError;
 
-/// Strike specification for a caplet/floorlet.
+/// Strike specification for option instruments and volatility quote keys.
 ///
-/// - [`Strike::Absolute`] — a fixed absolute strike rate.
-/// - [`Strike::Atm`] — at-the-money: the pricer sets the strike equal to the
-///   prevailing forward rate at pricing time.
-/// - [`Strike::Relative`] — a spread (positive or negative) added to the
-///   forward rate at pricing time: `K_eff = F + spread`.
+/// The [`Strike::resolve`] helper interprets these variants as:
+/// - [`Strike::Absolute`] — a fixed absolute rate or price.
+/// - [`Strike::Atm`] — the supplied forward rate or price.
+/// - [`Strike::Relative`] — an additive offset: `K_eff = F + offset`.
 ///
-/// For [`Strike::Atm`] and [`Strike::Relative`], the effective absolute strike
-/// is computed by the pricer from the forward rate before querying the
-/// volatility surface.
+/// Consumers need not use this helper. In particular, the Black and Hull-White
+/// caplet/cap pricers interpret `Relative(pct)` multiplicatively as
+/// `F * (1 + pct)`. Volatility lookup keys also need not equal the payoff strike.
+/// Consult the consuming pricer's convention; absolute strikes avoid this
+/// relative-strike ambiguity.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Strike {
-    /// A fixed absolute strike rate.
+    /// A fixed absolute strike rate or price.
     Absolute(f64),
     /// At-the-money: the strike equals the forward rate at pricing time.
     Atm,
-    /// A spread over the forward rate: `K_eff = F + spread`.
+    /// A relative-strike payload: additive for [`Strike::resolve`], but
+    /// interpreted multiplicatively by some rate-option pricers.
     Relative(f64),
 }
 
 impl Strike {
-    /// Resolves the effective absolute strike given the current forward rate.
+    /// Resolves a strike using the supplied forward, adding a `Relative`
+    /// payload in the same rate/price units.
+    ///
+    /// This helper does not impose its convention on pricers that resolve
+    /// strikes independently.
     #[must_use]
     pub fn resolve(self, forward_rate: f64) -> f64 {
         match self {
@@ -55,9 +61,9 @@ impl std::str::FromStr for Strike {
 /// Represents if the volatility is quoted as black (log-normal) or normal volatility.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum VolatilityType {
-    /// Black (log-normal) volatility.
+    /// Annualized decimal lognormal volatility, e.g. `0.20` for 20%.
     Black,
-    /// Normal volatility.
+    /// Absolute underlying rate/price units per square-root year.
     Normal,
 }
 

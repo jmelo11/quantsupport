@@ -3,17 +3,15 @@
 //! A [`PricerConfiguration`](crate::core::pricerconfiguration::PricerConfiguration)
 //! selects one implementation for an
 //! [`InstrumentType`](crate::core::pricerconfiguration::InstrumentType) and
-//! carries any stochastic models required by that
-//! implementation. The configuration belongs to
-//! [`PricingContext`](crate::core::pricingcontext::PricingContext), rather
-//! than to an individual pricer, so the same JSON mechanism can configure all
-//! instrument families.
+//! carries the stochastic models required by that implementation.
+//! [`PricingContext`](crate::core::pricingcontext::PricingContext) stores these
+//! configurations by instrument family.
 //!
 //! Models are represented by
 //! [`ModelConfiguration`](crate::models::modelconfiguration::ModelConfiguration)
-//! values, not free-form names. A model is assigned to a typed
-//! [`MarketIndex`](crate::indices::marketindex::MarketIndex); a pricer therefore
-//! resolves the model from the same index it uses to resolve its market curve.
+//! values assigned to a typed
+//! [`MarketIndex`](crate::indices::marketindex::MarketIndex). Pricers resolve
+//! model inputs using their selected market indices.
 //!
 //! # Callable-bond JSON example
 //!
@@ -116,6 +114,10 @@ pub enum InstrumentType {
 }
 
 /// Uniform contractual-time grid shared by the callable-bond engines.
+///
+/// Defaults are 48 target intervals per year, at most 2,048 total intervals,
+/// and ACT/365 model time. These are numerical controls, not coupon frequency
+/// or payment-date conventions.
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TimeGridConfiguration {
@@ -184,6 +186,9 @@ impl Default for TimeGridConfiguration {
 }
 
 /// Spatial grid used by backward Fourier evolution.
+///
+/// Defaults are 1,024 state points and a half-width of ten terminal standard
+/// deviations. Validation requires a power-of-two count of at least eight.
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct FourierGridConfiguration {

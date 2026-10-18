@@ -298,7 +298,7 @@ impl LoanPricer {
     /// Returns signed receipt PV, excluding the initial advance, and reporting
     /// legs 0/1/2 for scheduled receipts, prepayments, and recoveries. PV retains
     /// AD dependencies in survival and prepayment weights; reporting notionals
-    /// and principal amounts are their signed `f64` values.
+    /// and principal amounts are `f64` values, with direction carried by each leg.
     ///
     /// # Errors
     /// Propagates unavailable rates/curves, rejects invalid survival or
@@ -485,8 +485,9 @@ impl LoanPricer {
                     .mul_val(discount),
             );
             // Reporting cashflows retain existing variants and f64 notionals.
+            // The shared report handler applies the reporting legs' side once.
             // PV uses the AD weights above, including prepayment and credit risk.
-            let reporting_notional = opening * weighted.value() * trade.side().sign();
+            let reporting_notional = opening * weighted.value();
             match cashflow {
                 CashflowType::FixedRateCoupon(coupon) => {
                     scheduled.push(CashflowType::FixedRateCoupon(FixedRateCoupon::new(
@@ -537,19 +538,19 @@ impl LoanPricer {
             }
             if redemption.value() != 0.0 {
                 scheduled.push(CashflowType::Redemption(SimpleCashflow::new(
-                    redemption.value() * trade.side().sign(),
+                    redemption.value(),
                     payment,
                 )));
             }
             if prepayment.value() != 0.0 {
                 prepaid.push(CashflowType::Redemption(SimpleCashflow::new(
-                    prepayment.value() * trade.side().sign(),
+                    prepayment.value(),
                     payment,
                 )));
             }
             if recovery.value() != 0.0 {
                 recovered.push(CashflowType::ConstantAmount(SimpleCashflow::new(
-                    recovery.value() * trade.side().sign(),
+                    recovery.value(),
                     payment,
                 )));
             }
@@ -1328,6 +1329,15 @@ mod tests {
             original
         );
         let short = LoanTrade::new(trade.instrument().clone(), provider.date, Side::PayShort);
+        let short_result = pricer.evaluate(&short, &[Request::Cashflows], &provider)?;
+        let short_table = short_result
+            .cashflows()
+            .ok_or_else(|| QSError::ValueNotSetErr("Short cashflows".into()))?;
+        assert_eq!(table.payment_dates(), short_table.payment_dates());
+        assert_eq!(table.amounts().len(), short_table.amounts().len());
+        for (long, short) in table.amounts().iter().zip(short_table.amounts()) {
+            assert!((long + short).abs() < 1e-10);
+        }
         assert!(
             (evaluate_loan_receipt_present_value(&pricer, &short, &provider)? + expected).abs()
                 < 1e-7

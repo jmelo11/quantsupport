@@ -7,7 +7,7 @@
 //!
 //! ```json
 //! {
-//!     "market_index": "Credit(SOMECORP)",
+//!     "market_index": {"Credit": "SOMECORP"},
 //!     "currency": "USD",
 //!     "discount_index": "SOFR",
 //!     "recovery": 0.4,

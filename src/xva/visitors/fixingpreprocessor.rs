@@ -20,6 +20,11 @@ use super::claimpreprocessor::ClaimPreprocessor;
 ///     daily fixings from `accrual_start` to `ref_date` are compounded
 ///     and stored as a `partial_fixing` so only the remaining period
 ///     needs simulation.
+///
+/// Resolution is best-effort: missing term fixings leave the claim unchanged.
+/// Overnight compounding uses only stored observations in `[start, end)`;
+/// absent dates are not validated or filled, and an empty range on an existing
+/// index yields an accrual factor of one. Today's fixing is not resolved here.
 pub struct FixingPreprocessor {
     ref_date: Date,
     day_counter: DayCounter,

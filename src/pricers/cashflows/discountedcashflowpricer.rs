@@ -49,11 +49,28 @@ impl PricerState for DCFState<'_> {
     }
 }
 
-/// Generic cashflow discounting pricer for any trade with linear cashflows.
-/// Works directly with legs and their cashflows, properly handling:
-/// - Floating rate coupons (forward rates are set via market data resolution)
-/// - Multi-currency trades (uses FX parity from legs at valuation date)
-/// - Automatic discount curve requests based on leg currencies/indices
+/// Discounts resolved linear cashflows with each leg's direction.
+///
+/// Supports fixed and floating coupons, redemptions, and disbursements; embedded
+/// options and other nonlinear cashflows are rejected. Historical observations
+/// resolve started coupons, while future coupons use their forwarding curves.
+/// A discount policy can select separate collateral curves. Cross-currency
+/// collateral discounting converts leg amounts at spot into collateral currency;
+/// without such a policy, this pricer does not provide a general reporting-
+/// currency conversion.
+///
+/// Supplied legs must represent the intended remaining contract: valuation
+/// iterates every cashflow without excluding payment dates at or before the
+/// evaluation date. Default cashflow reports are undiscounted and apply the
+/// same leg and disbursement signs used in NPV.
+///
+/// Supported requests are value, sensitivities, cashflows, and fair rate.
+/// Other requests leave their result fields absent. Fair rate is the ratio of
+/// floating-coupon PV to fixed-coupon annuity using the first forwarding curve;
+/// it ignores principal exchanges and is intended for vanilla fixed-versus-
+/// floating swaps, not a general multi-leg breakeven calculation.
+/// Missing or ambiguous curve selection, missing required fixings, and
+/// unsupported payoffs produce errors.
 ///
 /// ## Example
 /// ```rust
@@ -929,7 +946,7 @@ mod tests {
     }
 
     #[test]
-    fn test_vanilla_swap_cashflows() {
+    fn test_vanilla_swap_cashflows() -> Result<()> {
         let start_date = Date::new(2024, 1, 1);
         let maturity_date = Date::new(2025, 1, 1);
         let notional = 1_000_000.0;
@@ -994,9 +1011,7 @@ mod tests {
         };
 
         let pricer = DiscountedCashflowPricer::<Swap<DualFwd>, SwapTrade<DualFwd>>::new();
-        let results = pricer
-            .evaluate(&trade, &[Request::Cashflows], &provider)
-            .expect("Vanilla swap cashflows evaluation failed");
+        let results = pricer.evaluate(&trade, &[Request::Cashflows, Request::Value], &provider)?;
 
         let cashflows = results
             .cashflows()
@@ -1010,6 +1025,27 @@ mod tests {
         let currencies = cashflows.currencies();
         let floorlet_strikes = cashflows.floorlet_strikes();
         let caplet_strikes = cashflows.caplet_strikes();
+
+        let curve = provider
+            .market_data
+            .constructed_elements()
+            .discount_curve(&MarketIndex::SOFR)
+            .ok_or_else(|| QSError::NotFoundErr("Missing discount curve".into()))?
+            .curve();
+        let mut reported_pv = 0.0;
+        for i in 0..amounts.len() {
+            let receipt =
+                (cashflows.leg_indices()[i] == 0) != (cashflow_types[i] == "Disbursement");
+            assert_eq!(amounts[i] > 0.0, receipt);
+            reported_pv = amounts[i].mul_add(
+                curve.discount_factor(payment_dates[i])?.value(),
+                reported_pv,
+            );
+        }
+        let price = results
+            .price()
+            .ok_or_else(|| QSError::ValueNotSetErr("Missing PV".into()))?;
+        assert!((reported_pv - price).abs() < 1e-8);
 
         println!("Vanilla swap cashflows table (from EvaluationResults.cashflows):");
         println!(
@@ -1078,6 +1114,7 @@ mod tests {
             option_embedded_count, 0,
             "Vanilla swap should not contain option-embedded coupons"
         );
+        Ok(())
     }
 
     #[test]

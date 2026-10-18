@@ -90,8 +90,9 @@ impl ADCurveElement for Box<dyn ADCurveElement> {
     }
 }
 
-/// Struct representing a discount curve element, which includes
-/// the associated market index, currency, and the curve itself.
+/// Market-index key and shared, AD-enabled discount or forwarding curve.
+///
+/// Cloning the element shares the same interior-mutable curve.
 #[derive(Clone)]
 pub struct DiscountCurveElement {
     market_index: MarketIndex,
@@ -99,7 +100,7 @@ pub struct DiscountCurveElement {
 }
 
 impl DiscountCurveElement {
-    /// Creates a new [`DiscountCurveElement`] with the specified market index, currency, and curve.
+    /// Associates a market index with a shared curve.
     #[must_use]
     pub const fn new(market_index: MarketIndex, curve: SharedElement<dyn ADCurveElement>) -> Self {
         Self {
@@ -124,6 +125,10 @@ impl DiscountCurveElement {
     /// curve nodes. Useful for feeding models and simulations that operate on
     /// `f64` (e.g. Hull-White calibration and Monte Carlo path generation).
     ///
+    /// The result uses the supplied day counter, log-linear discount-factor
+    /// interpolation, and enabled extrapolation, regardless of the source
+    /// curve's interpolation policy. Derivative connections are not retained.
+    ///
     /// # Errors
     /// Returns an error if the curve exposes no nodes or if the term
     /// structure cannot be constructed.
@@ -147,8 +152,7 @@ impl DiscountCurveElement {
     }
 }
 
-/// Struct representing a dividend curve element, which includes
-/// the associated market index, currency, and the curve itself.
+/// Market-index key and shared dividend-discount curve.
 #[derive(Clone)]
 pub struct DividendCurveElement {
     market_index: MarketIndex,
@@ -156,7 +160,7 @@ pub struct DividendCurveElement {
 }
 
 impl DividendCurveElement {
-    /// Creates a new [`DividendCurveElement`] with the specified market index, currency, and curve.
+    /// Associates a market index with a shared dividend curve.
     #[must_use]
     pub const fn new(market_index: MarketIndex, curve: SharedElement<dyn ADCurveElement>) -> Self {
         Self {

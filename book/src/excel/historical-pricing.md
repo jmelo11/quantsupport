@@ -1,13 +1,17 @@
-# Historical Pricing
+# Historical pricing
 
-Price one unchanged trade against multiple complete historical markets using
-the same native snapshot archive and selector as Python. Load the XLL before
-opening [the example workbook](https://github.com/jmelo11/quantsupport/blob/main/bindings/excel/examples/historical_pricing_example.xlsx),
+Historical pricing evaluates a trade against a sequence of recorded markets.
+The Excel workflow uses the same native snapshot archive and selection rules
+as Python. Each snapshot records the observations and construction inputs for
+one market instant.
+
+Load the XLL before opening [the example
+workbook](https://jmelo11.github.io/quantsupport/downloads/historical_pricing_example.xlsx),
 then press **Ctrl+Alt+F9** to reconstruct its objects. Regenerate both Excel
-examples with `python bindings/excel/examples/create_examples.py` after installing
-`bindings/excel/examples/requirements.txt`. The historical workbook uses explicit zero
-rates; the same snapshot workflow accepts bootstrapped markets, volatility,
-FX, simulation, and model configurations.
+examples with `python bindings/excel/examples/create_examples.py` after
+installing `bindings/excel/examples/requirements.txt`. The historical workbook
+uses explicit zero rates; the same snapshot workflow accepts bootstrapped
+markets, volatility, FX, simulation, and model configurations.
 
 ## Capture each market
 
@@ -96,10 +100,12 @@ or Excel serial datetimes.
 `QS.SNAPSHOTS.FROM.JSON(name,json_text)` imports the same native snapshot-array
 schema saved by Python's `MarketSnapshotStore.to_json`.
 `QS.SNAPSHOTS.TO.JSON(store)` returns JSON text, excluding fixing histories,
-constructed curves, and AD state. These functions take/return worksheet text,
-not filenames; export fails above Excel's 32767 UTF-16-unit cell limit.
+constructed curves, and AD state. These functions exchange JSON as worksheet
+text. Export fails above Excel's 32767 UTF-16-unit cell limit.
 
 The archive captures base market configurations. Materialized scenario contexts
 with supplied runtime elements are rejected; capture the original base context.
-For workflow differences outside historical pricing, see the Excel package's
-`COMPONENTS.md` and the API's Rust component coverage page.
+The [workbook chapter](workbook.md) relates these handles to ordinary valuation
+and recalculation. The [worksheet
+reference](https://jmelo11.github.io/quantsupport/api/excel/functions/index.html)
+provides exact argument lists.

@@ -10,7 +10,10 @@ use crate::{
     utils::errors::{QSError, Result},
 };
 
-/// Struct that defines a flat forward term structure.
+/// Discount curve generated from one constant quoted interest-rate parameter.
+///
+/// The rate definition determines discounting; a flat quoted rate is not a
+/// constant instantaneous forward under every compounding convention.
 ///
 /// ## Example
 /// ```
@@ -38,7 +41,7 @@ where
     ///
     /// ## Parameters
     /// * `reference_date`: the reference date for the term structure. All discount factors and forward rates will be calculated relative to this date.
-    /// * `rate`: the flat forward rate for the term structure. This is the constant rate that will be used to calculate discount factors and forward rates.
+    /// * `rate`: constant decimal quoted rate, interpreted using `rate_definition`.
     /// * `rate_definition`: the definition of the interest rate, including day count convention, compounding method, and frequency.
     #[must_use]
     pub const fn new(reference_date: Date, rate: T, rate_definition: RateDefinition) -> Self {

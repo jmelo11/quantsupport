@@ -22,7 +22,7 @@ class MarketInputs:
     """Unconstructed inputs; a PricingContext turns them into market objects."""
 
     quotes: qs.QuoteStore
-    curves: list
+    curves: list[qs.CurveConfiguration]
     csa_policy: qs.SingleCurveCSADiscountPolicy
 
 

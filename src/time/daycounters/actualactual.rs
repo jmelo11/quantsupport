@@ -7,6 +7,15 @@ use crate::time::date::Date;
 ///
 /// Actual/Actual day count convention.
 ///
+/// Same-year fractions use that year's 365/366-day denominator; adjacent-year
+/// intervals split at January 1.
+///
+/// # Limitation
+/// When endpoint years differ by at least two, the current implementation
+/// omits one complete intervening calendar year. It therefore undercounts
+/// the magnitude by one versus a full calendar-year split; it is not a
+/// general long-span Actual/Actual implementation.
+///
 /// ## Example
 /// ```
 /// use quantsupport::time::date::Date;

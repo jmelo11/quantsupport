@@ -12,7 +12,28 @@ use crate::{
     utils::errors::Result,
 };
 
-/// Parameters for the Hull-White (one-factor) short-rate model.
+/// One-factor Hull-White analytic helpers and short-rate path generator.
+///
+/// `alpha` is mean reversion in inverse years. Method times are year fractions
+/// from the input curve's reference date; `sigma` is absolute short-rate
+/// volatility in decimal-rate units per square-root year (`0.01` means 100 bp).
+/// Bond prices are per unit principal and caplet/floorlet prices per unit
+/// notional. Explicit `sigma` arguments select constant-volatility analytic
+/// formulas independently of the stored path-generation volatility schedule.
+///
+/// These low-level constructors do not validate numerical domains. Use finite
+/// positive `alpha`: several formulas divide by it and do not implement its
+/// zero limit. Bond-option formulas also require positive option time,
+/// volatility, and bond strike; zero-variance intrinsic-value limits are not
+/// handled here. The separate
+/// [`LgmRateModel`](crate::models::lgm::lgmcomponents::LgmRateModel) supports
+/// zero mean reversion.
+///
+/// [`PathGenerator::generate`] uses Euler steps for the Gaussian state, not
+/// exact Ornstein-Uhlenbeck transitions. Its short-rate shift is the finite-
+/// difference initial forward plus half the recursively accumulated state
+/// variance. This path approximation must not be identified with the analytic
+/// bond-option formulas or the callable-bond engines' transition schemes.
 pub struct HullWhite<'a, T: Scalar> {
     /// Mean-reversion speed.
     alpha: T,
@@ -22,7 +43,10 @@ pub struct HullWhite<'a, T: Scalar> {
 }
 
 impl<'a, T: Scalar> HullWhite<'a, T> {
-    /// Creates new Hull-White parameters.
+    /// Borrows an initial discount curve and stores unvalidated mean reversion.
+    ///
+    /// No volatility schedule is installed. Calibrate the model or use
+    /// [`Self::with_constant_volatility`] before generating paths.
     #[must_use]
     pub fn new(alpha: T, curve: &'a dyn InterestRatesTermStructure<T>) -> Self {
         Self {
@@ -69,8 +93,10 @@ impl<'a, T: Scalar> HullWhite<'a, T> {
 }
 
 impl HullWhite<'_, f64> {
-    /// Sets a flat, time-independent short-rate volatility. Useful for
-    /// debugging and for configurations that don't require calibration.
+    /// Sets a flat absolute short-rate volatility for path generation.
+    ///
+    /// `sigma` is in decimal-rate units per square-root year, not a Black
+    /// relative volatility. This setter does not validate its value.
     #[must_use]
     pub fn with_constant_volatility(mut self, sigma: f64) -> Self {
         self.vol_func = Some(HullWhiteTimeDependentVolatility::new(vec![(0.0, sigma)]));
@@ -135,7 +161,10 @@ impl HullWhite<'_, f64> {
         sigma * b * ((1.0 - (-2.0 * self.alpha * t).exp()) / (2.0 * self.alpha)).sqrt()
     }
 
-    /// Computes the drift function theta(t) from the initial curve.
+    /// Approximates the drift function theta(t) from the initial curve.
+    ///
+    /// Uses a fixed `1/365`-year finite-difference increment. Curve coverage is
+    /// required through `t + 1/365`, and through `t + 2/365` near the origin.
     ///
     /// # Errors
     /// Returns an error if discount factor lookup fails.
@@ -279,7 +308,12 @@ impl HullWhite<'_, f64> {
     /// that makes the swap value zero.
     ///
     /// # Errors
-    /// Returns an error if discount factor lookups or root-finding fails.
+    /// Returns an error when a discount-factor lookup in the final bond-option
+    /// valuation fails. The critical-rate search expands a bracket and takes
+    /// 200 bisection steps without reporting a convergence status; failed curve
+    /// lookups inside its objective are replaced by zero. Callers must ensure
+    /// admissible cashflows and complete curve coverage. An empty schedule
+    /// returns zero.
     #[allow(non_snake_case)]
     pub fn swaption_price(
         &self,
@@ -370,6 +404,19 @@ impl HullWhite<'_, f64> {
 }
 
 impl PathGenerator<f64> for HullWhite<'_, f64> {
+    /// Generates Euler-discretized short rates at nondecreasing year fractions.
+    ///
+    /// `draws[i]` is a standard-normal innovation and `scenario[i]` receives
+    /// the short rate at `times[i]`. Inputs must be finite, with nonnegative
+    /// times and positive mean reversion.
+    ///
+    /// # Errors
+    /// Returns an error if no volatility schedule is installed or if a
+    /// volatility or forward-curve lookup fails.
+    ///
+    /// # Panics
+    /// Panics if `draws` or `scenario` is shorter than `times`. Unlike some
+    /// path generators, this implementation does not check buffer lengths.
     fn generate(&self, times: &[f64], draws: &[f64], scenario: &mut [f64]) -> Result<()> {
         let alpha = self.alpha;
         let vol_func = self.vol_func.as_ref().ok_or_else(|| {

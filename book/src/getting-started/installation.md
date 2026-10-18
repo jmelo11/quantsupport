@@ -1,101 +1,62 @@
 # Installation
 
-This chapter prepares a Rust project for QuantSupport and explains the choices
-behind each installation route. A released dependency is appropriate for
-applications that want a stable version. A workspace checkout is useful
-for running the examples, reading the source, or contributing changes.
+QuantSupport can be used as a Rust crate, a Python package or an Excel add-in.
+Choose the interface that fits your application. The Python package includes
+a compiled Rust extension; the Excel add-in is distributed as a Windows XLL.
 
-## Requirements
+## Rust applications
 
-QuantSupport targets the stable Rust toolchain and uses the 2021 edition.
-Installing Rust through [rustup](https://rustup.rs) provides `cargo`, the
-compiler, and a straightforward upgrade path. Verify the installation with
-`rustc --version` and `cargo --version` before adding the crate.
+QuantSupport uses the Rust 2021 edition. A stable toolchain installed through
+[rustup](https://rustup.rs) supplies the compiler and Cargo. Add the published
+crate to an application with:
 
-## Rust crate
-
-For a normal application, add the latest published release. Cargo records the
-selected compatible version in the project manifest and resolves its
-dependencies automatically.
-
-```bash
+```sh
 cargo add quantsupport
 ```
 
-During library development, a path dependency points an application at a
-local checkout. This lets the application compile against source changes
-without publishing an intermediate release.
+A local application can instead use a path dependency during development:
 
 ```toml
 [dependencies]
 quantsupport = { path = "../quantsupport" }
 ```
 
-Plotting is an optional feature for applications and examples that render
-charts. Core pricing services can use the default feature set.
+The optional `plot` feature enables plotting support; it is not necessary for
+core pricing. Applications loading JSON add their own `serde_json` dependency.
+The library owns serializable financial types, while the application owns file
+locations and I/O.
 
-```bash
-cargo add quantsupport --features plot
-```
+For the source checkout:
 
-The crate uses `chrono` for dates, `rayon` for parallel XVA and script evaluation, `rand` and `sobol_burley` for random sequences, `nalgebra` for solvers and correlation matrices, `num-complex` for FFT operations, `serde` for configuration, and `thiserror` for errors. Applications that load the JSON files described in [Configuration](../reference/configuration.md) should add `serde_json` to their own dependencies.
-
-The distinction between library and application dependencies matters when
-loading external data. QuantSupport supplies serializable types. The
-application chooses the format reader and owns file-system concerns.
-
-## Building the repository
-
-The repository is a Cargo workspace whose members are the library,
-`benchmarks`, `bindings/python`, and one package per example. Building the
-library alone gives a quick development cycle. Building the workspace checks
-that examples and bindings still agree with the public API.
-
-```bash
+```sh
 git clone https://github.com/jmelo11/quantsupport
 cd quantsupport
-cargo build -p quantsupport              # library only
-cargo test -p quantsupport               # unit tests + doctests
-cargo build --workspace                  # everything, including examples and bindings
-```
-
-The crate is compiled with `missing_docs = "forbid"` and Clippy `pedantic`, `nursery` and `cargo` lint groups at `deny`, with `unwrap_used` and `expect_used` denied. If you contribute, run `cargo clippy --all-targets` before opening a pull request.
-
-After the workspace builds, run an example to confirm that market data can be
-loaded and a complete workflow can execute. These three commands exercise
-direct pricing, curve construction, and scripting respectively.
-
-```bash
+cargo build -p quantsupport
 cargo run -p valuation-swaps
-cargo run -p bootstrap
-cargo run -p scripting-examples --bin valuation
 ```
 
-See [Examples](../reference/examples.md) for the full list.
+The workspace includes the library, Rust examples, benchmarks, and both binding
+packages. Run `cargo test -p quantsupport` to check the native library and its
+doctests. Contributor checks also include Clippy and documentation builds.
 
-## Documentation
+## Python and Excel
 
-The API reference answers method-level questions. This book explains
-how the types collaborate and why the workflows are designed as they are.
-During development, a local mdBook server rebuilds the prose as files change.
+Install the published Python package with:
 
-- API docs: <https://docs.rs/quantsupport>
-- This book: <https://jmelo11.github.io/quantsupport/> (published from `main` by `.github/workflows/pages.yml`)
-- Local build: install mdBook and its Mermaid preprocessor, then install the JavaScript assets before building or serving:
-
-```bash
-cargo install mdbook --version 0.5.2 --locked
-cargo install mdbook-mermaid --version 0.17.0 --locked
-mdbook-mermaid install .
-mdbook build
-mdbook serve --open
+```sh
+python -m pip install quantsupport
 ```
 
-These versions match the Pages workflow. Run the asset installation from the repository root; `book.toml` references the generated Mermaid JavaScript files.
+The package supports Python 3.9 and later and includes pandas reporting.
+Optional typing tools are available with `quantsupport[typing]`. To use local
+source changes, build the extension using the [binding development
+instructions](https://github.com/jmelo11/quantsupport/blob/main/bindings/python/README.md).
 
-## Installation outcome
+Excel requires 64-bit Windows desktop Excel.
+[Installing the add-in](../excel/installation.md) provides the released XLL and
+platform-specific steps. Excel for macOS and the browser cannot load it.
 
-A successful workspace build establishes that the Rust toolchain, crate
-features, examples, and bindings are compatible. The next chapter uses that
-environment to construct and price a swap, turning the installation into a
-working valuation path.
+The [first valuation](first-swap.md) establishes a numerical reference in Rust.
+The [Python](../python/getting-started.md) and
+[Excel](../excel/workbook.md) chapters explain how their execution and reporting
+models differ while using the same native financial objects.

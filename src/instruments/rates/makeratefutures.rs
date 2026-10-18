@@ -73,8 +73,10 @@ impl MakeRateFutures {
         self
     }
 
-    /// Sets the contract size. Defaults to 2500.0 (CME SOFR 3M convention:
-    /// notional $1M × $25/bp ÷ 100 = $2500 per point).
+    /// Sets currency per quoted price point; defaults to `2500.0`.
+    ///
+    /// A one-basis-point rate change moves the quote by `0.01`, corresponding
+    /// to 25 currency units per contract with the default multiplier.
     #[must_use]
     pub const fn with_contract_size(mut self, size: f64) -> Self {
         self.contract_size = Some(size);
@@ -88,7 +90,9 @@ impl MakeRateFutures {
         self
     }
 
-    /// Sets the side (defaults to `LongReceive`).
+    /// Stores a compatibility setting that is not used by `build`.
+    ///
+    /// Set the position direction on `RateFuturesTrade` instead.
     #[must_use]
     pub const fn with_side(mut self, side: Side) -> Self {
         self.side = Some(side);

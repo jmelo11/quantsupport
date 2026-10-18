@@ -18,13 +18,16 @@ pub struct Evaluator {
 }
 
 impl Evaluator {
-    /// Creates a new [`Evaluator`] with the specified models and pricers.
+    /// Creates a dispatcher keyed by each accepted position's [`TypeId`].
+    ///
+    /// Register the position type, not the instrument or pricer type.
+    /// Models and market inputs are supplied separately through the provider.
     #[must_use]
     pub fn new(pricers: HashMap<TypeId, Box<dyn ErasedPricer>>) -> Self {
         Self { pricers }
     }
 
-    /// Evaluates the given trade using the registered models and pricers, returning the evaluation results.
+    /// Dispatches a position to its registered pricer using the supplied market.
     ///
     /// # Errors
     /// Returns an error if no pricer is registered for the trade type or if evaluation fails.

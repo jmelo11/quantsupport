@@ -108,7 +108,10 @@ pub struct MarketView<'a> {
 }
 
 impl<'a> MarketView<'a> {
-    /// Creates a view after its scenario has been validated against the base inputs.
+    /// Creates a view with an empty construction cache.
+    ///
+    /// This constructor does not validate the scenario. Prefer
+    /// [`Scenario::apply`] when shocks must be checked against the base inputs.
     #[must_use]
     pub fn new(base: &'a PricingContext, scenario: Scenario) -> Self {
         Self {
@@ -127,7 +130,7 @@ impl<'a> MarketView<'a> {
         self
     }
 
-    /// Creates a lazy view of the base market using the context's request cache.
+    /// Creates a lazy, unshocked view using the context's shared request cache.
     #[must_use]
     pub fn base(context: &'a PricingContext) -> Self {
         Self::new(context, Scenario::default()).with_cache(context.request_cache().clone())

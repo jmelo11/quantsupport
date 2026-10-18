@@ -28,10 +28,13 @@ use crate::{
 /// `F = S * DF_quote(T) / DF_base(T)`,
 /// and the NPV of the trade (from the buyer's side) is
 /// `NPV = N * (F - K) * DF_quote(T)`,
-/// where `K` is the agreed forward price.
+/// where `K` is the agreed forward price and the trade side signs the result.
+/// This is the implemented DF ratio; the FX option pricer uses the reciprocal
+/// ratio. A strike-free calibration instrument returns `N * F * DF_quote`
+/// without a side multiplier.
 ///
-/// When a [`DiscountPolicy`] is set, the pricer uses the policy-resolved
-/// discount curve for the quote-currency leg instead of the natural curve.
+/// A [`DiscountPolicy`] is required and resolves curves for both currencies.
+/// Spot and strike are quote-currency units per base-currency unit.
 ///
 /// ## Example
 /// ```rust
@@ -50,9 +53,10 @@ use crate::{
 ///     .build()
 ///     .expect("failed to build fx forward");
 ///
-/// // Wrap in a trade and evaluate with a MarketDataProvider:
-/// //   let trade = FxForwardTrade::new(fx_fwd, Date::new(2024, 6, 1), 1_000_000.0);
-/// //   let results = pricer.evaluate(&trade, &[Request::Value], &ctx);
+/// let trade = FxForwardTrade::new(
+///     fx_fwd, Date::new(2024, 6, 1), 1_000_000.0, Side::LongReceive,
+/// );
+/// assert_eq!(trade.notional(), 1_000_000.0);
 /// ```
 pub struct FxForwardPricer {
     discount_policy: Option<Box<dyn DiscountPolicy>>,

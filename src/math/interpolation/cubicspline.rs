@@ -10,6 +10,8 @@ use crate::{
 ///
 /// Uses natural boundary conditions (second derivatives are zero at the endpoints)
 /// and solves the tridiagonal system via the Thomas algorithm on each call.
+/// Knots must be strictly increasing with matching values. Enabled
+/// extrapolation extends the first or last interval's cubic polynomial.
 #[derive(Clone)]
 pub struct CubicSplineInterpolator {}
 

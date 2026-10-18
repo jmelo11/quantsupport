@@ -11,11 +11,13 @@ pub struct HullWhiteCalibrationRecord {
     pub t: f64,
     /// Year-fraction to payment (caplet) or last swap date (swaption).
     pub big_t: f64,
-    /// Market Black (or Normal) volatility read from the quote.
+    /// Market Black or normal volatility, sampled from the configured surface/
+    /// cube when configuration-based calibration is used, otherwise the raw quote.
     pub market_vol: f64,
     /// Target price derived from market vol.
     pub market_price: f64,
-    /// Model price at the calibrated sigma.
+    /// Instrument price at its independently calibrated constant sigma,
+    /// not a repricing under the assembled piecewise schedule.
     pub model_price: f64,
     /// Calibrated HW short-rate volatility.
     pub calibrated_sigma: f64,

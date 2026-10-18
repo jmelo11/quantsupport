@@ -13,8 +13,10 @@ use crate::{
 
 /// Aggregation method for reducing multiple observations into a single value.
 ///
-/// Used by [`ClaimEvaluationStrategy::PathDependent`] to combine observations
-/// along a simulated path (e.g. arithmetic mean for Asian options).
+/// Describes the requested reduction for [`ClaimEvaluationStrategy::PathDependent`]
+/// (e.g. arithmetic mean for Asian options).
+/// This is currently stored metadata: `ContingentClaim::evaluate` consumes
+/// an already resolved observation and does not execute the aggregator.
 pub enum PathAggregator {
     /// Arithmetic mean of observations.
     ArithmeticMean,
@@ -46,12 +48,12 @@ pub enum PathAggregator {
 pub enum ClaimEvaluationStrategy {
     /// Known amount (fixed coupons, redemptions, disbursements).
     Deterministic {
-        /// Fixed cashflow amount.
+        /// Raw amount per claim notional; claim evaluation multiplies by notional again.
         amount: f64,
     },
 
     /// Linear in a single rate fixing over an accrual period.
-    /// value = notional × (fixing + spread) × τ
+    /// raw = (fixing + spread) × τ
     /// e.g. floating rate coupon
     LinearRate {
         /// Additive spread over the index rate.
@@ -61,26 +63,26 @@ pub enum ClaimEvaluationStrategy {
     },
 
     /// Non-linear in a single rate fixing over an accrual period.
-    /// value = notional × payoff(fixing + spread) × τ
+    /// raw = payoff(fixing + spread) × τ
     /// e.g. caplet, floorlet, digital coupon
     NonLinearRate {
         /// Payoff function (call, put, digital, etc.).
         payoff_ops: PayoffOps,
         /// Additive spread over the index rate.
         spread: f64,
-        /// Option strike.
+        /// Stored strike metadata; evaluation uses the strike encoded in `payoff_ops`.
         strike: f64,
         /// Day-count convention for accrual factor τ.
         day_counter: DayCounter,
     },
 
     /// Payoff on a single spot observation (no accrual period).
-    /// value = notional × payoff(S)
+    /// raw = payoff(S)
     /// e.g. equity call, FX option, binary
     SpotPayoff {
         /// Payoff function.
         payoff_ops: PayoffOps,
-        /// Option strike.
+        /// Stored strike metadata; evaluation uses the strike encoded in `payoff_ops`.
         strike: f64,
         /// Date the spot is observed.
         observation_date: Date,
@@ -91,16 +93,18 @@ pub enum ClaimEvaluationStrategy {
     PathDependent {
         /// Dates at which the underlying is observed.
         observation_dates: Vec<Date>,
-        /// How observations are combined.
+        /// Requested aggregation metadata, not executed by the basic claim evaluator.
         aggregator: PathAggregator,
         /// Payoff function applied to the aggregated value.
         payoff_ops: PayoffOps,
-        /// Option strike.
+        /// Stored strike metadata; evaluation uses the strike encoded in `payoff_ops`.
         strike: f64,
     },
 
-    /// Exercise-contingent: conditional on an exercise decision.
-    /// e.g. Bermudan swaption, callable bond
+    /// Exercise metadata wrapping an inner claim.
+    ///
+    /// The basic evaluator always evaluates the inner claim; it does not solve
+    /// an exercise policy or gate payment on an exercise decision.
     ExerciseContingent {
         /// Date the exercise may occur.
         exercise_date: Date,

@@ -2926,8 +2926,9 @@ class EquityOption(Instrument):
     strike : float or str or Mapping[str, Any]
         Numeric absolute exercise price per equity unit, case-insensitive
         "ATM", or a native tagged Strike dictionary: {"Absolute": value} or
-        {"Relative": spread}. Relative means an additive spread to the forward
-        equity price, not a percentage; the pricer resolves the effective strike.
+        {"Relative": offset}. The equity pricer uses Strike.resolve: Relative
+        adds this offset to the forward equity price, not a percentage.
+        This helper convention is not universal across product pricers.
     option_type : OptionType or str
         Call or Put payoff direction, as an enum or case-insensitive name.
         Trade supplies the equity position size and long/short direction.
@@ -3260,8 +3261,12 @@ class CapletFloorlet(Instrument):
     strike : float or str or Mapping[str, Any]
         Annual decimal absolute strike as a number, case-insensitive "ATM",
         or native tagged Strike dictionary: {"Absolute": rate} or
-        {"Relative": spread}. Relative adds an annual decimal spread to the
-        forward rate at pricing time. Notional belongs to Trade.
+        {"Relative": pct}. The Black and Hull-White caplet pricers interpret
+        Relative multiplicatively as forward * (1 + pct), unlike the generic
+        Strike.resolve helper's additive forward + offset. For example,
+        pct=0.10 raises a 0.04 forward to a 0.044 strike, not 0.14.
+        Prefer an absolute numeric strike to avoid this consumer-specific
+        convention. Notional belongs to Trade.
     currency : Currency or str
         Payoff currency enum or alphabetic currency code.
     market_index : MarketIndex or str
@@ -3361,7 +3366,9 @@ class CapletFloorlet(Instrument):
 
 @disjoint_base
 class RateFutures(Instrument):
-    """An exchange-traded interest-rate futures position.
+    """An exchange-traded interest-rate futures contract.
+
+    Position side and number of contracts belong to Trade, not this instrument.
 
     Parameters
     ----------
@@ -3452,7 +3459,11 @@ class RateFutures(Instrument):
 
     @property
     def contract_size(self) -> float | None:
-        """Read-only contractual contract_size. Collections are returned as copies."""
+        """Read-only currency value per one futures price point for one contract.
+
+The default 2500 per point corresponds to 25 per 0.01-point move, not
+2500 per basis point. Position contract count belongs to Trade.
+"""
         ...
 
 @final

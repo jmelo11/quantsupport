@@ -267,7 +267,9 @@ impl BootstrappedCurve {
     /// Returns the discount factor at the given date.
     ///
     /// # Errors
-    /// Returns an error if the date is out of bounds for the curve's time grid or if interpolation fails for any reason (e.g., NaN inputs, invalid interpolator state). The error message will indicate the nature of the failure to aid in debugging bootstrapping issues.
+    /// Propagates interpolation or explicit source-curve errors. Ordinary
+    /// discount-factor snapshots enable extrapolation; they do not reject a
+    /// date solely because it lies outside the stored grid.
     pub fn discount_factor(&self, date: Date) -> Result<f64> {
         let year_fraction = self.day_counter.year_fraction(self.reference_date, date);
         self.discount_factor_from_time(year_fraction)
