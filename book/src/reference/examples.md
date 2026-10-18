@@ -1,9 +1,9 @@
 # Executable reading route
 
-Executable examples complement the book by supplying complete construction
-inputs and actual output interpretation. They are not evidence that every
-illustrative fragment is a standalone program. Run Rust packages from the
-repository root so their existing data paths resolve.
+The example collection supplies complete market inputs and valuations for the
+workflows developed in this book. Run the Rust packages from the repository
+root so their data paths resolve. Python notebooks have companion loaders and
+data files in their own directories.
 
 ## From one valuation to a constructed market
 
@@ -14,11 +14,11 @@ with calibrated SOFR, Term SOFR, ICP, collateralized CLP and bond-anchored
 curves. `cargo run -p sensitivity` follows those dependencies into quote-level
 trade risk.
 
-Product examples add genuinely different problems rather than just different
-function names. `valuation-caps` connects optionlet quotes to volatility risk.
-`valuation-bonds` compares tree and backward-Fourier callable valuation.
-`valuation-loans` separates contractual principal from market observations,
-prepayment, credit and fair-rate schedule choices.
+The product examples develop valuation and quotation choices for each family.
+`valuation-caps` connects optionlet quotes to volatility risk. `valuation-bonds`
+compares tree and backward-Fourier callable valuation. `valuation-loans`
+separates contractual principal from market observations, prepayment, credit and
+fair-rate schedule choices.
 
 ## From market targets to future states
 
@@ -36,10 +36,9 @@ cargo run -p scripting-examples --bin xva
 cargo run -p scripting-examples --bin stepped-coupon-bond
 ```
 
-These compare selected native and scripted representations under their stated
-model/payoff setups. Read their assertions as scoped regressions, not proofs
-of exact general stochastic equivalence or of optimal exercise for arbitrary
-scripts.
+These compare native and scripted representations under specified models and
+payoff rules. Their assertions test those setups; stochastic comparisons also
+require a sampling tolerance and matching exercise assumptions.
 
 ## Python and Excel
 
@@ -59,7 +58,8 @@ The optional
 present the same canonical notebooks and saved outputs without requiring a
 local kernel.
 
-The notebook [directory](https://github.com/jmelo11/quantsupport/tree/main/bindings/python/examples)
+The notebook
+[directory](https://github.com/jmelo11/quantsupport/tree/main/bindings/python/examples)
 contains local loaders and illustrative market/model files. Read the
 problem-setting narrative and units alongside the code; do not copy helper
 defaults into an unrelated market without reviewing them.

@@ -1,18 +1,21 @@
 # Cross-currency contracts
 
-Cross-currency valuation separates four roles: each index projects its own
-coupons, a collateral agreement selects discount curves, spot connects payment
-currencies, and cross-currency instruments calibrate collateral adjustments.
-Conflating any two of these roles can produce plausible numbers in the wrong
-currency or with the wrong market risk.
+A cross-currency contract exchanges payments in two currencies. Valuation
+requires curves for projecting each leg, discount curves consistent with the
+collateral agreement, and an FX rate for converting between currencies.
+Cross-currency market quotes help calibrate the collateral-adjusted curves.
+
+For a USD-collateralized USD/CLP swap, for example, SOFR can provide USD
+projection and discounting, ICP can project CLP coupons, and a separate
+USD-collateralized CLP curve discounts those payments.
 
 ## Swaps and collateral curves
 
-Fixed–floating and floating–floating cross-currency builders create two
-currency legs with initial/final principal exchanges. Notionals can be chosen
-to be spot-equivalent at inception: for USD→CLP spot \\(S\\) quoted in CLP per
-USD, CLP principal is USD principal times \\(S\\). A symbol such as
-`fx_clpusd` is not a reliable substitute for explicitly stating these units.
+Fixed–floating and floating–floating cross-currency builders create two currency
+legs with initial/final principal exchanges. Notionals can be chosen to be
+spot-equivalent at inception: for USD→CLP spot \\(S\\) quoted in CLP per USD,
+CLP principal is USD principal times \\(S\\). State this orientation explicitly
+when supplying spot or interpreting results.
 
 A USD CSA policy selects SOFR for USD payments and
 `Collateral(CLP, USD)` for CLP payments. The latter is not the local CLP ICP
@@ -51,13 +54,11 @@ V=N\\,s\\,(F_{\rm impl}-K)P_{\rm quote}(0,T)
 
 when a contractual forward price is present.
 
-This ratio is stated deliberately. For spot expressed as quote currency per
-base currency, the usual covered-interest-parity formula uses the reciprocal
-discount-factor ratio. The library's FX-option pricer uses that usual
-base/quote ratio, whereas the standalone forward implementation above does
-not. Do not assume the two pricers are interchangeable representations of one
-market convention, or silently substitute a textbook expression while
-explaining the implemented forward results.
+For spot expressed as quote currency per base currency, this implementation
+uses the reciprocal of the usual covered-interest-parity discount ratio.
+The FX-option pricer uses the usual base/quote ratio. This discrepancy affects
+comparisons between the two pricers and must be accounted for when
+reproducing forward values or testing option parity.
 
 An outright forward rate and forward points are different calibration
 strategies. `AnchorOutrightPrice` uses the outright quote;

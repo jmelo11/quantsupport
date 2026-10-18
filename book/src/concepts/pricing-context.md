@@ -1,9 +1,13 @@
 # Constructing and querying a market
 
-`PricingContext` binds observations, construction specifications and market
-identities into one valuation environment. Its evaluation date comes from the
-quote store's reference date. The context can build everything eagerly or
-resolve only the dependencies requested by a pricer.
+A valuation needs a consistent set of observations and constructed market
+objects. `PricingContext` brings these together: it holds quote, fixing and FX
+stores, curve and model configurations, and the objects built from them. Its
+evaluation date is the quote store's reference date.
+
+A pricer requests the market data needed for a trade, and the context constructs
+and caches the corresponding dependencies. Applications can also call
+`initialize()` to build the configured market in advance.
 
 The following fragment illustrates configuration-driven setup; `quotes` and
 `curves` are previously loaded typed inputs:
@@ -27,10 +31,10 @@ curves, volatility surfaces, cubes and simulations in that order. Later
 components can therefore consume earlier dependencies. Reinitialization
 rebuilds from the original inputs.
 
-Eager initialization does not mean that the context owns a universal AD tape.
-Native pricers and simulation services manage their recording scopes.
-Python context entry establishes its own scope and enables lazy construction;
-it should not be described as an implicit eager `initialize()` call.
+Native pricers and simulation services manage their own differentiation
+recording scopes. In Python, entering a context also establishes the binding's
+scope and enables construction on request; explicit `initialize()` performs
+the eager build.
 
 ## Dependency-driven construction
 
@@ -42,8 +46,7 @@ provider constructs and caches required objects and dependencies.
 For example, a swap may need only two rate curves and a fixing series even if
 the context also describes unrelated equities and simulations. A calibrated
 swaption additionally needs source option identities and its volatility market.
-Missing configuration is reported at the requested resource rather than
-replaced by an unrelated available curve.
+The context reports missing configuration for the requested resource.
 
 `ConstructedElementStore` groups constructed objects by `MarketIndex`.
 Directly supplied curves are useful for controlled tests such as the first
@@ -64,10 +67,10 @@ base currency/index guide base collateral construction, but they are not a
 promise that every direct Rust pricer will automatically install a policy or
 convert its output to that currency.
 
-`PricerConfiguration` is keyed by instrument family and contains typed
-implementation/model assignments. It is not an arbitrary string registry.
-Direct Rust callers still select the concrete pricer, while binding services
-can use the typed selection mechanism for supported families.
+`PricerConfiguration` associates an instrument family with a typed pricing
+implementation and model assignments. Binding services use these assignments
+for supported families. Direct Rust callers construct the selected concrete
+pricer.
 
 ## Independent market views
 
@@ -77,9 +80,8 @@ mutate the base store or require reconstructing every configured simulation.
 Unchanged calibrated values can be reused with detached AD wrappers; affected
 dependencies are rebuilt when consumed.
 
-This separation gives three useful lifetimes: persistent construction inputs,
-constructed objects cached for a market view, and temporary numerical/tape
-state for a valuation. Keeping these lifetimes distinct avoids stale curves,
-invalid derivative pointers and unnecessary construction work. The
-[risk chapters](../risk/aad.md) explain what is retained when the final output
-is a derivative rather than just a value.
+Construction inputs can be retained between valuations, while each market
+view has its own cache and each valuation uses temporary differentiation
+state. These lifetimes determine when a curve can be reused and when it must
+be rebuilt. The [risk chapter](../risk/aad.md) explains how market inputs
+remain connected to the reported derivatives.

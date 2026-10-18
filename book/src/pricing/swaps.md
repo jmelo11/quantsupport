@@ -1,8 +1,11 @@
 # Swaps and discounted cashflows
 
-Discounted-cashflow valuation combines contractual amounts, observed/projected
-rates, direction, currency conversion and a discount policy. For appropriately
-chosen live payments, its financial form is
+An interest-rate swap is valued by projecting its floating coupons and
+discounting the payments on both legs. Historical fixings determine coupons
+whose observations are already known; forward curves supply the remaining
+rates. The discount policy selects the curve appropriate to each payment.
+
+For the payments included in the valuation, we can write
 
 \\[
 V=\sum_{\ell}s_\ell\sum_i
@@ -10,9 +13,9 @@ C_{\ell i}\\,P_{d,\ell}(0,T_{\ell i})\\,X_{\ell i}.
 \\]
 
 Here \\(s_\ell\\) is leg direction and \\(X_{\ell i}\\) is the applicable
-conversion factor when the pricing policy calls for conversion. This formula
-describes the financial operation, not a promise that the generic implementation
-automatically selects live payments or a universal reporting currency.
+conversion factor when the pricing policy calls for conversion. The pricer's
+payment-selection and currency-conversion conventions determine which terms
+enter the sum. The generic implementation's conventions are described below.
 
 ## Regular fixed–floating swaps
 
@@ -41,15 +44,15 @@ filter. Do not use it as an implicit settlement/seasoning filter for an
 arbitrary existing leg. Specialized bond and loan pricers apply their own
 payment-selection conventions.
 
-Likewise, default `HandleCashflows` reports underlying unsigned amounts before
-leg-side multiplication. Principal and initial disbursement rows can be
-present. The table has no discounted-PV column. Its payment dates, leg indices,
-currencies and observations explain the contract but cannot be naively summed
-as signed PV.
+The default `HandleCashflows` report shows signed amounts, including principal
+and initial disbursements where present. It applies leg direction and reverses
+disbursements: receipts are positive and payments are negative.
+Use its payment dates, leg indices, currencies and observations to inspect
+the contract. Reconciling the table to PV also requires payment selection,
+discount factors and any currency conversion.
 
-These distinctions are visible in the [first valuation](../getting-started/first-swap.md):
-the regular builder produces principal exchanges on both sides, and the raw
-24-row report is not a series of 24 positive receipts.
+In the [first valuation](../getting-started/first-swap.md), the builder produces
+principal exchanges on both sides, giving 24 rows in the cashflow table.
 
 ## Fair fixed rate
 
@@ -63,9 +66,9 @@ A=\sum_iN_i\tau_iP_d(0,T_i).
 
 The current generic `FairRate` handler constructs fixed-coupon annuity and
 floating amounts using its first resolved forward curve and ignores principal
-flows. This is a useful vanilla fixed–floating rate, not a general solver for
-arbitrary multi-leg, cross-currency, optional or amortizing-contract breakeven.
-More complex products need their own defined adjustable term and methodology.
+flows. This handler supports the vanilla fixed–floating calculation. More complex
+multi-leg, cross-currency, optional or amortizing contracts require a
+product-specific definition of the adjustable term and solution method.
 
 ## Overnight index swaps
 

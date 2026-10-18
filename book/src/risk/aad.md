@@ -1,15 +1,19 @@
 # Differentiation and market sensitivities
 
-A useful risk report identifies both the derivative and the independent input.
-QuantSupport names market pillars so that a trade's numerical dependencies
-can be expressed as quote exposures rather than anonymous curve-node
-derivatives.
+Automatic differentiation computes a valuation's local response to its
+inputs. QuantSupport registers those inputs under market pillar labels, so a
+risk report can identify the deposit, swap, volatility quote or other quantity
+whose change affects the trade.
 
-For a decimal rate quote \\(q\\), the reported row is
-\\(\partial V/\partial q\\). Its first-order +1 bp change is
-\\(10^{-4}\partial V/\partial q\\). A volatility quote, FX spot or spread
-anchor has different units. A number called “exposure” is not automatically a
-DV01, vega per percentage point, or a historical stress loss.
+For a calibrated curve, the derivative includes the connection between market
+quotes and solved curve nodes. The label and units of each input determine
+how to translate the derivative into a monetary change.
+
+For a decimal rate quote \\(q\\), the reported row is \\(\partial V/\partial
+q\\). Its first-order +1 bp change is \\(10^{-4}\partial V/\partial q\\). A
+volatility quote, FX spot or spread anchor has different units. Apply the
+scaling appropriate to each input when reporting DV01, vega or other market-move
+estimates.
 
 ## Forward and reverse representations
 
@@ -30,8 +34,8 @@ assert!((y.second_derivative() - 2.0).abs() < 1e-12);
 ```
 
 Reverse mode starts from a selected output and accumulates adjoints toward
-independent leaves. A constant has no independent market meaning merely
-because it is stored in an AD type.
+registered independent inputs. In the example below, `x` is a tracked
+variable and the exponential's derivative is propagated back to it.
 
 ```rust
 # extern crate quantsupport;
@@ -48,18 +52,18 @@ Tape::stop_recording_fwd();
 ```
 
 The tape is thread-local. Marks separate persistent market dependencies from
-temporary trade/path nodes. Pricers register required pillars, calculate
-values, propagate adjoints and report them under labels; script/XVA services
-use path-by-path rewind and worker-local markets. `PricingContext::initialize`
-is a construction operation, not the owner of all these tape lifetimes.
+temporary trade/path nodes. Pricers register required pillars, calculate values
+and propagate adjoints before reporting labelled derivatives. Script and XVA
+services rewind path-local nodes and use worker-local markets. These valuation
+services manage recording separately from context initialization.
 
 ## Calibration dependencies
 
 For calibrated rate curves, the nonlinear solve is numerical `f64` work.
-Finite-difference residual Jacobians and the implicit-function theorem
-reconnect the converged discount factors to market quotes. This is a local
-first-order construction, not exact differentiation of every Newton iteration
-or a guarantee of exact calibration curvature.
+Finite-difference residual Jacobians and the implicit-function theorem reconnect
+the converged discount factors to market quotes. The resulting connection
+approximates the local first-order calibration response; higher-order
+calibration effects require separate validation.
 
 The resulting ladder can include parent curves. A Term SOFR swap discounted
 on SOFR may expose basis quotes and OIS quotes because both define the market
@@ -75,7 +79,7 @@ assume every implementation removes zero rows or includes every conceivable
 model parameter. Bond Z-spread/OAS anchors, for example, appear as explicitly
 independent spread factors rather than being re-solved under every curve move.
 
-## What a derivative does not establish
+## Validation and numerical accuracy
 
 AD differentiates the active implemented program. Branches use their selected
 local behavior; hard digitals have zero pathwise derivative almost everywhere.

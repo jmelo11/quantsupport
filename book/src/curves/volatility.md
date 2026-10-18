@@ -1,10 +1,13 @@
 # Volatility markets and model calibration
 
-An implied-volatility market describes option prices across contract
-coordinates. A dynamics model describes future states. Calibrating the second
-to the first does not make them the same object: a surface retains the
-observations that define the target, while the model retains parameters that
-produce its own distribution.
+Option markets quote implied volatility across expiries, strikes and, for
+swaptions, underlying swap tenors. QuantSupport constructs surfaces and cubes
+from these observations. Pricers can query them directly or use them as targets
+when calibrating a stochastic model.
+
+Calibration converts the selected volatility quotes into option prices, then
+fits model parameters to those prices. The resulting parameters describe the
+model's dynamics and use units appropriate to that model.
 
 ## Coordinates and interpolation
 
@@ -66,11 +69,10 @@ uses a volatility parameter. These are distinct units and parameterizations,
 even when they are ultimately fitted to the same option premium.
 
 Gaussian calibration converts each selected caplet or swaption's Black or
-Normal volatility into an option price. It then fits a **constant** sigma to
-each instrument independently and assembles those fitted values into a
-piecewise schedule. This is not a forward-sigma bootstrap that preserves
-earlier intervals while fitting the next instrument. The assembled schedule
-is not guaranteed to jointly reproduce the calibration basket.
+Normal volatility into an option price. It fits a constant sigma to each
+instrument independently, then assembles the fitted values into a piecewise
+schedule. Repricing under that combined schedule can differ from the targets
+because the individual fits do not jointly solve its interval volatilities.
 
 Hull–White quality reports retain instrument identity, target volatility/price,
 fitted price, sigma, forward and strike. Their fitted prices describe the
@@ -82,8 +84,8 @@ For lognormal Brownian motion, term-volatility stripping instead enforces
 \int_0^{T_i}\sigma(u)^2\\,du=\sigma_{\rm term}(T_i)^2T_i.
 \\]
 
-Negative forward variance is rejected. This makes the meaning of model
-volatility explicit: it is not generally the number read from one surface node.
+Negative forward variance is rejected. The stripped interval volatilities
+reproduce the accumulated variance implied by the selected term quotes.
 
 The Gaussian calibration Jacobian uses diagonal forward differences with
 absolute volatility bump \\(h=10^{-6}\\):

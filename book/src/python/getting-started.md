@@ -1,9 +1,11 @@
 # Working in Python
 
-The Python package exposes native financial objects rather than an independent
-pricing implementation. Typed configuration, contracts and trade positions
-cross into Rust; results return as scalar properties and pandas tables.
-Domain imports and package-root imports refer to the same supported classes:
+The Python package provides access to QuantSupport's native instruments,
+market construction, valuation and risk calculations. Build a contract and
+trade, configure its market, then evaluate the position inside a pricing
+context. Results are available as scalar properties and pandas tables.
+
+Classes can be imported from domain packages or from the package root:
 
 ```python
 import quantsupport as qs
@@ -89,8 +91,8 @@ with context, scenario:
 ```
 
 The base inputs remain unchanged. Scenarios compose in entry order and rebuild
-only requested affected dependencies. Historical snapshots solve a different
-problem: selecting one complete observed market, not shocking today's market.
+only requested affected dependencies. To reprice against an observed historical
+market, select a complete snapshot from a market archive:
 
 ```python
 archive = qs.MarketSnapshotStore()
@@ -128,13 +130,14 @@ The discount index needs a configured model and constructed curves; a script
 outside the base currency needs an explicit discount index. This service does
 not expose arbitrary FX/equity factors, custom correlations, raw paths, or
 scripted cashflow/sensitivity tables. Native-trade exposure/XVA is available
-through the separate context XVA workflow. Do not infer complete low-level
-Rust scripting parity from the direct script evaluator.
+through the separate context XVA workflow. Use the Rust interfaces when the
+workflow needs those additional facilities.
 
 Native failures use `QuantSupportError`; invalid Python inputs can also raise
-`TypeError` or `ValueError`. The
-[executable notebooks](../reference/examples.md) develop complete applications.
-The optional [Python guide](https://jmelo11.github.io/quantsupport/api/python/guide/index.html)
-develops binding-specific workflows; the
-[Python reference](https://jmelo11.github.io/quantsupport/api/autoapi/quantsupport/index.html)
+`TypeError` or `ValueError`. The [executable
+notebooks](../reference/examples.md) develop complete applications. The optional
+[Python
+guide](https://jmelo11.github.io/quantsupport/api/python/guide/index.html)
+develops binding-specific workflows; the [Python
+reference](https://jmelo11.github.io/quantsupport/api/autoapi/quantsupport/index.html)
 provides declaration-level details.

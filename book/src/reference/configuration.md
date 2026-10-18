@@ -1,10 +1,10 @@
 # Serializable configuration
 
-Configuration is the persistent description of a construction, not a dump of
-runtime objects. Rust derives Serde support for native types; Python accepts
-typed definitions and supported plain dictionaries; Excel constructors build
-the corresponding native configurations. Applications remain responsible for
-file I/O and example-specific envelopes.
+Configuration records the observations and construction rules needed to
+rebuild a market. Rust uses Serde for the native types, Python accepts typed
+definitions and supported dictionaries, and Excel constructors create the
+corresponding native configurations. Applications load and save these inputs
+using their own file conventions.
 
 ## Observations and curve membership
 
@@ -124,10 +124,9 @@ separately supplies index, model, paths, seed, horizon, frequency and time basis
 
 `XvaEngineConfig` contains rate-model definitions/driver mappings, FX
 definitions and path/grid controls. `CsaTerms` contains legal-group collateral,
-margin, credit and funding assumptions. Those are different descriptions:
-calibrating a rate model does not determine counterparty recovery or margin
-thresholds. See [Netting and collateral](../xva/netting-csa.md) for field
-precedence and timing limits.
+margin, credit and funding assumptions. Specify these agreement inputs
+separately from the rate model. See [Netting and
+collateral](../xva/netting-csa.md) for field precedence and timing limits.
 
 A scripted-product input is an ordered array of date/source pairs:
 
@@ -150,7 +149,7 @@ and `5Y`, and enum spelling follows canonical native variants. Standard
 `{"Equity":"AAPL"}`. A supported Python string conversion is not necessarily
 an alias accepted by a serialized Rust enum.
 
-Historical snapshot archives preserve complete native construction inputs
-using this discipline. They exclude runtime AD state, fixing histories and
-binding-only registrations. Reproducibility requires preserving those external
-assumptions separately, not merely saving one JSON file.
+Historical snapshot archives preserve complete native construction inputs using
+this discipline. They exclude runtime AD state, fixing histories and
+binding-only registrations. Preserve those external assumptions separately when
+recording a reproducible valuation.

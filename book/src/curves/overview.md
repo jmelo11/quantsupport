@@ -1,10 +1,14 @@
 # Discount factors and rate conventions
 
-A rate curve answers a dated question: how much is a payment worth, or what
-rate is implied over an interval? `InterestRatesTermStructure<T>` supplies
-discount factors and forward rates independently of how the curve is
-represented. A calibrated nodal curve, a flat curve and a composite funding
-curve can therefore serve the same downstream valuation.
+Interest-rate curves provide the discount factors used to value future
+payments and the forward rates used to project floating coupons. QuantSupport
+exposes these queries through `InterestRatesTermStructure<T>`, so a pricer can
+use a calibrated curve, a flat curve or a composite funding curve through the
+same interface.
+
+A curve's rate conventions determine how discount factors translate into
+quoted rates. Understanding these conventions is useful both when constructing
+a market and when interpreting a forward-rate query.
 
 Write \\(P(0,t)\\) for the discount factor from reference date zero to date
 \\(t\\). For an interval with year fraction \\(\tau\\),
@@ -39,18 +43,15 @@ identical displayed percentages under different conventions are not equal
 financial prices.
 
 Day counters include ACT/360, ACT/365, 30/360 variants, Actual/Actual and
-Business/252. They are explicit mathematical choices, not interchangeable
-labels. Calendar adjustment determines dates; day count determines the
-fraction between them.
+Business/252. The day counter measures the accrual fraction between dates,
+while the calendar determines any business-day adjustment to those dates.
 
-Names do not establish general convention conformity. The current
-`ActualActual` calculation handles same-year and adjacent-year intervals,
-but omits one complete intervening year when endpoint years differ by at
-least two. `Thirty360US` independently adjusts February month-ends after its
-31st-day adjustments, differing from common US/NASD rules. Do not rely on
-these implementations as general ISDA or US Bond Basis calculations;
-validate the actual dates and contractual convention. The verified first
-valuation instead uses ACT/360.
+Two implementations have restrictions relevant to contractual accrual.
+`ActualActual` handles same-year and adjacent-year intervals but omits one
+complete intervening year over longer spans. `Thirty360US` adjusts February
+month-ends after its 31st-day adjustments, differing from common US/NASD rules.
+Validate these conventions against the required dates; their API references
+describe the implemented rules. The examples here use ACT/360 or ACT/365.
 
 ## Curve representations
 
@@ -69,11 +70,11 @@ is a separate permission: log-linear continuation extends the terminal
 forward, while linear/cubic choices use their implemented linear
 extrapolation. Disabled extrapolation makes out-of-domain queries errors.
 
-`FlatForwardTermStructure<T>` represents the term structure with one rate
-and rate definition. An explicit `ZeroRateTermStructure` interpolates zero
-rates rather than discount factors; tenor-based zero curves resolve their
-pillars from the reference date. Interpolating rates and interpolating
-discount factors are not the same construction.
+`FlatForwardTermStructure<T>` represents the term structure with one rate and
+rate definition. An explicit `ZeroRateTermStructure` interpolates zero rates,
+and tenor-based zero curves resolve pillar dates from the reference date. Choose
+the representation and interpolator together, since they determine the implied
+shape between pillars.
 
 A spread representation can express a continuously compounded adjustment:
 
@@ -90,10 +91,11 @@ construction.
 
 ## Pricing nodes and risk pillars
 
-A node is a quantity used to evaluate the curve. A risk pillar is an
-independent input named in a sensitivity report. They coincide for some
-hand-built curves but not for a calibrated curve: its nodes are solved discount
-factors, whereas its pillars can be deposit, swap or bond quotes.
+A calibrated curve has discount-factor nodes used for interpolation and
+market quote pillars used for sensitivity reporting. Calibration connects
+the two: changing a deposit, swap or bond quote changes the solved discount
+factors and hence the value of a trade. On some directly constructed curves,
+the pricing nodes themselves are the independent risk inputs.
 
 `Pillars<DualFwd>` exposes labels, values and tape-registration operations.
 Calibration supplies a Jacobian to connect pricing nodes to independent market

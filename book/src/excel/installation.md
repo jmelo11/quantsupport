@@ -1,6 +1,7 @@
-# Download and Install
+# Download and install
 
-**[Download quantsupport.xll for 64-bit Windows Excel](https://jmelo11.github.io/quantsupport/downloads/quantsupport.xll)**
+**[Download quantsupport.xll for 64-bit Windows
+Excel](https://jmelo11.github.io/quantsupport/downloads/quantsupport.xll)**
 
 [Release history](https://github.com/jmelo11/quantsupport/releases) provides
 versioned downloads. Excel for macOS and Excel in the browser cannot load an XLL.
@@ -14,18 +15,19 @@ versioned downloads. Excel for macOS and Excel in the browser cannot load an XLL
 
 The workbook includes pricing, curve tables, cashflows, and sensitivities.
 
-## Discover Functions
+## Discover functions
 
-`=QS.FUNCTIONS()` lists worksheet names. `=QS.FUNCTIONS.DETAILS()` spills
-the catalog. `=QS.HELP("QS.TRADE.SWAP")` displays parameter guidance in cells.
-The same help appears in Excel's Function Arguments dialog and the optional
-[worksheet reference](https://jmelo11.github.io/quantsupport/api/excel/functions/index.html).
+`=QS.FUNCTIONS()` lists worksheet names. `=QS.FUNCTIONS.DETAILS()` spills the
+catalog. `=QS.HELP("QS.TRADE.SWAP")` displays parameter guidance in cells. The
+same help appears in Excel's Function Arguments dialog and the optional
+[worksheet
+reference](https://jmelo11.github.io/quantsupport/api/excel/functions/index.html).
 
 Function names and aliases are public. Registry objects, raw pointers, and Rust
 helper functions are internal. Scalar date functions can run on calculation
 threads; registry and pricing functions run on Excel's main thread.
 
-## Build from Source
+## Build from source
 
 On Windows, install the 64-bit MSVC Rust toolchain and Visual Studio Build Tools,
 then run from the repository root:

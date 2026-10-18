@@ -1,15 +1,14 @@
 # Working in Rust
 
-Rust exposes the separation between contract, position, market and methodology
-directly. A `Make*` builder creates an instrument, a trade wrapper supplies
-position metadata, and a concrete pricer evaluates requested outputs against a
-`MarketDataProvider`. `quantsupport::prelude::*` is the usual starting point.
+A Rust valuation typically starts by building an instrument and wrapping it
+in a trade. A pricer evaluates that trade against a `MarketDataProvider` and
+returns the requested results, such as value, cashflows and sensitivities.
+Import `quantsupport::prelude::*` to bring the common workflow types into scope.
 
-This structure matters more than a list of constructors. A curve-building
-application and a portfolio application can share financial objects without
-sharing their I/O or reporting infrastructure. An alternative market provider
-can supply a controlled market in tests; an alternative pricer can value the
-same contract under another numerical method.
+The instrument, market provider and pricer have separate interfaces. This
+allows an application to reuse a contract with different markets or numerical
+methods. For example, tests can supply a flat curve directly, while a portfolio
+application can construct its curves from quoted instruments.
 
 ## Scalars and ownership
 
@@ -20,10 +19,10 @@ forward derivative seed, and nesting it raises the derivative order.
 constructed-market wrappers generally use
 `DualFwd = Dual<Fwd2>`, with `Fwd2 = Fwd<Fwd<f64>>`.
 
-Generic mathematical support does not imply that every pricer accepts every
-scalar. In particular, the generic discounted-cashflow pricer's implemented
-trade bounds require `LegsProvider<DualFwd>`. Use the scalar required by the
-whole connected workflow, rather than changing only the instrument parameter.
+Choose a scalar supported by the full valuation workflow. The generic
+discounted-cashflow pricer, for example, requires trades implementing
+`LegsProvider<DualFwd>`, even though many underlying mathematical types also
+support `f64` and other scalars.
 
 Constructed curves commonly use `Rc<RefCell<dyn ADCurveElement>>`. They share
 market objects within a workflow and permit controlled mutation such as pillar
@@ -38,11 +37,11 @@ as value, cashflows or sensitivities. The pricer's `MarketDataRequest` declares
 inputs such as discount curves, fixings, FX or a volatility market. A provider
 resolves the latter before the pricer runs its valuation.
 
-`EvaluationResults` is a non-generic reporting envelope with optional fields.
-Submit only requests supported by the selected methodology: unsupported
-requests can be rejected or left unpopulated depending on the implementation.
-A populated cashflow table is not necessarily a signed or discounted
-decomposition of reported PV.
+`EvaluationResults` contains optional fields for the measures produced.
+Request support and cashflow reporting conventions depend on the selected
+pricer. Check its reference when choosing requests or reconciling reported
+amounts to PV; an unsupported request may raise an error or leave its field
+unpopulated.
 
 Concrete pricers provide compile-time dispatch. For a heterogeneous portfolio,
 `Evaluator` associates an erased pricer with a trade's `TypeId` and performs
@@ -59,10 +58,10 @@ market index used to discount an object; it should not rewrite the contract.
 An `InterestRatesTermStructure<T>` answers discount and forward queries without
 requiring the consumer to know how the curve was constructed.
 
-These boundaries provide a disciplined extension strategy. Add a new pricing
-method at `Pricer`, a new observation source at `MarketDataProvider`, and a new
-curve representation at the term-structure interface. Use a `MarketModel` when
-the extension must resolve pathwise observables for scripts or claims.
+Choose the interface that corresponds to the component you need to extend:
+`Pricer` for a valuation method, `MarketDataProvider` for a market-data source,
+and the term-structure interface for a curve representation. A `MarketModel`
+provides pathwise observations for scripts and exposure claims.
 
 Fallible public operations use `Result<T>` with `QSError`. Context attached to
 an error identifies the failing construction, event or path while preserving
@@ -71,6 +70,6 @@ interpret them at an application boundary. Numerical solvers also expose
 convergence status; successful return alone is not a universal proof that an
 iteration tolerance was met.
 
-The [first valuation](first-swap.md) is executable Rust, not an API sketch.
-The [Rust reference](https://docs.rs/quantsupport) supplies declarations when
-the concepts developed here need a precise signature.
+The [first valuation](first-swap.md) provides a complete Rust program.
+Use the [Rust reference](https://docs.rs/quantsupport) for signatures,
+parameter descriptions and implementation-specific behavior.

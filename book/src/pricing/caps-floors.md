@@ -1,9 +1,14 @@
 # Interest-rate options
 
-Caps, floors and swaptions combine contractual schedules with an option-price
-model. QuantSupport supports direct implied-volatility optionlet valuation and
-Gaussian short-rate representations. The routes share contracts and curves,
-but they do not make the same assumptions about volatility or model risk.
+An interest-rate option gives its holder a payment or exercise right tied
+to future rates. Caps and floors protect individual coupon periods, while a
+swaption gives the right to enter a swap. Their valuation uses the underlying
+schedules and curves together with an option-pricing model.
+
+QuantSupport supports optionlet valuation from Black or Normal volatility
+markets and Gaussian short-rate models for caplets, caps and swaptions. The
+choice determines the required volatility inputs and the interpretation of
+model sensitivities.
 
 ## Optionlets and Black/Normal markets
 
@@ -56,10 +61,10 @@ B(t,S)=\frac{1-e^{-\alpha(S-t)}}{\alpha},\qquad
 \sqrt{\frac{1-e^{-2\alpha T}}{2\alpha}}.
 \\]
 
-The fixed-parameter Hull–White caplet/cap pricers take alpha and sigma
-directly. They are useful comparisons with market Black/Normal valuation.
-They do not acquire an implied-volatility ladder merely because those
-parameters could have been calibrated elsewhere.
+The fixed-parameter Hull–White caplet and cap pricers take alpha and sigma
+directly. Their risk reports treat these supplied parameters as fixed, while
+configured calibration is responsible for connecting model parameters to
+market volatility quotes.
 
 ## Swaptions and Jamshidian decomposition
 
@@ -90,11 +95,11 @@ constructed volatility objects and curves.
 
 The schedule assembles independent constant-sigma fits; it is not a joint
 piecewise-volatility repricing calibration. Its diagonal forward-difference
-Jacobian includes sigma's response to volatility inputs, but
-not its response to curve quotes or moving calibration strikes. Direct curve
-risk through valuation still exists. Cube calibration permits at most one
-underlying tenor per expiry and must remain in-domain. These are substantive
-limits on the meaning of “calibrated risk,” not merely configuration details.
+Jacobian includes sigma's response to volatility inputs, but not its response to
+curve quotes or moving calibration strikes. Direct curve risk through valuation
+still exists. Cube calibration permits at most one underlying tenor per expiry
+and must remain in-domain. Sensitivity reports therefore include partial
+calibration risk with these inputs held fixed.
 
 The [model chapter](../simulation/monte-carlo.md) distinguishes these
 closed forms from actual numerical path generation and its zero-parameter

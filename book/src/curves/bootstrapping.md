@@ -1,11 +1,14 @@
 # Calibration and dependent curves
 
-Curve calibration chooses discount factors so that selected instruments
-reproduce observed rates or prices. In QuantSupport, a quote-based
-`CurveConfiguration` identifies those instruments, an interpolation rule and
-a curve identity. `MultiCurveBootstrapper` resolves their dependencies and
-solves each curve as a global nonlinear system, not as an assumption that every
-instrument affects only one payment.
+Curve calibration chooses discount factors so that the prices or rates of
+selected instruments reproduce market observations. A quote-based
+`CurveConfiguration` specifies the instruments, interpolation rule and market
+index of the resulting curve.
+
+Some calibration instruments need other curves. For example, a term-rate
+projection curve may use an overnight curve for discounting.
+`MultiCurveBootstrapper` resolves these dependencies, then solves a nonlinear
+system for all pillars of each curve.
 
 ## Residuals and the nonlinear solve
 
@@ -24,13 +27,11 @@ their outright/points strategy. Bond anchors compare model price with either
 a quoted price or a yield-converted target, normally in units per 100.
 These bond strategies do not constitute OAS calibration.
 
-The solver starts from `0.99` at each unknown factor and uses
-`VectorNewton::new(1e-12, 200)`. Its Jacobian comes from finite differences of
-the full residual system. Bumps are scale-controlled and clipped to retain
-positive trial factors. Newton step acceptance also guards positivity.
-Numerical convergence status must be distinguished from the absence of a
-returned error: iteration exhaustion is not universally reported as
-`SolverErr`.
+The bootstrapper uses a Newton solve with finite-difference residual
+Jacobians. Trial bumps and accepted steps preserve positive discount factors.
+The current setup starts each factor at `0.99`, with tolerance `1e-12` and
+200 iterations. Inspect convergence status and repricing residuals: iteration
+exhaustion can return a result without `SolverErr`.
 
 ## Dependencies and collateral
 
@@ -46,14 +47,17 @@ USD-collateralized CLP curve. A local ICP curve can separately project CLP
 coupons. Only the instruments actually chosen as collateral-curve pillars
 determine whether ICP is a dependency of that calibration.
 
-List order is not solve order. The same context list can also include explicit
-zero-rate definitions and composites. A composite depends on both component
+The bootstrapper determines solve order from dependencies, so configurations
+can be supplied in any order. The same list can include explicit zero-rate
+curves and composites. A composite depends on both component
 curves and can itself become a parent of calibrated curves. Duplicate
 identities, self-references and cycles are rejected.
 
-## OIS is a distinct calibration contract
+## Overnight-index calibration instruments
 
-`OIS_CCY_Index_Tenor` builds `OvernightIndexSwap`, not a generic regular swap.
+An OIS exchanges fixed coupons against compounded overnight interest.
+`OIS_CCY_Index_Tenor` identifies this contract and builds an
+`OvernightIndexSwap` for calibration.
 The preset uses coupon-only legs with annual schedules, index calendars and
 day counts, Modified Following accrual adjustment and Following payment
 adjustment. SOFR uses two business days to settlement and two business days of
@@ -77,9 +81,10 @@ converter rejects.
 
 `Swap_CCY_Index_Tenor[_FixedFreq[_FloatFreq]]` remains a different quote family.
 It starts under regular swap conventions with single-fixing coupons and
-semiannual/quarterly frequency defaults. Giving it an overnight index does not
-make it an OIS. Matching a vendor curve requires matching all these instrument
-choices, interpolation and valuation-time assumptions, not just the rates.
+semiannual/quarterly frequency defaults. It retains single-fixing coupon
+behavior when its index is overnight. To reproduce a supplied market curve,
+match the calibration contracts, interpolation and valuation assumptions as well
+as the quoted rates.
 
 ## Differentiating calibration
 

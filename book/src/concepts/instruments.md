@@ -1,10 +1,10 @@
 # Cashflows, contracts and positions
 
-A valuation begins with obligations, not curves. QuantSupport represents many
-obligations as cashflows grouped into legs. Instruments collect the contractual
-terms; trades supply the held position. This hierarchy lets the same contract
-participate in deterministic pricing and, where supported, conversion into
-simulation claims.
+QuantSupport represents many financial contracts as cashflows grouped into
+legs. An instrument collects contractual terms, including payment amounts,
+dates and observation rules. A trade adds the position held in that instrument.
+Pricers use these objects for valuation, and supported trades can also be
+converted into claims for exposure simulation.
 
 ## Amounts and signs
 
@@ -23,10 +23,10 @@ apply position direction according to their own contract/trade conventions.
 Do not multiply signs twice because both an instrument and a trade expose
 direction-related fields.
 
-The generic cashflow report preserves underlying amounts before leg-side
-multiplication. A table of positive coupon amounts is therefore not a table of
-positive portfolio receipts. Specialized reporting, such as projected loan
-receipts, has its own explicit semantics.
+Cashflow reports show signed amounts: receipts are positive and payments are
+negative. The generic report applies leg direction and reverses disbursements,
+so an initial advance has the opposite sign to principal repayment. The loan
+pricer reports projected signed receipts after prepayment and credit adjustments.
 
 ## Schedules are economic inputs
 
@@ -35,12 +35,12 @@ frequency, calendar, business-day convention and generation rule into dated
 obligations. Front and back stubs, end-of-month behavior and termination-date
 adjustment can change amounts as well as payment dates.
 
-Several clocks must remain distinct. A coupon accrues over one interval, fixes
-on a specified date or observation schedule, and pays on another date. A term
-index's observation tenor need not equal coupon frequency: a monthly loan can
-retain annual EURIBOR resets. OIS coupons instead compound weighted daily
-overnight observations. Payment lag is not lookback, and publication lag is
-not either of them.
+A coupon has an accrual interval, an observation date or schedule, and a
+payment date. These dates serve different purposes. For example, a loan can
+pay monthly while resetting against EURIBOR annually. An OIS coupon compounds
+daily overnight observations with the appropriate accrual weights. Its
+observation rules determine which fixings enter the coupon, while payment lag
+determines when the resulting amount is paid.
 
 `DayCounter` converts dates into accrual fractions. Curve interpolation can use
 a different day counter from the coupon; the equivalent projected rate must
@@ -67,8 +67,8 @@ closures require updates or explicit local overrides.
 
 ## Builders and positions
 
-`Make*` builders validate required terms and construct the instrument. Their
-defaults are conveniences, not universal market standards. `MakeSwap` produces
+`Make*` builders validate required terms and construct the instrument. Check
+their defaults against the contract's market conventions. `MakeSwap` produces
 regular single-fixing coupons; `MakeOvernightIndexSwap` starts from index-specific
 overnight conventions. Bond and loan builders have distinct principal,
 schedule and optionality responsibilities.
@@ -78,9 +78,8 @@ Bond positions additionally carry a clean/dirty price or spread anchor.
 Discounting remains a pricing policy rather than a general contractual promise
 embedded in every instrument.
 
-For simulation, supported trades implement `IntoContingentClaims`. A claim
-is one scheduled payment with evaluation instructions and stable trade/leg
-identity. This is an extension of the contractual representation, not proof
-that every feature of every instrument is implemented by every exposure
-method. Nonstandard overnight conventions, for example, are rejected by the
-legacy claim converter rather than silently approximated.
+For simulation, supported trades implement `IntoContingentClaims`. Each claim
+represents a scheduled payment with evaluation instructions and stable trade
+and leg identifiers. Conversion checks whether the exposure implementation
+supports the contract's features. The legacy claim converter, for example,
+rejects nonstandard overnight conventions.

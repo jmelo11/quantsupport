@@ -1,11 +1,9 @@
 # A first valuation
 
-A five-year receive-fixed USD swap provides a controlled first example. The
-contract receives a 3% fixed coupon, pays a single-fixing SOFR-indexed floating
-coupon, and uses USD 10 million notional. Its market is a flat 3% continuously
-compounded ACT/360 curve. This is deliberately a regular `Swap`, not an
-overnight-index swap: choosing SOFR as the index does not by itself install
-daily overnight compounding.
+Consider a five-year USD interest-rate swap with a notional of USD 10 million.
+It receives a fixed coupon of 3%, using simple compounding and ACT/360 accrual,
+and pays a floating coupon every six months. We use `MakeSwap` to define the
+contract, then value it against a flat curve.
 
 The complete example is
 [`examples/valuation/swaps/src/main.rs`](https://github.com/jmelo11/quantsupport/blob/main/examples/valuation/swaps/src/main.rs).
@@ -17,10 +15,15 @@ cargo run -p valuation-swaps
 
 ## From contract to market
 
-The following self-contained program constructs the same valuation. The
-instrument builder fixes schedules and contractual amounts; the trade records
-the position. Directly inserting a curve avoids calibration so the example can
-isolate pricing conventions.
+The program below builds the instrument and wraps it in a `SwapTrade` to
+record the position. It then supplies a flat, continuously compounded 3%
+curve for both projection and discounting. This keeps the market setup small;
+the [curve chapters](../curves/overview.md) explain how to replace it with
+curves calibrated to market quotes.
+
+The floating leg uses one SOFR-indexed observation per coupon period.
+Daily compounded overnight coupons are available through
+`MakeOvernightIndexSwap`, introduced in [Swaps](../pricing/swaps.md).
 
 ```rust
 # extern crate quantsupport;
@@ -85,28 +88,25 @@ The native example produces an NPV of approximately **−10,723.59 USD**, with
 flat-rate derivative **−47,405,484.05 USD per unit rate**, or approximately
 **−4,740.55 USD for a +1 bp move** to first order.
 
-The nonzero value is informative. A continuously compounded 3% curve implies a
-simple forward over an accrual interval \\(\tau\\) of
+To understand the value, consider the floating coupon. A continuously compounded
+3% curve implies a simple forward over an accrual interval \\(\tau\\) of
 
 \\[
 L=\frac{e^{0.03\tau}-1}{\tau},
 \\]
 
-which is not exactly 3%. Equal numbers under different compounding conventions
-do not make a par swap. Receiving the fixed coupon therefore has a small
-negative value in this setup.
+which is slightly above the fixed coupon of 3%. The receive-fixed position
+therefore has a small negative value. The fixed coupon and the curve rate use
+different compounding conventions even though both were entered as `0.03`.
 
-`SOFR_flat` names the one independent rate in this hand-built market. A
-calibrated market instead names the original quote pillars. The derivative's
-unit is determined by that input; it is not automatically a DV01.
+The sensitivity is labelled `SOFR_flat`, the name assigned to the flat rate.
+It measures the PV change per unit change in that decimal rate. Multiplying
+by `0.0001` gives the first-order change for a one-basis-point increase. With
+calibrated curves, the report uses the original quote pillars instead.
 
-The example's cashflow table contains 24 raw rows, including the generated
-principal exchanges on both legs. The default table reports underlying
-unsigned amounts, with leg identity needed to reconstruct direction. It has
-no discounted-PV column. Do not sum those amounts as signed receipts or assume
-every row has already been filtered by evaluation date.
-
-The remaining chapters explain what this controlled example deliberately
-omits: calibrated market construction, explicit collateral policies, daily
-overnight conventions, and the distinction between local derivatives and full
-scenario revaluation.
+The cashflow table contains 24 rows, including principal exchanges generated
+on both legs. It reports signed contractual amounts: receipts are positive
+and payments are negative, including initial advances. The table includes all supplied
+cashflows and has no discounted-PV column, so reconciling it to NPV requires
+payment selection and discounting. [Swaps](../pricing/swaps.md)
+describes these reporting conventions in more detail.

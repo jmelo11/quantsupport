@@ -1,10 +1,13 @@
 # Netting and collateral
 
-A netting set defines which positions offset under one agreement.
-`NettingSet` owns their claims and a discount policy; `CsaTerms` additionally
-supplies collateral, credit and funding assumptions for the high-level XVA
-engine. A collateral discounting convention is not the same as simulating a
-margin account.
+Trades covered by one netting agreement are valued together so that positive
+and negative amounts can offset. `NettingSet` stores their claims and the
+applicable discount policy. Attach `CsaTerms` to supply the collateral, credit
+and funding inputs used by the high-level XVA engine.
+
+The agreement's collateral currency determines discounting. Variation-margin
+settings additionally determine the simulated collateral balance and residual
+exposure used in adjustment calculations.
 
 ## Currency and discounting
 
@@ -45,10 +48,9 @@ exposure. That reporting distinction is essential when reconciling profiles
 to a collateralized adjustment.
 
 Calls occur on every simulation date, including the initial date, and settle
-immediately. Separate call frequency, settlement lag, margin period of risk
-and initial margin are not implemented. Grid refinement can study this
-particular timing approximation; it cannot create those absent contractual
-features.
+immediately. The implementation omits separate call frequency, settlement lag,
+margin period of risk and initial margin. Refine the simulation grid to assess
+the effect of the implemented call timing.
 
 ## Credit and funding inputs
 

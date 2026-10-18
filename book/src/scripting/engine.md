@@ -1,9 +1,13 @@
 # Script valuation and claim integration
 
-`ScriptEngine` turns dated payoff code into an analyzed program and evaluates
-it over model-backed paths. Its preparation separates semantic reasoning from
-the repeated numerical work: parsing is done once, observations are declared
-before simulation, and AD memory is bounded by rewinding temporary path nodes.
+`ScriptEngine` prepares a dated payoff program and evaluates it over market
+paths. Preparation parses the program once and identifies the observations
+needed from the model. Each path then supplies those observations, updates
+script variables and accumulates payments.
+
+For a selected result variable, the engine also propagates derivatives to
+registered market and model inputs. Temporary differentiation state is
+released after each path to bound memory use.
 
 ## Preparing the program
 
@@ -69,17 +73,17 @@ bond/forward controls. The main estimator is schematically
 \widehat\beta^\mathsf T(C_p-E[C])\right].
 \\]
 
-The fitted coefficients are held fixed during differentiation. This reduces
-variance but does not eliminate all Monte Carlo error or turn a nonlinear
-payoff into a deterministic one.
+The fitted coefficients are held fixed during differentiation. The adjusted
+estimator reduces variance; assess its remaining error through sampling
+comparisons.
 
 Only the selected result variable receives this adjustment. Expected cashflow
 present values remain unadjusted sampled payments. Consequently their sum need
 not equal the reported controlled result at finite path count. Equality also
 requires that the selected variable actually represents the total payment
-accumulator rather than another state quantity. Deterministic one-path
-comparisons and particular regression assertions must not be generalized to
-all stochastic script outputs.
+accumulator rather than another state quantity. Use the estimator's sampling
+error when assessing a stochastic reconciliation; a deterministic comparison has
+a different tolerance.
 
 ## From payments to exposure claims
 
@@ -93,10 +97,9 @@ controls which payments remain. Required discount, rate, FX and spot requests
 must all be supported by the market model; the claim bridge does not create
 missing dynamics.
 
-These claims can share a netting set with native products. This gives bespoke
-and standard payments a common exposure interface, but it is not a general
-optimal-stopping engine for arbitrary scripted callability. A program that
-describes an exercise rule is responsible for what that rule means.
+Scripted and native claims can share a netting set. The script must specify
+any exercise rule it uses; this claim bridge does not solve general optimal
+stopping for scripted callable products.
 
 The Rust examples compare native and scripted swaps under controlled matching
 setups. Python's `evaluate_script` is a narrower averaged-variable service,

@@ -1,16 +1,20 @@
 # Dated payoff programs
 
-A script represents contractual state changes and payments as a dated sequence
-of small programs. It is useful when the payoff is clearer as observation and
-payment logic than as a new native instrument hierarchy. The program remains
-data, while parsing, market requests and numerical evaluation remain native
-library operations.
+Payoff scripts describe observations, state changes and payments in a dated
+sequence of events. They are useful for contracts whose coupon or redemption
+rules can be expressed directly as a small program. The native engine parses
+the events, determines their market-data requirements and evaluates them
+against simulated market states.
+
+Variables persist along each path, allowing a later payment to depend on
+earlier observations. Payment statements apply discounting and currency
+conversion through the configured market model.
 
 `CodedEvent` pairs a date with source text. Conversion into an `EventStream`
 parses each program into an expression tree. Events must be nonempty, ordered
 and not precede the reference date; equal-date events execute in vector order.
-Variables persist across events on a path. Every read must follow an assignment
-in the current or an earlier event.
+Every variable read must follow an assignment in the current or an earlier
+event.
 
 ## State, observations and payments
 
@@ -24,16 +28,14 @@ floating = RateIndex("SOFR", "2027-03-09", "2027-06-09");
 swap pays 10000000 * (fixed_rate - floating) * accrual on "2027-06-09";
 ```
 
-Attach it to the fixing/start date, 9 March, not automatically to its payment
-date. The rate observation and later payment are distinct events in the
-financial meaning even when one source program declares both.
+Attach this event to the fixing/start date, 9 March. The event observes the
+rate at that date and declares the payment due on 9 June.
 
 Statements terminate with semicolons; blocks use braces. Assignment,
 compound assignment, arithmetic, power, comparisons, boolean logic, arrays
 and bounded `for` loops provide ordinary state manipulation. Identifiers are
-case-sensitive. The parser, not Python or Rust, defines this language:
-comments or syntax accepted by the host language are not automatically valid
-inside script strings.
+case-sensitive. Script strings follow the native payoff-language grammar, including its
+supported comment and expression syntax.
 
 `RateIndex` requests a forward observation over the specified interval.
 `Spot("AAPL")` requests an equity spot; a currency pair such as
@@ -111,10 +113,10 @@ including those in branches and loops. It requires at least one payment and
 rejects payments before the reference date. The same engine is shared by
 claims, avoiding repeated parsing for each coupon.
 
-Parsing and evaluation use the common `QSError` categories:
-`ParsingErr` for grammar, `InvalidValueErr` for structural rules,
-`ValueNotSetErr` for uninitialized state, `NotFoundErr` for unavailable
-responses/results and `EvaluationErr` for invalid expression operations.
-Context preserves the event/path that failed, and `root_cause()` exposes the
-underlying category. A malformed program should fail before a long simulation
-is mistaken for a financial result.
+Parsing and evaluation use the common `QSError` categories: `ParsingErr` for
+grammar, `InvalidValueErr` for structural rules, `ValueNotSetErr` for
+uninitialized state, `NotFoundErr` for unavailable responses/results and
+`EvaluationErr` for invalid expression operations. Context preserves the
+event/path that failed, and `root_cause()` exposes the underlying category.
+Validate the event stream before starting a long simulation so structural and
+grammar errors can be resolved first.

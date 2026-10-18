@@ -1,10 +1,13 @@
 # Claims, exposure and the XVA engine
 
-Exposure is a future portfolio value, not the amount of a future coupon.
-QuantSupport decomposes supported positions into `ContingentClaim` payments,
-resolves their observations along market paths, and values the live payments
-at a grid of dates. Aggregation then adds legal netting and adjustment
-assumptions.
+Exposure measures the value of a trade or portfolio at future dates. To
+calculate it, QuantSupport converts supported positions into scheduled
+`ContingentClaim` payments and simulates the market observations needed to
+value them. At each exposure date, the remaining payments are valued under
+the simulated market state.
+
+The resulting path values can be inspected as exposure profiles or combined
+under netting and collateral agreements to calculate valuation adjustments.
 
 ## Claim-level valuation
 
@@ -27,11 +30,10 @@ payment value from the compiled script response block instead. Claim
 construction must use the strategy's amount/notional convention consistently
 to avoid double scaling.
 
-`FixingPreprocessor` installs already realized or partially realized
-observations. Compression can merge economically compatible deterministic
-claims. Neither operation licenses approximating unsupported overnight
-observation rules: nonstandard conventions rejected by conversion should
-remain explicit failures.
+Before simulation, `FixingPreprocessor` installs realized or partially
+realized observations. Compression can merge compatible deterministic claims
+to reduce repeated evaluation. The claim converter checks supported contract
+features, including overnight observation rules, before these steps.
 
 ## Cubes and pointwise profiles
 
@@ -58,8 +60,8 @@ trade-level EPE is generally not the EPE of the netted sum:
 \neq\sum_j\max(V_j,0).
 \\]
 
-Preserving paths and dates makes that distinction observable instead of
-burying it inside a scalar CVA.
+Calculate netted profiles from the summed path values before taking their
+positive and negative parts.
 
 ## High-level orchestration
 
@@ -72,7 +74,7 @@ At a high level, `run` preprocesses claims, determines required curves and
 factors, builds the date grid, prepares system discount factors and per-netting
 set factories, then evaluates shared model paths. Foreign currencies and
 policy-selected discount identities need corresponding supported models.
-Missing factors are errors, not permission to substitute the domestic curve.
+The engine reports an error if a required factor is missing.
 
 The following fragment assumes prepared `context`, `configuration` and
 `netting_sets`:
@@ -97,10 +99,10 @@ explicit own-credit inputs, not an automatic third output of `run`.
 
 Shared paths make netting internally coherent, but finite grids and samples
 remain approximations. LGM path construction, calibration targets and
-correlations determine the future-state distribution. Optional/payoff behavior
-may require numerical conditioning or smoothing. A matching deterministic
-test does not prove general equality between every native pricer and every
-claim representation.
+correlations determine the future-state distribution. Optional payoffs may
+require numerical conditioning or smoothing. Comparisons with native pricers
+need matching payoff, model and payment-selection assumptions, together with
+tolerances for numerical and sampling error.
 
 The engine's system discount sequence is stored numerically and held fixed
 during AD. Credit/funding factories also introduce particular independent

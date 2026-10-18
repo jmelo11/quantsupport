@@ -1,9 +1,9 @@
 # Build the QuantSupport Book
 
-The Book is a connected, implementation-grounded treatment of the whole
-library, with independent Rust, Python and Excel overviews. It is not an API
-catalog. Sphinx separately provides binding guides and declaration references;
-optional Book reference links use their stable published URLs.
+The Book explains QuantSupport's financial concepts, architecture and
+computational workflows, with overviews of the Rust, Python and Excel
+interfaces. Sphinx provides detailed binding guides and API references.
+Links from the Book use their stable published URLs.
 
 To build just the walkthroughs, install Rust, mdBook 0.5.2, and
 mdbook-mermaid 0.17.0. From the repository root:

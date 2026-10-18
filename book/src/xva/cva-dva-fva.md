@@ -1,9 +1,13 @@
 # Credit, funding and XVA risk
 
-Valuation adjustments integrate future exposure against credit or funding
-inputs. QuantSupport separates path generation from measure-specific
-aggregators. The distinction makes formulas inspectable, but also makes the
-scope of each independent risk input explicit.
+Credit and funding adjustments combine future exposure with counterparty,
+own-credit or funding assumptions. QuantSupport first generates market paths
+and values the portfolio, then applies a measure-specific aggregator to each
+path. Netting and variation margin determine the exposure supplied to that
+aggregator.
+
+The formulas below describe the implemented integration and the inputs held
+fixed when its sensitivities are calculated.
 
 Let \\(U_{p,k}\\) be exposure after the netting/collateral rules applied for
 the adjustment, \\(D_k\\) the numerical system discount factor, and
@@ -44,11 +48,10 @@ The implemented FVA is
 D_k\\,U_{p,k}\\,s_f(t_k)\\,\Delta t_k.
 \\]
 
-It uses signed exposure, not its positive part. Negative and positive funding
-contributions can cancel. This is a symmetric signed funding convention,
-not a separate borrowing/lending-spread FVA model. Do not replace \\(U\\)
-with EPE while describing its results or claim monotonic reductions from a
-change in netting.
+This symmetric funding convention uses signed exposure, so positive and
+negative contributions can cancel. It uses one spread for both directions;
+separate borrowing and lending spreads are outside this model. As a result,
+a reduction in EPE alone does not determine the change in FVA.
 
 Funding inputs can be flat, dated explicit spreads, or spreads derived from
 a configured funding curve relative to the system curve. System discount

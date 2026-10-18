@@ -1,10 +1,10 @@
 # Equity and FX options
 
-European equity and currency options share a valuation pattern: determine a
-forward from spot and carrying costs, obtain volatility at the contract
-coordinates, and discount the payoff. The market identities and output
-currencies still differ, and a simulated payoff need not carry the same risk
-dependencies as a closed-form calculation.
+Valuing a European equity or currency option requires spot, carrying costs,
+a volatility market and a discount curve. These inputs determine the forward,
+the distribution of the payoff and its present value. QuantSupport provides
+closed-form pricers for both asset classes and a separate Monte Carlo route
+for equity options.
 
 ## FX options
 
@@ -74,10 +74,9 @@ for the call form. Relative/ATM strike resolution uses the sample terminal
 mean as a forward proxy. Grid choice therefore matters independently of
 sampling error.
 
-Those paths were generated numerically in `f64`. Storing them in `DualFwd`
-does not reconstruct how their spot, volatility or calibrated parameters
-affected generation. The current sensitivity handler reports discount-curve
-pillars, not a complete pathwise delta/vega ladder. Use the
-[model-backed scripting/exposure route](../simulation/monte-carlo.md) when
-reasoning about differentiated model paths, and verify its supported factors
-and payoff behavior separately.
+The stored paths are generated numerically in `f64`, with their generation
+inputs held fixed during pricing. The current sensitivity handler therefore
+reports discount-curve pillars and omits path-generation delta and vega.
+[Model-backed scripting and exposure](../simulation/monte-carlo.md) use a
+separate workflow that retains differentiated path construction for supported
+factors.

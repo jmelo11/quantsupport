@@ -1,9 +1,12 @@
 # Observations and historical markets
 
-A market contains several kinds of observations with different temporal
-meaning. `QuoteStore` holds current calibration prices or rates at a reference
-date. `FixingStore` holds dated realized index observations. `FxStore` holds
-spot currency relationships. None of these stores alone is a calibrated market.
+Market construction starts from quotes, historical fixings and spot FX
+rates. QuantSupport stores these observations separately because they are used
+at different stages of valuation. `QuoteStore` supplies the prices or rates
+used for calibration at a reference date. `FixingStore` supplies realized index
+observations, and `FxStore` supplies spot exchange rates. A pricing context
+combines these stores with the instructions needed to construct curves and
+other market objects.
 
 ## Quotes and identities
 
@@ -22,7 +25,7 @@ assert_eq!(quote.levels().mid(), Some(0.04));
 # Ok::<(), QSError>(())
 ```
 
-An identifier encodes a calibration contract rather than merely a label.
+Quote identifiers specify the calibration contract.
 `Swap_USD_TermSOFR3m_5Y_Semiannual_Quarterly` identifies product, currency,
 projection index, tenor and payment frequencies. An option identifier also
 specifies expiry and strike conventions; for a swaption, expiry and underlying
@@ -47,14 +50,13 @@ observations are errors. Same-day observations can be used when present and
 forecast otherwise in the relevant coupon workflows. The fixing date, not
 merely the payment date or trade date, determines whether history is required.
 
-Daily overnight accrual needs business-day observations with weekend and
-holiday accrual weights. Term coupons may require one reset for several
-payments. Supply the required historical observations explicitly.
-`FixingStore::fill_missing_fixings` currently evaluates days remaining to the
-last observation against knots measured from the first. This reverses its
-interpolation coordinate for inserted calendar dates; it is not reliable
-chronological gap filling and applies no business-day filter. The workflows
-here do not use it to manufacture missing history.
+Daily overnight accrual needs business-day observations with weekend and holiday
+accrual weights. Term coupons may require one reset for several payments. Supply
+the required historical observations explicitly. Handle gaps through a validated
+data-preparation policy. The current `FixingStore::fill_missing_fixings` uses
+reversed interpolation coordinates and applies no business-day filter; its
+[reference](https://docs.rs/quantsupport/latest/quantsupport/quotes/fixingstore/struct.FixingStore.html)
+documents that restriction.
 
 ## FX observations
 
@@ -63,11 +65,10 @@ per base unit: storing USD→CLP at 935 means one USD buys 935 CLP. Lookup uses 
 direct rate, a reciprocal rate, or breadth-first triangulation through connected
 currencies. A disconnected pair is an error.
 
-This graph resolves spot relationships. It does not imply a universal
-reporting-currency conversion service or a dated FX history. The context's
-ordinary FX request handling resolves currency-pair spot inputs; its request
-date is not a historical-selection instruction. Individual pricers determine
-which amounts are converted and into which currency.
+Pricers request spot rates from this graph and determine which amounts to
+convert and which currency to report. Ordinary FX requests use the stored
+spot market even when the request carries a date. To select a historical FX
+market, load the corresponding snapshot as described below.
 
 ## Coherent historical markets
 
@@ -94,5 +95,5 @@ Fixing histories are supplied separately and do not carry publication-vintage
 filtering. Historical valuation therefore requires the application to supply
 the appropriate historical observations, including any revision policy.
 The [Python](../python/getting-started.md) and
-[Excel](../excel/historical-pricing.md) workflows use this same native archive,
-not separate historical-pricing engines.
+[Excel](../excel/historical-pricing.md) workflows use the same native archive
+and selection rules.

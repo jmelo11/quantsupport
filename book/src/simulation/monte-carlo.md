@@ -1,11 +1,15 @@
 # Stochastic models and simulation
 
-Simulation introduces a distribution of future market states. QuantSupport has
-two materially different routes: a stored numerical path set generated from
-`SimulationConfiguration`, and a model-backed `MarketModel` resolving
-observables for scripting and exposure. Both use stochastic models, but only
-the latter retains the differentiated path construction used by those
-services.
+Simulation provides the future rates, spot prices and discount factors needed
+for stochastic payoffs and exposure calculations. A model specifies their
+dynamics, while the date grid, path count and random seed control the numerical
+experiment.
+
+QuantSupport supports stored path sets generated from a
+`SimulationConfiguration` and model-backed observations supplied by a
+`MarketModel` to scripting and exposure services. Stored paths are useful for
+inspection and numerical payoff valuation. The model-backed services also
+retain the path-construction dependencies used for automatic differentiation.
 
 ## Materialized numerical paths
 
@@ -17,9 +21,9 @@ draws from seeded `StdRng`. This route does not inherit the Sobol/antithetic
 construction of `LgmMarketModel`.
 
 `GeneratedMonteCarloSimulation` stores the resulting values in `DualFwd`
-containers, but exposes no simulation pillars and does not replay differentiated
-generation. An AD wrapper does not restore the dependency that was removed
-when parameters and curves became numerical inputs. The
+containers with generation inputs held fixed. It exposes no simulation
+pillars, so subsequent differentiation covers only the operations performed
+on the stored values. The
 [MC equity pricer](../pricing/options.md#materialized-monte-carlo-valuation)
 can differentiate its subsequent discounting without providing path-generation
 delta or vega.
@@ -62,11 +66,10 @@ x_{i+1}=x_i-a x_i\Delta_i+
 \sigma(t_{i+1})\sqrt{\Delta_i}Z_i.
 \\]
 
-It updates a variance estimate and reports the state plus its implemented
-curve-derived shift. This must not be confused with the exact OU transition
-used in parts of the callable-bond machinery. Refining the time grid changes
-discretization bias; increasing path count changes sampling error. Neither
-change replaces the other.
+The generator updates a variance estimate and adds a curve-derived shift to
+the state. Its Euler discretization differs from the exact OU transitions
+used in callable-bond valuation. Refine the grid to assess discretization
+bias and increase path count to assess sampling precision.
 
 Several low-level Hull–White formulas divide by mean reversion and do not
 implement a zero-alpha limit. Do not infer zero-alpha support from the formal
@@ -101,9 +104,8 @@ P(t,T;z)=\frac{P(0,T)}{P(0,t)}
 N(t,z)=\frac{\exp(H(t)z+\tfrac12H(t)^2\zeta(t))}{P(0,t)}.
 \\]
 
-This is the LGM reference-numeraire representation, not a generic accumulated
-money-market bank account. The domestic factor is driftless under its
-corresponding measure. Foreign rate factors receive measure-change drift
+The reference numeraire defines the measure under which the domestic factor
+is driftless. Foreign rate factors receive measure-change drift
 terms involving domestic-rate and FX correlations.
 
 `LgmMarketModel` combines rate factors with supported FX/equity components.
@@ -114,11 +116,10 @@ spots; correlation input must match that ordering.
 
 Path construction uses Owen-scrambled Sobol draws, antithetic pairing and
 Cholesky correlation. Consecutive paths share opposite-sign normal draws.
-Even counts preserve complete pairs, but odd counts—including a one-path
-run—are supported. One path does not by itself make a stochastic model
-deterministic. Equal seeds, grids, models and indices reproduce draws;
-changing model/grid inputs is not the same experiment merely because the seed
-is unchanged.
+Even counts preserve complete pairs; odd counts, including one path, are
+also supported. Reproducing a run requires matching the seed, grid, model and
+indices. Path count controls sampling, while volatility and model inputs
+determine whether the dynamics are stochastic.
 
 ## Model-backed observations
 
@@ -130,7 +131,6 @@ market/model categories instead of becoming silently absent paths.
 
 Scripting and XVA operate on these model responses in `DualFwd`. They can
 propagate through registered model/curve inputs while rewinding temporary
-path nodes. This capability remains subject to fixed correlations, calibrated
-parameter omissions and payoff smoothing. It should not be attributed to the
-separate stored numerical simulation just because both routes use the word
-Monte Carlo.
+path nodes. The resulting sensitivities remain subject to fixed correlations, partial
+calibration Jacobians and payoff smoothing. Stored numerical simulations
+retain the more limited risk dependencies described above.

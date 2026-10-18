@@ -1,7 +1,8 @@
 # Swap valuation
 
-Flat SOFR discounting of a five-year receive-fixed USD swap, with cashflows
-and quote sensitivities. The illustrative flat market is dated 2024-01-15.
+This example values a five-year receive-fixed USD swap against a flat SOFR
+curve and reports cashflows and rate sensitivities. The illustrative market
+is dated 15 January 2024.
 
 Run from the repository root:
 

@@ -1,10 +1,18 @@
 # QuantSupport
 
-QuantSupport is a quantitative-finance library written in Rust, with Python and Excel bindings provided in the same repository. It combines instrument construction, market-data bootstrapping, pricing, automatic differentiation, payoff scripting, Monte Carlo exposure simulation, and XVA in one toolkit.
+QuantSupport (QS) is a quantitative finance library written in Rust, with
+Python and Excel bindings. It supports valuation across several asset classes,
+market sensitivities using automatic differentiation, interest-rate and credit
+curve construction, volatility markets, Monte Carlo simulation and XVA.
 
-A crate is available for usage in your project:
+Observable quotes and fixings are stored separately from constructed market
+objects, such as bootstrapped curves and implied-volatility surfaces.
+Instruments define contractual terms, and trades add the position held.
+Pricers combine those trades with the market data needed for valuation.
 
-```rust
+Add the Rust crate to your project with:
+
+```sh
 cargo add quantsupport
 ```
 
@@ -24,11 +32,14 @@ cargo add quantsupport
 
 ## Quick start: price and risk a swap
 
-This example values a five-year receive-fixed USD swap and asks for NPV, par
-rate, cashflows, and curve sensitivity. The fixed coupon is a simple ACT/360
-rate; the flat curve uses continuous ACT/360 compounding. Equal numeric rates
-therefore do not imply a par swap. SOFR identifies the curve here, but this
-`Swap` uses term-style floating coupons rather than daily-compounded OIS coupons.
+Consider a five-year USD swap that receives a fixed coupon of 3% and pays
+a floating coupon every six months on USD 10 million. We construct it with
+`MakeSwap`, create a trade and supply a flat curve for projection and
+discounting. The pricer returns NPV, par coupon, cashflows and sensitivities.
+
+The fixed coupon uses simple ACT/360 accrual, while the 3% curve is continuously
+compounded. The floating leg uses one SOFR-indexed observation per coupon
+period. For daily compounded overnight coupons, use `MakeOvernightIndexSwap`.
 
 ```rust
 use std::{cell::RefCell, rc::Rc};
@@ -118,9 +129,11 @@ A related program with a detailed cashflow report is available in
 
 The NPV is approximately -10,723.59 USD and the flat-rate derivative is
 -47,405,484.05 USD per unit decimal rate, corresponding to about -4,740.55 USD
-for a one-basis-point increase. This is risk to the supplied flat curve, not
-to bootstrapping instruments. Raw cashflow rows are undiscounted and omit leg
-directions; they cannot be summed directly to reproduce NPV.
+for a one-basis-point increase. The continuous curve implies simple floating
+coupons slightly above the agreed fixed coupon, giving the receive-fixed
+position its small negative value. Sensitivity is measured against the flat
+rate supplied to the curve. The cashflow table contains unsigned,
+undiscounted amounts; apply direction and discounting to reconcile it to NPV.
 
 ## Architecture and components
 
@@ -149,9 +162,8 @@ quotes, historical index fixings, and spot FX rates. Dates, calendars, schedules
 day-count rules, compounding, currencies, and indices provide the conventions
 used to interpret those observations and build product cashflows.
 
-Scenarios also operate at this input layer. A shocked valuation rebuilds the
-dependent market rather than modifying an already-built curve, so curves,
-volatility objects, and simulations remain consistent with one another.
+Scenarios also operate at this input layer. A shocked valuation rebuilds affected market objects from changed inputs,
+preserving their construction dependencies.
 
 ### Market construction
 
@@ -232,6 +244,7 @@ accrual period and adds the discounted coupon to the `note` variable, which woul
 let events = vec![CodedEvent::new(
     Date::new(2026, 1, 2),
     r#"
+        note = 0;
         accrual = cvg("2026-01-02", "2026-04-02", "Actual360");
         coupon = RateIndex("SOFR", "2026-01-02", "2026-04-02");
         note pays 1000000 * coupon * accrual on "2026-04-02" in "USD";
@@ -267,8 +280,8 @@ Automatic differentiation runs through market construction and valuation.
 Market pillars become labelled leaves on the AAD tape, and calibrated curves
 reconnect first-order risk through numerical calibration Jacobians. Reported
 derivatives apply to the inputs actually differentiated by each engine;
-stored `f64`-generated paths do not acquire model or volatility risk merely
-because their values are wrapped in AD scalars. This is the common risk
+stored numerical simulations hold path-generation inputs fixed and therefore
+omit their model and volatility dependencies. This is the common risk
 mechanism for native pricers, scripted payoffs, and XVA. Full revaluation under
 quote scenarios complements AAD for stress tests and non-linear moves.
 

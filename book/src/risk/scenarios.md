@@ -1,7 +1,9 @@
 # Scenarios and full revaluation
 
-A sensitivity linearizes a valuation near one market. A scenario changes the
-inputs and evaluates the actual construction/pricing composition again:
+Scenarios measure the effect of a specified market move by changing inputs,
+rebuilding the affected market objects and repricing the trade. Comparing the
+revalued change with the sensitivity estimate shows how well a local linear
+approximation describes that move:
 
 \\[
 \Delta V=V(q+\Delta q)-V(q),\qquad
@@ -9,9 +11,8 @@ inputs and evaluates the actual construction/pricing composition again:
 \frac{\partial V}{\partial q_j}\Delta q_j.
 \\]
 
-Their difference includes curvature, changed active branches and differences
-between fully recalibrated behavior and deliberately partial model Jacobians.
-It is not automatically an AD defect.
+The difference can reflect curvature, a change in exercise or payoff behavior,
+and recalibration effects omitted from partial model sensitivities.
 
 ## Ordered input transformations
 

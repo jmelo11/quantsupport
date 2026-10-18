@@ -1,17 +1,19 @@
 # Bonds and issuer optionality
 
-QuantSupport keeps straight fixed-rate debt separate from callable
-stepped-coupon debt. This distinction prevents call-model terms from leaking
-into the ordinary `FixedRateBond` contract.
+Bond valuation combines contractual coupon and principal payments with a
+market quotation. For a straight fixed-rate bond, QuantSupport solves the
+spread implied by a price anchor and provides yield and duration analytics.
+For a stepped-coupon bond with issuer calls, valuation also requires a
+short-rate model and an exercise calculation.
 
 | Instrument | Pricer | Supported analytics |
 | --- | --- | --- |
 | `FixedRateBond` | `BondPricer` | value, cashflows, yield to maturity, modified duration, Z-spread, sensitivities |
 | `SteppedCouponBond` | `TreeBasedBondPricer` or `BackwardFourierEvolutionBondPricer` | value, cashflows, OAS, sensitivities |
 
-The stepped-coupon bond normally trades in price, so it deliberately has no
-yield-rate convention. Requests for yield to maturity or modified duration on
-that instrument return an error.
+Stepped-coupon bonds use price or spread anchors. Their supported analytics
+are value, cashflows, OAS and sensitivities; yield-to-maturity and
+modified-duration requests return an error.
 
 ## Pricing anchors
 
@@ -23,10 +25,9 @@ are reusable and take no quote in their constructors:
 - `ZSpread(value)` is a continuously compounded spread for a straight bond.
 - `OAS(value)` is an option-adjusted spread for a bond with issuer calls.
 
-Clean and dirty prices are anchor variants; there is no separate price-kind
-enum. For a straight bond, a price anchor implies Z-spread. For a callable
-stepped-coupon bond, it implies OAS. OAS on a straight bond and Z-spread on a
-callable bond are rejected.
+A clean or dirty price anchor implies Z-spread for a straight bond and OAS
+for a bond with issuer calls. The pricer rejects OAS on a straight bond and
+Z-spread on a callable bond.
 
 The solved or supplied spread becomes an independent AD variable. The common
 sensitivity table therefore reports curve risk together with either
@@ -110,12 +111,12 @@ coupons use the referenced index convention.
 An outstanding-notional reduction creates a principal redemption at the end
 of that coupon period. The remaining principal is redeemed at maturity.
 
-Calls are issuer calls only; there is no exercise-type enum and no holder-put
-branch. A strike is quoted per bond units and excludes a coupon paid on the
-same date. During backward valuation the engine first discounts continuation,
-then applies the issuer obstacle `min(V, K)`, then adds contractual cashflows
-mapped to that date. Consequently, same-day coupon and scheduled amortization
-are paid before the remaining bond is called.
+Call entries give the issuer the right to redeem; holder puts are unsupported.
+Strikes are quoted in bond units and exclude same-day coupons. During backward
+valuation the engine first discounts continuation, then applies the issuer
+obstacle `min(V, K)`, then adds contractual cashflows mapped to that date.
+Consequently, same-day coupon and scheduled amortization are paid before the
+remaining bond is called.
 
 The following Rust fragment illustrates the contract and position terms.
 Its context and market configuration are supplied separately.
@@ -164,10 +165,10 @@ pricing also requires a policy; an embedded instrument index does not bypass
 it. A policy can explicitly choose whether to prefer legacy instrument
 indices.
 
-`CashflowType::fixed` and `CashflowType::floating` create templates rather
-than another coupon hierarchy. The builder rebinds existing cashflows to the
-generated dates and outstanding notional, preserving rates, spreads, payoff
-operations and fixed-rate conventions unless a day counter is overridden.
+`CashflowType::fixed` and `CashflowType::floating` create coupon templates. The
+builder rebinds existing cashflows to the generated dates and outstanding
+notional, preserving rates, spreads, payoff operations and fixed-rate
+conventions unless a day counter is overridden.
 
 ## Floating-coupon projection convention
 
@@ -177,19 +178,17 @@ then apply spread, floor, and cap. The resulting amount remains an AD
 expression, so its forward-curve sensitivity appears in the ordinary risk
 table.
 
-The current callable engines model the issuer option through the Hull-White
-short-rate state but do not make future coupon fixings state-dependent. In
-other words, future floating coupons are deterministic forward projections at
-the valuation date. This convention is explicit so a later stochastic-index
-extension can be introduced without changing the product contract.
+The callable engines use the Hull–White short-rate state to value the issuer
+option. Future floating coupons are projected from valuation-date forwards
+and remain deterministic within that exercise calculation. Their forward-curve
+sensitivity is retained, but the engines omit stochastic future coupon fixings.
 
 ## Context-level pricer and model selection
 
-`PricingContext` owns `PricerConfiguration` entries keyed by
-`InstrumentType`. This is the common selection mechanism for every product
-family, not a bond-specific model store. Models are typed
-`ModelConfiguration` values assigned to a `MarketIndex`; neither the model nor
-the pricer is selected by an arbitrary string at runtime.
+Choose the callable engine through a `PricerConfiguration` for
+`InstrumentType::SteppedCouponBond`. The context uses the same configuration
+mechanism for other product families. Each model assignment associates a typed
+`ModelConfiguration` with a `MarketIndex`.
 
 A tree configuration for the stepped-coupon bond is:
 
@@ -341,7 +340,7 @@ adjoints and one additional row:
 ```
 
 This is the partial derivative with OAS treated as an independent market
-factor. It intentionally does not re-solve OAS under a curve bump.
+factor. Curve and volatility sensitivities hold that spread fixed.
 
 ## Validation and examples
 

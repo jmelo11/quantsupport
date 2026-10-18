@@ -1,10 +1,12 @@
 # Working in Excel
 
-The XLL turns the native library into a worksheet dependency graph. Some cells
-hold observations or contractual terms, some construct market objects, and
-others request valuation outputs. The distinction between an input and a
-constructed market remains the same as in Rust and Python; Excel adds
-recalculation and object-lifetime rules.
+The Excel add-in lets a workbook construct markets, define trades and request
+valuations from the native library. Input cells hold quotes and contractual
+terms. Worksheet functions combine them into market and trade objects, which
+pricing functions consume to calculate values and sensitivities.
+
+Excel's formula dependencies determine recalculation order. Object handles
+connect the formulas to native objects owned by the add-in.
 
 ## Handles and dependencies
 
@@ -25,17 +27,16 @@ A8 =QS.CURVE.GET(A6,"SOFR")
 A9 =QS.CURVE.TABLE(A8)
 ```
 
-This is a worksheet fragment, not a complete market: `E2:E10` must contain
-matching quote identifiers, and `D2` must contain a trade handle such as one
-constructed by `QS.TRADE.SWAP`. The
-[bundled workbook](https://jmelo11.github.io/quantsupport/downloads/swap_pricing_example.xlsx)
+To use this fragment, populate `E2:E10` with matching quote identifiers and `D2`
+with a trade handle from a constructor such as `QS.TRADE.SWAP`. The [bundled
+workbook](https://jmelo11.github.io/quantsupport/downloads/swap_pricing_example.xlsx)
 supplies the complete inputs.
 
 Unchanged recalculation reuses cached objects. A changed quote advances its
 handle and invalidates dependent contexts and values; reads reject stale
 revisions. Branching mutations from one old revision can make another branch
-stale. Worksheet layout should therefore show financial dependency order, not
-hide state changes inside unrelated formula chains.
+stale. Arrange the worksheet so each update consumes the preceding handle and the
+final context depends on the completed input chain.
 
 When rows are deleted or identifiers renamed, clear and repopulate a store
 using `QS.OBJECT.RESET`. A version cell provides an explicit rebuild signal:
@@ -55,7 +56,7 @@ objects; it does not automatically turn a regular swap into a daily-compounded
 OIS or select every required foreign-currency curve.
 
 The output table's semantics matter as much as its layout. Generic DCF
-cashflows show underlying amounts before leg-side multiplication and do not
+cashflows show signed amounts, positive for receipts and negative for payments, and do not
 supply a PV column. Quote sensitivities are derivatives in each input's units:
 multiply a decimal-rate derivative by `0.0001` to estimate a +1 bp change.
 Compare currencies only after an explicit, supported conversion.
@@ -68,19 +69,18 @@ replacement for signed position PV.
 
 ## Scope and reproducibility
 
-The worksheet surface includes market construction, contracts, pricing,
-analytics, curve inspection and native historical snapshots. It is not an
-automatic export of every Rust trait or Python facility. Registry operations
+Worksheet functions cover market construction, contracts, pricing, analytics,
+curve inspection and native historical snapshots. Registry operations
 and pricing execute on Excel's main thread; registered scalar functions can be
 thread-safe. Volatile registrations still reuse unchanged cached inputs.
 There is no worksheet script constructor; the direct payoff-program interfaces
 described later belong to Rust and Python.
 
-For historical analysis, serialize coherent construction inputs rather than
-save handle strings. [Historical valuation](historical-pricing.md) explains
-timestamp selection, quote levels and separately supplied fixings.
-`QS.FUNCTIONS`, `QS.FUNCTIONS.DETAILS` and `QS.HELP` expose worksheet help.
-The optional [Excel guide](https://jmelo11.github.io/quantsupport/api/excel/guide/index.html)
-develops binding-specific workflows, while the
-[worksheet reference](https://jmelo11.github.io/quantsupport/api/excel/functions/index.html)
+For historical analysis, serialize coherent construction inputs rather than save
+handle strings. [Historical valuation](historical-pricing.md) explains timestamp
+selection, quote levels and separately supplied fixings. `QS.FUNCTIONS`,
+`QS.FUNCTIONS.DETAILS` and `QS.HELP` expose worksheet help. The optional [Excel
+guide](https://jmelo11.github.io/quantsupport/api/excel/guide/index.html)
+develops binding-specific workflows, while the [worksheet
+reference](https://jmelo11.github.io/quantsupport/api/excel/functions/index.html)
 provides signatures without changing the dependency model described here.
