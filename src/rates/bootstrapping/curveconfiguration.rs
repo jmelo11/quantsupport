@@ -19,6 +19,8 @@ use crate::{
     utils::errors::{QSError, Result},
 };
 
+use super::quotedcurve::QuotedCurve;
+
 /// A dated pillar or a tenor measured from the market reference date.
 #[derive(Serialize, Deserialize, Clone)]
 #[serde(untagged)]
@@ -44,7 +46,8 @@ impl CurvePillar {
 #[derive(Serialize, Deserialize, Clone, Default)]
 #[serde(tag = "type", deny_unknown_fields)]
 pub enum CurveConstruction {
-    /// Calibrate discount factors to the configuration's instrument quotes.
+    /// Calibrate instrument quotes, or interpolate direct discount-factor or
+    /// zero-rate quotes from the configuration's quote identifiers.
     #[default]
     Bootstrapped,
     /// Interpolate explicit zero rates with the configuration's conventions.
@@ -68,7 +71,7 @@ pub enum CurveConstruction {
 }
 
 /// Construction specification for a curve, including market identity,
-/// conventions, and either calibration quotes, zero rates, or component indices.
+/// conventions, and instrument/direct quotes, explicit zero rates, or component indices.
 #[derive(Serialize, Deserialize, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct CurveConfiguration {
@@ -81,13 +84,15 @@ pub struct CurveConfiguration {
     interpolator: Interpolator,
     #[serde(default = "default_enable_extrapolation")]
     enable_extrapolation: bool,
-    /// Quote identifiers that define the pillars of this curve.
+    /// Instrument or direct curve quote identifiers that define this curve.
     #[serde(default)]
     quotes: Vec<String>,
     #[serde(skip)]
     reference_date: Option<Date>,
     #[serde(skip)]
     calibration_instruments: Option<Vec<CalibrationInstrument>>,
+    #[serde(skip)]
+    quoted_curve: Option<QuotedCurve>,
 }
 
 const fn default_day_counter() -> DayCounter {
@@ -119,6 +124,7 @@ impl CurveConfiguration {
             quotes,
             reference_date: None,
             calibration_instruments: None,
+            quoted_curve: None,
         }
     }
 
@@ -158,7 +164,7 @@ impl CurveConfiguration {
         &self.construction
     }
 
-    /// Returns the configured calibration quote identifiers.
+    /// Returns the configured instrument or direct curve quote identifiers.
     #[must_use]
     pub fn quotes(&self) -> &[String] {
         &self.quotes
@@ -170,8 +176,8 @@ impl CurveConfiguration {
         &self.market_index
     }
 
-    /// Resolves configured quote identifiers into concrete calibration
-    /// instruments.
+    /// Resolves configured quote identifiers into calibration instruments or
+    /// direct discount-factor/zero-rate pillars.
     ///
     /// # Errors
     /// Returns an error if a quote is not found, quote levels are missing,
@@ -183,6 +189,8 @@ impl CurveConfiguration {
         fx_spot: Option<f64>,
     ) -> Result<()> {
         let mut instruments = Vec::new();
+        self.calibration_instruments = None;
+        self.quoted_curve = None;
         self.reference_date = Some(selector.reference_date());
 
         if !matches!(self.construction, CurveConstruction::Bootstrapped) {
@@ -196,10 +204,23 @@ impl CurveConfiguration {
             return Ok(());
         }
 
-        for id in &self.quotes {
-            let quote = selector
-                .select(id)
-                .ok_or_else(|| QSError::NotFoundErr(format!("Quote {id} not found in quotes.")))?;
+        let quotes = self
+            .quotes
+            .iter()
+            .map(|id| {
+                selector
+                    .select(id)
+                    .ok_or_else(|| QSError::NotFoundErr(format!("Quote {id} not found in quotes.")))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        self.quoted_curve = QuotedCurve::resolve(&quotes, selector.reference_date(), level, self)?;
+        if self.quoted_curve.is_some() {
+            self.calibration_instruments = Some(instruments);
+            return Ok(());
+        }
+
+        for quote in quotes {
+            let id = quote.details().identifier();
 
             let quote_value = quote.levels().value(level).map_err(|error| {
                 error.context(format!(
@@ -234,6 +255,10 @@ impl CurveConfiguration {
         instruments.sort_by_key(CalibrationInstrument::pillar_date);
         self.calibration_instruments = Some(instruments);
         Ok(())
+    }
+
+    pub(crate) const fn quoted_curve(&self) -> Option<&QuotedCurve> {
+        self.quoted_curve.as_ref()
     }
 
     /// Returns the calibration instruments in pillar order.
@@ -331,6 +356,9 @@ impl CurveConfiguration {
     pub fn dependencies(&self, policy: &BootstrapDiscountPolicy) -> Result<HashSet<MarketIndex>> {
         let mut set = HashSet::new();
         set.insert(self.market_index.clone());
+        if self.quoted_curve.is_some() {
+            return Ok(set);
+        }
         match &self.construction {
             CurveConstruction::Composite {
                 base_index,

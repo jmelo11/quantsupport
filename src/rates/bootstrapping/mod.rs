@@ -14,3 +14,5 @@ pub mod creditcurveconfiguration;
 pub mod curveconfiguration;
 /// Multi-curve bootstrap orchestration.
 pub mod multicurvebootstrapper;
+
+mod quotedcurve;

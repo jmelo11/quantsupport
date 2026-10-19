@@ -120,11 +120,12 @@ impl<'a> MultiCurveBootstrapper<'a> {
         self
     }
 
-    /// Resolves quotes and constructs calibrated, explicit zero-rate, and
-    /// composite curves in dependency order.
+    /// Resolves quotes and constructs calibrated, directly quoted, explicit
+    /// zero-rate, and composite curves in dependency order.
     ///
     /// ## Parameters
-    /// * `selector`: the quote selector to resolve market quotes for the pillar instruments. The selector should be able to build the corresponding `CalibrationInstrumentType`s for each quote ID, as these are needed for bootstrapping.
+    /// * `selector`: selects the instrument or direct curve quotes referenced
+    ///   by each configuration at the requested level.
     ///
     /// ## Errors
     /// Returns an error if quote resolution fails, a dependency cycle or
@@ -212,13 +213,17 @@ impl<'a> MultiCurveBootstrapper<'a> {
         solved: &HashMap<MarketIndex, BootstrappedCurve>,
     ) -> Result<(DiscountCurveElement, BootstrappedCurve)> {
         let index = spec.market_index();
-        let (curve, calibrated) = match spec.construction() {
-            CurveConstruction::Bootstrapped => {
-                let calibrated = self.bootstrap_next_curve(index, spec, solved)?;
-                let curve = Self::calibrated_term_structure(spec, &calibrated)?;
-                (Box::new(curve) as Box<dyn ADCurveElement>, calibrated)
+        let (curve, calibrated) = if let Some(quoted) = spec.quoted_curve() {
+            quoted.construct(spec)?
+        } else {
+            match spec.construction() {
+                CurveConstruction::Bootstrapped => {
+                    let calibrated = self.bootstrap_next_curve(index, spec, solved)?;
+                    let curve = Self::calibrated_term_structure(spec, &calibrated)?;
+                    (Box::new(curve) as Box<dyn ADCurveElement>, calibrated)
+                }
+                construction => Self::explicit_term_structure(spec, construction, curves, solved)?,
             }
-            construction => Self::explicit_term_structure(spec, construction, curves, solved)?,
         };
         let shared: SharedElement<dyn ADCurveElement> = Rc::new(RefCell::new(curve));
         Ok((DiscountCurveElement::new(index.clone(), shared), calibrated))

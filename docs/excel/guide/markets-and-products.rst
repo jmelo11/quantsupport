@@ -46,6 +46,24 @@ Observation timestamps instead require offset-aware RFC 3339 text.
 ``QS.DATETIME.PARSE`` normalizes to UTC; ``QS.DATETIME.DATE`` returns the UTC
 calendar day, not a market business date or a rolled valuation date.
 
+Direct discount-factor and zero-rate quotes
+------------------------------------------
+
+``QS.QUOTES.ADD`` also accepts direct curve observations such as
+``DiscountFactor_USD_SOFR_1Y`` (a dimensionless factor) or
+``ZeroRate_USD_SOFR_2027-02-24`` (an annual decimal zero rate). Include these
+identifiers in the quote range supplied to ``QS.CURVE.CONFIGS.ADD``. Pillars
+accept tenors or ISO dates. Zero rates default to Continuous compounding and
+Annual frequency; append ``_Compounded_Semiannual`` to specify semiannual
+compounding. The curve configuration supplies day count, interpolation and
+extrapolation settings.
+
+Each direct curve uses a single quote family with matching currency, index,
+and rate conventions. Discount factors must be positive, and the fixed
+reference-date factor of one is inserted automatically. Direct observations
+use the context's selected Mid/Bid/Ask side and keep their original identifiers
+for scenario shocks and sensitivity output.
+
 Explicit zero rates and composite funding
 -----------------------------------------
 

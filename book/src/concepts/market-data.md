@@ -43,6 +43,18 @@ CLP payments under USD collateral, or `Credit("NAME")`, which identifies credit
 survival. Their [serialized forms](../reference/configuration.md) must agree
 across configurations, models and contracts.
 
+Curves may also consume direct observations through
+`CurveConfiguration.quotes`: `DiscountFactor_USD_SOFR_1Y` supplies a discount
+factor, and `ZeroRate_USD_SOFR_2027-02-24` supplies an annual decimal zero rate.
+Pillars accept tenors or ISO dates. Zero rates default to Continuous compounding
+and Annual frequency; append `_Compounded_Semiannual`, for example, to change
+the rate convention. The configuration supplies day count, interpolation and
+extrapolation. Use one direct quote family with consistent currency and rate
+conventions per curve, with the quoted index matching the configured index.
+These inputs retain their quote identifiers, selected sides and scenario risk.
+Discount-factor curves automatically include the fixed reference-date factor
+of one and require at least one future pillar.
+
 ## Fixings
 
 Fixings resolve observations already known at valuation. Missing required past

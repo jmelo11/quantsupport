@@ -161,6 +161,10 @@ impl QuoteLevels {
 /// Represents the type of instruments that can be handled by the quoting system.
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub enum QuoteInstrument {
+    /// A directly observed discount factor at a curve pillar.
+    DiscountFactor,
+    /// A directly observed annual zero rate at a curve pillar.
+    ZeroRate,
     /// Deposit instrument.
     FixedRateDeposit,
     /// Fixed-rate bond instrument.
@@ -338,6 +342,8 @@ impl std::str::FromStr for FxForwardCalibrationStrategy {
 /// | Identifier | What it describes |
 /// | --- | --- |
 /// | `FixedRateDeposit_CCY_Index_Tenor` | A deposit's currency, curve index and term. |
+/// | `DiscountFactor_CCY_Index_Pillar` | A discount factor at a tenor or ISO date. |
+/// | `ZeroRate_CCY_Index_Pillar[_Compounding[_Frequency]]` | An annual decimal zero rate at a tenor or ISO date; defaults to Continuous and Annual. |
 /// | `OIS_CCY_Index_Tenor[_OisFields]` | A fixed rate against an overnight index; optional conventions are described under [OIS parameters](#ois-parameters). |
 /// | `Swap_CCY_Index_Tenor[_FixedFreq[_FloatFreq]]` | A fixed rate against a floating index, with optional fixed and floating payment frequencies. |
 /// | `FixedRateBond_CCY_Index_Tenor[_PayFreq]_CouponRate[_BondStrategy]` | A bond's currency, curve index, term, coupon and optional payment frequency and calibration strategy. |
@@ -347,6 +353,10 @@ impl std::str::FromStr for FxForwardCalibrationStrategy {
 ///
 /// Deposit and swap quote values are rates, while CDS quote values are par spreads.
 /// Rates, coupons and spreads use decimals: `0.04` means 4%.
+/// Direct curve quotes are referenced by `CurveConfiguration.quotes`, using its
+/// day counter, interpolation and extrapolation settings. Each direct curve
+/// uses one quote family and consistent rate conventions. Its sensitivity
+/// labels remain the original quote identifiers.
 ///
 /// In `FixedRateBond_USD_CORP_5Y_Semiannual_0.04_AnchorPrice`, the `0.04` in the
 /// identifier is the coupon. `AnchorPrice` tells calibration to use the observed
@@ -507,6 +517,10 @@ pub struct QuoteDetails {
     /// Receive (or floating / foreign) leg frequency.
     #[serde(default)]
     receive_leg_frequency: Option<Frequency>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    compounding: Option<Compounding>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    frequency: Option<Frequency>,
 }
 
 impl QuoteDetails {
@@ -537,6 +551,8 @@ impl QuoteDetails {
             index_tenor: None,
             pay_leg_frequency: None,
             receive_leg_frequency: None,
+            compounding: None,
+            frequency: None,
         }
     }
 
@@ -638,6 +654,18 @@ impl QuoteDetails {
     #[must_use]
     pub const fn tenor(&self) -> Option<Period> {
         self.tenor
+    }
+
+    /// Returns the compounding convention of a direct zero-rate quote.
+    #[must_use]
+    pub const fn compounding(&self) -> Option<Compounding> {
+        self.compounding
+    }
+
+    /// Returns the compounding frequency of a direct zero-rate quote.
+    #[must_use]
+    pub const fn frequency(&self) -> Option<Frequency> {
+        self.frequency
     }
 
     /// Returns the primary instrument currency, if present.
@@ -760,6 +788,20 @@ impl QuoteDetails {
     #[must_use]
     pub const fn with_tenor(mut self, p: Period) -> Self {
         self.tenor = Some(p);
+        self
+    }
+
+    /// Sets the compounding convention of a direct zero-rate quote.
+    #[must_use]
+    pub const fn with_compounding(mut self, compounding: Compounding) -> Self {
+        self.compounding = Some(compounding);
+        self
+    }
+
+    /// Sets the compounding frequency of a direct zero-rate quote.
+    #[must_use]
+    pub const fn with_frequency(mut self, frequency: Frequency) -> Self {
+        self.frequency = Some(frequency);
         self
     }
     /// Sets the vol shift.
@@ -1467,6 +1509,41 @@ impl QuoteDetails {
             .with_strike(strike))
     }
 
+    fn parse_curve_pillar(id: &str, parts: &[&str]) -> Result<Self> {
+        let zero_rate = parts[0] == "ZeroRate";
+        let max_parts = if zero_rate { 6 } else { 4 };
+        if !(4..=max_parts).contains(&parts.len()) {
+            return Err(QSError::InvalidValueErr(format!(
+                "Invalid direct curve quote identifier: {id}"
+            )));
+        }
+        let instrument = if zero_rate {
+            QuoteInstrument::ZeroRate
+        } else {
+            QuoteInstrument::DiscountFactor
+        };
+        let mut details = Self::new(id.to_string(), instrument)
+            .with_currency(parts[1].parse()?)
+            .with_market_index(parts[2].parse()?);
+        details = if let Ok(date) = Date::from_str(parts[3], "%Y-%m-%d") {
+            details.with_maturity(date)
+        } else {
+            details.with_tenor(Period::from_str(parts[3])?)
+        };
+        if zero_rate {
+            details = details
+                .with_compounding(parts.get(4).map_or(Ok(Compounding::Continuous), |value| {
+                    Compounding::try_from((*value).to_string())
+                })?)
+                .with_frequency(
+                    parts
+                        .get(5)
+                        .map_or(Ok(Frequency::Annual), |value| value.parse())?,
+                );
+        }
+        Ok(details)
+    }
+
     /// Parses a quote identifier using a custom separator.
     ///
     /// ## Errors
@@ -1479,6 +1556,7 @@ impl QuoteDetails {
             )));
         }
         match parts[0] {
+            "DiscountFactor" | "ZeroRate" => Self::parse_curve_pillar(s, &parts),
             "OIS" => Self::parse_ois(s, &parts),
             "Swap" => Self::parse_swap(s, &parts),
             "FixedRateDeposit" => Self::parse_fixed_rate_deposit(s, &parts),
@@ -1730,6 +1808,12 @@ impl Quote {
                  calibration-instrument builder"
                     .into(),
             )),
+            QuoteInstrument::DiscountFactor | QuoteInstrument::ZeroRate => {
+                Err(QSError::InvalidValueErr(
+                    "Direct curve quotes are consumed by CurveConfiguration, not instrument builders"
+                        .into(),
+                ))
+            }
         }
     }
 
