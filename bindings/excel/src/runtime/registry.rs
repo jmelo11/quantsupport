@@ -23,6 +23,8 @@ const RESET_OPERATION_ID: &str = "__registry_reset__";
 
 /// QuantSupport components and trades that can be referenced by an Excel cell.
 pub enum QsObject {
+    /// Contractual loan trade and its native pricer settings.
+    LoanTrade(Box<super::loans::LoanPosition>),
     /// Market quote collection.
     QuoteStore(Box<QuoteStore>),
     /// Historical fixing collection.
@@ -94,6 +96,7 @@ impl QsObject {
     #[must_use]
     pub const fn kind(&self) -> &'static str {
         match self {
+            Self::LoanTrade(_) => "LoanTrade",
             Self::QuoteStore(_) => "QuoteStore",
             Self::FixingStore(_) => "FixingStore",
             Self::FxStore(_) => "FxStore",

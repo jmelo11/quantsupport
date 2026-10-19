@@ -347,7 +347,11 @@ pub fn qs_context_create(
     category = "QuantSupport - Pricing",
     help = "Spills discount-curve indices constructed in a PricingContext"
 )]
-pub fn qs_context_curves(context: &str) -> Result<*mut xll_rs::types::XLOPER12, XllError> {
+pub fn qs_context_curves(
+    context: &str,
+    transpose: *const xll_rs::types::XLOPER12,
+) -> Result<*mut xll_rs::types::XLOPER12, XllError> {
+    let transpose = crate::functions::helpers::optional_bool(transpose, "transpose")?;
     with_registry(|registry| {
         let mut indices: Vec<_> = registry
             .pricing_context(context)?
@@ -359,7 +363,7 @@ pub fn qs_context_curves(context: &str) -> Result<*mut xll_rs::types::XLOPER12, 
         indices.sort();
         Ok::<Vec<String>, crate::runtime::registry::RegistryError>(indices)
     })
-    .map(crate::functions::helpers::string_column)
+    .map(|values| crate::functions::helpers::string_column(values, transpose))
     .map_err(value_error)
 }
 
@@ -368,7 +372,11 @@ pub fn qs_context_curves(context: &str) -> Result<*mut xll_rs::types::XLOPER12, 
     category = "QuantSupport - Pricing",
     help = "Spills volatility-surface indices constructed in a PricingContext"
 )]
-pub fn qs_context_vol_surfaces(context: &str) -> Result<*mut xll_rs::types::XLOPER12, XllError> {
+pub fn qs_context_vol_surfaces(
+    context: &str,
+    transpose: *const xll_rs::types::XLOPER12,
+) -> Result<*mut xll_rs::types::XLOPER12, XllError> {
+    let transpose = crate::functions::helpers::optional_bool(transpose, "transpose")?;
     with_registry(|registry| {
         let mut indices: Vec<_> = registry
             .pricing_context(context)?
@@ -380,7 +388,7 @@ pub fn qs_context_vol_surfaces(context: &str) -> Result<*mut xll_rs::types::XLOP
         indices.sort();
         Ok::<Vec<String>, crate::runtime::registry::RegistryError>(indices)
     })
-    .map(crate::functions::helpers::string_column)
+    .map(|values| crate::functions::helpers::string_column(values, transpose))
     .map_err(value_error)
 }
 
@@ -389,7 +397,11 @@ pub fn qs_context_vol_surfaces(context: &str) -> Result<*mut xll_rs::types::XLOP
     category = "QuantSupport - Pricing",
     help = "Spills volatility-cube indices constructed in a PricingContext"
 )]
-pub fn qs_context_vol_cubes(context: &str) -> Result<*mut xll_rs::types::XLOPER12, XllError> {
+pub fn qs_context_vol_cubes(
+    context: &str,
+    transpose: *const xll_rs::types::XLOPER12,
+) -> Result<*mut xll_rs::types::XLOPER12, XllError> {
+    let transpose = crate::functions::helpers::optional_bool(transpose, "transpose")?;
     with_registry(|registry| {
         let mut indices: Vec<_> = registry
             .pricing_context(context)?
@@ -401,7 +413,7 @@ pub fn qs_context_vol_cubes(context: &str) -> Result<*mut xll_rs::types::XLOPER1
         indices.sort();
         Ok::<Vec<String>, crate::runtime::registry::RegistryError>(indices)
     })
-    .map(crate::functions::helpers::string_column)
+    .map(|values| crate::functions::helpers::string_column(values, transpose))
     .map_err(value_error)
 }
 
@@ -410,7 +422,11 @@ pub fn qs_context_vol_cubes(context: &str) -> Result<*mut xll_rs::types::XLOPER1
     category = "QuantSupport - Pricing",
     help = "Spills simulation indices constructed in a PricingContext"
 )]
-pub fn qs_context_simulations(context: &str) -> Result<*mut xll_rs::types::XLOPER12, XllError> {
+pub fn qs_context_simulations(
+    context: &str,
+    transpose: *const xll_rs::types::XLOPER12,
+) -> Result<*mut xll_rs::types::XLOPER12, XllError> {
+    let transpose = crate::functions::helpers::optional_bool(transpose, "transpose")?;
     with_registry(|registry| {
         let mut indices: Vec<_> = registry
             .pricing_context(context)?
@@ -422,6 +438,6 @@ pub fn qs_context_simulations(context: &str) -> Result<*mut xll_rs::types::XLOPE
         indices.sort();
         Ok::<Vec<String>, crate::runtime::registry::RegistryError>(indices)
     })
-    .map(crate::functions::helpers::string_column)
+    .map(|values| crate::functions::helpers::string_column(values, transpose))
     .map_err(value_error)
 }

@@ -16,7 +16,10 @@ pub fn qs_version() -> String {
     category = "QuantSupport - System",
     help = "Spills the names of all worksheet functions registered by this XLL"
 )]
-pub fn qs_functions() -> *mut xll_rs::types::XLOPER12 {
+pub fn qs_functions(
+    transpose: *const xll_rs::types::XLOPER12,
+) -> Result<*mut xll_rs::types::XLOPER12, XllError> {
+    let transpose = crate::functions::helpers::optional_bool(transpose, "transpose")?;
     let mut names: Vec<_> = xll_rs::inventory::iter::<xll_rs::registry::XllExport>
         .into_iter()
         .flat_map(|export| {
@@ -26,7 +29,7 @@ pub fn qs_functions() -> *mut xll_rs::types::XLOPER12 {
         .collect();
     names.sort();
     names.dedup();
-    crate::functions::helpers::string_column(names)
+    Ok(crate::functions::helpers::string_column(names, transpose))
 }
 
 #[xll_bindgen(
@@ -34,7 +37,12 @@ pub fn qs_functions() -> *mut xll_rs::types::XLOPER12 {
     category = "QuantSupport - System",
     help = "Spills the function catalog with arguments, category, aliases, and description"
 )]
-pub fn qs_functions_details() -> *mut xll_rs::types::XLOPER12 {
+pub fn qs_functions_details(
+    transpose: *const xll_rs::types::XLOPER12,
+    headers: *const xll_rs::types::XLOPER12,
+) -> Result<*mut xll_rs::types::XLOPER12, XllError> {
+    let transpose = crate::functions::helpers::optional_bool(transpose, "transpose")?;
+    let headers = crate::functions::helpers::optional_bool(headers, "headers")?;
     let mut exports: Vec<_> = xll_rs::inventory::iter::<xll_rs::registry::XllExport>
         .into_iter()
         .collect();
@@ -56,7 +64,9 @@ pub fn qs_functions_details() -> *mut xll_rs::types::XLOPER12 {
             export.help.to_string(),
         ]
     }));
-    crate::functions::helpers::string_matrix(rows)
+    Ok(crate::functions::helpers::string_matrix(
+        rows, transpose, headers,
+    ))
 }
 
 #[xll_bindgen(
@@ -64,7 +74,13 @@ pub fn qs_functions_details() -> *mut xll_rs::types::XLOPER12 {
     category = "QuantSupport - System",
     help = "Spills a worksheet function's description and parameter guidance"
 )]
-pub fn qs_help(function_name: &str) -> Result<*mut xll_rs::types::XLOPER12, XllError> {
+pub fn qs_help(
+    function_name: &str,
+    transpose: *const xll_rs::types::XLOPER12,
+    headers: *const xll_rs::types::XLOPER12,
+) -> Result<*mut xll_rs::types::XLOPER12, XllError> {
+    let transpose = crate::functions::helpers::optional_bool(transpose, "transpose")?;
+    let headers = crate::functions::helpers::optional_bool(headers, "headers")?;
     let requested_name = function_name.trim();
     let export = xll_rs::inventory::iter::<xll_rs::registry::XllExport>
         .into_iter()
@@ -102,14 +118,18 @@ pub fn qs_help(function_name: &str) -> Result<*mut xll_rs::types::XLOPER12, XllE
     if !export.aliases.is_empty() {
         rows.push(vec!["Aliases".to_string(), export.aliases.join(", ")]);
     }
-    rows.push(vec!["Parameter".to_string(), "Guidance".to_string()]);
+    if headers.unwrap_or(true) {
+        rows.push(vec!["Parameter".to_string(), "Guidance".to_string()]);
+    }
     rows.extend(
         argument_names
             .into_iter()
             .zip(argument_help)
             .map(|(name, help)| vec![name.to_string(), help.to_string()]),
     );
-    Ok(crate::functions::helpers::string_matrix(rows))
+    Ok(crate::functions::helpers::string_matrix(
+        rows, transpose, None,
+    ))
 }
 
 #[cfg(test)]

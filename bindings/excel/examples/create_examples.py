@@ -9,6 +9,7 @@ Use --xll-path on Windows for optional native Excel validation (requires pywin32
 
 import argparse
 from datetime import datetime
+import json
 import math
 from pathlib import Path
 import sys
@@ -289,6 +290,238 @@ def create_swap(path):
             help_sheet.set_column(columns, width, style["text"])
 
 
+def study_sheets(workbook, names, title, notes):
+    style = formats(workbook)
+    sheets = {name: workbook.add_worksheet(name) for name in ("README", *names)}
+    for sheet in sheets.values():
+        sheet.hide_gridlines(2)
+        sheet.freeze_panes(4, 0)
+        sheet.set_column("A:L", 22, style["text"])
+    readme = sheets["README"]
+    readme.set_column("A:A", 115, style["text"])
+    heading(readme, "A1:F1", title, style["title"])
+    for row, note in enumerate([
+        "Load quantsupport.xll in 64-bit Windows Excel, then open this workbook and press Ctrl+Alt+F9.",
+        "Blue cells are editable inputs. Rates and spreads are annual decimals; dates are ISO text.",
+        *notes,
+        "These are illustrative assumptions, following the questions explored in the Python notebook studies.",
+        "Table functions end with transpose,headers. Defaults are FALSE,TRUE; TRUE,FALSE transposes without headers.",
+    ], 4):
+        readme.write(f"A{row}", note)
+        readme.set_row(row - 1, 34)
+    return style, sheets
+
+
+def zero_market(sheet, style, prefix, currency, index):
+    """Editable explicit-zero inputs, with native pillar sensitivities."""
+    for cell, value in {
+        "A3": "Market reference date", "B3": "2026-02-24",
+        "A5": "Pillar", "B5": "Continuous zero rate",
+        "E3": "Quote store", "F3": f'=QS.QUOTES.CREATE("{prefix}.Quotes",B3)',
+        "E4": "Configuration store", "F4": f'=QS.CURVE.CONFIGS.CREATE("{prefix}.Curves")',
+        "E6": "Discount curve configuration",
+        "F6": f'=QS.CURVE.CONFIGS.ADD.ZERO(F4,"{index}","Actual360","Linear",TRUE,A6:A10,B6:B10,"Continuous","Annual")',
+        "E11": "Initialized pricing context",
+        "F11": formula("QS.CONTEXT.CREATE", f'"{prefix}.Context"', "F3", "F6", *([""] * 9), f'"{currency}"', f'"{index}"'),
+        "E12": "Discount curve handle", "F12": f'=QS.CURVE.GET(F11,"{index}")',
+        "A14": "Change a zero-rate pillar and inspect prices, cashflows, and raw sensitivities.",
+    }.items():
+        write(sheet, cell, value, style["input"] if cell == "B3" else style["text"])
+    for row, tenor, rate in [(6, "0D", 0.03), (7, "5Y", 0.03), (8, "10Y", 0.032), (9, "30Y", 0.034), (10, "35Y", 0.035)]:
+        sheet.write(f"A{row}", tenor, style["input"])
+        sheet.write(f"B{row}", rate, style["input_rate"])
+    sheet.set_column("E:E", 32)
+    sheet.set_column("F:F", 58)
+
+
+def create_loans(path):
+    with new_workbook(path) as workbook:
+        style, sheets = study_sheets(workbook,
+            ("Market", "Loan Inputs", "Comparison", "Cashflows", "Risk", "Layouts"),
+            "Loans: monthly payments, prepayment, borrower credit, and funding", [
+                "Compare French, bullet, and 25% balloon principal; then floating and introductory-fixed coupons.",
+                "The lender's price is future receipt PV. Net origination value subtracts the original advance.",
+                "CPR reduces future principal and interest; borrower survival and recovery use an illustrative CDS proxy.",
+                "Funding discount factors multiply EURIBOR12m by a separate treasury-spread curve.",
+                "FairRate solves a uniform fixed coupon or floating margin at origination. Introductory/bounded schedules omit this unsupported solve.",
+                "Cashflows include scheduled receipts, prepayments, and recovery in legs 0, 1, and 2. Bounded coupons exclude option time value.",
+            ])
+        market = sheets["Market"]
+        zero_market(market, style, "Loans", "EUR", "ESTR")
+        market.write("C5", "EURIBOR12m zero", style["header"])
+        market.write("D5", "Funding zero spread", style["header"])
+        for row, rate, spread in [(6, .04, .005), (7, .037, .01), (8, .04, .011), (9, .0415, .014), (10, .0415, .015)]:
+            market.write(f"C{row}", rate, style["input_rate"])
+            market.write(f"D{row}", spread, style["input_rate"])
+        for cell, value in {
+            "E7": "Projection configuration", "F7": '=QS.CURVE.CONFIGS.ADD.ZERO(F6,"EURIBOR12m","Actual360","Linear",TRUE,A6:A10,C6:C10,"Continuous","Annual")',
+            "E8": "Funding spread configuration", "F8": '=QS.CURVE.CONFIGS.ADD.ZERO(F7,"FUNDINGSPREAD","Actual360","Linear",TRUE,A6:A10,D6:D10,"Continuous","Annual")',
+            "E9": "Composite funding configuration", "F9": '=QS.CURVE.CONFIGS.ADD.COMPOSITE(F8,"FUNDING","EURIBOR12m","FUNDINGSPREAD")',
+            "H5": "Borrower CDS quote", "I5": "Spread", "J5": "Quote store revision",
+            "E10": "Borrower credit configuration", "F10": '=QS.CREDIT.CURVE.CONFIGS.FROM.JSON("Loans.Credit",H16)',
+            "H15": "Native credit configuration JSON (illustrative borrower proxy)",
+        }.items():
+            write(market, cell, value)
+        credit_quotes = []
+        for row, (tenor, spread) in enumerate(zip(("1Y", "3Y", "5Y", "10Y", "20Y", "30Y", "35Y"), (.005, .007, .009, .011, .014, .016, .017)), 6):
+            identifier = f"Cds_BORROWER_EUR_{tenor}"
+            credit_quotes.append(identifier)
+            market.write(f"H{row}", identifier)
+            market.write(f"I{row}", spread, style["input_rate"])
+            previous = "$F$3" if row == 6 else f"J{row-1}"
+            write(market, f"J{row}", f"=QS.QUOTES.SET({previous},H{row},I{row},,)")
+        market.write_string("H16", json.dumps([{"market_index": {"Credit": "BORROWER"}, "currency": "EUR", "discount_index": "ESTR", "recovery": .4, "quotes": credit_quotes}]), style["input"])
+        write(market, "F11", formula("QS.CONTEXT.CREATE", '"Loans.Context"', "J12", "F9", "F10", *([""] * 8), '"EUR"', '"ESTR"'))
+        market.set_column("H:H", 42)
+        market.set_column("J:J", 58)
+
+        inputs = sheets["Loan Inputs"]
+        for row, (label, value) in enumerate([
+            ("Principal (EUR)", 250000), ("Fixed coupon", .06), ("Floating margin", .01),
+            ("Start date", "2026-02-24"), ("Maturity date", "2056-02-24"),
+            ("Payment frequency", "Monthly"), ("Day counter", "Actual360"), ("Currency", "EUR"),
+        ], 4):
+            inputs.write(f"A{row}", label)
+            inputs.write(f"B{row}", value, style["input_rate"] if row in (5, 6) else style["input"])
+        inputs.set_column("A:A", 30)
+        inputs.write("A14", "Floating principal is agreed at a 5% initial all-in rate; annual resets use EURIBOR12m metadata.")
+        inputs.write("A15", "The default zero fixing lag makes the first observation today's projected fixing; no historical fixing is required.")
+
+        comparison = sheets["Comparison"]
+        for column, label in enumerate(("Case", "Coupon / spread", "Projection index", "Repayment", "Options JSON", "Loan trade", "Receipt PV (EUR)", "PV less advance", "Fair coupon / spread")):
+            comparison.write(3, column, label, style["header"])
+        cases = [
+            ("French", False, "French", {}), ("Bullet", False, "Bullet", {}),
+            ("25% balloon", False, "Balloon", {"balloon_fraction": .25}),
+            ("Floating", True, "French", {"amortization_rate": .05}),
+            ("5-year introductory fixed", True, "French", {"introductory_periods": 60, "introductory_rate": .04}),
+            ("Bounded floating", True, "French", {"amortization_rate": .05, "floor": .02, "cap": .045}),
+            ("15% annual CPR", False, "French", {"prepayment": {"Cpr": .15}}),
+            ("Borrower credit", False, "French", {"credit_index": {"Credit": "BORROWER"}, "recovery": .4}),
+            ("Funded fixed", False, "French", {"discount_index": {"Other": "FUNDING"}}),
+            ("Funded floating", True, "French", {"amortization_rate": .05, "discount_index": {"Other": "FUNDING"}}),
+        ]
+        for row, (label, floating, repayment, options) in enumerate(cases, 5):
+            comparison.write(f"A{row}", label)
+            write(comparison, f"B{row}", "='Loan Inputs'!B6" if floating else "='Loan Inputs'!B5", style["rate"])
+            comparison.write(f"C{row}", "EURIBOR12m" if floating else "", style["input"])
+            comparison.write(f"D{row}", repayment, style["input"])
+            comparison.write_string(f"E{row}", json.dumps(options), style["input"])
+            write(comparison, f"F{row}", formula("QS.TRADE.LOAN", f'"Loans.Case{row}"', "Market!$B$3", "'Loan Inputs'!$B$7", "'Loan Inputs'!$B$8", "'Loan Inputs'!$B$11", "'Loan Inputs'!$B$4", f"B{row}", f"C{row}", f"D{row}", "'Loan Inputs'!$B$9", "'Loan Inputs'!$B$10", '"Receive"', f"E{row}"))
+            write(comparison, f"G{row}", f"=QS.PRICE(F{row},Market!$F$11)", style["number"])
+            write(comparison, f"H{row}", f"=G{row}-'Loan Inputs'!$B$4", style["number"])
+            if row not in (9, 10):
+                write(comparison, f"I{row}", f"=QS.FAIR.RATE(F{row},Market!$F$11)", style["rate"])
+            else:
+                comparison.write(f"I{row}", "Unsupported for mixed/bounded coupons")
+        comparison.set_column("A:A", 31)
+        comparison.set_column("E:E", 70)
+        comparison.set_column("F:F", 48)
+        comparison.activate()
+
+        for cell, title, expression in [
+            ("A4", "French contractual receipts", "=QS.CASHFLOWS(Comparison!F5,Market!F11)"),
+            ("K4", "Expected receipts with prepayment", "=QS.CASHFLOWS(Comparison!F11,Market!F11)"),
+        ]:
+            sheets["Cashflows"].write(cell.replace("4", "2"), title, style["section"])
+            write(sheets["Cashflows"], cell, expression)
+        for cell, label, trade in [("A4", "Funding risk: raw EUR per unit pillar", "F13"), ("E4", "Floating funding risk", "F14")]:
+            sheets["Risk"].write(cell.replace("4", "2"), label, style["section"])
+            write(sheets["Risk"], cell, f"=QS.SENSITIVITIES(Comparison!{trade},Market!F11)")
+        sheets["Risk"].write("A25", "Multiply a decimal-rate derivative by 0.0001 for an approximate +1 bp value change.")
+        layouts = sheets["Layouts"]
+        layouts.write("A2", "Funding risk transposed, headers hidden", style["section"])
+        write(layouts, "A4", "=QS.SENSITIVITIES(Comparison!F13,Market!F11,TRUE,FALSE)")
+        layouts.write("A9", "Same risk with headers (row labels after transposing)", style["section"])
+        write(layouts, "A11", "=QS.SENSITIVITIES(Comparison!F13,Market!F11,TRUE,TRUE)")
+        layouts.write("A16", "First year payment dates as a row (list, no headers)", style["section"])
+        write(layouts, "A18", '=QS.SCHEDULE("2026-02-24","2027-02-24","Monthly",TRUE)')
+
+
+def create_bonds(path):
+    with new_workbook(path) as workbook:
+        style, sheets = study_sheets(workbook, ("Market", "Bond Inputs", "Valuation", "Cashflows", "Risk"),
+            "Straight bonds: price anchors, duration, spread, and curve risk", [
+                "Compare the same fixed bond anchored at zero Z-spread, 100 bp Z-spread, and clean price 100.",
+                "QS.BOND.PRICE is monetary PV; CleanPrice/DirtyPrice anchors use quotation units per 100 face.",
+                "Duration is yield-modified duration. Spread derivatives and curve derivatives retain their actual units.",
+            ])
+        zero_market(sheets["Market"], style, "Bonds", "USD", "SOFR")
+        inputs = sheets["Bond Inputs"]
+        for row, (label, value) in enumerate([("Start", "2026-02-24"), ("Maturity", "2036-02-24"), ("Notional", 1000000), ("Coupon", .04)], 4):
+            inputs.write(f"A{row}", label)
+            inputs.write(f"B{row}", value, style["input_rate"] if row == 7 else style["input"])
+        valuation = sheets["Valuation"]
+        for column, title in enumerate(("Anchor", "Anchor value", "Trade", "PV (USD)", "Modified duration", "Z-spread")):
+            valuation.write(3, column, title, style["header"])
+        for row, anchor, value in [(5, "ZSpread", 0.0), (6, "ZSpread", .01), (7, "CleanPrice", 100.0)]:
+            valuation.write(f"A{row}", anchor, style["input"])
+            valuation.write(f"B{row}", value, style["input"])
+            write(valuation, f"C{row}", formula("QS.TRADE.FIXED.BOND", f'"Bonds.Case{row}"', "Market!$B$3", "'Bond Inputs'!$B$4", "'Bond Inputs'!$B$5", '"USD"', '"SOFR"', "'Bond Inputs'!$B$6", "'Bond Inputs'!$B$7", '"Receive"', '"Actual360"', '"Compounded"', '"Semiannual"', '"Semiannual"', f"A{row}", f"B{row}"))
+            for column, function in [("D", "QS.BOND.PRICE"), ("E", "QS.BOND.MODIFIED.DURATION"), ("F", "QS.BOND.Z.SPREAD")]:
+                write(valuation, f"{column}{row}", f"={function}(C{row},Market!$F$11)", style["rate"] if column == "F" else style["number"])
+        valuation.set_column("C:C", 55)
+        valuation.activate()
+        write(sheets["Cashflows"], "A4", "=QS.CASHFLOWS(Valuation!C5,Market!F11)")
+        write(sheets["Risk"], "A4", "=QS.BOND.SENSITIVITIES(Valuation!C6,Market!F11)")
+        sheets["Risk"].write("E2", "Same data without headers, transposed", style["section"])
+        write(sheets["Risk"], "E4", "=QS.BOND.SENSITIVITIES(Valuation!C6,Market!F11,TRUE,FALSE)")
+
+
+def create_interpolation(path):
+    with new_workbook(path) as workbook:
+        style, sheets = study_sheets(workbook, ("One Dimension", "Two Dimensions", "Schedules"),
+            "Interpolation and schedules: nodes, methods, and worksheet layouts", [
+                "Compare linear, log-linear, and natural cubic-spline interpolation on a positive discount-factor grid.",
+                "The two-dimensional example reproduces a surface with an x*y interaction at nodes and between them.",
+                "Schedules compares unadjusted and TARGET-adjusted dates; lists can be transposed directly.",
+            ])
+        one = sheets["One Dimension"]
+        for cell, value in {"A4": "Time", "B4": "Discount factor", "D4": "Query", "E4": "Linear", "F4": "Log-linear", "G4": "Cubic spline"}.items():
+            one.write(cell, value, style["header"])
+        for row, x, y in [(5, 0, 1), (6, 1, .97), (7, 3, .91), (8, 5, .85), (9, 10, .70)]:
+            one.write(f"A{row}", x, style["input"])
+            one.write(f"B{row}", y, style["input"])
+        for row, point in enumerate((0, .5, 1, 2, 4, 7, 10), 5):
+            one.write(f"D{row}", point, style["input"])
+            for column, function in [("E", "QS.INTERPOLATE.LINEAR"), ("F", "QS.INTERPOLATE.LOG.LINEAR"), ("G", "QS.INTERPOLATE.CUBIC.SPLINE")]:
+                write(one, f"{column}{row}", f"={function}(D{row},$A$5:$A$9,$B$5:$B$9,FALSE)", style["factor"])
+        two = sheets["Two Dimensions"]
+        for column, label in zip("ABC", ("x", "y", "2 + x + 3*y + x*y")):
+            two.write(f"{column}4", label, style["header"])
+        for row, (x, y) in enumerate(((0, 0), (0, 2), (1, 0), (1, 2)), 5):
+            two.write(f"A{row}", x, style["input"])
+            two.write(f"B{row}", y, style["input"])
+            write(two, f"C{row}", f"=2+A{row}+3*B{row}+A{row}*B{row}")
+        for cell, value in {"E4": "Query x", "F4": "Query y", "G4": "Native bilinear", "H4": "Analytic value", "E5": .4, "F5": .7,
+                            "G5": '=QS.INTERPOLATE.BILINEAR(E5,F5,A5:A8,B5:B8,C5:C8,"Reject")', "H5": "=2+E5+3*F5+E5*F5"}.items():
+            write(two, cell, value, style["input"] if cell in ("E5", "F5") else style["text"])
+        schedules = sheets["Schedules"]
+        schedules.write("A2", "Unadjusted quarterly dates", style["section"])
+        write(schedules, "A4", '=QS.SCHEDULE("2026-02-24","2027-02-24","Quarterly")')
+        schedules.write("C2", "Same dates transposed", style["section"])
+        write(schedules, "C4", '=QS.SCHEDULE("2026-02-24","2027-02-24","Quarterly",TRUE)')
+        schedules.write("C8", "Following TARGET adjustment", style["section"])
+        write(schedules, "C10", '=QS.SCHEDULE.ADJUSTED("2026-02-28","2027-02-28","Quarterly","TARGET","Following",TRUE)')
+        one.activate()
+
+
+STUDY_CHECKS = {
+    "loan_pricing_example": {
+        "handles": [("Market", "F11"), ("Comparison", "F5"), ("Comparison", "F14")],
+        "numbers": [("Comparison", f"{column}{row}") for row in range(5, 15) for column in "GH"] + [("Comparison", "I5"), ("Comparison", "I8")],
+    },
+    "bond_pricing_example": {
+        "handles": [("Market", "F11"), ("Valuation", "C5"), ("Valuation", "C7")],
+        "numbers": [("Valuation", f"{column}{row}") for row in (5, 6, 7) for column in "DEF"],
+    },
+    "interpolation_example": {
+        "handles": [],
+        "numbers": [("One Dimension", f"{column}{row}") for row in range(5, 12) for column in "EFG"] + [("Two Dimensions", "G5")],
+    },
+}
+
+
 def validate_in_excel(path, xll_path):
     """Check the optional live XLL workflow and unchanged F9 recalculation."""
     from win32com.client import DispatchEx
@@ -304,7 +537,25 @@ def validate_in_excel(path, xll_path):
         workbook.ForceFullCalculation = True
         excel.CalculateFullRebuild()
         historical = "Historical Pricing" in [sheet.Name for sheet in workbook.Worksheets]
-        if historical:
+        study = STUDY_CHECKS.get(path.stem)
+        if study:
+            handles = [workbook.Worksheets(sheet).Range(cell) for sheet, cell in study["handles"]]
+            prices = [workbook.Worksheets(sheet).Range(cell) for sheet, cell in study["numbers"]]
+            if path.stem == "interpolation_example":
+                sheet = workbook.Worksheets("Two Dimensions")
+                if abs(sheet.Range("G5").Value2 - sheet.Range("H5").Value2) > 1e-10:
+                    raise RuntimeError("Bilinear result disagrees with the analytic surface")
+            elif path.stem == "loan_pricing_example":
+                sheet = workbook.Worksheets("Comparison")
+                if sheet.Range("G13").Value2 >= sheet.Range("G5").Value2:
+                    raise RuntimeError("Higher funding rates did not reduce fixed-loan PV")
+                layouts = workbook.Worksheets("Layouts")
+                if layouts.Range("A11").Value2 != "Risk factor":
+                    raise RuntimeError("Transposed sensitivity table lost its header")
+                for without_header, with_header in (("A4", "B11"), ("A5", "B12")):
+                    if layouts.Range(without_header).Value2 != layouts.Range(with_header).Value2:
+                        raise RuntimeError("Header-free and transposed sensitivity values do not align")
+        elif historical:
             sheet = workbook.Worksheets("Historical Pricing")
             handles = [sheet.Range(f"{column}{row}") for column in "BC" for row in (9, 11, 12, 13, 20, 21)]
             prices = [sheet.Range(f"{column}24") for column in "BC"]
@@ -331,7 +582,7 @@ def validate_in_excel(path, xll_path):
         values = [cell.Value2 for cell in prices]
         if not all(isinstance(value, float) and math.isfinite(value) for value in values):
             raise RuntimeError(f"Pricing did not return finite numbers: {values!r}")
-        if not historical:
+        if not historical and not study:
             notional = workbook.Worksheets("Trade Inputs").Range("B4").Value2
             if abs(values[0]) > notional or abs(values[1]) > 0.5:
                 raise RuntimeError("Swap price or fair rate is implausible for the example")
@@ -352,7 +603,7 @@ def validate_in_excel(path, xll_path):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--example", choices=("all", "swap", "historical"), default="all")
+    parser.add_argument("--example", choices=("all", "swap", "historical", "loans", "bonds", "interpolation"), default="all")
     parser.add_argument("--output-dir", type=Path, default=Path(__file__).resolve().parent)
     parser.add_argument("--xll-path", type=Path, help="Validate with native Windows Excel; requires pywin32")
     args = parser.parse_args()
@@ -363,7 +614,7 @@ def main():
         if not args.xll_path.is_file():
             parser.error(f"XLL file does not exist: {args.xll_path}")
     args.output_dir.mkdir(parents=True, exist_ok=True)
-    for name, filename, generate in [("swap", "swap_pricing_example.xlsx", create_swap), ("historical", "historical_pricing_example.xlsx", create_historical)]:
+    for name, filename, generate in EXAMPLES:
         if args.example not in ("all", name):
             continue
         with TemporaryDirectory(dir=args.output_dir) as temporary:
@@ -373,6 +624,15 @@ def main():
                 validate_in_excel(path, args.xll_path)
             path.replace(args.output_dir / filename)
         print(f"Created {args.output_dir / filename}")
+
+
+EXAMPLES = [
+    ("swap", "swap_pricing_example.xlsx", create_swap),
+    ("historical", "historical_pricing_example.xlsx", create_historical),
+    ("loans", "loan_pricing_example.xlsx", create_loans),
+    ("bonds", "bond_pricing_example.xlsx", create_bonds),
+    ("interpolation", "interpolation_example.xlsx", create_interpolation),
+]
 
 
 if __name__ == "__main__":
