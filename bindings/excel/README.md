@@ -30,6 +30,11 @@ rustup target add x86_64-pc-windows-msvc
 powershell -ExecutionPolicy Bypass -File bindings/excel/scripts/build.ps1
 ```
 
+Use the XLL and workbooks from the same checkout or release. The published
+XLL and online guide may not include development-branch changes. When testing
+branch changes, load the locally built XLL and the workbooks under
+`bindings/excel/examples`.
+
 Load `bindings/excel/dist/quantsupport.xll` through **File > Options > Add-ins >
 Excel Add-ins > Go > Browse**. Follow your organization's trusted-add-in policy.
 Load the add-in before the workbook, or press **Ctrl+Alt+F9** afterwards.
@@ -174,7 +179,8 @@ nor Excel and preserves exact per-function reference URLs.
 
 The build derives an expected function inventory from the worksheet sources.
 Loading checks that inventory, registers every primary name and alias, and
-requires a positive numeric Excel registration ID. A rejection rolls back the
+requires a numeric Excel registration ID. IDs are opaque values; zero and
+negative IDs are accepted. A rejection rolls back the
 registrations and displays the failed function's name instead of loading a
 partial add-in. Argument-name separators are compacted to fit Excel's 255-character
 registration field; an oversized argument list fails the build.

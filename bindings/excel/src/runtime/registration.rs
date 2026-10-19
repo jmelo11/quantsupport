@@ -14,13 +14,55 @@ pub fn argument_text(names: &str) -> Result<String, String> {
     Ok(text)
 }
 
+/// Typed callback result, separated from the Windows ABI for portable tests.
+#[derive(Clone, Copy, Debug)]
+pub enum RegistrationResult {
+    Number(f64),
+    Integer(i32),
+    ExcelError(i32),
+    OtherType(u32),
+}
+
+/// Validates callback success and Excel's numeric registration result.
+///
+/// Registration IDs are opaque tokens: their sign and magnitude do not indicate
+/// success. In particular, zero and negative IDs must not be rejected.
+/// https://learn.microsoft.com/en-us/office/client-developer/excel/xlfregister-form-1
+pub fn checked_registration_id(status: i32, result: RegistrationResult) -> Result<f64, String> {
+    if status != 0 {
+        return Err(format!(
+            "Excel callback failed with code {status}; result={result:?}"
+        ));
+    }
+    let id = match result {
+        RegistrationResult::Number(id) => id,
+        RegistrationResult::Integer(id) => f64::from(id),
+        RegistrationResult::ExcelError(code) => {
+            return Err(format!(
+                "Excel rejected registration (worksheet error {code})"
+            ));
+        }
+        RegistrationResult::OtherType(kind) => {
+            return Err(format!(
+                "Excel returned a nonnumeric registration result (xltype=0x{kind:04X})"
+            ));
+        }
+    };
+    if !id.is_finite() {
+        return Err(format!("Excel returned a non-finite registration ID: {id}"));
+    }
+    Ok(id)
+}
+
 #[cfg(windows)]
 pub mod windows {
     use std::cell::RefCell;
     use xll_rs::{
         entrypoint::{excel12, excel_free, XLRET_SUCCESS},
         memory::xlAutoFree12,
-        types::{XLBIT_XL_FREE, XLF_REGISTER, XLOPER12, XLTYPE_ERR, XLTYPE_NUM, XL_GET_NAME},
+        types::{
+            XLBIT_XL_FREE, XLF_REGISTER, XLOPER12, XLTYPE_ERR, XLTYPE_INT, XLTYPE_NUM, XL_GET_NAME,
+        },
     };
 
     const XLF_UNREGISTER: i32 = 201;
@@ -55,22 +97,13 @@ pub mod windows {
     }
 
     fn registration_id(status: i32, result: &XLOPER12) -> Result<f64, String> {
-        if status != XLRET_SUCCESS {
-            return Err(format!("Excel callback failed with code {status}"));
-        }
-        if result.base_type() == XLTYPE_NUM {
-            let id = unsafe { result.val.num };
-            if id.is_finite() && id > 0.0 {
-                return Ok(id);
-            }
-        }
-        if result.base_type() == XLTYPE_ERR {
-            return Err(format!(
-                "Excel rejected registration (worksheet error {})",
-                unsafe { result.val.err }
-            ));
-        }
-        Err("Excel did not return a valid numeric registration ID".into())
+        let value = match result.base_type() {
+            XLTYPE_NUM => super::RegistrationResult::Number(unsafe { result.val.num }),
+            XLTYPE_INT => super::RegistrationResult::Integer(unsafe { result.val.w }),
+            XLTYPE_ERR => super::RegistrationResult::ExcelError(unsafe { result.val.err }),
+            kind => super::RegistrationResult::OtherType(kind),
+        };
+        super::checked_registration_id(status, value)
     }
 
     pub fn register_functions() -> Result<(), String> {
@@ -97,6 +130,12 @@ pub mod windows {
         let argument_texts = functions
             .iter()
             .map(|function| {
+                if crate::documentation::function_help::result_help(function.name).is_none() {
+                    return Err(format!(
+                        "{}: missing worksheet result/error documentation",
+                        function.name
+                    ));
+                }
                 super::argument_text(function.arg_names)
                     .map_err(|error| format!("{}: {error}", function.name))
             })
@@ -201,15 +240,20 @@ pub mod windows {
             assert!(registration_id(32, &XLOPER12::from_f64(1.0)).is_err());
             for result in [
                 XLOPER12::nil(),
-                XLOPER12::from_f64(0.0),
                 XLOPER12::from_f64(f64::NAN),
                 XLOPER12::from_bool(true),
             ] {
                 assert!(registration_id(XLRET_SUCCESS, &result).is_err());
             }
+            for id in [42.0, 0.0, -42.0] {
+                assert_eq!(
+                    registration_id(XLRET_SUCCESS, &XLOPER12::from_f64(id)).unwrap(),
+                    id
+                );
+            }
             assert_eq!(
-                registration_id(XLRET_SUCCESS, &XLOPER12::from_f64(42.0)).unwrap(),
-                42.0
+                registration_id(XLRET_SUCCESS, &XLOPER12::from_int(-42)).unwrap(),
+                -42.0
             );
         }
     }
@@ -217,6 +261,51 @@ pub mod windows {
 
 #[cfg(test)]
 mod tests {
+    use super::{checked_registration_id, RegistrationResult};
+
+    #[test]
+    fn accepts_opaque_numeric_ids_regardless_of_sign_or_zero() {
+        for id in [-2_147_483_648.0, -42.0, -0.0, 0.0, 42.0, 2_147_483_647.0] {
+            assert_eq!(
+                checked_registration_id(0, RegistrationResult::Number(id)).unwrap(),
+                id
+            );
+        }
+        for id in [i32::MIN, -42, 0, 42, i32::MAX] {
+            assert_eq!(
+                checked_registration_id(0, RegistrationResult::Integer(id)).unwrap(),
+                f64::from(id)
+            );
+        }
+    }
+
+    #[test]
+    fn still_rejects_failed_callbacks_excel_errors_and_nonnumeric_results() {
+        assert!(
+            checked_registration_id(32, RegistrationResult::Number(-42.0))
+                .unwrap_err()
+                .contains("code 32")
+        );
+        assert!(
+            checked_registration_id(0, RegistrationResult::ExcelError(15))
+                .unwrap_err()
+                .contains("worksheet error 15")
+        );
+        // Boolean, string, missing, and nil results are not registration IDs.
+        for kind in [0x0004, 0x0002, 0x0080, 0x0100] {
+            let error =
+                checked_registration_id(0, RegistrationResult::OtherType(kind)).unwrap_err();
+            assert!(error.contains(&format!("xltype=0x{kind:04X}")));
+        }
+        for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            assert!(
+                checked_registration_id(0, RegistrationResult::Number(value))
+                    .unwrap_err()
+                    .contains("non-finite")
+            );
+        }
+    }
+
     #[test]
     fn compacts_argument_separators_and_checks_utf16_limit() {
         assert_eq!(
