@@ -232,6 +232,8 @@ pub struct EvaluationResults {
     cashflows: Option<CashflowsTable>,
     /// Fair (par / breakeven) rate.
     fair_rate: Option<f64>,
+    /// Bootstrapped coupon/spread levels in contractual segment order.
+    fair_rates: Option<Vec<f64>>,
 }
 
 impl EvaluationResults {
@@ -249,6 +251,7 @@ impl EvaluationResults {
             sensitivities: None,
             cashflows: None,
             fair_rate: None,
+            fair_rates: None,
         }
     }
 
@@ -395,8 +398,37 @@ impl EvaluationResults {
     /// Its meaning depends on the product: a swap coupon is an annual decimal
     /// rate, whereas an equity or FX forward returns a delivery price or
     /// exchange rate in the contract's quotation units.
+    /// Multi-segment loans supply [`Self::fair_rates`] and leave this scalar absent.
     #[must_use]
     pub const fn fair_rate(&self) -> Option<f64> {
         self.fair_rate
+    }
+
+    /// Sets bootstrapped fair rates in contractual segment order.
+    ///
+    /// A single segment also populates [`Self::fair_rate`]. With multiple
+    /// segments, the scalar is absent. Loan segments are solved successively to
+    /// par, redeeming outstanding principal at each segment's end and retaining
+    /// already solved coupon/spread levels.
+    #[must_use]
+    pub fn with_fair_rates(mut self, fair_rates: Vec<f64>) -> Self {
+        self.fair_rate = if let [rate] = fair_rates.as_slice() {
+            Some(*rate)
+        } else {
+            None
+        };
+        self.fair_rates = Some(fair_rates);
+        self
+    }
+
+    /// Returns bootstrapped fair coupon/spread levels, if available.
+    ///
+    /// Loan entries follow contiguous contractual segments. A change in coupon
+    /// type, fixed rate, floating spread, or floating index starts a new segment;
+    /// projected index resets do not. Each prefix redeems outstanding principal
+    /// at its end; previously solved rates remain fixed in subsequent solves.
+    #[must_use]
+    pub fn fair_rates(&self) -> Option<&[f64]> {
+        self.fair_rates.as_deref()
     }
 }

@@ -36,9 +36,20 @@ of payment frequency. A daily index defaults to resetting at payment boundaries.
 Loan ``QS.PRICE`` is signed PV of future receipts strictly after the valuation
 date. It excludes the advance, so at origination the lender's net value is
 receipt PV less notional. ``QS.FAIR.RATE`` solves the fixed annual coupon or
-floating margin that lends at par. It supports uniform fixed or unbounded
-floating coupons at or before origination; mixed and bounded schedules are
-unsupported. Its search interval is [-5%, 50%].
+floating margins that lend at par, at or before origination. It returns one
+number per contiguous coupon segment, in contractual order. A change in fixed
+rate, floating spread, coupon type, or floating index starts a segment; index
+fixing resets do not.
+
+The solve first shortens the loan to the end of the first segment, repaying its
+remaining principal there. It fixes that fair coupon/spread, extends to the next
+segment, and repeats. Every solved prefix therefore lends at par with its
+remaining principal repaid at that prefix's end. The original contract stays
+unchanged. Bounded schedules remain unsupported; each search uses [-5%, 50%].
+
+``QS.FAIR.RATE(trade,context)`` spills the rates vertically without headers.
+Use ``QS.FAIR.RATE(trade,context,TRUE)`` for a row. A uniform single-segment loan
+continues to return one numeric cell.
 
 Advanced options
 ----------------
@@ -75,12 +86,26 @@ principal due at maturity; CPR is the annual conditional prepayment fraction.
      - Optional all-in floating coupon bounds. The pricer resolves bounded rates without option time value.
    * - ``introductory_periods``, ``introductory_rate``
      - Supply both: a positive count of fixed payment periods and their annual coupon. The floating rate/margin then continues through maturity.
+   * - ``coupon_segments``
+     - Optional array of rate segments, overriding the worksheet rate/index. Each has ``rate``, optional ``market_index`` (absent means fixed), and positive ``periods``. Omit only the final count to fill maturity. Cannot be combined with introductory terms or floor/cap.
    * - ``refinancing_benchmark_index``
      - Required by Refinancing prepayment, e.g. ``"EURIBOR12m"``; this benchmark excludes replacement-loan margins and fees.
    * - ``discount_index``
      - Override the base-currency discount curve, e.g. ``{"Other":"FUNDING"}`` for a constructed composite funding curve. Absent means the context's base index.
    * - ``rebuild_amortization_for_fair_rate``
      - Default ``false`` preserves agreed principal during fair-rate trials. ``true`` rebuilds principal per trial; it leaves Value/Cashflows/Sensitivities principal unchanged.
+
+For two stepped fixed coupons followed by floating payments, put this JSON in
+the options cell:
+
+.. code-block:: json
+
+   {"coupon_segments":[{"rate":0.03,"periods":12},{"rate":0.04,"periods":12},{"rate":0.01,"market_index":"EURIBOR12m"}]}
+
+``QS.FAIR.RATE`` returns three numbers: the first fair fixed coupon, the next
+fair fixed coupon with the first held fixed, and the final fair floating spread
+with both fixed coupons held fixed. Each shortened loan repays its remaining
+capital at the corresponding segment end.
 
 Inspect receipts and risk
 -------------------------

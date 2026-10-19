@@ -265,13 +265,29 @@ pub fn qs_bond_oas(trade: &str, context: &str) -> Result<f64, XllError> {
 #[xll_bindgen(
     name = "QS.FAIR.RATE",
     category = "QuantSupport - Pricing",
-    help = "Returns the fair rate, par coupon, or fair forward from a supported pricer"
+    help = "Returns fair rate(s), par coupon, or fair forward; loans spill one bootstrapped coupon/spread per contiguous segment"
 )]
-pub fn qs_fair_rate(trade: &str, context: &str) -> Result<f64, XllError> {
-    with_registry(|registry| evaluate(registry, trade, context, &[Request::FairRate]))
-        .map_err(value_error)?
-        .fair_rate()
-        .ok_or_else(|| not_found("the selected pricer did not return a fair rate"))
+pub fn qs_fair_rate(
+    trade: &str,
+    context: &str,
+    transpose: *const XLOPER12,
+) -> Result<*mut XLOPER12, XllError> {
+    let transpose = crate::functions::helpers::optional_bool(transpose, "transpose")?;
+    let result = with_registry(|registry| evaluate(registry, trade, context, &[Request::FairRate]))
+        .map_err(value_error)?;
+    let rates = result
+        .fair_rates()
+        .map(<[f64]>::to_vec)
+        .or_else(|| result.fair_rate().map(|rate| vec![rate]))
+        .ok_or_else(|| not_found("the selected pricer did not return a fair rate"))?;
+    let rows = rates.len();
+    Ok(crate::functions::helpers::spill(
+        rates.into_iter().map(XLOPER12::from_f64).collect(),
+        rows,
+        1,
+        transpose,
+        Some(true),
+    ))
 }
 
 #[xll_bindgen(

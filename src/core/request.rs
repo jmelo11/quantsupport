@@ -29,6 +29,8 @@ pub enum Request {
     /// Signed, undiscounted cashflow report; payment selection depends on the pricer.
     Cashflows,
     /// Breakeven contract quote, such as a decimal swap coupon or forward price.
+    /// Loans supply a bootstrapped coupon/spread array in `fair_rates`; a
+    /// single-segment loan also supplies the scalar `fair_rate`.
     FairRate,
 }
 

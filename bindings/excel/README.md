@@ -133,6 +133,12 @@ floating spread. Optional JSON `options` supplies prepayment, credit/recovery,
 funding, reset/calendar, bounded/introductory-coupon, and fair-rate settings.
 Use `QS.PRICE`, `QS.FAIR.RATE`, `QS.CASHFLOWS`, and `QS.SENSITIVITIES` on its handle.
 Loan prices are signed future receipt PVs, excluding the initial advance.
+`QS.FAIR.RATE` bootstraps one coupon/spread per contiguous rate segment: redeem
+remaining capital at each segment end, solve its rate, then lock it before
+extending to the next segment. Mixed and stepped loans spill a numeric column;
+pass `TRUE` as the third argument for a row. Single-segment loans keep one cell.
+Use options `coupon_segments` for stepped contracts; the final segment can omit
+its `periods` count to fill maturity.
 See the [loan guide](../../docs/excel/guide/loans.rst) for defaults and the options schema.
 
 Supported workflows include curves/credit, volatility, model/simulation

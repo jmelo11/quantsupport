@@ -27,9 +27,19 @@ pub struct LoanOptions {
     pub cap: Option<f64>,
     pub introductory_periods: Option<usize>,
     pub introductory_rate: Option<f64>,
+    pub coupon_segments: Option<Vec<CouponSegment>>,
     pub refinancing_benchmark_index: Option<MarketIndex>,
     pub discount_index: Option<MarketIndex>,
     pub rebuild_amortization_for_fair_rate: bool,
+}
+
+/// A contiguous contractual coupon level; the final segment can fill maturity.
+#[derive(Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CouponSegment {
+    pub rate: f64,
+    pub market_index: Option<MarketIndex>,
+    pub periods: Option<usize>,
 }
 
 /// Contractual and position inputs; rates are annual decimal coupon/spread values.
@@ -92,7 +102,46 @@ impl LoanTerms {
             || CashflowType::fixed(self.rate),
             |index| CashflowType::floating(index, self.rate, options.floor, options.cap),
         );
-        let coupons =
+        let coupons = if let Some(segments) = &options.coupon_segments {
+            if options.introductory_periods.is_some()
+                || options.introductory_rate.is_some()
+                || options.floor.is_some()
+                || options.cap.is_some()
+            {
+                return Err(
+                    "coupon_segments cannot be combined with introductory terms or floor/cap"
+                        .into(),
+                );
+            }
+            let schedule = MakeSchedule::new(self.start_date, self.maturity_date)
+                .with_frequency(self.payment_frequency)
+                .build()
+                .map_err(|error| error.to_string())?;
+            let payments = schedule.dates().len().saturating_sub(1);
+            let mut coupons = Vec::new();
+            if segments.is_empty() {
+                return Err("coupon_segments cannot be empty".into());
+            }
+            for (position, segment) in segments.iter().enumerate() {
+                let periods = match segment.periods {
+                    Some(periods) if periods > 0 => periods,
+                    None if position + 1 == segments.len() => payments.saturating_sub(coupons.len()),
+                    _ => return Err("coupon_segments needs positive periods; only the final count may be omitted".into()),
+                };
+                if periods == 0 || periods > payments.saturating_sub(coupons.len()) {
+                    return Err("coupon_segments exceeds the contractual payment schedule".into());
+                }
+                let coupon = segment.market_index.as_ref().map_or_else(
+                    || CashflowType::fixed(segment.rate),
+                    |index| CashflowType::floating(index.clone(), segment.rate, None, None),
+                );
+                coupons.extend(vec![coupon; periods]);
+            }
+            if coupons.len() != payments {
+                return Err("coupon_segments must cover every contractual payment".into());
+            }
+            coupons
+        } else {
             match (options.introductory_periods, options.introductory_rate) {
                 (None, None) => vec![coupon],
                 (Some(periods), Some(rate)) if periods > 0 => {
@@ -114,7 +163,8 @@ impl LoanTerms {
                     "introductory_rate and positive introductory_periods must be supplied together"
                         .into(),
                 ),
-            };
+            }
+        };
         let mut builder = MakeLoan::default()
             .with_identifier(name.to_string())
             .with_start_date(self.start_date)
@@ -372,6 +422,96 @@ mod tests {
         let mut input = terms();
         input.options.floor = Some(0.02);
         assert!(input.build("loan").is_err());
+    }
+
+    #[test]
+    fn mixed_and_stepped_loans_return_bootstrapped_rate_arrays() {
+        let context = context();
+        for rebuild in [false, true] {
+            let mut input = terms();
+            input.options = serde_json::from_value(serde_json::json!({
+                "coupon_segments": [
+                    {"rate": 0.06, "periods": 12},
+                    {"rate": 0.04, "periods": 12},
+                    {"rate": 0.01, "market_index": "EURIBOR12m", "periods": 12},
+                    {"rate": 0.02, "market_index": "EURIBOR12m"}
+                ],
+                "rebuild_amortization_for_fair_rate": rebuild,
+            }))
+            .unwrap();
+            let original_options = input.options.clone();
+            let loan = input.build("mixed").unwrap();
+            let before = loan
+                .evaluate(&context, &[Request::Value, Request::Cashflows])
+                .unwrap();
+            let results = loan.evaluate(&context, &[Request::FairRate]).unwrap();
+            let rates = results.fair_rates().unwrap();
+            assert_eq!(rates.len(), 4);
+            assert!(results.fair_rate().is_none());
+            let mut candidate = terms();
+            candidate.options = original_options;
+            for (segment, rate) in candidate
+                .options
+                .coupon_segments
+                .as_mut()
+                .unwrap()
+                .iter_mut()
+                .zip(rates)
+            {
+                segment.rate = *rate;
+            }
+            candidate.options.amortization_rate = Some(if rebuild { rates[0] } else { 0.06 });
+            let candidate = candidate.build("par").unwrap();
+            let price = candidate
+                .evaluate(&context, &[Request::Value])
+                .unwrap()
+                .price()
+                .unwrap();
+            assert!((price - 250_000.0).abs() < 1e-5, "{rebuild}: {price}");
+            let after = loan
+                .evaluate(&context, &[Request::Value, Request::Cashflows])
+                .unwrap();
+            assert_eq!(before.price(), after.price());
+            assert_eq!(
+                before.cashflows().unwrap().amounts(),
+                after.cashflows().unwrap().amounts()
+            );
+        }
+        let mut input = terms_with_floating_without_amortization();
+        input.options =
+            serde_json::from_str(r#"{"introductory_periods":12,"introductory_rate":0.04}"#)
+                .unwrap();
+        assert_eq!(
+            input
+                .build("introductory")
+                .unwrap()
+                .evaluate(&context, &[Request::FairRate])
+                .unwrap()
+                .fair_rates()
+                .unwrap()
+                .len(),
+            2
+        );
+    }
+
+    #[test]
+    fn coupon_segments_reject_incomplete_oversized_and_conflicting_schedules() {
+        for options in [
+            serde_json::json!({"coupon_segments": []}),
+            serde_json::json!({"coupon_segments": [{"rate": 0.04, "periods": 0}]}),
+            serde_json::json!({"coupon_segments": [{"rate": 0.04, "periods": 61}]}),
+            serde_json::json!({"coupon_segments": [{"rate": 0.04, "periods": 12}]}),
+            serde_json::json!({"coupon_segments": [{"rate": 0.04}, {"rate": 0.05}]}),
+            serde_json::json!({"coupon_segments": [{"rate": 0.04}], "introductory_rate": 0.03, "introductory_periods": 12}),
+        ] {
+            let mut input = terms();
+            input.options = serde_json::from_value(options).unwrap();
+            assert!(input.build("invalid").is_err());
+        }
+        assert!(serde_json::from_str::<LoanOptions>(
+            r#"{"coupon_segments":[{"rate":0.03,"unknown":1}]}"#
+        )
+        .is_err());
     }
 
     #[test]

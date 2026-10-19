@@ -47,7 +47,7 @@ Observation timestamps instead require offset-aware RFC 3339 text.
 calendar day, not a market business date or a rolled valuation date.
 
 Direct discount-factor and zero-rate quotes
-------------------------------------------
+-------------------------------------------
 
 ``QS.QUOTES.ADD`` also accepts direct curve observations such as
 ``DiscountFactor_USD_SOFR_1Y`` (a dimensionless factor) or

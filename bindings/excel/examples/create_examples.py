@@ -343,7 +343,7 @@ def create_loans(path):
                 "The lender's price is future receipt PV. Net origination value subtracts the original advance.",
                 "CPR reduces future principal and interest; borrower survival and recovery use an illustrative CDS proxy.",
                 "Funding discount factors multiply EURIBOR12m by a separate treasury-spread curve.",
-                "FairRate solves a uniform fixed coupon or floating margin at origination. Introductory/bounded schedules omit this unsupported solve.",
+                "FairRate bootstraps each rate segment: repay remaining capital at its end, solve, lock, and extend. Arrays are transposed into a row; bounded coupons omit the solve.",
                 "Cashflows include scheduled receipts, prepayments, and recovery in legs 0, 1, and 2. Bounded coupons exclude option time value.",
             ])
         market = sheets["Market"]
@@ -388,7 +388,7 @@ def create_loans(path):
         inputs.write("A15", "The default zero fixing lag makes the first observation today's projected fixing; no historical fixing is required.")
 
         comparison = sheets["Comparison"]
-        for column, label in enumerate(("Case", "Coupon / spread", "Projection index", "Repayment", "Options JSON", "Loan trade", "Receipt PV (EUR)", "PV less advance", "Fair coupon / spread")):
+        for column, label in enumerate(("Case", "Coupon / spread", "Projection index", "Repayment", "Options JSON", "Loan trade", "Receipt PV (EUR)", "PV less advance", "Fair first segment", "Fair second segment", "Fair third segment")):
             comparison.write(3, column, label, style["header"])
         cases = [
             ("French", False, "French", {}), ("Bullet", False, "Bullet", {}),
@@ -400,23 +400,28 @@ def create_loans(path):
             ("Borrower credit", False, "French", {"credit_index": {"Credit": "BORROWER"}, "recovery": .4}),
             ("Funded fixed", False, "French", {"discount_index": {"Other": "FUNDING"}}),
             ("Funded floating", True, "French", {"amortization_rate": .05, "discount_index": {"Other": "FUNDING"}}),
+            ("Stepped fixed", False, "French", {"coupon_segments": [{"rate": .03, "periods": 60}, {"rate": .04, "periods": 60}, {"rate": .05}]}),
+            ("Stepped then floating", False, "French", {"coupon_segments": [{"rate": .03, "periods": 60}, {"rate": .04, "periods": 60}, {"rate": .01, "market_index": "EURIBOR12m"}]}),
         ]
         for row, (label, floating, repayment, options) in enumerate(cases, 5):
             comparison.write(f"A{row}", label)
-            write(comparison, f"B{row}", "='Loan Inputs'!B6" if floating else "='Loan Inputs'!B5", style["rate"])
+            rate = options["coupon_segments"][0]["rate"] if "coupon_segments" in options else (
+                "='Loan Inputs'!B6" if floating else "='Loan Inputs'!B5")
+            write(comparison, f"B{row}", rate, style["rate"])
             comparison.write(f"C{row}", "EURIBOR12m" if floating else "", style["input"])
             comparison.write(f"D{row}", repayment, style["input"])
             comparison.write_string(f"E{row}", json.dumps(options), style["input"])
             write(comparison, f"F{row}", formula("QS.TRADE.LOAN", f'"Loans.Case{row}"', "Market!$B$3", "'Loan Inputs'!$B$7", "'Loan Inputs'!$B$8", "'Loan Inputs'!$B$11", "'Loan Inputs'!$B$4", f"B{row}", f"C{row}", f"D{row}", "'Loan Inputs'!$B$9", "'Loan Inputs'!$B$10", '"Receive"', f"E{row}"))
             write(comparison, f"G{row}", f"=QS.PRICE(F{row},Market!$F$11)", style["number"])
             write(comparison, f"H{row}", f"=G{row}-'Loan Inputs'!$B$4", style["number"])
-            if row not in (9, 10):
-                write(comparison, f"I{row}", f"=QS.FAIR.RATE(F{row},Market!$F$11)", style["rate"])
+            if row != 10:
+                write(comparison, f"I{row}", f"=QS.FAIR.RATE(F{row},Market!$F$11,TRUE)", style["rate"])
             else:
-                comparison.write(f"I{row}", "Unsupported for mixed/bounded coupons")
+                comparison.write(f"I{row}", "Unsupported for bounded coupons")
         comparison.set_column("A:A", 31)
         comparison.set_column("E:E", 70)
         comparison.set_column("F:F", 48)
+        comparison.set_column("I:K", 21, style["rate"])
         comparison.activate()
 
         for cell, title, expression in [
@@ -508,8 +513,8 @@ def create_interpolation(path):
 
 STUDY_CHECKS = {
     "loan_pricing_example": {
-        "handles": [("Market", "F11"), ("Comparison", "F5"), ("Comparison", "F14")],
-        "numbers": [("Comparison", f"{column}{row}") for row in range(5, 15) for column in "GH"] + [("Comparison", "I5"), ("Comparison", "I8")],
+        "handles": [("Market", "F11"), ("Comparison", "F5"), ("Comparison", "F14"), ("Comparison", "F16")],
+        "numbers": [("Comparison", f"{column}{row}") for row in range(5, 17) for column in "GH"] + [("Comparison", cell) for cell in ("I5", "I8", "I9", "J9", "I15", "J15", "K15", "I16", "J16", "K16")],
     },
     "bond_pricing_example": {
         "handles": [("Market", "F11"), ("Valuation", "C5"), ("Valuation", "C7")],

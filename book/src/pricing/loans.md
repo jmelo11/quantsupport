@@ -212,17 +212,30 @@ principal schedules stay fixed during market sensitivity calculations.
 
 ## Fair rate and schedule choice
 
-`FairRate` solves a fixed coupon or floating spread that makes receipt PV equal
-the PV of the original advance. It is defined at or before origination for
-uniform fixed coupons or a uniform floating spread. Mixed, stepped, and bounded
-coupons require a specified adjustable segment and are currently rejected by
-`FairRate`; their Value, Cashflows, and Sensitivities requests remain supported.
+`FairRate` bootstraps one fixed coupon or floating spread per contiguous
+contractual segment at or before origination. A change in fixed rate, spread,
+coupon type, or floating index starts a segment; index fixing resets do not.
+First shorten the loan to the first segment's end and repay all remaining
+capital there. Solve that segment's rate so receipt PV equals the original
+advance PV, lock the result, extend through the next segment, and repeat.
+Every solved prefix therefore lends at par with its outstanding principal
+repaid at that prefix's end. Bounded coupons remain unsupported.
+
+The result's `fair_rates` array follows contractual segment order. A single
+segment also populates `fair_rate`, preserving existing scalar workflows.
+For mixed or stepped loans, use `fair_rates`. Excel's `QS.FAIR.RATE` spills this
+array vertically, or horizontally with its optional third argument `TRUE`.
+
+```python
+with context:
+    rates = qs.LoanPricer().evaluate(trade=trade, context=context, requests=[qs.Request.FairRate]).fair_rates
+```
 
 The pricer's `rebuild_amortization_for_fair_rate` parameter controls how solver
 trials treat principal. The default `false` preserves the already created
 amortization schedule. With `true`, each trial regenerates the builder's French,
-bullet, or balloon schedule using the candidate fixed coupon or the first
-observed index rate plus candidate spread. A custom leg needs explicit repayment
+bullet, or balloon schedule using the first trial coupon's all-in rate. Once
+the first segment is solved, its rate stays fixed during later trials. A custom leg needs explicit repayment
 metadata to use this mode. Neither mode changes the original instrument.
 
 ```python

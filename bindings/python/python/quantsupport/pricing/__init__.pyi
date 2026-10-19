@@ -1147,8 +1147,10 @@ requests : sequence of Request or str, optional
     Value, Cashflows, Sensitivities, or FairRate, as typed requests or names.
     None, the default, selects Value. Sensitivities are derivatives per unit
     market-pillar change. FairRate solves an annual fixed coupon or floating
-    spread at or before origination over [-0.05, 0.50]; mixed, stepped, and
-    bounded coupon schedules are unsupported.
+    spread at or before origination over [-0.05, 0.50]. Loans bootstrap one
+    rate per contiguous fixed-rate/floating-spread/index segment in fair_rates:
+    redeem remaining capital at each prefix end, fix the solved rate, then
+    extend. A single segment also supplies fair_rate. Bounded coupons are unsupported.
 
 Returns
 -------
@@ -1540,6 +1542,10 @@ oas : float, optional
 fair_rate : float, optional
     Par coupon or spread in decimal annual rate units, as defined by the pricer.
     Defaults to None.
+fair_rates : sequence of float, optional
+    Bootstrapped loan coupon/spread levels in contiguous contractual segment
+    order. Each shortened loan redeems its remaining principal at the segment
+    end; previously solved rates stay fixed in subsequent solves. Defaults to None.
 sensitivities : mapping or sequence of (str, float), optional
     Raw pillar labels and exposures, normally derivatives per unit input change.
     Pair sequences preserve order and duplicates; mappings are sorted by label.
@@ -1564,7 +1570,7 @@ Scalar fields are stored as supplied; no consistency checks or valuation are
 performed. Table properties construct new pandas DataFrames on access.
 """
 
-    def __new__(cls, evaluation_date: _DateLike, identifier: str, *, price: Any | None = ..., yield_to_maturity: Any | None = ..., modified_duration: Any | None = ..., z_spread: Any | None = ..., oas: Any | None = ..., fair_rate: Any | None = ..., sensitivities: Any | None = ..., cashflows: Any | None = ...) -> Self:
+    def __new__(cls, evaluation_date: _DateLike, identifier: str, *, price: Any | None = ..., yield_to_maturity: Any | None = ..., modified_duration: Any | None = ..., z_spread: Any | None = ..., oas: Any | None = ..., fair_rate: Any | None = ..., fair_rates: Sequence[float] | None = ..., sensitivities: Any | None = ..., cashflows: Any | None = ...) -> Self:
         ...
 
     def __repr__(self) -> str:
@@ -1592,7 +1598,12 @@ performed. Table properties construct new pandas DataFrames on access.
 
     @property
     def fair_rate(self) -> float | None:
-        """Fair (par) rate, if `"FairRate"` was requested."""
+        """Scalar fair rate, if available; multi-segment loans use fair_rates."""
+        ...
+
+    @property
+    def fair_rates(self) -> list[float] | None:
+        """Bootstrapped loan coupon/spread levels in contiguous segment order."""
         ...
 
     @property
