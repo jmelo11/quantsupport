@@ -7,10 +7,7 @@ use quantsupport::prelude::{
     FloatingRateNoteTrade, FxEuropeanOptionPricer, FxForwardPricer, Pricer, PricingContext,
     RateFuturesPricer, Request, SingleCurveCSADiscountPolicy, Swap, SwapTrade,
 };
-use xll_rs::{
-    convert::build_multi,
-    types::{XllError, XLOPER12},
-};
+use xll_rs::types::{XllError, XLOPER12};
 use xllgen::xll_bindgen;
 
 use crate::runtime::registry::{with_registry, QsObject, Registry};
@@ -34,6 +31,7 @@ pub fn evaluate(
         .object(trade_handle)
         .map_err(|error| error.to_string())?
     {
+        QsObject::LoanTrade(loan) => loan.evaluate(context, requests),
         QsObject::FxForwardTrade(trade) => evaluate_fx_forward(trade, context, requests),
         QsObject::SwapTrade(trade) => {
             DiscountedCashflowPricer::<Swap<DualFwd>, SwapTrade<DualFwd>>::new()
@@ -281,7 +279,14 @@ pub fn qs_fair_rate(trade: &str, context: &str) -> Result<f64, XllError> {
     category = "QuantSupport - Pricing",
     help = "Spills the resolved cashflow table for a cashflow-based trade"
 )]
-pub fn qs_cashflows(trade: &str, context: &str) -> Result<*mut XLOPER12, XllError> {
+pub fn qs_cashflows(
+    trade: &str,
+    context: &str,
+    transpose: *const xll_rs::types::XLOPER12,
+    headers: *const xll_rs::types::XLOPER12,
+) -> Result<*mut XLOPER12, XllError> {
+    let transpose = crate::functions::helpers::optional_bool(transpose, "transpose")?;
+    let headers = crate::functions::helpers::optional_bool(headers, "headers")?;
     let results =
         with_registry(|registry| evaluate(registry, trade, context, &[Request::Cashflows]))
             .map_err(value_error)?;
@@ -318,7 +323,9 @@ pub fn qs_cashflows(trade: &str, context: &str) -> Result<*mut XLOPER12, XllErro
             i32::try_from(table.leg_indices()[row]).unwrap_or(i32::MAX),
         ));
     }
-    Ok(build_multi(cells, rows, COLUMNS))
+    Ok(crate::functions::helpers::spill(
+        cells, rows, COLUMNS, transpose, headers,
+    ))
 }
 
 #[cfg(test)]

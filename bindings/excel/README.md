@@ -44,6 +44,15 @@ Load the add-in before the workbook, or press **Ctrl+Alt+F9** afterwards.
 The [swap workbook](https://jmelo11.github.io/quantsupport/downloads/swap_pricing_example.xlsx) and
 [historical workbook](https://jmelo11.github.io/quantsupport/downloads/historical_pricing_example.xlsx) contain inputs
 and formulas; Windows Excel calculates them after the XLL is loaded.
+Additional studies cover [loans](examples/loan_pricing_example.xlsx),
+[bond analytics](examples/bond_pricing_example.xlsx), and
+[interpolation and schedules](examples/interpolation_example.xlsx).
+
+Table functions accept trailing `transpose` and `headers` flags, defaulting to
+`FALSE,TRUE`. For example, `=QS.CASHFLOWS(trade,context,TRUE,FALSE)` exchanges
+rows and columns and omits headers. `=QS.SENSITIVITIES(trade,context,FALSE,FALSE)`
+keeps the usual layout without headers. Lists such as `QS.SCHEDULE` and
+`QS.SIMULATION.PATH` accept only `transpose` because they have no headers.
 
 ## A visible market-to-price chain
 
@@ -113,9 +122,17 @@ curve objects. Previous/Mid are selector defaults; missing Bid/Ask does not
 fall back; the selected market reference date remains the valuation date.
 Archive export is subject to Excel's 32767 UTF-16-unit cell limit.
 
+`QS.TRADE.LOAN` creates fixed or floating loans with French, bullet, or balloon
+principal. `rate` is the fixed coupon when `market_index` is blank, otherwise the
+floating spread. Optional JSON `options` supplies prepayment, credit/recovery,
+funding, reset/calendar, bounded/introductory-coupon, and fair-rate settings.
+Use `QS.PRICE`, `QS.FAIR.RATE`, `QS.CASHFLOWS`, and `QS.SENSITIVITIES` on its handle.
+Loan prices are signed future receipt PVs, excluding the initial advance.
+See the [loan guide](../../docs/excel/guide/loans.rst) for defaults and the options schema.
+
 Supported workflows include curves/credit, volatility, model/simulation
 configuration, vanilla rates, straight fixed income, FX/equity, CDS, options,
-scenarios, and interpolation. There is no worksheet loan/callable/scripted
+loans, scenarios, and interpolation. There is no worksheet callable/scripted
 product constructor, custom-pricer registration, or netting/exposure/XVA
 workflow. OIS quote bootstrapping does not expose a standalone OIS trade.
 
@@ -128,7 +145,7 @@ python -m pip install -r bindings/excel/examples/requirements.txt
 python bindings/excel/examples/create_examples.py
 ```
 
-`--example swap` or `--example historical` selects a workbook; `--output-dir`
+`--example swap`, `historical`, `loans`, `bonds`, or `interpolation` selects a workbook; `--output-dir`
 selects its destination. Optional Windows live validation uses `pywin32` and
 `--xll-path bindings/excel/dist/quantsupport.xll`.
 
@@ -146,6 +163,7 @@ callback pointers at the boundary, not in stored objects.
 
 ```sh
 cargo test -p quantsupport-xll --lib --example function_catalog
+python -m unittest discover -s bindings/excel/examples -p 'test_*.py'
 ```
 
 Portable tests cover the registry, historical markets, interpolation and
@@ -153,3 +171,10 @@ source-derived catalog. Windows tests additionally compare registered inventory
 and exercise worksheet boundaries; portable tests do not prove native Excel
 loading. The [Sphinx build guide](../../docs/README.md) requires neither Windows
 nor Excel and preserves exact per-function reference URLs.
+
+The build derives an expected function inventory from the worksheet sources.
+Loading checks that inventory, registers every primary name and alias, and
+requires a positive numeric Excel registration ID. A rejection rolls back the
+registrations and displays the failed function's name instead of loading a
+partial add-in. Argument-name separators are compacted to fit Excel's 255-character
+registration field; an oversized argument list fails the build.

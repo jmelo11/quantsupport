@@ -16,6 +16,14 @@ loading to rebuild all formula dependencies.
 
 Download the `swap example workbook <https://jmelo11.github.io/quantsupport/downloads/swap_pricing_example.xlsx>`_
 or the `historical pricing workbook <https://jmelo11.github.io/quantsupport/downloads/historical_pricing_example.xlsx>`_.
+Further notebook-style studies cover
+`loans, funding, and borrower credit <https://jmelo11.github.io/quantsupport/downloads/loan_pricing_example.xlsx>`_,
+`bond anchors and risk <https://jmelo11.github.io/quantsupport/downloads/bond_pricing_example.xlsx>`_, and
+`interpolation and schedules <https://jmelo11.github.io/quantsupport/downloads/interpolation_example.xlsx>`_.
+
+Add-in loading validates every function and alias. A registration failure
+displays the rejected function name and fails loading; a partially registered
+catalog is rolled back.
 
 To compile from the checkout, use a Windows PowerShell prompt with the
 64-bit MSVC Rust toolchain and Visual Studio Build Tools:

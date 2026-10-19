@@ -15,6 +15,15 @@ pub fn argument_help(function_name: &str, argument_names: &str) -> Vec<&'static 
 
 fn describe_argument(function_name: &str, argument_name: &str) -> &'static str {
     match (function_name, argument_name) {
+        (_, "transpose") => "Optional TRUE transposes the entire spill; omitted or blank defaults to FALSE; table headers move with their fields",
+        (_, "headers") => "Optional TRUE includes table headers (default); FALSE removes the first header row before transposing; omitted or blank defaults to TRUE",
+        ("QS.TRADE.LOAN", "rate") => "Annual decimal fixed coupon when market_index is blank; otherwise the floating spread, e.g. 0.01 for 100 bp",
+        ("QS.TRADE.LOAN", "market_index") => "Optional floating projection index such as EURIBOR12m; omitted or blank creates a fixed-rate loan",
+        ("QS.TRADE.LOAN", "repayment") => "Optional French (default), Bullet, or Balloon; omitted or blank defaults to French; Balloon requires balloon_fraction in options",
+        ("QS.TRADE.LOAN", "payment_frequency") => "Optional contractual payment frequency; omitted or blank defaults to Monthly; floating resets independently use index metadata unless options override it",
+        ("QS.TRADE.LOAN", "day_counter") => "Optional interest and amortization day count; omitted or blank defaults to Actual365",
+        ("QS.TRADE.LOAN", "side") => "Optional Receive/Buy for lender receipts (default) or Pay/Sell for opposite signs; omitted or blank defaults to Receive",
+        ("QS.TRADE.LOAN", "options") => "Optional JSON text for balloon_fraction, amortization_rate, prepayment, credit_index/recovery, fixing and calendar terms, floor/cap, introductory terms, discount_index and fair-rate settings; omitted or blank uses native defaults",
         (name, "point" | "point_x" | "point_y" | "point_z") if name.starts_with("QS.INTERPOLATE") => "Finite numeric query coordinate on the corresponding axis",
         (name, "x_values") if name.starts_with("QS.INTERPOLATE") => "Required numeric range of at least two strictly increasing finite x coordinates; duplicate coordinates, blanks, text, and booleans are rejected; ranges are read in row-major order",
         (name, "y_values") if name.starts_with("QS.INTERPOLATE") => "Required finite numeric values aligned with x_values, with the same cell count; log-linear interpolation requires strictly positive values; blanks, text, and booleans are rejected",
@@ -247,8 +256,8 @@ pub fn result_help(function_name: &str) -> Option<(&'static str, &'static str)> 
         "QS.CURVE.ZERO.RATE" => "Numeric zero rate from the curve reference date to the requested date, as a decimal annual rate under the requested compounding and frequency; blank conventions default to Simple and Annual.",
         "QS.VERSION" => "Text containing the linked XLL package version.",
         "QS.FUNCTIONS" => "One-column spill of sorted, distinct registered worksheet names, including aliases; no header row.",
-        "QS.FUNCTIONS.DETAILS" => "Five-column spill with headers Function, Arguments, Category, Aliases, Description; one row per primary registered function, sorted by name.",
-        "QS.HELP" => "Two-column help spill of labels and values: Function, Category, Description, optional Aliases, then Parameter/Guidance and argument rows. Names and aliases are matched case-insensitively.",
+        "QS.FUNCTIONS.DETAILS" => "Five-column spill with headers Function, Arguments, Category, Aliases, Description; one row per primary registered function, sorted by name. headers=FALSE removes headers; transpose=TRUE exchanges rows and columns.",
+        "QS.HELP" => "Two-column help spill of labels and values: Function, Category, Description, optional Aliases, then Parameter/Guidance and argument rows. Names and aliases are matched case-insensitively. headers=FALSE omits Parameter/Guidance while retaining the function metadata; transpose=TRUE exchanges rows and columns.",
         "QS.OBJECT.TYPE" => "Text type tag of the live object, for example QuoteStore or SwapTrade; not an object handle.",
         "QS.OBJECT.COUNT" => "Integer count of live object identities in the current Excel thread, capped at the maximum i32 value; revisions are not counted separately.",
         "QS.OBJECT.REMOVE" => "TRUE when the current object is removed; FALSE when its identity is already absent from the thread's registry.",
@@ -307,6 +316,7 @@ pub fn result_help(function_name: &str) -> Option<(&'static str, &'static str)> 
         "QS.SIMULATION.CALIBRATION" => "Eleven-column Hull-White diagnostics spill with headers identifier, expiry, t, big_t, market_vol, market_price, model_price, calibrated_sigma, forward_rate, effective_strike, price_error. Expiry is tenor text such as 1Y, not an ISO date; price_error is model_price minus market_price, not an absolute error.",
         "QS.TRADE.FX.FORWARD" => "Revisioned text handle to a deliverable FxForwardTrade, ready for pricing; not the forward rate or present value.",
         "QS.TRADE.SWAP" => "Revisioned text handle to a vanilla fixed-versus-floating SwapTrade; not a par rate or present value.",
+        "QS.TRADE.LOAN" => "Revisioned LoanTrade text handle. QS.PRICE returns signed future receipt PV excluding the advance; QS.FAIR.RATE solves the fixed coupon or floating spread at/before origination. QS.CASHFLOWS includes scheduled payments (leg 0), prepayments (1), and recovery (2). QS.SENSITIVITIES returns raw market derivatives.",
         "QS.TRADE.BASIS.SWAP" => "Revisioned text handle to a floating-versus-floating BasisSwapTrade; not a basis spread or present value.",
         "QS.TRADE.XCCY.FLOAT.FLOAT" => "Revisioned text handle to a FloatFloatCrossCurrencySwapTrade with the supplied domestic and foreign legs.",
         "QS.TRADE.XCCY.FIX.FLOAT" => "Revisioned text handle to a FixFloatCrossCurrencySwapTrade with a domestic fixed leg and foreign floating leg.",
@@ -353,8 +363,9 @@ pub fn result_help(function_name: &str) -> Option<(&'static str, &'static str)> 
         "QS.CURVE.CONFIGS.ADD.ZERO" => "#VALUE! for invalid index/conventions/pillars, empty or mismatched ranges, nonnumeric/blank/nonfinite rates, or registry failures. Invalid resolved pillar ordering or range constraints fail during context construction.",
         "QS.CURVE.CONFIGS.ADD.COMPOSITE" => "#VALUE! for invalid indices or configuration handles or registry failures; missing dependencies and cycles fail during context construction.",
         "QS.CURVE.ZERO.RATE" => "#VALUE! for invalid date/conventions, a stale or wrong-type curve handle, or native zero-rate evaluation failures.",
-        "QS.VERSION" | "QS.FUNCTIONS" | "QS.FUNCTIONS.DETAILS" | "QS.OBJECT.COUNT" =>
+        "QS.VERSION" | "QS.OBJECT.COUNT" =>
             "No worksheet-level Result error is returned.",
+        "QS.FUNCTIONS" | "QS.FUNCTIONS.DETAILS" => "#VALUE! for invalid layout flags; use TRUE/FALSE or leave the argument blank.",
         "QS.HELP" => "#VALUE! if the requested name or alias is not registered.",
         "QS.OBJECT.TYPE" => "#VALUE! for a malformed, missing, wrong-type, or stale handle.",
         "QS.OBJECT.REMOVE" => "#N/A for a malformed or stale handle; an already-absent identity returns FALSE rather than an error.",
@@ -406,6 +417,7 @@ pub fn result_help(function_name: &str) -> Option<(&'static str, &'static str)> 
         "QS.TRADE.CAPLET.FLOORLET" => "#VALUE! for invalid date/index/currency/Caplet-Floorlet direction/side text or registry/fingerprint failures.",
         "QS.TRADE.FX.FORWARD" => "#VALUE! for invalid trade/delivery dates, currency codes, side, deliverable FX-forward builder failures, or registry/fingerprint failures.",
         "QS.TRADE.SWAP" => "#VALUE! for invalid trade/start/maturity dates, currency/index, side, day count, compounding, or rate/leg frequencies, or swap-builder/registry failures.",
+        "QS.TRADE.LOAN" => "#VALUE! for invalid contract terms, nonpositive principal, malformed/unknown JSON options, unsupported repayment, missing balloon_fraction, floating amortization without amortization_rate, invalid reset grids, or registry failures. Pricing errors propagate through the valuation functions.",
         "QS.TRADE.BASIS.SWAP" => "#VALUE! for invalid trade/start/maturity dates, currency, pay/receive indices or frequencies, side, or basis-swap-builder/registry failures.",
         "QS.TRADE.XCCY.FLOAT.FLOAT" => "#VALUE! for invalid trade/start/maturity dates, domestic/foreign currencies, indices or frequencies, side, or cross-currency-swap-builder/registry failures.",
         "QS.TRADE.XCCY.FIX.FLOAT" => "#VALUE! for invalid trade/start/maturity dates, domestic/foreign currencies, foreign index, rate/leg conventions or frequencies, side, or cross-currency-swap-builder/registry failures.",

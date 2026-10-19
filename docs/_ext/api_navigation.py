@@ -124,7 +124,7 @@ def excel_section(name):
         return "Time", "Dates and Accrual"
     if name.startswith("QS.TRADE."):
         product = name.removeprefix("QS.TRADE.")
-        if product in ("FIXED.BOND", "FLOATING.NOTE", "FIXED.DEPOSIT"):
+        if product in ("FIXED.BOND", "FLOATING.NOTE", "FIXED.DEPOSIT", "LOAN"):
             return "Instruments", "Fixed Income"
         if product.startswith("FX."):
             return "Instruments", "Foreign Exchange"

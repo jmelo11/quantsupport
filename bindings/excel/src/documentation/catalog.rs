@@ -127,6 +127,15 @@ fn function(item: &syn::ItemFn, source: &str) -> Result<Option<Value>, Box<dyn E
             "help": explicit_help.map_or(help[i], |hints| hints[i].as_str().unwrap()),
         }))
         .collect::<Vec<_>>());
+    if arguments.iter().any(|(name, _)| name == "transpose") {
+        let mut returns = record["returns"].as_str().unwrap().to_string();
+        if arguments.iter().any(|(name, _)| name == "headers") {
+            returns.push_str(" headers=FALSE removes the header row before transposing; omitted headers defaults to TRUE.");
+        }
+        returns.push_str(" transpose=TRUE exchanges rows and columns; omitted transpose defaults to FALSE. Empty output returns a blank cell.");
+        record["returns"] = json!(returns);
+        record["errors"] = json!(format!("{} Invalid transpose/headers flags return #VALUE!; use TRUE/FALSE or leave optional flags blank.", record["errors"].as_str().unwrap()));
+    }
     Ok(Some(record))
 }
 
@@ -240,6 +249,25 @@ pub fn exports(root: &Path) -> Result<Vec<Value>, Box<dyn Error>> {
 #[cfg(test)]
 mod tests {
     #[test]
+    fn context_argument_names_fit_excel_registration_after_compacting() {
+        let records =
+            super::exports(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/functions"))
+                .unwrap();
+        let record = records
+            .iter()
+            .find(|record| record["name"] == "QS.CONTEXT.CREATE")
+            .unwrap();
+        let names: Vec<_> = record["arguments"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|argument| argument["name"].as_str().unwrap())
+            .collect();
+        assert!(names.join(", ").len() > 255);
+        assert_eq!(names.join(",").len(), 252);
+    }
+
+    #[test]
     fn source_paths_use_forward_slashes() {
         let records =
             super::exports(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/functions"))
@@ -293,7 +321,7 @@ mod tests {
         let records =
             super::exports(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/functions"))
                 .unwrap();
-        assert_eq!(records.len(), 109);
+        assert_eq!(records.len(), 110);
         let scenario = records
             .iter()
             .find(|record| record["name"] == "QS.SCENARIOS.FROM.JSON")
@@ -369,9 +397,12 @@ mod tests {
             ),
             (
                 "QS.CALENDAR.HOLIDAYS",
-                &["from", "to", "calendar", "include_weekends"][..],
+                &["from", "to", "calendar", "include_weekends", "transpose"][..],
             ),
-            ("QS.CALENDAR.BUSINESS.DAYS", &["from", "to", "calendar"][..]),
+            (
+                "QS.CALENDAR.BUSINESS.DAYS",
+                &["from", "to", "calendar", "transpose"][..],
+            ),
         ] {
             let record = records
                 .iter()
@@ -433,7 +464,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             path["return_type"],
-            quote::quote!(-> Result<Vec<f64>, XllError>).to_string()
+            quote::quote!(-> Result<*mut xll_rs::types::XLOPER12, XllError>).to_string()
         );
         for (name, headers) in [
             (

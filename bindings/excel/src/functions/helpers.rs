@@ -128,13 +128,13 @@ pub fn parse_caplet_floorlet_type(value: &str) -> Result<CapletFloorletType, Xll
     }
 }
 
-pub fn string_column(values: Vec<String>) -> *mut XLOPER12 {
+pub fn string_column(values: Vec<String>, transpose: Option<bool>) -> *mut XLOPER12 {
     let rows = values.len();
     let cells = values
         .iter()
         .map(|value| XLOPER12::from_str(value))
         .collect();
-    build_multi(cells, rows, 1)
+    spill(cells, rows, 1, transpose, None)
 }
 
 pub fn string_values(value: *const XLOPER12, argument_name: &str) -> Result<Vec<String>, XllError> {
@@ -266,7 +266,11 @@ pub fn bool_value(value: *const XLOPER12, argument_name: &str) -> Result<bool, X
     }
 }
 
-pub fn string_matrix(values: Vec<Vec<String>>) -> *mut XLOPER12 {
+pub fn string_matrix(
+    values: Vec<Vec<String>>,
+    transpose: Option<bool>,
+    headers: Option<bool>,
+) -> *mut XLOPER12 {
     let rows = values.len();
     let columns = values.iter().map(Vec::len).max().unwrap_or(0);
     let cells = values
@@ -277,7 +281,7 @@ pub fn string_matrix(values: Vec<Vec<String>>) -> *mut XLOPER12 {
         })
         .map(|value| XLOPER12::from_str(&value))
         .collect();
-    build_multi(cells, rows, columns)
+    spill(cells, rows, columns, transpose, headers)
 }
 
 pub fn parse_json<T: DeserializeOwned>(json: &str, what: &str) -> Result<T, XllError> {
@@ -309,4 +313,106 @@ pub fn parse_json_list<T: DeserializeOwned>(json: &str, what: &str) -> Result<Ve
 
 pub fn cached_handle(name: &str, kind: &str, key: &str) -> Result<Option<String>, XllError> {
     with_registry(|registry| registry.handle_if_unchanged(name, kind, key)).map_err(value_error)
+}
+
+/// Builds a typed spill, optionally transposing rows and columns together.
+pub fn spill(
+    cells: Vec<XLOPER12>,
+    rows: usize,
+    columns: usize,
+    transpose: Option<bool>,
+    headers: Option<bool>,
+) -> *mut XLOPER12 {
+    // XLOPER12 has no Drop implementation; excluded header strings need explicit cleanup.
+    let (cells, rows, columns) = crate::runtime::output::prepare(
+        cells,
+        rows,
+        columns,
+        transpose.unwrap_or(false),
+        headers.unwrap_or(true),
+        |cell| xll_rs::memory::xlAutoFree12(Box::into_raw(Box::new(cell))),
+    );
+    if cells.is_empty() {
+        return xll_rs::returning::XlReturn::nil().into_raw();
+    }
+    // xll-rs reconstructs the array with capacity equal to its length when freeing it.
+    let cells = cells.into_boxed_slice().into_vec();
+    build_multi(cells, rows, columns)
+}
+
+pub fn optional_bool(value: *const XLOPER12, name: &str) -> Result<Option<bool>, XllError> {
+    if value.is_null() {
+        return Err(value_error(format!("{name} cannot be null")));
+    }
+    if matches!(unsafe { &*value }.base_type(), XLTYPE_NIL | XLTYPE_MISSING) {
+        return Ok(None);
+    }
+    bool_value(value, name).map(Some)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn table_flags_preserve_types_and_remove_headers_before_transposing() {
+        for (transpose, headers, expected_rows, expected_columns) in [
+            (false, true, 3, 2),
+            (true, true, 2, 3),
+            (false, false, 2, 2),
+            (true, false, 2, 2),
+        ] {
+            let cells = vec![
+                XLOPER12::from_str("Date"),
+                XLOPER12::from_str("Amount"),
+                XLOPER12::from_str("2026-01-01"),
+                XLOPER12::from_f64(12.0),
+                XLOPER12::from_str("2026-02-01"),
+                XLOPER12::nil(),
+            ];
+            let result = spill(cells, 3, 2, Some(transpose), Some(headers));
+            let array = unsafe { &*std::ptr::addr_of!((*result).val.array) };
+            assert_eq!(
+                (array.rows, array.columns),
+                (expected_rows, expected_columns)
+            );
+            let first = unsafe { &*array.lparray };
+            assert_eq!(
+                first.as_string().as_deref(),
+                Some(if headers { "Date" } else { "2026-01-01" })
+            );
+            let cells = unsafe {
+                std::slice::from_raw_parts(array.lparray, (array.rows * array.columns) as usize)
+            };
+            assert_eq!(
+                cells
+                    .iter()
+                    .filter(|cell| cell.base_type() == XLTYPE_NUM)
+                    .count(),
+                1
+            );
+            assert_eq!(
+                cells
+                    .iter()
+                    .filter(|cell| cell.base_type() == XLTYPE_NIL)
+                    .count(),
+                1
+            );
+            xll_rs::memory::xlAutoFree12(result);
+        }
+        let result = spill(vec![XLOPER12::from_str("Header")], 1, 1, None, Some(false));
+        assert_eq!(unsafe { &*result }.base_type(), XLTYPE_NIL);
+        xll_rs::memory::xlAutoFree12(result);
+        assert_eq!(
+            optional_bool(&XLOPER12::missing(), "transpose").unwrap(),
+            None
+        );
+        assert_eq!(
+            optional_bool(&XLOPER12::from_bool(true), "transpose").unwrap(),
+            Some(true)
+        );
+        let invalid = XLOPER12::from_str("sideways");
+        assert!(optional_bool(&invalid, "transpose").is_err());
+        xll_rs::memory::xlAutoFree12(Box::into_raw(Box::new(invalid)));
+    }
 }

@@ -224,7 +224,7 @@ text limit, which matters for snapshot archives.
 
 The worksheet interface supports vanilla rates, basis/cross-currency swaps,
 straight fixed income, FX/equity forwards and options, CDS, caps/caplets,
-swaptions, and rate futures. There are no worksheet constructors for loans,
+swaptions, rate futures, and :doc:`loans`. There are no worksheet constructors for
 callable stepped bonds, scripted products, or standalone OIS trades; no
 custom-pricer registration; and no exposure/netting/XVA worksheet workflow.
 Configuration-based access to native models is not a claim that every native

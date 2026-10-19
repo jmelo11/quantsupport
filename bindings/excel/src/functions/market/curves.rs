@@ -3,10 +3,7 @@ use std::{cell::RefCell, rc::Rc};
 use quantsupport::prelude::{
     Compounding, DiscountCurveElement, DualFwd, FlatForwardTermStructure, Frequency, RateDefinition,
 };
-use xll_rs::{
-    convert::build_multi,
-    types::{XllError, XLOPER12},
-};
+use xll_rs::types::{XllError, XLOPER12};
 use xllgen::xll_bindgen;
 
 use crate::runtime::registry::{with_registry, with_registry_mut, QsObject};
@@ -230,7 +227,11 @@ pub fn qs_curve_table(
     curve: &str,
     compounding: Option<String>,
     frequency: Option<String>,
+    transpose: *const xll_rs::types::XLOPER12,
+    headers: *const xll_rs::types::XLOPER12,
 ) -> Result<*mut XLOPER12, XllError> {
+    let transpose = crate::functions::helpers::optional_bool(transpose, "transpose")?;
+    let headers = crate::functions::helpers::optional_bool(headers, "headers")?;
     let (compounding, frequency) = rate_convention(compounding, frequency)?;
     with_registry(|registry| {
         let element = registry
@@ -288,7 +289,13 @@ pub fn qs_curve_table(
             }
         }
 
-        Ok(build_multi(cells, nodes.len() + 1, COLUMNS))
+        Ok(crate::functions::helpers::spill(
+            cells,
+            nodes.len() + 1,
+            COLUMNS,
+            transpose,
+            headers,
+        ))
     })
     .map_err(value_error)
 }

@@ -1,4 +1,3 @@
-use quantsupport::prelude::Scalar;
 use xll_rs::types::XllError;
 use xllgen::xll_bindgen;
 
@@ -55,7 +54,9 @@ pub fn qs_simulation_dt(context: &str, market_index: &str) -> Result<f64, XllErr
 pub fn qs_simulation_dates(
     context: &str,
     market_index: &str,
+    transpose: *const xll_rs::types::XLOPER12,
 ) -> Result<*mut xll_rs::types::XLOPER12, XllError> {
+    let transpose = crate::functions::helpers::optional_bool(transpose, "transpose")?;
     let index = parse_index(market_index)?;
     with_registry(|registry| {
         let element = registry
@@ -75,7 +76,7 @@ pub fn qs_simulation_dates(
                 .collect(),
         )
     })
-    .map(string_column)
+    .map(|values| string_column(values, transpose))
     .map_err(value_error)
 }
 
@@ -88,7 +89,9 @@ pub fn qs_simulation_path(
     context: &str,
     market_index: &str,
     path_index: i32,
-) -> Result<Vec<f64>, XllError> {
+    transpose: *const xll_rs::types::XLOPER12,
+) -> Result<*mut xll_rs::types::XLOPER12, XllError> {
+    let transpose = crate::functions::helpers::optional_bool(transpose, "transpose")?;
     let index = parse_index(market_index)?;
     let path_index =
         usize::try_from(path_index).map_err(|_| value_error("path index must be non-negative"))?;
@@ -106,7 +109,15 @@ pub fn qs_simulation_path(
             .path()
             .get(path_index)
             .ok_or_else(|| format!("simulation path {path_index} is out of range"))
-            .map(|path| path.iter().map(Scalar::value).collect())
+            .map(|path| {
+                path.iter()
+                    .map(|value| xll_rs::types::XLOPER12::from_f64(value.value()))
+                    .collect::<Vec<_>>()
+            })
+    })
+    .map(|cells| {
+        let rows = cells.len();
+        crate::functions::helpers::spill(cells, rows, 1, transpose, None)
     })
     .map_err(value_error)
 }
@@ -119,8 +130,12 @@ pub fn qs_simulation_path(
 pub fn qs_simulation_calibration(
     context: &str,
     market_index: &str,
+    transpose: *const xll_rs::types::XLOPER12,
+    headers: *const xll_rs::types::XLOPER12,
 ) -> Result<*mut xll_rs::types::XLOPER12, XllError> {
-    use xll_rs::{convert::build_multi, types::XLOPER12};
+    let transpose = crate::functions::helpers::optional_bool(transpose, "transpose")?;
+    let headers = crate::functions::helpers::optional_bool(headers, "headers")?;
+    use xll_rs::types::XLOPER12;
     let index = parse_index(market_index)?;
     let quality = with_registry(|registry| {
         let element = registry
@@ -135,7 +150,7 @@ pub fn qs_simulation_calibration(
         })
     })
     .map_err(value_error)?;
-    let headers = [
+    let labels = [
         "identifier",
         "expiry",
         "t",
@@ -149,7 +164,7 @@ pub fn qs_simulation_calibration(
         "price_error",
     ];
     let rows = quality.records.len() + 1;
-    let mut cells: Vec<_> = headers
+    let mut cells: Vec<_> = labels
         .iter()
         .map(|header| XLOPER12::from_str(header))
         .collect();
@@ -170,7 +185,13 @@ pub fn qs_simulation_calibration(
             cells.push(XLOPER12::from_f64(value));
         }
     }
-    Ok(build_multi(cells, rows, headers.len()))
+    Ok(crate::functions::helpers::spill(
+        cells,
+        rows,
+        labels.len(),
+        transpose,
+        headers,
+    ))
 }
 
 use crate::functions::helpers::{cached_handle, parse_json_list};
