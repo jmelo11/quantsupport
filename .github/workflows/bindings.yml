@@ -112,4 +112,6 @@ jobs:
           path: |
             bindings/excel/dist/quantsupport.xll
             bindings/excel/dist/quantsupport.intellisense.xml
+            bindings/excel/dist/ExcelDna.IntelliSense64.xll
+            bindings/excel/dist/quantsupport-excel-windows-x64.zip
           if-no-files-found: error

@@ -14,11 +14,21 @@ Excel for macOS and the browser cannot load the XLL.
 - [Market assumptions and product workflows](https://jmelo11.github.io/quantsupport/api/excel/guide/markets-and-products.html)
 - [Risk, scenarios, and historical markets](https://jmelo11.github.io/quantsupport/api/excel/guide/risk-and-history.html)
 - [Exact worksheet reference](https://jmelo11.github.io/quantsupport/api/excel/functions/index.html)
-- [Download quantsupport.xll](https://jmelo11.github.io/quantsupport/downloads/quantsupport.xll)
+- [Download Excel add-in and IntelliSense ZIP](https://jmelo11.github.io/quantsupport/downloads/quantsupport-excel-windows-x64.zip)
+- [Download quantsupport.xll only](https://jmelo11.github.io/quantsupport/downloads/quantsupport.xll)
 
 The guide explains the financial conventions alongside complete worksheet
 calculations. The Book and Python studies provide further examples. Registration metadata supplies
 function names, argument order, aliases, categories, and per-parameter help.
+
+## Install the download
+
+Extract **all files** from the ZIP into one stable local folder. It includes
+`quantsupport.xll`, `quantsupport.intellisense.xml`,
+`ExcelDna.IntelliSense64.xll`, installation instructions and license notices.
+In Excel's **File > Options > Add-ins > Excel Add-ins > Go > Browse** dialog,
+load both XLLs, then restart Excel. Keep the XML beside `quantsupport.xll`.
+The IntelliSense companion requires .NET Framework 4.6.2 or later.
 
 ## Build and load
 
@@ -29,6 +39,11 @@ Build Tools, then run from the repository root:
 rustup target add x86_64-pc-windows-msvc
 powershell -ExecutionPolicy Bypass -File bindings/excel/scripts/build.ps1
 ```
+
+The build creates `bindings/excel/dist/quantsupport-excel-windows-x64.zip`,
+including the XLL, generated XML and the pinned Excel-DNA IntelliSense companion.
+Packaging downloads the companion when it is not already cached and checks its
+SHA-256 against `third-party/intellisense.json`.
 
 Use the XLL and workbooks from the same checkout or release. The published
 XLL and online guide may not include development-branch changes. When testing
@@ -45,12 +60,12 @@ Inline function signatures and active-parameter descriptions use
 [Excel-DNA IntelliSense](https://github.com/Excel-DNA/IntelliSense/releases).
 Set it up once in 64-bit Windows Excel:
 
-1. Build QuantSupport with the script above. Keep the generated
-   `quantsupport.xll` and `quantsupport.intellisense.xml` together in the same folder.
-   For release downloads, take both files from the same
-   [release](https://github.com/jmelo11/quantsupport/releases).
-2. Download `ExcelDna.IntelliSense64.xll` from the linked Excel-DNA release and
-   load it through Excel's Add-ins dialog, alongside `quantsupport.xll`.
+1. Extract the [Excel ZIP](https://jmelo11.github.io/quantsupport/downloads/quantsupport-excel-windows-x64.zip)
+   or build it with the script above. Keep all three add-in files together.
+   Versioned downloads are also available from
+   [releases](https://github.com/jmelo11/quantsupport/releases).
+2. Load the included `ExcelDna.IntelliSense64.xll` through Excel's Add-ins dialog,
+   alongside `quantsupport.xll`.
 3. Restart Excel with both add-ins enabled, then type `=QS.EVALUATE` followed
    by an opening parenthesis to see the parameter list and help for the current argument.
 

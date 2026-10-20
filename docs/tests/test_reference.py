@@ -476,7 +476,8 @@ class RenderedReferenceTests(unittest.TestCase):
             workbook = Text((output / "excel/guide/workbook.html").read_text())
             downloads = "https://jmelo11.github.io/quantsupport/downloads/"
             self.assertIn(downloads + "quantsupport.xll", excel.hrefs)
-            for name in ("quantsupport.xll", "swap_pricing_example.xlsx",
+            self.assertIn(downloads + "quantsupport-excel-windows-x64.zip", excel.hrefs)
+            for name in ("quantsupport.xll", "quantsupport-excel-windows-x64.zip", "swap_pricing_example.xlsx",
                          "historical_pricing_example.xlsx"):
                 self.assertIn(downloads + name, workbook.hrefs)
             swap = Text((output / "autoapi/quantsupport/instruments/Swap.html").read_text())

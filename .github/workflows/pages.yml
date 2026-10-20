@@ -56,9 +56,18 @@ jobs:
       - name: Build API reference
         run: sphinx-build -W -b html docs book/html/api
       - name: Stage Excel downloads
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         run: |
           mkdir -p book/html/downloads
-          gh release download --repo "$GITHUB_REPOSITORY" --pattern quantsupport.xll --dir book/html/downloads
+          gh release download --repo "$GITHUB_REPOSITORY" \
+            --pattern quantsupport.xll \
+            --pattern quantsupport.intellisense.xml \
+            --pattern ExcelDna.IntelliSense64.xll \
+            --pattern quantsupport-excel-windows-x64.zip \
+            --dir book/html/downloads
+          for asset in quantsupport.xll quantsupport.intellisense.xml ExcelDna.IntelliSense64.xll quantsupport-excel-windows-x64.zip; do
+            test -s "book/html/downloads/$asset"
+          done
           cp bindings/excel/examples/*.xlsx book/html/downloads/
         env:
           GH_TOKEN: ${{ github.token }}

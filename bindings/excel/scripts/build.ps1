@@ -67,4 +67,4 @@ if (Test-Path -LiteralPath $pdb) {
 
 Write-Host "Packaged QuantSupport XLL: $destination"
 Write-Host "Packaged parameter hints: $intelliSense"
-Write-Host "For inline hints, load ExcelDna.IntelliSense64.xll alongside QuantSupport."
+& (Join-Path $PSScriptRoot "package.ps1") -Dist $dist

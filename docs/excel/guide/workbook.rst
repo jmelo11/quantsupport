@@ -4,13 +4,21 @@ Building a reproducible pricing workbook
 Install and load the add-in
 -------------------------------
 
-Use 64-bit Windows Excel and the matching `quantsupport.xll release <https://jmelo11.github.io/quantsupport/downloads/quantsupport.xll>`_. Excel for macOS and
+Download the `Excel add-in and IntelliSense ZIP <https://jmelo11.github.io/quantsupport/downloads/quantsupport-excel-windows-x64.zip>`_
+and extract all files into one stable local folder. It contains
+``quantsupport.xll``, its matching ``quantsupport.intellisense.xml``,
+``ExcelDna.IntelliSense64.xll``, installation instructions and license notices.
+The `standalone XLL <https://jmelo11.github.io/quantsupport/downloads/quantsupport.xll>`_
+is also available at the same download location.
+
+Use 64-bit Windows Excel. Excel for macOS and
 Excel in a browser cannot load this native XLL. Follow your organization's
 policy for downloaded add-ins and trusted locations; if Windows marks the
 downloaded file as blocked, review its source before unblocking it.
 
 In Excel open **File → Options → Add-ins**, choose **Excel Add-ins**, select
-**Go**, and browse to the XLL. Keep the file at a stable location. Load the
+**Go**, and browse to each of the two XLLs. Keep the XML beside
+``quantsupport.xll``, then restart Excel with both add-ins enabled. Load the
 add-in before opening the pricing workbook, or press **Ctrl+Alt+F9** after
 loading to rebuild all formula dependencies.
 
@@ -42,8 +50,10 @@ To compile from the checkout, use a Windows PowerShell prompt with the
    rustup target add x86_64-pc-windows-msvc
    powershell -ExecutionPolicy Bypass -File bindings/excel/scripts/build.ps1
 
-The build writes ``bindings/excel/dist/quantsupport.xll`` and the matching
-``quantsupport.intellisense.xml``. Keep both files together. The portable Sphinx
+The build writes ``bindings/excel/dist/quantsupport-excel-windows-x64.zip``
+and the individual XLL, XML and companion files. Packaging downloads a pinned
+Excel-DNA IntelliSense release and verifies its SHA-256. Keep the files together.
+The portable Sphinx
 build and metadata tests do not load Excel; actual worksheet execution requires
 Windows Excel.
 
@@ -66,17 +76,16 @@ Parameter hints while typing
 
 Inline signatures and active-parameter help use the optional
 `Excel-DNA IntelliSense companion <https://github.com/Excel-DNA/IntelliSense/releases>`_.
-Download ``ExcelDna.IntelliSense64.xll`` and load it through the same Add-ins
-dialog as QuantSupport. It requires .NET Framework 4.6.2 or later. Keep the
+The QuantSupport ZIP includes ``ExcelDna.IntelliSense64.xll``; load it through
+the same Add-ins dialog as QuantSupport. It requires .NET Framework 4.6.2 or later. Keep the
 generated ``quantsupport.intellisense.xml`` beside ``quantsupport.xll``, restart
 Excel with both add-ins enabled, then type ``=QS.EVALUATE`` followed by an opening parenthesis. The popup shows
 the signature and highlights the argument being entered.
 
 The build generates descriptions for every registered function and alias from
-the same catalog used by Function Arguments and ``QS.HELP``. Download the XLL
-and its matching XML from the same
-`release <https://github.com/jmelo11/quantsupport/releases>`_ or build both from
-one checkout. Renaming the XLL also requires renaming the XML's base name.
+the same catalog used by Function Arguments and ``QS.HELP``. Download the ZIP
+from the site or a versioned `release <https://github.com/jmelo11/quantsupport/releases>`_
+to keep the XLL and XML matched. Renaming the XLL also requires renaming the XML's base name.
 The companion's
 `usage guide <https://github.com/Excel-DNA/IntelliSense/wiki/Usage-Instructions>`_
 documents this integration. Function Arguments and its shortcuts work without
