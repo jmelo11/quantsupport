@@ -373,47 +373,114 @@ impl BusinessDayConvention {
     }
 }
 
-mirror_enum!(
-    /// Evaluation request.
-    Request,
-    QsRequest,
-    "Request",
-    [
-        Value,
-        YieldToMaturity,
-        ModifiedDuration,
-        Sensitivities,
-        ZSpread,
-        OAS,
-        Cashflows,
-        FairRate
-    ]
-);
+/// Evaluation request with an optional zero-based contractual target.
+#[pyclass(module = "quantsupport", eq, frozen, hash, from_py_object)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct Request {
+    inner: QsRequest,
+}
+
+impl From<Request> for QsRequest {
+    fn from(value: Request) -> Self {
+        value.inner
+    }
+}
+impl From<QsRequest> for Request {
+    fn from(inner: QsRequest) -> Self {
+        Self { inner }
+    }
+}
 
 #[pymethods]
+#[allow(non_upper_case_globals, non_snake_case)]
 impl Request {
-    /// Parses a request from its name.
+    #[classattr]
+    pub const Value: Self = Self {
+        inner: QsRequest::Value,
+    };
+    #[classattr]
+    pub const YieldToMaturity: Self = Self {
+        inner: QsRequest::YieldToMaturity,
+    };
+    #[classattr]
+    pub const ModifiedDuration: Self = Self {
+        inner: QsRequest::ModifiedDuration,
+    };
+    #[classattr]
+    pub const Sensitivities: Self = Self {
+        inner: QsRequest::Sensitivities,
+    };
+    #[classattr]
+    pub const ZSpread: Self = Self {
+        inner: QsRequest::ZSpread,
+    };
+    #[classattr]
+    pub const OAS: Self = Self {
+        inner: QsRequest::OAS,
+    };
+    #[classattr]
+    pub const Cashflows: Self = Self {
+        inner: QsRequest::Cashflows,
+    };
+
+    /// Selects a zero-based swap leg or loan coupon/spread segment.
+    #[staticmethod]
+    #[pyo3(signature = (index=0))]
+    pub const fn FairRate(index: usize) -> Self {
+        Self {
+            inner: QsRequest::FairRate(index),
+        }
+    }
+
+    /// Zero-based contractual target for FairRate; None for other requests.
+    #[getter]
+    pub const fn index(&self) -> Option<usize> {
+        match self.inner {
+            QsRequest::FairRate(index) => Some(index),
+            _ => None,
+        }
+    }
+
+    /// Parses a request, including FairRate(1). Bare FairRate selects target zero.
     #[staticmethod]
     pub fn parse(s: &str) -> PyResult<Self> {
-        match s {
-            "Value" | "value" | "npv" => Ok(Self::Value),
-            "Sensitivities" | "sensitivities" => Ok(Self::Sensitivities),
-            "Cashflows" | "cashflows" => Ok(Self::Cashflows),
-            "FairRate" | "fair_rate" => Ok(Self::FairRate),
-            "YieldToMaturity" | "ytm" => Ok(Self::YieldToMaturity),
-            "ModifiedDuration" | "modified_duration" => Ok(Self::ModifiedDuration),
-            "ZSpread" | "z_spread" | "zspread" => Ok(Self::ZSpread),
-            "OAS" | "oas" => Ok(Self::OAS),
-            other => Self::from_name(other),
+        let name = s.trim().to_ascii_lowercase().replace('_', "");
+        match name.as_str() {
+            "value" | "npv" => Ok(Self::Value),
+            "sensitivities" => Ok(Self::Sensitivities),
+            "cashflows" => Ok(Self::Cashflows),
+            "fairrate" => Ok(Self::FairRate(0)),
+            "yieldtomaturity" | "ytm" => Ok(Self::YieldToMaturity),
+            "modifiedduration" => Ok(Self::ModifiedDuration),
+            "zspread" => Ok(Self::ZSpread),
+            "oas" => Ok(Self::OAS),
+            _ => {
+                if let Some(index) = name
+                    .strip_prefix("fairrate(")
+                    .and_then(|v| v.strip_suffix(')'))
+                {
+                    if let Ok(index) = index.trim().parse::<usize>() {
+                        return Ok(Self::FairRate(index));
+                    }
+                }
+                Err(QuantSupportError::new_err(format!(
+                    "invalid Request '{s}'; use FairRate(nonnegative_index) for a targeted quote"
+                )))
+            }
         }
     }
 
     fn __str__(&self) -> String {
-        format!("{self:?}")
+        format!("{:?}", self.inner)
     }
-
     fn __repr__(&self) -> String {
-        format!("Request.{self:?}")
+        format!("Request.{:?}", self.inner)
+    }
+}
+
+impl Request {
+    pub fn from_name(s: &str) -> PyResult<Self> {
+        Self::parse(s)
     }
 }
 

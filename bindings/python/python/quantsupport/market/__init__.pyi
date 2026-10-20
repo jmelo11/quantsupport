@@ -849,13 +849,14 @@ class CurveConstruction:
 
     @staticmethod
     def bootstrapped() -> CurveConstruction:
-        """Select calibration to configured market quote identifiers.
+        """Select construction from configured market quote identifiers.
 
         Returns
         -------
         CurveConstruction
-            Bootstrapping rule using ``CurveConfiguration.quotes`` when the
-            pricing context constructs the curve; this call does not calibrate.
+            Calibrate instrument quotes or interpolate direct discount-factor
+            or zero-rate quotes in ``CurveConfiguration.quotes`` when the
+            pricing context constructs the curve.
         """
         ...
 
@@ -922,7 +923,11 @@ class CurveConfiguration:
             Curve lookup identity: typed index, case-sensitive native fieldless
             name such as ``"SOFR"``, or native tagged index mapping.
         quotes : sequence of str or None, optional
-            Calibration quote identifiers for bootstrapped construction.
+            Calibration instruments, ``DiscountFactor_CCY_Index_Pillar``, or
+            ``ZeroRate_CCY_Index_Pillar[_Compounding[_Frequency]]`` identifiers.
+            Direct curves use one quote family with matching conventions;
+            pillars are tenors or ISO dates. Zero rates default to Continuous
+            and Annual. The curve supplies day count and interpolation.
             Omitted or ``None`` supplies an empty list, not inferred quotes.
         construction : CurveConstruction or None, optional
             Construction rule. Omitted or ``None`` selects ``bootstrapped()``.

@@ -86,6 +86,20 @@ class ExtensionTests(unittest.TestCase):
         self.assertEqual(result.price, -125.0)
         self.assertEqual(result.raw_sensitivities, [("CUSTOM_AMOUNT", 1.0)])
 
+    def test_fair_rate_target_survives_native_request_conversion(self):
+        class TargetPricer(qs.Pricer):
+            def evaluate(self, trade, requests, context):
+                self.received = requests
+                return qs.EvaluationResults(context.evaluation_date, trade.instrument.identifier,
+                                            fair_rate=float(requests[0].index))
+        context = self.make_context()
+        pricer = TargetPricer()
+        context.register_pricer(CouponTrade, pricer)
+        with context:
+            result = context.evaluate(CouponTrade(Coupon("TARGET", 1), "2025-01-02"), [qs.Request.FairRate(1)])
+        self.assertEqual(pricer.received, [qs.Request.FairRate(1)])
+        self.assertEqual(result.fair_rate, 1.0)
+
     def test_registration_can_be_removed(self):
         context = self.make_context()
         context.register_pricer(CouponTrade, CouponPricer())

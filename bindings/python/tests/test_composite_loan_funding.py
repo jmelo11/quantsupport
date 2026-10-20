@@ -79,7 +79,7 @@ class CompositeLoanFundingTests(unittest.TestCase):
         instrument = loan()
         with funding_context() as context:
             result = qs.LoanPricer().evaluate(qs.Trade(instrument, REFERENCE), context,
-                                             [qs.Request.Value, qs.Request.Cashflows, qs.Request.FairRate])
+                                             [qs.Request.Value, qs.Request.Cashflows, qs.Request.FairRate(0)])
             expected = sum(row.amount * context.curve(FUNDING).discount_factor(row.payment_date)
                            for row in result.cashflows.itertuples(index=False))
             self.assertAlmostEqual(result.price, expected, places=8)

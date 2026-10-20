@@ -82,6 +82,8 @@ class BookStructureTests(unittest.TestCase):
                 self.assertNotIn("](../api/", text)
         self.assertIn("https://jmelo11.github.io/quantsupport/downloads/quantsupport.xll",
                       (SOURCE / "excel/installation.md").read_text())
+        self.assertIn("https://jmelo11.github.io/quantsupport/downloads/quantsupport-excel-windows-x64.zip",
+                      (SOURCE / "excel/installation.md").read_text())
 
     def test_runnable_rust_has_a_crate_harness(self):
         runnable = 0

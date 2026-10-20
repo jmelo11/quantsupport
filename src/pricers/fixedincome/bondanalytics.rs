@@ -962,7 +962,7 @@ where
             Request::Cashflows => {
                 results = results.with_cashflows(engine.handle_cashflows(trade, &mut state)?);
             }
-            Request::FairRate => {}
+            Request::FairRate(_) => {}
         }
     }
     Ok(results)

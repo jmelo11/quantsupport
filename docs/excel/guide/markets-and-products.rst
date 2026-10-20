@@ -46,6 +46,24 @@ Observation timestamps instead require offset-aware RFC 3339 text.
 ``QS.DATETIME.PARSE`` normalizes to UTC; ``QS.DATETIME.DATE`` returns the UTC
 calendar day, not a market business date or a rolled valuation date.
 
+Direct discount-factor and zero-rate quotes
+-------------------------------------------
+
+``QS.QUOTES.ADD`` also accepts direct curve observations such as
+``DiscountFactor_USD_SOFR_1Y`` (a dimensionless factor) or
+``ZeroRate_USD_SOFR_2027-02-24`` (an annual decimal zero rate). Include these
+identifiers in the quote range supplied to ``QS.CURVE.CONFIGS.ADD``. Pillars
+accept tenors or ISO dates. Zero rates default to Continuous compounding and
+Annual frequency; append ``_Compounded_Semiannual`` to specify semiannual
+compounding. The curve configuration supplies day count, interpolation and
+extrapolation settings.
+
+Each direct curve uses a single quote family with matching currency, index,
+and rate conventions. Discount factors must be positive, and the fixed
+reference-date factor of one is inserted automatically. Direct observations
+use the context's selected Mid/Bid/Ask side and keep their original identifiers
+for scenario shocks and sensitivity output.
+
 Explicit zero rates and composite funding
 -----------------------------------------
 
@@ -87,7 +105,11 @@ The composite satisfies :math:`D_F=D_{\mathrm{SOFR}}D_{\mathrm{SPREAD}}`.
 Continuous rates add only when compared on a common time basis. All component
 configurations must exist, and cycles are errors. Creating a funding curve
 does not automatically make every pricer use it; selection is a discount-policy
-or instrument choice, and Excel exposes fewer policy controls than Python.
+choice. Map the funding index in a native discount policy supplied to the pricer;
+reuse the same instrument and trade when comparing policies. For fixed income,
+enter USD/FUNDING in a two-column range and create
+``QS.DISCOUNT.POLICY.FIXED.INCOME``. Derivatives use the native CSA policy when
+appropriate. Funding has no special instrument-level storage or construction path.
 
 ``QS.CURVE.FLAT`` instead creates a runtime ``DiscountCurveElement``. It can be
 queried directly and composed into an element store with ``QS.CURVE.ADD``.
@@ -98,22 +120,26 @@ a flat zero-rate configuration is an explicit, archivable alternative.
 Bond anchors and monetary value
 -------------------------------
 
-The straight fixed-rate bond constructor takes a position and its quotation
-anchor. The following bullet bond uses the bootstrapped context and asks for
-the spread consistent with a clean quote of 99.25:
+The contract constructor defines cashflows. Its position supplies the quotation
+anchor. Enter USD/SOFR in ``AC20:AD20`` and Value, ModifiedDuration, ZSpread,
+Cashflows, Sensitivities in ``AC23:AC27``:
 
 .. code-block:: text
    :name: guide-excel-bond
 
-   H22 =QS.TRADE.FIXED.BOND("guide.usd.bond",$B$1,$B$1,"2031-02-24","USD","SOFR",1000000,0.04,"Receive","Actual360","Simple","Annual","Semiannual","CleanPrice",99.25)
-   =QS.BOND.PRICE(H22,H5)
-   =QS.BOND.MODIFIED.DURATION(H22,H5)
-   =QS.BOND.Z.SPREAD(H22,H5)
-   =QS.BOND.SENSITIVITIES(H22,H5)
+   H21 =QS.INSTRUMENT.FIXED.BOND("guide.usd.bond",$B$1,"2031-02-24","USD",,1000000,0.04,"Actual360","Simple","Annual","Semiannual")
+   H22 =QS.TRADE.CREATE("guide.usd.bond.trade",H21,$B$1,"Receive",,,"CleanPrice",99.25)
+   H23 =QS.DISCOUNT.POLICY.FIXED.INCOME("guide.bond.policy",AC20:AD20)
+   H24 =QS.PRICER.CREATE("guide.bond.pricer","BondPricer",H23)
+   H25 =QS.EVALUATE("guide.bond.results",H24,H22,H5,AC23:AC27)
+   =QS.RESULT.VALUE(H25)
+   =QS.RESULT.MODIFIED.DURATION(H25)
+   =QS.RESULT.Z.SPREAD(H25)
+   =QS.RESULT.SENSITIVITIES(H25)
 
 ``CleanPrice`` excludes accrued interest; ``DirtyPrice`` includes it.
 ``ZSpread`` instead supplies a continuously compounded annual decimal spread:
-0.001 means 10 basis points. Anchor names are exact. ``QS.BOND.PRICE`` returns
+0.001 means 10 basis points. Anchor names are exact. ``QS.RESULT.VALUE`` returns
 monetary PV, not the clean/dirty quote per 100 units. Modified duration is
 yield-modified duration in years; it is not a raw curve-quote sensitivity.
 The risk spill can include both curve inputs and ``dPV/dZSpread``.
@@ -139,47 +165,25 @@ those cells: native Black/Hull–White cap/caplet consumers use
 uses an additive offset. These are different conventions, not interchangeable
 encodings of one rate.
 
-European swaptions require an explicit ``EuropeanSwaption`` /
-``HullWhiteClosedForm`` configuration with a Hull–White model assigned to the
-underlying index. Put the following complete JSON array in a text cell such
-as ``AA1``:
-
-.. code-block:: json
-
-   [{
-     "instrument_type": "EuropeanSwaption",
-     "pricer": "HullWhiteClosedForm",
-     "models": [{
-       "market_index": "SOFR",
-       "model": {"HullWhite": {
-         "alpha": 0.1,
-         "parameter_source": {"Fixed": {"sigma": 0.01}}
-       }}
-     }]
-   }]
-
-Load it and build a context with the pricer handle in argument 9:
+Create a native Hull–White swaption pricer with ordinary worksheet settings.
+Enter Alpha/0.1 and Sigma/0.01 in ``AC30:AD31``. The policy from the first
+workbook is in ``L3``:
 
 .. code-block:: text
    :name: guide-excel-model
 
-   AA2 =QS.PRICER.CONFIGS.FROM.JSON("guide.pricers",AA1)
-   AA3 =QS.CONTEXT.CREATE("guide.option.context",C7,H4,,,,,,AA2,,,,"USD","SOFR","Mid")
-   AA4 =QS.TRADE.EUROPEAN.SWAPTION("guide.swaption",$B$1,"2027-02-24","2031-02-24","USD","SOFR",0.04,1000000,"Payer","Receive","Actual360","Simple","Annual","Semiannual","Quarterly","")
-   =QS.PRICE(AA4,AA3)
+   AA2 =QS.PRICER.CREATE("guide.swaption.pricer","ClosedFormHullWhiteSwaptionPricer",L3,AC30:AD31)
+   AA3 =QS.INSTRUMENT.EUROPEAN.SWAPTION("guide.swaption", "2027-02-24","2031-02-24","USD","SOFR",0.04,"Payer","Actual360","Simple","Annual","Semiannual","Quarterly","")
+   AA4 =QS.TRADE.CREATE("guide.swaption.trade",AA3,$B$1,"Receive",1000000)
+   AA5 =QS.EVALUATE("guide.swaption.results",AA2,AA4,H5,"Value")
+   =QS.RESULT.VALUE(AA5)
 
-``Payer``/``Receiver`` choose exercise direction; the separate side chooses
-position direction. The final empty string leaves the underlying calendar
-unset; do not assume every required text argument has a blank-cell default.
-The fixed sigma above is an absolute short-rate volatility, not a Black
-volatility quote or a calibrated market fit.
-
-For calibrated parameters, use ``Calibrated`` with a ``Surface`` or ``Cube``
-source and an explicit basket, and load the matching volatility configuration.
-The selected Mid/Bid/Ask side applies to calibration. Default native surface
-extrapolation is ``Reject``; ATM or cube-basket requests can be outside quoted
-strike slices. Restrict the basket or explicitly document a supported Flat
-policy instead of silently changing the numerical assumption.
+``Payer``/``Receiver`` choose exercise direction; trade side selects position
+direction. The native option contract has a unit underlying; the trade carries
+its position quantity. Sigma is an absolute short-rate volatility, not a Black
+volatility quote or a calibrated fit. Alpha must be positive and sigma nonnegative.
+This explicit pricer path needs no JSON in cells. Existing configuration import
+APIs remain available for advanced calibrated native models and interoperability.
 
 ``QS.SIMULATION.CALIBRATION`` reports available Hull–White calibration
 diagnostics; the eleven columns include market/model prices, calibrated sigma,
@@ -224,7 +228,7 @@ text limit, which matters for snapshot archives.
 
 The worksheet interface supports vanilla rates, basis/cross-currency swaps,
 straight fixed income, FX/equity forwards and options, CDS, caps/caplets,
-swaptions, and rate futures. There are no worksheet constructors for loans,
+swaptions, rate futures, and :doc:`loans`. There are no worksheet constructors for
 callable stepped bonds, scripted products, or standalone OIS trades; no
 custom-pricer registration; and no exposure/netting/XVA worksheet workflow.
 Configuration-based access to native models is not a claim that every native

@@ -64,7 +64,10 @@ B20 =QS.SNAPSHOT.SELECTOR("history_selector_20260115","2026-01-15T16:00:00Z","Ex
 B21 =QS.CONTEXT.FROM.SNAPSHOT("history_selected_20260115",$B$15,B20,)
 B22 =QS.CONTEXT.SNAPSHOT.TIMESTAMP(B21)
 B23 =QS.CONTEXT.EVALUATION.DATE(B21)
-B24 =QS.PRICE($B$17,B21)
+B31 =QS.DISCOUNT.POLICY.CSA("history_policy","USD","SOFR")
+B32 =QS.PRICER.CREATE("history_pricer","DiscountedCashflowPricer",B31)
+B33 =QS.EVALUATE("history_results",B32,$B$17,B21,"Value")
+B24 =QS.RESULT.VALUE(B33)
 ```
 
 The optional fourth context argument is a `FixingStore` handle. Fixings are

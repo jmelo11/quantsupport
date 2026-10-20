@@ -72,7 +72,7 @@
 //! let pricer = DiscountedCashflowPricer::<Swap<DualFwd>, SwapTrade<DualFwd>>::new();
 //! let results = pricer.evaluate(
 //!     &trade,
-//!     &[Request::Value, Request::FairRate, Request::Sensitivities],
+//!     &[Request::Value, Request::FairRate(0), Request::Sensitivities],
 //!     &context,
 //! )?;
 //! let npv = results.price()

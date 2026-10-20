@@ -4,18 +4,43 @@ Building a reproducible pricing workbook
 Install and load the add-in
 -------------------------------
 
-Use 64-bit Windows Excel and the matching `quantsupport.xll release <https://jmelo11.github.io/quantsupport/downloads/quantsupport.xll>`_. Excel for macOS and
+Download the `Excel add-in and IntelliSense ZIP <https://jmelo11.github.io/quantsupport/downloads/quantsupport-excel-windows-x64.zip>`_
+and extract all files into one stable local folder. It contains
+``quantsupport.xll``, its matching ``quantsupport.intellisense.xml``,
+``ExcelDna.IntelliSense64.xll``, installation instructions and license notices.
+The `standalone XLL <https://jmelo11.github.io/quantsupport/downloads/quantsupport.xll>`_
+is also available at the same download location.
+
+Use 64-bit Windows Excel. Excel for macOS and
 Excel in a browser cannot load this native XLL. Follow your organization's
 policy for downloaded add-ins and trusted locations; if Windows marks the
 downloaded file as blocked, review its source before unblocking it.
 
 In Excel open **File → Options → Add-ins**, choose **Excel Add-ins**, select
-**Go**, and browse to the XLL. Keep the file at a stable location. Load the
+**Go**, and browse to each of the two XLLs. Keep the XML beside
+``quantsupport.xll``, then restart Excel with both add-ins enabled. Load the
 add-in before opening the pricing workbook, or press **Ctrl+Alt+F9** after
 loading to rebuild all formula dependencies.
 
 Download the `swap example workbook <https://jmelo11.github.io/quantsupport/downloads/swap_pricing_example.xlsx>`_
 or the `historical pricing workbook <https://jmelo11.github.io/quantsupport/downloads/historical_pricing_example.xlsx>`_.
+Further notebook-style studies cover
+`loans, funding, and borrower credit <https://jmelo11.github.io/quantsupport/downloads/loan_pricing_example.xlsx>`_,
+`bond anchors and risk <https://jmelo11.github.io/quantsupport/downloads/bond_pricing_example.xlsx>`_, and
+`interpolation and schedules <https://jmelo11.github.io/quantsupport/downloads/interpolation_example.xlsx>`_.
+
+Each example opens on **Start Here**, which links to the numbered tabs and
+suggests three changes to try. Follow Inputs, Market, Build, then Results.
+Blue cells hold editable assumptions; green cells show financial measures.
+Construction sheets keep object references beside their purpose and show each
+formula immediately below its step. Loan and bond Results tabs link directly
+to each case's inputs and construction steps; their **Inspect one case**
+dropdown controls both Cashflows and Risk. Generated results stay blank until
+Excel calculates them.
+
+Add-in loading validates every function and alias. A registration failure
+displays the rejected function name and fails loading; a partially registered
+catalog is rolled back.
 
 To compile from the checkout, use a Windows PowerShell prompt with the
 64-bit MSVC Rust toolchain and Visual Studio Build Tools:
@@ -25,7 +50,10 @@ To compile from the checkout, use a Windows PowerShell prompt with the
    rustup target add x86_64-pc-windows-msvc
    powershell -ExecutionPolicy Bypass -File bindings/excel/scripts/build.ps1
 
-The build writes ``bindings/excel/dist/quantsupport.xll``. The portable Sphinx
+The build writes ``bindings/excel/dist/quantsupport-excel-windows-x64.zip``
+and the individual XLL, XML and companion files. Packaging downloads a pinned
+Excel-DNA IntelliSense release and verifies its SHA-256. Keep the files together.
+The portable Sphinx
 build and metadata tests do not load Excel; actual worksheet execution requires
 Windows Excel.
 
@@ -36,12 +64,35 @@ Check the loaded version and discover functions:
    =QS.VERSION()
    =QS.FUNCTIONS()
    =QS.FUNCTIONS.DETAILS()
-   =QS.HELP("QS.TRADE.SWAP")
+   =QS.HELP("QS.INSTRUMENT.SWAP")
 
 The catalog includes aliases; ``QS.HELP`` accepts aliases case-insensitively.
-Function Arguments provides parameter hints. Formula examples below use commas
-as separators and decimal points; adapt separators to your Excel locale without
-changing financial units.
+The Function Arguments dialog shows parameter names and descriptions: type a
+function name and press **Ctrl+A**, or click **fx**. **Ctrl+Shift+A** inserts its
+argument names into the formula.
+
+Parameter hints while typing
+----------------------------
+
+Inline signatures and active-parameter help use the optional
+`Excel-DNA IntelliSense companion <https://github.com/Excel-DNA/IntelliSense/releases>`_.
+The QuantSupport ZIP includes ``ExcelDna.IntelliSense64.xll``; load it through
+the same Add-ins dialog as QuantSupport. It requires .NET Framework 4.6.2 or later. Keep the
+generated ``quantsupport.intellisense.xml`` beside ``quantsupport.xll``, restart
+Excel with both add-ins enabled, then type ``=QS.EVALUATE`` followed by an opening parenthesis. The popup shows
+the signature and highlights the argument being entered.
+
+The build generates descriptions for every registered function and alias from
+the same catalog used by Function Arguments and ``QS.HELP``. Download the ZIP
+from the site or a versioned `release <https://github.com/jmelo11/quantsupport/releases>`_
+to keep the XLL and XML matched. Renaming the XLL also requires renaming the XML's base name.
+The companion's
+`usage guide <https://github.com/Excel-DNA/IntelliSense/wiki/Usage-Instructions>`_
+documents this integration. Function Arguments and its shortcuts work without
+the companion.
+
+Formula examples below use commas as separators and decimal points; adapt
+separators to your Excel locale without changing financial units.
 
 A complete curve-to-swap chain
 ----------------------------------
@@ -105,20 +156,34 @@ Create a five-year receive-fixed position and request value and par coupon:
 .. code-block:: text
    :name: guide-excel-swap
 
-   H6 =QS.TRADE.SWAP("guide.usd.swap",$B$1,$B$1,"2031-02-24","USD","SOFR",10000000,0.04,0,"Receive","Actual360","Simple","Annual","Semiannual","Quarterly")
-   H7 =QS.PRICE(H6,H5)
-   H8 =QS.FAIR.RATE(H6,H5)
+   L2 =QS.INSTRUMENT.SWAP("guide.usd.instrument",$B$1,"2031-02-24","USD","SOFR",10000000,0.04,0,"Actual360","Simple","Annual","Semiannual","Quarterly")
+   H6 =QS.TRADE.CREATE("guide.usd.swap",L2,$B$1,"Receive")
+   L3 =QS.DISCOUNT.POLICY.CSA("guide.usd.policy","USD","SOFR")
+   L4 =QS.PRICER.CREATE("guide.usd.pricer","DiscountedCashflowPricer",L3)
+   M2 Value
+   M3 Cashflows
+   M4 Sensitivities
+   M5 =QS.REQUEST.FAIR.RATE(0)
+   L5 =QS.EVALUATE("guide.usd.results",L4,H6,H5,M2:M5)
+   H7 =QS.RESULT.VALUE(L5)
+   H8 =QS.RESULT.FAIR.RATE(L5)
 
-The position receives fixed and pays floating on ten million USD. ``H7`` is
-monetary PV under this pricer's conventions; ``H8`` is an annual decimal fixed
-coupon. A receive-fixed position can have negative PV when its contracted coupon
-is below the market-implied coupon.
+The contract fixes dates, coupons and indices; the trade supplies direction and
+position quantity. The pricer selects a native discount policy independently.
+The receive-fixed position can have negative PV when its coupon is below par.
+``H7`` is monetary PV and ``H8`` is an annual decimal fixed coupon.
 
-The current generic ``FairRate`` calculation is appropriate to the vanilla
-fixed-versus-floating problem: it uses fixed coupon annuity and floating
-amounts from the first forward curve, ignoring principal flows. Basis,
-cross-currency and other multi-leg breakeven problems require their own
-definition of the adjustable term and calculation.
+``FairRate(0)`` selects the fixed leg; ``FairRate(1)`` instead solves the second
+leg's floating spread so total trade PV is zero, including principal exchanges,
+each leg's index and native policy discounting. Request one target per evaluation.
+``QS.REQUEST.FAIR.RATE`` builds the request text from a numeric index; directly
+entering ``FairRate(1)`` in a request cell has the same meaning. Invalid indices
+fail explicitly. Other single-quote products support only index zero.
+
+Use ``QS.INSTRUMENT.*`` and ``QS.TRADE.CREATE`` for every exposed product family.
+Combined ``QS.TRADE.<product>`` and direct valuation functions remain compatibility
+shortcuts. The separated object path makes position terms, chosen pricing engine,
+and discount assumptions visible as independent worksheet dependencies.
 
 Inspecting the results
 ----------------------
@@ -132,8 +197,8 @@ Extract the curve once and leave room for spilled results:
    J3 =QS.CURVE.DISCOUNT(J2,"2028-02-24")
    J4 =QS.CURVE.FORWARD(J2,"2027-02-24","2028-02-24",,)
    J6 =QS.CURVE.TABLE(J2,,)
-   P2 =QS.CASHFLOWS(H6,H5)
-   Z2 =QS.SENSITIVITIES(H6,H5)
+   P2 =QS.RESULT.CASHFLOWS(L5)
+   Z2 =QS.RESULT.SENSITIVITIES(L5)
 
 Blank scalar curve-rate query conventions default to Simple and Annual.
 ``QS.CURVE.TABLE`` reports Pillar, Date, Discount factor, Zero rate, and

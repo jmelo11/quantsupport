@@ -98,7 +98,11 @@ pub fn qs_snapshot_reference_date(snapshot: &str) -> Result<String, XllError> {
     category = "QuantSupport - Market",
     help = "Spills the archive's observation timestamps in ascending UTC order"
 )]
-pub fn qs_snapshots_timestamps(store: &str) -> Result<*mut XLOPER12, XllError> {
+pub fn qs_snapshots_timestamps(
+    store: &str,
+    transpose: *const xll_rs::types::XLOPER12,
+) -> Result<*mut XLOPER12, XllError> {
+    let transpose = crate::functions::helpers::optional_bool(transpose, "transpose")?;
     let timestamps: Vec<String> = with_registry(|registry| {
         registry.market_snapshot_store(store).map(|value| {
             value
@@ -112,7 +116,7 @@ pub fn qs_snapshots_timestamps(store: &str) -> Result<*mut XLOPER12, XllError> {
     if timestamps.is_empty() {
         return Ok(xll_rs::convert::build_multi(vec![XLOPER12::nil()], 1, 1));
     }
-    Ok(string_column(timestamps))
+    Ok(string_column(timestamps, transpose))
 }
 
 #[xll_bindgen(

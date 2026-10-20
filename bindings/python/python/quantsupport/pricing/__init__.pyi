@@ -51,7 +51,26 @@ QuantSupportError
     ZSpread: ClassVar[Request]
     OAS: ClassVar[Request]
     Cashflows: ClassVar[Request]
-    FairRate: ClassVar[Request]
+    @staticmethod
+    def FairRate(index: int = 0) -> Request:
+        """Select a zero-based swap leg or loan coupon/spread segment.
+
+Parameters
+----------
+index : int, optional
+    Contractual target, starting at zero. Defaults to zero. Swaps select a leg;
+    loans select a contiguous rate segment. Single-quote products accept only zero.
+
+Returns
+-------
+Request
+    A targeted fair-rate request. The selected scalar is returned in fair_rate.
+"""
+        ...
+    @property
+    def index(self) -> int | None:
+        """Zero-based FairRate target; None for other requests."""
+        ...
 
 
 @final
@@ -1146,9 +1165,11 @@ context : PricingContext
 requests : sequence of Request or str, optional
     Value, Cashflows, Sensitivities, or FairRate, as typed requests or names.
     None, the default, selects Value. Sensitivities are derivatives per unit
-    market-pillar change. FairRate solves an annual fixed coupon or floating
-    spread at or before origination over [-0.05, 0.50]; mixed, stepped, and
-    bounded coupon schedules are unsupported.
+    market-pillar change. Request.FairRate(index) returns the selected zero-based
+    segment's scalar in fair_rate. Earlier segments are solved first, repaying
+    remaining capital at each prefix end and retaining solved rates when extending.
+    Each solve is at/before origination over [-0.05, 0.50]. Bounded coupons and
+    invalid indices are rejected.
 
 Returns
 -------
@@ -1592,7 +1613,7 @@ performed. Table properties construct new pandas DataFrames on access.
 
     @property
     def fair_rate(self) -> float | None:
-        """Fair (par) rate, if `"FairRate"` was requested."""
+        """Fair rate for the target selected by Request.FairRate(index)."""
         ...
 
     @property

@@ -232,7 +232,7 @@ impl EvaluationResults {
         self.oas
     }
 
-    /// Fair (par) rate, if `"FairRate"` was requested.
+    /// Fair rate for the target selected by Request.FairRate(index), if requested.
     #[getter]
     fn fair_rate(&self) -> Option<f64> {
         self.fair_rate

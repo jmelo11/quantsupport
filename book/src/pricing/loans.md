@@ -212,25 +212,42 @@ principal schedules stay fixed during market sensitivity calculations.
 
 ## Fair rate and schedule choice
 
-`FairRate` solves a fixed coupon or floating spread that makes receipt PV equal
-the PV of the original advance. It is defined at or before origination for
-uniform fixed coupons or a uniform floating spread. Mixed, stepped, and bounded
-coupons require a specified adjustable segment and are currently rejected by
-`FairRate`; their Value, Cashflows, and Sensitivities requests remain supported.
+`FairRate` bootstraps one fixed coupon or floating spread per contiguous
+contractual segment at or before origination. A change in fixed rate, spread,
+coupon type, or floating index starts a segment; index fixing resets do not.
+First shorten the loan to the first segment's end and repay all remaining
+capital there. Solve that segment's rate so receipt PV equals the original
+advance PV, lock the result, extend through the next segment, and repeat.
+Every solved prefix therefore lends at par with its outstanding principal
+repaid at that prefix's end. Bounded coupons remain unsupported.
+
+`Request::FairRate(index)` in Rust and `qs.Request.FairRate(index)` in Python
+select one zero-based segment and return its scalar in `fair_rate`. Only the
+earlier segments needed for that target are solved. Use separate evaluations
+for several targets; invalid indices are errors. There is no second fair-rate
+attribute or implicit array. In Excel, `QS.REQUEST.FAIR.RATE(index)` supplies
+the request to `QS.EVALUATE`, then `QS.RESULT.FAIR.RATE` reads its scalar.
+
+```python
+with context:
+    second_rate = qs.LoanPricer().evaluate(
+        trade=trade, context=context, requests=[qs.Request.FairRate(1)]
+    ).fair_rate
+```
 
 The pricer's `rebuild_amortization_for_fair_rate` parameter controls how solver
 trials treat principal. The default `false` preserves the already created
 amortization schedule. With `true`, each trial regenerates the builder's French,
-bullet, or balloon schedule using the candidate fixed coupon or the first
-observed index rate plus candidate spread. A custom leg needs explicit repayment
+bullet, or balloon schedule using the first trial coupon's all-in rate. Once
+the first segment is solved, its rate stays fixed during later trials. A custom leg needs explicit repayment
 metadata to use this mode. Neither mode changes the original instrument.
 
 ```python
 preserve = qs.LoanPricer(rebuild_amortization_for_fair_rate=False)
 rebuild = qs.LoanPricer(rebuild_amortization_for_fair_rate=True)
 with context:
-    fair_with_existing_principal = preserve.evaluate(trade=trade, context=context, requests=[qs.Request.FairRate]).fair_rate
-    fair_with_new_amortization = rebuild.evaluate(trade=trade, context=context, requests=[qs.Request.FairRate]).fair_rate
+    fair_with_existing_principal = preserve.evaluate(trade=trade, context=context, requests=[qs.Request.FairRate(0)]).fair_rate
+    fair_with_new_amortization = rebuild.evaluate(trade=trade, context=context, requests=[qs.Request.FairRate(0)]).fair_rate
 ```
 
 In Rust, use `LoanPricer::new().with_fair_rate_amortization_rebuild(true)` for

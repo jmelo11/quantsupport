@@ -84,8 +84,9 @@ impl LoanPricer {
     /// the builder's repayment schedule for each candidate rate/spread.
     ///
     /// Defaults to `false`. Rebuilding requires repayment metadata and uses
-    /// the candidate fixed coupon or first index fixing plus candidate spread
-    /// as the initial amortization rate. Neither mode changes the instrument
+    /// the first trial coupon's all-in rate as the initial amortization rate.
+    /// Once solved, that first rate remains fixed during later segment solves.
+    /// Neither mode changes the instrument
     /// or the principal schedule used by `Value` and `Sensitivities`.
     #[must_use]
     pub const fn with_fair_rate_amortization_rebuild(mut self, enabled: bool) -> Self {
@@ -733,12 +734,20 @@ impl HandleSensitivities<LoanTrade<DualFwd>, LoanValuationState> for LoanPricer 
     }
 }
 
+/// Contiguous contractual coupon level and its hypothetical redemption date.
+struct LoanCouponSegment {
+    coupons: std::ops::Range<usize>,
+    redemption_date: Date,
+}
+
 /// Fair-rate objective holding resolved coupons and the discounted advance target.
 struct LoanFairRateObjective<'a> {
     pricer: &'a LoanPricer,
     trade: &'a LoanTrade<DualFwd>,
     state: &'a LoanValuationState,
-    cashflows: Vec<CashflowType<DualFwd>>,
+    cashflows: &'a [CashflowType<DualFwd>],
+    adjustable_segment: std::ops::Range<usize>,
+    redemption_date: Date,
     target: f64,
 }
 
@@ -779,7 +788,8 @@ impl LoanFairRateObjective<'_> {
 
     /// Creates trial coupons for a candidate fixed annual rate or floating spread.
     ///
-    /// Existing index fixings are retained. By default, principal cashflows and
+    /// Only coupons in the selected segment change; other coupon rates and all
+    /// index fixings are retained. By default, principal cashflows and
     /// coupon notionals are preserved; recompute mode regenerates amortization
     /// from repayment metadata and the first trial coupon's all-in rate.
     ///
@@ -792,7 +802,24 @@ impl LoanFairRateObjective<'_> {
         candidate: f64,
     ) -> Result<Vec<CashflowType<DualFwd>>> {
         let mut coupons = Vec::new();
-        for cashflow in &self.cashflows {
+        let mut position = 0;
+        for cashflow in self.cashflows {
+            let selected = self.adjustable_segment.contains(&position);
+            if matches!(
+                cashflow,
+                CashflowType::FixedRateCoupon(_) | CashflowType::FloatingRateCoupon(_)
+            ) {
+                position += 1;
+            }
+            if !selected {
+                if matches!(
+                    cashflow,
+                    CashflowType::FixedRateCoupon(_) | CashflowType::FloatingRateCoupon(_)
+                ) {
+                    coupons.push(cashflow.clone());
+                }
+                continue;
+            }
             match cashflow {
                 CashflowType::FixedRateCoupon(coupon) => {
                     coupons.push(CashflowType::FixedRateCoupon(FixedRateCoupon::new(
@@ -857,7 +884,7 @@ impl LoanFairRateObjective<'_> {
                     .fixing()
                     .ok_or_else(|| QSError::ValueNotSetErr("Loan initial fixing".into()))?
                     .value()
-                    + candidate
+                    + coupon.spread().value()
             }
             _ => return Err(QSError::ValueNotSetErr("Loan trial coupons".into())),
         };
@@ -945,15 +972,43 @@ impl ContFunc<f64> for LoanFairRateObjective<'_> {
     /// Propagates trial-cashflow construction and receipt-projection errors.
     fn call(&self, candidate: &f64) -> Result<f64> {
         let trial = self.build_cashflows_for_trial_coupon_or_spread(*candidate)?;
+        let mut repaid = 0.0;
+        let mut prefix = Vec::new();
+        for cashflow in trial {
+            let payment = match &cashflow {
+                CashflowType::FixedRateCoupon(coupon) => coupon.payment_date(),
+                CashflowType::FloatingRateCoupon(coupon) => coupon.payment_date(),
+                CashflowType::Redemption(principal) | CashflowType::Disbursement(principal) => {
+                    principal.payment_date()
+                }
+                _ => continue,
+            };
+            if payment <= self.redemption_date {
+                if let CashflowType::Redemption(principal) = &cashflow {
+                    repaid += principal.amount()?;
+                }
+                prefix.push(cashflow);
+            }
+        }
+        let remaining = (self.trade.instrument().notional() - repaid).max(0.0);
+        if remaining > 0.0 {
+            prefix.push(CashflowType::Redemption(SimpleCashflow::new(
+                remaining,
+                self.redemption_date,
+            )));
+        }
         let (value, _) = self
             .pricer
-            .calculate_expected_receipts_and_present_value(self.trade, self.state, &trial)?;
+            .calculate_expected_receipts_and_present_value(self.trade, self.state, &prefix)?;
         Ok(value.value() * self.trade.side().sign() / self.target - 1.0)
     }
 }
 
-impl HandleFairRate<LoanTrade<DualFwd>, LoanValuationState> for LoanPricer {
-    /// Solves the annual fixed coupon or floating spread that funds the advance.
+impl LoanPricer {
+    /// Bootstraps contiguous coupon/spread segments to par successively.
+    ///
+    /// Each prefix repays its remaining capital at its final payment date.
+    /// Solved coupon/spread levels stay fixed when extending to the next prefix.
     ///
     /// Matches receipt PV to original principal discounted from origination to
     /// the evaluation date. Bisection searches within [-0.05, 0.50], narrowing
@@ -961,13 +1016,13 @@ impl HandleFairRate<LoanTrade<DualFwd>, LoanValuationState> for LoanPricer {
     /// It uses at most 100 iterations and a funding-residual tolerance of 1e-11.
     ///
     /// # Errors
-    /// Rejects valuation after origination, mixed or stepped rates/spreads, and
-    /// bounded coupons: these need an explicitly selected adjustable segment.
+    /// Rejects valuation after origination, missing coupons, and bounded coupons.
     /// Propagates market/trial errors and reports unbracketed or unconverged solves.
-    fn handle_fair_rate(
+    fn handle_segment_fair_rate(
         &self,
         trade: &LoanTrade<DualFwd>,
-        state: &mut LoanValuationState,
+        state: &LoanValuationState,
+        target_segment: usize,
     ) -> Result<f64> {
         if state.evaluation_date > trade.instrument().start_date() {
             return Err(QSError::InvalidValueErr(
@@ -975,7 +1030,7 @@ impl HandleFairRate<LoanTrade<DualFwd>, LoanValuationState> for LoanPricer {
             ));
         }
         Tape::stop_recording_fwd();
-        let cashflows = Self::clone_cashflows_with_resolved_fixings(trade.instrument(), state)?;
+        let mut cashflows = Self::clone_cashflows_with_resolved_fixings(trade.instrument(), state)?;
         if cashflows
             .iter()
             .any(|coupon| matches!(coupon, CashflowType::OptionEmbeddedCoupon(_)))
@@ -984,31 +1039,9 @@ impl HandleFairRate<LoanTrade<DualFwd>, LoanValuationState> for LoanPricer {
                 "Loan fair rate does not support bounded coupons".into(),
             ));
         }
-        let coupon_rates = cashflows
-            .iter()
-            .filter_map(|coupon| match coupon {
-                CashflowType::FixedRateCoupon(coupon) => {
-                    Some(coupon.rate().rate().value().to_bits())
-                }
-                CashflowType::FloatingRateCoupon(coupon) => Some(coupon.spread().value().to_bits()),
-                _ => None,
-            })
-            .collect::<Vec<_>>();
-        if coupon_rates.windows(2).any(|rates| rates[0] != rates[1]) {
-            return Err(QSError::InvalidValueErr(
-                "Loan fair rate requires uniform coupons/spreads; specify an adjustable segment for stepped coupons".into(),
-            ));
-        }
-        let fixed = cashflows
-            .iter()
-            .any(|cashflow| matches!(cashflow, CashflowType::FixedRateCoupon(_)));
-        let floating = cashflows
-            .iter()
-            .any(|cashflow| matches!(cashflow, CashflowType::FloatingRateCoupon(_)));
-        if fixed && floating {
-            return Err(QSError::InvalidValueErr(
-                "Mixed loans need a specified adjustable coupon segment".into(),
-            ));
+        let segments = Self::coupon_segments(&cashflows);
+        if segments.is_empty() {
+            return Err(QSError::ValueNotSetErr("Loan fair-rate coupons".into()));
         }
         let curve = state
             .get_discount_curve_element(&self.select_discount_curve_index(trade.instrument())?)?;
@@ -1021,23 +1054,96 @@ impl HandleFairRate<LoanTrade<DualFwd>, LoanValuationState> for LoanPricer {
                 .curve()
                 .discount_factor(state.evaluation_date)?
                 .value();
-        let objective = LoanFairRateObjective {
-            pricer: self,
-            trade,
-            state,
-            cashflows,
-            target,
-        };
-        let upper = objective.admissible_upper_bound(-0.05, 0.5)?;
-        let solution = Bisection::new(-0.05, upper, 100)
-            .with_ftol(1e-11)
-            .solve(&objective)?;
-        if !matches!(solution.status, SolutionStatus::Converged) {
-            return Err(QSError::SolverErr(
-                "Loan fair rate did not converge in [-5%, 50%]".into(),
-            ));
+        if target_segment >= segments.len() {
+            return Err(QSError::InvalidValueErr(format!(
+                "Loan fair-rate target {target_segment} is out of range for {} segments (zero-based)",
+                segments.len()
+            )));
         }
-        Ok(solution.x)
+        let mut selected_rate = 0.0;
+        for (position, segment) in segments.into_iter().take(target_segment + 1).enumerate() {
+            let objective = LoanFairRateObjective {
+                pricer: self,
+                trade,
+                state,
+                cashflows: &cashflows,
+                adjustable_segment: segment.coupons,
+                redemption_date: segment.redemption_date,
+                target,
+            };
+            let solve = || -> Result<f64> {
+                let upper = objective.admissible_upper_bound(-0.05, 0.5)?;
+                if (objective.call(&upper)? - objective.call(&-0.05)?).abs() < 1e-14 {
+                    return Err(QSError::SolverErr(
+                        "Loan segment has no identifiable rate exposure".into(),
+                    ));
+                }
+                let solution = Bisection::new(-0.05, upper, 100)
+                    .with_ftol(1e-11)
+                    .solve(&objective)?;
+                if !matches!(solution.status, SolutionStatus::Converged) {
+                    return Err(QSError::SolverErr(
+                        "Loan fair rate did not converge in [-5%, 50%]".into(),
+                    ));
+                }
+                Ok(solution.x)
+            };
+            let rate = solve().map_err(|error| {
+                QSError::SolverErr(format!("Loan fair-rate segment {}: {error}", position + 1))
+            })?;
+            cashflows = objective.build_cashflows_for_trial_coupon_or_spread(rate)?;
+            selected_rate = rate;
+        }
+        Ok(selected_rate)
+    }
+
+    /// Identifies contiguous coupon levels, ignoring intervening principal flows.
+    fn coupon_segments(cashflows: &[CashflowType<DualFwd>]) -> Vec<LoanCouponSegment> {
+        let mut previous = None;
+        let mut segments: Vec<LoanCouponSegment> = Vec::new();
+        let mut position = 0;
+        for cashflow in cashflows {
+            let (key, payment) = match cashflow {
+                CashflowType::FixedRateCoupon(coupon) => (
+                    (None, coupon.rate().rate().value().to_bits()),
+                    coupon.payment_date(),
+                ),
+                CashflowType::FloatingRateCoupon(coupon) => (
+                    (
+                        Some(coupon.market_index().clone()),
+                        coupon.spread().value().to_bits(),
+                    ),
+                    coupon.payment_date(),
+                ),
+                _ => continue,
+            };
+            if previous.as_ref() == Some(&key) {
+                if let Some(segment) = segments.last_mut() {
+                    segment.coupons.end = position + 1;
+                    segment.redemption_date = payment;
+                }
+            } else {
+                segments.push(LoanCouponSegment {
+                    coupons: position..position + 1,
+                    redemption_date: payment,
+                });
+            }
+            previous = Some(key);
+            position += 1;
+        }
+        segments
+    }
+}
+
+impl HandleFairRate<LoanTrade<DualFwd>, LoanValuationState> for LoanPricer {
+    /// Returns the selected segment's coupon or spread after solving earlier segments.
+    fn handle_fair_rate(
+        &self,
+        trade: &LoanTrade<DualFwd>,
+        state: &mut LoanValuationState,
+        target: usize,
+    ) -> Result<f64> {
+        self.handle_segment_fair_rate(trade, state, target)
     }
 }
 
@@ -1058,6 +1164,7 @@ impl Pricer for LoanPricer {
         requests: &[Request],
         ctx: &impl MarketDataProvider,
     ) -> Result<EvaluationResults> {
+        Request::validate(requests)?;
         let mut state = self.load_loan_valuation_state(trade, ctx)?;
         let mut results =
             EvaluationResults::new(ctx.evaluation_date(), trade.instrument().identifier());
@@ -1067,8 +1174,8 @@ impl Pricer for LoanPricer {
                 Request::Sensitivities => {
                     results.with_sensitivities(self.handle_sensitivities(trade, &mut state)?)
                 }
-                Request::FairRate => {
-                    results.with_fair_rate(self.handle_fair_rate(trade, &mut state)?)
+                Request::FairRate(target) => {
+                    results.with_fair_rate(self.handle_fair_rate(trade, &mut state, *target)?)
                 }
                 Request::Cashflows => {
                     self.handle_value(trade, &mut state)?;
@@ -1293,7 +1400,7 @@ mod tests {
             &[
                 Request::Cashflows,
                 Request::Cashflows,
-                Request::FairRate,
+                Request::FairRate(0),
                 Request::Sensitivities,
                 Request::Value,
             ],
@@ -1435,6 +1542,240 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::too_many_lines)]
+    fn fair_rates_bootstrap_mixed_and_stepped_segments_with_early_principal_repayment() -> Result<()>
+    {
+        let provider = build_test_market(0.03, 0.04, 0.0);
+        let coupon_schedule = |rates: &[f64]| {
+            rates
+                .iter()
+                .enumerate()
+                .flat_map(|(position, rate)| {
+                    let coupon = if position < 2 {
+                        CashflowType::fixed(*rate)
+                    } else {
+                        CashflowType::floating(MarketIndex::EURIBOR12m, *rate, None, None)
+                    };
+                    vec![coupon; 6]
+                })
+                .collect()
+        };
+        for repayment in [
+            LoanRepaymentStructure::French,
+            LoanRepaymentStructure::Bullet,
+            LoanRepaymentStructure::Balloon {
+                residual_fraction: 0.25,
+            },
+        ] {
+            let builder = default_loan_builder()
+                .with_repayment_structure(repayment)
+                .with_coupons(coupon_schedule(&[0.06, 0.04, 0.01, 0.005]))
+                .with_initial_amortization_rate(0.05);
+            for side in [Side::LongReceive, Side::PayShort] {
+                let trade = LoanTrade::new(builder.clone().build()?, provider.date, side);
+                let original = estr_loan_pricer().evaluate(
+                    &trade,
+                    &[Request::Value, Request::Cashflows],
+                    &provider,
+                )?;
+                for rebuild in [false, true] {
+                    let pricer = estr_loan_pricer().with_fair_rate_amortization_rebuild(rebuild);
+                    let result = pricer.evaluate(
+                        &trade,
+                        &[Request::FairRate(0), Request::Value, Request::Cashflows],
+                        &provider,
+                    )?;
+                    let rates = (0..4)
+                        .map(|target| {
+                            pricer
+                                .evaluate(&trade, &[Request::FairRate(target)], &provider)?
+                                .fair_rate()
+                                .ok_or_else(|| QSError::ValueNotSetErr("Segment fair rate".into()))
+                        })
+                        .collect::<Result<Vec<_>>>()?;
+                    let candidate = LoanTrade::new(
+                        builder
+                            .clone()
+                            .with_coupons(coupon_schedule(&rates))
+                            .with_initial_amortization_rate(if rebuild { rates[0] } else { 0.05 })
+                            .build()?,
+                        provider.date,
+                        side,
+                    );
+                    let par = pricer.evaluate(
+                        &candidate,
+                        &[Request::Value, Request::Cashflows],
+                        &provider,
+                    )?;
+                    assert!(
+                        (par.price().unwrap_or_default() - side.sign() * 100_000.0).abs() < 1e-5
+                    );
+                    let table = par
+                        .cashflows()
+                        .ok_or_else(|| QSError::ValueNotSetErr("Par cashflows".into()))?;
+                    for segment in 1..=4 {
+                        let end = provider
+                            .date
+                            .advance(segment * 6, crate::time::enums::TimeUnit::Months);
+                        let mut prefix_value = 0.0;
+                        let mut repaid = 0.0;
+                        for ((date, amount), kind) in table
+                            .payment_dates()
+                            .iter()
+                            .zip(table.amounts())
+                            .zip(table.cashflow_types())
+                        {
+                            if *date <= end {
+                                prefix_value += amount
+                                    * (-0.03
+                                        * DayCounter::Actual365
+                                            .year_fraction(provider.date, *date))
+                                    .exp();
+                                if kind == "Redemption" {
+                                    repaid += amount;
+                                }
+                            }
+                        }
+                        prefix_value += (side.sign() * 100_000.0 - repaid)
+                            * (-0.03 * DayCounter::Actual365.year_fraction(provider.date, end))
+                                .exp();
+                        assert!(
+                            (prefix_value - side.sign() * 100_000.0).abs() < 1e-5,
+                            "segment {segment}, rebuild={rebuild}: {prefix_value}"
+                        );
+                    }
+                    assert_eq!(original.price(), result.price());
+                    assert_eq!(
+                        original.cashflows().map(|table| table.amounts()),
+                        result.cashflows().map(|table| table.amounts())
+                    );
+                }
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn coupon_segments_preserve_repeated_levels_and_ignore_principal_and_index_resets() -> Result<()>
+    {
+        let mut coupons = vec![CashflowType::fixed(0.03); 6];
+        coupons.extend(vec![CashflowType::fixed(0.04); 6]);
+        coupons.extend(vec![CashflowType::fixed(0.03); 6]);
+        coupons.extend(vec![
+            CashflowType::floating(
+                MarketIndex::EURIBOR12m,
+                0.03,
+                None,
+                None
+            );
+            3
+        ]);
+        coupons.push(CashflowType::floating(
+            MarketIndex::EURIBOR3m,
+            0.03,
+            None,
+            None,
+        ));
+        let loan = default_loan_builder().with_coupons(coupons).build()?;
+        let segments = LoanPricer::coupon_segments(loan.contractual_leg().cashflows());
+        let ranges = segments
+            .iter()
+            .map(|segment| segment.coupons.clone())
+            .collect::<Vec<_>>();
+        assert_eq!(ranges, vec![0..6, 6..12, 12..18, 18..21, 21..24]);
+        let floating = default_loan_builder()
+            .with_coupons(vec![CashflowType::floating(
+                MarketIndex::EURIBOR12m,
+                0.01,
+                None,
+                None,
+            )])
+            .with_initial_amortization_rate(0.05)
+            .build()?;
+        assert_eq!(
+            LoanPricer::coupon_segments(floating.contractual_leg().cashflows()).len(),
+            1
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn floating_first_bootstrap_retains_the_solved_initial_amortization_rate() -> Result<()> {
+        let provider = build_test_market(0.03, 0.04, 0.0);
+        let coupons = |spread, fixed_rate| {
+            let mut coupons =
+                vec![CashflowType::floating(MarketIndex::EURIBOR12m, spread, None, None); 12];
+            coupons.push(CashflowType::fixed(fixed_rate));
+            coupons
+        };
+        let builder = default_loan_builder()
+            .with_coupons(coupons(0.01, 0.06))
+            .with_initial_amortization_rate(0.05);
+        let trade = LoanTrade::new(builder.clone().build()?, provider.date, Side::LongReceive);
+        for rebuild in [false, true] {
+            let pricer = estr_loan_pricer().with_fair_rate_amortization_rebuild(rebuild);
+            let rates = (0..2)
+                .map(|target| {
+                    pricer
+                        .evaluate(&trade, &[Request::FairRate(target)], &provider)?
+                        .fair_rate()
+                        .ok_or_else(|| QSError::ValueNotSetErr("Floating-first fair rate".into()))
+                })
+                .collect::<Result<Vec<_>>>()?;
+            let initial_rate = if rebuild {
+                0.04_f64.exp_m1() / (365.0 / 360.0) + rates[0]
+            } else {
+                0.05
+            };
+            let candidate = LoanTrade::new(
+                builder
+                    .clone()
+                    .with_coupons(coupons(rates[0], rates[1]))
+                    .with_initial_amortization_rate(initial_rate)
+                    .build()?,
+                provider.date,
+                Side::LongReceive,
+            );
+            assert!(
+                (evaluate_loan_receipt_present_value(&pricer, &candidate, &provider)? - 100_000.0)
+                    .abs()
+                    < 1e-5
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn fully_prepaid_segments_report_an_unidentifiable_rate() -> Result<()> {
+        let provider = build_test_market(0.03, 0.04, 0.0);
+        let mut coupons = vec![CashflowType::fixed(0.04); 12];
+        coupons.push(CashflowType::fixed(0.06));
+        let trade = LoanTrade::new(
+            default_loan_builder()
+                .with_coupons(coupons)
+                .with_prepayment_configuration(PrepaymentModelConfiguration::Cpr(1.0))
+                .build()?,
+            provider.date,
+            Side::LongReceive,
+        );
+        // A valid earlier target does not attempt to solve an unidentifiable later segment.
+        assert!(estr_loan_pricer()
+            .evaluate(&trade, &[Request::FairRate(0)], &provider)?
+            .fair_rate()
+            .is_some());
+        assert!(estr_loan_pricer()
+            .evaluate(&trade, &[Request::FairRate(2)], &provider)
+            .is_err());
+        let error = estr_loan_pricer()
+            .evaluate(&trade, &[Request::FairRate(1)], &provider)
+            .err()
+            .ok_or_else(|| QSError::ValueNotSetErr("Expected unidentified segment error".into()))?;
+        assert!(error.to_string().contains("segment 2"));
+        assert!(error.to_string().contains("no identifiable rate exposure"));
+        Ok(())
+    }
+
+    #[test]
     fn fair_rate_rebuilds_thirty_year_mortgages_with_actual_month_lengths() -> Result<()> {
         let provider = build_test_market(0.03, 0.04, 0.0);
         for floating in [false, true] {
@@ -1451,7 +1792,7 @@ mod tests {
             let trade = LoanTrade::new(builder.clone().build()?, provider.date, Side::LongReceive);
             let pricer = estr_loan_pricer().with_fair_rate_amortization_rebuild(true);
             let fair = pricer
-                .evaluate(&trade, &[Request::FairRate], &provider)?
+                .evaluate(&trade, &[Request::FairRate(0)], &provider)?
                 .fair_rate()
                 .ok_or_else(|| QSError::ValueNotSetErr("Mortgage fair rate".into()))?;
             let rate = if floating {
@@ -1513,7 +1854,7 @@ mod tests {
             for rebuild in [false, true] {
                 let pricer = estr_loan_pricer().with_fair_rate_amortization_rebuild(rebuild);
                 let fair = pricer
-                    .evaluate(&trade, &[Request::FairRate], &provider)?
+                    .evaluate(&trade, &[Request::FairRate(0)], &provider)?
                     .fair_rate()
                     .ok_or_else(|| QSError::ValueNotSetErr("Fair rate".into()))?;
                 let rate = if floating {

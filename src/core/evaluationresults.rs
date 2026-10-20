@@ -395,6 +395,7 @@ impl EvaluationResults {
     /// Its meaning depends on the product: a swap coupon is an annual decimal
     /// rate, whereas an equity or FX forward returns a delivery price or
     /// exchange rate in the contract's quotation units.
+    /// The target is selected by [`Request::FairRate`](crate::core::request::Request::FairRate).
     #[must_use]
     pub const fn fair_rate(&self) -> Option<f64> {
         self.fair_rate

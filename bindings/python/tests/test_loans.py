@@ -100,8 +100,12 @@ class LoanWorkflowTests(unittest.TestCase):
             self.assertEqual(len(rates), 24)
             self.assertAlmostEqual(rates.iloc[0], 0.03)
             self.assertTrue(all(math.isclose(rate, 0.05) for rate in rates.iloc[1:]))
-            with self.assertRaisesRegex(qs.QuantSupportError, "uniform"):
-                evaluate_loan_trade(instrument, ctx, ["FairRate"])
+            for target in [0, 1]:
+                fair = evaluate_loan_trade(instrument, ctx, [qs.Request.FairRate(target)])
+                self.assertIsInstance(fair.fair_rate, float)
+                self.assertFalse(hasattr(fair, "fair_rates"))
+            with self.assertRaises(qs.QuantSupportError):
+                evaluate_loan_trade(instrument, ctx, [qs.Request.FairRate(2)])
 
     def test_coupon_schedule_json_and_subclass_roundtrip(self):
         class CustomLoan(qs.Loan):
@@ -183,7 +187,7 @@ class LoanWorkflowTests(unittest.TestCase):
         instrument = build_floating_rate_loan()
         with build_pricing_context(instrument) as ctx:
             result = evaluate_loan_trade(instrument, ctx, [qs.Request.Cashflows, qs.Request.Cashflows,
-                qs.Request.FairRate, qs.Request.Sensitivities, qs.Request.Value])
+                qs.Request.FairRate(0), qs.Request.Sensitivities, qs.Request.Value])
             table = result.cashflows
             expected = sum(row.amount * ctx.curve("ESTR").discount_factor(row.payment_date)
                            for row in table.itertuples(index=False))
@@ -248,6 +252,46 @@ class LoanWorkflowTests(unittest.TestCase):
                     candidate = build_loan_contract(coupons=[rate], amortization_rate=amortization_rate)
                     par = evaluate_loan_trade(candidate, ctx).price
                     self.assertAlmostEqual(par, 100_000, places=5)
+
+    def test_fair_rate_request_keeps_its_target_and_rejects_ambiguous_results(self):
+        self.assertEqual(qs.Request.FairRate(1), qs.Request.parse("FairRate(1)"))
+        self.assertNotEqual(qs.Request.FairRate(0), qs.Request.FairRate(1))
+        self.assertEqual(qs.Request.FairRate(1).index, 1)
+        self.assertIsNone(qs.Request.Value.index)
+        self.assertEqual(repr(qs.Request.FairRate(1)), "Request.FairRate(1)")
+        for text in ["FairRate(-1)", "FairRate(1.5)"]:
+            with self.assertRaises(qs.QuantSupportError): qs.Request.parse(text)
+        with build_pricing_context() as ctx:
+            with self.assertRaises(qs.QuantSupportError):
+                evaluate_loan_trade(build_loan_contract(), ctx, [qs.Request.FairRate(0), qs.Request.FairRate(1)])
+
+    def test_mixed_and_stepped_fair_rates_bootstrap_each_prefix(self):
+        def coupons(rates):
+            return ([qs.FixedRateCoupon(rate=qs.InterestRate(rate=rates[0]))] * 6 +
+                    [qs.FixedRateCoupon(rate=qs.InterestRate(rate=rates[1]))] * 6 +
+                    [qs.FloatingRateCoupon(index="EURIBOR12m", spread=rates[2])] * 6 +
+                    [qs.FloatingRateCoupon(index="EURIBOR12m", spread=rates[3])])
+        instrument = build_loan_contract(coupons=coupons([0.06, 0.04, 0.01, 0.02]), amortization_rate=0.05)
+        snapshot = instrument.to_dict()
+        with build_pricing_context(instrument) as ctx:
+            for rebuild in [False, True]:
+                with self.subTest(rebuild=rebuild):
+                    rates = [evaluate_loan_trade(instrument, ctx, [qs.Request.FairRate(target)],
+                             rebuild_amortization_for_fair_rate=rebuild).fair_rate for target in range(4)]
+                    candidate = build_loan_contract(coupons=coupons(rates),
+                        amortization_rate=rates[0] if rebuild else 0.05)
+                    par = evaluate_loan_trade(candidate, ctx, ["Value", "Cashflows"])
+                    self.assertAlmostEqual(par.price, 100_000, places=5)
+                    for end in ["2026-08-24", "2027-02-24", "2027-08-24", "2028-02-24"]:
+                        # Apply the same solved schedule to each shortened loan,
+                        # redeeming its outstanding capital at the boundary.
+                        table = par.cashflows.loc[par.cashflows.payment_date <= end]
+                        repaid = table.loc[table.type == "Redemption", "amount"].sum()
+                        prefix_pv = sum(row.amount * ctx.curve("ESTR").discount_factor(row.payment_date)
+                                        for row in table.itertuples(index=False))
+                        prefix_pv += (100_000 - repaid) * ctx.curve("ESTR").discount_factor(end)
+                        self.assertAlmostEqual(prefix_pv, 100_000, places=5)
+        self.assertEqual(instrument.to_dict(), snapshot)
 
     def test_refinancing_model_uses_configured_market_and_cashflow_requests(self):
         instrument = build_loan_contract(prepayment=qs.PrepaymentModelConfiguration.refinancing_incentive(0.02, 4.0, 0.4))

@@ -21,8 +21,7 @@ use crate::{
     },
     indices::marketindex::MarketIndex,
     instruments::cashflows::{cashflow::Cashflow, cashflowtype::CashflowType, leg::Leg},
-    rates::compounding::Compounding,
-    time::{date::Date, enums::Frequency},
+    time::date::Date,
     utils::errors::{QSError, Result},
 };
 use std::{collections::HashSet, marker::PhantomData};
@@ -65,11 +64,11 @@ impl PricerState for DCFState<'_> {
 /// same leg and disbursement signs used in NPV.
 ///
 /// Supported requests are value, sensitivities, cashflows, and fair rate.
-/// Other requests leave their result fields absent. Fair rate is the ratio of
-/// floating-coupon PV to fixed-coupon annuity using the first forwarding curve;
-/// it ignores principal exchanges and is intended for vanilla fixed-versus-
-/// floating swaps, not a general multi-leg breakeven calculation.
-/// Missing or ambiguous curve selection, missing required fixings, and
+/// Other requests leave their result fields absent. `FairRate(index)` selects a
+/// zero-based leg and solves its fixed coupon or floating spread to zero total
+/// trade PV, including principal exchanges and each leg's curves and direction.
+/// Selected spreads compounded daily are rejected because their quote exposure
+/// is nonlinear. Missing or ambiguous curve selection, missing required fixings, and
 /// unsupported payoffs produce errors.
 ///
 /// ## Example
@@ -234,6 +233,79 @@ where
     }
 }
 
+impl<I, T> DiscountedCashflowPricer<I, T> {
+    fn select_discount_index(
+        &self,
+        leg: &Leg<DualFwd>,
+        state: &DCFState<'_>,
+    ) -> Result<MarketIndex> {
+        let leg_currency = leg.currency();
+        let leg_has_floating = leg
+            .cashflows()
+            .iter()
+            .any(|cf| matches!(cf, CashflowType::FloatingRateCoupon(_)));
+        Ok(if let Some(policy) = &self.discount_policy {
+            policy.accept(leg)?
+        } else if leg_has_floating {
+            let mut matching = state
+                .get_market_data_reponse()
+                .ok_or_else(|| QSError::NotFoundErr("MarketDataResponse not available.".into()))?
+                .constructed_elements()
+                .discount_curves()
+                .iter()
+                .filter(|(idx, _)| {
+                    idx.rate_index_details()
+                        .is_ok_and(|d| d.currency() == leg_currency)
+                })
+                .map(|(index, _)| index.clone());
+
+            let first = matching.next().ok_or_else(|| {
+                    QSError::NotFoundErr(format!(
+                        "No discount curve found for currency {leg_currency}. For derivative legs without CSA this curve is required as risk-free discounting curve."
+                    ))
+                })?;
+
+            if matching.next().is_some() {
+                return Err(QSError::InvalidValueErr(format!(
+                        "Multiple discount curves found for currency {leg_currency}. Set a leg market index or a discount policy to disambiguate discounting."
+                    )));
+            }
+
+            first
+        } else if let Some(index) = leg.discount_index() {
+            index
+        } else if let Some(index) = leg.forward_index() {
+            index.clone()
+        } else {
+            let mut matching = state
+                .get_market_data_reponse()
+                .ok_or_else(|| QSError::NotFoundErr("MarketDataResponse not available.".into()))?
+                .constructed_elements()
+                .discount_curves()
+                .iter()
+                .filter(|(idx, _)| {
+                    idx.rate_index_details()
+                        .is_ok_and(|d| d.currency() == leg_currency)
+                })
+                .map(|(index, _)| index.clone());
+
+            let first = matching.next().ok_or_else(|| {
+                    QSError::NotFoundErr(format!(
+                        "No discount curve found for currency {leg_currency}. Provide a leg market index or load a risk-free curve for this currency."
+                    ))
+                })?;
+
+            if matching.next().is_some() {
+                return Err(QSError::InvalidValueErr(format!(
+                        "Multiple discount curves found for currency {leg_currency}. Set leg market index to select discount curve explicitly."
+                    )));
+            }
+
+            first
+        })
+    }
+}
+
 impl<I, T> HandleValue<T, DCFState<'_>> for DiscountedCashflowPricer<I, T>
 where
     I: Instrument,
@@ -262,74 +334,7 @@ where
         // Iterate through all legs
         for leg in trade.legs() {
             let leg_currency = leg.currency();
-            let leg_has_floating = leg
-                .cashflows()
-                .iter()
-                .any(|cf| matches!(cf, CashflowType::FloatingRateCoupon(_)));
-
-            let leg_discount_index = if let Some(policy) = &self.discount_policy {
-                policy.accept(leg)?
-            } else if leg_has_floating {
-                let mut matching = state
-                    .get_market_data_reponse()
-                    .ok_or_else(|| {
-                        QSError::NotFoundErr("MarketDataResponse not available.".into())
-                    })?
-                    .constructed_elements()
-                    .discount_curves()
-                    .iter()
-                    .filter(|(idx, _)| {
-                        idx.rate_index_details()
-                            .is_ok_and(|d| d.currency() == leg_currency)
-                    })
-                    .map(|(index, _)| index.clone());
-
-                let first = matching.next().ok_or_else(|| {
-                    QSError::NotFoundErr(format!(
-                        "No discount curve found for currency {leg_currency}. For derivative legs without CSA this curve is required as risk-free discounting curve."
-                    ))
-                })?;
-
-                if matching.next().is_some() {
-                    return Err(QSError::InvalidValueErr(format!(
-                        "Multiple discount curves found for currency {leg_currency}. Set a leg market index or a discount policy to disambiguate discounting."
-                    )));
-                }
-
-                first
-            } else if let Some(index) = leg.discount_index() {
-                index
-            } else if let Some(index) = leg.forward_index() {
-                index.clone()
-            } else {
-                let mut matching = state
-                    .get_market_data_reponse()
-                    .ok_or_else(|| {
-                        QSError::NotFoundErr("MarketDataResponse not available.".into())
-                    })?
-                    .constructed_elements()
-                    .discount_curves()
-                    .iter()
-                    .filter(|(idx, _)| {
-                        idx.rate_index_details()
-                            .is_ok_and(|d| d.currency() == leg_currency)
-                    })
-                    .map(|(index, _)| index.clone());
-
-                let first = matching.next().ok_or_else(|| {
-                    QSError::NotFoundErr(format!(
-                        "No discount curve found for currency {leg_currency}. Provide a leg market index or load a risk-free curve for this currency."
-                    ))
-                })?;
-
-                if matching.next().is_some() {
-                    return Err(QSError::InvalidValueErr(format!(
-                        "Multiple discount curves found for currency {leg_currency}. Set leg market index to select discount curve explicitly."
-                    )));
-                }
-
-                first
-            };
+            let leg_discount_index = self.select_discount_index(leg, state)?;
 
             let side = leg.side().sign();
 
@@ -459,118 +464,84 @@ where
     I: Instrument,
     T: LegsProvider<DualFwd> + Trade<I>,
 {
-    fn handle_fair_rate(&self, trade: &T, state: &mut DCFState<'_>) -> Result<f64> {
-        let mut annuity = 0.0_f64;
-        let mut float_pv = 0.0_f64;
-
-        let forward_index = trade
-            .legs()
-            .iter()
-            .find_map(Leg::forward_index)
-            .ok_or_else(|| {
-                QSError::InvalidValueErr(
-                    "At least one leg must be floating to get a fair rate".into(),
-                )
-            })?;
-
-        let forward_curve = state.get_discount_curve_element(forward_index)?.curve();
-
-        for leg in trade.legs() {
-            // Forward / projection curve always comes from the leg's own market index
-
-            for cashflow in leg.cashflows() {
-                match cashflow {
-                    CashflowType::FixedRateCoupon(coupon) => {
-                        let year_fraction = coupon
-                            .rate()
-                            .day_counter()
-                            .year_fraction(coupon.accrual_start_date(), coupon.accrual_end_date());
-                        let payment_date = coupon.payment_date();
-
-                        let df_fx = if let Some(policy) = &self.discount_policy {
-                            let collateral_index = policy.accept(leg)?;
-                            let coll_curve =
-                                state.get_discount_curve_element(&collateral_index)?.curve();
-                            let df_coll = coll_curve.discount_factor(payment_date)?.value();
-                            if let MarketIndex::Collateral(_, coll_ccy) = &collateral_index {
-                                let fx_spot =
-                                    state.get_exchange_rate(leg.currency(), *coll_ccy)?.value();
-                                fx_spot * df_coll
-                            } else {
-                                df_coll
-                            }
-                        } else {
-                            forward_curve.discount_factor(payment_date)?.value()
-                        };
-                        annuity = f64::mul_add(coupon.notional() * year_fraction, df_fx, annuity);
-                    }
-                    CashflowType::FloatingRateCoupon(coupon) => {
-                        // Use historical fixing when accrual has already
-                        // started, otherwise project from the forward curve.
-                        let forward = if coupon.overnight_conventions().is_some() {
-                            let response = state.get_market_data_reponse().ok_or_else(|| {
-                                QSError::NotFoundErr("MarketDataResponse not available".into())
-                            })?;
-                            coupon
-                                .overnight_rate(
-                                    state.eval_date,
-                                    |date| forward_curve.discount_factor(date),
-                                    |date| {
-                                        Ok(response
-                                            .fixings()
-                                            .get(forward_index)
-                                            .and_then(|values| values.get(&date).copied()))
-                                    },
-                                )?
-                                .value()
-                        } else if coupon.accrual_start_date() < state.eval_date {
-                            state.get_fixing(forward_index, coupon.accrual_start_date())?
-                        } else {
-                            forward_curve
-                                .forward_rate(
-                                    coupon.accrual_start_date(),
-                                    coupon.accrual_end_date(),
-                                    Compounding::Simple,
-                                    Frequency::Annual,
-                                )?
-                                .value()
-                        };
-                        coupon.set_fixing(forward.into());
-                        let amount = coupon.amount()?.value();
-                        let payment_date = coupon.payment_date();
-
-                        let df_fx = if let Some(policy) = &self.discount_policy {
-                            let collateral_index = policy.accept(leg)?;
-                            let coll_curve =
-                                state.get_discount_curve_element(&collateral_index)?.curve();
-                            let df_coll = coll_curve.discount_factor(payment_date)?.value();
-                            if let MarketIndex::Collateral(_, coll_ccy) = &collateral_index {
-                                let fx_spot =
-                                    state.get_exchange_rate(leg.currency(), *coll_ccy)?.value();
-                                fx_spot * df_coll
-                            } else {
-                                df_coll
-                            }
-                        } else {
-                            forward_curve.discount_factor(payment_date)?.value()
-                        };
-                        float_pv = f64::mul_add(amount, df_fx, float_pv);
-                    }
-                    // Disbursements and redemptions cancel in a vanilla swap
-                    // (both legs have the same notional exchange)
-                    // this is an incorrect assumption
-                    _ => {}
-                }
+    fn handle_fair_rate(&self, trade: &T, state: &mut DCFState<'_>, target: usize) -> Result<f64> {
+        let leg = trade.legs().get(target).ok_or_else(|| {
+            QSError::InvalidValueErr(format!(
+                "Fair-rate leg {target} is out of range for {} legs (zero-based)",
+                trade.legs().len()
+            ))
+        })?;
+        let value = match state.value {
+            Some(value) => value.value(),
+            None => self.handle_value(trade, state)?,
+        };
+        let index = self.select_discount_index(leg, state)?;
+        let curve = state.get_discount_curve_element(&index)?.curve();
+        let fx = if self.discount_policy.is_some() {
+            if let MarketIndex::Collateral(_, currency) = &index {
+                state.get_exchange_rate(leg.currency(), *currency)?.value()
+            } else {
+                1.0
             }
+        } else {
+            1.0
+        };
+        let mut annuity = 0.0;
+        let mut quote_pv = 0.0;
+        let mut floating = None;
+        for cashflow in leg.cashflows() {
+            let (is_floating, notional, accrual, payment, quote) = match cashflow {
+                CashflowType::FixedRateCoupon(coupon) => (
+                    false,
+                    coupon.notional(),
+                    coupon
+                        .rate()
+                        .day_counter()
+                        .year_fraction(coupon.accrual_start_date(), coupon.accrual_end_date()),
+                    coupon.payment_date(),
+                    coupon.rate().rate().value(),
+                ),
+                CashflowType::FloatingRateCoupon(coupon) => {
+                    if coupon
+                        .overnight_conventions()
+                        .is_some_and(crate::instruments::rates::oisconventions::OvernightCouponConventions::compound_spread_daily)
+                    {
+                        return Err(QSError::InvalidValueErr("Fair spread does not support daily spread compounding on the selected leg".into()));
+                    }
+                    (
+                        true,
+                        coupon.notional(),
+                        coupon
+                            .day_counter()
+                            .year_fraction(coupon.accrual_start_date(), coupon.accrual_end_date()),
+                        coupon.payment_date(),
+                        coupon.spread().value(),
+                    )
+                }
+                _ => continue,
+            };
+            if floating.is_some_and(|previous| previous != is_floating) {
+                return Err(QSError::InvalidValueErr(
+                    "Selected fair-rate leg mixes fixed and floating coupons".into(),
+                ));
+            }
+            floating = Some(is_floating);
+            let weight = notional
+                * accrual
+                * curve.discount_factor(payment)?.value()
+                * fx
+                * leg.side().sign();
+            annuity += weight;
+            quote_pv = quote.mul_add(weight, quote_pv);
         }
-
-        if annuity.abs() < f64::EPSILON {
+        if annuity.abs() < 1e-16 {
             return Err(QSError::InvalidValueErr(
-                "Cannot compute par rate: annuity is zero (no fixed coupons found)".into(),
+                "Selected fair-rate leg has no identifiable coupon exposure".into(),
             ));
         }
-
-        Ok(float_pv / annuity)
+        // Replacing the selected leg's coupon/spread by a common quote changes
+        // total PV by quote * annuity - quote_pv. Principal and other legs stay fixed.
+        Ok((quote_pv - value) / annuity)
     }
 }
 
@@ -588,6 +559,7 @@ where
         requests: &[Request],
         ctx: &impl MarketDataProvider,
     ) -> Result<EvaluationResults> {
+        Request::validate(requests)?;
         let eval_date = ctx.evaluation_date();
         let identifier = trade.instrument().identifier();
 
@@ -638,7 +610,7 @@ where
         let needs_value = requests.iter().any(|r| {
             matches!(
                 r,
-                Request::Value | Request::Cashflows | Request::Sensitivities
+                Request::Value | Request::Cashflows | Request::Sensitivities | Request::FairRate(_)
             )
         });
         let wants_price = requests.iter().any(|r| matches!(r, Request::Value));
@@ -662,8 +634,8 @@ where
                     )?;
                     results = results.with_cashflows(cashflows);
                 }
-                Request::FairRate => {
-                    let fair_rate = self.handle_fair_rate(trade, &mut state)?;
+                Request::FairRate(target) => {
+                    let fair_rate = self.handle_fair_rate(trade, &mut state, *target)?;
                     results = results.with_fair_rate(fair_rate);
                 }
                 _ => {}
@@ -937,7 +909,7 @@ mod tests {
             OvernightIndexSwapTrade<DualFwd>,
         >::new();
         let results = pricer
-            .evaluate(&trade, &[Request::Value, Request::FairRate], &context)
+            .evaluate(&trade, &[Request::Value, Request::FairRate(0)], &context)
             .unwrap();
         let discount = |date| (-0.04 * DayCounter::Actual365.year_fraction(reference, date)).exp();
         let growth = (1.0 + 0.03 * 3.0 / 360.0) / discount(end) - 1.0;
@@ -1387,7 +1359,7 @@ mod tests {
         // Evaluate fair rate.
         let pricer = DiscountedCashflowPricer::<Swap<DualFwd>, SwapTrade<DualFwd>>::new();
         let results = pricer
-            .evaluate(&trade, &[Request::FairRate], &provider)
+            .evaluate(&trade, &[Request::FairRate(0)], &provider)
             .expect("Fair rate evaluation failed");
 
         let fair_rate = results.fair_rate().expect("Missing fair rate in results");
@@ -1555,7 +1527,7 @@ mod tests {
             Currency::USD,
         )));
         let results = pricer
-            .evaluate(&trade, &[Request::FairRate], &provider)
+            .evaluate(&trade, &[Request::FairRate(0)], &provider)
             .expect("CLP fair rate evaluation failed");
 
         let fair_rate = results.fair_rate().expect("Missing fair rate");

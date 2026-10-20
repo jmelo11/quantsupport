@@ -6,10 +6,7 @@ use crate::{
     runtime::registry::with_registry,
 };
 use quantsupport::prelude::Request;
-use xll_rs::{
-    convert::build_multi,
-    types::{XllError, XLOPER12},
-};
+use xll_rs::types::{XllError, XLOPER12};
 use xllgen::xll_bindgen;
 
 #[xll_bindgen(
@@ -17,7 +14,14 @@ use xllgen::xll_bindgen;
     category = "QuantSupport - Risk",
     help = "Spills curve and dPV/dZSpread risk in one table for a straight fixed-rate bond"
 )]
-pub fn qs_bond_sensitivities(trade: &str, context: &str) -> Result<*mut XLOPER12, XllError> {
+pub fn qs_bond_sensitivities(
+    trade: &str,
+    context: &str,
+    transpose: *const xll_rs::types::XLOPER12,
+    headers: *const xll_rs::types::XLOPER12,
+) -> Result<*mut XLOPER12, XllError> {
+    let transpose = crate::functions::helpers::optional_bool(transpose, "transpose")?;
+    let headers = crate::functions::helpers::optional_bool(headers, "headers")?;
     let results = with_registry(|registry| {
         evaluate_bond(
             registry,
@@ -42,7 +46,9 @@ pub fn qs_bond_sensitivities(trade: &str, context: &str) -> Result<*mut XLOPER12
         cells.push(XLOPER12::from_str(key));
         cells.push(XLOPER12::from_f64(*exposure));
     }
-    Ok(build_multi(cells, rows, 2))
+    Ok(crate::functions::helpers::spill(
+        cells, rows, 2, transpose, headers,
+    ))
 }
 
 #[xll_bindgen(
@@ -50,7 +56,14 @@ pub fn qs_bond_sensitivities(trade: &str, context: &str) -> Result<*mut XLOPER12
     category = "QuantSupport - Risk",
     help = "Spills sensitivity keys and values for a supported trade/pricer"
 )]
-pub fn qs_sensitivities(trade: &str, context: &str) -> Result<*mut XLOPER12, XllError> {
+pub fn qs_sensitivities(
+    trade: &str,
+    context: &str,
+    transpose: *const xll_rs::types::XLOPER12,
+    headers: *const xll_rs::types::XLOPER12,
+) -> Result<*mut XLOPER12, XllError> {
+    let transpose = crate::functions::helpers::optional_bool(transpose, "transpose")?;
+    let headers = crate::functions::helpers::optional_bool(headers, "headers")?;
     let results = with_registry(|registry| {
         evaluate(
             registry,
@@ -76,5 +89,7 @@ pub fn qs_sensitivities(trade: &str, context: &str) -> Result<*mut XLOPER12, Xll
         cells.push(XLOPER12::from_str(key));
         cells.push(XLOPER12::from_f64(*exposure));
     }
-    Ok(build_multi(cells, rows, 2))
+    Ok(crate::functions::helpers::spill(
+        cells, rows, 2, transpose, headers,
+    ))
 }

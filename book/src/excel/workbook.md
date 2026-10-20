@@ -22,13 +22,26 @@ A3 =QS.QUOTES.SET(A2,"OIS_USD_SOFR_2Y",B3,,)
 A4 =QS.CURVE.CONFIGS.CREATE("usd_curves")
 A5 =QS.CURVE.CONFIGS.ADD(A4,"SOFR","Actual360","LogLinear",TRUE,E2:E10)
 A6 =QS.CONTEXT.CREATE("usd_ctx",A3,A5,,,,,,,,,,"USD","SOFR")
-A7 =QS.PRICE(D2,A6)
+A7 =QS.RESULT.VALUE(D6)
 A8 =QS.CURVE.GET(A6,"SOFR")
 A9 =QS.CURVE.TABLE(A8)
 ```
 
 To use this fragment, populate `E2:E10` with matching quote identifiers and `D2`
-with a trade handle from a constructor such as `QS.TRADE.SWAP`. The [bundled
+with a position from `QS.TRADE.CREATE` on a `QS.INSTRUMENT.SWAP` contract.
+Store an explicit policy and native pricer in `D4:D5`, then evaluate:
+
+```text
+D4 =QS.DISCOUNT.POLICY.CSA("usd_policy","USD","SOFR")
+D5 =QS.PRICER.CREATE("usd_pricer","DiscountedCashflowPricer",D4)
+D6 =QS.EVALUATE("usd_results",D5,D2,A6,"Value")
+```
+
+The instrument defines contractual terms, the trade defines position terms,
+and the pricer selects the discount policy. Funding is an ordinary configured
+curve selected by that policy. Table result readers accept `transpose` and
+`headers` flags; `QS.REQUEST.FAIR.RATE(index)` requests one zero-based leg or
+loan rate segment and produces a scalar `fair_rate` result. The [bundled
 workbook](https://jmelo11.github.io/quantsupport/downloads/swap_pricing_example.xlsx)
 supplies the complete inputs.
 
@@ -62,9 +75,9 @@ multiply a decimal-rate derivative by `0.0001` to estimate a +1 bp change.
 Compare currencies only after an explicit, supported conversion.
 
 Bond trades carry the valuation anchor. Supply `CleanPrice`, `DirtyPrice` or
-`ZSpread` and its value to `QS.TRADE.FIXED.BOND`; analytics such as
-`QS.BOND.PRICE`, `QS.BOND.MODIFIED.DURATION` and `QS.BOND.Z.SPREAD` then use the
-same trade/context handles. A quote anchors the solved spread; it is not a
+`ZSpread` and its value to `QS.TRADE.CREATE` on a `QS.INSTRUMENT.FIXED.BOND`
+contract. Evaluate with an explicitly configured `BondPricer`, then read
+`QS.RESULT.VALUE`, `QS.RESULT.MODIFIED.DURATION` and `QS.RESULT.Z.SPREAD`. A quote anchors the solved spread; it is not a
 replacement for signed position PV.
 
 ## Scope and reproducibility

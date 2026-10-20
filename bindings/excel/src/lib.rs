@@ -14,7 +14,6 @@ use runtime::registry::with_registry_mut;
 #[cfg(windows)]
 use xll_rs::{
     convert::return_xl_error,
-    register::Reg,
     returning::XlReturn,
     types::{XLERR_VALUE, XLOPER12, XLTYPE_INT, XLTYPE_NUM},
 };
@@ -23,45 +22,31 @@ use xll_rs::{
 #[cfg(windows)]
 #[no_mangle]
 pub extern "system" fn xlAutoOpen() -> i32 {
-    let registry = Reg::new();
+    match runtime::registration::windows::register_functions() {
+        Ok(()) => 1,
+        Err(error) => {
+            runtime::registration::windows::show_error(&error);
+            0
+        }
+    }
+}
+
+#[cfg(windows)]
+fn worksheet_exports() -> Vec<xll_rs::registry::XllExport> {
     let mut functions: Vec<_> = xll_rs::inventory::iter::<xll_rs::registry::XllExport>
         .into_iter()
         .copied()
         .collect();
     functions.sort_by(|left, right| left.name.cmp(right.name));
 
-    for function in functions {
-        let generated_argument_help =
-            documentation::function_help::argument_help(function.name, function.arg_names);
-        let argument_help = if function.arg_help.is_empty() {
-            generated_argument_help.as_slice()
-        } else {
-            function.arg_help
-        };
-        for excel_name in std::iter::once(function.name).chain(function.aliases.iter().copied()) {
-            if registry
-                .add(
-                    function.rust_name,
-                    function.type_str,
-                    excel_name,
-                    function.arg_names,
-                    function.category,
-                    function.help,
-                    argument_help,
-                )
-                .is_err()
-            {
-                return 0;
-            }
-        }
-    }
-    1
+    functions
 }
 
 /// Releases all in-process object handles when Excel unloads the XLL.
 #[cfg(windows)]
 #[no_mangle]
 pub extern "system" fn xlAutoClose() -> i32 {
+    runtime::registration::windows::unregister_functions();
     with_registry_mut(|registry| registry.clear());
     1
 }

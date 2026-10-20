@@ -14,11 +14,21 @@ Excel for macOS and the browser cannot load the XLL.
 - [Market assumptions and product workflows](https://jmelo11.github.io/quantsupport/api/excel/guide/markets-and-products.html)
 - [Risk, scenarios, and historical markets](https://jmelo11.github.io/quantsupport/api/excel/guide/risk-and-history.html)
 - [Exact worksheet reference](https://jmelo11.github.io/quantsupport/api/excel/functions/index.html)
-- [Download quantsupport.xll](https://jmelo11.github.io/quantsupport/downloads/quantsupport.xll)
+- [Download Excel add-in and IntelliSense ZIP](https://jmelo11.github.io/quantsupport/downloads/quantsupport-excel-windows-x64.zip)
+- [Download quantsupport.xll only](https://jmelo11.github.io/quantsupport/downloads/quantsupport.xll)
 
 The guide explains the financial conventions alongside complete worksheet
 calculations. The Book and Python studies provide further examples. Registration metadata supplies
 function names, argument order, aliases, categories, and per-parameter help.
+
+## Install the download
+
+Extract **all files** from the ZIP into one stable local folder. It includes
+`quantsupport.xll`, `quantsupport.intellisense.xml`,
+`ExcelDna.IntelliSense64.xll`, installation instructions and license notices.
+In Excel's **File > Options > Add-ins > Excel Add-ins > Go > Browse** dialog,
+load both XLLs, then restart Excel. Keep the XML beside `quantsupport.xll`.
+The IntelliSense companion requires .NET Framework 4.6.2 or later.
 
 ## Build and load
 
@@ -30,20 +40,69 @@ rustup target add x86_64-pc-windows-msvc
 powershell -ExecutionPolicy Bypass -File bindings/excel/scripts/build.ps1
 ```
 
+The build creates `bindings/excel/dist/quantsupport-excel-windows-x64.zip`,
+including the XLL, generated XML and the pinned Excel-DNA IntelliSense companion.
+Packaging downloads the companion when it is not already cached and checks its
+SHA-256 against `third-party/intellisense.json`.
+
+Use the XLL and workbooks from the same checkout or release. The published
+XLL and online guide may not include development-branch changes. When testing
+branch changes, load the locally built XLL and the workbooks under
+`bindings/excel/examples`.
+
 Load `bindings/excel/dist/quantsupport.xll` through **File > Options > Add-ins >
 Excel Add-ins > Go > Browse**. Follow your organization's trusted-add-in policy.
 Load the add-in before the workbook, or press **Ctrl+Alt+F9** afterwards.
+
+### Parameter hints while typing
+
+Inline function signatures and active-parameter descriptions use
+[Excel-DNA IntelliSense](https://github.com/Excel-DNA/IntelliSense/releases).
+Set it up once in 64-bit Windows Excel:
+
+1. Extract the [Excel ZIP](https://jmelo11.github.io/quantsupport/downloads/quantsupport-excel-windows-x64.zip)
+   or build it with the script above. Keep all three add-in files together.
+   Versioned downloads are also available from
+   [releases](https://github.com/jmelo11/quantsupport/releases).
+2. Load the included `ExcelDna.IntelliSense64.xll` through Excel's Add-ins dialog,
+   alongside `quantsupport.xll`.
+3. Restart Excel with both add-ins enabled, then type `=QS.EVALUATE` followed
+   by an opening parenthesis to see the parameter list and help for the current argument.
+
+The metadata is generated from QuantSupport's function catalog, covering every
+function and alias. If you rename the XLL, give the XML the same base name.
+The companion requires .NET Framework 4.6.2 or later. Its
+[setup documentation](https://github.com/Excel-DNA/IntelliSense/wiki/Usage-Instructions)
+explains the external metadata format.
+
+Excel's Function Arguments dialog also shows parameter names and descriptions:
+type a function name and press **Ctrl+A**, or click **fx**. **Ctrl+Shift+A** inserts
+its argument names into the formula. These built-in shortcuts work without the
+IntelliSense companion.
 
 ```text
 =QS.VERSION()
 =QS.FUNCTIONS()
 =QS.FUNCTIONS.DETAILS()
-=QS.HELP("QS.TRADE.SWAP")
+=QS.HELP("QS.INSTRUMENT.SWAP")
 ```
 
 The [swap workbook](https://jmelo11.github.io/quantsupport/downloads/swap_pricing_example.xlsx) and
 [historical workbook](https://jmelo11.github.io/quantsupport/downloads/historical_pricing_example.xlsx) contain inputs
 and formulas; Windows Excel calculates them after the XLL is loaded.
+Additional studies cover [loans](examples/loan_pricing_example.xlsx),
+[bond analytics](examples/bond_pricing_example.xlsx), and
+[interpolation and schedules](examples/interpolation_example.xlsx).
+Each opens on **Start Here**, with linked, numbered tabs, editable blue inputs,
+explained construction steps and green financial results. The loan and bond
+workbooks have a case selector shared by their cashflow and risk tables.
+See the [example walkthrough](examples/README.md) for the suggested reading order.
+
+Table functions accept trailing `transpose` and `headers` flags, defaulting to
+`FALSE,TRUE`. For example, `=QS.RESULT.CASHFLOWS(result,TRUE,FALSE)` exchanges
+rows and columns and omits headers. `=QS.RESULT.SENSITIVITIES(result,FALSE,FALSE)`
+keeps the usual layout without headers. Lists such as `QS.SCHEDULE` and
+`QS.SIMULATION.PATH` accept only `transpose` because they have no headers.
 
 ## A visible market-to-price chain
 
@@ -62,9 +121,15 @@ C6 =QS.QUOTES.SET(C5,A6,B6,,)
 H3 =QS.CURVE.CONFIGS.CREATE("workbook.usd.curves")
 H4 =QS.CURVE.CONFIGS.ADD(H3,"SOFR","Actual360","LogLinear",FALSE,A3:A6)
 H5 =QS.CONTEXT.CREATE("workbook.usd.context",C6,H4,,,,,,,,,,"USD","SOFR","Mid")
-H6 =QS.TRADE.SWAP("workbook.usd.swap",$B$1,$B$1,"2031-02-24","USD","SOFR",10000000,0.04,0,"Receive","Actual360","Simple","Annual","Semiannual","Quarterly")
-H7 =QS.PRICE(H6,H5)
-H8 =QS.FAIR.RATE(H6,H5)
+H6 =QS.INSTRUMENT.SWAP("workbook.usd.instrument",$B$1,"2031-02-24","USD","SOFR",10000000,0.04,0,"Actual360","Simple","Annual","Semiannual","Quarterly")
+H7 =QS.TRADE.CREATE("workbook.usd.trade",H6,$B$1,"Receive")
+H8 =QS.DISCOUNT.POLICY.CSA("workbook.usd.policy","USD","SOFR")
+H9 =QS.PRICER.CREATE("workbook.usd.pricer","DiscountedCashflowPricer",H8)
+K2 Value
+K3 =QS.REQUEST.FAIR.RATE(1)
+H10 =QS.EVALUATE("workbook.usd.results",H9,H7,H5,K2:K3)
+H11 =QS.RESULT.VALUE(H10)
+H12 =QS.RESULT.FAIR.RATE(H10)
 ```
 
 `QS.CONTEXT.CREATE` takes base currency and base index in positions **13 and
@@ -88,22 +153,31 @@ update chain when the input set changes. Reset applies to supported mutable
 stores/configuration collections, not immutable curves, contexts, or trades.
 Workbooks must preserve formulas and inputs; handles do not serialize objects.
 
-`QS.PRICE` is monetary PV under the selected pricer. Generic swap cashflow
-spills contain signed amounts, positive for receipts and negative for payments,
-and no PV column; apply discounting and any currency conversion before reconciliation.
-Generic discounted-cashflow valuation does not itself filter past payments.
-`QS.FAIR.RATE` should not be described as an arbitrary multi-leg breakeven solver.
+`QS.INSTRUMENT.*` creates native contracts for every exposed product family.
+`QS.TRADE.CREATE` adds position terms; `QS.PRICER.CREATE` selects an actual Rust
+pricer and an explicit native discount policy. `QS.EVALUATE` returns an
+`EvaluationResults` handle, read by `QS.RESULT.*`. Bond pricing anchors belong
+to trades; loan refinancing and fair-rate amortization settings belong to pricers.
+Existing `QS.TRADE.<product>` and direct valuation shortcuts remain compatibility
+helpers; new examples use the separated object workflow. Loans require the
+explicit pricer path.
 
+`QS.RESULT.VALUE` is monetary PV under the pricer's conventions. Swap cashflow
+spills contain signed undiscounted amounts. `FairRate(index)` selects a zero-based
+swap leg or loan rate segment and populates **one scalar `fair_rate` result**.
+Swap target 0 solves the fixed coupon; target 1 solves the floating spread,
+including all legs and principal in total PV. One evaluation accepts one fair-rate
+target; use separate evaluations for several targets. Single-quote products accept
+only target 0. Table outputs accept `transpose` and `headers`.
 Sensitivity values are raw derivatives, not automatically DV01. Scale decimal
 rate derivatives by `0.0001` for an approximate +1 bp move and retain the risk
 factor's actual units. Futures contract size is currency per price point, not
 per basis point. Equity indices use `Equity:SPX`; FX spot rates are quote
-currency per base unit. Product-specific FX carry and discount-policy controls
-are not universally identical across the Excel/Python interfaces.
+currency per base unit. Product-specific FX carry conventions follow the selected native Rust pricer.
 
 Bond anchors are required trade inputs: exact `CleanPrice`, `DirtyPrice`, or
 `ZSpread` plus a value. Clean/dirty quotes use bond quotation units, spreads
-annual decimals, and `QS.BOND.PRICE` returns monetary PV. Although registered,
+annual decimals, and `QS.RESULT.VALUE` returns monetary PV. Although registered,
 `QS.BOND.OAS` currently cannot successfully evaluate a bond from the exposed
 straight-bond constructors.
 
@@ -113,9 +187,26 @@ curve objects. Previous/Mid are selector defaults; missing Bid/Ask does not
 fall back; the selected market reference date remains the valuation date.
 Archive export is subject to Excel's 32767 UTF-16-unit cell limit.
 
+`QS.INSTRUMENT.LOAN` creates fixed or floating contracts with French, bullet,
+or balloon principal. `rate` is the fixed coupon when `market_index` is blank,
+otherwise the floating spread. Optional worksheet ranges use Setting/Value,
+Periods/Rate or spread/Market index, and Date/CPR columns. Enter numeric, text,
+and TRUE/FALSE cells directly; unknown or duplicate settings fail explicitly.
+Create the position with `QS.TRADE.CREATE`, then choose `LoanPricer` and a
+`QS.DISCOUNT.POLICY.FIXED.INCOME` mapping such as EUR/ESTR or EUR/FUNDING.
+Funding is an ordinary curve constructed through the same curve APIs as other
+indices. It is selected by policy, never by a loan contract setting.
+
+A loan's `FairRate(index)` solves earlier segments successively, repaying remaining
+capital at each prefix end and locking its solved coupon/spread before extending.
+The requested segment is returned in `fair_rate`; bounded coupons remain unsupported.
+See the [loan guide](../../docs/excel/guide/loans.rst) and editable workbook for
+credit, coupon schedules, prepayment and pricer settings. Credit configurations
+use `QS.CREDIT.CURVE.CONFIGS.CREATE` and `.ADD` with CDS identifier ranges.
+
 Supported workflows include curves/credit, volatility, model/simulation
 configuration, vanilla rates, straight fixed income, FX/equity, CDS, options,
-scenarios, and interpolation. There is no worksheet loan/callable/scripted
+loans, scenarios, and interpolation. There is no worksheet callable/scripted
 product constructor, custom-pricer registration, or netting/exposure/XVA
 workflow. OIS quote bootstrapping does not expose a standalone OIS trade.
 
@@ -128,7 +219,7 @@ python -m pip install -r bindings/excel/examples/requirements.txt
 python bindings/excel/examples/create_examples.py
 ```
 
-`--example swap` or `--example historical` selects a workbook; `--output-dir`
+`--example swap`, `historical`, `loans`, `bonds`, or `interpolation` selects a workbook; `--output-dir`
 selects its destination. Optional Windows live validation uses `pywin32` and
 `--xll-path bindings/excel/dist/quantsupport.xll`.
 
@@ -146,6 +237,7 @@ callback pointers at the boundary, not in stored objects.
 
 ```sh
 cargo test -p quantsupport-xll --lib --example function_catalog
+python -m unittest discover -s bindings/excel/examples -p 'test_*.py'
 ```
 
 Portable tests cover the registry, historical markets, interpolation and
@@ -153,3 +245,11 @@ source-derived catalog. Windows tests additionally compare registered inventory
 and exercise worksheet boundaries; portable tests do not prove native Excel
 loading. The [Sphinx build guide](../../docs/README.md) requires neither Windows
 nor Excel and preserves exact per-function reference URLs.
+
+The build derives an expected function inventory from the worksheet sources.
+Loading checks that inventory, registers every primary name and alias, and
+requires a numeric Excel registration ID. IDs are opaque values; zero and
+negative IDs are accepted. A rejection rolls back the
+registrations and displays the failed function's name instead of loading a
+partial add-in. Argument-name separators are compacted to fit Excel's 255-character
+registration field; an oversized argument list fails the build.

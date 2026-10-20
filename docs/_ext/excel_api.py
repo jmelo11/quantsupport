@@ -128,14 +128,14 @@ def result_type(record):
 
 def function_page(record):
     name = record["name"]
-    declaration = ", ".join(f"{argument['name']}: {worksheet_type(argument['type'])}"
+    declaration = ", ".join(f"{argument['name']}: {argument_type(argument)}"
                             for argument in record["arguments"])
     lines = [name, "=" * len(name), "", record["help"], "",
              f"Category: **{record['category']}**.", "",
              f".. excel:function:: {name}({declaration}) -> {result_type(record)}", ""]
     for argument in record["arguments"]:
         lines.extend([f"   :param {argument['name']}: {argument['help']}",
-                      f"   :type {argument['name']}: {worksheet_type(argument['type'])}"])
+                      f"   :type {argument['name']}: {argument_type(argument)}"])
     lines.extend([f"   :returns: {record['returns']}", f"   :rtype: {result_type(record)}",
                   f"   :errors: {record['errors']}", ""])
     if record["aliases"]:
@@ -150,6 +150,12 @@ def function_page(record):
                   f"   {record['declaration']}", "",
                   f"`Rust source <https://github.com/jmelo11/quantsupport/blob/main/{record['source']}>`_", ""])
     return "\n".join(lines)
+
+
+def argument_type(argument):
+    if argument["name"] in ("transpose", "headers"):
+        return "logical or blank"
+    return worksheet_type(argument["type"])
 
 
 def generate(app):

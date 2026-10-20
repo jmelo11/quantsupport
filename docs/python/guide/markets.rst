@@ -76,6 +76,52 @@ The bootstrap uses native OIS calibration instruments with compounded
 overnight coupons. Python's standalone ``Swap`` uses regular single-fixing
 coupons; a standalone ``OvernightIndexSwap`` wrapper is currently unavailable.
 
+Direct curve quotes
+-------------------
+
+Discount factors and zero rates can also be supplied directly in ``QuoteStore``.
+Reference their identifiers in ``CurveConfiguration.quotes`` with the default
+construction rule:
+
+.. code-block:: python
+
+   direct_quotes = qs.QuoteStore.from_dict({
+       "reference_date": "2026-02-24",
+       "quotes": [
+           {"identifier": "DiscountFactor_USD_SOFR_1Y", "mid": 0.96},
+           {"identifier": "DiscountFactor_USD_SOFR_2028-02-24", "mid": 0.91},
+       ],
+   })
+   direct_spec = qs.CurveConfiguration(
+       market_index="SOFR", quotes=direct_quotes.identifiers(),
+       day_counter="Actual365", interpolator="LogLinear",
+   )
+   with qs.PricingContext(direct_quotes, [direct_spec]) as context:
+       assert abs(context.curve("SOFR").discount_factor("2027-02-24") - 0.96) < 1e-12
+
+Use ``DiscountFactor_CCY_Index_Pillar`` for dimensionless factors, or
+``ZeroRate_CCY_Index_Pillar[_Compounding[_Frequency]]`` for annual decimal
+zero rates. ``Pillar`` is a tenor such as ``1Y`` or an ISO date. Zero rates
+default to ``Continuous`` compounding and ``Annual`` frequency; for example,
+``ZeroRate_USD_SOFR_1Y_Compounded_Semiannual`` quotes a semiannually compounded
+annual rate. The enclosing configuration supplies the day counter,
+interpolator, and extrapolation setting. Interpolation applies to factors for
+discount-factor quotes and to rates for zero-rate quotes.
+
+Direct pillars are sorted by date. Each curve uses one direct quote family,
+currency, and rate convention, with identifiers matching its market index.
+Do not mix direct observations with calibration instruments in one curve.
+Dates must be distinct and on or after the reference date. Discount factors
+must be finite and positive; the reference-date factor is fixed at one and
+is inserted automatically. A supplied reference-date factor must equal one,
+and a discount curve needs at least one future pillar.
+
+Direct quotes use the selected Mid/Bid/Ask level and retain their original
+identifiers for scenarios and sensitivities. They can be components of
+composite curves or dependencies of calibrated curves. Zero rates supplied
+through ``CurveConstruction.zero_rate`` remain a separate way to define
+explicit inputs without quote sides.
+
 Explicit and composite construction
 -----------------------------------
 

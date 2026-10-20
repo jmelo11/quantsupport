@@ -172,9 +172,13 @@ fees. Payment frequency, reset frequency, fixing lag, and observation tenor are
 independent contractual inputs. ``coupon_fixing_requests()`` identifies required
 historical observations, not a promise that missing fixings will be projected.
 
-``FairRate`` solves a fixed coupon or floating spread at or before
-origination. The current search interval is [-5%, 50%]; mixed, stepped, or
-bounded coupon schedules are not a general supported fair-rate problem.
+``Request.FairRate(index)`` selects a zero-based contiguous loan coupon/spread
+segment and returns its scalar in ``fair_rate``. It solves earlier segments
+first, shortening the loan and repaying remaining capital at each segment end;
+solved rates stay fixed when extending to the requested segment. Mixed and
+stepped schedules follow this same rule. The original contract is unchanged.
+Each evaluation accepts one target; invalid indices and bounded coupons fail.
+The search interval for each segment is [-5%, 50%].
 ``rebuild_amortization_for_fair_rate=False`` preserves principal during trial rates; True reconstructs trial
 amortization without changing the original contract. Choose the setting that
 matches whether the proposed new coupon should also change contractual

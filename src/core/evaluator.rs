@@ -37,6 +37,7 @@ impl Evaluator {
         requests: &[Request],
         context: &dyn MarketDataProvider,
     ) -> Result<EvaluationResults> {
+        Request::validate(requests)?;
         let trade_type_id = trade.type_id();
         self.pricers.get(&trade_type_id).map_or_else(
             || {

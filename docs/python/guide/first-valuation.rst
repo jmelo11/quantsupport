@@ -78,7 +78,7 @@ zero-rate curve. Two equal rate pillars specify that curve explicitly.
 
    with context:
        result = context.evaluate(trade, [
-           qs.Request.Value, qs.Request.FairRate,
+           qs.Request.Value, qs.Request.FairRate(0),
            qs.Request.Cashflows, qs.Request.Sensitivities,
        ])
        discount = context.curve("SOFR").discount_factor(reference + "5Y")
@@ -104,10 +104,11 @@ For a single-currency fixed-versus-floating swap the economic decomposition is
 
 The familiar par coupon :math:`K^*=PV_{\mathrm{float}}/A`, where
 :math:`A=N\sum_i\alpha_iD(t,T_i)`, is a vanilla-swap relationship.
-The current generic ``FairRate`` implementation uses the first forward curve,
-fixed coupon annuity, and floating amounts, and ignores principal flows.
-Do not treat it as a general multi-leg breakeven solver for basis or
-cross-currency positions.
+``Request.FairRate(0)`` solves the first leg's fixed coupon.
+``Request.FairRate(1)`` solves the second leg's floating spread. Each request
+uses the whole trade PV, including principal exchanges and each leg's native
+curves, discount policy and direction; only the selected leg's quote changes.
+Invalid indices fail explicitly. Each evaluation returns one scalar fair rate.
 
 Interpreting results
 --------------------

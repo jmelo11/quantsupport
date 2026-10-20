@@ -3,7 +3,7 @@ use std::{fmt::Display, str::FromStr};
 use crate::runtime::registry::with_registry;
 use quantsupport::prelude::{
     CapFloorType, CapletFloorletType, Compounding, Currency, Date, DayCounter, EuroOptionType,
-    Frequency, FxPair, Interpolator, MarketIndex, Side,
+    Frequency, Interpolator, MarketIndex, Side,
 };
 use serde::{de::DeserializeOwned, Serialize};
 use xll_rs::convert::build_multi;
@@ -29,31 +29,7 @@ pub fn parse_currency(value: &str) -> Result<Currency, XllError> {
 }
 
 pub fn parse_index(value: &str) -> Result<MarketIndex, XllError> {
-    let value = value.trim();
-    if let Some(name) = value.strip_prefix("Equity:") {
-        return Ok(MarketIndex::Equity(name.to_string()));
-    }
-    if let Some(name) = value.strip_prefix("Credit:") {
-        return Ok(MarketIndex::Credit(name.to_string()));
-    }
-    if let Some(pair) = value.strip_prefix("FX:") {
-        let (base, quote) = pair
-            .split_once('/')
-            .ok_or_else(|| value_error(format!("invalid FX market index '{value}'")))?;
-        return FxPair::new(parse_currency(base)?, parse_currency(quote)?)
-            .map(MarketIndex::FxPair)
-            .map_err(value_error);
-    }
-    if let Some(pair) = value.strip_prefix("Collateral:") {
-        let (currency, collateral) = pair
-            .split_once('/')
-            .ok_or_else(|| value_error(format!("invalid collateral market index '{value}'")))?;
-        return Ok(MarketIndex::Collateral(
-            parse_currency(currency)?,
-            parse_currency(collateral)?,
-        ));
-    }
-    Ok(MarketIndex::from_str(value).unwrap_or_else(|never| match never {}))
+    crate::runtime::inputs::market_index(value).map_err(value_error)
 }
 
 pub fn parse_day_counter(value: &str) -> Result<DayCounter, XllError> {
@@ -128,13 +104,13 @@ pub fn parse_caplet_floorlet_type(value: &str) -> Result<CapletFloorletType, Xll
     }
 }
 
-pub fn string_column(values: Vec<String>) -> *mut XLOPER12 {
+pub fn string_column(values: Vec<String>, transpose: Option<bool>) -> *mut XLOPER12 {
     let rows = values.len();
     let cells = values
         .iter()
         .map(|value| XLOPER12::from_str(value))
         .collect();
-    build_multi(cells, rows, 1)
+    spill(cells, rows, 1, transpose, None)
 }
 
 pub fn string_values(value: *const XLOPER12, argument_name: &str) -> Result<Vec<String>, XllError> {
@@ -251,6 +227,54 @@ pub fn numeric_values(value: *const XLOPER12, argument_name: &str) -> Result<Vec
         .collect()
 }
 
+/// Reads a rectangular worksheet range without discarding blank cells or types.
+pub fn worksheet_table(
+    value: *const XLOPER12,
+    name: &str,
+) -> Result<crate::runtime::inputs::Table, XllError> {
+    use crate::runtime::inputs::Cell;
+    if value.is_null() {
+        return Err(value_error(format!("{name} cannot be null")));
+    }
+    let cell = |value: &XLOPER12| -> Result<Cell, XllError> {
+        match value.base_type() {
+            XLTYPE_NIL | XLTYPE_MISSING => Ok(Cell::Blank),
+            XLTYPE_STR => value
+                .as_string()
+                .map(Cell::Text)
+                .ok_or_else(|| value_error(format!("{name} contains invalid text"))),
+            XLTYPE_BOOL => Ok(Cell::Boolean(unsafe { value.val.xbool } != 0)),
+            XLTYPE_INT => Ok(Cell::Number(f64::from(unsafe { value.val.w }))),
+            XLTYPE_NUM if unsafe { value.val.num }.is_finite() => {
+                Ok(Cell::Number(unsafe { value.val.num }))
+            }
+            _ => Err(value_error(format!(
+                "{name} contains an error or unsupported cell value"
+            ))),
+        }
+    };
+    let value = unsafe { &*value };
+    if value.base_type() != XLTYPE_MULTI {
+        return Ok(vec![vec![cell(value)?]]);
+    }
+    let array = unsafe { &*std::ptr::addr_of!(value.val.array) };
+    if array.rows <= 0 || array.columns <= 0 || array.lparray.is_null() {
+        return Err(value_error(format!("{name} has invalid range dimensions")));
+    }
+    let columns = array.columns as usize;
+    let total = (array.rows as usize)
+        .checked_mul(columns)
+        .ok_or_else(|| value_error(format!("{name} is too large")))?;
+    (0..total)
+        .step_by(columns)
+        .map(|start| {
+            (start..start + columns)
+                .map(|index| cell(unsafe { &*array.lparray.add(index) }))
+                .collect()
+        })
+        .collect()
+}
+
 pub fn bool_value(value: *const XLOPER12, argument_name: &str) -> Result<bool, XllError> {
     if value.is_null() {
         return Err(value_error(format!("{argument_name} cannot be null")));
@@ -266,7 +290,11 @@ pub fn bool_value(value: *const XLOPER12, argument_name: &str) -> Result<bool, X
     }
 }
 
-pub fn string_matrix(values: Vec<Vec<String>>) -> *mut XLOPER12 {
+pub fn string_matrix(
+    values: Vec<Vec<String>>,
+    transpose: Option<bool>,
+    headers: Option<bool>,
+) -> *mut XLOPER12 {
     let rows = values.len();
     let columns = values.iter().map(Vec::len).max().unwrap_or(0);
     let cells = values
@@ -277,7 +305,7 @@ pub fn string_matrix(values: Vec<Vec<String>>) -> *mut XLOPER12 {
         })
         .map(|value| XLOPER12::from_str(&value))
         .collect();
-    build_multi(cells, rows, columns)
+    spill(cells, rows, columns, transpose, headers)
 }
 
 pub fn parse_json<T: DeserializeOwned>(json: &str, what: &str) -> Result<T, XllError> {
@@ -309,4 +337,106 @@ pub fn parse_json_list<T: DeserializeOwned>(json: &str, what: &str) -> Result<Ve
 
 pub fn cached_handle(name: &str, kind: &str, key: &str) -> Result<Option<String>, XllError> {
     with_registry(|registry| registry.handle_if_unchanged(name, kind, key)).map_err(value_error)
+}
+
+/// Builds a typed spill, optionally transposing rows and columns together.
+pub fn spill(
+    cells: Vec<XLOPER12>,
+    rows: usize,
+    columns: usize,
+    transpose: Option<bool>,
+    headers: Option<bool>,
+) -> *mut XLOPER12 {
+    // XLOPER12 has no Drop implementation; excluded header strings need explicit cleanup.
+    let (cells, rows, columns) = crate::runtime::output::prepare(
+        cells,
+        rows,
+        columns,
+        transpose.unwrap_or(false),
+        headers.unwrap_or(true),
+        |cell| xll_rs::memory::xlAutoFree12(Box::into_raw(Box::new(cell))),
+    );
+    if cells.is_empty() {
+        return xll_rs::returning::XlReturn::nil().into_raw();
+    }
+    // xll-rs reconstructs the array with capacity equal to its length when freeing it.
+    let cells = cells.into_boxed_slice().into_vec();
+    build_multi(cells, rows, columns)
+}
+
+pub fn optional_bool(value: *const XLOPER12, name: &str) -> Result<Option<bool>, XllError> {
+    if value.is_null() {
+        return Err(value_error(format!("{name} cannot be null")));
+    }
+    if matches!(unsafe { &*value }.base_type(), XLTYPE_NIL | XLTYPE_MISSING) {
+        return Ok(None);
+    }
+    bool_value(value, name).map(Some)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn table_flags_preserve_types_and_remove_headers_before_transposing() {
+        for (transpose, headers, expected_rows, expected_columns) in [
+            (false, true, 3, 2),
+            (true, true, 2, 3),
+            (false, false, 2, 2),
+            (true, false, 2, 2),
+        ] {
+            let cells = vec![
+                XLOPER12::from_str("Date"),
+                XLOPER12::from_str("Amount"),
+                XLOPER12::from_str("2026-01-01"),
+                XLOPER12::from_f64(12.0),
+                XLOPER12::from_str("2026-02-01"),
+                XLOPER12::nil(),
+            ];
+            let result = spill(cells, 3, 2, Some(transpose), Some(headers));
+            let array = unsafe { &*std::ptr::addr_of!((*result).val.array) };
+            assert_eq!(
+                (array.rows, array.columns),
+                (expected_rows, expected_columns)
+            );
+            let first = unsafe { &*array.lparray };
+            assert_eq!(
+                first.as_string().as_deref(),
+                Some(if headers { "Date" } else { "2026-01-01" })
+            );
+            let cells = unsafe {
+                std::slice::from_raw_parts(array.lparray, (array.rows * array.columns) as usize)
+            };
+            assert_eq!(
+                cells
+                    .iter()
+                    .filter(|cell| cell.base_type() == XLTYPE_NUM)
+                    .count(),
+                1
+            );
+            assert_eq!(
+                cells
+                    .iter()
+                    .filter(|cell| cell.base_type() == XLTYPE_NIL)
+                    .count(),
+                1
+            );
+            xll_rs::memory::xlAutoFree12(result);
+        }
+        let result = spill(vec![XLOPER12::from_str("Header")], 1, 1, None, Some(false));
+        assert_eq!(unsafe { &*result }.base_type(), XLTYPE_NIL);
+        xll_rs::memory::xlAutoFree12(result);
+        assert_eq!(
+            optional_bool(&XLOPER12::missing(), "transpose").unwrap(),
+            None
+        );
+        assert_eq!(
+            optional_bool(&XLOPER12::from_bool(true), "transpose").unwrap(),
+            Some(true)
+        );
+        let invalid = XLOPER12::from_str("sideways");
+        assert!(optional_bool(&invalid, "transpose").is_err());
+        xll_rs::memory::xlAutoFree12(Box::into_raw(Box::new(invalid)));
+    }
 }

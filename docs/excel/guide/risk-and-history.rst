@@ -14,8 +14,7 @@ references when moving them to dedicated sheets.
 From raw derivatives to a risk report
 ----------------------------------------
 
-:excel:func:`QS.SENSITIVITIES` and
-:excel:func:`QS.BOND.SENSITIVITIES` spill Risk factor and Sensitivity columns.
+:excel:func:`QS.RESULT.SENSITIVITIES` spills Risk factor and Sensitivity columns.
 The values are raw derivatives in the pricer's valuation units per unit
 risk-factor change. A decimal interest-rate derivative becomes an approximate
 +1 bp currency change after multiplication by ``0.0001``. A futures quote
@@ -32,33 +31,30 @@ objects; the worksheet interface does not expose the latter.
 A scenario is a new constructed market
 --------------------------------------
 
-Put this complete scenario array in ``BB1``:
-
-.. code-block:: json
-
-   [{
-     "shocks": [{
-       "target": "SOFR",
-       "value": 0.0001,
-       "type": "Absolute"
-     }]
-   }]
-
-Load and price the stressed context:
+Construct the stressed market from visible bumped quotes. Put 0.0001 in
+``BB1``, retaining the original quote identifiers in ``A4:A7`` and rates in
+``B4:B7``. Each update below adds one basis point to a decimal-rate quote:
 
 .. code-block:: text
    :name: guide-excel-scenario
 
-   BB2 =QS.SCENARIOS.FROM.JSON("guide.up1bp",BB1)
-   BB3 =QS.CONTEXT.CREATE("guide.stressed.context",C7,H4,,,,,,,,,BB2,"USD","SOFR","Mid")
-   BB4 =QS.PRICE(H6,BB3)
+   BB2 =QS.QUOTES.CREATE("guide.stressed.quotes",$B$1)
+   BC4 =QS.QUOTES.SET(BB2,A4,B4+$BB$1,,)
+   BC5 =QS.QUOTES.SET(BC4,A5,B5+$BB$1,,)
+   BC6 =QS.QUOTES.SET(BC5,A6,B6+$BB$1,,)
+   BC7 =QS.QUOTES.SET(BC6,A7,B7+$BB$1,,)
+   BB3 =QS.CONTEXT.CREATE("guide.stressed.context",BC7,H4,,,,,,,,,,"USD","SOFR","Mid")
+   BB5 =QS.EVALUATE("guide.stressed.results",L4,H6,BB3,"Value")
+   BB4 =QS.RESULT.VALUE(BB5)
 
-The scenario occupies argument 12. An Absolute shock adds in the input's
-units; Relative multiplies by ``1 + value``. The selector ``SOFR``
-changes matching market quotes and explicit pillars; reconstruction then
-determines the effect on projected payments and value. Excel materializes the
-scenario in a separate context snapshot, unlike Python's scoped borrowed
-market views.
+This workflow requires only ordinary numeric cells. The same instrument, trade,
+pricer and explicit policy are reused against another constructed market.
+Native scenario imports remain available for interoperability; when supplied,
+their context position is argument 12. An Absolute shock adds in the input's
+units; Relative multiplies by ``1 + value``. A selector such as ``SOFR``
+changes matching market quotes and explicit pillars; reconstruction determines
+the effect on projected payments and value. Excel materializes an imported
+scenario in a separate context snapshot, unlike Python's scoped borrowed views.
 
 Shock targets are case-sensitive underscore-token selectors, not a guaranteed
 exact-match mode. After checking identifier equality, matching ignores token
@@ -120,7 +116,8 @@ For a minimal example using the base market, place the first formula in ``BD2``:
    BD7 =QS.CONTEXT.FROM.SNAPSHOT("guide.historical.context",BD4,BD5,)
    BD8 =QS.CONTEXT.EVALUATION.DATE(BD7)
    BD9 =QS.CONTEXT.SNAPSHOT.TIMESTAMP(BD7)
-   BD10 =QS.PRICE(H6,BD7)
+   BD11 =QS.EVALUATE("guide.historical.results",L4,H6,BD7,"Value")
+   BD10 =QS.RESULT.VALUE(BD11)
 
 The requested timestamp is February 25, but ``BD8`` remains the selected
 market's February 24 reference date. ``BD9`` reports the actual matched

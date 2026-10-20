@@ -112,7 +112,9 @@ config_wrapper!(
     /// market_index : MarketIndex or str
     ///     Identity used to request the curve for projection or discounting.
     /// quotes : sequence of str, optional
-    ///     Calibration quote identifiers. Used with bootstrapped construction.
+    ///     Calibration instruments, DiscountFactor_CCY_Index_Pillar, or
+    ///     ZeroRate_CCY_Index_Pillar[_Compounding[_Frequency]] identifiers.
+    ///     Direct curves use one quote family; pillars are tenors or ISO dates.
     /// construction : CurveConstruction, optional
     ///     Bootstrapped, explicit zero-rate, or composite construction rule.
     ///     Defaults to bootstrapped construction.
@@ -140,7 +142,8 @@ pub struct CurveConstruction {
 
 #[pymethods]
 impl CurveConstruction {
-    /// Calibrate the curve to the quote identifiers in CurveConfiguration.quotes.
+    /// Construct from CurveConfiguration.quotes: calibrate instrument quotes
+    /// or interpolate direct discount-factor or zero-rate observations.
     #[staticmethod]
     fn bootstrapped() -> Self {
         Self {

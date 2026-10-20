@@ -18,6 +18,7 @@ result schemas, aliases and error codes.
 
    workbook
    markets-and-products
+   loans
    risk-and-history
 
 The XLL requires Windows desktop Excel. For related numerical studies, see the

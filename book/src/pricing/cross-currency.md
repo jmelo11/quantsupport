@@ -32,7 +32,7 @@ PV_{\rm USD}=C_{\rm CLP}\\,S_{\rm CLP\to USD}
 
 The pricer's actual currency rule must be checked for each product; this is not
 a universal context-level reporting conversion. Generic DCF payment filtering
-and `FairRate` limitations described in [Swaps](swaps.md) still apply.
+and zero-based `FairRate(index)` leg selection described in [Swaps](swaps.md) apply.
 
 Risk follows the construction graph. USD projection/discounting reaches SOFR
 quotes; CLP coupon projection reaches ICP; collateral discounting reaches

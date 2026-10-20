@@ -50,13 +50,16 @@ pub fn qs_schedule(
     start_date: &str,
     end_date: &str,
     frequency: &str,
+    transpose: *const xll_rs::types::XLOPER12,
 ) -> Result<*mut xll_rs::types::XLOPER12, XllError> {
+    let transpose = crate::functions::helpers::optional_bool(transpose, "transpose")?;
     let schedule = MakeSchedule::new(parse_date(start_date)?, parse_date(end_date)?)
         .with_frequency(parse_frequency(frequency)?)
         .build()
         .map_err(value_error)?;
     Ok(crate::functions::helpers::string_column(
         schedule.dates().iter().map(ToString::to_string).collect(),
+        transpose,
     ))
 }
 
@@ -163,7 +166,9 @@ pub fn qs_calendar_holidays(
     to: &str,
     calendar: &str,
     include_weekends: *const xll_rs::types::XLOPER12,
+    transpose: *const xll_rs::types::XLOPER12,
 ) -> Result<*mut xll_rs::types::XLOPER12, XllError> {
+    let transpose = crate::functions::helpers::optional_bool(transpose, "transpose")?;
     Ok(crate::functions::helpers::string_column(
         calendar_operations::holidays(
             from,
@@ -172,6 +177,7 @@ pub fn qs_calendar_holidays(
             optional_calendar_flag(include_weekends, "include_weekends")?,
         )
         .map_err(calendar_value_error)?,
+        transpose,
     ))
 }
 
@@ -186,9 +192,12 @@ pub fn qs_calendar_business_days(
     from: &str,
     to: &str,
     calendar: &str,
+    transpose: *const xll_rs::types::XLOPER12,
 ) -> Result<*mut xll_rs::types::XLOPER12, XllError> {
+    let transpose = crate::functions::helpers::optional_bool(transpose, "transpose")?;
     Ok(crate::functions::helpers::string_column(
         calendar_operations::business_days(from, to, calendar).map_err(calendar_value_error)?,
+        transpose,
     ))
 }
 
@@ -205,7 +214,9 @@ pub fn qs_schedule_adjusted(
     frequency: &str,
     calendar: &str,
     convention: &str,
+    transpose: *const xll_rs::types::XLOPER12,
 ) -> Result<*mut xll_rs::types::XLOPER12, XllError> {
+    let transpose = crate::functions::helpers::optional_bool(transpose, "transpose")?;
     use quantsupport::prelude::{BusinessDayConvention, Calendar};
     let calendar = Calendar::try_from(calendar.to_string()).map_err(value_error)?;
     let convention =
@@ -218,6 +229,7 @@ pub fn qs_schedule_adjusted(
         .map_err(value_error)?;
     Ok(crate::functions::helpers::string_column(
         schedule.dates().iter().map(ToString::to_string).collect(),
+        transpose,
     ))
 }
 
@@ -560,9 +572,16 @@ mod tests {
                 &XLOPER12::nil(),
             )
             .unwrap_err(),
-            qs_calendar_holidays("2024-04-02", "2024-03-28", "TARGET", &XLOPER12::nil())
+            qs_calendar_holidays(
+                "2024-04-02",
+                "2024-03-28",
+                "TARGET",
+                &XLOPER12::nil(),
+                &XLOPER12::missing(),
+            )
+            .unwrap_err(),
+            qs_calendar_business_days("2024-04-02", "2024-03-28", "TARGET", &XLOPER12::missing())
                 .unwrap_err(),
-            qs_calendar_business_days("2024-04-02", "2024-03-28", "TARGET").unwrap_err(),
             optional_calendar_flag(std::ptr::null(), "flag").unwrap_err(),
             optional_calendar_flag(&XLOPER12::from_err(XLERR_VALUE), "flag").unwrap_err(),
         ] {

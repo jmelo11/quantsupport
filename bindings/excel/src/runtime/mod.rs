@@ -2,11 +2,25 @@
 
 #[cfg_attr(not(windows), allow(dead_code))]
 pub mod registry;
-#[cfg_attr(not(windows), allow(dead_code))]
-pub mod table;
 
 #[cfg_attr(not(windows), allow(dead_code))]
 pub mod historical;
 
 #[cfg_attr(not(windows), allow(dead_code))]
 pub mod interpolation;
+
+#[cfg_attr(not(windows), allow(dead_code))]
+pub mod inputs;
+
+#[cfg_attr(not(windows), allow(dead_code))]
+pub mod loan_inputs;
+#[cfg_attr(not(windows), allow(dead_code))]
+pub mod loans;
+#[cfg_attr(not(windows), allow(dead_code))]
+pub mod output;
+#[cfg_attr(not(windows), allow(dead_code))]
+pub mod pricing;
+#[cfg_attr(not(windows), allow(dead_code))]
+pub mod products;
+#[cfg_attr(not(windows), allow(dead_code))]
+pub mod registration;

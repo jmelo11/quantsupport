@@ -43,9 +43,28 @@ New-Item -ItemType Directory -Path $dist -Force | Out-Null
 $destination = Join-Path $dist "quantsupport.xll"
 Copy-Item -LiteralPath $source -Destination $destination -Force
 
+$intelliSense = Join-Path $dist "quantsupport.intellisense.xml"
+$metadataArguments = @(
+    "run",
+    "--manifest-path", (Join-Path $excelRoot "Cargo.toml"),
+    "--package", "quantsupport-xll",
+    "--target", $targetTriple,
+    "--example", "function_catalog"
+)
+if ($Profile -eq "release") {
+    $metadataArguments += "--release"
+}
+$metadataArguments += @("--", "--intellisense", $intelliSense)
+& cargo @metadataArguments
+if ($LASTEXITCODE -ne 0) {
+    throw "IntelliSense metadata generation failed with exit code $LASTEXITCODE"
+}
+
 $pdb = [IO.Path]::ChangeExtension($source, ".pdb")
 if (Test-Path -LiteralPath $pdb) {
     Copy-Item -LiteralPath $pdb -Destination (Join-Path $dist "quantsupport.pdb") -Force
 }
 
 Write-Host "Packaged QuantSupport XLL: $destination"
+Write-Host "Packaged parameter hints: $intelliSense"
+& (Join-Path $PSScriptRoot "package.ps1") -Dist $dist
