@@ -109,5 +109,7 @@ jobs:
       - uses: actions/upload-artifact@v6
         with:
           name: excel-windows-x64
-          path: bindings/excel/dist/quantsupport.xll
+          path: |
+            bindings/excel/dist/quantsupport.xll
+            bindings/excel/dist/quantsupport.intellisense.xml
           if-no-files-found: error

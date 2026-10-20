@@ -39,6 +39,32 @@ Load `bindings/excel/dist/quantsupport.xll` through **File > Options > Add-ins >
 Excel Add-ins > Go > Browse**. Follow your organization's trusted-add-in policy.
 Load the add-in before the workbook, or press **Ctrl+Alt+F9** afterwards.
 
+### Parameter hints while typing
+
+Inline function signatures and active-parameter descriptions use
+[Excel-DNA IntelliSense](https://github.com/Excel-DNA/IntelliSense/releases).
+Set it up once in 64-bit Windows Excel:
+
+1. Build QuantSupport with the script above. Keep the generated
+   `quantsupport.xll` and `quantsupport.intellisense.xml` together in the same folder.
+   For release downloads, take both files from the same
+   [release](https://github.com/jmelo11/quantsupport/releases).
+2. Download `ExcelDna.IntelliSense64.xll` from the linked Excel-DNA release and
+   load it through Excel's Add-ins dialog, alongside `quantsupport.xll`.
+3. Restart Excel with both add-ins enabled, then type `=QS.EVALUATE` followed
+   by an opening parenthesis to see the parameter list and help for the current argument.
+
+The metadata is generated from QuantSupport's function catalog, covering every
+function and alias. If you rename the XLL, give the XML the same base name.
+The companion requires .NET Framework 4.6.2 or later. Its
+[setup documentation](https://github.com/Excel-DNA/IntelliSense/wiki/Usage-Instructions)
+explains the external metadata format.
+
+Excel's Function Arguments dialog also shows parameter names and descriptions:
+type a function name and press **Ctrl+A**, or click **fx**. **Ctrl+Shift+A** inserts
+its argument names into the formula. These built-in shortcuts work without the
+IntelliSense companion.
+
 ```text
 =QS.VERSION()
 =QS.FUNCTIONS()

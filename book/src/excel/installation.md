@@ -23,6 +23,17 @@ same help appears in Excel's Function Arguments dialog and the optional
 [worksheet
 reference](https://jmelo11.github.io/quantsupport/api/excel/functions/index.html).
 
+For parameter hints **while typing**, load
+[ExcelDna.IntelliSense64.xll](https://github.com/Excel-DNA/IntelliSense/releases)
+alongside QuantSupport and keep the matching `quantsupport.intellisense.xml`
+beside `quantsupport.xll`. The build below generates both QuantSupport files;
+release downloads must come from the same release. Restart Excel with both
+add-ins enabled, then type `=QS.EVALUATE` followed by an opening parenthesis to see its signature and active-argument
+help. The companion requires .NET Framework 4.6.2 or later.
+
+Without the companion, type the function name and press **Ctrl+A** for the
+Function Arguments dialog, or **Ctrl+Shift+A** to insert its argument names.
+
 Function names and aliases are public. Registry objects, raw pointers, and Rust
 helper functions are internal. Scalar date functions can run on calculation
 threads; registry and pricing functions run on Excel's main thread.
@@ -37,4 +48,5 @@ rustup target add x86_64-pc-windows-msvc
 powershell -ExecutionPolicy Bypass -File bindings/excel/scripts/build.ps1
 ```
 
-The packaged add-in is `bindings/excel/dist/quantsupport.xll`.
+The build packages `bindings/excel/dist/quantsupport.xll` and its matching
+`quantsupport.intellisense.xml`. Keep them together if moving the add-in.

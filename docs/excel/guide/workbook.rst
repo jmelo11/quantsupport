@@ -33,7 +33,8 @@ To compile from the checkout, use a Windows PowerShell prompt with the
    rustup target add x86_64-pc-windows-msvc
    powershell -ExecutionPolicy Bypass -File bindings/excel/scripts/build.ps1
 
-The build writes ``bindings/excel/dist/quantsupport.xll``. The portable Sphinx
+The build writes ``bindings/excel/dist/quantsupport.xll`` and the matching
+``quantsupport.intellisense.xml``. Keep both files together. The portable Sphinx
 build and metadata tests do not load Excel; actual worksheet execution requires
 Windows Excel.
 
@@ -47,9 +48,33 @@ Check the loaded version and discover functions:
    =QS.HELP("QS.INSTRUMENT.SWAP")
 
 The catalog includes aliases; ``QS.HELP`` accepts aliases case-insensitively.
-Function Arguments provides parameter hints. Formula examples below use commas
-as separators and decimal points; adapt separators to your Excel locale without
-changing financial units.
+The Function Arguments dialog shows parameter names and descriptions: type a
+function name and press **Ctrl+A**, or click **fx**. **Ctrl+Shift+A** inserts its
+argument names into the formula.
+
+Parameter hints while typing
+----------------------------
+
+Inline signatures and active-parameter help use the optional
+`Excel-DNA IntelliSense companion <https://github.com/Excel-DNA/IntelliSense/releases>`_.
+Download ``ExcelDna.IntelliSense64.xll`` and load it through the same Add-ins
+dialog as QuantSupport. It requires .NET Framework 4.6.2 or later. Keep the
+generated ``quantsupport.intellisense.xml`` beside ``quantsupport.xll``, restart
+Excel with both add-ins enabled, then type ``=QS.EVALUATE`` followed by an opening parenthesis. The popup shows
+the signature and highlights the argument being entered.
+
+The build generates descriptions for every registered function and alias from
+the same catalog used by Function Arguments and ``QS.HELP``. Download the XLL
+and its matching XML from the same
+`release <https://github.com/jmelo11/quantsupport/releases>`_ or build both from
+one checkout. Renaming the XLL also requires renaming the XML's base name.
+The companion's
+`usage guide <https://github.com/Excel-DNA/IntelliSense/wiki/Usage-Instructions>`_
+documents this integration. Function Arguments and its shortcuts work without
+the companion.
+
+Formula examples below use commas as separators and decimal points; adapt
+separators to your Excel locale without changing financial units.
 
 A complete curve-to-swap chain
 ----------------------------------
