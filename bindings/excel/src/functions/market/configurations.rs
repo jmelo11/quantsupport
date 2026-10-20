@@ -6,7 +6,8 @@ use crate::functions::helpers::{
 use crate::runtime::registry::{with_registry_mut, QsObject};
 use quantsupport::prelude::{
     CreditCurveConfiguration, CurveConfiguration, CurveConstruction, CurvePillar, DayCounter,
-    Interpolator, Period, VolatilityCubeConfiguration, VolatilitySurfaceConfiguration,
+    Frequency, Interpolator, MarketIndex, Period, VolatilityCubeConfiguration,
+    VolatilitySurfaceConfiguration,
 };
 use xll_rs::types::{XllError, XLOPER12};
 use xllgen::xll_bindgen;
@@ -207,6 +208,91 @@ pub fn qs_curve_configs_add_composite(
         spread_index: parse_index(spread_index)?,
     });
     add_configuration(configurations, configuration)
+}
+
+#[xll_bindgen(
+    name = "QS.CREDIT.CURVE.CONFIGS.CREATE",
+    volatile,
+    category = "QuantSupport - Market",
+    help = "Creates an empty credit-curve configuration collection for worksheet quote-range builders"
+)]
+pub fn qs_credit_curve_configs_create(name: &str) -> Result<String, XllError> {
+    with_registry_mut(|registry| {
+        registry.upsert_if_changed(
+            name,
+            QsObject::CreditCurveConfigurations(Vec::new()),
+            "empty",
+        )
+    })
+    .map_err(value_error)
+}
+
+#[xll_bindgen(
+    name = "QS.CREDIT.CURVE.CONFIGS.ADD",
+    category = "QuantSupport - Market",
+    help = "Adds a borrower credit curve using worksheet arguments and a range of CDS quote identifiers"
+)]
+#[allow(clippy::too_many_arguments)]
+pub fn qs_credit_curve_configs_add(
+    configurations: &str,
+    market_index: &str,
+    currency: &str,
+    discount_index: &str,
+    recovery: f64,
+    quotes: *const XLOPER12,
+    day_counter: Option<String>,
+    premium_frequency: Option<String>,
+) -> Result<String, XllError> {
+    let index = parse_index(market_index)?;
+    if !matches!(index, MarketIndex::Credit(_)) {
+        return Err(value_error("market_index must be Credit:entity"));
+    }
+    if !recovery.is_finite() || !(0.0..=1.0).contains(&recovery) {
+        return Err(value_error("recovery must be in [0, 1]"));
+    }
+    let configuration = CreditCurveConfiguration::new(
+        index,
+        crate::functions::helpers::parse_currency(currency)?,
+        parse_index(discount_index)?,
+        recovery,
+        string_values(quotes, "quotes")?,
+    )
+    .with_day_counter(
+        day_counter
+            .as_deref()
+            .filter(|value| !value.trim().is_empty())
+            .map(parse_day_counter)
+            .transpose()?
+            .unwrap_or(DayCounter::Actual360),
+    )
+    .with_premium_frequency(
+        premium_frequency
+            .as_deref()
+            .filter(|value| !value.trim().is_empty())
+            .map(parse_frequency)
+            .transpose()?
+            .unwrap_or(Frequency::Quarterly),
+    );
+    let operation = format!("credit:{}", configuration.market_index());
+    let key = input_key(&configuration)?;
+    with_registry_mut(|registry| {
+        registry.update_credit_curve_configurations_if_changed(
+            configurations,
+            &operation,
+            &key,
+            |values| {
+                if let Some(position) = values
+                    .iter()
+                    .position(|value| value.market_index() == configuration.market_index())
+                {
+                    values[position] = configuration;
+                } else {
+                    values.push(configuration);
+                }
+            },
+        )
+    })
+    .map_err(value_error)
 }
 
 macro_rules! json_config_function {

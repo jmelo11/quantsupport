@@ -43,7 +43,7 @@ Load the add-in before the workbook, or press **Ctrl+Alt+F9** afterwards.
 =QS.VERSION()
 =QS.FUNCTIONS()
 =QS.FUNCTIONS.DETAILS()
-=QS.HELP("QS.TRADE.SWAP")
+=QS.HELP("QS.INSTRUMENT.SWAP")
 ```
 
 The [swap workbook](https://jmelo11.github.io/quantsupport/downloads/swap_pricing_example.xlsx) and
@@ -54,8 +54,8 @@ Additional studies cover [loans](examples/loan_pricing_example.xlsx),
 [interpolation and schedules](examples/interpolation_example.xlsx).
 
 Table functions accept trailing `transpose` and `headers` flags, defaulting to
-`FALSE,TRUE`. For example, `=QS.CASHFLOWS(trade,context,TRUE,FALSE)` exchanges
-rows and columns and omits headers. `=QS.SENSITIVITIES(trade,context,FALSE,FALSE)`
+`FALSE,TRUE`. For example, `=QS.RESULT.CASHFLOWS(result,TRUE,FALSE)` exchanges
+rows and columns and omits headers. `=QS.RESULT.SENSITIVITIES(result,FALSE,FALSE)`
 keeps the usual layout without headers. Lists such as `QS.SCHEDULE` and
 `QS.SIMULATION.PATH` accept only `transpose` because they have no headers.
 
@@ -76,9 +76,15 @@ C6 =QS.QUOTES.SET(C5,A6,B6,,)
 H3 =QS.CURVE.CONFIGS.CREATE("workbook.usd.curves")
 H4 =QS.CURVE.CONFIGS.ADD(H3,"SOFR","Actual360","LogLinear",FALSE,A3:A6)
 H5 =QS.CONTEXT.CREATE("workbook.usd.context",C6,H4,,,,,,,,,,"USD","SOFR","Mid")
-H6 =QS.TRADE.SWAP("workbook.usd.swap",$B$1,$B$1,"2031-02-24","USD","SOFR",10000000,0.04,0,"Receive","Actual360","Simple","Annual","Semiannual","Quarterly")
-H7 =QS.PRICE(H6,H5)
-H8 =QS.FAIR.RATE(H6,H5)
+H6 =QS.INSTRUMENT.SWAP("workbook.usd.instrument",$B$1,"2031-02-24","USD","SOFR",10000000,0.04,0,"Actual360","Simple","Annual","Semiannual","Quarterly")
+H7 =QS.TRADE.CREATE("workbook.usd.trade",H6,$B$1,"Receive")
+H8 =QS.DISCOUNT.POLICY.CSA("workbook.usd.policy","USD","SOFR")
+H9 =QS.PRICER.CREATE("workbook.usd.pricer","DiscountedCashflowPricer",H8)
+K2 Value
+K3 =QS.REQUEST.FAIR.RATE(1)
+H10 =QS.EVALUATE("workbook.usd.results",H9,H7,H5,K2:K3)
+H11 =QS.RESULT.VALUE(H10)
+H12 =QS.RESULT.FAIR.RATE(H10)
 ```
 
 `QS.CONTEXT.CREATE` takes base currency and base index in positions **13 and
@@ -102,22 +108,31 @@ update chain when the input set changes. Reset applies to supported mutable
 stores/configuration collections, not immutable curves, contexts, or trades.
 Workbooks must preserve formulas and inputs; handles do not serialize objects.
 
-`QS.PRICE` is monetary PV under the selected pricer. Generic swap cashflow
-spills contain signed amounts, positive for receipts and negative for payments,
-and no PV column; apply discounting and any currency conversion before reconciliation.
-Generic discounted-cashflow valuation does not itself filter past payments.
-`QS.FAIR.RATE` should not be described as an arbitrary multi-leg breakeven solver.
+`QS.INSTRUMENT.*` creates native contracts for every exposed product family.
+`QS.TRADE.CREATE` adds position terms; `QS.PRICER.CREATE` selects an actual Rust
+pricer and an explicit native discount policy. `QS.EVALUATE` returns an
+`EvaluationResults` handle, read by `QS.RESULT.*`. Bond pricing anchors belong
+to trades; loan refinancing and fair-rate amortization settings belong to pricers.
+Existing `QS.TRADE.<product>` and direct valuation shortcuts remain compatibility
+helpers; new examples use the separated object workflow. Loans require the
+explicit pricer path.
 
+`QS.RESULT.VALUE` is monetary PV under the pricer's conventions. Swap cashflow
+spills contain signed undiscounted amounts. `FairRate(index)` selects a zero-based
+swap leg or loan rate segment and populates **one scalar `fair_rate` result**.
+Swap target 0 solves the fixed coupon; target 1 solves the floating spread,
+including all legs and principal in total PV. One evaluation accepts one fair-rate
+target; use separate evaluations for several targets. Single-quote products accept
+only target 0. Table outputs accept `transpose` and `headers`.
 Sensitivity values are raw derivatives, not automatically DV01. Scale decimal
 rate derivatives by `0.0001` for an approximate +1 bp move and retain the risk
 factor's actual units. Futures contract size is currency per price point, not
 per basis point. Equity indices use `Equity:SPX`; FX spot rates are quote
-currency per base unit. Product-specific FX carry and discount-policy controls
-are not universally identical across the Excel/Python interfaces.
+currency per base unit. Product-specific FX carry conventions follow the selected native Rust pricer.
 
 Bond anchors are required trade inputs: exact `CleanPrice`, `DirtyPrice`, or
 `ZSpread` plus a value. Clean/dirty quotes use bond quotation units, spreads
-annual decimals, and `QS.BOND.PRICE` returns monetary PV. Although registered,
+annual decimals, and `QS.RESULT.VALUE` returns monetary PV. Although registered,
 `QS.BOND.OAS` currently cannot successfully evaluate a bond from the exposed
 straight-bond constructors.
 
@@ -127,19 +142,22 @@ curve objects. Previous/Mid are selector defaults; missing Bid/Ask does not
 fall back; the selected market reference date remains the valuation date.
 Archive export is subject to Excel's 32767 UTF-16-unit cell limit.
 
-`QS.TRADE.LOAN` creates fixed or floating loans with French, bullet, or balloon
-principal. `rate` is the fixed coupon when `market_index` is blank, otherwise the
-floating spread. Optional JSON `options` supplies prepayment, credit/recovery,
-funding, reset/calendar, bounded/introductory-coupon, and fair-rate settings.
-Use `QS.PRICE`, `QS.FAIR.RATE`, `QS.CASHFLOWS`, and `QS.SENSITIVITIES` on its handle.
-Loan prices are signed future receipt PVs, excluding the initial advance.
-`QS.FAIR.RATE` bootstraps one coupon/spread per contiguous rate segment: redeem
-remaining capital at each segment end, solve its rate, then lock it before
-extending to the next segment. Mixed and stepped loans spill a numeric column;
-pass `TRUE` as the third argument for a row. Single-segment loans keep one cell.
-Use options `coupon_segments` for stepped contracts; the final segment can omit
-its `periods` count to fill maturity.
-See the [loan guide](../../docs/excel/guide/loans.rst) for defaults and the options schema.
+`QS.INSTRUMENT.LOAN` creates fixed or floating contracts with French, bullet,
+or balloon principal. `rate` is the fixed coupon when `market_index` is blank,
+otherwise the floating spread. Optional worksheet ranges use Setting/Value,
+Periods/Rate or spread/Market index, and Date/CPR columns. Enter numeric, text,
+and TRUE/FALSE cells directly; unknown or duplicate settings fail explicitly.
+Create the position with `QS.TRADE.CREATE`, then choose `LoanPricer` and a
+`QS.DISCOUNT.POLICY.FIXED.INCOME` mapping such as EUR/ESTR or EUR/FUNDING.
+Funding is an ordinary curve constructed through the same curve APIs as other
+indices. It is selected by policy, never by a loan contract setting.
+
+A loan's `FairRate(index)` solves earlier segments successively, repaying remaining
+capital at each prefix end and locking its solved coupon/spread before extending.
+The requested segment is returned in `fair_rate`; bounded coupons remain unsupported.
+See the [loan guide](../../docs/excel/guide/loans.rst) and editable workbook for
+credit, coupon schedules, prepayment and pricer settings. Credit configurations
+use `QS.CREDIT.CURVE.CONFIGS.CREATE` and `.ADD` with CDS identifier ranges.
 
 Supported workflows include curves/credit, volatility, model/simulation
 configuration, vanilla rates, straight fixed income, FX/equity, CDS, options,

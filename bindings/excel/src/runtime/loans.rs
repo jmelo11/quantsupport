@@ -1,15 +1,14 @@
 //! Native loan construction and valuation shared by worksheet boundaries and tests.
 
 use quantsupport::prelude::{
-    BusinessDayConvention, Calendar, CashflowType, Currency, Date, DayCounter, DualFwd,
-    EvaluationResults, FixedIncomeDiscountPolicy, Frequency, LoanPricer, LoanRepaymentStructure,
-    LoanTrade, MakeLoan, MakeSchedule, MarketIndex, Period, PrepaymentModelConfiguration, Pricer,
-    PricingContext, Request, Side,
+    BusinessDayConvention, Calendar, CashflowType, Currency, Date, DayCounter, DualFwd, Frequency,
+    LoanRepaymentStructure, MakeLoan, MakeSchedule, MarketIndex, Period,
+    PrepaymentModelConfiguration,
 };
 use serde::{Deserialize, Serialize};
 use std::result::Result;
 
-/// Optional contract and pricing settings supplied as worksheet JSON text.
+/// Optional contractual settings parsed from worksheet ranges.
 #[derive(Clone, Default, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct LoanOptions {
@@ -28,9 +27,6 @@ pub struct LoanOptions {
     pub introductory_periods: Option<usize>,
     pub introductory_rate: Option<f64>,
     pub coupon_segments: Option<Vec<CouponSegment>>,
-    pub refinancing_benchmark_index: Option<MarketIndex>,
-    pub discount_index: Option<MarketIndex>,
-    pub rebuild_amortization_for_fair_rate: bool,
 }
 
 /// A contiguous contractual coupon level; the final segment can fill maturity.
@@ -42,10 +38,9 @@ pub struct CouponSegment {
     pub periods: Option<usize>,
 }
 
-/// Contractual and position inputs; rates are annual decimal coupon/spread values.
+/// Contractual inputs; rates are annual decimal coupon/spread values.
 #[derive(Serialize)]
 pub struct LoanTerms {
-    pub trade_date: Date,
     pub start_date: Date,
     pub maturity_date: Date,
     pub currency: Currency,
@@ -55,23 +50,14 @@ pub struct LoanTerms {
     pub repayment: String,
     pub payment_frequency: Frequency,
     pub day_counter: DayCounter,
-    #[serde(serialize_with = "serialize_side")]
-    pub side: Side,
     pub options: LoanOptions,
 }
 
-fn serialize_side<S: serde::Serializer>(side: &Side, serializer: S) -> Result<S::Ok, S::Error> {
-    serializer.serialize_str(&format!("{side:?}"))
-}
-
-/// A native loan trade and its explicit pricer settings.
-pub struct LoanPosition {
-    pub trade: LoanTrade<DualFwd>,
-    options: LoanOptions,
-}
-
 impl LoanTerms {
-    pub fn build(self, name: &str) -> Result<LoanPosition, String> {
+    pub fn build_instrument(
+        self,
+        name: &str,
+    ) -> Result<quantsupport::prelude::Loan<DualFwd>, String> {
         let options = &self.options;
         let repayment = match self.repayment.trim().to_ascii_lowercase().as_str() {
             "french" => LoanRepaymentStructure::French,
@@ -79,7 +65,7 @@ impl LoanTerms {
             "balloon" => LoanRepaymentStructure::Balloon {
                 residual_fraction: options
                     .balloon_fraction
-                    .ok_or("Balloon requires options.balloon_fraction")?,
+                    .ok_or("Balloon requires a Balloon fraction setting")?,
             },
             _ => return Err("repayment must be French, Bullet, or Balloon".into()),
         };
@@ -202,38 +188,7 @@ impl LoanTerms {
         if let Some(value) = options.business_day_convention {
             builder = builder.with_business_day_convention(value);
         }
-        let loan = builder.build().map_err(|error| error.to_string())?;
-        Ok(LoanPosition {
-            trade: LoanTrade::new(loan, self.trade_date, self.side),
-            options: self.options,
-        })
-    }
-}
-
-impl LoanPosition {
-    pub fn evaluate(
-        &self,
-        context: &PricingContext,
-        requests: &[Request],
-    ) -> Result<EvaluationResults, String> {
-        let mut pricer = LoanPricer::new()
-            .with_fair_rate_amortization_rebuild(self.options.rebuild_amortization_for_fair_rate);
-        if let Some(index) = &self.options.refinancing_benchmark_index {
-            pricer = pricer.with_refinancing_benchmark_index(index.clone());
-        }
-        pricer.set_discount_policy(Box::new(
-            FixedIncomeDiscountPolicy::new(true).with_risk_free_index(
-                context.base_currency(),
-                self.options
-                    .discount_index
-                    .as_ref()
-                    .unwrap_or(context.base_index())
-                    .clone(),
-            ),
-        ));
-        pricer
-            .evaluate(&self.trade, requests, context)
-            .map_err(|error| error.to_string())
+        builder.build().map_err(|error| error.to_string())
     }
 }
 
@@ -241,25 +196,87 @@ impl LoanPosition {
 mod tests {
     use super::*;
     use quantsupport::prelude::{
+        EvaluationResults, FixedIncomeDiscountPolicy, LoanPricer, LoanTrade, Pricer,
+        PricingContext, Request, Side,
+    };
+
+    struct TestTerms {
+        contract: LoanTerms,
+        side: Side,
+        discount_index: Option<MarketIndex>,
+        rebuild: bool,
+    }
+    impl std::ops::Deref for TestTerms {
+        type Target = LoanTerms;
+        fn deref(&self) -> &LoanTerms {
+            &self.contract
+        }
+    }
+    impl std::ops::DerefMut for TestTerms {
+        fn deref_mut(&mut self) -> &mut LoanTerms {
+            &mut self.contract
+        }
+    }
+    struct TestPosition {
+        trade: LoanTrade<DualFwd>,
+        discount_index: Option<MarketIndex>,
+        rebuild: bool,
+    }
+    impl TestTerms {
+        fn build(self, name: &str) -> Result<TestPosition, String> {
+            let loan = self.contract.build_instrument(name)?;
+            Ok(TestPosition {
+                trade: LoanTrade::new(loan, Date::new(2026, 2, 24), self.side),
+                discount_index: self.discount_index,
+                rebuild: self.rebuild,
+            })
+        }
+    }
+    impl TestPosition {
+        fn evaluate(
+            &self,
+            context: &PricingContext,
+            requests: &[Request],
+        ) -> Result<EvaluationResults, String> {
+            let mut pricer = LoanPricer::new().with_fair_rate_amortization_rebuild(self.rebuild);
+            pricer.set_discount_policy(Box::new(
+                FixedIncomeDiscountPolicy::new(false).with_risk_free_index(
+                    context.base_currency(),
+                    self.discount_index
+                        .as_ref()
+                        .unwrap_or(context.base_index())
+                        .clone(),
+                ),
+            ));
+            pricer
+                .evaluate(&self.trade, requests, context)
+                .map_err(|error| error.to_string())
+        }
+    }
+
+    use quantsupport::prelude::{
         Compounding, ConstructedElementStore, CreditCurveConfiguration, DiscountCurveElement,
         FlatForwardTermStructure, Quote, QuoteLevels, QuoteStore, RateDefinition,
     };
     use std::{cell::RefCell, rc::Rc};
 
-    fn terms() -> LoanTerms {
-        LoanTerms {
-            trade_date: Date::new(2026, 2, 24),
-            start_date: Date::new(2026, 2, 24),
-            maturity_date: Date::new(2031, 2, 24),
-            currency: Currency::EUR,
-            notional: 250_000.0,
-            rate: 0.06,
-            market_index: None,
-            repayment: "French".into(),
-            payment_frequency: Frequency::Monthly,
-            day_counter: DayCounter::Actual360,
+    fn terms() -> TestTerms {
+        TestTerms {
+            contract: LoanTerms {
+                start_date: Date::new(2026, 2, 24),
+                maturity_date: Date::new(2031, 2, 24),
+                currency: Currency::EUR,
+                notional: 250_000.0,
+                rate: 0.06,
+                market_index: None,
+                repayment: "French".into(),
+                payment_frequency: Frequency::Monthly,
+                day_counter: DayCounter::Actual360,
+                options: LoanOptions::default(),
+            },
             side: Side::LongReceive,
-            options: LoanOptions::default(),
+            discount_index: None,
+            rebuild: false,
         }
     }
 
@@ -310,7 +327,7 @@ mod tests {
                     &[
                         Request::Value,
                         Request::Cashflows,
-                        Request::FairRate,
+                        Request::FairRate(0),
                         Request::Sensitivities,
                     ],
                 )
@@ -369,7 +386,7 @@ mod tests {
         let base = floating
             .build("floating")
             .unwrap()
-            .evaluate(&context, &[Request::Value, Request::FairRate])
+            .evaluate(&context, &[Request::Value, Request::FairRate(0)])
             .unwrap();
         assert!(base.price().unwrap().is_finite());
         let mut prepaid = terms();
@@ -390,7 +407,7 @@ mod tests {
             .unwrap();
         assert!(prepaid < fixed);
         let mut funded = terms();
-        funded.options.discount_index = Some(MarketIndex::EURIBOR12m);
+        funded.discount_index = Some(MarketIndex::EURIBOR12m);
         assert!(
             funded
                 .build("funded")
@@ -403,7 +420,7 @@ mod tests {
         );
     }
 
-    fn terms_with_floating_without_amortization() -> LoanTerms {
+    fn terms_with_floating_without_amortization() -> TestTerms {
         let mut value = terms();
         value.market_index = Some(MarketIndex::EURIBOR12m);
         value.rate = 0.01;
@@ -425,29 +442,36 @@ mod tests {
     }
 
     #[test]
-    fn mixed_and_stepped_loans_return_bootstrapped_rate_arrays() {
+    fn mixed_and_stepped_loans_select_bootstrapped_rate_segments() {
         let context = context();
         for rebuild in [false, true] {
             let mut input = terms();
-            input.options = serde_json::from_value(serde_json::json!({
-                "coupon_segments": [
-                    {"rate": 0.06, "periods": 12},
-                    {"rate": 0.04, "periods": 12},
-                    {"rate": 0.01, "market_index": "EURIBOR12m", "periods": 12},
-                    {"rate": 0.02, "market_index": "EURIBOR12m"}
+            use super::super::inputs::Cell::{Blank, Number, Text};
+            input.rebuild = rebuild;
+            input.options = super::super::loan_inputs::options(
+                &vec![],
+                &vec![
+                    vec![Number(12.0), Number(0.06), Blank],
+                    vec![Number(12.0), Number(0.04), Blank],
+                    vec![Number(12.0), Number(0.01), Text("EURIBOR12m".into())],
+                    vec![Blank, Number(0.02), Text("EURIBOR12m".into())],
                 ],
-                "rebuild_amortization_for_fair_rate": rebuild,
-            }))
+                &vec![],
+            )
             .unwrap();
             let original_options = input.options.clone();
             let loan = input.build("mixed").unwrap();
             let before = loan
                 .evaluate(&context, &[Request::Value, Request::Cashflows])
                 .unwrap();
-            let results = loan.evaluate(&context, &[Request::FairRate]).unwrap();
-            let rates = results.fair_rates().unwrap();
-            assert_eq!(rates.len(), 4);
-            assert!(results.fair_rate().is_none());
+            let rates: Vec<_> = (0..4)
+                .map(|target| {
+                    loan.evaluate(&context, &[Request::FairRate(target)])
+                        .unwrap()
+                        .fair_rate()
+                        .unwrap()
+                })
+                .collect();
             let mut candidate = terms();
             candidate.options = original_options;
             for (segment, rate) in candidate
@@ -456,7 +480,7 @@ mod tests {
                 .as_mut()
                 .unwrap()
                 .iter_mut()
-                .zip(rates)
+                .zip(&rates)
             {
                 segment.rate = *rate;
             }
@@ -481,17 +505,15 @@ mod tests {
         input.options =
             serde_json::from_str(r#"{"introductory_periods":12,"introductory_rate":0.04}"#)
                 .unwrap();
-        assert_eq!(
-            input
-                .build("introductory")
-                .unwrap()
-                .evaluate(&context, &[Request::FairRate])
-                .unwrap()
-                .fair_rates()
-                .unwrap()
-                .len(),
-            2
-        );
+        let introductory = input.build("introductory").unwrap();
+        assert!(introductory
+            .evaluate(&context, &[Request::FairRate(1)])
+            .unwrap()
+            .fair_rate()
+            .is_some());
+        assert!(introductory
+            .evaluate(&context, &[Request::FairRate(2)])
+            .is_err());
     }
 
     #[test]
@@ -525,7 +547,7 @@ mod tests {
             .evaluate(&context, &[Request::Value, Request::Cashflows])
             .unwrap();
         assert!(results.price().unwrap().is_finite());
-        assert!(bounded.evaluate(&context, &[Request::FairRate]).is_err());
+        assert!(bounded.evaluate(&context, &[Request::FairRate(0)]).is_err());
         let mut introductory = terms_with_floating_without_amortization();
         introductory.options =
             serde_json::from_str(r#"{"introductory_periods":12,"introductory_rate":0.04}"#)
@@ -574,7 +596,7 @@ mod tests {
                 &[
                     Request::Value,
                     Request::Cashflows,
-                    Request::FairRate,
+                    Request::FairRate(0),
                     Request::Sensitivities,
                 ],
             )

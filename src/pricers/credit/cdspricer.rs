@@ -149,7 +149,17 @@ impl HandleValue<CdsTrade, CdsState> for CdsPricer {
 }
 
 impl HandleFairRate<CdsTrade, CdsState> for CdsPricer {
-    fn handle_fair_rate(&self, trade: &CdsTrade, state: &mut CdsState) -> Result<f64> {
+    fn handle_fair_rate(
+        &self,
+        trade: &CdsTrade,
+        state: &mut CdsState,
+        target: usize,
+    ) -> Result<f64> {
+        if target != 0 {
+            return Err(QSError::InvalidValueErr(
+                "Fair-rate target must be zero for this product".into(),
+            ));
+        }
         Tape::start_recording_fwd();
         Tape::set_mark_fwd();
         state.put_pillars_on_tape()?;
@@ -230,6 +240,7 @@ impl Pricer for CdsPricer {
         requests: &[Request],
         ctx: &impl MarketDataProvider,
     ) -> Result<EvaluationResults> {
+        Request::validate(requests)?;
         let eval_date = ctx.evaluation_date();
         let identifier = trade.instrument().identifier();
 
@@ -249,8 +260,8 @@ impl Pricer for CdsPricer {
                     let price = self.handle_value(trade, &mut state)?;
                     results = results.with_price(price);
                 }
-                Request::FairRate => {
-                    let fair_rate = self.handle_fair_rate(trade, &mut state)?;
+                Request::FairRate(target) => {
+                    let fair_rate = self.handle_fair_rate(trade, &mut state, *target)?;
                     results = results.with_fair_rate(fair_rate);
                 }
                 Request::Sensitivities => {
@@ -423,8 +434,11 @@ mod tests {
             Side::LongReceive,
             notional,
         )?;
-        let results =
-            CdsPricer::new().evaluate(&trade, &[Request::Value, Request::FairRate], &provider)?;
+        let results = CdsPricer::new().evaluate(
+            &trade,
+            &[Request::Value, Request::FairRate(0)],
+            &provider,
+        )?;
 
         let decay = 1.0 - (-(lambda + r) * t).exp();
         let protection = lgd * lambda / (lambda + r) * decay;

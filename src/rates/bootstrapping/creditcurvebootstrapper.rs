@@ -537,7 +537,7 @@ mod tests {
         let pricer = CdsPricer::new();
         let results = pricer.evaluate(
             &trade,
-            &[Request::Value, Request::FairRate, Request::Sensitivities],
+            &[Request::Value, Request::FairRate(0), Request::Sensitivities],
             &provider,
         )?;
 
@@ -744,7 +744,7 @@ mod tests {
             0.02,
             0.0,
             Side::LongReceive,
-            &[Request::FairRate],
+            &[Request::FairRate(0)],
         )?
         .fair_rate()
         .ok_or_else(|| QSError::UnexpectedErr("missing fair rate".into()))?;
@@ -756,7 +756,7 @@ mod tests {
             0.02,
             0.4,
             Side::LongReceive,
-            &[Request::FairRate],
+            &[Request::FairRate(0)],
         )?
         .fair_rate()
         .ok_or_else(|| QSError::UnexpectedErr("missing fair rate".into()))?;

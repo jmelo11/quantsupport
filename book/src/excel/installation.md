@@ -18,7 +18,7 @@ The workbook includes pricing, curve tables, cashflows, and sensitivities.
 ## Discover functions
 
 `=QS.FUNCTIONS()` lists worksheet names. `=QS.FUNCTIONS.DETAILS()` spills the
-catalog. `=QS.HELP("QS.TRADE.SWAP")` displays parameter guidance in cells. The
+catalog. `=QS.HELP("QS.INSTRUMENT.SWAP")` displays parameter guidance in cells. The
 same help appears in Excel's Function Arguments dialog and the optional
 [worksheet
 reference](https://jmelo11.github.io/quantsupport/api/excel/functions/index.html).

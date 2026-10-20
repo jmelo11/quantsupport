@@ -157,7 +157,17 @@ impl HandleValue<FxForwardTrade, FxForwardState> for FxForwardPricer {
 impl HandleFairRate<FxForwardTrade, FxForwardState> for FxForwardPricer {
     /// Computes the fair (par) forward rate, defined as `F = S * DF_quote / DF_base`.
     /// This is the strike at which the trade has zero NPV.
-    fn handle_fair_rate(&self, trade: &FxForwardTrade, state: &mut FxForwardState) -> Result<f64> {
+    fn handle_fair_rate(
+        &self,
+        trade: &FxForwardTrade,
+        state: &mut FxForwardState,
+        target: usize,
+    ) -> Result<f64> {
+        if target != 0 {
+            return Err(QSError::InvalidValueErr(
+                "Fair-rate target must be zero for this product".into(),
+            ));
+        }
         let inst = trade.instrument();
         let base = inst.base_currency();
         let quote = inst.quote_currency();
@@ -246,6 +256,7 @@ impl Pricer for FxForwardPricer {
         requests: &[Request],
         ctx: &impl MarketDataProvider,
     ) -> Result<EvaluationResults> {
+        Request::validate(requests)?;
         let eval_date = ctx.evaluation_date();
         let identifier = trade.instrument().identifier();
         let md_request = self.market_data_request(trade).ok_or_else(|| {
@@ -264,8 +275,8 @@ impl Pricer for FxForwardPricer {
                 Request::Sensitivities => {
                     out = out.with_sensitivities(self.handle_sensitivities(trade, &mut state)?);
                 }
-                Request::FairRate => {
-                    out = out.with_fair_rate(self.handle_fair_rate(trade, &mut state)?);
+                Request::FairRate(target) => {
+                    out = out.with_fair_rate(self.handle_fair_rate(trade, &mut state, *target)?);
                 }
                 _ => {}
             }
@@ -509,7 +520,7 @@ mod tests {
             1_000_000.0,
             base_rate,
             quote_rate,
-            &[Request::FairRate],
+            &[Request::FairRate(0)],
         )?;
         let fair = results
             .fair_rate()

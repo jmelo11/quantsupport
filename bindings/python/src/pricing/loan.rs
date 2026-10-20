@@ -67,10 +67,10 @@ impl LoanPricer {
     /// Value is signed receipt PV, excluding the initial advance. Cashflows are
     /// future expected receipts in legs 0/1/2 for scheduled payments, prepayment,
     /// and recovery. Sensitivities are derivatives per unit market pillar change.
-    /// FairRate bootstraps annual fixed coupons/floating spreads at/before
-    /// origination, one per contiguous coupon segment, in fair_rates. Each prefix
-    /// redeems remaining capital at its end, fixing earlier solved rates before
-    /// extending. A single segment also supplies fair_rate. Bounded coupons are
+    /// FairRate(index) returns the selected zero-based segment's coupon/spread
+    /// in fair_rate. It bootstraps earlier segments at/before origination,
+    /// redeeming remaining capital at each prefix end and retaining solved rates.
+    /// Bounded coupons are
     /// unsupported. The search for each segment is [-5%, 50%].
     ///
     /// Raises TypeError for a non-loan trade. Raises QuantSupportError for an

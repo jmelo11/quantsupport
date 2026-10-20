@@ -122,8 +122,10 @@ def excel_section(name):
         return "Time", "Schedules"
     if name.startswith("QS.DATETIME.") or name in ("QS.DATE.ADVANCE", "QS.YEAR.FRACTION"):
         return "Time", "Dates and Accrual"
-    if name.startswith("QS.TRADE."):
-        product = name.removeprefix("QS.TRADE.")
+    if name == "QS.TRADE.CREATE":
+        return "Instruments", "Positions"
+    if name.startswith(("QS.TRADE.", "QS.INSTRUMENT.")):
+        product = name.split(".", 2)[2]
         if product in ("FIXED.BOND", "FLOATING.NOTE", "FIXED.DEPOSIT", "LOAN"):
             return "Instruments", "Fixed Income"
         if product.startswith("FX."):
@@ -135,6 +137,10 @@ def excel_section(name):
         return "Instruments", "Interest Rates"
     if name in ("QS.SENSITIVITIES", "QS.BOND.SENSITIVITIES"):
         return "Risk", "Sensitivities"
+    if name.startswith("QS.DISCOUNT.POLICY."):
+        return "Pricing", "Discount Policies"
+    if name == "QS.EVALUATE" or name.startswith(("QS.RESULT.", "QS.REQUEST.")):
+        return "Pricing", "Valuation and Risk"
     if name.startswith("QS.BOND."):
         return "Pricing", "Bond Analytics"
     if name in ("QS.PRICE", "QS.FAIR.RATE", "QS.CASHFLOWS", "QS.SENSITIVITIES"):

@@ -12,8 +12,8 @@ use pyo3::prelude::*;
 use pyo3::types::PyType;
 use quantsupport::prelude::Request as QsRequest;
 
-use crate::pricing::context::PricingContext;
 use crate::common::conversion::extract_requests;
+use crate::pricing::context::PricingContext;
 use crate::pricing::results::EvaluationResults;
 use crate::time::Date;
 use crate::QuantSupportError;
@@ -225,7 +225,9 @@ impl Trade {
             pricing_anchor: pricing_anchor
                 .map(crate::pricing::bond_anchor::BondPricingAnchorConfig::extract)
                 .transpose()?,
-            settlement_date: settlement_date.map(crate::common::conversion::extract_date).transpose()?,
+            settlement_date: settlement_date
+                .map(crate::common::conversion::extract_date)
+                .transpose()?,
             spread_day_counter: spread_day_counter
                 .map(crate::common::conversion::extract_day_counter)
                 .transpose()?,
@@ -299,9 +301,9 @@ impl Trade {
             domestic_notional: self.domestic_notional,
             foreign_notional: self.foreign_notional,
             num_contracts: self.num_contracts,
-            pricing_anchor: Some(crate::pricing::bond_anchor::BondPricingAnchorConfig::extract(
-                anchor,
-            )?),
+            pricing_anchor: Some(
+                crate::pricing::bond_anchor::BondPricingAnchorConfig::extract(anchor)?,
+            ),
             settlement_date: self.settlement_date,
             spread_day_counter: self.spread_day_counter,
         })
@@ -464,19 +466,7 @@ impl PricerRegistry {
 }
 
 fn requests_for_python(requests: &[QsRequest]) -> Vec<crate::common::enums::Request> {
-    requests
-        .iter()
-        .map(|request| match request {
-            QsRequest::Value => crate::common::enums::Request::Value,
-            QsRequest::YieldToMaturity => crate::common::enums::Request::YieldToMaturity,
-            QsRequest::ModifiedDuration => crate::common::enums::Request::ModifiedDuration,
-            QsRequest::Sensitivities => crate::common::enums::Request::Sensitivities,
-            QsRequest::ZSpread => crate::common::enums::Request::ZSpread,
-            QsRequest::OAS => crate::common::enums::Request::OAS,
-            QsRequest::Cashflows => crate::common::enums::Request::Cashflows,
-            QsRequest::FairRate => crate::common::enums::Request::FairRate,
-        })
-        .collect()
+    requests.iter().copied().map(Into::into).collect()
 }
 
 /// Calls a resolved Python pricer and validates its result.

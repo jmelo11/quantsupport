@@ -96,7 +96,7 @@ fn main() -> Result<()> {
     let pricer = DiscountedCashflowPricer::<Swap<DualFwd>, SwapTrade<DualFwd>>::new();
     let requests = [
         Request::Value,
-        Request::FairRate,
+        Request::FairRate(0),
         Request::Cashflows,
         Request::Sensitivities,
     ];

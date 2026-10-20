@@ -9,7 +9,6 @@ Use --xll-path on Windows for optional native Excel validation (requires pywin32
 
 import argparse
 from datetime import datetime
-import json
 import math
 from pathlib import Path
 import sys
@@ -38,8 +37,15 @@ def historical_cells():
         "A29": "Change Exact to Previous in a selector to query a timestamp absent from the archive.",
         "A30": "Previous preserves the matched market's valuation date; it does not roll curves to the requested date.",
         "B15": '=QS.SNAPSHOTS.CREATE("history_archive",B13:C13)',
-        "B17": '=QS.TRADE.SWAP("history_swap","2026-01-15","2026-01-19","2031-01-19","USD","SOFR",1000000,0.04,0,"Receive","Actual360","Simple","Semiannual","Semiannual","Quarterly")',
+        "B16": '=QS.INSTRUMENT.SWAP("history_instrument","2026-01-19","2031-01-19","USD","SOFR",1000000,0.04,0,"Actual360","Simple","Semiannual","Semiannual","Quarterly")',
     }
+    cells.update({
+        "A16": "Native swap instrument", "A31": "Explicit CSA discount policy", "A32": "Native cashflow pricer",
+        "A33": "Evaluation results",
+        "B17": '=QS.TRADE.CREATE("history_swap",B16,"2026-01-15","Receive")',
+        "B31": '=QS.DISCOUNT.POLICY.CSA("history_policy","USD","SOFR")',
+        "B32": '=QS.PRICER.CREATE("history_pricer","DiscountedCashflowPricer",B31)',
+    })
     for column, day, rates in [("B", 15, [0.040, 0.039, 0.038]), ("C", 16, [0.041, 0.040, 0.039])]:
         date = f"2026-01-{day}"
         cells[f"{column}1"] = date
@@ -56,7 +62,8 @@ def historical_cells():
         cells[f"{column}21"] = formula("QS.CONTEXT.FROM.SNAPSHOT", f'"history_selected_"&{column}$1', "$B$15", f"{column}20", "")
         cells[f"{column}22"] = formula("QS.CONTEXT.SNAPSHOT.TIMESTAMP", f"{column}21")
         cells[f"{column}23"] = formula("QS.CONTEXT.EVALUATION.DATE", f"{column}21")
-        cells[f"{column}24"] = formula("QS.PRICE", "$B$17", f"{column}21")
+        cells[f"{column}33"] = formula("QS.EVALUATE", f'"history_result_{column}"', "$B$32", "$B$17", f"{column}21", '"Value"')
+        cells[f"{column}24"] = formula("QS.RESULT.VALUE", f"{column}33")
         cells[f"{column}25"] = formula("QS.CONTEXT.QUOTE.LEVEL", f"{column}21")
     return cells
 
@@ -233,9 +240,9 @@ def create_swap(path):
             ("1. Quote store", "='Curve Setup'!J18", "Latest revision after loading SOFR and ESTR quotes"),
             ("2. Curve configurations", "='Curve Setup'!M11", "Both curves' conventions and pillar ranges"),
             ("3. Pricing context", formula("QS.CONTEXT.CREATE", '"SwapExample.Context"', "B4", "B5", *([""] * 9), '"USD"', '"SOFR"'), "Bootstraps the configured curves"),
-            ("4. Swap trade", '=QS.TRADE.SWAP("SwapExample.Swap",\'Curve Setup\'!B3,\'Trade Inputs\'!B6,\'Trade Inputs\'!B7,\'Trade Inputs\'!B8,\'Trade Inputs\'!B9,\'Trade Inputs\'!B4,\'Trade Inputs\'!B5,0,\'Trade Inputs\'!B10,\'Trade Inputs\'!B11,\'Trade Inputs\'!B12,\'Trade Inputs\'!B13,\'Trade Inputs\'!B14,\'Trade Inputs\'!B15)', "Receive-fixed USD SOFR swap"),
-            ("5. Present value", "=QS.PRICE(B7,B6)", "Swap NPV in USD"),
-            ("6. Fair fixed rate", "=QS.FAIR.RATE(B7,B6)", "Par coupon implied by the curve"),
+            ("4. Swap position", formula("QS.TRADE.CREATE", '"SwapExample.Swap"', "B15", "'Curve Setup'!B3", "'Trade Inputs'!B10"), "Position on instrument B15"),
+            ("5. Present value", "=QS.RESULT.VALUE(B18)", "Swap NPV in USD"),
+            ("6. Fair fixed rate", "=QS.RESULT.FAIR.RATE(B18)", "FairRate(0): fixed leg"),
             ("7. SOFR curve", "=QS.CURVE.GET(B6,'Trade Inputs'!B9)", "Reusable bootstrapped SOFR curve handle"),
             ("8. SOFR maturity discount", "=QS.CURVE.DISCOUNT(B10,'Trade Inputs'!B7)", "SOFR discount factor at maturity"),
             ("9. ESTR curve", '=QS.CURVE.GET(B6,"ESTR")', "Reusable bootstrapped ESTR curve handle"),
@@ -248,6 +255,16 @@ def create_swap(path):
             pricing.write(f"C{row}", purpose)
         for columns, width in [("A:A", 24), ("B:B", 58), ("C:C", 40)]:
             pricing.set_column(columns, width, style["text"])
+        for cell, value in {
+            "A15": "Native swap contract", "B15": formula("QS.INSTRUMENT.SWAP", '"SwapExample.Instrument"', "'Trade Inputs'!B6", "'Trade Inputs'!B7", "'Trade Inputs'!B8", "'Trade Inputs'!B9", "'Trade Inputs'!B4", "'Trade Inputs'!B5", "0", "'Trade Inputs'!B11", "'Trade Inputs'!B12", "'Trade Inputs'!B13", "'Trade Inputs'!B14", "'Trade Inputs'!B15"),
+            "A16": "Explicit CSA policy", "B16": '=QS.DISCOUNT.POLICY.CSA("SwapExample.Policy","USD","SOFR")',
+            "A17": "Native cashflow pricer", "B17": '=QS.PRICER.CREATE("SwapExample.Pricer","DiscountedCashflowPricer",B16)',
+            "A18": "Requested native results", "B18": '=QS.EVALUATE("SwapExample.Results",B17,B7,B6,E15:E18)',
+            "E15": "Value", "E16": "Cashflows", "E17": "Sensitivities", "E18": '=QS.REQUEST.FAIR.RATE(0)',
+            "A20": "Fair floating spread", "B20": '=QS.EVALUATE("SwapExample.FloatFair",B17,B7,B6,E20)',
+            "E20": '=QS.REQUEST.FAIR.RATE(1)', "B21": '=QS.RESULT.FAIR.RATE(B20)',
+        }.items(): write(pricing, cell, value)
+        pricing.set_column("E:E", 28)
         pricing.activate()
         pricing.set_selection("A4")
 
@@ -277,13 +294,13 @@ def create_swap(path):
         outputs = sheets["Outputs"]
         heading(outputs, "A1:L1", "Swap outputs", style["title"])
         heading(outputs, "A3:I3", "Cashflows", style["section"])
-        write(outputs, "A4", "=QS.CASHFLOWS(Pricing!B7,Pricing!B6)")
+        write(outputs, "A4", "=QS.RESULT.CASHFLOWS(Pricing!B18)")
         heading(outputs, "K3:L3", "Sensitivities", style["section"])
-        write(outputs, "K4", "=QS.SENSITIVITIES(Pricing!B7,Pricing!B6)")
+        write(outputs, "K4", "=QS.RESULT.SENSITIVITIES(Pricing!B18)")
 
         help_sheet = sheets["Function Help"]
         heading(help_sheet, "A1:H1", "Live worksheet-function help", style["title"])
-        for area, cell, label, function_name in [("A3:B3", "A4", "Curve construction", "QS.CURVE.CONFIGS.ADD"), ("D3:E3", "D4", "Swap construction", "QS.TRADE.SWAP"), ("G3:H3", "G4", "Curve inspection", "QS.CURVE.TABLE")]:
+        for area, cell, label, function_name in [("A3:B3", "A4", "Curve construction", "QS.CURVE.CONFIGS.ADD"), ("D3:E3", "D4", "Swap construction", "QS.INSTRUMENT.SWAP"), ("G3:H3", "G4", "Curve inspection", "QS.CURVE.TABLE")]:
             heading(help_sheet, area, label, style["section"])
             write(help_sheet, cell, f'=QS.HELP("{function_name}")')
         for columns, width in [("A:A", 25), ("B:B", 76), ("D:D", 25), ("E:E", 76), ("G:G", 25), ("H:H", 76)]:
@@ -337,13 +354,13 @@ def zero_market(sheet, style, prefix, currency, index):
 def create_loans(path):
     with new_workbook(path) as workbook:
         style, sheets = study_sheets(workbook,
-            ("Market", "Loan Inputs", "Comparison", "Cashflows", "Risk", "Layouts"),
+            ("Market", "Loan Inputs", "Loan Settings", "Coupon Schedules", "Pricing", "Comparison", "Cashflows", "Risk", "Layouts"),
             "Loans: monthly payments, prepayment, borrower credit, and funding", [
                 "Compare French, bullet, and 25% balloon principal; then floating and introductory-fixed coupons.",
                 "The lender's price is future receipt PV. Net origination value subtracts the original advance.",
                 "CPR reduces future principal and interest; borrower survival and recovery use an illustrative CDS proxy.",
                 "Funding discount factors multiply EURIBOR12m by a separate treasury-spread curve.",
-                "FairRate bootstraps each rate segment: repay remaining capital at its end, solve, lock, and extend. Arrays are transposed into a row; bounded coupons omit the solve.",
+                "FairRate bootstraps each rate segment: repay remaining capital at its end, solve, lock, and extend. Each FairRate(index) request returns one scalar; bounded coupons omit the solve.",
                 "Cashflows include scheduled receipts, prepayments, and recovery in legs 0, 1, and 2. Bounded coupons exclude option time value.",
             ])
         market = sheets["Market"]
@@ -358,20 +375,21 @@ def create_loans(path):
             "E8": "Funding spread configuration", "F8": '=QS.CURVE.CONFIGS.ADD.ZERO(F7,"FUNDINGSPREAD","Actual360","Linear",TRUE,A6:A10,D6:D10,"Continuous","Annual")',
             "E9": "Composite funding configuration", "F9": '=QS.CURVE.CONFIGS.ADD.COMPOSITE(F8,"FUNDING","EURIBOR12m","FUNDINGSPREAD")',
             "H5": "Borrower CDS quote", "I5": "Spread", "J5": "Quote store revision",
-            "E10": "Borrower credit configuration", "F10": '=QS.CREDIT.CURVE.CONFIGS.FROM.JSON("Loans.Credit",H16)',
-            "H15": "Native credit configuration JSON (illustrative borrower proxy)",
+            "E10": "Credit configurations", "F10": '=QS.CREDIT.CURVE.CONFIGS.CREATE("Loans.Credit")',
+            "E13": "Borrower credit configuration", "F13": '=QS.CREDIT.CURVE.CONFIGS.ADD(F10,I15,I16,I17,I18,H6:H12)',
+            "H15": "Credit index", "I15": "Credit:BORROWER",
+            "H16": "Currency", "I16": "EUR", "H17": "Discount index", "I17": "ESTR",
+            "H18": "Recovery", "I18": .4,
         }.items():
             write(market, cell, value)
-        credit_quotes = []
         for row, (tenor, spread) in enumerate(zip(("1Y", "3Y", "5Y", "10Y", "20Y", "30Y", "35Y"), (.005, .007, .009, .011, .014, .016, .017)), 6):
             identifier = f"Cds_BORROWER_EUR_{tenor}"
-            credit_quotes.append(identifier)
             market.write(f"H{row}", identifier)
             market.write(f"I{row}", spread, style["input_rate"])
             previous = "$F$3" if row == 6 else f"J{row-1}"
             write(market, f"J{row}", f"=QS.QUOTES.SET({previous},H{row},I{row},,)")
-        market.write_string("H16", json.dumps([{"market_index": {"Credit": "BORROWER"}, "currency": "EUR", "discount_index": "ESTR", "recovery": .4, "quotes": credit_quotes}]), style["input"])
-        write(market, "F11", formula("QS.CONTEXT.CREATE", '"Loans.Context"', "J12", "F9", "F10", *([""] * 8), '"EUR"', '"ESTR"'))
+        market.write("I18", .4, style["input_rate"])
+        write(market, "F11", formula("QS.CONTEXT.CREATE", '"Loans.Context"', "J12", "F9", "F13", *([""] * 8), '"EUR"', '"ESTR"'))
         market.set_column("H:H", 42)
         market.set_column("J:J", 58)
 
@@ -387,8 +405,21 @@ def create_loans(path):
         inputs.write("A14", "Floating principal is agreed at a 5% initial all-in rate; annual resets use EURIBOR12m metadata.")
         inputs.write("A15", "The default zero fixing lag makes the first observation today's projected fixing; no historical fixing is required.")
 
+        pricing = sheets["Pricing"]
+        pricing.set_column("A:B", 26)
+        pricing.set_column("C:D", 58)
+        for cell, value in {
+            "A3": "Currency", "B3": "Index", "A4": "EUR", "B4": "ESTR", "A5": "EUR", "B5": "FUNDING",
+            "C3": "Native discount policy", "D3": "Native pricer",
+            "C4": '=QS.DISCOUNT.POLICY.FIXED.INCOME("Loans.RiskFreePolicy",A4:B4)',
+            "C5": '=QS.DISCOUNT.POLICY.FIXED.INCOME("Loans.FundingPolicy",A5:B5)',
+            "D4": '=QS.PRICER.CREATE("Loans.RiskFreePricer","LoanPricer",C4)',
+            "D5": '=QS.PRICER.CREATE("Loans.FundingPricer","LoanPricer",C5)',
+            "A8": "Value", "A9": "Cashflows", "A10": "Sensitivities",
+            "B8": '=QS.REQUEST.FAIR.RATE(0)', "B9": '=QS.REQUEST.FAIR.RATE(1)', "B10": '=QS.REQUEST.FAIR.RATE(2)',
+        }.items(): write(pricing, cell, value)
         comparison = sheets["Comparison"]
-        for column, label in enumerate(("Case", "Coupon / spread", "Projection index", "Repayment", "Options JSON", "Loan trade", "Receipt PV (EUR)", "PV less advance", "Fair first segment", "Fair second segment", "Fair third segment")):
+        for column, label in enumerate(("Case", "Coupon / spread", "Projection index", "Repayment", "Editable settings / coupons", "Loan trade", "Receipt PV (EUR)", "PV less advance", "Fair first segment", "Fair second segment", "Fair third segment", "Instrument", "Pricer", "Evaluation results", "Fair target 0 results", "Fair target 1 results", "Fair target 2 results")):
             comparison.write(3, column, label, style["header"])
         cases = [
             ("French", False, "French", {}), ("Bullet", False, "Bullet", {}),
@@ -398,47 +429,100 @@ def create_loans(path):
             ("Bounded floating", True, "French", {"amortization_rate": .05, "floor": .02, "cap": .045}),
             ("15% annual CPR", False, "French", {"prepayment": {"Cpr": .15}}),
             ("Borrower credit", False, "French", {"credit_index": {"Credit": "BORROWER"}, "recovery": .4}),
-            ("Funded fixed", False, "French", {"discount_index": {"Other": "FUNDING"}}),
-            ("Funded floating", True, "French", {"amortization_rate": .05, "discount_index": {"Other": "FUNDING"}}),
+            ("Funded fixed", False, "French", {}),
+            ("Funded floating", True, "French", {"amortization_rate": .05}),
             ("Stepped fixed", False, "French", {"coupon_segments": [{"rate": .03, "periods": 60}, {"rate": .04, "periods": 60}, {"rate": .05}]}),
             ("Stepped then floating", False, "French", {"coupon_segments": [{"rate": .03, "periods": 60}, {"rate": .04, "periods": 60}, {"rate": .01, "market_index": "EURIBOR12m"}]}),
         ]
+        settings_sheet, coupons_sheet = sheets["Loan Settings"], sheets["Coupon Schedules"]
+        settings_sheet.set_column("A:A", 40)
+        settings_sheet.set_column("B:B", 25)
+        coupons_sheet.set_column("A:C", 23)
+        settings_row, coupon_row = 4, 4
+        setting_labels = {"balloon_fraction": "Balloon fraction", "amortization_rate": "Amortization rate",
+                          "floor": "Floor", "cap": "Cap", "recovery": "Recovery",
+                          "credit_index": "Credit index", "discount_index": "Discount index"}
         for row, (label, floating, repayment, options) in enumerate(cases, 5):
+            scalar_settings = []
+            for key, value in options.items():
+                if key in ("coupon_segments", "introductory_periods", "introductory_rate"):
+                    continue
+                if key == "prepayment":
+                    scalar_settings.append(("Annual CPR", value["Cpr"]))
+                else:
+                    if isinstance(value, dict):
+                        value = "Credit:" + value["Credit"] if "Credit" in value else value["Other"]
+                    scalar_settings.append((setting_labels[key], value))
+            settings_range = coupons_range = ""
+            if scalar_settings:
+                settings_sheet.write(settings_row - 2, 0, label, style["section"])
+                settings_sheet.write_row(settings_row - 1, 0, ["Setting", "Value"], style["header"])
+                for offset, (setting_name, value) in enumerate(scalar_settings, settings_row):
+                    settings_sheet.write(offset, 0, setting_name)
+                    settings_sheet.write(offset, 1, value, style["input_rate"] if isinstance(value, (int, float)) else style["input"])
+                settings_range = f"'Loan Settings'!A{settings_row}:B{settings_row + len(scalar_settings)}"
+                settings_row += len(scalar_settings) + 4
+            segments = options.get("coupon_segments")
+            if "introductory_periods" in options:
+                segments = [{"periods": options["introductory_periods"], "rate": options["introductory_rate"]},
+                            {"rate": "='Loan Inputs'!$B$6", "market_index": "EURIBOR12m"}]
+            if segments:
+                coupons_sheet.write(coupon_row - 2, 0, label, style["section"])
+                coupons_sheet.write_row(coupon_row - 1, 0, ["Periods", "Rate / spread", "Market index"], style["header"])
+                for offset, segment in enumerate(segments, coupon_row):
+                    if "periods" in segment:
+                        coupons_sheet.write(offset, 0, segment["periods"], style["input"])
+                    write(coupons_sheet, f"B{offset + 1}", segment["rate"], style["input_rate"])
+                    coupons_sheet.write(offset, 2, segment.get("market_index", ""), style["input"])
+                coupons_range = f"'Coupon Schedules'!A{coupon_row}:C{coupon_row + len(segments)}"
+                coupon_row += len(segments) + 4
             comparison.write(f"A{row}", label)
             rate = options["coupon_segments"][0]["rate"] if "coupon_segments" in options else (
                 "='Loan Inputs'!B6" if floating else "='Loan Inputs'!B5")
             write(comparison, f"B{row}", rate, style["rate"])
             comparison.write(f"C{row}", "EURIBOR12m" if floating else "", style["input"])
             comparison.write(f"D{row}", repayment, style["input"])
-            comparison.write_string(f"E{row}", json.dumps(options), style["input"])
-            write(comparison, f"F{row}", formula("QS.TRADE.LOAN", f'"Loans.Case{row}"', "Market!$B$3", "'Loan Inputs'!$B$7", "'Loan Inputs'!$B$8", "'Loan Inputs'!$B$11", "'Loan Inputs'!$B$4", f"B{row}", f"C{row}", f"D{row}", "'Loan Inputs'!$B$9", "'Loan Inputs'!$B$10", '"Receive"', f"E{row}"))
-            write(comparison, f"G{row}", f"=QS.PRICE(F{row},Market!$F$11)", style["number"])
+            if settings_range or coupons_range:
+                target = settings_range or coupons_range
+                comparison.write_url(f"E{row}", "internal:" + target.split(":")[0], string="Edit settings" if settings_range else "Edit coupon schedule")
+            else:
+                comparison.write(f"E{row}", "Default settings")
+            write(comparison, f"L{row}", formula("QS.INSTRUMENT.LOAN", f'"Loans.Instrument{row}"', "'Loan Inputs'!$B$7", "'Loan Inputs'!$B$8", "'Loan Inputs'!$B$11", "'Loan Inputs'!$B$4", f"B{row}", f"C{row}", f"D{row}", "'Loan Inputs'!$B$9", "'Loan Inputs'!$B$10", settings_range, coupons_range))
+            write(comparison, f"F{row}", formula("QS.TRADE.CREATE", f'"Loans.Trade{row}"', f"L{row}", "Market!$B$3", '"Receive"'))
+            write(comparison, f"M{row}", "=Pricing!D5" if row in (13,14) else "=Pricing!D4")
+            write(comparison, f"N{row}", formula("QS.EVALUATE", f'"Loans.Results{row}"', f"M{row}", f"F{row}", "Market!$F$11", "Pricing!$A$8:$A$10"))
+            write(comparison, f"G{row}", f"=QS.RESULT.VALUE(N{row})", style["number"])
             write(comparison, f"H{row}", f"=G{row}-'Loan Inputs'!$B$4", style["number"])
+            segment_count = len(segments) if segments else 1
             if row != 10:
-                write(comparison, f"I{row}", f"=QS.FAIR.RATE(F{row},Market!$F$11,TRUE)", style["rate"])
+                for target in range(segment_count):
+                    result_column = "OPQ"[target]
+                    write(comparison, f"{result_column}{row}", formula("QS.EVALUATE", f'"Loans.Fair{row}.{target}"', f"M{row}", f"F{row}", "Market!$F$11", f"Pricing!$B${8+target}"))
+                    write(comparison, f"{'IJK'[target]}{row}", f"=QS.RESULT.FAIR.RATE({result_column}{row})", style["rate"])
             else:
                 comparison.write(f"I{row}", "Unsupported for bounded coupons")
         comparison.set_column("A:A", 31)
-        comparison.set_column("E:E", 70)
+        comparison.set_column("E:E", 26)
         comparison.set_column("F:F", 48)
         comparison.set_column("I:K", 21, style["rate"])
+        comparison.set_column("L:Q", 48)
         comparison.activate()
 
         for cell, title, expression in [
-            ("A4", "French contractual receipts", "=QS.CASHFLOWS(Comparison!F5,Market!F11)"),
-            ("K4", "Expected receipts with prepayment", "=QS.CASHFLOWS(Comparison!F11,Market!F11)"),
+            ("A4", "French contractual receipts", "=QS.RESULT.CASHFLOWS(Comparison!N5)"),
+            ("K4", "Expected receipts with prepayment", "=QS.RESULT.CASHFLOWS(Comparison!N11)"),
         ]:
             sheets["Cashflows"].write(cell.replace("4", "2"), title, style["section"])
             write(sheets["Cashflows"], cell, expression)
         for cell, label, trade in [("A4", "Funding risk: raw EUR per unit pillar", "F13"), ("E4", "Floating funding risk", "F14")]:
             sheets["Risk"].write(cell.replace("4", "2"), label, style["section"])
-            write(sheets["Risk"], cell, f"=QS.SENSITIVITIES(Comparison!{trade},Market!F11)")
+            write(sheets["Risk"], cell, f"=QS.RESULT.SENSITIVITIES(Comparison!N{trade[1:]})")
         sheets["Risk"].write("A25", "Multiply a decimal-rate derivative by 0.0001 for an approximate +1 bp value change.")
         layouts = sheets["Layouts"]
         layouts.write("A2", "Funding risk transposed, headers hidden", style["section"])
-        write(layouts, "A4", "=QS.SENSITIVITIES(Comparison!F13,Market!F11,TRUE,FALSE)")
+        write(layouts, "A4", "=QS.RESULT.SENSITIVITIES(Comparison!N13,TRUE,FALSE)")
         layouts.write("A9", "Same risk with headers (row labels after transposing)", style["section"])
-        write(layouts, "A11", "=QS.SENSITIVITIES(Comparison!F13,Market!F11,TRUE,TRUE)")
+        write(layouts, "A11", "=QS.RESULT.SENSITIVITIES(Comparison!N13,TRUE,TRUE)")
         layouts.write("A16", "First year payment dates as a row (list, no headers)", style["section"])
         write(layouts, "A18", '=QS.SCHEDULE("2026-02-24","2027-02-24","Monthly",TRUE)')
 
@@ -448,7 +532,7 @@ def create_bonds(path):
         style, sheets = study_sheets(workbook, ("Market", "Bond Inputs", "Valuation", "Cashflows", "Risk"),
             "Straight bonds: price anchors, duration, spread, and curve risk", [
                 "Compare the same fixed bond anchored at zero Z-spread, 100 bp Z-spread, and clean price 100.",
-                "QS.BOND.PRICE is monetary PV; CleanPrice/DirtyPrice anchors use quotation units per 100 face.",
+                "QS.RESULT.VALUE is monetary PV; CleanPrice/DirtyPrice anchors use quotation units per 100 face.",
                 "Duration is yield-modified duration. Spread derivatives and curve derivatives retain their actual units.",
             ])
         zero_market(sheets["Market"], style, "Bonds", "USD", "SOFR")
@@ -456,21 +540,30 @@ def create_bonds(path):
         for row, (label, value) in enumerate([("Start", "2026-02-24"), ("Maturity", "2036-02-24"), ("Notional", 1000000), ("Coupon", .04)], 4):
             inputs.write(f"A{row}", label)
             inputs.write(f"B{row}", value, style["input_rate"] if row == 7 else style["input"])
+        write(inputs, "D4", formula("QS.INSTRUMENT.FIXED.BOND", '"Bonds.Instrument"', "B4", "B5", '"USD"', '""', "B6", "B7", '"Actual360"', '"Compounded"', '"Semiannual"', '"Semiannual"'))
+        market = sheets["Market"]
+        for cell, value in {
+            "H15": "USD", "I15": "SOFR",
+            "F15": '=QS.DISCOUNT.POLICY.FIXED.INCOME("Bonds.Policy",H15:I15)',
+            "F16": '=QS.PRICER.CREATE("Bonds.Pricer","BondPricer",F15)',
+            "H20": "Value", "H21": "ModifiedDuration", "H22": "ZSpread", "H23": "Cashflows", "H24": "Sensitivities",
+        }.items(): write(market, cell, value)
         valuation = sheets["Valuation"]
-        for column, title in enumerate(("Anchor", "Anchor value", "Trade", "PV (USD)", "Modified duration", "Z-spread")):
+        for column, title in enumerate(("Anchor", "Anchor value", "Trade", "PV (USD)", "Modified duration", "Z-spread", "Evaluation results")):
             valuation.write(3, column, title, style["header"])
         for row, anchor, value in [(5, "ZSpread", 0.0), (6, "ZSpread", .01), (7, "CleanPrice", 100.0)]:
             valuation.write(f"A{row}", anchor, style["input"])
             valuation.write(f"B{row}", value, style["input"])
-            write(valuation, f"C{row}", formula("QS.TRADE.FIXED.BOND", f'"Bonds.Case{row}"', "Market!$B$3", "'Bond Inputs'!$B$4", "'Bond Inputs'!$B$5", '"USD"', '"SOFR"', "'Bond Inputs'!$B$6", "'Bond Inputs'!$B$7", '"Receive"', '"Actual360"', '"Compounded"', '"Semiannual"', '"Semiannual"', f"A{row}", f"B{row}"))
-            for column, function in [("D", "QS.BOND.PRICE"), ("E", "QS.BOND.MODIFIED.DURATION"), ("F", "QS.BOND.Z.SPREAD")]:
-                write(valuation, f"{column}{row}", f"={function}(C{row},Market!$F$11)", style["rate"] if column == "F" else style["number"])
+            write(valuation, f"C{row}", formula("QS.TRADE.CREATE", f'"Bonds.Case{row}"', "'Bond Inputs'!$D$4", "Market!$B$3", '"Receive"', "", "", f"A{row}", f"B{row}"))
+            write(valuation, f"G{row}", formula("QS.EVALUATE", f'"Bonds.Results{row}"', "Market!$F$16", f"C{row}", "Market!$F$11", "Market!$H$20:$H$24"))
+            for column, function in [("D", "QS.RESULT.VALUE"), ("E", "QS.RESULT.MODIFIED.DURATION"), ("F", "QS.RESULT.Z.SPREAD")]:
+                write(valuation, f"{column}{row}", f"={function}(G{row})", style["rate"] if column == "F" else style["number"])
         valuation.set_column("C:C", 55)
         valuation.activate()
-        write(sheets["Cashflows"], "A4", "=QS.CASHFLOWS(Valuation!C5,Market!F11)")
-        write(sheets["Risk"], "A4", "=QS.BOND.SENSITIVITIES(Valuation!C6,Market!F11)")
+        write(sheets["Cashflows"], "A4", "=QS.RESULT.CASHFLOWS(Valuation!G5)")
+        write(sheets["Risk"], "A4", "=QS.RESULT.SENSITIVITIES(Valuation!G6)")
         sheets["Risk"].write("E2", "Same data without headers, transposed", style["section"])
-        write(sheets["Risk"], "E4", "=QS.BOND.SENSITIVITIES(Valuation!C6,Market!F11,TRUE,FALSE)")
+        write(sheets["Risk"], "E4", "=QS.RESULT.SENSITIVITIES(Valuation!G6,TRUE,FALSE)")
 
 
 def create_interpolation(path):

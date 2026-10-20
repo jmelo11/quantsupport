@@ -221,14 +221,18 @@ advance PV, lock the result, extend through the next segment, and repeat.
 Every solved prefix therefore lends at par with its outstanding principal
 repaid at that prefix's end. Bounded coupons remain unsupported.
 
-The result's `fair_rates` array follows contractual segment order. A single
-segment also populates `fair_rate`, preserving existing scalar workflows.
-For mixed or stepped loans, use `fair_rates`. Excel's `QS.FAIR.RATE` spills this
-array vertically, or horizontally with its optional third argument `TRUE`.
+`Request::FairRate(index)` in Rust and `qs.Request.FairRate(index)` in Python
+select one zero-based segment and return its scalar in `fair_rate`. Only the
+earlier segments needed for that target are solved. Use separate evaluations
+for several targets; invalid indices are errors. There is no second fair-rate
+attribute or implicit array. In Excel, `QS.REQUEST.FAIR.RATE(index)` supplies
+the request to `QS.EVALUATE`, then `QS.RESULT.FAIR.RATE` reads its scalar.
 
 ```python
 with context:
-    rates = qs.LoanPricer().evaluate(trade=trade, context=context, requests=[qs.Request.FairRate]).fair_rates
+    second_rate = qs.LoanPricer().evaluate(
+        trade=trade, context=context, requests=[qs.Request.FairRate(1)]
+    ).fair_rate
 ```
 
 The pricer's `rebuild_amortization_for_fair_rate` parameter controls how solver
@@ -242,8 +246,8 @@ metadata to use this mode. Neither mode changes the original instrument.
 preserve = qs.LoanPricer(rebuild_amortization_for_fair_rate=False)
 rebuild = qs.LoanPricer(rebuild_amortization_for_fair_rate=True)
 with context:
-    fair_with_existing_principal = preserve.evaluate(trade=trade, context=context, requests=[qs.Request.FairRate]).fair_rate
-    fair_with_new_amortization = rebuild.evaluate(trade=trade, context=context, requests=[qs.Request.FairRate]).fair_rate
+    fair_with_existing_principal = preserve.evaluate(trade=trade, context=context, requests=[qs.Request.FairRate(0)]).fair_rate
+    fair_with_new_amortization = rebuild.evaluate(trade=trade, context=context, requests=[qs.Request.FairRate(0)]).fair_rate
 ```
 
 In Rust, use `LoanPricer::new().with_fair_rate_amortization_rebuild(true)` for

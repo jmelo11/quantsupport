@@ -208,6 +208,7 @@ impl Pricer for EquityForwardPricer {
         requests: &[Request],
         ctx: &impl MarketDataProvider,
     ) -> Result<EvaluationResults> {
+        Request::validate(requests)?;
         let eval_date = ctx.evaluation_date();
         if !trade.notional().is_finite()
             || trade.notional() < 0.0
@@ -248,7 +249,12 @@ impl Pricer for EquityForwardPricer {
                     let sensitivities = self.handle_sensitivities(trade, &mut state)?;
                     results = results.with_sensitivities(sensitivities);
                 }
-                Request::FairRate => {
+                Request::FairRate(target) => {
+                    if *target != 0 {
+                        return Err(QSError::InvalidValueErr(
+                            "Equity-forward fair-rate target must be zero".into(),
+                        ));
+                    }
                     let expiry = forward.delivery_date();
                     let spot = state.get_fixing(&forward.market_index(), eval_date)?;
                     let dividend = state
@@ -402,7 +408,7 @@ mod tests {
         let position = trade(Side::LongReceive)?;
         let result = pricer().evaluate(
             &position,
-            &[Request::Value, Request::FairRate, Request::Sensitivities],
+            &[Request::Value, Request::FairRate(0), Request::Sensitivities],
             &provider(spot, forward, Some(dividend), payment),
         )?;
         let fair = spot * (forward - dividend).exp();
@@ -456,7 +462,7 @@ mod tests {
         let position = trade(Side::LongReceive)?;
         let result = pricer().evaluate(
             &position,
-            &[Request::FairRate],
+            &[Request::FairRate(0)],
             &provider(100.0, 0.05, None, 0.03),
         )?;
         assert!((result.fair_rate().unwrap() - 100.0 * 0.05_f64.exp()).abs() < 1e-10);

@@ -14,16 +14,48 @@ pub fn argument_help(function_name: &str, argument_names: &str) -> Vec<&'static 
 }
 
 fn describe_argument(function_name: &str, argument_name: &str) -> &'static str {
+    if let Some(product) = function_name.strip_prefix("QS.INSTRUMENT.") {
+        if argument_name == "discount_index" {
+            return "Optional instrument discount index; blank leaves policy selection to the pricer; a fixed-income policy may prefer or override this index";
+        }
+        return describe_argument(&format!("QS.TRADE.{product}"), argument_name);
+    }
     match (function_name, argument_name) {
+        (_, "result") => "EvaluationResults handle from QS.EVALUATE; the requested measure must have been included in its requests",
+        (_, "target") | ("QS.REQUEST.FAIR.RATE", "index") => "Zero-based leg or loan coupon/spread segment index; omitted or blank target defaults to zero; single-quote products accept only zero",
+        (_, "mappings") => "Two-column Currency/Index range selecting ordinary discount curves; optional headers; blank is allowed only when prefer_instrument_index is TRUE",
+        (_, "prefer_instrument_index") => "Optional TRUE prefers the instrument's discount index; omitted or blank defaults to FALSE and uses currency/index mappings",
+        (_, "collateral_currency") => "Native CSA collateral currency, such as USD",
+        (_, "collateral_index") => "Ordinary market index for the native CSA collateral curve, such as SOFR",
+        (_, "discount_policy") => "Native discount-policy handle; blank is supported only for RateFuturesPricer, which does not discount cashflows",
+        (_, "implementation") => "Native pricer class name, e.g. LoanPricer, DiscountedCashflowPricer, BondPricer or FxForwardPricer",
+        ("QS.PRICER.CREATE", "settings") => "Optional two-column Setting/Value range; blank uses pricer defaults; LoanPricer accepts Refinancing benchmark index and Rebuild amortization for fair rate; Hull-White requires Alpha and Sigma",
+        (_, "pricer") => "Pricer handle from QS.PRICER.CREATE; must support the native trade type",
+        (_, "requests") => "Text cell or range of native request names: Value, Cashflows, Sensitivities, YieldToMaturity, ModifiedDuration, ZSpread, OAS or FairRate(index); QS.REQUEST.FAIR.RATE(index) builds the latter; one fair-rate target per evaluation",
+        ("QS.TRADE.CREATE", "instrument") => "Native contract handle from QS.INSTRUMENT.*; trade direction, quantity and bond pricing anchor are defined here",
+        ("QS.TRADE.CREATE", "notional") => "Optional position notional; blank uses the contract principal or one unit; loan principal is contractual and cannot be overridden",
+        ("QS.TRADE.CREATE", "foreign_notional") => "Optional foreign position principal for cross-currency swaps; blank uses the contract's foreign principal",
+        ("QS.TRADE.CREATE", "pricing_anchor") => "Bond anchor type CleanPrice, DirtyPrice or ZSpread; supply anchor_value together; blank for other products",
+        ("QS.TRADE.CREATE", "anchor_value") => "Numeric bond price or decimal spread corresponding to pricing_anchor; blank for non-bond trades",
+        ("QS.TRADE.CREATE", "settlement_date") => "Optional ISO bond settlement date; blank uses the native trade default; unsupported for other products",
+        ("QS.TRADE.CREATE", "spread_day_counter") => "Optional bond spread day counter; blank uses Actual365; unsupported for other products",
+
         (_, "transpose") => "Optional TRUE transposes the entire spill; omitted or blank defaults to FALSE; table headers move with their fields",
         (_, "headers") => "Optional TRUE includes table headers (default); FALSE removes the first header row before transposing; omitted or blank defaults to TRUE",
         ("QS.TRADE.LOAN", "rate") => "Annual decimal fixed coupon when market_index is blank; otherwise the floating spread, e.g. 0.01 for 100 bp",
         ("QS.TRADE.LOAN", "market_index") => "Optional floating projection index such as EURIBOR12m; omitted or blank creates a fixed-rate loan",
-        ("QS.TRADE.LOAN", "repayment") => "Optional French (default), Bullet, or Balloon; omitted or blank defaults to French; Balloon requires balloon_fraction in options",
-        ("QS.TRADE.LOAN", "payment_frequency") => "Optional contractual payment frequency; omitted or blank defaults to Monthly; floating resets independently use index metadata unless options override it",
+        ("QS.TRADE.LOAN", "repayment") => "Optional French (default), Bullet, or Balloon; omitted or blank defaults to French; Balloon requires Balloon fraction in the settings range",
+        ("QS.TRADE.LOAN", "payment_frequency") => "Optional contractual payment frequency; omitted or blank defaults to Monthly; floating resets independently use index metadata unless settings override it",
         ("QS.TRADE.LOAN", "day_counter") => "Optional interest and amortization day count; omitted or blank defaults to Actual365",
         ("QS.TRADE.LOAN", "side") => "Optional Receive/Buy for lender receipts (default) or Pay/Sell for opposite signs; omitted or blank defaults to Receive",
-        ("QS.TRADE.LOAN", "options") => "Optional JSON: balloon_fraction, amortization_rate, prepayment, credit_index/recovery, fixing/calendar, floor/cap, introductory terms, coupon_segments, discount_index and fair-rate rebuild; blank uses defaults",
+        ("QS.TRADE.LOAN", "settings") => "Optional two-column Setting/Value range with numeric, text or TRUE/FALSE cells; e.g. Balloon fraction, Annual CPR, Credit index; blank uses defaults; JSON text is rejected",
+        ("QS.TRADE.LOAN", "coupons") => "Optional three-column Periods/Rate or spread/Market index range; blank index means fixed; omit the final period count to fill maturity; replaces rate/index inputs; blank uses the uniform or introductory schedule",
+        ("QS.TRADE.LOAN", "prepayments") => "Optional two-column Date/CPR range for dated annual prepayment rates; dates are ISO text; headers and blank rows are optional; blank uses no dated curve; cannot combine with another prepayment model",
+        ("QS.CREDIT.CURVE.CONFIGS.ADD", "configurations") => "CreditCurveConfigurations handle from QS.CREDIT.CURVE.CONFIGS.CREATE or an earlier ADD; replaces the same credit index or appends a new one",
+        ("QS.CREDIT.CURVE.CONFIGS.ADD", "market_index") => "Borrower credit index text, for example Credit:BORROWER",
+        ("QS.CREDIT.CURVE.CONFIGS.ADD", "quotes") => "Required worksheet range of CDS quote identifiers already in the quote store; blank cells are skipped",
+        ("QS.CREDIT.CURVE.CONFIGS.ADD", "day_counter") => "Optional CDS premium day counter; omitted or blank defaults to Actual360",
+        ("QS.CREDIT.CURVE.CONFIGS.ADD", "premium_frequency") => "Optional CDS premium frequency; omitted or blank defaults to Quarterly",
         (name, "point" | "point_x" | "point_y" | "point_z") if name.starts_with("QS.INTERPOLATE") => "Finite numeric query coordinate on the corresponding axis",
         (name, "x_values") if name.starts_with("QS.INTERPOLATE") => "Required numeric range of at least two strictly increasing finite x coordinates; duplicate coordinates, blanks, text, and booleans are rejected; ranges are read in row-major order",
         (name, "y_values") if name.starts_with("QS.INTERPOLATE") => "Required finite numeric values aligned with x_values, with the same cell count; log-linear interpolation requires strictly positive values; blanks, text, and booleans are rejected",
@@ -131,7 +163,7 @@ fn describe_argument(function_name: &str, argument_name: &str) -> &'static str {
             "Optional CurveConfigurations handle from QS.CURVE.CONFIGS.ADD or FROM.JSON; omitted or blank means an empty configuration collection"
         }
         (_, "credit_curve_configurations") => {
-            "Optional CreditCurveConfigurations handle from QS.CREDIT.CURVE.CONFIGS.FROM.JSON; omitted or blank means an empty configuration collection"
+            "Optional CreditCurveConfigurations handle from QS.CREDIT.CURVE.CONFIGS.CREATE/ADD; omitted or blank means an empty configuration collection"
         }
         (_, "fixings") => "Optional FixingStore handle; omitted or blank leaves the default empty fixing store",
         (_, "fx") => "Optional FxStore handle; omitted or blank leaves the default empty FX store",
@@ -232,6 +264,23 @@ fn describe_argument(function_name: &str, argument_name: &str) -> &'static str {
 }
 
 pub fn result_help(function_name: &str) -> Option<(&'static str, &'static str)> {
+    if function_name.starts_with("QS.INSTRUMENT.") {
+        return Some(("Revisioned text handle to a native instrument contract. Create a separate position with QS.TRADE.CREATE and choose its pricer and discount policy explicitly.", "#VALUE! for invalid contract terms, missing dependencies, native builder errors or registry failures."));
+    }
+    let object = match function_name {
+        "QS.TRADE.CREATE" => Some("Revisioned text handle to a native Trade on the supplied instrument, with explicit position direction, quantity and any bond pricing anchor."),
+        "QS.DISCOUNT.POLICY.FIXED.INCOME" | "QS.DISCOUNT.POLICY.CSA" => Some("Revisioned text handle to a native discount policy selecting ordinary market curves; no instrument or trade is modified."),
+        "QS.PRICER.CREATE" => Some("Revisioned text handle to an explicit native pricer configured with its discount policy and typed worksheet settings."),
+        "QS.EVALUATE" => Some("Revisioned EvaluationResults handle containing the requested native measures; each evaluation selects at most one fair-rate target."),
+        "QS.REQUEST.FAIR.RATE" => Some("Text request FairRate(index) selecting a zero-based swap leg or loan rate segment; pass to QS.EVALUATE."),
+        "QS.RESULT.CASHFLOWS" => Some("Nine-column cashflow spill: Payment date, Type, Amount, Fixing, Accrual, Currency, Floor, Cap, Leg. Optional transpose and headers control layout."),
+        "QS.RESULT.SENSITIVITIES" => Some("Two-column Risk factor/Sensitivity spill of raw value derivatives. Optional transpose and headers control layout."),
+        name if name.starts_with("QS.RESULT.") => Some("Scalar native measure from stored evaluation results. Interest rates and spreads are decimals; fair rate corresponds to the target selected in the request."),
+        _ => None,
+    };
+    if let Some(output) = object {
+        return Some((output, "#VALUE! for invalid inputs, stale or wrong-type handles, unsupported target/pricer/trade combinations or native evaluation errors; #N/A when the result does not contain the requested measure."));
+    }
     let returns = match function_name {
         "QS.INTERPOLATE" | "QS.INTERPOLATE.LINEAR" | "QS.INTERPOLATE.LOG.LINEAR" | "QS.INTERPOLATE.CUBIC.SPLINE" => "Finite numeric interpolated value in the input values' units. One-dimensional data requires at least two strictly increasing coordinates; extrapolation is disabled by default. CubicSpline uses a natural spline and falls back to linear interpolation with two points.",
         "QS.INTERPOLATE.BILINEAR" => "Finite numeric value interpolated along y within each x slice, then along x. Supports rectangular or sparse point ranges and singleton axes; no grid completion or output spill is performed.",
@@ -297,6 +346,8 @@ pub fn result_help(function_name: &str) -> Option<(&'static str, &'static str)> 
         "QS.CURVE.CONFIGS.ADD" => "Current revisioned text handle to CurveConfigurations after adding or replacing the market index's bootstrap configuration; curves are built by QS.CONTEXT.CREATE.",
         "QS.CURVE.CONFIGS.FROM.JSON" => "Revisioned text handle to a collection of CurveConfiguration values parsed from JSON; no curves are built yet.",
         "QS.CREDIT.CURVE.CONFIGS.FROM.JSON" => "Revisioned text handle to a collection of CreditCurveConfiguration values parsed from JSON; no credit curves are built yet.",
+        "QS.CREDIT.CURVE.CONFIGS.CREATE" => "Revisioned text handle to an empty credit-curve configuration collection. Use QS.CREDIT.CURVE.CONFIGS.ADD with worksheet arguments and a CDS quote range.",
+        "QS.CREDIT.CURVE.CONFIGS.ADD" => "Revisioned text handle to credit-curve configurations with the supplied credit index replaced or appended. Build curves by supplying the returned handle to QS.CONTEXT.CREATE.",
         "QS.VOL.SURFACE.CONFIGS.FROM.JSON" => "Revisioned text handle to a collection of VolatilitySurfaceConfiguration values parsed from JSON; no surfaces are built yet.",
         "QS.VOL.CUBE.CONFIGS.FROM.JSON" => "Revisioned text handle to a collection of VolatilityCubeConfiguration values parsed from JSON; no cubes are built yet.",
         "QS.PRICER.CONFIGS.FROM.JSON" => "Revisioned text handle to a collection of PricerConfiguration values selecting instrument pricers and typed model assignments; not a PricingContext handle.",
@@ -316,7 +367,7 @@ pub fn result_help(function_name: &str) -> Option<(&'static str, &'static str)> 
         "QS.SIMULATION.CALIBRATION" => "Eleven-column Hull-White diagnostics spill with headers identifier, expiry, t, big_t, market_vol, market_price, model_price, calibrated_sigma, forward_rate, effective_strike, price_error. Expiry is tenor text such as 1Y, not an ISO date; price_error is model_price minus market_price, not an absolute error.",
         "QS.TRADE.FX.FORWARD" => "Revisioned text handle to a deliverable FxForwardTrade, ready for pricing; not the forward rate or present value.",
         "QS.TRADE.SWAP" => "Revisioned text handle to a vanilla fixed-versus-floating SwapTrade; not a par rate or present value.",
-        "QS.TRADE.LOAN" => "Revisioned LoanTrade text handle. QS.PRICE returns signed future receipt PV excluding the advance. QS.FAIR.RATE bootstraps a coupon/spread per contiguous segment at/before origination. QS.CASHFLOWS includes scheduled payments (leg 0), prepayments (1), and recovery (2). QS.SENSITIVITIES returns raw market derivatives.",
+        "QS.TRADE.LOAN" => "Compatibility constructor returning a native LoanTrade handle. Evaluate with an explicit LoanPricer and discount policy through QS.EVALUATE; use QS.INSTRUMENT.LOAN and QS.TRADE.CREATE to keep contract and position separate. Value is signed future receipt PV excluding the advance; FairRate(index) selects one coupon/spread segment.",
         "QS.TRADE.BASIS.SWAP" => "Revisioned text handle to a floating-versus-floating BasisSwapTrade; not a basis spread or present value.",
         "QS.TRADE.XCCY.FLOAT.FLOAT" => "Revisioned text handle to a FloatFloatCrossCurrencySwapTrade with the supplied domestic and foreign legs.",
         "QS.TRADE.XCCY.FIX.FLOAT" => "Revisioned text handle to a FixFloatCrossCurrencySwapTrade with a domestic fixed leg and foreign floating leg.",
@@ -337,7 +388,7 @@ pub fn result_help(function_name: &str) -> Option<(&'static str, &'static str)> 
         "QS.BOND.Z.SPREAD" => "Numeric straight-bond Z-spread as a decimal rate (0.001 means 10 basis points), resolved from the trade's anchor.",
         "QS.BOND.OAS" => "Intended scalar option-adjusted spread as a decimal rate; the current worksheet path accepts only straight fixed-rate bonds and rejects their OAS request, so no successful OAS result is available through the current constructors.",
         "QS.BOND.SENSITIVITIES" => "Two-column spill with headers Risk factor, Sensitivity, including curve risk and the bond's dPV/dZSpread node. Values are raw derivatives per unit risk-factor change, not automatically scaled to one basis point.",
-        "QS.FAIR.RATE" => "Numeric column of fair rates, or one cell for a single rate/forward; optional transpose returns a row, without headers. Loan entries bootstrap contiguous coupon/spread/index segments: repay outstanding capital at each prefix end, lock its solved rate, then extend. Interest rates are decimals; forwards use native price/FX quote units. Generic DCF FairRate uses fixed annuity and the first forward curve, ignoring principal flows.",
+        "QS.FAIR.RATE" => "Scalar fair coupon, floating spread or forward quote for the selected zero-based target; use QS.EVALUATE with an explicit pricer for loans and policy selection.",
         "QS.SENSITIVITIES" => "Two-column spill with headers Risk factor, Sensitivity. Values are raw derivatives of the pricer value per unit risk-factor change, in the pricer's valuation units; no automatic basis-point scaling.",
         "QS.CASHFLOWS" => "Nine-column spill with headers Payment date, Type, Amount, Fixing, Accrual, Currency, Floor, Cap, Leg. Dates are ISO text; Amount is in the row currency, Accrual is a year fraction, and absent Fixing/Floor/Cap values are blank. Generic discounted-cashflow reports contain signed amounts, positive for receipts and negative for payments, including supplied principal exchanges and reversed disbursements; there is no PV column or automatic reporting-currency conversion.",
         _ => return None,
@@ -439,7 +490,8 @@ pub fn result_help(function_name: &str) -> Option<(&'static str, &'static str)> 
         "QS.CASHFLOWS" => "#VALUE! for invalid trade/context handles, unsupported trade/request combinations, or cashflow-resolution failures; #N/A if a successful evaluation omitted cashflows.",
         name if name.ends_with(".CONFIGS.FROM.JSON") || name == "QS.SCENARIOS.FROM.JSON" =>
             "#VALUE! for invalid JSON or values that do not deserialize into the function's native configuration/scenario type, or registry failures. Parsing does not perform context construction or calibration.",
-        "QS.ELEMENTS.CREATE" | "QS.FIXINGS.CREATE" | "QS.FX.CREATE" | "QS.CURVE.CONFIGS.CREATE" =>
+        "QS.CREDIT.CURVE.CONFIGS.ADD" => "#VALUE! for invalid configuration handles, non-credit indices, recovery outside [0,1], missing quote identifiers, invalid conventions, or registry failures.",
+        "QS.ELEMENTS.CREATE" | "QS.FIXINGS.CREATE" | "QS.FX.CREATE" | "QS.CURVE.CONFIGS.CREATE" | "QS.CREDIT.CURVE.CONFIGS.CREATE" =>
             "#VALUE! for object-registry creation or revision failures.",
         _ => return None,
     };

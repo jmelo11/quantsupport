@@ -3,7 +3,7 @@ use crate::core::collateral::Discountable;
 use crate::{
     core::evaluationresults::{CashflowsTable, SensitivityMap},
     instruments::cashflows::{cashflow::Cashflow, cashflowtype::CashflowType, leg::Leg},
-    utils::errors::Result,
+    utils::errors::{QSError, Result},
 };
 
 /// A requested instrument result.
@@ -12,6 +12,7 @@ use crate::{
 /// Availability is specific to the pricer. Unsupported variants may produce an
 /// error or leave the corresponding [`EvaluationResults`](crate::core::evaluationresults::EvaluationResults)
 /// field absent; requesting a variant does not guarantee support.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[allow(clippy::upper_case_acronyms)]
 pub enum Request {
     /// Monetary present value in the pricer's currency and normalization.
@@ -28,13 +29,34 @@ pub enum Request {
     Sensitivities,
     /// Signed, undiscounted cashflow report; payment selection depends on the pricer.
     Cashflows,
-    /// Breakeven contract quote, such as a decimal swap coupon or forward price.
-    /// Loans supply a bootstrapped coupon/spread array in `fair_rates`; a
-    /// single-segment loan also supplies the scalar `fair_rate`.
-    FairRate,
+    /// Breakeven quote for the zero-based contractual target.
+    ///
+    /// For swaps the target selects a leg (fixed coupon or floating spread).
+    /// For loans it selects a contiguous coupon/spread segment. Earlier loan
+    /// segments are solved first, repaying remaining capital at each prefix end.
+    /// Products with a single quote accept only target zero.
+    FairRate(usize),
 }
 
 impl Request {
+    /// Checks that one evaluation does not overwrite its scalar fair-rate result.
+    ///
+    /// # Errors
+    /// Rejects more than one fair-rate request; evaluate each target separately.
+    pub fn validate(requests: &[Self]) -> Result<()> {
+        if requests
+            .iter()
+            .filter(|request| matches!(request, Self::FairRate(_)))
+            .count()
+            > 1
+        {
+            return Err(QSError::InvalidValueErr(
+                "Request one fair-rate target per evaluation".into(),
+            ));
+        }
+        Ok(())
+    }
+
     /// Returns the rank of the request, which can be used for ordering or prioritization.
     #[must_use]
     pub const fn rank(&self) -> u8 {
@@ -46,7 +68,7 @@ impl Request {
             Self::ZSpread => 4,
             Self::OAS => 5,
             Self::Cashflows => 6,
-            Self::FairRate => 7,
+            Self::FairRate(_) => 7,
         }
     }
 }
@@ -94,7 +116,7 @@ pub trait HandleFairRate<T, S> {
     ///
     /// ## Errors
     /// Returns an error if the evaluation fails.
-    fn handle_fair_rate(&self, trade: &T, state: &mut S) -> Result<f64>;
+    fn handle_fair_rate(&self, trade: &T, state: &mut S, target: usize) -> Result<f64>;
 }
 
 /// The [`LegsProvider`] trait defines a method for providing the cashflows of an instrument.

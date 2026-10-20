@@ -213,7 +213,7 @@ fn main() -> ExampleResult<()> {
         ] {
             let trade = LoanTrade::new(builder.clone().build()?, reference, Side::LongReceive);
             let fair = pricer
-                .evaluate(&trade, &[Request::FairRate], &context)?
+                .evaluate(&trade, &[Request::FairRate(0)], &context)?
                 .fair_rate()
                 .ok_or_else(|| QSError::ValueNotSetErr("Fair rate".into()))?;
             let rate = if floating {

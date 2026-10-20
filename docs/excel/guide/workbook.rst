@@ -44,7 +44,7 @@ Check the loaded version and discover functions:
    =QS.VERSION()
    =QS.FUNCTIONS()
    =QS.FUNCTIONS.DETAILS()
-   =QS.HELP("QS.TRADE.SWAP")
+   =QS.HELP("QS.INSTRUMENT.SWAP")
 
 The catalog includes aliases; ``QS.HELP`` accepts aliases case-insensitively.
 Function Arguments provides parameter hints. Formula examples below use commas
@@ -113,20 +113,34 @@ Create a five-year receive-fixed position and request value and par coupon:
 .. code-block:: text
    :name: guide-excel-swap
 
-   H6 =QS.TRADE.SWAP("guide.usd.swap",$B$1,$B$1,"2031-02-24","USD","SOFR",10000000,0.04,0,"Receive","Actual360","Simple","Annual","Semiannual","Quarterly")
-   H7 =QS.PRICE(H6,H5)
-   H8 =QS.FAIR.RATE(H6,H5)
+   L2 =QS.INSTRUMENT.SWAP("guide.usd.instrument",$B$1,"2031-02-24","USD","SOFR",10000000,0.04,0,"Actual360","Simple","Annual","Semiannual","Quarterly")
+   H6 =QS.TRADE.CREATE("guide.usd.swap",L2,$B$1,"Receive")
+   L3 =QS.DISCOUNT.POLICY.CSA("guide.usd.policy","USD","SOFR")
+   L4 =QS.PRICER.CREATE("guide.usd.pricer","DiscountedCashflowPricer",L3)
+   M2 Value
+   M3 Cashflows
+   M4 Sensitivities
+   M5 =QS.REQUEST.FAIR.RATE(0)
+   L5 =QS.EVALUATE("guide.usd.results",L4,H6,H5,M2:M5)
+   H7 =QS.RESULT.VALUE(L5)
+   H8 =QS.RESULT.FAIR.RATE(L5)
 
-The position receives fixed and pays floating on ten million USD. ``H7`` is
-monetary PV under this pricer's conventions; ``H8`` is an annual decimal fixed
-coupon. A receive-fixed position can have negative PV when its contracted coupon
-is below the market-implied coupon.
+The contract fixes dates, coupons and indices; the trade supplies direction and
+position quantity. The pricer selects a native discount policy independently.
+The receive-fixed position can have negative PV when its coupon is below par.
+``H7`` is monetary PV and ``H8`` is an annual decimal fixed coupon.
 
-The current generic ``FairRate`` calculation is appropriate to the vanilla
-fixed-versus-floating problem: it uses fixed coupon annuity and floating
-amounts from the first forward curve, ignoring principal flows. Basis,
-cross-currency and other multi-leg breakeven problems require their own
-definition of the adjustable term and calculation.
+``FairRate(0)`` selects the fixed leg; ``FairRate(1)`` instead solves the second
+leg's floating spread so total trade PV is zero, including principal exchanges,
+each leg's index and native policy discounting. Request one target per evaluation.
+``QS.REQUEST.FAIR.RATE`` builds the request text from a numeric index; directly
+entering ``FairRate(1)`` in a request cell has the same meaning. Invalid indices
+fail explicitly. Other single-quote products support only index zero.
+
+Use ``QS.INSTRUMENT.*`` and ``QS.TRADE.CREATE`` for every exposed product family.
+Combined ``QS.TRADE.<product>`` and direct valuation functions remain compatibility
+shortcuts. The separated object path makes position terms, chosen pricing engine,
+and discount assumptions visible as independent worksheet dependencies.
 
 Inspecting the results
 ----------------------
@@ -140,8 +154,8 @@ Extract the curve once and leave room for spilled results:
    J3 =QS.CURVE.DISCOUNT(J2,"2028-02-24")
    J4 =QS.CURVE.FORWARD(J2,"2027-02-24","2028-02-24",,)
    J6 =QS.CURVE.TABLE(J2,,)
-   P2 =QS.CASHFLOWS(H6,H5)
-   Z2 =QS.SENSITIVITIES(H6,H5)
+   P2 =QS.RESULT.CASHFLOWS(L5)
+   Z2 =QS.RESULT.SENSITIVITIES(L5)
 
 Blank scalar curve-rate query conventions default to Simple and Annual.
 ``QS.CURVE.TABLE`` reports Pillar, Date, Discount factor, Zero rate, and

@@ -314,7 +314,8 @@ pub fn extract_period(obj: &Bound<'_, PyAny>) -> PyResult<Period> {
 
 /// Extracts evaluation requests from `Request` enums or strings.
 pub fn extract_requests(reqs: &[Bound<'_, PyAny>]) -> PyResult<Vec<Request>> {
-    reqs.iter()
+    let requests = reqs
+        .iter()
         .map(|obj| {
             if let Ok(r) = obj.extract::<crate::common::enums::Request>() {
                 return Ok(r.into());
@@ -327,7 +328,9 @@ pub fn extract_requests(reqs: &[Bound<'_, PyAny>]) -> PyResult<Vec<Request>> {
                 obj.get_type().name()?
             )))
         })
-        .collect()
+        .collect::<PyResult<Vec<Request>>>()?;
+    Request::validate(&requests).map_err(qs_err)?;
+    Ok(requests)
 }
 
 enum_extractor!(

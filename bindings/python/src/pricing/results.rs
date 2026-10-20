@@ -84,7 +84,6 @@ pub struct EvaluationResults {
     z_spread: Option<f64>,
     oas: Option<f64>,
     fair_rate: Option<f64>,
-    fair_rates: Option<Vec<f64>>,
     sensitivities: Option<Vec<(String, f64)>>,
     cashflows: Option<Vec<CashflowRow>>,
 }
@@ -122,7 +121,6 @@ impl EvaluationResults {
             z_spread: res.z_spread(),
             oas: res.oas(),
             fair_rate: res.fair_rate(),
-            fair_rates: res.fair_rates().map(<[f64]>::to_vec),
             sensitivities,
             cashflows,
         }
@@ -147,7 +145,6 @@ impl EvaluationResults {
         z_spread = None,
         oas = None,
         fair_rate = None,
-        fair_rates = None,
         sensitivities = None,
         cashflows = None,
     ))]
@@ -161,7 +158,6 @@ impl EvaluationResults {
         z_spread: Option<f64>,
         oas: Option<f64>,
         fair_rate: Option<f64>,
-        fair_rates: Option<Vec<f64>>,
         sensitivities: Option<&Bound<'_, PyAny>>,
         cashflows: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<Self> {
@@ -181,7 +177,6 @@ impl EvaluationResults {
             z_spread,
             oas,
             fair_rate,
-            fair_rates,
             sensitivities,
             cashflows,
         })
@@ -237,19 +232,10 @@ impl EvaluationResults {
         self.oas
     }
 
-    /// Scalar fair rate, if available; multi-segment loans use `fair_rates`.
+    /// Fair rate for the target selected by Request.FairRate(index), if requested.
     #[getter]
     fn fair_rate(&self) -> Option<f64> {
         self.fair_rate
-    }
-
-    /// Bootstrapped loan coupon/spread levels in contiguous segment order.
-    ///
-    /// Each prefix repays remaining capital at its segment's end. Previously
-    /// solved rates are fixed when solving later segments. None if not supplied.
-    #[getter]
-    fn fair_rates(&self) -> Option<Vec<f64>> {
-        self.fair_rates.clone()
     }
 
     /// Sensitivities as a DataFrame with columns pillar/value (duplicated

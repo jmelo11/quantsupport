@@ -23,8 +23,16 @@ const RESET_OPERATION_ID: &str = "__registry_reset__";
 
 /// QuantSupport components and trades that can be referenced by an Excel cell.
 pub enum QsObject {
-    /// Contractual loan trade and its native pricer settings.
-    LoanTrade(Box<super::loans::LoanPosition>),
+    /// Native instrument, without position or pricing settings.
+    Instrument(Box<super::products::InstrumentObject>),
+    /// An explicit native discount policy.
+    DiscountPolicy(Box<super::pricing::PolicyObject>),
+    /// Configured native pricer dispatch.
+    Pricer(Box<super::pricing::PricerObject>),
+    /// Results of an explicit native valuation request.
+    EvaluationResults(Box<quantsupport::prelude::EvaluationResults>),
+    /// Native loan position, independent of pricer settings.
+    LoanTrade(Box<quantsupport::prelude::LoanTrade<DualFwd>>),
     /// Market quote collection.
     QuoteStore(Box<QuoteStore>),
     /// Historical fixing collection.
@@ -96,6 +104,10 @@ impl QsObject {
     #[must_use]
     pub const fn kind(&self) -> &'static str {
         match self {
+            Self::Instrument(value) => value.kind(),
+            Self::DiscountPolicy(value) => value.kind,
+            Self::Pricer(_) => "Pricer",
+            Self::EvaluationResults(_) => "EvaluationResults",
             Self::LoanTrade(_) => "LoanTrade",
             Self::QuoteStore(_) => "QuoteStore",
             Self::FixingStore(_) => "FixingStore",
@@ -282,6 +294,25 @@ impl Registry {
     }
 
     accessor!(quote_store, QuoteStore, QuoteStore, "QuoteStore");
+    accessor!(
+        instrument,
+        Instrument,
+        super::products::InstrumentObject,
+        "Instrument"
+    );
+    accessor!(
+        discount_policy,
+        DiscountPolicy,
+        super::pricing::PolicyObject,
+        "DiscountPolicy"
+    );
+    accessor!(pricer, Pricer, super::pricing::PricerObject, "Pricer");
+    accessor!(
+        evaluation_results,
+        EvaluationResults,
+        quantsupport::prelude::EvaluationResults,
+        "EvaluationResults"
+    );
     accessor!(fixing_store, FixingStore, FixingStore, "FixingStore");
     accessor!(fx_store, FxStore, FxStore, "FxStore");
     collection_accessor!(
@@ -423,6 +454,23 @@ impl Registry {
                 Ok(())
             }
             other => Err(wrong_type("CurveConfigurations", other)),
+        })
+    }
+
+    /// Mutates credit configurations only when the worksheet inputs changed.
+    pub fn update_credit_curve_configurations_if_changed(
+        &mut self,
+        handle: &str,
+        operation_id: &str,
+        value_key: &str,
+        operation: impl FnOnce(&mut Vec<CreditCurveConfiguration>),
+    ) -> Result<String, RegistryError> {
+        self.mutate_if_changed(handle, operation_id, value_key, |object| match object {
+            QsObject::CreditCurveConfigurations(configurations) => {
+                operation(configurations);
+                Ok(())
+            }
+            other => Err(wrong_type("CreditCurveConfigurations", other)),
         })
     }
 

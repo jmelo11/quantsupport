@@ -3,7 +3,7 @@ use std::{fmt::Display, str::FromStr};
 use crate::runtime::registry::with_registry;
 use quantsupport::prelude::{
     CapFloorType, CapletFloorletType, Compounding, Currency, Date, DayCounter, EuroOptionType,
-    Frequency, FxPair, Interpolator, MarketIndex, Side,
+    Frequency, Interpolator, MarketIndex, Side,
 };
 use serde::{de::DeserializeOwned, Serialize};
 use xll_rs::convert::build_multi;
@@ -29,31 +29,7 @@ pub fn parse_currency(value: &str) -> Result<Currency, XllError> {
 }
 
 pub fn parse_index(value: &str) -> Result<MarketIndex, XllError> {
-    let value = value.trim();
-    if let Some(name) = value.strip_prefix("Equity:") {
-        return Ok(MarketIndex::Equity(name.to_string()));
-    }
-    if let Some(name) = value.strip_prefix("Credit:") {
-        return Ok(MarketIndex::Credit(name.to_string()));
-    }
-    if let Some(pair) = value.strip_prefix("FX:") {
-        let (base, quote) = pair
-            .split_once('/')
-            .ok_or_else(|| value_error(format!("invalid FX market index '{value}'")))?;
-        return FxPair::new(parse_currency(base)?, parse_currency(quote)?)
-            .map(MarketIndex::FxPair)
-            .map_err(value_error);
-    }
-    if let Some(pair) = value.strip_prefix("Collateral:") {
-        let (currency, collateral) = pair
-            .split_once('/')
-            .ok_or_else(|| value_error(format!("invalid collateral market index '{value}'")))?;
-        return Ok(MarketIndex::Collateral(
-            parse_currency(currency)?,
-            parse_currency(collateral)?,
-        ));
-    }
-    Ok(MarketIndex::from_str(value).unwrap_or_else(|never| match never {}))
+    crate::runtime::inputs::market_index(value).map_err(value_error)
 }
 
 pub fn parse_day_counter(value: &str) -> Result<DayCounter, XllError> {
@@ -248,6 +224,54 @@ pub fn numeric_values(value: *const XLOPER12, argument_name: &str) -> Result<Vec
         .ok_or_else(|| value_error("Range is too large"))?;
     (0..total)
         .map(|index| number(unsafe { &*array.lparray.add(index) }))
+        .collect()
+}
+
+/// Reads a rectangular worksheet range without discarding blank cells or types.
+pub fn worksheet_table(
+    value: *const XLOPER12,
+    name: &str,
+) -> Result<crate::runtime::inputs::Table, XllError> {
+    use crate::runtime::inputs::Cell;
+    if value.is_null() {
+        return Err(value_error(format!("{name} cannot be null")));
+    }
+    let cell = |value: &XLOPER12| -> Result<Cell, XllError> {
+        match value.base_type() {
+            XLTYPE_NIL | XLTYPE_MISSING => Ok(Cell::Blank),
+            XLTYPE_STR => value
+                .as_string()
+                .map(Cell::Text)
+                .ok_or_else(|| value_error(format!("{name} contains invalid text"))),
+            XLTYPE_BOOL => Ok(Cell::Boolean(unsafe { value.val.xbool } != 0)),
+            XLTYPE_INT => Ok(Cell::Number(f64::from(unsafe { value.val.w }))),
+            XLTYPE_NUM if unsafe { value.val.num }.is_finite() => {
+                Ok(Cell::Number(unsafe { value.val.num }))
+            }
+            _ => Err(value_error(format!(
+                "{name} contains an error or unsupported cell value"
+            ))),
+        }
+    };
+    let value = unsafe { &*value };
+    if value.base_type() != XLTYPE_MULTI {
+        return Ok(vec![vec![cell(value)?]]);
+    }
+    let array = unsafe { &*std::ptr::addr_of!(value.val.array) };
+    if array.rows <= 0 || array.columns <= 0 || array.lparray.is_null() {
+        return Err(value_error(format!("{name} has invalid range dimensions")));
+    }
+    let columns = array.columns as usize;
+    let total = (array.rows as usize)
+        .checked_mul(columns)
+        .ok_or_else(|| value_error(format!("{name} is too large")))?;
+    (0..total)
+        .step_by(columns)
+        .map(|start| {
+            (start..start + columns)
+                .map(|index| cell(unsafe { &*array.lparray.add(index) }))
+                .collect()
+        })
         .collect()
 }
 

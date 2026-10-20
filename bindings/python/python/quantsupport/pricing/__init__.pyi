@@ -51,7 +51,26 @@ QuantSupportError
     ZSpread: ClassVar[Request]
     OAS: ClassVar[Request]
     Cashflows: ClassVar[Request]
-    FairRate: ClassVar[Request]
+    @staticmethod
+    def FairRate(index: int = 0) -> Request:
+        """Select a zero-based swap leg or loan coupon/spread segment.
+
+Parameters
+----------
+index : int, optional
+    Contractual target, starting at zero. Defaults to zero. Swaps select a leg;
+    loans select a contiguous rate segment. Single-quote products accept only zero.
+
+Returns
+-------
+Request
+    A targeted fair-rate request. The selected scalar is returned in fair_rate.
+"""
+        ...
+    @property
+    def index(self) -> int | None:
+        """Zero-based FairRate target; None for other requests."""
+        ...
 
 
 @final
@@ -1146,11 +1165,11 @@ context : PricingContext
 requests : sequence of Request or str, optional
     Value, Cashflows, Sensitivities, or FairRate, as typed requests or names.
     None, the default, selects Value. Sensitivities are derivatives per unit
-    market-pillar change. FairRate solves an annual fixed coupon or floating
-    spread at or before origination over [-0.05, 0.50]. Loans bootstrap one
-    rate per contiguous fixed-rate/floating-spread/index segment in fair_rates:
-    redeem remaining capital at each prefix end, fix the solved rate, then
-    extend. A single segment also supplies fair_rate. Bounded coupons are unsupported.
+    market-pillar change. Request.FairRate(index) returns the selected zero-based
+    segment's scalar in fair_rate. Earlier segments are solved first, repaying
+    remaining capital at each prefix end and retaining solved rates when extending.
+    Each solve is at/before origination over [-0.05, 0.50]. Bounded coupons and
+    invalid indices are rejected.
 
 Returns
 -------
@@ -1542,10 +1561,6 @@ oas : float, optional
 fair_rate : float, optional
     Par coupon or spread in decimal annual rate units, as defined by the pricer.
     Defaults to None.
-fair_rates : sequence of float, optional
-    Bootstrapped loan coupon/spread levels in contiguous contractual segment
-    order. Each shortened loan redeems its remaining principal at the segment
-    end; previously solved rates stay fixed in subsequent solves. Defaults to None.
 sensitivities : mapping or sequence of (str, float), optional
     Raw pillar labels and exposures, normally derivatives per unit input change.
     Pair sequences preserve order and duplicates; mappings are sorted by label.
@@ -1570,7 +1585,7 @@ Scalar fields are stored as supplied; no consistency checks or valuation are
 performed. Table properties construct new pandas DataFrames on access.
 """
 
-    def __new__(cls, evaluation_date: _DateLike, identifier: str, *, price: Any | None = ..., yield_to_maturity: Any | None = ..., modified_duration: Any | None = ..., z_spread: Any | None = ..., oas: Any | None = ..., fair_rate: Any | None = ..., fair_rates: Sequence[float] | None = ..., sensitivities: Any | None = ..., cashflows: Any | None = ...) -> Self:
+    def __new__(cls, evaluation_date: _DateLike, identifier: str, *, price: Any | None = ..., yield_to_maturity: Any | None = ..., modified_duration: Any | None = ..., z_spread: Any | None = ..., oas: Any | None = ..., fair_rate: Any | None = ..., sensitivities: Any | None = ..., cashflows: Any | None = ...) -> Self:
         ...
 
     def __repr__(self) -> str:
@@ -1598,12 +1613,7 @@ performed. Table properties construct new pandas DataFrames on access.
 
     @property
     def fair_rate(self) -> float | None:
-        """Scalar fair rate, if available; multi-segment loans use fair_rates."""
-        ...
-
-    @property
-    def fair_rates(self) -> list[float] | None:
-        """Bootstrapped loan coupon/spread levels in contiguous segment order."""
+        """Fair rate for the target selected by Request.FairRate(index)."""
         ...
 
     @property

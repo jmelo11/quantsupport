@@ -52,6 +52,7 @@ class WorkbookTests(unittest.TestCase):
                     self.assertIsNone(archive.testzip())
                     self.assertFalse(any(part.startswith("xl/externalLinks/") for part in archive.namelist()))
                     formula_count = 0
+                    functions = set()
                     for part in archive.namelist():
                         if not re.fullmatch(r"xl/worksheets/sheet\d+.xml", part):
                             continue
@@ -63,7 +64,11 @@ class WorkbookTests(unittest.TestCase):
                             formula = expression.text.removeprefix("_xll.")
                             function = formula.split("(", 1)[0]
                             with self.subTest(sheet=part, cell=cell.attrib["r"], function=function):
+                                functions.add(function)
                                 self.assertIn(function, self.catalog)
+                                self.assertFalse(function.startswith("QS.TRADE.") and function != "QS.TRADE.CREATE", "Example contracts and positions must be separate")
+                                self.assertNotIn(function, ("QS.PRICE", "QS.BOND.PRICE", "QS.FAIR.RATE"), "Examples must use explicit native pricers and result readers")
+                                self.assertFalse(function.endswith(".FROM.JSON"), "Examples must use worksheet inputs rather than JSON imports")
                                 args = arguments(formula)
                                 self.assertLessEqual(len(args), len(self.catalog[function]["arguments"]))
                                 # Formula2 storage preserves XLL spills, avoiding implicit @ intersection.
@@ -75,6 +80,19 @@ class WorkbookTests(unittest.TestCase):
                                     self.assertIn(args[13], ('"SOFR"', '"ESTR"'))
                                 formula_count += 1
                     self.assertGreater(formula_count, 10)
+                    if name != "interpolation":
+                        self.assertTrue(any(function.startswith("QS.INSTRUMENT.") for function in functions))
+                        self.assertTrue({"QS.TRADE.CREATE", "QS.PRICER.CREATE", "QS.EVALUATE", "QS.RESULT.VALUE"} <= functions)
+                        self.assertTrue(any(function.startswith("QS.DISCOUNT.POLICY.") for function in functions))
+                    shared = ET.fromstring(archive.read("xl/sharedStrings.xml"))
+                    for item in shared.findall("s:si", NS):
+                        value = "".join(node.text or "" for node in item.findall(".//s:t", NS)).strip()
+                        if value.startswith(("{", "[")):
+                            try:
+                                decoded = json.loads(value)
+                            except ValueError:
+                                continue
+                            self.assertNotIsInstance(decoded, (dict, list), "Examples must not store JSON input cells")
 
 
 if __name__ == "__main__":

@@ -321,7 +321,7 @@ mod tests {
         let records =
             super::exports(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/functions"))
                 .unwrap();
-        assert_eq!(records.len(), 110);
+        assert_eq!(records.len(), 143);
         let scenario = records
             .iter()
             .find(|record| record["name"] == "QS.SCENARIOS.FROM.JSON")

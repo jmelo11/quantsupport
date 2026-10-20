@@ -1018,11 +1018,12 @@ impl LoanPricer {
     /// # Errors
     /// Rejects valuation after origination, missing coupons, and bounded coupons.
     /// Propagates market/trial errors and reports unbracketed or unconverged solves.
-    fn handle_fair_rates(
+    fn handle_segment_fair_rate(
         &self,
         trade: &LoanTrade<DualFwd>,
         state: &LoanValuationState,
-    ) -> Result<Vec<f64>> {
+        target_segment: usize,
+    ) -> Result<f64> {
         if state.evaluation_date > trade.instrument().start_date() {
             return Err(QSError::InvalidValueErr(
                 "Loan fair rate requires valuation at or before origination".into(),
@@ -1053,8 +1054,14 @@ impl LoanPricer {
                 .curve()
                 .discount_factor(state.evaluation_date)?
                 .value();
-        let mut rates = Vec::with_capacity(segments.len());
-        for (position, segment) in segments.into_iter().enumerate() {
+        if target_segment >= segments.len() {
+            return Err(QSError::InvalidValueErr(format!(
+                "Loan fair-rate target {target_segment} is out of range for {} segments (zero-based)",
+                segments.len()
+            )));
+        }
+        let mut selected_rate = 0.0;
+        for (position, segment) in segments.into_iter().take(target_segment + 1).enumerate() {
             let objective = LoanFairRateObjective {
                 pricer: self,
                 trade,
@@ -1085,9 +1092,9 @@ impl LoanPricer {
                 QSError::SolverErr(format!("Loan fair-rate segment {}: {error}", position + 1))
             })?;
             cashflows = objective.build_cashflows_for_trial_coupon_or_spread(rate)?;
-            rates.push(rate);
+            selected_rate = rate;
         }
-        Ok(rates)
+        Ok(selected_rate)
     }
 
     /// Identifies contiguous coupon levels, ignoring intervening principal flows.
@@ -1129,24 +1136,14 @@ impl LoanPricer {
 }
 
 impl HandleFairRate<LoanTrade<DualFwd>, LoanValuationState> for LoanPricer {
-    /// Returns the scalar fair rate for a single-segment loan.
-    ///
-    /// # Errors
-    /// Rejects multiple segments; use `evaluate` with `Request::FairRate` and
-    /// [`EvaluationResults::fair_rates`] to obtain every segment's result.
-    /// Propagates fair-rate solve errors.
+    /// Returns the selected segment's coupon or spread after solving earlier segments.
     fn handle_fair_rate(
         &self,
         trade: &LoanTrade<DualFwd>,
         state: &mut LoanValuationState,
+        target: usize,
     ) -> Result<f64> {
-        let rates = self.handle_fair_rates(trade, state)?;
-        match rates.as_slice() {
-            [rate] => Ok(*rate),
-            _ => Err(QSError::InvalidValueErr(
-                "Loan has multiple fair rates; evaluate FairRate and read fair_rates".into(),
-            )),
-        }
+        self.handle_segment_fair_rate(trade, state, target)
     }
 }
 
@@ -1167,6 +1164,7 @@ impl Pricer for LoanPricer {
         requests: &[Request],
         ctx: &impl MarketDataProvider,
     ) -> Result<EvaluationResults> {
+        Request::validate(requests)?;
         let mut state = self.load_loan_valuation_state(trade, ctx)?;
         let mut results =
             EvaluationResults::new(ctx.evaluation_date(), trade.instrument().identifier());
@@ -1176,8 +1174,8 @@ impl Pricer for LoanPricer {
                 Request::Sensitivities => {
                     results.with_sensitivities(self.handle_sensitivities(trade, &mut state)?)
                 }
-                Request::FairRate => {
-                    results.with_fair_rates(self.handle_fair_rates(trade, &state)?)
+                Request::FairRate(target) => {
+                    results.with_fair_rate(self.handle_fair_rate(trade, &mut state, *target)?)
                 }
                 Request::Cashflows => {
                     self.handle_value(trade, &mut state)?;
@@ -1402,7 +1400,7 @@ mod tests {
             &[
                 Request::Cashflows,
                 Request::Cashflows,
-                Request::FairRate,
+                Request::FairRate(0),
                 Request::Sensitivities,
                 Request::Value,
             ],
@@ -1584,18 +1582,21 @@ mod tests {
                     let pricer = estr_loan_pricer().with_fair_rate_amortization_rebuild(rebuild);
                     let result = pricer.evaluate(
                         &trade,
-                        &[Request::FairRate, Request::Value, Request::Cashflows],
+                        &[Request::FairRate(0), Request::Value, Request::Cashflows],
                         &provider,
                     )?;
-                    assert!(result.fair_rate().is_none());
-                    let rates = result
-                        .fair_rates()
-                        .ok_or_else(|| QSError::ValueNotSetErr("Segment fair rates".into()))?;
-                    assert_eq!(rates.len(), 4);
+                    let rates = (0..4)
+                        .map(|target| {
+                            pricer
+                                .evaluate(&trade, &[Request::FairRate(target)], &provider)?
+                                .fair_rate()
+                                .ok_or_else(|| QSError::ValueNotSetErr("Segment fair rate".into()))
+                        })
+                        .collect::<Result<Vec<_>>>()?;
                     let candidate = LoanTrade::new(
                         builder
                             .clone()
-                            .with_coupons(coupon_schedule(rates))
+                            .with_coupons(coupon_schedule(&rates))
                             .with_initial_amortization_rate(if rebuild { rates[0] } else { 0.05 })
                             .build()?,
                         provider.date,
@@ -1713,11 +1714,14 @@ mod tests {
         let trade = LoanTrade::new(builder.clone().build()?, provider.date, Side::LongReceive);
         for rebuild in [false, true] {
             let pricer = estr_loan_pricer().with_fair_rate_amortization_rebuild(rebuild);
-            let result = pricer.evaluate(&trade, &[Request::FairRate], &provider)?;
-            let rates = result
-                .fair_rates()
-                .ok_or_else(|| QSError::ValueNotSetErr("Floating-first fair rates".into()))?;
-            assert_eq!(rates.len(), 2);
+            let rates = (0..2)
+                .map(|target| {
+                    pricer
+                        .evaluate(&trade, &[Request::FairRate(target)], &provider)?
+                        .fair_rate()
+                        .ok_or_else(|| QSError::ValueNotSetErr("Floating-first fair rate".into()))
+                })
+                .collect::<Result<Vec<_>>>()?;
             let initial_rate = if rebuild {
                 0.04_f64.exp_m1() / (365.0 / 360.0) + rates[0]
             } else {
@@ -1754,8 +1758,16 @@ mod tests {
             provider.date,
             Side::LongReceive,
         );
+        // A valid earlier target does not attempt to solve an unidentifiable later segment.
+        assert!(estr_loan_pricer()
+            .evaluate(&trade, &[Request::FairRate(0)], &provider)?
+            .fair_rate()
+            .is_some());
+        assert!(estr_loan_pricer()
+            .evaluate(&trade, &[Request::FairRate(2)], &provider)
+            .is_err());
         let error = estr_loan_pricer()
-            .evaluate(&trade, &[Request::FairRate], &provider)
+            .evaluate(&trade, &[Request::FairRate(1)], &provider)
             .err()
             .ok_or_else(|| QSError::ValueNotSetErr("Expected unidentified segment error".into()))?;
         assert!(error.to_string().contains("segment 2"));
@@ -1780,7 +1792,7 @@ mod tests {
             let trade = LoanTrade::new(builder.clone().build()?, provider.date, Side::LongReceive);
             let pricer = estr_loan_pricer().with_fair_rate_amortization_rebuild(true);
             let fair = pricer
-                .evaluate(&trade, &[Request::FairRate], &provider)?
+                .evaluate(&trade, &[Request::FairRate(0)], &provider)?
                 .fair_rate()
                 .ok_or_else(|| QSError::ValueNotSetErr("Mortgage fair rate".into()))?;
             let rate = if floating {
@@ -1842,7 +1854,7 @@ mod tests {
             for rebuild in [false, true] {
                 let pricer = estr_loan_pricer().with_fair_rate_amortization_rebuild(rebuild);
                 let fair = pricer
-                    .evaluate(&trade, &[Request::FairRate], &provider)?
+                    .evaluate(&trade, &[Request::FairRate(0)], &provider)?
                     .fair_rate()
                     .ok_or_else(|| QSError::ValueNotSetErr("Fair rate".into()))?;
                 let rate = if floating {

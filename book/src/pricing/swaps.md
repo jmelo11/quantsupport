@@ -64,11 +64,14 @@ K^\ast=\frac{PV_{\rm float}}{A},\qquad
 A=\sum_iN_i\tau_iP_d(0,T_i).
 \\]
 
-The current generic `FairRate` handler constructs fixed-coupon annuity and
-floating amounts using its first resolved forward curve and ignores principal
-flows. This handler supports the vanilla fixed–floating calculation. More complex
-multi-leg, cross-currency, optional or amortizing contracts require a
-product-specific definition of the adjustable term and solution method.
+`Request::FairRate(index)` selects a zero-based leg. Target 0 solves the fixed
+coupon and target 1 the floating spread on a vanilla swap. The scalar result
+makes total trade PV zero, retaining all other legs' quotes, principal exchanges,
+projection indices, discount policy and leg signs. Selected fixed or floating
+coupons are replaced by a common coupon/spread; mixed coupon types in one
+selected leg, daily spread compounding and legs without rate exposure are rejected. Request one target per
+evaluation. The same selection applies to linear basis and cross-currency legs
+under a compatible native discount policy.
 
 ## Overnight index swaps
 
