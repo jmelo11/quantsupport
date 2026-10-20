@@ -11,6 +11,10 @@ publish = false
 name = "function_catalog"
 path = "tools/function_catalog.rs"
 
+[[example]]
+name = "validate_example_market"
+path = "tools/validate_example_market.rs"
+
 [lib]
 name = "quantsupport_xll"
 crate-type = ["cdylib", "rlib"]

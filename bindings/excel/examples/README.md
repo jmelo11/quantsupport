@@ -6,7 +6,7 @@ Load the matching `quantsupport.xll` in **64-bit Windows Excel** before opening 
 
 | Workbook | What to follow |
 | --- | --- |
-| [Swap pricing](swap_pricing_example.xlsx) | Load SOFR/ESTR quotes, build curves, create a receive-fixed swap, then compare PV and fair quotes for each leg. |
+| [Swap pricing](swap_pricing_example.xlsx) | Bootstrap SOFR under USD collateral and value a receive-fixed USD swap. Bootstrap ESTR in a separate EUR context for curve comparisons. |
 | [Loan pricing](loan_pricing_example.xlsx) | Compare 12 agreements: repayment styles, floating and mixed coupons, prepayment, borrower credit, funding and stepped coupons. |
 | [Bond pricing](bond_pricing_example.xlsx) | Keep one bond contract and compare separately anchored positions using Z-spread or clean price. |
 | [Historical pricing](historical_pricing_example.xlsx) | Archive two dated markets and reprice one unchanged trade. Compare the requested timestamp with the actual selected market date. |
@@ -23,6 +23,8 @@ Load the matching `quantsupport.xll` in **64-bit Windows Excel** before opening 
 
 The pricing studies use the library's separate **instrument → trade → discount policy → pricer → evaluation → result** objects. FUNDING is an ordinary composite curve selected by a discount policy. Coupon schedules and settings use worksheet ranges.
 
+The swap study keeps USD/SOFR and EUR/ESTR bootstrap configurations in separate contexts. Bootstrapping EUR OIS inside a USD collateral context would require a `Collateral:EUR/USD` curve calibrated from additional market data. The ESTR comparison context has no role in the USD swap's valuation.
+
 Loan fair-rate columns correspond to zero-based coupon segments. Each `QS.REQUEST.FAIR.RATE(index)` evaluation returns one scalar. A mixed or stepped solve fixes earlier segments before solving the requested segment. Empty segment columns mean that segment does not exist; bounded floating coupons have no fair-rate solve.
 
 ## Regenerate and check
@@ -37,4 +39,6 @@ python -m unittest discover -s bindings/excel/examples -p 'test_*.py'
 
 Use `--example swap`, `historical`, `loans`, `bonds`, or `interpolation` to generate one file, and `--output-dir PATH` to choose a destination.
 
-On Windows, install `pywin32` and add `--xll-path bindings/excel/dist/quantsupport.xll` for live checks of native handles, numerical results, selected-case tables, and unchanged recalculation. Portable checks validate navigation, formula dependencies, registered signatures, and the native pricing workflow; live calculations require Windows Excel.
+The tests require Rust/Cargo. They validate navigation, formula dependencies, registered signatures, and the native pricing workflow. They also extract the swap's actual worksheet quotes, configurations and context assumptions and bootstrap them through Rust on any platform, checking the original missing-collateral failure as a regression.
+
+On Windows, install `pywin32` and add `--xll-path bindings/excel/dist/quantsupport.xll` for live checks of native handles, numerical results, selected-case tables, and unchanged recalculation. Actual worksheet execution requires Windows Excel.

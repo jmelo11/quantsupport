@@ -151,7 +151,7 @@ def create_swap(path):
     routes = [("1 Inputs", "Set the contract and position."), ("2 Market", "Review quotes, then construct the market inputs."),
               ("3 Build", "Follow the instrument → trade → policy → pricer → results sequence."), ("4 Results", "Read PV, fair quotes and curve checks."),
               ("5 Cashflows", "Inspect the swap's signed cashflows."), ("6 Risk", "Inspect raw market sensitivities."), ("7 Curves", "Inspect the bootstrapped nodes.")]
-    with Study(path, "Swap", "Swap pricing · a guided example", "Build USD SOFR and EUR ESTR curves, then value one receive-fixed USD swap.", routes,
+    with Study(path, "Swap", "Swap pricing · a guided example", "Value one receive-fixed USD swap under USD/SOFR collateral. Build a separate EUR/ESTR market for curve comparisons.", routes,
                ["Change the fixed coupon on Inputs and read the PV on Results.", "Change a SOFR quote on Market and compare the fair fixed coupon.", "Compare FairRate(0), the fixed coupon, with FairRate(1), the floating spread."]) as s:
         inputs(s, "1 Inputs", [
             ("Valuation date", "2026-02-24", "ValuationDate", "Market reference date (ISO text).", "input"),
@@ -160,8 +160,8 @@ def create_swap(path):
             ("Floating spread", 0, "Spread", "Annual decimal spread paid over SOFR.", "input_rate"),
             ("Start date", "2026-02-24", "Start", "Accrual starts on this date.", "input"),
             ("Maturity date", "2031-02-24", "Maturity", "Final contractual date.", "input"),
-            ("Currency", "USD", "Currency", "Use a currency consistent with the selected market index.", "input"),
-            ("Projection index", "SOFR", "Index", "SOFR and ESTR are constructed on the Market tab.", "input"),
+            ("Currency", "USD", "Currency", "This study prices a USD contract in the USD/SOFR context.", "body"),
+            ("Projection index", "SOFR", "Index", "SOFR projects this swap; ESTR has a separate comparison context.", "body"),
             ("Position side", "Receive", "Side", "Receive means receive fixed / pay floating.", "input"),
             ("Day counter", "Actual360", "DayCounter", "Contractual interest accrual convention.", "input"),
             ("Coupon compounding", "Simple", "Compounding", "Native coupon rate convention.", "input"),
@@ -190,13 +190,15 @@ def create_swap(path):
             row = step(s, market, row, f"2.{offset} Load quote", "QS.QUOTES.SET", [previous, f"'{market}'!A{source}", f"'{market}'!B{source}", "", ""], key, "Updates form one ordered store chain.")
             previous = s.name(key)
         s.workbook.define_name(s.name("Quotes"), "=" + previous)
-        row = step(s, market, row, "3. Create curve configurations", "QS.CURVE.CONFIGS.CREATE", [text("Swap.Curves")], "InitialCurves", "Use Actual360 / LogLinear / extrapolation for both curves.")
+        row = step(s, market, row, "3. Create USD configurations", "QS.CURVE.CONFIGS.CREATE", [text("Swap.UsdCurves")], "InitialCurves", "USD/SOFR and EUR/ESTR use separate bootstrap collateral assumptions.")
         row = step(s, market, row, "4. Configure SOFR", "QS.CURVE.CONFIGS.ADD", [s.name("InitialCurves"), '"SOFR"', '"Actual360"', '"LogLinear"', "TRUE", s.name("SofrQuotes")], "SofrConfig", "Bootstraps the visible USD deposit / OIS quotes.")
-        step(s, market, row, "5. Configure ESTR", "QS.CURVE.CONFIGS.ADD", [s.name("SofrConfig"), '"ESTR"', '"Actual360"', '"LogLinear"', "TRUE", s.name("EstrQuotes")], "Curves", "Adds EUR without replacing the USD configuration.")
+        row = step(s, market, row, "5. Create EUR configurations", "QS.CURVE.CONFIGS.CREATE", [text("Swap.EurCurves")], "InitialEstrCurves", "An independent configuration collection for the EUR/ESTR context.")
+        step(s, market, row, "6. Configure ESTR", "QS.CURVE.CONFIGS.ADD", [s.name("InitialEstrCurves"), '"ESTR"', '"Actual360"', '"LogLinear"', "TRUE", s.name("EstrQuotes")], "EstrConfig", "EUR OIS quotes bootstrap under EUR/ESTR collateral in their own context.")
         build = "3 Build"
         s.sheet(build, "Build the pricing objects", "Read from top to bottom. Grey cells contain object references; the exact formula is shown immediately below each step.")
         s.headers(build, 6, ["Step", "Object reference", "Purpose"])
-        row = s.step(build, 7, "1. Initialize the context", context("Swap.Context", s.name("Quotes"), s.name("Curves"), s.name("Currency"), s.name("Index")), "Context", "Builds the curves configured on Market.")
+        row = s.step(build, 7, "1.1 Initialize USD context", context("Swap.Context", s.name("Quotes"), s.name("SofrConfig"), s.name("Currency"), s.name("Index")), "Context", "Bootstraps SOFR under USD collateral; this context prices the swap.")
+        row = s.step(build, row, "1.2 Initialize EUR context", context("Swap.EstrContext", s.name("Quotes"), s.name("EstrConfig"), '"EUR"', '"ESTR"'), "EstrContext", "Bootstraps ESTR under EUR collateral for comparison only.")
         row = step(s, build, row, "2. Define the instrument", "QS.INSTRUMENT.SWAP", [text("Swap.Instrument"), *[s.name(k) for k in ("Start", "Maturity", "Currency", "Index", "Notional", "FixedRate", "Spread", "DayCounter", "Compounding", "RateFrequency", "FixedFrequency", "FloatFrequency")]], "Instrument", "The contract contains dates, rates and indices.")
         row = step(s, build, row, "3. Create the position", "QS.TRADE.CREATE", [text("Swap.Trade"), s.name("Instrument"), s.name("ValuationDate"), s.name("Side")], "Trade", "The trade adds execution date and direction.")
         row = step(s, build, row, "4. Choose discount policy", "QS.DISCOUNT.POLICY.CSA", [text("Swap.Policy"), s.name("Currency"), s.name("Index")], "Policy", "The policy selects the native CSA discount curve.")
@@ -205,8 +207,8 @@ def create_swap(path):
         for target, label in [(0, "fixed coupon"), (1, "floating spread")]:
             row = step(s, build, row, f"7.{target+1} Select {label}", "QS.REQUEST.FAIR.RATE", [str(target)], f"Request{target}", f"Zero-based leg {target}; one fair-rate target per evaluation.")
             row = step(s, build, row, f"8.{target+1} Solve {label}", "QS.EVALUATE", [text(f"Swap.Fair{target}"), s.name("Pricer"), s.name("Trade"), s.name("Context"), s.name(f"Request{target}")], f"Fair{target}", "Only the selected leg's quote is adjusted to zero total PV.")
-        for index, key in [("SOFR", "SofrCurve"), ("ESTR", "EstrCurve")]:
-            row = step(s, build, row, "9. Inspect " + index, "QS.CURVE.GET", [s.name("Context"), text(index)], key, "Reusable curve object for point queries and node reports.")
+        for index, key, source in [("SOFR", "SofrCurve", "Context"), ("ESTR", "EstrCurve", "EstrContext")]:
+            row = step(s, build, row, "9. Inspect " + index, "QS.CURVE.GET", [s.name(source), text(index)], key, "Reads the curve from its matching collateral context.")
         result = "4 Results"
         s.sheet(result, "Read the swap results", "Green cells contain financial measures. The Build tab explains how each native result was produced.", (34, 24, 65), "#21845B")
         s.headers(result, 6, ["Measure", "Calculated value", "Interpretation"])
@@ -573,7 +575,7 @@ def create_interpolation(path):
 def validation_names(example):
     """Stable workbook names keep live checks independent of the visual layout."""
     if example == "swap_pricing_example":
-        return (["Swap_" + key for key in ("Context", "Instrument", "Trade", "Policy", "Pricer", "Result", "Fair0", "Fair1")],
+        return (["Swap_" + key for key in ("Context", "EstrContext", "SofrCurve", "EstrCurve", "Instrument", "Trade", "Policy", "Pricer", "Result", "Fair0", "Fair1")],
                 ["Swap_" + key for key in ("PV", "FairFixed", "FairFloat", "SofrDiscount", "EstrDiscount", "SofrForward", "EstrForward")])
     if example == "historical_pricing_example":
         return (["History_" + key for key in ("Archive", "Trade", "Pricer", "Context1", "Context2", "Result1", "Result2")],

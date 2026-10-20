@@ -1,6 +1,7 @@
 """Portable checks of workbook navigation and native formula dependencies."""
 
 import json
+from copy import deepcopy
 from pathlib import Path
 import re
 import subprocess
@@ -76,6 +77,46 @@ class Workbook:
             return expression.strip('"')
         match = re.fullmatch(SHEET_RANGE, self.names[expression])
         return self.value(match[1].replace("''", "'"), match[2].replace("$", ""))
+
+    def market_input(self, expression):
+        """Resolve actual worksheet market inputs for native bootstrap validation."""
+        if expression in self.names:
+            return self.market_input(self.names[expression])
+        if expression.startswith('"'):
+            return expression[1:-1].replace('""', '"')
+        if expression in ("TRUE", "FALSE"):
+            return expression == "TRUE"
+        reference = re.fullmatch(SHEET_RANGE, expression)
+        if reference:
+            sheet = reference[1].replace("''", "'")
+            cells = self.range_cells(sheet, reference[2])
+            values = []
+            for _, address in cells:
+                cell = self.cells[sheet][address]
+                node = cell.find("s:f", NS)
+                if node is not None:
+                    values.append(self.market_input(node.text))
+                elif cell.attrib.get("t") == "s":
+                    values.append(self.value(sheet, address))
+                else:
+                    values.append(float(self.value(sheet, address)))
+            return values if ":" in reference[2] else values[0]
+        if "(" not in expression:
+            return float(expression) if expression else None
+        function = expression.split("(", 1)[0].removeprefix("_xll.")
+        args = [self.market_input(argument) for argument in arguments(expression)]
+        if function == "QS.QUOTES.CREATE":
+            return {"reference_date": args[1], "quotes": []}
+        if function == "QS.QUOTES.SET":
+            return args[0] | {"quotes": args[0]["quotes"] + [dict(zip(("identifier", "mid", "bid", "ask"), args[1:]))]}
+        if function == "QS.CURVE.CONFIGS.CREATE":
+            return []
+        if function == "QS.CURVE.CONFIGS.ADD":
+            return args[0] + [dict(zip(("market_index", "day_counter", "interpolator", "enable_extrapolation", "quotes"), args[1:]))]
+        if function == "QS.CONTEXT.CREATE":
+            return {"name": args[0], "quotes": args[1], "curves": args[2],
+                    "base_currency": args[12], "base_index": args[13], "quote_level": args[14]}
+        raise AssertionError(f"Unsupported market-input formula: {expression}")
 
     def formulas(self):
         for sheet, cells in self.cells.items():
@@ -258,6 +299,31 @@ class WorkbookTests(unittest.TestCase):
             fair = [args for args in evaluate if args[0].startswith(f'"Loan.C{index:02}.Fair')]
             count = 0 if label == "Bounded floating" else len(segments) or 1
             self.assertEqual([args[4] for args in fair], [f"Loan_Request{target}" for target in range(count)])
+
+    def test_swap_markets_bootstrap_with_their_actual_collateral_assumptions(self):
+        book = self.books["swap"]
+        query_date = book.market_input("Swap_Maturity")
+        inputs = [book.market_input(expression) | {"query_date": query_date}
+                  for _, _, expression, _ in book.formulas()
+                  if expression.startswith("_xll.QS.CONTEXT.CREATE(")]
+        command = ["cargo", "run", "--quiet", "-p", "quantsupport-xll", "--example", "validate_example_market"]
+        checked = subprocess.run(command, cwd=ROOT, input=json.dumps(inputs), text=True, capture_output=True)
+        self.assertEqual(checked.returncode, 0, checked.stderr)
+        reports = {report["name"]: report["curves"] for report in json.loads(checked.stdout)}
+        self.assertEqual({context["base_currency"] for context in inputs}, {"USD", "EUR"})
+        for _, _, expression, _ in book.formulas():
+            if expression.startswith("_xll.QS.CURVE.GET("):
+                args = arguments(expression)
+                context = book.market_input(args[0])
+                index = book.market_input(args[1])
+                self.assertIn(index, [curve["market_index"] for curve in reports[context["name"]]])
+        # This is the original failure: EUR OIS under USD CSA requires an FX collateral curve.
+        combined = deepcopy(next(context for context in inputs if context["base_currency"] == "USD"))
+        eur = next(context for context in inputs if context["base_currency"] == "EUR")
+        combined["curves"] += eur["curves"]
+        rejected = subprocess.run(command, cwd=ROOT, input=json.dumps([combined]), text=True, capture_output=True)
+        self.assertNotEqual(rejected.returncode, 0)
+        self.assertIn("coll:eur/usd", rejected.stderr.lower())
 
 
 if __name__ == "__main__":
