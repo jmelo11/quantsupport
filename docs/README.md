@@ -113,3 +113,14 @@ dependencies, runs documentation tests, and builds both sites with strict
 warnings. Pull requests validate without deploying. Main-branch publication
 uploads the combined `book/html` artifact to
 <https://jmelo11.github.io/quantsupport/>.
+
+Pushes to main also validate documentation, but automatic deployment waits for
+the **Release** workflow to finish successfully. Pages resolves that run's
+reserved version, builds the site and workbooks from its tagged source, and
+downloads the XLL, XML, IntelliSense companion and ZIP from that same release.
+Missing assets or a ZIP that disagrees with the standalone files fail with an
+explicit error; files from an older release are never substituted.
+
+For a manual redeployment, run **Documentation** on main using
+`workflow_dispatch`. Its optional `release_tag` selects a published version;
+blank selects the latest published release.

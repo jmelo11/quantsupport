@@ -24,7 +24,8 @@ class DistributionTests(unittest.TestCase):
         release = (ROOT / ".github/workflows/release.yml").read_text()
         for name in (ARCHIVE, COMPANION, "quantsupport.xll", "quantsupport.intellisense.xml"):
             self.assertIn("bindings/excel/dist/" + name, bindings)
-            self.assertIn("--pattern " + name, pages)
+            self.assertIn('"' + name + '"', (ROOT / ".github/scripts/excel_downloads.py").read_text())
+        self.assertIn('"$RUNNER_TEMP/excel_downloads.py" stage', pages)
         self.assertIn("gh release upload", release)
         self.assertIn("dist/*", release)
         self.assertIn('"package.ps1"', (EXCEL / "scripts/build.ps1").read_text())

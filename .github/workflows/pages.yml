@@ -10,6 +10,11 @@ on:
     branches: [main]
     types: [completed]
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Published release to deploy (blank selects latest)
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -25,12 +30,32 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+        with:
+          fetch-depth: 0
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
+      - name: Test Excel download staging
+        run: python -m unittest discover -s .github/scripts -p 'test_*.py' -v
+      - name: Select published release
+        id: release
+        if: github.ref == 'refs/heads/main' && (github.event_name == 'workflow_run' || github.event_name == 'workflow_dispatch')
+        run: |
+          python .github/scripts/excel_downloads.py resolve --repository "$GITHUB_REPOSITORY" \
+            --run-id "$RELEASE_RUN_ID" --tag "$RELEASE_TAG"
+          cp .github/scripts/excel_downloads.py "$RUNNER_TEMP/excel_downloads.py"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_RUN_ID: ${{ github.event.workflow_run.id }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+      - name: Check out released source
+        if: steps.release.outputs.ref != ''
+        run: git checkout --detach "$RELEASE_REF"
+        env:
+          RELEASE_REF: ${{ steps.release.outputs.ref }}
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
       - name: Install binding documentation dependencies
         run: python -m pip install -r docs/requirements.txt
       - name: Install checkout Python bindings for guide examples
@@ -56,32 +81,24 @@ jobs:
       - name: Build API reference
         run: sphinx-build -W -b html docs book/html/api
       - name: Stage Excel downloads
-        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        if: steps.release.outputs.tag != ''
         run: |
-          mkdir -p book/html/downloads
-          gh release download --repo "$GITHUB_REPOSITORY" \
-            --pattern quantsupport.xll \
-            --pattern quantsupport.intellisense.xml \
-            --pattern ExcelDna.IntelliSense64.xll \
-            --pattern quantsupport-excel-windows-x64.zip \
-            --dir book/html/downloads
-          for asset in quantsupport.xll quantsupport.intellisense.xml ExcelDna.IntelliSense64.xll quantsupport-excel-windows-x64.zip; do
-            test -s "book/html/downloads/$asset"
-          done
-          cp bindings/excel/examples/*.xlsx book/html/downloads/
+          python "$RUNNER_TEMP/excel_downloads.py" stage --repository "$GITHUB_REPOSITORY" \
+            --tag "$RELEASE_TAG" --destination book/html/downloads --examples bindings/excel/examples
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
       - name: Configure Pages
-        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        if: steps.release.outputs.tag != ''
         uses: actions/configure-pages@v5
       - name: Upload Pages artifact
-        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        if: steps.release.outputs.tag != ''
         uses: actions/upload-pages-artifact@v3
         with:
           path: book/html
 
   deploy:
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'workflow_run' || github.event_name == 'workflow_dispatch')
     needs: build
     runs-on: ubuntu-latest
     permissions:
