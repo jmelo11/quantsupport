@@ -8,6 +8,12 @@ borrower credit, and treasury funding change lender value. Its editable zero
 curves are illustrative assumptions, while the notebook bootstraps its example
 curves from market quotes. Both use native loan construction and pricing.
 
+Open **Start Here**, then follow the numbered tabs. **1 Inputs** contains shared
+terms, **2 Cases** keeps each agreement's settings and coupon schedule together,
+and **5 Results** compares the twelve cases. Use that tab's **Inspect one case**
+dropdown to select the agreement shown on both Cashflows and Risk; each result
+row also links to its inputs and build steps.
+
 Construct a loan
 ----------------
 

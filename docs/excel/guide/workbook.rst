@@ -21,6 +21,15 @@ Further notebook-style studies cover
 `bond anchors and risk <https://jmelo11.github.io/quantsupport/downloads/bond_pricing_example.xlsx>`_, and
 `interpolation and schedules <https://jmelo11.github.io/quantsupport/downloads/interpolation_example.xlsx>`_.
 
+Each example opens on **Start Here**, which links to the numbered tabs and
+suggests three changes to try. Follow Inputs, Market, Build, then Results.
+Blue cells hold editable assumptions; green cells show financial measures.
+Construction sheets keep object references beside their purpose and show each
+formula immediately below its step. Loan and bond Results tabs link directly
+to each case's inputs and construction steps; their **Inspect one case**
+dropdown controls both Cashflows and Risk. Generated results stay blank until
+Excel calculates them.
+
 Add-in loading validates every function and alias. A registration failure
 displays the rejected function name and fails loading; a partially registered
 catalog is rolled back.

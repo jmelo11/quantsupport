@@ -1,10 +1,9 @@
-"""Generate the Excel example workbooks with Python.
+"""Generate the guided Excel studies.
 
 Install: python -m pip install -r bindings/excel/examples/requirements.txt
 Run: python bindings/excel/examples/create_examples.py
-Generation works without Excel or the XLL. Open the workbooks in Windows Excel
-with quantsupport.xll loaded and press Ctrl+Alt+F9 to calculate their formulas.
-Use --xll-path on Windows for optional native Excel validation (requires pywin32).
+Windows Excel with the matching QuantSupport XLL calculates the formulas.
+Use --xll-path for optional live validation with pywin32.
 """
 
 import argparse
@@ -14,614 +13,592 @@ from pathlib import Path
 import sys
 from tempfile import TemporaryDirectory
 
-import xlsxwriter
-
-
-def formula(name, *arguments):
-    return "=" + name + "(" + ",".join(arguments) + ")"
-
-def historical_cells():
-    cells = {
-        "A1": "Market reference date", "A2": "Observation timestamp (UTC)",
-        "A4": "Pillar", "B4": "Zero rate: first market", "C4": "Zero rate: second market",
-        "A5": "0D", "A6": "1Y", "A7": "10Y", "A9": "Quote store (reference date)",
-        "A10": "Curve configuration store", "A11": "Explicit zero-rate configuration",
-        "A12": "Base market context", "A13": "Captured market snapshot",
-        "A15": "Complete snapshot archive", "A17": "One unchanged swap trade",
-        "A19": "Requested timestamp", "A20": "Native snapshot selector",
-        "A21": "Selected historical context", "A22": "Actual matched timestamp",
-        "A23": "Actual valuation date", "A24": "Swap present value",
-        "A25": "Construction quote side",
-        "A27": "Edit B5:C7 to reprice. Rates are decimals; cells display percentages.",
-        "A28": "The swap starts after both valuation dates, so this example requires no historical fixings.",
-        "A29": "Change Exact to Previous in a selector to query a timestamp absent from the archive.",
-        "A30": "Previous preserves the matched market's valuation date; it does not roll curves to the requested date.",
-        "B15": '=QS.SNAPSHOTS.CREATE("history_archive",B13:C13)',
-        "B16": '=QS.INSTRUMENT.SWAP("history_instrument","2026-01-19","2031-01-19","USD","SOFR",1000000,0.04,0,"Actual360","Simple","Semiannual","Semiannual","Quarterly")',
-    }
-    cells.update({
-        "A16": "Native swap instrument", "A31": "Explicit CSA discount policy", "A32": "Native cashflow pricer",
-        "A33": "Evaluation results",
-        "B17": '=QS.TRADE.CREATE("history_swap",B16,"2026-01-15","Receive")',
-        "B31": '=QS.DISCOUNT.POLICY.CSA("history_policy","USD","SOFR")',
-        "B32": '=QS.PRICER.CREATE("history_pricer","DiscountedCashflowPricer",B31)',
-    })
-    for column, day, rates in [("B", 15, [0.040, 0.039, 0.038]), ("C", 16, [0.041, 0.040, 0.039])]:
-        date = f"2026-01-{day}"
-        cells[f"{column}1"] = date
-        cells[f"{column}2"] = date + "T16:00:00Z"
-        for row, rate in enumerate(rates, 5):
-            cells[f"{column}{row}"] = rate
-        cells[f"{column}9"] = formula("QS.QUOTES.CREATE", f'"history_quotes_"&{column}$1', f"{column}$1")
-        cells[f"{column}10"] = formula("QS.CURVE.CONFIGS.CREATE", f'"history_curves_"&{column}$1')
-        cells[f"{column}11"] = formula("QS.CURVE.CONFIGS.ADD.ZERO", f"{column}10", '"SOFR"', '"Actual365"', '"Linear"', "FALSE", "$A$5:$A$7", f"{column}5:{column}7", '"Continuous"', '"Annual"')
-        cells[f"{column}12"] = formula("QS.CONTEXT.CREATE", f'"history_market_"&{column}$1', f"{column}9", f"{column}11", *([""] * 9), '"USD"', '"SOFR"')
-        cells[f"{column}13"] = formula("QS.SNAPSHOT.FROM.CONTEXT", f'"history_snapshot_"&{column}$1', f"{column}2", f"{column}12")
-        cells[f"{column}19"] = date + "T16:00:00Z"
-        cells[f"{column}20"] = formula("QS.SNAPSHOT.SELECTOR", f'"history_selector_"&{column}$1', f"{column}19", '"Exact"', '"Mid"')
-        cells[f"{column}21"] = formula("QS.CONTEXT.FROM.SNAPSHOT", f'"history_selected_"&{column}$1', "$B$15", f"{column}20", "")
-        cells[f"{column}22"] = formula("QS.CONTEXT.SNAPSHOT.TIMESTAMP", f"{column}21")
-        cells[f"{column}23"] = formula("QS.CONTEXT.EVALUATION.DATE", f"{column}21")
-        cells[f"{column}33"] = formula("QS.EVALUATE", f'"history_result_{column}"', "$B$32", "$B$17", f"{column}21", '"Value"')
-        cells[f"{column}24"] = formula("QS.RESULT.VALUE", f"{column}33")
-        cells[f"{column}25"] = formula("QS.CONTEXT.QUOTE.LEVEL", f"{column}21")
-    return cells
-
-
-def formats(workbook):
-    common = {"font_name": "Calibri", "font_size": 11, "text_wrap": True, "valign": "top"}
-    variants = {
-        "text": {},
-        "title": {"bold": True, "font_size": 18, "font_color": "white", "bg_color": "#003070"},
-        "header": {"bold": True, "font_color": "white", "bg_color": "#2C5AA0", "border": 1},
-        "section": {"bold": True, "font_color": "#003070", "bg_color": "#CFD9E8"},
-        "input": {"bg_color": "#D6E4FC", "border": 1},
-        "input_rate": {"bg_color": "#D6E4FC", "border": 1, "num_format": "0.0000%"},
-        "input_number": {"bg_color": "#D6E4FC", "border": 1, "num_format": "#,##0.00"},
-        "rate": {"num_format": "0.0000%"},
-        "number": {"num_format": "#,##0.00"},
-        "factor": {"num_format": "0.000000"},
-    }
-    return {name: workbook.add_format(common | properties) for name, properties in variants.items()}
-
-
-def write(sheet, cell, value, cell_format=None):
-    if isinstance(value, str) and value.startswith("="):
-        if value.startswith("=QS."):
-            # Match Excel's Formula2 storage for XLL functions and preserve spills.
-            sheet.write_dynamic_array_formula(cell, value.replace("=QS.", "=_xll.QS.", 1), cell_format)
-        else:
-            sheet.write_formula(cell, value, cell_format)
-    else:
-        sheet.write(cell, value, cell_format)
-
-
-def heading(sheet, cell_range, text, cell_format):
-    sheet.merge_range(cell_range, text, cell_format)
-    if cell_range.startswith("A1:"):
-        sheet.set_row(0, 28)
-
-
-def new_workbook(path):
-    workbook = xlsxwriter.Workbook(path)
-    workbook.set_properties({"title": "QuantSupport Excel examples", "created": datetime(2026, 1, 1)})
-    workbook.set_calc_mode("auto")
-    return workbook
-
-
-def create_historical(path):
-    with new_workbook(path) as workbook:
-        style = formats(workbook)
-        sheet = workbook.add_worksheet("Historical Pricing")
-        sheet.hide_gridlines(2)
-        sheet.freeze_panes(4, 1)
-        sheet.set_column("A:A", 38, style["text"])
-        sheet.set_column("B:C", 55, style["text"])
-        for address, value in historical_cells().items():
-            row = int(address[1:])
-            kind = "header" if row in (1, 4, 19) else "text"
-            if address[0] != "A":
-                if row in (5, 6, 7):
-                    kind = "input_rate"
-                elif row == 24:
-                    kind = "number"
-                elif row in (1, 2, 19):
-                    kind = "input"
-            write(sheet, address, value, style[kind])
+from workbook_layout import Study, context, formula, text
 
 
 SOFR_QUOTES = [
-    ("FixedRateDeposit_USD_SOFR_1D", 0.04500),
-    ("OIS_USD_SOFR_1Y", 0.04837), ("OIS_USD_SOFR_2Y", 0.04528),
-    ("OIS_USD_SOFR_3Y", 0.04260), ("OIS_USD_SOFR_5Y", 0.04077),
-    ("OIS_USD_SOFR_7Y", 0.04033), ("OIS_USD_SOFR_10Y", 0.03898),
-    ("OIS_USD_SOFR_30Y", 0.03738),
+    ("FixedRateDeposit_USD_SOFR_1D", .045), ("OIS_USD_SOFR_1Y", .04837),
+    ("OIS_USD_SOFR_2Y", .04528), ("OIS_USD_SOFR_3Y", .04260),
+    ("OIS_USD_SOFR_5Y", .04077), ("OIS_USD_SOFR_7Y", .04033),
+    ("OIS_USD_SOFR_10Y", .03898), ("OIS_USD_SOFR_30Y", .03738),
 ]
 ESTR_QUOTES = [
-    ("FixedRateDeposit_EUR_ESTR_1D", 0.02900),
-    ("OIS_EUR_ESTR_3M", 0.02880), ("OIS_EUR_ESTR_6M", 0.02800),
-    ("OIS_EUR_ESTR_1Y", 0.02650), ("OIS_EUR_ESTR_2Y", 0.02500),
-    ("OIS_EUR_ESTR_3Y", 0.02450), ("OIS_EUR_ESTR_4Y", 0.02430),
-    ("OIS_EUR_ESTR_5Y", 0.02420), ("OIS_EUR_ESTR_7Y", 0.02450),
-    ("OIS_EUR_ESTR_10Y", 0.02520), ("OIS_EUR_ESTR_15Y", 0.02580),
-    ("OIS_EUR_ESTR_20Y", 0.02550), ("OIS_EUR_ESTR_30Y", 0.02400),
+    ("FixedRateDeposit_EUR_ESTR_1D", .029), ("OIS_EUR_ESTR_3M", .0288),
+    ("OIS_EUR_ESTR_6M", .028), ("OIS_EUR_ESTR_1Y", .0265),
+    ("OIS_EUR_ESTR_2Y", .025), ("OIS_EUR_ESTR_3Y", .0245),
+    ("OIS_EUR_ESTR_4Y", .0243), ("OIS_EUR_ESTR_5Y", .0242),
+    ("OIS_EUR_ESTR_7Y", .0245), ("OIS_EUR_ESTR_10Y", .0252),
+    ("OIS_EUR_ESTR_15Y", .0258), ("OIS_EUR_ESTR_20Y", .0255),
+    ("OIS_EUR_ESTR_30Y", .024),
 ]
+ZERO_PILLARS = [("0D", .03), ("5Y", .03), ("10Y", .032), ("30Y", .034), ("35Y", .035)]
+
+
+def requests(study, sheet, row, names=("Value", "Cashflows", "Sensitivities")):
+    study.headers(sheet, row, ["Requested measure", "What the result contains", ""])
+    descriptions = {"Value": "Monetary present value", "Cashflows": "Resolved payments and receipts",
+                    "Sensitivities": "Raw derivatives per unit market input", "ModifiedDuration": "Yield-modified duration in years",
+                    "ZSpread": "Annual decimal spread implied by the bond anchor"}
+    for offset, name in enumerate(names, row + 1):
+        study.write(sheet, f"A{offset}", name)
+        study.write(sheet, f"B{offset}", descriptions[name], "note")
+    study.range("Requests", sheet, row + 1, 0, row + len(names), 0)
+
+
+def inputs(study, sheet, rows, purpose):
+    study.sheet(sheet, "Contract and position inputs", purpose, (34, 26, 62), "#337AB7")
+    study.headers(sheet, 6, ["Parameter", "Value", "Meaning"])
+    for row, (label, value, key, meaning, kind) in enumerate(rows, 7):
+        study.input(sheet, row, label, value, key, meaning, kind)
+
+
+def step(study, sheet, row, label, name, args, key, explanation):
+    return study.step(sheet, row, label, formula(name, *args), key, explanation)
+
+
+def simple_market(study, sheet, currency, index, loan=False):
+    """Market assumptions first; the construction sequence follows below them."""
+    widths = (38, 42, 36, 24) if loan else (38, 42, 44)
+    study.sheet(sheet, "Market assumptions and curve construction",
+                "Edit the blue rates. The steps below the input tables construct ordinary curves from those cells.", widths, "#337AB7")
+    study.headers(sheet, 6, ["Pillar", f"{index} zero", "EURIBOR12m zero", "Treasury spread"] if loan else ["Pillar", "Continuous zero rate", ""])
+    for row, (pillar, rate) in enumerate(ZERO_PILLARS, 7):
+        study.write(sheet, f"A{row}", pillar, "input")
+        study.write(sheet, f"B{row}", rate, "input_rate")
+        if loan:
+            study.write(sheet, f"C{row}", [.04, .037, .04, .0415, .0415][row-7], "input_rate")
+            study.write(sheet, f"D{row}", [.005, .01, .011, .014, .015][row-7], "input_rate")
+    study.range("Pillars", sheet, 7, 0, 11, 0)
+    study.range("ZeroRates", sheet, 7, 1, 11, 1)
+    if loan:
+        study.range("ForwardRates", sheet, 7, 2, 11, 2)
+        study.range("FundingSpreads", sheet, 7, 3, 11, 3)
+        study.merge(sheet, "A13:D14", "These are illustrative continuous zero rates on Actual360. FUNDING is an ordinary composite curve: EURIBOR12m discount factors × treasury-spread discount factors.")
+        study.headers(sheet, 17, ["Borrower CDS quote", "Annual spread", "", ""])
+        for row, (tenor, spread) in enumerate(zip(("1Y", "3Y", "5Y", "10Y", "20Y", "30Y", "35Y"), (.005, .007, .009, .011, .014, .016, .017)), 18):
+            study.write(sheet, f"A{row}", f"Cds_BORROWER_EUR_{tenor}")
+            study.write(sheet, f"B{row}", spread, "input_rate")
+        study.range("CreditQuotes", sheet, 18, 0, 24, 0)
+        study.input(sheet, 27, "Borrower recovery", .4, "Recovery", "Fraction recovered on borrower default.", "input_rate")
+        row = 31
+    else:
+        study.merge(sheet, "A13:C14", "Illustrative continuous zero rates on Actual360, linearly interpolated with extrapolation enabled. Changing a pillar rebuilds the context and dependent prices.")
+        row = 17
+    study.headers(sheet, row, ["Construction step", "Object reference", "Why it is needed"])
+    row += 1
+    row = step(study, sheet, row, "1. Create quote store", "QS.QUOTES.CREATE", [text(study.prefix + ".Quotes"), study.name("ValuationDate")], "InitialQuotes", "Sets the valuation date for the market.")
+    previous = study.name("InitialQuotes")
+    if loan:
+        for offset in range(7):
+            key = f"CreditQuote{offset+1}"
+            row = step(study, sheet, row, f"2.{offset+1} Load CDS quote", "QS.QUOTES.SET",
+                       [previous, f"'{sheet}'!A{18+offset}", f"'{sheet}'!B{18+offset}", "", ""], key, "Each update consumes the preceding store revision.")
+            previous = study.name(key)
+    study.workbook.define_name(study.name("Quotes"), "=" + previous)
+    row = step(study, sheet, row, "3. Create curve configurations", "QS.CURVE.CONFIGS.CREATE", [text(study.prefix + ".Curves")], "InitialCurves", "Curve construction choices are separate from contract terms.")
+    row = step(study, sheet, row, f"4. Configure {index}", "QS.CURVE.CONFIGS.ADD.ZERO",
+               [study.name("InitialCurves"), text(index), '"Actual360"', '"Linear"', "TRUE", study.name("Pillars"), study.name("ZeroRates"), '"Continuous"', '"Annual"'], "BaseCurves", "The context builds this curve from the blue input range.")
+    if loan:
+        row = step(study, sheet, row, "5. Configure projection curve", "QS.CURVE.CONFIGS.ADD.ZERO",
+                   [study.name("BaseCurves"), '"EURIBOR12m"', '"Actual360"', '"Linear"', "TRUE", study.name("Pillars"), study.name("ForwardRates"), '"Continuous"', '"Annual"'], "ForwardCurves", "EURIBOR12m projects floating coupon fixings.")
+        row = step(study, sheet, row, "6. Configure treasury spread", "QS.CURVE.CONFIGS.ADD.ZERO",
+                   [study.name("ForwardCurves"), '"FUNDINGSPREAD"', '"Actual360"', '"Linear"', "TRUE", study.name("Pillars"), study.name("FundingSpreads"), '"Continuous"', '"Annual"'], "SpreadCurves", "The spread is constructed with the same curve API.")
+        row = step(study, sheet, row, "7. Configure funding curve", "QS.CURVE.CONFIGS.ADD.COMPOSITE",
+                   [study.name("SpreadCurves"), '"FUNDING"', '"EURIBOR12m"', '"FUNDINGSPREAD"'], "Curves", "The discount policy chooses whether to use ESTR or FUNDING.")
+        row = step(study, sheet, row, "8. Create credit configurations", "QS.CREDIT.CURVE.CONFIGS.CREATE", [text(study.prefix + ".Credit")], "InitialCredit", "Borrower survival is calibrated from the CDS quotes.")
+        step(study, sheet, row, "9. Configure borrower credit", "QS.CREDIT.CURVE.CONFIGS.ADD",
+             [study.name("InitialCredit"), '"Credit:BORROWER"', text(currency), text(index), study.name("Recovery"), study.name("CreditQuotes")], "Credit", "Only the borrower-credit case attaches this credit index to its contract.")
+    else:
+        study.workbook.define_name(study.name("Curves"), "=" + study.name("BaseCurves"))
+
+
+def detail_sheet(study, sheet, title, result, measure, selected=None):
+    cashflows = measure == "CASHFLOWS"
+    widths = (16, 28, 18, 14, 12, 12, 12, 12, 8) if cashflows else (62, 24, 24)
+    ws = study.sheet(sheet, title,
+        "Signed, undiscounted receipts and payments in each row's currency. Loan legs 0 / 1 / 2 are scheduled receipts / prepayment / recovery." if cashflows else
+        "Raw value derivatives per unit input. Multiply a decimal-rate derivative by 0.0001 to estimate a +1 bp move. Preserve each factor's units.", widths, "#78909C")
+    if selected:
+        study.write(sheet, "A6", "Selected case")
+        study.write(sheet, "B6", "=" + study.name("SelectedCase"), "result")
+        study.link(sheet, "C6", selected, "Change case →")
+    study.write(sheet, "A7", formula("QS.RESULT." + measure, result))
+    ws.freeze_panes(7, 2 if cashflows else 1)
+    ws.repeat_rows(0, 6)
+    ws.set_column(2 if cashflows else 1, 2 if cashflows else 1, 18 if cashflows else 24, study.formats["money"])
+    if cashflows:
+        for column in (3, 6, 7):
+            ws.set_column(column, column, 12, study.formats["rate"])
+        ws.set_column(4, 4, 12, study.formats["number"])
+
+
+def selected_case(study, build, row, results, labels, result_keys, selector_row):
+    study.headers(build, row, ["Case lookup for detail sheets", "Evaluation result", ""])
+    for offset, (label, result) in enumerate(zip(labels, result_keys), row + 1):
+        study.write(build, f"A{offset}", label)
+        study.write(build, f"B{offset}", "=" + study.name(result), "handle")
+    study.range("ResultHandles", build, row + 1, 1, row + len(labels), 1)
+    study.range("CaseNames", results, 7, 0, 6 + len(labels), 0)
+    study.write(results, f"A{selector_row}", "Inspect one case", "section")
+    study.write(results, f"B{selector_row}", labels[0], "input", "SelectedCase")
+    study.sheets[results].data_validation(f"B{selector_row}", {"validate": "list", "source": "=" + study.name("CaseNames")})
+    study.merge(results, f"C{selector_row}:F{selector_row+1}", "Choose a case, then open Cashflows or Risk. Both detail sheets follow this selection.")
+    expression = f"=INDEX({study.name('ResultHandles')},MATCH({study.name('SelectedCase')},{study.name('CaseNames')},0))"
+    study.step(build, row + len(labels) + 3, "Selected case for detail sheets", expression, "SelectedResult", "The dropdown on Results chooses an existing evaluation result.")
 
 
 def create_swap(path):
-    with new_workbook(path) as workbook:
-        style = formats(workbook)
-        sheets = {name: workbook.add_worksheet(name) for name in (
-            "README", "Curve Setup", "Trade Inputs", "Pricing", "Curve Results", "Outputs", "Function Help",
-        )}
-        for sheet in sheets.values():
-            sheet.hide_gridlines(2)
-            sheet.set_column("A:N", 18, style["text"])
-            sheet.freeze_panes(3, 0)
-
-        readme = sheets["README"]
-        heading(readme, "A1:F1", "QuantSupport: SOFR and ESTR Curve Construction", style["title"])
-        heading(readme, "A3:F3", "How to use this workbook", style["section"])
-        instructions = {
-            4: "1. Build and load bindings/excel/dist/quantsupport.xll in 64-bit Windows Excel.",
-            5: "2. Open this workbook after the add-in is loaded, then press Ctrl+Alt+F9 once.",
-            6: "3. Change the blue SOFR or ESTR quotes on Curve Setup, or edit Trade Inputs. Curves and prices recalculate.",
-            7: "4. Pricing shows the object chain. Curve Results shows both curves. Outputs shows cashflows and sensitivities.",
-            10: "Curve Setup contains USD SOFR and EUR ESTR deposit/OIS quotes plus interpolation, day count, extrapolation, and pillars.",
-            11: "The QuoteStore chain loads SOFR from A6:A13, then ESTR from H6:H18. The configuration chain adds both curves.",
-            12: "QS.CONTEXT.CREATE bootstraps both curves from worksheet handles. No JSON or external curve file is used.",
-            13: "Pressing F9 with unchanged inputs reuses every object handle. Edited quotes or trade inputs advance revisions.",
-            15: "Excel's Function Arguments dialog shows guidance for every parameter.",
-            16: 'Use =QS.HELP("QS.CURVE.CONFIGS.ADD") or =QS.FUNCTIONS.DETAILS() for an in-sheet reference.',
-        }
-        for row, text in instructions.items():
-            readme.write_string(f"A{row}", text, style["text"])
-            readme.set_row(row - 1, 32)
-        heading(readme, "A9:F9", "Both curves are configured in this workbook", style["section"])
-        heading(readme, "A14:F14", "Function guidance", style["section"])
-        readme.set_column("A:A", 115)
-
-        curve = sheets["Curve Setup"]
-        heading(curve, "A1:M1", "USD SOFR and EUR ESTR curve setup", style["title"])
-        curve.write("A3", "Valuation date")
-        curve.write("B3", "2026-02-24", style["input"])
-        curve.write("E3", "Initial quote store")
-        write(curve, "F3", '=QS.QUOTES.CREATE("SwapExample.Quotes",B3)')
-        for columns, quotes, upstream in [("ABC", SOFR_QUOTES, "$F$3"), ("HIJ", ESTR_QUOTES, "$C$13")]:
-            identifier_column, rate_column, handle_column = columns
-            for column, label in zip(columns, ["Quote identifier / calibration instrument", "Mid", "QuoteStore revision"]):
-                curve.write(f"{column}5", label, style["header"])
-            for row, (identifier, rate) in enumerate(quotes, 6):
-                curve.write(f"{identifier_column}{row}", identifier)
-                curve.write(f"{rate_column}{row}", rate, style["input_rate"])
-                previous = upstream if row == 6 else f"{handle_column}{row - 1}"
-                write(curve, f"{handle_column}{row}", formula("QS.QUOTES.SET", previous, f"{identifier_column}{row}", f"{rate_column}{row}", "", ""))
-        for label_column, value_column, index in [("E", "F", "SOFR"), ("L", "M", "ESTR")]:
-            curve.write(f"{label_column}5", "Curve parameter", style["header"])
-            curve.write(f"{value_column}5", "Value / handle", style["header"])
-            for row, label, value in [(6, "Market index", index), (7, "Day counter", "Actual360"), (8, "Interpolator", "LogLinear"), (9, "Enable extrapolation", True)]:
-                curve.write(f"{label_column}{row}", label)
-                curve.write(f"{value_column}{row}", value, style["input"])
-        for cell, value in {
-            "E10": "Configuration store", "F10": '=QS.CURVE.CONFIGS.CREATE("SwapExample.Curves")',
-            "E11": "Configured SOFR curve", "F11": "=QS.CURVE.CONFIGS.ADD(F10,F6,F7,F8,F9,A6:A13)",
-            "L10": "SOFR configuration input", "M10": "=F11",
-            "L11": "Configured ESTR curve", "M11": "=QS.CURVE.CONFIGS.ADD(M10,M6,M7,M8,M9,H6:H18)",
-        }.items():
-            write(curve, cell, value)
-        for columns, width in [("A:A", 42), ("B:B", 14), ("C:C", 48), ("D:D", 3), ("E:E", 24), ("F:F", 50), ("G:G", 3), ("H:H", 42), ("I:I", 14), ("J:J", 48), ("K:K", 3), ("L:L", 24), ("M:M", 50)]:
-            curve.set_column(columns, width, style["text"])
-
-        inputs = sheets["Trade Inputs"]
-        heading(inputs, "A1:D1", "Swap inputs", style["title"])
-        inputs.write("A3", "Parameter", style["header"])
-        inputs.write("B3", "Value", style["header"])
-        values = [
-            ("Notional", 10000000), ("Fixed coupon", 0.0425),
-            ("Start date", "2026-02-24"), ("Maturity date", "2031-02-24"),
-            ("Currency", "USD"), ("Market index", "SOFR"), ("Side", "Receive"),
-            ("Day counter", "Actual360"), ("Coupon compounding", "Simple"),
-            ("Rate frequency", "Semiannual"), ("Fixed-leg frequency", "Semiannual"),
-            ("Floating-leg frequency", "Quarterly"),
-        ]
-        for row, (label, value) in enumerate(values, 4):
-            inputs.write(f"A{row}", label)
-            kind = "input_number" if row == 4 else "input_rate" if row == 5 else "input"
-            inputs.write(f"B{row}", value, style[kind])
-        inputs.write("D3", "Rates are decimals: 0.03 = 3%. Dates are ISO text (YYYY-MM-DD).")
-        for columns, width in [("A:A", 27), ("B:B", 23), ("D:D", 42)]:
-            inputs.set_column(columns, width, style["text"])
-
-        pricing = sheets["Pricing"]
-        heading(pricing, "A1:D1", "Pricing chain", style["title"])
-        for cell, label in [("A3", "Step"), ("B3", "Result"), ("C3", "Purpose")]:
-            pricing.write(cell, label, style["header"])
-        steps = [
-            ("1. Quote store", "='Curve Setup'!J18", "Latest revision after loading SOFR and ESTR quotes"),
-            ("2. Curve configurations", "='Curve Setup'!M11", "Both curves' conventions and pillar ranges"),
-            ("3. Pricing context", formula("QS.CONTEXT.CREATE", '"SwapExample.Context"', "B4", "B5", *([""] * 9), '"USD"', '"SOFR"'), "Bootstraps the configured curves"),
-            ("4. Swap position", formula("QS.TRADE.CREATE", '"SwapExample.Swap"', "B15", "'Curve Setup'!B3", "'Trade Inputs'!B10"), "Position on instrument B15"),
-            ("5. Present value", "=QS.RESULT.VALUE(B18)", "Swap NPV in USD"),
-            ("6. Fair fixed rate", "=QS.RESULT.FAIR.RATE(B18)", "FairRate(0): fixed leg"),
-            ("7. SOFR curve", "=QS.CURVE.GET(B6,'Trade Inputs'!B9)", "Reusable bootstrapped SOFR curve handle"),
-            ("8. SOFR maturity discount", "=QS.CURVE.DISCOUNT(B10,'Trade Inputs'!B7)", "SOFR discount factor at maturity"),
-            ("9. ESTR curve", '=QS.CURVE.GET(B6,"ESTR")', "Reusable bootstrapped ESTR curve handle"),
-            ("10. ESTR maturity discount", "=QS.CURVE.DISCOUNT(B12,'Trade Inputs'!B7)", "ESTR discount factor at maturity"),
-        ]
-        for row, (label, expression, purpose) in enumerate(steps, 4):
-            pricing.write(f"A{row}", label)
-            kind = "number" if row == 8 else "rate" if row == 9 else "factor" if row in (11, 13) else "text"
-            write(pricing, f"B{row}", expression, style[kind])
-            pricing.write(f"C{row}", purpose)
-        for columns, width in [("A:A", 24), ("B:B", 58), ("C:C", 40)]:
-            pricing.set_column(columns, width, style["text"])
-        for cell, value in {
-            "A15": "Native swap contract", "B15": formula("QS.INSTRUMENT.SWAP", '"SwapExample.Instrument"', "'Trade Inputs'!B6", "'Trade Inputs'!B7", "'Trade Inputs'!B8", "'Trade Inputs'!B9", "'Trade Inputs'!B4", "'Trade Inputs'!B5", "0", "'Trade Inputs'!B11", "'Trade Inputs'!B12", "'Trade Inputs'!B13", "'Trade Inputs'!B14", "'Trade Inputs'!B15"),
-            "A16": "Explicit CSA policy", "B16": '=QS.DISCOUNT.POLICY.CSA("SwapExample.Policy","USD","SOFR")',
-            "A17": "Native cashflow pricer", "B17": '=QS.PRICER.CREATE("SwapExample.Pricer","DiscountedCashflowPricer",B16)',
-            "A18": "Requested native results", "B18": '=QS.EVALUATE("SwapExample.Results",B17,B7,B6,E15:E18)',
-            "E15": "Value", "E16": "Cashflows", "E17": "Sensitivities", "E18": '=QS.REQUEST.FAIR.RATE(0)',
-            "A20": "Fair floating spread", "B20": '=QS.EVALUATE("SwapExample.FloatFair",B17,B7,B6,E20)',
-            "E20": '=QS.REQUEST.FAIR.RATE(1)', "B21": '=QS.RESULT.FAIR.RATE(B20)',
-        }.items(): write(pricing, cell, value)
-        pricing.set_column("E:E", 28)
-        pricing.activate()
-        pricing.set_selection("A4")
-
-        results = sheets["Curve Results"]
-        heading(results, "A1:N1", "Bootstrapped SOFR and ESTR discount curves", style["title"])
-        for area, cell, index_cell, label in [("A3:E3", "A4", "B10", "SOFR curve nodes"), ("G3:K3", "G4", "B12", "ESTR curve nodes")]:
-            heading(results, area, label, style["section"])
-            write(results, cell, f'=QS.CURVE.TABLE(Pricing!{index_cell},"Simple","Annual")')
-        for columns, width, kind in [("A:A", 38, "text"), ("B:B", 16, "text"), ("C:C", 20, "factor"), ("D:E", 20, "rate"), ("G:G", 38, "text"), ("H:H", 16, "text"), ("I:I", 20, "factor"), ("J:K", 20, "rate"), ("M:M", 22, "text"), ("N:N", 58, "text")]:
-            results.set_column(columns, width, style[kind])
-        heading(results, "M3:N3", "Point queries", style["section"])
-        queries = [
-            ("SOFR curve handle", "=Pricing!B10", "text"),
-            ("Discount date", "='Trade Inputs'!B7", "text"),
-            ("SOFR discount factor", "=QS.CURVE.DISCOUNT(Pricing!B10,N5)", "factor"),
-            ("ESTR curve handle", "=Pricing!B12", "text"),
-            ("ESTR discount factor", "=QS.CURVE.DISCOUNT(Pricing!B12,N5)", "factor"),
-            ("Forward start", "='Trade Inputs'!B6", "text"),
-            ("Forward end", "='Trade Inputs'!B7", "text"),
-            ("SOFR forward rate", '=QS.CURVE.FORWARD(Pricing!B10,N9,N10,"Simple","Annual")', "rate"),
-            ("ESTR forward rate", '=QS.CURVE.FORWARD(Pricing!B12,N9,N10,"Simple","Annual")', "rate"),
-        ]
-        for row, (label, expression, kind) in enumerate(queries, 4):
-            results.write(f"M{row}", label)
-            write(results, f"N{row}", expression, style[kind])
-
-        outputs = sheets["Outputs"]
-        heading(outputs, "A1:L1", "Swap outputs", style["title"])
-        heading(outputs, "A3:I3", "Cashflows", style["section"])
-        write(outputs, "A4", "=QS.RESULT.CASHFLOWS(Pricing!B18)")
-        heading(outputs, "K3:L3", "Sensitivities", style["section"])
-        write(outputs, "K4", "=QS.RESULT.SENSITIVITIES(Pricing!B18)")
-
-        help_sheet = sheets["Function Help"]
-        heading(help_sheet, "A1:H1", "Live worksheet-function help", style["title"])
-        for area, cell, label, function_name in [("A3:B3", "A4", "Curve construction", "QS.CURVE.CONFIGS.ADD"), ("D3:E3", "D4", "Swap construction", "QS.INSTRUMENT.SWAP"), ("G3:H3", "G4", "Curve inspection", "QS.CURVE.TABLE")]:
-            heading(help_sheet, area, label, style["section"])
-            write(help_sheet, cell, f'=QS.HELP("{function_name}")')
-        for columns, width in [("A:A", 25), ("B:B", 76), ("D:D", 25), ("E:E", 76), ("G:G", 25), ("H:H", 76)]:
-            help_sheet.set_column(columns, width, style["text"])
+    routes = [("1 Inputs", "Set the contract and position."), ("2 Market", "Review quotes, then construct the market inputs."),
+              ("3 Build", "Follow the instrument → trade → policy → pricer → results sequence."), ("4 Results", "Read PV, fair quotes and curve checks."),
+              ("5 Cashflows", "Inspect the swap's signed cashflows."), ("6 Risk", "Inspect raw market sensitivities."), ("7 Curves", "Inspect the bootstrapped nodes.")]
+    with Study(path, "Swap", "Swap pricing · a guided example", "Build USD SOFR and EUR ESTR curves, then value one receive-fixed USD swap.", routes,
+               ["Change the fixed coupon on Inputs and read the PV on Results.", "Change a SOFR quote on Market and compare the fair fixed coupon.", "Compare FairRate(0), the fixed coupon, with FairRate(1), the floating spread."]) as s:
+        inputs(s, "1 Inputs", [
+            ("Valuation date", "2026-02-24", "ValuationDate", "Market reference date (ISO text).", "input"),
+            ("Notional (USD)", 10_000_000, "Notional", "Contract principal and default position size.", "input_number"),
+            ("Fixed coupon", .0425, "FixedRate", "Annual decimal fixed coupon received by the position.", "input_rate"),
+            ("Floating spread", 0, "Spread", "Annual decimal spread paid over SOFR.", "input_rate"),
+            ("Start date", "2026-02-24", "Start", "Accrual starts on this date.", "input"),
+            ("Maturity date", "2031-02-24", "Maturity", "Final contractual date.", "input"),
+            ("Currency", "USD", "Currency", "Use a currency consistent with the selected market index.", "input"),
+            ("Projection index", "SOFR", "Index", "SOFR and ESTR are constructed on the Market tab.", "input"),
+            ("Position side", "Receive", "Side", "Receive means receive fixed / pay floating.", "input"),
+            ("Day counter", "Actual360", "DayCounter", "Contractual interest accrual convention.", "input"),
+            ("Coupon compounding", "Simple", "Compounding", "Native coupon rate convention.", "input"),
+            ("Rate frequency", "Semiannual", "RateFrequency", "Rate convention, separate from payment frequency.", "input"),
+            ("Fixed payment frequency", "Semiannual", "FixedFrequency", "Fixed-leg payment schedule.", "input"),
+            ("Floating payment frequency", "Quarterly", "FloatFrequency", "Floating-leg payment schedule.", "input"),
+        ], "Change blue cells; read their units and meaning in the right-hand column.")
+        requests(s, "1 Inputs", 23)
+        market = "2 Market"
+        s.sheet(market, "Market quotes and construction", "Blue Mid quotes are annual decimals. Quote loading and curve configurations appear below the input tables.", (42, 42, 42), "#337AB7")
+        s.headers(market, 6, ["USD SOFR quote", "Mid", ""])
+        for row, (identifier, rate) in enumerate(SOFR_QUOTES, 7):
+            s.write(market, f"A{row}", identifier)
+            s.write(market, f"B{row}", rate, "input_rate")
+        s.range("SofrQuotes", market, 7, 0, 14, 0)
+        s.headers(market, 17, ["EUR ESTR quote", "Mid", ""])
+        for row, (identifier, rate) in enumerate(ESTR_QUOTES, 18):
+            s.write(market, f"A{row}", identifier)
+            s.write(market, f"B{row}", rate, "input_rate")
+        s.range("EstrQuotes", market, 18, 0, 30, 0)
+        s.headers(market, 33, ["Construction step", "Object reference", ""])
+        row = step(s, market, 34, "1. Create quote store", "QS.QUOTES.CREATE", [text("Swap.Quotes"), s.name("ValuationDate")], "InitialQuotes", "All quotes share this valuation date.")
+        previous = s.name("InitialQuotes")
+        for offset, source in enumerate([*range(7, 15), *range(18, 31)], 1):
+            key = f"Quote{offset}"
+            row = step(s, market, row, f"2.{offset} Load quote", "QS.QUOTES.SET", [previous, f"'{market}'!A{source}", f"'{market}'!B{source}", "", ""], key, "Updates form one ordered store chain.")
+            previous = s.name(key)
+        s.workbook.define_name(s.name("Quotes"), "=" + previous)
+        row = step(s, market, row, "3. Create curve configurations", "QS.CURVE.CONFIGS.CREATE", [text("Swap.Curves")], "InitialCurves", "Use Actual360 / LogLinear / extrapolation for both curves.")
+        row = step(s, market, row, "4. Configure SOFR", "QS.CURVE.CONFIGS.ADD", [s.name("InitialCurves"), '"SOFR"', '"Actual360"', '"LogLinear"', "TRUE", s.name("SofrQuotes")], "SofrConfig", "Bootstraps the visible USD deposit / OIS quotes.")
+        step(s, market, row, "5. Configure ESTR", "QS.CURVE.CONFIGS.ADD", [s.name("SofrConfig"), '"ESTR"', '"Actual360"', '"LogLinear"', "TRUE", s.name("EstrQuotes")], "Curves", "Adds EUR without replacing the USD configuration.")
+        build = "3 Build"
+        s.sheet(build, "Build the pricing objects", "Read from top to bottom. Grey cells contain object references; the exact formula is shown immediately below each step.")
+        s.headers(build, 6, ["Step", "Object reference", "Purpose"])
+        row = s.step(build, 7, "1. Initialize the context", context("Swap.Context", s.name("Quotes"), s.name("Curves"), s.name("Currency"), s.name("Index")), "Context", "Builds the curves configured on Market.")
+        row = step(s, build, row, "2. Define the instrument", "QS.INSTRUMENT.SWAP", [text("Swap.Instrument"), *[s.name(k) for k in ("Start", "Maturity", "Currency", "Index", "Notional", "FixedRate", "Spread", "DayCounter", "Compounding", "RateFrequency", "FixedFrequency", "FloatFrequency")]], "Instrument", "The contract contains dates, rates and indices.")
+        row = step(s, build, row, "3. Create the position", "QS.TRADE.CREATE", [text("Swap.Trade"), s.name("Instrument"), s.name("ValuationDate"), s.name("Side")], "Trade", "The trade adds execution date and direction.")
+        row = step(s, build, row, "4. Choose discount policy", "QS.DISCOUNT.POLICY.CSA", [text("Swap.Policy"), s.name("Currency"), s.name("Index")], "Policy", "The policy selects the native CSA discount curve.")
+        row = step(s, build, row, "5. Create the pricer", "QS.PRICER.CREATE", [text("Swap.Pricer"), '"DiscountedCashflowPricer"', s.name("Policy")], "Pricer", "Pricing assumptions remain separate from the contract.")
+        row = step(s, build, row, "6. Request value and tables", "QS.EVALUATE", [text("Swap.Results"), s.name("Pricer"), s.name("Trade"), s.name("Context"), s.name("Requests")], "Result", "Value, Cashflows and Sensitivities are listed on Inputs.")
+        for target, label in [(0, "fixed coupon"), (1, "floating spread")]:
+            row = step(s, build, row, f"7.{target+1} Select {label}", "QS.REQUEST.FAIR.RATE", [str(target)], f"Request{target}", f"Zero-based leg {target}; one fair-rate target per evaluation.")
+            row = step(s, build, row, f"8.{target+1} Solve {label}", "QS.EVALUATE", [text(f"Swap.Fair{target}"), s.name("Pricer"), s.name("Trade"), s.name("Context"), s.name(f"Request{target}")], f"Fair{target}", "Only the selected leg's quote is adjusted to zero total PV.")
+        for index, key in [("SOFR", "SofrCurve"), ("ESTR", "EstrCurve")]:
+            row = step(s, build, row, "9. Inspect " + index, "QS.CURVE.GET", [s.name("Context"), text(index)], key, "Reusable curve object for point queries and node reports.")
+        result = "4 Results"
+        s.sheet(result, "Read the swap results", "Green cells contain financial measures. The Build tab explains how each native result was produced.", (34, 24, 65), "#21845B")
+        s.headers(result, 6, ["Measure", "Calculated value", "Interpretation"])
+        s.result(result, 7, "Present value (USD)", formula("QS.RESULT.VALUE", s.name("Result")), "PV", "Signed monetary PV of this receive-fixed position.")
+        s.result(result, 8, "Fair fixed coupon · leg 0", formula("QS.RESULT.FAIR.RATE", s.name("Fair0")), "FairFixed", "Annual fixed coupon that makes total trade PV zero.", "rate")
+        s.result(result, 9, "Fair floating spread · leg 1", formula("QS.RESULT.FAIR.RATE", s.name("Fair1")), "FairFloat", "Spread over the floating index that makes total PV zero.", "rate")
+        s.headers(result, 12, ["Curve check", "Calculated value", "Interpretation"])
+        for row, label, expression, key, meaning, kind in [
+            (13, "SOFR discount at maturity", formula("QS.CURVE.DISCOUNT", s.name("SofrCurve"), s.name("Maturity")), "SofrDiscount", "Dimensionless discount factor.", "factor"),
+            (14, "ESTR discount at maturity", formula("QS.CURVE.DISCOUNT", s.name("EstrCurve"), s.name("Maturity")), "EstrDiscount", "The EUR curve is constructed but does not price the USD swap.", "factor"),
+            (15, "SOFR start-to-maturity forward", formula("QS.CURVE.FORWARD", s.name("SofrCurve"), s.name("Start"), s.name("Maturity"), '"Simple"', '"Annual"'), "SofrForward", "Simple annual forward over the full interval.", "rate"),
+            (16, "ESTR start-to-maturity forward", formula("QS.CURVE.FORWARD", s.name("EstrCurve"), s.name("Start"), s.name("Maturity"), '"Simple"', '"Annual"'), "EstrForward", "Same query against ESTR.", "rate"),
+        ]: s.result(result, row, label, expression, key, meaning, kind)
+        s.link(result, "A20", "'1 Inputs'!B9", "Edit the fixed coupon →")
+        detail_sheet(s, "5 Cashflows", "Swap cashflows", s.name("Result"), "CASHFLOWS")
+        detail_sheet(s, "6 Risk", "Swap market risk", s.name("Result"), "SENSITIVITIES")
+        s.sheet("7 Curves", "Bootstrapped curve nodes", "Dates are ISO text; rates are decimals. Each table contains its own field headers.", (48, 18, 20, 20, 24))
+        for row, label, key in [(6, "USD SOFR", "SofrCurve"), (26, "EUR ESTR", "EstrCurve")]:
+            s.merge("7 Curves", f"A{row}:E{row}", label, "section")
+            s.write("7 Curves", f"A{row+1}", formula("QS.CURVE.TABLE", s.name(key), '"Simple"', '"Annual"'))
 
 
-def study_sheets(workbook, names, title, notes):
-    style = formats(workbook)
-    sheets = {name: workbook.add_worksheet(name) for name in ("README", *names)}
-    for sheet in sheets.values():
-        sheet.hide_gridlines(2)
-        sheet.freeze_panes(4, 0)
-        sheet.set_column("A:L", 22, style["text"])
-    readme = sheets["README"]
-    readme.set_column("A:A", 115, style["text"])
-    heading(readme, "A1:F1", title, style["title"])
-    for row, note in enumerate([
-        "Load quantsupport.xll in 64-bit Windows Excel, then open this workbook and press Ctrl+Alt+F9.",
-        "Blue cells are editable inputs. Rates and spreads are annual decimals; dates are ISO text.",
-        *notes,
-        "These are illustrative assumptions, following the questions explored in the Python notebook studies.",
-        "Table functions end with transpose,headers. Defaults are FALSE,TRUE; TRUE,FALSE transposes without headers.",
-    ], 4):
-        readme.write(f"A{row}", note)
-        readme.set_row(row - 1, 34)
-    return style, sheets
-
-
-def zero_market(sheet, style, prefix, currency, index):
-    """Editable explicit-zero inputs, with native pillar sensitivities."""
-    for cell, value in {
-        "A3": "Market reference date", "B3": "2026-02-24",
-        "A5": "Pillar", "B5": "Continuous zero rate",
-        "E3": "Quote store", "F3": f'=QS.QUOTES.CREATE("{prefix}.Quotes",B3)',
-        "E4": "Configuration store", "F4": f'=QS.CURVE.CONFIGS.CREATE("{prefix}.Curves")',
-        "E6": "Discount curve configuration",
-        "F6": f'=QS.CURVE.CONFIGS.ADD.ZERO(F4,"{index}","Actual360","Linear",TRUE,A6:A10,B6:B10,"Continuous","Annual")',
-        "E11": "Initialized pricing context",
-        "F11": formula("QS.CONTEXT.CREATE", f'"{prefix}.Context"', "F3", "F6", *([""] * 9), f'"{currency}"', f'"{index}"'),
-        "E12": "Discount curve handle", "F12": f'=QS.CURVE.GET(F11,"{index}")',
-        "A14": "Change a zero-rate pillar and inspect prices, cashflows, and raw sensitivities.",
-    }.items():
-        write(sheet, cell, value, style["input"] if cell == "B3" else style["text"])
-    for row, tenor, rate in [(6, "0D", 0.03), (7, "5Y", 0.03), (8, "10Y", 0.032), (9, "30Y", 0.034), (10, "35Y", 0.035)]:
-        sheet.write(f"A{row}", tenor, style["input"])
-        sheet.write(f"B{row}", rate, style["input_rate"])
-    sheet.set_column("E:E", 32)
-    sheet.set_column("F:F", 58)
+LOAN_CASES = [
+    ("French", False, "French", "ESTR", [], [], "Baseline monthly amortization."),
+    ("Bullet", False, "Bullet", "ESTR", [], [], "Repay all principal at maturity."),
+    ("25% balloon", False, "Balloon", "ESTR", [("Balloon fraction", .25)], [], "Reserve one quarter of principal for maturity."),
+    ("Floating", True, "French", "ESTR", [("Amortization rate", .05)], [], "EURIBOR12m plus a spread; principal is agreed at 5%."),
+    ("5-year introductory fixed", True, "French", "ESTR", [], [(60, .04, ""), (None, "=Loan_FloatingSpread", "EURIBOR12m")], "Fixed for 60 payments, then floating through maturity."),
+    ("Bounded floating", True, "French", "ESTR", [("Amortization rate", .05), ("Floor", .02), ("Cap", .045)], [], "Bounded projected coupons; fair rate is not supported."),
+    ("15% annual CPR", False, "French", "ESTR", [("Annual CPR", .15)], [], "Conditional prepayment reduces future principal and interest."),
+    ("Borrower credit", False, "French", "ESTR", [("Credit index", "Credit:BORROWER"), ("Recovery", "=Loan_Recovery")], [], "Survival and recovery use the illustrative CDS curve."),
+    ("Funded fixed", False, "French", "FUNDING", [], [], "Same fixed contract; a different pricer policy selects funding."),
+    ("Funded floating", True, "French", "FUNDING", [("Amortization rate", .05)], [], "Same floating contract; discount using FUNDING."),
+    ("Stepped fixed", False, "French", "ESTR", [], [(60, .03, ""), (60, .04, ""), (None, .05, "")], "Three consecutive fixed coupon segments."),
+    ("Stepped then floating", False, "French", "ESTR", [], [(60, .03, ""), (60, .04, ""), (None, .01, "EURIBOR12m")], "Two fixed segments followed by a floating margin."),
+]
 
 
 def create_loans(path):
-    with new_workbook(path) as workbook:
-        style, sheets = study_sheets(workbook,
-            ("Market", "Loan Inputs", "Loan Settings", "Coupon Schedules", "Pricing", "Comparison", "Cashflows", "Risk", "Layouts"),
-            "Loans: monthly payments, prepayment, borrower credit, and funding", [
-                "Compare French, bullet, and 25% balloon principal; then floating and introductory-fixed coupons.",
-                "The lender's price is future receipt PV. Net origination value subtracts the original advance.",
-                "CPR reduces future principal and interest; borrower survival and recovery use an illustrative CDS proxy.",
-                "Funding discount factors multiply EURIBOR12m by a separate treasury-spread curve.",
-                "FairRate bootstraps each rate segment: repay remaining capital at its end, solve, lock, and extend. Each FairRate(index) request returns one scalar; bounded coupons omit the solve.",
-                "Cashflows include scheduled receipts, prepayments, and recovery in legs 0, 1, and 2. Bounded coupons exclude option time value.",
-            ])
-        market = sheets["Market"]
-        zero_market(market, style, "Loans", "EUR", "ESTR")
-        market.write("C5", "EURIBOR12m zero", style["header"])
-        market.write("D5", "Funding zero spread", style["header"])
-        for row, rate, spread in [(6, .04, .005), (7, .037, .01), (8, .04, .011), (9, .0415, .014), (10, .0415, .015)]:
-            market.write(f"C{row}", rate, style["input_rate"])
-            market.write(f"D{row}", spread, style["input_rate"])
-        for cell, value in {
-            "E7": "Projection configuration", "F7": '=QS.CURVE.CONFIGS.ADD.ZERO(F6,"EURIBOR12m","Actual360","Linear",TRUE,A6:A10,C6:C10,"Continuous","Annual")',
-            "E8": "Funding spread configuration", "F8": '=QS.CURVE.CONFIGS.ADD.ZERO(F7,"FUNDINGSPREAD","Actual360","Linear",TRUE,A6:A10,D6:D10,"Continuous","Annual")',
-            "E9": "Composite funding configuration", "F9": '=QS.CURVE.CONFIGS.ADD.COMPOSITE(F8,"FUNDING","EURIBOR12m","FUNDINGSPREAD")',
-            "H5": "Borrower CDS quote", "I5": "Spread", "J5": "Quote store revision",
-            "E10": "Credit configurations", "F10": '=QS.CREDIT.CURVE.CONFIGS.CREATE("Loans.Credit")',
-            "E13": "Borrower credit configuration", "F13": '=QS.CREDIT.CURVE.CONFIGS.ADD(F10,I15,I16,I17,I18,H6:H12)',
-            "H15": "Credit index", "I15": "Credit:BORROWER",
-            "H16": "Currency", "I16": "EUR", "H17": "Discount index", "I17": "ESTR",
-            "H18": "Recovery", "I18": .4,
-        }.items():
-            write(market, cell, value)
-        for row, (tenor, spread) in enumerate(zip(("1Y", "3Y", "5Y", "10Y", "20Y", "30Y", "35Y"), (.005, .007, .009, .011, .014, .016, .017)), 6):
-            identifier = f"Cds_BORROWER_EUR_{tenor}"
-            market.write(f"H{row}", identifier)
-            market.write(f"I{row}", spread, style["input_rate"])
-            previous = "$F$3" if row == 6 else f"J{row-1}"
-            write(market, f"J{row}", f"=QS.QUOTES.SET({previous},H{row},I{row},,)")
-        market.write("I18", .4, style["input_rate"])
-        write(market, "F11", formula("QS.CONTEXT.CREATE", '"Loans.Context"', "J12", "F9", "F13", *([""] * 8), '"EUR"', '"ESTR"'))
-        market.set_column("H:H", 42)
-        market.set_column("J:J", 58)
-
-        inputs = sheets["Loan Inputs"]
-        for row, (label, value) in enumerate([
-            ("Principal (EUR)", 250000), ("Fixed coupon", .06), ("Floating margin", .01),
-            ("Start date", "2026-02-24"), ("Maturity date", "2056-02-24"),
-            ("Payment frequency", "Monthly"), ("Day counter", "Actual360"), ("Currency", "EUR"),
-        ], 4):
-            inputs.write(f"A{row}", label)
-            inputs.write(f"B{row}", value, style["input_rate"] if row in (5, 6) else style["input"])
-        inputs.set_column("A:A", 30)
-        inputs.write("A14", "Floating principal is agreed at a 5% initial all-in rate; annual resets use EURIBOR12m metadata.")
-        inputs.write("A15", "The default zero fixing lag makes the first observation today's projected fixing; no historical fixing is required.")
-
-        pricing = sheets["Pricing"]
-        pricing.set_column("A:B", 26)
-        pricing.set_column("C:D", 58)
-        for cell, value in {
-            "A3": "Currency", "B3": "Index", "A4": "EUR", "B4": "ESTR", "A5": "EUR", "B5": "FUNDING",
-            "C3": "Native discount policy", "D3": "Native pricer",
-            "C4": '=QS.DISCOUNT.POLICY.FIXED.INCOME("Loans.RiskFreePolicy",A4:B4)',
-            "C5": '=QS.DISCOUNT.POLICY.FIXED.INCOME("Loans.FundingPolicy",A5:B5)',
-            "D4": '=QS.PRICER.CREATE("Loans.RiskFreePricer","LoanPricer",C4)',
-            "D5": '=QS.PRICER.CREATE("Loans.FundingPricer","LoanPricer",C5)',
-            "A8": "Value", "A9": "Cashflows", "A10": "Sensitivities",
-            "B8": '=QS.REQUEST.FAIR.RATE(0)', "B9": '=QS.REQUEST.FAIR.RATE(1)', "B10": '=QS.REQUEST.FAIR.RATE(2)',
-        }.items(): write(pricing, cell, value)
-        comparison = sheets["Comparison"]
-        for column, label in enumerate(("Case", "Coupon / spread", "Projection index", "Repayment", "Editable settings / coupons", "Loan trade", "Receipt PV (EUR)", "PV less advance", "Fair first segment", "Fair second segment", "Fair third segment", "Instrument", "Pricer", "Evaluation results", "Fair target 0 results", "Fair target 1 results", "Fair target 2 results")):
-            comparison.write(3, column, label, style["header"])
-        cases = [
-            ("French", False, "French", {}), ("Bullet", False, "Bullet", {}),
-            ("25% balloon", False, "Balloon", {"balloon_fraction": .25}),
-            ("Floating", True, "French", {"amortization_rate": .05}),
-            ("5-year introductory fixed", True, "French", {"introductory_periods": 60, "introductory_rate": .04}),
-            ("Bounded floating", True, "French", {"amortization_rate": .05, "floor": .02, "cap": .045}),
-            ("15% annual CPR", False, "French", {"prepayment": {"Cpr": .15}}),
-            ("Borrower credit", False, "French", {"credit_index": {"Credit": "BORROWER"}, "recovery": .4}),
-            ("Funded fixed", False, "French", {}),
-            ("Funded floating", True, "French", {"amortization_rate": .05}),
-            ("Stepped fixed", False, "French", {"coupon_segments": [{"rate": .03, "periods": 60}, {"rate": .04, "periods": 60}, {"rate": .05}]}),
-            ("Stepped then floating", False, "French", {"coupon_segments": [{"rate": .03, "periods": 60}, {"rate": .04, "periods": 60}, {"rate": .01, "market_index": "EURIBOR12m"}]}),
-        ]
-        settings_sheet, coupons_sheet = sheets["Loan Settings"], sheets["Coupon Schedules"]
-        settings_sheet.set_column("A:A", 40)
-        settings_sheet.set_column("B:B", 25)
-        coupons_sheet.set_column("A:C", 23)
-        settings_row, coupon_row = 4, 4
-        setting_labels = {"balloon_fraction": "Balloon fraction", "amortization_rate": "Amortization rate",
-                          "floor": "Floor", "cap": "Cap", "recovery": "Recovery",
-                          "credit_index": "Credit index", "discount_index": "Discount index"}
-        for row, (label, floating, repayment, options) in enumerate(cases, 5):
-            scalar_settings = []
-            for key, value in options.items():
-                if key in ("coupon_segments", "introductory_periods", "introductory_rate"):
-                    continue
-                if key == "prepayment":
-                    scalar_settings.append(("Annual CPR", value["Cpr"]))
-                else:
-                    if isinstance(value, dict):
-                        value = "Credit:" + value["Credit"] if "Credit" in value else value["Other"]
-                    scalar_settings.append((setting_labels[key], value))
-            settings_range = coupons_range = ""
-            if scalar_settings:
-                settings_sheet.write(settings_row - 2, 0, label, style["section"])
-                settings_sheet.write_row(settings_row - 1, 0, ["Setting", "Value"], style["header"])
-                for offset, (setting_name, value) in enumerate(scalar_settings, settings_row):
-                    settings_sheet.write(offset, 0, setting_name)
-                    settings_sheet.write(offset, 1, value, style["input_rate"] if isinstance(value, (int, float)) else style["input"])
-                settings_range = f"'Loan Settings'!A{settings_row}:B{settings_row + len(scalar_settings)}"
-                settings_row += len(scalar_settings) + 4
-            segments = options.get("coupon_segments")
-            if "introductory_periods" in options:
-                segments = [{"periods": options["introductory_periods"], "rate": options["introductory_rate"]},
-                            {"rate": "='Loan Inputs'!$B$6", "market_index": "EURIBOR12m"}]
+    routes = [("1 Inputs", "Review shared loan terms and position direction."), ("2 Cases", "Edit one case's coupon, settings or schedule in its own block."),
+              ("3 Market", "Review ordinary projection, discount, funding and credit curves."), ("4 Build", "Follow the native construction and pricing steps."),
+              ("5 Results", "Compare all cases; select one for the detail sheets."), ("6 Cashflows", "Inspect receipts for the selected case."),
+              ("7 Risk", "Inspect risk for the same selected case."), ("8 Layouts", "Compare transpose and header options on a small curve table.")]
+    with Study(path, "Loan", "Loans · compare one change at a time", "Start with the French loan. Compare repayment, floating coupons, prepayment, credit and funding, then inspect stepped schedules.", routes,
+               ["Compare French, Bullet and 25% balloon on Results.", "Compare French with Funded fixed: only the discount policy changes.", "Choose Stepped then floating on Results; inspect its three fair-rate targets, Cashflows and Risk."]) as s:
+        inputs(s, "1 Inputs", [
+            ("Valuation date", "2026-02-24", "ValuationDate", "Valuation at origination supports the fair-rate solves.", "input"),
+            ("Principal (EUR)", 250_000, "Notional", "Contractual principal; the trade does not override it.", "input_number"),
+            ("Default fixed coupon", .06, "FixedRate", "Used by the fixed-rate cases unless overridden.", "input_rate"),
+            ("Default floating spread", .01, "FloatingSpread", "Spread over EURIBOR12m.", "input_rate"),
+            ("Start date", "2026-02-24", "Start", "Contractual origination date.", "input"),
+            ("Maturity date", "2056-02-24", "Maturity", "Thirty-year teaching example.", "input"),
+            ("Payment frequency", "Monthly", "Frequency", "Case schedule counts refer to payment periods.", "input"),
+            ("Day counter", "Actual360", "DayCounter", "Contractual accrual and amortization convention.", "input"),
+            ("Currency", "EUR", "Currency", "These market assumptions are configured in EUR.", "body"),
+            ("Position side", "Receive", "Side", "Lender receipts are positive; Pay reverses the direction.", "input"),
+        ], "Shared inputs apply to all cases. Blue cells are editable; each case's specific terms are on the next tab.")
+        requests(s, "1 Inputs", 20)
+        s.headers("1 Inputs", 27, ["Policy currency", "Ordinary discount index", ""])
+        for row, index in [(28, "ESTR"), (29, "FUNDING")]:
+            s.write("1 Inputs", f"A{row}", "EUR")
+            s.write("1 Inputs", f"B{row}", index, "input")
+        s.range("RiskFreeMapping", "1 Inputs", 28, 0, 28, 1)
+        s.range("FundingMapping", "1 Inputs", 29, 0, 29, 1)
+        s.sheet("2 Cases", "Case inputs · one block per agreement", "Each block keeps its contractual settings and coupon schedule together. Discount-curve choice selects a pricer policy; it is never passed to the instrument.", (26, 20, 24, 18, 18, 22), "#337AB7")
+        s.sheets["2 Cases"].freeze_panes(5, 0)
+        case_rows = []
+        row = 6
+        for index, (label, floating, repayment, discount, settings, segments, description) in enumerate(LOAN_CASES, 1):
+            case_rows.append(row)
+            key = f"C{index:02}"
+            s.merge("2 Cases", f"A{row}:F{row}", f"{index:02}. {label}", "section")
+            s.merge("2 Cases", f"A{row+1}:F{row+1}", description)
+            for cell, value in [(f"A{row+2}", "Coupon / spread"), (f"C{row+2}", "Projection index"), (f"E{row+2}", "Repayment"), (f"A{row+3}", "Pricing discount curve")]:
+                s.write("2 Cases", cell, value)
+            rate = f"=E{row+6}" if segments else "=" + s.name("FloatingSpread" if floating else "FixedRate")
+            s.write("2 Cases", f"B{row+2}", rate, "rate" if segments else "input_rate", key + "_Rate")
+            market_index = f'=IF(F{row+6}="","",F{row+6})' if segments else ("EURIBOR12m" if floating else "")
+            s.write("2 Cases", f"D{row+2}", market_index, "body" if segments else "input", key + "_Index")
+            s.write("2 Cases", f"F{row+2}", repayment, "input", key + "_Repayment")
+            s.write("2 Cases", f"B{row+3}", discount, "input", key + "_Discount")
+            s.sheets["2 Cases"].data_validation(f"B{row+3}", {"validate": "list", "source": ["ESTR", "FUNDING"]})
+            s.sheets["2 Cases"].data_validation(f"F{row+2}", {"validate": "list", "source": ["French", "Bullet", "Balloon"]})
+            if settings:
+                for column, header in [("A", "Setting"), ("B", "Value")]:
+                    s.write("2 Cases", f"{column}{row+5}", header, "header")
+                for offset, (setting, value) in enumerate(settings, row + 6):
+                    s.write("2 Cases", f"A{offset}", setting)
+                    s.write("2 Cases", f"B{offset}", value, "input" if isinstance(value, str) and not value.startswith("=") else "input_rate")
+                s.range(key + "_Settings", "2 Cases", row + 5, 0, row + 5 + len(settings), 1)
+            else:
+                s.merge("2 Cases", f"A{row+5}:C{row+6}", "Contract settings: native defaults.")
             if segments:
-                coupons_sheet.write(coupon_row - 2, 0, label, style["section"])
-                coupons_sheet.write_row(coupon_row - 1, 0, ["Periods", "Rate / spread", "Market index"], style["header"])
-                for offset, segment in enumerate(segments, coupon_row):
-                    if "periods" in segment:
-                        coupons_sheet.write(offset, 0, segment["periods"], style["input"])
-                    write(coupons_sheet, f"B{offset + 1}", segment["rate"], style["input_rate"])
-                    coupons_sheet.write(offset, 2, segment.get("market_index", ""), style["input"])
-                coupons_range = f"'Coupon Schedules'!A{coupon_row}:C{coupon_row + len(segments)}"
-                coupon_row += len(segments) + 4
-            comparison.write(f"A{row}", label)
-            rate = options["coupon_segments"][0]["rate"] if "coupon_segments" in options else (
-                "='Loan Inputs'!B6" if floating else "='Loan Inputs'!B5")
-            write(comparison, f"B{row}", rate, style["rate"])
-            comparison.write(f"C{row}", "EURIBOR12m" if floating else "", style["input"])
-            comparison.write(f"D{row}", repayment, style["input"])
-            if settings_range or coupons_range:
-                target = settings_range or coupons_range
-                comparison.write_url(f"E{row}", "internal:" + target.split(":")[0], string="Edit settings" if settings_range else "Edit coupon schedule")
+                for column, header in zip("DEF", ("Periods", "Rate / spread", "Market index")):
+                    s.write("2 Cases", f"{column}{row+5}", header, "header")
+                for offset, (periods, coupon, market_index) in enumerate(segments, row + 6):
+                    s.write("2 Cases", f"D{offset}", periods, "input")
+                    s.write("2 Cases", f"E{offset}", coupon, "input_rate")
+                    s.write("2 Cases", f"F{offset}", market_index, "input")
+                s.range(key + "_Coupons", "2 Cases", row + 5, 3, row + 5 + len(segments), 5)
+                s.merge("2 Cases", f"D{row+10}:F{row+11}", "Edit this schedule; the scalar above follows its first row. Blank index = fixed; blank final count fills maturity. Fair-rate targets follow segment order.")
             else:
-                comparison.write(f"E{row}", "Default settings")
-            write(comparison, f"L{row}", formula("QS.INSTRUMENT.LOAN", f'"Loans.Instrument{row}"', "'Loan Inputs'!$B$7", "'Loan Inputs'!$B$8", "'Loan Inputs'!$B$11", "'Loan Inputs'!$B$4", f"B{row}", f"C{row}", f"D{row}", "'Loan Inputs'!$B$9", "'Loan Inputs'!$B$10", settings_range, coupons_range))
-            write(comparison, f"F{row}", formula("QS.TRADE.CREATE", f'"Loans.Trade{row}"', f"L{row}", "Market!$B$3", '"Receive"'))
-            write(comparison, f"M{row}", "=Pricing!D5" if row in (13,14) else "=Pricing!D4")
-            write(comparison, f"N{row}", formula("QS.EVALUATE", f'"Loans.Results{row}"', f"M{row}", f"F{row}", "Market!$F$11", "Pricing!$A$8:$A$10"))
-            write(comparison, f"G{row}", f"=QS.RESULT.VALUE(N{row})", style["number"])
-            write(comparison, f"H{row}", f"=G{row}-'Loan Inputs'!$B$4", style["number"])
-            segment_count = len(segments) if segments else 1
-            if row != 10:
-                for target in range(segment_count):
-                    result_column = "OPQ"[target]
-                    write(comparison, f"{result_column}{row}", formula("QS.EVALUATE", f'"Loans.Fair{row}.{target}"', f"M{row}", f"F{row}", "Market!$F$11", f"Pricing!$B${8+target}"))
-                    write(comparison, f"{'IJK'[target]}{row}", f"=QS.RESULT.FAIR.RATE({result_column}{row})", style["rate"])
-            else:
-                comparison.write(f"I{row}", "Unsupported for bounded coupons")
-        comparison.set_column("A:A", 31)
-        comparison.set_column("E:E", 26)
-        comparison.set_column("F:F", 48)
-        comparison.set_column("I:K", 21, style["rate"])
-        comparison.set_column("L:Q", 48)
-        comparison.activate()
-
-        for cell, title, expression in [
-            ("A4", "French contractual receipts", "=QS.RESULT.CASHFLOWS(Comparison!N5)"),
-            ("K4", "Expected receipts with prepayment", "=QS.RESULT.CASHFLOWS(Comparison!N11)"),
-        ]:
-            sheets["Cashflows"].write(cell.replace("4", "2"), title, style["section"])
-            write(sheets["Cashflows"], cell, expression)
-        for cell, label, trade in [("A4", "Funding risk: raw EUR per unit pillar", "F13"), ("E4", "Floating funding risk", "F14")]:
-            sheets["Risk"].write(cell.replace("4", "2"), label, style["section"])
-            write(sheets["Risk"], cell, f"=QS.RESULT.SENSITIVITIES(Comparison!N{trade[1:]})")
-        sheets["Risk"].write("A25", "Multiply a decimal-rate derivative by 0.0001 for an approximate +1 bp value change.")
-        layouts = sheets["Layouts"]
-        layouts.write("A2", "Funding risk transposed, headers hidden", style["section"])
-        write(layouts, "A4", "=QS.RESULT.SENSITIVITIES(Comparison!N13,TRUE,FALSE)")
-        layouts.write("A9", "Same risk with headers (row labels after transposing)", style["section"])
-        write(layouts, "A11", "=QS.RESULT.SENSITIVITIES(Comparison!N13,TRUE,TRUE)")
-        layouts.write("A16", "First year payment dates as a row (list, no headers)", style["section"])
-        write(layouts, "A18", '=QS.SCHEDULE("2026-02-24","2027-02-24","Monthly",TRUE)')
+                s.merge("2 Cases", f"D{row+5}:F{row+6}", "Coupon schedule: use the scalar rate / spread and projection index above.")
+            footer = row + (12 if segments else 7 + max(1, len(settings)))
+            s.link("2 Cases", f"A{footer}", f"'5 Results'!A{index+6}", "See this case's results →")
+            row = footer + 2
+        simple_market(s, "3 Market", "EUR", "ESTR", loan=True)
+        build = "4 Build"
+        s.sheet(build, "Build and evaluate the loan agreements", "Shared context and pricers come first. Each case then follows instrument → trade → pricer selection → evaluation. Use the links on Results to jump directly to a case.")
+        s.headers(build, 6, ["Step", "Object reference", "Purpose"])
+        row = s.step(build, 7, "1. Initialize pricing context", context("Loan.Context", s.name("Quotes"), s.name("Curves"), '"EUR"', '"ESTR"', s.name("Credit")), "Context", "Constructs the projection, discount, funding and credit curves.")
+        for number, suffix, label in [(2, "RiskFree", "ESTR"), (4, "Funding", "FUNDING")]:
+            row = step(s, build, row, f"{number}. {label} discount policy", "QS.DISCOUNT.POLICY.FIXED.INCOME", [text(f"Loan.{suffix}Policy"), s.name(suffix + "Mapping")], suffix + "Policy", "Maps EUR to an ordinary market curve.")
+            row = step(s, build, row, f"{number+1}. {label} loan pricer", "QS.PRICER.CREATE", [text(f"Loan.{suffix}Pricer"), '"LoanPricer"', s.name(suffix + "Policy")], suffix + "Pricer", "Same native LoanPricer, with an explicit policy.")
+        row = step(s, build, row, "6. Get ESTR for layout examples", "QS.CURVE.GET", [s.name("Context"), '"ESTR"'], "EstrCurve", "A small five-node table for the layout lesson.")
+        for target in range(3):
+            row = step(s, build, row, f"7.{target+1} Fair-rate request {target}", "QS.REQUEST.FAIR.RATE", [str(target)], f"Request{target}", "Returns one requested segment's scalar; earlier segments are bootstrapped first.")
+        result_keys, build_rows = [], []
+        for index, (label, floating, repayment, discount, settings, segments, description) in enumerate(LOAN_CASES, 1):
+            key = f"C{index:02}"
+            build_rows.append(row)
+            s.merge(build, f"A{row}:C{row}", f"{index:02}. {label}", "section")
+            s.link(build, f"A{row+1}", f"'2 Cases'!A{case_rows[index-1]}", "Edit these case inputs →")
+            row += 3
+            args = [text(f"Loan.{key}.Instrument"), *[s.name(k) for k in ("Start", "Maturity", "Currency", "Notional")],
+                    s.name(key + "_Rate"), s.name(key + "_Index"), s.name(key + "_Repayment"), s.name("Frequency"), s.name("DayCounter"),
+                    s.name(key + "_Settings") if settings else "", s.name(key + "_Coupons") if segments else ""]
+            row = step(s, build, row, "1. Define this instrument", "QS.INSTRUMENT.LOAN", args, key + "_Instrument", description)
+            row = step(s, build, row, "2. Create this position", "QS.TRADE.CREATE", [text(f"Loan.{key}.Trade"), s.name(key + "_Instrument"), s.name("ValuationDate"), s.name("Side")], key + "_Trade", "The contractual principal stays in the instrument.")
+            row = s.step(build, row, "3. Select explicit pricer", f'=IF({s.name(key+"_Discount")}="FUNDING",{s.name("FundingPricer")},{s.name("RiskFreePricer")})', key + "_Pricer", "The case's discount choice selects an existing policy-configured pricer.")
+            row = step(s, build, row, "4. Evaluate value and tables", "QS.EVALUATE", [text(f"Loan.{key}.Result"), s.name(key + "_Pricer"), s.name(key + "_Trade"), s.name("Context"), s.name("Requests")], key + "_Result", "Future receipt PV excludes the original principal advance.")
+            result_keys.append(key + "_Result")
+            if label != "Bounded floating":
+                for target in range(len(segments) if segments else 1):
+                    row = step(s, build, row, f"5.{target+1} Solve segment {target}", "QS.EVALUATE", [text(f"Loan.{key}.Fair{target}"), s.name(key + "_Pricer"), s.name(key + "_Trade"), s.name("Context"), s.name(f"Request{target}")], key + f"_Fair{target}", "Repay remaining principal at each prefix end, lock earlier solved rates, then extend.")
+            row += 2
+        results = "5 Results"
+        s.sheet(results, "Compare the loan results", "PV is future receipt value in EUR; net origination value subtracts principal. Fair-rate columns are annual decimal coupon / spread levels. Blank means that segment does not exist.", (29, 17, 17, 15, 15, 15, 12, 12), "#21845B")
+        s.headers(results, 6, ["Case", "Receipt PV (EUR)", "PV less advance", "Fair segment 0", "Fair segment 1", "Fair segment 2", "Edit inputs", "Read build"])
+        for index, (label, _, _, _, _, segments, _) in enumerate(LOAN_CASES, 1):
+            row_result = index + 6
+            key = f"C{index:02}"
+            s.write(results, f"A{row_result}", label)
+            s.write(results, f"B{row_result}", formula("QS.RESULT.VALUE", s.name(key + "_Result")), "money", key + "_PV")
+            s.write(results, f"C{row_result}", f"={s.name(key+'_PV')}-{s.name('Notional')}", "money", key + "_Net")
+            for target in range(3):
+                column = "DEF"[target]
+                if label == "Bounded floating" and target == 0:
+                    s.write(results, f"{column}{row_result}", "Bounded: n/a", "note")
+                elif label != "Bounded floating" and target < (len(segments) if segments else 1):
+                    s.write(results, f"{column}{row_result}", formula("QS.RESULT.FAIR.RATE", s.name(key + f"_Fair{target}")), "rate", key + f"_FairRate{target}")
+                else:
+                    s.write(results, f"{column}{row_result}", None, "result")
+            s.link(results, f"G{row_result}", f"'2 Cases'!A{case_rows[index-1]}", "Edit →")
+            s.link(results, f"H{row_result}", f"'4 Build'!A{build_rows[index-1]}", "Build →")
+            s.sheets[results].set_row(row_result - 1, 34)
+        selected_case(s, build, row, results, [case[0] for case in LOAN_CASES], result_keys, 22)
+        s.merge(results, "A26:H28", "FairRate(index) returns one scalar. For mixed or stepped loans, earlier rate segments are solved and fixed before the selected segment is solved. The original agreement remains unchanged. Bounded coupons have no fair-rate output.")
+        detail_sheet(s, "6 Cashflows", "Selected loan · expected receipts", s.name("SelectedResult"), "CASHFLOWS", "'5 Results'!B22")
+        detail_sheet(s, "7 Risk", "Selected loan · market risk", s.name("SelectedResult"), "SENSITIVITIES", "'5 Results'!B22")
+        s.sheet("8 Layouts", "Table layout · transpose and headers", "The same small ESTR curve table is shown four ways. Header removal happens before transposition. All other report tables accept the same flags.", (28, 18, 20, 20, 24, 24))
+        for row_layout, label, transpose, headers in [(6, "Default · rows with headers", "FALSE", "TRUE"), (16, "Rows without headers", "FALSE", "FALSE"), (26, "Transposed with headers", "TRUE", "TRUE"), (36, "Transposed without headers", "TRUE", "FALSE")]:
+            s.merge("8 Layouts", f"A{row_layout}:F{row_layout}", label, "section")
+            s.write("8 Layouts", f"A{row_layout+1}", formula("QS.CURVE.TABLE", s.name("EstrCurve"), '"Simple"', '"Annual"', transpose, headers))
 
 
 def create_bonds(path):
-    with new_workbook(path) as workbook:
-        style, sheets = study_sheets(workbook, ("Market", "Bond Inputs", "Valuation", "Cashflows", "Risk"),
-            "Straight bonds: price anchors, duration, spread, and curve risk", [
-                "Compare the same fixed bond anchored at zero Z-spread, 100 bp Z-spread, and clean price 100.",
-                "QS.RESULT.VALUE is monetary PV; CleanPrice/DirtyPrice anchors use quotation units per 100 face.",
-                "Duration is yield-modified duration. Spread derivatives and curve derivatives retain their actual units.",
-            ])
-        zero_market(sheets["Market"], style, "Bonds", "USD", "SOFR")
-        inputs = sheets["Bond Inputs"]
-        for row, (label, value) in enumerate([("Start", "2026-02-24"), ("Maturity", "2036-02-24"), ("Notional", 1000000), ("Coupon", .04)], 4):
-            inputs.write(f"A{row}", label)
-            inputs.write(f"B{row}", value, style["input_rate"] if row == 7 else style["input"])
-        write(inputs, "D4", formula("QS.INSTRUMENT.FIXED.BOND", '"Bonds.Instrument"', "B4", "B5", '"USD"', '""', "B6", "B7", '"Actual360"', '"Compounded"', '"Semiannual"', '"Semiannual"'))
-        market = sheets["Market"]
-        for cell, value in {
-            "H15": "USD", "I15": "SOFR",
-            "F15": '=QS.DISCOUNT.POLICY.FIXED.INCOME("Bonds.Policy",H15:I15)',
-            "F16": '=QS.PRICER.CREATE("Bonds.Pricer","BondPricer",F15)',
-            "H20": "Value", "H21": "ModifiedDuration", "H22": "ZSpread", "H23": "Cashflows", "H24": "Sensitivities",
-        }.items(): write(market, cell, value)
-        valuation = sheets["Valuation"]
-        for column, title in enumerate(("Anchor", "Anchor value", "Trade", "PV (USD)", "Modified duration", "Z-spread", "Evaluation results")):
-            valuation.write(3, column, title, style["header"])
-        for row, anchor, value in [(5, "ZSpread", 0.0), (6, "ZSpread", .01), (7, "CleanPrice", 100.0)]:
-            valuation.write(f"A{row}", anchor, style["input"])
-            valuation.write(f"B{row}", value, style["input"])
-            write(valuation, f"C{row}", formula("QS.TRADE.CREATE", f'"Bonds.Case{row}"', "'Bond Inputs'!$D$4", "Market!$B$3", '"Receive"', "", "", f"A{row}", f"B{row}"))
-            write(valuation, f"G{row}", formula("QS.EVALUATE", f'"Bonds.Results{row}"', "Market!$F$16", f"C{row}", "Market!$F$11", "Market!$H$20:$H$24"))
-            for column, function in [("D", "QS.RESULT.VALUE"), ("E", "QS.RESULT.MODIFIED.DURATION"), ("F", "QS.RESULT.Z.SPREAD")]:
-                write(valuation, f"{column}{row}", f"={function}(G{row})", style["rate"] if column == "F" else style["number"])
-        valuation.set_column("C:C", 55)
-        valuation.activate()
-        write(sheets["Cashflows"], "A4", "=QS.RESULT.CASHFLOWS(Valuation!G5)")
-        write(sheets["Risk"], "A4", "=QS.RESULT.SENSITIVITIES(Valuation!G6)")
-        sheets["Risk"].write("E2", "Same data without headers, transposed", style["section"])
-        write(sheets["Risk"], "E4", "=QS.RESULT.SENSITIVITIES(Valuation!G6,TRUE,FALSE)")
+    routes = [("1 Inputs", "Set one contract and three alternative bond anchors."), ("2 Market", "Review and build the SOFR zero curve."),
+              ("3 Build", "Create one instrument, then separately anchored trades and results."), ("4 Results", "Compare PV, duration and Z-spread; choose a detail case."),
+              ("5 Cashflows", "Inspect the selected anchored position."), ("6 Risk", "Inspect curve and spread derivatives for the same position.")]
+    anchors = [("Zero spread", "ZSpread", 0.0), ("100 bp spread", "ZSpread", .01), ("Clean price 100", "CleanPrice", 100.0)]
+    with Study(path, "Bond", "Bond anchors · contract, trade and value", "Use one fixed bond to compare spread and price anchors. Pricing anchors belong to trades; the discount policy belongs to the pricer.", routes,
+               ["Compare Zero spread and 100 bp spread on Results.", "Change the clean-price anchor on Inputs and inspect the solved Z-spread.", "Choose a case on Results, then inspect its cashflows and risk."]) as s:
+        inputs(s, "1 Inputs", [
+            ("Valuation date", "2026-02-24", "ValuationDate", "Market and execution date.", "input"),
+            ("Start date", "2026-02-24", "Start", "Contractual start date.", "input"),
+            ("Maturity date", "2036-02-24", "Maturity", "Final contractual principal repayment.", "input"),
+            ("Face principal (USD)", 1_000_000, "Notional", "Principal used to construct the instrument's cashflows.", "input_number"),
+            ("Fixed coupon", .04, "Coupon", "Annual decimal coupon.", "input_rate"),
+            ("Position side", "Receive", "Side", "Receive holds the bond; Pay reverses the position.", "input"),
+        ], "Blue cells are editable. Clean/dirty price anchors are per 100 face; spread anchors are annual decimals.")
+        s.headers("1 Inputs", 16, ["Anchor case", "Native anchor type", "Anchor value"])
+        for index, (label, anchor, value) in enumerate(anchors, 1):
+            row = 16 + index
+            s.write("1 Inputs", f"A{row}", label)
+            s.write("1 Inputs", f"B{row}", anchor, "input", f"C{index:02}_Anchor")
+            s.write("1 Inputs", f"C{row}", value, "input_rate" if anchor == "ZSpread" else "input_number", f"C{index:02}_AnchorValue")
+        requests(s, "1 Inputs", 22, ("Value", "ModifiedDuration", "ZSpread", "Cashflows", "Sensitivities"))
+        s.headers("1 Inputs", 30, ["Policy currency", "Ordinary discount index", ""])
+        s.write("1 Inputs", "A31", "USD")
+        s.write("1 Inputs", "B31", "SOFR", "input")
+        s.range("DiscountMapping", "1 Inputs", 31, 0, 31, 1)
+        simple_market(s, "2 Market", "USD", "SOFR")
+        build = "3 Build"
+        s.sheet(build, "Build one contract and three positions", "The shared instrument is created once. Each trade adds its own anchor, and the explicit BondPricer evaluates each position.")
+        s.headers(build, 6, ["Step", "Object reference", "Purpose"])
+        row = s.step(build, 7, "1. Initialize market context", context("Bond.Context", s.name("Quotes"), s.name("Curves"), '"USD"', '"SOFR"'), "Context", "Constructs the visible SOFR zero curve.")
+        row = step(s, build, row, "2. Define the bond instrument", "QS.INSTRUMENT.FIXED.BOND", [text("Bond.Instrument"), s.name("Start"), s.name("Maturity"), '"USD"', "", s.name("Notional"), s.name("Coupon"), '"Actual360"', '"Compounded"', '"Semiannual"', '"Semiannual"'], "Instrument", "No position side or pricing anchor is stored in this contract.")
+        row = step(s, build, row, "3. Choose discount policy", "QS.DISCOUNT.POLICY.FIXED.INCOME", [text("Bond.Policy"), s.name("DiscountMapping")], "Policy", "Maps USD to the ordinary SOFR curve.")
+        row = step(s, build, row, "4. Create native bond pricer", "QS.PRICER.CREATE", [text("Bond.Pricer"), '"BondPricer"', s.name("Policy")], "Pricer", "The same configured pricer evaluates all three positions.")
+        result_keys, build_rows = [], []
+        for index, (label, _, _) in enumerate(anchors, 1):
+            key = f"C{index:02}"
+            build_rows.append(row)
+            row = step(s, build, row, f"5.{index} Position · {label}", "QS.TRADE.CREATE", [text(f"Bond.{key}.Trade"), s.name("Instrument"), s.name("ValuationDate"), s.name("Side"), "", "", s.name(key + "_Anchor"), s.name(key + "_AnchorValue")], key + "_Trade", "The trade supplies the bond's price or spread anchor.")
+            row = step(s, build, row, f"6.{index} Evaluate · {label}", "QS.EVALUATE", [text(f"Bond.{key}.Result"), s.name("Pricer"), s.name(key + "_Trade"), s.name("Context"), s.name("Requests")], key + "_Result", "Produces the measures listed on Inputs.")
+            result_keys.append(key + "_Result")
+        result = "4 Results"
+        s.sheet(result, "Compare the anchored bond positions", "PV is monetary USD value. Duration is measured in years. Z-spread is an annual decimal spread; the same contract is used in all cases.", (30, 22, 18, 18, 16, 16), "#21845B")
+        s.headers(result, 6, ["Case", "PV (USD)", "Modified duration", "Z-spread", "Edit anchor", "Read build"])
+        for index, (label, _, _) in enumerate(anchors, 1):
+            key = f"C{index:02}"
+            row_result = index + 6
+            s.write(result, f"A{row_result}", label)
+            for column, method, suffix, kind in [("B", "VALUE", "PV", "money"), ("C", "MODIFIED.DURATION", "Duration", "number"), ("D", "Z.SPREAD", "ZSpread", "rate")]:
+                s.write(result, f"{column}{row_result}", formula("QS.RESULT." + method, s.name(key + "_Result")), kind, key + "_" + suffix)
+            s.link(result, f"E{row_result}", f"'1 Inputs'!C{index+16}", "Edit →")
+            s.link(result, f"F{row_result}", f"'3 Build'!A{build_rows[index-1]}", "Build →")
+            s.sheets[result].set_row(row_result - 1, 34)
+        selected_case(s, build, row + 2, result, [anchor[0] for anchor in anchors], result_keys, 13)
+        s.merge(result, "A17:F19", "A clean-price anchor fixes the quoted price and solves a consistent spread. A Z-spread anchor fixes that spread and produces a monetary PV. Neither quotation is a replacement for position sizing or direction.")
+        detail_sheet(s, "5 Cashflows", "Selected bond · cashflows", s.name("SelectedResult"), "CASHFLOWS", "'4 Results'!B13")
+        detail_sheet(s, "6 Risk", "Selected bond · curve and spread risk", s.name("SelectedResult"), "SENSITIVITIES", "'4 Results'!B13")
+
+
+def create_historical(path):
+    routes = [("1 Inputs", "Set one unchanged swap and two timestamp queries."), ("2 Markets", "Edit the two dated zero-rate observations."),
+              ("3 Archive", "Build each market, capture its snapshot and collect the archive."), ("4 Pricing", "Select historical contexts and value the same trade."),
+              ("5 Results", "Compare requested time, matched time, valuation date and PV.")]
+    with Study(path, "History", "Historical pricing · follow the timestamps", "Record two coherent markets, then reprice one unchanged swap. A timestamp query selects a recorded market; it does not roll its valuation date.", routes,
+               ["Compare the two matched markets on Results.", "Move query 2 after the second observation and change Exact to Previous.", "Edit the second market's zero rates and compare the same trade's PV."]) as s:
+        inputs(s, "1 Inputs", [
+            ("Trade date", "2026-01-15", "TradeDate", "The position remains unchanged across both market observations.", "input"),
+            ("Start date", "2026-01-19", "Start", "Starts after both observations, so no historical fixing is needed.", "input"),
+            ("Maturity date", "2031-01-19", "Maturity", "Final contractual date.", "input"),
+            ("Notional (USD)", 1_000_000, "Notional", "Contractual principal.", "input_number"),
+            ("Fixed coupon", .04, "FixedRate", "Annual fixed coupon received.", "input_rate"),
+            ("Side", "Receive", "Side", "Receive fixed and pay SOFR.", "input"),
+        ], "Contract and trade inputs are common to both valuations. Timestamp queries are separate inputs below.")
+        s.headers("1 Inputs", 16, ["Query", "Requested UTC timestamp", "Matching rule"])
+        for index, day in [(1, 15), (2, 16)]:
+            s.write("1 Inputs", f"A{16+index}", f"Query {index}")
+            s.write("1 Inputs", f"B{16+index}", f"2026-01-{day}T16:00:00Z", "input", f"Query{index}")
+            s.write("1 Inputs", f"C{16+index}", "Exact", "input", f"Rule{index}")
+            s.sheets["1 Inputs"].data_validation(f"C{16+index}", {"validate": "list", "source": ["Exact", "Previous", "Closest"]})
+        s.merge("1 Inputs", "A21:C23", "Previous selects the latest observation at or before the request. Closest can select a future observation. The selected market's reference date remains the valuation date.")
+        market = "2 Markets"
+        s.sheet(market, "Two dated market observations", "Both markets use a USD SOFR explicit zero curve, Actual365, continuous compounding, linear interpolation and no extrapolation.", (34, 30, 30), "#337AB7")
+        s.headers(market, 6, ["Observation", "First market", "Second market"])
+        s.write(market, "A7", "Market reference date")
+        s.write(market, "A8", "Observation timestamp (UTC)")
+        s.headers(market, 11, ["Pillar", "First zero curve", "Second zero curve"])
+        for row, pillar in enumerate(("0D", "1Y", "10Y"), 12):
+            s.write(market, f"A{row}", pillar, "input")
+        s.range("Pillars", market, 12, 0, 14, 0)
+        for index, column, day in [(1, "B", 15), (2, "C", 16)]:
+            s.write(market, f"{column}7", f"2026-01-{day}", "input", f"Date{index}")
+            s.write(market, f"{column}8", f"2026-01-{day}T16:00:00Z", "input", f"Timestamp{index}")
+            for row, rate in enumerate(([.04, .039, .038] if index == 1 else [.041, .040, .039]), 12):
+                s.write(market, f"{column}{row}", rate, "input_rate")
+            s.range(f"Rates{index}", market, 12, index, 14, index)
+        archive = "3 Archive"
+        s.sheet(archive, "Construct and archive each market", "Each snapshot captures its own quote date and curve assumptions. Read the two market blocks in order, then the archive-creation step.")
+        s.headers(archive, 6, ["Step", "Object reference", "Purpose"])
+        row = 7
+        for index in [1, 2]:
+            row = step(s, archive, row, f"{index}.1 Create dated quote store", "QS.QUOTES.CREATE", [text(f"History.Quotes{index}"), s.name(f"Date{index}")], f"Quotes{index}", "The quote-store reference date is the valuation date.")
+            row = step(s, archive, row, f"{index}.2 Create configurations", "QS.CURVE.CONFIGS.CREATE", [text(f"History.Curves{index}")], f"InitialCurves{index}", "A separate configuration is used for each recorded market.")
+            row = step(s, archive, row, f"{index}.3 Configure dated zero curve", "QS.CURVE.CONFIGS.ADD.ZERO", [s.name(f"InitialCurves{index}"), '"SOFR"', '"Actual365"', '"Linear"', "FALSE", s.name("Pillars"), s.name(f"Rates{index}"), '"Continuous"', '"Annual"'], f"Curves{index}", "Use the visible curve from the matching observation.")
+            row = s.step(archive, row, f"{index}.4 Initialize dated market", context(f"History.Context{index}", s.name(f"Quotes{index}"), s.name(f"Curves{index}"), '"USD"', '"SOFR"'), f"OriginalContext{index}", "Rebuild the curve using that market's reference date.")
+            row = step(s, archive, row, f"{index}.5 Capture market snapshot", "QS.SNAPSHOT.FROM.CONTEXT", [text(f"History.Snapshot{index}"), s.name(f"Timestamp{index}"), s.name(f"OriginalContext{index}")], f"Snapshot{index}", "Record the complete construction inputs at its observation timestamp.")
+        s.headers(archive, row, ["Captured snapshot", "Object reference", ""])
+        for index in [1, 2]:
+            s.write(archive, f"A{row+index}", f"Market {index}")
+            s.write(archive, f"B{row+index}", "=" + s.name(f"Snapshot{index}"), "handle")
+        s.range("Snapshots", archive, row + 1, 1, row + 2, 1)
+        step(s, archive, row + 4, "3. Collect snapshot archive", "QS.SNAPSHOTS.CREATE", [text("History.Archive"), s.name("Snapshots")], "Archive", "The archive consumes both captured snapshots.")
+        build = "4 Pricing"
+        s.sheet(build, "Reprice one trade against selected markets", "Build one instrument, trade and policy-configured pricer. Each timestamp query then selects its own context before valuation.")
+        s.headers(build, 6, ["Step", "Object reference", "Purpose"])
+        row = step(s, build, 7, "1. Define unchanged instrument", "QS.INSTRUMENT.SWAP", [text("History.Instrument"), s.name("Start"), s.name("Maturity"), '"USD"', '"SOFR"', s.name("Notional"), s.name("FixedRate"), "0", '"Actual360"', '"Simple"', '"Semiannual"', '"Semiannual"', '"Quarterly"'], "Instrument", "Contractual terms are identical for both market observations.")
+        row = step(s, build, row, "2. Create unchanged position", "QS.TRADE.CREATE", [text("History.Trade"), s.name("Instrument"), s.name("TradeDate"), s.name("Side")], "Trade", "Same execution date, position size and direction.")
+        row = step(s, build, row, "3. Choose CSA discount policy", "QS.DISCOUNT.POLICY.CSA", [text("History.Policy"), '"USD"', '"SOFR"'], "Policy", "Use the same native discount policy in both markets.")
+        row = step(s, build, row, "4. Create the native pricer", "QS.PRICER.CREATE", [text("History.Pricer"), '"DiscountedCashflowPricer"', s.name("Policy")], "Pricer", "Only the selected market changes between evaluations.")
+        for index in [1, 2]:
+            row = step(s, build, row, f"{index+4}.1 Select timestamp", "QS.SNAPSHOT.SELECTOR", [text(f"History.Selector{index}"), s.name(f"Query{index}"), s.name(f"Rule{index}"), '"Mid"'], f"Selector{index}", "The requested timestamp and matching rule are editable on Inputs.")
+            row = step(s, build, row, f"{index+4}.2 Rebuild selected context", "QS.CONTEXT.FROM.SNAPSHOT", [text(f"History.Selected{index}"), s.name("Archive"), s.name(f"Selector{index}")], f"Context{index}", "The market's own reference date is preserved.")
+            row = step(s, build, row, f"{index+4}.3 Evaluate unchanged trade", "QS.EVALUATE", [text(f"History.Result{index}"), s.name("Pricer"), s.name("Trade"), s.name(f"Context{index}"), '"Value"'], f"Result{index}", "The same position and pricer consume this selected market.")
+        result = "5 Results"
+        s.sheet(result, "Compare requested and selected markets", "A later query time does not create a later valuation date. Read the actual matched timestamp and market date before comparing PV.", (38, 36, 36), "#21845B")
+        s.headers(result, 6, ["Measure", "Query 1", "Query 2"])
+        for row, label in [(7, "Requested timestamp"), (8, "Actual matched timestamp"), (9, "Actual valuation date"), (10, "Matching rule"), (12, "Present value (USD)"), (13, "Change from query 1 (USD)")]:
+            s.write(result, f"A{row}", label)
+            s.sheets[result].set_row(row - 1, 36)
+        for index, column in [(1, "B"), (2, "C")]:
+            s.write(result, f"{column}7", "=" + s.name(f"Query{index}"), "result")
+            s.write(result, f"{column}8", formula("QS.CONTEXT.SNAPSHOT.TIMESTAMP", s.name(f"Context{index}")), "result", f"Matched{index}")
+            s.write(result, f"{column}9", formula("QS.CONTEXT.EVALUATION.DATE", s.name(f"Context{index}")), "result", f"ActualDate{index}")
+            s.write(result, f"{column}10", "=" + s.name(f"Rule{index}"), "result")
+            s.write(result, f"{column}12", formula("QS.RESULT.VALUE", s.name(f"Result{index}")), "money", f"PV{index}")
+            s.write(result, f"{column}13", f"={s.name(f'PV{index}')}-{s.name('PV1')}", "money")
+        s.link(result, "A17", "'1 Inputs'!B18", "Change timestamp queries →")
 
 
 def create_interpolation(path):
-    with new_workbook(path) as workbook:
-        style, sheets = study_sheets(workbook, ("One Dimension", "Two Dimensions", "Schedules"),
-            "Interpolation and schedules: nodes, methods, and worksheet layouts", [
-                "Compare linear, log-linear, and natural cubic-spline interpolation on a positive discount-factor grid.",
-                "The two-dimensional example reproduces a surface with an x*y interaction at nodes and between them.",
-                "Schedules compares unadjusted and TARGET-adjusted dates; lists can be transposed directly.",
-            ])
-        one = sheets["One Dimension"]
-        for cell, value in {"A4": "Time", "B4": "Discount factor", "D4": "Query", "E4": "Linear", "F4": "Log-linear", "G4": "Cubic spline"}.items():
-            one.write(cell, value, style["header"])
-        for row, x, y in [(5, 0, 1), (6, 1, .97), (7, 3, .91), (8, 5, .85), (9, 10, .70)]:
-            one.write(f"A{row}", x, style["input"])
-            one.write(f"B{row}", y, style["input"])
-        for row, point in enumerate((0, .5, 1, 2, 4, 7, 10), 5):
-            one.write(f"D{row}", point, style["input"])
-            for column, function in [("E", "QS.INTERPOLATE.LINEAR"), ("F", "QS.INTERPOLATE.LOG.LINEAR"), ("G", "QS.INTERPOLATE.CUBIC.SPLINE")]:
-                write(one, f"{column}{row}", f"={function}(D{row},$A$5:$A$9,$B$5:$B$9,FALSE)", style["factor"])
-        two = sheets["Two Dimensions"]
-        for column, label in zip("ABC", ("x", "y", "2 + x + 3*y + x*y")):
-            two.write(f"{column}4", label, style["header"])
-        for row, (x, y) in enumerate(((0, 0), (0, 2), (1, 0), (1, 2)), 5):
-            two.write(f"A{row}", x, style["input"])
-            two.write(f"B{row}", y, style["input"])
-            write(two, f"C{row}", f"=2+A{row}+3*B{row}+A{row}*B{row}")
-        for cell, value in {"E4": "Query x", "F4": "Query y", "G4": "Native bilinear", "H4": "Analytic value", "E5": .4, "F5": .7,
-                            "G5": '=QS.INTERPOLATE.BILINEAR(E5,F5,A5:A8,B5:B8,C5:C8,"Reject")', "H5": "=2+E5+3*F5+E5*F5"}.items():
-            write(two, cell, value, style["input"] if cell in ("E5", "F5") else style["text"])
-        schedules = sheets["Schedules"]
-        schedules.write("A2", "Unadjusted quarterly dates", style["section"])
-        write(schedules, "A4", '=QS.SCHEDULE("2026-02-24","2027-02-24","Quarterly")')
-        schedules.write("C2", "Same dates transposed", style["section"])
-        write(schedules, "C4", '=QS.SCHEDULE("2026-02-24","2027-02-24","Quarterly",TRUE)')
-        schedules.write("C8", "Following TARGET adjustment", style["section"])
-        write(schedules, "C10", '=QS.SCHEDULE.ADJUSTED("2026-02-28","2027-02-28","Quarterly","TARGET","Following",TRUE)')
-        one.activate()
+    routes = [("1 Inputs", "Edit curve nodes, query points, surface coordinates and dates."), ("2 Interpolation", "Compare methods and check the bilinear example."),
+              ("3 Schedules", "Compare unadjusted, adjusted and transposed date lists.")]
+    with Study(path, "Interpolation", "Interpolation and schedules · see what changes", "Compare three native one-dimensional methods, verify a bilinear surface, then inspect date-list layouts.", routes,
+               ["Change one positive discount-factor node and compare the three methods.", "Move the bilinear query and compare the native and analytic values.", "Compare the same schedule before and after TARGET / Following adjustment."]) as s:
+        inputs_sheet = "1 Inputs"
+        s.sheet(inputs_sheet, "Numerical inputs", "Blue cells are editable. Positive discount factors support log-linear interpolation. The bilinear surface is 2 + x + 3y + xy.", (30, 24, 32), "#337AB7")
+        s.headers(inputs_sheet, 6, ["Time", "Discount factor", ""])
+        for row, (x, y) in enumerate([(0, 1), (1, .97), (3, .91), (5, .85), (10, .70)], 7):
+            s.write(inputs_sheet, f"A{row}", x, "input")
+            s.write(inputs_sheet, f"B{row}", y, "input_number")
+        s.range("Times", inputs_sheet, 7, 0, 11, 0)
+        s.range("Factors", inputs_sheet, 7, 1, 11, 1)
+        s.headers(inputs_sheet, 14, ["Query point", "", ""])
+        for row, point in enumerate([0, .5, 1, 2, 4, 7, 10], 15):
+            s.write(inputs_sheet, f"A{row}", point, "input")
+        s.headers(inputs_sheet, 24, ["Surface x", "Surface y", "Surface value"])
+        for row, (x, y) in enumerate([(0, 0), (0, 2), (1, 0), (1, 2)], 25):
+            s.write(inputs_sheet, f"A{row}", x, "input")
+            s.write(inputs_sheet, f"B{row}", y, "input")
+            s.write(inputs_sheet, f"C{row}", f"=2+A{row}+3*B{row}+A{row}*B{row}", "number")
+        for key, column in [("SurfaceX", 0), ("SurfaceY", 1), ("SurfaceValues", 2)]:
+            s.range(key, inputs_sheet, 25, column, 28, column)
+        for row, label, value, key in [(31, "Query x", .4, "QueryX"), (32, "Query y", .7, "QueryY"), (35, "Schedule start", "2026-02-28", "Start"), (36, "Schedule end", "2027-02-28", "End"), (37, "Frequency", "Quarterly", "Frequency"), (38, "Calendar", "TARGET", "Calendar"), (39, "Business-day convention", "Following", "Convention")]:
+            s.input(inputs_sheet, row, label, value, key, "Used by the corresponding result tab.")
+        result = "2 Interpolation"
+        s.sheet(result, "Compare native interpolation methods", "The same nodes feed all three methods. Query points must stay inside the node range because extrapolation is disabled.", (24, 24, 24, 24), "#21845B")
+        s.headers(result, 6, ["Query point", "Linear", "Log-linear", "Cubic spline"])
+        for row in range(7, 14):
+            s.write(result, f"A{row}", f"='{inputs_sheet}'!A{row+8}", "number")
+            for column, method in [("B", "LINEAR"), ("C", "LOG.LINEAR"), ("D", "CUBIC.SPLINE")]:
+                s.write(result, f"{column}{row}", formula("QS.INTERPOLATE." + method, f"A{row}", s.name("Times"), s.name("Factors"), "FALSE"), "factor", f"{column}{row}")
+        s.headers(result, 17, ["Bilinear surface", "Calculated value", "", ""])
+        s.write(result, "A18", "Native interpolation")
+        s.write(result, "B18", formula("QS.INTERPOLATE.BILINEAR", s.name("QueryX"), s.name("QueryY"), s.name("SurfaceX"), s.name("SurfaceY"), s.name("SurfaceValues"), '"Reject"'), "number", "Bilinear")
+        s.write(result, "A19", "Analytic value")
+        s.write(result, "B19", f"=2+{s.name('QueryX')}+3*{s.name('QueryY')}+{s.name('QueryX')}*{s.name('QueryY')}", "number", "Analytic")
+        s.write(result, "A20", "Difference")
+        s.write(result, "B20", f"={s.name('Bilinear')}-{s.name('Analytic')}", "number", "Difference")
+        chart = s.workbook.add_chart({"type": "scatter", "subtype": "straight_with_markers"})
+        for column, name, color in [(1, "Linear", "#176B75"), (2, "Log-linear", "#337AB7"), (3, "Cubic spline", "#B27C2C")]:
+            chart.add_series({"name": name, "categories": [result, 6, 0, 12, 0], "values": [result, 6, column, 12, column], "line": {"color": color}, "marker": {"type": "circle", "size": 4}})
+        chart.set_title({"name": "Same nodes · different interpolation"})
+        chart.set_x_axis({"name": "Time"})
+        chart.set_y_axis({"name": "Discount factor"})
+        chart.set_legend({"position": "bottom"})
+        chart.set_size({"width": 650, "height": 310})
+        s.sheets[result].insert_chart("A23", chart)
+        schedules = "3 Schedules"
+        s.sheet(schedules, "The same schedule in different layouts", "Both date columns use the same start, end and frequency. The adjusted list adds TARGET / Following. Lists have no headers; transpose changes orientation only.", (20, 20, 20, 20, 20), "#21845B")
+        s.sheets[schedules].set_column("F:AZ", 16)
+        s.write(schedules, "A6", "Unadjusted", "header")
+        s.write(schedules, "C6", "TARGET / Following", "header")
+        s.write(schedules, "A7", formula("QS.SCHEDULE", s.name("Start"), s.name("End"), s.name("Frequency")))
+        s.write(schedules, "C7", formula("QS.SCHEDULE.ADJUSTED", s.name("Start"), s.name("End"), s.name("Frequency"), s.name("Calendar"), s.name("Convention")))
+        s.merge(schedules, "A16:E16", "The unadjusted list transposed into one row", "section")
+        s.write(schedules, "A17", formula("QS.SCHEDULE", s.name("Start"), s.name("End"), s.name("Frequency"), "TRUE"))
 
 
-STUDY_CHECKS = {
-    "loan_pricing_example": {
-        "handles": [("Market", "F11"), ("Comparison", "F5"), ("Comparison", "F14"), ("Comparison", "F16")],
-        "numbers": [("Comparison", f"{column}{row}") for row in range(5, 17) for column in "GH"] + [("Comparison", cell) for cell in ("I5", "I8", "I9", "J9", "I15", "J15", "K15", "I16", "J16", "K16")],
-    },
-    "bond_pricing_example": {
-        "handles": [("Market", "F11"), ("Valuation", "C5"), ("Valuation", "C7")],
-        "numbers": [("Valuation", f"{column}{row}") for row in (5, 6, 7) for column in "DEF"],
-    },
-    "interpolation_example": {
-        "handles": [],
-        "numbers": [("One Dimension", f"{column}{row}") for row in range(5, 12) for column in "EFG"] + [("Two Dimensions", "G5")],
-    },
-}
+def validation_names(example):
+    """Stable workbook names keep live checks independent of the visual layout."""
+    if example == "swap_pricing_example":
+        return (["Swap_" + key for key in ("Context", "Instrument", "Trade", "Policy", "Pricer", "Result", "Fair0", "Fair1")],
+                ["Swap_" + key for key in ("PV", "FairFixed", "FairFloat", "SofrDiscount", "EstrDiscount", "SofrForward", "EstrForward")])
+    if example == "historical_pricing_example":
+        return (["History_" + key for key in ("Archive", "Trade", "Pricer", "Context1", "Context2", "Result1", "Result2")],
+                ["History_PV1", "History_PV2"])
+    if example == "loan_pricing_example":
+        handles = ["Loan_" + key for key in ("Context", "RiskFreePricer", "FundingPricer", "SelectedResult")]
+        numbers = []
+        for index, case in enumerate(LOAN_CASES, 1):
+            key = f"Loan_C{index:02}_"
+            handles += [key + "Instrument", key + "Trade", key + "Result"]
+            numbers += [key + "PV", key + "Net"]
+            if case[0] != "Bounded floating":
+                numbers += [key + f"FairRate{target}" for target in range(len(case[5]) or 1)]
+        return handles, numbers
+    if example == "bond_pricing_example":
+        return (["Bond_" + key for key in ("Context", "Instrument", "Pricer", "SelectedResult")],
+                [f"Bond_C{index:02}_{key}" for index in range(1, 4) for key in ("PV", "Duration", "ZSpread")])
+    if example == "interpolation_example":
+        return [], ([f"Interpolation_{column}{row}" for column in "BCD" for row in range(7, 14)]
+                    + ["Interpolation_Bilinear", "Interpolation_Analytic", "Interpolation_Difference"])
+    raise ValueError(f"Unknown example: {example}")
 
 
 def validate_in_excel(path, xll_path):
-    """Check the optional live XLL workflow and unchanged F9 recalculation."""
+    """Check native results, selected-case spills and unchanged F9 recalculation."""
     from win32com.client import DispatchEx
 
     excel = DispatchEx("Excel.Application")
@@ -634,65 +611,73 @@ def validate_in_excel(path, xll_path):
         workbook = excel.Workbooks.Open(str(path.resolve()), UpdateLinks=0, ReadOnly=True)
         workbook.ForceFullCalculation = True
         excel.CalculateFullRebuild()
-        historical = "Historical Pricing" in [sheet.Name for sheet in workbook.Worksheets]
-        study = STUDY_CHECKS.get(path.stem)
-        if study:
-            handles = [workbook.Worksheets(sheet).Range(cell) for sheet, cell in study["handles"]]
-            prices = [workbook.Worksheets(sheet).Range(cell) for sheet, cell in study["numbers"]]
-            if path.stem == "interpolation_example":
-                sheet = workbook.Worksheets("Two Dimensions")
-                if abs(sheet.Range("G5").Value2 - sheet.Range("H5").Value2) > 1e-10:
-                    raise RuntimeError("Bilinear result disagrees with the analytic surface")
-            elif path.stem == "loan_pricing_example":
-                sheet = workbook.Worksheets("Comparison")
-                if sheet.Range("G13").Value2 >= sheet.Range("G5").Value2:
-                    raise RuntimeError("Higher funding rates did not reduce fixed-loan PV")
-                layouts = workbook.Worksheets("Layouts")
-                if layouts.Range("A11").Value2 != "Risk factor":
-                    raise RuntimeError("Transposed sensitivity table lost its header")
-                for without_header, with_header in (("A4", "B11"), ("A5", "B12")):
-                    if layouts.Range(without_header).Value2 != layouts.Range(with_header).Value2:
-                        raise RuntimeError("Header-free and transposed sensitivity values do not align")
-        elif historical:
-            sheet = workbook.Worksheets("Historical Pricing")
-            handles = [sheet.Range(f"{column}{row}") for column in "BC" for row in (9, 11, 12, 13, 20, 21)]
-            prices = [sheet.Range(f"{column}24") for column in "BC"]
-            for column in "BC":
-                if sheet.Range(f"{column}23").Value2 != sheet.Range(f"{column}1").Value2:
-                    raise RuntimeError("Historical valuation date does not match its market")
+
+        def cell(name):
+            return workbook.Names.Item(name).RefersToRange
+
+        def value(name):
+            return cell(name).Value2
+
+        handle_names, number_names = validation_names(path.stem)
+        before = [value(name) for name in handle_names]
+        for name, result in zip(handle_names, before):
+            if not isinstance(result, str) or not result.startswith("QSObject:"):
+                raise RuntimeError(f"{name} did not return a native object handle: {result!r}")
+        numbers = [value(name) for name in number_names]
+        for name, result in zip(number_names, numbers):
+            if not isinstance(result, (int, float)) or isinstance(result, bool) or not math.isfinite(result):
+                raise RuntimeError(f"{name} did not return a finite number: {result!r}")
+            if bool(excel.WorksheetFunction.IsError(cell(name))):
+                raise RuntimeError(f"{name} returned an Excel error: {result!r}")
+
+        if path.stem == "interpolation_example":
+            if abs(value("Interpolation_Difference")) > 1e-10:
+                raise RuntimeError("Bilinear result disagrees with the analytic surface")
+        elif path.stem == "historical_pricing_example":
+            for index in (1, 2):
+                if value(f"History_ActualDate{index}") != value(f"History_Date{index}"):
+                    raise RuntimeError("Historical valuation date does not match its selected market")
+                matched = datetime.fromisoformat(value(f"History_Matched{index}").replace("Z", "+00:00"))
+                recorded = datetime.fromisoformat(value(f"History_Timestamp{index}").replace("Z", "+00:00"))
+                if matched != recorded:
+                    raise RuntimeError("Exact timestamp query did not match its observation")
         else:
-            sheet = workbook.Worksheets("Pricing")
-            handles = [sheet.Range(f"B{row}") for row in (4, 5, 6, 7, 10, 12)]
-            prices = [sheet.Range(f"B{row}") for row in (8, 9, 11, 13)]
-            results = workbook.Worksheets("Curve Results")
-            numeric = [results.Range(cell).Value2 for cell in ("C5", "E6", "N6", "N8", "N11", "N12")]
-            for value in numeric:
-                if not isinstance(value, float) or not math.isfinite(value):
-                    raise RuntimeError(f"Curve query did not return a finite number: {value!r}")
-            if numeric[0] != 1.0 or abs(numeric[2] - prices[2].Value2) > 1e-8:
-                raise RuntimeError("Curve table and point-query discount factors disagree")
-            for output_sheet, cell in [("Outputs", "A4"), ("Outputs", "K4"), ("Function Help", "A4")]:
-                if not isinstance(workbook.Worksheets(output_sheet).Range(cell).Value2, str):
-                    raise RuntimeError(f"{output_sheet}!{cell} did not spill a header")
-        before = [cell.Value2 for cell in handles]
-        if not all(isinstance(value, str) and value.startswith("QSObject:") for value in before):
-            raise RuntimeError(f"Expected native object handles: {before!r}")
-        values = [cell.Value2 for cell in prices]
-        if not all(isinstance(value, float) and math.isfinite(value) for value in values):
-            raise RuntimeError(f"Pricing did not return finite numbers: {values!r}")
-        if not historical and not study:
-            notional = workbook.Worksheets("Trade Inputs").Range("B4").Value2
-            if abs(values[0]) > notional or abs(values[1]) > 0.5:
-                raise RuntimeError("Swap price or fair rate is implausible for the example")
-            if not all(0.0 < discount <= 1.5 for discount in values[2:]):
-                raise RuntimeError("Maturity discount factors are outside the example's expected range")
-            if any(abs(forward) > 0.5 for forward in numeric[4:]):
-                raise RuntimeError("Curve point forwards are outside the example's expected range")
+            for sheet in workbook.Worksheets:
+                if sheet.Name.endswith((" Cashflows", " Risk")):
+                    expected = "Risk factor" if sheet.Name.endswith(" Risk") else "Payment date"
+                    if sheet.Range("A7").Value2 != expected:
+                        raise RuntimeError(f"{sheet.Name}!A7 did not spill its expected header")
+            if path.stem in ("loan_pricing_example", "bond_pricing_example"):
+                prefix = "Loan" if path.stem == "loan_pricing_example" else "Bond"
+                selected = cell(prefix + "_SelectedCase")
+                original = selected.Value2
+                try:
+                    selected.Value2 = "Stepped then floating" if prefix == "Loan" else "Clean price 100"
+                    excel.CalculateFullRebuild()
+                    expected = value(prefix + ("_C12_Result" if prefix == "Loan" else "_C03_Result"))
+                    if value(prefix + "_SelectedResult") != expected:
+                        raise RuntimeError("The detail selector did not choose the requested result")
+                    for sheet in workbook.Worksheets:
+                        if sheet.Name.endswith((" Cashflows", " Risk")):
+                            if sheet.Range("B6").Value2 != selected.Value2:
+                                raise RuntimeError("Cashflows and risk do not follow the same selected case")
+                finally:
+                    selected.Value2 = original
+                    excel.CalculateFullRebuild()
+            if path.stem == "loan_pricing_example":
+                if value("Loan_C09_PV") >= value("Loan_C01_PV"):
+                    raise RuntimeError("Higher funding rates did not reduce fixed-loan PV")
+                layouts = workbook.Worksheets("8 Layouts")
+                if layouts.Range("A7").Value2 != "Pillar" or layouts.Range("A27").Value2 != "Pillar":
+                    raise RuntimeError("Curve-table layouts lost their headers")
+                for first, second in (("A17", "A8"), ("A37", "B27")):
+                    if layouts.Range(first).Value2 != layouts.Range(second).Value2:
+                        raise RuntimeError("Header-free and transposed curve values do not align")
         excel.Calculate()
-        if [cell.Value2 for cell in handles] != before:
-            raise RuntimeError("Unchanged F9 recalculation changed object handles")
-        if any(abs(cell.Value2 - value) > 1e-8 for cell, value in zip(prices, values)):
-            raise RuntimeError("Unchanged F9 recalculation changed prices")
+        if [value(name) for name in handle_names] != before:
+            raise RuntimeError("Unchanged recalculation changed object handles")
+        if any(abs(value(name) - previous) > 1e-8 for name, previous in zip(number_names, numbers)):
+            raise RuntimeError("Unchanged recalculation changed numerical results")
     finally:
         if workbook is not None:
             workbook.Close(SaveChanges=False)

@@ -78,6 +78,10 @@ and formulas; Windows Excel calculates them after the XLL is loaded.
 Additional studies cover [loans](examples/loan_pricing_example.xlsx),
 [bond analytics](examples/bond_pricing_example.xlsx), and
 [interpolation and schedules](examples/interpolation_example.xlsx).
+Each opens on **Start Here**, with linked, numbered tabs, editable blue inputs,
+explained construction steps and green financial results. The loan and bond
+workbooks have a case selector shared by their cashflow and risk tables.
+See the [example walkthrough](examples/README.md) for the suggested reading order.
 
 Table functions accept trailing `transpose` and `headers` flags, defaulting to
 `FALSE,TRUE`. For example, `=QS.RESULT.CASHFLOWS(result,TRUE,FALSE)` exchanges
