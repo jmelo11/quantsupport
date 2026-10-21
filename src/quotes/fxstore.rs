@@ -62,11 +62,14 @@ impl FxStore {
     /// Exports side-independent spot observations without runtime AD state.
     #[must_use]
     pub fn records(&self) -> Vec<FxRateRecord> {
-        self.exchange_rate_map.iter().map(|(&(base, quote), rate)| FxRateRecord {
-            base,
-            quote,
-            rate: rate.value(),
-        }).collect()
+        self.exchange_rate_map
+            .iter()
+            .map(|(&(base, quote), rate)| FxRateRecord {
+                base,
+                quote,
+                rate: rate.value(),
+            })
+            .collect()
     }
 
     /// Creates an empty store.
@@ -90,6 +93,17 @@ impl FxStore {
     /// Inserts a spot rate: 1 `base` = `rate` `quote`.
     pub fn add_fx_rate(&mut self, base: Currency, quote: Currency, rate: DualFwd) {
         self.exchange_rate_map.insert((base, quote), rate);
+    }
+
+    /// Returns an explicitly stored spot without inversion or triangulation.
+    #[must_use]
+    pub fn direct_fx_rate(&self, base: Currency, quote: Currency) -> Option<DualFwd> {
+        self.exchange_rate_map.get(&(base, quote)).copied()
+    }
+
+    /// Removes an explicitly stored spot observation.
+    pub fn remove_fx_rate(&mut self, base: Currency, quote: Currency) -> Option<DualFwd> {
+        self.exchange_rate_map.remove(&(base, quote))
     }
 
     /// Retrieves the exchange rate `base → quote`, composing via BFS if no

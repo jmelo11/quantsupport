@@ -47,6 +47,16 @@ impl FixingStore {
             .insert(date, value);
     }
 
+    /// Removes one stored fixing and drops an empty index bucket.
+    pub fn remove_fixing(&mut self, market_index: &MarketIndex, date: Date) -> Option<f64> {
+        let fixings = self.values.get_mut(market_index)?;
+        let previous = fixings.remove(&date);
+        if fixings.is_empty() {
+            self.values.remove(market_index);
+        }
+        previous
+    }
+
     /// Fills missing calendar dates between the first and last stored fixings.
     ///
     /// Existing values are preserved. The current implementation queries at

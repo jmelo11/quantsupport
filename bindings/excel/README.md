@@ -140,18 +140,55 @@ that require no JSON.
 
 ## Calculation and financial conventions
 
-Constructors return revisioned handles such as
-`QSObject:QuoteStore:workbook.usd.quotes:3`. The objects remain in the XLL's
-process/thread-local registry. Unchanged inputs reuse objects; changed inputs
-advance revisions and recalculate dependents. Readers reject stale handles;
-mutators accept older revisions of the same identity in dependency chains.
-Use workbook-qualified object names when several workbooks may be open.
+Quote identifiers and their typed fields accept case variants, including lookup
+and replacement in native Rust quote stores. Original display identifiers remain
+available.
 
-Deleting a mutation row does not remove its old observation automatically.
-Use `QS.OBJECT.RESET(store, reset_key)` (alias `QS.STORE.RESET`) before the
-update chain when the input set changes. Reset applies to supported mutable
-stores/configuration collections, not immutable curves, contexts, or trades.
-Workbooks must preserve formulas and inputs; handles do not serialize objects.
+Constructors return revisioned handles such as
+`QSObject:QuoteStore:w7~usd.quotes:3`. Names are isolated per workbook; two open
+workbooks can use the same names. Keep handles in formulas or cell references:
+they identify runtime objects and cannot be saved as permanent data.
+
+Each worksheet cell owns its outputs and references to its inputs. Unchanged
+inputs reuse objects and results. Replacing or clearing formulas releases their
+previous objects once no live cell references them. Closing a workbook releases
+its entire registry, including when Excel stays open with no workbooks. A native
+observer processes cell edits and checks completed workbook closures on Excel's
+main thread. On opening a workbook, it marks saved QuantSupport formulas dirty
+so runtime handles are rebuilt under Excel's current calculation mode. It never
+calls Calculate. Keep Excel's
+`Application.EnableEvents` enabled for cleanup when editing or clearing cells;
+workbook-close cleanup also runs independently of that setting.
+
+Store update formulas own their individual quote, fixing, FX, curve, or
+configuration contribution. Changing its key replaces the old contribution;
+a failed edit or deleted formula removes it. An overwritten observation imported
+from JSON is restored. Two cells cannot define the same store entry. Structural
+configuration errors fail before changing the collection; errors requiring market
+levels are reported when the context is built. Correct the responsible input and
+recalculate without creating another store.
+
+Functions owning objects and running valuations are nonvolatile. Excel's normal
+dependency graph determines when they run, including Manual calculation mode.
+F9/Calculate explicitly runs calculations; Excel can also evaluate a newly entered
+formula in Manual mode. Changing calculation mode does not cancel an evaluation
+already in progress. Use `QS.OBJECT.COUNT()` to inspect the calling workbook's
+live object count, or `QS.OBJECT.COUNT(TRUE)` for the whole Excel instance.
+`QS.OBJECT.RESET(store, reset_key)` / `QS.STORE.RESET` remain
+available for an explicit reset of an entire mutable collection.
+
+For portfolios needing only PV, return numbers directly:
+
+```text
+=QS.EVALUATE.VALUE(pricer,trade,context)
+=QS.EVALUATE.VALUES(pricer,A2:A10001,context)
+=QS.EVALUATE.VALUES(pricer,A2:A10001,context,TRUE)
+```
+
+The range version returns one PV per trade, as a column or transposed row. Excel
+caches the values; no `EvaluationResults` objects are retained. Share market
+contexts and pricers across positions. Use `QS.EVALUATE` and `QS.RESULT.*` when
+cashflows, risk, fair rates or other stored measures are needed.
 
 `QS.INSTRUMENT.*` creates native contracts for every exposed product family.
 `QS.TRADE.CREATE` adds position terms; `QS.PRICER.CREATE` selects an actual Rust
@@ -193,7 +230,9 @@ otherwise the floating spread. Optional worksheet ranges use Setting/Value,
 Periods/Rate or spread/Market index, and Date/CPR columns. Enter numeric, text,
 and TRUE/FALSE cells directly; unknown or duplicate settings fail explicitly.
 Create the position with `QS.TRADE.CREATE`, then choose `LoanPricer` and a
-`QS.DISCOUNT.POLICY.FIXED.INCOME` mapping such as EUR/ESTR or EUR/FUNDING.
+`QS.DISCOUNT.POLICY.FIXED.INCOME("policy","EUR","ESTR")` or the same call
+with `"FUNDING"`. Multiple currencies use `.FROM.MAPPINGS(name,range,prefer)`.
+The earlier `(name,mappings,prefer)` formula remains compatible.
 Funding is an ordinary curve constructed through the same curve APIs as other
 indices. It is selected by policy, never by a loan contract setting.
 
@@ -239,6 +278,17 @@ callback pointers at the boundary, not in stored objects.
 cargo test -p quantsupport-xll --lib --example function_catalog
 python -m unittest discover -s bindings/excel/examples -p 'test_*.py'
 ```
+
+For lifecycle checks in actual Windows Excel, install `pywin32`, set
+`QS_XLL_PATH` to the built XLL, and run:
+
+```powershell
+python -m unittest discover -s bindings/excel/examples -p 'test_lifecycle_live.py' -v
+```
+
+These checks cover workbook isolation, closing the last workbook while Excel
+stays open, failed edits, clearing/renaming formulas, and Manual versus explicit
+calculation. They use their own Excel instance and close it afterward.
 
 Portable tests cover the registry, historical markets, interpolation and
 source-derived catalog. Windows tests additionally compare registered inventory

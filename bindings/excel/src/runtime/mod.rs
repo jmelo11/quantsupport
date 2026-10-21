@@ -24,3 +24,12 @@ pub mod pricing;
 pub mod products;
 #[cfg_attr(not(windows), allow(dead_code))]
 pub mod registration;
+
+#[cfg_attr(not(windows), allow(dead_code, unused_imports))]
+pub mod lifecycle;
+
+#[cfg_attr(not(windows), allow(dead_code))]
+pub mod configuration_inputs;
+
+#[cfg(windows)]
+pub mod arguments;

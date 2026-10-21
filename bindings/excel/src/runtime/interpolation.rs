@@ -88,6 +88,7 @@ pub fn bilinear(
 /// # Errors
 /// Rejects empty or mismatched ranges, duplicate points, nonfinite inputs/results,
 /// and queries outside a slice when extrapolation is rejected.
+#[allow(clippy::too_many_arguments)]
 pub fn trilinear(
     point_x: f64,
     point_y: f64,

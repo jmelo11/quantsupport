@@ -15,6 +15,7 @@ members = [
     "benchmarks",
     "bindings/python",
     "bindings/excel",
+    "bindings/excel/macros",
 ]
 
 [workspace.package]

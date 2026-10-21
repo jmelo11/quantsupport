@@ -7,12 +7,11 @@ use crate::{
     },
 };
 use quantsupport::prelude::BondPricingAnchor;
+use quantsupport_xll_macros::xll_bindgen;
 use xll_rs::types::XllError;
-use xllgen::xll_bindgen;
 
 #[xll_bindgen(
     name = "QS.TRADE.CREATE",
-    volatile,
     category = "QuantSupport - Instruments",
     help = "Creates a native position on an existing instrument; contract terms and pricing policy remain separate"
 )]
@@ -40,6 +39,19 @@ pub fn qs_trade_create(
         settlement_date.as_deref(),
         spread_day_counter.as_deref(),
     ))?;
+    let kind = with_registry(|registry| {
+        registry.instrument(instrument).map(|value| {
+            if value.kind() == "CreditDefaultSwap" {
+                "CdsTrade".to_string()
+            } else {
+                format!("{}Trade", value.kind())
+            }
+        })
+    })
+    .map_err(value_error)?;
+    if let Some(handle) = cached_handle(name, &kind, &key)? {
+        return Ok(handle);
+    }
     let anchor = match (
         pricing_anchor
             .as_deref()

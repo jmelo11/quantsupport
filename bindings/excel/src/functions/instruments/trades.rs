@@ -8,8 +8,8 @@ use quantsupport::prelude::{
     MakeFxEuropeanOption, MakeFxForward, MakeRateFutures, MakeSwap, PaymentStructure,
     RateDefinition, RateFuturesTrade, Strike, SwapTrade,
 };
+use quantsupport_xll_macros::xll_bindgen;
 use xll_rs::types::XllError;
-use xllgen::xll_bindgen;
 
 use crate::runtime::registry::{with_registry, with_registry_mut, QsObject};
 
@@ -25,7 +25,6 @@ fn cached_handle(name: &str, kind: &str, key: &str) -> Result<Option<String>, Xl
 
 #[xll_bindgen(
     name = "QS.TRADE.FX.FORWARD",
-    volatile,
     category = "QuantSupport - Instruments",
     help = "Creates a deliverable FX-forward trade"
 )]
@@ -81,7 +80,6 @@ pub fn qs_trade_fx_forward(
 
 #[xll_bindgen(
     name = "QS.TRADE.SWAP",
-    volatile,
     category = "QuantSupport - Instruments",
     help = "Creates a vanilla fixed-versus-floating interest-rate swap trade"
 )]
@@ -151,7 +149,6 @@ pub fn qs_trade_swap(
 
 #[xll_bindgen(
     name = "QS.TRADE.BASIS.SWAP",
-    volatile,
     category = "QuantSupport - Instruments",
     help = "Creates a native floating-versus-floating BasisSwapTrade"
 )]
@@ -217,7 +214,6 @@ pub fn qs_trade_basis_swap(
 
 #[xll_bindgen(
     name = "QS.TRADE.XCCY.FLOAT.FLOAT",
-    volatile,
     category = "QuantSupport - Instruments",
     help = "Creates a native FloatFloatCrossCurrencySwapTrade"
 )]
@@ -296,7 +292,6 @@ pub fn qs_trade_xccy_float_float(
 
 #[xll_bindgen(
     name = "QS.TRADE.XCCY.FIX.FLOAT",
-    volatile,
     category = "QuantSupport - Instruments",
     help = "Creates a native FixFloatCrossCurrencySwapTrade"
 )]
@@ -382,7 +377,6 @@ pub fn qs_trade_xccy_fix_float(
 
 #[xll_bindgen(
     name = "QS.TRADE.FIXED.BOND",
-    volatile,
     category = "QuantSupport - Instruments",
     help = "Creates a fixed-rate bond trade"
 )]
@@ -466,7 +460,6 @@ pub fn qs_trade_fixed_bond(
 
 #[xll_bindgen(
     name = "QS.TRADE.FIXED.DEPOSIT",
-    volatile,
     category = "QuantSupport - Instruments",
     help = "Creates a fixed-rate deposit trade"
 )]
@@ -531,7 +524,6 @@ pub fn qs_trade_fixed_deposit(
 
 #[xll_bindgen(
     name = "QS.TRADE.FLOATING.NOTE",
-    volatile,
     category = "QuantSupport - Instruments",
     help = "Creates a native FloatingRateNoteTrade"
 )]
@@ -589,7 +581,6 @@ pub fn qs_trade_floating_note(
 
 #[xll_bindgen(
     name = "QS.TRADE.FX.OPTION",
-    volatile,
     category = "QuantSupport - Instruments",
     help = "Creates a native FxEuropeanOptionTrade"
 )]
@@ -647,7 +638,6 @@ pub fn qs_trade_fx_option(
 
 #[xll_bindgen(
     name = "QS.TRADE.EQUITY.OPTION",
-    volatile,
     category = "QuantSupport - Instruments",
     help = "Creates a native EquityEuropeanOptionTrade"
 )]
@@ -702,7 +692,6 @@ pub fn qs_trade_equity_option(
 
 #[xll_bindgen(
     name = "QS.TRADE.CDS",
-    volatile,
     category = "QuantSupport - Instruments",
     help = "Creates a native CdsTrade; use a Credit:<entity> market index"
 )]
@@ -762,7 +751,6 @@ pub fn qs_trade_cds(
 
 #[xll_bindgen(
     name = "QS.TRADE.CAP.FLOOR",
-    volatile,
     category = "QuantSupport - Instruments",
     help = "Creates a native CapFloorTrade"
 )]
@@ -833,7 +821,6 @@ pub fn qs_trade_cap_floor(
 
 #[xll_bindgen(
     name = "QS.TRADE.CAPLET.FLOORLET",
-    volatile,
     category = "QuantSupport - Instruments",
     help = "Creates a native CapletFloorletTrade"
 )]
@@ -893,7 +880,6 @@ pub fn qs_trade_caplet_floorlet(
 
 #[xll_bindgen(
     name = "QS.TRADE.RATE.FUTURE",
-    volatile,
     category = "QuantSupport - Instruments",
     help = "Creates an interest-rate futures trade"
 )]
@@ -951,7 +937,6 @@ pub fn qs_trade_rate_future(
 
 #[xll_bindgen(
     name = "QS.TRADE.EQUITY.FORWARD",
-    volatile,
     category = "QuantSupport - Instruments",
     help = "Creates a native equity-forward trade"
 )]
@@ -1012,7 +997,6 @@ pub fn qs_trade_equity_forward(
 
 #[xll_bindgen(
     name = "QS.TRADE.EUROPEAN.SWAPTION",
-    volatile,
     category = "QuantSupport - Instruments",
     help = "Creates a European swaption; pricing uses the configured fixed or calibrated HullWhite model"
 )]

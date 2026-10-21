@@ -268,9 +268,9 @@ def create_loans(path):
         ], "Shared inputs apply to all cases. Blue cells are editable; each case's specific terms are on the next tab.")
         requests(s, "1 Inputs", 20)
         s.headers("1 Inputs", 27, ["Policy currency", "Ordinary discount index", ""])
-        for row, index in [(28, "ESTR"), (29, "FUNDING")]:
-            s.write("1 Inputs", f"A{row}", "EUR")
-            s.write("1 Inputs", f"B{row}", index, "input")
+        for row, index, suffix in [(28, "ESTR", "RiskFree"), (29, "FUNDING", "Funding")]:
+            s.write("1 Inputs", f"A{row}", "EUR", "body", suffix + "Currency")
+            s.write("1 Inputs", f"B{row}", index, "input", suffix + "Index")
         s.range("RiskFreeMapping", "1 Inputs", 28, 0, 28, 1)
         s.range("FundingMapping", "1 Inputs", 29, 0, 29, 1)
         s.sheet("2 Cases", "Case inputs · one block per agreement", "Each block keeps its contractual settings and coupon schedule together. Discount-curve choice selects a pricer policy; it is never passed to the instrument.", (26, 20, 24, 18, 18, 22), "#337AB7")
@@ -321,7 +321,7 @@ def create_loans(path):
         s.headers(build, 6, ["Step", "Object reference", "Purpose"])
         row = s.step(build, 7, "1. Initialize pricing context", context("Loan.Context", s.name("Quotes"), s.name("Curves"), '"EUR"', '"ESTR"', s.name("Credit")), "Context", "Constructs the projection, discount, funding and credit curves.")
         for number, suffix, label in [(2, "RiskFree", "ESTR"), (4, "Funding", "FUNDING")]:
-            row = step(s, build, row, f"{number}. {label} discount policy", "QS.DISCOUNT.POLICY.FIXED.INCOME", [text(f"Loan.{suffix}Policy"), s.name(suffix + "Mapping")], suffix + "Policy", "Maps EUR to an ordinary market curve.")
+            row = step(s, build, row, f"{number}. {label} discount policy", "QS.DISCOUNT.POLICY.FIXED.INCOME", [text(f"Loan.{suffix}Policy"), s.name(suffix + "Currency"), s.name(suffix + "Index")], suffix + "Policy", "Maps EUR to an ordinary market curve.")
             row = step(s, build, row, f"{number+1}. {label} loan pricer", "QS.PRICER.CREATE", [text(f"Loan.{suffix}Pricer"), '"LoanPricer"', s.name(suffix + "Policy")], suffix + "Pricer", "Same native LoanPricer, with an explicit policy.")
         row = step(s, build, row, "6. Get ESTR for layout examples", "QS.CURVE.GET", [s.name("Context"), '"ESTR"'], "EstrCurve", "A small five-node table for the layout lesson.")
         for target in range(3):
@@ -398,8 +398,8 @@ def create_bonds(path):
             s.write("1 Inputs", f"C{row}", value, "input_rate" if anchor == "ZSpread" else "input_number", f"C{index:02}_AnchorValue")
         requests(s, "1 Inputs", 22, ("Value", "ModifiedDuration", "ZSpread", "Cashflows", "Sensitivities"))
         s.headers("1 Inputs", 30, ["Policy currency", "Ordinary discount index", ""])
-        s.write("1 Inputs", "A31", "USD")
-        s.write("1 Inputs", "B31", "SOFR", "input")
+        s.write("1 Inputs", "A31", "USD", "body", "DiscountCurrency")
+        s.write("1 Inputs", "B31", "SOFR", "input", "DiscountIndex")
         s.range("DiscountMapping", "1 Inputs", 31, 0, 31, 1)
         simple_market(s, "2 Market", "USD", "SOFR")
         build = "3 Build"
@@ -407,7 +407,7 @@ def create_bonds(path):
         s.headers(build, 6, ["Step", "Object reference", "Purpose"])
         row = s.step(build, 7, "1. Initialize market context", context("Bond.Context", s.name("Quotes"), s.name("Curves"), '"USD"', '"SOFR"'), "Context", "Constructs the visible SOFR zero curve.")
         row = step(s, build, row, "2. Define the bond instrument", "QS.INSTRUMENT.FIXED.BOND", [text("Bond.Instrument"), s.name("Start"), s.name("Maturity"), '"USD"', "", s.name("Notional"), s.name("Coupon"), '"Actual360"', '"Compounded"', '"Semiannual"', '"Semiannual"'], "Instrument", "No position side or pricing anchor is stored in this contract.")
-        row = step(s, build, row, "3. Choose discount policy", "QS.DISCOUNT.POLICY.FIXED.INCOME", [text("Bond.Policy"), s.name("DiscountMapping")], "Policy", "Maps USD to the ordinary SOFR curve.")
+        row = step(s, build, row, "3. Choose discount policy", "QS.DISCOUNT.POLICY.FIXED.INCOME", [text("Bond.Policy"), s.name("DiscountCurrency"), s.name("DiscountIndex")], "Policy", "Maps USD to the ordinary SOFR curve.")
         row = step(s, build, row, "4. Create native bond pricer", "QS.PRICER.CREATE", [text("Bond.Pricer"), '"BondPricer"', s.name("Policy")], "Pricer", "The same configured pricer evaluates all three positions.")
         result_keys, build_rows = [], []
         for index, (label, _, _) in enumerate(anchors, 1):

@@ -1,6 +1,6 @@
 use quantsupport::prelude::{DayCounter, Frequency};
+use quantsupport_xll_macros::xll_bindgen;
 use xll_rs::types::{XllError, XLOPER12};
-use xllgen::xll_bindgen;
 
 use crate::{
     functions::helpers::{
@@ -23,7 +23,6 @@ fn optional_text(value: Option<String>) -> Option<String> {
 
 #[xll_bindgen(
     name = "QS.TRADE.LOAN",
-    volatile,
     category = "QuantSupport - Instruments",
     help = "Creates a fixed or floating loan with French, bullet, or balloon principal and optional prepayment/credit terms"
 )]
@@ -91,7 +90,6 @@ pub fn qs_trade_loan(
 
 #[xll_bindgen(
     name = "QS.INSTRUMENT.LOAN",
-    volatile,
     category = "QuantSupport - Instruments",
     help = "Creates a native loan contract from worksheet terms and ranges; positions, pricers and discount policies are separate"
 )]

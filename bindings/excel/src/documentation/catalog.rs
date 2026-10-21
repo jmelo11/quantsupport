@@ -321,7 +321,7 @@ mod tests {
         let records =
             super::exports(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/functions"))
                 .unwrap();
-        assert_eq!(records.len(), 143);
+        assert_eq!(records.len(), 146);
         let scenario = records
             .iter()
             .find(|record| record["name"] == "QS.SCENARIOS.FROM.JSON")
@@ -585,5 +585,34 @@ mod tests {
                 .collect::<Vec<_>>();
             assert_eq!(arguments, registered_arguments, "{name}");
         }
+    }
+
+    #[test]
+    fn stored_objects_and_pricing_are_nonvolatile_and_direct_policy_arguments_are_visible() {
+        let records =
+            super::exports(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/functions"))
+                .unwrap();
+        for record in &records {
+            assert_eq!(record["volatile"], false, "{}", record["name"]);
+        }
+        let policy = records
+            .iter()
+            .find(|record| record["name"] == "QS.DISCOUNT.POLICY.FIXED.INCOME")
+            .unwrap();
+        let arguments: Vec<_> = policy["arguments"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|argument| argument["name"].as_str().unwrap())
+            .collect();
+        assert_eq!(
+            arguments,
+            [
+                "name",
+                "currency",
+                "market_index",
+                "prefer_instrument_index"
+            ]
+        );
     }
 }

@@ -1,5 +1,5 @@
-use xll_rs::types::XllError;
-use xllgen::xll_bindgen;
+use quantsupport_xll_macros::xll_bindgen;
+use xll_rs::types::{XllError, XLOPER12};
 
 use crate::runtime::registry::{with_registry, with_registry_mut};
 
@@ -17,10 +17,15 @@ pub fn qs_object_type(handle: &str) -> Result<String, XllError> {
 #[xll_bindgen(
     name = "QS.OBJECT.COUNT",
     category = "QuantSupport - System",
-    help = "Returns the number of live object identities in this Excel thread"
+    help = "Counts live objects in this workbook, or all open workbooks when TRUE"
 )]
-pub fn qs_object_count() -> i32 {
-    with_registry(|registry| i32::try_from(registry.len()).unwrap_or(i32::MAX))
+pub fn qs_object_count(all_workbooks: *const XLOPER12) -> Result<i32, XllError> {
+    let all_workbooks =
+        crate::functions::helpers::optional_bool(all_workbooks, "all_workbooks")?.unwrap_or(false);
+    Ok(
+        i32::try_from(crate::runtime::registry::live_object_count(all_workbooks))
+            .unwrap_or(i32::MAX),
+    )
 }
 
 #[xll_bindgen(

@@ -139,7 +139,7 @@ def excel_section(name):
         return "Risk", "Sensitivities"
     if name.startswith("QS.DISCOUNT.POLICY."):
         return "Pricing", "Discount Policies"
-    if name == "QS.EVALUATE" or name.startswith(("QS.RESULT.", "QS.REQUEST.")):
+    if name == "QS.EVALUATE" or name.startswith(("QS.EVALUATE.", "QS.RESULT.", "QS.REQUEST.")):
         return "Pricing", "Valuation and Risk"
     if name.startswith("QS.BOND."):
         return "Pricing", "Bond Analytics"

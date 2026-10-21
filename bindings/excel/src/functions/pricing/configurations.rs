@@ -1,12 +1,11 @@
 use crate::functions::helpers::{cached_handle, parse_json_list, value_error};
 use crate::runtime::registry::{with_registry_mut, QsObject};
 use quantsupport::prelude::PricerConfiguration;
+use quantsupport_xll_macros::xll_bindgen;
 use xll_rs::types::XllError;
-use xllgen::xll_bindgen;
 
 #[xll_bindgen(
     name = "QS.PRICER.CONFIGS.FROM.JSON",
-    volatile,
     category = "QuantSupport - Pricing",
     help = "Stores native QuantSupport PricerConfiguration values parsed from JSON"
 )]

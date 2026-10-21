@@ -21,6 +21,8 @@ fn describe_argument(function_name: &str, argument_name: &str) -> &'static str {
         return describe_argument(&format!("QS.TRADE.{product}"), argument_name);
     }
     match (function_name, argument_name) {
+        (_, "all_workbooks") => "Optional TRUE counts live objects across all workbooks in this Excel instance; omitted or FALSE counts the calling workbook",
+        (_, "trades") => "Text cell or range of native trade handles; values follow row-major input order; all trades use the supplied explicit pricer and context",
         (_, "result") => "EvaluationResults handle from QS.EVALUATE; the requested measure must have been included in its requests",
         (_, "target") | ("QS.REQUEST.FAIR.RATE", "index") => "Zero-based leg or loan coupon/spread segment index; omitted or blank target defaults to zero; single-quote products accept only zero",
         (_, "mappings") => "Two-column Currency/Index range selecting ordinary discount curves; optional headers; blank is allowed only when prefer_instrument_index is TRUE",
@@ -269,8 +271,10 @@ pub fn result_help(function_name: &str) -> Option<(&'static str, &'static str)> 
     }
     let object = match function_name {
         "QS.TRADE.CREATE" => Some("Revisioned text handle to a native Trade on the supplied instrument, with explicit position direction, quantity and any bond pricing anchor."),
-        "QS.DISCOUNT.POLICY.FIXED.INCOME" | "QS.DISCOUNT.POLICY.CSA" => Some("Revisioned text handle to a native discount policy selecting ordinary market curves; no instrument or trade is modified."),
+        "QS.DISCOUNT.POLICY.FIXED.INCOME" | "QS.DISCOUNT.POLICY.FIXED.INCOME.FROM.MAPPINGS" | "QS.DISCOUNT.POLICY.CSA" => Some("Revisioned text handle to a native discount policy selecting ordinary market curves; no instrument or trade is modified."),
         "QS.PRICER.CREATE" => Some("Revisioned text handle to an explicit native pricer configured with its discount policy and typed worksheet settings."),
+        "QS.EVALUATE.VALUE" => Some("Monetary PV as a number. Excel caches the scalar; no EvaluationResults object is retained.") ,
+        "QS.EVALUATE.VALUES" => Some("A numeric PV list, one per trade in input order; vertical by default or transposed when TRUE; no header row or EvaluationResults objects.") ,
         "QS.EVALUATE" => Some("Revisioned EvaluationResults handle containing the requested native measures; each evaluation selects at most one fair-rate target."),
         "QS.REQUEST.FAIR.RATE" => Some("Text request FairRate(index) selecting a zero-based swap leg or loan rate segment; pass to QS.EVALUATE."),
         "QS.RESULT.CASHFLOWS" => Some("Nine-column cashflow spill: Payment date, Type, Amount, Fixing, Accrual, Currency, Floor, Cap, Leg. Optional transpose and headers control layout."),
@@ -308,7 +312,7 @@ pub fn result_help(function_name: &str) -> Option<(&'static str, &'static str)> 
         "QS.FUNCTIONS.DETAILS" => "Five-column spill with headers Function, Arguments, Category, Aliases, Description; one row per primary registered function, sorted by name. headers=FALSE removes headers; transpose=TRUE exchanges rows and columns.",
         "QS.HELP" => "Two-column help spill of labels and values: Function, Category, Description, optional Aliases, then Parameter/Guidance and argument rows. Names and aliases are matched case-insensitively. headers=FALSE omits Parameter/Guidance while retaining the function metadata; transpose=TRUE exchanges rows and columns.",
         "QS.OBJECT.TYPE" => "Text type tag of the live object, for example QuoteStore or SwapTrade; not an object handle.",
-        "QS.OBJECT.COUNT" => "Integer count of live object identities in the current Excel thread, capped at the maximum i32 value; revisions are not counted separately.",
+        "QS.OBJECT.COUNT" => "Integer count of live object identities in the calling workbook (or all workbooks when TRUE), capped at i32 maximum; revisions are not counted separately.",
         "QS.OBJECT.REMOVE" => "TRUE when the current object is removed; FALSE when its identity is already absent from the thread's registry.",
         "QS.OBJECT.RESET" => "Current revisioned text handle of the cleared mutable store or configuration collection. An unchanged reset key reuses the handle; older revisions of the same identity are accepted.",
         "QS.DATE.ADVANCE" => "ISO date text (YYYY-MM-DD) advanced by the requested period, without business-day adjustment.",
@@ -414,7 +418,8 @@ pub fn result_help(function_name: &str) -> Option<(&'static str, &'static str)> 
         "QS.CURVE.CONFIGS.ADD.ZERO" => "#VALUE! for invalid index/conventions/pillars, empty or mismatched ranges, nonnumeric/blank/nonfinite rates, or registry failures. Invalid resolved pillar ordering or range constraints fail during context construction.",
         "QS.CURVE.CONFIGS.ADD.COMPOSITE" => "#VALUE! for invalid indices or configuration handles or registry failures; missing dependencies and cycles fail during context construction.",
         "QS.CURVE.ZERO.RATE" => "#VALUE! for invalid date/conventions, a stale or wrong-type curve handle, or native zero-rate evaluation failures.",
-        "QS.VERSION" | "QS.OBJECT.COUNT" =>
+        "QS.OBJECT.COUNT" => "#VALUE! for an invalid all_workbooks flag; use TRUE/FALSE or leave it blank.",
+        "QS.VERSION" =>
             "No worksheet-level Result error is returned.",
         "QS.FUNCTIONS" | "QS.FUNCTIONS.DETAILS" => "#VALUE! for invalid layout flags; use TRUE/FALSE or leave the argument blank.",
         "QS.HELP" => "#VALUE! if the requested name or alias is not registered.",

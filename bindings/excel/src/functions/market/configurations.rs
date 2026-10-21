@@ -3,19 +3,21 @@ use crate::functions::helpers::{
     parse_day_counter, parse_frequency, parse_index, parse_interpolator, parse_json_list,
     string_values, value_error,
 };
+use crate::runtime::configuration_inputs::WorksheetConfiguration;
 use crate::runtime::registry::{with_registry_mut, QsObject};
 use quantsupport::prelude::{
     CreditCurveConfiguration, CurveConfiguration, CurveConstruction, CurvePillar, DayCounter,
     Frequency, Interpolator, MarketIndex, Period, VolatilityCubeConfiguration,
     VolatilitySurfaceConfiguration,
 };
+use quantsupport_xll_macros::xll_bindgen;
 use xll_rs::types::{XllError, XLOPER12};
-use xllgen::xll_bindgen;
 
 fn add_configuration(
     configurations: &str,
     configuration: CurveConfiguration,
 ) -> Result<String, XllError> {
+    configuration.validate().map_err(value_error)?;
     let operation_id = format!("curve:{}", configuration.market_index());
     let value_key = input_key(&configuration)?;
     with_registry_mut(|registry| {
@@ -212,7 +214,6 @@ pub fn qs_curve_configs_add_composite(
 
 #[xll_bindgen(
     name = "QS.CREDIT.CURVE.CONFIGS.CREATE",
-    volatile,
     category = "QuantSupport - Market",
     help = "Creates an empty credit-curve configuration collection for worksheet quote-range builders"
 )]
@@ -273,6 +274,7 @@ pub fn qs_credit_curve_configs_add(
             .transpose()?
             .unwrap_or(Frequency::Quarterly),
     );
+    configuration.validate().map_err(value_error)?;
     let operation = format!("credit:{}", configuration.market_index());
     let key = input_key(&configuration)?;
     with_registry_mut(|registry| {
@@ -298,16 +300,18 @@ pub fn qs_credit_curve_configs_add(
 macro_rules! json_config_function {
     ($fn_name:ident, $excel_name:literal, $type:ty, $variant:ident, $what:literal, $help:literal) => {
         #[xll_bindgen(
-                                                            name = $excel_name,
-                                                            volatile,
-                                                            category = "QuantSupport - Market",
-                                                            help = $help
-                )]
+                                                    name = $excel_name,
+                                                    category = "QuantSupport - Market",
+                                                    help = $help
+                                                )]
         pub fn $fn_name(name: &str, json: &str) -> Result<String, XllError> {
             if let Some(handle) = cached_handle(name, stringify!($variant), json)? {
                 return Ok(handle);
             }
             let values: Vec<$type> = parse_json_list(json, $what)?;
+            for value in &values {
+                value.validate().map_err(value_error)?;
+            }
             with_registry_mut(|registry| {
                 registry.upsert_if_changed(name, QsObject::$variant(values), json)
             })
@@ -350,7 +354,6 @@ json_config_function!(
 );
 #[xll_bindgen(
     name = "QS.CURVE.CONFIGS.CREATE",
-    volatile,
     category = "QuantSupport - Market",
     help = "Creates an empty curve-configuration collection for worksheet-built curves"
 )]
@@ -382,6 +385,8 @@ pub fn qs_curve_configs_add(
     let interpolator = parse_interpolator(interpolator)?;
     let enable_extrapolation = bool_value(enable_extrapolation, "enable_extrapolation")?;
     let quote_identifiers = string_values(quote_identifiers, "quote_identifiers")?;
+    crate::runtime::configuration_inputs::quote_identifiers(&quote_identifiers)
+        .map_err(value_error)?;
     let operation_id = format!("curve:{market_index}");
     let value_key = input_key(&(
         &market_index,

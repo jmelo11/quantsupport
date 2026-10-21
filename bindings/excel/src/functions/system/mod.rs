@@ -1,5 +1,5 @@
+use quantsupport_xll_macros::xll_bindgen;
 use xll_rs::types::XllError;
-use xllgen::xll_bindgen;
 
 #[xll_bindgen(
     name = "QS.VERSION",

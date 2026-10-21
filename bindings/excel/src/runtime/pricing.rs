@@ -53,6 +53,7 @@ pub fn fixed_income_policy(
         }
         let currency = row[0]
             .text("discount currency")?
+            .to_ascii_uppercase()
             .parse::<Currency>()
             .map_err(|error| error.to_string())?;
         if !seen.insert(currency) {
@@ -241,6 +242,37 @@ impl PricerObject {
             .evaluate(native, requests, context)
             .map_err(|error| error.to_string())
     }
+}
+
+/// Computes values without retaining EvaluationResults objects in the registry.
+/// Excel owns the returned scalar/array cache and its dependency scheduling.
+pub fn evaluate_values(
+    registry: &super::registry::Registry,
+    pricer: &str,
+    trades: &[String],
+    context: &str,
+) -> Result<Vec<f64>, String> {
+    if trades.is_empty() {
+        return Err("at least one trade is required".into());
+    }
+    let pricer = registry.pricer(pricer).map_err(|error| error.to_string())?;
+    let context = registry
+        .pricing_context(context)
+        .map_err(|error| error.to_string())?;
+    // Validate all handles before beginning an expensive portfolio calculation.
+    let trades = trades
+        .iter()
+        .map(|trade| registry.object(trade).map_err(|error| error.to_string()))
+        .collect::<Result<Vec<_>, _>>()?;
+    trades
+        .into_iter()
+        .map(|trade| {
+            pricer
+                .evaluate(trade, &[Request::Value], context)?
+                .price()
+                .ok_or_else(|| "native pricer did not supply Value".into())
+        })
+        .collect()
 }
 
 fn register<P: Pricer + 'static>(pricers: &mut HashMap<TypeId, Box<dyn ErasedPricer>>, pricer: P)
@@ -676,5 +708,103 @@ mod tests {
             false
         )
         .is_err());
+    }
+
+    #[test]
+    fn ten_thousand_positions_return_values_without_storing_ten_thousand_results() {
+        use super::super::registry::{CellId, Registry};
+        let started = std::time::Instant::now();
+        let mut registry = Registry::default();
+        let cell = |row, column| CellId {
+            sheet: 100,
+            row,
+            column,
+        };
+        registry.begin_cell(cell(0, 0));
+        let context_handle = registry
+            .upsert_if_changed(
+                "context",
+                QsObject::PricingContext(Box::new(context())),
+                "context",
+            )
+            .unwrap();
+        registry.finish_cell(true);
+        registry.begin_cell(cell(0, 1));
+        let policy = policy("ESTR");
+        let pricer = PricerObject::new("DiscountedCashflowPricer", Some(&policy), &vec![]).unwrap();
+        let pricer_handle = registry
+            .upsert_if_changed("pricer", QsObject::Pricer(Box::new(pricer)), "pricer")
+            .unwrap();
+        registry.finish_cell(true);
+        let date = Date::new(2026, 2, 24);
+        let instrument = InstrumentObject {
+            native: NativeInstrument::FixedRateDeposit(
+                MakeFixedRateDeposit::<DualFwd>::default()
+                    .with_identifier("portfolio deposit".into())
+                    .with_start_date(date)
+                    .with_maturity_date(Date::new(2027, 2, 24))
+                    .with_currency(Currency::EUR)
+                    .with_notional(1000.0)
+                    .with_rate(0.04)
+                    .with_rate_definition(RateDefinition::new(
+                        DayCounter::Actual360,
+                        Compounding::Simple,
+                        Frequency::Annual,
+                    ))
+                    .build()
+                    .unwrap(),
+            ),
+            notional: 1000.0,
+            foreign_notional: None,
+        };
+        let mut trades = Vec::new();
+        for row in 1..=10_000 {
+            registry.begin_cell(cell(row, 0));
+            let trade = instrument
+                .trade(date, Side::LongReceive, &PositionTerms::default())
+                .unwrap();
+            trades.push(
+                registry
+                    .upsert_if_changed(&format!("trade{row}"), trade, "trade")
+                    .unwrap(),
+            );
+            registry.finish_cell(true);
+        }
+        registry.begin_cell(cell(0, 2));
+        let values = evaluate_values(&registry, &pricer_handle, &trades, &context_handle).unwrap();
+        registry.finish_cell(true);
+        assert_eq!(values.len(), 10_000);
+        assert!(values
+            .iter()
+            .all(|value| value.is_finite() && (*value - values[0]).abs() < 1e-10));
+        assert_eq!(
+            registry.len(),
+            10_002,
+            "no EvaluationResults object is retained"
+        );
+        use quantsupport::ad::{forward::ADForward, tape::TapeHolder};
+        let nodes = ADForward::with_tape(|tape| tape.book.len());
+        registry.begin_cell(cell(0, 2));
+        let repeated =
+            evaluate_values(&registry, &pricer_handle, &trades, &context_handle).unwrap();
+        registry.finish_cell(true);
+        assert_eq!(values, repeated);
+        assert_eq!(
+            ADForward::with_tape(|tape| tape.book.len()),
+            nodes,
+            "the AD tape does not accumulate per position"
+        );
+        for row in 1..=10_000 {
+            registry.release_cell(cell(row, 0));
+        }
+        registry.release_cell(cell(0, 2));
+        assert_eq!(registry.len(), 2);
+        registry.release_cell(cell(0, 0));
+        registry.release_cell(cell(0, 1));
+        assert_eq!(registry.len(), 0);
+        eprintln!(
+            "10,000 native positions, two valuation passes and collection: {:?}",
+            started.elapsed()
+        );
     }
 }
