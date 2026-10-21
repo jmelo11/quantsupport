@@ -459,6 +459,9 @@ impl Registry {
     pub fn set_cell_formula(&mut self, cell: CellId, formula: Option<String>) {
         if let Some(formula) = formula {
             self.cell_formulas.insert(cell, formula);
+        } else {
+            // Missing formula information must not match an older invocation.
+            self.cell_formulas.remove(&cell);
         }
     }
 

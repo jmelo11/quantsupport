@@ -154,7 +154,7 @@ class ExcelLifecycleTests(unittest.TestCase):
                 sheet.Range("B1").Value2 = f"renamed{position}"
                 sheet.Range("A1").Calculate()
                 self.assertEqual(self.count(), 1)
-            sheet.Range("A1").ClearContents()
+            sheet.Range("A1").Formula = "=1+2"
             self.assertEqual(self.count(), 0)
         finally:
             book.Close(False)

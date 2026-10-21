@@ -305,6 +305,8 @@ pub mod windows {
         look_in: i32,
     ) -> ::windows::core::Result<bool> {
         let mut args = [
+            false.into(), // SearchFormat: ignore persisted Find-dialog formatting.
+            missing(),    // MatchByte
             false.into(),
             1.into(),
             1.into(),
