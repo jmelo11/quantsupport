@@ -466,10 +466,23 @@ pub mod windows {
             // Compare against the actual caller formula recorded by the UDF;
             // never discard an object that the replacement formula just made.
             let cells = registry::workbook_cells_in_rectangles(book, sheet_id, &rectangles);
+            if cells.is_empty() {
+                continue;
+            }
+            if bool::try_from(&get(&range, "HasFormula", &mut [])?).ok() == Some(false) {
+                // Clearing a large range needs no per-cell COM calls.
+                for cell in cells {
+                    registry::release_workbook_cell_if_changed(book, cell, "", false);
+                }
+                continue;
+            }
+            // Worksheet.Cells is a parameterless property. Its returned Range
+            // exposes the indexed Item property for selecting a particular cell.
+            let sheet_cells = dispatch(&sheet, "Cells", &mut [])?;
             for cell in cells {
                 let target = dispatch(
-                    &sheet,
-                    "Cells",
+                    &sheet_cells,
+                    "Item",
                     &mut [(cell.column + 1).into(), (cell.row + 1).into()],
                 )?;
                 let formula =
