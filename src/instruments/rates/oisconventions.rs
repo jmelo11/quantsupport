@@ -250,15 +250,18 @@ impl OisConventions {
                 12 => {
                     self.with_date_generation_rule(DateGenerationRule::try_from(value.to_string())?)
                 }
-                13 => self.with_end_of_month(value.parse().map_err(|_| invalid())?),
-                14 => self.with_forward_start(Period::from_str(value)?),
+                13 => self
+                    .with_end_of_month(value.to_ascii_lowercase().parse().map_err(|_| invalid())?),
+                14 => self.with_forward_start(Period::from_str(&value.to_ascii_uppercase())?),
                 15 => self.with_first_coupon_date(Date::from_str(value, "%Y-%m-%d")?),
                 16 => self.with_next_to_last_coupon_date(Date::from_str(value, "%Y-%m-%d")?),
-                17 => self.with_overnight(overnight.with_averaging(match value {
-                    "Compound" => OvernightAveraging::Compound,
-                    "Simple" => OvernightAveraging::Simple,
-                    _ => return Err(invalid()),
-                })),
+                17 => self.with_overnight(overnight.with_averaging(
+                    match value.to_ascii_lowercase().as_str() {
+                        "compound" => OvernightAveraging::Compound,
+                        "simple" => OvernightAveraging::Simple,
+                        _ => return Err(invalid()),
+                    },
+                )),
                 18 => self.with_overnight(
                     overnight.with_lookback_days(
                         value
@@ -268,21 +271,24 @@ impl OisConventions {
                             .ok_or_else(invalid)?,
                     ),
                 ),
-                19 => self.with_overnight(
-                    overnight.with_lockout_days(value.parse().map_err(|_| invalid())?),
-                ),
-                20 => self.with_overnight(
-                    overnight.with_observation_shift(value.parse().map_err(|_| invalid())?),
-                ),
-                21 => self.with_overnight(
-                    overnight.with_compound_spread_daily(value.parse().map_err(|_| invalid())?),
-                ),
-                22 => self.with_pillar(match value {
-                    "LastRelevantDate" => OisPillar::LastRelevantDate,
-                    "MaturityDate" => OisPillar::MaturityDate,
+                19 => {
+                    self.with_overnight(overnight.with_lockout_days(
+                        value.to_ascii_lowercase().parse().map_err(|_| invalid())?,
+                    ))
+                }
+                20 => self.with_overnight(overnight.with_observation_shift(
+                    value.to_ascii_lowercase().parse().map_err(|_| invalid())?,
+                )),
+                21 => self.with_overnight(overnight.with_compound_spread_daily(
+                    value.to_ascii_lowercase().parse().map_err(|_| invalid())?,
+                )),
+                22 => self.with_pillar(match value.to_ascii_lowercase().as_str() {
+                    "lastrelevantdate" => OisPillar::LastRelevantDate,
+                    "maturitydate" => OisPillar::MaturityDate,
                     _ => OisPillar::CustomDate(Date::from_str(
                         value
-                            .strip_prefix("CustomDate(")
+                            .to_ascii_lowercase()
+                            .strip_prefix("customdate(")
                             .and_then(|date| date.strip_suffix(')'))
                             .ok_or_else(invalid)?,
                         "%Y-%m-%d",

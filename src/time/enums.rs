@@ -42,20 +42,20 @@ impl std::str::FromStr for Frequency {
     type Err = QSError;
 
     fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
-        match s {
-            "NoFrequency" => Ok(Self::NoFrequency),
-            "Once" => Ok(Self::Once),
-            "Annual" => Ok(Self::Annual),
-            "Semiannual" => Ok(Self::Semiannual),
-            "EveryFourthMonth" => Ok(Self::EveryFourthMonth),
-            "Quarterly" => Ok(Self::Quarterly),
-            "Bimonthly" => Ok(Self::Bimonthly),
-            "Monthly" => Ok(Self::Monthly),
-            "EveryFourthWeek" => Ok(Self::EveryFourthWeek),
-            "Biweekly" => Ok(Self::Biweekly),
-            "Weekly" => Ok(Self::Weekly),
-            "Daily" => Ok(Self::Daily),
-            "OtherFrequency" => Ok(Self::OtherFrequency),
+        match s.to_ascii_lowercase().as_str() {
+            "nofrequency" => Ok(Self::NoFrequency),
+            "once" => Ok(Self::Once),
+            "annual" => Ok(Self::Annual),
+            "semiannual" => Ok(Self::Semiannual),
+            "everyfourthmonth" => Ok(Self::EveryFourthMonth),
+            "quarterly" => Ok(Self::Quarterly),
+            "bimonthly" => Ok(Self::Bimonthly),
+            "monthly" => Ok(Self::Monthly),
+            "everyfourthweek" => Ok(Self::EveryFourthWeek),
+            "biweekly" => Ok(Self::Biweekly),
+            "weekly" => Ok(Self::Weekly),
+            "daily" => Ok(Self::Daily),
+            "otherfrequency" => Ok(Self::OtherFrequency),
             _ => Err(QSError::InvalidValueErr(format!("Invalid frequency: {s}"))),
         }
     }
@@ -257,17 +257,17 @@ impl TryFrom<String> for DateGenerationRule {
     type Error = QSError;
 
     fn try_from(s: String) -> Result<Self> {
-        match s.as_str() {
-            "Backward" => Ok(Self::Backward),
-            "Forward" => Ok(Self::Forward),
-            "Zero" => Ok(Self::Zero),
-            "ThirdWednesday" => Ok(Self::ThirdWednesday),
-            "ThirdWednesdayInclusive" => Ok(Self::ThirdWednesdayInclusive),
-            "Twentieth" => Ok(Self::Twentieth),
-            "TwentiethIMM" => Ok(Self::TwentiethIMM),
-            "OldCDS" => Ok(Self::OldCDS),
-            "CDS" => Ok(Self::CDS),
-            "CDS2015" => Ok(Self::CDS2015),
+        match s.to_ascii_lowercase().as_str() {
+            "backward" => Ok(Self::Backward),
+            "forward" => Ok(Self::Forward),
+            "zero" => Ok(Self::Zero),
+            "thirdwednesday" => Ok(Self::ThirdWednesday),
+            "thirdwednesdayinclusive" => Ok(Self::ThirdWednesdayInclusive),
+            "twentieth" => Ok(Self::Twentieth),
+            "twentiethimm" => Ok(Self::TwentiethIMM),
+            "oldcds" => Ok(Self::OldCDS),
+            "cds" => Ok(Self::CDS),
+            "cds2015" => Ok(Self::CDS2015),
             _ => Err(QSError::InvalidValueErr(format!(
                 "Invalid date generation rule: {s}"
             ))),
@@ -325,14 +325,14 @@ impl TryFrom<String> for BusinessDayConvention {
     type Error = QSError;
 
     fn try_from(s: String) -> Result<Self> {
-        match s.as_str() {
-            "Following" => Ok(Self::Following),
-            "ModifiedFollowing" => Ok(Self::ModifiedFollowing),
-            "Preceding" => Ok(Self::Preceding),
-            "ModifiedPreceding" => Ok(Self::ModifiedPreceding),
-            "Unadjusted" => Ok(Self::Unadjusted),
-            "HalfMonthModifiedFollowing" => Ok(Self::HalfMonthModifiedFollowing),
-            "Nearest" => Ok(Self::Nearest),
+        match s.to_ascii_lowercase().as_str() {
+            "following" => Ok(Self::Following),
+            "modifiedfollowing" => Ok(Self::ModifiedFollowing),
+            "preceding" => Ok(Self::Preceding),
+            "modifiedpreceding" => Ok(Self::ModifiedPreceding),
+            "unadjusted" => Ok(Self::Unadjusted),
+            "halfmonthmodifiedfollowing" => Ok(Self::HalfMonthModifiedFollowing),
+            "nearest" => Ok(Self::Nearest),
             _ => Err(QSError::InvalidValueErr(format!(
                 "Invalid business day convention: {s}"
             ))),

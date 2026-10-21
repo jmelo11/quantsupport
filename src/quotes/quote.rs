@@ -51,8 +51,8 @@ fn parse_fx_pair(pair: &str) -> Result<(Currency, Currency)> {
             "Invalid FX currency pair: {pair}"
         )));
     }
-    let base: Currency = pair[..3].parse()?;
-    let quote_ccy: Currency = pair[3..6].parse()?;
+    let base: Currency = pair[..3].to_ascii_uppercase().parse()?;
+    let quote_ccy: Currency = pair[3..6].to_ascii_uppercase().parse()?;
     Ok((base, quote_ccy))
 }
 
@@ -220,11 +220,11 @@ impl std::str::FromStr for OptionStrategy {
     type Err = QSError;
 
     fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
-        match s {
-            "Straddle" => Ok(Self::Straddle),
-            "Strangle" => Ok(Self::Strangle),
-            "RiskReversal" => Ok(Self::RiskReversal),
-            "Butterfly" => Ok(Self::Butterfly),
+        match s.to_ascii_lowercase().as_str() {
+            "straddle" => Ok(Self::Straddle),
+            "strangle" => Ok(Self::Strangle),
+            "riskreversal" => Ok(Self::RiskReversal),
+            "butterfly" => Ok(Self::Butterfly),
             _ => Err(QSError::InvalidValueErr(format!(
                 "Unknown option strategy: {s}"
             ))),
@@ -245,9 +245,9 @@ impl std::str::FromStr for BondCalibrationStrategy {
     type Err = QSError;
 
     fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
-        match s {
-            "AnchorPrice" => Ok(Self::AnchorPrice),
-            "AnchorYield" => Ok(Self::AnchorYield),
+        match s.to_ascii_lowercase().as_str() {
+            "anchorprice" => Ok(Self::AnchorPrice),
+            "anchoryield" => Ok(Self::AnchorYield),
             _ => Err(QSError::InvalidValueErr(format!(
                 "Unknown fixed-rate bond calibration strategy: {s}"
             ))),
@@ -268,9 +268,9 @@ impl std::str::FromStr for FxForwardCalibrationStrategy {
     type Err = QSError;
 
     fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
-        match s {
-            "AnchorForwardPoints" => Ok(Self::AnchorForwardPoints),
-            "AnchorOutrightPrice" => Ok(Self::AnchorOutrightPrice),
+        match s.to_ascii_lowercase().as_str() {
+            "anchorforwardpoints" => Ok(Self::AnchorForwardPoints),
+            "anchoroutrightprice" => Ok(Self::AnchorOutrightPrice),
             _ => Err(QSError::InvalidValueErr(format!(
                 "Unknown FX forward calibration strategy: {s}"
             ))),
@@ -898,9 +898,9 @@ impl QuoteDetails {
                 "OIS identifier too short: {id}"
             )));
         }
-        let currency: Currency = parts[1].parse()?;
+        let currency: Currency = parts[1].to_ascii_uppercase().parse()?;
         let index = parts[2].parse::<MarketIndex>()?;
-        let tenor = Period::from_str(parts[3])?;
+        let tenor = Period::from_str(&parts[3].to_ascii_uppercase())?;
 
         let pay_freq = parts
             .get(4)
@@ -942,7 +942,7 @@ impl QuoteDetails {
             .ok_or_else(|| QSError::ValueNotSetErr("OIS index".into()))?;
         let separator = self
             .identifier
-            .strip_prefix("OIS")
+            .get(3..)
             .and_then(|suffix| suffix.chars().next())
             .unwrap_or('_');
         let parts: Vec<_> = self.identifier.split(separator).collect();
@@ -959,9 +959,9 @@ impl QuoteDetails {
                 "Swap identifier requires four to six fields: {id}"
             )));
         }
-        let currency: Currency = parts[1].parse()?;
+        let currency: Currency = parts[1].to_ascii_uppercase().parse()?;
         let index: MarketIndex = parts[2].parse()?;
-        let tenor = Period::from_str(parts[3])?;
+        let tenor = Period::from_str(&parts[3].to_ascii_uppercase())?;
         let fixed_frequency = parts
             .get(4)
             .filter(|value| !value.is_empty())
@@ -998,9 +998,9 @@ impl QuoteDetails {
                 "FixedRateDeposit identifier must contain exactly four fields: {id}"
             )));
         }
-        let currency: Currency = parts[1].parse()?;
+        let currency: Currency = parts[1].to_ascii_uppercase().parse()?;
         let index = parts[2].parse::<MarketIndex>()?;
-        let tenor = Period::from_str(parts[3])?;
+        let tenor = Period::from_str(&parts[3].to_ascii_uppercase())?;
         Ok(Self::new(id.to_string(), QuoteInstrument::FixedRateDeposit)
             .with_market_index(index)
             .with_currency(currency)
@@ -1025,6 +1025,7 @@ impl QuoteDetails {
             .ok_or_else(|| {
                 QSError::InvalidValueErr(format!("FixedRateBond identifier too short: {id}"))
             })?
+            .to_ascii_uppercase()
             .parse::<Currency>()?;
         let index = parts
             .get(2)
@@ -1032,9 +1033,14 @@ impl QuoteDetails {
                 QSError::InvalidValueErr(format!("FixedRateBond identifier too short: {id}"))
             })?
             .parse::<MarketIndex>()?;
-        let tenor = Period::from_str(parts.get(3).ok_or_else(|| {
-            QSError::InvalidValueErr(format!("FixedRateBond identifier too short: {id}"))
-        })?)?;
+        let tenor = Period::from_str(
+            &parts
+                .get(3)
+                .ok_or_else(|| {
+                    QSError::InvalidValueErr(format!("FixedRateBond identifier too short: {id}"))
+                })?
+                .to_ascii_uppercase(),
+        )?;
         let mut next = 4;
         let freq = parts.get(next).and_then(|s| s.parse::<Frequency>().ok());
         if freq.is_some() {
@@ -1083,8 +1089,8 @@ impl QuoteDetails {
             )));
         }
         let entity = parts[1].to_string();
-        let currency: Currency = parts[2].parse()?;
-        let tenor = Period::from_str(parts[3])?;
+        let currency: Currency = parts[2].to_ascii_uppercase().parse()?;
+        let tenor = Period::from_str(&parts[3].to_ascii_uppercase())?;
         Ok(Self::new(id.to_string(), QuoteInstrument::Cds)
             .with_market_index(MarketIndex::Credit(entity))
             .with_currency(currency)
@@ -1103,10 +1109,10 @@ impl QuoteDetails {
                 "BasisSwap identifier too short: {id}"
             )));
         }
-        let currency: Currency = parts[1].parse()?;
+        let currency: Currency = parts[1].to_ascii_uppercase().parse()?;
         let pay_index = parts[2].parse::<MarketIndex>()?;
         let recv_index = parts[3].parse::<MarketIndex>()?;
-        let tenor = Period::from_str(parts[4])?;
+        let tenor = Period::from_str(&parts[4].to_ascii_uppercase())?;
 
         let (pay_freq, recv_freq, _) = Self::try_parse_frequencies(parts, 5);
 
@@ -1136,10 +1142,10 @@ impl QuoteDetails {
                 "FixFloatCrossCurrencySwap identifier too short: {id}"
             )));
         }
-        let domestic_currency: Currency = parts[1].parse()?;
+        let domestic_currency: Currency = parts[1].to_ascii_uppercase().parse()?;
         let floating_index = parts[2].parse::<MarketIndex>()?;
-        let foreign_currency: Currency = parts[3].parse()?;
-        let tenor = Period::from_str(parts[4])?;
+        let foreign_currency: Currency = parts[3].to_ascii_uppercase().parse()?;
+        let tenor = Period::from_str(&parts[4].to_ascii_uppercase())?;
 
         let (dom_freq, for_freq, _) = Self::try_parse_frequencies(parts, 5);
 
@@ -1170,11 +1176,11 @@ impl QuoteDetails {
                 "FloatFloatCrossCurrencySwap identifier too short: {id}"
             )));
         }
-        let domestic_currency: Currency = parts[1].parse()?;
+        let domestic_currency: Currency = parts[1].to_ascii_uppercase().parse()?;
         let dom_index = parts[2].parse::<MarketIndex>()?;
         let for_index = parts[3].parse::<MarketIndex>()?;
-        let foreign_currency: Currency = parts[4].parse()?;
-        let tenor = Period::from_str(parts[5])?;
+        let foreign_currency: Currency = parts[4].to_ascii_uppercase().parse()?;
+        let tenor = Period::from_str(&parts[5].to_ascii_uppercase())?;
 
         let (dom_freq, for_freq, _) = Self::try_parse_frequencies(parts, 6);
 
@@ -1209,9 +1215,9 @@ impl QuoteDetails {
                 "CapFloor identifier too short: {id}"
             )));
         }
-        let currency: Currency = parts[1].parse()?;
+        let currency: Currency = parts[1].to_ascii_uppercase().parse()?;
         let index = parts[2].parse::<MarketIndex>()?;
-        let tenor = Period::from_str(parts[3])?;
+        let tenor = Period::from_str(&parts[3].to_ascii_uppercase())?;
 
         // Try optional frequency after tenor
         let (freq, next) = parts
@@ -1266,10 +1272,10 @@ impl QuoteDetails {
                 "CapletFloorlet identifier too short: {id}"
             )));
         }
-        let currency: Currency = parts[1].parse()?;
+        let currency: Currency = parts[1].to_ascii_uppercase().parse()?;
         let index = parts[2].parse::<MarketIndex>()?;
-        let index_tenor = Period::from_str(parts[3])?;
-        let option_expiry = Period::from_str(parts[4])?;
+        let index_tenor = Period::from_str(&parts[3].to_ascii_uppercase())?;
+        let option_expiry = Period::from_str(&parts[4].to_ascii_uppercase())?;
         let strike_base = parts[5].parse::<Strike>()?;
 
         let (strike, next_idx) = parts[6].parse::<f64>().map_or((strike_base, 6), |s| {
@@ -1311,9 +1317,9 @@ impl QuoteDetails {
                 "Future identifier too short: {id}"
             )));
         }
-        let currency: Currency = parts[1].parse()?;
+        let currency: Currency = parts[1].to_ascii_uppercase().parse()?;
         let index = parts[2].parse::<MarketIndex>()?;
-        let code = parts[3].to_string();
+        let code = parts[3].to_ascii_uppercase();
         Ok(Self::new(id.to_string(), QuoteInstrument::Future)
             .with_market_index(index)
             .with_currency(currency)
@@ -1330,9 +1336,9 @@ impl QuoteDetails {
                 "ConvexityAdjustment identifier too short: {id}"
             )));
         }
-        let currency: Currency = parts[1].parse()?;
+        let currency: Currency = parts[1].to_ascii_uppercase().parse()?;
         let index = parts[2].parse::<MarketIndex>()?;
-        let code = parts[3].to_string();
+        let code = parts[3].to_ascii_uppercase();
         Ok(
             Self::new(id.to_string(), QuoteInstrument::ConvexityAdjustment)
                 .with_market_index(index)
@@ -1356,10 +1362,10 @@ impl QuoteDetails {
                 "Swaption identifier too short: {id}"
             )));
         }
-        let currency: Currency = parts[1].parse()?;
+        let currency: Currency = parts[1].to_ascii_uppercase().parse()?;
         let index = parts[2].parse::<MarketIndex>()?;
-        let option_expiry = Period::from_str(parts[3])?;
-        let swap_tenor = Period::from_str(parts[4])?;
+        let option_expiry = Period::from_str(&parts[3].to_ascii_uppercase())?;
+        let swap_tenor = Period::from_str(&parts[4].to_ascii_uppercase())?;
 
         let (pay_freq, recv_freq, next) = Self::try_parse_frequencies(parts, 5);
 
@@ -1410,7 +1416,7 @@ impl QuoteDetails {
             )));
         }
         let (base, quote_ccy) = parse_fx_pair(parts[1])?;
-        let tenor = Period::from_str(parts[2])?;
+        let tenor = Period::from_str(&parts[2].to_ascii_uppercase())?;
         let strategy = parts[3].parse::<FxForwardCalibrationStrategy>()?;
         Ok(Self::new(id.to_string(), QuoteInstrument::FxForward)
             .with_pay_currency(base)
@@ -1429,9 +1435,9 @@ impl QuoteDetails {
                 "Call identifier too short: {id}"
             )));
         }
-        let currency: Currency = parts[1].parse()?;
+        let currency: Currency = parts[1].to_ascii_uppercase().parse()?;
         let index = MarketIndex::Equity(parts[2].to_string());
-        let tenor = Period::from_str(parts[3])?;
+        let tenor = Period::from_str(&parts[3].to_ascii_uppercase())?;
         let strike = parse_strike(id, parts[4], parts[5])?;
         Ok(Self::new(id.to_string(), QuoteInstrument::EquityCall)
             .with_market_index(index)
@@ -1451,9 +1457,9 @@ impl QuoteDetails {
                 "Put identifier too short: {id}"
             )));
         }
-        let currency: Currency = parts[1].parse()?;
+        let currency: Currency = parts[1].to_ascii_uppercase().parse()?;
         let index = MarketIndex::Equity(parts[2].to_string());
-        let tenor = Period::from_str(parts[3])?;
+        let tenor = Period::from_str(&parts[3].to_ascii_uppercase())?;
         let strike = parse_strike(id, parts[4], parts[5])?;
         Ok(Self::new(id.to_string(), QuoteInstrument::EquityPut)
             .with_market_index(index)
@@ -1474,7 +1480,7 @@ impl QuoteDetails {
             )));
         }
         let (base, quote_ccy) = parse_fx_pair(parts[1])?;
-        let tenor = Period::from_str(parts[2])?;
+        let tenor = Period::from_str(&parts[2].to_ascii_uppercase())?;
         let strike = parse_strike(id, parts[3], parts[4])?;
 
         Ok(Self::new(id.to_string(), QuoteInstrument::FxCall)
@@ -1497,7 +1503,7 @@ impl QuoteDetails {
             )));
         }
         let (base, quote_ccy) = parse_fx_pair(parts[1])?;
-        let tenor = Period::from_str(parts[2])?;
+        let tenor = Period::from_str(&parts[2].to_ascii_uppercase())?;
         let strike = parse_strike(id, parts[3], parts[4])?;
 
         Ok(Self::new(id.to_string(), QuoteInstrument::FxPut)
@@ -1510,7 +1516,7 @@ impl QuoteDetails {
     }
 
     fn parse_curve_pillar(id: &str, parts: &[&str]) -> Result<Self> {
-        let zero_rate = parts[0] == "ZeroRate";
+        let zero_rate = parts[0].eq_ignore_ascii_case("ZeroRate");
         let max_parts = if zero_rate { 6 } else { 4 };
         if !(4..=max_parts).contains(&parts.len()) {
             return Err(QSError::InvalidValueErr(format!(
@@ -1523,12 +1529,12 @@ impl QuoteDetails {
             QuoteInstrument::DiscountFactor
         };
         let mut details = Self::new(id.to_string(), instrument)
-            .with_currency(parts[1].parse()?)
+            .with_currency(parts[1].to_ascii_uppercase().parse()?)
             .with_market_index(parts[2].parse()?);
         details = if let Ok(date) = Date::from_str(parts[3], "%Y-%m-%d") {
             details.with_maturity(date)
         } else {
-            details.with_tenor(Period::from_str(parts[3])?)
+            details.with_tenor(Period::from_str(&parts[3].to_ascii_uppercase())?)
         };
         if zero_rate {
             details = details
@@ -1555,26 +1561,26 @@ impl QuoteDetails {
                 "Identifier has fewer than 3 parts: {s}"
             )));
         }
-        match parts[0] {
-            "DiscountFactor" | "ZeroRate" => Self::parse_curve_pillar(s, &parts),
-            "OIS" => Self::parse_ois(s, &parts),
-            "Swap" => Self::parse_swap(s, &parts),
-            "FixedRateDeposit" => Self::parse_fixed_rate_deposit(s, &parts),
-            "FixedRateBond" => Self::parse_fixed_rate_bond(s, &parts),
-            "BasisSwap" => Self::parse_basis_swap(s, &parts),
-            "FixFloatCrossCurrencySwap" => Self::parse_fix_float_cross_currency_swap(s, &parts),
-            "CapFloor" => Self::parse_cap_floor(s, &parts),
-            "CapletFloorlet" => Self::parse_caplet_floorlet(s, &parts),
-            "Future" => Self::parse_future(s, &parts),
-            "ConvexityAdjustment" => Self::parse_convexity_adjustment(s, &parts),
-            "Swaption" => Self::parse_swaption(s, &parts),
-            "FloatFloatCrossCurrencySwap" => Self::parse_float_float_cross_currency_swap(s, &parts),
-            "FxForward" => Self::parse_fx_forward(s, &parts),
-            "EquityCall" => Self::parse_equity_call(s, &parts),
-            "EquityPut" => Self::parse_equity_put(s, &parts),
-            "FxCall" => Self::parse_fx_call(s, &parts),
-            "FxPut" => Self::parse_fx_put(s, &parts),
-            "Cds" => Self::parse_cds(s, &parts),
+        match parts[0].to_ascii_lowercase().as_str() {
+            "discountfactor" | "zerorate" => Self::parse_curve_pillar(s, &parts),
+            "ois" => Self::parse_ois(s, &parts),
+            "swap" => Self::parse_swap(s, &parts),
+            "fixedratedeposit" => Self::parse_fixed_rate_deposit(s, &parts),
+            "fixedratebond" => Self::parse_fixed_rate_bond(s, &parts),
+            "basisswap" => Self::parse_basis_swap(s, &parts),
+            "fixfloatcrosscurrencyswap" => Self::parse_fix_float_cross_currency_swap(s, &parts),
+            "capfloor" => Self::parse_cap_floor(s, &parts),
+            "capletfloorlet" => Self::parse_caplet_floorlet(s, &parts),
+            "future" => Self::parse_future(s, &parts),
+            "convexityadjustment" => Self::parse_convexity_adjustment(s, &parts),
+            "swaption" => Self::parse_swaption(s, &parts),
+            "floatfloatcrosscurrencyswap" => Self::parse_float_float_cross_currency_swap(s, &parts),
+            "fxforward" => Self::parse_fx_forward(s, &parts),
+            "equitycall" => Self::parse_equity_call(s, &parts),
+            "equityput" => Self::parse_equity_put(s, &parts),
+            "fxcall" => Self::parse_fx_call(s, &parts),
+            "fxput" => Self::parse_fx_put(s, &parts),
+            "cds" => Self::parse_cds(s, &parts),
             other => Err(QSError::InvalidValueErr(format!(
                 "Unknown instrument type in identifier: {other}"
             ))),
@@ -1587,8 +1593,9 @@ impl std::str::FromStr for QuoteDetails {
 
     /// Parses a quote identifier string (underscore-separated) into [`QuoteDetails`].
     ///
-    /// The first `_`-delimited segment determines the instrument type and must
-    /// match the exact [`QuoteInstrument`] variant name (e.g. [`FxForward`]).
+    /// The first `_`-delimited segment determines the instrument type (e.g.
+    /// `FxForward`). Instrument names and typed fields are case insensitive.
+    /// The original identifier and free-form entity names are preserved.
     ///
     /// # Errors
     /// Returns an error if the identifier cannot be parsed.
@@ -3172,5 +3179,46 @@ mod tests {
     fn parse_cap_floor_without_frequency_still_works() {
         let det: QuoteDetails = "CapFloor_USD_SOFR_1Y_Absolute_Black".parse().unwrap();
         assert_eq!(det.pay_leg_frequency(), None);
+    }
+}
+
+#[cfg(test)]
+mod case_insensitive_tests {
+    use super::*;
+
+    #[test]
+    fn products_and_typed_fields_accept_lower_upper_and_mixed_case() {
+        for identifier in [
+            "OIS_USD_SOFR_1Y_Annual_Annual_2_0_Actual360_TARGET_TARGET_TARGET_TARGET_ModifiedFollowing_ModifiedFollowing_ModifiedFollowing_Backward_FALSE_0D",
+            "Swap_USD_SOFR_5Y_Annual_Quarterly",
+            "FixedRateDeposit_USD_SOFR_3M",
+            "FixedRateBond_USD_SOFR_5Y_Semiannual_0.04_AnchorPrice",
+            "BasisSwap_USD_SOFR_TermSOFR3m_5Y_Quarterly_Quarterly",
+            "FixFloatCrossCurrencySwap_USD_SOFR_EUR_5Y_Annual_Annual",
+            "FloatFloatCrossCurrencySwap_USD_SOFR_ESTR_EUR_5Y_Quarterly_Quarterly",
+            "CapFloor_USD_SOFR_1Y_Quarterly_Absolute_0.03_Black",
+            "CapletFloorlet_USD_TermSOFR3m_3M_3M_Absolute_0.01_Straddle_Normal",
+            "Swaption_USD_SOFR_3M_2Y_Semiannual_Semiannual_Absolute_0.04_Black",
+            "FxForward_EURUSD_1Y_AnchorOutrightPrice",
+            "EquityCall_USD_SPX_1Y_Absolute_5000",
+            "FxPut_EURUSD_1Y_Absolute_1.10",
+            "Cds_Acme_USD_5Y",
+            "DiscountFactor_USD_SOFR_1Y",
+            "ZeroRate_USD_SOFR_1Y_Continuous_Annual",
+        ] {
+            let canonical = identifier.parse::<QuoteDetails>().unwrap_or_else(|error| panic!("{identifier}: {error}"));
+            for variant in [identifier.to_ascii_lowercase(), identifier.to_ascii_uppercase()] {
+                let parsed = variant.parse::<QuoteDetails>().unwrap_or_else(|error| panic!("{variant}: {error}"));
+                assert_eq!(parsed.identifier(), variant);
+                assert_eq!(parsed.instrument(), canonical.instrument());
+            }
+        }
+        let custom = QuoteDetails::parse("oIs|uSd|sOfR|1y|aNnUaL", '|').unwrap();
+        custom.ois_conventions().unwrap();
+        let equity: QuoteDetails = "equitycall_usd_MyTicker_1y_absolute_10".parse().unwrap();
+        assert_eq!(
+            equity.market_index(),
+            Some(MarketIndex::Equity("MyTicker".into())).as_ref()
+        );
     }
 }

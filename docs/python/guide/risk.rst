@@ -64,7 +64,7 @@ The same inactive scenario can be reused with another context. Do not retain a
 shocked AD-backed market view after its scope ends.
 
 An Absolute shock adds a value in the target's units; a Relative shock
-multiplies by ``1 + value``. Targets use case-sensitive set membership of
+multiplies by ``1 + value``. Targets use case-insensitive set membership of
 underscore-separated tokens after an initial identifier-equality check.
 Token order and multiplicity are ignored: a full identifier is
 **not an exact-only selector**.

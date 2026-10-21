@@ -46,7 +46,7 @@ class Shock:
 Parameters
 ----------
 target : str
-    Nonempty case-sensitive underscore-token selector. Exact identifier equality
+    Nonempty case-insensitive underscore-token selector. Exact identifier equality
     succeeds first; otherwise all target tokens must occur in the identifier.
     Token order and repeated-token counts are ignored, so supplying a full
     identifier does not make the match exact-only. For example,

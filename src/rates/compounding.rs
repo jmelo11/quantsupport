@@ -22,12 +22,12 @@ impl TryFrom<String> for Compounding {
     type Error = QSError;
 
     fn try_from(s: String) -> Result<Self> {
-        match s.as_str() {
-            "Simple" => Ok(Self::Simple),
-            "Compounded" => Ok(Self::Compounded),
-            "Continuous" => Ok(Self::Continuous),
-            "SimpleThenCompounded" => Ok(Self::SimpleThenCompounded),
-            "CompoundedThenSimple" => Ok(Self::CompoundedThenSimple),
+        match s.to_ascii_lowercase().as_str() {
+            "simple" => Ok(Self::Simple),
+            "compounded" => Ok(Self::Compounded),
+            "continuous" => Ok(Self::Continuous),
+            "simplethencompounded" => Ok(Self::SimpleThenCompounded),
+            "compoundedthensimple" => Ok(Self::CompoundedThenSimple),
             _ => Err(QSError::InvalidValueErr(format!(
                 "Invalid compounding: {s}"
             ))),

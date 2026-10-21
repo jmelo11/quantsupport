@@ -47,10 +47,10 @@ impl std::str::FromStr for Strike {
     type Err = QSError;
 
     fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
-        match s {
-            "Absolute" => Ok(Self::Absolute(0.0)),
-            "ATM" => Ok(Self::Atm),
-            "Relative" => Ok(Self::Relative(0.0)),
+        match s.to_ascii_lowercase().as_str() {
+            "absolute" => Ok(Self::Absolute(0.0)),
+            "atm" => Ok(Self::Atm),
+            "relative" => Ok(Self::Relative(0.0)),
             _ => Err(QSError::InvalidValueErr(format!(
                 "Unknown strike type: {s}"
             ))),
@@ -71,9 +71,9 @@ impl std::str::FromStr for VolatilityType {
     type Err = QSError;
 
     fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
-        match s {
-            "Black" => Ok(Self::Black),
-            "Normal" => Ok(Self::Normal),
+        match s.to_ascii_lowercase().as_str() {
+            "black" => Ok(Self::Black),
+            "normal" => Ok(Self::Normal),
             _ => Err(QSError::InvalidValueErr(format!(
                 "Unknown volatility type: {s}"
             ))),

@@ -56,7 +56,7 @@ changes matching market quotes and explicit pillars; reconstruction determines
 the effect on projected payments and value. Excel materializes an imported
 scenario in a separate context snapshot, unlike Python's scoped borrowed views.
 
-Shock targets are case-sensitive underscore-token selectors, not a guaranteed
+Shock targets are case-insensitive underscore-token selectors, not a guaranteed
 exact-match mode. After checking identifier equality, matching ignores token
 order and multiplicity. A full caplet identifier with repeated tenor/expiry
 tokens can select other expiries too; overlapping shocks compose without
