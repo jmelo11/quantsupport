@@ -94,8 +94,13 @@ jobs:
           ref: ${{ inputs.ref || github.sha }}
       - name: Install Rust
         run: rustup toolchain install stable --profile minimal
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
       - name: Test worksheet functions and registry
         run: cargo +stable test -p quantsupport-xll --lib --example function_catalog
+      - name: Test ribbon JSON contract
+        run: dotnet run --project bindings/excel/ribbon/tests/ContractTests.csproj --configuration Release
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
@@ -113,5 +118,6 @@ jobs:
             bindings/excel/dist/quantsupport.xll
             bindings/excel/dist/quantsupport.intellisense.xml
             bindings/excel/dist/ExcelDna.IntelliSense64.xll
+            bindings/excel/dist/QuantSupport.Ribbon64.xll
             bindings/excel/dist/quantsupport-excel-windows-x64.zip
           if-no-files-found: error

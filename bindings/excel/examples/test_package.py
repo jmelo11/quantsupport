@@ -22,7 +22,7 @@ class DistributionTests(unittest.TestCase):
         bindings = (ROOT / ".github/workflows/bindings.yml").read_text()
         pages = (ROOT / ".github/workflows/pages.yml").read_text()
         release = (ROOT / ".github/workflows/release.yml").read_text()
-        for name in (ARCHIVE, COMPANION, "quantsupport.xll", "quantsupport.intellisense.xml"):
+        for name in (ARCHIVE, COMPANION, "quantsupport.xll", "quantsupport.intellisense.xml", "QuantSupport.Ribbon64.xll"):
             self.assertIn("bindings/excel/dist/" + name, bindings)
             self.assertIn('"' + name + '"', (ROOT / ".github/scripts/excel_downloads.py").read_text())
         self.assertIn('"$RUNNER_TEMP/excel_downloads.py" stage', pages)
@@ -51,25 +51,28 @@ class PackageTests(unittest.TestCase):
         self.xml = b'<?xml version="1.0"?><IntelliSense xmlns="http://schemas.excel-dna.net/intellisense/1.0"/>'
         (self.dist / "quantsupport.xll").write_bytes(self.xll)
         (self.dist / "quantsupport.intellisense.xml").write_bytes(self.xml)
+        self.ribbon = b"Isolated packed ribbon fixture, never published"
+        (self.dist / "QuantSupport.Ribbon64.xll").write_bytes(self.ribbon)
 
     def package(self, *arguments):
         return subprocess.run([self.powershell, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
                                str(EXCEL / "scripts/package.ps1"), "-Dist", str(self.dist), *map(str, arguments)],
                               text=True, capture_output=True, timeout=90)
 
-    def test_bundle_downloads_and_preserves_all_three_addin_files_at_zip_root(self):
+    def test_bundle_downloads_and_preserves_all_addin_files_at_zip_root(self):
         result = self.package()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         with ZipFile(self.dist / ARCHIVE) as archive:
             self.assertIsNone(archive.testzip())
-            self.assertEqual(set(archive.namelist()), {"quantsupport.xll", "quantsupport.intellisense.xml", COMPANION,
+            self.assertEqual(set(archive.namelist()), {"quantsupport.xll", "quantsupport.intellisense.xml", COMPANION, "QuantSupport.Ribbon64.xll",
                                                       "INSTALL.txt", "QuantSupport-LICENSE.txt",
                                                       "ExcelDna.IntelliSense-LICENSE.txt", "ExcelDna-LICENSE.txt"})
             self.assertEqual(archive.read("quantsupport.xll"), self.xll)
             self.assertEqual(archive.read("quantsupport.intellisense.xml"), self.xml)
             self.assertEqual(archive.read(COMPANION), self.companion)
+            self.assertEqual(archive.read("QuantSupport.Ribbon64.xll"), self.ribbon)
             instructions = archive.read("INSTALL.txt").decode()
-            for name in ("quantsupport.xll", "quantsupport.intellisense.xml", COMPANION):
+            for name in ("quantsupport.xll", "quantsupport.intellisense.xml", COMPANION, "QuantSupport.Ribbon64.xll"):
                 self.assertIn(name, instructions)
             self.assertEqual(archive.read("ExcelDna.IntelliSense-LICENSE.txt"),
                              (EXCEL / "third-party/ExcelDna.IntelliSense-LICENSE.txt").read_bytes())
@@ -92,6 +95,14 @@ class PackageTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("Missing build output", result.stdout + result.stderr)
         self.assertFalse((self.dist / ARCHIVE).exists())
+
+    def test_missing_ribbon_prevents_replacing_an_existing_bundle(self):
+        (self.dist / "QuantSupport.Ribbon64.xll").unlink()
+        (self.dist / ARCHIVE).write_bytes(b"previous complete bundle")
+        result = self.package()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("QuantSupport.Ribbon64.xll", result.stdout + result.stderr)
+        self.assertEqual((self.dist / ARCHIVE).read_bytes(), b"previous complete bundle")
 
 
 if __name__ == "__main__":

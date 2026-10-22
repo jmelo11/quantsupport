@@ -17,6 +17,7 @@ ASSETS = (
     "quantsupport.xll",
     "quantsupport.intellisense.xml",
     "ExcelDna.IntelliSense64.xll",
+    "QuantSupport.Ribbon64.xll",
     "quantsupport-excel-windows-x64.zip",
 )
 

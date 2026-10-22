@@ -70,7 +70,7 @@ class DownloadStagingTests(unittest.TestCase):
         self.examples = self.root / "examples"
         self.examples.mkdir()
         (self.examples / "swap_pricing_example.xlsx").write_bytes(b"matching release workbook fixture")
-        self.payloads = dict(zip(downloads.ASSETS[:-1], (b"XLL build fixture", b"matching XML fixture", b"companion fixture")))
+        self.payloads = {name: ("Isolated fixture: " + name).encode() for name in downloads.ASSETS[:-1]}
         archive = io.BytesIO()
         with ZipFile(archive, "w") as writer:
             for name, payload in self.payloads.items():

@@ -7,7 +7,8 @@ Install and load the add-in
 Download the `Excel add-in and IntelliSense ZIP <https://jmelo11.github.io/quantsupport/downloads/quantsupport-excel-windows-x64.zip>`_
 and extract all files into one stable local folder. It contains
 ``quantsupport.xll``, its matching ``quantsupport.intellisense.xml``,
-``ExcelDna.IntelliSense64.xll``, installation instructions and license notices.
+``ExcelDna.IntelliSense64.xll``, ``QuantSupport.Ribbon64.xll``, installation
+instructions and license notices.
 The `standalone XLL <https://jmelo11.github.io/quantsupport/downloads/quantsupport.xll>`_
 is also available at the same download location.
 
@@ -17,10 +18,23 @@ policy for downloaded add-ins and trusted locations; if Windows marks the
 downloaded file as blocked, review its source before unblocking it.
 
 In Excel open **File → Options → Add-ins**, choose **Excel Add-ins**, select
-**Go**, and browse to each of the two XLLs. Keep the XML beside
-``quantsupport.xll``, then restart Excel with both add-ins enabled. Load the
+**Go**, and browse to each of the three XLLs. Keep the XML and companions beside
+``quantsupport.xll``, then restart Excel with all three add-ins enabled. Load the
 add-in before opening the pricing workbook, or press **Ctrl+Alt+F9** after
 loading to rebuild all formula dependencies.
+
+The **QuantSupport** ribbon tab opens **Pricing Contexts**, **Instruments & Trades**
+and **All Objects** in a side panel for the active workbook. Contexts show their
+valuation date, historical snapshot timestamp in UTC, and quote side. Select an
+object to see its terms, source formulas and dependencies; **Go to cell** opens
+its source definition for editing. **Inspect Selection** finds the live handle
+in the selected cell. The panel refreshes while Excel is ready and never starts
+calculation. These dates describe the market and contract, not object creation
+times. **Setup Guide** opens the worksheet construction examples.
+
+The ribbon is optional and requires .NET Framework 4.6.2 or later. Extract the
+native XLL and ribbon from the same ZIP into the same folder. Worksheet functions
+also work with the native XLL alone.
 
 Download the `swap example workbook <https://jmelo11.github.io/quantsupport/downloads/swap_pricing_example.xlsx>`_
 or the `historical pricing workbook <https://jmelo11.github.io/quantsupport/downloads/historical_pricing_example.xlsx>`_.
@@ -43,7 +57,7 @@ displays the rejected function name and fails loading; a partially registered
 catalog is rolled back.
 
 To compile from the checkout, use a Windows PowerShell prompt with the
-64-bit MSVC Rust toolchain and Visual Studio Build Tools:
+64-bit MSVC Rust toolchain, Visual Studio Build Tools and .NET 8 SDK or later:
 
 .. code-block:: powershell
 

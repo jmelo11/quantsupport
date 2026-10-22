@@ -25,15 +25,38 @@ function names, argument order, aliases, categories, and per-parameter help.
 
 Extract **all files** from the ZIP into one stable local folder. It includes
 `quantsupport.xll`, `quantsupport.intellisense.xml`,
-`ExcelDna.IntelliSense64.xll`, installation instructions and license notices.
+`ExcelDna.IntelliSense64.xll`, `QuantSupport.Ribbon64.xll`, installation
+instructions and license notices.
 In Excel's **File > Options > Add-ins > Excel Add-ins > Go > Browse** dialog,
-load both XLLs, then restart Excel. Keep the XML beside `quantsupport.xll`.
-The IntelliSense companion requires .NET Framework 4.6.2 or later.
+load all three XLLs, then restart Excel. Keep them and the XML in the same folder.
+The ribbon and IntelliSense companions require .NET Framework 4.6.2 or later.
+
+### QuantSupport ribbon and object browser
+
+The **QuantSupport** tab provides **Pricing Contexts**, **Instruments & Trades**,
+**All Objects**, **Inspect Selection**, and **Refresh Browser**, plus links to the
+setup guide and function reference. The side panel lists live objects belonging
+to its workbook, with search, type filters, current handles, source formulas and
+dependencies. Select an object, choose a source, and click **Go to cell** to edit
+its worksheet definition. **Copy handle** copies its current runtime handle.
+
+Contexts display their valuation date, historical snapshot timestamp in UTC,
+quote side, base currency/index and constructed market components. Instruments
+display identifiers and notionals; trades display identifiers, trade dates and
+sides. These dates describe market/contract data, not object creation times.
+Changed dependencies are marked **Recalculate**. The browser refreshes while
+Excel is ready and never triggers calculation or keeps native objects alive.
+Each Excel window gets its own panel, released when that window closes.
+
+The ribbon is optional; formulas work with the native XLL alone. Load the ribbon
+and native XLL from the same build and folder. This version browses and inspects
+existing objects; setup continues through worksheet inputs and formulas, with
+examples accessible through **Setup Guide**.
 
 ## Build and load
 
-On Windows, install the stable 64-bit MSVC Rust toolchain and Visual Studio
-Build Tools, then run from the repository root:
+On Windows, install the stable 64-bit MSVC Rust toolchain, Visual Studio
+Build Tools and the .NET 8 SDK or later, then run from the repository root:
 
 ```powershell
 rustup target add x86_64-pc-windows-msvc
@@ -41,7 +64,7 @@ powershell -ExecutionPolicy Bypass -File bindings/excel/scripts/build.ps1
 ```
 
 The build creates `bindings/excel/dist/quantsupport-excel-windows-x64.zip`,
-including the XLL, generated XML and the pinned Excel-DNA IntelliSense companion.
+including the XLL, generated XML, packed ribbon and pinned Excel-DNA IntelliSense companion.
 Packaging downloads the companion when it is not already cached and checks its
 SHA-256 against `third-party/intellisense.json`.
 
@@ -61,7 +84,7 @@ Inline function signatures and active-parameter descriptions use
 Set it up once in 64-bit Windows Excel:
 
 1. Extract the [Excel ZIP](https://jmelo11.github.io/quantsupport/downloads/quantsupport-excel-windows-x64.zip)
-   or build it with the script above. Keep all three add-in files together.
+   or build it with the script above. Keep all add-in files together.
    Versioned downloads are also available from
    [releases](https://github.com/jmelo11/quantsupport/releases).
 2. Load the included `ExcelDna.IntelliSense64.xll` through Excel's Add-ins dialog,
