@@ -986,7 +986,36 @@ impl Registry {
         self.mutation_owners.clear();
     }
 
+    /// Validates a browser read without recording worksheet ownership or dependencies.
+    pub fn browser_object(&self, handle: &str) -> Result<&QsObject, RegistryError> {
+        let mut pending = vec![handle.to_string()];
+        let mut seen = HashSet::new();
+        while let Some(current) = pending.pop() {
+            if !seen.insert(current.clone()) {
+                continue;
+            }
+            let entry = self.validated_entry(&current)?;
+            pending.extend(
+                entry
+                    .dependencies
+                    .iter()
+                    .map(|(identity, revision)| format_handle(identity, *revision)),
+            );
+        }
+        Ok(&self.validated_entry(handle)?.object)
+    }
+
     fn entry(&self, handle: &str) -> Result<&RegistryEntry, RegistryError> {
+        let entry = self.validated_entry(handle)?;
+        if self.active_cell.is_some() {
+            self.reads
+                .borrow_mut()
+                .insert(ParsedHandle::parse(handle)?.identity());
+        }
+        Ok(entry)
+    }
+
+    fn validated_entry(&self, handle: &str) -> Result<&RegistryEntry, RegistryError> {
         let parsed = ParsedHandle::parse(handle)?;
         let identity = parsed.identity();
         let entry = self
@@ -1006,9 +1035,6 @@ impl Registry {
                 handle: handle.to_string(),
                 dependency: dependency.clone(),
             });
-        }
-        if self.active_cell.is_some() {
-            self.reads.borrow_mut().insert(identity);
         }
         Ok(entry)
     }
@@ -1225,6 +1251,26 @@ pub fn workbook_browser_objects(workbook: u64) -> Vec<super::browser::BrowserObj
             .get(&workbook)
             .map(Registry::browser_objects)
             .unwrap_or_default()
+    })
+}
+
+/// Runs an explicit browser request in its workbook, without selecting a caller registry.
+pub fn workbook_browser_query(
+    workbook: u64,
+    request: &super::browser_queries::BrowserQuery,
+) -> super::browser_queries::BrowserResponse {
+    REGISTRIES.with(|registries| {
+        let registries = registries.borrow();
+        let result = registries
+            .get(&workbook)
+            .ok_or_else(|| "The workbook has no live objects. Recalculate and refresh.".to_string())
+            .and_then(|registry| {
+                if registry.active_cell.is_some() {
+                    return Err("Wait for worksheet calculation to finish, then retry.".into());
+                }
+                super::browser_queries::execute(registry, request)
+            });
+        result.unwrap_or_else(super::browser_queries::BrowserResponse::error)
     })
 }
 
@@ -1550,6 +1596,7 @@ mod browser_tests {
 
         registry.begin_cell(cell(2));
         let snapshot = registry.browser_objects();
+        registry.browser_object(&handle).unwrap();
         assert!(registry.reads.borrow().is_empty());
         assert!(registry.writes.borrow().is_empty());
         assert_eq!(snapshot[0].name, "shared");
@@ -1624,6 +1671,7 @@ mod browser_tests {
             )
             .unwrap();
         registry.finish_cell(true);
+        assert!(registry.browser_object(&context.handle).is_err());
         assert!(
             !registry
                 .browser_objects()
@@ -1653,12 +1701,59 @@ mod browser_tests {
         assert_eq!(one[0].name, two[0].name);
         assert_eq!(ACTIVE_WORKBOOK.with(Cell::get), 92);
         let count = REGISTRIES.with(|v| v.borrow().len());
+        let request = super::super::browser_queries::BrowserQuery {
+            handle: one[0].handle.clone(),
+            view: "curves".into(),
+            ..Default::default()
+        };
+        assert!(workbook_browser_query(91, &request).error.is_empty());
+        assert!(workbook_browser_query(92, &request)
+            .error
+            .contains("does not exist"));
+        assert!(!workbook_browser_query(93, &request).error.is_empty());
+        assert_eq!(ACTIVE_WORKBOOK.with(Cell::get), 92);
         assert!(workbook_browser_objects(93).is_empty());
         assert_eq!(REGISTRIES.with(|v| v.borrow().len()), count);
         close_workbook(91);
         assert!(workbook_browser_objects(91).is_empty());
         clear_workbooks();
         select_workbook(0);
+    }
+
+    #[test]
+    fn browser_queries_reject_transitively_stale_inputs_and_obsolete_revisions() {
+        let mut registry = Registry::in_workbook(8);
+        registry.begin_cell(cell(0));
+        let root = registry
+            .upsert_if_changed("root", QsObject::FxStore(Box::default()), "initial")
+            .unwrap();
+        registry.finish_cell(true);
+        registry.begin_cell(cell(1));
+        let object = registry.fx_store(&root).unwrap().clone();
+        let middle = registry
+            .upsert_if_changed("middle", QsObject::FxStore(Box::new(object)), "middle")
+            .unwrap();
+        registry.finish_cell(true);
+        registry.begin_cell(cell(2));
+        let object = registry.fx_store(&middle).unwrap().clone();
+        let leaf = registry
+            .upsert_if_changed("leaf", QsObject::FxStore(Box::new(object)), "leaf")
+            .unwrap();
+        registry.finish_cell(true);
+        registry.browser_object(&leaf).unwrap();
+        registry.begin_cell(cell(0));
+        registry
+            .upsert_if_changed("root", QsObject::FxStore(Box::default()), "changed")
+            .unwrap();
+        registry.finish_cell(true);
+        assert!(matches!(
+            registry.browser_object(&root),
+            Err(RegistryError::StaleHandle { .. })
+        ));
+        assert!(matches!(
+            registry.browser_object(&leaf),
+            Err(RegistryError::StaleDependency { .. })
+        ));
     }
 }
 

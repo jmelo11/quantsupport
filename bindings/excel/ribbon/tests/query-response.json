@@ -1,0 +1,9 @@
+{
+  "title": "Trade cashflows",
+  "message": "Signed, undiscounted amounts in each row's currency. Rates are decimal; leg indices start at 0.",
+  "curves": [],
+  "columns": ["Payment date", "Type", "Amount", "Currency", "Fixing", "Accrual period", "Floor strike", "Cap strike", "Leg index"],
+  "rows": [["2027-01-15", "Coupon café", "-1234.5", "EUR", "", "1", "", "", "1"]],
+  "parameters": [],
+  "error": ""
+}

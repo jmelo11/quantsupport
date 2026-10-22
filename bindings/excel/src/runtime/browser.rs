@@ -35,6 +35,7 @@ pub struct BrowserObject {
     pub details: Vec<BrowserDetail>,
     pub locations: Vec<BrowserLocation>,
     pub dependencies: Vec<String>,
+    pub curves: Vec<String>,
 }
 
 #[derive(Serialize)]
@@ -54,6 +55,7 @@ impl BrowserObject {
     pub fn from_object(object: &QsObject) -> Self {
         let mut result = Self {
             kind: object.kind().into(),
+            curves: super::browser_queries::curve_names(object),
             ..Self::default()
         };
         result.family = match object {
@@ -211,7 +213,44 @@ pub mod windows {
 
     #[no_mangle]
     pub extern "system" fn qs_browser_api_version() -> u32 {
-        1
+        2
+    }
+
+    /// Runs an explicit query and returns owned UTF-8 JSON, released by qs_browser_free.
+    ///
+    /// # Safety
+    /// `request` must be null or a UTF-16 buffer of at least `length` code units.
+    #[no_mangle]
+    pub unsafe extern "system" fn qs_browser_query(
+        request: *const u16,
+        length: usize,
+    ) -> *mut c_char {
+        use super::super::browser_queries::{BrowserQuery, BrowserResponse};
+        let result = std::panic::catch_unwind(|| {
+            if MAIN_THREAD.load(Ordering::Acquire) != unsafe { GetCurrentThreadId() } {
+                return BrowserResponse::error("Run browser requests on Excel's main thread.");
+            }
+            if request.is_null() || length == 0 || length > 65536 {
+                return BrowserResponse::error("Invalid browser request.");
+            }
+            let json =
+                match String::from_utf16(unsafe { std::slice::from_raw_parts(request, length) }) {
+                    Ok(json) => json,
+                    Err(_) => return BrowserResponse::error("Invalid request encoding."),
+                };
+            match serde_json::from_str::<BrowserQuery>(&json) {
+                Ok(request) => super::super::lifecycle::browser_query(&request),
+                Err(error) => BrowserResponse::error(format!("Invalid browser request: {error}")),
+            }
+        })
+        .unwrap_or_else(|_| {
+            BrowserResponse::error("The browser request failed. Refresh when Excel is ready.")
+        });
+        let json = serde_json::to_string(&result)
+            .unwrap_or_else(|_| "{\"error\":\"Could not serialize the browser result.\"}".into());
+        CString::new(json)
+            .expect("JSON escapes NUL characters")
+            .into_raw()
     }
 
     /// Returns an owned UTF-8 JSON string, released by qs_browser_free.
@@ -245,7 +284,7 @@ pub mod windows {
     }
 
     /// # Safety
-    /// `value` must be null or an unfreed pointer returned by qs_browser_snapshot.
+    /// `value` must be null or an unfreed pointer returned by qs_browser_snapshot or qs_browser_query.
     #[no_mangle]
     pub unsafe extern "system" fn qs_browser_free(value: *mut c_char) {
         if !value.is_null() {
@@ -267,9 +306,21 @@ pub mod windows {
             result
         }
 
+        fn query(json: &str) -> serde_json::Value {
+            let request: Vec<u16> = json.encode_utf16().collect();
+            let value = unsafe { qs_browser_query(request.as_ptr(), request.len()) };
+            let json = unsafe { std::ffi::CStr::from_ptr(value) }.to_str().unwrap();
+            let result = serde_json::from_str(json).unwrap();
+            unsafe {
+                qs_browser_free(value);
+            }
+            result
+        }
+
         #[test]
         fn abi_rejects_background_calls_and_invalid_utf16_and_releases_its_buffers() {
             start();
+            assert_eq!(qs_browser_api_version(), 2);
             let name: Vec<u16> = "Café.xlsx".encode_utf16().collect();
             let snapshot = read(&name);
             assert_eq!(snapshot["workbook"], "Café.xlsx");
@@ -283,6 +334,20 @@ pub mod windows {
             .unwrap());
             assert_eq!(read(&[0xd800])["error"], "Invalid workbook name.");
             assert_eq!(read(&[])["error"], "Select an open workbook.");
+            assert!(query("not JSON")["error"]
+                .as_str()
+                .unwrap()
+                .contains("Invalid browser request"));
+            assert!(query("{\"workbook\":\"missing.xlsx\"}")["error"]
+                .as_str()
+                .unwrap()
+                .contains("no live objects"));
+            assert!(std::thread::spawn(|| query("{}")["error"]
+                .as_str()
+                .unwrap()
+                .contains("main thread"))
+            .join()
+            .unwrap());
             stop();
             assert!(read(&[65])["error"]
                 .as_str()

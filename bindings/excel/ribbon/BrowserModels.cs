@@ -26,6 +26,9 @@ namespace QuantSupport.Ribbon
         [DataMember(Name = "details")] public List<Detail> Details { get; set; }
         [DataMember(Name = "locations")] public List<Location> Locations { get; set; }
         [DataMember(Name = "dependencies")] public List<string> Dependencies { get; set; }
+        [DataMember(Name = "curves")] public List<string> Curves { get; set; }
+
+        public string DisplayName => Name + " (" + Kind + ")";
     }
 
     [DataContract]
@@ -54,5 +57,30 @@ namespace QuantSupport.Ribbon
     {
         [DataMember(Name = "label")] public string Label { get; set; }
         [DataMember(Name = "value")] public string Value { get; set; }
+    }
+
+    [DataContract]
+    internal sealed class BrowserQuery
+    {
+        [DataMember(Name = "workbook")] public string Workbook { get; set; } = "";
+        [DataMember(Name = "handle")] public string Handle { get; set; } = "";
+        [DataMember(Name = "view")] public string View { get; set; } = "";
+        [DataMember(Name = "curve")] public string Curve { get; set; } = "";
+        [DataMember(Name = "context")] public string Context { get; set; } = "";
+        [DataMember(Name = "pricer")] public string Pricer { get; set; } = "";
+        [DataMember(Name = "request")] public string Request { get; set; } = "";
+        [DataMember(Name = "target")] public uint Target { get; set; }
+    }
+
+    [DataContract]
+    internal sealed class BrowserResponse
+    {
+        [DataMember(Name = "title")] public string Title { get; set; }
+        [DataMember(Name = "message")] public string Message { get; set; }
+        [DataMember(Name = "curves")] public List<string> Curves { get; set; }
+        [DataMember(Name = "columns")] public List<string> Columns { get; set; }
+        [DataMember(Name = "rows")] public List<List<string>> Rows { get; set; }
+        [DataMember(Name = "parameters")] public List<List<Detail>> Parameters { get; set; }
+        [DataMember(Name = "error")] public string Error { get; set; }
     }
 }

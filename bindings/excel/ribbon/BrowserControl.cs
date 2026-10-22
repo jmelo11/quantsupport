@@ -36,12 +36,16 @@ namespace QuantSupport.Ribbon
         private readonly ComboBox sources = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 190, DisplayMember = "Address" };
         private readonly Button go = new Button { Text = "Go to cell", AutoSize = true, Enabled = false };
         private readonly Button copy = new Button { Text = "Copy handle", AutoSize = true, Enabled = false };
+        private readonly TabControl tabs = new TabControl { Dock = DockStyle.Fill };
+        private readonly ExplorerControl tradeExplorer;
+        private readonly ExplorerControl curveExplorer;
+        private bool populating;
 
         public BrowserControl()
         {
             Font = new Font("Segoe UI", 9);
             Dock = DockStyle.Fill;
-            filter.Items.AddRange(new object[] { "All objects", "Pricing contexts", "Instruments & Trades", "Market & configuration", "Pricing setup", "Results" });
+            filter.Items.AddRange(new object[] { "All objects", "Pricing contexts", "Instruments & Trades", "Curves", "Market & configuration", "Pricing setup", "Results" });
             filter.SelectedIndex = 0;
             var toolbar = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, Padding = new Padding(4) };
             var refresh = new Button { Text = "Refresh", AutoSize = true };
@@ -52,9 +56,15 @@ namespace QuantSupport.Ribbon
             toolbar.Controls.Add(refresh);
             foreach (var title in new[] { "Name", "Type", "Valuation date", "Snapshot (UTC)", "Quote side", "Inputs" })
                 grid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = title, SortMode = DataGridViewColumnSortMode.NotSortable });
-            var split = new SplitContainer { Dock = DockStyle.Fill, Orientation = Orientation.Horizontal, Size = new Size(500, 520), SplitterDistance = 285 };
+            var split = new SplitContainer { Dock = DockStyle.Fill, Orientation = Orientation.Horizontal, Size = new Size(500, 700), SplitterDistance = 210 };
             split.Panel1.Controls.Add(grid);
-            split.Panel2.Controls.Add(details);
+            tradeExplorer = new ExplorerControl(true, () => WindowId);
+            curveExplorer = new ExplorerControl(false, () => WindowId);
+            foreach (var title in new[] { "Details", "Trade requests", "Curves" }) tabs.TabPages.Add(title);
+            tabs.TabPages[0].Controls.Add(details);
+            tabs.TabPages[1].Controls.Add(tradeExplorer);
+            tabs.TabPages[2].Controls.Add(curveExplorer);
+            split.Panel2.Controls.Add(tabs);
             var navigation = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, Padding = new Padding(4) };
             navigation.Controls.Add(sources);
             navigation.Controls.Add(go);
@@ -71,7 +81,7 @@ namespace QuantSupport.Ribbon
             Controls.Add(layout);
             filter.SelectedIndexChanged += (s, e) => Populate();
             search.TextChanged += (s, e) => Populate();
-            grid.SelectionChanged += (s, e) => ShowDetails();
+            grid.SelectionChanged += (s, e) => { if (!populating) ShowDetails(); };
             go.Click += (s, e) => QuantSupportRibbon.Run(GoToSource);
             copy.Click += (s, e) => QuantSupportRibbon.Run(() => { if (Selected != null) Clipboard.SetText(Selected.Handle); });
         }
@@ -102,6 +112,8 @@ namespace QuantSupport.Ribbon
                 stamp = null;
                 grid.Rows.Clear();
                 details.Clear();
+                tradeExplorer.Bind(null, null);
+                curveExplorer.Bind(null, null);
                 sources.Items.Clear();
                 go.Enabled = copy.Enabled = false;
                 status.Text = error.Message;
@@ -111,13 +123,15 @@ namespace QuantSupport.Ribbon
         private void Populate()
         {
             var selected = Selected?.Handle;
+            populating = true;
             grid.Rows.Clear();
-            if (snapshot == null) return;
+            if (snapshot == null) { populating = false; ShowDetails(); return; }
             var category = (string)filter.SelectedItem;
             var query = search.Text.Trim();
             foreach (var item in snapshot.Objects)
             {
                 var matchesCategory = category == "All objects" || item.Family == category ||
+                    (category == "Curves" && item.Curves != null && item.Curves.Count > 0) ||
                     (category == "Instruments & Trades" && (item.Family == "Instruments" || item.Family == "Trades"));
                 if (!matchesCategory || (query.Length > 0 &&
                     (item.Name + " " + item.Kind + " " + item.Handle).IndexOf(query, StringComparison.OrdinalIgnoreCase) < 0)) continue;
@@ -127,6 +141,7 @@ namespace QuantSupport.Ribbon
             }
             foreach (DataGridViewRow row in grid.Rows)
                 if (((BrowserObject)row.Tag).Handle == selected) { grid.CurrentCell = row.Cells[0]; break; }
+            populating = false;
             ShowDetails();
             status.Text = snapshot.Workbook + " · " + grid.Rows.Count + " of " + snapshot.Objects.Count + " live objects" +
                 (snapshot.Objects.Count == 0 ? ". Calculate the workbook to create its objects." : ". Refreshes while Excel is ready.");
@@ -136,6 +151,8 @@ namespace QuantSupport.Ribbon
         {
             sources.Items.Clear();
             var item = Selected;
+            tradeExplorer.Bind(snapshot, item);
+            curveExplorer.Bind(snapshot, item);
             copy.Enabled = item != null;
             go.Enabled = item != null && item.Locations.Count > 0;
             if (item == null) { details.Clear(); return; }
@@ -164,6 +181,9 @@ namespace QuantSupport.Ribbon
                 foreach (var dependency in item.Dependencies) text.AppendLine(dependency);
             }
             details.Text = text.ToString();
+            if (item.Family == "Trades") tabs.SelectedIndex = 1;
+            else if (item.Curves != null && item.Curves.Count > 0) tabs.SelectedIndex = 2;
+            else tabs.SelectedIndex = 0;
         }
 
         internal void Inspect(string handle)

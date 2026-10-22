@@ -90,6 +90,24 @@ pub fn browser_snapshot(name: &str) -> super::browser::BrowserSnapshot {
     snapshot
 }
 
+pub fn browser_query(
+    request: &super::browser_queries::BrowserQuery,
+) -> super::browser_queries::BrowserResponse {
+    SESSIONS.with(|sessions| {
+        let sessions = sessions.borrow();
+        match sessions
+            .books
+            .iter()
+            .find(|(_, book)| book.name.eq_ignore_ascii_case(&request.workbook))
+        {
+            Some((id, _)) => registry::workbook_browser_query(*id, request),
+            None => super::browser_queries::BrowserResponse::error(
+                "The workbook has no live objects. Recalculate and refresh.",
+            ),
+        }
+    })
+}
+
 /// One stateful UDF invocation. Early returns and unwinding release old outputs.
 pub struct CallScope {
     previous: Option<u64>,

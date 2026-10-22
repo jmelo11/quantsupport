@@ -31,6 +31,7 @@ namespace QuantSupport.Ribbon
 
         public void ShowContexts(IRibbonControl control) { Run(() => BrowserPanes.Show("Pricing contexts")); }
         public void ShowInstruments(IRibbonControl control) { Run(() => BrowserPanes.Show("Instruments & Trades")); }
+        public void ShowCurves(IRibbonControl control) { Run(() => BrowserPanes.Show("Curves")); }
         public void ShowAll(IRibbonControl control) { Run(() => BrowserPanes.Show("All objects")); }
         public void InspectSelection(IRibbonControl control) { Run(() => BrowserPanes.Inspect()); }
         public void RefreshBrowser(IRibbonControl control) { Run(() => BrowserPanes.Show(null)); }

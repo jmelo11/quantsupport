@@ -7,6 +7,9 @@ pub mod registry;
 pub mod browser;
 
 #[cfg_attr(not(windows), allow(dead_code))]
+pub mod browser_queries;
+
+#[cfg_attr(not(windows), allow(dead_code))]
 pub mod historical;
 
 #[cfg_attr(not(windows), allow(dead_code))]

@@ -25,7 +25,8 @@
       "column": 1,
       "formula": "=QS.CONTEXT.CREATE(\"café \"\"market\"\"\",B2,B3)"
     }],
-    "dependencies": []
+    "dependencies": [],
+    "curves": []
   }],
   "error": ""
 }
