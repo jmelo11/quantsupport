@@ -8,7 +8,24 @@ from ..market import CreditCurveConfiguration, Currency, CurveConfiguration, Dis
 from ..instruments import Instrument, ScriptedProduct, Side
 from ..risk import XvaResult
 __all__ = ['Request', 'PricerConfiguration', 'SingleCurveCSADiscountPolicy', 'FixedIncomeDiscountPolicy', 'BondPricingAnchor',
-           'PricingContext', 'LoanPricer', 'Trade', 'Pricer', 'MarketDataProvider', 'Evaluator', 'EvaluationResults']
+           'PricingContext', 'LoanPricer', 'Trade', 'Pricer', 'MarketDataProvider', 'Evaluator', 'Portfolio', 'EvaluationResults']
+
+
+@final
+class Portfolio:
+    """Ordered trade list evaluated incrementally into standard EvaluationResults.
+
+    Repeated entries count as repeated positions. Value and sensitivities require
+    one common pricing currency; cashflows keep their original currencies and
+    retain coupon types, fixing indices, dates and conventions. Compatible
+    rates/spreads use notional weights; pay/receive directions remain separate.
+    Unsupported or incomplete aggregate measures remain absent.
+    """
+
+    def __new__(cls, trades: Sequence[Any]) -> Self: ...
+    def __len__(self) -> int: ...
+    def __repr__(self) -> str: ...
+    def evaluate(self, context: PricingContext, requests: Sequence[Request | str] | None = ..., *, value_currency: _CurrencyLike | None = ...) -> EvaluationResults: ...
 
 
 @final
@@ -1673,6 +1690,16 @@ QuantSupportError
     @property
     def price(self) -> float | None:
         """Net present value, if `"Value"` was requested."""
+        ...
+
+    @property
+    def coupons(self) -> DataFrame | None:
+        """Cashflows plus dates, index, signed notional, rate/spread and contractual conventions."""
+        ...
+
+    @property
+    def cashflow_summary(self) -> DataFrame | None:
+        """Payments grouped by date and currency, with interest, capital, other and total."""
         ...
 
     @property

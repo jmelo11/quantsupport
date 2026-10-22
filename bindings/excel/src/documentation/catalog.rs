@@ -321,13 +321,30 @@ mod tests {
         let records =
             super::exports(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/functions"))
                 .unwrap();
-        assert_eq!(records.len(), 148);
+        assert_eq!(records.len(), 152);
         for (name, arguments) in [
             (
                 "QS.QUOTES.FROM.RANGE",
                 vec!["name", "reference_date", "data"],
             ),
             ("QS.FIXINGS.FROM.RANGE", vec!["name", "data"]),
+            ("QS.PORTFOLIO.CREATE", vec!["name", "trades"]),
+            (
+                "QS.PORTFOLIO.EVALUATE",
+                vec![
+                    "name",
+                    "portfolio",
+                    "pricers",
+                    "context",
+                    "requests",
+                    "value_currency",
+                ],
+            ),
+            (
+                "QS.RESULT.CASHFLOW.SUMMARY",
+                vec!["result", "transpose", "headers"],
+            ),
+            ("QS.RESULT.COUPONS", vec!["result", "transpose", "headers"]),
         ] {
             let record = records
                 .iter()

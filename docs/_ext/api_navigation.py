@@ -36,7 +36,7 @@ PYTHON_SECTIONS = {
         "Scripting": "ScriptedProduct",
     },
     "pricing": {
-        "Positions and Requests": "Trade Request BondPricingAnchor",
+        "Positions and Requests": "Trade Portfolio Request BondPricingAnchor",
         "Contexts and Results": "PricingContext EvaluationResults",
         "Pricers and Policies": "LoanPricer PricerConfiguration SingleCurveCSADiscountPolicy FixedIncomeDiscountPolicy",
         "Python Extension Interfaces": "Pricer MarketDataProvider Evaluator",
@@ -139,7 +139,7 @@ def excel_section(name):
         return "Risk", "Sensitivities"
     if name.startswith("QS.DISCOUNT.POLICY."):
         return "Pricing", "Discount Policies"
-    if name == "QS.EVALUATE" or name.startswith(("QS.EVALUATE.", "QS.RESULT.", "QS.REQUEST.")):
+    if name == "QS.EVALUATE" or name.startswith(("QS.EVALUATE.", "QS.RESULT.", "QS.REQUEST.", "QS.PORTFOLIO.")):
         return "Pricing", "Valuation and Risk"
     if name.startswith("QS.BOND."):
         return "Pricing", "Bond Analytics"

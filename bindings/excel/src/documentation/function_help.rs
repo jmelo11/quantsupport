@@ -21,11 +21,16 @@ fn describe_argument(function_name: &str, argument_name: &str) -> &'static str {
         return describe_argument(&format!("QS.TRADE.{product}"), argument_name);
     }
     match (function_name, argument_name) {
+        ("QS.PORTFOLIO.CREATE", "trades") => "Cell or range of live trade handles in row-major order; repeated handles count as repeated positions",
+        ("QS.PORTFOLIO.EVALUATE", "portfolio") => "Portfolio handle from QS.PORTFOLIO.CREATE",
+        ("QS.PORTFOLIO.EVALUATE", "pricers") => "One explicit pricer handle for all members, or a range with one pricer per member in trade-list order",
+        ("QS.PORTFOLIO.EVALUATE", "value_currency") => "Common monetary PV currency of the selected pricers, such as USD; blank is allowed for cashflow-only runs; required for returned Value or Sensitivities; not an FX conversion",
+        ("QS.PORTFOLIO.EVALUATE", "requests") => "Value, Cashflows and Sensitivities are aggregated; other measures remain absent; a measure omitted by any member remains absent for the portfolio",
         ("QS.QUOTES.FROM.RANGE", "data") => "Two to four columns: Identifier, Mid, optional Bid, optional Ask; optional matching headers and blank rows; blank quote sides remain absent; duplicate identifiers are rejected",
         ("QS.FIXINGS.FROM.RANGE", "data") => "Three columns: Market index, Date (ISO YYYY-MM-DD text), Value (finite number); optional matching headers and blank rows; duplicate index/date observations are rejected",
         (_, "all_workbooks") => "Optional TRUE counts live objects across all workbooks in this Excel instance; omitted or FALSE counts the calling workbook",
         (_, "trades") => "Text cell or range of native trade handles; values follow row-major input order; all trades use the supplied explicit pricer and context",
-        (_, "result") => "EvaluationResults handle from QS.EVALUATE; the requested measure must have been included in its requests",
+        (_, "result") => "EvaluationResults handle from QS.EVALUATE or QS.PORTFOLIO.EVALUATE; the requested measure must have been returned by the evaluation",
         (_, "target") | ("QS.REQUEST.FAIR.RATE", "index") => "Zero-based leg or loan coupon/spread segment index; omitted or blank target defaults to zero; single-quote products accept only zero",
         (_, "mappings") => "Two-column Currency/Index range selecting ordinary discount curves; optional headers; blank is allowed only when prefer_instrument_index is TRUE",
         (_, "prefer_instrument_index") => "Optional TRUE prefers the instrument's discount index; omitted or blank defaults to FALSE and uses currency/index mappings",
@@ -272,6 +277,10 @@ pub fn result_help(function_name: &str) -> Option<(&'static str, &'static str)> 
         return Some(("Revisioned text handle to a native instrument contract. Create a separate position with QS.TRADE.CREATE and choose its pricer and discount policy explicitly.", "#VALUE! for invalid contract terms, missing dependencies, native builder errors or registry failures."));
     }
     let object = match function_name {
+        "QS.PORTFOLIO.CREATE" => Some("Revisioned Portfolio handle retaining the ordered list of live trade handles."),
+        "QS.PORTFOLIO.EVALUATE" => Some("Standard EvaluationResults handle; cashflow compression preserves coupon types, fixing indices, accrual dates, conventions and pay/receive direction, with notional-weighted compatible rates or spreads. Unsupported or incomplete measures remain absent."),
+        "QS.RESULT.COUPONS" => Some("Eighteen-column cashflow spill including original coupon type, fixing and contractual indices, accrual dates, signed notional, weighted rate/spread, day count and overnight/payoff conventions. Optional transpose and headers control layout."),
+        "QS.RESULT.CASHFLOW.SUMMARY" | "QS.PORTFOLIO.RESULT.CASHFLOWS" => Some("Six-column cashflow spill: Payment date, Currency, Interest, Capital, Other, Total. Signed undiscounted payments, with optional transpose and headers; no accrual allocation or FX conversion."),
         "QS.TRADE.CREATE" => Some("Revisioned text handle to a native Trade on the supplied instrument, with explicit position direction, quantity and any bond pricing anchor."),
         "QS.DISCOUNT.POLICY.FIXED.INCOME" | "QS.DISCOUNT.POLICY.FIXED.INCOME.FROM.MAPPINGS" | "QS.DISCOUNT.POLICY.CSA" => Some("Revisioned text handle to a native discount policy selecting ordinary market curves; no instrument or trade is modified."),
         "QS.PRICER.CREATE" => Some("Revisioned text handle to an explicit native pricer configured with its discount policy and typed worksheet settings."),

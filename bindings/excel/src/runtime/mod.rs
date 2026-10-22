@@ -30,6 +30,8 @@ pub mod output;
 #[cfg_attr(not(windows), allow(dead_code))]
 pub mod pricing;
 #[cfg_attr(not(windows), allow(dead_code))]
+pub mod portfolios;
+#[cfg_attr(not(windows), allow(dead_code))]
 pub mod products;
 #[cfg_attr(not(windows), allow(dead_code))]
 pub mod registration;

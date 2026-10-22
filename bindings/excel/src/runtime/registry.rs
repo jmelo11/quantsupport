@@ -28,6 +28,8 @@ const RESET_OPERATION_ID: &str = "__registry_reset__";
 
 /// QuantSupport components and trades that can be referenced by an Excel cell.
 pub enum QsObject {
+    /// Ordered references to live trades in this workbook.
+    Portfolio(Box<quantsupport::prelude::Portfolio<String>>),
     /// Native instrument, without position or pricing settings.
     Instrument(Box<super::products::InstrumentObject>),
     /// An explicit native discount policy.
@@ -109,6 +111,7 @@ impl QsObject {
     #[must_use]
     pub const fn kind(&self) -> &'static str {
         match self {
+            Self::Portfolio(_) => "Portfolio",
             Self::Instrument(value) => value.kind(),
             Self::DiscountPolicy(value) => value.kind,
             Self::Pricer(_) => "Pricer",
@@ -664,6 +667,12 @@ impl Registry {
         "DiscountPolicy"
     );
     accessor!(pricer, Pricer, super::pricing::PricerObject, "Pricer");
+    accessor!(
+        portfolio,
+        Portfolio,
+        quantsupport::prelude::Portfolio<String>,
+        "Portfolio"
+    );
     accessor!(
         evaluation_results,
         EvaluationResults,
