@@ -5,13 +5,12 @@ use crate::runtime::{
     registry::{with_registry_mut, QsObject},
 };
 use quantsupport::prelude::*;
+use quantsupport_xll_macros::xll_bindgen;
 use std::result::Result;
 use xll_rs::types::XllError;
-use xllgen::xll_bindgen;
 
 #[xll_bindgen(
     name = "QS.INSTRUMENT.FX.FORWARD",
-    volatile,
     category = "QuantSupport - Instruments",
     help = "Creates a native FxForward contract; use QS.TRADE.CREATE for a position"
 )]
@@ -51,7 +50,6 @@ pub fn qs_instrument_fx_forward(
 
 #[xll_bindgen(
     name = "QS.INSTRUMENT.SWAP",
-    volatile,
     category = "QuantSupport - Instruments",
     help = "Creates a native Swap contract; use QS.TRADE.CREATE for a position"
 )]
@@ -110,7 +108,7 @@ pub fn qs_instrument_swap(
         .map_err(value_error)?;
     let object = InstrumentObject {
         native: NativeInstrument::Swap(instrument),
-        notional: notional,
+        notional,
         foreign_notional: None,
     };
     with_registry_mut(|registry| {
@@ -121,7 +119,6 @@ pub fn qs_instrument_swap(
 
 #[xll_bindgen(
     name = "QS.INSTRUMENT.BASIS.SWAP",
-    volatile,
     category = "QuantSupport - Instruments",
     help = "Creates a native BasisSwap contract; use QS.TRADE.CREATE for a position"
 )]
@@ -172,7 +169,7 @@ pub fn qs_instrument_basis_swap(
         .map_err(value_error)?;
     let object = InstrumentObject {
         native: NativeInstrument::BasisSwap(instrument),
-        notional: notional,
+        notional,
         foreign_notional: None,
     };
     with_registry_mut(|registry| {
@@ -183,7 +180,6 @@ pub fn qs_instrument_basis_swap(
 
 #[xll_bindgen(
     name = "QS.INSTRUMENT.XCCY.FLOAT.FLOAT",
-    volatile,
     category = "QuantSupport - Instruments",
     help = "Creates a native FloatFloatCrossCurrencySwap contract; use QS.TRADE.CREATE for a position"
 )]
@@ -251,7 +247,6 @@ pub fn qs_instrument_xccy_float_float(
 
 #[xll_bindgen(
     name = "QS.INSTRUMENT.XCCY.FIX.FLOAT",
-    volatile,
     category = "QuantSupport - Instruments",
     help = "Creates a native FixFloatCrossCurrencySwap contract; use QS.TRADE.CREATE for a position"
 )]
@@ -327,7 +322,6 @@ pub fn qs_instrument_xccy_fix_float(
 
 #[xll_bindgen(
     name = "QS.INSTRUMENT.FIXED.BOND",
-    volatile,
     category = "QuantSupport - Instruments",
     help = "Creates a native FixedRateBond contract; use QS.TRADE.CREATE for a position"
 )]
@@ -383,7 +377,7 @@ pub fn qs_instrument_fixed_bond(
     let instrument = builder.build().map_err(value_error)?;
     let object = InstrumentObject {
         native: NativeInstrument::FixedRateBond(instrument),
-        notional: notional,
+        notional,
         foreign_notional: None,
     };
     with_registry_mut(|registry| {
@@ -394,7 +388,6 @@ pub fn qs_instrument_fixed_bond(
 
 #[xll_bindgen(
     name = "QS.INSTRUMENT.FIXED.DEPOSIT",
-    volatile,
     category = "QuantSupport - Instruments",
     help = "Creates a native FixedRateDeposit contract; use QS.TRADE.CREATE for a position"
 )]
@@ -448,7 +441,7 @@ pub fn qs_instrument_fixed_deposit(
     let instrument = builder.build().map_err(value_error)?;
     let object = InstrumentObject {
         native: NativeInstrument::FixedRateDeposit(instrument),
-        notional: notional,
+        notional,
         foreign_notional: None,
     };
     with_registry_mut(|registry| {
@@ -459,7 +452,6 @@ pub fn qs_instrument_fixed_deposit(
 
 #[xll_bindgen(
     name = "QS.INSTRUMENT.FLOATING.NOTE",
-    volatile,
     category = "QuantSupport - Instruments",
     help = "Creates a native FloatingRateNote contract; use QS.TRADE.CREATE for a position"
 )]
@@ -502,7 +494,7 @@ pub fn qs_instrument_floating_note(
         .map_err(value_error)?;
     let object = InstrumentObject {
         native: NativeInstrument::FloatingRateNote(instrument),
-        notional: notional,
+        notional,
         foreign_notional: None,
     };
     with_registry_mut(|registry| {
@@ -513,7 +505,6 @@ pub fn qs_instrument_floating_note(
 
 #[xll_bindgen(
     name = "QS.INSTRUMENT.FX.OPTION",
-    volatile,
     category = "QuantSupport - Instruments",
     help = "Creates a native FxEuropeanOption contract; use QS.TRADE.CREATE for a position"
 )]
@@ -564,7 +555,6 @@ pub fn qs_instrument_fx_option(
 
 #[xll_bindgen(
     name = "QS.INSTRUMENT.EQUITY.OPTION",
-    volatile,
     category = "QuantSupport - Instruments",
     help = "Creates a native EquityEuropeanOption contract; use QS.TRADE.CREATE for a position"
 )]
@@ -612,7 +602,6 @@ pub fn qs_instrument_equity_option(
 
 #[xll_bindgen(
     name = "QS.INSTRUMENT.CDS",
-    volatile,
     category = "QuantSupport - Instruments",
     help = "Creates a native CreditDefaultSwap contract; use QS.TRADE.CREATE for a position"
 )]
@@ -669,7 +658,6 @@ pub fn qs_instrument_cds(
 
 #[xll_bindgen(
     name = "QS.INSTRUMENT.CAP.FLOOR",
-    volatile,
     category = "QuantSupport - Instruments",
     help = "Creates a native CapFloor contract; use QS.TRADE.CREATE for a position"
 )]
@@ -734,7 +722,6 @@ pub fn qs_instrument_cap_floor(
 
 #[xll_bindgen(
     name = "QS.INSTRUMENT.CAPLET.FLOORLET",
-    volatile,
     category = "QuantSupport - Instruments",
     help = "Creates a native CapletFloorlet contract; use QS.TRADE.CREATE for a position"
 )]
@@ -787,7 +774,6 @@ pub fn qs_instrument_caplet_floorlet(
 
 #[xll_bindgen(
     name = "QS.INSTRUMENT.RATE.FUTURE",
-    volatile,
     category = "QuantSupport - Instruments",
     help = "Creates a native RateFutures contract; use QS.TRADE.CREATE for a position"
 )]
@@ -834,7 +820,6 @@ pub fn qs_instrument_rate_future(
 
 #[xll_bindgen(
     name = "QS.INSTRUMENT.EQUITY.FORWARD",
-    volatile,
     category = "QuantSupport - Instruments",
     help = "Creates a native EquityForward contract; use QS.TRADE.CREATE for a position"
 )]
@@ -873,7 +858,6 @@ pub fn qs_instrument_equity_forward(
 
 #[xll_bindgen(
     name = "QS.INSTRUMENT.EUROPEAN.SWAPTION",
-    volatile,
     category = "QuantSupport - Instruments",
     help = "Creates a native EuropeanSwaption contract; use QS.TRADE.CREATE for a position"
 )]

@@ -72,13 +72,13 @@ impl TryFrom<String> for DayCounter {
     type Error = QSError;
 
     fn try_from(s: String) -> Result<Self> {
-        match s.as_str() {
-            "Actual360" => Ok(Self::Actual360),
-            "Actual365" => Ok(Self::Actual365),
-            "Thirty360" => Ok(Self::Thirty360), // to match curveengine
-            "Thirty360US" => Ok(Self::Thirty360US),
-            "ActualActual" => Ok(Self::ActualActual),
-            "Business252" => Ok(Self::Business252),
+        match s.to_ascii_lowercase().as_str() {
+            "actual360" => Ok(Self::Actual360),
+            "actual365" => Ok(Self::Actual365),
+            "thirty360" => Ok(Self::Thirty360), // to match curveengine
+            "thirty360us" => Ok(Self::Thirty360US),
+            "actualactual" => Ok(Self::ActualActual),
+            "business252" => Ok(Self::Business252),
             _ => Err(QSError::InvalidValueErr(format!(
                 "Invalid day counter: {s}"
             ))),

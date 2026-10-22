@@ -10,8 +10,6 @@ mod runtime;
 mod functions;
 
 #[cfg(windows)]
-use runtime::registry::with_registry_mut;
-#[cfg(windows)]
 use xll_rs::{
     convert::return_xl_error,
     returning::XlReturn,
@@ -23,7 +21,17 @@ use xll_rs::{
 #[no_mangle]
 pub extern "system" fn xlAutoOpen() -> i32 {
     match runtime::registration::windows::register_functions() {
-        Ok(()) => 1,
+        Ok(()) => match runtime::lifecycle::windows::start() {
+            Ok(()) => {
+                runtime::browser::windows::start();
+                1
+            }
+            Err(error) => {
+                runtime::registration::windows::unregister_functions();
+                runtime::registration::windows::show_error(&error);
+                0
+            }
+        },
         Err(error) => {
             runtime::registration::windows::show_error(&error);
             0
@@ -46,8 +54,9 @@ fn worksheet_exports() -> Vec<xll_rs::registry::XllExport> {
 #[cfg(windows)]
 #[no_mangle]
 pub extern "system" fn xlAutoClose() -> i32 {
+    runtime::browser::windows::stop();
     runtime::registration::windows::unregister_functions();
-    with_registry_mut(|registry| registry.clear());
+    runtime::lifecycle::windows::stop();
     1
 }
 

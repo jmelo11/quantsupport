@@ -1,0 +1,20 @@
+<customUI xmlns="http://schemas.microsoft.com/office/2009/07/customui">
+  <ribbon>
+    <tabs>
+      <tab id="qsTab" label="QuantSupport">
+        <group id="qsObjects" label="Workbook objects">
+          <button id="qsContexts" label="Pricing Contexts" size="large" imageMso="TableProperties" onAction="ShowContexts" screentip="Browse pricing contexts and their market dates" />
+          <button id="qsInstruments" label="Instruments &amp; Trades" size="large" imageMso="TableInsert" onAction="ShowInstruments" />
+          <button id="qsCurves" label="Curves" size="large" imageMso="TableProperties" onAction="ShowCurves" screentip="Explore curve tables, calibration instruments and their parameters" />
+          <button id="qsAll" label="All Objects" imageMso="FindDialog" onAction="ShowAll" />
+          <button id="qsInspect" label="Inspect Selection" imageMso="ZoomToSelection" onAction="InspectSelection" />
+          <button id="qsRefresh" label="Refresh Browser" imageMso="RefreshAll" onAction="RefreshBrowser" />
+        </group>
+        <group id="qsHelp" label="Setup &amp; help">
+          <button id="qsSetup" label="Setup Guide" size="large" imageMso="FileNew" onAction="OpenSetup" screentip="Open the workbook setup guide and formula examples" />
+          <button id="qsReference" label="Function Reference" imageMso="Help" onAction="OpenReference" />
+        </group>
+      </tab>
+    </tabs>
+  </ribbon>
+</customUI>

@@ -1,4 +1,5 @@
 use crate::ad::{dual::DualFwd, scalar::Scalar};
+use crate::core::cashflowaggregation::CouponDetails;
 use crate::core::collateral::Discountable;
 use crate::{
     core::evaluationresults::{CashflowsTable, SensitivityMap},
@@ -178,6 +179,19 @@ where
                             None,
                             leg_index,
                         );
+                        cashflows_table.set_last_coupon_details(CouponDetails {
+                            accrual_start,
+                            accrual_end,
+                            market_index: None,
+                            forward_index: None,
+                            notional: coupon.notional() * side,
+                            rate: Some(coupon.rate().rate().value()),
+                            spread: None,
+                            day_counter: coupon.rate().day_counter(),
+                            rate_definition: Some(coupon.rate().rate_definition()),
+                            overnight_conventions: None,
+                            payoff: None,
+                        });
                     }
                     CashflowType::FloatingRateCoupon(coupon) => {
                         let amount = coupon.amount()?.value() * side;
@@ -200,6 +214,19 @@ where
                             None,
                             leg_index,
                         );
+                        cashflows_table.set_last_coupon_details(CouponDetails {
+                            accrual_start,
+                            accrual_end,
+                            market_index: Some(coupon.market_index().clone()),
+                            forward_index: leg.forward_index().cloned(),
+                            notional: coupon.notional() * side,
+                            rate: None,
+                            spread: Some(coupon.spread().value()),
+                            day_counter: coupon.day_counter(),
+                            rate_definition: None,
+                            overnight_conventions: coupon.overnight_conventions().cloned(),
+                            payoff: None,
+                        });
                     }
                     CashflowType::OptionEmbeddedCoupon(coupon) => {
                         let amount = coupon.amount()?.value() * side;
@@ -221,6 +248,19 @@ where
                             None,
                             leg_index,
                         );
+                        cashflows_table.set_last_coupon_details(CouponDetails {
+                            accrual_start,
+                            accrual_end,
+                            market_index: Some(coupon.market_index().clone()),
+                            forward_index: leg.forward_index().cloned(),
+                            notional: coupon.notional() * side,
+                            rate: None,
+                            spread: Some(coupon.spread().value()),
+                            day_counter,
+                            rate_definition: None,
+                            overnight_conventions: None,
+                            payoff: Some(coupon.payoff_ops().clone()),
+                        });
                     }
                     CashflowType::Redemption(cashflow) => {
                         let amount = cashflow.amount()?.value() * side;

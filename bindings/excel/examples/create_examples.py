@@ -10,10 +10,13 @@ import argparse
 from datetime import datetime
 import math
 from pathlib import Path
+import shutil
 import sys
 from tempfile import TemporaryDirectory
+from uuid import uuid4
 
 from workbook_layout import Study, context, formula, text
+from portfolio_example import create_portfolio
 
 
 SOFR_QUOTES = [
@@ -268,9 +271,9 @@ def create_loans(path):
         ], "Shared inputs apply to all cases. Blue cells are editable; each case's specific terms are on the next tab.")
         requests(s, "1 Inputs", 20)
         s.headers("1 Inputs", 27, ["Policy currency", "Ordinary discount index", ""])
-        for row, index in [(28, "ESTR"), (29, "FUNDING")]:
-            s.write("1 Inputs", f"A{row}", "EUR")
-            s.write("1 Inputs", f"B{row}", index, "input")
+        for row, index, suffix in [(28, "ESTR", "RiskFree"), (29, "FUNDING", "Funding")]:
+            s.write("1 Inputs", f"A{row}", "EUR", "body", suffix + "Currency")
+            s.write("1 Inputs", f"B{row}", index, "input", suffix + "Index")
         s.range("RiskFreeMapping", "1 Inputs", 28, 0, 28, 1)
         s.range("FundingMapping", "1 Inputs", 29, 0, 29, 1)
         s.sheet("2 Cases", "Case inputs · one block per agreement", "Each block keeps its contractual settings and coupon schedule together. Discount-curve choice selects a pricer policy; it is never passed to the instrument.", (26, 20, 24, 18, 18, 22), "#337AB7")
@@ -321,7 +324,7 @@ def create_loans(path):
         s.headers(build, 6, ["Step", "Object reference", "Purpose"])
         row = s.step(build, 7, "1. Initialize pricing context", context("Loan.Context", s.name("Quotes"), s.name("Curves"), '"EUR"', '"ESTR"', s.name("Credit")), "Context", "Constructs the projection, discount, funding and credit curves.")
         for number, suffix, label in [(2, "RiskFree", "ESTR"), (4, "Funding", "FUNDING")]:
-            row = step(s, build, row, f"{number}. {label} discount policy", "QS.DISCOUNT.POLICY.FIXED.INCOME", [text(f"Loan.{suffix}Policy"), s.name(suffix + "Mapping")], suffix + "Policy", "Maps EUR to an ordinary market curve.")
+            row = step(s, build, row, f"{number}. {label} discount policy", "QS.DISCOUNT.POLICY.FIXED.INCOME", [text(f"Loan.{suffix}Policy"), s.name(suffix + "Currency"), s.name(suffix + "Index")], suffix + "Policy", "Maps EUR to an ordinary market curve.")
             row = step(s, build, row, f"{number+1}. {label} loan pricer", "QS.PRICER.CREATE", [text(f"Loan.{suffix}Pricer"), '"LoanPricer"', s.name(suffix + "Policy")], suffix + "Pricer", "Same native LoanPricer, with an explicit policy.")
         row = step(s, build, row, "6. Get ESTR for layout examples", "QS.CURVE.GET", [s.name("Context"), '"ESTR"'], "EstrCurve", "A small five-node table for the layout lesson.")
         for target in range(3):
@@ -398,8 +401,8 @@ def create_bonds(path):
             s.write("1 Inputs", f"C{row}", value, "input_rate" if anchor == "ZSpread" else "input_number", f"C{index:02}_AnchorValue")
         requests(s, "1 Inputs", 22, ("Value", "ModifiedDuration", "ZSpread", "Cashflows", "Sensitivities"))
         s.headers("1 Inputs", 30, ["Policy currency", "Ordinary discount index", ""])
-        s.write("1 Inputs", "A31", "USD")
-        s.write("1 Inputs", "B31", "SOFR", "input")
+        s.write("1 Inputs", "A31", "USD", "body", "DiscountCurrency")
+        s.write("1 Inputs", "B31", "SOFR", "input", "DiscountIndex")
         s.range("DiscountMapping", "1 Inputs", 31, 0, 31, 1)
         simple_market(s, "2 Market", "USD", "SOFR")
         build = "3 Build"
@@ -407,7 +410,7 @@ def create_bonds(path):
         s.headers(build, 6, ["Step", "Object reference", "Purpose"])
         row = s.step(build, 7, "1. Initialize market context", context("Bond.Context", s.name("Quotes"), s.name("Curves"), '"USD"', '"SOFR"'), "Context", "Constructs the visible SOFR zero curve.")
         row = step(s, build, row, "2. Define the bond instrument", "QS.INSTRUMENT.FIXED.BOND", [text("Bond.Instrument"), s.name("Start"), s.name("Maturity"), '"USD"', "", s.name("Notional"), s.name("Coupon"), '"Actual360"', '"Compounded"', '"Semiannual"', '"Semiannual"'], "Instrument", "No position side or pricing anchor is stored in this contract.")
-        row = step(s, build, row, "3. Choose discount policy", "QS.DISCOUNT.POLICY.FIXED.INCOME", [text("Bond.Policy"), s.name("DiscountMapping")], "Policy", "Maps USD to the ordinary SOFR curve.")
+        row = step(s, build, row, "3. Choose discount policy", "QS.DISCOUNT.POLICY.FIXED.INCOME", [text("Bond.Policy"), s.name("DiscountCurrency"), s.name("DiscountIndex")], "Policy", "Maps USD to the ordinary SOFR curve.")
         row = step(s, build, row, "4. Create native bond pricer", "QS.PRICER.CREATE", [text("Bond.Pricer"), '"BondPricer"', s.name("Policy")], "Pricer", "The same configured pricer evaluates all three positions.")
         result_keys, build_rows = [], []
         for index, (label, _, _) in enumerate(anchors, 1):
@@ -574,6 +577,11 @@ def create_interpolation(path):
 
 def validation_names(example):
     """Stable workbook names keep live checks independent of the visual layout."""
+    if example == "portfolio_aggregation_example":
+        return (["Portfolio_" + key for key in ("Context", "Policy", "Pricer", "Book", "Result")]
+                + [f"Portfolio_C{index:02}_{key}" for index in range(1, 7) for key in ("Instrument", "Trade", "Result")],
+                ["Portfolio_" + key for key in ("PV", "SumPV", "PVDifference", "DepositRate", "SofrSpread")]
+                + [f"Portfolio_C{index:02}_PV" for index in range(1, 7)])
     if example == "swap_pricing_example":
         return (["Swap_" + key for key in ("Context", "EstrContext", "SofrCurve", "EstrCurve", "Instrument", "Trade", "Policy", "Pricer", "Result", "Fair0", "Fair1")],
                 ["Swap_" + key for key in ("PV", "FairFixed", "FairFloat", "SofrDiscount", "EstrDiscount", "SofrForward", "EstrForward")])
@@ -610,7 +618,8 @@ def validate_in_excel(path, xll_path):
         excel.DisplayAlerts = False
         if not excel.RegisterXLL(str(xll_path)):
             raise RuntimeError(f"Excel could not load {xll_path}")
-        workbook = excel.Workbooks.Open(str(path.resolve()), UpdateLinks=0, ReadOnly=True)
+        # xlNormalLoad (0): do not attempt repair or data recovery.
+        workbook = excel.Workbooks.Open(str(path.resolve()), UpdateLinks=0, ReadOnly=True, CorruptLoad=0)
         workbook.ForceFullCalculation = True
         excel.CalculateFullRebuild()
 
@@ -675,6 +684,31 @@ def validate_in_excel(path, xll_path):
                 for first, second in (("A17", "A8"), ("A37", "B27")):
                     if layouts.Range(first).Value2 != layouts.Range(second).Value2:
                         raise RuntimeError("Header-free and transposed curve values do not align")
+            if path.stem == "portfolio_aggregation_example":
+                if abs(value("Portfolio_PVDifference")) > 1e-8:
+                    raise RuntimeError("Portfolio PV does not reconcile to individual positions")
+                coupon_sheet = workbook.Worksheets("5 Coupons")
+                if "%" in coupon_sheet.Range("I8").NumberFormat or "%" not in coupon_sheet.Range("J8").NumberFormat:
+                    raise RuntimeError("Coupon notionals and rates have incorrect display units")
+                rows = coupon_sheet.Range("A7:R200").Value2
+                columns = {label: index for index, label in enumerate(rows[0])}
+                coupons = [row for row in rows[1:] if row[0] is not None]
+                deposits = [row for row in coupons if row[columns["Type"]] == "FixedRateCoupon"
+                            and row[columns["Accrual end"]] == value("Portfolio_DepositMaturity")]
+                if len(deposits) != 1 or not math.isclose(deposits[0][columns["Coupon rate"]], value("Portfolio_DepositRate"), abs_tol=1e-12):
+                    raise RuntimeError("Deposit coupons did not combine at their weighted rate")
+                floating = [row for row in coupons if row[columns["Type"]] == "FloatingRateCoupon"]
+                if {row[columns["Fixing index"]] for row in floating} != {"SOFR", "TermSOFR3m"}:
+                    raise RuntimeError("Portfolio cashflows lost their distinct fixing indices")
+                paid = [row for row in floating if row[columns["Fixing index"]] == "SOFR" and row[columns["Signed notional"]] < 0]
+                if not paid or any(not math.isclose(row[columns["Spread"]], value("Portfolio_SofrSpread"), abs_tol=1e-12) for row in paid):
+                    raise RuntimeError("SOFR coupons did not combine at their weighted spread")
+                summary = workbook.Worksheets("6 Cashflows").Range("A7:F100").Value2
+                if summary[0] != ("Payment date", "Currency", "Interest", "Capital", "Other", "Total"):
+                    raise RuntimeError("Portfolio cashflow summary has unexpected columns")
+                payments = [row for row in summary[1:] if row[0] is not None]
+                if not payments or any(not math.isclose(sum(row[2:5]), row[5], abs_tol=1e-8) for row in payments):
+                    raise RuntimeError("Portfolio interest and capital do not reconcile to payments")
         excel.Calculate()
         if [value(name) for name in handle_names] != before:
             raise RuntimeError("Unchanged recalculation changed object handles")
@@ -686,9 +720,26 @@ def validate_in_excel(path, xll_path):
         excel.Quit()
 
 
+def publish_workbook(source, destination):
+    """Publish atomically with the destination folder's inherited permissions.
+
+    Windows temporary directories can grant access only to their creator.
+    Moving a file out of one preserves that private ACL. Copy the content to
+    a normal sibling file first so the published workbook inherits its folder's
+    access rules instead of the temporary directory's rules.
+    """
+    destination = Path(destination)
+    staged = destination.with_name(f".{destination.name}.{uuid4().hex}.tmp")
+    try:
+        shutil.copyfile(source, staged)
+        staged.replace(destination)
+    finally:
+        staged.unlink(missing_ok=True)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--example", choices=("all", "swap", "historical", "loans", "bonds", "interpolation"), default="all")
+    parser.add_argument("--example", choices=("all", "swap", "historical", "loans", "bonds", "interpolation", "portfolio"), default="all")
     parser.add_argument("--output-dir", type=Path, default=Path(__file__).resolve().parent)
     parser.add_argument("--xll-path", type=Path, help="Validate with native Windows Excel; requires pywin32")
     args = parser.parse_args()
@@ -707,11 +758,12 @@ def main():
             generate(path)
             if args.xll_path:
                 validate_in_excel(path, args.xll_path)
-            path.replace(args.output_dir / filename)
+            publish_workbook(path, args.output_dir / filename)
         print(f"Created {args.output_dir / filename}")
 
 
 EXAMPLES = [
+    ("portfolio", "portfolio_aggregation_example.xlsx", create_portfolio),
     ("swap", "swap_pricing_example.xlsx", create_swap),
     ("historical", "historical_pricing_example.xlsx", create_historical),
     ("loans", "loan_pricing_example.xlsx", create_loans),

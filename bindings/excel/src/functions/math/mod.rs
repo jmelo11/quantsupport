@@ -1,8 +1,8 @@
 use quantsupport::math::interpolation::{
     extrapolation::ExtrapolationPolicy, interpolator::Interpolator,
 };
+use quantsupport_xll_macros::xll_bindgen;
 use xll_rs::types::{XLLError, XllError, XLOPER12, XLTYPE_MISSING, XLTYPE_NIL, XLTYPE_NUM};
-use xllgen::xll_bindgen;
 
 use crate::{
     functions::helpers::{bool_value, numeric_values, parse_interpolator},
@@ -129,6 +129,7 @@ pub fn qs_interpolate_bilinear(
     category = "QuantSupport - Math",
     help = "Interpolates aligned x/y/z/value ranges over rectangular or sparse slices"
 )]
+#[allow(clippy::too_many_arguments)]
 pub fn qs_interpolate_trilinear(
     point_x: f64,
     point_y: f64,

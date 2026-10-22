@@ -13,6 +13,7 @@ use crate::{currencies::currency::Currency, time::date::Date};
 /// any FX conversion, and discount factors.
 #[derive(Clone, Debug)]
 pub struct CashflowsTable {
+    coupon_details: Vec<Option<super::cashflowaggregation::CouponDetails>>,
     payment_dates: Vec<Date>,
     cashflow_types: Vec<String>,
     amount: Vec<f64>,
@@ -29,6 +30,7 @@ impl CashflowsTable {
     #[must_use]
     pub const fn new() -> Self {
         Self {
+            coupon_details: Vec::new(),
             payment_dates: Vec::new(),
             cashflow_types: Vec::new(),
             amount: Vec::new(),
@@ -45,6 +47,19 @@ impl CashflowsTable {
     #[must_use]
     pub fn payment_dates(&self) -> &[Date] {
         &self.payment_dates
+    }
+
+    /// Returns contractual coupon metadata, including signed notional and fixing index.
+    #[must_use]
+    pub fn coupon_details(&self) -> &[Option<super::cashflowaggregation::CouponDetails>] {
+        &self.coupon_details
+    }
+
+    /// Attaches contractual metadata to the most recently added cashflow.
+    pub fn set_last_coupon_details(&mut self, details: super::cashflowaggregation::CouponDetails) {
+        if let Some(last) = self.coupon_details.last_mut() {
+            *last = Some(details);
+        }
     }
 
     /// Returns the cashflow types.
@@ -112,6 +127,7 @@ impl CashflowsTable {
         caplet_strike: Option<f64>,
         leg_index: usize,
     ) {
+        self.coupon_details.push(None);
         self.payment_dates.push(payment_date);
         self.cashflow_types.push(cashflow_type);
         self.amount.push(amount);

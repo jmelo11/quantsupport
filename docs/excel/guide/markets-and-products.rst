@@ -107,8 +107,9 @@ configurations must exist, and cycles are errors. Creating a funding curve
 does not automatically make every pricer use it; selection is a discount-policy
 choice. Map the funding index in a native discount policy supplied to the pricer;
 reuse the same instrument and trade when comparing policies. For fixed income,
-enter USD/FUNDING in a two-column range and create
-``QS.DISCOUNT.POLICY.FIXED.INCOME``. Derivatives use the native CSA policy when
+call ``QS.DISCOUNT.POLICY.FIXED.INCOME("funding.policy","USD","FUNDING")``.
+For multiple currencies, use ``QS.DISCOUNT.POLICY.FIXED.INCOME.FROM.MAPPINGS``
+with a two-column Currency/Index range. Derivatives use the native CSA policy when
 appropriate. Funding has no special instrument-level storage or construction path.
 
 ``QS.CURVE.FLAT`` instead creates a runtime ``DiscountCurveElement``. It can be
@@ -129,7 +130,7 @@ Cashflows, Sensitivities in ``AC23:AC27``:
 
    H21 =QS.INSTRUMENT.FIXED.BOND("guide.usd.bond",$B$1,"2031-02-24","USD",,1000000,0.04,"Actual360","Simple","Annual","Semiannual")
    H22 =QS.TRADE.CREATE("guide.usd.bond.trade",H21,$B$1,"Receive",,,"CleanPrice",99.25)
-   H23 =QS.DISCOUNT.POLICY.FIXED.INCOME("guide.bond.policy",AC20:AD20)
+   H23 =QS.DISCOUNT.POLICY.FIXED.INCOME("guide.bond.policy",AC20,AD20)
    H24 =QS.PRICER.CREATE("guide.bond.pricer","BondPricer",H23)
    H25 =QS.EVALUATE("guide.bond.results",H24,H22,H5,AC23:AC27)
    =QS.RESULT.VALUE(H25)

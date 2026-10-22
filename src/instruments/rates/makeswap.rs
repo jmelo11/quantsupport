@@ -65,6 +65,7 @@ pub struct MakeSwap<T: Scalar> {
     floating_leg_frequency: Option<Frequency>,
     calendar: Option<Calendar>,
     business_day_convention: Option<BusinessDayConvention>,
+    termination_date_convention: Option<BusinessDayConvention>,
     date_generation_rule: Option<DateGenerationRule>,
     end_of_month: Option<bool>,
     _marker: PhantomData<T>,
@@ -173,6 +174,16 @@ where
         self
     }
 
+    /// Sets the business day convention for the final date of both legs.
+    #[must_use]
+    pub const fn with_termination_date_convention(
+        mut self,
+        convention: BusinessDayConvention,
+    ) -> Self {
+        self.termination_date_convention = Some(convention);
+        self
+    }
+
     /// Sets the date generation rule.
     #[must_use]
     pub const fn with_date_generation_rule(mut self, rule: DateGenerationRule) -> Self {
@@ -239,6 +250,7 @@ where
             .bullet()
             .with_calendar(self.calendar.clone())
             .with_business_day_convention(self.business_day_convention)
+            .with_termination_date_convention(self.termination_date_convention)
             .with_date_generation_rule(self.date_generation_rule)
             .with_end_of_month(self.end_of_month)
             .build()?;
@@ -263,6 +275,7 @@ where
             .bullet()
             .with_calendar(self.calendar)
             .with_business_day_convention(self.business_day_convention)
+            .with_termination_date_convention(self.termination_date_convention)
             .with_date_generation_rule(self.date_generation_rule)
             .with_end_of_month(self.end_of_month)
             .build()?;

@@ -33,6 +33,8 @@ jobs:
         python-version: '3.12'
     - name: Test release automation
       run: python .github/scripts/release.py test
+    - name: Test Excel download staging
+      run: python -m unittest discover -s .github/scripts -p 'test_*.py' -v
     - name: Build
       run: cargo +stable build -p quantsupport --verbose
     - name: Run Clippy

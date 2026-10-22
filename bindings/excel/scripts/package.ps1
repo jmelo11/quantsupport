@@ -12,7 +12,7 @@ $dependency = Get-Content -LiteralPath (Join-Path $thirdParty "intellisense.json
 $companionName = "ExcelDna.IntelliSense64.xll"
 $archiveName = "quantsupport-excel-windows-x64.zip"
 
-foreach ($name in @("quantsupport.xll", "quantsupport.intellisense.xml")) {
+foreach ($name in @("quantsupport.xll", "quantsupport.intellisense.xml", "QuantSupport.Ribbon64.xll")) {
     $file = Join-Path $Dist $name
     if (-not (Test-Path -LiteralPath $file -PathType Leaf) -or (Get-Item -LiteralPath $file).Length -eq 0) {
         throw "Missing build output: $file"
@@ -41,7 +41,7 @@ try {
     }
 
     $files = @($companion)
-    foreach ($name in @("quantsupport.xll", "quantsupport.intellisense.xml")) {
+    foreach ($name in @("quantsupport.xll", "quantsupport.intellisense.xml", "QuantSupport.Ribbon64.xll")) {
         $target = Join-Path $temporary $name
         Copy-Item -LiteralPath (Join-Path $Dist $name) -Destination $target
         $files += $target
@@ -64,4 +64,4 @@ try {
 finally {
     Remove-Item -LiteralPath $temporary -Recurse -Force
 }
-Write-Host "Packaged Excel add-in and IntelliSense: $(Join-Path $Dist $archiveName)"
+Write-Host "Packaged Excel add-in, ribbon and IntelliSense: $(Join-Path $Dist $archiveName)"

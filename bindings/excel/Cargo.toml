@@ -15,6 +15,10 @@ path = "tools/function_catalog.rs"
 name = "validate_example_market"
 path = "tools/validate_example_market.rs"
 
+[[example]]
+name = "benchmark_history"
+path = "tools/benchmark_history.rs"
+
 [lib]
 name = "quantsupport_xll"
 crate-type = ["cdylib", "rlib"]
@@ -27,6 +31,8 @@ serde_json = "1.0"
 [target.'cfg(windows)'.dependencies]
 xll-rs = "0.1.1"
 xllgen = "0.1.2"
+quantsupport-xll-macros = { path = "macros" }
+windows = { version = "0.61", features = ["Win32_System_Com", "Win32_System_Ole", "Win32_System_Variant", "Win32_System_Com_StructuredStorage", "Win32_UI_Accessibility", "Win32_UI_WindowsAndMessaging", "Win32_System_Threading", "Win32_System_LibraryLoader", "Win32_Graphics_Gdi"] }
 
 [dev-dependencies]
 proc-macro2 = "1"

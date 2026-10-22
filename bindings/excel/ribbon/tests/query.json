@@ -1,0 +1,10 @@
+{
+  "workbook": "Café.xlsx",
+  "handle": "QSObject:SwapTrade:w1~swap:1",
+  "view": "evaluate",
+  "curve": "",
+  "context": "QSObject:PricingContext:w1~market:2",
+  "pricer": "QSObject:Pricer:w1~pricer:3",
+  "request": "FairRate",
+  "target": 1
+}

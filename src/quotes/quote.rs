@@ -39,7 +39,14 @@ use crate::{
         },
     },
     rates::{compounding::Compounding, interestrate::RateDefinition},
-    time::{date::Date, daycounter::DayCounter, enums::Frequency, imm::IMM, period::Period},
+    time::{
+        calendars::traits::IsCalendar,
+        date::Date,
+        daycounter::DayCounter,
+        enums::{BusinessDayConvention, Frequency, TimeUnit},
+        imm::IMM,
+        period::Period,
+    },
     utils::errors::{QSError, Result},
     volatility::volatilityindexing::{Strike, VolatilityType},
 };
@@ -51,8 +58,8 @@ fn parse_fx_pair(pair: &str) -> Result<(Currency, Currency)> {
             "Invalid FX currency pair: {pair}"
         )));
     }
-    let base: Currency = pair[..3].parse()?;
-    let quote_ccy: Currency = pair[3..6].parse()?;
+    let base: Currency = pair[..3].to_ascii_uppercase().parse()?;
+    let quote_ccy: Currency = pair[3..6].to_ascii_uppercase().parse()?;
     Ok((base, quote_ccy))
 }
 
@@ -220,11 +227,11 @@ impl std::str::FromStr for OptionStrategy {
     type Err = QSError;
 
     fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
-        match s {
-            "Straddle" => Ok(Self::Straddle),
-            "Strangle" => Ok(Self::Strangle),
-            "RiskReversal" => Ok(Self::RiskReversal),
-            "Butterfly" => Ok(Self::Butterfly),
+        match s.to_ascii_lowercase().as_str() {
+            "straddle" => Ok(Self::Straddle),
+            "strangle" => Ok(Self::Strangle),
+            "riskreversal" => Ok(Self::RiskReversal),
+            "butterfly" => Ok(Self::Butterfly),
             _ => Err(QSError::InvalidValueErr(format!(
                 "Unknown option strategy: {s}"
             ))),
@@ -245,9 +252,9 @@ impl std::str::FromStr for BondCalibrationStrategy {
     type Err = QSError;
 
     fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
-        match s {
-            "AnchorPrice" => Ok(Self::AnchorPrice),
-            "AnchorYield" => Ok(Self::AnchorYield),
+        match s.to_ascii_lowercase().as_str() {
+            "anchorprice" => Ok(Self::AnchorPrice),
+            "anchoryield" => Ok(Self::AnchorYield),
             _ => Err(QSError::InvalidValueErr(format!(
                 "Unknown fixed-rate bond calibration strategy: {s}"
             ))),
@@ -268,9 +275,9 @@ impl std::str::FromStr for FxForwardCalibrationStrategy {
     type Err = QSError;
 
     fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
-        match s {
-            "AnchorForwardPoints" => Ok(Self::AnchorForwardPoints),
-            "AnchorOutrightPrice" => Ok(Self::AnchorOutrightPrice),
+        match s.to_ascii_lowercase().as_str() {
+            "anchorforwardpoints" => Ok(Self::AnchorForwardPoints),
+            "anchoroutrightprice" => Ok(Self::AnchorOutrightPrice),
             _ => Err(QSError::InvalidValueErr(format!(
                 "Unknown FX forward calibration strategy: {s}"
             ))),
@@ -326,6 +333,7 @@ impl std::str::FromStr for FxForwardCalibrationStrategy {
 /// | `index_tenor()` | Underlying accrual period of a caplet/floorlet. |
 /// | `contract_code()` | IMM contract code of a future or convexity-adjustment quote. |
 /// | `pay_leg_frequency()`, `receive_leg_frequency()` | Payment frequencies supplied in the identifier. |
+/// | `settlement_days()` | Regular swap start lag in business days; defaults to two when built. |
 /// | `coupon_rate()`, `strike()`, `vol_type()` | Bond coupon, option strike and volatility quoting convention, where applicable. |
 /// | `bond_calibration_strategy()` | Whether the bond quote supplies a yield or a price. |
 /// | `fx_forward_calibration_strategy()` | Whether the FX forward quote supplies forward points or an outright rate. |
@@ -345,7 +353,7 @@ impl std::str::FromStr for FxForwardCalibrationStrategy {
 /// | `DiscountFactor_CCY_Index_Pillar` | A discount factor at a tenor or ISO date. |
 /// | `ZeroRate_CCY_Index_Pillar[_Compounding[_Frequency]]` | An annual decimal zero rate at a tenor or ISO date; defaults to Continuous and Annual. |
 /// | `OIS_CCY_Index_Tenor[_OisFields]` | A fixed rate against an overnight index; optional conventions are described under [OIS parameters](#ois-parameters). |
-/// | `Swap_CCY_Index_Tenor[_FixedFreq[_FloatFreq]]` | A fixed rate against a floating index, with optional fixed and floating payment frequencies. |
+/// | `Swap_CCY_Index_Tenor[_FixedFreq[_FloatFreq[_SettlementDays]]]` | A fixed rate against a floating index, with optional payment frequencies and start lag in business days (default two). |
 /// | `FixedRateBond_CCY_Index_Tenor[_PayFreq]_CouponRate[_BondStrategy]` | A bond's currency, curve index, term, coupon and optional payment frequency and calibration strategy. |
 /// | `Future_CCY_Index_IMM` | An interest-rate futures contract identified by its currency, index and IMM code. |
 /// | `ConvexityAdjustment_CCY_Index_IMM` | An adjustment quote associated with the specified futures contract. |
@@ -353,6 +361,11 @@ impl std::str::FromStr for FxForwardCalibrationStrategy {
 ///
 /// Deposit and swap quote values are rates, while CDS quote values are par spreads.
 /// Rates, coupons and spreads use decimals: `0.04` means 4%.
+/// Regular swaps settle on the index calendar and use Modified Following for
+/// both leg schedules. The tenor runs from settlement. All Euribor tenors use
+/// TARGET. For example, `Swap_EUR_EURIBOR6m_5Y_Annual_Semiannual_0` explicitly
+/// starts on the reference date (rolled Following if necessary). Settlement
+/// lag delays the start of accrual; it is separate from coupon payment lag.
 /// Direct curve quotes are referenced by `CurveConfiguration.quotes`, using its
 /// day counter, interpolation and extrapolation settings. Each direct curve
 /// uses one quote family and consistent rate conventions. Its sensitivity
@@ -517,6 +530,9 @@ pub struct QuoteDetails {
     /// Receive (or floating / foreign) leg frequency.
     #[serde(default)]
     receive_leg_frequency: Option<Frequency>,
+    /// Regular swap settlement lag, in business days.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    settlement_days: Option<i32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     compounding: Option<Compounding>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -551,6 +567,7 @@ impl QuoteDetails {
             index_tenor: None,
             pay_leg_frequency: None,
             receive_leg_frequency: None,
+            settlement_days: None,
             compounding: None,
             frequency: None,
         }
@@ -710,6 +727,13 @@ impl QuoteDetails {
         self.receive_leg_frequency
     }
 
+    /// Returns the regular swap start lag in business days, if specified.
+    /// An omitted value defaults to two when constructing the swap.
+    #[must_use]
+    pub const fn settlement_days(&self) -> Option<i32> {
+        self.settlement_days
+    }
+
     // -----------------------------------------------------------------------
     // Builder setters
     // -----------------------------------------------------------------------
@@ -855,6 +879,14 @@ impl QuoteDetails {
         self
     }
 
+    /// Sets the regular swap start lag in business days.
+    /// Negative values are rejected when constructing the swap.
+    #[must_use]
+    pub const fn with_settlement_days(mut self, days: i32) -> Self {
+        self.settlement_days = Some(days);
+        self
+    }
+
     /// Sets the primary market index.
     #[must_use]
     pub fn with_market_index(mut self, idx: MarketIndex) -> Self {
@@ -898,9 +930,9 @@ impl QuoteDetails {
                 "OIS identifier too short: {id}"
             )));
         }
-        let currency: Currency = parts[1].parse()?;
+        let currency: Currency = parts[1].to_ascii_uppercase().parse()?;
         let index = parts[2].parse::<MarketIndex>()?;
-        let tenor = Period::from_str(parts[3])?;
+        let tenor = Period::from_str(&parts[3].to_ascii_uppercase())?;
 
         let pay_freq = parts
             .get(4)
@@ -942,26 +974,27 @@ impl QuoteDetails {
             .ok_or_else(|| QSError::ValueNotSetErr("OIS index".into()))?;
         let separator = self
             .identifier
-            .strip_prefix("OIS")
+            .get(3..)
             .and_then(|suffix| suffix.chars().next())
             .unwrap_or('_');
         let parts: Vec<_> = self.identifier.split(separator).collect();
         OisConventions::for_index(index).with_quote_fields(parts.get(4..).unwrap_or_default())
     }
 
-    /// `Swap_CCY_Index_Tenor[_FixedFreq[_FloatingFreq]]`
+    /// `Swap_CCY_Index_Tenor[_FixedFreq[_FloatingFreq[_SettlementDays]]]`
     ///
     /// # Errors
-    /// Rejects missing required fields, invalid frequencies and excess fields.
+    /// Rejects missing fields, invalid frequencies, negative or invalid settlement
+    /// days, and excess fields. Empty optional fields retain their defaults.
     pub fn parse_swap(id: &str, parts: &[&str]) -> Result<Self> {
-        if !(4..=6).contains(&parts.len()) {
+        if !(4..=7).contains(&parts.len()) {
             return Err(QSError::InvalidValueErr(format!(
-                "Swap identifier requires four to six fields: {id}"
+                "Swap identifier requires four to seven fields: {id}"
             )));
         }
-        let currency: Currency = parts[1].parse()?;
+        let currency: Currency = parts[1].to_ascii_uppercase().parse()?;
         let index: MarketIndex = parts[2].parse()?;
-        let tenor = Period::from_str(parts[3])?;
+        let tenor = Period::from_str(&parts[3].to_ascii_uppercase())?;
         let fixed_frequency = parts
             .get(4)
             .filter(|value| !value.is_empty())
@@ -982,6 +1015,17 @@ impl QuoteDetails {
         if let Some(frequency) = floating_frequency {
             details = details.with_receive_leg_frequency(frequency);
         }
+        if let Some(value) = parts.get(6).filter(|value| !value.is_empty()) {
+            let days = value.parse::<i32>().map_err(|error| {
+                QSError::InvalidValueErr(format!("Invalid swap settlement days in {id}: {error}"))
+            })?;
+            if days < 0 {
+                return Err(QSError::InvalidValueErr(format!(
+                    "Swap settlement days must be nonnegative: {id}"
+                )));
+            }
+            details = details.with_settlement_days(days);
+        }
         Ok(details)
     }
 
@@ -998,9 +1042,9 @@ impl QuoteDetails {
                 "FixedRateDeposit identifier must contain exactly four fields: {id}"
             )));
         }
-        let currency: Currency = parts[1].parse()?;
+        let currency: Currency = parts[1].to_ascii_uppercase().parse()?;
         let index = parts[2].parse::<MarketIndex>()?;
-        let tenor = Period::from_str(parts[3])?;
+        let tenor = Period::from_str(&parts[3].to_ascii_uppercase())?;
         Ok(Self::new(id.to_string(), QuoteInstrument::FixedRateDeposit)
             .with_market_index(index)
             .with_currency(currency)
@@ -1025,6 +1069,7 @@ impl QuoteDetails {
             .ok_or_else(|| {
                 QSError::InvalidValueErr(format!("FixedRateBond identifier too short: {id}"))
             })?
+            .to_ascii_uppercase()
             .parse::<Currency>()?;
         let index = parts
             .get(2)
@@ -1032,9 +1077,14 @@ impl QuoteDetails {
                 QSError::InvalidValueErr(format!("FixedRateBond identifier too short: {id}"))
             })?
             .parse::<MarketIndex>()?;
-        let tenor = Period::from_str(parts.get(3).ok_or_else(|| {
-            QSError::InvalidValueErr(format!("FixedRateBond identifier too short: {id}"))
-        })?)?;
+        let tenor = Period::from_str(
+            &parts
+                .get(3)
+                .ok_or_else(|| {
+                    QSError::InvalidValueErr(format!("FixedRateBond identifier too short: {id}"))
+                })?
+                .to_ascii_uppercase(),
+        )?;
         let mut next = 4;
         let freq = parts.get(next).and_then(|s| s.parse::<Frequency>().ok());
         if freq.is_some() {
@@ -1083,8 +1133,8 @@ impl QuoteDetails {
             )));
         }
         let entity = parts[1].to_string();
-        let currency: Currency = parts[2].parse()?;
-        let tenor = Period::from_str(parts[3])?;
+        let currency: Currency = parts[2].to_ascii_uppercase().parse()?;
+        let tenor = Period::from_str(&parts[3].to_ascii_uppercase())?;
         Ok(Self::new(id.to_string(), QuoteInstrument::Cds)
             .with_market_index(MarketIndex::Credit(entity))
             .with_currency(currency)
@@ -1103,10 +1153,10 @@ impl QuoteDetails {
                 "BasisSwap identifier too short: {id}"
             )));
         }
-        let currency: Currency = parts[1].parse()?;
+        let currency: Currency = parts[1].to_ascii_uppercase().parse()?;
         let pay_index = parts[2].parse::<MarketIndex>()?;
         let recv_index = parts[3].parse::<MarketIndex>()?;
-        let tenor = Period::from_str(parts[4])?;
+        let tenor = Period::from_str(&parts[4].to_ascii_uppercase())?;
 
         let (pay_freq, recv_freq, _) = Self::try_parse_frequencies(parts, 5);
 
@@ -1136,10 +1186,10 @@ impl QuoteDetails {
                 "FixFloatCrossCurrencySwap identifier too short: {id}"
             )));
         }
-        let domestic_currency: Currency = parts[1].parse()?;
+        let domestic_currency: Currency = parts[1].to_ascii_uppercase().parse()?;
         let floating_index = parts[2].parse::<MarketIndex>()?;
-        let foreign_currency: Currency = parts[3].parse()?;
-        let tenor = Period::from_str(parts[4])?;
+        let foreign_currency: Currency = parts[3].to_ascii_uppercase().parse()?;
+        let tenor = Period::from_str(&parts[4].to_ascii_uppercase())?;
 
         let (dom_freq, for_freq, _) = Self::try_parse_frequencies(parts, 5);
 
@@ -1170,11 +1220,11 @@ impl QuoteDetails {
                 "FloatFloatCrossCurrencySwap identifier too short: {id}"
             )));
         }
-        let domestic_currency: Currency = parts[1].parse()?;
+        let domestic_currency: Currency = parts[1].to_ascii_uppercase().parse()?;
         let dom_index = parts[2].parse::<MarketIndex>()?;
         let for_index = parts[3].parse::<MarketIndex>()?;
-        let foreign_currency: Currency = parts[4].parse()?;
-        let tenor = Period::from_str(parts[5])?;
+        let foreign_currency: Currency = parts[4].to_ascii_uppercase().parse()?;
+        let tenor = Period::from_str(&parts[5].to_ascii_uppercase())?;
 
         let (dom_freq, for_freq, _) = Self::try_parse_frequencies(parts, 6);
 
@@ -1209,9 +1259,9 @@ impl QuoteDetails {
                 "CapFloor identifier too short: {id}"
             )));
         }
-        let currency: Currency = parts[1].parse()?;
+        let currency: Currency = parts[1].to_ascii_uppercase().parse()?;
         let index = parts[2].parse::<MarketIndex>()?;
-        let tenor = Period::from_str(parts[3])?;
+        let tenor = Period::from_str(&parts[3].to_ascii_uppercase())?;
 
         // Try optional frequency after tenor
         let (freq, next) = parts
@@ -1266,10 +1316,10 @@ impl QuoteDetails {
                 "CapletFloorlet identifier too short: {id}"
             )));
         }
-        let currency: Currency = parts[1].parse()?;
+        let currency: Currency = parts[1].to_ascii_uppercase().parse()?;
         let index = parts[2].parse::<MarketIndex>()?;
-        let index_tenor = Period::from_str(parts[3])?;
-        let option_expiry = Period::from_str(parts[4])?;
+        let index_tenor = Period::from_str(&parts[3].to_ascii_uppercase())?;
+        let option_expiry = Period::from_str(&parts[4].to_ascii_uppercase())?;
         let strike_base = parts[5].parse::<Strike>()?;
 
         let (strike, next_idx) = parts[6].parse::<f64>().map_or((strike_base, 6), |s| {
@@ -1311,9 +1361,9 @@ impl QuoteDetails {
                 "Future identifier too short: {id}"
             )));
         }
-        let currency: Currency = parts[1].parse()?;
+        let currency: Currency = parts[1].to_ascii_uppercase().parse()?;
         let index = parts[2].parse::<MarketIndex>()?;
-        let code = parts[3].to_string();
+        let code = parts[3].to_ascii_uppercase();
         Ok(Self::new(id.to_string(), QuoteInstrument::Future)
             .with_market_index(index)
             .with_currency(currency)
@@ -1330,9 +1380,9 @@ impl QuoteDetails {
                 "ConvexityAdjustment identifier too short: {id}"
             )));
         }
-        let currency: Currency = parts[1].parse()?;
+        let currency: Currency = parts[1].to_ascii_uppercase().parse()?;
         let index = parts[2].parse::<MarketIndex>()?;
-        let code = parts[3].to_string();
+        let code = parts[3].to_ascii_uppercase();
         Ok(
             Self::new(id.to_string(), QuoteInstrument::ConvexityAdjustment)
                 .with_market_index(index)
@@ -1356,10 +1406,10 @@ impl QuoteDetails {
                 "Swaption identifier too short: {id}"
             )));
         }
-        let currency: Currency = parts[1].parse()?;
+        let currency: Currency = parts[1].to_ascii_uppercase().parse()?;
         let index = parts[2].parse::<MarketIndex>()?;
-        let option_expiry = Period::from_str(parts[3])?;
-        let swap_tenor = Period::from_str(parts[4])?;
+        let option_expiry = Period::from_str(&parts[3].to_ascii_uppercase())?;
+        let swap_tenor = Period::from_str(&parts[4].to_ascii_uppercase())?;
 
         let (pay_freq, recv_freq, next) = Self::try_parse_frequencies(parts, 5);
 
@@ -1410,7 +1460,7 @@ impl QuoteDetails {
             )));
         }
         let (base, quote_ccy) = parse_fx_pair(parts[1])?;
-        let tenor = Period::from_str(parts[2])?;
+        let tenor = Period::from_str(&parts[2].to_ascii_uppercase())?;
         let strategy = parts[3].parse::<FxForwardCalibrationStrategy>()?;
         Ok(Self::new(id.to_string(), QuoteInstrument::FxForward)
             .with_pay_currency(base)
@@ -1429,9 +1479,9 @@ impl QuoteDetails {
                 "Call identifier too short: {id}"
             )));
         }
-        let currency: Currency = parts[1].parse()?;
+        let currency: Currency = parts[1].to_ascii_uppercase().parse()?;
         let index = MarketIndex::Equity(parts[2].to_string());
-        let tenor = Period::from_str(parts[3])?;
+        let tenor = Period::from_str(&parts[3].to_ascii_uppercase())?;
         let strike = parse_strike(id, parts[4], parts[5])?;
         Ok(Self::new(id.to_string(), QuoteInstrument::EquityCall)
             .with_market_index(index)
@@ -1451,9 +1501,9 @@ impl QuoteDetails {
                 "Put identifier too short: {id}"
             )));
         }
-        let currency: Currency = parts[1].parse()?;
+        let currency: Currency = parts[1].to_ascii_uppercase().parse()?;
         let index = MarketIndex::Equity(parts[2].to_string());
-        let tenor = Period::from_str(parts[3])?;
+        let tenor = Period::from_str(&parts[3].to_ascii_uppercase())?;
         let strike = parse_strike(id, parts[4], parts[5])?;
         Ok(Self::new(id.to_string(), QuoteInstrument::EquityPut)
             .with_market_index(index)
@@ -1474,7 +1524,7 @@ impl QuoteDetails {
             )));
         }
         let (base, quote_ccy) = parse_fx_pair(parts[1])?;
-        let tenor = Period::from_str(parts[2])?;
+        let tenor = Period::from_str(&parts[2].to_ascii_uppercase())?;
         let strike = parse_strike(id, parts[3], parts[4])?;
 
         Ok(Self::new(id.to_string(), QuoteInstrument::FxCall)
@@ -1497,7 +1547,7 @@ impl QuoteDetails {
             )));
         }
         let (base, quote_ccy) = parse_fx_pair(parts[1])?;
-        let tenor = Period::from_str(parts[2])?;
+        let tenor = Period::from_str(&parts[2].to_ascii_uppercase())?;
         let strike = parse_strike(id, parts[3], parts[4])?;
 
         Ok(Self::new(id.to_string(), QuoteInstrument::FxPut)
@@ -1510,7 +1560,7 @@ impl QuoteDetails {
     }
 
     fn parse_curve_pillar(id: &str, parts: &[&str]) -> Result<Self> {
-        let zero_rate = parts[0] == "ZeroRate";
+        let zero_rate = parts[0].eq_ignore_ascii_case("ZeroRate");
         let max_parts = if zero_rate { 6 } else { 4 };
         if !(4..=max_parts).contains(&parts.len()) {
             return Err(QSError::InvalidValueErr(format!(
@@ -1523,12 +1573,12 @@ impl QuoteDetails {
             QuoteInstrument::DiscountFactor
         };
         let mut details = Self::new(id.to_string(), instrument)
-            .with_currency(parts[1].parse()?)
+            .with_currency(parts[1].to_ascii_uppercase().parse()?)
             .with_market_index(parts[2].parse()?);
         details = if let Ok(date) = Date::from_str(parts[3], "%Y-%m-%d") {
             details.with_maturity(date)
         } else {
-            details.with_tenor(Period::from_str(parts[3])?)
+            details.with_tenor(Period::from_str(&parts[3].to_ascii_uppercase())?)
         };
         if zero_rate {
             details = details
@@ -1555,26 +1605,26 @@ impl QuoteDetails {
                 "Identifier has fewer than 3 parts: {s}"
             )));
         }
-        match parts[0] {
-            "DiscountFactor" | "ZeroRate" => Self::parse_curve_pillar(s, &parts),
-            "OIS" => Self::parse_ois(s, &parts),
-            "Swap" => Self::parse_swap(s, &parts),
-            "FixedRateDeposit" => Self::parse_fixed_rate_deposit(s, &parts),
-            "FixedRateBond" => Self::parse_fixed_rate_bond(s, &parts),
-            "BasisSwap" => Self::parse_basis_swap(s, &parts),
-            "FixFloatCrossCurrencySwap" => Self::parse_fix_float_cross_currency_swap(s, &parts),
-            "CapFloor" => Self::parse_cap_floor(s, &parts),
-            "CapletFloorlet" => Self::parse_caplet_floorlet(s, &parts),
-            "Future" => Self::parse_future(s, &parts),
-            "ConvexityAdjustment" => Self::parse_convexity_adjustment(s, &parts),
-            "Swaption" => Self::parse_swaption(s, &parts),
-            "FloatFloatCrossCurrencySwap" => Self::parse_float_float_cross_currency_swap(s, &parts),
-            "FxForward" => Self::parse_fx_forward(s, &parts),
-            "EquityCall" => Self::parse_equity_call(s, &parts),
-            "EquityPut" => Self::parse_equity_put(s, &parts),
-            "FxCall" => Self::parse_fx_call(s, &parts),
-            "FxPut" => Self::parse_fx_put(s, &parts),
-            "Cds" => Self::parse_cds(s, &parts),
+        match parts[0].to_ascii_lowercase().as_str() {
+            "discountfactor" | "zerorate" => Self::parse_curve_pillar(s, &parts),
+            "ois" => Self::parse_ois(s, &parts),
+            "swap" => Self::parse_swap(s, &parts),
+            "fixedratedeposit" => Self::parse_fixed_rate_deposit(s, &parts),
+            "fixedratebond" => Self::parse_fixed_rate_bond(s, &parts),
+            "basisswap" => Self::parse_basis_swap(s, &parts),
+            "fixfloatcrosscurrencyswap" => Self::parse_fix_float_cross_currency_swap(s, &parts),
+            "capfloor" => Self::parse_cap_floor(s, &parts),
+            "capletfloorlet" => Self::parse_caplet_floorlet(s, &parts),
+            "future" => Self::parse_future(s, &parts),
+            "convexityadjustment" => Self::parse_convexity_adjustment(s, &parts),
+            "swaption" => Self::parse_swaption(s, &parts),
+            "floatfloatcrosscurrencyswap" => Self::parse_float_float_cross_currency_swap(s, &parts),
+            "fxforward" => Self::parse_fx_forward(s, &parts),
+            "equitycall" => Self::parse_equity_call(s, &parts),
+            "equityput" => Self::parse_equity_put(s, &parts),
+            "fxcall" => Self::parse_fx_call(s, &parts),
+            "fxput" => Self::parse_fx_put(s, &parts),
+            "cds" => Self::parse_cds(s, &parts),
             other => Err(QSError::InvalidValueErr(format!(
                 "Unknown instrument type in identifier: {other}"
             ))),
@@ -1587,8 +1637,9 @@ impl std::str::FromStr for QuoteDetails {
 
     /// Parses a quote identifier string (underscore-separated) into [`QuoteDetails`].
     ///
-    /// The first `_`-delimited segment determines the instrument type and must
-    /// match the exact [`QuoteInstrument`] variant name (e.g. [`FxForward`]).
+    /// The first `_`-delimited segment determines the instrument type (e.g.
+    /// `FxForward`). Instrument names and typed fields are case insensitive.
+    /// The original identifier and free-form entity names are preserved.
     ///
     /// # Errors
     /// Returns an error if the identifier cannot be parsed.
@@ -1923,7 +1974,7 @@ impl Quote {
         Ok(CalibrationInstrumentType::OIS(swap))
     }
 
-    /// Builds a regular swap using single-fixing floating coupons and swap defaults.
+    /// Builds a spot-starting regular swap with single-fixing floating coupons.
     fn build_swap<T: Scalar + Default>(
         &self,
         rate: f64,
@@ -1944,15 +1995,40 @@ impl Quote {
                 "Swap currency does not match its index".into(),
             ));
         }
+        let settlement_days = details.settlement_days().unwrap_or(2);
+        if settlement_days < 0 {
+            return Err(QSError::InvalidValueErr(
+                "Swap settlement days must be nonnegative".into(),
+            ));
+        }
+        let calendar = index_details.calendar();
+        let start_date = calendar.adjust(
+            calendar.advance(
+                reference_date,
+                Period::new(settlement_days, TimeUnit::Days),
+                None,
+                false,
+            ),
+            Some(BusinessDayConvention::Following),
+        );
+        let maturity_date = details.maturity().unwrap_or(start_date + tenor);
+        if maturity_date <= start_date {
+            return Err(QSError::InvalidValueErr(
+                "Swap maturity must follow its settlement date".into(),
+            ));
+        }
         let mut builder = MakeSwap::<T>::default()
             .with_identifier(details.identifier())
-            .with_start_date(reference_date)
-            .with_maturity_date(details.maturity().unwrap_or(reference_date + tenor))
+            .with_start_date(start_date)
+            .with_maturity_date(maturity_date)
             .with_fixed_rate(rate)
             .with_notional(notional)
             .with_rate_definition(index_details.rate_definition())
             .with_market_index(index)
-            .with_currency(currency);
+            .with_currency(currency)
+            .with_calendar(calendar)
+            .with_business_day_convention(BusinessDayConvention::ModifiedFollowing)
+            .with_termination_date_convention(BusinessDayConvention::ModifiedFollowing);
         if let Some(frequency) = details.pay_leg_frequency() {
             builder = builder.with_fixed_leg_frequency(frequency);
         }
@@ -2912,11 +2988,169 @@ mod tests {
         for identifier in [
             "Swap_USD_SOFR",
             "Swap_USD_SOFR_1Y_garbage",
-            "Swap_USD_SOFR_1Y_Annual_Quarterly_2",
+            "Swap_USD_SOFR_1Y_Annual_Quarterly_2_extra",
             "Swap_USD_SOFR_1Y_Annual_bad",
         ] {
             assert!(identifier.parse::<QuoteDetails>().is_err());
         }
+    }
+
+    #[test]
+    fn regular_swap_settlement_days_parse_and_round_trip() -> Result<()> {
+        for (identifier, expected) in [
+            ("Swap_EUR_EURIBOR6m_5Y", None),
+            ("Swap_EUR_EURIBOR6m_5Y___", None),
+            ("Swap_EUR_EURIBOR6m_5Y_Annual_Semiannual_2", Some(2)),
+            ("Swap_EUR_EURIBOR6m_5Y___0", Some(0)),
+            ("Swap_EUR_EURIBOR6m_5Y___3", Some(3)),
+        ] {
+            let details: QuoteDetails = identifier.parse()?;
+            assert_eq!(details.settlement_days(), expected);
+            let serialized = serde_json::to_value(&details).unwrap();
+            assert_eq!(
+                serialized.get("settlement_days").is_some(),
+                expected.is_some()
+            );
+            let restored: QuoteDetails = serde_json::from_value(serialized).unwrap();
+            assert_eq!(restored.settlement_days(), expected);
+            assert_eq!(restored.identifier(), identifier);
+        }
+        let custom = QuoteDetails::parse("Swap|EUR|EURIBOR3m|5Y|||1", '|')?;
+        assert_eq!(custom.settlement_days(), Some(1));
+        for invalid in ["-1", "1.5", "two", "2147483648"] {
+            assert!(format!("Swap_EUR_EURIBOR6m_5Y___{invalid}")
+                .parse::<QuoteDetails>()
+                .is_err());
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn euribor_swap_quotes_settle_and_schedule_on_target() -> Result<()> {
+        use crate::instruments::cashflows::cashflowtype::CashflowType;
+
+        for index in [
+            MarketIndex::EURIBOR1w,
+            MarketIndex::EURIBOR1m,
+            MarketIndex::EURIBOR3m,
+            MarketIndex::EURIBOR6m,
+            MarketIndex::EURIBOR12m,
+        ] {
+            let calendar = index.rate_index_details()?.calendar();
+            assert_eq!(calendar.name(), "TARGET");
+            for (reference, tenor, start, end) in [
+                // Good Friday and Easter Monday are TARGET holidays.
+                (
+                    Date::new(2026, 4, 2),
+                    "1Y",
+                    Date::new(2026, 4, 8),
+                    Date::new(2027, 4, 8),
+                ),
+                // Christmas and the weekend are skipped in the spot lag.
+                (
+                    Date::new(2026, 12, 23),
+                    "1Y",
+                    Date::new(2026, 12, 28),
+                    Date::new(2027, 12, 28),
+                ),
+                // May Day is a TARGET holiday.
+                (
+                    Date::new(2026, 4, 29),
+                    "1Y",
+                    Date::new(2026, 5, 4),
+                    Date::new(2027, 5, 4),
+                ),
+                // Modified Following rolls a month-end weekend backward.
+                (
+                    Date::new(2026, 4, 28),
+                    "1M",
+                    Date::new(2026, 4, 30),
+                    Date::new(2026, 5, 29),
+                ),
+            ] {
+                let details = format!("Swap_EUR_{index}_{tenor}_Monthly_Monthly").parse()?;
+                let quote = Quote::new(details, QuoteLevels::with_mid(0.04));
+                let built = quote.build_instrument(reference, Level::Mid, None)?;
+                let CalibrationInstrumentType::Swap(swap) = &built else {
+                    panic!("expected regular swap");
+                };
+                for leg in [swap.fixed_leg(), swap.floating_leg()] {
+                    let mut accrual_start = start;
+                    for cashflow in leg.cashflows() {
+                        let (coupon_start, coupon_end, payment) = match cashflow {
+                            CashflowType::FixedRateCoupon(coupon) => (
+                                coupon.accrual_start_date(),
+                                coupon.accrual_end_date(),
+                                coupon.payment_date(),
+                            ),
+                            CashflowType::FloatingRateCoupon(coupon) => (
+                                coupon.accrual_start_date(),
+                                coupon.accrual_end_date(),
+                                coupon.payment_date(),
+                            ),
+                            _ => continue,
+                        };
+                        assert_eq!(coupon_start, accrual_start);
+                        assert!(calendar.is_business_day(&coupon_start));
+                        assert!(calendar.is_business_day(&coupon_end));
+                        assert_eq!(payment, coupon_end);
+                        accrual_start = coupon_end;
+                    }
+                    assert_eq!(accrual_start, end);
+                    assert_eq!(leg.last_payment_date(), end);
+                }
+                assert_eq!(quote.calibration_pillar_date(&built)?, end);
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn regular_swap_settlement_overrides_and_explicit_maturity() -> Result<()> {
+        use crate::instruments::cashflows::cashflowtype::CashflowType;
+
+        let reference = Date::new(2026, 4, 2);
+        for (days, expected) in [
+            (0, reference),
+            (1, Date::new(2026, 4, 7)),
+            (3, Date::new(2026, 4, 9)),
+        ] {
+            let details: QuoteDetails = "Swap_EUR_EURIBOR6m_1Y".parse()?;
+            let maturity = Date::new(2027, 4, 15);
+            let quote = Quote::new(
+                details.with_settlement_days(days).with_maturity(maturity),
+                QuoteLevels::with_mid(0.04),
+            );
+            let CalibrationInstrumentType::Swap(swap) =
+                quote.build_instrument(reference, Level::Mid, None)?
+            else {
+                panic!("expected regular swap");
+            };
+            let first = swap
+                .fixed_leg()
+                .cashflows()
+                .iter()
+                .find_map(|cashflow| {
+                    if let CashflowType::FixedRateCoupon(coupon) = cashflow {
+                        Some(coupon)
+                    } else {
+                        None
+                    }
+                })
+                .unwrap();
+            assert_eq!(first.accrual_start_date(), expected);
+            assert_eq!(swap.fixed_leg().last_payment_date(), maturity);
+        }
+        let details: QuoteDetails = "Swap_EUR_EURIBOR6m_1Y".parse()?;
+        for invalid in [
+            details.clone().with_settlement_days(-1),
+            details.with_maturity(Date::new(2026, 4, 7)),
+        ] {
+            assert!(Quote::new(invalid, QuoteLevels::with_mid(0.04))
+                .build_instrument(reference, Level::Mid, None)
+                .is_err());
+        }
+        Ok(())
     }
 
     #[test]
@@ -2964,7 +3198,7 @@ mod tests {
                 .collect();
             assert_eq!(fixed.len(), fixed_count);
             assert_eq!(floating.len(), floating_count);
-            assert_eq!(fixed[0].accrual_start_date(), reference);
+            assert_eq!(fixed[0].accrual_start_date(), Date::new(2026, 2, 26));
             assert!((fixed[0].rate().rate() - 0.05).abs() < 1e-12);
             assert!(floating
                 .iter()
@@ -3172,5 +3406,46 @@ mod tests {
     fn parse_cap_floor_without_frequency_still_works() {
         let det: QuoteDetails = "CapFloor_USD_SOFR_1Y_Absolute_Black".parse().unwrap();
         assert_eq!(det.pay_leg_frequency(), None);
+    }
+}
+
+#[cfg(test)]
+mod case_insensitive_tests {
+    use super::*;
+
+    #[test]
+    fn products_and_typed_fields_accept_lower_upper_and_mixed_case() {
+        for identifier in [
+            "OIS_USD_SOFR_1Y_Annual_Annual_2_0_Actual360_TARGET_TARGET_TARGET_TARGET_ModifiedFollowing_ModifiedFollowing_ModifiedFollowing_Backward_FALSE_0D",
+            "Swap_USD_SOFR_5Y_Annual_Quarterly",
+            "FixedRateDeposit_USD_SOFR_3M",
+            "FixedRateBond_USD_SOFR_5Y_Semiannual_0.04_AnchorPrice",
+            "BasisSwap_USD_SOFR_TermSOFR3m_5Y_Quarterly_Quarterly",
+            "FixFloatCrossCurrencySwap_USD_SOFR_EUR_5Y_Annual_Annual",
+            "FloatFloatCrossCurrencySwap_USD_SOFR_ESTR_EUR_5Y_Quarterly_Quarterly",
+            "CapFloor_USD_SOFR_1Y_Quarterly_Absolute_0.03_Black",
+            "CapletFloorlet_USD_TermSOFR3m_3M_3M_Absolute_0.01_Straddle_Normal",
+            "Swaption_USD_SOFR_3M_2Y_Semiannual_Semiannual_Absolute_0.04_Black",
+            "FxForward_EURUSD_1Y_AnchorOutrightPrice",
+            "EquityCall_USD_SPX_1Y_Absolute_5000",
+            "FxPut_EURUSD_1Y_Absolute_1.10",
+            "Cds_Acme_USD_5Y",
+            "DiscountFactor_USD_SOFR_1Y",
+            "ZeroRate_USD_SOFR_1Y_Continuous_Annual",
+        ] {
+            let canonical = identifier.parse::<QuoteDetails>().unwrap_or_else(|error| panic!("{identifier}: {error}"));
+            for variant in [identifier.to_ascii_lowercase(), identifier.to_ascii_uppercase()] {
+                let parsed = variant.parse::<QuoteDetails>().unwrap_or_else(|error| panic!("{variant}: {error}"));
+                assert_eq!(parsed.identifier(), variant);
+                assert_eq!(parsed.instrument(), canonical.instrument());
+            }
+        }
+        let custom = QuoteDetails::parse("oIs|uSd|sOfR|1y|aNnUaL", '|').unwrap();
+        custom.ois_conventions().unwrap();
+        let equity: QuoteDetails = "equitycall_usd_MyTicker_1y_absolute_10".parse().unwrap();
+        assert_eq!(
+            equity.market_index(),
+            Some(MarketIndex::Equity("MyTicker".into())).as_ref()
+        );
     }
 }

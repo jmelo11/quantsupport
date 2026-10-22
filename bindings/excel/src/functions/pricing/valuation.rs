@@ -7,8 +7,8 @@ use quantsupport::prelude::{
     FloatingRateNoteTrade, FxEuropeanOptionPricer, FxForwardPricer, Pricer, PricingContext,
     RateFuturesPricer, Request, SingleCurveCSADiscountPolicy, Swap, SwapTrade,
 };
+use quantsupport_xll_macros::xll_bindgen;
 use xll_rs::types::{XllError, XLOPER12};
-use xllgen::xll_bindgen;
 
 use crate::runtime::registry::{with_registry, QsObject, Registry};
 

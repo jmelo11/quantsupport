@@ -3,16 +3,24 @@ QuantSupport for 64-bit Windows Excel
 1. Extract ALL files from this ZIP into a stable local folder.
 2. In Excel, open File > Options > Add-ins.
 3. Choose Excel Add-ins, click Go, then Browse.
-4. Load quantsupport.xll and ExcelDna.IntelliSense64.xll from that folder.
-5. Restart Excel with both add-ins enabled.
+4. Load quantsupport.xll, ExcelDna.IntelliSense64.xll and
+   QuantSupport.Ribbon64.xll from that folder.
+5. Restart Excel with all three add-ins enabled.
 6. Enter =QS.VERSION() to check QuantSupport loaded. Type =QS.EVALUATE(
    to see the function signature and help for the current parameter.
+7. Open the QuantSupport ribbon tab. Pricing Contexts and Instruments & Trades
+   open the workbook object browser; Inspect Selection shows the object in the
+   active cell. Select an object and click Go to cell to edit its source inputs.
+   Select a trade, choose its context and pricer in Trade requests, then run
+   PV, Cashflows or Fair rate (with a zero-based leg/segment).
+   Curves opens curve tables and Instruments & inputs; select an instrument
+   row to inspect its parameters. Select a pricing context for market levels.
 
 Keep quantsupport.intellisense.xml beside quantsupport.xll. If you rename the
 QuantSupport XLL, give the XML the same base name. Replacing the add-in requires
 the matching XML from the same build or release; extract a new bundle together.
 
-Excel-DNA IntelliSense requires .NET Framework 4.6.2 or later. Follow your
+The ribbon and Excel-DNA IntelliSense require .NET Framework 4.6.2 or later. Follow your
 organization's policy for downloaded add-ins and trusted locations. Excel for
 macOS and Excel in the browser cannot load these XLLs.
 
@@ -21,6 +29,13 @@ afterwards to rebuild its formulas and object handles.
 
 Without the IntelliSense companion, Ctrl+A after a function name opens Excel's
 Function Arguments dialog. Ctrl+Shift+A inserts its argument names.
+
+The browser shows live objects for the active workbook and refreshes while
+Excel is ready. It does not calculate the workbook. Valuation dates are market
+reference dates; Snapshot (UTC) is the historical observation timestamp, when
+available. Neither field is an object's creation time. Use the Setup Guide
+button for worksheet construction examples. Creation wizards are not included.
+The ribbon is optional: worksheet functions work with quantsupport.xll alone.
 
 Guides and examples:
 https://jmelo11.github.io/quantsupport/api/excel/guide/index.html

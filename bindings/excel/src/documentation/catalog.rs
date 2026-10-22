@@ -321,7 +321,44 @@ mod tests {
         let records =
             super::exports(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/functions"))
                 .unwrap();
-        assert_eq!(records.len(), 143);
+        assert_eq!(records.len(), 152);
+        for (name, arguments) in [
+            (
+                "QS.QUOTES.FROM.RANGE",
+                vec!["name", "reference_date", "data"],
+            ),
+            ("QS.FIXINGS.FROM.RANGE", vec!["name", "data"]),
+            ("QS.PORTFOLIO.CREATE", vec!["name", "trades"]),
+            (
+                "QS.PORTFOLIO.EVALUATE",
+                vec![
+                    "name",
+                    "portfolio",
+                    "pricers",
+                    "context",
+                    "requests",
+                    "value_currency",
+                ],
+            ),
+            (
+                "QS.RESULT.CASHFLOW.SUMMARY",
+                vec!["result", "transpose", "headers"],
+            ),
+            ("QS.RESULT.COUPONS", vec!["result", "transpose", "headers"]),
+        ] {
+            let record = records
+                .iter()
+                .find(|record| record["name"] == name)
+                .unwrap();
+            let actual: Vec<_> = record["arguments"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|argument| argument["name"].as_str().unwrap())
+                .collect();
+            assert_eq!(actual, arguments);
+            assert_eq!(record["volatile"], false);
+        }
         let scenario = records
             .iter()
             .find(|record| record["name"] == "QS.SCENARIOS.FROM.JSON")
@@ -585,5 +622,34 @@ mod tests {
                 .collect::<Vec<_>>();
             assert_eq!(arguments, registered_arguments, "{name}");
         }
+    }
+
+    #[test]
+    fn stored_objects_and_pricing_are_nonvolatile_and_direct_policy_arguments_are_visible() {
+        let records =
+            super::exports(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/functions"))
+                .unwrap();
+        for record in &records {
+            assert_eq!(record["volatile"], false, "{}", record["name"]);
+        }
+        let policy = records
+            .iter()
+            .find(|record| record["name"] == "QS.DISCOUNT.POLICY.FIXED.INCOME")
+            .unwrap();
+        let arguments: Vec<_> = policy["arguments"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|argument| argument["name"].as_str().unwrap())
+            .collect();
+        assert_eq!(
+            arguments,
+            [
+                "name",
+                "currency",
+                "market_index",
+                "prefer_instrument_index"
+            ]
+        );
     }
 }

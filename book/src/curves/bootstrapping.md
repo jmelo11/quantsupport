@@ -79,10 +79,20 @@ alter observation semantics and must match the actual contract. Deterministic
 valuation supports nonstandard overnight settings that the legacy XVA claim
 converter rejects.
 
-`Swap_CCY_Index_Tenor[_FixedFreq[_FloatFreq]]` remains a different quote family.
-It starts under regular swap conventions with single-fixing coupons and
-semiannual/quarterly frequency defaults. It retains single-fixing coupon
-behavior when its index is overnight. To reproduce a supplied market curve,
+`Swap_CCY_Index_Tenor[_FixedFreq[_FloatFreq[_SettlementDays]]]` remains a
+different quote family. It starts two business days after the reference date,
+using the index calendar for settlement and Modified Following for both leg
+schedules. The tenor runs from that settlement date. All five Euribor tenors
+use TARGET, including its Easter, May Day and Christmas holidays.
+The optional final field overrides the start lag; for example,
+`Swap_EUR_EURIBOR6m_5Y_Annual_Semiannual_0` starts on the reference date
+(rolled Following if necessary), while `Swap_EUR_EURIBOR6m_5Y___2` explicitly
+keeps the two-day lag and default frequencies. This is settlement lag;
+coupon payments still occur at accrual end.
+
+Regular swaps use single-fixing coupons and semiannual/quarterly frequency
+defaults. They retain single-fixing coupon behavior when their index is overnight.
+To reproduce a supplied market curve,
 match the calibration contracts, interpolation and valuation assumptions as well
 as the quoted rates.
 

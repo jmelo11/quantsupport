@@ -1,5 +1,5 @@
+use quantsupport_xll_macros::xll_bindgen;
 use xll_rs::types::XllError;
-use xllgen::xll_bindgen;
 
 use crate::{functions::helpers::value_error, runtime::historical};
 

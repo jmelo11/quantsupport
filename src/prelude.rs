@@ -11,6 +11,7 @@ pub use crate::{
         tape::Tape,
     },
     core::{
+        cashflowaggregation::CouponDetails,
         collateral::{
             DiscountPolicy, Discountable, FixedIncomeDiscountPolicy, SingleCurveCSADiscountPolicy,
         },
@@ -41,6 +42,7 @@ pub use crate::{
         marketsnapshot::MarketSnapshot,
         marketsnapshotstore::MarketSnapshotStore,
         pillars::Pillars,
+        portfolio::{summarize_cashflows, Portfolio, PortfolioCashflow},
         pricer::Pricer,
         pricerconfiguration::{
             FourierGridConfiguration, InstrumentType, PricerConfiguration, PricerImplementation,

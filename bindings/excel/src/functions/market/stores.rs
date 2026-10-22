@@ -1,19 +1,52 @@
 use crate::functions::helpers::{
     cached_handle, input_key, not_found, parse_currency, parse_date, parse_index, parse_json,
-    parse_json_list, value_error,
+    parse_json_list, value_error, worksheet_table,
 };
 use crate::runtime::registry::{with_registry, with_registry_mut, QsObject};
 use quantsupport::prelude::{
     DualFwd, FixingStore, FxRateRecord, FxStore, Level, Quote, QuoteDetails, QuoteLevels,
     QuoteStore, QuoteStoreRecords,
 };
+use quantsupport_xll_macros::xll_bindgen;
 use std::str::FromStr;
 use xll_rs::types::XllError;
-use xllgen::xll_bindgen;
+
+#[xll_bindgen(
+    name = "QS.QUOTES.FROM.RANGE",
+    category = "QuantSupport - Market",
+    help = "Loads Identifier/Mid[/Bid/Ask] rows into one QuoteStore; optional headers and blank rows"
+)]
+pub fn qs_quotes_from_range(
+    name: &str,
+    reference_date: &str,
+    data: *const xll_rs::types::XLOPER12,
+) -> Result<String, XllError> {
+    let date = parse_date(reference_date)?;
+    let table = worksheet_table(data, "quotes")?;
+    with_registry_mut(|registry| {
+        crate::runtime::market_inputs::import_quotes(registry, name, date, &table)
+    })
+    .map_err(value_error)
+}
+
+#[xll_bindgen(
+    name = "QS.FIXINGS.FROM.RANGE",
+    category = "QuantSupport - Market",
+    help = "Loads Market index/Date/Value rows into one FixingStore; optional headers and blank rows"
+)]
+pub fn qs_fixings_from_range(
+    name: &str,
+    data: *const xll_rs::types::XLOPER12,
+) -> Result<String, XllError> {
+    let table = worksheet_table(data, "fixings")?;
+    with_registry_mut(|registry| {
+        crate::runtime::market_inputs::import_fixings(registry, name, &table)
+    })
+    .map_err(value_error)
+}
 
 #[xll_bindgen(
     name = "QS.QUOTES.CREATE",
-    volatile,
     category = "QuantSupport - Market",
     help = "Creates a QuantSupport QuoteStore"
 )]
@@ -31,7 +64,6 @@ pub fn qs_quotes_create(name: &str, reference_date: &str) -> Result<String, XllE
 
 #[xll_bindgen(
     name = "QS.QUOTES.FROM.JSON",
-    volatile,
     category = "QuantSupport - Market",
     help = "Creates a QuoteStore from the library's QuoteStoreRecords JSON shape"
 )]
@@ -61,7 +93,7 @@ pub fn qs_quotes_set(
 ) -> Result<String, XllError> {
     let details = QuoteDetails::from_str(identifier).map_err(value_error)?;
     let quote = Quote::new(details, QuoteLevels::new(mid, bid, ask));
-    let operation_id = format!("quote:{}", identifier.trim());
+    let operation_id = format!("quote:{}", identifier.trim().to_ascii_lowercase());
     let value_key = input_key(&(
         mid.map(f64::to_bits),
         bid.map(f64::to_bits),
@@ -100,7 +132,6 @@ pub fn qs_quotes_get(store: &str, identifier: &str, level: &str) -> Result<f64, 
 
 #[xll_bindgen(
     name = "QS.FIXINGS.CREATE",
-    volatile,
     category = "QuantSupport - Market",
     help = "Creates an empty QuantSupport FixingStore"
 )]
@@ -116,7 +147,6 @@ pub fn qs_fixings_create(name: &str) -> Result<String, XllError> {
 
 #[xll_bindgen(
     name = "QS.FIXINGS.FROM.JSON",
-    volatile,
     category = "QuantSupport - Market",
     help = "Creates a FixingStore from its native JSON representation"
 )]
@@ -144,7 +174,7 @@ pub fn qs_fixings_set(
 ) -> Result<String, XllError> {
     let index = parse_index(market_index)?;
     let date = parse_date(date)?;
-    let operation_id = format!("fixing:{market_index}:{date}");
+    let operation_id = format!("fixing:{index}:{date}");
     let value_key = input_key(&value.to_bits())?;
     with_registry_mut(|registry| {
         registry.update_fixing_store_if_changed(store, &operation_id, &value_key, |target| {
@@ -174,7 +204,6 @@ pub fn qs_fixings_get(store: &str, market_index: &str, date: &str) -> Result<f64
 
 #[xll_bindgen(
     name = "QS.FX.CREATE",
-    volatile,
     aliases = ["QS.CREATE.FX.STORE"],
     category = "QuantSupport - Market",
     help = "Creates an empty QuantSupport FxStore"
@@ -191,7 +220,6 @@ pub fn qs_fx_create(name: &str) -> Result<String, XllError> {
 
 #[xll_bindgen(
     name = "QS.FX.FROM.JSON",
-    volatile,
     category = "QuantSupport - Market",
     help = "Creates an FxStore from an array of native FxRateRecord objects"
 )]
@@ -252,4 +280,102 @@ pub fn qs_fx_get(store: &str, base_currency: &str, quote_currency: &str) -> Resu
             .map_err(|error| error.to_string())
     })
     .map_err(not_found)
+}
+
+#[cfg(test)]
+mod ownership_abi_tests {
+    #[test]
+    fn bulk_imports_read_worksheet_arrays_and_reuse_unchanged_handles() {
+        use super::{qs_fixings_from_range, qs_quotes_from_range};
+        use xll_rs::{convert::build_multi, memory::xlAutoFree12, types::XLOPER12};
+
+        let quotes = build_multi(
+            vec![
+                XLOPER12::from_str("Identifier"),
+                XLOPER12::from_str("Mid"),
+                XLOPER12::from_str("FixedRateDeposit_USD_SOFR_6M"),
+                XLOPER12::from_f64(0.04),
+            ],
+            2,
+            2,
+        );
+        let first = qs_quotes_from_range("range.quotes", "2026-01-15", quotes).unwrap();
+        assert_eq!(
+            qs_quotes_from_range("range.quotes", "2026-01-15", quotes).unwrap(),
+            first
+        );
+        assert_eq!(
+            super::qs_quotes_get(&first, "FixedRateDeposit_USD_SOFR_6M", "Mid").unwrap(),
+            0.04
+        );
+        xlAutoFree12(quotes);
+        let fixings = build_multi(
+            vec![
+                XLOPER12::from_str("SOFR"),
+                XLOPER12::from_str("2026-01-14"),
+                XLOPER12::from_f64(0.03),
+            ],
+            1,
+            3,
+        );
+        let first = qs_fixings_from_range("range.fixings", fixings).unwrap();
+        assert_eq!(
+            qs_fixings_from_range("range.fixings", fixings).unwrap(),
+            first
+        );
+        assert_eq!(
+            super::qs_fixings_get(&first, "SOFR", "2026-01-14").unwrap(),
+            0.03
+        );
+        xlAutoFree12(fixings);
+        assert!(qs_fixings_from_range("bad.range", &XLOPER12::from_f64(1.0)).is_err());
+    }
+
+    #[test]
+    fn invalid_abi_arguments_release_the_previous_object_before_typed_code_runs() {
+        use super::xl_qs_quotes_create;
+        use crate::runtime::{
+            lifecycle::windows::set_test_caller,
+            registry::{live_object_count, CellId},
+        };
+        use xll_rs::memory::xlAutoFree12;
+        use xll_rs::types::{XLOPER12, XLTYPE_ERR};
+        struct CallerReset;
+        impl Drop for CallerReset {
+            fn drop(&mut self) {
+                set_test_caller(None);
+            }
+        }
+        let _reset = CallerReset;
+        set_test_caller(Some((
+            "ArgumentScope.xlsx".into(),
+            "Inputs".into(),
+            CellId {
+                sheet: 908,
+                row: 0,
+                column: 0,
+            },
+            Some("=QS.QUOTES.CREATE(A2,A3)".into()),
+        )));
+        let before = live_object_count(true);
+        let name = Box::into_raw(Box::new(XLOPER12::from_str("scoped")));
+        let date = Box::into_raw(Box::new(XLOPER12::from_str("2026-01-15")));
+        let created = xl_qs_quotes_create(name, date);
+        assert!(unsafe { &*created }
+            .as_string()
+            .unwrap()
+            .starts_with("QSObject:QuoteStore:"));
+        assert_eq!(live_object_count(true), before + 1);
+        xlAutoFree12(created);
+        let failed = xl_qs_quotes_create(name, &XLOPER12::from_f64(123.0));
+        assert_eq!(unsafe { &*failed }.base_type(), XLTYPE_ERR);
+        assert_eq!(
+            live_object_count(true),
+            before,
+            "conversion failure must not retain the previous object"
+        );
+        xlAutoFree12(failed);
+        xlAutoFree12(name);
+        xlAutoFree12(date);
+    }
 }

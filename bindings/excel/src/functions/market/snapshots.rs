@@ -1,5 +1,5 @@
+use quantsupport_xll_macros::xll_bindgen;
 use xll_rs::types::{XllError, XLOPER12};
-use xllgen::xll_bindgen;
 
 use crate::{
     functions::helpers::{optional_string_values, string_column, value_error},
@@ -11,7 +11,6 @@ use crate::{
 
 #[xll_bindgen(
     name = "QS.SNAPSHOT.FROM.CONTEXT",
-    volatile,
     category = "QuantSupport - Market",
     help = "Captures serializable base market inputs from a context at an observation timestamp; excludes fixings and temporary scenarios"
 )]
@@ -27,7 +26,6 @@ pub fn qs_snapshot_from_context(
 
 #[xll_bindgen(
     name = "QS.SNAPSHOTS.CREATE",
-    volatile,
     category = "QuantSupport - Market",
     help = "Builds a complete snapshot archive from a range of snapshot handles; changing or removing rows rebuilds it"
 )]
@@ -38,7 +36,6 @@ pub fn qs_snapshots_create(name: &str, snapshots: *const XLOPER12) -> Result<Str
 
 #[xll_bindgen(
     name = "QS.SNAPSHOT.SELECTOR",
-    volatile,
     category = "QuantSupport - Market",
     help = "Creates a native timestamp and quote-side selector; defaults to Previous and Mid"
 )]
@@ -56,7 +53,6 @@ pub fn qs_snapshot_selector(
 
 #[xll_bindgen(
     name = "QS.SNAPSHOTS.SELECT",
-    volatile,
     category = "QuantSupport - Market",
     help = "Selects one complete market from an archive; inspect its timestamp for the actual match"
 )]
@@ -121,7 +117,6 @@ pub fn qs_snapshots_timestamps(
 
 #[xll_bindgen(
     name = "QS.SNAPSHOTS.FROM.JSON",
-    volatile,
     category = "QuantSupport - Market",
     help = "Loads the native snapshot JSON array shared with Python and Rust; duplicate timestamps are rejected"
 )]

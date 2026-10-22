@@ -6,12 +6,11 @@ use quantsupport::prelude::{
     ConstructedElementRequest, Level, MarketDataProvider, MarketDataRequest, PricingContext,
     QuoteSelector, QuoteStore, Scenario,
 };
+use quantsupport_xll_macros::xll_bindgen;
 use xll_rs::types::XllError;
-use xllgen::xll_bindgen;
 
 #[xll_bindgen(
     name = "QS.CONTEXT.FROM.SNAPSHOT",
-    volatile,
     category = "QuantSupport - Pricing",
     help = "Builds and initializes a context from the archive's selected complete market; fixings are supplied separately"
 )]
@@ -128,7 +127,6 @@ mod tests {
 
 #[xll_bindgen(
     name = "QS.CONTEXT.CREATE",
-    volatile,
     category = "QuantSupport - Pricing",
     help = "Builds and initializes a native PricingContext from component handles"
 )]

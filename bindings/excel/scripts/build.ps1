@@ -6,6 +6,10 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) {
+    throw "Install the .NET 8 SDK or later to build the QuantSupport ribbon companion."
+}
+
 if (-not [Environment]::Is64BitProcess) {
     throw "Build the QuantSupport XLL from a 64-bit PowerShell process."
 }
@@ -67,4 +71,14 @@ if (Test-Path -LiteralPath $pdb) {
 
 Write-Host "Packaged QuantSupport XLL: $destination"
 Write-Host "Packaged parameter hints: $intelliSense"
+$configuration = if ($Profile -eq "release") { "Release" } else { "Debug" }
+& dotnet build (Join-Path $excelRoot "ribbon\QuantSupport.Ribbon.csproj") --configuration $configuration
+if ($LASTEXITCODE -ne 0) {
+    throw "Ribbon companion build failed with exit code $LASTEXITCODE"
+}
+$ribbon = Join-Path $excelRoot "ribbon\bin\$configuration\net462\publish\QuantSupport.Ribbon64.xll"
+if (-not (Test-Path -LiteralPath $ribbon -PathType Leaf)) {
+    throw "The ribbon build did not produce the packed companion: $ribbon"
+}
+Copy-Item -LiteralPath $ribbon -Destination (Join-Path $dist "QuantSupport.Ribbon64.xll") -Force
 & (Join-Path $PSScriptRoot "package.ps1") -Dist $dist

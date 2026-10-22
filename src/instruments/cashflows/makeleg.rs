@@ -98,6 +98,7 @@ pub struct MakeLeg<T: Scalar> {
     end_of_month: Option<bool>,
     calendar: Option<Calendar>,
     business_day_convention: Option<BusinessDayConvention>,
+    termination_date_convention: Option<BusinessDayConvention>,
     date_generation_rule: Option<DateGenerationRule>,
     discount_index: Option<MarketIndex>,
     rate_type: Option<RateType>,
@@ -139,6 +140,7 @@ where
             end_of_month: None,
             calendar: None,
             business_day_convention: None,
+            termination_date_convention: None,
             date_generation_rule: None,
             rate_type: None,
             spread: None,
@@ -242,6 +244,16 @@ where
         business_day_convention: Option<BusinessDayConvention>,
     ) -> Self {
         self.business_day_convention = business_day_convention;
+        self
+    }
+
+    /// Sets the convention for adjusting the final schedule date.
+    #[must_use]
+    pub const fn with_termination_date_convention(
+        mut self,
+        convention: Option<BusinessDayConvention>,
+    ) -> Self {
+        self.termination_date_convention = convention;
         self
     }
 
@@ -455,6 +467,10 @@ where
                     )
                     .with_convention(
                         self.business_day_convention
+                            .unwrap_or(BusinessDayConvention::Unadjusted),
+                    )
+                    .with_termination_date_convention(
+                        self.termination_date_convention
                             .unwrap_or(BusinessDayConvention::Unadjusted),
                     )
                     .with_rule(
@@ -686,6 +702,10 @@ where
                         self.business_day_convention
                             .unwrap_or(BusinessDayConvention::Unadjusted),
                     )
+                    .with_termination_date_convention(
+                        self.termination_date_convention
+                            .unwrap_or(BusinessDayConvention::Unadjusted),
+                    )
                     .with_rule(
                         self.date_generation_rule
                             .unwrap_or(DateGenerationRule::Backward),
@@ -794,6 +814,10 @@ where
                         self.business_day_convention
                             .unwrap_or(BusinessDayConvention::Unadjusted),
                     )
+                    .with_termination_date_convention(
+                        self.termination_date_convention
+                            .unwrap_or(BusinessDayConvention::Unadjusted),
+                    )
                     .with_calendar(
                         self.calendar
                             .unwrap_or(Calendar::NullCalendar(NullCalendar::new())),
@@ -857,6 +881,10 @@ where
                     .end_of_month(self.end_of_month.unwrap_or(false))
                     .with_convention(
                         self.business_day_convention
+                            .unwrap_or(BusinessDayConvention::Unadjusted),
+                    )
+                    .with_termination_date_convention(
+                        self.termination_date_convention
                             .unwrap_or(BusinessDayConvention::Unadjusted),
                     )
                     .with_calendar(

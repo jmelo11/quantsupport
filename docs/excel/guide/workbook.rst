@@ -7,7 +7,8 @@ Install and load the add-in
 Download the `Excel add-in and IntelliSense ZIP <https://jmelo11.github.io/quantsupport/downloads/quantsupport-excel-windows-x64.zip>`_
 and extract all files into one stable local folder. It contains
 ``quantsupport.xll``, its matching ``quantsupport.intellisense.xml``,
-``ExcelDna.IntelliSense64.xll``, installation instructions and license notices.
+``ExcelDna.IntelliSense64.xll``, ``QuantSupport.Ribbon64.xll``, installation
+instructions and license notices.
 The `standalone XLL <https://jmelo11.github.io/quantsupport/downloads/quantsupport.xll>`_
 is also available at the same download location.
 
@@ -17,14 +18,28 @@ policy for downloaded add-ins and trusted locations; if Windows marks the
 downloaded file as blocked, review its source before unblocking it.
 
 In Excel open **File → Options → Add-ins**, choose **Excel Add-ins**, select
-**Go**, and browse to each of the two XLLs. Keep the XML beside
-``quantsupport.xll``, then restart Excel with both add-ins enabled. Load the
+**Go**, and browse to each of the three XLLs. Keep the XML and companions beside
+``quantsupport.xll``, then restart Excel with all three add-ins enabled. Load the
 add-in before opening the pricing workbook, or press **Ctrl+Alt+F9** after
 loading to rebuild all formula dependencies.
+
+The **QuantSupport** ribbon tab opens **Pricing Contexts**, **Instruments & Trades**
+and **All Objects** in a side panel for the active workbook. Contexts show their
+valuation date, historical snapshot timestamp in UTC, and quote side. Select an
+object to see its terms, source formulas and dependencies; **Go to cell** opens
+its source definition for editing. **Inspect Selection** finds the live handle
+in the selected cell. The panel refreshes while Excel is ready and never starts
+calculation. These dates describe the market and contract, not object creation
+times. **Setup Guide** opens the worksheet construction examples.
+
+The ribbon is optional and requires .NET Framework 4.6.2 or later. Extract the
+native XLL and ribbon from the same ZIP into the same folder. Worksheet functions
+also work with the native XLL alone.
 
 Download the `swap example workbook <https://jmelo11.github.io/quantsupport/downloads/swap_pricing_example.xlsx>`_
 or the `historical pricing workbook <https://jmelo11.github.io/quantsupport/downloads/historical_pricing_example.xlsx>`_.
 Further notebook-style studies cover
+`portfolio aggregation <https://jmelo11.github.io/quantsupport/downloads/portfolio_aggregation_example.xlsx>`_,
 `loans, funding, and borrower credit <https://jmelo11.github.io/quantsupport/downloads/loan_pricing_example.xlsx>`_,
 `bond anchors and risk <https://jmelo11.github.io/quantsupport/downloads/bond_pricing_example.xlsx>`_, and
 `interpolation and schedules <https://jmelo11.github.io/quantsupport/downloads/interpolation_example.xlsx>`_.
@@ -43,7 +58,7 @@ displays the rejected function name and fails loading; a partially registered
 catalog is rolled back.
 
 To compile from the checkout, use a Windows PowerShell prompt with the
-64-bit MSVC Rust toolchain and Visual Studio Build Tools:
+64-bit MSVC Rust toolchain, Visual Studio Build Tools and .NET 8 SDK or later:
 
 .. code-block:: powershell
 
@@ -224,29 +239,78 @@ decimal-rate quote, multiplying by ``0.0001`` estimates the value change for a
 +1 bp move. This is not a universal conversion for futures prices, FX spots,
 or volatility quotes. Keep risk labels and units with the table.
 
+Aggregate a trade range
+-----------------------
+
+The portfolio workbook uses two deposits, three receive-fixed swaps and one
+short swap under USD/SOFR discounting. It builds both SOFR and TermSOFR3m
+projection curves from visible zero-rate inputs. Follow **3 Build** to the
+contiguous ``Portfolio_Members`` range and its two aggregation formulas:
+
+.. code-block:: text
+
+   =QS.PORTFOLIO.CREATE("Portfolio.Book",Portfolio_Members)
+   =QS.PORTFOLIO.EVALUATE("Portfolio.Result",Portfolio_Book,Portfolio_Pricer,Portfolio_Context,Portfolio_Requests,"USD")
+   =QS.RESULT.VALUE(Portfolio_Result)
+   =QS.RESULT.COUPONS(Portfolio_Result)
+   =QS.RESULT.CASHFLOW.SUMMARY(Portfolio_Result)
+   =QS.RESULT.SENSITIVITIES(Portfolio_Result)
+
+These use the workbook's defined names; its Build tab shows the actual formulas
+and object names. One pricer handle applies to every member. Alternatively,
+pass a range with one pricer per member. The returned object is standard
+``EvaluationResults``. PV and sensitivities require one common pricing currency;
+the currency argument declares that unit and performs no FX conversion.
+
+The deposits' default 100,000 at 4% and 300,000 at 6% combine to a 400,000 coupon
+at 5.5%. Paid SOFR coupons combine at a 25 bp spread on -400,000 principal.
+TermSOFR3m coupons remain distinct, as do opposing directions and incompatible
+conventions. **5 Coupons** retains types, accrual dates, both contractual and
+effective fixing indices, principal and weighted quotes. **6 Cashflows** is a
+separate payment-date view of signed interest, capital and other payments;
+it does not allocate accrual NII. **4 Results** checks PV against individually
+evaluated positions, and **7 Risk** keeps the original sensitivity labels.
+
 Handles, revisions, and calculation
 -----------------------------------
 
-Constructors return tokens such as ``QSObject:QuoteStore:guide.usd.quotes:3``.
-The native object remains owned by the XLL registry. Handles are valid only in
-the current Excel process/calculation thread and are not persisted market data.
-Saving a workbook saves formulas and inputs, not the live Rust objects.
+Constructors return tokens such as ``QSObject:QuoteStore:w7~guide.usd.quotes:3``.
+Each workbook has an isolated registry; the same names can be used in different
+workbooks. Handles are runtime references, not persisted market data. Saving a
+workbook saves formulas and inputs. Closing it releases its registry even if
+Excel remains running.
 
-Unchanged inputs reuse current objects. Changed constructor/mutator inputs
-advance revisions; a changed upstream token makes dependent context and value
-formulas recalculate. Readers reject stale handles. Mutators accept older
-revisions of the same identity because a worksheet mutation chain can retain
-its original upstream token while another formula has advanced the store.
-Do not reconstruct this behavior by editing handle text.
+Unchanged inputs reuse objects and results. Changed inputs advance revisions;
+Excel's dependency graph recalculates dependent formulas. Readers reject stale
+handles and cached objects whose inputs have changed. Mutators accept older
+revisions of the same identity so a worksheet update chain can retain its
+original constructor token. Always pass the final update handle to the context.
+Do not edit handle text.
 
-Object identity is shared by type and name. Use workbook-qualified naming when
-several workbooks are open; ``guide.usd.*`` is an example namespace, not an
-automatically isolated workbook registry. Registry/AD functions run on Excel's
-main calculation thread. Thread-safe date/interpolation functions may return
-scalars or spills; thread safety does not imply scalar output.
+A worksheet cell owns its outputs and observes its input objects. Replacing or
+clearing the formula releases previous outputs once no other cell references
+them. Store-update cells own individual contributions: changing the quote or
+curve key removes its previous entry; deleting the formula or a failed edit
+removes the contribution and restores any imported baseline. Two cells defining
+the same store entry fail explicitly. Keep ``Application.EnableEvents`` enabled
+for edit notifications; workbook closure is also checked independently.
 
-Deleting a quote row does not issue a removal operation on an already mutated
-store. Introduce a keyed reset when the input set changes:
+Object and valuation functions are nonvolatile. Manual calculation defers
+ordinary input-driven recalculation; F9/Calculate explicitly runs it. Excel may
+also evaluate a newly entered formula in Manual mode. On opening a saved workbook, the observer marks QuantSupport formula sheets
+dirty so handles are reconstructed under the current calculation mode. It never
+calls Calculate. Registry/AD operations run on
+Excel's main calculation thread; pure date/interpolation functions can run on
+worker threads.
+
+For large portfolios needing only PV, use
+``QS.EVALUATE.VALUE(pricer,trade,context)`` or
+``QS.EVALUATE.VALUES(pricer,A2:A10001,context)``. The latter spills a numeric
+column, or a row with a final TRUE argument. These functions retain no
+``EvaluationResults`` objects. Share the context and pricer across positions;
+use ``QS.EVALUATE`` when other requested measures must be retained.
+
+An explicit keyed reset is also available:
 
 .. code-block:: text
 
@@ -254,11 +318,9 @@ store. Introduce a keyed reset when the input set changes:
    H11 =QS.OBJECT.RESET(H10,$B$2)
    H12 =QS.QUOTES.SET(H11,A4,B4,,)
 
-Changing ``B2`` clears the mutable store once and lets unchanged downstream
-updates repopulate it. Reset works for supported mutable stores/configuration
-collections, not immutable curves, contexts, or trades. :excel:func:`QS.STORE.RESET` is
-an alias. Use the reset chain instead of retaining deleted observations by
-accident.
+Changing ``B2`` clears the mutable collection once, then downstream formulas
+repopulate it. Reset supports mutable stores/configuration collections;
+:excel:func:`QS.STORE.RESET` is an alias.
 
 Diagnosing errors
 -----------------
@@ -273,6 +335,8 @@ area instead of changing a pricing assumption.
 Check dates, decimal units, exact index/calendar names, optional argument
 positions, selected quote side, and handle revisions before changing numerical
 parameters. ``QS.OBJECT.TYPE`` can confirm a live object's type;
-``QS.OBJECT.COUNT`` counts identities, not historical revisions.
+``QS.OBJECT.COUNT()`` counts identities in this workbook, while
+``QS.OBJECT.COUNT(TRUE)`` counts across the Excel instance. Revisions are not
+counted as separate objects.
 Proceed to :doc:`markets-and-products` for alternative construction and
 quotation workflows, then :doc:`risk-and-history` for reproducible comparisons.

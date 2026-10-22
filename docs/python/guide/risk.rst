@@ -64,7 +64,7 @@ The same inactive scenario can be reused with another context. Do not retain a
 shocked AD-backed market view after its scope ends.
 
 An Absolute shock adds a value in the target's units; a Relative shock
-multiplies by ``1 + value``. Targets use case-sensitive set membership of
+multiplies by ``1 + value``. Targets use case-insensitive set membership of
 underscore-separated tokens after an initial identifier-equality check.
 Token order and multiplicity are ignored: a full identifier is
 **not an exact-only selector**.
@@ -83,6 +83,21 @@ alone cannot reveal a duplicated or unintended input move.
 
 Portfolio aggregation
 ---------------------
+
+The :doc:`portfolio aggregation notebook <../studies/notebooks/portfolio-aggregation>`
+uses ``qs.Portfolio(trades).evaluate(context, requests, value_currency="USD")``
+and returns standard ``EvaluationResults``. Its six-position deposit/swap book
+matches the Excel portfolio workbook. It reconciles PV, every sensitivity and
+payment-date totals against individual evaluations, then optionally exports
+five tables as CSV.
+
+``result.coupons`` preserves coupon types, accrual dates, contractual and
+effective fixing indices, signed notionals and compatible weighted rates or
+spreads. The two deposits combine to 400,000 at 5.5%, while SOFR and TermSOFR3m
+coupons and opposing directions remain separate. ``result.cashflow_summary``
+reports payment-date interest, capital, other and total amounts, without
+allocating interest to accrual periods. Numerical aggregation follows each
+trade's differentiation, avoiding a combined portfolio AD graph.
 
 Value each explicit ``Trade`` under the same market assumptions, then aggregate
 compatible monetary values and risk labels. Two opposite positions on the

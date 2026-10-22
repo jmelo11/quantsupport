@@ -79,7 +79,8 @@ calibration or volatility sensitivities.
 Portfolio risk and benchmarking
 -----------------------------------
 
-Reconcile sensitivities with full revaluation before aggregation. The legacy
+Inspect weighted coupons, fixing indices and separate interest/capital payments,
+then reconcile sensitivities with full revaluation. The legacy
 benchmark is an optional external comparison, not an additional pricing API:
 its ORE/CurveEngine prerequisites are separate from QuantSupport and are not
 required to build this documentation or run the main tutorial sequence.
@@ -91,6 +92,7 @@ explicitly rather than hiding it with a comparison tolerance.
 .. toctree::
    :maxdepth: 1
 
+   notebooks/portfolio-aggregation
    notebooks/portfolio-risk
    notebooks/sensitivity-benchmark
 
@@ -137,7 +139,7 @@ rejecting stale bindings. Saved ``execution_environment`` metadata records
 sanitized Python/package versions and whether the kernel matched its caller;
 inspect this provenance rather than inferring identity from a launch command.
 The legacy external benchmark lives outside that runner's directory
-but is available through its ``benchmark`` selector. To validate all fourteen,
+but is available through its ``benchmark`` selector. To validate all fifteen,
 install the benchmark's optional requirements and include it explicitly:
 
 .. code-block:: console

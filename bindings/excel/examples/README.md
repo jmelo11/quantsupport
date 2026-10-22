@@ -6,6 +6,7 @@ Load the matching `quantsupport.xll` in **64-bit Windows Excel** before opening 
 
 | Workbook | What to follow |
 | --- | --- |
+| [Portfolio aggregation](portfolio_aggregation_example.xlsx) | Pass a range of six trade handles, reconcile PV, and inspect weighted coupon rates/spreads, distinct SOFR/TermSOFR3m fixing indices, sensitivities and separate interest/capital payments. |
 | [Swap pricing](swap_pricing_example.xlsx) | Bootstrap SOFR under USD collateral and value a receive-fixed USD swap. Bootstrap ESTR in a separate EUR context for curve comparisons. |
 | [Loan pricing](loan_pricing_example.xlsx) | Compare 12 agreements: repayment styles, floating and mixed coupons, prepayment, borrower credit, funding and stepped coupons. |
 | [Bond pricing](bond_pricing_example.xlsx) | Keep one bond contract and compare separately anchored positions using Z-spread or clean price. |
@@ -37,7 +38,19 @@ python bindings/excel/examples/create_examples.py
 python -m unittest discover -s bindings/excel/examples -p 'test_*.py'
 ```
 
-Use `--example swap`, `historical`, `loans`, `bonds`, or `interpolation` to generate one file, and `--output-dir PATH` to choose a destination.
+Use `--example portfolio`, `swap`, `historical`, `loans`, `bonds`, or `interpolation` to generate one file, and `--output-dir PATH` to choose a destination.
+
+The portfolio workbook matches the [Python notebook](../../python/examples/sensitivity/portfolio_aggregation.ipynb).
+Its default USD book has two deposits (100,000 at 4% and 300,000 at 6%), two
+receive-fixed SOFR swaps (100,000 at a 10 bp floating spread and 300,000 at
+30 bp), one 200,000 TermSOFR3m swap, and a 50,000 short SOFR swap.
+All payments are discounted on SOFR; TermSOFR3m has its own projection curve.
+The deposits combine at **400,000 and 5.5%**; the paid SOFR coupons combine at
+**-400,000 and 25 bp**. The TermSOFR3m coupons and opposing directions remain
+separate. Open **3 Build** to find the contiguous `Portfolio_Members` range
+passed to `QS.PORTFOLIO.CREATE`, and **5 Coupons** to inspect the resulting terms.
+**6 Cashflows** shows payment-date interest and capital; it does not allocate
+interest across accrual periods for NII.
 
 The tests require Rust/Cargo. They validate navigation, formula dependencies, registered signatures, and the native pricing workflow. They also extract the swap's actual worksheet quotes, configurations and context assumptions and bootstrap them through Rust on any platform, checking the original missing-collateral failure as a regression.
 

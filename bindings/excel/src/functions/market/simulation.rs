@@ -1,5 +1,5 @@
+use quantsupport_xll_macros::xll_bindgen;
 use xll_rs::types::XllError;
-use xllgen::xll_bindgen;
 
 use crate::runtime::registry::with_registry;
 
@@ -200,7 +200,6 @@ use quantsupport::prelude::SimulationConfiguration;
 
 #[xll_bindgen(
     name = "QS.SIMULATION.CONFIGS.FROM.JSON",
-    volatile,
     category = "QuantSupport - Market",
     help = "Stores native QuantSupport SimulationConfiguration values parsed from JSON"
 )]

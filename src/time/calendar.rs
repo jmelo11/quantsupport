@@ -122,75 +122,75 @@ impl TryFrom<String> for Calendar {
     type Error = QSError;
 
     fn try_from(s: String) -> Result<Self> {
-        match s.as_str() {
-            "Australia(Settlement)" => Ok(Self::Australia(Australia::new(
+        match s.to_ascii_lowercase().as_str() {
+            "australia(settlement)" => Ok(Self::Australia(Australia::new(
                 super::calendars::australia::Market::Settlement,
             ))),
-            "Australia(ASX)" => Ok(Self::Australia(Australia::new(
+            "australia(asx)" => Ok(Self::Australia(Australia::new(
                 super::calendars::australia::Market::ASX,
             ))),
-            "Australia" => Ok(Self::Australia(Australia::default())),
-            "Canada(Settlement)" => Ok(Self::Canada(Canada::new(
+            "australia" => Ok(Self::Australia(Australia::default())),
+            "canada(settlement)" => Ok(Self::Canada(Canada::new(
                 super::calendars::canada::Market::Settlement,
             ))),
-            "Canada(TSX)" => Ok(Self::Canada(Canada::new(
+            "canada(tsx)" => Ok(Self::Canada(Canada::new(
                 super::calendars::canada::Market::TSX,
             ))),
-            "Canada" => Ok(Self::Canada(Canada::default())),
-            "Switzerland" => Ok(Self::Switzerland(Switzerland::new())),
-            "NewZealand(Wellington)" => Ok(Self::NewZealand(NewZealand::new(
+            "canada" => Ok(Self::Canada(Canada::default())),
+            "switzerland" => Ok(Self::Switzerland(Switzerland::new())),
+            "newzealand(wellington)" => Ok(Self::NewZealand(NewZealand::new(
                 super::calendars::newzealand::Market::Wellington,
             ))),
-            "NewZealand(Auckland)" => Ok(Self::NewZealand(NewZealand::new(
+            "newzealand(auckland)" => Ok(Self::NewZealand(NewZealand::new(
                 super::calendars::newzealand::Market::Auckland,
             ))),
-            "NewZealand" => Ok(Self::NewZealand(NewZealand::default())),
-            "Norway" => Ok(Self::Norway(Norway::new())),
-            "Sweden" => Ok(Self::Sweden(Sweden::new())),
-            "Denmark" => Ok(Self::Denmark(Denmark::new())),
-            "SouthKorea(Settlement)" => Ok(Self::SouthKorea(SouthKorea::new(
+            "newzealand" => Ok(Self::NewZealand(NewZealand::default())),
+            "norway" => Ok(Self::Norway(Norway::new())),
+            "sweden" => Ok(Self::Sweden(Sweden::new())),
+            "denmark" => Ok(Self::Denmark(Denmark::new())),
+            "southkorea(settlement)" => Ok(Self::SouthKorea(SouthKorea::new(
                 super::calendars::southkorea::Market::Settlement,
             ))),
-            "SouthKorea(KRX)" => Ok(Self::SouthKorea(SouthKorea::new(
+            "southkorea(krx)" => Ok(Self::SouthKorea(SouthKorea::new(
                 super::calendars::southkorea::Market::KRX,
             ))),
-            "SouthKorea" => Ok(Self::SouthKorea(SouthKorea::default())),
-            "SouthAfrica" => Ok(Self::SouthAfrica(SouthAfrica::new())),
-            "China(SSE)" => Ok(Self::China(China::new(
+            "southkorea" => Ok(Self::SouthKorea(SouthKorea::default())),
+            "southafrica" => Ok(Self::SouthAfrica(SouthAfrica::new())),
+            "china(sse)" => Ok(Self::China(China::new(
                 super::calendars::china::Market::SSE,
             ))),
-            "China(IB)" => Ok(Self::China(China::new(super::calendars::china::Market::IB))),
-            "China" => Ok(Self::China(China::default())),
-            "UnitedKingdom(Settlement)" => Ok(Self::UnitedKingdom(UnitedKingdom::new())),
-            "Japan" => Ok(Self::Japan(Japan::new())),
-            name if name.starts_with("JointCalendar(") => parse_joint_calendar(name),
-            "NullCalendar" => Ok(Self::NullCalendar(NullCalendar::new())),
-            "WeekendsOnly" => Ok(Self::WeekendsOnly(WeekendsOnly::new())),
-            "TARGET" => Ok(Self::TARGET(TARGET::new())),
-            "UnitedStates(Sofr)" => Ok(Self::UnitedStates(UnitedStates::default())),
-            "UnitedStates(Settlement)" => Ok(Self::UnitedStates(UnitedStates::new(
+            "china(ib)" => Ok(Self::China(China::new(super::calendars::china::Market::IB))),
+            "china" => Ok(Self::China(China::default())),
+            "unitedkingdom(settlement)" => Ok(Self::UnitedKingdom(UnitedKingdom::new())),
+            "japan" => Ok(Self::Japan(Japan::new())),
+            name if name.starts_with("jointcalendar(") => parse_joint_calendar(name),
+            "nullcalendar" => Ok(Self::NullCalendar(NullCalendar::new())),
+            "weekendsonly" => Ok(Self::WeekendsOnly(WeekendsOnly::new())),
+            "target" => Ok(Self::TARGET(TARGET::new())),
+            "unitedstates(sofr)" => Ok(Self::UnitedStates(UnitedStates::default())),
+            "unitedstates(settlement)" => Ok(Self::UnitedStates(UnitedStates::new(
                 super::calendars::unitedstates::Market::Settlement,
             ))),
-            "UnitedStates(LiborImpact)" => Ok(Self::UnitedStates(UnitedStates::new(
+            "unitedstates(liborimpact)" => Ok(Self::UnitedStates(UnitedStates::new(
                 super::calendars::unitedstates::Market::LiborImpact,
             ))),
-            "UnitedStates(Nyse)" => Ok(Self::UnitedStates(UnitedStates::new(
+            "unitedstates(nyse)" => Ok(Self::UnitedStates(UnitedStates::new(
                 super::calendars::unitedstates::Market::Nyse,
             ))),
-            "UnitedStates(GovernmentBond)" => Ok(Self::UnitedStates(UnitedStates::new(
+            "unitedstates(governmentbond)" => Ok(Self::UnitedStates(UnitedStates::new(
                 super::calendars::unitedstates::Market::GovernmentBond,
             ))),
-            "UnitedStates(Nerc)" => Ok(Self::UnitedStates(UnitedStates::new(
+            "unitedstates(nerc)" => Ok(Self::UnitedStates(UnitedStates::new(
                 super::calendars::unitedstates::Market::Nerc,
             ))),
-            "UnitedStates(FederalReserve)" => Ok(Self::UnitedStates(UnitedStates::new(
+            "unitedstates(federalreserve)" => Ok(Self::UnitedStates(UnitedStates::new(
                 super::calendars::unitedstates::Market::FederalReserve,
             ))),
-            "Brazil(Settlement)" => Ok(Self::Brazil(Brazil::default())),
-            "Brazil(Exchange)" => Ok(Self::Brazil(Brazil::new(
+            "brazil(settlement)" => Ok(Self::Brazil(Brazil::default())),
+            "brazil(exchange)" => Ok(Self::Brazil(Brazil::new(
                 super::calendars::brazil::Market::Exchange,
             ))),
-            "Chile(SSE)" => Ok(Self::Chile(Chile::default())),
+            "chile(sse)" => Ok(Self::Chile(Chile::default())),
             _ => Err(QSError::InvalidValueErr(format!("Invalid calendar: {s}"))),
         }
     }
@@ -199,7 +199,7 @@ impl TryFrom<String> for Calendar {
 fn parse_joint_calendar(name: &str) -> Result<Calendar> {
     let invalid = || QSError::InvalidValueErr(format!("Invalid joint calendar: {name}"));
     let body = name
-        .strip_prefix("JointCalendar(")
+        .strip_prefix("jointcalendar(")
         .and_then(|s| s.strip_suffix(')'))
         .ok_or_else(invalid)?;
     let mut parts = Vec::new();
@@ -221,8 +221,8 @@ fn parse_joint_calendar(name: &str) -> Result<Calendar> {
     }
     parts.push(&body[start..]);
     let rule = match parts.first().copied() {
-        Some("JoinHolidays") => JointCalendarRule::JoinHolidays,
-        Some("JoinBusinessDays") => JointCalendarRule::JoinBusinessDays,
+        Some("joinholidays") => JointCalendarRule::JoinHolidays,
+        Some("joinbusinessdays") => JointCalendarRule::JoinBusinessDays,
         _ => return Err(invalid()),
     };
     let calendars = parts
@@ -513,13 +513,19 @@ mod test {
             let json = serde_json::to_string(&calendar).unwrap();
             assert_eq!(serde_json::from_str::<Calendar>(&json).unwrap(), calendar);
         }
+        for spelling in [
+            "target",
+            "TaRgEt",
+            "jointcalendar(joinholidays,target,japan)",
+        ] {
+            assert!(Calendar::try_from(spelling.to_string()).is_ok());
+        }
         for alias in [
             "UnitedStates",
             "Brazil",
             "Chile",
             "SOFR",
             "Sofr",
-            "target",
             "JointCalendar(JoinHolidays,Japan)",
             "JointCalendar(Other,Japan,TARGET)",
             "JointCalendar(JoinHolidays,Japan,TARGET))",

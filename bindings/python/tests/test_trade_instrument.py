@@ -7,6 +7,55 @@ import quantsupport as qs
 
 
 class TradeInstrumentTests(unittest.TestCase):
+    def test_deposits_and_portfolios_use_standard_results(self):
+        instrument = qs.FixedRateDeposit("DEPOSIT", "2026-02-24", "2027-02-24", 100_000, 0.04, "USD", "SOFR")
+        long = qs.Trade(instrument, "2026-02-24")
+        short = qs.Trade(instrument, "2026-02-24", "PayShort", notional=50_000)
+        portfolio = qs.Portfolio([long, short, long])
+        self.assertEqual(len(portfolio), 3)
+        with self.make_context() as context:
+            single = context.evaluate(long, ["Value", "Sensitivities", "Cashflows"])
+            result = portfolio.evaluate(context, ["Value", "Sensitivities", "Cashflows"], value_currency="USD")
+            self.assertIsInstance(result, qs.EvaluationResults)
+            self.assertAlmostEqual(result.price, 1.5 * single.price, places=7)
+            expected = dict(single.raw_sensitivities)
+            for factor, value in result.raw_sensitivities:
+                self.assertAlmostEqual(value, 1.5 * expected[factor], places=6)
+            summary = result.cashflow_summary
+            self.assertEqual(list(summary.columns), ["payment_date", "currency", "interest", "capital", "other", "total"])
+            self.assertTrue((summary.currency == "USD").all())
+            self.assertAlmostEqual(summary.capital.sum(), 0.0)
+            self.assertGreater(summary.interest.sum(), 0.0)
+            self.assertEqual(set(result.cashflows.type), {"FixedRateCoupon", "Redemption", "Disbursement"})
+            coupons = result.coupons[result.coupons.type == "FixedRateCoupon"]
+            self.assertEqual(len(coupons), 2)  # Pay and receive directions remain separate.
+            self.assertTrue((coupons.rate == 0.04).all())
+            self.assertAlmostEqual(coupons.notional.sum(), 150_000.0)
+            omitted = portfolio.evaluate(context, ["FairRate(0)"])
+            self.assertIsNone(omitted.fair_rate)
+            self.assertIsNone(omitted.price)
+
+    def test_portfolio_omits_incomplete_measures_and_keeps_cashflow_currencies_separate(self):
+        class NumericContext:
+            def evaluate(self, trade, requests):
+                if trade == "missing":
+                    return qs.EvaluationResults("2026-01-15", trade)
+                return qs.EvaluationResults("2026-01-15", trade, price=10.0, cashflows=[
+                    dict(payment_date="2027-01-15", type="FixedRateCoupon", amount=3.0, currency="USD"),
+                    dict(payment_date="2027-01-15", type="Redemption", amount=100.0, currency="EUR"),
+                ])
+
+        result = qs.Portfolio(["first", "missing"]).evaluate(NumericContext(), ["Value", "Cashflows"], value_currency="USD")
+        self.assertIsNone(result.price)
+        self.assertIsNone(result.cashflows)
+        result = qs.Portfolio(["first", "second"]).evaluate(NumericContext(), ["Cashflows"])
+        summary = result.cashflow_summary.set_index("currency")
+        self.assertEqual(summary.loc["USD", "interest"], 6.0)
+        self.assertEqual(summary.loc["USD", "capital"], 0.0)
+        self.assertEqual(summary.loc["EUR", "capital"], 200.0)
+        with self.assertRaises(qs.QuantSupportError):
+            qs.Portfolio([])
+
     def make_swap(self):
         return qs.Swap(
             identifier="POSITION-SWAP", start_date="2026-02-24",

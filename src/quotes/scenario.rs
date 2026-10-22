@@ -1,7 +1,7 @@
 //! Combined market shocks applied through an independent, request-driven view.
 //!
 //! A shock target first checks identifier equality, then falls back to
-//! case-sensitive, underscore-separated token membership. Every target token
+//! case-insensitive, underscore-separated token membership. Every target token
 //! must occur in the identifier, but token order and multiplicity are ignored.
 //! Supplying a full identifier does not restrict matching to that exact quote:
 //! a repeated `3M` tenor/expiry token can also match a `3M`/`6M` identifier.
@@ -107,7 +107,7 @@ impl Shock {
     /// Returns `true` if the scenario targets the given quote identifier.
     ///
     /// Exact string equality succeeds first. Otherwise every underscore-separated
-    /// target token must occur in the identifier, case-sensitively. Order and
+    /// target token must occur in the identifier, case-insensitively. Order and
     /// repeated-token counts are ignored, so a full identifier can match other
     /// identifiers too. Overlapping shocks are applied separately, not deduplicated.
     ///
@@ -133,11 +133,15 @@ impl Shock {
     /// ```
     #[must_use]
     pub fn matches(&self, identifier: &str) -> bool {
-        if self.target == identifier {
+        if self.target.eq_ignore_ascii_case(identifier) {
             return true;
         }
         let segments: Vec<&str> = identifier.split('_').collect();
-        self.target.split('_').all(|part| segments.contains(&part))
+        self.target.split('_').all(|part| {
+            segments
+                .iter()
+                .any(|segment| segment.eq_ignore_ascii_case(part))
+        })
     }
 
     /// Applies the shock to a single value.
@@ -273,6 +277,7 @@ mod tests {
     fn matches_exact_identifier() {
         let scenario = Shock::new("OIS_USD_SOFR_1Y", 0.01, ScenarioType::Absolute);
         assert!(scenario.matches("OIS_USD_SOFR_1Y"));
+        assert!(scenario.matches("ois_usd_sofr_1y"));
         assert!(!scenario.matches("OIS_USD_SOFR_2Y"));
     }
 

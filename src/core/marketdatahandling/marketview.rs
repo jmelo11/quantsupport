@@ -795,4 +795,53 @@ mod tests {
         assert!(!Rc::ptr_eq(base.simulation(), rebuilt.simulation()));
         Ok(())
     }
+
+    #[test]
+    fn case_variants_of_quote_ids_still_invalidate_scenario_curve_caches() -> Result<()> {
+        use crate::prelude::{Currency, DayCounter, Interpolator, Quote, QuoteLevels};
+        let date = Date::new(2026, 1, 15);
+        let maturity = Date::new(2027, 1, 15);
+        let mut quotes = QuoteStore::new(date);
+        quotes.add_quote(Quote::new(
+            "ZeroRate_EUR_ESTR_1Y_Continuous_Annual".parse()?,
+            QuoteLevels::with_mid(0.05),
+        ));
+        let configuration = CurveConfiguration::new(
+            MarketIndex::ESTR,
+            DayCounter::Actual365,
+            Interpolator::Linear,
+            true,
+            vec!["zerorate_eur_estr_1y_continuous_annual".into()],
+        );
+        let mut context = PricingContext::new()
+            .with_quote_store(quotes)
+            .with_base_currency(Currency::EUR)
+            .with_base_index(MarketIndex::ESTR)
+            .with_curve_configurations(vec![configuration]);
+        context.initialize()?;
+        let before = context
+            .constructed_elements()
+            .discount_curve(&MarketIndex::ESTR)
+            .ok_or_else(|| QSError::NotFoundErr("ESTR".into()))?
+            .curve()
+            .discount_factor(maturity)?
+            .value();
+        let scenario = Scenario::new(vec![Shock::new(
+            "ZeroRate_EUR_ESTR_1Y_Continuous_Annual",
+            0.01,
+            ScenarioType::Absolute,
+        )]);
+        let view = scenario.apply(&context)?;
+        let shocked = view.handle_request(&request(MarketIndex::ESTR))?;
+        let after = shocked
+            .constructed_elements()
+            .discount_curve(&MarketIndex::ESTR)
+            .ok_or_else(|| QSError::NotFoundErr("ESTR".into()))?
+            .curve()
+            .discount_factor(maturity)?
+            .value();
+        assert!((before - (-0.05_f64).exp()).abs() < 1e-12);
+        assert!((after - (-0.06_f64).exp()).abs() < 1e-12);
+        Ok(())
+    }
 }

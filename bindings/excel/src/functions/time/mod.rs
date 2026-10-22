@@ -3,9 +3,9 @@ use quantsupport::prelude::{MakeSchedule, Period};
 #[cfg(windows)]
 mod datetime;
 #[cfg(windows)]
-use xll_rs::types::XllError;
+use quantsupport_xll_macros::xll_bindgen;
 #[cfg(windows)]
-use xllgen::xll_bindgen;
+use xll_rs::types::XllError;
 
 #[cfg(windows)]
 use crate::functions::helpers::{

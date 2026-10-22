@@ -1,3 +1,4 @@
 /dist/
 !scripts/build.ps1
+!ribbon/tests/smoke.ps1
 !examples/create_swap_example.ps1

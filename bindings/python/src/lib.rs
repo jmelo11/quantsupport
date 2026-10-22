@@ -121,6 +121,7 @@ fn quantsupport(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<instruments::scripting::ScriptedProduct>()?;
     // Results
     m.add_class::<pricing::results::EvaluationResults>()?;
+    m.add_class::<pricing::portfolio::Portfolio>()?;
     // XVA
     m.add_class::<xva::XvaConfig>()?;
     m.add_class::<xva::CsaTerms>()?;

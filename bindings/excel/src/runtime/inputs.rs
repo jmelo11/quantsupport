@@ -106,3 +106,11 @@ pub fn market_index(value: &str) -> Result<quantsupport::prelude::MarketIndex, S
     }
     Ok(value.parse().unwrap_or_else(|never| match never {}))
 }
+
+/// A single text argument (a literal or one worksheet cell).
+pub fn scalar_text(table: &Table, label: &str) -> Result<String, String> {
+    if table.len() != 1 || table[0].len() != 1 {
+        return Err(format!("{label} must be a text value or a single cell"));
+    }
+    Ok(table[0][0].text(label)?.to_string())
+}

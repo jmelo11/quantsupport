@@ -13,6 +13,7 @@ use crate::QuantSupportError;
 /// A single cashflow row extracted from the Rust `CashflowsTable`.
 #[derive(Clone)]
 struct CashflowRow {
+    coupon_details: Option<quantsupport::prelude::CouponDetails>,
     payment_date: String,
     cashflow_type: String,
     amount: f64,
@@ -26,6 +27,8 @@ struct CashflowRow {
 
 #[derive(Deserialize)]
 struct CashflowInput {
+    #[serde(default)]
+    coupon_details: Option<quantsupport::prelude::CouponDetails>,
     payment_date: String,
     #[serde(rename = "type", alias = "cashflow_type")]
     cashflow_type: String,
@@ -46,6 +49,7 @@ struct CashflowInput {
 impl From<CashflowInput> for CashflowRow {
     fn from(value: CashflowInput) -> Self {
         Self {
+            coupon_details: value.coupon_details,
             payment_date: value.payment_date,
             cashflow_type: value.cashflow_type,
             amount: value.amount,
@@ -89,6 +93,61 @@ pub struct EvaluationResults {
 }
 
 impl EvaluationResults {
+    pub(crate) fn to_qs(&self) -> PyResult<QsEvaluationResults> {
+        use quantsupport::prelude::{CashflowsTable, Currency, Date, SensitivityMap};
+        let mut result = QsEvaluationResults::new(self.evaluation_date, self.identifier.clone());
+        if let Some(value) = self.price {
+            result = result.with_price(value);
+        }
+        if let Some(value) = self.yield_to_maturity {
+            result = result.with_ytm(value);
+        }
+        if let Some(value) = self.modified_duration {
+            result = result.with_modified_duration(value);
+        }
+        if let Some(value) = self.z_spread {
+            result = result.with_z_spread(value);
+        }
+        if let Some(value) = self.oas {
+            result = result.with_oas(value);
+        }
+        if let Some(value) = self.fair_rate {
+            result = result.with_fair_rate(value);
+        }
+        if let Some(pairs) = &self.sensitivities {
+            let (keys, values): (Vec<_>, Vec<_>) = pairs.iter().cloned().unzip();
+            result = result.with_sensitivities(
+                SensitivityMap::default()
+                    .with_instrument_keys(&keys)
+                    .with_exposure(&values),
+            );
+        }
+        if let Some(rows) = &self.cashflows {
+            let mut flows = CashflowsTable::new();
+            for row in rows {
+                flows.add_cashflow(
+                    Date::from_str(&row.payment_date, "%Y-%m-%d")
+                        .map_err(crate::common::conversion::qs_err)?,
+                    row.cashflow_type.clone(),
+                    row.amount,
+                    row.fixing,
+                    row.accrual_period,
+                    row.currency
+                        .parse::<Currency>()
+                        .map_err(crate::common::conversion::qs_err)?,
+                    row.floorlet_strike,
+                    row.caplet_strike,
+                    row.leg_index,
+                );
+                if let Some(details) = &row.coupon_details {
+                    flows.set_last_coupon_details(details.clone());
+                }
+            }
+            result = result.with_cashflows(flows);
+        }
+        Ok(result)
+    }
+
     pub fn from_qs(res: &QsEvaluationResults) -> Self {
         let sensitivities = res.sensitivities().map(|s| {
             s.instrument_keys()
@@ -100,6 +159,7 @@ impl EvaluationResults {
         let cashflows = res.cashflows().map(|t| {
             (0..t.payment_dates().len())
                 .map(|i| CashflowRow {
+                    coupon_details: t.coupon_details()[i].clone(),
                     payment_date: t.payment_dates()[i].to_string(),
                     cashflow_type: t.cashflow_types()[i].clone(),
                     amount: t.amounts()[i],
@@ -263,6 +323,189 @@ impl EvaluationResults {
     #[getter]
     fn raw_sensitivities(&self) -> Option<Vec<(String, f64)>> {
         self.sensitivities.clone()
+    }
+
+    /// Signed payments grouped by date and currency, separating interest and capital.
+    /// Amounts use payment dates; no allocation to accrual periods is performed.
+    #[getter]
+    fn cashflow_summary<'py>(&self, py: Python<'py>) -> PyResult<Option<Bound<'py, PyAny>>> {
+        let native = self.to_qs()?;
+        let Some(flows) = native.cashflows() else {
+            return Ok(None);
+        };
+        let rows = quantsupport::prelude::summarize_cashflows(flows)
+            .map_err(crate::common::conversion::qs_err)?;
+        Ok(Some(dataframe(
+            py,
+            &[
+                (
+                    "payment_date",
+                    rows.iter()
+                        .map(|row| row.payment_date.to_string())
+                        .collect::<Vec<_>>()
+                        .into_pyobject(py)?
+                        .into_any(),
+                ),
+                (
+                    "currency",
+                    rows.iter()
+                        .map(|row| row.currency.to_string())
+                        .collect::<Vec<_>>()
+                        .into_pyobject(py)?
+                        .into_any(),
+                ),
+                (
+                    "interest",
+                    rows.iter()
+                        .map(|row| row.interest)
+                        .collect::<Vec<_>>()
+                        .into_pyobject(py)?
+                        .into_any(),
+                ),
+                (
+                    "capital",
+                    rows.iter()
+                        .map(|row| row.capital)
+                        .collect::<Vec<_>>()
+                        .into_pyobject(py)?
+                        .into_any(),
+                ),
+                (
+                    "other",
+                    rows.iter()
+                        .map(|row| row.other)
+                        .collect::<Vec<_>>()
+                        .into_pyobject(py)?
+                        .into_any(),
+                ),
+                (
+                    "total",
+                    rows.iter()
+                        .map(|row| row.total())
+                        .collect::<Vec<_>>()
+                        .into_pyobject(py)?
+                        .into_any(),
+                ),
+            ],
+        )?))
+    }
+
+    /// Cashflows with contractual coupon type, fixing index, dates, signed
+    /// notional and compatible weighted quotes. Original conventions survive
+    /// portfolio aggregation and reconstruction of the standard results.
+    #[getter]
+    fn coupons<'py>(&self, py: Python<'py>) -> PyResult<Option<Bound<'py, PyAny>>> {
+        let Some(frame) = self.cashflows(py)? else {
+            return Ok(None);
+        };
+        let Some(rows) = &self.cashflows else {
+            return Ok(None);
+        };
+        let extra = pyo3::types::PyDict::new(py);
+        extra.set_item(
+            "accrual_start",
+            rows.iter()
+                .map(|row| {
+                    row.coupon_details
+                        .as_ref()
+                        .map(|terms| terms.accrual_start.to_string())
+                })
+                .collect::<Vec<_>>(),
+        )?;
+        extra.set_item(
+            "accrual_end",
+            rows.iter()
+                .map(|row| {
+                    row.coupon_details
+                        .as_ref()
+                        .map(|terms| terms.accrual_end.to_string())
+                })
+                .collect::<Vec<_>>(),
+        )?;
+        extra.set_item(
+            "market_index",
+            rows.iter()
+                .map(|row| {
+                    row.coupon_details
+                        .as_ref()
+                        .and_then(|terms| terms.market_index.as_ref().map(ToString::to_string))
+                })
+                .collect::<Vec<_>>(),
+        )?;
+        extra.set_item(
+            "notional",
+            rows.iter()
+                .map(|row| row.coupon_details.as_ref().map(|terms| terms.notional))
+                .collect::<Vec<_>>(),
+        )?;
+        extra.set_item(
+            "fixing_index",
+            rows.iter()
+                .map(|row| {
+                    row.coupon_details
+                        .as_ref()
+                        .and_then(|terms| terms.fixing_index().map(ToString::to_string))
+                })
+                .collect::<Vec<_>>(),
+        )?;
+        extra.set_item(
+            "rate",
+            rows.iter()
+                .map(|row| row.coupon_details.as_ref().and_then(|terms| terms.rate))
+                .collect::<Vec<_>>(),
+        )?;
+        extra.set_item(
+            "spread",
+            rows.iter()
+                .map(|row| row.coupon_details.as_ref().and_then(|terms| terms.spread))
+                .collect::<Vec<_>>(),
+        )?;
+        extra.set_item(
+            "day_counter",
+            rows.iter()
+                .map(|row| {
+                    row.coupon_details
+                        .as_ref()
+                        .map(|terms| format!("{:?}", terms.day_counter))
+                })
+                .collect::<Vec<_>>(),
+        )?;
+        extra.set_item(
+            "rate_definition",
+            rows.iter()
+                .map(|row| {
+                    row.coupon_details.as_ref().and_then(|terms| {
+                        terms
+                            .rate_definition
+                            .map(|definition| format!("{definition:?}"))
+                    })
+                })
+                .collect::<Vec<_>>(),
+        )?;
+        extra.set_item(
+            "overnight_conventions",
+            rows.iter()
+                .map(|row| {
+                    row.coupon_details.as_ref().and_then(|terms| {
+                        terms
+                            .overnight_conventions
+                            .as_ref()
+                            .map(|conventions| format!("{conventions:?}"))
+                    })
+                })
+                .collect::<Vec<_>>(),
+        )?;
+        extra.set_item(
+            "payoff",
+            rows.iter()
+                .map(|row| {
+                    row.coupon_details
+                        .as_ref()
+                        .and_then(|terms| terms.payoff.as_ref().map(|payoff| format!("{payoff:?}")))
+                })
+                .collect::<Vec<_>>(),
+        )?;
+        Ok(Some(frame.call_method("assign", (), Some(&extra))?))
     }
 
     /// Cashflow table as a DataFrame, if `"Cashflows"` was requested.

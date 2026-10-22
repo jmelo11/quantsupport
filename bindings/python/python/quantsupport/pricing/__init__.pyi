@@ -8,7 +8,77 @@ from ..market import CreditCurveConfiguration, Currency, CurveConfiguration, Dis
 from ..instruments import Instrument, ScriptedProduct, Side
 from ..risk import XvaResult
 __all__ = ['Request', 'PricerConfiguration', 'SingleCurveCSADiscountPolicy', 'FixedIncomeDiscountPolicy', 'BondPricingAnchor',
-           'PricingContext', 'LoanPricer', 'Trade', 'Pricer', 'MarketDataProvider', 'Evaluator', 'EvaluationResults']
+           'PricingContext', 'LoanPricer', 'Trade', 'Pricer', 'MarketDataProvider', 'Evaluator', 'Portfolio', 'EvaluationResults']
+
+
+@final
+class Portfolio:
+    """Ordered trade list evaluated incrementally into standard EvaluationResults.
+
+    Repeated entries count as repeated positions. Value and sensitivities require
+    one common pricing currency; cashflows keep their original currencies and
+    retain coupon types, fixing indices, dates and conventions. Compatible
+    rates/spreads use notional weights; pay/receive directions remain separate.
+    Unsupported or incomplete aggregate measures remain absent.
+    """
+
+    def __new__(cls, trades: Sequence[Any]) -> Self:
+        """Create a nonempty portfolio, preserving order and repeated positions.
+
+        Parameters
+        ----------
+        trades : sequence
+            Positions accepted by the evaluation context. Wrap native instruments
+            in explicit ``Trade`` objects. Repeated entries count as repeated
+            positions; the portfolio retains references to its members.
+
+        Raises
+        ------
+        QuantSupportError
+            If the sequence is empty.
+        """
+        ...
+
+    def __len__(self) -> int: ...
+    def __repr__(self) -> str: ...
+    def evaluate(self, context: PricingContext, requests: Sequence[Request | str] | None = ..., *, value_currency: _CurrencyLike | None = ...) -> EvaluationResults:
+        """Evaluate members individually and aggregate their numeric results.
+
+        Parameters
+        ----------
+        context : PricingContext
+            Active pricing context providing the market inputs, pricers and
+            discount policies for every member. Enter ``with context:`` before
+            evaluating the portfolio.
+        requests : sequence of Request or str, optional
+            Measures to aggregate: ``Value``, ``Sensitivities`` and ``Cashflows``.
+            None, the default, requests only Value; an empty sequence requests
+            no measures. Unsupported aggregate requests are ignored. A measure
+            omitted by any member remains absent from the aggregate results.
+        value_currency : Currency or str or None, optional
+            Common pricing currency of member monetary PVs and their raw
+            derivatives. Supply it when requesting Value or Sensitivities;
+            None is suitable for cashflow-only requests. This declares the
+            valuation unit and performs no FX conversion. Cashflows retain
+            their original currencies.
+
+        Returns
+        -------
+        EvaluationResults
+            Standard results with summed PV and risk-factor derivatives, plus
+            compatible compressed coupons when requested. Coupon types,
+            fixing indices, dates, conventions and opposing directions remain
+            distinguishable. The cashflow_summary property separately groups
+            payment-date interest and capital by currency.
+
+        Raises
+        ------
+        QuantSupportError
+            If inputs cannot be converted, a member cannot be priced, supplied
+            monetary measures lack a pricing currency, or numeric results
+            contain inconsistent evaluation dates or nonfinite values.
+        """
+        ...
 
 
 @final
@@ -1673,6 +1743,16 @@ QuantSupportError
     @property
     def price(self) -> float | None:
         """Net present value, if `"Value"` was requested."""
+        ...
+
+    @property
+    def coupons(self) -> DataFrame | None:
+        """Cashflows plus dates, index, signed notional, rate/spread and contractual conventions."""
+        ...
+
+    @property
+    def cashflow_summary(self) -> DataFrame | None:
+        """Payments grouped by date and currency, with interest, capital, other and total."""
         ...
 
     @property

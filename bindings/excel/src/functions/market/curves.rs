@@ -3,8 +3,8 @@ use std::{cell::RefCell, rc::Rc};
 use quantsupport::prelude::{
     Compounding, DiscountCurveElement, DualFwd, FlatForwardTermStructure, Frequency, RateDefinition,
 };
+use quantsupport_xll_macros::xll_bindgen;
 use xll_rs::types::{XllError, XLOPER12};
-use xllgen::xll_bindgen;
 
 use crate::runtime::registry::{with_registry, with_registry_mut, QsObject};
 
@@ -70,7 +70,6 @@ fn flat_curve_element(
 
 #[xll_bindgen(
     name = "QS.CURVE.FLAT",
-    volatile,
     category = "QuantSupport - Market",
     help = "Creates a flat DiscountCurveElement; add its handle to an elements store with QS.CURVE.ADD"
 )]
@@ -302,7 +301,6 @@ pub fn qs_curve_table(
 
 #[xll_bindgen(
     name = "QS.ELEMENTS.CREATE",
-    volatile,
     category = "QuantSupport - Market",
     help = "Creates a QuantSupport ConstructedElementStore"
 )]

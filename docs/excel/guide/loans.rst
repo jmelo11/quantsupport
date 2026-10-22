@@ -31,7 +31,7 @@ put Value, Cashflows, and Sensitivities in ``K23:K25``:
 
    D20 =QS.INSTRUMENT.LOAN("guide.loan",$B$1,"2031-02-24","USD",250000,0.06,,"French","Monthly","Actual360")
    D21 =QS.TRADE.CREATE("guide.loan.trade",D20,$B$1,"Receive")
-   D22 =QS.DISCOUNT.POLICY.FIXED.INCOME("guide.loan.policy",K20:L20)
+   D22 =QS.DISCOUNT.POLICY.FIXED.INCOME("guide.loan.policy",K20,L20)
    D23 =QS.PRICER.CREATE("guide.loan.pricer","LoanPricer",D22)
    K26 =QS.REQUEST.FAIR.RATE(0)
    D25 =QS.EVALUATE("guide.loan.results",D23,D21,H5,K23:K26)
