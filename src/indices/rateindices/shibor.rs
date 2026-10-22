@@ -1,5 +1,7 @@
 //! SHIBOR conventions, checked against QuantLib 5f4811e7e03b.
 
+use crate::time::enums::Frequency;
+
 use crate::time::{
     calendar::Calendar,
     calendars::china::{China, Market},
@@ -14,7 +16,8 @@ rate_index!(
     Simple,
     0,
     Daily,
-    false
+    false,
+    (|_| Frequency::Quarterly, Actual365, Daily, 0)
 );
 rate_index!(
     SHIBOR1wIndex,
@@ -25,7 +28,8 @@ rate_index!(
     Simple,
     1,
     Weekly,
-    false
+    false,
+    (|_| Frequency::Quarterly, Actual365, Weekly, 1)
 );
 rate_index!(
     SHIBOR2wIndex,
@@ -36,7 +40,8 @@ rate_index!(
     Simple,
     1,
     Biweekly,
-    false
+    false,
+    (|_| Frequency::Quarterly, Actual365, Biweekly, 1)
 );
 rate_index!(
     SHIBOR1mIndex,
@@ -47,7 +52,8 @@ rate_index!(
     Simple,
     1,
     Monthly,
-    false
+    false,
+    (|_| Frequency::Quarterly, Actual365, Monthly, 1)
 );
 rate_index!(
     SHIBOR3mIndex,
@@ -58,7 +64,8 @@ rate_index!(
     Simple,
     1,
     Quarterly,
-    false
+    false,
+    (|_| Frequency::Quarterly, Actual365, Quarterly, 1)
 );
 rate_index!(
     SHIBOR6mIndex,
@@ -69,7 +76,8 @@ rate_index!(
     Simple,
     1,
     Semiannual,
-    false
+    false,
+    (|_| Frequency::Quarterly, Actual365, Semiannual, 1)
 );
 rate_index!(
     SHIBOR12mIndex,
@@ -80,5 +88,6 @@ rate_index!(
     Simple,
     1,
     Annual,
-    false
+    false,
+    (|_| Frequency::Quarterly, Actual365, Annual, 1)
 );

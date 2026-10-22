@@ -5,7 +5,7 @@ use crate::{
     indices::{
         marketindex::{MarketIndex, MarketIndexDetails},
         quotetype::QuoteType,
-        rateindex::RateIndexDetails,
+        rateindex::{RateIndexDetails, SwapConventions},
     },
     rates::{compounding::Compounding, interestrate::RateDefinition},
     time::{
@@ -51,6 +51,21 @@ macro_rules! euribor_index {
                     DayCounter::Actual360,
                     Compounding::Simple,
                     Frequency::Annual,
+                )
+            }
+
+            fn swap_conventions(&self, _tenor: crate::time::period::Period) -> SwapConventions {
+                SwapConventions::new(
+                    RateDefinition::new(
+                        DayCounter::Thirty360,
+                        Compounding::Simple,
+                        Frequency::Annual,
+                    ),
+                    Frequency::Annual,
+                    $frequency,
+                    self.rate_definition().day_counter(),
+                    2,
+                    crate::time::enums::BusinessDayConvention::ModifiedFollowing,
                 )
             }
 
