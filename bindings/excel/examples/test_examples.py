@@ -184,8 +184,21 @@ class PublishTests(unittest.TestCase):
 
             def access_rules(path):
                 quoted = "'" + str(path).replace("'", "''") + "'"
-                command = f"(Get-Acl -LiteralPath {quoted}).GetSecurityDescriptorSddlForm([System.Security.AccessControl.AccessControlSections]::Access)"
-                return subprocess.check_output([powershell, "-NoProfile", "-Command", command], text=True).strip()
+                # A parent PowerShell can pass module paths for a different version.
+                # Load the security module belonging to this executable explicitly.
+                command = (
+                    "$ErrorActionPreference = 'Stop'; "
+                    "Import-Module (Join-Path $PSHOME "
+                    "'Modules/Microsoft.PowerShell.Security/Microsoft.PowerShell.Security.psd1'); "
+                    f"(Get-Acl -LiteralPath {quoted}).GetSecurityDescriptorSddlForm("
+                    "[System.Security.AccessControl.AccessControlSections]::Access)"
+                )
+                result = subprocess.run([powershell, "-NoProfile", "-NonInteractive", "-Command", command],
+                                        text=True, capture_output=True, timeout=30)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                rules = result.stdout.strip()
+                self.assertTrue(rules, "PowerShell returned no access rules")
+                return rules
 
             self.assertEqual(access_rules(destination), access_rules(baseline),
                              "Published workbooks must inherit the output folder's access rules")
