@@ -1,0 +1,31 @@
+{
+  "workbook": "Café.xlsx",
+  "objects": [{
+    "name": "café \"market\"",
+    "handle": "QSObject:PricingContext:w1~café \"market\":1",
+    "kind": "PricingContext",
+    "family": "Pricing contexts",
+    "revision": 1,
+    "current_inputs": true,
+    "evaluation_date": "2026-01-15",
+    "snapshot_timestamp": "2026-01-16T00:30:00+00:00",
+    "quote_level": "Ask",
+    "details": [
+      {"label": "Base currency", "value": "USD"},
+      {"label": "Base index", "value": "SOFR"},
+      {"label": "Constructed curves", "value": ""},
+      {"label": "Volatility surfaces", "value": ""},
+      {"label": "Volatility cubes", "value": ""},
+      {"label": "Simulations", "value": ""}
+    ],
+    "locations": [{
+      "sheet_id": 42,
+      "sheet": "Marché",
+      "row": 1,
+      "column": 1,
+      "formula": "=QS.CONTEXT.CREATE(\"café \"\"market\"\"\",B2,B3)"
+    }],
+    "dependencies": []
+  }],
+  "error": ""
+}

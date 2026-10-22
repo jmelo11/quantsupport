@@ -62,6 +62,34 @@ thread_local! {
     static IN_CALL: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
+/// Looks up a workbook by name without changing worksheet ownership or caller state.
+pub fn browser_snapshot(name: &str) -> super::browser::BrowserSnapshot {
+    let mut snapshot = super::browser::BrowserSnapshot {
+        workbook: name.into(),
+        ..Default::default()
+    };
+    SESSIONS.with(|sessions| {
+        let sessions = sessions.borrow();
+        if let Some((id, book)) = sessions
+            .books
+            .iter()
+            .find(|(_, book)| book.name.eq_ignore_ascii_case(name))
+        {
+            snapshot.objects = registry::workbook_browser_objects(*id);
+            for object in &mut snapshot.objects {
+                for cell in &mut object.locations {
+                    cell.sheet = book
+                        .sheets
+                        .get(&(cell.sheet_id as usize))
+                        .cloned()
+                        .unwrap_or_default();
+                }
+            }
+        }
+    });
+    snapshot
+}
+
 /// One stateful UDF invocation. Early returns and unwinding release old outputs.
 pub struct CallScope {
     previous: Option<u64>,
@@ -749,6 +777,54 @@ pub mod windows {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn browser_snapshot_matches_the_managed_contract_and_resolves_workbook_names() {
+        use quantsupport::prelude::{Date, Level, PricingContext, QuoteStore};
+        SESSIONS.with(|sessions| *sessions.borrow_mut() = Sessions::default());
+        registry::clear_workbooks();
+        let id = SESSIONS.with(|sessions| sessions.borrow_mut().caller("Café.xlsx", 42, "Marché"));
+        let previous = registry::select_workbook(id);
+        registry::with_registry_mut(|registry| {
+            let cell = CellId {
+                sheet: 42,
+                row: 0,
+                column: 0,
+            };
+            registry.begin_cell(cell);
+            registry.set_cell_formula(
+                cell,
+                Some("=QS.CONTEXT.CREATE(\"café \"\"market\"\"\",B2,B3)".into()),
+            );
+            let context = PricingContext::new()
+                .with_quote_store(QuoteStore::new(Date::new(2026, 1, 15)))
+                .with_quote_level(Level::Ask)
+                .with_snapshot_timestamp(
+                    super::super::historical::timestamp("2026-01-16T00:30:00Z").unwrap(),
+                );
+            registry
+                .upsert_if_changed(
+                    "café \"market\"",
+                    registry::QsObject::PricingContext(Box::new(context)),
+                    "contract",
+                )
+                .unwrap();
+            registry.finish_cell(true);
+        });
+        registry::select_workbook(previous);
+        let snapshot = browser_snapshot("Café.xlsx");
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../ribbon/tests/snapshot.json")).unwrap();
+        assert_eq!(serde_json::to_value(&snapshot).unwrap(), fixture);
+        assert_eq!(
+            browser_snapshot("café.XLSX").objects[0].handle,
+            snapshot.objects[0].handle
+        );
+        assert!(browser_snapshot("Other.xlsx").objects.is_empty());
+        registry::close_workbook(id);
+        assert!(browser_snapshot("Café.xlsx").objects.is_empty());
+        SESSIONS.with(|sessions| *sessions.borrow_mut() = Sessions::default());
+    }
 
     #[test]
     fn workbook_names_are_isolated_and_sheet_identity_survives_save_as() {

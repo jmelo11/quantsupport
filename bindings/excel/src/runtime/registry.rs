@@ -238,6 +238,7 @@ pub struct Registry {
     writes: RefCell<HashSet<String>>,
     mutations: HashSet<(String, String)>,
     cell_roots: HashMap<CellId, HashSet<String>>,
+    cell_outputs: HashMap<CellId, HashSet<String>>,
     cell_formulas: HashMap<CellId, String>,
     cell_mutations: HashMap<CellId, HashSet<(String, String)>>,
     references: HashMap<String, usize>,
@@ -500,6 +501,11 @@ impl Registry {
         }
         let mut roots = std::mem::take(self.reads.get_mut());
         let writes = std::mem::take(self.writes.get_mut());
+        if success && !writes.is_empty() {
+            self.cell_outputs.insert(cell, writes.clone());
+        } else {
+            self.cell_outputs.remove(&cell);
+        }
         if success {
             roots.extend(writes.iter().cloned());
         } else {
@@ -548,6 +554,7 @@ impl Registry {
     }
 
     pub fn release_cell(&mut self, cell: CellId) {
+        self.cell_outputs.remove(&cell);
         self.cell_formulas.remove(&cell);
         if let Some(mutations) = self.cell_mutations.remove(&cell) {
             for key in mutations {
@@ -915,11 +922,64 @@ impl Registry {
         self.objects.len()
     }
 
+    /// Copies browser metadata without registering worksheet reads or writes.
+    pub fn browser_objects(&self) -> Vec<super::browser::BrowserObject> {
+        use super::browser::{BrowserLocation, BrowserObject};
+        let mut locations: HashMap<&str, Vec<BrowserLocation>> = HashMap::new();
+        for (cell, outputs) in &self.cell_outputs {
+            for identity in outputs {
+                locations
+                    .entry(identity)
+                    .or_default()
+                    .push(BrowserLocation {
+                        sheet_id: cell.sheet as u64,
+                        sheet: String::new(),
+                        row: cell.row + 1,
+                        column: cell.column + 1,
+                        formula: self.cell_formulas.get(cell).cloned().unwrap_or_default(),
+                    });
+            }
+        }
+        let namespace = format!("w{}~", self.namespace);
+        let mut objects: Vec<_> = self
+            .objects
+            .iter()
+            .map(|(identity, entry)| {
+                let mut object = BrowserObject::from_object(&entry.object);
+                let name = identity.split(':').nth(2).unwrap_or_default();
+                object.name = if self.namespace == 0 {
+                    name
+                } else {
+                    name.strip_prefix(&namespace).unwrap_or(name)
+                }
+                .to_string();
+                object.handle = format_handle(identity, entry.revision);
+                object.revision = entry.revision;
+                object.current_inputs = self.dependencies_current(entry);
+                object.locations = locations.remove(identity.as_str()).unwrap_or_default();
+                object
+                    .locations
+                    .sort_by_key(|cell| (cell.sheet_id, cell.row, cell.column));
+                object.dependencies = entry
+                    .dependencies
+                    .iter()
+                    .map(|(identity, revision)| format_handle(identity, *revision))
+                    .collect();
+                object.dependencies.sort();
+                object
+            })
+            .collect();
+        objects
+            .sort_by(|a, b| (&a.family, &a.name, &a.handle).cmp(&(&b.family, &b.name, &b.handle)));
+        objects
+    }
+
     /// Drops every live object.
     #[allow(dead_code)]
     pub fn clear(&mut self) {
         self.objects.clear();
         self.cell_roots.clear();
+        self.cell_outputs.clear();
         self.cell_formulas.clear();
         self.cell_mutations.clear();
         self.references.clear();
@@ -1154,6 +1214,17 @@ pub fn with_registry_mut<R>(operation: impl FnOnce(&mut Registry) -> R) -> R {
                 .entry(workbook)
                 .or_insert_with(|| Registry::in_workbook(workbook)),
         )
+    })
+}
+
+/// Inspects an existing workbook without changing the current caller or creating a registry.
+pub fn workbook_browser_objects(workbook: u64) -> Vec<super::browser::BrowserObject> {
+    REGISTRIES.with(|registries| {
+        registries
+            .borrow()
+            .get(&workbook)
+            .map(Registry::browser_objects)
+            .unwrap_or_default()
     })
 }
 
@@ -1449,6 +1520,145 @@ mod tests {
             registry.reset_if_changed(&handle, "v2"),
             Err(RegistryError::ResetUnsupported("PricingContext"))
         ));
+    }
+}
+
+#[cfg(test)]
+mod browser_tests {
+    use super::*;
+
+    fn cell(row: i32) -> CellId {
+        CellId {
+            sheet: 42,
+            row,
+            column: 0,
+        }
+    }
+
+    #[test]
+    fn inspection_preserves_dependencies_and_does_not_retain_objects() {
+        let mut registry = Registry::in_workbook(7);
+        registry.begin_cell(cell(0));
+        registry.set_cell_formula(cell(0), Some("=QS.FX.CREATE(\"shared\")".into()));
+        let handle = registry
+            .upsert_if_changed("shared", QsObject::FxStore(Box::default()), "a")
+            .unwrap();
+        registry.finish_cell(true);
+        registry.begin_cell(cell(1));
+        registry.fx_store(&handle).unwrap();
+        registry.finish_cell(true);
+
+        registry.begin_cell(cell(2));
+        let snapshot = registry.browser_objects();
+        assert!(registry.reads.borrow().is_empty());
+        assert!(registry.writes.borrow().is_empty());
+        assert_eq!(snapshot[0].name, "shared");
+        assert_eq!(snapshot[0].handle, handle);
+        assert_eq!(
+            snapshot[0].locations.len(),
+            1,
+            "readers are not defining cells"
+        );
+        assert_eq!(snapshot[0].locations[0].row, 1);
+        assert_eq!(snapshot[0].locations[0].column, 1);
+        registry.finish_cell(true);
+        registry.release_cell(cell(0));
+        assert_eq!(registry.len(), 1, "the reader still owns the input");
+        assert!(registry.browser_objects()[0].locations.is_empty());
+        registry.release_cell(cell(1));
+        assert_eq!(
+            registry.len(),
+            0,
+            "the owned browser snapshot must not retain native objects"
+        );
+        assert_eq!(
+            snapshot[0].handle, handle,
+            "metadata survives independently"
+        );
+    }
+
+    #[test]
+    fn contexts_show_market_dates_and_browsing_detects_changed_dependencies() {
+        let mut registry = Registry::in_workbook(3);
+        registry.begin_cell(cell(0));
+        let source = registry
+            .upsert_if_changed(
+                "quotes",
+                QsObject::QuoteStore(Box::new(QuoteStore::new(Date::new(2026, 1, 15)))),
+                "initial",
+            )
+            .unwrap();
+        registry.finish_cell(true);
+        registry.begin_cell(cell(1));
+        let quotes = registry.quote_store(&source).unwrap().clone();
+        let context = PricingContext::new()
+            .with_quote_store(quotes)
+            .with_quote_level(quantsupport::prelude::Level::Ask)
+            .with_snapshot_timestamp(
+                super::super::historical::timestamp("2026-01-16T00:30:00Z").unwrap(),
+            );
+        registry
+            .upsert_if_changed(
+                "market",
+                QsObject::PricingContext(Box::new(context)),
+                "context",
+            )
+            .unwrap();
+        registry.finish_cell(true);
+        let objects = registry.browser_objects();
+        let context = objects
+            .iter()
+            .find(|v| v.family == "Pricing contexts")
+            .unwrap();
+        assert_eq!(context.evaluation_date, "2026-01-15");
+        assert_eq!(context.snapshot_timestamp, "2026-01-16T00:30:00+00:00");
+        assert_eq!(context.quote_level, "Ask");
+        assert!(context.current_inputs);
+        assert_eq!(context.dependencies, vec![source]);
+        registry.begin_cell(cell(0));
+        registry
+            .upsert_if_changed(
+                "quotes",
+                QsObject::QuoteStore(Box::new(QuoteStore::new(Date::new(2026, 1, 16)))),
+                "changed",
+            )
+            .unwrap();
+        registry.finish_cell(true);
+        assert!(
+            !registry
+                .browser_objects()
+                .iter()
+                .find(|v| v.family == "Pricing contexts")
+                .unwrap()
+                .current_inputs
+        );
+    }
+
+    #[test]
+    fn workbook_snapshots_do_not_select_or_create_registries() {
+        clear_workbooks();
+        select_workbook(91);
+        with_registry_mut(|registry| {
+            registry.upsert_if_changed("shared", QsObject::FxStore(Box::default()), "one")
+        })
+        .unwrap();
+        select_workbook(92);
+        with_registry_mut(|registry| {
+            registry.upsert_if_changed("shared", QsObject::FxStore(Box::default()), "two")
+        })
+        .unwrap();
+        let one = workbook_browser_objects(91);
+        let two = workbook_browser_objects(92);
+        assert_ne!(one[0].handle, two[0].handle);
+        assert_eq!(one[0].name, two[0].name);
+        assert_eq!(ACTIVE_WORKBOOK.with(Cell::get), 92);
+        let count = REGISTRIES.with(|v| v.borrow().len());
+        assert!(workbook_browser_objects(93).is_empty());
+        assert_eq!(REGISTRIES.with(|v| v.borrow().len()), count);
+        close_workbook(91);
+        assert!(workbook_browser_objects(91).is_empty());
+        clear_workbooks();
+        select_workbook(0);
     }
 }
 

@@ -22,7 +22,10 @@ use xll_rs::{
 pub extern "system" fn xlAutoOpen() -> i32 {
     match runtime::registration::windows::register_functions() {
         Ok(()) => match runtime::lifecycle::windows::start() {
-            Ok(()) => 1,
+            Ok(()) => {
+                runtime::browser::windows::start();
+                1
+            }
             Err(error) => {
                 runtime::registration::windows::unregister_functions();
                 runtime::registration::windows::show_error(&error);
@@ -51,6 +54,7 @@ fn worksheet_exports() -> Vec<xll_rs::registry::XllExport> {
 #[cfg(windows)]
 #[no_mangle]
 pub extern "system" fn xlAutoClose() -> i32 {
+    runtime::browser::windows::stop();
     runtime::registration::windows::unregister_functions();
     runtime::lifecycle::windows::stop();
     1
