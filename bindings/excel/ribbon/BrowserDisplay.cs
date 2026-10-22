@@ -15,6 +15,18 @@ namespace QuantSupport.Ribbon
 
         internal static bool CanPrice(BrowserObject item) => item?.Family == "Trades" || item?.Family == "Instruments";
 
+        internal static string PricingRequest(string choice)
+        {
+            switch (choice)
+            {
+                case "PV": return "Value";
+                case "Cashflows": return "Cashflows";
+                case "Fair rate": return "FairRate";
+                case "Sensitivities": return "Sensitivities";
+                default: throw new InvalidOperationException("Choose a pricing request.");
+            }
+        }
+
         internal static double ReadNumber(string value)
         {
             var format = new NumberFormatInfo { NumberDecimalSeparator = DecimalSeparator };

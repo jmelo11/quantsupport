@@ -10,5 +10,6 @@
     <None Include="query.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="query-instrument.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="query-response.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="sensitivities-response.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

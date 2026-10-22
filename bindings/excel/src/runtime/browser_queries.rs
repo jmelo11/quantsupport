@@ -109,9 +109,9 @@ pub fn execute(registry: &Registry, request: &BrowserQuery) -> Result<BrowserRes
             _ => return Err("Select an explicit pricer.".into()),
         };
         let name = match request.request.as_str() {
-            "Value" | "Cashflows" => request.request.clone(),
+            "Value" | "Cashflows" | "Sensitivities" => request.request.clone(),
             "FairRate" => format!("FairRate({})", request.target),
-            _ => return Err("Choose PV, Cashflows or Fair rate.".into()),
+            _ => return Err("Choose PV, Cashflows, Fair rate or Sensitivities.".into()),
         };
         let requests = pricing::parse_requests(&[name])?;
         // Instrument previews use explicit position inputs and stay outside the
@@ -543,6 +543,26 @@ fn evaluation_table(results: &EvaluationResults, request: &str) -> Result<Browse
             ]);
         }
         Ok(table)
+    } else if request == "Sensitivities" {
+        let risk = results
+            .sensitivities()
+            .ok_or("This pricer did not return sensitivities for this trade.")?;
+        if risk.instrument_keys().len() != risk.exposure().len() {
+            return Err("Sensitivity risk factors and values have different lengths.".into());
+        }
+        let mut table = BrowserResponse::table("Sensitivities", &["Risk factor", "Sensitivity"]);
+        table.numeric_columns = vec![1];
+        table.message = "Raw derivatives per unit of each risk factor, in the pricer's value units. For decimal-rate factors, multiply by 0.0001 for a +1 bp estimate.".into();
+        table.rows = risk
+            .instrument_keys()
+            .iter()
+            .zip(risk.exposure())
+            .map(|(key, value)| vec![key.clone(), value.to_string()])
+            .collect();
+        if table.rows.is_empty() {
+            table.message.push_str(" No risk factors were returned.");
+        }
+        Ok(table)
     } else {
         let (label, value) = if request == "Value" {
             ("PV", results.price())
@@ -577,19 +597,23 @@ mod tests {
         let date = Date::new(2026, 1, 15);
         let mut elements = ConstructedElementStore::default();
         for index in [MarketIndex::SOFR, MarketIndex::ESTR] {
+            let label = format!("{index}.flat");
             elements.discount_curves_mut().insert(
                 index.clone(),
                 DiscountCurveElement::new(
                     index,
-                    Rc::new(RefCell::new(FlatForwardTermStructure::new(
-                        date,
-                        DualFwd::from(0.03),
-                        RateDefinition::new(
-                            DayCounter::Actual360,
-                            Compounding::Continuous,
-                            Frequency::Annual,
-                        ),
-                    ))),
+                    Rc::new(RefCell::new(
+                        FlatForwardTermStructure::new(
+                            date,
+                            DualFwd::from(0.03),
+                            RateDefinition::new(
+                                DayCounter::Actual360,
+                                Compounding::Continuous,
+                                Frequency::Annual,
+                            ),
+                        )
+                        .with_pillar_label(label),
+                    )),
                 ),
             );
         }
@@ -736,6 +760,16 @@ mod tests {
         }
         query.target = 2;
         assert!(execute(&registry, &query).is_err());
+        query.request = "Sensitivities".into();
+        let risk = execute(&registry, &query).unwrap();
+        assert_eq!(risk.columns, vec!["Risk factor", "Sensitivity"]);
+        assert_eq!(risk.numeric_columns, vec![1]);
+        assert_eq!(risk.rows.len(), 1);
+        assert_eq!(risk.rows[0][0], "SOFR.flat");
+        let derivative = risk.rows[0][1].parse::<f64>().unwrap();
+        assert!(derivative.is_finite() && derivative.abs() > 1.0);
+        preview.request.clone_from(&query.request);
+        assert_eq!(execute(&registry, &preview).unwrap().rows, risk.rows);
         query.request = "Unknown".into();
         assert!(execute(&registry, &query).is_err());
         assert_eq!(registry.len(), count);
@@ -1047,5 +1081,35 @@ mod tests {
         assert_eq!(query.workbook, "Café.xlsx");
         assert_eq!(query.target, 1);
         assert_eq!(query.request, "FairRate");
+    }
+
+    #[test]
+    fn sensitivities_preserve_raw_values_labels_and_the_managed_contract() {
+        let results = EvaluationResults::new(Date::new(2026, 1, 15), "swap".into())
+            .with_sensitivities(
+                SensitivityMap::default()
+                    .with_instrument_keys(&["SOFR.flat".into(), "FX:USD/EUR.café".into()])
+                    .with_exposure(&[-1234.5, 0.00001]),
+            );
+        let table = evaluation_table(&results, "Sensitivities").unwrap();
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../ribbon/tests/sensitivities-response.json"
+        ))
+        .unwrap();
+        assert_eq!(serde_json::to_value(table).unwrap(), fixture);
+
+        let results = EvaluationResults::new(Date::new(2026, 1, 15), "swap".into());
+        assert!(evaluation_table(&results, "Sensitivities")
+            .err()
+            .unwrap()
+            .contains("did not return sensitivities"));
+        let empty = results.with_sensitivities(SensitivityMap::default());
+        let table = evaluation_table(&empty, "Sensitivities").unwrap();
+        assert!(table.rows.is_empty());
+        assert!(table.message.contains("No risk factors were returned"));
+        let inconsistent = empty.with_sensitivities(
+            SensitivityMap::default().with_instrument_keys(&["SOFR.flat".into()]),
+        );
+        assert!(evaluation_table(&inconsistent, "Sensitivities").is_err());
     }
 }

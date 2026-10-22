@@ -13,7 +13,8 @@ QuantSupport for 64-bit Windows Excel
    active cell. Select an object and click Go to cell to edit its source inputs.
    Select an instrument or trade and click Price Selection, or use Pricing in
    the panel. Choose its context and pricer, then run
-   PV, Cashflows or Fair rate (with a zero-based leg/segment).
+   PV, Cashflows, Fair rate (with a zero-based leg/segment), or Sensitivities.
+   Sensitivities lists risk factors and raw derivatives per unit of each factor.
    Instrument previews use the displayed trade date, side and instrument notional.
    Bond previews also require a CleanPrice, DirtyPrice or ZSpread anchor and value.
    Existing trades use their stored position terms.

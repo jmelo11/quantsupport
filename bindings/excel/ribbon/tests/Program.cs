@@ -35,6 +35,8 @@ internal static class Program
         Check(BrowserDisplay.CanPrice(new BrowserObject { Family = "Instruments", Kind = "Swap" }), "Instrument selection must expose pricing");
         Check(BrowserDisplay.CanPrice(new BrowserObject { Family = "Trades", Kind = "SwapTrade" }), "Trade selection must expose pricing");
         Check(!BrowserDisplay.CanPrice(new BrowserObject { Family = "Pricing contexts" }) && !BrowserDisplay.CanPrice(null), "Unrelated selections must hide pricing");
+        Check(BrowserDisplay.PricingRequest("Sensitivities") == "Sensitivities", "Sensitivities must reach the native request unchanged");
+        Check(BrowserDisplay.PricingRequest("Fair rate") == "FairRate" && BrowserDisplay.PricingRequest("PV") == "Value" && BrowserDisplay.PricingRequest("Cashflows") == "Cashflows", "Existing pricing request mappings");
         using (var input = File.OpenRead(Path.Combine(AppContext.BaseDirectory, "query-response.json")))
         {
             var response = (BrowserResponse)new DataContractJsonSerializer(typeof(BrowserResponse)).ReadObject(input);
@@ -77,6 +79,14 @@ internal static class Program
             }
         }
         BrowserDisplay.DecimalSeparator = ",";
+        using (var input = File.OpenRead(Path.Combine(AppContext.BaseDirectory, "sensitivities-response.json")))
+        {
+            var response = (BrowserResponse)new DataContractJsonSerializer(typeof(BrowserResponse)).ReadObject(input);
+            Check(response.Title == "Sensitivities" && response.Rows.Count == 2, "Sensitivity response contract");
+            Check(response.NumericColumns.Count == 1 && response.NumericColumns[0] == 1, "Only sensitivity values are numeric");
+            Check(response.Rows[1][0] == "FX:USD/EUR.café" && BrowserDisplay.Number(response.Rows[0][1]) == "-1234,5", "Localized sensitivity values preserve risk-factor labels");
+            Check(response.Rows[1][1] == "0.00001", "Raw sensitivity values must not be scaled");
+        }
         Check(BrowserDisplay.Number("-1234.5678901234567") == "-1234,5678901234567", "Excel comma decimals preserve precision");
         Check(BrowserDisplay.Number("1.25e-10") == "1,25e-10", "Scientific notation uses the Excel decimal separator");
         Check(BrowserDisplay.ReadNumber("99,25") == 99.25, "Bond anchors accept Excel comma decimals");

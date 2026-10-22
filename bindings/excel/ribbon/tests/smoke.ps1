@@ -69,6 +69,12 @@ try {
     }
     $view = $explorerType.GetField('view',$flags).GetValue($explorer)
     $target = $explorerType.GetField('target',$flags).GetValue($explorer)
+    if (-not $view.Items.Contains('Sensitivities')) { throw 'Pricing must offer Sensitivities.' }
+    $view.SelectedItem = 'Sensitivities'
+    $riskRequest = $explorerType.GetMethod('BuildQuery',$flags).Invoke($explorer,@())
+    if ($target.Enabled -or -not $runButton.Enabled -or $riskRequest.Request -ne 'Sensitivities') {
+        throw 'Sensitivities must run without a fair-rate leg or segment target.'
+    }
     $view.SelectedIndex = 2
     if (-not $target.Enabled) { throw 'Fair rate must enable the leg/segment input.' }
     $view.SelectedIndex = 0

@@ -73,7 +73,7 @@ namespace QuantSupport.Ribbon
             if (trades) add("Pricer", pricer);
             else add("Curve", curve);
             add(trades ? "Request" : "View", view);
-            view.Items.AddRange(trades ? new object[] { "PV", "Cashflows", "Fair rate" } : new object[] { "Curve table", "Instruments & inputs" });
+            view.Items.AddRange(trades ? new object[] { "PV", "Cashflows", "Fair rate", "Sensitivities" } : new object[] { "Curve table", "Instruments & inputs" });
             view.SelectedIndex = 0;
             if (trades) { toolbar.Controls.Add(targetLabel); toolbar.Controls.Add(target); }
             if (trades)
@@ -204,7 +204,7 @@ namespace QuantSupport.Ribbon
                 else try { BrowserDisplay.ReadNumber(anchorValue.Text); } catch (Exception error) { anchorError = error.Message; }
             }
             run.Enabled = supported && item.CurrentInputs && !bondFairRate && anchorError.Length == 0 && (!trades || (context.SelectedItem is BrowserObject && pricer.SelectedItem is BrowserObject));
-            if (!supported) message.Text = trades ? "Select an instrument or trade to request PV, cashflows or a fair rate." : "Select a pricing context, curve, curve configuration or constructed elements store.";
+            if (!supported) message.Text = trades ? "Select an instrument or trade to request PV, cashflows, a fair rate or sensitivities." : "Select a pricing context, curve, curve configuration or constructed elements store.";
             else if (!item.CurrentInputs) message.Text = "Inputs changed. Recalculate the workbook, then refresh before requesting results.";
             else if (bondFairRate) message.Text = "BondPricer does not define FairRate. Request YieldToMaturity or ZSpread through QS.EVALUATE for the bond's price or spread anchor.";
             else if (anchorError.Length > 0) message.Text = anchorError;
@@ -266,7 +266,7 @@ namespace QuantSupport.Ribbon
                 Curve = curve.SelectedItem as string ?? "",
                 Context = item.Kind == "PricingContext" ? "" : (context.SelectedItem as BrowserObject)?.Handle ?? "",
                 Pricer = (pricer.SelectedItem as BrowserObject)?.Handle ?? "",
-                Request = view.SelectedIndex == 0 ? "Value" : view.SelectedIndex == 1 ? "Cashflows" : "FairRate",
+                Request = trades ? BrowserDisplay.PricingRequest(view.SelectedItem as string) : "",
                 Target = (uint)target.Value,
                 TradeDate = Preview ? tradeDate.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) : null,
                 Side = Preview ? side.SelectedItem as string : null,

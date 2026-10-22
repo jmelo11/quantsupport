@@ -25,7 +25,10 @@ IDs continue increasing so handles saved before a reset cannot become valid agai
 Queries validate handles and their upstream revisions without recording worksheet
 reads. They borrow the named workbook's existing registry without selecting it.
 Pricing requests use the selected native pricer/context and return owned result
-tables without registering EvaluationResults. All requests run in queued macros,
+tables without registering EvaluationResults. Requests include PV, Cashflows,
+Fair rate and Sensitivities. Sensitivities returns Risk factor/Sensitivity rows
+with raw derivatives and localized numeric formatting; decimal-rate exposures
+times `0.0001` estimate a +1 bp move. All requests run in queued macros,
 with workbook/window checks and cancellation when the selection changes.
 Sheet IDs and one-based source coordinates are resolved to Excel references
 when navigating, with a fresh handle/source check in a queued macro.

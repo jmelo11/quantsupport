@@ -46,11 +46,15 @@ the selected values with column headings. Right-click a table for **Select all**
 Select an instrument or trade to open **Pricing**, or select its handle cell and
 click **Price Selection** in the ribbon. **Price selected** in the panel opens the
 same controls. Choose an existing pricing context,
-an explicit pricer and **PV**, **Cashflows** or **Fair rate**, then click
+an explicit pricer and **PV**, **Cashflows**, **Fair rate** or **Sensitivities**, then click
 **Run request**. Fair rates require a zero-based swap leg or loan rate segment;
 the selected pricer determines which requests it supports. Results appear in
 the panel without adding worksheet formulas or stored results. Changing an input
 selection clears the previous result; requests run again only when you click.
+**Sensitivities** displays Risk factor and Sensitivity columns as raw derivatives
+per unit of each factor. For decimal-rate factors, multiply by `0.0001` to
+estimate the value change from a +1 bp move. Displayed and copied numbers use
+Excel's decimal separator.
 For a native instrument, confirm the displayed preview trade date and Receive/Pay
 side. The date initially follows the selected context's valuation date, and the
 preview uses the instrument's own notional. Bond previews also require an explicit
