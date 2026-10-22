@@ -60,6 +60,13 @@ impl RateDefinition {
     pub const fn day_counter(&self) -> DayCounter {
         self.day_counter
     }
+
+    /// Replaces the day count while preserving compounding and frequency.
+    #[must_use]
+    pub const fn with_day_counter(mut self, day_counter: DayCounter) -> Self {
+        self.day_counter = day_counter;
+        self
+    }
 }
 
 impl Default for RateDefinition {

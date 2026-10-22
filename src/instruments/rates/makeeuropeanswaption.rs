@@ -10,6 +10,7 @@ use crate::{
     time::{
         calendar::Calendar,
         date::Date,
+        daycounter::DayCounter,
         enums::{BusinessDayConvention, DateGenerationRule, Frequency},
     },
     utils::errors::{QSError, Result},
@@ -61,6 +62,7 @@ pub struct MakeSwaption<T: Scalar + Default> {
     swaption_type: Option<SwaptionType>,
     fixed_leg_frequency: Option<Frequency>,
     floating_leg_frequency: Option<Frequency>,
+    floating_day_counter: Option<DayCounter>,
     calendar: Option<Calendar>,
     business_day_convention: Option<BusinessDayConvention>,
     date_generation_rule: Option<DateGenerationRule>,
@@ -104,6 +106,13 @@ where
     #[must_use]
     pub const fn with_notional(mut self, notional: f64) -> Self {
         self.notional = Some(notional);
+        self
+    }
+
+    /// Sets floating day counter for coupon accrual without changing index quoting.
+    #[must_use]
+    pub const fn with_floating_day_counter(mut self, dc: DayCounter) -> Self {
+        self.floating_day_counter = Some(dc);
         self
     }
 
@@ -250,6 +259,9 @@ where
             swap_builder = swap_builder.with_end_of_month(eom);
         }
 
+        if let Some(dc) = self.floating_day_counter {
+            swap_builder = swap_builder.with_floating_day_counter(dc);
+        }
         let underlying = swap_builder.build()?;
 
         Ok(EuropeanSwaption::new(

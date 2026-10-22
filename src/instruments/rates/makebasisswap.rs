@@ -12,6 +12,7 @@ use crate::{
     time::{
         calendar::Calendar,
         date::Date,
+        daycounter::DayCounter,
         enums::{BusinessDayConvention, DateGenerationRule, Frequency},
     },
     utils::errors::{QSError, Result},
@@ -55,6 +56,8 @@ pub struct MakeBasisSwap<T: Scalar> {
     side: Option<Side>,
     pay_leg_frequency: Option<Frequency>,
     receive_leg_frequency: Option<Frequency>,
+    pay_day_counter: Option<DayCounter>,
+    receive_day_counter: Option<DayCounter>,
     calendar: Option<Calendar>,
     business_day_convention: Option<BusinessDayConvention>,
     date_generation_rule: Option<DateGenerationRule>,
@@ -66,6 +69,20 @@ impl<T> MakeBasisSwap<T>
 where
     T: Scalar,
 {
+    /// Sets pay day counter for coupon accrual without changing index quoting.
+    #[must_use]
+    pub const fn with_pay_day_counter(mut self, dc: DayCounter) -> Self {
+        self.pay_day_counter = Some(dc);
+        self
+    }
+
+    /// Sets receive day counter for coupon accrual without changing index quoting.
+    #[must_use]
+    pub const fn with_receive_day_counter(mut self, dc: DayCounter) -> Self {
+        self.receive_day_counter = Some(dc);
+        self
+    }
+
     /// Sets the start date.
     #[must_use]
     pub const fn with_start_date(mut self, date: Date) -> Self {
@@ -212,7 +229,7 @@ where
         let receive_freq = self.receive_leg_frequency.unwrap_or(Frequency::Quarterly);
 
         // Pay leg
-        let pay_leg = MakeLeg::<T>::default()
+        let mut pay_leg = MakeLeg::<T>::default()
             .with_leg_id(0)
             .with_notional(notional)
             .with_side(Side::PayShort)
@@ -231,7 +248,7 @@ where
             .build()?;
 
         // Receive leg
-        let receive_leg = MakeLeg::<T>::default()
+        let mut receive_leg = MakeLeg::<T>::default()
             .with_leg_id(1)
             .with_notional(notional)
             .with_side(Side::LongReceive)
@@ -248,6 +265,13 @@ where
             .with_date_generation_rule(self.date_generation_rule)
             .with_end_of_month(self.end_of_month)
             .build()?;
+
+        if let Some(dc) = self.pay_day_counter {
+            pay_leg = pay_leg.with_floating_day_counter(dc);
+        }
+        if let Some(dc) = self.receive_day_counter {
+            receive_leg = receive_leg.with_floating_day_counter(dc);
+        }
 
         Ok(BasisSwap::new(
             identifier,

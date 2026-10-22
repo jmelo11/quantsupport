@@ -12,6 +12,7 @@ use crate::{
     time::{
         calendar::Calendar,
         date::Date,
+        daycounter::DayCounter,
         enums::{BusinessDayConvention, DateGenerationRule, Frequency},
     },
     utils::errors::{QSError, Result},
@@ -60,6 +61,8 @@ pub struct MakeFloatFloatCrossCurrencySwap<T: Scalar> {
     side: Option<Side>,
     domestic_leg_frequency: Option<Frequency>,
     foreign_leg_frequency: Option<Frequency>,
+    domestic_day_counter: Option<DayCounter>,
+    foreign_day_counter: Option<DayCounter>,
     calendar: Option<Calendar>,
     business_day_convention: Option<BusinessDayConvention>,
     date_generation_rule: Option<DateGenerationRule>,
@@ -71,6 +74,20 @@ impl<T> MakeFloatFloatCrossCurrencySwap<T>
 where
     T: Scalar,
 {
+    /// Sets domestic day counter for coupon accrual without changing index quoting.
+    #[must_use]
+    pub const fn with_domestic_day_counter(mut self, dc: DayCounter) -> Self {
+        self.domestic_day_counter = Some(dc);
+        self
+    }
+
+    /// Sets foreign day counter for coupon accrual without changing index quoting.
+    #[must_use]
+    pub const fn with_foreign_day_counter(mut self, dc: DayCounter) -> Self {
+        self.foreign_day_counter = Some(dc);
+        self
+    }
+
     /// Sets the start date.
     #[must_use]
     pub const fn with_start_date(mut self, date: Date) -> Self {
@@ -237,7 +254,7 @@ where
         let foreign_freq = self.foreign_leg_frequency.unwrap_or(Frequency::Quarterly);
 
         // Domestic (floating) leg
-        let domestic_leg = MakeLeg::<T>::default()
+        let mut domestic_leg = MakeLeg::<T>::default()
             .with_leg_id(0)
             .with_notional(domestic_notional)
             .with_side(side)
@@ -262,7 +279,7 @@ where
             Side::PayShort => Side::LongReceive,
         };
 
-        let foreign_leg = MakeLeg::<T>::default()
+        let mut foreign_leg = MakeLeg::<T>::default()
             .with_leg_id(1)
             .with_notional(foreign_notional)
             .with_side(foreign_side)
@@ -280,6 +297,13 @@ where
             .with_date_generation_rule(self.date_generation_rule)
             .with_end_of_month(self.end_of_month)
             .build()?;
+
+        if let Some(dc) = self.domestic_day_counter {
+            domestic_leg = domestic_leg.with_floating_day_counter(dc);
+        }
+        if let Some(dc) = self.foreign_day_counter {
+            foreign_leg = foreign_leg.with_floating_day_counter(dc);
+        }
 
         Ok(FloatFloatCrossCurrencySwap::new(
             identifier,

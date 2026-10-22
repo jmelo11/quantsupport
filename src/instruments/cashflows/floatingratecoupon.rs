@@ -309,6 +309,11 @@ where
         self
     }
 
+    /// Sets contractual accrual without changing the index quoting convention.
+    pub const fn set_day_counter(&mut self, day_counter: DayCounter) {
+        self.day_counter = day_counter;
+    }
+
     /// Installs explicit overnight observation conventions.
     ///
     /// # Errors

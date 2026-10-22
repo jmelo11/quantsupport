@@ -990,6 +990,77 @@ mod tests {
     }
 
     #[test]
+    fn euribor_fixed_day_counts_match_independent_multicurve_cashflows() -> Result<()> {
+        let reference = Date::new(2026, 10, 2);
+        let dates = [
+            Date::new(2027, 1, 4),
+            Date::new(2027, 4, 2),
+            Date::new(2027, 7, 2),
+            Date::new(2027, 10, 4),
+        ];
+        let rates = [0.02598, 0.02781542, 0.029203, 0.0302858];
+        let overnight_rates = [0.02499, 0.02620, 0.02741, 0.02839];
+        for (suffix, fixed_day_counter) in [
+            ("", DayCounter::Thirty360),
+            ("_Thirty360", DayCounter::Thirty360),
+            ("_Actual360", DayCounter::Actual360),
+            ("_Actual365", DayCounter::Actual365),
+        ] {
+            let mut selector = MapSelector::new(reference);
+            let mut overnight_ids = Vec::new();
+            let mut term_ids = Vec::new();
+            for ((tenor, rate), overnight_rate) in ["3M", "6M", "9M", "1Y"]
+                .into_iter()
+                .zip(rates)
+                .zip(overnight_rates)
+            {
+                let overnight_id = format!("OIS_EUR_ESTR_{tenor}___0_0");
+                let term_id = format!("Swap_EUR_EURIBOR3m_{tenor}___0{suffix}");
+                selector.add(&overnight_id, overnight_rate);
+                selector.add(&term_id, rate);
+                overnight_ids.push(overnight_id);
+                term_ids.push(term_id);
+            }
+            let config = |index, ids| {
+                CurveConfiguration::new(
+                    index,
+                    DayCounter::Actual365,
+                    Interpolator::LogLinear,
+                    true,
+                    ids,
+                )
+            };
+            let curves = MultiCurveBootstrapper::new(
+                vec![
+                    config(MarketIndex::EURIBOR3m, term_ids),
+                    config(MarketIndex::ESTR, overnight_ids),
+                ],
+                BootstrapDiscountPolicy::new(MarketIndex::ESTR, Currency::EUR),
+            )
+            .bootstrap(&selector, Level::Mid)?;
+            let curve = curves[&MarketIndex::EURIBOR3m].curve();
+            let mut previous = 1.0;
+            let mut floating_pv = 0.0;
+            for ((date, rate), overnight_rate) in dates.into_iter().zip(rates).zip(overnight_rates)
+            {
+                // One fixed payment vs quarterly floating coupons. All dates
+                // are market pillars, so this recursion has no interpolation.
+                let overnight_accrual = DayCounter::Actual360.year_fraction(reference, date);
+                let discount = 1.0 / (1.0 + overnight_rate * overnight_accrual);
+                let fixed_accrual = fixed_day_counter.year_fraction(reference, date);
+                let expected = previous / (1.0 + rate * fixed_accrual - floating_pv / discount);
+                assert!(
+                    (curve.discount_factor(date)?.value() - expected).abs() < 1e-11,
+                    "{suffix} fixed convention at {date}"
+                );
+                floating_pv += (previous / expected - 1.0) * discount;
+                previous = expected;
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
     fn ois_bootstrap_recovers_discount_growth_with_different_day_counts() {
         use crate::prelude::{CashflowType, MakeOvernightIndexSwap, Period};
 

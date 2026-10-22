@@ -46,7 +46,7 @@ impl QuotedCurve {
             let details = quote.details();
             (details.instrument() == &QuoteInstrument::ZeroRate).then(|| {
                 RateDefinition::new(
-                    spec.day_counter(),
+                    details.day_counter().unwrap_or_else(|| spec.day_counter()),
                     details.compounding().unwrap_or(Compounding::Continuous),
                     details.frequency().unwrap_or(Frequency::Annual),
                 )

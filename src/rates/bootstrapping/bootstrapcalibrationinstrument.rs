@@ -14,7 +14,7 @@ use crate::{
         bootstrapping::{bootstrappedcurve::BootstrappedCurve, bootstrapstep::BootstrapStep},
         interestrate::InterestRate,
     },
-    time::date::Date,
+    time::{date::Date, daycounter::DayCounter},
     utils::errors::{QSError, Result},
 };
 
@@ -156,12 +156,20 @@ impl<'a> BootstrapStepEvaluation<'a> {
             })
     }
 
-    fn yield_price(&self, leg: &Leg<f64>, units: f64, yield_rate: f64) -> Result<f64> {
+    fn yield_price(
+        &self,
+        leg: &Leg<f64>,
+        units: f64,
+        yield_rate: f64,
+        day_counter: Option<DayCounter>,
+    ) -> Result<f64> {
         let settlement_date = Self::settlement_date(leg)?;
         let rate_definition = leg
             .interest_rate()
             .ok_or_else(|| QSError::ValueNotSetErr("Fixed-leg rate definition".into()))?
             .rate_definition();
+        let rate_definition =
+            day_counter.map_or(rate_definition, |dc| rate_definition.with_day_counter(dc));
         let yield_definition = InterestRate::from_rate_definition(yield_rate, rate_definition);
         let day_counter = rate_definition.day_counter();
         let mut dates = Vec::with_capacity(leg.cashflows().len());
@@ -231,7 +239,12 @@ impl CalibrationInstrumentPricer for BootstrapStepEvaluation<'_> {
                         Ok(model_price - instrument.quote_value())
                     }
                     BondCalibrationStrategy::AnchorYield => Ok(model_price
-                        - self.yield_price(bond.leg(), bond.units(), instrument.quote_value())?),
+                        - self.yield_price(
+                            bond.leg(),
+                            bond.units(),
+                            instrument.quote_value(),
+                            instrument.quote().details().yield_day_counter(),
+                        )?),
                 }
             }
             CalibrationInstrumentType::Swap(swap) => {
@@ -340,8 +353,10 @@ impl CalibrationInstrumentPricer for BootstrapStepEvaluation<'_> {
                 BondCalibrationStrategy::AnchorYield => {
                     let bump = 1e-6;
                     let market_yield = instrument.quote_value();
-                    let up = self.yield_price(bond.leg(), bond.units(), market_yield + bump)?;
-                    let down = self.yield_price(bond.leg(), bond.units(), market_yield - bump)?;
+                    let dc = instrument.quote().details().yield_day_counter();
+                    let up = self.yield_price(bond.leg(), bond.units(), market_yield + bump, dc)?;
+                    let down =
+                        self.yield_price(bond.leg(), bond.units(), market_yield - bump, dc)?;
                     Ok(-(up - down) / (2.0 * bump))
                 }
             },

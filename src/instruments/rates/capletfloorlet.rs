@@ -8,7 +8,7 @@ use crate::{
     },
     currencies::currency::Currency,
     indices::marketindex::MarketIndex,
-    time::date::Date,
+    time::{date::Date, daycounter::DayCounter},
     volatility::volatilityindexing::Strike,
 };
 
@@ -48,6 +48,8 @@ pub struct CapletFloorlet {
     payoff_type: CapletFloorletType,
     /// Strike specification (absolute, ATM, or relative to forward).
     strike: Strike,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    day_counter: Option<DayCounter>,
 }
 
 impl CapletFloorlet {
@@ -75,7 +77,21 @@ impl CapletFloorlet {
             payment_date,
             payoff_type,
             strike,
+            day_counter: None,
         }
+    }
+
+    /// Sets payoff accrual independently of native index rate quoting and volatility time.
+    #[must_use]
+    pub const fn with_day_counter(mut self, day_counter: DayCounter) -> Self {
+        self.day_counter = Some(day_counter);
+        self
+    }
+
+    /// Returns an explicit payoff accrual day count; absent values use index conventions.
+    #[must_use]
+    pub const fn day_counter(&self) -> Option<DayCounter> {
+        self.day_counter
     }
 
     /// Returns the market index (forecast curve).
