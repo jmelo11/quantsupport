@@ -6,6 +6,29 @@ rebuild and reprice the market under changed inputs. Historical snapshots
 provide a third comparison: the same trade valued against recorded markets.
 Each calculation needs consistent position, currency and quotation conventions.
 
+Loading large histories
+-----------------------
+
+Use one range import per quote store and one shared fixing-store handle across
+dated contexts to reduce the number of worksheet formulas:
+
+.. code-block:: text
+
+   =QS.QUOTES.FROM.RANGE("history.usd.quotes",B1,A3:D1002)
+   =QS.FIXINGS.FROM.RANGE("history.usd.fixings",F3:H10002)
+
+The quote range has **Identifier, Mid** columns, optionally followed by
+**Bid, Ask**. The fixing range has **Market index, Date, Value** columns;
+dates are ISO text such as ``2026-01-15``. Matching headers and fully blank
+rows are optional. Blank quote sides stay absent. Duplicate quote identifiers
+or index/date fixings are errors. Removing rows removes those observations
+from the rebuilt store. Unchanged inputs reuse their existing handles.
+
+Dated contexts share unchanged fixing history in memory. Updating a fixing
+store preserves the inputs already held by existing contexts; recalculate
+dependent contexts to use the updated history. Each distinct market date still
+requires its own curve construction and calibration.
+
 The examples continue the handles from :doc:`workbook`: ``H5`` is the base
 context, ``H6`` the swap, ``C7`` the final quote handle and ``H4`` the curve
 configuration. Place additional formulas in clear cells and retain upstream

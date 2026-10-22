@@ -260,7 +260,7 @@ class ExcelReferenceTests(unittest.TestCase):
         cls.records = json.loads(output.stdout)
 
     def test_catalog_has_complete_symbol_and_parameter_details(self):
-        self.assertEqual(len(self.records), 146)
+        self.assertEqual(len(self.records), 148)
         for record in self.records:
             with self.subTest(function=record["name"]):
                 for field in ("name", "category", "help", "return_type", "returns", "errors", "declaration", "source"):
@@ -510,7 +510,7 @@ class RenderedReferenceTests(unittest.TestCase):
             self.assertIn("defaults to Linear", interpolation.text)
             self.assertIn("strictly increasing", interpolation.text)
             self.assertIn("#VALUE!", interpolation.text)
-            self.assertEqual(len(list((output / "excel/functions").glob("qs-*.html"))), 146)
+            self.assertEqual(len(list((output / "excel/functions").glob("qs-*.html"))), 148)
             for index in ("genindex.html", "py-modindex.html", "excel-functionindex.html", "search.html", "objects.inv"):
                 self.assertTrue((output / index).is_file(), index)
             self.check_guides_and_studies(output)

@@ -1,6 +1,6 @@
 use crate::functions::helpers::{
     cached_handle, input_key, not_found, parse_currency, parse_date, parse_index, parse_json,
-    parse_json_list, value_error,
+    parse_json_list, value_error, worksheet_table,
 };
 use crate::runtime::registry::{with_registry, with_registry_mut, QsObject};
 use quantsupport::prelude::{
@@ -10,6 +10,40 @@ use quantsupport::prelude::{
 use quantsupport_xll_macros::xll_bindgen;
 use std::str::FromStr;
 use xll_rs::types::XllError;
+
+#[xll_bindgen(
+    name = "QS.QUOTES.FROM.RANGE",
+    category = "QuantSupport - Market",
+    help = "Loads Identifier/Mid[/Bid/Ask] rows into one QuoteStore; optional headers and blank rows"
+)]
+pub fn qs_quotes_from_range(
+    name: &str,
+    reference_date: &str,
+    data: *const xll_rs::types::XLOPER12,
+) -> Result<String, XllError> {
+    let date = parse_date(reference_date)?;
+    let table = worksheet_table(data, "quotes")?;
+    with_registry_mut(|registry| {
+        crate::runtime::market_inputs::import_quotes(registry, name, date, &table)
+    })
+    .map_err(value_error)
+}
+
+#[xll_bindgen(
+    name = "QS.FIXINGS.FROM.RANGE",
+    category = "QuantSupport - Market",
+    help = "Loads Market index/Date/Value rows into one FixingStore; optional headers and blank rows"
+)]
+pub fn qs_fixings_from_range(
+    name: &str,
+    data: *const xll_rs::types::XLOPER12,
+) -> Result<String, XllError> {
+    let table = worksheet_table(data, "fixings")?;
+    with_registry_mut(|registry| {
+        crate::runtime::market_inputs::import_fixings(registry, name, &table)
+    })
+    .map_err(value_error)
+}
 
 #[xll_bindgen(
     name = "QS.QUOTES.CREATE",
@@ -250,6 +284,53 @@ pub fn qs_fx_get(store: &str, base_currency: &str, quote_currency: &str) -> Resu
 
 #[cfg(test)]
 mod ownership_abi_tests {
+    #[test]
+    fn bulk_imports_read_worksheet_arrays_and_reuse_unchanged_handles() {
+        use super::{qs_fixings_from_range, qs_quotes_from_range};
+        use xll_rs::{convert::build_multi, memory::xlAutoFree12, types::XLOPER12};
+
+        let quotes = build_multi(
+            vec![
+                XLOPER12::from_str("Identifier"),
+                XLOPER12::from_str("Mid"),
+                XLOPER12::from_str("FixedRateDeposit_USD_SOFR_6M"),
+                XLOPER12::from_f64(0.04),
+            ],
+            2,
+            2,
+        );
+        let first = qs_quotes_from_range("range.quotes", "2026-01-15", quotes).unwrap();
+        assert_eq!(
+            qs_quotes_from_range("range.quotes", "2026-01-15", quotes).unwrap(),
+            first
+        );
+        assert_eq!(
+            super::qs_quotes_get(&first, "FixedRateDeposit_USD_SOFR_6M", "Mid").unwrap(),
+            0.04
+        );
+        xlAutoFree12(quotes);
+        let fixings = build_multi(
+            vec![
+                XLOPER12::from_str("SOFR"),
+                XLOPER12::from_str("2026-01-14"),
+                XLOPER12::from_f64(0.03),
+            ],
+            1,
+            3,
+        );
+        let first = qs_fixings_from_range("range.fixings", fixings).unwrap();
+        assert_eq!(
+            qs_fixings_from_range("range.fixings", fixings).unwrap(),
+            first
+        );
+        assert_eq!(
+            super::qs_fixings_get(&first, "SOFR", "2026-01-14").unwrap(),
+            0.03
+        );
+        xlAutoFree12(fixings);
+        assert!(qs_fixings_from_range("bad.range", &XLOPER12::from_f64(1.0)).is_err());
+    }
+
     #[test]
     fn invalid_abi_arguments_release_the_previous_object_before_typed_code_runs() {
         use super::xl_qs_quotes_create;

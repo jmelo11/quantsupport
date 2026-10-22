@@ -159,6 +159,37 @@ class ExcelLifecycleTests(unittest.TestCase):
         finally:
             book.Close(False)
 
+    def test_bulk_ranges_update_and_remove_observations(self):
+        book = self.excel.Workbooks.Add()
+        try:
+            sheet = book.Worksheets(1)
+            sheet.Range("A1:B3").Value2 = (
+                ("Identifier", "Mid"),
+                ("FixedRateDeposit_USD_SOFR_6M", 0.04),
+                ("FixedRateDeposit_USD_SOFR_1Y", 0.05),
+            )
+            sheet.Range("D1:F3").Value2 = (
+                ("Market index", "Date", "Value"),
+                ("SOFR", "2026-01-14", 0.03),
+                ("SOFR", "2026-01-15", 0.04),
+            )
+            sheet.Range("H1").Formula = '=QS.QUOTES.FROM.RANGE("quotes","2026-01-15",A1:B3)'
+            sheet.Range("H2").Formula = '=QS.FIXINGS.FROM.RANGE("fixings",D1:F3)'
+            sheet.Range("I1").Formula = '=QS.QUOTES.GET(H1,"FixedRateDeposit_USD_SOFR_6M","Mid")'
+            sheet.Range("I2").Formula = '=QS.FIXINGS.GET(H2,"SOFR","2026-01-14")'
+            self.assertEqual(sheet.Range("I1").Value2, 0.04)
+            self.assertEqual(sheet.Range("I2").Value2, 0.03)
+            sheet.Range("B2").Value2 = 0.06
+            sheet.Range("F2").Value2 = 0.07
+            self.assertEqual(sheet.Range("I1").Value2, 0.06)
+            self.assertEqual(sheet.Range("I2").Value2, 0.07)
+            sheet.Range("A2:B2").ClearContents()
+            sheet.Range("D2:F2").ClearContents()
+            self.assertIsInstance(sheet.Range("I1").Value2, int)  # Excel error
+            self.assertIsInstance(sheet.Range("I2").Value2, int)
+        finally:
+            book.Close(False)
+
 
 if __name__ == "__main__":
     unittest.main()

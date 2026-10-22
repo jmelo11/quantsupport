@@ -321,7 +321,27 @@ mod tests {
         let records =
             super::exports(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/functions"))
                 .unwrap();
-        assert_eq!(records.len(), 146);
+        assert_eq!(records.len(), 148);
+        for (name, arguments) in [
+            (
+                "QS.QUOTES.FROM.RANGE",
+                vec!["name", "reference_date", "data"],
+            ),
+            ("QS.FIXINGS.FROM.RANGE", vec!["name", "data"]),
+        ] {
+            let record = records
+                .iter()
+                .find(|record| record["name"] == name)
+                .unwrap();
+            let actual: Vec<_> = record["arguments"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|argument| argument["name"].as_str().unwrap())
+                .collect();
+            assert_eq!(actual, arguments);
+            assert_eq!(record["volatile"], false);
+        }
         let scenario = records
             .iter()
             .find(|record| record["name"] == "QS.SCENARIOS.FROM.JSON")

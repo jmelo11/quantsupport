@@ -21,6 +21,8 @@ fn describe_argument(function_name: &str, argument_name: &str) -> &'static str {
         return describe_argument(&format!("QS.TRADE.{product}"), argument_name);
     }
     match (function_name, argument_name) {
+        ("QS.QUOTES.FROM.RANGE", "data") => "Two to four columns: Identifier, Mid, optional Bid, optional Ask; optional matching headers and blank rows; blank quote sides remain absent; duplicate identifiers are rejected",
+        ("QS.FIXINGS.FROM.RANGE", "data") => "Three columns: Market index, Date (ISO YYYY-MM-DD text), Value (finite number); optional matching headers and blank rows; duplicate index/date observations are rejected",
         (_, "all_workbooks") => "Optional TRUE counts live objects across all workbooks in this Excel instance; omitted or FALSE counts the calling workbook",
         (_, "trades") => "Text cell or range of native trade handles; values follow row-major input order; all trades use the supplied explicit pricer and context",
         (_, "result") => "EvaluationResults handle from QS.EVALUATE; the requested measure must have been included in its requests",
@@ -336,10 +338,12 @@ pub fn result_help(function_name: &str) -> Option<(&'static str, &'static str)> 
         "QS.CURVE.ADD" => "Current revisioned text handle to the ConstructedElementStore after adding or replacing the discount curve by market index; unchanged inputs reuse its revision.",
         "QS.QUOTES.CREATE" => "Revisioned text handle to an empty QuoteStore with the supplied reference date.",
         "QS.QUOTES.FROM.JSON" => "Revisioned text handle to a QuoteStore populated from native QuoteStoreRecords JSON.",
+        "QS.QUOTES.FROM.RANGE" => "Revisioned text handle to a QuoteStore populated from the full worksheet range; changing or removing rows replaces prior inputs; unchanged inputs reuse the handle.",
         "QS.QUOTES.SET" => "Current revisioned text handle to the QuoteStore after adding or replacing the quote; unchanged inputs reuse its revision.",
         "QS.QUOTES.GET" => "Numeric Mid, Bid, or Ask quote level in the quote's native units; no percentage or basis-point conversion is applied.",
         "QS.FIXINGS.CREATE" => "Revisioned text handle to an initially empty FixingStore.",
         "QS.FIXINGS.FROM.JSON" => "Revisioned text handle to a FixingStore populated from its native JSON representation.",
+        "QS.FIXINGS.FROM.RANGE" => "Revisioned text handle to a FixingStore populated from the full worksheet range; changing or removing rows replaces prior inputs; unchanged inputs reuse the handle.",
         "QS.FIXINGS.SET" => "Current revisioned text handle to the FixingStore after adding or replacing the index/date fixing; unchanged inputs reuse its revision.",
         "QS.FIXINGS.GET" => "Numeric stored historical fixing for the index/date in the index's native units; no unit conversion, interpolation, forecasting, or missing-observation fallback is applied.",
         "QS.FX.CREATE" => "Revisioned text handle to an initially empty FxStore.",
@@ -448,9 +452,11 @@ pub fn result_help(function_name: &str) -> Option<(&'static str, &'static str)> 
         "QS.CURVE.ADD" => "#VALUE! for malformed, missing, or wrong-type handles, a stale curve handle, or a registry update failure.",
         "QS.QUOTES.CREATE" => "#VALUE! for an invalid reference date or registry/fingerprint failure.",
         "QS.QUOTES.FROM.JSON" => "#VALUE! for invalid QuoteStoreRecords JSON, quote-store conversion failures, or registry failures.",
+        "QS.QUOTES.FROM.RANGE" => "#VALUE! for invalid reference date, range dimensions, quote identifiers, nonnumeric quote levels, duplicate identifiers, or registry failures.",
         "QS.QUOTES.SET" => "#VALUE! for an invalid quote identifier, malformed/missing/wrong-type store handle, or registry/fingerprint failure.",
         "QS.QUOTES.GET" => "#N/A for an invalid/stale/wrong-type store handle, missing quote or requested level, or a level other than Mid, Bid, or Ask.",
         "QS.FIXINGS.FROM.JSON" => "#VALUE! for invalid native FixingStore JSON or registry failures.",
+        "QS.FIXINGS.FROM.RANGE" => "#VALUE! for invalid range dimensions, index/date cells, nonfinite or nonnumeric values, duplicate index/date observations, or registry failures.",
         "QS.FIXINGS.SET" => "#VALUE! for an invalid index/date, malformed/missing/wrong-type store handle, or registry/fingerprint failure.",
         "QS.FIXINGS.GET" => "#VALUE! for index/date parse failures; #N/A for invalid/stale/wrong-type store handles or missing historical fixings.",
         "QS.FX.FROM.JSON" => "#VALUE! for invalid native FxRateRecord JSON or registry failures.",

@@ -10,6 +10,9 @@ pub mod browser;
 pub mod historical;
 
 #[cfg_attr(not(windows), allow(dead_code))]
+pub mod market_inputs;
+
+#[cfg_attr(not(windows), allow(dead_code))]
 pub mod interpolation;
 
 #[cfg_attr(not(windows), allow(dead_code))]

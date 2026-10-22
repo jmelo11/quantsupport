@@ -208,6 +208,26 @@ For portfolios needing only PV, return numbers directly:
 =QS.EVALUATE.VALUES(pricer,A2:A10001,context,TRUE)
 ```
 
+For large market histories, import each quote range and fixing history with one
+formula instead of one `SET` formula per observation:
+
+```text
+=QS.QUOTES.FROM.RANGE("usd.quotes",B1,A3:D1002)
+=QS.FIXINGS.FROM.RANGE("usd.fixings",F3:H10002)
+```
+
+Quote columns are **Identifier, Mid**, optionally followed by **Bid, Ask**.
+Fixing columns are **Market index, Date, Value**, with dates as ISO text.
+Matching headers and fully blank rows are optional. Missing quote sides remain
+absent; duplicate identifiers or index/date fixings fail explicitly. Changing or
+removing a row rebuilds the complete store, and unchanged inputs reuse its
+handle. Share the resulting fixing handle across dated contexts: unchanged
+histories share storage, while edits copy shared history before changing it.
+
+Run `cargo run -p quantsupport-xll --release --example benchmark_history` to
+measure attaching 10,000 shared fixings to 1,000 dated contexts. This benchmark
+excludes Excel callbacks, curve construction and calibration.
+
 The range version returns one PV per trade, as a column or transposed row. Excel
 caches the values; no `EvaluationResults` objects are retained. Share market
 contexts and pricers across positions. Use `QS.EVALUATE` and `QS.RESULT.*` when
