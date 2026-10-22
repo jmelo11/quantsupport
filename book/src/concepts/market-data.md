@@ -31,6 +31,12 @@ projection index, tenor and payment frequencies. An option identifier also
 specifies expiry and strike conventions; for a swaption, expiry and underlying
 swap tenor are separate coordinates.
 
+Regular swap quotes default to a two-business-day settlement lag on the index
+calendar, with the tenor measured from settlement and Modified Following for
+both leg schedules. Append a settlement-day override after the frequencies:
+`Swap_EUR_EURIBOR6m_5Y_Annual_Semiannual_0` starts on the reference date
+(rolled Following if necessary). All Euribor tenors use TARGET.
+
 `Swaption_USD_SOFR_1Y_5Y_ATM_Black` quotes a one-year-expiry option on a
 five-year swap. `CapletFloorlet_USD_SOFR_3M_1Y_Absolute_0.045_Straddle_Black`
 quotes an option with a three-month index tenor, one-year expiry and 4.5%
