@@ -45,7 +45,8 @@ namespace QuantSupport.Ribbon
         {
             Font = new Font("Segoe UI", 9);
             Dock = DockStyle.Fill;
-            filter.Items.AddRange(new object[] { "All objects", "Pricing contexts", "Instruments & Trades", "Curves", "Market & configuration", "Pricing setup", "Results" });
+            TableClipboard.Configure(grid);
+            filter.Items.AddRange(new object[] { "All objects", "Pricing contexts", "Instruments & Trades", "Portfolios", "Curves", "Market & configuration", "Pricing setup", "Results" });
             filter.SelectedIndex = 0;
             var toolbar = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, Padding = new Padding(4) };
             var refresh = new Button { Text = "Refresh", AutoSize = true };

@@ -62,12 +62,14 @@ impl BrowserObject {
             QsObject::PricingContext(_) => "Pricing contexts",
             QsObject::Instrument(_) => "Instruments",
             QsObject::EvaluationResults(_) => "Results",
+            QsObject::Portfolio(_) => "Portfolios",
             QsObject::Pricer(_) | QsObject::DiscountPolicy(_) => "Pricing setup",
             _ if object.kind().ends_with("Trade") => "Trades",
             _ => "Market & configuration",
         }
         .into();
         match object {
+            QsObject::Portfolio(portfolio) => result.detail("Trades", portfolio.trades().len()),
             QsObject::PricingContext(context) => {
                 result.evaluation_date = context.evaluation_date().to_string();
                 result.snapshot_timestamp = context

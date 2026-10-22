@@ -31,7 +31,7 @@ internal static class Program
         using (var input = File.OpenRead(Path.Combine(AppContext.BaseDirectory, "query-response.json")))
         {
             var response = (BrowserResponse)new DataContractJsonSerializer(typeof(BrowserResponse)).ReadObject(input);
-            Check(response.Error == "" && response.Columns.Count == 9, "Query response contract");
+            Check(response.Error == "" && response.Columns.Count == 20 && response.Rows[0].Count == 20, "Query response contract");
             Check(response.Rows[0][1] == "Coupon café" && response.Rows[0][2] == "-1234.5" && response.Rows[0][4] == "", "Unicode, amounts and blank cells");
             Check(response.Curves.Count == 0 && response.Parameters.Count == 0, "Query metadata arrays");
         }

@@ -35,6 +35,12 @@ try {
     $populate = $browserType.GetMethod('Populate',$flags)
     [void]$populate.Invoke($control,@())
     $grid = $browserType.GetField('grid',$flags).GetValue($control)
+    $grid.SelectAll()
+    if ($grid.SelectedRows.Count -ne 3) { throw 'All object rows must be selectable.' }
+    $objectCopy = [string]$grid.GetClipboardContent().GetData([Windows.Forms.DataFormats]::UnicodeText)
+    if (-not $objectCopy.Contains('USD swap') -or -not $objectCopy.Contains('Swap pricer') -or -not $objectCopy.Contains('Name')) {
+        throw 'Object selection must copy all values and column headings.'
+    }
     $grid.CurrentCell = $grid.Rows[0].Cells[0]
     $explorer = $browserType.GetField('tradeExplorer',$flags).GetValue($control)
     $explorerType = $explorer.GetType()
@@ -51,6 +57,16 @@ try {
     if (-not $target.Enabled) { throw 'Fair rate must enable the leg/segment input.' }
     $view.SelectedIndex = 0
     if ($target.Enabled) { throw 'PV must disable the leg/segment input.' }
+    $table = $explorerType.GetField('table',$flags).GetValue($explorer)
+    [void]$table.Columns.Add('amount','Amount')
+    [void]$table.Columns.Add('currency','Currency')
+    [void]$table.Rows.Add([object[]]@('100.5','USD'))
+    [void]$table.Rows.Add([object[]]@('-20','EUR'))
+    $table.SelectAll()
+    $tableCopy = [string]$table.GetClipboardContent().GetData([Windows.Forms.DataFormats]::UnicodeText)
+    if ($table.SelectedRows.Count -ne 2 -or -not $tableCopy.Contains('100.5') -or -not $tableCopy.Contains('-20') -or -not $tableCopy.Contains('Amount')) {
+        throw 'Result tables must support selecting and copying every value and heading.'
+    }
     $context = $explorerType.GetField('context',$flags).GetValue($explorer)
     $context.SelectedIndex = -1
     if ($runButton.Enabled) { throw 'A trade request requires a context.' }
@@ -66,8 +82,13 @@ try {
     $snapshot.Objects[0].CurrentInputs = $false
     [void]$populate.Invoke($control,@())
     if ($runButton.Enabled) { throw 'Changed trade inputs must disable requests.' }
+    $snapshot.Objects[0].CurrentInputs = $true
+    $snapshot.Objects[0].Kind = 'FixedRateBondTrade'
+    [void]$populate.Invoke($control,@())
+    $view.SelectedIndex = 2
+    if ($runButton.Enabled) { throw 'Bond fair rate must explain its absent measure in the ribbon.' }
     $snapshot.Objects.Clear()
     [void]$populate.Invoke($control,@())
     if ($runButton.Enabled) { throw 'An empty browser must disable requests.' }
-    Write-Output 'Ribbon construction, selection, request controls and stale-input checks passed.'
+    Write-Output 'Ribbon construction, multi-selection, copied values, request controls and stale-input checks passed.'
 } finally { $form.Dispose() }

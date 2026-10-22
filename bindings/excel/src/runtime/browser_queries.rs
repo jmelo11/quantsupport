@@ -430,10 +430,22 @@ fn evaluation_table(results: &EvaluationResults, request: &str) -> Result<Browse
                 "Floor strike",
                 "Cap strike",
                 "Leg index",
+                "Accrual start",
+                "Accrual end",
+                "Fixing index",
+                "Coupon index",
+                "Signed notional",
+                "Coupon rate",
+                "Spread",
+                "Day count",
+                "Rate conventions",
+                "Overnight conventions",
+                "Payoff",
             ],
         );
         table.message = "Signed, undiscounted amounts in each row's currency. Rates are decimal; leg indices start at 0.".into();
         for row in 0..flows.payment_dates().len() {
+            let details = flows.coupon_details()[row].as_ref();
             let optional =
                 |value: Option<f64>| value.map(|value| value.to_string()).unwrap_or_default();
             table.rows.push(vec![
@@ -446,6 +458,38 @@ fn evaluation_table(results: &EvaluationResults, request: &str) -> Result<Browse
                 optional(flows.floorlet_strikes()[row]),
                 optional(flows.caplet_strikes()[row]),
                 flows.leg_indices()[row].to_string(),
+                details
+                    .map(|terms| terms.accrual_start.to_string())
+                    .unwrap_or_default(),
+                details
+                    .map(|terms| terms.accrual_end.to_string())
+                    .unwrap_or_default(),
+                details
+                    .and_then(CouponDetails::fixing_index)
+                    .map(ToString::to_string)
+                    .unwrap_or_default(),
+                details
+                    .and_then(|terms| terms.market_index.as_ref())
+                    .map(ToString::to_string)
+                    .unwrap_or_default(),
+                optional(details.map(|terms| terms.notional)),
+                optional(details.and_then(|terms| terms.rate)),
+                optional(details.and_then(|terms| terms.spread)),
+                details
+                    .map(|terms| format!("{:?}", terms.day_counter))
+                    .unwrap_or_default(),
+                details
+                    .and_then(|terms| terms.rate_definition)
+                    .map(|definition| format!("{definition:?}"))
+                    .unwrap_or_default(),
+                details
+                    .and_then(|terms| terms.overnight_conventions.as_ref())
+                    .map(|conventions| format!("{conventions:?}"))
+                    .unwrap_or_default(),
+                details
+                    .and_then(|terms| terms.payoff.as_ref())
+                    .map(|payoff| format!("{payoff:?}"))
+                    .unwrap_or_default(),
             ]);
         }
         Ok(table)
@@ -576,6 +620,14 @@ mod tests {
         assert!(flows.rows.len() >= 6);
         assert!(flows.rows.iter().any(|row| row[8] == "0"));
         assert!(flows.rows.iter().any(|row| row[8] == "1"));
+        assert!(flows
+            .rows
+            .iter()
+            .any(|row| row[1] == "FloatingRateCoupon" && row[11] == "SOFR" && row[12] == "SOFR"));
+        assert!(flows
+            .rows
+            .iter()
+            .all(|row| row.len() == flows.columns.len()));
         for target in 0..2 {
             query.request = "FairRate".into();
             query.target = target;

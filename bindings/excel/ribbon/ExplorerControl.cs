@@ -46,6 +46,7 @@ namespace QuantSupport.Ribbon
             this.trades = trades;
             this.windowId = windowId;
             Dock = DockStyle.Fill;
+            TableClipboard.Configure(table);
             var toolbar = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, Padding = new Padding(4), WrapContents = true };
             Action<string, Control> add = (label, control) => {
                 toolbar.Controls.Add(new Label { Text = label, AutoSize = true, Padding = new Padding(0, 6, 0, 0) });
@@ -134,9 +135,11 @@ namespace QuantSupport.Ribbon
             ClearResult();
             target.Enabled = targetLabel.Enabled = trades && view.SelectedIndex == 2;
             var supported = item != null && (trades ? item.Family == "Trades" : curve.Items.Count > 0);
-            run.Enabled = supported && item.CurrentInputs && (!trades || (context.SelectedItem is BrowserObject && pricer.SelectedItem is BrowserObject));
+            var bondFairRate = trades && item?.Kind == "FixedRateBondTrade" && view.SelectedIndex == 2;
+            run.Enabled = supported && item.CurrentInputs && !bondFairRate && (!trades || (context.SelectedItem is BrowserObject && pricer.SelectedItem is BrowserObject));
             if (!supported) message.Text = trades ? "Select a trade to request PV, cashflows or a fair rate." : "Select a pricing context, curve, curve configuration or constructed elements store.";
             else if (!item.CurrentInputs) message.Text = "Inputs changed. Recalculate the workbook, then refresh before requesting results.";
+            else if (bondFairRate) message.Text = "BondPricer does not define FairRate. Request YieldToMaturity or ZSpread through QS.EVALUATE for the bond's price or spread anchor.";
             else if (!run.Enabled) message.Text = "Create a pricing context and an explicit pricer in the workbook, then refresh.";
             else if (trades) message.Text = "Choose a context, pricer and request, then click Run request. Fair rates use a zero-based leg or loan segment.";
             else RunQuery();

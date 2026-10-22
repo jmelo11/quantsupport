@@ -30,7 +30,10 @@ Workbook, Window or Range COM wrappers are cached. A Forms timer refreshes the
 visible active pane when Excel is ready and disposes panes for closed windows.
 The browser does not request workbook recalculation. Trade pricing is explicit;
 curve selection reads nodes and calibration inputs. Results use read-only grids;
-selecting a calibration row displays its parameters. Setup links open worksheet guides; creation
+all grids allow multiple selected rows, Ctrl+A/Ctrl+C, and a right-click copy menu.
+Cashflow tables include coupon dates, contractual/fixing indices, signed notional
+and rate/spread conventions. Selecting a calibration row displays its parameters.
+Setup links open worksheet guides; creation
 wizards are deferred.
 
 The managed companion can also be compiled and packed on macOS/Linux with the
