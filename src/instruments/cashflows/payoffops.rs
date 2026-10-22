@@ -4,7 +4,7 @@ use crate::ad::scalar::Scalar;
 use crate::utils::errors::Result;
 
 /// [`PayoffOps`] describes the set of possible mathematical operations that can be used to compute the payoff of a [`NonLinearCoupon`](crate::instruments::cashflows::coupons::NonLinearCoupon).
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum PayoffOps {
     /// Max operation.
     Max(Box<Self>, Box<Self>),
@@ -14,7 +14,7 @@ pub enum PayoffOps {
     Times(Box<Self>, Box<Self>),
     /// Addition operation.
     Plus(Box<Self>, Box<Self>),
-    /// Substraction operation.
+    /// Subtraction operation.
     Minus(Box<Self>, Box<Self>),
     /// Describes a constant value.
     Const(f64),

@@ -4,6 +4,8 @@
 //! instrument and trade abstractions, evaluation results, market-data handling,
 //! and collateral / CSA discount policy definitions.
 
+/// Convention-preserving coupon compression and weighted contractual quotes.
+pub mod cashflowaggregation;
 /// Collateral / CSA discount policy module.
 pub mod collateral;
 /// Constructed element module.
@@ -22,6 +24,8 @@ pub mod marketsnapshot;
 pub mod marketsnapshotstore;
 /// Pillars module.
 pub mod pillars;
+/// Streaming portfolio valuation and numeric aggregation.
+pub mod portfolio;
 /// Pricer module.
 pub mod pricer;
 /// Typed instrument-to-pricer configuration.
