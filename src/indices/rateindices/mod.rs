@@ -27,7 +27,7 @@ pub mod tonar;
 
 // Convention-only rate definitions share the same metadata implementation.
 macro_rules! rate_index {
-    ($name:ident, $variant:ident, $ccy:ident, $calendar:expr, $dc:ident, $comp:ident, $lag:expr, $frequency:ident, $arrears:expr) => {
+    ($name:ident, $variant:ident, $ccy:ident, $calendar:expr, $dc:ident, $comp:ident, $lag:expr, $frequency:ident, $arrears:expr, ($fixed_frequency:expr, $fixed_dc:ident, $floating_frequency:ident, $settlement:expr)) => {
         #[doc = concat!("Conventions for the ", stringify!($variant), " rate index.")]
         #[derive(Clone, Copy, Default, serde::Serialize, serde::Deserialize)]
         pub struct $name;
@@ -54,6 +54,23 @@ macro_rules! rate_index {
                     crate::time::daycounter::DayCounter::$dc,
                     crate::rates::compounding::Compounding::$comp,
                     crate::time::enums::Frequency::Annual,
+                )
+            }
+            fn swap_conventions(
+                &self,
+                tenor: crate::time::period::Period,
+            ) -> crate::indices::rateindex::SwapConventions {
+                crate::indices::rateindex::SwapConventions::new(
+                    crate::rates::interestrate::RateDefinition::new(
+                        crate::time::daycounter::DayCounter::$fixed_dc,
+                        crate::rates::compounding::Compounding::$comp,
+                        crate::time::enums::Frequency::Annual,
+                    ),
+                    ($fixed_frequency)(tenor),
+                    crate::time::enums::Frequency::$floating_frequency,
+                    crate::time::daycounter::DayCounter::$dc,
+                    $settlement,
+                    crate::time::enums::BusinessDayConvention::ModifiedFollowing,
                 )
             }
             fn market_index(&self) -> crate::indices::marketindex::MarketIndex {

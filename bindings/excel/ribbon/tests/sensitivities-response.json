@@ -1,0 +1,10 @@
+{
+  "title": "Sensitivities",
+  "message": "Raw derivatives per unit of each risk factor, in the pricer's value units. For decimal-rate factors, multiply by 0.0001 for a +1 bp estimate.",
+  "curves": [],
+  "columns": ["Risk factor", "Sensitivity"],
+  "rows": [["SOFR.flat", "-1234.5"], ["FX:USD/EUR.café", "0.00001"]],
+  "numeric_columns": [1],
+  "parameters": [],
+  "error": ""
+}

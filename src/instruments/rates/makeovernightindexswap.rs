@@ -13,6 +13,7 @@ use crate::{
     time::{
         calendars::traits::IsCalendar,
         date::Date,
+        daycounter::DayCounter,
         enums::{BusinessDayConvention, Frequency, TimeUnit},
         period::Period,
         schedule::MakeSchedule,
@@ -57,6 +58,13 @@ impl<T: Scalar> MakeOvernightIndexSwap<T> {
             conventions,
             marker: std::marker::PhantomData,
         }
+    }
+
+    /// Sets the overnight coupon accrual day count independently of native index quotes.
+    #[must_use]
+    pub fn with_floating_day_counter(mut self, dc: DayCounter) -> Self {
+        self.conventions = self.conventions.with_floating_day_counter(dc);
+        self
     }
 
     /// Replaces the convention preset.
@@ -230,6 +238,9 @@ impl<T: Scalar> MakeOvernightIndexSwap<T> {
                     Some(fixed_definition),
                 )?;
                 if let CashflowType::FloatingRateCoupon(floating) = &mut coupon {
+                    if let Some(dc) = conventions.floating_day_counter() {
+                        floating.set_day_counter(dc);
+                    }
                     floating.set_overnight_conventions(conventions.overnight().clone())?;
                 }
                 cashflows.push(coupon);

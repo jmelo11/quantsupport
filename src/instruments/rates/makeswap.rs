@@ -13,13 +13,18 @@ use crate::{
     time::{
         calendar::Calendar,
         date::Date,
-        enums::{BusinessDayConvention, DateGenerationRule, Frequency},
+        daycounter::DayCounter,
+        enums::{BusinessDayConvention, DateGenerationRule, Frequency, TimeUnit},
+        period::Period,
     },
     utils::errors::{QSError, Result},
 };
 use std::marker::PhantomData;
 
 /// A builder for creating a [`Swap`] instance (vanilla fixed-float interest rate swap).
+///
+/// Omitted coupon conventions, payment frequencies and calendars use the
+/// floating index's swap metadata. Explicit builder values take precedence.
 ///
 /// ## Example
 /// ```rust
@@ -63,6 +68,7 @@ pub struct MakeSwap<T: Scalar> {
     side: Option<Side>,
     fixed_leg_frequency: Option<Frequency>,
     floating_leg_frequency: Option<Frequency>,
+    floating_day_counter: Option<DayCounter>,
     calendar: Option<Calendar>,
     business_day_convention: Option<BusinessDayConvention>,
     termination_date_convention: Option<BusinessDayConvention>,
@@ -75,6 +81,13 @@ impl<T> MakeSwap<T>
 where
     T: Scalar,
 {
+    /// Sets floating day counter for coupon accrual without changing index quoting.
+    #[must_use]
+    pub const fn with_floating_day_counter(mut self, dc: DayCounter) -> Self {
+        self.floating_day_counter = Some(dc);
+        self
+    }
+
     /// Sets the start date.
     #[must_use]
     pub const fn with_start_date(mut self, start_date: Date) -> Self {
@@ -215,9 +228,6 @@ where
         let fixed_rate = self
             .fixed_rate
             .ok_or_else(|| QSError::ValueNotSetErr("Fixed rate".into()))?;
-        let rate_definition = self
-            .rate_definition
-            .ok_or_else(|| QSError::ValueNotSetErr("Rate definition".into()))?;
         let currency = self
             .currency
             .ok_or_else(|| QSError::ValueNotSetErr("Currency".into()))?;
@@ -230,8 +240,33 @@ where
 
         let side = self.side.unwrap_or(Side::LongReceive);
         let spread = self.spread.unwrap_or(0.0);
-        let fixed_leg_frequency = self.fixed_leg_frequency.unwrap_or(Frequency::Semiannual);
-        let floating_leg_frequency = self.floating_leg_frequency.unwrap_or(Frequency::Quarterly);
+        let index_details = market_index.rate_index_details()?;
+        let tenor = Period::new(
+            i32::try_from(maturity_date - start_date).map_err(|_| {
+                QSError::InvalidValueErr("Swap tenor exceeds supported range".into())
+            })?,
+            TimeUnit::Days,
+        );
+        let conventions = index_details.swap_conventions(tenor);
+        let rate_definition = self
+            .rate_definition
+            .unwrap_or_else(|| conventions.fixed_rate_definition());
+        let fixed_leg_frequency = self
+            .fixed_leg_frequency
+            .unwrap_or_else(|| conventions.fixed_frequency());
+        let floating_leg_frequency = self
+            .floating_leg_frequency
+            .unwrap_or_else(|| conventions.floating_frequency());
+        let floating_day_counter = self
+            .floating_day_counter
+            .unwrap_or_else(|| conventions.floating_day_counter());
+        let calendar = Some(self.calendar.unwrap_or_else(|| index_details.calendar()));
+        let business_day_convention = Some(
+            self.business_day_convention
+                .unwrap_or_else(|| conventions.business_day_convention()),
+        );
+        let termination_date_convention =
+            self.termination_date_convention.or(business_day_convention);
 
         let interest_rate =
             InterestRate::from_rate_definition(T::scalar(fixed_rate), rate_definition);
@@ -248,9 +283,9 @@ where
             .with_rate(interest_rate)
             .with_payment_frequency(fixed_leg_frequency)
             .bullet()
-            .with_calendar(self.calendar.clone())
-            .with_business_day_convention(self.business_day_convention)
-            .with_termination_date_convention(self.termination_date_convention)
+            .with_calendar(calendar.clone())
+            .with_business_day_convention(business_day_convention)
+            .with_termination_date_convention(termination_date_convention)
             .with_date_generation_rule(self.date_generation_rule)
             .with_end_of_month(self.end_of_month)
             .build()?;
@@ -261,7 +296,7 @@ where
             Side::PayShort => Side::LongReceive,
         };
 
-        let floating_leg = MakeLeg::<T>::default()
+        let mut floating_leg = MakeLeg::<T>::default()
             .with_leg_id(1)
             .with_notional(notional)
             .with_side(floating_side)
@@ -273,12 +308,14 @@ where
             .with_spread(spread)
             .with_payment_frequency(floating_leg_frequency)
             .bullet()
-            .with_calendar(self.calendar)
-            .with_business_day_convention(self.business_day_convention)
-            .with_termination_date_convention(self.termination_date_convention)
+            .with_calendar(calendar)
+            .with_business_day_convention(business_day_convention)
+            .with_termination_date_convention(termination_date_convention)
             .with_date_generation_rule(self.date_generation_rule)
             .with_end_of_month(self.end_of_month)
             .build()?;
+
+        floating_leg = floating_leg.with_floating_day_counter(floating_day_counter);
 
         Ok(Swap::new(
             identifier,
@@ -345,5 +382,49 @@ mod tests {
             .build();
 
         assert!(result.is_err(), "expected missing fixed rate to fail");
+    }
+
+    #[test]
+    fn omitted_conventions_use_index_metadata_in_direct_builder() -> Result<()> {
+        use crate::instruments::cashflows::{cashflow::Cashflow, cashflowtype::CashflowType};
+
+        let swap = MakeSwap::<f64>::default()
+            .with_identifier("euribor_defaults".into())
+            .with_start_date(Date::new(2026, 10, 2))
+            .with_maturity_date(Date::new(2027, 10, 2))
+            .with_fixed_rate(0.03)
+            .with_notional(1.0)
+            .with_market_index(MarketIndex::EURIBOR6m)
+            .with_currency(Currency::EUR)
+            .build()?;
+        let fixed: Vec<_> = swap
+            .fixed_leg()
+            .cashflows()
+            .iter()
+            .filter_map(|cf| match cf {
+                CashflowType::FixedRateCoupon(coupon) => Some(coupon),
+                _ => None,
+            })
+            .collect();
+        let floating: Vec<_> = swap
+            .floating_leg()
+            .cashflows()
+            .iter()
+            .filter_map(|cf| match cf {
+                CashflowType::FloatingRateCoupon(coupon) => Some(coupon),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(fixed.len(), 1);
+        assert_eq!(floating.len(), 2);
+        let fixed = fixed[0];
+        assert_eq!(fixed.rate().day_counter(), DayCounter::Thirty360);
+        // TARGET rolls the Saturday maturity to Monday.
+        assert_eq!(fixed.accrual_end_date(), Date::new(2027, 10, 4));
+        assert!((fixed.amount()? - 0.03 * 362.0 / 360.0).abs() < 1e-14);
+        for coupon in floating {
+            assert_eq!(coupon.day_counter(), DayCounter::Actual360);
+        }
+        Ok(())
     }
 }

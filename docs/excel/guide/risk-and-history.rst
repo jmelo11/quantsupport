@@ -17,6 +17,20 @@ dated contexts to reduce the number of worksheet formulas:
    =QS.QUOTES.FROM.RANGE("history.usd.quotes",B1,A3:D1002)
    =QS.FIXINGS.FROM.RANGE("history.usd.fixings",F3:H10002)
 
+Quotes can also use separate component arrays:
+
+.. code-block:: text
+
+   =QS.QUOTES.FROM.RANGE("history.usd.quotes",B1,A3:A1002,H3:H1002)
+   =QS.QUOTES.FROM.RANGE("history.usd.quotes",B1,A3#,H3#,I3#,J3#)
+
+After the date, the arguments are **Identifiers, Mid, Bid, Ask**. Each supplied
+component must be one row or column with the same number of entries. Single
+cells are accepted for a single quote. Bid and Ask are optional, and blank
+entries retain missing levels without moving other quotes. To supply only Bid
+or Ask, leave the earlier side arguments blank. The existing combined-table
+form is selected when all side arguments are omitted.
+
 The quote range has **Identifier, Mid** columns, optionally followed by
 **Bid, Ask**. The fixing range has **Market index, Date, Value** columns;
 dates are ISO text such as ``2026-01-15``. Matching headers and fully blank
@@ -28,6 +42,21 @@ Dated contexts share unchanged fixing history in memory. Updating a fixing
 store preserves the inputs already held by existing contexts; recalculate
 dependent contexts to use the updated history. Each distinct market date still
 requires its own curve construction and calibration.
+
+The ribbon's object list refreshes only when its native change token changes;
+it does not repeatedly build unchanged snapshots. Pricing and curve-table
+queries require an explicit button click. **Reset Memory & Rebuild** clears all
+native objects and AD tape storage in this Excel instance, then rebuilds every
+open workbook. This explicit action also calculates workbooks in Manual mode
+without changing that setting. Workbook formulas and inputs remain intact;
+their handles are recreated.
+
+The browser shows only the tabs relevant to the selected object. Table headers
+expand to fit their text, and numeric displays and copied values follow Excel's
+decimal separator. After correcting a quote and recalculating, the browser keeps
+the same object and curve selection with its new handle; click **Refresh table**
+to request the updated curve. Closing a workbook releases its native state while
+other workbooks remain open.
 
 The examples continue the handles from :doc:`workbook`: ``H5`` is the base
 context, ``H6`` the swap, ``C7`` the final quote handle and ``H4`` the curve

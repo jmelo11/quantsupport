@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.Globalization;
 using System.Linq;
 using System.Text;
 using System.Windows.Forms;
@@ -17,6 +18,12 @@ namespace QuantSupport.Ribbon
         private readonly ComboBox pricer = Choice();
         private readonly ComboBox curve = Choice();
         private readonly ComboBox view = Choice();
+        private readonly DateTimePicker tradeDate = new DateTimePicker { Format = DateTimePickerFormat.Custom, CustomFormat = "yyyy-MM-dd", Width = 120 };
+        private readonly ComboBox side = Choice();
+        private readonly ComboBox anchor = Choice();
+        private readonly TextBox anchorValue = new TextBox { Width = 120 };
+        private readonly List<Control> positionControls = new List<Control>();
+        private readonly List<Control> bondControls = new List<Control>();
         private readonly NumericUpDown target = new NumericUpDown { Minimum = 0, Maximum = uint.MaxValue, Width = 75 };
         private readonly Label targetLabel = new Label { Text = "Leg / segment (0-based)", AutoSize = true, Padding = new Padding(0, 6, 0, 0) };
         private readonly Button run = new Button { Text = "Run request", AutoSize = true };
@@ -38,6 +45,7 @@ namespace QuantSupport.Ribbon
         private BrowserResponse response;
         private bool binding;
         private int generation;
+        private string positionDefaultsKey;
 
         private static ComboBox Choice() => new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 210, DisplayMember = "DisplayName", DropDownWidth = 420 };
 
@@ -47,7 +55,16 @@ namespace QuantSupport.Ribbon
             this.windowId = windowId;
             Dock = DockStyle.Fill;
             TableClipboard.Configure(table);
+            table.CellFormatting += (sender, args) =>
+            {
+                if (response?.NumericColumns == null || !response.NumericColumns.Contains(args.ColumnIndex)) return;
+                args.Value = BrowserDisplay.Number(Convert.ToString(args.Value));
+                args.CellStyle.Alignment = DataGridViewContentAlignment.MiddleRight;
+                args.FormattingApplied = true;
+            };
             var toolbar = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, Padding = new Padding(4), WrapContents = true };
+            run.Text = trades ? "Run request" : "Refresh table";
+            toolbar.Controls.Add(run);
             Action<string, Control> add = (label, control) => {
                 toolbar.Controls.Add(new Label { Text = label, AutoSize = true, Padding = new Padding(0, 6, 0, 0) });
                 toolbar.Controls.Add(control);
@@ -56,11 +73,27 @@ namespace QuantSupport.Ribbon
             if (trades) add("Pricer", pricer);
             else add("Curve", curve);
             add(trades ? "Request" : "View", view);
-            view.Items.AddRange(trades ? new object[] { "PV", "Cashflows", "Fair rate" } : new object[] { "Curve table", "Instruments & inputs" });
+            view.Items.AddRange(trades ? new object[] { "PV", "Cashflows", "Fair rate", "Sensitivities" } : new object[] { "Curve table", "Instruments & inputs" });
             view.SelectedIndex = 0;
             if (trades) { toolbar.Controls.Add(targetLabel); toolbar.Controls.Add(target); }
-            run.Text = trades ? "Run request" : "Refresh table";
-            toolbar.Controls.Add(run);
+            if (trades)
+            {
+                side.Items.AddRange(new object[] { "Receive", "Pay" });
+                side.SelectedIndex = 0;
+                anchor.Items.AddRange(new object[] { "CleanPrice", "DirtyPrice", "ZSpread" });
+                Action<string, Control, List<Control>> position = (label, control, group) =>
+                {
+                    var heading = new Label { Text = label, AutoSize = true, Padding = new Padding(0, 6, 0, 0) };
+                    toolbar.Controls.Add(heading);
+                    toolbar.Controls.Add(control);
+                    group.Add(heading);
+                    group.Add(control);
+                };
+                position("Preview trade date", tradeDate, positionControls);
+                position("Side", side, positionControls);
+                position("Bond anchor", anchor, bondControls);
+                position("Anchor value", anchorValue, bondControls);
+            }
             var split = new SplitContainer { Dock = DockStyle.Fill, Orientation = Orientation.Horizontal, Size = new Size(500, 300), SplitterDistance = 190 };
             split.Panel1.Controls.Add(table);
             split.Panel2.Controls.Add(parameters);
@@ -81,11 +114,15 @@ namespace QuantSupport.Ribbon
                 message.MaximumSize = new Size(width, 0);
             };
             run.Click += (sender, args) => RunQuery();
-            context.SelectedIndexChanged += (sender, args) => OptionsChanged();
+            context.SelectedIndexChanged += (sender, args) => { UpdatePositionDefaults(); OptionsChanged(); };
             pricer.SelectedIndexChanged += (sender, args) => OptionsChanged();
             curve.SelectedIndexChanged += (sender, args) => OptionsChanged();
             view.SelectedIndexChanged += (sender, args) => OptionsChanged();
             target.ValueChanged += (sender, args) => OptionsChanged();
+            tradeDate.ValueChanged += (sender, args) => OptionsChanged();
+            side.SelectedIndexChanged += (sender, args) => OptionsChanged();
+            anchor.SelectedIndexChanged += (sender, args) => OptionsChanged();
+            anchorValue.TextChanged += (sender, args) => OptionsChanged();
             table.SelectionChanged += (sender, args) => ShowParameters();
             Bind(null, null);
         }
@@ -117,7 +154,27 @@ namespace QuantSupport.Ribbon
             // A context owns both its nodes and calibration inputs.
             context.Enabled = selected?.Kind != "PricingContext";
             binding = false;
+            UpdatePositionDefaults();
             OptionsChanged();
+        }
+
+        private bool Preview => trades && item?.Family == "Instruments";
+        private bool BondPreview => Preview && item.Kind == "FixedRateBond";
+
+        private void UpdatePositionDefaults()
+        {
+            if (binding || !Preview) return;
+            var selectedContext = context.SelectedItem as BrowserObject;
+            var key = item.Identity + "\0" + selectedContext?.Identity + "\0" + selectedContext?.EvaluationDate;
+            if (key == positionDefaultsKey) return;
+            binding = true;
+            try
+            {
+                if (DateTime.TryParseExact(selectedContext?.EvaluationDate, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var date))
+                    tradeDate.Value = date;
+                positionDefaultsKey = key;
+            }
+            finally { binding = false; }
         }
 
         private void ClearResult()
@@ -129,38 +186,44 @@ namespace QuantSupport.Ribbon
             parameters.Clear();
         }
 
+        internal void CancelRequests() { generation++; }
+
         private void OptionsChanged()
         {
             if (binding) return;
             ClearResult();
+            foreach (var control in positionControls) control.Visible = Preview;
+            foreach (var control in bondControls) control.Visible = BondPreview;
             target.Enabled = targetLabel.Enabled = trades && view.SelectedIndex == 2;
-            var supported = item != null && (trades ? item.Family == "Trades" : curve.Items.Count > 0);
-            var bondFairRate = trades && item?.Kind == "FixedRateBondTrade" && view.SelectedIndex == 2;
-            run.Enabled = supported && item.CurrentInputs && !bondFairRate && (!trades || (context.SelectedItem is BrowserObject && pricer.SelectedItem is BrowserObject));
-            if (!supported) message.Text = trades ? "Select a trade to request PV, cashflows or a fair rate." : "Select a pricing context, curve, curve configuration or constructed elements store.";
+            var supported = item != null && (trades ? BrowserDisplay.CanPrice(item) : curve.Items.Count > 0);
+            var bondFairRate = trades && (item?.Kind == "FixedRateBondTrade" || item?.Kind == "FixedRateBond") && view.SelectedIndex == 2;
+            var anchorError = "";
+            if (BondPreview)
+            {
+                if (anchor.SelectedItem == null) anchorError = "Choose the bond's CleanPrice, DirtyPrice or ZSpread anchor and enter its value.";
+                else try { BrowserDisplay.ReadNumber(anchorValue.Text); } catch (Exception error) { anchorError = error.Message; }
+            }
+            run.Enabled = supported && item.CurrentInputs && !bondFairRate && anchorError.Length == 0 && (!trades || (context.SelectedItem is BrowserObject && pricer.SelectedItem is BrowserObject));
+            if (!supported) message.Text = trades ? "Select an instrument or trade to request PV, cashflows, a fair rate or sensitivities." : "Select a pricing context, curve, curve configuration or constructed elements store.";
             else if (!item.CurrentInputs) message.Text = "Inputs changed. Recalculate the workbook, then refresh before requesting results.";
             else if (bondFairRate) message.Text = "BondPricer does not define FairRate. Request YieldToMaturity or ZSpread through QS.EVALUATE for the bond's price or spread anchor.";
+            else if (anchorError.Length > 0) message.Text = anchorError;
             else if (!run.Enabled) message.Text = "Create a pricing context and an explicit pricer in the workbook, then refresh.";
+            else if (Preview) message.Text = "Instrument preview uses its notional and the trade date and side shown above. Choose a context, pricer and request, then click Run request.";
             else if (trades) message.Text = "Choose a context, pricer and request, then click Run request. Fair rates use a zero-based leg or loan segment.";
-            else RunQuery();
+            else message.Text = "Choose a curve and view, then click Refresh table.";
         }
 
         private void RunQuery()
         {
             if (!run.Enabled || snapshot == null || item == null) return;
             ClearResult();
-            var request = new BrowserQuery
-            {
-                Workbook = snapshot.Workbook, Handle = item.Handle,
-                View = trades ? "evaluate" : view.SelectedIndex == 0 ? "nodes" : "instruments",
-                Curve = curve.SelectedItem as string ?? "",
-                Context = item.Kind == "PricingContext" ? "" : (context.SelectedItem as BrowserObject)?.Handle ?? "",
-                Pricer = (pricer.SelectedItem as BrowserObject)?.Handle ?? "",
-                Request = view.SelectedIndex == 0 ? "Value" : view.SelectedIndex == 1 ? "Cashflows" : "FairRate",
-                Target = (uint)target.Value
-            };
+            BrowserQuery request;
+            try { request = BuildQuery(); }
+            catch (Exception error) { message.Text = error.Message; return; }
             var token = generation;
-            var origin = item.DisplayName + (trades ? "; " + (context.SelectedItem as BrowserObject)?.DisplayName + "; " + (pricer.SelectedItem as BrowserObject)?.DisplayName : "");
+            var origin = item.DisplayName + (trades ? "; " + (context.SelectedItem as BrowserObject)?.DisplayName + "; " + (pricer.SelectedItem as BrowserObject)?.DisplayName : "") +
+                (Preview ? "; preview " + request.TradeDate + ", " + request.Side : "");
             message.Text = "Running " + (trades ? (string)view.SelectedItem : request.Curve) + "…";
             ExcelAsyncUtil.QueueAsMacro(() =>
             {
@@ -171,6 +234,17 @@ namespace QuantSupport.Ribbon
                     if (BrowserPanes.ActiveWindowId() != windowId() || !string.Equals((string)app.ActiveWorkbook.Name, request.Workbook, StringComparison.OrdinalIgnoreCase))
                         throw new InvalidOperationException("Activate the source workbook and refresh before running this request.");
                     if (!(bool)app.Ready) throw new InvalidOperationException("Wait until Excel is ready, then retry.");
+                    // A queued request follows the same object to its newest revision.
+                    // Dependency validation remains native and rejects genuinely stale inputs.
+                    var latest = NativeBrowser.Read(request.Workbook);
+                    var selected = BrowserDisplay.Resolve(latest, item);
+                    if (selected == null) throw new InvalidOperationException("This object was removed. Refresh the browser and select its replacement.");
+                    request.Handle = selected.Handle;
+                    if (!string.IsNullOrEmpty(request.Context))
+                        request.Context = BrowserDisplay.Resolve(latest, context.SelectedItem as BrowserObject)?.Handle ?? request.Context;
+                    if (!string.IsNullOrEmpty(request.Pricer))
+                        request.Pricer = BrowserDisplay.Resolve(latest, pricer.SelectedItem as BrowserObject)?.Handle ?? request.Pricer;
+                    BrowserDisplay.DecimalSeparator = BrowserPanes.DecimalSeparator(app);
                     var result = NativeBrowser.Query(request);
                     if (IsDisposed || token != generation) return;
                     response = result;
@@ -183,14 +257,34 @@ namespace QuantSupport.Ribbon
             });
         }
 
+        private BrowserQuery BuildQuery()
+        {
+            return new BrowserQuery
+            {
+                Workbook = snapshot.Workbook, Handle = item.Handle,
+                View = trades ? "evaluate" : view.SelectedIndex == 0 ? "nodes" : "instruments",
+                Curve = curve.SelectedItem as string ?? "",
+                Context = item.Kind == "PricingContext" ? "" : (context.SelectedItem as BrowserObject)?.Handle ?? "",
+                Pricer = (pricer.SelectedItem as BrowserObject)?.Handle ?? "",
+                Request = trades ? BrowserDisplay.PricingRequest(view.SelectedItem as string) : "",
+                Target = (uint)target.Value,
+                TradeDate = Preview ? tradeDate.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) : null,
+                Side = Preview ? side.SelectedItem as string : null,
+                PricingAnchor = BondPreview ? anchor.SelectedItem as string : null,
+                AnchorValue = BondPreview ? (double?)BrowserDisplay.ReadNumber(anchorValue.Text) : null
+            };
+        }
+
         private void ShowParameters()
         {
             parameters.Clear();
             var row = table.CurrentRow?.Index ?? -1;
             if (response?.Parameters == null || row < 0 || row >= response.Parameters.Count) return;
             var text = new StringBuilder("Selected instrument / input parameters" + Environment.NewLine);
-            foreach (var field in response.Parameters[row]) text.AppendLine(field.Label + ": " + field.Value);
+            foreach (var field in response.Parameters[row]) text.AppendLine(field.Label + ": " + BrowserDisplay.Value(field));
             parameters.Text = text.ToString();
         }
+
+        internal void RefreshFormats() { table.Invalidate(); ShowParameters(); }
     }
 }

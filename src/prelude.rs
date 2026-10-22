@@ -63,7 +63,7 @@ pub use crate::{
         fxpair::FxPair,
         marketindex::{MarketIndex, MarketIndexDetails},
         quotetype::QuoteType,
-        rateindex::RateIndexDetails,
+        rateindex::{RateIndexDetails, SwapConventions},
     },
     instruments::{
         cashflows::{

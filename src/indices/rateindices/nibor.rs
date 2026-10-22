@@ -1,5 +1,7 @@
 //! NIBOR conventions, checked against QuantLib 5f4811e7e03b.
 
+use crate::time::enums::Frequency;
+
 use crate::time::{calendar::Calendar, calendars::norway::Norway};
 
 rate_index!(
@@ -11,7 +13,8 @@ rate_index!(
     Simple,
     2,
     Monthly,
-    false
+    false,
+    (|_| Frequency::Annual, Thirty360, Monthly, 2)
 );
 rate_index!(
     NIBOR3mIndex,
@@ -22,7 +25,8 @@ rate_index!(
     Simple,
     2,
     Quarterly,
-    false
+    false,
+    (|_| Frequency::Annual, Thirty360, Quarterly, 2)
 );
 rate_index!(
     NIBOR6mIndex,
@@ -33,7 +37,8 @@ rate_index!(
     Simple,
     2,
     Semiannual,
-    false
+    false,
+    (|_| Frequency::Annual, Thirty360, Semiannual, 2)
 );
 rate_index!(
     NIBOR12mIndex,
@@ -44,5 +49,6 @@ rate_index!(
     Simple,
     2,
     Annual,
-    false
+    false,
+    (|_| Frequency::Annual, Thirty360, Annual, 2)
 );

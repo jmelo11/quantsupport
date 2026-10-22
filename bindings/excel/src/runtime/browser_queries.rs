@@ -3,6 +3,7 @@
 use super::{
     browser::BrowserDetail,
     pricing,
+    products::PositionTerms,
     registry::{QsObject, Registry},
 };
 use quantsupport::{core::elements::curveelement::ADCurveElement, prelude::*};
@@ -20,6 +21,10 @@ pub struct BrowserQuery {
     pub pricer: String,
     pub request: String,
     pub target: u32,
+    pub trade_date: String,
+    pub side: String,
+    pub pricing_anchor: String,
+    pub anchor_value: Option<f64>,
 }
 
 #[derive(Default, Serialize)]
@@ -29,6 +34,8 @@ pub struct BrowserResponse {
     pub curves: Vec<String>,
     pub columns: Vec<String>,
     pub rows: Vec<Vec<String>>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub numeric_columns: Vec<usize>,
     /// Parameter rows correspond to table rows (e.g. a selected calibration quote).
     pub parameters: Vec<Vec<BrowserDetail>>,
     pub error: String,
@@ -102,12 +109,50 @@ pub fn execute(registry: &Registry, request: &BrowserQuery) -> Result<BrowserRes
             _ => return Err("Select an explicit pricer.".into()),
         };
         let name = match request.request.as_str() {
-            "Value" | "Cashflows" => request.request.clone(),
+            "Value" | "Cashflows" | "Sensitivities" => request.request.clone(),
             "FairRate" => format!("FairRate({})", request.target),
-            _ => return Err("Choose PV, Cashflows or Fair rate.".into()),
+            _ => return Err("Choose PV, Cashflows, Fair rate or Sensitivities.".into()),
         };
         let requests = pricing::parse_requests(&[name])?;
-        let results = pricer.evaluate(object, &requests, context)?;
+        // Instrument previews use explicit position inputs and stay outside the
+        // worksheet registry. Stored trades always retain their original terms.
+        let preview = if let QsObject::Instrument(instrument) = object {
+            let date = Date::from_str(request.trade_date.trim(), "%Y-%m-%d")
+                .map_err(|_| "Choose a trade date for the instrument preview.".to_string())?;
+            let side = match request.side.as_str() {
+                "Receive" => Side::LongReceive,
+                "Pay" => Side::PayShort,
+                _ => return Err("Choose Receive or Pay for the instrument preview.".into()),
+            };
+            let anchor = match (request.pricing_anchor.as_str(), request.anchor_value) {
+                ("", None) => None,
+                ("CleanPrice", Some(value)) => Some(BondPricingAnchor::CleanPrice(value)),
+                ("DirtyPrice", Some(value)) => Some(BondPricingAnchor::DirtyPrice(value)),
+                ("ZSpread", Some(value)) => Some(BondPricingAnchor::ZSpread(value)),
+                _ => return Err(
+                    "Supply a bond anchor and value together: CleanPrice, DirtyPrice or ZSpread."
+                        .into(),
+                ),
+            };
+            Some(instrument.trade(
+                date,
+                side,
+                &PositionTerms {
+                    pricing_anchor: anchor,
+                    ..Default::default()
+                },
+            )?)
+        } else {
+            if !request.trade_date.is_empty()
+                || !request.side.is_empty()
+                || !request.pricing_anchor.is_empty()
+                || request.anchor_value.is_some()
+            {
+                return Err("Stored trades use their own position terms; select the instrument to preview different terms.".into());
+            }
+            None
+        };
+        let results = pricer.evaluate(preview.as_ref().unwrap_or(object), &requests, context)?;
         return evaluation_table(&results, &request.request);
     }
 
@@ -183,6 +228,7 @@ fn curve_table(curve: &dyn ADCurveElement, name: &str) -> Result<BrowserResponse
             "Forward from prior node",
         ],
     );
+    table.numeric_columns = vec![2, 3, 4];
     let nodes = match curve.nodes() {
         Some(nodes) if !nodes.is_empty() => nodes,
         _ => {
@@ -262,6 +308,7 @@ fn fields(value: &impl Serialize) -> Result<Vec<BrowserDetail>, String> {
             }
             value => output.push(BrowserDetail {
                 label: prefix.into(),
+                numeric: value.is_number(),
                 value: match value {
                     serde_json::Value::String(text) => text.clone(),
                     _ => value.to_string(),
@@ -290,6 +337,7 @@ fn configuration_table(
         ],
     );
     let settings = fields(config)?;
+    table.numeric_columns = vec![3];
     table.message = settings
         .iter()
         .filter(|field| field.label != "quotes")
@@ -401,6 +449,7 @@ fn configuration_table(
                     |field| BrowserDetail {
                         label: format!("Curve: {}", field.label),
                         value: field.value.clone(),
+                        numeric: field.numeric,
                     },
                 ));
                 table.parameters.push(parameters);
@@ -444,6 +493,7 @@ fn evaluation_table(results: &EvaluationResults, request: &str) -> Result<Browse
             ],
         );
         table.message = "Signed, undiscounted amounts in each row's currency. Rates are decimal; leg indices start at 0.".into();
+        table.numeric_columns = vec![2, 4, 5, 6, 7, 8, 13, 14, 15];
         for row in 0..flows.payment_dates().len() {
             let details = flows.coupon_details()[row].as_ref();
             let optional =
@@ -493,6 +543,26 @@ fn evaluation_table(results: &EvaluationResults, request: &str) -> Result<Browse
             ]);
         }
         Ok(table)
+    } else if request == "Sensitivities" {
+        let risk = results
+            .sensitivities()
+            .ok_or("This pricer did not return sensitivities for this trade.")?;
+        if risk.instrument_keys().len() != risk.exposure().len() {
+            return Err("Sensitivity risk factors and values have different lengths.".into());
+        }
+        let mut table = BrowserResponse::table("Sensitivities", &["Risk factor", "Sensitivity"]);
+        table.numeric_columns = vec![1];
+        table.message = "Raw derivatives per unit of each risk factor, in the pricer's value units. For decimal-rate factors, multiply by 0.0001 for a +1 bp estimate.".into();
+        table.rows = risk
+            .instrument_keys()
+            .iter()
+            .zip(risk.exposure())
+            .map(|(key, value)| vec![key.clone(), value.to_string()])
+            .collect();
+        if table.rows.is_empty() {
+            table.message.push_str(" No risk factors were returned.");
+        }
+        Ok(table)
     } else {
         let (label, value) = if request == "Value" {
             ("PV", results.price())
@@ -502,6 +572,7 @@ fn evaluation_table(results: &EvaluationResults, request: &str) -> Result<Browse
         let value =
             value.ok_or_else(|| format!("This pricer did not return {label} for this trade."))?;
         let mut table = BrowserResponse::table(label, &["Result", "Value"]);
+        table.numeric_columns = vec![1];
         table.message = if request == "Value" {
             "Monetary PV under the selected pricer's conventions."
         } else {
@@ -526,19 +597,23 @@ mod tests {
         let date = Date::new(2026, 1, 15);
         let mut elements = ConstructedElementStore::default();
         for index in [MarketIndex::SOFR, MarketIndex::ESTR] {
+            let label = format!("{index}.flat");
             elements.discount_curves_mut().insert(
                 index.clone(),
                 DiscountCurveElement::new(
                     index,
-                    Rc::new(RefCell::new(FlatForwardTermStructure::new(
-                        date,
-                        DualFwd::from(0.03),
-                        RateDefinition::new(
-                            DayCounter::Actual360,
-                            Compounding::Continuous,
-                            Frequency::Annual,
-                        ),
-                    ))),
+                    Rc::new(RefCell::new(
+                        FlatForwardTermStructure::new(
+                            date,
+                            DualFwd::from(0.03),
+                            RateDefinition::new(
+                                DayCounter::Actual360,
+                                Compounding::Continuous,
+                                Frequency::Annual,
+                            ),
+                        )
+                        .with_pillar_label(label),
+                    )),
                 ),
             );
         }
@@ -548,7 +623,7 @@ mod tests {
     }
 
     #[test]
-    fn trade_queries_return_native_pv_cashflows_and_targeted_fair_rates_without_storing_results() {
+    fn pricing_queries_cover_trades_and_instrument_previews_without_storing_results() {
         let date = Date::new(2026, 1, 15);
         let swap = MakeSwap::<DualFwd>::default()
             .with_identifier("swap".into())
@@ -602,6 +677,13 @@ mod tests {
         let pricer = registry
             .upsert_if_changed("pricer", QsObject::Pricer(Box::new(pricer)), "pricer")
             .unwrap();
+        let instrument = registry
+            .upsert_if_changed(
+                "swap.contract",
+                QsObject::Instrument(Box::new(contract)),
+                "contract",
+            )
+            .unwrap();
         let count = registry.len();
         let mut query = BrowserQuery {
             handle: trade,
@@ -615,8 +697,42 @@ mod tests {
             .parse::<f64>()
             .unwrap();
         assert!(pv.is_finite() && pv.abs() > 1.0);
+        let mut preview: BrowserQuery =
+            serde_json::from_str(include_str!("../../ribbon/tests/query-instrument.json")).unwrap();
+        preview.handle = instrument;
+        preview.context.clone_from(&query.context);
+        preview.pricer.clone_from(&query.pricer);
+        let preview_pv = execute(&registry, &preview).unwrap().rows[0][1]
+            .parse::<f64>()
+            .unwrap();
+        assert!((preview_pv - pv).abs() < 1e-10);
+        preview.side = "Pay".into();
+        let opposite_pv = execute(&registry, &preview).unwrap().rows[0][1]
+            .parse::<f64>()
+            .unwrap();
+        assert!((opposite_pv + pv).abs() < 1e-10);
+        preview.side.clear();
+        assert!(execute(&registry, &preview)
+            .err()
+            .unwrap()
+            .contains("Receive or Pay"));
+        preview.side = "Receive".into();
+        preview.trade_date.clear();
+        assert!(execute(&registry, &preview)
+            .err()
+            .unwrap()
+            .contains("trade date"));
+        preview.trade_date = "2026-01-15".into();
+        query.side = "Pay".into();
+        assert!(execute(&registry, &query)
+            .err()
+            .unwrap()
+            .contains("own position terms"));
+        query.side.clear();
         query.request = "Cashflows".into();
         let flows = execute(&registry, &query).unwrap();
+        preview.request.clone_from(&query.request);
+        assert_eq!(execute(&registry, &preview).unwrap().rows, flows.rows);
         assert!(flows.rows.len() >= 6);
         assert!(flows.rows.iter().any(|row| row[8] == "0"));
         assert!(flows.rows.iter().any(|row| row[8] == "1"));
@@ -635,12 +751,112 @@ mod tests {
                 .parse::<f64>()
                 .unwrap();
             assert!(value.is_finite());
+            preview.request.clone_from(&query.request);
+            preview.target = target;
+            let preview_rate = execute(&registry, &preview).unwrap().rows[0][1]
+                .parse::<f64>()
+                .unwrap();
+            assert!((preview_rate - value).abs() < 1e-12);
         }
         query.target = 2;
         assert!(execute(&registry, &query).is_err());
+        query.request = "Sensitivities".into();
+        let risk = execute(&registry, &query).unwrap();
+        assert_eq!(risk.columns, vec!["Risk factor", "Sensitivity"]);
+        assert_eq!(risk.numeric_columns, vec![1]);
+        assert_eq!(risk.rows.len(), 1);
+        assert_eq!(risk.rows[0][0], "SOFR.flat");
+        let derivative = risk.rows[0][1].parse::<f64>().unwrap();
+        assert!(derivative.is_finite() && derivative.abs() > 1.0);
+        preview.request.clone_from(&query.request);
+        assert_eq!(execute(&registry, &preview).unwrap().rows, risk.rows);
         query.request = "Unknown".into();
         assert!(execute(&registry, &query).is_err());
         assert_eq!(registry.len(), count);
+    }
+
+    #[test]
+    fn bond_instrument_previews_require_a_valid_explicit_anchor() {
+        let date = Date::new(2026, 1, 15);
+        let bond = MakeFixedRateBond::<DualFwd>::default()
+            .with_identifier("bond".into())
+            .with_start_date(date)
+            .with_maturity_date(Date::new(2031, 1, 15))
+            .with_currency(Currency::USD)
+            .with_notional(100_000.0)
+            .with_rate_definition(RateDefinition::default())
+            .with_rate(0.05)
+            .with_payment_frequency(Frequency::Semiannual)
+            .build()
+            .unwrap();
+        let policy = pricing::fixed_income_policy(
+            &vec![vec![
+                super::super::inputs::Cell::Text("USD".into()),
+                super::super::inputs::Cell::Text("SOFR".into()),
+            ]],
+            false,
+        )
+        .unwrap();
+        let mut registry = Registry::default();
+        let handle = registry
+            .upsert_if_changed(
+                "bond",
+                QsObject::Instrument(Box::new(InstrumentObject {
+                    native: NativeInstrument::FixedRateBond(bond),
+                    notional: 100_000.0,
+                    foreign_notional: None,
+                })),
+                "bond",
+            )
+            .unwrap();
+        let context = registry
+            .upsert_if_changed(
+                "market",
+                QsObject::PricingContext(Box::new(market())),
+                "market",
+            )
+            .unwrap();
+        let pricer = registry
+            .upsert_if_changed(
+                "bond.pricer",
+                QsObject::Pricer(Box::new(
+                    PricerObject::new("BondPricer", Some(&policy), &vec![]).unwrap(),
+                )),
+                "pricer",
+            )
+            .unwrap();
+        let mut query = BrowserQuery {
+            handle,
+            context,
+            pricer,
+            view: "evaluate".into(),
+            request: "Value".into(),
+            trade_date: "2026-01-15".into(),
+            side: "Receive".into(),
+            ..Default::default()
+        };
+        assert!(execute(&registry, &query)
+            .err()
+            .unwrap()
+            .contains("pricing_anchor"));
+        query.pricing_anchor = "CleanPrice".into();
+        query.anchor_value = Some(99.25);
+        let pv = execute(&registry, &query).unwrap().rows[0][1]
+            .parse::<f64>()
+            .unwrap();
+        assert!(pv.is_finite() && pv > 0.0);
+        query.anchor_value = Some(0.0);
+        assert!(execute(&registry, &query)
+            .err()
+            .unwrap()
+            .contains("positive"));
+        query.pricing_anchor = "ZSpread".into();
+        assert!(execute(&registry, &query).is_ok());
+        assert_eq!(
+            registry.len(),
+            3,
+            "previews must not retain trades or results"
+        );
     }
 
     #[test]
@@ -674,6 +890,99 @@ mod tests {
         query.curve = "Missing".into();
         assert!(execute(&registry, &query).is_err());
         assert_eq!(registry.len(), 1);
+    }
+
+    #[test]
+    fn corrected_quote_identifiers_rebuild_queryable_curves_under_the_same_name() {
+        use super::super::{inputs::Cell, market_inputs::import_quotes, registry::CellId};
+        let date = Date::new(2026, 1, 15);
+        let cell = |row| CellId {
+            sheet: 42,
+            row,
+            column: 0,
+        };
+        let mut registry = Registry::default();
+        let mut query = BrowserQuery {
+            view: "nodes".into(),
+            curve: "SOFR".into(),
+            ..Default::default()
+        };
+        let mut previous_rows = Vec::new();
+        for identifier in ["OIS_USD_SOFR_1Y", "OIS_USD_SOFR_2Y"] {
+            registry.begin_cell(cell(0));
+            let quotes = import_quotes(
+                &mut registry,
+                "quotes",
+                date,
+                &vec![vec![Cell::Text(identifier.into()), Cell::Number(0.03)]],
+            )
+            .unwrap();
+            registry.finish_cell(true);
+            registry.begin_cell(cell(1));
+            let configurations = registry
+                .upsert_if_changed(
+                    "curves",
+                    QsObject::CurveConfigurations(vec![CurveConfiguration::new(
+                        MarketIndex::SOFR,
+                        DayCounter::Actual360,
+                        Interpolator::LogLinear,
+                        true,
+                        vec![identifier.into()],
+                    )]),
+                    identifier,
+                )
+                .unwrap();
+            registry.finish_cell(true);
+            if !query.handle.is_empty() {
+                assert!(
+                    execute(&registry, &query).is_err(),
+                    "old market must be rebuilt"
+                );
+            }
+            registry.begin_cell(cell(2));
+            let mut context = PricingContext::new()
+                .with_quote_store(registry.quote_store(&quotes).unwrap().clone())
+                .with_curve_configurations(
+                    registry
+                        .curve_configurations(&configurations)
+                        .unwrap()
+                        .clone(),
+                )
+                .with_base_currency(Currency::USD)
+                .with_base_index(MarketIndex::SOFR);
+            context.initialize().unwrap();
+            let handle = registry
+                .upsert_if_changed(
+                    "market",
+                    QsObject::PricingContext(Box::new(context)),
+                    format!("{quotes}|{configurations}"),
+                )
+                .unwrap();
+            registry.finish_cell(true);
+            assert_ne!(handle, query.handle);
+            query.handle = handle;
+            let table = execute(&registry, &query).unwrap();
+            assert_ne!(table.rows, previous_rows);
+            assert!(table.rows.iter().any(|row| row[0] == identifier));
+            assert_eq!(table.numeric_columns, vec![2, 3, 4]);
+            previous_rows = table.rows;
+            let inputs = execute(
+                &registry,
+                &BrowserQuery {
+                    handle: query.handle.clone(),
+                    curve: query.curve.clone(),
+                    view: "instruments".into(),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            assert_eq!(inputs.rows[0][0], identifier);
+            assert_eq!(inputs.rows[0][3], "0.03");
+            assert!(inputs.parameters[0]
+                .iter()
+                .any(|field| field.label == "mid" && field.numeric));
+            assert_eq!(registry.len(), 3);
+        }
     }
 
     #[test]
@@ -772,5 +1081,35 @@ mod tests {
         assert_eq!(query.workbook, "Café.xlsx");
         assert_eq!(query.target, 1);
         assert_eq!(query.request, "FairRate");
+    }
+
+    #[test]
+    fn sensitivities_preserve_raw_values_labels_and_the_managed_contract() {
+        let results = EvaluationResults::new(Date::new(2026, 1, 15), "swap".into())
+            .with_sensitivities(
+                SensitivityMap::default()
+                    .with_instrument_keys(&["SOFR.flat".into(), "FX:USD/EUR.café".into()])
+                    .with_exposure(&[-1234.5, 0.00001]),
+            );
+        let table = evaluation_table(&results, "Sensitivities").unwrap();
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../ribbon/tests/sensitivities-response.json"
+        ))
+        .unwrap();
+        assert_eq!(serde_json::to_value(table).unwrap(), fixture);
+
+        let results = EvaluationResults::new(Date::new(2026, 1, 15), "swap".into());
+        assert!(evaluation_table(&results, "Sensitivities")
+            .err()
+            .unwrap()
+            .contains("did not return sensitivities"));
+        let empty = results.with_sensitivities(SensitivityMap::default());
+        let table = evaluation_table(&empty, "Sensitivities").unwrap();
+        assert!(table.rows.is_empty());
+        assert!(table.message.contains("No risk factors were returned"));
+        let inconsistent = empty.with_sensitivities(
+            SensitivityMap::default().with_instrument_keys(&["SOFR.flat".into()]),
+        );
+        assert!(evaluation_table(&inconsistent, "Sensitivities").is_err());
     }
 }

@@ -84,8 +84,9 @@ impl CreditCurveBootstrapper {
         })?;
         let discount = discount_element.to_f64_term_structure(spec.day_counter())?;
 
-        // Collect (maturity, spread, id) sorted by maturity.
-        let mut pillars: Vec<(Date, f64, String)> = Vec::with_capacity(spec.quotes().len());
+        // Keep each quote's premium day count separate from survival-curve time.
+        let mut pillars: Vec<(Date, f64, String, DayCounter)> =
+            Vec::with_capacity(spec.quotes().len());
         for id in spec.quotes() {
             let quote = selector
                 .select(id)
@@ -95,7 +96,11 @@ impl CreditCurveBootstrapper {
                 .tenor()
                 .ok_or_else(|| QSError::InvalidValueErr(format!("CDS quote {id} has no tenor")))?;
             let spread = quote.levels().value(level)?;
-            pillars.push((ref_date + tenor, spread, id.clone()));
+            let premium_dc = quote
+                .details()
+                .day_counter()
+                .unwrap_or_else(|| spec.day_counter());
+            pillars.push((ref_date + tenor, spread, id.clone(), premium_dc));
         }
         pillars.sort_by_key(|p| p.0);
         if pillars.is_empty() {
@@ -114,6 +119,7 @@ impl CreditCurveBootstrapper {
         let pillar_dates: Vec<Date> = pillars.iter().map(|p| p.0).collect();
         let spreads: Vec<f64> = pillars.iter().map(|p| p.1).collect();
         let labels: Vec<String> = pillars.iter().map(|p| p.2.clone()).collect();
+        let premium_day_counters: Vec<_> = pillars.iter().map(|p| p.3).collect();
 
         let strip_ctx = StripContext {
             discount: &discount,
@@ -122,6 +128,7 @@ impl CreditCurveBootstrapper {
             frequency: spec.premium_frequency(),
             recovery: spec.recovery(),
             pillar_dates: &pillar_dates,
+            premium_day_counters: &premium_day_counters,
         };
 
         // Base strip and survival probabilities at pillar dates.
@@ -179,6 +186,7 @@ struct StripContext<'a> {
     frequency: Frequency,
     recovery: f64,
     pillar_dates: &'a [Date],
+    premium_day_counters: &'a [DayCounter],
 }
 
 impl StripContext<'_> {
@@ -201,6 +209,7 @@ impl StripContext<'_> {
                 known_hazards: &hazards,
                 schedule_dates: schedule.dates(),
                 spread: *spread,
+                premium_day_counter: self.premium_day_counters[k],
             };
             let solution =
                 Bisection::<HazardObjective<'_>>::new(HAZARD_LOWER, HAZARD_UPPER, MAX_ITERATIONS)
@@ -255,6 +264,7 @@ struct HazardObjective<'a> {
     known_hazards: &'a [f64],
     schedule_dates: &'a [Date],
     spread: f64,
+    premium_day_counter: DayCounter,
 }
 
 impl ContFunc<f64> for HazardObjective<'_> {
@@ -268,7 +278,7 @@ impl ContFunc<f64> for HazardObjective<'_> {
             if d1 <= ctx.ref_date {
                 continue;
             }
-            let delta = ctx.day_counter.year_fraction(d0, d1);
+            let delta = self.premium_day_counter.year_fraction(d0, d1);
             let df = ctx.discount.discount_factor(d1)?;
             let s1 = ctx.survival(ctx.time(d1), self.known_hazards, *x);
             let default_prob = s_prev - s1;
@@ -567,6 +577,54 @@ mod tests {
                 .any(|k| k.contains("Cds_CORPORATE-A_USD_5Y")),
             "sensitivities should include the CDS quote pillars"
         );
+        Ok(())
+    }
+
+    #[test]
+    fn individual_cds_quote_day_counts_reprice_at_par() -> Result<()> {
+        let ref_date = Date::new(2026, 10, 2);
+        let (curves, discount) = bootstrap_with(
+            ref_date,
+            &[
+                ("Cds_CORPORATE-A_USD_1Y_Actual365", 0.010),
+                ("Cds_CORPORATE-A_USD_3Y_Thirty360", 0.015),
+                ("Cds_CORPORATE-A_USD_5Y", 0.020),
+            ],
+            0.4,
+        )?;
+        let credit_index = MarketIndex::Credit("CORPORATE-A".into());
+        let mut store = ConstructedElementStore::default();
+        store
+            .discount_curves_mut()
+            .insert(MarketIndex::SOFR, discount);
+        store
+            .credit_curves_mut()
+            .insert(credit_index.clone(), get_corporate_curve(&curves)?.clone());
+        let provider = SimpleMarketDataProvider {
+            evaluation_date: ref_date,
+            market_data: MarketData::new(HashMap::new(), store),
+        };
+        for (years, spread, dc) in [
+            (1, 0.010, DayCounter::Actual365),
+            (3, 0.015, DayCounter::Thirty360),
+            (5, 0.020, DayCounter::Actual360),
+        ] {
+            let cds = CreditDefaultSwap::new(
+                format!("CDS-{years}Y"),
+                credit_index.clone(),
+                MarketIndex::SOFR,
+                Currency::USD,
+                ref_date,
+                ref_date.advance(years, TimeUnit::Years),
+                spread,
+                0.4,
+                Frequency::Quarterly,
+                dc,
+            )?;
+            let trade = CdsTrade::new(cds, ref_date, 1_000_000.0, Side::LongReceive);
+            let result = CdsPricer::new().evaluate(&trade, &[Request::Value], &provider)?;
+            assert!(result.price().unwrap().abs() < 0.01, "{years}Y {dc:?}");
+        }
         Ok(())
     }
 

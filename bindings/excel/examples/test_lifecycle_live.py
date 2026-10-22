@@ -159,6 +159,40 @@ class ExcelLifecycleTests(unittest.TestCase):
         finally:
             book.Close(False)
 
+    def test_names_from_literals_text_cells_and_formula_cells(self):
+        book = self.excel.Workbooks.Add()
+        try:
+            sheet = book.Worksheets(1)
+            sheet.Range("D1").Value2 = "text.cell"
+            sheet.Range("D2").Formula = '="formula."&"cell"'
+            for row, name in enumerate(('"literal"', 'D1', 'D2'), start=1):
+                sheet.Cells(row, 1).Formula = f'=QS.QUOTES.CREATE({name},"2026-01-15")'
+                sheet.Cells(row, 2).Formula = f'=QS.OBJECT.TYPE(A{row})'
+                self.assertEqual(sheet.Cells(row, 2).Value2, "QuoteStore")
+            sheet.Range("D2").Formula = '="changed."&"name"'
+            self.excel.CalculateFullRebuild()
+            self.assertEqual([sheet.Cells(row, 2).Value2 for row in (1, 2, 3)], ["QuoteStore"] * 3)
+            self.assertEqual(self.count(), 3)
+        finally:
+            book.Close(False)
+
+    def test_rapid_reopen_with_another_workbook_never_reuses_handles(self):
+        with tempfile.TemporaryDirectory(prefix="qs-rapid-reopen-") as directory:
+            path = str(Path(directory) / "Market.xlsx")
+            book = self.excel.Workbooks.Add()
+            try:
+                original = self.quotes(book)
+                book.SaveAs(path, 51)
+                book.Close(False)
+                book = None
+                book = self.excel.Workbooks.Open(path)
+                self.assertNotEqual(book.Worksheets(1).Range("A1").Value2, original)
+                self.assertEqual(book.Worksheets(1).Range("B1").Value2, "QuoteStore")
+                self.assertEqual(self.count(), 1)
+            finally:
+                if book is not None:
+                    book.Close(False)
+
     def test_bulk_ranges_update_and_remove_observations(self):
         book = self.excel.Workbooks.Add()
         try:
@@ -187,6 +221,28 @@ class ExcelLifecycleTests(unittest.TestCase):
             sheet.Range("D2:F2").ClearContents()
             self.assertIsInstance(sheet.Range("I1").Value2, int)  # Excel error
             self.assertIsInstance(sheet.Range("I2").Value2, int)
+        finally:
+            book.Close(False)
+
+    def test_separate_quote_arrays_track_edits_and_missing_sides(self):
+        book = self.excel.Workbooks.Add()
+        try:
+            sheet = book.Worksheets(1)
+            sheet.Range("A1:A2").Value2 = (("FixedRateDeposit_USD_SOFR_6M",),
+                                           ("FixedRateDeposit_USD_SOFR_1Y",))
+            sheet.Range("D1:E1").Value2 = ((0.04, 0.05),)
+            sheet.Range("H1:H2").Value2 = ((None,), (0.06,))
+            sheet.Range("K1").Formula = '=QS.QUOTES.FROM.RANGE("arrays","2026-01-15",A1:A2,D1:E1,,H1:H2)'
+            sheet.Range("K2").Formula = '=QS.QUOTES.GET(K1,"FixedRateDeposit_USD_SOFR_6M","Mid")'
+            sheet.Range("K3").Formula = '=QS.QUOTES.GET(K1,"FixedRateDeposit_USD_SOFR_1Y","Ask")'
+            self.assertEqual(sheet.Range("K2").Value2, 0.04)
+            self.assertEqual(sheet.Range("K3").Value2, 0.06)
+            sheet.Range("D1").Value2 = 0.07
+            self.assertEqual(sheet.Range("K2").Value2, 0.07)
+            sheet.Range("H2").ClearContents()
+            self.assertIsInstance(sheet.Range("K3").Value2, int)
+            sheet.Range("K1").Formula = '=QS.QUOTES.FROM.RANGE("arrays","2026-01-15",A1:A2,D1)'
+            self.assertIsInstance(sheet.Range("K1").Value2, int)
         finally:
             book.Close(False)
 

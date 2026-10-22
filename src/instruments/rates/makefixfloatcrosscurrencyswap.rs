@@ -13,6 +13,7 @@ use crate::{
     time::{
         calendar::Calendar,
         date::Date,
+        daycounter::DayCounter,
         enums::{BusinessDayConvention, DateGenerationRule, Frequency},
     },
     utils::errors::{QSError, Result},
@@ -68,6 +69,7 @@ pub struct MakeFixFloatCrossCurrencySwap<T: Scalar> {
     side: Option<Side>,
     domestic_leg_frequency: Option<Frequency>,
     foreign_leg_frequency: Option<Frequency>,
+    floating_day_counter: Option<DayCounter>,
     calendar: Option<Calendar>,
     business_day_convention: Option<BusinessDayConvention>,
     date_generation_rule: Option<DateGenerationRule>,
@@ -79,6 +81,13 @@ impl<T> MakeFixFloatCrossCurrencySwap<T>
 where
     T: Scalar,
 {
+    /// Sets floating day counter for coupon accrual without changing index quoting.
+    #[must_use]
+    pub const fn with_floating_day_counter(mut self, dc: DayCounter) -> Self {
+        self.floating_day_counter = Some(dc);
+        self
+    }
+
     /// Sets the start date.
     #[must_use]
     pub const fn with_start_date(mut self, date: Date) -> Self {
@@ -274,7 +283,7 @@ where
             Side::PayShort => Side::LongReceive,
         };
 
-        let foreign_leg = MakeLeg::<T>::default()
+        let mut foreign_leg = MakeLeg::<T>::default()
             .with_leg_id(1)
             .with_notional(foreign_notional)
             .with_side(foreign_side)
@@ -292,6 +301,10 @@ where
             .with_date_generation_rule(self.date_generation_rule)
             .with_end_of_month(self.end_of_month)
             .build()?;
+
+        if let Some(dc) = self.floating_day_counter {
+            foreign_leg = foreign_leg.with_floating_day_counter(dc);
+        }
 
         Ok(FixFloatCrossCurrencySwap::new(
             identifier,

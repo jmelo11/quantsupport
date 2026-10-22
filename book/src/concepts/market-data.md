@@ -31,11 +31,32 @@ projection index, tenor and payment frequencies. An option identifier also
 specifies expiry and strike conventions; for a swaption, expiry and underlying
 swap tenor are separate coordinates.
 
-Regular swap quotes default to a two-business-day settlement lag on the index
-calendar, with the tenor measured from settlement and Modified Following for
-both leg schedules. Append a settlement-day override after the frequencies:
-`Swap_EUR_EURIBOR6m_5Y_Annual_Semiannual_0` starts on the reference date
-(rolled Following if necessary). All Euribor tenors use TARGET.
+Rate indices own their swap defaults through
+`RateIndexDetails::swap_conventions(tenor)`: fixed coupon day count and
+compounding, both payment frequencies, floating accrual day count, settlement
+lag and business-day adjustment. Swap quotes and swaption underlyings consume
+these defaults. Direct `MakeSwap` builders use the same metadata. There is no
+shared semiannual/quarterly fallback.
+
+For example, Euribor uses annual 30/360 fixed coupons, floating payments at the
+index tenor with ACT/360 accrual, TARGET and two settlement days. TIBOR uses
+semiannual ACT/365 fixed coupons; NIBOR uses annual 30/360 fixed coupons.
+SONIA uses annual ACT/365 coupons and same-day settlement, while SOFR uses
+annual ACT/360 coupons and two settlement days. AUD BBSW fixed payments are
+quarterly below four years and semiannual from four years.
+
+All quote parameters are positional. A regular swap accepts
+`Swap_CCY_Index_Tenor[_FixedFreq[_FloatFreq[_SettlementDays[_FixedDC[_FloatDC]]]]]`.
+Empty fields retain the index defaults. For example,
+`Swap_EUR_EURIBOR3m_1Y___1_Actual365` changes settlement to one business day
+and fixed accrual to ACT/365. Appending `_Actual360` explicitly sets the
+floating day count too. Overrides apply independently, including when supplied
+through Python quote records or Excel quote identifiers.
+
+Day counts are also positional for deposits, futures, bonds, zero rates, CDS,
+caps, caplets, OIS, basis and cross-currency swaps, and swaptions. Bond coupon
+and yield day counts are separate; two-leg contracts allow separate accrual
+conventions. See the `QuoteDetails` identifier schemas for each field order.
 
 `Swaption_USD_SOFR_1Y_5Y_ATM_Black` quotes a one-year-expiry option on a
 five-year swap. `CapletFloorlet_USD_SOFR_3M_1Y_Absolute_0.045_Straddle_Black`

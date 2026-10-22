@@ -325,7 +325,7 @@ mod tests {
         for (name, arguments) in [
             (
                 "QS.QUOTES.FROM.RANGE",
-                vec!["name", "reference_date", "data"],
+                vec!["name", "reference_date", "identifiers", "mid", "bid", "ask"],
             ),
             ("QS.FIXINGS.FROM.RANGE", vec!["name", "data"]),
             ("QS.PORTFOLIO.CREATE", vec!["name", "trades"]),

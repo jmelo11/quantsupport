@@ -14,15 +14,39 @@ use xll_rs::types::XllError;
 #[xll_bindgen(
     name = "QS.QUOTES.FROM.RANGE",
     category = "QuantSupport - Market",
-    help = "Loads Identifier/Mid[/Bid/Ask] rows into one QuoteStore; optional headers and blank rows"
+    help = "Loads separate identifier/Mid[/Bid/Ask] arrays or one combined quote table"
 )]
 pub fn qs_quotes_from_range(
     name: &str,
     reference_date: &str,
-    data: *const xll_rs::types::XLOPER12,
+    identifiers: *const xll_rs::types::XLOPER12,
+    mid: *const xll_rs::types::XLOPER12,
+    bid: *const xll_rs::types::XLOPER12,
+    ask: *const xll_rs::types::XLOPER12,
 ) -> Result<String, XllError> {
     let date = parse_date(reference_date)?;
-    let table = worksheet_table(data, "quotes")?;
+    let identifiers = worksheet_table(identifiers, "identifiers")?;
+    let optional = |value: *const xll_rs::types::XLOPER12, name: &str| {
+        use xll_rs::types::{XLTYPE_MISSING, XLTYPE_NIL};
+        if value.is_null() || matches!(unsafe { &*value }.base_type(), XLTYPE_MISSING | XLTYPE_NIL)
+        {
+            Ok(None)
+        } else {
+            worksheet_table(value, name).map(Some)
+        }
+    };
+    let (mid, bid, ask) = (
+        optional(mid, "mid")?,
+        optional(bid, "bid")?,
+        optional(ask, "ask")?,
+    );
+    let table = crate::runtime::market_inputs::quote_arrays(
+        &identifiers,
+        mid.as_ref(),
+        bid.as_ref(),
+        ask.as_ref(),
+    )
+    .map_err(value_error)?;
     with_registry_mut(|registry| {
         crate::runtime::market_inputs::import_quotes(registry, name, date, &table)
     })
@@ -285,6 +309,52 @@ pub fn qs_fx_get(store: &str, base_currency: &str, quote_currency: &str) -> Resu
 #[cfg(test)]
 mod ownership_abi_tests {
     #[test]
+    fn quote_arrays_preserve_alignment_and_optional_sides_at_the_abi() {
+        use super::qs_quotes_from_range;
+        use xll_rs::{convert::build_multi, memory::xlAutoFree12, types::XLOPER12};
+        let identifiers = build_multi(
+            vec![
+                XLOPER12::from_str("FixedRateDeposit_USD_SOFR_6M"),
+                XLOPER12::from_str("FixedRateDeposit_USD_SOFR_1Y"),
+            ],
+            2,
+            1,
+        );
+        let mid = build_multi(vec![XLOPER12::from_f64(0.04), XLOPER12::nil()], 1, 2);
+        let ask = build_multi(vec![XLOPER12::nil(), XLOPER12::from_f64(0.05)], 2, 1);
+        let handle = qs_quotes_from_range(
+            "array.quotes",
+            "2026-01-15",
+            identifiers,
+            mid,
+            &XLOPER12::nil(),
+            ask,
+        )
+        .unwrap();
+        assert_eq!(
+            super::qs_quotes_get(&handle, "FixedRateDeposit_USD_SOFR_6M", "Mid").unwrap(),
+            0.04
+        );
+        assert!(super::qs_quotes_get(&handle, "FixedRateDeposit_USD_SOFR_1Y", "Mid").is_err());
+        assert_eq!(
+            super::qs_quotes_get(&handle, "FixedRateDeposit_USD_SOFR_1Y", "Ask").unwrap(),
+            0.05
+        );
+        assert!(qs_quotes_from_range(
+            "bad.arrays",
+            "2026-01-15",
+            identifiers,
+            &XLOPER12::from_f64(0.04),
+            std::ptr::null(),
+            std::ptr::null()
+        )
+        .is_err());
+        xlAutoFree12(identifiers);
+        xlAutoFree12(mid);
+        xlAutoFree12(ask);
+    }
+
+    #[test]
     fn bulk_imports_read_worksheet_arrays_and_reuse_unchanged_handles() {
         use super::{qs_fixings_from_range, qs_quotes_from_range};
         use xll_rs::{convert::build_multi, memory::xlAutoFree12, types::XLOPER12};
@@ -299,9 +369,12 @@ mod ownership_abi_tests {
             2,
             2,
         );
-        let first = qs_quotes_from_range("range.quotes", "2026-01-15", quotes).unwrap();
+        let blank = std::ptr::null();
+        let first = qs_quotes_from_range("range.quotes", "2026-01-15", quotes, blank, blank, blank)
+            .unwrap();
         assert_eq!(
-            qs_quotes_from_range("range.quotes", "2026-01-15", quotes).unwrap(),
+            qs_quotes_from_range("range.quotes", "2026-01-15", quotes, blank, blank, blank)
+                .unwrap(),
             first
         );
         assert_eq!(

@@ -148,6 +148,8 @@ pub struct OisConventions {
     overnight_frequency: Frequency,
     /// Fixed-leg day count; otherwise the index day count.
     fixed_day_counter: Option<DayCounter>,
+    /// Overnight coupon accrual day count; otherwise the index day count.
+    floating_day_counter: Option<DayCounter>,
     /// Accrual date adjustment.
     convention: BusinessDayConvention,
     /// Termination date adjustment; otherwise the accrual convention.
@@ -182,6 +184,7 @@ impl Default for OisConventions {
             fixed_frequency: Frequency::Annual,
             overnight_frequency: Frequency::Annual,
             fixed_day_counter: None,
+            floating_day_counter: None,
             convention: BusinessDayConvention::ModifiedFollowing,
             termination_convention: None,
             payment_convention: BusinessDayConvention::Following,
@@ -203,9 +206,9 @@ impl OisConventions {
     /// Rejects excess fields, invalid enum spellings and invalid parameter values.
     pub fn with_quote_fields(mut self, fields: &[&str]) -> crate::utils::errors::Result<Self> {
         use crate::utils::errors::QSError;
-        if fields.len() > 23 {
+        if fields.len() > 24 {
             return Err(QSError::InvalidValueErr(
-                "OIS identifier has more than 23 optional fields".into(),
+                "OIS identifier has more than 24 optional fields".into(),
             ));
         }
         for (position, &value) in fields.iter().enumerate() {
@@ -294,6 +297,7 @@ impl OisConventions {
                         "%Y-%m-%d",
                     )?),
                 }),
+                23 => self.with_floating_day_counter(DayCounter::try_from(value.to_string())?),
                 _ => return Err(invalid()),
             };
         }
@@ -420,6 +424,19 @@ impl OisConventions {
     #[must_use]
     pub const fn with_fixed_day_counter(mut self, day_counter: DayCounter) -> Self {
         self.fixed_day_counter = Some(day_counter);
+        self
+    }
+
+    /// Returns the overnight coupon accrual day count override.
+    #[must_use]
+    pub const fn floating_day_counter(&self) -> Option<DayCounter> {
+        self.floating_day_counter
+    }
+
+    /// Sets overnight coupon accrual independently of the index quote definition.
+    #[must_use]
+    pub const fn with_floating_day_counter(mut self, day_counter: DayCounter) -> Self {
+        self.floating_day_counter = Some(day_counter);
         self
     }
 

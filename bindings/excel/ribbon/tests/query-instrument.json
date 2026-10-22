@@ -1,0 +1,11 @@
+{
+  "workbook": "Café.xlsx",
+  "handle": "QSObject:Swap:w1~swap.contract:4",
+  "view": "evaluate",
+  "curve": "",
+  "context": "QSObject:PricingContext:w1~market:2",
+  "pricer": "QSObject:Pricer:w1~pricer:3",
+  "request": "Value",
+  "trade_date": "2026-01-15",
+  "side": "Receive"
+}

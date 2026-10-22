@@ -9,6 +9,63 @@ use super::{
     registry::{QsObject, Registry},
 };
 
+/// Aligns separate row/column arrays without dropping blank quote sides.
+/// With no side arrays, the existing combined-table input is preserved.
+pub fn quote_arrays(
+    identifiers: &Table,
+    mid: Option<&Table>,
+    bid: Option<&Table>,
+    ask: Option<&Table>,
+) -> Result<Table, String> {
+    if mid.is_none() && bid.is_none() && ask.is_none() {
+        return Ok(identifiers.clone());
+    }
+    let vector = |table: &Table, name: &str| -> Result<Vec<Cell>, String> {
+        if table.len() == 1 {
+            Ok(table[0].clone())
+        } else if table.iter().all(|row| row.len() == 1) {
+            Ok(table.iter().map(|row| row[0].clone()).collect())
+        } else {
+            Err(format!("{name} must be a single row or column array"))
+        }
+    };
+    let identifiers = vector(identifiers, "identifiers")?;
+    let mut rows: Table = identifiers
+        .into_iter()
+        .map(|identifier| vec![identifier, Cell::Blank, Cell::Blank, Cell::Blank])
+        .collect();
+    for (column, (name, side)) in [("mid", mid), ("bid", bid), ("ask", ask)]
+        .into_iter()
+        .enumerate()
+    {
+        if let Some(side) = side {
+            let values = vector(side, name)?;
+            if values.len() != rows.len() {
+                return Err(format!(
+                    "{name} must have the same number of entries as identifiers"
+                ));
+            }
+            for (row, value) in rows.iter_mut().zip(values) {
+                row[column + 1] = value;
+            }
+        }
+    }
+    // A matching identifier header makes omitted side headers explicit too.
+    if let Some(first) = rows.first_mut() {
+        if first[0]
+            .text("identifier")
+            .is_ok_and(|value| inputs::label(value) == "identifier")
+        {
+            for (column, label) in ["Mid", "Bid", "Ask"].into_iter().enumerate() {
+                if first[column + 1].is_blank() {
+                    first[column + 1] = Cell::Text(label.into());
+                }
+            }
+        }
+    }
+    Ok(rows)
+}
+
 /// Builds one quote store from Identifier/Mid[/Bid/Ask] columns.
 pub fn quotes(date: Date, table: &Table) -> Result<QuoteStore, String> {
     let mut store = QuoteStore::new(date);
@@ -141,6 +198,78 @@ mod tests {
             vec![Cell::Blank; 3],
             vec![text("SOFR"), text("2026-01-16"), Cell::Number(0.05)],
         ]
+    }
+
+    #[test]
+    fn separate_quote_arrays_align_rows_columns_scalars_and_missing_sides() {
+        let date = Date::new(2026, 1, 15);
+        let identifiers = vec![
+            vec![text("FixedRateDeposit_USD_SOFR_6M")],
+            vec![text("FixedRateDeposit_USD_SOFR_1Y")],
+        ];
+        let mid = vec![vec![Cell::Number(0.04), Cell::Blank]];
+        let ask = vec![vec![Cell::Blank], vec![Cell::Number(0.05)]];
+        let rows = quote_arrays(&identifiers, Some(&mid), None, Some(&ask)).unwrap();
+        let store = quotes(date, &rows).unwrap();
+        let first = store.quote("FixedRateDeposit_USD_SOFR_6M").unwrap();
+        assert_eq!(first.levels().value(Level::Mid).unwrap(), 0.04);
+        assert!(first.levels().value(Level::Bid).is_err());
+        assert!(first.levels().value(Level::Ask).is_err());
+        let second = store.quote("FixedRateDeposit_USD_SOFR_1Y").unwrap();
+        assert!(second.levels().value(Level::Mid).is_err());
+        assert_eq!(second.levels().value(Level::Ask).unwrap(), 0.05);
+
+        let scalar = quote_arrays(
+            &vec![identifiers[0].clone()],
+            Some(&vec![vec![Cell::Number(0.06)]]),
+            None,
+            None,
+        )
+        .unwrap();
+        assert_eq!(quotes(date, &scalar).unwrap().quotes().len(), 1);
+        let bid_only = quote_arrays(&identifiers, None, Some(&ask), None).unwrap();
+        assert_eq!(
+            quotes(date, &bid_only)
+                .unwrap()
+                .quote("FixedRateDeposit_USD_SOFR_1Y")
+                .unwrap()
+                .levels()
+                .value(Level::Bid)
+                .unwrap(),
+            0.05
+        );
+    }
+
+    #[test]
+    fn quote_arrays_reject_misalignment_and_preserve_combined_tables() {
+        let identifiers = vec![
+            vec![text("Identifier")],
+            vec![text("FixedRateDeposit_USD_SOFR_6M")],
+        ];
+        let mid = vec![vec![text("Mid"), Cell::Number(0.04)]];
+        let rows = quote_arrays(&identifiers, Some(&mid), None, None).unwrap();
+        let date = Date::new(2026, 1, 15);
+        assert_eq!(quotes(date, &rows).unwrap().quotes().len(), 1);
+        assert_eq!(quote_arrays(&rows, None, None, None).unwrap(), rows);
+        assert!(quote_arrays(
+            &identifiers,
+            Some(&vec![vec![Cell::Number(0.04)]]),
+            None,
+            None
+        )
+        .is_err());
+        assert!(quote_arrays(
+            &identifiers,
+            Some(&vec![vec![Cell::Number(0.04); 2]; 2]),
+            None,
+            None
+        )
+        .is_err());
+        assert!(quote_arrays(&rows, Some(&mid), None, None).is_err());
+        let empty: Table = vec![];
+        assert!(quote_arrays(&empty, Some(&empty), None, None)
+            .unwrap()
+            .is_empty());
     }
 
     #[test]

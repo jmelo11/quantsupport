@@ -79,22 +79,44 @@ alter observation semantics and must match the actual contract. Deterministic
 valuation supports nonstandard overnight settings that the legacy XVA claim
 converter rejects.
 
-`Swap_CCY_Index_Tenor[_FixedFreq[_FloatFreq[_SettlementDays]]]` remains a
-different quote family. It starts two business days after the reference date,
-using the index calendar for settlement and Modified Following for both leg
-schedules. The tenor runs from that settlement date. All five Euribor tenors
-use TARGET, including its Easter, May Day and Christmas holidays.
-The optional final field overrides the start lag; for example,
-`Swap_EUR_EURIBOR6m_5Y_Annual_Semiannual_0` starts on the reference date
-(rolled Following if necessary), while `Swap_EUR_EURIBOR6m_5Y___2` explicitly
-keeps the two-day lag and default frequencies. This is settlement lag;
-coupon payments still occur at accrual end.
+`Swap_CCY_Index_Tenor[_FixedFreq[_FloatFreq[_SettlementDays[_FixedDC[_FloatDC]]]]]`
+uses single-fixing floating coupons, including when the index is overnight.
+Its defaults come from the index's `swap_conventions(tenor)` metadata, which is
+separate from the rate's deposit/forward quoting definition. The tenor runs
+from settlement on the index calendar. Swaption underlyings and direct swap
+builders use the same defaults.
 
-Regular swaps use single-fixing coupons and semiannual/quarterly frequency
-defaults. They retain single-fixing coupon behavior when their index is overnight.
+Euribor defaults to annual **Thirty360 (bond basis)** fixed coupons, floating
+coupons at the index tenor with ACT/360 accrual, TARGET and two settlement
+days. TIBOR defaults to semiannual ACT/365 fixed coupons, while NIBOR uses
+annual 30/360. SOFR uses annual ACT/360 on both legs; SONIA uses annual
+ACT/365 and zero settlement days. There is no universal fixed-leg default.
+
+Optional fields override each convention independently. For example,
+`Swap_EUR_EURIBOR3m_1Y_Annual_Quarterly_1_Thirty360_Actual360` supplies both
+frequencies, one settlement day and both accrual conventions.
+`Swap_EUR_EURIBOR3m_1Y___1_Actual365` retains the index frequencies and
+floating day count while changing settlement and fixed accrual. Empty fields
+retain defaults. Rust builders and serialized quote details can supply the
+same terms through their individual setters and fields.
+
+Settlement lag delays the start of accrual; regular swap payments occur at
+accrual end. Use OIS quotes for compounded daily observations and their
+separate payment-lag conventions. To reproduce curves made with the former
+semiannual/quarterly defaults, supply those frequencies and the former day
+counts explicitly.
+
 To reproduce a supplied market curve,
 match the calibration contracts, interpolation and valuation assumptions as well
 as the quoted rates.
+
+In particular, a quote's extraction date need not be its effective date, and
+`discount_factor(T)` is anchored at the curve reference date. Compare a factor
+measured from a later start `S` using `discount_factor(T) / discount_factor(S)`.
+The curve's day counter measures interpolation time; it does not override the
+swap quote's fixed or floating coupon day counts. See the executable
+[Euribor 3M reconciliation](../../../examples/bootstrap/euribor3m-reconciliation.md)
+for an annual-versus-semiannual comparison and an independent cashflow check.
 
 ## Differentiating calibration
 

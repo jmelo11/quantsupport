@@ -1,5 +1,7 @@
 //! BKBM conventions, checked against QuantLib 5f4811e7e03b.
 
+use crate::time::enums::Frequency;
+
 use crate::time::{calendar::Calendar, calendars::newzealand::NewZealand};
 
 rate_index!(
@@ -11,7 +13,8 @@ rate_index!(
     Simple,
     0,
     Monthly,
-    false
+    false,
+    (|_| Frequency::Semiannual, Actual365, Monthly, 0)
 );
 rate_index!(
     BKBM2mIndex,
@@ -22,7 +25,8 @@ rate_index!(
     Simple,
     0,
     Bimonthly,
-    false
+    false,
+    (|_| Frequency::Semiannual, Actual365, Bimonthly, 0)
 );
 rate_index!(
     BKBM3mIndex,
@@ -33,7 +37,8 @@ rate_index!(
     Simple,
     0,
     Quarterly,
-    false
+    false,
+    (|_| Frequency::Semiannual, Actual365, Quarterly, 0)
 );
 rate_index!(
     BKBM4mIndex,
@@ -44,7 +49,8 @@ rate_index!(
     Simple,
     0,
     EveryFourthMonth,
-    false
+    false,
+    (|_| Frequency::Semiannual, Actual365, EveryFourthMonth, 0)
 );
 rate_index!(
     BKBM6mIndex,
@@ -55,5 +61,6 @@ rate_index!(
     Simple,
     0,
     Semiannual,
-    false
+    false,
+    (|_| Frequency::Semiannual, Actual365, Semiannual, 0)
 );

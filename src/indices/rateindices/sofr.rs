@@ -5,7 +5,7 @@ use crate::{
     indices::{
         marketindex::{MarketIndex, MarketIndexDetails},
         quotetype::QuoteType,
-        rateindex::RateIndexDetails,
+        rateindex::{RateIndexDetails, SwapConventions},
     },
     rates::{compounding::Compounding, interestrate::RateDefinition},
     time::{
@@ -58,6 +58,29 @@ macro_rules! sofr_index {
                     DayCounter::Actual360,
                     Compounding::Simple,
                     Frequency::Annual,
+                )
+            }
+
+            fn swap_conventions(&self, _tenor: crate::time::period::Period) -> SwapConventions {
+                SwapConventions::new(
+                    RateDefinition::new(
+                        DayCounter::Actual360,
+                        Compounding::Simple,
+                        Frequency::Annual,
+                    ),
+                    if $in_arrears {
+                        Frequency::Annual
+                    } else {
+                        Frequency::Semiannual
+                    },
+                    if $in_arrears {
+                        Frequency::Annual
+                    } else {
+                        $frequency
+                    },
+                    self.rate_definition().day_counter(),
+                    2,
+                    crate::time::enums::BusinessDayConvention::ModifiedFollowing,
                 )
             }
 

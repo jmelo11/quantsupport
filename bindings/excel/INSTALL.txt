@@ -11,10 +11,19 @@ QuantSupport for 64-bit Windows Excel
 7. Open the QuantSupport ribbon tab. Pricing Contexts and Instruments & Trades
    open the workbook object browser; Inspect Selection shows the object in the
    active cell. Select an object and click Go to cell to edit its source inputs.
-   Select a trade, choose its context and pricer in Trade requests, then run
-   PV, Cashflows or Fair rate (with a zero-based leg/segment).
-   Curves opens curve tables and Instruments & inputs; select an instrument
+   Select an instrument or trade and click Price Selection, or use Pricing in
+   the panel. Choose its context and pricer, then run
+   PV, Cashflows, Fair rate (with a zero-based leg/segment), or Sensitivities.
+   Sensitivities lists risk factors and raw derivatives per unit of each factor.
+   Instrument previews use the displayed trade date, side and instrument notional.
+   Bond previews also require a CleanPrice, DirtyPrice or ZSpread anchor and value.
+   Existing trades use their stored position terms.
+   Curves opens curve tables and Instruments & inputs; click Refresh table
+   to load a view, then select an instrument
    row to inspect its parameters. Select a pricing context for market levels.
+8. Reset Memory & Rebuild clears all native QuantSupport objects and calculation
+   memory in this Excel instance, then rebuilds every open workbook. This also
+   calculates in Manual mode without changing the mode or editing formulas.
 
 Keep quantsupport.intellisense.xml beside quantsupport.xll. If you rename the
 QuantSupport XLL, give the XML the same base name. Replacing the add-in requires
@@ -30,8 +39,10 @@ afterwards to rebuild its formulas and object handles.
 Without the IntelliSense companion, Ctrl+A after a function name opens Excel's
 Function Arguments dialog. Ctrl+Shift+A inserts its argument names.
 
-The browser shows live objects for the active workbook and refreshes while
-Excel is ready. It does not calculate the workbook. Valuation dates are market
+The browser shows live objects for the active workbook and refreshes when
+native objects change while Excel is ready. Normal browsing does not calculate
+the workbook; Reset Memory & Rebuild explicitly recalculates all open workbooks.
+Valuation dates are market
 reference dates; Snapshot (UTC) is the historical observation timestamp, when
 available. Neither field is an object's creation time. Use the Setup Guide
 button for worksheet construction examples. Creation wizards are not included.

@@ -120,7 +120,10 @@ impl HandleValue<CapletFloorletTrade, BlackCapletState> for ClosedFormBlackCaple
         let end_date = caplet.end_accrual_date();
         let payment_date = caplet.payment_date();
         let rate_def = index.rate_index_details()?.rate_definition();
-        let yf = rate_def.day_counter().year_fraction(start_date, end_date);
+        let yf = caplet
+            .day_counter()
+            .unwrap_or_else(|| rate_def.day_counter())
+            .year_fraction(start_date, end_date);
 
         // Time to expiry: from trade date to fixing date
         let tau = rate_def
@@ -553,6 +556,50 @@ mod tests {
         println!("Closed-form price: {closed_form}");
         assert!((price - closed_form).abs() < 1e-4);
 
+        Ok(())
+    }
+
+    #[test]
+    fn caplet_accrual_override_scales_price_without_changing_forward_or_volatility_time(
+    ) -> Result<()> {
+        use crate::time::daycounter::DayCounter;
+        let reference = Date::new(2026, 10, 2);
+        let start = reference + Period::new(6, TimeUnit::Months);
+        let end = start + Period::new(3, TimeUnit::Months);
+        let index = MarketIndex::TermSOFR3m;
+        let (market_data, _, _) =
+            setup_caplet_market_data(reference, start, end, &index, 0.04, 0.2, 0.05)?;
+        let provider = SimpleMarketDataProvider {
+            evaluation_date: reference,
+            market_data,
+        };
+        let caplet = CapletFloorlet::new(
+            "CAPLET-DC".into(),
+            index,
+            Currency::USD,
+            start,
+            start,
+            end,
+            end,
+            CapletFloorletType::Caplet,
+            Strike::Absolute(0.05),
+        );
+        let mut prices = Vec::new();
+        for instrument in [
+            caplet.clone(),
+            caplet.with_day_counter(DayCounter::Actual365),
+        ] {
+            let trade =
+                CapletFloorletTrade::new(instrument, reference, 1_000_000.0, Side::LongReceive);
+            let result = ClosedFormBlackCapletPricer::new().evaluate(
+                &trade,
+                &[Request::Value],
+                &provider,
+            )?;
+            prices.push(result.price().unwrap());
+        }
+        assert!(prices[0] > 0.0);
+        assert!((prices[1] / prices[0] - 360.0 / 365.0).abs() < 1e-12);
         Ok(())
     }
 

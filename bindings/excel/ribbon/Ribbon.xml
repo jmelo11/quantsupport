@@ -5,10 +5,12 @@
         <group id="qsObjects" label="Workbook objects">
           <button id="qsContexts" label="Pricing Contexts" size="large" imageMso="TableProperties" onAction="ShowContexts" screentip="Browse pricing contexts and their market dates" />
           <button id="qsInstruments" label="Instruments &amp; Trades" size="large" imageMso="TableInsert" onAction="ShowInstruments" />
+          <button id="qsPrice" label="Price Selection" size="large" imageMso="TableProperties" onAction="PriceSelection" screentip="Price the selected instrument or trade" supertip="Opens Pricing for a handle in the active cell. Choose a context, pricer and request. Instrument previews use the displayed trade date, side and instrument notional." />
           <button id="qsCurves" label="Curves" size="large" imageMso="TableProperties" onAction="ShowCurves" screentip="Explore curve tables, calibration instruments and their parameters" />
           <button id="qsAll" label="All Objects" imageMso="FindDialog" onAction="ShowAll" />
           <button id="qsInspect" label="Inspect Selection" imageMso="ZoomToSelection" onAction="InspectSelection" />
           <button id="qsRefresh" label="Refresh Browser" imageMso="RefreshAll" onAction="RefreshBrowser" />
+          <button id="qsResetMemory" label="Reset Memory &amp; Rebuild" imageMso="RefreshAll" onAction="ResetMemory" screentip="Clear all QuantSupport objects and rebuild every open workbook" supertip="Releases native objects and calculation memory in this Excel instance, then calculates all open workbooks from scratch. Keeps your calculation mode unchanged." />
         </group>
         <group id="qsHelp" label="Setup &amp; help">
           <button id="qsSetup" label="Setup Guide" size="large" imageMso="FileNew" onAction="OpenSetup" screentip="Open the workbook setup guide and formula examples" />

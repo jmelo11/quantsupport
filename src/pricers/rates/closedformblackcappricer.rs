@@ -118,7 +118,10 @@ impl HandleValue<CapFloorTrade, BlackCapState> for ClosedFormBlackCapPricer {
             let start_date = c.start_accrual_date();
             let end_date = c.end_accrual_date();
             let payment_date = c.payment_date();
-            let yf = rate_def.day_counter().year_fraction(start_date, end_date);
+            let yf = c
+                .day_counter()
+                .unwrap_or_else(|| rate_def.day_counter())
+                .year_fraction(start_date, end_date);
 
             // Time to expiry: from trade date to fixing date
             let tau = rate_def

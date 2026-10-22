@@ -242,7 +242,7 @@ impl MakeCapFloor {
             let payment_date = period_end;
             let name = format!("{identifier}:{period_start}-{period_end}");
 
-            caplet_floorlets.push(CapletFloorlet::new(
+            let mut caplet = CapletFloorlet::new(
                 name,
                 market_index.clone(),
                 currency,
@@ -252,7 +252,11 @@ impl MakeCapFloor {
                 payment_date,
                 option_type,
                 strike_spec,
-            ));
+            );
+            if let Some(definition) = self.rate_definition {
+                caplet = caplet.with_day_counter(definition.day_counter());
+            }
+            caplet_floorlets.push(caplet);
         }
 
         let cf_start_date = dates.first().copied().unwrap_or(start_date);

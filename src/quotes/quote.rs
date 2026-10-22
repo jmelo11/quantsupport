@@ -333,7 +333,12 @@ impl std::str::FromStr for FxForwardCalibrationStrategy {
 /// | `index_tenor()` | Underlying accrual period of a caplet/floorlet. |
 /// | `contract_code()` | IMM contract code of a future or convexity-adjustment quote. |
 /// | `pay_leg_frequency()`, `receive_leg_frequency()` | Payment frequencies supplied in the identifier. |
-/// | `settlement_days()` | Regular swap start lag in business days; defaults to two when built. |
+/// | `settlement_days()` | Regular swap start lag in business days; defaults to the index swap convention. |
+/// | `fixed_day_counter()` | Swap fixed coupon day count; defaults to the index swap convention. |
+/// | `day_counter()` | Deposit/futures/zero-rate convention, bond/cap accrual, or CDS premium day count. |
+/// | `floating_day_counter()` | Floating coupon accrual for swaps and swaptions. |
+/// | `pay_day_counter()`, `receive_day_counter()` | Independent basis or float-float cross-currency leg accrual. |
+/// | `yield_day_counter()` | Bond yield convention, independent of coupon accrual. |
 /// | `coupon_rate()`, `strike()`, `vol_type()` | Bond coupon, option strike and volatility quoting convention, where applicable. |
 /// | `bond_calibration_strategy()` | Whether the bond quote supplies a yield or a price. |
 /// | `fx_forward_calibration_strategy()` | Whether the FX forward quote supplies forward points or an outright rate. |
@@ -349,15 +354,15 @@ impl std::str::FromStr for FxForwardCalibrationStrategy {
 ///
 /// | Identifier | What it describes |
 /// | --- | --- |
-/// | `FixedRateDeposit_CCY_Index_Tenor` | A deposit's currency, curve index and term. |
+/// | `FixedRateDeposit_CCY_Index_Tenor[_DayCounter]` | A deposit's currency, curve index, term and optional rate day count. |
 /// | `DiscountFactor_CCY_Index_Pillar` | A discount factor at a tenor or ISO date. |
-/// | `ZeroRate_CCY_Index_Pillar[_Compounding[_Frequency]]` | An annual decimal zero rate at a tenor or ISO date; defaults to Continuous and Annual. |
+/// | `ZeroRate_CCY_Index_Pillar[_Compounding[_Frequency[_DayCounter]]]` | An annual decimal zero rate at a tenor or ISO date; defaults to Continuous and Annual. |
 /// | `OIS_CCY_Index_Tenor[_OisFields]` | A fixed rate against an overnight index; optional conventions are described under [OIS parameters](#ois-parameters). |
-/// | `Swap_CCY_Index_Tenor[_FixedFreq[_FloatFreq[_SettlementDays]]]` | A fixed rate against a floating index, with optional payment frequencies and start lag in business days (default two). |
-/// | `FixedRateBond_CCY_Index_Tenor[_PayFreq]_CouponRate[_BondStrategy]` | A bond's currency, curve index, term, coupon and optional payment frequency and calibration strategy. |
-/// | `Future_CCY_Index_IMM` | An interest-rate futures contract identified by its currency, index and IMM code. |
+/// | `Swap_CCY_Index_Tenor[_FixedFreq[_FloatFreq[_SettlementDays[_FixedDayCounter[_FloatDayCounter]]]]]` | Fixed versus floating, with independent coupon day counts. |
+/// | `FixedRateBond_CCY_Index_Tenor[_PayFreq]_CouponRate[_BondStrategy[_CouponDayCounter[_YieldDayCounter]]]` | Bond coupon accrual and yield conventions can be supplied independently. |
+/// | `Future_CCY_Index_IMM[_DayCounter]` | An interest-rate futures contract with an optional underlying rate day count. |
 /// | `ConvexityAdjustment_CCY_Index_IMM` | An adjustment quote associated with the specified futures contract. |
-/// | `Cds_Entity_CCY_Tenor` | A CDS par spread for a credit entity, currency and term. |
+/// | `Cds_Entity_CCY_Tenor[_DayCounter]` | A CDS par spread with optional premium accrual day count. |
 ///
 /// Deposit and swap quote values are rates, while CDS quote values are par spreads.
 /// Rates, coupons and spreads use decimals: `0.04` means 4%.
@@ -366,6 +371,15 @@ impl std::str::FromStr for FxForwardCalibrationStrategy {
 /// TARGET. For example, `Swap_EUR_EURIBOR6m_5Y_Annual_Semiannual_0` explicitly
 /// starts on the reference date (rolled Following if necessary). Settlement
 /// lag delays the start of accrual; it is separate from coupon payment lag.
+/// Euribor swaps default to annual Thirty360 fixed coupons and floating coupons
+/// at the index tenor (e.g. quarterly for `EURIBOR3m`, semiannual for `EURIBOR6m`).
+/// Each index owns its swap defaults through `RateIndexDetails::swap_conventions`.
+/// For example, TIBOR uses semiannual ACT/365 fixed coupons, NIBOR annual 30/360,
+/// and SOFR annual ACT/360. Explicit positional fields override only those terms.
+/// Append a fixed day counter to override it:
+/// `Swap_EUR_EURIBOR3m_1Y___1_Actual360` keeps the default frequencies, starts
+/// one business day after the reference date and uses ACT/360 fixed coupons.
+/// The override does not change the floating index's ACT/360 day count.
 /// Direct curve quotes are referenced by `CurveConfiguration.quotes`, using its
 /// day counter, interpolation and extrapolation settings. Each direct curve
 /// uses one quote family and consistent rate conventions. Its sensitivity
@@ -380,9 +394,9 @@ impl std::str::FromStr for FxForwardCalibrationStrategy {
 ///
 /// | Identifier | What it describes |
 /// | --- | --- |
-/// | `BasisSwap_CCY_PayIndex_RecvIndex_Tenor[_PayFreq[_RecvFreq]]` | Two floating legs in one currency; the primary index is the pay index and the secondary index is the receive index. |
-/// | `FixFloatCrossCurrencySwap_DomCCY_FloatIndex_ForCCY_Tenor[_DomFreq[_ForFreq]]` | A fixed domestic-currency leg against a floating foreign-currency leg. |
-/// | `FloatFloatCrossCurrencySwap_DomCCY_DomIndex_ForIndex_ForCCY_Tenor[_DomFreq[_ForFreq]]` | A domestic floating leg against a foreign floating leg, each with its own index. |
+/// | `BasisSwap_CCY_PayIndex_RecvIndex_Tenor[_PayFreq[_RecvFreq[_PayDayCounter[_RecvDayCounter]]]]` | Two floating legs with independent coupon day counts. |
+/// | `FixFloatCrossCurrencySwap_DomCCY_FloatIndex_ForCCY_Tenor[_DomFreq[_ForFreq[_FixedDayCounter[_FloatDayCounter]]]]` | Domestic fixed versus foreign floating with independent coupon day counts. |
+/// | `FloatFloatCrossCurrencySwap_DomCCY_DomIndex_ForIndex_ForCCY_Tenor[_DomFreq[_ForFreq[_DomDayCounter[_ForDayCounter]]]]` | Domestic and foreign floating legs with independent coupon day counts. |
 ///
 /// `DomCCY` and `ForCCY` identify the domestic and foreign legs; `DomFreq` and
 /// `ForFreq` set their payment frequencies. For example,
@@ -413,9 +427,9 @@ impl std::str::FromStr for FxForwardCalibrationStrategy {
 ///
 /// | Identifier | What it describes |
 /// | --- | --- |
-/// | `CapFloor_CCY_Index_Tenor[_Freq]_Strike_VolType` | A cap/floor volatility quote with the full instrument term and optional coupon frequency. |
-/// | `CapletFloorlet_CCY_Index_IndexTenor_Expiry_Strike_Strategy_VolType` | A caplet/floorlet volatility quote; index tenor is the underlying accrual period and expiry is the time until it starts. |
-/// | `Swaption_CCY_Index_Expiry_SwapTenor[_FixedFreq[_FloatFreq]]_Strike_VolType` | A swaption volatility quote; expiry is the exercise term and swap tenor is the length of the underlying swap. |
+/// | `CapFloor_CCY_Index_Tenor[_Freq]_Strike_VolType[_DayCounter]` | Cap/floor volatility with optional payoff accrual day count. |
+/// | `CapletFloorlet_CCY_Index_IndexTenor_Expiry_Strike_Strategy_VolType[_DayCounter]` | Single-period rate option with optional payoff accrual day count. |
+/// | `Swaption_CCY_Index_Expiry_SwapTenor[_FixedFreq[_FloatFreq]]_Strike_VolType[_FixedDayCounter[_FloatDayCounter]]` | Swaption volatility with independent underlying coupon day counts. |
 ///
 /// `Strike` expands to `Absolute_0.04`, `Relative_0.01` or `ATM`. `Absolute` specifies
 /// the strike itself; `Relative` adds an offset to the forward; `ATM` uses the
@@ -427,6 +441,19 @@ impl std::str::FromStr for FxForwardCalibrationStrategy {
 /// volatility. Volatilities use decimals: a Black value of
 /// `0.20` means 20%. The caplet/floorlet `Strategy` field accepts `Straddle`,
 /// `Strangle`, `RiskReversal` or `Butterfly`, as defined by `OptionStrategy`.
+///
+/// # Day-count parameters
+///
+/// All day counts are positional. Empty optional fields keep defaults; earlier
+/// positions never shift. For example,
+/// `Swap_USD_TermSOFR3m_5Y_Semiannual_Quarterly_2_Thirty360_Actual365`
+/// uses 30/360 fixed accrual and ACT/365 floating accrual. The floating index
+/// retains its native fixing/forward-rate quoting convention.
+/// `FixedRateBond_USD_SOFR_6M_Annual_0_AnchorYield_Thirty360_Actual365`
+/// selects 30/360 coupons and ACT/365 yield conversion.
+/// A cap's day count changes payoff accrual; the volatility time convention
+/// remains unchanged. A zero-rate day count overrides the configuration's rate
+/// basis, and all zero-rate quotes on one curve must use the same conventions.
 ///
 /// # OIS parameters
 ///
@@ -462,6 +489,7 @@ impl std::str::FromStr for FxForwardCalibrationStrategy {
 /// | 21 | Observation shift | `true` or `false` | `false` |
 /// | 22 | Daily spread compounding | `true` or `false` | `false` |
 /// | 23 | Calibration pillar | `LastRelevantDate`, `MaturityDate`, `CustomDate(YYYY-MM-DD)` | `LastRelevantDate` |
+/// | 24 | Overnight coupon day counter | `DayCounter`, e.g. `Actual360`, `Actual365` | Index day counter |
 ///
 /// Calendar values use names such as `UnitedStates(Sofr)` or `TARGET`.
 /// `OIS_USD_SOFR_2Y_Annual_Annual_2_2_Actual360` specifies annual payments,
@@ -533,6 +561,19 @@ pub struct QuoteDetails {
     /// Regular swap settlement lag, in business days.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     settlement_days: Option<i32>,
+    /// Regular swap fixed coupon day count, independent of the floating index.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    fixed_day_counter: Option<DayCounter>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    day_counter: Option<DayCounter>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    floating_day_counter: Option<DayCounter>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pay_day_counter: Option<DayCounter>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    receive_day_counter: Option<DayCounter>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    yield_day_counter: Option<DayCounter>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     compounding: Option<Compounding>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -568,6 +609,12 @@ impl QuoteDetails {
             pay_leg_frequency: None,
             receive_leg_frequency: None,
             settlement_days: None,
+            fixed_day_counter: None,
+            day_counter: None,
+            floating_day_counter: None,
+            pay_day_counter: None,
+            receive_day_counter: None,
+            yield_day_counter: None,
             compounding: None,
             frequency: None,
         }
@@ -728,10 +775,47 @@ impl QuoteDetails {
     }
 
     /// Returns the regular swap start lag in business days, if specified.
-    /// An omitted value defaults to two when constructing the swap.
+    /// An omitted value uses the index swap settlement convention.
     #[must_use]
     pub const fn settlement_days(&self) -> Option<i32> {
         self.settlement_days
+    }
+
+    /// Returns the regular swap fixed coupon day count, if specified.
+    /// An omitted value uses the index swap fixed coupon convention.
+    #[must_use]
+    pub const fn fixed_day_counter(&self) -> Option<DayCounter> {
+        self.fixed_day_counter
+    }
+
+    /// Returns the single-leg coupon, deposit, futures, CDS premium or zero-rate day count.
+    #[must_use]
+    pub const fn day_counter(&self) -> Option<DayCounter> {
+        self.day_counter
+    }
+
+    /// Returns the floating coupon accrual day count, independently of index quoting.
+    #[must_use]
+    pub const fn floating_day_counter(&self) -> Option<DayCounter> {
+        self.floating_day_counter
+    }
+
+    /// Returns the pay (domestic for float-float cross-currency) coupon day count.
+    #[must_use]
+    pub const fn pay_day_counter(&self) -> Option<DayCounter> {
+        self.pay_day_counter
+    }
+
+    /// Returns the receive (foreign for float-float cross-currency) coupon day count.
+    #[must_use]
+    pub const fn receive_day_counter(&self) -> Option<DayCounter> {
+        self.receive_day_counter
+    }
+
+    /// Returns the bond yield day count, independently of fixed coupon accrual.
+    #[must_use]
+    pub const fn yield_day_counter(&self) -> Option<DayCounter> {
+        self.yield_day_counter
     }
 
     // -----------------------------------------------------------------------
@@ -887,6 +971,49 @@ impl QuoteDetails {
         self
     }
 
+    /// Sets the regular swap fixed coupon day count without changing the
+    /// floating index's rate definition.
+    #[must_use]
+    pub const fn with_fixed_day_counter(mut self, day_counter: DayCounter) -> Self {
+        self.fixed_day_counter = Some(day_counter);
+        self
+    }
+
+    /// Sets the single-leg coupon, deposit, futures, CDS premium or zero-rate day count.
+    #[must_use]
+    pub const fn with_day_counter(mut self, dc: DayCounter) -> Self {
+        self.day_counter = Some(dc);
+        self
+    }
+
+    /// Sets floating coupon accrual without changing the index's quoted-rate definition.
+    #[must_use]
+    pub const fn with_floating_day_counter(mut self, dc: DayCounter) -> Self {
+        self.floating_day_counter = Some(dc);
+        self
+    }
+
+    /// Sets pay (domestic for float-float cross-currency) coupon accrual.
+    #[must_use]
+    pub const fn with_pay_day_counter(mut self, dc: DayCounter) -> Self {
+        self.pay_day_counter = Some(dc);
+        self
+    }
+
+    /// Sets receive (foreign for float-float cross-currency) coupon accrual.
+    #[must_use]
+    pub const fn with_receive_day_counter(mut self, dc: DayCounter) -> Self {
+        self.receive_day_counter = Some(dc);
+        self
+    }
+
+    /// Sets the yield day count for bond quote calibration.
+    #[must_use]
+    pub const fn with_yield_day_counter(mut self, dc: DayCounter) -> Self {
+        self.yield_day_counter = Some(dc);
+        self
+    }
+
     /// Sets the primary market index.
     #[must_use]
     pub fn with_market_index(mut self, idx: MarketIndex) -> Self {
@@ -898,6 +1025,32 @@ impl QuoteDetails {
     // Identifier parsing helpers
     // -----------------------------------------------------------------------
 
+    fn parse_optional_day_counter(
+        id: &str,
+        parts: &[&str],
+        position: usize,
+    ) -> Result<Option<DayCounter>> {
+        parts
+            .get(position)
+            .filter(|value| !value.is_empty())
+            .map(|value| DayCounter::try_from((*value).to_string()))
+            .transpose()
+            .map_err(|error| {
+                error.context(format!(
+                    "reading day counter at position {} in {id}",
+                    position + 1
+                ))
+            })
+    }
+
+    fn parse_optional_frequency(parts: &[&str], position: usize) -> Result<Option<Frequency>> {
+        parts
+            .get(position)
+            .filter(|value| !value.is_empty())
+            .map(|value| value.parse())
+            .transpose()
+    }
+
     /// Tries to parse one or two optional [`Frequency`] values starting at
     /// `parts[start]`.
     ///
@@ -907,14 +1060,16 @@ impl QuoteDetails {
         parts: &[&str],
         start: usize,
     ) -> (Option<Frequency>, Option<Frequency>, usize) {
-        let pay: Option<Frequency> = parts.get(start).and_then(|s| s.parse().ok());
-        pay.map_or((None, None, start), |p| {
-            let recv: Option<Frequency> = parts.get(start + 1).and_then(|s| s.parse().ok());
-            recv.map_or_else(
-                || (Some(p), None, start + 1),
-                |r| (Some(p), Some(r), start + 2),
-            )
-        })
+        let pay = parts.get(start).and_then(|value| value.parse().ok());
+        let next = start + usize::from(pay.is_some() || parts.get(start) == Some(&""));
+        let recv = if next > start {
+            parts.get(next).and_then(|value| value.parse().ok())
+        } else {
+            None
+        };
+        let consumed =
+            usize::from(next > start && (recv.is_some() || parts.get(next) == Some(&"")));
+        (pay, recv, next + consumed)
     }
 
     /// Parses `OIS_CCY_Index_Tenor` followed by optional positional contract fields.
@@ -978,18 +1133,27 @@ impl QuoteDetails {
             .and_then(|suffix| suffix.chars().next())
             .unwrap_or('_');
         let parts: Vec<_> = self.identifier.split(separator).collect();
-        OisConventions::for_index(index).with_quote_fields(parts.get(4..).unwrap_or_default())
+        let mut conventions = OisConventions::for_index(index)
+            .with_quote_fields(parts.get(4..).unwrap_or_default())?;
+        if let Some(dc) = self.fixed_day_counter {
+            conventions = conventions.with_fixed_day_counter(dc);
+        }
+        if let Some(dc) = self.floating_day_counter {
+            conventions = conventions.with_floating_day_counter(dc);
+        }
+        Ok(conventions)
     }
 
-    /// `Swap_CCY_Index_Tenor[_FixedFreq[_FloatingFreq[_SettlementDays]]]`
+    /// `Swap_CCY_Index_Tenor[_FixedFreq[_FloatingFreq[_SettlementDays[_FixedDayCounter[_FloatDayCounter]]]]]`
     ///
     /// # Errors
     /// Rejects missing fields, invalid frequencies, negative or invalid settlement
-    /// days, and excess fields. Empty optional fields retain their defaults.
+    /// days, invalid day counters, and excess fields. Empty optional fields
+    /// retain their defaults.
     pub fn parse_swap(id: &str, parts: &[&str]) -> Result<Self> {
-        if !(4..=7).contains(&parts.len()) {
+        if !(4..=9).contains(&parts.len()) {
             return Err(QSError::InvalidValueErr(format!(
-                "Swap identifier requires four to seven fields: {id}"
+                "Swap identifier requires four to nine fields: {id}"
             )));
         }
         let currency: Currency = parts[1].to_ascii_uppercase().parse()?;
@@ -1026,10 +1190,20 @@ impl QuoteDetails {
             }
             details = details.with_settlement_days(days);
         }
+        if let Some(value) = parts.get(7).filter(|value| !value.is_empty()) {
+            details = details.with_fixed_day_counter(
+                DayCounter::try_from((*value).to_string()).map_err(|error| {
+                    error.context(format!("reading fixed day counter in swap quote {id}"))
+                })?,
+            );
+        }
+        if let Some(dc) = Self::parse_optional_day_counter(id, parts, 8)? {
+            details = details.with_floating_day_counter(dc);
+        }
         Ok(details)
     }
 
-    /// `{Instrument}_CCY_{Index}_{Tenor}`
+    /// `{Instrument}_CCY_{Index}_{Tenor}[_DayCounter]`
     ///
     /// Fixed-rate deposit quotes are rates; no alternative calibration
     /// strategies are supported.
@@ -1037,21 +1211,25 @@ impl QuoteDetails {
     /// # Errors
     /// Returns an error if the identifier is too short or fields cannot be parsed.
     pub fn parse_fixed_rate_deposit(id: &str, parts: &[&str]) -> Result<Self> {
-        if parts.len() != 4 {
+        if !(4..=5).contains(&parts.len()) {
             return Err(QSError::InvalidValueErr(format!(
-                "FixedRateDeposit identifier must contain exactly four fields: {id}"
+                "FixedRateDeposit identifier requires four or five fields: {id}"
             )));
         }
         let currency: Currency = parts[1].to_ascii_uppercase().parse()?;
         let index = parts[2].parse::<MarketIndex>()?;
         let tenor = Period::from_str(&parts[3].to_ascii_uppercase())?;
-        Ok(Self::new(id.to_string(), QuoteInstrument::FixedRateDeposit)
+        let mut details = Self::new(id.to_string(), QuoteInstrument::FixedRateDeposit)
             .with_market_index(index)
             .with_currency(currency)
-            .with_tenor(tenor))
+            .with_tenor(tenor);
+        if let Some(dc) = Self::parse_optional_day_counter(id, parts, 4)? {
+            details = details.with_day_counter(dc);
+        }
+        Ok(details)
     }
 
-    /// `{Instrument}_{CCY}_{Index}_{Tenor}[_{PayFreq}]_{CouponRate}[_{Strategy}]`
+    /// `{Instrument}_{CCY}_{Index}_{Tenor}[_{PayFreq}]_{CouponRate}[_{Strategy}[_{CouponDayCounter}[_{YieldDayCounter}]]]`
     ///
     /// The strategy defaults to `AnchorYield`, for example
     /// `FixedRateBond_USD_UST_5Y_Semiannual_0.04_AnchorYield`.
@@ -1086,19 +1264,25 @@ impl QuoteDetails {
                 .to_ascii_uppercase(),
         )?;
         let mut next = 4;
-        let freq = parts.get(next).and_then(|s| s.parse::<Frequency>().ok());
-        if freq.is_some() {
+        let freq = parts
+            .get(next)
+            .and_then(|value| value.parse::<Frequency>().ok());
+        if freq.is_some() || parts.get(next) == Some(&"") {
             next += 1;
         }
-        let coupon_rate = parts.get(next).and_then(|s| s.parse::<f64>().ok());
-        if coupon_rate.is_some() {
+        let coupon_rate = parts.get(next).and_then(|value| value.parse::<f64>().ok());
+        if coupon_rate.is_some() || parts.get(next) == Some(&"") {
             next += 1;
         }
         let strategy = parts
             .get(next)
-            .map(|s| s.parse::<BondCalibrationStrategy>())
+            .filter(|value| !value.is_empty())
+            .map(|value| value.parse::<BondCalibrationStrategy>())
             .transpose()?;
-        if parts.len() > next + usize::from(strategy.is_some()) {
+        if strategy.is_some() || parts.get(next) == Some(&"") {
+            next += 1;
+        }
+        if parts.len() > next + 2 {
             return Err(QSError::InvalidValueErr(format!(
                 "Unexpected fields in fixed-rate bond identifier: {id}"
             )));
@@ -1117,6 +1301,12 @@ impl QuoteDetails {
         if let Some(strategy) = strategy {
             quote = quote.with_bond_calibration_strategy(strategy);
         }
+        if let Some(dc) = Self::parse_optional_day_counter(id, parts, next)? {
+            quote = quote.with_day_counter(dc);
+        }
+        if let Some(dc) = Self::parse_optional_day_counter(id, parts, next + 1)? {
+            quote = quote.with_yield_day_counter(dc);
+        }
         Ok(quote)
     }
 
@@ -1127,18 +1317,21 @@ impl QuoteDetails {
     /// # Errors
     /// Returns an error if the identifier is too short or fields cannot be parsed.
     pub fn parse_cds(id: &str, parts: &[&str]) -> Result<Self> {
-        if parts.len() < 4 {
+        if !(4..=5).contains(&parts.len()) {
             return Err(QSError::InvalidValueErr(format!(
-                "Cds identifier too short: {id}"
+                "Cds identifier requires four or five fields: {id}"
             )));
         }
-        let entity = parts[1].to_string();
         let currency: Currency = parts[2].to_ascii_uppercase().parse()?;
         let tenor = Period::from_str(&parts[3].to_ascii_uppercase())?;
-        Ok(Self::new(id.to_string(), QuoteInstrument::Cds)
-            .with_market_index(MarketIndex::Credit(entity))
+        let mut details = Self::new(id.to_string(), QuoteInstrument::Cds)
+            .with_market_index(MarketIndex::Credit(parts[1].to_string()))
             .with_currency(currency)
-            .with_tenor(tenor))
+            .with_tenor(tenor);
+        if let Some(dc) = Self::parse_optional_day_counter(id, parts, 4)? {
+            details = details.with_day_counter(dc);
+        }
+        Ok(details)
     }
 
     /// `{Instrument}_CCY_{PayIndex}_{RecvIndex}_{Tenor}[_{PayFreq}_{RecvFreq}]`
@@ -1148,7 +1341,7 @@ impl QuoteDetails {
     /// # Errors
     /// Returns an error if the identifier is too short or fields cannot be parsed.
     pub fn parse_basis_swap(id: &str, parts: &[&str]) -> Result<Self> {
-        if parts.len() < 5 {
+        if !(5..=9).contains(&parts.len()) {
             return Err(QSError::InvalidValueErr(format!(
                 "BasisSwap identifier too short: {id}"
             )));
@@ -1158,7 +1351,8 @@ impl QuoteDetails {
         let recv_index = parts[3].parse::<MarketIndex>()?;
         let tenor = Period::from_str(&parts[4].to_ascii_uppercase())?;
 
-        let (pay_freq, recv_freq, _) = Self::try_parse_frequencies(parts, 5);
+        let pay_freq = Self::parse_optional_frequency(parts, 5)?;
+        let recv_freq = Self::parse_optional_frequency(parts, 6)?;
 
         let mut det = Self::new(id.to_string(), QuoteInstrument::BasisSwap)
             .with_market_index(pay_index)
@@ -1171,6 +1365,12 @@ impl QuoteDetails {
         if let Some(f) = recv_freq {
             det = det.with_receive_leg_frequency(f);
         }
+        if let Some(dc) = Self::parse_optional_day_counter(id, parts, 7)? {
+            det = det.with_pay_day_counter(dc);
+        }
+        if let Some(dc) = Self::parse_optional_day_counter(id, parts, 8)? {
+            det = det.with_receive_day_counter(dc);
+        }
         Ok(det)
     }
 
@@ -1181,7 +1381,7 @@ impl QuoteDetails {
     /// # Errors
     /// Returns an error if the identifier is too short or fields cannot be parsed.
     pub fn parse_fix_float_cross_currency_swap(id: &str, parts: &[&str]) -> Result<Self> {
-        if parts.len() < 5 {
+        if !(5..=9).contains(&parts.len()) {
             return Err(QSError::InvalidValueErr(format!(
                 "FixFloatCrossCurrencySwap identifier too short: {id}"
             )));
@@ -1191,7 +1391,8 @@ impl QuoteDetails {
         let foreign_currency: Currency = parts[3].to_ascii_uppercase().parse()?;
         let tenor = Period::from_str(&parts[4].to_ascii_uppercase())?;
 
-        let (dom_freq, for_freq, _) = Self::try_parse_frequencies(parts, 5);
+        let dom_freq = Self::parse_optional_frequency(parts, 5)?;
+        let for_freq = Self::parse_optional_frequency(parts, 6)?;
 
         let mut det = Self::new(id.to_string(), QuoteInstrument::FixFloatCrossCurrencySwap)
             .with_market_index(floating_index)
@@ -1205,6 +1406,12 @@ impl QuoteDetails {
         if let Some(f) = for_freq {
             det = det.with_receive_leg_frequency(f);
         }
+        if let Some(dc) = Self::parse_optional_day_counter(id, parts, 7)? {
+            det = det.with_fixed_day_counter(dc);
+        }
+        if let Some(dc) = Self::parse_optional_day_counter(id, parts, 8)? {
+            det = det.with_floating_day_counter(dc);
+        }
         Ok(det)
     }
 
@@ -1215,7 +1422,7 @@ impl QuoteDetails {
     /// # Errors
     /// Returns an error if the identifier is too short or fields cannot be parsed.
     pub fn parse_float_float_cross_currency_swap(id: &str, parts: &[&str]) -> Result<Self> {
-        if parts.len() < 6 {
+        if !(6..=10).contains(&parts.len()) {
             return Err(QSError::InvalidValueErr(format!(
                 "FloatFloatCrossCurrencySwap identifier too short: {id}"
             )));
@@ -1226,7 +1433,8 @@ impl QuoteDetails {
         let foreign_currency: Currency = parts[4].to_ascii_uppercase().parse()?;
         let tenor = Period::from_str(&parts[5].to_ascii_uppercase())?;
 
-        let (dom_freq, for_freq, _) = Self::try_parse_frequencies(parts, 6);
+        let dom_freq = Self::parse_optional_frequency(parts, 6)?;
+        let for_freq = Self::parse_optional_frequency(parts, 7)?;
 
         let mut det = Self::new(id.to_string(), QuoteInstrument::FloatFloatCrossCurrencySwap)
             .with_market_index(dom_index)
@@ -1240,6 +1448,12 @@ impl QuoteDetails {
         }
         if let Some(f) = for_freq {
             det = det.with_receive_leg_frequency(f);
+        }
+        if let Some(dc) = Self::parse_optional_day_counter(id, parts, 8)? {
+            det = det.with_pay_day_counter(dc);
+        }
+        if let Some(dc) = Self::parse_optional_day_counter(id, parts, 9)? {
+            det = det.with_receive_day_counter(dc);
         }
         Ok(det)
     }
@@ -1269,7 +1483,11 @@ impl QuoteDetails {
             .and_then(|s| s.parse::<Frequency>().ok())
             .map_or((None, 4), |f| (Some(f), 5));
 
-        let strike_base = parts[next].parse::<Strike>()?;
+        let next = if parts.get(4) == Some(&"") { 5 } else { next };
+        let strike_base = parts
+            .get(next)
+            .ok_or_else(|| QSError::InvalidValueErr(format!("Missing strike in: {id}")))?
+            .parse::<Strike>()?;
 
         // Try parsing next+1 as f64 (strike value). If it succeeds, the vol
         // type follows at next+2; otherwise next+1 is the vol type.
@@ -1298,6 +1516,14 @@ impl QuoteDetails {
             .with_vol_type(vol_type);
         if let Some(f) = freq {
             det = det.with_pay_leg_frequency(f);
+        }
+        if parts.len() > (vol_idx + 1) + 1 {
+            return Err(QSError::InvalidValueErr(format!(
+                "Unexpected fields in quote: {id}"
+            )));
+        }
+        if let Some(dc) = Self::parse_optional_day_counter(id, parts, vol_idx + 1)? {
+            det = det.with_day_counter(dc);
         }
         Ok(det)
     }
@@ -1340,7 +1566,7 @@ impl QuoteDetails {
             .ok_or_else(|| QSError::InvalidValueErr(format!("Missing vol type in: {id}")))?
             .parse()?;
 
-        let det = Self::new(id.to_string(), QuoteInstrument::CapletFloorlet)
+        let mut det = Self::new(id.to_string(), QuoteInstrument::CapletFloorlet)
             .with_market_index(index)
             .with_currency(currency)
             .with_index_tenor(index_tenor)
@@ -1348,26 +1574,37 @@ impl QuoteDetails {
             .with_strike(strike)
             .with_option_strategy(strategy)
             .with_vol_type(vol_type);
+        if parts.len() > (next_idx + 2) + 1 {
+            return Err(QSError::InvalidValueErr(format!(
+                "Unexpected fields in quote: {id}"
+            )));
+        }
+        if let Some(dc) = Self::parse_optional_day_counter(id, parts, next_idx + 2)? {
+            det = det.with_day_counter(dc);
+        }
         Ok(det)
     }
 
-    /// `{Instrument}_CCY_{Index}_{IMMCode}` — e.g. `Future_USD_SOFR_H6`
+    /// `{Instrument}_CCY_{Index}_{IMMCode}[_DayCounter]` — e.g. `Future_USD_SOFR_H6`
     ///
     /// # Errors
     /// Returns an error if the identifier is too short or fields cannot be parsed.
     pub fn parse_future(id: &str, parts: &[&str]) -> Result<Self> {
-        if parts.len() < 4 {
+        if !(4..=5).contains(&parts.len()) {
             return Err(QSError::InvalidValueErr(format!(
-                "Future identifier too short: {id}"
+                "Future identifier requires four or five fields: {id}"
             )));
         }
         let currency: Currency = parts[1].to_ascii_uppercase().parse()?;
         let index = parts[2].parse::<MarketIndex>()?;
-        let code = parts[3].to_ascii_uppercase();
-        Ok(Self::new(id.to_string(), QuoteInstrument::Future)
+        let mut details = Self::new(id.to_string(), QuoteInstrument::Future)
             .with_market_index(index)
             .with_currency(currency)
-            .with_contract_code(code))
+            .with_contract_code(parts[3].to_ascii_uppercase());
+        if let Some(dc) = Self::parse_optional_day_counter(id, parts, 4)? {
+            details = details.with_day_counter(dc);
+        }
+        Ok(details)
     }
 
     /// `{Instrument}_CCY_{Index}_{IMMCode}` — e.g. `ConvexityAdjustment_USD_SOFR_H6`
@@ -1413,7 +1650,10 @@ impl QuoteDetails {
 
         let (pay_freq, recv_freq, next) = Self::try_parse_frequencies(parts, 5);
 
-        let strike_base = parts[next].parse::<Strike>()?;
+        let strike_base = parts
+            .get(next)
+            .ok_or_else(|| QSError::InvalidValueErr(format!("Missing strike in: {id}")))?
+            .parse::<Strike>()?;
 
         let strike_idx = next + 1;
         let (strike, vol_idx) = parts
@@ -1444,6 +1684,17 @@ impl QuoteDetails {
         }
         if let Some(f) = recv_freq {
             det = det.with_receive_leg_frequency(f);
+        }
+        if parts.len() > (vol_idx + 1) + 2 {
+            return Err(QSError::InvalidValueErr(format!(
+                "Unexpected fields in quote: {id}"
+            )));
+        }
+        if let Some(dc) = Self::parse_optional_day_counter(id, parts, vol_idx + 1)? {
+            det = det.with_fixed_day_counter(dc);
+        }
+        if let Some(dc) = Self::parse_optional_day_counter(id, parts, (vol_idx + 1) + 1)? {
+            det = det.with_floating_day_counter(dc);
         }
         Ok(det)
     }
@@ -1561,7 +1812,7 @@ impl QuoteDetails {
 
     fn parse_curve_pillar(id: &str, parts: &[&str]) -> Result<Self> {
         let zero_rate = parts[0].eq_ignore_ascii_case("ZeroRate");
-        let max_parts = if zero_rate { 6 } else { 4 };
+        let max_parts = if zero_rate { 7 } else { 4 };
         if !(4..=max_parts).contains(&parts.len()) {
             return Err(QSError::InvalidValueErr(format!(
                 "Invalid direct curve quote identifier: {id}"
@@ -1582,14 +1833,25 @@ impl QuoteDetails {
         };
         if zero_rate {
             details = details
-                .with_compounding(parts.get(4).map_or(Ok(Compounding::Continuous), |value| {
-                    Compounding::try_from((*value).to_string())
-                })?)
+                .with_compounding(
+                    parts
+                        .get(4)
+                        .filter(|value| !value.is_empty())
+                        .map_or(Ok(Compounding::Continuous), |value| {
+                            Compounding::try_from((*value).to_string())
+                        })?,
+                )
                 .with_frequency(
                     parts
                         .get(5)
+                        .filter(|value| !value.is_empty())
                         .map_or(Ok(Frequency::Annual), |value| value.parse())?,
                 );
+        }
+        if zero_rate {
+            if let Some(dc) = Self::parse_optional_day_counter(id, parts, 6)? {
+                details = details.with_day_counter(dc);
+            }
         }
         Ok(details)
     }
@@ -1969,6 +2231,9 @@ impl Quote {
         if let Some(maturity) = d.maturity() {
             builder = builder.with_maturity_date(maturity);
         }
+        if let Some(dc) = d.floating_day_counter() {
+            builder = builder.with_floating_day_counter(dc);
+        }
         let swap = builder.build()?;
 
         Ok(CalibrationInstrumentType::OIS(swap))
@@ -1995,7 +2260,10 @@ impl Quote {
                 "Swap currency does not match its index".into(),
             ));
         }
-        let settlement_days = details.settlement_days().unwrap_or(2);
+        let conventions = index_details.swap_conventions(tenor);
+        let settlement_days = details
+            .settlement_days()
+            .unwrap_or_else(|| conventions.settlement_days());
         if settlement_days < 0 {
             return Err(QSError::InvalidValueErr(
                 "Swap settlement days must be nonnegative".into(),
@@ -2017,24 +2285,35 @@ impl Quote {
                 "Swap maturity must follow its settlement date".into(),
             ));
         }
-        let mut builder = MakeSwap::<T>::default()
+        let fixed_definition = conventions.fixed_rate_definition();
+        let fixed_definition = details
+            .fixed_day_counter()
+            .map_or(fixed_definition, |dc| fixed_definition.with_day_counter(dc));
+        let fixed_frequency = details
+            .pay_leg_frequency()
+            .unwrap_or_else(|| conventions.fixed_frequency());
+        let floating_frequency = details
+            .receive_leg_frequency()
+            .unwrap_or_else(|| conventions.floating_frequency());
+        let builder = MakeSwap::<T>::default()
             .with_identifier(details.identifier())
             .with_start_date(start_date)
             .with_maturity_date(maturity_date)
             .with_fixed_rate(rate)
             .with_notional(notional)
-            .with_rate_definition(index_details.rate_definition())
+            .with_rate_definition(fixed_definition)
             .with_market_index(index)
             .with_currency(currency)
             .with_calendar(calendar)
-            .with_business_day_convention(BusinessDayConvention::ModifiedFollowing)
-            .with_termination_date_convention(BusinessDayConvention::ModifiedFollowing);
-        if let Some(frequency) = details.pay_leg_frequency() {
-            builder = builder.with_fixed_leg_frequency(frequency);
-        }
-        if let Some(frequency) = details.receive_leg_frequency() {
-            builder = builder.with_floating_leg_frequency(frequency);
-        }
+            .with_business_day_convention(conventions.business_day_convention())
+            .with_termination_date_convention(conventions.business_day_convention())
+            .with_fixed_leg_frequency(fixed_frequency)
+            .with_floating_leg_frequency(floating_frequency)
+            .with_floating_day_counter(
+                details
+                    .floating_day_counter()
+                    .unwrap_or_else(|| conventions.floating_day_counter()),
+            );
         Ok(CalibrationInstrumentType::Swap(builder.build()?))
     }
 
@@ -2056,6 +2335,7 @@ impl Quote {
         let maturity = reference_date + tenor;
         let market_index = Self::required_market_index(d, "deposit quote")?;
         let rd = market_index.rate_index_details()?.rate_definition();
+        let rd = d.day_counter().map_or(rd, |dc| rd.with_day_counter(dc));
 
         let deposit = MakeFixedRateDeposit::<T>::default()
             .with_identifier(d.identifier())
@@ -2092,8 +2372,11 @@ impl Quote {
             QSError::ValueNotSetErr("Coupon rate on fixed-rate bond quote".into())
         })?;
         let frequency = d.pay_leg_frequency().unwrap_or(Frequency::Semiannual);
-        let rate_definition =
-            RateDefinition::new(DayCounter::ActualActual, Compounding::Compounded, frequency);
+        let rate_definition = RateDefinition::new(
+            d.day_counter().unwrap_or(DayCounter::ActualActual),
+            Compounding::Compounded,
+            frequency,
+        );
         let strategy = d
             .bond_calibration_strategy()
             .unwrap_or(BondCalibrationStrategy::AnchorYield);
@@ -2152,6 +2435,12 @@ impl Quote {
         if let Some(f) = d.receive_leg_frequency() {
             builder = builder.with_receive_leg_frequency(f);
         }
+        if let Some(dc) = d.pay_day_counter() {
+            builder = builder.with_pay_day_counter(dc);
+        }
+        if let Some(dc) = d.receive_day_counter() {
+            builder = builder.with_receive_day_counter(dc);
+        }
         let basis_swap = builder.build()?;
 
         Ok(CalibrationInstrumentType::BasisSwap(basis_swap))
@@ -2172,6 +2461,7 @@ impl Quote {
         let end_date = IMM::next_date(start_date, true);
         let market_index = Self::required_market_index(d, "futures quote")?;
         let rd = market_index.rate_index_details()?.rate_definition();
+        let rd = d.day_counter().map_or(rd, |dc| rd.with_day_counter(dc));
 
         let futures = MakeRateFutures::default()
             .with_identifier(d.identifier())
@@ -2254,6 +2544,9 @@ impl Quote {
 
         let maturity = reference_date + tenor;
         let rd = floating_index.rate_index_details()?.rate_definition();
+        let rd = d
+            .fixed_day_counter()
+            .map_or(rd, |dc| rd.with_day_counter(dc));
 
         let mut builder = MakeFixFloatCrossCurrencySwap::<T>::default()
             .with_identifier(d.identifier())
@@ -2271,6 +2564,9 @@ impl Quote {
         }
         if let Some(f) = d.receive_leg_frequency() {
             builder = builder.with_foreign_leg_frequency(f);
+        }
+        if let Some(dc) = d.floating_day_counter() {
+            builder = builder.with_floating_day_counter(dc);
         }
         let xccy = builder.build()?;
 
@@ -2317,6 +2613,12 @@ impl Quote {
             .with_foreign_currency(foreign_ccy)
             .with_domestic_market_index(domestic_index)
             .with_foreign_market_index(foreign_index);
+        if let Some(dc) = d.pay_day_counter() {
+            builder = builder.with_domestic_day_counter(dc);
+        }
+        if let Some(dc) = d.receive_day_counter() {
+            builder = builder.with_foreign_day_counter(dc);
+        }
         if let Some(f) = d.pay_leg_frequency() {
             builder = builder.with_domestic_leg_frequency(f);
         }
@@ -2448,7 +2750,7 @@ impl Quote {
 
         let strike = d.strike().unwrap_or(Strike::Atm);
 
-        let cfl = CFL::new(
+        let mut cfl = CFL::new(
             d.identifier(),
             market_index,
             d.currency()
@@ -2460,6 +2762,9 @@ impl Quote {
             CapletFloorletType::Caplet,
             strike,
         );
+        if let Some(dc) = d.day_counter() {
+            cfl = cfl.with_day_counter(dc);
+        }
 
         Ok(CalibrationInstrumentType::CapletFloorlet(cfl))
     }
@@ -2479,6 +2784,7 @@ impl Quote {
         let maturity = reference_date + tenor;
         let market_index = Self::required_market_index(d, "CapFloor quote")?;
         let rd = market_index.rate_index_details()?.rate_definition();
+        let rd = d.day_counter().map_or(rd, |dc| rd.with_day_counter(dc));
 
         // The quote value is treated as the strike. If the details already
         // carry a parsed strike, prefer that.
@@ -2528,7 +2834,13 @@ impl Quote {
         let expiry_date = reference_date + option_expiry_period;
         let swap_maturity = expiry_date + swap_tenor;
         let market_index = Self::required_market_index(d, "Swaption quote")?;
-        let rd = market_index.rate_index_details()?.rate_definition();
+        let conventions = market_index
+            .rate_index_details()?
+            .swap_conventions(swap_tenor);
+        let rd = conventions.fixed_rate_definition();
+        let rd = d
+            .fixed_day_counter()
+            .map_or(rd, |dc| rd.with_day_counter(dc));
 
         let strike = d.strike().unwrap_or(Strike::Absolute(value)).resolve(0.0);
 
@@ -2551,6 +2863,9 @@ impl Quote {
         if let Some(f) = d.receive_leg_frequency() {
             builder = builder.with_floating_leg_frequency(f);
         }
+        if let Some(dc) = d.floating_day_counter() {
+            builder = builder.with_floating_day_counter(dc);
+        }
         let swaption = builder.build()?;
 
         Ok(CalibrationInstrumentType::EuropeanSwaption(swaption))
@@ -2560,7 +2875,7 @@ impl Quote {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::time::enums::TimeUnit;
+    use crate::{prelude::*, time::enums::TimeUnit};
 
     fn ref_date() -> Date {
         Date::new(2026, 2, 24)
@@ -3026,6 +3341,358 @@ mod tests {
     }
 
     #[test]
+    fn regular_swap_fixed_day_counter_parse_and_round_trip() -> Result<()> {
+        for (identifier, expected) in [
+            ("Swap_EUR_EURIBOR3m_1Y", None),
+            ("Swap_EUR_EURIBOR3m_1Y____", None),
+            (
+                "Swap_EUR_EURIBOR3m_1Y_Annual_Quarterly_1_Thirty360",
+                Some(DayCounter::Thirty360),
+            ),
+            (
+                "Swap_EUR_EURIBOR3m_1Y____Actual360",
+                Some(DayCounter::Actual360),
+            ),
+        ] {
+            let details: QuoteDetails = identifier.parse()?;
+            assert_eq!(details.fixed_day_counter(), expected);
+            let serialized = serde_json::to_value(&details).unwrap();
+            assert_eq!(
+                serialized.get("fixed_day_counter").is_some(),
+                expected.is_some()
+            );
+            let restored: QuoteDetails = serde_json::from_value(serialized).unwrap();
+            assert_eq!(restored.fixed_day_counter(), expected);
+            assert_eq!(restored.identifier(), identifier);
+        }
+        let custom = QuoteDetails::parse("Swap|EUR|EURIBOR6m|1Y||||Actual365", '|')?;
+        assert_eq!(custom.fixed_day_counter(), Some(DayCounter::Actual365));
+        for invalid in [
+            "Swap_EUR_EURIBOR3m_1Y____bad",
+            "Swap_EUR_EURIBOR3m_1Y_Annual_Quarterly_1_Thirty360_extra",
+        ] {
+            assert!(invalid.parse::<QuoteDetails>().is_err());
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn euribor_swap_defaults_separate_fixed_and_floating_conventions() -> Result<()> {
+        use crate::instruments::cashflows::{cashflow::Cashflow, cashflowtype::CashflowType};
+
+        let reference = Date::new(2026, 10, 2);
+        for (index, floating_count) in [
+            (MarketIndex::EURIBOR1w, 53),
+            (MarketIndex::EURIBOR1m, 12),
+            (MarketIndex::EURIBOR3m, 4),
+            (MarketIndex::EURIBOR6m, 2),
+            (MarketIndex::EURIBOR12m, 1),
+        ] {
+            let quote = Quote::new(
+                format!("Swap_EUR_{index}_1Y___0").parse()?,
+                QuoteLevels::with_mid(0.03),
+            );
+            let CalibrationInstrumentType::Swap(swap) =
+                quote.build_instrument(reference, Level::Mid, None)?
+            else {
+                panic!("expected regular swap");
+            };
+            let fixed: Vec<_> = swap
+                .fixed_leg()
+                .cashflows()
+                .iter()
+                .filter_map(|cashflow| {
+                    if let CashflowType::FixedRateCoupon(coupon) = cashflow {
+                        Some(coupon)
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            let floating: Vec<_> = swap
+                .floating_leg()
+                .cashflows()
+                .iter()
+                .filter_map(|cashflow| {
+                    if let CashflowType::FloatingRateCoupon(coupon) = cashflow {
+                        Some(coupon)
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            assert_eq!(fixed.len(), 1, "annual fixed payments for {index}");
+            assert_eq!(
+                floating.len(),
+                floating_count,
+                "index-tenor payments for {index}"
+            );
+            assert_eq!(fixed[0].rate().day_counter(), DayCounter::Thirty360);
+            // 2 Oct 2026 -> 4 Oct 2027 is 362 bond-basis days, 367 actual days.
+            let fixed_amount = fixed[0].amount()? / fixed[0].notional();
+            assert!((fixed_amount - 0.03 * 362.0 / 360.0).abs() < 1e-14);
+            assert!(floating
+                .iter()
+                .all(|coupon| coupon.day_counter() == DayCounter::Actual360));
+            for coupon in floating {
+                coupon.set_fixing(0.03);
+                let actual_days = (coupon.accrual_end_date() - coupon.accrual_start_date()) as f64;
+                let normalized_amount = coupon.amount()? / fixed[0].notional();
+                assert!((normalized_amount - 0.03 * actual_days / 360.0).abs() < 1e-14);
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn swap_defaults_follow_each_index_and_preserve_partial_overrides() -> Result<()> {
+        let reference = Date::new(2026, 10, 2);
+        for (identifier, fixed_count, floating_count, fixed_dc, floating_dc, start) in [
+            (
+                "Swap_JPY_TIBOR6m_1Y",
+                2,
+                2,
+                DayCounter::Actual365,
+                DayCounter::Actual365,
+                Date::new(2026, 10, 6),
+            ),
+            (
+                "Swap_NOK_NIBOR6m_1Y",
+                1,
+                2,
+                DayCounter::Thirty360,
+                DayCounter::Actual360,
+                Date::new(2026, 10, 6),
+            ),
+            (
+                "Swap_NZD_BKBM3m_1Y",
+                2,
+                4,
+                DayCounter::Actual365,
+                DayCounter::Actual365,
+                reference,
+            ),
+            (
+                "Swap_AUD_BBSW3m_1Y",
+                4,
+                4,
+                DayCounter::Actual365,
+                DayCounter::Actual365,
+                Date::new(2026, 10, 6),
+            ),
+            (
+                "Swap_AUD_BBSW6m_5Y",
+                10,
+                10,
+                DayCounter::Actual365,
+                DayCounter::Actual365,
+                Date::new(2026, 10, 6),
+            ),
+            (
+                "Swap_GBP_SONIA_1Y",
+                1,
+                1,
+                DayCounter::Actual365,
+                DayCounter::Actual365,
+                reference,
+            ),
+            (
+                "Swap_USD_SOFR_1Y",
+                1,
+                1,
+                DayCounter::Actual360,
+                DayCounter::Actual360,
+                Date::new(2026, 10, 6),
+            ),
+            // Each supplied positional field leaves every other index default intact.
+            (
+                "Swap_NOK_NIBOR6m_1Y_Monthly",
+                12,
+                2,
+                DayCounter::Thirty360,
+                DayCounter::Actual360,
+                Date::new(2026, 10, 6),
+            ),
+            (
+                "Swap_NOK_NIBOR6m_1Y__Quarterly",
+                1,
+                4,
+                DayCounter::Thirty360,
+                DayCounter::Actual360,
+                Date::new(2026, 10, 6),
+            ),
+            (
+                "Swap_NOK_NIBOR6m_1Y____Actual365",
+                1,
+                2,
+                DayCounter::Actual365,
+                DayCounter::Actual360,
+                Date::new(2026, 10, 6),
+            ),
+            (
+                "Swap_NOK_NIBOR6m_1Y_____Actual365",
+                1,
+                2,
+                DayCounter::Thirty360,
+                DayCounter::Actual365,
+                Date::new(2026, 10, 6),
+            ),
+            (
+                "Swap_NOK_NIBOR6m_1Y___0",
+                1,
+                2,
+                DayCounter::Thirty360,
+                DayCounter::Actual360,
+                reference,
+            ),
+        ] {
+            let CalibrationInstrumentType::Swap(swap) =
+                day_count_quote(identifier)?.build_instrument(reference, Level::Mid, None)?
+            else {
+                panic!("expected swap for {identifier}");
+            };
+            assert_eq!(
+                swap.fixed_leg()
+                    .cashflows()
+                    .iter()
+                    .filter(|cf| matches!(cf, CashflowType::FixedRateCoupon(_)))
+                    .count(),
+                fixed_count,
+                "{identifier}"
+            );
+            assert_eq!(
+                swap.floating_leg()
+                    .cashflows()
+                    .iter()
+                    .filter(|cf| matches!(cf, CashflowType::FloatingRateCoupon(_)))
+                    .count(),
+                floating_count,
+                "{identifier}"
+            );
+            let first = swap
+                .fixed_leg()
+                .cashflows()
+                .iter()
+                .find_map(|cf| match cf {
+                    CashflowType::FixedRateCoupon(coupon) => Some(coupon),
+                    _ => None,
+                })
+                .expect("fixed coupon");
+            assert_eq!(first.accrual_start_date(), start, "{identifier}");
+            assert_leg_day_count(swap.fixed_leg(), fixed_dc)?;
+            assert_leg_day_count(swap.floating_leg(), floating_dc)?;
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn swaption_underlying_uses_index_swap_defaults() -> Result<()> {
+        for (identifier, fixed_count, floating_count, fixed_dc, floating_dc) in [
+            (
+                "Swaption_EUR_EURIBOR6m_1Y_2Y_ATM_Black",
+                2,
+                4,
+                DayCounter::Thirty360,
+                DayCounter::Actual360,
+            ),
+            (
+                "Swaption_JPY_TIBOR3m_1Y_2Y_ATM_Black",
+                4,
+                8,
+                DayCounter::Actual365,
+                DayCounter::Actual365,
+            ),
+            (
+                "Swaption_NOK_NIBOR6m_1Y_2Y__Quarterly_ATM_Black__Actual365",
+                2,
+                8,
+                DayCounter::Thirty360,
+                DayCounter::Actual365,
+            ),
+        ] {
+            let CalibrationInstrumentType::EuropeanSwaption(option) =
+                day_count_quote(identifier)?.build_instrument(ref_date(), Level::Mid, None)?
+            else {
+                panic!("expected swaption");
+            };
+            let swap = option.underlying();
+            assert_eq!(
+                swap.fixed_leg()
+                    .cashflows()
+                    .iter()
+                    .filter(|cf| matches!(cf, CashflowType::FixedRateCoupon(_)))
+                    .count(),
+                fixed_count,
+                "{identifier}"
+            );
+            assert_eq!(
+                swap.floating_leg()
+                    .cashflows()
+                    .iter()
+                    .filter(|cf| matches!(cf, CashflowType::FloatingRateCoupon(_)))
+                    .count(),
+                floating_count,
+                "{identifier}"
+            );
+            assert_leg_day_count(swap.fixed_leg(), fixed_dc)?;
+            assert_leg_day_count(swap.floating_leg(), floating_dc)?;
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn regular_swap_fixed_overrides_do_not_change_floating_day_count() -> Result<()> {
+        use crate::instruments::cashflows::cashflowtype::CashflowType;
+
+        let reference = Date::new(2026, 10, 2);
+        for details in [
+            "Swap_EUR_EURIBOR3m_1Y_Semiannual_Semiannual_0_Actual365".parse()?,
+            "Swap_EUR_EURIBOR3m_1Y"
+                .parse::<QuoteDetails>()?
+                .with_pay_leg_frequency(Frequency::Semiannual)
+                .with_receive_leg_frequency(Frequency::Semiannual)
+                .with_settlement_days(0)
+                .with_fixed_day_counter(DayCounter::Actual365),
+        ] {
+            let quote = Quote::new(details, QuoteLevels::with_mid(0.03));
+            let CalibrationInstrumentType::Swap(swap) =
+                quote.build_instrument(reference, Level::Mid, None)?
+            else {
+                panic!("expected regular swap");
+            };
+            let fixed_count = swap
+                .fixed_leg()
+                .cashflows()
+                .iter()
+                .filter(|cashflow| {
+                    if let CashflowType::FixedRateCoupon(coupon) = cashflow {
+                        assert_eq!(coupon.rate().day_counter(), DayCounter::Actual365);
+                        true
+                    } else {
+                        false
+                    }
+                })
+                .count();
+            let floating_count = swap
+                .floating_leg()
+                .cashflows()
+                .iter()
+                .filter(|cashflow| {
+                    if let CashflowType::FloatingRateCoupon(coupon) = cashflow {
+                        assert_eq!(coupon.day_counter(), DayCounter::Actual360);
+                        true
+                    } else {
+                        false
+                    }
+                })
+                .count();
+            assert_eq!(fixed_count, 2);
+            assert_eq!(floating_count, 2);
+        }
+        Ok(())
+    }
+
+    #[test]
     fn euribor_swap_quotes_settle_and_schedule_on_target() -> Result<()> {
         use crate::instruments::cashflows::cashflowtype::CashflowType;
 
@@ -3161,7 +3828,7 @@ mod tests {
         for (identifier, fixed_count, floating_count) in [
             ("Swap_USD_TermSOFR3m_1Y", 2, 4),
             ("Swap_USD_TermSOFR3m_1Y_Annual_Semiannual", 1, 2),
-            ("Swap_USD_SOFR_1Y", 2, 4),
+            ("Swap_USD_SOFR_1Y", 1, 1),
         ] {
             let details: QuoteDetails = identifier.parse().unwrap();
             let quote = Quote::new(
@@ -3255,7 +3922,7 @@ mod tests {
         assert_eq!(details.pay_leg_frequency(), None);
         assert_eq!(details.receive_leg_frequency(), Some(Frequency::Quarterly));
         assert_eq!(details.ois_conventions().unwrap().payment_lag(), 2);
-        let excess = format!("OIS_USD_SOFR_1Y_{}", [""; 24].join("_"));
+        let excess = format!("OIS_USD_SOFR_1Y_{}", [""; 25].join("_"));
         assert!(excess.parse::<QuoteDetails>().is_err());
     }
 
@@ -3406,6 +4073,259 @@ mod tests {
     fn parse_cap_floor_without_frequency_still_works() {
         let det: QuoteDetails = "CapFloor_USD_SOFR_1Y_Absolute_Black".parse().unwrap();
         assert_eq!(det.pay_leg_frequency(), None);
+    }
+    fn day_count_quote(identifier: &str) -> Result<Quote> {
+        Ok(Quote::new(identifier.parse()?, QuoteLevels::with_mid(0.03)))
+    }
+
+    fn day_count_single_curve(identifier: &str, value: f64) -> Result<DiscountCurveElement> {
+        let details: QuoteDetails = identifier.parse()?;
+        let index = details.market_index().cloned().unwrap();
+        let currency = details.currency().unwrap();
+        let mut store = QuoteStore::new(Date::new(2026, 10, 2));
+        store.add_quote(Quote::new(details, QuoteLevels::with_mid(value)));
+        let configuration = CurveConfiguration::new(
+            index.clone(),
+            DayCounter::Actual360,
+            Interpolator::LogLinear,
+            true,
+            vec![identifier.into()],
+        );
+        Ok(MultiCurveBootstrapper::new(
+            vec![configuration],
+            BootstrapDiscountPolicy::new(index.clone(), currency),
+        )
+        .bootstrap(&store, Level::Mid)?
+        .remove(&index)
+        .unwrap())
+    }
+
+    #[test]
+    fn positional_day_counts_parse_and_round_trip_across_products() -> Result<()> {
+        for (identifier, field) in [
+            ("FixedRateDeposit_USD_SOFR_6M_Actual365", "day_counter"),
+            (
+                "FixedRateBond_USD_SOFR_6M_Annual_0_AnchorYield__Actual365",
+                "yield_day_counter",
+            ),
+            ("Future_USD_TermSOFR3m_H7_Actual365", "day_counter"),
+            ("Swap_USD_TermSOFR3m_1Y____Actual365", "fixed_day_counter"),
+            (
+                "Swap_USD_TermSOFR3m_1Y_____Actual365",
+                "floating_day_counter",
+            ),
+            ("OIS_EUR_ESTR_1Y_____Actual365", "fixed_day_counter"),
+            (
+                "OIS_EUR_ESTR_1Y________________________Actual365",
+                "floating_day_counter",
+            ),
+            (
+                "BasisSwap_USD_SOFR_TermSOFR3m_1Y___Actual365",
+                "pay_day_counter",
+            ),
+            (
+                "FloatFloatCrossCurrencySwap_EUR_EURIBOR3m_SOFR_USD_1Y____Actual365",
+                "receive_day_counter",
+            ),
+            (
+                "FixFloatCrossCurrencySwap_EUR_SOFR_USD_1Y___Actual365",
+                "fixed_day_counter",
+            ),
+            (
+                "Swaption_USD_TermSOFR3m_1Y_2Y_ATM_Black_Actual365",
+                "fixed_day_counter",
+            ),
+            (
+                "CapFloor_USD_TermSOFR3m_1Y_ATM_Black_Actual365",
+                "day_counter",
+            ),
+            (
+                "CapletFloorlet_USD_TermSOFR3m_3M_6M_ATM_Straddle_Black_Actual365",
+                "day_counter",
+            ),
+            ("Cds_CORP_USD_1Y_Actual365", "day_counter"),
+            ("ZeroRate_USD_SOFR_1Y___Actual365", "day_counter"),
+        ] {
+            let details: QuoteDetails = identifier.parse()?;
+            let json = serde_json::to_value(&details).unwrap();
+            let conventions = if details.instrument() == &QuoteInstrument::OIS {
+                serde_json::to_value(details.ois_conventions()?).unwrap()
+            } else {
+                json.clone()
+            };
+            assert_eq!(conventions[field], "Actual365", "{identifier}");
+            let restored: QuoteDetails = serde_json::from_value(json.clone()).unwrap();
+            assert_eq!(serde_json::to_value(restored).unwrap(), json);
+            assert_eq!(details.identifier(), identifier);
+        }
+        let custom = QuoteDetails::parse("Swap|USD|TermSOFR3m|1Y||||actual365", '|')?;
+        assert_eq!(custom.fixed_day_counter(), Some(DayCounter::Actual365));
+        Ok(())
+    }
+
+    #[test]
+    fn invalid_day_count_overrides_are_rejected() {
+        for identifier in [
+            "Swap_USD_TermSOFR3m_1Y___2_Thirty360_Actual365_Actual360",
+            "FixedRateDeposit_USD_SOFR_1Y_bad",
+            "FixedRateDeposit_USD_SOFR_1Y_Actual365_extra",
+            "Future_USD_SOFR_H7_bad",
+            "Future_USD_SOFR_H7_Actual365_extra",
+            "FxForward_EURUSD_1Y_AnchorOutrightPrice_Actual365",
+            "DiscountFactor_USD_SOFR_1Y_Actual365",
+            "BasisSwap_USD_SOFR_TermSOFR3m_1Y___bad_Actual365",
+            "FixFloatCrossCurrencySwap_EUR_SOFR_USD_1Y___Actual365_bad",
+            "CapFloor_USD_TermSOFR3m_1Y_ATM_Black_bad",
+            "Swaption_USD_TermSOFR3m_1Y_2Y_ATM_Black_Thirty360_bad",
+        ] {
+            assert!(identifier.parse::<QuoteDetails>().is_err(), "{identifier}");
+        }
+    }
+
+    fn assert_leg_day_count(leg: &Leg<f64>, dc: DayCounter) -> Result<()> {
+        let mut found = false;
+        for cashflow in leg.cashflows() {
+            match cashflow {
+                CashflowType::FixedRateCoupon(coupon) => {
+                    found = true;
+                    assert_eq!(coupon.rate().day_counter(), dc);
+                    let accrual =
+                        dc.year_fraction(coupon.accrual_start_date(), coupon.accrual_end_date());
+                    assert!(
+                        (coupon.amount()? / coupon.notional() - coupon.rate().rate() * accrual)
+                            .abs()
+                            < 1e-14
+                    );
+                }
+                CashflowType::FloatingRateCoupon(coupon) => {
+                    found = true;
+                    assert_eq!(coupon.day_counter(), dc);
+                    coupon.set_fixing(0.03);
+                    let accrual =
+                        dc.year_fraction(coupon.accrual_start_date(), coupon.accrual_end_date());
+                    assert!(
+                        (coupon.amount()? / coupon.notional() - (0.03 + coupon.spread()) * accrual)
+                            .abs()
+                            < 1e-14
+                    );
+                }
+                _ => {}
+            }
+        }
+        assert!(found);
+        Ok(())
+    }
+
+    #[test]
+    fn independent_leg_day_counts_reach_all_swap_families() -> Result<()> {
+        let reference = Date::new(2026, 10, 2);
+        for identifier in [
+            "Swap_USD_TermSOFR3m_1Y_Annual_Quarterly_0_Thirty360_Actual365",
+            "OIS_EUR_ESTR_1Y___0_0_Thirty360___________________Actual365",
+            "BasisSwap_USD_SOFR_TermSOFR3m_1Y___Thirty360_Actual365",
+            "FixFloatCrossCurrencySwap_EUR_SOFR_USD_1Y___Thirty360_Actual365",
+            "FloatFloatCrossCurrencySwap_EUR_EURIBOR3m_SOFR_USD_1Y___Thirty360_Actual365",
+            "Swaption_USD_TermSOFR3m_1Y_2Y_Annual_Quarterly_ATM_Black_Thirty360_Actual365",
+        ] {
+            let built =
+                day_count_quote(identifier)?.build_instrument(reference, Level::Mid, Some(1.1))?;
+            let (first, second) = match &built {
+                CalibrationInstrumentType::Swap(swap) => (swap.fixed_leg(), swap.floating_leg()),
+                CalibrationInstrumentType::OIS(swap) => (swap.fixed_leg(), swap.floating_leg()),
+                CalibrationInstrumentType::BasisSwap(swap) => (swap.pay_leg(), swap.receive_leg()),
+                CalibrationInstrumentType::FixFloatCrossCurrencySwap(swap) => {
+                    (swap.domestic_leg(), swap.foreign_leg())
+                }
+                CalibrationInstrumentType::FloatFloatCrossCurrencySwap(swap) => {
+                    (swap.domestic_leg(), swap.foreign_leg())
+                }
+                CalibrationInstrumentType::EuropeanSwaption(option) => (
+                    option.underlying().fixed_leg(),
+                    option.underlying().floating_leg(),
+                ),
+                _ => panic!("unexpected quote product {identifier}"),
+            };
+            assert_leg_day_count(first, DayCounter::Thirty360)?;
+            assert_leg_day_count(second, DayCounter::Actual365)?;
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn single_leg_and_option_quotes_retain_accrual_day_counts() -> Result<()> {
+        let reference = Date::new(2026, 10, 2);
+        for identifier in [
+            "FixedRateDeposit_USD_SOFR_6M_Actual365",
+            "FixedRateBond_USD_SOFR_6M_Annual_0.03_AnchorPrice_Actual365",
+            "Future_USD_TermSOFR3m_H7_Actual365",
+            "CapFloor_USD_TermSOFR3m_1Y_ATM_Black_Actual365",
+            "CapletFloorlet_USD_TermSOFR3m_3M_6M_ATM_Straddle_Black_Actual365",
+        ] {
+            match day_count_quote(identifier)?.build_instrument(reference, Level::Mid, None)? {
+                CalibrationInstrumentType::FixedRateDeposit(deposit) => {
+                    assert_eq!(deposit.rate().unwrap().day_counter(), DayCounter::Actual365)
+                }
+                CalibrationInstrumentType::FixedRateBond(bond, _) => {
+                    assert_leg_day_count(bond.leg(), DayCounter::Actual365)?
+                }
+                CalibrationInstrumentType::RateFutures(future) => assert_eq!(
+                    future.rate_definition().day_counter(),
+                    DayCounter::Actual365
+                ),
+                CalibrationInstrumentType::CapFloor(cap) => assert!(cap
+                    .caplet_floorlets()
+                    .iter()
+                    .all(|caplet| caplet.day_counter() == Some(DayCounter::Actual365))),
+                CalibrationInstrumentType::CapletFloorlet(caplet) => {
+                    assert_eq!(caplet.day_counter(), Some(DayCounter::Actual365))
+                }
+                _ => panic!("unexpected quote product {identifier}"),
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn quoted_day_counts_control_deposit_futures_bond_and_zero_calibration() -> Result<()> {
+        let reference = Date::new(2026, 10, 2);
+        let maturity = Date::new(2027, 4, 2);
+        let accrual = 182.0 / 365.0;
+        for (identifier, value, expected) in [
+            (
+                "FixedRateDeposit_USD_SOFR_6M_Actual365",
+                0.03,
+                1.0 / (1.0 + 0.03 * accrual),
+            ),
+            (
+                "FixedRateBond_USD_SOFR_6M_Annual_0_AnchorYield_Thirty360_Actual365",
+                0.03,
+                1.03_f64.powf(-accrual),
+            ),
+            (
+                "ZeroRate_USD_SOFR_6M___Actual365",
+                0.03,
+                (-0.03 * accrual).exp(),
+            ),
+        ] {
+            let curve = day_count_single_curve(identifier, value)?;
+            assert!(
+                (curve.curve().discount_factor(maturity)?.value() - expected).abs() < 1e-10,
+                "{identifier}"
+            );
+        }
+        let identifier = "Future_USD_TermSOFR3m_H7_Actual365";
+        let curve = day_count_single_curve(identifier, 97.0)?;
+        let CalibrationInstrumentType::RateFutures(future) =
+            day_count_quote(identifier)?.build_instrument(reference, Level::Mid, None)?
+        else {
+            panic!("expected futures");
+        };
+        let term = curve.curve();
+        let ratio = term.discount_factor(future.start_date())?.value()
+            / term.discount_factor(future.end_date())?.value();
+        let implied = (ratio - 1.0) / future.accrual_factor();
+        assert!((implied - 0.03).abs() < 1e-10);
+        Ok(())
     }
 }
 

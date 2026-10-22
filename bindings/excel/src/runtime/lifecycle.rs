@@ -10,6 +10,7 @@ struct Workbook {
     // a callback, so the cache cannot keep a closed workbook alive.
     com_identity: Option<usize>,
     sheets: HashMap<usize, String>,
+    closing: bool,
 }
 
 #[derive(Default)]
@@ -21,14 +22,18 @@ struct Sessions {
 impl Sessions {
     fn caller(&mut self, name: &str, sheet: usize, sheet_name: &str) -> u64 {
         let existing = self.books.iter().find_map(|(id, book)| {
-            (book.name.eq_ignore_ascii_case(name) || book.sheets.contains_key(&sheet))
-                .then_some(*id)
+            (book.name.eq_ignore_ascii_case(name)
+                || (!book.closing && book.sheets.contains_key(&sheet)))
+            .then_some(*id)
         });
         let id = existing.unwrap_or_else(|| {
             self.next_id += 1;
             self.next_id
         });
         let book = self.books.entry(id).or_default();
+        if book.name != name || book.sheets.get(&sheet).map(String::as_str) != Some(sheet_name) {
+            registry::browser_changed();
+        }
         book.name = name.to_string();
         book.sheets.insert(sheet, sheet_name.to_string());
         id
@@ -46,6 +51,7 @@ impl Sessions {
             if let Some((identity, name)) = live {
                 book.com_identity = Some(*identity);
                 book.name.clone_from(name);
+                book.closing = false;
             } else {
                 closed.push(*id);
             }
@@ -54,6 +60,36 @@ impl Sessions {
             self.books.remove(id);
         }
         closed
+    }
+
+    fn before_close(&mut self, name: &str, identity: usize) {
+        for book in self
+            .books
+            .values_mut()
+            .filter(|book| book.name.eq_ignore_ascii_case(name))
+        {
+            book.com_identity = Some(identity);
+            book.closing = true;
+        }
+    }
+
+    fn opened(&mut self, name: &str, identity: usize) -> Vec<u64> {
+        let retired: Vec<_> = self
+            .books
+            .iter()
+            .filter_map(|(id, book)| {
+                (book.name.eq_ignore_ascii_case(name)
+                    && (book.closing
+                        || book
+                            .com_identity
+                            .is_some_and(|previous| previous != identity)))
+                .then_some(*id)
+            })
+            .collect();
+        for id in &retired {
+            self.books.remove(id);
+        }
+        retired
     }
 }
 
@@ -106,6 +142,19 @@ pub fn browser_query(
             ),
         }
     })
+}
+
+/// Clears all workbook objects and AD storage on the calculation thread.
+/// Session IDs keep increasing so cached worksheet handles cannot become live again.
+pub fn reset_memory() -> Result<usize, String> {
+    if IN_CALL.with(std::cell::Cell::get) || registry::calculation_active() {
+        return Err("Wait for worksheet calculation to finish before resetting memory.".into());
+    }
+    let count = registry::live_object_count(true);
+    registry::clear_workbooks();
+    SESSIONS.with(|sessions| sessions.borrow_mut().books.clear());
+    registry::select_workbook(0);
+    Ok(count)
 }
 
 /// One stateful UDF invocation. Early returns and unwinding release old outputs.
@@ -226,6 +275,8 @@ pub mod windows {
         static SUBSCRIPTION: RefCell<Option<Subscription>> = const { RefCell::new(None) };
         static BUSY: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
         static RESTORE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+        static LAST_BOOK_COUNT: std::cell::Cell<Option<i32>> = const { std::cell::Cell::new(None) };
+        static AUDIT_TICKS: std::cell::Cell<u8> = const { std::cell::Cell::new(0) };
     }
 
     #[cfg(test)]
@@ -468,10 +519,14 @@ pub mod windows {
         for book in closed {
             registry::close_workbook(book);
         }
+        LAST_BOOK_COUNT.with(|previous| previous.set(Some(count)));
         Ok(())
     }
 
     fn sheet_change(params: *const DISPPARAMS) -> ::windows::core::Result<()> {
+        if SESSIONS.with(|sessions| sessions.borrow().books.is_empty()) {
+            return Ok(());
+        }
         if params.is_null() {
             return Ok(());
         }
@@ -533,10 +588,27 @@ pub mod windows {
                     "Item",
                     &mut [(cell.column + 1).into(), (cell.row + 1).into()],
                 )?;
-                let formula =
-                    text(&target, "Formula2Local").or_else(|_| text(&target, "FormulaLocal"))?;
                 let has_formula = bool::try_from(&get(&target, "HasFormula", &mut [])?)?;
-                registry::release_workbook_cell_if_changed(book, cell, &formula, has_formula);
+                if !has_formula {
+                    registry::release_workbook_cell_if_changed(book, cell, "", false);
+                    continue;
+                }
+                let mut first = None;
+                let mut matched = false;
+                for property in ["Formula2Local", "FormulaLocal", "Formula2", "Formula"] {
+                    if let Ok(formula) = text(&target, property) {
+                        matched = registry::workbook_cell_formula_matches(book, cell, &formula);
+                        first.get_or_insert(formula);
+                        if matched {
+                            break;
+                        }
+                    }
+                }
+                if !matched {
+                    if let Some(formula) = first {
+                        registry::release_workbook_cell_if_changed(book, cell, &formula, true);
+                    }
+                }
             }
         }
         Ok(())
@@ -629,12 +701,44 @@ pub mod windows {
             if id == SHEET_CHANGE {
                 let _ = sheet_change(params);
             }
+            if id == 0x622 && !params.is_null() {
+                // WorkbookBeforeClose(Wb, Cancel)
+                let params = unsafe { &*params };
+                if params.cArgs == 2 && !params.rgvarg.is_null() {
+                    if let Ok(book) = IDispatch::try_from(unsafe { &*params.rgvarg.add(1) }) {
+                        if let (Ok(name), Ok(identity)) =
+                            (text(&book, "Name"), book.cast::<IUnknown>())
+                        {
+                            SESSIONS.with(|sessions| {
+                                sessions
+                                    .borrow_mut()
+                                    .before_close(&name, identity.as_raw() as usize)
+                            });
+                        }
+                    }
+                }
+                LAST_BOOK_COUNT.with(|previous| previous.set(None));
+            }
             // NewWorkbook, WorkbookOpen and WorkbookActivate: reconcile before
             // formulas in a reopened workbook can reuse an earlier session.
             if matches!(id, 0x61d | 0x61f | 0x620) && !params.is_null() {
                 let params = unsafe { &*params };
                 if params.cArgs == 1 && !params.rgvarg.is_null() {
                     if let Ok(book) = IDispatch::try_from(unsafe { &*params.rgvarg }) {
+                        if matches!(id, 0x61d | 0x61f) {
+                            if let (Ok(name), Ok(identity)) =
+                                (text(&book, "Name"), book.cast::<IUnknown>())
+                            {
+                                let retired = SESSIONS.with(|sessions| {
+                                    sessions
+                                        .borrow_mut()
+                                        .opened(&name, identity.as_raw() as usize)
+                                });
+                                for id in retired {
+                                    registry::close_workbook(id);
+                                }
+                            }
+                        }
                         if let Ok(app) = dispatch(&book, "Application", &mut []) {
                             let _ = reconcile(&app);
                         }
@@ -682,6 +786,12 @@ pub mod windows {
         }
         let _ = std::panic::catch_unwind(|| {
             if let Some(app) = application() {
+                // Never compete with a calculation or Excel's cell editor/dialogs.
+                if bool::try_from(&get(&app, "Ready", &mut [])?).ok() != Some(true)
+                    || integer(&app, "CalculationState")? == 1
+                {
+                    return Ok::<(), ::windows::core::Error>(());
+                }
                 if RESTORE.with(|restore| restore.replace(false)) {
                     let _ = restore_open_workbooks(&app);
                 }
@@ -693,8 +803,27 @@ pub mod windows {
                         }
                     }
                 });
-                let _ = reconcile(&app);
+                let count = integer(&dispatch(&app, "Workbooks", &mut [])?, "Count")?;
+                let audit = AUDIT_TICKS.with(|ticks| {
+                    let previous = ticks.get();
+                    ticks.set(if previous == 0 { 30 } else { previous - 1 });
+                    previous == 0
+                });
+                let unidentified = SESSIONS.with(|sessions| {
+                    sessions
+                        .borrow()
+                        .books
+                        .values()
+                        .any(|book| book.com_identity.is_none())
+                });
+                if audit
+                    || unidentified
+                    || LAST_BOOK_COUNT.with(|previous| previous.get() != Some(count))
+                {
+                    reconcile(&app)?;
+                }
             }
+            Ok::<(), ::windows::core::Error>(())
         });
         BUSY.with(|busy| busy.set(false));
     }
@@ -788,6 +917,8 @@ pub mod windows {
         });
         SESSIONS.with(|sessions| *sessions.borrow_mut() = Sessions::default());
         RESTORE.with(|restore| restore.set(false));
+        LAST_BOOK_COUNT.with(|previous| previous.set(None));
+        AUDIT_TICKS.with(|ticks| ticks.set(0));
         registry::clear_workbooks();
     }
 }
@@ -795,6 +926,99 @@ pub mod windows {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn closing_and_reopening_before_an_idle_tick_retires_only_the_old_workbook() {
+        let mut sessions = Sessions::default();
+        let old = sessions.caller("Market.xlsx", 11, "Inputs");
+        let other = sessions.caller("Other.xlsx", 22, "Inputs");
+        sessions.before_close("Market.xlsx", 101);
+        let retired = sessions.opened("Market.xlsx", 102);
+        assert_eq!(retired, vec![old]);
+        assert!(sessions.books.contains_key(&other));
+        let fresh = sessions.caller("Market.xlsx", 11, "Inputs");
+        assert_ne!(fresh, old);
+        assert!(sessions
+            .reconcile(&[(102, "Market.xlsx".into()), (202, "Other.xlsx".into())])
+            .is_empty());
+        sessions.before_close("Other.xlsx", 202);
+        assert!(sessions
+            .reconcile(&[(102, "Market.xlsx".into()), (202, "Other.xlsx".into())])
+            .is_empty());
+        assert_eq!(
+            sessions.caller("Other.xlsx", 22, "Inputs"),
+            other,
+            "cancelled closes preserve the workbook session"
+        );
+    }
+
+    #[test]
+    fn reset_drops_all_workbooks_and_never_revives_old_handles() {
+        use quantsupport::prelude::FixingStore;
+        registry::clear_workbooks();
+        let make = |name: &str, sheet| {
+            let id = SESSIONS.with(|sessions| sessions.borrow_mut().caller(name, sheet, "Inputs"));
+            registry::select_workbook(id);
+            registry::with_registry_mut(|registry| {
+                registry
+                    .upsert_if_changed(
+                        "fixings",
+                        registry::QsObject::FixingStore(Box::new(FixingStore::default())),
+                        "empty",
+                    )
+                    .unwrap()
+            })
+        };
+        let old = make("One.xlsx", 900);
+        make("Two.xlsx", 901);
+        let version = registry::browser_revision();
+        assert_eq!(reset_memory().unwrap(), 2);
+        assert!(registry::browser_revision() > version);
+        assert_eq!(registry::live_object_count(true), 0);
+        assert!(browser_snapshot("One.xlsx").objects.is_empty());
+        let fresh = make("One.xlsx", 900);
+        assert_ne!(old, fresh);
+        registry::with_registry(|registry| assert!(registry.fixing_store(&old).is_err()));
+        registry::with_registry_mut(|registry| {
+            registry.begin_cell(CellId {
+                sheet: 900,
+                row: 0,
+                column: 0,
+            })
+        });
+        assert!(reset_memory().is_err());
+        assert_eq!(registry::live_object_count(true), 1);
+        registry::with_registry_mut(|registry| registry.finish_cell(true));
+        reset_memory().unwrap();
+    }
+
+    #[test]
+    fn polling_browser_revision_does_not_visit_or_change_registry_state() {
+        registry::clear_workbooks();
+        let version = registry::browser_revision();
+        for _ in 0..10_000 {
+            assert_eq!(registry::browser_revision(), version);
+        }
+        browser_snapshot("not open.xlsx");
+        assert_eq!(registry::browser_revision(), version);
+        registry::select_workbook(5000);
+        registry::with_registry_mut(|registry| {
+            registry
+                .upsert_if_changed(
+                    "fixings",
+                    registry::QsObject::FixingStore(Box::default()),
+                    "empty",
+                )
+                .unwrap();
+        });
+        assert!(registry::browser_revision() > version);
+        let version = registry::browser_revision();
+        registry::workbook_browser_objects(5000);
+        assert_eq!(registry::browser_revision(), version);
+        registry::close_workbook(5000);
+        assert!(registry::browser_revision() > version);
+        registry::select_workbook(0);
+    }
 
     #[test]
     fn browser_snapshot_matches_the_managed_contract_and_resolves_workbook_names() {

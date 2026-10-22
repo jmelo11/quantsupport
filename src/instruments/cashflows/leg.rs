@@ -5,7 +5,7 @@ use crate::{
     indices::marketindex::MarketIndex,
     instruments::cashflows::cashflowtype::CashflowType,
     rates::interestrate::InterestRate,
-    time::date::Date,
+    time::{date::Date, daycounter::DayCounter},
 };
 
 /// A [`Leg`] represents a sequence of cashflows associated to a particular instrument.
@@ -93,6 +93,18 @@ where
     #[must_use]
     pub fn cashflows_mut(&mut self) -> &mut [CashflowType<T>] {
         &mut self.cashflows
+    }
+
+    /// Sets contractual accrual on floating coupons, preserving index quoting
+    /// conventions and all other cashflows.
+    #[must_use]
+    pub fn with_floating_day_counter(mut self, day_counter: DayCounter) -> Self {
+        for cashflow in &mut self.cashflows {
+            if let CashflowType::FloatingRateCoupon(coupon) = cashflow {
+                coupon.set_day_counter(day_counter);
+            }
+        }
+        self
     }
 
     /// Returns the market index associated with the leg, if any.

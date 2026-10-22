@@ -33,7 +33,7 @@ The ribbon and IntelliSense companions require .NET Framework 4.6.2 or later.
 
 ### QuantSupport ribbon and object browser
 
-The **QuantSupport** tab provides **Pricing Contexts**, **Instruments & Trades**, **Curves**,
+The **QuantSupport** tab provides **Pricing Contexts**, **Instruments & Trades**, **Price Selection**, **Curves**,
 **All Objects**, **Inspect Selection**, and **Refresh Browser**, plus links to the
 setup guide and function reference. The side panel lists live objects belonging
 to its workbook, with search, type filters, current handles, source formulas and
@@ -43,12 +43,24 @@ All ribbon grids support **Ctrl+A** to select every row and **Ctrl+C** to copy
 the selected values with column headings. Right-click a table for **Select all**,
 **Copy values**, or **Copy entire table**; pasted values form a tabular range in Excel.
 
-Select a trade to open **Trade requests**. Choose an existing pricing context,
-an explicit pricer and **PV**, **Cashflows** or **Fair rate**, then click
+Select an instrument or trade to open **Pricing**, or select its handle cell and
+click **Price Selection** in the ribbon. **Price selected** in the panel opens the
+same controls. Choose an existing pricing context,
+an explicit pricer and **PV**, **Cashflows**, **Fair rate** or **Sensitivities**, then click
 **Run request**. Fair rates require a zero-based swap leg or loan rate segment;
 the selected pricer determines which requests it supports. Results appear in
 the panel without adding worksheet formulas or stored results. Changing an input
 selection clears the previous result; requests run again only when you click.
+**Sensitivities** displays Risk factor and Sensitivity columns as raw derivatives
+per unit of each factor. For decimal-rate factors, multiply by `0.0001` to
+estimate the value change from a +1 bp move. Displayed and copied numbers use
+Excel's decimal separator.
+For a native instrument, confirm the displayed preview trade date and Receive/Pay
+side. The date initially follows the selected context's valuation date, and the
+preview uses the instrument's own notional. Bond previews also require an explicit
+CleanPrice, DirtyPrice or ZSpread anchor and value, entered with Excel's decimal
+separator. Previews create no stored trade or result objects. Selecting an existing
+trade uses its stored position terms and hides the preview inputs.
 `BondPricer` leaves `FairRate` absent. For bonds, request `YieldToMaturity`,
 `ModifiedDuration`, `ZSpread` or `OAS` through worksheet evaluation as supported
 by the selected pricer and anchor; `QS.RESULT.YIELD` reads the yield result.
@@ -289,6 +301,11 @@ For portfolios needing only individual PVs, return numbers directly:
 =QS.EVALUATE.VALUES(pricer,A2:A10001,context,TRUE)
 ```
 
+The range version returns one PV per trade, as a column or transposed row. Excel
+caches the values; no `EvaluationResults` objects are retained. Share market
+contexts and pricers across positions. Use `QS.EVALUATE` and `QS.RESULT.*` when
+cashflows, risk, fair rates or other stored measures are needed.
+
 For large market histories, import each quote range and fixing history with one
 formula instead of one `SET` formula per observation:
 
@@ -296,6 +313,20 @@ formula instead of one `SET` formula per observation:
 =QS.QUOTES.FROM.RANGE("usd.quotes",B1,A3:D1002)
 =QS.FIXINGS.FROM.RANGE("usd.fixings",F3:H10002)
 ```
+
+Quote components can also come from separate arrays or nonadjacent ranges:
+
+```text
+=QS.QUOTES.FROM.RANGE("usd.quotes",B1,A3:A1002,H3:H1002)
+=QS.QUOTES.FROM.RANGE("usd.quotes",B1,A3#,H3#,I3#,J3#)
+```
+
+The arguments after the date are **Identifiers, Mid, Bid, Ask**. Each component
+can be a single cell, row array or column array, with the same number of entries
+in each supplied array. Bid and Ask are optional; blanks preserve absent sides
+without shifting subsequent entries. Omit Mid only when supplying another side
+or using the combined-table form. The combined table remains supported when all
+three side arguments are omitted.
 
 Quote columns are **Identifier, Mid**, optionally followed by **Bid, Ask**.
 Fixing columns are **Market index, Date, Value**, with dates as ISO text.
@@ -309,10 +340,17 @@ Run `cargo run -p quantsupport-xll --release --example benchmark_history` to
 measure attaching 10,000 shared fixings to 1,000 dated contexts. This benchmark
 excludes Excel callbacks, curve construction and calibration.
 
-The range version returns one PV per trade, as a column or transposed row. Excel
-caches the values; no `EvaluationResults` objects are retained. Share market
-contexts and pricers across positions. Use `QS.EVALUATE` and `QS.RESULT.*` when
-cashflows, risk, fair rates or other stored measures are needed.
+The ribbon checks a cheap native change token before refreshing its object
+list. Unchanged registries do not generate snapshots, and selecting an object
+does not run pricing or curve queries. Use **Run request** or **Refresh table**
+when you want those results.
+
+Use **QuantSupport → Reset Memory & Rebuild** to discard all native objects and
+AD tape storage in this Excel instance and reconstruct the open workbooks.
+This explicitly calculates all open workbooks, including in Manual mode, and
+keeps your calculation-mode setting. Existing handles become invalid; rebuilt
+formulas create fresh handles. Save formulas and inputs normally; the button
+does not change them.
 
 `QS.INSTRUMENT.*` creates native contracts for every exposed product family.
 `QS.TRADE.CREATE` adds position terms; `QS.PRICER.CREATE` selects an actual Rust

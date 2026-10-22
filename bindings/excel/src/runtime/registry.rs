@@ -440,11 +440,25 @@ impl Registry {
     }
 
     fn dependencies_current(&self, entry: &RegistryEntry) -> bool {
-        entry.dependencies.iter().all(|(identity, revision)| {
-            self.objects
+        self.stale_dependency(entry).is_none()
+    }
+
+    fn stale_dependency(&self, entry: &RegistryEntry) -> Option<String> {
+        let mut pending: Vec<_> = entry.dependencies.iter().collect();
+        let mut seen = HashSet::new();
+        while let Some((identity, revision)) = pending.pop() {
+            let Some(current) = self
+                .objects
                 .get(identity)
-                .is_some_and(|current| current.revision == *revision)
-        })
+                .filter(|current| current.revision == *revision)
+            else {
+                return Some(identity.clone());
+            };
+            if seen.insert(identity.as_str()) {
+                pending.extend(current.dependencies.iter());
+            }
+        }
+        None
     }
 
     fn record_write(&self, identity: &str) {
@@ -461,6 +475,9 @@ impl Registry {
     }
 
     pub fn set_cell_formula(&mut self, cell: CellId, formula: Option<String>) {
+        if self.cell_formulas.get(&cell) != formula.as_ref() {
+            browser_changed();
+        }
         if let Some(formula) = formula {
             self.cell_formulas.insert(cell, formula);
         } else {
@@ -474,10 +491,16 @@ impl Registry {
             || self
                 .cell_formulas
                 .get(&cell)
-                .is_some_and(|previous| previous != formula)
+                .is_some_and(|previous| !formulas_match(previous, formula))
         {
             self.release_cell(cell);
         }
+    }
+
+    pub fn cell_formula_matches(&self, cell: CellId, formula: &str) -> bool {
+        self.cell_formulas
+            .get(&cell)
+            .is_some_and(|previous| formulas_match(previous, formula))
     }
 
     pub fn finish_cell(&mut self, success: bool) {
@@ -505,9 +528,14 @@ impl Registry {
         let mut roots = std::mem::take(self.reads.get_mut());
         let writes = std::mem::take(self.writes.get_mut());
         if success && !writes.is_empty() {
+            if self.cell_outputs.get(&cell) != Some(&writes) {
+                browser_changed();
+            }
             self.cell_outputs.insert(cell, writes.clone());
         } else {
-            self.cell_outputs.remove(&cell);
+            if self.cell_outputs.remove(&cell).is_some() {
+                browser_changed();
+            }
         }
         if success {
             roots.extend(writes.iter().cloned());
@@ -515,6 +543,9 @@ impl Registry {
             roots.clear();
         }
         let previous = self.cell_roots.remove(&cell).unwrap_or_default();
+        if roots != previous {
+            browser_changed();
+        }
         for identity in roots.difference(&previous) {
             *self.references.entry(identity.clone()).or_default() += 1;
         }
@@ -542,6 +573,7 @@ impl Registry {
                 // A revision change prevents old contexts/results from being reused.
                 self.revision_clock = self.revision_clock.saturating_add(1);
                 entry.revision = self.revision_clock;
+                browser_changed();
             }
         }
     }
@@ -557,6 +589,9 @@ impl Registry {
     }
 
     pub fn release_cell(&mut self, cell: CellId) {
+        if self.cell_roots.contains_key(&cell) || self.cell_formulas.contains_key(&cell) {
+            browser_changed();
+        }
         self.cell_outputs.remove(&cell);
         self.cell_formulas.remove(&cell);
         if let Some(mutations) = self.cell_mutations.remove(&cell) {
@@ -650,6 +685,7 @@ impl Registry {
                 undo: HashMap::new(),
             },
         );
+        browser_changed();
         Ok(format_handle(&identity, revision))
     }
 
@@ -875,7 +911,11 @@ impl Registry {
             return Ok(false);
         };
         ensure_current(handle, &identity, parsed.revision, entry.revision)?;
-        Ok(self.objects.remove(&identity).is_some())
+        let removed = self.objects.remove(&identity).is_some();
+        if removed {
+            browser_changed();
+        }
+        Ok(removed)
     }
 
     /// Resets a mutable store or configuration collection when `reset_key`
@@ -916,6 +956,7 @@ impl Registry {
         self.revision_clock = next_revision(self.revision_clock, &identity)?;
         let revision = self.revision_clock;
         reset_object(&mut entry.object)?;
+        browser_changed();
         entry.revision = revision;
         entry.mutation_keys.clear();
         entry.undo.clear();
@@ -986,6 +1027,7 @@ impl Registry {
     /// Drops every live object.
     #[allow(dead_code)]
     pub fn clear(&mut self) {
+        browser_changed();
         self.objects.clear();
         self.cell_roots.clear();
         self.cell_outputs.clear();
@@ -997,20 +1039,6 @@ impl Registry {
 
     /// Validates a browser read without recording worksheet ownership or dependencies.
     pub fn browser_object(&self, handle: &str) -> Result<&QsObject, RegistryError> {
-        let mut pending = vec![handle.to_string()];
-        let mut seen = HashSet::new();
-        while let Some(current) = pending.pop() {
-            if !seen.insert(current.clone()) {
-                continue;
-            }
-            let entry = self.validated_entry(&current)?;
-            pending.extend(
-                entry
-                    .dependencies
-                    .iter()
-                    .map(|(identity, revision)| format_handle(identity, *revision)),
-            );
-        }
         Ok(&self.validated_entry(handle)?.object)
     }
 
@@ -1035,14 +1063,10 @@ impl Registry {
             return Err(wrong_type(parsed.kind, &entry.object));
         }
         ensure_current(handle, &identity, parsed.revision, entry.revision)?;
-        if let Some((dependency, _)) = entry.dependencies.iter().find(|(identity, revision)| {
-            self.objects
-                .get(*identity)
-                .is_none_or(|current| current.revision != **revision)
-        }) {
+        if let Some(dependency) = self.stale_dependency(entry) {
             return Err(RegistryError::StaleDependency {
                 handle: handle.to_string(),
-                dependency: dependency.clone(),
+                dependency,
             });
         }
         Ok(entry)
@@ -1115,6 +1139,7 @@ impl Registry {
             }
         }
         operation(&mut entry.object)?;
+        browser_changed();
         entry.revision = revision;
         entry
             .mutation_keys
@@ -1163,6 +1188,53 @@ fn identity(kind: &str, name: &str) -> String {
 
 fn format_handle(identity: &str, revision: u64) -> String {
     format!("{identity}:{revision}")
+}
+
+// Excel's C API and Formula/FormulaLocal may decorate XLL function names
+// differently. Preserve quoted text: object names are case-sensitive inputs.
+fn formulas_match(left: &str, right: &str) -> bool {
+    fn canonical(formula: &str) -> String {
+        let mut output = String::new();
+        let mut chars = formula.trim().chars().peekable();
+        let mut quote = None;
+        while let Some(ch) = chars.next() {
+            if let Some(delimiter) = quote {
+                output.push(ch);
+                if ch == delimiter {
+                    if chars.peek() == Some(&delimiter) {
+                        output.push(chars.next().unwrap_or(delimiter));
+                    } else {
+                        quote = None;
+                    }
+                }
+                continue;
+            }
+            if ch == '"' || ch == '\'' {
+                quote = Some(ch);
+                output.push(ch);
+                continue;
+            }
+            if ch == '@' || ch == '_' {
+                let rest = chars
+                    .clone()
+                    .take(9)
+                    .collect::<String>()
+                    .to_ascii_lowercase();
+                if ch == '@' && (rest.starts_with("qs.") || rest.starts_with("_xll.qs.")) {
+                    continue;
+                }
+                if ch == '_' && rest.starts_with("xll.qs.") {
+                    for _ in 0..4 {
+                        chars.next();
+                    }
+                    continue;
+                }
+            }
+            output.push(ch.to_ascii_lowercase());
+        }
+        output
+    }
+    left == right || canonical(left) == canonical(right)
 }
 
 fn ensure_current(
@@ -1228,6 +1300,16 @@ fn reset_object(object: &mut QsObject) -> Result<(), RegistryError> {
 thread_local! {
     static REGISTRIES: RefCell<HashMap<u64, Registry>> = RefCell::new(HashMap::new());
     static ACTIVE_WORKBOOK: Cell<u64> = const { Cell::new(0) };
+    static BROWSER_REVISION: Cell<u64> = const { Cell::new(1) };
+}
+
+/// Cheap change token; polling this never walks or serializes live objects.
+pub fn browser_revision() -> u64 {
+    BROWSER_REVISION.with(Cell::get)
+}
+
+pub(super) fn browser_changed() {
+    BROWSER_REVISION.with(|revision| revision.set(revision.get().saturating_add(1)));
 }
 
 pub fn select_workbook(workbook: u64) -> u64 {
@@ -1292,6 +1374,7 @@ pub fn live_object_count(all_workbooks: bool) -> usize {
 }
 
 pub fn close_workbook(workbook: u64) {
+    browser_changed();
     REGISTRIES.with(|registries| {
         let mut registries = registries.borrow_mut();
         registries.remove(&workbook);
@@ -1305,8 +1388,18 @@ pub fn close_workbook(workbook: u64) {
 }
 
 pub fn clear_workbooks() {
+    browser_changed();
     REGISTRIES.with(|registries| registries.borrow_mut().clear());
     release_tapes();
+}
+
+pub fn calculation_active() -> bool {
+    REGISTRIES.with(|registries| {
+        registries
+            .borrow()
+            .values()
+            .any(|registry| registry.active_cell.is_some())
+    })
 }
 
 fn release_tapes() {
@@ -1379,12 +1472,89 @@ pub fn release_workbook_cell_if_changed(
     });
 }
 
+pub fn workbook_cell_formula_matches(workbook: u64, cell: CellId, formula: &str) -> bool {
+    REGISTRIES.with(|registries| {
+        registries
+            .borrow()
+            .get(&workbook)
+            .is_some_and(|registry| registry.cell_formula_matches(cell, formula))
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::str::FromStr;
 
     use quantsupport::prelude::{Currency, Date, Quote, QuoteDetails, QuoteLevels};
+
+    #[test]
+    fn unchanged_calculations_do_not_refresh_the_browser() {
+        let mut registry = Registry::default();
+        let cell = CellId {
+            sheet: 12,
+            row: 0,
+            column: 0,
+        };
+        let calculate = |registry: &mut Registry| {
+            registry.begin_cell(cell);
+            registry.set_cell_formula(cell, Some("=QS.FIXINGS.CREATE(\"history\")".into()));
+            let handle = registry
+                .upsert_if_changed("history", QsObject::FixingStore(Box::default()), "empty")
+                .unwrap();
+            registry.finish_cell(true);
+            handle
+        };
+        let first = calculate(&mut registry);
+        let revision = browser_revision();
+        assert_eq!(calculate(&mut registry), first);
+        assert_eq!(browser_revision(), revision);
+        registry.object(&first).unwrap();
+        assert_eq!(browser_revision(), revision);
+        registry.release_cell(cell);
+        assert!(browser_revision() > revision);
+    }
+
+    #[test]
+    fn formula_comparisons_preserve_names_but_accept_excel_xll_decorations() {
+        assert!(formulas_match(
+            "=QS.QUOTES.CREATE(\"usd\",A1)",
+            "=@_xll.QS.QUOTES.CREATE(\"usd\",A1)"
+        ));
+        assert!(formulas_match(
+            "=qs.quotes.create(B1&\".quotes\",C1)",
+            "=QS.QUOTES.CREATE(B1&\".quotes\",C1)"
+        ));
+        assert!(formulas_match(
+            "=QS.FX.CREATE(\"a\"\"b\")",
+            "=_xll.QS.FX.CREATE(\"a\"\"b\")"
+        ));
+        assert!(!formulas_match(
+            "=QS.FX.CREATE(\"USD\")",
+            "=QS.FX.CREATE(\"usd\")"
+        ));
+        assert!(!formulas_match(
+            "=QS.FX.CREATE(\"@_xll.QS.value\")",
+            "=QS.FX.CREATE(\"QS.value\")"
+        ));
+        assert!(!formulas_match("=QS.FX.CREATE(B1)", "=QS.FX.CREATE(C1)"));
+        let cell = CellId {
+            sheet: 12,
+            row: 0,
+            column: 0,
+        };
+        let mut registry = Registry::default();
+        registry.begin_cell(cell);
+        registry.set_cell_formula(cell, Some("=QS.FX.CREATE(\"literal\")".into()));
+        let handle = registry
+            .upsert_if_changed("literal", QsObject::FxStore(Box::default()), "empty")
+            .unwrap();
+        registry.finish_cell(true);
+        registry.release_if_formula_changed(cell, "=@_xll.QS.FX.CREATE(\"literal\")", true);
+        assert!(registry.fx_store(&handle).is_ok());
+        registry.release_if_formula_changed(cell, "=QS.FX.CREATE(\"changed\")", true);
+        assert!(registry.fx_store(&handle).is_err());
+    }
 
     #[test]
     fn constructor_recalculation_reuses_revision_until_inputs_change() {
@@ -1759,6 +1929,18 @@ mod browser_tests {
             registry.browser_object(&root),
             Err(RegistryError::StaleHandle { .. })
         ));
+        assert!(registry
+            .handle_if_unchanged("leaf", "FxStore", "leaf")
+            .unwrap()
+            .is_none());
+        assert!(
+            !registry
+                .browser_objects()
+                .iter()
+                .find(|object| object.name == "leaf")
+                .unwrap()
+                .current_inputs
+        );
         assert!(matches!(
             registry.browser_object(&leaf),
             Err(RegistryError::StaleDependency { .. })

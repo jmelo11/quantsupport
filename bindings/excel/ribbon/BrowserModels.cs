@@ -4,6 +4,13 @@ using System.Runtime.Serialization;
 namespace QuantSupport.Ribbon
 {
     [DataContract]
+    internal sealed class ResetResponse
+    {
+        [DataMember(Name = "released_objects")] public ulong ReleasedObjects { get; set; }
+        [DataMember(Name = "error")] public string Error { get; set; }
+    }
+
+    [DataContract]
     internal sealed class Snapshot
     {
         [DataMember(Name = "workbook")] public string Workbook { get; set; }
@@ -29,6 +36,7 @@ namespace QuantSupport.Ribbon
         [DataMember(Name = "curves")] public List<string> Curves { get; set; }
 
         public string DisplayName => Name + " (" + Kind + ")";
+        public string Identity => Kind + "\0" + Name;
     }
 
     [DataContract]
@@ -57,6 +65,7 @@ namespace QuantSupport.Ribbon
     {
         [DataMember(Name = "label")] public string Label { get; set; }
         [DataMember(Name = "value")] public string Value { get; set; }
+        [DataMember(Name = "numeric")] public bool Numeric { get; set; }
     }
 
     [DataContract]
@@ -70,6 +79,10 @@ namespace QuantSupport.Ribbon
         [DataMember(Name = "pricer")] public string Pricer { get; set; } = "";
         [DataMember(Name = "request")] public string Request { get; set; } = "";
         [DataMember(Name = "target")] public uint Target { get; set; }
+        [DataMember(Name = "trade_date", EmitDefaultValue = false)] public string TradeDate { get; set; }
+        [DataMember(Name = "side", EmitDefaultValue = false)] public string Side { get; set; }
+        [DataMember(Name = "pricing_anchor", EmitDefaultValue = false)] public string PricingAnchor { get; set; }
+        [DataMember(Name = "anchor_value", EmitDefaultValue = false)] public double? AnchorValue { get; set; }
     }
 
     [DataContract]
@@ -80,6 +93,7 @@ namespace QuantSupport.Ribbon
         [DataMember(Name = "curves")] public List<string> Curves { get; set; }
         [DataMember(Name = "columns")] public List<string> Columns { get; set; }
         [DataMember(Name = "rows")] public List<List<string>> Rows { get; set; }
+        [DataMember(Name = "numeric_columns")] public List<int> NumericColumns { get; set; }
         [DataMember(Name = "parameters")] public List<List<Detail>> Parameters { get; set; }
         [DataMember(Name = "error")] public string Error { get; set; }
     }
