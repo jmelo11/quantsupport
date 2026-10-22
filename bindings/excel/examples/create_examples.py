@@ -10,10 +10,13 @@ import argparse
 from datetime import datetime
 import math
 from pathlib import Path
+import shutil
 import sys
 from tempfile import TemporaryDirectory
+from uuid import uuid4
 
 from workbook_layout import Study, context, formula, text
+from portfolio_example import create_portfolio
 
 
 SOFR_QUOTES = [
@@ -574,6 +577,11 @@ def create_interpolation(path):
 
 def validation_names(example):
     """Stable workbook names keep live checks independent of the visual layout."""
+    if example == "portfolio_aggregation_example":
+        return (["Portfolio_" + key for key in ("Context", "Policy", "Pricer", "Book", "Result")]
+                + [f"Portfolio_C{index:02}_{key}" for index in range(1, 7) for key in ("Instrument", "Trade", "Result")],
+                ["Portfolio_" + key for key in ("PV", "SumPV", "PVDifference", "DepositRate", "SofrSpread")]
+                + [f"Portfolio_C{index:02}_PV" for index in range(1, 7)])
     if example == "swap_pricing_example":
         return (["Swap_" + key for key in ("Context", "EstrContext", "SofrCurve", "EstrCurve", "Instrument", "Trade", "Policy", "Pricer", "Result", "Fair0", "Fair1")],
                 ["Swap_" + key for key in ("PV", "FairFixed", "FairFloat", "SofrDiscount", "EstrDiscount", "SofrForward", "EstrForward")])
@@ -610,7 +618,8 @@ def validate_in_excel(path, xll_path):
         excel.DisplayAlerts = False
         if not excel.RegisterXLL(str(xll_path)):
             raise RuntimeError(f"Excel could not load {xll_path}")
-        workbook = excel.Workbooks.Open(str(path.resolve()), UpdateLinks=0, ReadOnly=True)
+        # xlNormalLoad (0): do not attempt repair or data recovery.
+        workbook = excel.Workbooks.Open(str(path.resolve()), UpdateLinks=0, ReadOnly=True, CorruptLoad=0)
         workbook.ForceFullCalculation = True
         excel.CalculateFullRebuild()
 
@@ -675,6 +684,31 @@ def validate_in_excel(path, xll_path):
                 for first, second in (("A17", "A8"), ("A37", "B27")):
                     if layouts.Range(first).Value2 != layouts.Range(second).Value2:
                         raise RuntimeError("Header-free and transposed curve values do not align")
+            if path.stem == "portfolio_aggregation_example":
+                if abs(value("Portfolio_PVDifference")) > 1e-8:
+                    raise RuntimeError("Portfolio PV does not reconcile to individual positions")
+                coupon_sheet = workbook.Worksheets("5 Coupons")
+                if "%" in coupon_sheet.Range("I8").NumberFormat or "%" not in coupon_sheet.Range("J8").NumberFormat:
+                    raise RuntimeError("Coupon notionals and rates have incorrect display units")
+                rows = coupon_sheet.Range("A7:R200").Value2
+                columns = {label: index for index, label in enumerate(rows[0])}
+                coupons = [row for row in rows[1:] if row[0] is not None]
+                deposits = [row for row in coupons if row[columns["Type"]] == "FixedRateCoupon"
+                            and row[columns["Accrual end"]] == value("Portfolio_DepositMaturity")]
+                if len(deposits) != 1 or not math.isclose(deposits[0][columns["Coupon rate"]], value("Portfolio_DepositRate"), abs_tol=1e-12):
+                    raise RuntimeError("Deposit coupons did not combine at their weighted rate")
+                floating = [row for row in coupons if row[columns["Type"]] == "FloatingRateCoupon"]
+                if {row[columns["Fixing index"]] for row in floating} != {"SOFR", "TermSOFR3m"}:
+                    raise RuntimeError("Portfolio cashflows lost their distinct fixing indices")
+                paid = [row for row in floating if row[columns["Fixing index"]] == "SOFR" and row[columns["Signed notional"]] < 0]
+                if not paid or any(not math.isclose(row[columns["Spread"]], value("Portfolio_SofrSpread"), abs_tol=1e-12) for row in paid):
+                    raise RuntimeError("SOFR coupons did not combine at their weighted spread")
+                summary = workbook.Worksheets("6 Cashflows").Range("A7:F100").Value2
+                if summary[0] != ("Payment date", "Currency", "Interest", "Capital", "Other", "Total"):
+                    raise RuntimeError("Portfolio cashflow summary has unexpected columns")
+                payments = [row for row in summary[1:] if row[0] is not None]
+                if not payments or any(not math.isclose(sum(row[2:5]), row[5], abs_tol=1e-8) for row in payments):
+                    raise RuntimeError("Portfolio interest and capital do not reconcile to payments")
         excel.Calculate()
         if [value(name) for name in handle_names] != before:
             raise RuntimeError("Unchanged recalculation changed object handles")
@@ -686,9 +720,26 @@ def validate_in_excel(path, xll_path):
         excel.Quit()
 
 
+def publish_workbook(source, destination):
+    """Publish atomically with the destination folder's inherited permissions.
+
+    Windows temporary directories can grant access only to their creator.
+    Moving a file out of one preserves that private ACL. Copy the content to
+    a normal sibling file first so the published workbook inherits its folder's
+    access rules instead of the temporary directory's rules.
+    """
+    destination = Path(destination)
+    staged = destination.with_name(f".{destination.name}.{uuid4().hex}.tmp")
+    try:
+        shutil.copyfile(source, staged)
+        staged.replace(destination)
+    finally:
+        staged.unlink(missing_ok=True)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--example", choices=("all", "swap", "historical", "loans", "bonds", "interpolation"), default="all")
+    parser.add_argument("--example", choices=("all", "swap", "historical", "loans", "bonds", "interpolation", "portfolio"), default="all")
     parser.add_argument("--output-dir", type=Path, default=Path(__file__).resolve().parent)
     parser.add_argument("--xll-path", type=Path, help="Validate with native Windows Excel; requires pywin32")
     args = parser.parse_args()
@@ -707,11 +758,12 @@ def main():
             generate(path)
             if args.xll_path:
                 validate_in_excel(path, args.xll_path)
-            path.replace(args.output_dir / filename)
+            publish_workbook(path, args.output_dir / filename)
         print(f"Created {args.output_dir / filename}")
 
 
 EXAMPLES = [
+    ("portfolio", "portfolio_aggregation_example.xlsx", create_portfolio),
     ("swap", "swap_pricing_example.xlsx", create_swap),
     ("historical", "historical_pricing_example.xlsx", create_historical),
     ("loans", "loan_pricing_example.xlsx", create_loans),

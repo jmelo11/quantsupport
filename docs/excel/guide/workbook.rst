@@ -39,6 +39,7 @@ also work with the native XLL alone.
 Download the `swap example workbook <https://jmelo11.github.io/quantsupport/downloads/swap_pricing_example.xlsx>`_
 or the `historical pricing workbook <https://jmelo11.github.io/quantsupport/downloads/historical_pricing_example.xlsx>`_.
 Further notebook-style studies cover
+`portfolio aggregation <https://jmelo11.github.io/quantsupport/downloads/portfolio_aggregation_example.xlsx>`_,
 `loans, funding, and borrower credit <https://jmelo11.github.io/quantsupport/downloads/loan_pricing_example.xlsx>`_,
 `bond anchors and risk <https://jmelo11.github.io/quantsupport/downloads/bond_pricing_example.xlsx>`_, and
 `interpolation and schedules <https://jmelo11.github.io/quantsupport/downloads/interpolation_example.xlsx>`_.
@@ -237,6 +238,38 @@ Sensitivities are raw derivatives with respect to named risk factors. For a
 decimal-rate quote, multiplying by ``0.0001`` estimates the value change for a
 +1 bp move. This is not a universal conversion for futures prices, FX spots,
 or volatility quotes. Keep risk labels and units with the table.
+
+Aggregate a trade range
+-----------------------
+
+The portfolio workbook uses two deposits, three receive-fixed swaps and one
+short swap under USD/SOFR discounting. It builds both SOFR and TermSOFR3m
+projection curves from visible zero-rate inputs. Follow **3 Build** to the
+contiguous ``Portfolio_Members`` range and its two aggregation formulas:
+
+.. code-block:: text
+
+   =QS.PORTFOLIO.CREATE("Portfolio.Book",Portfolio_Members)
+   =QS.PORTFOLIO.EVALUATE("Portfolio.Result",Portfolio_Book,Portfolio_Pricer,Portfolio_Context,Portfolio_Requests,"USD")
+   =QS.RESULT.VALUE(Portfolio_Result)
+   =QS.RESULT.COUPONS(Portfolio_Result)
+   =QS.RESULT.CASHFLOW.SUMMARY(Portfolio_Result)
+   =QS.RESULT.SENSITIVITIES(Portfolio_Result)
+
+These use the workbook's defined names; its Build tab shows the actual formulas
+and object names. One pricer handle applies to every member. Alternatively,
+pass a range with one pricer per member. The returned object is standard
+``EvaluationResults``. PV and sensitivities require one common pricing currency;
+the currency argument declares that unit and performs no FX conversion.
+
+The deposits' default 100,000 at 4% and 300,000 at 6% combine to a 400,000 coupon
+at 5.5%. Paid SOFR coupons combine at a 25 bp spread on -400,000 principal.
+TermSOFR3m coupons remain distinct, as do opposing directions and incompatible
+conventions. **5 Coupons** retains types, accrual dates, both contractual and
+effective fixing indices, principal and weighted quotes. **6 Cashflows** is a
+separate payment-date view of signed interest, capital and other payments;
+it does not allocate accrual NII. **4 Results** checks PV against individually
+evaluated positions, and **7 Risk** keeps the original sensitivity labels.
 
 Handles, revisions, and calculation
 -----------------------------------

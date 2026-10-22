@@ -39,6 +39,9 @@ setup guide and function reference. The side panel lists live objects belonging
 to its workbook, with search, type filters, current handles, source formulas and
 dependencies. Select an object, choose a source, and click **Go to cell** to edit
 its worksheet definition. **Copy handle** copies its current runtime handle.
+All ribbon grids support **Ctrl+A** to select every row and **Ctrl+C** to copy
+the selected values with column headings. Right-click a table for **Select all**,
+**Copy values**, or **Copy entire table**; pasted values form a tabular range in Excel.
 
 Select a trade to open **Trade requests**. Choose an existing pricing context,
 an explicit pricer and **PV**, **Cashflows** or **Fair rate**, then click
@@ -46,6 +49,9 @@ an explicit pricer and **PV**, **Cashflows** or **Fair rate**, then click
 the selected pricer determines which requests it supports. Results appear in
 the panel without adding worksheet formulas or stored results. Changing an input
 selection clears the previous result; requests run again only when you click.
+`BondPricer` leaves `FairRate` absent. For bonds, request `YieldToMaturity`,
+`ModifiedDuration`, `ZSpread` or `OAS` through worksheet evaluation as supported
+by the selected pricer and anchor; `QS.RESULT.YIELD` reads the yield result.
 
 Select **Curves**, then a context, curve configuration or constructed curve/store.
 Choose a curve to see its dates, discount factors, zero rates and forwards.
@@ -131,7 +137,8 @@ IntelliSense companion.
 The [swap workbook](https://jmelo11.github.io/quantsupport/downloads/swap_pricing_example.xlsx) and
 [historical workbook](https://jmelo11.github.io/quantsupport/downloads/historical_pricing_example.xlsx) contain inputs
 and formulas; Windows Excel calculates them after the XLL is loaded.
-Additional studies cover [loans](examples/loan_pricing_example.xlsx),
+Additional studies cover [portfolio aggregation](examples/portfolio_aggregation_example.xlsx),
+[loans](examples/loan_pricing_example.xlsx),
 [bond analytics](examples/bond_pricing_example.xlsx), and
 [interpolation and schedules](examples/interpolation_example.xlsx).
 Each opens on **Start Here**, with linked, numbered tabs, editable blue inputs,
@@ -218,7 +225,63 @@ live object count, or `QS.OBJECT.COUNT(TRUE)` for the whole Excel instance.
 `QS.OBJECT.RESET(store, reset_key)` / `QS.STORE.RESET` remain
 available for an explicit reset of an entire mutable collection.
 
-For portfolios needing only PV, return numbers directly:
+For aggregation of an ordered trade range, create a portfolio and evaluate it:
+
+```text
+=QS.PORTFOLIO.CREATE("Book",A2:A1001)
+=QS.PORTFOLIO.EVALUATE("Book.Results",portfolio,pricer,context,requests,"USD")
+=QS.RESULT.VALUE(result)
+=QS.RESULT.SENSITIVITIES(result)
+=QS.RESULT.CASHFLOWS(result)
+=QS.RESULT.COUPONS(result)
+=QS.RESULT.CASHFLOW.SUMMARY(result)
+```
+
+Open the guided [portfolio workbook](examples/portfolio_aggregation_example.xlsx)
+for editable deposits and swaps, weighted coupon quotes, distinct fixing
+indices, PV reconciliation, sensitivities and interest/capital payments.
+
+Here `portfolio` and `result` refer to the first and second formula's handle
+cells. `requests` is a cell or range containing **Value**, **Sensitivities** and/or
+**Cashflows**. `pricer` may be one handle for every member or a range with one
+pricer per trade, allowing mixed instruments. Repeated trade handles count as
+repeated positions. Trade and pricer edits invalidate dependent portfolio results.
+
+The result is the same **EvaluationResults** type used by `QS.EVALUATE`.
+Unsupported aggregate requests remain absent, and a measure omitted by any
+member remains absent for the whole portfolio. Monetary PVs and raw derivatives
+must use one common pricing currency, explicitly identified by the final argument;
+this label performs no FX conversion. Use compatible policies or separate
+currency portfolios. The currency argument can be blank for cashflow-only runs.
+
+Each member's completed numeric results are accumulated immediately. Identical
+risk-factor labels are summed with compensated arithmetic, and built-in pricers
+reuse their per-trade AD tape. The portfolio retains no combined AD graph or
+per-trade result registry objects. Cashflows retain their original currencies,
+coupon types, fixing indices, accrual start/end dates, day count, rate conventions,
+overnight observation rules and payoffs. Only compatible coupons are grouped;
+fixed rates and linear floating spreads use notional-weighted averages.
+Pay and receive directions remain separate, avoiding undefined averages at zero
+net notional. Daily-compounded spreads and different option payoffs are kept
+distinct. Coupons lacking contractual metadata remain individual rows.
+`QS.RESULT.COUPONS` displays the signed notional, weighted quote, contractual
+coupon index, effective fixing index (including leg overrides) and conventions.
+These terms are also shown in ribbon cashflow tables. In Rust,
+`CouponDetails::to_coupon` reconstructs a numeric coupon; retain `forward_index`
+on its containing leg when an override is present.
+The summary reader shows **Payment date, Currency, Interest, Capital, Other, Total**.
+Interest includes coupons; capital includes redemptions and signed advances;
+unclassified payments stay in Other. Historical payments remain included.
+The summary is a separate view; the detailed coupon information remains in the
+standard results. These are signed undiscounted cash payments; accrual-period NII
+is a separate step. PV and sensitivities continue to be computed from the original
+trades, including any model-dependent schedules or prepayments.
+
+Fixed-rate deposits are available as `QS.INSTRUMENT.FIXED.DEPOSIT`, followed by
+`QS.TRADE.CREATE`, or directly as `QS.TRADE.FIXED.DEPOSIT`. Evaluate deposit positions
+with `DiscountedCashflowPricer` and an explicit fixed-income discount policy.
+
+For portfolios needing only individual PVs, return numbers directly:
 
 ```text
 =QS.EVALUATE.VALUE(pricer,trade,context)

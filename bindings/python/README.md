@@ -91,6 +91,50 @@ negative for payments, including initial advances. They contain no PV column.
 
 ## Interface conventions
 
+For portfolio aggregation, use the same explicit trades and receive standard
+`EvaluationResults`:
+
+```python
+book = qs.Portfolio([position, another_position])
+with context:
+    result = book.evaluate(
+        context, ["Value", "Sensitivities", "Cashflows"], value_currency="USD",
+    )
+    print(result.price)
+    print(result.sensitivities)
+    print(result.coupons)  # type, market_index, fixing_index, dates, notional, rate/spread, conventions
+    print(result.cashflow_summary)  # payment_date, currency, interest, capital, other, total
+```
+
+Open the complete [portfolio aggregation notebook](examples/sensitivity/portfolio_aggregation.ipynb)
+for an editable deposit/swap book, weighted quotes, distinct fixing indices,
+individual-position reconciliation and optional CSV exports.
+
+The portfolio prices one member at a time, immediately summing completed numeric
+results and duplicate risk factors. Built-in pricers reuse the per-trade AD tape;
+no portfolio-wide AD graph or list of individual valuation results is retained.
+`value_currency` identifies the common pricing currency of member PVs and raw
+derivatives; it performs no FX conversion. Cashflow currencies remain separate.
+Unsupported aggregate measures remain absent, as does any measure omitted by a
+member. Repeated entries count as repeated positions. Cashflows preserve coupon
+types, contractual and effective fixing indices (including leg overrides),
+accrual dates, day counts, overnight conventions and payoffs.
+Compatible fixed coupons use notional-weighted rates; compatible linear floating
+coupons use notional-weighted spreads. Pay and receive directions remain separate;
+daily-compounded spreads and different option payoffs are kept distinct. Coupons
+without contractual metadata remain individual rows. `result.coupons` exposes
+these contractual terms; historical payments are retained. The separate summary
+view separates net coupon interest from signed redemptions and
+advances, leaving unknown payment types in Other. It does not allocate accrual NII.
+
+Fixed-rate deposits already use the shared Rust `MakeFixedRateDeposit` /
+`FixedRateDeposit` instrument and are exposed as `qs.FixedRateDeposit` (also
+`qs.instruments.FixedRateDeposit`). Create a `qs.Trade` to place one in a portfolio.
+
+`BondPricer` leaves `FairRate` absent. For bond price/spread anchors, use
+`YieldToMaturity`, `ModifiedDuration`, `ZSpread` or the selected model's `OAS`
+request instead.
+
 - Built-in instruments contain terms, not positions. `Trade` owns execution
   date, side, size overrides, and bond anchors. `evaluate()` and `NettingSet`
   require explicit trades. Do not put `side` or `trade_date` in product dicts.
@@ -140,7 +184,7 @@ versions and whether the kernel matched its caller. Without `--write` it leaves
 sources unchanged; Sphinx renders saved outputs without executing notebooks.
 The legacy external sensitivity benchmark has additional ORE/CurveEngine
 prerequisites and is not part of that runner's default directory. To validate
-all fourteen studies:
+all fifteen studies:
 
 ```sh
 python -m pip install "open-source-risk-engine==1.8.14.1" "curveengine @ git+https://github.com/jmelo11/curveengine.git@d7e000da626e08ff2be5d34561597065340b017e"

@@ -1,16 +1,20 @@
 """Portable checks of workbook navigation and native formula dependencies."""
 
+import ast
 import json
 from copy import deepcopy
 from pathlib import Path
 import re
+import shutil
 import subprocess
+import sys
 from tempfile import TemporaryDirectory
 import unittest
+from uuid import uuid4
 from xml.etree import ElementTree as ET
 from zipfile import ZipFile
 
-from create_examples import EXAMPLES, LOAN_CASES, validation_names
+from create_examples import EXAMPLES, LOAN_CASES, publish_workbook, validation_names
 
 ROOT = Path(__file__).resolve().parents[3]
 NS = {"s": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
@@ -159,6 +163,34 @@ class Workbook:
         return dependencies
 
 
+class PublishTests(unittest.TestCase):
+    def test_published_workbook_inherits_destination_access_and_preserves_contents(self):
+        directory = ROOT / "target" / ("workbook-publish-test-" + uuid4().hex)
+        directory.mkdir(parents=True)
+        self.assertTrue(directory.resolve().is_relative_to((ROOT / "target").resolve()))
+        self.addCleanup(shutil.rmtree, directory)
+        baseline = directory / "ordinary-file.xlsx"
+        baseline.write_bytes(b"baseline")
+        destination = directory / "published.xlsx"
+        with TemporaryDirectory(dir=directory) as temporary:
+            source = Path(temporary) / "private.xlsx"
+            source.write_bytes(b"validated workbook contents")
+            publish_workbook(source, destination)
+        self.assertEqual(destination.read_bytes(), b"validated workbook contents")
+        self.assertFalse(list(directory.glob("*.tmp")))
+        if sys.platform == "win32":
+            powershell = shutil.which("powershell") or shutil.which("pwsh")
+            self.assertIsNotNone(powershell, "Windows access-rule validation requires PowerShell")
+
+            def access_rules(path):
+                quoted = "'" + str(path).replace("'", "''") + "'"
+                command = f"(Get-Acl -LiteralPath {quoted}).GetSecurityDescriptorSddlForm([System.Security.AccessControl.AccessControlSections]::Access)"
+                return subprocess.check_output([powershell, "-NoProfile", "-Command", command], text=True).strip()
+
+            self.assertEqual(access_rules(destination), access_rules(baseline),
+                             "Published workbooks must inherit the output folder's access rules")
+
+
 class WorkbookTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -299,6 +331,43 @@ class WorkbookTests(unittest.TestCase):
             fair = [args for args in evaluate if args[0].startswith(f'"Loan.C{index:02}.Fair')]
             count = 0 if label == "Bounded floating" else len(segments) or 1
             self.assertEqual([args[4] for args in fair], [f"Loan_Request{target}" for target in range(count)])
+
+    def test_portfolio_uses_a_trade_handle_range_and_preserves_detailed_result_views(self):
+        book = self.books["portfolio"]
+        members = book.names["Portfolio_Members"]
+        target = re.fullmatch(SHEET_RANGE, members)
+        cells = book.range_cells(target[1], target[2])
+        self.assertEqual(len(cells), 6)
+        for index, (sheet, address) in enumerate(cells, 1):
+            self.assertEqual(book.cells[sheet][address].find("s:f", NS).text, f"Portfolio_C{index:02}_Trade")
+        views = {}
+        for sheet, address, expression, _ in book.formulas():
+            if expression.startswith("_xll.QS.PORTFOLIO.CREATE("):
+                self.assertEqual(arguments(expression)[1], "Portfolio_Members")
+            if expression.startswith("_xll.QS.PORTFOLIO.EVALUATE("):
+                self.assertEqual(arguments(expression)[1:], ["Portfolio_Book", "Portfolio_Pricer", "Portfolio_Context", "Portfolio_Requests", "Portfolio_Currency"])
+            if sheet in ("5 Coupons", "6 Cashflows", "7 Risk") and expression.startswith("_xll.QS."):
+                self.assertEqual(address, "A7")
+                self.assertEqual(arguments(expression), ["Portfolio_Result"])
+                views[sheet] = expression.split("(")[0]
+        self.assertEqual(views, {"5 Coupons": "_xll.QS.RESULT.COUPONS", "6 Cashflows": "_xll.QS.RESULT.CASHFLOW.SUMMARY", "7 Risk": "_xll.QS.RESULT.SENSITIVITIES"})
+
+    def test_portfolio_default_positions_match_the_python_notebook(self):
+        source = ROOT / "bindings/python/examples/sensitivity/portfolio_aggregation.ipynb"
+        notebook = json.loads(source.read_text(encoding="utf-8"))
+        code = "\n\n".join("".join(cell["source"]) for cell in notebook["cells"] if cell["cell_type"] == "code")
+        assignments = {node.targets[0].id: node.value for node in ast.parse(code).body
+                       if isinstance(node, ast.Assign) and isinstance(node.targets[0], ast.Name)}
+        positions = ast.literal_eval(assignments["POSITIONS"])
+        book = self.books["portfolio"]
+        for index, spec in enumerate(positions, 1):
+            prefix = f"Portfolio_C{index:02}_"
+            actual = [book.literal(prefix + suffix) for suffix in ("Name", "Kind", "Notional", "Rate", "Spread", "Index", "Side")]
+            actual[2:5] = [float(value or 0) for value in actual[2:5]]
+            actual[-1] = {"Receive": "LongReceive", "Pay": "PayShort"}[actual[-1]]
+            self.assertEqual(tuple(actual), spec)
+        for name, key in [("ValuationDate", "VALUATION_DATE"), ("Start", "START"), ("DepositMaturity", "DEPOSIT_MATURITY"), ("SwapMaturity", "SWAP_MATURITY")]:
+            self.assertEqual(book.literal("Portfolio_" + name), ast.literal_eval(assignments[key]))
 
     def test_swap_markets_bootstrap_with_their_actual_collateral_assumptions(self):
         book = self.books["swap"]

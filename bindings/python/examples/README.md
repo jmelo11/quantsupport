@@ -5,7 +5,7 @@ Each study introduces a contract or market problem, states its assumptions and
 uses Python calculations to interpret the native results. They assume
 familiarity with the products and introduce the library as it is used.
 
-Thirteen studies cover the Python binding. A fourteenth historical benchmark
+Fourteen studies cover the Python binding. A fifteenth historical benchmark
 compares ORE/CurveEngine with recorded Rust results. Run cells in order in a
 fresh kernel; saved outputs are retained for publication.
 
@@ -42,9 +42,15 @@ to that scope.
 | 7 | [Curves and volatility](volatilitysurface/curves_and_volatility.ipynb) | Configure and inspect curves and surfaces, query forwards and smiles, and explain market-shock P&L |
 | 8 | [Simulations and their results](hullwhite/simulations.ipynb) | Model calibration, path count/seed/grid, retrieving paths, seeds and sampling error |
 | 9 | [Portfolio valuation and risk](sensitivity/portfolio_risk.ipynb) | Aggregate quote risk and payments, distinguish DV01 from vega, and check AAD against full revaluation |
-| 10 | [Callable stepped-coupon bond](valuation/bonds/stepped_coupon_bond.ipynb) | Typed terms, calibrated tree/Fourier engines, OAS and risk |
-| 11 | [Scripted cashflows](scripting/scripted_cashflows.ipynb) | Dated observations/payments and the native-versus-scripted bond check |
-| 12 | [Exposure and XVA](cva/xva.ipynb) | Netting sets, client terms, exposure profiles and adjustment risk |
+| 10 | [Coupon and cashflow aggregation](sensitivity/portfolio_aggregation.ipynb) | Use `qs.Portfolio`, retain fixing indices, inspect weighted quotes, and separate interest/capital payments |
+| 11 | [Callable stepped-coupon bond](valuation/bonds/stepped_coupon_bond.ipynb) | Typed terms, calibrated tree/Fourier engines, OAS and risk |
+| 12 | [Scripted cashflows](scripting/scripted_cashflows.ipynb) | Dated observations/payments and the native-versus-scripted bond check |
+| 13 | [Exposure and XVA](cva/xva.ipynb) | Netting sets, client terms, exposure profiles and adjustment risk |
+
+For a notebook demonstrating `qs.Portfolio`, weighted coupons and
+interest/capital payments, open
+[`sensitivity/portfolio_aggregation.ipynb`](sensitivity/portfolio_aggregation.ipynb).
+It has a [matching Excel workbook](../../excel/examples/portfolio_aggregation_example.xlsx).
 
 The introduction is the recommended starting point. For a closer look at curve
 construction before pricing, read [bootstrap/curves.ipynb](bootstrap/curves.ipynb).
@@ -71,9 +77,10 @@ and activate it (`source .venv/bin/activate` on macOS/Linux, or
 Conda environment. Select a notebook kernel using the same interpreter into
 which `maturin develop` installed the extension.
 
-Open any notebook and run its cells in order. Each folder contains its own copy
-of `market_data.py`, imported with `from market_data import load_market`.
-That file resolves market and configuration paths relative to its own location.
+Open any notebook and run its cells in order. Most studies import a local copy
+of `market_data.py` with `from market_data import load_market`. That file resolves
+market and configuration paths relative to its own location. The portfolio
+aggregation notebook defines its small market inline.
 No helper-package installation or notebook magic is needed. The scripting
 notebook also uses its adjacent event builder.
 
@@ -91,7 +98,7 @@ root using the intended environment's Python:
 python bindings/python/examples/run_notebooks.py
 ```
 
-This runs the thirteen binding studies. The historical benchmark additionally
+This runs the fourteen binding studies. The historical benchmark additionally
 requires the optional `ORE` and `curveengine` packages; it uses its own adjacent
 configuration and recorded-results JSON files. The benchmark uses ORE
 1.8.14.1 and CurveEngine source revision
@@ -105,7 +112,7 @@ environment:
 python -m pip install "open-source-risk-engine==1.8.14.1" "curveengine @ git+https://github.com/jmelo11/curveengine.git@d7e000da626e08ff2be5d34561597065340b017e"
 ```
 
-To run all fourteen, or only that benchmark:
+To run all fifteen, or only that benchmark:
 
 ```bash
 python bindings/python/examples/run_notebooks.py --include-benchmark
@@ -181,8 +188,9 @@ native automatic-differentiation tape is managed per thread.
 Simulation configurations add a model and a path-generation setup. A raw rate
 path is not a product value. Script evaluation and the XVA engine combine
 models with future payments to answer different questions. Ordinary portfolio
-valuation is a loop over trades plus labelled pandas aggregation; legal netting
-is specified separately with `NettingSet`.
+valuation uses `Portfolio(trades).evaluate(...)` for streaming numeric aggregation;
+the older risk study also shows labelled pandas reconciliation. Legal netting is
+specified separately with `NettingSet`.
 
 Python-defined instruments and pricers can also participate through
 `register_pricer`; see the [binding extension guide](../README.md#extending-the-library-in-python).
