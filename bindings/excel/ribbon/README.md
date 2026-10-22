@@ -24,7 +24,7 @@ the AD tapes after checking that no worksheet call is active. Workbook session
 IDs continue increasing so handles saved before a reset cannot become valid again.
 Queries validate handles and their upstream revisions without recording worksheet
 reads. They borrow the named workbook's existing registry without selecting it.
-Trade requests use the selected native pricer/context and return owned result
+Pricing requests use the selected native pricer/context and return owned result
 tables without registering EvaluationResults. All requests run in queued macros,
 with workbook/window checks and cancellation when the selection changes.
 Sheet IDs and one-based source coordinates are resolved to Excel references
@@ -35,8 +35,15 @@ Workbook, Window or Range COM wrappers are cached. A Forms timer refreshes the
 visible active pane when Excel is ready and the native change token changes,
 and disposes panes for closed windows. The object grid uses virtual rows, and
 only the visible explorer tab binds its context/pricer selectors.
-Details is always available; Trade requests appears for trades, and Curves appears
-for objects with curves. Selection and the chosen tab follow the same object when
+Details is always available; Pricing appears for instruments and trades, and
+Curves appears for objects with curves. **Price Selection** in the ribbon opens
+Pricing for the active handle cell; **Price selected** is also available in the
+panel. Instrument previews pass an explicit trade date and Receive/Pay side to
+the native contract-to-trade conversion, retaining the instrument notional.
+The date starts at the selected context's valuation date. Bonds require an
+explicit CleanPrice, DirtyPrice or ZSpread anchor and value. Preview trades and
+results are temporary; stored trade selections use their original position terms.
+Selection and the chosen tab follow the same object when
 recalculation replaces its handle revision, including after quote corrections.
 Normal browsing does not request workbook recalculation. Trade pricing and
 curve queries are explicit; choose a view and click its request/refresh button.

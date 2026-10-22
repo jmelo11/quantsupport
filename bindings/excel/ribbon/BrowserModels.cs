@@ -79,6 +79,10 @@ namespace QuantSupport.Ribbon
         [DataMember(Name = "pricer")] public string Pricer { get; set; } = "";
         [DataMember(Name = "request")] public string Request { get; set; } = "";
         [DataMember(Name = "target")] public uint Target { get; set; }
+        [DataMember(Name = "trade_date", EmitDefaultValue = false)] public string TradeDate { get; set; }
+        [DataMember(Name = "side", EmitDefaultValue = false)] public string Side { get; set; }
+        [DataMember(Name = "pricing_anchor", EmitDefaultValue = false)] public string PricingAnchor { get; set; }
+        [DataMember(Name = "anchor_value", EmitDefaultValue = false)] public double? AnchorValue { get; set; }
     }
 
     [DataContract]

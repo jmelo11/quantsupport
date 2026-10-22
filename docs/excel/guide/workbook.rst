@@ -32,6 +32,15 @@ in the selected cell. The panel refreshes while Excel is ready and never starts
 calculation. These dates describe the market and contract, not object creation
 times. **Setup Guide** opens the worksheet construction examples.
 
+To price an existing instrument or trade, select its handle cell and click
+**Price Selection**, or select it in **Instruments & Trades** and open **Pricing**.
+Choose an existing context, explicit pricer and PV, Cashflows or Fair rate, then
+click **Run request**. Instrument previews use the displayed trade date and
+Receive/Pay side with the instrument notional; the date initially follows the
+context's valuation date. A bond preview also needs its CleanPrice, DirtyPrice
+or ZSpread anchor and value. Existing trades retain their stored position terms.
+Results appear in the panel without creating worksheet trade or result handles.
+
 The ribbon is optional and requires .NET Framework 4.6.2 or later. Extract the
 native XLL and ribbon from the same ZIP into the same folder. Worksheet functions
 also work with the native XLL alone.

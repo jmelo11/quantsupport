@@ -34,6 +34,7 @@ namespace QuantSupport.Ribbon
         public void ShowCurves(IRibbonControl control) { Run(() => BrowserPanes.Show("Curves")); }
         public void ShowAll(IRibbonControl control) { Run(() => BrowserPanes.Show("All objects")); }
         public void InspectSelection(IRibbonControl control) { Run(() => BrowserPanes.Inspect()); }
+        public void PriceSelection(IRibbonControl control) { Run(() => BrowserPanes.PriceSelection()); }
         public void RefreshBrowser(IRibbonControl control) { Run(() => BrowserPanes.Show(null)); }
         public void ResetMemory(IRibbonControl control)
         {

@@ -5,6 +5,7 @@
         <group id="qsObjects" label="Workbook objects">
           <button id="qsContexts" label="Pricing Contexts" size="large" imageMso="TableProperties" onAction="ShowContexts" screentip="Browse pricing contexts and their market dates" />
           <button id="qsInstruments" label="Instruments &amp; Trades" size="large" imageMso="TableInsert" onAction="ShowInstruments" />
+          <button id="qsPrice" label="Price Selection" size="large" imageMso="TableProperties" onAction="PriceSelection" screentip="Price the selected instrument or trade" supertip="Opens Pricing for a handle in the active cell. Choose a context, pricer and request. Instrument previews use the displayed trade date, side and instrument notional." />
           <button id="qsCurves" label="Curves" size="large" imageMso="TableProperties" onAction="ShowCurves" screentip="Explore curve tables, calibration instruments and their parameters" />
           <button id="qsAll" label="All Objects" imageMso="FindDialog" onAction="ShowAll" />
           <button id="qsInspect" label="Inspect Selection" imageMso="ZoomToSelection" onAction="InspectSelection" />

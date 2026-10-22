@@ -32,6 +32,9 @@ internal static class Program
             Check(BrowserDisplay.Resolve(snapshot, new BrowserObject { Name = context.Name, Kind = "QuoteStore" }) == null, "Same name in a different family must not resolve");
         }
         Check(new Location { Sheet = "Sheet1", Column = 16384, Row = 1048576 }.Address == "Sheet1!XFD1048576", "Excel edge coordinates");
+        Check(BrowserDisplay.CanPrice(new BrowserObject { Family = "Instruments", Kind = "Swap" }), "Instrument selection must expose pricing");
+        Check(BrowserDisplay.CanPrice(new BrowserObject { Family = "Trades", Kind = "SwapTrade" }), "Trade selection must expose pricing");
+        Check(!BrowserDisplay.CanPrice(new BrowserObject { Family = "Pricing contexts" }) && !BrowserDisplay.CanPrice(null), "Unrelated selections must hide pricing");
         using (var input = File.OpenRead(Path.Combine(AppContext.BaseDirectory, "query-response.json")))
         {
             var response = (BrowserResponse)new DataContractJsonSerializer(typeof(BrowserResponse)).ReadObject(input);
@@ -48,19 +51,47 @@ internal static class Program
             using (var output = new MemoryStream())
             {
                 serializer.WriteObject(output, query);
+                var json = System.Text.Encoding.UTF8.GetString(output.ToArray());
+                Check(!json.Contains("\"trade_date\"") && !json.Contains("\"side\"") && !json.Contains("\"anchor_value\""), "Stored trade requests must omit preview fields on the wire");
                 output.Position = 0;
                 var copy = (BrowserQuery)serializer.ReadObject(output);
                 Check(copy.Context == query.Context && copy.Target == 1 && copy.Handle == query.Handle, "Query serialization round trip");
+                Check(copy.TradeDate == null && copy.Side == null && copy.AnchorValue == null, "Stored trade requests must not override position terms");
+            }
+        }
+        using (var input = File.OpenRead(Path.Combine(AppContext.BaseDirectory, "query-instrument.json")))
+        {
+            var serializer = new DataContractJsonSerializer(typeof(BrowserQuery));
+            var query = (BrowserQuery)serializer.ReadObject(input);
+            Check(query.TradeDate == "2026-01-15" && query.Side == "Receive", "Instrument preview position inputs");
+            query.PricingAnchor = "CleanPrice";
+            query.AnchorValue = 99.25;
+            using (var output = new MemoryStream())
+            {
+                serializer.WriteObject(output, query);
+                using (var json = System.Text.Json.JsonDocument.Parse(output.ToArray()))
+                    Check(json.RootElement.GetProperty("anchor_value").GetDouble() == 99.25, "Native query requires an ordinary JSON numeric anchor");
+                output.Position = 0;
+                var copy = (BrowserQuery)serializer.ReadObject(output);
+                Check(copy.AnchorValue == 99.25 && copy.PricingAnchor == "CleanPrice", "Bond anchor remains numeric across the ABI");
             }
         }
         BrowserDisplay.DecimalSeparator = ",";
         Check(BrowserDisplay.Number("-1234.5678901234567") == "-1234,5678901234567", "Excel comma decimals preserve precision");
         Check(BrowserDisplay.Number("1.25e-10") == "1,25e-10", "Scientific notation uses the Excel decimal separator");
+        Check(BrowserDisplay.ReadNumber("99,25") == 99.25, "Bond anchors accept Excel comma decimals");
+        foreach (var invalid in new[] { "NaN", "Infinity", "99.25", "" })
+        {
+            var rejected = false;
+            try { BrowserDisplay.ReadNumber(invalid); } catch (InvalidOperationException) { rejected = true; }
+            Check(rejected, "Reject invalid or ambiguous anchor values: " + invalid);
+        }
         Check(BrowserDisplay.Value(new Detail { Value = "Swap_EUR_EURIBOR3m_1Y_0.04", Numeric = false }) == "Swap_EUR_EURIBOR3m_1Y_0.04", "Quote identifiers must remain unchanged");
         Check(BrowserDisplay.Value(new Detail { Value = "2026-10-22", Numeric = false }) == "2026-10-22", "Dates must remain unchanged");
         Check(BrowserDisplay.Value(new Detail { Value = "0.035", Numeric = true }) == "0,035", "Numeric parameter display follows Excel");
         BrowserDisplay.DecimalSeparator = ".";
         Check(BrowserDisplay.Number("0.035") == "0.035", "Dot-decimal Excel settings remain supported");
+        Check(BrowserDisplay.ReadNumber("99.25") == 99.25, "Bond anchors accept Excel dot decimals");
         Console.WriteLine("Browser contracts, revision replacement, numeric localization and source coordinates passed.");
     }
 }

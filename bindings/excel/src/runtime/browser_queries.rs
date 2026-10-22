@@ -3,6 +3,7 @@
 use super::{
     browser::BrowserDetail,
     pricing,
+    products::PositionTerms,
     registry::{QsObject, Registry},
 };
 use quantsupport::{core::elements::curveelement::ADCurveElement, prelude::*};
@@ -20,6 +21,10 @@ pub struct BrowserQuery {
     pub pricer: String,
     pub request: String,
     pub target: u32,
+    pub trade_date: String,
+    pub side: String,
+    pub pricing_anchor: String,
+    pub anchor_value: Option<f64>,
 }
 
 #[derive(Default, Serialize)]
@@ -109,7 +114,45 @@ pub fn execute(registry: &Registry, request: &BrowserQuery) -> Result<BrowserRes
             _ => return Err("Choose PV, Cashflows or Fair rate.".into()),
         };
         let requests = pricing::parse_requests(&[name])?;
-        let results = pricer.evaluate(object, &requests, context)?;
+        // Instrument previews use explicit position inputs and stay outside the
+        // worksheet registry. Stored trades always retain their original terms.
+        let preview = if let QsObject::Instrument(instrument) = object {
+            let date = Date::from_str(request.trade_date.trim(), "%Y-%m-%d")
+                .map_err(|_| "Choose a trade date for the instrument preview.".to_string())?;
+            let side = match request.side.as_str() {
+                "Receive" => Side::LongReceive,
+                "Pay" => Side::PayShort,
+                _ => return Err("Choose Receive or Pay for the instrument preview.".into()),
+            };
+            let anchor = match (request.pricing_anchor.as_str(), request.anchor_value) {
+                ("", None) => None,
+                ("CleanPrice", Some(value)) => Some(BondPricingAnchor::CleanPrice(value)),
+                ("DirtyPrice", Some(value)) => Some(BondPricingAnchor::DirtyPrice(value)),
+                ("ZSpread", Some(value)) => Some(BondPricingAnchor::ZSpread(value)),
+                _ => return Err(
+                    "Supply a bond anchor and value together: CleanPrice, DirtyPrice or ZSpread."
+                        .into(),
+                ),
+            };
+            Some(instrument.trade(
+                date,
+                side,
+                &PositionTerms {
+                    pricing_anchor: anchor,
+                    ..Default::default()
+                },
+            )?)
+        } else {
+            if !request.trade_date.is_empty()
+                || !request.side.is_empty()
+                || !request.pricing_anchor.is_empty()
+                || request.anchor_value.is_some()
+            {
+                return Err("Stored trades use their own position terms; select the instrument to preview different terms.".into());
+            }
+            None
+        };
+        let results = pricer.evaluate(preview.as_ref().unwrap_or(object), &requests, context)?;
         return evaluation_table(&results, &request.request);
     }
 
@@ -556,7 +599,7 @@ mod tests {
     }
 
     #[test]
-    fn trade_queries_return_native_pv_cashflows_and_targeted_fair_rates_without_storing_results() {
+    fn pricing_queries_cover_trades_and_instrument_previews_without_storing_results() {
         let date = Date::new(2026, 1, 15);
         let swap = MakeSwap::<DualFwd>::default()
             .with_identifier("swap".into())
@@ -610,6 +653,13 @@ mod tests {
         let pricer = registry
             .upsert_if_changed("pricer", QsObject::Pricer(Box::new(pricer)), "pricer")
             .unwrap();
+        let instrument = registry
+            .upsert_if_changed(
+                "swap.contract",
+                QsObject::Instrument(Box::new(contract)),
+                "contract",
+            )
+            .unwrap();
         let count = registry.len();
         let mut query = BrowserQuery {
             handle: trade,
@@ -623,8 +673,42 @@ mod tests {
             .parse::<f64>()
             .unwrap();
         assert!(pv.is_finite() && pv.abs() > 1.0);
+        let mut preview: BrowserQuery =
+            serde_json::from_str(include_str!("../../ribbon/tests/query-instrument.json")).unwrap();
+        preview.handle = instrument;
+        preview.context.clone_from(&query.context);
+        preview.pricer.clone_from(&query.pricer);
+        let preview_pv = execute(&registry, &preview).unwrap().rows[0][1]
+            .parse::<f64>()
+            .unwrap();
+        assert!((preview_pv - pv).abs() < 1e-10);
+        preview.side = "Pay".into();
+        let opposite_pv = execute(&registry, &preview).unwrap().rows[0][1]
+            .parse::<f64>()
+            .unwrap();
+        assert!((opposite_pv + pv).abs() < 1e-10);
+        preview.side.clear();
+        assert!(execute(&registry, &preview)
+            .err()
+            .unwrap()
+            .contains("Receive or Pay"));
+        preview.side = "Receive".into();
+        preview.trade_date.clear();
+        assert!(execute(&registry, &preview)
+            .err()
+            .unwrap()
+            .contains("trade date"));
+        preview.trade_date = "2026-01-15".into();
+        query.side = "Pay".into();
+        assert!(execute(&registry, &query)
+            .err()
+            .unwrap()
+            .contains("own position terms"));
+        query.side.clear();
         query.request = "Cashflows".into();
         let flows = execute(&registry, &query).unwrap();
+        preview.request.clone_from(&query.request);
+        assert_eq!(execute(&registry, &preview).unwrap().rows, flows.rows);
         assert!(flows.rows.len() >= 6);
         assert!(flows.rows.iter().any(|row| row[8] == "0"));
         assert!(flows.rows.iter().any(|row| row[8] == "1"));
@@ -643,12 +727,102 @@ mod tests {
                 .parse::<f64>()
                 .unwrap();
             assert!(value.is_finite());
+            preview.request.clone_from(&query.request);
+            preview.target = target;
+            let preview_rate = execute(&registry, &preview).unwrap().rows[0][1]
+                .parse::<f64>()
+                .unwrap();
+            assert!((preview_rate - value).abs() < 1e-12);
         }
         query.target = 2;
         assert!(execute(&registry, &query).is_err());
         query.request = "Unknown".into();
         assert!(execute(&registry, &query).is_err());
         assert_eq!(registry.len(), count);
+    }
+
+    #[test]
+    fn bond_instrument_previews_require_a_valid_explicit_anchor() {
+        let date = Date::new(2026, 1, 15);
+        let bond = MakeFixedRateBond::<DualFwd>::default()
+            .with_identifier("bond".into())
+            .with_start_date(date)
+            .with_maturity_date(Date::new(2031, 1, 15))
+            .with_currency(Currency::USD)
+            .with_notional(100_000.0)
+            .with_rate_definition(RateDefinition::default())
+            .with_rate(0.05)
+            .with_payment_frequency(Frequency::Semiannual)
+            .build()
+            .unwrap();
+        let policy = pricing::fixed_income_policy(
+            &vec![vec![
+                super::super::inputs::Cell::Text("USD".into()),
+                super::super::inputs::Cell::Text("SOFR".into()),
+            ]],
+            false,
+        )
+        .unwrap();
+        let mut registry = Registry::default();
+        let handle = registry
+            .upsert_if_changed(
+                "bond",
+                QsObject::Instrument(Box::new(InstrumentObject {
+                    native: NativeInstrument::FixedRateBond(bond),
+                    notional: 100_000.0,
+                    foreign_notional: None,
+                })),
+                "bond",
+            )
+            .unwrap();
+        let context = registry
+            .upsert_if_changed(
+                "market",
+                QsObject::PricingContext(Box::new(market())),
+                "market",
+            )
+            .unwrap();
+        let pricer = registry
+            .upsert_if_changed(
+                "bond.pricer",
+                QsObject::Pricer(Box::new(
+                    PricerObject::new("BondPricer", Some(&policy), &vec![]).unwrap(),
+                )),
+                "pricer",
+            )
+            .unwrap();
+        let mut query = BrowserQuery {
+            handle,
+            context,
+            pricer,
+            view: "evaluate".into(),
+            request: "Value".into(),
+            trade_date: "2026-01-15".into(),
+            side: "Receive".into(),
+            ..Default::default()
+        };
+        assert!(execute(&registry, &query)
+            .err()
+            .unwrap()
+            .contains("pricing_anchor"));
+        query.pricing_anchor = "CleanPrice".into();
+        query.anchor_value = Some(99.25);
+        let pv = execute(&registry, &query).unwrap().rows[0][1]
+            .parse::<f64>()
+            .unwrap();
+        assert!(pv.is_finite() && pv > 0.0);
+        query.anchor_value = Some(0.0);
+        assert!(execute(&registry, &query)
+            .err()
+            .unwrap()
+            .contains("positive"));
+        query.pricing_anchor = "ZSpread".into();
+        assert!(execute(&registry, &query).is_ok());
+        assert_eq!(
+            registry.len(),
+            3,
+            "previews must not retain trades or results"
+        );
     }
 
     #[test]

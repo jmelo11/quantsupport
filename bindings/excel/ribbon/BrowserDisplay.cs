@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using System.Linq;
 using System.Text;
 
@@ -11,6 +12,16 @@ namespace QuantSupport.Ribbon
 
         internal static string Number(string value) => (value ?? "").Replace(".", DecimalSeparator);
         internal static string Value(Detail field) => field.Numeric ? Number(field.Value) : field.Value;
+
+        internal static bool CanPrice(BrowserObject item) => item?.Family == "Trades" || item?.Family == "Instruments";
+
+        internal static double ReadNumber(string value)
+        {
+            var format = new NumberFormatInfo { NumberDecimalSeparator = DecimalSeparator };
+            if (!double.TryParse(value, NumberStyles.Float, format, out var number) || double.IsNaN(number) || double.IsInfinity(number))
+                throw new InvalidOperationException("Enter a finite anchor value using Excel's decimal separator (" + DecimalSeparator + ").");
+            return number;
+        }
 
         internal static BrowserObject Resolve(Snapshot snapshot, BrowserObject previous)
         {

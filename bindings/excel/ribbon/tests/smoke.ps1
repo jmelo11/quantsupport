@@ -21,6 +21,11 @@ $json = @'
 $serializer = New-Object System.Runtime.Serialization.Json.DataContractJsonSerializer($snapshotType)
 $inputStream = New-Object IO.MemoryStream(,[Text.Encoding]::UTF8.GetBytes($json))
 try { $snapshot = $serializer.ReadObject($inputStream) } finally { $inputStream.Dispose() }
+$snapshot.Objects[1].EvaluationDate = '2026-01-15'
+$instrumentJson = '{"name":"USD swap contract","handle":"QSObject:Swap:w1~swap.contract:4","kind":"Swap","family":"Instruments","revision":4,"current_inputs":true,"details":[],"locations":[],"dependencies":[],"curves":[]}'
+$instrumentSerializer = New-Object System.Runtime.Serialization.Json.DataContractJsonSerializer($assembly.GetType('QuantSupport.Ribbon.BrowserObject'))
+$inputStream = New-Object IO.MemoryStream(,[Text.Encoding]::UTF8.GetBytes($instrumentJson))
+try { $snapshot.Objects.Add($instrumentSerializer.ReadObject($inputStream)) } finally { $inputStream.Dispose() }
 $control = [Activator]::CreateInstance($browserType)
 $form = New-Object Windows.Forms.Form
 try {
@@ -40,7 +45,7 @@ try {
         throw 'Headers must expand to fit wrapped text at the current display DPI.'
     }
     $grid.SelectAll()
-    if ($grid.SelectedRows.Count -ne 3) { throw 'All object rows must be selectable.' }
+    if ($grid.SelectedRows.Count -ne 4) { throw 'All object rows must be selectable.' }
     $objectCopy = [string]$grid.GetClipboardContent().GetData([Windows.Forms.DataFormats]::UnicodeText)
     if (-not $objectCopy.Contains('USD swap') -or -not $objectCopy.Contains('Swap pricer') -or -not $objectCopy.Contains('Name')) {
         throw 'Object selection must copy all values and column headings.'
@@ -48,7 +53,7 @@ try {
     $grid.CurrentCell = $grid.Rows[0].Cells[0]
     $explorer = $browserType.GetField('tradeExplorer',$flags).GetValue($control)
     $tabs = $browserType.GetField('tabs',$flags).GetValue($control)
-    if ((($tabs.TabPages | ForEach-Object Text) -join ',') -ne 'Details,Trade requests') {
+    if ((($tabs.TabPages | ForEach-Object Text) -join ',') -ne 'Details,Pricing') {
         throw 'A trade must show only its relevant tabs.'
     }
     $explorerType = $explorer.GetType()
@@ -58,6 +63,9 @@ try {
     $runPosition = $explorer.PointToClient($runButton.PointToScreen([Drawing.Point]::Empty))
     if ($runPosition.X -lt 0 -or $runPosition.X + $runButton.Width -gt $explorer.ClientSize.Width) {
         throw 'Run request must remain visible within the pane width.'
+    }
+    if ($runPosition.Y -lt 0 -or $runPosition.Y + $runButton.Height -gt $explorer.ClientSize.Height) {
+        throw 'Run request must remain visible within the pane height.'
     }
     $view = $explorerType.GetField('view',$flags).GetValue($explorer)
     $target = $explorerType.GetField('target',$flags).GetValue($explorer)
@@ -126,6 +134,42 @@ try {
     [void]$populate.Invoke($control,@())
     $view.SelectedIndex = 2
     if ($runButton.Enabled) { throw 'Bond fair rate must explain its absent measure in the ribbon.' }
+    $view.SelectedIndex = 0
+    $grid.CurrentCell = $grid.Rows[3].Cells[0]
+    if ((($tabs.TabPages | ForEach-Object Text) -join ',') -ne 'Details,Pricing' -or -not $runButton.Enabled) {
+        throw 'Selecting an instrument must expose working pricing controls.'
+    }
+    $priceButton = $browserType.GetField('price',$flags).GetValue($control)
+    if (-not $priceButton.Enabled) { throw 'Instrument selection must enable Price selected.' }
+    $tabs.SelectedIndex = 0
+    [void]$browserType.GetMethod('ShowPricing',$flags).Invoke($control,@())
+    if ($tabs.SelectedTab.Text -ne 'Pricing') { throw 'Price selected must open Pricing.' }
+    $buildQuery = $explorerType.GetMethod('BuildQuery',$flags)
+    $preview = $buildQuery.Invoke($explorer,@())
+    if ($preview.Handle -ne $snapshot.Objects[3].Handle -or $preview.TradeDate -ne '2026-01-15' -or $preview.Side -ne 'Receive') {
+        throw 'Instrument previews must send the selected contract and visible position inputs.'
+    }
+    $previewDate = $explorerType.GetField('tradeDate',$flags).GetValue($explorer)
+    $previewDate.Value = [datetime]'2026-01-14'
+    [void]$populate.Invoke($control,@())
+    if ($buildQuery.Invoke($explorer,@()).TradeDate -ne '2026-01-14') {
+        throw 'Refreshing the same instrument must retain edited preview terms.'
+    }
+    $snapshot.Objects[3].Kind = 'FixedRateBond'
+    [void]$populate.Invoke($control,@())
+    if ($runButton.Enabled) { throw 'A bond preview must require an explicit anchor.' }
+    $anchor = $explorerType.GetField('anchor',$flags).GetValue($explorer)
+    $anchorValue = $explorerType.GetField('anchorValue',$flags).GetValue($explorer)
+    $anchor.SelectedItem = 'CleanPrice'
+    $anchorValue.Text = '99.25'
+    if (-not $runButton.Enabled -or $buildQuery.Invoke($explorer,@()).AnchorValue -ne 99.25) {
+        throw 'A valid bond anchor must enable instrument pricing.'
+    }
+    $grid.CurrentCell = $grid.Rows[0].Cells[0]
+    $stored = $buildQuery.Invoke($explorer,@())
+    if ($null -ne $stored.TradeDate -or $null -ne $stored.Side -or $null -ne $stored.AnchorValue) {
+        throw 'Stored trade pricing must retain the original trade terms.'
+    }
     $snapshot.Objects.Clear()
     [void]$populate.Invoke($control,@())
     if ($runButton.Enabled) { throw 'An empty browser must disable requests.' }

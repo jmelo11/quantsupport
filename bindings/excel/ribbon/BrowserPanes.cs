@@ -66,6 +66,15 @@ namespace QuantSupport.Ribbon
             control.Inspect(value);
         }
 
+        internal static void PriceSelection()
+        {
+            var control = Show("Instruments & Trades");
+            dynamic app = ExcelDnaUtil.Application;
+            var value = app.ActiveCell == null ? null : app.ActiveCell.Value2 as string;
+            if (value != null && value.StartsWith("QSObject:", StringComparison.Ordinal)) control.Inspect(value);
+            control.ShowPricing();
+        }
+
         private static void Tick(object sender, EventArgs args)
         {
             try

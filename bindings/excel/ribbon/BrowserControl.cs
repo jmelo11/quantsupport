@@ -38,9 +38,10 @@ namespace QuantSupport.Ribbon
         private readonly ComboBox sources = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 190, DisplayMember = "Address" };
         private readonly Button go = new Button { Text = "Go to cell", AutoSize = true, Enabled = false };
         private readonly Button copy = new Button { Text = "Copy handle", AutoSize = true, Enabled = false };
+        private readonly Button price = new Button { Text = "Price selected", AutoSize = true, Enabled = false };
         private readonly TabControl tabs = new TabControl { Dock = DockStyle.Fill };
         private readonly TabPage detailsPage = new TabPage("Details");
-        private readonly TabPage tradesPage = new TabPage("Trade requests");
+        private readonly TabPage tradesPage = new TabPage("Pricing");
         private readonly TabPage curvesPage = new TabPage("Curves");
         private readonly ExplorerControl tradeExplorer;
         private readonly ExplorerControl curveExplorer;
@@ -89,6 +90,7 @@ namespace QuantSupport.Ribbon
             navigation.Controls.Add(sources);
             navigation.Controls.Add(go);
             navigation.Controls.Add(copy);
+            navigation.Controls.Add(price);
             var layout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 4 };
             layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
             layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
@@ -111,6 +113,7 @@ namespace QuantSupport.Ribbon
             tabs.SelectedIndexChanged += (s, e) => BindSelectedExplorer();
             go.Click += (s, e) => QuantSupportRibbon.Run(GoToSource);
             copy.Click += (s, e) => QuantSupportRibbon.Run(() => { if (Selected != null) Clipboard.SetText(Selected.Handle); });
+            price.Click += (s, e) => ShowPricing();
         }
 
         private BrowserObject Selected
@@ -162,7 +165,7 @@ namespace QuantSupport.Ribbon
                 tradeExplorer.Bind(null, null);
                 curveExplorer.Bind(null, null);
                 sources.Items.Clear();
-                go.Enabled = copy.Enabled = false;
+                go.Enabled = copy.Enabled = price.Enabled = false;
                 status.Text = error.Message;
             }
         }
@@ -211,6 +214,7 @@ namespace QuantSupport.Ribbon
             tradeExplorer.CancelRequests();
             curveExplorer.CancelRequests();
             copy.Enabled = item != null;
+            price.Enabled = BrowserDisplay.CanPrice(item);
             go.Enabled = item != null && item.Locations.Count > 0;
             foreach (var cell in item?.Locations ?? new List<Location>()) sources.Items.Add(cell);
             if (sources.Items.Count > 0) sources.SelectedIndex = 0;
@@ -219,9 +223,9 @@ namespace QuantSupport.Ribbon
             populating = true;
             tabs.TabPages.Clear();
             tabs.TabPages.Add(detailsPage);
-            if (item?.Family == "Trades") tabs.TabPages.Add(tradesPage);
+            if (BrowserDisplay.CanPrice(item)) tabs.TabPages.Add(tradesPage);
             if (item?.Curves != null && item.Curves.Count > 0) tabs.TabPages.Add(curvesPage);
-            var preferred = item?.Family == "Trades" ? tradesPage : tabs.TabPages.Contains(curvesPage) ? curvesPage : detailsPage;
+            var preferred = BrowserDisplay.CanPrice(item) ? tradesPage : tabs.TabPages.Contains(curvesPage) ? curvesPage : detailsPage;
             tabs.SelectedTab = item != null && detailsIdentity == item.Identity && tabs.TabPages.Contains(previousTab) ? previousTab : preferred;
             detailsIdentity = item?.Identity;
             populating = false;
@@ -234,6 +238,16 @@ namespace QuantSupport.Ribbon
             if (populating) return;
             if (tabs.SelectedTab == tradesPage) tradeExplorer.Bind(snapshot, Selected);
             if (tabs.SelectedTab == curvesPage) curveExplorer.Bind(snapshot, Selected);
+        }
+
+        internal void ShowPricing()
+        {
+            if (!BrowserDisplay.CanPrice(Selected))
+            {
+                status.Text = "Select an instrument or trade in the list to open Pricing.";
+                return;
+            }
+            tabs.SelectedTab = tradesPage;
         }
 
         protected override void Dispose(bool disposing)

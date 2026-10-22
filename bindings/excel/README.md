@@ -33,7 +33,7 @@ The ribbon and IntelliSense companions require .NET Framework 4.6.2 or later.
 
 ### QuantSupport ribbon and object browser
 
-The **QuantSupport** tab provides **Pricing Contexts**, **Instruments & Trades**, **Curves**,
+The **QuantSupport** tab provides **Pricing Contexts**, **Instruments & Trades**, **Price Selection**, **Curves**,
 **All Objects**, **Inspect Selection**, and **Refresh Browser**, plus links to the
 setup guide and function reference. The side panel lists live objects belonging
 to its workbook, with search, type filters, current handles, source formulas and
@@ -43,12 +43,20 @@ All ribbon grids support **Ctrl+A** to select every row and **Ctrl+C** to copy
 the selected values with column headings. Right-click a table for **Select all**,
 **Copy values**, or **Copy entire table**; pasted values form a tabular range in Excel.
 
-Select a trade to open **Trade requests**. Choose an existing pricing context,
+Select an instrument or trade to open **Pricing**, or select its handle cell and
+click **Price Selection** in the ribbon. **Price selected** in the panel opens the
+same controls. Choose an existing pricing context,
 an explicit pricer and **PV**, **Cashflows** or **Fair rate**, then click
 **Run request**. Fair rates require a zero-based swap leg or loan rate segment;
 the selected pricer determines which requests it supports. Results appear in
 the panel without adding worksheet formulas or stored results. Changing an input
 selection clears the previous result; requests run again only when you click.
+For a native instrument, confirm the displayed preview trade date and Receive/Pay
+side. The date initially follows the selected context's valuation date, and the
+preview uses the instrument's own notional. Bond previews also require an explicit
+CleanPrice, DirtyPrice or ZSpread anchor and value, entered with Excel's decimal
+separator. Previews create no stored trade or result objects. Selecting an existing
+trade uses its stored position terms and hides the preview inputs.
 `BondPricer` leaves `FairRate` absent. For bonds, request `YieldToMaturity`,
 `ModifiedDuration`, `ZSpread` or `OAS` through worksheet evaluation as supported
 by the selected pricer and anchor; `QS.RESULT.YIELD` reads the yield result.
