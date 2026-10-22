@@ -26,6 +26,10 @@ internal static class Program
             var source = context.Locations[0];
             Check(source.SheetId == 42 && source.Address == "Marché!A1", "Source coordinates contract");
             Check(source.Formula.Contains("\"\"market\"\""), "Formula quoting contract");
+            var previous = new BrowserObject { Kind = context.Kind, Name = context.Name, Handle = context.Handle };
+            context.Handle = context.Handle.Substring(0, context.Handle.LastIndexOf(':')) + ":2";
+            Check(BrowserDisplay.Resolve(snapshot, previous) == context, "Curve selection follows a rebuilt revision");
+            Check(BrowserDisplay.Resolve(snapshot, new BrowserObject { Name = context.Name, Kind = "QuoteStore" }) == null, "Same name in a different family must not resolve");
         }
         Check(new Location { Sheet = "Sheet1", Column = 16384, Row = 1048576 }.Address == "Sheet1!XFD1048576", "Excel edge coordinates");
         using (var input = File.OpenRead(Path.Combine(AppContext.BaseDirectory, "query-response.json")))
@@ -34,6 +38,7 @@ internal static class Program
             Check(response.Error == "" && response.Columns.Count == 20 && response.Rows[0].Count == 20, "Query response contract");
             Check(response.Rows[0][1] == "Coupon café" && response.Rows[0][2] == "-1234.5" && response.Rows[0][4] == "", "Unicode, amounts and blank cells");
             Check(response.Curves.Count == 0 && response.Parameters.Count == 0, "Query metadata arrays");
+            Check(response.NumericColumns.Contains(2) && !response.NumericColumns.Contains(0), "Numeric metadata must distinguish dates from amounts");
         }
         using (var input = File.OpenRead(Path.Combine(AppContext.BaseDirectory, "query.json")))
         {
@@ -48,6 +53,14 @@ internal static class Program
                 Check(copy.Context == query.Context && copy.Target == 1 && copy.Handle == query.Handle, "Query serialization round trip");
             }
         }
-        Console.WriteLine("Browser JSON contract and source coordinates passed.");
+        BrowserDisplay.DecimalSeparator = ",";
+        Check(BrowserDisplay.Number("-1234.5678901234567") == "-1234,5678901234567", "Excel comma decimals preserve precision");
+        Check(BrowserDisplay.Number("1.25e-10") == "1,25e-10", "Scientific notation uses the Excel decimal separator");
+        Check(BrowserDisplay.Value(new Detail { Value = "Swap_EUR_EURIBOR3m_1Y_0.04", Numeric = false }) == "Swap_EUR_EURIBOR3m_1Y_0.04", "Quote identifiers must remain unchanged");
+        Check(BrowserDisplay.Value(new Detail { Value = "2026-10-22", Numeric = false }) == "2026-10-22", "Dates must remain unchanged");
+        Check(BrowserDisplay.Value(new Detail { Value = "0.035", Numeric = true }) == "0,035", "Numeric parameter display follows Excel");
+        BrowserDisplay.DecimalSeparator = ".";
+        Check(BrowserDisplay.Number("0.035") == "0.035", "Dot-decimal Excel settings remain supported");
+        Console.WriteLine("Browser contracts, revision replacement, numeric localization and source coordinates passed.");
     }
 }

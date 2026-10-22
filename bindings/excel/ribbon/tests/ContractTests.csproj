@@ -5,6 +5,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="../BrowserModels.cs" Link="BrowserModels.cs" />
+    <Compile Include="../BrowserDisplay.cs" Link="BrowserDisplay.cs" />
     <None Include="snapshot.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="query.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="query-response.json" CopyToOutputDirectory="PreserveNewest" />

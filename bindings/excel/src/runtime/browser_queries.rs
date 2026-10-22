@@ -29,6 +29,8 @@ pub struct BrowserResponse {
     pub curves: Vec<String>,
     pub columns: Vec<String>,
     pub rows: Vec<Vec<String>>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub numeric_columns: Vec<usize>,
     /// Parameter rows correspond to table rows (e.g. a selected calibration quote).
     pub parameters: Vec<Vec<BrowserDetail>>,
     pub error: String,
@@ -183,6 +185,7 @@ fn curve_table(curve: &dyn ADCurveElement, name: &str) -> Result<BrowserResponse
             "Forward from prior node",
         ],
     );
+    table.numeric_columns = vec![2, 3, 4];
     let nodes = match curve.nodes() {
         Some(nodes) if !nodes.is_empty() => nodes,
         _ => {
@@ -262,6 +265,7 @@ fn fields(value: &impl Serialize) -> Result<Vec<BrowserDetail>, String> {
             }
             value => output.push(BrowserDetail {
                 label: prefix.into(),
+                numeric: value.is_number(),
                 value: match value {
                     serde_json::Value::String(text) => text.clone(),
                     _ => value.to_string(),
@@ -290,6 +294,7 @@ fn configuration_table(
         ],
     );
     let settings = fields(config)?;
+    table.numeric_columns = vec![3];
     table.message = settings
         .iter()
         .filter(|field| field.label != "quotes")
@@ -401,6 +406,7 @@ fn configuration_table(
                     |field| BrowserDetail {
                         label: format!("Curve: {}", field.label),
                         value: field.value.clone(),
+                        numeric: field.numeric,
                     },
                 ));
                 table.parameters.push(parameters);
@@ -444,6 +450,7 @@ fn evaluation_table(results: &EvaluationResults, request: &str) -> Result<Browse
             ],
         );
         table.message = "Signed, undiscounted amounts in each row's currency. Rates are decimal; leg indices start at 0.".into();
+        table.numeric_columns = vec![2, 4, 5, 6, 7, 8, 13, 14, 15];
         for row in 0..flows.payment_dates().len() {
             let details = flows.coupon_details()[row].as_ref();
             let optional =
@@ -502,6 +509,7 @@ fn evaluation_table(results: &EvaluationResults, request: &str) -> Result<Browse
         let value =
             value.ok_or_else(|| format!("This pricer did not return {label} for this trade."))?;
         let mut table = BrowserResponse::table(label, &["Result", "Value"]);
+        table.numeric_columns = vec![1];
         table.message = if request == "Value" {
             "Monetary PV under the selected pricer's conventions."
         } else {
@@ -674,6 +682,99 @@ mod tests {
         query.curve = "Missing".into();
         assert!(execute(&registry, &query).is_err());
         assert_eq!(registry.len(), 1);
+    }
+
+    #[test]
+    fn corrected_quote_identifiers_rebuild_queryable_curves_under_the_same_name() {
+        use super::super::{inputs::Cell, market_inputs::import_quotes, registry::CellId};
+        let date = Date::new(2026, 1, 15);
+        let cell = |row| CellId {
+            sheet: 42,
+            row,
+            column: 0,
+        };
+        let mut registry = Registry::default();
+        let mut query = BrowserQuery {
+            view: "nodes".into(),
+            curve: "SOFR".into(),
+            ..Default::default()
+        };
+        let mut previous_rows = Vec::new();
+        for identifier in ["OIS_USD_SOFR_1Y", "OIS_USD_SOFR_2Y"] {
+            registry.begin_cell(cell(0));
+            let quotes = import_quotes(
+                &mut registry,
+                "quotes",
+                date,
+                &vec![vec![Cell::Text(identifier.into()), Cell::Number(0.03)]],
+            )
+            .unwrap();
+            registry.finish_cell(true);
+            registry.begin_cell(cell(1));
+            let configurations = registry
+                .upsert_if_changed(
+                    "curves",
+                    QsObject::CurveConfigurations(vec![CurveConfiguration::new(
+                        MarketIndex::SOFR,
+                        DayCounter::Actual360,
+                        Interpolator::LogLinear,
+                        true,
+                        vec![identifier.into()],
+                    )]),
+                    identifier,
+                )
+                .unwrap();
+            registry.finish_cell(true);
+            if !query.handle.is_empty() {
+                assert!(
+                    execute(&registry, &query).is_err(),
+                    "old market must be rebuilt"
+                );
+            }
+            registry.begin_cell(cell(2));
+            let mut context = PricingContext::new()
+                .with_quote_store(registry.quote_store(&quotes).unwrap().clone())
+                .with_curve_configurations(
+                    registry
+                        .curve_configurations(&configurations)
+                        .unwrap()
+                        .clone(),
+                )
+                .with_base_currency(Currency::USD)
+                .with_base_index(MarketIndex::SOFR);
+            context.initialize().unwrap();
+            let handle = registry
+                .upsert_if_changed(
+                    "market",
+                    QsObject::PricingContext(Box::new(context)),
+                    format!("{quotes}|{configurations}"),
+                )
+                .unwrap();
+            registry.finish_cell(true);
+            assert_ne!(handle, query.handle);
+            query.handle = handle;
+            let table = execute(&registry, &query).unwrap();
+            assert_ne!(table.rows, previous_rows);
+            assert!(table.rows.iter().any(|row| row[0] == identifier));
+            assert_eq!(table.numeric_columns, vec![2, 3, 4]);
+            previous_rows = table.rows;
+            let inputs = execute(
+                &registry,
+                &BrowserQuery {
+                    handle: query.handle.clone(),
+                    curve: query.curve.clone(),
+                    view: "instruments".into(),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            assert_eq!(inputs.rows[0][0], identifier);
+            assert_eq!(inputs.rows[0][3], "0.03");
+            assert!(inputs.parameters[0]
+                .iter()
+                .any(|field| field.label == "mid" && field.numeric));
+            assert_eq!(registry.len(), 3);
+        }
     }
 
     #[test]

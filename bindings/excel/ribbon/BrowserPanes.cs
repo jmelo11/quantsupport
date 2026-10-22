@@ -27,6 +27,11 @@ namespace QuantSupport.Ribbon
             return Convert.ToInt64(app.ActiveWindow.Hwnd);
         }
 
+        internal static string DecimalSeparator(dynamic app)
+        {
+            return (bool)app.UseSystemSeparators ? Convert.ToString(app.International[3]) : (string)app.DecimalSeparator;
+        }
+
         internal static BrowserControl Show(string filter)
         {
             var id = ActiveWindowId();
@@ -49,7 +54,7 @@ namespace QuantSupport.Ribbon
             }
             entry.Pane.Visible = true;
             entry.Control.SetFilter(filter);
-            entry.Control.RefreshObjects(true);
+            entry.Control.RefreshObjects(filter == null);
             return entry.Control;
         }
 
@@ -66,7 +71,7 @@ namespace QuantSupport.Ribbon
             try
             {
                 dynamic app = ExcelDnaUtil.Application;
-                if (!(bool)app.Ready) return;
+                if (!(bool)app.Ready || (int)app.CalculationState == 1) return;
                 var open = new HashSet<long>();
                 var count = (int)app.Windows.Count;
                 for (var i = 1; i <= count; i++) open.Add(Convert.ToInt64(app.Windows[i].Hwnd));
@@ -101,6 +106,11 @@ namespace QuantSupport.Ribbon
         {
             StopTimer();
             foreach (var id in Panes.Keys.ToArray()) Remove(id);
+        }
+
+        internal static void InvalidateAll()
+        {
+            foreach (var entry in Panes.Values) entry.Control.InvalidateObjects();
         }
     }
 }

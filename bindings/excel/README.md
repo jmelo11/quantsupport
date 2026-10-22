@@ -289,6 +289,11 @@ For portfolios needing only individual PVs, return numbers directly:
 =QS.EVALUATE.VALUES(pricer,A2:A10001,context,TRUE)
 ```
 
+The range version returns one PV per trade, as a column or transposed row. Excel
+caches the values; no `EvaluationResults` objects are retained. Share market
+contexts and pricers across positions. Use `QS.EVALUATE` and `QS.RESULT.*` when
+cashflows, risk, fair rates or other stored measures are needed.
+
 For large market histories, import each quote range and fixing history with one
 formula instead of one `SET` formula per observation:
 
@@ -323,10 +328,17 @@ Run `cargo run -p quantsupport-xll --release --example benchmark_history` to
 measure attaching 10,000 shared fixings to 1,000 dated contexts. This benchmark
 excludes Excel callbacks, curve construction and calibration.
 
-The range version returns one PV per trade, as a column or transposed row. Excel
-caches the values; no `EvaluationResults` objects are retained. Share market
-contexts and pricers across positions. Use `QS.EVALUATE` and `QS.RESULT.*` when
-cashflows, risk, fair rates or other stored measures are needed.
+The ribbon checks a cheap native change token before refreshing its object
+list. Unchanged registries do not generate snapshots, and selecting an object
+does not run pricing or curve queries. Use **Run request** or **Refresh table**
+when you want those results.
+
+Use **QuantSupport → Reset Memory & Rebuild** to discard all native objects and
+AD tape storage in this Excel instance and reconstruct the open workbooks.
+This explicitly calculates all open workbooks, including in Manual mode, and
+keeps your calculation-mode setting. Existing handles become invalid; rebuilt
+formulas create fresh handles. Save formulas and inputs normally; the button
+does not change them.
 
 `QS.INSTRUMENT.*` creates native contracts for every exposed product family.
 `QS.TRADE.CREATE` adds position terms; `QS.PRICER.CREATE` selects an actual Rust

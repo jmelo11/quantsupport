@@ -11,6 +11,12 @@ pub struct BrowserSnapshot {
     pub error: String,
 }
 
+#[derive(Default, Serialize)]
+pub struct ResetResponse {
+    pub released_objects: usize,
+    pub error: String,
+}
+
 #[derive(Clone, Serialize)]
 pub struct BrowserLocation {
     pub sheet_id: u64,
@@ -42,6 +48,8 @@ pub struct BrowserObject {
 pub struct BrowserDetail {
     pub label: String,
     pub value: String,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub numeric: bool,
 }
 
 impl BrowserObject {
@@ -49,6 +57,7 @@ impl BrowserObject {
         self.details.push(BrowserDetail {
             label: label.into(),
             value: value.to_string(),
+            numeric: matches!(label, "Notional" | "Foreign notional" | "Trades"),
         });
     }
 
@@ -215,7 +224,45 @@ pub mod windows {
 
     #[no_mangle]
     pub extern "system" fn qs_browser_api_version() -> u32 {
-        2
+        3
+    }
+
+    /// Returns zero off the main thread; otherwise an inexpensive change token.
+    #[no_mangle]
+    pub extern "system" fn qs_browser_revision() -> u64 {
+        if MAIN_THREAD.load(Ordering::Acquire) != unsafe { GetCurrentThreadId() } {
+            return 0;
+        }
+        super::super::registry::browser_revision()
+    }
+
+    /// Clears all native workbook objects. Rebuilds are explicitly requested by the ribbon.
+    #[no_mangle]
+    pub extern "system" fn qs_browser_reset() -> *mut c_char {
+        let result = std::panic::catch_unwind(|| {
+            let reset = if MAIN_THREAD.load(Ordering::Acquire) != unsafe { GetCurrentThreadId() } {
+                Err("Reset memory on Excel's main thread.".into())
+            } else {
+                super::super::lifecycle::reset_memory()
+            };
+            match reset {
+                Ok(count) => super::ResetResponse {
+                    released_objects: count,
+                    error: String::new(),
+                },
+                Err(error) => super::ResetResponse {
+                    error,
+                    ..Default::default()
+                },
+            }
+        })
+        .unwrap_or_else(|_| super::ResetResponse {
+            error: "Memory reset failed; rebuild the workbook before continuing.".into(),
+            ..Default::default()
+        });
+        CString::new(serde_json::to_string(&result).expect("reset response serializes"))
+            .expect("JSON escapes NUL characters")
+            .into_raw()
     }
 
     /// Runs an explicit query and returns owned UTF-8 JSON, released by qs_browser_free.
@@ -286,7 +333,7 @@ pub mod windows {
     }
 
     /// # Safety
-    /// `value` must be null or an unfreed pointer returned by qs_browser_snapshot or qs_browser_query.
+    /// `value` must be null or an unfreed pointer returned by a browser JSON export.
     #[no_mangle]
     pub unsafe extern "system" fn qs_browser_free(value: *mut c_char) {
         if !value.is_null() {
@@ -322,18 +369,37 @@ pub mod windows {
         #[test]
         fn abi_rejects_background_calls_and_invalid_utf16_and_releases_its_buffers() {
             start();
-            assert_eq!(qs_browser_api_version(), 2);
+            assert_eq!(qs_browser_api_version(), 3);
+            let revision = qs_browser_revision();
+            assert!(revision > 0);
             let name: Vec<u16> = "Café.xlsx".encode_utf16().collect();
             let snapshot = read(&name);
             assert_eq!(snapshot["workbook"], "Café.xlsx");
             assert_eq!(snapshot["error"], "");
             assert_eq!(snapshot["objects"], serde_json::json!([]));
+            assert_eq!(qs_browser_revision(), revision);
             assert!(std::thread::spawn(move || read(&name)["error"]
                 .as_str()
                 .unwrap()
                 .contains("main thread"))
             .join()
             .unwrap());
+            let background_reset = std::thread::spawn(|| {
+                assert_eq!(qs_browser_revision(), 0);
+                let value = qs_browser_reset();
+                let json = unsafe { std::ffi::CStr::from_ptr(value) }.to_str().unwrap();
+                let result: serde_json::Value = serde_json::from_str(json).unwrap();
+                unsafe {
+                    qs_browser_free(value);
+                }
+                result
+            })
+            .join()
+            .unwrap();
+            assert!(background_reset["error"]
+                .as_str()
+                .unwrap()
+                .contains("main thread"));
             assert_eq!(read(&[0xd800])["error"], "Invalid workbook name.");
             assert_eq!(read(&[])["error"], "Select an open workbook.");
             assert!(query("not JSON")["error"]
@@ -350,7 +416,18 @@ pub mod windows {
                 .contains("main thread"))
             .join()
             .unwrap());
+            let value = qs_browser_reset();
+            let response: serde_json::Value =
+                serde_json::from_str(unsafe { std::ffi::CStr::from_ptr(value) }.to_str().unwrap())
+                    .unwrap();
+            assert_eq!(response["error"], "");
+            assert!(response["released_objects"].is_u64());
+            unsafe {
+                qs_browser_free(value);
+            }
+            assert!(qs_browser_revision() > revision);
             stop();
+            assert_eq!(qs_browser_revision(), 0);
             assert!(read(&[65])["error"]
                 .as_str()
                 .unwrap()

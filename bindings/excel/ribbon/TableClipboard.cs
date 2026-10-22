@@ -8,6 +8,10 @@ namespace QuantSupport.Ribbon
         internal static void Configure(DataGridView table)
         {
             table.MultiSelect = true;
+            table.ColumnHeadersVisible = true;
+            table.ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.AutoSize;
+            table.ColumnHeadersDefaultCellStyle.WrapMode = DataGridViewTriState.True;
+            table.ColumnAdded += (sender, args) => args.Column.MinimumWidth = 85;
             table.ClipboardCopyMode = DataGridViewClipboardCopyMode.EnableAlwaysIncludeHeaderText;
             Action copy = () => QuantSupportRibbon.Run(() =>
             {

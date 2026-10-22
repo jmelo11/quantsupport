@@ -35,6 +35,10 @@ try {
     $populate = $browserType.GetMethod('Populate',$flags)
     [void]$populate.Invoke($control,@())
     $grid = $browserType.GetField('grid',$flags).GetValue($control)
+    if (-not $grid.VirtualMode) { throw 'Large object lists must use virtual rows.' }
+    if ($grid.ColumnHeadersHeightSizeMode -ne [Windows.Forms.DataGridViewColumnHeadersHeightSizeMode]::AutoSize) {
+        throw 'Headers must expand to fit wrapped text at the current display DPI.'
+    }
     $grid.SelectAll()
     if ($grid.SelectedRows.Count -ne 3) { throw 'All object rows must be selectable.' }
     $objectCopy = [string]$grid.GetClipboardContent().GetData([Windows.Forms.DataFormats]::UnicodeText)
@@ -43,6 +47,10 @@ try {
     }
     $grid.CurrentCell = $grid.Rows[0].Cells[0]
     $explorer = $browserType.GetField('tradeExplorer',$flags).GetValue($control)
+    $tabs = $browserType.GetField('tabs',$flags).GetValue($control)
+    if ((($tabs.TabPages | ForEach-Object Text) -join ',') -ne 'Details,Trade requests') {
+        throw 'A trade must show only its relevant tabs.'
+    }
     $explorerType = $explorer.GetType()
     $runButton = $explorerType.GetField('run',$flags).GetValue($explorer)
     if (-not $runButton.Enabled) { throw 'A selected trade with a context and pricer must enable requests.' }
@@ -67,11 +75,42 @@ try {
     if ($table.SelectedRows.Count -ne 2 -or -not $tableCopy.Contains('100.5') -or -not $tableCopy.Contains('-20') -or -not $tableCopy.Contains('Amount')) {
         throw 'Result tables must support selecting and copying every value and heading.'
     }
+    $response = [Activator]::CreateInstance($assembly.GetType('QuantSupport.Ribbon.BrowserResponse'))
+    $response.NumericColumns = New-Object 'System.Collections.Generic.List[int]'
+    $response.NumericColumns.Add(0)
+    $explorerType.GetField('response',$flags).SetValue($explorer,$response)
+    $separator = $assembly.GetType('QuantSupport.Ribbon.BrowserDisplay').GetProperty('DecimalSeparator',[Reflection.BindingFlags]'Static, NonPublic')
+    $separator.SetValue($null,',')
+    $table.Rows[0].Cells[1].Value = 'USD.v1'
+    $localizedCopy = [string]$table.GetClipboardContent().GetData([Windows.Forms.DataFormats]::UnicodeText)
+    if (-not $localizedCopy.Contains('100,5') -or -not $localizedCopy.Contains('USD.v1')) {
+        throw 'Copy must use Excel decimal conventions without changing identifiers.'
+    }
+    $separator.SetValue($null,'.')
     $context = $explorerType.GetField('context',$flags).GetValue($explorer)
     $context.SelectedIndex = -1
     if ($runButton.Enabled) { throw 'A trade request requires a context.' }
     $context.SelectedIndex = 0
     if (-not $runButton.Enabled) { throw 'Selecting a context must enable requests again.' }
+    $snapshot.Objects[1].Curves.Add('SOFR')
+    [void]$populate.Invoke($control,@())
+    $grid.CurrentCell = $grid.Rows[1].Cells[0]
+    if ((($tabs.TabPages | ForEach-Object Text) -join ',') -ne 'Details,Curves') {
+        throw 'A context with curves must show only Details and Curves.'
+    }
+    $curveExplorer = $browserType.GetField('curveExplorer',$flags).GetValue($control)
+    $curveMessage = $explorerType.GetField('message',$flags).GetValue($curveExplorer)
+    $curveTable = $explorerType.GetField('table',$flags).GetValue($curveExplorer)
+    if (-not $curveMessage.Text.Contains('click Refresh table') -or $curveTable.RowCount -ne 0) {
+        throw 'Selecting a curve must wait for an explicit query, including hidden tabs.'
+    }
+    $snapshot.Objects[1].Handle = 'QSObject:PricingContext:w1~market:99'
+    [void]$populate.Invoke($control,@())
+    $selected = $browserType.GetProperty('Selected',$flags).GetValue($control)
+    if ($selected.Handle -ne 'QSObject:PricingContext:w1~market:99' -or $tabs.SelectedTab.Text -ne 'Curves') {
+        throw 'Refreshing after a quote correction must retain the curve object with its new handle.'
+    }
+    $grid.CurrentCell = $grid.Rows[0].Cells[0]
     if ($PreviewPath) {
         $image = New-Object Drawing.Bitmap($form.Width,$form.Height)
         try {

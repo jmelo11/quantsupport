@@ -9,6 +9,7 @@
           <button id="qsAll" label="All Objects" imageMso="FindDialog" onAction="ShowAll" />
           <button id="qsInspect" label="Inspect Selection" imageMso="ZoomToSelection" onAction="InspectSelection" />
           <button id="qsRefresh" label="Refresh Browser" imageMso="RefreshAll" onAction="RefreshBrowser" />
+          <button id="qsResetMemory" label="Reset Memory &amp; Rebuild" imageMso="RefreshAll" onAction="ResetMemory" screentip="Clear all QuantSupport objects and rebuild every open workbook" supertip="Releases native objects and calculation memory in this Excel instance, then calculates all open workbooks from scratch. Keeps your calculation mode unchanged." />
         </group>
         <group id="qsHelp" label="Setup &amp; help">
           <button id="qsSetup" label="Setup Guide" size="large" imageMso="FileNew" onAction="OpenSetup" screentip="Open the workbook setup guide and formula examples" />

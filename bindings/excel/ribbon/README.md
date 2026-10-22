@@ -13,10 +13,15 @@ The main Excel build script copies it beside `quantsupport.xll` and includes it
 in the distribution ZIP. Both XLLs must be loaded from that folder.
 
 The UI resolves the already-loaded native XLL by its full path. The versioned
-C ABI v2 (`qs_browser_api_version`, `qs_browser_snapshot`, `qs_browser_query`, `qs_browser_free`)
+C ABI v3 (`qs_browser_api_version`, `qs_browser_revision`, `qs_browser_snapshot`,
+`qs_browser_query`, `qs_browser_reset`, `qs_browser_free`)
 copies UTF-8 JSON on Excel's main thread. It never loads another copy of the
-native DLL, calls worksheet constructors, selects a caller registry, or retains
+native DLL, calls worksheet constructors, or retains
 native object pointers. Registry snapshots use no ownership/dependency reads.
+`qs_browser_revision` returns a constant-time change token without serializing
+or walking the registry. `qs_browser_reset` clears all workbook registries and
+the AD tapes after checking that no worksheet call is active. Workbook session
+IDs continue increasing so handles saved before a reset cannot become valid again.
 Queries validate handles and their upstream revisions without recording worksheet
 reads. They borrow the named workbook's existing registry without selecting it.
 Trade requests use the selected native pricer/context and return owned result
@@ -27,12 +32,25 @@ when navigating, with a fresh handle/source check in a queued macro.
 
 Only numeric window identities and owned metadata persist in the UI; no
 Workbook, Window or Range COM wrappers are cached. A Forms timer refreshes the
-visible active pane when Excel is ready and disposes panes for closed windows.
-The browser does not request workbook recalculation. Trade pricing is explicit;
-curve selection reads nodes and calibration inputs. Results use read-only grids;
+visible active pane when Excel is ready and the native change token changes,
+and disposes panes for closed windows. The object grid uses virtual rows, and
+only the visible explorer tab binds its context/pricer selectors.
+Details is always available; Trade requests appears for trades, and Curves appears
+for objects with curves. Selection and the chosen tab follow the same object when
+recalculation replaces its handle revision, including after quote corrections.
+Normal browsing does not request workbook recalculation. Trade pricing and
+curve queries are explicit; choose a view and click its request/refresh button.
+**Reset Memory & Rebuild** is a queued macro: it clears native state, cancels
+pending browser requests and explicitly invokes Excel's `CalculateFullRebuild`
+for all open workbooks. The calculation mode is not changed. Results use read-only grids;
 all grids allow multiple selected rows, Ctrl+A/Ctrl+C, and a right-click copy menu.
+Column headers wrap and grow to fit their text. Numeric values and copied table
+values use Excel's decimal separator, including a custom separator; identifiers,
+dates, formulas and handles retain their original text.
 Cashflow tables include coupon dates, contractual/fixing indices, signed notional
 and rate/spread conventions. Selecting a calibration row displays its parameters.
+Closing a workbook retires its native objects independently of other open workbooks.
+Reopening it creates a fresh session, even before the next maintenance timer tick.
 Setup links open worksheet guides; creation
 wizards are deferred.
 

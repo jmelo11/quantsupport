@@ -47,6 +47,13 @@ namespace QuantSupport.Ribbon
             this.windowId = windowId;
             Dock = DockStyle.Fill;
             TableClipboard.Configure(table);
+            table.CellFormatting += (sender, args) =>
+            {
+                if (response?.NumericColumns == null || !response.NumericColumns.Contains(args.ColumnIndex)) return;
+                args.Value = BrowserDisplay.Number(Convert.ToString(args.Value));
+                args.CellStyle.Alignment = DataGridViewContentAlignment.MiddleRight;
+                args.FormattingApplied = true;
+            };
             var toolbar = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, Padding = new Padding(4), WrapContents = true };
             Action<string, Control> add = (label, control) => {
                 toolbar.Controls.Add(new Label { Text = label, AutoSize = true, Padding = new Padding(0, 6, 0, 0) });
@@ -129,6 +136,8 @@ namespace QuantSupport.Ribbon
             parameters.Clear();
         }
 
+        internal void CancelRequests() { generation++; }
+
         private void OptionsChanged()
         {
             if (binding) return;
@@ -142,7 +151,7 @@ namespace QuantSupport.Ribbon
             else if (bondFairRate) message.Text = "BondPricer does not define FairRate. Request YieldToMaturity or ZSpread through QS.EVALUATE for the bond's price or spread anchor.";
             else if (!run.Enabled) message.Text = "Create a pricing context and an explicit pricer in the workbook, then refresh.";
             else if (trades) message.Text = "Choose a context, pricer and request, then click Run request. Fair rates use a zero-based leg or loan segment.";
-            else RunQuery();
+            else message.Text = "Choose a curve and view, then click Refresh table.";
         }
 
         private void RunQuery()
@@ -171,6 +180,17 @@ namespace QuantSupport.Ribbon
                     if (BrowserPanes.ActiveWindowId() != windowId() || !string.Equals((string)app.ActiveWorkbook.Name, request.Workbook, StringComparison.OrdinalIgnoreCase))
                         throw new InvalidOperationException("Activate the source workbook and refresh before running this request.");
                     if (!(bool)app.Ready) throw new InvalidOperationException("Wait until Excel is ready, then retry.");
+                    // A queued request follows the same object to its newest revision.
+                    // Dependency validation remains native and rejects genuinely stale inputs.
+                    var latest = NativeBrowser.Read(request.Workbook);
+                    var selected = BrowserDisplay.Resolve(latest, item);
+                    if (selected == null) throw new InvalidOperationException("This object was removed. Refresh the browser and select its replacement.");
+                    request.Handle = selected.Handle;
+                    if (!string.IsNullOrEmpty(request.Context))
+                        request.Context = BrowserDisplay.Resolve(latest, context.SelectedItem as BrowserObject)?.Handle ?? request.Context;
+                    if (!string.IsNullOrEmpty(request.Pricer))
+                        request.Pricer = BrowserDisplay.Resolve(latest, pricer.SelectedItem as BrowserObject)?.Handle ?? request.Pricer;
+                    BrowserDisplay.DecimalSeparator = BrowserPanes.DecimalSeparator(app);
                     var result = NativeBrowser.Query(request);
                     if (IsDisposed || token != generation) return;
                     response = result;
@@ -189,8 +209,10 @@ namespace QuantSupport.Ribbon
             var row = table.CurrentRow?.Index ?? -1;
             if (response?.Parameters == null || row < 0 || row >= response.Parameters.Count) return;
             var text = new StringBuilder("Selected instrument / input parameters" + Environment.NewLine);
-            foreach (var field in response.Parameters[row]) text.AppendLine(field.Label + ": " + field.Value);
+            foreach (var field in response.Parameters[row]) text.AppendLine(field.Label + ": " + BrowserDisplay.Value(field));
             parameters.Text = text.ToString();
         }
+
+        internal void RefreshFormats() { table.Invalidate(); ShowParameters(); }
     }
 }

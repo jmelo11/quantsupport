@@ -43,6 +43,21 @@ store preserves the inputs already held by existing contexts; recalculate
 dependent contexts to use the updated history. Each distinct market date still
 requires its own curve construction and calibration.
 
+The ribbon's object list refreshes only when its native change token changes;
+it does not repeatedly build unchanged snapshots. Pricing and curve-table
+queries require an explicit button click. **Reset Memory & Rebuild** clears all
+native objects and AD tape storage in this Excel instance, then rebuilds every
+open workbook. This explicit action also calculates workbooks in Manual mode
+without changing that setting. Workbook formulas and inputs remain intact;
+their handles are recreated.
+
+The browser shows only the tabs relevant to the selected object. Table headers
+expand to fit their text, and numeric displays and copied values follow Excel's
+decimal separator. After correcting a quote and recalculating, the browser keeps
+the same object and curve selection with its new handle; click **Refresh table**
+to request the updated curve. Closing a workbook releases its native state while
+other workbooks remain open.
+
 The examples continue the handles from :doc:`workbook`: ``H5`` is the base
 context, ``H6`` the swap, ``C7`` the final quote handle and ``H4`` the curve
 configuration. Place additional formulas in clear cells and retain upstream

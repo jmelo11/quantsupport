@@ -35,6 +35,20 @@ namespace QuantSupport.Ribbon
         public void ShowAll(IRibbonControl control) { Run(() => BrowserPanes.Show("All objects")); }
         public void InspectSelection(IRibbonControl control) { Run(() => BrowserPanes.Inspect()); }
         public void RefreshBrowser(IRibbonControl control) { Run(() => BrowserPanes.Show(null)); }
+        public void ResetMemory(IRibbonControl control)
+        {
+            ExcelAsyncUtil.QueueAsMacro(() => Run(() =>
+            {
+                dynamic app = ExcelDnaUtil.Application;
+                if (!(bool)app.Ready || (int)app.CalculationState == 1)
+                    throw new InvalidOperationException("Wait until Excel calculation finishes, then reset memory.");
+                NativeBrowser.Reset();
+                BrowserPanes.InvalidateAll();
+                // This explicit user action rebuilds every workbook while retaining
+                // the user's Automatic/Manual calculation setting.
+                app.CalculateFullRebuild();
+            }));
+        }
         public void OpenSetup(IRibbonControl control) { Open("guide/workbook.html"); }
         public void OpenReference(IRibbonControl control) { Open("functions/index.html"); }
 
