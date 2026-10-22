@@ -1,4 +1,7 @@
-use std::collections::{BTreeMap, HashMap};
+use std::{
+    collections::{BTreeMap, HashMap},
+    sync::Arc,
+};
 
 use serde::{Deserialize, Serialize};
 
@@ -11,9 +14,11 @@ use crate::{
 
 /// Fixing store for market indices, providing access to historical fixings and the ability to fill missing
 /// fixings using interpolation.
+///
+/// Clones share immutable history; updates copy shared data before changing it.
 #[derive(Serialize, Debug, Default, Deserialize, Clone)]
 pub struct FixingStore {
-    values: HashMap<MarketIndex, BTreeMap<Date, f64>>,
+    values: Arc<HashMap<MarketIndex, BTreeMap<Date, f64>>>,
 }
 
 impl FixingStore {
@@ -41,7 +46,7 @@ impl FixingStore {
     /// Adds a fixing for a given date and rate.
     pub fn add_fixing(&mut self, market_index: &MarketIndex, date: Date, value: f64) {
         // ensure an entry exists and insert the fixing
-        self.values
+        Arc::make_mut(&mut self.values)
             .entry(market_index.clone())
             .or_default()
             .insert(date, value);
@@ -49,10 +54,13 @@ impl FixingStore {
 
     /// Removes one stored fixing and drops an empty index bucket.
     pub fn remove_fixing(&mut self, market_index: &MarketIndex, date: Date) -> Option<f64> {
-        let fixings = self.values.get_mut(market_index)?;
+        // A missing observation must not copy an otherwise shared history.
+        self.values.get(market_index)?.get(&date)?;
+        let values = Arc::make_mut(&mut self.values);
+        let fixings = values.get_mut(market_index)?;
         let previous = fixings.remove(&date);
         if fixings.is_empty() {
-            self.values.remove(market_index);
+            values.remove(market_index);
         }
         previous
     }
@@ -68,7 +76,7 @@ impl FixingStore {
     /// Returns an error if interpolation fails during the filling process.
     #[allow(clippy::cast_precision_loss)]
     pub fn fill_missing_fixings(&mut self, interpolator: Interpolator) -> Result<()> {
-        self.values
+        Arc::make_mut(&mut self.values)
             .values_mut()
             .filter(|fixings| !fixings.is_empty())
             .try_for_each(|fixings| {
@@ -101,5 +109,44 @@ impl FixingStore {
                 }
                 Ok(())
             })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn clones_share_history_until_an_observation_changes() {
+        let date = Date::new(2026, 1, 15);
+        let mut original = FixingStore::default();
+        original.add_fixing(&MarketIndex::SOFR, date, 0.04);
+        let mut updated = original.clone();
+        assert!(Arc::ptr_eq(&original.values, &updated.values));
+        assert_eq!(updated.remove_fixing(&MarketIndex::SOFR, date + 1), None);
+        assert!(Arc::ptr_eq(&original.values, &updated.values));
+        updated.add_fixing(&MarketIndex::SOFR, date, 0.05);
+        assert!(!Arc::ptr_eq(&original.values, &updated.values));
+        assert_eq!(original.fixing(&MarketIndex::SOFR, date).unwrap(), 0.04);
+        assert_eq!(updated.fixing(&MarketIndex::SOFR, date).unwrap(), 0.05);
+        let mut removed = original.clone();
+        assert_eq!(removed.remove_fixing(&MarketIndex::SOFR, date), Some(0.04));
+        assert!(removed.fixings(&MarketIndex::SOFR).is_err());
+        assert_eq!(original.fixing(&MarketIndex::SOFR, date).unwrap(), 0.04);
+    }
+
+    #[test]
+    fn shared_history_preserves_json_and_interpolation_isolation() {
+        let json = r#"{"values":{"SOFR":{"2026-01-15":0.04,"2026-01-17":0.06}}}"#;
+        let original: FixingStore = serde_json::from_str(json).unwrap();
+        assert_eq!(
+            serde_json::to_value(&original).unwrap(),
+            serde_json::from_str::<serde_json::Value>(json).unwrap()
+        );
+        let mut filled = original.clone();
+        filled.fill_missing_fixings(Interpolator::Linear).unwrap();
+        let middle = Date::new(2026, 1, 16);
+        assert!((filled.fixing(&MarketIndex::SOFR, middle).unwrap() - 0.05).abs() < 1e-12);
+        assert!(original.fixing(&MarketIndex::SOFR, middle).is_err());
     }
 }

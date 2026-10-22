@@ -15,6 +15,10 @@ path = "tools/function_catalog.rs"
 name = "validate_example_market"
 path = "tools/validate_example_market.rs"
 
+[[example]]
+name = "benchmark_history"
+path = "tools/benchmark_history.rs"
+
 [lib]
 name = "quantsupport_xll"
 crate-type = ["cdylib", "rlib"]

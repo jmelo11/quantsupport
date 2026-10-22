@@ -45,7 +45,7 @@ rayon = "1.7.0"
 rand = "0.8.0"
 sobol_burley = { version = "0.5.0", default-features = false }
 thiserror = "1.0"
-serde = { version = "1.0", features = ["derive"] }
+serde = { version = "1.0", features = ["derive", "rc"] }
 nalgebra = "0.34.1"
 num-complex = "0.4"
 num-traits = "0.2"
