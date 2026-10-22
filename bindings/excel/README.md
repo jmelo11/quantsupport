@@ -33,19 +33,37 @@ The ribbon and IntelliSense companions require .NET Framework 4.6.2 or later.
 
 ### QuantSupport ribbon and object browser
 
-The **QuantSupport** tab provides **Pricing Contexts**, **Instruments & Trades**,
+The **QuantSupport** tab provides **Pricing Contexts**, **Instruments & Trades**, **Curves**,
 **All Objects**, **Inspect Selection**, and **Refresh Browser**, plus links to the
 setup guide and function reference. The side panel lists live objects belonging
 to its workbook, with search, type filters, current handles, source formulas and
 dependencies. Select an object, choose a source, and click **Go to cell** to edit
 its worksheet definition. **Copy handle** copies its current runtime handle.
 
+Select a trade to open **Trade requests**. Choose an existing pricing context,
+an explicit pricer and **PV**, **Cashflows** or **Fair rate**, then click
+**Run request**. Fair rates require a zero-based swap leg or loan rate segment;
+the selected pricer determines which requests it supports. Results appear in
+the panel without adding worksheet formulas or stored results. Changing an input
+selection clears the previous result; requests run again only when you click.
+
+Select **Curves**, then a context, curve configuration or constructed curve/store.
+Choose a curve to see its dates, discount factors, zero rates and forwards.
+Rates use Simple/Annual conventions and the curve's day count; flat curves show
+labelled annual samples. Switch to **Instruments & inputs** to see calibration
+quote identifiers, types, market levels and pillar dates. Selecting a row shows
+its instrument parameters and curve conventions. Explicit zero-rate inputs and
+composite curve components are also shown. For a standalone configuration or
+curve, select its pricing context to obtain constructed nodes or market inputs.
+
 Contexts display their valuation date, historical snapshot timestamp in UTC,
 quote side, base currency/index and constructed market components. Instruments
 display identifiers and notionals; trades display identifiers, trade dates and
 sides. These dates describe market/contract data, not object creation times.
 Changed dependencies are marked **Recalculate**. The browser refreshes while
-Excel is ready and never triggers calculation or keeps native objects alive.
+Excel is ready and never triggers workbook recalculation or keeps native objects alive.
+Curve inspection and trade requests use current handles; changed inputs must be
+recalculated before running a request.
 Each Excel window gets its own panel, released when that window closes.
 
 The ribbon is optional; formulas work with the native XLL alone. Load the ribbon

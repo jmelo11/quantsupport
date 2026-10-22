@@ -11,6 +11,10 @@ QuantSupport for 64-bit Windows Excel
 7. Open the QuantSupport ribbon tab. Pricing Contexts and Instruments & Trades
    open the workbook object browser; Inspect Selection shows the object in the
    active cell. Select an object and click Go to cell to edit its source inputs.
+   Select a trade, choose its context and pricer in Trade requests, then run
+   PV, Cashflows or Fair rate (with a zero-based leg/segment).
+   Curves opens curve tables and Instruments & inputs; select an instrument
+   row to inspect its parameters. Select a pricing context for market levels.
 
 Keep quantsupport.intellisense.xml beside quantsupport.xll. If you rename the
 QuantSupport XLL, give the XML the same base name. Replacing the add-in requires
