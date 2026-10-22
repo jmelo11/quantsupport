@@ -297,6 +297,20 @@ formula instead of one `SET` formula per observation:
 =QS.FIXINGS.FROM.RANGE("usd.fixings",F3:H10002)
 ```
 
+Quote components can also come from separate arrays or nonadjacent ranges:
+
+```text
+=QS.QUOTES.FROM.RANGE("usd.quotes",B1,A3:A1002,H3:H1002)
+=QS.QUOTES.FROM.RANGE("usd.quotes",B1,A3#,H3#,I3#,J3#)
+```
+
+The arguments after the date are **Identifiers, Mid, Bid, Ask**. Each component
+can be a single cell, row array or column array, with the same number of entries
+in each supplied array. Bid and Ask are optional; blanks preserve absent sides
+without shifting subsequent entries. Omit Mid only when supplying another side
+or using the combined-table form. The combined table remains supported when all
+three side arguments are omitted.
+
 Quote columns are **Identifier, Mid**, optionally followed by **Bid, Ask**.
 Fixing columns are **Market index, Date, Value**, with dates as ISO text.
 Matching headers and fully blank rows are optional. Missing quote sides remain

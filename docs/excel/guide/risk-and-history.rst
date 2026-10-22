@@ -17,6 +17,20 @@ dated contexts to reduce the number of worksheet formulas:
    =QS.QUOTES.FROM.RANGE("history.usd.quotes",B1,A3:D1002)
    =QS.FIXINGS.FROM.RANGE("history.usd.fixings",F3:H10002)
 
+Quotes can also use separate component arrays:
+
+.. code-block:: text
+
+   =QS.QUOTES.FROM.RANGE("history.usd.quotes",B1,A3:A1002,H3:H1002)
+   =QS.QUOTES.FROM.RANGE("history.usd.quotes",B1,A3#,H3#,I3#,J3#)
+
+After the date, the arguments are **Identifiers, Mid, Bid, Ask**. Each supplied
+component must be one row or column with the same number of entries. Single
+cells are accepted for a single quote. Bid and Ask are optional, and blank
+entries retain missing levels without moving other quotes. To supply only Bid
+or Ask, leave the earlier side arguments blank. The existing combined-table
+form is selected when all side arguments are omitted.
+
 The quote range has **Identifier, Mid** columns, optionally followed by
 **Bid, Ask**. The fixing range has **Market index, Date, Value** columns;
 dates are ISO text such as ``2026-01-15``. Matching headers and fully blank

@@ -190,6 +190,28 @@ class ExcelLifecycleTests(unittest.TestCase):
         finally:
             book.Close(False)
 
+    def test_separate_quote_arrays_track_edits_and_missing_sides(self):
+        book = self.excel.Workbooks.Add()
+        try:
+            sheet = book.Worksheets(1)
+            sheet.Range("A1:A2").Value2 = (("FixedRateDeposit_USD_SOFR_6M",),
+                                           ("FixedRateDeposit_USD_SOFR_1Y",))
+            sheet.Range("D1:E1").Value2 = ((0.04, 0.05),)
+            sheet.Range("H1:H2").Value2 = ((None,), (0.06,))
+            sheet.Range("K1").Formula = '=QS.QUOTES.FROM.RANGE("arrays","2026-01-15",A1:A2,D1:E1,,H1:H2)'
+            sheet.Range("K2").Formula = '=QS.QUOTES.GET(K1,"FixedRateDeposit_USD_SOFR_6M","Mid")'
+            sheet.Range("K3").Formula = '=QS.QUOTES.GET(K1,"FixedRateDeposit_USD_SOFR_1Y","Ask")'
+            self.assertEqual(sheet.Range("K2").Value2, 0.04)
+            self.assertEqual(sheet.Range("K3").Value2, 0.06)
+            sheet.Range("D1").Value2 = 0.07
+            self.assertEqual(sheet.Range("K2").Value2, 0.07)
+            sheet.Range("H2").ClearContents()
+            self.assertIsInstance(sheet.Range("K3").Value2, int)
+            sheet.Range("K1").Formula = '=QS.QUOTES.FROM.RANGE("arrays","2026-01-15",A1:A2,D1)'
+            self.assertIsInstance(sheet.Range("K1").Value2, int)
+        finally:
+            book.Close(False)
+
 
 if __name__ == "__main__":
     unittest.main()
