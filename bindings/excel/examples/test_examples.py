@@ -117,7 +117,7 @@ class Workbook:
             return []
         if function == "QS.CURVE.CONFIGS.ADD":
             return args[0] + [dict(zip(("market_index", "day_counter", "interpolator", "enable_extrapolation", "quotes"), args[1:]))]
-        if function == "QS.CONTEXT.CREATE":
+        if function == "QS.CONTEXT.FROM.COMPONENTS":
             return {"name": args[0], "quotes": args[1], "curves": args[2],
                     "base_currency": args[12], "base_index": args[13], "quote_level": args[14]}
         raise AssertionError(f"Unsupported market-input formula: {expression}")
@@ -242,7 +242,7 @@ class WorkbookTests(unittest.TestCase):
                         self.assertTrue(args[index], parameter["name"])
                     self.assertEqual(node.attrib["t"], "array", "Formula2 must preserve XLL spills")
                     self.assertNotIn("@", formula)
-                    if function == "QS.CONTEXT.CREATE":
+                    if function == "QS.CONTEXT.FROM.COMPONENTS":
                         self.assertGreaterEqual(len(args), 14)
                         self.assertIn(book.literal(args[12]), ("USD", "EUR"))
                         self.assertIn(book.literal(args[13]), ("SOFR", "ESTR"))
@@ -250,7 +250,10 @@ class WorkbookTests(unittest.TestCase):
                     self.assertIsNone(book.value(sheet, address))
                     count += 1
             self.assertGreater(count, 10)
-            if name != "interpolation":
+            if name == "context":
+                self.assertTrue({"QS.CONTEXT.CREATE", "QS.CONTEXT.ADD.CURVE", "QS.CONTEXT.PRICE", "QS.HISTORY.VALUES", "QS.LOAN.SETTINGS"} <= functions)
+                self.assertFalse({"QS.EVALUATE", "QS.RESULT.VALUE", "QS.CURVE.CONFIGS.ADD"} & functions)
+            elif name != "interpolation":
                 self.assertTrue(any(function.startswith("QS.INSTRUMENT.") for function in functions))
                 self.assertTrue({"QS.TRADE.CREATE", "QS.PRICER.CREATE", "QS.EVALUATE", "QS.RESULT.VALUE"} <= functions)
                 self.assertTrue(any(function.startswith("QS.DISCOUNT.POLICY.") for function in functions))
@@ -306,7 +309,7 @@ class WorkbookTests(unittest.TestCase):
                 if not sheet.endswith(" Results") or not expression.startswith("_xll.QS."):
                     continue
                 with self.subTest(example=name, sheet=sheet, cell=address):
-                    self.assertTrue(expression.startswith(("_xll.QS.RESULT.", "_xll.QS.CURVE.DISCOUNT(",
+                    self.assertTrue(expression.startswith(("_xll.QS.CONTEXT.PRICE(", "_xll.QS.HISTORY.VALUES(", "_xll.QS.RESULT.", "_xll.QS.CURVE.DISCOUNT(",
                                                           "_xll.QS.CURVE.FORWARD(", "_xll.QS.CONTEXT.SNAPSHOT.TIMESTAMP(",
                                                           "_xll.QS.CONTEXT.EVALUATION.DATE(")))
             filename = next(filename for example, filename, _ in EXAMPLES if example == name)
@@ -387,7 +390,7 @@ class WorkbookTests(unittest.TestCase):
         query_date = book.market_input("Swap_Maturity")
         inputs = [book.market_input(expression) | {"query_date": query_date}
                   for _, _, expression, _ in book.formulas()
-                  if expression.startswith("_xll.QS.CONTEXT.CREATE(")]
+                  if expression.startswith("_xll.QS.CONTEXT.FROM.COMPONENTS(")]
         command = ["cargo", "run", "--quiet", "-p", "quantsupport-xll", "--example", "validate_example_market"]
         checked = subprocess.run(command, cwd=ROOT, input=json.dumps(inputs), text=True, capture_output=True)
         self.assertEqual(checked.returncode, 0, checked.stderr)

@@ -125,7 +125,7 @@ Set it up once in 64-bit Windows Excel:
    [releases](https://github.com/jmelo11/quantsupport/releases).
 2. Load the included `ExcelDna.IntelliSense64.xll` through Excel's Add-ins dialog,
    alongside `quantsupport.xll`.
-3. Restart Excel with both add-ins enabled, then type `=QS.EVALUATE` followed
+3. Restart Excel with both add-ins enabled, then type `=QS.CONTEXT.PRICE` followed
    by an opening parenthesis to see the parameter list and help for the current argument.
 
 The metadata is generated from QuantSupport's function catalog, covering every
@@ -164,39 +164,81 @@ rows and columns and omits headers. `=QS.RESULT.SENSITIVITIES(result,FALSE,FALSE
 keeps the usual layout without headers. Lists such as `QS.SCHEDULE` and
 `QS.SIMULATION.PATH` accept only `transpose` because they have no headers.
 
-## A visible market-to-price chain
+## Context-first pricing
 
-Put ISO text `2026-02-24` in `B1`. Put native quote identifiers and annual decimal
-rates in `A3:B6`, for example deposit
-`FixedRateDeposit_USD_SOFR_1D` at `0.045`, followed by
-`OIS_USD_SOFR_1Y`, `_2Y`, `_5Y` at `0.04837`, `0.04528`, `0.04077`.
-Use full identifiers in each row, not literal shorthand `_2Y`.
+Create a root context, add independent inputs, then request a value directly.
+All additions reference the **same root cell**. The pricing formula takes the
+**complete input range**, so Excel orders recalculation and propagates edits.
+There is no last-update handle to find.
+
+With the market date in B1 and Identifier/Mid quotes in A3:B6:
 
 ```text
-H2 =QS.QUOTES.CREATE("workbook.usd.quotes",$B$1)
-C3 =QS.QUOTES.SET(H2,A3,B3,,)
-C4 =QS.QUOTES.SET(C3,A4,B4,,)
-C5 =QS.QUOTES.SET(C4,A5,B5,,)
-C6 =QS.QUOTES.SET(C5,A6,B6,,)
-H3 =QS.CURVE.CONFIGS.CREATE("workbook.usd.curves")
-H4 =QS.CURVE.CONFIGS.ADD(H3,"SOFR","Actual360","LogLinear",FALSE,A3:A6)
-H5 =QS.CONTEXT.CREATE("workbook.usd.context",C6,H4,,,,,,,,,,"USD","SOFR","Mid")
-H6 =QS.INSTRUMENT.SWAP("workbook.usd.instrument",$B$1,"2031-02-24","USD","SOFR",10000000,0.04,0,"Actual360","Simple","Annual","Semiannual","Quarterly")
-H7 =QS.TRADE.CREATE("workbook.usd.trade",H6,$B$1,"Receive")
-H8 =QS.DISCOUNT.POLICY.CSA("workbook.usd.policy","USD","SOFR")
-H9 =QS.PRICER.CREATE("workbook.usd.pricer","DiscountedCashflowPricer",H8)
-K2 Value
-K3 =QS.REQUEST.FAIR.RATE(1)
-H10 =QS.EVALUATE("workbook.usd.results",H9,H7,H5,K2:K3)
-H11 =QS.RESULT.VALUE(H10)
-H12 =QS.RESULT.FAIR.RATE(H10)
+H2 =QS.CONTEXT.CREATE("usd.context",$B$1,"USD","SOFR")
+H3 =QS.CONTEXT.ADD.CURVE(H2,"SOFR",A3:B6)
+H5 =QS.INSTRUMENT.SWAP("swap",$B$1,"2031-02-24","USD","SOFR",10000000,0.04,0,"Actual360","Simple","Annual","Semiannual","Quarterly")
+H6 =QS.CONTEXT.PRICE(H2,H5,"Value",H3)
+H7 =QS.CONTEXT.PRICE(H2,H5,"FairRate(0)",H3)
+H8 =QS.CONTEXT.PRICE(H2,H5,"Cashflows",H3)
 ```
 
-`QS.CONTEXT.CREATE` takes base currency and base index in positions **13 and
-14**, then optional quote level. Preserve the intervening empty component
-positions. Dates are ISO text; 4% is numeric `0.04`; a quote-side blank remains
-absent instead of copying Mid. See the guide for inspection spills and examples
-that require no JSON.
+A curve input includes its definition and quotes. Alternatively, keep a shared
+quote table in one addition and let each curve select matching identifiers:
+
+```text
+H3 =QS.CONTEXT.ADD.QUOTES(H2,A3:B6)
+H4 =QS.CONTEXT.ADD.CURVE(H2,"SOFR")
+H6 =QS.CONTEXT.PRICE(H2,H5,"Value",H3:H4)
+```
+
+Other additions cover fixings, FX, credit curves, explicit zero-rate curves,
+composite curves, volatility surfaces and cubes. Additions are worksheet-owned
+market definitions; they do not mutate the root as a hidden side effect. Blank
+input-range cells are ignored. Duplicate quotes/curves and inputs from another
+root fail explicitly. Include every relevant addition in prices and snapshots.
+
+`QS.CONTEXT.PRICE` returns the requested number or table, with no evaluation
+object. `QS.CONTEXT.VALUES` prices a range of instruments against one prepared
+market. Native product pricers use the context base discount curve by default;
+supply an explicit pricer to choose funding or model settings. Contracts use a
+Receive position at the context date and their contractual notional. Pass a trade
+for another side/date, quantity override, or bond anchor. Swaptions require an
+explicit configured pricer.
+
+Loan options are discoverable through `QS.LOAN.SETTINGS` named arguments;
+pass its result to the loan constructor's settings argument. `QS.LOAN.PRICER`
+exposes discount, refinancing and fair-rate amortization parameters directly.
+Legacy Setting/Value tables remain accepted.
+
+For large origination studies, use a batch instead of 50,000 worksheet contexts:
+
+```text
+=QS.HISTORY.VALUES(archive,instruments,origination_timestamps,loan_pricer)
+```
+
+Each instrument has one offset-aware timestamp. The batch returns values in
+input order and constructs each distinct matched market once. It defaults to
+Previous/Mid and preserves the selected market's actual reference date; it does
+not roll a Friday market to a weekend origination date. Fixings are supplied
+separately and must represent the intended historical information set.
+Separately named `QS.CONTEXT.FROM.SNAPSHOT` objects also share native calibrated
+markets when archive revision, matched snapshot, quote side and fixing revision
+match. Different names or requested instants alone do not rebuild curves.
+
+Open [context_pricing_example.xlsx](examples/context_pricing_example.xlsx) for
+context inputs, direct loan prices, cashflows, sensitivities and batch history.
+See the [context-first guide](../../docs/excel/guide/context-first.rst).
+
+**Migration:** the former 15-argument `QS.CONTEXT.CREATE` is now
+`QS.CONTEXT.FROM.COMPONENTS`, with the same argument order. Existing custom
+workbooks using that signature must rename the function or adopt the new
+context-first flow. The bundled component-based studies use the renamed
+constructor. The legacy evaluation/result APIs remain available for stored,
+multi-measure evaluations.
+
+Historical batching and market reuse are synchronous. RTD/background execution
+has not been added: asynchronous return alone does not parallelize calibration
+or make the registry and AD state safe to access from worker threads.
 
 ## Calculation and financial conventions
 
@@ -339,6 +381,10 @@ histories share storage, while edits copy shared history before changing it.
 Run `cargo run -p quantsupport-xll --release --example benchmark_history` to
 measure attaching 10,000 shared fixings to 1,000 dated contexts. This benchmark
 excludes Excel callbacks, curve construction and calibration.
+For the 50,000-context calibration-reuse microbenchmark, run
+`cargo test -p quantsupport-xll --release --lib benchmark_fifty_thousand_contexts -- --ignored --nocapture`.
+It compares repeated construction of one simple deposit market with separately
+named contexts sharing that market; it excludes instrument valuation and Excel.
 
 The ribbon checks a cheap native change token before refreshing its object
 list. Unchanged registries do not generate snapshots, and selecting an object
@@ -358,8 +404,9 @@ pricer and an explicit native discount policy. `QS.EVALUATE` returns an
 `EvaluationResults` handle, read by `QS.RESULT.*`. Bond pricing anchors belong
 to trades; loan refinancing and fair-rate amortization settings belong to pricers.
 Existing `QS.TRADE.<product>` and direct valuation shortcuts remain compatibility
-helpers; new examples use the separated object workflow. Loans require the
-explicit pricer path.
+helpers; detailed component-based studies retain the explicit object workflow.
+The context-first API also accepts contracts directly and selects a native
+product pricer using the context base discount curve by default.
 
 `QS.RESULT.VALUE` is monetary PV under the pricer's conventions. Swap cashflow
 spills contain signed undiscounted amounts. `FairRate(index)` selects a zero-based

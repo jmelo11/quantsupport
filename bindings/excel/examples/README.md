@@ -6,6 +6,7 @@ Load the matching `quantsupport.xll` in **64-bit Windows Excel** before opening 
 
 | Workbook | What to follow |
 | --- | --- |
+| [Context-first pricing](context_pricing_example.xlsx) | Create a short context, add independent inputs, request direct loan values and run a historical batch without per-row contexts or evaluation handles. |
 | [Portfolio aggregation](portfolio_aggregation_example.xlsx) | Pass a range of six trade handles, reconcile PV, and inspect weighted coupon rates/spreads, distinct SOFR/TermSOFR3m fixing indices, sensitivities and separate interest/capital payments. |
 | [Swap pricing](swap_pricing_example.xlsx) | Bootstrap SOFR under USD collateral and value a receive-fixed USD swap. Bootstrap ESTR in a separate EUR context for curve comparisons. |
 | [Loan pricing](loan_pricing_example.xlsx) | Compare 12 agreements: repayment styles, floating and mixed coupons, prepayment, borrower credit, funding and stepped coupons. |
@@ -22,7 +23,7 @@ Load the matching `quantsupport.xll` in **64-bit Windows Excel** before opening 
 - **Cashflows / Risk / Curves:** tables have dedicated space to spill. Sensitivities are raw derivatives per unit market input; multiplying a decimal-rate sensitivity by `0.0001` approximates the effect of a +1 bp move.
 - **Layouts** in the loan study shows the same small curve table with all four combinations of `transpose` and `headers`. The schedule study also shows a transposed date list.
 
-The pricing studies use the library's separate **instrument → trade → discount policy → pricer → evaluation → result** objects. FUNDING is an ordinary composite curve selected by a discount policy. Coupon schedules and settings use worksheet ranges.
+Start with **Context-first pricing** for the shorter API. Its additions all reference the same root; pricing takes the complete additions range. The other studies retain the library's explicit **instrument → trade → discount policy → pricer → evaluation → result** objects. FUNDING is an ordinary composite curve selected by a discount policy. Coupon schedules and settings use worksheet ranges.
 
 The swap study keeps USD/SOFR and EUR/ESTR bootstrap configurations in separate contexts. Bootstrapping EUR OIS inside a USD collateral context would require a `Collateral:EUR/USD` curve calibrated from additional market data. The ESTR comparison context has no role in the USD swap's valuation.
 
@@ -38,7 +39,7 @@ python bindings/excel/examples/create_examples.py
 python -m unittest discover -s bindings/excel/examples -p 'test_*.py'
 ```
 
-Use `--example portfolio`, `swap`, `historical`, `loans`, `bonds`, or `interpolation` to generate one file, and `--output-dir PATH` to choose a destination.
+Use `--example context`, `portfolio`, `swap`, `historical`, `loans`, `bonds`, or `interpolation` to generate one file, and `--output-dir PATH` to choose a destination.
 
 The portfolio workbook matches the [Python notebook](../../python/examples/sensitivity/portfolio_aggregation.ipynb).
 Its default USD book has two deposits (100,000 at 4% and 300,000 at 6%), two

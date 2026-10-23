@@ -16,7 +16,7 @@ def formula(name, *arguments):
 
 
 def context(name, quotes, curves, currency, index, credit=""):
-    return formula("QS.CONTEXT.CREATE", text(name), quotes, curves, credit,
+    return formula("QS.CONTEXT.FROM.COMPONENTS", text(name), quotes, curves, credit,
                    *([""] * 8), currency, index, '"Mid"')
 
 

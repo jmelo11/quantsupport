@@ -260,7 +260,7 @@ class ExcelReferenceTests(unittest.TestCase):
         cls.records = json.loads(output.stdout)
 
     def test_catalog_has_complete_symbol_and_parameter_details(self):
-        self.assertEqual(len(self.records), 152)
+        self.assertEqual(len(self.records), 167)
         for record in self.records:
             with self.subTest(function=record["name"]):
                 for field in ("name", "category", "help", "return_type", "returns", "errors", "declaration", "source"):
@@ -332,17 +332,19 @@ class ExcelReferenceTests(unittest.TestCase):
                     self.assertIn(name, records)
                     self.assertLessEqual(len(arguments), len(records[name]["arguments"]))
                     count += 1
-                    if name == "QS.CONTEXT.CREATE":
+                    if name == "QS.CONTEXT.FROM.COMPONENTS":
                         self.assertEqual(arguments[12:15], ['"USD"', '"SOFR"', '"Mid"'])
                         contexts.append(arguments)
         self.assertGreater(count, 70)
-        self.assertGreaterEqual(len(contexts), 5)
+        self.assertGreaterEqual(len(contexts), 4)
         model_pricer = next(arguments for name, arguments in formulas((ROOT / "docs/excel/guide/markets-and-products.rst").read_text())
                             if name == "QS.PRICER.CREATE" and '"ClosedFormHullWhiteSwaptionPricer"' in arguments)
         self.assertEqual(model_pricer[2:4], ["L3", "AC30:AD31"])
         self.assertTrue(any(arguments[1] == "BC7" for arguments in contexts))
-        self.assertEqual([a["name"] for a in records["QS.CONTEXT.CREATE"]["arguments"]][12:15],
+        self.assertEqual([a["name"] for a in records["QS.CONTEXT.FROM.COMPONENTS"]["arguments"]][12:15],
                          ["base_currency", "base_index", "quote_level"])
+        self.assertEqual([a["name"] for a in records["QS.CONTEXT.CREATE"]["arguments"]],
+                         ["name", "reference_date", "base_currency", "base_index", "quote_level"])
 
     def test_catalog_financial_units_and_range_threading_are_precise(self):
         records = {record["name"]: record for record in self.records}
@@ -510,7 +512,7 @@ class RenderedReferenceTests(unittest.TestCase):
             self.assertIn("defaults to Linear", interpolation.text)
             self.assertIn("strictly increasing", interpolation.text)
             self.assertIn("#VALUE!", interpolation.text)
-            self.assertEqual(len(list((output / "excel/functions").glob("qs-*.html"))), 152)
+            self.assertEqual(len(list((output / "excel/functions").glob("qs-*.html"))), 167)
             for index in ("genindex.html", "py-modindex.html", "excel-functionindex.html", "search.html", "objects.inv"):
                 self.assertTrue((output / index).is_file(), index)
             self.check_guides_and_studies(output)

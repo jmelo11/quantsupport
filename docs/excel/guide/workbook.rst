@@ -167,9 +167,9 @@ Create the store and chain quote updates in column C:
    C7 =QS.QUOTES.SET(C6,A7,B7,,)
    H3 =QS.CURVE.CONFIGS.CREATE("guide.usd.curves")
    H4 =QS.CURVE.CONFIGS.ADD(H3,"SOFR","Actual360","LogLinear",FALSE,A4:A7)
-   H5 =QS.CONTEXT.CREATE("guide.usd.context",C7,H4,,,,,,,,,,"USD","SOFR","Mid")
+   H5 =QS.CONTEXT.FROM.COMPONENTS("guide.usd.context",C7,H4,,,,,,,,,,"USD","SOFR","Mid")
 
-In :excel:func:`QS.CONTEXT.CREATE`, base currency and base index are arguments
+In :excel:func:`QS.CONTEXT.FROM.COMPONENTS`, base currency and base index are arguments
 **13 and 14**, followed by the optional quote level. Keep the nine intervening
 optional component arguments empty, as shown in the formula.
 

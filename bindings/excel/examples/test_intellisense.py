@@ -50,7 +50,7 @@ class IntelliSenseTests(unittest.TestCase):
     def test_inline_hints_preserve_the_full_context_signature_and_fair_rate_target(self):
         functions = {node.attrib["Name"]: node for node in
                      self.xml.findall("i:FunctionInfo/i:Function", NS)}
-        context = functions["QS.CONTEXT.CREATE"].findall("i:Argument", NS)
+        context = functions["QS.CONTEXT.FROM.COMPONENTS"].findall("i:Argument", NS)
         self.assertEqual(len(context), 15)
         self.assertEqual([argument.attrib["Name"] for argument in context][12:],
                          ["base_currency", "base_index", "quote_level"])

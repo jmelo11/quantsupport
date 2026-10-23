@@ -95,7 +95,7 @@ Construct the stressed market from visible bumped quotes. Put 0.0001 in
    BC5 =QS.QUOTES.SET(BC4,A5,B5+$BB$1,,)
    BC6 =QS.QUOTES.SET(BC5,A6,B6+$BB$1,,)
    BC7 =QS.QUOTES.SET(BC6,A7,B7+$BB$1,,)
-   BB3 =QS.CONTEXT.CREATE("guide.stressed.context",BC7,H4,,,,,,,,,,"USD","SOFR","Mid")
+   BB3 =QS.CONTEXT.FROM.COMPONENTS("guide.stressed.context",BC7,H4,,,,,,,,,,"USD","SOFR","Mid")
    BB5 =QS.EVALUATE("guide.stressed.results",L4,H6,BB3,"Value")
    BB4 =QS.RESULT.VALUE(BB5)
 

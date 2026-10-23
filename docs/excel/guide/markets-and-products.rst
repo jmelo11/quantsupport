@@ -76,7 +76,7 @@ controlled funding stress. Set ``A12:A13`` to text ``0D`` and ``10Y`` and
 
    H14 =QS.CURVE.CONFIGS.CREATE("guide.explicit.curves")
    H15 =QS.CURVE.CONFIGS.ADD.ZERO(H14,"SOFR","Actual360","Linear",TRUE,A12:A13,B12:B13,"Continuous","Annual")
-   H16 =QS.CONTEXT.CREATE("guide.explicit.context",C7,H15,,,,,,,,,,"USD","SOFR","Mid")
+   H16 =QS.CONTEXT.FROM.COMPONENTS("guide.explicit.context",C7,H15,,,,,,,,,,"USD","SOFR","Mid")
    J14 =QS.CURVE.GET(H16,"SOFR")
    J15 =QS.CURVE.DISCOUNT(J14,"2031-02-24")
    J16 =QS.CURVE.ZERO.RATE(J14,"2031-02-24","Continuous","Annual")
@@ -99,7 +99,7 @@ For a composite funding illustration, place text ``0D``, ``10Y`` in
 
    H17 =QS.CURVE.CONFIGS.ADD.ZERO(H15,"SPREAD","Actual360","Linear",TRUE,D12:D13,E12:E13,"Continuous","Annual")
    H18 =QS.CURVE.CONFIGS.ADD.COMPOSITE(H17,"FUNDING","SOFR","SPREAD")
-   H19 =QS.CONTEXT.CREATE("guide.funding.context",C7,H18,,,,,,,,,,"USD","SOFR","Mid")
+   H19 =QS.CONTEXT.FROM.COMPONENTS("guide.funding.context",C7,H18,,,,,,,,,,"USD","SOFR","Mid")
 
 The composite satisfies :math:`D_F=D_{\mathrm{SOFR}}D_{\mathrm{SPREAD}}`.
 Continuous rates add only when compared on a common time basis. All component
