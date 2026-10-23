@@ -23,7 +23,7 @@ Load the matching `quantsupport.xll` in **64-bit Windows Excel** before opening 
 - **Cashflows / Risk / Curves:** tables have dedicated space to spill. Sensitivities are raw derivatives per unit market input; multiplying a decimal-rate sensitivity by `0.0001` approximates the effect of a +1 bp move.
 - **Layouts** in the loan study shows the same small curve table with all four combinations of `transpose` and `headers`. The schedule study also shows a transposed date list.
 
-Start with **Context-first pricing** for the shorter API. Its additions all reference the same root; pricing takes the complete additions range. The other studies retain the library's explicit **instrument → trade → discount policy → pricer → evaluation → result** objects. FUNDING is an ordinary composite curve selected by a discount policy. Coupon schedules use independent period, rate and index arrays. Contract settings use named QS.LOAN.SETTINGS arguments.
+Start with **Context-first pricing** for the shorter API. Its additions all reference the same root; pricing takes the complete additions range. Every study now creates its market through a context and independent additions. The detailed studies use the library's explicit **instrument → trade → discount policy → pricer → evaluation → result** objects. FUNDING is an ordinary composite curve selected by a discount policy. Coupon schedules use independent period, rate and index arrays. Contract settings use named QS.LOAN.SETTINGS arguments.
 
 The swap study keeps USD/SOFR and EUR/ESTR bootstrap configurations in separate contexts. Bootstrapping EUR OIS inside a USD collateral context would require a `Collateral:EUR/USD` curve calibrated from additional market data. The ESTR comparison context has no role in the USD swap's valuation.
 
@@ -56,3 +56,6 @@ interest across accrual periods for NII.
 The tests require Rust/Cargo. They validate navigation, formula dependencies, registered signatures, and the native pricing workflow. They also extract the swap's actual worksheet quotes, configurations and context assumptions and bootstrap them through Rust on any platform, checking the original missing-collateral failure as a regression.
 
 On Windows, install `pywin32` and add `--xll-path bindings/excel/dist/quantsupport.xll` for live checks of native handles, numerical results, selected-case tables, and unchanged recalculation. Actual worksheet execution requires Windows Excel.
+
+Prepared context and observation timestamp arrays feed `QS.SNAPSHOT.FROM.RANGE`;
+no store-constructor chain or input record table is required.

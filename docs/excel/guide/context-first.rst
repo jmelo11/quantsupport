@@ -1,132 +1,83 @@
-Create a context and price directly
-============================================================
+Contexts, inputs and evaluation
+===============================
 
-Start with ``context_pricing_example.xlsx`` under ``bindings/excel/examples``.
-It uses one root context, independent market inputs, and direct pricing.
-Load the matching XLL in 64-bit Windows Excel first; see the
-:doc:`installation instructions <workbook>`.
+A worksheet context corresponds to the Rust ``PricingContext``. It owns dated
+quotes, historical fixings, FX observations and market construction settings.
+Create one root per coherent market and use independent contributions to define
+its inputs. The context's quote reference date is its valuation date.
 
-Put an ISO market date in B1, identifiers in A3:A6 and Mid rates in F3:F6. For example,
-use ``FixedRateDeposit_USD_SOFR_1D`` and ``OIS_USD_SOFR_1Y``, ``_2Y``, ``_5Y``
-with full identifiers and annual decimal rates.
+Create the market
+-----------------
 
-.. code-block:: text
-
-   H2 =QS.CONTEXT.CREATE("market",$B$1,"USD","SOFR")
-   H3 =QS.CONTEXT.ADD.CURVE(H2,"SOFR",A3:A6,TRANSPOSE(F3:F6))
-   H5 =QS.INSTRUMENT.SWAP("swap",$B$1,"2031-02-24","USD","SOFR",10000000,0.04,0,"Actual360","Simple","Annual","Semiannual","Quarterly")
-   H6 =QS.CONTEXT.PRICE(H2,H5,"Value",H3)
-   H7 =QS.CONTEXT.PRICE(H2,H5,"FairRate(0)",H3)
-   H8 =QS.CONTEXT.PRICE(H2,H5,"Cashflows",H3)
-
-The curve input contains both its construction conventions and its quotes.
-There is no separate curve-configuration collection to create or update.
-``Cashflows`` and ``Sensitivities`` return tables directly; scalar measures
-return numbers. No evaluation handle or result-reader formula is required.
-Use separate areas for spilling tables.
-
-Independent additions and Excel dependencies
-------------------------------------------------------------
-
-Each addition references the same root. Independent quote arrays can feed several curves:
+With identifiers in A10:A20 and decimal Mid values in F10:F20:
 
 .. code-block:: text
 
-   H3 =QS.CONTEXT.ADD.QUOTES(H2,A3:A6,F3:F6)
-   H4 =QS.CONTEXT.ADD.CURVE(H2,"SOFR")
-   H6 =QS.CONTEXT.PRICE(H2,H5,"Value",H3:H4)
+   B2 =QS.CONTEXT.CREATE("usd","2026-01-15","USD","SOFR","Mid")
+   B3 =QS.CONTEXT.ADD.QUOTES(B2,A10:A20,TRANSPOSE(F10:F20))
+   B4 =QS.CONTEXT.ADD.CURVE(B2,"SOFR")
+   B5 =QS.CONTEXT.PREPARE("usd.market",B2,B3:B4)
 
-Omitted curve identifiers select context quotes matching the curve's market
-index, excluding volatility quotes. Supply identifiers alone to select an exact
-basket from existing context quotes, or add Mid/Bid/Ask arrays with those identifiers.
-Each field is an independent scalar, row, column or spill. Arrays may occupy
-unrelated cells and have different orientations; entry counts must match.
-Interior blanks are preserved and never shift subsequent observations. Day count, interpolation and extrapolation are optional curve
-arguments; defaults are Actual360, LogLinear and FALSE.
+Every addition references B2. B5 composes the full input array and initializes
+its market. Alternatively pass B3:B4 directly to evaluation. Removing a cell
+from that array removes its contribution. Additions do not change B2 through
+hidden worksheet side effects, and no last-update handle needs to be located.
 
-The complete additions range is an explicit argument to pricing. Excel must
-see those cells as dependencies to order calculations and recalculate after an
-edit. Additions describe inputs without changing the root as a hidden side
-effect. Reordering them does not change the market; removing an addition from
-the pricing range removes it from that calculation. Duplicate input handles,
-quote identifiers, curve indices, or inputs belonging to another root fail
-explicitly. Blank range cells are ignored.
-
-Other input functions accept fixing histories, FX rows, credit curves, explicit
-zero curves, composite curves, volatility surfaces and cubes. Use
-``QS.CONTEXT.ADD.FIXINGS(root,market_indices,dates,values)`` with independent arrays.
-Supply one complete fixing history per context. FX uses separate base-currency,
-quote-currency and rate arrays.
-Credit curves take an explicit currency and discount index with their CDS
-quotes. Zero curves take ordered pillars and annual decimal rates; composite
-curves identify their base and spread indices in the same context.
-
-Contract terms and pricing choices
-------------------------------------------------------------
-
-Direct contract pricing uses Receive, the contractual notional and the context
-date. Pass a trade when side, trade date, quantity or a bond pricing anchor must
-be explicit. Default pricing uses the product's native pricer and the context
-base discount curve. An optional pricer argument chooses another discount or
-model policy. Swaptions require an explicit configured pricer.
-
-``QS.LOAN.SETTINGS`` exposes optional contractual parameters in IntelliSense:
-balloon and amortization rates, credit and recovery, fixing conventions,
-calendar, coupon bounds, introductory periods and prepayment parameters.
-Pass its handle to the loan constructor's settings argument. Coupon periods,
-rates and indices are independent arrays, as are prepayment dates and CPRs.
-
-``QS.LOAN.PRICER(name,currency,discount_index,refinancing_index,rebuild_amortization)``
-exposes the loan pricer's optional controls without a settings table or a
-separate worksheet discount-policy object. Funding remains an ordinary market
-curve selected by the pricer.
-
-Historical studies with many instruments
-------------------------------------------------------------
-
-Capture a complete market with its additions range:
+For an individual quote, specify identifier, value and level:
 
 .. code-block:: text
 
-   =QS.SNAPSHOT.FROM.CONTEXT("market.close","2026-02-24T16:00:00Z",H2,H3:H4)
+   =QS.CONTEXT.ADD.QUOTE(B2,"FixedRateDeposit_USD_SOFR_6M",0.04,"Mid")
+   =QS.CONTEXT.ADD.FIXINGS(B2,A30:A40,F30:F40,J30:J40)
+   =QS.CONTEXT.ADD.FX(B2,A50:A55,F50:F55,J50:J55)
 
-Build an archive with ``QS.SNAPSHOTS.CREATE`` and price instrument ranges:
+All field arrays can be scalar, row, column or spilled arrays. They may have
+different orientations and locations, but supplied fields must have equal entry
+counts. Interior blanks keep their positions. Optional quote sides remain absent
+when omitted. Do not supply headers or rectangular record tables.
+
+Duplicate observations fail explicitly. Separate quote levels for the same
+identifier are combined; providing the same level twice is an error. An input
+belongs to its root context and cannot be accidentally included in another root.
+Shared fixing arrays can be reused across dated roots without copying unchanged
+history. No fixing publication-vintage filtering is inferred.
+
+Evaluate a contract or trade
+----------------------------
 
 .. code-block:: text
 
-   =QS.HISTORY.VALUES(archive,instruments,origination_timestamps,loan_pricer)
+   D2 =QS.INSTRUMENT.FIXED.RATE.DEPOSIT("deposit","2026-01-15","2026-07-15","USD",,1000,0.05,"Actual360","Simple","Annual")
+   D3 =QS.TRADE.CREATE("position",D2,"2026-01-15","Receive")
+   D4 =QS.EVALUATE(B2,D3,"Value",B3:B4)
+   D5 =QS.EVALUATE(B5,D3,"Cashflows")
+   D6 =QS.EVALUATE(B5,D3,"Sensitivities")
+   D7 =QS.EVALUATE.RANGE(B5,D10:D100,"Value")
 
-The instrument and timestamp ranges align one-for-one in row-major order.
-Blank positions fail instead of shifting the correspondence. Timestamps require
-an explicit UTC offset. The batch constructs each distinct matched market once
-and spills scalar values in input order. Optional arguments select a scalar
-request, fixing history, matching rule, quote side and transpose.
+Direct evaluation takes context, instrument/trade, request, input array, optional
+pricer and optional discount policy. Its result is the requested scalar or table.
+The default request is Value. A contract uses Receive, the context date and its
+contractual notional. A trade preserves its position terms. Bond contracts need
+a trade with an explicit pricing anchor before evaluation.
 
-Previous/Mid are the defaults. Previous selects the latest market at or before
-the timestamp. The selected market's actual reference date remains the valuation
-date; curves are not silently rolled to the requested origination date.
-Fixings are separate from snapshots and are not automatically filtered by
-publication vintage.
+A blank pricer selects the native product implementation using the context's
+base discount curve. A policy can override that default selection. For explicit
+model or funding settings, create a configured pricer once and pass its handle;
+leave the separate policy argument blank because the pricer already owns it.
 
-Separately named ``QS.CONTEXT.FROM.SNAPSHOT`` handles share calibrated native
-contexts when archive revision, matched snapshot, quote side and fixing revision
-match. ``QS.CONTEXT.VALUES`` also prices an instrument range against one prepared
-context. Neither batch retains evaluation objects or per-row preview trades.
-Prepared declarative contexts use a bounded cache; historical shared contexts
-are released when their worksheet owners and active batches release them.
+.. code-block:: text
 
-These functions execute synchronously. RTD and background completion have not
-been implemented. Worker isolation, recalculation cancellation and workbook
-closure must be handled before moving registry or AD operations off the main
-Excel calculation thread.
+   H2 =QS.DISCOUNT.POLICY.CSA("csa","USD","SOFR")
+   H3 =QS.PRICER.CREATE("pricer","DiscountedCashflowPricer",H2)
+   H4 =QS.EVALUATE(B5,D3,"Value",,H3)
+   H5 =QS.EVALUATE.RESULTS(B5,D3,{"Value","Cashflows","Sensitivities"},,H3)
+   H6 =QS.RESULT.VALUE(H5)
 
-Migrating existing workbooks
-------------------------------------------------------------
+``QS.EVALUATE.RESULTS`` stores one native ``EvaluationResults`` object when
+several measures or repeated result views are needed. Direct evaluations avoid
+retaining one result object per row. The prepared-market cache is bounded and
+validates upstream revisions before reuse.
 
-Replace earlier combined input ranges with their separate field arrays.
-The former component-handle ``QS.CONTEXT.CREATE`` is now
-``QS.CONTEXT.FROM.COMPONENTS``, preserving its fifteen argument positions.
-Rename that function in existing custom workbooks or migrate to the short
-constructor above. Component-based bundled studies use the renamed function.
-Existing explicit pricers, trades, evaluations and result readers remain
-available for detailed multi-measure workflows.
+For complete editable formulas open ``context_pricing_example.xlsx``. Continue
+with :doc:`workbook` for installation and debugging, :doc:`markets-and-products`
+for construction conventions, or :doc:`risk-and-history` for snapshots and historical batches.

@@ -1,245 +1,118 @@
-Risk checks and historical repricing
-====================================
+Risk, portfolios and historical snapshots
+=========================================
 
-Sensitivities estimate the effect of a small market move, while scenarios
-rebuild and reprice the market under changed inputs. Historical snapshots
-provide a third comparison: the same trade valued against recorded markets.
-Each calculation needs consistent position, currency and quotation conventions.
-
-Loading large histories
------------------------
-
-Use one range import per quote store and one shared fixing-store handle across
-dated contexts to reduce the number of worksheet formulas:
+Evaluation requests follow the Rust library's ``Request`` and
+``EvaluationResults``. Direct evaluation returns one number or table. Use a
+stored result when several requested measures share one evaluation:
 
 .. code-block:: text
 
-   =QS.QUOTES.FROM.RANGE("history.usd.quotes",B1,A3:A1002,B3:B1002,C3:C1002,D3:D1002)
-   =QS.FIXINGS.FROM.RANGE("history.usd.fixings",F3:F10002,G3:G10002,H3:H10002)
+   H2 =QS.EVALUATE.RESULTS(context,trade,{"Value","Cashflows","Sensitivities"},,pricer)
+   H3 =QS.RESULT.VALUE(H2)
+   H4 =QS.RESULT.SENSITIVITIES(H2)
+   H5 =QS.RESULT.COUPONS(H2)
+   H6 =QS.RESULT.CASHFLOW.SUMMARY(H2)
 
-Quotes can also use separate component arrays:
-
-.. code-block:: text
-
-   =QS.QUOTES.FROM.RANGE("history.usd.quotes",B1,A3:A1002,H3:H1002)
-   =QS.QUOTES.FROM.RANGE("history.usd.quotes",B1,A3#,H3#,I3#,J3#)
-
-After the date, the arguments are **Identifiers, Mid, Bid, Ask**. Each supplied
-component must be one row or column with the same number of entries. Single
-cells are accepted for a single quote. Bid and Ask are optional, and blank
-entries retain missing levels without moving other quotes. To supply only Bid
-or Ask, leave the earlier side arguments blank. Each field is passed
-independently; no rectangular table is required.
-
-Fixings take separate **Market indices, Dates, Values** arrays. Dates are ISO
-text such as ``2026-01-15``. Every supplied field can be a row, column or spill
-in a different location, with equal entry counts. Blanks stay aligned. Duplicate
-quote identifiers or index/date fixings are errors. Removing entries removes
-those observations from the rebuilt store. Unchanged values reuse their handles
-when fields are transposed or moved.
-
-Dated contexts share unchanged fixing history in memory. Updating a fixing
-store preserves the inputs already held by existing contexts; recalculate
-dependent contexts to use the updated history. Historical batches construct each distinct matched market once per batch,
-and separately named contexts can share the same matched calibrated market.
-
-The ribbon's object list refreshes only when its native change token changes;
-it does not repeatedly build unchanged snapshots. Pricing and curve-table
-queries require an explicit button click. **Reset Memory & Rebuild** clears all
-native objects and AD tape storage in this Excel instance, then rebuilds every
-open workbook. This explicit action also calculates workbooks in Manual mode
-without changing that setting. Workbook formulas and inputs remain intact;
-their handles are recreated.
-
-The browser shows only the tabs relevant to the selected object. Table headers
-expand to fit their text, and numeric displays and copied values follow Excel's
-decimal separator. After correcting a quote and recalculating, the browser keeps
-the same object and curve selection with its new handle; click **Refresh table**
-to request the updated curve. Closing a workbook releases its native state while
-other workbooks remain open.
-
-The examples continue the handles from :doc:`workbook`: ``H5`` is the base
-context, ``H6`` the swap, ``C7`` the final quote handle and ``H4`` the curve
-configuration. Place additional formulas in clear cells and retain upstream
-references when moving them to dedicated sheets.
-
-From raw derivatives to a risk report
-----------------------------------------
-
-:excel:func:`QS.RESULT.SENSITIVITIES` spills Risk factor and Sensitivity columns.
-The values are raw derivatives in the pricer's valuation units per unit
-risk-factor change. A decimal interest-rate derivative becomes an approximate
-+1 bp currency change after multiplication by ``0.0001``. A futures quote
-derivative uses price points; a volatility quote and FX spot have their own
-units. Preserve the factor label and scaling convention in any hedge report.
-
-For a portfolio, sum only compatible values and risk factors under the same
-market and currency assumptions. The signed Amount column in generic swap
-cashflow reports contains undiscounted receipts and payments; discount and
-convert currencies before reconciling it to PV.
-Cashflows, quote sensitivities, and future-exposure profiles are different
-objects; the worksheet interface does not expose the latter.
-
-A scenario is a new constructed market
---------------------------------------
-
-Construct the stressed market from visible bumped quotes. Put 0.0001 in
-``BB1``, retaining the original quote identifiers in ``A4:A7`` and rates in
-``B4:B7``. Each update below adds one basis point to a decimal-rate quote:
-
-.. code-block:: text
-   :name: guide-excel-scenario
-
-   BB2 =QS.QUOTES.CREATE("guide.stressed.quotes",$B$1)
-   BC4 =QS.QUOTES.SET(BB2,A4,B4+$BB$1,,)
-   BC5 =QS.QUOTES.SET(BC4,A5,B5+$BB$1,,)
-   BC6 =QS.QUOTES.SET(BC5,A6,B6+$BB$1,,)
-   BC7 =QS.QUOTES.SET(BC6,A7,B7+$BB$1,,)
-   BB3 =QS.CONTEXT.FROM.COMPONENTS("guide.stressed.context",BC7,H4,,,,,,,,,,"USD","SOFR","Mid")
-   BB5 =QS.EVALUATE("guide.stressed.results",L4,H6,BB3,"Value")
-   BB4 =QS.RESULT.VALUE(BB5)
-
-This workflow requires only ordinary numeric cells. The same instrument, trade,
-pricer and explicit policy are reused against another constructed market.
-Native scenario imports remain available for interoperability; when supplied,
-their context position is argument 12. An Absolute shock adds in the input's
-units; Relative multiplies by ``1 + value``. A selector such as ``SOFR``
-changes matching market quotes and explicit pillars; reconstruction determines
-the effect on projected payments and value. Excel materializes an imported
-scenario in a separate context snapshot, unlike Python's scoped borrowed views.
-
-Shock targets are case-insensitive underscore-token selectors, not a guaranteed
-exact-match mode. After checking identifier equality, matching ignores token
-order and multiplicity. A full caplet identifier with repeated tenor/expiry
-tokens can select other expiries too; overlapping shocks compose without
-deduplication. Use one family selector such as ``CapletFloorlet_USD_SOFR``
-for one intended volatility-family shift, not one shock per full ID. Check
-the affected inputs and confirm each intended quote changes once. The example
-above has one SOFR shock against the first workbook's rate-only quote set.
-
-Compare ``BB4-H7`` with the sum of the matching decimal-rate derivatives times
-``0.0001``. The difference measures finite-shock nonlinearity and numerical
-construction effects; options, exercise boundaries, and recalibration can make
-the linear approximation less accurate. For a central-difference check, build
-an otherwise identical scenario with value ``-0.0001`` and compare
-
-.. math::
-
-   \frac{V(q+h)-V(q-h)}{2h}
-   \quad\hbox{with}\quad
-   \sum_{k\ \mathrm{selected}}\frac{\partial V}{\partial q_k}.
-
-Compare several step sizes to assess curvature and numerical noise. Inspect
-the selected inputs and confirm that the base value remains unchanged.
-Request support follows the selected product and pricer.
-
-Inspecting simulations
-----------------------
-
-With a configured simulation in a context, ``QS.SIMULATION.NPATHS``, ``DT``,
-``DATES``, ``PATH``, and ``CALIBRATION`` inspect its generated state.
-Path indices are zero-based, and a path vector aligns with the spilled date
-grid. ``DT`` is the reported year step, which can be an average for a generated
-grid. Inspect diagnostics before interpreting a calibrated path distribution.
-
-Generated paths use numeric inputs and expose no market risk pillars.
-The Hull–White generator uses Euler evolution, so assess time-grid error and
-sampling precision separately. These worksheet queries inspect the stored
-simulation; portfolio exposure and XVA workflows are available through other
-interfaces.
-
-Archiving a coherent market
+Sensitivities and cashflows
 ---------------------------
 
-A snapshot records the observations and construction inputs needed to rebuild
-one market. Capture a base context for each observation instant, using distinct
-object names. This preserves the recorded inputs as other worksheet markets
-change.
+Sensitivities are raw derivatives in the pricer's value units per unit factor.
+For a decimal-rate factor, multiply by 0.0001 for an approximate +1 bp value
+change. Retain each factor's actual units; futures price points, currency spots,
+volatility and rates are not interchangeable. Risk is calculated from the
+original trade and model, not from a compressed cashflow report.
 
-For a minimal example using the base market, place the first formula in ``BD2``:
+Cashflows contain signed undiscounted amounts in each payment currency, with
+positive receipts and negative payments. The detailed coupon report retains
+accrual dates, fixing and contractual indices, notional and rate conventions.
+The summary groups Interest, Capital, Other and Total by payment date/currency.
+It does not convert currencies or allocate accrual-period net interest income.
 
-.. code-block:: text
-   :name: guide-excel-history
-
-   BD2 =QS.SNAPSHOT.FROM.CONTEXT("guide.close.20260224","2026-02-24T16:00:00Z",H5)
-   BD4 =QS.SNAPSHOTS.CREATE("guide.archive",BD2:BD2)
-   BD5 =QS.SNAPSHOT.SELECTOR("guide.selection","2026-02-25T08:00:00Z","Previous","Mid")
-   BD6 =QS.SNAPSHOTS.SELECT("guide.matched.snapshot",BD4,BD5)
-   BD7 =QS.CONTEXT.FROM.SNAPSHOT("guide.historical.context",BD4,BD5,)
-   BD8 =QS.CONTEXT.EVALUATION.DATE(BD7)
-   BD9 =QS.CONTEXT.SNAPSHOT.TIMESTAMP(BD7)
-   BD11 =QS.EVALUATE("guide.historical.results",L4,H6,BD7,"Value")
-   BD10 =QS.RESULT.VALUE(BD11)
-
-The requested timestamp is February 25, but ``BD8`` remains the selected
-market's February 24 reference date. ``BD9`` reports the actual matched
-observation instant. Repricing the unchanged trade should agree with the base
-valuation because no economic input changed merely by requesting a later
-selection timestamp.
-
-For a longer archive, construct each additional market from its own recorded
-quote/configuration inputs, capture it into another row, and expand the
-``QS.SNAPSHOTS.CREATE`` range. That function rebuilds the archive from its full
-input range, so removed rows disappear; duplicate normalized UTC timestamps are
-errors. Reusing one mutable quote chain for all historical observations would
-instead recapture its latest state and lose the original experiment.
-
-``Previous`` is the default matching rule and never chooses a later observation.
-``Exact`` requires equality; ``Closest`` can choose future data and breaks ties
-toward the earlier instant. All selection inputs require timezone-aware text;
-date-only or naive timestamps are rejected. A backtest should normally prefer
-Previous and record the actual match, not silently accept look-ahead.
-
-Quote sides, fixings, and snapshot limits
---------------------------------------------
-
-The selector chooses Mid, Bid, or Ask for construction and model calibration.
-Every consumed quote must contain that side; missing Bid/Ask does not fall back
-to Mid. Explicit zero-rate inputs and FX spots are side-independent.
-
-Snapshots exclude historical fixing stores. Pass a fixing handle separately
-as the fourth argument to ``QS.CONTEXT.FROM.SNAPSHOT`` when needed. There is
-no publication-vintage filtering: the workbook must supply observations known
-at that historical instant, not today's complete fixing history by accident.
-
-Snapshots preserve configuration inputs, including explicit zero/composite
-curves, volatility, and model/simulation definitions. Supplied runtime curves
-and materialized scenario states cannot be archived. Use construction
-configurations and record the scenario separately instead.
-
-``QS.SNAPSHOTS.TO.JSON`` exports the native archive array, and
-``QS.SNAPSHOTS.FROM.JSON`` imports it. The schema is shared with Python/Rust,
-but Excel exchanges cell text rather than filenames and rejects exports beyond
-the 32767 UTF-16-unit cell limit. Saving only handles does not preserve a market
-between Excel processes.
-
-Interpolation as a controlled numerical operation
--------------------------------------------------
-
-Interpolation utilities are numeric scalar functions, not market-object
-constructors. On another clear input area set ``A20:A22`` to 0, 1, 2 and
-``B20:B22`` to 1, 4, 1:
+FairRate(index) requests one zero-based leg or loan coupon segment. Swap leg 0
+solves the fixed coupon and leg 1 solves the floating spread, including all legs
+and principal in the zero-PV condition. Loan segments are solved successively,
+locking earlier rates. Bounded loan coupons remain unsupported for fair-rate
+solving. Separate targets require separate evaluations.
 
 .. code-block:: text
 
-   =QS.INTERPOLATE(0.5,A20:A22,B20:B22)
-   =QS.INTERPOLATE.LOG.LINEAR(0.5,A20:A22,B20:B22)
-   =QS.INTERPOLATE.CUBIC.SPLINE(0.5,A20:A22,B20:B22)
+   =QS.EVALUATE(context,trade,"FairRate(0)",,pricer)
+   =QS.EVALUATE(context,trade,"FairRate(1)",,pricer)
+   =QS.REQUEST.FAIR.RATE(0)
 
-These produce 2.5, 2, and 3.0625. The generic function defaults to Linear.
-Coordinates must be strictly increasing; values align point by point;
-log-linear values must be positive. Blanks, text, booleans, duplicate
-coordinates, nonfinite values, and mismatched ranges are errors rather than
-missing-data imputation. Extrapolation is disabled unless explicitly enabled;
-natural cubic extrapolation extends the endpoint polynomial, not a guaranteed
-financially sensible tail.
+Portfolio aggregation
+---------------------
 
-Bilinear and trilinear functions accept point-coordinate ranges in arbitrary
-order, including sparse slices and singleton axes. They interpolate innermost
-axes first and do not complete a missing grid. Their default policy is Reject;
-Flat clamps within each native slice and is not linear extrapolation.
-These are general numerical operations. Their units and economic suitability
-come from the values supplied by the workbook, not from the function name.
+.. code-block:: text
 
-Use the :doc:`worksheet reference <../functions/index>` to check precise
-signatures and errors.
+   B2 =QS.PORTFOLIO.CREATE("book",A10:A100)
+   B3 =QS.EVALUATE.PORTFOLIO(context,B2,pricer,requests,"USD")
+   B4 =QS.RESULT.VALUE(B3)
+   B5 =QS.RESULT.COUPONS(B3)
+   B6 =QS.RESULT.CASHFLOW.SUMMARY(B3)
+
+The portfolio holds an ordered trade-reference array. Repeated handles count as
+repeated positions. Pass one pricer for all members or one per member. Value and
+Sensitivities require a common monetary value currency; the currency argument
+identifies those units and does not perform an FX conversion. Unsupported or
+incomplete measures remain absent.
+
+Evaluation streams one trade at a time and releases its intermediate result.
+Compatible coupons are grouped using notional-weighted rates or spreads, while
+pay/receive directions, nonlinear payoffs and distinct conventions remain
+separate. The portfolio does not retain a combined AD graph. For individual
+scalar values, use EVALUATE.RANGE with one shared prepared context instead.
+
+Archive complete dated markets
+------------------------------
+
+Prepare every root with its full contribution array. Put prepared-context
+references in A2:A10 and corresponding observation timestamps in F2:F10:
+
+.. code-block:: text
+
+   C2 =QS.CONTEXT.PREPARE("first.market",first_root,first_inputs)
+   C3 =QS.CONTEXT.PREPARE("next.market",next_root,next_inputs)
+   H2 =QS.SNAPSHOT.FROM.RANGE("history",A2:A10,TRANSPOSE(F2:F10))
+   H3 =QS.EVALUATE.FROM.SNAPSHOT(H2,trades,dates,pricer,"Value")
+
+Observation timestamps require an explicit RFC 3339 offset, for example
+2026-01-15T16:00:00Z. The selected quote-store reference date remains the actual
+valuation date, even if an observation crosses a UTC day boundary. Dates and
+trade references align one-for-one; blanks are rejected instead of shifting rows.
+The output follows the original input order.
+
+Defaults are Previous/Mid. Previous selects the most recent complete observation
+at or before a request; Exact requires an exact match; Closest may select a future
+observation and chooses the earlier one on a tie. Missing Bid/Ask never falls
+back to Mid. Duplicate UTC observation timestamps fail explicitly.
+
+For individual selection and inspection:
+
+.. code-block:: text
+
+   J2 =QS.SNAPSHOT.SELECTOR("selection","2026-01-16T17:00:00Z","Previous","Mid")
+   J3 =QS.SNAPSHOT.SELECT("matched",H2,J2)
+   J4 =QS.SNAPSHOT.TIMESTAMP(J3)
+   J5 =QS.SNAPSHOT.REFERENCE.DATE(J3)
+   J6 =QS.CONTEXT.FROM.SNAPSHOT("historical",H2,J2,fixings)
+
+Snapshots store quote observations, FX and construction configurations, including
+explicit zero curves, credit, volatility and simulation settings. Supplied
+runtime curves cannot be captured. Fixings and their publication vintages are
+separate; supply a fixing contribution or prepared context to historical pricing.
+No fixing-vintage filter is inferred. Native JSON import/export is available
+under SNAPSHOT.FROM.JSON and SNAPSHOT.TO.JSON; Excel limits exported cell text
+to 32767 UTF-16 units.
+
+Historical batch performance
+----------------------------
+
+The native batch groups rows by matched snapshot and constructs each market
+once. It returns scalar values in the original input order without creating
+per-row context or evaluation-result objects. Evaluation completes synchronously
+during Excel calculation.
+
+The historical and context example workbooks show this batch API. Portable tests
+verify snapshot selection, calibration reuse, input ordering and stale-handle
+validation. Worksheet execution requires Windows Excel.

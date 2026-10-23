@@ -8,8 +8,8 @@ market and its dependent valuations. Handles returned by construction
 functions refer to native objects owned by the add-in.
 
 Start with the context-first workflow for direct prices and historical batches.
-The installation walkthrough also explains the explicit component workflow
-used by the detailed product studies. Consult the
+The detailed studies use the same context and evaluation API with explicit
+contracts, positions and pricing policies. Consult the
 :doc:`worksheet reference <../functions/index>` for argument order, defaults,
 result schemas, aliases and error codes.
 

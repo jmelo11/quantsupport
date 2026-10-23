@@ -130,7 +130,7 @@ def excel_section(name):
         return "Instruments", "Positions"
     if name.startswith(("QS.TRADE.", "QS.INSTRUMENT.")):
         product = name.split(".", 2)[2]
-        if product in ("FIXED.BOND", "FLOATING.NOTE", "FIXED.DEPOSIT", "LOAN"):
+        if product in ("FIXED.RATE.BOND", "FLOATING.RATE.NOTE", "FIXED.RATE.DEPOSIT", "LOAN"):
             return "Instruments", "Fixed Income"
         if product.startswith("FX."):
             return "Instruments", "Foreign Exchange"
