@@ -171,11 +171,11 @@ All additions reference the **same root cell**. The pricing formula takes the
 **complete input range**, so Excel orders recalculation and propagates edits.
 There is no last-update handle to find.
 
-With the market date in B1 and Identifier/Mid quotes in A3:B6:
+With the market date in B1, identifiers in A3:A6 and Mid rates in F3:F6:
 
 ```text
 H2 =QS.CONTEXT.CREATE("usd.context",$B$1,"USD","SOFR")
-H3 =QS.CONTEXT.ADD.CURVE(H2,"SOFR",A3:B6)
+H3 =QS.CONTEXT.ADD.CURVE(H2,"SOFR",A3:A6,TRANSPOSE(F3:F6))
 H5 =QS.INSTRUMENT.SWAP("swap",$B$1,"2031-02-24","USD","SOFR",10000000,0.04,0,"Actual360","Simple","Annual","Semiannual","Quarterly")
 H6 =QS.CONTEXT.PRICE(H2,H5,"Value",H3)
 H7 =QS.CONTEXT.PRICE(H2,H5,"FairRate(0)",H3)
@@ -183,10 +183,10 @@ H8 =QS.CONTEXT.PRICE(H2,H5,"Cashflows",H3)
 ```
 
 A curve input includes its definition and quotes. Alternatively, keep a shared
-quote table in one addition and let each curve select matching identifiers:
+quote arrays in one addition and let each curve select matching identifiers:
 
 ```text
-H3 =QS.CONTEXT.ADD.QUOTES(H2,A3:B6)
+H3 =QS.CONTEXT.ADD.QUOTES(H2,A3:A6,F3:F6)
 H4 =QS.CONTEXT.ADD.CURVE(H2,"SOFR")
 H6 =QS.CONTEXT.PRICE(H2,H5,"Value",H3:H4)
 ```
@@ -208,7 +208,8 @@ explicit configured pricer.
 Loan options are discoverable through `QS.LOAN.SETTINGS` named arguments;
 pass its result to the loan constructor's settings argument. `QS.LOAN.PRICER`
 exposes discount, refinancing and fair-rate amortization parameters directly.
-Legacy Setting/Value tables remain accepted.
+Loan coupon periods, rates and indices, and prepayment dates and CPRs, are
+separate optional arrays.
 
 For large origination studies, use a batch instead of 50,000 worksheet contexts:
 
@@ -229,7 +230,9 @@ Open [context_pricing_example.xlsx](examples/context_pricing_example.xlsx) for
 context inputs, direct loan prices, cashflows, sensitivities and batch history.
 See the [context-first guide](../../docs/excel/guide/context-first.rst).
 
-**Migration:** the former 15-argument `QS.CONTEXT.CREATE` is now
+**Migration:** quote, fixing, FX, schedule, mapping and pricer-setting inputs
+use separate field arrays. Replace earlier combined ranges with their individual
+field ranges. The former 15-argument `QS.CONTEXT.CREATE` is now
 `QS.CONTEXT.FROM.COMPONENTS`, with the same argument order. Existing custom
 workbooks using that signature must rename the function or adopt the new
 context-first flow. The bundled component-based studies use the renamed
@@ -348,35 +351,24 @@ caches the values; no `EvaluationResults` objects are retained. Share market
 contexts and pricers across positions. Use `QS.EVALUATE` and `QS.RESULT.*` when
 cashflows, risk, fair rates or other stored measures are needed.
 
-For large market histories, import each quote range and fixing history with one
-formula instead of one `SET` formula per observation:
+Each input field is an independent scalar, row, column or spilled array.
+Arrays can be nonadjacent and have different orientations; supplied fields
+must have equal entry counts. Interior blanks retain their positions. There is
+no requirement to assemble a rectangular input table.
 
 ```text
-=QS.QUOTES.FROM.RANGE("usd.quotes",B1,A3:D1002)
-=QS.FIXINGS.FROM.RANGE("usd.fixings",F3:H10002)
+=QS.QUOTES.FROM.RANGE("usd.quotes",B1,A3:A1002,H3:H1002,I3:I1002,J3:J1002)
+=QS.FIXINGS.FROM.RANGE("usd.fixings",A3:A1002,F3:F1002,TRANSPOSE(J3:J1002))
+=QS.CONTEXT.ADD.QUOTES(context,A3#,TRANSPOSE(H3#),I3#,J3#)
+=QS.CONTEXT.ADD.FX(context,A3:A10,F3:F10,TRANSPOSE(J3:J10))
 ```
 
-Quote components can also come from separate arrays or nonadjacent ranges:
-
-```text
-=QS.QUOTES.FROM.RANGE("usd.quotes",B1,A3:A1002,H3:H1002)
-=QS.QUOTES.FROM.RANGE("usd.quotes",B1,A3#,H3#,I3#,J3#)
-```
-
-The arguments after the date are **Identifiers, Mid, Bid, Ask**. Each component
-can be a single cell, row array or column array, with the same number of entries
-in each supplied array. Bid and Ask are optional; blanks preserve absent sides
-without shifting subsequent entries. Omit Mid only when supplying another side
-or using the combined-table form. The combined table remains supported when all
-three side arguments are omitted.
-
-Quote columns are **Identifier, Mid**, optionally followed by **Bid, Ask**.
-Fixing columns are **Market index, Date, Value**, with dates as ISO text.
-Matching headers and fully blank rows are optional. Missing quote sides remain
-absent; duplicate identifiers or index/date fixings fail explicitly. Changing or
-removing a row rebuilds the complete store, and unchanged inputs reuse its
-handle. Share the resulting fixing handle across dated contexts: unchanged
-histories share storage, while edits copy shared history before changing it.
+Quote arguments are **Identifiers, Mid, Bid, Ask**. Missing optional sides stay
+absent. Fixing arguments are **Market indices, Dates, Values**, with ISO dates.
+FX arguments are **Base currencies, Quote currencies, Rates**. Duplicate
+identifiers or observations fail explicitly. Changing or removing entries
+rebuilds the contribution; unchanged values reuse it regardless of orientation.
+Share fixing histories across dated contexts to reuse their storage.
 
 Run `cargo run -p quantsupport-xll --release --example benchmark_history` to
 measure attaching 10,000 shared fixings to 1,000 dated contexts. This benchmark
@@ -435,13 +427,13 @@ Archive export is subject to Excel's 32767 UTF-16-unit cell limit.
 
 `QS.INSTRUMENT.LOAN` creates fixed or floating contracts with French, bullet,
 or balloon principal. `rate` is the fixed coupon when `market_index` is blank,
-otherwise the floating spread. Optional worksheet ranges use Setting/Value,
-Periods/Rate or spread/Market index, and Date/CPR columns. Enter numeric, text,
-and TRUE/FALSE cells directly; unknown or duplicate settings fail explicitly.
+otherwise the floating spread. Supply a QS.LOAN.SETTINGS handle for named
+contractual options. Coupon periods, rates/spreads and indices are separate
+arrays, followed by independent prepayment-date and CPR arrays.
 Create the position with `QS.TRADE.CREATE`, then choose `LoanPricer` and a
 `QS.DISCOUNT.POLICY.FIXED.INCOME("policy","EUR","ESTR")` or the same call
-with `"FUNDING"`. Multiple currencies use `.FROM.MAPPINGS(name,range,prefer)`.
-The earlier `(name,mappings,prefer)` formula remains compatible.
+with `"FUNDING"`. Multiple currencies use independent currency and index arrays
+in `.FROM.MAPPINGS(name,currencies,market_indices,prefer)`.
 Funding is an ordinary curve constructed through the same curve APIs as other
 indices. It is selected by policy, never by a loan contract setting.
 

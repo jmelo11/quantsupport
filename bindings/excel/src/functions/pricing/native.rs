@@ -65,27 +65,7 @@ pub fn qs_discount_policy_fixed_income(
     market_index: *const XLOPER12,
     prefer_instrument_index: *const XLOPER12,
 ) -> Result<String, XllError> {
-    let currencies = worksheet_table(currency, "currency")?;
-    if currencies.is_empty() {
-        let prefer = optional_bool(prefer_instrument_index, "prefer_instrument_index")?
-            .or(optional_bool(market_index, "prefer_instrument_index")?)
-            .unwrap_or(false);
-        return fixed_income_mappings(name, Vec::new(), prefer);
-    }
-    // Existing workbooks using (name, two-column mappings, prefer) remain valid.
-    if currencies.iter().any(|row| row.len() > 1) {
-        return fixed_income_mappings(
-            name,
-            currencies,
-            optional_bool(market_index, "prefer_instrument_index")?.unwrap_or(false),
-        );
-    }
-    let indices = worksheet_table(market_index, "market_index")?;
-    let currency =
-        crate::runtime::inputs::scalar_text(&currencies, "currency").map_err(value_error)?;
-    let index =
-        crate::runtime::inputs::scalar_text(&indices, "market_index").map_err(value_error)?;
-    let mappings = vec![vec![Cell::Text(currency), Cell::Text(index)]];
+    let mappings = worksheet_columns(&[("currency", currency), ("market_index", market_index)])?;
     fixed_income_mappings(
         name,
         mappings,
@@ -96,16 +76,20 @@ pub fn qs_discount_policy_fixed_income(
 #[xll_bindgen(
     name = "QS.DISCOUNT.POLICY.FIXED.INCOME.FROM.MAPPINGS",
     category = "QuantSupport - Pricing",
-    help = "Creates a native fixed-income policy from multiple Currency/Index rows"
+    help = "Creates a native fixed-income policy from independent currency and index arrays"
 )]
 pub fn qs_discount_policy_fixed_income_from_mappings(
     name: &str,
-    mappings: *const XLOPER12,
+    currencies: *const XLOPER12,
+    market_indices: *const XLOPER12,
     prefer_instrument_index: *const XLOPER12,
 ) -> Result<String, XllError> {
     fixed_income_mappings(
         name,
-        worksheet_table(mappings, "mappings")?,
+        worksheet_columns(&[
+            ("currencies", currencies),
+            ("market_indices", market_indices),
+        ])?,
         optional_bool(prefer_instrument_index, "prefer_instrument_index")?.unwrap_or(false),
     )
 }
@@ -153,15 +137,19 @@ pub fn qs_discount_policy_csa(
 #[xll_bindgen(
     name = "QS.PRICER.CREATE",
     category = "QuantSupport - Pricing",
-    help = "Creates an explicit native pricer with a discount-policy handle and optional Setting/Value range"
+    help = "Creates an explicit native pricer with independent optional setting-name and setting-value arrays"
 )]
 pub fn qs_pricer_create(
     name: &str,
     implementation: &str,
     discount_policy: Option<String>,
-    settings: *const XLOPER12,
+    setting_names: *const XLOPER12,
+    setting_values: *const XLOPER12,
 ) -> Result<String, XllError> {
-    let settings = worksheet_table(settings, "settings")?;
+    let settings = worksheet_columns(&[
+        ("setting_names", setting_names),
+        ("setting_values", setting_values),
+    ])?;
     let policy = discount_policy.as_deref().filter(|s| !s.trim().is_empty());
     let key = input_key(&(implementation, policy, &settings))?;
     with_registry(|registry| {

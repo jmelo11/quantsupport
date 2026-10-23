@@ -16,6 +16,7 @@ from tempfile import TemporaryDirectory
 from uuid import uuid4
 
 from workbook_layout import Study, context, formula, text
+from xlsxwriter.utility import xl_rowcol_to_cell
 from portfolio_example import create_portfolio
 
 
@@ -75,26 +76,29 @@ def create_context_first(path):
             ("Fixed coupon", .05, "Rate", "Annual decimal coupon", "input_rate"),
             ("Balloon fraction", .25, "Balloon", "Residual fraction repaid at maturity", "input_rate"),
         ], "Blue inputs feed context, curve and loan formulas directly.")
-        s.headers("1 Inputs", 17, ["Identifier", "Mid", ""])
-        for row, (identifier, rate) in enumerate(ESTR_QUOTES, 18):
-            s.write("1 Inputs", f"A{row}", identifier, "input")
-            s.write("1 Inputs", f"B{row}", rate, "input_rate")
-        s.range("QuoteRows", "1 Inputs", 18, 0, 17 + len(ESTR_QUOTES), 1)
+        s.headers("1 Inputs", 17, ["Identifier", "", ""])
+        s.merge("1 Inputs", "D16:P16", "Mid levels: independent row array", "header")
+        s.sheets["1 Inputs"].set_column(3, 15, 12)
+        for offset, (identifier, rate) in enumerate(ESTR_QUOTES):
+            s.write("1 Inputs", f"A{18+offset}", identifier, "input")
+            s.write("1 Inputs", xl_rowcol_to_cell(16, 3+offset), rate, "input_rate")
+        s.range("QuoteIds", "1 Inputs", 18, 0, 17 + len(ESTR_QUOTES), 0)
+        s.range("QuoteMid", "1 Inputs", 17, 3, 17, 2 + len(ESTR_QUOTES))
         sheet = "2 Contexts"
         s.sheet(sheet, "Create contexts and independent inputs", "Every ADD formula points to its root. Pricing and snapshot formulas consume the complete input range.")
         s.headers(sheet, 6, ["Step", "Reference", "Purpose"])
         step(s, sheet, 7, "Create root", "QS.CONTEXT.CREATE", [text("Example.Context"), s.name("Date"), '"EUR"', '"ESTR"'], "Root", "Date, currency, base index and optional quote side.")
         for row, function, args, label in [
-            (12, "QS.CONTEXT.ADD.QUOTES", [s.name("Root"), s.name("QuoteRows")], "Market quotes"),
+            (12, "QS.CONTEXT.ADD.QUOTES", [s.name("Root"), s.name("QuoteIds"), s.name("QuoteMid")], "Independent quote arrays"),
             (13, "QS.CONTEXT.ADD.CURVE", [s.name("Root"), '"ESTR"'], "Curve from matching quotes"),
         ]:
             s.write(sheet, f"A{row}", label)
             s.write(sheet, f"B{row}", formula(function, *args), "handle")
         s.range("Inputs", sheet, 12, 1, 13, 1)
-        s.merge(sheet, "A15:C16", "Inputs is B12:B13. Both formulas use Root; neither references the previous addition. You may instead use ADD.CURVE(root,index,quote_table) in one cell.")
+        s.merge(sheet, "A15:C16", "Inputs is B12:B13. Both formulas use Root; neither references the previous addition. You may instead use ADD.CURVE(root,index,identifiers,mid) in one cell.")
         step(s, sheet, 19, "Second dated root", "QS.CONTEXT.CREATE", [text("Example.Next"), s.name("NextDate"), '"EUR"', '"ESTR"'], "NextRoot", "Each market carries its own actual valuation date.")
         s.write(sheet, "A24", "Curve and quotes together")
-        s.write(sheet, "B24", formula("QS.CONTEXT.ADD.CURVE", s.name("NextRoot"), '"ESTR"', s.name("QuoteRows")), "handle", "NextInputs")
+        s.write(sheet, "B24", formula("QS.CONTEXT.ADD.CURVE", s.name("NextRoot"), '"ESTR"', s.name("QuoteIds"), s.name("QuoteMid")), "handle", "NextInputs")
         sheet = "3 Contracts"
         s.sheet(sheet, "Loan contract and historical market archive", "Loan settings have named arguments in IntelliSense. Snapshots include the complete context input range.")
         s.headers(sheet, 6, ["Step", "Reference", "Purpose"])
@@ -102,7 +106,7 @@ def create_context_first(path):
         row = step(s, sheet, row, "Loan contract", "QS.INSTRUMENT.LOAN", [text("Example.Loan"), s.name("Date"), s.name("Maturity"), '"EUR"', s.name("Notional"), s.name("Rate"), "", '"Balloon"', '"Monthly"', '"Actual365"', s.name("Options")], "Loan", "Direct pricing uses Receive and the contract notional; use a trade for other position terms.")
         row = step(s, sheet, row, "Explicit loan pricer", "QS.LOAN.PRICER", [text("Example.Pricer"), '"EUR"', '"ESTR"'], "Pricer", "An explicit discount curve with optional named refinancing and fair-rate settings.")
         row = step(s, sheet, row, "Capture first market", "QS.SNAPSHOT.FROM.CONTEXT", [text("Example.Snapshot"), '"2026-02-24T16:00:00Z"', s.name("Root"), s.name("Inputs")], "Snapshot", "Captures market quotes and the curve definition together; fixings stay separate.")
-        row = step(s, sheet, row, "Capture next market", "QS.SNAPSHOT.FROM.CONTEXT", [text("Example.NextSnapshot"), '"2026-02-25T16:00:00Z"', s.name("NextRoot"), s.name("NextInputs")], "NextSnapshot", "Same quote levels, next business date.")
+        row = step(s, sheet, row, "Capture next market", "QS.SNAPSHOT.FROM.CONTEXT", [text("Example.NextSnapshot"), '"2026-02-25T16:00:00Z"', s.name("NextRoot"), s.name("NextInputs")], "NextSnapshot", "Same independent quote arrays, next business date.")
         s.write(sheet, f"A{row}", "First snapshot")
         s.write(sheet, f"B{row}", "=" + s.name("Snapshot"), "handle")
         s.write(sheet, f"A{row+1}", "Second snapshot")
@@ -372,8 +376,7 @@ def create_loans(path):
                     s.write("2 Cases", f"{column}{row+5}", header, "header")
                 for offset, (setting, value) in enumerate(settings, row + 6):
                     s.write("2 Cases", f"A{offset}", setting)
-                    s.write("2 Cases", f"B{offset}", value, "input" if isinstance(value, str) and not value.startswith("=") else "input_rate")
-                s.range(key + "_Settings", "2 Cases", row + 5, 0, row + 5 + len(settings), 1)
+                    s.write("2 Cases", f"B{offset}", value, "input" if isinstance(value, str) and not value.startswith("=") else "input_rate", key + "_Setting_" + "".join(c for c in setting.lower() if c.isalnum()))
             else:
                 s.merge("2 Cases", f"A{row+5}:C{row+6}", "Contract settings: native defaults.")
             if segments:
@@ -383,7 +386,8 @@ def create_loans(path):
                     s.write("2 Cases", f"D{offset}", periods, "input")
                     s.write("2 Cases", f"E{offset}", coupon, "input_rate")
                     s.write("2 Cases", f"F{offset}", market_index, "input")
-                s.range(key + "_Coupons", "2 Cases", row + 5, 3, row + 5 + len(segments), 5)
+                for suffix, column in [("CouponPeriods", 3), ("CouponRates", 4), ("CouponIndices", 5)]:
+                    s.range(key + "_" + suffix, "2 Cases", row + 6, column, row + 5 + len(segments), column)
                 s.merge("2 Cases", f"D{row+10}:F{row+11}", "Edit this schedule; the scalar above follows its first row. Blank index = fixed; blank final count fills maturity. Fair-rate targets follow segment order.")
             else:
                 s.merge("2 Cases", f"D{row+5}:F{row+6}", "Coupon schedule: use the scalar rate / spread and projection index above.")
@@ -410,14 +414,15 @@ def create_loans(path):
             row += 3
             if settings:
                 parameter_order = ["balloonfraction", "amortizationrate", "creditindex", "recovery", "fixingfrequency", "fixinglag", "indextenor", "calendar", "businessdayconvention", "floor", "cap", "introductoryperiods", "introductoryrate", "annualcpr", "basecpr", "incentivemultiplier", "maximumcpr"]
-                positions = {"".join(c for c in label.lower() if c.isalnum()): position + 2 for position, (label, _) in enumerate(settings)}
-                setting_args = [f'INDEX({s.name(key + "_Settings")},{positions[param]},2)' if param in positions else "" for param in parameter_order]
+                supplied = {"".join(c for c in label.lower() if c.isalnum()) for label, _ in settings}
+                setting_args = [s.name(key + "_Setting_" + param) if param in supplied else "" for param in parameter_order]
                 while setting_args and not setting_args[-1]:
                     setting_args.pop()
                 row = step(s, build, row, "Named loan settings", "QS.LOAN.SETTINGS", [text(f"Loan.{key}.Options"), *setting_args], key + "_Options", "Each optional parameter is visible in IntelliSense; its value refers to the case input cell.")
             args = [text(f"Loan.{key}.Instrument"), *[s.name(k) for k in ("Start", "Maturity", "Currency", "Notional")],
                     s.name(key + "_Rate"), s.name(key + "_Index"), s.name(key + "_Repayment"), s.name("Frequency"), s.name("DayCounter"),
-                    s.name(key + "_Options") if settings else "", s.name(key + "_Coupons") if segments else ""]
+                    s.name(key + "_Options") if settings else "",
+                    *[s.name(key + "_" + suffix) if segments else "" for suffix in ("CouponPeriods", "CouponRates", "CouponIndices")]]
             row = step(s, build, row, "1. Define this instrument", "QS.INSTRUMENT.LOAN", args, key + "_Instrument", description)
             row = step(s, build, row, "2. Create this position", "QS.TRADE.CREATE", [text(f"Loan.{key}.Trade"), s.name(key + "_Instrument"), s.name("ValuationDate"), s.name("Side")], key + "_Trade", "The contractual principal stays in the instrument.")
             row = s.step(build, row, "3. Select explicit pricer", f'=IF({s.name(key+"_Discount")}="FUNDING",{s.name("FundingPricer")},{s.name("RiskFreePricer")})', key + "_Pricer", "The case's discount choice selects an existing policy-configured pricer.")

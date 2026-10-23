@@ -135,8 +135,8 @@ pub fn add(
         .map_err(|e| e.to_string())
 }
 
-/// A full quote table defines a curve in one call. With no table, select the
-/// matching non-volatility quotes from the context's quote contributions.
+/// Defines a curve from normalized array fields, or from identifiers selecting
+/// existing context quotes. Empty identifiers select matching market indices.
 pub fn curve(
     date: Date,
     index: MarketIndex,
@@ -145,9 +145,7 @@ pub fn curve(
     interpolator: Interpolator,
     extrapolate: bool,
 ) -> Result<InputData, String> {
-    let quotes = market_inputs::quotes(date, table)?;
-    let mut identifiers: Vec<_> = quotes.quotes().keys().cloned().collect();
-    identifiers.sort();
+    let (identifiers, quotes) = market_inputs::definition_quotes(date, table)?;
     Ok(InputData::Curve {
         configuration: CurveConfiguration::new(
             index,

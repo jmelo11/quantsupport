@@ -327,7 +327,46 @@ mod tests {
                 "QS.QUOTES.FROM.RANGE",
                 vec!["name", "reference_date", "identifiers", "mid", "bid", "ask"],
             ),
-            ("QS.FIXINGS.FROM.RANGE", vec!["name", "data"]),
+            (
+                "QS.CONTEXT.ADD.QUOTES",
+                vec!["context", "identifiers", "mid", "bid", "ask"],
+            ),
+            (
+                "QS.CONTEXT.ADD.FIXINGS",
+                vec!["context", "market_indices", "dates", "values"],
+            ),
+            (
+                "QS.CONTEXT.ADD.FX",
+                vec!["context", "base_currencies", "quote_currencies", "rates"],
+            ),
+            (
+                "QS.CONTEXT.ADD.CURVE",
+                vec![
+                    "context",
+                    "market_index",
+                    "identifiers",
+                    "mid",
+                    "bid",
+                    "ask",
+                    "day_counter",
+                    "interpolator",
+                    "extrapolate",
+                ],
+            ),
+            (
+                "QS.PRICER.CREATE",
+                vec![
+                    "name",
+                    "implementation",
+                    "discount_policy",
+                    "setting_names",
+                    "setting_values",
+                ],
+            ),
+            (
+                "QS.FIXINGS.FROM.RANGE",
+                vec!["name", "market_indices", "dates", "values"],
+            ),
             ("QS.PORTFOLIO.CREATE", vec!["name", "trades"]),
             (
                 "QS.PORTFOLIO.EVALUATE",

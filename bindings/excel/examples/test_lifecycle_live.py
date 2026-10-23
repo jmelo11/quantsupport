@@ -207,8 +207,8 @@ class ExcelLifecycleTests(unittest.TestCase):
                 ("SOFR", "2026-01-14", 0.03),
                 ("SOFR", "2026-01-15", 0.04),
             )
-            sheet.Range("H1").Formula = '=QS.QUOTES.FROM.RANGE("quotes","2026-01-15",A1:B3)'
-            sheet.Range("H2").Formula = '=QS.FIXINGS.FROM.RANGE("fixings",D1:F3)'
+            sheet.Range("H1").Formula = '=QS.QUOTES.FROM.RANGE("quotes","2026-01-15",A1:A3,B1:B3)'
+            sheet.Range("H2").Formula = '=QS.FIXINGS.FROM.RANGE("fixings",D1:D3,E1:E3,F1:F3)'
             sheet.Range("I1").Formula = '=QS.QUOTES.GET(H1,"FixedRateDeposit_USD_SOFR_6M","Mid")'
             sheet.Range("I2").Formula = '=QS.FIXINGS.GET(H2,"SOFR","2026-01-14")'
             self.assertEqual(sheet.Range("I1").Value2, 0.04)

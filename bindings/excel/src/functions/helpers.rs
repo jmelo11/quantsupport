@@ -227,7 +227,61 @@ pub fn numeric_values(value: *const XLOPER12, argument_name: &str) -> Result<Vec
         .collect()
 }
 
-/// Reads a rectangular worksheet range without discarding blank cells or types.
+/// Reads one scalar, row or column array, retaining interior blanks and types.
+pub fn worksheet_array(
+    value: *const XLOPER12,
+    name: &str,
+) -> Result<Vec<crate::runtime::inputs::Cell>, XllError> {
+    use crate::runtime::inputs;
+    if value.is_null() {
+        return Ok(Vec::new());
+    }
+    let array = worksheet_table(value, name)?;
+    let values = inputs::vector(&array, name).map_err(value_error)?;
+    if matches!(values.as_slice(), [cell] if cell.is_blank()) {
+        return Ok(Vec::new());
+    }
+    Ok(values)
+}
+
+/// Aligns independent worksheet arrays; no rectangular input layout is required.
+pub fn worksheet_columns(
+    fields: &[(&str, *const XLOPER12)],
+) -> Result<crate::runtime::inputs::Table, XllError> {
+    let arrays = fields
+        .iter()
+        .map(|(name, value)| worksheet_array(*value, name))
+        .collect::<Result<Vec<_>, _>>()?;
+    let columns: Vec<_> = fields
+        .iter()
+        .zip(&arrays)
+        .map(|((name, _), values)| (*name, values.as_slice()))
+        .collect();
+    crate::runtime::inputs::aligned(&columns).map_err(value_error)
+}
+
+/// Reads quote identifiers and sides as independent arrays. Identifier-only
+/// inputs select existing context quotes when used in a curve definition.
+pub fn worksheet_quotes(
+    identifiers: *const XLOPER12,
+    mid: *const XLOPER12,
+    bid: *const XLOPER12,
+    ask: *const XLOPER12,
+) -> Result<crate::runtime::inputs::Table, XllError> {
+    let arrays = [
+        worksheet_array(identifiers, "identifiers")?,
+        worksheet_array(mid, "mid")?,
+        worksheet_array(bid, "bid")?,
+        worksheet_array(ask, "ask")?,
+    ];
+    if arrays[1..].iter().all(Vec::is_empty) {
+        return Ok(arrays[0].iter().cloned().map(|cell| vec![cell]).collect());
+    }
+    crate::runtime::market_inputs::quote_rows(&arrays[0], &arrays[1], &arrays[2], &arrays[3])
+        .map_err(value_error)
+}
+
+/// Internal reader for typed array values, preserving blanks and dimensions.
 pub fn worksheet_table(
     value: *const XLOPER12,
     name: &str,

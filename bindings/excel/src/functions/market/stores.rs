@@ -1,6 +1,6 @@
 use crate::functions::helpers::{
     cached_handle, input_key, not_found, parse_currency, parse_date, parse_index, parse_json,
-    parse_json_list, value_error, worksheet_table,
+    parse_json_list, value_error, worksheet_columns, worksheet_quotes,
 };
 use crate::runtime::registry::{with_registry, with_registry_mut, QsObject};
 use quantsupport::prelude::{
@@ -14,7 +14,7 @@ use xll_rs::types::XllError;
 #[xll_bindgen(
     name = "QS.QUOTES.FROM.RANGE",
     category = "QuantSupport - Market",
-    help = "Loads separate identifier/Mid[/Bid/Ask] arrays or one combined quote table"
+    help = "Loads separate identifier and Mid/Bid/Ask arrays; each array can be a row or column"
 )]
 pub fn qs_quotes_from_range(
     name: &str,
@@ -25,28 +25,7 @@ pub fn qs_quotes_from_range(
     ask: *const xll_rs::types::XLOPER12,
 ) -> Result<String, XllError> {
     let date = parse_date(reference_date)?;
-    let identifiers = worksheet_table(identifiers, "identifiers")?;
-    let optional = |value: *const xll_rs::types::XLOPER12, name: &str| {
-        use xll_rs::types::{XLTYPE_MISSING, XLTYPE_NIL};
-        if value.is_null() || matches!(unsafe { &*value }.base_type(), XLTYPE_MISSING | XLTYPE_NIL)
-        {
-            Ok(None)
-        } else {
-            worksheet_table(value, name).map(Some)
-        }
-    };
-    let (mid, bid, ask) = (
-        optional(mid, "mid")?,
-        optional(bid, "bid")?,
-        optional(ask, "ask")?,
-    );
-    let table = crate::runtime::market_inputs::quote_arrays(
-        &identifiers,
-        mid.as_ref(),
-        bid.as_ref(),
-        ask.as_ref(),
-    )
-    .map_err(value_error)?;
+    let table = worksheet_quotes(identifiers, mid, bid, ask)?;
     with_registry_mut(|registry| {
         crate::runtime::market_inputs::import_quotes(registry, name, date, &table)
     })
@@ -56,13 +35,19 @@ pub fn qs_quotes_from_range(
 #[xll_bindgen(
     name = "QS.FIXINGS.FROM.RANGE",
     category = "QuantSupport - Market",
-    help = "Loads Market index/Date/Value rows into one FixingStore; optional headers and blank rows"
+    help = "Loads separate market-index, date and value arrays into one FixingStore"
 )]
 pub fn qs_fixings_from_range(
     name: &str,
-    data: *const xll_rs::types::XLOPER12,
+    market_indices: *const xll_rs::types::XLOPER12,
+    dates: *const xll_rs::types::XLOPER12,
+    values: *const xll_rs::types::XLOPER12,
 ) -> Result<String, XllError> {
-    let table = worksheet_table(data, "fixings")?;
+    let table = worksheet_columns(&[
+        ("market_indices", market_indices),
+        ("dates", dates),
+        ("values", values),
+    ])?;
     with_registry_mut(|registry| {
         crate::runtime::market_inputs::import_fixings(registry, name, &table)
     })
@@ -359,21 +344,25 @@ mod ownership_abi_tests {
         use super::{qs_fixings_from_range, qs_quotes_from_range};
         use xll_rs::{convert::build_multi, memory::xlAutoFree12, types::XLOPER12};
 
-        let quotes = build_multi(
+        let identifiers = build_multi(
             vec![
                 XLOPER12::from_str("Identifier"),
-                XLOPER12::from_str("Mid"),
                 XLOPER12::from_str("FixedRateDeposit_USD_SOFR_6M"),
-                XLOPER12::from_f64(0.04),
             ],
             2,
+            1,
+        );
+        let mid = build_multi(
+            vec![XLOPER12::from_str("Mid"), XLOPER12::from_f64(0.04)],
+            1,
             2,
         );
         let blank = std::ptr::null();
-        let first = qs_quotes_from_range("range.quotes", "2026-01-15", quotes, blank, blank, blank)
-            .unwrap();
+        let first =
+            qs_quotes_from_range("range.quotes", "2026-01-15", identifiers, mid, blank, blank)
+                .unwrap();
         assert_eq!(
-            qs_quotes_from_range("range.quotes", "2026-01-15", quotes, blank, blank, blank)
+            qs_quotes_from_range("range.quotes", "2026-01-15", identifiers, mid, blank, blank)
                 .unwrap(),
             first
         );
@@ -381,27 +370,25 @@ mod ownership_abi_tests {
             super::qs_quotes_get(&first, "FixedRateDeposit_USD_SOFR_6M", "Mid").unwrap(),
             0.04
         );
-        xlAutoFree12(quotes);
-        let fixings = build_multi(
-            vec![
-                XLOPER12::from_str("SOFR"),
-                XLOPER12::from_str("2026-01-14"),
-                XLOPER12::from_f64(0.03),
-            ],
-            1,
-            3,
-        );
-        let first = qs_fixings_from_range("range.fixings", fixings).unwrap();
+        xlAutoFree12(identifiers);
+        xlAutoFree12(mid);
+        let index = XLOPER12::from_str("SOFR");
+        let date = XLOPER12::from_str("2026-01-14");
+        let value = XLOPER12::from_f64(0.03);
+        let first = qs_fixings_from_range("range.fixings", &index, &date, &value).unwrap();
         assert_eq!(
-            qs_fixings_from_range("range.fixings", fixings).unwrap(),
+            qs_fixings_from_range("range.fixings", &index, &date, &value).unwrap(),
             first
         );
         assert_eq!(
             super::qs_fixings_get(&first, "SOFR", "2026-01-14").unwrap(),
             0.03
         );
-        xlAutoFree12(fixings);
-        assert!(qs_fixings_from_range("bad.range", &XLOPER12::from_f64(1.0)).is_err());
+        assert!(
+            qs_fixings_from_range("bad.range", &XLOPER12::from_f64(1.0), &date, &value).is_err()
+        );
+        xlAutoFree12(Box::into_raw(Box::new(index)));
+        xlAutoFree12(Box::into_raw(Box::new(date)));
     }
 
     #[test]

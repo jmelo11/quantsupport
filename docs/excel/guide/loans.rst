@@ -19,7 +19,8 @@ Construct a loan
 
 :excel:func:`QS.INSTRUMENT.LOAN` defines the contract: name, start date,
 maturity date, currency, notional, rate, optional market index, repayment,
-payment frequency, day counter, then settings, coupons, and prepayments ranges.
+payment frequency, day counter, then a settings handle and independent coupon
+period, rate, index, prepayment-date and CPR arrays.
 A blank market index makes ``rate`` a fixed annual coupon; otherwise it is a
 floating spread. Rates are decimals: 0.06 means 6%, 0.01 means a 100 bp margin.
 
@@ -62,25 +63,17 @@ bounded schedules remain unsupported and each search uses [-5%, 50%].
 Worksheet settings
 ------------------
 
-The optional 11th argument is a two-column ``Setting | Value`` range. A header
-row is optional; empty rows and blank values retain defaults. Setting names
-ignore capitalization, spaces and underscores. Numbers must be numeric cells;
-flags use TRUE/FALSE or 0/1. Unknown or duplicate names fail explicitly.
+The optional 11th argument is a ``QS.LOAN.SETTINGS`` handle. Its named arguments
+appear in IntelliSense and accept individual values or cell references. Blank
+arguments preserve native defaults. For a balloon contract:
 
-For example, put these cells in ``A30:B32`` and pass that range as ``settings``:
+.. code-block:: text
 
-.. list-table:: Example settings
-   :header-rows: 1
-
-   * - Setting
-     - Value
-   * - Balloon fraction
-     - 0.25
-   * - Annual CPR
-     - 0.15
+   D18 =QS.LOAN.SETTINGS("guide.balloon.settings",0.25)
+   D19 =QS.INSTRUMENT.LOAN("guide.balloon",$B$1,"2031-02-24","USD",250000,0.06,,"Balloon","Monthly","Actual360",D18)
 
 Select Balloon repayment for this example. The balloon fraction is reserved
-principal due at maturity; Annual CPR is the conditional prepayment fraction.
+principal due at maturity. Annual CPR is a separate named prepayment parameter.
 
 .. list-table:: Available settings
    :header-rows: 1
@@ -96,8 +89,6 @@ principal due at maturity; Annual CPR is the conditional prepayment fraction.
      - Constant annual conditional prepayment rate in [0,1]. Omit for no prepayment.
    * - Base CPR, Incentive multiplier, Maximum CPR
      - Supply all three for refinancing-incentive prepayment, plus a benchmark on the pricer. Cannot combine with Annual CPR or a dated CPR range.
-   * - Prepayment model
-     - Optional None, CPR, CPRCurve, or Refinancing; normally inferred from the supplied inputs. Conflicting inputs fail.
    * - Credit index, Recovery
      - Borrower index text such as ``Credit:BORROWER``. Recovery defaults to 0.4 and must be in [0,1]. Supply credit configurations to the context.
    * - Fixing frequency, Fixing lag, Index tenor
@@ -112,12 +103,12 @@ principal due at maturity; Annual CPR is the conditional prepayment fraction.
 Pricer settings and discounting
 -------------------------------
 
-The pricer's optional Setting/Value range accepts ``Refinancing benchmark index``
-and ``Rebuild amortization for fair rate``. The former is required for
-refinancing-incentive prepayment and excludes replacement-loan margins and fees.
-The latter defaults to FALSE, preserving agreed principal during fair-rate
-trials; TRUE rebuilds trial principal from the first trial coupon's all-in rate.
-Neither setting changes the original loan.
+``QS.LOAN.PRICER(name,currency,discount_index,refinancing_index,rebuild_amortization)``
+exposes the loan controls as named arguments. The optional refinancing benchmark
+is required for refinancing-incentive prepayment and excludes replacement-loan
+margins and fees. Rebuild amortization defaults to FALSE, preserving agreed
+principal during fair-rate trials; TRUE rebuilds trial principal from the first
+trial coupon's all-in rate. Neither setting changes the original loan.
 
 Funding is an ordinary curve. Construct FUNDING with the same curve APIs used
 for SOFR or an optional composite, as in :doc:`markets-and-products`. Set a
@@ -125,11 +116,12 @@ policy's USD mapping to FUNDING and pass that policy to another LoanPricer.
 Reuse the same contract and trade to compare funding assumptions. Discount
 selection is a native policy responsibility, with no Discount index loan setting.
 
-Coupon schedule range
----------------------
+Coupon schedule arrays
+----------------------
 
-The optional 12th argument is a three-column coupon table. Put the following
-in ``E30:G33`` (including its optional header row):
+Arguments 12–14 are independent coupon-period, rate/spread and market-index
+arrays. This illustrative layout places the fields in E31:E33, F31:F33 and
+G31:G33. Each field may instead be elsewhere or transposed independently:
 
 .. list-table:: Coupon segments
    :header-rows: 1
@@ -150,12 +142,12 @@ in ``E30:G33`` (including its optional header row):
 This defines 12 fixed payments at 3%, 12 at 4%, then SOFR plus 1% through
 maturity. A blank index means fixed; a blank final count fills the remaining
 payments. All earlier counts must be positive whole numbers. Supplied counts
-must cover the schedule. The coupon table replaces the scalar rate/index inputs
+must cover the schedule. The coupon arrays replace the scalar rate/index inputs
 and cannot be combined with introductory settings or floor/cap.
 
 .. code-block:: text
 
-   D40 =QS.INSTRUMENT.LOAN("guide.stepped",$B$1,"2031-02-24","USD",250000,0.03,,"French","Monthly","Actual360",,E30:G33)
+   D40 =QS.INSTRUMENT.LOAN("guide.stepped",$B$1,"2031-02-24","USD",250000,0.03,,"French","Monthly","Actual360",,E31:E33,F31:F33,G31:G33)
    D41 =QS.TRADE.CREATE("guide.stepped.trade",D40,$B$1,"Receive")
    D42 =QS.EVALUATE("guide.stepped.second",D23,D41,H5,"FairRate(1)")
    D43 =QS.RESULT.FAIR.RATE(D42)
@@ -169,11 +161,12 @@ The USD/SOFR context supplies the projection curve for this schedule.
 Dated prepayments
 -----------------
 
-The optional 13th argument is a two-column ``Date | CPR`` range. Dates are ISO
-text, such as 2026-02-24; annual CPRs are numeric fractions in [0,1]. Dates must
-increase strictly. Headers and blank rows are optional. Before the first date,
-CPR is zero; after the last, it remains at the last supplied rate. This range
-cannot be combined with Annual CPR or refinancing settings.
+Arguments 15–16 are independent prepayment-date and annual CPR arrays.
+Dates are ISO text, such as 2026-02-24; annual CPRs are numeric fractions in
+[0,1]. Dates must increase strictly. For example, dates can be in I31:I33 and
+CPRs in Q31:S31, with the same three entries paired in order. Before the first
+date CPR is zero; after the last it remains at the last supplied rate. Dated
+CPRs cannot be combined with Annual CPR or refinancing settings.
 
 Borrower credit from cells
 --------------------------
@@ -187,7 +180,7 @@ quote identifiers already present in the quote store:
    D51 =QS.CREDIT.CURVE.CONFIGS.ADD(D50,"Credit:BORROWER","USD","SOFR",0.4,J30:J36)
 
 Pass ``D51`` as the context's credit-configuration input and use
-``Credit index | Credit:BORROWER`` in the loan settings. Optional premium
+the ``credit_index`` argument of ``QS.LOAN.SETTINGS`` set to ``Credit:BORROWER``. Optional premium
 conventions default to Actual360 and Quarterly. The loan workbook demonstrates
 this complete workflow using ordinary numeric and text cells.
 

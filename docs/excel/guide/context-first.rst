@@ -6,14 +6,14 @@ It uses one root context, independent market inputs, and direct pricing.
 Load the matching XLL in 64-bit Windows Excel first; see the
 :doc:`installation instructions <workbook>`.
 
-Put an ISO market date in B1 and Identifier/Mid quote rows in A3:B6. For example,
+Put an ISO market date in B1, identifiers in A3:A6 and Mid rates in F3:F6. For example,
 use ``FixedRateDeposit_USD_SOFR_1D`` and ``OIS_USD_SOFR_1Y``, ``_2Y``, ``_5Y``
 with full identifiers and annual decimal rates.
 
 .. code-block:: text
 
    H2 =QS.CONTEXT.CREATE("market",$B$1,"USD","SOFR")
-   H3 =QS.CONTEXT.ADD.CURVE(H2,"SOFR",A3:B6)
+   H3 =QS.CONTEXT.ADD.CURVE(H2,"SOFR",A3:A6,TRANSPOSE(F3:F6))
    H5 =QS.INSTRUMENT.SWAP("swap",$B$1,"2031-02-24","USD","SOFR",10000000,0.04,0,"Actual360","Simple","Annual","Semiannual","Quarterly")
    H6 =QS.CONTEXT.PRICE(H2,H5,"Value",H3)
    H7 =QS.CONTEXT.PRICE(H2,H5,"FairRate(0)",H3)
@@ -28,17 +28,20 @@ Use separate areas for spilling tables.
 Independent additions and Excel dependencies
 ------------------------------------------------------------
 
-Each addition references the same root. A quote table can feed several curves:
+Each addition references the same root. Independent quote arrays can feed several curves:
 
 .. code-block:: text
 
-   H3 =QS.CONTEXT.ADD.QUOTES(H2,A3:B6)
+   H3 =QS.CONTEXT.ADD.QUOTES(H2,A3:A6,F3:F6)
    H4 =QS.CONTEXT.ADD.CURVE(H2,"SOFR")
    H6 =QS.CONTEXT.PRICE(H2,H5,"Value",H3:H4)
 
-An omitted curve table selects the context quotes matching that curve's market
-index, excluding volatility quotes. A supplied table defines the curve's exact
-quote basket. Day count, interpolation and extrapolation are optional curve
+Omitted curve identifiers select context quotes matching the curve's market
+index, excluding volatility quotes. Supply identifiers alone to select an exact
+basket from existing context quotes, or add Mid/Bid/Ask arrays with those identifiers.
+Each field is an independent scalar, row, column or spill. Arrays may occupy
+unrelated cells and have different orientations; entry counts must match.
+Interior blanks are preserved and never shift subsequent observations. Day count, interpolation and extrapolation are optional curve
 arguments; defaults are Actual360, LogLinear and FALSE.
 
 The complete additions range is an explicit argument to pricing. Excel must
@@ -51,8 +54,9 @@ explicitly. Blank range cells are ignored.
 
 Other input functions accept fixing histories, FX rows, credit curves, explicit
 zero curves, composite curves, volatility surfaces and cubes. Use
-``QS.CONTEXT.ADD.FIXINGS(root,range)`` with Market index/Date/Value columns.
-Supply one complete fixing history per context. FX columns are Base/Quote/Rate.
+``QS.CONTEXT.ADD.FIXINGS(root,market_indices,dates,values)`` with independent arrays.
+Supply one complete fixing history per context. FX uses separate base-currency,
+quote-currency and rate arrays.
 Credit curves take an explicit currency and discount index with their CDS
 quotes. Zero curves take ordered pillars and annual decimal rates; composite
 curves identify their base and spread indices in the same context.
@@ -69,8 +73,8 @@ model policy. Swaptions require an explicit configured pricer.
 ``QS.LOAN.SETTINGS`` exposes optional contractual parameters in IntelliSense:
 balloon and amortization rates, credit and recovery, fixing conventions,
 calendar, coupon bounds, introductory periods and prepayment parameters.
-Pass its handle to the loan constructor's settings argument. Existing
-Setting/Value inputs remain compatible.
+Pass its handle to the loan constructor's settings argument. Coupon periods,
+rates and indices are independent arrays, as are prepayment dates and CPRs.
 
 ``QS.LOAN.PRICER(name,currency,discount_index,refinancing_index,rebuild_amortization)``
 exposes the loan pricer's optional controls without a settings table or a
@@ -119,6 +123,7 @@ Excel calculation thread.
 Migrating existing workbooks
 ------------------------------------------------------------
 
+Replace earlier combined input ranges with their separate field arrays.
 The former component-handle ``QS.CONTEXT.CREATE`` is now
 ``QS.CONTEXT.FROM.COMPONENTS``, preserving its fifteen argument positions.
 Rename that function in existing custom workbooks or migrate to the short

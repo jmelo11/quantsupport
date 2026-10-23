@@ -109,7 +109,7 @@ choice. Map the funding index in a native discount policy supplied to the pricer
 reuse the same instrument and trade when comparing policies. For fixed income,
 call ``QS.DISCOUNT.POLICY.FIXED.INCOME("funding.policy","USD","FUNDING")``.
 For multiple currencies, use ``QS.DISCOUNT.POLICY.FIXED.INCOME.FROM.MAPPINGS``
-with a two-column Currency/Index range. Derivatives use the native CSA policy when
+with separate currency and index arrays. Derivatives use the native CSA policy when
 appropriate. Funding has no special instrument-level storage or construction path.
 
 ``QS.CURVE.FLAT`` instead creates a runtime ``DiscountCurveElement``. It can be
@@ -166,14 +166,14 @@ those cells: native Black/Hull–White cap/caplet consumers use
 uses an additive offset. These are different conventions, not interchangeable
 encodings of one rate.
 
-Create a native Hull–White swaption pricer with ordinary worksheet settings.
+Create a native Hull–White swaption pricer with independent setting-name and setting-value arrays.
 Enter Alpha/0.1 and Sigma/0.01 in ``AC30:AD31``. The policy from the first
 workbook is in ``L3``:
 
 .. code-block:: text
    :name: guide-excel-model
 
-   AA2 =QS.PRICER.CREATE("guide.swaption.pricer","ClosedFormHullWhiteSwaptionPricer",L3,AC30:AD31)
+   AA2 =QS.PRICER.CREATE("guide.swaption.pricer","ClosedFormHullWhiteSwaptionPricer",L3,AC30:AC31,AD30:AD31)
    AA3 =QS.INSTRUMENT.EUROPEAN.SWAPTION("guide.swaption", "2027-02-24","2031-02-24","USD","SOFR",0.04,"Payer","Actual360","Simple","Annual","Semiannual","Quarterly","")
    AA4 =QS.TRADE.CREATE("guide.swaption.trade",AA3,$B$1,"Receive",1000000)
    AA5 =QS.EVALUATE("guide.swaption.results",AA2,AA4,H5,"Value")

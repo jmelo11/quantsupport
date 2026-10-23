@@ -4,14 +4,12 @@ use crate::{
     functions::helpers::*,
     runtime::{
         context::{self, InputData},
-        historical,
-        inputs,
-        market_inputs, pricing,
+        historical, market_inputs, pricing,
         registry::{with_registry, with_registry_mut},
     },
 };
 use quantsupport::prelude::{
-    CreditCurveConfiguration, DayCounter, Frequency, FxRateRecord, Interpolator, Level, Request,
+    CreditCurveConfiguration, DayCounter, Frequency, Interpolator, Level, Request,
     VolatilityCubeConfiguration, VolatilitySurfaceConfiguration,
 };
 use quantsupport_xll_macros::xll_bindgen;
@@ -75,10 +73,16 @@ fn date(context: &str) -> Result<quantsupport::prelude::Date, XllError> {
 #[xll_bindgen(
     name = "QS.CONTEXT.ADD.QUOTES",
     category = "QuantSupport - Pricing",
-    help = "Adds an independent quote table to a context; reference this cell in the pricing input range"
+    help = "Adds separate identifier and Mid/Bid/Ask arrays to a context; each array can be a row or column"
 )]
-pub fn qs_context_add_quotes(context: &str, data: *const XLOPER12) -> Result<String, XllError> {
-    let table = worksheet_table(data, "data")?;
+pub fn qs_context_add_quotes(
+    context: &str,
+    identifiers: *const XLOPER12,
+    mid: *const XLOPER12,
+    bid: *const XLOPER12,
+    ask: *const XLOPER12,
+) -> Result<String, XllError> {
+    let table = worksheet_quotes(identifiers, mid, bid, ask)?;
     let key = input_key(&("quotes", &table))?;
     add(
         context,
@@ -90,10 +94,19 @@ pub fn qs_context_add_quotes(context: &str, data: *const XLOPER12) -> Result<Str
 #[xll_bindgen(
     name = "QS.CONTEXT.ADD.FIXINGS",
     category = "QuantSupport - Pricing",
-    help = "Adds a complete Market index/Date/Value fixing history directly to a context"
+    help = "Adds fixing history from separate market-index, date and value arrays"
 )]
-pub fn qs_context_add_fixings(context: &str, data: *const XLOPER12) -> Result<String, XllError> {
-    let table = worksheet_table(data, "data")?;
+pub fn qs_context_add_fixings(
+    context: &str,
+    market_indices: *const XLOPER12,
+    dates: *const XLOPER12,
+    values: *const XLOPER12,
+) -> Result<String, XllError> {
+    let table = worksheet_columns(&[
+        ("market_indices", market_indices),
+        ("dates", dates),
+        ("values", values),
+    ])?;
     let key = input_key(&("fixings", &table))?;
     add(
         context,
@@ -105,55 +118,44 @@ pub fn qs_context_add_fixings(context: &str, data: *const XLOPER12) -> Result<St
 #[xll_bindgen(
     name = "QS.CONTEXT.ADD.FX",
     category = "QuantSupport - Pricing",
-    help = "Adds Base/Quote/Rate FX rows directly to a context; one base unit equals rate quote units"
+    help = "Adds separate base-currency, quote-currency and rate arrays; one base unit equals rate quote units"
 )]
-pub fn qs_context_add_fx(context: &str, data: *const XLOPER12) -> Result<String, XllError> {
-    let table = worksheet_table(data, "data")?;
-    let key = input_key(&("fx", &table))?;
-    let mut records = Vec::new();
-    for (position, row) in inputs::rows(&table, 3, "FX (Base, Quote, Rate)")
-        .map_err(value_error)?
-        .into_iter()
-        .enumerate()
-    {
-        if position == 0
-            && row
-                .iter()
-                .zip(["base", "quote", "rate"])
-                .all(|(cell, header)| {
-                    cell.text("header")
-                        .is_ok_and(|s| inputs::label(s) == header)
-                })
-        {
-            continue;
-        }
-        let rate = row[2].number("FX rate").map_err(value_error)?;
-        if rate <= 0.0 {
-            return Err(value_error("FX rate must be positive"));
-        }
-        records.push(FxRateRecord {
-            base: parse_currency(row[0].text("base").map_err(value_error)?)?,
-            quote: parse_currency(row[1].text("quote").map_err(value_error)?)?,
-            rate,
-        });
-    }
-    add(context, InputData::Fx(records), key)
+pub fn qs_context_add_fx(
+    context: &str,
+    base_currencies: *const XLOPER12,
+    quote_currencies: *const XLOPER12,
+    rates: *const XLOPER12,
+) -> Result<String, XllError> {
+    let rows = worksheet_columns(&[
+        ("base_currencies", base_currencies),
+        ("quote_currencies", quote_currencies),
+        ("rates", rates),
+    ])?;
+    let key = input_key(&("fx", &rows))?;
+    add(
+        context,
+        InputData::Fx(market_inputs::fx(&rows).map_err(value_error)?),
+        key,
+    )
 }
 
 #[xll_bindgen(
     name = "QS.CONTEXT.ADD.CURVE",
     category = "QuantSupport - Pricing",
-    help = "Defines a curve together with its quote table; omit data to use matching context quotes"
+    help = "Defines a curve from separate identifier and quote-side arrays; omit identifiers to match context quotes"
 )]
 pub fn qs_context_add_curve(
     context: &str,
     market_index: &str,
-    data: *const XLOPER12,
+    identifiers: *const XLOPER12,
+    mid: *const XLOPER12,
+    bid: *const XLOPER12,
+    ask: *const XLOPER12,
     day_counter: Option<String>,
     interpolator: Option<String>,
     extrapolate: *const XLOPER12,
 ) -> Result<String, XllError> {
-    let table = worksheet_table(data, "data")?;
+    let table = worksheet_quotes(identifiers, mid, bid, ask)?;
     let dc = day_counter
         .as_deref()
         .filter(|s| !s.trim().is_empty())
@@ -195,14 +197,16 @@ pub fn qs_context_add_credit_curve(
     currency: &str,
     discount_index: &str,
     recovery: f64,
-    data: *const XLOPER12,
+    identifiers: *const XLOPER12,
+    mid: *const XLOPER12,
+    bid: *const XLOPER12,
+    ask: *const XLOPER12,
     day_counter: Option<String>,
     premium_frequency: Option<String>,
 ) -> Result<String, XllError> {
-    let table = worksheet_table(data, "data")?;
-    let quotes = market_inputs::quotes(date(context)?, &table).map_err(value_error)?;
-    let mut ids: Vec<_> = quotes.quotes().keys().cloned().collect();
-    ids.sort();
+    let table = worksheet_quotes(identifiers, mid, bid, ask)?;
+    let (ids, quotes) =
+        market_inputs::definition_quotes(date(context)?, &table).map_err(value_error)?;
     let dc = day_counter
         .as_deref()
         .filter(|s| !s.is_empty())
@@ -247,12 +251,14 @@ pub fn qs_context_add_vol_surface(
     market_index: &str,
     volatility_type: &str,
     smile_type: &str,
-    data: *const XLOPER12,
+    identifiers: *const XLOPER12,
+    mid: *const XLOPER12,
+    bid: *const XLOPER12,
+    ask: *const XLOPER12,
 ) -> Result<String, XllError> {
-    let table = worksheet_table(data, "data")?;
-    let quotes = market_inputs::quotes(date(context)?, &table).map_err(value_error)?;
-    let mut ids: Vec<_> = quotes.quotes().keys().cloned().collect();
-    ids.sort();
+    let table = worksheet_quotes(identifiers, mid, bid, ask)?;
+    let (ids, quotes) =
+        market_inputs::definition_quotes(date(context)?, &table).map_err(value_error)?;
     let configuration = VolatilitySurfaceConfiguration::new(
         parse_index(market_index)?,
         volatility_type.parse().map_err(value_error)?,
@@ -280,12 +286,14 @@ pub fn qs_context_add_vol_cube(
     market_index: &str,
     volatility_type: &str,
     smile_type: &str,
-    data: *const XLOPER12,
+    identifiers: *const XLOPER12,
+    mid: *const XLOPER12,
+    bid: *const XLOPER12,
+    ask: *const XLOPER12,
 ) -> Result<String, XllError> {
-    let table = worksheet_table(data, "data")?;
-    let quotes = market_inputs::quotes(date(context)?, &table).map_err(value_error)?;
-    let mut ids: Vec<_> = quotes.quotes().keys().cloned().collect();
-    ids.sort();
+    let table = worksheet_quotes(identifiers, mid, bid, ask)?;
+    let (ids, quotes) =
+        market_inputs::definition_quotes(date(context)?, &table).map_err(value_error)?;
     let configuration = VolatilityCubeConfiguration::new(
         parse_index(market_index)?,
         volatility_type.parse().map_err(value_error)?,
@@ -540,9 +548,8 @@ pub fn qs_history_values(
 ) -> Result<*mut XLOPER12, XllError> {
     // Preserve blank positions: silently dropping a timestamp could misalign rows.
     let strings = |range, label| {
-        worksheet_table(range, label)?
+        worksheet_array(range, label)?
             .iter()
-            .flatten()
             .map(|cell| {
                 cell.text(label).and_then(|s| {
                     if s.is_empty() {
@@ -580,4 +587,93 @@ pub fn qs_history_values(
         optional_bool(transpose, "transpose")?,
         None,
     ))
+}
+
+#[cfg(test)]
+mod array_boundary_tests {
+    use super::*;
+    use crate::runtime::registry::CellId;
+    use xll_rs::{convert::build_multi, memory::xlAutoFree12};
+
+    struct Array(*mut XLOPER12);
+    impl Drop for Array {
+        fn drop(&mut self) {
+            xlAutoFree12(self.0);
+        }
+    }
+    fn array(values: Vec<XLOPER12>, rows: usize, columns: usize) -> Array {
+        Array(build_multi(values, rows, columns))
+    }
+    fn in_cell<T>(row: i32, run: impl FnOnce() -> Result<T, XllError>) -> Result<T, XllError> {
+        with_registry_mut(|registry| {
+            registry.begin_cell(CellId {
+                sheet: 0xa991,
+                row,
+                column: 0,
+            })
+        });
+        let result = run();
+        with_registry_mut(|registry| registry.finish_cell(result.is_ok()));
+        result
+    }
+
+    #[test]
+    fn independent_arrays_construct_curves_and_reuse_handles_after_transposition() {
+        let identifiers = || {
+            vec![
+                XLOPER12::from_str("FixedRateDeposit_USD_SOFR_6M"),
+                XLOPER12::from_str("FixedRateDeposit_USD_SOFR_1Y"),
+            ]
+        };
+        let levels = || vec![XLOPER12::from_f64(0.04), XLOPER12::from_f64(0.05)];
+        let ids_column = array(identifiers(), 2, 1);
+        let ids_row = array(identifiers(), 1, 2);
+        let mid_row = array(levels(), 1, 2);
+        let mid_column = array(levels(), 2, 1);
+        let root = in_cell(0, || {
+            qs_context_new("array.boundary.context", "2026-01-15", "USD", "SOFR", None)
+        })
+        .unwrap();
+        let define = |ids, mid| {
+            in_cell(1, || {
+                qs_context_add_curve(
+                    &root,
+                    "SOFR",
+                    ids,
+                    mid,
+                    std::ptr::null(),
+                    std::ptr::null(),
+                    None,
+                    None,
+                    &XLOPER12::nil(),
+                )
+            })
+        };
+        let first = define(ids_column.0, mid_row.0).unwrap();
+        let prepared = with_registry(|registry| {
+            context::prepare(registry, &root, std::slice::from_ref(&first))
+        })
+        .unwrap();
+        assert_eq!(prepared.quote_store().quotes().len(), 2);
+        assert!(prepared
+            .constructed_elements()
+            .discount_curve(&quantsupport::prelude::MarketIndex::SOFR)
+            .is_some());
+        let second = define(ids_row.0, mid_column.0).unwrap();
+        assert_eq!(first, second);
+        let transposed =
+            with_registry(|registry| context::prepare(registry, &root, &[second])).unwrap();
+        assert!(std::rc::Rc::ptr_eq(&prepared, &transposed));
+        let rectangle = array(
+            vec![
+                XLOPER12::from_str("Identifier"),
+                XLOPER12::from_str("Mid"),
+                XLOPER12::from_str("FixedRateDeposit_USD_SOFR_6M"),
+                XLOPER12::from_f64(0.04),
+            ],
+            2,
+            2,
+        );
+        assert!(define(rectangle.0, std::ptr::null()).is_err());
+    }
 }

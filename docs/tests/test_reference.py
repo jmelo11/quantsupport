@@ -339,7 +339,7 @@ class ExcelReferenceTests(unittest.TestCase):
         self.assertGreaterEqual(len(contexts), 4)
         model_pricer = next(arguments for name, arguments in formulas((ROOT / "docs/excel/guide/markets-and-products.rst").read_text())
                             if name == "QS.PRICER.CREATE" and '"ClosedFormHullWhiteSwaptionPricer"' in arguments)
-        self.assertEqual(model_pricer[2:4], ["L3", "AC30:AD31"])
+        self.assertEqual(model_pricer[2:5], ["L3", "AC30:AC31", "AD30:AD31"])
         self.assertTrue(any(arguments[1] == "BC7" for arguments in contexts))
         self.assertEqual([a["name"] for a in records["QS.CONTEXT.FROM.COMPONENTS"]["arguments"]][12:15],
                          ["base_currency", "base_index", "quote_level"])

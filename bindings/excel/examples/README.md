@@ -16,14 +16,14 @@ Load the matching `quantsupport.xll` in **64-bit Windows Excel** before opening 
 
 ## Reading the sheets
 
-- **Inputs / Cases:** blue cells are editable; labels explain units and conventions. Loan settings and coupon schedules sit together in each case's block. Rates and spreads are annual decimals: enter `0.04` for 4%. Dates are ISO text such as `2026-02-24`.
+- **Inputs / Cases:** blue cells are editable; labels explain units and conventions. Loan settings and coupon fields are labelled in each case's block. Rates and spreads are annual decimals: enter `0.04` for 4%. Dates are ISO text such as `2026-02-24`.
 - **Market / Markets:** market assumptions appear first, followed by the curve-construction steps that consume them.
 - **Build / Archive / Pricing:** read the object sequence from top to bottom. Each grey object-reference cell has its purpose beside it and its Excel formula immediately below. Named cells such as `Swap_Context` make dependencies easier to trace in the formula bar or Excel's Name Manager.
 - **Results:** green cells contain financial measures. Loan and bond rows link directly to their inputs and build steps. Their **Inspect one case** dropdown controls both the Cashflows and Risk tabs.
 - **Cashflows / Risk / Curves:** tables have dedicated space to spill. Sensitivities are raw derivatives per unit market input; multiplying a decimal-rate sensitivity by `0.0001` approximates the effect of a +1 bp move.
 - **Layouts** in the loan study shows the same small curve table with all four combinations of `transpose` and `headers`. The schedule study also shows a transposed date list.
 
-Start with **Context-first pricing** for the shorter API. Its additions all reference the same root; pricing takes the complete additions range. The other studies retain the library's explicit **instrument → trade → discount policy → pricer → evaluation → result** objects. FUNDING is an ordinary composite curve selected by a discount policy. Coupon schedules and settings use worksheet ranges.
+Start with **Context-first pricing** for the shorter API. Its additions all reference the same root; pricing takes the complete additions range. The other studies retain the library's explicit **instrument → trade → discount policy → pricer → evaluation → result** objects. FUNDING is an ordinary composite curve selected by a discount policy. Coupon schedules use independent period, rate and index arrays. Contract settings use named QS.LOAN.SETTINGS arguments.
 
 The swap study keeps USD/SOFR and EUR/ESTR bootstrap configurations in separate contexts. Bootstrapping EUR OIS inside a USD collateral context would require a `Collateral:EUR/USD` curve calibrated from additional market data. The ESTR comparison context has no role in the USD swap's valuation.
 

@@ -316,6 +316,32 @@ class WorkbookTests(unittest.TestCase):
             handles, numbers = validation_names(Path(filename).stem)
             self.assertTrue(set(handles + numbers) <= set(book.names), "Live checks must follow the generated workbook")
 
+    def test_context_quote_fields_are_separate_nonadjacent_opposite_orientation_arrays(self):
+        book = self.books["context"]
+        identifiers = re.fullmatch(SHEET_RANGE, book.names["Context_QuoteIds"])
+        levels = re.fullmatch(SHEET_RANGE, book.names["Context_QuoteMid"])
+        id_cells = book.range_cells(identifiers[1], identifiers[2])
+        level_cells = book.range_cells(levels[1], levels[2])
+        self.assertEqual(len(id_cells), len(level_cells))
+        self.assertEqual(len({re.sub(r"\d", "", address) for _, address in id_cells}), 1)
+        self.assertEqual(len({re.sub(r"\D", "", address) for _, address in level_cells}), 1)
+        self.assertFalse(set(id_cells) & set(level_cells))
+        additions = [arguments(expression) for _, _, expression, _ in book.formulas()
+                     if expression.startswith("_xll.QS.CONTEXT.ADD.QUOTES(")]
+        self.assertEqual(additions, [["Context_Root", "Context_QuoteIds", "Context_QuoteMid"]])
+
+    def test_loan_schedules_pass_each_field_independently(self):
+        book = self.books["loans"]
+        for _, _, expression, _ in book.formulas():
+            if expression.startswith("_xll.QS.INSTRUMENT.LOAN("):
+                values = arguments(expression)
+                self.assertEqual(len(values), 14)
+                if values[11]:
+                    self.assertTrue(values[11].endswith("_CouponPeriods"))
+                    self.assertTrue(values[12].endswith("_CouponRates"))
+                    self.assertTrue(values[13].endswith("_CouponIndices"))
+                self.assertFalse(any("_Coupons" in value or "_Settings" in value for value in values))
+
     def test_detail_sheets_share_the_same_result_and_have_room_to_spill(self):
         for name in ("swap", "loans", "bonds"):
             book = self.books[name]

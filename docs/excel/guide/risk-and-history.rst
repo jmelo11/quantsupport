@@ -14,8 +14,8 @@ dated contexts to reduce the number of worksheet formulas:
 
 .. code-block:: text
 
-   =QS.QUOTES.FROM.RANGE("history.usd.quotes",B1,A3:D1002)
-   =QS.FIXINGS.FROM.RANGE("history.usd.fixings",F3:H10002)
+   =QS.QUOTES.FROM.RANGE("history.usd.quotes",B1,A3:A1002,B3:B1002,C3:C1002,D3:D1002)
+   =QS.FIXINGS.FROM.RANGE("history.usd.fixings",F3:F10002,G3:G10002,H3:H10002)
 
 Quotes can also use separate component arrays:
 
@@ -28,20 +28,20 @@ After the date, the arguments are **Identifiers, Mid, Bid, Ask**. Each supplied
 component must be one row or column with the same number of entries. Single
 cells are accepted for a single quote. Bid and Ask are optional, and blank
 entries retain missing levels without moving other quotes. To supply only Bid
-or Ask, leave the earlier side arguments blank. The existing combined-table
-form is selected when all side arguments are omitted.
+or Ask, leave the earlier side arguments blank. Each field is passed
+independently; no rectangular table is required.
 
-The quote range has **Identifier, Mid** columns, optionally followed by
-**Bid, Ask**. The fixing range has **Market index, Date, Value** columns;
-dates are ISO text such as ``2026-01-15``. Matching headers and fully blank
-rows are optional. Blank quote sides stay absent. Duplicate quote identifiers
-or index/date fixings are errors. Removing rows removes those observations
-from the rebuilt store. Unchanged inputs reuse their existing handles.
+Fixings take separate **Market indices, Dates, Values** arrays. Dates are ISO
+text such as ``2026-01-15``. Every supplied field can be a row, column or spill
+in a different location, with equal entry counts. Blanks stay aligned. Duplicate
+quote identifiers or index/date fixings are errors. Removing entries removes
+those observations from the rebuilt store. Unchanged values reuse their handles
+when fields are transposed or moved.
 
 Dated contexts share unchanged fixing history in memory. Updating a fixing
 store preserves the inputs already held by existing contexts; recalculate
-dependent contexts to use the updated history. Each distinct market date still
-requires its own curve construction and calibration.
+dependent contexts to use the updated history. Historical batches construct each distinct matched market once per batch,
+and separately named contexts can share the same matched calibrated market.
 
 The ribbon's object list refreshes only when its native change token changes;
 it does not repeatedly build unchanged snapshots. Pricing and curve-table
