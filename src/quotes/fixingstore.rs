@@ -22,6 +22,15 @@ pub struct FixingStore {
 }
 
 impl FixingStore {
+    /// Iterates over stored observations without copying the shared history.
+    pub fn observations(&self) -> impl Iterator<Item = (&MarketIndex, Date, f64)> {
+        self.values.iter().flat_map(|(index, values)| {
+            values
+                .iter()
+                .map(move |(date, value)| (index, *date, *value))
+        })
+    }
+
     /// Returns the stored fixing for a date, in the index's native quote units.
     ///
     /// ## Errors

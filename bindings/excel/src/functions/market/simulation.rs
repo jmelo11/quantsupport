@@ -193,24 +193,3 @@ pub fn qs_simulation_calibration(
         headers,
     ))
 }
-
-use crate::functions::helpers::{cached_handle, parse_json_list};
-use crate::runtime::registry::{with_registry_mut, QsObject};
-use quantsupport::prelude::SimulationConfiguration;
-
-#[xll_bindgen(
-    name = "QS.SIMULATION.CONFIGS.FROM.JSON",
-    category = "QuantSupport - Market",
-    help = "Stores native QuantSupport SimulationConfiguration values parsed from JSON"
-)]
-pub fn qs_simulation_configs_from_json(name: &str, json: &str) -> Result<String, XllError> {
-    if let Some(handle) = cached_handle(name, "SimulationConfigurations", json)? {
-        return Ok(handle);
-    }
-    let values: Vec<SimulationConfiguration> =
-        parse_json_list(json, "SimulationConfiguration values")?;
-    with_registry_mut(|registry| {
-        registry.upsert_if_changed(name, QsObject::SimulationConfigurations(values), json)
-    })
-    .map_err(value_error)
-}

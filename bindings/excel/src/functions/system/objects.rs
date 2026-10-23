@@ -36,13 +36,3 @@ pub fn qs_object_count(all_workbooks: *const XLOPER12) -> Result<i32, XllError> 
 pub fn qs_object_remove(handle: &str) -> Result<bool, XllError> {
     with_registry_mut(|registry| registry.remove(handle)).map_err(not_found)
 }
-
-#[xll_bindgen(
-    name = "QS.OBJECT.RESET",
-    aliases = ["QS.STORE.RESET"],
-    category = "QuantSupport - System",
-    help = "Clears a mutable store or configuration collection when the reset key changes and returns its new handle"
-)]
-pub fn qs_object_reset(handle: &str, reset_key: &str) -> Result<String, XllError> {
-    with_registry_mut(|registry| registry.reset_if_changed(handle, reset_key)).map_err(value_error)
-}

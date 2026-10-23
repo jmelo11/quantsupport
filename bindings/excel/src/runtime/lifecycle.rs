@@ -112,6 +112,14 @@ pub fn browser_snapshot(name: &str) -> super::browser::BrowserSnapshot {
             .find(|(_, book)| book.name.eq_ignore_ascii_case(name))
         {
             snapshot.objects = registry::workbook_browser_objects(*id);
+            snapshot.diagnostics = registry::workbook_diagnostics(*id);
+            for diagnostic in &mut snapshot.diagnostics {
+                diagnostic.sheet = book
+                    .sheets
+                    .get(&(diagnostic.sheet_id as usize))
+                    .cloned()
+                    .unwrap_or_default();
+            }
             for object in &mut snapshot.objects {
                 for cell in &mut object.locations {
                     cell.sheet = book
@@ -279,22 +287,7 @@ pub mod windows {
         static AUDIT_TICKS: std::cell::Cell<u8> = const { std::cell::Cell::new(0) };
     }
 
-    #[cfg(test)]
-    thread_local! {
-        static TEST_CALLER: RefCell<Option<(String, String, CellId, Option<String>)>> = const { RefCell::new(None) };
-    }
-
-    #[cfg(test)]
-    pub(crate) fn set_test_caller(caller: Option<(String, String, CellId, Option<String>)>) {
-        TEST_CALLER.with(|value| *value.borrow_mut() = caller);
-    }
-
     pub fn caller() -> Option<(String, String, CellId, Option<String>)> {
-        #[cfg(test)]
-        if let Some(caller) = TEST_CALLER.with(|value| value.borrow().clone()) {
-            return Some(caller);
-        }
-
         let (status, mut caller) = excel12(XLF_CALLER, &mut []);
         if status != 0 {
             excel_free(&mut caller);
@@ -1036,7 +1029,7 @@ mod tests {
             registry.begin_cell(cell);
             registry.set_cell_formula(
                 cell,
-                Some("=QS.CONTEXT.FROM.COMPONENTS(\"café \"\"market\"\"\",B2,B3)".into()),
+                Some("=QS.CONTEXT.PREPARE(\"café \"\"market\"\"\",B2,B3)".into()),
             );
             let context = PricingContext::new()
                 .with_quote_store(QuoteStore::new(Date::new(2026, 1, 15)))

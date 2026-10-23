@@ -61,11 +61,13 @@ impl BrowserResponse {
 pub fn curve_names(object: &QsObject) -> Vec<String> {
     let mut names: Vec<String> = match object {
         QsObject::DiscountCurve(curve) => vec![curve.market_index().to_string()],
+        #[cfg(test)]
         QsObject::ConstructedElements(store) => store
             .discount_curves()
             .keys()
             .map(ToString::to_string)
             .collect(),
+        #[cfg(test)]
         QsObject::CurveConfigurations(configs) => configs
             .iter()
             .map(|config| config.market_index().to_string())
@@ -182,6 +184,7 @@ pub fn execute(registry: &Registry, request: &BrowserQuery) -> Result<BrowserRes
         "nodes" => {
             let element = match object {
                 QsObject::DiscountCurve(curve) => Some(curve.as_ref()),
+                #[cfg(test)]
                 QsObject::ConstructedElements(store) => store.discount_curves().get(&index),
                 _ => context.and_then(|context| {
                     context.constructed_elements().discount_curves().get(&index)
@@ -194,6 +197,7 @@ pub fn execute(registry: &Registry, request: &BrowserQuery) -> Result<BrowserRes
         }
         "instruments" => {
             let configs = match object {
+                #[cfg(test)]
                 QsObject::CurveConfigurations(configs) => Some(configs.as_slice()),
                 _ => context.map(|context| context.curve_configurations().as_slice()),
             };
@@ -922,6 +926,7 @@ mod tests {
             let configurations = registry
                 .upsert_if_changed(
                     "curves",
+                    #[cfg(test)]
                     QsObject::CurveConfigurations(vec![CurveConfiguration::new(
                         MarketIndex::SOFR,
                         DayCounter::Actual360,

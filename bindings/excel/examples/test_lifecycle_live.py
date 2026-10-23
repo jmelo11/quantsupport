@@ -43,13 +43,13 @@ class ExcelLifecycleTests(unittest.TestCase):
 
     def quotes(self, book):
         cell = book.Worksheets(1).Range("A1")
-        cell.Formula = '=QS.QUOTES.CREATE("shared","2026-01-15")'
+        cell.Formula = '=QS.CONTEXT.CREATE("shared","2026-01-15","USD","SOFR")'
         handle = cell.Value2
         self.assertIsInstance(handle, str)
-        self.assertTrue(handle.startswith("QSObject:QuoteStore:"), handle)
+        self.assertTrue(handle.startswith("QSObject:PricingContext:"), handle)
         check = book.Worksheets(1).Range("B1")
         check.Formula = "=QS.OBJECT.TYPE(A1)"
-        self.assertEqual(check.Value2, "QuoteStore", "SheetChange must preserve the freshly calculated object")
+        self.assertEqual(check.Value2, "PricingContext", "SheetChange must preserve the freshly calculated object")
         return handle
 
     def test_workbooks_isolate_names_and_close_independently(self):
@@ -99,7 +99,7 @@ class ExcelLifecycleTests(unittest.TestCase):
                 self.assertEqual(self.count(), 0)
                 book = self.excel.Workbooks.Open(path)
                 self.assertNotEqual(book.Worksheets(1).Range("A1").Value2, original)
-                self.assertEqual(book.Worksheets(1).Range("B1").Value2, "QuoteStore")
+                self.assertEqual(book.Worksheets(1).Range("B1").Value2, "PricingContext")
                 book.Close(False)
                 book = None
                 time.sleep(1.3)
@@ -108,7 +108,7 @@ class ExcelLifecycleTests(unittest.TestCase):
                 self.assertEqual(self.count(), 0, "Manual open must defer native construction")
                 self.excel.Calculate()
                 self.assertEqual(self.count(), 1)
-                self.assertEqual(book.Worksheets(1).Range("B1").Value2, "QuoteStore")
+                self.assertEqual(book.Worksheets(1).Range("B1").Value2, "PricingContext")
             finally:
                 if book is not None:
                     book.Close(False)
@@ -121,7 +121,7 @@ class ExcelLifecycleTests(unittest.TestCase):
             sheet = book.Worksheets(1)
             sheet.Range("B1").Value2 = "2026-01-15"
             cell = sheet.Range("A1")
-            cell.Formula = '=QS.QUOTES.CREATE("manual",B1)'
+            cell.Formula = '=QS.CONTEXT.CREATE("manual",B1,"USD","SOFR")'
             cell.Calculate()
             original = cell.Value2
             self.assertTrue(original.startswith("QSObject:"), original)
@@ -132,10 +132,10 @@ class ExcelLifecycleTests(unittest.TestCase):
             self.excel.Calculate()
             self.assertNotEqual(cell.Value2, original)
             self.assertEqual(self.count(), 1)
-            cell.Formula = '=QS.QUOTES.CREATE("manual","invalid date")'
+            cell.Formula = '=QS.CONTEXT.CREATE("manual","invalid date","USD","SOFR")'
             cell.Calculate()
             self.assertEqual(self.count(), 0)
-            cell.Formula = '=QS.QUOTES.CREATE("manual",B1)'
+            cell.Formula = '=QS.CONTEXT.CREATE("manual",B1,"USD","SOFR")'
             cell.Calculate()
             self.assertEqual(self.count(), 1)
             cell.ClearContents()
@@ -149,7 +149,7 @@ class ExcelLifecycleTests(unittest.TestCase):
         try:
             sheet = book.Worksheets(1)
             sheet.Range("B1").Value2 = "first"
-            sheet.Range("A1").Formula = '=QS.QUOTES.CREATE(B1,"2026-01-15")'
+            sheet.Range("A1").Formula = '=QS.CONTEXT.CREATE(B1,"2026-01-15","USD","SOFR")'
             for position in range(20):
                 sheet.Range("B1").Value2 = f"renamed{position}"
                 sheet.Range("A1").Calculate()
@@ -166,12 +166,12 @@ class ExcelLifecycleTests(unittest.TestCase):
             sheet.Range("D1").Value2 = "text.cell"
             sheet.Range("D2").Formula = '="formula."&"cell"'
             for row, name in enumerate(('"literal"', 'D1', 'D2'), start=1):
-                sheet.Cells(row, 1).Formula = f'=QS.QUOTES.CREATE({name},"2026-01-15")'
+                sheet.Cells(row, 1).Formula = f'=QS.CONTEXT.CREATE({name},"2026-01-15","USD","SOFR")'
                 sheet.Cells(row, 2).Formula = f'=QS.OBJECT.TYPE(A{row})'
-                self.assertEqual(sheet.Cells(row, 2).Value2, "QuoteStore")
+                self.assertEqual(sheet.Cells(row, 2).Value2, "PricingContext")
             sheet.Range("D2").Formula = '="changed."&"name"'
             self.excel.CalculateFullRebuild()
-            self.assertEqual([sheet.Cells(row, 2).Value2 for row in (1, 2, 3)], ["QuoteStore"] * 3)
+            self.assertEqual([sheet.Cells(row, 2).Value2 for row in (1, 2, 3)], ["PricingContext"] * 3)
             self.assertEqual(self.count(), 3)
         finally:
             book.Close(False)
@@ -187,7 +187,7 @@ class ExcelLifecycleTests(unittest.TestCase):
                 book = None
                 book = self.excel.Workbooks.Open(path)
                 self.assertNotEqual(book.Worksheets(1).Range("A1").Value2, original)
-                self.assertEqual(book.Worksheets(1).Range("B1").Value2, "QuoteStore")
+                self.assertEqual(book.Worksheets(1).Range("B1").Value2, "PricingContext")
                 self.assertEqual(self.count(), 1)
             finally:
                 if book is not None:
@@ -207,10 +207,12 @@ class ExcelLifecycleTests(unittest.TestCase):
                 ("SOFR", "2026-01-14", 0.03),
                 ("SOFR", "2026-01-15", 0.04),
             )
-            sheet.Range("H1").Formula = '=QS.QUOTES.FROM.RANGE("quotes","2026-01-15",A1:A3,B1:B3)'
-            sheet.Range("H2").Formula = '=QS.FIXINGS.FROM.RANGE("fixings",D1:D3,E1:E3,F1:F3)'
-            sheet.Range("I1").Formula = '=QS.QUOTES.GET(H1,"FixedRateDeposit_USD_SOFR_6M","Mid")'
-            sheet.Range("I2").Formula = '=QS.FIXINGS.GET(H2,"SOFR","2026-01-14")'
+            sheet.Range("G1").Formula = '=QS.CONTEXT.CREATE("arrays","2026-01-15","USD","SOFR")'
+            sheet.Range("H1").Formula = '=QS.CONTEXT.ADD.QUOTES(G1,A1:A3,B1:B3)'
+            sheet.Range("H2").Formula = '=QS.CONTEXT.ADD.FIXINGS(G1,D1:D3,E1:E3,F1:F3)'
+            sheet.Range("J1").Formula = '=QS.CONTEXT.PREPARE("full",G1,H1:H2)'
+            sheet.Range("I1").Formula = '=QS.CONTEXT.QUOTE(J1,"FixedRateDeposit_USD_SOFR_6M","Mid")'
+            sheet.Range("I2").Formula = '=QS.CONTEXT.FIXING(J1,"SOFR","2026-01-14")'
             self.assertEqual(sheet.Range("I1").Value2, 0.04)
             self.assertEqual(sheet.Range("I2").Value2, 0.03)
             sheet.Range("B2").Value2 = 0.06
@@ -232,16 +234,18 @@ class ExcelLifecycleTests(unittest.TestCase):
                                            ("FixedRateDeposit_USD_SOFR_1Y",))
             sheet.Range("D1:E1").Value2 = ((0.04, 0.05),)
             sheet.Range("H1:H2").Value2 = ((None,), (0.06,))
-            sheet.Range("K1").Formula = '=QS.QUOTES.FROM.RANGE("arrays","2026-01-15",A1:A2,D1:E1,,H1:H2)'
-            sheet.Range("K2").Formula = '=QS.QUOTES.GET(K1,"FixedRateDeposit_USD_SOFR_6M","Mid")'
-            sheet.Range("K3").Formula = '=QS.QUOTES.GET(K1,"FixedRateDeposit_USD_SOFR_1Y","Ask")'
+            sheet.Range("L1").Formula = '=QS.CONTEXT.CREATE("arrays","2026-01-15","USD","SOFR")'
+            sheet.Range("K1").Formula = '=QS.CONTEXT.ADD.QUOTES(L1,A1:A2,D1:E1,,H1:H2)'
+            sheet.Range("L2").Formula = '=QS.CONTEXT.PREPARE("full",L1,K1)'
+            sheet.Range("K2").Formula = '=QS.CONTEXT.QUOTE(L2,"FixedRateDeposit_USD_SOFR_6M","Mid")'
+            sheet.Range("K3").Formula = '=QS.CONTEXT.QUOTE(L2,"FixedRateDeposit_USD_SOFR_1Y","Ask")'
             self.assertEqual(sheet.Range("K2").Value2, 0.04)
             self.assertEqual(sheet.Range("K3").Value2, 0.06)
             sheet.Range("D1").Value2 = 0.07
             self.assertEqual(sheet.Range("K2").Value2, 0.07)
             sheet.Range("H2").ClearContents()
             self.assertIsInstance(sheet.Range("K3").Value2, int)
-            sheet.Range("K1").Formula = '=QS.QUOTES.FROM.RANGE("arrays","2026-01-15",A1:A2,D1)'
+            sheet.Range("K1").Formula = '=QS.CONTEXT.ADD.QUOTES(L1,A1:A2,D1)'
             self.assertIsInstance(sheet.Range("K1").Value2, int)
         finally:
             book.Close(False)

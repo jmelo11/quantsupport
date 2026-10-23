@@ -9,6 +9,17 @@ pub struct BrowserSnapshot {
     pub workbook: String,
     pub objects: Vec<BrowserObject>,
     pub error: String,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub diagnostics: Vec<BrowserDiagnostic>,
+}
+
+#[derive(Serialize)]
+pub struct BrowserDiagnostic {
+    pub sheet_id: u64,
+    pub sheet: String,
+    pub row: i32,
+    pub column: i32,
+    pub message: String,
 }
 
 #[derive(Default, Serialize)]
@@ -168,6 +179,7 @@ impl BrowserObject {
                     result.detail("Foreign notional", value);
                 }
             }
+            #[cfg(test)]
             QsObject::QuoteStore(store) => result.detail("Reference date", store.reference_date()),
             _ => {}
         }

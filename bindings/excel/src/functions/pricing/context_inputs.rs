@@ -4,12 +4,12 @@ use crate::{
     functions::helpers::*,
     runtime::{
         context::{self, InputData},
-        historical, market_inputs, pricing,
+        market_inputs,
         registry::{with_registry, with_registry_mut},
     },
 };
 use quantsupport::prelude::{
-    CreditCurveConfiguration, DayCounter, Frequency, Interpolator, Level, Request,
+    CreditCurveConfiguration, DayCounter, Frequency, Interpolator, Level,
     VolatilityCubeConfiguration, VolatilitySurfaceConfiguration,
 };
 use quantsupport_xll_macros::xll_bindgen;
@@ -18,7 +18,7 @@ use xll_rs::types::{XllError, XLOPER12};
 #[xll_bindgen(
     name = "QS.CONTEXT.CREATE",
     category = "QuantSupport - Pricing",
-    help = "Creates a dated pricing context; pass independent CONTEXT.ADD inputs as a range to CONTEXT.PRICE"
+    help = "Creates a dated pricing context; pass independent CONTEXT.ADD inputs as an array to QS.EVALUATE"
 )]
 pub fn qs_context_new(
     name: &str,
@@ -68,6 +68,88 @@ fn date(context: &str) -> Result<quantsupport::prelude::Date, XllError> {
             .map(|c| c.evaluation_date())
     })
     .map_err(value_error)
+}
+
+#[xll_bindgen(
+    name = "QS.CONTEXT.ADD.QUOTE",
+    category = "QuantSupport - Pricing",
+    help = "Adds one quote identifier, finite value and explicit Mid, Bid or Ask level to a context"
+)]
+pub fn qs_context_add_quote(
+    context: &str,
+    identifier: &str,
+    value: f64,
+    level: Option<String>,
+) -> Result<String, XllError> {
+    use quantsupport::prelude::{Quote, QuoteLevels, QuoteStore};
+    if !value.is_finite() {
+        return Err(value_error("quote value must be finite"));
+    }
+    let levels = match level
+        .as_deref()
+        .unwrap_or("Mid")
+        .trim()
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "" | "mid" => QuoteLevels::new(Some(value), None, None),
+        "bid" => QuoteLevels::new(None, Some(value), None),
+        "ask" => QuoteLevels::new(None, None, Some(value)),
+        _ => return Err(value_error("level must be Mid, Bid, or Ask")),
+    };
+    let quote = Quote::new(identifier.trim().parse().map_err(value_error)?, levels);
+    let key = input_key(&("quote", &quote))?;
+    let mut quotes = QuoteStore::new(date(context)?);
+    quotes.add_quote(quote);
+    add(context, InputData::Quotes(quotes), key)
+}
+
+#[xll_bindgen(
+    name = "QS.CONTEXT.PREPARE",
+    category = "QuantSupport - Pricing",
+    help = "Returns a reusable complete context from a root and its full array of independent CONTEXT.ADD references"
+)]
+pub fn qs_context_prepare(
+    name: &str,
+    context: &str,
+    inputs: *const XLOPER12,
+) -> Result<String, XllError> {
+    use crate::runtime::registry::QsObject;
+    let inputs = optional_string_values(inputs, "inputs")?;
+    let key = input_key(&(context, &inputs))?;
+    let prepared = with_registry(|registry| context::prepare(registry, context, &inputs))
+        .map_err(value_error)?;
+    with_registry_mut(|registry| {
+        registry.upsert_if_changed(name, QsObject::PricingContext(prepared), key)
+    })
+    .map_err(value_error)
+}
+
+#[xll_bindgen(
+    name = "QS.CONTEXT.ADD.PRICER.CONFIGURATION",
+    category = "QuantSupport - Pricing",
+    help = "Adds one native PricerConfiguration JSON object to a context, including typed model assignments"
+)]
+pub fn qs_context_add_pricer_configuration(context: &str, json: &str) -> Result<String, XllError> {
+    let value = serde_json::from_str::<quantsupport::prelude::PricerConfiguration>(json)
+        .map_err(value_error)?;
+    let key = input_key(&("pricer", &value))?;
+    add(context, InputData::Pricer(value), key)
+}
+
+#[xll_bindgen(
+    name = "QS.CONTEXT.ADD.SIMULATION.CONFIGURATION",
+    category = "QuantSupport - Pricing",
+    help = "Adds one native SimulationConfiguration JSON object to a context"
+)]
+pub fn qs_context_add_simulation_configuration(
+    context: &str,
+    json: &str,
+) -> Result<String, XllError> {
+    let value = serde_json::from_str::<quantsupport::prelude::SimulationConfiguration>(json)
+        .map_err(value_error)?;
+    let key = input_key(&("simulation", &value))?;
+    add(context, InputData::Simulation(value), key)
 }
 
 #[xll_bindgen(
@@ -311,15 +393,6 @@ pub fn qs_context_add_vol_cube(
     )
 }
 
-fn request(value: Option<&str>) -> Result<Request, XllError> {
-    pricing::parse_requests(&[value
-        .filter(|s| !s.trim().is_empty())
-        .unwrap_or("Value")
-        .into()])
-    .map(|mut requests| requests.remove(0))
-    .map_err(value_error)
-}
-
 #[xll_bindgen(
     name = "QS.CONTEXT.ADD.ZERO.CURVE",
     category = "QuantSupport - Pricing",
@@ -418,175 +491,6 @@ fn smile(value: &str) -> Result<quantsupport::prelude::SmileType, XllError> {
         "delta" => Ok(quantsupport::prelude::SmileType::Delta),
         _ => Err(value_error("smile_type must be Strike or Delta")),
     }
-}
-
-#[xll_bindgen(
-    name = "QS.CONTEXT.PRICE",
-    category = "QuantSupport - Pricing",
-    help = "Returns a requested number or table directly; inputs is the complete range of independent CONTEXT.ADD cells"
-)]
-pub fn qs_context_price(
-    context: &str,
-    instrument: &str,
-    request_name: Option<String>,
-    inputs: *const XLOPER12,
-    pricer: Option<String>,
-    transpose: *const XLOPER12,
-    headers: *const XLOPER12,
-) -> Result<*mut XLOPER12, XllError> {
-    let request = request(request_name.as_deref())?;
-    let inputs = optional_string_values(inputs, "inputs")?;
-    let transpose = optional_bool(transpose, "transpose")?;
-    let headers = optional_bool(headers, "headers")?;
-    let results = with_registry(|registry| {
-        let context = context::prepare(registry, context, &inputs)?;
-        context::evaluate(
-            registry,
-            &context,
-            instrument,
-            &request,
-            pricer.as_deref().filter(|s| !s.is_empty()),
-        )
-    })
-    .map_err(value_error)?;
-    match request {
-        Request::Cashflows => super::valuation::cashflows_output(
-            results
-                .cashflows()
-                .ok_or_else(|| not_found("pricer did not return cashflows"))?,
-            transpose,
-            headers,
-        ),
-        Request::Sensitivities => {
-            let risk = results
-                .sensitivities()
-                .ok_or_else(|| not_found("pricer did not return sensitivities"))?;
-            let mut cells = vec![
-                XLOPER12::from_str("Risk factor"),
-                XLOPER12::from_str("Sensitivity"),
-            ];
-            for (label, value) in risk.instrument_keys().iter().zip(risk.exposure()) {
-                cells.push(XLOPER12::from_str(label));
-                cells.push(XLOPER12::from_f64(*value));
-            }
-            Ok(spill(
-                cells,
-                risk.instrument_keys().len() + 1,
-                2,
-                transpose,
-                headers,
-            ))
-        }
-        _ => Ok(xll_rs::returning::XlReturn::num(
-            context::scalar(&results, &request).map_err(value_error)?,
-        )
-        .into_raw()),
-    }
-}
-
-#[xll_bindgen(
-    name = "QS.CONTEXT.VALUES",
-    category = "QuantSupport - Pricing",
-    help = "Prices an instrument range against one prepared context and spills scalar results in input order"
-)]
-pub fn qs_context_values(
-    context: &str,
-    instruments: *const XLOPER12,
-    request_name: Option<String>,
-    inputs: *const XLOPER12,
-    pricer: Option<String>,
-    transpose: *const XLOPER12,
-) -> Result<*mut XLOPER12, XllError> {
-    let request = request(request_name.as_deref())?;
-    let inputs = optional_string_values(inputs, "inputs")?;
-    let instruments = string_values(instruments, "instruments")?;
-    if instruments.is_empty() {
-        return Err(value_error("supply at least one instrument"));
-    }
-    let values = with_registry(|registry| {
-        let context = context::prepare(registry, context, &inputs)?;
-        instruments
-            .iter()
-            .map(|instrument| {
-                let results = context::evaluate(
-                    registry,
-                    &context,
-                    instrument,
-                    &request,
-                    pricer.as_deref().filter(|s| !s.is_empty()),
-                )?;
-                context::scalar(&results, &request)
-            })
-            .collect::<Result<Vec<_>, String>>()
-    })
-    .map_err(value_error)?;
-    let count = values.len();
-    Ok(spill(
-        values.into_iter().map(XLOPER12::from_f64).collect(),
-        count,
-        1,
-        optional_bool(transpose, "transpose")?,
-        None,
-    ))
-}
-
-#[xll_bindgen(
-    name = "QS.HISTORY.VALUES",
-    category = "QuantSupport - Pricing",
-    help = "Prices each instrument at its origination timestamp, constructing each matched market once per batch"
-)]
-pub fn qs_history_values(
-    store: &str,
-    instruments: *const XLOPER12,
-    timestamps: *const XLOPER12,
-    pricer: &str,
-    request_name: Option<String>,
-    fixings: Option<String>,
-    rule: Option<String>,
-    quote_level: Option<String>,
-    transpose: *const XLOPER12,
-) -> Result<*mut XLOPER12, XllError> {
-    // Preserve blank positions: silently dropping a timestamp could misalign rows.
-    let strings = |range, label| {
-        worksheet_array(range, label)?
-            .iter()
-            .map(|cell| {
-                cell.text(label).and_then(|s| {
-                    if s.is_empty() {
-                        Err(format!("{label} cannot contain blanks"))
-                    } else {
-                        Ok(s.to_string())
-                    }
-                })
-            })
-            .collect::<Result<Vec<_>, String>>()
-            .map_err(value_error)
-    };
-    let instruments = strings(instruments, "instruments")?;
-    let timestamps = strings(timestamps, "timestamps")?;
-    let request = request(request_name.as_deref())?;
-    let values = with_registry(|registry| {
-        historical::values(
-            registry,
-            store,
-            &instruments,
-            &timestamps,
-            &request,
-            pricer,
-            fixings.as_deref().filter(|s| !s.is_empty()),
-            rule.as_deref(),
-            quote_level.as_deref(),
-        )
-    })
-    .map_err(value_error)?;
-    let count = values.len();
-    Ok(spill(
-        values.into_iter().map(XLOPER12::from_f64).collect(),
-        count,
-        1,
-        optional_bool(transpose, "transpose")?,
-        None,
-    ))
 }
 
 #[cfg(test)]

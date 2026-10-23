@@ -321,7 +321,7 @@ pub fn qs_instrument_xccy_fix_float(
 }
 
 #[xll_bindgen(
-    name = "QS.INSTRUMENT.FIXED.BOND",
+    name = "QS.INSTRUMENT.FIXED.RATE.BOND",
     category = "QuantSupport - Instruments",
     help = "Creates a native FixedRateBond contract; use QS.TRADE.CREATE for a position"
 )]
@@ -387,7 +387,7 @@ pub fn qs_instrument_fixed_bond(
 }
 
 #[xll_bindgen(
-    name = "QS.INSTRUMENT.FIXED.DEPOSIT",
+    name = "QS.INSTRUMENT.FIXED.RATE.DEPOSIT",
     category = "QuantSupport - Instruments",
     help = "Creates a native FixedRateDeposit contract; use QS.TRADE.CREATE for a position"
 )]
@@ -451,7 +451,7 @@ pub fn qs_instrument_fixed_deposit(
 }
 
 #[xll_bindgen(
-    name = "QS.INSTRUMENT.FLOATING.NOTE",
+    name = "QS.INSTRUMENT.FLOATING.RATE.NOTE",
     category = "QuantSupport - Instruments",
     help = "Creates a native FloatingRateNote contract; use QS.TRADE.CREATE for a position"
 )]
@@ -773,7 +773,7 @@ pub fn qs_instrument_caplet_floorlet(
 }
 
 #[xll_bindgen(
-    name = "QS.INSTRUMENT.RATE.FUTURE",
+    name = "QS.INSTRUMENT.RATE.FUTURES",
     category = "QuantSupport - Instruments",
     help = "Creates a native RateFutures contract; use QS.TRADE.CREATE for a position"
 )]

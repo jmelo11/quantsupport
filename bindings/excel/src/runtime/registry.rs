@@ -1,8 +1,8 @@
 //! Revisioned handles for actual QuantSupport objects.
 //!
 //! Excel cells can only carry scalar values, so the registry owns library
-//! components. A handle such as `QSObject:QuoteStore:usd:4` is both an object
-//! reference and a dependency token; mutations return the next revision.
+//! values. A handle such as `QSObject:PricingContext:usd:4` is both an object
+//! reference and a dependency token. Changed definitions return a new revision.
 
 use std::{
     cell::{Cell, RefCell},
@@ -12,18 +12,22 @@ use std::{
 };
 
 use quantsupport::prelude::{
-    BasisSwapTrade, CapFloorTrade, CapletFloorletTrade, CdsTrade, ConstructedElementStore,
-    CreditCurveConfiguration, Currency, CurveConfiguration, Date, DiscountCurveElement, DualFwd,
+    BasisSwapTrade, CapFloorTrade, CapletFloorletTrade, CdsTrade, DiscountCurveElement, DualFwd,
     EquityEuropeanOptionTrade, EquityForwardTrade, EuropeanSwaptionTrade,
-    FixFloatCrossCurrencySwapTrade, FixedRateBondTrade, FixedRateDepositTrade, FixingStore,
+    FixFloatCrossCurrencySwapTrade, FixedRateBondTrade, FixedRateDepositTrade,
     FloatFloatCrossCurrencySwapTrade, FloatingRateNoteTrade, FxEuropeanOptionTrade, FxForwardTrade,
-    FxStore, MarketIndex, MarketSnapshot, MarketSnapshotStore, PricerConfiguration, PricingContext,
-    Quote, QuoteStore, RateFuturesTrade, Scenario, SimulationConfiguration, SnapshotSelector,
-    SwapTrade, VolatilityCubeConfiguration, VolatilitySurfaceConfiguration,
+    MarketSnapshot, MarketSnapshotStore, PricingContext, RateFuturesTrade, SnapshotSelector,
+    SwapTrade,
+};
+#[cfg(test)]
+use quantsupport::prelude::{
+    ConstructedElementStore, Currency, CurveConfiguration, Date, FixingStore, FxStore, MarketIndex,
+    Quote, QuoteStore,
 };
 
 const HANDLE_PREFIX: &str = "QSObject";
 const MAX_OBJECT_NAME_UTF16: usize = 128;
+#[cfg(test)]
 const RESET_OPERATION_ID: &str = "__registry_reset__";
 
 /// QuantSupport components and trades that can be referenced by an Excel cell.
@@ -45,28 +49,21 @@ pub enum QsObject {
     /// Native loan position, independent of pricer settings.
     LoanTrade(Box<quantsupport::prelude::LoanTrade<DualFwd>>),
     /// Market quote collection.
+    #[cfg(test)]
     QuoteStore(Box<QuoteStore>),
     /// Historical fixing collection.
+    #[cfg(test)]
     FixingStore(Box<FixingStore>),
     /// FX spot-rate collection.
+    #[cfg(test)]
     FxStore(Box<FxStore>),
     /// Curve bootstrap configurations.
+    #[cfg(test)]
     CurveConfigurations(Vec<CurveConfiguration>),
-    /// Credit-curve bootstrap configurations.
-    CreditCurveConfigurations(Vec<CreditCurveConfiguration>),
-    /// Volatility-surface configurations.
-    VolatilitySurfaceConfigurations(Vec<VolatilitySurfaceConfiguration>),
-    /// Volatility-cube configurations.
-    VolatilityCubeConfigurations(Vec<VolatilityCubeConfiguration>),
-    /// Monte Carlo simulation configurations.
-    SimulationConfigurations(Vec<SimulationConfiguration>),
-    /// Instrument-level pricer selections and typed model assignments.
-    PricerConfigurations(Vec<PricerConfiguration>),
-    /// Quote scenarios.
-    Scenarios(Vec<Scenario>),
     /// A constructed discount curve.
     DiscountCurve(Box<DiscountCurveElement>),
     /// A collection of constructed market-data elements.
+    #[cfg(test)]
     ConstructedElements(Box<ConstructedElementStore>),
     /// An initialized pricing context.
     PricingContext(std::rc::Rc<PricingContext>),
@@ -123,17 +120,16 @@ impl QsObject {
             Self::Pricer(_) => "Pricer",
             Self::EvaluationResults(_) => "EvaluationResults",
             Self::LoanTrade(_) => "LoanTrade",
+            #[cfg(test)]
             Self::QuoteStore(_) => "QuoteStore",
+            #[cfg(test)]
             Self::FixingStore(_) => "FixingStore",
+            #[cfg(test)]
             Self::FxStore(_) => "FxStore",
+            #[cfg(test)]
             Self::CurveConfigurations(_) => "CurveConfigurations",
-            Self::CreditCurveConfigurations(_) => "CreditCurveConfigurations",
-            Self::VolatilitySurfaceConfigurations(_) => "VolatilitySurfaceConfigurations",
-            Self::VolatilityCubeConfigurations(_) => "VolatilityCubeConfigurations",
-            Self::SimulationConfigurations(_) => "SimulationConfigurations",
-            Self::PricerConfigurations(_) => "PricerConfigurations",
-            Self::Scenarios(_) => "Scenarios",
             Self::DiscountCurve(_) => "DiscountCurveElement",
+            #[cfg(test)]
             Self::ConstructedElements(_) => "ConstructedElementStore",
             Self::PricingContext(_) => "PricingContext",
             Self::MarketSnapshot(_) => "MarketSnapshot",
@@ -164,7 +160,9 @@ struct RegistryEntry {
     object: QsObject,
     definition_key: Option<String>,
     dependencies: HashMap<String, u64>,
+    #[cfg(test)]
     mutation_keys: HashMap<String, String>,
+    #[cfg(test)]
     undo: HashMap<String, MutationUndo>,
 }
 
@@ -194,8 +192,10 @@ pub enum RegistryError {
     /// An object's revision counter could not be incremented.
     RevisionOverflow(String),
     /// The object is immutable or cannot be reconstructed without its inputs.
+    #[cfg(test)]
     ResetUnsupported(&'static str),
     /// Two worksheet cells attempted to own the same store update.
+    #[cfg(test)]
     DuplicateMutation(String),
     /// A cached object was built from an input that has since changed.
     StaleDependency { handle: String, dependency: String },
@@ -205,6 +205,7 @@ impl fmt::Display for RegistryError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::StaleDependency { handle, dependency } => write!(formatter, "object {handle} must be recalculated because dependency {dependency} changed"),
+            #[cfg(test)]
             Self::DuplicateMutation(operation) => write!(formatter, "store update {operation} is already defined by another cell"),
             Self::InvalidHandle(handle) => write!(
                 formatter,
@@ -226,6 +227,7 @@ impl fmt::Display for RegistryError {
             Self::RevisionOverflow(handle) => {
                 write!(formatter, "revision counter overflow for '{handle}'")
             }
+            #[cfg(test)]
             Self::ResetUnsupported(actual) => write!(
                 formatter,
                 "object type {actual} cannot be reset; reset the mutable input store or configuration collection instead"
@@ -240,18 +242,22 @@ impl Error for RegistryError {}
 #[derive(Default)]
 pub struct Registry {
     pub context_cache: RefCell<super::context::ContextCache>,
+    diagnostics: HashMap<CellId, String>,
     objects: HashMap<String, RegistryEntry>,
     namespace: u64,
     revision_clock: u64,
     active_cell: Option<CellId>,
     reads: RefCell<HashSet<String>>,
     writes: RefCell<HashSet<String>>,
+    #[cfg(test)]
     mutations: HashSet<(String, String)>,
     cell_roots: HashMap<CellId, HashSet<String>>,
     cell_outputs: HashMap<CellId, HashSet<String>>,
     cell_formulas: HashMap<CellId, String>,
+    #[cfg(test)]
     cell_mutations: HashMap<CellId, HashSet<(String, String)>>,
     references: HashMap<String, usize>,
+    #[cfg(test)]
     mutation_owners: HashMap<(String, String), CellId>,
 }
 
@@ -265,9 +271,9 @@ pub struct CellId {
 
 // Only the overwritten observation/configuration is retained, never a copy of
 // the whole collection. This keeps storage linear in the number of worksheet inputs.
+#[cfg(test)]
 enum MutationUndo {
     Curve(Option<CurveConfiguration>),
-    Credit(Option<CreditCurveConfiguration>),
     Quote {
         identifier: String,
         previous: Option<Quote>,
@@ -288,6 +294,7 @@ enum MutationUndo {
     },
 }
 
+#[cfg(test)]
 impl MutationUndo {
     fn capture(object: &QsObject, operation: &str) -> Option<Self> {
         match object {
@@ -330,15 +337,6 @@ impl MutationUndo {
             QsObject::CurveConfigurations(values) => {
                 let index = operation.strip_prefix("curve:")?;
                 Some(Self::Curve(
-                    values
-                        .iter()
-                        .find(|v| v.market_index().to_string() == index)
-                        .cloned(),
-                ))
-            }
-            QsObject::CreditCurveConfigurations(values) => {
-                let index = operation.strip_prefix("credit:")?;
-                Some(Self::Credit(
                     values
                         .iter()
                         .find(|v| v.market_index().to_string() == index)
@@ -399,10 +397,6 @@ impl MutationUndo {
                 values.retain(|v| format!("curve:{}", v.market_index()) != operation);
                 values.extend(previous);
             }
-            (Self::Credit(previous), QsObject::CreditCurveConfigurations(values)) => {
-                values.retain(|v| format!("credit:{}", v.market_index()) != operation);
-                values.extend(previous);
-            }
             _ => {}
         }
     }
@@ -419,6 +413,7 @@ macro_rules! accessor {
     };
 }
 
+#[cfg(test)]
 macro_rules! collection_accessor {
     ($name:ident, $variant:ident, $type:ty, $label:literal) => {
         pub fn $name(&self, handle: &str) -> Result<&Vec<$type>, RegistryError> {
@@ -431,6 +426,24 @@ macro_rules! collection_accessor {
 }
 
 impl Registry {
+    pub fn record_diagnostic(&mut self, message: Option<String>) {
+        let Some(cell) = self.active_cell else {
+            return;
+        };
+        match message {
+            Some(message) => {
+                if self.diagnostics.get(&cell) != Some(&message) {
+                    self.diagnostics.insert(cell, message);
+                    browser_changed();
+                }
+            }
+            None => {
+                if self.diagnostics.remove(&cell).is_some() {
+                    browser_changed();
+                }
+            }
+        }
+    }
     /// Stable name for an output owned by the calling worksheet cell.
     pub fn cell_name(&self, prefix: &str) -> Result<String, String> {
         let cell = self
@@ -488,6 +501,7 @@ impl Registry {
         self.active_cell = Some(cell);
         self.reads.borrow_mut().clear();
         self.writes.borrow_mut().clear();
+        #[cfg(test)]
         self.mutations.clear();
     }
 
@@ -524,23 +538,26 @@ impl Registry {
         let Some(cell) = self.active_cell.take() else {
             return;
         };
-        let mutations = if success {
-            std::mem::take(&mut self.mutations)
-        } else {
-            HashSet::new()
-        };
-        let previous = self.cell_mutations.remove(&cell).unwrap_or_default();
-        for key in previous.difference(&mutations) {
-            self.undo_mutation(key);
-        }
-        // Also undo a partial operation if a later step of the formula failed.
-        if !success {
-            for key in std::mem::take(&mut self.mutations) {
-                self.undo_mutation(&key);
+        #[cfg(test)]
+        {
+            let mutations = if success {
+                std::mem::take(&mut self.mutations)
+            } else {
+                HashSet::new()
+            };
+            let previous = self.cell_mutations.remove(&cell).unwrap_or_default();
+            for key in previous.difference(&mutations) {
+                self.undo_mutation(key);
             }
-        }
-        if !mutations.is_empty() {
-            self.cell_mutations.insert(cell, mutations);
+            // Also undo a partial operation if a later step of the formula failed.
+            if !success {
+                for key in std::mem::take(&mut self.mutations) {
+                    self.undo_mutation(&key);
+                }
+            }
+            if !mutations.is_empty() {
+                self.cell_mutations.insert(cell, mutations);
+            }
         }
         let mut roots = std::mem::take(self.reads.get_mut());
         let writes = std::mem::take(self.writes.get_mut());
@@ -576,11 +593,12 @@ impl Registry {
         }
         if !roots.is_empty() {
             self.cell_roots.insert(cell, roots);
-        } else {
+        } else if !self.diagnostics.contains_key(&cell) {
             self.cell_formulas.remove(&cell);
         }
     }
 
+    #[cfg(test)]
     fn undo_mutation(&mut self, key: &(String, String)) {
         self.mutation_owners.remove(key);
         if let Some(entry) = self.objects.get_mut(&key.0) {
@@ -606,11 +624,15 @@ impl Registry {
     }
 
     pub fn release_cell(&mut self, cell: CellId) {
+        if self.diagnostics.remove(&cell).is_some() {
+            browser_changed();
+        }
         if self.cell_roots.contains_key(&cell) || self.cell_formulas.contains_key(&cell) {
             browser_changed();
         }
         self.cell_outputs.remove(&cell);
         self.cell_formulas.remove(&cell);
+        #[cfg(test)]
         if let Some(mutations) = self.cell_mutations.remove(&cell) {
             for key in mutations {
                 self.undo_mutation(&key);
@@ -653,8 +675,7 @@ impl Registry {
 
     /// Inserts a named object only when its defining worksheet inputs changed.
     ///
-    /// Mutations made after construction are retained when Excel recalculates
-    /// the constructor with the same key.
+    /// Recalculation reuses the object when inputs and upstream revisions agree.
     pub fn upsert_if_changed(
         &mut self,
         name: &str,
@@ -698,7 +719,9 @@ impl Registry {
                 object,
                 definition_key: Some(definition_key),
                 dependencies,
+                #[cfg(test)]
                 mutation_keys: HashMap::new(),
+                #[cfg(test)]
                 undo: HashMap::new(),
             },
         );
@@ -706,6 +729,7 @@ impl Registry {
         Ok(format_handle(&identity, revision))
     }
 
+    #[cfg(test)]
     accessor!(quote_store, QuoteStore, QuoteStore, "QuoteStore");
     accessor!(
         instrument,
@@ -732,51 +756,24 @@ impl Registry {
         quantsupport::prelude::EvaluationResults,
         "EvaluationResults"
     );
+    #[cfg(test)]
     accessor!(fixing_store, FixingStore, FixingStore, "FixingStore");
+    #[cfg(test)]
     accessor!(fx_store, FxStore, FxStore, "FxStore");
+    #[cfg(test)]
     collection_accessor!(
         curve_configurations,
         CurveConfigurations,
         CurveConfiguration,
         "CurveConfigurations"
     );
-    collection_accessor!(
-        credit_curve_configurations,
-        CreditCurveConfigurations,
-        CreditCurveConfiguration,
-        "CreditCurveConfigurations"
-    );
-    collection_accessor!(
-        volatility_surface_configurations,
-        VolatilitySurfaceConfigurations,
-        VolatilitySurfaceConfiguration,
-        "VolatilitySurfaceConfigurations"
-    );
-    collection_accessor!(
-        volatility_cube_configurations,
-        VolatilityCubeConfigurations,
-        VolatilityCubeConfiguration,
-        "VolatilityCubeConfigurations"
-    );
-    collection_accessor!(
-        simulation_configurations,
-        SimulationConfigurations,
-        SimulationConfiguration,
-        "SimulationConfigurations"
-    );
-    collection_accessor!(
-        pricer_configurations,
-        PricerConfigurations,
-        PricerConfiguration,
-        "PricerConfigurations"
-    );
-    collection_accessor!(scenarios, Scenarios, Scenario, "Scenarios");
     accessor!(
         discount_curve,
         DiscountCurve,
         DiscountCurveElement,
         "DiscountCurveElement"
     );
+    #[cfg(test)]
     accessor!(
         constructed_elements,
         ConstructedElements,
@@ -809,6 +806,7 @@ impl Registry {
     );
 
     /// Mutates a quote store only when this operation's worksheet inputs changed.
+    #[cfg(test)]
     pub fn update_quote_store_if_changed(
         &mut self,
         handle: &str,
@@ -826,6 +824,7 @@ impl Registry {
     }
 
     /// Mutates a fixing store only when this operation's worksheet inputs changed.
+    #[cfg(test)]
     pub fn update_fixing_store_if_changed(
         &mut self,
         handle: &str,
@@ -843,6 +842,7 @@ impl Registry {
     }
 
     /// Mutates an FX store only when this operation's worksheet inputs changed.
+    #[cfg(test)]
     pub fn update_fx_store_if_changed(
         &mut self,
         handle: &str,
@@ -860,6 +860,7 @@ impl Registry {
     }
 
     /// Mutates curve configurations only when this operation's inputs changed.
+    #[cfg(test)]
     pub fn update_curve_configurations_if_changed(
         &mut self,
         handle: &str,
@@ -876,24 +877,8 @@ impl Registry {
         })
     }
 
-    /// Mutates credit configurations only when the worksheet inputs changed.
-    pub fn update_credit_curve_configurations_if_changed(
-        &mut self,
-        handle: &str,
-        operation_id: &str,
-        value_key: &str,
-        operation: impl FnOnce(&mut Vec<CreditCurveConfiguration>),
-    ) -> Result<String, RegistryError> {
-        self.mutate_if_changed(handle, operation_id, value_key, |object| match object {
-            QsObject::CreditCurveConfigurations(configurations) => {
-                operation(configurations);
-                Ok(())
-            }
-            other => Err(wrong_type("CreditCurveConfigurations", other)),
-        })
-    }
-
     /// Mutates constructed elements only when this operation's inputs changed.
+    #[cfg(test)]
     pub fn update_constructed_elements_if_changed(
         &mut self,
         handle: &str,
@@ -943,6 +928,7 @@ impl Registry {
     /// mutators, an older revision of the same object identity is accepted;
     /// Excel mutation chains commonly retain their original constructor
     /// handle between recalculations.
+    #[cfg(test)]
     pub fn reset_if_changed(
         &mut self,
         handle: &str,
@@ -1048,10 +1034,13 @@ impl Registry {
         browser_changed();
         self.objects.clear();
         self.cell_roots.clear();
+        self.diagnostics.clear();
         self.cell_outputs.clear();
         self.cell_formulas.clear();
+        #[cfg(test)]
         self.cell_mutations.clear();
         self.references.clear();
+        #[cfg(test)]
         self.mutation_owners.clear();
     }
 
@@ -1090,6 +1079,7 @@ impl Registry {
         Ok(entry)
     }
 
+    #[cfg(test)]
     fn mutate_if_changed(
         &mut self,
         handle: &str,
@@ -1111,7 +1101,6 @@ impl Registry {
                     | QsObject::FxStore(_)
                     | QsObject::ConstructedElements(_)
                     | QsObject::CurveConfigurations(_)
-                    | QsObject::CreditCurveConfigurations(_)
             )
         });
         if let Some(cell) = self.active_cell.filter(|_| reversible) {
@@ -1294,6 +1283,7 @@ fn wrong_type(expected: &str, object: &QsObject) -> RegistryError {
     }
 }
 
+#[cfg(test)]
 fn reset_object(object: &mut QsObject) -> Result<(), RegistryError> {
     match object {
         QsObject::QuoteStore(store) => {
@@ -1303,12 +1293,6 @@ fn reset_object(object: &mut QsObject) -> Result<(), RegistryError> {
         QsObject::FixingStore(store) => **store = FixingStore::default(),
         QsObject::FxStore(store) => **store = FxStore::new(),
         QsObject::CurveConfigurations(configurations) => configurations.clear(),
-        QsObject::CreditCurveConfigurations(configurations) => configurations.clear(),
-        QsObject::VolatilitySurfaceConfigurations(configurations) => configurations.clear(),
-        QsObject::VolatilityCubeConfigurations(configurations) => configurations.clear(),
-        QsObject::SimulationConfigurations(configurations) => configurations.clear(),
-        QsObject::PricerConfigurations(configurations) => configurations.clear(),
-        QsObject::Scenarios(scenarios) => scenarios.clear(),
         QsObject::ConstructedElements(store) => **store = ConstructedElementStore::default(),
         other => return Err(RegistryError::ResetUnsupported(other.kind())),
     }
@@ -1360,6 +1344,28 @@ pub fn workbook_browser_objects(workbook: u64) -> Vec<super::browser::BrowserObj
             .get(&workbook)
             .map(Registry::browser_objects)
             .unwrap_or_default()
+    })
+}
+
+pub fn workbook_diagnostics(workbook: u64) -> Vec<super::browser::BrowserDiagnostic> {
+    REGISTRIES.with(|registries| {
+        let registries = registries.borrow();
+        let Some(registry) = registries.get(&workbook) else {
+            return Vec::new();
+        };
+        let mut values: Vec<_> = registry
+            .diagnostics
+            .iter()
+            .map(|(cell, message)| super::browser::BrowserDiagnostic {
+                sheet_id: cell.sheet as u64,
+                sheet: String::new(),
+                row: cell.row + 1,
+                column: cell.column + 1,
+                message: message.clone(),
+            })
+            .collect();
+        values.sort_by_key(|d| (d.sheet_id, d.row, d.column));
+        values
     })
 }
 
@@ -1445,7 +1451,9 @@ pub fn workbook_cells_in_rectangles(
                 for row in row..end_row {
                     for column in column..end_column {
                         let cell = CellId { sheet, row, column };
-                        if registry.cell_roots.contains_key(&cell) {
+                        if registry.cell_roots.contains_key(&cell)
+                            || registry.diagnostics.contains_key(&cell)
+                        {
                             result.insert(cell);
                         }
                     }
@@ -1455,6 +1463,7 @@ pub fn workbook_cells_in_rectangles(
                     registry
                         .cell_roots
                         .keys()
+                        .chain(registry.diagnostics.keys())
                         .filter(|cell| {
                             cell.sheet == sheet
                                 && cell.row >= row
@@ -2356,5 +2365,46 @@ mod ownership_tests {
         );
         registry.release_cell(cell(2));
         assert_eq!(registry.len(), 0);
+    }
+}
+
+#[cfg(test)]
+mod diagnostic_tests {
+    use super::*;
+    #[test]
+    fn failed_cells_keep_clearable_diagnostics_without_retaining_native_objects() {
+        let workbook = 0xfeed;
+        let previous = select_workbook(workbook);
+        let cell = CellId {
+            sheet: 7,
+            row: 2,
+            column: 3,
+        };
+        with_registry_mut(|registry| {
+            registry.begin_cell(cell);
+            registry.set_cell_formula(cell, Some("=QS.CONTEXT.CREATE(...)".into()));
+            registry.record_diagnostic(Some("Missing SOFR quote".into()));
+            registry.finish_cell(false);
+        });
+        let diagnostics = workbook_diagnostics(workbook);
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!((diagnostics[0].row, diagnostics[0].column), (3, 4));
+        assert_eq!(with_registry(Registry::len), 0);
+        assert_eq!(
+            workbook_cells_in_rectangles(workbook, 7, &[(2, 3, 3, 4)]),
+            vec![cell]
+        );
+        release_workbook_cell_if_changed(workbook, cell, "", false);
+        assert!(workbook_diagnostics(workbook).is_empty());
+        with_registry_mut(|registry| {
+            registry.begin_cell(cell);
+            registry.record_diagnostic(Some("first error".into()));
+            registry.finish_cell(false);
+            registry.begin_cell(cell);
+            registry.record_diagnostic(None);
+            registry.finish_cell(true);
+        });
+        assert!(workbook_diagnostics(workbook).is_empty());
+        select_workbook(previous);
     }
 }

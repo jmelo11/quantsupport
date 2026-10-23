@@ -5,7 +5,7 @@ use xll_rs::types::{XllError, XLOPER12};
 use crate::{
     functions::helpers::{
         cached_handle, input_key, parse_currency, parse_date, parse_day_counter, parse_frequency,
-        parse_index, parse_side, value_error, worksheet_columns,
+        parse_index, value_error, worksheet_columns,
     },
     runtime::{
         loan_inputs,
@@ -109,78 +109,6 @@ pub fn qs_loan_settings(
     let options = loan_inputs::options(&rows, &vec![], &vec![]).map_err(value_error)?;
     with_registry_mut(|registry| {
         registry.upsert_if_changed(name, QsObject::LoanSettings(Box::new(options)), key)
-    })
-    .map_err(value_error)
-}
-
-#[xll_bindgen(
-    name = "QS.TRADE.LOAN",
-    category = "QuantSupport - Instruments",
-    help = "Creates a fixed or floating loan with French, bullet, or balloon principal and optional prepayment/credit terms"
-)]
-#[allow(clippy::too_many_arguments)]
-pub fn qs_trade_loan(
-    name: &str,
-    trade_date: &str,
-    start_date: &str,
-    maturity_date: &str,
-    currency: &str,
-    notional: f64,
-    rate: f64,
-    market_index: Option<String>,
-    repayment: Option<String>,
-    payment_frequency: Option<String>,
-    day_counter: Option<String>,
-    side: Option<String>,
-    settings: Option<String>,
-    coupon_periods: *const XLOPER12,
-    coupon_rates: *const XLOPER12,
-    coupon_indices: *const XLOPER12,
-    prepayment_dates: *const XLOPER12,
-    prepayment_cprs: *const XLOPER12,
-) -> Result<String, XllError> {
-    let terms = LoanTerms {
-        start_date: parse_date(start_date)?,
-        maturity_date: parse_date(maturity_date)?,
-        currency: parse_currency(currency)?,
-        notional,
-        rate,
-        market_index: optional_text(market_index)
-            .as_deref()
-            .map(parse_index)
-            .transpose()?,
-        repayment: optional_text(repayment).unwrap_or_else(|| "French".into()),
-        payment_frequency: optional_text(payment_frequency)
-            .as_deref()
-            .map(parse_frequency)
-            .transpose()?
-            .unwrap_or(Frequency::Monthly),
-        day_counter: optional_text(day_counter)
-            .as_deref()
-            .map(parse_day_counter)
-            .transpose()?
-            .unwrap_or(DayCounter::Actual365),
-        options: loan_options(
-            settings,
-            coupon_periods,
-            coupon_rates,
-            coupon_indices,
-            prepayment_dates,
-            prepayment_cprs,
-        )?,
-    };
-    let key = input_key(&(&terms, trade_date, side.as_deref()))?;
-    if let Some(handle) = cached_handle(name, "LoanTrade", &key)? {
-        return Ok(handle);
-    }
-    let loan = terms.build_instrument(name).map_err(value_error)?;
-    let trade = quantsupport::prelude::LoanTrade::new(
-        loan,
-        parse_date(trade_date)?,
-        parse_side(optional_text(side).as_deref().unwrap_or("Receive"))?,
-    );
-    with_registry_mut(|registry| {
-        registry.upsert_if_changed(name, QsObject::LoanTrade(Box::new(trade)), key)
     })
     .map_err(value_error)
 }

@@ -43,6 +43,8 @@ pub enum InputData {
         configuration: VolatilityCubeConfiguration,
         quotes: QuoteStore,
     },
+    Pricer(PricerConfiguration),
+    Simulation(SimulationConfiguration),
 }
 
 /// Composed contexts have bounded residency. Historical contexts are shared for
@@ -78,12 +80,14 @@ impl ContextCache {
 /// Historical pricing can reuse a context's fixing input directly.
 pub fn fixing_history<'a>(registry: &'a Registry, handle: &str) -> Result<&'a FixingStore, String> {
     match registry.object(handle).map_err(|e| e.to_string())? {
+        #[cfg(test)]
         QsObject::FixingStore(store) => Ok(store),
+        QsObject::PricingContext(context) => Ok(context.fixing_store()),
         QsObject::ContextInput(input) => match &input.data {
             InputData::Fixings(store) => Ok(store),
             _ => Err("expected a fixing input".into()),
         },
-        _ => Err("expected FixingStore or CONTEXT.ADD.FIXINGS input".into()),
+        _ => Err("expected a prepared context or CONTEXT.ADD.FIXINGS input".into()),
     }
 }
 
@@ -202,11 +206,6 @@ pub fn prepare(
         }
     }
     let mut quotes = base.quote_store().clone();
-    let mut seen: HashSet<_> = quotes
-        .quotes()
-        .keys()
-        .map(|id| id.to_ascii_lowercase())
-        .collect();
     for input in &inputs {
         let store = match &input.data {
             InputData::Quotes(store)
@@ -217,18 +216,40 @@ pub fn prepare(
             _ => continue,
         };
         for (id, quote) in store.quotes() {
-            if !seen.insert(id.to_ascii_lowercase()) {
-                return Err(format!("duplicate context quote: {id}"));
+            if let Some(previous) = quotes.quote(id) {
+                let a = previous.levels();
+                let b = quote.levels();
+                if (a.mid().is_some() && b.mid().is_some())
+                    || (a.bid().is_some() && b.bid().is_some())
+                    || (a.ask().is_some() && b.ask().is_some())
+                {
+                    return Err(format!("duplicate context quote level: {id}"));
+                }
+                quotes.add_quote(Quote::new(
+                    quote.details().clone(),
+                    QuoteLevels::new(
+                        a.mid().or(b.mid()),
+                        a.bid().or(b.bid()),
+                        a.ask().or(b.ask()),
+                    ),
+                ));
+            } else {
+                quotes.add_quote(quote.clone());
             }
-            quotes.add_quote(quote.clone());
         }
     }
     let mut curves = base.curve_configurations().clone();
     let mut credit = base.credit_curve_configurations().clone();
     let mut surfaces = base.volatility_surface_configurations().clone();
     let mut cubes = base.volatility_cube_configurations().clone();
+    let mut pricers = base.pricer_configurations().clone();
+    let mut simulations = base.simulation_configurations().clone();
     let mut indices: HashSet<_> = curves.iter().map(|c| c.market_index().clone()).collect();
-    let mut fixings = None;
+    let mut fixings: Option<FixingStore> = if base.fixing_store().observations().next().is_some() {
+        Some(base.fixing_store().clone())
+    } else {
+        None
+    };
     let mut fx = base.fx_store().clone();
     let mut fx_pairs = HashSet::new();
     for input in &inputs {
@@ -269,8 +290,15 @@ pub fn prepare(
                 curves.push(configuration);
             }
             InputData::Fixings(store) => {
-                if fixings.replace(store.clone()).is_some() {
-                    return Err("supply one complete fixing history per context".into());
+                if let Some(combined) = &mut fixings {
+                    for (index, date, value) in store.observations() {
+                        if combined.fixing(index, date).is_ok() {
+                            return Err(format!("duplicate context fixing: {index} on {date}"));
+                        }
+                        combined.add_fixing(index, date, value);
+                    }
+                } else {
+                    fixings = Some(store.clone());
                 }
             }
             InputData::Fx(records) => {
@@ -284,6 +312,8 @@ pub fn prepare(
             InputData::Credit { configuration, .. } => credit.push(configuration.clone()),
             InputData::Surface { configuration, .. } => surfaces.push(configuration.clone()),
             InputData::Cube { configuration, .. } => cubes.push(configuration.clone()),
+            InputData::Pricer(configuration) => pricers.push(configuration.clone()),
+            InputData::Simulation(configuration) => simulations.push(configuration.clone()),
             InputData::Quotes(_) => {}
         }
     }
@@ -295,7 +325,9 @@ pub fn prepare(
         .with_curve_configurations(curves)
         .with_credit_curve_configurations(credit)
         .with_volatility_surface_configurations(surfaces)
-        .with_volatility_cube_configurations(cubes);
+        .with_volatility_cube_configurations(cubes)
+        .with_pricer_configurations(pricers)
+        .with_simulation_configurations(simulations);
     if let Some(fixings) = fixings {
         result = result.with_fixing_store(fixings);
     }
@@ -318,6 +350,31 @@ pub fn evaluate(
     request: &Request,
     pricer: Option<&str>,
 ) -> Result<EvaluationResults, String> {
+    evaluate_requests(
+        registry,
+        context,
+        instrument,
+        std::slice::from_ref(request),
+        pricer,
+        None,
+    )
+}
+
+/// Common dispatch for direct values, stored results and historical batches.
+pub fn evaluate_requests(
+    registry: &Registry,
+    context: &PricingContext,
+    instrument: &str,
+    requests: &[Request],
+    pricer: Option<&str>,
+    policy: Option<&str>,
+) -> Result<EvaluationResults, String> {
+    Request::validate(requests).map_err(|e| e.to_string())?;
+    if pricer.is_some() && policy.is_some() {
+        return Err(
+            "the explicit pricer already owns its discount policy; leave policy blank".into(),
+        );
+    }
     let object = registry.object(instrument).map_err(|e| e.to_string())?;
     let position;
     let trade = if let QsObject::Instrument(instrument) = object {
@@ -350,7 +407,7 @@ pub fn evaluate(
             }
             _ => "DiscountedCashflowPricer",
         };
-        let policy =
+        let default_policy =
             super::pricing::PolicyObject {
                 native: if matches!(
                     trade,
@@ -370,13 +427,21 @@ pub fn evaluate(
             if implementation == "RateFuturesPricer" {
                 None
             } else {
-                Some(&policy)
+                Some(match policy {
+                    Some(handle) => registry
+                        .discount_policy(handle)
+                        .map_err(|e| e.to_string())?,
+                    None => &default_policy,
+                })
             },
             &vec![],
         )?;
         &default
     };
-    pricer.evaluate(trade, std::slice::from_ref(request), context)
+    if policy.is_some() && matches!(trade, QsObject::RateFuturesTrade(_)) {
+        return Err("RateFuturesPricer does not use a discount policy".into());
+    }
+    pricer.evaluate(trade, requests, context)
 }
 
 pub fn scalar(results: &EvaluationResults, request: &Request) -> Result<f64, String> {
@@ -689,5 +754,90 @@ mod tests {
         assert!(!prepared.constructed_elements().discount_curves().is_empty());
         registry.release_cell(cell);
         assert!(prepare(&registry, &root, &[input]).is_err());
+    }
+}
+
+#[cfg(test)]
+mod addition_tests {
+    use super::*;
+    #[test]
+    fn quote_sides_merge_but_conflicting_levels_fail() {
+        let mut registry = Registry::default();
+        let date = Date::new(2026, 1, 15);
+        let root = create(
+            &mut registry,
+            "root",
+            date,
+            Currency::USD,
+            MarketIndex::SOFR,
+            Level::Mid,
+        )
+        .unwrap();
+        let mut input = |name, levels| {
+            let mut quotes = QuoteStore::new(date);
+            quotes.add_quote(Quote::new(
+                "FixedRateDeposit_USD_SOFR_6M".parse().unwrap(),
+                levels,
+            ));
+            add(&mut registry, name, &root, InputData::Quotes(quotes), name).unwrap()
+        };
+        let mid = input("mid", QuoteLevels::with_mid(0.04));
+        let ask = input("ask", QuoteLevels::new(None, None, Some(0.05)));
+        let duplicate = input("duplicate", QuoteLevels::with_mid(0.03));
+        let context = prepare(&registry, &root, &[mid.clone(), ask]).unwrap();
+        let levels = context
+            .quote_store()
+            .quote("FixedRateDeposit_USD_SOFR_6M")
+            .unwrap()
+            .levels();
+        assert_eq!(levels.mid(), Some(0.04));
+        assert_eq!(levels.ask(), Some(0.05));
+        assert_eq!(levels.bid(), None);
+        assert!(prepare(&registry, &root, &[mid, duplicate])
+            .err()
+            .unwrap()
+            .contains("duplicate context quote"));
+    }
+    #[test]
+    fn fixing_additions_merge_and_duplicate_observations_fail() {
+        let mut registry = Registry::default();
+        let date = Date::new(2026, 1, 15);
+        let root = create(
+            &mut registry,
+            "root",
+            date,
+            Currency::USD,
+            MarketIndex::SOFR,
+            Level::Mid,
+        )
+        .unwrap();
+        let mut input = |name, day, value| {
+            let mut fixings = FixingStore::default();
+            fixings.add_fixing(&MarketIndex::SOFR, Date::new(2026, 1, day), value);
+            add(
+                &mut registry,
+                name,
+                &root,
+                InputData::Fixings(fixings),
+                name,
+            )
+            .unwrap()
+        };
+        let first = input("first", 13, 0.03);
+        let second = input("second", 14, 0.04);
+        let duplicate = input("duplicate", 13, 0.05);
+        let context = prepare(&registry, &root, &[first.clone(), second]).unwrap();
+        assert_eq!(context.fixing_store().observations().count(), 2);
+        assert_eq!(
+            context
+                .fixing_store()
+                .fixing(&MarketIndex::SOFR, Date::new(2026, 1, 13))
+                .unwrap(),
+            0.03
+        );
+        assert!(prepare(&registry, &root, &[first, duplicate])
+            .err()
+            .unwrap()
+            .contains("duplicate context fixing"));
     }
 }

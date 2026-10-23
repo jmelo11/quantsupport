@@ -250,15 +250,12 @@ pub fn evaluate_values(
     registry: &super::registry::Registry,
     pricer: &str,
     trades: &[String],
-    context: &str,
+    context: &PricingContext,
 ) -> Result<Vec<f64>, String> {
     if trades.is_empty() {
         return Err("at least one trade is required".into());
     }
     let pricer = registry.pricer(pricer).map_err(|error| error.to_string())?;
-    let context = registry
-        .pricing_context(context)
-        .map_err(|error| error.to_string())?;
     // Validate all handles before beginning an expensive portfolio calculation.
     let trades = trades
         .iter()
@@ -771,7 +768,13 @@ mod tests {
             registry.finish_cell(true);
         }
         registry.begin_cell(cell(0, 2));
-        let values = evaluate_values(&registry, &pricer_handle, &trades, &context_handle).unwrap();
+        let values = evaluate_values(
+            &registry,
+            &pricer_handle,
+            &trades,
+            registry.pricing_context(&context_handle).unwrap(),
+        )
+        .unwrap();
         registry.finish_cell(true);
         assert_eq!(values.len(), 10_000);
         assert!(values
@@ -785,8 +788,13 @@ mod tests {
         use quantsupport::ad::{forward::ADForward, tape::TapeHolder};
         let nodes = ADForward::with_tape(|tape| tape.book.len());
         registry.begin_cell(cell(0, 2));
-        let repeated =
-            evaluate_values(&registry, &pricer_handle, &trades, &context_handle).unwrap();
+        let repeated = evaluate_values(
+            &registry,
+            &pricer_handle,
+            &trades,
+            registry.pricing_context(&context_handle).unwrap(),
+        )
+        .unwrap();
         registry.finish_cell(true);
         assert_eq!(values, repeated);
         assert_eq!(

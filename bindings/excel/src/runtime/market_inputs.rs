@@ -4,10 +4,9 @@ use std::collections::HashSet;
 
 use quantsupport::prelude::{Date, FixingStore, Quote, QuoteDetails, QuoteLevels, QuoteStore};
 
-use super::{
-    inputs::{self, Cell, Table},
-    registry::{QsObject, Registry},
-};
+use super::inputs::{self, Cell, Table};
+#[cfg(test)]
+use super::registry::{QsObject, Registry};
 
 /// Aligns separate row/column arrays without dropping blank quote sides.
 /// Every supplied field must be a scalar, row array or column array.
@@ -185,6 +184,7 @@ pub fn fixings(table: &Table) -> Result<FixingStore, String> {
 }
 
 /// Replaces the complete range contribution, reusing unchanged definitions.
+#[cfg(test)]
 pub fn import_quotes(
     registry: &mut Registry,
     name: &str,
@@ -205,6 +205,7 @@ pub fn import_quotes(
 }
 
 /// Replaces the complete fixing history, reusing unchanged definitions.
+#[cfg(test)]
 pub fn import_fixings(
     registry: &mut Registry,
     name: &str,

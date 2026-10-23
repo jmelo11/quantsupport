@@ -5,7 +5,7 @@ use quantsupport::prelude::{
     CapFloorType, CapletFloorletType, Compounding, Currency, Date, DayCounter, EuroOptionType,
     Frequency, Interpolator, MarketIndex, Side,
 };
-use serde::{de::DeserializeOwned, Serialize};
+use serde::Serialize;
 use xll_rs::convert::build_multi;
 use xll_rs::types::{
     XLLError, XllError, XLOPER12, XLTYPE_BOOL, XLTYPE_INT, XLTYPE_MISSING, XLTYPE_MULTI,
@@ -360,33 +360,6 @@ pub fn string_matrix(
         .map(|value| XLOPER12::from_str(&value))
         .collect();
     spill(cells, rows, columns, transpose, headers)
-}
-
-pub fn parse_json<T: DeserializeOwned>(json: &str, what: &str) -> Result<T, XllError> {
-    serde_json::from_str(json).map_err(|error| value_error(format!("invalid {what}: {error}")))
-}
-
-pub fn parse_json_list<T: DeserializeOwned>(json: &str, what: &str) -> Result<Vec<T>, XllError> {
-    let value: serde_json::Value = parse_json(json, what)?;
-    let normalized = match value {
-        serde_json::Value::Array(_) => value,
-        serde_json::Value::Object(ref object)
-            if object.len() == 1
-                && object
-                    .values()
-                    .next()
-                    .is_some_and(serde_json::Value::is_array) =>
-        {
-            object
-                .values()
-                .next()
-                .cloned()
-                .ok_or_else(|| value_error(format!("invalid {what}")))?
-        }
-        other => serde_json::Value::Array(vec![other]),
-    };
-    serde_json::from_value(normalized)
-        .map_err(|error| value_error(format!("invalid {what}: {error}")))
 }
 
 pub fn cached_handle(name: &str, kind: &str, key: &str) -> Result<Option<String>, XllError> {

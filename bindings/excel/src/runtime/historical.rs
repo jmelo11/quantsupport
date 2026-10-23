@@ -46,6 +46,53 @@ fn key(value: &impl serde::Serialize) -> Result<String, String> {
     serde_json::to_string(value).map_err(|error| error.to_string())
 }
 
+/// Build complete dated snapshots from aligned context and observation arrays.
+/// No intermediate snapshot objects are retained in the worksheet registry.
+pub fn from_contexts(
+    registry: &mut Registry,
+    name: &str,
+    contexts: &[String],
+    timestamps: &[String],
+) -> Result<String, String> {
+    if contexts.len() != timestamps.len() {
+        return Err("supply one observation timestamp per context".into());
+    }
+    let instants = timestamps
+        .iter()
+        .map(|s| timestamp(s))
+        .collect::<Result<Vec<_>, _>>()?;
+    for handle in contexts {
+        registry
+            .pricing_context(handle)
+            .map_err(|e| e.to_string())?;
+    }
+    let definition = key(&(contexts, &instants))?;
+    if let Some(handle) = registry
+        .handle_if_unchanged(name, "MarketSnapshotStore", &definition)
+        .map_err(|e| e.to_string())?
+    {
+        return Ok(handle);
+    }
+    let mut store = MarketSnapshotStore::new();
+    for (row, (handle, instant)) in contexts.iter().zip(instants).enumerate() {
+        let context = registry
+            .pricing_context(handle)
+            .map_err(|e| e.to_string())?;
+        let snapshot = MarketSnapshot::from_context(instant, context)
+            .map_err(|e| format!("snapshot row {}: {e}", row + 1))?;
+        store
+            .insert(snapshot)
+            .map_err(|e| format!("snapshot row {}: {e}", row + 1))?;
+    }
+    registry
+        .upsert_if_changed(
+            name,
+            QsObject::MarketSnapshotStore(Box::new(store)),
+            definition,
+        )
+        .map_err(|e| e.to_string())
+}
+
 /// Capture serializable base inputs; native code rejects supplied runtime curves.
 #[cfg(test)]
 pub fn capture(
@@ -923,5 +970,61 @@ mod tests {
         assert!(capture(&mut registry, "unsupported", instant, &runtime)
             .unwrap_err()
             .contains("construction configurations"));
+    }
+}
+
+#[cfg(test)]
+mod context_array_tests {
+    use super::*;
+    use quantsupport::prelude::*;
+    #[test]
+    fn context_arrays_rebuild_after_removal_and_reject_duplicate_observation_instants() {
+        let mut registry = Registry::default();
+        let contexts = (15..=16)
+            .map(|day| {
+                crate::runtime::context::create(
+                    &mut registry,
+                    &format!("day{day}"),
+                    Date::new(2026, 1, day),
+                    Currency::USD,
+                    MarketIndex::SOFR,
+                    Level::Mid,
+                )
+                .unwrap()
+            })
+            .collect::<Vec<_>>();
+        let times = vec!["2026-01-15T16:00:00Z".into(), "2026-01-16T16:00:00Z".into()];
+        let first = from_contexts(&mut registry, "history", &contexts, &times).unwrap();
+        assert_eq!(
+            from_contexts(&mut registry, "history", &contexts, &times).unwrap(),
+            first
+        );
+        assert_eq!(
+            registry
+                .market_snapshot_store(&first)
+                .unwrap()
+                .timestamps()
+                .len(),
+            2
+        );
+        let duplicate = vec![times[0].clone(), "2026-01-15T17:00:00+01:00".into()];
+        assert!(from_contexts(&mut registry, "bad", &contexts, &duplicate).is_err());
+        assert!(from_contexts(&mut registry, "bad", &contexts, &times[..1]).is_err());
+        let next = from_contexts(&mut registry, "history", &contexts[..1], &times[..1]).unwrap();
+        assert_ne!(first, next);
+        assert_eq!(
+            registry
+                .market_snapshot_store(&next)
+                .unwrap()
+                .timestamps()
+                .len(),
+            1
+        );
+        let empty = from_contexts(&mut registry, "history", &[], &[]).unwrap();
+        assert!(registry
+            .market_snapshot_store(&empty)
+            .unwrap()
+            .timestamps()
+            .is_empty());
     }
 }

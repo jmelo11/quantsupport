@@ -1,16 +1,11 @@
-use std::{cell::RefCell, rc::Rc};
-
-use quantsupport::prelude::{
-    Compounding, DiscountCurveElement, DualFwd, FlatForwardTermStructure, Frequency, RateDefinition,
-};
+use quantsupport::prelude::{Compounding, Frequency};
 use quantsupport_xll_macros::xll_bindgen;
 use xll_rs::types::{XllError, XLOPER12};
 
 use crate::runtime::registry::{with_registry, with_registry_mut, QsObject};
 
 use crate::functions::helpers::{
-    input_key, parse_compounding, parse_date, parse_day_counter, parse_frequency, parse_index,
-    value_error,
+    input_key, parse_compounding, parse_date, parse_frequency, parse_index, value_error,
 };
 
 fn cached_handle(name: &str, kind: &str, key: &str) -> Result<Option<String>, XllError> {
@@ -40,77 +35,6 @@ fn rate_convention(
     let compounding = parse_compounding(compounding.as_deref().unwrap_or("Simple"))?;
     let frequency = parse_frequency(frequency.as_deref().unwrap_or("Annual"))?;
     Ok((compounding, frequency))
-}
-
-fn flat_curve_element(
-    name: &str,
-    market_index: &str,
-    reference_date: &str,
-    rate: f64,
-    day_counter: &str,
-    compounding: &str,
-    frequency: &str,
-) -> Result<DiscountCurveElement, XllError> {
-    let index = parse_index(market_index)?;
-    let curve = FlatForwardTermStructure::new(
-        parse_date(reference_date)?,
-        DualFwd::from(rate),
-        RateDefinition::new(
-            parse_day_counter(day_counter)?,
-            parse_compounding(compounding)?,
-            parse_frequency(frequency)?,
-        ),
-    )
-    .with_pillar_label(name.to_string());
-    Ok(DiscountCurveElement::new(
-        index,
-        Rc::new(RefCell::new(curve)),
-    ))
-}
-
-#[xll_bindgen(
-    name = "QS.CURVE.FLAT",
-    category = "QuantSupport - Market",
-    help = "Creates a flat DiscountCurveElement; add its handle to an elements store with QS.CURVE.ADD"
-)]
-#[allow(clippy::too_many_arguments)]
-pub fn qs_curve_flat(
-    name: &str,
-    market_index: &str,
-    reference_date: &str,
-    rate: f64,
-    day_counter: &str,
-    compounding: &str,
-    frequency: &str,
-) -> Result<String, XllError> {
-    let definition_key = input_key(&(
-        market_index,
-        reference_date,
-        rate.to_bits(),
-        day_counter,
-        compounding,
-        frequency,
-    ))?;
-    if let Some(handle) = cached_handle(name, "DiscountCurveElement", &definition_key)? {
-        return Ok(handle);
-    }
-    let element = flat_curve_element(
-        name,
-        market_index,
-        reference_date,
-        rate,
-        day_counter,
-        compounding,
-        frequency,
-    )?;
-    with_registry_mut(|registry| {
-        registry.upsert_if_changed(
-            name,
-            QsObject::DiscountCurve(Box::new(element)),
-            definition_key,
-        )
-    })
-    .map_err(value_error)
 }
 
 #[xll_bindgen(
@@ -295,45 +219,6 @@ pub fn qs_curve_table(
             transpose,
             headers,
         ))
-    })
-    .map_err(value_error)
-}
-
-#[xll_bindgen(
-    name = "QS.ELEMENTS.CREATE",
-    category = "QuantSupport - Market",
-    help = "Creates a QuantSupport ConstructedElementStore"
-)]
-pub fn qs_elements_create(name: &str) -> Result<String, XllError> {
-    if let Some(handle) = cached_handle(name, "ConstructedElementStore", "empty")? {
-        return Ok(handle);
-    }
-    with_registry_mut(|registry| {
-        registry.upsert_if_changed(name, QsObject::ConstructedElements(Box::default()), "empty")
-    })
-    .map_err(value_error)
-}
-
-#[xll_bindgen(
-    name = "QS.CURVE.ADD",
-    category = "QuantSupport - Market",
-    help = "Adds a curve from QS.CURVE.FLAT to an elements store and returns the updated store handle"
-)]
-pub fn qs_elements_add_discount_curve(elements: &str, curve: &str) -> Result<String, XllError> {
-    let value_key = curve.to_string();
-    with_registry_mut(|registry| {
-        let curve = registry.discount_curve(curve)?.clone();
-        let operation_id = format!("discount_curve:{}", curve.market_index());
-        registry.update_constructed_elements_if_changed(
-            elements,
-            &operation_id,
-            &value_key,
-            |store| {
-                store
-                    .discount_curves_mut()
-                    .insert(curve.market_index().clone(), curve);
-            },
-        )
     })
     .map_err(value_error)
 }

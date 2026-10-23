@@ -18,7 +18,7 @@ pub fn qs_result_coupons(
     with_registry(|registry| {
         let results = registry.evaluation_results(result).map_err(value_error)?;
         let flows = results.cashflows().ok_or_else(|| {
-            not_found("Request Cashflows in QS.EVALUATE or QS.PORTFOLIO.EVALUATE")
+            not_found("Request Cashflows in QS.EVALUATE or QS.EVALUATE.PORTFOLIO")
         })?;
         let columns = [
             "Payment date",
