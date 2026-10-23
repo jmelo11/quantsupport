@@ -8,58 +8,36 @@ use crate::{
         rateindex::{RateIndexDetails, SwapConventions},
     },
     rates::{compounding::Compounding, interestrate::RateDefinition},
-    time::{calendar::Calendar, calendars::japan::Japan, daycounter::DayCounter, enums::Frequency},
+    time::{
+        calendar::Calendar,
+        calendars::japan::Japan,
+        daycounter::DayCounter,
+        enums::{BusinessDayConvention, Frequency},
+        period::Period,
+    },
 };
 
-/// Details for TONAR (Tokyo Overnight Average Rate).
-/// Overnight unsecured rate published by the Bank of Japan.
-#[derive(Copy, Clone, Serialize, Default, Deserialize)]
-pub struct TONARIndex;
+use super::macros::rate_index;
 
-impl MarketIndexDetails for TONARIndex {
-    fn quote_type(&self) -> QuoteType {
-        QuoteType::Rate
-    }
-
-    fn name(&self) -> &'static str {
-        "TONAR"
-    }
-}
-
-impl RateIndexDetails for TONARIndex {
-    fn calendar(&self) -> Calendar {
-        Calendar::Japan(Japan::new())
-    }
-
-    fn currency(&self) -> Currency {
-        Currency::JPY
-    }
-
-    fn fixing_lag(&self) -> i64 {
-        1
-    }
-
-    fn rate_definition(&self) -> RateDefinition {
-        RateDefinition::new(
-            DayCounter::Actual365,
-            Compounding::Simple,
-            Frequency::Annual,
-        )
-    }
-
-    fn swap_conventions(&self, _tenor: crate::time::period::Period) -> SwapConventions {
-        SwapConventions::new(
-            self.rate_definition(),
-            Frequency::Annual,
-            Frequency::Annual,
-            self.rate_definition().day_counter(),
-            2,
-            crate::time::enums::BusinessDayConvention::ModifiedFollowing,
-        )
-    }
-
-    fn market_index(&self) -> MarketIndex {
-        MarketIndex::TONAR
+rate_index! {
+    /// Details for TONAR (Tokyo Overnight Average Rate).
+    /// Overnight unsecured rate published by the Bank of Japan.
+    TONARIndex {
+        market_index: TONAR,
+        currency: JPY,
+        calendar: Calendar::Japan(Japan::new()),
+        fixing_lag: 1,
+        day_counter: Actual365,
+        compounding: Simple,
+        compounding_frequency: Annual,
+        frequency: Daily,
+        is_in_arrears: true,
+        swap_conventions: {
+            fixed_day_counter: Actual365,
+            fixed_frequency: |_| Frequency::Annual,
+            floating_frequency: Annual,
+            settlement_days: 2,
+        },
     }
 }
 

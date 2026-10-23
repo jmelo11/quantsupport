@@ -9,59 +9,34 @@ use crate::{
     },
     rates::{compounding::Compounding, interestrate::RateDefinition},
     time::{
-        calendar::Calendar, calendars::switzerland::Switzerland, daycounter::DayCounter,
-        enums::Frequency,
+        calendar::Calendar,
+        calendars::switzerland::Switzerland,
+        daycounter::DayCounter,
+        enums::{BusinessDayConvention, Frequency},
+        period::Period,
     },
 };
 
-/// Details for SARON (Swiss Average Rate Overnight).
-/// Overnight secured rate published by SIX Swiss Exchange.
-#[derive(Copy, Clone, Serialize, Default, Deserialize)]
-pub struct SARONIndex;
+use super::macros::rate_index;
 
-impl MarketIndexDetails for SARONIndex {
-    fn quote_type(&self) -> QuoteType {
-        QuoteType::Rate
-    }
-
-    fn name(&self) -> &'static str {
-        "SARON"
-    }
-}
-
-impl RateIndexDetails for SARONIndex {
-    fn calendar(&self) -> Calendar {
-        Calendar::Switzerland(Switzerland::default())
-    }
-
-    fn currency(&self) -> Currency {
-        Currency::CHF
-    }
-
-    fn fixing_lag(&self) -> i64 {
-        0
-    }
-
-    fn rate_definition(&self) -> RateDefinition {
-        RateDefinition::new(
-            DayCounter::Actual360,
-            Compounding::Simple,
-            Frequency::Annual,
-        )
-    }
-
-    fn swap_conventions(&self, _tenor: crate::time::period::Period) -> SwapConventions {
-        SwapConventions::new(
-            self.rate_definition(),
-            Frequency::Annual,
-            Frequency::Annual,
-            self.rate_definition().day_counter(),
-            2,
-            crate::time::enums::BusinessDayConvention::ModifiedFollowing,
-        )
-    }
-
-    fn market_index(&self) -> MarketIndex {
-        MarketIndex::SARON
+rate_index! {
+    /// Details for SARON (Swiss Average Rate Overnight).
+    /// Overnight secured rate published by SIX Swiss Exchange.
+    SARONIndex {
+        market_index: SARON,
+        currency: CHF,
+        calendar: Calendar::Switzerland(Switzerland::default()),
+        fixing_lag: 0,
+        day_counter: Actual360,
+        compounding: Simple,
+        compounding_frequency: Annual,
+        frequency: Daily,
+        is_in_arrears: true,
+        swap_conventions: {
+            fixed_day_counter: Actual360,
+            fixed_frequency: |_| Frequency::Annual,
+            floating_frequency: Annual,
+            settlement_days: 2,
+        },
     }
 }

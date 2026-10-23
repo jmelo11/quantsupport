@@ -9,59 +9,34 @@ use crate::{
     },
     rates::{compounding::Compounding, interestrate::RateDefinition},
     time::{
-        calendar::Calendar, calendars::australia::Australia, daycounter::DayCounter,
-        enums::Frequency,
+        calendar::Calendar,
+        calendars::australia::Australia,
+        daycounter::DayCounter,
+        enums::{BusinessDayConvention, Frequency},
+        period::Period,
     },
 };
 
-/// Details for AONIA (AUD Overnight Index Average).
-/// Overnight unsecured rate published by the Reserve Bank of Australia.
-#[derive(Copy, Clone, Serialize, Default, Deserialize)]
-pub struct AONIAIndex;
+use super::macros::rate_index;
 
-impl MarketIndexDetails for AONIAIndex {
-    fn quote_type(&self) -> QuoteType {
-        QuoteType::Rate
-    }
-
-    fn name(&self) -> &'static str {
-        "AONIA"
-    }
-}
-
-impl RateIndexDetails for AONIAIndex {
-    fn calendar(&self) -> Calendar {
-        Calendar::Australia(Australia::default())
-    }
-
-    fn currency(&self) -> Currency {
-        Currency::AUD
-    }
-
-    fn fixing_lag(&self) -> i64 {
-        0
-    }
-
-    fn rate_definition(&self) -> RateDefinition {
-        RateDefinition::new(
-            DayCounter::Actual365,
-            Compounding::Simple,
-            Frequency::Annual,
-        )
-    }
-
-    fn swap_conventions(&self, _tenor: crate::time::period::Period) -> SwapConventions {
-        SwapConventions::new(
-            self.rate_definition(),
-            Frequency::Annual,
-            Frequency::Annual,
-            self.rate_definition().day_counter(),
-            2,
-            crate::time::enums::BusinessDayConvention::ModifiedFollowing,
-        )
-    }
-
-    fn market_index(&self) -> MarketIndex {
-        MarketIndex::AONIA
+rate_index! {
+    /// Details for AONIA (AUD Overnight Index Average).
+    /// Overnight unsecured rate published by the Reserve Bank of Australia.
+    AONIAIndex {
+        market_index: AONIA,
+        currency: AUD,
+        calendar: Calendar::Australia(Australia::default()),
+        fixing_lag: 0,
+        day_counter: Actual365,
+        compounding: Simple,
+        compounding_frequency: Annual,
+        frequency: Daily,
+        is_in_arrears: true,
+        swap_conventions: {
+            fixed_day_counter: Actual365,
+            fixed_frequency: |_| Frequency::Annual,
+            floating_frequency: Annual,
+            settlement_days: 2,
+        },
     }
 }

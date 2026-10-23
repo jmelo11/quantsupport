@@ -8,88 +8,55 @@ use crate::{
         rateindex::{RateIndexDetails, SwapConventions},
     },
     rates::{compounding::Compounding, interestrate::RateDefinition},
-    time::{calendar::Calendar, calendars::japan::Japan, daycounter::DayCounter, enums::Frequency},
+    time::{
+        calendar::Calendar,
+        calendars::japan::Japan,
+        daycounter::DayCounter,
+        enums::{BusinessDayConvention, Frequency},
+        period::Period,
+    },
 };
 
-macro_rules! tibor_index {
-    ($name:ident, $doc:expr, $display:expr, $variant:ident, $frequency:expr) => {
-        #[doc = $doc]
-        #[derive(Copy, Clone, Serialize, Default, Deserialize)]
-        pub struct $name;
+use super::macros::rate_index;
 
-        impl MarketIndexDetails for $name {
-            fn quote_type(&self) -> QuoteType {
-                QuoteType::Rate
-            }
-
-            fn name(&self) -> &'static str {
-                $display
-            }
-        }
-
-        impl RateIndexDetails for $name {
-            /// Returns the TIBOR observation tenor, independently of compounding.
-            fn frequency(&self) -> Frequency {
-                $frequency
-            }
-
-            fn calendar(&self) -> Calendar {
-                Calendar::Japan(Japan::default())
-            }
-
-            fn currency(&self) -> Currency {
-                Currency::JPY
-            }
-
-            fn fixing_lag(&self) -> i64 {
-                2
-            }
-
-            fn rate_definition(&self) -> RateDefinition {
-                RateDefinition::new(
-                    DayCounter::Actual365,
-                    Compounding::Simple,
-                    Frequency::Semiannual,
-                )
-            }
-
-            fn swap_conventions(&self, _tenor: crate::time::period::Period) -> SwapConventions {
-                SwapConventions::new(
-                    RateDefinition::new(
-                        DayCounter::Actual365,
-                        Compounding::Simple,
-                        Frequency::Annual,
-                    ),
-                    Frequency::Semiannual,
-                    $frequency,
-                    self.rate_definition().day_counter(),
-                    2,
-                    crate::time::enums::BusinessDayConvention::ModifiedFollowing,
-                )
-            }
-
-            fn market_index(&self) -> MarketIndex {
-                MarketIndex::$variant
-            }
-
-            fn is_in_arrears(&self) -> bool {
-                false
-            }
-        }
-    };
+rate_index! {
+    /// Details for the TIBOR 3-month rate index.
+    Tibor3mIndex {
+        market_index: TIBOR3m,
+        currency: JPY,
+        calendar: Calendar::Japan(Japan::default()),
+        fixing_lag: 2,
+        day_counter: Actual365,
+        compounding: Simple,
+        compounding_frequency: Semiannual,
+        frequency: Quarterly,
+        is_in_arrears: false,
+        swap_conventions: {
+            fixed_day_counter: Actual365,
+            fixed_frequency: |_| Frequency::Semiannual,
+            floating_frequency: Quarterly,
+            settlement_days: 2,
+        },
+    }
 }
 
-tibor_index!(
-    Tibor3mIndex,
-    "Details for the TIBOR 3-month rate index.",
-    "TIBOR3m",
-    TIBOR3m,
-    Frequency::Quarterly
-);
-tibor_index!(
-    Tibor6mIndex,
-    "Details for the TIBOR 6-month rate index.",
-    "TIBOR6m",
-    TIBOR6m,
-    Frequency::Semiannual
-);
+rate_index! {
+    /// Details for the TIBOR 6-month rate index.
+    Tibor6mIndex {
+        market_index: TIBOR6m,
+        currency: JPY,
+        calendar: Calendar::Japan(Japan::default()),
+        fixing_lag: 2,
+        day_counter: Actual365,
+        compounding: Simple,
+        compounding_frequency: Semiannual,
+        frequency: Semiannual,
+        is_in_arrears: false,
+        swap_conventions: {
+            fixed_day_counter: Actual365,
+            fixed_frequency: |_| Frequency::Semiannual,
+            floating_frequency: Semiannual,
+            settlement_days: 2,
+        },
+    }
+}
