@@ -16,6 +16,7 @@ from tempfile import TemporaryDirectory
 from uuid import uuid4
 
 from workbook_layout import Study, context, formula, text
+from xlsxwriter.utility import xl_rowcol_to_cell
 from portfolio_example import create_portfolio
 
 
@@ -59,6 +60,85 @@ def step(study, sheet, row, label, name, args, key, explanation):
     return study.step(sheet, row, label, formula(name, *args), key, explanation)
 
 
+def create_context_first(path):
+    routes = [("1 Inputs", "Edit the dated market quotes and loan contract terms."),
+              ("2 Contexts", "All additions reference their root context; the input ranges are complete."),
+              ("3 Contracts", "Create the loan and archive complete dated markets."),
+              ("4 Results", "Read direct values, cashflows, risk and historical batch values.")]
+    with Study(path, "Context", "Context-first pricing", "Create one context, add independent inputs, and request values directly.", routes,
+               ["Change a quote and inspect PV and risk.", "Change the balloon fraction through named loan settings.",
+                "Reorder the historical rows; output order follows the instruments and timestamps."]) as s:
+        inputs(s, "1 Inputs", [
+            ("Market date", "2026-02-24", "Date", "ISO market business date", "input"),
+            ("Next market date", "2026-02-25", "NextDate", "A second complete historical market", "input"),
+            ("Maturity", "2031-02-24", "Maturity", "Contractual final repayment date", "input"),
+            ("Notional", 10000, "Notional", "EUR principal", "input_number"),
+            ("Fixed coupon", .05, "Rate", "Annual decimal coupon", "input_rate"),
+            ("Balloon fraction", .25, "Balloon", "Residual fraction repaid at maturity", "input_rate"),
+        ], "Blue inputs feed context, curve and loan formulas directly.")
+        s.headers("1 Inputs", 17, ["Identifier", "", ""])
+        s.merge("1 Inputs", "D16:P16", "Mid levels: independent row array", "header")
+        s.sheets["1 Inputs"].set_column(3, 15, 12)
+        for offset, (identifier, rate) in enumerate(ESTR_QUOTES):
+            s.write("1 Inputs", f"A{18+offset}", identifier, "input")
+            s.write("1 Inputs", xl_rowcol_to_cell(16, 3+offset), rate, "input_rate")
+        s.range("QuoteIds", "1 Inputs", 18, 0, 17 + len(ESTR_QUOTES), 0)
+        s.range("QuoteMid", "1 Inputs", 17, 3, 17, 2 + len(ESTR_QUOTES))
+        sheet = "2 Contexts"
+        s.sheet(sheet, "Create contexts and independent inputs", "Every ADD formula points to its root. Pricing and snapshot formulas consume the complete input range.")
+        s.headers(sheet, 6, ["Step", "Reference", "Purpose"])
+        step(s, sheet, 7, "Create root", "QS.CONTEXT.CREATE", [text("Example.Context"), s.name("Date"), '"EUR"', '"ESTR"'], "Root", "Date, currency, base index and optional quote side.")
+        for row, function, args, label in [
+            (12, "QS.CONTEXT.ADD.QUOTES", [s.name("Root"), s.name("QuoteIds"), s.name("QuoteMid")], "Independent quote arrays"),
+            (13, "QS.CONTEXT.ADD.CURVE", [s.name("Root"), '"ESTR"'], "Curve from matching quotes"),
+        ]:
+            s.write(sheet, f"A{row}", label)
+            s.write(sheet, f"B{row}", formula(function, *args), "handle")
+        s.range("Inputs", sheet, 12, 1, 13, 1)
+        s.merge(sheet, "A15:C16", "Inputs is B12:B13. Both formulas use Root; neither references the previous addition. You may instead use ADD.CURVE(root,index,identifiers,mid) in one cell.")
+        step(s, sheet, 19, "Second dated root", "QS.CONTEXT.CREATE", [text("Example.Next"), s.name("NextDate"), '"EUR"', '"ESTR"'], "NextRoot", "Each market carries its own actual valuation date.")
+        s.write(sheet, "A24", "Curve and quotes together")
+        s.write(sheet, "B24", formula("QS.CONTEXT.ADD.CURVE", s.name("NextRoot"), '"ESTR"', s.name("QuoteIds"), s.name("QuoteMid")), "handle", "NextInputs")
+        sheet = "3 Contracts"
+        s.sheet(sheet, "Loan contract and historical market archive", "Loan settings have named arguments in IntelliSense. Snapshots include the complete context input range.")
+        s.headers(sheet, 6, ["Step", "Reference", "Purpose"])
+        row = step(s, sheet, 7, "Named loan settings", "QS.LOAN.SETTINGS", [text("Example.Options"), s.name("Balloon")], "Options", "The second argument is balloon_fraction; remaining settings use defaults.")
+        row = step(s, sheet, row, "Loan contract", "QS.INSTRUMENT.LOAN", [text("Example.Loan"), s.name("Date"), s.name("Maturity"), '"EUR"', s.name("Notional"), s.name("Rate"), "", '"Balloon"', '"Monthly"', '"Actual365"', s.name("Options")], "Loan", "Direct pricing uses Receive and the contract notional; use a trade for other position terms.")
+        row = step(s, sheet, row, "Explicit loan pricer", "QS.LOAN.PRICER", [text("Example.Pricer"), '"EUR"', '"ESTR"'], "Pricer", "An explicit discount curve with optional named refinancing and fair-rate settings.")
+        row = step(s, sheet, row, "Prepare first market", "QS.CONTEXT.PREPARE", [text("Example.Market"), s.name("Root"), s.name("Inputs")], "Snapshot", "Complete context includes quotes and construction settings.")
+        row = step(s, sheet, row, "Prepare next market", "QS.CONTEXT.PREPARE", [text("Example.NextMarket"), s.name("NextRoot"), s.name("NextInputs")], "NextSnapshot", "Next complete dated context.")
+        s.write(sheet, f"A{row}", "First context")
+        s.write(sheet, f"B{row}", "=" + s.name("Snapshot"), "handle")
+        s.write(sheet, f"A{row+1}", "Second context")
+        s.write(sheet, f"B{row+1}", "=" + s.name("NextSnapshot"), "handle")
+        s.range("Snapshots", sheet, row, 1, row + 1, 1)
+        s.write(sheet, f"D{row}", "2026-02-24T16:00:00Z", "input")
+        s.write(sheet, f"D{row+1}", "2026-02-25T16:00:00Z", "input")
+        s.range("ObservationTimes", sheet, row, 3, row + 1, 3)
+        step(s, sheet, row + 3, "Archive complete markets", "QS.SNAPSHOT.FROM.RANGE", [text("Example.Archive"), s.name("Snapshots"), s.name("ObservationTimes")], "Archive", "Independent prepared-context and timestamp arrays.")
+        sheet = "4 Results"
+        s.sheet(sheet, "Direct prices and historical batch", "No evaluation handle is needed. The complete input range gives Excel the calculation dependencies.", (29, 24, 32, 8, 35, 30, 20), "#21845B")
+        s.headers(sheet, 6, ["Measure", "Value", "Meaning"])
+        s.write(sheet, "A7", "Receipt PV (EUR)")
+        s.write(sheet, "B7", formula("QS.EVALUATE", s.name("Root"), s.name("Loan"), '"Value"', s.name("Inputs")), "money", "PV")
+        s.write(sheet, "C7", "Native loan pricer using the context base discount curve.", "note")
+        s.write(sheet, "A8", "Fair coupon")
+        s.write(sheet, "B8", formula("QS.EVALUATE", s.name("Root"), s.name("Loan"), '"FairRate(0)"', s.name("Inputs"), s.name("Pricer")), "rate", "FairRate")
+        s.write(sheet, "A12", "Cashflows", "section")
+        s.write(sheet, "A13", formula("QS.EVALUATE", s.name("Root"), s.name("Loan"), '"Cashflows"', s.name("Inputs")), "result", "Cashflows")
+        s.write(sheet, "A160", "Sensitivities", "section")
+        s.write(sheet, "A161", formula("QS.EVALUATE", s.name("Root"), s.name("Loan"), '"Sensitivities"', s.name("Inputs")), "result", "Risk")
+        for column, label in zip("EFG", ["Instrument", "Origination timestamp", "Receipt PV"]):
+            s.write(sheet, f"{column}6", label, "header")
+        for row, instant in enumerate(["2026-02-25T17:00:00Z", "2026-02-24T17:00:00Z", "2026-02-25T18:00:00Z"], 7):
+            s.write(sheet, f"E{row}", "=" + s.name("Loan"), "handle")
+            s.write(sheet, f"F{row}", instant, "input")
+        s.range("HistoryInstruments", sheet, 7, 4, 9, 4)
+        s.range("Originations", sheet, 7, 5, 9, 5)
+        s.write(sheet, "G7", formula("QS.EVALUATE.FROM.SNAPSHOT", s.name("Archive"), s.name("HistoryInstruments"), s.name("Originations"), s.name("Pricer")), "money", "HistoryValues")
+
+
+
 def simple_market(study, sheet, currency, index, loan=False):
     """Market assumptions first; the construction sequence follows below them."""
     widths = (38, 42, 36, 24) if loan else (38, 42, 44)
@@ -89,30 +169,20 @@ def simple_market(study, sheet, currency, index, loan=False):
         row = 17
     study.headers(sheet, row, ["Construction step", "Object reference", "Why it is needed"])
     row += 1
-    row = step(study, sheet, row, "1. Create quote store", "QS.QUOTES.CREATE", [text(study.prefix + ".Quotes"), study.name("ValuationDate")], "InitialQuotes", "Sets the valuation date for the market.")
-    previous = study.name("InitialQuotes")
+    row = step(study, sheet, row, "1. Create root context", "QS.CONTEXT.CREATE",
+               [text(study.prefix + ".Root"), study.name("ValuationDate"), text(currency), text(index)], "Root", "Owns the market stores and date.")
+    start_row = row
     if loan:
-        for offset in range(7):
-            key = f"CreditQuote{offset+1}"
-            row = step(study, sheet, row, f"2.{offset+1} Load CDS quote", "QS.QUOTES.SET",
-                       [previous, f"'{sheet}'!A{18+offset}", f"'{sheet}'!B{18+offset}", "", ""], key, "Each update consumes the preceding store revision.")
-            previous = study.name(key)
-    study.workbook.define_name(study.name("Quotes"), "=" + previous)
-    row = step(study, sheet, row, "3. Create curve configurations", "QS.CURVE.CONFIGS.CREATE", [text(study.prefix + ".Curves")], "InitialCurves", "Curve construction choices are separate from contract terms.")
-    row = step(study, sheet, row, f"4. Configure {index}", "QS.CURVE.CONFIGS.ADD.ZERO",
-               [study.name("InitialCurves"), text(index), '"Actual360"', '"Linear"', "TRUE", study.name("Pillars"), study.name("ZeroRates"), '"Continuous"', '"Annual"'], "BaseCurves", "The context builds this curve from the blue input range.")
+        study.range("CreditMid", sheet, 18, 1, 24, 1)
+        row = step(study, sheet, row, "2. Add borrower credit", "QS.CONTEXT.ADD.CREDIT.CURVE",
+                   [study.name("Root"), '"Credit:BORROWER"', text(currency), text(index), study.name("Recovery"), study.name("CreditQuotes"), study.name("CreditMid")], "Credit", "Independent CDS identifier and quote arrays.")
+    for curve_index, rates, key in [(index, "ZeroRates", "BaseCurves"), *([("EURIBOR12m", "ForwardRates", "ForwardCurves"), ("FUNDINGSPREAD", "FundingSpreads", "SpreadCurves")] if loan else [])]:
+        row = step(study, sheet, row, "Add " + curve_index, "QS.CONTEXT.ADD.ZERO.CURVE",
+                   [study.name("Root"), text(curve_index), study.name("Pillars"), study.name(rates), '"Actual360"', '"Continuous"', '"Annual"', '"Linear"', "TRUE"], key, "Every addition references the same root; fields are separate arrays.")
     if loan:
-        row = step(study, sheet, row, "5. Configure projection curve", "QS.CURVE.CONFIGS.ADD.ZERO",
-                   [study.name("BaseCurves"), '"EURIBOR12m"', '"Actual360"', '"Linear"', "TRUE", study.name("Pillars"), study.name("ForwardRates"), '"Continuous"', '"Annual"'], "ForwardCurves", "EURIBOR12m projects floating coupon fixings.")
-        row = step(study, sheet, row, "6. Configure treasury spread", "QS.CURVE.CONFIGS.ADD.ZERO",
-                   [study.name("ForwardCurves"), '"FUNDINGSPREAD"', '"Actual360"', '"Linear"', "TRUE", study.name("Pillars"), study.name("FundingSpreads"), '"Continuous"', '"Annual"'], "SpreadCurves", "The spread is constructed with the same curve API.")
-        row = step(study, sheet, row, "7. Configure funding curve", "QS.CURVE.CONFIGS.ADD.COMPOSITE",
-                   [study.name("SpreadCurves"), '"FUNDING"', '"EURIBOR12m"', '"FUNDINGSPREAD"'], "Curves", "The discount policy chooses whether to use ESTR or FUNDING.")
-        row = step(study, sheet, row, "8. Create credit configurations", "QS.CREDIT.CURVE.CONFIGS.CREATE", [text(study.prefix + ".Credit")], "InitialCredit", "Borrower survival is calibrated from the CDS quotes.")
-        step(study, sheet, row, "9. Configure borrower credit", "QS.CREDIT.CURVE.CONFIGS.ADD",
-             [study.name("InitialCredit"), '"Credit:BORROWER"', text(currency), text(index), study.name("Recovery"), study.name("CreditQuotes")], "Credit", "Only the borrower-credit case attaches this credit index to its contract.")
-    else:
-        study.workbook.define_name(study.name("Curves"), "=" + study.name("BaseCurves"))
+        row = step(study, sheet, row, "Add funding curve", "QS.CONTEXT.ADD.COMPOSITE.CURVE",
+                   [study.name("Root"), '"FUNDING"', '"EURIBOR12m"', '"FUNDINGSPREAD"'], "Curves", "Funding is an ordinary context curve.")
+    study.range("MarketInputs", sheet, start_row, 1, row - 1, 1)
 
 
 def detail_sheet(study, sheet, title, result, measure, selected=None):
@@ -186,30 +256,24 @@ def create_swap(path):
             s.write(market, f"B{row}", rate, "input_rate")
         s.range("EstrQuotes", market, 18, 0, 30, 0)
         s.headers(market, 33, ["Construction step", "Object reference", ""])
-        row = step(s, market, 34, "1. Create quote store", "QS.QUOTES.CREATE", [text("Swap.Quotes"), s.name("ValuationDate")], "InitialQuotes", "All quotes share this valuation date.")
-        previous = s.name("InitialQuotes")
-        for offset, source in enumerate([*range(7, 15), *range(18, 31)], 1):
-            key = f"Quote{offset}"
-            row = step(s, market, row, f"2.{offset} Load quote", "QS.QUOTES.SET", [previous, f"'{market}'!A{source}", f"'{market}'!B{source}", "", ""], key, "Updates form one ordered store chain.")
-            previous = s.name(key)
-        s.workbook.define_name(s.name("Quotes"), "=" + previous)
-        row = step(s, market, row, "3. Create USD configurations", "QS.CURVE.CONFIGS.CREATE", [text("Swap.UsdCurves")], "InitialCurves", "USD/SOFR and EUR/ESTR use separate bootstrap collateral assumptions.")
-        row = step(s, market, row, "4. Configure SOFR", "QS.CURVE.CONFIGS.ADD", [s.name("InitialCurves"), '"SOFR"', '"Actual360"', '"LogLinear"', "TRUE", s.name("SofrQuotes")], "SofrConfig", "Bootstraps the visible USD deposit / OIS quotes.")
-        row = step(s, market, row, "5. Create EUR configurations", "QS.CURVE.CONFIGS.CREATE", [text("Swap.EurCurves")], "InitialEstrCurves", "An independent configuration collection for the EUR/ESTR context.")
-        step(s, market, row, "6. Configure ESTR", "QS.CURVE.CONFIGS.ADD", [s.name("InitialEstrCurves"), '"ESTR"', '"Actual360"', '"LogLinear"', "TRUE", s.name("EstrQuotes")], "EstrConfig", "EUR OIS quotes bootstrap under EUR/ESTR collateral in their own context.")
+        row = 34
+        for prefix, currency, index, ids, first, last in [("Usd", "USD", "SOFR", "SofrQuotes", 7, 14), ("Eur", "EUR", "ESTR", "EstrQuotes", 18, 30)]:
+            s.range(prefix + "Mid", market, first, 1, last, 1)
+            row = step(s, market, row, "Create " + currency + " context", "QS.CONTEXT.CREATE", [text("Swap." + prefix), s.name("ValuationDate"), text(currency), text(index)], prefix + "Root", "Context owns its stores and conventions.")
+            row = step(s, market, row, "Add " + index + " curve and quotes", "QS.CONTEXT.ADD.CURVE", [s.name(prefix + "Root"), text(index), s.name(ids), s.name(prefix + "Mid"), "", "", '"Actual360"', '"LogLinear"', "TRUE"], prefix + "Inputs", "Independent quote identifiers and levels; no quote-store chain.")
         build = "3 Build"
         s.sheet(build, "Build the pricing objects", "Read from top to bottom. Grey cells contain object references; the exact formula is shown immediately below each step.")
         s.headers(build, 6, ["Step", "Object reference", "Purpose"])
-        row = s.step(build, 7, "1.1 Initialize USD context", context("Swap.Context", s.name("Quotes"), s.name("SofrConfig"), s.name("Currency"), s.name("Index")), "Context", "Bootstraps SOFR under USD collateral; this context prices the swap.")
-        row = s.step(build, row, "1.2 Initialize EUR context", context("Swap.EstrContext", s.name("Quotes"), s.name("EstrConfig"), '"EUR"', '"ESTR"'), "EstrContext", "Bootstraps ESTR under EUR collateral for comparison only.")
+        row = s.step(build, 7, "1.1 Initialize USD context", context("Swap.Context", s.name("UsdRoot"), s.name("UsdInputs")), "Context", "Bootstraps SOFR under USD collateral; this context prices the swap.")
+        row = s.step(build, row, "1.2 Initialize EUR context", context("Swap.EstrContext", s.name("EurRoot"), s.name("EurInputs")), "EstrContext", "Bootstraps ESTR under EUR collateral for comparison only.")
         row = step(s, build, row, "2. Define the instrument", "QS.INSTRUMENT.SWAP", [text("Swap.Instrument"), *[s.name(k) for k in ("Start", "Maturity", "Currency", "Index", "Notional", "FixedRate", "Spread", "DayCounter", "Compounding", "RateFrequency", "FixedFrequency", "FloatFrequency")]], "Instrument", "The contract contains dates, rates and indices.")
         row = step(s, build, row, "3. Create the position", "QS.TRADE.CREATE", [text("Swap.Trade"), s.name("Instrument"), s.name("ValuationDate"), s.name("Side")], "Trade", "The trade adds execution date and direction.")
         row = step(s, build, row, "4. Choose discount policy", "QS.DISCOUNT.POLICY.CSA", [text("Swap.Policy"), s.name("Currency"), s.name("Index")], "Policy", "The policy selects the native CSA discount curve.")
         row = step(s, build, row, "5. Create the pricer", "QS.PRICER.CREATE", [text("Swap.Pricer"), '"DiscountedCashflowPricer"', s.name("Policy")], "Pricer", "Pricing assumptions remain separate from the contract.")
-        row = step(s, build, row, "6. Request value and tables", "QS.EVALUATE", [text("Swap.Results"), s.name("Pricer"), s.name("Trade"), s.name("Context"), s.name("Requests")], "Result", "Value, Cashflows and Sensitivities are listed on Inputs.")
+        row = step(s, build, row, "6. Request value and tables", "QS.EVALUATE.RESULTS", [s.name("Context"), s.name("Trade"), s.name("Requests"), "", s.name("Pricer")], "Result", "Value, Cashflows and Sensitivities are listed on Inputs.")
         for target, label in [(0, "fixed coupon"), (1, "floating spread")]:
             row = step(s, build, row, f"7.{target+1} Select {label}", "QS.REQUEST.FAIR.RATE", [str(target)], f"Request{target}", f"Zero-based leg {target}; one fair-rate target per evaluation.")
-            row = step(s, build, row, f"8.{target+1} Solve {label}", "QS.EVALUATE", [text(f"Swap.Fair{target}"), s.name("Pricer"), s.name("Trade"), s.name("Context"), s.name(f"Request{target}")], f"Fair{target}", "Only the selected leg's quote is adjusted to zero total PV.")
+            row = step(s, build, row, f"8.{target+1} Solve {label}", "QS.EVALUATE.RESULTS", [s.name("Context"), s.name("Trade"), s.name(f"Request{target}"), "", s.name("Pricer")], f"Fair{target}", "Only the selected leg's quote is adjusted to zero total PV.")
         for index, key, source in [("SOFR", "SofrCurve", "Context"), ("ESTR", "EstrCurve", "EstrContext")]:
             row = step(s, build, row, "9. Inspect " + index, "QS.CURVE.GET", [s.name(source), text(index)], key, "Reads the curve from its matching collateral context.")
         result = "4 Results"
@@ -300,8 +364,7 @@ def create_loans(path):
                     s.write("2 Cases", f"{column}{row+5}", header, "header")
                 for offset, (setting, value) in enumerate(settings, row + 6):
                     s.write("2 Cases", f"A{offset}", setting)
-                    s.write("2 Cases", f"B{offset}", value, "input" if isinstance(value, str) and not value.startswith("=") else "input_rate")
-                s.range(key + "_Settings", "2 Cases", row + 5, 0, row + 5 + len(settings), 1)
+                    s.write("2 Cases", f"B{offset}", value, "input" if isinstance(value, str) and not value.startswith("=") else "input_rate", key + "_Setting_" + "".join(c for c in setting.lower() if c.isalnum()))
             else:
                 s.merge("2 Cases", f"A{row+5}:C{row+6}", "Contract settings: native defaults.")
             if segments:
@@ -311,7 +374,8 @@ def create_loans(path):
                     s.write("2 Cases", f"D{offset}", periods, "input")
                     s.write("2 Cases", f"E{offset}", coupon, "input_rate")
                     s.write("2 Cases", f"F{offset}", market_index, "input")
-                s.range(key + "_Coupons", "2 Cases", row + 5, 3, row + 5 + len(segments), 5)
+                for suffix, column in [("CouponPeriods", 3), ("CouponRates", 4), ("CouponIndices", 5)]:
+                    s.range(key + "_" + suffix, "2 Cases", row + 6, column, row + 5 + len(segments), column)
                 s.merge("2 Cases", f"D{row+10}:F{row+11}", "Edit this schedule; the scalar above follows its first row. Blank index = fixed; blank final count fills maturity. Fair-rate targets follow segment order.")
             else:
                 s.merge("2 Cases", f"D{row+5}:F{row+6}", "Coupon schedule: use the scalar rate / spread and projection index above.")
@@ -322,7 +386,7 @@ def create_loans(path):
         build = "4 Build"
         s.sheet(build, "Build and evaluate the loan agreements", "Shared context and pricers come first. Each case then follows instrument → trade → pricer selection → evaluation. Use the links on Results to jump directly to a case.")
         s.headers(build, 6, ["Step", "Object reference", "Purpose"])
-        row = s.step(build, 7, "1. Initialize pricing context", context("Loan.Context", s.name("Quotes"), s.name("Curves"), '"EUR"', '"ESTR"', s.name("Credit")), "Context", "Constructs the projection, discount, funding and credit curves.")
+        row = s.step(build, 7, "1. Initialize pricing context", context("Loan.Context", s.name("Root"), s.name("MarketInputs")), "Context", "Constructs the projection, discount, funding and credit curves.")
         for number, suffix, label in [(2, "RiskFree", "ESTR"), (4, "Funding", "FUNDING")]:
             row = step(s, build, row, f"{number}. {label} discount policy", "QS.DISCOUNT.POLICY.FIXED.INCOME", [text(f"Loan.{suffix}Policy"), s.name(suffix + "Currency"), s.name(suffix + "Index")], suffix + "Policy", "Maps EUR to an ordinary market curve.")
             row = step(s, build, row, f"{number+1}. {label} loan pricer", "QS.PRICER.CREATE", [text(f"Loan.{suffix}Pricer"), '"LoanPricer"', s.name(suffix + "Policy")], suffix + "Pricer", "Same native LoanPricer, with an explicit policy.")
@@ -336,17 +400,25 @@ def create_loans(path):
             s.merge(build, f"A{row}:C{row}", f"{index:02}. {label}", "section")
             s.link(build, f"A{row+1}", f"'2 Cases'!A{case_rows[index-1]}", "Edit these case inputs →")
             row += 3
+            if settings:
+                parameter_order = ["balloonfraction", "amortizationrate", "creditindex", "recovery", "fixingfrequency", "fixinglag", "indextenor", "calendar", "businessdayconvention", "floor", "cap", "introductoryperiods", "introductoryrate", "annualcpr", "basecpr", "incentivemultiplier", "maximumcpr"]
+                supplied = {"".join(c for c in label.lower() if c.isalnum()) for label, _ in settings}
+                setting_args = [s.name(key + "_Setting_" + param) if param in supplied else "" for param in parameter_order]
+                while setting_args and not setting_args[-1]:
+                    setting_args.pop()
+                row = step(s, build, row, "Named loan settings", "QS.LOAN.SETTINGS", [text(f"Loan.{key}.Options"), *setting_args], key + "_Options", "Each optional parameter is visible in IntelliSense; its value refers to the case input cell.")
             args = [text(f"Loan.{key}.Instrument"), *[s.name(k) for k in ("Start", "Maturity", "Currency", "Notional")],
                     s.name(key + "_Rate"), s.name(key + "_Index"), s.name(key + "_Repayment"), s.name("Frequency"), s.name("DayCounter"),
-                    s.name(key + "_Settings") if settings else "", s.name(key + "_Coupons") if segments else ""]
+                    s.name(key + "_Options") if settings else "",
+                    *[s.name(key + "_" + suffix) if segments else "" for suffix in ("CouponPeriods", "CouponRates", "CouponIndices")]]
             row = step(s, build, row, "1. Define this instrument", "QS.INSTRUMENT.LOAN", args, key + "_Instrument", description)
             row = step(s, build, row, "2. Create this position", "QS.TRADE.CREATE", [text(f"Loan.{key}.Trade"), s.name(key + "_Instrument"), s.name("ValuationDate"), s.name("Side")], key + "_Trade", "The contractual principal stays in the instrument.")
             row = s.step(build, row, "3. Select explicit pricer", f'=IF({s.name(key+"_Discount")}="FUNDING",{s.name("FundingPricer")},{s.name("RiskFreePricer")})', key + "_Pricer", "The case's discount choice selects an existing policy-configured pricer.")
-            row = step(s, build, row, "4. Evaluate value and tables", "QS.EVALUATE", [text(f"Loan.{key}.Result"), s.name(key + "_Pricer"), s.name(key + "_Trade"), s.name("Context"), s.name("Requests")], key + "_Result", "Future receipt PV excludes the original principal advance.")
+            row = step(s, build, row, "4. Evaluate value and tables", "QS.EVALUATE.RESULTS", [s.name("Context"), s.name(key + "_Trade"), s.name("Requests"), "", s.name(key + "_Pricer")], key + "_Result", "Future receipt PV excludes the original principal advance.")
             result_keys.append(key + "_Result")
             if label != "Bounded floating":
                 for target in range(len(segments) if segments else 1):
-                    row = step(s, build, row, f"5.{target+1} Solve segment {target}", "QS.EVALUATE", [text(f"Loan.{key}.Fair{target}"), s.name(key + "_Pricer"), s.name(key + "_Trade"), s.name("Context"), s.name(f"Request{target}")], key + f"_Fair{target}", "Repay remaining principal at each prefix end, lock earlier solved rates, then extend.")
+                    row = step(s, build, row, f"5.{target+1} Solve segment {target}", "QS.EVALUATE.RESULTS", [s.name("Context"), s.name(key + "_Trade"), s.name(f"Request{target}"), "", s.name(key + "_Pricer")], key + f"_Fair{target}", "Repay remaining principal at each prefix end, lock earlier solved rates, then extend.")
             row += 2
         results = "5 Results"
         s.sheet(results, "Compare the loan results", "PV is future receipt value in EUR; net origination value subtracts principal. Fair-rate columns are annual decimal coupon / spread levels. Blank means that segment does not exist.", (29, 17, 17, 15, 15, 15, 12, 12), "#21845B")
@@ -408,8 +480,8 @@ def create_bonds(path):
         build = "3 Build"
         s.sheet(build, "Build one contract and three positions", "The shared instrument is created once. Each trade adds its own anchor, and the explicit BondPricer evaluates each position.")
         s.headers(build, 6, ["Step", "Object reference", "Purpose"])
-        row = s.step(build, 7, "1. Initialize market context", context("Bond.Context", s.name("Quotes"), s.name("Curves"), '"USD"', '"SOFR"'), "Context", "Constructs the visible SOFR zero curve.")
-        row = step(s, build, row, "2. Define the bond instrument", "QS.INSTRUMENT.FIXED.BOND", [text("Bond.Instrument"), s.name("Start"), s.name("Maturity"), '"USD"', "", s.name("Notional"), s.name("Coupon"), '"Actual360"', '"Compounded"', '"Semiannual"', '"Semiannual"'], "Instrument", "No position side or pricing anchor is stored in this contract.")
+        row = s.step(build, 7, "1. Initialize market context", context("Bond.Context", s.name("Root"), s.name("MarketInputs")), "Context", "Constructs the visible SOFR zero curve.")
+        row = step(s, build, row, "2. Define the bond instrument", "QS.INSTRUMENT.FIXED.RATE.BOND", [text("Bond.Instrument"), s.name("Start"), s.name("Maturity"), '"USD"', "", s.name("Notional"), s.name("Coupon"), '"Actual360"', '"Compounded"', '"Semiannual"', '"Semiannual"'], "Instrument", "No position side or pricing anchor is stored in this contract.")
         row = step(s, build, row, "3. Choose discount policy", "QS.DISCOUNT.POLICY.FIXED.INCOME", [text("Bond.Policy"), s.name("DiscountCurrency"), s.name("DiscountIndex")], "Policy", "Maps USD to the ordinary SOFR curve.")
         row = step(s, build, row, "4. Create native bond pricer", "QS.PRICER.CREATE", [text("Bond.Pricer"), '"BondPricer"', s.name("Policy")], "Pricer", "The same configured pricer evaluates all three positions.")
         result_keys, build_rows = [], []
@@ -417,7 +489,7 @@ def create_bonds(path):
             key = f"C{index:02}"
             build_rows.append(row)
             row = step(s, build, row, f"5.{index} Position · {label}", "QS.TRADE.CREATE", [text(f"Bond.{key}.Trade"), s.name("Instrument"), s.name("ValuationDate"), s.name("Side"), "", "", s.name(key + "_Anchor"), s.name(key + "_AnchorValue")], key + "_Trade", "The trade supplies the bond's price or spread anchor.")
-            row = step(s, build, row, f"6.{index} Evaluate · {label}", "QS.EVALUATE", [text(f"Bond.{key}.Result"), s.name("Pricer"), s.name(key + "_Trade"), s.name("Context"), s.name("Requests")], key + "_Result", "Produces the measures listed on Inputs.")
+            row = step(s, build, row, f"6.{index} Evaluate · {label}", "QS.EVALUATE.RESULTS", [s.name("Context"), s.name(key + "_Trade"), s.name("Requests"), "", s.name("Pricer")], key + "_Result", "Produces the measures listed on Inputs.")
             result_keys.append(key + "_Result")
         result = "4 Results"
         s.sheet(result, "Compare the anchored bond positions", "PV is monetary USD value. Duration is measured in years. Z-spread is an annual decimal spread; the same contract is used in all cases.", (30, 22, 18, 18, 16, 16), "#21845B")
@@ -478,17 +550,19 @@ def create_historical(path):
         s.headers(archive, 6, ["Step", "Object reference", "Purpose"])
         row = 7
         for index in [1, 2]:
-            row = step(s, archive, row, f"{index}.1 Create dated quote store", "QS.QUOTES.CREATE", [text(f"History.Quotes{index}"), s.name(f"Date{index}")], f"Quotes{index}", "The quote-store reference date is the valuation date.")
-            row = step(s, archive, row, f"{index}.2 Create configurations", "QS.CURVE.CONFIGS.CREATE", [text(f"History.Curves{index}")], f"InitialCurves{index}", "A separate configuration is used for each recorded market.")
-            row = step(s, archive, row, f"{index}.3 Configure dated zero curve", "QS.CURVE.CONFIGS.ADD.ZERO", [s.name(f"InitialCurves{index}"), '"SOFR"', '"Actual365"', '"Linear"', "FALSE", s.name("Pillars"), s.name(f"Rates{index}"), '"Continuous"', '"Annual"'], f"Curves{index}", "Use the visible curve from the matching observation.")
-            row = s.step(archive, row, f"{index}.4 Initialize dated market", context(f"History.Context{index}", s.name(f"Quotes{index}"), s.name(f"Curves{index}"), '"USD"', '"SOFR"'), f"OriginalContext{index}", "Rebuild the curve using that market's reference date.")
-            row = step(s, archive, row, f"{index}.5 Capture market snapshot", "QS.SNAPSHOT.FROM.CONTEXT", [text(f"History.Snapshot{index}"), s.name(f"Timestamp{index}"), s.name(f"OriginalContext{index}")], f"Snapshot{index}", "Record the complete construction inputs at its observation timestamp.")
+            row = step(s, archive, row, f"{index}.1 Create dated context", "QS.CONTEXT.CREATE", [text(f"History.Root{index}"), s.name(f"Date{index}"), '"USD"', '"SOFR"'], f"Root{index}", "Each root owns its market date.")
+            row = step(s, archive, row, f"{index}.2 Add zero curve", "QS.CONTEXT.ADD.ZERO.CURVE", [s.name(f"Root{index}"), '"SOFR"', s.name("Pillars"), s.name(f"Rates{index}"), '"Actual365"', '"Continuous"', '"Annual"', '"Linear"', "FALSE"], f"MarketInputs{index}", "Separate pillar and rate arrays.")
+            row = s.step(archive, row, f"{index}.3 Prepare complete context", context(f"History.Context{index}", s.name(f"Root{index}"), s.name(f"MarketInputs{index}")), f"OriginalContext{index}", "Compose complete market inputs for reuse.")
+            row = step(s, archive, row, f"{index}.4 Capture market", "QS.SNAPSHOT.FROM.CONTEXT", [text(f"History.Snapshot{index}"), s.name(f"Timestamp{index}"), s.name(f"OriginalContext{index}")], f"Snapshot{index}", "Observation timestamp remains separate from market business date.")
         s.headers(archive, row, ["Captured snapshot", "Object reference", ""])
         for index in [1, 2]:
             s.write(archive, f"A{row+index}", f"Market {index}")
-            s.write(archive, f"B{row+index}", "=" + s.name(f"Snapshot{index}"), "handle")
+            s.write(archive, f"B{row+index}", "=" + s.name(f"OriginalContext{index}"), "handle")
         s.range("Snapshots", archive, row + 1, 1, row + 2, 1)
-        step(s, archive, row + 4, "3. Collect snapshot archive", "QS.SNAPSHOTS.CREATE", [text("History.Archive"), s.name("Snapshots")], "Archive", "The archive consumes both captured snapshots.")
+        for index in [1, 2]:
+            s.write(archive, f"D{row+index}", "=" + s.name(f"Timestamp{index}"), "input")
+        s.range("ObservationTimes", archive, row + 1, 3, row + 2, 3)
+        step(s, archive, row + 4, "3. Collect snapshot archive", "QS.SNAPSHOT.FROM.RANGE", [text("History.Archive"), s.name("Snapshots"), s.name("ObservationTimes")], "Archive", "Prepared contexts and their observation timestamps are independent arrays.")
         build = "4 Pricing"
         s.sheet(build, "Reprice one trade against selected markets", "Build one instrument, trade and policy-configured pricer. Each timestamp query then selects its own context before valuation.")
         s.headers(build, 6, ["Step", "Object reference", "Purpose"])
@@ -499,7 +573,7 @@ def create_historical(path):
         for index in [1, 2]:
             row = step(s, build, row, f"{index+4}.1 Select timestamp", "QS.SNAPSHOT.SELECTOR", [text(f"History.Selector{index}"), s.name(f"Query{index}"), s.name(f"Rule{index}"), '"Mid"'], f"Selector{index}", "The requested timestamp and matching rule are editable on Inputs.")
             row = step(s, build, row, f"{index+4}.2 Rebuild selected context", "QS.CONTEXT.FROM.SNAPSHOT", [text(f"History.Selected{index}"), s.name("Archive"), s.name(f"Selector{index}")], f"Context{index}", "The market's own reference date is preserved.")
-            row = step(s, build, row, f"{index+4}.3 Evaluate unchanged trade", "QS.EVALUATE", [text(f"History.Result{index}"), s.name("Pricer"), s.name("Trade"), s.name(f"Context{index}"), '"Value"'], f"Result{index}", "The same position and pricer consume this selected market.")
+            row = step(s, build, row, f"{index+4}.3 Evaluate unchanged trade", "QS.EVALUATE.RESULTS", [s.name(f"Context{index}"), s.name("Trade"), '"Value"', "", s.name("Pricer")], f"Result{index}", "The same position and pricer consume this selected market.")
         result = "5 Results"
         s.sheet(result, "Compare requested and selected markets", "A later query time does not create a later valuation date. Read the actual matched timestamp and market date before comparing PV.", (38, 36, 36), "#21845B")
         s.headers(result, 6, ["Measure", "Query 1", "Query 2"])
@@ -577,6 +651,9 @@ def create_interpolation(path):
 
 def validation_names(example):
     """Stable workbook names keep live checks independent of the visual layout."""
+    if example == "context_pricing_example":
+        return (["Context_Root", "Context_Options", "Context_Loan", "Context_Pricer", "Context_Archive"],
+                ["Context_PV", "Context_FairRate", "Context_HistoryValues"])
     if example == "portfolio_aggregation_example":
         return (["Portfolio_" + key for key in ("Context", "Policy", "Pricer", "Book", "Result")]
                 + [f"Portfolio_C{index:02}_{key}" for index in range(1, 7) for key in ("Instrument", "Trade", "Result")],
@@ -739,7 +816,7 @@ def publish_workbook(source, destination):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--example", choices=("all", "swap", "historical", "loans", "bonds", "interpolation", "portfolio"), default="all")
+    parser.add_argument("--example", choices=("all", "context", "swap", "historical", "loans", "bonds", "interpolation", "portfolio"), default="all")
     parser.add_argument("--output-dir", type=Path, default=Path(__file__).resolve().parent)
     parser.add_argument("--xll-path", type=Path, help="Validate with native Windows Excel; requires pywin32")
     args = parser.parse_args()
@@ -763,6 +840,7 @@ def main():
 
 
 EXAMPLES = [
+    ("context", "context_pricing_example.xlsx", create_context_first),
     ("portfolio", "portfolio_aggregation_example.xlsx", create_portfolio),
     ("swap", "swap_pricing_example.xlsx", create_swap),
     ("historical", "historical_pricing_example.xlsx", create_historical),

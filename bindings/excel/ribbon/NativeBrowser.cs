@@ -55,17 +55,20 @@ namespace QuantSupport.Ribbon
 
         internal static BrowserResponse Query(BrowserQuery request)
         {
-            string json;
-            using (var stream = new MemoryStream())
-            {
-                new DataContractJsonSerializer(typeof(BrowserQuery)).WriteObject(stream, request);
-                json = Encoding.UTF8.GetString(stream.ToArray());
-            }
+            var json = Serialize(request);
             var response = Invoke<BrowserResponse>(module => Export<GetQuery>(module, "qs_browser_query")(json, new UIntPtr((uint)json.Length)));
             if (!string.IsNullOrEmpty(response.Error)) throw new InvalidOperationException(response.Error);
             return response;
         }
 
+        internal static string Serialize<T>(T value)
+        {
+            using (var stream = new MemoryStream())
+            {
+                new DataContractJsonSerializer(typeof(T)).WriteObject(stream, value);
+                return Encoding.UTF8.GetString(stream.ToArray());
+            }
+        }
         private static IntPtr Module()
         {
             var path = Path.Combine(Path.GetDirectoryName(ExcelDnaUtil.XllPath), "quantsupport.xll");

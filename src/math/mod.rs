@@ -12,3 +12,6 @@ pub mod probability;
 pub mod random;
 /// Scalar and vector numerical solvers.
 pub mod solvers;
+
+/// Numerically stable finite scalar accumulation.
+pub mod compensatedsum;

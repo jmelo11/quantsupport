@@ -4,52 +4,47 @@ use std::collections::HashSet;
 
 use quantsupport::prelude::{Date, FixingStore, Quote, QuoteDetails, QuoteLevels, QuoteStore};
 
-use super::{
-    inputs::{self, Cell, Table},
-    registry::{QsObject, Registry},
-};
+use super::inputs::{self, Cell, Table};
+#[cfg(test)]
+use super::registry::{QsObject, Registry};
 
 /// Aligns separate row/column arrays without dropping blank quote sides.
-/// With no side arrays, the existing combined-table input is preserved.
+/// Every supplied field must be a scalar, row array or column array.
+#[cfg(test)]
 pub fn quote_arrays(
     identifiers: &Table,
     mid: Option<&Table>,
     bid: Option<&Table>,
     ask: Option<&Table>,
 ) -> Result<Table, String> {
-    if mid.is_none() && bid.is_none() && ask.is_none() {
-        return Ok(identifiers.clone());
-    }
-    let vector = |table: &Table, name: &str| -> Result<Vec<Cell>, String> {
-        if table.len() == 1 {
-            Ok(table[0].clone())
-        } else if table.iter().all(|row| row.len() == 1) {
-            Ok(table.iter().map(|row| row[0].clone()).collect())
-        } else {
-            Err(format!("{name} must be a single row or column array"))
-        }
-    };
-    let identifiers = vector(identifiers, "identifiers")?;
-    let mut rows: Table = identifiers
-        .into_iter()
-        .map(|identifier| vec![identifier, Cell::Blank, Cell::Blank, Cell::Blank])
-        .collect();
-    for (column, (name, side)) in [("mid", mid), ("bid", bid), ("ask", ask)]
-        .into_iter()
-        .enumerate()
-    {
-        if let Some(side) = side {
-            let values = vector(side, name)?;
-            if values.len() != rows.len() {
-                return Err(format!(
-                    "{name} must have the same number of entries as identifiers"
-                ));
-            }
-            for (row, value) in rows.iter_mut().zip(values) {
-                row[column + 1] = value;
-            }
-        }
-    }
+    let identifiers = inputs::vector(identifiers, "identifiers")?;
+    let mid = mid
+        .map(|array| inputs::vector(array, "mid"))
+        .transpose()?
+        .unwrap_or_default();
+    let bid = bid
+        .map(|array| inputs::vector(array, "bid"))
+        .transpose()?
+        .unwrap_or_default();
+    let ask = ask
+        .map(|array| inputs::vector(array, "ask"))
+        .transpose()?
+        .unwrap_or_default();
+    quote_rows(&identifiers, &mid, &bid, &ask)
+}
+
+pub fn quote_rows(
+    identifiers: &[Cell],
+    mid: &[Cell],
+    bid: &[Cell],
+    ask: &[Cell],
+) -> Result<Table, String> {
+    let mut rows = inputs::aligned(&[
+        ("identifiers", identifiers),
+        ("mid", mid),
+        ("bid", bid),
+        ("ask", ask),
+    ])?;
     // A matching identifier header makes omitted side headers explicit too.
     if let Some(first) = rows.first_mut() {
         if first[0]
@@ -64,6 +59,51 @@ pub fn quote_arrays(
         }
     }
     Ok(rows)
+}
+
+/// A curve may supply its quote sides, or reference identifiers already added
+/// to the context. These are internal records assembled from separate arrays.
+pub fn definition_quotes(date: Date, records: &Table) -> Result<(Vec<String>, QuoteStore), String> {
+    if records.iter().all(|row| row.len() == 1) {
+        let identifiers = inputs::rows(records, 1, "identifiers")?
+            .into_iter()
+            .map(|row| row[0].text("quote identifier").map(str::to_string))
+            .collect::<Result<Vec<_>, _>>()?;
+        if !identifiers.is_empty() {
+            super::configuration_inputs::quote_identifiers(&identifiers)?;
+        }
+        return Ok((identifiers, QuoteStore::new(date)));
+    }
+    let quotes = quotes(date, records)?;
+    let mut identifiers: Vec<_> = quotes.quotes().keys().cloned().collect();
+    identifiers.sort();
+    Ok((identifiers, quotes))
+}
+
+pub fn fx(records: &Table) -> Result<Vec<quantsupport::prelude::FxRateRecord>, String> {
+    let mut result = Vec::new();
+    let mut seen = HashSet::new();
+    for row in inputs::rows(records, 3, "FX arrays")? {
+        let base = row[0]
+            .text("base currency")?
+            .to_ascii_uppercase()
+            .parse()
+            .map_err(|e: quantsupport::prelude::QSError| e.to_string())?;
+        let quote = row[1]
+            .text("quote currency")?
+            .to_ascii_uppercase()
+            .parse()
+            .map_err(|e: quantsupport::prelude::QSError| e.to_string())?;
+        let rate = row[2].number("FX rate")?;
+        if rate <= 0.0 {
+            return Err("FX rate must be positive".into());
+        }
+        if !seen.insert((base, quote)) {
+            return Err("duplicate FX pair".into());
+        }
+        result.push(quantsupport::prelude::FxRateRecord { base, quote, rate });
+    }
+    Ok(result)
 }
 
 /// Builds one quote store from Identifier/Mid[/Bid/Ask] columns.
@@ -144,6 +184,7 @@ pub fn fixings(table: &Table) -> Result<FixingStore, String> {
 }
 
 /// Replaces the complete range contribution, reusing unchanged definitions.
+#[cfg(test)]
 pub fn import_quotes(
     registry: &mut Registry,
     name: &str,
@@ -164,6 +205,7 @@ pub fn import_quotes(
 }
 
 /// Replaces the complete fixing history, reusing unchanged definitions.
+#[cfg(test)]
 pub fn import_fixings(
     registry: &mut Registry,
     name: &str,
@@ -241,7 +283,7 @@ mod tests {
     }
 
     #[test]
-    fn quote_arrays_reject_misalignment_and_preserve_combined_tables() {
+    fn quote_arrays_reject_misalignment_and_rectangular_inputs() {
         let identifiers = vec![
             vec![text("Identifier")],
             vec![text("FixedRateDeposit_USD_SOFR_6M")],
@@ -250,7 +292,7 @@ mod tests {
         let rows = quote_arrays(&identifiers, Some(&mid), None, None).unwrap();
         let date = Date::new(2026, 1, 15);
         assert_eq!(quotes(date, &rows).unwrap().quotes().len(), 1);
-        assert_eq!(quote_arrays(&rows, None, None, None).unwrap(), rows);
+        assert!(quote_arrays(&rows, None, None, None).is_err());
         assert!(quote_arrays(
             &identifiers,
             Some(&vec![vec![Cell::Number(0.04)]]),

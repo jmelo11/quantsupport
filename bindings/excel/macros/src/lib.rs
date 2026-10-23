@@ -65,6 +65,8 @@ pub fn xll_bindgen(args: TokenStream, input: TokenStream) -> TokenStream {
                     #(#conversions)*
                     super::#name(#(#call_args),*)
                 })).unwrap_or_else(|_| Err(crate::functions::helpers::value_error("native evaluation panicked; previous cell state was released")));
+                crate::runtime::registry::with_registry_mut(|registry|
+                    registry.record_diagnostic(result.as_ref().err().map(|error| error.message().unwrap_or("The input contains an Excel error or has the wrong type.").to_string())));
                 scope.finish(result.is_ok());
                 result
             }

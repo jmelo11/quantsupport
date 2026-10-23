@@ -9,58 +9,34 @@ use crate::{
     },
     rates::{compounding::Compounding, interestrate::RateDefinition},
     time::{
-        calendar::Calendar, calendars::canada::Canada, daycounter::DayCounter, enums::Frequency,
+        calendar::Calendar,
+        calendars::canada::Canada,
+        daycounter::DayCounter,
+        enums::{BusinessDayConvention, Frequency},
+        period::Period,
     },
 };
 
-/// Details for CORRA (Canadian Overnight Repo Rate Average).
-/// Overnight secured rate published by the Bank of Canada.
-#[derive(Copy, Clone, Serialize, Default, Deserialize)]
-pub struct CORRAIndex;
+use super::macros::rate_index;
 
-impl MarketIndexDetails for CORRAIndex {
-    fn quote_type(&self) -> QuoteType {
-        QuoteType::Rate
-    }
-
-    fn name(&self) -> &'static str {
-        "CORRA"
-    }
-}
-
-impl RateIndexDetails for CORRAIndex {
-    fn calendar(&self) -> Calendar {
-        Calendar::Canada(Canada::default())
-    }
-
-    fn currency(&self) -> Currency {
-        Currency::CAD
-    }
-
-    fn fixing_lag(&self) -> i64 {
-        0
-    }
-
-    fn rate_definition(&self) -> RateDefinition {
-        RateDefinition::new(
-            DayCounter::Actual365,
-            Compounding::Simple,
-            Frequency::Annual,
-        )
-    }
-
-    fn swap_conventions(&self, _tenor: crate::time::period::Period) -> SwapConventions {
-        SwapConventions::new(
-            self.rate_definition(),
-            Frequency::Annual,
-            Frequency::Annual,
-            self.rate_definition().day_counter(),
-            1,
-            crate::time::enums::BusinessDayConvention::ModifiedFollowing,
-        )
-    }
-
-    fn market_index(&self) -> MarketIndex {
-        MarketIndex::CORRA
+rate_index! {
+    /// Details for CORRA (Canadian Overnight Repo Rate Average).
+    /// Overnight secured rate published by the Bank of Canada.
+    CORRAIndex {
+        market_index: CORRA,
+        currency: CAD,
+        calendar: Calendar::Canada(Canada::default()),
+        fixing_lag: 0,
+        day_counter: Actual365,
+        compounding: Simple,
+        compounding_frequency: Annual,
+        frequency: Daily,
+        is_in_arrears: true,
+        swap_conventions: {
+            fixed_day_counter: Actual365,
+            fixed_frequency: |_| Frequency::Annual,
+            floating_frequency: Annual,
+            settlement_days: 1,
+        },
     }
 }

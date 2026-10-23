@@ -6,6 +6,7 @@ Load the matching `quantsupport.xll` in **64-bit Windows Excel** before opening 
 
 | Workbook | What to follow |
 | --- | --- |
+| [Context-first pricing](context_pricing_example.xlsx) | Create a short context, add independent inputs, request direct loan values and run a historical batch without per-row contexts or evaluation handles. |
 | [Portfolio aggregation](portfolio_aggregation_example.xlsx) | Pass a range of six trade handles, reconcile PV, and inspect weighted coupon rates/spreads, distinct SOFR/TermSOFR3m fixing indices, sensitivities and separate interest/capital payments. |
 | [Swap pricing](swap_pricing_example.xlsx) | Bootstrap SOFR under USD collateral and value a receive-fixed USD swap. Bootstrap ESTR in a separate EUR context for curve comparisons. |
 | [Loan pricing](loan_pricing_example.xlsx) | Compare 12 agreements: repayment styles, floating and mixed coupons, prepayment, borrower credit, funding and stepped coupons. |
@@ -15,14 +16,14 @@ Load the matching `quantsupport.xll` in **64-bit Windows Excel** before opening 
 
 ## Reading the sheets
 
-- **Inputs / Cases:** blue cells are editable; labels explain units and conventions. Loan settings and coupon schedules sit together in each case's block. Rates and spreads are annual decimals: enter `0.04` for 4%. Dates are ISO text such as `2026-02-24`.
+- **Inputs / Cases:** blue cells are editable; labels explain units and conventions. Loan settings and coupon fields are labelled in each case's block. Rates and spreads are annual decimals: enter `0.04` for 4%. Dates are ISO text such as `2026-02-24`.
 - **Market / Markets:** market assumptions appear first, followed by the curve-construction steps that consume them.
 - **Build / Archive / Pricing:** read the object sequence from top to bottom. Each grey object-reference cell has its purpose beside it and its Excel formula immediately below. Named cells such as `Swap_Context` make dependencies easier to trace in the formula bar or Excel's Name Manager.
 - **Results:** green cells contain financial measures. Loan and bond rows link directly to their inputs and build steps. Their **Inspect one case** dropdown controls both the Cashflows and Risk tabs.
 - **Cashflows / Risk / Curves:** tables have dedicated space to spill. Sensitivities are raw derivatives per unit market input; multiplying a decimal-rate sensitivity by `0.0001` approximates the effect of a +1 bp move.
 - **Layouts** in the loan study shows the same small curve table with all four combinations of `transpose` and `headers`. The schedule study also shows a transposed date list.
 
-The pricing studies use the library's separate **instrument → trade → discount policy → pricer → evaluation → result** objects. FUNDING is an ordinary composite curve selected by a discount policy. Coupon schedules and settings use worksheet ranges.
+Start with **Context-first pricing** for the shorter API. Its additions all reference the same root; pricing takes the complete additions range. Every study now creates its market through a context and independent additions. The detailed studies use the library's explicit **instrument → trade → discount policy → pricer → evaluation → result** objects. FUNDING is an ordinary composite curve selected by a discount policy. Coupon schedules use independent period, rate and index arrays. Contract settings use named QS.LOAN.SETTINGS arguments.
 
 The swap study keeps USD/SOFR and EUR/ESTR bootstrap configurations in separate contexts. Bootstrapping EUR OIS inside a USD collateral context would require a `Collateral:EUR/USD` curve calibrated from additional market data. The ESTR comparison context has no role in the USD swap's valuation.
 
@@ -38,7 +39,7 @@ python bindings/excel/examples/create_examples.py
 python -m unittest discover -s bindings/excel/examples -p 'test_*.py'
 ```
 
-Use `--example portfolio`, `swap`, `historical`, `loans`, `bonds`, or `interpolation` to generate one file, and `--output-dir PATH` to choose a destination.
+Use `--example context`, `portfolio`, `swap`, `historical`, `loans`, `bonds`, or `interpolation` to generate one file, and `--output-dir PATH` to choose a destination.
 
 The portfolio workbook matches the [Python notebook](../../python/examples/sensitivity/portfolio_aggregation.ipynb).
 Its default USD book has two deposits (100,000 at 4% and 300,000 at 6%), two
@@ -55,3 +56,6 @@ interest across accrual periods for NII.
 The tests require Rust/Cargo. They validate navigation, formula dependencies, registered signatures, and the native pricing workflow. They also extract the swap's actual worksheet quotes, configurations and context assumptions and bootstrap them through Rust on any platform, checking the original missing-collateral failure as a regression.
 
 On Windows, install `pywin32` and add `--xll-path bindings/excel/dist/quantsupport.xll` for live checks of native handles, numerical results, selected-case tables, and unchanged recalculation. Actual worksheet execution requires Windows Excel.
+
+Prepared context and observation timestamp arrays feed `QS.SNAPSHOT.FROM.RANGE`;
+no store-constructor chain or input record table is required.

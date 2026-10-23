@@ -66,7 +66,8 @@ class PackageTests(unittest.TestCase):
             self.assertIsNone(archive.testzip())
             self.assertEqual(set(archive.namelist()), {"quantsupport.xll", "quantsupport.intellisense.xml", COMPANION, "QuantSupport.Ribbon64.xll",
                                                       "INSTALL.txt", "QuantSupport-LICENSE.txt",
-                                                      "ExcelDna.IntelliSense-LICENSE.txt", "ExcelDna-LICENSE.txt"})
+                                                      "ExcelDna.IntelliSense-LICENSE.txt", "ExcelDna-LICENSE.txt",
+                                                      "MaterialSymbols-LICENSE.txt", "MaterialSymbols-NOTICE.txt"})
             self.assertEqual(archive.read("quantsupport.xll"), self.xll)
             self.assertEqual(archive.read("quantsupport.intellisense.xml"), self.xml)
             self.assertEqual(archive.read(COMPANION), self.companion)
@@ -76,6 +77,10 @@ class PackageTests(unittest.TestCase):
                 self.assertIn(name, instructions)
             self.assertEqual(archive.read("ExcelDna.IntelliSense-LICENSE.txt"),
                              (EXCEL / "third-party/ExcelDna.IntelliSense-LICENSE.txt").read_bytes())
+            self.assertEqual(archive.read("MaterialSymbols-LICENSE.txt"),
+                             (EXCEL / "ribbon/Icons/LICENSE.txt").read_bytes())
+            self.assertEqual(archive.read("MaterialSymbols-NOTICE.txt"),
+                             (EXCEL / "ribbon/Icons/NOTICE.txt").read_bytes())
         self.assertEqual((self.dist / COMPANION).read_bytes(), self.companion)
 
     def test_changed_companion_is_rejected_before_replacing_an_existing_bundle(self):

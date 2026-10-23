@@ -14,7 +14,71 @@ pub fn argument_help(function_name: &str, argument_names: &str) -> Vec<&'static 
 }
 
 fn describe_argument(function_name: &str, argument_name: &str) -> &'static str {
+    match (function_name, argument_name) {
+        (_, "inputs") => return "Complete array of independent QS.CONTEXT.ADD references for this root; omitted or blank uses the context as prepared; blank array cells are ignored",
+        (_, "policy") => return "Optional discount-policy handle for the default native pricer; omitted or blank uses the context policy; leave blank when passing an explicit configured pricer",
+        ("QS.SNAPSHOT.FROM.RANGE", "contexts") => return "Independent array of complete prepared context handles; aligned one-for-one with observation timestamps; no header row",
+        ("QS.SNAPSHOT.FROM.RANGE", "timestamps") => return "Independent offset-aware RFC 3339 observation timestamp array aligned with contexts; duplicates and interior blanks are rejected",
+        ("QS.CONTEXT.QUOTE" | "QS.CONTEXT.ADD.QUOTE", "level") => return "Optional Mid, Bid or Ask; omitted or blank uses Mid; missing selected sides raise an error",
+
+        (name, "identifiers") if name.starts_with("QS.CONTEXT.ADD.") || name == "QS.QUOTES.FROM.RANGE" => return "Independent quote-identifier array: scalar, row, column or spilled array; may be nonadjacent to quote sides; all supplied arrays must have the same entry count; omit for automatic matching in CONTEXT.ADD.CURVE",
+        (name, "mid" | "bid" | "ask") if name.starts_with("QS.CONTEXT.ADD.") || name == "QS.QUOTES.FROM.RANGE" => return "Optional independent quote-side array; scalar, row, column or spill; blank omits this side; interior blanks preserve missing observations; supplied arrays match identifier count regardless of orientation",
+        ("QS.CONTEXT.ADD.FIXINGS" | "QS.FIXINGS.FROM.RANGE", "market_indices") => return "Independent market-index array, one entry per fixing date and value; scalar, row, column or spill; no implicit broadcasting",
+        ("QS.CONTEXT.ADD.FIXINGS" | "QS.FIXINGS.FROM.RANGE", "dates") => return "Independent ISO fixing-date array, aligned by position with indices and values; either row or column orientation",
+        ("QS.CONTEXT.ADD.FIXINGS" | "QS.FIXINGS.FROM.RANGE", "values") => return "Independent finite numeric fixing-value array, aligned with indices and dates; interior blanks are not dropped",
+        ("QS.CONTEXT.ADD.FX", "base_currencies" | "quote_currencies") => return "Independent currency array, one entry per FX rate; scalar, row, column or spill; supplied arrays must have equal entry counts",
+        ("QS.CONTEXT.ADD.FX", "rates") => return "Independent positive FX-rate array, one quote-currency amount per base unit; either row or column orientation",
+        ("QS.DISCOUNT.POLICY.FIXED.INCOME", "currency" | "market_index") => return "Independent currency or curve-index array; scalar, row, column or spill; one index per currency; arrays may have different orientations and locations",
+        ("QS.DISCOUNT.POLICY.FIXED.INCOME.FROM.MAPPINGS", "currencies" | "market_indices") => return "Independent currency or curve-index array; one index per currency; scalar, row, column or spill; no combined mapping table",
+        ("QS.PRICER.CREATE", "setting_names" | "setting_values") => return "Optional independent setting-name or typed setting-value array; omitted or blank uses native defaults; arrays align by position and may have different orientations",
+        ("QS.TRADE.LOAN" | "QS.INSTRUMENT.LOAN", "coupon_periods") => return "Optional independent whole-number segment-length array aligned with coupon_rates; blank final count fills maturity; only the final count may be blank",
+        ("QS.TRADE.LOAN" | "QS.INSTRUMENT.LOAN", "coupon_rates") => return "Optional independent coupon/spread array defining successive segments; row, column or spill; blank omits the schedule and uses the scalar rate",
+        ("QS.TRADE.LOAN" | "QS.INSTRUMENT.LOAN", "coupon_indices") => return "Optional independent index array aligned with coupon_rates; blank entries mean fixed coupons; omitted array makes all segments fixed",
+        ("QS.TRADE.LOAN" | "QS.INSTRUMENT.LOAN", "prepayment_dates") => return "Optional independent ISO date array aligned with prepayment_cprs; blank omits dated prepayments",
+        ("QS.TRADE.LOAN" | "QS.INSTRUMENT.LOAN", "prepayment_cprs") => return "Optional independent annual CPR array in [0,1], aligned with prepayment_dates; blank omits dated prepayments",
+        ("QS.CONTEXT.CREATE" | "QS.EVALUATE.FROM.SNAPSHOT", "quote_level") => return "Optional Mid, Bid or Ask; omitted or blank defaults to Mid; a missing selected side raises an error",
+        ("QS.EVALUATE.FROM.SNAPSHOT" | "QS.CONTEXT.FROM.SNAPSHOT", "fixings") => return "Optional prepared context or CONTEXT.ADD.FIXINGS input handle; omitted or blank uses an empty history; histories are not automatically filtered by publication vintage",
+        ("QS.CONTEXT.ADD.CURVE", "interpolator") => return "Optional Linear, LogLinear or CubicSpline; omitted or blank defaults to LogLinear",
+        ("QS.CONTEXT.ADD.VOL.SURFACE" | "QS.CONTEXT.ADD.VOL.CUBE", "volatility_type") => return "Required native volatility convention: Black or Normal, matching the quote identifiers",
+        ("QS.CONTEXT.ADD.VOL.SURFACE" | "QS.CONTEXT.ADD.VOL.CUBE", "smile_type") => return "Required smile coordinate convention: Strike or Delta",
+        ("QS.LOAN.SETTINGS", "credit_index") => return "Optional Credit:<entity> curve index; blank leaves borrower credit unset",
+        ("QS.LOAN.SETTINGS", "recovery") => return "Optional recovery fraction in [0,1]; blank keeps the native recovery default",
+        ("QS.LOAN.SETTINGS", "calendar") => return "Optional canonical calendar, such as TARGET; blank keeps the native calendar default",
+        ("QS.LOAN.SETTINGS", "business_day_convention") => return "Optional Following, ModifiedFollowing, Preceding, ModifiedPreceding or Unadjusted; blank keeps the native adjustment default",
+        ("QS.LOAN.SETTINGS", "floor") => return "Optional annual decimal floating coupon floor; blank leaves the floor absent; requires a floating loan",
+        ("QS.LOAN.SETTINGS", "cap") => return "Optional annual decimal floating coupon cap; blank leaves the cap absent; requires a floating loan",
+        (name, "context") if name.starts_with("QS.CONTEXT.ADD.") => return "The same root context cell from QS.CONTEXT.CREATE for every addition; never reference the previous addition",
+        ("QS.EVALUATE" | "QS.EVALUATE.RANGE" | "QS.EVALUATE.RESULTS", "pricer") => return "Optional explicit pricer handle; blank selects the product's native pricer and the context base discount curve; swaptions require an explicit configured pricer",
+        ("QS.EVALUATE" | "QS.EVALUATE.RANGE" | "QS.EVALUATE.FROM.SNAPSHOT", "request_name") => return "One request: Value (omitted or blank default), FairRate(index), YieldToMaturity, ModifiedDuration, ZSpread, OAS; QS.EVALUATE also returns Cashflows or Sensitivities tables",
+        ("QS.EVALUATE" | "QS.EVALUATE.RANGE", "instrument" | "instruments") => return "Contract or trade handle(s); contracts use Receive at the context date and contractual notional; use a trade for explicit side/date/quantity or bond anchor",
+        ("QS.EVALUATE.FROM.SNAPSHOT", "timestamps") => return "Offset-aware origination timestamps aligned one-for-one with instruments in row-major order; blanks are rejected; Previous selects the latest complete market at or before each timestamp",
+        ("QS.EVALUATE.FROM.SNAPSHOT", "store") => return "Historical market archive handle; each distinct matched snapshot is constructed once per batch, using its actual market reference date",
+        ("QS.CONTEXT.ADD.CURVE" | "QS.CONTEXT.ADD.ZERO.CURVE", "extrapolate") => return "Optional TRUE/FALSE, default FALSE; permits curve evaluation outside its calibrated pillars",
+        ("QS.EVALUATE.FROM.SNAPSHOT", "instruments") => return "Contract or trade handles aligned one-for-one with origination timestamps; blanks are rejected; contracts use Receive and contractual notional, while trades preserve position terms",
+        ("QS.TRADE.LOAN", "settings") | ("QS.INSTRUMENT.LOAN", "settings") => return "Optional QS.LOAN.SETTINGS handle with discoverable named parameters; blank keeps native defaults",
+        ("QS.LOAN.SETTINGS", "balloon_fraction") => return "Residual fraction of principal at maturity; required for Balloon repayment; blank leaves this setting unset",
+        ("QS.LOAN.SETTINGS", "amortization_rate") => return "Initial annual decimal rate used to construct a floating French amortization schedule; blank leaves this setting unset",
+        ("QS.LOAN.SETTINGS", "fixing_lag") => return "Nonnegative whole number of business days between fixing and reset; blank leaves this setting unset",
+        ("QS.LOAN.SETTINGS", "fixing_frequency") => return "Optional coupon reset frequency, for example Monthly, Quarterly, or Annual; blank leaves this setting unset",
+        ("QS.LOAN.SETTINGS", "index_tenor") => return "Optional floating index observation tenor, for example 3M or 12M; blank leaves this setting unset",
+        ("QS.LOAN.SETTINGS", "introductory_periods") => return "Positive whole number of initial fixed payments; supply introductory_rate too; requires a floating loan; blank leaves this setting unset",
+        ("QS.LOAN.SETTINGS", "introductory_rate") => return "Annual decimal fixed coupon for introductory_periods; requires a floating loan; blank leaves this setting unset",
+        ("QS.LOAN.SETTINGS", "annual_cpr") => return "Constant annual prepayment fraction in [0,1]; excludes refinancing parameters and dated CPRs; blank leaves this setting unset",
+        ("QS.LOAN.SETTINGS", "base_cpr") => return "Refinancing model base annual prepayment fraction; supply incentive_multiplier and maximum_cpr too; blank leaves this setting unset",
+        ("QS.LOAN.SETTINGS", "incentive_multiplier") => return "Nonnegative multiplier for the refinancing rate incentive; blank leaves this setting unset",
+        ("QS.LOAN.SETTINGS", "maximum_cpr") => return "Refinancing model maximum annual prepayment fraction in [0,1]; blank leaves this setting unset",
+        ("QS.LOAN.PRICER", "refinancing_index") => return "Optional benchmark curve for refinancing incentives; omitted or blank uses the loan pricer's native default",
+        ("QS.LOAN.PRICER", "rebuild_amortization") => return "Optional TRUE/FALSE, default FALSE; rebuild the contractual amortization schedule during fair-rate solving",
+        _ => {},
+    }
     if let Some(product) = function_name.strip_prefix("QS.INSTRUMENT.") {
+        let product = match product {
+            "FIXED.RATE.BOND" => "FIXED.BOND",
+            "FIXED.RATE.DEPOSIT" => "FIXED.DEPOSIT",
+            "FLOATING.RATE.NOTE" => "FLOATING.NOTE",
+            "RATE.FUTURES" => "RATE.FUTURE",
+            other => other,
+        };
         if argument_name == "discount_index" {
             return "Optional instrument discount index; blank leaves policy selection to the pricer; a fixed-income policy may prefer or override this index";
         }
@@ -22,18 +86,15 @@ fn describe_argument(function_name: &str, argument_name: &str) -> &'static str {
     }
     match (function_name, argument_name) {
         ("QS.PORTFOLIO.CREATE", "trades") => "Cell or range of live trade handles in row-major order; repeated handles count as repeated positions",
-        ("QS.PORTFOLIO.EVALUATE", "portfolio") => "Portfolio handle from QS.PORTFOLIO.CREATE",
-        ("QS.PORTFOLIO.EVALUATE", "pricers") => "One explicit pricer handle for all members, or a range with one pricer per member in trade-list order",
-        ("QS.PORTFOLIO.EVALUATE", "value_currency") => "Common monetary PV currency of the selected pricers, such as USD; blank is allowed for cashflow-only runs; required for returned Value or Sensitivities; not an FX conversion",
-        ("QS.PORTFOLIO.EVALUATE", "requests") => "Value, Cashflows and Sensitivities are aggregated; other measures remain absent; a measure omitted by any member remains absent for the portfolio",
-        ("QS.QUOTES.FROM.RANGE", "identifiers") => "Identifier row or column array aligned with the side arrays; single cells and dynamic arrays are supported; alternatively pass a combined Identifier/Mid[/Bid/Ask] table and omit all side arguments",
-        ("QS.QUOTES.FROM.RANGE", "mid") => "Optional Mid row or column array with one entry per identifier; blank cells preserve absent levels; omit only when using a combined table or other side arrays",
+        ("QS.EVALUATE.PORTFOLIO", "portfolio") => "Portfolio handle from QS.PORTFOLIO.CREATE",
+        ("QS.EVALUATE.PORTFOLIO", "pricers") => "One explicit pricer handle for all members, or a range with one pricer per member in trade-list order",
+        ("QS.EVALUATE.PORTFOLIO", "value_currency") => "Common monetary PV currency of the selected pricers, such as USD; blank is allowed for cashflow-only runs; required for returned Value or Sensitivities; not an FX conversion",
+        ("QS.EVALUATE.PORTFOLIO", "requests") => "Value, Cashflows and Sensitivities are aggregated; other measures remain absent; a measure omitted by any member remains absent for the portfolio",
         ("QS.QUOTES.FROM.RANGE", "bid") => "Optional Bid row or column array with one entry per identifier; omitted argument or blank cells preserve absent Bid levels",
         ("QS.QUOTES.FROM.RANGE", "ask") => "Optional Ask row or column array with one entry per identifier; omitted argument or blank cells preserve absent Ask levels",
-        ("QS.FIXINGS.FROM.RANGE", "data") => "Three columns: Market index, Date (ISO YYYY-MM-DD text), Value (finite number); optional matching headers and blank rows; duplicate index/date observations are rejected",
         (_, "all_workbooks") => "Optional TRUE counts live objects across all workbooks in this Excel instance; omitted or FALSE counts the calling workbook",
         (_, "trades") => "Text cell or range of native trade handles; values follow row-major input order; all trades use the supplied explicit pricer and context",
-        (_, "result") => "EvaluationResults handle from QS.EVALUATE or QS.PORTFOLIO.EVALUATE; the requested measure must have been returned by the evaluation",
+        (_, "result") => "EvaluationResults handle from QS.EVALUATE or QS.EVALUATE.PORTFOLIO; the requested measure must have been returned by the evaluation",
         (_, "target") | ("QS.REQUEST.FAIR.RATE", "index") => "Zero-based leg or loan coupon/spread segment index; omitted or blank target defaults to zero; single-quote products accept only zero",
         (_, "mappings") => "Two-column Currency/Index range selecting ordinary discount curves; optional headers; blank is allowed only when prefer_instrument_index is TRUE",
         (_, "prefer_instrument_index") => "Optional TRUE prefers the instrument's discount index; omitted or blank defaults to FALSE and uses currency/index mappings",
@@ -41,7 +102,6 @@ fn describe_argument(function_name: &str, argument_name: &str) -> &'static str {
         (_, "collateral_index") => "Ordinary market index for the native CSA collateral curve, such as SOFR",
         (_, "discount_policy") => "Native discount-policy handle; blank is supported only for RateFuturesPricer, which does not discount cashflows",
         (_, "implementation") => "Native pricer class name, e.g. LoanPricer, DiscountedCashflowPricer, BondPricer or FxForwardPricer",
-        ("QS.PRICER.CREATE", "settings") => "Optional two-column Setting/Value range; blank uses pricer defaults; LoanPricer accepts Refinancing benchmark index and Rebuild amortization for fair rate; Hull-White requires Alpha and Sigma",
         (_, "pricer") => "Pricer handle from QS.PRICER.CREATE; must support the native trade type",
         (_, "requests") => "Text cell or range of native request names: Value, Cashflows, Sensitivities, YieldToMaturity, ModifiedDuration, ZSpread, OAS or FairRate(index); QS.REQUEST.FAIR.RATE(index) builds the latter; one fair-rate target per evaluation",
         ("QS.TRADE.CREATE", "instrument") => "Native contract handle from QS.INSTRUMENT.*; trade direction, quantity and bond pricing anchor are defined here",
@@ -56,13 +116,10 @@ fn describe_argument(function_name: &str, argument_name: &str) -> &'static str {
         (_, "headers") => "Optional TRUE includes table headers (default); FALSE removes the first header row before transposing; omitted or blank defaults to TRUE",
         ("QS.TRADE.LOAN", "rate") => "Annual decimal fixed coupon when market_index is blank; otherwise the floating spread, e.g. 0.01 for 100 bp",
         ("QS.TRADE.LOAN", "market_index") => "Optional floating projection index such as EURIBOR12m; omitted or blank creates a fixed-rate loan",
-        ("QS.TRADE.LOAN", "repayment") => "Optional French (default), Bullet, or Balloon; omitted or blank defaults to French; Balloon requires Balloon fraction in the settings range",
+        ("QS.TRADE.LOAN", "repayment") => "Optional French (default), Bullet, or Balloon; omitted or blank defaults to French; Balloon requires balloon_fraction in QS.LOAN.SETTINGS",
         ("QS.TRADE.LOAN", "payment_frequency") => "Optional contractual payment frequency; omitted or blank defaults to Monthly; floating resets independently use index metadata unless settings override it",
         ("QS.TRADE.LOAN", "day_counter") => "Optional interest and amortization day count; omitted or blank defaults to Actual365",
         ("QS.TRADE.LOAN", "side") => "Optional Receive/Buy for lender receipts (default) or Pay/Sell for opposite signs; omitted or blank defaults to Receive",
-        ("QS.TRADE.LOAN", "settings") => "Optional two-column Setting/Value range with numeric, text or TRUE/FALSE cells; e.g. Balloon fraction, Annual CPR, Credit index; blank uses defaults; JSON text is rejected",
-        ("QS.TRADE.LOAN", "coupons") => "Optional three-column Periods/Rate or spread/Market index range; blank index means fixed; omit the final period count to fill maturity; replaces rate/index inputs; blank uses the uniform or introductory schedule",
-        ("QS.TRADE.LOAN", "prepayments") => "Optional two-column Date/CPR range for dated annual prepayment rates; dates are ISO text; headers and blank rows are optional; blank uses no dated curve; cannot combine with another prepayment model",
         ("QS.CREDIT.CURVE.CONFIGS.ADD", "configurations") => "CreditCurveConfigurations handle from QS.CREDIT.CURVE.CONFIGS.CREATE or an earlier ADD; replaces the same credit index or appends a new one",
         ("QS.CREDIT.CURVE.CONFIGS.ADD", "market_index") => "Borrower credit index text, for example Credit:BORROWER",
         ("QS.CREDIT.CURVE.CONFIGS.ADD", "quotes") => "Required worksheet range of CDS quote identifiers already in the quote store; blank cells are skipped",
@@ -77,12 +134,12 @@ fn describe_argument(function_name: &str, argument_name: &str) -> &'static str {
         (name, "enable_extrapolation") if name.starts_with("QS.INTERPOLATE") => "Optional TRUE/FALSE or finite numeric flag (nonzero is TRUE); omitted or blank defaults to FALSE; TRUE extends the native end interval (linear, log-linear, or cubic polynomial)",
         (name, "extrapolation") if name.starts_with("QS.INTERPOLATE") => "Optional Reject or Flat; omitted, blank, or empty text defaults to Reject; Flat clamps each axis within each native slice, including singleton axes",
         (_, "timestamp") => "Required offset-aware RFC 3339 text, e.g. 2026-01-15T16:00:00Z or 2026-01-15T17:00:00+01:00; normalized to UTC; date-only and naive timestamps are rejected",
-        (_, "snapshot") => "Current MarketSnapshot handle from QS.SNAPSHOT.FROM.CONTEXT or QS.SNAPSHOTS.SELECT",
+        (_, "snapshot") => "Current MarketSnapshot handle from QS.SNAPSHOT.FROM.CONTEXT or QS.SNAPSHOT.SELECT",
         (_, "snapshots") => "Range of current MarketSnapshot handles; blank range cells are ignored; an omitted or blank scalar creates an empty archive; duplicate UTC timestamps are rejected",
         (_, "selector") => "Current SnapshotSelector handle from QS.SNAPSHOT.SELECTOR; selects one complete market, without rolling its valuation date",
         (_, "rule") => "Optional Exact, Previous, or Closest matching rule; omitted, blank, or empty text defaults to Previous; Closest may select future data, with ties preferring the earlier snapshot",
         ("QS.SNAPSHOT.SELECTOR", "quote_level") => "Optional Mid, Bid, or Ask; omitted, blank, or empty text defaults to Mid; missing quote sides raise errors; explicit zero rates and FX spots are side-independent",
-        ("QS.SNAPSHOTS.SELECT" | "QS.SNAPSHOTS.TIMESTAMPS" | "QS.SNAPSHOTS.TO.JSON" | "QS.CONTEXT.FROM.SNAPSHOT", "store") => "Current MarketSnapshotStore handle from QS.SNAPSHOTS.CREATE or QS.SNAPSHOTS.FROM.JSON",
+        ("QS.SNAPSHOT.SELECT" | "QS.SNAPSHOT.TIMESTAMPS" | "QS.SNAPSHOT.TO.JSON" | "QS.CONTEXT.FROM.SNAPSHOT", "store") => "Current MarketSnapshotStore handle from QS.SNAPSHOT.ARCHIVE or QS.SNAPSHOT.FROM.JSON",
         (_, "pillars") => "Required ordered range of ISO date text (YYYY-MM-DD) or tenors (0D, 1Y, 10Y); each pillar must have one numeric rate; dates must resolve in increasing order",
         (_, "rates") => "Required numeric range of finite annual decimal zero rates, one per pillar (0.04 means 4%); blanks and text are rejected",
         (_, "spread_index") => "Market index of the configured spread curve; the composite multiplies its discount factors by the base curve's discount factors",
@@ -110,13 +167,13 @@ fn describe_argument(function_name: &str, argument_name: &str) -> &'static str {
         ("QS.CURVE.FORWARD" | "QS.CURVE.TABLE" | "QS.CURVE.ZERO.RATE", "frequency") => {
             "Frequency for the rate convention; omitted or blank input defaults to Annual"
         }
-        ("QS.CONTEXT.CREATE", "pricer_configurations") => {
+        ("QS.CONTEXT.FROM.COMPONENTS", "pricer_configurations") => {
             "Optional PricerConfigurations handle from QS.PRICER.CONFIGS.FROM.JSON; omitted or blank means an empty configuration collection (no explicit pricer/model selections)"
         }
-        ("QS.CONTEXT.CREATE", "scenarios") => {
+        ("QS.CONTEXT.FROM.COMPONENTS", "scenarios") => {
             "Optional Scenarios handle from QS.SCENARIOS.FROM.JSON; blank applies no shocks; supplied scenario shocks are combined after initialization"
         }
-        ("QS.CONTEXT.CREATE", "quote_level") => {
+        ("QS.CONTEXT.FROM.COMPONENTS", "quote_level") => {
             "Construction/calibration quote level: Mid, Bid, or Ask; omitted, blank, or empty text defaults to Mid"
         }
         ("QS.TRADE.EUROPEAN.SWAPTION", "calendar") => {
@@ -193,7 +250,7 @@ fn describe_argument(function_name: &str, argument_name: &str) -> &'static str {
         }
         (_, "scenarios") => "Optional scenario handle from QS.SCENARIOS.FROM.JSON; blank is allowed",
         (_, "elements") => "Current ConstructedElementStore handle",
-        (_, "context") => "Initialized PricingContext handle returned by QS.CONTEXT.CREATE",
+        (_, "context") => "Context handle from QS.CONTEXT.CREATE, QS.CONTEXT.PREPARE or QS.CONTEXT.FROM.SNAPSHOT; direct root pricing also requires the complete CONTEXT.ADD input array",
         (_, "pricing_anchor") => "Bond trade anchor: CleanPrice, DirtyPrice, or ZSpread",
         (_, "anchor_value") => "Bond price per quote units or decimal spread, according to pricing_anchor",
         (_, "trade") => "Trade handle returned by a QS.TRADE.* function",
@@ -276,12 +333,27 @@ fn describe_argument(function_name: &str, argument_name: &str) -> &'static str {
 }
 
 pub fn result_help(function_name: &str) -> Option<(&'static str, &'static str)> {
+    match function_name {
+        "QS.CONTEXT.QUOTE" => return Some(("Selected quote level in its native units; missing sides do not fall back.", "#VALUE! for stale contexts, absent identifiers or quote sides, or invalid levels.")),
+        "QS.CONTEXT.FIXING" => return Some(("Exact historical fixing in the index's native units, with no unit conversion, interpolation or vintage filtering.", "#VALUE! for stale contexts, invalid index/date or absent observations.")),
+        "QS.CONTEXT.PREPARE" => return Some(("Complete reusable PricingContext handle composed from its root and full input array.", "#VALUE! for stale, foreign or duplicate inputs, or market construction failure.")),
+        "QS.SNAPSHOT.FROM.RANGE" => return Some(("MarketSnapshotStore archive capturing the prepared contexts at aligned observation timestamps; removing entries rebuilds the archive.", "#VALUE! for unequal array lengths, blanks, stale contexts, invalid or duplicate timestamps or runtime objects that cannot be captured.")),
+        "QS.EVALUATE.RESULTS" => return Some(("EvaluationResults handle containing the requested native measures; read with QS.RESULT functions.", "#VALUE! for stale handles, duplicate or foreign context inputs, conflicting policy/pricer, unsupported requests or pricing errors.")),
+
+        "QS.LOAN.PRICER" => return Some(("Pricer handle with the selected currency discount curve and explicit loan pricing settings; pass it to QS.EVALUATE or QS.EVALUATE.FROM.SNAPSHOT.", "#VALUE! for invalid discount mapping, refinancing index, amortization flag or registry failure.")),
+        "QS.CONTEXT.CREATE" => return Some(("Root context handle containing date, base currency/index and quote side. Supply independent CONTEXT.ADD cells to QS.EVALUATE or QS.EVALUATE.RANGE through their inputs range.", "#VALUE! for invalid name, date, currency, index or quote side.")),
+        "QS.EVALUATE" => return Some(("Requested scalar or spilled cashflow/sensitivity table directly, without an EvaluationResults handle. Prepared curves are reused while the complete input range remains unchanged.", "#VALUE! for stale, wrong-context or duplicate inputs, missing market data, unsupported request/product or pricing failure; #N/A for an absent table result.")),
+        "QS.EVALUATE.RANGE" | "QS.EVALUATE.FROM.SNAPSHOT" => return Some(("One scalar per instrument in input order, with no stored evaluation objects. Historical batches reuse each distinct selected market and preserve its actual valuation date.", "#VALUE! for invalid or misaligned inputs, blank historical timestamps/instruments, stale handles, unsupported scalar requests, missing markets or pricing failure. Historical errors identify the input row.")),
+        "QS.LOAN.SETTINGS" => return Some(("LoanSettings handle passed to QS.INSTRUMENT.LOAN or QS.TRADE.LOAN. Named arguments appear in IntelliSense; omitted values keep native defaults.", "#VALUE! for invalid settings or conflicting prepayment models; repayment-specific validation occurs when the loan is built.")),
+        name if name.starts_with("QS.CONTEXT.ADD.") => return Some(("Independent context input handle owned by this worksheet cell. All additions reference the same root; pass the entire input range to pricing. Changing or removing an input changes only calculations that include it.", "#VALUE! for invalid root context, malformed arrays or conventions, invalid configuration, duplicate observations or registry errors. Market-dependent validation runs at pricing.")),
+        _ => {},
+    }
     if function_name.starts_with("QS.INSTRUMENT.") {
-        return Some(("Revisioned text handle to a native instrument contract. Create a separate position with QS.TRADE.CREATE and choose its pricer and discount policy explicitly.", "#VALUE! for invalid contract terms, missing dependencies, native builder errors or registry failures."));
+        return Some(("Native instrument contract handle. Pass it directly to QS.EVALUATE, or create a position with QS.TRADE.CREATE for explicit side, date, quantity or bond anchor.", "#VALUE! for invalid contract terms, missing dependencies, native builder errors or registry failures."));
     }
     let object = match function_name {
         "QS.PORTFOLIO.CREATE" => Some("Revisioned Portfolio handle retaining the ordered list of live trade handles."),
-        "QS.PORTFOLIO.EVALUATE" => Some("Standard EvaluationResults handle; cashflow compression preserves coupon types, fixing indices, accrual dates, conventions and pay/receive direction, with notional-weighted compatible rates or spreads. Unsupported or incomplete measures remain absent."),
+        "QS.EVALUATE.PORTFOLIO" => Some("Standard EvaluationResults handle; cashflow compression preserves coupon types, fixing indices, accrual dates, conventions and pay/receive direction, with notional-weighted compatible rates or spreads. Unsupported or incomplete measures remain absent."),
         "QS.RESULT.COUPONS" => Some("Eighteen-column cashflow spill including original coupon type, fixing and contractual indices, accrual dates, signed notional, weighted rate/spread, day count and overnight/payoff conventions. Optional transpose and headers control layout."),
         "QS.RESULT.CASHFLOW.SUMMARY" | "QS.PORTFOLIO.RESULT.CASHFLOWS" => Some("Six-column cashflow spill: Payment date, Currency, Interest, Capital, Other, Total. Signed undiscounted payments, with optional transpose and headers; no accrual allocation or FX conversion."),
         "QS.TRADE.CREATE" => Some("Revisioned text handle to a native Trade on the supplied instrument, with explicit position direction, quantity and any bond pricing anchor."),
@@ -291,7 +363,7 @@ pub fn result_help(function_name: &str) -> Option<(&'static str, &'static str)> 
         "QS.EVALUATE.VALUES" => Some("A numeric PV list, one per trade in input order; vertical by default or transposed when TRUE; no header row or EvaluationResults objects.") ,
         "QS.EVALUATE" => Some("Revisioned EvaluationResults handle containing the requested native measures; each evaluation selects at most one fair-rate target."),
         "QS.REQUEST.FAIR.RATE" => Some("Text request FairRate(index) selecting a zero-based swap leg or loan rate segment; pass to QS.EVALUATE."),
-        "QS.RESULT.CASHFLOWS" => Some("Nine-column cashflow spill: Payment date, Type, Amount, Fixing, Accrual, Currency, Floor, Cap, Leg. Optional transpose and headers control layout."),
+        "QS.RESULT.CASHFLOWS" => Some("Signed undiscounted amounts, positive for receipts and negative for payments. Nine-column cashflow spill: Payment date, Type, Amount, Fixing, Accrual, Currency, Floor, Cap, Leg. Optional transpose and headers control layout."),
         "QS.RESULT.SENSITIVITIES" => Some("Two-column Risk factor/Sensitivity spill of raw value derivatives. Optional transpose and headers control layout."),
         name if name.starts_with("QS.RESULT.") => Some("Scalar native measure from stored evaluation results. Interest rates and spreads are decimals; fair rate corresponds to the target selected in the request."),
         _ => None,
@@ -306,14 +378,14 @@ pub fn result_help(function_name: &str) -> Option<(&'static str, &'static str)> 
         "QS.DATETIME.PARSE" => "Offset-aware RFC 3339 timestamp text normalized to UTC, preserving nanoseconds; not an Excel serial datetime.",
         "QS.DATETIME.DATE" => "ISO date text for the timestamp's UTC calendar day; this is not a market business or valuation date.",
         "QS.SNAPSHOT.FROM.CONTEXT" => "Revisioned MarketSnapshot handle capturing serializable base observations and configurations. Fixings are excluded. Supplied runtime elements and materialized scenarios cannot be archived; use construction configurations.",
-        "QS.SNAPSHOTS.CREATE" => "Revisioned MarketSnapshotStore handle rebuilt from all supplied snapshot handles. Removed rows disappear; duplicate UTC instants are rejected. Omitted or blank input creates an empty archive.",
+        "QS.SNAPSHOT.ARCHIVE" => "Revisioned MarketSnapshotStore handle rebuilt from all supplied snapshot handles. Removed rows disappear; duplicate UTC instants are rejected. Omitted or blank input creates an empty archive.",
         "QS.SNAPSHOT.SELECTOR" => "Revisioned SnapshotSelector handle. Defaults to Previous and Mid. Closest may choose future data and prefers the earlier snapshot on ties. Selection never rolls the market valuation date.",
-        "QS.SNAPSHOTS.SELECT" => "Revisioned MarketSnapshot handle for one coherent matched market. All curves, FX, volatility, and model configurations come from that single snapshot.",
+        "QS.SNAPSHOT.SELECT" => "Revisioned MarketSnapshot handle for one coherent matched market. All curves, FX, volatility, and model configurations come from that single snapshot.",
         "QS.SNAPSHOT.TIMESTAMP" => "Actual matched observation timestamp as UTC RFC 3339 text, which may differ from the requested timestamp.",
         "QS.SNAPSHOT.REFERENCE.DATE" => "Market business reference date as ISO text; contexts selected from this snapshot use this valuation date.",
-        "QS.SNAPSHOTS.TIMESTAMPS" => "One-column spill of observation timestamps in ascending UTC order; no header row; an empty archive returns a blank cell.",
-        "QS.SNAPSHOTS.FROM.JSON" => "Revisioned MarketSnapshotStore handle restored from the native JSON snapshot array shared with Python and Rust. Duplicate observation instants are rejected.",
-        "QS.SNAPSHOTS.TO.JSON" => "Native snapshot-array JSON text for Python/Rust interoperability. Includes construction configurations and explicit zero-rate pillars, excluding fixing histories, runtime curves, and AD state.",
+        "QS.SNAPSHOT.TIMESTAMPS" => "One-column spill of observation timestamps in ascending UTC order; no header row; an empty archive returns a blank cell.",
+        "QS.SNAPSHOT.FROM.JSON" => "Revisioned MarketSnapshotStore handle restored from the native JSON snapshot array shared with Python and Rust. Duplicate observation instants are rejected.",
+        "QS.SNAPSHOT.TO.JSON" => "Native snapshot-array JSON text for Python/Rust interoperability. Includes construction configurations and explicit zero-rate pillars, excluding fixing histories, runtime curves, and AD state.",
         "QS.CONTEXT.FROM.SNAPSHOT" => "Revisioned initialized PricingContext handle built from the matched complete market and requested quote side. Its valuation date is the matched market business date. Fixings are supplied separately without publication-vintage filtering.",
         "QS.CONTEXT.EVALUATION.DATE" => "Valuation date as ISO text, from the context quote store reference date.",
         "QS.CONTEXT.SNAPSHOT.TIMESTAMP" => "Actual matched observation timestamp as UTC RFC 3339 text; empty text for contexts without snapshot provenance.",
@@ -346,16 +418,16 @@ pub fn result_help(function_name: &str) -> Option<(&'static str, &'static str)> 
         "QS.CURVE.DISCOUNT" => "Dimensionless discount factor at the requested date, as a numeric scalar.",
         "QS.CURVE.FORWARD" => "Forward interest rate between the two dates as a decimal scalar (0.03 means 3%), using the curve's day count and requested compounding/frequency.",
         "QS.CURVE.TABLE" => "Five-column spill with headers Pillar, Date, Discount factor, Zero rate, Forward from prior node. Dates are ISO text, discount factors dimensionless, and rates decimal. The reference-date zero rate and first-node forward are blank.",
-        "QS.ELEMENTS.CREATE" => "Revisioned text handle to an initially empty ConstructedElementStore, ready for QS.CURVE.ADD or QS.CONTEXT.CREATE.",
+        "QS.ELEMENTS.CREATE" => "Revisioned text handle to an initially empty ConstructedElementStore, ready for QS.CURVE.ADD or QS.CONTEXT.FROM.COMPONENTS.",
         "QS.CURVE.ADD" => "Current revisioned text handle to the ConstructedElementStore after adding or replacing the discount curve by market index; unchanged inputs reuse its revision.",
         "QS.QUOTES.CREATE" => "Revisioned text handle to an empty QuoteStore with the supplied reference date.",
         "QS.QUOTES.FROM.JSON" => "Revisioned text handle to a QuoteStore populated from native QuoteStoreRecords JSON.",
-        "QS.QUOTES.FROM.RANGE" => "Revisioned text handle to a QuoteStore populated from the full worksheet range; changing or removing rows replaces prior inputs; unchanged inputs reuse the handle.",
+        "QS.QUOTES.FROM.RANGE" => "Revisioned text handle to a QuoteStore populated from independent field arrays; changing or removing entries replaces prior inputs; unchanged inputs reuse the handle.",
         "QS.QUOTES.SET" => "Current revisioned text handle to the QuoteStore after adding or replacing the quote; unchanged inputs reuse its revision.",
         "QS.QUOTES.GET" => "Numeric Mid, Bid, or Ask quote level in the quote's native units; no percentage or basis-point conversion is applied.",
         "QS.FIXINGS.CREATE" => "Revisioned text handle to an initially empty FixingStore.",
         "QS.FIXINGS.FROM.JSON" => "Revisioned text handle to a FixingStore populated from its native JSON representation.",
-        "QS.FIXINGS.FROM.RANGE" => "Revisioned text handle to a FixingStore populated from the full worksheet range; changing or removing rows replaces prior inputs; unchanged inputs reuse the handle.",
+        "QS.FIXINGS.FROM.RANGE" => "Revisioned text handle to a FixingStore populated from independent field arrays; changing or removing entries replaces prior inputs; unchanged inputs reuse the handle.",
         "QS.FIXINGS.SET" => "Current revisioned text handle to the FixingStore after adding or replacing the index/date fixing; unchanged inputs reuse its revision.",
         "QS.FIXINGS.GET" => "Numeric stored historical fixing for the index/date in the index's native units; no unit conversion, interpolation, forecasting, or missing-observation fallback is applied.",
         "QS.FX.CREATE" => "Revisioned text handle to an initially empty FxStore.",
@@ -363,17 +435,17 @@ pub fn result_help(function_name: &str) -> Option<(&'static str, &'static str)> 
         "QS.FX.SET" => "Current revisioned text handle to the FxStore after adding or replacing the currency-pair rate; unchanged inputs reuse its revision.",
         "QS.FX.GET" => "Numeric FX rate in quote-currency units per base-currency unit, using a direct, inverse, or triangulated rate.",
         "QS.CURVE.CONFIGS.CREATE" => "Revisioned text handle to an initially empty CurveConfigurations collection; no curves are built yet.",
-        "QS.CURVE.CONFIGS.ADD" => "Current revisioned text handle to CurveConfigurations after adding or replacing the market index's bootstrap configuration; curves are built by QS.CONTEXT.CREATE.",
+        "QS.CURVE.CONFIGS.ADD" => "Current revisioned text handle to CurveConfigurations after adding or replacing the market index's bootstrap configuration; curves are built by QS.CONTEXT.FROM.COMPONENTS.",
         "QS.CURVE.CONFIGS.FROM.JSON" => "Revisioned text handle to a collection of CurveConfiguration values parsed from JSON; no curves are built yet.",
         "QS.CREDIT.CURVE.CONFIGS.FROM.JSON" => "Revisioned text handle to a collection of CreditCurveConfiguration values parsed from JSON; no credit curves are built yet.",
         "QS.CREDIT.CURVE.CONFIGS.CREATE" => "Revisioned text handle to an empty credit-curve configuration collection. Use QS.CREDIT.CURVE.CONFIGS.ADD with worksheet arguments and a CDS quote range.",
-        "QS.CREDIT.CURVE.CONFIGS.ADD" => "Revisioned text handle to credit-curve configurations with the supplied credit index replaced or appended. Build curves by supplying the returned handle to QS.CONTEXT.CREATE.",
+        "QS.CREDIT.CURVE.CONFIGS.ADD" => "Revisioned text handle to credit-curve configurations with the supplied credit index replaced or appended. Build curves by supplying the returned handle to QS.CONTEXT.FROM.COMPONENTS.",
         "QS.VOL.SURFACE.CONFIGS.FROM.JSON" => "Revisioned text handle to a collection of VolatilitySurfaceConfiguration values parsed from JSON; no surfaces are built yet.",
         "QS.VOL.CUBE.CONFIGS.FROM.JSON" => "Revisioned text handle to a collection of VolatilityCubeConfiguration values parsed from JSON; no cubes are built yet.",
         "QS.PRICER.CONFIGS.FROM.JSON" => "Revisioned text handle to a collection of PricerConfiguration values selecting instrument pricers and typed model assignments; not a PricingContext handle.",
         "QS.SIMULATION.CONFIGS.FROM.JSON" => "Revisioned text handle to a collection of SimulationConfiguration values parsed from JSON; no paths are generated yet.",
         "QS.SCENARIOS.FROM.JSON" => "Revisioned text handle to a collection of Scenario definitions parsed from JSON; shocks are not applied until context construction.",
-        "QS.CONTEXT.CREATE" => "Revisioned text handle to an initialized PricingContext containing the supplied market data and constructed/calibrated elements, with any supplied scenario shocks applied to its worksheet snapshot.",
+        "QS.CONTEXT.FROM.COMPONENTS" => "Revisioned text handle to an initialized PricingContext containing the supplied market data and constructed/calibrated elements, with any supplied scenario shocks applied to its worksheet snapshot.",
         "QS.CONTEXT.CURVES" => "One-column spill of sorted discount-curve market-index text from the context, without a header row; these are index names, not curve handles.",
         "QS.CONTEXT.VOL.SURFACES" => "One-column spill of sorted volatility-surface market-index text from the context, without a header row; not surface handles.",
         "QS.CONTEXT.VOL.CUBES" => "One-column spill of sorted volatility-cube market-index text from the context, without a header row; not cube handles.",
@@ -419,14 +491,14 @@ pub fn result_help(function_name: &str) -> Option<(&'static str, &'static str)> 
         "QS.DATETIME.PARSE" => "#VALUE! for invalid, naive, or date-only input; an explicit RFC 3339 timezone offset is required.",
         "QS.DATETIME.DATE" => "#VALUE! for invalid, naive, or date-only input; an explicit RFC 3339 timezone offset is required.",
         "QS.SNAPSHOT.FROM.CONTEXT" => "#VALUE! for invalid timestamps, stale/wrong-type context handles, supplied runtime market elements that cannot be serialized, or registry failures.",
-        "QS.SNAPSHOTS.CREATE" => "#VALUE! for nontext snapshot inputs, stale/wrong-type snapshot handles, duplicate UTC timestamps, or registry failures.",
+        "QS.SNAPSHOT.ARCHIVE" => "#VALUE! for nontext snapshot inputs, stale/wrong-type snapshot handles, duplicate UTC timestamps, or registry failures.",
         "QS.SNAPSHOT.SELECTOR" => "#VALUE! for invalid or naive timestamps, unknown matching rules or quote levels, or registry failures.",
-        "QS.SNAPSHOTS.SELECT" => "#VALUE! for stale/wrong-type archive or selector handles, no snapshot satisfying the rule, or registry failures.",
+        "QS.SNAPSHOT.SELECT" => "#VALUE! for stale/wrong-type archive or selector handles, no snapshot satisfying the rule, or registry failures.",
         "QS.SNAPSHOT.TIMESTAMP" => "#VALUE! for a malformed, missing, stale, or wrong-type MarketSnapshot handle.",
         "QS.SNAPSHOT.REFERENCE.DATE" => "#VALUE! for a malformed, missing, stale, or wrong-type MarketSnapshot handle.",
-        "QS.SNAPSHOTS.TIMESTAMPS" => "#VALUE! for a malformed, missing, stale, or wrong-type MarketSnapshotStore handle.",
-        "QS.SNAPSHOTS.FROM.JSON" => "#VALUE! for invalid native snapshot JSON, duplicate UTC instants, or registry failures.",
-        "QS.SNAPSHOTS.TO.JSON" => "#VALUE! for malformed, missing, stale, or wrong-type archive handles, serialization failures, or JSON exceeding Excel's 32767 UTF-16-unit cell limit.",
+        "QS.SNAPSHOT.TIMESTAMPS" => "#VALUE! for a malformed, missing, stale, or wrong-type MarketSnapshotStore handle.",
+        "QS.SNAPSHOT.FROM.JSON" => "#VALUE! for invalid native snapshot JSON, duplicate UTC instants, or registry failures.",
+        "QS.SNAPSHOT.TO.JSON" => "#VALUE! for malformed, missing, stale, or wrong-type archive handles, serialization failures, or JSON exceeding Excel's 32767 UTF-16-unit cell limit.",
         "QS.CONTEXT.FROM.SNAPSHOT" => "#VALUE! for stale/wrong-type dependencies, no matching snapshot, missing consumed quote sides, market construction/calibration failures, or registry failures. Missing Bid/Ask inputs never fall back to Mid.",
         "QS.CONTEXT.EVALUATION.DATE" => "#VALUE! for a malformed, missing, stale, or wrong-type PricingContext handle.",
         "QS.CONTEXT.SNAPSHOT.TIMESTAMP" => "#VALUE! for a malformed, missing, stale, or wrong-type PricingContext handle.",
@@ -464,7 +536,7 @@ pub fn result_help(function_name: &str) -> Option<(&'static str, &'static str)> 
         "QS.CURVE.ADD" => "#VALUE! for malformed, missing, or wrong-type handles, a stale curve handle, or a registry update failure.",
         "QS.QUOTES.CREATE" => "#VALUE! for an invalid reference date or registry/fingerprint failure.",
         "QS.QUOTES.FROM.JSON" => "#VALUE! for invalid QuoteStoreRecords JSON, quote-store conversion failures, or registry failures.",
-        "QS.QUOTES.FROM.RANGE" => "#VALUE! for invalid reference date, nonvector or differently sized side arrays, invalid table dimensions, quote identifiers, nonnumeric quote levels, duplicate identifiers, or registry failures.",
+        "QS.QUOTES.FROM.RANGE" => "#VALUE! for invalid reference date, nonvector or differently sized side arrays, invalid array dimensions, quote identifiers, nonnumeric quote levels, duplicate identifiers, or registry failures.",
         "QS.QUOTES.SET" => "#VALUE! for an invalid quote identifier, malformed/missing/wrong-type store handle, or registry/fingerprint failure.",
         "QS.QUOTES.GET" => "#N/A for an invalid/stale/wrong-type store handle, missing quote or requested level, or a level other than Mid, Bid, or Ask.",
         "QS.FIXINGS.FROM.JSON" => "#VALUE! for invalid native FixingStore JSON or registry failures.",
@@ -475,7 +547,7 @@ pub fn result_help(function_name: &str) -> Option<(&'static str, &'static str)> 
         "QS.FX.SET" => "#VALUE! for invalid currency codes, malformed/missing/wrong-type store handles, or registry/fingerprint failures.",
         "QS.FX.GET" => "#VALUE! for currency parse failures; #N/A for invalid/stale/wrong-type store handles or an unavailable direct, inverse, or triangulated FX rate.",
         "QS.CURVE.CONFIGS.ADD" => "#VALUE! for invalid index/day-count/interpolator inputs, a blank or non-boolean/nonnumeric extrapolation flag, a missing/empty or nontext identifier range, or invalid configuration handles/registry updates.",
-        "QS.CONTEXT.CREATE" => "#VALUE! for invalid quote level, base currency/index, malformed/stale/wrong-type component handles, initialization/bootstrap/calibration failures, scenario application failures, or registry failures. Blank optional handles retain empty defaults, not automatic configurations.",
+        "QS.CONTEXT.FROM.COMPONENTS" => "#VALUE! for invalid quote level, base currency/index, malformed/stale/wrong-type component handles, initialization/bootstrap/calibration failures, scenario application failures, or registry failures. Blank optional handles retain empty defaults, not automatic configurations.",
         "QS.CONTEXT.CURVES" | "QS.CONTEXT.VOL.SURFACES" | "QS.CONTEXT.VOL.CUBES" | "QS.CONTEXT.SIMULATIONS" =>
             "#VALUE! for an invalid, missing, stale, or wrong-type PricingContext handle.",
         "QS.VOL.SURFACE" => "#VALUE! for invalid index/expiry or context handles, a surface not constructed for the index, or surface lookup/interpolation/range failures.",
@@ -491,7 +563,7 @@ pub fn result_help(function_name: &str) -> Option<(&'static str, &'static str)> 
         "QS.TRADE.CAPLET.FLOORLET" => "#VALUE! for invalid date/index/currency/Caplet-Floorlet direction/side text or registry/fingerprint failures.",
         "QS.TRADE.FX.FORWARD" => "#VALUE! for invalid trade/delivery dates, currency codes, side, deliverable FX-forward builder failures, or registry/fingerprint failures.",
         "QS.TRADE.SWAP" => "#VALUE! for invalid trade/start/maturity dates, currency/index, side, day count, compounding, or rate/leg frequencies, or swap-builder/registry failures.",
-        "QS.TRADE.LOAN" => "#VALUE! for invalid contract terms, nonpositive principal, malformed/unknown JSON options, unsupported repayment, missing balloon_fraction, floating amortization without amortization_rate, invalid reset grids, or registry failures. Pricing errors propagate through the valuation functions.",
+        "QS.TRADE.LOAN" => "#VALUE! for invalid contract terms, nonpositive principal, malformed settings handles or mismatched schedule arrays, unsupported repayment, missing balloon_fraction, floating amortization without amortization_rate, invalid reset grids, or registry failures. Pricing errors propagate through the valuation functions.",
         "QS.TRADE.BASIS.SWAP" => "#VALUE! for invalid trade/start/maturity dates, currency, pay/receive indices or frequencies, side, or basis-swap-builder/registry failures.",
         "QS.TRADE.XCCY.FLOAT.FLOAT" => "#VALUE! for invalid trade/start/maturity dates, domestic/foreign currencies, indices or frequencies, side, or cross-currency-swap-builder/registry failures.",
         "QS.TRADE.XCCY.FIX.FLOAT" => "#VALUE! for invalid trade/start/maturity dates, domestic/foreign currencies, foreign index, rate/leg conventions or frequencies, side, or cross-currency-swap-builder/registry failures.",
@@ -545,7 +617,7 @@ mod tests {
         assert!(help[0].contains("blank is rejected"));
         assert!(help[1].contains("at least one identifier is required"));
         let help = argument_help(
-            "QS.CONTEXT.CREATE",
+            "QS.CONTEXT.FROM.COMPONENTS",
             "pricer_configurations,quote_level,scenarios",
         );
         assert!(help[0].contains("empty configuration collection"));

@@ -109,17 +109,16 @@ class Workbook:
             return float(expression) if expression else None
         function = expression.split("(", 1)[0].removeprefix("_xll.")
         args = [self.market_input(argument) for argument in arguments(expression)]
-        if function == "QS.QUOTES.CREATE":
-            return {"reference_date": args[1], "quotes": []}
-        if function == "QS.QUOTES.SET":
-            return args[0] | {"quotes": args[0]["quotes"] + [dict(zip(("identifier", "mid", "bid", "ask"), args[1:]))]}
-        if function == "QS.CURVE.CONFIGS.CREATE":
-            return []
-        if function == "QS.CURVE.CONFIGS.ADD":
-            return args[0] + [dict(zip(("market_index", "day_counter", "interpolator", "enable_extrapolation", "quotes"), args[1:]))]
         if function == "QS.CONTEXT.CREATE":
-            return {"name": args[0], "quotes": args[1], "curves": args[2],
-                    "base_currency": args[12], "base_index": args[13], "quote_level": args[14]}
+            return {"name": args[0], "quotes": {"reference_date": args[1], "quotes": []}, "curves": [],
+                    "base_currency": args[2], "base_index": args[3], "quote_level": args[4] if len(args) > 4 else "Mid"}
+        if function == "QS.CONTEXT.ADD.CURVE":
+            identifiers, mid = args[2:4]
+            quotes = [dict(identifier=identifier, mid=level, bid=None, ask=None) for identifier, level in zip(identifiers, mid)]
+            return {"quotes": args[0]["quotes"] | {"quotes": quotes},
+                    "curves": [dict(market_index=args[1], day_counter=args[6], interpolator=args[7], enable_extrapolation=args[8], quotes=identifiers)]}
+        if function == "QS.CONTEXT.PREPARE":
+            return args[1] | args[2] | {"name": args[0]}
         raise AssertionError(f"Unsupported market-input formula: {expression}")
 
     def formulas(self):
@@ -240,19 +239,27 @@ class WorkbookTests(unittest.TestCase):
                             continue
                         self.assertLess(index, len(args), parameter["name"])
                         self.assertTrue(args[index], parameter["name"])
+                    for argument, parameter in zip(args, parameters):
+                        if argument in ("TRUE", "FALSE"):
+                            self.assertTrue(parameter["type"].startswith("* const")
+                                            or "bool" in parameter["type"],
+                                            f"{parameter['name']} cannot receive {argument}: {parameter['type']}")
                     self.assertEqual(node.attrib["t"], "array", "Formula2 must preserve XLL spills")
                     self.assertNotIn("@", formula)
                     if function == "QS.CONTEXT.CREATE":
-                        self.assertGreaterEqual(len(args), 14)
-                        self.assertIn(book.literal(args[12]), ("USD", "EUR"))
-                        self.assertIn(book.literal(args[13]), ("SOFR", "ESTR"))
+                        self.assertGreaterEqual(len(args), 4)
+                        self.assertIn(book.literal(args[2]), ("USD", "EUR"))
+                        self.assertIn(book.literal(args[3]), ("SOFR", "ESTR"))
                     # Blank cached results cannot be mistaken for zero PV before Excel calculates.
                     self.assertIsNone(book.value(sheet, address))
                     count += 1
             self.assertGreater(count, 10)
-            if name != "interpolation":
+            if name == "context":
+                self.assertTrue({"QS.CONTEXT.CREATE", "QS.CONTEXT.ADD.CURVE", "QS.EVALUATE", "QS.EVALUATE.FROM.SNAPSHOT", "QS.LOAN.SETTINGS"} <= functions)
+                self.assertFalse({"QS.EVALUATE.RESULTS", "QS.RESULT.VALUE", "QS.CURVE.CONFIGS.ADD"} & functions)
+            elif name != "interpolation":
                 self.assertTrue(any(function.startswith("QS.INSTRUMENT.") for function in functions))
-                self.assertTrue({"QS.TRADE.CREATE", "QS.PRICER.CREATE", "QS.EVALUATE", "QS.RESULT.VALUE"} <= functions)
+                self.assertTrue({"QS.TRADE.CREATE", "QS.PRICER.CREATE", "QS.EVALUATE.RESULTS", "QS.RESULT.VALUE"} <= functions)
                 self.assertTrue(any(function.startswith("QS.DISCOUNT.POLICY.") for function in functions))
             for value in book.strings:
                 if value.strip().startswith(("{", "[")):
@@ -306,12 +313,38 @@ class WorkbookTests(unittest.TestCase):
                 if not sheet.endswith(" Results") or not expression.startswith("_xll.QS."):
                     continue
                 with self.subTest(example=name, sheet=sheet, cell=address):
-                    self.assertTrue(expression.startswith(("_xll.QS.RESULT.", "_xll.QS.CURVE.DISCOUNT(",
+                    self.assertTrue(expression.startswith(("_xll.QS.EVALUATE(", "_xll.QS.EVALUATE.FROM.SNAPSHOT(", "_xll.QS.RESULT.", "_xll.QS.CURVE.DISCOUNT(",
                                                           "_xll.QS.CURVE.FORWARD(", "_xll.QS.CONTEXT.SNAPSHOT.TIMESTAMP(",
                                                           "_xll.QS.CONTEXT.EVALUATION.DATE(")))
             filename = next(filename for example, filename, _ in EXAMPLES if example == name)
             handles, numbers = validation_names(Path(filename).stem)
             self.assertTrue(set(handles + numbers) <= set(book.names), "Live checks must follow the generated workbook")
+
+    def test_context_quote_fields_are_separate_nonadjacent_opposite_orientation_arrays(self):
+        book = self.books["context"]
+        identifiers = re.fullmatch(SHEET_RANGE, book.names["Context_QuoteIds"])
+        levels = re.fullmatch(SHEET_RANGE, book.names["Context_QuoteMid"])
+        id_cells = book.range_cells(identifiers[1], identifiers[2])
+        level_cells = book.range_cells(levels[1], levels[2])
+        self.assertEqual(len(id_cells), len(level_cells))
+        self.assertEqual(len({re.sub(r"\d", "", address) for _, address in id_cells}), 1)
+        self.assertEqual(len({re.sub(r"\D", "", address) for _, address in level_cells}), 1)
+        self.assertFalse(set(id_cells) & set(level_cells))
+        additions = [arguments(expression) for _, _, expression, _ in book.formulas()
+                     if expression.startswith("_xll.QS.CONTEXT.ADD.QUOTES(")]
+        self.assertEqual(additions, [["Context_Root", "Context_QuoteIds", "Context_QuoteMid"]])
+
+    def test_loan_schedules_pass_each_field_independently(self):
+        book = self.books["loans"]
+        for _, _, expression, _ in book.formulas():
+            if expression.startswith("_xll.QS.INSTRUMENT.LOAN("):
+                values = arguments(expression)
+                self.assertEqual(len(values), 14)
+                if values[11]:
+                    self.assertTrue(values[11].endswith("_CouponPeriods"))
+                    self.assertTrue(values[12].endswith("_CouponRates"))
+                    self.assertTrue(values[13].endswith("_CouponIndices"))
+                self.assertFalse(any("_Coupons" in value or "_Settings" in value for value in values))
 
     def test_detail_sheets_share_the_same_result_and_have_room_to_spill(self):
         for name in ("swap", "loans", "bonds"):
@@ -337,13 +370,13 @@ class WorkbookTests(unittest.TestCase):
     def test_all_loan_cases_keep_separate_instruments_trades_and_fair_targets(self):
         book = self.books["loans"]
         evaluate = [arguments(expression) for _, _, expression, _ in book.formulas()
-                    if expression.startswith("_xll.QS.EVALUATE(")]
+                    if expression.startswith("_xll.QS.EVALUATE.RESULTS(")]
         for index, (label, _, _, _, _, segments, _) in enumerate(LOAN_CASES, 1):
             prefix = f"Loan_C{index:02}_"
             self.assertTrue({prefix + key for key in ("Instrument", "Trade", "Result", "PV")} <= set(book.names))
-            fair = [args for args in evaluate if args[0].startswith(f'"Loan.C{index:02}.Fair')]
+            fair = [args for args in evaluate if args[1] == prefix + "Trade" and re.fullmatch(r"Loan_Request\d+", args[2])]
             count = 0 if label == "Bounded floating" else len(segments) or 1
-            self.assertEqual([args[4] for args in fair], [f"Loan_Request{target}" for target in range(count)])
+            self.assertEqual([args[2] for args in fair], [f"Loan_Request{target}" for target in range(count)])
 
     def test_portfolio_uses_a_trade_handle_range_and_preserves_detailed_result_views(self):
         book = self.books["portfolio"]
@@ -357,8 +390,8 @@ class WorkbookTests(unittest.TestCase):
         for sheet, address, expression, _ in book.formulas():
             if expression.startswith("_xll.QS.PORTFOLIO.CREATE("):
                 self.assertEqual(arguments(expression)[1], "Portfolio_Members")
-            if expression.startswith("_xll.QS.PORTFOLIO.EVALUATE("):
-                self.assertEqual(arguments(expression)[1:], ["Portfolio_Book", "Portfolio_Pricer", "Portfolio_Context", "Portfolio_Requests", "Portfolio_Currency"])
+            if expression.startswith("_xll.QS.EVALUATE.PORTFOLIO("):
+                self.assertEqual(arguments(expression), ["Portfolio_Context", "Portfolio_Book", "Portfolio_Pricer", "Portfolio_Requests", "Portfolio_Currency"])
             if sheet in ("5 Coupons", "6 Cashflows", "7 Risk") and expression.startswith("_xll.QS."):
                 self.assertEqual(address, "A7")
                 self.assertEqual(arguments(expression), ["Portfolio_Result"])
@@ -387,7 +420,7 @@ class WorkbookTests(unittest.TestCase):
         query_date = book.market_input("Swap_Maturity")
         inputs = [book.market_input(expression) | {"query_date": query_date}
                   for _, _, expression, _ in book.formulas()
-                  if expression.startswith("_xll.QS.CONTEXT.CREATE(")]
+                  if expression.startswith("_xll.QS.CONTEXT.PREPARE(")]
         command = ["cargo", "run", "--quiet", "-p", "quantsupport-xll", "--example", "validate_example_market"]
         checked = subprocess.run(command, cwd=ROOT, input=json.dumps(inputs), text=True, capture_output=True)
         self.assertEqual(checked.returncode, 0, checked.stderr)
@@ -403,6 +436,7 @@ class WorkbookTests(unittest.TestCase):
         combined = deepcopy(next(context for context in inputs if context["base_currency"] == "USD"))
         eur = next(context for context in inputs if context["base_currency"] == "EUR")
         combined["curves"] += eur["curves"]
+        combined["quotes"]["quotes"] += eur["quotes"]["quotes"]
         rejected = subprocess.run(command, cwd=ROOT, input=json.dumps([combined]), text=True, capture_output=True)
         self.assertNotEqual(rejected.returncode, 0)
         self.assertIn("coll:eur/usd", rejected.stderr.lower())

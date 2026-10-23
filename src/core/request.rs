@@ -1,6 +1,7 @@
 use crate::ad::{dual::DualFwd, scalar::Scalar};
-use crate::core::cashflowaggregation::CouponDetails;
 use crate::core::collateral::Discountable;
+use crate::core::{cashflowaggregation::CouponDetails, evaluationresults::CashflowKind};
+use crate::rates::interestrate::InterestRate;
 use crate::{
     core::evaluationresults::{CashflowsTable, SensitivityMap},
     instruments::cashflows::{cashflow::Cashflow, cashflowtype::CashflowType, leg::Leg},
@@ -170,7 +171,7 @@ where
 
                         cashflows_table.add_cashflow(
                             payment_date,
-                            "FixedRateCoupon".to_string(),
+                            CashflowKind::FixedRateCoupon,
                             amount,
                             None,
                             accrual_period,
@@ -179,19 +180,20 @@ where
                             None,
                             leg_index,
                         );
-                        cashflows_table.set_last_coupon_details(CouponDetails {
-                            accrual_start,
-                            accrual_end,
-                            market_index: None,
-                            forward_index: None,
-                            notional: coupon.notional() * side,
-                            rate: Some(coupon.rate().rate().value()),
-                            spread: None,
-                            day_counter: coupon.rate().day_counter(),
-                            rate_definition: Some(coupon.rate().rate_definition()),
-                            overnight_conventions: None,
-                            payoff: None,
-                        });
+                        cashflows_table.set_last_coupon_details(
+                            CouponDetails::new(
+                                accrual_start,
+                                accrual_end,
+                                coupon.notional() * side,
+                                coupon.rate().day_counter(),
+                            )
+                            .with_fixed_rate(
+                                InterestRate::from_rate_definition(
+                                    coupon.rate().rate().value(),
+                                    coupon.rate().rate_definition(),
+                                ),
+                            ),
+                        );
                     }
                     CashflowType::FloatingRateCoupon(coupon) => {
                         let amount = coupon.amount()?.value() * side;
@@ -205,7 +207,7 @@ where
 
                         cashflows_table.add_cashflow(
                             payment_date,
-                            "FloatingRateCoupon".to_string(),
+                            CashflowKind::FloatingRateCoupon,
                             amount,
                             fixing,
                             accrual_period,
@@ -214,19 +216,20 @@ where
                             None,
                             leg_index,
                         );
-                        cashflows_table.set_last_coupon_details(CouponDetails {
-                            accrual_start,
-                            accrual_end,
-                            market_index: Some(coupon.market_index().clone()),
-                            forward_index: leg.forward_index().cloned(),
-                            notional: coupon.notional() * side,
-                            rate: None,
-                            spread: Some(coupon.spread().value()),
-                            day_counter: coupon.day_counter(),
-                            rate_definition: None,
-                            overnight_conventions: coupon.overnight_conventions().cloned(),
-                            payoff: None,
-                        });
+                        cashflows_table.set_last_coupon_details(
+                            CouponDetails::new(
+                                accrual_start,
+                                accrual_end,
+                                coupon.notional() * side,
+                                coupon.day_counter(),
+                            )
+                            .with_floating_rate(
+                                coupon.market_index().clone(),
+                                coupon.spread().value(),
+                            )
+                            .with_forward_index(leg.forward_index().cloned())
+                            .with_overnight_conventions(coupon.overnight_conventions().cloned()),
+                        );
                     }
                     CashflowType::OptionEmbeddedCoupon(coupon) => {
                         let amount = coupon.amount()?.value() * side;
@@ -239,7 +242,7 @@ where
 
                         cashflows_table.add_cashflow(
                             payment_date,
-                            "OptionEmbeddedCoupon".to_string(),
+                            CashflowKind::OptionEmbeddedCoupon,
                             amount,
                             fixing,
                             accrual_period,
@@ -248,19 +251,20 @@ where
                             None,
                             leg_index,
                         );
-                        cashflows_table.set_last_coupon_details(CouponDetails {
-                            accrual_start,
-                            accrual_end,
-                            market_index: Some(coupon.market_index().clone()),
-                            forward_index: leg.forward_index().cloned(),
-                            notional: coupon.notional() * side,
-                            rate: None,
-                            spread: Some(coupon.spread().value()),
-                            day_counter,
-                            rate_definition: None,
-                            overnight_conventions: None,
-                            payoff: Some(coupon.payoff_ops().clone()),
-                        });
+                        cashflows_table.set_last_coupon_details(
+                            CouponDetails::new(
+                                accrual_start,
+                                accrual_end,
+                                coupon.notional() * side,
+                                day_counter,
+                            )
+                            .with_floating_rate(
+                                coupon.market_index().clone(),
+                                coupon.spread().value(),
+                            )
+                            .with_forward_index(leg.forward_index().cloned())
+                            .with_payoff(coupon.payoff_ops().clone()),
+                        );
                     }
                     CashflowType::Redemption(cashflow) => {
                         let amount = cashflow.amount()?.value() * side;
@@ -268,7 +272,7 @@ where
 
                         cashflows_table.add_cashflow(
                             payment_date,
-                            "Redemption".to_string(),
+                            CashflowKind::Redemption,
                             amount,
                             None,
                             0.0,
@@ -284,7 +288,7 @@ where
 
                         cashflows_table.add_cashflow(
                             payment_date,
-                            "Disbursement".to_string(),
+                            CashflowKind::Disbursement,
                             amount,
                             None,
                             0.0,
@@ -300,7 +304,7 @@ where
 
                         cashflows_table.add_cashflow(
                             payment_date,
-                            "ConstantAmount".to_string(),
+                            CashflowKind::ConstantAmount,
                             amount,
                             None,
                             0.0,
@@ -507,7 +511,7 @@ mod tests {
         );
         assert_eq!(
             table.cashflow_types()[0],
-            "FixedRateCoupon",
+            CashflowKind::FixedRateCoupon,
             "Cashflow type should be FixedRateCoupon"
         );
         assert!(
@@ -546,7 +550,7 @@ mod tests {
 
         let table = result.unwrap();
         assert_eq!(table.payment_dates().len(), 1);
-        assert_eq!(table.cashflow_types()[0], "Redemption");
+        assert_eq!(table.cashflow_types()[0], CashflowKind::Redemption);
         assert_eq!(table.amounts()[0], -100_000.0);
     }
 
@@ -580,7 +584,7 @@ mod tests {
 
         let table = result.unwrap();
         assert_eq!(table.payment_dates().len(), 1);
-        assert_eq!(table.cashflow_types()[0], "Disbursement");
+        assert_eq!(table.cashflow_types()[0], CashflowKind::Disbursement);
         assert_eq!(table.amounts()[0], 100_000.0);
     }
 
@@ -634,9 +638,9 @@ mod tests {
             3,
             "Table should have three cashflows"
         );
-        assert_eq!(table.cashflow_types()[0], "Disbursement");
-        assert_eq!(table.cashflow_types()[1], "FixedRateCoupon");
-        assert_eq!(table.cashflow_types()[2], "Redemption");
+        assert_eq!(table.cashflow_types()[0], CashflowKind::Disbursement);
+        assert_eq!(table.cashflow_types()[1], CashflowKind::FixedRateCoupon);
+        assert_eq!(table.cashflow_types()[2], CashflowKind::Redemption);
     }
 
     #[test]

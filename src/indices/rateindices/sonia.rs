@@ -9,60 +9,35 @@ use crate::{
     },
     rates::{compounding::Compounding, interestrate::RateDefinition},
     time::{
-        calendar::Calendar, calendars::unitedkingdom::UnitedKingdom, daycounter::DayCounter,
-        enums::Frequency,
+        calendar::Calendar,
+        calendars::unitedkingdom::UnitedKingdom,
+        daycounter::DayCounter,
+        enums::{BusinessDayConvention, Frequency},
+        period::Period,
     },
 };
 
-/// Details for SONIA (Sterling Overnight Index Average).
-/// Overnight unsecured rate administered by the Bank of England.
-#[derive(Copy, Clone, Serialize, Default, Deserialize)]
-pub struct SONIAIndex;
+use super::macros::rate_index;
 
-impl MarketIndexDetails for SONIAIndex {
-    fn quote_type(&self) -> QuoteType {
-        QuoteType::Rate
-    }
-
-    fn name(&self) -> &'static str {
-        "SONIA"
-    }
-}
-
-impl RateIndexDetails for SONIAIndex {
-    fn calendar(&self) -> Calendar {
-        Calendar::UnitedKingdom(UnitedKingdom::new())
-    }
-
-    fn currency(&self) -> Currency {
-        Currency::GBP
-    }
-
-    fn fixing_lag(&self) -> i64 {
-        0
-    }
-
-    fn rate_definition(&self) -> RateDefinition {
-        RateDefinition::new(
-            DayCounter::Actual365,
-            Compounding::Simple,
-            Frequency::Annual,
-        )
-    }
-
-    fn swap_conventions(&self, _tenor: crate::time::period::Period) -> SwapConventions {
-        SwapConventions::new(
-            self.rate_definition(),
-            Frequency::Annual,
-            Frequency::Annual,
-            self.rate_definition().day_counter(),
-            0,
-            crate::time::enums::BusinessDayConvention::ModifiedFollowing,
-        )
-    }
-
-    fn market_index(&self) -> MarketIndex {
-        MarketIndex::SONIA
+rate_index! {
+    /// Details for SONIA (Sterling Overnight Index Average).
+    /// Overnight unsecured rate administered by the Bank of England.
+    SONIAIndex {
+        market_index: SONIA,
+        currency: GBP,
+        calendar: Calendar::UnitedKingdom(UnitedKingdom::new()),
+        fixing_lag: 0,
+        day_counter: Actual365,
+        compounding: Simple,
+        compounding_frequency: Annual,
+        frequency: Daily,
+        is_in_arrears: true,
+        swap_conventions: {
+            fixed_day_counter: Actual365,
+            fixed_frequency: |_| Frequency::Annual,
+            floating_frequency: Annual,
+            settlement_days: 0,
+        },
     }
 }
 

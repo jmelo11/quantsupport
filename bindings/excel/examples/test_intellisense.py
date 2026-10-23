@@ -51,8 +51,8 @@ class IntelliSenseTests(unittest.TestCase):
         functions = {node.attrib["Name"]: node for node in
                      self.xml.findall("i:FunctionInfo/i:Function", NS)}
         context = functions["QS.CONTEXT.CREATE"].findall("i:Argument", NS)
-        self.assertEqual(len(context), 15)
-        self.assertEqual([argument.attrib["Name"] for argument in context][12:],
+        self.assertEqual(len(context), 5)
+        self.assertEqual([argument.attrib["Name"] for argument in context][2:],
                          ["base_currency", "base_index", "quote_level"])
         fair_rate = functions["QS.REQUEST.FAIR.RATE"].findall("i:Argument", NS)
         self.assertEqual([argument.attrib["Name"] for argument in fair_rate], ["index"])

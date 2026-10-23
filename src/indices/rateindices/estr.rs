@@ -9,58 +9,34 @@ use crate::{
     },
     rates::{compounding::Compounding, interestrate::RateDefinition},
     time::{
-        calendar::Calendar, calendars::target::TARGET, daycounter::DayCounter, enums::Frequency,
+        calendar::Calendar,
+        calendars::target::TARGET,
+        daycounter::DayCounter,
+        enums::{BusinessDayConvention, Frequency},
+        period::Period,
     },
 };
 
-/// Details for the €STR (Euro Short-Term Rate) index.
-/// Overnight unsecured rate published by the ECB.
-#[derive(Copy, Clone, Serialize, Default, Deserialize)]
-pub struct ESTRIndex;
+use super::macros::rate_index;
 
-impl MarketIndexDetails for ESTRIndex {
-    fn quote_type(&self) -> QuoteType {
-        QuoteType::Rate
-    }
-
-    fn name(&self) -> &'static str {
-        "ESTR"
-    }
-}
-
-impl RateIndexDetails for ESTRIndex {
-    fn calendar(&self) -> Calendar {
-        Calendar::TARGET(TARGET::new())
-    }
-
-    fn currency(&self) -> Currency {
-        Currency::EUR
-    }
-
-    fn fixing_lag(&self) -> i64 {
-        1
-    }
-
-    fn rate_definition(&self) -> RateDefinition {
-        RateDefinition::new(
-            DayCounter::Actual360,
-            Compounding::Simple,
-            Frequency::Annual,
-        )
-    }
-
-    fn swap_conventions(&self, _tenor: crate::time::period::Period) -> SwapConventions {
-        SwapConventions::new(
-            self.rate_definition(),
-            Frequency::Annual,
-            Frequency::Annual,
-            self.rate_definition().day_counter(),
-            2,
-            crate::time::enums::BusinessDayConvention::ModifiedFollowing,
-        )
-    }
-
-    fn market_index(&self) -> MarketIndex {
-        MarketIndex::ESTR
+rate_index! {
+    /// Details for the €STR (Euro Short-Term Rate) index.
+    /// Overnight unsecured rate published by the ECB.
+    ESTRIndex {
+        market_index: ESTR,
+        currency: EUR,
+        calendar: Calendar::TARGET(TARGET::new()),
+        fixing_lag: 1,
+        day_counter: Actual360,
+        compounding: Simple,
+        compounding_frequency: Annual,
+        frequency: Daily,
+        is_in_arrears: true,
+        swap_conventions: {
+            fixed_day_counter: Actual360,
+            fixed_frequency: |_| Frequency::Annual,
+            floating_frequency: Annual,
+            settlement_days: 2,
+        },
     }
 }

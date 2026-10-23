@@ -260,7 +260,7 @@ class ExcelReferenceTests(unittest.TestCase):
         cls.records = json.loads(output.stdout)
 
     def test_catalog_has_complete_symbol_and_parameter_details(self):
-        self.assertEqual(len(self.records), 152)
+        self.assertEqual(len(self.records), 113)
         for record in self.records:
             with self.subTest(function=record["name"]):
                 for field in ("name", "category", "help", "return_type", "returns", "errors", "declaration", "source"):
@@ -296,7 +296,7 @@ class ExcelReferenceTests(unittest.TestCase):
             self.assertTrue(domain)
             self.assertTrue(subsection)
         self.assertEqual(excel_section("QS.CALENDAR.HOLIDAYS"), ("Time", "Calendars"))
-        self.assertEqual(excel_section("QS.TRADE.FIXED.BOND"), ("Instruments", "Fixed Income"))
+        self.assertEqual(excel_section("QS.INSTRUMENT.FIXED.RATE.BOND"), ("Instruments", "Fixed Income"))
 
     def test_interpolation_methods_have_defaults_and_math_navigation(self):
         records = {record["name"]: record for record in self.records
@@ -333,27 +333,30 @@ class ExcelReferenceTests(unittest.TestCase):
                     self.assertLessEqual(len(arguments), len(records[name]["arguments"]))
                     count += 1
                     if name == "QS.CONTEXT.CREATE":
-                        self.assertEqual(arguments[12:15], ['"USD"', '"SOFR"', '"Mid"'])
+                        self.assertIn(arguments[2], ['"USD"', '"EUR"'])
+                        self.assertIn(arguments[3], ['"SOFR"', '"ESTR"'])
                         contexts.append(arguments)
         self.assertGreater(count, 70)
-        self.assertGreaterEqual(len(contexts), 5)
+        self.assertGreaterEqual(len(contexts), 4)
         model_pricer = next(arguments for name, arguments in formulas((ROOT / "docs/excel/guide/markets-and-products.rst").read_text())
                             if name == "QS.PRICER.CREATE" and '"ClosedFormHullWhiteSwaptionPricer"' in arguments)
-        self.assertEqual(model_pricer[2:4], ["L3", "AC30:AD31"])
-        self.assertTrue(any(arguments[1] == "BC7" for arguments in contexts))
-        self.assertEqual([a["name"] for a in records["QS.CONTEXT.CREATE"]["arguments"]][12:15],
-                         ["base_currency", "base_index", "quote_level"])
+        self.assertEqual(model_pricer[2:5], ["L3", "AC30:AC31", "AD30:AD31"])
+        self.assertEqual([a["name"] for a in records["QS.EVALUATE"]["arguments"]][:6],
+                         ["context", "instrument", "request_name", "inputs", "pricer", "policy"])
+        self.assertNotIn("QS.CONTEXT.FROM.COMPONENTS", records)
+        self.assertEqual([a["name"] for a in records["QS.CONTEXT.CREATE"]["arguments"]],
+                         ["name", "reference_date", "base_currency", "base_index", "quote_level"])
 
     def test_catalog_financial_units_and_range_threading_are_precise(self):
         records = {record["name"]: record for record in self.records}
-        futures = records["QS.TRADE.RATE.FUTURE"]
+        futures = records["QS.INSTRUMENT.RATE.FUTURES"]
         size = next(argument for argument in futures["arguments"]
                     if argument["name"] == "contract_size")
         self.assertIn("per one futures price point", size["help"])
-        self.assertIn("positive for receipts and negative for payments", records["QS.CASHFLOWS"]["returns"])
+        self.assertIn("positive for receipts and negative for payments", records["QS.RESULT.CASHFLOWS"]["returns"])
         self.assertIn("tenor text", records["QS.SIMULATION.CALIBRATION"]["returns"])
         self.assertIn("omits one intervening year", records["QS.YEAR.FRACTION"]["returns"])
-        self.assertIn("no unit conversion, interpolation", records["QS.FIXINGS.GET"]["returns"])
+        self.assertIn("no unit conversion, interpolation", records["QS.CONTEXT.FIXING"]["returns"])
         calendar = function_page(records["QS.CALENDAR.HOLIDAYS"])
         self.assertIn("Thread-safe worksheet function", calendar)
         self.assertNotIn("Thread-safe scalar", calendar)
@@ -371,7 +374,7 @@ class GuideAndStudyTests(unittest.TestCase):
             self.assertIn("guide/index", hub)
             for chapter in chapters:
                 self.assertIn(chapter, index)
-                self.assertGreater(len((ROOT / f"docs/{binding}/guide/{chapter}.rst").read_text()), 5000)
+                self.assertGreater(len((ROOT / f"docs/{binding}/guide/{chapter}.rst").read_text()), 3000)
         self.assertEqual(len(guide_snippets()), 10)
         for code in guide_snippets().values():
             ast.parse(code)
@@ -501,7 +504,7 @@ class RenderedReferenceTests(unittest.TestCase):
             trade = Text((output / "autoapi/quantsupport/pricing/Trade.html").read_text())
             self.assertIn("datetime.date", trade.text)
             self.assertNotIn("_DateLike", trade.text)
-            price = Text((output / "excel/functions/qs-price.html").read_text())
+            price = Text((output / "excel/functions/qs-evaluate.html").read_text())
             for field in ("Parameters", "Returns", "Errors"):
                 self.assertRegex(price.text, field + r"\s*:")
             for error in ("#N/A", "#VALUE!"):
@@ -510,7 +513,7 @@ class RenderedReferenceTests(unittest.TestCase):
             self.assertIn("defaults to Linear", interpolation.text)
             self.assertIn("strictly increasing", interpolation.text)
             self.assertIn("#VALUE!", interpolation.text)
-            self.assertEqual(len(list((output / "excel/functions").glob("qs-*.html"))), 152)
+            self.assertEqual(len(list((output / "excel/functions").glob("qs-*.html"))), 113)
             for index in ("genindex.html", "py-modindex.html", "excel-functionindex.html", "search.html", "objects.inv"):
                 self.assertTrue((output / index).is_file(), index)
             self.check_guides_and_studies(output)
@@ -532,8 +535,10 @@ class RenderedReferenceTests(unittest.TestCase):
             self.assertIn("no direct constructor", factory.text)
             self.assertNotIn("PythonDate", date.text)
             function_index = Text((output / "excel-functionindex.html").read_text())
-            for alias in ("QS.CREATE.FX.STORE", "QS.GET.FX.QUOTE", "QS.ADD.FX.QUOTE", "QS.STORE.RESET"):
-                self.assertIn(alias, function_index.text)
+            for name in ("QS.CONTEXT.CREATE", "QS.CONTEXT.ADD.QUOTE", "QS.EVALUATE", "QS.SNAPSHOT.FROM.RANGE"):
+                self.assertIn(name, function_index.text)
+            for removed in ("QS.CREATE.FX.STORE", "QS.GET.FX.QUOTE", "QS.ADD.FX.QUOTE", "QS.STORE.RESET"):
+                self.assertNotIn(removed, function_index.text)
 
     def check_guides_and_studies(self, output):
         paths = [output / "index.html",

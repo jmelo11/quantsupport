@@ -9,110 +9,117 @@ use crate::{
     },
     rates::{compounding::Compounding, interestrate::RateDefinition},
     time::{
-        calendar::Calendar, calendars::target::TARGET, daycounter::DayCounter, enums::Frequency,
+        calendar::Calendar,
+        calendars::target::TARGET,
+        daycounter::DayCounter,
+        enums::{BusinessDayConvention, Frequency},
+        period::Period,
     },
 };
 
-macro_rules! euribor_index {
-    ($name:ident, $doc:expr, $display:expr, $variant:ident, $frequency:expr) => {
-        #[doc = $doc]
-        #[derive(Copy, Clone, Serialize, Default, Deserialize)]
-        pub struct $name;
+use super::macros::rate_index;
 
-        impl MarketIndexDetails for $name {
-            fn quote_type(&self) -> QuoteType {
-                QuoteType::Rate
-            }
-
-            fn name(&self) -> &'static str {
-                $display
-            }
-        }
-
-        impl RateIndexDetails for $name {
-            /// Returns the EURIBOR observation tenor, independently of compounding.
-            fn frequency(&self) -> Frequency {
-                $frequency
-            }
-            fn calendar(&self) -> Calendar {
-                Calendar::TARGET(TARGET::new())
-            }
-
-            fn currency(&self) -> Currency {
-                Currency::EUR
-            }
-
-            fn fixing_lag(&self) -> i64 {
-                2
-            }
-
-            fn rate_definition(&self) -> RateDefinition {
-                RateDefinition::new(
-                    DayCounter::Actual360,
-                    Compounding::Simple,
-                    Frequency::Annual,
-                )
-            }
-
-            fn swap_conventions(&self, _tenor: crate::time::period::Period) -> SwapConventions {
-                SwapConventions::new(
-                    RateDefinition::new(
-                        DayCounter::Thirty360,
-                        Compounding::Simple,
-                        Frequency::Annual,
-                    ),
-                    Frequency::Annual,
-                    $frequency,
-                    self.rate_definition().day_counter(),
-                    2,
-                    crate::time::enums::BusinessDayConvention::ModifiedFollowing,
-                )
-            }
-
-            fn market_index(&self) -> MarketIndex {
-                MarketIndex::$variant
-            }
-
-            fn is_in_arrears(&self) -> bool {
-                false
-            }
-        }
-    };
+rate_index! {
+    /// Details for the EURIBOR 1-month rate index.
+    Euribor1mIndex {
+        market_index: EURIBOR1m,
+        currency: EUR,
+        calendar: Calendar::TARGET(TARGET::new()),
+        fixing_lag: 2,
+        day_counter: Actual360,
+        compounding: Simple,
+        compounding_frequency: Annual,
+        frequency: Monthly,
+        is_in_arrears: false,
+        swap_conventions: {
+            fixed_day_counter: Thirty360,
+            fixed_frequency: |_| Frequency::Annual,
+            floating_frequency: Monthly,
+            settlement_days: 2,
+        },
+    }
 }
 
-euribor_index!(
-    Euribor1mIndex,
-    "Details for the EURIBOR 1-month rate index.",
-    "EURIBOR1m",
-    EURIBOR1m,
-    Frequency::Monthly
-);
-euribor_index!(
-    Euribor3mIndex,
-    "Details for the EURIBOR 3-month rate index.",
-    "EURIBOR3m",
-    EURIBOR3m,
-    Frequency::Quarterly
-);
-euribor_index!(
-    Euribor6mIndex,
-    "Details for the EURIBOR 6-month rate index.",
-    "EURIBOR6m",
-    EURIBOR6m,
-    Frequency::Semiannual
-);
-euribor_index!(
-    Euribor12mIndex,
-    "Details for the EURIBOR 12-month rate index.",
-    "EURIBOR12m",
-    EURIBOR12m,
-    Frequency::Annual
-);
+rate_index! {
+    /// Details for the EURIBOR 3-month rate index.
+    Euribor3mIndex {
+        market_index: EURIBOR3m,
+        currency: EUR,
+        calendar: Calendar::TARGET(TARGET::new()),
+        fixing_lag: 2,
+        day_counter: Actual360,
+        compounding: Simple,
+        compounding_frequency: Annual,
+        frequency: Quarterly,
+        is_in_arrears: false,
+        swap_conventions: {
+            fixed_day_counter: Thirty360,
+            fixed_frequency: |_| Frequency::Annual,
+            floating_frequency: Quarterly,
+            settlement_days: 2,
+        },
+    }
+}
 
-euribor_index!(
-    Euribor1wIndex,
-    "Details for the EURIBOR 1-week rate index.",
-    "EURIBOR1w",
-    EURIBOR1w,
-    Frequency::Weekly
-);
+rate_index! {
+    /// Details for the EURIBOR 6-month rate index.
+    Euribor6mIndex {
+        market_index: EURIBOR6m,
+        currency: EUR,
+        calendar: Calendar::TARGET(TARGET::new()),
+        fixing_lag: 2,
+        day_counter: Actual360,
+        compounding: Simple,
+        compounding_frequency: Annual,
+        frequency: Semiannual,
+        is_in_arrears: false,
+        swap_conventions: {
+            fixed_day_counter: Thirty360,
+            fixed_frequency: |_| Frequency::Annual,
+            floating_frequency: Semiannual,
+            settlement_days: 2,
+        },
+    }
+}
+
+rate_index! {
+    /// Details for the EURIBOR 12-month rate index.
+    Euribor12mIndex {
+        market_index: EURIBOR12m,
+        currency: EUR,
+        calendar: Calendar::TARGET(TARGET::new()),
+        fixing_lag: 2,
+        day_counter: Actual360,
+        compounding: Simple,
+        compounding_frequency: Annual,
+        frequency: Annual,
+        is_in_arrears: false,
+        swap_conventions: {
+            fixed_day_counter: Thirty360,
+            fixed_frequency: |_| Frequency::Annual,
+            floating_frequency: Annual,
+            settlement_days: 2,
+        },
+    }
+}
+
+rate_index! {
+    /// Details for the EURIBOR 1-week rate index.
+    Euribor1wIndex {
+        market_index: EURIBOR1w,
+        currency: EUR,
+        calendar: Calendar::TARGET(TARGET::new()),
+        fixing_lag: 2,
+        day_counter: Actual360,
+        compounding: Simple,
+        compounding_frequency: Annual,
+        frequency: Weekly,
+        is_in_arrears: false,
+        swap_conventions: {
+            fixed_day_counter: Thirty360,
+            fixed_frequency: |_| Frequency::Annual,
+            floating_frequency: Weekly,
+            settlement_days: 2,
+        },
+    }
+}

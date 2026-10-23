@@ -1,10 +1,13 @@
 //! Pricing worksheet functions.
 
-mod configurations;
 mod context;
-/// Trade evaluation and valuation worksheet functions.
-pub mod valuation;
+mod context_inputs;
+mod evaluation;
+mod output;
 
 mod coupons;
-mod native;
+mod policies;
 mod portfolios;
+mod pricers;
+mod requests;
+mod results;

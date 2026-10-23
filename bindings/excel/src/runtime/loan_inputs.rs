@@ -12,6 +12,35 @@ use super::{
     loans::{CouponSegment, LoanOptions},
 };
 
+/// Accepts named-argument settings or the legacy Setting/Value table.
+pub fn with_settings(
+    registry: &super::registry::Registry,
+    settings: &Table,
+    coupons: &Table,
+    prepayments: &Table,
+) -> Result<LoanOptions, String> {
+    if let [row] = settings.as_slice() {
+        if let [Cell::Text(handle)] = row.as_slice() {
+            if handle.starts_with("QSObject:LoanSettings:") {
+                let mut settings = match registry.object(handle).map_err(|e| e.to_string())? {
+                    super::registry::QsObject::LoanSettings(value) => value.as_ref().clone(),
+                    _ => return Err("expected LoanSettings".into()),
+                };
+                let extra = options(&vec![], coupons, prepayments)?;
+                settings.coupon_segments = extra.coupon_segments;
+                if extra.prepayment.is_some() {
+                    if settings.prepayment.is_some() {
+                        return Err("prepayment is defined in both settings and dated CPRs".into());
+                    }
+                    settings.prepayment = extra.prepayment;
+                }
+                return Ok(settings);
+            }
+        }
+    }
+    options(settings, coupons, prepayments)
+}
+
 fn index(cell: &Cell, name: &str) -> Result<MarketIndex, String> {
     let text = cell.text(name)?;
     if let Some(entity) = text.strip_prefix("Credit:") {
@@ -224,6 +253,40 @@ mod tests {
     }
     fn setting(name: &str, value: Cell) -> Vec<Cell> {
         vec![text(name), value]
+    }
+
+    #[test]
+    fn named_settings_keep_schedules_and_reject_duplicate_prepayment_or_stale_options() {
+        use super::super::registry::{QsObject, Registry};
+        let mut registry = Registry::default();
+        let native = LoanOptions {
+            balloon_fraction: Some(0.25),
+            prepayment: Some(PrepaymentModelConfiguration::Cpr(0.1)),
+            ..LoanOptions::default()
+        };
+        let handle = registry
+            .upsert_if_changed("options", QsObject::LoanSettings(Box::new(native)), "first")
+            .unwrap();
+        let settings = vec![vec![text(&handle)]];
+        let coupons = vec![
+            vec![Number(12.0), Number(0.04), Blank],
+            vec![Blank, Number(0.05), Blank],
+        ];
+        let parsed = with_settings(&registry, &settings, &coupons, &vec![]).unwrap();
+        assert_eq!(parsed.balloon_fraction, Some(0.25));
+        assert_eq!(parsed.coupon_segments.unwrap().len(), 2);
+        assert!(parsed.prepayment.is_some());
+        assert!(with_settings(
+            &registry,
+            &settings,
+            &vec![],
+            &vec![vec![text("2026-01-01"), Number(0.2)]]
+        )
+        .is_err());
+        registry
+            .upsert_if_changed("options", QsObject::LoanSettings(Box::default()), "changed")
+            .unwrap();
+        assert!(with_settings(&registry, &settings, &vec![], &vec![]).is_err());
     }
 
     #[test]

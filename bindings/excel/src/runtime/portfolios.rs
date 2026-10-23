@@ -120,7 +120,7 @@ mod tests {
         let context = registry
             .upsert_if_changed(
                 "context",
-                QsObject::PricingContext(Box::new(context)),
+                QsObject::PricingContext(std::rc::Rc::new(context)),
                 "ctx",
             )
             .unwrap();
@@ -193,24 +193,23 @@ mod tests {
         let flows = result.cashflows().unwrap();
         assert_eq!(flows.payment_dates().len(), 3);
         let coupon = flows.coupon_details().iter().flatten().next().unwrap();
-        assert_eq!(coupon.notional, 1000.0 * members as f64);
-        assert_eq!(
-            coupon.rate,
-            single
-                .cashflows()
-                .unwrap()
-                .coupon_details()
-                .iter()
-                .flatten()
-                .next()
-                .unwrap()
-                .rate
-        );
+        assert_eq!(coupon.notional(), 1000.0 * members as f64);
+        let expected_rate = single
+            .cashflows()
+            .unwrap()
+            .coupon_details()
+            .iter()
+            .flatten()
+            .next()
+            .unwrap()
+            .rate()
+            .unwrap();
+        assert!((coupon.rate().unwrap() - expected_rate).abs() < 1e-14);
         let rows = summarize_cashflows(flows).unwrap();
         assert_eq!(rows.len(), 2);
-        assert_eq!(rows[0].capital, -1000.0 * members as f64);
-        assert_eq!(rows[1].capital, 1000.0 * members as f64);
-        assert!(rows[1].interest > 0.0);
+        assert_eq!(rows[0].capital(), -1000.0 * members as f64);
+        assert_eq!(rows[1].capital(), 1000.0 * members as f64);
+        assert!(rows[1].interest() > 0.0);
     }
 
     #[test]

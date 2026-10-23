@@ -253,18 +253,19 @@ mod tests {
         let records =
             super::exports(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/functions"))
                 .unwrap();
-        let record = records
-            .iter()
-            .find(|record| record["name"] == "QS.CONTEXT.CREATE")
-            .unwrap();
-        let names: Vec<_> = record["arguments"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|argument| argument["name"].as_str().unwrap())
-            .collect();
-        assert!(names.join(", ").len() > 255);
-        assert_eq!(names.join(",").len(), 252);
+        for record in records {
+            let names = record["arguments"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|a| a["name"].as_str().unwrap())
+                .collect::<Vec<_>>();
+            assert!(
+                names.join(",").encode_utf16().count() <= 255,
+                "{}",
+                record["name"]
+            );
+        }
     }
 
     #[test]
@@ -321,21 +322,90 @@ mod tests {
         let records =
             super::exports(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/functions"))
                 .unwrap();
-        assert_eq!(records.len(), 152);
+        for removed in [
+            "QS.CONTEXT.FROM.COMPONENTS",
+            "QS.QUOTES.CREATE",
+            "QS.TRADE.SWAP",
+            "QS.PRICE",
+            "QS.EVALUATE.VALUE",
+            "QS.HISTORY.VALUES",
+            "QS.SNAPSHOTS.CREATE",
+        ] {
+            assert!(
+                !records.iter().any(|r| r["name"] == removed),
+                "obsolete export {removed}"
+            );
+        }
         for (name, arguments) in [
             (
-                "QS.QUOTES.FROM.RANGE",
-                vec!["name", "reference_date", "identifiers", "mid", "bid", "ask"],
+                "QS.CONTEXT.ADD.QUOTE",
+                vec!["context", "identifier", "value", "level"],
             ),
-            ("QS.FIXINGS.FROM.RANGE", vec!["name", "data"]),
-            ("QS.PORTFOLIO.CREATE", vec!["name", "trades"]),
+            ("QS.CONTEXT.PREPARE", vec!["name", "context", "inputs"]),
             (
-                "QS.PORTFOLIO.EVALUATE",
+                "QS.SNAPSHOT.FROM.RANGE",
+                vec!["name", "contexts", "timestamps"],
+            ),
+            (
+                "QS.EVALUATE",
+                vec![
+                    "context",
+                    "instrument",
+                    "request_name",
+                    "inputs",
+                    "pricer",
+                    "policy",
+                    "transpose",
+                    "headers",
+                ],
+            ),
+            (
+                "QS.EVALUATE.RESULTS",
+                vec!["context", "trade", "requests", "inputs", "pricer", "policy"],
+            ),
+            (
+                "QS.CONTEXT.ADD.QUOTES",
+                vec!["context", "identifiers", "mid", "bid", "ask"],
+            ),
+            (
+                "QS.CONTEXT.ADD.FIXINGS",
+                vec!["context", "market_indices", "dates", "values"],
+            ),
+            (
+                "QS.CONTEXT.ADD.FX",
+                vec!["context", "base_currencies", "quote_currencies", "rates"],
+            ),
+            (
+                "QS.CONTEXT.ADD.CURVE",
+                vec![
+                    "context",
+                    "market_index",
+                    "identifiers",
+                    "mid",
+                    "bid",
+                    "ask",
+                    "day_counter",
+                    "interpolator",
+                    "extrapolate",
+                ],
+            ),
+            (
+                "QS.PRICER.CREATE",
                 vec![
                     "name",
+                    "implementation",
+                    "discount_policy",
+                    "setting_names",
+                    "setting_values",
+                ],
+            ),
+            ("QS.PORTFOLIO.CREATE", vec!["name", "trades"]),
+            (
+                "QS.EVALUATE.PORTFOLIO",
+                vec![
+                    "context",
                     "portfolio",
                     "pricers",
-                    "context",
                     "requests",
                     "value_currency",
                 ],
@@ -359,16 +429,9 @@ mod tests {
             assert_eq!(actual, arguments);
             assert_eq!(record["volatile"], false);
         }
-        let scenario = records
+        assert!(records
             .iter()
-            .find(|record| record["name"] == "QS.SCENARIOS.FROM.JSON")
-            .unwrap();
-        assert_eq!(scenario["arguments"][1]["name"], "json");
-        assert!(records.iter().any(|record| record["aliases"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|alias| alias == "QS.STORE.RESET")));
+            .all(|record| record["aliases"].as_array().unwrap().is_empty()));
         for record in records {
             assert!(!record["help"].as_str().unwrap().is_empty());
             assert!(!record["return_type"].as_str().unwrap().is_empty());
@@ -515,7 +578,7 @@ mod tests {
                 ][..],
             ),
             (
-                "QS.CASHFLOWS",
+                "QS.RESULT.CASHFLOWS",
                 &[
                     "Payment date",
                     "Type",
@@ -528,8 +591,10 @@ mod tests {
                     "Leg",
                 ][..],
             ),
-            ("QS.SENSITIVITIES", &["Risk factor", "Sensitivity"][..]),
-            ("QS.BOND.SENSITIVITIES", &["Risk factor", "Sensitivity"][..]),
+            (
+                "QS.RESULT.SENSITIVITIES",
+                &["Risk factor", "Sensitivity"][..],
+            ),
             (
                 "QS.FUNCTIONS.DETAILS",
                 &[
@@ -571,6 +636,15 @@ mod tests {
                 ),
             )
             .unwrap();
+            let source = if name == "QS.RESULT.CASHFLOWS" {
+                std::fs::read_to_string(
+                    std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                        .join("src/functions/pricing/output.rs"),
+                )
+                .unwrap()
+            } else {
+                source
+            };
             for header in headers {
                 assert!(
                     record["returns"].as_str().unwrap().contains(header),

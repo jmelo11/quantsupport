@@ -29,7 +29,8 @@ class TradeInstrumentTests(unittest.TestCase):
             self.assertEqual(set(result.cashflows.type), {"FixedRateCoupon", "Redemption", "Disbursement"})
             coupons = result.coupons[result.coupons.type == "FixedRateCoupon"]
             self.assertEqual(len(coupons), 2)  # Pay and receive directions remain separate.
-            self.assertTrue((coupons.rate == 0.04).all())
+            for rate in coupons.rate:
+                self.assertAlmostEqual(rate, 0.04, places=14)
             self.assertAlmostEqual(coupons.notional.sum(), 150_000.0)
             omitted = portfolio.evaluate(context, ["FairRate(0)"])
             self.assertIsNone(omitted.fair_rate)

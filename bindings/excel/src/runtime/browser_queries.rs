@@ -61,11 +61,13 @@ impl BrowserResponse {
 pub fn curve_names(object: &QsObject) -> Vec<String> {
     let mut names: Vec<String> = match object {
         QsObject::DiscountCurve(curve) => vec![curve.market_index().to_string()],
+        #[cfg(test)]
         QsObject::ConstructedElements(store) => store
             .discount_curves()
             .keys()
             .map(ToString::to_string)
             .collect(),
+        #[cfg(test)]
         QsObject::CurveConfigurations(configs) => configs
             .iter()
             .map(|config| config.market_index().to_string())
@@ -182,6 +184,7 @@ pub fn execute(registry: &Registry, request: &BrowserQuery) -> Result<BrowserRes
         "nodes" => {
             let element = match object {
                 QsObject::DiscountCurve(curve) => Some(curve.as_ref()),
+                #[cfg(test)]
                 QsObject::ConstructedElements(store) => store.discount_curves().get(&index),
                 _ => context.and_then(|context| {
                     context.constructed_elements().discount_curves().get(&index)
@@ -194,6 +197,7 @@ pub fn execute(registry: &Registry, request: &BrowserQuery) -> Result<BrowserRes
         }
         "instruments" => {
             let configs = match object {
+                #[cfg(test)]
                 QsObject::CurveConfigurations(configs) => Some(configs.as_slice()),
                 _ => context.map(|context| context.curve_configurations().as_slice()),
             };
@@ -500,7 +504,7 @@ fn evaluation_table(results: &EvaluationResults, request: &str) -> Result<Browse
                 |value: Option<f64>| value.map(|value| value.to_string()).unwrap_or_default();
             table.rows.push(vec![
                 flows.payment_dates()[row].to_string(),
-                flows.cashflow_types()[row].clone(),
+                flows.cashflow_types()[row].to_string(),
                 flows.amounts()[row].to_string(),
                 flows.currencies()[row].to_string(),
                 optional(flows.fixing()[row]),
@@ -509,35 +513,35 @@ fn evaluation_table(results: &EvaluationResults, request: &str) -> Result<Browse
                 optional(flows.caplet_strikes()[row]),
                 flows.leg_indices()[row].to_string(),
                 details
-                    .map(|terms| terms.accrual_start.to_string())
+                    .map(|terms| terms.accrual_start().to_string())
                     .unwrap_or_default(),
                 details
-                    .map(|terms| terms.accrual_end.to_string())
+                    .map(|terms| terms.accrual_end().to_string())
                     .unwrap_or_default(),
                 details
                     .and_then(CouponDetails::fixing_index)
                     .map(ToString::to_string)
                     .unwrap_or_default(),
                 details
-                    .and_then(|terms| terms.market_index.as_ref())
+                    .and_then(|terms| terms.market_index())
                     .map(ToString::to_string)
                     .unwrap_or_default(),
-                optional(details.map(|terms| terms.notional)),
-                optional(details.and_then(|terms| terms.rate)),
-                optional(details.and_then(|terms| terms.spread)),
+                optional(details.map(|terms| terms.notional())),
+                optional(details.and_then(|terms| terms.rate())),
+                optional(details.and_then(|terms| terms.spread())),
                 details
-                    .map(|terms| format!("{:?}", terms.day_counter))
+                    .map(|terms| format!("{:?}", terms.day_counter()))
                     .unwrap_or_default(),
                 details
-                    .and_then(|terms| terms.rate_definition)
+                    .and_then(|terms| terms.rate_definition())
                     .map(|definition| format!("{definition:?}"))
                     .unwrap_or_default(),
                 details
-                    .and_then(|terms| terms.overnight_conventions.as_ref())
+                    .and_then(|terms| terms.overnight_conventions())
                     .map(|conventions| format!("{conventions:?}"))
                     .unwrap_or_default(),
                 details
-                    .and_then(|terms| terms.payoff.as_ref())
+                    .and_then(|terms| terms.payoff())
                     .map(|payoff| format!("{payoff:?}"))
                     .unwrap_or_default(),
             ]);
@@ -670,7 +674,7 @@ mod tests {
         let context = registry
             .upsert_if_changed(
                 "market",
-                QsObject::PricingContext(Box::new(market())),
+                QsObject::PricingContext(std::rc::Rc::new(market())),
                 "context",
             )
             .unwrap();
@@ -812,7 +816,7 @@ mod tests {
         let context = registry
             .upsert_if_changed(
                 "market",
-                QsObject::PricingContext(Box::new(market())),
+                QsObject::PricingContext(std::rc::Rc::new(market())),
                 "market",
             )
             .unwrap();
@@ -865,7 +869,7 @@ mod tests {
         let handle = registry
             .upsert_if_changed(
                 "market",
-                QsObject::PricingContext(Box::new(market())),
+                QsObject::PricingContext(std::rc::Rc::new(market())),
                 "context",
             )
             .unwrap();
@@ -922,6 +926,7 @@ mod tests {
             let configurations = registry
                 .upsert_if_changed(
                     "curves",
+                    #[cfg(test)]
                     QsObject::CurveConfigurations(vec![CurveConfiguration::new(
                         MarketIndex::SOFR,
                         DayCounter::Actual360,
@@ -954,7 +959,7 @@ mod tests {
             let handle = registry
                 .upsert_if_changed(
                     "market",
-                    QsObject::PricingContext(Box::new(context)),
+                    QsObject::PricingContext(std::rc::Rc::new(context)),
                     format!("{quotes}|{configurations}"),
                 )
                 .unwrap();

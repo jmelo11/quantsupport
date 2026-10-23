@@ -146,7 +146,7 @@ mod tests {
             "QS.CURVE.TABLE",
             "QS.CURVE.DISCOUNT",
             "QS.CURVE.FORWARD",
-            "QS.CURVE.ADD",
+            "QS.CONTEXT.ADD.CURVE",
         ] {
             assert!(names.contains(&expected), "missing {expected}");
         }

@@ -11,7 +11,9 @@ pub use crate::{
         tape::Tape,
     },
     core::{
-        cashflowaggregation::CouponDetails,
+        cashflowaggregation::{
+            CashflowAggregator, CouponDetails, GrossCashflowAggregator, NetCashflowAggregator,
+        },
         collateral::{
             DiscountPolicy, Discountable, FixedIncomeDiscountPolicy, SingleCurveCSADiscountPolicy,
         },
@@ -25,8 +27,9 @@ pub use crate::{
             volatilitycubelement::{ADVolatilityCubeElement, VolatilityCubeElement},
             volatilitysurfaceelement::{ADVolatilitySurfaceElement, VolatilitySurfaceElement},
         },
-        evaluationresults::{CashflowsTable, EvaluationResults, SensitivityMap},
+        evaluationresults::{CashflowKind, CashflowsTable, EvaluationResults, SensitivityMap},
         instrument::{AssetClass, Instrument},
+        makeportfolioaccumulator::MakePortfolioAccumulator,
         marketdatahandling::{
             constructedelementrequest::ConstructedElementRequest,
             constructedelementstore::{ConstructedElementStore, SharedElement},
@@ -42,7 +45,9 @@ pub use crate::{
         marketsnapshot::MarketSnapshot,
         marketsnapshotstore::MarketSnapshotStore,
         pillars::Pillars,
-        portfolio::{summarize_cashflows, Portfolio, PortfolioCashflow},
+        portfolio::{
+            summarize_cashflows, Portfolio, PortfolioAccumulator, PortfolioCashflowForecast,
+        },
         pricer::Pricer,
         pricerconfiguration::{
             FourierGridConfiguration, InstrumentType, PricerConfiguration, PricerImplementation,

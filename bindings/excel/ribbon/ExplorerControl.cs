@@ -25,15 +25,20 @@ namespace QuantSupport.Ribbon
         private readonly List<Control> positionControls = new List<Control>();
         private readonly List<Control> bondControls = new List<Control>();
         private readonly NumericUpDown target = new NumericUpDown { Minimum = 0, Maximum = uint.MaxValue, Width = 75 };
-        private readonly Label targetLabel = new Label { Text = "Leg / segment (0-based)", AutoSize = true, Padding = new Padding(0, 6, 0, 0) };
-        private readonly Button run = new Button { Text = "Run request", AutoSize = true };
+        private Label targetLabel = new Label { Text = "Leg / segment (0-based)", AutoSize = true, Padding = new Padding(0, 6, 0, 0) };
+        private readonly Button run = new Button { Text = "Calculate", AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, MinimumSize = new Size(110, 30), Padding = new Padding(12, 3, 12, 3) };
         private readonly Label message = new Label { AutoSize = true, Dock = DockStyle.Fill, Padding = new Padding(4), MaximumSize = new Size(700, 0) };
+        private readonly Label empty = new Label { Dock = DockStyle.Fill, Text = "Results appear here after calculation.", TextAlign = ContentAlignment.MiddleCenter, ForeColor = SystemColors.GrayText, BackColor = SystemColors.Window };
+        private readonly TableLayoutPanel toolbar;
+        private readonly Panel options;
+        private readonly RowStyle optionsHeight = new RowStyle(SizeType.Absolute);
+        private readonly SplitContainer results;
         private readonly DataGridView table = new DataGridView
         {
             Dock = DockStyle.Fill, ReadOnly = true, MultiSelect = false,
             SelectionMode = DataGridViewSelectionMode.FullRowSelect, AllowUserToAddRows = false,
             AllowUserToDeleteRows = false, RowHeadersVisible = false,
-            BackgroundColor = SystemColors.Window, AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.DisplayedCells
+            BackgroundColor = SystemColors.Window, VirtualMode = true, AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.None
         };
         private readonly TextBox parameters = new TextBox
         {
@@ -47,7 +52,7 @@ namespace QuantSupport.Ribbon
         private int generation;
         private string positionDefaultsKey;
 
-        private static ComboBox Choice() => new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 210, DisplayMember = "DisplayName", DropDownWidth = 420 };
+        private static ComboBox Choice() => new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 210, DisplayMember = "Name", DropDownWidth = 420 };
 
         internal ExplorerControl(bool trades, Func<long> windowId)
         {
@@ -55,6 +60,12 @@ namespace QuantSupport.Ribbon
             this.windowId = windowId;
             Dock = DockStyle.Fill;
             TableClipboard.Configure(table);
+            table.CellValueNeeded += (sender, args) =>
+            {
+                if (response == null || args.RowIndex < 0 || args.RowIndex >= response.Rows.Count) return;
+                var row = response.Rows[args.RowIndex];
+                if (args.ColumnIndex < row.Count) args.Value = row[args.ColumnIndex];
+            };
             table.CellFormatting += (sender, args) =>
             {
                 if (response?.NumericColumns == null || !response.NumericColumns.Contains(args.ColumnIndex)) return;
@@ -62,12 +73,19 @@ namespace QuantSupport.Ribbon
                 args.CellStyle.Alignment = DataGridViewContentAlignment.MiddleRight;
                 args.FormattingApplied = true;
             };
-            var toolbar = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, Padding = new Padding(4), WrapContents = true };
-            run.Text = trades ? "Run request" : "Refresh table";
-            toolbar.Controls.Add(run);
+            toolbar = new TableLayoutPanel { Anchor = AnchorStyles.Top | AnchorStyles.Left, ColumnCount = 2, RowCount = 0, Padding = new Padding(8), Margin = Padding.Empty, GrowStyle = TableLayoutPanelGrowStyle.AddRows };
+            toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 36));
+            toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 64));
+            run.Text = trades ? "Calculate" : "Refresh table";
+            MaterialIcons.Apply(run, trades ? "calculate" : "refresh");
             Action<string, Control> add = (label, control) => {
-                toolbar.Controls.Add(new Label { Text = label, AutoSize = true, Padding = new Padding(0, 6, 0, 0) });
-                toolbar.Controls.Add(control);
+                var row = toolbar.RowCount++;
+                toolbar.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+                toolbar.Controls.Add(new Label { Text = label, AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(0, 6, 10, 6) }, 0, row);
+                // Fill the available width without making an AutoSize row grow vertically.
+                control.Anchor = AnchorStyles.Left | AnchorStyles.Right;
+                control.Margin = new Padding(0, 4, 0, 4);
+                toolbar.Controls.Add(control, 1, row);
             };
             add(trades ? "Pricing context" : "Context (for curve inputs)", context);
             if (trades) add("Pricer", pricer);
@@ -75,7 +93,7 @@ namespace QuantSupport.Ribbon
             add(trades ? "Request" : "View", view);
             view.Items.AddRange(trades ? new object[] { "PV", "Cashflows", "Fair rate", "Sensitivities" } : new object[] { "Curve table", "Instruments & inputs" });
             view.SelectedIndex = 0;
-            if (trades) { toolbar.Controls.Add(targetLabel); toolbar.Controls.Add(target); }
+            if (trades) { add(targetLabel.Text, target); targetLabel = (Label)toolbar.GetControlFromPosition(0, toolbar.RowCount - 1); }
             if (trades)
             {
                 side.Items.AddRange(new object[] { "Receive", "Pay" });
@@ -83,36 +101,60 @@ namespace QuantSupport.Ribbon
                 anchor.Items.AddRange(new object[] { "CleanPrice", "DirtyPrice", "ZSpread" });
                 Action<string, Control, List<Control>> position = (label, control, group) =>
                 {
-                    var heading = new Label { Text = label, AutoSize = true, Padding = new Padding(0, 6, 0, 0) };
-                    toolbar.Controls.Add(heading);
-                    toolbar.Controls.Add(control);
+                    add(label, control);
+                    var heading = toolbar.GetControlFromPosition(0, toolbar.RowCount - 1);
                     group.Add(heading);
                     group.Add(control);
                 };
-                position("Preview trade date", tradeDate, positionControls);
-                position("Side", side, positionControls);
+                var terms = new TableLayoutPanel { AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, ColumnCount = 2, RowCount = 1, Margin = Padding.Empty };
+                terms.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 60));
+                terms.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 40));
+                tradeDate.AccessibleName = "Preview trade date";
+                side.AccessibleName = "Preview side";
+                tradeDate.Anchor = side.Anchor = AnchorStyles.Left | AnchorStyles.Right;
+                tradeDate.Margin = new Padding(0, 0, 6, 0);
+                side.Margin = Padding.Empty;
+                terms.Controls.Add(tradeDate, 0, 0);
+                terms.Controls.Add(side, 1, 0);
+                position("Preview date / side", terms, positionControls);
                 position("Bond anchor", anchor, bondControls);
                 position("Anchor value", anchorValue, bondControls);
             }
-            var split = new SplitContainer { Dock = DockStyle.Fill, Orientation = Orientation.Horizontal, Size = new Size(500, 300), SplitterDistance = 190 };
-            split.Panel1.Controls.Add(table);
-            split.Panel2.Controls.Add(parameters);
-            split.Panel2Collapsed = trades;
-            var layout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3 };
+            run.Anchor = AnchorStyles.Top | AnchorStyles.Left;
+            run.Margin = Padding.Empty;
+            var actions = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, FlowDirection = FlowDirection.RightToLeft, Padding = new Padding(8, 0, 8, 0), Margin = Padding.Empty };
+            actions.Controls.Add(run);
+            options = new Panel { Dock = DockStyle.Fill, AutoScroll = true, Margin = Padding.Empty };
+            options.Controls.Add(toolbar);
+            var resultArea = new Panel { Dock = DockStyle.Fill, Margin = Padding.Empty };
+            resultArea.Controls.Add(table);
+            resultArea.Controls.Add(empty);
+            Control output = resultArea;
+            if (!trades)
+            {
+                results = new SplitContainer { Dock = DockStyle.Fill, Orientation = Orientation.Horizontal, FixedPanel = FixedPanel.Panel2, Size = new Size(500, 300), SplitterDistance = 190, Panel2Collapsed = true };
+                results.Panel1.Controls.Add(resultArea);
+                results.Panel2.Controls.Add(parameters);
+                output = results;
+            }
+            var layout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 4 };
             layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            layout.RowStyles.Add(optionsHeight);
             layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-            layout.Controls.Add(toolbar, 0, 0);
-            layout.Controls.Add(message, 0, 1);
-            layout.Controls.Add(split, 0, 2);
+            layout.Controls.Add(options, 0, 0);
+            layout.Controls.Add(actions, 0, 1);
+            layout.Controls.Add(message, 0, 2);
+            layout.Controls.Add(output, 0, 3);
             Controls.Add(layout);
             SizeChanged += (sender, args) =>
             {
                 var width = Math.Max(1, ClientSize.Width - 8);
-                toolbar.MaximumSize = new Size(width, 0);
                 message.MaximumSize = new Size(width, 0);
+                SizeOptions();
             };
+            VisibleChanged += (sender, args) => { if (Visible) SizeOptions(); };
             run.Click += (sender, args) => RunQuery();
             context.SelectedIndexChanged += (sender, args) => { UpdatePositionDefaults(); OptionsChanged(); };
             pricer.SelectedIndexChanged += (sender, args) => OptionsChanged();
@@ -123,8 +165,35 @@ namespace QuantSupport.Ribbon
             side.SelectedIndexChanged += (sender, args) => OptionsChanged();
             anchor.SelectedIndexChanged += (sender, args) => OptionsChanged();
             anchorValue.TextChanged += (sender, args) => OptionsChanged();
-            table.SelectionChanged += (sender, args) => ShowParameters();
+            table.CurrentCellChanged += (sender, args) => ShowParameters();
             Bind(null, null);
+        }
+
+        private void SizeOptions()
+        {
+            var width = Math.Max(1, ClientSize.Width - SystemInformation.VerticalScrollBarWidth);
+            toolbar.Width = width;
+            var widths = toolbar.GetColumnWidths();
+            var preferred = toolbar.Padding.Vertical;
+            // Explicit row heights avoid surplus space from percentage-width measurements.
+            for (var row = 0; row < toolbar.RowCount; row++)
+            {
+                var height = 0;
+                for (var column = 0; column < toolbar.ColumnCount; column++)
+                {
+                    var control = toolbar.GetControlFromPosition(column, row);
+                    if (control == null || !control.Visible) continue;
+                    var availableWidth = Math.Max(1, widths[column] - control.Margin.Horizontal);
+                    height = Math.Max(height, control.GetPreferredSize(new Size(availableWidth, 0)).Height + control.Margin.Vertical);
+                }
+                toolbar.RowStyles[row].SizeType = SizeType.Absolute;
+                toolbar.RowStyles[row].Height = height;
+                preferred += height;
+            }
+            toolbar.Height = preferred;
+            options.AutoScrollMinSize = new Size(0, preferred);
+            var available = ClientSize.Height - message.GetPreferredSize(new Size(width, 0)).Height - run.PreferredSize.Height - 8 - 120;
+            optionsHeight.Height = Math.Min(preferred, Math.Max(40, available));
         }
 
         private static void Objects(ComboBox choice, IEnumerable<BrowserObject> objects, bool optional)
@@ -140,12 +209,24 @@ namespace QuantSupport.Ribbon
 
         internal void Bind(Snapshot next, BrowserObject selected)
         {
+            var changedSelection = item?.Identity != selected?.Identity;
             binding = true;
             snapshot = next;
             item = selected;
             var objects = next?.Objects ?? new List<BrowserObject>();
-            Objects(context, objects.Where(value => value.Kind == "PricingContext"), !trades);
+            Objects(context, objects.Where(value => !trades ? value.Kind == "PricingContext" : BrowserDisplay.IsPricingContext(value)), !trades);
             Objects(pricer, objects.Where(value => value.Kind == "Pricer"), false);
+            if (trades && changedSelection)
+            {
+                var defaults = BrowserDisplay.PricingDefaults(next, selected);
+                if (defaults.Length == 2) { context.SelectedItem = defaults[0]; pricer.SelectedItem = defaults[1]; }
+                else
+                {
+                    context.SelectedIndex = context.Items.Count == 1 ? 0 : -1;
+                    pricer.SelectedIndex = pricer.Items.Count == 1 ? 0 : -1;
+                }
+                side.SelectedIndex = 0;
+            }
             var previousCurve = curve.SelectedItem as string;
             curve.Items.Clear();
             foreach (var name in selected?.Curves ?? new List<string>()) curve.Items.Add(name);
@@ -184,6 +265,8 @@ namespace QuantSupport.Ribbon
             table.Rows.Clear();
             table.Columns.Clear();
             parameters.Clear();
+            if (results != null) results.Panel2Collapsed = true;
+            empty.Visible = true;
         }
 
         internal void CancelRequests() { generation++; }
@@ -191,10 +274,17 @@ namespace QuantSupport.Ribbon
         private void OptionsChanged()
         {
             if (binding) return;
+            message.ForeColor = SystemColors.ControlText;
             ClearResult();
             foreach (var control in positionControls) control.Visible = Preview;
             foreach (var control in bondControls) control.Visible = BondPreview;
-            target.Enabled = targetLabel.Enabled = trades && view.SelectedIndex == 2;
+            if (!trades)
+            {
+                // A context already owns its curves. Nodes need no calibration context.
+                var needsContext = item != null && item.Kind != "PricingContext" && view.SelectedIndex == 1;
+                context.Visible = toolbar.GetControlFromPosition(0, 0).Visible = needsContext;
+            }
+            target.Visible = targetLabel.Visible = target.Enabled = targetLabel.Enabled = trades && view.SelectedIndex == 2;
             var supported = item != null && (trades ? BrowserDisplay.CanPrice(item) : curve.Items.Count > 0);
             var bondFairRate = trades && (item?.Kind == "FixedRateBondTrade" || item?.Kind == "FixedRateBond") && view.SelectedIndex == 2;
             var anchorError = "";
@@ -203,15 +293,22 @@ namespace QuantSupport.Ribbon
                 if (anchor.SelectedItem == null) anchorError = "Choose the bond's CleanPrice, DirtyPrice or ZSpread anchor and enter its value.";
                 else try { BrowserDisplay.ReadNumber(anchorValue.Text); } catch (Exception error) { anchorError = error.Message; }
             }
-            run.Enabled = supported && item.CurrentInputs && !bondFairRate && anchorError.Length == 0 && (!trades || (context.SelectedItem is BrowserObject && pricer.SelectedItem is BrowserObject));
-            if (!supported) message.Text = trades ? "Select an instrument or trade to request PV, cashflows, a fair rate or sensitivities." : "Select a pricing context, curve, curve configuration or constructed elements store.";
+            var selectedContext = context.SelectedItem as BrowserObject;
+            var selectedPricer = pricer.SelectedItem as BrowserObject;
+            run.Enabled = supported && item.CurrentInputs && !bondFairRate && anchorError.Length == 0 &&
+                (!trades || (selectedContext?.CurrentInputs == true && selectedPricer?.CurrentInputs == true));
+            if (!supported) message.Text = trades ? "Select an instrument or trade to request PV, cashflows, a fair rate or sensitivities." : "Select a prepared pricing context or curve.";
             else if (!item.CurrentInputs) message.Text = "Inputs changed. Recalculate the workbook, then refresh before requesting results.";
             else if (bondFairRate) message.Text = "BondPricer does not define FairRate. Request YieldToMaturity or ZSpread through QS.EVALUATE for the bond's price or spread anchor.";
             else if (anchorError.Length > 0) message.Text = anchorError;
-            else if (!run.Enabled) message.Text = "Create a pricing context and an explicit pricer in the workbook, then refresh.";
-            else if (Preview) message.Text = "Instrument preview uses its notional and the trade date and side shown above. Choose a context, pricer and request, then click Run request.";
-            else if (trades) message.Text = "Choose a context, pricer and request, then click Run request. Fair rates use a zero-based leg or loan segment.";
+            else if (trades && context.Items.Count == 0) message.Text = snapshot?.Diagnostics?.Count > 0
+                ? "No prepared market is available. Fix the worksheet errors in Messages, then recalculate."
+                : "Prepare a market context in the workbook, then refresh.";
+            else if (!run.Enabled) message.Text = "Choose a current market and pricer. Recalculate the workbook if their inputs changed.";
+            else if (Preview) message.Text = "Preview uses the contract notional and the date and side above.";
+            else if (trades) message.Text = "Uses the trade's saved date, side and quantity.";
             else message.Text = "Choose a curve and view, then click Refresh table.";
+            SizeOptions();
         }
 
         private void RunQuery()
@@ -220,10 +317,8 @@ namespace QuantSupport.Ribbon
             ClearResult();
             BrowserQuery request;
             try { request = BuildQuery(); }
-            catch (Exception error) { message.Text = error.Message; return; }
+            catch (Exception error) { message.Text = error.Message; SizeOptions(); return; }
             var token = generation;
-            var origin = item.DisplayName + (trades ? "; " + (context.SelectedItem as BrowserObject)?.DisplayName + "; " + (pricer.SelectedItem as BrowserObject)?.DisplayName : "") +
-                (Preview ? "; preview " + request.TradeDate + ", " + request.Side : "");
             message.Text = "Running " + (trades ? (string)view.SelectedItem : request.Curve) + "…";
             ExcelAsyncUtil.QueueAsMacro(() =>
             {
@@ -249,11 +344,14 @@ namespace QuantSupport.Ribbon
                     if (IsDisposed || token != generation) return;
                     response = result;
                     foreach (var column in result.Columns) table.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = column, SortMode = DataGridViewColumnSortMode.NotSortable });
-                    foreach (var row in result.Rows) table.Rows.Add(row.Cast<object>().ToArray());
-                    message.Text = origin + Environment.NewLine + result.Title + ": " + result.Rows.Count + " rows. " + result.Message;
+                    table.RowCount = result.Rows.Count;
+                    empty.Visible = false;
+                    message.ForeColor = SystemColors.ControlText;
+                    message.Text = string.IsNullOrWhiteSpace(result.Message) ? result.Title + " · " + result.Rows.Count + " rows" : result.Message;
+                    SizeOptions();
                     ShowParameters();
                 }
-                catch (Exception error) { message.Text = error.Message; }
+                catch (Exception error) { message.ForeColor = Color.Firebrick; message.Text = "Unable to run request. " + error.Message; SizeOptions(); }
             });
         }
 
@@ -279,7 +377,9 @@ namespace QuantSupport.Ribbon
         {
             parameters.Clear();
             var row = table.CurrentRow?.Index ?? -1;
-            if (response?.Parameters == null || row < 0 || row >= response.Parameters.Count) return;
+            var hasParameters = !trades && view.SelectedIndex == 1 && response?.Parameters != null && row >= 0 && row < response.Parameters.Count && response.Parameters[row].Count > 0;
+            if (results != null) results.Panel2Collapsed = !hasParameters;
+            if (!hasParameters) return;
             var text = new StringBuilder("Selected instrument / input parameters" + Environment.NewLine);
             foreach (var field in response.Parameters[row]) text.AppendLine(field.Label + ": " + BrowserDisplay.Value(field));
             parameters.Text = text.ToString();

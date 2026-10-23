@@ -707,6 +707,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::prelude::CashflowKind;
     use std::cell::RefCell;
     use std::collections::HashMap;
     use std::rc::Rc;
@@ -1006,8 +1007,8 @@ mod tests {
             .curve();
         let mut reported_pv = 0.0;
         for i in 0..amounts.len() {
-            let receipt =
-                (cashflows.leg_indices()[i] == 0) != (cashflow_types[i] == "Disbursement");
+            let receipt = (cashflows.leg_indices()[i] == 0)
+                != (matches!(cashflow_types[i], CashflowKind::Disbursement));
             assert_eq!(amounts[i] > 0.0, receipt);
             reported_pv = amounts[i].mul_add(
                 curve.discount_factor(payment_dates[i])?.value(),
@@ -1033,14 +1034,14 @@ mod tests {
 
         for i in 0..payment_dates.len() {
             let ctype = &cashflow_types[i];
-            if ctype == "FixedRateCoupon" {
+            if matches!(ctype, CashflowKind::FixedRateCoupon) {
                 fixed_coupon_count += 1;
-            } else if ctype == "FloatingRateCoupon" {
+            } else if matches!(ctype, CashflowKind::FloatingRateCoupon) {
                 floating_coupon_count += 1;
                 if fixings[i].is_none() {
                     missing_floating_fixing_count += 1;
                 }
-            } else if ctype == "OptionEmbeddedCoupon" {
+            } else if matches!(ctype, CashflowKind::OptionEmbeddedCoupon) {
                 option_embedded_count += 1;
             }
 

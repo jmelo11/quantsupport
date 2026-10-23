@@ -79,23 +79,19 @@ def create_portfolio(path):
         s.range("SofrRates", market, 7, 1, 9, 1)
         s.range("TermRates", market, 7, 2, 9, 2)
         s.headers(market, 12, ["Construction step", "Object reference", "Purpose"])
-        row = s.step(market, 13, "1. Set market date", formula("QS.QUOTES.CREATE", '"Portfolio.Quotes"', s.name("ValuationDate")),
-                     "Quotes", "The date store is empty because these curves use explicit zero rates.")
-        row = s.step(market, row, "2. Start curve collection", formula("QS.CURVE.CONFIGS.CREATE", '"Portfolio.Curves"'),
-                     "InitialCurves", "Both indices are in the same USD pricing context.")
-        for index, source, previous, key in [("SOFR", "SofrRates", "InitialCurves", "SofrCurves"),
-                                             ("TermSOFR3m", "TermRates", "SofrCurves", "Curves")]:
-            row = s.step(market, row, "3. Configure " + index,
-                         formula("QS.CURVE.CONFIGS.ADD.ZERO", s.name(previous), text(index), '"Actual360"', '"Linear"',
-                                 "TRUE", s.name("Pillars"), s.name(source), '"Continuous"', '"Annual"'),
-                         key, "A separate index key keeps projection curves distinguishable.")
+        row = s.step(market, 13, "1. Create dated context", formula("QS.CONTEXT.CREATE", '"Portfolio.Root"', s.name("ValuationDate"), s.name("Currency"), '"SOFR"'), "Root", "The context owns its market stores.")
+        first_input = row
+        for index, source, key in [("SOFR", "SofrRates", "SofrCurves"), ("TermSOFR3m", "TermRates", "Curves")]:
+            row = s.step(market, row, "Add " + index,
+                         formula("QS.CONTEXT.ADD.ZERO.CURVE", s.name("Root"), text(index), s.name("Pillars"), s.name(source), '"Actual360"', '"Continuous"', '"Annual"', '"Linear"', "TRUE"), key, "Independent context curve addition.")
+        s.range("MarketInputs", market, first_input, 1, row - 1, 1)
 
         build = "3 Build"
         s.sheet(build, "Build trades and aggregate a handle range",
                 "Read top to bottom. Individual evaluations provide an independent PV check. The portfolio takes a contiguous range of trade handles and one broadcast pricer; it returns ordinary EvaluationResults.")
         s.headers(build, 6, ["Step", "Object reference", "Purpose"])
         row = s.step(build, 7, "1. Create pricing context",
-                     context("Portfolio.Context", s.name("Quotes"), s.name("Curves"), s.name("Currency"), '"SOFR"'),
+                     context("Portfolio.Context", s.name("Root"), s.name("MarketInputs")),
                      "Context", "Both explicit curves share the same valuation date.")
         row = s.step(build, row, "2. Select SOFR discounting",
                      formula("QS.DISCOUNT.POLICY.CSA", '"Portfolio.Policy"', s.name("Currency"), '"SOFR"'),
@@ -107,7 +103,7 @@ def create_portfolio(path):
             key = f"C{index:02}_"
             common = [text(f"Portfolio.C{index:02}.Instrument"), s.name("Start"), s.name(key + "Maturity"), s.name("Currency")]
             if case[1] == "Deposit":
-                name = "QS.INSTRUMENT.FIXED.DEPOSIT"
+                name = "QS.INSTRUMENT.FIXED.RATE.DEPOSIT"
                 args = [*common, s.name(key + "Index"), s.name(key + "Notional"), s.name(key + "Rate"), '"Actual360"', '"Simple"', '"Annual"']
             else:
                 name = "QS.INSTRUMENT.SWAP"
@@ -118,7 +114,7 @@ def create_portfolio(path):
                          formula("QS.TRADE.CREATE", text(f"Portfolio.C{index:02}.Trade"), s.name(key + "Instrument"), s.name("ValuationDate"), s.name(key + "Side")),
                          key + "Trade", "Position direction is separate from the instrument.")
             row = s.step(build, row, case[0] + " · reference result",
-                         formula("QS.EVALUATE", text(f"Portfolio.C{index:02}.Result"), s.name("Pricer"), s.name(key + "Trade"), s.name("Context"), s.name("Requests")),
+                         formula("QS.EVALUATE.RESULTS", s.name("Context"), s.name(key + "Trade"), s.name("Requests"), "", s.name("Pricer")),
                          key + "Result", "Independent single-position result used to check the portfolio PV.")
         s.headers(build, row, ["Portfolio member", "Trade handle passed to CREATE", "Reference evaluation"])
         for index, case in enumerate(PORTFOLIO_CASES, 1):
@@ -131,7 +127,7 @@ def create_portfolio(path):
                      formula("QS.PORTFOLIO.CREATE", '"Portfolio.Book"', s.name("Members")), "Book",
                      "The ordered member range holds live trade handles. Repeating a handle repeats its position.")
         s.step(build, row, "5. Aggregate completed results",
-               formula("QS.PORTFOLIO.EVALUATE", '"Portfolio.Result"', s.name("Book"), s.name("Pricer"), s.name("Context"), s.name("Requests"), s.name("Currency")),
+               formula("QS.EVALUATE.PORTFOLIO", s.name("Context"), s.name("Book"), s.name("Pricer"), s.name("Requests"), s.name("Currency")),
                "Result", "Returns standard EvaluationResults; numerical risk is summed after each trade's AD calculation.")
 
         results = "4 Results"

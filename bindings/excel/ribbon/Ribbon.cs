@@ -11,7 +11,7 @@ namespace QuantSupport.Ribbon
     public sealed class AddIn : IExcelAddIn
     {
         public void AutoOpen() { }
-        public void AutoClose() { BrowserPanes.CloseAll(); }
+        public void AutoClose() { BrowserPanes.CloseAll(); MaterialIcons.Release(); }
     }
 
     [ComVisible(true)]
@@ -22,6 +22,8 @@ namespace QuantSupport.Ribbon
             using (var stream = typeof(QuantSupportRibbon).Assembly.GetManifestResourceStream("QuantSupport.Ribbon.Ribbon.xml"))
             using (var reader = new StreamReader(stream)) return reader.ReadToEnd();
         }
+
+        public override object LoadImage(string imageId) => MaterialIcons.RibbonImage(imageId);
 
         internal static void Run(Action action)
         {

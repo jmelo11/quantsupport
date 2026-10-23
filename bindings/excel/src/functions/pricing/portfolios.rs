@@ -27,18 +27,18 @@ pub fn qs_portfolio_create(name: &str, trades: *const XLOPER12) -> Result<String
 }
 
 #[xll_bindgen(
-    name = "QS.PORTFOLIO.EVALUATE",
+    name = "QS.EVALUATE.PORTFOLIO",
     category = "QuantSupport - Pricing",
     help = "Returns standard EvaluationResults; pricers accepts one handle or one per trade, and value_currency identifies the common monetary PV currency"
 )]
 pub fn qs_portfolio_evaluate(
-    name: &str,
+    context: &str,
     portfolio: &str,
     pricers: *const XLOPER12,
-    context: &str,
     requests: *const XLOPER12,
     value_currency: Option<String>,
 ) -> Result<String, XllError> {
+    let name = with_registry(|r| r.cell_name("portfolio.evaluation")).map_err(value_error)?;
     let pricers = string_values(pricers, "pricers")?;
     let names = string_values(requests, "requests")?;
     let requests = pricing::parse_requests(&names).map_err(value_error)?;
@@ -61,7 +61,7 @@ pub fn qs_portfolio_evaluate(
     })
     .map_err(value_error)?;
     if let Some(handle) =
-        with_registry(|registry| registry.handle_if_unchanged(name, "EvaluationResults", &key))
+        with_registry(|registry| registry.handle_if_unchanged(&name, "EvaluationResults", &key))
             .map_err(value_error)?
     {
         return Ok(handle);
@@ -72,16 +72,19 @@ pub fn qs_portfolio_evaluate(
     .map_err(value_error)?;
     with_registry_mut(|registry| {
         registry.upsert_if_changed(
-            name,
-            QsObject::EvaluationResults(Box::new(result.with_identifier(name.into()))),
+            &name,
+            QsObject::EvaluationResults(Box::new(result.with_identifier(name.clone()))),
             key,
         )
     })
     .map_err(value_error)
 }
 
-#[xll_bindgen(name = "QS.RESULT.CASHFLOW.SUMMARY", aliases = ["QS.PORTFOLIO.RESULT.CASHFLOWS"], category = "QuantSupport - Pricing",
-    help = "Spills date and currency with separate signed Interest, Capital, Other and Total amounts; no accrual allocation or FX conversion")]
+#[xll_bindgen(
+    name = "QS.RESULT.CASHFLOW.SUMMARY",
+    category = "QuantSupport - Pricing",
+    help = "Spills date and currency with separate signed Interest, Capital, Other and Total amounts; no accrual allocation or FX conversion"
+)]
 pub fn qs_portfolio_result_cashflows(
     result: &str,
     transpose: *const XLOPER12,
@@ -92,7 +95,7 @@ pub fn qs_portfolio_result_cashflows(
     with_registry(|registry| {
         let result = registry.evaluation_results(result).map_err(value_error)?;
         let flows = result.cashflows().ok_or_else(|| {
-            not_found("Request Cashflows in QS.EVALUATE or QS.PORTFOLIO.EVALUATE")
+            not_found("Request Cashflows in QS.EVALUATE or QS.EVALUATE.PORTFOLIO")
         })?;
         let rows = quantsupport::prelude::summarize_cashflows(flows).map_err(value_error)?;
         let mut cells = [
@@ -108,11 +111,11 @@ pub fn qs_portfolio_result_cashflows(
         .collect::<Vec<_>>();
         for row in &rows {
             cells.extend([
-                XLOPER12::from_str(&row.payment_date.to_string()),
-                XLOPER12::from_str(&row.currency.to_string()),
-                XLOPER12::from_f64(row.interest),
-                XLOPER12::from_f64(row.capital),
-                XLOPER12::from_f64(row.other),
+                XLOPER12::from_str(&row.payment_date().to_string()),
+                XLOPER12::from_str(&row.currency().to_string()),
+                XLOPER12::from_f64(row.interest()),
+                XLOPER12::from_f64(row.capital()),
+                XLOPER12::from_f64(row.other()),
                 XLOPER12::from_f64(row.total()),
             ]);
         }

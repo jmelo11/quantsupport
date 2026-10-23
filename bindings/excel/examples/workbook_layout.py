@@ -15,9 +15,8 @@ def formula(name, *arguments):
     return "=" + name + "(" + ",".join(str(argument) for argument in arguments) + ")"
 
 
-def context(name, quotes, curves, currency, index, credit=""):
-    return formula("QS.CONTEXT.CREATE", text(name), quotes, curves, credit,
-                   *([""] * 8), currency, index, '"Mid"')
+def context(name, root, inputs):
+    return formula("QS.CONTEXT.PREPARE", text(name), root, inputs)
 
 
 class Study:

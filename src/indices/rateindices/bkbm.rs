@@ -1,66 +1,127 @@
 //! BKBM conventions, checked against QuantLib 5f4811e7e03b.
 
-use crate::time::enums::Frequency;
+use serde::{Deserialize, Serialize};
 
-use crate::time::{calendar::Calendar, calendars::newzealand::NewZealand};
+use crate::{
+    currencies::currency::Currency,
+    indices::{
+        marketindex::{MarketIndex, MarketIndexDetails},
+        quotetype::QuoteType,
+        rateindex::{RateIndexDetails, SwapConventions},
+    },
+    rates::{compounding::Compounding, interestrate::RateDefinition},
+    time::{
+        calendar::Calendar,
+        calendars::newzealand::NewZealand,
+        daycounter::DayCounter,
+        enums::{BusinessDayConvention, Frequency},
+        period::Period,
+    },
+};
 
-rate_index!(
-    BKBM1mIndex,
-    BKBM1m,
-    NZD,
-    Calendar::NewZealand(NewZealand::default()),
-    Actual365,
-    Simple,
-    0,
-    Monthly,
-    false,
-    (|_| Frequency::Semiannual, Actual365, Monthly, 0)
-);
-rate_index!(
-    BKBM2mIndex,
-    BKBM2m,
-    NZD,
-    Calendar::NewZealand(NewZealand::default()),
-    Actual365,
-    Simple,
-    0,
-    Bimonthly,
-    false,
-    (|_| Frequency::Semiannual, Actual365, Bimonthly, 0)
-);
-rate_index!(
-    BKBM3mIndex,
-    BKBM3m,
-    NZD,
-    Calendar::NewZealand(NewZealand::default()),
-    Actual365,
-    Simple,
-    0,
-    Quarterly,
-    false,
-    (|_| Frequency::Semiannual, Actual365, Quarterly, 0)
-);
-rate_index!(
-    BKBM4mIndex,
-    BKBM4m,
-    NZD,
-    Calendar::NewZealand(NewZealand::default()),
-    Actual365,
-    Simple,
-    0,
-    EveryFourthMonth,
-    false,
-    (|_| Frequency::Semiannual, Actual365, EveryFourthMonth, 0)
-);
-rate_index!(
-    BKBM6mIndex,
-    BKBM6m,
-    NZD,
-    Calendar::NewZealand(NewZealand::default()),
-    Actual365,
-    Simple,
-    0,
-    Semiannual,
-    false,
-    (|_| Frequency::Semiannual, Actual365, Semiannual, 0)
-);
+use super::macros::rate_index;
+
+rate_index! {
+    /// Conventions for the `BKBM1m` rate index.
+    BKBM1mIndex {
+        market_index: BKBM1m,
+        currency: NZD,
+        calendar: Calendar::NewZealand(NewZealand::default()),
+        fixing_lag: 0,
+        day_counter: Actual365,
+        compounding: Simple,
+        compounding_frequency: Annual,
+        frequency: Monthly,
+        is_in_arrears: false,
+        swap_conventions: {
+            fixed_day_counter: Actual365,
+            fixed_frequency: |_| Frequency::Semiannual,
+            floating_frequency: Monthly,
+            settlement_days: 0,
+        },
+    }
+}
+
+rate_index! {
+    /// Conventions for the `BKBM2m` rate index.
+    BKBM2mIndex {
+        market_index: BKBM2m,
+        currency: NZD,
+        calendar: Calendar::NewZealand(NewZealand::default()),
+        fixing_lag: 0,
+        day_counter: Actual365,
+        compounding: Simple,
+        compounding_frequency: Annual,
+        frequency: Bimonthly,
+        is_in_arrears: false,
+        swap_conventions: {
+            fixed_day_counter: Actual365,
+            fixed_frequency: |_| Frequency::Semiannual,
+            floating_frequency: Bimonthly,
+            settlement_days: 0,
+        },
+    }
+}
+
+rate_index! {
+    /// Conventions for the `BKBM3m` rate index.
+    BKBM3mIndex {
+        market_index: BKBM3m,
+        currency: NZD,
+        calendar: Calendar::NewZealand(NewZealand::default()),
+        fixing_lag: 0,
+        day_counter: Actual365,
+        compounding: Simple,
+        compounding_frequency: Annual,
+        frequency: Quarterly,
+        is_in_arrears: false,
+        swap_conventions: {
+            fixed_day_counter: Actual365,
+            fixed_frequency: |_| Frequency::Semiannual,
+            floating_frequency: Quarterly,
+            settlement_days: 0,
+        },
+    }
+}
+
+rate_index! {
+    /// Conventions for the `BKBM4m` rate index.
+    BKBM4mIndex {
+        market_index: BKBM4m,
+        currency: NZD,
+        calendar: Calendar::NewZealand(NewZealand::default()),
+        fixing_lag: 0,
+        day_counter: Actual365,
+        compounding: Simple,
+        compounding_frequency: Annual,
+        frequency: EveryFourthMonth,
+        is_in_arrears: false,
+        swap_conventions: {
+            fixed_day_counter: Actual365,
+            fixed_frequency: |_| Frequency::Semiannual,
+            floating_frequency: EveryFourthMonth,
+            settlement_days: 0,
+        },
+    }
+}
+
+rate_index! {
+    /// Conventions for the `BKBM6m` rate index.
+    BKBM6mIndex {
+        market_index: BKBM6m,
+        currency: NZD,
+        calendar: Calendar::NewZealand(NewZealand::default()),
+        fixing_lag: 0,
+        day_counter: Actual365,
+        compounding: Simple,
+        compounding_frequency: Annual,
+        frequency: Semiannual,
+        is_in_arrears: false,
+        swap_conventions: {
+            fixed_day_counter: Actual365,
+            fixed_frequency: |_| Frequency::Semiannual,
+            floating_frequency: Semiannual,
+            settlement_days: 0,
+        },
+    }
+}

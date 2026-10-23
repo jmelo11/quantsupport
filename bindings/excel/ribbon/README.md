@@ -37,11 +37,16 @@ Only numeric window identities and owned metadata persist in the UI; no
 Workbook, Window or Range COM wrappers are cached. A Forms timer refreshes the
 visible active pane when Excel is ready and the native change token changes,
 and disposes panes for closed windows. The object grid uses virtual rows, and
-only the visible explorer tab binds its context/pricer selectors.
-Details is always available; Pricing appears for instruments and trades, and
-Curves appears for objects with curves. **Price Selection** in the ribbon opens
-Pricing for the active handle cell; **Price selected** is also available in the
-panel. Instrument previews pass an explicit trade date and Receive/Pay side to
+only the visible explorer page binds its context/pricer selectors.
+Objects, Pricing and Curves have separate full-height native pages. Objects
+contains the searchable list and details. Pricing and Curves each have an object
+selector, so their tables use the space previously occupied by the list.
+Switching pages retains unchanged results and the selected view. Curve nodes
+use the whole result area; selecting a calibration input reveals its parameters.
+Messages appears when worksheet errors need attention. **Price Selection** in
+the ribbon opens Pricing for the active handle cell; **Price selected** and
+**View curves** open the selected object's page from Objects.
+Instrument previews pass an explicit trade date and Receive/Pay side to
 the native contract-to-trade conversion, retaining the instrument notional.
 The date starts at the selected context's valuation date. Bonds require an
 explicit CleanPrice, DirtyPrice or ZSpread anchor and value. Preview trades and
@@ -82,3 +87,24 @@ Run `cargo test -p quantsupport-xll --lib --example function_catalog` for native
 metadata, workbook isolation and lifetime checks. Building the native engine
 and validating the live ribbon require Windows Excel; the repository's Windows
 bindings job builds both as part of the complete distribution.
+
+## Panel layout
+
+The ribbon groups Market, Pricing, Workbook, Calculation and Help. Panel forms
+use two-column labels/controls, and result grids use virtual rows with fixed
+initial widths, resizable columns and wrapped headings. Worksheet diagnostics
+include source cells and native messages. Details omit formulas and dependency
+traces; navigation and copying remain explicit actions.
+
+Pricing keeps Calculate at a fixed size outside the scrollable input form and
+reserves space for results. Preview date and side share one row; fair-rate and
+bond fields appear only when applicable. Empty root contexts are excluded from
+pricing. The initial market and pricer follow the selected object's existing
+worksheet valuation when it identifies a single setup; ambiguous setups require
+a choice. Manual choices survive refreshes of that object. Instrument lists hide
+empty market-date columns, and clicking the worksheet-error count opens Messages.
+
+Ribbon, panel actions, tabs and copy menus use Google's Material Symbols
+Outlined icons in QuantSupport teal. Their original SVGs and Apache 2.0 license
+are [bundled with the source](Icons/README.md). The add-in embeds and renders
+the vectors locally, without an installed font or network access.

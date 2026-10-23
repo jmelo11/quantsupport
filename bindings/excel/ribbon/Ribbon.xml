@@ -1,20 +1,27 @@
-<customUI xmlns="http://schemas.microsoft.com/office/2009/07/customui">
+<customUI xmlns="http://schemas.microsoft.com/office/2009/07/customui" loadImage="LoadImage">
   <ribbon>
     <tabs>
       <tab id="qsTab" label="QuantSupport">
-        <group id="qsObjects" label="Workbook objects">
-          <button id="qsContexts" label="Pricing Contexts" size="large" imageMso="TableProperties" onAction="ShowContexts" screentip="Browse pricing contexts and their market dates" />
-          <button id="qsInstruments" label="Instruments &amp; Trades" size="large" imageMso="TableInsert" onAction="ShowInstruments" />
-          <button id="qsPrice" label="Price Selection" size="large" imageMso="TableProperties" onAction="PriceSelection" screentip="Price the selected instrument or trade" supertip="Opens Pricing for a handle in the active cell. Choose a context, pricer and request. Instrument previews use the displayed trade date, side and instrument notional." />
-          <button id="qsCurves" label="Curves" size="large" imageMso="TableProperties" onAction="ShowCurves" screentip="Explore curve tables, calibration instruments and their parameters" />
-          <button id="qsAll" label="All Objects" imageMso="FindDialog" onAction="ShowAll" />
-          <button id="qsInspect" label="Inspect Selection" imageMso="ZoomToSelection" onAction="InspectSelection" />
-          <button id="qsRefresh" label="Refresh Browser" imageMso="RefreshAll" onAction="RefreshBrowser" />
-          <button id="qsResetMemory" label="Reset Memory &amp; Rebuild" imageMso="RefreshAll" onAction="ResetMemory" screentip="Clear all QuantSupport objects and rebuild every open workbook" supertip="Releases native objects and calculation memory in this Excel instance, then calculates all open workbooks from scratch. Keeps your calculation mode unchanged." />
+        <group id="qsMarket" label="Market">
+          <button id="qsContexts" label="Pricing Contexts" size="large" image="account_balance_32" onAction="ShowContexts" screentip="Browse pricing contexts and their market dates" />
+          <button id="qsCurves" label="Curves" size="large" image="show_chart_32" onAction="ShowCurves" screentip="Explore curve tables, calibration instruments and their parameters" />
+        </group>
+        <group id="qsPricing" label="Pricing">
+          <button id="qsInstruments" label="Instruments &amp; Trades" size="large" image="receipt_long_32" onAction="ShowInstruments" />
+          <button id="qsPrice" label="Price Selection" size="large" image="calculate_32" onAction="PriceSelection" screentip="Price the selected instrument or trade" supertip="Opens Pricing for a handle in the active cell. Choose a context, pricer and request. Instrument previews use the displayed trade date, side and instrument notional." />
+        </group>
+        <group id="qsObjects" label="Workbook">
+          <button id="qsAll" label="All Objects" image="widgets_16" onAction="ShowAll" />
+          <button id="qsInspect" label="Inspect Selection" image="manage_search_16" onAction="InspectSelection" />
+          <button id="qsRefresh" label="Refresh Browser" image="refresh_16" onAction="RefreshBrowser" />
+
+        </group>
+        <group id="qsMaintenance" label="Calculation">
+          <button id="qsResetMemory" label="Reset Memory &amp; Rebuild" image="restart_alt_16" onAction="ResetMemory" screentip="Clear all QuantSupport objects and rebuild every open workbook" supertip="Releases native objects and calculation memory in this Excel instance, then calculates all open workbooks from scratch. Keeps your calculation mode unchanged." />
         </group>
         <group id="qsHelp" label="Setup &amp; help">
-          <button id="qsSetup" label="Setup Guide" size="large" imageMso="FileNew" onAction="OpenSetup" screentip="Open the workbook setup guide and formula examples" />
-          <button id="qsReference" label="Function Reference" imageMso="Help" onAction="OpenReference" />
+          <button id="qsSetup" label="Setup Guide" size="large" image="menu_book_32" onAction="OpenSetup" screentip="Open the workbook setup guide and formula examples" />
+          <button id="qsReference" label="Function Reference" image="help_16" onAction="OpenReference" />
         </group>
       </tab>
     </tabs>

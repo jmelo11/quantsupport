@@ -10,6 +10,35 @@ use crate::{
 };
 
 #[xll_bindgen(
+    name = "QS.SNAPSHOT.FROM.RANGE",
+    category = "QuantSupport - Market",
+    help = "Creates a historical archive from independent arrays of prepared contexts and observation timestamps"
+)]
+pub fn qs_snapshot_from_range(
+    name: &str,
+    contexts: *const XLOPER12,
+    timestamps: *const XLOPER12,
+) -> Result<String, XllError> {
+    use crate::functions::helpers::worksheet_columns;
+    let rows = worksheet_columns(&[("contexts", contexts), ("timestamps", timestamps)])?;
+    let mut handles = Vec::with_capacity(rows.len());
+    let mut instants = Vec::with_capacity(rows.len());
+    for row in rows {
+        let handle = row[0].text("context").map_err(value_error)?;
+        let instant = row[1].text("timestamp").map_err(value_error)?;
+        if handle.is_empty() || instant.is_empty() {
+            return Err(value_error(
+                "context and timestamp arrays cannot contain blanks",
+            ));
+        }
+        handles.push(handle.to_owned());
+        instants.push(instant.to_owned());
+    }
+    with_registry_mut(|registry| historical::from_contexts(registry, name, &handles, &instants))
+        .map_err(value_error)
+}
+
+#[xll_bindgen(
     name = "QS.SNAPSHOT.FROM.CONTEXT",
     category = "QuantSupport - Market",
     help = "Captures serializable base market inputs from a context at an observation timestamp; excludes fixings and temporary scenarios"
@@ -18,14 +47,18 @@ pub fn qs_snapshot_from_context(
     name: &str,
     timestamp: &str,
     context: &str,
+    inputs: *const XLOPER12,
 ) -> Result<String, XllError> {
     let instant = historical::timestamp(timestamp).map_err(value_error)?;
-    with_registry_mut(|registry| historical::capture(registry, name, instant, context))
-        .map_err(value_error)
+    let inputs = optional_string_values(inputs, "inputs")?;
+    with_registry_mut(|registry| {
+        historical::capture_inputs(registry, name, instant, context, &inputs)
+    })
+    .map_err(value_error)
 }
 
 #[xll_bindgen(
-    name = "QS.SNAPSHOTS.CREATE",
+    name = "QS.SNAPSHOT.ARCHIVE",
     category = "QuantSupport - Market",
     help = "Builds a complete snapshot archive from a range of snapshot handles; changing or removing rows rebuilds it"
 )]
@@ -52,7 +85,7 @@ pub fn qs_snapshot_selector(
 }
 
 #[xll_bindgen(
-    name = "QS.SNAPSHOTS.SELECT",
+    name = "QS.SNAPSHOT.SELECT",
     category = "QuantSupport - Market",
     help = "Selects one complete market from an archive; inspect its timestamp for the actual match"
 )]
@@ -90,7 +123,7 @@ pub fn qs_snapshot_reference_date(snapshot: &str) -> Result<String, XllError> {
 }
 
 #[xll_bindgen(
-    name = "QS.SNAPSHOTS.TIMESTAMPS",
+    name = "QS.SNAPSHOT.TIMESTAMPS",
     category = "QuantSupport - Market",
     help = "Spills the archive's observation timestamps in ascending UTC order"
 )]
@@ -116,7 +149,7 @@ pub fn qs_snapshots_timestamps(
 }
 
 #[xll_bindgen(
-    name = "QS.SNAPSHOTS.FROM.JSON",
+    name = "QS.SNAPSHOT.FROM.JSON",
     category = "QuantSupport - Market",
     help = "Loads the native snapshot JSON array shared with Python and Rust; duplicate timestamps are rejected"
 )]
@@ -125,7 +158,7 @@ pub fn qs_snapshots_from_json(name: &str, json: &str) -> Result<String, XllError
 }
 
 #[xll_bindgen(
-    name = "QS.SNAPSHOTS.TO.JSON",
+    name = "QS.SNAPSHOT.TO.JSON",
     category = "QuantSupport - Market",
     help = "Serializes native snapshot inputs as JSON text; errors if Excel's 32767 UTF-16-unit cell limit is exceeded"
 )]
@@ -153,14 +186,18 @@ mod tests {
         let context = with_registry_mut(|registry| {
             registry.upsert_if_changed(
                 "worksheet_market",
-                QsObject::PricingContext(Box::new(context)),
+                QsObject::PricingContext(std::rc::Rc::new(context)),
                 "2026-01-15",
             )
         })
         .unwrap();
-        let snapshot =
-            qs_snapshot_from_context("worksheet_snapshot", "2026-01-15T16:00:00Z", &context)
-                .unwrap();
+        let snapshot = qs_snapshot_from_context(
+            "worksheet_snapshot",
+            "2026-01-15T16:00:00Z",
+            &context,
+            &XLOPER12::nil(),
+        )
+        .unwrap();
         let range = xll_rs::convert::build_multi(
             vec![XLOPER12::from_str(&snapshot), XLOPER12::nil()],
             2,

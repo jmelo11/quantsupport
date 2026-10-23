@@ -1418,16 +1418,16 @@ mod tests {
             })
             .sum::<f64>();
         assert!((expected - result.price().unwrap_or_default()).abs() < 1e-7);
-        assert!(table
-            .cashflow_types()
-            .iter()
-            .all(|kind| ["FixedRateCoupon", "Redemption"].contains(&kind.as_str())));
+        assert!(table.cashflow_types().iter().all(|kind| matches!(
+            kind,
+            CashflowKind::FixedRateCoupon | CashflowKind::Redemption
+        )));
         assert!(table.leg_indices().contains(&1));
         let principal: f64 = table
             .amounts()
             .iter()
             .zip(table.cashflow_types())
-            .filter(|(_, kind)| kind.as_str() == "Redemption")
+            .filter(|(_, kind)| matches!(kind, CashflowKind::Redemption))
             .map(|(amount, _)| amount)
             .sum();
         assert!((principal - 100_000.0).abs() < 1e-7);
@@ -1484,7 +1484,7 @@ mod tests {
                     .amounts()
                     .iter()
                     .zip(table.cashflow_types())
-                    .filter(|(_, kind)| kind.as_str() == "Redemption")
+                    .filter(|(_, kind)| matches!(kind, CashflowKind::Redemption))
                     .map(|(amount, _)| *amount)
                     .collect::<Vec<_>>(),
             );
@@ -1534,7 +1534,7 @@ mod tests {
             table
                 .cashflow_types()
                 .iter()
-                .filter(|kind| kind.as_str() == "FloatingRateCoupon")
+                .filter(|kind| matches!(kind, CashflowKind::FloatingRateCoupon))
                 .count(),
             12
         );
@@ -1631,7 +1631,7 @@ mod tests {
                                         * DayCounter::Actual365
                                             .year_fraction(provider.date, *date))
                                     .exp();
-                                if kind == "Redemption" {
+                                if matches!(kind, CashflowKind::Redemption) {
                                     repaid += amount;
                                 }
                             }

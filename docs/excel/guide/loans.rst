@@ -1,221 +1,112 @@
-Loans, prepayment, and funding
-==============================
+Loan contracts, funding and fair rates
+======================================
 
-The `loan workbook <https://jmelo11.github.io/quantsupport/downloads/loan_pricing_example.xlsx>`_
-develops the same questions as the :doc:`mortgage notebook <../../python/studies/notebooks/loans>`:
-how principal returns, how floating resets change payments, and how prepayment,
-borrower credit, and treasury funding change lender value. Its editable zero
-curves are illustrative assumptions, while the notebook bootstraps its example
-curves from market quotes. Both use native loan construction and pricing.
+A loan contract contains principal, dates, coupon rules and repayment structure.
+A trade adds position direction and trade date. The pricer selects discounting,
+refinancing assumptions and fair-rate amortization behavior. This follows the
+Rust library's separation of ``Loan``, ``LoanTrade`` and ``LoanPricer``.
 
-Open **Start Here**, then follow the numbered tabs. **1 Inputs** contains shared
-terms, **2 Cases** keeps each agreement's settings and coupon schedule together,
-and **5 Results** compares the twelve cases. Use that tab's **Inspect one case**
-dropdown to select the agreement shown on both Cashflows and Risk; each result
-row also links to its inputs and build steps.
+Build a market context
+----------------------
 
-Construct a loan
-----------------
-
-:excel:func:`QS.INSTRUMENT.LOAN` defines the contract: name, start date,
-maturity date, currency, notional, rate, optional market index, repayment,
-payment frequency, day counter, then settings, coupons, and prepayments ranges.
-A blank market index makes ``rate`` a fixed annual coupon; otherwise it is a
-floating spread. Rates are decimals: 0.06 means 6%, 0.01 means a 100 bp margin.
-
-Create the position, discount policy and pricer separately. With the USD/SOFR
-context ``H5`` from :doc:`workbook`, enter USD in ``K20`` and SOFR in ``L20``;
-put Value, Cashflows, and Sensitivities in ``K23:K25``:
+For illustrative continuous zero rates, put ordered pillars in A10:A14 and rates
+in F10:F14. A pillar can be ISO text or a tenor such as 0D or 10Y.
 
 .. code-block:: text
 
-   D20 =QS.INSTRUMENT.LOAN("guide.loan",$B$1,"2031-02-24","USD",250000,0.06,,"French","Monthly","Actual360")
-   D21 =QS.TRADE.CREATE("guide.loan.trade",D20,$B$1,"Receive")
-   D22 =QS.DISCOUNT.POLICY.FIXED.INCOME("guide.loan.policy",K20,L20)
-   D23 =QS.PRICER.CREATE("guide.loan.pricer","LoanPricer",D22)
-   K26 =QS.REQUEST.FAIR.RATE(0)
-   D25 =QS.EVALUATE("guide.loan.results",D23,D21,H5,K23:K26)
-   D26 =QS.RESULT.VALUE(D25)
-   D27 =QS.RESULT.FAIR.RATE(D25)
-   D28 =D26-250000
+   B2 =QS.CONTEXT.CREATE("eur","2026-02-24","EUR","ESTR")
+   B3 =QS.CONTEXT.ADD.ZERO.CURVE(B2,"ESTR",A10:A14,F10:F14,"Actual360","Linear",TRUE,"Continuous","Annual")
+   B4 =QS.CONTEXT.ADD.ZERO.CURVE(B2,"EURIBOR12m",A10:A14,J10:J14,"Actual360","Linear",TRUE,"Continuous","Annual")
+   H2 =QS.CONTEXT.PREPARE("eur.market",B2,B3:B4)
 
-Default contractual terms are French amortization, monthly payments and
-Actual365 accrual. Position side is a trade input. Principal belongs to the
-loan contract; a different position principal requires another contract.
-Floating-first French and balloon contracts require an initial all-in
-``Amortization rate``. Reset and observation tenor default to index metadata,
-independently of payment frequency; daily indices reset at payment boundaries.
+ESTR discounts payments under the illustrated policy; EURIBOR12m projects the
+floating coupon. Use appropriate calibrated inputs for production work. The
+independent field arrays can have different orientations and need no table
+headers. Each curve addition references B2, and H2 consumes the complete array.
 
-Loan value is signed PV of future receipts strictly after valuation, excluding
-the advance. Net lender value at origination subtracts the original advance.
-``FairRate(index)`` selects a **zero-based contiguous rate segment** and returns
-one scalar ``fair_rate``. Changes in fixed rate, spread, coupon type or index
-start a segment; projected index resets do not.
-
-For target 1, the solver first shortens the loan to segment 0's end and repays
-remaining capital there. It solves and locks that coupon/spread, extends to
-segment 1's end, repays remaining capital, then solves segment 1. Only the
-selected segment's scalar is returned. The original contract stays unchanged.
-Use a separate evaluation for each target. Invalid indices fail explicitly;
-bounded schedules remain unsupported and each search uses [-5%, 50%].
-
-Worksheet settings
-------------------
-
-The optional 11th argument is a two-column ``Setting | Value`` range. A header
-row is optional; empty rows and blank values retain defaults. Setting names
-ignore capitalization, spaces and underscores. Numbers must be numeric cells;
-flags use TRUE/FALSE or 0/1. Unknown or duplicate names fail explicitly.
-
-For example, put these cells in ``A30:B32`` and pass that range as ``settings``:
-
-.. list-table:: Example settings
-   :header-rows: 1
-
-   * - Setting
-     - Value
-   * - Balloon fraction
-     - 0.25
-   * - Annual CPR
-     - 0.15
-
-Select Balloon repayment for this example. The balloon fraction is reserved
-principal due at maturity; Annual CPR is the conditional prepayment fraction.
-
-.. list-table:: Available settings
-   :header-rows: 1
-   :widths: 35 65
-
-   * - Setting
-     - Meaning / default
-   * - Balloon fraction
-     - Required for Balloon, in [0,1]; rejected for other repayment structures.
-   * - Amortization rate
-     - Initial all-in annual decimal rate for agreed principal. Fixed-first schedules otherwise use their first coupon.
-   * - Annual CPR
-     - Constant annual conditional prepayment rate in [0,1]. Omit for no prepayment.
-   * - Base CPR, Incentive multiplier, Maximum CPR
-     - Supply all three for refinancing-incentive prepayment, plus a benchmark on the pricer. Cannot combine with Annual CPR or a dated CPR range.
-   * - Prepayment model
-     - Optional None, CPR, CPRCurve, or Refinancing; normally inferred from the supplied inputs. Conflicting inputs fail.
-   * - Credit index, Recovery
-     - Borrower index text such as ``Credit:BORROWER``. Recovery defaults to 0.4 and must be in [0,1]. Supply credit configurations to the context.
-   * - Fixing frequency, Fixing lag, Index tenor
-     - Reset frequency, nonnegative whole business-day lag (default 0), and period text such as 12M. Past observations require a fixing store.
-   * - Calendar, Business day convention
-     - For example TARGET and Following. Defaults are NullCalendar and Unadjusted; accrual dates stay fixed.
-   * - Floor, Cap
-     - Optional all-in floating coupon bounds; projection excludes option time value.
-   * - Introductory periods, Introductory rate
-     - Optional shortcut for fixed-then-floating loans: supply both a positive whole payment count and the annual introductory coupon.
-
-Pricer settings and discounting
--------------------------------
-
-The pricer's optional Setting/Value range accepts ``Refinancing benchmark index``
-and ``Rebuild amortization for fair rate``. The former is required for
-refinancing-incentive prepayment and excludes replacement-loan margins and fees.
-The latter defaults to FALSE, preserving agreed principal during fair-rate
-trials; TRUE rebuilds trial principal from the first trial coupon's all-in rate.
-Neither setting changes the original loan.
-
-Funding is an ordinary curve. Construct FUNDING with the same curve APIs used
-for SOFR or an optional composite, as in :doc:`markets-and-products`. Set a
-policy's USD mapping to FUNDING and pass that policy to another LoanPricer.
-Reuse the same contract and trade to compare funding assumptions. Discount
-selection is a native policy responsibility, with no Discount index loan setting.
-
-Coupon schedule range
----------------------
-
-The optional 12th argument is a three-column coupon table. Put the following
-in ``E30:G33`` (including its optional header row):
-
-.. list-table:: Coupon segments
-   :header-rows: 1
-
-   * - Periods
-     - Rate / spread
-     - Market index
-   * - 12
-     - 0.03
-     -
-   * - 12
-     - 0.04
-     -
-   * -
-     - 0.01
-     - SOFR
-
-This defines 12 fixed payments at 3%, 12 at 4%, then SOFR plus 1% through
-maturity. A blank index means fixed; a blank final count fills the remaining
-payments. All earlier counts must be positive whole numbers. Supplied counts
-must cover the schedule. The coupon table replaces the scalar rate/index inputs
-and cannot be combined with introductory settings or floor/cap.
+Create fixed and floating contracts
+-----------------------------------
 
 .. code-block:: text
 
-   D40 =QS.INSTRUMENT.LOAN("guide.stepped",$B$1,"2031-02-24","USD",250000,0.03,,"French","Monthly","Actual360",,E30:G33)
-   D41 =QS.TRADE.CREATE("guide.stepped.trade",D40,$B$1,"Receive")
-   D42 =QS.EVALUATE("guide.stepped.second",D23,D41,H5,"FairRate(1)")
-   D43 =QS.RESULT.FAIR.RATE(D42)
-   D44 =QS.EVALUATE("guide.stepped.third",D23,D41,H5,"FairRate(2)")
-   D45 =QS.RESULT.FAIR.RATE(D44)
+   D2 =QS.LOAN.SETTINGS("balloon.options",0.25)
+   D3 =QS.INSTRUMENT.LOAN("balloon","2026-02-24","2031-02-24","EUR",10000,0.05,,"Balloon","Monthly","Actual365",D2)
+   D4 =QS.TRADE.CREATE("receipt",D3,"2026-02-24","Receive")
+   D5 =QS.LOAN.PRICER("loan.pricer","EUR","ESTR")
+   D6 =QS.EVALUATE(H2,D4,"Value",,D5)
+   D7 =QS.EVALUATE(H2,D4,"FairRate(0)",,D5)
 
-``D43`` returns the second segment's fixed coupon and ``D45`` the third segment's
-floating spread. They are ordinary scalar cells and can be placed in any layout.
-The USD/SOFR context supplies the projection curve for this schedule.
+The rate is an annual decimal fixed coupon when market_index is blank and a
+floating spread otherwise. French, Bullet and Balloon repayment are supported.
+Balloon repayment requires the residual principal fraction in Loan Settings.
+A floating French schedule can use a separate amortization rate; projection and
+contractual amortization assumptions are distinct.
 
-Dated prepayments
------------------
+``QS.LOAN.SETTINGS`` exposes named optional parameters in IntelliSense. Omitted
+settings retain native defaults. These include balloon fraction, credit index,
+recovery, fixing conventions, calendar, coupon bounds, introductory fixed terms
+and prepayment assumptions. The loan constructor accepts the settings handle,
+then independent coupon-period, rate/spread and index arrays, followed by
+independent prepayment-date and annual-CPR arrays. Only the final coupon segment
+may omit its period count to fill the remaining maturity.
 
-The optional 13th argument is a two-column ``Date | CPR`` range. Dates are ISO
-text, such as 2026-02-24; annual CPRs are numeric fractions in [0,1]. Dates must
-increase strictly. Headers and blank rows are optional. Before the first date,
-CPR is zero; after the last, it remains at the last supplied rate. This range
-cannot be combined with Annual CPR or refinancing settings.
+Funding and borrower credit
+---------------------------
 
-Borrower credit from cells
---------------------------
-
-Create a configuration collection, then add a credit curve using a range of CDS
-quote identifiers already present in the quote store:
-
-.. code-block:: text
-
-   D50 =QS.CREDIT.CURVE.CONFIGS.CREATE("guide.credit")
-   D51 =QS.CREDIT.CURVE.CONFIGS.ADD(D50,"Credit:BORROWER","USD","SOFR",0.4,J30:J36)
-
-Pass ``D51`` as the context's credit-configuration input and use
-``Credit index | Credit:BORROWER`` in the loan settings. Optional premium
-conventions default to Actual360 and Quarterly. The loan workbook demonstrates
-this complete workflow using ordinary numeric and text cells.
-
-Inspect receipts and risk
--------------------------
+Funding is an ordinary curve chosen by a discount policy. For a treasury spread,
+construct its curve in the same root, then compose a FUNDING index:
 
 .. code-block:: text
 
-   =QS.RESULT.CASHFLOWS(D25)
-   =QS.RESULT.CASHFLOWS(D25,TRUE,FALSE)
-   =QS.RESULT.SENSITIVITIES(D25)
+   B6 =QS.CONTEXT.ADD.ZERO.CURVE(B2,"FUNDINGSPREAD",A10:A14,N10:N14,"Actual360","Linear",TRUE,"Continuous","Annual")
+   B7 =QS.CONTEXT.ADD.COMPOSITE.CURVE(B2,"FUNDING","EURIBOR12m","FUNDINGSPREAD")
+   B8 =QS.CONTEXT.PREPARE("funded.market",B2,B3:B7)
+   D8 =QS.LOAN.PRICER("funded.loan","EUR","FUNDING")
+   D9 =QS.EVALUATE(B8,D4,"Value",,D8)
 
-Cashflows use leg 0 for scheduled receipts, 1 for prepayments, and 2 for
-recovery. ``Pay`` reverses signs. Sensitivities are derivatives per unit market
-pillar change; multiply decimal-rate derivatives by ``0.0001`` to estimate a
-+1 bp move. The loan workbook compares funding-curve and benchmark exposures.
+Keep B3:B7 exclusively for addition handles or blanks. Prepared contexts belong
+outside the contribution array. The full loan example separates those blocks.
+A composite multiplies base and spread discount factors. Contract settings do
+not select funding curves.
 
-Table layout
-------------
+For borrower credit use an independent CDS identifier and spread array:
 
-Table functions take trailing ``transpose`` and ``headers`` parameters.
-Both accept TRUE/FALSE; omitted or blank inputs default to FALSE and TRUE,
-respectively. ``headers=FALSE`` removes the header row first, then
-``transpose=TRUE`` exchanges rows and columns while preserving cell types.
-For a nine-field cashflow table, this produces nine rows with one column per
-cashflow. An empty result returns a blank cell.
+.. code-block:: text
 
-The controls apply to cashflows, sensitivities (including bond risk), curve
-tables, simulation calibration diagnostics, the function catalog, and help.
-Date lists, context index lists, historical timestamps, and simulation paths
-have no headers and expose only ``transpose``.
+   =QS.CONTEXT.ADD.CREDIT.CURVE(B2,"Credit:BORROWER","EUR","ESTR",0.4,A30:A36,F30:F36)
+   =QS.DISCOUNT.POLICY.FIXED.INCOME("policy","EUR","FUNDING")
+
+Attach the same credit index and compatible recovery assumption through Loan
+Settings. Credit and prepayment can affect the future receipt schedule. Preserve
+those model-dependent cashflows when comparing pricing and risk results.
+
+Prepayment and fair-rate interpretation
+---------------------------------------
+
+Constant annual CPR, dated CPR observations and refinancing-based prepayment
+models are supported through their named settings. Refinancing settings use an
+explicit benchmark curve on LoanPricer. Incompatible prepayment specifications
+fail validation instead of being silently combined.
+
+A loan FairRate(index) solves earlier coupon segments in order, repays remaining
+capital at each prefix end, locks each solved coupon/spread and then extends to
+the requested segment. One evaluation returns one scalar fair_rate. Use separate
+requests for each segment. Coupon bounds remain unsupported for this solve.
+The pricer's rebuild_amortization option controls whether the contractual
+amortization schedule is rebuilt during solving.
+
+.. code-block:: text
+
+   =QS.LOAN.PRICER("refinancing","EUR","FUNDING","EURIBOR12m",TRUE)
+   =QS.EVALUATE.RESULTS(H2,D4,{"Value","Cashflows","Sensitivities"},,D5)
+
+Value is signed future receipt PV under the native loan conventions and excludes
+the original principal advance. Cashflow tables contain signed undiscounted
+payments; loan legs distinguish scheduled receipts, prepayment and recovery.
+Sensitivities are raw per-unit derivatives. For decimal rates, multiply by
+0.0001 for an approximate +1 bp change.
+
+The editable loan study includes fixed, floating, balloon, stepped, mixed,
+credit, bounded and prepayment cases. A selector drives its cashflow and risk
+views. The context study demonstrates separate row/column inputs and historical
+batch pricing; see :doc:`risk-and-history` for snapshot selection and batch evaluation.

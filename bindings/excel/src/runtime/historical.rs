@@ -46,17 +46,74 @@ fn key(value: &impl serde::Serialize) -> Result<String, String> {
     serde_json::to_string(value).map_err(|error| error.to_string())
 }
 
+/// Build complete dated snapshots from aligned context and observation arrays.
+/// No intermediate snapshot objects are retained in the worksheet registry.
+pub fn from_contexts(
+    registry: &mut Registry,
+    name: &str,
+    contexts: &[String],
+    timestamps: &[String],
+) -> Result<String, String> {
+    if contexts.len() != timestamps.len() {
+        return Err("supply one observation timestamp per context".into());
+    }
+    let instants = timestamps
+        .iter()
+        .map(|s| timestamp(s))
+        .collect::<Result<Vec<_>, _>>()?;
+    for handle in contexts {
+        registry
+            .pricing_context(handle)
+            .map_err(|e| e.to_string())?;
+    }
+    let definition = key(&(contexts, &instants))?;
+    if let Some(handle) = registry
+        .handle_if_unchanged(name, "MarketSnapshotStore", &definition)
+        .map_err(|e| e.to_string())?
+    {
+        return Ok(handle);
+    }
+    let mut store = MarketSnapshotStore::new();
+    for (row, (handle, instant)) in contexts.iter().zip(instants).enumerate() {
+        let context = registry
+            .pricing_context(handle)
+            .map_err(|e| e.to_string())?;
+        let snapshot = MarketSnapshot::from_context(instant, context)
+            .map_err(|e| format!("snapshot row {}: {e}", row + 1))?;
+        store
+            .insert(snapshot)
+            .map_err(|e| format!("snapshot row {}: {e}", row + 1))?;
+    }
+    registry
+        .upsert_if_changed(
+            name,
+            QsObject::MarketSnapshotStore(Box::new(store)),
+            definition,
+        )
+        .map_err(|e| e.to_string())
+}
+
 /// Capture serializable base inputs; native code rejects supplied runtime curves.
+#[cfg(test)]
 pub fn capture(
     registry: &mut Registry,
     name: &str,
     instant: DateTime,
     context: &str,
 ) -> Result<String, String> {
-    let context_value = registry
-        .pricing_context(context)
-        .map_err(|error| error.to_string())?;
-    let definition = key(&(instant, context))?;
+    capture_inputs(registry, name, instant, context, &[])
+}
+
+/// Captures the complete declarative market referenced by the input range.
+pub fn capture_inputs(
+    registry: &mut Registry,
+    name: &str,
+    instant: DateTime,
+    context: &str,
+    inputs: &[String],
+) -> Result<String, String> {
+    let context_value = super::context::prepare(registry, context, inputs)?;
+    let definition = key(&(instant, context, inputs))?;
     if let Some(handle) = registry
         .handle_if_unchanged(name, "MarketSnapshot", &definition)
         .map_err(|error| error.to_string())?
@@ -64,7 +121,7 @@ pub fn capture(
         return Ok(handle);
     }
     let snapshot =
-        MarketSnapshot::from_context(instant, context_value).map_err(|error| error.to_string())?;
+        MarketSnapshot::from_context(instant, &context_value).map_err(|error| error.to_string())?;
     registry
         .upsert_if_changed(
             name,
@@ -168,16 +225,15 @@ pub fn pricing_context(
     selector: &str,
     fixings: Option<&str>,
 ) -> Result<String, String> {
-    let archive = registry
+    let _archive = registry
         .market_snapshot_store(store)
         .map_err(|error| error.to_string())?;
     let selector_value = registry
         .snapshot_selector(selector)
         .map_err(|error| error.to_string())?;
-    let fixings_value = fixings
-        .map(|handle| registry.fixing_store(handle))
-        .transpose()
-        .map_err(|error| error.to_string())?;
+    let _fixings_value = fixings
+        .map(|handle| super::context::fixing_history(registry, handle))
+        .transpose()?;
     let definition = key(&(store, selector, fixings))?;
     if let Some(handle) = registry
         .handle_if_unchanged(name, "PricingContext", &definition)
@@ -185,17 +241,132 @@ pub fn pricing_context(
     {
         return Ok(handle);
     }
-    let mut context = archive
-        .pricing_context(selector_value, fixings_value.cloned().unwrap_or_default())
-        .map_err(|error| error.to_string())?;
-    context.initialize().map_err(|error| error.to_string())?;
+    let context = shared_context(registry, store, selector_value, fixings)?;
     registry
-        .upsert_if_changed(
-            name,
-            QsObject::PricingContext(Box::new(context)),
-            definition,
-        )
+        .upsert_if_changed(name, QsObject::PricingContext(context), definition)
         .map_err(|error| error.to_string())
+}
+
+/// Reuses calibration by matched snapshot, quote side and fixing revision.
+/// Selector names and requested instants do not distinguish identical markets.
+pub fn shared_context(
+    registry: &Registry,
+    store: &str,
+    selector: &SnapshotSelector,
+    fixings: Option<&str>,
+) -> Result<std::rc::Rc<quantsupport::prelude::PricingContext>, String> {
+    let archive = registry
+        .market_snapshot_store(store)
+        .map_err(|e| e.to_string())?;
+    let fixings_value = fixings
+        .map(|handle| super::context::fixing_history(registry, handle))
+        .transpose()?;
+    let snapshot = archive.select(selector).map_err(|e| e.to_string())?;
+    context_for_snapshot(
+        registry,
+        store,
+        snapshot,
+        selector.level(),
+        fixings,
+        fixings_value,
+    )
+}
+
+fn context_for_snapshot(
+    registry: &Registry,
+    store: &str,
+    snapshot: &MarketSnapshot,
+    level: Level,
+    fixings: Option<&str>,
+    fixings_value: Option<&quantsupport::prelude::FixingStore>,
+) -> Result<std::rc::Rc<quantsupport::prelude::PricingContext>, String> {
+    let key = key(&(store, snapshot.timestamp(), level, fixings))?;
+    if let Some(context) = registry.context_cache.borrow().historical(&key) {
+        return Ok(context);
+    }
+    let mut context = snapshot.pricing_context(fixings_value.cloned().unwrap_or_default(), level);
+    context.initialize().map_err(|e| e.to_string())?;
+    let context = std::rc::Rc::new(context);
+    registry
+        .context_cache
+        .borrow_mut()
+        .remember_historical(key, &context);
+    Ok(context)
+}
+
+/// One scalar per instrument at its selected origination market. Each matched
+/// market is constructed once per batch; no per-row context or result is stored.
+pub fn values(
+    registry: &Registry,
+    store: &str,
+    instruments: &[String],
+    timestamps: &[String],
+    request: &quantsupport::prelude::Request,
+    pricer: &str,
+    fixings: Option<&str>,
+    rule: Option<&str>,
+    level: Option<&str>,
+) -> Result<Vec<f64>, String> {
+    if instruments.is_empty() || instruments.len() != timestamps.len() {
+        return Err("supply one origination timestamp per instrument".into());
+    }
+    registry.pricer(pricer).map_err(|e| e.to_string())?;
+    let archive = registry
+        .market_snapshot_store(store)
+        .map_err(|e| e.to_string())?;
+    let fixings_value = fixings
+        .map(|handle| super::context::fixing_history(registry, handle))
+        .transpose()?;
+    if !matches!(
+        request,
+        quantsupport::prelude::Request::Value
+            | quantsupport::prelude::Request::FairRate(_)
+            | quantsupport::prelude::Request::YieldToMaturity
+            | quantsupport::prelude::Request::ModifiedDuration
+            | quantsupport::prelude::Request::ZSpread
+            | quantsupport::prelude::Request::OAS
+    ) {
+        return Err("historical batches require a scalar request".into());
+    }
+    for (row, instrument) in instruments.iter().enumerate() {
+        registry
+            .object(instrument)
+            .map_err(|e| format!("historical pricing row {}: {e}", row + 1))?;
+    }
+    // Group rows before constructing markets. The output keeps worksheet order,
+    // while native market residency is bounded by one group at a time.
+    let mut groups = std::collections::BTreeMap::new();
+    for (row, instant) in timestamps.iter().enumerate() {
+        let selection = selector(instant, rule, level)
+            .map_err(|e| format!("historical pricing row {}: {e}", row + 1))?;
+        let snapshot = archive
+            .select(&selection)
+            .map_err(|e| format!("historical pricing row {}: {e}", row + 1))?;
+        groups
+            .entry(snapshot.timestamp())
+            .or_insert_with(|| (snapshot, selection.level(), Vec::new()))
+            .2
+            .push(row);
+    }
+    let mut output = vec![0.0; instruments.len()];
+    for (_, (snapshot, level, rows)) in groups {
+        let context =
+            context_for_snapshot(registry, store, snapshot, level, fixings, fixings_value)
+                .map_err(|e| format!("historical pricing row {}: {e}", rows[0] + 1))?;
+        for row in rows {
+            let results = super::context::evaluate(
+                registry,
+                &context,
+                &instruments[row],
+                request,
+                Some(pricer),
+            )
+            .and_then(|results| super::context::scalar(&results, request))
+            .map_err(|e| format!("historical pricing row {}: {e}", row + 1))?;
+            output[row] = results;
+        }
+    }
+    Ok(output)
 }
 
 /// Restore the same JSON snapshot array used by Python and Rust.
@@ -243,7 +414,7 @@ mod tests {
         registry
             .upsert_if_changed(
                 name,
-                QsObject::PricingContext(Box::new(context)),
+                QsObject::PricingContext(std::rc::Rc::new(context)),
                 format!("{date}:{rate}"),
             )
             .unwrap()
@@ -260,6 +431,248 @@ mod tests {
             .discount_factor(Date::new(2025, 6, 15))
             .unwrap()
             .value()
+    }
+
+    #[test]
+    fn named_historical_contexts_share_native_markets_but_separate_sides_and_fixing_revisions() {
+        use std::rc::Rc;
+        let mut registry = Registry::default();
+        let base = market(&mut registry, "base", 1, 0.04);
+        let snapshot = capture(
+            &mut registry,
+            "snapshot",
+            timestamp("2025-01-01T16:00:00Z").unwrap(),
+            &base,
+        )
+        .unwrap();
+        let store = archive(&mut registry, "archive", &[snapshot]).unwrap();
+        let selector_a = store_selector(
+            &mut registry,
+            "a",
+            selector("2025-01-01T17:00:00Z", None, None).unwrap(),
+        )
+        .unwrap();
+        let selector_b = store_selector(
+            &mut registry,
+            "b",
+            selector("2025-01-01T18:00:00Z", None, None).unwrap(),
+        )
+        .unwrap();
+        let a = pricing_context(&mut registry, "instrument.a", &store, &selector_a, None).unwrap();
+        let b = pricing_context(&mut registry, "instrument.b", &store, &selector_b, None).unwrap();
+        let context = |handle: &str| match registry.object(handle).unwrap() {
+            QsObject::PricingContext(context) => Rc::clone(context),
+            _ => panic!("context"),
+        };
+        assert!(Rc::ptr_eq(&context(&a), &context(&b)));
+        let bid = shared_context(
+            &registry,
+            &store,
+            &selector("2025-01-01T17:00:00Z", None, Some("Bid")).unwrap(),
+            None,
+        )
+        .unwrap();
+        assert!(!Rc::ptr_eq(&context(&a), &bid));
+        assert_eq!(bid.quote_level(), Level::Bid);
+        let history = registry
+            .upsert_if_changed("fixings", QsObject::FixingStore(Box::default()), "empty")
+            .unwrap();
+        let selector = selector("2025-01-01T17:00:00Z", None, None).unwrap();
+        let first = shared_context(&registry, &store, &selector, Some(&history)).unwrap();
+        let changed = registry
+            .update_fixing_store_if_changed(&history, "observation", "0.1", |store| {
+                store.add_fixing(&MarketIndex::SOFR, Date::new(2024, 12, 31), 0.1)
+            })
+            .unwrap();
+        assert!(shared_context(&registry, &store, &selector, Some(&history)).is_err());
+        let second = shared_context(&registry, &store, &selector, Some(&changed)).unwrap();
+        assert!(!Rc::ptr_eq(&first, &second));
+        assert_eq!(
+            second
+                .fixing_store()
+                .fixing(&MarketIndex::SOFR, Date::new(2024, 12, 31))
+                .unwrap(),
+            0.1
+        );
+    }
+
+    #[test]
+    fn historical_batch_preserves_row_order_and_matches_individual_native_valuations() {
+        use crate::runtime::{
+            context, pricing,
+            products::{InstrumentObject, NativeInstrument},
+        };
+        let mut registry = Registry::default();
+        let mut snapshots = Vec::new();
+        for (day, rate) in [(1, 0.02), (2, 0.08)] {
+            let base = market(&mut registry, &format!("market{day}"), day, rate);
+            snapshots.push(
+                capture(
+                    &mut registry,
+                    &format!("snapshot{day}"),
+                    timestamp(&format!("2025-01-{day:02}T16:00:00Z")).unwrap(),
+                    &base,
+                )
+                .unwrap(),
+            );
+        }
+        let store = archive(&mut registry, "archive", &snapshots).unwrap();
+        let policy = pricing::fixed_income_policy(
+            &vec![vec![
+                super::super::inputs::Cell::Text("USD".into()),
+                super::super::inputs::Cell::Text("SOFR".into()),
+            ]],
+            false,
+        )
+        .unwrap();
+        let pricer =
+            pricing::PricerObject::new("DiscountedCashflowPricer", Some(&policy), &vec![]).unwrap();
+        let pricer = registry
+            .upsert_if_changed("pricer", QsObject::Pricer(Box::new(pricer)), "pricer")
+            .unwrap();
+        let deposit = MakeFixedRateDeposit::<DualFwd>::default()
+            .with_identifier("deposit".into())
+            .with_start_date(Date::new(2025, 1, 3))
+            .with_maturity_date(Date::new(2025, 6, 15))
+            .with_currency(Currency::USD)
+            .with_notional(1000.0)
+            .with_rate(0.05)
+            .with_rate_definition(RateDefinition::new(
+                DayCounter::Actual360,
+                Compounding::Simple,
+                Frequency::Annual,
+            ))
+            .build()
+            .unwrap();
+        let instrument = registry
+            .upsert_if_changed(
+                "deposit",
+                QsObject::Instrument(Box::new(InstrumentObject {
+                    native: NativeInstrument::FixedRateDeposit(deposit),
+                    notional: 1000.0,
+                    foreign_notional: None,
+                })),
+                "deposit",
+            )
+            .unwrap();
+        let instants: Vec<String> = [
+            "2025-01-02T17:00:00Z",
+            "2025-01-01T18:00:00Z",
+            "2025-01-02T19:00:00Z",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+        let instruments = vec![instrument.clone(); 3];
+        let count = registry.len();
+        let actual = values(
+            &registry,
+            &store,
+            &instruments,
+            &instants,
+            &Request::Value,
+            &pricer,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        for (value, instant) in actual.iter().zip(&instants) {
+            let selector = selector(instant, None, None).unwrap();
+            let mut native = registry
+                .market_snapshot_store(&store)
+                .unwrap()
+                .pricing_context(&selector, FixingStore::default())
+                .unwrap();
+            native.initialize().unwrap();
+            let expected = context::evaluate(
+                &registry,
+                &native,
+                &instrument,
+                &Request::Value,
+                Some(&pricer),
+            )
+            .unwrap()
+            .price()
+            .unwrap();
+            assert!((value - expected).abs() < 1e-10);
+        }
+        assert_eq!(actual[0], actual[2]);
+        assert_ne!(actual[0], actual[1]);
+        assert_eq!(
+            registry.len(),
+            count,
+            "batch retains no context or result handles"
+        );
+        let mut bad = instants.clone();
+        bad[1] = "bad".into();
+        assert!(values(
+            &registry,
+            &store,
+            &instruments,
+            &bad,
+            &Request::Value,
+            &pricer,
+            None,
+            None,
+            None
+        )
+        .unwrap_err()
+        .contains("row 2"));
+        assert!(values(
+            &registry,
+            &store,
+            &instruments,
+            &instants[..2],
+            &Request::Value,
+            &pricer,
+            None,
+            None,
+            None
+        )
+        .is_err());
+    }
+
+    #[test]
+    #[ignore = "release benchmark; excludes Excel callbacks and instrument valuation"]
+    fn benchmark_fifty_thousand_contexts() {
+        let mut registry = Registry::default();
+        let base = market(&mut registry, "base", 1, 0.04);
+        let snapshot = capture(
+            &mut registry,
+            "snapshot",
+            timestamp("2025-01-01T16:00:00Z").unwrap(),
+            &base,
+        )
+        .unwrap();
+        let store = archive(&mut registry, "archive", &[snapshot]).unwrap();
+        let selection = selector("2025-01-01T17:00:00Z", None, None).unwrap();
+        let began = std::time::Instant::now();
+        for _ in 0..50_000 {
+            let mut context = registry
+                .market_snapshot_store(&store)
+                .unwrap()
+                .pricing_context(&selection, FixingStore::default())
+                .unwrap();
+            context.initialize().unwrap();
+            std::hint::black_box(context);
+        }
+        let rebuilding = began.elapsed();
+        let selector = store_selector(&mut registry, "selector", selection).unwrap();
+        let began = std::time::Instant::now();
+        for row in 0..50_000 {
+            std::hint::black_box(
+                pricing_context(
+                    &mut registry,
+                    &format!("instrument.{row}"),
+                    &store,
+                    &selector,
+                    None,
+                )
+                .unwrap(),
+            );
+        }
+        println!("50,000 contexts, one matched deposit market: rebuilding {rebuilding:?}; shared named contexts {:?}", began.elapsed());
     }
 
     #[test]
@@ -510,7 +923,7 @@ mod tests {
         let context = registry
             .upsert_if_changed(
                 "zero_market",
-                QsObject::PricingContext(Box::new(context)),
+                QsObject::PricingContext(std::rc::Rc::new(context)),
                 "zero inputs",
             )
             .unwrap();
@@ -550,12 +963,68 @@ mod tests {
         let runtime = registry
             .upsert_if_changed(
                 "runtime_market",
-                QsObject::PricingContext(Box::new(runtime)),
+                QsObject::PricingContext(std::rc::Rc::new(runtime)),
                 "runtime",
             )
             .unwrap();
         assert!(capture(&mut registry, "unsupported", instant, &runtime)
             .unwrap_err()
             .contains("construction configurations"));
+    }
+}
+
+#[cfg(test)]
+mod context_array_tests {
+    use super::*;
+    use quantsupport::prelude::*;
+    #[test]
+    fn context_arrays_rebuild_after_removal_and_reject_duplicate_observation_instants() {
+        let mut registry = Registry::default();
+        let contexts = (15..=16)
+            .map(|day| {
+                crate::runtime::context::create(
+                    &mut registry,
+                    &format!("day{day}"),
+                    Date::new(2026, 1, day),
+                    Currency::USD,
+                    MarketIndex::SOFR,
+                    Level::Mid,
+                )
+                .unwrap()
+            })
+            .collect::<Vec<_>>();
+        let times = vec!["2026-01-15T16:00:00Z".into(), "2026-01-16T16:00:00Z".into()];
+        let first = from_contexts(&mut registry, "history", &contexts, &times).unwrap();
+        assert_eq!(
+            from_contexts(&mut registry, "history", &contexts, &times).unwrap(),
+            first
+        );
+        assert_eq!(
+            registry
+                .market_snapshot_store(&first)
+                .unwrap()
+                .timestamps()
+                .len(),
+            2
+        );
+        let duplicate = vec![times[0].clone(), "2026-01-15T17:00:00+01:00".into()];
+        assert!(from_contexts(&mut registry, "bad", &contexts, &duplicate).is_err());
+        assert!(from_contexts(&mut registry, "bad", &contexts, &times[..1]).is_err());
+        let next = from_contexts(&mut registry, "history", &contexts[..1], &times[..1]).unwrap();
+        assert_ne!(first, next);
+        assert_eq!(
+            registry
+                .market_snapshot_store(&next)
+                .unwrap()
+                .timestamps()
+                .len(),
+            1
+        );
+        let empty = from_contexts(&mut registry, "history", &[], &[]).unwrap();
+        assert!(registry
+            .market_snapshot_store(&empty)
+            .unwrap()
+            .timestamps()
+            .is_empty());
     }
 }

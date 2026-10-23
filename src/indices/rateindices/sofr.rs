@@ -12,130 +12,135 @@ use crate::{
         calendar::Calendar,
         calendars::unitedstates::{Market, UnitedStates},
         daycounter::DayCounter,
-        enums::Frequency,
+        enums::{BusinessDayConvention, Frequency},
+        period::Period,
     },
 };
 
-macro_rules! sofr_index {
-    ($name:ident, $doc:expr, $display:expr, $variant:ident) => {
-        sofr_index!($name, $doc, $display, $variant, true, Frequency::Daily);
-    };
-    ($name:ident, $doc:expr, $display:expr, $variant:ident, $in_arrears:expr, $frequency:expr) => {
-        #[doc = $doc]
-        #[derive(Copy, Clone, Serialize, Default, Deserialize)]
-        pub struct $name;
+use super::macros::rate_index;
 
-        impl MarketIndexDetails for $name {
-            fn quote_type(&self) -> QuoteType {
-                QuoteType::Rate
-            }
-
-            fn name(&self) -> &'static str {
-                $display
-            }
-        }
-
-        impl RateIndexDetails for $name {
-            /// Returns daily overnight or term-SOFR tenor frequency for loan resets.
-            fn frequency(&self) -> Frequency {
-                $frequency
-            }
-
-            fn calendar(&self) -> Calendar {
-                Calendar::UnitedStates(UnitedStates::new(Market::Sofr))
-            }
-
-            fn currency(&self) -> Currency {
-                Currency::USD
-            }
-
-            fn fixing_lag(&self) -> i64 {
-                1
-            }
-
-            fn rate_definition(&self) -> RateDefinition {
-                RateDefinition::new(
-                    DayCounter::Actual360,
-                    Compounding::Simple,
-                    Frequency::Annual,
-                )
-            }
-
-            fn swap_conventions(&self, _tenor: crate::time::period::Period) -> SwapConventions {
-                SwapConventions::new(
-                    RateDefinition::new(
-                        DayCounter::Actual360,
-                        Compounding::Simple,
-                        Frequency::Annual,
-                    ),
-                    if $in_arrears {
-                        Frequency::Annual
-                    } else {
-                        Frequency::Semiannual
-                    },
-                    if $in_arrears {
-                        Frequency::Annual
-                    } else {
-                        $frequency
-                    },
-                    self.rate_definition().day_counter(),
-                    2,
-                    crate::time::enums::BusinessDayConvention::ModifiedFollowing,
-                )
-            }
-
-            fn market_index(&self) -> MarketIndex {
-                MarketIndex::$variant
-            }
-
-            fn is_in_arrears(&self) -> bool {
-                $in_arrears
-            }
-        }
-    };
+rate_index! {
+    /// Details for the SOFR overnight rate index.
+    SOFRIndex {
+        market_index: SOFR,
+        currency: USD,
+        calendar: Calendar::UnitedStates(UnitedStates::new(Market::Sofr)),
+        fixing_lag: 1,
+        day_counter: Actual360,
+        compounding: Simple,
+        compounding_frequency: Annual,
+        frequency: Daily,
+        is_in_arrears: true,
+        swap_conventions: {
+            fixed_day_counter: Actual360,
+            fixed_frequency: |_| Frequency::Annual,
+            floating_frequency: Annual,
+            settlement_days: 2,
+        },
+    }
 }
 
-sofr_index!(
-    SOFRIndex,
-    "Details for the SOFR overnight rate index.",
-    "SOFR",
-    SOFR
-);
-sofr_index!(
-    SOFRCompoundedIndex,
-    "Details for the SOFR Compounded rate index.",
-    "SOFRCompounded",
-    SOFRCompounded
-);
-sofr_index!(
-    TermSOFR1mIndex,
-    "Details for the Term-SOFR 1-month rate index.",
-    "TermSOFR1m",
-    TermSOFR1m,
-    false,
-    Frequency::Monthly
-);
-sofr_index!(
-    TermSOFR3mIndex,
-    "Details for the Term-SOFR 3-month rate index.",
-    "TermSOFR3m",
-    TermSOFR3m,
-    false,
-    Frequency::Quarterly
-);
-sofr_index!(
-    TermSOFR6mIndex,
-    "Details for the Term-SOFR 6-month rate index.",
-    "TermSOFR6m",
-    TermSOFR6m,
-    false,
-    Frequency::Semiannual
-);
-sofr_index!(
-    TermSOFR12mIndex,
-    "Details for the Term-SOFR 12-month rate index.",
-    "TermSOFR12m",
-    TermSOFR12m,
-    false,
-    Frequency::Annual
-);
+rate_index! {
+    /// Details for the SOFR Compounded rate index.
+    SOFRCompoundedIndex {
+        market_index: SOFRCompounded,
+        currency: USD,
+        calendar: Calendar::UnitedStates(UnitedStates::new(Market::Sofr)),
+        fixing_lag: 1,
+        day_counter: Actual360,
+        compounding: Simple,
+        compounding_frequency: Annual,
+        frequency: Daily,
+        is_in_arrears: true,
+        swap_conventions: {
+            fixed_day_counter: Actual360,
+            fixed_frequency: |_| Frequency::Annual,
+            floating_frequency: Annual,
+            settlement_days: 2,
+        },
+    }
+}
+
+rate_index! {
+    /// Details for the Term-SOFR 1-month rate index.
+    TermSOFR1mIndex {
+        market_index: TermSOFR1m,
+        currency: USD,
+        calendar: Calendar::UnitedStates(UnitedStates::new(Market::Sofr)),
+        fixing_lag: 1,
+        day_counter: Actual360,
+        compounding: Simple,
+        compounding_frequency: Annual,
+        frequency: Monthly,
+        is_in_arrears: false,
+        swap_conventions: {
+            fixed_day_counter: Actual360,
+            fixed_frequency: |_| Frequency::Semiannual,
+            floating_frequency: Monthly,
+            settlement_days: 2,
+        },
+    }
+}
+
+rate_index! {
+    /// Details for the Term-SOFR 3-month rate index.
+    TermSOFR3mIndex {
+        market_index: TermSOFR3m,
+        currency: USD,
+        calendar: Calendar::UnitedStates(UnitedStates::new(Market::Sofr)),
+        fixing_lag: 1,
+        day_counter: Actual360,
+        compounding: Simple,
+        compounding_frequency: Annual,
+        frequency: Quarterly,
+        is_in_arrears: false,
+        swap_conventions: {
+            fixed_day_counter: Actual360,
+            fixed_frequency: |_| Frequency::Semiannual,
+            floating_frequency: Quarterly,
+            settlement_days: 2,
+        },
+    }
+}
+
+rate_index! {
+    /// Details for the Term-SOFR 6-month rate index.
+    TermSOFR6mIndex {
+        market_index: TermSOFR6m,
+        currency: USD,
+        calendar: Calendar::UnitedStates(UnitedStates::new(Market::Sofr)),
+        fixing_lag: 1,
+        day_counter: Actual360,
+        compounding: Simple,
+        compounding_frequency: Annual,
+        frequency: Semiannual,
+        is_in_arrears: false,
+        swap_conventions: {
+            fixed_day_counter: Actual360,
+            fixed_frequency: |_| Frequency::Semiannual,
+            floating_frequency: Semiannual,
+            settlement_days: 2,
+        },
+    }
+}
+
+rate_index! {
+    /// Details for the Term-SOFR 12-month rate index.
+    TermSOFR12mIndex {
+        market_index: TermSOFR12m,
+        currency: USD,
+        calendar: Calendar::UnitedStates(UnitedStates::new(Market::Sofr)),
+        fixing_lag: 1,
+        day_counter: Actual360,
+        compounding: Simple,
+        compounding_frequency: Annual,
+        frequency: Annual,
+        is_in_arrears: false,
+        swap_conventions: {
+            fixed_day_counter: Actual360,
+            fixed_frequency: |_| Frequency::Semiannual,
+            floating_frequency: Annual,
+            settlement_days: 2,
+        },
+    }
+}

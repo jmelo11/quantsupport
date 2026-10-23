@@ -17,7 +17,11 @@
     <Reference Include="System.Windows.Forms" />
     <Reference Include="System.Drawing" />
     <Reference Include="System.Runtime.Serialization" />
+    <Reference Include="System.Xml.Linq" />
     <Reference Include="Microsoft.CSharp" />
     <EmbeddedResource Include="Ribbon.xml" />
+    <EmbeddedResource Include="Icons/*.svg" />
+    <EmbeddedResource Include="Icons/LICENSE.txt" />
+    <EmbeddedResource Include="Icons/NOTICE.txt" />
   </ItemGroup>
 </Project>

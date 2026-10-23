@@ -47,6 +47,8 @@ reference dates; Snapshot (UTC) is the historical observation timestamp, when
 available. Neither field is an object's creation time. Use the Setup Guide
 button for worksheet construction examples. Creation wizards are not included.
 The ribbon is optional: worksheet functions work with quantsupport.xll alone.
+Use QS.CONTEXT.CREATE and CONTEXT.ADD inputs with QS.EVALUATE; older store
+constructors and aliases were removed.
 
 Guides and examples:
 https://jmelo11.github.io/quantsupport/api/excel/guide/index.html
@@ -58,3 +60,6 @@ Excel-DNA IntelliSense (bundled unmodified):
 https://github.com/Excel-DNA/IntelliSense
 
 License notices are included alongside these instructions.
+The ribbon and panel use Google Material Symbols Outlined; their Apache 2.0
+license and source attribution are included as MaterialSymbols-LICENSE.txt
+and MaterialSymbols-NOTICE.txt.

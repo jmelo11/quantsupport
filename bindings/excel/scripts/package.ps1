@@ -50,7 +50,9 @@ try {
         @{ Source = (Join-Path $excelRoot "INSTALL.txt"); Name = "INSTALL.txt" },
         @{ Source = (Join-Path $repositoryRoot "LICENSE"); Name = "QuantSupport-LICENSE.txt" },
         @{ Source = (Join-Path $thirdParty "ExcelDna.IntelliSense-LICENSE.txt"); Name = "ExcelDna.IntelliSense-LICENSE.txt" },
-        @{ Source = (Join-Path $thirdParty "ExcelDna-LICENSE.txt"); Name = "ExcelDna-LICENSE.txt" }
+        @{ Source = (Join-Path $thirdParty "ExcelDna-LICENSE.txt"); Name = "ExcelDna-LICENSE.txt" },
+        @{ Source = (Join-Path $excelRoot "ribbon/Icons/LICENSE.txt"); Name = "MaterialSymbols-LICENSE.txt" },
+        @{ Source = (Join-Path $excelRoot "ribbon/Icons/NOTICE.txt"); Name = "MaterialSymbols-NOTICE.txt" }
     )) {
         $target = Join-Path $temporary $entry.Name
         Copy-Item -LiteralPath $entry.Source -Destination $target
@@ -62,6 +64,11 @@ try {
     Copy-Item -LiteralPath $archive -Destination (Join-Path $Dist $archiveName) -Force
 }
 finally {
+    $resolvedTemporary = (Resolve-Path -LiteralPath $temporary).Path
+    $temporaryRoot = [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd([IO.Path]::DirectorySeparatorChar)
+    if (-not [string]::Equals([IO.Path]::GetDirectoryName($resolvedTemporary), $temporaryRoot, [StringComparison]::OrdinalIgnoreCase)) {
+        throw "Refusing to remove a packaging directory outside the temporary folder: $resolvedTemporary"
+    }
     Remove-Item -LiteralPath $temporary -Recurse -Force
 }
 Write-Host "Packaged Excel add-in, ribbon and IntelliSense: $(Join-Path $Dist $archiveName)"
