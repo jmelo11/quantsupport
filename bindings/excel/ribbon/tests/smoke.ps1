@@ -58,6 +58,11 @@ try {
     $populate = $browserType.GetMethod('Populate',$flags)
     [void]$populate.Invoke($control,@())
     $grid = $browserType.GetField('grid',$flags).GetValue($control)
+    $searchField = $browserType.GetField('search',$flags).GetValue($control)
+    $searchField.Text = 'contract'
+    if ($grid.RowCount -ne 1) { throw 'Search must filter worksheet objects.' }
+    $searchField.Text = ''
+    if ($grid.RowCount -ne 4) { throw 'Clearing search must restore the object list.' }
     if (-not $grid.VirtualMode) { throw 'Large object lists must use virtual rows.' }
     if ($grid.ColumnHeadersHeightSizeMode -ne [Windows.Forms.DataGridViewColumnHeadersHeightSizeMode]::AutoSize) {
         throw 'Headers must expand to fit wrapped text at the current display DPI.'
@@ -185,7 +190,7 @@ try {
     if ($grid.Columns[2].Visible -or $grid.Columns[3].Visible -or $grid.Columns[4].Visible) {
         throw 'Instrument lists must not devote space to empty market-date columns.'
     }
-    foreach ($size in @(@(360,560), @(520,760), @(840,760))) {
+    foreach ($size in @(@(320,680), @(360,560), @(400,760), @(520,760), @(840,760))) {
         $form.ClientSize = New-Object Drawing.Size($size[0],$size[1])
         $form.PerformLayout()
         [Windows.Forms.Application]::DoEvents()
