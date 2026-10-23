@@ -1,6 +1,6 @@
 //! Preserve coupon economics while compressing compatible cashflows.
 
-use super::portfolio::Sum;
+use crate::math::compensatedsum::CompensatedSum;
 use crate::instruments::cashflows::{
     optionembeddedcoupon::OptionEmbeddedCoupon, payoffops::PayoffOps,
 };
@@ -110,10 +110,10 @@ struct Group {
     cap: Option<f64>,
     leg: usize,
     details: Option<CouponDetails>,
-    amount: Sum,
-    notional: Sum,
-    rate_moment: Sum,
-    spread_moment: Sum,
+    amount: CompensatedSum,
+    notional: CompensatedSum,
+    rate_moment: CompensatedSum,
+    spread_moment: CompensatedSum,
     average_rate: bool,
     average_spread: bool,
 }
@@ -185,10 +185,10 @@ impl CashflowCompressor {
                     cap: flows.caplet_strikes()[row],
                     leg: flows.leg_indices()[row],
                     details: details.clone(),
-                    amount: Sum::default(),
-                    notional: Sum::default(),
-                    rate_moment: Sum::default(),
-                    spread_moment: Sum::default(),
+                    amount: CompensatedSum::default(),
+                    notional: CompensatedSum::default(),
+                    rate_moment: CompensatedSum::default(),
+                    spread_moment: CompensatedSum::default(),
                     average_rate,
                     average_spread,
                 });

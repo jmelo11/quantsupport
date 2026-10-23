@@ -1,5 +1,6 @@
 //! Aggregate completed, numeric trade results without retaining an AD graph.
 
+use crate::math::compensatedsum::CompensatedSum;
 use crate::prelude::{
     CashflowsTable, Currency, Date, EvaluationResults, QSError, Request, SensitivityMap,
 };
@@ -82,38 +83,6 @@ impl<T> Portfolio<T> {
     }
 }
 
-#[derive(Default)]
-pub(crate) struct Sum {
-    value: f64,
-    correction: f64,
-}
-
-impl Sum {
-    pub(crate) fn add(&mut self, value: f64) -> Result<()> {
-        let next = self.value + value;
-        if !value.is_finite() || !next.is_finite() {
-            return Err(QSError::InvalidValueErr(
-                "Nonfinite portfolio result".into(),
-            ));
-        }
-        self.correction += if self.value.abs() >= value.abs() {
-            (self.value - next) + value
-        } else {
-            (value - next) + self.value
-        };
-        self.value = next;
-        if !self.total().is_finite() {
-            return Err(QSError::InvalidValueErr(
-                "Portfolio aggregation overflow".into(),
-            ));
-        }
-        Ok(())
-    }
-    pub(crate) fn total(&self) -> f64 {
-        self.value + self.correction
-    }
-}
-
 /// Signed undiscounted payments grouped by payment date and original currency.
 pub struct PortfolioCashflow {
     /// Actual payment date; historical payments are retained.
@@ -138,9 +107,9 @@ impl PortfolioCashflow {
 
 struct CashflowSums {
     currency: Currency,
-    interest: Sum,
-    capital: Sum,
-    other: Sum,
+    interest: CompensatedSum,
+    capital: CompensatedSum,
+    other: CompensatedSum,
 }
 
 #[derive(Default)]
@@ -149,8 +118,8 @@ struct PortfolioAccumulator {
     unavailable: HashSet<Request>,
     evaluation_date: Option<Date>,
     value_currency: Option<Currency>,
-    value: Sum,
-    sensitivities: BTreeMap<String, Sum>,
+    value: CompensatedSum,
+    sensitivities: BTreeMap<String, CompensatedSum>,
     cashflows: super::cashflowaggregation::CashflowCompressor,
 }
 
@@ -284,9 +253,9 @@ fn add_cashflows(
             .entry((flows.payment_dates()[row], currency.to_string()))
             .or_insert_with(|| CashflowSums {
                 currency,
-                interest: Sum::default(),
-                capital: Sum::default(),
-                other: Sum::default(),
+                interest: CompensatedSum::default(),
+                capital: CompensatedSum::default(),
+                other: CompensatedSum::default(),
             });
         let sum = match flows.cashflow_types()[row].as_str() {
             "FixedRateCoupon" | "FloatingRateCoupon" | "OptionEmbeddedCoupon" | "Interest" => {
