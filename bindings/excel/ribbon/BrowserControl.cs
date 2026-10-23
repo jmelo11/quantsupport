@@ -17,7 +17,6 @@ namespace QuantSupport.Ribbon
         private Snapshot snapshot;
         private ulong stamp;
         private string decimalSeparator = ".";
-        private string detailsIdentity;
         private readonly List<BrowserObject> visibleObjects = new List<BrowserObject>();
         private readonly ComboBox filter = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 170 };
         private readonly TextBox search = new TextBox { Width = 170 };
@@ -39,15 +38,22 @@ namespace QuantSupport.Ribbon
         private readonly Button go = new Button { Text = "Go to cell", AutoSize = true, Enabled = false };
         private readonly Button copy = new Button { Text = "Copy handle", AutoSize = true, Enabled = false };
         private readonly Button price = new Button { Text = "Price selected", AutoSize = true, Enabled = false };
+        private readonly Button showCurves = new Button { Text = "View curves", AutoSize = true, Enabled = false };
         private readonly TabControl tabs = new TabControl { Dock = DockStyle.Fill };
-        private readonly TabPage detailsPage = new TabPage("Details");
+        private readonly TabPage objectsPage = new TabPage("Objects");
         private readonly TabPage messagesPage = new TabPage("Messages");
         private readonly TextBox messages = new TextBox { Dock = DockStyle.Fill, ReadOnly = true, Multiline = true, WordWrap = true, ScrollBars = ScrollBars.Vertical, BackColor = SystemColors.Window };
         private readonly TabPage tradesPage = new TabPage("Pricing");
         private readonly TabPage curvesPage = new TabPage("Curves");
+        private readonly ComboBox pricingObjects = ObjectChoice();
+        private readonly ComboBox curveObjects = ObjectChoice();
         private readonly ExplorerControl tradeExplorer;
         private readonly ExplorerControl curveExplorer;
         private bool populating;
+        private bool pricingDirty = true;
+        private bool curvesDirty = true;
+
+        private static ComboBox ObjectChoice() => new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Dock = DockStyle.Fill, DisplayMember = "DisplayName", DropDownWidth = 460 };
 
         public BrowserControl()
         {
@@ -56,8 +62,9 @@ namespace QuantSupport.Ribbon
             MaterialIcons.Apply(go, "open_in_new");
             MaterialIcons.Apply(copy, "content_copy");
             MaterialIcons.Apply(price, "calculate");
+            MaterialIcons.Apply(showCurves, "show_chart");
             MaterialIcons.Apply(tabs, "info", "warning", "calculate", "show_chart");
-            detailsPage.ImageIndex = 0;
+            objectsPage.ImageIndex = 0;
             messagesPage.ImageIndex = 1;
             tradesPage.ImageIndex = 2;
             curvesPage.ImageIndex = 3;
@@ -84,9 +91,7 @@ namespace QuantSupport.Ribbon
             toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             toolbar.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             toolbar.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            var refresh = new Button { Text = "Refresh", AutoSize = true };
-            MaterialIcons.Apply(refresh, "refresh");
-            refresh.Click += (s, e) => RefreshObjects(true);
+            var refresh = RefreshButton();
             filter.Dock = search.Dock = DockStyle.Fill;
             toolbar.Controls.Add(filter, 0, 0);
             toolbar.SetColumnSpan(filter, 2);
@@ -102,58 +107,89 @@ namespace QuantSupport.Ribbon
             grid.Columns[3].Width = 165;
             grid.Columns[4].Width = 75;
             grid.Columns[5].Width = 90;
-            var split = new SplitContainer { Dock = DockStyle.Fill, Orientation = Orientation.Horizontal, FixedPanel = FixedPanel.Panel1, Size = new Size(500, 700), SplitterDistance = 190, SplitterWidth = 6, Panel1MinSize = 80, Panel2MinSize = 180 };
-            var listHeight = 190;
-            var sizing = false;
-            split.SplitterMoved += (sender, args) => { if (!sizing) listHeight = split.SplitterDistance; };
-            split.SizeChanged += (sender, args) =>
-            {
-                if (split.ClientSize.Height < split.Panel1MinSize + split.Panel2MinSize + split.SplitterWidth) return;
-                sizing = true;
-                try { split.SplitterDistance = Math.Max(80, Math.Min(listHeight, split.ClientSize.Height - 266)); }
-                finally { sizing = false; }
-            };
+            var split = new SplitContainer { Dock = DockStyle.Fill, Orientation = Orientation.Horizontal, Size = new Size(500, 600), SplitterDistance = 350, SplitterWidth = 6, Panel1MinSize = 80, Panel2MinSize = 80 };
             split.Panel1.Controls.Add(grid);
+            split.Panel2.Controls.Add(details);
+            var objectLayout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3, Margin = Padding.Empty };
+            objectLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            objectLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            objectLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+            objectLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            objectLayout.Controls.Add(toolbar, 0, 0);
+            objectLayout.Controls.Add(split, 0, 1);
+            var objectActions = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, Margin = Padding.Empty };
+            objectActions.Controls.Add(price);
+            objectActions.Controls.Add(showCurves);
+            objectLayout.Controls.Add(objectActions, 0, 2);
+            objectsPage.Controls.Add(objectLayout);
             tradeExplorer = new ExplorerControl(true, () => WindowId);
             curveExplorer = new ExplorerControl(false, () => WindowId);
-            detailsPage.Controls.Add(details);
             messagesPage.Controls.Add(messages);
-            tradesPage.Controls.Add(tradeExplorer);
-            curvesPage.Controls.Add(curveExplorer);
-            tabs.TabPages.Add(detailsPage);
-            split.Panel2.Controls.Add(tabs);
-            var navigation = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, Padding = new Padding(4) };
-            navigation.Controls.Add(sources);
-            navigation.Controls.Add(go);
-            navigation.Controls.Add(copy);
-            navigation.Controls.Add(price);
-            var layout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 4 };
+            AddWorkspace(tradesPage, "Instrument / trade", pricingObjects, tradeExplorer);
+            AddWorkspace(curvesPage, "Market / curve", curveObjects, curveExplorer);
+            tabs.TabPages.AddRange(new[] { objectsPage, tradesPage, curvesPage });
+            var navigation = new TableLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 3, RowCount = 1, Padding = new Padding(4), Margin = Padding.Empty };
+            navigation.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            navigation.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            navigation.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            sources.Dock = DockStyle.Fill;
+            navigation.Controls.Add(sources, 0, 0);
+            navigation.Controls.Add(go, 1, 0);
+            navigation.Controls.Add(copy, 2, 0);
+            var layout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3 };
             layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
             layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            layout.Controls.Add(toolbar, 0, 0);
-            layout.Controls.Add(split, 0, 1);
-            layout.Controls.Add(navigation, 0, 2);
-            layout.Controls.Add(status, 0, 3);
+            layout.Controls.Add(tabs, 0, 0);
+            layout.Controls.Add(navigation, 0, 1);
+            layout.Controls.Add(status, 0, 2);
             Controls.Add(layout);
             SizeChanged += (sender, args) =>
             {
                 var width = Math.Max(1, ClientSize.Width - 8);
                 toolbar.MaximumSize = navigation.MaximumSize = status.MaximumSize = new Size(width, 0);
             };
-            filter.SelectedIndexChanged += (s, e) => { if (!populating) Populate(); };
-            search.TextChanged += (s, e) => { if (!populating) Populate(); };
+            filter.SelectedIndexChanged += (s, e) => { if (!populating) PopulateList(false); };
+            search.TextChanged += (s, e) => { if (!populating) PopulateList(false); };
             grid.CurrentCellChanged += (s, e) => { if (!populating) ShowDetails(); };
-            tabs.SelectedIndexChanged += (s, e) => BindSelectedExplorer();
+            tabs.SelectedIndexChanged += (s, e) => { BindSelectedExplorer(); UpdateNavigation(); };
+            pricingObjects.SelectedIndexChanged += (s, e) => WorkspaceSelectionChanged(true);
+            curveObjects.SelectedIndexChanged += (s, e) => WorkspaceSelectionChanged(false);
             go.Click += (s, e) => QuantSupportRibbon.Run(GoToSource);
             copy.Click += (s, e) => QuantSupportRibbon.Run(() => { if (Selected != null) Clipboard.SetText(Selected.Handle); });
             price.Click += (s, e) => ShowPricing();
+            showCurves.Click += (s, e) => ShowCurves();
             status.LinkClicked += (s, e) => { if (tabs.TabPages.Contains(messagesPage)) tabs.SelectedTab = messagesPage; };
         }
 
-        private BrowserObject Selected
+        private Button RefreshButton()
+        {
+            var button = new Button { Text = "Refresh", AutoSize = true };
+            MaterialIcons.Apply(button, "refresh");
+            button.Click += (s, e) => RefreshObjects(true);
+            return button;
+        }
+
+        private void AddWorkspace(TabPage page, string label, ComboBox choice, ExplorerControl explorer)
+        {
+            var header = new TableLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 2, RowCount = 2, Padding = new Padding(4), Margin = Padding.Empty };
+            header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            header.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            header.Controls.Add(new Label { Text = label, AutoSize = true, Anchor = AnchorStyles.Left }, 0, 0);
+            header.Controls.Add(choice, 0, 1);
+            header.Controls.Add(RefreshButton(), 1, 1);
+            choice.AccessibleName = label;
+            var layout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, Margin = Padding.Empty };
+            layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+            layout.Controls.Add(header, 0, 0);
+            layout.Controls.Add(explorer, 0, 1);
+            page.Controls.Add(layout);
+        }
+
+        private BrowserObject GridSelection
         {
             get
             {
@@ -162,13 +198,24 @@ namespace QuantSupport.Ribbon
             }
         }
 
+        private BrowserObject Selected
+        {
+            get
+            {
+                if (tabs.SelectedTab == tradesPage) return pricingObjects.SelectedItem as BrowserObject;
+                if (tabs.SelectedTab == curvesPage) return curveObjects.SelectedItem as BrowserObject;
+                return tabs.SelectedTab == objectsPage ? GridSelection : null;
+            }
+        }
+
         internal void SetFilter(string value)
         {
-            if (value == null || ((string)filter.SelectedItem == value && search.TextLength == 0)) return;
+            if (value == null) return;
+            tabs.SelectedTab = value == "Curves" ? curvesPage : value == "Instruments & Trades" ? tradesPage : objectsPage;
             populating = true;
             try { search.Clear(); filter.SelectedItem = value; }
             finally { populating = false; }
-            Populate();
+            PopulateList(false);
         }
 
         internal void RefreshObjects(bool force)
@@ -185,7 +232,7 @@ namespace QuantSupport.Ribbon
                 var revision = NativeBrowser.Revision();
                 if (!force && snapshot != null && snapshot.Workbook == workbook && stamp == revision)
                 {
-                    if (formatChanged) { details.Text = BrowserDisplay.Describe(Selected); tradeExplorer.RefreshFormats(); curveExplorer.RefreshFormats(); }
+                    if (formatChanged) { details.Text = BrowserDisplay.Describe(GridSelection); tradeExplorer.RefreshFormats(); curveExplorer.RefreshFormats(); }
                     return;
                 }
                 snapshot = NativeBrowser.Read(workbook);
@@ -196,13 +243,7 @@ namespace QuantSupport.Ribbon
             {
                 snapshot = null;
                 stamp = 0;
-                grid.Rows.Clear();
-                visibleObjects.Clear();
-                details.Clear();
-                tradeExplorer.Bind(null, null);
-                curveExplorer.Bind(null, null);
-                sources.Items.Clear();
-                go.Enabled = copy.Enabled = price.Enabled = false;
+                Populate();
                 status.ForeColor = Color.Firebrick;
                 status.Text = error.Message;
             }
@@ -216,17 +257,27 @@ namespace QuantSupport.Ribbon
             status.Text = "Native objects cleared. Rebuilding open workbooks…";
         }
 
-        private void Populate()
+        private void Populate() { PopulateList(true); }
+
+        private void PopulateList(bool snapshotChanged)
         {
-            var selected = Selected?.Identity;
+            var selected = GridSelection?.Identity;
             populating = true;
             grid.SuspendLayout();
             grid.Rows.Clear();
             visibleObjects.Clear();
-            if (snapshot == null) { grid.ResumeLayout(); populating = false; ShowDetails(); return; }
+            var objects = snapshot?.Objects ?? new List<BrowserObject>();
+            if (snapshotChanged)
+            {
+                PopulateChoices(pricingObjects, objects.Where(BrowserDisplay.CanPrice));
+                PopulateChoices(curveObjects, objects.Where(value => value.Curves?.Count > 0));
+                tradeExplorer.CancelRequests();
+                curveExplorer.CancelRequests();
+                pricingDirty = curvesDirty = true;
+            }
             var category = (string)filter.SelectedItem;
             var query = search.Text.Trim();
-            foreach (var item in snapshot.Objects)
+            foreach (var item in objects)
             {
                 var matchesCategory = category == "All objects" || item.Family == category ||
                     (category == "Curves" && item.Curves != null && item.Curves.Count > 0) ||
@@ -244,62 +295,98 @@ namespace QuantSupport.Ribbon
             var selectedIndex = visibleObjects.FindIndex(item => item.Identity == selected);
             if (selectedIndex >= 0) grid.CurrentCell = grid.Rows[selectedIndex].Cells[0];
             grid.ResumeLayout();
+            var errors = snapshot?.Diagnostics ?? new List<Diagnostic>();
+            messages.Text = string.Join(Environment.NewLine + Environment.NewLine, errors.Select(error => new Location { Sheet = error.Sheet, Row = error.Row, Column = error.Column }.Address + Environment.NewLine + error.Message));
+            if (errors.Count > 0 && !tabs.TabPages.Contains(messagesPage)) tabs.TabPages.Add(messagesPage);
+            else if (errors.Count == 0) tabs.TabPages.Remove(messagesPage);
             populating = false;
             ShowDetails();
-            var errors = snapshot.Diagnostics;
-            status.ForeColor = errors != null && errors.Count > 0 ? Color.Firebrick : SystemColors.ControlText;
-            status.Text = errors != null && errors.Count > 0
+            status.ForeColor = errors.Count > 0 ? Color.Firebrick : SystemColors.ControlText;
+            status.Text = errors.Count > 0
                 ? errors.Count + (errors.Count == 1 ? " worksheet error. " : " worksheet errors. ") + "Open Messages for the library details."
-                : snapshot.Workbook + " · " + grid.Rows.Count + " of " + snapshot.Objects.Count + " objects";
-            status.LinkArea = new LinkArea(0, errors != null && errors.Count > 0 ? status.Text.Length : 0);
+                : snapshot == null ? "No objects loaded. Refresh after recalculating the workbook."
+                : snapshot.Workbook + " · " + objects.Count + " objects";
+            status.LinkArea = new LinkArea(0, errors.Count > 0 ? status.Text.Length : 0);
+        }
 
-
+        private static void PopulateChoices(ComboBox choice, IEnumerable<BrowserObject> objects)
+        {
+            var previous = (choice.SelectedItem as BrowserObject)?.Identity;
+            choice.BeginUpdate();
+            try
+            {
+                choice.Items.Clear();
+                foreach (var item in objects) choice.Items.Add(item);
+                var match = choice.Items.OfType<BrowserObject>().FirstOrDefault(item => item.Identity == previous);
+                if (match != null) choice.SelectedItem = match;
+                else if (choice.Items.Count > 0) choice.SelectedIndex = 0;
+                choice.Enabled = choice.Items.Count > 0;
+            }
+            finally { choice.EndUpdate(); }
         }
 
         private void ShowDetails()
         {
+            var item = GridSelection;
+            details.Text = BrowserDisplay.Describe(item);
+            if (tabs.SelectedTab == objectsPage)
+            {
+                if (BrowserDisplay.CanPrice(item)) pricingObjects.SelectedItem = item;
+                if (item?.Curves?.Count > 0) curveObjects.SelectedItem = item;
+            }
+            price.Enabled = BrowserDisplay.CanPrice(item);
+            showCurves.Enabled = item?.Curves?.Count > 0;
+            BindSelectedExplorer();
+            UpdateNavigation();
+        }
+
+        private void UpdateNavigation()
+        {
+            if (populating) return;
+            var previous = (sources.SelectedItem as Location)?.Address;
             sources.Items.Clear();
             var item = Selected;
-            tradeExplorer.CancelRequests();
-            curveExplorer.CancelRequests();
             copy.Enabled = item != null;
-            price.Enabled = BrowserDisplay.CanPrice(item);
-            go.Enabled = item != null && item.Locations.Count > 0;
+            go.Enabled = item?.Locations?.Count > 0;
             foreach (var cell in item?.Locations ?? new List<Location>()) sources.Items.Add(cell);
-            if (sources.Items.Count > 0) sources.SelectedIndex = 0;
-            details.Text = BrowserDisplay.Describe(item);
-            var previousTab = tabs.SelectedTab;
-            populating = true;
-            tabs.TabPages.Clear();
-            tabs.TabPages.Add(detailsPage);
-            var diagnostics = snapshot?.Diagnostics ?? new List<Diagnostic>();
-            messages.Text = string.Join(Environment.NewLine + Environment.NewLine, diagnostics.Select(error => new Location { Sheet = error.Sheet, Row = error.Row, Column = error.Column }.Address + Environment.NewLine + error.Message));
-            if (diagnostics.Count > 0) tabs.TabPages.Add(messagesPage);
-            if (BrowserDisplay.CanPrice(item)) tabs.TabPages.Add(tradesPage);
-            if (item?.Curves != null && item.Curves.Count > 0) tabs.TabPages.Add(curvesPage);
-            var preferred = item == null && diagnostics.Count > 0 ? messagesPage : BrowserDisplay.CanPrice(item) ? tradesPage : tabs.TabPages.Contains(curvesPage) ? curvesPage : detailsPage;
-            tabs.SelectedTab = item != null && detailsIdentity == item.Identity && tabs.TabPages.Contains(previousTab) ? previousTab : preferred;
-            detailsIdentity = item?.Identity;
-            populating = false;
-            if (item == null) { tradeExplorer.Bind(null, null); curveExplorer.Bind(null, null); }
-            else BindSelectedExplorer();
+            var match = sources.Items.OfType<Location>().FirstOrDefault(cell => cell.Address == previous);
+            if (match != null) sources.SelectedItem = match;
+            else if (sources.Items.Count > 0) sources.SelectedIndex = 0;
+        }
+
+        private void WorkspaceSelectionChanged(bool pricing)
+        {
+            if (populating) return;
+            if (pricing) { pricingDirty = true; tradeExplorer.CancelRequests(); }
+            else { curvesDirty = true; curveExplorer.CancelRequests(); }
+            BindSelectedExplorer();
+            UpdateNavigation();
         }
 
         private void BindSelectedExplorer()
         {
             if (populating) return;
-            if (tabs.SelectedTab == tradesPage) tradeExplorer.Bind(snapshot, Selected);
-            if (tabs.SelectedTab == curvesPage) curveExplorer.Bind(snapshot, Selected);
+            if (tabs.SelectedTab == tradesPage && pricingDirty) { tradeExplorer.Bind(snapshot, Selected); pricingDirty = false; }
+            if (tabs.SelectedTab == curvesPage && curvesDirty) { curveExplorer.Bind(snapshot, Selected); curvesDirty = false; }
         }
 
         internal void ShowPricing()
         {
-            if (!BrowserDisplay.CanPrice(Selected))
+            if (tabs.SelectedTab == objectsPage && BrowserDisplay.CanPrice(GridSelection)) pricingObjects.SelectedItem = GridSelection;
+            if (pricingObjects.SelectedItem == null)
             {
                 status.Text = "Select an instrument or trade in the list to open Pricing.";
                 return;
             }
             tabs.SelectedTab = tradesPage;
+            BindSelectedExplorer();
+        }
+
+        internal void ShowCurves()
+        {
+            if (tabs.SelectedTab == objectsPage && GridSelection?.Curves?.Count > 0) curveObjects.SelectedItem = GridSelection;
+            tabs.SelectedTab = curvesPage;
+            BindSelectedExplorer();
         }
 
         protected override void Dispose(bool disposing)
@@ -307,7 +394,7 @@ namespace QuantSupport.Ribbon
             if (disposing)
             {
                 populating = true;
-                detailsPage.Dispose();
+                objectsPage.Dispose();
                 messagesPage.Dispose();
                 tradesPage.Dispose();
                 curvesPage.Dispose();
@@ -317,6 +404,7 @@ namespace QuantSupport.Ribbon
 
         internal void Inspect(string handle)
         {
+            tabs.SelectedTab = objectsPage;
             search.Clear();
             var index = visibleObjects.FindIndex(item => item.Handle == handle);
             if (!string.IsNullOrEmpty(handle) && index >= 0) { grid.CurrentCell = grid.Rows[index].Cells[0]; return; }

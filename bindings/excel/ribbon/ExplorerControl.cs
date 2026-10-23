@@ -132,7 +132,7 @@ namespace QuantSupport.Ribbon
             Control output = resultArea;
             if (!trades)
             {
-                results = new SplitContainer { Dock = DockStyle.Fill, Orientation = Orientation.Horizontal, Size = new Size(500, 300), SplitterDistance = 190 };
+                results = new SplitContainer { Dock = DockStyle.Fill, Orientation = Orientation.Horizontal, FixedPanel = FixedPanel.Panel2, Size = new Size(500, 300), SplitterDistance = 190, Panel2Collapsed = true };
                 results.Panel1.Controls.Add(resultArea);
                 results.Panel2.Controls.Add(parameters);
                 output = results;
@@ -154,6 +154,7 @@ namespace QuantSupport.Ribbon
                 message.MaximumSize = new Size(width, 0);
                 SizeOptions();
             };
+            VisibleChanged += (sender, args) => { if (Visible) SizeOptions(); };
             run.Click += (sender, args) => RunQuery();
             context.SelectedIndexChanged += (sender, args) => { UpdatePositionDefaults(); OptionsChanged(); };
             pricer.SelectedIndexChanged += (sender, args) => OptionsChanged();
@@ -172,7 +173,23 @@ namespace QuantSupport.Ribbon
         {
             var width = Math.Max(1, ClientSize.Width - SystemInformation.VerticalScrollBarWidth);
             toolbar.Width = width;
-            var preferred = toolbar.GetPreferredSize(new Size(width, 0)).Height;
+            var widths = toolbar.GetColumnWidths();
+            var preferred = toolbar.Padding.Vertical;
+            // Explicit row heights avoid surplus space from percentage-width measurements.
+            for (var row = 0; row < toolbar.RowCount; row++)
+            {
+                var height = 0;
+                for (var column = 0; column < toolbar.ColumnCount; column++)
+                {
+                    var control = toolbar.GetControlFromPosition(column, row);
+                    if (control == null || !control.Visible) continue;
+                    var availableWidth = Math.Max(1, widths[column] - control.Margin.Horizontal);
+                    height = Math.Max(height, control.GetPreferredSize(new Size(availableWidth, 0)).Height + control.Margin.Vertical);
+                }
+                toolbar.RowStyles[row].SizeType = SizeType.Absolute;
+                toolbar.RowStyles[row].Height = height;
+                preferred += height;
+            }
             toolbar.Height = preferred;
             options.AutoScrollMinSize = new Size(0, preferred);
             var available = ClientSize.Height - message.GetPreferredSize(new Size(width, 0)).Height - run.PreferredSize.Height - 8 - 120;
@@ -248,6 +265,7 @@ namespace QuantSupport.Ribbon
             table.Rows.Clear();
             table.Columns.Clear();
             parameters.Clear();
+            if (results != null) results.Panel2Collapsed = true;
             empty.Visible = true;
         }
 
@@ -260,6 +278,12 @@ namespace QuantSupport.Ribbon
             ClearResult();
             foreach (var control in positionControls) control.Visible = Preview;
             foreach (var control in bondControls) control.Visible = BondPreview;
+            if (!trades)
+            {
+                // A context already owns its curves. Nodes need no calibration context.
+                var needsContext = item != null && item.Kind != "PricingContext" && view.SelectedIndex == 1;
+                context.Visible = toolbar.GetControlFromPosition(0, 0).Visible = needsContext;
+            }
             target.Visible = targetLabel.Visible = target.Enabled = targetLabel.Enabled = trades && view.SelectedIndex == 2;
             var supported = item != null && (trades ? BrowserDisplay.CanPrice(item) : curve.Items.Count > 0);
             var bondFairRate = trades && (item?.Kind == "FixedRateBondTrade" || item?.Kind == "FixedRateBond") && view.SelectedIndex == 2;
@@ -353,7 +377,9 @@ namespace QuantSupport.Ribbon
         {
             parameters.Clear();
             var row = table.CurrentRow?.Index ?? -1;
-            if (response?.Parameters == null || row < 0 || row >= response.Parameters.Count) return;
+            var hasParameters = !trades && view.SelectedIndex == 1 && response?.Parameters != null && row >= 0 && row < response.Parameters.Count && response.Parameters[row].Count > 0;
+            if (results != null) results.Panel2Collapsed = !hasParameters;
+            if (!hasParameters) return;
             var text = new StringBuilder("Selected instrument / input parameters" + Environment.NewLine);
             foreach (var field in response.Parameters[row]) text.AppendLine(field.Label + ": " + BrowserDisplay.Value(field));
             parameters.Text = text.ToString();

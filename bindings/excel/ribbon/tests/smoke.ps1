@@ -76,9 +76,14 @@ try {
     $grid.CurrentCell = $grid.Rows[0].Cells[0]
     $explorer = $browserType.GetField('tradeExplorer',$flags).GetValue($control)
     $tabs = $browserType.GetField('tabs',$flags).GetValue($control)
-    if ((($tabs.TabPages | ForEach-Object Text) -join ',') -ne 'Details,Pricing') {
-        throw 'A trade must show only its relevant tabs.'
+    if ((($tabs.TabPages | ForEach-Object Text) -join ',') -ne 'Objects,Pricing,Curves') {
+        throw 'Objects, Pricing and Curves must have independent pages.'
     }
+    $pricingObjects = $browserType.GetField('pricingObjects',$flags).GetValue($control)
+    $curveObjects = $browserType.GetField('curveObjects',$flags).GetValue($control)
+    if ($pricingObjects.Items.Count -ne 2 -or $curveObjects.Items.Count -ne 1) { throw 'Each workspace must offer only its supported objects.' }
+    [void]$browserType.GetMethod('ShowPricing',$flags).Invoke($control,@())
+    if ($grid.Visible) { throw 'Pricing must use the full page without the object list.' }
     $explorerType = $explorer.GetType()
     $runButton = $explorerType.GetField('run',$flags).GetValue($explorer)
     if ($null -eq $runButton.Image -or $null -eq $tabs.ImageList) { throw 'Panel actions and tabs must use the shared icon set.' }
@@ -132,29 +137,78 @@ try {
         throw 'Copy must use Excel decimal conventions without changing identifiers.'
     }
     $separator.SetValue($null,'.')
+    $tabs.SelectedTab = $browserType.GetField('curvesPage',$flags).GetValue($control)
+    $tabs.SelectedTab = $browserType.GetField('tradesPage',$flags).GetValue($control)
+    if ($table.RowCount -ne 2) { throw 'Switching workspaces must preserve unchanged pricing results.' }
     $context = $explorerType.GetField('context',$flags).GetValue($explorer)
     $context.SelectedIndex = -1
     if ($runButton.Enabled) { throw 'A trade request requires a context.' }
     $context.SelectedIndex = 0
     if (-not $runButton.Enabled) { throw 'Selecting a context must enable requests again.' }
     [void]$populate.Invoke($control,@())
+    $tabs.SelectedIndex = 0
     $grid.CurrentCell = $grid.Rows[1].Cells[0]
-    if ((($tabs.TabPages | ForEach-Object Text) -join ',') -ne 'Details,Curves') {
-        throw 'A context with curves must show only Details and Curves.'
-    }
+    [void]$browserType.GetMethod('ShowCurves',$flags).Invoke($control,@())
     $curveExplorer = $browserType.GetField('curveExplorer',$flags).GetValue($control)
     $curveMessage = $explorerType.GetField('message',$flags).GetValue($curveExplorer)
     $curveTable = $explorerType.GetField('table',$flags).GetValue($curveExplorer)
     if (-not $curveMessage.Text.Contains('click Refresh table') -or $curveTable.RowCount -ne 0) {
         throw 'Selecting a curve must wait for an explicit query, including hidden tabs.'
     }
+    $curveResults = $explorerType.GetField('results',$flags).GetValue($curveExplorer)
+    $curveContext = $explorerType.GetField('context',$flags).GetValue($curveExplorer)
+    if (-not $curveResults.Panel2Collapsed -or $curveContext.Visible) { throw 'Curve nodes must not reserve space for unused calibration controls or parameters.' }
+    foreach ($size in @(@(320,680), @(360,560), @(400,760), @(520,760))) {
+        $form.ClientSize = New-Object Drawing.Size($size[0],$size[1])
+        $form.PerformLayout()
+        [Windows.Forms.Application]::DoEvents()
+        if ($grid.Visible -or -not $curveExplorer.Visible) { throw 'Curves must occupy their own page.' }
+        $curveOptions = $explorerType.GetField('options',$flags).GetValue($curveExplorer)
+        if ($curveOptions.HorizontalScroll.Visible) { throw 'Curve controls must fit without a second horizontal scrollbar.' }
+        Write-Output "Curves $($size[0])x$($size[1]): table height $($curveTable.Height)."
+        if ($PreviewPath) {
+            $image = New-Object Drawing.Bitmap($form.Width,$form.Height)
+            try {
+                $form.DrawToBitmap($image,(New-Object Drawing.Rectangle(0,0,$form.Width,$form.Height)))
+                $image.Save([IO.Path]::ChangeExtension($PreviewPath,"curves.$($size[0]).png"),[Drawing.Imaging.ImageFormat]::Png)
+            } finally { $image.Dispose() }
+        }
+        if ($curveTable.Height -lt $form.ClientSize.Height - 350) {
+            throw "The curve table is squeezed: $($curveTable.Height) pixels in a $($size[1])-pixel pane."
+        }
+    }
+    $curveView = $explorerType.GetField('view',$flags).GetValue($curveExplorer)
+    $curveView.SelectedIndex = 1
+    $curveResponseJson = '{"title":"SOFR inputs","columns":["Instrument"],"rows":[["Deposit"]],"numeric_columns":[],"parameters":[[{"label":"Rate","value":"0.04","numeric":true}]]}'
+    $responseSerializer = New-Object System.Runtime.Serialization.Json.DataContractJsonSerializer($assembly.GetType('QuantSupport.Ribbon.BrowserResponse'))
+    $inputStream = New-Object IO.MemoryStream(,[Text.Encoding]::UTF8.GetBytes($curveResponseJson))
+    try { $curveResponse = $responseSerializer.ReadObject($inputStream) } finally { $inputStream.Dispose() }
+    [void]$curveTable.Columns.Add('instrument','Instrument')
+    $explorerType.GetField('response',$flags).SetValue($curveExplorer,$curveResponse)
+    $explorerType.GetField('empty',$flags).GetValue($curveExplorer).Visible = $false
+    $curveTable.RowCount = 1
+    $curveTable.CurrentCell = $curveTable.Rows[0].Cells[0]
+    [void]$explorerType.GetMethod('ShowParameters',$flags).Invoke($curveExplorer,@())
+    $curveParameters = $explorerType.GetField('parameters',$flags).GetValue($curveExplorer)
+    if ($curveResults.Panel2Collapsed -or -not $curveParameters.Text.Contains('Rate: 0.04')) { throw 'Calibration rows must still show their parameters.' }
+    $tabs.SelectedIndex = 1
+    $tabs.SelectedIndex = 2
+    if ($curveTable.RowCount -ne 1 -or $curveView.SelectedIndex -ne 1 -or $curveResults.Panel2Collapsed) { throw 'Returning to Curves must preserve the selected view and its result.' }
+    $tabs.SelectedIndex = 0
+    $searchField.Text = 'pricer'
+    $tabs.SelectedIndex = 2
+    $searchField.Clear()
+    if ($curveTable.RowCount -ne 1) { throw 'Searching the object list must preserve an unchanged curve result.' }
+    $curveView.SelectedIndex = 0
+    if (-not $curveResults.Panel2Collapsed -or $curveTable.RowCount -ne 0) { throw 'Returning to nodes must clear the old query and release calibration space.' }
     $snapshot.Objects[1].Handle = 'QSObject:PricingContext:w1~market:99'
     [void]$populate.Invoke($control,@())
     $selected = $browserType.GetProperty('Selected',$flags).GetValue($control)
     if ($selected.Handle -ne 'QSObject:PricingContext:w1~market:99' -or $tabs.SelectedTab.Text -ne 'Curves') {
         throw 'Refreshing after a quote correction must retain the curve object with its new handle.'
     }
-    $grid.CurrentCell = $grid.Rows[0].Cells[0]
+    $tabs.SelectedTab = $browserType.GetField('tradesPage',$flags).GetValue($control)
+    $pricingObjects.SelectedItem = $snapshot.Objects[0]
     $snapshot.Objects[0].CurrentInputs = $false
     [void]$populate.Invoke($control,@())
     if ($runButton.Enabled) { throw 'Changed trade inputs must disable requests.' }
@@ -164,15 +218,13 @@ try {
     $view.SelectedIndex = 2
     if ($runButton.Enabled) { throw 'Bond fair rate must explain its absent measure in the ribbon.' }
     $view.SelectedIndex = 0
+    $tabs.SelectedIndex = 0
     $grid.CurrentCell = $grid.Rows[3].Cells[0]
-    if ((($tabs.TabPages | ForEach-Object Text) -join ',') -ne 'Details,Pricing' -or -not $runButton.Enabled) {
-        throw 'Selecting an instrument must expose working pricing controls.'
-    }
     $priceButton = $browserType.GetField('price',$flags).GetValue($control)
     if (-not $priceButton.Enabled) { throw 'Instrument selection must enable Price selected.' }
     $tabs.SelectedIndex = 0
     [void]$browserType.GetMethod('ShowPricing',$flags).Invoke($control,@())
-    if ($tabs.SelectedTab.Text -ne 'Pricing') { throw 'Price selected must open Pricing.' }
+    if ($tabs.SelectedTab.Text -ne 'Pricing' -or -not $runButton.Enabled) { throw 'Price selected must open working Pricing controls for the chosen instrument.' }
     $buildQuery = $explorerType.GetMethod('BuildQuery',$flags)
     $preview = $buildQuery.Invoke($explorer,@())
     if ($preview.Handle -ne $snapshot.Objects[3].Handle -or $preview.TradeDate -ne '2026-01-15' -or $preview.Side -ne 'Receive') {
@@ -234,7 +286,7 @@ try {
     if (-not $runButton.Enabled -or $buildQuery.Invoke($explorer,@()).AnchorValue -ne 99.25) {
         throw 'A valid bond anchor must enable instrument pricing.'
     }
-    $grid.CurrentCell = $grid.Rows[0].Cells[0]
+    $pricingObjects.SelectedItem = $snapshot.Objects[0]
     $stored = $buildQuery.Invoke($explorer,@())
     if ($null -ne $stored.TradeDate -or $null -ne $stored.Side -or $null -ne $stored.AnchorValue) {
         throw 'Stored trade pricing must retain the original trade terms.'
@@ -262,6 +314,12 @@ try {
     if ($tabs.SelectedTab.Text -ne 'Messages' -or -not $messages.Text.Contains('Market!B21')) { throw 'The error link must show a readable source cell and message.' }
     $snapshot.Objects.Clear()
     [void]$populate.Invoke($control,@())
+    $tabs.SelectedTab = $browserType.GetField('tradesPage',$flags).GetValue($control)
     if ($runButton.Enabled) { throw 'An empty browser must disable requests.' }
+    $tabs.SelectedTab = $browserType.GetField('curvesPage',$flags).GetValue($control)
+    if ($explorerType.GetField('run',$flags).GetValue($curveExplorer).Enabled -or $curveObjects.Items.Count -ne 0) { throw 'Removing all curve objects must disable their workspace.' }
+    $snapshot.Diagnostics.Clear()
+    [void]$populate.Invoke($control,@())
+    if ($tabs.TabPages.Contains($browserType.GetField('messagesPage',$flags).GetValue($control))) { throw 'Messages must disappear after the worksheet errors are resolved.' }
     Write-Output 'Ribbon construction, multi-selection, copied values, request controls and stale-input checks passed.'
 } finally { $form.Dispose() }

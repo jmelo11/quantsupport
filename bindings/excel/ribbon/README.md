@@ -37,11 +37,16 @@ Only numeric window identities and owned metadata persist in the UI; no
 Workbook, Window or Range COM wrappers are cached. A Forms timer refreshes the
 visible active pane when Excel is ready and the native change token changes,
 and disposes panes for closed windows. The object grid uses virtual rows, and
-only the visible explorer tab binds its context/pricer selectors.
-Details is always available; Pricing appears for instruments and trades, and
-Curves appears for objects with curves. **Price Selection** in the ribbon opens
-Pricing for the active handle cell; **Price selected** is also available in the
-panel. Instrument previews pass an explicit trade date and Receive/Pay side to
+only the visible explorer page binds its context/pricer selectors.
+Objects, Pricing and Curves have separate full-height native pages. Objects
+contains the searchable list and details. Pricing and Curves each have an object
+selector, so their tables use the space previously occupied by the list.
+Switching pages retains unchanged results and the selected view. Curve nodes
+use the whole result area; selecting a calibration input reveals its parameters.
+Messages appears when worksheet errors need attention. **Price Selection** in
+the ribbon opens Pricing for the active handle cell; **Price selected** and
+**View curves** open the selected object's page from Objects.
+Instrument previews pass an explicit trade date and Receive/Pay side to
 the native contract-to-trade conversion, retaining the instrument notional.
 The date starts at the selected context's valuation date. Bonds require an
 explicit CleanPrice, DirtyPrice or ZSpread anchor and value. Preview trades and
