@@ -13,6 +13,48 @@ use std::sync::Arc;
 use xll_rs::types::{XllError, XLOPER12};
 
 #[xll_bindgen(
+    name = "QS.LOAN.PRICER",
+    category = "QuantSupport - Pricing",
+    help = "Creates a loan pricer with explicit named discount, refinancing and fair-rate amortization parameters"
+)]
+pub fn qs_loan_pricer(
+    name: &str,
+    currency: &str,
+    discount_index: &str,
+    refinancing_index: Option<String>,
+    rebuild_amortization: *const XLOPER12,
+) -> Result<String, XllError> {
+    let rebuild = optional_bool(rebuild_amortization, "rebuild_amortization")?.unwrap_or(false);
+    let key = input_key(&(currency, discount_index, &refinancing_index, rebuild))?;
+    if let Some(handle) = cached_handle(name, "Pricer", &key)? {
+        return Ok(handle);
+    }
+    let policy = pricing::fixed_income_policy(
+        &vec![vec![
+            Cell::Text(currency.into()),
+            Cell::Text(discount_index.into()),
+        ]],
+        false,
+    )
+    .map_err(value_error)?;
+    let mut settings = vec![vec![
+        Cell::Text("Rebuild amortization for fair rate".into()),
+        Cell::Boolean(rebuild),
+    ]];
+    if let Some(index) = refinancing_index.filter(|s| !s.trim().is_empty()) {
+        settings.push(vec![
+            Cell::Text("Refinancing benchmark index".into()),
+            Cell::Text(index),
+        ]);
+    }
+    let pricer = PricerObject::new("LoanPricer", Some(&policy), &settings).map_err(value_error)?;
+    with_registry_mut(|registry| {
+        registry.upsert_if_changed(name, QsObject::Pricer(Box::new(pricer)), key)
+    })
+    .map_err(value_error)
+}
+
+#[xll_bindgen(
     name = "QS.DISCOUNT.POLICY.FIXED.INCOME",
     category = "QuantSupport - Pricing",
     help = "Creates a native fixed-income discount policy from a currency and an ordinary discount-curve index"

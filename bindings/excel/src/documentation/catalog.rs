@@ -255,7 +255,7 @@ mod tests {
                 .unwrap();
         let record = records
             .iter()
-            .find(|record| record["name"] == "QS.CONTEXT.CREATE")
+            .find(|record| record["name"] == "QS.CONTEXT.FROM.COMPONENTS")
             .unwrap();
         let names: Vec<_> = record["arguments"]
             .as_array()
@@ -321,7 +321,7 @@ mod tests {
         let records =
             super::exports(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/functions"))
                 .unwrap();
-        assert_eq!(records.len(), 152);
+        assert_eq!(records.len(), 167);
         for (name, arguments) in [
             (
                 "QS.QUOTES.FROM.RANGE",

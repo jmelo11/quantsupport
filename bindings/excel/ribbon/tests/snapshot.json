@@ -23,7 +23,7 @@
       "sheet": "Marché",
       "row": 1,
       "column": 1,
-      "formula": "=QS.CONTEXT.CREATE(\"café \"\"market\"\"\",B2,B3)"
+      "formula": "=QS.CONTEXT.FROM.COMPONENTS(\"café \"\"market\"\"\",B2,B3)"
     }],
     "dependencies": [],
     "curves": []

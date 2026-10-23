@@ -91,7 +91,7 @@ mod tests {
             let context = registry
                 .upsert_if_changed(
                     "getter_market",
-                    QsObject::PricingContext(Box::new(context)),
+                    QsObject::PricingContext(std::rc::Rc::new(context)),
                     "market",
                 )
                 .unwrap();
@@ -126,7 +126,7 @@ mod tests {
 }
 
 #[xll_bindgen(
-    name = "QS.CONTEXT.CREATE",
+    name = "QS.CONTEXT.FROM.COMPONENTS",
     category = "QuantSupport - Pricing",
     help = "Builds and initializes a native PricingContext from component handles"
 )]
@@ -333,7 +333,7 @@ pub fn qs_context_create(
     with_registry_mut(|registry| {
         registry.upsert_if_changed(
             name,
-            QsObject::PricingContext(Box::new(context)),
+            QsObject::PricingContext(std::rc::Rc::new(context)),
             definition_key,
         )
     })

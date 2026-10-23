@@ -13,6 +13,9 @@ pub mod browser_queries;
 pub mod historical;
 
 #[cfg_attr(not(windows), allow(dead_code))]
+pub mod context;
+
+#[cfg_attr(not(windows), allow(dead_code))]
 pub mod market_inputs;
 
 #[cfg_attr(not(windows), allow(dead_code))]
@@ -28,9 +31,9 @@ pub mod loans;
 #[cfg_attr(not(windows), allow(dead_code))]
 pub mod output;
 #[cfg_attr(not(windows), allow(dead_code))]
-pub mod pricing;
-#[cfg_attr(not(windows), allow(dead_code))]
 pub mod portfolios;
+#[cfg_attr(not(windows), allow(dead_code))]
+pub mod pricing;
 #[cfg_attr(not(windows), allow(dead_code))]
 pub mod products;
 #[cfg_attr(not(windows), allow(dead_code))]

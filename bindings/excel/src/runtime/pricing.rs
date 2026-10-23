@@ -724,7 +724,7 @@ mod tests {
         let context_handle = registry
             .upsert_if_changed(
                 "context",
-                QsObject::PricingContext(Box::new(context())),
+                QsObject::PricingContext(std::rc::Rc::new(context())),
                 "context",
             )
             .unwrap();

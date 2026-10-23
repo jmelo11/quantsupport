@@ -28,6 +28,10 @@ const RESET_OPERATION_ID: &str = "__registry_reset__";
 
 /// QuantSupport components and trades that can be referenced by an Excel cell.
 pub enum QsObject {
+    /// Independent market input attached to a context by a pricing formula.
+    ContextInput(Box<super::context::ContextInput>),
+    /// Discoverable contractual loan settings with named worksheet arguments.
+    LoanSettings(Box<super::loans::LoanOptions>),
     /// Ordered references to live trades in this workbook.
     Portfolio(Box<quantsupport::prelude::Portfolio<String>>),
     /// Native instrument, without position or pricing settings.
@@ -65,7 +69,7 @@ pub enum QsObject {
     /// A collection of constructed market-data elements.
     ConstructedElements(Box<ConstructedElementStore>),
     /// An initialized pricing context.
-    PricingContext(Box<PricingContext>),
+    PricingContext(std::rc::Rc<PricingContext>),
     /// Immutable historical market inputs.
     MarketSnapshot(Box<MarketSnapshot>),
     /// Complete historical markets indexed by observation timestamp.
@@ -111,6 +115,8 @@ impl QsObject {
     #[must_use]
     pub const fn kind(&self) -> &'static str {
         match self {
+            Self::ContextInput(_) => "ContextInput",
+            Self::LoanSettings(_) => "LoanSettings",
             Self::Portfolio(_) => "Portfolio",
             Self::Instrument(value) => value.kind(),
             Self::DiscountPolicy(value) => value.kind,
@@ -233,6 +239,7 @@ impl Error for RegistryError {}
 /// Registry of live objects for the current Excel calculation thread.
 #[derive(Default)]
 pub struct Registry {
+    pub context_cache: RefCell<super::context::ContextCache>,
     objects: HashMap<String, RegistryEntry>,
     namespace: u64,
     revision_clock: u64,
@@ -424,6 +431,16 @@ macro_rules! collection_accessor {
 }
 
 impl Registry {
+    /// Stable name for an output owned by the calling worksheet cell.
+    pub fn cell_name(&self, prefix: &str) -> Result<String, String> {
+        let cell = self
+            .active_cell
+            .ok_or("this function requires a worksheet caller")?;
+        Ok(format!(
+            "{prefix}.{}.{}.{}",
+            cell.sheet, cell.row, cell.column
+        ))
+    }
     fn in_workbook(namespace: u64) -> Self {
         Self {
             namespace,
@@ -1027,6 +1044,7 @@ impl Registry {
     /// Drops every live object.
     #[allow(dead_code)]
     pub fn clear(&mut self) {
+        self.context_cache.get_mut().clear();
         browser_changed();
         self.objects.clear();
         self.cell_roots.clear();
@@ -1736,7 +1754,7 @@ mod tests {
         let handle = registry
             .upsert_if_changed(
                 "context",
-                QsObject::PricingContext(Box::new(PricingContext::new())),
+                QsObject::PricingContext(std::rc::Rc::new(PricingContext::new())),
                 "definition",
             )
             .expect("context handle");
@@ -1826,7 +1844,7 @@ mod browser_tests {
         registry
             .upsert_if_changed(
                 "market",
-                QsObject::PricingContext(Box::new(context)),
+                QsObject::PricingContext(std::rc::Rc::new(context)),
                 "context",
             )
             .unwrap();

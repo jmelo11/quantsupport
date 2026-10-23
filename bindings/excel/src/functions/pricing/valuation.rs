@@ -421,7 +421,7 @@ mod tests {
             let context_handle = registry
                 .upsert_if_changed(
                     "CALIBRATION-CTX",
-                    QsObject::PricingContext(Box::new(context)),
+                    QsObject::PricingContext(std::rc::Rc::new(context)),
                     "context",
                 )
                 .unwrap();
@@ -495,7 +495,7 @@ mod tests {
         let context = registry
             .upsert_if_changed(
                 "TEST-CTX",
-                QsObject::PricingContext(Box::new(context)),
+                QsObject::PricingContext(std::rc::Rc::new(context)),
                 "context",
             )
             .unwrap();

@@ -1036,7 +1036,7 @@ mod tests {
             registry.begin_cell(cell);
             registry.set_cell_formula(
                 cell,
-                Some("=QS.CONTEXT.CREATE(\"café \"\"market\"\"\",B2,B3)".into()),
+                Some("=QS.CONTEXT.FROM.COMPONENTS(\"café \"\"market\"\"\",B2,B3)".into()),
             );
             let context = PricingContext::new()
                 .with_quote_store(QuoteStore::new(Date::new(2026, 1, 15)))
@@ -1047,7 +1047,7 @@ mod tests {
             registry
                 .upsert_if_changed(
                     "café \"market\"",
-                    registry::QsObject::PricingContext(Box::new(context)),
+                    registry::QsObject::PricingContext(std::rc::Rc::new(context)),
                     "contract",
                 )
                 .unwrap();

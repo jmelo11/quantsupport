@@ -670,7 +670,7 @@ mod tests {
         let context = registry
             .upsert_if_changed(
                 "market",
-                QsObject::PricingContext(Box::new(market())),
+                QsObject::PricingContext(std::rc::Rc::new(market())),
                 "context",
             )
             .unwrap();
@@ -812,7 +812,7 @@ mod tests {
         let context = registry
             .upsert_if_changed(
                 "market",
-                QsObject::PricingContext(Box::new(market())),
+                QsObject::PricingContext(std::rc::Rc::new(market())),
                 "market",
             )
             .unwrap();
@@ -865,7 +865,7 @@ mod tests {
         let handle = registry
             .upsert_if_changed(
                 "market",
-                QsObject::PricingContext(Box::new(market())),
+                QsObject::PricingContext(std::rc::Rc::new(market())),
                 "context",
             )
             .unwrap();
@@ -954,7 +954,7 @@ mod tests {
             let handle = registry
                 .upsert_if_changed(
                     "market",
-                    QsObject::PricingContext(Box::new(context)),
+                    QsObject::PricingContext(std::rc::Rc::new(context)),
                     format!("{quotes}|{configurations}"),
                 )
                 .unwrap();
