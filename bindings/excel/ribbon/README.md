@@ -82,3 +82,11 @@ Run `cargo test -p quantsupport-xll --lib --example function_catalog` for native
 metadata, workbook isolation and lifetime checks. Building the native engine
 and validating the live ribbon require Windows Excel; the repository's Windows
 bindings job builds both as part of the complete distribution.
+
+## Panel layout
+
+The ribbon groups Market, Pricing, Workbook, Calculation and Help. Panel forms
+use two-column labels/controls, and result grids use virtual rows with fixed
+initial widths, resizable columns and wrapped headings. Worksheet diagnostics
+include source cells and native messages. Details omit formulas and dependency
+traces; navigation and copying remain explicit actions.

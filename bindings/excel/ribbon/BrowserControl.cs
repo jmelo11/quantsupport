@@ -32,8 +32,8 @@ namespace QuantSupport.Ribbon
         };
         private readonly TextBox details = new TextBox
         {
-            Dock = DockStyle.Fill, ReadOnly = true, Multiline = true, WordWrap = false,
-            ScrollBars = ScrollBars.Both, BackColor = SystemColors.Window
+            Dock = DockStyle.Fill, ReadOnly = true, Multiline = true, WordWrap = true,
+            ScrollBars = ScrollBars.Vertical, BackColor = SystemColors.Window
         };
         private readonly ComboBox sources = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 190, DisplayMember = "Address" };
         private readonly Button go = new Button { Text = "Go to cell", AutoSize = true, Enabled = false };
@@ -41,6 +41,8 @@ namespace QuantSupport.Ribbon
         private readonly Button price = new Button { Text = "Price selected", AutoSize = true, Enabled = false };
         private readonly TabControl tabs = new TabControl { Dock = DockStyle.Fill };
         private readonly TabPage detailsPage = new TabPage("Details");
+        private readonly TabPage messagesPage = new TabPage("Messages");
+        private readonly TextBox messages = new TextBox { Dock = DockStyle.Fill, ReadOnly = true, Multiline = true, WordWrap = true, ScrollBars = ScrollBars.Vertical, BackColor = SystemColors.Window };
         private readonly TabPage tradesPage = new TabPage("Pricing");
         private readonly TabPage curvesPage = new TabPage("Curves");
         private readonly ExplorerControl tradeExplorer;
@@ -82,6 +84,7 @@ namespace QuantSupport.Ribbon
             tradeExplorer = new ExplorerControl(true, () => WindowId);
             curveExplorer = new ExplorerControl(false, () => WindowId);
             detailsPage.Controls.Add(details);
+            messagesPage.Controls.Add(messages);
             tradesPage.Controls.Add(tradeExplorer);
             curvesPage.Controls.Add(curveExplorer);
             tabs.TabPages.Add(detailsPage);
@@ -166,6 +169,7 @@ namespace QuantSupport.Ribbon
                 curveExplorer.Bind(null, null);
                 sources.Items.Clear();
                 go.Enabled = copy.Enabled = price.Enabled = false;
+                status.ForeColor = Color.Firebrick;
                 status.Text = error.Message;
             }
         }
@@ -203,8 +207,13 @@ namespace QuantSupport.Ribbon
             grid.ResumeLayout();
             populating = false;
             ShowDetails();
-            status.Text = snapshot.Workbook + " · " + grid.Rows.Count + " of " + snapshot.Objects.Count + " live objects" +
-                (snapshot.Objects.Count == 0 ? ". Calculate the workbook to create its objects." : ". Updates when native objects change.");
+            var errors = snapshot.Diagnostics;
+            status.ForeColor = errors != null && errors.Count > 0 ? Color.Firebrick : SystemColors.ControlText;
+            status.Text = errors != null && errors.Count > 0
+                ? errors.Count + (errors.Count == 1 ? " worksheet error. " : " worksheet errors. ") + "Open Messages for the library details."
+                : snapshot.Workbook + " · " + grid.Rows.Count + " of " + snapshot.Objects.Count + " objects";
+
+
         }
 
         private void ShowDetails()
@@ -223,9 +232,12 @@ namespace QuantSupport.Ribbon
             populating = true;
             tabs.TabPages.Clear();
             tabs.TabPages.Add(detailsPage);
+            var diagnostics = snapshot?.Diagnostics ?? new List<Diagnostic>();
+            messages.Text = string.Join(Environment.NewLine + Environment.NewLine, diagnostics.Select(error => error.Sheet + " · row " + error.Row + ", column " + error.Column + Environment.NewLine + error.Message));
+            if (diagnostics.Count > 0) tabs.TabPages.Add(messagesPage);
             if (BrowserDisplay.CanPrice(item)) tabs.TabPages.Add(tradesPage);
             if (item?.Curves != null && item.Curves.Count > 0) tabs.TabPages.Add(curvesPage);
-            var preferred = BrowserDisplay.CanPrice(item) ? tradesPage : tabs.TabPages.Contains(curvesPage) ? curvesPage : detailsPage;
+            var preferred = item == null && diagnostics.Count > 0 ? messagesPage : BrowserDisplay.CanPrice(item) ? tradesPage : tabs.TabPages.Contains(curvesPage) ? curvesPage : detailsPage;
             tabs.SelectedTab = item != null && detailsIdentity == item.Identity && tabs.TabPages.Contains(previousTab) ? previousTab : preferred;
             detailsIdentity = item?.Identity;
             populating = false;
@@ -256,6 +268,7 @@ namespace QuantSupport.Ribbon
             {
                 populating = true;
                 detailsPage.Dispose();
+                messagesPage.Dispose();
                 tradesPage.Dispose();
                 curvesPage.Dispose();
             }

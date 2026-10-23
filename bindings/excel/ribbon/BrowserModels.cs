@@ -11,10 +11,20 @@ namespace QuantSupport.Ribbon
     }
 
     [DataContract]
+    internal sealed class Diagnostic
+    {
+        [DataMember(Name = "sheet")] public string Sheet { get; set; }
+        [DataMember(Name = "row")] public int Row { get; set; }
+        [DataMember(Name = "column")] public int Column { get; set; }
+        [DataMember(Name = "message")] public string Message { get; set; }
+    }
+
+    [DataContract]
     internal sealed class Snapshot
     {
         [DataMember(Name = "workbook")] public string Workbook { get; set; }
         [DataMember(Name = "objects")] public List<BrowserObject> Objects { get; set; }
+        [DataMember(Name = "diagnostics")] public List<Diagnostic> Diagnostics { get; set; }
         [DataMember(Name = "error")] public string Error { get; set; }
     }
 
