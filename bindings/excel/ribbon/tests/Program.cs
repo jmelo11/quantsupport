@@ -35,6 +35,23 @@ internal static class Program
         Check(BrowserDisplay.CanPrice(new BrowserObject { Family = "Instruments", Kind = "Swap" }), "Instrument selection must expose pricing");
         Check(BrowserDisplay.CanPrice(new BrowserObject { Family = "Trades", Kind = "SwapTrade" }), "Trade selection must expose pricing");
         Check(!BrowserDisplay.CanPrice(new BrowserObject { Family = "Pricing contexts" }) && !BrowserDisplay.CanPrice(null), "Unrelated selections must hide pricing");
+        var root = new BrowserObject { Name = "Root", Kind = "PricingContext", Handle = "root", CurrentInputs = true, Curves = new System.Collections.Generic.List<string>() };
+        var market = new BrowserObject { Name = "Market", Kind = "PricingContext", Handle = "market", CurrentInputs = true, Curves = new System.Collections.Generic.List<string> { "SOFR" }, Dependencies = new System.Collections.Generic.List<string> { "root" } };
+        var contract = new BrowserObject { Name = "Contract", Kind = "Loan", Handle = "contract" };
+        var position = new BrowserObject { Name = "Position", Kind = "LoanTrade", Handle = "position", Dependencies = new System.Collections.Generic.List<string> { "contract" } };
+        var funding = new BrowserObject { Name = "Funding", Kind = "Pricer", Handle = "funding", CurrentInputs = true };
+        var riskFree = new BrowserObject { Name = "RiskFree", Kind = "Pricer", Handle = "riskFree", CurrentInputs = true };
+        var evaluation = new BrowserObject { Name = "PV", Kind = "EvaluationResults", Handle = "pv", CurrentInputs = true, Dependencies = new System.Collections.Generic.List<string> { "position", "market", "riskFree" } };
+        var setup = new Snapshot { Objects = new System.Collections.Generic.List<BrowserObject> { root, market, contract, position, funding, riskFree, evaluation } };
+        Check(!BrowserDisplay.IsPricingContext(root) && BrowserDisplay.IsPricingContext(market), "Empty roots must not appear as prepared pricing markets");
+        var defaults = BrowserDisplay.PricingDefaults(setup, contract);
+        Check(defaults.Length == 2 && defaults[0] == market && defaults[1] == riskFree, "Instrument preview follows its worksheet valuation instead of the first alphabetical pricer");
+        Check(BrowserDisplay.PricingDefaults(setup, position)[1] == riskFree, "Trade selection follows the same worksheet setup");
+        evaluation.CurrentInputs = false;
+        Check(BrowserDisplay.PricingDefaults(setup, contract).Length == 0, "Stale valuations cannot supply pricing defaults");
+        evaluation.CurrentInputs = true;
+        setup.Objects.Add(new BrowserObject { Name = "Alternative PV", Kind = "EvaluationResults", Handle = "alternative", CurrentInputs = true, Dependencies = new System.Collections.Generic.List<string> { "position", "market", "funding" } });
+        Check(BrowserDisplay.PricingDefaults(setup, contract).Length == 0, "Ambiguous worksheet setups require an explicit choice");
         Check(BrowserDisplay.PricingRequest("Sensitivities") == "Sensitivities", "Sensitivities must reach the native request unchanged");
         Check(BrowserDisplay.PricingRequest("Fair rate") == "FairRate" && BrowserDisplay.PricingRequest("PV") == "Value" && BrowserDisplay.PricingRequest("Cashflows") == "Cashflows", "Existing pricing request mappings");
         using (var input = File.OpenRead(Path.Combine(AppContext.BaseDirectory, "query-response.json")))

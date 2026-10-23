@@ -60,3 +60,6 @@ Excel-DNA IntelliSense (bundled unmodified):
 https://github.com/Excel-DNA/IntelliSense
 
 License notices are included alongside these instructions.
+The ribbon and panel use Google Material Symbols Outlined; their Apache 2.0
+license and source attribution are included as MaterialSymbols-LICENSE.txt
+and MaterialSymbols-NOTICE.txt.

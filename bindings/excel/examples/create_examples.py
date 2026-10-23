@@ -178,7 +178,7 @@ def simple_market(study, sheet, currency, index, loan=False):
                    [study.name("Root"), '"Credit:BORROWER"', text(currency), text(index), study.name("Recovery"), study.name("CreditQuotes"), study.name("CreditMid")], "Credit", "Independent CDS identifier and quote arrays.")
     for curve_index, rates, key in [(index, "ZeroRates", "BaseCurves"), *([("EURIBOR12m", "ForwardRates", "ForwardCurves"), ("FUNDINGSPREAD", "FundingSpreads", "SpreadCurves")] if loan else [])]:
         row = step(study, sheet, row, "Add " + curve_index, "QS.CONTEXT.ADD.ZERO.CURVE",
-                   [study.name("Root"), text(curve_index), study.name("Pillars"), study.name(rates), '"Actual360"', '"Linear"', "TRUE", '"Continuous"', '"Annual"'], key, "Every addition references the same root; fields are separate arrays.")
+                   [study.name("Root"), text(curve_index), study.name("Pillars"), study.name(rates), '"Actual360"', '"Continuous"', '"Annual"', '"Linear"', "TRUE"], key, "Every addition references the same root; fields are separate arrays.")
     if loan:
         row = step(study, sheet, row, "Add funding curve", "QS.CONTEXT.ADD.COMPOSITE.CURVE",
                    [study.name("Root"), '"FUNDING"', '"EURIBOR12m"', '"FUNDINGSPREAD"'], "Curves", "Funding is an ordinary context curve.")
@@ -551,7 +551,7 @@ def create_historical(path):
         row = 7
         for index in [1, 2]:
             row = step(s, archive, row, f"{index}.1 Create dated context", "QS.CONTEXT.CREATE", [text(f"History.Root{index}"), s.name(f"Date{index}"), '"USD"', '"SOFR"'], f"Root{index}", "Each root owns its market date.")
-            row = step(s, archive, row, f"{index}.2 Add zero curve", "QS.CONTEXT.ADD.ZERO.CURVE", [s.name(f"Root{index}"), '"SOFR"', s.name("Pillars"), s.name(f"Rates{index}"), '"Actual365"', '"Linear"', "FALSE", '"Continuous"', '"Annual"'], f"MarketInputs{index}", "Separate pillar and rate arrays.")
+            row = step(s, archive, row, f"{index}.2 Add zero curve", "QS.CONTEXT.ADD.ZERO.CURVE", [s.name(f"Root{index}"), '"SOFR"', s.name("Pillars"), s.name(f"Rates{index}"), '"Actual365"', '"Continuous"', '"Annual"', '"Linear"', "FALSE"], f"MarketInputs{index}", "Separate pillar and rate arrays.")
             row = s.step(archive, row, f"{index}.3 Prepare complete context", context(f"History.Context{index}", s.name(f"Root{index}"), s.name(f"MarketInputs{index}")), f"OriginalContext{index}", "Compose complete market inputs for reuse.")
             row = step(s, archive, row, f"{index}.4 Capture market", "QS.SNAPSHOT.FROM.CONTEXT", [text(f"History.Snapshot{index}"), s.name(f"Timestamp{index}"), s.name(f"OriginalContext{index}")], f"Snapshot{index}", "Observation timestamp remains separate from market business date.")
         s.headers(archive, row, ["Captured snapshot", "Object reference", ""])

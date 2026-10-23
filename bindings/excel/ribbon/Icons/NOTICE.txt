@@ -1,0 +1,9 @@
+Google Material Symbols Outlined
+Copyright Google LLC.
+Licensed under the Apache License, Version 2.0.
+
+Source: https://github.com/google/material-design-icons
+Revision: 10ecc14790612ca8fd164e3f4ffe9c16fc50d5b7
+Assets: symbols/web/NAME/materialsymbolsoutlined/NAME_24px.svg
+
+Original SVG geometry is unchanged. QuantSupport renders the icons in teal.

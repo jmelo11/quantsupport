@@ -37,9 +37,9 @@ namespace QuantSupport.Ribbon
                 if (content != null) Clipboard.SetDataObject(content, true);
             });
             var menu = new ContextMenuStrip();
-            menu.Items.Add("Select all (Ctrl+A)", null, (sender, args) => table.SelectAll());
-            menu.Items.Add("Copy values (Ctrl+C)", null, (sender, args) => copy());
-            menu.Items.Add("Copy entire table", null, (sender, args) => { table.SelectAll(); copy(); });
+            menu.Items.Add("Select all (Ctrl+A)", MaterialIcons.Get("select_all", 16), (sender, args) => table.SelectAll());
+            menu.Items.Add("Copy values (Ctrl+C)", MaterialIcons.Get("content_copy", 16), (sender, args) => copy());
+            menu.Items.Add("Copy entire table", MaterialIcons.Get("content_copy", 16), (sender, args) => { table.SelectAll(); copy(); });
             table.ContextMenuStrip = menu;
             table.Disposed += (sender, args) => menu.Dispose();
             table.KeyDown += (sender, args) =>

@@ -90,3 +90,16 @@ use two-column labels/controls, and result grids use virtual rows with fixed
 initial widths, resizable columns and wrapped headings. Worksheet diagnostics
 include source cells and native messages. Details omit formulas and dependency
 traces; navigation and copying remain explicit actions.
+
+Pricing keeps Calculate at a fixed size outside the scrollable input form and
+reserves space for results. Preview date and side share one row; fair-rate and
+bond fields appear only when applicable. Empty root contexts are excluded from
+pricing. The initial market and pricer follow the selected object's existing
+worksheet valuation when it identifies a single setup; ambiguous setups require
+a choice. Manual choices survive refreshes of that object. Instrument lists hide
+empty market-date columns, and clicking the worksheet-error count opens Messages.
+
+Ribbon, panel actions, tabs and copy menus use Google's Material Symbols
+Outlined icons in QuantSupport teal. Their original SVGs and Apache 2.0 license
+are [bundled with the source](Icons/README.md). The add-in embeds and renders
+the vectors locally, without an installed font or network access.

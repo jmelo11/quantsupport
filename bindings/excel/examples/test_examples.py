@@ -239,6 +239,11 @@ class WorkbookTests(unittest.TestCase):
                             continue
                         self.assertLess(index, len(args), parameter["name"])
                         self.assertTrue(args[index], parameter["name"])
+                    for argument, parameter in zip(args, parameters):
+                        if argument in ("TRUE", "FALSE"):
+                            self.assertTrue(parameter["type"].startswith("* const")
+                                            or "bool" in parameter["type"],
+                                            f"{parameter['name']} cannot receive {argument}: {parameter['type']}")
                     self.assertEqual(node.attrib["t"], "array", "Formula2 must preserve XLL spills")
                     self.assertNotIn("@", formula)
                     if function == "QS.CONTEXT.CREATE":

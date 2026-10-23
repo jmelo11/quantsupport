@@ -83,7 +83,7 @@ def create_portfolio(path):
         first_input = row
         for index, source, key in [("SOFR", "SofrRates", "SofrCurves"), ("TermSOFR3m", "TermRates", "Curves")]:
             row = s.step(market, row, "Add " + index,
-                         formula("QS.CONTEXT.ADD.ZERO.CURVE", s.name("Root"), text(index), s.name("Pillars"), s.name(source), '"Actual360"', '"Linear"', "TRUE", '"Continuous"', '"Annual"'), key, "Independent context curve addition.")
+                         formula("QS.CONTEXT.ADD.ZERO.CURVE", s.name("Root"), text(index), s.name("Pillars"), s.name(source), '"Actual360"', '"Continuous"', '"Annual"', '"Linear"', "TRUE"), key, "Independent context curve addition.")
         s.range("MarketInputs", market, first_input, 1, row - 1, 1)
 
         build = "3 Build"

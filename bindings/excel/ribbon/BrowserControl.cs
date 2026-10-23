@@ -21,7 +21,7 @@ namespace QuantSupport.Ribbon
         private readonly List<BrowserObject> visibleObjects = new List<BrowserObject>();
         private readonly ComboBox filter = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 170 };
         private readonly TextBox search = new TextBox { Width = 170 };
-        private readonly Label status = new Label { Dock = DockStyle.Fill, AutoSize = true, Padding = new Padding(4) };
+        private readonly LinkLabel status = new LinkLabel { Dock = DockStyle.Fill, AutoSize = true, Padding = new Padding(4), LinkArea = new LinkArea(0, 0) };
         private readonly DataGridView grid = new DataGridView
         {
             Dock = DockStyle.Fill, ReadOnly = true, MultiSelect = false,
@@ -53,6 +53,14 @@ namespace QuantSupport.Ribbon
         {
             Font = new Font("Segoe UI", 9);
             Dock = DockStyle.Fill;
+            MaterialIcons.Apply(go, "open_in_new");
+            MaterialIcons.Apply(copy, "content_copy");
+            MaterialIcons.Apply(price, "calculate");
+            MaterialIcons.Apply(tabs, "info", "warning", "calculate", "show_chart");
+            detailsPage.ImageIndex = 0;
+            messagesPage.ImageIndex = 1;
+            tradesPage.ImageIndex = 2;
+            curvesPage.ImageIndex = 3;
             TableClipboard.Configure(grid);
             grid.CellValueNeeded += (sender, args) =>
             {
@@ -70,16 +78,41 @@ namespace QuantSupport.Ribbon
             };
             filter.Items.AddRange(new object[] { "All objects", "Pricing contexts", "Instruments & Trades", "Portfolios", "Curves", "Market & configuration", "Pricing setup", "Results" });
             filter.SelectedIndex = 0;
-            var toolbar = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, Padding = new Padding(4) };
+            var toolbar = new TableLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, ColumnCount = 3, RowCount = 2, Padding = new Padding(4), Margin = Padding.Empty };
+            toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            toolbar.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            toolbar.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             var refresh = new Button { Text = "Refresh", AutoSize = true };
+            MaterialIcons.Apply(refresh, "refresh");
             refresh.Click += (s, e) => RefreshObjects(true);
-            toolbar.Controls.Add(filter);
-            toolbar.Controls.Add(new Label { Text = "Search", AutoSize = true, Margin = new Padding(4, 7, 2, 0) });
-            toolbar.Controls.Add(search);
-            toolbar.Controls.Add(refresh);
+            filter.Dock = search.Dock = DockStyle.Fill;
+            toolbar.Controls.Add(filter, 0, 0);
+            toolbar.SetColumnSpan(filter, 2);
+            toolbar.Controls.Add(refresh, 2, 0);
+            toolbar.Controls.Add(new Label { Text = "Search", AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(4, 4, 8, 4) }, 0, 1);
+            toolbar.Controls.Add(search, 1, 1);
+            toolbar.SetColumnSpan(search, 2);
             foreach (var title in new[] { "Name", "Type", "Valuation date", "Snapshot (UTC)", "Quote side", "Inputs" })
                 grid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = title, SortMode = DataGridViewColumnSortMode.NotSortable });
-            var split = new SplitContainer { Dock = DockStyle.Fill, Orientation = Orientation.Horizontal, Size = new Size(500, 700), SplitterDistance = 210 };
+            grid.Columns[0].MinimumWidth = 140;
+            grid.Columns[1].Width = 110;
+            grid.Columns[2].Width = 105;
+            grid.Columns[3].Width = 165;
+            grid.Columns[4].Width = 75;
+            grid.Columns[5].Width = 90;
+            var split = new SplitContainer { Dock = DockStyle.Fill, Orientation = Orientation.Horizontal, FixedPanel = FixedPanel.Panel1, Size = new Size(500, 700), SplitterDistance = 190, SplitterWidth = 6, Panel1MinSize = 80, Panel2MinSize = 180 };
+            var listHeight = 190;
+            var sizing = false;
+            split.SplitterMoved += (sender, args) => { if (!sizing) listHeight = split.SplitterDistance; };
+            split.SizeChanged += (sender, args) =>
+            {
+                if (split.ClientSize.Height < split.Panel1MinSize + split.Panel2MinSize + split.SplitterWidth) return;
+                sizing = true;
+                try { split.SplitterDistance = Math.Max(80, Math.Min(listHeight, split.ClientSize.Height - 266)); }
+                finally { sizing = false; }
+            };
             split.Panel1.Controls.Add(grid);
             tradeExplorer = new ExplorerControl(true, () => WindowId);
             curveExplorer = new ExplorerControl(false, () => WindowId);
@@ -112,11 +145,12 @@ namespace QuantSupport.Ribbon
             };
             filter.SelectedIndexChanged += (s, e) => { if (!populating) Populate(); };
             search.TextChanged += (s, e) => { if (!populating) Populate(); };
-            grid.SelectionChanged += (s, e) => { if (!populating) ShowDetails(); };
+            grid.CurrentCellChanged += (s, e) => { if (!populating) ShowDetails(); };
             tabs.SelectedIndexChanged += (s, e) => BindSelectedExplorer();
             go.Click += (s, e) => QuantSupportRibbon.Run(GoToSource);
             copy.Click += (s, e) => QuantSupportRibbon.Run(() => { if (Selected != null) Clipboard.SetText(Selected.Handle); });
             price.Click += (s, e) => ShowPricing();
+            status.LinkClicked += (s, e) => { if (tabs.TabPages.Contains(messagesPage)) tabs.SelectedTab = messagesPage; };
         }
 
         private BrowserObject Selected
@@ -202,6 +236,11 @@ namespace QuantSupport.Ribbon
                 visibleObjects.Add(item);
             }
             grid.RowCount = visibleObjects.Count;
+            // Keep the list useful for instruments, whose market-date columns are empty.
+            grid.Columns[2].Visible = visibleObjects.Any(value => !string.IsNullOrEmpty(value.EvaluationDate));
+            grid.Columns[3].Visible = visibleObjects.Any(value => !string.IsNullOrEmpty(value.SnapshotTimestamp));
+            grid.Columns[4].Visible = visibleObjects.Any(value => !string.IsNullOrEmpty(value.QuoteLevel));
+            grid.Columns[5].Visible = visibleObjects.Any(value => !value.CurrentInputs);
             var selectedIndex = visibleObjects.FindIndex(item => item.Identity == selected);
             if (selectedIndex >= 0) grid.CurrentCell = grid.Rows[selectedIndex].Cells[0];
             grid.ResumeLayout();
@@ -212,6 +251,7 @@ namespace QuantSupport.Ribbon
             status.Text = errors != null && errors.Count > 0
                 ? errors.Count + (errors.Count == 1 ? " worksheet error. " : " worksheet errors. ") + "Open Messages for the library details."
                 : snapshot.Workbook + " · " + grid.Rows.Count + " of " + snapshot.Objects.Count + " objects";
+            status.LinkArea = new LinkArea(0, errors != null && errors.Count > 0 ? status.Text.Length : 0);
 
 
         }
@@ -233,7 +273,7 @@ namespace QuantSupport.Ribbon
             tabs.TabPages.Clear();
             tabs.TabPages.Add(detailsPage);
             var diagnostics = snapshot?.Diagnostics ?? new List<Diagnostic>();
-            messages.Text = string.Join(Environment.NewLine + Environment.NewLine, diagnostics.Select(error => error.Sheet + " · row " + error.Row + ", column " + error.Column + Environment.NewLine + error.Message));
+            messages.Text = string.Join(Environment.NewLine + Environment.NewLine, diagnostics.Select(error => new Location { Sheet = error.Sheet, Row = error.Row, Column = error.Column }.Address + Environment.NewLine + error.Message));
             if (diagnostics.Count > 0) tabs.TabPages.Add(messagesPage);
             if (BrowserDisplay.CanPrice(item)) tabs.TabPages.Add(tradesPage);
             if (item?.Curves != null && item.Curves.Count > 0) tabs.TabPages.Add(curvesPage);
