@@ -326,7 +326,7 @@ pub(super) fn cashflows_output(
     }
     for row in 0..table.payment_dates().len() {
         cells.push(XLOPER12::from_str(&table.payment_dates()[row].to_string()));
-        cells.push(XLOPER12::from_str(&table.cashflow_types()[row]));
+        cells.push(XLOPER12::from_str(&table.cashflow_types()[row].to_string()));
         cells.push(XLOPER12::from_f64(table.amounts()[row]));
         cells.push(table.fixing()[row].map_or_else(XLOPER12::nil, XLOPER12::from_f64));
         cells.push(XLOPER12::from_f64(table.accrual_periods()[row]));

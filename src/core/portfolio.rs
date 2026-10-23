@@ -1,8 +1,11 @@
 //! Aggregate completed, numeric trade results without retaining an AD graph.
 
+use crate::core::cashflowaggregation::{CashflowAggregator, GrossCashflowAggregator};
+use crate::core::makeportfolioaccumulator::MakePortfolioAccumulator;
 use crate::math::compensatedsum::CompensatedSum;
 use crate::prelude::{
-    CashflowsTable, Currency, Date, EvaluationResults, QSError, Request, SensitivityMap,
+    CashflowKind, CashflowsTable, Currency, Date, EvaluationResults, QSError, Request,
+    SensitivityMap,
 };
 use crate::utils::errors::Result;
 use std::collections::{BTreeMap, HashSet};
@@ -42,7 +45,7 @@ impl<T> Portfolio<T> {
     /// member remains absent from the returned standard [`EvaluationResults`].
     /// PV and sensitivities must share one pricing currency. Cashflow compression
     /// retains coupon types, periods, indices, conventions and pay/receive
-    /// direction, weighting compatible rates/spreads by signed principal.
+    /// direction, deriving compatible rates/spreads from actual reported interest.
     ///
     /// # Errors
     /// Rejects absent value currencies for supplied monetary measures,
@@ -51,22 +54,27 @@ impl<T> Portfolio<T> {
     pub fn evaluate(
         &self,
         requests: &[Request],
+        evaluate: impl FnMut(usize, &T, &[Request]) -> Result<(Option<Currency>, EvaluationResults)>,
+    ) -> Result<EvaluationResults> {
+        self.evaluate_with_aggregator(requests, GrossCashflowAggregator::default(), evaluate)
+    }
+
+    /// Evaluates trades using the supplied cashflow aggregation strategy.
+    ///
+    /// # Errors
+    /// Propagates trade pricing, inconsistent monetary units/dates, nonfinite
+    /// results and cashflow aggregation errors. No partial result is returned.
+    pub fn evaluate_with_aggregator<A: CashflowAggregator>(
+        &self,
+        requests: &[Request],
+        aggregator: A,
         mut evaluate: impl FnMut(usize, &T, &[Request]) -> Result<(Option<Currency>, EvaluationResults)>,
     ) -> Result<EvaluationResults> {
-        let mut unique = Vec::new();
-        for request in requests {
-            if matches!(
-                request,
-                Request::Value | Request::Sensitivities | Request::Cashflows
-            ) && !unique.contains(request)
-            {
-                unique.push(*request);
-            }
-        }
-        let mut results = PortfolioAccumulator {
-            requests: unique.clone(),
-            ..PortfolioAccumulator::default()
-        };
+        let mut results = MakePortfolioAccumulator::default()
+            .with_requests(requests)
+            .with_cashflow_aggregator(aggregator)
+            .build()?;
+        let unique = results.requests.clone();
         for (index, trade) in self.trades.iter().enumerate() {
             let (currency, value) = evaluate(index, trade, &unique).map_err(|error| {
                 error.context(format!("pricing portfolio member {}", index + 1))
@@ -83,21 +91,51 @@ impl<T> Portfolio<T> {
     }
 }
 
-/// Signed undiscounted payments grouped by payment date and original currency.
-pub struct PortfolioCashflow {
+/// Forecast undiscounted payments grouped by payment date and original currency.
+pub struct PortfolioCashflowForecast {
     /// Actual payment date; historical payments are retained.
-    pub payment_date: Date,
+    payment_date: Date,
     /// Currency of the contractual payments.
-    pub currency: Currency,
+    currency: Currency,
     /// Net fixed, floating and option-embedded coupon payments.
-    pub interest: f64,
+    interest: f64,
     /// Net redemptions less disbursements, using native cashflow signs.
-    pub capital: f64,
+    capital: f64,
     /// Payments with a type that does not identify interest or capital.
-    pub other: f64,
+    other: f64,
 }
 
-impl PortfolioCashflow {
+impl PortfolioCashflowForecast {
+    /// Returns the forecast payment date, including retained historical payments.
+    #[must_use]
+    pub const fn payment_date(&self) -> Date {
+        self.payment_date
+    }
+
+    /// Returns the original payment currency.
+    #[must_use]
+    pub const fn currency(&self) -> Currency {
+        self.currency
+    }
+
+    /// Returns forecast coupon interest.
+    #[must_use]
+    pub const fn interest(&self) -> f64 {
+        self.interest
+    }
+
+    /// Returns redemptions less disbursements.
+    #[must_use]
+    pub const fn capital(&self) -> f64 {
+        self.capital
+    }
+
+    /// Returns other forecast payments.
+    #[must_use]
+    pub const fn other(&self) -> f64 {
+        self.other
+    }
+
     /// Returns the sum of the three payment categories.
     #[must_use]
     pub fn total(&self) -> f64 {
@@ -105,6 +143,7 @@ impl PortfolioCashflow {
     }
 }
 
+/// Compensated payment-category totals for one date and currency.
 struct CashflowSums {
     currency: Currency,
     interest: CompensatedSum,
@@ -112,19 +151,52 @@ struct CashflowSums {
     other: CompensatedSum,
 }
 
-#[derive(Default)]
-struct PortfolioAccumulator {
+/// Incrementally combines numeric results using an injected cashflow strategy.
+///
+/// Use [`MakePortfolioAccumulator`] for stepwise construction.
+pub struct PortfolioAccumulator<A = GrossCashflowAggregator> {
     requests: Vec<Request>,
     unavailable: HashSet<Request>,
     evaluation_date: Option<Date>,
     value_currency: Option<Currency>,
     value: CompensatedSum,
     sensitivities: BTreeMap<String, CompensatedSum>,
-    cashflows: super::cashflowaggregation::CashflowCompressor,
+    cashflows: A,
 }
 
-impl PortfolioAccumulator {
-    fn add(&mut self, currency: Option<Currency>, result: &EvaluationResults) -> Result<()> {
+impl<A: CashflowAggregator> PortfolioAccumulator<A> {
+    /// Creates an empty accumulator with the requested measures and cashflow strategy.
+    ///
+    /// Unsupported requests and duplicates are removed, preserving request order.
+    #[must_use]
+    pub fn new(requests: &[Request], cashflow_aggregator: A) -> Self {
+        let mut unique = Vec::new();
+        for request in requests {
+            if matches!(
+                request,
+                Request::Value | Request::Sensitivities | Request::Cashflows
+            ) && !unique.contains(request)
+            {
+                unique.push(*request);
+            }
+        }
+        Self {
+            requests: unique,
+            unavailable: HashSet::new(),
+            evaluation_date: None,
+            value_currency: None,
+            value: CompensatedSum::default(),
+            sensitivities: BTreeMap::new(),
+            cashflows: cashflow_aggregator,
+        }
+    }
+
+    /// Adds one completed trade result.
+    ///
+    /// # Errors
+    /// Rejects inconsistent dates/currencies, missing monetary units and nonfinite values.
+    /// Discard the accumulator after an error; no partial result should be published.
+    pub fn add(&mut self, currency: Option<Currency>, result: &EvaluationResults) -> Result<()> {
         if self
             .evaluation_date
             .is_some_and(|date| date != result.evaluation_date())
@@ -193,7 +265,11 @@ impl PortfolioAccumulator {
         Ok(())
     }
 
-    fn finish(self) -> Result<EvaluationResults> {
+    /// Completes the portfolio result, omitting measures unavailable for any member.
+    ///
+    /// # Errors
+    /// Rejects an empty accumulator or failure of the injected cashflow strategy.
+    pub fn finish(self) -> Result<EvaluationResults> {
         let date = self
             .evaluation_date
             .ok_or_else(|| QSError::ValueNotSetErr("Portfolio evaluation date".into()))?;
@@ -218,7 +294,7 @@ impl PortfolioAccumulator {
         if self.requests.contains(&Request::Cashflows)
             && !self.unavailable.contains(&Request::Cashflows)
         {
-            result = result.with_cashflows(self.cashflows.finish());
+            result = result.with_cashflows(self.cashflows.finish()?);
         }
         Ok(result)
     }
@@ -228,12 +304,12 @@ impl PortfolioAccumulator {
 ///
 /// # Errors
 /// Rejects nonfinite amounts or aggregation overflow.
-pub fn summarize_cashflows(flows: &CashflowsTable) -> Result<Vec<PortfolioCashflow>> {
+pub fn summarize_cashflows(flows: &CashflowsTable) -> Result<Vec<PortfolioCashflowForecast>> {
     let mut rows = BTreeMap::new();
     add_cashflows(&mut rows, flows)?;
     Ok(rows
         .into_iter()
-        .map(|((date, _), sums)| PortfolioCashflow {
+        .map(|((date, _), sums)| PortfolioCashflowForecast {
             payment_date: date,
             currency: sums.currency,
             interest: sums.interest.total(),
@@ -257,11 +333,14 @@ fn add_cashflows(
                 capital: CompensatedSum::default(),
                 other: CompensatedSum::default(),
             });
-        let sum = match flows.cashflow_types()[row].as_str() {
-            "FixedRateCoupon" | "FloatingRateCoupon" | "OptionEmbeddedCoupon" | "Interest" => {
-                &mut sums.interest
+        let sum = match &flows.cashflow_types()[row] {
+            CashflowKind::FixedRateCoupon
+            | CashflowKind::FloatingRateCoupon
+            | CashflowKind::OptionEmbeddedCoupon
+            | CashflowKind::Interest => &mut sums.interest,
+            CashflowKind::Redemption | CashflowKind::Disbursement | CashflowKind::Capital => {
+                &mut sums.capital
             }
-            "Redemption" | "Disbursement" | "Capital" => &mut sums.capital,
             _ => &mut sums.other,
         };
         sum.add(flows.amounts()[row])?;
@@ -285,7 +364,7 @@ mod tests {
         ] {
             flows.add_cashflow(
                 date,
-                kind.into(),
+                CashflowKind::from(kind),
                 amount,
                 None,
                 0.0,
@@ -297,7 +376,7 @@ mod tests {
         }
         flows.add_cashflow(
             date,
-            "FixedRateCoupon".into(),
+            CashflowKind::FixedRateCoupon,
             7.0,
             None,
             0.0,
@@ -434,6 +513,65 @@ mod tests {
             Ok((Some(Currency::USD), result(0).with_price(*value)))
         })?;
         assert_eq!(result.price(), Some(1.0));
+        Ok(())
+    }
+    #[test]
+    fn builder_injects_net_aggregation_and_rejects_empty_results() -> Result<()> {
+        use crate::prelude::NetCashflowAggregator;
+        assert!(matches!(
+            MakePortfolioAccumulator::default().build(),
+            Err(QSError::ValueNotSetErr(_))
+        ));
+        assert!(MakePortfolioAccumulator::default()
+            .with_requests(&[Request::Value])
+            .build()?
+            .finish()
+            .is_err());
+        let mut accumulator = MakePortfolioAccumulator::default()
+            .with_requests(&[
+                Request::Value,
+                Request::Cashflows,
+                Request::Value,
+                Request::FairRate(0),
+            ])
+            .with_cashflow_aggregator(NetCashflowAggregator::default())
+            .build()?;
+        assert_eq!(
+            accumulator.requests,
+            vec![Request::Value, Request::Cashflows]
+        );
+        accumulator.add(Some(Currency::USD), &result(0))?;
+        let result = accumulator.finish()?;
+        let flows = result
+            .cashflows()
+            .ok_or_else(|| QSError::ValueNotSetErr("net cashflows".into()))?;
+        assert_eq!(result.price(), Some(12.0));
+        assert!(flows.cashflow_types().contains(&CashflowKind::Capital));
+        assert!(!flows.cashflow_types().contains(&CashflowKind::Disbursement));
+        Ok(())
+    }
+
+    #[test]
+    fn injected_strategy_errors_propagate_with_member_context() -> Result<()> {
+        /// A custom strategy that fails when consuming a table.
+        struct RejectCashflows;
+        impl CashflowAggregator for RejectCashflows {
+            fn add(&mut self, _: &CashflowsTable) -> Result<()> {
+                Err(QSError::InvalidValueErr("custom cashflow strategy".into()))
+            }
+            fn finish(self) -> Result<CashflowsTable> {
+                Ok(CashflowsTable::new())
+            }
+        }
+        let error = Portfolio::new(vec![0])?
+            .evaluate_with_aggregator(&[Request::Cashflows], RejectCashflows, |index, _, _| {
+                Ok((None, result(index)))
+            })
+            .err()
+            .ok_or_else(|| QSError::ValueNotSetErr("strategy error".into()))?;
+        let message = error.to_string();
+        assert!(message.contains("custom cashflow strategy"));
+        assert!(message.contains("aggregating portfolio member 1"));
         Ok(())
     }
 }

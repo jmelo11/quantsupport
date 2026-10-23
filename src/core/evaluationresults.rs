@@ -1,6 +1,85 @@
 use std::collections::HashMap;
 
-use crate::{currencies::currency::Currency, time::date::Date};
+use crate::{
+    core::cashflowaggregation::CouponDetails,
+    currencies::currency::Currency,
+    rates::interestrate::{InterestRate, RateDefinition},
+    time::date::Date,
+    utils::errors::Result,
+};
+
+/// Economic cashflow kind used by numeric reports and aggregators.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum CashflowKind {
+    /// Fixed coupon interest.
+    FixedRateCoupon,
+    /// Floating coupon interest.
+    FloatingRateCoupon,
+    /// Coupon with an option payoff.
+    OptionEmbeddedCoupon,
+    /// Principal returned at maturity or amortization.
+    Redemption,
+    /// Principal advanced at origination.
+    Disbursement,
+    /// A contractual constant payment.
+    ConstantAmount,
+    /// A non-coupon option payoff.
+    OptionEmbeddedCashflow,
+    /// Interest reported without contractual coupon terms.
+    Interest,
+    /// Principal reported without a redemption/disbursement distinction.
+    Capital,
+    /// A custom reporting kind supplied by a pricer.
+    Other(String),
+}
+
+impl CashflowKind {
+    /// Returns the external report label.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        match self {
+            Self::FixedRateCoupon => "FixedRateCoupon",
+            Self::FloatingRateCoupon => "FloatingRateCoupon",
+            Self::OptionEmbeddedCoupon => "OptionEmbeddedCoupon",
+            Self::Redemption => "Redemption",
+            Self::Disbursement => "Disbursement",
+            Self::ConstantAmount => "ConstantAmount",
+            Self::OptionEmbeddedCashflow => "OptionEmbeddedCashflow",
+            Self::Interest => "Interest",
+            Self::Capital => "Capital",
+            Self::Other(label) => label,
+        }
+    }
+}
+
+impl From<&str> for CashflowKind {
+    fn from(label: &str) -> Self {
+        match label {
+            "FixedRateCoupon" => Self::FixedRateCoupon,
+            "FloatingRateCoupon" => Self::FloatingRateCoupon,
+            "OptionEmbeddedCoupon" => Self::OptionEmbeddedCoupon,
+            "Redemption" => Self::Redemption,
+            "Disbursement" => Self::Disbursement,
+            "ConstantAmount" => Self::ConstantAmount,
+            "OptionEmbeddedCashflow" => Self::OptionEmbeddedCashflow,
+            "Interest" => Self::Interest,
+            "Capital" => Self::Capital,
+            _ => Self::Other(label.into()),
+        }
+    }
+}
+
+impl From<String> for CashflowKind {
+    fn from(label: String) -> Self {
+        Self::from(label.as_str())
+    }
+}
+
+impl std::fmt::Display for CashflowKind {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.as_str())
+    }
+}
 
 /// Column-oriented, undiscounted cashflow report.
 ///
@@ -13,9 +92,9 @@ use crate::{currencies::currency::Currency, time::date::Date};
 /// any FX conversion, and discount factors.
 #[derive(Clone, Debug)]
 pub struct CashflowsTable {
-    coupon_details: Vec<Option<super::cashflowaggregation::CouponDetails>>,
+    coupon_details: Vec<Option<CouponDetails>>,
     payment_dates: Vec<Date>,
-    cashflow_types: Vec<String>,
+    cashflow_types: Vec<CashflowKind>,
     amount: Vec<f64>,
     fixing: Vec<Option<f64>>,
     accrual_periods: Vec<f64>,
@@ -51,12 +130,35 @@ impl CashflowsTable {
 
     /// Returns contractual coupon metadata, including signed notional and fixing index.
     #[must_use]
-    pub fn coupon_details(&self) -> &[Option<super::cashflowaggregation::CouponDetails>] {
+    pub fn coupon_details(&self) -> &[Option<CouponDetails>] {
         &self.coupon_details
     }
 
+    /// Computes coupon rates from actual reported interest under the given convention.
+    ///
+    /// Rows without contractual coupon terms have no implied rate. This includes
+    /// net interest with zero principal and non-interest payments.
+    ///
+    /// # Errors
+    /// Rejects invalid principal, accrual dates, interest or rate conventions.
+    pub fn implied_rates(
+        &self,
+        convention: RateDefinition,
+    ) -> Result<Vec<Option<InterestRate<f64>>>> {
+        self.coupon_details
+            .iter()
+            .zip(&self.amount)
+            .map(|(terms, interest)| {
+                terms
+                    .as_ref()
+                    .map(|terms| terms.implied_rate(*interest, convention))
+                    .transpose()
+            })
+            .collect()
+    }
+
     /// Attaches contractual metadata to the most recently added cashflow.
-    pub fn set_last_coupon_details(&mut self, details: super::cashflowaggregation::CouponDetails) {
+    pub fn set_last_coupon_details(&mut self, details: CouponDetails) {
         if let Some(last) = self.coupon_details.last_mut() {
             *last = Some(details);
         }
@@ -64,7 +166,7 @@ impl CashflowsTable {
 
     /// Returns the cashflow types.
     #[must_use]
-    pub fn cashflow_types(&self) -> &[String] {
+    pub fn cashflow_types(&self) -> &[CashflowKind] {
         &self.cashflow_types
     }
 
@@ -118,7 +220,7 @@ impl CashflowsTable {
     pub fn add_cashflow(
         &mut self,
         payment_date: Date,
-        cashflow_type: String,
+        cashflow_type: CashflowKind,
         amount: f64,
         fixing: Option<f64>,
         accrual_period: f64,

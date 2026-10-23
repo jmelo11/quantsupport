@@ -345,7 +345,7 @@ mod tests {
                 .amounts()
                 .iter()
                 .zip(results.cashflows().unwrap().cashflow_types())
-                .filter(|(_, kind)| kind.contains("Redemption"))
+                .filter(|(_, kind)| matches!(kind, quantsupport::prelude::CashflowKind::Redemption))
                 .map(|(amount, _)| amount)
                 .sum();
             assert!((principal - 250_000.0).abs() < 1e-6, "{principal}");

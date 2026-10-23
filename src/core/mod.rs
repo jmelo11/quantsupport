@@ -4,7 +4,7 @@
 //! instrument and trade abstractions, evaluation results, market-data handling,
 //! and collateral / CSA discount policy definitions.
 
-/// Convention-preserving coupon compression and weighted contractual quotes.
+/// Injectable cashflow aggregation and convention-based implied coupon rates.
 pub mod cashflowaggregation;
 /// Collateral / CSA discount policy module.
 pub mod collateral;
@@ -16,6 +16,8 @@ pub mod evaluationresults;
 pub mod evaluator;
 /// Instrument module.
 pub mod instrument;
+/// Builder for streaming portfolio accumulators.
+pub mod makeportfolioaccumulator;
 /// Market data handling module.
 pub mod marketdatahandling;
 /// Serializable timestamped market inputs.

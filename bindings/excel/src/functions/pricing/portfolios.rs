@@ -108,11 +108,11 @@ pub fn qs_portfolio_result_cashflows(
         .collect::<Vec<_>>();
         for row in &rows {
             cells.extend([
-                XLOPER12::from_str(&row.payment_date.to_string()),
-                XLOPER12::from_str(&row.currency.to_string()),
-                XLOPER12::from_f64(row.interest),
-                XLOPER12::from_f64(row.capital),
-                XLOPER12::from_f64(row.other),
+                XLOPER12::from_str(&row.payment_date().to_string()),
+                XLOPER12::from_str(&row.currency().to_string()),
+                XLOPER12::from_f64(row.interest()),
+                XLOPER12::from_f64(row.capital()),
+                XLOPER12::from_f64(row.other()),
                 XLOPER12::from_f64(row.total()),
             ]);
         }

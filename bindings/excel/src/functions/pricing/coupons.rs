@@ -48,14 +48,14 @@ pub fn qs_result_coupons(
             let details = flows.coupon_details()[row].as_ref();
             cells.extend([
                 XLOPER12::from_str(&flows.payment_dates()[row].to_string()),
-                XLOPER12::from_str(&flows.cashflow_types()[row]),
+                XLOPER12::from_str(&flows.cashflow_types()[row].to_string()),
                 XLOPER12::from_str(&flows.currencies()[row].to_string()),
                 XLOPER12::from_f64(flows.amounts()[row]),
                 details.map_or_else(XLOPER12::nil, |terms| {
-                    XLOPER12::from_str(&terms.accrual_start.to_string())
+                    XLOPER12::from_str(&terms.accrual_start().to_string())
                 }),
                 details.map_or_else(XLOPER12::nil, |terms| {
-                    XLOPER12::from_str(&terms.accrual_end.to_string())
+                    XLOPER12::from_str(&terms.accrual_end().to_string())
                 }),
                 details
                     .and_then(|terms| terms.fixing_index())
@@ -63,39 +63,39 @@ pub fn qs_result_coupons(
                         XLOPER12::from_str(&index.to_string())
                     }),
                 details
-                    .and_then(|terms| terms.market_index.as_ref())
+                    .and_then(|terms| terms.market_index())
                     .map_or_else(XLOPER12::nil, |index| {
                         XLOPER12::from_str(&index.to_string())
                     }),
-                details.map_or_else(XLOPER12::nil, |terms| XLOPER12::from_f64(terms.notional)),
+                details.map_or_else(XLOPER12::nil, |terms| XLOPER12::from_f64(terms.notional())),
                 details
-                    .and_then(|terms| terms.rate)
+                    .and_then(|terms| terms.rate())
                     .map_or_else(XLOPER12::nil, XLOPER12::from_f64),
                 details
-                    .and_then(|terms| terms.spread)
+                    .and_then(|terms| terms.spread())
                     .map_or_else(XLOPER12::nil, XLOPER12::from_f64),
                 flows.fixing()[row].map_or_else(XLOPER12::nil, XLOPER12::from_f64),
                 XLOPER12::from_f64(flows.accrual_periods()[row]),
                 details.map_or_else(XLOPER12::nil, |terms| {
-                    XLOPER12::from_str(&format!("{:?}", terms.day_counter))
+                    XLOPER12::from_str(&format!("{:?}", terms.day_counter()))
                 }),
                 details
-                    .and_then(|terms| terms.rate_definition)
+                    .and_then(|terms| terms.rate_definition())
                     .map_or_else(XLOPER12::nil, |definition| {
                         XLOPER12::from_str(&format!("{:?}", definition.compounding()))
                     }),
                 details
-                    .and_then(|terms| terms.rate_definition)
+                    .and_then(|terms| terms.rate_definition())
                     .map_or_else(XLOPER12::nil, |definition| {
                         XLOPER12::from_str(&format!("{:?}", definition.frequency()))
                     }),
                 details
-                    .and_then(|terms| terms.overnight_conventions.as_ref())
+                    .and_then(|terms| terms.overnight_conventions())
                     .map_or_else(XLOPER12::nil, |conventions| {
                         XLOPER12::from_str(&format!("{conventions:?}"))
                     }),
                 details
-                    .and_then(|terms| terms.payoff.as_ref())
+                    .and_then(|terms| terms.payoff())
                     .map_or_else(XLOPER12::nil, |payoff| {
                         XLOPER12::from_str(&format!("{payoff:?}"))
                     }),

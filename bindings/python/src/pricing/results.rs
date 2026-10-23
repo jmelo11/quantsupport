@@ -25,6 +25,7 @@ struct CashflowRow {
     leg_index: usize,
 }
 
+/// A cashflow supplied by a Python pricer, including optional contractual terms.
 #[derive(Deserialize)]
 struct CashflowInput {
     #[serde(default)]
@@ -128,7 +129,7 @@ impl EvaluationResults {
                 flows.add_cashflow(
                     Date::from_str(&row.payment_date, "%Y-%m-%d")
                         .map_err(crate::common::conversion::qs_err)?,
-                    row.cashflow_type.clone(),
+                    row.cashflow_type.as_str().into(),
                     row.amount,
                     row.fixing,
                     row.accrual_period,
@@ -161,7 +162,7 @@ impl EvaluationResults {
                 .map(|i| CashflowRow {
                     coupon_details: t.coupon_details()[i].clone(),
                     payment_date: t.payment_dates()[i].to_string(),
-                    cashflow_type: t.cashflow_types()[i].clone(),
+                    cashflow_type: t.cashflow_types()[i].to_string(),
                     amount: t.amounts()[i],
                     fixing: t.fixing()[i],
                     accrual_period: t.accrual_periods()[i],
@@ -341,7 +342,7 @@ impl EvaluationResults {
                 (
                     "payment_date",
                     rows.iter()
-                        .map(|row| row.payment_date.to_string())
+                        .map(|row| row.payment_date().to_string())
                         .collect::<Vec<_>>()
                         .into_pyobject(py)?
                         .into_any(),
@@ -349,7 +350,7 @@ impl EvaluationResults {
                 (
                     "currency",
                     rows.iter()
-                        .map(|row| row.currency.to_string())
+                        .map(|row| row.currency().to_string())
                         .collect::<Vec<_>>()
                         .into_pyobject(py)?
                         .into_any(),
@@ -357,7 +358,7 @@ impl EvaluationResults {
                 (
                     "interest",
                     rows.iter()
-                        .map(|row| row.interest)
+                        .map(|row| row.interest())
                         .collect::<Vec<_>>()
                         .into_pyobject(py)?
                         .into_any(),
@@ -365,7 +366,7 @@ impl EvaluationResults {
                 (
                     "capital",
                     rows.iter()
-                        .map(|row| row.capital)
+                        .map(|row| row.capital())
                         .collect::<Vec<_>>()
                         .into_pyobject(py)?
                         .into_any(),
@@ -373,7 +374,7 @@ impl EvaluationResults {
                 (
                     "other",
                     rows.iter()
-                        .map(|row| row.other)
+                        .map(|row| row.other())
                         .collect::<Vec<_>>()
                         .into_pyobject(py)?
                         .into_any(),
@@ -408,7 +409,7 @@ impl EvaluationResults {
                 .map(|row| {
                     row.coupon_details
                         .as_ref()
-                        .map(|terms| terms.accrual_start.to_string())
+                        .map(|terms| terms.accrual_start().to_string())
                 })
                 .collect::<Vec<_>>(),
         )?;
@@ -418,7 +419,7 @@ impl EvaluationResults {
                 .map(|row| {
                     row.coupon_details
                         .as_ref()
-                        .map(|terms| terms.accrual_end.to_string())
+                        .map(|terms| terms.accrual_end().to_string())
                 })
                 .collect::<Vec<_>>(),
         )?;
@@ -428,14 +429,14 @@ impl EvaluationResults {
                 .map(|row| {
                     row.coupon_details
                         .as_ref()
-                        .and_then(|terms| terms.market_index.as_ref().map(ToString::to_string))
+                        .and_then(|terms| terms.market_index().map(ToString::to_string))
                 })
                 .collect::<Vec<_>>(),
         )?;
         extra.set_item(
             "notional",
             rows.iter()
-                .map(|row| row.coupon_details.as_ref().map(|terms| terms.notional))
+                .map(|row| row.coupon_details.as_ref().map(|terms| terms.notional()))
                 .collect::<Vec<_>>(),
         )?;
         extra.set_item(
@@ -451,13 +452,13 @@ impl EvaluationResults {
         extra.set_item(
             "rate",
             rows.iter()
-                .map(|row| row.coupon_details.as_ref().and_then(|terms| terms.rate))
+                .map(|row| row.coupon_details.as_ref().and_then(|terms| terms.rate()))
                 .collect::<Vec<_>>(),
         )?;
         extra.set_item(
             "spread",
             rows.iter()
-                .map(|row| row.coupon_details.as_ref().and_then(|terms| terms.spread))
+                .map(|row| row.coupon_details.as_ref().and_then(|terms| terms.spread()))
                 .collect::<Vec<_>>(),
         )?;
         extra.set_item(
@@ -466,7 +467,7 @@ impl EvaluationResults {
                 .map(|row| {
                     row.coupon_details
                         .as_ref()
-                        .map(|terms| format!("{:?}", terms.day_counter))
+                        .map(|terms| format!("{:?}", terms.day_counter()))
                 })
                 .collect::<Vec<_>>(),
         )?;
@@ -476,7 +477,7 @@ impl EvaluationResults {
                 .map(|row| {
                     row.coupon_details.as_ref().and_then(|terms| {
                         terms
-                            .rate_definition
+                            .rate_definition()
                             .map(|definition| format!("{definition:?}"))
                     })
                 })
@@ -488,8 +489,7 @@ impl EvaluationResults {
                 .map(|row| {
                     row.coupon_details.as_ref().and_then(|terms| {
                         terms
-                            .overnight_conventions
-                            .as_ref()
+                            .overnight_conventions()
                             .map(|conventions| format!("{conventions:?}"))
                     })
                 })
@@ -501,7 +501,7 @@ impl EvaluationResults {
                 .map(|row| {
                     row.coupon_details
                         .as_ref()
-                        .and_then(|terms| terms.payoff.as_ref().map(|payoff| format!("{payoff:?}")))
+                        .and_then(|terms| terms.payoff().map(|payoff| format!("{payoff:?}")))
                 })
                 .collect::<Vec<_>>(),
         )?;

@@ -12,7 +12,7 @@ use crate::{
 };
 
 /// Overnight coupon averaging, independent of annualized rate compounding.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum OvernightAveraging {
     /// Product of daily simple interest factors.
     #[default]
@@ -34,7 +34,7 @@ pub enum OisPillar {
 }
 
 /// Observation conventions for an overnight coupon.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(default)]
 pub struct OvernightCouponConventions {
     /// Daily compounding or arithmetic averaging.
