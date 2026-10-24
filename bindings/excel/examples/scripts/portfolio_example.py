@@ -91,7 +91,7 @@ def create_portfolio(path):
                 "Read top to bottom. Individual evaluations provide an independent PV check. The portfolio takes a contiguous range of trade handles and one broadcast pricer; it returns ordinary EvaluationResults.")
         s.headers(build, 6, ["Step", "Object reference", "Purpose"])
         row = s.step(build, 7, "1. Create pricing context",
-                     context("Portfolio.Context", s.name("Root"), s.name("MarketInputs")),
+                     context(s.name('Root')),
                      "Context", "Both explicit curves share the same valuation date.")
         row = s.step(build, row, "2. Select SOFR discounting",
                      formula("QS.DISCOUNT.POLICY.CSA", '"Portfolio.Policy"', s.name("Currency"), '"SOFR"'),
@@ -114,7 +114,7 @@ def create_portfolio(path):
                          formula("QS.TRADE.CREATE", text(f"Portfolio.C{index:02}.Trade"), s.name(key + "Instrument"), s.name("ValuationDate"), s.name(key + "Side")),
                          key + "Trade", "Position direction is separate from the instrument.")
             row = s.step(build, row, case[0] + " · reference result",
-                         formula("QS.EVALUATE.RESULTS", s.name("Context"), s.name(key + "Trade"), s.name("Requests"), "", s.name("Pricer")),
+                         formula('QS.EVALUATE.RESULTS', s.name('Context'), s.name(key + 'Trade'), s.name('Requests'), s.name('Pricer')),
                          key + "Result", "Independent single-position result used to check the portfolio PV.")
         s.headers(build, row, ["Portfolio member", "Trade handle passed to CREATE", "Reference evaluation"])
         for index, case in enumerate(PORTFOLIO_CASES, 1):

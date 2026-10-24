@@ -14,9 +14,12 @@ from uuid import uuid4
 from xml.etree import ElementTree as ET
 from zipfile import ZipFile
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+
+
 from create_examples import EXAMPLES, LOAN_CASES, publish_workbook, validation_names
 
-ROOT = Path(__file__).resolve().parents[3]
+ROOT = Path(__file__).resolve().parents[4]
 NS = {"s": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
 QUOTED = r'"(?:[^"\n]|"")*"'
 SHEET_RANGE = r"'((?:[^']|'')+)'!(\$?[A-Z]+\$?\d+(?::\$?[A-Z]+\$?\d+)?)"
@@ -82,10 +85,10 @@ class Workbook:
         match = re.fullmatch(SHEET_RANGE, self.names[expression])
         return self.value(match[1].replace("''", "'"), match[2].replace("$", ""))
 
-    def market_input(self, expression):
+    def market_input(self, expression, include_owned=True):
         """Resolve actual worksheet market inputs for native bootstrap validation."""
         if expression in self.names:
-            return self.market_input(self.names[expression])
+            return self.market_input(self.names[expression], include_owned)
         if expression.startswith('"'):
             return expression[1:-1].replace('""', '"')
         if expression in ("TRUE", "FALSE"):
@@ -99,7 +102,7 @@ class Workbook:
                 cell = self.cells[sheet][address]
                 node = cell.find("s:f", NS)
                 if node is not None:
-                    values.append(self.market_input(node.text))
+                    values.append(self.market_input(node.text, include_owned))
                 elif cell.attrib.get("t") == "s":
                     values.append(self.value(sheet, address))
                 else:
@@ -108,17 +111,22 @@ class Workbook:
         if "(" not in expression:
             return float(expression) if expression else None
         function = expression.split("(", 1)[0].removeprefix("_xll.")
-        args = [self.market_input(argument) for argument in arguments(expression)]
+        args = [self.market_input(argument, False) for argument in arguments(expression)]
         if function == "QS.CONTEXT.CREATE":
-            return {"name": args[0], "quotes": {"reference_date": args[1], "quotes": []}, "curves": [],
-                    "base_currency": args[2], "base_index": args[3], "quote_level": args[4] if len(args) > 4 else "Mid"}
+            market = {"name": args[0], "quotes": {"reference_date": args[1], "quotes": []}, "curves": [],
+                      "base_currency": args[2], "base_index": args[3], "quote_level": args[4] if len(args) > 4 else "Mid"}
+            if include_owned:
+                for _, _, contribution, _ in self.formulas():
+                    if contribution.startswith("_xll.QS.CONTEXT.ADD.CURVE(") and self.market_input(arguments(contribution)[0], False)["name"] == market["name"]:
+                        owned = self.market_input(contribution, False)
+                        market["quotes"]["quotes"].extend(owned["quotes"]["quotes"])
+                        market["curves"].extend(owned["curves"])
+            return market
         if function == "QS.CONTEXT.ADD.CURVE":
             identifiers, mid = args[2:4]
             quotes = [dict(identifier=identifier, mid=level, bid=None, ask=None) for identifier, level in zip(identifiers, mid)]
             return {"quotes": args[0]["quotes"] | {"quotes": quotes},
                     "curves": [dict(market_index=args[1], day_counter=args[6], interpolator=args[7], enable_extrapolation=args[8], quotes=identifiers)]}
-        if function == "QS.CONTEXT.PREPARE":
-            return args[1] | args[2] | {"name": args[0]}
         raise AssertionError(f"Unsupported market-input formula: {expression}")
 
     def formulas(self):
@@ -420,7 +428,7 @@ class WorkbookTests(unittest.TestCase):
         query_date = book.market_input("Swap_Maturity")
         inputs = [book.market_input(expression) | {"query_date": query_date}
                   for _, _, expression, _ in book.formulas()
-                  if expression.startswith("_xll.QS.CONTEXT.PREPARE(")]
+                  if expression.startswith("_xll.QS.CONTEXT.CREATE(")]
         command = ["cargo", "run", "--quiet", "-p", "quantsupport-xll", "--example", "validate_example_market"]
         checked = subprocess.run(command, cwd=ROOT, input=json.dumps(inputs), text=True, capture_output=True)
         self.assertEqual(checked.returncode, 0, checked.stderr)

@@ -17,7 +17,7 @@ in F10:F14. A pillar can be ISO text or a tenor such as 0D or 10Y.
    B2 =QS.CONTEXT.CREATE("eur","2026-02-24","EUR","ESTR")
    B3 =QS.CONTEXT.ADD.ZERO.CURVE(B2,"ESTR",A10:A14,F10:F14,"Actual360","Linear",TRUE,"Continuous","Annual")
    B4 =QS.CONTEXT.ADD.ZERO.CURVE(B2,"EURIBOR12m",A10:A14,J10:J14,"Actual360","Linear",TRUE,"Continuous","Annual")
-   H2 =QS.CONTEXT.PREPARE("eur.market",B2,B3:B4)
+   H2 =B2
 
 ESTR discounts payments under the illustrated policy; EURIBOR12m projects the
 floating coupon. Use appropriate calibrated inputs for production work. The
@@ -33,8 +33,8 @@ Create fixed and floating contracts
    D3 =QS.INSTRUMENT.LOAN("balloon","2026-02-24","2031-02-24","EUR",10000,0.05,,"Balloon","Monthly","Actual365",D2)
    D4 =QS.TRADE.CREATE("receipt",D3,"2026-02-24","Receive")
    D5 =QS.LOAN.PRICER("loan.pricer","EUR","ESTR")
-   D6 =QS.EVALUATE(H2,D4,"Value",,D5)
-   D7 =QS.EVALUATE(H2,D4,"FairRate(0)",,D5)
+   D6 =QS.EVALUATE(H2,D4,"Value",D5)
+   D7 =QS.EVALUATE(H2,D4,"FairRate(0)",D5)
 
 The rate is an annual decimal fixed coupon when market_index is blank and a
 floating spread otherwise. French, Bullet and Balloon repayment are supported.
@@ -60,9 +60,9 @@ construct its curve in the same root, then compose a FUNDING index:
 
    B6 =QS.CONTEXT.ADD.ZERO.CURVE(B2,"FUNDINGSPREAD",A10:A14,N10:N14,"Actual360","Linear",TRUE,"Continuous","Annual")
    B7 =QS.CONTEXT.ADD.COMPOSITE.CURVE(B2,"FUNDING","EURIBOR12m","FUNDINGSPREAD")
-   B8 =QS.CONTEXT.PREPARE("funded.market",B2,B3:B7)
+   B8 =B2
    D8 =QS.LOAN.PRICER("funded.loan","EUR","FUNDING")
-   D9 =QS.EVALUATE(B8,D4,"Value",,D8)
+   D9 =QS.EVALUATE(B8,D4,"Value",D8)
 
 Keep B3:B7 exclusively for addition handles or blanks. Prepared contexts belong
 outside the contribution array. The full loan example separates those blocks.
@@ -98,7 +98,7 @@ amortization schedule is rebuilt during solving.
 .. code-block:: text
 
    =QS.LOAN.PRICER("refinancing","EUR","FUNDING","EURIBOR12m",TRUE)
-   =QS.EVALUATE.RESULTS(H2,D4,{"Value","Cashflows","Sensitivities"},,D5)
+   =QS.EVALUATE.RESULTS(H2,D4,{"Value","Cashflows","Sensitivities"},D5)
 
 Value is signed future receipt PV under the native loan conventions and excludes
 the original principal advance. Cashflow tables contain signed undiscounted

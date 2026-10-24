@@ -107,7 +107,7 @@ jobs:
       - name: Test generated Excel workbooks against the function catalog
         run: |
           python -m pip install -r bindings/excel/examples/requirements.txt
-          python -m unittest discover -s bindings/excel/examples -p 'test_*.py' -v
+          python -m unittest discover -s bindings/excel/examples/tests -p 'test_*.py' -v
       - name: Build and package XLL
         shell: pwsh
         run: ./bindings/excel/scripts/build.ps1 -Profile release

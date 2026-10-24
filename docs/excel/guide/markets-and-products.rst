@@ -3,8 +3,8 @@ Markets, instruments and pricing conventions
 
 Start every market with ``QS.CONTEXT.CREATE``. Its quote store reference date
 is the valuation date. Base currency/index and quote side govern native market
-construction. Additions reference that root; evaluation consumes their complete
-array or a context composed once with ``QS.CONTEXT.PREPARE``.
+construction. Additions belong to that stable root. Evaluation commits the complete
+definition pass and lazily constructs only its required dependencies on workers.
 
 Bootstrapped and explicit curves
 --------------------------------
@@ -18,7 +18,7 @@ conventions from the Rust library, including the product, index and tenor.
 
    B2 =QS.CONTEXT.CREATE("usd","2026-01-15","USD","SOFR")
    B3 =QS.CONTEXT.ADD.CURVE(B2,"SOFR",A10:A20,F10:F20)
-   B4 =QS.CONTEXT.PREPARE("usd.market",B2,B3)
+   B4 =B2
 
 When identifiers and values are already supplied through ADD.QUOTES, omit them
 in ADD.CURVE to select matching market-index quotes. Matching is deterministic.
@@ -39,7 +39,7 @@ reference date. A composite multiplies the discount factors of its base and
 spread curves. FUNDING is an ordinary index, selected through a policy rather
 than through contractual loan settings.
 
-``QS.CURVE.GET`` obtains a curve from a prepared context. Use DISCOUNT,
+``QS.CURVE.GET`` obtains a curve from a committed context. Use DISCOUNT,
 ZERO.RATE, FORWARD and TABLE under the same namespace to inspect it. The table
 shows pillar dates, discount factors, zero rates and forwards. Default displayed
 rates use Simple/Annual and the native curve day count. Extrapolation is explicit.

@@ -7,7 +7,7 @@ stored result when several requested measures share one evaluation:
 
 .. code-block:: text
 
-   H2 =QS.EVALUATE.RESULTS(context,trade,{"Value","Cashflows","Sensitivities"},,pricer)
+   H2 =QS.EVALUATE.RESULTS(context,trade,{"Value","Cashflows","Sensitivities"},pricer)
    H3 =QS.RESULT.VALUE(H2)
    H4 =QS.RESULT.SENSITIVITIES(H2)
    H5 =QS.RESULT.COUPONS(H2)
@@ -36,8 +36,8 @@ solving. Separate targets require separate evaluations.
 
 .. code-block:: text
 
-   =QS.EVALUATE(context,trade,"FairRate(0)",,pricer)
-   =QS.EVALUATE(context,trade,"FairRate(1)",,pricer)
+   =QS.EVALUATE(context,trade,"FairRate(0)",pricer)
+   =QS.EVALUATE(context,trade,"FairRate(1)",pricer)
    =QS.REQUEST.FAIR.RATE(0)
 
 Portfolio aggregation
@@ -61,7 +61,7 @@ Evaluation streams one trade at a time and releases its intermediate result.
 Compatible coupons are grouped using notional-weighted rates or spreads, while
 pay/receive directions, nonlinear payoffs and distinct conventions remain
 separate. The portfolio does not retain a combined AD graph. For individual
-scalar values, use EVALUATE.RANGE with one shared prepared context instead.
+scalar values, use EVALUATE.RANGE with one shared committed context instead.
 
 Archive complete dated markets
 ------------------------------
@@ -71,8 +71,8 @@ references in A2:A10 and corresponding observation timestamps in F2:F10:
 
 .. code-block:: text
 
-   C2 =QS.CONTEXT.PREPARE("first.market",first_root,first_inputs)
-   C3 =QS.CONTEXT.PREPARE("next.market",next_root,next_inputs)
+   C2 =first_root
+   C3 =next_root
    H2 =QS.SNAPSHOT.FROM.RANGE("history",A2:A10,TRANSPOSE(F2:F10))
    H3 =QS.EVALUATE.FROM.SNAPSHOT(H2,trades,dates,pricer,"Value")
 
@@ -100,7 +100,7 @@ For individual selection and inspection:
 Snapshots store quote observations, FX and construction configurations, including
 explicit zero curves, credit, volatility and simulation settings. Supplied
 runtime curves cannot be captured. Fixings and their publication vintages are
-separate; supply a fixing contribution or prepared context to historical pricing.
+separate; supply a fixing contribution or committed context to historical pricing.
 No fixing-vintage filter is inferred. Native JSON import/export is available
 under SNAPSHOT.FROM.JSON and SNAPSHOT.TO.JSON; Excel limits exported cell text
 to 32767 UTF-16 units.

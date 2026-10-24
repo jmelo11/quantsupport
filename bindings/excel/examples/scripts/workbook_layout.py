@@ -15,8 +15,8 @@ def formula(name, *arguments):
     return "=" + name + "(" + ",".join(str(argument) for argument in arguments) + ")"
 
 
-def context(name, root, inputs):
-    return formula("QS.CONTEXT.PREPARE", text(name), root, inputs)
+def context(root):
+    return "=" + root
 
 
 class Study:
