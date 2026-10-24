@@ -50,7 +50,7 @@ to that scope.
 For a notebook demonstrating `qs.Portfolio`, weighted coupons and
 interest/capital payments, open
 [`sensitivity/portfolio_aggregation.ipynb`](sensitivity/portfolio_aggregation.ipynb).
-It has a [matching Excel workbook](../../excel/examples/portfolio_aggregation_example.xlsx).
+It has a [matching Excel workbook](../../excel/examples/workbooks/portfolio_aggregation_example.xlsx).
 
 The introduction is the recommended starting point. For a closer look at curve
 construction before pricing, read [bootstrap/curves.ipynb](bootstrap/curves.ipynb).
