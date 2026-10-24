@@ -87,7 +87,9 @@ def stage(repository, tag, destination, examples):
                         raise RuntimeError(f"Release {tag}: ZIP and standalone {asset} do not match")
         except BadZipFile as error:
             raise RuntimeError(f"Release {tag}: invalid Excel ZIP: {error}") from error
-        workbooks = list(Path(examples).glob("*.xlsx"))
+        examples = Path(examples)
+        workbook_directory = examples / "workbooks" if (examples / "workbooks").is_dir() else examples
+        workbooks = list(workbook_directory.glob("*.xlsx"))
         if not workbooks:
             raise RuntimeError(f"No example workbooks found in {examples}")
         destination = Path(destination)

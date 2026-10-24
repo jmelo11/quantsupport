@@ -103,6 +103,14 @@ class DownloadStagingTests(unittest.TestCase):
                          (self.examples / "swap_pricing_example.xlsx").read_bytes())
         self.assertEqual(len(self.calls), 2)
 
+    def test_organized_examples_keep_the_same_download_filenames(self):
+        nested = self.examples / "workbooks"
+        nested.mkdir()
+        (self.examples / "swap_pricing_example.xlsx").rename(nested / "swap_pricing_example.xlsx")
+        self.stage()
+        self.assertEqual((self.destination / "swap_pricing_example.xlsx").read_bytes(),
+                         (nested / "swap_pricing_example.xlsx").read_bytes())
+
     def test_previous_xll_only_release_lists_missing_files_without_downloading(self):
         self.assets = self.assets[:1]
         with self.assertRaises(RuntimeError) as raised:

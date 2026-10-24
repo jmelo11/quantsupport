@@ -45,19 +45,24 @@ fn rate_convention(
 pub fn qs_curve_get(context: &str, market_index: &str) -> Result<String, XllError> {
     let index = parse_index(market_index)?;
     let name = derived_curve_name(context, &index.to_string());
-    let definition_key = input_key(&(context, index.to_string()))?;
+    let market_revision = with_registry(|r| crate::runtime::context::revision_key(r, context))
+        .map_err(value_error)?;
+    let definition_key = input_key(&(context, index.to_string(), market_revision))?;
     if let Some(handle) = cached_handle(&name, "DiscountCurveElement", &definition_key)? {
         return Ok(handle);
     }
 
     with_registry_mut(|registry| {
-        let curve = registry
-            .pricing_context(context)
-            .map_err(|error| error.to_string())?
-            .constructed_elements()
-            .discount_curve(&index)
-            .ok_or_else(|| format!("discount curve '{index}' was not constructed"))?
-            .clone();
+        let curve = crate::runtime::context::elements(
+            registry,
+            context,
+            quantsupport::prelude::ConstructedElementRequest::DiscountCurve {
+                market_index: index.clone(),
+            },
+        )?
+        .discount_curve(&index)
+        .ok_or_else(|| format!("discount curve '{index}' was not constructed"))?
+        .clone();
         registry
             .upsert_if_changed(
                 &name,

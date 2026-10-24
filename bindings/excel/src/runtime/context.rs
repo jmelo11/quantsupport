@@ -1,5 +1,5 @@
-//! Declarative context inputs. Every input refers to the same root; the price
-//! formula supplies the complete input range, making Excel dependencies explicit.
+//! Cell-owned contributions to stable contexts. Workers compose committed
+//! definitions and lazily retain the required market dependencies.
 
 use std::{
     collections::{HashMap, HashSet, VecDeque},
@@ -51,14 +51,21 @@ pub enum InputData {
 /// as long as a worksheet object (or a batch) owns them, without pinning history.
 #[derive(Default)]
 pub struct ContextCache {
-    prepared: VecDeque<(String, Rc<PricingContext>)>,
+    pub compositions: u64,
+    pub committed: HashMap<String, Rc<PricingContext>>,
+    pub committed_keys: HashMap<String, String>,
+    prepared: HashMap<String, Rc<PricingContext>>,
+    prepared_order: VecDeque<String>,
     historical: HashMap<String, Weak<PricingContext>>,
     historical_insertions: usize,
 }
 
 impl ContextCache {
     pub fn clear(&mut self) {
+        self.committed.clear();
+        self.committed_keys.clear();
         self.prepared.clear();
+        self.prepared_order.clear();
         self.historical.clear();
         self.historical_insertions = 0;
     }
@@ -75,6 +82,42 @@ impl ContextCache {
         }
         self.historical.insert(key, Rc::downgrade(context));
     }
+}
+
+/// Resolves the worker's committed market revision without rebuilding its cache.
+pub fn resolve(registry: &Registry, handle: &str) -> Result<Rc<PricingContext>, String> {
+    if let Some(context) = registry.context_cache.borrow().committed.get(handle) {
+        return Ok(Rc::clone(context));
+    }
+    prepare(registry, handle, &registry.context_inputs(handle))
+}
+
+pub fn revision_key(registry: &Registry, handle: &str) -> Result<String, String> {
+    if let Some(key) = registry.context_cache.borrow().committed_keys.get(handle) {
+        return Ok(key.clone());
+    }
+    serde_json::to_string(&(
+        registry
+            .context_revision(handle)
+            .map_err(|e| e.to_string())?,
+        registry.context_inputs(handle),
+    ))
+    .map_err(|e| e.to_string())
+}
+
+/// Requests only the dependency required by a market viewer on its owner worker.
+pub fn elements(
+    registry: &Registry,
+    context: &str,
+    request: ConstructedElementRequest,
+) -> Result<ConstructedElementStore, String> {
+    let context = resolve(registry, context)?;
+    let market = context
+        .handle_request(
+            &MarketDataRequest::default().with_constructed_elements_request(vec![request]),
+        )
+        .map_err(|e| e.to_string())?;
+    Ok(market.constructed_elements().clone())
 }
 
 /// Historical pricing can reuse a context's fixing input directly.
@@ -112,7 +155,7 @@ pub fn create(
         .with_base_index(index)
         .with_quote_level(level);
     registry
-        .upsert_if_changed(name, QsObject::PricingContext(Rc::new(context)), key)
+        .upsert_context_root(name, QsObject::PricingContext(Rc::new(context)), key)
         .map_err(|e| e.to_string())
 }
 
@@ -195,14 +238,18 @@ pub fn prepare(
     if inputs.is_empty() {
         return Ok(Rc::clone(base));
     }
-    let key = serde_json::to_string(&(context, handles)).map_err(|e| e.to_string())?;
+    let key = serde_json::to_string(&(
+        context,
+        registry
+            .context_revision(context)
+            .map_err(|e| e.to_string())?,
+        handles,
+    ))
+    .map_err(|e| e.to_string())?;
     {
-        let mut cache = registry.context_cache.borrow_mut();
-        if let Some(position) = cache.prepared.iter().position(|(stored, _)| stored == &key) {
-            let entry = cache.prepared.remove(position).unwrap();
-            let value = Rc::clone(&entry.1);
-            cache.prepared.push_back(entry);
-            return Ok(value);
+        let cache = registry.context_cache.borrow();
+        if let Some(value) = cache.prepared.get(&key) {
+            return Ok(Rc::clone(value));
         }
     }
     let mut quotes = base.quote_store().clone();
@@ -215,6 +262,9 @@ pub fn prepare(
             | InputData::Cube { quotes: store, .. } => store,
             _ => continue,
         };
+        if !store.quotes().is_empty() && store.reference_date() != base.evaluation_date() {
+            return Err("a context quote contribution has a different market date; recalculate its source cell".into());
+        }
         for (id, quote) in store.quotes() {
             if let Some(previous) = quotes.quote(id) {
                 let a = previous.levels();
@@ -331,13 +381,17 @@ pub fn prepare(
     if let Some(fixings) = fixings {
         result = result.with_fixing_store(fixings);
     }
-    result.initialize().map_err(|e| e.to_string())?;
+    result.validate().map_err(|e| e.to_string())?;
     let result = Rc::new(result);
     let mut cache = registry.context_cache.borrow_mut();
-    if cache.prepared.len() == 128 {
-        cache.prepared.pop_front();
+    cache.compositions += 1;
+    if cache.prepared.len() == 16384 {
+        if let Some(old) = cache.prepared_order.pop_front() {
+            cache.prepared.remove(&old);
+        }
     }
-    cache.prepared.push_back((key, Rc::clone(&result)));
+    cache.prepared_order.push_back(key.clone());
+    cache.prepared.insert(key, Rc::clone(&result));
     Ok(result)
 }
 
@@ -605,6 +659,14 @@ mod tests {
         let second = prepare(&registry, &root, &[changed]).unwrap();
         let df = |context: &PricingContext| {
             context
+                .handle_request(
+                    &MarketDataRequest::default().with_constructed_elements_request(vec![
+                        ConstructedElementRequest::DiscountCurve {
+                            market_index: MarketIndex::SOFR,
+                        },
+                    ]),
+                )
+                .unwrap()
                 .constructed_elements()
                 .discount_curve(&MarketIndex::SOFR)
                 .unwrap()
@@ -655,7 +717,19 @@ mod tests {
             Some(&fixings),
         )
         .unwrap();
+        assert!(
+            restored.constructed_elements().discount_curves().is_empty(),
+            "snapshot restoration stays lazy"
+        );
         assert!(restored
+            .handle_request(
+                &MarketDataRequest::default().with_constructed_elements_request(vec![
+                    ConstructedElementRequest::DiscountCurve {
+                        market_index: MarketIndex::SOFR
+                    }
+                ])
+            )
+            .unwrap()
             .constructed_elements()
             .discount_curve(&MarketIndex::SOFR)
             .is_some());
@@ -699,6 +773,14 @@ mod tests {
         .unwrap();
         let context = prepare(&registry, &root, &[curve.clone(), quotes.clone()]).unwrap();
         assert!(context
+            .handle_request(
+                &MarketDataRequest::default().with_constructed_elements_request(vec![
+                    ConstructedElementRequest::DiscountCurve {
+                        market_index: MarketIndex::SOFR
+                    }
+                ])
+            )
+            .unwrap()
             .constructed_elements()
             .discount_curve(&MarketIndex::SOFR)
             .is_some());
@@ -751,7 +833,18 @@ mod tests {
         let input = add_curve(&mut registry, &root, 0.04);
         registry.finish_cell(true);
         let prepared = prepare(&registry, &root, std::slice::from_ref(&input)).unwrap();
-        assert!(!prepared.constructed_elements().discount_curves().is_empty());
+        assert!(
+            prepared.constructed_elements().discount_curves().is_empty(),
+            "composition does no calibration"
+        );
+        assert!(elements(
+            &registry,
+            &root,
+            ConstructedElementRequest::DiscountCurve {
+                market_index: MarketIndex::SOFR
+            }
+        )
+        .is_ok());
         registry.release_cell(cell);
         assert!(prepare(&registry, &root, &[input]).is_err());
     }

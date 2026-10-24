@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Linq;
+using System.Threading.Tasks;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 using ExcelDna.Integration;
@@ -45,15 +46,21 @@ namespace QuantSupport.Ribbon
         private readonly TextBox messages = new TextBox { Dock = DockStyle.Fill, ReadOnly = true, Multiline = true, WordWrap = true, ScrollBars = ScrollBars.Vertical, BackColor = SystemColors.Window };
         private readonly TabPage tradesPage = new TabPage("Pricing");
         private readonly TabPage curvesPage = new TabPage("Curves");
-        private readonly ComboBox pricingObjects = ObjectChoice();
-        private readonly ComboBox curveObjects = ObjectChoice();
+        private readonly ObjectPicker pricingObjects = ObjectChoice();
+        private readonly ObjectPicker curveObjects = ObjectChoice();
         private readonly ExplorerControl tradeExplorer;
         private readonly ExplorerControl curveExplorer;
         private bool populating;
         private bool pricingDirty = true;
         private bool curvesDirty = true;
+        private bool loading;
+        private string loadingWorkbook;
+        private long refreshGeneration;
+        private Task refreshTask = Task.CompletedTask;
+        private bool pendingSelection, pendingPricing;
+        private string pendingHandle;
 
-        private static ComboBox ObjectChoice() => new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Dock = DockStyle.Fill, DisplayMember = "DisplayName", DropDownWidth = 460 };
+        private static ObjectPicker ObjectChoice() => new ObjectPicker(true) { Dock = DockStyle.Fill };
 
         public BrowserControl()
         {
@@ -171,7 +178,7 @@ namespace QuantSupport.Ribbon
             return button;
         }
 
-        private void AddWorkspace(TabPage page, string label, ComboBox choice, ExplorerControl explorer)
+        private void AddWorkspace(TabPage page, string label, ObjectPicker choice, ExplorerControl explorer)
         {
             var header = new TableLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 2, RowCount = 2, Padding = new Padding(4), Margin = Padding.Empty };
             header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
@@ -218,39 +225,69 @@ namespace QuantSupport.Ribbon
             PopulateList(false);
         }
 
-        internal void RefreshObjects(bool force)
+        internal Task RefreshObjects(bool force)
         {
             try
             {
-                if (BrowserPanes.ActiveWindowId() != WindowId) return;
+                if (BrowserPanes.ActiveWindowId() != WindowId) return Task.CompletedTask;
                 dynamic app = ExcelDnaUtil.Application;
-                if (!(bool)app.Ready || (int)app.CalculationState == 1) return;
+                if (!(bool)app.Ready || (int)app.CalculationState == 1) return Task.CompletedTask;
                 var workbook = (string)app.ActiveWorkbook.Name;
                 var nextSeparator = BrowserPanes.DecimalSeparator(app);
                 var formatChanged = decimalSeparator != nextSeparator;
                 BrowserDisplay.DecimalSeparator = decimalSeparator = nextSeparator;
+                if (loading && loadingWorkbook == workbook) return refreshTask;
                 var revision = NativeBrowser.Revision();
                 if (!force && snapshot != null && snapshot.Workbook == workbook && stamp == revision)
                 {
                     if (formatChanged) { details.Text = BrowserDisplay.Describe(GridSelection); tradeExplorer.RefreshFormats(); curveExplorer.RefreshFormats(); }
-                    return;
+                    return Task.CompletedTask;
                 }
-                snapshot = NativeBrowser.Read(workbook);
-                stamp = revision;
-                Populate();
+                loading = true; loadingWorkbook = workbook;
+                status.ForeColor = SystemColors.ControlText;
+                status.Text = "Loading workbook objects…";
+                var generation = ++refreshGeneration;
+                return refreshTask = ApplySnapshot(NativeBrowser.ReadAsync(workbook), workbook, revision, generation);
             }
             catch (Exception error)
             {
-                snapshot = null;
-                stamp = 0;
-                Populate();
-                status.ForeColor = Color.Firebrick;
-                status.Text = error.Message;
+                ShowLoadError(error);
+                return Task.CompletedTask;
             }
+        }
+
+        private async Task ApplySnapshot(Task<Snapshot> read, string workbook, ulong revision, long generation)
+        {
+            try {
+                var next = await read.ConfigureAwait(false);
+                if (IsDisposed) return;
+                await NativeBrowser.OnExcel(() => {
+                    if (IsDisposed || generation != refreshGeneration) return;
+                    loading = false;
+                    dynamic app = ExcelDnaUtil.Application;
+                    if (BrowserPanes.ActiveWindowId() != WindowId || !string.Equals((string)app.ActiveWorkbook.Name, workbook, StringComparison.OrdinalIgnoreCase)) return;
+                    snapshot = next; stamp = revision;
+                    Populate();
+                    if (pendingSelection) { pendingSelection = false; Inspect(pendingHandle); }
+                    if (pendingPricing) { pendingPricing = false; ShowPricing(); }
+                }).ConfigureAwait(false);
+            } catch (Exception error) {
+                if (IsDisposed) return;
+                await NativeBrowser.OnExcel(() => { if (!IsDisposed && generation == refreshGeneration) ShowLoadError(error); }).ConfigureAwait(false);
+            }
+        }
+
+        private void ShowLoadError(Exception error)
+        {
+            loading = false; snapshot = null; stamp = 0;
+            Populate();
+            status.ForeColor = Color.Firebrick;
+            status.Text = error.Message;
         }
 
         internal void InvalidateObjects()
         {
+            refreshGeneration++; loading = false;
             snapshot = null;
             stamp = 0;
             Populate();
@@ -309,20 +346,9 @@ namespace QuantSupport.Ribbon
             status.LinkArea = new LinkArea(0, errors.Count > 0 ? status.Text.Length : 0);
         }
 
-        private static void PopulateChoices(ComboBox choice, IEnumerable<BrowserObject> objects)
+        private static void PopulateChoices(ObjectPicker choice, IEnumerable<BrowserObject> objects)
         {
-            var previous = (choice.SelectedItem as BrowserObject)?.Identity;
-            choice.BeginUpdate();
-            try
-            {
-                choice.Items.Clear();
-                foreach (var item in objects) choice.Items.Add(item);
-                var match = choice.Items.OfType<BrowserObject>().FirstOrDefault(item => item.Identity == previous);
-                if (match != null) choice.SelectedItem = match;
-                else if (choice.Items.Count > 0) choice.SelectedIndex = 0;
-                choice.Enabled = choice.Items.Count > 0;
-            }
-            finally { choice.EndUpdate(); }
+            choice.SetObjects(objects);
         }
 
         private void ShowDetails()
@@ -372,6 +398,7 @@ namespace QuantSupport.Ribbon
 
         internal void ShowPricing()
         {
+            if (loading || snapshot == null) { pendingPricing = true; return; }
             if (tabs.SelectedTab == objectsPage && BrowserDisplay.CanPrice(GridSelection)) pricingObjects.SelectedItem = GridSelection;
             if (pricingObjects.SelectedItem == null)
             {
@@ -393,6 +420,7 @@ namespace QuantSupport.Ribbon
         {
             if (disposing)
             {
+                refreshGeneration++;
                 populating = true;
                 objectsPage.Dispose();
                 messagesPage.Dispose();
@@ -405,6 +433,7 @@ namespace QuantSupport.Ribbon
         internal void Inspect(string handle)
         {
             tabs.SelectedTab = objectsPage;
+            if (loading || snapshot == null) { pendingSelection = true; pendingHandle = handle; return; }
             search.Clear();
             var index = visibleObjects.FindIndex(item => item.Handle == handle);
             if (!string.IsNullOrEmpty(handle) && index >= 0) { grid.CurrentCell = grid.Rows[index].Cells[0]; return; }
@@ -420,18 +449,29 @@ namespace QuantSupport.Ribbon
             var handle = Selected?.Handle;
             var workbook = snapshot?.Workbook;
             if (location == null || handle == null || workbook == null) return;
-            ExcelAsyncUtil.QueueAsMacro(() => QuantSupportRibbon.Run(() =>
+            ExcelAsyncUtil.QueueAsMacro(async () =>
             {
-                if (IsDisposed) return;
-                dynamic app = ExcelDnaUtil.Application;
-                if (BrowserPanes.ActiveWindowId() != WindowId || !string.Equals((string)app.ActiveWorkbook.Name, workbook, StringComparison.OrdinalIgnoreCase))
-                    throw new InvalidOperationException("Activate the source workbook and refresh the browser.");
-                var current = NativeBrowser.Read(workbook).Objects.FirstOrDefault(o => o.Handle == handle);
-                if (current == null || !current.Locations.Any(l => l.SheetId == location.SheetId && l.Row == location.Row && l.Column == location.Column))
-                    throw new InvalidOperationException("The object or its source has changed. Refresh the browser.");
-                var reference = new ExcelReference(location.Row - 1, location.Row - 1, location.Column - 1, location.Column - 1, new IntPtr(unchecked((long)location.SheetId)));
-                XlCall.Excel(XlCall.xlcFormulaGoto, reference);
-            }));
+                try {
+                    if (IsDisposed) return;
+                    dynamic app = ExcelDnaUtil.Application;
+                    if (BrowserPanes.ActiveWindowId() != WindowId || !string.Equals((string)app.ActiveWorkbook.Name, workbook, StringComparison.OrdinalIgnoreCase))
+                        throw new InvalidOperationException("Activate the source workbook and refresh the browser.");
+                    var latest = await NativeBrowser.ReadAsync(workbook).ConfigureAwait(false);
+                    await NativeBrowser.OnExcel(() => {
+                        if (IsDisposed) return;
+                        dynamic active = ExcelDnaUtil.Application;
+                        if (BrowserPanes.ActiveWindowId() != WindowId || !string.Equals((string)active.ActiveWorkbook.Name, workbook, StringComparison.OrdinalIgnoreCase))
+                            throw new InvalidOperationException("Activate the source workbook and refresh the browser.");
+                        var current = latest.Objects.FirstOrDefault(o => o.Handle == handle);
+                        if (current == null || !current.Locations.Any(l => l.SheetId == location.SheetId && l.Row == location.Row && l.Column == location.Column))
+                            throw new InvalidOperationException("The object or its source has changed. Refresh the browser.");
+                        var reference = new ExcelReference(location.Row - 1, location.Row - 1, location.Column - 1, location.Column - 1, new IntPtr(unchecked((long)location.SheetId)));
+                        XlCall.Excel(XlCall.xlcFormulaGoto, reference);
+                    }).ConfigureAwait(false);
+                } catch (Exception error) {
+                    await NativeBrowser.OnExcel(() => { if (!IsDisposed) QuantSupportRibbon.Run(() => { throw error; }); }).ConfigureAwait(false);
+                }
+            });
         }
     }
 }

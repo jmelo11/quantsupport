@@ -24,7 +24,7 @@ date in B1, quote identifiers in A10:A20 and Mid levels in F10:F20:
    B2 =QS.CONTEXT.CREATE("usd",B1,"USD","SOFR")
    B3 =QS.CONTEXT.ADD.QUOTES(B2,A10:A20,F10:F20)
    B4 =QS.CONTEXT.ADD.CURVE(B2,"SOFR")
-   B5 =QS.CONTEXT.PREPARE("usd.market",B2,B3:B4)
+   B5 =B2
 
 Base currency and index describe collateral assumptions used for construction.
 For example, EUR OIS in a USD collateral context needs the appropriate FX
@@ -45,9 +45,9 @@ Define the contract, then its position
    D3 =QS.TRADE.CREATE("position",D2,B1,"Receive")
    H2 =QS.DISCOUNT.POLICY.CSA("csa","USD","SOFR")
    H3 =QS.PRICER.CREATE("pricer","DiscountedCashflowPricer",H2)
-   H4 =QS.EVALUATE(B5,D3,"Value",,H3)
-   H5 =QS.EVALUATE(B5,D3,"FairRate(0)",,H3)
-   H6 =QS.EVALUATE.RESULTS(B5,D3,{"Value","Cashflows","Sensitivities"},,H3)
+   H4 =QS.EVALUATE(B5,D3,"Value",H3)
+   H5 =QS.EVALUATE(B5,D3,"FairRate(0)",H3)
+   H6 =QS.EVALUATE.RESULTS(B5,D3,{"Value","Cashflows","Sensitivities"},H3)
 
 The contract carries dates, rates, indices and notional. The position adds trade
 date, direction, permitted quantity overrides and bond pricing anchors. A policy
@@ -91,6 +91,12 @@ whole table. Numbers follow Excel's decimal separator, including custom settings
 Details show financial data; Copy handle and Go to cell provide explicit access
 to the underlying worksheet without a method trace in the normal display.
 
+Object, context and pricer selectors open searchable lists. Search by name,
+type or valuation date, then click a row or press Enter. Escape closes the list
+without changing the selection. These lists retain all objects in large books.
+Refreshing shows a loading message while browser data is decoded in the
+background; repeated refresh clicks share the pending load.
+
 When a native worksheet function fails, the panel reports its source sheet and
 cell with the library message. Correcting the input or clearing the formula
 removes the message. Pricing queries require an explicit Run request; ordinary
@@ -108,7 +114,7 @@ On Windows use stable Rust, Visual Studio Build Tools and .NET SDK 8 or later:
 
 The distribution includes the native XLL, ribbon, pinned IntelliSense companion,
 XML metadata and licenses. On any platform regenerate examples with
-``python bindings/excel/examples/create_examples.py``. Portable tests validate
+``python bindings/excel/examples/scripts/create_examples.py``. Portable tests validate
 native markets, ownership and workbook formulas; live loading and panel
 rendering require Windows Excel. See :doc:`risk-and-history` for historical
 snapshot selection and batch evaluation.
@@ -120,6 +126,7 @@ Downloads
 * `Native XLL <https://jmelo11.github.io/quantsupport/downloads/quantsupport.xll>`_
 * `Swap workbook <https://jmelo11.github.io/quantsupport/downloads/swap_pricing_example.xlsx>`_
 * `Historical workbook <https://jmelo11.github.io/quantsupport/downloads/historical_pricing_example.xlsx>`_
+* `10,000 valuations in one batch <https://jmelo11.github.io/quantsupport/downloads/origination_10000_batch.xlsx>`_
 
-Development workbooks under ``bindings/excel/examples`` should be used with a
+Development workbooks under ``bindings/excel/examples/workbooks`` should be used with a
 locally built development add-in; these hosted downloads track published builds.

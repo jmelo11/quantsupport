@@ -4,6 +4,8 @@ using System.Drawing;
 using System.Globalization;
 using System.Linq;
 using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
 using System.Windows.Forms;
 using ExcelDna.Integration;
 
@@ -13,9 +15,10 @@ namespace QuantSupport.Ribbon
     internal sealed class ExplorerControl : UserControl
     {
         private readonly bool trades;
+        private CancellationTokenSource queryCancellation;
         private readonly Func<long> windowId;
-        private readonly ComboBox context = Choice();
-        private readonly ComboBox pricer = Choice();
+        private readonly ObjectPicker context = new ObjectPicker();
+        private readonly ObjectPicker pricer = new ObjectPicker();
         private readonly ComboBox curve = Choice();
         private readonly ComboBox view = Choice();
         private readonly DateTimePicker tradeDate = new DateTimePicker { Format = DateTimePickerFormat.Custom, CustomFormat = "yyyy-MM-dd", Width = 120 };
@@ -196,15 +199,9 @@ namespace QuantSupport.Ribbon
             optionsHeight.Height = Math.Min(preferred, Math.Max(40, available));
         }
 
-        private static void Objects(ComboBox choice, IEnumerable<BrowserObject> objects, bool optional)
+        private static void Objects(ObjectPicker choice, IEnumerable<BrowserObject> objects, bool optional)
         {
-            var previous = (choice.SelectedItem as BrowserObject)?.Name;
-            choice.Items.Clear();
-            if (optional) choice.Items.Add("(Use selected object)");
-            foreach (var value in objects) choice.Items.Add(value);
-            var match = choice.Items.OfType<BrowserObject>().FirstOrDefault(value => value.Name == previous);
-            if (match != null) choice.SelectedItem = match;
-            else if (choice.Items.Count > 0) choice.SelectedIndex = 0;
+            choice.SetObjects(objects, optional);
         }
 
         internal void Bind(Snapshot next, BrowserObject selected)
@@ -260,6 +257,7 @@ namespace QuantSupport.Ribbon
 
         private void ClearResult()
         {
+            queryCancellation?.Cancel(); queryCancellation?.Dispose(); queryCancellation = null;
             generation++;
             response = null;
             table.Rows.Clear();
@@ -269,7 +267,13 @@ namespace QuantSupport.Ribbon
             empty.Visible = true;
         }
 
-        internal void CancelRequests() { generation++; }
+        internal void CancelRequests() { generation++; queryCancellation?.Cancel(); }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing) { CancelRequests(); queryCancellation?.Dispose(); queryCancellation = null; }
+            base.Dispose(disposing);
+        }
 
         private void OptionsChanged()
         {
@@ -320,7 +324,9 @@ namespace QuantSupport.Ribbon
             catch (Exception error) { message.Text = error.Message; SizeOptions(); return; }
             var token = generation;
             message.Text = "Running " + (trades ? (string)view.SelectedItem : request.Curve) + "…";
-            ExcelAsyncUtil.QueueAsMacro(() =>
+            queryCancellation = new CancellationTokenSource();
+            var cancellation = queryCancellation.Token;
+            ExcelAsyncUtil.QueueAsMacro(async () =>
             {
                 if (IsDisposed || token != generation) return;
                 try
@@ -331,17 +337,29 @@ namespace QuantSupport.Ribbon
                     if (!(bool)app.Ready) throw new InvalidOperationException("Wait until Excel is ready, then retry.");
                     // A queued request follows the same object to its newest revision.
                     // Dependency validation remains native and rejects genuinely stale inputs.
-                    var latest = NativeBrowser.Read(request.Workbook);
-                    var selected = BrowserDisplay.Resolve(latest, item);
-                    if (selected == null) throw new InvalidOperationException("This object was removed. Refresh the browser and select its replacement.");
-                    request.Handle = selected.Handle;
-                    if (!string.IsNullOrEmpty(request.Context))
-                        request.Context = BrowserDisplay.Resolve(latest, context.SelectedItem as BrowserObject)?.Handle ?? request.Context;
-                    if (!string.IsNullOrEmpty(request.Pricer))
-                        request.Pricer = BrowserDisplay.Resolve(latest, pricer.SelectedItem as BrowserObject)?.Handle ?? request.Pricer;
-                    BrowserDisplay.DecimalSeparator = BrowserPanes.DecimalSeparator(app);
-                    var result = NativeBrowser.Query(request);
+                    var latest = await NativeBrowser.ReadAsync(request.Workbook).ConfigureAwait(false);
+                    Task<BrowserResponse> query = null;
+                    await NativeBrowser.OnExcel(() => {
+                        if (IsDisposed || token != generation || cancellation.IsCancellationRequested) return;
+                        dynamic current = ExcelDnaUtil.Application;
+                        if (BrowserPanes.ActiveWindowId() != windowId() || !string.Equals((string)current.ActiveWorkbook.Name, request.Workbook, StringComparison.OrdinalIgnoreCase))
+                            throw new InvalidOperationException("Activate the source workbook and refresh before running this request.");
+                        var selected = BrowserDisplay.Resolve(latest, item);
+                        if (selected == null) throw new InvalidOperationException("This object was removed. Refresh the browser and select its replacement.");
+                        request.Handle = selected.Handle;
+                        if (!string.IsNullOrEmpty(request.Context))
+                            request.Context = BrowserDisplay.Resolve(latest, context.SelectedItem as BrowserObject)?.Handle ?? request.Context;
+                        if (!string.IsNullOrEmpty(request.Pricer))
+                            request.Pricer = BrowserDisplay.Resolve(latest, pricer.SelectedItem as BrowserObject)?.Handle ?? request.Pricer;
+                        BrowserDisplay.DecimalSeparator = BrowserPanes.DecimalSeparator(current);
+                        query = NativeBrowser.QueryAsync(request, cancellation);
+                    }).ConfigureAwait(false);
+                    if (query == null) return;
+                    var result = await query.ConfigureAwait(false);
+                    ExcelAsyncUtil.QueueAsMacro(() => {
                     if (IsDisposed || token != generation) return;
+                    dynamic current = ExcelDnaUtil.Application;
+                    if (BrowserPanes.ActiveWindowId() != windowId() || !string.Equals((string)current.ActiveWorkbook.Name, request.Workbook, StringComparison.OrdinalIgnoreCase)) return;
                     response = result;
                     foreach (var column in result.Columns) table.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = column, SortMode = DataGridViewColumnSortMode.NotSortable });
                     table.RowCount = result.Rows.Count;
@@ -350,8 +368,10 @@ namespace QuantSupport.Ribbon
                     message.Text = string.IsNullOrWhiteSpace(result.Message) ? result.Title + " · " + result.Rows.Count + " rows" : result.Message;
                     SizeOptions();
                     ShowParameters();
+                    });
                 }
-                catch (Exception error) { message.ForeColor = Color.Firebrick; message.Text = "Unable to run request. " + error.Message; SizeOptions(); }
+                catch (OperationCanceledException) { }
+                catch (Exception error) { ExcelAsyncUtil.QueueAsMacro(() => { if (IsDisposed || token != generation) return; message.ForeColor = Color.Firebrick; message.Text = "Unable to run request. " + error.Message; SizeOptions(); }); }
             });
         }
 

@@ -42,7 +42,16 @@ pub fn qs_portfolio_evaluate(
     let pricers = string_values(pricers, "pricers")?;
     let names = string_values(requests, "requests")?;
     let requests = pricing::parse_requests(&names).map_err(value_error)?;
-    let key = input_key(&(portfolio, &pricers, context, &names, &value_currency))?;
+    let market_revision = with_registry(|r| crate::runtime::context::revision_key(r, context))
+        .map_err(value_error)?;
+    let key = input_key(&(
+        portfolio,
+        &pricers,
+        context,
+        &names,
+        &value_currency,
+        market_revision,
+    ))?;
     let currency = value_currency
         .as_deref()
         .filter(|value| !value.trim().is_empty())

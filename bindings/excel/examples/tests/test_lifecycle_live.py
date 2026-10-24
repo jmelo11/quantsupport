@@ -8,6 +8,9 @@ import time
 import unittest
 
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+
+
 @unittest.skipUnless(sys.platform == "win32" and os.environ.get("QS_XLL_PATH"),
                      "requires Windows Excel and QS_XLL_PATH")
 class ExcelLifecycleTests(unittest.TestCase):
@@ -24,6 +27,7 @@ class ExcelLifecycleTests(unittest.TestCase):
         if not cls.excel.RegisterXLL(path):
             cls.excel.Quit()
             raise AssertionError(f"Excel could not load {path}")
+        assert cls.excel.RegisterXLL(str(Path(path).with_name("QuantSupport.Ribbon64.xll")))
         time.sleep(1.2)
 
     @classmethod
@@ -37,9 +41,19 @@ class ExcelLifecycleTests(unittest.TestCase):
     def count(self):
         cell = self.anchor.Worksheets(1).Range("Z1")
         cell.Formula = "=QS.OBJECT.COUNT(TRUE)"
+        cell.Dirty()
         cell.Calculate()
         self.assertIsInstance(cell.Value2, (float, int), cell.Value2)
         return int(cell.Value2)
+
+    def assert_count(self, expected, message=None):
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            actual = self.count()
+            if actual == expected:
+                return
+            time.sleep(.025)
+        self.assertEqual(actual, expected, message)
 
     def quotes(self, book):
         cell = book.Worksheets(1).Range("A1")
@@ -59,15 +73,15 @@ class ExcelLifecycleTests(unittest.TestCase):
             one = self.quotes(first)
             two = self.quotes(second)
             self.assertNotEqual(one, two)
-            self.assertEqual(self.count(), 2)
+            self.assert_count(2)
             first.Close(False)
             first = None
             time.sleep(1.3)
-            self.assertEqual(self.count(), 1)
+            self.assert_count(1)
             second.Close(False)
             second = None
             time.sleep(1.3)
-            self.assertEqual(self.count(), 0)
+            self.assert_count(0)
         finally:
             if first is not None:
                 first.Close(False)
@@ -77,13 +91,13 @@ class ExcelLifecycleTests(unittest.TestCase):
     def test_closing_the_last_workbook_collects_without_quitting_excel(self):
         book = self.excel.Workbooks.Add()
         self.quotes(book)
-        self.assertEqual(self.count(), 1)
+        self.assert_count(1)
         book.Close(False)
         self.anchor.Close(False)
         self.__class__.anchor = None
         time.sleep(1.3)
         self.__class__.anchor = self.excel.Workbooks.Add()
-        self.assertEqual(self.count(), 0)
+        self.assert_count(0)
 
     def test_reopening_saved_formulas_rebuilds_handles_and_respects_manual_mode(self):
         previous_mode = self.excel.Calculation
@@ -96,7 +110,7 @@ class ExcelLifecycleTests(unittest.TestCase):
                 book.Close(False)
                 book = None
                 time.sleep(1.3)
-                self.assertEqual(self.count(), 0)
+                self.assert_count(0)
                 book = self.excel.Workbooks.Open(path)
                 self.assertNotEqual(book.Worksheets(1).Range("A1").Value2, original)
                 self.assertEqual(book.Worksheets(1).Range("B1").Value2, "PricingContext")
@@ -105,9 +119,9 @@ class ExcelLifecycleTests(unittest.TestCase):
                 time.sleep(1.3)
                 self.excel.Calculation = -4135
                 book = self.excel.Workbooks.Open(path)
-                self.assertEqual(self.count(), 0, "Manual open must defer native construction")
+                self.assert_count(0, "Manual open must defer native construction")
                 self.excel.Calculate()
-                self.assertEqual(self.count(), 1)
+                self.assert_count(1)
                 self.assertEqual(book.Worksheets(1).Range("B1").Value2, "PricingContext")
             finally:
                 if book is not None:
@@ -119,6 +133,7 @@ class ExcelLifecycleTests(unittest.TestCase):
         previous_mode = self.excel.Calculation
         try:
             sheet = book.Worksheets(1)
+            sheet.Range("B1").NumberFormat = "@"
             sheet.Range("B1").Value2 = "2026-01-15"
             cell = sheet.Range("A1")
             cell.Formula = '=QS.CONTEXT.CREATE("manual",B1,"USD","SOFR")'
@@ -130,16 +145,16 @@ class ExcelLifecycleTests(unittest.TestCase):
             time.sleep(0.1)
             self.assertEqual(cell.Value2, original)
             self.excel.Calculate()
-            self.assertNotEqual(cell.Value2, original)
-            self.assertEqual(self.count(), 1)
+            self.assertEqual(cell.Value2, original, "root identity stays stable when its date changes")
+            self.assert_count(1)
             cell.Formula = '=QS.CONTEXT.CREATE("manual","invalid date","USD","SOFR")'
             cell.Calculate()
-            self.assertEqual(self.count(), 0)
+            self.assert_count(0)
             cell.Formula = '=QS.CONTEXT.CREATE("manual",B1,"USD","SOFR")'
             cell.Calculate()
-            self.assertEqual(self.count(), 1)
+            self.assert_count(1)
             cell.ClearContents()
-            self.assertEqual(self.count(), 0)
+            self.assert_count(0)
         finally:
             self.excel.Calculation = previous_mode
             book.Close(False)
@@ -153,9 +168,9 @@ class ExcelLifecycleTests(unittest.TestCase):
             for position in range(20):
                 sheet.Range("B1").Value2 = f"renamed{position}"
                 sheet.Range("A1").Calculate()
-                self.assertEqual(self.count(), 1)
+                self.assert_count(1)
             sheet.Range("A1").Formula = "=1+2"
-            self.assertEqual(self.count(), 0)
+            self.assert_count(0)
         finally:
             book.Close(False)
 
@@ -172,7 +187,7 @@ class ExcelLifecycleTests(unittest.TestCase):
             sheet.Range("D2").Formula = '="changed."&"name"'
             self.excel.CalculateFullRebuild()
             self.assertEqual([sheet.Cells(row, 2).Value2 for row in (1, 2, 3)], ["PricingContext"] * 3)
-            self.assertEqual(self.count(), 3)
+            self.assert_count(3)
         finally:
             book.Close(False)
 
@@ -188,7 +203,7 @@ class ExcelLifecycleTests(unittest.TestCase):
                 book = self.excel.Workbooks.Open(path)
                 self.assertNotEqual(book.Worksheets(1).Range("A1").Value2, original)
                 self.assertEqual(book.Worksheets(1).Range("B1").Value2, "PricingContext")
-                self.assertEqual(self.count(), 1)
+                self.assert_count(1)
             finally:
                 if book is not None:
                     book.Close(False)
@@ -197,6 +212,7 @@ class ExcelLifecycleTests(unittest.TestCase):
         book = self.excel.Workbooks.Add()
         try:
             sheet = book.Worksheets(1)
+            sheet.Range("E1:E3").NumberFormat = "@"
             sheet.Range("A1:B3").Value2 = (
                 ("Identifier", "Mid"),
                 ("FixedRateDeposit_USD_SOFR_6M", 0.04),
@@ -210,17 +226,22 @@ class ExcelLifecycleTests(unittest.TestCase):
             sheet.Range("G1").Formula = '=QS.CONTEXT.CREATE("arrays","2026-01-15","USD","SOFR")'
             sheet.Range("H1").Formula = '=QS.CONTEXT.ADD.QUOTES(G1,A1:A3,B1:B3)'
             sheet.Range("H2").Formula = '=QS.CONTEXT.ADD.FIXINGS(G1,D1:D3,E1:E3,F1:F3)'
-            sheet.Range("J1").Formula = '=QS.CONTEXT.PREPARE("full",G1,H1:H2)'
+            sheet.Range("J1").Formula = '=G1'
             sheet.Range("I1").Formula = '=QS.CONTEXT.QUOTE(J1,"FixedRateDeposit_USD_SOFR_6M","Mid")'
             sheet.Range("I2").Formula = '=QS.CONTEXT.FIXING(J1,"SOFR","2026-01-14")'
+            from async_excel import await_engine
+            await_engine(self.excel, book, allow_errors=True)
             self.assertEqual(sheet.Range("I1").Value2, 0.04)
             self.assertEqual(sheet.Range("I2").Value2, 0.03)
             sheet.Range("B2").Value2 = 0.06
             sheet.Range("F2").Value2 = 0.07
+            from async_excel import await_engine
+            await_engine(self.excel, book, allow_errors=True)
             self.assertEqual(sheet.Range("I1").Value2, 0.06)
             self.assertEqual(sheet.Range("I2").Value2, 0.07)
             sheet.Range("A2:B2").ClearContents()
             sheet.Range("D2:F2").ClearContents()
+            await_engine(self.excel, book, allow_errors=True)
             self.assertIsInstance(sheet.Range("I1").Value2, int)  # Excel error
             self.assertIsInstance(sheet.Range("I2").Value2, int)
         finally:
@@ -236,14 +257,19 @@ class ExcelLifecycleTests(unittest.TestCase):
             sheet.Range("H1:H2").Value2 = ((None,), (0.06,))
             sheet.Range("L1").Formula = '=QS.CONTEXT.CREATE("arrays","2026-01-15","USD","SOFR")'
             sheet.Range("K1").Formula = '=QS.CONTEXT.ADD.QUOTES(L1,A1:A2,D1:E1,,H1:H2)'
-            sheet.Range("L2").Formula = '=QS.CONTEXT.PREPARE("full",L1,K1)'
+            sheet.Range("L2").Formula = '=L1'
             sheet.Range("K2").Formula = '=QS.CONTEXT.QUOTE(L2,"FixedRateDeposit_USD_SOFR_6M","Mid")'
             sheet.Range("K3").Formula = '=QS.CONTEXT.QUOTE(L2,"FixedRateDeposit_USD_SOFR_1Y","Ask")'
+            from async_excel import await_engine
+            await_engine(self.excel, book, allow_errors=True)
             self.assertEqual(sheet.Range("K2").Value2, 0.04)
             self.assertEqual(sheet.Range("K3").Value2, 0.06)
             sheet.Range("D1").Value2 = 0.07
+            from async_excel import await_engine
+            await_engine(self.excel, book, allow_errors=True)
             self.assertEqual(sheet.Range("K2").Value2, 0.07)
             sheet.Range("H2").ClearContents()
+            await_engine(self.excel, book, allow_errors=True)
             self.assertIsInstance(sheet.Range("K3").Value2, int)
             sheet.Range("K1").Formula = '=QS.CONTEXT.ADD.QUOTES(L1,A1:A2,D1)'
             self.assertIsInstance(sheet.Range("K1").Value2, int)

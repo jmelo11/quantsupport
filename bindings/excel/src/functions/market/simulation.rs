@@ -13,15 +13,20 @@ use crate::functions::helpers::{parse_index, string_column, value_error};
 pub fn qs_simulation_n_paths(context: &str, market_index: &str) -> Result<i32, XllError> {
     let index = parse_index(market_index)?;
     with_registry(|registry| {
-        let element = registry
-            .pricing_context(context)
-            .map_err(|error| error.to_string())?
-            .constructed_elements()
+        let market = crate::runtime::context::elements(
+            registry,
+            context,
+            quantsupport::prelude::ConstructedElementRequest::Simulation {
+                market_index: index.clone(),
+            },
+        )?;
+        let element = market
             .simulations()
             .get(&index)
             .ok_or_else(|| format!("simulation '{index}' was not constructed"))?;
-        i32::try_from(element.simulation().borrow().n_paths())
-            .map_err(|_| "simulation path count does not fit in an Excel integer".to_string())
+        let output = i32::try_from(element.simulation().borrow().n_paths())
+            .map_err(|_| "simulation path count does not fit in an Excel integer".to_string());
+        output
     })
     .map_err(value_error)
 }
@@ -34,14 +39,19 @@ pub fn qs_simulation_n_paths(context: &str, market_index: &str) -> Result<i32, X
 pub fn qs_simulation_dt(context: &str, market_index: &str) -> Result<f64, XllError> {
     let index = parse_index(market_index)?;
     with_registry(|registry| {
-        let element = registry
-            .pricing_context(context)
-            .map_err(|error| error.to_string())?
-            .constructed_elements()
+        let market = crate::runtime::context::elements(
+            registry,
+            context,
+            quantsupport::prelude::ConstructedElementRequest::Simulation {
+                market_index: index.clone(),
+            },
+        )?;
+        let element = market
             .simulations()
             .get(&index)
             .ok_or_else(|| format!("simulation '{index}' was not constructed"))?;
-        Ok::<f64, String>(element.simulation().borrow().dt())
+        let output = Ok::<f64, String>(element.simulation().borrow().dt());
+        output
     })
     .map_err(value_error)
 }
@@ -59,14 +69,18 @@ pub fn qs_simulation_dates(
     let transpose = crate::functions::helpers::optional_bool(transpose, "transpose")?;
     let index = parse_index(market_index)?;
     with_registry(|registry| {
-        let element = registry
-            .pricing_context(context)
-            .map_err(|error| error.to_string())?
-            .constructed_elements()
+        let market = crate::runtime::context::elements(
+            registry,
+            context,
+            quantsupport::prelude::ConstructedElementRequest::Simulation {
+                market_index: index.clone(),
+            },
+        )?;
+        let element = market
             .simulations()
             .get(&index)
             .ok_or_else(|| format!("simulation '{index}' was not constructed"))?;
-        Ok::<Vec<String>, String>(
+        let output = Ok::<Vec<String>, String>(
             element
                 .simulation()
                 .borrow()
@@ -74,7 +88,8 @@ pub fn qs_simulation_dates(
                 .iter()
                 .map(ToString::to_string)
                 .collect(),
-        )
+        );
+        output
     })
     .map(|values| string_column(values, transpose))
     .map_err(value_error)
@@ -96,14 +111,18 @@ pub fn qs_simulation_path(
     let path_index =
         usize::try_from(path_index).map_err(|_| value_error("path index must be non-negative"))?;
     with_registry(|registry| {
-        let element = registry
-            .pricing_context(context)
-            .map_err(|error| error.to_string())?
-            .constructed_elements()
+        let market = crate::runtime::context::elements(
+            registry,
+            context,
+            quantsupport::prelude::ConstructedElementRequest::Simulation {
+                market_index: index.clone(),
+            },
+        )?;
+        let element = market
             .simulations()
             .get(&index)
             .ok_or_else(|| format!("simulation '{index}' was not constructed"))?;
-        element
+        let output = element
             .simulation()
             .borrow()
             .path()
@@ -113,7 +132,8 @@ pub fn qs_simulation_path(
                 path.iter()
                     .map(|value| xll_rs::types::XLOPER12::from_f64(value.value()))
                     .collect::<Vec<_>>()
-            })
+            });
+        output
     })
     .map(|cells| {
         let rows = cells.len();
@@ -138,10 +158,14 @@ pub fn qs_simulation_calibration(
     use xll_rs::types::XLOPER12;
     let index = parse_index(market_index)?;
     let quality = with_registry(|registry| {
-        let element = registry
-            .pricing_context(context)
-            .map_err(|error| error.to_string())?
-            .constructed_elements()
+        let market = crate::runtime::context::elements(
+            registry,
+            context,
+            quantsupport::prelude::ConstructedElementRequest::Simulation {
+                market_index: index.clone(),
+            },
+        )?;
+        let element = market
             .simulations()
             .get(&index)
             .ok_or_else(|| format!("simulation '{index}' was not constructed"))?;

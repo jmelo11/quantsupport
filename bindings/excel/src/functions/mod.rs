@@ -1,6 +1,6 @@
 //! Worksheet domains mirror native contexts, instruments, evaluation and results.
 
-mod helpers;
+pub(crate) mod helpers;
 mod instruments;
 mod market;
 mod math;

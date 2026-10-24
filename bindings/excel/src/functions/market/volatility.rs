@@ -20,16 +20,19 @@ pub fn qs_vol_surface(
     let index = parse_index(market_index)?;
     let expiry = parse_date(expiry_date)?;
     with_registry(|registry| {
-        registry
-            .pricing_context(context)
-            .map_err(|error| error.to_string())?
-            .constructed_elements()
-            .volatility_surface(&index)
-            .ok_or_else(|| format!("volatility surface '{index}' was not constructed"))?
-            .surface()
-            .volatility_from_date(expiry, key)
-            .map(|value| value.value())
-            .map_err(|error| error.to_string())
+        crate::runtime::context::elements(
+            registry,
+            context,
+            quantsupport::prelude::ConstructedElementRequest::VolatilitySurface {
+                market_index: index.clone(),
+            },
+        )?
+        .volatility_surface(&index)
+        .ok_or_else(|| format!("volatility surface '{index}' was not constructed"))?
+        .surface()
+        .volatility_from_date(expiry, key)
+        .map(|value| value.value())
+        .map_err(|error| error.to_string())
     })
     .map_err(value_error)
 }
@@ -51,16 +54,19 @@ pub fn qs_vol_cube(
     let expiry = parse_date(expiry_date)?;
     let maturity = Period::new(maturity_length, parse_time_unit(maturity_unit)?);
     with_registry(|registry| {
-        registry
-            .pricing_context(context)
-            .map_err(|error| error.to_string())?
-            .constructed_elements()
-            .volatility_cube(&index)
-            .ok_or_else(|| format!("volatility cube '{index}' was not constructed"))?
-            .cube()
-            .volatility_from_date(expiry, maturity, key)
-            .map(|value| value.value())
-            .map_err(|error| error.to_string())
+        crate::runtime::context::elements(
+            registry,
+            context,
+            quantsupport::prelude::ConstructedElementRequest::VolatilityCube {
+                market_index: index.clone(),
+            },
+        )?
+        .volatility_cube(&index)
+        .ok_or_else(|| format!("volatility cube '{index}' was not constructed"))?
+        .cube()
+        .volatility_from_date(expiry, maturity, key)
+        .map(|value| value.value())
+        .map_err(|error| error.to_string())
     })
     .map_err(value_error)
 }

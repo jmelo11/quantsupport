@@ -11,7 +11,7 @@ import unittest
 from urllib.request import urlopen
 from zipfile import ZipFile
 
-ROOT = Path(__file__).resolve().parents[3]
+ROOT = Path(__file__).resolve().parents[4]
 EXCEL = ROOT / "bindings/excel"
 ARCHIVE = "quantsupport-excel-windows-x64.zip"
 COMPANION = "ExcelDna.IntelliSense64.xll"

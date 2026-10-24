@@ -27,7 +27,7 @@ pub struct BrowserQuery {
     pub anchor_value: Option<f64>,
 }
 
-#[derive(Default, Serialize)]
+#[derive(Clone, Default, Serialize)]
 pub struct BrowserResponse {
     pub title: String,
     pub message: String,
@@ -96,13 +96,7 @@ pub fn execute(registry: &Registry, request: &BrowserQuery) -> Result<BrowserRes
         .browser_object(&request.handle)
         .map_err(|error| error.to_string())?;
     if request.view == "evaluate" {
-        let context = match registry
-            .browser_object(&request.context)
-            .map_err(|error| error.to_string())?
-        {
-            QsObject::PricingContext(context) => context,
-            _ => return Err("Select a pricing context.".into()),
-        };
+        let context = super::context::resolve(registry, &request.context)?;
         let pricer = match registry
             .browser_object(&request.pricer)
             .map_err(|error| error.to_string())?
@@ -154,11 +148,19 @@ pub fn execute(registry: &Registry, request: &BrowserQuery) -> Result<BrowserRes
             }
             None
         };
-        let results = pricer.evaluate(preview.as_ref().unwrap_or(object), &requests, context)?;
+        let results = pricer.evaluate(preview.as_ref().unwrap_or(object), &requests, &context)?;
         return evaluation_table(&results, &request.request);
     }
 
-    let names = curve_names(object);
+    let resolved = if matches!(object, QsObject::PricingContext(_)) {
+        Some(super::context::resolve(registry, &request.handle)?)
+    } else {
+        None
+    };
+    let names = resolved.as_ref().map_or_else(
+        || curve_names(object),
+        |c| curve_names(&QsObject::PricingContext(c.clone())),
+    );
     if request.view == "curves" {
         return Ok(BrowserResponse {
             curves: names,
@@ -169,37 +171,49 @@ pub fn execute(registry: &Registry, request: &BrowserQuery) -> Result<BrowserRes
         return Err("Select an available curve and refresh if its inputs have changed.".into());
     }
     let index = super::inputs::market_index(&request.curve)?;
-    let context = match object {
-        QsObject::PricingContext(context) => Some(context.as_ref()),
-        _ if !request.context.is_empty() => match registry
-            .browser_object(&request.context)
-            .map_err(|error| error.to_string())?
-        {
-            QsObject::PricingContext(context) => Some(context.as_ref()),
-            _ => return Err("Select a pricing context.".into()),
-        },
-        _ => None,
+    let context = if resolved.is_some() {
+        resolved
+    } else if !request.context.is_empty() {
+        Some(super::context::resolve(registry, &request.context)?)
+    } else {
+        None
     };
     match request.view.as_str() {
         "nodes" => {
+            let market = context
+                .as_ref()
+                .map(|c| {
+                    c.handle_request(
+                        &MarketDataRequest::default().with_constructed_elements_request(vec![
+                            ConstructedElementRequest::DiscountCurve {
+                                market_index: index.clone(),
+                            },
+                        ]),
+                    )
+                })
+                .transpose()
+                .map_err(|e| e.to_string())?;
             let element = match object {
                 QsObject::DiscountCurve(curve) => Some(curve.as_ref()),
                 #[cfg(test)]
                 QsObject::ConstructedElements(store) => store.discount_curves().get(&index),
-                _ => context.and_then(|context| {
-                    context.constructed_elements().discount_curves().get(&index)
-                }),
+                _ => market
+                    .as_ref()
+                    .and_then(|market| market.constructed_elements().discount_curves().get(&index)),
             }
             .ok_or(
                 "This curve has no constructed nodes here. Select an initialized pricing context.",
             )?;
-            curve_table(&*element.curve(), &request.curve)
+            let result = curve_table(&*element.curve(), &request.curve);
+            result
         }
         "instruments" => {
             let configs = match object {
                 #[cfg(test)]
                 QsObject::CurveConfigurations(configs) => Some(configs.as_slice()),
-                _ => context.map(|context| context.curve_configurations().as_slice()),
+                _ => context
+                    .as_ref()
+                    .map(|context| context.curve_configurations().as_slice()),
             };
             let config = configs.and_then(|configs| {
                 configs
@@ -207,7 +221,7 @@ pub fn execute(registry: &Registry, request: &BrowserQuery) -> Result<BrowserRes
                     .find(|config| config.market_index() == &index)
             });
             if let Some(config) = config {
-                configuration_table(config, context)
+                configuration_table(config, context.as_deref())
             } else {
                 Ok(BrowserResponse {
                     title: format!("{} — curve inputs", request.curve),

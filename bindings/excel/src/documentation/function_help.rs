@@ -15,7 +15,9 @@ pub fn argument_help(function_name: &str, argument_names: &str) -> Vec<&'static 
 
 fn describe_argument(function_name: &str, argument_name: &str) -> &'static str {
     match (function_name, argument_name) {
-        (_, "inputs") => return "Complete array of independent QS.CONTEXT.ADD references for this root; omitted or blank uses the context as prepared; blank array cells are ignored",
+        ("QS.EVALUATE.RANGE", "context") => return "One committed context handle for the whole range, or an independent handle array aligned one-for-one with instruments; paired contexts price across workers",
+        ("QS.ENGINE.PROBE", "seconds") => return "Synthetic background delay in seconds, from 0 through 30; used to check Excel responsiveness",
+        ("QS.ENGINE.PROBE", "rows") => return "Number of result rows from 1 through 10000; one row returns 42, multiple rows spill consecutive values",
         (_, "policy") => return "Optional discount-policy handle for the default native pricer; omitted or blank uses the context policy; leave blank when passing an explicit configured pricer",
         ("QS.SNAPSHOT.FROM.RANGE", "contexts") => return "Independent array of complete prepared context handles; aligned one-for-one with observation timestamps; no header row",
         ("QS.SNAPSHOT.FROM.RANGE", "timestamps") => return "Independent offset-aware RFC 3339 observation timestamp array aligned with contexts; duplicates and interior blanks are rejected",
@@ -250,7 +252,7 @@ fn describe_argument(function_name: &str, argument_name: &str) -> &'static str {
         }
         (_, "scenarios") => "Optional scenario handle from QS.SCENARIOS.FROM.JSON; blank is allowed",
         (_, "elements") => "Current ConstructedElementStore handle",
-        (_, "context") => "Context handle from QS.CONTEXT.CREATE, QS.CONTEXT.PREPARE or QS.CONTEXT.FROM.SNAPSHOT; direct root pricing also requires the complete CONTEXT.ADD input array",
+        (_, "context") => "Stable workbook-scoped root from QS.CONTEXT.CREATE or revisioned historical context; additions belong to the context and commit after the definition pass",
         (_, "pricing_anchor") => "Bond trade anchor: CleanPrice, DirtyPrice, or ZSpread",
         (_, "anchor_value") => "Bond price per quote units or decimal spread, according to pricing_anchor",
         (_, "trade") => "Trade handle returned by a QS.TRADE.* function",
@@ -333,19 +335,24 @@ fn describe_argument(function_name: &str, argument_name: &str) -> &'static str {
 }
 
 pub fn result_help(function_name: &str) -> Option<(&'static str, &'static str)> {
+    if function_name == "QS.ENGINE.STATUS" {
+        return Some(("JSON job counts and timing metrics. pending == 0, pending_delivery == 0 and settled == true denote delivered worksheet results after the definition pass. Explicitly dirty a nonvolatile status cell when polling from automation.", "#VALUE! if the native engine is unavailable."));
+    }
+    if function_name == "QS.ENGINE.PROBE" {
+        return Some(("42 or a column starting at 42 after the requested background delay.", "#N/A while pending; #VALUE! for invalid arguments or a missing matching RTD companion."));
+    }
     match function_name {
         "QS.CONTEXT.QUOTE" => return Some(("Selected quote level in its native units; missing sides do not fall back.", "#VALUE! for stale contexts, absent identifiers or quote sides, or invalid levels.")),
         "QS.CONTEXT.FIXING" => return Some(("Exact historical fixing in the index's native units, with no unit conversion, interpolation or vintage filtering.", "#VALUE! for stale contexts, invalid index/date or absent observations.")),
-        "QS.CONTEXT.PREPARE" => return Some(("Complete reusable PricingContext handle composed from its root and full input array.", "#VALUE! for stale, foreign or duplicate inputs, or market construction failure.")),
         "QS.SNAPSHOT.FROM.RANGE" => return Some(("MarketSnapshotStore archive capturing the prepared contexts at aligned observation timestamps; removing entries rebuilds the archive.", "#VALUE! for unequal array lengths, blanks, stale contexts, invalid or duplicate timestamps or runtime objects that cannot be captured.")),
-        "QS.EVALUATE.RESULTS" => return Some(("EvaluationResults handle containing the requested native measures; read with QS.RESULT functions.", "#VALUE! for stale handles, duplicate or foreign context inputs, conflicting policy/pricer, unsupported requests or pricing errors.")),
+        "QS.EVALUATE.RESULTS" => return Some(("Revisioned opaque handle to worker-owned EvaluationResults; read with asynchronous QS.RESULT functions. #N/A means pending.", "#VALUE! for stale handles, duplicate or foreign context inputs, conflicting policy/pricer, unsupported requests or pricing errors.")),
 
         "QS.LOAN.PRICER" => return Some(("Pricer handle with the selected currency discount curve and explicit loan pricing settings; pass it to QS.EVALUATE or QS.EVALUATE.FROM.SNAPSHOT.", "#VALUE! for invalid discount mapping, refinancing index, amortization flag or registry failure.")),
-        "QS.CONTEXT.CREATE" => return Some(("Root context handle containing date, base currency/index and quote side. Supply independent CONTEXT.ADD cells to QS.EVALUATE or QS.EVALUATE.RANGE through their inputs range.", "#VALUE! for invalid name, date, currency, index or quote side.")),
-        "QS.EVALUATE" => return Some(("Requested scalar or spilled cashflow/sensitivity table directly, without an EvaluationResults handle. Prepared curves are reused while the complete input range remains unchanged.", "#VALUE! for stale, wrong-context or duplicate inputs, missing market data, unsupported request/product or pricing failure; #N/A for an absent table result.")),
+        "QS.CONTEXT.CREATE" => return Some(("Stable root context identity containing date, base currency/index and quote side. CONTEXT.ADD cells own contributions on this context; evaluation commits them and builds markets lazily on workers.", "#VALUE! for invalid name, date, currency, index or quote side.")),
+        "QS.EVALUATE" => return Some(("Requested scalar or spilled cashflow/sensitivity table directly, without an EvaluationResults handle. Committed market dependencies and identical computations are reused; #N/A means background work is pending.", "#VALUE! for stale, wrong-context or duplicate inputs, missing market data, unsupported request/product or pricing failure; #N/A for an absent table result.")),
         "QS.EVALUATE.RANGE" | "QS.EVALUATE.FROM.SNAPSHOT" => return Some(("One scalar per instrument in input order, with no stored evaluation objects. Historical batches reuse each distinct selected market and preserve its actual valuation date.", "#VALUE! for invalid or misaligned inputs, blank historical timestamps/instruments, stale handles, unsupported scalar requests, missing markets or pricing failure. Historical errors identify the input row.")),
         "QS.LOAN.SETTINGS" => return Some(("LoanSettings handle passed to QS.INSTRUMENT.LOAN or QS.TRADE.LOAN. Named arguments appear in IntelliSense; omitted values keep native defaults.", "#VALUE! for invalid settings or conflicting prepayment models; repayment-specific validation occurs when the loan is built.")),
-        name if name.starts_with("QS.CONTEXT.ADD.") => return Some(("Independent context input handle owned by this worksheet cell. All additions reference the same root; pass the entire input range to pricing. Changing or removing an input changes only calculations that include it.", "#VALUE! for invalid root context, malformed arrays or conventions, invalid configuration, duplicate observations or registry errors. Market-dependent validation runs at pricing.")),
+        name if name.starts_with("QS.CONTEXT.ADD.") => return Some(("Context contribution owned by its source cell. All additions reference the same stable root; edits, removals and failed inputs invalidate registered consumers after the definition pass.", "#VALUE! for invalid root context, malformed arrays or conventions, invalid configuration, duplicate observations or registry errors. Market-dependent validation runs at pricing.")),
         _ => {},
     }
     if function_name.starts_with("QS.INSTRUMENT.") {

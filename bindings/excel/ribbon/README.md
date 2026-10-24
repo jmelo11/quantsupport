@@ -1,6 +1,6 @@
 # QuantSupport ribbon companion
 
-This optional 64-bit Windows Excel add-in supplies the QuantSupport ribbon and
+This required companion for background pricing supplies the QuantSupport ribbon and
 an object browser attached to each workbook window. It targets .NET Framework
 4.6.2 and uses Excel-DNA 1.9.0. Build on Windows with the .NET 8 SDK:
 
@@ -13,7 +13,7 @@ The main Excel build script copies it beside `quantsupport.xll` and includes it
 in the distribution ZIP. Both XLLs must be loaded from that folder.
 
 The UI resolves the already-loaded native XLL by its full path. The versioned
-C ABI v3 (`qs_browser_api_version`, `qs_browser_revision`, `qs_browser_snapshot`,
+C ABI v4 (`qs_browser_api_version`, `qs_browser_revision`, `qs_browser_snapshot`,
 `qs_browser_query`, `qs_browser_reset`, `qs_browser_free`)
 copies UTF-8 JSON on Excel's main thread. It never loads another copy of the
 native DLL, calls worksheet constructors, or retains
@@ -28,8 +28,7 @@ Pricing requests use the selected native pricer/context and return owned result
 tables without registering EvaluationResults. Requests include PV, Cashflows,
 Fair rate and Sensitivities. Sensitivities returns Risk factor/Sensitivity rows
 with raw derivatives and localized numeric formatting; decimal-rate exposures
-times `0.0001` estimate a +1 bp move. All requests run in queued macros,
-with workbook/window checks and cancellation when the selection changes.
+times `0.0001` estimate a +1 bp move. Pricing and curve queries submit owned definitions to the versioned Rust engine ABI. Queued macros capture arguments and dispatch completions; computation runs on context-affine workers. Worksheet and pane valuations share identical computations. Selection changes and pane disposal cancel subscriptions. Tables transfer in pages of at most 256 rows, then render in the existing virtual grid.
 Sheet IDs and one-based source coordinates are resolved to Excel references
 when navigating, with a fresh handle/source check in a queued macro.
 
@@ -88,23 +87,11 @@ metadata, workbook isolation and lifetime checks. Building the native engine
 and validating the live ribbon require Windows Excel; the repository's Windows
 bindings job builds both as part of the complete distribution.
 
-## Panel layout
+`EngineBridge` uses one native event to wake a bounded Excel-thread dispatcher and private RTD subscriptions. It does not change Calculation or the application-wide RTD throttle. **Refresh Pricing** awaits dependent engine stages in Manual mode. Matching browser ABI v4 and engine ABI v1 are required; mixed releases are rejected.
 
-The ribbon groups Market, Pricing, Workbook, Calculation and Help. Panel forms
-use two-column labels/controls, and result grids use virtual rows with fixed
-initial widths, resizable columns and wrapped headings. Worksheet diagnostics
-include source cells and native messages. Details omit formulas and dependency
-traces; navigation and copying remain explicit actions.
+Dispatch yields through a 16 ms UI timer between batches, including paged pane
+results. Worksheet notifications share small column blocks; paired-context
+`QS.EVALUATE.RANGE` batches return one ordered spill while their dated markets
+are priced across context-affine workers.
 
-Pricing keeps Calculate at a fixed size outside the scrollable input form and
-reserves space for results. Preview date and side share one row; fair-rate and
-bond fields appear only when applicable. Empty root contexts are excluded from
-pricing. The initial market and pricer follow the selected object's existing
-worksheet valuation when it identifies a single setup; ambiguous setups require
-a choice. Manual choices survive refreshes of that object. Instrument lists hide
-empty market-date columns, and clicking the worksheet-error count opens Messages.
-
-Ribbon, panel actions, tabs and copy menus use Google's Material Symbols
-Outlined icons in QuantSupport teal. Their original SVGs and Apache 2.0 license
-are [bundled with the source](Icons/README.md). The add-in embeds and renders
-the vectors locally, without an installed font or network access.
+For desktop UI tests, build with `-p:QuantSupportLiveTests=true` and set `QS_PROBE_XLL` to that test companion. This includes the hidden test command from `tests/live/PanelProbe.cs`; ordinary release packages omit it.

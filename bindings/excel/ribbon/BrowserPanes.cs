@@ -113,6 +113,7 @@ namespace QuantSupport.Ribbon
 
         internal static void CloseAll()
         {
+            NativeBrowser.ClearSnapshot();
             StopTimer();
             foreach (var id in Panes.Keys.ToArray()) Remove(id);
         }

@@ -16,12 +16,18 @@ With identifiers in A10:A20 and decimal Mid values in F10:F20:
    B2 =QS.CONTEXT.CREATE("usd","2026-01-15","USD","SOFR","Mid")
    B3 =QS.CONTEXT.ADD.QUOTES(B2,A10:A20,TRANSPOSE(F10:F20))
    B4 =QS.CONTEXT.ADD.CURVE(B2,"SOFR")
-   B5 =QS.CONTEXT.PREPARE("usd.market",B2,B3:B4)
+   B5 =B2
 
-Every addition references B2. B5 composes the full input array and initializes
-its market. Alternatively pass B3:B4 directly to evaluation. Removing a cell
-from that array removes its contribution. Additions do not change B2 through
-hidden worksheet side effects, and no last-update handle needs to be located.
+Every addition references B2. B5 is an optional alias for the same stable root.
+The engine commits the cell-owned contributions after the calculation pass and
+constructs required market dependencies lazily on workers. Editing or clearing
+an addition invalidates registered consumers of B2. Failed inputs produce a
+source diagnostic; unchanged recalculation preserves contributions and results.
+
+Both matching XLLs must be loaded. Evaluation and market views return ``#N/A``
+while pending and update through RTD. In Manual mode use **Refresh Pricing**;
+F9 and Excel's calculation status do not await background jobs. Automation should
+use the explicit completion helper in ``bindings/excel/examples/scripts/async_excel.py``.
 
 For an individual quote, specify identifier, value and level:
 
@@ -49,12 +55,23 @@ Evaluate a contract or trade
 
    D2 =QS.INSTRUMENT.FIXED.RATE.DEPOSIT("deposit","2026-01-15","2026-07-15","USD",,1000,0.05,"Actual360","Simple","Annual")
    D3 =QS.TRADE.CREATE("position",D2,"2026-01-15","Receive")
-   D4 =QS.EVALUATE(B2,D3,"Value",B3:B4)
+   D4 =QS.EVALUATE(B2,D3,"Value")
    D5 =QS.EVALUATE(B5,D3,"Cashflows")
    D6 =QS.EVALUATE(B5,D3,"Sensitivities")
    D7 =QS.EVALUATE.RANGE(B5,D10:D100,"Value")
 
-Direct evaluation takes context, instrument/trade, request, input array, optional
+For independent valuation dates, supply one context per trade:
+
+.. code-block:: text
+
+   G2 =QS.EVALUATE.RANGE(C2:C10001,F2:F10001,"Value")
+
+The context and instrument/trade arrays must have the same number of entries.
+Each dated context retains its own market and curve cache. The engine schedules
+the valuations across workers and spills one scalar per input row in order.
+Use this form for large dated books to reduce Excel calls and result notifications.
+
+Direct evaluation takes context, instrument/trade, request, optional
 pricer and optional discount policy. Its result is the requested scalar or table.
 The default request is Value. A contract uses Receive, the context date and its
 contractual notional. A trade preserves its position terms. Bond contracts need
@@ -69,8 +86,8 @@ leave the separate policy argument blank because the pricer already owns it.
 
    H2 =QS.DISCOUNT.POLICY.CSA("csa","USD","SOFR")
    H3 =QS.PRICER.CREATE("pricer","DiscountedCashflowPricer",H2)
-   H4 =QS.EVALUATE(B5,D3,"Value",,H3)
-   H5 =QS.EVALUATE.RESULTS(B5,D3,{"Value","Cashflows","Sensitivities"},,H3)
+   H4 =QS.EVALUATE(B5,D3,"Value",H3)
+   H5 =QS.EVALUATE.RESULTS(B5,D3,{"Value","Cashflows","Sensitivities"},H3)
    H6 =QS.RESULT.VALUE(H5)
 
 ``QS.EVALUATE.RESULTS`` stores one native ``EvaluationResults`` object when

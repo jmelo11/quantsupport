@@ -8,7 +8,7 @@ import unittest
 from xml.etree import ElementTree as ET
 
 
-ROOT = Path(__file__).resolve().parents[3]
+ROOT = Path(__file__).resolve().parents[4]
 COMMAND = ["cargo", "run", "--quiet", "-p", "quantsupport-xll", "--example", "function_catalog"]
 NS = {"i": "http://schemas.excel-dna.net/intellisense/1.0"}
 

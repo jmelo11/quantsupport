@@ -46,6 +46,25 @@ fn key(value: &impl serde::Serialize) -> Result<String, String> {
     serde_json::to_string(value).map_err(|error| error.to_string())
 }
 
+/// Captures a committed market's definitions without constructing its dependencies.
+pub fn capture_committed(
+    registry: &mut Registry,
+    name: &str,
+    instant: DateTime,
+    context: &str,
+) -> Result<String, String> {
+    let market = super::context::resolve(registry, context)?;
+    let snapshot = MarketSnapshot::from_context(instant, &market).map_err(|e| e.to_string())?;
+    let definition = key(&(instant, &snapshot))?;
+    registry
+        .upsert_if_changed(
+            name,
+            QsObject::MarketSnapshot(Box::new(snapshot)),
+            definition,
+        )
+        .map_err(|e| e.to_string())
+}
+
 /// Build complete dated snapshots from aligned context and observation arrays.
 /// No intermediate snapshot objects are retained in the worksheet registry.
 pub fn from_contexts(
@@ -66,7 +85,11 @@ pub fn from_contexts(
             .pricing_context(handle)
             .map_err(|e| e.to_string())?;
     }
-    let definition = key(&(contexts, &instants))?;
+    let revisions = contexts
+        .iter()
+        .map(|h| super::context::revision_key(registry, h))
+        .collect::<Result<Vec<_>, _>>()?;
+    let definition = key(&(contexts, &instants, revisions))?;
     if let Some(handle) = registry
         .handle_if_unchanged(name, "MarketSnapshotStore", &definition)
         .map_err(|e| e.to_string())?
@@ -75,10 +98,8 @@ pub fn from_contexts(
     }
     let mut store = MarketSnapshotStore::new();
     for (row, (handle, instant)) in contexts.iter().zip(instants).enumerate() {
-        let context = registry
-            .pricing_context(handle)
-            .map_err(|e| e.to_string())?;
-        let snapshot = MarketSnapshot::from_context(instant, context)
+        let context = super::context::resolve(registry, handle)?;
+        let snapshot = MarketSnapshot::from_context(instant, &context)
             .map_err(|e| format!("snapshot row {}: {e}", row + 1))?;
         store
             .insert(snapshot)
@@ -105,6 +126,7 @@ pub fn capture(
 }
 
 /// Captures the complete declarative market referenced by the input range.
+#[cfg(test)]
 pub fn capture_inputs(
     registry: &mut Registry,
     name: &str,
@@ -113,7 +135,14 @@ pub fn capture_inputs(
     inputs: &[String],
 ) -> Result<String, String> {
     let context_value = super::context::prepare(registry, context, inputs)?;
-    let definition = key(&(instant, context, inputs))?;
+    let definition = key(&(
+        instant,
+        context,
+        registry
+            .context_revision(context)
+            .map_err(|e| e.to_string())?,
+        inputs,
+    ))?;
     if let Some(handle) = registry
         .handle_if_unchanged(name, "MarketSnapshot", &definition)
         .map_err(|error| error.to_string())?
@@ -284,8 +313,8 @@ fn context_for_snapshot(
     if let Some(context) = registry.context_cache.borrow().historical(&key) {
         return Ok(context);
     }
-    let mut context = snapshot.pricing_context(fixings_value.cloned().unwrap_or_default(), level);
-    context.initialize().map_err(|e| e.to_string())?;
+    let context = snapshot.pricing_context(fixings_value.cloned().unwrap_or_default(), level);
+    context.validate().map_err(|e| e.to_string())?;
     let context = std::rc::Rc::new(context);
     registry
         .context_cache
@@ -423,6 +452,14 @@ mod tests {
     fn discount(registry: &Registry, context: &str) -> f64 {
         registry
             .pricing_context(context)
+            .unwrap()
+            .handle_request(
+                &MarketDataRequest::default().with_constructed_elements_request(vec![
+                    ConstructedElementRequest::DiscountCurve {
+                        market_index: MarketIndex::SOFR,
+                    },
+                ]),
+            )
             .unwrap()
             .constructed_elements()
             .discount_curve(&MarketIndex::SOFR)
@@ -889,12 +926,17 @@ mod tests {
             selector(&instant.to_string(), None, Some("Bid")).unwrap(),
         )
         .unwrap();
-        assert!(
-            pricing_context(&mut registry, "failure", &mid_only, &selected, None)
-                .unwrap_err()
-                .to_lowercase()
-                .contains("bid")
-        );
+        let lazy = pricing_context(&mut registry, "failure", &mid_only, &selected, None).unwrap();
+        let error = super::super::context::elements(
+            &registry,
+            &lazy,
+            ConstructedElementRequest::DiscountCurve {
+                market_index: MarketIndex::SOFR,
+            },
+        )
+        .err()
+        .unwrap();
+        assert!(error.to_lowercase().contains("bid"));
         let duplicate = serde_json::json!([payload[0], payload[0]]);
         assert!(from_json(&mut registry, "duplicate_json", &duplicate.to_string()).is_err());
     }
@@ -949,6 +991,14 @@ mod tests {
         let value = registry.pricing_context(&context).unwrap();
         assert_eq!(value.evaluation_date(), Date::new(2025, 1, 15));
         let actual = value
+            .handle_request(
+                &MarketDataRequest::default().with_constructed_elements_request(vec![
+                    ConstructedElementRequest::DiscountCurve {
+                        market_index: MarketIndex::Credit("composite".into()),
+                    },
+                ]),
+            )
+            .unwrap()
             .constructed_elements()
             .discount_curve(&MarketIndex::Credit("composite".into()))
             .unwrap()

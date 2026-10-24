@@ -34,7 +34,7 @@ allocation. Built-in pricers differentiate one trade at a time.
 Sensitivities are raw derivatives per unit zero-rate input; multiply by `0.0001`
 to estimate a +1 bp PV change for these decimal-rate pillars.
 
-The matching [Excel workbook](../../../excel/examples/portfolio_aggregation_example.xlsx)
+The matching [Excel workbook](../../../excel/examples/workbooks/portfolio_aggregation_example.xlsx)
 uses the same dates, curves, instruments and directions. Its **Start Here** tab
 explains the editable inputs and result sheets.
 

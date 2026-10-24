@@ -167,6 +167,8 @@ def excel_section(name):
         return "Risk", "Scenarios"
     if name.startswith("QS.OBJECT."):
         return "System", "Object Lifecycle"
+    if name.startswith("QS.ENGINE."):
+        return "System", "Background Pricing"
     if name in ("QS.FUNCTIONS", "QS.FUNCTIONS.DETAILS", "QS.HELP", "QS.VERSION"):
         return "System", "Catalog and Help"
     raise ExtensionError(f"Uncategorized worksheet function: {name}")

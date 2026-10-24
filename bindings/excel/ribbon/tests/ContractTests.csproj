@@ -4,6 +4,7 @@
     <TargetFramework>net8.0</TargetFramework>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Remove="live/**/*.cs" />
     <Compile Include="../BrowserModels.cs" Link="BrowserModels.cs" />
     <Compile Include="../BrowserDisplay.cs" Link="BrowserDisplay.cs" />
     <None Include="snapshot.json" CopyToOutputDirectory="PreserveNewest" />

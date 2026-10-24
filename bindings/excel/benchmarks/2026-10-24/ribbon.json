@@ -1,0 +1,76 @@
+{
+  "date": "2026-10-24",
+  "base_commit": "ae72a09",
+  "workload": {
+    "instruments": 10000,
+    "distinct_origination_dates": 10000,
+    "contexts": 10000,
+    "browser_objects": 40000,
+    "pricing_objects": 20000,
+    "layout": "batch",
+    "inputs": "synthetic"
+  },
+  "machine": {
+    "os": "Windows-11-10.0.26200-SP0",
+    "logical_cpus": 16
+  },
+  "before": {
+    "profile": {
+      "snapshot_ms": 1320.6139,
+      "objects": 40000.0,
+      "create_ms": 307.82210000000003,
+      "populate_ms": 126.0073,
+      "pricing_ms": 2888.5119,
+      "curves_ms": 917.5319000000001,
+      "objects_ms": 37.8314
+    },
+    "xll_sha256": {
+      "quantsupport.xll": "716c52361f00ce9b457e055eea323cdcd3d4ec71a65bd53c096daf78ad01e809",
+      "QuantSupport.Ribbon64.xll": "86ab2948bcae4c2abfc4e9e03ed676c698468517e8b5c39356c68b73f7df46ca"
+    }
+  },
+  "after": {
+    "profile": {
+      "capture_ms": 324.8235,
+      "decode_ms": 888.3884,
+      "objects": 40000.0,
+      "create_ms": 296.4699,
+      "populate_ms": 130.16060000000002,
+      "pricing_ms": 227.35920000000002,
+      "curves_ms": 71.6031,
+      "objects_ms": 38.4394
+    },
+    "refresh": {
+      "open_return_ms": 785.5999,
+      "open_complete_ms": 1870.1651000000002,
+      "objects": 40000.0,
+      "pricing_objects": 20000.0,
+      "contexts": 10000.0,
+      "pricing_popup_ms": 38.627900000000004,
+      "pricing_search_ms": 11.3101,
+      "context_popup_ms": 25.4826,
+      "context_search_ms": 8.0633,
+      "cached_refresh_ms": 53.4979,
+      "changed_refresh_return_ms": 333.44
+    },
+    "refresh_heartbeat_max_ms": 488.9,
+    "profile_heartbeat_p95_ms": 19.1269,
+    "profile_heartbeat_max_ms": 760.3798,
+    "probe_xll_sha256": {
+      "quantsupport.xll": "09530560e2fb370669f5baf1ff6d4016bf8b0be26148770377407f8cef4ff9ea",
+      "QuantSupport.Ribbon64.xll": "2520e9e52ba5830bf4fb0122cc1ad7c2b015d1336c53d91c72a3dad2cc063706"
+    },
+    "release_xll_sha256": {
+      "quantsupport.xll": "09530560e2fb370669f5baf1ff6d4016bf8b0be26148770377407f8cef4ff9ea",
+      "QuantSupport.Ribbon64.xll": "88f0765d8ba0886ab1b4a01aea91131204937fdb47a2238548d7c6e77cc30842"
+    }
+  },
+  "notes": [
+    "All timings are milliseconds.",
+    "Before snapshot_ms includes UI capture and JSON decoding. After capture_ms is on the UI thread; decode_ms is background decoding.",
+    "Profile creates and populates a hosted BrowserControl, then opens Pricing, Curves and Objects together in one macro callback. Its heartbeat maximum includes all these UI stages together.",
+    "Refresh measurements exercise actual RefreshObjects, deferred selection, full-list search, cached refresh, invalidation and disposal. Open return includes constructing and displaying the hosted pane plus native capture.",
+    "Desktop tests load an optional probe companion built from the same source with QuantSupportLiveTests=true; production excludes the probe.",
+    "20 desktop tests, 123 native tests (one benchmark ignored), managed contracts and ribbon layout smoke checks passed."
+  ]
+}

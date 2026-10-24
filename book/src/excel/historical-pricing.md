@@ -8,7 +8,7 @@ one market instant.
 Load the XLL before opening [the example
 workbook](https://jmelo11.github.io/quantsupport/downloads/historical_pricing_example.xlsx),
 then press **Ctrl+Alt+F9** to reconstruct its objects. Regenerate both Excel
-examples with `python bindings/excel/examples/create_examples.py` after
+examples with `python bindings/excel/examples/scripts/create_examples.py` after
 installing `bindings/excel/examples/requirements.txt`. The historical workbook
 uses explicit zero rates; the same snapshot workflow accepts bootstrapped
 markets, volatility, FX, simulation, and model configurations.

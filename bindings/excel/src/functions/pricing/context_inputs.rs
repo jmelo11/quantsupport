@@ -1,4 +1,4 @@
-//! Context-first worksheet workflow with explicit range dependencies.
+//! Context-owned market contributions; evaluation commits a complete calculation pass.
 
 use crate::{
     functions::helpers::*,
@@ -18,7 +18,7 @@ use xll_rs::types::{XllError, XLOPER12};
 #[xll_bindgen(
     name = "QS.CONTEXT.CREATE",
     category = "QuantSupport - Pricing",
-    help = "Creates a dated pricing context; pass independent CONTEXT.ADD inputs as an array to QS.EVALUATE"
+    help = "Creates a stable workbook-scoped pricing context; additions update its owned market definitions"
 )]
 pub fn qs_context_new(
     name: &str,
@@ -50,12 +50,7 @@ pub fn qs_context_new(
 
 fn add(context: &str, data: InputData, key: String) -> Result<String, XllError> {
     with_registry_mut(|registry| {
-        // Several additions may be nested in the same worksheet formula.
-        // Different definitions must not overwrite one another's cell output.
-        use std::hash::{Hash, Hasher};
-        let mut hash = std::collections::hash_map::DefaultHasher::new();
-        (context, &key).hash(&mut hash);
-        let name = registry.cell_name(&format!("context.input.{:016x}", hash.finish()))?;
+        let name = registry.contribution_name()?;
         context::add(registry, &name, context, data, &key)
     })
     .map_err(value_error)
@@ -102,27 +97,6 @@ pub fn qs_context_add_quote(
     let mut quotes = QuoteStore::new(date(context)?);
     quotes.add_quote(quote);
     add(context, InputData::Quotes(quotes), key)
-}
-
-#[xll_bindgen(
-    name = "QS.CONTEXT.PREPARE",
-    category = "QuantSupport - Pricing",
-    help = "Returns a reusable complete context from a root and its full array of independent CONTEXT.ADD references"
-)]
-pub fn qs_context_prepare(
-    name: &str,
-    context: &str,
-    inputs: *const XLOPER12,
-) -> Result<String, XllError> {
-    use crate::runtime::registry::QsObject;
-    let inputs = optional_string_values(inputs, "inputs")?;
-    let key = input_key(&(context, &inputs))?;
-    let prepared = with_registry(|registry| context::prepare(registry, context, &inputs))
-        .map_err(value_error)?;
-    with_registry_mut(|registry| {
-        registry.upsert_if_changed(name, QsObject::PricingContext(prepared), key)
-    })
-    .map_err(value_error)
 }
 
 #[xll_bindgen(
@@ -497,6 +471,7 @@ fn smile(value: &str) -> Result<quantsupport::prelude::SmileType, XllError> {
 mod array_boundary_tests {
     use super::*;
     use crate::runtime::registry::CellId;
+    use quantsupport::prelude::MarketDataProvider;
     use xll_rs::{convert::build_multi, memory::xlAutoFree12};
 
     struct Array(*mut XLOPER12);
@@ -560,6 +535,15 @@ mod array_boundary_tests {
         .unwrap();
         assert_eq!(prepared.quote_store().quotes().len(), 2);
         assert!(prepared
+            .handle_request(
+                &quantsupport::prelude::MarketDataRequest::default()
+                    .with_constructed_elements_request(vec![
+                        quantsupport::prelude::ConstructedElementRequest::DiscountCurve {
+                            market_index: quantsupport::prelude::MarketIndex::SOFR
+                        }
+                    ])
+            )
+            .unwrap()
             .constructed_elements()
             .discount_curve(&quantsupport::prelude::MarketIndex::SOFR)
             .is_some());

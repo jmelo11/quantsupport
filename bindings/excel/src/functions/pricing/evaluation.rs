@@ -22,24 +22,22 @@ fn request(value: Option<&str>) -> Result<Request, XllError> {
 #[xll_bindgen(
     name = "QS.EVALUATE",
     category = "QuantSupport - Pricing",
-    help = "Returns a requested number or table directly; inputs is the complete range of independent CONTEXT.ADD cells"
+    help = "Returns a requested number or table asynchronously from the committed context-owned market"
 )]
 pub fn qs_evaluate(
     context: &str,
     instrument: &str,
     request_name: Option<String>,
-    inputs: *const XLOPER12,
     pricer: Option<String>,
     policy: Option<String>,
     transpose: *const XLOPER12,
     headers: *const XLOPER12,
 ) -> Result<*mut XLOPER12, XllError> {
     let request = request(request_name.as_deref())?;
-    let inputs = optional_string_values(inputs, "inputs")?;
     let transpose = optional_bool(transpose, "transpose")?;
     let headers = optional_bool(headers, "headers")?;
     let results = with_registry(|registry| {
-        let context = context::prepare(registry, context, &inputs)?;
+        let context = context::resolve(registry, context)?;
         context::evaluate_requests(
             registry,
             &context,
@@ -88,25 +86,50 @@ pub fn qs_evaluate(
 #[xll_bindgen(
     name = "QS.EVALUATE.RANGE",
     category = "QuantSupport - Pricing",
-    help = "Prices an instrument range against one prepared context and spills scalar results in input order"
+    help = "Prices instruments against one context or paired context handles; dated contexts run across workers and scalar results spill in input order"
 )]
 pub fn qs_evaluate_range(
-    context: &str,
+    context: *const XLOPER12,
     instruments: *const XLOPER12,
     request_name: Option<String>,
-    inputs: *const XLOPER12,
     pricer: Option<String>,
     policy: Option<String>,
     transpose: *const XLOPER12,
 ) -> Result<*mut XLOPER12, XllError> {
     let request = request(request_name.as_deref())?;
-    let inputs = optional_string_values(inputs, "inputs")?;
     let instruments = string_values(instruments, "instruments")?;
+    let contexts = string_values(context, "context")?;
+    if contexts.len() != 1 && contexts.len() != instruments.len() {
+        return Err(value_error(
+            "context must be one handle or an array aligned with instruments",
+        ));
+    }
+    if contexts.is_empty() {
+        return Err(value_error("supply at least one context"));
+    }
     if instruments.is_empty() {
         return Err(value_error("supply at least one instrument"));
     }
     let values = with_registry(|registry| {
-        let context = context::prepare(registry, context, &inputs)?;
+        if contexts.len() > 1 {
+            return instruments
+                .iter()
+                .zip(&contexts)
+                .map(|(instrument, handle)| {
+                    let market = context::resolve(registry, handle)?;
+                    let results = context::evaluate_requests(
+                        registry,
+                        &market,
+                        instrument,
+                        std::slice::from_ref(&request),
+                        pricer.as_deref().filter(|s| !s.is_empty()),
+                        policy.as_deref().filter(|s| !s.is_empty()),
+                    )?;
+                    context::scalar(&results, &request)
+                })
+                .collect::<Result<Vec<_>, String>>();
+        }
+        let context = context::resolve(registry, &contexts[0])?;
         if matches!(request, Request::Value) && policy.as_deref().is_none_or(str::is_empty) {
             if let Some(pricer) = pricer.as_deref().filter(|s| !s.is_empty()) {
                 return pricing::evaluate_values(registry, pricer, &instruments, &context);
@@ -206,17 +229,17 @@ pub fn qs_evaluate_results(
     context: &str,
     trade: &str,
     requests: *const XLOPER12,
-    inputs: *const XLOPER12,
     pricer: Option<String>,
     policy: Option<String>,
 ) -> Result<String, XllError> {
     let names = string_values(requests, "requests")?;
     let requests = pricing::parse_requests(&names).map_err(value_error)?;
-    let inputs = optional_string_values(inputs, "inputs")?;
-    let key = input_key(&(context, trade, &names, &inputs, &pricer, &policy))?;
+    let market_revision =
+        with_registry(|r| context::revision_key(r, context)).map_err(value_error)?;
+    let key = input_key(&(context, trade, &names, &pricer, &policy, market_revision))?;
     let name = with_registry(|r| r.cell_name("evaluation")).map_err(value_error)?;
     let results = with_registry(|registry| {
-        let context = context::prepare(registry, context, &inputs)?;
+        let context = context::resolve(registry, context)?;
         // Validate all dependencies even when the result can be reused.
         registry.object(trade).map_err(|e| e.to_string())?;
         if let Some(handle) = pricer.as_deref().filter(|s| !s.is_empty()) {

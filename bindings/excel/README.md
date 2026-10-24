@@ -29,28 +29,27 @@ from the same build. Load the add-in before opening a workbook; use
 
 `QS.CONTEXT.CREATE` owns the quote, fixing and FX stores and construction
 settings. Each `QS.CONTEXT.ADD.*` formula defines one independent contribution.
-Every contribution references the same root cell. Pass the complete contribution
-array to evaluation, or compose it once with `QS.CONTEXT.PREPARE`.
+Every contribution references the same stable root cell. Evaluation commits the
+cell-owned definitions after calculation settles and builds dependencies lazily
+on context-affine Rust workers.
 
 ```text
 B2 =QS.CONTEXT.CREATE("usd","2026-01-15","USD","SOFR")
 B3 =QS.CONTEXT.ADD.QUOTE(B2,"FixedRateDeposit_USD_SOFR_6M",0.04,"Mid")
 B4 =QS.CONTEXT.ADD.CURVE(B2,"SOFR")
-B5 =QS.CONTEXT.PREPARE("usd.market",B2,B3:B4)
 D2 =QS.INSTRUMENT.FIXED.RATE.DEPOSIT("deposit","2026-01-15","2026-07-15","USD",,1000,0.05,"Actual360","Simple","Annual")
 D3 =QS.TRADE.CREATE("position",D2,"2026-01-15","Receive")
-D4 =QS.EVALUATE(B2,D3,"Value",B3:B4)
-D5 =QS.EVALUATE(B5,D3,"Cashflows")
-D6 =QS.EVALUATE.RESULTS(B5,D3,{"Value","Cashflows","Sensitivities"})
+D4 =QS.EVALUATE(B2,D3,"Value")
+D5 =QS.EVALUATE(B2,D3,"Cashflows")
+D6 =QS.EVALUATE.RESULTS(B2,D3,{"Value","Cashflows","Sensitivities"})
 D7 =QS.RESULT.VALUE(D6)
 ```
 
-Contributions are declarative worksheet values. They do not mutate the root
-behind Excel's dependency graph. Including the inputs in `EVALUATE` or `PREPARE`
-is essential: Excel then orders calculation, propagates edits and removes deleted
-observations. Duplicate quote sides, fixing observations or curve indices fail
-explicitly; separate Mid/Bid/Ask additions for one identifier can be combined.
-Inputs from another root are rejected.
+Editing, replacing or deleting an addition invalidates the context's registered
+consumers, including formulas whose arguments contain only the stable root.
+A failed addition leaves a source diagnostic and an invalid market. Duplicate
+quote sides, fixings and configurations fail explicitly; separate Mid/Bid/Ask
+contributions merge. Unchanged recalculation preserves additions and ready results.
 
 Use separate arrays for fields, in any row or column orientation:
 
@@ -67,19 +66,42 @@ input table, Excel Table object or header row is required.
 
 The context has additions for bootstrapped, zero-rate and composite curves,
 credit curves, volatility surfaces/cubes and native model/pricer configurations.
-`QS.CONTEXT.QUOTE` and `QS.CONTEXT.FIXING` inspect a prepared context.
+`QS.CONTEXT.QUOTE` and `QS.CONTEXT.FIXING` inspect a committed context.
 
 ## Evaluate consistently
+
+Both `quantsupport.xll` and its matching `QuantSupport.Ribbon64.xll` companion
+are required for background delivery. Scalar and spilled outputs return `#N/A`
+while pending; source diagnostics appear in the browser. Errors remain typed
+Excel errors. Stored results are revisioned opaque IDs; native objects and AD
+tapes stay on their owner worker.
+
+Automatic mode updates through Excel-DNA RTD. In Manual mode use the ribbon's
+**Refresh Pricing** action to await jobs and refresh dependent worksheet stages.
+F9 starts work but is not an asynchronous completion barrier. Automation can use
+`examples/scripts/async_excel.py`; `QS.ENGINE.STATUS()` reports `pending`, `pending_delivery`, `settled`, errors
+and stage metrics. Excel's `CalculationState` alone does not indicate completion.
+The application-wide RTD throttle is preserved (typically 2,000 ms).
+
+This release removes the prepare function and the evaluation `inputs` argument.
+Use matching XLLs and workbooks. `examples/scripts/migrate_async_api.py` updates old
+example formulas while preserving their workbook layout.
+
+The bounded pool defaults to at most eight workers; `QS_ENGINE_WORKERS` can set
+1–32 workers before Excel starts. There is no service or additional runtime.
+Close/reset cancels subscriptions and retires worker registries asynchronously.
+The executing native module remains mapped until Excel exits so noninterruptible
+native calls can finish safely after add-in unload.
 
 | Function | Result |
 | --- | --- |
 | `QS.EVALUATE` | One requested scalar or cashflow/sensitivity spill |
-| `QS.EVALUATE.RANGE` | One scalar per instrument/trade, in input order |
+| `QS.EVALUATE.RANGE` | One context or paired context/trade arrays; parallel dated markets and one scalar per row |
 | `QS.EVALUATE.RESULTS` | One reusable native result handle for request arrays |
 | `QS.EVALUATE.PORTFOLIO` | Aggregated native result handle from a portfolio |
 | `QS.EVALUATE.FROM.SNAPSHOT` | Historical scalar batch at aligned timestamps |
 
-Direct evaluation takes **context, instrument/trade, request, inputs, pricer,
+Direct evaluation takes **context, instrument/trade, request, pricer,
 policy**, then output-layout flags. Request defaults to Value. A blank pricer
 selects the native product pricer. A blank policy selects the context's base
 curve policy. To choose funding or model parameters explicitly, construct a
@@ -90,9 +112,9 @@ passing both an explicit pricer and a separate policy is an error.
 =QS.DISCOUNT.POLICY.CSA("csa","USD","SOFR")
 =QS.DISCOUNT.POLICY.FIXED.INCOME("funding","EUR","FUNDING")
 =QS.PRICER.CREATE("pricer","DiscountedCashflowPricer",policy)
-=QS.EVALUATE(context,trade,"FairRate(0)",inputs,pricer)
-=QS.EVALUATE.RANGE(context,trades,"Value",inputs,pricer)
-=QS.EVALUATE.RESULTS(context,trade,requests,inputs,pricer)
+=QS.EVALUATE(context,trade,"FairRate(0)",pricer)
+=QS.EVALUATE.RANGE(context,trades,"Value",pricer)
+=QS.EVALUATE.RESULTS(context,trade,requests,pricer)
 =QS.EVALUATE.PORTFOLIO(context,portfolio,pricer,requests,"USD")
 ```
 
@@ -121,7 +143,7 @@ is used. Exact and Closest are available; Closest may select a future market.
 The selected quote reference date remains the valuation date. Missing Bid/Ask
 never falls back to Mid. Snapshot archives preserve construction inputs, and
 exclude runtime curves and fixing vintages. Supply a shared fixing contribution
-or prepared context in the optional `fixings` argument.
+or committed context in the optional `fixings` argument.
 
 The batch groups requests by matched snapshot and constructs each market once.
 It returns scalar values in input order without storing per-row evaluation
@@ -152,25 +174,29 @@ Migrate older workbooks before using this build:
 | Previous API | Replacement |
 | --- | --- |
 | Quote/fixing/FX stores and curve configuration collections | Context creation and `QS.CONTEXT.ADD.*` |
-| `QS.CONTEXT.FROM.COMPONENTS` | `QS.CONTEXT.CREATE`, additions and `QS.CONTEXT.PREPARE` |
+| `QS.CONTEXT.FROM.COMPONENTS` | `QS.CONTEXT.CREATE` and context-owned additions |
 | `QS.CONTEXT.PRICE`, `QS.CONTEXT.VALUES` | `QS.EVALUATE`, `QS.EVALUATE.RANGE` |
-| Stored `QS.EVALUATE` with name/pricer/trade/context/requests | `QS.EVALUATE.RESULTS` with context/trade/requests/inputs/pricer |
+| Stored `QS.EVALUATE` with name/pricer/trade/context/requests | `QS.EVALUATE.RESULTS` with context/trade/requests/pricer |
 | `QS.HISTORY.VALUES` | `QS.EVALUATE.FROM.SNAPSHOT` |
 | `QS.SNAPSHOTS.*` | Singular `QS.SNAPSHOT.*`; archive construction is `.ARCHIVE` |
 | Product trade constructors and direct pricing/risk shortcuts | `QS.INSTRUMENT.*`, `QS.TRADE.CREATE`, evaluation requests |
 | Fixed bond/deposit and floating note names | `FIXED.RATE.BOND`, `FIXED.RATE.DEPOSIT`, `FLOATING.RATE.NOTE` |
 
-[Seven editable studies](examples/README.md) cover contexts, swaps, history,
-loans, bonds, portfolio aggregation and interpolation. Each opens on Start Here.
+[Ready-to-open workbooks](examples/README.md) cover contexts, swaps, history,
+loans, bonds, portfolio aggregation and interpolation. The
+[10,000-valuation example](examples/workbooks/origination_10000_batch.xlsx)
+prices a different swap at each of 10,000 origination dates using 10,000 dated
+contexts. Workbooks live in `examples/workbooks/`, generators and the benchmark
+in `examples/scripts/`, and checks in `examples/tests/`. Each workbook opens on Start Here.
 [The guide](../../docs/excel/guide/index.rst) explains the financial conventions;
 the [generated reference](https://jmelo11.github.io/quantsupport/api/excel/functions/index.html)
 lists exact native signatures.
 
 ```sh
 python -m pip install -r bindings/excel/examples/requirements.txt
-python bindings/excel/examples/create_examples.py
+python bindings/excel/examples/scripts/create_examples.py
 cargo test -p quantsupport-xll --lib --example function_catalog
-python -m unittest discover -s bindings/excel/examples -p 'test_*.py'
+python -m unittest discover -s bindings/excel/examples/tests -p 'test_*.py'
 ```
 
 Windows lifecycle tests require pywin32 and `QS_XLL_PATH`. Portable tests verify

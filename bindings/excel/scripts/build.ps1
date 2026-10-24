@@ -1,7 +1,8 @@
 [CmdletBinding()]
 param(
     [ValidateSet("debug", "release")]
-    [string]$Profile = "release"
+    [string]$Profile = "release",
+    [string]$Dist
 )
 
 $ErrorActionPreference = "Stop"
@@ -42,7 +43,8 @@ if (-not (Test-Path -LiteralPath $source)) {
     throw "The expected XLL library was not produced: $source"
 }
 
-$dist = Join-Path $excelRoot "dist"
+if (-not $Dist) { $Dist = Join-Path $excelRoot "dist" }
+$dist = [IO.Path]::GetFullPath($Dist)
 New-Item -ItemType Directory -Path $dist -Force | Out-Null
 $destination = Join-Path $dist "quantsupport.xll"
 Copy-Item -LiteralPath $source -Destination $destination -Force

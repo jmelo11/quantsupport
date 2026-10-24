@@ -1,7 +1,7 @@
 """Generate the guided Excel studies.
 
 Install: python -m pip install -r bindings/excel/examples/requirements.txt
-Run: python bindings/excel/examples/create_examples.py
+Run: python bindings/excel/examples/scripts/create_examples.py
 Windows Excel with the matching QuantSupport XLL calculates the formulas.
 Use --xll-path for optional live validation with pywin32.
 """
@@ -62,7 +62,7 @@ def step(study, sheet, row, label, name, args, key, explanation):
 
 def create_context_first(path):
     routes = [("1 Inputs", "Edit the dated market quotes and loan contract terms."),
-              ("2 Contexts", "All additions reference their root context; the input ranges are complete."),
+              ("2 Contexts", "All additions reference their root context; the contexts own their additions."),
               ("3 Contracts", "Create the loan and archive complete dated markets."),
               ("4 Results", "Read direct values, cashflows, risk and historical batch values.")]
     with Study(path, "Context", "Context-first pricing", "Create one context, add independent inputs, and request values directly.", routes,
@@ -85,7 +85,7 @@ def create_context_first(path):
         s.range("QuoteIds", "1 Inputs", 18, 0, 17 + len(ESTR_QUOTES), 0)
         s.range("QuoteMid", "1 Inputs", 17, 3, 17, 2 + len(ESTR_QUOTES))
         sheet = "2 Contexts"
-        s.sheet(sheet, "Create contexts and independent inputs", "Every ADD formula points to its root. Pricing and snapshot formulas consume the complete input range.")
+        s.sheet(sheet, "Create contexts and independent inputs", "Every ADD formula points to its root. Pricing and snapshot formulas consume the context-owned market definitions.")
         s.headers(sheet, 6, ["Step", "Reference", "Purpose"])
         step(s, sheet, 7, "Create root", "QS.CONTEXT.CREATE", [text("Example.Context"), s.name("Date"), '"EUR"', '"ESTR"'], "Root", "Date, currency, base index and optional quote side.")
         for row, function, args, label in [
@@ -105,8 +105,8 @@ def create_context_first(path):
         row = step(s, sheet, 7, "Named loan settings", "QS.LOAN.SETTINGS", [text("Example.Options"), s.name("Balloon")], "Options", "The second argument is balloon_fraction; remaining settings use defaults.")
         row = step(s, sheet, row, "Loan contract", "QS.INSTRUMENT.LOAN", [text("Example.Loan"), s.name("Date"), s.name("Maturity"), '"EUR"', s.name("Notional"), s.name("Rate"), "", '"Balloon"', '"Monthly"', '"Actual365"', s.name("Options")], "Loan", "Direct pricing uses Receive and the contract notional; use a trade for other position terms.")
         row = step(s, sheet, row, "Explicit loan pricer", "QS.LOAN.PRICER", [text("Example.Pricer"), '"EUR"', '"ESTR"'], "Pricer", "An explicit discount curve with optional named refinancing and fair-rate settings.")
-        row = step(s, sheet, row, "Prepare first market", "QS.CONTEXT.PREPARE", [text("Example.Market"), s.name("Root"), s.name("Inputs")], "Snapshot", "Complete context includes quotes and construction settings.")
-        row = step(s, sheet, row, "Prepare next market", "QS.CONTEXT.PREPARE", [text("Example.NextMarket"), s.name("NextRoot"), s.name("NextInputs")], "NextSnapshot", "Next complete dated context.")
+        row = s.step(sheet, row, 'Prepare first market', '=' + s.name('Root'), 'Snapshot', 'The stable root owns all market additions.')
+        row = s.step(sheet, row, 'Prepare next market', '=' + s.name('NextRoot'), 'NextSnapshot', 'The stable root owns all market additions.')
         s.write(sheet, f"A{row}", "First context")
         s.write(sheet, f"B{row}", "=" + s.name("Snapshot"), "handle")
         s.write(sheet, f"A{row+1}", "Second context")
@@ -117,17 +117,17 @@ def create_context_first(path):
         s.range("ObservationTimes", sheet, row, 3, row + 1, 3)
         step(s, sheet, row + 3, "Archive complete markets", "QS.SNAPSHOT.FROM.RANGE", [text("Example.Archive"), s.name("Snapshots"), s.name("ObservationTimes")], "Archive", "Independent prepared-context and timestamp arrays.")
         sheet = "4 Results"
-        s.sheet(sheet, "Direct prices and historical batch", "No evaluation handle is needed. The complete input range gives Excel the calculation dependencies.", (29, 24, 32, 8, 35, 30, 20), "#21845B")
+        s.sheet(sheet, "Direct prices and historical batch", "No evaluation handle is needed. The context-owned market definitions gives Excel the calculation dependencies.", (29, 24, 32, 8, 35, 30, 20), "#21845B")
         s.headers(sheet, 6, ["Measure", "Value", "Meaning"])
         s.write(sheet, "A7", "Receipt PV (EUR)")
-        s.write(sheet, "B7", formula("QS.EVALUATE", s.name("Root"), s.name("Loan"), '"Value"', s.name("Inputs")), "money", "PV")
+        s.write(sheet, "B7", formula('QS.EVALUATE', s.name('Root'), s.name('Loan'), '"Value"'), "money", "PV")
         s.write(sheet, "C7", "Native loan pricer using the context base discount curve.", "note")
         s.write(sheet, "A8", "Fair coupon")
-        s.write(sheet, "B8", formula("QS.EVALUATE", s.name("Root"), s.name("Loan"), '"FairRate(0)"', s.name("Inputs"), s.name("Pricer")), "rate", "FairRate")
+        s.write(sheet, "B8", formula('QS.EVALUATE', s.name('Root'), s.name('Loan'), '"FairRate(0)"', s.name('Pricer')), "rate", "FairRate")
         s.write(sheet, "A12", "Cashflows", "section")
-        s.write(sheet, "A13", formula("QS.EVALUATE", s.name("Root"), s.name("Loan"), '"Cashflows"', s.name("Inputs")), "result", "Cashflows")
+        s.write(sheet, "A13", formula('QS.EVALUATE', s.name('Root'), s.name('Loan'), '"Cashflows"'), "result", "Cashflows")
         s.write(sheet, "A160", "Sensitivities", "section")
-        s.write(sheet, "A161", formula("QS.EVALUATE", s.name("Root"), s.name("Loan"), '"Sensitivities"', s.name("Inputs")), "result", "Risk")
+        s.write(sheet, "A161", formula('QS.EVALUATE', s.name('Root'), s.name('Loan'), '"Sensitivities"'), "result", "Risk")
         for column, label in zip("EFG", ["Instrument", "Origination timestamp", "Receipt PV"]):
             s.write(sheet, f"{column}6", label, "header")
         for row, instant in enumerate(["2026-02-25T17:00:00Z", "2026-02-24T17:00:00Z", "2026-02-25T18:00:00Z"], 7):
@@ -264,16 +264,16 @@ def create_swap(path):
         build = "3 Build"
         s.sheet(build, "Build the pricing objects", "Read from top to bottom. Grey cells contain object references; the exact formula is shown immediately below each step.")
         s.headers(build, 6, ["Step", "Object reference", "Purpose"])
-        row = s.step(build, 7, "1.1 Initialize USD context", context("Swap.Context", s.name("UsdRoot"), s.name("UsdInputs")), "Context", "Bootstraps SOFR under USD collateral; this context prices the swap.")
-        row = s.step(build, row, "1.2 Initialize EUR context", context("Swap.EstrContext", s.name("EurRoot"), s.name("EurInputs")), "EstrContext", "Bootstraps ESTR under EUR collateral for comparison only.")
+        row = s.step(build, 7, "1.1 Initialize USD context", context(s.name('UsdRoot')), "Context", "Bootstraps SOFR under USD collateral; this context prices the swap.")
+        row = s.step(build, row, "1.2 Initialize EUR context", context(s.name('EurRoot')), "EstrContext", "Bootstraps ESTR under EUR collateral for comparison only.")
         row = step(s, build, row, "2. Define the instrument", "QS.INSTRUMENT.SWAP", [text("Swap.Instrument"), *[s.name(k) for k in ("Start", "Maturity", "Currency", "Index", "Notional", "FixedRate", "Spread", "DayCounter", "Compounding", "RateFrequency", "FixedFrequency", "FloatFrequency")]], "Instrument", "The contract contains dates, rates and indices.")
         row = step(s, build, row, "3. Create the position", "QS.TRADE.CREATE", [text("Swap.Trade"), s.name("Instrument"), s.name("ValuationDate"), s.name("Side")], "Trade", "The trade adds execution date and direction.")
         row = step(s, build, row, "4. Choose discount policy", "QS.DISCOUNT.POLICY.CSA", [text("Swap.Policy"), s.name("Currency"), s.name("Index")], "Policy", "The policy selects the native CSA discount curve.")
         row = step(s, build, row, "5. Create the pricer", "QS.PRICER.CREATE", [text("Swap.Pricer"), '"DiscountedCashflowPricer"', s.name("Policy")], "Pricer", "Pricing assumptions remain separate from the contract.")
-        row = step(s, build, row, "6. Request value and tables", "QS.EVALUATE.RESULTS", [s.name("Context"), s.name("Trade"), s.name("Requests"), "", s.name("Pricer")], "Result", "Value, Cashflows and Sensitivities are listed on Inputs.")
+        row = step(s, build, row, '6. Request value and tables', 'QS.EVALUATE.RESULTS', [s.name('Context'), s.name('Trade'), s.name('Requests'), s.name('Pricer')], 'Result', 'Value, Cashflows and Sensitivities are listed on Inputs.')
         for target, label in [(0, "fixed coupon"), (1, "floating spread")]:
             row = step(s, build, row, f"7.{target+1} Select {label}", "QS.REQUEST.FAIR.RATE", [str(target)], f"Request{target}", f"Zero-based leg {target}; one fair-rate target per evaluation.")
-            row = step(s, build, row, f"8.{target+1} Solve {label}", "QS.EVALUATE.RESULTS", [s.name("Context"), s.name("Trade"), s.name(f"Request{target}"), "", s.name("Pricer")], f"Fair{target}", "Only the selected leg's quote is adjusted to zero total PV.")
+            row = step(s, build, row, f'8.{target + 1} Solve {label}', 'QS.EVALUATE.RESULTS', [s.name('Context'), s.name('Trade'), s.name(f'Request{target}'), s.name('Pricer')], f'Fair{target}', "Only the selected leg's quote is adjusted to zero total PV.")
         for index, key, source in [("SOFR", "SofrCurve", "Context"), ("ESTR", "EstrCurve", "EstrContext")]:
             row = step(s, build, row, "9. Inspect " + index, "QS.CURVE.GET", [s.name(source), text(index)], key, "Reads the curve from its matching collateral context.")
         result = "4 Results"
@@ -386,7 +386,7 @@ def create_loans(path):
         build = "4 Build"
         s.sheet(build, "Build and evaluate the loan agreements", "Shared context and pricers come first. Each case then follows instrument → trade → pricer selection → evaluation. Use the links on Results to jump directly to a case.")
         s.headers(build, 6, ["Step", "Object reference", "Purpose"])
-        row = s.step(build, 7, "1. Initialize pricing context", context("Loan.Context", s.name("Root"), s.name("MarketInputs")), "Context", "Constructs the projection, discount, funding and credit curves.")
+        row = s.step(build, 7, "1. Initialize pricing context", context(s.name('Root')), "Context", "Constructs the projection, discount, funding and credit curves.")
         for number, suffix, label in [(2, "RiskFree", "ESTR"), (4, "Funding", "FUNDING")]:
             row = step(s, build, row, f"{number}. {label} discount policy", "QS.DISCOUNT.POLICY.FIXED.INCOME", [text(f"Loan.{suffix}Policy"), s.name(suffix + "Currency"), s.name(suffix + "Index")], suffix + "Policy", "Maps EUR to an ordinary market curve.")
             row = step(s, build, row, f"{number+1}. {label} loan pricer", "QS.PRICER.CREATE", [text(f"Loan.{suffix}Pricer"), '"LoanPricer"', s.name(suffix + "Policy")], suffix + "Pricer", "Same native LoanPricer, with an explicit policy.")
@@ -414,11 +414,11 @@ def create_loans(path):
             row = step(s, build, row, "1. Define this instrument", "QS.INSTRUMENT.LOAN", args, key + "_Instrument", description)
             row = step(s, build, row, "2. Create this position", "QS.TRADE.CREATE", [text(f"Loan.{key}.Trade"), s.name(key + "_Instrument"), s.name("ValuationDate"), s.name("Side")], key + "_Trade", "The contractual principal stays in the instrument.")
             row = s.step(build, row, "3. Select explicit pricer", f'=IF({s.name(key+"_Discount")}="FUNDING",{s.name("FundingPricer")},{s.name("RiskFreePricer")})', key + "_Pricer", "The case's discount choice selects an existing policy-configured pricer.")
-            row = step(s, build, row, "4. Evaluate value and tables", "QS.EVALUATE.RESULTS", [s.name("Context"), s.name(key + "_Trade"), s.name("Requests"), "", s.name(key + "_Pricer")], key + "_Result", "Future receipt PV excludes the original principal advance.")
+            row = step(s, build, row, '4. Evaluate value and tables', 'QS.EVALUATE.RESULTS', [s.name('Context'), s.name(key + '_Trade'), s.name('Requests'), s.name(key + '_Pricer')], key + '_Result', 'Future receipt PV excludes the original principal advance.')
             result_keys.append(key + "_Result")
             if label != "Bounded floating":
                 for target in range(len(segments) if segments else 1):
-                    row = step(s, build, row, f"5.{target+1} Solve segment {target}", "QS.EVALUATE.RESULTS", [s.name("Context"), s.name(key + "_Trade"), s.name(f"Request{target}"), "", s.name(key + "_Pricer")], key + f"_Fair{target}", "Repay remaining principal at each prefix end, lock earlier solved rates, then extend.")
+                    row = step(s, build, row, f'5.{target + 1} Solve segment {target}', 'QS.EVALUATE.RESULTS', [s.name('Context'), s.name(key + '_Trade'), s.name(f'Request{target}'), s.name(key + '_Pricer')], key + f'_Fair{target}', 'Repay remaining principal at each prefix end, lock earlier solved rates, then extend.')
             row += 2
         results = "5 Results"
         s.sheet(results, "Compare the loan results", "PV is future receipt value in EUR; net origination value subtracts principal. Fair-rate columns are annual decimal coupon / spread levels. Blank means that segment does not exist.", (29, 17, 17, 15, 15, 15, 12, 12), "#21845B")
@@ -480,7 +480,7 @@ def create_bonds(path):
         build = "3 Build"
         s.sheet(build, "Build one contract and three positions", "The shared instrument is created once. Each trade adds its own anchor, and the explicit BondPricer evaluates each position.")
         s.headers(build, 6, ["Step", "Object reference", "Purpose"])
-        row = s.step(build, 7, "1. Initialize market context", context("Bond.Context", s.name("Root"), s.name("MarketInputs")), "Context", "Constructs the visible SOFR zero curve.")
+        row = s.step(build, 7, "1. Initialize market context", context(s.name('Root')), "Context", "Constructs the visible SOFR zero curve.")
         row = step(s, build, row, "2. Define the bond instrument", "QS.INSTRUMENT.FIXED.RATE.BOND", [text("Bond.Instrument"), s.name("Start"), s.name("Maturity"), '"USD"', "", s.name("Notional"), s.name("Coupon"), '"Actual360"', '"Compounded"', '"Semiannual"', '"Semiannual"'], "Instrument", "No position side or pricing anchor is stored in this contract.")
         row = step(s, build, row, "3. Choose discount policy", "QS.DISCOUNT.POLICY.FIXED.INCOME", [text("Bond.Policy"), s.name("DiscountCurrency"), s.name("DiscountIndex")], "Policy", "Maps USD to the ordinary SOFR curve.")
         row = step(s, build, row, "4. Create native bond pricer", "QS.PRICER.CREATE", [text("Bond.Pricer"), '"BondPricer"', s.name("Policy")], "Pricer", "The same configured pricer evaluates all three positions.")
@@ -489,7 +489,7 @@ def create_bonds(path):
             key = f"C{index:02}"
             build_rows.append(row)
             row = step(s, build, row, f"5.{index} Position · {label}", "QS.TRADE.CREATE", [text(f"Bond.{key}.Trade"), s.name("Instrument"), s.name("ValuationDate"), s.name("Side"), "", "", s.name(key + "_Anchor"), s.name(key + "_AnchorValue")], key + "_Trade", "The trade supplies the bond's price or spread anchor.")
-            row = step(s, build, row, f"6.{index} Evaluate · {label}", "QS.EVALUATE.RESULTS", [s.name("Context"), s.name(key + "_Trade"), s.name("Requests"), "", s.name("Pricer")], key + "_Result", "Produces the measures listed on Inputs.")
+            row = step(s, build, row, f'6.{index} Evaluate · {label}', 'QS.EVALUATE.RESULTS', [s.name('Context'), s.name(key + '_Trade'), s.name('Requests'), s.name('Pricer')], key + '_Result', 'Produces the measures listed on Inputs.')
             result_keys.append(key + "_Result")
         result = "4 Results"
         s.sheet(result, "Compare the anchored bond positions", "PV is monetary USD value. Duration is measured in years. Z-spread is an annual decimal spread; the same contract is used in all cases.", (30, 22, 18, 18, 16, 16), "#21845B")
@@ -552,7 +552,7 @@ def create_historical(path):
         for index in [1, 2]:
             row = step(s, archive, row, f"{index}.1 Create dated context", "QS.CONTEXT.CREATE", [text(f"History.Root{index}"), s.name(f"Date{index}"), '"USD"', '"SOFR"'], f"Root{index}", "Each root owns its market date.")
             row = step(s, archive, row, f"{index}.2 Add zero curve", "QS.CONTEXT.ADD.ZERO.CURVE", [s.name(f"Root{index}"), '"SOFR"', s.name("Pillars"), s.name(f"Rates{index}"), '"Actual365"', '"Continuous"', '"Annual"', '"Linear"', "FALSE"], f"MarketInputs{index}", "Separate pillar and rate arrays.")
-            row = s.step(archive, row, f"{index}.3 Prepare complete context", context(f"History.Context{index}", s.name(f"Root{index}"), s.name(f"MarketInputs{index}")), f"OriginalContext{index}", "Compose complete market inputs for reuse.")
+            row = s.step(archive, row, f"{index}.3 Prepare complete context", context(s.name(f'Root{index}')), f"OriginalContext{index}", "Compose complete market inputs for reuse.")
             row = step(s, archive, row, f"{index}.4 Capture market", "QS.SNAPSHOT.FROM.CONTEXT", [text(f"History.Snapshot{index}"), s.name(f"Timestamp{index}"), s.name(f"OriginalContext{index}")], f"Snapshot{index}", "Observation timestamp remains separate from market business date.")
         s.headers(archive, row, ["Captured snapshot", "Object reference", ""])
         for index in [1, 2]:
@@ -573,7 +573,7 @@ def create_historical(path):
         for index in [1, 2]:
             row = step(s, build, row, f"{index+4}.1 Select timestamp", "QS.SNAPSHOT.SELECTOR", [text(f"History.Selector{index}"), s.name(f"Query{index}"), s.name(f"Rule{index}"), '"Mid"'], f"Selector{index}", "The requested timestamp and matching rule are editable on Inputs.")
             row = step(s, build, row, f"{index+4}.2 Rebuild selected context", "QS.CONTEXT.FROM.SNAPSHOT", [text(f"History.Selected{index}"), s.name("Archive"), s.name(f"Selector{index}")], f"Context{index}", "The market's own reference date is preserved.")
-            row = step(s, build, row, f"{index+4}.3 Evaluate unchanged trade", "QS.EVALUATE.RESULTS", [s.name(f"Context{index}"), s.name("Trade"), '"Value"', "", s.name("Pricer")], f"Result{index}", "The same position and pricer consume this selected market.")
+            row = step(s, build, row, f'{index + 4}.3 Evaluate unchanged trade', 'QS.EVALUATE.RESULTS', [s.name(f'Context{index}'), s.name('Trade'), '"Value"', s.name('Pricer')], f'Result{index}', 'The same position and pricer consume this selected market.')
         result = "5 Results"
         s.sheet(result, "Compare requested and selected markets", "A later query time does not create a later valuation date. Read the actual matched timestamp and market date before comparing PV.", (38, 36, 36), "#21845B")
         s.headers(result, 6, ["Measure", "Query 1", "Query 2"])
@@ -687,6 +687,7 @@ def validation_names(example):
 def validate_in_excel(path, xll_path):
     """Check native results, selected-case spills and unchanged F9 recalculation."""
     from win32com.client import DispatchEx
+    from async_excel import await_engine
 
     excel = DispatchEx("Excel.Application")
     workbook = None
@@ -695,10 +696,13 @@ def validate_in_excel(path, xll_path):
         excel.DisplayAlerts = False
         if not excel.RegisterXLL(str(xll_path)):
             raise RuntimeError(f"Excel could not load {xll_path}")
+        if not excel.RegisterXLL(str(xll_path.with_name("QuantSupport.Ribbon64.xll"))):
+            raise RuntimeError("Load the matching Excel-DNA companion beside the native XLL")
         # xlNormalLoad (0): do not attempt repair or data recovery.
         workbook = excel.Workbooks.Open(str(path.resolve()), UpdateLinks=0, ReadOnly=True, CorruptLoad=0)
         workbook.ForceFullCalculation = True
         excel.CalculateFullRebuild()
+        await_engine(excel, workbook)
 
         def cell(name):
             return workbook.Names.Item(name).RefersToRange
@@ -709,7 +713,7 @@ def validate_in_excel(path, xll_path):
         handle_names, number_names = validation_names(path.stem)
         before = [value(name) for name in handle_names]
         for name, result in zip(handle_names, before):
-            if not isinstance(result, str) or not result.startswith("QSObject:"):
+            if not isinstance(result, str) or not result.startswith(("QSObject:", "QSEngine:")):
                 raise RuntimeError(f"{name} did not return a native object handle: {result!r}")
         numbers = [value(name) for name in number_names]
         for name, result in zip(number_names, numbers):
@@ -742,6 +746,7 @@ def validate_in_excel(path, xll_path):
                 try:
                     selected.Value2 = "Stepped then floating" if prefix == "Loan" else "Clean price 100"
                     excel.CalculateFullRebuild()
+                    await_engine(excel, workbook)
                     expected = value(prefix + ("_C12_Result" if prefix == "Loan" else "_C03_Result"))
                     if value(prefix + "_SelectedResult") != expected:
                         raise RuntimeError("The detail selector did not choose the requested result")
@@ -752,6 +757,7 @@ def validate_in_excel(path, xll_path):
                 finally:
                     selected.Value2 = original
                     excel.CalculateFullRebuild()
+                    await_engine(excel, workbook)
             if path.stem == "loan_pricing_example":
                 if value("Loan_C09_PV") >= value("Loan_C01_PV"):
                     raise RuntimeError("Higher funding rates did not reduce fixed-loan PV")
@@ -817,7 +823,7 @@ def publish_workbook(source, destination):
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--example", choices=("all", "context", "swap", "historical", "loans", "bonds", "interpolation", "portfolio"), default="all")
-    parser.add_argument("--output-dir", type=Path, default=Path(__file__).resolve().parent)
+    parser.add_argument("--output-dir", type=Path, default=Path(__file__).resolve().parents[1] / "workbooks")
     parser.add_argument("--xll-path", type=Path, help="Validate with native Windows Excel; requires pywin32")
     args = parser.parse_args()
     if args.xll_path:

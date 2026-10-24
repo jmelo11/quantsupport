@@ -21,7 +21,11 @@ QuantSupport for 64-bit Windows Excel
    Curves opens curve tables and Instruments & inputs; click Refresh table
    to load a view, then select an instrument
    row to inspect its parameters. Select a pricing context for market levels.
-8. Reset Memory & Rebuild clears all native QuantSupport objects and calculation
+8. Refresh Pricing calculates definitions and delivers background prices and
+   dependent result stages, including in Manual mode. Pending values show #N/A.
+   Each CONTEXT.ADD contribution belongs to its root context; no PREPARE call or
+   explicit input range is needed for evaluation.
+9. Reset Memory & Rebuild clears all native QuantSupport objects and calculation
    memory in this Excel instance, then rebuilds every open workbook. This also
    calculates in Manual mode without changing the mode or editing formulas.
 
@@ -46,7 +50,8 @@ Valuation dates are market
 reference dates; Snapshot (UTC) is the historical observation timestamp, when
 available. Neither field is an object's creation time. Use the Setup Guide
 button for worksheet construction examples. Creation wizards are not included.
-The ribbon is optional: worksheet functions work with quantsupport.xll alone.
+The matching ribbon companion is required for background worksheet results.
+It preserves Excel's calculation mode and application-wide RTD throttle.
 Use QS.CONTEXT.CREATE and CONTEXT.ADD inputs with QS.EVALUATE; older store
 constructors and aliases were removed.
 
