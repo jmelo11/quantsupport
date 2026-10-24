@@ -240,5 +240,28 @@ class AsyncExcelTests(unittest.TestCase):
         rows = int(next(line for line in result.splitlines() if line.startswith("Rows:")).split(":")[1])
         self.assertGreater(rows, 256)
 
+    def test_10_unchanged_price_is_redelivered_after_definition_revalidation(self):
+        from async_excel import await_engine
+        await_engine(self.app, self.book)
+        original = self.sheet.Range("G4").Value2
+        submitted = self.status()["submitted"]
+        previous_mode = self.app.Calculation
+        try:
+            self.app.Calculation = -4135
+            for index in range(5):
+                # Changing an unrelated definition invalidates validation stamps,
+                # while the existing price's fingerprint stays unchanged.
+                self.sheet.Range("AZ1").Formula2 = f'=QS.CONTEXT.CREATE("redelivery.{index}","2026-01-15","USD","SOFR")'
+                self.sheet.Range("AZ1").Calculate()
+                self.sheet.Range("G4").Dirty()
+                self.sheet.Range("G4").Calculate()
+                await_engine(self.app, self.book)
+                self.assertEqual(self.sheet.Range("G4").Value2, original)
+                self.assertEqual(self.status()["submitted"], submitted,
+                                 "unchanged prices must be redelivered without new pricing jobs")
+        finally:
+            self.sheet.Range("AZ1").ClearContents()
+            self.app.Calculation = previous_mode
+
 if __name__ == "__main__":
     unittest.main()

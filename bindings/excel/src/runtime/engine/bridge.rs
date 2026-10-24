@@ -1230,6 +1230,12 @@ pub fn worksheet(function: &str, args: &[*const XLOPER12]) -> Result<*mut XLOPER
             .flatten();
         if value.is_some() {
             c.delivered_generation = c.generation;
+        } else {
+            // A recalculation can temporarily return #N/A while unchanged
+            // definitions are revalidated. The previously delivered value no
+            // longer occupies this cell; arrange delivery even if its pricing
+            // fingerprint and generation stay the same.
+            c.delivered_generation = u64::MAX;
         }
         (
             value,
