@@ -1,6 +1,25 @@
 # Excel background pricing engine implementation plan
 
-Status: proposed implementation; no runtime changes made. Date: 2026-10-24.
+Status: implemented in the working tree; the 10,000-date workload is benchmarked in desktop Excel. Date: 2026-10-24.
+
+[Measurements and raw results](benchmarks/2026-10-24/README.md): 4.75 s cold for
+the paired-context batch with eight workers, 2.17 s unchanged recalculation,
+10,000 context/curve builds, and maximum price difference 2.33e-10 USD from
+the synchronous reference. The initial 2.35 s definition pass and 127 ms
+maximum native dispatch remain visible in the measurements.
+
+The native worker engine, context ownership, RTD companion, asynchronous ribbon
+queries and workbook migration are implemented. The 10,000-instrument example is
+in `examples/workbooks/origination_10000_batch.xlsx`, with a row-by-row comparison
+in `examples/workbooks/origination_10000_valuations.xlsx`; its generator and live
+benchmark are in `examples/scripts/`. The benchmark uses 10,000 different
+origination dates and independently constructed dated SOFR curves.
+
+Desktop checks cover scalar/spilled delivery, stable context identity, nested
+contributions and duplicate errors, stored results, lazy curve views, worksheet/
+pane reuse, cancellation and Manual mode. The broader workload and deployment
+matrix below remains an acceptance checklist; it is not a claim that every row
+has been measured.
 
 ## Intended behavior
 
@@ -188,7 +207,7 @@ flowchart LR
 
 ## Ordered implementation milestones
 
-1. **Prove delivery and capture the baseline.** Build a minimal background job,
+1. **Prove delivery and capture the baseline.** Build a background job,
    private RTD helper and native scalar/spill wrapper using the existing package.
    Test from an ordinary Windows account without an installer, service or manual
    COM registration. Verify editability, native caller ownership, load order,
@@ -265,7 +284,7 @@ machine before accepting the full implementation.
 
 Run portable Rust scheduler/registry/market tests, managed ABI contract tests and
 generated-workbook/catalog checks. Extend the Windows binding build and add live
-Excel tests alongside `examples/test_lifecycle_live.py`. The existing hosted
+Excel tests alongside `examples/tests/test_lifecycle_live.py`. The existing hosted
 Windows build does not prove interactive Excel behavior; run those checks on a
 machine with desktop Excel. Planning on macOS cannot validate this deployment.
 
