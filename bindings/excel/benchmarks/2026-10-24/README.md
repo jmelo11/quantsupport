@@ -1,5 +1,8 @@
 # 10,000 instruments at 10,000 origination dates
 
+For opening and refreshing the object/pricing panes in this workload, see the
+[pane responsiveness measurements](ribbon.md).
+
 The packaged build prices the complete book in **4.75 seconds**, compared with
 **12.35 seconds** for individual asynchronous worksheet formulas (62% less time).
 A confirmation run took 4.57 seconds. Unchanged recalculation takes 2.17 seconds

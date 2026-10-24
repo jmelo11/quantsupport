@@ -90,3 +90,9 @@ python bindings/excel/examples/scripts/benchmark_async.py --xll bindings/excel/d
 The benchmark generates the same example beside its report and runs an isolated Excel instance. Use `--layout rows` to measure individual PV formulas. It checks that every price is numeric and that unchanged recalculation submits no new jobs. Add `--reference PATH.json` to compare all prices against a previous run. Inputs are synthetic; each swap starts seven days after its valuation date.
 
 See the [measured results and raw reports](../benchmarks/2026-10-24/README.md): 4.75 seconds cold for the paired batch versus 12.35 seconds for individual asynchronous formulas on the measured machine.
+
+The [pane responsiveness report](../benchmarks/2026-10-24/ribbon.md) covers opening,
+refreshing and searching the same 10,000-context book. The optional
+`tests/test_ribbon_large_live.py` regression uses a probe companion built with
+`-p:QuantSupportLiveTests=true`; it verifies the full lists, selection retention
+and safe disposal during a pending load.

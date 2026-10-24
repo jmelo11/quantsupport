@@ -12,6 +12,11 @@ namespace QuantSupport.Ribbon
 {
     internal static class NativeBrowser
     {
+        private static string cachedWorkbook;
+        private static ulong cachedRevision;
+        private static Task<Snapshot> cachedSnapshot;
+        [DllImport("msvcrt.dll", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+        private static extern UIntPtr strlen(IntPtr text);
         [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
         private static extern IntPtr GetModuleHandle(string name);
         [DllImport("kernel32.dll", CharSet = CharSet.Ansi, ExactSpelling = true, SetLastError = true)]
@@ -94,10 +99,29 @@ namespace QuantSupport.Ribbon
             return (T)(object)Marshal.GetDelegateForFunctionPointer(address, typeof(T));
         }
 
-        // Never LoadLibrary: a second copy would have an empty, independent object registry.
-        internal static Snapshot Read(string workbook)
+        internal static Task<Snapshot> ReadAsync(string workbook)
         {
-            return Invoke<Snapshot>(module => Export<GetSnapshot>(module, "qs_browser_snapshot")(workbook, new UIntPtr((uint)workbook.Length)));
+            var revision = Revision();
+            if (cachedSnapshot != null && cachedWorkbook == workbook && cachedRevision == revision && !cachedSnapshot.IsFaulted && !cachedSnapshot.IsCanceled) return cachedSnapshot;
+            // Registry capture stays on its owner thread. Only detached UTF-8
+            // data and managed model construction run on the thread pool.
+            var bytes = Capture(module => Export<GetSnapshot>(module, "qs_browser_snapshot")(workbook, new UIntPtr((uint)workbook.Length)));
+            cachedWorkbook = workbook; cachedRevision = revision;
+            return cachedSnapshot = Task.Run(() => Decode<Snapshot>(bytes));
+        }
+
+        internal static void ClearSnapshot() { cachedWorkbook = null; cachedSnapshot = null; }
+
+        internal static Task OnExcel(Action action)
+        {
+            var done = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            try {
+                ExcelAsyncUtil.QueueAsMacro(() => {
+                    try { action(); done.TrySetResult(true); }
+                    catch (Exception error) { done.TrySetException(error); }
+                });
+            } catch (Exception error) { done.TrySetException(error); }
+            return done.Task;
         }
 
         internal static ulong Revision()
@@ -109,6 +133,7 @@ namespace QuantSupport.Ribbon
 
         internal static void Reset()
         {
+            ClearSnapshot();
             var result = Invoke<ResetResponse>(module => Export<ResetMemory>(module, "qs_browser_reset")());
             if (!string.IsNullOrEmpty(result.Error)) throw new InvalidOperationException(result.Error);
         }
@@ -131,6 +156,7 @@ namespace QuantSupport.Ribbon
         }
         private static IntPtr Module()
         {
+            // Never LoadLibrary: a second copy would have an independent registry.
             var path = Path.Combine(Path.GetDirectoryName(ExcelDnaUtil.XllPath), "quantsupport.xll");
             var module = GetModuleHandle(path);
             if (module == IntPtr.Zero)
@@ -142,22 +168,30 @@ namespace QuantSupport.Ribbon
 
         private static T Invoke<T>(Func<IntPtr, IntPtr> read)
         {
+            return Decode<T>(Capture(read));
+        }
+
+        private static T Decode<T>(byte[] bytes)
+        {
+            using (var stream = new MemoryStream(bytes)) {
+                var result = (T)new DataContractJsonSerializer(typeof(T)).ReadObject(stream);
+                if (result is Snapshot snapshot && !string.IsNullOrEmpty(snapshot.Error)) throw new InvalidOperationException(snapshot.Error);
+                return result;
+            }
+        }
+
+        private static byte[] Capture(Func<IntPtr, IntPtr> read)
+        {
             var module = Module();
             var release = Export<FreeSnapshot>(module, "qs_browser_free");
             var buffer = read(module);
             if (buffer == IntPtr.Zero) throw new InvalidOperationException("The native object browser returned no data.");
             try
             {
-                var length = 0;
-                while (Marshal.ReadByte(buffer, length) != 0) length++;
+                var length = checked((int)strlen(buffer).ToUInt64());
                 var bytes = new byte[length];
                 Marshal.Copy(buffer, bytes, 0, length);
-                using (var stream = new MemoryStream(bytes))
-                {
-                    var result = (T)new DataContractJsonSerializer(typeof(T)).ReadObject(stream);
-                    if (result is Snapshot snapshot && !string.IsNullOrEmpty(snapshot.Error)) throw new InvalidOperationException(snapshot.Error);
-                    return result;
-                }
+                return bytes;
             }
             finally { release(buffer); }
         }

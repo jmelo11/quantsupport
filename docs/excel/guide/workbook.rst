@@ -91,6 +91,12 @@ whole table. Numbers follow Excel's decimal separator, including custom settings
 Details show financial data; Copy handle and Go to cell provide explicit access
 to the underlying worksheet without a method trace in the normal display.
 
+Object, context and pricer selectors open searchable lists. Search by name,
+type or valuation date, then click a row or press Enter. Escape closes the list
+without changing the selection. These lists retain all objects in large books.
+Refreshing shows a loading message while browser data is decoded in the
+background; repeated refresh clicks share the pending load.
+
 When a native worksheet function fails, the panel reports its source sheet and
 cell with the library message. Correcting the input or clearing the formula
 removes the message. Pricing queries require an explicit Run request; ordinary
