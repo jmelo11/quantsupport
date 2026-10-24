@@ -96,6 +96,21 @@ impl Sessions {
 thread_local! {
     static SESSIONS: RefCell<Sessions> = RefCell::new(Sessions::default());
     static IN_CALL: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    static EVENT_ERROR: RefCell<String> = const { RefCell::new(String::new()) };
+}
+
+pub fn event_error() -> String {
+    EVENT_ERROR.with(|error| error.borrow().clone())
+}
+
+pub fn workbook_id(name: &str) -> Option<u64> {
+    SESSIONS.with(|s| {
+        s.borrow()
+            .books
+            .iter()
+            .find(|(_, b)| b.name.eq_ignore_ascii_case(name))
+            .map(|(id, _)| *id)
+    })
 }
 
 /// Looks up a workbook by name without changing worksheet ownership or caller state.
@@ -112,6 +127,22 @@ pub fn browser_snapshot(name: &str) -> super::browser::BrowserSnapshot {
             .find(|(_, book)| book.name.eq_ignore_ascii_case(name))
         {
             snapshot.objects = registry::workbook_browser_objects(*id);
+            #[cfg(windows)]
+            {
+                for object in &mut snapshot.objects {
+                    if object.kind == "PricingContext" {
+                        object
+                            .curves
+                            .extend(super::engine::bridge::root_curves(&object.handle));
+                        object.curves.sort();
+                        object.curves.dedup();
+                        object.current_inputs &= super::engine::bridge::root_valid(&object.handle);
+                    }
+                }
+                snapshot
+                    .objects
+                    .extend(super::engine::bridge::browser_objects(*id));
+            }
             snapshot.diagnostics = registry::workbook_diagnostics(*id);
             for diagnostic in &mut snapshot.diagnostics {
                 diagnostic.sheet = book
@@ -171,7 +202,7 @@ pub struct CallScope {
 }
 
 impl CallScope {
-    pub fn enter() -> Self {
+    pub fn enter(function: &str, worksheet_name: &str) -> Self {
         if IN_CALL.with(std::cell::Cell::get) {
             return Self { previous: None };
         }
@@ -185,6 +216,11 @@ impl CallScope {
                 registry.begin_cell(cell);
                 registry.set_cell_formula(cell, formula);
             });
+            if registry::with_registry_mut(|registry| {
+                registry.begin_invocation(function, worksheet_name)
+            }) {
+                super::engine::bridge::begin_source_pass(cell);
+            }
             return Self {
                 previous: Some(previous),
             };
@@ -208,6 +244,8 @@ impl CallScope {
             quantsupport::prelude::Tape::stop_recording_fwd();
             quantsupport::prelude::Tape::stop_recording();
             registry::with_registry_mut(|registry| registry.finish_cell(success));
+            #[cfg(windows)]
+            super::engine::bridge::schedule_commit();
             registry::select_workbook(previous);
             IN_CALL.with(|active| active.set(false));
         }
@@ -322,6 +360,7 @@ pub mod windows {
             });
             excel_free(&mut sheet);
             let name = name?;
+            let name = name.trim_matches('\'').replace("''", "'");
             let start = name.rfind('[')?;
             let end = name.rfind(']')?;
             let cell = CellId {
@@ -359,16 +398,20 @@ pub mod windows {
         };
         unsafe {
             object.GetIDsOfNames(&GUID::zeroed(), &PCWSTR(wide.as_ptr()), 1, 0, &mut id)?;
-            object.Invoke(
-                id,
-                &GUID::zeroed(),
-                0,
-                flags,
-                &params,
-                Some(&mut result),
-                None,
-                None,
-            )?;
+            object
+                .Invoke(
+                    id,
+                    &GUID::zeroed(),
+                    0,
+                    flags,
+                    &params,
+                    Some(&mut result),
+                    None,
+                    None,
+                )
+                .map_err(|error| {
+                    ::windows::core::Error::new(error.code(), format!("{name}: {error}"))
+                })?;
         }
         Ok(result)
     }
@@ -517,6 +560,7 @@ pub mod windows {
     }
 
     fn sheet_change(params: *const DISPPARAMS) -> ::windows::core::Result<()> {
+        super::super::engine::bridge::user_edit();
         if SESSIONS.with(|sessions| sessions.borrow().books.is_empty()) {
             return Ok(());
         }
@@ -528,8 +572,17 @@ pub mod windows {
             return Ok(());
         }
         let args = unsafe { std::slice::from_raw_parts(params.rgvarg, 2) };
-        let range = IDispatch::try_from(&args[0])?;
-        let sheet = IDispatch::try_from(&args[1])?;
+        // Resolve the worksheet from the changed Range itself. Excel event
+        // sources can supply the two dispatch arguments in either order.
+        let first = IDispatch::try_from(&args[0])?;
+        let (range, sheet) = match dispatch(&first, "Worksheet", &mut []) {
+            Ok(sheet) => (first, sheet),
+            Err(_) => {
+                let range = IDispatch::try_from(&args[1])?;
+                let sheet = dispatch(&range, "Worksheet", &mut [])?;
+                (range, sheet)
+            }
+        };
         let book = dispatch(&sheet, "Parent", &mut [])?;
         let book_name = text(&book, "Name")?;
         let sheet_name = text(&sheet, "Name")?;
@@ -691,8 +744,51 @@ pub mod windows {
         _: *mut u32,
     ) -> HRESULT {
         let _ = std::panic::catch_unwind(|| {
+            if matches!(id, 0xa34 | 0x61b) {
+                super::super::engine::bridge::schedule_commit();
+            }
+            if id == 0xc07 && !params.is_null() {
+                // Installed Excel type library: Application.SheetBeforeDelete(Sh).
+                let params = unsafe { &*params };
+                if params.cArgs == 1 && !params.rgvarg.is_null() {
+                    if let Ok(sheet) = IDispatch::try_from(unsafe { &*params.rgvarg }) {
+                        if let (Ok(name), Ok(book)) =
+                            (text(&sheet, "Name"), dispatch(&sheet, "Parent", &mut []))
+                        {
+                            if let Ok(book_name) = text(&book, "Name") {
+                                let removed =
+                                    SESSIONS.with(|s| {
+                                        let mut s = s.borrow_mut();
+                                        let mut removed = Vec::new();
+                                        for (id, book) in s.books.iter_mut().filter(|(_, b)| {
+                                            b.name.eq_ignore_ascii_case(&book_name)
+                                        }) {
+                                            book.sheets.retain(|sheet, label| {
+                                                if *label == name {
+                                                    removed.push((*id, *sheet));
+                                                    false
+                                                } else {
+                                                    true
+                                                }
+                                            });
+                                        }
+                                        removed
+                                    });
+                                for (book, sheet) in removed {
+                                    registry::release_sheet(book, sheet);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             if id == SHEET_CHANGE {
-                let _ = sheet_change(params);
+                EVENT_ERROR.with(|error| {
+                    *error.borrow_mut() = sheet_change(params)
+                        .err()
+                        .map(|e| e.to_string())
+                        .unwrap_or_default()
+                });
             }
             if id == 0x622 && !params.is_null() {
                 // WorkbookBeforeClose(Wb, Cancel)

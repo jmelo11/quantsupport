@@ -32,7 +32,7 @@ const RESET_OPERATION_ID: &str = "__registry_reset__";
 
 /// QuantSupport components and trades that can be referenced by an Excel cell.
 pub enum QsObject {
-    /// Independent market input attached to a context by a pricing formula.
+    /// Cell-owned market contribution attached to its stable root context.
     ContextInput(Box<super::context::ContextInput>),
     /// Discoverable contractual loan settings with named worksheet arguments.
     LoanSettings(Box<super::loans::LoanOptions>),
@@ -157,6 +157,7 @@ impl QsObject {
 
 struct RegistryEntry {
     revision: u64,
+    input_revision: u64,
     object: QsObject,
     definition_key: Option<String>,
     dependencies: HashMap<String, u64>,
@@ -257,6 +258,13 @@ pub struct Registry {
     #[cfg(test)]
     cell_mutations: HashMap<CellId, HashSet<(String, String)>>,
     references: HashMap<String, usize>,
+    defer_ownership: bool,
+    pending_cells: HashMap<CellId, (HashSet<String>, HashSet<String>)>,
+    invocation_counts: HashMap<CellId, HashMap<String, usize>>,
+    invocation_cells: HashSet<CellId>,
+    active_function: String,
+    active_invocation: usize,
+    unnamed_invocation: std::cell::Cell<usize>,
     #[cfg(test)]
     mutation_owners: HashMap<(String, String), CellId>,
 }
@@ -426,6 +434,95 @@ macro_rules! collection_accessor {
 }
 
 impl Registry {
+    #[cfg(windows)]
+    pub fn engine_cell(&self) -> Option<CellId> {
+        self.active_cell
+    }
+    #[cfg(windows)]
+    pub fn engine_epoch(&self) -> u64 {
+        self.namespace
+    }
+    pub fn invocation(&self) -> usize {
+        self.active_invocation
+    }
+    pub fn set_invocation(&mut self, function: &str, ordinal: usize) {
+        self.active_function = function.into();
+        self.active_invocation = ordinal;
+    }
+    pub fn begin_invocation(&mut self, function: &str, worksheet_name: &str) -> bool {
+        let Some(cell) = self.active_cell else {
+            return false;
+        };
+        let limit = self
+            .cell_formulas
+            .get(&cell)
+            .map(|formula| invocation_count(formula, worksheet_name).max(1))
+            .unwrap_or(usize::MAX);
+        if self
+            .invocation_counts
+            .get(&cell)
+            .and_then(|counts| counts.get(function))
+            .copied()
+            .unwrap_or(0)
+            >= limit
+        {
+            // Excel can execute a whole formula more than once before the
+            // dispatcher commits. Restart that source pass, preserving sibling
+            // invocations within each individual execution.
+            self.invocation_counts.remove(&cell);
+            self.invocation_cells.remove(&cell);
+            self.pending_cells.remove(&cell);
+        }
+        let first = self.invocation_cells.insert(cell);
+        let ordinal = self
+            .invocation_counts
+            .entry(cell)
+            .or_default()
+            .entry(function.into())
+            .or_default();
+        self.active_function = function.into();
+        self.active_invocation = *ordinal;
+        *ordinal += 1;
+        first
+    }
+    pub fn contribution_name(&self) -> Result<String, String> {
+        let cell = self
+            .active_cell
+            .ok_or("this contribution requires a worksheet caller")?;
+        let ordinal = if self.active_function.is_empty() {
+            let ordinal = self.unnamed_invocation.get();
+            self.unnamed_invocation.set(ordinal + 1);
+            ordinal
+        } else {
+            self.active_invocation
+        };
+        Ok(format!(
+            "input.{}.{}.{}.{}.{ordinal}",
+            self.active_function, cell.sheet, cell.row, cell.column
+        ))
+    }
+    #[cfg(windows)]
+    pub fn engine_writes(&self) -> Vec<String> {
+        self.writes
+            .borrow()
+            .iter()
+            .filter_map(|id| self.objects.get(id).map(|e| format_handle(id, e.revision)))
+            .collect()
+    }
+    pub fn context_revision(&self, handle: &str) -> Result<u64, RegistryError> {
+        Ok(self.entry(handle)?.input_revision)
+    }
+    pub fn context_inputs(&self, context: &str) -> Vec<String> {
+        self.objects
+            .iter()
+            .filter_map(|(id, e)| match &e.object {
+                QsObject::ContextInput(input) if input.context == context => {
+                    Some(format_handle(id, e.revision))
+                }
+                _ => None,
+            })
+            .collect()
+    }
     pub fn record_diagnostic(&mut self, message: Option<String>) {
         let Some(cell) = self.active_cell else {
             return;
@@ -457,6 +554,7 @@ impl Registry {
     fn in_workbook(namespace: u64) -> Self {
         Self {
             namespace,
+            defer_ownership: !cfg!(test),
             ..Self::default()
         }
     }
@@ -480,7 +578,7 @@ impl Registry {
             let Some(current) = self
                 .objects
                 .get(identity)
-                .filter(|current| current.revision == *revision)
+                .filter(|current| current.input_revision == *revision)
             else {
                 return Some(identity.clone());
             };
@@ -498,7 +596,15 @@ impl Registry {
     }
 
     pub fn begin_cell(&mut self, cell: CellId) {
+        #[cfg(all(windows, not(test)))]
+        {
+            self.defer_ownership =
+                super::engine::bridge::attached() || super::engine::bridge::on_worker();
+        }
         self.active_cell = Some(cell);
+        self.active_function.clear();
+        self.active_invocation = 0;
+        self.unnamed_invocation.set(0);
         self.reads.borrow_mut().clear();
         self.writes.borrow_mut().clear();
         #[cfg(test)]
@@ -560,7 +666,19 @@ impl Registry {
             }
         }
         let mut roots = std::mem::take(self.reads.get_mut());
-        let writes = std::mem::take(self.writes.get_mut());
+        let mut writes = std::mem::take(self.writes.get_mut());
+        if self.defer_ownership && success {
+            // Excel invokes nested UDFs separately with the same caller. Collect
+            // their ownership until the definition pass has settled.
+            let pending = self.pending_cells.entry(cell).or_default();
+            pending.0.extend(roots.iter().cloned());
+            pending.0.extend(writes.iter().cloned());
+            pending.1.extend(writes.iter().cloned());
+            roots.extend(self.cell_roots.get(&cell).into_iter().flatten().cloned());
+            writes.extend(self.cell_outputs.get(&cell).into_iter().flatten().cloned());
+        } else if !success {
+            self.pending_cells.remove(&cell);
+        }
         if success && !writes.is_empty() {
             if self.cell_outputs.get(&cell) != Some(&writes) {
                 browser_changed();
@@ -608,6 +726,7 @@ impl Registry {
                 // A revision change prevents old contexts/results from being reused.
                 self.revision_clock = self.revision_clock.saturating_add(1);
                 entry.revision = self.revision_clock;
+                entry.input_revision = self.revision_clock;
                 browser_changed();
             }
         }
@@ -624,6 +743,11 @@ impl Registry {
     }
 
     pub fn release_cell(&mut self, cell: CellId) {
+        #[cfg(windows)]
+        super::engine::bridge::release_cell(cell);
+        self.pending_cells.remove(&cell);
+        self.invocation_counts.remove(&cell);
+        self.invocation_cells.remove(&cell);
         if self.diagnostics.remove(&cell).is_some() {
             browser_changed();
         }
@@ -643,6 +767,31 @@ impl Registry {
                 self.release(&identity);
             }
         }
+    }
+
+    /// Replaces each source cell's entire contribution set once per settled pass.
+    pub fn commit_cells(&mut self) -> bool {
+        self.invocation_counts.clear();
+        self.invocation_cells.clear();
+        let mut changed = false;
+        for (cell, (roots, outputs)) in std::mem::take(&mut self.pending_cells) {
+            let previous = self.cell_roots.remove(&cell).unwrap_or_default();
+            for id in previous.difference(&roots) {
+                self.release(id);
+                changed = true;
+            }
+            if roots.is_empty() {
+                self.cell_formulas.remove(&cell);
+            } else {
+                self.cell_roots.insert(cell, roots);
+            }
+            if outputs.is_empty() {
+                self.cell_outputs.remove(&cell);
+            } else {
+                self.cell_outputs.insert(cell, outputs);
+            }
+        }
+        changed
     }
 }
 
@@ -682,10 +831,28 @@ impl Registry {
         object: QsObject,
         definition_key: impl Into<String>,
     ) -> Result<String, RegistryError> {
+        self.upsert_definition(name, object, definition_key.into(), false)
+    }
+
+    pub fn upsert_context_root(
+        &mut self,
+        name: &str,
+        object: QsObject,
+        definition_key: impl Into<String>,
+    ) -> Result<String, RegistryError> {
+        self.upsert_definition(name, object, definition_key.into(), true)
+    }
+
+    fn upsert_definition(
+        &mut self,
+        name: &str,
+        object: QsObject,
+        definition_key: String,
+        stable_identity: bool,
+    ) -> Result<String, RegistryError> {
         let name = validate_name(name)?;
         let identity = self.named_identity(object.kind(), name);
         self.record_write(&identity);
-        let definition_key = definition_key.into();
         if let Some(entry) = self.objects.get(&identity) {
             if entry.definition_key.as_deref() == Some(definition_key.as_str())
                 && self.dependencies_current(entry)
@@ -700,7 +867,15 @@ impl Registry {
         }
 
         self.revision_clock = next_revision(self.revision_clock, &identity)?;
-        let revision = self.revision_clock;
+        // Root identity is stable for its workbook lifetime. Its input revision
+        // still changes, independently of the worksheet handle.
+        let revision = if stable_identity {
+            self.objects
+                .get(&identity)
+                .map_or(self.revision_clock, |entry| entry.revision)
+        } else {
+            self.revision_clock
+        };
         let dependencies = self
             .reads
             .borrow()
@@ -709,13 +884,14 @@ impl Registry {
             .filter_map(|input| {
                 self.objects
                     .get(input)
-                    .map(|entry| (input.clone(), entry.revision))
+                    .map(|entry| (input.clone(), entry.input_revision))
             })
             .collect();
         self.objects.insert(
             identity.clone(),
             RegistryEntry {
                 revision,
+                input_revision: self.revision_clock,
                 object,
                 definition_key: Some(definition_key),
                 dependencies,
@@ -961,6 +1137,7 @@ impl Registry {
         reset_object(&mut entry.object)?;
         browser_changed();
         entry.revision = revision;
+        entry.input_revision = revision;
         entry.mutation_keys.clear();
         entry.undo.clear();
         entry
@@ -1016,7 +1193,12 @@ impl Registry {
                 object.dependencies = entry
                     .dependencies
                     .iter()
-                    .map(|(identity, revision)| format_handle(identity, *revision))
+                    .map(|(identity, revision)| {
+                        format_handle(
+                            identity,
+                            self.objects.get(identity).map_or(*revision, |e| e.revision),
+                        )
+                    })
                     .collect();
                 object.dependencies.sort();
                 object
@@ -1040,6 +1222,9 @@ impl Registry {
         #[cfg(test)]
         self.cell_mutations.clear();
         self.references.clear();
+        self.pending_cells.clear();
+        self.invocation_counts.clear();
+        self.invocation_cells.clear();
         #[cfg(test)]
         self.mutation_owners.clear();
     }
@@ -1148,6 +1333,7 @@ impl Registry {
         operation(&mut entry.object)?;
         browser_changed();
         entry.revision = revision;
+        entry.input_revision = revision;
         entry
             .mutation_keys
             .insert(operation_id.to_string(), value_key.to_string());
@@ -1199,6 +1385,29 @@ fn format_handle(identity: &str, revision: u64) -> String {
 
 // Excel's C API and Formula/FormulaLocal may decorate XLL function names
 // differently. Preserve quoted text: object names are case-sensitive inputs.
+fn invocation_count(formula: &str, function: &str) -> usize {
+    let mut code = String::new();
+    let mut chars = formula.chars().peekable();
+    let mut quote = None;
+    while let Some(ch) = chars.next() {
+        if let Some(delimiter) = quote {
+            if ch == delimiter {
+                if chars.peek() == Some(&delimiter) {
+                    chars.next();
+                } else {
+                    quote = None;
+                }
+            }
+        } else if ch == '"' || ch == '\'' {
+            quote = Some(ch);
+        } else if !ch.is_whitespace() {
+            code.push(ch.to_ascii_uppercase());
+        }
+    }
+    code.matches(&format!("{}(", function.to_ascii_uppercase()))
+        .count()
+}
+
 fn formulas_match(left: &str, right: &str) -> bool {
     fn canonical(formula: &str) -> String {
         let mut output = String::new();
@@ -1398,6 +1607,8 @@ pub fn live_object_count(all_workbooks: bool) -> usize {
 }
 
 pub fn close_workbook(workbook: u64) {
+    #[cfg(windows)]
+    super::engine::bridge::retire(workbook);
     browser_changed();
     REGISTRIES.with(|registries| {
         let mut registries = registries.borrow_mut();
@@ -1412,9 +1623,21 @@ pub fn close_workbook(workbook: u64) {
 }
 
 pub fn clear_workbooks() {
+    #[cfg(windows)]
+    super::engine::bridge::reset();
     browser_changed();
     REGISTRIES.with(|registries| registries.borrow_mut().clear());
     release_tapes();
+}
+
+#[cfg(windows)]
+pub fn engine_handle_live(handle: &str) -> bool {
+    REGISTRIES.with(|registries| {
+        registries
+            .borrow()
+            .values()
+            .any(|r| r.browser_object(handle).is_ok())
+    })
 }
 
 pub fn calculation_active() -> bool {
@@ -1424,6 +1647,144 @@ pub fn calculation_active() -> bool {
             .values()
             .any(|registry| registry.active_cell.is_some())
     })
+}
+
+pub fn commit_definition_pass() -> bool {
+    REGISTRIES.with(|registries| {
+        registries
+            .borrow_mut()
+            .values_mut()
+            .fold(false, |changed, r| r.commit_cells() || changed)
+    })
+}
+pub fn definition_pass_pending() -> bool {
+    REGISTRIES.with(|registries| {
+        registries
+            .borrow()
+            .values()
+            .any(|registry| !registry.pending_cells.is_empty())
+    })
+}
+pub fn release_sheet(workbook: u64, sheet: usize) {
+    REGISTRIES.with(|registries| {
+        if let Some(registry) = registries.borrow_mut().get_mut(&workbook) {
+            let cells: HashSet<_> = registry
+                .cell_roots
+                .keys()
+                .chain(registry.cell_formulas.keys())
+                .chain(registry.diagnostics.keys())
+                .chain(registry.pending_cells.keys())
+                .filter(|c| c.sheet == sheet)
+                .copied()
+                .collect();
+            for cell in cells {
+                registry.release_cell(cell);
+            }
+        }
+    });
+}
+
+#[cfg(test)]
+mod definition_pass_tests {
+    use super::super::context::{self, InputData};
+    use super::*;
+    use quantsupport::prelude::*;
+
+    #[test]
+    fn repeated_formula_executions_restart_slots_before_the_dispatcher_runs() {
+        let mut registry = Registry::default();
+        let cell = CellId {
+            sheet: 1,
+            row: 1,
+            column: 1,
+        };
+        let formula = "=LEN(QS.CONTEXT.ADD.QUOTE(A1,\"QS.CONTEXT.ADD.QUOTE(\",.04))+LEN(QS.CONTEXT.ADD.QUOTE(A1,\"second\",.05))";
+        for _ in 0..3 {
+            registry.begin_cell(cell);
+            registry.set_cell_formula(cell, Some(formula.into()));
+            assert!(registry.begin_invocation("qs_context_add_quote", "QS.CONTEXT.ADD.QUOTE"));
+            assert_eq!(registry.invocation(), 0);
+            registry.finish_cell(true);
+            registry.begin_cell(cell);
+            registry.set_cell_formula(cell, Some(formula.into()));
+            assert!(!registry.begin_invocation("qs_context_add_quote", "QS.CONTEXT.ADD.QUOTE"));
+            assert_eq!(registry.invocation(), 1);
+            registry.finish_cell(true);
+        }
+    }
+
+    #[test]
+    fn nested_calls_have_distinct_stable_slots_and_commit_removes_unseen_slots() {
+        let mut registry = Registry {
+            defer_ownership: true,
+            ..Registry::default()
+        };
+        let date = Date::new(2026, 1, 15);
+        let cell = CellId {
+            sheet: 1,
+            row: 1,
+            column: 1,
+        };
+        registry.begin_cell(CellId { row: 0, ..cell });
+        let root = context::create(
+            &mut registry,
+            "root",
+            date,
+            Currency::USD,
+            MarketIndex::SOFR,
+            Level::Mid,
+        )
+        .unwrap();
+        registry.finish_cell(true);
+        registry.commit_cells();
+        let add = |r: &mut Registry, id: &str, rate| {
+            r.begin_cell(cell);
+            r.begin_invocation("qs_context_add_quote", "QS.CONTEXT.ADD.QUOTE");
+            let name = r.contribution_name().unwrap();
+            let mut quotes = QuoteStore::new(date);
+            quotes.add_quote(Quote::new(
+                id.parse().unwrap(),
+                QuoteLevels::new(Some(rate), None, None),
+            ));
+            let handle = context::add(
+                r,
+                &name,
+                &root,
+                InputData::Quotes(quotes),
+                &rate.to_string(),
+            )
+            .unwrap();
+            r.finish_cell(true);
+            handle
+        };
+        let first = add(&mut registry, "FixedRateDeposit_USD_SOFR_6M", 0.04);
+        let second = add(&mut registry, "FixedRateDeposit_USD_SOFR_1Y", 0.05);
+        assert_ne!(first, second);
+        registry.commit_cells();
+        assert_eq!(
+            context::resolve(&registry, &root)
+                .unwrap()
+                .quote_store()
+                .quotes()
+                .len(),
+            2
+        );
+        let changed = add(&mut registry, "FixedRateDeposit_USD_SOFR_6M", 0.06);
+        registry.commit_cells();
+        assert_eq!(
+            first.rsplit_once(':').unwrap().0,
+            changed.rsplit_once(':').unwrap().0
+        );
+        assert!(registry.object(&second).is_err());
+        assert_eq!(
+            context::resolve(&registry, &root)
+                .unwrap()
+                .quote_store()
+                .quotes()
+                .len(),
+            1
+        );
+    }
 }
 
 fn release_tapes() {

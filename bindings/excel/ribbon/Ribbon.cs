@@ -10,8 +10,8 @@ namespace QuantSupport.Ribbon
 {
     public sealed class AddIn : IExcelAddIn
     {
-        public void AutoOpen() { }
-        public void AutoClose() { BrowserPanes.CloseAll(); MaterialIcons.Release(); }
+        public void AutoOpen() { EngineBridge.Start(); }
+        public void AutoClose() { EngineBridge.Stop(); BrowserPanes.CloseAll(); MaterialIcons.Release(); }
     }
 
     [ComVisible(true)]
@@ -38,6 +38,7 @@ namespace QuantSupport.Ribbon
         public void InspectSelection(IRibbonControl control) { Run(() => BrowserPanes.Inspect()); }
         public void PriceSelection(IRibbonControl control) { Run(() => BrowserPanes.PriceSelection()); }
         public void RefreshBrowser(IRibbonControl control) { Run(() => BrowserPanes.Show(null)); }
+        public void RefreshPricing(IRibbonControl control) { EngineBridge.Refresh(); }
         public void ResetMemory(IRibbonControl control)
         {
             ExcelAsyncUtil.QueueAsMacro(() => Run(() =>

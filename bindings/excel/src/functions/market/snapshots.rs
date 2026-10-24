@@ -47,14 +47,10 @@ pub fn qs_snapshot_from_context(
     name: &str,
     timestamp: &str,
     context: &str,
-    inputs: *const XLOPER12,
 ) -> Result<String, XllError> {
     let instant = historical::timestamp(timestamp).map_err(value_error)?;
-    let inputs = optional_string_values(inputs, "inputs")?;
-    with_registry_mut(|registry| {
-        historical::capture_inputs(registry, name, instant, context, &inputs)
-    })
-    .map_err(value_error)
+    with_registry_mut(|registry| historical::capture_committed(registry, name, instant, context))
+        .map_err(value_error)
 }
 
 #[xll_bindgen(
@@ -191,13 +187,9 @@ mod tests {
             )
         })
         .unwrap();
-        let snapshot = qs_snapshot_from_context(
-            "worksheet_snapshot",
-            "2026-01-15T16:00:00Z",
-            &context,
-            &XLOPER12::nil(),
-        )
-        .unwrap();
+        let snapshot =
+            qs_snapshot_from_context("worksheet_snapshot", "2026-01-15T16:00:00Z", &context)
+                .unwrap();
         let range = xll_rs::convert::build_multi(
             vec![XLOPER12::from_str(&snapshot), XLOPER12::nil()],
             2,

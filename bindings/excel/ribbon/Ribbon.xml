@@ -17,6 +17,7 @@
 
         </group>
         <group id="qsMaintenance" label="Calculation">
+          <button id="qsRefreshPricing" label="Refresh Pricing" image="calculate_16" onAction="RefreshPricing" screentip="Await background pricing and refresh worksheet results" supertip="Refreshes results asynchronously in Automatic or Manual mode. Keeps the current Excel calculation mode and RTD throttle interval." />
           <button id="qsResetMemory" label="Reset Memory &amp; Rebuild" image="restart_alt_16" onAction="ResetMemory" screentip="Clear all QuantSupport objects and rebuild every open workbook" supertip="Releases native objects and calculation memory in this Excel instance, then calculates all open workbooks from scratch. Keeps your calculation mode unchanged." />
         </group>
         <group id="qsHelp" label="Setup &amp; help">

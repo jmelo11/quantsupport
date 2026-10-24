@@ -31,9 +31,7 @@ pub fn qs_context_quote(
         _ => return Err(value_error("level must be Mid, Bid, or Ask")),
     };
     with_registry(|registry| {
-        registry
-            .pricing_context(context)
-            .map_err(|e| e.to_string())?
+        crate::runtime::context::resolve(registry, context)?
             .quote_store()
             .quote(identifier)
             .ok_or_else(|| format!("quote not found: {identifier}"))?
@@ -53,9 +51,7 @@ pub fn qs_context_fixing(context: &str, market_index: &str, date: &str) -> Resul
     let index = crate::functions::helpers::parse_index(market_index)?;
     let date = crate::functions::helpers::parse_date(date)?;
     with_registry(|registry| {
-        registry
-            .pricing_context(context)
-            .map_err(|e| e.to_string())?
+        crate::runtime::context::resolve(registry, context)?
             .fixing_store()
             .fixing(&index, date)
             .map_err(|e| e.to_string())
@@ -190,15 +186,22 @@ pub fn qs_context_curves(
 ) -> Result<*mut xll_rs::types::XLOPER12, XllError> {
     let transpose = crate::functions::helpers::optional_bool(transpose, "transpose")?;
     with_registry(|registry| {
-        let mut indices: Vec<_> = registry
-            .pricing_context(context)?
-            .constructed_elements()
-            .discount_curves()
-            .keys()
-            .map(ToString::to_string)
+        let market = crate::runtime::context::resolve(registry, context)?;
+        let mut indices: Vec<_> = market
+            .curve_configurations()
+            .iter()
+            .map(|c| c.market_index().to_string())
+            .chain(
+                market
+                    .constructed_elements()
+                    .discount_curves()
+                    .keys()
+                    .map(ToString::to_string),
+            )
             .collect();
         indices.sort();
-        Ok::<Vec<String>, crate::runtime::registry::RegistryError>(indices)
+        indices.dedup();
+        Ok::<Vec<String>, String>(indices)
     })
     .map(|values| crate::functions::helpers::string_column(values, transpose))
     .map_err(value_error)
@@ -215,15 +218,22 @@ pub fn qs_context_vol_surfaces(
 ) -> Result<*mut xll_rs::types::XLOPER12, XllError> {
     let transpose = crate::functions::helpers::optional_bool(transpose, "transpose")?;
     with_registry(|registry| {
-        let mut indices: Vec<_> = registry
-            .pricing_context(context)?
-            .constructed_elements()
-            .volatility_surfaces()
-            .keys()
-            .map(ToString::to_string)
+        let market = crate::runtime::context::resolve(registry, context)?;
+        let mut indices: Vec<_> = market
+            .volatility_surface_configurations()
+            .iter()
+            .map(|c| c.market_index().to_string())
+            .chain(
+                market
+                    .constructed_elements()
+                    .volatility_surfaces()
+                    .keys()
+                    .map(ToString::to_string),
+            )
             .collect();
         indices.sort();
-        Ok::<Vec<String>, crate::runtime::registry::RegistryError>(indices)
+        indices.dedup();
+        Ok::<Vec<String>, String>(indices)
     })
     .map(|values| crate::functions::helpers::string_column(values, transpose))
     .map_err(value_error)
@@ -240,15 +250,22 @@ pub fn qs_context_vol_cubes(
 ) -> Result<*mut xll_rs::types::XLOPER12, XllError> {
     let transpose = crate::functions::helpers::optional_bool(transpose, "transpose")?;
     with_registry(|registry| {
-        let mut indices: Vec<_> = registry
-            .pricing_context(context)?
-            .constructed_elements()
-            .volatility_cubes()
-            .keys()
-            .map(ToString::to_string)
+        let market = crate::runtime::context::resolve(registry, context)?;
+        let mut indices: Vec<_> = market
+            .volatility_cube_configurations()
+            .iter()
+            .map(|c| c.market_index().to_string())
+            .chain(
+                market
+                    .constructed_elements()
+                    .volatility_cubes()
+                    .keys()
+                    .map(ToString::to_string),
+            )
             .collect();
         indices.sort();
-        Ok::<Vec<String>, crate::runtime::registry::RegistryError>(indices)
+        indices.dedup();
+        Ok::<Vec<String>, String>(indices)
     })
     .map(|values| crate::functions::helpers::string_column(values, transpose))
     .map_err(value_error)
@@ -265,15 +282,22 @@ pub fn qs_context_simulations(
 ) -> Result<*mut xll_rs::types::XLOPER12, XllError> {
     let transpose = crate::functions::helpers::optional_bool(transpose, "transpose")?;
     with_registry(|registry| {
-        let mut indices: Vec<_> = registry
-            .pricing_context(context)?
-            .constructed_elements()
-            .simulations()
-            .keys()
-            .map(ToString::to_string)
+        let market = crate::runtime::context::resolve(registry, context)?;
+        let mut indices: Vec<_> = market
+            .simulation_configurations()
+            .iter()
+            .map(|c| c.market_index().to_string())
+            .chain(
+                market
+                    .constructed_elements()
+                    .simulations()
+                    .keys()
+                    .map(ToString::to_string),
+            )
             .collect();
         indices.sort();
-        Ok::<Vec<String>, crate::runtime::registry::RegistryError>(indices)
+        indices.dedup();
+        Ok::<Vec<String>, String>(indices)
     })
     .map(|values| crate::functions::helpers::string_column(values, transpose))
     .map_err(value_error)

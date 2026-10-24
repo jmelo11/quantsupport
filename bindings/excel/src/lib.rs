@@ -23,6 +23,7 @@ pub extern "system" fn xlAutoOpen() -> i32 {
     match runtime::registration::windows::register_functions() {
         Ok(()) => match runtime::lifecycle::windows::start() {
             Ok(()) => {
+                runtime::engine::bridge::start();
                 runtime::browser::windows::start();
                 1
             }
@@ -54,6 +55,7 @@ fn worksheet_exports() -> Vec<xll_rs::registry::XllExport> {
 #[cfg(windows)]
 #[no_mangle]
 pub extern "system" fn xlAutoClose() -> i32 {
+    runtime::engine::bridge::stop();
     runtime::browser::windows::stop();
     runtime::registration::windows::unregister_functions();
     runtime::lifecycle::windows::stop();

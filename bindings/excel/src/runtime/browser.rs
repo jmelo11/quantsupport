@@ -38,7 +38,7 @@ pub struct BrowserLocation {
     pub formula: String,
 }
 
-#[derive(Default, Serialize)]
+#[derive(Clone, Default, Serialize)]
 pub struct BrowserObject {
     pub name: String,
     pub handle: String,
@@ -55,7 +55,7 @@ pub struct BrowserObject {
     pub curves: Vec<String>,
 }
 
-#[derive(Serialize)]
+#[derive(Clone, Serialize)]
 pub struct BrowserDetail {
     pub label: String,
     pub value: String,
@@ -236,7 +236,7 @@ pub mod windows {
 
     #[no_mangle]
     pub extern "system" fn qs_browser_api_version() -> u32 {
-        3
+        4
     }
 
     /// Returns zero off the main thread; otherwise an inexpensive change token.
@@ -381,7 +381,7 @@ pub mod windows {
         #[test]
         fn abi_rejects_background_calls_and_invalid_utf16_and_releases_its_buffers() {
             start();
-            assert_eq!(qs_browser_api_version(), 3);
+            assert_eq!(qs_browser_api_version(), 4);
             let revision = qs_browser_revision();
             assert!(revision > 0);
             let name: Vec<u16> = "Café.xlsx".encode_utf16().collect();

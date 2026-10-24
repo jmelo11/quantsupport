@@ -341,7 +341,6 @@ mod tests {
                 "QS.CONTEXT.ADD.QUOTE",
                 vec!["context", "identifier", "value", "level"],
             ),
-            ("QS.CONTEXT.PREPARE", vec!["name", "context", "inputs"]),
             (
                 "QS.SNAPSHOT.FROM.RANGE",
                 vec!["name", "contexts", "timestamps"],
@@ -352,7 +351,6 @@ mod tests {
                     "context",
                     "instrument",
                     "request_name",
-                    "inputs",
                     "pricer",
                     "policy",
                     "transpose",
@@ -361,7 +359,7 @@ mod tests {
             ),
             (
                 "QS.EVALUATE.RESULTS",
-                vec!["context", "trade", "requests", "inputs", "pricer", "policy"],
+                vec!["context", "trade", "requests", "pricer", "policy"],
             ),
             (
                 "QS.CONTEXT.ADD.QUOTES",

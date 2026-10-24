@@ -54,6 +54,13 @@ struct CachedMarket {
 pub struct MarketCache(Rc<RefCell<CachedMarket>>);
 
 impl MarketCache {
+    /// Number of discount curves currently materialized in this owner-local cache.
+    /// This read does not request or construct any market dependencies.
+    #[must_use]
+    pub fn discount_curve_count(&self) -> usize {
+        self.0.borrow().elements.discount_curves().len()
+    }
+
     /// Releases all constructed objects and calibration snapshots in this cache.
     pub fn clear(&self) {
         *self.0.borrow_mut() = CachedMarket::default();

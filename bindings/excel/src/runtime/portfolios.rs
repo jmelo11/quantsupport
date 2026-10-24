@@ -45,9 +45,7 @@ pub fn evaluate(
     for pricer in pricers {
         registry.pricer(pricer).map_err(|error| error.to_string())?;
     }
-    let context = registry
-        .pricing_context(context)
-        .map_err(|error| error.to_string())?;
+    let context = super::context::resolve(registry, context)?;
     portfolio
         .evaluate(requests, |index, trade, requests| {
             let pricer = registry
@@ -57,7 +55,7 @@ pub fn evaluate(
                 .object(trade)
                 .map_err(|error| QSError::InvalidValueErr(error.to_string()))?;
             let result = pricer
-                .evaluate(object, requests, context)
+                .evaluate(object, requests, &context)
                 .map_err(QSError::InvalidValueErr)?;
             Ok((value_currency, result))
         })
