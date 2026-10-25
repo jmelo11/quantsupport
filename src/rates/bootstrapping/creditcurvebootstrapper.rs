@@ -68,6 +68,7 @@ impl CreditCurveBootstrapper {
         Ok(curves)
     }
 
+    /// Calibrates one credit curve against its quotes using the resolved discount curve.
     fn bootstrap_single(
         spec: &CreditCurveConfiguration,
         selector: &impl QuoteSelector,

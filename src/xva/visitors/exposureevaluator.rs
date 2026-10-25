@@ -304,6 +304,7 @@ impl VariationMarginSimulation {
         }
     }
 
+    /// Applies the configured variation-margin terms to one exposure path.
     fn adjust_path(
         &self,
         npvs: &[DualFwd],

@@ -118,6 +118,7 @@ impl CalibrationBasket {
         self.strike
     }
 
+    /// Checks whether quote details match the requested calibration expiries and tenors.
     fn includes(&self, details: &QuoteDetails, source: &CalibrationSource) -> bool {
         let expiry_matches = self
             .expiries
@@ -134,6 +135,7 @@ impl CalibrationBasket {
         expiry_matches && tenor_matches
     }
 
+    /// Checks that the source market contains every explicitly requested calibration axis.
     fn validate_available_axes(
         &self,
         available: &[QuoteDetails],
@@ -167,6 +169,7 @@ impl CalibrationBasket {
         Ok(())
     }
 
+    /// Checks that the selected calibration basket retains every requested expiry and tenor.
     fn validate_selected_axes(
         &self,
         selected: &[QuoteDetails],

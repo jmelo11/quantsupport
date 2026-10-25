@@ -196,6 +196,7 @@ impl TryFrom<String> for Calendar {
     }
 }
 
+/// Parses a joint-calendar expression into its constituent calendars and joining rule.
 fn parse_joint_calendar(name: &str) -> Result<Calendar> {
     let invalid = || QSError::InvalidValueErr(format!("Invalid joint calendar: {name}"));
     let body = name

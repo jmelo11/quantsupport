@@ -72,6 +72,7 @@ impl Drop for ScriptTapeMark {
 }
 
 impl EventResponseMap {
+    /// Rebases response ranges when the model supplies compact per-event responses.
     fn for_layout(self, compact: bool) -> Self {
         if !compact {
             return self;
@@ -633,6 +634,7 @@ impl ScriptEngine {
         })
     }
 
+    /// Checks whether the requested output and path count support control-variate estimation.
     fn uses_controls(&self, result_variable: Option<&str>, n_paths: usize) -> bool {
         result_variable.is_some()
             && n_paths >= 16
@@ -642,6 +644,7 @@ impl ScriptEngine {
                 .any(|mapping| mapping.discounts.len + mapping.forwards.len > 0)
     }
 
+    /// Checks the declared path count and installs the script event dates and market requests.
     fn configure_model(&self, model: &mut dyn MarketModel<DualFwd>, n_paths: usize) -> Result<()> {
         if model.n_paths() != n_paths {
             return Err(QSError::InvalidValueErr(format!(
@@ -655,6 +658,7 @@ impl ScriptEngine {
         Ok(())
     }
 
+    /// Fits control-variate weights from the parallel simulation paths.
     fn fit_parallel_control_betas<S: ScriptModelSetup>(
         &self,
         setup: &S,
@@ -699,6 +703,7 @@ impl ScriptEngine {
         result
     }
 
+    /// Evaluates a range of paths and accumulates averaged variables and expected payments.
     #[allow(clippy::too_many_arguments)]
     fn evaluate_path_range(
         &self,
@@ -781,6 +786,7 @@ impl ScriptEngine {
         Ok((averages, cashflows))
     }
 
+    /// Executes the script with the evaluator suited to its conditional nesting depth.
     fn evaluate_scenario(&self, scenario: &Scenario) -> Result<HashMap<String, Value>> {
         if self.max_nested_ifs == 0 {
             SingleScenarioEvaluator::new()
@@ -830,6 +836,7 @@ impl ScriptEngine {
         }
     }
 
+    /// Computes the model expectations of discount and forward control variables.
     fn control_expectations(&self, model: &dyn MarketModel<DualFwd>) -> Result<[DualFwd; 2]> {
         let mut bonds = DualFwd::zero();
         let mut forwards = DualFwd::zero();
@@ -851,6 +858,7 @@ impl ScriptEngine {
         Ok([bonds, forwards])
     }
 
+    /// Extracts discount and forward control variables from one simulated path.
     fn path_controls(
         &self,
         path: &PathScenario<DualFwd>,
@@ -968,6 +976,7 @@ impl ScriptEngine {
         }
     }
 
+    /// Resolves event numeraires, using one where a numeraire is not required.
     fn event_numeraires(&self, model: &dyn MarketModel<DualFwd>) -> Result<Vec<DualFwd>> {
         self.events
             .event_dates()
@@ -990,6 +999,7 @@ impl ScriptEngine {
             .collect()
     }
 
+    /// Maps a dated model path to the script event response layout.
     fn scenario_from_path(
         &self,
         path: &PathScenario<DualFwd>,
@@ -1041,6 +1051,7 @@ impl ScriptEngine {
             .collect()
     }
 
+    /// Maps flat model responses into the market data required by each script event.
     fn scenario_from_responses(
         &self,
         responses: &[SimulationResponse<DualFwd>],
@@ -1077,6 +1088,7 @@ impl ScriptEngine {
     }
 }
 
+/// Flattens event requests while recording the response ranges needed to reconstruct events.
 fn flatten_requests(
     requests: &[SimulationDataRequest],
     event_dates: &[Date],
@@ -1178,6 +1190,7 @@ fn flatten_requests(
     (flattened, request_dates, maps)
 }
 
+/// Extracts a required response range and reports any missing market response.
 fn collect_responses(
     responses: &[SimulationResponse<DualFwd>],
     range: ResponseRange,

@@ -31,6 +31,7 @@ impl<'a> BootstrapStepEvaluation<'a> {
         Self { step }
     }
 
+    /// Discounts signed calibration-leg cashflows, projecting floating coupons from the selected forward curve.
     #[allow(clippy::unused_self)]
     fn leg_pv(
         &self,
@@ -99,6 +100,7 @@ impl<'a> BootstrapStepEvaluation<'a> {
         Ok(pv)
     }
 
+    /// Combines fixed and floating leg PVs using their resolved discount and forward curves.
     fn fixed_float_pv(&self, fixed_leg: &Leg<f64>, floating_leg: &Leg<f64>) -> Result<f64> {
         let pv_fixed = {
             let disc = self.step.discount_curve_for_leg(fixed_leg)?;
@@ -143,6 +145,7 @@ impl<'a> BootstrapStepEvaluation<'a> {
         Ok((pv / side + disbursement_pv) * units / principal)
     }
 
+    /// Finds the earliest disbursement date that defines the calibration bond settlement.
     fn settlement_date(leg: &Leg<f64>) -> Result<Date> {
         leg.cashflows()
             .iter()
@@ -156,6 +159,7 @@ impl<'a> BootstrapStepEvaluation<'a> {
             })
     }
 
+    /// Computes a calibration bond price under the fixed leg yield convention.
     fn yield_price(
         &self,
         leg: &Leg<f64>,

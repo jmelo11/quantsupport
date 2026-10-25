@@ -143,12 +143,14 @@ impl<'a> MarketView<'a> {
         Self::new(context, Scenario::default()).with_cache(context.request_cache().clone())
     }
 
+    /// Checks whether the active scenario affects any of the supplied quote identifiers.
     fn quote_changed(&self, identifiers: &[String]) -> bool {
         identifiers
             .iter()
             .any(|identifier| self.scenario.matches(identifier))
     }
 
+    /// Resolves curve dependencies and rebuilds curves affected by the active scenario.
     fn ensure_curve(
         &self,
         index: &MarketIndex,
@@ -238,6 +240,7 @@ impl<'a> MarketView<'a> {
         Ok(affected)
     }
 
+    /// Copies an available cached or supplied base curve into the scenario cache.
     fn copy_base_curve(&self, index: &MarketIndex) -> Result<bool> {
         let cached = self.base.request_cache().0.borrow();
         if let Some(element) = cached
@@ -263,6 +266,7 @@ impl<'a> MarketView<'a> {
         Ok(false)
     }
 
+    /// Loads or constructs the requested credit curve in the scenario cache.
     fn ensure_credit(&self, index: &MarketIndex) -> Result<()> {
         if self.cache.0.borrow().elements.credit_curve(index).is_some() {
             return Ok(());
@@ -318,6 +322,7 @@ impl<'a> MarketView<'a> {
         Ok(())
     }
 
+    /// Ensures a volatility surface is available and reports whether the scenario affects it.
     fn ensure_surface(&self, index: &MarketIndex) -> Result<bool> {
         if let Some(affected) = self.cache.0.borrow().affected_surfaces.get(index) {
             return Ok(*affected);
@@ -359,6 +364,7 @@ impl<'a> MarketView<'a> {
         Ok(affected)
     }
 
+    /// Ensures a volatility cube is available and reports whether the scenario affects it.
     fn ensure_cube(&self, index: &MarketIndex) -> Result<bool> {
         if let Some(affected) = self.cache.0.borrow().affected_cubes.get(index) {
             return Ok(*affected);
@@ -400,6 +406,7 @@ impl<'a> MarketView<'a> {
         Ok(affected)
     }
 
+    /// Resolves the surface or cube required by a model calibration configuration.
     fn ensure_calibration(&self, configuration: &ModelCalibrationConfiguration) -> Result<bool> {
         match configuration.source() {
             CalibrationSource::Surface { market_index } => self.ensure_surface(market_index),
@@ -407,6 +414,7 @@ impl<'a> MarketView<'a> {
         }
     }
 
+    /// Reuses or rebuilds a simulation according to its scenario-affected market dependencies.
     fn ensure_simulation(&self, index: &MarketIndex) -> Result<()> {
         if self
             .cache
@@ -497,6 +505,7 @@ impl<'a> MarketView<'a> {
         Ok(())
     }
 
+    /// Loads a supplied dividend curve, allowing its absence when the request is optional.
     fn ensure_dividend(&self, index: &MarketIndex, optional: bool) -> Result<()> {
         if self
             .cache

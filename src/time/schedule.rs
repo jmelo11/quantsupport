@@ -8,6 +8,7 @@ use super::enums::{BusinessDayConvention, DateGenerationRule, Frequency, TimeUni
 use super::imm::IMM;
 use super::period::Period;
 
+/// Finds the next twentieth on or after the date, respecting any IMM-month restriction.
 fn next_twentieth(date: Date, rule: DateGenerationRule) -> Date {
     let mut result = Date::new(date.year(), date.month(), 20);
     if result < date {
@@ -32,6 +33,7 @@ fn next_twentieth(date: Date, rule: DateGenerationRule) -> Date {
     result
 }
 
+/// Finds the previous twentieth on or before the date, respecting any IMM-month restriction.
 fn previous_twentieth(date: Date, rule: DateGenerationRule) -> Date {
     let mut result = Date::new(date.year(), date.month(), 20);
     if result > date {

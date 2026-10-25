@@ -21,9 +21,11 @@ pub struct VolatilitySurfaceConfiguration {
     extrapolation_policy: ExtrapolationPolicy,
 }
 
+/// Uses Black volatility when configuration omits its volatility convention.
 const fn default_volatility_type() -> VolatilityType {
     VolatilityType::Black
 }
+/// Uses strike coordinates when configuration omits its smile convention.
 const fn default_smile_type() -> SmileType {
     SmileType::Strike
 }

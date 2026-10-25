@@ -29,6 +29,7 @@ impl IfConditionTransform {
         Self
     }
 
+    /// Canonicalizes comparisons as differences against zero, recursing through boolean conditions.
     fn transform_cond(&self, node: &mut Node) {
         match node {
             Node::Superior(data) => {

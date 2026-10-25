@@ -71,6 +71,7 @@ impl VolatilityCubeBuilder {
         Ok(cubes)
     }
 
+    /// Builds one volatility cube from its configured expiry, tenor and smile quotes.
     #[allow(clippy::unused_self)]
     fn build_one(
         &self,

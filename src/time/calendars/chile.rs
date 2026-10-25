@@ -34,10 +34,12 @@ impl Chile {
         }
     }
 
+    /// Checks whether the weekday is Saturday or Sunday.
     fn is_weekend(day: Weekday) -> bool {
         day == Weekday::Sat || day == Weekday::Sun
     }
 
+    /// Checks the date against this calendar's New Year's Day observance rule.
     fn is_new_years_day(day: u32, month: u32, year: i32) -> bool {
         let w = NaiveDate::from_ymd_opt(year, month, day)
             .unwrap_or_else(|| panic!("valid date for New Year's Day rules"))
@@ -45,30 +47,36 @@ impl Chile {
         (day == 1 && month == 1) || (day == 2 && month == 1 && w == Weekday::Mon && year >= 2016)
     }
 
+    /// Checks the date against this calendar's Good Friday observance rule.
     fn is_good_friday(day: u32, month: u32, year: i32) -> bool {
         let easter_friday = easter_monday(year) - 3;
         let dd = Date::new(year, month, day).day_of_year();
         dd == easter_friday
     }
 
+    /// Checks the date against this calendar's Easter Saturday observance rule.
     fn is_easter_saturday(day: u32, month: u32, year: i32) -> bool {
         let easter_saturday = easter_monday(year) - 2;
         let dd = Date::new(year, month, day).day_of_year();
         dd == easter_saturday
     }
 
+    /// Checks the date against this calendar's Labour Day observance rule.
     const fn is_labour_day(day: u32, month: u32) -> bool {
         day == 1 && month == 5
     }
 
+    /// Checks the date against this calendar's Navy Day observance rule.
     const fn is_navy_day(day: u32, month: u32) -> bool {
         day == 21 && month == 5
     }
 
+    /// Checks the date against this calendar's Aboriginal Peoples Day observance rule.
     const fn is_aboriginal_peoples_day(day: u32, month: u32, year: i32) -> bool {
         day == 21 && month == 6 && year >= 2021
     }
 
+    /// Checks the date against this calendar's Saint Peter and Saint Paul Day observance rule.
     fn is_saint_peter_and_saint_paul_day(day: u32, month: u32) -> bool {
         let w = NaiveDate::from_ymd_opt(2001, month, day)
             .unwrap_or_else(|| panic!("valid date for Saint Peter and Saint Paul day rules"))
@@ -77,14 +85,17 @@ impl Chile {
             || day == 2 && month == 7 && w == Weekday::Mon
     }
 
+    /// Checks the date against this calendar's Our Lady of Mount Carmel Day observance rule.
     const fn is_our_lady_of_mount_carmel_day(day: u32, month: u32) -> bool {
         day == 16 && month == 7
     }
 
+    /// Checks the date against this calendar's Assumption Day observance rule.
     const fn is_assumption_day(day: u32, month: u32) -> bool {
         day == 15 && month == 8
     }
 
+    /// Checks the date against this calendar's Independence Day observance rule.
     fn is_independence_day(day: u32, month: u32, year: i32) -> bool {
         let w = NaiveDate::from_ymd_opt(1810, month, day)
             .unwrap_or_else(|| panic!("valid date for Independence Day rules"))
@@ -95,6 +106,7 @@ impl Chile {
             || (day == 18 && month == 9)
     }
 
+    /// Checks the date against this calendar's Army Day observance rule.
     fn is_army_day(day: u32, month: u32, year: i32) -> bool {
         let w = NaiveDate::from_ymd_opt(1810, month, day)
             .unwrap_or_else(|| panic!("valid date for Army Day rules"))
@@ -102,6 +114,7 @@ impl Chile {
         (day == 19 && month == 9) || (day == 20 && month == 9 && w == Weekday::Fri && year >= 2007)
     }
 
+    /// Checks the date against this calendar's Discovery of Two Worlds observance rule.
     fn is_discovery_of_two_worlds(day: u32, month: u32) -> bool {
         let w = NaiveDate::from_ymd_opt(1492, month, day)
             .unwrap_or_else(|| panic!("valid date for Discovery of Two Worlds rules"))
@@ -109,6 +122,7 @@ impl Chile {
         !(month != 10 || w != Weekday::Mon || !(9..=12).contains(&day) && day != 15)
     }
 
+    /// Checks the date against this calendar's Reformation Day observance rule.
     fn is_reformation_day(day: u32, month: u32, year: i32) -> bool {
         let w = NaiveDate::from_ymd_opt(year, month, day)
             .unwrap_or_else(|| panic!("valid date for Reformation Day rules"))
@@ -119,18 +133,22 @@ impl Chile {
             && year >= 2008
     }
 
+    /// Checks the date against this calendar's All Saints Day observance rule.
     const fn is_all_saints_day(day: u32, month: u32) -> bool {
         day == 1 && month == 11
     }
 
+    /// Checks the date against this calendar's Immaculate Conception observance rule.
     const fn is_immaculate_conception(day: u32, month: u32) -> bool {
         day == 8 && month == 12
     }
 
+    /// Checks the date against this calendar's Christmas Day observance rule.
     const fn is_christmas_day(day: u32, month: u32) -> bool {
         day == 25 && month == 12
     }
 
+    /// Checks the date against this calendar's the year-end bank holiday observance rule.
     const fn is_bank_holiday(day: u32, month: u32) -> bool {
         day == 31 && month == 12
     }

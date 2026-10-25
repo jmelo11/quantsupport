@@ -24,18 +24,22 @@ use crate::{
     time::{daycounter::DayCounter, enums::Frequency},
 };
 
+/// Uses Actual/360 when configuration omits the day-count convention.
 const fn default_day_counter() -> DayCounter {
     DayCounter::Actual360
 }
 
+/// Uses quarterly CDS premiums when configuration omits the payment frequency.
 const fn default_premium_frequency() -> Frequency {
     Frequency::Quarterly
 }
 
+/// Uses log-linear interpolation when configuration omits the curve interpolator.
 const fn default_interpolator() -> Interpolator {
     Interpolator::LogLinear
 }
 
+/// Enables curve extrapolation when configuration omits that setting.
 const fn default_enable_extrapolation() -> bool {
     true
 }

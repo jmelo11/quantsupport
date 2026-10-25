@@ -229,6 +229,7 @@ impl<'a> MultiCurveBootstrapper<'a> {
         Ok((DiscountCurveElement::new(index.clone(), shared), calibrated))
     }
 
+    /// Builds an AD term structure from calibrated discount factors and their quote derivatives.
     fn calibrated_term_structure(
         spec: &CurveConfiguration,
         calibrated: &BootstrappedCurve,
@@ -264,6 +265,7 @@ impl<'a> MultiCurveBootstrapper<'a> {
         Ok(curve)
     }
 
+    /// Builds a term structure from explicit zero-rate or base-plus-spread construction settings.
     fn explicit_term_structure(
         spec: &CurveConfiguration,
         construction: &CurveConstruction,
@@ -649,6 +651,7 @@ impl<'a> MultiCurveBootstrapper<'a> {
     }
 }
 
+/// Evaluates a calibration residual after bumping one parent-curve pillar.
 fn bumped_residual(
     problem: &BootstrapObjectiveFunc,
     parent_idx: &MarketIndex,
@@ -708,6 +711,7 @@ struct BootstrapObjectiveFunc<'a> {
 }
 
 impl BootstrapObjectiveFunc<'_> {
+    /// Builds a trial discount curve from the solver discount factors, anchored at one today.
     fn create_trial_curve(&self, x: &[f64]) -> BootstrappedCurve {
         let mut dfs = Vec::with_capacity(self.times.len());
         dfs.push(1.0_f64); // DF(0) = 1

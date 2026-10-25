@@ -138,6 +138,7 @@ where
         })
     }
 
+    /// Returns the largest absolute vector component for the solver convergence check.
     fn norm_inf(v: &[f64]) -> f64 {
         v.iter().map(|x| x.abs()).fold(0.0, f64::max)
     }

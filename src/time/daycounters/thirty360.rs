@@ -71,6 +71,7 @@ impl DayCount for Thirty360 {
 /// ```
 pub struct Thirty360US;
 
+/// Checks whether the supplied year, month and day identify the final day of February.
 const fn is_last_of_february(d: i64, m: i64, y: i32) -> bool {
     if Date::is_leap_year(y) {
         m == 2 && d == 28 + 1

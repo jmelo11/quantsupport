@@ -46,10 +46,12 @@ impl UnitedStates {
         }
     }
 
+    /// Checks whether the weekday is Saturday or Sunday.
     fn is_weekend(day: Weekday) -> bool {
         day == Weekday::Sat || day == Weekday::Sun
     }
 
+    /// Checks the date against this calendar's Washington's Birthday observance rule.
     fn is_washington_birthday(day: u32, month: u32, year: i32, weekday: Weekday) -> bool {
         match year {
             y if y >= 1971 => (15..=21).contains(&day) && weekday == Weekday::Mon && month == 2,
@@ -62,6 +64,7 @@ impl UnitedStates {
         }
     }
 
+    /// Checks the date against this calendar's Memorial Day observance rule.
     fn is_memorial_day(day: u32, month: u32, year: i32, weekday: Weekday) -> bool {
         match year {
             y if y >= 1971 => day >= 25 && weekday == Weekday::Mon && month == 5,
@@ -74,15 +77,18 @@ impl UnitedStates {
         }
     }
 
+    /// Checks the date against this calendar's Independence Day observance rule.
     fn is_independence_day(day: u32, month: u32, weekday: Weekday) -> bool {
         (day == 4 || (day == 5 && weekday == Weekday::Mon) || (day == 3 && weekday == Weekday::Fri))
             && month == 7
     }
 
+    /// Checks the date against this calendar's Thanksgiving observance rule.
     fn is_thanksgiving(day: u32, month: u32, weekday: Weekday) -> bool {
         (22..=28).contains(&day) && weekday == Weekday::Thu && month == 11
     }
 
+    /// Checks the date against this calendar's Christmas observance rule.
     fn is_christmas(day: u32, month: u32, weekday: Weekday) -> bool {
         (day == 25
             || (day == 26 && weekday == Weekday::Mon)
