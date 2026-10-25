@@ -348,42 +348,6 @@ enum Grouping {
     Net,
 }
 
-/// Exact, hashable representation of an option payoff, including floating-point bits.
-#[derive(Clone, PartialEq, Eq, Hash)]
-enum PayoffIdentity {
-    Max(Box<Self>, Box<Self>),
-    Min(Box<Self>, Box<Self>),
-    Times(Box<Self>, Box<Self>),
-    Plus(Box<Self>, Box<Self>),
-    Minus(Box<Self>, Box<Self>),
-    Const(u64),
-    Index,
-}
-
-impl From<&PayoffOps> for PayoffIdentity {
-    fn from(payoff: &PayoffOps) -> Self {
-        match payoff {
-            PayoffOps::Max(a, b) => {
-                Self::Max(Box::new(Self::from(&**a)), Box::new(Self::from(&**b)))
-            }
-            PayoffOps::Min(a, b) => {
-                Self::Min(Box::new(Self::from(&**a)), Box::new(Self::from(&**b)))
-            }
-            PayoffOps::Times(a, b) => {
-                Self::Times(Box::new(Self::from(&**a)), Box::new(Self::from(&**b)))
-            }
-            PayoffOps::Plus(a, b) => {
-                Self::Plus(Box::new(Self::from(&**a)), Box::new(Self::from(&**b)))
-            }
-            PayoffOps::Minus(a, b) => {
-                Self::Minus(Box::new(Self::from(&**a)), Box::new(Self::from(&**b)))
-            }
-            PayoffOps::Const(value) => Self::Const(value.to_bits()),
-            PayoffOps::Index => Self::Index,
-        }
-    }
-}
-
 /// Contract terms that must agree before coupons can share an equivalent quote.
 #[derive(Clone, PartialEq, Eq, Hash)]
 struct CouponIdentity {
@@ -394,7 +358,7 @@ struct CouponIdentity {
     day_counter: DayCounter,
     definition: Option<RateDefinition>,
     overnight: Option<OvernightCouponConventions>,
-    payoff: Option<PayoffIdentity>,
+    payoff: Option<PayoffOps>,
     rate: Option<u64>,
     spread: Option<u64>,
 }
@@ -466,7 +430,7 @@ impl CashflowCompressor {
                 day_counter: terms.day_counter,
                 definition: terms.rate_definition,
                 overnight: terms.overnight_conventions.clone(),
-                payoff: terms.payoff.as_ref().map(PayoffIdentity::from),
+                payoff: terms.payoff.clone(),
                 rate: if equivalent_rate {
                     None
                 } else {
@@ -733,7 +697,7 @@ mod tests {
         changed.overnight_conventions =
             Some(OvernightCouponConventions::new().with_lookback_days(2));
         add(&mut flows, changed, Some(0.03))?;
-        for cap in [0.04, 0.06] {
+        for cap in [0.04, 0.06, 0.04] {
             let mut changed = base.clone();
             changed.payoff = Some(PayoffOps::Min(
                 Box::new(PayoffOps::Index),
