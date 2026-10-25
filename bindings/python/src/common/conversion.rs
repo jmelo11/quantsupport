@@ -12,17 +12,90 @@ use quantsupport::prelude::{
 };
 use serde::de::DeserializeOwned;
 
-use crate::QuantSupportError;
+use crate::common::errors;
+use quantsupport::utils::errors::QSError;
 
 /// Maps any library error into the Python `QuantSupportError` exception.
-pub fn qs_err<E: std::fmt::Display>(e: E) -> PyErr {
-    QuantSupportError::new_err(e.to_string())
+pub fn qs_err<E: std::fmt::Display + 'static>(e: E) -> PyErr {
+    let value = &e as &dyn std::any::Any;
+    if let Some(error) = value.downcast_ref::<QSError>() {
+        errors::native(error)
+    } else if value.is::<pythonize::PythonizeError>() || value.is::<serde_json::Error>() {
+        errors::native(&QSError::SerializationErr(e.to_string()))
+    } else if let Some(error) = value.downcast_ref::<PyErr>() {
+        Python::attach(|py| errors::context(py, error.clone_ref(py), None, None))
+    } else {
+        errors::native(&QSError::UnexpectedErr(e.to_string()))
+    }
 }
 
 /// Deserializes a JSON-compatible Python object (dict/list/str/...) into `T`.
 pub fn from_py<T: DeserializeOwned>(obj: &Bound<'_, PyAny>, what: &str) -> PyResult<T> {
-    pythonize::depythonize(&serde_input(obj)?)
-        .map_err(|e| QuantSupportError::new_err(format!("invalid {what}: {e}")))
+    let input = serde_input(obj).map_err(|e| errors::context(obj.py(), e, Some(what), None))?;
+    let mut deserializer = pythonize::Depythonizer::from_object(&input);
+    serde_path_to_error::deserialize(&mut deserializer).map_err(|error| {
+        let path = error.path().to_string();
+        let mut leaf = Some(input.clone());
+        for segment in error.path() {
+            leaf = leaf.and_then(|value| match segment {
+                serde_path_to_error::Segment::Seq { index } => value.get_item(*index).ok(),
+                serde_path_to_error::Segment::Map { key } => value.get_item(key).ok(),
+                serde_path_to_error::Segment::Enum { variant } => value.get_item(variant).ok(),
+                serde_path_to_error::Segment::Unknown => None,
+            });
+        }
+        let cause: PyErr = error.into_inner().into();
+        let result = errors::native(&QSError::DeserializationErr(format!(
+            "invalid {what}: {cause}"
+        )));
+        if let Some(value) = leaf {
+            if let Ok(actual) = value.get_type().name() {
+                let _ = result.value(obj.py()).setattr("actual", actual);
+            }
+        }
+        result.set_cause(obj.py(), Some(cause));
+        errors::context(
+            obj.py(),
+            result,
+            None,
+            (path != "." && !path.is_empty()).then_some(path.as_str()),
+        )
+    })
+}
+
+/// Validate dictionary inputs before PyO3 can emit an unlabelled cast error.
+pub fn expect_dict<'a, 'py>(
+    obj: &'a Bound<'py, PyAny>,
+    what: &str,
+) -> PyResult<&'a Bound<'py, PyDict>> {
+    obj.cast::<PyDict>().map_err(|cause| {
+        let error = errors::invalid_type(obj, "dict", None);
+        error.set_cause(obj.py(), Some(cause.into()));
+        errors::context(obj.py(), error, Some(what), None)
+    })
+}
+
+/// Attach a field path while retaining the original Python exception type.
+pub fn at_path(py: Python<'_>, path: &str, error: PyErr) -> PyErr {
+    let (operation, path) = path
+        .split_once('.')
+        .map_or((None, path), |(op, path)| (Some(op), path));
+    let nested = error
+        .value(py)
+        .getattr("path")
+        .ok()
+        .and_then(|value| value.extract::<String>().ok());
+    let path = nested.filter(|value| !value.is_empty()).map_or_else(
+        || path.to_owned(),
+        |value| {
+            if value.starts_with('[') {
+                format!("{path}{value}")
+            } else {
+                format!("{path}.{value}")
+            }
+        },
+    );
+    errors::context(py, error, operation, Some(&path))
 }
 
 /// Recursively normalizes typed terms, dates, enums, and containers for serde.
@@ -109,11 +182,48 @@ fn serde_input<'py>(obj: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
 
 /// Reads a JSON file and deserializes it into `T`.
 pub fn from_json_file<T: DeserializeOwned>(path: &str, what: &str) -> PyResult<T> {
-    let text = std::fs::read_to_string(path).map_err(|e| {
-        QuantSupportError::new_err(format!("cannot read {what} file '{path}': {e}"))
+    let text = std::fs::read_to_string(path).map_err(|error| {
+        let error =
+            errors::native(&QSError::IoErr(error).context(format!("reading {what} file '{path}'")));
+        Python::attach(|py| {
+            let _ = error
+                .value(py)
+                .getattr("details")
+                .and_then(|d| d.set_item("file", path));
+        });
+        error
     })?;
-    serde_json::from_str(&text)
-        .map_err(|e| QuantSupportError::new_err(format!("invalid {what} in '{path}': {e}")))
+    let json_error = |cause: serde_json::Error, field: Option<&str>| {
+        let error = errors::native(&QSError::DeserializationErr(format!(
+            "invalid {what} in '{path}': {cause}"
+        )));
+        Python::attach(|py| {
+            if let Ok(details) = error.value(py).getattr("details") {
+                let _ = details.set_item("file", path);
+                let _ = details.set_item("line", cause.line());
+                let _ = details.set_item("column", cause.column());
+            }
+            error.set_cause(
+                py,
+                Some(pyo3::exceptions::PyValueError::new_err(cause.to_string())),
+            );
+            errors::context(
+                py,
+                error,
+                None,
+                field.filter(|value| *value != "." && !value.is_empty()),
+            )
+        })
+    };
+    let mut deserializer = serde_json::Deserializer::from_str(&text);
+    let result = serde_path_to_error::deserialize(&mut deserializer).map_err(|error| {
+        let field = error.path().to_string();
+        json_error(error.into_inner(), Some(&field))
+    })?;
+    deserializer
+        .end()
+        .map_err(|error| json_error(error, None))?;
+    Ok(result)
 }
 
 /// Builds a `pandas.DataFrame` from named columns.
@@ -122,7 +232,9 @@ pub fn dataframe<'py>(
     columns: &[(&str, Bound<'py, PyAny>)],
 ) -> PyResult<Bound<'py, PyAny>> {
     let pandas = py.import("pandas").map_err(|_| {
-        QuantSupportError::new_err("pandas is required for DataFrame results (pip install pandas)")
+        errors::native(&QSError::NotFoundErr(
+            "pandas is required for DataFrame results (pip install pandas)".into(),
+        ))
     })?;
     let data = PyDict::new(py);
     for (name, col) in columns {
@@ -134,7 +246,7 @@ pub fn dataframe<'py>(
 /// Parses a plain string into a serde-deserializable enum (e.g. `"USD"` → `Currency::USD`).
 pub fn parse_str_enum<T: DeserializeOwned>(s: &str, what: &str) -> PyResult<T> {
     serde_json::from_value(serde_json::Value::String(s.to_string()))
-        .map_err(|e| QuantSupportError::new_err(format!("invalid {what} '{s}': {e}")))
+        .map_err(|e| errors::native(&QSError::ParsingErr(format!("invalid {what} '{s}': {e}"))))
 }
 
 /// Defines an extractor accepting either the Python mirror enum or its
@@ -149,16 +261,11 @@ macro_rules! enum_extractor {
             if let Ok(s) = obj.extract::<String>() {
                 return <$py>::parse(&s).map(Into::into);
             }
-            Err(QuantSupportError::new_err(format!(
-                concat!(
-                    "invalid ",
-                    $what,
-                    ": expected a ",
-                    $what,
-                    " enum or string, got {}"
-                ),
-                obj.get_type().name()?
-            )))
+            Err(errors::invalid_type(
+                obj,
+                concat!($what, " enum or string"),
+                Some(&$what.replace(' ', "_")),
+            ))
         }
     };
 }
@@ -251,10 +358,11 @@ pub fn extract_strike(obj: &Bound<'_, PyAny>) -> PyResult<Strike> {
     if obj.is_instance_of::<PyDict>() {
         return from_py(obj, "strike");
     }
-    Err(QuantSupportError::new_err(format!(
-        "invalid strike: expected a float, 'ATM', or native tagged dict, got {}",
-        obj.get_type().name()?
-    )))
+    Err(errors::invalid_type(
+        obj,
+        "float, 'ATM', or native tagged dict",
+        Some("strike"),
+    ))
 }
 
 /// Extracts a `MarketIndex` from the wrapper class or a plain rate-index
@@ -269,10 +377,11 @@ pub fn extract_market_index(obj: &Bound<'_, PyAny>) -> PyResult<MarketIndex> {
     if obj.is_instance_of::<PyDict>() {
         return from_py(obj, "market index");
     }
-    Err(QuantSupportError::new_err(format!(
-        "invalid market index: expected a MarketIndex, string, or native tagged dict, got {}",
-        obj.get_type().name()?
-    )))
+    Err(errors::invalid_type(
+        obj,
+        "MarketIndex, string, or native tagged dict",
+        Some("market_index"),
+    ))
 }
 
 /// Extracts a `Date` from a `Date` object, an ISO string (`"YYYY-MM-DD"`)
@@ -292,10 +401,11 @@ pub fn extract_date(obj: &Bound<'_, PyAny>) -> PyResult<Date> {
     ) {
         return Date::from_str(&format!("{y:04}-{m:02}-{d:02}"), "%Y-%m-%d").map_err(qs_err);
     }
-    Err(QuantSupportError::new_err(format!(
-        "invalid date: expected a Date, 'YYYY-MM-DD' string or datetime.date, got {}",
-        obj.get_type().name()?
-    )))
+    Err(errors::invalid_type(
+        obj,
+        "Date, 'YYYY-MM-DD' string or datetime.date",
+        None,
+    ))
 }
 
 /// Extracts a `Period` from a `Period` object or a string like `"5Y"`.
@@ -306,10 +416,11 @@ pub fn extract_period(obj: &Bound<'_, PyAny>) -> PyResult<Period> {
     if let Ok(s) = obj.extract::<String>() {
         return parse_str_enum(&s, "period");
     }
-    Err(QuantSupportError::new_err(format!(
-        "invalid period: expected a Period or string like '5Y', got {}",
-        obj.get_type().name()?
-    )))
+    Err(errors::invalid_type(
+        obj,
+        "Period or string like '5Y'",
+        None,
+    ))
 }
 
 /// Extracts evaluation requests from `Request` enums or strings.
@@ -323,10 +434,11 @@ pub fn extract_requests(reqs: &[Bound<'_, PyAny>]) -> PyResult<Vec<Request>> {
             if let Ok(s) = obj.extract::<String>() {
                 return crate::common::enums::Request::parse(&s).map(Into::into);
             }
-            Err(QuantSupportError::new_err(format!(
-                "invalid request: expected a Request enum or string, got {}",
-                obj.get_type().name()?
-            )))
+            Err(errors::invalid_type(
+                obj,
+                "Request enum or string",
+                Some("requests"),
+            ))
         })
         .collect::<PyResult<Vec<Request>>>()?;
     Request::validate(&requests).map_err(qs_err)?;

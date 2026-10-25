@@ -221,6 +221,12 @@ QuantSupportError
 """
         ...
 
+    def keys(self) -> list[str]:
+        """Return serialized field names; supports dict(obj)."""
+        ...
+
+    def __getitem__(self, key: str, /) -> Any: ...
+
 
 @final
 class SingleCurveCSADiscountPolicy:
@@ -297,6 +303,12 @@ QuantSupportError
         """Read-only market index of the collateral remuneration curve."""
         ...
 
+    def keys(self) -> list[str]:
+        """Return serialized field names; supports dict(obj)."""
+        ...
+
+    def __getitem__(self, key: str, /) -> Any: ...
+
 
 @final
 class FixedIncomeDiscountPolicy:
@@ -317,6 +329,18 @@ FixedIncomeDiscountPolicy(discount_curve_by_currency={Currency.EUR: MarketIndex.
     def __new__(cls, discount_curve_by_currency: Mapping[_CurrencyLike, _IndexLike], prefer_instrument_index: bool = ...) -> Self:
         """Map each cashflow currency to its discount curve's market index."""
         ...
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return JSON-compatible fields as a dictionary."""
+        ...
+
+    def keys(self) -> list[str]:
+        """Return serialized field names; supports dict(obj)."""
+        ...
+
+    def __getitem__(self, key: str, /) -> Any: ...
+
+    def __repr__(self) -> str: ...
 
 
 @final
@@ -432,6 +456,14 @@ QuantSupportError
     If serialization to Python objects fails.
 """
         ...
+
+    def keys(self) -> list[str]:
+        """Return serialized field names; supports dict(obj)."""
+        ...
+
+    def __getitem__(self, key: str, /) -> Any: ...
+
+    def __repr__(self) -> str: ...
 
 
 @disjoint_base
@@ -1205,7 +1237,7 @@ rebuild_amortization_for_fair_rate : bool, optional
     principal used for Value and Sensitivities.
 """
 
-    def __new__(cls, *, refinancing_benchmark_index: _IndexLike | None = ..., discount_policy: FixedIncomeDiscountPolicy | None = ..., rebuild_amortization_for_fair_rate: bool = ...) -> Self:
+    def __new__(cls, refinancing_benchmark_index: _IndexLike | None = ..., discount_policy: FixedIncomeDiscountPolicy | None = ..., rebuild_amortization_for_fair_rate: bool = ...) -> Self:
         """Configure refinancing/discount overrides and whether FairRate trials rebuild amortization."""
         ...
 
@@ -1302,7 +1334,7 @@ Notes
 Positions retain a reference to the instrument and are thread-confined.
 """
 
-    def __new__(cls, instrument: Instrument, trade_date: _DateLike, side: Side | str | None = ..., *, notional: float | None = ..., domestic_notional: float | None = ..., foreign_notional: float | None = ..., num_contracts: float = ..., pricing_anchor: Any | None = ..., settlement_date: _DateLike | None = ..., spread_day_counter: Any | None = ...) -> Self:
+    def __new__(cls, instrument: Instrument, trade_date: _DateLike, side: Side | str | None = ..., notional: float | None = ..., domestic_notional: float | None = ..., foreign_notional: float | None = ..., num_contracts: float = ..., pricing_anchor: Any | None = ..., settlement_date: _DateLike | None = ..., spread_day_counter: Any | None = ...) -> Self:
         ...
 
     def __repr__(self) -> str:
@@ -1645,7 +1677,7 @@ Scalar fields are stored as supplied; no consistency checks or valuation are
 performed. Table properties construct new pandas DataFrames on access.
 """
 
-    def __new__(cls, evaluation_date: _DateLike, identifier: str, *, price: Any | None = ..., yield_to_maturity: Any | None = ..., modified_duration: Any | None = ..., z_spread: Any | None = ..., oas: Any | None = ..., fair_rate: Any | None = ..., sensitivities: Any | None = ..., cashflows: Any | None = ...) -> Self:
+    def __new__(cls, evaluation_date: _DateLike, identifier: str, price: Any | None = ..., yield_to_maturity: Any | None = ..., modified_duration: Any | None = ..., z_spread: Any | None = ..., oas: Any | None = ..., fair_rate: Any | None = ..., sensitivities: Any | None = ..., cashflows: Any | None = ...) -> Self:
         ...
 
     def __repr__(self) -> str:

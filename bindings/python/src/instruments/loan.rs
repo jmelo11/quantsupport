@@ -13,8 +13,8 @@ use crate::common::conversion::{
     dataframe, extract_business_day_convention, extract_calendar, extract_currency, extract_date,
     extract_day_counter, extract_frequency, extract_market_index, extract_period, from_py, qs_err,
 };
-use crate::instruments::coupons::CouponDefinition;
 use crate::common::enums::Currency;
+use crate::instruments::coupons::CouponDefinition;
 use crate::pricing::extension::{Instrument, Trade};
 
 /// A native loan contract; rates and CPRs are fractions, not percentages.
@@ -109,7 +109,7 @@ impl Loan {
     #[new]
     #[allow(clippy::too_many_arguments)]
     #[pyo3(signature = (identifier, start_date, maturity_date, notional, coupons, currency,
-        repayment = None, *, payment_frequency = None, fixing_frequency = None,
+        repayment = None, payment_frequency = None, fixing_frequency = None,
         day_counter = None, prepayment = None, credit_index = None, recovery = None,
         fixing_lag = None, index_tenor = None, calendar = None, business_day_convention = None,
         amortization_rate = None))]
@@ -118,7 +118,7 @@ impl Loan {
         start_date: &Bound<'_, PyAny>,
         maturity_date: &Bound<'_, PyAny>,
         notional: f64,
-        coupons: Vec<Bound<'_, PyAny>>,
+        coupons: &Bound<'_, PyAny>,
         currency: &Bound<'_, PyAny>,
         repayment: Option<&Bound<'_, PyAny>>,
         payment_frequency: Option<&Bound<'_, PyAny>>,
@@ -133,10 +133,7 @@ impl Loan {
         business_day_convention: Option<&Bound<'_, PyAny>>,
         amortization_rate: Option<f64>,
     ) -> PyResult<PyClassInitializer<Self>> {
-        let coupons = coupons
-            .iter()
-            .map(CouponDefinition::from_py)
-            .collect::<PyResult<Vec<_>>>()?;
+        let coupons = CouponDefinition::list_from_py(coupons, "Loan.coupons")?;
         let start_date = extract_date(start_date)?;
         let maturity_date = extract_date(maturity_date)?;
         let currency = extract_currency(currency)?;
@@ -273,9 +270,15 @@ impl Loan {
     #[classmethod]
     fn from_dict<'py>(
         cls: &Bound<'py, PyType>,
-        obj: &Bound<'py, PyDict>,
+        obj: &Bound<'py, PyAny>,
     ) -> PyResult<Bound<'py, PyAny>> {
-        cls.call((), Some(obj))
+        cls.call(
+            (),
+            Some(crate::common::conversion::expect_dict(
+                obj,
+                "Loan.from_dict",
+            )?),
+        )
     }
 
     /// Reads construction parameters from a JSON file and constructs a loan.
@@ -286,7 +289,13 @@ impl Loan {
     fn from_json<'py>(cls: &Bound<'py, PyType>, path: &str) -> PyResult<Bound<'py, PyAny>> {
         let value: serde_json::Value = crate::common::conversion::from_json_file(path, "loan")?;
         let obj = pythonize::pythonize(cls.py(), &value).map_err(qs_err)?;
-        cls.call((), Some(obj.cast::<PyDict>()?))
+        cls.call(
+            (),
+            Some(crate::common::conversion::expect_dict(
+                &obj,
+                "Loan JSON construction parameters",
+            )?),
+        )
     }
 
     /// Returns JSON-compatible construction parameters for ``from_dict()``.
@@ -321,3 +330,5 @@ impl Loan {
         })
     }
 }
+
+crate::common::representation::impl_dict_protocol!(Loan);

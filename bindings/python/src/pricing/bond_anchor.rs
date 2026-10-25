@@ -66,7 +66,9 @@ impl BondPricingAnchorConfig {
         } else {
             crate::common::conversion::from_py(obj, "bond pricing anchor")?
         };
-        anchor.validate().map_err(crate::common::conversion::qs_err)?;
+        anchor
+            .validate()
+            .map_err(crate::common::conversion::qs_err)?;
         Ok(anchor)
     }
 }
@@ -84,3 +86,5 @@ impl BondPricingAnchorConfig {
         pythonize::pythonize(py, &self.inner).map_err(crate::common::conversion::qs_err)
     }
 }
+
+crate::common::representation::impl_dict_protocol!(BondPricingAnchorConfig);

@@ -8,6 +8,9 @@ from sphinx.errors import ExtensionError
 from python_api import declarations
 
 
+PYTHON_EXCEPTIONS = "QuantSupportError QuantSupportTypeError QuantSupportValueError QuantSupportStateError QuantSupportIOError QuantSupportNotImplementedError".split()
+
+
 PYTHON_SECTIONS = {
     "time": {
         "Dates and Periods": "Date DateTime Period TimeUnit",
@@ -66,7 +69,7 @@ def python_sections(module):
 
 def generate_python_navigation(app):
     public = {name for name in declarations() if "._" not in name}
-    assigned = ["quantsupport.QuantSupportError"]
+    assigned = [f"quantsupport.{name}" for name in PYTHON_EXCEPTIONS]
     for domain, sections in PYTHON_SECTIONS.items():
         output = Path(app.srcdir) / "python/sections" / domain
         output.mkdir(parents=True, exist_ok=True)

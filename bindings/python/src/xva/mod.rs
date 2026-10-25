@@ -8,18 +8,20 @@
 //! - [`XvaResult`] exposes per-netting-set XVA values and sensitivities as
 //!   pandas DataFrames.
 
+use crate::common::conversion::qs_err;
 use pyo3::prelude::*;
 use quantsupport::prelude::{
     CsaTerms as QsCsaTerms, ExposureResult, NettingSet as QsNettingSet,
     XvaEngineConfig as QsXvaEngineConfig,
 };
 
-use crate::common::conversion::{dataframe, extract_currency, extract_market_index, from_json_file, from_py};
+use crate::common::conversion::{
+    dataframe, extract_currency, extract_market_index, from_json_file, from_py,
+};
 use crate::instruments::products::{
     BasisSwap, CrossCurrencySwap, FixFloatCrossCurrencySwap, FixedRateBond, FixedRateDeposit,
     FloatingRateNote, Swap,
 };
-use crate::QuantSupportError;
 
 /// XVA engine configuration (models, paths, seed, frequency).
 ///
@@ -69,7 +71,7 @@ pub struct CsaTerms {
 #[pymethods]
 impl CsaTerms {
     #[new]
-    #[pyo3(signature = (collateral_index, collateral_currency, credit_spread, recovery, funding_spread = 0.0, credit_index = None, funding_spread_curve = None, funding_index = None, *, variation_margin = false, counterparty_threshold = 0.0, own_threshold = 0.0, minimum_transfer_amount = 0.0))]
+    #[pyo3(signature = (collateral_index, collateral_currency, credit_spread, recovery, funding_spread = 0.0, credit_index = None, funding_spread_curve = None, funding_index = None, variation_margin = false, counterparty_threshold = 0.0, own_threshold = 0.0, minimum_transfer_amount = 0.0))]
     #[allow(clippy::too_many_arguments)]
     fn new(
         collateral_index: &Bound<'_, PyAny>,
@@ -104,10 +106,7 @@ impl CsaTerms {
                 credit_index: credit_index.map(extract_market_index).transpose()?,
             },
         };
-        terms
-            .inner
-            .validate()
-            .map_err(|error| QuantSupportError::new_err(error.to_string()))?;
+        terms.inner.validate().map_err(qs_err)?;
         Ok(terms)
     }
 
@@ -117,10 +116,7 @@ impl CsaTerms {
         let terms = Self {
             inner: from_py(obj, "csa terms")?,
         };
-        terms
-            .inner
-            .validate()
-            .map_err(|error| QuantSupportError::new_err(error.to_string()))?;
+        terms.inner.validate().map_err(qs_err)?;
         Ok(terms)
     }
 
@@ -130,10 +126,7 @@ impl CsaTerms {
         let terms = Self {
             inner: from_json_file(path, "csa terms")?,
         };
-        terms
-            .inner
-            .validate()
-            .map_err(|error| QuantSupportError::new_err(error.to_string()))?;
+        terms.inner.validate().map_err(qs_err)?;
         Ok(terms)
     }
 
@@ -267,7 +260,7 @@ impl NettingSet {
         } else if let Ok(deposit) = instrument.extract::<FixedRateDeposit>() {
             deposit.claims(position)
         } else {
-            Err(QuantSupportError::new_err(
+            Err(crate::common::errors::invalid_value(
                 "unsupported instrument type in netting set",
             ))
         }
@@ -285,11 +278,13 @@ impl NettingSet {
         let mut specs = Vec::new();
         for item in trades.try_iter()? {
             let item = item?;
-            let position = item.extract::<Py<crate::pricing::extension::Trade>>().map_err(|_| {
-                pyo3::exceptions::PyTypeError::new_err(
-                    "NettingSet requires Trade objects, not bare instruments",
-                )
-            })?;
+            let position = item
+                .extract::<Py<crate::pricing::extension::Trade>>()
+                .map_err(|_| {
+                    pyo3::exceptions::PyTypeError::new_err(
+                        "NettingSet requires Trade objects, not bare instruments",
+                    )
+                })?;
             Self::claims(&position.borrow(item.py()), item.py())?;
             specs.push(position);
         }

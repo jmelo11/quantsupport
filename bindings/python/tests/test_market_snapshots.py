@@ -105,9 +105,12 @@ class MarketSnapshotTests(unittest.TestCase):
             restored = qs.MarketSnapshotStore.from_json(path)
         self.assertEqual(restored.timestamps, self.store.timestamps)
         payload = self.store.to_dict()
+        self.assertIsInstance(payload, dict)
+        self.assertEqual(dict(self.store), payload)
         self.assertEqual(qs.MarketSnapshotStore.from_dict(payload).to_dict(), payload)
-        payload[0]["timestamp"] = self.store.timestamps[0]
-        snapshot = qs.MarketSnapshot.from_dict(payload[0])
+        self.assertEqual(qs.MarketSnapshotStore.from_dict(payload["snapshots"]).to_dict(), payload)
+        payload["snapshots"][0]["timestamp"] = self.store.timestamps[0]
+        snapshot = qs.MarketSnapshot.from_dict(payload["snapshots"][0])
         self.assertEqual(snapshot.timestamp, self.store.timestamps[0])
         with self.assertRaises(qs.QuantSupportError):
             qs.MarketSnapshotStore.from_dict([snapshot.to_dict(), snapshot.to_dict()])

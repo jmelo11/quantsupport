@@ -2,7 +2,7 @@
 
 use crate::pricing::extension::{Instrument, Trade};
 use pyo3::prelude::*;
-use pyo3::types::{PyDict, PyType};
+use pyo3::types::PyType;
 use quantsupport::prelude::{
     BasisSwap as QsBasisSwap, BasisSwapTrade, BusinessDayConvention, Calendar,
     CallScheduleEntry as QsCallScheduleEntry, CapFloor as QsCapFloor, CapFloorTrade, CapFloorType,
@@ -39,9 +39,9 @@ macro_rules! product_dict_constructors {
                 #[classmethod]
                 fn from_dict<'py>(
                     cls: &Bound<'py, PyType>,
-                    obj: &Bound<'py, PyDict>,
+                    obj: &Bound<'py, PyAny>,
                 ) -> PyResult<Bound<'py, PyAny>> {
-                    cls.call((), Some(obj))
+                    cls.call((), Some(crate::common::conversion::expect_dict(obj, &format!("{}.from_dict", cls.name()?))?))
                 }
 
                 /// Loads constructor fields from a JSON file.
@@ -52,7 +52,7 @@ macro_rules! product_dict_constructors {
                 ) -> PyResult<Bound<'py, PyAny>> {
                     let value: serde_json::Value = crate::common::conversion::from_json_file(path, "product")?;
                     let obj = pythonize::pythonize(cls.py(), &value).map_err(qs_err)?;
-                    cls.call((), Some(obj.cast::<PyDict>()?))
+                    cls.call((), Some(crate::common::conversion::expect_dict(&obj, &format!("{} JSON construction parameters", cls.name()?))?))
                 }
             }
         )+
@@ -256,13 +256,6 @@ impl Swap {
             inner: self.market_index.clone(),
         }
     }
-
-    fn __repr__(&self) -> String {
-        format!(
-            "Swap(identifier='{}', start_date='{}', maturity_date='{}', notional={}, fixed_rate={})",
-            self.identifier, self.start_date, self.maturity_date, self.notional, self.fixed_rate
-        )
-    }
 }
 
 /// A float-vs-float cross-currency swap.
@@ -446,13 +439,6 @@ impl CrossCurrencySwap {
             inner: self.foreign_market_index.clone(),
         }
     }
-
-    fn __repr__(&self) -> String {
-        format!(
-            "CrossCurrencySwap(identifier='{}', start_date='{}', maturity_date='{}')",
-            self.identifier, self.start_date, self.maturity_date
-        )
-    }
 }
 
 /// A float-vs-float single-currency basis swap.
@@ -575,13 +561,6 @@ impl BasisSwap {
     #[getter]
     fn identifier(&self) -> &str {
         &self.identifier
-    }
-
-    fn __repr__(&self) -> String {
-        format!(
-            "BasisSwap(identifier='{}', start_date='{}', maturity_date='{}', notional={})",
-            self.identifier, self.start_date, self.maturity_date, self.notional
-        )
     }
 }
 
@@ -750,13 +729,6 @@ impl FixFloatCrossCurrencySwap {
     fn identifier(&self) -> &str {
         &self.identifier
     }
-
-    fn __repr__(&self) -> String {
-        format!(
-            "FixFloatCrossCurrencySwap(identifier='{}', start_date='{}', maturity_date='{}')",
-            self.identifier, self.start_date, self.maturity_date
-        )
-    }
 }
 
 /// One dated issuer call in a callable bond's schedule.
@@ -774,7 +746,7 @@ pub struct CallScheduleEntry {
 #[pymethods]
 impl CallScheduleEntry {
     #[new]
-    #[pyo3(signature = (date = None, strike = 100.0, *, start_date = None, end_date = None))]
+    #[pyo3(signature = (date = None, strike = 100.0, start_date = None, end_date = None))]
     fn new(
         date: Option<&Bound<'_, PyAny>>,
         strike: f64,
@@ -852,15 +824,6 @@ impl CallScheduleEntry {
     #[getter]
     fn strike(&self) -> f64 {
         self.inner.strike()
-    }
-
-    fn __repr__(&self) -> String {
-        format!(
-            "CallScheduleEntry(start_date='{}', end_date='{}', strike={})",
-            self.inner.date(),
-            self.inner.end_date(),
-            self.inner.strike()
-        )
     }
 }
 
@@ -1063,13 +1026,6 @@ impl FixedRateBond {
     fn identifier(&self) -> &str {
         &self.identifier
     }
-
-    fn __repr__(&self) -> String {
-        format!(
-            "FixedRateBond(identifier='{}', start_date='{}', maturity_date='{}', notional={}, rate={})",
-            self.identifier, self.start_date, self.maturity_date, self.notional, self.rate
-        )
-    }
 }
 
 /// A callable bond with positional coupon and outstanding-notional schedules.
@@ -1185,7 +1141,7 @@ impl SteppedCouponBond {
         maturity_date: &Bound<'_, PyAny>,
         notional: f64,
         currency: &Bound<'_, PyAny>,
-        coupons: Vec<Bound<'_, PyAny>>,
+        coupons: &Bound<'_, PyAny>,
         notional_percentages: Vec<f64>,
         call_schedule: Option<Vec<Bound<'_, PyAny>>>,
         units: f64,
@@ -1199,6 +1155,7 @@ impl SteppedCouponBond {
         next_to_last_coupon_date: Option<&Bound<'_, PyAny>>,
         termination_date_convention: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<PyClassInitializer<Self>> {
+        let coupons = CouponDefinition::list_from_py(coupons, "SteppedCouponBond.coupons")?;
         if coupons.is_empty() {
             return Err(pyo3::exceptions::PyValueError::new_err(
                 "coupons cannot be empty",
@@ -1209,10 +1166,6 @@ impl SteppedCouponBond {
                 "notional_percentages cannot be empty",
             ));
         }
-        let coupons = coupons
-            .iter()
-            .map(CouponDefinition::from_py)
-            .collect::<PyResult<Vec<_>>>()?;
         let call_schedule = call_schedule
             .unwrap_or_default()
             .iter()
@@ -1285,19 +1238,6 @@ impl SteppedCouponBond {
     #[getter]
     fn identifier(&self) -> &str {
         &self.identifier
-    }
-
-    fn __repr__(&self) -> String {
-        format!(
-            "SteppedCouponBond(identifier='{}', start_date='{}', maturity_date='{}', notional={}, coupons={}, notionals={}, calls={})",
-            self.identifier,
-            self.start_date,
-            self.maturity_date,
-            self.notional,
-            self.coupons.len(),
-            self.notional_percentages.len(),
-            self.call_schedule.len()
-        )
     }
 }
 
@@ -1408,13 +1348,6 @@ impl FloatingRateNote {
     #[getter]
     fn identifier(&self) -> &str {
         &self.identifier
-    }
-
-    fn __repr__(&self) -> String {
-        format!(
-            "FloatingRateNote(identifier='{}', start_date='{}', maturity_date='{}', notional={})",
-            self.identifier, self.start_date, self.maturity_date, self.notional
-        )
     }
 }
 
@@ -1536,13 +1469,6 @@ impl FixedRateDeposit {
     fn identifier(&self) -> &str {
         &self.identifier
     }
-
-    fn __repr__(&self) -> String {
-        format!(
-            "FixedRateDeposit(identifier='{}', start_date='{}', maturity_date='{}', notional={}, rate={})",
-            self.identifier, self.start_date, self.maturity_date, self.notional, self.rate
-        )
-    }
 }
 
 /// A deliverable or non-deliverable FX forward.
@@ -1637,13 +1563,6 @@ impl FxForwardPy {
     fn identifier(&self) -> &str {
         &self.identifier
     }
-
-    fn __repr__(&self) -> String {
-        format!(
-            "FxForward(identifier='{}', delivery_date='{}')",
-            self.identifier, self.delivery_date
-        )
-    }
 }
 
 /// A European FX option.
@@ -1715,13 +1634,6 @@ impl FxOptionPy {
     fn identifier(&self) -> &str {
         &self.identifier
     }
-
-    fn __repr__(&self) -> String {
-        format!(
-            "FxOption(identifier='{}', expiry_date='{}', strike={})",
-            self.identifier, self.expiry_date, self.strike
-        )
-    }
 }
 
 /// A European equity option.
@@ -1786,13 +1698,6 @@ impl EquityOption {
     #[getter]
     fn identifier(&self) -> &str {
         &self.identifier
-    }
-
-    fn __repr__(&self) -> String {
-        format!(
-            "EquityOption(identifier='{}', expiry_date='{}')",
-            self.identifier, self.expiry_date
-        )
     }
 }
 
@@ -1898,13 +1803,6 @@ impl CreditDefaultSwapPy {
     fn identifier(&self) -> &str {
         &self.identifier
     }
-
-    fn __repr__(&self) -> String {
-        format!(
-            "CreditDefaultSwap(identifier='{}', start_date='{}', maturity_date='{}', spread={})",
-            self.identifier, self.start_date, self.maturity_date, self.spread
-        )
-    }
 }
 
 /// An interest-rate cap or floor.
@@ -1995,13 +1893,6 @@ impl CapFloorPy {
     fn identifier(&self) -> &str {
         &self.identifier
     }
-
-    fn __repr__(&self) -> String {
-        format!(
-            "CapFloor(identifier='{}', start_date='{}', maturity_date='{}', strike={}, notional={})",
-            self.identifier, self.start_date, self.maturity_date, self.strike, self.notional
-        )
-    }
 }
 
 /// A single caplet or floorlet.
@@ -2087,13 +1978,6 @@ impl CapletFloorletPy {
     fn identifier(&self) -> &str {
         &self.identifier
     }
-
-    fn __repr__(&self) -> String {
-        format!(
-            "CapletFloorlet(identifier='{}', fixing_date='{}')",
-            self.identifier, self.fixing_date
-        )
-    }
 }
 
 /// An exchange-traded interest-rate futures position.
@@ -2166,13 +2050,6 @@ impl RateFuturesPy {
     #[getter]
     fn identifier(&self) -> &str {
         &self.identifier
-    }
-
-    fn __repr__(&self) -> String {
-        format!(
-            "RateFutures(identifier='{}', start_date='{}', end_date='{}', futures_price={})",
-            self.identifier, self.start_date, self.end_date, self.futures_price
-        )
     }
 }
 
@@ -2621,3 +2498,360 @@ contract_getters! { EuropeanSwaption, this, py;
     floating_leg_frequency: crate::common::enums::Frequency => this.floating_leg_frequency.into();
     calendar: Option<crate::time::Calendar> => this.calendar.clone().map(|value| crate::time::Calendar { inner: value.clone() });
 }
+
+#[pymethods]
+impl Swap {
+    /// Returns JSON-compatible constructor fields.
+    fn to_dict<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        pythonize::pythonize(
+            py,
+            &serde_json::json!({
+                "identifier": self.identifier,
+                "start_date": self.start_date,
+                "maturity_date": self.maturity_date,
+                "notional": self.notional,
+                "fixed_rate": self.fixed_rate,
+                "spread": self.spread,
+                "currency": self.currency,
+                "market_index": self.market_index,
+                "day_counter": self.day_counter,
+                "compounding": self.compounding,
+                "rate_frequency": self.rate_frequency,
+                "fixed_leg_frequency": self.fixed_leg_frequency,
+                "floating_leg_frequency": self.floating_leg_frequency,
+            }),
+        )
+        .map_err(qs_err)
+    }
+}
+
+#[pymethods]
+impl CrossCurrencySwap {
+    /// Returns JSON-compatible constructor fields.
+    fn to_dict<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        pythonize::pythonize(
+            py,
+            &serde_json::json!({
+                "identifier": self.identifier,
+                "start_date": self.start_date,
+                "maturity_date": self.maturity_date,
+                "domestic_notional": self.domestic_notional,
+                "foreign_notional": self.foreign_notional,
+                "domestic_spread": self.domestic_spread,
+                "foreign_spread": self.foreign_spread,
+                "domestic_currency": self.domestic_currency,
+                "foreign_currency": self.foreign_currency,
+                "domestic_market_index": self.domestic_market_index,
+                "foreign_market_index": self.foreign_market_index,
+                "domestic_leg_frequency": self.domestic_leg_frequency,
+                "foreign_leg_frequency": self.foreign_leg_frequency,
+            }),
+        )
+        .map_err(qs_err)
+    }
+}
+
+#[pymethods]
+impl BasisSwap {
+    /// Returns JSON-compatible constructor fields.
+    fn to_dict<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        pythonize::pythonize(
+            py,
+            &serde_json::json!({
+                "identifier": self.identifier,
+                "start_date": self.start_date,
+                "maturity_date": self.maturity_date,
+                "notional": self.notional,
+                "currency": self.currency,
+                "pay_market_index": self.pay_market_index,
+                "receive_market_index": self.receive_market_index,
+                "pay_spread": self.pay_spread,
+                "receive_spread": self.receive_spread,
+                "pay_leg_frequency": self.pay_leg_frequency,
+                "receive_leg_frequency": self.receive_leg_frequency,
+            }),
+        )
+        .map_err(qs_err)
+    }
+}
+
+#[pymethods]
+impl FixFloatCrossCurrencySwap {
+    /// Returns JSON-compatible constructor fields.
+    fn to_dict<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        pythonize::pythonize(
+            py,
+            &serde_json::json!({
+                "identifier": self.identifier,
+                "start_date": self.start_date,
+                "maturity_date": self.maturity_date,
+                "domestic_notional": self.domestic_notional,
+                "foreign_notional": self.foreign_notional,
+                "fixed_rate": self.fixed_rate,
+                "spread": self.spread,
+                "domestic_currency": self.domestic_currency,
+                "foreign_currency": self.foreign_currency,
+                "floating_index": self.floating_index,
+                "day_counter": self.day_counter,
+                "compounding": self.compounding,
+                "rate_frequency": self.rate_frequency,
+                "domestic_leg_frequency": self.domestic_leg_frequency,
+                "foreign_leg_frequency": self.foreign_leg_frequency,
+            }),
+        )
+        .map_err(qs_err)
+    }
+}
+
+#[pymethods]
+impl FloatingRateNote {
+    /// Returns JSON-compatible constructor fields.
+    fn to_dict<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        pythonize::pythonize(py, &serde_json::json!({
+            "identifier": self.identifier,
+            "start_date": self.start_date,
+            "maturity_date": self.maturity_date,
+            "notional": self.notional,
+            "spread": self.spread,
+            "forward_index": self.forward_index,
+            "currency": self.currency,
+            "payment_frequency": self.payment_frequency,
+            "payment_structure": format!("{:?}", crate::common::enums::PaymentStructure::from(self.payment_structure)),
+        })).map_err(qs_err)
+    }
+}
+
+#[pymethods]
+impl FixedRateDeposit {
+    /// Returns JSON-compatible constructor fields.
+    fn to_dict<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        pythonize::pythonize(
+            py,
+            &serde_json::json!({
+                "identifier": self.identifier,
+                "start_date": self.start_date,
+                "maturity_date": self.maturity_date,
+                "notional": self.notional,
+                "rate": self.rate,
+                "currency": self.currency,
+                "discount_index": self.discount_index,
+                "day_counter": self.day_counter,
+                "compounding": self.compounding,
+                "rate_frequency": self.rate_frequency,
+            }),
+        )
+        .map_err(qs_err)
+    }
+}
+
+#[pymethods]
+impl FxForwardPy {
+    /// Returns JSON-compatible constructor fields.
+    fn to_dict<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        pythonize::pythonize(
+            py,
+            &serde_json::json!({
+                "identifier": self.identifier,
+                "delivery_date": self.delivery_date,
+                "base_currency": self.base_currency,
+                "quote_currency": self.quote_currency,
+                "forward_price": self.forward_price,
+                "forward_points": self.forward_points,
+                "day_counter": self.day_counter,
+                "fixing_date": self.fixing_date,
+                "settlement_currency": self.settlement_currency,
+            }),
+        )
+        .map_err(qs_err)
+    }
+}
+
+#[pymethods]
+impl FxOptionPy {
+    /// Returns JSON-compatible constructor fields.
+    fn to_dict<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        pythonize::pythonize(
+            py,
+            &serde_json::json!({
+                "identifier": self.identifier,
+                "expiry_date": self.expiry_date,
+                "strike": self.strike,
+                "option_type": self.option_type,
+                "base_currency": self.base_currency,
+                "quote_currency": self.quote_currency,
+            }),
+        )
+        .map_err(qs_err)
+    }
+}
+
+#[pymethods]
+impl EquityOption {
+    /// Returns JSON-compatible constructor fields.
+    fn to_dict<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        pythonize::pythonize(
+            py,
+            &serde_json::json!({
+                "identifier": self.identifier,
+                "market_index": self.market_index,
+                "expiry_date": self.expiry_date,
+                "strike": self.strike,
+                "option_type": self.option_type,
+            }),
+        )
+        .map_err(qs_err)
+    }
+}
+
+#[pymethods]
+impl CreditDefaultSwapPy {
+    /// Returns JSON-compatible constructor fields.
+    fn to_dict<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        pythonize::pythonize(
+            py,
+            &serde_json::json!({
+                "identifier": self.identifier,
+                "credit_index": self.credit_index,
+                "discount_index": self.discount_index,
+                "currency": self.currency,
+                "start_date": self.start_date,
+                "maturity_date": self.maturity_date,
+                "spread": self.spread,
+                "recovery": self.recovery,
+                "premium_frequency": self.premium_frequency,
+                "day_counter": self.day_counter,
+            }),
+        )
+        .map_err(qs_err)
+    }
+}
+
+#[pymethods]
+impl CapFloorPy {
+    /// Returns JSON-compatible constructor fields.
+    fn to_dict<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        pythonize::pythonize(
+            py,
+            &serde_json::json!({
+                "identifier": self.identifier,
+                "start_date": self.start_date,
+                "maturity_date": self.maturity_date,
+                "strike": self.strike,
+                "notional": self.notional,
+                "market_index": self.market_index,
+                "currency": self.currency,
+                "cap_floor_type": self.cap_floor_type,
+                "frequency": self.frequency,
+            }),
+        )
+        .map_err(qs_err)
+    }
+}
+
+#[pymethods]
+impl CapletFloorletPy {
+    /// Returns JSON-compatible constructor fields.
+    fn to_dict<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        pythonize::pythonize(
+            py,
+            &serde_json::json!({
+                "identifier": self.identifier,
+                "market_index": self.market_index,
+                "currency": self.currency,
+                "fixing_date": self.fixing_date,
+                "start_accrual_date": self.start_accrual_date,
+                "end_accrual_date": self.end_accrual_date,
+                "payment_date": self.payment_date,
+                "payoff_type": self.payoff_type,
+                "strike": self.strike,
+            }),
+        )
+        .map_err(qs_err)
+    }
+}
+
+#[pymethods]
+impl RateFuturesPy {
+    /// Returns JSON-compatible constructor fields.
+    fn to_dict<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        pythonize::pythonize(
+            py,
+            &serde_json::json!({
+                "identifier": self.identifier,
+                "market_index": self.market_index,
+                "start_date": self.start_date,
+                "end_date": self.end_date,
+                "futures_price": self.futures_price,
+                "contract_size": self.contract_size,
+            }),
+        )
+        .map_err(qs_err)
+    }
+}
+
+#[pymethods]
+impl EquityForward {
+    /// Returns JSON-compatible constructor fields.
+    fn to_dict<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        pythonize::pythonize(
+            py,
+            &serde_json::json!({
+                "identifier": self.identifier,
+                "market_index": self.market_index,
+                "delivery_date": self.delivery_date,
+                "strike": self.strike,
+                "currency": self.currency,
+                "day_counter": self.day_counter,
+            }),
+        )
+        .map_err(qs_err)
+    }
+}
+
+#[pymethods]
+impl EuropeanSwaption {
+    /// Returns JSON-compatible constructor fields.
+    fn to_dict<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        pythonize::pythonize(
+            py,
+            &serde_json::json!({
+                "identifier": self.identifier,
+                "expiry_date": self.expiry_date,
+                "maturity_date": self.maturity_date,
+                "strike": self.strike,
+                "notional": self.notional,
+                "currency": self.currency,
+                "market_index": self.market_index,
+                "swaption_type": self.swaption_type,
+                "day_counter": self.day_counter,
+                "compounding": self.compounding,
+                "rate_frequency": self.rate_frequency,
+                "fixed_leg_frequency": self.fixed_leg_frequency,
+                "floating_leg_frequency": self.floating_leg_frequency,
+                "calendar": self.calendar,
+            }),
+        )
+        .map_err(qs_err)
+    }
+}
+
+crate::common::representation::impl_dict_protocol!(
+    Swap,
+    CrossCurrencySwap,
+    BasisSwap,
+    FixFloatCrossCurrencySwap,
+    CallScheduleEntry,
+    FixedRateBond,
+    SteppedCouponBond,
+    FloatingRateNote,
+    FixedRateDeposit,
+    FxForwardPy,
+    FxOptionPy,
+    EquityOption,
+    CreditDefaultSwapPy,
+    CapFloorPy,
+    CapletFloorletPy,
+    RateFuturesPy,
+    EquityForward,
+    EuropeanSwaption
+);

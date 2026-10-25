@@ -7,7 +7,6 @@
 //! base classes is convenient, but any Python type and any object with a callable
 //! `evaluate` method can be registered.
 
-use pyo3::exceptions::PyNotImplementedError;
 use pyo3::prelude::*;
 use pyo3::types::PyType;
 use quantsupport::prelude::Request as QsRequest;
@@ -16,7 +15,6 @@ use crate::common::conversion::extract_requests;
 use crate::pricing::context::PricingContext;
 use crate::pricing::results::EvaluationResults;
 use crate::time::Date;
-use crate::QuantSupportError;
 
 fn python_type_name(value: &Bound<'_, PyAny>) -> String {
     value
@@ -51,8 +49,10 @@ impl MarketDataProvider {
     /// Reference date supplied by a concrete provider.
     #[getter]
     fn evaluation_date(&self) -> PyResult<()> {
-        Err(PyNotImplementedError::new_err(
-            "MarketDataProvider.evaluation_date must be implemented",
+        Err(crate::common::errors::native(
+            &quantsupport::utils::errors::QSError::NotImplementedErr(
+                "MarketDataProvider.evaluation_date must be implemented".into(),
+            ),
         ))
     }
 }
@@ -181,7 +181,7 @@ impl Trade {
 impl Trade {
     #[new]
     #[allow(clippy::too_many_arguments)]
-    #[pyo3(signature = (instrument, trade_date, side = None, *, notional = None,
+    #[pyo3(signature = (instrument, trade_date, side = None, notional = None,
         domestic_notional = None, foreign_notional = None, num_contracts = 1.0,
         pricing_anchor = None, settlement_date = None, spread_day_counter = None))]
     fn new(
@@ -346,8 +346,10 @@ impl Pricer {
         _requests: &Bound<'_, PyAny>,
         _context: &Bound<'_, PyAny>,
     ) -> PyResult<()> {
-        Err(PyNotImplementedError::new_err(
-            "Pricer.evaluate(trade, requests, context) must be implemented",
+        Err(crate::common::errors::native(
+            &quantsupport::utils::errors::QSError::NotImplementedErr(
+                "Pricer.evaluate(trade, requests, context) must be implemented".into(),
+            ),
         ))
     }
 
@@ -389,13 +391,13 @@ impl PricerRegistry {
         pricer: &Bound<'_, PyAny>,
     ) -> PyResult<()> {
         let evaluate = pricer.getattr("evaluate").map_err(|_| {
-            QuantSupportError::new_err(format!(
+            crate::common::errors::invalid_value(format!(
                 "pricer of type '{}' must define evaluate(trade, requests, context)",
                 python_type_name(pricer)
             ))
         })?;
         if !evaluate.is_callable() {
-            return Err(QuantSupportError::new_err(
+            return Err(crate::common::errors::invalid_value(
                 "pricer.evaluate must be callable",
             ));
         }
@@ -481,7 +483,7 @@ pub fn call_pricer(
         .bind(py)
         .call_method1("evaluate", (trade, requests_for_python(requests), context))?;
     result.extract::<Py<EvaluationResults>>().map_err(|_| {
-        QuantSupportError::new_err(format!(
+        crate::common::errors::invalid_value(format!(
             "{}.evaluate must return EvaluationResults, got {}",
             python_type_name(pricer.bind(py)),
             python_type_name(&result)
@@ -543,7 +545,7 @@ impl Evaluator {
             |objects| extract_requests(&objects),
         )?;
         let pricer = self.registry.resolve(py, trade)?.ok_or_else(|| {
-            QuantSupportError::new_err(format!(
+            crate::common::errors::invalid_value(format!(
                 "no pricer registered for trade type '{}'",
                 python_type_name(trade)
             ))
@@ -559,3 +561,5 @@ impl Evaluator {
         format!("Evaluator(registrations={})", self.registry.len())
     }
 }
+
+crate::common::representation::impl_class_repr!(Pricer, MarketDataProvider);

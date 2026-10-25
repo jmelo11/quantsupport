@@ -8,7 +8,6 @@ use quantsupport::prelude::EvaluationResults as QsEvaluationResults;
 use serde::Deserialize;
 
 use crate::common::conversion::{dataframe, extract_date, from_py};
-use crate::QuantSupportError;
 
 /// A single cashflow row extracted from the Rust `CashflowsTable`.
 #[derive(Clone)]
@@ -73,7 +72,7 @@ fn extract_sensitivities(obj: &Bound<'_, PyAny>) -> PyResult<Vec<(String, f64)>>
         pairs.sort_by(|left, right| left.0.cmp(&right.0));
         return Ok(pairs);
     }
-    Err(QuantSupportError::new_err(
+    Err(crate::common::errors::invalid_value(
         "sensitivities must be a mapping or an iterable of (pillar, value) pairs",
     ))
 }
@@ -199,7 +198,6 @@ impl EvaluationResults {
     #[pyo3(signature = (
         evaluation_date,
         identifier,
-        *,
         price = None,
         yield_to_maturity = None,
         modified_duration = None,

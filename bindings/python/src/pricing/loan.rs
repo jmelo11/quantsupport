@@ -43,7 +43,7 @@ pub struct LoanPricer {
 impl LoanPricer {
     /// Creates a pricer with the documented refinancing and fair-rate settings.
     #[new]
-    #[pyo3(signature = (*, refinancing_benchmark_index = None, discount_policy = None, rebuild_amortization_for_fair_rate = false))]
+    #[pyo3(signature = (refinancing_benchmark_index = None, discount_policy = None, rebuild_amortization_for_fair_rate = false))]
     fn new(
         refinancing_benchmark_index: Option<&Bound<'_, PyAny>>,
         discount_policy: Option<FixedIncomeDiscountPolicy>,
@@ -112,3 +112,5 @@ impl LoanPricer {
         Py::new(py, EvaluationResults::from_qs(&result))
     }
 }
+
+crate::common::representation::impl_class_repr!(LoanPricer);

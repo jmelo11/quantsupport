@@ -84,8 +84,8 @@ def construction_note(obj):
     if own_constructor(node) is not None:
         return ""
     names = {member.name for member in node.body if isinstance(member, ast.FunctionDef)}
-    if obj.short_name == "QuantSupportError":
-        return "Catch this exception for native-library failures; Python input validation can raise built-in exception types."
+    if obj.short_name.startswith("QuantSupport") and obj.short_name.endswith("Error"):
+        return "Catch this exception for structured QuantSupport failures; code and native_type preserve the native error category, and __cause__ preserves the cause chain."
     if obj.short_name == "Evaluator":
         return "Construct with ``Evaluator()``; registrations are initially empty."
     if obj.short_name in ("DiscountCurve", "VolatilitySurface", "VolatilityCube", "Simulation"):

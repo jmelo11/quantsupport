@@ -34,7 +34,7 @@ class SnapshotSelector:
     level : Level or str, optional
         Mid, Bid, or Ask. Defaults to Mid; missing consumed sides are errors.
     """
-    def __new__(cls, timestamp: _DateTimeLike, *, rule: SnapshotSelectionRule | str | None = ..., level: Level | str | None = ...) -> Self: ...
+    def __new__(cls, timestamp: _DateTimeLike, rule: SnapshotSelectionRule | str | None = ..., level: Level | str | None = ...) -> Self: ...
     @property
     def timestamp(self) -> DateTime:
         """Requested UTC instant as a library DateTime."""
@@ -47,6 +47,18 @@ class SnapshotSelector:
     def level(self) -> Level:
         """Quote side used for construction and model calibration."""
         ...
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return JSON-compatible fields as a dictionary."""
+        ...
+
+    def keys(self) -> list[str]:
+        """Return serialized field names; supports dict(obj)."""
+        ...
+
+    def __getitem__(self, key: str, /) -> Any: ...
+
+    def __repr__(self) -> str: ...
 
 @final
 class MarketSnapshot:
@@ -96,6 +108,14 @@ class MarketSnapshot:
         """Copy of the market's quote observations."""
         ...
 
+    def keys(self) -> list[str]:
+        """Return serialized field names; supports dict(obj)."""
+        ...
+
+    def __getitem__(self, key: str, /) -> Any: ...
+
+    def __repr__(self) -> str: ...
+
 @final
 class MarketSnapshotStore:
     """Archive coherent historical markets by DateTime with JSON persistence."""
@@ -123,7 +143,7 @@ class MarketSnapshotStore:
             snapshot's timestamp to see the actual selected instant.
         """
         ...
-    def pricing_context(self, selector: SnapshotSelector, *, fixings: FixingStore | None = ..., fixed_income_policy: _pricing.FixedIncomeDiscountPolicy | None = ...) -> _pricing.PricingContext:
+    def pricing_context(self, selector: SnapshotSelector, fixings: FixingStore | None = ..., fixed_income_policy: _pricing.FixedIncomeDiscountPolicy | None = ...) -> _pricing.PricingContext:
         """Create a fresh context using the matched market's business date.
 
         Parameters
@@ -162,18 +182,26 @@ class MarketSnapshotStore:
         """
         ...
     @staticmethod
-    def from_dict(value: Sequence[Mapping[str, Any]]) -> MarketSnapshotStore:
+    def from_dict(value: Mapping[str, Any] | Sequence[Mapping[str, Any]]) -> MarketSnapshotStore:
         """Load a native snapshot array, rejecting duplicate instants.
 
         Parameters
         ----------
         value : sequence of mappings
-            Native snapshot dictionaries, as returned by to_dict.
+            A dictionary with a snapshots list, or a legacy list of snapshot dictionaries.
         """
         ...
-    def to_dict(self) -> list[dict[str, Any]]:
-        """Native snapshot array in timestamp order, with RFC 3339 strings."""
+    def to_dict(self) -> dict[str, Any]:
+        """Dictionary with a snapshots list in timestamp order and RFC 3339 strings."""
         ...
+
+    def keys(self) -> list[str]:
+        """Return serialized field names; supports dict(obj)."""
+        ...
+
+    def __getitem__(self, key: str, /) -> Any: ...
+
+    def __repr__(self) -> str: ...
 
 @final
 class Level:
@@ -851,7 +879,7 @@ class CurveConfiguration:
     interpolation. Use ``composite`` to combine two other configured curves.
     """
 
-    def __new__(cls, *, market_index: _IndexLike, quotes: Sequence[str] | None=..., day_counter: DayCounter | str | None=..., interpolator: Interpolator | str | None=..., enable_extrapolation: bool=...) -> Self:
+    def __new__(cls, market_index: _IndexLike, quotes: Sequence[str] | None=..., day_counter: DayCounter | str | None=..., interpolator: Interpolator | str | None=..., enable_extrapolation: bool=...) -> Self:
         """Configure a curve for later construction by a pricing context.
 
         Parameters
@@ -878,7 +906,7 @@ class CurveConfiguration:
         ...
 
     @staticmethod
-    def composite(*, market_index: _IndexLike, base_index: _IndexLike, spread_index: _IndexLike) -> CurveConfiguration:
+    def composite( market_index: _IndexLike, base_index: _IndexLike, spread_index: _IndexLike) -> CurveConfiguration:
         """Multiply discount factors from two configured component curves.
 
         Parameters
@@ -971,6 +999,12 @@ class CurveConfiguration:
         """
         ...
 
+    def keys(self) -> list[str]:
+        """Return serialized field names; supports dict(obj)."""
+        ...
+
+    def __getitem__(self, key: str, /) -> Any: ...
+
 @final
 class CreditCurveConfiguration:
     """CDS calibration inputs for a reference entity's survival curve.
@@ -1053,6 +1087,12 @@ class CreditCurveConfiguration:
         """
         ...
 
+    def keys(self) -> list[str]:
+        """Return serialized field names; supports dict(obj)."""
+        ...
+
+    def __getitem__(self, key: str, /) -> Any: ...
+
 @final
 class VolatilitySurfaceConfiguration:
     """Quote selection and conventions for an expiry-by-smile volatility surface."""
@@ -1128,6 +1168,12 @@ class VolatilitySurfaceConfiguration:
         """
         ...
 
+    def keys(self) -> list[str]:
+        """Return serialized field names; supports dict(obj)."""
+        ...
+
+    def __getitem__(self, key: str, /) -> Any: ...
+
 @final
 class VolatilityCubeConfiguration:
     """Quote selection and conventions for an expiry-by-tenor-by-smile cube."""
@@ -1202,6 +1248,12 @@ class VolatilityCubeConfiguration:
             and extrapolation policy, not interpolated volatility values.
         """
         ...
+
+    def keys(self) -> list[str]:
+        """Return serialized field names; supports dict(obj)."""
+        ...
+
+    def __getitem__(self, key: str, /) -> Any: ...
 
 @final
 class SimulationConfiguration:
@@ -1281,6 +1333,12 @@ class SimulationConfiguration:
         """
         ...
 
+    def keys(self) -> list[str]:
+        """Return serialized field names; supports dict(obj)."""
+        ...
+
+    def __getitem__(self, key: str, /) -> Any: ...
+
 @final
 class ZeroRateTermStructure:
     """Interpolate annual zero rates on explicitly dated pillars.
@@ -1289,7 +1347,7 @@ class ZeroRateTermStructure:
     are calculated from those rates using the curve's day-count basis.
     """
 
-    def __new__(cls, reference_date: _DateLike, dates: Sequence[_DateLike], rates: Sequence[float], *, day_counter: DayCounter | str | None=..., compounding: Compounding | str | None=..., frequency: Frequency | str | None=..., interpolator: Interpolator | str | None=..., enable_extrapolation: bool=...) -> Self:
+    def __new__(cls, reference_date: _DateLike, dates: Sequence[_DateLike], rates: Sequence[float], day_counter: DayCounter | str | None=..., compounding: Compounding | str | None=..., frequency: Frequency | str | None=..., interpolator: Interpolator | str | None=..., enable_extrapolation: bool=...) -> Self:
         """Create a dated zero-rate curve.
 
         Parameters
@@ -1528,6 +1586,12 @@ class ZeroRateTermStructure:
         """Read-only decimal zero rates in pillar-date order, returned as a fresh list."""
         ...
 
+    def keys(self) -> list[str]:
+        """Return serialized field names; supports dict(obj)."""
+        ...
+
+    def __getitem__(self, key: str, /) -> Any: ...
+
 @final
 class TenorBasedZeroRateTermStructure:
     """Interpolate annual zero rates at tenors from a fixed reference date.
@@ -1536,7 +1600,7 @@ class TenorBasedZeroRateTermStructure:
     calendar. Queries use the resulting dated zero-rate curve.
     """
 
-    def __new__(cls, reference_date: _DateLike, tenors: Sequence[_PeriodLike], rates: Sequence[float], *, day_counter: DayCounter | str | None=..., compounding: Compounding | str | None=..., frequency: Frequency | str | None=..., interpolator: Interpolator | str | None=..., enable_extrapolation: bool=...) -> Self:
+    def __new__(cls, reference_date: _DateLike, tenors: Sequence[_PeriodLike], rates: Sequence[float], day_counter: DayCounter | str | None=..., compounding: Compounding | str | None=..., frequency: Frequency | str | None=..., interpolator: Interpolator | str | None=..., enable_extrapolation: bool=...) -> Self:
         """Create a zero-rate curve from reference-date tenors.
 
         Parameters
@@ -1742,6 +1806,12 @@ class TenorBasedZeroRateTermStructure:
     def compounding(self) -> Compounding:
         """Read-only compounding convention for the curve's zero rates."""
         ...
+
+    def keys(self) -> list[str]:
+        """Return serialized field names; supports dict(obj)."""
+        ...
+
+    def __getitem__(self, key: str, /) -> Any: ...
 
 @final
 class DiscountCurve:

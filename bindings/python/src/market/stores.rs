@@ -19,7 +19,6 @@ use crate::common::conversion::{
     extract_currency, extract_date, extract_day_counter, extract_interpolator,
     extract_market_index, from_json_file, from_py, qs_err,
 };
-use crate::QuantSupportError;
 
 /// Accepts a JSON value that is either a list of `T`, a single `T`, or an
 /// object wrapping a single list (e.g. `{"curve_specs": [...]}`).
@@ -37,7 +36,11 @@ fn list_from_value<T: DeserializeOwned>(value: serde_json::Value, what: &str) ->
             _ => serde_json::from_value::<T>(v).map(|one| vec![one]),
         }
     };
-    parse(value).map_err(|e| QuantSupportError::new_err(format!("invalid {what}: {e}")))
+    parse(value).map_err(|e| {
+        crate::common::errors::native(&quantsupport::utils::errors::QSError::DeserializationErr(
+            format!("invalid {what}: {e}"),
+        ))
+    })
 }
 
 /// Defines a Python wrapper class around a serde-deserializable library
@@ -87,18 +90,9 @@ macro_rules! config_wrapper {
 
             /// Returns the configuration as a dict.
             fn to_dict<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-                pythonize::pythonize(py, &self.inner).map_err(|e| {
-                    QuantSupportError::new_err(format!("cannot serialize {}: {e}", $what))
-                })
+                crate::common::representation::to_dict(py, &self.inner)
             }
 
-            fn __repr__(&self) -> String {
-                format!(
-                    "{}({})",
-                    $pyname,
-                    serde_json::to_string(&self.inner).unwrap_or_default()
-                )
-            }
         }
     };
 }
@@ -130,7 +124,7 @@ config_wrapper!(
 impl CurveConfiguration {
     #[new]
     #[allow(clippy::too_many_arguments)]
-    #[pyo3(signature = (*, market_index, quotes = None,
+    #[pyo3(signature = (market_index, quotes = None,
         day_counter = None, interpolator = None, enable_extrapolation = true))]
     fn new(
         market_index: &Bound<'_, PyAny>,
@@ -168,7 +162,7 @@ impl CurveConfiguration {
     ///     Spread curve configured in the same context. The component curves
     ///     must share a reference date and day-count convention.
     #[staticmethod]
-    #[pyo3(signature = (*, market_index, base_index, spread_index))]
+    #[pyo3(signature = (market_index, base_index, spread_index))]
     fn composite(
         market_index: &Bound<'_, PyAny>,
         base_index: &Bound<'_, PyAny>,
@@ -262,27 +256,27 @@ impl QuoteStore {
     #[pyo3(signature = (identifier, level = "mid"))]
     fn value(&self, identifier: &str, level: &str) -> PyResult<f64> {
         let quote = self.inner.quote(identifier).ok_or_else(|| {
-            QuantSupportError::new_err(format!("quote '{identifier}' was not found"))
+            crate::common::errors::not_found(format!("quote '{identifier}' was not found"))
         })?;
         let value = match level.to_ascii_lowercase().as_str() {
             "mid" => quote.levels().mid(),
             "bid" => quote.levels().bid(),
             "ask" => quote.levels().ask(),
             _ => {
-                return Err(QuantSupportError::new_err(format!(
+                return Err(crate::common::errors::invalid_value(format!(
                     "invalid quote level '{level}' (expected 'mid', 'bid', or 'ask')"
                 )))
             }
         };
         value.ok_or_else(|| {
-            QuantSupportError::new_err(format!("quote '{identifier}' has no {level} level"))
+            crate::common::errors::not_found(format!("quote '{identifier}' has no {level} level"))
         })
     }
 
     /// Returns `(mid, bid, ask)` for one quote identifier.
     fn levels(&self, identifier: &str) -> PyResult<(Option<f64>, Option<f64>, Option<f64>)> {
         let quote = self.inner.quote(identifier).ok_or_else(|| {
-            QuantSupportError::new_err(format!("quote '{identifier}' was not found"))
+            crate::common::errors::not_found(format!("quote '{identifier}' was not found"))
         })?;
         Ok((
             quote.levels().mid(),
@@ -467,3 +461,12 @@ impl FxStore {
         "FxStore(...)".to_string()
     }
 }
+
+crate::common::representation::impl_dict_protocol!(
+    CurveConfiguration,
+    CreditCurveConfiguration,
+    VolatilitySurfaceConfiguration,
+    VolatilityCubeConfiguration,
+    SimulationConfiguration,
+    PricerConfiguration
+);

@@ -37,7 +37,7 @@ pub struct Shock {
 #[pymethods]
 impl Shock {
     #[new]
-    #[pyo3(signature = (*, target, value, shock_type))]
+    #[pyo3(signature = (target, value, shock_type))]
     fn new(target: String, value: f64, shock_type: ScenarioType) -> PyResult<Self> {
         if target.is_empty() || !value.is_finite() {
             return Err(PyValueError::new_err(
@@ -182,7 +182,7 @@ pub struct Scenario {
 #[pymethods]
 impl Scenario {
     #[new]
-    #[pyo3(signature = (*, shocks))]
+    #[pyo3(signature = (shocks))]
     fn new(shocks: Vec<Shock>) -> Self {
         Self {
             inner: QsScenario::new(shocks.into_iter().map(|shock| shock.inner).collect()),
@@ -268,3 +268,5 @@ impl Scenario {
         Ok(false)
     }
 }
+
+crate::common::representation::impl_class_repr!(Scenario);

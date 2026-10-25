@@ -6,7 +6,7 @@ use quantsupport::prelude::{
     PrepaymentModelConfiguration as QsPrepaymentModelConfiguration,
 };
 
-use crate::common::conversion::{extract_date, from_py, qs_err};
+use crate::common::conversion::{extract_date, from_py};
 
 /// French amortization, bullet repayment, or a residual balloon.
 #[pyclass(module = "quantsupport", frozen, from_py_object)]
@@ -122,8 +122,8 @@ macro_rules! serialized_terms {
         impl $name {
             /// Loads the native JSON-compatible representation.
             ///
-            /// Accepts the same tagged dictionary or unit-variant string returned
-            /// by ``to_dict()``. Deserializes terms; economic parameter constraints
+            /// Accepts tagged dictionaries and legacy unit-variant strings.
+            /// Deserializes terms; economic parameter constraints
             /// are validated later when constructing a Loan.
             #[staticmethod]
             fn from_dict(obj: &Bound<'_, PyAny>) -> PyResult<Self> {
@@ -134,16 +134,11 @@ macro_rules! serialized_terms {
 
             /// Returns the native JSON-compatible representation.
             ///
-            /// Unit variants serialize as strings; variants with parameters
-            /// serialize as tagged dictionaries. Suitable for ``from_dict()``
+            /// All variants serialize as tagged dictionaries, including unit
+            /// variants with a None value. Suitable for ``from_dict()``
             /// or embedding in Loan construction parameters.
             fn to_dict<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-                pythonize::pythonize(py, &self.inner).map_err(qs_err)
-            }
-
-            /// Returns the term type and native variant for inspection.
-            fn __repr__(&self) -> String {
-                format!("{}({:?})", stringify!($name), self.inner)
+                crate::common::representation::to_dict(py, &self.inner)
             }
         }
     };
@@ -158,4 +153,9 @@ serialized_terms!(
     PrepaymentModelConfiguration,
     QsPrepaymentModelConfiguration,
     "prepayment"
+);
+
+crate::common::representation::impl_dict_protocol!(
+    LoanRepaymentStructure,
+    PrepaymentModelConfiguration
 );

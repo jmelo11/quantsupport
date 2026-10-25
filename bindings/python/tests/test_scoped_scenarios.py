@@ -56,17 +56,17 @@ class ScopedScenarioTests(unittest.TestCase):
             with self.subTest(target=target, value=value), self.assertRaises(ValueError):
                 qs.Shock(target=target, value=value, shock_type=qs.ScenarioType.Absolute)
 
-    def test_shock_constructor_enforces_typed_keyword_parameters(self):
+    def test_shock_constructor_accepts_positional_and_typed_keyword_parameters(self):
         import inspect
         signature = inspect.signature(qs.Shock)
         self.assertEqual(list(signature.parameters), ["target", "value", "shock_type"])
-        self.assertTrue(all(parameter.kind == inspect.Parameter.KEYWORD_ONLY
+        self.assertTrue(all(parameter.kind == inspect.Parameter.POSITIONAL_OR_KEYWORD
                             for parameter in signature.parameters.values()))
         for invalid_type in ["Absolute", qs.Frequency.Annual, None]:
             with self.subTest(shock_type=invalid_type), self.assertRaises(TypeError):
                 qs.Shock(target="ESTR", value=0.01, shock_type=invalid_type)
-        with self.assertRaises(TypeError):
-            qs.Shock("ESTR", 0.01, qs.ScenarioType.Absolute)
+        self.assertEqual(repr(qs.Shock("ESTR", 0.01, qs.ScenarioType.Absolute)),
+                         repr(qs.Shock(target="ESTR", value=0.01, shock_type=qs.ScenarioType.Absolute)))
         with self.assertRaises(TypeError):
             qs.Shock(target="ESTR", value=0.01)
         with self.assertRaises(TypeError):

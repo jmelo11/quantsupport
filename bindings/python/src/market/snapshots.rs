@@ -11,7 +11,6 @@ use crate::{
     market::stores::{FixingStore, QuoteStore},
     pricing::{collateral::FixedIncomeDiscountPolicy, context::PricingContext},
     time::{datetime::extract_datetime, DateTime},
-    QuantSupportError,
 };
 
 /// Timestamp matching policy. Previous never selects a later observation.
@@ -51,7 +50,7 @@ fn selection_rule(value: &Bound<'_, PyAny>) -> PyResult<QsSnapshotSelectionRule>
         "exact" => Ok(QsSnapshotSelectionRule::Exact),
         "closest" => Ok(QsSnapshotSelectionRule::Closest),
         "previous" => Ok(QsSnapshotSelectionRule::Previous),
-        _ => Err(QuantSupportError::new_err(
+        _ => Err(crate::common::errors::invalid_value(
             "Expected Exact, Closest, or Previous",
         )),
     }
@@ -67,8 +66,13 @@ pub struct SnapshotSelector {
 
 #[pymethods]
 impl SnapshotSelector {
+    /// Returns timestamp, selection rule, and quote level as a dictionary.
+    fn to_dict<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        crate::common::representation::to_dict(py, &self.inner)
+    }
+
     #[new]
-    #[pyo3(signature = (timestamp, *, rule = None, level = None))]
+    #[pyo3(signature = (timestamp, rule = None, level = None))]
     fn new(
         timestamp: &Bound<'_, PyAny>,
         rule: Option<&Bound<'_, PyAny>>,
@@ -132,8 +136,7 @@ impl MarketSnapshot {
     }
 
     fn to_dict<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        pythonize::pythonize(py, &self.inner)
-            .map_err(|error| QuantSupportError::new_err(error.to_string()))
+        pythonize::pythonize(py, &self.inner).map_err(qs_err)
     }
 
     /// Matched observation instant as a library DateTime.
@@ -199,7 +202,7 @@ impl MarketSnapshotStore {
 
     /// Create an independent context at the selected market's business date.
     /// Fixings are supplied separately; no publication-vintage filtering occurs.
-    #[pyo3(signature = (selector, *, fixings = None, fixed_income_policy = None))]
+    #[pyo3(signature = (selector, fixings = None, fixed_income_policy = None))]
     fn pricing_context(
         &self,
         selector: &SnapshotSelector,
@@ -229,22 +232,32 @@ impl MarketSnapshotStore {
 
     /// Save all market observations and configurations, excluding runtime AD data.
     fn to_json(&self, path: &str) -> PyResult<()> {
-        let json = serde_json::to_string_pretty(&self.inner)
-            .map_err(|error| QuantSupportError::new_err(error.to_string()))?;
-        std::fs::write(path, json).map_err(|error| QuantSupportError::new_err(error.to_string()))
-    }
-
-    /// Load a list of native snapshot dictionaries, rejecting duplicate timestamps.
-    #[staticmethod]
-    fn from_dict(value: &Bound<'_, PyAny>) -> PyResult<Self> {
-        Ok(Self {
-            inner: from_py(value, "market snapshot archive")?,
+        let json = serde_json::to_string_pretty(&self.inner).map_err(qs_err)?;
+        std::fs::write(path, json).map_err(|error| {
+            crate::common::errors::native(&quantsupport::utils::errors::QSError::IoErr(error))
         })
     }
 
-    /// Return the serialized archive as a list of snapshot dictionaries.
+    /// Load a snapshots dictionary or legacy list, rejecting duplicate timestamps.
+    #[staticmethod]
+    fn from_dict(value: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let snapshots = value.get_item("snapshots").ok();
+        Ok(Self {
+            inner: from_py(
+                snapshots.as_ref().unwrap_or(value),
+                "market snapshot archive",
+            )?,
+        })
+    }
+
+    /// Return a dictionary containing the snapshot list.
     fn to_dict<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        pythonize::pythonize(py, &self.inner)
-            .map_err(|error| QuantSupportError::new_err(error.to_string()))
+        pythonize::pythonize(py, &serde_json::json!({"snapshots": self.inner})).map_err(qs_err)
     }
 }
+
+crate::common::representation::impl_dict_protocol!(
+    SnapshotSelector,
+    MarketSnapshot,
+    MarketSnapshotStore
+);

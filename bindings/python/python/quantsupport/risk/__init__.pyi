@@ -77,7 +77,7 @@ Repeated tenor/expiry tokens can cause a full quote identifier to match
 additional quotes. Use one family selector for one family-wide move and verify
 the selected inputs, rather than assuming one shock per full ID bumps once."""
 
-    def __new__(cls, *, target: str, value: float, shock_type: ScenarioType) -> Self:
+    def __new__(cls, target: str, value: float, shock_type: ScenarioType) -> Self:
         ...
 
     def __repr__(self) -> str:
@@ -123,7 +123,7 @@ exit on the owning thread, exiting before the enclosing PricingContext.
 Do not retain AD-backed shocked market objects for use after scenario exit.
 """
 
-    def __new__(cls, *, shocks: Sequence[Shock]) -> Self:
+    def __new__(cls, shocks: Sequence[Shock]) -> Self:
         ...
 
     @property
@@ -306,7 +306,7 @@ QuantSupportError
     or transfer minimum is negative or non-finite.
 """
 
-    def __new__(cls, collateral_index: _IndexLike, collateral_currency: _CurrencyLike, credit_spread: Any, recovery: Any, funding_spread: float = ..., credit_index: _IndexLike | None = ..., funding_spread_curve: Any | None = ..., funding_index: Any | None = ..., *, variation_margin: bool = ..., counterparty_threshold: float = ..., own_threshold: float = ..., minimum_transfer_amount: float = ...) -> Self:
+    def __new__(cls, collateral_index: _IndexLike, collateral_currency: _CurrencyLike, credit_spread: Any, recovery: Any, funding_spread: float = ..., credit_index: _IndexLike | None = ..., funding_spread_curve: Any | None = ..., funding_index: Any | None = ..., variation_margin: bool = ..., counterparty_threshold: float = ..., own_threshold: float = ..., minimum_transfer_amount: float = ...) -> Self:
         ...
 
     def __repr__(self) -> str:

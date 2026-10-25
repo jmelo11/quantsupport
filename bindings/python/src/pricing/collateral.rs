@@ -72,12 +72,6 @@ impl SingleCurveCSADiscountPolicy {
     fn to_dict<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         pythonize::pythonize(py, &serde_json::json!({"collateral_currency": self.collateral_currency, "collateral_index": self.collateral_index})).map_err(qs_err)
     }
-    fn __repr__(&self) -> String {
-        format!(
-            "SingleCurveCSADiscountPolicy(collateral_currency={}, collateral_index={})",
-            self.collateral_currency, self.collateral_index
-        )
-    }
 }
 
 /// Select discount curves by the cashflow currency.
@@ -114,6 +108,21 @@ impl FixedIncomeDiscountPolicy {
 }
 #[pymethods]
 impl FixedIncomeDiscountPolicy {
+    /// Returns the currency-to-curve mapping and discount preference.
+    fn to_dict<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let indices = pyo3::types::PyDict::new(py);
+        for (currency, index) in &self.discount_curve_by_currency {
+            indices.set_item(
+                currency.to_string(),
+                pythonize::pythonize(py, index).map_err(qs_err)?,
+            )?;
+        }
+        let result = pyo3::types::PyDict::new(py);
+        result.set_item("discount_curve_by_currency", indices)?;
+        result.set_item("prefer_instrument_index", self.prefer_instrument_index)?;
+        Ok(result.into_any())
+    }
+
     #[new]
     #[pyo3(signature = (discount_curve_by_currency, prefer_instrument_index = true))]
     fn new(
@@ -132,3 +141,8 @@ impl FixedIncomeDiscountPolicy {
         })
     }
 }
+
+crate::common::representation::impl_dict_protocol!(
+    SingleCurveCSADiscountPolicy,
+    FixedIncomeDiscountPolicy
+);
