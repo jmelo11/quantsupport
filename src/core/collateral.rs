@@ -84,7 +84,7 @@ impl DiscountPolicy for FixedIncomeDiscountPolicy {
                 }
                 self.discount_curve_index(target.currency()).ok_or_else(|| {
                     QSError::InvalidValueErr(format!(
-                        "No risk-free index configured for currency {}",
+                        "No discount curve configured for currency {}",
                         target.currency()
                     ))
                 })
@@ -118,7 +118,7 @@ impl SingleCurveCSADiscountPolicy {
     pub const fn collateral_index(&self) -> &MarketIndex {
         &self.discount_index
     }
-    /// Returns the base currency used for collateral and monetary reporting.
+    /// Returns the currency used to collateralize the selected discount curves.
     #[must_use]
     pub const fn base_currency(&self) -> Currency {
         self.base_currency

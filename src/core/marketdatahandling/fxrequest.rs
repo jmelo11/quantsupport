@@ -5,9 +5,10 @@ use crate::{currencies::currency::Currency, time::date::Date};
 /// An explicit pair requests quote-currency units per one base-currency unit.
 /// [`PricingContext`](crate::core::pricingcontext::PricingContext) resolves
 /// such pairs from its spot FX store, including available triangulation paths.
-/// It does not use [`Self::date`] to construct a forward FX rate and does not
-/// resolve single-currency requests. A simulation model may instead interpret
-/// the date and a single currency relative to its own domestic currency.
+/// A single currency requests the spot observations needed for conversion to
+/// the context's base currency. The pricer composes that conversion on its AD
+/// tape. The context does not use [`Self::date`] to construct a forward FX rate;
+/// a simulation model may interpret it relative to its own domestic currency.
 #[derive(Clone)]
 pub struct FxRequest {
     base: Currency,
@@ -16,9 +17,7 @@ pub struct FxRequest {
 }
 
 impl FxRequest {
-    /// Creates a single-currency request for consumers with a domestic currency.
-    ///
-    /// A pricing context alone does not resolve this form.
+    /// Requests conversion inputs from this currency to the consumer's base currency.
     #[must_use]
     pub const fn single(base: Currency) -> Self {
         Self {

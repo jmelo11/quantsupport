@@ -661,17 +661,27 @@ impl PricingContext {
             }
         }
 
-        // 3. Resolve FX rates from the FX store.
-        // this approach is not ideal, it could lead to sensitivities in unnatural parities
-        let mut fx_store = FxStore::new();
-        if let Some(fx_requests) = request.fx_request() {
+        // 3. Validate requested FX paths and retain original spot observations.
+        // Differentiating a synthesized inverse/pair as a fresh quote would
+        // report risk in coordinates that do not exist in the input store.
+        let fx_store = if let Some(fx_requests) = request.fx_request() {
             for fx_req in fx_requests {
                 if let Some(quote_ccy) = fx_req.quote() {
-                    let rate = self.fx_store.get_fx_rate(fx_req.base(), quote_ccy)?;
-                    fx_store.add_fx_rate(fx_req.base(), quote_ccy, rate);
+                    let _ = self.fx_store.get_fx_rate(fx_req.base(), quote_ccy)?;
                 }
             }
-        }
+            // Conversion to the context base is composed on the pricer's AD tape.
+            if fx_requests
+                .iter()
+                .any(|request| request.is_pair() || request.base() != self.base_currency)
+            {
+                FxStore::from_records(self.fx_store.records())
+            } else {
+                FxStore::new()
+            }
+        } else {
+            FxStore::new()
+        };
 
         // 4. Assemble final MarketData.
         let mut pricer_configurations = HashMap::new();
@@ -704,6 +714,7 @@ impl PricingContext {
             })
             .transpose()?;
         let mut md = MarketData::new(fixings, constructed_elements)
+            .with_base_currency(self.base_currency)
             .with_quote_level(self.quote_level)
             .with_fx_store(fx_store)
             .with_pricer_configurations(pricer_configurations);

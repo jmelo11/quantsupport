@@ -3,12 +3,13 @@ use crate::rates::yieldtermstructure::primalcurve::PrimalCurve;
 use crate::{
     ad::{dual::DualFwd, scalar::Scalar, tape::Tape},
     core::{
-        collateral::DiscountPolicy,
+        collateral::{DiscountPolicy, Discountable},
         evaluationresults::{EvaluationResults, SensitivityMap},
         instrument::Instrument,
         marketdatahandling::{
             constructedelementrequest::ConstructedElementRequest,
             fixingrequest::FixingRequest,
+            fxrequest::FxRequest,
             marketdata::{MarketData, MarketDataProvider, MarketDataRequest},
         },
         pricerconfiguration::InstrumentType,
@@ -674,6 +675,7 @@ pub fn contractual_market_request(
     MarketDataRequest::default()
         .with_constructed_elements_request(elements)
         .with_fixings_request(fixings)
+        .with_fx_request(vec![FxRequest::single(trade.bond_leg().currency())])
 }
 /// Records the engine valuation and the trade's spread as an independent risk factor.
 fn build_ad_value<E: BondPricingEngine>(
@@ -720,6 +722,16 @@ fn build_ad_value<E: BondPricingEngine>(
             .mul_val(DualFwd::scalar(trade.side().sign()));
         drop(curve);
         state.legs = vec![resolved_leg.with_side(trade.side())];
+        let source = trade.bond_leg().currency();
+        let value = if let Some(target) = state
+            .get_market_data_reponse()
+            .and_then(MarketData::base_currency)
+            .filter(|target| *target != source)
+        {
+            (value * state.get_exchange_rate(source, target)?).into()
+        } else {
+            value
+        };
         state.value = Some(value);
         state.spread_node = Some(spread);
         Ok(value.value())
@@ -765,6 +777,10 @@ fn sensitivities(state: &BondState) -> Result<SensitivityMap> {
         .ok_or_else(|| QSError::ValueNotSetErr("Bond spread risk factor".into()))?;
     labels.push(state.spread_label.clone());
     exposures.push(spread.adjoint()?.value());
+    for (label, exposure) in state.get_fx_sensitivities()? {
+        labels.push(label);
+        exposures.push(exposure);
+    }
     Ok(SensitivityMap::default()
         .with_instrument_keys(&labels)
         .with_exposure(&exposures)
@@ -999,6 +1015,7 @@ pub fn bond_market_data_request(
     if !trade.call_schedule().is_empty() {
         request = request.with_pricer_configuration_request(vec![trade.instrument_type()]);
     }
+    request = request.with_fx_request(vec![FxRequest::single(trade.bond_leg().currency())]);
     Some(request)
 }
 

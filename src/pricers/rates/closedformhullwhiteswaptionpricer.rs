@@ -3,11 +3,12 @@ use std::collections::HashSet;
 use crate::{
     ad::{dual::DualFwd, expr::FloatExt, tape::Tape},
     core::{
-        collateral::DiscountPolicy,
+        collateral::{DiscountPolicy, Discountable},
         evaluationresults::{EvaluationResults, SensitivityMap},
         instrument::Instrument,
         marketdatahandling::{
             constructedelementrequest::ConstructedElementRequest,
+            fxrequest::FxRequest,
             marketdata::{MarketData, MarketDataProvider, MarketDataRequest},
         },
         pricer::Pricer,
@@ -407,7 +408,7 @@ impl HandleValue<EuropeanSwaptionTrade<DualFwd>, HullWhiteSwaptionState>
         })?;
         parameters.resolve_calibration(market, &trade.instrument().market_index())?;
         Tape::start_recording_fwd();
-        let value = (|| {
+        let value: Result<DualFwd> = (|| {
             Tape::set_mark_fwd();
             state.put_pillars_on_tape()?;
             let market = state
@@ -422,7 +423,17 @@ impl HandleValue<EuropeanSwaptionTrade<DualFwd>, HullWhiteSwaptionState>
                 cube.cube_mut().put_pillars_on_tape();
             }
             let parameters = parameters.ad_parameters(market)?;
-            self.swaption_value(trade, state, &parameters)
+            let value = self.swaption_value(trade, state, &parameters)?;
+            let source = Discountable::currency(trade.instrument());
+            if let Some(target) = state
+                .get_market_data_reponse()
+                .and_then(MarketData::base_currency)
+                .filter(|target| *target != source)
+            {
+                Ok((value * state.get_exchange_rate(source, target)?).into())
+            } else {
+                Ok(value)
+            }
         })();
         Tape::stop_recording_fwd();
 
@@ -476,6 +487,11 @@ impl HandleSensitivities<EuropeanSwaptionTrade<DualFwd>, HullWhiteSwaptionState>
                 identifiers.push(label);
                 exposures.push(pillar.adjoint()?.value());
             }
+        }
+
+        for (label, exposure) in state.get_fx_sensitivities()? {
+            identifiers.push(label);
+            exposures.push(exposure);
         }
 
         Ok(SensitivityMap::default()
@@ -565,7 +581,13 @@ impl Pricer for ClosedFormHullWhiteSwaptionPricer {
             }
             request = request.with_calibration_request(calibration.clone());
         }
-        Some(request.with_constructed_elements_request(elements))
+        request = request.with_constructed_elements_request(elements);
+        let mut fx = request.fx_request().cloned().unwrap_or_default();
+        fx.push(FxRequest::single(Discountable::currency(
+            trade.instrument(),
+        )));
+        request = request.with_fx_request(fx);
+        Some(request)
     }
 
     fn set_discount_policy(&mut self, policy: Box<Self::Policy>) {

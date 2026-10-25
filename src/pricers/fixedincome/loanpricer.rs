@@ -11,6 +11,7 @@ use crate::{
             constructedelementrequest::ConstructedElementRequest,
             fixingrequest::FixingRequest,
             forwardraterequest::ForwardRateRequest,
+            fxrequest::FxRequest,
             marketdata::{MarketData, MarketDataProvider, MarketDataRequest},
         },
         pricer::Pricer,
@@ -642,6 +643,16 @@ impl HandleValue<LoanTrade<DualFwd>, LoanValuationState> for LoanPricer {
             let cashflows = Self::clone_cashflows_with_resolved_fixings(trade.instrument(), state)?;
             let (value, legs) =
                 self.calculate_expected_receipts_and_present_value(trade, state, &cashflows)?;
+            let source = trade.instrument().currency();
+            let value = if let Some(target) = state
+                .get_market_data_reponse()
+                .and_then(MarketData::base_currency)
+                .filter(|target| *target != source)
+            {
+                (value * state.get_exchange_rate(source, target)?).into()
+            } else {
+                value
+            };
             state.value = Some(value);
             state.legs = legs;
             Ok(value.value())
@@ -729,6 +740,10 @@ impl HandleSensitivities<LoanTrade<DualFwd>, LoanValuationState> for LoanPricer 
                     exposures.push(exposure);
                 }
             }
+        }
+        for (label, exposure) in state.get_fx_sensitivities()? {
+            keys.push(label);
+            exposures.push(exposure);
         }
         Ok(SensitivityMap::default()
             .with_instrument_keys(&keys)
@@ -1231,11 +1246,13 @@ impl Pricer for LoanPricer {
                     .with_missing_fixing_allowed(true)
             })
             .collect();
-        Some(
-            MarketDataRequest::default()
-                .with_constructed_elements_request(elements)
-                .with_fixings_request(fixings),
-        )
+        let mut request = MarketDataRequest::default()
+            .with_constructed_elements_request(elements)
+            .with_fixings_request(fixings);
+        let mut fx = request.fx_request().cloned().unwrap_or_default();
+        fx.push(FxRequest::single(loan.currency()));
+        request = request.with_fx_request(fx);
+        Some(request)
     }
     /// Installs a policy used to select the loan's discount curve.
     fn set_discount_policy(&mut self, policy: Box<Self::Policy>) {

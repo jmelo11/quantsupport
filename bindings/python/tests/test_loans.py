@@ -52,6 +52,37 @@ def evaluate_loan_trade(instrument, ctx, requests=None, **pricer_options):
 
 
 class LoanWorkflowTests(unittest.TestCase):
+    def test_context_and_explicit_pricer_convert_receipts_and_risk_to_base_currency(self):
+        instrument = build_loan_contract()
+        trade = qs.Trade(instrument, REFERENCE)
+        context = build_pricing_context()
+        with context:
+            local = context.evaluate(trade, ["Value", "Sensitivities", "Cashflows"])
+        context.curves = [*context.curves, qs.CurveConfiguration(
+            market_index="SOFR",
+            construction=qs.CurveConstruction.zero_rate(
+                pillars=["0D", "5Y"], rates=[0.03, 0.03],
+            ),
+        )]
+        context.csa_policy = qs.SingleCurveCSADiscountPolicy("USD", "SOFR")
+        context.fixed_income_policy = qs.FixedIncomeDiscountPolicy({"EUR": "ESTR"})
+        fx = qs.FxStore()
+        fx.add("EUR", "USD", 1.1)
+        context.fx = fx
+        with context:
+            converted = context.evaluate(trade, ["Value", "Sensitivities", "Cashflows"])
+            explicit = qs.LoanPricer().evaluate(trade, context, ["Value", "Sensitivities"])
+            risk_only = qs.LoanPricer().evaluate(trade, context, ["Sensitivities"])
+        self.assertAlmostEqual(converted.price, local.price * 1.1, places=7)
+        self.assertAlmostEqual(explicit.price, converted.price, places=7)
+        self.assertIsNone(risk_only.price)
+        self.assertEqual(dict(risk_only.raw_sensitivities), dict(explicit.raw_sensitivities))
+        self.assertEqual(converted.cashflows.amount.tolist(), local.cashflows.amount.tolist())
+        self.assertEqual(set(converted.cashflows.currency), {"EUR"})
+        self.assertAlmostEqual(dict(converted.raw_sensitivities)["EUR/USD"], local.price, places=7)
+        for pillar, value in local.raw_sensitivities:
+            self.assertAlmostEqual(dict(converted.raw_sensitivities)[pillar], value * 1.1, places=6)
+
     def test_discount_curve_is_a_pricing_choice_and_rejected_in_contract_terms(self):
         instrument = build_loan_contract()
         self.assertNotIn("discount_index", instrument.to_dict())

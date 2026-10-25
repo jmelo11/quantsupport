@@ -108,6 +108,24 @@ pub trait PricerState {
         self.get_market_data_reponse().and_then(|md| md.fx_store())
     }
 
+    /// Collects spot-pillar derivatives after the pricer differentiates its value.
+    ///
+    /// # Errors
+    /// Propagates adjoint errors for spot observations on the valuation tape.
+    fn get_fx_sensitivities(&self) -> Result<Vec<(String, f64)>> {
+        self.get_fx_store().map_or_else(
+            || Ok(Vec::new()),
+            |store| {
+                store
+                    .pillars()
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(|(label, pillar)| Ok((label, pillar.adjoint()?.value())))
+                    .collect()
+            },
+        )
+    }
+
     /// Retrieves the fixing for a given market index and date, if available.
     ///
     /// ## Errors

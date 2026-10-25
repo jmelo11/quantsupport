@@ -1,12 +1,13 @@
 use crate::{
     ad::{dual::DualFwd, tape::Tape},
     core::{
-        collateral::DiscountPolicy,
+        collateral::{DiscountPolicy, Discountable},
         evaluationresults::{EvaluationResults, SensitivityMap},
         instrument::Instrument,
         marketdatahandling::{
             constructedelementrequest::ConstructedElementRequest,
             fixingrequest::FixingRequest,
+            fxrequest::FxRequest,
             marketdata::{MarketData, MarketDataProvider, MarketDataRequest},
         },
         pricer::Pricer,
@@ -129,6 +130,16 @@ impl HandleValue<EquityEuropeanOptionTrade, EquityOptionState> for BlackEuropean
         )?;
 
         let value: DualFwd = (df_r * undiscounted * trade.notional()).into();
+        let source = Discountable::currency(option);
+        let value = if let Some(target) = state
+            .get_market_data_reponse()
+            .and_then(MarketData::base_currency)
+            .filter(|target| *target != source)
+        {
+            (value * state.get_exchange_rate(source, target)?).into()
+        } else {
+            value
+        };
         state.value = Some(value);
         Tape::stop_recording_fwd();
         Ok(value.value())
@@ -204,6 +215,11 @@ impl HandleSensitivities<EquityEuropeanOptionTrade, EquityOptionState>
             }
         }
 
+        for (label, exposure) in state.get_fx_sensitivities()? {
+            ids.push(label);
+            exposures.push(exposure);
+        }
+
         Ok(SensitivityMap::default()
             .with_instrument_keys(&ids)
             .with_exposure(&exposures)
@@ -277,9 +293,14 @@ impl Pricer for BlackEuropeanOptionPricer {
             }
         }
 
-        let request = MarketDataRequest::default()
+        let mut request = MarketDataRequest::default()
             .with_constructed_elements_request(elements)
             .with_fixings_request(fixings);
+        let mut fx = request.fx_request().cloned().unwrap_or_default();
+        fx.push(FxRequest::single(Discountable::currency(
+            trade.instrument(),
+        )));
+        request = request.with_fx_request(fx);
         Some(request)
     }
 

@@ -143,6 +143,16 @@ impl HandleValue<FxEuropeanOptionTrade, FxEuropeanOptionState> for FxEuropeanOpt
         let notional = DualFwd::new(trade.notional());
         let side = DualFwd::new(trade.side().sign());
         let npv: DualFwd = (df_quote * undiscounted * notional * side).into();
+        let source = inst.quote_currency();
+        let npv = if let Some(target) = state
+            .get_market_data_reponse()
+            .and_then(MarketData::base_currency)
+            .filter(|target| *target != source)
+        {
+            (npv * state.get_exchange_rate(source, target)?).into()
+        } else {
+            npv
+        };
         state.value = Some(npv);
 
         Tape::stop_recording_fwd();
@@ -279,6 +289,9 @@ impl Pricer for FxEuropeanOptionPricer {
             request = request.with_constructed_elements_request(elements);
         }
 
+        let mut fx = request.fx_request().cloned().unwrap_or_default();
+        fx.push(FxRequest::single(inst.quote_currency()));
+        request = request.with_fx_request(fx);
         Some(request)
     }
 

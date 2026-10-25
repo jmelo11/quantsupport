@@ -16,11 +16,12 @@
 use crate::{
     ad::{dual::DualFwd, scalar::Scalar, tape::Tape},
     core::{
-        collateral::DiscountPolicy,
+        collateral::{DiscountPolicy, Discountable},
         evaluationresults::{EvaluationResults, SensitivityMap},
         instrument::Instrument,
         marketdatahandling::{
             constructedelementrequest::ConstructedElementRequest,
+            fxrequest::FxRequest,
             marketdata::{MarketData, MarketDataProvider, MarketDataRequest},
         },
         pricer::Pricer,
@@ -142,6 +143,16 @@ impl HandleValue<CdsTrade, CdsState> for CdsPricer {
         let sign = trade.side().sign();
         let value: DualFwd =
             ((protection - premium) * DualFwd::scalar(sign * trade.notional())).into();
+        let source = Discountable::currency(cds);
+        let value = if let Some(target) = state
+            .get_market_data_reponse()
+            .and_then(MarketData::base_currency)
+            .filter(|target| *target != source)
+        {
+            (value * state.get_exchange_rate(source, target)?).into()
+        } else {
+            value
+        };
         state.value = Some(value);
 
         Tape::stop_recording_fwd();
@@ -224,6 +235,11 @@ impl HandleSensitivities<CdsTrade, CdsState> for CdsPricer {
             exposures.push(pillar.adjoint()?.value());
         }
 
+        for (label, exposure) in state.get_fx_sensitivities()? {
+            ids.push(label);
+            exposures.push(exposure);
+        }
+
         Ok(SensitivityMap::default()
             .with_instrument_keys(&ids)
             .with_exposure(&exposures)
@@ -300,7 +316,12 @@ impl Pricer for CdsPricer {
             }
         }
 
-        let request = MarketDataRequest::default().with_constructed_elements_request(elements);
+        let mut request = MarketDataRequest::default().with_constructed_elements_request(elements);
+        let mut fx = request.fx_request().cloned().unwrap_or_default();
+        fx.push(FxRequest::single(Discountable::currency(
+            trade.instrument(),
+        )));
+        request = request.with_fx_request(fx);
         Some(request)
     }
 
