@@ -74,6 +74,7 @@ impl PricerState for CdsState {
 }
 
 impl CdsPricer {
+    /// Selects the policy discount curve or the CDS contract discount index.
     fn resolve_discount_index(
         &self,
         trade: &CdsTrade,
@@ -389,6 +390,7 @@ mod tests {
         })
     }
 
+    /// Builds the CDS position used to compare value, spread and sensitivity requests.
     fn make_trade(
         ref_date: Date,
         years: i32,

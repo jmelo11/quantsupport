@@ -40,8 +40,11 @@ use std::collections::HashSet;
 
 /// Common contract exposed by straight and stepped-coupon bond trades.
 pub trait BondTerms: LegsProvider<DualFwd> {
+    /// Returns the trade quote or spread used to anchor bond valuation.
     fn pricing_anchor(&self) -> BondPricingAnchor;
+    /// Returns the optional settlement date supplied by the trade.
     fn settlement_date(&self) -> Option<Date>;
+    /// Returns the optional day count used to apply the bond spread.
     fn spread_day_counter(&self) -> Option<DayCounter>;
     /// Returns the single bond cashflow leg.
     fn bond_leg(&self) -> &Leg<DualFwd>;
@@ -144,6 +147,7 @@ impl BondTerms for SteppedCouponBondTrade<DualFwd> {
     }
 }
 
+/// Resolves the bond leg discount index through the required discount policy.
 fn discount_index(
     policy: Option<&dyn DiscountPolicy>,
     trade: &impl BondTerms,
@@ -576,18 +580,22 @@ fn solve_yield(
 /// Engine-specific preparation and valuation. Analytics do not dispatch by method.
 pub trait BondPricingEngine {
     type Model<T: Scalar>;
+    /// Returns the discount policy used by this bond pricing engine.
     fn policy(&self) -> Option<&dyn DiscountPolicy>;
+    /// Loads the market inputs and scalar model required by this engine.
     fn prepare(
         &self,
         trade: &impl BondTerms,
         discount_index: &MarketIndex,
         context: &impl MarketDataProvider,
     ) -> Result<(MarketData, Self::Model<f64>)>;
+    /// Rebuilds the prepared model with differentiable parameters for valuation risk.
     fn ad_model(
         &self,
         model: &Self::Model<f64>,
         market: &MarketData,
     ) -> Result<Self::Model<DualFwd>>;
+    /// Values the resolved bond cashflows and issuer calls with the supplied model and spread.
     fn value<T: Scalar>(
         &self,
         model: &Self::Model<T>,

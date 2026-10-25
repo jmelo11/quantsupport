@@ -319,6 +319,7 @@ pub fn summarize_cashflows(flows: &CashflowsTable) -> Result<Vec<PortfolioCashfl
         .collect())
 }
 
+/// Accumulates signed payments by date, original currency and payment category.
 fn add_cashflows(
     rows: &mut BTreeMap<(Date, String), CashflowSums>,
     flows: &CashflowsTable,
@@ -556,9 +557,11 @@ mod tests {
         /// A custom strategy that fails when consuming a table.
         struct RejectCashflows;
         impl CashflowAggregator for RejectCashflows {
+            /// Rejects incoming cashflows to exercise portfolio aggregation error propagation.
             fn accumulate_cashflows(&mut self, _: &CashflowsTable) -> Result<()> {
                 Err(QSError::InvalidValueErr("custom cashflow strategy".into()))
             }
+            /// Returns an empty cashflow table for the deliberately rejecting test strategy.
             fn into_cashflows_table(self) -> Result<CashflowsTable> {
                 Ok(CashflowsTable::new())
             }

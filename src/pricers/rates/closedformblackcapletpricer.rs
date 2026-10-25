@@ -985,6 +985,7 @@ mod tests {
     // Stress tests
     // -----------------------------------------------------------------------
 
+    /// Prices a test caplet or floorlet for the supplied market and strike.
     fn price_capletfloorlet(
         kind: CapletFloorletType,
         strike: f64,

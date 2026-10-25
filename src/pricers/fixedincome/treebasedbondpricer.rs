@@ -473,6 +473,7 @@ mod tests {
     };
     use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
+    /// Loads the example market used to test calibrated callable-bond engines.
     fn example_calibrated_context(
         use_fourier: bool,
         bump: Option<(&str, f64)>,
@@ -568,6 +569,7 @@ mod tests {
         }
     }
 
+    /// Returns lattice and analytic values for a callable zero-coupon test bond.
     fn callable_zero_coupon_value(steps_per_year: usize) -> (f64, f64) {
         let evaluation_date = Date::new(2025, 1, 1);
         let call_date = Date::new(2026, 1, 1);

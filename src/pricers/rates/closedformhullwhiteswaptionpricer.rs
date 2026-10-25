@@ -111,6 +111,7 @@ impl ClosedFormHullWhiteSwaptionPricer {
         Ok(pricer)
     }
 
+    /// Validates positive finite mean reversion and any fixed volatility parameters.
     fn validate_parameters(&self) -> Result<()> {
         if !self.alpha.is_finite() || self.alpha <= 0.0 {
             return Err(QSError::InvalidValueErr(
@@ -149,6 +150,7 @@ impl ClosedFormHullWhiteSwaptionPricer {
         Ok(log_a.exp())
     }
 
+    /// Solves the Jamshidian exercise rate by bracketing and bisection.
     fn find_critical_rate(terms: &[JamshidianTerm]) -> Result<f64> {
         let evaluate = |rate: f64| -> f64 {
             terms
@@ -213,6 +215,7 @@ impl ClosedFormHullWhiteSwaptionPricer {
         Ok((rate - objective / derivative).into())
     }
 
+    /// Prices the zero-coupon bond option used in payer or receiver swaption decomposition.
     fn bond_option(
         option_type: SwaptionType,
         bond_volatility: DualFwd,
@@ -249,6 +252,7 @@ impl ClosedFormHullWhiteSwaptionPricer {
         }
     }
 
+    /// Prices the swaption through Jamshidian decomposition using the selected curves.
     #[allow(clippy::too_many_lines)]
     fn swaption_value(
         &self,
@@ -653,6 +657,7 @@ mod tests {
     const STRIKE: f64 = 0.04;
     const NOTIONAL: f64 = 1_000_000.0;
 
+    /// Builds a surface- or cube-calibrated swaption market with an optional quote bump.
     fn calibrated_context(
         cube: bool,
         bump: Option<(&str, f64)>,
@@ -746,6 +751,7 @@ mod tests {
         Ok((context, configuration))
     }
 
+    /// Builds the payer or receiver swaption used by calibration-risk tests.
     fn calibrated_trade(option_type: SwaptionType) -> Result<EuropeanSwaptionTrade<DualFwd>> {
         let expiry = reference_date() + Period::new(30, TimeUnit::Months);
         let swaption = MakeSwaption::<DualFwd>::default()
@@ -905,10 +911,12 @@ mod tests {
         }
     }
 
+    /// Returns the fixed reference date shared by the swaption test market.
     fn reference_date() -> Date {
         Date::new(2025, 1, 2)
     }
 
+    /// Builds a payer or receiver swaption with the requested trade direction.
     fn build_trade(
         option_type: SwaptionType,
         side: Side,
@@ -937,6 +945,7 @@ mod tests {
         ))
     }
 
+    /// Builds the flat discount-curve inputs used by swaption valuation tests.
     fn market_data(rate: f64) -> MarketData {
         let curve = FlatForwardTermStructure::new(
             reference_date(),
@@ -952,6 +961,7 @@ mod tests {
         MarketData::new(HashMap::new(), elements)
     }
 
+    /// Builds the single-curve market provider used by swaption price and risk checks.
     fn provider(rate: f64) -> SimpleMarketDataProvider {
         SimpleMarketDataProvider {
             evaluation_date: reference_date(),
@@ -959,6 +969,7 @@ mod tests {
         }
     }
 
+    /// Builds separate forward and discount curves for swaption pricing tests.
     fn dual_curve_provider(forward_rate: f64, discount_rate: f64) -> SimpleMarketDataProvider {
         let mut market_data = market_data(forward_rate);
         let discount_curve = FlatForwardTermStructure::new(
@@ -980,6 +991,7 @@ mod tests {
         }
     }
 
+    /// Extracts the underlying swap's fixed coupon schedule for independent price checks.
     fn fixed_schedule(trade: &EuropeanSwaptionTrade<DualFwd>) -> Vec<(f64, f64)> {
         let day_counter = DayCounter::Actual360;
         trade
@@ -1001,6 +1013,7 @@ mod tests {
             .collect()
     }
 
+    /// Evaluates the test swaption and extracts its scalar PV.
     fn price(rate: f64, option_type: SwaptionType, side: Side) -> Result<f64> {
         let trade = build_trade(option_type, side)?;
         let pricer = ClosedFormHullWhiteSwaptionPricer::new(ALPHA, SIGMA);

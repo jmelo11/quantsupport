@@ -69,6 +69,8 @@ impl Discountable for CurrencyDiscountable {
 ///
 /// A [`DiscountPolicy`] is required and resolves curves for both currencies.
 /// Spot/strike are quote currency per base unit; notional is in base units.
+/// The formula above gives quote-currency PV; the policy can select a reporting
+/// currency for value and sensitivities, including spot FX conversion risk.
 /// Expiry time uses the instrument day count from trade date, not the context
 /// evaluation date. Black pricing requires a positive-forward/strike domain;
 /// the volatility surface is not automatically converted from normal quotes.

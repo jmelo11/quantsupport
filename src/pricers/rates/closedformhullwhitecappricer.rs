@@ -366,6 +366,7 @@ mod tests {
         }
     }
 
+    /// Builds flat forward and discount curves for Hull-White cap valuation tests.
     fn setup_hw_cap_market_data(
         trade_date: Date,
         market_index: &MarketIndex,
@@ -387,6 +388,7 @@ mod tests {
         MarketData::new(HashMap::new(), constructed_elements)
     }
 
+    /// Builds a scalar flat curve for independent Hull-White price checks.
     fn flat_f64_curve(ref_date: Date, rate: f64) -> FlatForwardTermStructure<f64> {
         FlatForwardTermStructure::new(ref_date, rate, RateDefinition::default())
     }

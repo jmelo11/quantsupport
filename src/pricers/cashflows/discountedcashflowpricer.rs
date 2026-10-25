@@ -757,6 +757,7 @@ mod tests {
         }
 
         impl MarketDataProvider for TestMarketDataProvider {
+            /// Returns the prepared market data used by this test provider.
             fn handle_request(
                 &self,
                 _request: &MarketDataRequest,
@@ -767,6 +768,7 @@ mod tests {
                 ))
             }
 
+            /// Returns the reference date of the test market.
             fn evaluation_date(&self) -> Date {
                 self.evaluation_date
             }
@@ -954,6 +956,7 @@ mod tests {
         }
 
         impl MarketDataProvider for VanillaSwapMarketDataProvider {
+            /// Returns the prepared market data used by this test provider.
             fn handle_request(&self, _request: &MarketDataRequest) -> Result<MarketData> {
                 Ok(MarketData::new(
                     self.market_data.fixings().clone(),
@@ -961,6 +964,7 @@ mod tests {
                 ))
             }
 
+            /// Returns the reference date of the test market.
             fn evaluation_date(&self) -> Date {
                 self.evaluation_date
             }
@@ -1110,6 +1114,7 @@ mod tests {
         }
 
         impl MarketDataProvider for CsaMarketDataProvider {
+            /// Returns the prepared market data used by this test provider.
             fn handle_request(&self, _request: &MarketDataRequest) -> Result<MarketData> {
                 let mut md = MarketData::new(
                     self.market_data.fixings().clone(),
@@ -1121,6 +1126,7 @@ mod tests {
                 Ok(md)
             }
 
+            /// Returns the reference date of the test market.
             fn evaluation_date(&self) -> Date {
                 self.evaluation_date
             }
@@ -1298,6 +1304,7 @@ mod tests {
         }
 
         impl MarketDataProvider for FairRateMarketDataProvider {
+            /// Returns the prepared market data used by this test provider.
             fn handle_request(&self, _request: &MarketDataRequest) -> Result<MarketData> {
                 Ok(MarketData::new(
                     self.market_data.fixings().clone(),
@@ -1305,6 +1312,7 @@ mod tests {
                 ))
             }
 
+            /// Returns the reference date of the test market.
             fn evaluation_date(&self) -> Date {
                 self.evaluation_date
             }
@@ -1436,6 +1444,7 @@ mod tests {
         }
 
         impl MarketDataProvider for CsaFairRateProvider {
+            /// Returns the prepared market data used by this test provider.
             fn handle_request(&self, _request: &MarketDataRequest) -> Result<MarketData> {
                 let mut md = MarketData::new(
                     self.market_data.fixings().clone(),
@@ -1447,6 +1456,7 @@ mod tests {
                 Ok(md)
             }
 
+            /// Returns the reference date of the test market.
             fn evaluation_date(&self) -> Date {
                 self.evaluation_date
             }

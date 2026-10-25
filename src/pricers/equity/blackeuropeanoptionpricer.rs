@@ -337,6 +337,7 @@ mod tests {
         },
     };
 
+    /// Finds a required market-pillar exposure in the reported sensitivity map.
     fn exposure_for_key(instrument_keys: &[String], exposures: &[f64], key: &str) -> Option<f64> {
         instrument_keys
             .iter()

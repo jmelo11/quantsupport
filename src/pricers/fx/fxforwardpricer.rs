@@ -35,6 +35,8 @@ use crate::{
 ///
 /// A [`DiscountPolicy`] is required and resolves curves for both currencies.
 /// Spot and strike are quote-currency units per base-currency unit.
+/// The formulas above give quote-currency PV. The policy can select a reporting
+/// currency for value and sensitivities; the fair strike retains the pair units.
 ///
 /// ## Example
 /// ```rust
@@ -404,10 +406,12 @@ mod tests {
         }
     }
 
+    /// Returns the synthetic base-currency discount index used by FX-forward tests.
     fn base_index() -> MarketIndex {
         MarketIndex::Other("EUR_DISC".to_string())
     }
 
+    /// Returns the synthetic quote-currency discount index used by FX-forward tests.
     fn quote_index() -> MarketIndex {
         MarketIndex::Other("USD_DISC".to_string())
     }

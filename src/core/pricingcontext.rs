@@ -84,6 +84,7 @@ pub struct PricingContext {
 }
 
 impl PricingContext {
+    /// Clears snapshot identity and cached market data while retaining supplied elements.
     fn invalidate_market(&mut self) {
         self.snapshot_timestamp = None;
         self.request_cache = MarketCache::default();
@@ -737,6 +738,7 @@ mod tests {
     const CAPLET: &str = "CapletFloorlet_USD_SOFR_3M_1Y_Absolute_0.04_Straddle_Black";
     const SWAPTION: &str = "Swaption_USD_SOFR_1Y_5Y_Absolute_0.04_Black";
 
+    /// Builds the multi-asset market fixture with the requested quote level and available quote sides.
     fn context(level: Level, only_selected_level: bool) -> TestResult<PricingContext> {
         let mut quotes = QuoteStore::new(Date::new(2026, 2, 24));
         let surface_quotes: Vec<_> = ["1Y", "2Y"]

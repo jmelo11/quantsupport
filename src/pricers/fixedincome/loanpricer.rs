@@ -1282,6 +1282,7 @@ mod tests {
             Ok(self.data.clone())
         }
     }
+    /// Builds labelled EUR discount, forward and credit curves for loan valuation tests.
     fn build_test_market(discount: f64, forward: f64, hazard: f64) -> Provider {
         let date = Date::new(2026, 1, 1);
         let mut elements = ConstructedElementStore::default();
@@ -1328,6 +1329,7 @@ mod tests {
             date,
         }
     }
+    /// Builds a loan pricer that discounts EUR receipts on ESTR.
     fn estr_loan_pricer() -> LoanPricer {
         let mut pricer = LoanPricer::new();
         pricer.set_discount_policy(Box::new(
@@ -1368,6 +1370,7 @@ mod tests {
             .is_none());
         Ok(())
     }
+    /// Builds the standard EUR loan contract used by receipt and fair-rate tests.
     fn default_loan_builder() -> MakeLoan<DualFwd> {
         MakeLoan::default()
             .with_identifier("LOAN".into())
@@ -1378,6 +1381,7 @@ mod tests {
             .with_coupons(vec![CashflowType::fixed(0.06)])
             .with_day_counter(DayCounter::Actual360)
     }
+    /// Evaluates the requested loan position and extracts its receipt PV.
     fn evaluate_loan_receipt_present_value(
         pricer: &LoanPricer,
         trade: &LoanTrade<DualFwd>,

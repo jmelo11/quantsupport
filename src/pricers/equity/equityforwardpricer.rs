@@ -339,6 +339,7 @@ mod tests {
             ))
         }
     }
+    /// Builds spot, forwarding, dividend and payment-curve inputs for equity-forward tests.
     fn provider(spot: f64, forward: f64, dividend: Option<f64>, payment: f64) -> Provider {
         let date = Date::new(2026, 1, 2);
         let index = MarketIndex::Equity("SPX".into());
@@ -375,6 +376,7 @@ mod tests {
             ),
         }
     }
+    /// Builds an equity-forward position with the requested trade direction.
     fn trade(side: Side) -> Result<EquityForwardTrade> {
         let instrument = MakeEquityForward::default()
             .with_identifier("FORWARD".into())
@@ -391,6 +393,7 @@ mod tests {
             side,
         ))
     }
+    /// Builds an equity-forward pricer with USD SOFR collateral discounting.
     fn pricer() -> EquityForwardPricer {
         let mut pricer = EquityForwardPricer::new();
         pricer.set_discount_policy(Box::new(SingleCurveCSADiscountPolicy::new(
