@@ -244,14 +244,9 @@ impl BondPricingEngine for BackwardFourierEvolutionBondPricer {
         context: &impl MarketDataProvider,
     ) -> Result<(MarketData, Self::Model<f64>)> {
         if trade.call_schedule().is_empty() {
-            return Ok((
-                context.handle_request(&contractual_market_request(
-                    trade,
-                    index,
-                    context.evaluation_date(),
-                ))?,
-                (None, FourierGridConfiguration::default()),
-            ));
+            let request = contractual_market_request(trade, index, context.evaluation_date());
+            let market = context.handle_request(&request)?;
+            return Ok((market, (None, FourierGridConfiguration::default())));
         }
         let configuration = pricer_configuration(trade, context)?;
         let (time_grid, grid) = match configuration.pricer() {

@@ -242,6 +242,7 @@ impl XvaEngine {
         Self::from_market(context, market.constructed_elements(), provider, config)
     }
 
+    /// Builds the XVA market setup from resolved curves and configured model parameters.
     fn from_market(
         context: &PricingContext,
         store: &ConstructedElementStore,
@@ -481,6 +482,7 @@ impl XvaEngine {
         evaluate_with_margin(&sim_dates, &ns_slices, &factories, &margins, &self.setup)
     }
 
+    /// Builds collateral remuneration requests for netting sets with variation margin enabled.
     fn build_variation_margin_requests(
         &mut self,
         netting_sets: &HashMap<String, NettingSet>,

@@ -95,12 +95,15 @@ pub struct CurveConfiguration {
     quoted_curve: Option<QuotedCurve>,
 }
 
+/// Uses Actual/360 when configuration omits the day-count convention.
 const fn default_day_counter() -> DayCounter {
     DayCounter::Actual360
 }
+/// Uses log-linear interpolation when configuration omits the curve interpolator.
 const fn default_interpolator() -> Interpolator {
     Interpolator::LogLinear
 }
+/// Enables curve extrapolation when configuration omits that setting.
 const fn default_enable_extrapolation() -> bool {
     true
 }
@@ -257,7 +260,9 @@ impl CurveConfiguration {
         Ok(())
     }
 
-    pub(crate) const fn quoted_curve(&self) -> Option<&QuotedCurve> {
+    /// Returns the resolved direct-quote curve definition, if the configuration contains one.
+    #[must_use]
+    pub const fn quoted_curve(&self) -> Option<&QuotedCurve> {
         self.quoted_curve.as_ref()
     }
 

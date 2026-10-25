@@ -39,14 +39,10 @@ impl BondPricingEngine for BondPricer {
         index: &MarketIndex,
         context: &impl MarketDataProvider,
     ) -> Result<(MarketData, ())> {
-        Ok((
-            context.handle_request(&contractual_market_request(
-                trade,
-                index,
-                context.evaluation_date(),
-            ))?,
-            (),
-        ))
+        let request =
+            contractual_market_request(trade, index, context.evaluation_date());
+        let market = context.handle_request(&request)?;
+        Ok((market, ()))
     }
     fn ad_model(&self, (): &(), _: &MarketData) -> Result<()> {
         Ok(())
@@ -99,7 +95,7 @@ pub mod test_support {
     pub fn policy() -> Box<dyn DiscountPolicy> {
         Box::new(
             FixedIncomeDiscountPolicy::new(false)
-                .with_risk_free_index(Currency::USD, MarketIndex::SOFR),
+                .with_discount_curve_index(Currency::USD, MarketIndex::SOFR),
         )
     }
 
@@ -243,6 +239,73 @@ pub mod test_support {
 mod tests {
     use super::{test_support::*, BondPricer};
     use crate::prelude::*;
+
+    #[test]
+    fn native_base_currency_changes_value_and_risk_but_preserves_bond_analytics() -> Result<()> {
+        let date = Date::new(2025, 1, 1);
+        let trade = fixed_bond(date, Date::new(2030, 1, 1), 0.04);
+        let (provider, _) = provider(date, 12);
+        let mut fx = FxStore::new();
+        fx.add_fx_rate(Currency::USD, Currency::EUR, DualFwd::new(0.9));
+        let context = PricingContext::new()
+            .with_quote_store(QuoteStore::new(date))
+            .with_constructed_elements(provider.market_data.constructed_elements().clone())
+            .with_fx_store(fx);
+        let requests = [
+            Request::Value,
+            Request::Sensitivities,
+            Request::YieldToMaturity,
+            Request::ModifiedDuration,
+            Request::ZSpread,
+            Request::Cashflows,
+        ];
+        let local = fixed_pricer().evaluate(&trade, &requests, &context)?;
+        let context = context.with_base_currency(Currency::EUR);
+        let mut pricer = BondPricer::new();
+        pricer.set_discount_policy(Box::new(
+            FixedIncomeDiscountPolicy::new(false)
+                .with_discount_curve_index(Currency::USD, MarketIndex::SOFR),
+        ));
+        let converted = pricer.evaluate(&trade, &requests, &context)?;
+        let local_pv = local
+            .price()
+            .ok_or_else(|| QSError::ValueNotSetErr("PV".into()))?;
+        assert!((converted.price().unwrap_or_default() - 0.9 * local_pv).abs() < 1e-10);
+        assert_eq!(converted.ytm(), local.ytm());
+        assert_eq!(converted.modified_duration(), local.modified_duration());
+        assert_eq!(converted.z_spread(), local.z_spread());
+        let risk = converted
+            .sensitivities()
+            .ok_or_else(|| QSError::ValueNotSetErr("Risk".into()))?;
+        let exposure = |label: &str| {
+            risk.instrument_keys()
+                .iter()
+                .zip(risk.exposure())
+                .find_map(|(key, value)| (key == label).then_some(*value))
+        };
+        assert!((exposure("USD/EUR").unwrap_or_default() - local_pv).abs() < 1e-10);
+        for (label, value) in local
+            .sensitivities()
+            .ok_or_else(|| QSError::ValueNotSetErr("Risk".into()))?
+            .instrument_keys()
+            .iter()
+            .zip(
+                local
+                    .sensitivities()
+                    .ok_or_else(|| QSError::ValueNotSetErr("Risk".into()))?
+                    .exposure(),
+            )
+        {
+            assert!((exposure(label).unwrap_or_default() - 0.9 * value).abs() < 1e-10);
+        }
+        assert!(converted
+            .cashflows()
+            .ok_or_else(|| QSError::ValueNotSetErr("Cashflows".into()))?
+            .currencies()
+            .iter()
+            .all(|currency| *currency == Currency::USD));
+        Ok(())
+    }
 
     #[test]
     fn z_spread_price_anchor_round_trip_duration_and_risk() {

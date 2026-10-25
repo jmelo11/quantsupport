@@ -366,6 +366,7 @@ where
         Ok(dates)
     }
 
+    /// Builds overnight observation periods using the index calendar and coupon conventions.
     fn overnight_periods(
         &self,
         conventions: &OvernightCouponConventions,

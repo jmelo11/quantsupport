@@ -274,13 +274,14 @@ impl CouponDetails {
             let definition = self
                 .rate_definition
                 .ok_or_else(|| QSError::ValueNotSetErr("Fixed coupon rate definition".into()))?;
-            Ok(CashflowType::FixedRateCoupon(FixedRateCoupon::new(
+            let coupon = FixedRateCoupon::new(
                 self.notional,
                 Box::new(InterestRate::from_rate_definition(rate, definition)),
                 self.accrual_start,
                 self.accrual_end,
                 payment_date,
-            )))
+            );
+            Ok(CashflowType::FixedRateCoupon(coupon))
         }
     }
 }
@@ -293,13 +294,13 @@ pub trait CashflowAggregator {
     ///
     /// # Errors
     /// Rejects invalid input or aggregation overflow. Discard the strategy on failure.
-    fn add(&mut self, flows: &CashflowsTable) -> Result<()>;
+    fn accumulate_cashflows(&mut self, flows: &CashflowsTable) -> Result<()>;
 
     /// Produces a standard cashflow table using this strategy's grouping rules.
     ///
     /// # Errors
     /// Returns an error if equivalent coupon terms cannot be computed.
-    fn finish(self) -> Result<CashflowsTable>;
+    fn into_cashflows_table(self) -> Result<CashflowsTable>;
 }
 
 /// Preserves separate payment and receipt positions while merging compatible coupons.
@@ -311,12 +312,12 @@ pub struct GrossCashflowAggregator {
 }
 
 impl CashflowAggregator for GrossCashflowAggregator {
-    fn add(&mut self, flows: &CashflowsTable) -> Result<()> {
-        self.compressor.add(flows, Grouping::Gross)
+    fn accumulate_cashflows(&mut self, flows: &CashflowsTable) -> Result<()> {
+        self.compressor.accumulate_cashflows(flows, Grouping::Gross)
     }
 
-    fn finish(self) -> Result<CashflowsTable> {
-        self.compressor.finish()
+    fn into_cashflows_table(self) -> Result<CashflowsTable> {
+        self.compressor.into_cashflows_table()
     }
 }
 
@@ -332,12 +333,12 @@ pub struct NetCashflowAggregator {
 }
 
 impl CashflowAggregator for NetCashflowAggregator {
-    fn add(&mut self, flows: &CashflowsTable) -> Result<()> {
-        self.compressor.add(flows, Grouping::Net)
+    fn accumulate_cashflows(&mut self, flows: &CashflowsTable) -> Result<()> {
+        self.compressor.accumulate_cashflows(flows, Grouping::Net)
     }
 
-    fn finish(self) -> Result<CashflowsTable> {
-        self.compressor.finish()
+    fn into_cashflows_table(self) -> Result<CashflowsTable> {
+        self.compressor.into_cashflows_table()
     }
 }
 
@@ -346,42 +347,6 @@ impl CashflowAggregator for NetCashflowAggregator {
 enum Grouping {
     Gross,
     Net,
-}
-
-/// Exact, hashable representation of an option payoff, including floating-point bits.
-#[derive(Clone, PartialEq, Eq, Hash)]
-enum PayoffIdentity {
-    Max(Box<Self>, Box<Self>),
-    Min(Box<Self>, Box<Self>),
-    Times(Box<Self>, Box<Self>),
-    Plus(Box<Self>, Box<Self>),
-    Minus(Box<Self>, Box<Self>),
-    Const(u64),
-    Index,
-}
-
-impl From<&PayoffOps> for PayoffIdentity {
-    fn from(payoff: &PayoffOps) -> Self {
-        match payoff {
-            PayoffOps::Max(a, b) => {
-                Self::Max(Box::new(Self::from(&**a)), Box::new(Self::from(&**b)))
-            }
-            PayoffOps::Min(a, b) => {
-                Self::Min(Box::new(Self::from(&**a)), Box::new(Self::from(&**b)))
-            }
-            PayoffOps::Times(a, b) => {
-                Self::Times(Box::new(Self::from(&**a)), Box::new(Self::from(&**b)))
-            }
-            PayoffOps::Plus(a, b) => {
-                Self::Plus(Box::new(Self::from(&**a)), Box::new(Self::from(&**b)))
-            }
-            PayoffOps::Minus(a, b) => {
-                Self::Minus(Box::new(Self::from(&**a)), Box::new(Self::from(&**b)))
-            }
-            PayoffOps::Const(value) => Self::Const(value.to_bits()),
-            PayoffOps::Index => Self::Index,
-        }
-    }
 }
 
 /// Contract terms that must agree before coupons can share an equivalent quote.
@@ -394,7 +359,7 @@ struct CouponIdentity {
     day_counter: DayCounter,
     definition: Option<RateDefinition>,
     overnight: Option<OvernightCouponConventions>,
-    payoff: Option<PayoffIdentity>,
+    payoff: Option<PayoffOps>,
     rate: Option<u64>,
     spread: Option<u64>,
 }
@@ -439,7 +404,8 @@ struct CashflowCompressor {
 }
 
 impl CashflowCompressor {
-    fn add(&mut self, flows: &CashflowsTable, grouping: Grouping) -> Result<()> {
+    /// Merges numeric cashflows into compatible payment and coupon groups.
+    fn accumulate_cashflows(&mut self, flows: &CashflowsTable, grouping: Grouping) -> Result<()> {
         for row in 0..flows.payment_dates().len() {
             self.serial += 1;
             let mut kind = flows.cashflow_types()[row].clone();
@@ -466,7 +432,7 @@ impl CashflowCompressor {
                 day_counter: terms.day_counter,
                 definition: terms.rate_definition,
                 overnight: terms.overnight_conventions.clone(),
-                payoff: terms.payoff.as_ref().map(PayoffIdentity::from),
+                payoff: terms.payoff.clone(),
                 rate: if equivalent_rate {
                     None
                 } else {
@@ -535,7 +501,8 @@ impl CashflowCompressor {
         Ok(())
     }
 
-    fn finish(mut self) -> Result<CashflowsTable> {
+    /// Builds the compressed cashflow table and derives compatible coupon rates and spreads.
+    fn into_cashflows_table(mut self) -> Result<CashflowsTable> {
         self.groups.sort_by(|a, b| {
             (
                 a.identity.date,
@@ -675,8 +642,8 @@ mod tests {
             Some(0.03),
         )?;
         let mut compressor = GrossCashflowAggregator::default();
-        compressor.add(&flows)?;
-        let result = compressor.finish()?;
+        compressor.accumulate_cashflows(&flows)?;
+        let result = compressor.into_cashflows_table()?;
         assert_eq!(result.payment_dates().len(), 3);
         let mut repriced = 0.0;
         for (row, terms) in result.coupon_details().iter().enumerate() {
@@ -733,7 +700,7 @@ mod tests {
         changed.overnight_conventions =
             Some(OvernightCouponConventions::new().with_lookback_days(2));
         add(&mut flows, changed, Some(0.03))?;
-        for cap in [0.04, 0.06] {
+        for cap in [0.04, 0.06, 0.04] {
             let mut changed = base.clone();
             changed.payoff = Some(PayoffOps::Min(
                 Box::new(PayoffOps::Index),
@@ -742,8 +709,8 @@ mod tests {
             add(&mut flows, changed, Some(0.05))?;
         }
         let mut compressor = GrossCashflowAggregator::default();
-        compressor.add(&flows)?;
-        assert_eq!(compressor.finish()?.payment_dates().len(), 8);
+        compressor.accumulate_cashflows(&flows)?;
+        assert_eq!(compressor.into_cashflows_table()?.payment_dates().len(), 8);
         Ok(())
     }
 
@@ -771,8 +738,8 @@ mod tests {
             );
         }
         let mut compressor = GrossCashflowAggregator::default();
-        compressor.add(&flows)?;
-        assert_eq!(compressor.finish()?.payment_dates().len(), 4);
+        compressor.accumulate_cashflows(&flows)?;
+        assert_eq!(compressor.into_cashflows_table()?.payment_dates().len(), 4);
         Ok(())
     }
     #[test]
@@ -781,12 +748,12 @@ mod tests {
         add(&mut flows, terms(None, 100.0, 0.04), None)?;
         add(&mut flows, terms(None, -50.0, 0.06), None)?;
         let mut gross = GrossCashflowAggregator::default();
-        gross.add(&flows)?;
-        let gross = gross.finish()?;
+        gross.accumulate_cashflows(&flows)?;
+        let gross = gross.into_cashflows_table()?;
         assert_eq!(gross.payment_dates().len(), 2);
         let mut net = NetCashflowAggregator::default();
-        net.add(&flows)?;
-        let net = net.finish()?;
+        net.accumulate_cashflows(&flows)?;
+        let net = net.into_cashflows_table()?;
         assert_eq!(net.payment_dates().len(), 1);
         let details = net.coupon_details()[0]
             .as_ref()
@@ -809,8 +776,8 @@ mod tests {
         add(&mut flows, terms(None, -100.0, 0.06), None)?;
         let interest = flows.amounts().iter().sum::<f64>();
         let mut net = NetCashflowAggregator::default();
-        net.add(&flows)?;
-        let net = net.finish()?;
+        net.accumulate_cashflows(&flows)?;
+        let net = net.into_cashflows_table()?;
         assert_eq!(net.amounts(), &[interest]);
         assert_eq!(net.cashflow_types(), &[CashflowKind::FixedRateCoupon]);
         assert!(net.coupon_details()[0].is_none());
@@ -846,8 +813,8 @@ mod tests {
             flows.set_last_coupon_details(terms(index, 100.0, 0.99));
         }
         let mut gross = GrossCashflowAggregator::default();
-        gross.add(&flows)?;
-        let result = gross.finish()?;
+        gross.accumulate_cashflows(&flows)?;
+        let result = gross.into_cashflows_table()?;
         for (row, details) in result.coupon_details().iter().enumerate() {
             let details = details
                 .as_ref()
@@ -937,8 +904,8 @@ mod tests {
             );
         }
         let mut net = NetCashflowAggregator::default();
-        net.add(&flows)?;
-        let net = net.finish()?;
+        net.accumulate_cashflows(&flows)?;
+        let net = net.into_cashflows_table()?;
         assert_eq!(
             net.cashflow_types(),
             &[CashflowKind::Capital, CashflowKind::Capital]

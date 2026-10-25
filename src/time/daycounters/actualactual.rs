@@ -29,6 +29,7 @@ use crate::time::date::Date;
 /// ```
 pub struct ActualActual;
 
+/// Returns 365 or 366 according to the supplied year.
 const fn days_in_year(year: i32) -> i32 {
     if Date::is_leap_year(year) {
         366

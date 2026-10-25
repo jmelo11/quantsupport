@@ -100,7 +100,7 @@ fn main() -> Result<()> {
     let policy = || -> Box<dyn DiscountPolicy> {
         Box::new(
             FixedIncomeDiscountPolicy::new(false)
-                .with_risk_free_index(Currency::USD, MarketIndex::SOFR),
+                .with_discount_curve_index(Currency::USD, MarketIndex::SOFR),
         )
     };
     let mut tree_pricer = TreeBasedBondPricer::new();

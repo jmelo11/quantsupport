@@ -121,6 +121,7 @@ impl Lexer {
         }
     }
 
+    /// Consumes the next input character, returning a null character at end of input.
     fn next_char(&self) -> char {
         if *self.position.borrow() >= self.input.len() {
             '\0'
@@ -131,6 +132,7 @@ impl Lexer {
         }
     }
 
+    /// Reads the next input character without advancing the lexer.
     fn peek_char(&self) -> char {
         if *self.position.borrow() >= self.input.len() {
             '\0' // Using null character to denote end of input
@@ -244,6 +246,7 @@ impl Lexer {
         }
     }
 
+    /// Adds line and column coordinates to a lexer error at the supplied input position.
     fn parsing_error(&self, message: &str, position: usize) -> QSError {
         let prefix = &self.input[..position];
         let line = prefix.iter().filter(|&&ch| ch == '\n').count() + 1;
@@ -251,6 +254,7 @@ impl Lexer {
         QSError::ParsingErr(format!("{message} at line {line}, column {column}"))
     }
 
+    /// Reads a quoted string and reports a missing closing quotation mark.
     fn read_string(&self) -> Result<Token> {
         let start = *self.position.borrow() - 1;
         let mut string = "".to_string();
@@ -266,6 +270,7 @@ impl Lexer {
 
     // This function is used to read numerical literals, including floating point numbers.
     // Should fail if the number is not valid or if it is not a number.
+    /// Reads a numeric token beginning with the supplied first character.
     fn read_number(&self, first_char: char) -> Result<Token> {
         let mut number = first_char.to_string();
         while self.peek_char().is_ascii_digit() || self.peek_char() == '.' {
@@ -282,6 +287,7 @@ impl Lexer {
     }
 
     // This function is used to read identifiers and special keywords
+    /// Reads an identifier and recognizes reserved scripting keywords.
     fn read_identifier(&self, first_char: char) -> Result<Token> {
         let mut identifier = first_char.to_string();
         while self.peek_char().is_alphanumeric() || self.peek_char() == '_' {
@@ -305,6 +311,7 @@ impl Lexer {
         }
     }
 
+    /// Skips whitespace while retaining newlines as distinct script tokens.
     fn skip_whitespace(&self) {
         while self.peek_char().is_whitespace() && self.peek_char() != '\n' {
             self.next_char();

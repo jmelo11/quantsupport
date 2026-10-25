@@ -35,6 +35,8 @@ use crate::{
 ///
 /// A [`DiscountPolicy`] is required and resolves curves for both currencies.
 /// Spot and strike are quote-currency units per base-currency unit.
+/// The formulas above give quote-currency PV. The policy can select a reporting
+/// currency for value and sensitivities; the fair strike retains the pair units.
 ///
 /// ## Example
 /// ```rust
@@ -147,6 +149,16 @@ impl HandleValue<FxForwardTrade, FxForwardState> for FxForwardPricer {
                 (notional * (forward - k) * df_quote * side).into()
             },
         );
+        let source = inst.quote_currency();
+        let npv = if let Some(target) = state
+            .get_market_data_reponse()
+            .and_then(MarketData::base_currency)
+            .filter(|target| *target != source)
+        {
+            (npv * state.get_exchange_rate(source, target)?).into()
+        } else {
+            npv
+        };
         state.value = Some(npv);
 
         Tape::stop_recording_fwd();
@@ -308,6 +320,9 @@ impl Pricer for FxForwardPricer {
             request = request.with_constructed_elements_request(elements);
         }
 
+        let mut fx = request.fx_request().cloned().unwrap_or_default();
+        fx.push(FxRequest::single(inst.quote_currency()));
+        request = request.with_fx_request(fx);
         Some(request)
     }
 
@@ -404,10 +419,12 @@ mod tests {
         }
     }
 
+    /// Returns the synthetic base-currency discount index used by FX-forward tests.
     fn base_index() -> MarketIndex {
         MarketIndex::Other("EUR_DISC".to_string())
     }
 
+    /// Returns the synthetic quote-currency discount index used by FX-forward tests.
     fn quote_index() -> MarketIndex {
         MarketIndex::Other("USD_DISC".to_string())
     }

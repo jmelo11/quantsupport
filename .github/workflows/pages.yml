@@ -35,7 +35,7 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
-      - name: Test Excel download staging
+      - name: Test release download staging
         run: python -m unittest discover -s .github/scripts -p 'test_*.py' -v
       - name: Select published release
         id: release
@@ -44,6 +44,7 @@ jobs:
           python .github/scripts/excel_downloads.py resolve --repository "$GITHUB_REPOSITORY" \
             --run-id "$RELEASE_RUN_ID" --tag "$RELEASE_TAG"
           cp .github/scripts/excel_downloads.py "$RUNNER_TEMP/excel_downloads.py"
+          cp .github/scripts/python_downloads.py "$RUNNER_TEMP/python_downloads.py"
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_RUN_ID: ${{ github.event.workflow_run.id }}
@@ -85,6 +86,15 @@ jobs:
         run: |
           python "$RUNNER_TEMP/excel_downloads.py" stage --repository "$GITHUB_REPOSITORY" \
             --tag "$RELEASE_TAG" --destination book/html/downloads --examples bindings/excel/examples
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+      - name: Stage Python packages and package page
+        if: steps.release.outputs.tag != ''
+        run: |
+          python "$RUNNER_TEMP/python_downloads.py" --repository "$GITHUB_REPOSITORY" \
+            --tag "$RELEASE_TAG" --page book/html/python/downloads.html \
+            --destination book/html/downloads/python
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ steps.release.outputs.tag }}

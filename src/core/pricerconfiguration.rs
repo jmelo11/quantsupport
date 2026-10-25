@@ -50,22 +50,27 @@ use crate::{
     utils::errors::{QSError, Result},
 };
 
+/// Supplies 48 time steps per year when configuration omits the grid density.
 const fn default_steps_per_year() -> usize {
     48
 }
 
+/// Supplies a 2048-step limit when configuration omits the grid cap.
 const fn default_max_steps() -> usize {
     2048
 }
 
+/// Uses Actual/365 when configuration omits the day-count convention.
 const fn default_day_counter() -> DayCounter {
     DayCounter::Actual365
 }
 
+/// Supplies 1024 Fourier grid points when configuration omits the grid size.
 const fn default_fourier_grid_points() -> usize {
     1024
 }
 
+/// Supplies a Fourier truncation width of ten standard deviations.
 const fn default_fourier_standard_deviations() -> f64 {
     10.0
 }

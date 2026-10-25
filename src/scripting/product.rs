@@ -182,6 +182,7 @@ impl ScriptedPayoff {
     }
 }
 
+/// Collects dated payment nodes recursively with their resolved payment identifiers and currencies.
 fn collect_payments(
     node: &Node,
     event_date: Date,

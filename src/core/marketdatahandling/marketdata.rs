@@ -9,6 +9,7 @@ use crate::{
         },
         pricerconfiguration::{InstrumentType, PricerConfiguration},
     },
+    currencies::currency::Currency,
     indices::marketindex::MarketIndex,
     quotes::{fxstore::FxStore, quote::Level, quotestore::QuoteStore},
     time::date::Date,
@@ -120,6 +121,7 @@ impl MarketDataRequest {
 /// pricer configurations requested for one valuation.
 #[derive(Clone, Default)]
 pub struct MarketData {
+    base_currency: Option<Currency>,
     fixings: HashMap<MarketIndex, BTreeMap<Date, f64>>,
     fx_store: Option<FxStore>,
     constructed_elements: ConstructedElementStore,
@@ -136,6 +138,7 @@ impl MarketData {
         constructed_elements: ConstructedElementStore,
     ) -> Self {
         Self {
+            base_currency: None,
             fixings,
             constructed_elements,
             fx_store: None,
@@ -143,6 +146,20 @@ impl MarketData {
             calibration_quotes: None,
             quote_level: Level::Mid,
         }
+    }
+
+    /// Returns the reporting currency supplied by the valuation context.
+    /// Providers without a reporting currency leave monetary values in their native units.
+    #[must_use]
+    pub const fn base_currency(&self) -> Option<Currency> {
+        self.base_currency
+    }
+
+    /// Attaches the context's reporting currency to this valuation's market data.
+    #[must_use]
+    pub const fn with_base_currency(mut self, currency: Currency) -> Self {
+        self.base_currency = Some(currency);
+        self
     }
 
     /// Returns the fixings.

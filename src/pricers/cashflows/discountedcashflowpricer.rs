@@ -10,7 +10,6 @@ use crate::{
             fxrequest::FxRequest,
             marketdata::{MarketData, MarketDataProvider, MarketDataRequest},
         },
-        pillars::Pillars,
         pricer::Pricer,
         pricerstate::PricerState,
         request::{
@@ -54,9 +53,9 @@ impl PricerState for DCFState<'_> {
 /// options and other nonlinear cashflows are rejected. Historical observations
 /// resolve started coupons, while future coupons use their forwarding curves.
 /// A discount policy can select separate collateral curves. Cross-currency
-/// collateral discounting converts leg amounts at spot into collateral currency;
-/// without such a policy, this pricer does not provide a general reporting-
-/// currency conversion.
+/// collateral discounting converts leg amounts at spot into collateral currency.
+/// The context supplies the base currency for monetary values and sensitivities,
+/// including spot FX risk.
 ///
 /// Supplied legs must represent the intended remaining contract: valuation
 /// iterates every cashflow without excluding payment dates at or before the
@@ -208,21 +207,9 @@ where
             }
         }
 
-        // FX sensitivities — only include when cross-currency discounting was
-        // actually used (i.e. at least one Collateral index was resolved).
-        let has_cross_currency = seen_indices
-            .iter()
-            .any(|idx| matches!(idx, MarketIndex::Collateral(_, _)));
-        if has_cross_currency {
-            if let Some(fx_store) = state.get_fx_store() {
-                for (label, value) in fx_store
-                    .pillars()
-                    .ok_or_else(|| QSError::ValueNotSetErr("Pillars".into()))?
-                {
-                    all_ids.push(label);
-                    all_exposures.push(value.adjoint().map_or(0.0, |a| a.value()));
-                }
-            }
+        for (label, exposure) in state.get_fx_sensitivities()? {
+            all_ids.push(label);
+            all_exposures.push(exposure);
         }
 
         let sensitivities = SensitivityMap::default()
@@ -234,6 +221,29 @@ where
 }
 
 impl<I, T> DiscountedCashflowPricer<I, T> {
+    /// Returns spot conversion from leg currency to the context base currency.
+    /// Returns one when no currency conversion is needed.
+    fn conversion_factor(
+        leg: &Leg<DualFwd>,
+        index: &MarketIndex,
+        state: &DCFState<'_>,
+    ) -> Result<DualFwd> {
+        let target = state
+            .get_market_data_reponse()
+            .and_then(MarketData::base_currency)
+            .or(match index {
+                MarketIndex::Collateral(_, currency) => Some(*currency),
+                _ => None,
+            });
+        target
+            .filter(|target| *target != leg.currency())
+            .map_or_else(
+                || Ok(DualFwd::one()),
+                |target| state.get_exchange_rate(leg.currency(), target),
+            )
+    }
+
+    /// Selects a policy or leg discount index, falling back to an unambiguous currency curve.
     fn select_discount_index(
         &self,
         leg: &Leg<DualFwd>,
@@ -244,7 +254,7 @@ impl<I, T> DiscountedCashflowPricer<I, T> {
             .cashflows()
             .iter()
             .any(|cf| matches!(cf, CashflowType::FloatingRateCoupon(_)));
-        Ok(if let Some(policy) = &self.discount_policy {
+        let index = if let Some(policy) = &self.discount_policy {
             policy.accept(leg)?
         } else if leg_has_floating {
             let mut matching = state
@@ -302,7 +312,8 @@ impl<I, T> DiscountedCashflowPricer<I, T> {
             }
 
             first
-        })
+        };
+        Ok(index)
     }
 }
 
@@ -333,10 +344,10 @@ where
 
         // Iterate through all legs
         for leg in trade.legs() {
-            let leg_currency = leg.currency();
             let leg_discount_index = self.select_discount_index(leg, state)?;
 
             let side = leg.side().sign();
+            let fx = Self::conversion_factor(leg, &leg_discount_index, state)?;
 
             // Iterate through cashflows in this leg
             for cashflow in leg.cashflows() {
@@ -417,33 +428,11 @@ where
                     }
                 };
 
-                let cf_pv: DualFwd = if self.discount_policy.is_some() {
-                    let df_leg = state
-                        .get_discount_curve_element(&leg_discount_index)?
-                        .curve()
-                        .discount_factor(payment_date)?;
-
-                    if let MarketIndex::Collateral(_, coll_ccy) = &leg_discount_index {
-                        // Cross-currency discounting: convert the leg-currency
-                        // cashflow to the collateral currency at FX spot, then
-                        // discount with the collateral curve.
-                        //
-                        //   PV_coll = CF_leg × FX_spot(leg→coll) × DF_Collateral(T)
-                        //
-                        // This is the correct CSA-aware formula: the Collateral
-                        // curve already embeds the cross-currency basis adjustment.
-                        let fx_spot = state.get_exchange_rate(leg_currency, *coll_ccy)?;
-                        (amount * fx_spot * df_leg).into()
-                    } else {
-                        (amount * df_leg).into()
-                    }
-                } else {
-                    let df = state
-                        .get_discount_curve_element(&leg_discount_index)?
-                        .curve()
-                        .discount_factor(payment_date)?;
-                    (amount * df).into()
-                };
+                let df = state
+                    .get_discount_curve_element(&leg_discount_index)?
+                    .curve()
+                    .discount_factor(payment_date)?;
+                let cf_pv: DualFwd = (amount * fx * df).into();
 
                 pv = (pv + cf_pv * side).into();
             }
@@ -477,15 +466,7 @@ where
         };
         let index = self.select_discount_index(leg, state)?;
         let curve = state.get_discount_curve_element(&index)?.curve();
-        let fx = if self.discount_policy.is_some() {
-            if let MarketIndex::Collateral(_, currency) = &index {
-                state.get_exchange_rate(leg.currency(), *currency)?.value()
-            } else {
-                1.0
-            }
-        } else {
-            1.0
-        };
+        let fx = Self::conversion_factor(leg, &index, state)?.value();
         let mut annuity = 0.0;
         let mut quote_pv = 0.0;
         let mut floating = None;
@@ -671,7 +652,10 @@ where
         // When a CSA discount policy is set, also request:
         //  1. The collateral currency's OIS discount curve(s) per leg
         //  2. Exchange rates (via FxRequest) for forward FX computation
-        let mut fx_requests = Vec::new();
+        let mut fx_requests: Vec<_> = legs
+            .iter()
+            .map(|leg| FxRequest::single(leg.currency()))
+            .collect();
         if let Some(policy) = &self.discount_policy {
             for leg in legs {
                 if let Ok(csa_index) = policy.accept(leg) {
@@ -756,6 +740,7 @@ mod tests {
         }
 
         impl MarketDataProvider for TestMarketDataProvider {
+            /// Returns the prepared market data used by this test provider.
             fn handle_request(
                 &self,
                 _request: &MarketDataRequest,
@@ -766,6 +751,7 @@ mod tests {
                 ))
             }
 
+            /// Returns the reference date of the test market.
             fn evaluation_date(&self) -> Date {
                 self.evaluation_date
             }
@@ -953,6 +939,7 @@ mod tests {
         }
 
         impl MarketDataProvider for VanillaSwapMarketDataProvider {
+            /// Returns the prepared market data used by this test provider.
             fn handle_request(&self, _request: &MarketDataRequest) -> Result<MarketData> {
                 Ok(MarketData::new(
                     self.market_data.fixings().clone(),
@@ -960,6 +947,7 @@ mod tests {
                 ))
             }
 
+            /// Returns the reference date of the test market.
             fn evaluation_date(&self) -> Date {
                 self.evaluation_date
             }
@@ -1109,6 +1097,7 @@ mod tests {
         }
 
         impl MarketDataProvider for CsaMarketDataProvider {
+            /// Returns the prepared market data used by this test provider.
             fn handle_request(&self, _request: &MarketDataRequest) -> Result<MarketData> {
                 let mut md = MarketData::new(
                     self.market_data.fixings().clone(),
@@ -1120,6 +1109,7 @@ mod tests {
                 Ok(md)
             }
 
+            /// Returns the reference date of the test market.
             fn evaluation_date(&self) -> Date {
                 self.evaluation_date
             }
@@ -1297,6 +1287,7 @@ mod tests {
         }
 
         impl MarketDataProvider for FairRateMarketDataProvider {
+            /// Returns the prepared market data used by this test provider.
             fn handle_request(&self, _request: &MarketDataRequest) -> Result<MarketData> {
                 Ok(MarketData::new(
                     self.market_data.fixings().clone(),
@@ -1304,6 +1295,7 @@ mod tests {
                 ))
             }
 
+            /// Returns the reference date of the test market.
             fn evaluation_date(&self) -> Date {
                 self.evaluation_date
             }
@@ -1435,6 +1427,7 @@ mod tests {
         }
 
         impl MarketDataProvider for CsaFairRateProvider {
+            /// Returns the prepared market data used by this test provider.
             fn handle_request(&self, _request: &MarketDataRequest) -> Result<MarketData> {
                 let mut md = MarketData::new(
                     self.market_data.fixings().clone(),
@@ -1446,6 +1439,7 @@ mod tests {
                 Ok(md)
             }
 
+            /// Returns the reference date of the test market.
             fn evaluation_date(&self) -> Date {
                 self.evaluation_date
             }
@@ -1609,5 +1603,276 @@ mod tests {
             "PV at fair rate should be near zero, got {pv_at_par:.4}"
         );
         println!("CLP PV at fair rate = {pv_at_par:.8}");
+    }
+}
+
+#[cfg(test)]
+mod reporting_tests {
+    use std::{any::TypeId, cell::RefCell, collections::HashMap, rc::Rc};
+
+    use crate::core::{
+        evaluator::Evaluator, marketdatahandling::fxrequest::FxRequest, pricer::ErasedPricer,
+    };
+    use crate::prelude::*;
+    use crate::utils::errors::{QSError, Result};
+
+    /// Builds an ESTR deposit market with the selected base currency and original FX observations.
+    fn context(base: Currency, fx: FxStore) -> PricingContext {
+        let date = Date::new(2026, 2, 24);
+        let curve = FlatForwardTermStructure::new(
+            date,
+            DualFwd::new(0.03),
+            RateDefinition::new(
+                DayCounter::Actual365,
+                Compounding::Continuous,
+                Frequency::Annual,
+            ),
+        )
+        .with_pillar_label("ESTR_ZERO".into());
+        let mut elements = ConstructedElementStore::default();
+        elements.discount_curves_mut().insert(
+            MarketIndex::ESTR,
+            DiscountCurveElement::new(MarketIndex::ESTR, Rc::new(RefCell::new(curve))),
+        );
+        PricingContext::new()
+            .with_quote_store(QuoteStore::new(date))
+            .with_base_currency(base)
+            .with_constructed_elements(elements)
+            .with_fx_store(fx)
+    }
+
+    /// Builds a fixed EUR deposit with contract terms detached from any previous AD tape.
+    fn trade() -> Result<FixedRateDepositTrade<DualFwd>> {
+        Tape::<ADForward>::stop_recording_fwd();
+        let date = Date::new(2026, 2, 24);
+        let deposit = MakeFixedRateDeposit::<DualFwd>::default()
+            .with_identifier("EUR-DEPOSIT".into())
+            .with_start_date(date)
+            .with_maturity_date(Date::new(2027, 2, 24))
+            .with_notional(100_000.0)
+            .with_rate(0.04)
+            .with_currency(Currency::EUR)
+            .with_discount_index(Some(MarketIndex::ESTR))
+            .with_rate_definition(RateDefinition::new(
+                DayCounter::Actual365,
+                Compounding::Simple,
+                Frequency::Annual,
+            ))
+            .build()?;
+        Ok(FixedRateDepositTrade::new(
+            deposit,
+            date,
+            100_000.0,
+            Side::LongReceive,
+        ))
+    }
+
+    /// Builds a deposit pricer that uses the instrument discount curve.
+    fn pricer(
+    ) -> DiscountedCashflowPricer<FixedRateDeposit<DualFwd>, FixedRateDepositTrade<DualFwd>> {
+        let mut pricer = DiscountedCashflowPricer::new();
+        pricer.set_discount_policy(Box::new(FixedIncomeDiscountPolicy::new(true)));
+        pricer
+    }
+
+    /// Finds the raw exposure associated with a required sensitivity label.
+    fn sensitivity(result: &EvaluationResults, label: &str) -> Result<f64> {
+        let risk = result
+            .sensitivities()
+            .ok_or_else(|| QSError::ValueNotSetErr("Risk".into()))?;
+        risk.instrument_keys()
+            .iter()
+            .zip(risk.exposure())
+            .find_map(|(key, value)| (key == label).then_some(*value))
+            .ok_or_else(|| QSError::ValueNotSetErr(label.into()))
+    }
+
+    #[test]
+    fn context_controls_reporting_without_a_discount_policy() -> Result<()> {
+        let mut fx = FxStore::new();
+        fx.add_fx_rate(Currency::EUR, Currency::USD, DualFwd::new(1.1));
+        let context = context(Currency::EUR, fx);
+        let trade = trade()?;
+        let mut pricer = DiscountedCashflowPricer::<
+            FixedRateDeposit<DualFwd>,
+            FixedRateDepositTrade<DualFwd>,
+        >::new();
+        let requests = [Request::Value, Request::Sensitivities, Request::Cashflows];
+        let local = pricer.evaluate(&trade, &requests, &context)?;
+        let context = context.with_base_currency(Currency::USD);
+        let converted = pricer.evaluate(&trade, &requests, &context)?;
+        let local_pv = local.price().unwrap();
+        assert!((converted.price().unwrap() - 1.1 * local_pv).abs() < 1e-8);
+        assert!((sensitivity(&converted, "EUR/USD")? - local_pv).abs() < 1e-8);
+        assert!(
+            (sensitivity(&converted, "ESTR_ZERO")? - 1.1 * sensitivity(&local, "ESTR_ZERO")?).abs()
+                < 1e-8
+        );
+        assert_eq!(
+            converted.cashflows().unwrap().currencies(),
+            local.cashflows().unwrap().currencies()
+        );
+        assert_eq!(
+            converted.cashflows().unwrap().amounts(),
+            local.cashflows().unwrap().amounts()
+        );
+        pricer.set_discount_policy(Box::new(SingleCurveCSADiscountPolicy::new(
+            MarketIndex::ESTR,
+            Currency::EUR,
+        )));
+        let collateralized = pricer.evaluate(&trade, &requests, &context)?;
+        assert_eq!(collateralized.price(), converted.price());
+        assert!((sensitivity(&collateralized, "EUR/USD")? - local_pv).abs() < 1e-8);
+        Ok(())
+    }
+
+    #[test]
+    fn direct_rust_pricer_and_evaluator_convert_pv_curve_risk_and_fx_risk() -> Result<()> {
+        let mut fx = FxStore::new();
+        fx.add_fx_rate(Currency::EUR, Currency::USD, DualFwd::new(1.1));
+        let context = context(Currency::USD, fx);
+        let trade = trade()?;
+        let pricer = pricer();
+        let requests = [Request::Value, Request::Sensitivities, Request::Cashflows];
+        let result = pricer.evaluate(&trade, &requests, &context)?;
+        let local = -100_000.0 + 104_000.0 * (-0.03_f64).exp();
+        assert!(
+            (result
+                .price()
+                .ok_or_else(|| QSError::ValueNotSetErr("PV".into()))?
+                - 1.1 * local)
+                .abs()
+                < 1e-8
+        );
+        assert!((sensitivity(&result, "EUR/USD")? - local).abs() < 1e-8);
+        assert!(
+            (sensitivity(&result, "ESTR_ZERO")? + 1.1 * 104_000.0 * (-0.03_f64).exp()).abs() < 1e-7
+        );
+        assert!(result
+            .cashflows()
+            .ok_or_else(|| QSError::ValueNotSetErr("Payments".into()))?
+            .currencies()
+            .iter()
+            .all(|currency| *currency == Currency::EUR));
+        let risk_only = pricer.evaluate(&trade, &[Request::Sensitivities], &context)?;
+        assert!(risk_only.price().is_none());
+        assert!((sensitivity(&risk_only, "EUR/USD")? - local).abs() < 1e-8);
+        let domestic = self::context(Currency::EUR, FxStore::new());
+        let local_fair = self::pricer()
+            .evaluate(&trade, &[Request::FairRate(0)], &domestic)?
+            .fair_rate();
+        let converted_fair = pricer
+            .evaluate(&trade, &[Request::FairRate(0)], &context)?
+            .fair_rate();
+        assert!(
+            (local_fair.unwrap_or_default() - converted_fair.unwrap_or_default()).abs() < 1e-12
+        );
+        // Portfolio accumulation consumes completed base-currency results.
+        let portfolio = Portfolio::new(
+            "TEST-PORTFOLIO".into(),
+            vec![self::trade()?, self::trade()?],
+        )?;
+        let total =
+            PortfolioPricer::new(self::pricer()).evaluate(&portfolio, &requests, &context)?;
+        assert!(
+            (total
+                .price()
+                .ok_or_else(|| QSError::ValueNotSetErr("PV".into()))?
+                - 2.2 * local)
+                .abs()
+                < 1e-8
+        );
+        let evaluator = Evaluator::new(HashMap::from([(
+            TypeId::of::<FixedRateDepositTrade<DualFwd>>(),
+            Box::new(pricer) as Box<dyn ErasedPricer>,
+        )]));
+        let erased = evaluator.evaluate(&trade, &requests, &context)?;
+        assert!(
+            (erased
+                .price()
+                .ok_or_else(|| QSError::ValueNotSetErr("PV".into()))?
+                - 1.1 * local)
+                .abs()
+                < 1e-8
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn native_conversion_uses_inverse_and_original_triangulated_spot_pillars() -> Result<()> {
+        let trade = trade()?;
+        let pricer = pricer();
+        let local = -100_000.0 + 104_000.0 * (-0.03_f64).exp();
+        let mut inverse = FxStore::new();
+        inverse.add_fx_rate(Currency::USD, Currency::EUR, DualFwd::new(0.9));
+        let result = pricer.evaluate(
+            &trade,
+            &[Request::Value, Request::Sensitivities],
+            &context(Currency::USD, inverse),
+        )?;
+        assert!(
+            (result
+                .price()
+                .ok_or_else(|| QSError::ValueNotSetErr("PV".into()))?
+                - local / 0.9)
+                .abs()
+                < 1e-8
+        );
+        assert!((sensitivity(&result, "USD/EUR")? + local / 0.9_f64.powi(2)).abs() < 1e-8);
+        let mut triangulated = FxStore::new();
+        triangulated.add_fx_rate(Currency::EUR, Currency::GBP, DualFwd::new(0.8));
+        triangulated.add_fx_rate(Currency::GBP, Currency::USD, DualFwd::new(1.375));
+        let result = pricer.evaluate(
+            &trade,
+            &[Request::Value, Request::Sensitivities],
+            &context(Currency::USD, triangulated),
+        )?;
+        assert!(
+            (result
+                .price()
+                .ok_or_else(|| QSError::ValueNotSetErr("PV".into()))?
+                - 1.1 * local)
+                .abs()
+                < 1e-8
+        );
+        assert!((sensitivity(&result, "EUR/GBP")? - local * 1.375).abs() < 1e-8);
+        assert!((sensitivity(&result, "GBP/USD")? - local * 0.8).abs() < 1e-8);
+        Ok(())
+    }
+
+    #[test]
+    fn native_same_currency_needs_no_fx_and_missing_conversion_paths_fail() -> Result<()> {
+        let trade = trade()?;
+        let domestic = context(Currency::EUR, FxStore::new());
+        let local = pricer().evaluate(&trade, &[Request::Value], &domestic)?;
+        assert!(local.price().is_some());
+        let foreign = context(Currency::USD, FxStore::new());
+        assert!(pricer()
+            .evaluate(&trade, &[Request::Value], &foreign)
+            .is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn native_fx_requests_keep_original_spot_observation_labels() -> Result<()> {
+        let mut fx = FxStore::new();
+        fx.add_fx_rate(Currency::EUR, Currency::GBP, DualFwd::new(0.8));
+        fx.add_fx_rate(Currency::GBP, Currency::USD, DualFwd::new(1.375));
+        let context = context(Currency::USD, fx);
+        let data = context.handle_request(
+            &MarketDataRequest::default().with_fx_request(vec![FxRequest::single(Currency::EUR)]),
+        )?;
+        assert_eq!(data.base_currency(), Some(Currency::USD));
+        let fx = data
+            .fx_store()
+            .ok_or_else(|| QSError::ValueNotSetErr("FX".into()))?;
+        let labels = fx
+            .pillar_labels()
+            .ok_or_else(|| QSError::ValueNotSetErr("FX pillars".into()))?;
+        assert!(labels.contains(&"EUR/GBP".to_string()));
+        assert!(labels.contains(&"GBP/USD".to_string()));
+        assert!(!labels.contains(&"USD/EUR".to_string()));
+        assert!((fx.get_fx_rate(Currency::USD, Currency::EUR)?.value() - 1.0 / 1.1).abs() < 1e-12);
+        Ok(())
     }
 }

@@ -182,8 +182,11 @@ is unavailable through Python.
 ``FxStore`` stores rates in quote-currency units per base-currency unit.
 For example ``{"base": "EUR", "quote": "USD", "rate": 1.1}`` means
 1 EUR = 1.1 USD. Direct, inverse, and triangulated spot lookup are available.
-An FX spot store does not automatically convert every returned price or
-cashflow report to a user-chosen reporting currency.
+Native Rust pricers use this store to convert monetary PVs and sensitivities to
+``context.base_currency``, including FX conversion risk. Python's
+``PricingContext.evaluate`` returns those native results.
+Cashflow reports retain their original payment currencies. Missing conversion
+paths raise an error when the native valuation requires conversion.
 
 ``SingleCurveCSADiscountPolicy`` defines collateral currency and remuneration
 index for curve construction and derivative valuation. A different cashflow

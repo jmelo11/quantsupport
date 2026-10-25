@@ -63,6 +63,7 @@ fn parse_fx_pair(pair: &str) -> Result<(Currency, Currency)> {
     Ok((base, quote_ccy))
 }
 
+/// Parses the strike kind and numeric coordinate encoded in a quote identifier.
 fn parse_strike(id: &str, kind: &str, value: &str) -> Result<Strike> {
     let strike_kind = kind.parse::<Strike>()?;
     let strike_value = value
@@ -1025,6 +1026,7 @@ impl QuoteDetails {
     // Identifier parsing helpers
     // -----------------------------------------------------------------------
 
+    /// Parses an optional day-count field and adds quote context to parsing errors.
     fn parse_optional_day_counter(
         id: &str,
         parts: &[&str],
@@ -1043,6 +1045,7 @@ impl QuoteDetails {
             })
     }
 
+    /// Parses an optional frequency field from a quote identifier.
     fn parse_optional_frequency(parts: &[&str], position: usize) -> Result<Option<Frequency>> {
         parts
             .get(position)
@@ -1810,6 +1813,7 @@ impl QuoteDetails {
             .with_strike(strike))
     }
 
+    /// Parses a direct discount-factor or zero-rate pillar and its optional rate conventions.
     fn parse_curve_pillar(id: &str, parts: &[&str]) -> Result<Self> {
         let zero_rate = parts[0].eq_ignore_ascii_case("ZeroRate");
         let max_parts = if zero_rate { 7 } else { 4 };
@@ -2646,6 +2650,7 @@ impl Quote {
         self.build_fx_option(reference_date, EuroOptionType::Put)
     }
 
+    /// Builds an FX option calibration position from the quote terms and reference date.
     fn build_fx_option<T: Scalar + Default>(
         &self,
         reference_date: Date,
@@ -2697,6 +2702,7 @@ impl Quote {
         self.build_equity_option(reference_date, EuroOptionType::Put)
     }
 
+    /// Builds an equity option calibration position from the quote terms and reference date.
     fn build_equity_option<T: Scalar + Default>(
         &self,
         reference_date: Date,

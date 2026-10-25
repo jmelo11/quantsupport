@@ -594,6 +594,7 @@ impl Default for VarIndexer {
     }
 }
 
+/// Converts script index text into the library market-index representation.
 fn parse_market_index(name: &str) -> MarketIndex {
     match name.parse() {
         Ok(index) => index,

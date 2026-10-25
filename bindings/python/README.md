@@ -95,10 +95,10 @@ For portfolio aggregation, use the same explicit trades and receive standard
 `EvaluationResults`:
 
 ```python
-book = qs.Portfolio([position, another_position])
+book = qs.Portfolio("PORTFOLIO", [position, another_position])
 with context:
-    result = book.evaluate(
-        context, ["Value", "Sensitivities", "Cashflows"], value_currency="USD",
+    result = context.evaluate(
+        book, ["Value", "Sensitivities", "Cashflows"],
     )
     print(result.price)
     print(result.sensitivities)
@@ -106,15 +106,20 @@ with context:
     print(result.cashflow_summary)  # payment_date, currency, interest, capital, other, total
 ```
 
-Open the complete [portfolio aggregation notebook](examples/sensitivity/portfolio_aggregation.ipynb)
+Start with [How a portfolio works](examples/sensitivity/portfolio.ipynb) for
+position construction, requests, result tables and numerical reconciliation.
+Open the [portfolio aggregation notebook](examples/sensitivity/portfolio_aggregation.ipynb)
 for an editable deposit/swap book, weighted quotes, distinct fixing indices,
 individual-position reconciliation and optional CSV exports.
 
-The portfolio prices one member at a time, immediately summing completed numeric
-results and duplicate risk factors. Built-in pricers reuse the per-trade AD tape;
-no portfolio-wide AD graph or list of individual valuation results is retained.
-`value_currency` identifies the common pricing currency of member PVs and raw
-derivatives; it performs no FX conversion. Cashflow currencies remain separate.
+The context prices one member at a time and sums completed numeric results
+and duplicate risk factors in portfolio order. Built-in pricers reuse the
+per-trade AD tape; no portfolio-wide AD graph or collection of member results
+is retained.
+Native Rust pricers report monetary PVs and derivatives in the context base
+currency, automatically using its FX store and including FX risk.
+Cashflow currencies remain separate. Python pricers report monetary results in
+the context base currency.
 Unsupported aggregate measures remain absent, as does any measure omitted by a
 member. Repeated entries count as repeated positions. Cashflows preserve coupon
 types, contractual and effective fixing indices (including leg overrides),
@@ -184,7 +189,7 @@ versions and whether the kernel matched its caller. Without `--write` it leaves
 sources unchanged; Sphinx renders saved outputs without executing notebooks.
 The legacy external sensitivity benchmark has additional ORE/CurveEngine
 prerequisites and is not part of that runner's default directory. To validate
-all fifteen studies:
+all sixteen studies:
 
 ```sh
 python -m pip install "open-source-risk-engine==1.8.14.1" "curveengine @ git+https://github.com/jmelo11/curveengine.git@d7e000da626e08ff2be5d34561597065340b017e"

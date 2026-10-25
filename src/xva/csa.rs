@@ -173,6 +173,7 @@ impl<T: Scalar> VariationMarginAccount<T> {
     }
 }
 
+/// Rejects nonfinite or negative collateral thresholds and minimum transfer amounts.
 fn validate_margin_parameters(
     counterparty_threshold: f64,
     own_threshold: f64,

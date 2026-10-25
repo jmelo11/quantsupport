@@ -144,7 +144,7 @@ def main():
     """Run selected notebooks/scopes, optionally saving outputs as the CLI directs.
 
     Paths are relative to the examples directory; "benchmark" selects the
-    optional historical study. Omitted selectors run the fourteen binding
+    optional historical study. Omitted selectors run all binding
     studies. Overlapping selections are deduplicated and checkpoints skipped.
     Invalid paths terminate with an argparse error and execution failures propagate.
     """

@@ -84,12 +84,26 @@ alone cannot reveal a duplicated or unintended input move.
 Portfolio aggregation
 ---------------------
 
+Start with :doc:`How a portfolio works <../studies/notebooks/portfolio>` for
+trade membership, position sizes, request rules and automatic currency conversion.
+It reconciles aggregate PV, sensitivities and payments against individual trades
+and checks rate risk by full revaluation.
+
 The :doc:`portfolio aggregation notebook <../studies/notebooks/portfolio-aggregation>`
-uses ``qs.Portfolio(trades).evaluate(context, requests, value_currency="USD")``
+uses ``context.evaluate(qs.Portfolio("PORTFOLIO", trades), requests)``
 and returns standard ``EvaluationResults``. Its six-position deposit/swap book
 matches the Excel portfolio workbook. It reconciles PV, every sensitivity and
 payment-date totals against individual evaluations, then optionally exports
 five tables as CSV.
+
+``Portfolio`` stores only the ordered trade membership. Context dispatch selects
+Rust's ``PortfolioPricer``, which implements the standard ``Pricer`` interface
+for Value, Sensitivities and Cashflows and delegates each member's valuation
+to its own pricer.
+
+Native Rust pricers convert monetary results to the context base currency using
+its FX store, including FX sensitivities, before portfolio aggregation. Cashflow
+reports keep their original currencies.
 
 ``result.coupons`` preserves coupon types, accrual dates, contractual and
 effective fixing indices, signed notionals and compatible weighted rates or

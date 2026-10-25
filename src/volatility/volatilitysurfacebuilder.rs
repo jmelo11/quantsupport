@@ -77,6 +77,7 @@ impl VolatilitySurfaceBuilder {
         Ok(surfaces)
     }
 
+    /// Builds one volatility surface from its configured quotes and coordinate conventions.
     #[allow(clippy::unused_self)]
     fn build_one(
         &self,

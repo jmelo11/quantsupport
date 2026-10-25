@@ -48,8 +48,7 @@ pub trait Pricer: Send + Sync {
     /// Returns a [`MarketDataRequest`] if the pricer requires market data to evaluate the instrument, otherwise returns `None`.
     fn market_data_request(&self, trade: &Self::Item) -> Option<MarketDataRequest>;
 
-    /// Attaches a [`DiscountPolicy`](crate::core::collateral::DiscountPolicy) that overrides default discounting and
-    /// can define both discount-curve and pricing-currency resolution.
+    /// Attaches a [`DiscountPolicy`](crate::core::collateral::DiscountPolicy) that overrides discount-curve selection.
     fn set_discount_policy(&mut self, _policy: Box<Self::Policy>);
 
     /// Returns the currently active [`DiscountPolicy`](crate::core::collateral::DiscountPolicy), if any.

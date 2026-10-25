@@ -467,7 +467,7 @@ pub fn evaluate_requests(
                     trade,
                     QsObject::LoanTrade(_) | QsObject::FixedRateBondTrade(_)
                 ) {
-                    std::sync::Arc::new(FixedIncomeDiscountPolicy::new(false).with_risk_free_index(
+                    std::sync::Arc::new(FixedIncomeDiscountPolicy::new(false).with_discount_curve_index(
                         context.base_currency(),
                         context.base_index().clone(),
                     ))

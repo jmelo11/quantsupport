@@ -1,9 +1,23 @@
 //! Worksheet portfolio membership and streaming valuation.
 
-use super::registry::Registry;
-use quantsupport::prelude::{Currency, EvaluationResults, Portfolio, QSError, Request};
+use super::{
+    pricing::PricerObject,
+    registry::{QsObject, Registry},
+};
+use quantsupport::{
+    prelude::{
+        Currency, EvaluationResults, MarketDataProvider, MarketDataRequest, Portfolio,
+        PortfolioPricer, Pricer, QSError, Request,
+    },
+    utils::errors::Result as QsResult,
+};
+use std::marker::PhantomData;
 
-pub fn create(registry: &Registry, trades: Vec<String>) -> Result<Portfolio<String>, String> {
+pub fn create(
+    registry: &Registry,
+    identifier: String,
+    trades: Vec<String>,
+) -> Result<Portfolio<String>, String> {
     for handle in &trades {
         let object = registry.object(handle).map_err(|error| error.to_string())?;
         if !object.kind().ends_with("Trade") {
@@ -13,7 +27,7 @@ pub fn create(registry: &Registry, trades: Vec<String>) -> Result<Portfolio<Stri
             ));
         }
     }
-    Portfolio::new(trades).map_err(|error| error.to_string())
+    Portfolio::new(identifier, trades).map_err(|error| error.to_string())
 }
 
 fn validate_count(count: usize, trades: usize, label: &str) -> Result<(), String> {
@@ -46,20 +60,61 @@ pub fn evaluate(
         registry.pricer(pricer).map_err(|error| error.to_string())?;
     }
     let context = super::context::resolve(registry, context)?;
-    portfolio
-        .evaluate(requests, |index, trade, requests| {
+    if value_currency.is_some_and(|currency| currency != context.base_currency()) {
+        return Err("Portfolio value currency must match the context base currency".into());
+    }
+    let members = portfolio
+        .trades()
+        .iter()
+        .enumerate()
+        .map(|(index, trade)| {
+            let object = registry.object(trade).map_err(|error| error.to_string())?;
+            let position = object;
+            let pricer_index = if pricers.len() == 1 { 0 } else { index };
             let pricer = registry
-                .pricer(&pricers[if pricers.len() == 1 { 0 } else { index }])
-                .map_err(|error| QSError::InvalidValueErr(error.to_string()))?;
-            let object = registry
-                .object(trade)
-                .map_err(|error| QSError::InvalidValueErr(error.to_string()))?;
-            let result = pricer
-                .evaluate(object, requests, &context)
-                .map_err(QSError::InvalidValueErr)?;
-            Ok((value_currency, result))
+                .pricer(&pricers[pricer_index])
+                .map_err(|error| error.to_string())?;
+            Ok(PortfolioMember { position, pricer })
         })
+        .collect::<Result<Vec<_>, String>>()?;
+    let portfolio = Portfolio::new(portfolio.identifier().to_owned(), members)
+        .map_err(|error| error.to_string())?;
+    PortfolioPricer::new(PortfolioMemberPricer(PhantomData))
+        .evaluate(&portfolio, requests, context.as_ref())
         .map_err(|error| error.to_string())
+}
+
+/// Associates a worksheet trade with its explicitly selected native pricer.
+struct PortfolioMember<'a> {
+    position: &'a QsObject,
+    pricer: &'a PricerObject,
+}
+
+/// Dispatches borrowed worksheet positions through their selected member pricers.
+struct PortfolioMemberPricer<'a>(PhantomData<&'a ()>);
+
+impl<'a> Pricer for PortfolioMemberPricer<'a> {
+    type Item = PortfolioMember<'a>;
+    type Policy = ();
+
+    fn evaluate(
+        &self,
+        trade: &Self::Item,
+        requests: &[Request],
+        context: &impl MarketDataProvider,
+    ) -> QsResult<EvaluationResults> {
+        trade
+            .pricer
+            .evaluate(trade.position, requests, context)
+            .map_err(QSError::InvalidValueErr)
+    }
+    fn market_data_request(&self, _trade: &Self::Item) -> Option<MarketDataRequest> {
+        None
+    }
+    fn set_discount_policy(&mut self, _policy: Box<()>) {}
+    fn discount_policy(&self) -> Option<&()> {
+        None
+    }
 }
 
 #[cfg(test)]
@@ -156,7 +211,7 @@ mod tests {
             .unwrap();
         let nodes = ADForward::with_tape(|tape| tape.book.len());
         let members = 2000;
-        let portfolio = create(&registry, vec![trade; members]).unwrap();
+        let portfolio = create(&registry, "TEST-PORTFOLIO".into(), vec![trade; members]).unwrap();
         let handle = registry
             .upsert_if_changed(
                 "portfolio",
@@ -219,7 +274,12 @@ mod tests {
             column: 0,
         };
         registry.begin_cell(cell);
-        let portfolio = create(&registry, vec![trade.clone(), trade.clone()]).unwrap();
+        let portfolio = create(
+            &registry,
+            "TEST-PORTFOLIO".into(),
+            vec![trade.clone(), trade.clone()],
+        )
+        .unwrap();
         let handle = registry
             .upsert_if_changed(
                 "portfolio",
@@ -234,8 +294,8 @@ mod tests {
             column: 0,
         });
         assert!(registry.object(&trade).is_ok());
-        assert!(create(&registry, vec![context.clone()]).is_err());
-        assert!(create(&registry, vec![]).is_err());
+        assert!(create(&registry, "TEST-PORTFOLIO".into(), vec![context.clone()]).is_err());
+        assert!(create(&registry, "TEST-PORTFOLIO".into(), vec![]).is_err());
         assert!(evaluate(
             &registry,
             &handle,

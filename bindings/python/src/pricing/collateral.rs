@@ -21,7 +21,7 @@ pub struct SingleCurveCSADiscountPolicy {
 impl From<QsCsaPolicy> for SingleCurveCSADiscountPolicy {
     fn from(policy: QsCsaPolicy) -> Self {
         Self {
-            collateral_currency: policy.collateral_currency(),
+            collateral_currency: policy.base_currency(),
             collateral_index: policy.collateral_index().clone(),
         }
     }
@@ -84,7 +84,7 @@ impl SingleCurveCSADiscountPolicy {
 ///
 /// Parameters
 /// ----------
-/// risk_free_indices : dict[Currency | str, MarketIndex | str]
+/// discount_curve_by_currency : dict[Currency | str, MarketIndex | str]
 ///     Currency-to-curve mapping. Each index must identify a configured curve.
 /// prefer_instrument_index : bool, optional
 ///     Use an instrument's discount index when present. Defaults to True.
@@ -92,7 +92,7 @@ impl SingleCurveCSADiscountPolicy {
 ///
 /// Examples
 /// --------
-/// FixedIncomeDiscountPolicy(risk_free_indices={Currency.EUR: MarketIndex.ESTR})
+/// FixedIncomeDiscountPolicy(discount_curve_by_currency={Currency.EUR: MarketIndex.ESTR})
 #[pyclass(
     module = "quantsupport",
     name = "FixedIncomeDiscountPolicy",
@@ -101,33 +101,33 @@ impl SingleCurveCSADiscountPolicy {
 )]
 #[derive(Clone)]
 pub struct FixedIncomeDiscountPolicy {
-    risk_free_indices: Vec<(Currency, MarketIndex)>,
+    discount_curve_by_currency: Vec<(Currency, MarketIndex)>,
     prefer_instrument_index: bool,
 }
 impl FixedIncomeDiscountPolicy {
     pub fn build(&self) -> QsFixedIncomePolicy {
-        self.risk_free_indices.iter().fold(
+        self.discount_curve_by_currency.iter().fold(
             QsFixedIncomePolicy::new(self.prefer_instrument_index),
-            |policy, (currency, index)| policy.with_risk_free_index(*currency, index.clone()),
+            |policy, (currency, index)| policy.with_discount_curve_index(*currency, index.clone()),
         )
     }
 }
 #[pymethods]
 impl FixedIncomeDiscountPolicy {
     #[new]
-    #[pyo3(signature = (risk_free_indices, prefer_instrument_index = true))]
+    #[pyo3(signature = (discount_curve_by_currency, prefer_instrument_index = true))]
     fn new(
-        risk_free_indices: &Bound<'_, pyo3::types::PyDict>,
+        discount_curve_by_currency: &Bound<'_, pyo3::types::PyDict>,
         prefer_instrument_index: bool,
     ) -> PyResult<Self> {
-        let indices = risk_free_indices
+        let indices = discount_curve_by_currency
             .iter()
             .map(|(currency, index)| {
                 Ok((extract_currency(&currency)?, extract_market_index(&index)?))
             })
             .collect::<PyResult<Vec<_>>>()?;
         Ok(Self {
-            risk_free_indices: indices,
+            discount_curve_by_currency: indices,
             prefer_instrument_index,
         })
     }

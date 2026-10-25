@@ -11,12 +11,15 @@ class TradeInstrumentTests(unittest.TestCase):
         instrument = qs.FixedRateDeposit("DEPOSIT", "2026-02-24", "2027-02-24", 100_000, 0.04, "USD", "SOFR")
         long = qs.Trade(instrument, "2026-02-24")
         short = qs.Trade(instrument, "2026-02-24", "PayShort", notional=50_000)
-        portfolio = qs.Portfolio([long, short, long])
+        portfolio = qs.Portfolio("DEPOSIT-BOOK", [long, short, long])
+        self.assertEqual(portfolio.identifier, "DEPOSIT-BOOK")
+        self.assertIn("DEPOSIT-BOOK", repr(portfolio))
         self.assertEqual(len(portfolio), 3)
         with self.make_context() as context:
             single = context.evaluate(long, ["Value", "Sensitivities", "Cashflows"])
-            result = portfolio.evaluate(context, ["Value", "Sensitivities", "Cashflows"], value_currency="USD")
+            result = context.evaluate(portfolio, ["Value", "Sensitivities", "Cashflows"])
             self.assertIsInstance(result, qs.EvaluationResults)
+            self.assertEqual(result.identifier, "DEPOSIT-BOOK")
             self.assertAlmostEqual(result.price, 1.5 * single.price, places=7)
             expected = dict(single.raw_sensitivities)
             for factor, value in result.raw_sensitivities:
@@ -32,30 +35,147 @@ class TradeInstrumentTests(unittest.TestCase):
             for rate in coupons.rate:
                 self.assertAlmostEqual(rate, 0.04, places=14)
             self.assertAlmostEqual(coupons.notional.sum(), 150_000.0)
-            omitted = portfolio.evaluate(context, ["FairRate(0)"])
+            omitted = context.evaluate(portfolio, ["FairRate(0)"])
             self.assertIsNone(omitted.fair_rate)
             self.assertIsNone(omitted.price)
 
     def test_portfolio_omits_incomplete_measures_and_keeps_cashflow_currencies_separate(self):
-        class NumericContext:
-            def evaluate(self, trade, requests):
+        class NumericPricer:
+            def evaluate(self, trade, requests, context):
                 if trade == "missing":
-                    return qs.EvaluationResults("2026-01-15", trade)
-                return qs.EvaluationResults("2026-01-15", trade, price=10.0, cashflows=[
+                    return qs.EvaluationResults(context.evaluation_date, trade)
+                return qs.EvaluationResults(context.evaluation_date, trade, price=10.0, cashflows=[
                     dict(payment_date="2027-01-15", type="FixedRateCoupon", amount=3.0, currency="USD"),
                     dict(payment_date="2027-01-15", type="Redemption", amount=100.0, currency="EUR"),
                 ])
 
-        result = qs.Portfolio(["first", "missing"]).evaluate(NumericContext(), ["Value", "Cashflows"], value_currency="USD")
-        self.assertIsNone(result.price)
-        self.assertIsNone(result.cashflows)
-        result = qs.Portfolio(["first", "second"]).evaluate(NumericContext(), ["Cashflows"])
+        context = self.make_context()
+        context.register_pricer(str, NumericPricer())
+        with context:
+            result = context.evaluate(qs.Portfolio("PORTFOLIO", ["first", "missing"]), ["Value", "Cashflows"])
+            self.assertIsNone(result.price)
+            self.assertIsNone(result.cashflows)
+            result = context.evaluate(qs.Portfolio("PORTFOLIO", ["first", "second"]), ["Cashflows"])
         summary = result.cashflow_summary.set_index("currency")
         self.assertEqual(summary.loc["USD", "interest"], 6.0)
         self.assertEqual(summary.loc["USD", "capital"], 0.0)
         self.assertEqual(summary.loc["EUR", "capital"], 200.0)
         with self.assertRaises(qs.QuantSupportError):
-            qs.Portfolio([])
+            qs.Portfolio("PORTFOLIO", [])
+        with self.assertRaisesRegex(qs.QuantSupportError, "identifier"):
+            qs.Portfolio("  ", ["first"])
+
+    def test_context_portfolio_defaults_requests_and_lifecycle(self):
+        instrument = qs.FixedRateDeposit("DEPOSIT", "2026-03-02", "2027-03-02", 100_000, 0.04, "USD", "SOFR")
+        trade = qs.Trade(instrument, "2026-02-24")
+        portfolio = qs.Portfolio("PORTFOLIO", [trade, trade])
+        self.assertFalse(hasattr(portfolio, "evaluate"))
+        context = self.make_context()
+        with self.assertRaisesRegex(qs.QuantSupportError, "not initialized"):
+            context.evaluate(portfolio)
+        with context:
+            single = context.evaluate(trade)
+            default = context.evaluate(portfolio)
+            self.assertAlmostEqual(default.price, 2 * single.price, places=7)
+            self.assertIsNone(default.sensitivities)
+            self.assertIsNone(default.cashflows)
+            empty = context.evaluate(portfolio, [])
+            self.assertIsNone(empty.price)
+            self.assertIsNone(empty.cashflows)
+            risk_only = context.evaluate(portfolio, ["Sensitivities", "Sensitivities"])
+            single_risk = context.evaluate(trade, ["Sensitivities"])
+            self.assertIsNone(risk_only.price)
+            expected = dict(single_risk.raw_sensitivities)
+            for pillar, value in risk_only.raw_sensitivities:
+                self.assertAlmostEqual(value, 2 * expected[pillar], places=6)
+        with self.assertRaisesRegex(qs.QuantSupportError, "not initialized"):
+            context.evaluate(portfolio)
+
+    def test_portfolio_rejects_futures_quotes_as_monetary_values(self):
+        futures = qs.Trade(qs.RateFutures(
+            "FUTURE", "2027-02-24", "2027-05-24", 96.0, "SOFR",
+        ), "2026-02-24")
+        deposit = qs.Trade(qs.FixedRateDeposit(
+            "DEPOSIT", "2026-02-24", "2027-02-24", 100_000, 0.04, "USD", "SOFR",
+        ), "2026-02-24")
+        with self.make_context() as context:
+            self.assertIsNotNone(context.evaluate(futures).price)
+            for requests in [["Value"], ["Sensitivities"]]:
+                with self.assertRaisesRegex(qs.QuantSupportError, "rate futures return quotes"):
+                    context.evaluate(qs.Portfolio("PORTFOLIO", [deposit, futures]), requests)
+
+    def test_context_converts_members_to_base_currency_before_aggregation(self):
+        date = "2026-02-24"
+        curves = [
+            qs.CurveConfiguration(
+                market_index=index,
+                construction=qs.CurveConstruction.zero_rate(
+                    pillars=["0D", "5Y"], rates=[0.03, 0.03],
+                ),
+            )
+            for index in ["SOFR", "ESTR"]
+        ]
+        fx = qs.FxStore()
+        fx.add("USD", "EUR", 0.9)
+        quotes = qs.QuoteStore.from_dict({"reference_date": date, "quotes": []})
+        context = qs.PricingContext(
+            quotes, curves, fx=fx,
+            csa_policy=qs.SingleCurveCSADiscountPolicy("EUR", "ESTR"),
+        )
+        usd_context = qs.PricingContext(
+            quotes, curves, fx=fx,
+            csa_policy=qs.SingleCurveCSADiscountPolicy("USD", "SOFR"),
+        )
+        eur = qs.Trade(qs.FixedRateDeposit("EUR", "2026-03-02", "2027-03-02", 100_000, 0.04, "EUR", "ESTR"), date)
+        usd = qs.Trade(qs.FixedRateDeposit("USD", "2026-03-02", "2027-03-02", 100_000, 0.04, "USD", "SOFR"), date)
+        with context:
+            single = context.evaluate(eur, ["Value", "Sensitivities"])
+            result = context.evaluate(qs.Portfolio("PORTFOLIO", [eur, eur]), ["Value", "Sensitivities"])
+            self.assertAlmostEqual(result.price, 2 * single.price, places=7)
+            converted = context.evaluate(usd, ["Value", "Sensitivities", "Cashflows"])
+            mixed = context.evaluate(qs.Portfolio("PORTFOLIO", [eur, usd]), ["Value", "Sensitivities", "Cashflows"])
+            self.assertAlmostEqual(mixed.price, single.price + converted.price, places=7)
+            payments = context.evaluate(qs.Portfolio("PORTFOLIO", [eur, usd]), ["Cashflows"])
+            self.assertEqual(set(payments.cashflow_summary.currency), {"EUR", "USD"})
+            risk_only = context.evaluate(usd, ["Sensitivities"])
+            self.assertIsNone(risk_only.price)
+            self.assertEqual(dict(risk_only.raw_sensitivities), dict(converted.raw_sensitivities))
+        with usd_context:
+            local = usd_context.evaluate(usd, ["Value", "Sensitivities"])
+        self.assertAlmostEqual(converted.price, 0.9 * local.price, places=7)
+        self.assertAlmostEqual(dict(converted.raw_sensitivities)["USD/EUR"], local.price, places=7)
+        for pillar, value in local.raw_sensitivities:
+            self.assertAlmostEqual(dict(converted.raw_sensitivities)[pillar], 0.9 * value, places=6)
+        with usd_context:
+            inverse = usd_context.evaluate(eur, ["Value", "Sensitivities"])
+        self.assertAlmostEqual(inverse.price, single.price / 0.9, places=7)
+        self.assertAlmostEqual(dict(inverse.raw_sensitivities)["USD/EUR"], -single.price / 0.9**2, places=6)
+        triangulated = qs.FxStore()
+        triangulated.add("USD", "GBP", 0.8)
+        triangulated.add("GBP", "EUR", 1.125)
+        context.fx = triangulated
+        with context:
+            via_gbp = context.evaluate(usd, ["Value", "Sensitivities"])
+        self.assertAlmostEqual(via_gbp.price, converted.price, places=7)
+        fx_risk = dict(via_gbp.raw_sensitivities)
+        self.assertAlmostEqual(fx_risk["USD/GBP"], 1.125 * local.price, places=7)
+        self.assertAlmostEqual(fx_risk["GBP/EUR"], 0.8 * local.price, places=7)
+        bumped_values = []
+        for shift in [1e-5, -1e-5]:
+            shifted_fx = qs.FxStore()
+            shifted_fx.add("USD", "GBP", 0.8 + shift)
+            shifted_fx.add("GBP", "EUR", 1.125)
+            context.fx = shifted_fx
+            with context:
+                bumped_values.append(context.evaluate(usd).price)
+        self.assertAlmostEqual(
+            (bumped_values[0] - bumped_values[1]) / 2e-5,
+            fx_risk["USD/GBP"], places=5,
+        )
+        context.fx = qs.FxStore()
+        with context:
+            with self.assertRaisesRegex(qs.QuantSupportError, "exchange rate path"):
+                context.evaluate(qs.Portfolio("PORTFOLIO", [eur, usd]))
 
     def make_swap(self):
         return qs.Swap(

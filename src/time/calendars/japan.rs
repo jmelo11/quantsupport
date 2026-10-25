@@ -20,6 +20,7 @@ impl Japan {
         Self::default()
     }
 
+    /// Estimates the March or September equinox day using the calendar year formula.
     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
     fn equinox(year: i32, spring: bool) -> u32 {
         let base = match (year < 1980, spring) {
@@ -33,6 +34,7 @@ impl Japan {
         (0.242194_f64.mul_add(f64::from(offset), base) - f64::from(leap_years)).floor() as u32
     }
 
+    /// Checks the date against the Japanese national-holiday rules implemented by this calendar.
     fn national_holiday(date: Date) -> bool {
         let year = date.year();
         let month = date.month();

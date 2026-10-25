@@ -1,11 +1,12 @@
 use crate::{
     ad::{dual::DualFwd, expr::FloatExt, tape::Tape},
     core::{
-        collateral::DiscountPolicy,
+        collateral::{DiscountPolicy, Discountable},
         evaluationresults::{EvaluationResults, SensitivityMap},
         instrument::Instrument,
         marketdatahandling::{
             constructedelementrequest::ConstructedElementRequest,
+            fxrequest::FxRequest,
             marketdata::{MarketData, MarketDataProvider, MarketDataRequest},
         },
         pricer::Pricer,
@@ -173,6 +174,16 @@ impl HandleValue<CapFloorTrade, HullWhiteCapState> for ClosedFormHullWhiteCapPri
             npv = (npv + adjusted * DualFwd::new(trade.notional())).into();
         }
 
+        let source = Discountable::currency(cap);
+        let npv = if let Some(target) = state
+            .get_market_data_reponse()
+            .and_then(MarketData::base_currency)
+            .filter(|target| *target != source)
+        {
+            (npv * state.get_exchange_rate(source, target)?).into()
+        } else {
+            npv
+        };
         state.value = Some(npv);
         Tape::stop_recording_fwd();
         Ok(npv.value())
@@ -230,6 +241,11 @@ impl HandleSensitivities<CapFloorTrade, HullWhiteCapState> for ClosedFormHullWhi
                 ids.push(label);
                 exposures.push(pillar.adjoint()?.value());
             }
+        }
+
+        for (label, exposure) in state.get_fx_sensitivities()? {
+            ids.push(label);
+            exposures.push(exposure);
         }
 
         Ok(SensitivityMap::default()
@@ -300,9 +316,14 @@ impl Pricer for ClosedFormHullWhiteCapPricer {
             }
         }
 
-        let request = MarketDataRequest::default()
+        let mut request = MarketDataRequest::default()
             .with_constructed_elements_request(elements)
             .with_fixings_request(fixings);
+        let mut fx = request.fx_request().cloned().unwrap_or_default();
+        fx.push(FxRequest::single(Discountable::currency(
+            trade.instrument(),
+        )));
+        request = request.with_fx_request(fx);
         Some(request)
     }
 
@@ -366,6 +387,7 @@ mod tests {
         }
     }
 
+    /// Builds flat forward and discount curves for Hull-White cap valuation tests.
     fn setup_hw_cap_market_data(
         trade_date: Date,
         market_index: &MarketIndex,
@@ -387,6 +409,7 @@ mod tests {
         MarketData::new(HashMap::new(), constructed_elements)
     }
 
+    /// Builds a scalar flat curve for independent Hull-White price checks.
     fn flat_f64_curve(ref_date: Date, rate: f64) -> FlatForwardTermStructure<f64> {
         FlatForwardTermStructure::new(ref_date, rate, RateDefinition::default())
     }

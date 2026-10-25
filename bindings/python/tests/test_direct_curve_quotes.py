@@ -92,7 +92,8 @@ class DirectCurveQuoteTests(unittest.TestCase):
 
             def value(shocks=(), risk=False):
                 with context([(label, {"mid": rate}) for label, rate in zip(labels, values)],
-                             enable_extrapolation=True) as ctx:
+                             enable_extrapolation=True,
+                             csa_policy=qs.SingleCurveCSADiscountPolicy("EUR", "ESTR")) as ctx:
                     with qs.Scenario(shocks=list(shocks)):
                         return qs.LoanPricer(discount_policy=policy).evaluate(
                             qs.Trade(loan, REFERENCE), ctx,

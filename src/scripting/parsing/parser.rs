@@ -114,6 +114,7 @@ impl Parser {
             .unwrap_or(Token::EOF)
     }
 
+    /// Returns the next token without advancing the parser, or the end marker when exhausted.
     fn peek_token(&self) -> Token {
         self.tokens
             .borrow()
@@ -159,6 +160,7 @@ impl Parser {
         ))
     }
 
+    /// Adds the current parser line, column and operation to an existing error.
     fn parsing_context(&self, error: QSError, operation: &str) -> QSError {
         error.context(format!(
             "{operation} at line {}, column {}",
@@ -415,6 +417,7 @@ impl Parser {
         Ok(Node::new_asign_with_values(lhs, rhs))
     }
 
+    /// Rewrites a compound assignment into its arithmetic expression and variable assignment.
     fn parse_compound_assign(&self, lhs: Node) -> Result<Node> {
         let op = self.current_token();
         self.advance();
@@ -724,6 +727,7 @@ impl Parser {
         self.parse_postfix(var)
     }
 
+    /// Parses supported method-style postfix operations following an expression.
     fn parse_postfix(&self, mut expr: Node) -> Result<Node> {
         loop {
             if self.current_token() == Token::Dot {
@@ -830,6 +834,7 @@ impl Parser {
         Ok(Node::new_spot(first, second, date))
     }
 
+    /// Parses a dated discount-factor request from the script expression.
     fn parse_df(&self) -> Result<Node> {
         self.expect_token(Token::Identifier("Df".to_string()))?;
         self.advance();
@@ -854,6 +859,7 @@ impl Parser {
         Ok(Node::new_df(date, curve))
     }
 
+    /// Parses a named rate-index expression and its required arguments.
     fn parse_rate_index(&self) -> Result<Node> {
         self.expect_token(Token::Identifier("RateIndex".to_string()))?;
         self.advance();

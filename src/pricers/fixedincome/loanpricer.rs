@@ -11,6 +11,7 @@ use crate::{
             constructedelementrequest::ConstructedElementRequest,
             fixingrequest::FixingRequest,
             forwardraterequest::ForwardRateRequest,
+            fxrequest::FxRequest,
             marketdata::{MarketData, MarketDataProvider, MarketDataRequest},
         },
         pricer::Pricer,
@@ -155,12 +156,14 @@ impl LoanPricer {
             })
             .collect();
         let request = request.with_fixings_request(fixings);
-        Ok(LoanValuationState {
-            market_data: Some(ctx.handle_request(&request)?),
+        let market_data = ctx.handle_request(&request)?;
+        let state = LoanValuationState {
+            market_data: Some(market_data),
             evaluation_date: ctx.evaluation_date(),
             value: None,
             legs: Vec::new(),
-        })
+        };
+        Ok(state)
     }
 
     /// Resolves an index observation with its own tenor and quote convention.
@@ -640,6 +643,16 @@ impl HandleValue<LoanTrade<DualFwd>, LoanValuationState> for LoanPricer {
             let cashflows = Self::clone_cashflows_with_resolved_fixings(trade.instrument(), state)?;
             let (value, legs) =
                 self.calculate_expected_receipts_and_present_value(trade, state, &cashflows)?;
+            let source = trade.instrument().currency();
+            let value = if let Some(target) = state
+                .get_market_data_reponse()
+                .and_then(MarketData::base_currency)
+                .filter(|target| *target != source)
+            {
+                (value * state.get_exchange_rate(source, target)?).into()
+            } else {
+                value
+            };
             state.value = Some(value);
             state.legs = legs;
             Ok(value.value())
@@ -727,6 +740,10 @@ impl HandleSensitivities<LoanTrade<DualFwd>, LoanValuationState> for LoanPricer 
                     exposures.push(exposure);
                 }
             }
+        }
+        for (label, exposure) in state.get_fx_sensitivities()? {
+            keys.push(label);
+            exposures.push(exposure);
         }
         Ok(SensitivityMap::default()
             .with_instrument_keys(&keys)
@@ -1229,11 +1246,13 @@ impl Pricer for LoanPricer {
                     .with_missing_fixing_allowed(true)
             })
             .collect();
-        Some(
-            MarketDataRequest::default()
-                .with_constructed_elements_request(elements)
-                .with_fixings_request(fixings),
-        )
+        let mut request = MarketDataRequest::default()
+            .with_constructed_elements_request(elements)
+            .with_fixings_request(fixings);
+        let mut fx = request.fx_request().cloned().unwrap_or_default();
+        fx.push(FxRequest::single(loan.currency()));
+        request = request.with_fx_request(fx);
+        Some(request)
     }
     /// Installs a policy used to select the loan's discount curve.
     fn set_discount_policy(&mut self, policy: Box<Self::Policy>) {
@@ -1280,6 +1299,7 @@ mod tests {
             Ok(self.data.clone())
         }
     }
+    /// Builds labelled EUR discount, forward and credit curves for loan valuation tests.
     fn build_test_market(discount: f64, forward: f64, hazard: f64) -> Provider {
         let date = Date::new(2026, 1, 1);
         let mut elements = ConstructedElementStore::default();
@@ -1326,11 +1346,12 @@ mod tests {
             date,
         }
     }
+    /// Builds a loan pricer that discounts EUR receipts on ESTR.
     fn estr_loan_pricer() -> LoanPricer {
         let mut pricer = LoanPricer::new();
         pricer.set_discount_policy(Box::new(
             FixedIncomeDiscountPolicy::new(false)
-                .with_risk_free_index(Currency::EUR, MarketIndex::ESTR),
+                .with_discount_curve_index(Currency::EUR, MarketIndex::ESTR),
         ));
         pricer
     }
@@ -1351,7 +1372,7 @@ mod tests {
         let estr = pricer.evaluate(&trade, &requests, &provider)?;
         pricer.set_discount_policy(Box::new(
             FixedIncomeDiscountPolicy::new(false)
-                .with_risk_free_index(Currency::EUR, MarketIndex::EURIBOR12m),
+                .with_discount_curve_index(Currency::EUR, MarketIndex::EURIBOR12m),
         ));
         let euribor = pricer.evaluate(&trade, &requests, &provider)?;
         assert!(euribor.price() < estr.price());
@@ -1366,6 +1387,7 @@ mod tests {
             .is_none());
         Ok(())
     }
+    /// Builds the standard EUR loan contract used by receipt and fair-rate tests.
     fn default_loan_builder() -> MakeLoan<DualFwd> {
         MakeLoan::default()
             .with_identifier("LOAN".into())
@@ -1376,6 +1398,7 @@ mod tests {
             .with_coupons(vec![CashflowType::fixed(0.06)])
             .with_day_counter(DayCounter::Actual360)
     }
+    /// Evaluates the requested loan position and extracts its receipt PV.
     fn evaluate_loan_receipt_present_value(
         pricer: &LoanPricer,
         trade: &LoanTrade<DualFwd>,

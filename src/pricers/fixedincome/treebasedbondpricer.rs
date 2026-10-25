@@ -284,14 +284,9 @@ impl BondPricingEngine for TreeBasedBondPricer {
         context: &impl MarketDataProvider,
     ) -> Result<(MarketData, Self::Model<f64>)> {
         if trade.call_schedule().is_empty() {
-            return Ok((
-                context.handle_request(&contractual_market_request(
-                    trade,
-                    index,
-                    context.evaluation_date(),
-                ))?,
-                None,
-            ));
+            let request = contractual_market_request(trade, index, context.evaluation_date());
+            let market = context.handle_request(&request)?;
+            return Ok((market, None));
         }
         let configuration = pricer_configuration(trade, context)?;
         let time_grid = match configuration.pricer() {
@@ -478,6 +473,7 @@ mod tests {
     };
     use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
+    /// Loads the example market used to test calibrated callable-bond engines.
     fn example_calibrated_context(
         use_fourier: bool,
         bump: Option<(&str, f64)>,
@@ -573,6 +569,7 @@ mod tests {
         }
     }
 
+    /// Returns lattice and analytic values for a callable zero-coupon test bond.
     fn callable_zero_coupon_value(steps_per_year: usize) -> (f64, f64) {
         let evaluation_date = Date::new(2025, 1, 1);
         let call_date = Date::new(2026, 1, 1);
@@ -969,7 +966,7 @@ mod tests {
         let selected_policy = || -> Box<dyn DiscountPolicy> {
             Box::new(
                 FixedIncomeDiscountPolicy::new(false)
-                    .with_risk_free_index(Currency::USD, selected_index.clone()),
+                    .with_discount_curve_index(Currency::USD, selected_index.clone()),
             )
         };
         let expected = FACE * (-0.08_f64 * 2.0).exp();

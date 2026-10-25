@@ -20,6 +20,7 @@ pub struct CallableBondModel<T: Scalar> {
     time_grid: TimeGridConfiguration,
 }
 impl CallableBondModel<f64> {
+    /// Rebuilds Hull-White parameters from market pillars for differentiable callable-bond valuation.
     pub fn ad_model(&self, market: &MarketData) -> Result<CallableBondModel<DualFwd>> {
         Ok(CallableBondModel {
             parameters: self.parameters.ad_parameters(market)?,
@@ -28,6 +29,7 @@ impl CallableBondModel<f64> {
     }
 }
 impl<T: Scalar> CallableBondModel<T> {
+    /// Builds the cashflow and issuer-exercise grid used by the callable-bond engine.
     pub fn events(&self, valuation: &BondValuation<'_, T>) -> Result<BondEventGrid<T>> {
         bond_event_grid(
             valuation.leg,
@@ -39,6 +41,7 @@ impl<T: Scalar> CallableBondModel<T> {
         )
     }
 }
+/// Loads and validates the context pricer configuration for the bond family.
 pub fn pricer_configuration(
     trade: &impl BondTerms,
     context: &impl MarketDataProvider,
@@ -60,6 +63,7 @@ pub fn pricer_configuration(
     configuration.validate()?;
     Ok(configuration)
 }
+/// Loads contractual and calibration data, resolves Hull-White parameters and aligns the time grid.
 pub fn prepare_callable_bond(
     trade: &impl BondTerms,
     index: &MarketIndex,

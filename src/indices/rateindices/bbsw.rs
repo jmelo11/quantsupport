@@ -127,6 +127,7 @@ rate_index! {
 }
 
 // AFMA: quarterly through three years, semiannual from four years.
+/// Selects quarterly fixed coupons below four years and semiannual coupons otherwise.
 fn bbsw_fixed_frequency(tenor: Period) -> Frequency {
     if tenor < Period::new(4, TimeUnit::Years) {
         Frequency::Quarterly

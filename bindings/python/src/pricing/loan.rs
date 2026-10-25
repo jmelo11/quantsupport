@@ -64,7 +64,8 @@ impl LoanPricer {
     /// contractual principal schedule at that size. ``requests`` accepts Request
     /// values or names and defaults to Value. Returns EvaluationResults.
     ///
-    /// Value is signed receipt PV, excluding the initial advance. Cashflows are
+    /// Monetary values and sensitivities are converted to the context base
+    /// currency. Value is signed receipt PV, excluding the initial advance. Cashflows are
     /// future expected receipts in legs 0/1/2 for scheduled payments, prepayment,
     /// and recovery. Sensitivities are derivatives per unit market pillar change.
     /// FairRate(index) returns the selected zero-based segment's coupon/spread

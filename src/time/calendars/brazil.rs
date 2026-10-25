@@ -36,76 +36,93 @@ impl Brazil {
         }
     }
 
+    /// Checks whether the weekday is Saturday or Sunday.
     fn is_weekend(day: Weekday) -> bool {
         day == Weekday::Sat || day == Weekday::Sun
     }
 
+    /// Checks the date against this calendar's New Year's Day observance rule.
     const fn is_new_years_day(day: u32, month: u32) -> bool {
         day == 1 && month == 1
     }
 
+    /// Checks the date against this calendar's Sao Paulo City Day observance rule.
     const fn is_sao_paulo_city_day(day: u32, month: u32) -> bool {
         day == 25 && month == 1
     }
 
+    /// Checks the date against this calendar's Tiradentes Day observance rule.
     const fn is_tiradentes_day(day: u32, month: u32) -> bool {
         day == 21 && month == 4
     }
 
+    /// Checks the date against this calendar's Labor Day observance rule.
     const fn is_labor_day(day: u32, month: u32) -> bool {
         day == 1 && month == 5
     }
 
+    /// Checks the date against this calendar's Revolution Day observance rule.
     const fn is_revolution_day(day: u32, month: u32) -> bool {
         day == 9 && month == 7
     }
 
+    /// Checks the date against this calendar's Independence Day observance rule.
     const fn is_independence_day(day: u32, month: u32) -> bool {
         day == 7 && month == 9
     }
 
+    /// Checks the date against this calendar's Nossa Senhora Aparecida Day observance rule.
     const fn is_nossa_senhora_aparecida_day(day: u32, month: u32) -> bool {
         day == 12 && month == 10
     }
 
+    /// Checks the date against this calendar's All Souls Day observance rule.
     const fn is_all_souls_day(day: u32, month: u32) -> bool {
         day == 2 && month == 11
     }
 
+    /// Checks the date against this calendar's Republic Day observance rule.
     const fn is_republic_day(day: u32, month: u32) -> bool {
         day == 15 && month == 11
     }
 
+    /// Checks the date against this calendar's Black Consciousness Day observance rule.
     const fn is_black_consciousness_day(day: u32, month: u32, year: i32) -> bool {
         day == 20 && month == 11 && year >= 2007
     }
 
+    /// Checks the date against this calendar's Christmas Eve observance rule.
     const fn is_christmas_eve(day: u32, month: u32) -> bool {
         day == 24 && month == 12
     }
 
+    /// Checks the date against this calendar's Christmas observance rule.
     const fn is_christmas(day: u32, month: u32) -> bool {
         day == 25 && month == 12
     }
 
+    /// Checks the date against this calendar's the Passion of Christ observance rule.
     fn is_passion_of_christ(day: u32, month: u32, year: i32) -> bool {
         let em = easter_monday(year);
         let dd = Date::new(year, month, day).day_of_year();
         em - 3 == dd
     }
 
+    /// Checks the date against this calendar's Carnival observance rule.
     fn is_carnival(day: u32, month: u32, year: i32) -> bool {
         let em = easter_monday(year);
         let dd = Date::new(year, month, day).day_of_year();
         em - 49 == dd || em - 48 == dd
     }
 
+    /// Checks the date against this calendar's Corpus Christi observance rule.
     fn is_corpus_christi(day: u32, month: u32, year: i32) -> bool {
         let em = easter_monday(year);
         let dd = Date::new(year, month, day).day_of_year();
         em + 59 == dd
     }
 
+    /// Checks the date against this calendar's the final business day of the year observance rule.
     fn is_last_business_day_of_year(day: u32, month: u32, year: i32) -> bool {
         let w = NaiveDate::from_ymd_opt(year, month, day)
             .unwrap_or_else(|| panic!("valid date for last business day calculation"))

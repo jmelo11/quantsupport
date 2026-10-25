@@ -30,6 +30,7 @@ pub enum Domain {
 }
 
 impl Domain {
+    /// Adds known constants, returning an unconstrained domain otherwise.
     fn add(&self, other: &Domain) -> Domain {
         match (self, other) {
             (Domain::Constant(a), Domain::Constant(b)) => Domain::Constant(a + b),
@@ -37,6 +38,7 @@ impl Domain {
         }
     }
 
+    /// Subtracts known constants, returning an unconstrained domain otherwise.
     fn sub(&self, other: &Domain) -> Domain {
         match (self, other) {
             (Domain::Constant(a), Domain::Constant(b)) => Domain::Constant(a - b),
@@ -44,6 +46,7 @@ impl Domain {
         }
     }
 
+    /// Multiplies known constants, returning an unconstrained domain otherwise.
     fn mul(&self, other: &Domain) -> Domain {
         match (self, other) {
             (Domain::Constant(a), Domain::Constant(b)) => Domain::Constant(a * b),
@@ -51,6 +54,7 @@ impl Domain {
         }
     }
 
+    /// Divides known constants, returning an unconstrained domain otherwise.
     fn div(&self, other: &Domain) -> Domain {
         match (self, other) {
             (Domain::Constant(a), Domain::Constant(b)) => Domain::Constant(a / b),
@@ -58,6 +62,7 @@ impl Domain {
         }
     }
 
+    /// Applies a numeric function to a known constant, preserving an unconstrained domain otherwise.
     fn apply_unary<F: Fn(f64) -> f64>(&self, f: F) -> Domain {
         match self {
             Domain::Constant(a) => Domain::Constant(f(*a)),
@@ -65,6 +70,7 @@ impl Domain {
         }
     }
 
+    /// Preserves equal constant domains and widens all other combinations to an unconstrained domain.
     fn union(&self, other: &Domain) -> Domain {
         match (self, other) {
             (Domain::Constant(a), Domain::Constant(b)) if (*a - *b).abs() < f64::EPSILON => {

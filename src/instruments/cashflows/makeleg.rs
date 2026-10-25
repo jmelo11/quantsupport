@@ -1118,6 +1118,7 @@ where
     Ok(())
 }
 
+/// Builds option-embedded coupons from aligned schedule dates and period notionals.
 fn build_embedded_option_coupons_from_notionals<T>(
     cashflows: &mut Vec<CashflowType<T>>,
     dates: &[Date],
@@ -1249,6 +1250,7 @@ where
     redemptions
 }
 
+/// Computes a numeric compound factor from a rate convention and supplied year fraction.
 fn compound_factor_from_yf_value<T>(rate: InterestRate<T>, year_fraction: f64) -> f64
 where
     T: Scalar,

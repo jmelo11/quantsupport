@@ -1,12 +1,13 @@
 use crate::{
     ad::{dual::DualFwd, tape::Tape},
     core::{
-        collateral::DiscountPolicy,
+        collateral::{DiscountPolicy, Discountable},
         evaluationresults::{EvaluationResults, SensitivityMap},
         instrument::Instrument,
         marketdatahandling::{
             constructedelementrequest::ConstructedElementRequest,
             fixingrequest::FixingRequest,
+            fxrequest::FxRequest,
             marketdata::{MarketData, MarketDataProvider, MarketDataRequest},
         },
         pricer::Pricer,
@@ -115,6 +116,16 @@ impl HandleValue<EquityForwardTrade, EquityForwardState> for EquityForwardPricer
         let fwd: DualFwd = (spot_ad * df_q / df_forward).into();
         let value: DualFwd =
             (df_r * (fwd - forward.strike()) * trade.notional() * trade.side().sign()).into();
+        let source = Discountable::currency(forward);
+        let value = if let Some(target) = state
+            .get_market_data_reponse()
+            .and_then(MarketData::base_currency)
+            .filter(|target| *target != source)
+        {
+            (value * state.get_exchange_rate(source, target)?).into()
+        } else {
+            value
+        };
         state.value = Some(value);
         Ok(value.value())
     }
@@ -190,6 +201,11 @@ impl HandleSensitivities<EquityForwardTrade, EquityForwardState> for EquityForwa
                 ids.push(label);
                 exposures.push(pillar.adjoint()?.value());
             }
+        }
+
+        for (label, exposure) in state.get_fx_sensitivities()? {
+            ids.push(label);
+            exposures.push(exposure);
         }
 
         Ok(SensitivityMap::default()
@@ -302,9 +318,14 @@ impl Pricer for EquityForwardPricer {
             }
         }
 
-        let request = MarketDataRequest::default()
+        let mut request = MarketDataRequest::default()
             .with_constructed_elements_request(elements)
             .with_fixings_request(fixings);
+        let mut fx = request.fx_request().cloned().unwrap_or_default();
+        fx.push(FxRequest::single(Discountable::currency(
+            trade.instrument(),
+        )));
+        request = request.with_fx_request(fx);
         Some(request)
     }
 
@@ -339,6 +360,7 @@ mod tests {
             ))
         }
     }
+    /// Builds spot, forwarding, dividend and payment-curve inputs for equity-forward tests.
     fn provider(spot: f64, forward: f64, dividend: Option<f64>, payment: f64) -> Provider {
         let date = Date::new(2026, 1, 2);
         let index = MarketIndex::Equity("SPX".into());
@@ -375,6 +397,7 @@ mod tests {
             ),
         }
     }
+    /// Builds an equity-forward position with the requested trade direction.
     fn trade(side: Side) -> Result<EquityForwardTrade> {
         let instrument = MakeEquityForward::default()
             .with_identifier("FORWARD".into())
@@ -391,6 +414,7 @@ mod tests {
             side,
         ))
     }
+    /// Builds an equity-forward pricer with USD SOFR collateral discounting.
     fn pricer() -> EquityForwardPricer {
         let mut pricer = EquityForwardPricer::new();
         pricer.set_discount_policy(Box::new(SingleCurveCSADiscountPolicy::new(

@@ -196,6 +196,7 @@ impl<T: Scalar> CashflowType<T> {
     }
 }
 
+/// Validates finite payoff constants and consistent nested coupon bounds.
 fn validate_coupon_payoff(payoff: &PayoffOps) -> Result<()> {
     match payoff {
         PayoffOps::Const(value) if !value.is_finite() => Err(QSError::InvalidValueErr(

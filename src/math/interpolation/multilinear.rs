@@ -3,6 +3,7 @@ use super::{bilinear::BilinearValue, extrapolation::ExtrapolationPolicy};
 // The outer axes select slices; each slice owns its inner coordinates. This
 // gives ordinary multilinear interpolation on rectangular grids and supports
 // different strike sets at each expiry/tenor without inventing missing nodes.
+/// Interpolates a multidimensional grid, returning no value for invalid or incomplete inputs.
 pub fn interpolate<T: BilinearValue, const N: usize>(
     query: [f64; N],
     mut points: Vec<([f64; N], T)>,
@@ -46,6 +47,7 @@ pub fn interpolate<T: BilinearValue, const N: usize>(
     interpolate_slice(&query, &points, 0, extrapolation)
 }
 
+/// Recursively interpolates one grid axis using the configured extrapolation policy.
 fn interpolate_slice<T: BilinearValue, const N: usize>(
     query: &[f64; N],
     points: &[([f64; N], T)],

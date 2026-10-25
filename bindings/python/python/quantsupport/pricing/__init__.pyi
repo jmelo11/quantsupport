@@ -13,20 +13,27 @@ __all__ = ['Request', 'PricerConfiguration', 'SingleCurveCSADiscountPolicy', 'Fi
 
 @final
 class Portfolio:
-    """Ordered trade list evaluated incrementally into standard EvaluationResults.
+    """Ordered trade list evaluated through ``PricingContext.evaluate``.
 
-    Repeated entries count as repeated positions. Value and sensitivities require
-    one common pricing currency; cashflows keep their original currencies and
-    retain coupon types, fixing indices, dates and conventions. Compatible
+    Portfolio stores membership; context dispatch selects the native PortfolioPricer,
+    which implements the standard pricing requests and delegates member valuations.
+    Repeated entries count as repeated positions. Native pricers return monetary
+    values and sensitivities in the context base currency; cashflows keep their original
+    currencies and retain coupon types, fixing indices, dates and conventions. Compatible
     rates/spreads use notional weights; pay/receive directions remain separate.
-    Unsupported or incomplete aggregate measures remain absent.
+    Unsupported or incomplete aggregate measures remain absent. Use
+    ``context.evaluate(portfolio, requests)`` to produce standard EvaluationResults;
+    the context supplies its base currency and FX conversion automatically.
+    Member results are combined numerically in portfolio order.
     """
 
-    def __new__(cls, trades: Sequence[Any]) -> Self:
+    def __new__(cls, identifier: str, trades: Sequence[Any]) -> Self:
         """Create a nonempty portfolio, preserving order and repeated positions.
 
         Parameters
         ----------
+        identifier : str
+            Nonempty portfolio name carried by the aggregate results.
         trades : sequence
             Positions accepted by the evaluation context. Wrap native instruments
             in explicit ``Trade`` objects. Repeated entries count as repeated
@@ -35,50 +42,17 @@ class Portfolio:
         Raises
         ------
         QuantSupportError
-            If the sequence is empty.
+            If the identifier is blank or the sequence is empty.
         """
+        ...
+
+    @property
+    def identifier(self) -> str:
+        """Caller-supplied portfolio name carried by aggregate results."""
         ...
 
     def __len__(self) -> int: ...
     def __repr__(self) -> str: ...
-    def evaluate(self, context: PricingContext, requests: Sequence[Request | str] | None = ..., *, value_currency: _CurrencyLike | None = ...) -> EvaluationResults:
-        """Evaluate members individually and aggregate their numeric results.
-
-        Parameters
-        ----------
-        context : PricingContext
-            Active pricing context providing the market inputs, pricers and
-            discount policies for every member. Enter ``with context:`` before
-            evaluating the portfolio.
-        requests : sequence of Request or str, optional
-            Measures to aggregate: ``Value``, ``Sensitivities`` and ``Cashflows``.
-            None, the default, requests only Value; an empty sequence requests
-            no measures. Unsupported aggregate requests are ignored. A measure
-            omitted by any member remains absent from the aggregate results.
-        value_currency : Currency or str or None, optional
-            Common pricing currency of member monetary PVs and their raw
-            derivatives. Supply it when requesting Value or Sensitivities;
-            None is suitable for cashflow-only requests. This declares the
-            valuation unit and performs no FX conversion. Cashflows retain
-            their original currencies.
-
-        Returns
-        -------
-        EvaluationResults
-            Standard results with summed PV and risk-factor derivatives, plus
-            compatible compressed coupons when requested. Coupon types,
-            fixing indices, dates, conventions and opposing directions remain
-            distinguishable. The cashflow_summary property separately groups
-            payment-date interest and capital by currency.
-
-        Raises
-        ------
-        QuantSupportError
-            If inputs cannot be converted, a member cannot be priced, supplied
-            monetary measures lack a pricing currency, or numeric results
-            contain inconsistent evaluation dates or nonfinite values.
-        """
-        ...
 
 
 @final
@@ -121,6 +95,7 @@ QuantSupportError
     ZSpread: ClassVar[Request]
     OAS: ClassVar[Request]
     Cashflows: ClassVar[Request]
+
     @staticmethod
     def FairRate(index: int = 0) -> Request:
         """Select a zero-based swap leg or loan coupon/spread segment.
@@ -137,6 +112,7 @@ Request
     A targeted fair-rate request. The selected scalar is returned in fair_rate.
 """
         ...
+
     @property
     def index(self) -> int | None:
         """Zero-based FairRate target; None for other requests."""
@@ -328,7 +304,7 @@ class FixedIncomeDiscountPolicy:
 
 Parameters
 ----------
-risk_free_indices : dict[Currency | str, MarketIndex | str]
+discount_curve_by_currency : dict[Currency | str, MarketIndex | str]
     Currency-to-curve mapping. Each index must identify a configured curve.
 prefer_instrument_index : bool, optional
     Use an instrument's discount index when present. Defaults to True.
@@ -336,9 +312,9 @@ prefer_instrument_index : bool, optional
 
 Examples
 --------
-FixedIncomeDiscountPolicy(risk_free_indices={Currency.EUR: MarketIndex.ESTR})"""
+FixedIncomeDiscountPolicy(discount_curve_by_currency={Currency.EUR: MarketIndex.ESTR})"""
 
-    def __new__(cls, risk_free_indices: Mapping[_CurrencyLike, _IndexLike], prefer_instrument_index: bool = ...) -> Self:
+    def __new__(cls, discount_curve_by_currency: Mapping[_CurrencyLike, _IndexLike], prefer_instrument_index: bool = ...) -> Self:
         """Map each cashflow currency to its discount curve's market index."""
         ...
 
@@ -862,21 +838,24 @@ QuantSupportError
 """
         ...
 
-    def evaluate(self, trade: Trade, requests: Sequence[Request | str] | None = ...) -> EvaluationResults:
-        """Evaluate a position against the active base or scenario market.
+    def evaluate(self, trade: Trade | Portfolio, requests: Sequence[Request | str] | None = ...) -> EvaluationResults:
+        """Evaluate a position or portfolio against the active base or scenario market.
 
 Parameters
 ----------
-trade : Trade
+trade : Trade or Portfolio
     Position wrapping a supported native instrument, including direction and
     position-size overrides. A bare instrument is not accepted by native
     dispatch. A registered Python pricer can instead handle its registered
-    Python trade types and takes precedence over native pricing.
+    Python trade types and takes precedence over native pricing. A Portfolio
+    evaluates its members individually and combines their numeric results.
 requests : sequence of Request or str, optional
     Requested outputs: Value, YieldToMaturity, ModifiedDuration, Sensitivities,
     ZSpread, OAS, Cashflows, or FairRate, as enums or case-insensitive names.
     None, the default, requests only Value. An explicit empty sequence is not
     replaced by Value. Supported requests depend on the instrument and pricer.
+    Portfolios aggregate only Value, Sensitivities and Cashflows; other requests
+    are ignored. A measure omitted by any member stays absent from the total.
 
 Returns
 -------
@@ -885,7 +864,13 @@ EvaluationResults
     Native results are copied out of AD state. Sensitivities are raw derivatives
     per unit pillar change, not pre-scaled basis-point changes. Python pricers
     receive ``evaluate(trade, requests, context)`` with typed Request values and
-    must return EvaluationResults.
+    must return EvaluationResults. Native monetary values and derivatives are
+    converted to the context base currency using its FX store, including the
+    FX contribution to sensitivities. Portfolio members use this same conversion.
+    Python pricers report monetary results in the context base currency.
+    Cashflows keep their original currencies; compatible coupons are compressed while retaining
+    types, fixing indices, dates, conventions and opposing directions.
+    cashflow_summary groups payment-date interest, capital and other amounts.
 
 Raises
 ------
@@ -897,7 +882,10 @@ QuantSupportError
     If the context is uninitialized, a request is invalid or unsupported,
     market data or required model configuration are missing, no native pricer
     supports the instrument, valuation fails, or a Python pricer returns the
-    wrong result type. Exceptions raised by a Python pricer propagate unchanged.
+    wrong result type, an FX conversion is unavailable, or portfolio members have
+    inconsistent evaluation dates or nonfinite results. Portfolio failures return
+    no partial result. Exceptions raised by an individual Python pricer propagate
+    unchanged.
 """
         ...
 
@@ -1232,6 +1220,8 @@ trade : Trade
 context : PricingContext
     Initialized native context, entered on its owning thread or initialized
     explicitly. Market inputs are resolved from its active scenario view.
+    Monetary PVs and sensitivities use its base currency, with automatic spot
+    conversion and FX sensitivities; cashflows retain their payment currency.
 requests : sequence of Request or str, optional
     Value, Cashflows, Sensitivities, or FairRate, as typed requests or names.
     None, the default, selects Value. Sensitivities are derivatives per unit

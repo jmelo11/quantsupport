@@ -41,11 +41,11 @@ pub trait DiscountPolicy: Send + Sync {
 
 /// Fixed-income discount policy.
 ///
-/// For fixed-income instruments, we typically want to use risk-free discount curves or issuer-related curves. This policy allows configuring a
-/// mapping of risk-free indices by currency, and optionally preferring the instrument's own index if available.
+/// Maps currencies to their chosen discount-curve indices and optionally
+/// prefers the instrument's own discount index when one is available.
 #[derive(Default)]
 pub struct FixedIncomeDiscountPolicy {
-    risk_free_by_currency: HashMap<Currency, MarketIndex>,
+    discount_curve_by_currency: HashMap<Currency, MarketIndex>,
     prefer_instrument_index: bool,
 }
 
@@ -54,22 +54,22 @@ impl FixedIncomeDiscountPolicy {
     #[must_use]
     pub fn new(prefer_instrument_index: bool) -> Self {
         Self {
-            risk_free_by_currency: HashMap::new(),
+            discount_curve_by_currency: HashMap::new(),
             prefer_instrument_index,
         }
     }
 
-    /// Adds or replaces a risk-free index mapping for a currency.
+    /// Adds or replaces the discount-curve index selected for a currency.
     #[must_use]
-    pub fn with_risk_free_index(mut self, currency: Currency, market_index: MarketIndex) -> Self {
-        self.risk_free_by_currency.insert(currency, market_index);
+    pub fn with_discount_curve_index(mut self, currency: Currency, market_index: MarketIndex) -> Self {
+        self.discount_curve_by_currency.insert(currency, market_index);
         self
     }
 
-    /// Checks if there is a risk-free index associated with the currency.
+    /// Returns the discount-curve index configured for the currency.
     #[must_use]
-    fn risk_free_index(&self, currency: Currency) -> Option<MarketIndex> {
-        self.risk_free_by_currency.get(&currency).cloned()
+    fn discount_curve_index(&self, currency: Currency) -> Option<MarketIndex> {
+        self.discount_curve_by_currency.get(&currency).cloned()
     }
 }
 
@@ -82,15 +82,12 @@ impl DiscountPolicy for FixedIncomeDiscountPolicy {
                         return Ok(indices);
                     }
                 }
-                self.risk_free_index(target.currency()).map_or_else(
-                    || {
-                        Err(QSError::InvalidValueErr(format!(
-                            "No risk-free index configured for currency {}",
-                            target.currency()
-                        )))
-                    },
-                    Ok,
-                )
+                self.discount_curve_index(target.currency()).ok_or_else(|| {
+                    QSError::InvalidValueErr(format!(
+                        "No discount curve configured for currency {}",
+                        target.currency()
+                    ))
+                })
             }
             _ => Err(QSError::InvalidValueErr(format!(
                 "Unsupported asset class for FixedIncomeDiscountPolicy: {:?}",
@@ -100,7 +97,7 @@ impl DiscountPolicy for FixedIncomeDiscountPolicy {
     }
 
     fn discount_indices(&self) -> Vec<MarketIndex> {
-        self.risk_free_by_currency.values().cloned().collect()
+        self.discount_curve_by_currency.values().cloned().collect()
     }
 }
 
@@ -112,7 +109,7 @@ impl DiscountPolicy for FixedIncomeDiscountPolicy {
 #[derive(Clone)]
 pub struct SingleCurveCSADiscountPolicy {
     discount_index: MarketIndex,
-    currency: Currency,
+    base_currency: Currency,
 }
 
 impl SingleCurveCSADiscountPolicy {
@@ -121,18 +118,18 @@ impl SingleCurveCSADiscountPolicy {
     pub const fn collateral_index(&self) -> &MarketIndex {
         &self.discount_index
     }
-    /// Returns the collateral currency.
+    /// Returns the currency used to collateralize the selected discount curves.
     #[must_use]
-    pub const fn collateral_currency(&self) -> Currency {
-        self.currency
+    pub const fn base_currency(&self) -> Currency {
+        self.base_currency
     }
 
     /// Creates a new [`SingleCurveCSADiscountPolicy`].
     #[must_use]
-    pub const fn new(discount_index: MarketIndex, currency: Currency) -> Self {
+    pub const fn new(discount_index: MarketIndex, base_currency: Currency) -> Self {
         Self {
             discount_index,
-            currency,
+            base_currency,
         }
     }
 }
@@ -141,10 +138,10 @@ impl DiscountPolicy for SingleCurveCSADiscountPolicy {
     fn accept(&self, target: &dyn Discountable) -> Result<MarketIndex> {
         // we need to check if we have a currency mismatch, if so, we need
         // to check for Collateral() curves, otherwise we return the stored index
-        if target.currency() == self.currency {
+        if target.currency() == self.base_currency {
             Ok(self.discount_index.clone())
         } else {
-            Ok(MarketIndex::Collateral(target.currency(), self.currency))
+            Ok(MarketIndex::Collateral(target.currency(), self.base_currency))
         }
     }
 

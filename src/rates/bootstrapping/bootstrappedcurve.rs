@@ -275,6 +275,7 @@ impl BootstrappedCurve {
         self.discount_factor_from_time(year_fraction)
     }
 
+    /// Resolves a time discount factor through the explicit, composite or calibrated curve source.
     fn discount_factor_from_time(&self, time: f64) -> Result<f64> {
         match &self.source {
             Some(CurveSource::ZeroRate(curve)) => curve.discount_factor_from_time(time),

@@ -177,18 +177,22 @@ pub enum ModelConfiguration {
     },
 }
 
+/// Uses 1000 simulation paths when configuration omits the path count.
 const fn default_n_paths() -> usize {
     1000
 }
 
+/// Uses seed 42 when configuration omits the random seed.
 const fn default_seed() -> u64 {
     42
 }
 
+/// Uses monthly simulation dates when configuration omits the grid frequency.
 const fn default_frequency() -> Frequency {
     Frequency::Monthly
 }
 
+/// Uses Actual/365 when configuration omits the day-count convention.
 const fn default_day_counter() -> DayCounter {
     DayCounter::Actual365
 }

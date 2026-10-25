@@ -74,6 +74,7 @@ impl SimulationBuilder {
         Ok(simulations)
     }
 
+    /// Builds one model-driven simulation on its configured date grid and market inputs.
     fn build_one(
         spec: &SimulationConfiguration,
         store: &ConstructedElementStore,

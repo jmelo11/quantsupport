@@ -64,7 +64,7 @@ pub fn fixed_income_policy(
             return Err("discount curve index cannot be blank".into());
         }
         let index = inputs::market_index(text)?;
-        native = native.with_risk_free_index(currency, index);
+        native = native.with_discount_curve_index(currency, index);
     }
     if seen.is_empty() && !prefer_instrument_index {
         return Err("fixed-income policy requires a currency/index mapping".into());
@@ -211,7 +211,7 @@ impl PricerObject {
         &self,
         trade: &QsObject,
         requests: &[Request],
-        context: &PricingContext,
+        context: &impl MarketDataProvider,
     ) -> Result<EvaluationResults, String> {
         let native: &dyn Any = match trade {
             QsObject::LoanTrade(trade) => trade.as_ref(),

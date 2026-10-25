@@ -380,10 +380,12 @@ impl<'a, T: Scalar> LgmMarketModel<'a, T> {
         self.rebuild_request_layout();
     }
 
+    /// Converts a date to model time using the configured reference date and day count.
     fn time_from_date(&self, date: Date) -> f64 {
         self.day_counter.year_fraction(self.reference_date, date)
     }
 
+    /// Finds the configured rate-factor index associated with a currency.
     fn rate_index_for_currency(&self, ccy: Currency) -> Option<MarketIndex> {
         self.currency_to_index.get(&ccy).cloned()
     }
@@ -554,6 +556,7 @@ unsafe impl<T: Scalar> Sync for LgmPathContext<'_, T> {}
 unsafe impl<T: Scalar> Send for LgmPathContext<'_, T> {}
 
 impl<'a, T: Scalar> LgmPathContext<'a, T> {
+    /// Prepares a path generator with the model factor layout and precomputed correlation data.
     fn new(model: &'a LgmMarketModel<'a, T>) -> Self {
         Self {
             model,
@@ -567,6 +570,7 @@ impl<'a, T: Scalar> LgmPathContext<'a, T> {
         }
     }
 
+    /// Transforms Sobol normal samples into correlated Brownian increments for one time step.
     fn correlated_increments(
         &self,
         step: usize,
@@ -601,6 +605,7 @@ impl<'a, T: Scalar> LgmPathContext<'a, T> {
             .collect()
     }
 
+    /// Advances the rate, FX and equity factors over one simulation time step.
     fn evolve_market_state(
         &self,
         time: f64,
@@ -690,6 +695,7 @@ impl<'a, T: Scalar> LgmPathContext<'a, T> {
         Ok(())
     }
 
+    /// Resolves requested market observations from the simulated state at one date.
     fn responses_for_step(
         &self,
         step: usize,
@@ -790,6 +796,7 @@ impl<'a, T: Scalar> LgmPathContext<'a, T> {
         Ok(responses)
     }
 
+    /// Fills spot observation responses after the simulated path states have been generated.
     fn populate_spot_responses(
         &self,
         scenario: &mut PathScenario<T>,
@@ -1017,6 +1024,7 @@ impl<T: Scalar + 'static> MarketModel<T> for LgmMarketModel<'_, T> {
 // State accessors (used by resolve methods when state is populated externally)
 // ---------------------------------------------------------------------------
 impl<T: Scalar> LgmMarketModel<'_, T> {
+    /// Looks up a simulated rate-factor state at the requested index and date.
     fn state_z(&self, index: &MarketIndex, date: Date) -> Option<f64> {
         self.state
             .rates
@@ -1025,6 +1033,7 @@ impl<T: Scalar> LgmMarketModel<'_, T> {
             .copied()
     }
 
+    /// Looks up a simulated FX state for the requested currency and date.
     fn state_fx(&self, currency: Currency, date: Date) -> Option<f64> {
         self.state.fx.get(&currency)?.get(&date).copied()
     }

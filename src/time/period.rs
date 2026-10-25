@@ -268,6 +268,7 @@ impl Period {
         Self::parse_impl(tenor)
     }
 
+    /// Parses a tenor expression by combining its successive length-and-unit periods.
     fn parse_impl(tenor: &str) -> Result<Self> {
         // parse multiple periods and add them
         let chars = tenor.chars();
@@ -287,6 +288,7 @@ impl Period {
         Ok(result)
     }
 
+    /// Parses one period length and time unit from its tenor text.
     fn parse_single_period(tenor: &str) -> Result<Self> {
         let chars = tenor.chars();
         let mut length = String::new();

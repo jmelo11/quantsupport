@@ -3,12 +3,13 @@ use crate::rates::yieldtermstructure::primalcurve::PrimalCurve;
 use crate::{
     ad::{dual::DualFwd, scalar::Scalar, tape::Tape},
     core::{
-        collateral::DiscountPolicy,
+        collateral::{DiscountPolicy, Discountable},
         evaluationresults::{EvaluationResults, SensitivityMap},
         instrument::Instrument,
         marketdatahandling::{
             constructedelementrequest::ConstructedElementRequest,
             fixingrequest::FixingRequest,
+            fxrequest::FxRequest,
             marketdata::{MarketData, MarketDataProvider, MarketDataRequest},
         },
         pricerconfiguration::InstrumentType,
@@ -40,8 +41,11 @@ use std::collections::HashSet;
 
 /// Common contract exposed by straight and stepped-coupon bond trades.
 pub trait BondTerms: LegsProvider<DualFwd> {
+    /// Returns the trade quote or spread used to anchor bond valuation.
     fn pricing_anchor(&self) -> BondPricingAnchor;
+    /// Returns the optional settlement date supplied by the trade.
     fn settlement_date(&self) -> Option<Date>;
+    /// Returns the optional day count used to apply the bond spread.
     fn spread_day_counter(&self) -> Option<DayCounter>;
     /// Returns the single bond cashflow leg.
     fn bond_leg(&self) -> &Leg<DualFwd>;
@@ -144,6 +148,7 @@ impl BondTerms for SteppedCouponBondTrade<DualFwd> {
     }
 }
 
+/// Resolves the bond leg discount index through the required discount policy.
 fn discount_index(
     policy: Option<&dyn DiscountPolicy>,
     trade: &impl BondTerms,
@@ -536,10 +541,9 @@ fn yield_price_and_derivative(
                 rate_definition.compounding(),
                 rate_definition.frequency(),
             )?;
-            Ok((
-                f64::mul_add(cashflow.amount, discount, price),
-                f64::mul_add(cashflow.amount, discount_derivative, derivative),
-            ))
+            let price = f64::mul_add(cashflow.amount, discount, price);
+            let derivative = f64::mul_add(cashflow.amount, discount_derivative, derivative);
+            Ok((price, derivative))
         })
 }
 
@@ -560,15 +564,13 @@ fn solve_yield(
     };
     bracketed_root(
         |yield_rate| {
-            Ok(
-                yield_price_and_derivative(
-                    cashflows,
-                    settlement_date,
-                    rate_definition,
-                    yield_rate,
-                )?
-                .0 - target_value,
-            )
+            let (price, _) = yield_price_and_derivative(
+                cashflows,
+                settlement_date,
+                rate_definition,
+                yield_rate,
+            )?;
+            Ok(price - target_value)
         },
         -0.05,
         0.10,
@@ -579,18 +581,22 @@ fn solve_yield(
 /// Engine-specific preparation and valuation. Analytics do not dispatch by method.
 pub trait BondPricingEngine {
     type Model<T: Scalar>;
+    /// Returns the discount policy used by this bond pricing engine.
     fn policy(&self) -> Option<&dyn DiscountPolicy>;
+    /// Loads the market inputs and scalar model required by this engine.
     fn prepare(
         &self,
         trade: &impl BondTerms,
         discount_index: &MarketIndex,
         context: &impl MarketDataProvider,
     ) -> Result<(MarketData, Self::Model<f64>)>;
+    /// Rebuilds the prepared model with differentiable parameters for valuation risk.
     fn ad_model(
         &self,
         model: &Self::Model<f64>,
         market: &MarketData,
     ) -> Result<Self::Model<DualFwd>>;
+    /// Values the resolved bond cashflows and issuer calls with the supplied model and spread.
     fn value<T: Scalar>(
         &self,
         model: &Self::Model<T>,
@@ -628,12 +634,9 @@ pub fn discounted_value<T: Scalar>(valuation: &BondValuation<'_, T>, spread: T) 
                 .curve
                 .discount_factor(cashflow.payment_date)?
                 .div_val(reference_discount);
-            Ok(value.add_val(
-                cashflow
-                    .amount
-                    .mul_val(discount)
-                    .mul_val(spread.mul_val(T::scalar(-time)).exp()),
-            ))
+            let spread_discount = spread.mul_val(T::scalar(-time)).exp();
+            let discounted_amount = cashflow.amount.mul_val(discount).mul_val(spread_discount);
+            Ok(value.add_val(discounted_amount))
         })
 }
 
@@ -672,6 +675,7 @@ pub fn contractual_market_request(
     MarketDataRequest::default()
         .with_constructed_elements_request(elements)
         .with_fixings_request(fixings)
+        .with_fx_request(vec![FxRequest::single(trade.bond_leg().currency())])
 }
 /// Records the engine valuation and the trade's spread as an independent risk factor.
 fn build_ad_value<E: BondPricingEngine>(
@@ -718,6 +722,16 @@ fn build_ad_value<E: BondPricingEngine>(
             .mul_val(DualFwd::scalar(trade.side().sign()));
         drop(curve);
         state.legs = vec![resolved_leg.with_side(trade.side())];
+        let source = trade.bond_leg().currency();
+        let value = if let Some(target) = state
+            .get_market_data_reponse()
+            .and_then(MarketData::base_currency)
+            .filter(|target| *target != source)
+        {
+            (value * state.get_exchange_rate(source, target)?).into()
+        } else {
+            value
+        };
         state.value = Some(value);
         state.spread_node = Some(spread);
         Ok(value.value())
@@ -763,6 +777,10 @@ fn sensitivities(state: &BondState) -> Result<SensitivityMap> {
         .ok_or_else(|| QSError::ValueNotSetErr("Bond spread risk factor".into()))?;
     labels.push(state.spread_label.clone());
     exposures.push(spread.adjoint()?.value());
+    for (label, exposure) in state.get_fx_sensitivities()? {
+        labels.push(label);
+        exposures.push(exposure);
+    }
     Ok(SensitivityMap::default()
         .with_instrument_keys(&labels)
         .with_exposure(&exposures)
@@ -997,6 +1015,7 @@ pub fn bond_market_data_request(
     if !trade.call_schedule().is_empty() {
         request = request.with_pricer_configuration_request(vec![trade.instrument_type()]);
     }
+    request = request.with_fx_request(vec![FxRequest::single(trade.bond_leg().currency())]);
     Some(request)
 }
 

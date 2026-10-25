@@ -6,11 +6,12 @@
 use crate::{
     ad::{dual::DualFwd, tape::Tape},
     core::{
-        collateral::DiscountPolicy,
+        collateral::{DiscountPolicy, Discountable},
         evaluationresults::{EvaluationResults, SensitivityMap},
         instrument::Instrument,
         marketdatahandling::{
             constructedelementrequest::ConstructedElementRequest,
+            fxrequest::FxRequest,
             marketdata::{MarketData, MarketDataProvider, MarketDataRequest},
         },
         pricer::Pricer,
@@ -49,8 +50,8 @@ impl PricerState for MonteCarloState {
 /// The strike for ATM/relative specifications is resolved from the mean
 /// terminal spot. Discounting still uses the exact expiry date.
 ///
-/// Sensitivities report discount-curve pillars only. Materialized paths do
-/// not retain derivatives through spot, model volatility, or calibration;
+/// Sensitivities report discount-curve pillars and any spot FX conversion risk.
+/// Materialized paths do not retain derivatives through spot, model volatility, or calibration;
 /// storing them as `DualFwd` does not provide those risks.
 ///
 /// When a [`DiscountPolicy`] is set, the pricer uses the CSA discount curve
@@ -148,6 +149,16 @@ impl HandleValue<EquityEuropeanOptionTrade, MonteCarloState> for BlackMCEuropean
             .discount_factor(expiry)?;
 
         let value: DualFwd = (df * mean_payoff * trade.notional()).into();
+        let source = Discountable::currency(option);
+        let value = if let Some(target) = state
+            .get_market_data_reponse()
+            .and_then(MarketData::base_currency)
+            .filter(|target| *target != source)
+        {
+            (value * state.get_exchange_rate(source, target)?).into()
+        } else {
+            value
+        };
         state.value = Some(value);
         Tape::stop_recording_fwd();
         Ok(value.value())
@@ -194,6 +205,11 @@ impl HandleSensitivities<EquityEuropeanOptionTrade, MonteCarloState>
         {
             ids.push(label);
             exposures.push(pillar.adjoint()?.value());
+        }
+
+        for (label, exposure) in state.get_fx_sensitivities()? {
+            ids.push(label);
+            exposures.push(exposure);
         }
 
         Ok(SensitivityMap::default()
@@ -264,7 +280,12 @@ impl Pricer for BlackMCEuropeanOptionPricer {
             }
         }
 
-        let request = MarketDataRequest::default().with_constructed_elements_request(elements);
+        let mut request = MarketDataRequest::default().with_constructed_elements_request(elements);
+        let mut fx = request.fx_request().cloned().unwrap_or_default();
+        fx.push(FxRequest::single(Discountable::currency(
+            trade.instrument(),
+        )));
+        request = request.with_fx_request(fx);
         Some(request)
     }
 
