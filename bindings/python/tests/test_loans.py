@@ -7,6 +7,8 @@ import unittest
 
 import quantsupport as qs
 
+from market_fixtures import append_quotes, zero_rate_quotes
+
 REFERENCE = "2026-02-24"
 
 
@@ -47,22 +49,65 @@ def build_pricing_context(instrument=None, forward=0.04, reference=REFERENCE, in
 
 
 def evaluate_loan_trade(instrument, ctx, requests=None, **pricer_options):
-    """Evaluate a loan position using the requested loan-pricer settings."""
-    return qs.LoanPricer(**pricer_options).evaluate(qs.Trade(instrument, REFERENCE), ctx, requests)
+    """Configure the core Rust loan pricer and use native context dispatch."""
+    ctx.pricer_configurations = [qs.PricerConfiguration.loan(**pricer_options)]
+    return ctx.evaluate(qs.Trade(instrument, REFERENCE), requests)
 
 
 class LoanWorkflowTests(unittest.TestCase):
-    def test_context_and_explicit_pricer_convert_receipts_and_risk_to_base_currency(self):
+    def test_native_loan_configuration_applies_to_portfolios_and_scenarios(self):
+        instrument = build_loan_contract(
+            prepayment=qs.PrepaymentModelConfiguration.refinancing_incentive(0.02, 4.0, 0.4),
+        )
+        terms = instrument.to_dict()
+        trade = qs.Trade(instrument, REFERENCE)
+        opposite_half = qs.Trade(instrument, REFERENCE, qs.Side.PayShort, notional=50_000)
+        context = build_pricing_context()
+        context.pricer_configurations = [qs.PricerConfiguration.loan(
+            refinancing_benchmark_index=qs.MarketIndex.EURIBOR12m,
+        )]
+        context.fixed_income_policy = qs.FixedIncomeDiscountPolicy({"EUR": "EURIBOR12m"})
+        self.assertIsNone(context.pricer_for(trade))
+        requests = [qs.Request.Value, qs.Request.Cashflows, qs.Request.Sensitivities]
+        with context:
+            result = context.evaluate(trade, requests)
+            self.assertGreater(result.cashflows.loc[result.cashflows.leg_index == 1, "amount"].sum(), 0)
+            curve = context.curve("EURIBOR12m")
+            expected = sum(row.amount * curve.discount_factor(row.payment_date)
+                           for row in result.cashflows.itertuples(index=False))
+            self.assertAlmostEqual(result.price, expected, places=7)
+            portfolio = context.evaluate(qs.Portfolio("LOANS", [trade, opposite_half]), requests)
+            self.assertAlmostEqual(portfolio.price, result.price / 2, places=7)
+            for pillar, value in portfolio.raw_sensitivities:
+                self.assertAlmostEqual(value, dict(result.raw_sensitivities)[pillar] / 2, places=6)
+            pillar = "FixedRateDeposit_EUR_EURIBOR12m_1Y"
+            bumped = {}
+            for bump in [-1e-5, 1e-5]:
+                with qs.Scenario(shocks=[qs.Shock(pillar, bump, qs.ScenarioType.Absolute)]):
+                    bumped[bump] = context.evaluate(trade).price
+            derivative = (bumped[1e-5] - bumped[-1e-5]) / 2e-5
+            self.assertAlmostEqual(derivative, dict(result.raw_sensitivities)[pillar], delta=0.01)
+            self.assertAlmostEqual(context.evaluate(trade).price, result.price, places=7)
+            deposit = qs.FixedRateDeposit("DEPOSIT", REFERENCE, "2027-02-24", 100_000, 0.04, "EUR", "ESTR")
+            self.assertIsNone(context.pricer_for(qs.Trade(deposit, REFERENCE)))
+            self.assertTrue(math.isfinite(context.evaluate(qs.Trade(deposit, REFERENCE)).price))
+            context.fixed_income_policy = None
+            self.assertGreater(context.evaluate(trade).price, result.price)
+            context.pricer_configurations = []
+            with self.assertRaises(qs.QuantSupportError):
+                context.evaluate(trade)
+        self.assertEqual(instrument.to_dict(), terms)
+
+    def test_native_context_converts_receipts_and_risk_to_base_currency(self):
         instrument = build_loan_contract()
         trade = qs.Trade(instrument, REFERENCE)
         context = build_pricing_context()
         with context:
             local = context.evaluate(trade, ["Value", "Sensitivities", "Cashflows"])
+        context.quotes = append_quotes(context.quotes, zero_rate_quotes("SOFR", ["0D", "5Y"], [0.03, 0.03], "USD"))
         context.curves = [*context.curves, qs.CurveConfiguration(
             market_index="SOFR",
-            construction=qs.CurveConstruction.zero_rate(
-                pillars=["0D", "5Y"], rates=[0.03, 0.03],
-            ),
+            quotes=["ZeroRate_USD_SOFR_0D", "ZeroRate_USD_SOFR_5Y"],
         )]
         context.csa_policy = qs.SingleCurveCSADiscountPolicy("USD", "SOFR")
         context.fixed_income_policy = qs.FixedIncomeDiscountPolicy({"EUR": "ESTR"})
@@ -71,12 +116,10 @@ class LoanWorkflowTests(unittest.TestCase):
         context.fx = fx
         with context:
             converted = context.evaluate(trade, ["Value", "Sensitivities", "Cashflows"])
-            explicit = qs.LoanPricer().evaluate(trade, context, ["Value", "Sensitivities"])
-            risk_only = qs.LoanPricer().evaluate(trade, context, ["Sensitivities"])
+            risk_only = context.evaluate(trade, ["Sensitivities"])
         self.assertAlmostEqual(converted.price, local.price * 1.1, places=7)
-        self.assertAlmostEqual(explicit.price, converted.price, places=7)
         self.assertIsNone(risk_only.price)
-        self.assertEqual(dict(risk_only.raw_sensitivities), dict(explicit.raw_sensitivities))
+        self.assertEqual(dict(risk_only.raw_sensitivities), dict(converted.raw_sensitivities))
         self.assertEqual(converted.cashflows.amount.tolist(), local.cashflows.amount.tolist())
         self.assertEqual(set(converted.cashflows.currency), {"EUR"})
         self.assertAlmostEqual(dict(converted.raw_sensitivities)["EUR/USD"], local.price, places=7)
@@ -174,7 +217,7 @@ class LoanWorkflowTests(unittest.TestCase):
             expected = sum(row.amount * ctx.curve("ESTR").discount_factor(row.payment_date)
                            for row in result.cashflows.itertuples(index=False))
             self.assertAlmostEqual(result.price, expected, places=7)
-            short = qs.LoanPricer().evaluate(qs.Trade(instrument, REFERENCE, qs.Side.PayShort), ctx)
+            short = ctx.evaluate(qs.Trade(instrument, REFERENCE, qs.Side.PayShort))
             self.assertAlmostEqual(short.price, -result.price, places=7)
             with self.assertRaisesRegex(qs.QuantSupportError, "bounded"):
                 evaluate_loan_trade(instrument, ctx, ["FairRate"])

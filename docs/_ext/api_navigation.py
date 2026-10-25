@@ -8,6 +8,9 @@ from sphinx.errors import ExtensionError
 from python_api import declarations
 
 
+PYTHON_EXCEPTIONS = "QuantSupportError QuantSupportTypeError QuantSupportValueError QuantSupportStateError QuantSupportIOError QuantSupportNotImplementedError".split()
+
+
 PYTHON_SECTIONS = {
     "time": {
         "Dates and Periods": "Date DateTime Period TimeUnit",
@@ -19,7 +22,7 @@ PYTHON_SECTIONS = {
         "Currencies and Indices": "Currency MarketIndex",
         "Quotes, Fixings, and FX": "QuoteStore FixingStore FxStore Level",
         "Historical Snapshots": "SnapshotSelectionRule SnapshotSelector MarketSnapshot MarketSnapshotStore",
-        "Curve Construction": "CurveConfiguration CreditCurveConfiguration CurveConstruction Interpolator",
+        "Curve Construction": "CurveConfiguration CreditCurveConfiguration Interpolator",
         "Yield Curves": "DiscountCurve ZeroRateTermStructure TenorBasedZeroRateTermStructure",
         "Volatility": "VolatilitySurface VolatilityCube VolatilitySurfaceConfiguration VolatilityCubeConfiguration VolatilityType SmileType",
         "Simulation": "Simulation SimulationConfiguration",
@@ -38,7 +41,7 @@ PYTHON_SECTIONS = {
     "pricing": {
         "Positions and Requests": "Trade Portfolio Request BondPricingAnchor",
         "Contexts and Results": "PricingContext EvaluationResults",
-        "Pricers and Policies": "LoanPricer PricerConfiguration SingleCurveCSADiscountPolicy FixedIncomeDiscountPolicy",
+        "Pricers and Policies": "PricerConfiguration SingleCurveCSADiscountPolicy FixedIncomeDiscountPolicy",
         "Python Extension Interfaces": "Pricer MarketDataProvider Evaluator",
     },
     "risk": {
@@ -66,7 +69,7 @@ def python_sections(module):
 
 def generate_python_navigation(app):
     public = {name for name in declarations() if "._" not in name}
-    assigned = ["quantsupport.QuantSupportError"]
+    assigned = [f"quantsupport.{name}" for name in PYTHON_EXCEPTIONS]
     for domain, sections in PYTHON_SECTIONS.items():
         output = Path(app.srcdir) / "python/sections" / domain
         output.mkdir(parents=True, exist_ok=True)

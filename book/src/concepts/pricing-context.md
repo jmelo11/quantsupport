@@ -74,8 +74,8 @@ pricer.
 
 ## Independent market views
 
-A `Scenario` borrows the base context and presents transformed quotes and
-explicit zero-rate pillars through an independent request cache. It does not
+A `Scenario` borrows the base context and presents transformed quotes,
+including direct zero rates, through an independent request cache. It does not
 mutate the base store or require reconstructing every configured simulation.
 Unchanged calibrated values can be reused with detached AD wrappers; affected
 dependencies are rebuilt when consumed.

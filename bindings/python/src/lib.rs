@@ -62,7 +62,6 @@ fn quantsupport(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<market::snapshots::SnapshotSelector>()?;
     m.add_class::<market::snapshots::MarketSnapshot>()?;
     m.add_class::<market::snapshots::MarketSnapshotStore>()?;
-    m.add_class::<market::stores::CurveConstruction>()?;
     m.add_class::<market::stores::CurveConfiguration>()?;
     m.add_class::<market::stores::CreditCurveConfiguration>()?;
     m.add_class::<market::stores::VolatilitySurfaceConfiguration>()?;
@@ -95,7 +94,6 @@ fn quantsupport(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Instruments
     m.add_class::<instruments::products::Swap>()?;
     m.add_class::<instruments::loan::Loan>()?;
-    m.add_class::<pricing::loan::LoanPricer>()?;
     m.add_class::<instruments::loan_terms::LoanRepaymentStructure>()?;
     m.add_class::<instruments::loan_terms::PrepaymentModelConfiguration>()?;
     m.add_class::<instruments::products::CrossCurrencySwap>()?;
@@ -128,7 +126,7 @@ fn quantsupport(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<xva::NettingSet>()?;
     m.add_class::<xva::XvaResult>()?;
     m.add_class::<xva::ExposureProfile>()?;
-    m.add("QuantSupportError", m.py().get_type::<QuantSupportError>())?;
+    common::errors::initialize(m)?;
     Ok(())
 }
 

@@ -47,6 +47,12 @@ Install the published Python package with:
 python -m pip install quantsupport
 ```
 
+For a manual download, the [Python packages
+page](https://jmelo11.github.io/quantsupport/python/downloads.html) provides
+folder ZIPs and wheels by operating system, architecture and Python version.
+Folder ZIPs contain only QuantSupport; install dependencies separately with
+`python -m pip install pandas`.
+
 The package supports Python 3.9 and later and includes pandas reporting.
 Optional typing tools are available with `quantsupport[typing]`. To use local
 source changes, build the extension using the [binding development

@@ -9,12 +9,9 @@ use quantsupport::time::{
 };
 
 use super::{calendar_date, Calendar, Date, Period};
-use crate::{
-    common::{
-        conversion::{extract_period, qs_err},
-        enums::{BusinessDayConvention, DateGenerationRule, Frequency},
-    },
-    QuantSupportError,
+use crate::common::{
+    conversion::{extract_period, qs_err},
+    enums::{BusinessDayConvention, DateGenerationRule, Frequency},
 };
 
 /// A native date schedule with immutable parameters and copied sequence views.
@@ -33,7 +30,7 @@ impl Schedule {
     /// Dates must be ordered and within 1902..2198; the tenor's trial dates
     /// must remain within the native calendar range 1901..2199.
     #[new]
-    #[pyo3(signature = (effective_date, termination_date, tenor = None, *, frequency = None, calendar = None, convention = None, termination_date_convention = None, rule = None, end_of_month = false, first_date = None, next_to_last_date = None))]
+    #[pyo3(signature = (effective_date, termination_date, tenor = None, frequency = None, calendar = None, convention = None, termination_date_convention = None, rule = None, end_of_month = false, first_date = None, next_to_last_date = None))]
     #[allow(clippy::too_many_arguments)]
     fn new(
         effective_date: &Bound<'_, PyAny>,
@@ -51,27 +48,28 @@ impl Schedule {
         let effective = calendar_date(effective_date)?;
         let termination = calendar_date(termination_date)?;
         if effective >= termination {
-            return Err(QuantSupportError::new_err(
+            return Err(crate::common::errors::invalid_value(
                 "effective_date must precede termination_date",
             ));
         }
         if tenor.is_some() && frequency.is_some() {
-            return Err(QuantSupportError::new_err(
+            return Err(crate::common::errors::invalid_value(
                 "supply tenor or frequency, not both",
             ));
         }
         let tenor = if let Some(value) = tenor {
             extract_period(value)?
         } else if let Some(value) = frequency {
-            QsPeriod::from_frequency(value.into())
-                .ok_or_else(|| QuantSupportError::new_err("frequency has no period equivalent"))?
+            QsPeriod::from_frequency(value.into()).ok_or_else(|| {
+                crate::common::errors::invalid_value("frequency has no period equivalent")
+            })?
         } else {
             QsPeriod::empty()
         };
         validate_tenor(effective, termination, tenor)?;
         let rule = rule.unwrap_or(DateGenerationRule::Backward);
         if end_of_month && (tenor.length() == 0 || rule == DateGenerationRule::Zero) {
-            return Err(QuantSupportError::new_err(
+            return Err(crate::common::errors::invalid_value(
                 "end_of_month requires a nonzero, non-Zero schedule",
             ));
         }
@@ -79,7 +77,7 @@ impl Schedule {
         let penultimate = next_to_last_date.map(calendar_date).transpose()?;
         for date in [first, penultimate].into_iter().flatten() {
             if date <= effective || date >= termination {
-                return Err(QuantSupportError::new_err(
+                return Err(crate::common::errors::invalid_value(
                     "stub dates must be strictly inside the schedule range",
                 ));
             }
@@ -88,7 +86,7 @@ impl Schedule {
             .zip(penultimate)
             .is_some_and(|(first, last)| first >= last)
         {
-            return Err(QuantSupportError::new_err(
+            return Err(crate::common::errors::invalid_value(
                 "first_date must precede next_to_last_date",
             ));
         }
@@ -113,13 +111,13 @@ impl Schedule {
         }
         let inner = std::panic::catch_unwind(|| builder.build())
             .map_err(|_| {
-                QuantSupportError::new_err(
+                crate::common::errors::invalid_value(
                     "native schedule generation failed; dates may collapse under adjustment",
                 )
             })?
             .map_err(qs_err)?;
         if inner.dates().len() < 2 || inner.dates().windows(2).any(|dates| dates[0] >= dates[1]) {
-            return Err(QuantSupportError::new_err(
+            return Err(crate::common::errors::invalid_value(
                 "schedule must contain at least two increasing dates after adjustment",
             ));
         }
@@ -224,7 +222,9 @@ impl Schedule {
 
 fn validate_tenor(effective: QsDate, termination: QsDate, tenor: QsPeriod) -> PyResult<()> {
     if tenor.length() < 0 {
-        return Err(QuantSupportError::new_err("tenor must be nonnegative"));
+        return Err(crate::common::errors::invalid_value(
+            "tenor must be nonnegative",
+        ));
     }
     let length = i64::from(tenor.length());
     let years = match tenor.units() {
@@ -234,7 +234,7 @@ fn validate_tenor(effective: QsDate, termination: QsDate, tenor: QsPeriod) -> Py
         TimeUnit::Years => length,
     };
     if i64::from(effective.year()) - years < 1901 || i64::from(termination.year()) + years > 2199 {
-        return Err(QuantSupportError::new_err(
+        return Err(crate::common::errors::invalid_value(
             "tenor trial dates exceed the native calendar range 1901..2199",
         ));
     }
@@ -259,3 +259,5 @@ mod tests {
         assert!(validate_tenor(effective, termination, QsPeriod::new(-1, TimeUnit::Days)).is_err());
     }
 }
+
+crate::common::representation::impl_class_repr!(Schedule);

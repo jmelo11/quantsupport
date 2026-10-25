@@ -1,15 +1,13 @@
 //! Native coupon cashflows and composable payoff operations.
 use crate::common::conversion::{
-    extract_compounding, extract_date, extract_day_counter, extract_frequency,
-    extract_market_index, from_py, qs_err,
+    at_path, expect_dict, extract_compounding, extract_date, extract_day_counter,
+    extract_frequency, extract_market_index, from_py, qs_err,
 };
 use crate::common::enums::{
     Compounding as PyCompounding, DayCounter as PyDayCounter, Frequency as PyFrequency, MarketIndex,
 };
 use crate::time::Date;
-use crate::QuantSupportError;
 use pyo3::prelude::*;
-use pyo3::types::PyDict;
 use quantsupport::instruments::cashflows::{
     cashflow::Cashflow, fixedratecoupon::FixedRateCoupon as QsFixed,
     floatingratecoupon::FloatingRateCoupon as QsFloating,
@@ -39,7 +37,7 @@ pub struct InterestRate {
 #[pymethods]
 impl InterestRate {
     #[new]
-    #[pyo3(signature = (*, rate, day_counter = None, compounding = None, frequency = None))]
+    #[pyo3(signature = (rate, day_counter = None, compounding = None, frequency = None))]
     fn new(
         rate: f64,
         day_counter: Option<&Bound<'_, PyAny>>,
@@ -91,14 +89,17 @@ impl InterestRate {
             .inner
             .discount_factor(extract_date(start)?, extract_date(end)?))
     }
-    fn __repr__(&self) -> String {
-        format!(
-            "InterestRate(rate={}, day_counter={:?}, compounding={:?}, frequency={:?})",
-            self.inner.rate(),
-            self.inner.day_counter(),
-            self.inner.compounding(),
-            self.inner.frequency()
-        )
+    /// Returns the native interest-rate value and rate definition.
+    fn to_dict<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        crate::common::representation::to_dict(py, &self.inner)
+    }
+
+    /// Restores the native interest-rate dictionary.
+    #[staticmethod]
+    fn from_dict(obj: &Bound<'_, PyAny>) -> PyResult<Self> {
+        Ok(Self {
+            inner: from_py(obj, "interest rate")?,
+        })
     }
 }
 
@@ -106,7 +107,7 @@ fn finite(value: f64) -> PyResult<()> {
     if value.is_finite() {
         Ok(())
     } else {
-        Err(QuantSupportError::new_err(
+        Err(crate::common::errors::invalid_value(
             "Coupon rates, spreads, fixings, and payoff constants must be finite",
         ))
     }
@@ -231,14 +232,7 @@ impl PayoffOps {
         Self::extract(obj)
     }
     fn to_dict<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let specification = serde_json::to_value(&self.inner).map_err(qs_err)?;
-        pythonize::pythonize(py, &specification).map_err(qs_err)
-    }
-    fn __repr__(&self) -> String {
-        format!(
-            "PayoffOps({})",
-            serde_json::to_string(&self.inner).unwrap_or_default()
-        )
+        crate::common::representation::to_dict(py, &self.inner)
     }
 }
 
@@ -260,7 +254,7 @@ pub struct FixedRateCoupon {
 #[pymethods]
 impl FixedRateCoupon {
     #[new]
-    #[pyo3(signature = (*, rate, notional = 1.0, accrual_start_date = None, accrual_end_date = None, payment_date = None))]
+    #[pyo3(signature = (rate, notional = 1.0, accrual_start_date = None, accrual_end_date = None, payment_date = None))]
     fn new(
         rate: &Bound<'_, PyAny>,
         notional: f64,
@@ -320,7 +314,7 @@ pub struct FloatingRateCoupon {
 impl FloatingRateCoupon {
     #[new]
     #[allow(clippy::too_many_arguments)]
-    #[pyo3(signature = (*, index, spread = 0.0, day_counter = None, notional = 1.0,
+    #[pyo3(signature = (index, spread = 0.0, day_counter = None, notional = 1.0,
         accrual_start_date = None, accrual_end_date = None, payment_date = None, fixing = None))]
     fn new(
         index: &Bound<'_, PyAny>,
@@ -400,7 +394,7 @@ pub struct OptionEmbeddedCoupon {
 impl OptionEmbeddedCoupon {
     #[new]
     #[allow(clippy::too_many_arguments)]
-    #[pyo3(signature = (*, index, payoff, spread = 0.0, day_counter = None, notional = 1.0,
+    #[pyo3(signature = (index, payoff, spread = 0.0, day_counter = None, notional = 1.0,
         accrual_start_date = None, accrual_end_date = None, payment_date = None, fixing = None))]
     fn new(
         index: &Bound<'_, PyAny>,
@@ -470,7 +464,7 @@ fn coupon_dates(
     payment: Option<&Bound<'_, PyAny>>,
 ) -> PyResult<(QsDate, QsDate, QsDate)> {
     if !notional.is_finite() || notional <= 0.0 {
-        return Err(QuantSupportError::new_err(
+        return Err(crate::common::errors::invalid_value(
             "Coupon notional must be positive and finite",
         ));
     }
@@ -486,13 +480,13 @@ fn coupon_dates(
                 extract_date(payment)?,
             );
             if dates.1 <= dates.0 || dates.2 < dates.1 {
-                return Err(QuantSupportError::new_err(
+                return Err(crate::common::errors::invalid_value(
                     "Coupon dates require start < end <= payment",
                 ));
             }
             Ok(dates)
         }
-        _ => Err(QuantSupportError::new_err(
+        _ => Err(crate::common::errors::invalid_value(
             "Supply all three coupon dates, or omit them for a schedule template",
         )),
     }
@@ -548,16 +542,6 @@ macro_rules! coupon_methods {
                 )
                 .map_err(qs_err)
             }
-            fn __repr__(&self) -> PyResult<String> {
-                Ok(format!(
-                    "{}({})",
-                    stringify!($name),
-                    CouponDefinition {
-                        inner: CashflowType::$variant(self.inner.clone())
-                    }
-                    .specification()?
-                ))
-            }
         }
     };
 }
@@ -571,16 +555,54 @@ pub struct CouponDefinition {
     pub inner: CashflowType<f64>,
 }
 impl CouponDefinition {
+    /// Read a flat coupon sequence and identify the failing entry in errors.
+    pub fn list_from_py(obj: &Bound<'_, PyAny>, path: &str) -> PyResult<Vec<Self>> {
+        let values = obj.extract::<Vec<Bound<'_, PyAny>>>().map_err(|cause| {
+            let error = crate::common::errors::invalid_type(
+                obj,
+                "a flat sequence of coupon objects or tagged dicts",
+                None,
+            );
+            error.set_cause(obj.py(), Some(cause));
+            at_path(obj.py(), path, error)
+        })?;
+        values
+            .iter()
+            .enumerate()
+            .map(|(index, value)| {
+                Self::from_py(value)
+                    .map_err(|error| at_path(obj.py(), &format!("{path}[{index}]"), error))
+            })
+            .collect()
+    }
+
     /// Returns an independent Python coupon with the native contractual terms.
     pub fn to_python(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         match &self.inner {
-            CashflowType::FixedRateCoupon(inner) =>
-                Py::new(py, FixedRateCoupon { inner: inner.clone() }).map(Py::into_any),
-            CashflowType::FloatingRateCoupon(inner) =>
-                Py::new(py, FloatingRateCoupon { inner: inner.clone() }).map(Py::into_any),
-            CashflowType::OptionEmbeddedCoupon(inner) =>
-                Py::new(py, OptionEmbeddedCoupon { inner: inner.clone() }).map(Py::into_any),
-            _ => Err(QuantSupportError::new_err("Expected a contractual coupon")),
+            CashflowType::FixedRateCoupon(inner) => Py::new(
+                py,
+                FixedRateCoupon {
+                    inner: inner.clone(),
+                },
+            )
+            .map(Py::into_any),
+            CashflowType::FloatingRateCoupon(inner) => Py::new(
+                py,
+                FloatingRateCoupon {
+                    inner: inner.clone(),
+                },
+            )
+            .map(Py::into_any),
+            CashflowType::OptionEmbeddedCoupon(inner) => Py::new(
+                py,
+                OptionEmbeddedCoupon {
+                    inner: inner.clone(),
+                },
+            )
+            .map(Py::into_any),
+            _ => Err(crate::common::errors::invalid_value(
+                "Expected a contractual coupon",
+            )),
         }
     }
 
@@ -600,7 +622,10 @@ impl CouponDefinition {
                 inner: CashflowType::OptionEmbeddedCoupon(c.inner),
             });
         }
-        let spec = obj.cast::<PyDict>()?;
+        let spec = expect_dict(
+            obj,
+            "coupon (expected a coupon object or tagged dict; use a flat coupon list)",
+        )?;
         if spec.len() != 1 {
             return Err(pyo3::exceptions::PyValueError::new_err(
                 "A coupon specification requires one cashflow kind",
@@ -609,9 +634,10 @@ impl CouponDefinition {
         let (kind, terms) = spec
             .iter()
             .next()
-            .ok_or_else(|| QuantSupportError::new_err("Missing coupon kind"))?;
+            .ok_or_else(|| crate::common::errors::invalid_value("Missing coupon kind"))?;
         let kind: String = kind.extract()?;
-        let terms = terms.cast::<PyDict>()?;
+        let terms = expect_dict(&terms, &format!("{kind} coupon terms"))
+            .map_err(|error| crate::common::errors::context(obj.py(), error, None, Some(&kind)))?;
         let py = obj.py();
         // Compact legacy JSON remains readable; all new output preserves native payoff trees.
         if (kind == "Floating" || kind == "FloatingRateCoupon")
@@ -619,7 +645,7 @@ impl CouponDefinition {
         {
             let index = terms
                 .get_item("index")?
-                .ok_or_else(|| QuantSupportError::new_err("Missing coupon index"))?;
+                .ok_or_else(|| crate::common::errors::invalid_value("Missing coupon index"))?;
             let spread = terms
                 .get_item("spread")?
                 .map(|v| v.extract::<f64>())
@@ -674,7 +700,7 @@ impl CouponDefinition {
                 serde_json::json!({"index":c.market_index(),"spread":c.spread(),"payoff":c.payoff_ops(),"day_counter":c.day_counter().map_err(qs_err)?,"fixing":c.fixing(),"notional":c.notional(),"accrual_start_date":c.accrual_start_date(),"accrual_end_date":c.accrual_end_date(),"payment_date":c.payment_date()}),
             ),
             _ => {
-                return Err(QuantSupportError::new_err(
+                return Err(crate::common::errors::invalid_value(
                     "Expected a native coupon cashflow",
                 ))
             }
@@ -688,3 +714,11 @@ impl CouponDefinition {
         Ok(serde_json::json!({kind:terms}))
     }
 }
+
+crate::common::representation::impl_dict_protocol!(
+    InterestRate,
+    PayoffOps,
+    FixedRateCoupon,
+    FloatingRateCoupon,
+    OptionEmbeddedCoupon,
+);

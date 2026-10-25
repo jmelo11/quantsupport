@@ -33,7 +33,6 @@ use quantsupport::time::calendars::{
 };
 
 use crate::common::conversion::{extract_currency, extract_date, qs_err};
-use crate::QuantSupportError;
 
 /// Defines a Python enum mirroring a fieldless library enum, with
 /// bidirectional (compile-time exhaustive) conversions and a `parse`
@@ -71,7 +70,7 @@ macro_rules! mirror_enum {
                         return Ok(Self::$variant);
                     }
                 )+
-                Err(QuantSupportError::new_err(format!(
+                Err(crate::common::errors::invalid_value(format!(
                     concat!("invalid ", $pyname, " '{}' (expected one of: {})"),
                     s,
                     [$(stringify!($variant)),+].join(", ")
@@ -183,7 +182,7 @@ impl Side {
         } else if ["payshort", "pay", "short"].contains(&s.to_ascii_lowercase().as_str()) {
             Ok(Self::PayShort)
         } else {
-            Err(QuantSupportError::new_err(format!(
+            Err(crate::common::errors::invalid_value(format!(
                 "invalid Side '{s}' (expected 'LongReceive' or 'PayShort')"
             )))
         }
@@ -463,7 +462,7 @@ impl Request {
                         return Ok(Self::FairRate(index));
                     }
                 }
-                Err(QuantSupportError::new_err(format!(
+                Err(crate::common::errors::invalid_value(format!(
                     "invalid Request '{s}'; use FairRate(nonnegative_index) for a targeted quote"
                 )))
             }
@@ -576,7 +575,7 @@ macro_rules! market_index_constants {
                         return Ok(Self { inner: QsMarketIndex::$variant });
                     }
                 )+
-                Err(QuantSupportError::new_err(format!(
+                Err(crate::common::errors::invalid_value(format!(
                     "invalid MarketIndex '{}' (expected one of: {})",
                     s,
                     [$(stringify!($variant)),+].join(", ")

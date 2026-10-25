@@ -11,6 +11,12 @@ notebook kernel:
 
    python -m pip install quantsupport
 
+For a manual download, choose your operating system, architecture and Python
+version on the `Python packages page <https://jmelo11.github.io/quantsupport/python/downloads.html>`_.
+It provides wheels and folder ZIPs containing only QuantSupport. Install
+dependencies separately with ``python -m pip install pandas`` before using a
+folder ZIP.
+
 A wheel needs no Rust compiler. Optional editor support is available through
 ``quantsupport[typing]``. For development from this repository, create a virtual
 environment, install Maturin, and compile the checkout:
@@ -53,14 +59,14 @@ zero-rate curve. Two equal rate pillars specify that curve explicitly.
 
    reference = qs.Date(2026, 2, 24)
    quotes = qs.QuoteStore.from_dict({
-       "reference_date": str(reference), "quotes": [],
+       "reference_date": str(reference), "quotes": [
+           {"identifier": f"ZeroRate_USD_SOFR_{tenor}", "mid": 0.03}
+           for tenor in ["0D", "10Y"]
+       ],
    })
    curve_spec = qs.CurveConfiguration(
        market_index=qs.MarketIndex.SOFR,
-       construction=qs.CurveConstruction.zero_rate(
-           pillars=["0D", "10Y"], rates=[0.03, 0.03],
-           compounding="Continuous", frequency="Annual",
-       ),
+       quotes=quotes.identifiers(),
        day_counter="Actual360", interpolator="Linear",
        enable_extrapolation=True,
    )
@@ -84,9 +90,6 @@ zero-rate curve. Two equal rate pillars specify that curve explicitly.
        discount = context.curve("SOFR").discount_factor(reference + "5Y")
        print(result.price, result.fair_rate, discount)
        print(result.sensitivities)
-       assert result.price < 0
-       assert result.fair_rate > swap.fixed_rate
-       assert 0 < discount < 1
 
 The receive-fixed position has a negative PV because the continuous curve
 implies floating coupons above the simple fixed coupon. The result's

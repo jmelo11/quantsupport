@@ -124,12 +124,6 @@ impl ScriptedProduct {
     fn identifier(&self) -> &str {
         &self.name
     }
-
-    fn __repr__(&self) -> String {
-        format!(
-            "ScriptedProduct(name={:?}, events={})",
-            self.name,
-            self.events.len()
-        )
-    }
 }
+
+crate::common::representation::impl_dict_protocol!(ScriptedProduct);

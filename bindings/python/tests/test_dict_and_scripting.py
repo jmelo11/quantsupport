@@ -31,7 +31,7 @@ class DictAndScriptTests(unittest.TestCase):
                             self.assertTrue(ast.get_docstring(member), f"{node.name}.{member.name}")
                     declarations[node.name] = node
         exported = {name for name, value in vars(qs).items()
-                    if inspect.isclass(value) and value.__module__ == "quantsupport"}
+                    if not name.startswith("_") and inspect.isclass(value) and value.__module__ == "quantsupport"}
         self.assertEqual(exported, set(declarations))
         if module_file:
             for module in [qs, qs.time, qs.market, qs.instruments, qs.pricing, qs.risk]:
@@ -363,6 +363,9 @@ class DictAndScriptTests(unittest.TestCase):
                 self.assertFalse(hasattr(product, "trade_date"))
                 self.assertEqual(product.identifier, spec["identifier"])
                 self.assertEqual(repr(product), repr(product_type(**spec)))
+                self.assertEqual(dict(product), product.to_dict())
+                self.assertEqual(product_type.from_dict(dict(product)).to_dict(), dict(product))
+                self.assertTrue(repr(product).startswith(product_type.__name__ + "("))
                 with tempfile.TemporaryDirectory() as directory:
                     path = Path(directory) / "product.json"
                     path.write_text(json.dumps(spec))

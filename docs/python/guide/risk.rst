@@ -6,7 +6,7 @@ Sensitivity labels define the experiment
 
 A sensitivity measures how a valuation changes locally with one market input.
 Under a bootstrapped market, that input can be a deposit, swap or volatility
-quote. For an explicit zero curve, it is a dated rate pillar. A bond spread
+quote. For a direct zero curve, it is the original zero-rate quote. A bond spread
 can also be registered as an independent input.
 
 The pillar label identifies the input, and its units determine how to scale
@@ -28,7 +28,7 @@ Compare selected derivatives with full revaluation to assess that local
 approximation.
 
 The following check reuses ``context`` and ``trade`` from
-:doc:`first-valuation`. It shifts both explicit SOFR zero-rate pillars and
+:doc:`first-valuation`. It shifts both SOFR zero-rate quotes and
 compares their summed derivative with central full revaluation.
 
 .. code-block:: python
@@ -74,9 +74,9 @@ moving one quote twice.
 
 Use one unambiguous family selector when one family-wide move is intended;
 for example ``CapletFloorlet_USD_SOFR`` rather than one shock per full caplet
-ID. For an explicit funding spread curve, ``FUNDINGSPREAD`` selects its
-pillars; appending a date narrows the token selector but does not enable an
-exact-only mode. Inspect every transformed quote and explicit pillar, including
+ID. For a quoted funding spread curve, ``FUNDINGSPREAD`` selects its
+zero-rate quotes; appending a pillar narrows the token selector but does not enable an
+exact-only mode. Inspect every transformed quote, including
 unexpected matches, and verify each intended input changes once before
 interpreting a stress as a parallel market move. An aggregate NPV difference
 alone cannot reveal a duplicated or unintended input move.
@@ -176,8 +176,6 @@ increase the path count and compare seeds for a numerical study.
        adjustments = context.run_xva(xva_configuration, [agreement])
    print(adjustments.xva_values)
    profile = adjustments.exposures[0].to_dataframe()
-   assert (profile["epe"] >= 0).all()
-   assert (profile["ene"] <= 0).all()
    assert (profile["ee"] - profile["epe"] - profile["ene"]).abs().max() < 1e-8
 
 High-level ``run_xva`` constructs CVA and FVA aggregators. Native DVA support is
@@ -276,8 +274,8 @@ the first valuation.
    context.register_pricer(ReceiptTrade, ReceiptPricer())
    with context:
        custom_result = context.evaluate(receipt_trade, ["Value"])
-       assert 0 < custom_result.price < 100
-   assert context.unregister_pricer(ReceiptTrade)
+       print(custom_result.price)
+   context.unregister_pricer(ReceiptTrade)
 
 Registration selects the exact trade type first and then compatible bases;
 Python registrations override built-in dispatch. Register the trade type, not

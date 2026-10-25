@@ -1,4 +1,4 @@
-"""Temporary quoted and explicit-pillar shocks on reusable pricing contexts."""
+"""Temporary quote shocks on reusable pricing contexts."""
 import unittest
 import math
 from pathlib import Path
@@ -6,6 +6,7 @@ from pathlib import Path
 import quantsupport as qs
 from test_composite_loan_funding import FUNDING, funding_context, loan
 from test_python_market_inputs import context_inputs
+from market_fixtures import append_quotes
 
 
 class TypedCalendarTests(unittest.TestCase):
@@ -55,17 +56,17 @@ class ScopedScenarioTests(unittest.TestCase):
             with self.subTest(target=target, value=value), self.assertRaises(ValueError):
                 qs.Shock(target=target, value=value, shock_type=qs.ScenarioType.Absolute)
 
-    def test_shock_constructor_enforces_typed_keyword_parameters(self):
+    def test_shock_constructor_accepts_positional_and_typed_keyword_parameters(self):
         import inspect
         signature = inspect.signature(qs.Shock)
         self.assertEqual(list(signature.parameters), ["target", "value", "shock_type"])
-        self.assertTrue(all(parameter.kind == inspect.Parameter.KEYWORD_ONLY
+        self.assertTrue(all(parameter.kind == inspect.Parameter.POSITIONAL_OR_KEYWORD
                             for parameter in signature.parameters.values()))
         for invalid_type in ["Absolute", qs.Frequency.Annual, None]:
             with self.subTest(shock_type=invalid_type), self.assertRaises(TypeError):
                 qs.Shock(target="ESTR", value=0.01, shock_type=invalid_type)
-        with self.assertRaises(TypeError):
-            qs.Shock("ESTR", 0.01, qs.ScenarioType.Absolute)
+        self.assertEqual(repr(qs.Shock("ESTR", 0.01, qs.ScenarioType.Absolute)),
+                         repr(qs.Shock(target="ESTR", value=0.01, shock_type=qs.ScenarioType.Absolute)))
         with self.assertRaises(TypeError):
             qs.Shock(target="ESTR", value=0.01)
         with self.assertRaises(TypeError):
@@ -94,15 +95,16 @@ class ScopedScenarioTests(unittest.TestCase):
 
     def test_active_scenario_cache_tracks_public_input_reassignment(self):
         context = funding_context()
-        replacement = funding_context(funding_shift=0.002).curves
+        replacement = funding_context(funding_shift=0.002)
         scenario = qs.Scenario(shocks=[qs.Shock(target="FUNDINGSPREAD", value=0.005, shock_type=qs.ScenarioType.Absolute)])
         with context, scenario:
             before = context.curve(index=FUNDING).discount_factor(date="2028-02-24")
-            context.curves = replacement
+            context.quotes = replacement.quotes
+            context.curves = replacement.curves
             after = context.curve(index=FUNDING).discount_factor(date="2028-02-24")
             tau = qs.DayCounter.Actual360.year_fraction(start="2026-02-24", end="2028-02-24")
             self.assertAlmostEqual(after / before, math.exp(-0.002 * tau))
-        self.assertEqual([curve.to_dict() for curve in context.curves], [curve.to_dict() for curve in replacement])
+        self.assertEqual([curve.to_dict() for curve in context.curves], [curve.to_dict() for curve in replacement.curves])
 
     def factor(self, context):
         return context.curve(index=qs.MarketIndex.ESTR).discount_factor(date="2028-02-24")
@@ -180,20 +182,23 @@ class ScopedScenarioTests(unittest.TestCase):
     def test_calibrated_quote_sensitivities_survive_scenario_restoration(self):
         data = Path(__file__).resolve().parents[3] / "examples" / "valuation" / "loans" / "data"
         context = funding_context()
-        context.quotes = qs.QuoteStore.from_json(path=str(data / "loan_quotes.json"))
+        funding_quotes = context.quotes
+        context.quotes = append_quotes(qs.QuoteStore.from_json(path=str(data / "loan_quotes.json")), [
+            {"identifier": identifier, "mid": funding_quotes.value(identifier)}
+            for identifier in funding_quotes.identifiers() if "FUNDINGSPREAD" in identifier
+        ])
         context.curves = qs.CurveConfiguration.from_json(path=str(data / "loan_curves.json")) + context.curves[-2:]
-        pricer = qs.LoanPricer()
         trade = qs.Trade(instrument=loan(floating=True), trade_date="2026-02-24")
         requests = [qs.Request.Value, qs.Request.Sensitivities]
         with context:
-            base = pricer.evaluate(trade=trade, context=context, requests=requests)
+            base = context.evaluate(trade=trade, requests=requests)
             with qs.Scenario(shocks=[
                 qs.Shock(target="EURIBOR12m", value=0.01, shock_type=qs.ScenarioType.Absolute),
                 qs.Shock(target="FUNDINGSPREAD", value=0.005, shock_type=qs.ScenarioType.Absolute),
             ]):
-                stressed = pricer.evaluate(trade=trade, context=context, requests=requests)
+                stressed = context.evaluate(trade=trade, requests=requests)
                 self.assertNotAlmostEqual(stressed.price, base.price)
-            restored = pricer.evaluate(trade=trade, context=context, requests=requests)
+            restored = context.evaluate(trade=trade, requests=requests)
             self.assertAlmostEqual(restored.price, base.price)
             before = dict(zip(base.sensitivities.pillar, base.sensitivities.value))
             after = dict(zip(restored.sensitivities.pillar, restored.sensitivities.value))
@@ -203,26 +208,25 @@ class ScopedScenarioTests(unittest.TestCase):
 
     def test_funding_pillar_sensitivities_match_scoped_repricing(self):
         context = funding_context()
-        pricer = qs.LoanPricer()
         epsilon = 1e-6
         for floating in [False, True]:
             trade = qs.Trade(instrument=loan(floating=floating), trade_date="2026-02-24")
             with context:
-                base = pricer.evaluate(trade=trade, context=context,
+                base = context.evaluate(trade=trade,
                     requests=[qs.Request.Value, qs.Request.Sensitivities, qs.Request.Cashflows])
-                funding_risk = base.sensitivities.loc[base.sensitivities.pillar.str.startswith("FUNDINGSPREAD_")]
+                funding_risk = base.sensitivities.loc[base.sensitivities.pillar.str.startswith("ZeroRate_EUR_FUNDINGSPREAD_")]
                 self.assertEqual(len(funding_risk), 4)
                 for row in funding_risk.itertuples(index=False):
                     prices = []
                     for shift in [-epsilon, epsilon]:
                         with qs.Scenario(shocks=[qs.Shock(target=row.pillar, value=shift, shock_type=qs.ScenarioType.Absolute)]):
-                            result = pricer.evaluate(trade=trade, context=context,
+                            result = context.evaluate(trade=trade,
                                 requests=[qs.Request.Value, qs.Request.Cashflows])
                             prices.append(result.price)
                             self.assertEqual(result.cashflows.amount.tolist(), base.cashflows.amount.tolist())
                     numerical = (prices[1] - prices[0]) / (2 * epsilon)
                     self.assertAlmostEqual(row.value, numerical, delta=max(0.02, abs(numerical) * 1e-6))
-                restored = pricer.evaluate(trade=trade, context=context,
+                restored = context.evaluate(trade=trade,
                     requests=[qs.Request.Value, qs.Request.Sensitivities])
                 self.assertAlmostEqual(restored.price, base.price)
                 self.assertEqual(restored.sensitivities.pillar.tolist(), base.sensitivities.pillar.tolist())

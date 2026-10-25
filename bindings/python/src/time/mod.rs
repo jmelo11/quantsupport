@@ -28,7 +28,6 @@ use crate::common::enums::{
     AustraliaMarket, BrazilMarket, CanadaMarket, ChinaMarket, Frequency, JointCalendarRule,
     NewZealandMarket, SouthKoreaMarket, TimeUnit, UnitedStatesMarket,
 };
-use crate::QuantSupportError;
 
 /// A calendar date.
 ///
@@ -56,7 +55,7 @@ impl Date {
         // invalid dates.
         let inner = QsDate::from_str(&format!("{year:04}-{month:02}-{day:02}"), "%Y-%m-%d")
             .map_err(|_| {
-                QuantSupportError::new_err(format!("invalid date: {year}-{month}-{day}"))
+                crate::common::errors::invalid_value(format!("invalid date: {year}-{month}-{day}"))
             })?;
         Ok(Self { inner })
     }
@@ -214,7 +213,9 @@ impl Period {
         QsPeriod::from_frequency(freq.into())
             .map(|inner| Self { inner })
             .ok_or_else(|| {
-                QuantSupportError::new_err("frequency has no period equivalent".to_string())
+                crate::common::errors::invalid_value(
+                    "frequency has no period equivalent".to_string(),
+                )
             })
     }
 
@@ -265,7 +266,7 @@ impl Calendar {
     /// market : AustraliaMarket or None, optional
     ///     Typed market or regional selector; None selects the native default.
     #[staticmethod]
-    #[pyo3(signature = (*, market = None))]
+    #[pyo3(signature = (market = None))]
     fn Australia(market: Option<AustraliaMarket>) -> Self {
         Self {
             inner: QsCalendar::Australia(Australia::new(
@@ -280,7 +281,7 @@ impl Calendar {
     /// market : CanadaMarket or None, optional
     ///     Typed market or regional selector; None selects the native default.
     #[staticmethod]
-    #[pyo3(signature = (*, market = None))]
+    #[pyo3(signature = (market = None))]
     fn Canada(market: Option<CanadaMarket>) -> Self {
         Self {
             inner: QsCalendar::Canada(Canada::new(market.map(Into::into).unwrap_or_default())),
@@ -300,7 +301,7 @@ impl Calendar {
     /// market : NewZealandMarket or None, optional
     ///     Typed market or regional selector; None selects the native default.
     #[staticmethod]
-    #[pyo3(signature = (*, market = None))]
+    #[pyo3(signature = (market = None))]
     fn NewZealand(market: Option<NewZealandMarket>) -> Self {
         Self {
             inner: QsCalendar::NewZealand(NewZealand::new(
@@ -336,7 +337,7 @@ impl Calendar {
     /// market : SouthKoreaMarket or None, optional
     ///     Typed market or regional selector; None selects the native default.
     #[staticmethod]
-    #[pyo3(signature = (*, market = None))]
+    #[pyo3(signature = (market = None))]
     fn SouthKorea(market: Option<SouthKoreaMarket>) -> Self {
         Self {
             inner: QsCalendar::SouthKorea(SouthKorea::new(
@@ -358,7 +359,7 @@ impl Calendar {
     /// market : ChinaMarket or None, optional
     ///     Typed market or regional selector; None selects the native default.
     #[staticmethod]
-    #[pyo3(signature = (*, market = None))]
+    #[pyo3(signature = (market = None))]
     fn China(market: Option<ChinaMarket>) -> Self {
         Self {
             inner: QsCalendar::China(China::new(market.map(Into::into).unwrap_or_default())),
@@ -408,7 +409,7 @@ impl Calendar {
     /// market : UnitedStatesMarket, optional
     ///     Defaults to Sofr.
     #[staticmethod]
-    #[pyo3(signature = (*, market = None))]
+    #[pyo3(signature = (market = None))]
     fn UnitedStates(market: Option<UnitedStatesMarket>) -> Self {
         Self {
             inner: QsCalendar::UnitedStates(UnitedStates::new(
@@ -423,7 +424,7 @@ impl Calendar {
     /// market : BrazilMarket, optional
     ///     Defaults to Settlement.
     #[staticmethod]
-    #[pyo3(signature = (*, market = None))]
+    #[pyo3(signature = (market = None))]
     fn Brazil(market: Option<BrazilMarket>) -> Self {
         Self {
             inner: QsCalendar::Brazil(Brazil::new(
@@ -440,7 +441,7 @@ impl Calendar {
     /// rule : JointCalendarRule, optional
     ///     Defaults to JoinHolidays: every constituent must be open.
     #[staticmethod]
-    #[pyo3(signature = (*, calendars, rule = None))]
+    #[pyo3(signature = (calendars, rule = None))]
     fn JointCalendar(calendars: Vec<Self>, rule: Option<JointCalendarRule>) -> PyResult<Self> {
         Ok(Self {
             inner: QsCalendar::JointCalendar(
@@ -565,16 +566,16 @@ impl Calendar {
     }
 
     /// Number of business days between two dates.
-    #[pyo3(signature = (from, to, include_first = true, include_last = false))]
+    #[pyo3(signature = (from_, to, include_first = true, include_last = false))]
     fn business_days_between(
         &self,
-        from: &Bound<'_, PyAny>,
+        from_: &Bound<'_, PyAny>,
         to: &Bound<'_, PyAny>,
         include_first: bool,
         include_last: bool,
     ) -> PyResult<i64> {
         Ok(self.inner.business_days_between(
-            extract_date(from)?,
+            extract_date(from_)?,
             extract_date(to)?,
             include_first,
             include_last,
@@ -582,16 +583,16 @@ impl Calendar {
     }
 
     /// Holidays between two dates.
-    #[pyo3(signature = (from, to, include_weekends = false))]
+    #[pyo3(signature = (from_, to, include_weekends = false))]
     fn holiday_list(
         &self,
-        from: &Bound<'_, PyAny>,
+        from_: &Bound<'_, PyAny>,
         to: &Bound<'_, PyAny>,
         include_weekends: bool,
     ) -> PyResult<Vec<Date>> {
         Ok(self
             .inner
-            .holiday_list(extract_date(from)?, extract_date(to)?, include_weekends)
+            .holiday_list(extract_date(from_)?, extract_date(to)?, include_weekends)
             .into_iter()
             .map(|inner| Date { inner })
             .collect())
@@ -600,12 +601,12 @@ impl Calendar {
     /// Business days between two dates.
     fn business_day_list(
         &self,
-        from: &Bound<'_, PyAny>,
+        from_: &Bound<'_, PyAny>,
         to: &Bound<'_, PyAny>,
     ) -> PyResult<Vec<Date>> {
         Ok(self
             .inner
-            .business_day_list(extract_date(from)?, extract_date(to)?)
+            .business_day_list(extract_date(from_)?, extract_date(to)?)
             .into_iter()
             .map(|inner| Date { inner })
             .collect())
@@ -619,7 +620,7 @@ impl Calendar {
 fn calendar_date(value: &Bound<'_, PyAny>) -> PyResult<QsDate> {
     let date = extract_date(value)?;
     if !(1902..=2198).contains(&date.year()) {
-        return Err(QuantSupportError::new_err(
+        return Err(crate::common::errors::invalid_value(
             "calendar dates must be in 1902..2198",
         ));
     }

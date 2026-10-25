@@ -944,13 +944,40 @@ mod tests {
     #[test]
     fn snapshots_roundtrip_explicit_zero_and_composite_inputs_and_reject_runtime_curves() {
         let mut registry = Registry::default();
-        let curves: Vec<CurveConfiguration> = serde_json::from_value(serde_json::json!([
-            {"market_index":"SOFR","interpolator":"Linear","construction":{"type":"ZeroRate","pillars":["0D","1Y"],"rates":[0.02,0.03],"compounding":"Continuous","frequency":"Annual"}},
-            {"market_index":{"Credit":"spread"},"interpolator":"Linear","construction":{"type":"ZeroRate","pillars":["0D","1Y"],"rates":[0.01,0.01],"compounding":"Continuous","frequency":"Annual"}},
-            {"market_index":{"Credit":"composite"},"construction":{"type":"Composite","base_index":"SOFR","spread_index":{"Credit":"spread"}}}
-        ])).unwrap();
+        let mut quotes = QuoteStore::new(Date::new(2025, 1, 15));
+        let mut curves = Vec::new();
+        for (index, label, rates) in [
+            (MarketIndex::SOFR, "SOFR", [0.02, 0.03]),
+            (
+                MarketIndex::Credit("spread".into()),
+                "Credit(spread)",
+                [0.01, 0.01],
+            ),
+        ] {
+            let mut identifiers = Vec::new();
+            for (tenor, rate) in ["0D", "1Y"].iter().zip(rates) {
+                let identifier = format!("ZeroRate_USD_{label}_{tenor}");
+                quotes.add_quote(Quote::new(
+                    identifier.parse().unwrap(),
+                    QuoteLevels::new(Some(rate), Some(rate), Some(rate)),
+                ));
+                identifiers.push(identifier);
+            }
+            curves.push(CurveConfiguration::new(
+                index,
+                DayCounter::Actual360,
+                Interpolator::Linear,
+                true,
+                identifiers,
+            ));
+        }
+        curves.push(CurveConfiguration::composite(
+            MarketIndex::Credit("composite".into()),
+            MarketIndex::SOFR,
+            MarketIndex::Credit("spread".into()),
+        ));
         let mut context = PricingContext::new()
-            .with_quote_store(QuoteStore::new(Date::new(2025, 1, 15)))
+            .with_quote_store(quotes)
             .with_curve_configurations(curves);
         context.initialize().unwrap();
         let expected = context

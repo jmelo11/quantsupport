@@ -26,6 +26,27 @@ def context(observations, *, enable_extrapolation=False, **kwargs):
 
 
 class DirectCurveQuoteTests(unittest.TestCase):
+    def test_builtin_curve_indices_match_quotes_in_any_case(self):
+        for family, value, expected in [
+            ("DiscountFactor", 0.999, 0.999),
+            ("ZeroRate", 0.04, math.exp(-0.04 * 7 / 365)),
+        ]:
+            canonical = f"{family}_EUR_EURIBOR3m_1W"
+            for label in [canonical.upper(), canonical.lower(), f"{family}_eUr_EuRiBoR3M_1w"]:
+                quotes = qs.QuoteStore.from_dict({
+                    "reference_date": REFERENCE,
+                    "quotes": [{"identifier": label, "mid": value}],
+                })
+                with self.subTest(label=label), qs.PricingContext(
+                    quotes, [qs.CurveConfiguration(
+                        market_index="EURIBOR3m", quotes=[label], day_counter="Actual365",
+                        interpolator="Linear",
+                    )],
+                ) as ctx:
+                    curve = ctx.curve("EURIBOR3m")
+                    self.assertAlmostEqual(curve.discount_factor("2026-03-03"), expected)
+                    self.assertEqual(list(curve.pillars().label), [label])
+
     def test_discount_factors_sort_dates_and_tenors_and_fix_the_origin(self):
         observations = [
             ("DiscountFactor_EUR_ESTR_2Y", {"mid": 0.90, "bid": 0.89, "ask": 0.91}),
@@ -64,10 +85,7 @@ class DirectCurveQuoteTests(unittest.TestCase):
             labels = [f"{family}_EUR_ESTR_{tenor}" for tenor in ["1Y", "2Y"]]
             ctx = context([(label, {"mid": value}) for label, value in zip(labels, values)])
             composite = qs.MarketIndex.other("COMPOSITE")
-            ctx.curves += [qs.CurveConfiguration(
-                market_index=composite,
-                construction=qs.CurveConstruction.composite(base_index="ESTR", spread_index="ESTR"),
-            )]
+            ctx.curves += [qs.CurveConfiguration.composite(market_index=composite, base_index='ESTR', spread_index='ESTR')]
             for _ in range(2):
                 with self.subTest(family=family), ctx:
                     base = ctx.curve("ESTR").discount_factor("2027-02-24")
@@ -93,10 +111,11 @@ class DirectCurveQuoteTests(unittest.TestCase):
             def value(shocks=(), risk=False):
                 with context([(label, {"mid": rate}) for label, rate in zip(labels, values)],
                              enable_extrapolation=True,
+                             fixed_income_policy=policy,
                              csa_policy=qs.SingleCurveCSADiscountPolicy("EUR", "ESTR")) as ctx:
                     with qs.Scenario(shocks=list(shocks)):
-                        return qs.LoanPricer(discount_policy=policy).evaluate(
-                            qs.Trade(loan, REFERENCE), ctx,
+                        return ctx.evaluate(
+                            qs.Trade(loan, REFERENCE),
                             [qs.Request.Value, qs.Request.Sensitivities] if risk else [qs.Request.Value],
                         )
 
@@ -150,10 +169,11 @@ class DirectCurveQuoteTests(unittest.TestCase):
                     ],
                     csa_policy=qs.SingleCurveCSADiscountPolicy("EUR", "ESTR"),
                 ) as ctx:
-                    return qs.LoanPricer(discount_policy=qs.FixedIncomeDiscountPolicy({
+                    ctx.fixed_income_policy = qs.FixedIncomeDiscountPolicy({
                         qs.Currency.EUR: qs.MarketIndex.EURIBOR3m,
-                    })).evaluate(trade, ctx, [qs.Request.Value, qs.Request.Sensitivities]
-                                 if risk else [qs.Request.Value])
+                    })
+                    return ctx.evaluate(trade, [qs.Request.Value, qs.Request.Sensitivities]
+                                        if risk else [qs.Request.Value])
 
             with self.subTest(family=family):
                 sensitivities = value(risk=True).sensitivities.set_index("pillar")["value"]

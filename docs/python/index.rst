@@ -1,6 +1,11 @@
 Python
 ======
 
+`Download Python packages <https://jmelo11.github.io/quantsupport/python/downloads.html>`_
+as folder ZIPs or wheels. Choose the package for your operating system,
+architecture and Python version. Folder ZIPs contain only QuantSupport; install
+dependencies separately with ``python -m pip install pandas``.
+
 The Python package provides native QuantSupport instruments, market
 construction, valuation and risk calculations. Define the contract and position,
 configure the market, then request values, cashflows or sensitivities from a
@@ -10,6 +15,7 @@ the studies apply it to larger quantitative finance calculations.
 .. toctree::
    :maxdepth: 2
 
+   Download Python packages <https://jmelo11.github.io/quantsupport/python/downloads.html>
    guide/index
    studies/index
    API reference <../autoapi/quantsupport/index>
@@ -35,17 +41,47 @@ Properties without setters are read-only. Context input properties with setters
 invalidate the dependent constructed market when reassigned. Method calls such
 as ``evaluate()`` perform operations rather than exposing attributes.
 
-Native failures raise ``quantsupport.QuantSupportError``. Invalid argument types
-or values can raise ``TypeError`` or ``ValueError``; individual methods document
-additional constraints and context lifetime requirements.
+QuantSupport failures raise :py:class:`~quantsupport.QuantSupportError` or one of
+its subclasses. Native and Python interfaces share stable error codes and native
+variant names. Type, value, state, I/O, and unsupported-operation subclasses also
+inherit the corresponding Python built-in exception, preserving existing catches.
 
 Exceptions
 ----------
 
 .. py:exception:: quantsupport.QuantSupportError
 
-   Library exception raised when native construction, market-data resolution,
-   or numerical evaluation fails. The message includes the underlying error.
+   Shared structured failure for construction, input conversion, market-data
+   resolution, and evaluation. Inspect ``code``, ``native_type``, ``message``,
+   ``operation``, ``path``, ``expected``, ``actual``, ``contexts``, and ``details``.
+   Fields that do not apply are ``None``. ``__cause__`` preserves the original
+   exception chain; ``to_dict()`` exports the same fields and nested causes.
+
+The Python subclasses are :py:class:`~quantsupport.QuantSupportTypeError`,
+:py:class:`~quantsupport.QuantSupportValueError`,
+:py:class:`~quantsupport.QuantSupportStateError`,
+:py:class:`~quantsupport.QuantSupportIOError`, and
+:py:class:`~quantsupport.QuantSupportNotImplementedError`.
+
+.. code-block:: python
+
+   try:
+       quotes = qs.QuoteStore.from_dict(market_inputs)
+   except qs.QuantSupportError as error:
+       print(error.code, error.operation, error.path)
+       diagnostics = error.to_dict()
+
+For example, an invalid quote level can report ``code="deserialization"``,
+``native_type="DeserializationErr"``, and ``path="quotes[1].mid"``. A missing
+quote instead reports ``code="not_found"`` and ``native_type="NotFoundErr"``.
+These come from native ``QSError`` categories, rather than message matching.
+File failures include the file path in ``details``; JSON failures also retain
+line and column when the parser supplies them.
+
+Python protocols retain normal behavior for attribute lookup, missing mapping
+keys, iteration termination, and indexing: ``AttributeError``, ``KeyError``,
+``StopIteration``, and ``IndexError`` continue to work with Python's containers
+and inspection functions.
 
 Installation, a first valuation, protocols, and reproducibility are explained
 locally in :doc:`guide/first-valuation`. The

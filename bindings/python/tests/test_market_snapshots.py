@@ -105,9 +105,12 @@ class MarketSnapshotTests(unittest.TestCase):
             restored = qs.MarketSnapshotStore.from_json(path)
         self.assertEqual(restored.timestamps, self.store.timestamps)
         payload = self.store.to_dict()
+        self.assertIsInstance(payload, dict)
+        self.assertEqual(dict(self.store), payload)
         self.assertEqual(qs.MarketSnapshotStore.from_dict(payload).to_dict(), payload)
-        payload[0]["timestamp"] = self.store.timestamps[0]
-        snapshot = qs.MarketSnapshot.from_dict(payload[0])
+        self.assertEqual(qs.MarketSnapshotStore.from_dict(payload["snapshots"]).to_dict(), payload)
+        payload["snapshots"][0]["timestamp"] = self.store.timestamps[0]
+        snapshot = qs.MarketSnapshot.from_dict(payload["snapshots"][0])
         self.assertEqual(snapshot.timestamp, self.store.timestamps[0])
         with self.assertRaises(qs.QuantSupportError):
             qs.MarketSnapshotStore.from_dict([snapshot.to_dict(), snapshot.to_dict()])
@@ -141,13 +144,14 @@ class MarketSnapshotTests(unittest.TestCase):
             with self.assertRaisesRegex(qs.QuantSupportError, "ask"):
                 context.curve("SOFR")
 
-    def test_explicit_zero_rate_curve_roundtrip(self):
+    def test_zero_rate_quotes_roundtrip(self):
         context = qs.PricingContext(
-            quotes=qs.QuoteStore.from_dict({"reference_date": "2025-01-15", "quotes": []}),
+            quotes=qs.QuoteStore.from_dict({"reference_date": "2025-01-15", "quotes": [
+                {"identifier": f"ZeroRate_USD_SOFR_{pillar}", "mid": rate}
+                for pillar, rate in [("0D", 0.02), ("1Y", 0.03)]
+            ]}),
             curves=[qs.CurveConfiguration(
-                market_index="SOFR", construction=qs.CurveConstruction.zero_rate(
-                    pillars=["0D", "1Y"], rates=[0.02, 0.03],
-                ),
+                market_index="SOFR", quotes=["ZeroRate_USD_SOFR_0D", "ZeroRate_USD_SOFR_1Y"],
             )],
         )
         snapshot = qs.MarketSnapshot.from_context(qs.DateTime(2025, 1, 15, 10), context)

@@ -5,10 +5,10 @@
 
 use pyo3::prelude::*;
 use quantsupport::prelude::{
-    Compounding, CreditCurveConfiguration as QsCreditCurveConfiguration,
-    CurveConfiguration as QsCurveConfiguration, CurveConstruction as QsCurveConstruction,
-    CurvePillar, DayCounter, DualFwd, FixingStore as QsFixingStore, Frequency, FxRateRecord,
-    FxStore as QsFxStore, Interpolator, PricerConfiguration as QsPricerConfiguration,
+    CreditCurveConfiguration as QsCreditCurveConfiguration,
+    CurveConfiguration as QsCurveConfiguration, DayCounter, DualFwd, FixingStore as QsFixingStore,
+    FxRateRecord, FxStore as QsFxStore, InstrumentType, Interpolator,
+    PricerConfiguration as QsPricerConfiguration, PricerImplementation,
     QuoteStore as QsQuoteStore, QuoteStoreRecords,
     SimulationConfiguration as QsSimulationConfiguration,
     VolatilityCubeConfiguration as QsVolatilityCubeConfiguration,
@@ -17,10 +17,9 @@ use quantsupport::prelude::{
 use serde::de::DeserializeOwned;
 
 use crate::common::conversion::{
-    extract_compounding, extract_currency, extract_date, extract_day_counter, extract_frequency,
-    extract_interpolator, extract_market_index, extract_period, from_json_file, from_py, qs_err,
+    extract_currency, extract_date, extract_day_counter, extract_interpolator,
+    extract_market_index, from_json_file, from_py, qs_err,
 };
-use crate::QuantSupportError;
 
 /// Accepts a JSON value that is either a list of `T`, a single `T`, or an
 /// object wrapping a single list (e.g. `{"curve_specs": [...]}`).
@@ -38,7 +37,11 @@ fn list_from_value<T: DeserializeOwned>(value: serde_json::Value, what: &str) ->
             _ => serde_json::from_value::<T>(v).map(|one| vec![one]),
         }
     };
-    parse(value).map_err(|e| QuantSupportError::new_err(format!("invalid {what}: {e}")))
+    parse(value).map_err(|e| {
+        crate::common::errors::native(&quantsupport::utils::errors::QSError::DeserializationErr(
+            format!("invalid {what}: {e}"),
+        ))
+    })
 }
 
 /// Defines a Python wrapper class around a serde-deserializable library
@@ -88,18 +91,9 @@ macro_rules! config_wrapper {
 
             /// Returns the configuration as a dict.
             fn to_dict<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-                pythonize::pythonize(py, &self.inner).map_err(|e| {
-                    QuantSupportError::new_err(format!("cannot serialize {}: {e}", $what))
-                })
+                crate::common::representation::to_dict(py, &self.inner)
             }
 
-            fn __repr__(&self) -> String {
-                format!(
-                    "{}({})",
-                    $pyname,
-                    serde_json::to_string(&self.inner).unwrap_or_default()
-                )
-            }
         }
     };
 }
@@ -115,9 +109,6 @@ config_wrapper!(
     ///     Calibration instruments, DiscountFactor_CCY_Index_Pillar, or
     ///     ZeroRate_CCY_Index_Pillar[_Compounding[_Frequency]] identifiers.
     ///     Direct curves use one quote family; pillars are tenors or ISO dates.
-    /// construction : CurveConstruction, optional
-    ///     Bootstrapped, explicit zero-rate, or composite construction rule.
-    ///     Defaults to bootstrapped construction.
     /// day_counter : DayCounter or str, optional
     ///     Curve time basis. Defaults to Actual360.
     /// interpolator : Interpolator or str, optional
@@ -130,109 +121,15 @@ config_wrapper!(
     "curve configuration"
 );
 
-/// Construction rule used by CurveConfiguration.
-///
-/// Use bootstrapped(), zero_rate(), or composite() to select the rule.
-/// Each rule wraps the corresponding native CurveConstruction variant.
-#[pyclass(module = "quantsupport", frozen, from_py_object)]
-#[derive(Clone)]
-pub struct CurveConstruction {
-    pub inner: QsCurveConstruction,
-}
-
-#[pymethods]
-impl CurveConstruction {
-    /// Construct from CurveConfiguration.quotes: calibrate instrument quotes
-    /// or interpolate direct discount-factor or zero-rate observations.
-    #[staticmethod]
-    fn bootstrapped() -> Self {
-        Self {
-            inner: QsCurveConstruction::Bootstrapped,
-        }
-    }
-
-    /// Interpolate supplied annual zero rates.
-    ///
-    /// Parameters
-    /// ----------
-    /// pillars : sequence of Date, datetime.date, Period, or str
-    ///     Ordered dates or tenors measured from the context reference date.
-    /// rates : sequence of float
-    ///     Decimal annual rates, one per pillar (0.01 means 1%).
-    /// compounding : Compounding or str, optional
-    ///     Convention for the supplied rates. Defaults to Continuous.
-    /// frequency : Frequency or str, optional
-    ///     Compounding frequency. Defaults to Annual.
-    #[staticmethod]
-    #[pyo3(signature = (*, pillars, rates, compounding = None, frequency = None))]
-    fn zero_rate(
-        pillars: Vec<Bound<'_, PyAny>>,
-        rates: Vec<f64>,
-        compounding: Option<&Bound<'_, PyAny>>,
-        frequency: Option<&Bound<'_, PyAny>>,
-    ) -> PyResult<Self> {
-        let pillars = pillars
-            .iter()
-            .map(|pillar| {
-                extract_date(pillar)
-                    .map(CurvePillar::Date)
-                    .or_else(|_| extract_period(pillar).map(CurvePillar::Tenor))
-            })
-            .collect::<PyResult<Vec<_>>>()?;
-        Ok(Self {
-            inner: QsCurveConstruction::ZeroRate {
-                pillars,
-                rates,
-                compounding: compounding
-                    .map(extract_compounding)
-                    .transpose()?
-                    .unwrap_or(Compounding::Continuous),
-                frequency: frequency
-                    .map(extract_frequency)
-                    .transpose()?
-                    .unwrap_or(Frequency::Annual),
-            },
-        })
-    }
-
-    /// Multiply the discount factors of two configured curves.
-    ///
-    /// Parameters
-    /// ----------
-    /// base_index : MarketIndex or str
-    ///     Benchmark curve present in the context's curve configurations.
-    /// spread_index : MarketIndex or str
-    ///     Spread curve present in the same configurations. Continuous zero
-    ///     spreads add to the benchmark's continuous zero rates.
-    #[staticmethod]
-    #[pyo3(signature = (*, base_index, spread_index))]
-    fn composite(base_index: &Bound<'_, PyAny>, spread_index: &Bound<'_, PyAny>) -> PyResult<Self> {
-        Ok(Self {
-            inner: QsCurveConstruction::Composite {
-                base_index: extract_market_index(base_index)?,
-                spread_index: extract_market_index(spread_index)?,
-            },
-        })
-    }
-
-    fn __repr__(&self) -> String {
-        format!(
-            "CurveConstruction({})",
-            serde_json::to_string(&self.inner).unwrap_or_default()
-        )
-    }
-}
-
 #[pymethods]
 impl CurveConfiguration {
     #[new]
     #[allow(clippy::too_many_arguments)]
-    #[pyo3(signature = (*, market_index, quotes = None, construction = None,
+    #[pyo3(signature = (market_index, quotes = None,
         day_counter = None, interpolator = None, enable_extrapolation = true))]
     fn new(
         market_index: &Bound<'_, PyAny>,
         quotes: Option<Vec<String>>,
-        construction: Option<CurveConstruction>,
         day_counter: Option<&Bound<'_, PyAny>>,
         interpolator: Option<&Bound<'_, PyAny>>,
         enable_extrapolation: bool,
@@ -250,8 +147,34 @@ impl CurveConfiguration {
                     .unwrap_or(Interpolator::LogLinear),
                 enable_extrapolation,
                 quotes.unwrap_or_default(),
-            )
-            .with_construction(construction.map_or(QsCurveConstruction::Bootstrapped, |c| c.inner)),
+            ),
+        })
+    }
+
+    /// Define a composite curve by multiplying its base and spread discount factors.
+    ///
+    /// Parameters
+    /// ----------
+    /// market_index : MarketIndex or str
+    ///     Identity used to request the resulting composite curve.
+    /// base_index : MarketIndex or str
+    ///     Benchmark curve configured in the same pricing context.
+    /// spread_index : MarketIndex or str
+    ///     Spread curve configured in the same context. The component curves
+    ///     must share a reference date and day-count convention.
+    #[staticmethod]
+    #[pyo3(signature = (market_index, base_index, spread_index))]
+    fn composite(
+        market_index: &Bound<'_, PyAny>,
+        base_index: &Bound<'_, PyAny>,
+        spread_index: &Bound<'_, PyAny>,
+    ) -> PyResult<Self> {
+        Ok(Self {
+            inner: QsCurveConfiguration::composite(
+                extract_market_index(market_index)?,
+                extract_market_index(base_index)?,
+                extract_market_index(spread_index)?,
+            ),
         })
     }
 }
@@ -279,6 +202,48 @@ config_wrapper!(
     "PricerConfiguration",
     "pricer configuration"
 );
+
+#[pymethods]
+impl PricerConfiguration {
+    /// Configure the core Rust loan pricer with typed Python inputs.
+    ///
+    /// Parameters
+    /// ----------
+    /// refinancing_benchmark_index : MarketIndex or str, optional
+    ///     Index benchmark for refinancing-incentive prepayment. Defaults to
+    ///     None, supplying no benchmark. Its metadata sets the observation tenor
+    ///     and rate convention; it excludes replacement-loan spreads and fees.
+    /// rebuild_amortization_for_fair_rate : bool, optional
+    ///     Defaults to False, preserving contractual principal during fair-rate
+    ///     trials. True rebuilds the trial amortization from its initial all-in
+    ///     rate. Neither setting changes the original contract.
+    ///
+    /// Returns
+    /// -------
+    /// PricerConfiguration
+    ///     Native Loan configuration for PricingContext.pricer_configurations.
+    ///     Discounting follows context.fixed_income_policy.
+    #[staticmethod]
+    #[pyo3(signature = (refinancing_benchmark_index = None, rebuild_amortization_for_fair_rate = false))]
+    fn loan(
+        refinancing_benchmark_index: Option<&Bound<'_, PyAny>>,
+        rebuild_amortization_for_fair_rate: bool,
+    ) -> PyResult<Self> {
+        Ok(Self {
+            inner: QsPricerConfiguration::new(
+                InstrumentType::Loan,
+                PricerImplementation::Loan {
+                    refinancing_benchmark_index: refinancing_benchmark_index
+                        .map(extract_market_index)
+                        .transpose()?,
+                    rebuild_amortization_for_fair_rate,
+                },
+                Vec::new(),
+            ),
+        })
+    }
+}
+
 config_wrapper!(
     SimulationConfiguration,
     QsSimulationConfiguration,
@@ -334,27 +299,27 @@ impl QuoteStore {
     #[pyo3(signature = (identifier, level = "mid"))]
     fn value(&self, identifier: &str, level: &str) -> PyResult<f64> {
         let quote = self.inner.quote(identifier).ok_or_else(|| {
-            QuantSupportError::new_err(format!("quote '{identifier}' was not found"))
+            crate::common::errors::not_found(format!("quote '{identifier}' was not found"))
         })?;
         let value = match level.to_ascii_lowercase().as_str() {
             "mid" => quote.levels().mid(),
             "bid" => quote.levels().bid(),
             "ask" => quote.levels().ask(),
             _ => {
-                return Err(QuantSupportError::new_err(format!(
+                return Err(crate::common::errors::invalid_value(format!(
                     "invalid quote level '{level}' (expected 'mid', 'bid', or 'ask')"
                 )))
             }
         };
         value.ok_or_else(|| {
-            QuantSupportError::new_err(format!("quote '{identifier}' has no {level} level"))
+            crate::common::errors::not_found(format!("quote '{identifier}' has no {level} level"))
         })
     }
 
     /// Returns `(mid, bid, ask)` for one quote identifier.
     fn levels(&self, identifier: &str) -> PyResult<(Option<f64>, Option<f64>, Option<f64>)> {
         let quote = self.inner.quote(identifier).ok_or_else(|| {
-            QuantSupportError::new_err(format!("quote '{identifier}' was not found"))
+            crate::common::errors::not_found(format!("quote '{identifier}' was not found"))
         })?;
         Ok((
             quote.levels().mid(),
@@ -539,3 +504,12 @@ impl FxStore {
         "FxStore(...)".to_string()
     }
 }
+
+crate::common::representation::impl_dict_protocol!(
+    CurveConfiguration,
+    CreditCurveConfiguration,
+    VolatilitySurfaceConfiguration,
+    VolatilityCubeConfiguration,
+    SimulationConfiguration,
+    PricerConfiguration
+);

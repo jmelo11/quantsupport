@@ -573,10 +573,22 @@ mod tests {
         let configuration: CreditCurveConfiguration = serde_json::from_value(serde_json::json!({
             "market_index":{"Credit":"BORROWER"}, "currency":"EUR", "discount_index":"ESTR", "recovery":0.4, "quotes":identifiers,
         })).unwrap();
-        let curve: quantsupport::prelude::CurveConfiguration = serde_json::from_value(serde_json::json!({
-            "market_index":"ESTR", "interpolator":"Linear", "day_counter":"Actual360",
-            "construction":{"type":"ZeroRate","pillars":["0D","5Y","10Y"],"rates":[0.03,0.03,0.03],"compounding":"Continuous","frequency":"Annual"},
-        })).unwrap();
+        let mut zero_identifiers = Vec::new();
+        for tenor in ["0D", "5Y", "10Y"] {
+            let identifier = format!("ZeroRate_EUR_ESTR_{tenor}");
+            quotes.add_quote(Quote::new(
+                identifier.parse().unwrap(),
+                QuoteLevels::with_mid(0.03),
+            ));
+            zero_identifiers.push(identifier);
+        }
+        let curve = quantsupport::prelude::CurveConfiguration::new(
+            MarketIndex::ESTR,
+            quantsupport::prelude::DayCounter::Actual360,
+            quantsupport::prelude::Interpolator::Linear,
+            true,
+            zero_identifiers,
+        );
         let mut credit_context = PricingContext::new()
             .with_quote_store(quotes)
             .with_base_currency(Currency::EUR)

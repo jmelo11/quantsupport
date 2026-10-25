@@ -9,6 +9,13 @@ spread curve, market scenarios, prepayment, and borrower recovery.
 Tables and charts show how those assumptions affect payments, expected principal
 life, income, and exposure to market quotes.
 
+All valuations use `context.evaluate(trade, requests)`, as in the other product
+examples. Loans use ordinary `qs.Trade` positions and dispatch directly to the
+core Rust loan pricer. The walkthrough compares ESTR and EURIBOR12m discount
+policies and uses typed `PricerConfiguration.loan(...)` settings for amortization
+rebuilding and refinancing benchmarks. Those settings also apply to loan
+portfolio members and scenarios.
+
 The local [market_data.py](market_data.py) reads the illustrative 24 February 2026
 EUR discount, EURIBOR12m, and borrower CDS inputs shared with the Rust example.
 Deposits anchor the short end; ESTR OIS and EURIBOR swaps extend the rate curves

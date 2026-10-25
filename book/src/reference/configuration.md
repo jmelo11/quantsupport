@@ -40,9 +40,9 @@ That wrapper belongs to their loader; the native configuration is one entry:
 }
 ```
 
-Missing optional fields use native defaults. `construction` defaults to
-bootstrapped construction. Explicit zero and composite curves instead leave
-quote membership empty:
+Missing optional fields use native defaults. The quote identifiers determine
+whether a curve calibrates instrument prices or interpolates zero rates or
+discount factors directly. All numeric observations belong in the quote store:
 
 ```json
 [
@@ -50,28 +50,21 @@ quote membership empty:
     "market_index": {"Other": "FUNDINGSPREAD"},
     "day_counter": "Actual360",
     "interpolator": "Linear",
-    "construction": {
-      "type": "ZeroRate",
-      "pillars": ["0D", "1Y", "5Y"],
-      "rates": [0.005, 0.0075, 0.01],
-      "compounding": "Continuous",
-      "frequency": "Annual"
-    }
+    "quotes": ["ZeroRate_EUR_FUNDINGSPREAD_0D", "ZeroRate_EUR_FUNDINGSPREAD_1Y", "ZeroRate_EUR_FUNDINGSPREAD_5Y"]
   },
   {
     "market_index": {"Other": "COSTOFFUNDS"},
-    "construction": {
-      "type": "Composite",
-      "base_index": "EURIBOR12m",
-      "spread_index": {"Other": "FUNDINGSPREAD"}
-    }
+    "base_index": "EURIBOR12m",
+    "spread_index": {"Other": "FUNDINGSPREAD"}
   }
 ]
 ```
 
-The benchmark curve must also be configured. Zero pillars can use tenors or
-ISO dates; components must share their reference date and day counter.
-Dependency resolution does not depend on list order.
+The quote store supplies the funding spread values, such as `0.005`, `0.0075`
+and `0.01`, under those identifiers. Pillars can use tenors or ISO dates.
+The benchmark curve must also be configured. Composite components must share
+their reference date and day counter; dependency resolution is independent of
+list order. A composite cannot also supply quote identifiers.
 
 Credit configurations additionally need currency, discount index, recovery and
 CDS quote membership. They construct survival rather than discount factors.

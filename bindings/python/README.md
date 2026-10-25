@@ -34,6 +34,13 @@ Released wheels require Python 3.9 or later and install pandas as a dependency:
 python -m pip install quantsupport
 ```
 
+The [Python downloads page](https://jmelo11.github.io/quantsupport/python/downloads.html)
+also provides folder ZIPs containing only QuantSupport for each supported Python
+version, operating system and architecture. Install dependencies separately with
+`python -m pip install pandas`, extract the ZIP, and add its `site-packages`
+directory to `sys.path` before importing QuantSupport. The ZIP includes a
+`README.txt` with these instructions.
+
 Use `quantsupport[typing]` for optional editor typing dependencies. A wheel does
 not require Rust. For a development build from the repository root:
 
@@ -58,13 +65,14 @@ import quantsupport as qs
 
 reference = qs.Date(2026, 2, 24)
 quotes = qs.QuoteStore.from_dict({
-    "reference_date": str(reference), "quotes": [],
+    "reference_date": str(reference), "quotes": [
+        {"identifier": f"ZeroRate_USD_SOFR_{tenor}", "mid": 0.03}
+        for tenor in ["0D", "10Y"]
+    ],
 })
 curve = qs.CurveConfiguration(
     market_index="SOFR", day_counter="Actual360", interpolator="Linear",
-    construction=qs.CurveConstruction.zero_rate(
-        pillars=["0D", "10Y"], rates=[0.03, 0.03],
-    ),
+    quotes=quotes.identifiers(),
 )
 context = qs.PricingContext(
     quotes, [curve], csa_policy=qs.SingleCurveCSADiscountPolicy("USD", "SOFR"),
@@ -158,7 +166,10 @@ request instead.
   straight bonds use Z-spread, issuer-call bonds OAS. Discounting is a policy
   choice, not an automatic inference from currency.
 - Loan Value is future expected receipt PV, excluding the initial advance.
-  Loan fair-rate and prepayment choices are explained in the guide.
+  Evaluate `qs.Trade` positions or portfolios with `context.evaluate(...)`,
+  which uses the core Rust loan pricer. Select fair-rate and refinancing options
+  through `PricerConfiguration.loan(...)`, and choose discounting with
+  `context.fixed_income_policy`.
 - Python scripting returns averaged numeric variables, not sensitivity/
   cashflow tables. Rate models are explicit; finite-path estimator comparisons
   need not reconcile raw cashflow PVs with a control-adjusted selected variable.

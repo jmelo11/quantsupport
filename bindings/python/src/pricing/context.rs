@@ -50,7 +50,6 @@ use crate::pricing::portfolio::Portfolio;
 use crate::pricing::results::EvaluationResults;
 use crate::time::Date;
 use crate::xva::{NettingSet, XvaConfig, XvaResult};
-use crate::QuantSupportError;
 
 /// Market inputs and policies used to value trades.
 ///
@@ -69,7 +68,7 @@ use crate::QuantSupportError;
 /// quotes : QuoteStore
 ///     Market observations and reference date.
 /// curves : sequence of CurveConfiguration
-///     Calibration inputs, explicit zero rates, and composite curves.
+///     Quote-based calibration or direct interpolation, and composite curves.
 /// fixings : FixingStore, optional
 ///     Published historical index observations.
 /// fx : FxStore, optional
@@ -206,7 +205,7 @@ impl PricingContext {
         if self.initialized {
             Ok(())
         } else {
-            Err(QuantSupportError::new_err(
+            Err(crate::common::errors::state_error(
                 "PricingContext is not initialized; use it inside a `with` block \
                  or call initialize() first",
             ))
@@ -635,7 +634,9 @@ impl PricingContext {
             .map(|element| DiscountCurve {
                 element: element.clone(),
             })
-            .ok_or_else(|| QuantSupportError::new_err(format!("No DiscountCurve for '{idx}'")))
+            .ok_or_else(|| {
+                crate::common::errors::not_found(format!("No DiscountCurve for '{idx}'"))
+            })
     }
 
     /// Resolves all configured volatility surfaces in the active market view.
@@ -675,7 +676,9 @@ impl PricingContext {
             .map(|element| VolatilitySurface {
                 element: element.clone(),
             })
-            .ok_or_else(|| QuantSupportError::new_err(format!("No VolatilitySurface for '{idx}'")))
+            .ok_or_else(|| {
+                crate::common::errors::not_found(format!("No VolatilitySurface for '{idx}'"))
+            })
     }
 
     /// Resolves all configured volatility cubes in the active market view.
@@ -713,7 +716,9 @@ impl PricingContext {
             .map(|element| VolatilityCube {
                 element: element.clone(),
             })
-            .ok_or_else(|| QuantSupportError::new_err(format!("No VolatilityCube for '{idx}'")))
+            .ok_or_else(|| {
+                crate::common::errors::not_found(format!("No VolatilityCube for '{idx}'"))
+            })
     }
 
     /// Resolves all configured simulations in the active market view.
@@ -752,7 +757,7 @@ impl PricingContext {
             .map(|element| Simulation {
                 element: element.clone(),
             })
-            .ok_or_else(|| QuantSupportError::new_err(format!("No Simulation for '{idx}'")))
+            .ok_or_else(|| crate::common::errors::not_found(format!("No Simulation for '{idx}'")))
     }
 
     /// Registers (or replaces) a Python pricer for a Python trade class.
@@ -837,7 +842,7 @@ impl PricingContext {
                 self.inner.base_index().clone()
             }
             None => {
-                return Err(QuantSupportError::new_err(
+                return Err(crate::common::errors::invalid_value(
                     "scripts outside the context base currency require an explicit discount_index",
                 ));
             }
@@ -874,7 +879,7 @@ impl PricingContext {
             );
         }
         if !assignments.contains_key(&discount_index) {
-            return Err(QuantSupportError::new_err(format!(
+            return Err(crate::common::errors::invalid_value(format!(
                 "no rate model configured for script discount index '{discount_index}'; supply script.models or context model configurations",
             )));
         }
@@ -921,7 +926,7 @@ impl PricingContext {
             .iter()
             .map(|(index, _)| {
                 store.discount_curve(index).ok_or_else(|| {
-                    QuantSupportError::new_err(format!(
+                    crate::common::errors::invalid_value(format!(
                         "no bootstrapped curve for script model '{index}'"
                     ))
                 })
@@ -932,7 +937,9 @@ impl PricingContext {
         let day_counter = store
             .discount_curve(&discount_index)
             .ok_or_else(|| {
-                QuantSupportError::new_err(format!("no script discount curve '{discount_index}'"))
+                crate::common::errors::not_found(format!(
+                    "no script discount curve '{discount_index}'"
+                ))
             })?
             .curve()
             .day_counter()
@@ -959,12 +966,12 @@ impl PricingContext {
                 other => other.clone(),
             };
             let ModelConfiguration::Lgm { lambda, .. } = &configuration else {
-                return Err(QuantSupportError::new_err(format!(
+                return Err(crate::common::errors::invalid_value(format!(
                     "script rate model '{index}' must be Lgm or HullWhite",
                 )));
             };
             if !lambda.is_finite() || *lambda < 0.0 {
-                return Err(QuantSupportError::new_err(
+                return Err(crate::common::errors::invalid_value(
                     "rate model mean reversion must be finite and non-negative",
                 ));
             }
@@ -1036,7 +1043,7 @@ impl PricingContext {
         for ns in &netting_sets {
             let ns = ns.borrow(py);
             if sets.contains_key(ns.name()) {
-                return Err(QuantSupportError::new_err(format!(
+                return Err(crate::common::errors::invalid_value(format!(
                     "duplicate netting set name '{}'",
                     ns.name()
                 )));
@@ -1095,7 +1102,11 @@ impl PricingContext {
 
         if let Ok(loan) = instrument.extract::<crate::instruments::loan::Loan>() {
             let trade = loan.build_native_loan_trade(&position)?;
-            let mut pricer = LoanPricer::new();
+            let mut pricer = slf
+                .inner
+                .pricer_configuration(InstrumentType::Loan)
+                .map_or_else(|| Ok(LoanPricer::new()), LoanPricer::from_configuration)
+                .map_err(qs_err)?;
             pricer.set_discount_policy(Box::new(slf.build_loan_discount_policy()));
             let result = pricer.evaluate(&trade, reqs, &market).map_err(qs_err)?;
             return Py::new(py, EvaluationResults::from_qs(&result));
@@ -1216,7 +1227,9 @@ impl PricingContext {
                 .inner
                 .pricer_configuration(InstrumentType::EuropeanSwaption)
                 .ok_or_else(|| {
-                    QuantSupportError::new_err("EuropeanSwaption requires a pricer configuration")
+                    crate::common::errors::invalid_value(
+                        "EuropeanSwaption requires a pricer configuration",
+                    )
                 })?;
             let mut pricer =
                 quantsupport::prelude::ClosedFormHullWhiteSwaptionPricer::from_configuration(
@@ -1264,7 +1277,7 @@ impl PricingContext {
             return Py::new(py, EvaluationResults::from_qs(&result));
         }
 
-        Err(QuantSupportError::new_err(format!(
+        Err(crate::common::errors::invalid_value(format!(
             "no native pricer for instrument type '{}'; \
              call context.register_pricer(TradeType, pricer)",
             instrument.get_type().name()?
@@ -1295,7 +1308,7 @@ impl Pricer for ContextMemberPricer {
                     if position.instrument_bound(py).is_instance_of::<RateFuturesPy>()
                         && context.python_pricers.resolve(py, member)?.is_none()
                     {
-                        return Err(QuantSupportError::new_err(
+                        return Err(crate::common::errors::invalid_value(
                             "Portfolio monetary aggregation requires currency-valued results; rate futures return quotes",
                         ));
                     }
@@ -1314,3 +1327,5 @@ impl Pricer for ContextMemberPricer {
         None
     }
 }
+
+crate::common::representation::impl_class_repr!(PricingContext);

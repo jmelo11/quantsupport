@@ -4,7 +4,7 @@ use pyo3::prelude::*;
 use quantsupport::time::{date::Date as QsDate, imm::IMM as QsIMM};
 
 use super::Date;
-use crate::{common::conversion::extract_date, QuantSupportError};
+use crate::common::conversion::extract_date;
 
 /// Static IMM date/code utilities. Main-cycle months are March, June, September and December.
 #[pyclass(module = "quantsupport", name = "IMM")]
@@ -16,7 +16,7 @@ fn valid_code(code: &str, main_cycle: bool) -> bool {
 
 fn checked_code(code: &str) -> PyResult<()> {
     if !valid_code(code, false) {
-        return Err(QuantSupportError::new_err(
+        return Err(crate::common::errors::invalid_value(
             "invalid IMM code: expected a month letter and one ASCII year digit",
         ));
     }
@@ -27,7 +27,7 @@ fn reference(value: &Bound<'_, PyAny>, resolve_code: bool) -> PyResult<QsDate> {
     let date = extract_date(value)?;
     let maximum = if resolve_code { 9989 } else { 9998 };
     if date == QsDate::empty() || !(1..=maximum).contains(&date.year()) {
-        return Err(QuantSupportError::new_err(format!(
+        return Err(crate::common::errors::invalid_value(format!(
             "reference_date must be nonempty and have a year in 1..{maximum}"
         )));
     }
@@ -42,7 +42,7 @@ fn checked_next_with_code(
     checked_code(imm_code)?;
     let date = QsIMM::next_date_with_code(imm_code, main_cycle, reference(reference_date, true)?);
     if date.year() > 9999 {
-        return Err(QuantSupportError::new_err(
+        return Err(crate::common::errors::invalid_value(
             "next IMM date exceeds year 9999",
         ));
     }
@@ -70,7 +70,7 @@ impl IMM {
     fn code(imm_date: &Bound<'_, PyAny>) -> PyResult<String> {
         let date = extract_date(imm_date)?;
         if !(1..=9999).contains(&date.year()) || !QsIMM::is_imm_date(date, false) {
-            return Err(QuantSupportError::new_err(
+            return Err(crate::common::errors::invalid_value(
                 "expected an IMM date with year in 1..9999",
             ));
         }
@@ -156,3 +156,5 @@ mod tests {
         assert!(!valid_code("F6", true));
     }
 }
+
+crate::common::representation::impl_class_repr!(IMM);

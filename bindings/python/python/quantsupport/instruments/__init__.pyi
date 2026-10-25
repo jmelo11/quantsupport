@@ -258,8 +258,8 @@ class LoanRepaymentStructure:
         Parameters
         ----------
         obj : str or Mapping[str, Any]
-            Native repayment representation returned by ``to_dict()``: a unit
-            variant name or tagged balloon terms. Economic constraints are
+            Tagged dictionary returned by ``to_dict()``; legacy unit-variant
+            strings are also accepted. Economic constraints are
             checked when constructing a Loan, not during deserialization.
 
         Returns
@@ -269,15 +269,23 @@ class LoanRepaymentStructure:
         """
         ...
 
-    def to_dict(self) -> str | dict[str, Any]:
-        """Return a unit-variant string or tagged repayment dictionary.
+    def to_dict(self) -> dict[str, Any]:
+        """Return a tagged repayment dictionary; unit variants map to None.
 
         Returns
         -------
-        str or dict[str, Any]
-            Native serde representation accepted by ``from_dict()`` and Loan.
+        dict[str, Any]
+            Tagged representation accepted by ``from_dict()`` and Loan.
         """
         ...
+
+    def keys(self) -> list[str]:
+        """Return serialized field names; supports dict(obj)."""
+        ...
+
+    def __getitem__(self, key: str, /) -> Any: ...
+
+    def __repr__(self) -> str: ...
 
 @final
 class PrepaymentModelConfiguration:
@@ -350,7 +358,8 @@ class PrepaymentModelConfiguration:
         Returns
         -------
         PrepaymentModelConfiguration
-            Incentive-based terms requiring a LoanPricer refinancing index.
+            Incentive-based terms requiring refinancing_benchmark_index in the
+            context's Loan PricerConfiguration.
         """
         ...
 
@@ -361,8 +370,8 @@ class PrepaymentModelConfiguration:
         Parameters
         ----------
         obj : str or Mapping[str, Any]
-            Native unit-variant string or tagged prepayment representation from
-            ``to_dict()``. Annual CPR values are decimals, not percentages.
+            Tagged dictionary returned by ``to_dict()``; legacy unit-variant
+            strings are also accepted. Annual CPR values are decimals, not percentages.
 
         Returns
         -------
@@ -371,21 +380,29 @@ class PrepaymentModelConfiguration:
         """
         ...
 
-    def to_dict(self) -> str | dict[str, Any]:
-        """Return a unit-variant string or tagged prepayment dictionary.
+    def to_dict(self) -> dict[str, Any]:
+        """Return a tagged prepayment dictionary; unit variants map to None.
 
         Returns
         -------
-        str or dict[str, Any]
-            Native serde representation accepted by ``from_dict()`` and Loan.
+        dict[str, Any]
+            Tagged representation accepted by ``from_dict()`` and Loan.
         """
         ...
+
+    def keys(self) -> list[str]:
+        """Return serialized field names; supports dict(obj)."""
+        ...
+
+    def __getitem__(self, key: str, /) -> Any: ...
+
+    def __repr__(self) -> str: ...
 
 @disjoint_base
 class Loan(Instrument):
     """Contractual cashflows and principal; valuation applies market/default/prepayment effects."""
 
-    def __new__(cls, identifier: str, start_date: _DateLike, maturity_date: _DateLike, notional: float, coupons: Sequence[FixedRateCoupon | FloatingRateCoupon | OptionEmbeddedCoupon | Mapping[str, Any]], currency: _CurrencyLike, repayment: LoanRepaymentStructure | str | Mapping[str, Any] | None=..., *, payment_frequency: Frequency | str | None=..., fixing_frequency: Frequency | str | None=..., day_counter: DayCounter | str | None=..., prepayment: PrepaymentModelConfiguration | str | Mapping[str, Any] | None=..., credit_index: _IndexLike | None=..., recovery: float | None=..., fixing_lag: int | None=..., index_tenor: _PeriodLike | None=..., calendar: Calendar | str | None=..., business_day_convention: BusinessDayConvention | str | None=..., amortization_rate: float | None=...) -> Self:
+    def __new__(cls, identifier: str, start_date: _DateLike, maturity_date: _DateLike, notional: float, coupons: Sequence[FixedRateCoupon | FloatingRateCoupon | OptionEmbeddedCoupon | Mapping[str, Any]], currency: _CurrencyLike, repayment: LoanRepaymentStructure | str | Mapping[str, Any] | None=..., payment_frequency: Frequency | str | None=..., fixing_frequency: Frequency | str | None=..., day_counter: DayCounter | str | None=..., prepayment: PrepaymentModelConfiguration | str | Mapping[str, Any] | None=..., credit_index: _IndexLike | None=..., recovery: float | None=..., fixing_lag: int | None=..., index_tenor: _PeriodLike | None=..., calendar: Calendar | str | None=..., business_day_convention: BusinessDayConvention | str | None=..., amortization_rate: float | None=...) -> Self:
         """Build a loan; floating-first amortizing schedules require an initial amortization_rate.
 
         Parameters
@@ -510,6 +527,14 @@ class Loan(Instrument):
         """
         ...
 
+    def keys(self) -> list[str]:
+        """Return serialized field names; supports dict(obj)."""
+        ...
+
+    def __getitem__(self, key: str, /) -> Any: ...
+
+    def __repr__(self) -> str: ...
+
 @final
 class SwaptionType:
     """Payer or receiver European swaption."""
@@ -626,6 +651,18 @@ class EquityForward(Instrument):
     def day_counter(self) -> DayCounter:
         """Read-only contractual day_counter. Collections are returned as copies."""
         ...
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return JSON-compatible fields as a dictionary."""
+        ...
+
+    def keys(self) -> list[str]:
+        """Return serialized field names; supports dict(obj)."""
+        ...
+
+    def __getitem__(self, key: str, /) -> Any: ...
+
+    def __repr__(self) -> str: ...
 
 @disjoint_base
 class EuropeanSwaption(Instrument):
@@ -776,6 +813,18 @@ class EuropeanSwaption(Instrument):
         """Read-only contractual calendar. Collections are returned as copies."""
         ...
 
+    def to_dict(self) -> dict[str, Any]:
+        """Return JSON-compatible fields as a dictionary."""
+        ...
+
+    def keys(self) -> list[str]:
+        """Return serialized field names; supports dict(obj)."""
+        ...
+
+    def __getitem__(self, key: str, /) -> Any: ...
+
+    def __repr__(self) -> str: ...
+
 @disjoint_base
 class Swap(Instrument):
     """A vanilla fixed-vs-floating interest rate swap.
@@ -919,6 +968,16 @@ class Swap(Instrument):
         """Read-only contractual floating_leg_frequency. Collections are returned as copies."""
         ...
 
+    def to_dict(self) -> dict[str, Any]:
+        """Return JSON-compatible fields as a dictionary."""
+        ...
+
+    def keys(self) -> list[str]:
+        """Return serialized field names; supports dict(obj)."""
+        ...
+
+    def __getitem__(self, key: str, /) -> Any: ...
+
 @disjoint_base
 class CrossCurrencySwap(Instrument):
     """A float-vs-float cross-currency swap.
@@ -1061,6 +1120,16 @@ class CrossCurrencySwap(Instrument):
         """Read-only contractual foreign_leg_frequency. Collections are returned as copies."""
         ...
 
+    def to_dict(self) -> dict[str, Any]:
+        """Return JSON-compatible fields as a dictionary."""
+        ...
+
+    def keys(self) -> list[str]:
+        """Return serialized field names; supports dict(obj)."""
+        ...
+
+    def __getitem__(self, key: str, /) -> Any: ...
+
 @disjoint_base
 class BasisSwap(Instrument):
     """A float-vs-float single-currency basis swap.
@@ -1190,6 +1259,16 @@ class BasisSwap(Instrument):
     def receive_leg_frequency(self) -> Frequency:
         """Read-only contractual receive_leg_frequency. Collections are returned as copies."""
         ...
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return JSON-compatible fields as a dictionary."""
+        ...
+
+    def keys(self) -> list[str]:
+        """Return serialized field names; supports dict(obj)."""
+        ...
+
+    def __getitem__(self, key: str, /) -> Any: ...
 
 @disjoint_base
 class FixFloatCrossCurrencySwap(Instrument):
@@ -1347,6 +1426,16 @@ class FixFloatCrossCurrencySwap(Instrument):
     def foreign_leg_frequency(self) -> Frequency:
         """Read-only contractual foreign_leg_frequency. Collections are returned as copies."""
         ...
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return JSON-compatible fields as a dictionary."""
+        ...
+
+    def keys(self) -> list[str]:
+        """Return serialized field names; supports dict(obj)."""
+        ...
+
+    def __getitem__(self, key: str, /) -> Any: ...
 
 @disjoint_base
 class FixedRateBond(Instrument):
@@ -1536,6 +1625,12 @@ class FixedRateBond(Instrument):
         """Read-only contractual first_coupon_date. Collections are returned as copies."""
         ...
 
+    def keys(self) -> list[str]:
+        """Return serialized field names; supports dict(obj)."""
+        ...
+
+    def __getitem__(self, key: str, /) -> Any: ...
+
 @final
 class InterestRate:
     """An annual interest rate with the native day-count and compounding conventions.
@@ -1552,7 +1647,7 @@ compounding : Compounding or str, optional
 frequency : Frequency or str, optional
     Compounding frequency used by the rate convention. Default None uses Annual."""
 
-    def __new__(cls, *, rate: float, day_counter: DayCounter | str | None=..., compounding: Compounding | str | None=..., frequency: Frequency | str | None=...) -> Self:
+    def __new__(cls, rate: float, day_counter: DayCounter | str | None=..., compounding: Compounding | str | None=..., frequency: Frequency | str | None=...) -> Self:
         ...
 
     @property
@@ -1609,6 +1704,30 @@ frequency : Frequency or str, optional
             Dimensionless reciprocal of ``compound_factor(start, end)``.
         """
         ...
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return JSON-compatible fields as a dictionary."""
+        ...
+
+    @staticmethod
+    def from_dict(obj: Mapping[str, Any]) -> InterestRate:
+        """Restore a native interest-rate dictionary.
+
+        Parameters
+        ----------
+        obj : mapping
+            Rate and nested rate_definition returned by to_dict().
+        """
+        ...
+
+    def keys(self) -> list[str]:
+        """Return serialized field names; supports dict(obj)."""
+        ...
+
+    def __getitem__(self, key: str, /) -> Any: ...
+
+    def __repr__(self) -> str: ...
+
 
 @final
 class PayoffOps:
@@ -1799,14 +1918,14 @@ OptionEmbeddedCoupon pays notional * accrual * (payoff.eval(fixing) + spread).""
         """
         ...
 
-    def to_dict(self) -> str | dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Return the native JSON-compatible representation.
 
         Returns
         -------
-        str or dict[str, Any]
-            Native serialized expression tree accepted by ``from_dict()``;
-            Index is a unit-variant string and other nodes are tagged objects.
+        dict[str, Any]
+            Tagged expression tree accepted by ``from_dict()``. The Index
+            leaf is represented by {"Index": None}.
         """
         ...
 
@@ -1826,6 +1945,14 @@ OptionEmbeddedCoupon pays notional * accrual * (payoff.eval(fixing) + spread).""
             Reconstructed expression for evaluation at a single index fixing.
         """
         ...
+
+    def keys(self) -> list[str]:
+        """Return serialized field names; supports dict(obj)."""
+        ...
+
+    def __getitem__(self, key: str, /) -> Any: ...
+
+    def __repr__(self) -> str: ...
 
 @final
 class FixedRateCoupon:
@@ -1849,7 +1976,7 @@ payment_date : Date or datetime.date or str, optional
     Interest payment date, on or after accrual_end_date. Default None;
     builders replace the template's 1970-01-01 placeholder dates."""
 
-    def __new__(cls, *, rate: InterestRate | float, notional: float=..., accrual_start_date: _DateLike | None=..., accrual_end_date: _DateLike | None=..., payment_date: _DateLike | None=...) -> Self:
+    def __new__(cls, rate: InterestRate | float, notional: float=..., accrual_start_date: _DateLike | None=..., accrual_end_date: _DateLike | None=..., payment_date: _DateLike | None=...) -> Self:
         ...
 
     @staticmethod
@@ -1917,6 +2044,14 @@ payment_date : Date or datetime.date or str, optional
         """Read-only copy of the annual fixed rate and its accrual and compounding conventions."""
         ...
 
+    def keys(self) -> list[str]:
+        """Return serialized field names; supports dict(obj)."""
+        ...
+
+    def __getitem__(self, key: str, /) -> Any: ...
+
+    def __repr__(self) -> str: ...
+
 @final
 class FloatingRateCoupon:
     """Native floating coupon paying the index fixing plus spread.
@@ -1944,7 +2079,7 @@ fixing : float, optional
     Finite annual decimal index observation for a standalone coupon, before
     spread. Default None leaves it unresolved; ``amount()`` requires a fixing."""
 
-    def __new__(cls, *, index: _IndexLike, spread: float=..., day_counter: DayCounter | str | None=..., notional: float=..., accrual_start_date: _DateLike | None=..., accrual_end_date: _DateLike | None=..., payment_date: _DateLike | None=..., fixing: float | None=...) -> Self:
+    def __new__(cls, index: _IndexLike, spread: float=..., day_counter: DayCounter | str | None=..., notional: float=..., accrual_start_date: _DateLike | None=..., accrual_end_date: _DateLike | None=..., payment_date: _DateLike | None=..., fixing: float | None=...) -> Self:
         ...
 
     @staticmethod
@@ -2028,6 +2163,14 @@ fixing : float, optional
         """Read-only convention used to calculate the coupon's accrual year fraction."""
         ...
 
+    def keys(self) -> list[str]:
+        """Return serialized field names; supports dict(obj)."""
+        ...
+
+    def __getitem__(self, key: str, /) -> Any: ...
+
+    def __repr__(self) -> str: ...
+
 @final
 class OptionEmbeddedCoupon:
     """Native coupon with a custom payoff expression.
@@ -2059,7 +2202,7 @@ fixing : float, optional
     Finite annual decimal index observation passed into payoff before spread.
     Default None leaves the observation unresolved; ``amount()`` requires it."""
 
-    def __new__(cls, *, index: _IndexLike, payoff: PayoffOps | str | Mapping[str, Any], spread: float=..., day_counter: DayCounter | str | None=..., notional: float=..., accrual_start_date: _DateLike | None=..., accrual_end_date: _DateLike | None=..., payment_date: _DateLike | None=..., fixing: float | None=...) -> Self:
+    def __new__(cls, index: _IndexLike, payoff: PayoffOps | str | Mapping[str, Any], spread: float=..., day_counter: DayCounter | str | None=..., notional: float=..., accrual_start_date: _DateLike | None=..., accrual_end_date: _DateLike | None=..., payment_date: _DateLike | None=..., fixing: float | None=...) -> Self:
         ...
 
     @staticmethod
@@ -2148,6 +2291,14 @@ fixing : float, optional
         """Read-only copy of the annual-rate expression applied before the additional spread."""
         ...
 
+    def keys(self) -> list[str]:
+        """Return serialized field names; supports dict(obj)."""
+        ...
+
+    def __getitem__(self, key: str, /) -> Any: ...
+
+    def __repr__(self) -> str: ...
+
 @final
 class CallScheduleEntry:
     """One dated issuer call in a callable bond's schedule.
@@ -2168,7 +2319,7 @@ class CallScheduleEntry:
         means exercise on the start date only.
     """
 
-    def __new__(cls, date: _DateLike | None=..., strike: float=..., *, start_date: _DateLike | None=..., end_date: _DateLike | None=...) -> Self:
+    def __new__(cls, date: _DateLike | None=..., strike: float=..., start_date: _DateLike | None=..., end_date: _DateLike | None=...) -> Self:
         ...
 
     def __repr__(self) -> str:
@@ -2259,6 +2410,12 @@ class CallScheduleEntry:
     def end_date(self) -> Date:
         """Inclusive final exercise date."""
         ...
+
+    def keys(self) -> list[str]:
+        """Return serialized field names; supports dict(obj)."""
+        ...
+
+    def __getitem__(self, key: str, /) -> Any: ...
 
 @disjoint_base
 class SteppedCouponBond(Instrument):
@@ -2459,6 +2616,12 @@ class SteppedCouponBond(Instrument):
         """Read-only contractual termination_date_convention. Collections are returned as copies."""
         ...
 
+    def keys(self) -> list[str]:
+        """Return serialized field names; supports dict(obj)."""
+        ...
+
+    def __getitem__(self, key: str, /) -> Any: ...
+
 @disjoint_base
 class FloatingRateNote(Instrument):
     """A floating-rate note.
@@ -2574,6 +2737,16 @@ class FloatingRateNote(Instrument):
     def payment_structure(self) -> PaymentStructure:
         """Read-only contractual payment_structure. Collections are returned as copies."""
         ...
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return JSON-compatible fields as a dictionary."""
+        ...
+
+    def keys(self) -> list[str]:
+        """Return serialized field names; supports dict(obj)."""
+        ...
+
+    def __getitem__(self, key: str, /) -> Any: ...
 
 @disjoint_base
 class FixedRateDeposit(Instrument):
@@ -2696,6 +2869,16 @@ class FixedRateDeposit(Instrument):
         """Read-only contractual rate_frequency. Collections are returned as copies."""
         ...
 
+    def to_dict(self) -> dict[str, Any]:
+        """Return JSON-compatible fields as a dictionary."""
+        ...
+
+    def keys(self) -> list[str]:
+        """Return serialized field names; supports dict(obj)."""
+        ...
+
+    def __getitem__(self, key: str, /) -> Any: ...
+
 @disjoint_base
 class FxForward(Instrument):
     """A deliverable or non-deliverable FX forward.
@@ -2817,6 +3000,16 @@ class FxForward(Instrument):
         """Read-only contractual settlement_currency. Collections are returned as copies."""
         ...
 
+    def to_dict(self) -> dict[str, Any]:
+        """Return JSON-compatible fields as a dictionary."""
+        ...
+
+    def keys(self) -> list[str]:
+        """Return serialized field names; supports dict(obj)."""
+        ...
+
+    def __getitem__(self, key: str, /) -> Any: ...
+
 @disjoint_base
 class FxOption(Instrument):
     """A European FX option.
@@ -2911,6 +3104,16 @@ class FxOption(Instrument):
         """Read-only contractual quote_currency. Collections are returned as copies."""
         ...
 
+    def to_dict(self) -> dict[str, Any]:
+        """Return JSON-compatible fields as a dictionary."""
+        ...
+
+    def keys(self) -> list[str]:
+        """Return serialized field names; supports dict(obj)."""
+        ...
+
+    def __getitem__(self, key: str, /) -> Any: ...
+
 @disjoint_base
 class EquityOption(Instrument):
     """A European equity option.
@@ -3001,6 +3204,16 @@ class EquityOption(Instrument):
     def option_type(self) -> OptionType:
         """Read-only contractual option_type. Collections are returned as copies."""
         ...
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return JSON-compatible fields as a dictionary."""
+        ...
+
+    def keys(self) -> list[str]:
+        """Return serialized field names; supports dict(obj)."""
+        ...
+
+    def __getitem__(self, key: str, /) -> Any: ...
 
 @disjoint_base
 class CreditDefaultSwap(Instrument):
@@ -3126,6 +3339,16 @@ class CreditDefaultSwap(Instrument):
         """Read-only contractual day_counter. Collections are returned as copies."""
         ...
 
+    def to_dict(self) -> dict[str, Any]:
+        """Return JSON-compatible fields as a dictionary."""
+        ...
+
+    def keys(self) -> list[str]:
+        """Return serialized field names; supports dict(obj)."""
+        ...
+
+    def __getitem__(self, key: str, /) -> Any: ...
+
 @disjoint_base
 class CapFloor(Instrument):
     """An interest-rate cap or floor.
@@ -3241,6 +3464,16 @@ class CapFloor(Instrument):
     def frequency(self) -> Frequency:
         """Read-only contractual frequency. Collections are returned as copies."""
         ...
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return JSON-compatible fields as a dictionary."""
+        ...
+
+    def keys(self) -> list[str]:
+        """Return serialized field names; supports dict(obj)."""
+        ...
+
+    def __getitem__(self, key: str, /) -> Any: ...
 
 @disjoint_base
 class CapletFloorlet(Instrument):
@@ -3364,6 +3597,16 @@ class CapletFloorlet(Instrument):
         """Read-only contractual strike. Collections are returned as copies."""
         ...
 
+    def to_dict(self) -> dict[str, Any]:
+        """Return JSON-compatible fields as a dictionary."""
+        ...
+
+    def keys(self) -> list[str]:
+        """Return serialized field names; supports dict(obj)."""
+        ...
+
+    def __getitem__(self, key: str, /) -> Any: ...
+
 @disjoint_base
 class RateFutures(Instrument):
     """An exchange-traded interest-rate futures contract.
@@ -3466,6 +3709,16 @@ The default 2500 per point corresponds to 25 per 0.01-point move, not
 """
         ...
 
+    def to_dict(self) -> dict[str, Any]:
+        """Return JSON-compatible fields as a dictionary."""
+        ...
+
+    def keys(self) -> list[str]:
+        """Return serialized field names; supports dict(obj)."""
+        ...
+
+    def __getitem__(self, key: str, /) -> Any: ...
+
 @final
 class ScriptedProduct:
     """Dated payoff code evaluated inside an initialized pricing context."""
@@ -3536,3 +3789,9 @@ class ScriptedProduct:
     def identifier(self) -> str:
         """Product identifier (an alias for name)."""
         ...
+
+    def keys(self) -> list[str]:
+        """Return serialized field names; supports dict(obj)."""
+        ...
+
+    def __getitem__(self, key: str, /) -> Any: ...

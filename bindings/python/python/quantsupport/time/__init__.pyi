@@ -786,7 +786,7 @@ class Schedule:
     """
 
     def __new__(cls, effective_date: _DateLike, termination_date: _DateLike,
-                tenor: _PeriodLike | None = None, *, frequency: Frequency | None = None,
+                tenor: _PeriodLike | None = None, frequency: Frequency | None = None,
                 calendar: Calendar | None = None,
                 convention: BusinessDayConvention | None = None,
                 termination_date_convention: BusinessDayConvention | None = None,
@@ -1187,7 +1187,7 @@ class Calendar:
     Chile: ClassVar[Calendar]
 
     @staticmethod
-    def Australia(*, market: AustraliaMarket | None = ...) -> Calendar:
+    def Australia( market: AustraliaMarket | None = ...) -> Calendar:
         """Create an Australian calendar.
 
         Parameters
@@ -1202,7 +1202,7 @@ class Calendar:
         """
         ...
     @staticmethod
-    def Canada(*, market: CanadaMarket | None = ...) -> Calendar:
+    def Canada( market: CanadaMarket | None = ...) -> Calendar:
         """Create a Canadian calendar.
 
         Parameters
@@ -1217,7 +1217,7 @@ class Calendar:
         """
         ...
     @staticmethod
-    def NewZealand(*, market: NewZealandMarket | None = ...) -> Calendar:
+    def NewZealand( market: NewZealandMarket | None = ...) -> Calendar:
         """Create a New Zealand calendar.
 
         Parameters
@@ -1232,7 +1232,7 @@ class Calendar:
         """
         ...
     @staticmethod
-    def SouthKorea(*, market: SouthKoreaMarket | None = ...) -> Calendar:
+    def SouthKorea( market: SouthKoreaMarket | None = ...) -> Calendar:
         """Create a South Korean calendar.
 
         Parameters
@@ -1247,7 +1247,7 @@ class Calendar:
         """
         ...
     @staticmethod
-    def China(*, market: ChinaMarket | None = ...) -> Calendar:
+    def China( market: ChinaMarket | None = ...) -> Calendar:
         """Create a Chinese calendar.
 
         Parameters
@@ -1262,7 +1262,7 @@ class Calendar:
         """
         ...
     @staticmethod
-    def UnitedStates(*, market: UnitedStatesMarket | None=...) -> Calendar:
+    def UnitedStates( market: UnitedStatesMarket | None=...) -> Calendar:
         """Create a United States market calendar.
 
         Parameters
@@ -1279,7 +1279,7 @@ class Calendar:
         ...
 
     @staticmethod
-    def Brazil(*, market: BrazilMarket | None=...) -> Calendar:
+    def Brazil( market: BrazilMarket | None=...) -> Calendar:
         """Create a Brazilian market calendar.
 
         Parameters
@@ -1296,7 +1296,7 @@ class Calendar:
         ...
 
     @staticmethod
-    def JointCalendar(*, calendars: Sequence[Calendar], rule: JointCalendarRule | None=...) -> Calendar:
+    def JointCalendar( calendars: Sequence[Calendar], rule: JointCalendarRule | None=...) -> Calendar:
         """Combine two or more business-day calendars.
 
         Parameters
@@ -1375,7 +1375,7 @@ class Calendar:
         """
         ...
 
-    def business_days_between(self, from_: _DateLike, /, to: _DateLike,
+    def business_days_between(self, from_: _DateLike, to: _DateLike,
                               include_first: bool = True, include_last: bool = False) -> int:
         """Count business days with independently inclusive endpoints.
 
@@ -1398,7 +1398,7 @@ class Calendar:
         """
         ...
 
-    def holiday_list(self, from_: _DateLike, /, to: _DateLike,
+    def holiday_list(self, from_: _DateLike, to: _DateLike,
                      include_weekends: bool = False) -> list[Date]:
         """List holidays in a closed date interval.
 
@@ -1421,7 +1421,7 @@ class Calendar:
         """
         ...
 
-    def business_day_list(self, from_: _DateLike, /, to: _DateLike) -> list[Date]:
+    def business_day_list(self, from_: _DateLike, to: _DateLike) -> list[Date]:
         """List business days in a closed date interval.
 
         Parameters

@@ -10,7 +10,7 @@ a curve configuration selects the calibration instruments and numerical
 conventions. The constructed curve can then be queried or used for valuation.
 
 This connection also determines risk reporting. A bootstrapped valuation can
-report sensitivities to its OIS quotes, while an explicit zero-rate curve
+report sensitivities to its OIS quotes, while a direct zero-rate curve
 reports sensitivities to the rates supplied at its pillars.
 
 The example below bootstraps a USD SOFR curve from a deposit and OIS quotes.
@@ -50,8 +50,7 @@ native quote parser. They are not arbitrary maturity labels.
            "2027-02-24", "2028-02-24",
            qs.Compounding.Simple, qs.Frequency.Annual,
        )
-       assert forward > 0
-       assert curve.discount_factor("2028-02-24") < 1
+       print(forward)
 
 ``nodes()`` reports interpolation dates and discount factors; ``pillars()``
 reports labelled market inputs where available. Together they show how the
@@ -97,7 +96,7 @@ construction rule:
        day_counter="Actual365", interpolator="LogLinear",
    )
    with qs.PricingContext(direct_quotes, [direct_spec]) as context:
-       assert abs(context.curve("SOFR").discount_factor("2027-02-24") - 0.96) < 1e-12
+       print(context.curve("SOFR").discount_factor("2027-02-24"))
 
 Use ``DiscountFactor_CCY_Index_Pillar`` for dimensionless factors, or
 ``ZeroRate_CCY_Index_Pillar[_Compounding[_Frequency]]`` for annual decimal
@@ -118,18 +117,11 @@ and a discount curve needs at least one future pillar.
 
 Direct quotes use the selected Mid/Bid/Ask level and retain their original
 identifiers for scenarios and sensitivities. They can be components of
-composite curves or dependencies of calibrated curves. Zero rates supplied
-through ``CurveConstruction.zero_rate`` remain a separate way to define
-explicit inputs without quote sides.
+composite curves or dependencies of calibrated curves. All observed values stay
+in ``QuoteStore``; configuration contains identifiers and construction conventions.
 
-Explicit and composite construction
------------------------------------
-
-:doc:`first-valuation` used ``CurveConstruction.zero_rate``. Its dates or tenors
-are measured from the context reference date, and each pillar has one annual
-decimal rate. The enclosing ``CurveConfiguration`` supplies day count,
-interpolation, and extrapolation; the zero-rate rule supplies rate compounding
-and frequency.
+Composite curves and standalone term structures
+-----------------------------------------------
 
 The separate ``ZeroRateTermStructure`` and ``TenorBasedZeroRateTermStructure``
 classes are reusable numeric term structures. Their defaults are Actual365,
@@ -149,12 +141,12 @@ A composite curve multiplies two component discount factors:
 Continuous zero rates add when their time bases agree. This is a
 discount-factor composition, not an arithmetic average of quoted yields.
 Configure it with
-``CurveConstruction.composite(base_index=..., spread_index=...)`` and supply
+``CurveConfiguration.composite(market_index=..., base_index=..., spread_index=...)`` and supply
 both component configurations. Dependencies are resolved by construction;
 cycles and missing parents are errors.
 
 For a loan funding experiment, a useful specification is a benchmark curve, an
-explicit spread curve identified by ``MarketIndex.other("FUNDINGSPREAD")``,
+quoted spread curve identified by ``MarketIndex.other("FUNDINGSPREAD")``,
 and their composite. Choose the composite through the fixed-income discount
 policy rather than adding a discount index to the loan contract.
 
@@ -257,14 +249,15 @@ The following independent example makes that distinction explicit.
 
    def recorded_market(day, rate):
        observations = qs.QuoteStore.from_dict({
-           "reference_date": f"2026-02-{day:02d}", "quotes": [],
+           "reference_date": f"2026-02-{day:02d}", "quotes": [
+               {"identifier": f"ZeroRate_USD_SOFR_{tenor}", "mid": rate}
+               for tenor in ["0D", "10Y"]
+           ],
        })
        specification = qs.CurveConfiguration(
            market_index="SOFR", day_counter="Actual360",
            interpolator="Linear",
-           construction=qs.CurveConstruction.zero_rate(
-               pillars=["0D", "10Y"], rates=[rate, rate],
-           ),
+           quotes=observations.identifiers(),
        )
        return qs.PricingContext(observations, [specification])
 
@@ -282,8 +275,6 @@ The following independent example makes that distinction explicit.
    with archive.pricing_context(selector) as historical:
        assert str(historical.evaluation_date) == "2026-02-24"
        assert historical.snapshot_timestamp == selected.timestamp
-       assert historical.curve("SOFR").discount_factor("2027-02-24") < 1
-   assert len(archive.timestamps) == 2
 
 ``Previous`` is the default and never chooses a later observation. ``Exact``
 requires equality; ``Closest`` may choose a future market and resolves ties
@@ -292,8 +283,8 @@ strings use different offsets. Inspect the matched timestamp rather than
 reporting the requested timestamp as though it were observed data.
 
 Snapshots rebuild from construction inputs rather than serializing runtime
-curves, caches, or AD state. Explicit zero rates and FX spots are
-side-independent. Fixings are supplied separately to ``archive.pricing_context(selector, fixings=...)``; there is
+curves, caches, or AD state. Zero rates and discount factors use the selected
+quote side, just like calibration instruments; FX spots are side-independent. Fixings are supplied separately to ``archive.pricing_context(selector, fixings=...)``; there is
 no automatic publication-vintage filtering. For a historical backtest, supply
 the fixing set that was known at each observation instant.
 

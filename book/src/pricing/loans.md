@@ -182,7 +182,7 @@ loan = qs.Loan(
     prepayment=qs.PrepaymentModelConfiguration.constant_annual_cpr(cpr=0.12),
 )
 trade = qs.Trade(instrument=loan, trade_date=reference_date, side=qs.Side.LongReceive)
-discount_policy = qs.FixedIncomeDiscountPolicy(risk_free_indices={qs.Currency.EUR: qs.MarketIndex.ESTR})
+discount_policy = qs.FixedIncomeDiscountPolicy(discount_curve_by_currency={qs.Currency.EUR: qs.MarketIndex.ESTR})
 with qs.PricingContext(quotes=quotes, curves=curves, fixings=fixings, csa_policy=csa_policy,
                       fixed_income_policy=discount_policy) as context:
     result = context.evaluate(trade=trade, requests=[qs.Request.Value, qs.Request.Cashflows, qs.Request.Sensitivities])
@@ -196,14 +196,26 @@ and `from_json` serialize construction parameters. Typed definitions and their
 plain serialized dictionaries are both accepted. `loan.coupon_fixing_requests()` lists
 unique coupon observations for loading fixings; valuation belongs to the pricer.
 
-`qs.LoanPricer(refinancing_benchmark_index=qs.MarketIndex.EURIBOR12m)` selects
-the benchmark for a refinancing-incentive model. An optional `discount_policy`
-overrides the context's fixed-income policy. Loans carry their payment currency,
+`context.evaluate(qs.Trade(loan, reference_date), requests)` dispatches directly
+to the core Rust `LoanPricer`. Use `PricerConfiguration.loan(...)` with Python
+arguments and a typed `MarketIndex` to select fair-rate and refinancing settings:
+
+```python
+context.pricer_configurations = [qs.PricerConfiguration.loan(
+    refinancing_benchmark_index=qs.MarketIndex.EURIBOR12m,
+)]
+```
+
+Omitting this configuration uses the native defaults: no refinancing benchmark
+and preserved amortization during fair-rate trials. The context's
+`fixed_income_policy` selects discounting. Loans carry their payment currency,
 while the policy selects the discount curve. The same contract can therefore be
 valued against ESTR, EURIBOR, or a funding curve by changing the policy. Native
 Rust valuation requires a configured policy. In Python, the default context
 policy maps its base currency to its base curve when no explicit fixed-income
 policy is supplied.
+The same native settings apply to individual loan trades, portfolio members and
+scenarios. No Python pricer registration or trade subclass is needed.
 
 Sensitivities are derivatives with respect to labelled market pillars. Multiply
 a rate-quote derivative by 0.0001 for the first-order PV change from a one-basis-point
@@ -230,8 +242,8 @@ the request to `QS.EVALUATE`, then `QS.RESULT.FAIR.RATE` reads its scalar.
 
 ```python
 with context:
-    second_rate = qs.LoanPricer().evaluate(
-        trade=trade, context=context, requests=[qs.Request.FairRate(1)]
+    second_rate = context.evaluate(
+        trade=trade, requests=[qs.Request.FairRate(1)]
     ).fair_rate
 ```
 
@@ -243,11 +255,17 @@ the first segment is solved, its rate stays fixed during later trials. A custom 
 metadata to use this mode. Neither mode changes the original instrument.
 
 ```python
-preserve = qs.LoanPricer(rebuild_amortization_for_fair_rate=False)
-rebuild = qs.LoanPricer(rebuild_amortization_for_fair_rate=True)
-with context:
-    fair_with_existing_principal = preserve.evaluate(trade=trade, context=context, requests=[qs.Request.FairRate(0)]).fair_rate
-    fair_with_new_amortization = rebuild.evaluate(trade=trade, context=context, requests=[qs.Request.FairRate(0)]).fair_rate
+original_configurations = context.pricer_configurations
+try:
+    for rebuild in [False, True]:
+        context.pricer_configurations = [qs.PricerConfiguration.loan(
+            rebuild_amortization_for_fair_rate=rebuild,
+        )]
+        with context:
+            fair_rate = context.evaluate(trade, [qs.Request.FairRate(0)]).fair_rate
+            print(rebuild, fair_rate)
+finally:
+    context.pricer_configurations = original_configurations
 ```
 
 In Rust, use `LoanPricer::new().with_fair_rate_amortization_rebuild(true)` for
@@ -276,7 +294,7 @@ retains its inputs and curves, including when the scope raises an exception.
 In Rust, `Scenario::new(vec![Shock::new(target, value, ScenarioType::Absolute)])`
 creates the same combination. `scenario.apply(&context)?` returns a borrowed
 `MarketDataProvider` accepted by pricers and `Evaluator`; the context stays unchanged.
-Funding-spread sensitivities use the explicit zero-rate pillar labels
-`FUNDINGSPREAD_<date>`. The notebook isolates those derivatives by funding tenor,
+Funding-spread sensitivities use the original zero-rate quote identifiers
+`ZeroRate_EUR_FUNDINGSPREAD_<tenor>`. The notebook isolates those derivatives by funding tenor,
 reports EUR changes for +1 bp, and compares the parallel funding exposure with
 fully repriced funding stress.

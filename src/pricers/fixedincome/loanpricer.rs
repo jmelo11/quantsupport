@@ -15,6 +15,7 @@ use crate::{
             marketdata::{MarketData, MarketDataProvider, MarketDataRequest},
         },
         pricer::Pricer,
+        pricerconfiguration::{InstrumentType, PricerConfiguration, PricerImplementation},
         pricerstate::PricerState,
         request::{
             HandleCashflows, HandleFairRate, HandleSensitivities, HandleValue, LegsProvider,
@@ -67,6 +68,33 @@ impl LoanPricer {
     #[must_use]
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Creates the native pricer from the context's typed loan configuration.
+    /// Discounting is supplied separately through [`Pricer::set_discount_policy`].
+    ///
+    /// # Errors
+    /// Rejects configurations for another instrument or pricing implementation.
+    pub fn from_configuration(configuration: &PricerConfiguration) -> Result<Self> {
+        configuration.validate()?;
+        if let (
+            InstrumentType::Loan,
+            PricerImplementation::Loan {
+                refinancing_benchmark_index,
+                rebuild_amortization_for_fair_rate,
+            },
+        ) = (configuration.instrument_type(), configuration.pricer())
+        {
+            Ok(Self {
+                discount_policy: None,
+                refinancing_benchmark_index: refinancing_benchmark_index.clone(),
+                rebuild_amortization_for_fair_rate: *rebuild_amortization_for_fair_rate,
+            })
+        } else {
+            Err(QSError::InvalidValueErr(
+                "LoanPricer requires a Loan pricer configuration".into(),
+            ))
+        }
     }
 
     /// Selects the index benchmark used by refinancing-incentive prepayment.

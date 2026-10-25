@@ -1,10 +1,9 @@
-"""Bundle a wheel and its binary dependencies for use from an extracted folder."""
+"""Package only QuantSupport for use from an extracted folder."""
 
 import argparse
 from email.parser import Parser
 import json
 from pathlib import Path
-import re
 import shutil
 import subprocess
 import sys
@@ -21,13 +20,20 @@ sys.path.insert(0, str(Path(sys.argv[1]) / "site-packages"))
 import quantsupport as qs
 import pandas as pd
 
+packages = (Path(sys.argv[1]) / "site-packages").resolve()
+assert Path(qs.__file__).resolve().is_relative_to(packages), qs.__file__
+assert not Path(pd.__file__).resolve().is_relative_to(packages), pd.__file__
+
 reference = qs.Date(2026, 2, 24)
-quotes = qs.QuoteStore.from_dict({"reference_date": str(reference), "quotes": []})
+quotes = qs.QuoteStore.from_dict({
+    "reference_date": str(reference), "quotes": [
+        {"identifier": f"ZeroRate_USD_SOFR_{tenor}", "mid": 0.03}
+        for tenor in ["0D", "10Y"]
+    ],
+})
 curve = qs.CurveConfiguration(
     market_index="SOFR", day_counter="Actual360", interpolator="Linear",
-    construction=qs.CurveConstruction.zero_rate(
-        pillars=["0D", "10Y"], rates=[0.03, 0.03],
-    ),
+    quotes=quotes.identifiers(),
 )
 context = qs.PricingContext(
     quotes, [curve], csa_policy=qs.SingleCurveCSADiscountPolicy("USD", "SOFR"),
@@ -39,27 +45,24 @@ with context:
 print("QuantSupport loaded from", qs.__file__)
 '''
 
-def compatible_platforms(wheel):
-    """Resolve dependencies for the wheel's minimum OS, not the newer CI host."""
-    platforms = set(Path(wheel).stem.rsplit("-", 1)[1].split("."))
-    for platform in list(platforms):
-        linux = re.fullmatch(r"manylinux_2_(\d+)_(x86_64|aarch64)", platform)
-        mac = re.fullmatch(r"macosx_(\d+)_(\d+)_(x86_64|arm64)", platform)
-        if linux:
-            minor, arch = int(linux[1]), linux[2]
-            platforms.update(f"manylinux_2_{i}_{arch}" for i in range(5, minor + 1))
-            for baseline, alias in ((17, "manylinux2014"), (12, "manylinux2010"), (5, "manylinux1")):
-                if minor >= baseline and (arch == "x86_64" or baseline == 17):
-                    platforms.add(f"{alias}_{arch}")
-        elif mac:
-            major, minor, arch = int(mac[1]), int(mac[2]), mac[3]
-            versions = [(i, 0) for i in range(11, major + 1)]
-            versions += [(10, i) for i in range(4, (minor if major == 10 else 16) + 1)]
-            for target_major, target_minor in versions:
-                platforms.add(f"macosx_{target_major}_{target_minor}_universal2")
-                if arch == "x86_64" or target_major >= 11:
-                    platforms.add(f"macosx_{target_major}_{target_minor}_{arch}")
-    return sorted(platforms)
+
+README = '''QuantSupport extracted folder package
+
+This ZIP contains only QuantSupport. Third-party dependencies are not included.
+Use the Python version, operating system and architecture named in the ZIP.
+
+Install the runtime dependencies into your Python environment:
+
+    python -m pip install pandas
+
+The complete dependency declarations remain in site-packages/quantsupport-*.dist-info/METADATA.
+
+Extract the ZIP and add its site-packages directory before importing QuantSupport:
+
+    import sys
+    sys.path.insert(0, "/path/to/extracted-folder/site-packages")
+    import quantsupport as qs
+'''
 
 
 def package(wheel_directory, output):
@@ -74,30 +77,32 @@ def package(wheel_directory, output):
         bundle = Path(temporary) / "bundle"
         packages = bundle / "site-packages"
         arguments = [
-            sys.executable, "-m", "pip", "install", "--only-binary=:all:",
+            sys.executable, "-m", "pip", "install", "--no-deps", "--no-index",
             "--no-compile", "--target", str(packages), str(wheel),
         ]
-        for platform in compatible_platforms(wheel):
-            arguments.extend(["--platform", platform])
         subprocess.run(arguments, check=True)
         versions = {}
+        requirements = []
         for metadata in sorted(packages.glob("*.dist-info/METADATA")):
             info = Parser().parsestr(metadata.read_text(encoding="utf-8"))
             versions[info["Name"]] = info["Version"]
+            requirements.extend(info.get_all("Requires-Dist", []))
         (bundle / "BUILD-INFO.json").write_text(json.dumps({
-            "wheel": wheel.name, "python": sys.version, "dependencies": versions,
+            "wheel": wheel.name, "python": sys.version, "packages": versions,
+            "requires_dist": requirements,
         }, indent=2) + "\n", encoding="utf-8")
+        (bundle / "README.txt").write_text(README, encoding="utf-8")
         # Console entry points have builder-specific shebangs; this bundle is imported.
         shutil.rmtree(packages / "bin", ignore_errors=True)
         with ZipFile(archive_path, "w", compression=ZIP_DEFLATED) as archive:
             for path in sorted(bundle.rglob("*")):
                 if path.is_file():
                     archive.write(path, path.relative_to(bundle))
-        # Verify the delivered ZIP after relocation, without any installed packages.
+        # Load QuantSupport from the relocated ZIP and dependencies from the environment.
         relocated = Path(temporary) / "extracted folder"
         with ZipFile(archive_path) as archive:
             archive.extractall(relocated)
-        subprocess.run([sys.executable, "-I", "-S", "-c", SMOKE_TEST, str(relocated)],
+        subprocess.run([sys.executable, "-I", "-c", SMOKE_TEST, str(relocated)],
                        cwd=relocated, check=True)
     return archive_path
 

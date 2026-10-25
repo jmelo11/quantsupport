@@ -24,7 +24,7 @@ from python_api import (
     class_declaration, construction_note, constructor_signature, declaration_source,
     declarations, method_signature, own_constructor, public_annotation, public_signature,
 )
-from api_navigation import PYTHON_SECTIONS, excel_section
+from api_navigation import PYTHON_EXCEPTIONS, PYTHON_SECTIONS, excel_section
 from notebook_studies import STUDIES, publication_links
 
 
@@ -161,21 +161,22 @@ class PythonReferenceTests(unittest.TestCase):
         assigned = [f"quantsupport.{domain}.{name}"
                     for domain, sections in PYTHON_SECTIONS.items()
                     for names in sections.values() for name in names.split()]
-        assigned.append("quantsupport.QuantSupportError")
+        assigned.extend(f"quantsupport.{name}" for name in PYTHON_EXCEPTIONS)
         self.assertCountEqual(assigned, [name for name in declarations() if "._" not in name])
         self.assertIn("Calendars", PYTHON_SECTIONS["time"])
         self.assertIn("Loans and Prepayment", PYTHON_SECTIONS["instruments"])
         self.assertIn("Volatility", PYTHON_SECTIONS["market"])
 
-    def test_positional_only_method_defaults_are_not_shifted(self):
+    def test_calendar_method_supports_keywords_and_preserves_defaults(self):
         signature = method_signature(SimpleNamespace(id="quantsupport.time.Calendar.business_days_between"))
-        self.assertIn("from_: Date | str | datetime.date, /, to:", signature)
+        self.assertIn("from_: Date | str | datetime.date, to:", signature)
+        self.assertNotIn("/", signature)
         self.assertNotIn("datetime.date=True", signature)
         self.assertIn("include_first: bool=True", signature)
 
     def test_factory_views_return_aliases_and_exception_source(self):
-        factory = SimpleNamespace(id="quantsupport.market.CurveConstruction",
-                                  short_name="CurveConstruction")
+        factory = SimpleNamespace(id="quantsupport.instruments.LoanRepaymentStructure",
+                                  short_name="LoanRepaymentStructure")
         self.assertEqual(class_declaration(factory), "")
         self.assertIn("factory", construction_note(factory))
         view = SimpleNamespace(id="quantsupport.market.DiscountCurve", short_name="DiscountCurve")
@@ -542,7 +543,7 @@ class RenderedReferenceTests(unittest.TestCase):
             self.assertRegex(rendered_signature, r"→\s*dict\s*\[\s*str\s*,\s*float\s*\]")
             date = Text((output / "autoapi/quantsupport/time/Date.html").read_text())
             self.assertIn("quantsupport.time.Date.__add__", date.ids)
-            factory = Text((output / "autoapi/quantsupport/market/CurveConstruction.html").read_text())
+            factory = Text((output / "autoapi/quantsupport/instruments/LoanRepaymentStructure.html").read_text())
             self.assertIn("no direct constructor", factory.text)
             self.assertNotIn("PythonDate", date.text)
             function_index = Text((output / "excel-functionindex.html").read_text())

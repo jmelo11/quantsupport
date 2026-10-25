@@ -6,8 +6,7 @@
 //! Supplying a full identifier does not restrict matching to that exact quote:
 //! a repeated `3M` tenor/expiry token can also match a `3M`/`6M` identifier.
 //! For example, `EURIBOR12m` selects its deposit and swap quotes.
-//! Explicit zero-rate pillars use `<index>_<date>` labels; `FUNDINGSPREAD`
-//! selects every pillar of that spread curve. Absolute changes use native input
+//! `FUNDINGSPREAD` selects every quote of that spread curve. Absolute changes use native input
 //! units: `0.01` means 100 bp for decimal rates, but is a price-point change
 //! for futures or a raw FX-point change for FX points. Relative changes
 //! multiply by `1 + value`. Overlapping
@@ -29,7 +28,6 @@ use std::str::FromStr;
 use crate::{
     core::{marketdatahandling::marketview::MarketView, pricingcontext::PricingContext},
     quotes::quote::{Quote, QuoteLevels},
-    rates::bootstrapping::curveconfiguration::CurveConstruction,
     utils::errors::{QSError, Result},
 };
 
@@ -58,7 +56,7 @@ impl FromStr for ScenarioType {
     }
 }
 
-/// A shock targeting quoted inputs or explicit zero-rate pillars.
+/// A shock targeting market quote inputs.
 ///
 /// The `target` is an underscore-token selector, even when it contains a full
 /// quote identifier. Exact equality succeeds immediately; otherwise matching
@@ -186,7 +184,7 @@ impl Scenario {
         Ok(MarketView::new(context, self.clone()))
     }
 
-    /// Checks selectors against quotes and configured explicit zero-rate pillars.
+    /// Checks selectors against the market quote identifiers.
     ///
     /// # Errors
     /// Returns an error for an invalid shock or a selector matching no market inputs.
@@ -202,22 +200,9 @@ impl Scenario {
                 .quotes()
                 .keys()
                 .any(|id| shock.matches(id));
-            let explicit = context.curve_configurations().iter().any(|configuration| {
-                let CurveConstruction::ZeroRate { pillars, .. } = configuration.construction()
-                else {
-                    return false;
-                };
-                pillars.iter().any(|pillar| {
-                    shock.matches(&format!(
-                        "{}_{}",
-                        configuration.market_index(),
-                        pillar.date(context.evaluation_date())
-                    ))
-                })
-            });
-            if !quoted && !explicit {
+            if !quoted {
                 return Err(QSError::NotFoundErr(format!(
-                    "Scenario target '{}' matched no quotes or zero-rate pillars",
+                    "Scenario target '{}' matched no quotes",
                     shock.target()
                 )));
             }

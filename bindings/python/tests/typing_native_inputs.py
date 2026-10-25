@@ -1,4 +1,6 @@
 """Static API contract; run with Pyright against the packaged stubs."""
+from typing import Any
+
 from typing_extensions import assert_type
 
 import quantsupport as qs
@@ -11,6 +13,11 @@ assert_type(qs.Interpolator.Linear, qs.Interpolator)
 assert_type(qs.Interpolator.parse(s="Linear"), qs.Interpolator)
 assert_type(qs.DayCounter.Actual360, qs.DayCounter)
 assert_type(qs.Request.Sensitivities, qs.Request)
+assert_type(qs.PricerConfiguration.loan(), qs.PricerConfiguration)
+assert_type(qs.PricerConfiguration.loan(
+    refinancing_benchmark_index=qs.MarketIndex.EURIBOR12m,
+    rebuild_amortization_for_fair_rate=True,
+), qs.PricerConfiguration)
 start = qs.Date(year=2026, month=2, day=24)
 period = qs.Period(length=30, units=qs.TimeUnit.Years)
 assert_type(start + period, qs.Date)
@@ -23,8 +30,12 @@ payoff = (2 * qs.PayoffOps.Index + 0.005).max(0.02).min(0.09)
 assert_type(payoff, qs.PayoffOps)
 assert_type(payoff.eval(index_fixing=0.04), float)
 rate = qs.InterestRate(rate=0.06, day_counter=qs.DayCounter.Actual360)
+assert_type(qs.InterestRate(0.06, qs.DayCounter.Actual360), qs.InterestRate)
+assert_type(dict(rate), dict[str, Any])
 assert_type(rate.day_counter, qs.DayCounter)
 fixed = qs.FixedRateCoupon(rate=rate)
+assert_type(qs.FixedRateCoupon(rate), qs.FixedRateCoupon)
+assert_type(dict(fixed), dict[str, Any])
 floating = qs.FloatingRateCoupon(index=qs.MarketIndex.EURIBOR12m, spread=0.01)
 option = qs.OptionEmbeddedCoupon(index=qs.MarketIndex.EURIBOR12m, payoff=payoff)
 assert_type(fixed.rate, qs.InterestRate)
@@ -45,6 +56,7 @@ def inspect_contract(loan: qs.Loan) -> None:
     assert_type(loan.currency, qs.Currency)
 
 assert_type(qs.Calendar.TARGET, qs.Calendar)
+assert_type(qs.Calendar.TARGET.business_days_between(from_=start, to=start + period), int)
 assert_type(qs.Calendar.UnitedStates(market=qs.UnitedStatesMarket.Sofr), qs.Calendar)
 assert_type(qs.Calendar.JointCalendar(
     calendars=[qs.Calendar.TARGET, qs.Calendar.Japan],

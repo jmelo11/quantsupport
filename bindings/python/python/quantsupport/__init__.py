@@ -42,7 +42,6 @@ from .market import (
     MarketSnapshotStore as MarketSnapshotStore,
     FixingStore as FixingStore,
     FxStore as FxStore,
-    CurveConstruction as CurveConstruction,
     CurveConfiguration as CurveConfiguration,
     CreditCurveConfiguration as CreditCurveConfiguration,
     VolatilitySurfaceConfiguration as VolatilitySurfaceConfiguration,
@@ -98,7 +97,6 @@ from .pricing import (
     FixedIncomeDiscountPolicy as FixedIncomeDiscountPolicy,
     BondPricingAnchor as BondPricingAnchor,
     PricingContext as PricingContext,
-    LoanPricer as LoanPricer,
     Trade as Trade,
     Pricer as Pricer,
     MarketDataProvider as MarketDataProvider,
@@ -118,7 +116,12 @@ from .risk import (
 )
 from ._exceptions import (
     QuantSupportError as QuantSupportError,
+    QuantSupportTypeError as QuantSupportTypeError,
+    QuantSupportValueError as QuantSupportValueError,
+    QuantSupportStateError as QuantSupportStateError,
+    QuantSupportIOError as QuantSupportIOError,
+    QuantSupportNotImplementedError as QuantSupportNotImplementedError,
 )
 
-__all__ = ['DateTime', 'SnapshotSelectionRule', 'SnapshotSelector', 'MarketSnapshot', 'MarketSnapshotStore', 'time', 'market', 'instruments', 'pricing', 'risk', 'Date', 'Period', 'Calendar', 'Schedule', 'IMM', 'UnitedStatesMarket', 'BrazilMarket', 'AustraliaMarket', 'CanadaMarket', 'NewZealandMarket', 'SouthKoreaMarket', 'ChinaMarket', 'JointCalendarRule', 'Compounding', 'Frequency', 'DayCounter', 'TimeUnit', 'BusinessDayConvention', 'DateGenerationRule', 'Currency', 'MarketIndex', 'Level', 'Interpolator', 'VolatilityType', 'SmileType', 'QuoteStore', 'FixingStore', 'FxStore', 'CurveConstruction', 'CurveConfiguration', 'CreditCurveConfiguration', 'VolatilitySurfaceConfiguration', 'VolatilityCubeConfiguration', 'SimulationConfiguration', 'ZeroRateTermStructure', 'TenorBasedZeroRateTermStructure', 'DiscountCurve', 'VolatilitySurface', 'VolatilityCube', 'Simulation', 'Instrument', 'Side', 'OptionType', 'SwaptionType', 'CapFloorType', 'CapletFloorletType',
-           'PaymentStructure', 'LoanRepaymentStructure', 'PrepaymentModelConfiguration', 'Loan', 'EquityForward', 'EuropeanSwaption', 'Swap', 'CrossCurrencySwap', 'BasisSwap', 'FixFloatCrossCurrencySwap', 'FixedRateBond', 'InterestRate', 'PayoffOps', 'FixedRateCoupon', 'FloatingRateCoupon', 'OptionEmbeddedCoupon', 'CallScheduleEntry', 'SteppedCouponBond', 'FloatingRateNote', 'FixedRateDeposit', 'FxForward', 'FxOption', 'EquityOption', 'CreditDefaultSwap', 'CapFloor', 'CapletFloorlet', 'RateFutures', 'ScriptedProduct', 'Request', 'PricerConfiguration', 'SingleCurveCSADiscountPolicy', 'FixedIncomeDiscountPolicy', 'BondPricingAnchor', 'PricingContext', 'LoanPricer', 'Trade', 'Pricer', 'MarketDataProvider', 'Evaluator', 'Portfolio', 'EvaluationResults', 'ScenarioType', 'Shock', 'Scenario', 'XvaConfig', 'CsaTerms', 'NettingSet', 'XvaResult', 'ExposureProfile', 'QuantSupportError']
+__all__ = ['DateTime', 'SnapshotSelectionRule', 'SnapshotSelector', 'MarketSnapshot', 'MarketSnapshotStore', 'time', 'market', 'instruments', 'pricing', 'risk', 'Date', 'Period', 'Calendar', 'Schedule', 'IMM', 'UnitedStatesMarket', 'BrazilMarket', 'AustraliaMarket', 'CanadaMarket', 'NewZealandMarket', 'SouthKoreaMarket', 'ChinaMarket', 'JointCalendarRule', 'Compounding', 'Frequency', 'DayCounter', 'TimeUnit', 'BusinessDayConvention', 'DateGenerationRule', 'Currency', 'MarketIndex', 'Level', 'Interpolator', 'VolatilityType', 'SmileType', 'QuoteStore', 'FixingStore', 'FxStore', 'CurveConfiguration', 'CreditCurveConfiguration', 'VolatilitySurfaceConfiguration', 'VolatilityCubeConfiguration', 'SimulationConfiguration', 'ZeroRateTermStructure', 'TenorBasedZeroRateTermStructure', 'DiscountCurve', 'VolatilitySurface', 'VolatilityCube', 'Simulation', 'Instrument', 'Side', 'OptionType', 'SwaptionType', 'CapFloorType', 'CapletFloorletType',
+           'PaymentStructure', 'LoanRepaymentStructure', 'PrepaymentModelConfiguration', 'Loan', 'EquityForward', 'EuropeanSwaption', 'Swap', 'CrossCurrencySwap', 'BasisSwap', 'FixFloatCrossCurrencySwap', 'FixedRateBond', 'InterestRate', 'PayoffOps', 'FixedRateCoupon', 'FloatingRateCoupon', 'OptionEmbeddedCoupon', 'CallScheduleEntry', 'SteppedCouponBond', 'FloatingRateNote', 'FixedRateDeposit', 'FxForward', 'FxOption', 'EquityOption', 'CreditDefaultSwap', 'CapFloor', 'CapletFloorlet', 'RateFutures', 'ScriptedProduct', 'Request', 'PricerConfiguration', 'SingleCurveCSADiscountPolicy', 'FixedIncomeDiscountPolicy', 'BondPricingAnchor', 'PricingContext', 'Trade', 'Pricer', 'MarketDataProvider', 'Evaluator', 'Portfolio', 'EvaluationResults', 'ScenarioType', 'Shock', 'Scenario', 'XvaConfig', 'CsaTerms', 'NettingSet', 'XvaResult', 'ExposureProfile', 'QuantSupportError', 'QuantSupportTypeError', 'QuantSupportValueError', 'QuantSupportStateError', 'QuantSupportIOError', 'QuantSupportNotImplementedError']

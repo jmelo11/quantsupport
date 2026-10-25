@@ -54,7 +54,7 @@ impl ZeroRateTermStructure {
 #[pymethods]
 impl ZeroRateTermStructure {
     #[new]
-    #[pyo3(signature = (reference_date, dates, rates, *, day_counter = None, compounding = None, frequency = None, interpolator = None, enable_extrapolation = false))]
+    #[pyo3(signature = (reference_date, dates, rates, day_counter = None, compounding = None, frequency = None, interpolator = None, enable_extrapolation = false))]
     #[allow(clippy::too_many_arguments)]
     fn new(
         reference_date: &Bound<'_, PyAny>,
@@ -120,7 +120,7 @@ impl TenorBasedZeroRateTermStructure {
 #[pymethods]
 impl TenorBasedZeroRateTermStructure {
     #[new]
-    #[pyo3(signature = (reference_date, tenors, rates, *, day_counter = None, compounding = None, frequency = None, interpolator = None, enable_extrapolation = false))]
+    #[pyo3(signature = (reference_date, tenors, rates, day_counter = None, compounding = None, frequency = None, interpolator = None, enable_extrapolation = false))]
     #[allow(clippy::too_many_arguments)]
     fn new(
         reference_date: &Bound<'_, PyAny>,
@@ -264,15 +264,6 @@ macro_rules! curve_methods {
             fn to_dict<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
                 pythonize::pythonize(py, self.curve()).map_err(qs_err)
             }
-
-            fn __repr__(&self) -> String {
-                format!(
-                    "{}(reference_date={}, pillars={})",
-                    stringify!($name),
-                    self.curve().reference_date(),
-                    self.curve().rates().len()
-                )
-            }
         }
     };
 }
@@ -289,3 +280,8 @@ pub fn extract_zero_curve(obj: &Bound<'_, PyAny>) -> PyResult<QsZeroCurve> {
     }
     from_py(obj, "zero-rate curve")
 }
+
+crate::common::representation::impl_dict_protocol!(
+    ZeroRateTermStructure,
+    TenorBasedZeroRateTermStructure
+);

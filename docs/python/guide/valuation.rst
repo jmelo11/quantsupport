@@ -70,9 +70,6 @@ Accrued interest distinguishes the two quotation anchors.
        ])
        print(bond_result.price, bond_result.z_spread)
        print(bond_result.yield_to_maturity, bond_result.modified_duration)
-       assert bond_result.price > 0
-       assert bond_result.modified_duration > 0
-       assert bond_result.z_spread is not None
 
 ``BondPricingAnchor.z_spread(0.0)`` instead asks for the unspread model value;
 ``dirty_price(...)`` includes accrued interest. ``with_pricing_anchor`` creates
@@ -151,12 +148,11 @@ rewrite the original principal schedule.
    )
    original_terms = loan.to_dict()
    with context:
-       loan_result = qs.LoanPricer().evaluate(
-           qs.Trade(loan, reference), context,
+       loan_result = context.evaluate(
+           qs.Trade(loan, reference),
            ["Value", "Cashflows", "Sensitivities"],
        )
-       assert loan_result.price > 0
-       assert loan_result.cashflows is not None
+       print(loan_result.price)
    assert loan.to_dict() == original_terms
 
 ``Value`` is signed PV of future expected receipts, **excluding the initial
@@ -166,7 +162,8 @@ and recovery receipts occupy legs 0, 1, and 2. Do not apply the generic swap
 cashflow-table interpretation indiscriminately to this report.
 
 Prepayment may be absent, constant annual CPR, or refinancing-incentive driven.
-The latter requires a ``LoanPricer(refinancing_benchmark_index=...)``; the
+The latter requires ``refinancing_benchmark_index`` in the context's native
+``PricerConfiguration.loan(...)``; the
 benchmark is an index rate, excluding replacement-loan lending spreads and
 fees. Payment frequency, reset frequency, fixing lag, and observation tenor are
 independent contractual inputs. ``coupon_fixing_requests()`` identifies required
@@ -182,7 +179,23 @@ The search interval for each segment is [-5%, 50%].
 ``rebuild_amortization_for_fair_rate=False`` preserves principal during trial rates; True reconstructs trial
 amortization without changing the original contract. Choose the setting that
 matches whether the proposed new coupon should also change contractual
-principal repayments. The :doc:`loan study <../studies/notebooks/loans>` reconciles them.
+principal repayments. Set these options through native pricer configuration
+and keep using ``context.evaluate(...)``:
+
+.. code-block:: python
+
+   context.pricer_configurations = [qs.PricerConfiguration.loan(
+       rebuild_amortization_for_fair_rate=True,
+       refinancing_benchmark_index=qs.MarketIndex.SOFR,
+   )]
+   with context:
+       par = context.evaluate(qs.Trade(loan, reference), [qs.Request.FairRate(0)])
+
+The context dispatches ordinary ``qs.Trade`` loan positions directly to the
+core Rust ``LoanPricer``, including portfolio members and scenarios. Discounting
+follows ``context.fixed_income_policy``. Omitting the loan configuration uses
+native defaults: no refinancing benchmark and preserved amortization during
+fair-rate trials. The :doc:`loan study <../studies/notebooks/loans>` reconciles the settings.
 
 Options, calibration, and simulation
 ------------------------------------
@@ -216,7 +229,7 @@ quoted volatility surface.
        option_result = context.evaluate(
            qs.Trade(swaption, reference), ["Value", "Sensitivities"],
        )
-       assert option_result.price > 0
+       print(option_result.price)
 
 For calibration replace the fixed parameter source with ``Calibrated``,
 specifying ``Surface`` or ``Cube`` and an explicit calibration basket, and

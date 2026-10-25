@@ -48,7 +48,7 @@ coupons. Only the instruments actually chosen as collateral-curve pillars
 determine whether ICP is a dependency of that calibration.
 
 The bootstrapper determines solve order from dependencies, so configurations
-can be supplied in any order. The same list can include explicit zero-rate
+can be supplied in any order. The same list can include quoted zero-rate
 curves and composites. A composite depends on both component
 curves and can itself become a parent of calibrated curves. Duplicate
 identities, self-references and cycles are rejected.
