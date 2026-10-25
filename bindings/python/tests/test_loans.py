@@ -63,11 +63,11 @@ class LoanWorkflowTests(unittest.TestCase):
         contract = instrument.to_dict()
         with build_pricing_context() as context:
             context.fixed_income_policy = qs.FixedIncomeDiscountPolicy(
-                risk_free_indices={qs.Currency.EUR: qs.MarketIndex.ESTR},
+                discount_curve_by_currency={qs.Currency.EUR: qs.MarketIndex.ESTR},
             )
             estr = evaluate_loan_trade(instrument, context, ["Value", "Cashflows"])
             context.fixed_income_policy = qs.FixedIncomeDiscountPolicy(
-                risk_free_indices={qs.Currency.EUR: qs.MarketIndex.EURIBOR12m},
+                discount_curve_by_currency={qs.Currency.EUR: qs.MarketIndex.EURIBOR12m},
             )
             euribor = evaluate_loan_trade(instrument, context, ["Value", "Cashflows"])
         self.assertLess(euribor.price, estr.price)

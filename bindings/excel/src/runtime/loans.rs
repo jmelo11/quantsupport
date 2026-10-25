@@ -240,7 +240,7 @@ mod tests {
         ) -> Result<EvaluationResults, String> {
             let mut pricer = LoanPricer::new().with_fair_rate_amortization_rebuild(self.rebuild);
             pricer.set_discount_policy(Box::new(
-                FixedIncomeDiscountPolicy::new(false).with_risk_free_index(
+                FixedIncomeDiscountPolicy::new(false).with_discount_curve_index(
                     context.base_currency(),
                     self.discount_index
                         .as_ref()

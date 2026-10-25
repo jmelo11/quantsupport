@@ -964,7 +964,7 @@ mod tests {
         let selected_policy = || -> Box<dyn DiscountPolicy> {
             Box::new(
                 FixedIncomeDiscountPolicy::new(false)
-                    .with_risk_free_index(Currency::USD, selected_index.clone()),
+                    .with_discount_curve_index(Currency::USD, selected_index.clone()),
             )
         };
         let expected = FACE * (-0.08_f64 * 2.0).exp();

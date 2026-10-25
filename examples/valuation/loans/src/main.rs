@@ -49,7 +49,7 @@ fn estr_loan_pricer() -> LoanPricer {
     let mut pricer = LoanPricer::new();
     pricer.set_discount_policy(Box::new(
         FixedIncomeDiscountPolicy::new(false)
-            .with_risk_free_index(Currency::EUR, MarketIndex::ESTR),
+            .with_discount_curve_index(Currency::EUR, MarketIndex::ESTR),
     ));
     pricer
 }
@@ -344,7 +344,7 @@ fn main() -> ExampleResult<()> {
     let funding_context = context.with_curve_configurations(configurations);
     let mut funding_pricer = LoanPricer::new();
     funding_pricer.set_discount_policy(Box::new(
-        FixedIncomeDiscountPolicy::new(false).with_risk_free_index(Currency::EUR, funding_index),
+        FixedIncomeDiscountPolicy::new(false).with_discount_curve_index(Currency::EUR, funding_index),
     ));
     let base = funding_pricer.evaluate(
         &trade,

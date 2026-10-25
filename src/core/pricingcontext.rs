@@ -94,7 +94,7 @@ impl PricingContext {
     #[must_use]
     pub fn with_csa_policy(mut self, policy: &SingleCurveCSADiscountPolicy) -> Self {
         self.invalidate_market();
-        self.base_currency = policy.collateral_currency();
+        self.base_currency = policy.base_currency();
         self.base_index = policy.collateral_index().clone();
         self
     }

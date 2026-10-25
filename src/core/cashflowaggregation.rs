@@ -294,13 +294,13 @@ pub trait CashflowAggregator {
     ///
     /// # Errors
     /// Rejects invalid input or aggregation overflow. Discard the strategy on failure.
-    fn add(&mut self, flows: &CashflowsTable) -> Result<()>;
+    fn accumulate_cashflows(&mut self, flows: &CashflowsTable) -> Result<()>;
 
     /// Produces a standard cashflow table using this strategy's grouping rules.
     ///
     /// # Errors
     /// Returns an error if equivalent coupon terms cannot be computed.
-    fn finish(self) -> Result<CashflowsTable>;
+    fn into_cashflows_table(self) -> Result<CashflowsTable>;
 }
 
 /// Preserves separate payment and receipt positions while merging compatible coupons.
@@ -312,12 +312,12 @@ pub struct GrossCashflowAggregator {
 }
 
 impl CashflowAggregator for GrossCashflowAggregator {
-    fn add(&mut self, flows: &CashflowsTable) -> Result<()> {
-        self.compressor.add(flows, Grouping::Gross)
+    fn accumulate_cashflows(&mut self, flows: &CashflowsTable) -> Result<()> {
+        self.compressor.accumulate_cashflows(flows, Grouping::Gross)
     }
 
-    fn finish(self) -> Result<CashflowsTable> {
-        self.compressor.finish()
+    fn into_cashflows_table(self) -> Result<CashflowsTable> {
+        self.compressor.into_cashflows_table()
     }
 }
 
@@ -333,12 +333,12 @@ pub struct NetCashflowAggregator {
 }
 
 impl CashflowAggregator for NetCashflowAggregator {
-    fn add(&mut self, flows: &CashflowsTable) -> Result<()> {
-        self.compressor.add(flows, Grouping::Net)
+    fn accumulate_cashflows(&mut self, flows: &CashflowsTable) -> Result<()> {
+        self.compressor.accumulate_cashflows(flows, Grouping::Net)
     }
 
-    fn finish(self) -> Result<CashflowsTable> {
-        self.compressor.finish()
+    fn into_cashflows_table(self) -> Result<CashflowsTable> {
+        self.compressor.into_cashflows_table()
     }
 }
 
@@ -404,7 +404,8 @@ struct CashflowCompressor {
 }
 
 impl CashflowCompressor {
-    fn add(&mut self, flows: &CashflowsTable, grouping: Grouping) -> Result<()> {
+    /// Merges numeric cashflows into compatible payment and coupon groups.
+    fn accumulate_cashflows(&mut self, flows: &CashflowsTable, grouping: Grouping) -> Result<()> {
         for row in 0..flows.payment_dates().len() {
             self.serial += 1;
             let mut kind = flows.cashflow_types()[row].clone();
@@ -500,7 +501,8 @@ impl CashflowCompressor {
         Ok(())
     }
 
-    fn finish(mut self) -> Result<CashflowsTable> {
+    /// Builds the compressed cashflow table and derives compatible coupon rates and spreads.
+    fn into_cashflows_table(mut self) -> Result<CashflowsTable> {
         self.groups.sort_by(|a, b| {
             (
                 a.identity.date,
@@ -640,8 +642,8 @@ mod tests {
             Some(0.03),
         )?;
         let mut compressor = GrossCashflowAggregator::default();
-        compressor.add(&flows)?;
-        let result = compressor.finish()?;
+        compressor.accumulate_cashflows(&flows)?;
+        let result = compressor.into_cashflows_table()?;
         assert_eq!(result.payment_dates().len(), 3);
         let mut repriced = 0.0;
         for (row, terms) in result.coupon_details().iter().enumerate() {
@@ -707,8 +709,8 @@ mod tests {
             add(&mut flows, changed, Some(0.05))?;
         }
         let mut compressor = GrossCashflowAggregator::default();
-        compressor.add(&flows)?;
-        assert_eq!(compressor.finish()?.payment_dates().len(), 8);
+        compressor.accumulate_cashflows(&flows)?;
+        assert_eq!(compressor.into_cashflows_table()?.payment_dates().len(), 8);
         Ok(())
     }
 
@@ -736,8 +738,8 @@ mod tests {
             );
         }
         let mut compressor = GrossCashflowAggregator::default();
-        compressor.add(&flows)?;
-        assert_eq!(compressor.finish()?.payment_dates().len(), 4);
+        compressor.accumulate_cashflows(&flows)?;
+        assert_eq!(compressor.into_cashflows_table()?.payment_dates().len(), 4);
         Ok(())
     }
     #[test]
@@ -746,12 +748,12 @@ mod tests {
         add(&mut flows, terms(None, 100.0, 0.04), None)?;
         add(&mut flows, terms(None, -50.0, 0.06), None)?;
         let mut gross = GrossCashflowAggregator::default();
-        gross.add(&flows)?;
-        let gross = gross.finish()?;
+        gross.accumulate_cashflows(&flows)?;
+        let gross = gross.into_cashflows_table()?;
         assert_eq!(gross.payment_dates().len(), 2);
         let mut net = NetCashflowAggregator::default();
-        net.add(&flows)?;
-        let net = net.finish()?;
+        net.accumulate_cashflows(&flows)?;
+        let net = net.into_cashflows_table()?;
         assert_eq!(net.payment_dates().len(), 1);
         let details = net.coupon_details()[0]
             .as_ref()
@@ -774,8 +776,8 @@ mod tests {
         add(&mut flows, terms(None, -100.0, 0.06), None)?;
         let interest = flows.amounts().iter().sum::<f64>();
         let mut net = NetCashflowAggregator::default();
-        net.add(&flows)?;
-        let net = net.finish()?;
+        net.accumulate_cashflows(&flows)?;
+        let net = net.into_cashflows_table()?;
         assert_eq!(net.amounts(), &[interest]);
         assert_eq!(net.cashflow_types(), &[CashflowKind::FixedRateCoupon]);
         assert!(net.coupon_details()[0].is_none());
@@ -811,8 +813,8 @@ mod tests {
             flows.set_last_coupon_details(terms(index, 100.0, 0.99));
         }
         let mut gross = GrossCashflowAggregator::default();
-        gross.add(&flows)?;
-        let result = gross.finish()?;
+        gross.accumulate_cashflows(&flows)?;
+        let result = gross.into_cashflows_table()?;
         for (row, details) in result.coupon_details().iter().enumerate() {
             let details = details
                 .as_ref()
@@ -902,8 +904,8 @@ mod tests {
             );
         }
         let mut net = NetCashflowAggregator::default();
-        net.add(&flows)?;
-        let net = net.finish()?;
+        net.accumulate_cashflows(&flows)?;
+        let net = net.into_cashflows_table()?;
         assert_eq!(
             net.cashflow_types(),
             &[CashflowKind::Capital, CashflowKind::Capital]

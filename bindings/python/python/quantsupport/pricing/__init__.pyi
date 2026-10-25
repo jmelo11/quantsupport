@@ -328,7 +328,7 @@ class FixedIncomeDiscountPolicy:
 
 Parameters
 ----------
-risk_free_indices : dict[Currency | str, MarketIndex | str]
+discount_curve_by_currency : dict[Currency | str, MarketIndex | str]
     Currency-to-curve mapping. Each index must identify a configured curve.
 prefer_instrument_index : bool, optional
     Use an instrument's discount index when present. Defaults to True.
@@ -336,9 +336,9 @@ prefer_instrument_index : bool, optional
 
 Examples
 --------
-FixedIncomeDiscountPolicy(risk_free_indices={Currency.EUR: MarketIndex.ESTR})"""
+FixedIncomeDiscountPolicy(discount_curve_by_currency={Currency.EUR: MarketIndex.ESTR})"""
 
-    def __new__(cls, risk_free_indices: Mapping[_CurrencyLike, _IndexLike], prefer_instrument_index: bool = ...) -> Self:
+    def __new__(cls, discount_curve_by_currency: Mapping[_CurrencyLike, _IndexLike], prefer_instrument_index: bool = ...) -> Self:
         """Map each cashflow currency to its discount curve's market index."""
         ...
 

@@ -105,7 +105,7 @@ class PythonMarketInputTests(unittest.TestCase):
         fixings.add(index="EURIBOR12m", date=REFERENCE, value=0.04)
         context.fixings = fixings
         self.assertAlmostEqual(context.fixings.fixing(index="EURIBOR12m", date=REFERENCE), 0.04)
-        policy = qs.FixedIncomeDiscountPolicy(risk_free_indices={qs.Currency.EUR: qs.MarketIndex.ESTR})
+        policy = qs.FixedIncomeDiscountPolicy(discount_curve_by_currency={qs.Currency.EUR: qs.MarketIndex.ESTR})
         context.fixed_income_policy = policy
         self.assertIsInstance(context.fixed_income_policy, qs.FixedIncomeDiscountPolicy)
         context.fixed_income_policy = None
@@ -116,7 +116,7 @@ class PythonMarketInputTests(unittest.TestCase):
             (qs.CurveConfiguration, "market_index"),
             (qs.CurveConstruction.zero_rate, "pillars"),
             (qs.CurveConstruction.composite, "base_index"),
-            (qs.FixedIncomeDiscountPolicy, "risk_free_indices"),
+            (qs.FixedIncomeDiscountPolicy, "discount_curve_by_currency"),
             (qs.Shock, "target"),
             (qs.Shock, "value"),
             (qs.Shock, "shock_type"),

@@ -138,7 +138,7 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     let mut pricer = TreeBasedBondPricer::new();
     pricer.set_discount_policy(Box::new(
         FixedIncomeDiscountPolicy::new(false)
-            .with_risk_free_index(Currency::USD, MarketIndex::SOFR),
+            .with_discount_curve_index(Currency::USD, MarketIndex::SOFR),
     ));
     let native = pricer
         .evaluate(&native_trade()?, &[Request::Value], &native_context())?

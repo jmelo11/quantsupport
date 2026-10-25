@@ -188,7 +188,7 @@ impl PricingContext {
     fn bond_discount_policy(&self, prefer_instrument_index: bool) -> FixedIncomeDiscountPolicy {
         self.fixed_income_policy.as_ref().map_or_else(
             || {
-                FixedIncomeDiscountPolicy::new(prefer_instrument_index).with_risk_free_index(
+                FixedIncomeDiscountPolicy::new(prefer_instrument_index).with_discount_curve_index(
                     self.inner.base_currency(),
                     self.inner.base_index().clone(),
                 )

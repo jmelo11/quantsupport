@@ -1332,7 +1332,7 @@ mod tests {
         let mut pricer = LoanPricer::new();
         pricer.set_discount_policy(Box::new(
             FixedIncomeDiscountPolicy::new(false)
-                .with_risk_free_index(Currency::EUR, MarketIndex::ESTR),
+                .with_discount_curve_index(Currency::EUR, MarketIndex::ESTR),
         ));
         pricer
     }
@@ -1353,7 +1353,7 @@ mod tests {
         let estr = pricer.evaluate(&trade, &requests, &provider)?;
         pricer.set_discount_policy(Box::new(
             FixedIncomeDiscountPolicy::new(false)
-                .with_risk_free_index(Currency::EUR, MarketIndex::EURIBOR12m),
+                .with_discount_curve_index(Currency::EUR, MarketIndex::EURIBOR12m),
         ));
         let euribor = pricer.evaluate(&trade, &requests, &provider)?;
         assert!(euribor.price() < estr.price());

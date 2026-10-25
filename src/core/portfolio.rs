@@ -79,7 +79,7 @@ impl<T> Portfolio<T> {
             let (currency, value) = evaluate(index, trade, &unique).map_err(|error| {
                 error.context(format!("pricing portfolio member {}", index + 1))
             })?;
-            results.add(currency, &value).map_err(|error| {
+            results.accumulate_trade_result(currency, &value).map_err(|error| {
                 error.context(format!(
                     "aggregating portfolio member {} ({})",
                     index + 1,
@@ -87,7 +87,7 @@ impl<T> Portfolio<T> {
                 ))
             })?;
         }
-        results.finish()
+        results.into_evaluation_results()
     }
 }
 
@@ -196,7 +196,7 @@ impl<A: CashflowAggregator> PortfolioAccumulator<A> {
     /// # Errors
     /// Rejects inconsistent dates/currencies, missing monetary units and nonfinite values.
     /// Discard the accumulator after an error; no partial result should be published.
-    pub fn add(&mut self, currency: Option<Currency>, result: &EvaluationResults) -> Result<()> {
+    pub fn accumulate_trade_result(&mut self, currency: Option<Currency>, result: &EvaluationResults) -> Result<()> {
         if self
             .evaluation_date
             .is_some_and(|date| date != result.evaluation_date())
@@ -257,7 +257,7 @@ impl<A: CashflowAggregator> PortfolioAccumulator<A> {
                         self.unavailable.insert(*request);
                         continue;
                     };
-                    self.cashflows.add(flows)?;
+                    self.cashflows.accumulate_cashflows(flows)?;
                 }
                 _ => {}
             }
@@ -269,7 +269,7 @@ impl<A: CashflowAggregator> PortfolioAccumulator<A> {
     ///
     /// # Errors
     /// Rejects an empty accumulator or failure of the injected cashflow strategy.
-    pub fn finish(self) -> Result<EvaluationResults> {
+    pub fn into_evaluation_results(self) -> Result<EvaluationResults> {
         let date = self
             .evaluation_date
             .ok_or_else(|| QSError::ValueNotSetErr("Portfolio evaluation date".into()))?;
@@ -294,7 +294,7 @@ impl<A: CashflowAggregator> PortfolioAccumulator<A> {
         if self.requests.contains(&Request::Cashflows)
             && !self.unavailable.contains(&Request::Cashflows)
         {
-            result = result.with_cashflows(self.cashflows.finish()?);
+            result = result.with_cashflows(self.cashflows.into_cashflows_table()?);
         }
         Ok(result)
     }
@@ -525,7 +525,7 @@ mod tests {
         assert!(MakePortfolioAccumulator::default()
             .with_requests(&[Request::Value])
             .build()?
-            .finish()
+            .into_evaluation_results()
             .is_err());
         let mut accumulator = MakePortfolioAccumulator::default()
             .with_requests(&[
@@ -540,8 +540,8 @@ mod tests {
             accumulator.requests,
             vec![Request::Value, Request::Cashflows]
         );
-        accumulator.add(Some(Currency::USD), &result(0))?;
-        let result = accumulator.finish()?;
+        accumulator.accumulate_trade_result(Some(Currency::USD), &result(0))?;
+        let result = accumulator.into_evaluation_results()?;
         let flows = result
             .cashflows()
             .ok_or_else(|| QSError::ValueNotSetErr("net cashflows".into()))?;
@@ -556,10 +556,10 @@ mod tests {
         /// A custom strategy that fails when consuming a table.
         struct RejectCashflows;
         impl CashflowAggregator for RejectCashflows {
-            fn add(&mut self, _: &CashflowsTable) -> Result<()> {
+            fn accumulate_cashflows(&mut self, _: &CashflowsTable) -> Result<()> {
                 Err(QSError::InvalidValueErr("custom cashflow strategy".into()))
             }
-            fn finish(self) -> Result<CashflowsTable> {
+            fn into_cashflows_table(self) -> Result<CashflowsTable> {
                 Ok(CashflowsTable::new())
             }
         }
