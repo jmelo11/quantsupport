@@ -80,7 +80,7 @@ Without `--write`, sources remain unchanged;
 use `--write` only when intentionally refreshing publication outputs. The
 optional legacy sensitivity benchmark has additional external dependencies
 and sits outside this runner's default directory. Install its declared optional
-requirements and select all fifteen with:
+requirements and select all sixteen with:
 
 ```sh
 python -m pip install "open-source-risk-engine==1.8.14.1" "curveengine @ git+https://github.com/jmelo11/curveengine.git@d7e000da626e08ff2be5d34561597065340b017e"

@@ -30,6 +30,7 @@ STUDIES = {
         ("simulations", "bindings/python/examples/hullwhite/simulations.ipynb"),
     ],
     "Portfolio risk and benchmarking": [
+        ("portfolio", "bindings/python/examples/sensitivity/portfolio.ipynb"),
         ("portfolio-aggregation", "bindings/python/examples/sensitivity/portfolio_aggregation.ipynb"),
         ("portfolio-risk", "bindings/python/examples/sensitivity/portfolio_risk.ipynb"),
         ("sensitivity-benchmark", "examples/sensitivity/bechmark/sensitivity.ipynb"),
