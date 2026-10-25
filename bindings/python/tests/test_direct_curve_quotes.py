@@ -111,10 +111,11 @@ class DirectCurveQuoteTests(unittest.TestCase):
             def value(shocks=(), risk=False):
                 with context([(label, {"mid": rate}) for label, rate in zip(labels, values)],
                              enable_extrapolation=True,
+                             fixed_income_policy=policy,
                              csa_policy=qs.SingleCurveCSADiscountPolicy("EUR", "ESTR")) as ctx:
                     with qs.Scenario(shocks=list(shocks)):
-                        return qs.LoanPricer(discount_policy=policy).evaluate(
-                            qs.Trade(loan, REFERENCE), ctx,
+                        return ctx.evaluate(
+                            qs.Trade(loan, REFERENCE),
                             [qs.Request.Value, qs.Request.Sensitivities] if risk else [qs.Request.Value],
                         )
 
@@ -168,10 +169,11 @@ class DirectCurveQuoteTests(unittest.TestCase):
                     ],
                     csa_policy=qs.SingleCurveCSADiscountPolicy("EUR", "ESTR"),
                 ) as ctx:
-                    return qs.LoanPricer(discount_policy=qs.FixedIncomeDiscountPolicy({
+                    ctx.fixed_income_policy = qs.FixedIncomeDiscountPolicy({
                         qs.Currency.EUR: qs.MarketIndex.EURIBOR3m,
-                    })).evaluate(trade, ctx, [qs.Request.Value, qs.Request.Sensitivities]
-                                 if risk else [qs.Request.Value])
+                    })
+                    return ctx.evaluate(trade, [qs.Request.Value, qs.Request.Sensitivities]
+                                        if risk else [qs.Request.Value])
 
             with self.subTest(family=family):
                 sensitivities = value(risk=True).sensitivities.set_index("pillar")["value"]

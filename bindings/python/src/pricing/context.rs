@@ -1102,7 +1102,11 @@ impl PricingContext {
 
         if let Ok(loan) = instrument.extract::<crate::instruments::loan::Loan>() {
             let trade = loan.build_native_loan_trade(&position)?;
-            let mut pricer = LoanPricer::new();
+            let mut pricer = slf
+                .inner
+                .pricer_configuration(InstrumentType::Loan)
+                .map_or_else(|| Ok(LoanPricer::new()), LoanPricer::from_configuration)
+                .map_err(qs_err)?;
             pricer.set_discount_policy(Box::new(slf.build_loan_discount_policy()));
             let result = pricer.evaluate(&trade, reqs, &market).map_err(qs_err)?;
             return Py::new(py, EvaluationResults::from_qs(&result));

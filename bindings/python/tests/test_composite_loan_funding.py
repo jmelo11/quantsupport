@@ -54,8 +54,8 @@ def loan(floating=False):
 
 def value(instrument, scenarios=None, requests=None, funding_shift=0):
     with funding_context(funding_shift=funding_shift) as context, qs.Scenario(shocks=scenarios or []):
-        return qs.LoanPricer().evaluate(
-            qs.Trade(instrument, REFERENCE), context, requests or [qs.Request.Value],
+        return context.evaluate(
+            qs.Trade(instrument, REFERENCE), requests or [qs.Request.Value],
         )
 
 
@@ -76,15 +76,16 @@ class CompositeLoanFundingTests(unittest.TestCase):
     def test_native_discount_policy_prices_receipts_and_par_coupon(self):
         instrument = loan()
         with funding_context() as context:
-            result = qs.LoanPricer().evaluate(qs.Trade(instrument, REFERENCE), context,
+            result = context.evaluate(qs.Trade(instrument, REFERENCE),
                                              [qs.Request.Value, qs.Request.Cashflows, qs.Request.FairRate(0)])
             expected = sum(row.amount * context.curve(FUNDING).discount_factor(row.payment_date)
                            for row in result.cashflows.itertuples(index=False))
             self.assertAlmostEqual(result.price, expected, places=8)
             self.assertGreater(result.fair_rate, 0.04)
-            estr = qs.LoanPricer(discount_policy=qs.FixedIncomeDiscountPolicy(
+            context.fixed_income_policy = qs.FixedIncomeDiscountPolicy(
                 {qs.Currency.EUR: qs.MarketIndex.ESTR},
-            )).evaluate(qs.Trade(instrument, REFERENCE), context, [qs.Request.Value])
+            )
+            estr = context.evaluate(qs.Trade(instrument, REFERENCE), [qs.Request.Value])
             self.assertLess(result.price, estr.price)
 
     def test_scenarios_rebuild_components_and_preserve_contract(self):
@@ -151,10 +152,10 @@ class CompositeLoanFundingTests(unittest.TestCase):
                 csa_policy=qs.SingleCurveCSADiscountPolicy(qs.Currency.EUR, qs.MarketIndex.other("PARENT")),
             ) as context:
                 requests = [qs.Request.Value, qs.Request.Sensitivities] if sensitivities else [qs.Request.Value]
-                pricer = qs.LoanPricer(discount_policy=qs.FixedIncomeDiscountPolicy(
+                context.fixed_income_policy = qs.FixedIncomeDiscountPolicy(
                     {qs.Currency.EUR: qs.MarketIndex.EURIBOR3m},
-                ))
-                return pricer.evaluate(qs.Trade(instrument, REFERENCE), context, requests)
+                )
+                return context.evaluate(qs.Trade(instrument, REFERENCE), requests)
 
         base = calibrated_value(sensitivities=True)
         epsilon = 1e-6

@@ -102,8 +102,8 @@ impl PrepaymentModelConfiguration {
     /// max(contractual_coupon_rate - refinancing_benchmark_rate, 0))``.
     /// Rates are decimals; the multiplier is nonnegative and
     /// ``0 <= base_cpr <= maximum_cpr <= 1``. Validation occurs
-    /// when constructing a Loan. Configure a LoanPricer refinancing benchmark
-    /// index to supply the observation; its AD dependencies enter sensitivities.
+    /// when constructing a Loan. Set refinancing_benchmark_index in the context's
+    /// Loan PricerConfiguration; its AD dependencies enter sensitivities.
     #[staticmethod]
     fn refinancing_incentive(base_cpr: f64, incentive_multiplier: f64, maximum_cpr: f64) -> Self {
         Self {

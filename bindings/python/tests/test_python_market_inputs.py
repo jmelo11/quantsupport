@@ -42,6 +42,31 @@ def context_inputs():
 
 
 class PythonMarketInputTests(unittest.TestCase):
+    def test_typed_loan_pricer_settings_accept_indices_and_roundtrip(self):
+        defaults = qs.PricerConfiguration.loan().to_dict()
+        self.assertEqual(defaults, {
+            "instrument_type": "Loan",
+            "pricer": {"Loan": {
+                "refinancing_benchmark_index": None,
+                "rebuild_amortization_for_fair_rate": False,
+            }},
+            "models": [],
+        })
+        for index in [qs.MarketIndex.EURIBOR12m, "EURIBOR12m", qs.MarketIndex.other("REFINANCING")]:
+            with self.subTest(index=index):
+                configuration = qs.PricerConfiguration.loan(
+                    refinancing_benchmark_index=index,
+                    rebuild_amortization_for_fair_rate=True,
+                )
+                serialized = configuration.to_dict()
+                self.assertEqual(qs.PricerConfiguration.from_dict(serialized).to_dict(), serialized)
+                self.assertTrue(serialized["pricer"]["Loan"]["rebuild_amortization_for_fair_rate"])
+                self.assertIsNotNone(serialized["pricer"]["Loan"]["refinancing_benchmark_index"])
+        self.assertEqual(qs.PricerConfiguration.loan(qs.MarketIndex.EURIBOR12m, True).to_dict(),
+                         qs.PricerConfiguration.loan("EURIBOR12m", True).to_dict())
+        with self.assertRaises(TypeError):
+            qs.PricerConfiguration.loan(refinancing_benchmark_index=42)
+
     def test_typed_curves_price_composition_with_dates_and_tenors(self):
         context = context_inputs()
         context.quotes = append_quotes(context.quotes, zero_rate_quotes(SPREAD, PILLARS, [0.01] * 3))
@@ -114,6 +139,8 @@ class PythonMarketInputTests(unittest.TestCase):
         for constructor, parameter in [
             (qs.CurveConfiguration, "market_index"),
             (qs.CurveConfiguration.composite, "base_index"),
+            (qs.PricerConfiguration.loan, "refinancing_benchmark_index"),
+            (qs.PricerConfiguration.loan, "rebuild_amortization_for_fair_rate"),
             (qs.FixedIncomeDiscountPolicy, "discount_curve_by_currency"),
             (qs.Shock, "target"),
             (qs.Shock, "value"),

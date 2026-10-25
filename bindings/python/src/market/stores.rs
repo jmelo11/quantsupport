@@ -7,7 +7,8 @@ use pyo3::prelude::*;
 use quantsupport::prelude::{
     CreditCurveConfiguration as QsCreditCurveConfiguration,
     CurveConfiguration as QsCurveConfiguration, DayCounter, DualFwd, FixingStore as QsFixingStore,
-    FxRateRecord, FxStore as QsFxStore, Interpolator, PricerConfiguration as QsPricerConfiguration,
+    FxRateRecord, FxStore as QsFxStore, InstrumentType, Interpolator,
+    PricerConfiguration as QsPricerConfiguration, PricerImplementation,
     QuoteStore as QsQuoteStore, QuoteStoreRecords,
     SimulationConfiguration as QsSimulationConfiguration,
     VolatilityCubeConfiguration as QsVolatilityCubeConfiguration,
@@ -201,6 +202,48 @@ config_wrapper!(
     "PricerConfiguration",
     "pricer configuration"
 );
+
+#[pymethods]
+impl PricerConfiguration {
+    /// Configure the core Rust loan pricer with typed Python inputs.
+    ///
+    /// Parameters
+    /// ----------
+    /// refinancing_benchmark_index : MarketIndex or str, optional
+    ///     Index benchmark for refinancing-incentive prepayment. Defaults to
+    ///     None, supplying no benchmark. Its metadata sets the observation tenor
+    ///     and rate convention; it excludes replacement-loan spreads and fees.
+    /// rebuild_amortization_for_fair_rate : bool, optional
+    ///     Defaults to False, preserving contractual principal during fair-rate
+    ///     trials. True rebuilds the trial amortization from its initial all-in
+    ///     rate. Neither setting changes the original contract.
+    ///
+    /// Returns
+    /// -------
+    /// PricerConfiguration
+    ///     Native Loan configuration for PricingContext.pricer_configurations.
+    ///     Discounting follows context.fixed_income_policy.
+    #[staticmethod]
+    #[pyo3(signature = (refinancing_benchmark_index = None, rebuild_amortization_for_fair_rate = false))]
+    fn loan(
+        refinancing_benchmark_index: Option<&Bound<'_, PyAny>>,
+        rebuild_amortization_for_fair_rate: bool,
+    ) -> PyResult<Self> {
+        Ok(Self {
+            inner: QsPricerConfiguration::new(
+                InstrumentType::Loan,
+                PricerImplementation::Loan {
+                    refinancing_benchmark_index: refinancing_benchmark_index
+                        .map(extract_market_index)
+                        .transpose()?,
+                    rebuild_amortization_for_fair_rate,
+                },
+                Vec::new(),
+            ),
+        })
+    }
+}
+
 config_wrapper!(
     SimulationConfiguration,
     QsSimulationConfiguration,

@@ -90,6 +90,8 @@ pub enum InstrumentType {
     FloatingRateNote,
     /// Fixed-rate deposit.
     FixedRateDeposit,
+    /// Loan with contractual repayment and optional prepayment or credit.
+    Loan,
     /// Fixed-versus-floating interest-rate swap.
     Swap,
     /// Fixed-versus-daily-compounded overnight indexed swap.
@@ -299,6 +301,16 @@ pub enum PricerImplementation {
     /// Deterministic straight-bond price, yield, duration, and Z-spread
     /// valuation.
     Bond,
+    /// Expected loan receipts, fair coupon/spread, and market sensitivities.
+    Loan {
+        /// Index benchmark for refinancing-incentive prepayment.
+        #[serde(default)]
+        refinancing_benchmark_index: Option<MarketIndex>,
+        /// Regenerate principal for each fair-rate trial instead of retaining
+        /// the contractual amortization schedule.
+        #[serde(default)]
+        rebuild_amortization_for_fair_rate: bool,
+    },
     /// Recombining trinomial-tree backward induction.
     TreeBased {
         /// Contractual-time discretisation.
@@ -398,6 +410,7 @@ impl PricerConfiguration {
                     | PricerImplementation::BackwardFourierEvolution { .. }
             ),
             InstrumentType::FixedRateBond => matches!(self.pricer, PricerImplementation::Bond),
+            InstrumentType::Loan => matches!(self.pricer, PricerImplementation::Loan { .. }),
             InstrumentType::FloatingRateNote
             | InstrumentType::FixedRateDeposit
             | InstrumentType::Swap
@@ -448,6 +461,7 @@ impl PricerConfiguration {
             }
             PricerImplementation::DiscountedCashflow
             | PricerImplementation::Bond
+            | PricerImplementation::Loan { .. }
             | PricerImplementation::BlackClosedForm
             | PricerImplementation::BlackMonteCarlo
             | PricerImplementation::HullWhiteClosedForm
@@ -472,6 +486,42 @@ impl PricerConfiguration {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn loan_configuration_defaults_roundtrips_and_rejects_incompatible_pricers() {
+        let configuration: PricerConfiguration =
+            serde_json::from_str(r#"{"instrument_type":"Loan","pricer":{"Loan":{}}}"#).unwrap();
+        assert!(configuration.validate().is_ok());
+        assert!(matches!(
+            configuration.pricer(),
+            PricerImplementation::Loan {
+                refinancing_benchmark_index: None,
+                rebuild_amortization_for_fair_rate: false,
+            }
+        ));
+        let serialized = serde_json::to_string(&configuration).unwrap();
+        let restored: PricerConfiguration = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(restored.instrument_type(), InstrumentType::Loan);
+        assert!(restored.validate().is_ok());
+        assert!(PricerConfiguration::new(
+            InstrumentType::Loan,
+            PricerImplementation::DiscountedCashflow,
+            Vec::new(),
+        )
+        .validate()
+        .is_err());
+        assert!(PricerConfiguration::new(
+            InstrumentType::Swap,
+            configuration.pricer().clone(),
+            Vec::new(),
+        )
+        .validate()
+        .is_err());
+        assert!(serde_json::from_str::<PricerConfiguration>(
+            r#"{"instrument_type":"Loan","pricer":{"Loan":{"unknown_setting":true}}}"#,
+        )
+        .is_err());
+    }
 
     #[test]
     fn ois_uses_distinct_discounted_cashflow_configuration() {

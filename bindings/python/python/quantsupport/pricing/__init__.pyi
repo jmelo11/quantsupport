@@ -8,7 +8,7 @@ from ..market import CreditCurveConfiguration, Currency, CurveConfiguration, Dis
 from ..instruments import Instrument, ScriptedProduct, Side
 from ..risk import XvaResult
 __all__ = ['Request', 'PricerConfiguration', 'SingleCurveCSADiscountPolicy', 'FixedIncomeDiscountPolicy', 'BondPricingAnchor',
-           'PricingContext', 'LoanPricer', 'Trade', 'Pricer', 'MarketDataProvider', 'Evaluator', 'Portfolio', 'EvaluationResults']
+           'PricingContext', 'Trade', 'Pricer', 'MarketDataProvider', 'Evaluator', 'Portfolio', 'EvaluationResults']
 
 
 @final
@@ -123,12 +123,43 @@ Request
 class PricerConfiguration:
     """Select a native pricing implementation and its index-keyed models.
 
-Load configurations through from_dict(), from_dict_list(), or from_json().
+Build loan configurations with loan(), or load serialized configurations
+through from_dict(), from_dict_list(), or from_json().
 They select an engine for an instrument family; they are not Python-pricer
 registrations. Native compatibility checks run when the context is validated.
 """
 
     def __repr__(self) -> str:
+        ...
+
+    @staticmethod
+    def loan(refinancing_benchmark_index: _IndexLike | None = ..., rebuild_amortization_for_fair_rate: bool = ...) -> PricerConfiguration:
+        """Configure the core Rust loan pricer with typed Python inputs.
+
+Parameters
+----------
+refinancing_benchmark_index : MarketIndex or str, optional
+    Index benchmark for refinancing-incentive prepayment. Defaults to None,
+    supplying no benchmark. Its metadata sets the observation tenor and rate
+    convention; it excludes replacement-loan spreads and fees.
+rebuild_amortization_for_fair_rate : bool, optional
+    Defaults to False, preserving contractual principal during fair-rate trials.
+    True rebuilds the trial amortization from its initial all-in rate.
+    Neither setting changes the original contract.
+
+Returns
+-------
+PricerConfiguration
+    Native Loan configuration for PricingContext.pricer_configurations.
+    Discounting follows context.fixed_income_policy.
+
+Raises
+------
+TypeError
+    If a supplied setting has an unsupported type.
+QuantSupportError
+    If the benchmark index cannot be parsed.
+"""
         ...
 
     @staticmethod
@@ -142,7 +173,10 @@ obj : mapping
     fields. ``models`` defaults to an empty list; each supplied entry requires
     ``market_index`` and a native tagged ``model``. Unit pricer variants use
     strings, for example ``"Bond"``; data-carrying variants use tagged mappings,
-    for example ``{"TreeBased": {}}``. Unknown configuration fields are rejected.
+    for example ``{"TreeBased": {}}``. Loan settings use ``{"Loan": {}}``, with
+    optional ``refinancing_benchmark_index`` and
+    ``rebuild_amortization_for_fair_rate`` (default False). The Loan family
+    dispatches directly to the core Rust loan pricer. Unknown fields are rejected.
 
 Returns
 -------
@@ -1213,71 +1247,6 @@ valuations. Unlike market-input reassignment, this does not rebuild market data.
         value : FixedIncomeDiscountPolicy or None
             New fixed-income discount override; None restores the base-curve policy.
         """
-        ...
-
-
-@final
-class LoanPricer:
-    """Native loan valuation with refinancing and discount-policy overrides.
-
-Parameters
-----------
-refinancing_benchmark_index : MarketIndex or str, optional
-    Benchmark index for refinancing-incentive prepayment. Its metadata supplies
-    observation tenor and quote convention; it excludes replacement-loan lending
-    spreads and fees. None, the default, supplies no override, so refinancing-
-    incentive prepayment requires an explicitly configured benchmark.
-discount_policy : FixedIncomeDiscountPolicy, optional
-    Loan discount-curve override. None, the default, uses the context's fixed-
-    income policy, which by default maps its base currency to its base curve.
-rebuild_amortization_for_fair_rate : bool, optional
-    Defaults to False, preserving contractual principal in FairRate trials.
-    True rebuilds amortization for each candidate from its repayment structure
-    and initial all-in rate. Neither setting changes the original loan or the
-    principal used for Value and Sensitivities.
-"""
-
-    def __new__(cls, refinancing_benchmark_index: _IndexLike | None = ..., discount_policy: FixedIncomeDiscountPolicy | None = ..., rebuild_amortization_for_fair_rate: bool = ...) -> Self:
-        """Configure refinancing/discount overrides and whether FairRate trials rebuild amortization."""
-        ...
-
-    def evaluate(self, trade: Trade, context: PricingContext, requests: Sequence[Request | str] | None = ...) -> EvaluationResults:
-        """Value a loan's signed expected receipts, excluding its initial advance.
-
-Parameters
-----------
-trade : Trade
-    Position wrapping a Loan. A notional override rebuilds the contractual
-    principal schedule at that amount; side controls receipt direction.
-context : PricingContext
-    Initialized native context, entered on its owning thread or initialized
-    explicitly. Market inputs are resolved from its active scenario view.
-    Monetary PVs and sensitivities use its base currency, with automatic spot
-    conversion and FX sensitivities; cashflows retain their payment currency.
-requests : sequence of Request or str, optional
-    Value, Cashflows, Sensitivities, or FairRate, as typed requests or names.
-    None, the default, selects Value. Sensitivities are derivatives per unit
-    market-pillar change. Request.FairRate(index) returns the selected zero-based
-    segment's scalar in fair_rate. Earlier segments are solved first, repaying
-    remaining capital at each prefix end and retaining solved rates when extending.
-    Each solve is at/before origination over [-0.05, 0.50]. Bounded coupons and
-    invalid indices are rejected.
-
-Returns
--------
-EvaluationResults
-    Signed receipt PV, raw pillar derivatives, annual decimal fair rate, and/or
-    expected future receipts. Cashflow leg indices 0, 1, and 2 identify scheduled
-    payments, prepayment, and recovery respectively.
-
-Raises
-------
-TypeError
-    If trade does not wrap a Loan.
-QuantSupportError
-    If the context is uninitialized, observations or projection terms are
-    unavailable/invalid, a request is unsupported, or the fair-rate solve fails.
-"""
         ...
 
 

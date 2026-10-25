@@ -21,7 +21,7 @@ use crate::pricing::extension::{Instrument, Trade};
 ///
 /// Contractual principal and cashflows are fixed at construction. Market rates,
 /// prepayment, and default are applied during valuation through ``Trade`` and
-/// ``PricingContext`` or ``LoanPricer``. Dates and enums accept their typed values
+/// ``PricingContext``. Dates and enums accept their typed values
 /// or string representations; coupons, repayment, and prepayment terms also accept
 /// their native JSON-compatible representations.
 ///

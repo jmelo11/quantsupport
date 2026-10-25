@@ -94,7 +94,6 @@ fn quantsupport(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Instruments
     m.add_class::<instruments::products::Swap>()?;
     m.add_class::<instruments::loan::Loan>()?;
-    m.add_class::<pricing::loan::LoanPricer>()?;
     m.add_class::<instruments::loan_terms::LoanRepaymentStructure>()?;
     m.add_class::<instruments::loan_terms::PrepaymentModelConfiguration>()?;
     m.add_class::<instruments::products::CrossCurrencySwap>()?;

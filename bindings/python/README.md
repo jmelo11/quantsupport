@@ -166,7 +166,10 @@ request instead.
   straight bonds use Z-spread, issuer-call bonds OAS. Discounting is a policy
   choice, not an automatic inference from currency.
 - Loan Value is future expected receipt PV, excluding the initial advance.
-  Loan fair-rate and prepayment choices are explained in the guide.
+  Evaluate `qs.Trade` positions or portfolios with `context.evaluate(...)`,
+  which uses the core Rust loan pricer. Select fair-rate and refinancing options
+  through `PricerConfiguration.loan(...)`, and choose discounting with
+  `context.fixed_income_policy`.
 - Python scripting returns averaged numeric variables, not sensitivity/
   cashflow tables. Rate models are explicit; finite-path estimator comparisons
   need not reconcile raw cashflow PVs with a control-adjusted selected variable.

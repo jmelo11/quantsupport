@@ -41,7 +41,7 @@ PYTHON_SECTIONS = {
     "pricing": {
         "Positions and Requests": "Trade Portfolio Request BondPricingAnchor",
         "Contexts and Results": "PricingContext EvaluationResults",
-        "Pricers and Policies": "LoanPricer PricerConfiguration SingleCurveCSADiscountPolicy FixedIncomeDiscountPolicy",
+        "Pricers and Policies": "PricerConfiguration SingleCurveCSADiscountPolicy FixedIncomeDiscountPolicy",
         "Python Extension Interfaces": "Pricer MarketDataProvider Evaluator",
     },
     "risk": {

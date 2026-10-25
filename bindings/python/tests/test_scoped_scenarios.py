@@ -188,18 +188,17 @@ class ScopedScenarioTests(unittest.TestCase):
             for identifier in funding_quotes.identifiers() if "FUNDINGSPREAD" in identifier
         ])
         context.curves = qs.CurveConfiguration.from_json(path=str(data / "loan_curves.json")) + context.curves[-2:]
-        pricer = qs.LoanPricer()
         trade = qs.Trade(instrument=loan(floating=True), trade_date="2026-02-24")
         requests = [qs.Request.Value, qs.Request.Sensitivities]
         with context:
-            base = pricer.evaluate(trade=trade, context=context, requests=requests)
+            base = context.evaluate(trade=trade, requests=requests)
             with qs.Scenario(shocks=[
                 qs.Shock(target="EURIBOR12m", value=0.01, shock_type=qs.ScenarioType.Absolute),
                 qs.Shock(target="FUNDINGSPREAD", value=0.005, shock_type=qs.ScenarioType.Absolute),
             ]):
-                stressed = pricer.evaluate(trade=trade, context=context, requests=requests)
+                stressed = context.evaluate(trade=trade, requests=requests)
                 self.assertNotAlmostEqual(stressed.price, base.price)
-            restored = pricer.evaluate(trade=trade, context=context, requests=requests)
+            restored = context.evaluate(trade=trade, requests=requests)
             self.assertAlmostEqual(restored.price, base.price)
             before = dict(zip(base.sensitivities.pillar, base.sensitivities.value))
             after = dict(zip(restored.sensitivities.pillar, restored.sensitivities.value))
@@ -209,12 +208,11 @@ class ScopedScenarioTests(unittest.TestCase):
 
     def test_funding_pillar_sensitivities_match_scoped_repricing(self):
         context = funding_context()
-        pricer = qs.LoanPricer()
         epsilon = 1e-6
         for floating in [False, True]:
             trade = qs.Trade(instrument=loan(floating=floating), trade_date="2026-02-24")
             with context:
-                base = pricer.evaluate(trade=trade, context=context,
+                base = context.evaluate(trade=trade,
                     requests=[qs.Request.Value, qs.Request.Sensitivities, qs.Request.Cashflows])
                 funding_risk = base.sensitivities.loc[base.sensitivities.pillar.str.startswith("ZeroRate_EUR_FUNDINGSPREAD_")]
                 self.assertEqual(len(funding_risk), 4)
@@ -222,13 +220,13 @@ class ScopedScenarioTests(unittest.TestCase):
                     prices = []
                     for shift in [-epsilon, epsilon]:
                         with qs.Scenario(shocks=[qs.Shock(target=row.pillar, value=shift, shock_type=qs.ScenarioType.Absolute)]):
-                            result = pricer.evaluate(trade=trade, context=context,
+                            result = context.evaluate(trade=trade,
                                 requests=[qs.Request.Value, qs.Request.Cashflows])
                             prices.append(result.price)
                             self.assertEqual(result.cashflows.amount.tolist(), base.cashflows.amount.tolist())
                     numerical = (prices[1] - prices[0]) / (2 * epsilon)
                     self.assertAlmostEqual(row.value, numerical, delta=max(0.02, abs(numerical) * 1e-6))
-                restored = pricer.evaluate(trade=trade, context=context,
+                restored = context.evaluate(trade=trade,
                     requests=[qs.Request.Value, qs.Request.Sensitivities])
                 self.assertAlmostEqual(restored.price, base.price)
                 self.assertEqual(restored.sensitivities.pillar.tolist(), base.sensitivities.pillar.tolist())

@@ -13,6 +13,11 @@ assert_type(qs.Interpolator.Linear, qs.Interpolator)
 assert_type(qs.Interpolator.parse(s="Linear"), qs.Interpolator)
 assert_type(qs.DayCounter.Actual360, qs.DayCounter)
 assert_type(qs.Request.Sensitivities, qs.Request)
+assert_type(qs.PricerConfiguration.loan(), qs.PricerConfiguration)
+assert_type(qs.PricerConfiguration.loan(
+    refinancing_benchmark_index=qs.MarketIndex.EURIBOR12m,
+    rebuild_amortization_for_fair_rate=True,
+), qs.PricerConfiguration)
 start = qs.Date(year=2026, month=2, day=24)
 period = qs.Period(length=30, units=qs.TimeUnit.Years)
 assert_type(start + period, qs.Date)

@@ -358,7 +358,8 @@ class PrepaymentModelConfiguration:
         Returns
         -------
         PrepaymentModelConfiguration
-            Incentive-based terms requiring a LoanPricer refinancing index.
+            Incentive-based terms requiring refinancing_benchmark_index in the
+            context's Loan PricerConfiguration.
         """
         ...
 
