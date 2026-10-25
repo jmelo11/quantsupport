@@ -211,7 +211,7 @@ impl PricerObject {
         &self,
         trade: &QsObject,
         requests: &[Request],
-        context: &PricingContext,
+        context: &impl MarketDataProvider,
     ) -> Result<EvaluationResults, String> {
         let native: &dyn Any = match trade {
             QsObject::LoanTrade(trade) => trade.as_ref(),

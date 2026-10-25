@@ -1767,6 +1767,21 @@ mod reporting_tests {
         assert!(
             (local_fair.unwrap_or_default() - converted_fair.unwrap_or_default()).abs() < 1e-12
         );
+        // Portfolio accumulation consumes completed base-currency results.
+        let portfolio = Portfolio::new(
+            "TEST-PORTFOLIO".into(),
+            vec![self::trade()?, self::trade()?],
+        )?;
+        let total =
+            PortfolioPricer::new(self::pricer()).evaluate(&portfolio, &requests, &context)?;
+        assert!(
+            (total
+                .price()
+                .ok_or_else(|| QSError::ValueNotSetErr("PV".into()))?
+                - 2.2 * local)
+                .abs()
+                < 1e-8
+        );
         let evaluator = Evaluator::new(HashMap::from([(
             TypeId::of::<FixedRateDepositTrade<DualFwd>>(),
             Box::new(pricer) as Box<dyn ErasedPricer>,

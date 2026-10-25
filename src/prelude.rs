@@ -181,6 +181,7 @@ pub use crate::{
             treebasedbondpricer::TreeBasedBondPricer,
         },
         fx::{fxeuropeanoptionpricer::FxEuropeanOptionPricer, fxforwardpricer::FxForwardPricer},
+        portfoliopricer::PortfolioPricer,
         rates::{
             closedformblackcapletpricer::ClosedFormBlackCapletPricer,
             closedformblackcappricer::ClosedFormBlackCapPricer,

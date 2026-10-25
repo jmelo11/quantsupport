@@ -25,8 +25,8 @@ use crate::{
 /// let result = EvaluationResults::new(Date::new(2026, 1, 15), "trade".into())
 ///     .with_price(12.0)
 ///     .with_cashflows(CashflowsTable::new());
-/// accumulator.accumulate_trade_result(Some(Currency::USD), &result)?;
-/// assert_eq!(accumulator.into_evaluation_results()?.price(), Some(12.0));
+/// accumulator.accumulate_trade_result(&result)?;
+/// assert_eq!(accumulator.into_evaluation_results("TEST-PORTFOLIO".into())?.price(), Some(12.0));
 /// # Ok::<(), QSError>(())
 /// ```
 pub struct MakePortfolioAccumulator<A = GrossCashflowAggregator> {

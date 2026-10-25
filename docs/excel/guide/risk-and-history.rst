@@ -51,10 +51,10 @@ Portfolio aggregation
    B5 =QS.RESULT.COUPONS(B3)
    B6 =QS.RESULT.CASHFLOW.SUMMARY(B3)
 
-The portfolio holds an ordered trade-reference array. Repeated handles count as
+The portfolio uses the caller-supplied name as its identifier and holds an ordered trade-reference array. Repeated handles count as
 repeated positions. Pass one pricer for all members or one per member. Value and
-Sensitivities require a common monetary value currency; the currency argument
-identifies those units and does not perform an FX conversion. Unsupported or
+Sensitivities are computed natively in the context base currency, including
+FX risk. The optional currency argument must match that base currency. Unsupported or
 incomplete measures remain absent.
 
 Evaluation streams one trade at a time and releases its intermediate result.

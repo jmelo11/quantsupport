@@ -1,7 +1,7 @@
 //! Aggregate completed, numeric trade results without retaining an AD graph.
 
 use crate::core::cashflowaggregation::{CashflowAggregator, GrossCashflowAggregator};
-use crate::core::makeportfolioaccumulator::MakePortfolioAccumulator;
+use crate::core::instrument::Instrument;
 use crate::math::compensatedsum::CompensatedSum;
 use crate::prelude::{
     CashflowKind, CashflowsTable, Currency, Date, EvaluationResults, QSError, Request,
@@ -11,7 +11,10 @@ use crate::utils::errors::Result;
 use std::collections::{BTreeMap, HashSet};
 
 /// Ordered trade collection. Repeated entries represent repeated positions.
+///
+/// Valuation belongs to [`PortfolioPricer`](crate::pricers::portfoliopricer::PortfolioPricer).
 pub struct Portfolio<T> {
+    identifier: String,
     trades: Vec<T>,
 }
 
@@ -19,14 +22,25 @@ impl<T> Portfolio<T> {
     /// Creates a nonempty portfolio, preserving order and multiplicity.
     ///
     /// # Errors
-    /// Rejects an empty trade list.
-    pub fn new(trades: Vec<T>) -> Result<Self> {
+    /// Rejects a blank identifier or an empty trade list.
+    pub fn new(identifier: String, trades: Vec<T>) -> Result<Self> {
+        if identifier.trim().is_empty() {
+            return Err(QSError::InvalidValueErr(
+                "A portfolio requires an identifier".into(),
+            ));
+        }
         if trades.is_empty() {
             return Err(QSError::InvalidValueErr(
                 "A portfolio requires at least one trade".into(),
             ));
         }
-        Ok(Self { trades })
+        Ok(Self { identifier, trades })
+    }
+
+    /// Returns the caller-supplied portfolio identifier.
+    #[must_use]
+    pub fn identifier(&self) -> &str {
+        &self.identifier
     }
 
     /// Returns the original trade list.
@@ -34,60 +48,11 @@ impl<T> Portfolio<T> {
     pub fn trades(&self) -> &[T] {
         &self.trades
     }
+}
 
-    /// Prices each trade and immediately aggregates its numeric results.
-    ///
-    /// The callback completes differentiation before returning and identifies
-    /// the currency of its monetary PV and derivatives. Cashflows retain their
-    /// own currencies. Built-in pricers reuse their per-trade AD tape; no AD
-    /// values or per-trade result collection are retained by this method.
-    /// Unsupported aggregate requests are ignored. A measure omitted by any
-    /// member remains absent from the returned standard [`EvaluationResults`].
-    /// PV and sensitivities must share one pricing currency. Cashflow compression
-    /// retains coupon types, periods, indices, conventions and pay/receive
-    /// direction, deriving compatible rates/spreads from actual reported interest.
-    ///
-    /// # Errors
-    /// Rejects absent value currencies for supplied monetary measures,
-    /// inconsistent dates, nonfinite results, or any trade pricing failure.
-    /// No partial portfolio result is returned on failure.
-    pub fn evaluate(
-        &self,
-        requests: &[Request],
-        evaluate: impl FnMut(usize, &T, &[Request]) -> Result<(Option<Currency>, EvaluationResults)>,
-    ) -> Result<EvaluationResults> {
-        self.evaluate_with_aggregator(requests, GrossCashflowAggregator::default(), evaluate)
-    }
-
-    /// Evaluates trades using the supplied cashflow aggregation strategy.
-    ///
-    /// # Errors
-    /// Propagates trade pricing, inconsistent monetary units/dates, nonfinite
-    /// results and cashflow aggregation errors. No partial result is returned.
-    pub fn evaluate_with_aggregator<A: CashflowAggregator>(
-        &self,
-        requests: &[Request],
-        aggregator: A,
-        mut evaluate: impl FnMut(usize, &T, &[Request]) -> Result<(Option<Currency>, EvaluationResults)>,
-    ) -> Result<EvaluationResults> {
-        let mut results = MakePortfolioAccumulator::default()
-            .with_requests(requests)
-            .with_cashflow_aggregator(aggregator)
-            .build()?;
-        let unique = results.requests.clone();
-        for (index, trade) in self.trades.iter().enumerate() {
-            let (currency, value) = evaluate(index, trade, &unique).map_err(|error| {
-                error.context(format!("pricing portfolio member {}", index + 1))
-            })?;
-            results.accumulate_trade_result(currency, &value).map_err(|error| {
-                error.context(format!(
-                    "aggregating portfolio member {} ({})",
-                    index + 1,
-                    value.identifier()
-                ))
-            })?;
-        }
-        results.into_evaluation_results()
+impl<T: Send + Sync> Instrument for Portfolio<T> {
+    fn identifier(&self) -> String {
+        self.identifier.clone()
     }
 }
 
@@ -153,12 +118,11 @@ struct CashflowSums {
 
 /// Incrementally combines numeric results using an injected cashflow strategy.
 ///
-/// Use [`MakePortfolioAccumulator`] for stepwise construction.
+/// Use [`MakePortfolioAccumulator`](crate::core::makeportfolioaccumulator::MakePortfolioAccumulator) for stepwise construction.
 pub struct PortfolioAccumulator<A = GrossCashflowAggregator> {
     requests: Vec<Request>,
     unavailable: HashSet<Request>,
     evaluation_date: Option<Date>,
-    value_currency: Option<Currency>,
     value: CompensatedSum,
     sensitivities: BTreeMap<String, CompensatedSum>,
     cashflows: A,
@@ -184,19 +148,24 @@ impl<A: CashflowAggregator> PortfolioAccumulator<A> {
             requests: unique,
             unavailable: HashSet::new(),
             evaluation_date: None,
-            value_currency: None,
             value: CompensatedSum::default(),
             sensitivities: BTreeMap::new(),
             cashflows: cashflow_aggregator,
         }
     }
 
+    /// Returns supported, deduplicated aggregate requests in their original order.
+    #[must_use]
+    pub fn requests(&self) -> &[Request] {
+        &self.requests
+    }
+
     /// Adds one completed trade result.
     ///
     /// # Errors
-    /// Rejects inconsistent dates/currencies, missing monetary units and nonfinite values.
+    /// Rejects inconsistent dates and nonfinite values.
     /// Discard the accumulator after an error; no partial result should be published.
-    pub fn accumulate_trade_result(&mut self, currency: Option<Currency>, result: &EvaluationResults) -> Result<()> {
+    pub fn accumulate_trade_result(&mut self, result: &EvaluationResults) -> Result<()> {
         if self
             .evaluation_date
             .is_some_and(|date| date != result.evaluation_date())
@@ -206,21 +175,6 @@ impl<A: CashflowAggregator> PortfolioAccumulator<A> {
             ));
         }
         self.evaluation_date = Some(result.evaluation_date());
-        if let Some(currency) = currency {
-            if self
-                .requests
-                .iter()
-                .any(|request| matches!(request, Request::Value | Request::Sensitivities))
-            {
-                if self
-                    .value_currency
-                    .is_some_and(|previous| previous != currency)
-                {
-                    return Err(QSError::InvalidValueErr("Portfolio PV and sensitivities require one common pricing currency; use a common discount policy or aggregate currency portfolios separately".into()));
-                }
-                self.value_currency = Some(currency);
-            }
-        }
         for request in &self.requests {
             if self.unavailable.contains(request) {
                 continue;
@@ -231,7 +185,6 @@ impl<A: CashflowAggregator> PortfolioAccumulator<A> {
                         self.unavailable.insert(*request);
                         continue;
                     };
-                    currency.ok_or_else(|| QSError::InvalidValueErr("Supply the pricing currency for every portfolio member when requesting Value or Sensitivities".into()))?;
                     self.value.add(value)?;
                 }
                 Request::Sensitivities => {
@@ -239,7 +192,6 @@ impl<A: CashflowAggregator> PortfolioAccumulator<A> {
                         self.unavailable.insert(*request);
                         continue;
                     };
-                    currency.ok_or_else(|| QSError::InvalidValueErr("Supply the pricing currency for every portfolio member when requesting Value or Sensitivities".into()))?;
                     if risk.instrument_keys().len() != risk.exposure().len() {
                         return Err(QSError::InvalidValueErr(
                             "Mismatched sensitivity keys and values".into(),
@@ -269,11 +221,11 @@ impl<A: CashflowAggregator> PortfolioAccumulator<A> {
     ///
     /// # Errors
     /// Rejects an empty accumulator or failure of the injected cashflow strategy.
-    pub fn into_evaluation_results(self) -> Result<EvaluationResults> {
+    pub fn into_evaluation_results(self, identifier: String) -> Result<EvaluationResults> {
         let date = self
             .evaluation_date
             .ok_or_else(|| QSError::ValueNotSetErr("Portfolio evaluation date".into()))?;
-        let mut result = EvaluationResults::new(date, "Portfolio".into());
+        let mut result = EvaluationResults::new(date, identifier);
         if self.requests.contains(&Request::Value) && !self.unavailable.contains(&Request::Value) {
             result = result.with_price(self.value.total());
         }
@@ -352,7 +304,51 @@ fn add_cashflows(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::prelude::{
+        MakePortfolioAccumulator, MarketDataProvider, MarketDataRequest, PortfolioPricer, Pricer,
+        PricingContext,
+    };
 
+    struct FixturePricer<F>(F);
+
+    impl<F> Pricer for FixturePricer<F>
+    where
+        F: Fn(usize, &usize, &[Request]) -> Result<EvaluationResults> + Send + Sync,
+    {
+        type Item = usize;
+        type Policy = ();
+
+        fn evaluate(
+            &self,
+            trade: &usize,
+            requests: &[Request],
+            _context: &impl MarketDataProvider,
+        ) -> Result<EvaluationResults> {
+            (self.0)(*trade, trade, requests)
+        }
+        fn market_data_request(&self, _trade: &usize) -> Option<MarketDataRequest> {
+            None
+        }
+        fn set_discount_policy(&mut self, _policy: Box<()>) {}
+        fn discount_policy(&self) -> Option<&()> {
+            None
+        }
+    }
+
+    /// Evaluates numeric fixtures through the standard portfolio pricer.
+    fn evaluate(
+        portfolio: &Portfolio<usize>,
+        requests: &[Request],
+        member: impl Fn(usize, &usize, &[Request]) -> Result<EvaluationResults> + Send + Sync,
+    ) -> Result<EvaluationResults> {
+        PortfolioPricer::new(FixturePricer(member)).evaluate(
+            portfolio,
+            requests,
+            &PricingContext::new(),
+        )
+    }
+
+    /// Builds a completed trade result with signed mixed-currency payments and repeated risk labels.
     fn result(index: usize) -> EvaluationResults {
         let date = Date::new(2026, 1, 15);
         let mut flows = CashflowsTable::new();
@@ -398,8 +394,9 @@ mod tests {
 
     #[test]
     fn compresses_results_and_separates_interest_capital_and_currencies() -> Result<()> {
-        let portfolio = Portfolio::new(vec![1, 1, 2])?;
-        let results = portfolio.evaluate(
+        let portfolio = Portfolio::new("TEST-PORTFOLIO".into(), vec![1, 1, 2])?;
+        let results = evaluate(
+            &portfolio,
             &[
                 Request::Value,
                 Request::Cashflows,
@@ -408,7 +405,7 @@ mod tests {
             ],
             |index, _, requests| {
                 assert_eq!(requests.len(), 3);
-                Ok((Some(Currency::USD), result(index)))
+                Ok(result(index))
             },
         )?;
         assert_eq!(results.price(), Some(36.0));
@@ -439,28 +436,27 @@ mod tests {
     #[test]
     fn unsupported_and_missing_measures_remain_absent_without_errors_or_partial_totals(
     ) -> Result<()> {
-        let portfolio = Portfolio::new(vec![0, 1])?;
-        let results = portfolio.evaluate(
+        let portfolio = Portfolio::new("TEST-PORTFOLIO".into(), vec![0, 1])?;
+        let results = evaluate(
+            &portfolio,
             &[Request::FairRate(0), Request::YieldToMaturity],
             |index, _, requests| {
                 assert!(requests.is_empty());
-                Ok((None, result(index)))
+                Ok(result(index))
             },
         )?;
         assert!(
             results.price().is_none() && results.fair_rate().is_none() && results.ytm().is_none()
         );
-        let results = portfolio.evaluate(
+        let results = evaluate(
+            &portfolio,
             &[Request::Value, Request::Cashflows, Request::Sensitivities],
             |index, _, _| {
-                Ok((
-                    Some(Currency::USD),
-                    if index == 0 {
-                        result(index)
-                    } else {
-                        EvaluationResults::new(Date::new(2026, 1, 15), "missing".into())
-                    },
-                ))
+                Ok(if index == 0 {
+                    result(index)
+                } else {
+                    EvaluationResults::new(Date::new(2026, 1, 15), "missing".into())
+                })
             },
         )?;
         assert!(
@@ -472,46 +468,35 @@ mod tests {
     }
 
     #[test]
-    fn rejects_mixed_pv_units_inconsistent_dates_and_nonfinite_values() -> Result<()> {
-        let portfolio = Portfolio::new(vec![0, 1])?;
-        assert!(portfolio
-            .evaluate(&[Request::Value], |index, _, _| Ok((
-                Some(if index == 0 {
-                    Currency::USD
-                } else {
-                    Currency::EUR
-                }),
-                result(index)
-            )))
-            .is_err());
-        assert!(portfolio
-            .evaluate(&[Request::Value], |index, _, _| Ok((None, result(index))))
-            .is_err());
-        assert!(portfolio
-            .evaluate(&[Request::Cashflows], |index, _, _| Ok((
-                None,
-                result(index).with_evaluation_date(Date::new(
-                    2026,
-                    1,
-                    if index == 0 { 15 } else { 16 }
-                ))
-            )))
-            .is_err());
-        assert!(portfolio
-            .evaluate(&[Request::Value], |index, _, _| Ok((
-                Some(Currency::USD),
-                result(index).with_price(f64::NAN)
-            )))
-            .is_err());
-        assert!(Portfolio::<()>::new(vec![]).is_err());
+    fn rejects_inconsistent_dates_and_nonfinite_values() -> Result<()> {
+        let portfolio = Portfolio::new("TEST-PORTFOLIO".into(), vec![0, 1])?;
+        assert!(
+            evaluate(&portfolio, &[Request::Cashflows], |index, _, _| Ok(result(
+                index
+            )
+            .with_evaluation_date(Date::new(
+                2026,
+                1,
+                if index == 0 { 15 } else { 16 }
+            ))))
+            .is_err()
+        );
+        assert!(
+            evaluate(&portfolio, &[Request::Value], |index, _, _| Ok(result(
+                index
+            )
+            .with_price(f64::NAN)))
+            .is_err()
+        );
+        assert!(Portfolio::<()>::new("TEST-PORTFOLIO".into(), vec![]).is_err());
         Ok(())
     }
 
     #[test]
     fn compensated_sums_preserve_small_exposures_after_large_offsets() -> Result<()> {
-        let portfolio = Portfolio::new(vec![1e16, 1.0, -1e16])?;
-        let result = portfolio.evaluate(&[Request::Value], |_, value, _| {
-            Ok((Some(Currency::USD), result(0).with_price(*value)))
+        let portfolio = Portfolio::new("TEST-PORTFOLIO".into(), vec![0, 1, 2])?;
+        let result = evaluate(&portfolio, &[Request::Value], |_, value, _| {
+            Ok(result(0).with_price([1e16, 1.0, -1e16][*value]))
         })?;
         assert_eq!(result.price(), Some(1.0));
         Ok(())
@@ -526,7 +511,7 @@ mod tests {
         assert!(MakePortfolioAccumulator::default()
             .with_requests(&[Request::Value])
             .build()?
-            .into_evaluation_results()
+            .into_evaluation_results("TEST-PORTFOLIO".into())
             .is_err());
         let mut accumulator = MakePortfolioAccumulator::default()
             .with_requests(&[
@@ -541,8 +526,8 @@ mod tests {
             accumulator.requests,
             vec![Request::Value, Request::Cashflows]
         );
-        accumulator.accumulate_trade_result(Some(Currency::USD), &result(0))?;
-        let result = accumulator.into_evaluation_results()?;
+        accumulator.accumulate_trade_result(&result(0))?;
+        let result = accumulator.into_evaluation_results("TEST-PORTFOLIO".into())?;
         let flows = result
             .cashflows()
             .ok_or_else(|| QSError::ValueNotSetErr("net cashflows".into()))?;
@@ -566,10 +551,16 @@ mod tests {
                 Ok(CashflowsTable::new())
             }
         }
-        let error = Portfolio::new(vec![0])?
-            .evaluate_with_aggregator(&[Request::Cashflows], RejectCashflows, |index, _, _| {
-                Ok((None, result(index)))
-            })
+        let pricer = PortfolioPricer::new(FixturePricer(|index, _: &usize, _: &[Request]| {
+            Ok(result(index))
+        }))
+        .with_cashflow_aggregator_factory(|| RejectCashflows);
+        let error = pricer
+            .evaluate(
+                &Portfolio::new("TEST-PORTFOLIO".into(), vec![0])?,
+                &[Request::Cashflows],
+                &PricingContext::new(),
+            )
             .err()
             .ok_or_else(|| QSError::ValueNotSetErr("strategy error".into()))?;
         let message = error.to_string();

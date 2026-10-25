@@ -15,3 +15,5 @@ pub mod fixedincome;
 pub mod fx;
 /// Rates pricers.
 pub mod rates;
+/// Streaming portfolio valuation and aggregation.
+pub mod portfoliopricer;

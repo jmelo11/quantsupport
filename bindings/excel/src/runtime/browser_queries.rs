@@ -148,7 +148,7 @@ pub fn execute(registry: &Registry, request: &BrowserQuery) -> Result<BrowserRes
             }
             None
         };
-        let results = pricer.evaluate(preview.as_ref().unwrap_or(object), &requests, &context)?;
+        let results = pricer.evaluate(preview.as_ref().unwrap_or(object), &requests, context.as_ref())?;
         return evaluation_table(&results, &request.request);
     }
 
