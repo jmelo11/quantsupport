@@ -26,7 +26,8 @@ pub struct QuotedCurve {
 }
 
 impl QuotedCurve {
-    pub(crate) fn resolve(
+    /// Resolves discount-factor or zero-rate pillar quotes into a direct-quote curve definition.
+    pub fn resolve(
         quotes: &[Quote],
         reference_date: Date,
         level: Level,
@@ -124,7 +125,8 @@ impl QuotedCurve {
         Ok(Some(result))
     }
 
-    pub(crate) fn construct(
+    /// Constructs a zero-rate or discount-factor term structure from the resolved pillar values.
+    pub fn construct(
         &self,
         spec: &CurveConfiguration,
     ) -> Result<(Box<dyn ADCurveElement>, BootstrappedCurve)> {
