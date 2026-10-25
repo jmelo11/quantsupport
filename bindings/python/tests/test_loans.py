@@ -7,6 +7,8 @@ import unittest
 
 import quantsupport as qs
 
+from market_fixtures import append_quotes, zero_rate_quotes
+
 REFERENCE = "2026-02-24"
 
 
@@ -58,11 +60,10 @@ class LoanWorkflowTests(unittest.TestCase):
         context = build_pricing_context()
         with context:
             local = context.evaluate(trade, ["Value", "Sensitivities", "Cashflows"])
+        context.quotes = append_quotes(context.quotes, zero_rate_quotes("SOFR", ["0D", "5Y"], [0.03, 0.03], "USD"))
         context.curves = [*context.curves, qs.CurveConfiguration(
             market_index="SOFR",
-            construction=qs.CurveConstruction.zero_rate(
-                pillars=["0D", "5Y"], rates=[0.03, 0.03],
-            ),
+            quotes=["ZeroRate_USD_SOFR_0D", "ZeroRate_USD_SOFR_5Y"],
         )]
         context.csa_policy = qs.SingleCurveCSADiscountPolicy("USD", "SOFR")
         context.fixed_income_policy = qs.FixedIncomeDiscountPolicy({"EUR": "ESTR"})

@@ -46,10 +46,10 @@ scales matching optionlet volatilities by 1.10. Overlapping transformations
 compose in supplied order. All available quote levels are transformed, then
 the context's selected bid/mid/ask level is consumed.
 
-Explicit zero-rate pillars can also be targeted. A funding spread curve may
-expose `FUNDINGSPREAD_<date>` labels; targeting `FUNDINGSPREAD` changes its
-whole explicit ladder. Historical fixings and spot FX are not implied targets
-of this quote/explicit-pillar mechanism. Empty targets, nonfinite shocks and
+Direct zero-rate quotes can also be targeted. A funding spread curve may
+expose `ZeroRate_EUR_FUNDINGSPREAD_<tenor>` identifiers; targeting
+`FUNDINGSPREAD` changes all matching spread quotes. Historical fixings and spot
+FX are not implied targets of this quote mechanism. Empty targets, nonfinite shocks and
 unmatched selectors are errors.
 
 ## Independent views and construction

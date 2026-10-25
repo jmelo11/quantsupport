@@ -25,12 +25,15 @@ assert Path(qs.__file__).resolve().is_relative_to(packages), qs.__file__
 assert not Path(pd.__file__).resolve().is_relative_to(packages), pd.__file__
 
 reference = qs.Date(2026, 2, 24)
-quotes = qs.QuoteStore.from_dict({"reference_date": str(reference), "quotes": []})
+quotes = qs.QuoteStore.from_dict({
+    "reference_date": str(reference), "quotes": [
+        {"identifier": f"ZeroRate_USD_SOFR_{tenor}", "mid": 0.03}
+        for tenor in ["0D", "10Y"]
+    ],
+})
 curve = qs.CurveConfiguration(
     market_index="SOFR", day_counter="Actual360", interpolator="Linear",
-    construction=qs.CurveConstruction.zero_rate(
-        pillars=["0D", "10Y"], rates=[0.03, 0.03],
-    ),
+    quotes=quotes.identifiers(),
 )
 context = qs.PricingContext(
     quotes, [curve], csa_policy=qs.SingleCurveCSADiscountPolicy("USD", "SOFR"),

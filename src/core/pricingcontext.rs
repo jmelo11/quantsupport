@@ -980,18 +980,36 @@ mod tests {
         let reference = Date::new(2026, 2, 24);
         let date = Date::new(2028, 2, 24);
         let funding = MarketIndex::Other("FUNDING".into());
-        let curves = serde_json::from_value(json!([
-            {"market_index": {"Other": "BENCHMARK"}, "interpolator": "Linear",
-             "construction": {"type": "ZeroRate", "pillars": ["0D", "1Y", "2Y"],
-                 "rates": [0.04, 0.04, 0.04], "compounding": "Continuous", "frequency": "Annual"}},
-            {"market_index": {"Other": "SPREAD"}, "interpolator": "Linear",
-             "construction": {"type": "ZeroRate", "pillars": ["0D", "1Y", "2Y"],
-                 "rates": [0.005, 0.01, 0.015], "compounding": "Continuous", "frequency": "Annual"}},
-            {"market_index": {"Other": "FUNDING"}, "construction": {"type": "Composite",
-                 "base_index": {"Other": "BENCHMARK"}, "spread_index": {"Other": "SPREAD"}}}
-        ]))?;
+        let mut quotes = QuoteStore::new(reference);
+        let mut curves = Vec::new();
+        for (index, rates) in [
+            ("BENCHMARK", [0.04, 0.04, 0.04]),
+            ("SPREAD", [0.005, 0.01, 0.015]),
+        ] {
+            let mut identifiers = Vec::new();
+            for (date, rate) in [reference, Date::new(2027, 2, 24), Date::new(2028, 2, 24)]
+                .iter()
+                .zip(rates)
+            {
+                let identifier = format!("ZeroRate_USD_{index}_{date}");
+                quotes.add_quote(Quote::new(identifier.parse()?, QuoteLevels::with_mid(rate)));
+                identifiers.push(identifier);
+            }
+            curves.push(CurveConfiguration::new(
+                MarketIndex::Other(index.into()),
+                DayCounter::Actual360,
+                Interpolator::Linear,
+                true,
+                identifiers,
+            ));
+        }
+        curves.push(CurveConfiguration::composite(
+            funding.clone(),
+            MarketIndex::Other("BENCHMARK".into()),
+            MarketIndex::Other("SPREAD".into()),
+        ));
         let mut context = PricingContext::new()
-            .with_quote_store(QuoteStore::new(reference))
+            .with_quote_store(quotes)
             .with_curve_configurations(curves);
         let base_inputs = serde_json::to_value(context.curve_configurations())?;
         context.initialize()?;

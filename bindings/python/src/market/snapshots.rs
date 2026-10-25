@@ -111,7 +111,7 @@ pub struct MarketSnapshot {
 #[pymethods]
 impl MarketSnapshot {
     /// Capture a context's base inputs, excluding fixings and temporary scenarios.
-    /// FX spots and explicit zero-rate pillars remain side-independent.
+    /// FX spots remain side-independent; zero rates use the selected quote side.
     #[staticmethod]
     fn from_context(timestamp: &Bound<'_, PyAny>, context: &PricingContext) -> PyResult<Self> {
         Ok(Self {

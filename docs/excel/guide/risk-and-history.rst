@@ -98,7 +98,7 @@ For individual selection and inspection:
    J6 =QS.CONTEXT.FROM.SNAPSHOT("historical",H2,J2,fixings)
 
 Snapshots store quote observations, FX and construction configurations, including
-explicit zero curves, credit, volatility and simulation settings. Supplied
+direct zero-rate quotes, credit, volatility and simulation settings. Supplied
 runtime curves cannot be captured. Fixings and their publication vintages are
 separate; supply a fixing contribution or committed context to historical pricing.
 No fixing-vintage filter is inferred. Native JSON import/export is available

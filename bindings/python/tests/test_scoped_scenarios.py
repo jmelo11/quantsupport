@@ -1,4 +1,4 @@
-"""Temporary quoted and explicit-pillar shocks on reusable pricing contexts."""
+"""Temporary quote shocks on reusable pricing contexts."""
 import unittest
 import math
 from pathlib import Path
@@ -6,6 +6,7 @@ from pathlib import Path
 import quantsupport as qs
 from test_composite_loan_funding import FUNDING, funding_context, loan
 from test_python_market_inputs import context_inputs
+from market_fixtures import append_quotes
 
 
 class TypedCalendarTests(unittest.TestCase):
@@ -94,15 +95,16 @@ class ScopedScenarioTests(unittest.TestCase):
 
     def test_active_scenario_cache_tracks_public_input_reassignment(self):
         context = funding_context()
-        replacement = funding_context(funding_shift=0.002).curves
+        replacement = funding_context(funding_shift=0.002)
         scenario = qs.Scenario(shocks=[qs.Shock(target="FUNDINGSPREAD", value=0.005, shock_type=qs.ScenarioType.Absolute)])
         with context, scenario:
             before = context.curve(index=FUNDING).discount_factor(date="2028-02-24")
-            context.curves = replacement
+            context.quotes = replacement.quotes
+            context.curves = replacement.curves
             after = context.curve(index=FUNDING).discount_factor(date="2028-02-24")
             tau = qs.DayCounter.Actual360.year_fraction(start="2026-02-24", end="2028-02-24")
             self.assertAlmostEqual(after / before, math.exp(-0.002 * tau))
-        self.assertEqual([curve.to_dict() for curve in context.curves], [curve.to_dict() for curve in replacement])
+        self.assertEqual([curve.to_dict() for curve in context.curves], [curve.to_dict() for curve in replacement.curves])
 
     def factor(self, context):
         return context.curve(index=qs.MarketIndex.ESTR).discount_factor(date="2028-02-24")
@@ -180,7 +182,11 @@ class ScopedScenarioTests(unittest.TestCase):
     def test_calibrated_quote_sensitivities_survive_scenario_restoration(self):
         data = Path(__file__).resolve().parents[3] / "examples" / "valuation" / "loans" / "data"
         context = funding_context()
-        context.quotes = qs.QuoteStore.from_json(path=str(data / "loan_quotes.json"))
+        funding_quotes = context.quotes
+        context.quotes = append_quotes(qs.QuoteStore.from_json(path=str(data / "loan_quotes.json")), [
+            {"identifier": identifier, "mid": funding_quotes.value(identifier)}
+            for identifier in funding_quotes.identifiers() if "FUNDINGSPREAD" in identifier
+        ])
         context.curves = qs.CurveConfiguration.from_json(path=str(data / "loan_curves.json")) + context.curves[-2:]
         pricer = qs.LoanPricer()
         trade = qs.Trade(instrument=loan(floating=True), trade_date="2026-02-24")
@@ -210,7 +216,7 @@ class ScopedScenarioTests(unittest.TestCase):
             with context:
                 base = pricer.evaluate(trade=trade, context=context,
                     requests=[qs.Request.Value, qs.Request.Sensitivities, qs.Request.Cashflows])
-                funding_risk = base.sensitivities.loc[base.sensitivities.pillar.str.startswith("FUNDINGSPREAD_")]
+                funding_risk = base.sensitivities.loc[base.sensitivities.pillar.str.startswith("ZeroRate_EUR_FUNDINGSPREAD_")]
                 self.assertEqual(len(funding_risk), 4)
                 for row in funding_risk.itertuples(index=False):
                     prices = []

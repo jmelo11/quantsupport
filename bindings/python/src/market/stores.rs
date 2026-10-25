@@ -5,10 +5,9 @@
 
 use pyo3::prelude::*;
 use quantsupport::prelude::{
-    Compounding, CreditCurveConfiguration as QsCreditCurveConfiguration,
-    CurveConfiguration as QsCurveConfiguration, CurveConstruction as QsCurveConstruction,
-    CurvePillar, DayCounter, DualFwd, FixingStore as QsFixingStore, Frequency, FxRateRecord,
-    FxStore as QsFxStore, Interpolator, PricerConfiguration as QsPricerConfiguration,
+    CreditCurveConfiguration as QsCreditCurveConfiguration,
+    CurveConfiguration as QsCurveConfiguration, DayCounter, DualFwd, FixingStore as QsFixingStore,
+    FxRateRecord, FxStore as QsFxStore, Interpolator, PricerConfiguration as QsPricerConfiguration,
     QuoteStore as QsQuoteStore, QuoteStoreRecords,
     SimulationConfiguration as QsSimulationConfiguration,
     VolatilityCubeConfiguration as QsVolatilityCubeConfiguration,
@@ -17,8 +16,8 @@ use quantsupport::prelude::{
 use serde::de::DeserializeOwned;
 
 use crate::common::conversion::{
-    extract_compounding, extract_currency, extract_date, extract_day_counter, extract_frequency,
-    extract_interpolator, extract_market_index, extract_period, from_json_file, from_py, qs_err,
+    extract_currency, extract_date, extract_day_counter, extract_interpolator,
+    extract_market_index, from_json_file, from_py, qs_err,
 };
 use crate::QuantSupportError;
 
@@ -115,9 +114,6 @@ config_wrapper!(
     ///     Calibration instruments, DiscountFactor_CCY_Index_Pillar, or
     ///     ZeroRate_CCY_Index_Pillar[_Compounding[_Frequency]] identifiers.
     ///     Direct curves use one quote family; pillars are tenors or ISO dates.
-    /// construction : CurveConstruction, optional
-    ///     Bootstrapped, explicit zero-rate, or composite construction rule.
-    ///     Defaults to bootstrapped construction.
     /// day_counter : DayCounter or str, optional
     ///     Curve time basis. Defaults to Actual360.
     /// interpolator : Interpolator or str, optional
@@ -130,109 +126,15 @@ config_wrapper!(
     "curve configuration"
 );
 
-/// Construction rule used by CurveConfiguration.
-///
-/// Use bootstrapped(), zero_rate(), or composite() to select the rule.
-/// Each rule wraps the corresponding native CurveConstruction variant.
-#[pyclass(module = "quantsupport", frozen, from_py_object)]
-#[derive(Clone)]
-pub struct CurveConstruction {
-    pub inner: QsCurveConstruction,
-}
-
-#[pymethods]
-impl CurveConstruction {
-    /// Construct from CurveConfiguration.quotes: calibrate instrument quotes
-    /// or interpolate direct discount-factor or zero-rate observations.
-    #[staticmethod]
-    fn bootstrapped() -> Self {
-        Self {
-            inner: QsCurveConstruction::Bootstrapped,
-        }
-    }
-
-    /// Interpolate supplied annual zero rates.
-    ///
-    /// Parameters
-    /// ----------
-    /// pillars : sequence of Date, datetime.date, Period, or str
-    ///     Ordered dates or tenors measured from the context reference date.
-    /// rates : sequence of float
-    ///     Decimal annual rates, one per pillar (0.01 means 1%).
-    /// compounding : Compounding or str, optional
-    ///     Convention for the supplied rates. Defaults to Continuous.
-    /// frequency : Frequency or str, optional
-    ///     Compounding frequency. Defaults to Annual.
-    #[staticmethod]
-    #[pyo3(signature = (*, pillars, rates, compounding = None, frequency = None))]
-    fn zero_rate(
-        pillars: Vec<Bound<'_, PyAny>>,
-        rates: Vec<f64>,
-        compounding: Option<&Bound<'_, PyAny>>,
-        frequency: Option<&Bound<'_, PyAny>>,
-    ) -> PyResult<Self> {
-        let pillars = pillars
-            .iter()
-            .map(|pillar| {
-                extract_date(pillar)
-                    .map(CurvePillar::Date)
-                    .or_else(|_| extract_period(pillar).map(CurvePillar::Tenor))
-            })
-            .collect::<PyResult<Vec<_>>>()?;
-        Ok(Self {
-            inner: QsCurveConstruction::ZeroRate {
-                pillars,
-                rates,
-                compounding: compounding
-                    .map(extract_compounding)
-                    .transpose()?
-                    .unwrap_or(Compounding::Continuous),
-                frequency: frequency
-                    .map(extract_frequency)
-                    .transpose()?
-                    .unwrap_or(Frequency::Annual),
-            },
-        })
-    }
-
-    /// Multiply the discount factors of two configured curves.
-    ///
-    /// Parameters
-    /// ----------
-    /// base_index : MarketIndex or str
-    ///     Benchmark curve present in the context's curve configurations.
-    /// spread_index : MarketIndex or str
-    ///     Spread curve present in the same configurations. Continuous zero
-    ///     spreads add to the benchmark's continuous zero rates.
-    #[staticmethod]
-    #[pyo3(signature = (*, base_index, spread_index))]
-    fn composite(base_index: &Bound<'_, PyAny>, spread_index: &Bound<'_, PyAny>) -> PyResult<Self> {
-        Ok(Self {
-            inner: QsCurveConstruction::Composite {
-                base_index: extract_market_index(base_index)?,
-                spread_index: extract_market_index(spread_index)?,
-            },
-        })
-    }
-
-    fn __repr__(&self) -> String {
-        format!(
-            "CurveConstruction({})",
-            serde_json::to_string(&self.inner).unwrap_or_default()
-        )
-    }
-}
-
 #[pymethods]
 impl CurveConfiguration {
     #[new]
     #[allow(clippy::too_many_arguments)]
-    #[pyo3(signature = (*, market_index, quotes = None, construction = None,
+    #[pyo3(signature = (*, market_index, quotes = None,
         day_counter = None, interpolator = None, enable_extrapolation = true))]
     fn new(
         market_index: &Bound<'_, PyAny>,
         quotes: Option<Vec<String>>,
-        construction: Option<CurveConstruction>,
         day_counter: Option<&Bound<'_, PyAny>>,
         interpolator: Option<&Bound<'_, PyAny>>,
         enable_extrapolation: bool,
@@ -250,8 +152,34 @@ impl CurveConfiguration {
                     .unwrap_or(Interpolator::LogLinear),
                 enable_extrapolation,
                 quotes.unwrap_or_default(),
-            )
-            .with_construction(construction.map_or(QsCurveConstruction::Bootstrapped, |c| c.inner)),
+            ),
+        })
+    }
+
+    /// Define a composite curve by multiplying its base and spread discount factors.
+    ///
+    /// Parameters
+    /// ----------
+    /// market_index : MarketIndex or str
+    ///     Identity used to request the resulting composite curve.
+    /// base_index : MarketIndex or str
+    ///     Benchmark curve configured in the same pricing context.
+    /// spread_index : MarketIndex or str
+    ///     Spread curve configured in the same context. The component curves
+    ///     must share a reference date and day-count convention.
+    #[staticmethod]
+    #[pyo3(signature = (*, market_index, base_index, spread_index))]
+    fn composite(
+        market_index: &Bound<'_, PyAny>,
+        base_index: &Bound<'_, PyAny>,
+        spread_index: &Bound<'_, PyAny>,
+    ) -> PyResult<Self> {
+        Ok(Self {
+            inner: QsCurveConfiguration::composite(
+                extract_market_index(market_index)?,
+                extract_market_index(base_index)?,
+                extract_market_index(spread_index)?,
+            ),
         })
     }
 }

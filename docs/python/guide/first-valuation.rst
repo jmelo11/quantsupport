@@ -59,14 +59,14 @@ zero-rate curve. Two equal rate pillars specify that curve explicitly.
 
    reference = qs.Date(2026, 2, 24)
    quotes = qs.QuoteStore.from_dict({
-       "reference_date": str(reference), "quotes": [],
+       "reference_date": str(reference), "quotes": [
+           {"identifier": f"ZeroRate_USD_SOFR_{tenor}", "mid": 0.03}
+           for tenor in ["0D", "10Y"]
+       ],
    })
    curve_spec = qs.CurveConfiguration(
        market_index=qs.MarketIndex.SOFR,
-       construction=qs.CurveConstruction.zero_rate(
-           pillars=["0D", "10Y"], rates=[0.03, 0.03],
-           compounding="Continuous", frequency="Annual",
-       ),
+       quotes=quotes.identifiers(),
        day_counter="Actual360", interpolator="Linear",
        enable_extrapolation=True,
    )

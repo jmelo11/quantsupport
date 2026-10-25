@@ -69,7 +69,7 @@ use crate::QuantSupportError;
 /// quotes : QuoteStore
 ///     Market observations and reference date.
 /// curves : sequence of CurveConfiguration
-///     Calibration inputs, explicit zero rates, and composite curves.
+///     Quote-based calibration or direct interpolation, and composite curves.
 /// fixings : FixingStore, optional
 ///     Published historical index observations.
 /// fx : FxStore, optional

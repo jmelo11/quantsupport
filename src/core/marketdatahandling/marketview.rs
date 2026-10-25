@@ -176,9 +176,6 @@ impl<'a> MarketView<'a> {
             BootstrapDiscountPolicy::new(self.base.base_index().clone(), self.base.base_currency());
         if let Some(configuration) = &mut configuration {
             affected = self.quote_changed(configuration.quotes());
-            for shock in self.scenario.shocks() {
-                affected |= configuration.apply_shock(shock, self.base.evaluation_date()) > 0;
-            }
             let fx = if let MarketIndex::Collateral(currency, collateral) = index {
                 self.base
                     .fx_store()
@@ -599,22 +596,34 @@ mod tests {
     };
 
     fn context() -> Result<PricingContext> {
-        let curves: Vec<CurveConfiguration> = serde_json::from_value(serde_json::json!([
-            {"market_index": "ESTR", "interpolator": "Linear", "construction": {
-                "type": "ZeroRate", "pillars": ["0D", "1Y", "5Y"],
-                "rates": [0.03, 0.035, 0.04], "compounding": "Continuous", "frequency": "Annual"
-            }},
-            {"market_index": {"Other": "SPREAD"}, "interpolator": "Linear", "construction": {
-                "type": "ZeroRate", "pillars": ["0D", "1Y", "5Y"],
-                "rates": [0.005, 0.0075, 0.01], "compounding": "Continuous", "frequency": "Annual"
-            }},
-            {"market_index": {"Other": "FUNDING"}, "construction": {
-                "type": "Composite", "base_index": "ESTR", "spread_index": {"Other": "SPREAD"}
-            }}
-        ]))
-        .map_err(|error| QSError::InvalidValueErr(error.to_string()))?;
+        use crate::prelude::{DayCounter, Interpolator, Quote, QuoteLevels};
+        let mut quotes = QuoteStore::new(Date::new(2026, 2, 24));
+        let mut curves = Vec::new();
+        for (index, rates) in [
+            ("ESTR", [0.03, 0.035, 0.04]),
+            ("SPREAD", [0.005, 0.0075, 0.01]),
+        ] {
+            let mut identifiers = Vec::new();
+            for (tenor, rate) in ["0D", "1Y", "5Y"].iter().zip(rates) {
+                let identifier = format!("ZeroRate_EUR_{index}_{tenor}");
+                quotes.add_quote(Quote::new(identifier.parse()?, QuoteLevels::with_mid(rate)));
+                identifiers.push(identifier);
+            }
+            curves.push(CurveConfiguration::new(
+                index.parse().unwrap_or_default(),
+                DayCounter::Actual360,
+                Interpolator::Linear,
+                true,
+                identifiers,
+            ));
+        }
+        curves.push(CurveConfiguration::composite(
+            MarketIndex::Other("FUNDING".into()),
+            MarketIndex::ESTR,
+            MarketIndex::Other("SPREAD".into()),
+        ));
         Ok(PricingContext::new()
-            .with_quote_store(QuoteStore::new(Date::new(2026, 2, 24)))
+            .with_quote_store(quotes)
             .with_curve_configurations(curves))
     }
 

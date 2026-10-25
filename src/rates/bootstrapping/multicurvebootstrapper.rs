@@ -30,13 +30,11 @@ use crate::{
             bootstrappedcurve::BootstrappedCurve,
             bootstrapstep::BootstrapStep,
             bootstraputils::{dependency_order, CrossCurveDep},
-            curveconfiguration::{CurveConfiguration, CurveConstruction},
+            curveconfiguration::CurveConfiguration,
         },
-        interestrate::RateDefinition,
         yieldtermstructure::{
             compositetermstructure::CompositeTermStructure,
             discounttermstructure::DiscountTermStructure,
-            zeroratetermstructure::ZeroRateTermStructure,
         },
     },
     time::{date::Date, daycounter::DayCounter},
@@ -215,15 +213,12 @@ impl<'a> MultiCurveBootstrapper<'a> {
         let index = spec.market_index();
         let (curve, calibrated) = if let Some(quoted) = spec.quoted_curve() {
             quoted.construct(spec)?
+        } else if let Some((base_index, spread_index)) = spec.composite_components() {
+            Self::composite_term_structure(spec, base_index, spread_index, curves, solved)?
         } else {
-            match spec.construction() {
-                CurveConstruction::Bootstrapped => {
-                    let calibrated = self.bootstrap_next_curve(index, spec, solved)?;
-                    let curve = Self::calibrated_term_structure(spec, &calibrated)?;
-                    (Box::new(curve) as Box<dyn ADCurveElement>, calibrated)
-                }
-                construction => Self::explicit_term_structure(spec, construction, curves, solved)?,
-            }
+            let calibrated = self.bootstrap_next_curve(index, spec, solved)?;
+            let curve = Self::calibrated_term_structure(spec, &calibrated)?;
+            (Box::new(curve) as Box<dyn ADCurveElement>, calibrated)
         };
         let shared: SharedElement<dyn ADCurveElement> = Rc::new(RefCell::new(curve));
         Ok((DiscountCurveElement::new(index.clone(), shared), calibrated))
@@ -265,88 +260,45 @@ impl<'a> MultiCurveBootstrapper<'a> {
         Ok(curve)
     }
 
-    /// Builds a term structure from explicit zero-rate or base-plus-spread construction settings.
-    fn explicit_term_structure(
+    /// Multiplies the term structures and source-risk snapshots of two component curves.
+    fn composite_term_structure(
         spec: &CurveConfiguration,
-        construction: &CurveConstruction,
+        base_index: &MarketIndex,
+        spread_index: &MarketIndex,
         curves: &HashMap<MarketIndex, DiscountCurveElement>,
         solved: &HashMap<MarketIndex, BootstrappedCurve>,
     ) -> Result<(Box<dyn ADCurveElement>, BootstrappedCurve)> {
-        match construction {
-            CurveConstruction::ZeroRate {
-                pillars,
-                rates,
-                compounding,
-                frequency,
-            } => {
-                let reference_date = spec.reference_date()?;
-                let dates: Vec<_> = pillars
-                    .iter()
-                    .map(|pillar| pillar.date(reference_date))
-                    .collect();
-                let labels = dates
-                    .iter()
-                    .map(|date| format!("{}_{date}", spec.market_index()))
-                    .collect();
-                let curve = ZeroRateTermStructure::new(
-                    reference_date,
-                    dates,
-                    rates.clone(),
-                    RateDefinition::new(spec.day_counter(), *compounding, *frequency),
-                    spec.interpolator(),
-                    spec.enable_extrapolation(),
-                )?
-                .with_pillar_labels(labels)?;
-                let snapshot =
-                    BootstrappedCurve::from_zero_rates(spec.market_index().clone(), curve.clone())?;
-                Ok((Box::new(curve.to_dual()), snapshot))
-            }
-            CurveConstruction::Composite {
-                base_index,
-                spread_index,
-            } => {
-                let component = |index: &MarketIndex| {
-                    curves
-                        .get(index)
-                        .ok_or_else(|| {
-                            QSError::NotFoundErr(format!("Composite component {index}"))
-                        })?
-                        .curve()
-                        .clone_curve()
-                };
-                let base = component(base_index)?;
-                let spread = component(spread_index)?;
-                if base.reference_date() != spread.reference_date()
-                    || base.day_counter() != spread.day_counter()
-                {
-                    return Err(QSError::InvalidValueErr(
-                        "Composite curves require matching reference dates and day counters".into(),
-                    ));
-                }
-                let snapshot = BootstrappedCurve::from_components(
-                    spec.market_index().clone(),
-                    solved
-                        .get(base_index)
-                        .ok_or_else(|| {
-                            QSError::NotFoundErr(format!("Composite component {base_index}"))
-                        })?
-                        .clone(),
-                    solved
-                        .get(spread_index)
-                        .ok_or_else(|| {
-                            QSError::NotFoundErr(format!("Composite component {spread_index}"))
-                        })?
-                        .clone(),
-                )?;
-                Ok((
-                    Box::new(CompositeTermStructure::from_curves(spread, base)),
-                    snapshot,
-                ))
-            }
-            CurveConstruction::Bootstrapped => Err(QSError::InvalidValueErr(
-                "Calibrated curves require bootstrap construction".into(),
-            )),
+        let component = |index: &MarketIndex| {
+            curves
+                .get(index)
+                .ok_or_else(|| QSError::NotFoundErr(format!("Composite component {index}")))?
+                .curve()
+                .clone_curve()
+        };
+        let base = component(base_index)?;
+        let spread = component(spread_index)?;
+        if base.reference_date() != spread.reference_date()
+            || base.day_counter() != spread.day_counter()
+        {
+            return Err(QSError::InvalidValueErr(
+                "Composite curves require matching reference dates and day counters".into(),
+            ));
         }
+        let snapshot = BootstrappedCurve::from_components(
+            spec.market_index().clone(),
+            solved
+                .get(base_index)
+                .ok_or_else(|| QSError::NotFoundErr(format!("Composite component {base_index}")))?
+                .clone(),
+            solved
+                .get(spread_index)
+                .ok_or_else(|| QSError::NotFoundErr(format!("Composite component {spread_index}")))?
+                .clone(),
+        )?;
+        Ok((
+            Box::new(CompositeTermStructure::from_curves(spread, base)),
+            snapshot,
+        ))
     }
 
     /// Bootstraps a single curve by solving for discount factors that
@@ -776,14 +728,6 @@ mod tests {
     use std::collections::HashMap;
 
     use crate::{
-        rates::compounding::Compounding,
-        time::{
-            enums::{Frequency, TimeUnit},
-            period::Period,
-        },
-    };
-
-    use crate::{
         ad::dual::DualFwd,
         currencies::currency::Currency,
         indices::marketindex::MarketIndex,
@@ -795,8 +739,7 @@ mod tests {
         },
         rates::bootstrapping::{
             bootstrapdiscountpolicy::BootstrapDiscountPolicy,
-            curveconfiguration::{CurveConfiguration, CurveConstruction, CurvePillar},
-            multicurvebootstrapper::MultiCurveBootstrapper,
+            curveconfiguration::CurveConfiguration, multicurvebootstrapper::MultiCurveBootstrapper,
         },
         time::{date::Date, daycounter::DayCounter},
         utils::errors::Result,
@@ -824,7 +767,12 @@ mod tests {
             let rate = self.quotes.get(identifier)?;
             let det: QuoteDetails = identifier.parse().ok()?;
             let q = Quote::new(det, QuoteLevels::with_mid(*rate));
-            if q.build_instrument(self.reference_date, Level::Mid, None)
+            if matches!(
+                q.details().instrument(),
+                crate::quotes::quote::QuoteInstrument::ZeroRate
+                    | crate::quotes::quote::QuoteInstrument::DiscountFactor
+            ) || q
+                .build_instrument(self.reference_date, Level::Mid, None)
                 .is_ok()
             {
                 Some(q)
@@ -852,15 +800,6 @@ mod tests {
         let spread_index = MarketIndex::Other("SPREAD".into());
         let funding_index = MarketIndex::Other("FUNDING".into());
         let nested_index = MarketIndex::Other("NESTED".into());
-        let configuration = |index| {
-            CurveConfiguration::new(
-                index,
-                DayCounter::Actual360,
-                Interpolator::Linear,
-                true,
-                Vec::new(),
-            )
-        };
         let benchmark = CurveConfiguration::new(
             MarketIndex::SOFR,
             DayCounter::Actual360,
@@ -868,26 +807,25 @@ mod tests {
             true,
             vec!["FixedRateDeposit_USD_SOFR_1Y".into()],
         );
-        let spread =
-            configuration(spread_index.clone()).with_construction(CurveConstruction::ZeroRate {
-                pillars: vec![
-                    CurvePillar::Date(rd()),
-                    CurvePillar::Tenor(Period::new(2, TimeUnit::Years)),
-                ],
-                rates: vec![0.005, 0.01],
-                compounding: Compounding::Continuous,
-                frequency: Frequency::Annual,
-            });
+        selector.add("ZeroRate_USD_SPREAD_0D", 0.005);
+        selector.add("ZeroRate_USD_SPREAD_2Y", 0.01);
+        let spread = CurveConfiguration::new(
+            spread_index.clone(),
+            DayCounter::Actual360,
+            Interpolator::Linear,
+            true,
+            vec![
+                "ZeroRate_USD_SPREAD_0D".into(),
+                "ZeroRate_USD_SPREAD_2Y".into(),
+            ],
+        );
         let funding =
-            configuration(funding_index.clone()).with_construction(CurveConstruction::Composite {
-                base_index: MarketIndex::SOFR,
-                spread_index,
-            });
-        let nested =
-            configuration(nested_index.clone()).with_construction(CurveConstruction::Composite {
-                base_index: funding_index.clone(),
-                spread_index: funding_index.clone(),
-            });
+            CurveConfiguration::composite(funding_index.clone(), MarketIndex::SOFR, spread_index);
+        let nested = CurveConfiguration::composite(
+            nested_index.clone(),
+            funding_index.clone(),
+            funding_index.clone(),
+        );
         let curves =
             MultiCurveBootstrapper::new(vec![nested, funding, spread, benchmark], default_policy())
                 .bootstrap(&selector, Level::Mid)?;

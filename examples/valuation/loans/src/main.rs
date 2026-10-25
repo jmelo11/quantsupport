@@ -310,41 +310,35 @@ fn main() -> ExampleResult<()> {
     let spread_index = MarketIndex::Other("FUNDINGSPREAD".into());
     let funding_index = MarketIndex::Other("COSTOFFUNDS".into());
     let mut configurations = context.curve_configurations().clone();
-    configurations.push(
-        CurveConfiguration::new(
-            spread_index.clone(),
-            DayCounter::Actual360,
-            Interpolator::Linear,
-            false,
-            vec![],
-        )
-        .with_construction(CurveConstruction::ZeroRate {
-            pillars: ["0D", "1Y", "5Y", "10Y", "20Y", "30Y", "35Y"]
-                .iter()
-                .map(|tenor| tenor.parse().map(CurvePillar::Tenor))
-                .collect::<Result<_>>()?,
-            rates: vec![0.005, 0.006, 0.008, 0.01, 0.012, 0.013, 0.0135],
-            compounding: Compounding::Continuous,
-            frequency: Frequency::Annual,
-        }),
-    );
-    configurations.push(
-        CurveConfiguration::new(
-            funding_index.clone(),
-            DayCounter::Actual360,
-            Interpolator::Linear,
-            false,
-            vec![],
-        )
-        .with_construction(CurveConstruction::Composite {
-            base_index: MarketIndex::EURIBOR12m,
-            spread_index,
-        }),
-    );
-    let funding_context = context.with_curve_configurations(configurations);
+    let mut quotes = context.quote_store().clone();
+    let mut identifiers = Vec::new();
+    for (tenor, rate) in ["0D", "1Y", "5Y", "10Y", "20Y", "30Y", "35Y"]
+        .iter()
+        .zip([0.005, 0.006, 0.008, 0.01, 0.012, 0.013, 0.0135])
+    {
+        let identifier = format!("ZeroRate_EUR_FUNDINGSPREAD_{tenor}");
+        quotes.add_quote(Quote::new(identifier.parse()?, QuoteLevels::with_mid(rate)));
+        identifiers.push(identifier);
+    }
+    configurations.push(CurveConfiguration::new(
+        spread_index.clone(),
+        DayCounter::Actual360,
+        Interpolator::Linear,
+        false,
+        identifiers,
+    ));
+    configurations.push(CurveConfiguration::composite(
+        funding_index.clone(),
+        MarketIndex::EURIBOR12m,
+        spread_index,
+    ));
+    let funding_context = context
+        .with_quote_store(quotes)
+        .with_curve_configurations(configurations);
     let mut funding_pricer = LoanPricer::new();
     funding_pricer.set_discount_policy(Box::new(
-        FixedIncomeDiscountPolicy::new(false).with_discount_curve_index(Currency::EUR, funding_index),
+        FixedIncomeDiscountPolicy::new(false)
+            .with_discount_curve_index(Currency::EUR, funding_index),
     ));
     let base = funding_pricer.evaluate(
         &trade,
@@ -360,7 +354,7 @@ fn main() -> ExampleResult<()> {
             .instrument_keys()
             .iter()
             .zip(risk.exposure())
-            .filter(|(pillar, _)| pillar.starts_with("FUNDINGSPREAD_"))
+            .filter(|(pillar, _)| pillar.contains("_FUNDINGSPREAD_"))
         {
             println!("  {pillar}: EUR {:.2} per +1 bp", exposure * 0.0001);
         }

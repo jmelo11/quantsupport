@@ -26,10 +26,10 @@ use crate::{
 
 /// One timestamped, coherent set of market observations and construction inputs.
 ///
-/// Curves are saved as their construction configurations, including explicit
-/// zero-rate pillars, and are rebuilt for the requested quote side. Runtime AD
-/// objects and caches are not serialized. FX records and explicit curve pillars
-/// are side-independent; only quoted calibration inputs use the selected level.
+/// Curves are saved as configurations referencing quote identifiers or composite
+/// components, and are rebuilt for the requested quote side. Runtime AD objects
+/// and caches are not serialized. FX records are side-independent; instrument,
+/// zero-rate and discount-factor quotes all use the selected level.
 /// Historical fixings are supplied separately when creating a pricing context.
 #[derive(Clone, Serialize, Deserialize)]
 pub struct MarketSnapshot {

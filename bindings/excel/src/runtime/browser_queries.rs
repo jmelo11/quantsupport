@@ -148,7 +148,11 @@ pub fn execute(registry: &Registry, request: &BrowserQuery) -> Result<BrowserRes
             }
             None
         };
-        let results = pricer.evaluate(preview.as_ref().unwrap_or(object), &requests, context.as_ref())?;
+        let results = pricer.evaluate(
+            preview.as_ref().unwrap_or(object),
+            &requests,
+            context.as_ref(),
+        )?;
         return evaluation_table(&results, &request.request);
     }
 
@@ -362,119 +366,96 @@ fn configuration_table(
         .map(|field| format!("{}: {}", field.label, field.value))
         .collect::<Vec<_>>()
         .join("; ");
-    match config.construction() {
-        CurveConstruction::ZeroRate { pillars, rates, .. } => {
-            for (pillar, rate) in pillars.iter().zip(rates) {
-                let label = serde_json::to_value(pillar).map_err(|error| error.to_string())?;
-                table.rows.push(vec![
-                    label
-                        .as_str()
-                        .map_or_else(|| label.to_string(), str::to_string),
-                    "Zero rate".into(),
-                    String::new(),
-                    rate.to_string(),
-                    context
-                        .map(|context| pillar.date(context.evaluation_date()).to_string())
-                        .unwrap_or_default(),
-                ]);
-                table.parameters.push(fields(config.construction())?);
-            }
+    if let Some((base_index, spread_index)) = config.composite_components() {
+        for (role, index) in [("Base curve", base_index), ("Spread curve", spread_index)] {
+            table.rows.push(vec![
+                index.to_string(),
+                role.into(),
+                String::new(),
+                String::new(),
+                String::new(),
+            ]);
+            table.parameters.push(settings.clone());
         }
-        CurveConstruction::Composite {
-            base_index,
-            spread_index,
-        } => {
-            for (role, index) in [("Base curve", base_index), ("Spread curve", spread_index)] {
-                table.rows.push(vec![
-                    index.to_string(),
-                    role.into(),
-                    String::new(),
-                    String::new(),
-                    String::new(),
-                ]);
-                table.parameters.push(fields(config.construction())?);
-            }
-        }
-        CurveConstruction::Bootstrapped => {
-            for identifier in config.quotes() {
-                let quote = context.and_then(|context| context.quote_store().quote(identifier));
-                let details = match quote {
-                    Some(quote) => quote.details().clone(),
-                    None => identifier
-                        .parse::<QuoteDetails>()
-                        .map_err(|error| error.to_string())?,
-                };
-                let level = context.map(|context| context.quote_level());
-                let value = quote
-                    .zip(level)
-                    .map(|(quote, level)| quote.levels().value(level))
-                    .transpose()
-                    .map_err(|error| error.to_string())?;
-                let pillar = context
-                    .and_then(|context| {
-                        let element = context
-                            .constructed_elements()
-                            .discount_curves()
-                            .get(config.market_index())?;
-                        let curve = element.curve();
-                        let labels = curve.pillar_labels()?;
-                        let nodes = curve.nodes()?;
-                        labels
-                            .into_iter()
-                            .zip(
-                                nodes
-                                    .into_iter()
-                                    .filter(|(date, _)| *date != curve.reference_date()),
+    } else {
+        for identifier in config.quotes() {
+            let quote = context.and_then(|context| context.quote_store().quote(identifier));
+            let details = match quote {
+                Some(quote) => quote.details().clone(),
+                None => identifier
+                    .parse::<QuoteDetails>()
+                    .map_err(|error| error.to_string())?,
+            };
+            let level = context.map(|context| context.quote_level());
+            let value = quote
+                .zip(level)
+                .map(|(quote, level)| quote.levels().value(level))
+                .transpose()
+                .map_err(|error| error.to_string())?;
+            let pillar = context
+                .and_then(|context| {
+                    let element = context
+                        .constructed_elements()
+                        .discount_curves()
+                        .get(config.market_index())?;
+                    let curve = element.curve();
+                    let labels = curve.pillar_labels()?;
+                    let nodes = curve.nodes()?;
+                    labels
+                        .into_iter()
+                        .zip(
+                            nodes
+                                .into_iter()
+                                .filter(|(date, _)| *date != curve.reference_date()),
+                        )
+                        .find_map(|(label, (date, _))| (label == *identifier).then_some(date))
+                })
+                .or_else(|| {
+                    quote.zip(context).and_then(|(quote, context)| {
+                        if matches!(
+                            details.instrument(),
+                            QuoteInstrument::DiscountFactor | QuoteInstrument::ZeroRate
+                        ) {
+                            return details.maturity().or_else(|| {
+                                details
+                                    .tenor()
+                                    .map(|tenor| context.evaluation_date() + tenor)
+                            });
+                        }
+                        quote
+                            .build_instrument(
+                                context.evaluation_date(),
+                                context.quote_level(),
+                                None,
                             )
-                            .find_map(|(label, (date, _))| (label == *identifier).then_some(date))
+                            .and_then(|built| quote.calibration_pillar_date(&built))
+                            .ok()
                     })
-                    .or_else(|| {
-                        quote.zip(context).and_then(|(quote, context)| {
-                            if matches!(
-                                details.instrument(),
-                                QuoteInstrument::DiscountFactor | QuoteInstrument::ZeroRate
-                            ) {
-                                return details.maturity().or_else(|| {
-                                    details
-                                        .tenor()
-                                        .map(|tenor| context.evaluation_date() + tenor)
-                                });
-                            }
-                            quote
-                                .build_instrument(
-                                    context.evaluation_date(),
-                                    context.quote_level(),
-                                    None,
-                                )
-                                .and_then(|built| quote.calibration_pillar_date(&built))
-                                .ok()
-                        })
-                    })
-                    .map(|date| date.to_string())
-                    .unwrap_or_default();
-                table.rows.push(vec![
-                    identifier.clone(),
-                    format!("{:?}", details.instrument()),
-                    level.map(|level| format!("{level:?}")).unwrap_or_default(),
-                    value.map(|value| value.to_string()).unwrap_or_default(),
-                    pillar,
-                ]);
-                let mut parameters = fields(&details)?;
-                if let Some(quote) = quote {
-                    parameters.extend(fields(quote.levels())?);
-                }
-                parameters.extend(settings.iter().filter(|field| field.label != "quotes").map(
-                    |field| BrowserDetail {
-                        label: format!("Curve: {}", field.label),
-                        value: field.value.clone(),
-                        numeric: field.numeric,
-                    },
-                ));
-                table.parameters.push(parameters);
+                })
+                .map(|date| date.to_string())
+                .unwrap_or_default();
+            table.rows.push(vec![
+                identifier.clone(),
+                format!("{:?}", details.instrument()),
+                level.map(|level| format!("{level:?}")).unwrap_or_default(),
+                value.map(|value| value.to_string()).unwrap_or_default(),
+                pillar,
+            ]);
+            let mut parameters = fields(&details)?;
+            if let Some(quote) = quote {
+                parameters.extend(fields(quote.levels())?);
             }
-            if context.is_none() {
-                table.message.push_str(". Select this curve in a pricing context to see market levels and resolved pillar dates.");
-            }
+            parameters.extend(settings.iter().filter(|field| field.label != "quotes").map(
+                |field| BrowserDetail {
+                    label: format!("Curve: {}", field.label),
+                    value: field.value.clone(),
+                    numeric: field.numeric,
+                },
+            ));
+            table.parameters.push(parameters);
+        }
+        if context.is_none() {
+            table.message.push_str(". Select this curve in a pricing context to see market levels and resolved pillar dates.");
         }
     }
     Ok(table)
@@ -1049,10 +1030,24 @@ mod tests {
 
     #[test]
     fn explicit_zero_rates_composites_and_node_curves_are_reported() {
-        let config: CurveConfiguration = serde_json::from_value(serde_json::json!({
-            "market_index": "SOFR", "construction": { "type": "ZeroRate", "pillars": ["1Y", "2Y"], "rates": [0.03, 0.04], "compounding": "Continuous", "frequency": "Annual" }
-        })).unwrap();
-        let mut context = market().with_curve_configurations(vec![config.clone()]);
+        let mut quotes = QuoteStore::new(Date::new(2026, 1, 15));
+        let identifiers = ["ZeroRate_USD_SOFR_1Y", "ZeroRate_USD_SOFR_2Y"];
+        for (identifier, rate) in identifiers.iter().zip([0.03, 0.04]) {
+            quotes.add_quote(Quote::new(
+                identifier.parse().unwrap(),
+                QuoteLevels::with_mid(rate),
+            ));
+        }
+        let config = CurveConfiguration::new(
+            MarketIndex::SOFR,
+            DayCounter::Actual360,
+            Interpolator::Linear,
+            true,
+            identifiers.iter().map(|id| (*id).into()).collect(),
+        );
+        let mut context = market()
+            .with_quote_store(quotes)
+            .with_curve_configurations(vec![config.clone()]);
         context.initialize().unwrap();
         let table = configuration_table(&config, Some(&context)).unwrap();
         assert_eq!(table.rows[0][3], "0.03");
@@ -1066,10 +1061,11 @@ mod tests {
         assert_eq!(table.rows.len(), 2);
         assert_eq!(table.rows[0][1], "2027-01-15");
         assert!(!table.message.starts_with("Annual samples"));
-        let config = config.with_construction(CurveConstruction::Composite {
-            base_index: MarketIndex::SOFR,
-            spread_index: MarketIndex::ESTR,
-        });
+        let config = CurveConfiguration::composite(
+            MarketIndex::Other("COMPOSITE".into()),
+            MarketIndex::SOFR,
+            MarketIndex::ESTR,
+        );
         let table = configuration_table(&config, None).unwrap();
         assert_eq!(table.rows[0][0], "SOFR");
         assert_eq!(table.rows[1][0], "ESTR");

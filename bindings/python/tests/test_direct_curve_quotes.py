@@ -64,10 +64,7 @@ class DirectCurveQuoteTests(unittest.TestCase):
             labels = [f"{family}_EUR_ESTR_{tenor}" for tenor in ["1Y", "2Y"]]
             ctx = context([(label, {"mid": value}) for label, value in zip(labels, values)])
             composite = qs.MarketIndex.other("COMPOSITE")
-            ctx.curves += [qs.CurveConfiguration(
-                market_index=composite,
-                construction=qs.CurveConstruction.composite(base_index="ESTR", spread_index="ESTR"),
-            )]
+            ctx.curves += [qs.CurveConfiguration.composite(market_index=composite, base_index='ESTR', spread_index='ESTR')]
             for _ in range(2):
                 with self.subTest(family=family), ctx:
                     base = ctx.curve("ESTR").discount_factor("2027-02-24")

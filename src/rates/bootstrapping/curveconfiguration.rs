@@ -10,74 +10,24 @@ use crate::{
         calibrationinstrument::CalibrationInstrument,
         quote::{CalibrationInstrumentType, Level},
         quoteselector::QuoteSelector,
-        scenario::Shock,
     },
-    rates::{
-        bootstrapping::bootstrapdiscountpolicy::BootstrapDiscountPolicy, compounding::Compounding,
-    },
-    time::{date::Date, daycounter::DayCounter, enums::Frequency, period::Period},
+    rates::bootstrapping::bootstrapdiscountpolicy::BootstrapDiscountPolicy,
+    time::{date::Date, daycounter::DayCounter},
     utils::errors::{QSError, Result},
 };
 
 use super::quotedcurve::QuotedCurve;
 
-/// A dated pillar or a tenor measured from the market reference date.
-#[derive(Serialize, Deserialize, Clone)]
-#[serde(untagged)]
-pub enum CurvePillar {
-    /// An explicit calendar date.
-    Date(Date),
-    /// A tenor from the market reference date.
-    Tenor(Period),
-}
-
-impl CurvePillar {
-    /// Resolves the pillar against a market reference date.
-    #[must_use]
-    pub fn date(&self, reference_date: Date) -> Date {
-        match self {
-            Self::Date(date) => *date,
-            Self::Tenor(tenor) => reference_date + *tenor,
-        }
-    }
-}
-
-/// Defines how a configured interest-rate curve is constructed.
-#[derive(Serialize, Deserialize, Clone, Default)]
-#[serde(tag = "type", deny_unknown_fields)]
-pub enum CurveConstruction {
-    /// Calibrate instrument quotes, or interpolate direct discount-factor or
-    /// zero-rate quotes from the configuration's quote identifiers.
-    #[default]
-    Bootstrapped,
-    /// Interpolate explicit zero rates with the configuration's conventions.
-    ZeroRate {
-        /// Ordered dates or tenors for the zero-rate pillars.
-        pillars: Vec<CurvePillar>,
-        /// Decimal annual zero rates, one per pillar.
-        rates: Vec<f64>,
-        /// Compounding convention for the supplied rates.
-        compounding: Compounding,
-        /// Compounding frequency for the supplied rates.
-        frequency: Frequency,
-    },
-    /// Multiply the discount factors of two configured component curves.
-    Composite {
-        /// Market index of the benchmark curve.
-        base_index: MarketIndex,
-        /// Market index of the spread curve.
-        spread_index: MarketIndex,
-    },
-}
-
 /// Construction specification for a curve, including market identity,
-/// conventions, and instrument/direct quotes, explicit zero rates, or component indices.
+/// conventions, and instrument/direct quote identifiers or composite component indices.
 #[derive(Serialize, Deserialize, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct CurveConfiguration {
     market_index: MarketIndex,
-    #[serde(default)]
-    construction: CurveConstruction,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    base_index: Option<MarketIndex>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    spread_index: Option<MarketIndex>,
     #[serde(default = "default_day_counter")]
     day_counter: DayCounter,
     #[serde(default = "default_interpolator")]
@@ -120,7 +70,8 @@ impl CurveConfiguration {
     ) -> Self {
         Self {
             market_index,
-            construction: CurveConstruction::Bootstrapped,
+            base_index: None,
+            spread_index: None,
             day_counter,
             interpolator,
             enable_extrapolation,
@@ -131,40 +82,62 @@ impl CurveConfiguration {
         }
     }
 
-    /// Selects explicit zero rates or composite construction for this curve.
+    /// Creates a composite curve whose discount factors multiply those of its components.
+    /// The components supply the curve conventions and must share a date and day count.
     #[must_use]
-    pub fn with_construction(mut self, construction: CurveConstruction) -> Self {
-        self.construction = construction;
-        self
+    pub fn composite(
+        market_index: MarketIndex,
+        base_index: MarketIndex,
+        spread_index: MarketIndex,
+    ) -> Self {
+        Self {
+            base_index: Some(base_index),
+            spread_index: Some(spread_index),
+            ..Self::new(
+                market_index,
+                default_day_counter(),
+                default_interpolator(),
+                true,
+                Vec::new(),
+            )
+        }
     }
 
-    /// Applies a shock to explicit zero-rate inputs using their sensitivity labels.
+    /// Returns the base and spread indices for a composite curve.
+    #[must_use]
+    pub const fn composite_components(&self) -> Option<(&MarketIndex, &MarketIndex)> {
+        match (&self.base_index, &self.spread_index) {
+            (Some(base), Some(spread)) => Some((base, spread)),
+            _ => None,
+        }
+    }
+
+    /// Validates that the definition uses quotes or a complete pair of composite indices.
     ///
-    /// Returns the number of matching pillars, or zero for other construction
-    /// types or a zero-valued shock. Clone the configuration first to preserve
-    /// the base market inputs.
-    pub fn apply_shock(&mut self, shock: &Shock, reference_date: Date) -> usize {
-        if shock.value() == 0.0 {
-            return 0;
-        }
-        let CurveConstruction::ZeroRate { pillars, rates, .. } = &mut self.construction else {
-            return 0;
-        };
-        let mut count = 0;
-        for (pillar, rate) in pillars.iter().zip(rates) {
-            let label = format!("{}_{}", self.market_index, pillar.date(reference_date));
-            if shock.matches(&label) {
-                *rate = shock.shocked_value(*rate);
-                count += 1;
+    /// # Errors
+    /// Returns an error for partial composite definitions, quotes on a composite,
+    /// or a composite referencing itself.
+    pub fn validate_definition(&self) -> Result<()> {
+        match (&self.base_index, &self.spread_index) {
+            (None, None) => Ok(()),
+            (Some(base), Some(spread)) => {
+                if !self.quotes.is_empty() {
+                    return Err(QSError::InvalidValueErr(
+                        "Composite curves cannot supply quote identifiers".into(),
+                    ));
+                }
+                if base == &self.market_index || spread == &self.market_index {
+                    return Err(QSError::InvalidValueErr(format!(
+                        "Circular dependency: composite curve {} references itself",
+                        self.market_index
+                    )));
+                }
+                Ok(())
             }
+            _ => Err(QSError::InvalidValueErr(
+                "Composite curves require both base_index and spread_index".into(),
+            )),
         }
-        count
-    }
-
-    /// Returns the construction definition for this curve.
-    #[must_use]
-    pub const fn construction(&self) -> &CurveConstruction {
-        &self.construction
     }
 
     /// Returns the configured instrument or direct curve quote identifiers.
@@ -196,13 +169,8 @@ impl CurveConfiguration {
         self.quoted_curve = None;
         self.reference_date = Some(selector.reference_date());
 
-        if !matches!(self.construction, CurveConstruction::Bootstrapped) {
-            if !self.quotes.is_empty() {
-                return Err(QSError::InvalidValueErr(format!(
-                    "Curve {} supplies calibration quotes for an explicit construction",
-                    self.market_index
-                )));
-            }
+        self.validate_definition()?;
+        if self.composite_components().is_some() {
             self.calibration_instruments = Some(instruments);
             return Ok(());
         }
@@ -364,23 +332,10 @@ impl CurveConfiguration {
         if self.quoted_curve.is_some() {
             return Ok(set);
         }
-        match &self.construction {
-            CurveConstruction::Composite {
-                base_index,
-                spread_index,
-            } => {
-                if base_index == &self.market_index || spread_index == &self.market_index {
-                    return Err(QSError::InvalidValueErr(format!(
-                        "Circular dependency: composite curve {} references itself",
-                        self.market_index
-                    )));
-                }
-                set.insert(base_index.clone());
-                set.insert(spread_index.clone());
-                return Ok(set);
-            }
-            CurveConstruction::ZeroRate { .. } => return Ok(set),
-            CurveConstruction::Bootstrapped => {}
+        if let Some((base_index, spread_index)) = self.composite_components() {
+            set.insert(base_index.clone());
+            set.insert(spread_index.clone());
+            return Ok(set);
         }
         let instruments = self.instruments()?;
         if instruments.is_empty() {

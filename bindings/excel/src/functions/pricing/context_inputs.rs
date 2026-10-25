@@ -370,7 +370,7 @@ pub fn qs_context_add_vol_cube(
 #[xll_bindgen(
     name = "QS.CONTEXT.ADD.ZERO.CURVE",
     category = "QuantSupport - Pricing",
-    help = "Defines an explicit zero-rate curve directly in a context from ordered pillars and annual decimal rates"
+    help = "Adds zero-rate quotes and their curve configuration to a context"
 )]
 pub fn qs_context_add_zero_curve(
     context: &str,
@@ -384,40 +384,61 @@ pub fn qs_context_add_zero_curve(
     extrapolate: *const XLOPER12,
 ) -> Result<String, XllError> {
     use crate::runtime::configuration_inputs::WorksheetConfiguration;
-    use quantsupport::prelude::{
-        CurveConfiguration, CurveConstruction, CurvePillar, Period, QuoteStore,
-    };
-    let pillars = string_values(pillars, "pillars")?
-        .into_iter()
-        .map(|pillar| {
-            if let Ok(period) = pillar.parse::<Period>() {
-                Ok(CurvePillar::Tenor(period))
-            } else {
-                parse_date(&pillar).map(CurvePillar::Date)
-            }
-        })
-        .collect::<Result<Vec<_>, XllError>>()?;
+    use quantsupport::prelude::{CurveConfiguration, Quote, QuoteLevels, QuoteStore};
+    let pillars = string_values(pillars, "pillars")?;
     let rates = numeric_values(rates, "rates")?;
+    if pillars.is_empty() || pillars.len() != rates.len() {
+        return Err(value_error(
+            "zero rates require equally sized, nonempty pillars and rates",
+        ));
+    }
+    let index = parse_index(market_index)?;
+    let index_label = match &index {
+        quantsupport::prelude::MarketIndex::Credit(entity) => format!("Credit({entity})"),
+        quantsupport::prelude::MarketIndex::Collateral(currency, collateral) => {
+            format!("Collateral({currency}/{collateral})")
+        }
+        _ => index.to_string(),
+    };
+    let compounding = parse_compounding(compounding)?;
+    let frequency = parse_frequency(frequency)?;
+    let (currency, level) = with_registry(|registry| {
+        registry
+            .pricing_context(context)
+            .map(|context| (context.base_currency(), context.quote_level()))
+    })
+    .map_err(value_error)?;
+    let mut quotes = QuoteStore::new(date(context)?);
+    let mut identifiers = Vec::new();
+    for (pillar, rate) in pillars.iter().zip(rates) {
+        let identifier =
+            format!("ZeroRate_{currency}_{index_label}_{pillar}_{compounding:?}_{frequency:?}");
+        let details = identifier.parse().map_err(value_error)?;
+        if !rate.is_finite() {
+            return Err(value_error("zero rates must be finite"));
+        }
+        let levels = match level {
+            Level::Mid => QuoteLevels::new(Some(rate), None, None),
+            Level::Bid => QuoteLevels::new(None, Some(rate), None),
+            Level::Ask => QuoteLevels::new(None, None, Some(rate)),
+        };
+        quotes.add_quote(Quote::new(details, levels));
+        identifiers.push(identifier);
+    }
     let configuration = CurveConfiguration::new(
-        parse_index(market_index)?,
+        index,
         parse_day_counter(day_counter)?,
         parse_interpolator(interpolator)?,
         optional_bool(extrapolate, "extrapolate")?.unwrap_or(false),
-        vec![],
-    )
-    .with_construction(CurveConstruction::ZeroRate {
-        pillars,
-        rates,
-        compounding: parse_compounding(compounding)?,
-        frequency: parse_frequency(frequency)?,
-    });
+        identifiers,
+    );
     configuration.validate().map_err(value_error)?;
-    let key = input_key(&("zero", &configuration))?;
+    let key = input_key(&("zero", &configuration, &quotes))?;
     add(
         context,
         InputData::Curve {
             configuration,
-            quotes: QuoteStore::new(date(context)?),
+            quotes,
         },
         key,
     )
@@ -435,18 +456,12 @@ pub fn qs_context_add_composite_curve(
     spread_index: &str,
 ) -> Result<String, XllError> {
     use crate::runtime::configuration_inputs::WorksheetConfiguration;
-    use quantsupport::prelude::{CurveConfiguration, CurveConstruction, QuoteStore};
-    let configuration = CurveConfiguration::new(
+    use quantsupport::prelude::{CurveConfiguration, QuoteStore};
+    let configuration = CurveConfiguration::composite(
         parse_index(market_index)?,
-        DayCounter::Actual360,
-        Interpolator::LogLinear,
-        false,
-        vec![],
-    )
-    .with_construction(CurveConstruction::Composite {
-        base_index: parse_index(base_index)?,
-        spread_index: parse_index(spread_index)?,
-    });
+        parse_index(base_index)?,
+        parse_index(spread_index)?,
+    );
     configuration.validate().map_err(value_error)?;
     let key = input_key(&("composite", &configuration))?;
     add(

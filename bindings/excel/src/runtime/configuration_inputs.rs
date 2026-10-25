@@ -1,8 +1,8 @@
 //! Validate worksheet configuration inputs before mutating a live collection.
 
 use quantsupport::prelude::{
-    CreditCurveConfiguration, CurveConfiguration, CurveConstruction, QuoteDetails,
-    VolatilityCubeConfiguration, VolatilitySurfaceConfiguration,
+    CreditCurveConfiguration, CurveConfiguration, QuoteDetails, VolatilityCubeConfiguration,
+    VolatilitySurfaceConfiguration,
 };
 use std::collections::HashSet;
 
@@ -28,28 +28,12 @@ pub trait WorksheetConfiguration {
 
 impl WorksheetConfiguration for CurveConfiguration {
     fn validate(&self) -> Result<(), String> {
-        match self.construction() {
-            CurveConstruction::Bootstrapped => quote_identifiers(self.quotes()),
-            CurveConstruction::ZeroRate { pillars, rates, .. } => {
-                if pillars.is_empty() || pillars.len() != rates.len() {
-                    return Err(
-                        "zero-rate curves require equally sized, nonempty pillars and rates".into(),
-                    );
-                }
-                if rates.iter().any(|rate| !rate.is_finite()) {
-                    return Err("zero rates must be finite".into());
-                }
-                Ok(())
-            }
-            CurveConstruction::Composite {
-                base_index,
-                spread_index,
-            } => {
-                if base_index == self.market_index() || spread_index == self.market_index() {
-                    return Err("a composite curve cannot depend on itself".into());
-                }
-                Ok(())
-            }
+        self.validate_definition()
+            .map_err(|error| error.to_string())?;
+        if self.composite_components().is_some() {
+            Ok(())
+        } else {
+            quote_identifiers(self.quotes())
         }
     }
 }

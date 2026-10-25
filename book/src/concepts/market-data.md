@@ -113,7 +113,7 @@ market, load the corresponding snapshot as described below.
 
 `MarketSnapshot` records one observation instant together with a complete set
 of native construction inputs. `MarketSnapshotStore` holds such observations.
-Snapshots preserve quote levels, FX and configuration—including explicit zero
+Snapshots preserve quote levels, FX and configuration—including direct zero
 rates—but not constructed curves or an AD tape. Contexts supplied with runtime
 market objects cannot be captured as if those objects were serializable
 construction instructions.
@@ -127,8 +127,8 @@ offset-aware input to UTC. Duplicate equivalent instants are rejected.
 The selected snapshot retains its own market reference date. Selecting Friday's
 market for a Monday request does not roll Friday's curves to Monday. Inputs
 from several snapshots are not blended. A selected bid or ask market rebuilds
-the consumed quoted inputs at that level; explicit zero-rate pillars and spot
-FX are side-independent.
+all consumed instrument, zero-rate and discount-factor quotes at that level;
+spot FX is side-independent.
 
 Fixing histories are supplied separately and do not carry publication-vintage
 filtering. Historical valuation therefore requires the application to supply

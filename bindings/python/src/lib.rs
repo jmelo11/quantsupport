@@ -62,7 +62,6 @@ fn quantsupport(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<market::snapshots::SnapshotSelector>()?;
     m.add_class::<market::snapshots::MarketSnapshot>()?;
     m.add_class::<market::snapshots::MarketSnapshotStore>()?;
-    m.add_class::<market::stores::CurveConstruction>()?;
     m.add_class::<market::stores::CurveConfiguration>()?;
     m.add_class::<market::stores::CreditCurveConfiguration>()?;
     m.add_class::<market::stores::VolatilitySurfaceConfiguration>()?;

@@ -19,7 +19,7 @@ PYTHON_SECTIONS = {
         "Currencies and Indices": "Currency MarketIndex",
         "Quotes, Fixings, and FX": "QuoteStore FixingStore FxStore Level",
         "Historical Snapshots": "SnapshotSelectionRule SnapshotSelector MarketSnapshot MarketSnapshotStore",
-        "Curve Construction": "CurveConfiguration CreditCurveConfiguration CurveConstruction Interpolator",
+        "Curve Construction": "CurveConfiguration CreditCurveConfiguration Interpolator",
         "Yield Curves": "DiscountCurve ZeroRateTermStructure TenorBasedZeroRateTermStructure",
         "Volatility": "VolatilitySurface VolatilityCube VolatilitySurfaceConfiguration VolatilityCubeConfiguration VolatilityType SmileType",
         "Simulation": "Simulation SimulationConfiguration",

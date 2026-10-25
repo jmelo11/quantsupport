@@ -109,15 +109,16 @@ class TradeInstrumentTests(unittest.TestCase):
         curves = [
             qs.CurveConfiguration(
                 market_index=index,
-                construction=qs.CurveConstruction.zero_rate(
-                    pillars=["0D", "5Y"], rates=[0.03, 0.03],
-                ),
+                quotes=[f"ZeroRate_{currency}_{index}_{tenor}" for tenor in ["0D", "5Y"]],
             )
-            for index in ["SOFR", "ESTR"]
+            for currency, index in [("USD", "SOFR"), ("EUR", "ESTR")]
         ]
         fx = qs.FxStore()
         fx.add("USD", "EUR", 0.9)
-        quotes = qs.QuoteStore.from_dict({"reference_date": date, "quotes": []})
+        quotes = qs.QuoteStore.from_dict({"reference_date": date, "quotes": [
+            {"identifier": identifier, "mid": 0.03}
+            for curve in curves for identifier in curve.to_dict()["quotes"]
+        ]})
         context = qs.PricingContext(
             quotes, curves, fx=fx,
             csa_policy=qs.SingleCurveCSADiscountPolicy("EUR", "ESTR"),

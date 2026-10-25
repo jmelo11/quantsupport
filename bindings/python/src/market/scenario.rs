@@ -10,17 +10,17 @@ use quantsupport::{
     prelude::{PricingContext as QsPricingContext, Scenario as QsScenario, Shock as QsShock},
 };
 
-use crate::pricing::context::PricingContext;
 use crate::common::{conversion::qs_err, enums::ScenarioType};
+use crate::pricing::context::PricingContext;
 
-/// A market shock selecting quote identifiers or explicit zero-rate pillars.
+/// A market shock selecting market quote identifiers.
 ///
 /// Parameters
 /// ----------
 /// target : str
 ///     Exact pillar identifier or underscore-separated selector. For example,
 ///     EURIBOR12m selects its deposit and swap quotes; FUNDINGSPREAD selects
-///     every explicit zero-rate pillar of that funding-spread curve.
+///     every zero-rate quote of that funding-spread curve.
 /// value : float
 ///     Additive decimal change for Absolute shocks (0.01 is 100 basis points),
 ///     or fractional change for Relative shocks (0.10 increases inputs by 10%).

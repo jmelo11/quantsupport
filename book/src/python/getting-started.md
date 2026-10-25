@@ -21,8 +21,8 @@ assert Trade is qs.Trade
 
 ## A complete market and valuation
 
-An explicit zero-rate configuration makes a small example independent of
-external data files. Its input rates are continuously compounded annual
+A small store of zero-rate quotes makes the example independent of external
+data files. Its input rates are continuously compounded annual
 decimals. Configuration remains serializable; the live curve is constructed
 when pricing requests it.
 
@@ -31,15 +31,14 @@ import quantsupport as qs
 
 quotes = qs.QuoteStore.from_dict({
     "reference_date": "2026-01-02",
-    "quotes": [],
+    "quotes": [
+        {"identifier": f"ZeroRate_USD_SOFR_{tenor}", "mid": 0.03}
+        for tenor in ["1Y", "5Y", "10Y"]
+    ],
 })
 curve = qs.CurveConfiguration(
     market_index=qs.MarketIndex.SOFR,
-    construction=qs.CurveConstruction.zero_rate(
-        pillars=["1Y", "5Y", "10Y"],
-        rates=[0.03, 0.03, 0.03],
-        compounding=qs.Compounding.Continuous,
-    ),
+    quotes=quotes.identifiers(),
     enable_extrapolation=True,
 )
 swap = qs.Swap(

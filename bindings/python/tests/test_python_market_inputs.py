@@ -2,26 +2,24 @@
 import inspect
 import math
 import unittest
-from datetime import date
 
 import quantsupport as qs
+
+from market_fixtures import append_quotes, zero_rate_quotes
 
 REFERENCE = "2026-02-24"
 SPREAD = qs.MarketIndex.other(name="SPREAD")
 FUNDING = qs.MarketIndex.other(name="FUNDING")
 
 
-def zero_curve(index, rates):
+PILLARS = ["0D", "2027-02-24", "2029-02-24"]
+
+
+def zero_curve(index):
     return qs.CurveConfiguration(
-        market_index=index,
-        day_counter=qs.DayCounter.Actual360,
+        market_index=index, day_counter=qs.DayCounter.Actual360,
         interpolator=qs.Interpolator.Linear,
-        construction=qs.CurveConstruction.zero_rate(
-            pillars=[qs.Period.parse("0D"), date(2027, 2, 24), "2029-02-24"],
-            rates=rates,
-            compounding=qs.Compounding.Continuous,
-            frequency=qs.Frequency.Annual,
-        ),
+        quotes=[f"ZeroRate_EUR_{index}_{pillar}" for pillar in PILLARS],
     )
 
 
@@ -35,7 +33,6 @@ def context_inputs():
         curves=[qs.CurveConfiguration(
             market_index=qs.MarketIndex.ESTR,
             quotes=identifiers,
-            construction=qs.CurveConstruction.bootstrapped(),
         )],
         csa_policy=qs.SingleCurveCSADiscountPolicy(
             collateral_currency=qs.Currency.EUR,
@@ -47,14 +44,10 @@ def context_inputs():
 class PythonMarketInputTests(unittest.TestCase):
     def test_typed_curves_price_composition_with_dates_and_tenors(self):
         context = context_inputs()
+        context.quotes = append_quotes(context.quotes, zero_rate_quotes(SPREAD, PILLARS, [0.01] * 3))
         context.curves += [
-            qs.CurveConfiguration(
-                market_index=FUNDING,
-                construction=qs.CurveConstruction.composite(
-                    base_index=qs.MarketIndex.ESTR, spread_index=SPREAD,
-                ),
-            ),
-            zero_curve(SPREAD, [0.01] * 3),
+            qs.CurveConfiguration.composite(market_index=FUNDING, base_index=qs.MarketIndex.ESTR, spread_index=SPREAD),
+            zero_curve(SPREAD),
         ]
         with context:
             tau = qs.DayCounter.Actual360.year_fraction(start=REFERENCE, end="2028-02-24")
@@ -84,15 +77,13 @@ class PythonMarketInputTests(unittest.TestCase):
         context = context_inputs()
         original = context.curves
         with context:
-            context.curves = original + [zero_curve(SPREAD, [0.01] * 3)]
+            context.quotes = append_quotes(context.quotes, zero_rate_quotes(SPREAD, PILLARS, [0.01] * 3))
+            context.curves = original + [zero_curve(SPREAD)]
             before = context.curve(SPREAD).discount_factor("2028-02-24")
-            context.curves = original + [zero_curve(SPREAD, [0.02] * 3)]
+            context.quotes = append_quotes(context.quotes, zero_rate_quotes(SPREAD, PILLARS, [0.02] * 3))
             after = context.curve(SPREAD).discount_factor("2028-02-24")
             self.assertAlmostEqual(after, before ** 2)
-            context.curves = original + [qs.CurveConfiguration(
-                market_index=FUNDING,
-                construction=qs.CurveConstruction.composite(base_index="ESTR", spread_index=SPREAD),
-            )]
+            context.curves = original + [qs.CurveConfiguration.composite(market_index=FUNDING, base_index='ESTR', spread_index=SPREAD)]
             with self.assertRaisesRegex(qs.QuantSupportError, "SPREAD"):
                 context.curve(FUNDING)
             context.curves = original
@@ -111,11 +102,18 @@ class PythonMarketInputTests(unittest.TestCase):
         context.fixed_income_policy = None
         self.assertIsNone(context.fixed_income_policy)
 
+    def test_curve_values_and_construction_shortcut_are_not_configuration_arguments(self):
+        self.assertFalse(hasattr(qs, "CurveConstruction"))
+        self.assertNotIn("construction", inspect.signature(qs.CurveConfiguration).parameters)
+        with self.assertRaises(TypeError):
+            qs.CurveConfiguration(market_index="SOFR", construction=None)
+        with self.assertRaisesRegex(qs.QuantSupportError, "unknown field.*rates"):
+            qs.CurveConfiguration.from_dict({"market_index": "SOFR", "rates": [0.03]})
+
     def test_constructor_signatures_and_parameter_help(self):
         for constructor, parameter in [
             (qs.CurveConfiguration, "market_index"),
-            (qs.CurveConstruction.zero_rate, "pillars"),
-            (qs.CurveConstruction.composite, "base_index"),
+            (qs.CurveConfiguration.composite, "base_index"),
             (qs.FixedIncomeDiscountPolicy, "discount_curve_by_currency"),
             (qs.Shock, "target"),
             (qs.Shock, "value"),

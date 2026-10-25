@@ -4,7 +4,9 @@ from typing import Any, ClassVar, Mapping, Sequence, final, overload
 from typing_extensions import Self, disjoint_base
 from pandas import DataFrame
 from ..market import _CurrencyLike, _IndexLike
-__all__ = ['ScenarioType', 'Shock', 'Scenario', 'XvaConfig', 'CsaTerms', 'NettingSet', 'XvaResult', 'ExposureProfile']
+__all__ = ['ScenarioType', 'Shock', 'Scenario', 'XvaConfig',
+           'CsaTerms', 'NettingSet', 'XvaResult', 'ExposureProfile']
+
 
 @final
 class ScenarioType:
@@ -39,9 +41,10 @@ QuantSupportError
     Absolute: ClassVar[ScenarioType]
     Relative: ClassVar[ScenarioType]
 
+
 @final
 class Shock:
-    """A market shock selecting quote identifiers or explicit zero-rate pillars.
+    """A market shock selecting market quote identifiers.
 
 Parameters
 ----------
@@ -51,7 +54,7 @@ target : str
     Token order and repeated-token counts are ignored, so supplying a full
     identifier does not make the match exact-only. For example,
     EURIBOR12m selects its deposit and swap quotes; FUNDINGSPREAD selects
-    every explicit zero-rate pillar of that funding-spread curve.
+    every zero-rate quote of that funding-spread curve.
 value : float
     Finite additive change in the selected input's units for Absolute shocks
     (for decimal interest rates, 0.01 is 100 basis points), or fractional change
@@ -94,6 +97,7 @@ the selected inputs, rather than assuming one shock per full ID bumps once."""
     def shock_type(self) -> ScenarioType:
         """Interpretation of the shock value."""
         ...
+
 
 @final
 class Scenario:
@@ -147,7 +151,7 @@ QuantSupportError
 """
         ...
 
-    def __exit__(self, _exc_type: Any=..., _exc_value: Any=..., _traceback: Any=...) -> bool:
+    def __exit__(self, _exc_type: Any = ..., _exc_value: Any = ..., _traceback: Any = ...) -> bool:
         """Discard the temporary market view and release its context reference.
 
 Parameters
@@ -171,6 +175,7 @@ RuntimeError
     If this scenario is inactive or scenarios exit out of reverse entry order.
 """
         ...
+
 
 @final
 class XvaConfig:
@@ -241,6 +246,7 @@ QuantSupportError
 """
         ...
 
+
 @final
 class CsaTerms:
     """Per-client collateral, credit, and funding assumptions for XVA.
@@ -300,7 +306,7 @@ QuantSupportError
     or transfer minimum is negative or non-finite.
 """
 
-    def __new__(cls, collateral_index: _IndexLike, collateral_currency: _CurrencyLike, credit_spread: Any, recovery: Any, funding_spread: float=..., credit_index: _IndexLike | None=..., funding_spread_curve: Any | None=..., funding_index: Any | None=..., *, variation_margin: bool=..., counterparty_threshold: float=..., own_threshold: float=..., minimum_transfer_amount: float=...) -> Self:
+    def __new__(cls, collateral_index: _IndexLike, collateral_currency: _CurrencyLike, credit_spread: Any, recovery: Any, funding_spread: float = ..., credit_index: _IndexLike | None = ..., funding_spread_curve: Any | None = ..., funding_index: Any | None = ..., *, variation_margin: bool = ..., counterparty_threshold: float = ..., own_threshold: float = ..., minimum_transfer_amount: float = ...) -> Self:
         ...
 
     def __repr__(self) -> str:
@@ -417,6 +423,7 @@ QuantSupportError
         """Read-only flat counterparty credit spread in decimal rate units."""
         ...
 
+
 @final
 class NettingSet:
     """A group of trades under a single netting agreement (one client),
@@ -457,6 +464,7 @@ QuantSupportError
     def name(self) -> str:
         """Read-only netting-agreement identifier used to label XVA results."""
         ...
+
 
 @final
 class XvaResult:
@@ -537,6 +545,7 @@ QuantSupportError
     If pandas is unavailable. Pandas construction errors propagate unchanged.
 """
         ...
+
 
 @final
 class ExposureProfile:

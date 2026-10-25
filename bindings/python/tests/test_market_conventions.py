@@ -63,10 +63,13 @@ class MarketConventionTests(unittest.TestCase):
         store = qs.MarketSnapshotStore()
         for day, rate in ((15, 0.03), (16, 0.06)):
             context = qs.PricingContext(
-                quotes=qs.QuoteStore.from_dict({"reference_date": f"2026-01-{day}", "quotes": []}),
+                quotes=qs.QuoteStore.from_dict({"reference_date": f"2026-01-{day}", "quotes": [
+                    {"identifier": f"ZeroRate_USD_{name}_{tenor}", "mid": rate}
+                    for name in NEW_INDICES for tenor in ["0D", "2Y"]
+                ]}),
                 curves=[qs.CurveConfiguration(
                     market_index=getattr(qs.MarketIndex, name),
-                    construction=qs.CurveConstruction.zero_rate(pillars=["0D", "2Y"], rates=[rate, rate]),
+                    quotes=[f"ZeroRate_USD_{name}_{tenor}" for tenor in ["0D", "2Y"]],
                 ) for name in NEW_INDICES],
             )
             store.insert(qs.MarketSnapshot.from_context(qs.DateTime(2026, 1, day, 10), context))

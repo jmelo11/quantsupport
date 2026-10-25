@@ -9,7 +9,7 @@ import quantsupport.pricing as _pricing
 _CurrencyLike = Currency | str
 _IndexLike = MarketIndex | str | Mapping[str, Any]
 
-__all__ = ['SnapshotSelectionRule', 'SnapshotSelector', 'MarketSnapshot', 'MarketSnapshotStore', 'Currency', 'MarketIndex', 'Level', 'Interpolator', 'VolatilityType', 'SmileType', 'QuoteStore', 'FixingStore', 'FxStore', 'CurveConstruction', 'CurveConfiguration', 'CreditCurveConfiguration', 'VolatilitySurfaceConfiguration', 'VolatilityCubeConfiguration', 'SimulationConfiguration', 'ZeroRateTermStructure', 'TenorBasedZeroRateTermStructure', 'DiscountCurve', 'VolatilitySurface', 'VolatilityCube', 'Simulation']
+__all__ = ['SnapshotSelectionRule', 'SnapshotSelector', 'MarketSnapshot', 'MarketSnapshotStore', 'Currency', 'MarketIndex', 'Level', 'Interpolator', 'VolatilityType', 'SmileType', 'QuoteStore', 'FixingStore', 'FxStore', 'CurveConfiguration', 'CreditCurveConfiguration', 'VolatilitySurfaceConfiguration', 'VolatilityCubeConfiguration', 'SimulationConfiguration', 'ZeroRateTermStructure', 'TenorBasedZeroRateTermStructure', 'DiscountCurve', 'VolatilitySurface', 'VolatilityCube', 'Simulation']
 
 @final
 class SnapshotSelectionRule:
@@ -52,10 +52,10 @@ class SnapshotSelector:
 class MarketSnapshot:
     """Timestamped market inputs, including curve construction configurations.
 
-    Curves are rebuilt from configurations, including explicit zero-rate pillars.
+    Curves are rebuilt from quote identifiers or composite component indices.
     Runtime AD objects, fixings, temporary scenarios, Python pricer registrations,
-    and Python fixed-income policies are not archived. FX and explicit zero-rate
-    pillars are side-independent. Use from_context or from_dict to construct.
+    and Python fixed-income policies are not archived. FX spots are side-independent;
+    zero-rate and discount-factor quotes use the selected side. Use from_context or from_dict to construct.
     """
     @staticmethod
     def from_context(timestamp: _DateTimeLike, context: _pricing.PricingContext) -> MarketSnapshot:
@@ -844,77 +844,14 @@ meaning 1 base = rate quote."""
         ...
 
 @final
-class CurveConstruction:
-    """Native curve construction rule: calibration, zero rates, or composition."""
-
-    @staticmethod
-    def bootstrapped() -> CurveConstruction:
-        """Select construction from configured market quote identifiers.
-
-        Returns
-        -------
-        CurveConstruction
-            Calibrate instrument quotes or interpolate direct discount-factor
-            or zero-rate quotes in ``CurveConfiguration.quotes`` when the
-            pricing context constructs the curve.
-        """
-        ...
-
-    @staticmethod
-    def zero_rate(*, pillars: Sequence[_DateLike | _PeriodLike], rates: Sequence[float], compounding: Compounding | str | None=..., frequency: Frequency | str | None=...) -> CurveConstruction:
-        """Define construction from explicit annual zero-rate pillars.
-
-        Parameters
-        ----------
-        pillars : sequence of Date, datetime.date, Period, or str
-            Ordered pillar dates or tenors measured from the pricing context's
-            reference date. Strings may be ISO dates or tenors such as ``"6M"``.
-        rates : sequence of float
-            Annual decimal zero rates, one per pillar; ``0.01`` means 1%.
-        compounding : Compounding, str, or None, optional
-            Typed convention or case-insensitive member name. Omitted or
-            ``None`` uses ``Continuous``.
-        frequency : Frequency, str, or None, optional
-            Typed frequency or case-insensitive member name. Omitted or
-            ``None`` uses ``Annual``; relevant for periodic compounding.
-
-        Returns
-        -------
-        CurveConstruction
-            Zero-rate construction rule. Time basis, interpolation, and
-            extrapolation are supplied by the enclosing ``CurveConfiguration``.
-        """
-        ...
-
-    @staticmethod
-    def composite(*, base_index: _IndexLike, spread_index: _IndexLike) -> CurveConstruction:
-        """Combine benchmark and spread curves by multiplying discount factors.
-
-        Parameters
-        ----------
-        base_index : MarketIndex, str, or mapping
-            Benchmark curve identity in the context: typed index, case-sensitive
-            native fieldless name, or native tagged index mapping.
-        spread_index : MarketIndex, str, or mapping
-            Spread curve identity in the same context, in the same accepted
-            formats. Continuous zero spreads add to benchmark continuous rates.
-
-        Returns
-        -------
-        CurveConstruction
-            Composition rule referencing the two configured curves.
-        """
-        ...
-
-@final
 class CurveConfiguration:
     """Inputs for a projection or discount curve built by ``PricingContext``.
 
-    Construction may calibrate to observed quotes, interpolate explicit zero
-    rates, or compose two other configured curves.
+    Quote identifiers select instrument calibration or direct zero-rate/discount
+    interpolation. Use ``composite`` to combine two other configured curves.
     """
 
-    def __new__(cls, *, market_index: _IndexLike, quotes: Sequence[str] | None=..., construction: CurveConstruction | None=..., day_counter: DayCounter | str | None=..., interpolator: Interpolator | str | None=..., enable_extrapolation: bool=...) -> Self:
+    def __new__(cls, *, market_index: _IndexLike, quotes: Sequence[str] | None=..., day_counter: DayCounter | str | None=..., interpolator: Interpolator | str | None=..., enable_extrapolation: bool=...) -> Self:
         """Configure a curve for later construction by a pricing context.
 
         Parameters
@@ -929,8 +866,6 @@ class CurveConfiguration:
             pillars are tenors or ISO dates. Zero rates default to Continuous
             and Annual. The curve supplies day count and interpolation.
             Omitted or ``None`` supplies an empty list, not inferred quotes.
-        construction : CurveConstruction or None, optional
-            Construction rule. Omitted or ``None`` selects ``bootstrapped()``.
         day_counter : DayCounter, str, or None, optional
             Curve time basis as an enum or case-insensitive name. Omitted or
             ``None`` uses ``Actual360``.
@@ -939,6 +874,27 @@ class CurveConfiguration:
             ``CubicSpline``. Omitted or ``None`` uses ``LogLinear``.
         enable_extrapolation : bool, optional
             Allow evaluation outside the pillar range. Defaults to ``True``.
+        """
+        ...
+
+    @staticmethod
+    def composite(*, market_index: _IndexLike, base_index: _IndexLike, spread_index: _IndexLike) -> CurveConfiguration:
+        """Multiply discount factors from two configured component curves.
+
+        Parameters
+        ----------
+        market_index : MarketIndex, str, or mapping
+            Identity of the resulting composite curve.
+        base_index : MarketIndex, str, or mapping
+            Benchmark curve configured in the same context.
+        spread_index : MarketIndex, str, or mapping
+            Spread curve configured in the same context. Components must share
+            a reference date and day-count convention.
+
+        Returns
+        -------
+        CurveConfiguration
+            Composite definition referencing its two component indices.
         """
         ...
 
@@ -952,13 +908,10 @@ class CurveConfiguration:
         Parameters
         ----------
         obj : mapping
-            Required ``market_index`` and optional native construction fields.
-            Omitted ``construction`` is ``{"type": "Bootstrapped"}``;
-            ``day_counter``, ``interpolator``, ``enable_extrapolation``, and
-            ``quotes`` default to ``"Actual360"``, ``"LogLinear"``, ``True``,
-            and an empty list. Explicit construction uses a mapping tagged by
-            ``type`` (``Bootstrapped``, ``ZeroRate``, or ``Composite``), not a
-            ``CurveConstruction`` wrapper object. Typed supported enums and
+            Ordinary curves contain ``market_index``, quote identifiers and
+            optional ``day_counter``, ``interpolator`` and ``enable_extrapolation``
+            settings. Composite curves identify ``base_index`` and ``spread_index``
+            and cannot contain quotes. Typed supported enums and
             indices are normalized; serialized values use native case-sensitive
             names and tags. Unknown fields are rejected. Defaults apply to
             omitted fields, not explicit ``None`` in non-nullable fields.

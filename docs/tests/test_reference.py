@@ -174,8 +174,8 @@ class PythonReferenceTests(unittest.TestCase):
         self.assertIn("include_first: bool=True", signature)
 
     def test_factory_views_return_aliases_and_exception_source(self):
-        factory = SimpleNamespace(id="quantsupport.market.CurveConstruction",
-                                  short_name="CurveConstruction")
+        factory = SimpleNamespace(id="quantsupport.instruments.LoanRepaymentStructure",
+                                  short_name="LoanRepaymentStructure")
         self.assertEqual(class_declaration(factory), "")
         self.assertIn("factory", construction_note(factory))
         view = SimpleNamespace(id="quantsupport.market.DiscountCurve", short_name="DiscountCurve")
@@ -542,7 +542,7 @@ class RenderedReferenceTests(unittest.TestCase):
             self.assertRegex(rendered_signature, r"→\s*dict\s*\[\s*str\s*,\s*float\s*\]")
             date = Text((output / "autoapi/quantsupport/time/Date.html").read_text())
             self.assertIn("quantsupport.time.Date.__add__", date.ids)
-            factory = Text((output / "autoapi/quantsupport/market/CurveConstruction.html").read_text())
+            factory = Text((output / "autoapi/quantsupport/instruments/LoanRepaymentStructure.html").read_text())
             self.assertIn("no direct constructor", factory.text)
             self.assertNotIn("PythonDate", date.text)
             function_index = Text((output / "excel-functionindex.html").read_text())

@@ -141,13 +141,14 @@ class MarketSnapshotTests(unittest.TestCase):
             with self.assertRaisesRegex(qs.QuantSupportError, "ask"):
                 context.curve("SOFR")
 
-    def test_explicit_zero_rate_curve_roundtrip(self):
+    def test_zero_rate_quotes_roundtrip(self):
         context = qs.PricingContext(
-            quotes=qs.QuoteStore.from_dict({"reference_date": "2025-01-15", "quotes": []}),
+            quotes=qs.QuoteStore.from_dict({"reference_date": "2025-01-15", "quotes": [
+                {"identifier": f"ZeroRate_USD_SOFR_{pillar}", "mid": rate}
+                for pillar, rate in [("0D", 0.02), ("1Y", 0.03)]
+            ]}),
             curves=[qs.CurveConfiguration(
-                market_index="SOFR", construction=qs.CurveConstruction.zero_rate(
-                    pillars=["0D", "1Y"], rates=[0.02, 0.03],
-                ),
+                market_index="SOFR", quotes=["ZeroRate_USD_SOFR_0D", "ZeroRate_USD_SOFR_1Y"],
             )],
         )
         snapshot = qs.MarketSnapshot.from_context(qs.DateTime(2025, 1, 15, 10), context)

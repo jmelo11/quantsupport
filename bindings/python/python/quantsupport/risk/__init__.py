@@ -11,4 +11,5 @@ from ..quantsupport import (
     ExposureProfile as ExposureProfile,
 )
 
-__all__ = ['ScenarioType', 'Shock', 'Scenario', 'XvaConfig', 'CsaTerms', 'NettingSet', 'XvaResult', 'ExposureProfile']
+__all__ = ['ScenarioType', 'Shock', 'Scenario', 'XvaConfig',
+           'CsaTerms', 'NettingSet', 'XvaResult', 'ExposureProfile']

@@ -454,7 +454,7 @@ quotes : QuoteStore
     Typed market observations, copied into the context. The store's reference
     date determines the context evaluation date.
 curves : sequence of CurveConfiguration
-    Typed bootstrap, explicit zero-rate, or composite-curve configurations.
+    Typed quote-based or composite-curve configurations.
     These are construction inputs, not already constructed DiscountCurve views.
 fixings : FixingStore, optional
     Published historical index observations. Defaults to None, retaining the

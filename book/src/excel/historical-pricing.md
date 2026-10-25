@@ -82,7 +82,7 @@ historical fixing dataset when publication times or revisions affect a result.
 
 The default quote side is `Mid`; `Bid` and `Ask` rebuild quoted construction and
 calibration inputs at that side. A consumed missing side raises an error. FX
-spots and explicit zero-rate pillars are side-independent.
+spots are side-independent; zero-rate quotes use the selected level.
 
 Selection preserves the matched snapshot's **market reference date** as the
 valuation date. Requesting Monday with `Previous` and matching Friday prices at

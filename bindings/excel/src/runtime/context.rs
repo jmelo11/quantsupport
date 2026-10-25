@@ -310,10 +310,8 @@ pub fn prepare(
                     return Err(format!("duplicate context curve: {index}"));
                 }
                 let configuration = if configuration.quotes().is_empty()
-                    && matches!(
-                        configuration.construction(),
-                        CurveConstruction::Bootstrapped
-                    ) {
+                    && configuration.composite_components().is_none()
+                {
                     let mut ids: Vec<_> = quotes
                         .quotes()
                         .iter()
@@ -461,21 +459,22 @@ pub fn evaluate_requests(
             }
             _ => "DiscountedCashflowPricer",
         };
-        let default_policy =
-            super::pricing::PolicyObject {
-                native: if matches!(
-                    trade,
-                    QsObject::LoanTrade(_) | QsObject::FixedRateBondTrade(_)
-                ) {
-                    std::sync::Arc::new(FixedIncomeDiscountPolicy::new(false).with_discount_curve_index(
+        let default_policy = super::pricing::PolicyObject {
+            native: if matches!(
+                trade,
+                QsObject::LoanTrade(_) | QsObject::FixedRateBondTrade(_)
+            ) {
+                std::sync::Arc::new(
+                    FixedIncomeDiscountPolicy::new(false).with_discount_curve_index(
                         context.base_currency(),
                         context.base_index().clone(),
-                    ))
-                } else {
-                    std::sync::Arc::new(context.csa_policy())
-                },
-                kind: "ContextDiscountPolicy",
-            };
+                    ),
+                )
+            } else {
+                std::sync::Arc::new(context.csa_policy())
+            },
+            kind: "ContextDiscountPolicy",
+        };
         default = PricerObject::new(
             implementation,
             if implementation == "RateFuturesPricer" {
