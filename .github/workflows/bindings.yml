@@ -21,12 +21,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python: ['3.9', '3.10', '3.11', '3.12', '3.13', '3.14']
+        python: ['3.11', '3.12', '3.13', '3.14']
         platform:
           - {runner: ubuntu-22.04, target: x86_64}
+          - {runner: ubuntu-24.04-arm, target: aarch64}
           - {runner: windows-latest, target: x64}
-          - {runner: macos-15, target: aarch64}
-          - {runner: macos-15-intel, target: x86_64}
+          - {runner: windows-11-arm, target: aarch64-pc-windows-msvc}
+          - {runner: macos-15, target: aarch64, deployment: '11.0'}
+          - {runner: macos-15-intel, target: x86_64, deployment: '10.15'}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -36,6 +38,8 @@ jobs:
           python-version: ${{ matrix.python }}
       - name: Build wheel
         uses: PyO3/maturin-action@v1
+        env:
+          MACOSX_DEPLOYMENT_TARGET: ${{ matrix.platform.deployment || '' }}
         with:
           target: ${{ matrix.platform.target }}
           manylinux: '2_28'
@@ -52,10 +56,19 @@ jobs:
           python -m mypy bindings/python/python/quantsupport --ignore-missing-imports
           python -m mypy.stubtest quantsupport --ignore-missing-stub
           python -m mypy bindings/python/tests/typing_native_inputs.py --ignore-missing-imports
+      - name: Package and test extracted folder distribution with dependencies
+        run: |
+          python -m unittest discover -s bindings/python/scripts -p 'test_*.py' -v
+          python bindings/python/scripts/package_portable.py --wheel-directory dist --output dist
       - uses: actions/upload-artifact@v6
         with:
           name: python-${{ matrix.platform.runner }}-${{ matrix.python }}
           path: dist/*.whl
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v6
+        with:
+          name: portable-python-${{ matrix.platform.runner }}-${{ matrix.python }}
+          path: dist/*-portable.zip
           if-no-files-found: error
 
   sdist:

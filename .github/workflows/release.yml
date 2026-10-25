@@ -111,6 +111,11 @@ jobs:
           path: dist
       - uses: actions/download-artifact@v6
         with:
+          pattern: portable-python-*
+          merge-multiple: true
+          path: dist
+      - uses: actions/download-artifact@v6
+        with:
           name: excel-windows-x64
           path: dist
       - name: Create release and attach packages
