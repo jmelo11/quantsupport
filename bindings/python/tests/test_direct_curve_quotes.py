@@ -26,6 +26,27 @@ def context(observations, *, enable_extrapolation=False, **kwargs):
 
 
 class DirectCurveQuoteTests(unittest.TestCase):
+    def test_builtin_curve_indices_match_quotes_in_any_case(self):
+        for family, value, expected in [
+            ("DiscountFactor", 0.999, 0.999),
+            ("ZeroRate", 0.04, math.exp(-0.04 * 7 / 365)),
+        ]:
+            canonical = f"{family}_EUR_EURIBOR3m_1W"
+            for label in [canonical.upper(), canonical.lower(), f"{family}_eUr_EuRiBoR3M_1w"]:
+                quotes = qs.QuoteStore.from_dict({
+                    "reference_date": REFERENCE,
+                    "quotes": [{"identifier": label, "mid": value}],
+                })
+                with self.subTest(label=label), qs.PricingContext(
+                    quotes, [qs.CurveConfiguration(
+                        market_index="EURIBOR3m", quotes=[label], day_counter="Actual365",
+                        interpolator="Linear",
+                    )],
+                ) as ctx:
+                    curve = ctx.curve("EURIBOR3m")
+                    self.assertAlmostEqual(curve.discount_factor("2026-03-03"), expected)
+                    self.assertEqual(list(curve.pillars().label), [label])
+
     def test_discount_factors_sort_dates_and_tenors_and_fix_the_origin(self):
         observations = [
             ("DiscountFactor_EUR_ESTR_2Y", {"mid": 0.90, "bid": 0.89, "ask": 0.91}),

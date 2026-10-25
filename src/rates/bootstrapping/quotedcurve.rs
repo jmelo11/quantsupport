@@ -217,6 +217,55 @@ mod tests {
     }
 
     #[test]
+    fn direct_quotes_match_builtin_indices_in_any_case() -> Result<()> {
+        let reference_date = Date::new(2026, 2, 24);
+        let pillar_date = Date::new(2026, 3, 3);
+        for (label, value, expected) in [
+            ("DISCOUNTFACTOR_EUR_EURIBOR3M_1W", 0.999, 0.999),
+            ("discountfactor_eur_euribor3m_1w", 0.999, 0.999),
+            ("DiscountFactor_EUR_EuRiBoR3m_1W", 0.999, 0.999),
+            (
+                "ZERORATE_EUR_EURIBOR3M_1W",
+                0.04,
+                (-0.04_f64 * 7.0 / 365.0).exp(),
+            ),
+            (
+                "zerorate_eur_euribor3m_1w",
+                0.04,
+                (-0.04_f64 * 7.0 / 365.0).exp(),
+            ),
+            (
+                "ZeroRate_EUR_EuRiBoR3m_1W",
+                0.04,
+                (-0.04_f64 * 7.0 / 365.0).exp(),
+            ),
+        ] {
+            let mut store = QuoteStore::new(reference_date);
+            store.add_quote(Quote::new(label.parse()?, QuoteLevels::with_mid(value)));
+            let spec = CurveConfiguration::new(
+                MarketIndex::EURIBOR3m,
+                DayCounter::Actual365,
+                Interpolator::Linear,
+                false,
+                vec![label.into()],
+            );
+            let policy = BootstrapDiscountPolicy::new(MarketIndex::EURIBOR3m, Currency::EUR);
+            let (curves, snapshots) = MultiCurveBootstrapper::new(vec![spec], policy)
+                .bootstrap_with_snapshots(&store, Level::Mid)?;
+            let factor = curves[&MarketIndex::EURIBOR3m]
+                .curve()
+                .discount_factor(pillar_date)?
+                .value();
+            assert!((factor - expected).abs() < 1e-12, "{label}");
+            assert_eq!(
+                snapshots[&MarketIndex::EURIBOR3m].pillar_labels().unwrap(),
+                &[label]
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
     fn direct_quotes_preserve_labels_and_parent_bump_coordinates() -> Result<()> {
         for (observations, expected, bumped) in [
             (

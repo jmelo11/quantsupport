@@ -264,51 +264,52 @@ impl Display for MarketIndex {
 impl std::str::FromStr for MarketIndex {
     type Err = std::convert::Infallible;
 
+    /// Parses built-in names case insensitively, preserving custom names and payloads.
     fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
-        let resutls = match s {
-            "FedFunds" => Self::FedFunds,
+        let result = match s.to_ascii_uppercase().as_str() {
+            "FEDFUNDS" => Self::FedFunds,
             "CDI" => Self::CDI,
             "DESTR" => Self::DESTR,
             "KOFR" => Self::KOFR,
             "ZARONIA" => Self::ZARONIA,
-            "BBSW1m" => Self::BBSW1m,
-            "BBSW2m" => Self::BBSW2m,
-            "BBSW3m" => Self::BBSW3m,
-            "BBSW4m" => Self::BBSW4m,
-            "BBSW6m" => Self::BBSW6m,
-            "BKBM1m" => Self::BKBM1m,
-            "BKBM2m" => Self::BKBM2m,
-            "BKBM3m" => Self::BKBM3m,
-            "BKBM4m" => Self::BKBM4m,
-            "BKBM6m" => Self::BKBM6m,
-            "NIBOR1m" => Self::NIBOR1m,
-            "NIBOR3m" => Self::NIBOR3m,
-            "NIBOR6m" => Self::NIBOR6m,
-            "NIBOR12m" => Self::NIBOR12m,
-            "SHIBOR1d" => Self::SHIBOR1d,
-            "SHIBOR1w" => Self::SHIBOR1w,
-            "SHIBOR2w" => Self::SHIBOR2w,
-            "SHIBOR1m" => Self::SHIBOR1m,
-            "SHIBOR3m" => Self::SHIBOR3m,
-            "SHIBOR6m" => Self::SHIBOR6m,
-            "SHIBOR12m" => Self::SHIBOR12m,
-            "EURIBOR1w" => Self::EURIBOR1w,
+            "BBSW1M" => Self::BBSW1m,
+            "BBSW2M" => Self::BBSW2m,
+            "BBSW3M" => Self::BBSW3m,
+            "BBSW4M" => Self::BBSW4m,
+            "BBSW6M" => Self::BBSW6m,
+            "BKBM1M" => Self::BKBM1m,
+            "BKBM2M" => Self::BKBM2m,
+            "BKBM3M" => Self::BKBM3m,
+            "BKBM4M" => Self::BKBM4m,
+            "BKBM6M" => Self::BKBM6m,
+            "NIBOR1M" => Self::NIBOR1m,
+            "NIBOR3M" => Self::NIBOR3m,
+            "NIBOR6M" => Self::NIBOR6m,
+            "NIBOR12M" => Self::NIBOR12m,
+            "SHIBOR1D" => Self::SHIBOR1d,
+            "SHIBOR1W" => Self::SHIBOR1w,
+            "SHIBOR2W" => Self::SHIBOR2w,
+            "SHIBOR1M" => Self::SHIBOR1m,
+            "SHIBOR3M" => Self::SHIBOR3m,
+            "SHIBOR6M" => Self::SHIBOR6m,
+            "SHIBOR12M" => Self::SHIBOR12m,
+            "EURIBOR1W" => Self::EURIBOR1w,
 
             "SOFR" => Self::SOFR,
-            "SOFRCompounded" => Self::SOFRCompounded,
-            "TermSOFR1m" => Self::TermSOFR1m,
-            "TermSOFR3m" => Self::TermSOFR3m,
-            "TermSOFR6m" => Self::TermSOFR6m,
-            "TermSOFR12m" => Self::TermSOFR12m,
+            "SOFRCOMPOUNDED" => Self::SOFRCompounded,
+            "TERMSOFR1M" => Self::TermSOFR1m,
+            "TERMSOFR3M" => Self::TermSOFR3m,
+            "TERMSOFR6M" => Self::TermSOFR6m,
+            "TERMSOFR12M" => Self::TermSOFR12m,
             "ESTR" | "€STR" => Self::ESTR,
-            "EURIBOR1m" => Self::EURIBOR1m,
-            "EURIBOR3m" => Self::EURIBOR3m,
-            "EURIBOR6m" => Self::EURIBOR6m,
-            "EURIBOR12m" => Self::EURIBOR12m,
+            "EURIBOR1M" => Self::EURIBOR1m,
+            "EURIBOR3M" => Self::EURIBOR3m,
+            "EURIBOR6M" => Self::EURIBOR6m,
+            "EURIBOR12M" => Self::EURIBOR12m,
             "SONIA" => Self::SONIA,
             "TONAR" => Self::TONAR,
-            "TIBOR3m" => Self::TIBOR3m,
-            "TIBOR6m" => Self::TIBOR6m,
+            "TIBOR3M" => Self::TIBOR3m,
+            "TIBOR6M" => Self::TIBOR6m,
             "SARON" => Self::SARON,
             "CORRA" => Self::CORRA,
             "AONIA" => Self::AONIA,
@@ -317,33 +318,35 @@ impl std::str::FromStr for MarketIndex {
             "SWESTR" => Self::SWESTR,
             "ICP" => Self::ICP,
             "VIX" => Self::VIX,
-            other if other.starts_with("FX:") => {
-                let pair_str = &other["FX:".len()..];
-                pair_str
-                    .parse::<FxPair>()
-                    .map_or_else(|_| Self::Other(other.to_string()), Self::FxPair)
-            }
-            other if other.starts_with("Credit(") && other.ends_with(')') => {
-                let entity = &other["Credit(".len()..other.len() - 1];
-                Self::Credit(entity.trim().to_string())
-            }
-            other if other.starts_with("Collateral(") && other.ends_with(')') => {
-                let inner = &other["Collateral(".len()..other.len() - 1];
-                if let Some((a, b)) = inner.split_once('/') {
-                    if let (Ok(c1), Ok(c2)) =
-                        (a.trim().parse::<Currency>(), b.trim().parse::<Currency>())
-                    {
-                        Self::Collateral(c1, c2)
+            _ => match s {
+                other if other.starts_with("FX:") => {
+                    let pair_str = &other["FX:".len()..];
+                    pair_str
+                        .parse::<FxPair>()
+                        .map_or_else(|_| Self::Other(other.to_string()), Self::FxPair)
+                }
+                other if other.starts_with("Credit(") && other.ends_with(')') => {
+                    let entity = &other["Credit(".len()..other.len() - 1];
+                    Self::Credit(entity.trim().to_string())
+                }
+                other if other.starts_with("Collateral(") && other.ends_with(')') => {
+                    let inner = &other["Collateral(".len()..other.len() - 1];
+                    if let Some((a, b)) = inner.split_once('/') {
+                        if let (Ok(c1), Ok(c2)) =
+                            (a.trim().parse::<Currency>(), b.trim().parse::<Currency>())
+                        {
+                            Self::Collateral(c1, c2)
+                        } else {
+                            Self::Other(other.to_string())
+                        }
                     } else {
                         Self::Other(other.to_string())
                     }
-                } else {
-                    Self::Other(other.to_string())
                 }
-            }
-            other => Self::Other(other.to_string()), // this should handle equity, fx
+                other => Self::Other(other.to_string()), // this should handle equity, fx
+            },
         };
-        Ok(resutls)
+        Ok(result)
     }
 }
 
@@ -481,5 +484,78 @@ impl MarketIndex {
             Self::ICP => Ok(Box::new(ICPIndex)),
             _ => Err(QSError::InvalidValueErr("Index is not rate index".into())),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn builtin_names_parse_in_any_case() {
+        for index in [
+            MarketIndex::EURIBOR1w,
+            MarketIndex::EURIBOR1m,
+            MarketIndex::EURIBOR3m,
+            MarketIndex::EURIBOR6m,
+            MarketIndex::EURIBOR12m,
+            MarketIndex::SOFR,
+            MarketIndex::SOFRCompounded,
+            MarketIndex::TermSOFR3m,
+            MarketIndex::FedFunds,
+            MarketIndex::BBSW3m,
+            MarketIndex::BKBM3m,
+            MarketIndex::NIBOR3m,
+            MarketIndex::SHIBOR1d,
+            MarketIndex::TIBOR3m,
+        ] {
+            let name = index.to_string();
+            for spelling in [
+                name.clone(),
+                name.to_ascii_lowercase(),
+                name.to_ascii_uppercase(),
+            ] {
+                assert_eq!(
+                    spelling.parse::<MarketIndex>().unwrap(),
+                    index,
+                    "{spelling}"
+                );
+            }
+        }
+        for spelling in ["ESTR", "estr", "eStR", "€STR", "€str"] {
+            assert_eq!(spelling.parse::<MarketIndex>().unwrap(), MarketIndex::ESTR);
+        }
+        assert_eq!(
+            "EuRiBoR3m".parse::<MarketIndex>().unwrap(),
+            MarketIndex::EURIBOR3m
+        );
+    }
+
+    #[test]
+    fn custom_names_and_parameter_payloads_keep_their_case() {
+        for name in [
+            "MyCurve",
+            "MYCURVE",
+            "mycurve",
+            "FX:BadPair",
+            "Collateral(Bad/Pair)",
+        ] {
+            assert_eq!(
+                name.parse::<MarketIndex>().unwrap(),
+                MarketIndex::Other(name.into())
+            );
+        }
+        assert_eq!(
+            "Credit(AcmeCorp)".parse::<MarketIndex>().unwrap(),
+            MarketIndex::Credit("AcmeCorp".into())
+        );
+        assert_eq!(
+            "FX:EURUSD".parse::<MarketIndex>().unwrap(),
+            MarketIndex::FxPair(FxPair::new(Currency::EUR, Currency::USD).unwrap())
+        );
+        assert_eq!(
+            "Collateral(EUR/USD)".parse::<MarketIndex>().unwrap(),
+            MarketIndex::Collateral(Currency::EUR, Currency::USD)
+        );
     }
 }
