@@ -243,9 +243,14 @@ pub fn initialize(module: &Bound<'_, PyModule>) -> PyResult<()> {
         install_constructors(module)?;
         return Ok(());
     }
-    let source = std::ffi::CString::new(include_str!("error_support.py"))
-        .expect("error support contains no NUL bytes");
+    let source =
+        std::ffi::CString::new(include_str!("../../python/quantsupport/_error_support.py"))
+            .expect("error support contains no NUL bytes");
     module.py().run(&source, Some(&module.dict()), None)?;
+    let initialized = module.getattr("_initialize")?.call1((&base,))?;
+    for (name, value) in initialized.cast::<PyDict>()?.iter() {
+        module.dict().set_item(name, value)?;
+    }
     for name in [
         "_make_error",
         "_with_context",
