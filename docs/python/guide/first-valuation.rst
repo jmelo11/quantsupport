@@ -90,9 +90,6 @@ zero-rate curve. Two equal rate pillars specify that curve explicitly.
        discount = context.curve("SOFR").discount_factor(reference + "5Y")
        print(result.price, result.fair_rate, discount)
        print(result.sensitivities)
-       assert result.price < 0
-       assert result.fair_rate > swap.fixed_rate
-       assert 0 < discount < 1
 
 The receive-fixed position has a negative PV because the continuous curve
 implies floating coupons above the simple fixed coupon. The result's

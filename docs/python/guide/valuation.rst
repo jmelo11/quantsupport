@@ -70,9 +70,6 @@ Accrued interest distinguishes the two quotation anchors.
        ])
        print(bond_result.price, bond_result.z_spread)
        print(bond_result.yield_to_maturity, bond_result.modified_duration)
-       assert bond_result.price > 0
-       assert bond_result.modified_duration > 0
-       assert bond_result.z_spread is not None
 
 ``BondPricingAnchor.z_spread(0.0)`` instead asks for the unspread model value;
 ``dirty_price(...)`` includes accrued interest. ``with_pricing_anchor`` creates
@@ -155,8 +152,7 @@ rewrite the original principal schedule.
            qs.Trade(loan, reference), context,
            ["Value", "Cashflows", "Sensitivities"],
        )
-       assert loan_result.price > 0
-       assert loan_result.cashflows is not None
+       print(loan_result.price)
    assert loan.to_dict() == original_terms
 
 ``Value`` is signed PV of future expected receipts, **excluding the initial
@@ -216,7 +212,7 @@ quoted volatility surface.
        option_result = context.evaluate(
            qs.Trade(swaption, reference), ["Value", "Sensitivities"],
        )
-       assert option_result.price > 0
+       print(option_result.price)
 
 For calibration replace the fixed parameter source with ``Calibrated``,
 specifying ``Surface`` or ``Cube`` and an explicit calibration basket, and

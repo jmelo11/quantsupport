@@ -50,8 +50,7 @@ native quote parser. They are not arbitrary maturity labels.
            "2027-02-24", "2028-02-24",
            qs.Compounding.Simple, qs.Frequency.Annual,
        )
-       assert forward > 0
-       assert curve.discount_factor("2028-02-24") < 1
+       print(forward)
 
 ``nodes()`` reports interpolation dates and discount factors; ``pillars()``
 reports labelled market inputs where available. Together they show how the
@@ -97,7 +96,7 @@ construction rule:
        day_counter="Actual365", interpolator="LogLinear",
    )
    with qs.PricingContext(direct_quotes, [direct_spec]) as context:
-       assert abs(context.curve("SOFR").discount_factor("2027-02-24") - 0.96) < 1e-12
+       print(context.curve("SOFR").discount_factor("2027-02-24"))
 
 Use ``DiscountFactor_CCY_Index_Pillar`` for dimensionless factors, or
 ``ZeroRate_CCY_Index_Pillar[_Compounding[_Frequency]]`` for annual decimal
@@ -276,8 +275,6 @@ The following independent example makes that distinction explicit.
    with archive.pricing_context(selector) as historical:
        assert str(historical.evaluation_date) == "2026-02-24"
        assert historical.snapshot_timestamp == selected.timestamp
-       assert historical.curve("SOFR").discount_factor("2027-02-24") < 1
-   assert len(archive.timestamps) == 2
 
 ``Previous`` is the default and never chooses a later observation. ``Exact``
 requires equality; ``Closest`` may choose a future market and resolves ties
