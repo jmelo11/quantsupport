@@ -102,6 +102,12 @@ def generate(app):
             for cell in cells:
                 if cell["cell_type"] == "markdown":
                     cell["source"] = publication_links("".join(cell["source"]), source, root)
+                # Editor viewers also save HTML/text; publish those portable
+                # representations without changing the canonical notebook.
+                for result in cell.get("outputs", []):
+                    data = result.get("data", {})
+                    if "text/html" in data or "text/plain" in data:
+                        data.pop("application/vnd.microsoft.datawrangler.viewer.v0+json", None)
             cells.insert(1 if cells and cells[0]["cell_type"] == "markdown" else 0, introduction)
             notebook.setdefault("metadata", {}).setdefault("mystnb", {})["execution_mode"] = "off"
             destination = output / f"{slug}.ipynb"
