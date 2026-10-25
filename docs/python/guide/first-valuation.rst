@@ -11,6 +11,12 @@ notebook kernel:
 
    python -m pip install quantsupport
 
+For a manual download, choose your operating system, architecture and Python
+version on the `Python packages page <https://jmelo11.github.io/quantsupport/python/downloads.html>`_.
+It provides wheels and folder ZIPs containing only QuantSupport. Install
+dependencies separately with ``python -m pip install pandas`` before using a
+folder ZIP.
+
 A wheel needs no Rust compiler. Optional editor support is available through
 ``quantsupport[typing]``. For development from this repository, create a virtual
 environment, install Maturin, and compile the checkout:

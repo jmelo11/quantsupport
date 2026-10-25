@@ -1,6 +1,11 @@
 Python
 ======
 
+`Download Python packages <https://jmelo11.github.io/quantsupport/python/downloads.html>`_
+as folder ZIPs or wheels. Choose the package for your operating system,
+architecture and Python version. Folder ZIPs contain only QuantSupport; install
+dependencies separately with ``python -m pip install pandas``.
+
 The Python package provides native QuantSupport instruments, market
 construction, valuation and risk calculations. Define the contract and position,
 configure the market, then request values, cashflows or sensitivities from a
@@ -10,6 +15,7 @@ the studies apply it to larger quantitative finance calculations.
 .. toctree::
    :maxdepth: 2
 
+   Download Python packages <https://jmelo11.github.io/quantsupport/python/downloads.html>
    guide/index
    studies/index
    API reference <../autoapi/quantsupport/index>
