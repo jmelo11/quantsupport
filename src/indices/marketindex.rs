@@ -170,6 +170,7 @@ pub enum MarketIndex {
     /// FX spot pair. Encodes a directed foreign-exchange pair.
     ///
     /// For example `FxPair(FxPair::new(EUR, USD))` represents the EUR/USD spot.
+    /// Its string form is `FxPair(EURUSD)`.
     FxPair(FxPair),
     /// Collateral discount curve for cashflows in `ccy` posted under `collateral_ccy`.
     ///
@@ -253,7 +254,7 @@ impl Display for MarketIndex {
             Self::ICP => write!(f, "ICP"),
             Self::VIX => write!(f, "VIX"),
             Self::Equity(name) => write!(f, "EQ:{name}"),
-            Self::FxPair(pair) => write!(f, "FX:{pair}"),
+            Self::FxPair(pair) => write!(f, "FxPair({pair})"),
             Self::Collateral(ccy, coll) => write!(f, "COLL:{ccy}/{coll}"),
             Self::Credit(entity) => write!(f, "CREDIT:{entity}"),
             Self::Other(s) => write!(f, "{s}"),
@@ -319,8 +320,8 @@ impl std::str::FromStr for MarketIndex {
             "ICP" => Self::ICP,
             "VIX" => Self::VIX,
             _ => match s {
-                other if other.starts_with("FX:") => {
-                    let pair_str = &other["FX:".len()..];
+                other if other.starts_with("FxPair(") && other.ends_with(')') => {
+                    let pair_str = &other["FxPair(".len()..other.len() - 1];
                     pair_str
                         .parse::<FxPair>()
                         .map_or_else(|_| Self::Other(other.to_string()), Self::FxPair)
@@ -537,7 +538,7 @@ mod tests {
             "MyCurve",
             "MYCURVE",
             "mycurve",
-            "FX:BadPair",
+            "FxPair(BadPair)",
             "Collateral(Bad/Pair)",
         ] {
             assert_eq!(
@@ -550,12 +551,38 @@ mod tests {
             MarketIndex::Credit("AcmeCorp".into())
         );
         assert_eq!(
-            "FX:EURUSD".parse::<MarketIndex>().unwrap(),
-            MarketIndex::FxPair(FxPair::new(Currency::EUR, Currency::USD).unwrap())
-        );
-        assert_eq!(
             "Collateral(EUR/USD)".parse::<MarketIndex>().unwrap(),
             MarketIndex::Collateral(Currency::EUR, Currency::USD)
         );
+    }
+
+    #[test]
+    fn fx_pair_indices_use_parentheses_and_preserve_direction() {
+        for (label, base, quote) in [
+            ("FxPair(EURUSD)", Currency::EUR, Currency::USD),
+            ("FxPair(USDEUR)", Currency::USD, Currency::EUR),
+        ] {
+            let index = MarketIndex::FxPair(FxPair::new(base, quote).unwrap());
+            assert_eq!(label.parse::<MarketIndex>().unwrap(), index);
+            assert_eq!(index.to_string(), label);
+            assert_eq!(index.to_string().parse::<MarketIndex>().unwrap(), index);
+        }
+    }
+
+    #[test]
+    fn malformed_fx_pair_indices_remain_custom_names() {
+        for label in [
+            "FxPair(EURUSD",
+            "FxPairEURUSD)",
+            "FxPair()",
+            "FxPair(EUR)",
+            "FxPair(EUREUR)",
+            "FxPair(EURUSD)extra",
+        ] {
+            assert_eq!(
+                label.parse::<MarketIndex>().unwrap(),
+                MarketIndex::Other(label.into())
+            );
+        }
     }
 }
