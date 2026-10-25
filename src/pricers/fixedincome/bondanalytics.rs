@@ -536,10 +536,9 @@ fn yield_price_and_derivative(
                 rate_definition.compounding(),
                 rate_definition.frequency(),
             )?;
-            Ok((
-                f64::mul_add(cashflow.amount, discount, price),
-                f64::mul_add(cashflow.amount, discount_derivative, derivative),
-            ))
+            let price = f64::mul_add(cashflow.amount, discount, price);
+            let derivative = f64::mul_add(cashflow.amount, discount_derivative, derivative);
+            Ok((price, derivative))
         })
 }
 
@@ -560,15 +559,13 @@ fn solve_yield(
     };
     bracketed_root(
         |yield_rate| {
-            Ok(
-                yield_price_and_derivative(
-                    cashflows,
-                    settlement_date,
-                    rate_definition,
-                    yield_rate,
-                )?
-                .0 - target_value,
-            )
+            let (price, _) = yield_price_and_derivative(
+                cashflows,
+                settlement_date,
+                rate_definition,
+                yield_rate,
+            )?;
+            Ok(price - target_value)
         },
         -0.05,
         0.10,
@@ -628,12 +625,9 @@ pub fn discounted_value<T: Scalar>(valuation: &BondValuation<'_, T>, spread: T) 
                 .curve
                 .discount_factor(cashflow.payment_date)?
                 .div_val(reference_discount);
-            Ok(value.add_val(
-                cashflow
-                    .amount
-                    .mul_val(discount)
-                    .mul_val(spread.mul_val(T::scalar(-time)).exp()),
-            ))
+            let spread_discount = spread.mul_val(T::scalar(-time)).exp();
+            let discounted_amount = cashflow.amount.mul_val(discount).mul_val(spread_discount);
+            Ok(value.add_val(discounted_amount))
         })
 }
 

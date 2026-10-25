@@ -155,12 +155,14 @@ impl LoanPricer {
             })
             .collect();
         let request = request.with_fixings_request(fixings);
-        Ok(LoanValuationState {
-            market_data: Some(ctx.handle_request(&request)?),
+        let market_data = ctx.handle_request(&request)?;
+        let state = LoanValuationState {
+            market_data: Some(market_data),
             evaluation_date: ctx.evaluation_date(),
             value: None,
             legs: Vec::new(),
-        })
+        };
+        Ok(state)
     }
 
     /// Resolves an index observation with its own tenor and quote convention.

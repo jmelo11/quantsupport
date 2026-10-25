@@ -39,14 +39,9 @@ impl BondPricingEngine for BondPricer {
         index: &MarketIndex,
         context: &impl MarketDataProvider,
     ) -> Result<(MarketData, ())> {
-        Ok((
-            context.handle_request(&contractual_market_request(
-                trade,
-                index,
-                context.evaluation_date(),
-            ))?,
-            (),
-        ))
+        let request = contractual_market_request(trade, index, context.evaluation_date());
+        let market = context.handle_request(&request)?;
+        Ok((market, ()))
     }
     fn ad_model(&self, (): &(), _: &MarketData) -> Result<()> {
         Ok(())

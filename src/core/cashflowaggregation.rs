@@ -274,13 +274,14 @@ impl CouponDetails {
             let definition = self
                 .rate_definition
                 .ok_or_else(|| QSError::ValueNotSetErr("Fixed coupon rate definition".into()))?;
-            Ok(CashflowType::FixedRateCoupon(FixedRateCoupon::new(
+            let coupon = FixedRateCoupon::new(
                 self.notional,
                 Box::new(InterestRate::from_rate_definition(rate, definition)),
                 self.accrual_start,
                 self.accrual_end,
                 payment_date,
-            )))
+            );
+            Ok(CashflowType::FixedRateCoupon(coupon))
         }
     }
 }

@@ -82,15 +82,12 @@ impl DiscountPolicy for FixedIncomeDiscountPolicy {
                         return Ok(indices);
                     }
                 }
-                self.risk_free_index(target.currency()).map_or_else(
-                    || {
-                        Err(QSError::InvalidValueErr(format!(
-                            "No risk-free index configured for currency {}",
-                            target.currency()
-                        )))
-                    },
-                    Ok,
-                )
+                self.risk_free_index(target.currency()).ok_or_else(|| {
+                    QSError::InvalidValueErr(format!(
+                        "No risk-free index configured for currency {}",
+                        target.currency()
+                    ))
+                })
             }
             _ => Err(QSError::InvalidValueErr(format!(
                 "Unsupported asset class for FixedIncomeDiscountPolicy: {:?}",

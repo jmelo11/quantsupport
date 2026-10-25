@@ -244,7 +244,7 @@ impl<I, T> DiscountedCashflowPricer<I, T> {
             .cashflows()
             .iter()
             .any(|cf| matches!(cf, CashflowType::FloatingRateCoupon(_)));
-        Ok(if let Some(policy) = &self.discount_policy {
+        let index = if let Some(policy) = &self.discount_policy {
             policy.accept(leg)?
         } else if leg_has_floating {
             let mut matching = state
@@ -302,7 +302,8 @@ impl<I, T> DiscountedCashflowPricer<I, T> {
             }
 
             first
-        })
+        };
+        Ok(index)
     }
 }
 

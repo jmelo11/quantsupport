@@ -284,14 +284,9 @@ impl BondPricingEngine for TreeBasedBondPricer {
         context: &impl MarketDataProvider,
     ) -> Result<(MarketData, Self::Model<f64>)> {
         if trade.call_schedule().is_empty() {
-            return Ok((
-                context.handle_request(&contractual_market_request(
-                    trade,
-                    index,
-                    context.evaluation_date(),
-                ))?,
-                None,
-            ));
+            let request = contractual_market_request(trade, index, context.evaluation_date());
+            let market = context.handle_request(&request)?;
+            return Ok((market, None));
         }
         let configuration = pricer_configuration(trade, context)?;
         let time_grid = match configuration.pricer() {
