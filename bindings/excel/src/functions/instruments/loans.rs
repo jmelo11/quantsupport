@@ -54,7 +54,7 @@ fn loan_options(
 #[xll_bindgen(
     name = "QS.LOAN.SETTINGS",
     category = "QuantSupport - Instruments",
-    help = "Creates loan settings through discoverable named arguments; all omitted values use native defaults"
+    help = "Creates optional loan terms: balloon principal, amortization, borrower credit, resets, coupon bounds and prepayment; pass the handle to QS.INSTRUMENT.LOAN"
 )]
 #[allow(clippy::too_many_arguments)]
 pub fn qs_loan_settings(
@@ -116,7 +116,7 @@ pub fn qs_loan_settings(
 #[xll_bindgen(
     name = "QS.INSTRUMENT.LOAN",
     category = "QuantSupport - Instruments",
-    help = "Creates a loan contract with optional named QS.LOAN.SETTINGS; pass it directly to CONTEXT.PRICE or create explicit position terms"
+    help = "Creates a fixed or floating loan contract; rate is an annual decimal coupon or spread; defaults to French monthly repayment and Actual365; value with QS.EVALUATE"
 )]
 #[allow(clippy::too_many_arguments)]
 pub fn qs_instrument_loan(
