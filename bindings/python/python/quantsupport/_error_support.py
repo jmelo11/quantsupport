@@ -194,6 +194,8 @@ def _initialize(QuantSupportError):
                 operation = f"{cls.__name__}.{name}"
                 if isinstance(descriptor, staticmethod):
                     setattr(cls, name, staticmethod(_guard(descriptor.__func__, operation)))
+                elif isinstance(descriptor, classmethod):
+                    setattr(cls, name, classmethod(_guard(descriptor.__func__, operation)))
                 elif isinstance(descriptor, _types.ClassMethodDescriptorType):
                     setattr(cls, name, _guard_classmethod(descriptor, operation))
                 elif _inspect.ismethoddescriptor(descriptor):

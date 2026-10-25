@@ -36,6 +36,15 @@ class StructuredErrorTests(unittest.TestCase):
             self.assertIs(getattr(qs, name), getattr(native, name))
             self.assertTrue(issubclass(getattr(qs, name), qs.QuantSupportError))
 
+    def test_reinstalling_error_boundaries_preserves_classmethods(self):
+        original = qs.Loan("L", "2026-02-24", "2028-02-24", 1000,
+                           [qs.FixedRateCoupon(.04)], "EUR")
+        for _ in range(2):
+            native._install_error_boundaries(vars(native))
+            restored = qs.Loan.from_dict(original.to_dict())
+            self.assertEqual(restored.to_dict(), original.to_dict())
+            self.assertEqual(list(inspect.signature(qs.Loan.from_dict).parameters), ["obj"])
+
     def test_coupon_failure_has_structured_path_and_preserves_cast_cause(self):
         error = self.capture(lambda: qs.Loan("L", "2026-02-24", "2028-02-24", 100_000,
                                            [qs.FixedRateCoupon(0.04), {"FixedRateCoupon": []}], "EUR"))

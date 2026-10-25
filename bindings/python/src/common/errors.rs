@@ -51,6 +51,8 @@ impl ErrorConstructor {
     }
 }
 
+// Capture native signatures before method guards change how Python 3.11/3.12
+// inspect inherited __init__ methods.
 fn install_constructors(module: &Bound<'_, PyModule>) -> PyResult<()> {
     let py = module.py();
     let inspect = py.import("inspect")?;
@@ -237,14 +239,14 @@ pub fn initialize(module: &Bound<'_, PyModule>) -> PyResult<()> {
         ] {
             module.add(name, namespace.get_item(name)?)?;
         }
+        install_constructors(module)?;
         namespace
             .get_item("_install_error_boundaries")?
             .call1((module.dict(),))?;
-        install_constructors(module)?;
         return Ok(());
     }
     let source =
-        std::ffi::CString::new(include_str!("../../python/quantsupport/_error_support.py"))
+        std::ffi::CString::new(include_str!(concat!(env!("OUT_DIR"), "/_error_support.py")))
             .expect("error support contains no NUL bytes");
     module.py().run(&source, Some(&module.dict()), None)?;
     let initialized = module.getattr("_initialize")?.call1((&base,))?;
@@ -265,9 +267,9 @@ pub fn initialize(module: &Bound<'_, PyModule>) -> PyResult<()> {
         base.setattr(name, method)?;
     }
     base.setattr("_support_namespace", module.dict())?;
+    install_constructors(module)?;
     module
         .getattr("_install_error_boundaries")?
         .call1((module.dict(),))?;
-    install_constructors(module)?;
     Ok(())
 }
