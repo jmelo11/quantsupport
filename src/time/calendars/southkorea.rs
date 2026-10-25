@@ -96,8 +96,6 @@ impl ImplCalendar for SouthKorea {
 }
 impl IsCalendar for SouthKorea {}
 
-// Dated data from holidays 0.106 (MIT): https://github.com/vacanza/holidays/tree/v0.106
-// Upstream copyright and permission notice are retained in LICENSE.
 #[rustfmt::skip]
 const KOREA_HOLIDAYS: &[i32] = &[
     20040101, 20040121, 20040122, 20040123, 20040301, 20040405, 20040415, 20040501, 20040505, 20040526, 20040606, 20040717, 20040815, 20040927, 20040928, 20040929, 20041003, 20041225,

@@ -73,8 +73,6 @@ impl ImplCalendar for China {
 }
 impl IsCalendar for China {}
 
-// Dated data from holidays 0.106 (MIT): https://github.com/vacanza/holidays/tree/v0.106
-// Upstream copyright and permission notice are retained in LICENSE.
 #[rustfmt::skip]
 const CHINA_HOLIDAYS: &[i32] = &[
     20040101, 20040122, 20040123, 20040124, 20040126, 20040127, 20040128, 20040501, 20040502, 20040503, 20040504, 20040505, 20040506, 20040507, 20041001, 20041002, 20041003, 20041004, 20041005, 20041006, 20041007,

@@ -69,8 +69,6 @@ impl ImplCalendar for SouthAfrica {
 }
 impl IsCalendar for SouthAfrica {}
 
-// Dated data from holidays 0.106 (MIT): https://github.com/vacanza/holidays/tree/v0.106
-// Upstream copyright and permission notice are retained in LICENSE.
 #[rustfmt::skip]
 const SOUTH_AFRICA_SPECIAL: &[i32] = &[
     19990602, 19991231,
