@@ -16,7 +16,7 @@ from excel_downloads import command
 PYTHONS = ("3.11", "3.12", "3.13", "3.14")
 PLATFORMS = (
     ("Windows", "Intel / AMD x64"), ("Windows", "ARM64"),
-    ("macOS", "Intel x64"), ("macOS", "Apple silicon ARM64"),
+    ("macOS", "Apple silicon ARM64"),
     ("Linux", "Intel / AMD x64"), ("Linux", "ARM64"),
 )
 
@@ -46,14 +46,12 @@ def packages(release):
             target = PLATFORMS[0]
         elif platform == "win_arm64":
             target = PLATFORMS[1]
-        elif platform.startswith("macosx_") and platform.endswith("_x86_64"):
-            target = PLATFORMS[2]
         elif platform.startswith("macosx_") and platform.endswith("_arm64"):
-            target = PLATFORMS[3]
+            target = PLATFORMS[2]
         elif platform.startswith("manylinux_") and platform.endswith("_x86_64"):
-            target = PLATFORMS[4]
+            target = PLATFORMS[3]
         elif platform.startswith("manylinux_") and platform.endswith("_aarch64"):
-            target = PLATFORMS[5]
+            target = PLATFORMS[4]
         else:
             continue
         key = (*target, python)

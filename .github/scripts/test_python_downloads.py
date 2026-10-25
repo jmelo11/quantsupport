@@ -11,7 +11,7 @@ import python_downloads as downloads
 
 
 TARGETS = (
-    "win_amd64", "win_arm64", "macosx_10_15_x86_64", "macosx_11_0_arm64",
+    "win_amd64", "win_arm64", "macosx_11_0_arm64",
     "manylinux_2_28_x86_64", "manylinux_2_28_aarch64",
 )
 
@@ -58,17 +58,18 @@ class PythonDownloadTests(unittest.TestCase):
         with patch.object(downloads, "command", side_effect=self.command):
             return downloads.select("owner/repo", tag)
 
-    def test_all_24_combinations_have_wheel_and_folder_links(self):
+    def test_all_20_combinations_have_wheel_and_folder_links(self):
         selected = self.select()
         entries = selected[0][1]
-        self.assertEqual(len(entries), 24)
+        self.assertEqual(len(entries), 20)
         for os, arch in downloads.PLATFORMS:
             for python in downloads.PYTHONS:
                 self.assertTrue(entries[os, arch, python]["portable"])
         html = downloads.render("owner/repo", selected[:1])
-        self.assertEqual(html.count(">Folder ZIP</a>"), 24)
-        self.assertEqual(html.count(">Wheel</a>"), 24)
+        self.assertEqual(html.count(">Folder ZIP</a>"), 20)
+        self.assertEqual(html.count(">Wheel</a>"), 20)
         self.assertIn("win_arm64-portable.zip", html)
+        self.assertIn("macosx_11_0_arm64.whl", html)
         self.assertIn("manylinux_2_28_aarch64.whl", html)
 
     def test_selection_stays_on_deployed_release_and_orders_versions_numerically(self):
@@ -110,6 +111,8 @@ class PythonDownloadTests(unittest.TestCase):
             "quantsupport-0.1.10-cp310-cp310-win_amd64.whl",
             "quantsupport-0.1.10-cp314-cp314t-win_amd64.whl",
             "quantsupport-0.1.10-cp311-cp311-linux_x86_64.whl",
+            "quantsupport-0.1.10-cp311-cp311-macosx_10_15_x86_64.whl",
+            "quantsupport-0.1.10-cp311-cp311-macosx_10_15_x86_64-portable.zip",
             "quantsupport-0.1.11-cp311-cp311-win_amd64.whl",
         ]
         fixture = {"tagName": "v0.1.10", "assets": [
@@ -130,11 +133,11 @@ class PythonDownloadTests(unittest.TestCase):
             self.assertNotIn("https://github.com/owner/repo/releases/download/v0.1.10/", html)
             self.assertNotIn("/v0.1.11/", html)
             self.assertEqual(self.downloaded, ["v0.1.10"])
-            self.assertEqual(len(list((destination / "v0.1.10").iterdir())), 48)
+            self.assertEqual(len(list((destination / "v0.1.10").iterdir())), 40)
             for path in (destination / "v0.1.10").iterdir():
                 self.assertEqual(path.read_bytes(), b"fixture")
             local_links = re.findall(r'href="(\.\./downloads/[^"]+)"', html)
-            self.assertEqual(len(local_links), 48)
+            self.assertEqual(len(local_links), 40)
             for link in local_links:
                 self.assertTrue((page.parent / link).is_file(), link)
             self.assertFalse((destination / "v0.1.9").exists())

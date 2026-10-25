@@ -28,7 +28,6 @@ jobs:
           - {runner: windows-latest, target: x64}
           - {runner: windows-11-arm, target: aarch64-pc-windows-msvc}
           - {runner: macos-15, target: aarch64, deployment: '11.0'}
-          - {runner: macos-15-intel, target: x86_64, deployment: '10.15'}
     steps:
       - uses: actions/checkout@v6
         with:
