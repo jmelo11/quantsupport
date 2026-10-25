@@ -56,7 +56,7 @@ jobs:
           python -m mypy bindings/python/python/quantsupport --ignore-missing-imports
           python -m mypy.stubtest quantsupport --ignore-missing-stub
           python -m mypy bindings/python/tests/typing_native_inputs.py --ignore-missing-imports
-      - name: Package and test extracted folder distribution with dependencies
+      - name: Package and test QuantSupport-only folder distribution
         run: |
           python -m unittest discover -s bindings/python/scripts -p 'test_*.py' -v
           python bindings/python/scripts/package_portable.py --wheel-directory dist --output dist

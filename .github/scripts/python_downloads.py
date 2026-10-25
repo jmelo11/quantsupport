@@ -165,6 +165,10 @@ a { color: #1763a6; }
 </style>
 </head>
 <body><h1>QuantSupport Python packages</h1>
+<p>Choose your operating system, architecture and Python version below.
+Before using a folder ZIP, install runtime dependencies separately with
+<code>python -m pip install pandas</code>, extract the ZIP and add its
+<code>site-packages</code> directory to Python's search path.</p>
 """ + tables + "\n</body>\n</html>\n"
     page.parent.mkdir(parents=True, exist_ok=True)
     page.write_text(source, encoding="utf-8")

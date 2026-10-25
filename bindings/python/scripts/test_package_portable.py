@@ -1,40 +1,67 @@
-"""Dependency resolution must respect the advertised minimum operating system."""
+"""Folder ZIPs contain only QuantSupport and leave dependencies to the user."""
 
+import json
+import os
+from pathlib import Path
+from tempfile import TemporaryDirectory
 import unittest
+from unittest.mock import patch
+from zipfile import ZipFile
 
-from package_portable import compatible_platforms
+import package_portable as portable
 
 
-class PortablePlatformTests(unittest.TestCase):
-    def platforms(self, platform):
-        return compatible_platforms(f"quantsupport-0.1.12-cp311-cp311-{platform}.whl")
-
-    def test_macos_arm_excludes_newer_accelerate_wheels(self):
-        platforms = self.platforms("macosx_11_0_arm64")
-        self.assertIn("macosx_11_0_arm64", platforms)
-        self.assertIn("macosx_10_9_universal2", platforms)
-        self.assertNotIn("macosx_14_0_arm64", platforms)
-        self.assertNotIn("macosx_10_15_arm64", platforms)
-        self.assertNotIn("macosx_11_0_x86_64", platforms)
-
-    def test_macos_intel_includes_older_deployment_targets(self):
-        platforms = self.platforms("macosx_10_15_x86_64")
-        self.assertIn("macosx_10_9_x86_64", platforms)
-        self.assertIn("macosx_10_15_universal2", platforms)
-        self.assertNotIn("macosx_11_0_x86_64", platforms)
-
-    def test_linux_uses_glibc_floor_and_legacy_aliases(self):
-        for arch in ("x86_64", "aarch64"):
-            platforms = self.platforms(f"manylinux_2_28_{arch}")
-            self.assertIn(f"manylinux_2_17_{arch}", platforms)
-            self.assertIn(f"manylinux2014_{arch}", platforms)
-            self.assertNotIn(f"manylinux_2_31_{arch}", platforms)
-            self.assertNotIn(f"musllinux_1_2_{arch}", platforms)
-        self.assertNotIn("manylinux1_aarch64", self.platforms("manylinux_2_28_aarch64"))
-
-    def test_windows_keeps_the_interpreter_architecture(self):
-        self.assertEqual(self.platforms("win_arm64"), ["win_arm64"])
-        self.assertEqual(self.platforms("win_amd64"), ["win_amd64"])
+class PortablePackageTests(unittest.TestCase):
+    def test_builds_offline_without_resolving_or_bundling_dependencies(self):
+        metadata = (
+            "Metadata-Version: 2.1\nName: quantsupport\nVersion: 0.1.12\n"
+            "Requires-Dist: dependency-that-must-not-be-bundled>=1\n\n"
+        )
+        smoke = '''
+from pathlib import Path
+import sys
+packages = Path(sys.argv[1]) / "site-packages"
+sys.path.insert(0, str(packages))
+import quantsupport
+assert quantsupport.VALUE == 42
+assert Path(quantsupport.__file__).resolve().is_relative_to(packages.resolve())
+'''
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            wheel = root / "quantsupport-0.1.12-py3-none-any.whl"
+            info = "quantsupport-0.1.12.dist-info"
+            with ZipFile(wheel, "w") as archive:
+                archive.writestr("quantsupport/__init__.py", "VALUE = 42\n")
+                archive.writestr(f"{info}/METADATA", metadata)
+                archive.writestr(f"{info}/WHEEL", (
+                    "Wheel-Version: 1.0\nGenerator: test\n"
+                    "Root-Is-Purelib: true\nTag: py3-none-any\n\n"
+                ))
+                archive.writestr(f"{info}/RECORD", "")
+            with patch.dict(os.environ, {
+                "PIP_NO_INDEX": "1", "PIP_DISABLE_PIP_VERSION_CHECK": "1",
+            }), patch.object(portable, "SMOKE_TEST", smoke):
+                result = portable.package(root, root / "output")
+            with ZipFile(result) as archive:
+                names = archive.namelist()
+                self.assertEqual({name.split("/")[0] for name in names}, {
+                    "site-packages", "BUILD-INFO.json", "README.txt",
+                })
+                self.assertEqual({name.split("/")[1] for name in names
+                                  if name.startswith("site-packages/")}, {
+                    "quantsupport", info,
+                })
+                self.assertFalse(any(name.endswith(".pyc") for name in names))
+                self.assertEqual(
+                    archive.read(f"site-packages/{info}/METADATA").decode(), metadata,
+                )
+                build = json.loads(archive.read("BUILD-INFO.json"))
+                self.assertEqual(build["packages"], {"quantsupport": "0.1.12"})
+                self.assertEqual(build["requires_dist"], [
+                    "dependency-that-must-not-be-bundled>=1",
+                ])
+                self.assertIn("python -m pip install pandas",
+                              archive.read("README.txt").decode())
 
 
 if __name__ == "__main__":
