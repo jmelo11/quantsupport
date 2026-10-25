@@ -8,6 +8,17 @@ use thiserror::Error;
 /// when callers have attached context.
 #[derive(Debug, Error)]
 pub enum QSError {
+    /// A value has the wrong type at an interface boundary.
+    #[error("Invalid type error: expected {expected}, got {actual}")]
+    InvalidTypeErr {
+        /// Required type or input shape.
+        expected: String,
+        /// Type or input shape that was supplied.
+        actual: String,
+    },
+    /// An operating-system I/O operation failed.
+    #[error("I/O error: {0}")]
+    IoErr(#[from] std::io::Error),
     /// Error indicating that a requested resource was not found.
     #[error("Not found error: {0}")]
     NotFoundErr(String),
@@ -85,6 +96,62 @@ pub enum QSError {
 }
 
 impl QSError {
+    /// Returns a stable code and native variant name, ignoring context wrappers.
+    #[must_use]
+    pub fn kind(&self) -> (&'static str, &'static str) {
+        macro_rules! kinds {
+            ($($pattern:pat => ($code:literal, $name:literal)),+ $(,)?) => {
+                match self.root_cause() {
+                    $($pattern => ($code, $name),)+
+                    Self::Context { .. } => unreachable!("root_cause removes context wrappers"),
+                }
+            };
+        }
+        kinds! {
+            Self::InvalidTypeErr { .. } => ("invalid_type", "InvalidTypeErr"),
+            Self::IoErr(_) => ("io", "IoErr"),
+            Self::NotFoundErr(_) => ("not_found", "NotFoundErr"),
+            Self::DateParsingErr(_) => ("date_parsing", "DateParsingErr"),
+            Self::PeriodParsingErr(_) => ("period_parsing", "PeriodParsingErr"),
+            Self::ParsingErr(_) => ("parsing", "ParsingErr"),
+            Self::PeriodOperationErr(_) => ("period_operation", "PeriodOperationErr"),
+            Self::MakeScheduleErr(_) => ("schedule", "MakeScheduleErr"),
+            Self::EvaluationErr(_) => ("evaluation", "EvaluationErr"),
+            Self::SerializationErr(_) => ("serialization", "SerializationErr"),
+            Self::DeserializationErr(_) => ("deserialization", "DeserializationErr"),
+            Self::ValueNotSetErr(_) => ("missing_value", "ValueNotSetErr"),
+            Self::InvalidValueErr(_) => ("invalid_value", "InvalidValueErr"),
+            Self::SolverErr(_) => ("solver", "SolverErr"),
+            Self::NotImplementedErr(_) => ("not_implemented", "NotImplementedErr"),
+            Self::InterpolationErr(_) => ("interpolation", "InterpolationErr"),
+            Self::NodeError(_) => ("node", "NodeError"),
+            Self::TapeError(_) => ("tape", "TapeError"),
+            Self::DualFwdError(_) => ("dual_forward", "DualFwdError"),
+            Self::NodeNotIndexedInTapeErr => ("node_not_indexed", "NodeNotIndexedInTapeErr"),
+            Self::UnexpectedErr(_) => ("unexpected", "UnexpectedErr"),
+            Self::QuoteParsingErr(_) => ("quote_parsing", "QuoteParsingErr"),
+            Self::InstrumentResolutionErr(_) => ("instrument_resolution", "InstrumentResolutionErr"),
+        }
+    }
+
+    /// Stable machine-readable category shared by native and foreign interfaces.
+    #[must_use]
+    pub fn code(&self) -> &'static str {
+        self.kind().0
+    }
+
+    /// Operation contexts in order from the outermost to the innermost.
+    #[must_use]
+    pub fn contexts(&self) -> Vec<&str> {
+        let mut result = Vec::new();
+        let mut error = self;
+        while let Self::Context { context, source } = error {
+            result.push(context.as_str());
+            error = source;
+        }
+        result
+    }
+
     /// Adds operation or resource context, preserving the original error.
     #[must_use]
     pub fn context(self, context: impl Into<String>) -> Self {
@@ -121,6 +188,55 @@ pub type Result<T> = std::result::Result<T, QSError>;
 mod tests {
     use super::*;
     use std::error::Error;
+
+    #[test]
+    fn structured_categories_survive_context_without_parsing_messages() {
+        for (error, code, variant) in [
+            (
+                QSError::InvalidTypeErr {
+                    expected: "dict".into(),
+                    actual: "list".into(),
+                },
+                "invalid_type",
+                "InvalidTypeErr",
+            ),
+            (
+                QSError::InvalidValueErr("a misleading Not found error: message".into()),
+                "invalid_value",
+                "InvalidValueErr",
+            ),
+            (
+                QSError::NotFoundErr("SOFR".into()),
+                "not_found",
+                "NotFoundErr",
+            ),
+            (
+                QSError::EvaluationErr("inactive context".into()),
+                "evaluation",
+                "EvaluationErr",
+            ),
+            (
+                QSError::DeserializationErr("quotes[1].mid".into()),
+                "deserialization",
+                "DeserializationErr",
+            ),
+            (
+                QSError::IoErr(std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    "quotes.json",
+                )),
+                "io",
+                "IoErr",
+            ),
+        ] {
+            let error = error.context("resolving curve").context("pricing loan");
+            assert_eq!(error.code(), code);
+            assert_eq!(error.kind(), (code, variant));
+            assert_eq!(error.contexts(), ["pricing loan", "resolving curve"]);
+            assert_eq!(error.root_cause().kind(), error.kind());
+            assert!(error.source().is_some());
+        }
+    }
 
     #[test]
     fn context_preserves_category_and_source_chain() -> std::result::Result<(), Box<dyn Error>> {
