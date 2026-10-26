@@ -20,7 +20,10 @@ permissions:
   contents: read
 
 concurrency:
-  group: pages-${{ github.ref }}
+  group: pages-${{ (github.event_name == 'push' || github.event_name == 'pull_request') && 'validation' || 'deployment' }}-${{ github.ref }}
+  # Keep release deployments queued when the version commit's skipped Release
+  # run also emits workflow_run. A skipped run must not replace a pending build.
+  queue: max
   cancel-in-progress: false
 
 jobs:
