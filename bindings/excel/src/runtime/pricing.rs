@@ -213,6 +213,9 @@ impl PricerObject {
         requests: &[Request],
         context: &impl MarketDataProvider,
     ) -> Result<EvaluationResults, String> {
+        if let QsObject::UnresolvedTrade(pending) = trade {
+            return self.evaluate(&pending.resolve_trade(context)?, requests, context);
+        }
         let native: &dyn Any = match trade {
             QsObject::LoanTrade(trade) => trade.as_ref(),
             QsObject::SwapTrade(trade) => trade.as_ref(),
@@ -560,7 +563,6 @@ mod tests {
                     .collect(),
             )
             .with_payment_frequency(Frequency::Monthly)
-            .with_day_counter(DayCounter::Actual360)
             .build()
             .unwrap();
         let contract = InstrumentObject {

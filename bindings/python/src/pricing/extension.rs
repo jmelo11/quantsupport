@@ -118,7 +118,8 @@ impl Instrument {
 #[pyclass(module = "quantsupport", name = "Trade", subclass, dict, unsendable)]
 pub struct Trade {
     instrument: Py<PyAny>,
-    trade_date: quantsupport::prelude::Date,
+    trade_date: Option<quantsupport::prelude::Date>,
+    trade_tenor: Option<quantsupport::prelude::Period>,
     side: quantsupport::prelude::Side,
     notional: Option<f64>,
     domestic_notional: Option<f64>,
@@ -130,8 +131,76 @@ pub struct Trade {
 }
 
 impl Trade {
-    pub const fn trade_date(&self) -> quantsupport::prelude::Date {
-        self.trade_date
+    pub fn with_instrument(&self, instrument: Py<PyAny>) -> Self {
+        Self {
+            instrument,
+            trade_date: self.trade_date,
+            trade_tenor: self.trade_tenor,
+            side: self.side,
+            notional: self.notional,
+            domestic_notional: self.domestic_notional,
+            foreign_notional: self.foreign_notional,
+            num_contracts: self.num_contracts,
+            pricing_anchor: self.pricing_anchor,
+            settlement_date: self.settlement_date,
+            spread_day_counter: self.spread_day_counter,
+        }
+    }
+
+    pub fn trade_date(&self) -> PyResult<quantsupport::prelude::Date> {
+        self.trade_date.ok_or_else(|| {
+            pyo3::exceptions::PyValueError::new_err("trade date requires a pricing context")
+        })
+    }
+
+    pub fn needs_resolution(&self, py: Python<'_>) -> bool {
+        self.trade_tenor.is_some()
+            || self
+                .instrument_bound(py)
+                .is_instance_of::<crate::instruments::unresolved::UnresolvedInstrument>()
+    }
+
+    pub fn resolve_with_market(
+        &self,
+        py: Python<'_>,
+        market: &impl quantsupport::prelude::MarketDataProvider,
+    ) -> PyResult<Self> {
+        let instrument = if let Ok(pending) = self
+            .instrument_bound(py)
+            .extract::<PyRef<'_, crate::instruments::unresolved::UnresolvedInstrument>>()
+        {
+            pending.resolve_with_market(py, market)?.unbind()
+        } else if self
+            .instrument_bound(py)
+            .extract::<PyRef<'_, crate::instruments::loan::Loan>>()
+            .is_ok_and(|loan| loan.inner.is_none())
+        {
+            let terms = self.instrument_bound(py).call_method0("to_dict")?;
+            let resolved = self
+                .instrument_bound(py)
+                .get_type()
+                .call_method1("from_dict", (&terms,))?;
+            resolved
+                .extract::<PyRefMut<'_, crate::instruments::loan::Loan>>()?
+                .freeze_resolved_contract(market)?;
+            resolved.unbind()
+        } else {
+            self.instrument.clone_ref(py)
+        };
+        let mut resolved = self.with_instrument(instrument);
+        let context = quantsupport::prelude::ResolutionContext::new(market);
+        resolved.trade_date = Some(
+            context
+                .resolve_date(
+                    self.trade_date,
+                    self.trade_tenor,
+                    context.reference_date(),
+                    "trade date",
+                )
+                .map_err(crate::common::conversion::qs_err)?,
+        );
+        resolved.trade_tenor = None;
+        Ok(resolved)
     }
 
     pub const fn side(&self) -> quantsupport::prelude::Side {
@@ -181,12 +250,12 @@ impl Trade {
 impl Trade {
     #[new]
     #[allow(clippy::too_many_arguments)]
-    #[pyo3(signature = (instrument, trade_date, side = None, notional = None,
+    #[pyo3(signature = (instrument, trade_date = None, side = None, notional = None,
         domestic_notional = None, foreign_notional = None, num_contracts = 1.0,
-        pricing_anchor = None, settlement_date = None, spread_day_counter = None))]
+        pricing_anchor = None, settlement_date = None, spread_day_counter = None, trade_tenor = None))]
     fn new(
         instrument: Py<PyAny>,
-        trade_date: &Bound<'_, PyAny>,
+        trade_date: Option<&Bound<'_, PyAny>>,
         side: Option<&Bound<'_, PyAny>>,
         notional: Option<f64>,
         domestic_notional: Option<f64>,
@@ -195,6 +264,7 @@ impl Trade {
         pricing_anchor: Option<&Bound<'_, PyAny>>,
         settlement_date: Option<&Bound<'_, PyAny>>,
         spread_day_counter: Option<&Bound<'_, PyAny>>,
+        trade_tenor: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<Self> {
         for amount in [
             notional,
@@ -211,9 +281,28 @@ impl Trade {
                 ));
             }
         }
+        let trade_date = trade_date
+            .filter(|v| !v.is_none())
+            .map(crate::common::conversion::extract_date)
+            .transpose()?;
+        let mut trade_tenor = trade_tenor
+            .map(crate::common::conversion::extract_period)
+            .transpose()?;
+        if trade_date.is_some() && trade_tenor.is_some() {
+            return Err(pyo3::exceptions::PyValueError::new_err(
+                "supply trade_date or trade_tenor, not both",
+            ));
+        }
+        if trade_date.is_none() && trade_tenor.is_none() {
+            trade_tenor = Some(quantsupport::prelude::Period::new(
+                0,
+                quantsupport::prelude::TimeUnit::Days,
+            ));
+        }
         Ok(Self {
             instrument,
-            trade_date: crate::common::conversion::extract_date(trade_date)?,
+            trade_date,
+            trade_tenor,
             side: side
                 .map(crate::common::conversion::extract_side)
                 .transpose()?
@@ -242,10 +331,23 @@ impl Trade {
 
     /// Execution date.
     #[getter(trade_date)]
-    fn trade_date_py(&self) -> Date {
-        Date {
-            inner: self.trade_date,
-        }
+    fn trade_date_py(&self) -> Option<Date> {
+        self.trade_date.map(|inner| Date { inner })
+    }
+
+    /// Execution-date offset retained until this position is evaluated.
+    #[getter(trade_tenor)]
+    fn trade_tenor_py(&self) -> Option<crate::time::Period> {
+        self.trade_tenor.map(|inner| crate::time::Period { inner })
+    }
+
+    /// Resolves the instrument and execution date once, retaining a concrete position.
+    fn resolve_trade(
+        &self,
+        py: Python<'_>,
+        context: PyRef<'_, crate::pricing::context::PricingContext>,
+    ) -> PyResult<Self> {
+        self.resolve_with_market(py, &context.market_view()?)
     }
 
     /// Pay/receive direction.
@@ -296,6 +398,7 @@ impl Trade {
         Ok(Self {
             instrument: self.instrument.clone_ref(py),
             trade_date: self.trade_date,
+            trade_tenor: self.trade_tenor,
             side: self.side,
             notional: self.notional,
             domestic_notional: self.domestic_notional,
@@ -313,7 +416,10 @@ impl Trade {
         let instrument = self.instrument.bind(py).repr()?.extract::<String>()?;
         Ok(format!(
             "Trade(instrument={instrument}, trade_date='{}', side={:?})",
-            self.trade_date, self.side
+            self.trade_date
+                .map(|date| date.to_string())
+                .unwrap_or_else(|| "unresolved".into()),
+            self.side
         ))
     }
 }

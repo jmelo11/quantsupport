@@ -38,6 +38,8 @@ pub mod pricerstate;
 pub mod pricingcontext;
 /// Pricing request module.
 pub mod request;
+/// Context-based resolution of reusable instrument definitions.
+pub mod resolution;
 /// Historical market timestamp and quote-side selection.
 pub mod snapshotselector;
 /// Trade module.

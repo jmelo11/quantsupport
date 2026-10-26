@@ -26,6 +26,7 @@ pub fn qs_context_new(
     base_currency: &str,
     base_index: &str,
     quote_level: Option<String>,
+    anchor_fixings: Option<bool>,
 ) -> Result<String, XllError> {
     let level = match quote_level
         .as_deref()
@@ -44,8 +45,18 @@ pub fn qs_context_new(
         parse_currency(base_currency)?,
         parse_index(base_index)?,
     );
-    with_registry_mut(|registry| context::create(registry, name, date, currency, index, level))
-        .map_err(value_error)
+    with_registry_mut(|registry| {
+        context::create_with_fixing_policy(
+            registry,
+            name,
+            date,
+            currency,
+            index,
+            level,
+            anchor_fixings.unwrap_or(true),
+        )
+    })
+    .map_err(value_error)
 }
 
 fn add(context: &str, data: InputData, key: String) -> Result<String, XllError> {
@@ -525,7 +536,14 @@ mod array_boundary_tests {
         let mid_row = array(levels(), 1, 2);
         let mid_column = array(levels(), 2, 1);
         let root = in_cell(0, || {
-            qs_context_new("array.boundary.context", "2026-01-15", "USD", "SOFR", None)
+            qs_context_new(
+                "array.boundary.context",
+                "2026-01-15",
+                "USD",
+                "SOFR",
+                None,
+                None,
+            )
         })
         .unwrap();
         let define = |ids, mid| {

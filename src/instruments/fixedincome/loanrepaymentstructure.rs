@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 pub enum LoanRepaymentStructure {
     /// Interest only, with all surviving principal due at maturity.
     Bullet,
-    /// Constant instalment on actual contractual accrual dates between recasts.
+    /// Level initial instalments; resolved principal remains contractual.
     French,
     /// French instalments leaving a fraction of original principal for maturity.
     Balloon {

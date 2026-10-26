@@ -1,4 +1,8 @@
 use crate::{
+    core::resolution::{ResolutionContext, Resolve},
+    time::period::Period,
+};
+use crate::{
     core::trade::Side,
     currencies::currency::Currency,
     indices::marketindex::MarketIndex,
@@ -25,8 +29,9 @@ use crate::{
 ///
 /// assert_eq!(futures.futures_price(), 5200.0);
 /// ```
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct MakeFutures {
+    expiry_tenor: Option<Period>,
     identifier: Option<String>,
     market_index: Option<MarketIndex>,
     expiry_date: Option<Date>,
@@ -38,6 +43,15 @@ pub struct MakeFutures {
 }
 
 impl MakeFutures {
+    /// Sets expiry date as a tenor from the resolution reference date.
+    /// Replaces an explicitly supplied expiry date. Resolve this maker with a context.
+    #[must_use]
+    pub const fn with_expiry_tenor(mut self, tenor: Period) -> Self {
+        self.expiry_tenor = Some(tenor);
+        self.expiry_date = None;
+        self
+    }
+
     /// Sets the identifier.
     #[must_use]
     pub fn with_identifier(mut self, identifier: String) -> Self {
@@ -56,6 +70,7 @@ impl MakeFutures {
     #[must_use]
     pub const fn with_expiry_date(mut self, date: Date) -> Self {
         self.expiry_date = Some(date);
+        self.expiry_tenor = None;
         self
     }
 
@@ -99,6 +114,11 @@ impl MakeFutures {
     /// # Errors
     /// Returns an error if any of the required fields are missing.
     pub fn build(self) -> Result<Futures> {
+        if self.expiry_tenor.is_some() {
+            return Err(QSError::InvalidValueErr(
+                "Relative dates require maker.resolve(&ResolutionContext)".into(),
+            ));
+        }
         let identifier = self
             .identifier
             .ok_or_else(|| QSError::ValueNotSetErr("Identifier".into()))?;
@@ -125,5 +145,47 @@ impl MakeFutures {
             currency,
             day_counter,
         ))
+    }
+}
+
+impl Resolve for MakeFutures {
+    type Resolved = Futures;
+
+    fn resolve(&self, context: &ResolutionContext<'_>) -> Result<Self::Resolved> {
+        let mut resolved = self.clone();
+        let dates = *context;
+        resolved.expiry_date = Some(dates.resolve_date(
+            self.expiry_date,
+            self.expiry_tenor,
+            context.reference_date(),
+            "expiry_date",
+        )?);
+        resolved.expiry_tenor = None;
+        resolved.build()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{
+        core::resolution::test_support::{empty_market, p, reference},
+        prelude::*,
+    };
+
+    #[test]
+    fn equity_future_resolves_relative_expiry() -> Result<()> {
+        let market = empty_market(reference());
+        let ctx = ResolutionContext::new(&market);
+        let expiry = reference() + p("1Y")?;
+        let equity = MarketIndex::Other("ACME".into());
+        let future = MakeFutures::default()
+            .with_identifier("equity-future".into())
+            .with_expiry_tenor(p("1Y")?)
+            .with_market_index(equity)
+            .with_currency(Currency::EUR)
+            .with_futures_price(100.0)
+            .resolve(&ctx)?;
+        assert_eq!(future.expiry_date(), expiry);
+        Ok(())
     }
 }

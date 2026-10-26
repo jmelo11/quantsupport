@@ -1,3 +1,7 @@
+use crate::core::{
+    resolution::{ResolutionContext, Resolve},
+    trade::UnresolvedTrade,
+};
 use std::any::Any;
 
 use crate::{
@@ -39,6 +43,21 @@ pub trait Pricer: Send + Sync {
         ctx: &impl MarketDataProvider,
     ) -> Result<EvaluationResults>;
 
+    /// Resolves a pending trade using the supplied market, then evaluates it.
+    ///
+    /// # Errors
+    /// Propagates request validation, instrument resolution and valuation errors.
+    fn evaluate_unresolved(
+        &self,
+        trade: &UnresolvedTrade<Self::Item>,
+        requests: &[Request],
+        ctx: &impl MarketDataProvider,
+    ) -> Result<EvaluationResults> {
+        Request::validate(requests)?;
+        let resolved = trade.resolve(&ResolutionContext::new(ctx))?;
+        self.evaluate(&resolved, requests, ctx)
+    }
+
     /// Returns a [`MarketDataRequest`] containing the market data elements required to evaluate the instrument.
     ///
     /// ## Arguments
@@ -57,6 +76,10 @@ pub trait Pricer: Send + Sync {
 
 /// Type-erased valuation interface for runtime trade dispatch.
 pub trait ErasedPricer: Send + Sync {
+    /// Whether this pricer accepts the supplied concrete or unresolved trade.
+    fn accepts_trade(&self, _trade: &dyn Any) -> bool {
+        false
+    }
     /// Evaluates a type-erased trade for the requested measures.
     ///
     /// # Errors
@@ -89,12 +112,19 @@ where
     P: Pricer,
     P::Item: Any,
 {
+    fn accepts_trade(&self, trade: &dyn Any) -> bool {
+        trade.is::<P::Item>() || trade.is::<UnresolvedTrade<P::Item>>()
+    }
+
     fn evaluate_erased(
         &self,
         trade: &dyn Any,
         requests: &[Request],
         ctx: &dyn MarketDataProvider,
     ) -> Result<EvaluationResults> {
+        if let Some(unresolved) = trade.downcast_ref::<UnresolvedTrade<P::Item>>() {
+            return self.evaluate_unresolved(unresolved, requests, &ctx);
+        }
         let typed_trade = trade.downcast_ref::<P::Item>().ok_or_else(|| {
             QSError::InvalidValueErr(format!(
                 "Pricer expected a trade of type `{}`, but received a value with type id {:?}",

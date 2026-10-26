@@ -354,7 +354,7 @@ class ExcelReferenceTests(unittest.TestCase):
         self.assertNotIn("QS.CONTEXT.PREPARE", records)
         self.assertNotIn("QS.CONTEXT.FROM.COMPONENTS", records)
         self.assertEqual([a["name"] for a in records["QS.CONTEXT.CREATE"]["arguments"]],
-                         ["name", "reference_date", "base_currency", "base_index", "quote_level"])
+                         ["name", "reference_date", "base_currency", "base_index", "quote_level", "anchor_fixings"])
 
     def test_catalog_financial_units_and_range_threading_are_precise(self):
         records = {record["name"]: record for record in self.records}

@@ -232,10 +232,15 @@ pub struct NettingSet {
 
 impl NettingSet {
     /// Builds the library netting set (claims + CSA terms).
-    pub fn build(&self, py: Python<'_>) -> PyResult<QsNettingSet> {
+    pub fn build(
+        &self,
+        py: Python<'_>,
+        market: &impl quantsupport::prelude::MarketDataProvider,
+    ) -> PyResult<QsNettingSet> {
         let mut claims = Vec::new();
         for position in &self.trades {
-            claims.extend(Self::claims(&position.borrow(py), py)?);
+            let resolved = position.borrow(py).resolve_with_market(py, market)?;
+            claims.extend(Self::claims(&resolved, py)?);
         }
         Ok(QsNettingSet::with_csa_terms(claims, self.csa.clone()))
     }
@@ -285,7 +290,9 @@ impl NettingSet {
                         "NettingSet requires Trade objects, not bare instruments",
                     )
                 })?;
-            Self::claims(&position.borrow(item.py()), item.py())?;
+            if !position.borrow(item.py()).needs_resolution(item.py()) {
+                Self::claims(&position.borrow(item.py()), item.py())?;
+            }
             specs.push(position);
         }
         Ok(Self {

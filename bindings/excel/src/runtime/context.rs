@@ -142,7 +142,20 @@ pub fn create(
     index: MarketIndex,
     level: Level,
 ) -> Result<String, String> {
-    let key = serde_json::to_string(&(date, currency, &index, level)).map_err(|e| e.to_string())?;
+    create_with_fixing_policy(registry, name, date, currency, index, level, true)
+}
+
+pub fn create_with_fixing_policy(
+    registry: &mut Registry,
+    name: &str,
+    date: Date,
+    currency: Currency,
+    index: MarketIndex,
+    level: Level,
+    anchor_fixings: bool,
+) -> Result<String, String> {
+    let key = serde_json::to_string(&(date, currency, &index, level, anchor_fixings))
+        .map_err(|e| e.to_string())?;
     if let Some(handle) = registry
         .handle_if_unchanged(name, "PricingContext", &key)
         .map_err(|e| e.to_string())?
@@ -150,6 +163,7 @@ pub fn create(
         return Ok(handle);
     }
     let context = PricingContext::new()
+        .with_anchor_fixings(anchor_fixings)
         .with_quote_store(QuoteStore::new(date))
         .with_base_currency(currency)
         .with_base_index(index)
@@ -439,6 +453,13 @@ pub fn evaluate_requests(
     } else {
         object
     };
+    let resolved;
+    let trade = if let QsObject::UnresolvedTrade(pending) = trade {
+        resolved = pending.resolve_trade(context)?;
+        &resolved
+    } else {
+        trade
+    };
     let default;
     let pricer = if let Some(handle) = pricer {
         registry.pricer(handle).map_err(|e| e.to_string())?
@@ -577,6 +598,83 @@ mod tests {
                 "deposit",
             )
             .unwrap()
+    }
+
+    #[test]
+    fn pending_instruments_and_trades_resolve_through_worksheet_dispatch() {
+        let mut registry = Registry::default();
+        let root = root(&mut registry);
+        let input = add_curve(&mut registry, &root, 0.04);
+        let concrete = instrument(&mut registry);
+        let maker = MakeFixedRateDeposit::<DualFwd>::default()
+            .with_identifier("pending".into())
+            .with_start_tenor(Period::new(0, TimeUnit::Days))
+            .with_tenor(Period::new(6, TimeUnit::Months))
+            .with_currency(Currency::USD)
+            .with_notional(1000.0)
+            .with_rate(0.05)
+            .with_rate_definition(RateDefinition::new(
+                DayCounter::Actual360,
+                Compounding::Simple,
+                Frequency::Annual,
+            ));
+        let pending = InstrumentObject::from_maker(
+            "FixedRateDeposit",
+            1000.0,
+            None,
+            maker,
+            NativeInstrument::FixedRateDeposit,
+        );
+        let position = pending
+            .trade_from_tenor(
+                Period::new(0, TimeUnit::Days),
+                Side::LongReceive,
+                &PositionTerms::default(),
+            )
+            .unwrap();
+        let pending = registry
+            .upsert_if_changed("pending", QsObject::Instrument(Box::new(pending)), "terms")
+            .unwrap();
+        let position = registry
+            .upsert_if_changed("position", position, "terms")
+            .unwrap();
+        let context = prepare(&registry, &root, &[input]).unwrap();
+        let expected = evaluate(&registry, &context, &concrete, &Request::Value, None)
+            .unwrap()
+            .price();
+        for handle in [&pending, &position, &position] {
+            assert_eq!(
+                evaluate(&registry, &context, handle, &Request::Value, None)
+                    .unwrap()
+                    .price(),
+                expected
+            );
+        }
+        assert!(matches!(
+            registry.object(&position).unwrap(),
+            QsObject::UnresolvedTrade(_)
+        ));
+        assert!(matches!(
+            registry.instrument(&pending).unwrap().native,
+            NativeInstrument::Pending(_)
+        ));
+    }
+
+    #[test]
+    fn workbook_context_carries_the_selected_fixing_policy() {
+        let mut registry = Registry::default();
+        let root = create_with_fixing_policy(
+            &mut registry,
+            "projection",
+            Date::new(2025, 1, 1),
+            Currency::USD,
+            MarketIndex::SOFR,
+            Level::Mid,
+            false,
+        )
+        .unwrap();
+        let context = prepare(&registry, &root, &[]).unwrap();
+        assert!(!context.anchor_fixings());
     }
 
     #[test]

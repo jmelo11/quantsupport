@@ -92,6 +92,17 @@ impl ScriptedProduct {
 
 #[pymethods]
 impl ScriptedProduct {
+    /// Defines script event tenors before the pricing reference date is available.
+    #[classmethod]
+    #[pyo3(signature=(**parameters))]
+    fn from_tenors<'py>(
+        cls: &Bound<'py, pyo3::types::PyType>,
+        parameters: Option<&Bound<'py, pyo3::types::PyDict>>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let empty = pyo3::types::PyDict::new(cls.py());
+        crate::instruments::unresolved::from_tenors(cls, parameters.unwrap_or(&empty))
+    }
+
     /// Builds a script from events [{date, code}], currency, and optional model assignments.
     #[staticmethod]
     pub fn from_dict(obj: &Bound<'_, PyAny>) -> PyResult<Self> {

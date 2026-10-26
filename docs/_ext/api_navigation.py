@@ -28,7 +28,7 @@ PYTHON_SECTIONS = {
         "Simulation": "Simulation SimulationConfiguration",
     },
     "instruments": {
-        "Base Types and Direction": "Instrument Side",
+        "Base Types and Direction": "Instrument UnresolvedInstrument Side",
         "Interest Rates": "InterestRate Swap BasisSwap CrossCurrencySwap FixFloatCrossCurrencySwap RateFutures",
         "Rate Options": "EuropeanSwaption SwaptionType CapFloor CapFloorType CapletFloorlet CapletFloorletType",
         "Fixed Income": "FixedRateBond FloatingRateNote FixedRateDeposit SteppedCouponBond CallScheduleEntry PaymentStructure",

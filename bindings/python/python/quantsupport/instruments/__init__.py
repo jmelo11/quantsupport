@@ -2,6 +2,7 @@
 
 from ..quantsupport import (
     Instrument as Instrument,
+    UnresolvedInstrument as UnresolvedInstrument,
     Side as Side,
     OptionType as OptionType,
     SwaptionType as SwaptionType,
@@ -37,4 +38,4 @@ from ..quantsupport import (
     ScriptedProduct as ScriptedProduct,
 )
 
-__all__ = ['Instrument', 'Side', 'OptionType', 'SwaptionType', 'CapFloorType', 'CapletFloorletType', 'PaymentStructure', 'LoanRepaymentStructure', 'PrepaymentModelConfiguration', 'Loan', 'EquityForward', 'EuropeanSwaption', 'Swap', 'CrossCurrencySwap', 'BasisSwap', 'FixFloatCrossCurrencySwap', 'FixedRateBond', 'InterestRate', 'PayoffOps', 'FixedRateCoupon', 'FloatingRateCoupon', 'OptionEmbeddedCoupon', 'CallScheduleEntry', 'SteppedCouponBond', 'FloatingRateNote', 'FixedRateDeposit', 'FxForward', 'FxOption', 'EquityOption', 'CreditDefaultSwap', 'CapFloor', 'CapletFloorlet', 'RateFutures', 'ScriptedProduct']
+__all__ = ['UnresolvedInstrument', 'Instrument', 'Side', 'OptionType', 'SwaptionType', 'CapFloorType', 'CapletFloorletType', 'PaymentStructure', 'LoanRepaymentStructure', 'PrepaymentModelConfiguration', 'Loan', 'EquityForward', 'EuropeanSwaption', 'Swap', 'CrossCurrencySwap', 'BasisSwap', 'FixFloatCrossCurrencySwap', 'FixedRateBond', 'InterestRate', 'PayoffOps', 'FixedRateCoupon', 'FloatingRateCoupon', 'OptionEmbeddedCoupon', 'CallScheduleEntry', 'SteppedCouponBond', 'FloatingRateNote', 'FixedRateDeposit', 'FxForward', 'FxOption', 'EquityOption', 'CreditDefaultSwap', 'CapFloor', 'CapletFloorlet', 'RateFutures', 'ScriptedProduct']

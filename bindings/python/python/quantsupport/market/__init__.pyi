@@ -143,7 +143,7 @@ class MarketSnapshotStore:
             snapshot's timestamp to see the actual selected instant.
         """
         ...
-    def pricing_context(self, selector: SnapshotSelector, fixings: FixingStore | None = ..., fixed_income_policy: _pricing.FixedIncomeDiscountPolicy | None = ...) -> _pricing.PricingContext:
+    def pricing_context(self, selector: SnapshotSelector, fixings: FixingStore | None = ..., fixed_income_policy: _pricing.FixedIncomeDiscountPolicy | None = ..., anchor_fixings: bool = ...) -> _pricing.PricingContext:
         """Create a fresh context using the matched market's business date.
 
         Parameters
@@ -154,6 +154,9 @@ class MarketSnapshotStore:
             Historical fixing dataset. Publication vintages are not filtered.
         fixed_income_policy : FixedIncomeDiscountPolicy or None, optional
             Explicit policy for the new context; otherwise uses its base curve.
+        anchor_fixings : bool, optional
+            True requires stored past index fixings; False projects all dates.
+            Today and future project in either case. Defaults to True.
 
         Notes
         -----

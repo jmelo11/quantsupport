@@ -15,6 +15,10 @@ use crate::{
     },
     utils::errors::{QSError, Result},
 };
+use crate::{
+    core::resolution::{ResolutionContext, Resolve},
+    time::period::Period,
+};
 use std::marker::PhantomData;
 
 /// A builder for creating an [`EuropeanSwaption`] instance.
@@ -48,11 +52,14 @@ use std::marker::PhantomData;
 /// assert_eq!(swaption.identifier(), "SWPTN-5Y10Y");
 /// assert_eq!(swaption.strike(), 0.03);
 /// ```
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct MakeSwaption<T: Scalar + Default> {
     start_date: Option<Date>,
+    start_tenor: Option<Period>,
     swap_tenor_date: Option<Date>,
+    swap_tenor: Option<Period>,
     expiry: Option<Date>,
+    expiry_tenor: Option<Period>,
     strike: Option<f64>,
     notional: Option<f64>,
     identifier: Option<String>,
@@ -74,10 +81,35 @@ impl<T> MakeSwaption<T>
 where
     T: Scalar + Default,
 {
+    /// Sets swap tenor date as a tenor from the resolved underlying start date.
+    #[must_use]
+    pub const fn with_swap_tenor(mut self, tenor: Period) -> Self {
+        self.swap_tenor_date = None;
+        self.swap_tenor = Some(tenor);
+        self
+    }
+
+    /// Sets start date as a tenor from the resolved expiry.
+    #[must_use]
+    pub const fn with_start_tenor(mut self, tenor: Period) -> Self {
+        self.start_date = None;
+        self.start_tenor = Some(tenor);
+        self
+    }
+
+    /// Sets expiry as a tenor from the resolution reference date.
+    #[must_use]
+    pub const fn with_expiry_tenor(mut self, tenor: Period) -> Self {
+        self.expiry = None;
+        self.expiry_tenor = Some(tenor);
+        self
+    }
+
     /// Sets the start date of the underlying swap (= option expiry for Europeans).
     #[must_use]
     pub const fn with_start_date(mut self, start_date: Date) -> Self {
         self.start_date = Some(start_date);
+        self.start_tenor = None;
         self
     }
 
@@ -85,6 +117,7 @@ where
     #[must_use]
     pub const fn with_swap_tenor_date(mut self, date: Date) -> Self {
         self.swap_tenor_date = Some(date);
+        self.swap_tenor = None;
         self
     }
 
@@ -92,6 +125,7 @@ where
     #[must_use]
     pub const fn with_expiry(mut self, expiry: Date) -> Self {
         self.expiry = Some(expiry);
+        self.expiry_tenor = None;
         self
     }
 
@@ -199,6 +233,11 @@ where
     /// Returns an error when required fields are missing or the underlying
     /// swap builder fails.
     pub fn build(self) -> Result<EuropeanSwaption<T>> {
+        if self.expiry_tenor.is_some() || self.start_tenor.is_some() || self.swap_tenor.is_some() {
+            return Err(QSError::InvalidValueErr(
+                "Relative dates require maker.resolve(&ResolutionContext)".into(),
+            ));
+        }
         let strike = self
             .strike
             .ok_or_else(|| QSError::ValueNotSetErr("Strike".into()))?;
@@ -276,6 +315,62 @@ where
     }
 }
 
+impl<T: Scalar> Resolve for MakeSwaption<T> {
+    type Resolved = EuropeanSwaption<T>;
+
+    fn resolve(&self, context: &ResolutionContext<'_>) -> Result<Self::Resolved> {
+        let mut resolved = self.clone();
+        let details = self
+            .market_index
+            .as_ref()
+            .ok_or_else(|| QSError::ValueNotSetErr("Market index".into()))?
+            .rate_index_details()?;
+        let calendar = self.calendar.clone().unwrap_or_else(|| details.calendar());
+        let convention = self.business_day_convention.unwrap_or_else(|| {
+            details
+                .swap_conventions(
+                    self.swap_tenor
+                        .unwrap_or_else(|| Period::new(1, crate::time::enums::TimeUnit::Years)),
+                )
+                .business_day_convention()
+        });
+        let dates = context.with_date_conventions(
+            &calendar,
+            convention,
+            self.end_of_month.unwrap_or(false),
+        );
+        let expiry = dates.resolve_date(
+            self.expiry,
+            self.expiry_tenor,
+            context.reference_date(),
+            "Expiry",
+        )?;
+        let start = if self.start_date.is_some() || self.start_tenor.is_some() {
+            dates.resolve_date(
+                self.start_date,
+                self.start_tenor,
+                expiry,
+                "Underlying start",
+            )?
+        } else {
+            expiry
+        };
+        let maturity = dates.resolve_date(
+            self.swap_tenor_date,
+            self.swap_tenor,
+            start,
+            "Underlying maturity",
+        )?;
+        resolved.expiry = Some(expiry);
+        resolved.start_date = Some(start);
+        resolved.swap_tenor_date = Some(maturity);
+        resolved.expiry_tenor = None;
+        resolved.start_tenor = None;
+        resolved.swap_tenor = None;
+        resolved.build()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -332,5 +427,35 @@ mod tests {
             .build();
 
         assert!(result.is_err(), "expected missing swap tenor to fail");
+    }
+}
+
+#[cfg(test)]
+mod resolution_tests {
+    use crate::{
+        core::resolution::test_support::{empty_market, p, reference},
+        prelude::*,
+    };
+
+    #[test]
+    fn swaption_resolves_expiry_and_underlying_tenor() -> Result<()> {
+        let market = empty_market(reference());
+        let ctx = ResolutionContext::new(&market);
+        let swaption = MakeSwaption::<f64>::default()
+            .with_identifier("swaption".into())
+            .with_expiry_tenor(p("1Y")?)
+            .with_swap_tenor(p("5Y")?)
+            .with_notional(100_000.0)
+            .with_strike(0.03)
+            .with_currency(Currency::EUR)
+            .with_market_index(MarketIndex::EURIBOR6m)
+            .with_business_day_convention(BusinessDayConvention::Unadjusted)
+            .resolve(&ctx)?;
+        assert_eq!(swaption.expiry_date(), reference() + p("1Y")?);
+        assert_eq!(
+            swaption.underlying().fixed_leg().last_payment_date(),
+            reference() + p("6Y")?
+        );
+        Ok(())
     }
 }

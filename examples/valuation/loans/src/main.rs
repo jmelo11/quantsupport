@@ -36,10 +36,20 @@ fn default_loan_terms(reference: Date, identifier: &str) -> MakeLoan<DualFwd> {
         .with_maturity_date(reference.advance(30, TimeUnit::Years))
         .with_notional(250_000.0)
         .with_currency(Currency::EUR)
-        .with_coupons(vec![CashflowType::fixed(0.06)])
+        .with_coupons(vec![CashflowType::FixedRateCoupon(FixedRateCoupon::new(
+            1.0,
+            Box::new(InterestRate::new(
+                DualFwd::new(0.06),
+                Compounding::Simple,
+                Frequency::Annual,
+                DayCounter::Actual360,
+            )),
+            reference,
+            reference,
+            reference,
+        ))])
         .with_repayment_structure(LoanRepaymentStructure::French)
         .with_payment_frequency(Frequency::Monthly)
-        .with_day_counter(DayCounter::Actual360)
         .with_calendar(Calendar::TARGET(TARGET::new()))
         .with_business_day_convention(BusinessDayConvention::Following)
         .with_fixing_lag_business_days(2)

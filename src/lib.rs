@@ -11,6 +11,12 @@
 //! A pricer combines the trade with its required market data to calculate the
 //! requested measures.
 //!
+//! Makers can also retain relative tenors until a market context is available.
+//! [`Resolve`](core::resolution::Resolve) produces concrete instruments using a
+//! [`ResolutionContext`](core::resolution::ResolutionContext). The same maker
+//! can be resolved for several reference dates; each resolved instrument retains
+//! its own contractual dates and principal schedule.
+//!
 //! This reference describes the native Rust API. The
 //! [Book](https://jmelo11.github.io/quantsupport/) explains financial concepts
 //! and workflows across the three interfaces. The
@@ -31,10 +37,10 @@
 //! # fn main() -> Result<()> {
 //! let valuation_date = Date::new(2024, 1, 15);
 //! let notional = 10_000_000.0;
-//! let swap = MakeSwap::<DualFwd>::default()
+//! let maker = MakeSwap::<DualFwd>::default()
 //!     .with_identifier("USD_IRS_5Y".to_string())
-//!     .with_start_date(valuation_date)
-//!     .with_maturity_date(Date::new(2029, 1, 15))
+//!     .with_start_tenor(Period::new(0, TimeUnit::Days))
+//!     .with_tenor(Period::new(5, TimeUnit::Years))
 //!     .with_fixed_rate(0.03)
 //!     .with_notional(notional)
 //!     .with_rate_definition(RateDefinition::new(
@@ -46,9 +52,7 @@
 //!     .with_market_index(MarketIndex::SOFR)
 //!     .with_side(Side::LongReceive)
 //!     .with_fixed_leg_frequency(Frequency::Semiannual)
-//!     .with_floating_leg_frequency(Frequency::Semiannual)
-//!     .build()?;
-//! let trade = SwapTrade::new(swap, valuation_date, notional, Side::LongReceive);
+//!     .with_floating_leg_frequency(Frequency::Semiannual);
 //!
 //! let curve = FlatForwardTermStructure::new(
 //!     valuation_date,
@@ -68,6 +72,8 @@
 //! let context = PricingContext::new()
 //!     .with_quote_store(QuoteStore::new(valuation_date))
 //!     .with_constructed_elements(elements);
+//! let swap = maker.resolve(&ResolutionContext::new(&context))?;
+//! let trade = SwapTrade::new(swap, valuation_date, notional, Side::LongReceive);
 //!
 //! let pricer = DiscountedCashflowPricer::<Swap<DualFwd>, SwapTrade<DualFwd>>::new();
 //! let results = pricer.evaluate(

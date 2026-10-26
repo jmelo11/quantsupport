@@ -169,7 +169,8 @@ impl<T: Scalar> CashflowType<T> {
                     start,
                     end,
                     payment,
-                );
+                )
+                .with_day_counter(coupon.day_counter());
                 if let Some(conventions) = coupon.overnight_conventions() {
                     result.set_overnight_conventions(conventions.clone())?;
                 }

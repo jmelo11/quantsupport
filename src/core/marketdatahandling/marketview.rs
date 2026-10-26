@@ -551,6 +551,9 @@ impl QuoteSelector for MarketView<'_> {
 }
 
 impl MarketDataProvider for MarketView<'_> {
+    fn anchor_fixings(&self) -> bool {
+        self.base.anchor_fixings()
+    }
     fn evaluation_date(&self) -> Date {
         self.base.evaluation_date()
     }

@@ -9,6 +9,30 @@ use quantsupport_xll_macros::xll_bindgen;
 use std::result::Result;
 use xll_rs::types::XllError;
 
+/// Keeps date and tenor worksheet inputs separate and configures the native maker.
+fn apply_date_input<M>(
+    maker: M,
+    date: &str,
+    tenor: Option<&str>,
+    label: &str,
+    set_date: impl FnOnce(M, Date) -> M,
+    set_tenor: impl FnOnce(M, Period) -> M,
+) -> Result<M, XllError> {
+    let date = date.trim();
+    let tenor = tenor.map(str::trim).filter(|s| !s.is_empty());
+    match (date.is_empty(), tenor) {
+        (false, None) => Ok(set_date(maker, parse_date(date)?)),
+        (true, Some(tenor)) => Ok(set_tenor(
+            maker,
+            Period::from_str(tenor).map_err(value_error)?,
+        )),
+        (false, Some(_)) => Err(value_error(format!(
+            "supply {label} or its tenor, not both"
+        ))),
+        (true, None) => Err(value_error(format!("{label} or its tenor is required"))),
+    }
+}
+
 #[xll_bindgen(
     name = "QS.INSTRUMENT.FX.FORWARD",
     category = "QuantSupport - Instruments",
@@ -21,27 +45,36 @@ pub fn qs_instrument_fx_forward(
     base_currency: &str,
     quote_currency: &str,
     forward_rate: f64,
+    delivery_tenor: Option<String>,
 ) -> Result<String, XllError> {
     let key = input_key(&(delivery_date, base_currency, quote_currency, forward_rate))?;
+    let key = input_key(&(&key, (delivery_tenor.as_deref(),)))?;
     if let Some(handle) = cached_handle(name, "FxForward", &key)? {
         return Ok(handle);
     }
     let side = Side::LongReceive;
     let instrument = MakeFxForward::default()
         .with_identifier(name.to_string())
-        .with_delivery_date(parse_date(delivery_date)?)
         .with_forward_rate(forward_rate)
         .with_base_currency(parse_currency(base_currency)?)
         .with_quote_currency(parse_currency(quote_currency)?)
         .with_side(side)
-        .as_deliverable()
-        .build()
-        .map_err(value_error)?;
-    let object = InstrumentObject {
-        native: NativeInstrument::FxForward(instrument),
-        notional: 1.0,
-        foreign_notional: None,
-    };
+        .as_deliverable();
+    let instrument = apply_date_input(
+        instrument,
+        delivery_date,
+        delivery_tenor.as_deref(),
+        "delivery_date",
+        |m, d| m.with_delivery_date(d),
+        |m, t| m.with_delivery_tenor(t),
+    )?;
+    let object = InstrumentObject::from_maker(
+        "FxForward",
+        1.0,
+        None,
+        instrument,
+        NativeInstrument::FxForward,
+    );
     with_registry_mut(|registry| {
         registry.upsert_if_changed(name, QsObject::Instrument(Box::new(object)), key)
     })
@@ -68,6 +101,8 @@ pub fn qs_instrument_swap(
     rate_frequency: &str,
     fixed_leg_frequency: &str,
     floating_leg_frequency: &str,
+    start_tenor: Option<String>,
+    tenor: Option<String>,
 ) -> Result<String, XllError> {
     let key = input_key(&(
         start_date,
@@ -83,14 +118,13 @@ pub fn qs_instrument_swap(
         fixed_leg_frequency,
         floating_leg_frequency,
     ))?;
+    let key = input_key(&(&key, (start_tenor.as_deref(), tenor.as_deref())))?;
     if let Some(handle) = cached_handle(name, "Swap", &key)? {
         return Ok(handle);
     }
     let side = Side::LongReceive;
     let instrument = MakeSwap::<DualFwd>::default()
         .with_identifier(name.to_string())
-        .with_start_date(parse_date(start_date)?)
-        .with_maturity_date(parse_date(maturity_date)?)
         .with_fixed_rate(fixed_rate)
         .with_spread(spread)
         .with_notional(notional)
@@ -103,14 +137,25 @@ pub fn qs_instrument_swap(
         .with_currency(parse_currency(currency)?)
         .with_side(side)
         .with_fixed_leg_frequency(parse_frequency(fixed_leg_frequency)?)
-        .with_floating_leg_frequency(parse_frequency(floating_leg_frequency)?)
-        .build()
-        .map_err(value_error)?;
-    let object = InstrumentObject {
-        native: NativeInstrument::Swap(instrument),
-        notional,
-        foreign_notional: None,
-    };
+        .with_floating_leg_frequency(parse_frequency(floating_leg_frequency)?);
+    let instrument = apply_date_input(
+        instrument,
+        start_date,
+        start_tenor.as_deref(),
+        "start_date",
+        |m, d| m.with_start_date(d),
+        |m, t| m.with_start_tenor(t),
+    )?;
+    let instrument = apply_date_input(
+        instrument,
+        maturity_date,
+        tenor.as_deref(),
+        "maturity_date",
+        |m, d| m.with_maturity_date(d),
+        |m, t| m.with_tenor(t),
+    )?;
+    let object =
+        InstrumentObject::from_maker("Swap", notional, None, instrument, NativeInstrument::Swap);
     with_registry_mut(|registry| {
         registry.upsert_if_changed(name, QsObject::Instrument(Box::new(object)), key)
     })
@@ -135,6 +180,8 @@ pub fn qs_instrument_basis_swap(
     receive_spread: f64,
     pay_frequency: &str,
     receive_frequency: &str,
+    start_tenor: Option<String>,
+    tenor: Option<String>,
 ) -> Result<String, XllError> {
     let key = input_key(&(
         start_date,
@@ -148,14 +195,13 @@ pub fn qs_instrument_basis_swap(
         pay_frequency,
         receive_frequency,
     ))?;
+    let key = input_key(&(&key, (start_tenor.as_deref(), tenor.as_deref())))?;
     if let Some(handle) = cached_handle(name, "BasisSwap", &key)? {
         return Ok(handle);
     }
     let side = Side::LongReceive;
     let instrument = MakeBasisSwap::<DualFwd>::default()
         .with_identifier(name.to_string())
-        .with_start_date(parse_date(start_date)?)
-        .with_maturity_date(parse_date(maturity_date)?)
         .with_notional(notional)
         .with_pay_market_index(parse_index(pay_index)?)
         .with_receive_market_index(parse_index(receive_index)?)
@@ -164,14 +210,30 @@ pub fn qs_instrument_basis_swap(
         .with_receive_spread(receive_spread)
         .with_pay_leg_frequency(parse_frequency(pay_frequency)?)
         .with_receive_leg_frequency(parse_frequency(receive_frequency)?)
-        .with_side(side)
-        .build()
-        .map_err(value_error)?;
-    let object = InstrumentObject {
-        native: NativeInstrument::BasisSwap(instrument),
+        .with_side(side);
+    let instrument = apply_date_input(
+        instrument,
+        start_date,
+        start_tenor.as_deref(),
+        "start_date",
+        |m, d| m.with_start_date(d),
+        |m, t| m.with_start_tenor(t),
+    )?;
+    let instrument = apply_date_input(
+        instrument,
+        maturity_date,
+        tenor.as_deref(),
+        "maturity_date",
+        |m, d| m.with_maturity_date(d),
+        |m, t| m.with_tenor(t),
+    )?;
+    let object = InstrumentObject::from_maker(
+        "BasisSwap",
         notional,
-        foreign_notional: None,
-    };
+        None,
+        instrument,
+        NativeInstrument::BasisSwap,
+    );
     with_registry_mut(|registry| {
         registry.upsert_if_changed(name, QsObject::Instrument(Box::new(object)), key)
     })
@@ -198,6 +260,8 @@ pub fn qs_instrument_xccy_float_float(
     foreign_spread: f64,
     domestic_frequency: &str,
     foreign_frequency: &str,
+    start_tenor: Option<String>,
+    tenor: Option<String>,
 ) -> Result<String, XllError> {
     let key = input_key(&(
         start_date,
@@ -213,14 +277,13 @@ pub fn qs_instrument_xccy_float_float(
         domestic_frequency,
         foreign_frequency,
     ))?;
+    let key = input_key(&(&key, (start_tenor.as_deref(), tenor.as_deref())))?;
     if let Some(handle) = cached_handle(name, "FloatFloatCrossCurrencySwap", &key)? {
         return Ok(handle);
     }
     let side = Side::LongReceive;
     let instrument = MakeFloatFloatCrossCurrencySwap::<DualFwd>::default()
         .with_identifier(name.to_string())
-        .with_start_date(parse_date(start_date)?)
-        .with_maturity_date(parse_date(maturity_date)?)
         .with_domestic_currency(parse_currency(domestic_currency)?)
         .with_foreign_currency(parse_currency(foreign_currency)?)
         .with_domestic_market_index(parse_index(domestic_index)?)
@@ -231,14 +294,30 @@ pub fn qs_instrument_xccy_float_float(
         .with_foreign_spread(foreign_spread)
         .with_domestic_leg_frequency(parse_frequency(domestic_frequency)?)
         .with_foreign_leg_frequency(parse_frequency(foreign_frequency)?)
-        .with_side(side)
-        .build()
-        .map_err(value_error)?;
-    let object = InstrumentObject {
-        native: NativeInstrument::FloatFloatCrossCurrencySwap(instrument),
-        notional: domestic_notional,
-        foreign_notional: Some(foreign_notional),
-    };
+        .with_side(side);
+    let instrument = apply_date_input(
+        instrument,
+        start_date,
+        start_tenor.as_deref(),
+        "start_date",
+        |m, d| m.with_start_date(d),
+        |m, t| m.with_start_tenor(t),
+    )?;
+    let instrument = apply_date_input(
+        instrument,
+        maturity_date,
+        tenor.as_deref(),
+        "maturity_date",
+        |m, d| m.with_maturity_date(d),
+        |m, t| m.with_tenor(t),
+    )?;
+    let object = InstrumentObject::from_maker(
+        "FloatFloatCrossCurrencySwap",
+        domestic_notional,
+        Some(foreign_notional),
+        instrument,
+        NativeInstrument::FloatFloatCrossCurrencySwap,
+    );
     with_registry_mut(|registry| {
         registry.upsert_if_changed(name, QsObject::Instrument(Box::new(object)), key)
     })
@@ -267,6 +346,8 @@ pub fn qs_instrument_xccy_fix_float(
     rate_frequency: &str,
     domestic_frequency: &str,
     foreign_frequency: &str,
+    start_tenor: Option<String>,
+    tenor: Option<String>,
 ) -> Result<String, XllError> {
     let key = input_key(&(
         start_date,
@@ -284,14 +365,13 @@ pub fn qs_instrument_xccy_fix_float(
         domestic_frequency,
         foreign_frequency,
     ))?;
+    let key = input_key(&(&key, (start_tenor.as_deref(), tenor.as_deref())))?;
     if let Some(handle) = cached_handle(name, "FixFloatCrossCurrencySwap", &key)? {
         return Ok(handle);
     }
     let side = Side::LongReceive;
     let instrument = MakeFixFloatCrossCurrencySwap::<DualFwd>::default()
         .with_identifier(name.to_string())
-        .with_start_date(parse_date(start_date)?)
-        .with_maturity_date(parse_date(maturity_date)?)
         .with_domestic_currency(parse_currency(domestic_currency)?)
         .with_foreign_currency(parse_currency(foreign_currency)?)
         .with_floating_index(parse_index(foreign_index)?)
@@ -306,14 +386,30 @@ pub fn qs_instrument_xccy_fix_float(
         ))
         .with_domestic_leg_frequency(parse_frequency(domestic_frequency)?)
         .with_foreign_leg_frequency(parse_frequency(foreign_frequency)?)
-        .with_side(side)
-        .build()
-        .map_err(value_error)?;
-    let object = InstrumentObject {
-        native: NativeInstrument::FixFloatCrossCurrencySwap(instrument),
-        notional: domestic_notional,
-        foreign_notional: Some(foreign_notional),
-    };
+        .with_side(side);
+    let instrument = apply_date_input(
+        instrument,
+        start_date,
+        start_tenor.as_deref(),
+        "start_date",
+        |m, d| m.with_start_date(d),
+        |m, t| m.with_start_tenor(t),
+    )?;
+    let instrument = apply_date_input(
+        instrument,
+        maturity_date,
+        tenor.as_deref(),
+        "maturity_date",
+        |m, d| m.with_maturity_date(d),
+        |m, t| m.with_tenor(t),
+    )?;
+    let object = InstrumentObject::from_maker(
+        "FixFloatCrossCurrencySwap",
+        domestic_notional,
+        Some(foreign_notional),
+        instrument,
+        NativeInstrument::FixFloatCrossCurrencySwap,
+    );
     with_registry_mut(|registry| {
         registry.upsert_if_changed(name, QsObject::Instrument(Box::new(object)), key)
     })
@@ -338,6 +434,8 @@ pub fn qs_instrument_fixed_bond(
     compounding: &str,
     rate_frequency: &str,
     payment_frequency: &str,
+    start_tenor: Option<String>,
+    tenor: Option<String>,
 ) -> Result<String, XllError> {
     let key = input_key(&(
         start_date,
@@ -351,13 +449,12 @@ pub fn qs_instrument_fixed_bond(
         rate_frequency,
         payment_frequency,
     ))?;
+    let key = input_key(&(&key, (start_tenor.as_deref(), tenor.as_deref())))?;
     if let Some(handle) = cached_handle(name, "FixedRateBond", &key)? {
         return Ok(handle);
     }
     let mut builder = MakeFixedRateBond::<DualFwd>::default()
         .with_identifier(name.to_string())
-        .with_start_date(parse_date(start_date)?)
-        .with_maturity_date(parse_date(maturity_date)?)
         .with_rate(coupon_rate)
         .with_notional(notional)
         .with_rate_definition(RateDefinition::new(
@@ -374,12 +471,30 @@ pub fn qs_instrument_fixed_bond(
     {
         builder = builder.with_discount_index(parse_index(index)?);
     }
-    let instrument = builder.build().map_err(value_error)?;
-    let object = InstrumentObject {
-        native: NativeInstrument::FixedRateBond(instrument),
+    let instrument = builder;
+    let instrument = apply_date_input(
+        instrument,
+        start_date,
+        start_tenor.as_deref(),
+        "start_date",
+        |m, d| m.with_start_date(d),
+        |m, t| m.with_start_tenor(t),
+    )?;
+    let instrument = apply_date_input(
+        instrument,
+        maturity_date,
+        tenor.as_deref(),
+        "maturity_date",
+        |m, d| m.with_maturity_date(d),
+        |m, t| m.with_tenor(t),
+    )?;
+    let object = InstrumentObject::from_maker(
+        "FixedRateBond",
         notional,
-        foreign_notional: None,
-    };
+        None,
+        instrument,
+        NativeInstrument::FixedRateBond,
+    );
     with_registry_mut(|registry| {
         registry.upsert_if_changed(name, QsObject::Instrument(Box::new(object)), key)
     })
@@ -403,6 +518,8 @@ pub fn qs_instrument_fixed_deposit(
     day_counter: &str,
     compounding: &str,
     rate_frequency: &str,
+    start_tenor: Option<String>,
+    tenor: Option<String>,
 ) -> Result<String, XllError> {
     let key = input_key(&(
         start_date,
@@ -415,14 +532,13 @@ pub fn qs_instrument_fixed_deposit(
         compounding,
         rate_frequency,
     ))?;
+    let key = input_key(&(&key, (start_tenor.as_deref(), tenor.as_deref())))?;
     if let Some(handle) = cached_handle(name, "FixedRateDeposit", &key)? {
         return Ok(handle);
     }
     let side = Side::LongReceive;
     let mut builder = MakeFixedRateDeposit::<DualFwd>::default()
         .with_identifier(name.to_string())
-        .with_start_date(parse_date(start_date)?)
-        .with_maturity_date(parse_date(maturity_date)?)
         .with_rate(rate)
         .with_notional(notional)
         .with_rate_definition(RateDefinition::new(
@@ -438,12 +554,30 @@ pub fn qs_instrument_fixed_deposit(
     {
         builder = builder.with_discount_index(Some(parse_index(index)?));
     }
-    let instrument = builder.build().map_err(value_error)?;
-    let object = InstrumentObject {
-        native: NativeInstrument::FixedRateDeposit(instrument),
+    let instrument = builder;
+    let instrument = apply_date_input(
+        instrument,
+        start_date,
+        start_tenor.as_deref(),
+        "start_date",
+        |m, d| m.with_start_date(d),
+        |m, t| m.with_start_tenor(t),
+    )?;
+    let instrument = apply_date_input(
+        instrument,
+        maturity_date,
+        tenor.as_deref(),
+        "maturity_date",
+        |m, d| m.with_maturity_date(d),
+        |m, t| m.with_tenor(t),
+    )?;
+    let object = InstrumentObject::from_maker(
+        "FixedRateDeposit",
         notional,
-        foreign_notional: None,
-    };
+        None,
+        instrument,
+        NativeInstrument::FixedRateDeposit,
+    );
     with_registry_mut(|registry| {
         registry.upsert_if_changed(name, QsObject::Instrument(Box::new(object)), key)
     })
@@ -465,6 +599,8 @@ pub fn qs_instrument_floating_note(
     notional: f64,
     spread: f64,
     payment_frequency: &str,
+    start_tenor: Option<String>,
+    tenor: Option<String>,
 ) -> Result<String, XllError> {
     let key = input_key(&(
         start_date,
@@ -475,28 +611,43 @@ pub fn qs_instrument_floating_note(
         spread,
         payment_frequency,
     ))?;
+    let key = input_key(&(&key, (start_tenor.as_deref(), tenor.as_deref())))?;
     if let Some(handle) = cached_handle(name, "FloatingRateNote", &key)? {
         return Ok(handle);
     }
     let side = Side::LongReceive;
     let instrument = MakeFloatingRateNote::<DualFwd>::default()
         .with_identifier(name.to_string())
-        .with_start_date(parse_date(start_date)?)
-        .with_maturity_date(parse_date(maturity_date)?)
         .with_currency(parse_currency(currency)?)
         .with_forward_index(parse_index(forward_index)?)
         .with_notional(notional)
         .with_spread(spread)
         .with_payment_frequency(parse_frequency(payment_frequency)?)
         .with_payment_structure(PaymentStructure::Bullet)
-        .with_side(side)
-        .build()
-        .map_err(value_error)?;
-    let object = InstrumentObject {
-        native: NativeInstrument::FloatingRateNote(instrument),
+        .with_side(side);
+    let instrument = apply_date_input(
+        instrument,
+        start_date,
+        start_tenor.as_deref(),
+        "start_date",
+        |m, d| m.with_start_date(d),
+        |m, t| m.with_start_tenor(t),
+    )?;
+    let instrument = apply_date_input(
+        instrument,
+        maturity_date,
+        tenor.as_deref(),
+        "maturity_date",
+        |m, d| m.with_maturity_date(d),
+        |m, t| m.with_tenor(t),
+    )?;
+    let object = InstrumentObject::from_maker(
+        "FloatingRateNote",
         notional,
-        foreign_notional: None,
-    };
+        None,
+        instrument,
+        NativeInstrument::FloatingRateNote,
+    );
     with_registry_mut(|registry| {
         registry.upsert_if_changed(name, QsObject::Instrument(Box::new(object)), key)
     })
@@ -517,6 +668,7 @@ pub fn qs_instrument_fx_option(
     strike: f64,
     option_type: &str,
     day_counter: &str,
+    expiry_tenor: Option<String>,
 ) -> Result<String, XllError> {
     let key = input_key(&(
         expiry_date,
@@ -526,6 +678,7 @@ pub fn qs_instrument_fx_option(
         option_type,
         day_counter,
     ))?;
+    let key = input_key(&(&key, (expiry_tenor.as_deref(),)))?;
     if let Some(handle) = cached_handle(name, "FxEuropeanOption", &key)? {
         return Ok(handle);
     }
@@ -533,20 +686,27 @@ pub fn qs_instrument_fx_option(
     let quote = parse_currency(quote_currency)?;
     let instrument = MakeFxEuropeanOption::default()
         .with_identifier(name.to_string())
-        .with_expiry_date(parse_date(expiry_date)?)
         .with_strike(strike)
         .with_option_type(parse_option_type(option_type)?)
         .with_base_currency(base)
         .with_quote_currency(quote)
         .with_pair(FxPair::new(base, quote).map_err(value_error)?)
-        .with_day_counter(parse_day_counter(day_counter)?)
-        .build()
-        .map_err(value_error)?;
-    let object = InstrumentObject {
-        native: NativeInstrument::FxEuropeanOption(instrument),
-        notional: 1.0,
-        foreign_notional: None,
-    };
+        .with_day_counter(parse_day_counter(day_counter)?);
+    let instrument = apply_date_input(
+        instrument,
+        expiry_date,
+        expiry_tenor.as_deref(),
+        "expiry_date",
+        |m, d| m.with_expiry_date(d),
+        |m, t| m.with_expiry_tenor(t),
+    )?;
+    let object = InstrumentObject::from_maker(
+        "FxEuropeanOption",
+        1.0,
+        None,
+        instrument,
+        NativeInstrument::FxEuropeanOption,
+    );
     with_registry_mut(|registry| {
         registry.upsert_if_changed(name, QsObject::Instrument(Box::new(object)), key)
     })
@@ -567,6 +727,7 @@ pub fn qs_instrument_equity_option(
     strike: f64,
     option_type: &str,
     day_counter: &str,
+    expiry_tenor: Option<String>,
 ) -> Result<String, XllError> {
     let key = input_key(&(
         expiry_date,
@@ -576,24 +737,32 @@ pub fn qs_instrument_equity_option(
         option_type,
         day_counter,
     ))?;
+    let key = input_key(&(&key, (expiry_tenor.as_deref(),)))?;
     if let Some(handle) = cached_handle(name, "EquityEuropeanOption", &key)? {
         return Ok(handle);
     }
     let instrument = MakeEquityEuropeanOption::default()
         .with_identifier(name.to_string())
-        .with_expiry_date(parse_date(expiry_date)?)
         .with_market_index(parse_index(market_index)?)
         .with_currency(parse_currency(currency)?)
         .with_strike(strike)
         .with_option_type(parse_option_type(option_type)?)
-        .with_day_counter(parse_day_counter(day_counter)?)
-        .build()
-        .map_err(value_error)?;
-    let object = InstrumentObject {
-        native: NativeInstrument::EquityEuropeanOption(instrument),
-        notional: 1.0,
-        foreign_notional: None,
-    };
+        .with_day_counter(parse_day_counter(day_counter)?);
+    let instrument = apply_date_input(
+        instrument,
+        expiry_date,
+        expiry_tenor.as_deref(),
+        "expiry_date",
+        |m, d| m.with_expiry_date(d),
+        |m, t| m.with_expiry_tenor(t),
+    )?;
+    let object = InstrumentObject::from_maker(
+        "EquityEuropeanOption",
+        1.0,
+        None,
+        instrument,
+        NativeInstrument::EquityEuropeanOption,
+    );
     with_registry_mut(|registry| {
         registry.upsert_if_changed(name, QsObject::Instrument(Box::new(object)), key)
     })
@@ -617,6 +786,8 @@ pub fn qs_instrument_cds(
     recovery: f64,
     premium_frequency: &str,
     day_counter: &str,
+    start_tenor: Option<String>,
+    tenor: Option<String>,
 ) -> Result<String, XllError> {
     let key = input_key(&(
         start_date,
@@ -629,27 +800,42 @@ pub fn qs_instrument_cds(
         premium_frequency,
         day_counter,
     ))?;
+    let key = input_key(&(&key, (start_tenor.as_deref(), tenor.as_deref())))?;
     if let Some(handle) = cached_handle(name, "CreditDefaultSwap", &key)? {
         return Ok(handle);
     }
-    let instrument = CreditDefaultSwap::new(
-        name.to_string(),
-        parse_index(credit_index)?,
-        parse_index(discount_index)?,
-        parse_currency(currency)?,
-        parse_date(start_date)?,
-        parse_date(maturity_date)?,
-        spread,
-        recovery,
-        parse_frequency(premium_frequency)?,
-        parse_day_counter(day_counter)?,
-    )
-    .map_err(value_error)?;
-    let object = InstrumentObject {
-        native: NativeInstrument::CreditDefaultSwap(instrument),
-        notional: 1.0,
-        foreign_notional: None,
-    };
+    let instrument = MakeCreditDefaultSwap::default()
+        .with_identifier(name.to_string())
+        .with_credit_index(parse_index(credit_index)?)
+        .with_discount_index(parse_index(discount_index)?)
+        .with_currency(parse_currency(currency)?)
+        .with_spread(spread)
+        .with_recovery(recovery)
+        .with_premium_frequency(parse_frequency(premium_frequency)?)
+        .with_day_counter(parse_day_counter(day_counter)?);
+    let instrument = apply_date_input(
+        instrument,
+        start_date,
+        start_tenor.as_deref(),
+        "start_date",
+        |m, d| m.with_start_date(d),
+        |m, t| m.with_start_tenor(t),
+    )?;
+    let instrument = apply_date_input(
+        instrument,
+        maturity_date,
+        tenor.as_deref(),
+        "maturity_date",
+        |m, d| m.with_maturity_date(d),
+        |m, t| m.with_tenor(t),
+    )?;
+    let object = InstrumentObject::from_maker(
+        "CreditDefaultSwap",
+        1.0,
+        None,
+        instrument,
+        NativeInstrument::CreditDefaultSwap,
+    );
     with_registry_mut(|registry| {
         registry.upsert_if_changed(name, QsObject::Instrument(Box::new(object)), key)
     })
@@ -674,6 +860,8 @@ pub fn qs_instrument_cap_floor(
     day_counter: &str,
     compounding: &str,
     rate_frequency: &str,
+    start_tenor: Option<String>,
+    tenor: Option<String>,
 ) -> Result<String, XllError> {
     let key = input_key(&(
         start_date,
@@ -687,14 +875,13 @@ pub fn qs_instrument_cap_floor(
         compounding,
         rate_frequency,
     ))?;
+    let key = input_key(&(&key, (start_tenor.as_deref(), tenor.as_deref())))?;
     if let Some(handle) = cached_handle(name, "CapFloor", &key)? {
         return Ok(handle);
     }
     let side = Side::LongReceive;
     let instrument = MakeCapFloor::default()
         .with_identifier(name.to_string())
-        .with_start_date(parse_date(start_date)?)
-        .with_maturity_date(parse_date(maturity_date)?)
         .with_market_index(parse_index(market_index)?)
         .with_currency(parse_currency(currency)?)
         .with_strike(strike)
@@ -706,14 +893,30 @@ pub fn qs_instrument_cap_floor(
             parse_compounding(compounding)?,
             parse_frequency(rate_frequency)?,
         ))
-        .with_side(side)
-        .build()
-        .map_err(value_error)?;
-    let object = InstrumentObject {
-        native: NativeInstrument::CapFloor(instrument),
-        notional: 1.0,
-        foreign_notional: None,
-    };
+        .with_side(side);
+    let instrument = apply_date_input(
+        instrument,
+        start_date,
+        start_tenor.as_deref(),
+        "start_date",
+        |m, d| m.with_start_date(d),
+        |m, t| m.with_start_tenor(t),
+    )?;
+    let instrument = apply_date_input(
+        instrument,
+        maturity_date,
+        tenor.as_deref(),
+        "maturity_date",
+        |m, d| m.with_maturity_date(d),
+        |m, t| m.with_tenor(t),
+    )?;
+    let object = InstrumentObject::from_maker(
+        "CapFloor",
+        1.0,
+        None,
+        instrument,
+        NativeInstrument::CapFloor,
+    );
     with_registry_mut(|registry| {
         registry.upsert_if_changed(name, QsObject::Instrument(Box::new(object)), key)
     })
@@ -736,6 +939,10 @@ pub fn qs_instrument_caplet_floorlet(
     currency: &str,
     strike: f64,
     caplet_floorlet_type: &str,
+    start_tenor: Option<String>,
+    tenor: Option<String>,
+    fixing_tenor: Option<String>,
+    payment_tenor: Option<String>,
 ) -> Result<String, XllError> {
     let key = input_key(&(
         fixing_date,
@@ -747,25 +954,63 @@ pub fn qs_instrument_caplet_floorlet(
         strike,
         caplet_floorlet_type,
     ))?;
+    let key = input_key(&(
+        &key,
+        (
+            start_tenor.as_deref(),
+            tenor.as_deref(),
+            fixing_tenor.as_deref(),
+            payment_tenor.as_deref(),
+        ),
+    ))?;
     if let Some(handle) = cached_handle(name, "CapletFloorlet", &key)? {
         return Ok(handle);
     }
-    let instrument = CapletFloorlet::new(
-        name.to_string(),
-        parse_index(market_index)?,
-        parse_currency(currency)?,
-        parse_date(fixing_date)?,
-        parse_date(accrual_start)?,
-        parse_date(accrual_end)?,
-        parse_date(payment_date)?,
-        parse_caplet_floorlet_type(caplet_floorlet_type)?,
-        Strike::Absolute(strike),
+    let instrument = MakeCapletFloorlet::default()
+        .with_identifier(name.to_string())
+        .with_market_index(parse_index(market_index)?)
+        .with_currency(parse_currency(currency)?)
+        .with_strike(Strike::Absolute(strike))
+        .with_payoff_type(parse_caplet_floorlet_type(caplet_floorlet_type)?);
+    let instrument = apply_date_input(
+        instrument,
+        accrual_start,
+        start_tenor.as_deref(),
+        "accrual_start",
+        |m, d| m.with_start_date(d),
+        |m, t| m.with_start_tenor(t),
+    )?;
+    let instrument = apply_date_input(
+        instrument,
+        accrual_end,
+        tenor.as_deref(),
+        "accrual_end",
+        |m, d| m.with_end_date(d),
+        |m, t| m.with_tenor(t),
+    )?;
+    let instrument = apply_date_input(
+        instrument,
+        fixing_date,
+        fixing_tenor.as_deref(),
+        "fixing_date",
+        |m, d| m.with_fixing_date(d),
+        |m, t| m.with_fixing_tenor(t),
+    )?;
+    let instrument = apply_date_input(
+        instrument,
+        payment_date,
+        payment_tenor.as_deref(),
+        "payment_date",
+        |m, d| m.with_payment_date(d),
+        |m, t| m.with_payment_tenor(t),
+    )?;
+    let object = InstrumentObject::from_maker(
+        "CapletFloorlet",
+        1.0,
+        None,
+        instrument,
+        NativeInstrument::CapletFloorlet,
     );
-    let object = InstrumentObject {
-        native: NativeInstrument::CapletFloorlet(instrument),
-        notional: 1.0,
-        foreign_notional: None,
-    };
     with_registry_mut(|registry| {
         registry.upsert_if_changed(name, QsObject::Instrument(Box::new(object)), key)
     })
@@ -785,6 +1030,8 @@ pub fn qs_instrument_rate_future(
     market_index: &str,
     futures_price: f64,
     contract_size: f64,
+    start_tenor: Option<String>,
+    tenor: Option<String>,
 ) -> Result<String, XllError> {
     let key = input_key(&(
         start_date,
@@ -793,6 +1040,7 @@ pub fn qs_instrument_rate_future(
         futures_price,
         contract_size,
     ))?;
+    let key = input_key(&(&key, (start_tenor.as_deref(), tenor.as_deref())))?;
     if let Some(handle) = cached_handle(name, "RateFutures", &key)? {
         return Ok(handle);
     }
@@ -800,18 +1048,32 @@ pub fn qs_instrument_rate_future(
     let instrument = MakeRateFutures::default()
         .with_identifier(name.to_string())
         .with_market_index(parse_index(market_index)?)
-        .with_start_date(parse_date(start_date)?)
-        .with_end_date(parse_date(end_date)?)
         .with_futures_price(futures_price)
         .with_contract_size(contract_size)
-        .with_side(side)
-        .build()
-        .map_err(value_error)?;
-    let object = InstrumentObject {
-        native: NativeInstrument::RateFutures(instrument),
-        notional: 1.0,
-        foreign_notional: None,
-    };
+        .with_side(side);
+    let instrument = apply_date_input(
+        instrument,
+        start_date,
+        start_tenor.as_deref(),
+        "start_date",
+        |m, d| m.with_start_date(d),
+        |m, t| m.with_start_tenor(t),
+    )?;
+    let instrument = apply_date_input(
+        instrument,
+        end_date,
+        tenor.as_deref(),
+        "end_date",
+        |m, d| m.with_end_date(d),
+        |m, t| m.with_end_tenor(t),
+    )?;
+    let object = InstrumentObject::from_maker(
+        "RateFutures",
+        1.0,
+        None,
+        instrument,
+        NativeInstrument::RateFutures,
+    );
     with_registry_mut(|registry| {
         registry.upsert_if_changed(name, QsObject::Instrument(Box::new(object)), key)
     })
@@ -831,25 +1093,34 @@ pub fn qs_instrument_equity_forward(
     currency: &str,
     strike: f64,
     day_counter: &str,
+    delivery_tenor: Option<String>,
 ) -> Result<String, XllError> {
     let key = input_key(&(delivery_date, market_index, currency, strike, day_counter))?;
+    let key = input_key(&(&key, (delivery_tenor.as_deref(),)))?;
     if let Some(handle) = cached_handle(name, "EquityForward", &key)? {
         return Ok(handle);
     }
     let instrument = quantsupport::prelude::MakeEquityForward::default()
         .with_identifier(name.to_string())
         .with_market_index(parse_index(market_index)?)
-        .with_delivery_date(parse_date(delivery_date)?)
         .with_currency(parse_currency(currency)?)
         .with_strike(strike)
-        .with_day_counter(parse_day_counter(day_counter)?)
-        .build()
-        .map_err(value_error)?;
-    let object = InstrumentObject {
-        native: NativeInstrument::EquityForward(instrument),
-        notional: 1.0,
-        foreign_notional: None,
-    };
+        .with_day_counter(parse_day_counter(day_counter)?);
+    let instrument = apply_date_input(
+        instrument,
+        delivery_date,
+        delivery_tenor.as_deref(),
+        "delivery_date",
+        |m, d| m.with_delivery_date(d),
+        |m, t| m.with_delivery_tenor(t),
+    )?;
+    let object = InstrumentObject::from_maker(
+        "EquityForward",
+        1.0,
+        None,
+        instrument,
+        NativeInstrument::EquityForward,
+    );
     with_registry_mut(|registry| {
         registry.upsert_if_changed(name, QsObject::Instrument(Box::new(object)), key)
     })
@@ -876,6 +1147,8 @@ pub fn qs_instrument_european_swaption(
     fixed_leg_frequency: &str,
     floating_leg_frequency: &str,
     calendar: &str,
+    tenor: Option<String>,
+    expiry_tenor: Option<String>,
 ) -> Result<String, XllError> {
     let key = input_key(&(
         expiry_date,
@@ -891,13 +1164,9 @@ pub fn qs_instrument_european_swaption(
         floating_leg_frequency,
         calendar,
     ))?;
+    let key = input_key(&(&key, (tenor.as_deref(), expiry_tenor.as_deref())))?;
     if let Some(handle) = cached_handle(name, "EuropeanSwaption", &key)? {
         return Ok(handle);
-    }
-    let expiry = parse_date(expiry_date)?;
-    let maturity = parse_date(maturity_date)?;
-    if expiry >= maturity {
-        return Err(value_error("swaption maturity must follow expiry"));
     }
     let kind = match swaption_type {
         "Payer" => SwaptionType::Payer,
@@ -906,8 +1175,6 @@ pub fn qs_instrument_european_swaption(
     };
     let mut builder = quantsupport::prelude::MakeSwaption::<DualFwd>::default()
         .with_identifier(name.to_string())
-        .with_expiry(expiry)
-        .with_swap_tenor_date(maturity)
         .with_currency(parse_currency(currency)?)
         .with_market_index(parse_index(market_index)?)
         .with_strike(strike)
@@ -925,12 +1192,30 @@ pub fn qs_instrument_european_swaption(
             quantsupport::prelude::Calendar::try_from(calendar.to_string()).map_err(value_error)?,
         );
     }
-    let instrument = builder.build().map_err(value_error)?;
-    let object = InstrumentObject {
-        native: NativeInstrument::EuropeanSwaption(instrument),
-        notional: 1.0,
-        foreign_notional: None,
-    };
+    let instrument = builder;
+    let instrument = apply_date_input(
+        instrument,
+        maturity_date,
+        tenor.as_deref(),
+        "maturity_date",
+        |m, d| m.with_swap_tenor_date(d),
+        |m, t| m.with_swap_tenor(t),
+    )?;
+    let instrument = apply_date_input(
+        instrument,
+        expiry_date,
+        expiry_tenor.as_deref(),
+        "expiry_date",
+        |m, d| m.with_expiry(d),
+        |m, t| m.with_expiry_tenor(t),
+    )?;
+    let object = InstrumentObject::from_maker(
+        "EuropeanSwaption",
+        1.0,
+        None,
+        instrument,
+        NativeInstrument::EuropeanSwaption,
+    );
     with_registry_mut(|registry| {
         registry.upsert_if_changed(name, QsObject::Instrument(Box::new(object)), key)
     })

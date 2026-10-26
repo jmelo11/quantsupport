@@ -39,14 +39,21 @@ impl Evaluator {
     ) -> Result<EvaluationResults> {
         Request::validate(requests)?;
         let trade_type_id = trade.type_id();
-        self.pricers.get(&trade_type_id).map_or_else(
-            || {
-                Err(QSError::NotFoundErr(format!(
-                    "No pricer registered for trade type: {trade_type_id:?}"
-                )))
-            },
-            |pricer| pricer.evaluate_erased(trade, requests, context),
-        )
+        self.pricers
+            .get(&trade_type_id)
+            .or_else(|| {
+                self.pricers
+                    .values()
+                    .find(|pricer| pricer.accepts_trade(trade))
+            })
+            .map_or_else(
+                || {
+                    Err(QSError::NotFoundErr(format!(
+                        "No pricer registered for trade type: {trade_type_id:?}"
+                    )))
+                },
+                |pricer| pricer.evaluate_erased(trade, requests, context),
+            )
     }
 }
 
@@ -137,5 +144,43 @@ mod tests {
             err.to_string().contains("DummyTrade"),
             "error should name the expected trade type, got: {err}"
         );
+    }
+}
+
+#[cfg(test)]
+mod resolution_tests {
+    use crate::{
+        core::resolution::test_support::{loan, market, reference},
+        prelude::*,
+    };
+
+    #[test]
+    fn unresolved_trade_is_dispatched_and_resolved_for_each_evaluation() -> Result<()> {
+        use crate::core::{evaluator::Evaluator, pricer::ErasedPricer};
+        use std::{any::TypeId, collections::HashMap};
+        let pending = UnresolvedTrade::from_maker(loan()?, |instrument, context| {
+            Ok(LoanTrade::new(
+                instrument,
+                context.reference_date(),
+                Side::LongReceive,
+            ))
+        });
+        let mut pricer = LoanPricer::new();
+        pricer.set_discount_policy(Box::new(
+            FixedIncomeDiscountPolicy::new(false)
+                .with_discount_curve_index(Currency::EUR, MarketIndex::ESTR),
+        ));
+        let mut registrations: HashMap<TypeId, Box<dyn ErasedPricer>> = HashMap::new();
+        registrations.insert(TypeId::of::<LoanTrade<DualFwd>>(), Box::new(pricer));
+        let evaluator = Evaluator::new(registrations);
+        let low = market(reference(), 0.02, FixingStore::default());
+        let high = market(reference(), 0.08, FixingStore::default());
+        for context in [&low, &high, &low] {
+            let automatic = evaluator.evaluate(&pending, &[Request::Value], context)?;
+            let concrete = pending.resolve(&ResolutionContext::new(context))?;
+            let explicit = evaluator.evaluate(&concrete, &[Request::Value], context)?;
+            assert_eq!(automatic.price(), explicit.price());
+        }
+        Ok(())
     }
 }

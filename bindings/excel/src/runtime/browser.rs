@@ -150,6 +150,7 @@ impl BrowserObject {
                 macro_rules! identifier {
                     ($($variant:ident),* $(,)?) => { match &instrument.native {
                         $(NativeInstrument::$variant(value) => value.identifier(),)*
+                        NativeInstrument::Pending(_) => "unresolved instrument terms".to_string(),
                     } };
                 }
                 result.detail(

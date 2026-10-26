@@ -1,3 +1,4 @@
+use crate::core::resolution::{ResolutionContext, Resolve};
 use crate::{
     ad::scalar::Scalar,
     core::{instrument::AssetClass, trade::Side},
@@ -24,9 +25,14 @@ use crate::{
 /// Builder for fixed versus overnight swaps without principal exchanges.
 ///
 /// Overnight conventions select daily compounding or simple averaging.
+#[derive(Clone)]
 pub struct MakeOvernightIndexSwap<T: Scalar> {
     index: MarketIndex,
-    reference_date: Date,
+    reference_date: Option<Date>,
+    start_tenor: Option<Period>,
+    first_coupon_tenor: Option<Period>,
+    next_to_last_coupon_tenor: Option<Period>,
+
     tenor: Period,
     fixed_rate: f64,
     notional: f64,
@@ -43,10 +49,21 @@ impl<T: Scalar> MakeOvernightIndexSwap<T> {
     /// Creates an OIS builder using the common convention preset for the index.
     #[must_use]
     pub fn new(index: MarketIndex, reference_date: Date, tenor: Period, fixed_rate: f64) -> Self {
+        Self::from_tenor(index, tenor, fixed_rate).with_reference_date(reference_date)
+    }
+
+    /// Defines an OIS whose reference date is supplied when it is resolved.
+    /// Settlement lag and forward-start conventions are applied during resolution.
+    #[must_use]
+    pub fn from_tenor(index: MarketIndex, tenor: Period, fixed_rate: f64) -> Self {
         let conventions = OisConventions::for_index(&index);
         Self {
             index,
-            reference_date,
+            reference_date: None,
+            start_tenor: None,
+            first_coupon_tenor: None,
+            next_to_last_coupon_tenor: None,
+
             tenor,
             fixed_rate,
             notional: 1.0,
@@ -60,6 +77,36 @@ impl<T: Scalar> MakeOvernightIndexSwap<T> {
         }
     }
 
+    /// Anchors settlement rules to an explicit reference date.
+    #[must_use]
+    pub const fn with_reference_date(mut self, date: Date) -> Self {
+        self.reference_date = Some(date);
+        self
+    }
+
+    /// Sets the effective date as a tenor from the resolution reference date.
+    /// This replaces the settlement-lag and forward-start calculation.
+    #[must_use]
+    pub const fn with_start_tenor(mut self, tenor: Period) -> Self {
+        self.start_tenor = Some(tenor);
+        self.effective_date = None;
+        self
+    }
+
+    /// Sets maturity as a tenor from the effective date.
+    #[must_use]
+    pub const fn with_tenor(mut self, tenor: Period) -> Self {
+        self.tenor = tenor;
+        self.termination_date = None;
+        self
+    }
+
+    /// Sets maturity as a tenor from the effective date.
+    #[must_use]
+    pub const fn with_maturity_tenor(self, tenor: Period) -> Self {
+        self.with_tenor(tenor)
+    }
+
     /// Sets the overnight coupon accrual day count independently of native index quotes.
     #[must_use]
     pub fn with_floating_day_counter(mut self, dc: DayCounter) -> Self {
@@ -71,6 +118,9 @@ impl<T: Scalar> MakeOvernightIndexSwap<T> {
     #[must_use]
     pub fn with_conventions(mut self, conventions: OisConventions) -> Self {
         self.conventions = conventions;
+        self.first_coupon_tenor = None;
+        self.next_to_last_coupon_tenor = None;
+
         self
     }
 
@@ -106,6 +156,7 @@ impl<T: Scalar> MakeOvernightIndexSwap<T> {
     #[must_use]
     pub const fn with_start_date(mut self, date: Date) -> Self {
         self.effective_date = Some(date);
+        self.start_tenor = None;
         self
     }
 
@@ -116,36 +167,44 @@ impl<T: Scalar> MakeOvernightIndexSwap<T> {
         self
     }
 
-    /// Builds the OIS and its independent fixed and overnight schedules.
-    ///
-    /// # Errors
-    /// Rejects invalid notionals, dates, lags, and non-overnight indices.
-    #[allow(clippy::too_many_lines)]
-    pub fn build(self) -> Result<OvernightIndexSwap<T>> {
+    /// Sets first coupon date as a tenor from the effective date.
+    #[must_use]
+    pub const fn with_first_coupon_tenor(mut self, tenor: Period) -> Self {
+        self.first_coupon_tenor = Some(tenor);
+        self
+    }
+
+    /// Sets an explicit first coupon date.
+    #[must_use]
+    pub fn with_first_coupon_date(mut self, date: Date) -> Self {
+        self.conventions = self.conventions.with_first_coupon_date(date);
+        self.first_coupon_tenor = None;
+        self
+    }
+
+    /// Sets next to last coupon date as a tenor from maturity; negative tenors move backwards.
+    #[must_use]
+    pub const fn with_next_to_last_coupon_tenor(mut self, tenor: Period) -> Self {
+        self.next_to_last_coupon_tenor = Some(tenor);
+        self
+    }
+
+    /// Sets an explicit next to last coupon date.
+    #[must_use]
+    pub fn with_next_to_last_coupon_date(mut self, date: Date) -> Self {
+        self.conventions = self.conventions.with_next_to_last_coupon_date(date);
+        self.next_to_last_coupon_tenor = None;
+        self
+    }
+
+    fn schedule_dates(&self, reference_date: Date) -> Result<(Date, Date, bool)> {
         let details = self.index.rate_index_details()?;
         let conventions = &self.conventions;
-        if !details.is_in_arrears() || details.frequency() != crate::time::enums::Frequency::Daily {
-            return Err(QSError::InvalidValueErr(
-                "OIS requires a daily overnight rate index".into(),
-            ));
-        }
-        if !self.notional.is_finite()
-            || self.notional <= 0.0
-            || !self.fixed_rate.is_finite()
-            || !self.spread.is_finite()
-            || conventions.settlement_days() < 0
-            || conventions.payment_lag() < 0
-            || conventions.overnight().lookback_days() < 0
-        {
-            return Err(QSError::InvalidValueErr(
-                "Invalid OIS notional, rate, or lag".into(),
-            ));
-        }
         let index_calendar = details.calendar();
-        let settlement_calendar = conventions.settlement_calendar().unwrap_or(&index_calendar);
         let overnight_calendar = conventions.overnight_calendar().unwrap_or(&index_calendar);
+        let settlement_calendar = conventions.settlement_calendar().unwrap_or(&index_calendar);
         let spot = settlement_calendar.advance(
-            self.reference_date,
+            reference_date,
             Period::new(conventions.settlement_days(), TimeUnit::Days),
             None,
             false,
@@ -174,6 +233,48 @@ impl<T: Scalar> MakeOvernightIndexSwap<T> {
                 maturity
             }
         });
+        Ok((start, end, eom))
+    }
+
+    /// Builds the OIS and its independent fixed and overnight schedules.
+    ///
+    /// # Errors
+    /// Rejects invalid notionals, dates, lags, and non-overnight indices.
+    #[allow(clippy::too_many_lines)]
+    pub fn build(self) -> Result<OvernightIndexSwap<T>> {
+        if self.start_tenor.is_some()
+            || self.first_coupon_tenor.is_some()
+            || self.next_to_last_coupon_tenor.is_some()
+        {
+            return Err(QSError::InvalidValueErr(
+                "Relative dates require maker.resolve(&ResolutionContext)".into(),
+            ));
+        }
+        let reference_date = self.reference_date.ok_or_else(|| {
+            QSError::ValueNotSetErr("OIS reference date requires resolution with a context".into())
+        })?;
+        let details = self.index.rate_index_details()?;
+        let conventions = &self.conventions;
+        if !details.is_in_arrears() || details.frequency() != crate::time::enums::Frequency::Daily {
+            return Err(QSError::InvalidValueErr(
+                "OIS requires a daily overnight rate index".into(),
+            ));
+        }
+        if !self.notional.is_finite()
+            || self.notional <= 0.0
+            || !self.fixed_rate.is_finite()
+            || !self.spread.is_finite()
+            || conventions.settlement_days() < 0
+            || conventions.payment_lag() < 0
+            || conventions.overnight().lookback_days() < 0
+        {
+            return Err(QSError::InvalidValueErr(
+                "Invalid OIS notional, rate, or lag".into(),
+            ));
+        }
+        let index_calendar = details.calendar();
+        let overnight_calendar = conventions.overnight_calendar().unwrap_or(&index_calendar);
+        let (start, end, eom) = self.schedule_dates(reference_date)?;
         if end <= start {
             return Err(QSError::InvalidValueErr(
                 "OIS maturity must follow its effective date".into(),
@@ -293,6 +394,56 @@ impl<T: Scalar> MakeOvernightIndexSwap<T> {
     }
 }
 
+impl<T: Scalar> Resolve for MakeOvernightIndexSwap<T> {
+    type Resolved = OvernightIndexSwap<T>;
+
+    fn resolve(&self, context: &ResolutionContext<'_>) -> Result<Self::Resolved> {
+        let mut resolved = self.clone();
+        let reference = self
+            .reference_date
+            .unwrap_or_else(|| context.reference_date());
+        resolved.reference_date = Some(reference);
+        if let Some(tenor) = self.start_tenor {
+            let details = self.index.rate_index_details()?;
+            let index_calendar = details.calendar();
+            let calendar = self
+                .conventions
+                .overnight_calendar()
+                .unwrap_or(&index_calendar);
+            let dates = context.with_date_conventions(
+                calendar,
+                BusinessDayConvention::Following,
+                self.conventions.end_of_month().unwrap_or(false),
+            );
+            resolved.effective_date = Some(dates.advance_date(reference, tenor)?);
+            resolved.start_tenor = None;
+        }
+        if self.first_coupon_tenor.is_some() || self.next_to_last_coupon_tenor.is_some() {
+            let (start, end, eom) = resolved.schedule_dates(reference)?;
+            let details = self.index.rate_index_details()?;
+            let index_calendar = details.calendar();
+            let calendar = self
+                .conventions
+                .overnight_calendar()
+                .unwrap_or(&index_calendar);
+            let dates = context.with_date_conventions(calendar, self.conventions.convention(), eom);
+            if let Some(tenor) = self.first_coupon_tenor {
+                resolved.conventions = resolved
+                    .conventions
+                    .with_first_coupon_date(dates.advance_date(start, tenor)?);
+                resolved.first_coupon_tenor = None;
+            }
+            if let Some(tenor) = self.next_to_last_coupon_tenor {
+                resolved.conventions = resolved
+                    .conventions
+                    .with_next_to_last_coupon_date(dates.advance_date(end, tenor)?);
+                resolved.next_to_last_coupon_tenor = None;
+            }
+        }
+        resolved.build()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -337,5 +488,67 @@ mod tests {
         };
         assert_eq!(coupon.accrual_end_date(), Date::new(2026, 2, 2));
         assert_eq!(coupon.payment_date(), Date::new(2026, 2, 4));
+    }
+}
+
+#[cfg(test)]
+mod resolution_tests {
+    use crate::time::calendars::target::TARGET;
+    use crate::{
+        core::resolution::test_support::{assert_legs, empty_market, p, reference},
+        prelude::*,
+    };
+
+    #[test]
+    fn ois_resolution_keeps_relative_stubs_on_the_same_settlement_schedule() -> Result<()> {
+        let market = empty_market(reference());
+        let ctx = ResolutionContext::new(&market);
+        let calendar = Calendar::TARGET(TARGET::new());
+        let first = calendar.advance(
+            reference(),
+            p("3M")?,
+            Some(BusinessDayConvention::ModifiedFollowing),
+            false,
+        );
+        let end = reference() + p("2Y")?;
+        let last = calendar.advance(
+            end,
+            Period::new(-3, TimeUnit::Months),
+            Some(BusinessDayConvention::ModifiedFollowing),
+            false,
+        );
+        let maker = MakeOvernightIndexSwap::<f64>::from_tenor(MarketIndex::ESTR, p("2Y")?, 0.03)
+            .with_conventions(
+                OisConventions::new()
+                    .with_end_of_month(false)
+                    .with_fixed_frequency(Frequency::Semiannual)
+                    .with_overnight_frequency(Frequency::Semiannual),
+            )
+            .with_start_tenor(p("0D")?)
+            .with_first_coupon_tenor(p("3M")?)
+            .with_next_to_last_coupon_tenor(Period::new(-3, TimeUnit::Months));
+        let resolved = maker.resolve(&ctx)?;
+        let explicit = maker
+            .with_reference_date(reference())
+            .with_start_date(reference())
+            .with_maturity_date(end)
+            .with_first_coupon_date(first)
+            .with_next_to_last_coupon_date(last)
+            .build()?;
+        assert_legs(&resolved, &explicit)?;
+        Ok(())
+    }
+
+    #[test]
+    fn ois_resolves_dates_before_building_legs() -> Result<()> {
+        let market = empty_market(reference());
+        let ctx = ResolutionContext::new(&market);
+        let ois = MakeOvernightIndexSwap::<f64>::from_tenor(MarketIndex::ESTR, p("2Y")?, 0.03);
+        let explicit =
+            MakeOvernightIndexSwap::<f64>::new(MarketIndex::ESTR, reference(), p("2Y")?, 0.03)
+                .build()?;
+        assert_legs(&ois.resolve(&ctx)?, &explicit)?;
+        assert!(ois.build().is_err());
+        Ok(())
     }
 }

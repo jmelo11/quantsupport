@@ -50,7 +50,7 @@ use crate::{
 /// Input-setting methods invalidate constructed caches and the selected snapshot
 /// timestamp. Cloning a context copies its inputs but can share reference-counted
 /// runtime objects and caches; a clone is not a guarantee of independent AD state.
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct PricingContext {
     /// The quote store provides access to direct market data quotes and reference date information.
     quote_store: QuoteStore,
@@ -81,6 +81,13 @@ pub struct PricingContext {
     base_currency: Currency,
     /// Base remuneration index
     base_index: MarketIndex,
+    anchor_fixings: bool,
+}
+
+impl Default for PricingContext {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl PricingContext {
@@ -126,7 +133,22 @@ impl PricingContext {
             snapshot_timestamp: None,
             base_currency: Currency::USD, // Default base currency
             base_index: MarketIndex::SOFR,
+            anchor_fixings: true,
         }
+    }
+
+    /// Selects whether historical index observations require stored fixings.
+    /// Defaults to true. False projects all observation dates from curves.
+    #[must_use]
+    pub const fn with_anchor_fixings(mut self, enabled: bool) -> Self {
+        self.anchor_fixings = enabled;
+        self
+    }
+
+    /// Whether historical observations are anchored to the fixing store.
+    #[must_use]
+    pub const fn anchor_fixings(&self) -> bool {
+        self.anchor_fixings
     }
 
     /// Returns the original quote store.
@@ -715,6 +737,7 @@ impl PricingContext {
             .transpose()?;
         let mut md = MarketData::new(fixings, constructed_elements)
             .with_base_currency(self.base_currency)
+            .with_anchor_fixings(self.anchor_fixings)
             .with_quote_level(self.quote_level)
             .with_fx_store(fx_store)
             .with_pricer_configurations(pricer_configurations);
@@ -727,6 +750,9 @@ impl PricingContext {
 }
 
 impl MarketDataProvider for PricingContext {
+    fn anchor_fixings(&self) -> bool {
+        self.anchor_fixings
+    }
     fn evaluation_date(&self) -> Date {
         self.evaluation_date()
     }

@@ -53,8 +53,8 @@ press **Ctrl+A** to open Function Arguments, or enter
      - Payment/accrual frequency, e.g. Monthly, Quarterly, Semiannual or Annual.
        Index resets and observation tenor are separate settings.
    * - ``day_counter``
-     - ``"Actual365"``
-     - Year fraction for interest and initial principal amortization.
+     - Index convention for floating coupons; ``"Actual365"`` for fixed coupons
+     - Optional coupon accrual basis for interest and initial principal amortization.
    * - ``settings``
      - No optional overrides
      - Handle returned by ``QS.LOAN.SETTINGS``; see the defaults below.
@@ -100,9 +100,10 @@ cell references so the formula remains readable.
      - Residual fraction in [0,1] of original principal, e.g. ``0.25`` = 25%.
        Required for Balloon; invalid for French/Bullet.
    * - ``amortization_rate``
-     - First fixed coupon
-     - Annual all-in rate used to build principal instalments, e.g. ``0.05``.
-       Required for floating-first French/Balloon; not needed for Bullet.
+     - Initial coupon resolved at evaluation
+     - Optional annual all-in rate used to build principal instalments, e.g. ``0.05``.
+       Blank floating-first French/Balloon uses the initial fixing or forecast;
+       not needed for Bullet.
        It does not set the coupon spread or forecast market rates.
    * - ``credit_index``
      - No borrower default

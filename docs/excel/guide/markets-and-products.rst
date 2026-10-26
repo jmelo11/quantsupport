@@ -87,6 +87,31 @@ quote currency per base unit; quote points are raw forward-minus-spot amounts,
 not automatically pip-scaled. Equity indices use identifiers such as Equity:SPX.
 Futures contract size is currency per price point, not per basis point.
 
+Relative dates and pending trades
+---------------------------------
+
+``QS.INSTRUMENT.*`` functions have separate tenor arguments. Leave an absolute
+date blank when supplying its tenor alternative. Instrument and trade handles
+can be created before a pricing context exists. Evaluation resolves pending
+terms against that context without modifying the stored definition.
+
+.. code-block:: text
+
+   D2 =QS.INSTRUMENT.FX.FORWARD("fx","","EUR","USD",1.10,"1Y")
+   D3 =QS.TRADE.CREATE("position",D2,"","Receive",1000000)
+   D4 =QS.EVALUATE(B4,D3,"Value")
+
+Scheduled products use ``start_tenor`` and ``tenor``; options use
+``expiry_tenor`` and forwards use ``delivery_tenor``. ``QS.TRADE.CREATE`` also
+accepts ``trade_tenor``. A blank execution date and blank tenor default to
+``0D``. Each valuation resolves a fresh contract; use absolute dates and an
+explicit initial loan amortization rate for fixed booked terms.
+
+``QS.CONTEXT.CREATE`` appends ``anchor_fixings`` (TRUE by default). TRUE
+requires stored index fixings strictly before evaluation, raising an error
+when one is missing; today and future observations project. FALSE projects
+all index observations, subject to the curve's supported date range.
+
 Policies and explicit model choices
 -----------------------------------
 

@@ -130,6 +130,10 @@ class MarketSnapshotTests(unittest.TestCase):
                 discounts.append(context.curve("SOFR").discount_factor("2025-07-15"))
         self.assertGreater(discounts[0], discounts[1])
         self.assertGreater(discounts[1], discounts[2])
+        selector = qs.SnapshotSelector(qs.DateTime(2025, 1, 16, 10))
+        projected = self.store.pricing_context(selector, anchor_fixings=False)
+        self.assertFalse(projected.anchor_fixings)
+        self.assertEqual(projected.snapshot_timestamp, self.store.select(selector).timestamp)
         with self.store.pricing_context(qs.SnapshotSelector(qs.DateTime(2025, 1, 16, 10))) as context:
             self.assertEqual(context.evaluation_date, qs.Date(2025, 1, 16))
             self.assertLess(context.curve("SOFR").discount_factor("2025-07-15"), discounts[-1])

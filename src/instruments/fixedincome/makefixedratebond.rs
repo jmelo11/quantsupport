@@ -15,6 +15,11 @@ use crate::{
     },
     utils::errors::{QSError, Result},
 };
+use crate::{
+    core::resolution::{ResolutionContext, Resolve},
+    time::calendars::nullcalendar::NullCalendar,
+    time::period::Period,
+};
 
 use std::marker::PhantomData;
 
@@ -47,8 +52,11 @@ use std::marker::PhantomData;
 /// assert_eq!(bond.identifier(), "UST-5Y");
 /// assert_eq!(bond.currency(), Currency::USD);
 /// ```
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct MakeFixedRateBond<T: Scalar> {
+    start_tenor: Option<Period>,
+    maturity_tenor: Option<Period>,
+    first_coupon_tenor: Option<Period>,
     start_date: Option<Date>,
     maturity_date: Option<Date>,
     rate: Option<f64>,
@@ -72,10 +80,44 @@ impl<T> MakeFixedRateBond<T>
 where
     T: Scalar,
 {
+    /// Sets start date as a tenor from the resolution reference date.
+    /// Replaces an explicitly supplied start date. Resolve this maker with a context.
+    #[must_use]
+    pub const fn with_start_tenor(mut self, tenor: Period) -> Self {
+        self.start_tenor = Some(tenor);
+        self.start_date = None;
+        self
+    }
+
+    /// Sets maturity date as a tenor from the resolved start date.
+    /// Replaces an explicitly supplied maturity date. Resolve this maker with a context.
+    #[must_use]
+    pub const fn with_maturity_tenor(mut self, tenor: Period) -> Self {
+        self.maturity_tenor = Some(tenor);
+        self.maturity_date = None;
+        self
+    }
+
+    /// Sets first coupon date as a tenor from the resolved start date.
+    /// Replaces an explicitly supplied first coupon date. Resolve this maker with a context.
+    #[must_use]
+    pub const fn with_first_coupon_tenor(mut self, tenor: Period) -> Self {
+        self.first_coupon_tenor = Some(tenor);
+        self.first_coupon_date = None;
+        self
+    }
+
+    /// Sets maturity as a tenor from the resolved start date.
+    #[must_use]
+    pub const fn with_tenor(self, tenor: Period) -> Self {
+        self.with_maturity_tenor(tenor)
+    }
+
     /// Sets the start date of the bond.
     #[must_use]
     pub const fn with_start_date(mut self, start_date: Date) -> Self {
         self.start_date = Some(start_date);
+        self.start_tenor = None;
         self
     }
 
@@ -83,6 +125,7 @@ where
     #[must_use]
     pub const fn with_maturity_date(mut self, maturity_date: Date) -> Self {
         self.maturity_date = Some(maturity_date);
+        self.maturity_tenor = None;
         self
     }
 
@@ -181,6 +224,7 @@ where
     #[must_use]
     pub const fn with_first_coupon_date(mut self, date: Date) -> Self {
         self.first_coupon_date = Some(date);
+        self.first_coupon_tenor = None;
         self
     }
 
@@ -189,6 +233,14 @@ where
     /// # Errors
     /// Returns an error if any of the required fields are missing or invalid.
     pub fn build(self) -> Result<FixedRateBond<T>> {
+        if self.start_tenor.is_some()
+            || self.maturity_tenor.is_some()
+            || self.first_coupon_tenor.is_some()
+        {
+            return Err(QSError::InvalidValueErr(
+                "Relative dates require maker.resolve(&ResolutionContext)".into(),
+            ));
+        }
         let notional = self
             .notional
             .ok_or_else(|| QSError::ValueNotSetErr("Notional".into()))?;
@@ -245,5 +297,96 @@ where
             self.discount_index,
             currency,
         ))
+    }
+}
+
+impl<T: Scalar> Resolve for MakeFixedRateBond<T> {
+    type Resolved = FixedRateBond<T>;
+
+    fn resolve(&self, context: &ResolutionContext<'_>) -> Result<Self::Resolved> {
+        let mut resolved = self.clone();
+        let calendar = self
+            .calendar
+            .clone()
+            .unwrap_or_else(|| Calendar::NullCalendar(NullCalendar::new()));
+        let convention = self
+            .business_day_convention
+            .unwrap_or(BusinessDayConvention::Unadjusted);
+        let dates = context.with_date_conventions(
+            &calendar,
+            convention,
+            self.end_of_month.unwrap_or(false),
+        );
+        resolved.start_date = Some(dates.resolve_date(
+            self.start_date,
+            self.start_tenor,
+            context.reference_date(),
+            "start_date",
+        )?);
+        resolved.start_tenor = None;
+        resolved.maturity_date = Some(
+            dates.resolve_date(
+                self.maturity_date,
+                self.maturity_tenor,
+                resolved
+                    .start_date
+                    .ok_or_else(|| QSError::ValueNotSetErr("start_date".into()))?,
+                "maturity_date",
+            )?,
+        );
+        resolved.maturity_tenor = None;
+        if self.first_coupon_date.is_some() || self.first_coupon_tenor.is_some() {
+            resolved.first_coupon_date = Some(
+                dates.resolve_date(
+                    self.first_coupon_date,
+                    self.first_coupon_tenor,
+                    resolved
+                        .start_date
+                        .ok_or_else(|| QSError::ValueNotSetErr("start_date".into()))?,
+                    "first_coupon_date",
+                )?,
+            );
+        }
+        resolved.first_coupon_tenor = None;
+        resolved.build()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{
+        core::resolution::test_support::{assert_legs, empty_market, p, reference},
+        prelude::*,
+    };
+
+    #[test]
+    fn bond_resolves_relative_start_maturity_and_first_coupon() -> Result<()> {
+        let market = empty_market(reference());
+        let ctx = ResolutionContext::new(&market);
+        let end = reference() + p("2Y")?;
+        let first = reference() + p("3M")?;
+        let bond = MakeFixedRateBond::<f64>::default()
+            .with_identifier("bond".into())
+            .with_start_tenor(p("0D")?)
+            .with_tenor(p("2Y")?)
+            .with_first_coupon_tenor(p("3M")?)
+            .with_rate(0.04)
+            .with_notional(100_000.0)
+            .with_currency(Currency::EUR)
+            .with_rate_definition(RateDefinition::new(
+                DayCounter::Actual365,
+                Compounding::Simple,
+                Frequency::Annual,
+            ))
+            .with_payment_frequency(Frequency::Semiannual);
+        assert_legs(
+            &bond.resolve(&ctx)?,
+            &bond
+                .with_start_date(reference())
+                .with_maturity_date(end)
+                .with_first_coupon_date(first)
+                .build()?,
+        )?;
+        Ok(())
     }
 }

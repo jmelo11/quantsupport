@@ -373,18 +373,24 @@ where
                             let response = state.get_market_data_reponse().ok_or_else(|| {
                                 QSError::NotFoundErr("MarketDataResponse not available".into())
                             })?;
-                            let rate = coupon.overnight_rate(
+                            let rate = coupon.overnight_rate_with_fixing_policy(
                                 state.eval_date,
+                                response.anchor_fixings(),
                                 |date| curve.discount_factor(date),
                                 |date| {
-                                    Ok(response
-                                        .fixings()
-                                        .get(forward_index)
-                                        .and_then(|values| values.get(&date).copied()))
+                                    Ok(response.fixings().get(forward_index).and_then(|values| {
+                                        (date < state.eval_date)
+                                            .then(|| values.get(&date).copied())
+                                            .flatten()
+                                    }))
                                 },
                             )?;
                             coupon.set_fixing(rate);
-                        } else if coupon.accrual_start_date() < state.eval_date {
+                        } else if state
+                            .get_market_data_reponse()
+                            .is_none_or(MarketData::anchor_fixings)
+                            && coupon.accrual_start_date() < state.eval_date
+                        {
                             let realized = state
                                 .get_fixing(forward_index, coupon.accrual_start_date())
                                 .map(DualFwd::new)?;
@@ -554,15 +560,15 @@ where
         for leg in trade.legs() {
             for cashflow in leg.cashflows() {
                 if let CashflowType::FloatingRateCoupon(coupon) = cashflow {
+                    if !ctx.anchor_fixings() {
+                        continue;
+                    }
                     let index = leg.forward_index().unwrap_or_else(|| coupon.market_index());
                     if coupon.overnight_conventions().is_some() {
                         for date in coupon.overnight_fixing_dates(eval_date)? {
-                            let request = FixingRequest::new(index.clone(), date);
-                            fixing_requests.push(if date == eval_date {
-                                request.with_missing_fixing_allowed(true)
-                            } else {
-                                request
-                            });
+                            if date < eval_date {
+                                fixing_requests.push(FixingRequest::new(index.clone(), date));
+                            }
                         }
                     } else if coupon.accrual_start_date() < eval_date {
                         fixing_requests.push(FixingRequest::new(
@@ -581,7 +587,10 @@ where
         let mut results = EvaluationResults::new(eval_date, identifier);
         let mut state = DCFState {
             value: None,
-            md_response: Some(ctx.handle_request(&md_request)?),
+            md_response: Some(
+                ctx.handle_request(&md_request)?
+                    .with_anchor_fixings(ctx.anchor_fixings()),
+            ),
             legs: trade.legs(),
             eval_date,
         };
@@ -1873,6 +1882,54 @@ mod reporting_tests {
         assert!(labels.contains(&"GBP/USD".to_string()));
         assert!(!labels.contains(&"USD/EUR".to_string()));
         assert!((fx.get_fx_rate(Currency::USD, Currency::EUR)?.value() - 1.0 / 1.1).abs() < 1e-12);
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod resolution_tests {
+    use crate::{
+        core::resolution::test_support::{market, p, reference},
+        prelude::*,
+    };
+
+    #[test]
+    fn fixing_policy_applies_to_swap_cashflows_and_market_views() -> Result<()> {
+        let start = reference();
+        let evaluation = Date::new(2026, 3, 10);
+        let base = market(start, 0.04, FixingStore::default())
+            .with_quote_store(QuoteStore::new(evaluation));
+        let instrument = MakeSwap::<DualFwd>::default()
+            .with_identifier("swap".into())
+            .with_start_date(start)
+            .with_maturity_date(start + p("2Y")?)
+            .with_notional(100_000.0)
+            .with_currency(Currency::EUR)
+            .with_market_index(MarketIndex::EURIBOR12m)
+            .with_fixed_rate(0.03)
+            .with_fixed_leg_frequency(Frequency::Annual)
+            .with_floating_leg_frequency(Frequency::Annual)
+            .build()?;
+        let trade = SwapTrade::new(instrument, start, 100_000.0, Side::LongReceive);
+        let mut pricer = DiscountedCashflowPricer::<Swap<DualFwd>, SwapTrade<DualFwd>>::new();
+        pricer.set_discount_policy(Box::new(SingleCurveCSADiscountPolicy::new(
+            MarketIndex::ESTR,
+            Currency::EUR,
+        )));
+        assert!(pricer.evaluate(&trade, &[Request::Value], &base).is_err());
+        let projected = base.clone().with_anchor_fixings(false);
+        let view = MarketView::new(&projected, Scenario::default());
+        assert!(!view.anchor_fixings());
+        let value = pricer.evaluate(&trade, &[Request::Value], &view)?.price();
+        let mut fixings = FixingStore::default();
+        fixings.add_fixing(&MarketIndex::EURIBOR12m, start, 0.04);
+        let anchored = base.with_fixing_store(fixings);
+        let expected = pricer
+            .evaluate(&trade, &[Request::Value], &anchored)?
+            .price();
+        let value = value.ok_or_else(|| QSError::ValueNotSetErr("PV".into()))?;
+        let expected = expected.ok_or_else(|| QSError::ValueNotSetErr("PV".into()))?;
+        assert!((value - expected).abs() < 1e-8);
         Ok(())
     }
 }

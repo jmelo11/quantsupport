@@ -92,6 +92,7 @@ fn quantsupport(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<instruments::products::EquityForward>()?;
     m.add_class::<instruments::products::EuropeanSwaption>()?;
     // Instruments
+    m.add_class::<instruments::unresolved::UnresolvedInstrument>()?;
     m.add_class::<instruments::products::Swap>()?;
     m.add_class::<instruments::loan::Loan>()?;
     m.add_class::<instruments::loan_terms::LoanRepaymentStructure>()?;

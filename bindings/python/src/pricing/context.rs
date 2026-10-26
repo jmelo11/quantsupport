@@ -6,6 +6,8 @@
 //! [`SingleCurveCSADiscountPolicy`]. Entering the `with` block enables request-driven market construction;
 //! leaving it stops the tape and releases all constructed market data.
 
+use quantsupport::prelude::ResolutionContext;
+
 use std::collections::HashMap;
 
 use pyo3::prelude::*;
@@ -230,6 +232,7 @@ impl PricingContext {
         fixed_income_policy = None,
         quote_level = None,
         credit_curves = None,
+        anchor_fixings = true,
     ))]
     fn new(
         quotes: QuoteStore,
@@ -244,8 +247,10 @@ impl PricingContext {
         fixed_income_policy: Option<PyFixedIncomeDiscountPolicy>,
         quote_level: Option<&Bound<'_, PyAny>>,
         credit_curves: Option<Vec<CreditCurveConfiguration>>,
+        anchor_fixings: bool,
     ) -> PyResult<Self> {
         let mut ctx = QsPricingContext::new()
+            .with_anchor_fixings(anchor_fixings)
             .with_quote_level(
                 quote_level
                     .map(extract_level)
@@ -321,6 +326,19 @@ impl PricingContext {
         Date {
             inner: self.inner.quote_store().reference_date(),
         }
+    }
+
+    /// True requires historical fixings; false projects every observation from curves.
+    #[getter]
+    fn anchor_fixings(&self) -> bool {
+        self.inner.anchor_fixings()
+    }
+
+    #[setter]
+    fn set_anchor_fixings(&mut self, enabled: bool) {
+        self.inner = self.inner.clone().with_anchor_fixings(enabled);
+        self.generation += 1;
+        self.fully_constructed = false;
     }
 
     /// Alias for `reference_date`, matching the `MarketDataProvider` contract.
@@ -833,6 +851,15 @@ impl PricingContext {
                 "n_paths must be positive",
             ));
         }
+        let resolved_script;
+        let script = if let Ok(pending) =
+            script.extract::<PyRef<'_, crate::instruments::unresolved::UnresolvedInstrument>>()
+        {
+            resolved_script = pending.resolve_with_market(script.py(), &self.market_view()?)?;
+            &resolved_script
+        } else {
+            script
+        };
         let script = script
             .extract::<ScriptedProduct>()
             .or_else(|_| ScriptedProduct::from_dict(script))?;
@@ -1048,7 +1075,7 @@ impl PricingContext {
                     ns.name()
                 )));
             }
-            sets.insert(ns.name().to_string(), ns.build(py)?);
+            sets.insert(ns.name().to_string(), ns.build(py, &self.market_view()?)?);
         }
 
         let mut engine =
@@ -1068,6 +1095,12 @@ impl PricingContext {
         trade: &Bound<'py, PyAny>,
         reqs: &[QsRequest],
     ) -> PyResult<Py<EvaluationResults>> {
+        if let Ok(position) = trade.extract::<PyRef<'_, Trade>>() {
+            if position.needs_resolution(py) {
+                let resolved = Py::new(py, position.resolve_with_market(py, &slf.market_view()?)?)?;
+                return Self::evaluate_trade(slf, py, resolved.bind(py).as_any(), reqs);
+            }
+        }
         if let Some(pricer) = slf.python_pricers.resolve(py, trade)? {
             let context = slf.into_pyobject(py)?;
             return call_pricer(py, &pricer, trade, reqs, context.as_any());
@@ -1101,7 +1134,8 @@ impl PricingContext {
         let instrument = position.instrument_bound(py);
 
         if let Ok(loan) = instrument.extract::<crate::instruments::loan::Loan>() {
-            let trade = loan.build_native_loan_trade(&position)?;
+            let trade =
+                loan.build_native_loan_trade(&position, &ResolutionContext::new(&market))?;
             let mut pricer = slf
                 .inner
                 .pricer_configuration(InstrumentType::Loan)

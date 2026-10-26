@@ -67,7 +67,14 @@ closures require updates or explicit local overrides.
 
 ## Builders and positions
 
-`Make*` builders validate required terms and construct the instrument. Check
+`Make*` makers retain contractual inputs and resolve them against a
+`ResolutionContext` when dates or observations depend on the market. Separate
+date and tenor methods retain their concrete `Date` and `Period` types.
+Resolution produces ordinary instruments for trades and pricers; `build()`
+handles terms that are already fully specified. See
+[Resolving reusable instrument definitions](instrument-resolution.md).
+
+Makers validate required terms and construct the instrument. Check
 their defaults against the contract's market conventions. `MakeSwap` produces
 regular single-fixing coupons; `MakeOvernightIndexSwap` starts from index-specific
 overnight conventions. Bond and loan builders have distinct principal,

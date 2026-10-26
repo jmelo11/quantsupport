@@ -3,7 +3,7 @@ from datetime import date as PythonDate
 from typing import Any, ClassVar, Mapping, Sequence, final, overload
 from typing_extensions import Self, disjoint_base
 from pandas import DataFrame
-from ..time import Date, DateTime, _DateLike
+from ..time import Date, DateTime, Period, _DateLike, _PeriodLike
 from ..market import CreditCurveConfiguration, Currency, CurveConfiguration, DiscountCurve, FixingStore, FxStore, Level, MarketIndex, QuoteStore, Simulation, SimulationConfiguration, VolatilityCube, VolatilityCubeConfiguration, VolatilitySurface, VolatilitySurfaceConfiguration, _CurrencyLike, _IndexLike
 from ..instruments import Instrument, ScriptedProduct, Side
 from ..risk import XvaResult
@@ -550,6 +550,9 @@ quote_level : Level or str, optional
 credit_curves : sequence of CreditCurveConfiguration, optional
     Survival-curve construction inputs. None, the default, configures no credit
     curves.
+anchor_fixings : bool, optional
+    True, the default, requires stored index fixings strictly before evaluation;
+    today and future project. False projects all observations from curves.
 
 Notes
 -----
@@ -574,7 +577,23 @@ Examples
        results = ctx.evaluate(trade, requests=["Value", "Sensitivities"])
 """
 
-    def __new__(cls, quotes: QuoteStore, curves: Sequence[CurveConfiguration], fixings: FixingStore | None = ..., fx: FxStore | None = ..., volatility_surfaces: Sequence[VolatilitySurfaceConfiguration] | None = ..., volatility_cubes: Sequence[VolatilityCubeConfiguration] | None = ..., pricer_configurations: Sequence[PricerConfiguration] | None = ..., simulations: Sequence[SimulationConfiguration] | None = ..., csa_policy: SingleCurveCSADiscountPolicy | None = ..., fixed_income_policy: FixedIncomeDiscountPolicy | None = ..., quote_level: Level | str | None = ..., credit_curves: Sequence[CreditCurveConfiguration] | None = ...) -> Self:
+    @property
+    def anchor_fixings(self) -> bool:
+        """Require stored past index fixings when true; project all when false."""
+        ...
+
+    @anchor_fixings.setter
+    def anchor_fixings(self, enabled: bool) -> None:
+        """Set the historical index-fixing policy and invalidate market caches.
+
+        Parameters
+        ----------
+        enabled : bool
+            True requires stored historical observations. False projects all.
+        """
+        ...
+
+    def __new__(cls, quotes: QuoteStore, curves: Sequence[CurveConfiguration], fixings: FixingStore | None = ..., fx: FxStore | None = ..., volatility_surfaces: Sequence[VolatilitySurfaceConfiguration] | None = ..., volatility_cubes: Sequence[VolatilityCubeConfiguration] | None = ..., pricer_configurations: Sequence[PricerConfiguration] | None = ..., simulations: Sequence[SimulationConfiguration] | None = ..., csa_policy: SingleCurveCSADiscountPolicy | None = ..., fixed_income_policy: FixedIncomeDiscountPolicy | None = ..., quote_level: Level | str | None = ..., credit_curves: Sequence[CreditCurveConfiguration] | None = ..., anchor_fixings: bool = ...) -> Self:
         ...
 
     def initialize(self) -> None:
@@ -1263,7 +1282,8 @@ instrument : Instrument
     Contract held by the position. Python objects may also be carried for
     registered Python pricers; native evaluation requires a supported product.
 trade_date : Date, datetime.date, or str
-    Execution date; strings use ISO ``YYYY-MM-DD`` format.
+    Execution date; strings use ISO ``YYYY-MM-DD`` format. None defers to
+    trade_tenor, defaulting to 0D when both inputs are omitted.
 side : Side or str, optional
     Direction, defaulting to Side.LongReceive when None. Strings accept
     LongReceive, Long, Receive, PayShort, Pay, or Short, case-insensitively.
@@ -1289,6 +1309,9 @@ settlement_date : Date, datetime.date, or str, optional
 spread_day_counter : DayCounter or str, optional
     Bond spread day-count override, as an enum or case-insensitive variant
     name. None, the default, leaves the native spread convention unchanged.
+trade_tenor : Period or str, optional
+    Execution-date offset from evaluation. Mutually exclusive with trade_date;
+    omitted date and tenor default to 0D.
 
 Raises
 ------
@@ -1303,7 +1326,7 @@ Notes
 Positions retain a reference to the instrument and are thread-confined.
 """
 
-    def __new__(cls, instrument: Instrument, trade_date: _DateLike, side: Side | str | None = ..., notional: float | None = ..., domestic_notional: float | None = ..., foreign_notional: float | None = ..., num_contracts: float = ..., pricing_anchor: Any | None = ..., settlement_date: _DateLike | None = ..., spread_day_counter: Any | None = ...) -> Self:
+    def __new__(cls, instrument: Instrument, trade_date: _DateLike | None = ..., side: Side | str | None = ..., notional: float | None = ..., domestic_notional: float | None = ..., foreign_notional: float | None = ..., num_contracts: float = ..., pricing_anchor: Any | None = ..., settlement_date: _DateLike | None = ..., spread_day_counter: Any | None = ..., trade_tenor: _PeriodLike | None = ...) -> Self:
         ...
 
     def __repr__(self) -> str:
@@ -1372,8 +1395,23 @@ QuantSupportError
         ...
 
     @property
-    def trade_date(self) -> Date:
+    def trade_date(self) -> Date | None:
         """Execution date."""
+        ...
+
+    @property
+    def trade_tenor(self) -> Period | None:
+        """Execution offset retained until evaluation, or None for a dated position."""
+        ...
+
+    def resolve_trade(self, context: PricingContext) -> Trade:
+        """Resolve once to retain concrete instrument and execution dates.
+
+        Parameters
+        ----------
+        context : PricingContext
+            Initialized market supplying the evaluation date, curves and fixings.
+        """
         ...
 
     @property

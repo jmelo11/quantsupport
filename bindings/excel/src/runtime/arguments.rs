@@ -24,6 +24,11 @@ impl Argument for String {
         value.as_string().ok_or_else(|| XllError::from(XLERR_VALUE))
     }
 }
+impl Argument for bool {
+    fn read(value: &XLOPER12) -> Result<Self, XllError> {
+        value.as_bool().ok_or_else(|| XllError::from(XLERR_VALUE))
+    }
+}
 impl Argument for f64 {
     fn read(value: &XLOPER12) -> Result<Self, XllError> {
         match value.base_type() {
@@ -60,6 +65,7 @@ mod tests {
         assert_eq!(decode::<f64>(&XLOPER12::from_int(3)), Ok(3.0));
         assert_eq!(decode::<i32>(&XLOPER12::from_f64(3.5)), Ok(3));
         assert_eq!(decode::<Option<f64>>(&XLOPER12::nil()), Ok(None));
+        assert_eq!(decode::<bool>(&XLOPER12::from_bool(true)), Ok(true));
         assert!(decode::<f64>(&XLOPER12::nil()).is_err());
         assert!(decode::<String>(&XLOPER12::from_f64(1.0)).is_err());
         assert!(decode::<f64>(std::ptr::null()).is_err());

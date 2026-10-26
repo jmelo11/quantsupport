@@ -10,6 +10,44 @@ The examples below reuse ``reference`` and ``context`` from
 :doc:`first-valuation`. Enter the context again for each calculation; its
 market objects are reconstructed as needed.
 
+Define trades before a market is available
+---------------------------------------------
+
+Use a product's ``from_tenors`` factory to retain separate relative date inputs.
+The ordinary constructors continue to accept absolute dates. A trade can be
+created immediately; ``evaluate`` resolves its instrument and execution date
+against the supplied context on every call, including inside portfolios.
+
+.. code-block:: python
+
+   definition = qs.Swap.from_tenors(
+       identifier="spot-5y", start_tenor="0D", tenor="5Y",
+       notional=1_000_000, fixed_rate=0.03, currency="USD", market_index="SOFR",
+   )
+   trade = qs.Trade(definition)  # execution defaults to a pending 0D offset
+   with context:
+       result = context.evaluate(trade)
+       booked = trade.resolve_trade(context)
+
+Retain ``booked`` to keep contractual dates and initial loan principal fixed
+across valuations and scenarios. Retaining ``trade`` instead creates a fresh
+contract from each evaluation's market. ``definition.resolve_instrument(context)``
+materializes just the product. Resolution leaves the original terms unchanged.
+
+Scheduled products use ``start_tenor`` and ``tenor``; options use
+``expiry_tenor`` and forwards use ``delivery_tenor``. Swaptions use
+``expiry_tenor`` and an underlying ``tenor``. Negative offsets such as ``-2D``
+are accepted for caplet ``fixing_tenor`` and bond stub dates. Date and tenor
+arguments for the same field are mutually exclusive.
+
+``PricingContext(anchor_fixings=True, ...)`` requires stored index fixings
+strictly before the evaluation date and raises an error when one is missing.
+Today and future observations project, even when today's fixing is stored.
+Set ``context.anchor_fixings = False`` to project every index observation;
+the curve must cover its observation interval. Floating amortizing loans can
+omit ``amortization_rate``; resolution applies the first index observation,
+spread and coupon payoff to construct the initial French/balloon schedule.
+
 Rates and direction
 -------------------
 
@@ -134,6 +172,14 @@ not a ``discount_index`` product field. French amortization fixes principal from
 the initial amortization rate; later floating coupon changes do not silently
 rewrite the original principal schedule.
 
+Set accrual conventions on the coupon: floating coupons use their explicit
+``day_counter``, or the index convention when omitted; fixed coupons use their
+``InterestRate`` day counter. The loan uses the same convention for principal
+amortization. The former ``Loan(day_counter=...)`` argument has been removed;
+move it to each coupon. French payments are level through the first reset when
+``amortization_rate`` matches that reset's all-in fixing, including spread and
+payoff bounds. Later resets can change payments without changing principal.
+
 .. code-block:: python
    :name: guide-python-loan
 
@@ -143,7 +189,7 @@ rewrite the original principal schedule.
            rate=0.06, day_counter="Actual360",
        ))],
        "USD", repayment=qs.LoanRepaymentStructure.bullet(),
-       payment_frequency="Quarterly", day_counter="Actual360",
+       payment_frequency="Quarterly",
        prepayment=qs.PrepaymentModelConfiguration.constant_annual_cpr(0.10),
    )
    original_terms = loan.to_dict()

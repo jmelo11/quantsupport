@@ -17,6 +17,11 @@ use crate::{
     },
     utils::errors::{QSError, Result},
 };
+use crate::{
+    core::resolution::{ResolutionContext, Resolve},
+    time::calendars::nullcalendar::NullCalendar,
+    time::period::Period,
+};
 use std::marker::PhantomData;
 
 /// A builder for creating a [`FloatFloatCrossCurrencySwap`] instance
@@ -45,8 +50,10 @@ use std::marker::PhantomData;
 /// assert_eq!(ff_xccy.domestic_currency(), Currency::USD);
 /// assert_eq!(ff_xccy.foreign_currency(), Currency::EUR);
 /// ```
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct MakeFloatFloatCrossCurrencySwap<T: Scalar> {
+    start_tenor: Option<Period>,
+    maturity_tenor: Option<Period>,
     start_date: Option<Date>,
     maturity_date: Option<Date>,
     domestic_notional: Option<f64>,
@@ -74,6 +81,30 @@ impl<T> MakeFloatFloatCrossCurrencySwap<T>
 where
     T: Scalar,
 {
+    /// Sets start date as a tenor from the resolution reference date.
+    /// Replaces an explicitly supplied start date. Resolve this maker with a context.
+    #[must_use]
+    pub const fn with_start_tenor(mut self, tenor: Period) -> Self {
+        self.start_tenor = Some(tenor);
+        self.start_date = None;
+        self
+    }
+
+    /// Sets maturity date as a tenor from the resolved start date.
+    /// Replaces an explicitly supplied maturity date. Resolve this maker with a context.
+    #[must_use]
+    pub const fn with_maturity_tenor(mut self, tenor: Period) -> Self {
+        self.maturity_tenor = Some(tenor);
+        self.maturity_date = None;
+        self
+    }
+
+    /// Sets maturity as a tenor from the resolved start date.
+    #[must_use]
+    pub const fn with_tenor(self, tenor: Period) -> Self {
+        self.with_maturity_tenor(tenor)
+    }
+
     /// Sets domestic day counter for coupon accrual without changing index quoting.
     #[must_use]
     pub const fn with_domestic_day_counter(mut self, dc: DayCounter) -> Self {
@@ -92,6 +123,7 @@ where
     #[must_use]
     pub const fn with_start_date(mut self, date: Date) -> Self {
         self.start_date = Some(date);
+        self.start_tenor = None;
         self
     }
 
@@ -99,6 +131,7 @@ where
     #[must_use]
     pub const fn with_maturity_date(mut self, date: Date) -> Self {
         self.maturity_date = Some(date);
+        self.maturity_tenor = None;
         self
     }
 
@@ -219,6 +252,11 @@ where
     /// # Errors
     /// Returns an error if any of the required fields are missing or invalid.
     pub fn build(self) -> Result<FloatFloatCrossCurrencySwap<T>> {
+        if self.start_tenor.is_some() || self.maturity_tenor.is_some() {
+            return Err(QSError::InvalidValueErr(
+                "Relative dates require maker.resolve(&ResolutionContext)".into(),
+            ));
+        }
         let start_date = self
             .start_date
             .ok_or_else(|| QSError::ValueNotSetErr("Start date".into()))?;
@@ -317,6 +355,45 @@ where
     }
 }
 
+impl<T: Scalar> Resolve for MakeFloatFloatCrossCurrencySwap<T> {
+    type Resolved = FloatFloatCrossCurrencySwap<T>;
+
+    fn resolve(&self, context: &ResolutionContext<'_>) -> Result<Self::Resolved> {
+        let mut resolved = self.clone();
+        let calendar = self
+            .calendar
+            .clone()
+            .unwrap_or_else(|| Calendar::NullCalendar(NullCalendar::new()));
+        let convention = self
+            .business_day_convention
+            .unwrap_or(BusinessDayConvention::Unadjusted);
+        let dates = context.with_date_conventions(
+            &calendar,
+            convention,
+            self.end_of_month.unwrap_or(false),
+        );
+        resolved.start_date = Some(dates.resolve_date(
+            self.start_date,
+            self.start_tenor,
+            context.reference_date(),
+            "start_date",
+        )?);
+        resolved.start_tenor = None;
+        resolved.maturity_date = Some(
+            dates.resolve_date(
+                self.maturity_date,
+                self.maturity_tenor,
+                resolved
+                    .start_date
+                    .ok_or_else(|| QSError::ValueNotSetErr("start_date".into()))?,
+                "maturity_date",
+            )?,
+        );
+        resolved.maturity_tenor = None;
+        resolved.build()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -367,5 +444,37 @@ mod tests {
             .build();
 
         assert!(result.is_err(), "expected missing foreign currency to fail");
+    }
+}
+
+#[cfg(test)]
+mod resolution_tests {
+    use crate::{
+        core::resolution::test_support::{assert_legs, empty_market, p, reference},
+        prelude::*,
+    };
+
+    #[test]
+    fn float_float_cross_currency_swap_resolves_dates_before_building_legs() -> Result<()> {
+        let market = empty_market(reference());
+        let ctx = ResolutionContext::new(&market);
+        let end = reference() + p("2Y")?;
+        let ff = MakeFloatFloatCrossCurrencySwap::<f64>::default()
+            .with_identifier("ff".into())
+            .with_start_tenor(p("0D")?)
+            .with_tenor(p("2Y")?)
+            .with_domestic_notional(100_000.0)
+            .with_foreign_notional(110_000.0)
+            .with_domestic_currency(Currency::EUR)
+            .with_foreign_currency(Currency::USD)
+            .with_domestic_market_index(MarketIndex::EURIBOR3m)
+            .with_foreign_market_index(MarketIndex::TermSOFR3m);
+        assert_legs(
+            &ff.resolve(&ctx)?,
+            &ff.with_start_date(reference())
+                .with_maturity_date(end)
+                .build()?,
+        )?;
+        Ok(())
     }
 }

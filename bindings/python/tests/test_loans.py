@@ -15,9 +15,9 @@ REFERENCE = "2026-02-24"
 def build_loan_contract(**overrides):
     """Build the default EUR loan contract with explicit term overrides."""
     terms = dict(identifier="LOAN", start_date=REFERENCE, maturity_date="2028-02-24",
-                 notional=100_000.0, coupons=[qs.FixedRateCoupon(rate=qs.InterestRate(rate=0.06))],
+                 notional=100_000.0, coupons=[qs.FixedRateCoupon(rate=qs.InterestRate(rate=0.06, day_counter="Actual360"))],
                  currency=qs.Currency.EUR,
-                 day_counter=qs.DayCounter.Actual360, calendar="TARGET", fixing_lag=2,
+                 calendar="TARGET", fixing_lag=2,
                  business_day_convention=qs.BusinessDayConvention.Following)
     terms.update(overrides)
     return qs.Loan(**terms)
@@ -55,6 +55,38 @@ def evaluate_loan_trade(instrument, ctx, requests=None, **pricer_options):
 
 
 class LoanWorkflowTests(unittest.TestCase):
+    def test_french_payments_are_level_through_initial_reset_on_coupon_basis(self):
+        for basis in [None, "Actual365", "Thirty360"]:
+            for bounded in [False, True]:
+                with self.subTest(basis=basis, bounded=bounded):
+                    coupon = (qs.OptionEmbeddedCoupon(index="EURIBOR12m", spread=0.01,
+                              payoff=qs.PayoffOps.Max(qs.PayoffOps.Index, qs.PayoffOps.Const(0.045)),
+                              day_counter=basis) if bounded else
+                              qs.FloatingRateCoupon(index="EURIBOR12m", spread=0.01, day_counter=basis))
+                    rate = 0.055 if bounded else 0.05
+                    instrument = build_loan_contract(coupons=[coupon], amortization_rate=rate)
+                    with build_pricing_context(instrument) as ctx:
+                        table = evaluate_loan_trade(instrument, ctx, ["Cashflows"]).cashflows
+                    first_reset = table[table.payment_date <= "2027-02-24"]
+                    payments = first_reset.groupby("payment_date").amount.sum()
+                    self.assertEqual(len(payments), 12)
+                    self.assertLess(payments.max() - payments.min(), 1e-7)
+                    coupons = first_reset[first_reset.type.isin(["FloatingRateCoupon", "OptionEmbeddedCoupon"])]
+                    expected_basis = qs.DayCounter.parse(basis or "Actual360")
+                    expected_tau = expected_basis.year_fraction(REFERENCE, "2026-03-24")
+                    self.assertAlmostEqual(coupons.accrual_period.iloc[0], expected_tau)
+                    self.assertAlmostEqual(coupons.amount.iloc[0], 100_000 * rate * expected_tau)
+                    restored = qs.Loan.from_dict(instrument.to_dict())
+                    self.assertEqual(restored.to_dict(), instrument.to_dict())
+
+    def test_loan_day_counter_is_configured_on_coupons(self):
+        instrument = build_loan_contract()
+        self.assertNotIn("day_counter", instrument.to_dict())
+        with self.assertRaises(TypeError):
+            build_loan_contract(day_counter="Actual360")
+        with self.assertRaises(TypeError):
+            qs.Loan.from_dict(dict(instrument.to_dict(), day_counter="Actual360"))
+
     def test_native_loan_configuration_applies_to_portfolios_and_scenarios(self):
         instrument = build_loan_contract(
             prepayment=qs.PrepaymentModelConfiguration.refinancing_incentive(0.02, 4.0, 0.4),
@@ -206,8 +238,8 @@ class LoanWorkflowTests(unittest.TestCase):
 
     def test_bounded_coupon_projection_uses_contractual_day_counter_and_trade_side(self):
         instrument = build_loan_contract(
-            coupons=[qs.OptionEmbeddedCoupon(index="EURIBOR12m", payoff=(qs.PayoffOps.Index + 0.01).min(0.07).max(0.06))],
-            repayment=qs.LoanRepaymentStructure.bullet(), day_counter="Thirty360")
+            coupons=[qs.OptionEmbeddedCoupon(index="EURIBOR12m", payoff=(qs.PayoffOps.Index + 0.01).min(0.07).max(0.06), day_counter="Thirty360")],
+            repayment=qs.LoanRepaymentStructure.bullet())
         with build_pricing_context(instrument) as ctx:
             result = evaluate_loan_trade(instrument, ctx, ["Value", "Cashflows", "Sensitivities"])
             coupons = result.cashflows.loc[result.cashflows.type == "OptionEmbeddedCoupon"]
@@ -224,7 +256,7 @@ class LoanWorkflowTests(unittest.TestCase):
 
     def test_typed_terms_roundtrip_and_serialized_inputs(self):
         coupon_schedules = [
-            [qs.FixedRateCoupon(rate=qs.InterestRate(rate=0.06))],
+            [qs.FixedRateCoupon(rate=qs.InterestRate(rate=0.06, day_counter="Actual360"))],
             [qs.FloatingRateCoupon(index=qs.MarketIndex.EURIBOR12m, spread=0.01)],
             [qs.FixedRateCoupon(rate=qs.InterestRate(rate=0.04))] * 12 + [qs.FloatingRateCoupon(index="EURIBOR12m", spread=0.01)],
             [qs.FixedRateCoupon(rate=qs.InterestRate(rate=0.03)), qs.FixedRateCoupon(rate=qs.InterestRate(rate=0.05))],
@@ -249,8 +281,15 @@ class LoanWorkflowTests(unittest.TestCase):
             build_loan_contract(notional=-1)
         with self.assertRaises(TypeError):
             build_loan_contract(notinoal=50_000)
-        with self.assertRaisesRegex(qs.QuantSupportError, "amortization_rate"):
-            build_loan_contract(coupons=[qs.FloatingRateCoupon(index="EURIBOR12m", spread=0.01)])
+        pending = build_loan_contract(coupons=[qs.FloatingRateCoupon(index="EURIBOR12m", spread=0.01)])
+        with self.assertRaisesRegex(qs.QuantSupportError, "context"):
+            pending.coupon_fixing_requests()
+        context = build_pricing_context()
+        fixings = qs.FixingStore()
+        fixings.add("EURIBOR12m", "2026-02-20", 0.04)
+        context.fixings = fixings
+        with context:
+            self.assertIsNotNone(context.evaluate(qs.Trade(pending)).price)
         for model in [qs.PrepaymentModelConfiguration.constant_annual_cpr(1.1),
                       qs.PrepaymentModelConfiguration.refinancing_incentive(0.4, 2.0, 0.2),
                       qs.PrepaymentModelConfiguration.dated_annual_cpr([(REFERENCE, 0.1), (REFERENCE, 0.2)])]:

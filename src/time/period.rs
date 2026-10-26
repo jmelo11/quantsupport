@@ -270,20 +270,29 @@ impl Period {
 
     /// Parses a tenor expression by combining its successive length-and-unit periods.
     fn parse_impl(tenor: &str) -> Result<Self> {
-        // parse multiple periods and add them
-        let chars = tenor.chars();
-        let mut periods = Vec::new();
-        let mut current_period = String::new();
-        for c in chars {
-            current_period.push(c);
-            if !c.is_numeric() {
-                periods.push(current_period);
-                current_period = String::new();
+        let (negative, tenor) = tenor.strip_prefix('-').map_or_else(
+            || (false, tenor.strip_prefix('+').unwrap_or(tenor)),
+            |rest| (true, rest),
+        );
+        let mut result = Self::empty();
+        let mut length = String::new();
+        let mut count = 0;
+        for character in tenor.chars() {
+            if character.is_ascii_digit() {
+                length.push(character);
+            } else {
+                if length.is_empty() {
+                    return Err(QSError::PeriodOperationErr("Missing period length".into()));
+                }
+                let sign = if negative { "-" } else { "" };
+                let component = Self::parse_single_period(&format!("{sign}{length}{character}"))?;
+                result = (result + component)?;
+                length.clear();
+                count += 1;
             }
         }
-        let mut result = Self::empty();
-        for period in periods {
-            result = (result + Self::parse_single_period(&period)?)?;
+        if !length.is_empty() || count == 0 {
+            return Err(QSError::PeriodOperationErr("Missing period unit".into()));
         }
         Ok(result)
     }
@@ -294,7 +303,7 @@ impl Period {
         let mut length = String::new();
         let mut units = String::new();
         for c in chars {
-            if c.is_numeric() {
+            if c.is_ascii_digit() || ((c == '-' || c == '+') && length.is_empty()) {
                 length.push(c);
             } else {
                 units.push(c);
@@ -680,6 +689,20 @@ impl MulAssign<i32> for Period {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn signed_tenors_apply_the_sign_to_the_whole_offset() -> Result<()> {
+        assert_eq!(Period::from_str("-2D")?, Period::new(-2, TimeUnit::Days));
+        assert_eq!(
+            Period::from_str("-1Y6M")?,
+            Period::new(-18, TimeUnit::Months)
+        );
+        assert_eq!(Period::from_str("+3M")?, Period::new(3, TimeUnit::Months));
+        for text in ["", "-", "1Y3", "1Y-3M", "M"] {
+            assert!(Period::from_str(text).is_err());
+        }
+        Ok(())
+    }
 
     #[test]
     fn test_period_negation() {

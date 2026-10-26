@@ -15,6 +15,7 @@
 # Contracts and market state
 
 - [Cashflows, contracts and positions](concepts/instruments.md)
+- [Resolving reusable instrument definitions](concepts/instrument-resolution.md)
 - [Observations and historical markets](concepts/market-data.md)
 - [Constructing and querying a market](concepts/pricing-context.md)
 

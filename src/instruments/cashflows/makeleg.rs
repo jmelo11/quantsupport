@@ -1,3 +1,4 @@
+use crate::core::resolution::{ResolutionContext, Resolve};
 use std::collections::HashMap;
 
 #[cfg(test)]
@@ -83,6 +84,8 @@ pub enum PaymentStructure {
 /// ```
 #[derive(Clone)]
 pub struct MakeLeg<T: Scalar> {
+    start_tenor: Option<Period>,
+    first_coupon_tenor: Option<Period>,
     // common fields
     leg_id: Option<usize>,
     start_date: Option<Date>,
@@ -95,6 +98,7 @@ pub struct MakeLeg<T: Scalar> {
     notional: Option<f64>,
     structure: Option<PaymentStructure>,
     redemptions: Option<HashMap<Date, f64>>,
+    redemptions_tenors: Vec<(Period, f64)>,
     end_of_month: Option<bool>,
     calendar: Option<Calendar>,
     business_day_convention: Option<BusinessDayConvention>,
@@ -110,6 +114,7 @@ pub struct MakeLeg<T: Scalar> {
     // fixed rate specific fields
     rate: Option<InterestRate<T>>,
     disbursements: Option<HashMap<Date, f64>>,
+    disbursements_tenors: Vec<(Period, f64)>,
 
     // asset class
     asset_class: AssetClass,
@@ -126,6 +131,8 @@ where
 {
     fn default() -> Self {
         Self {
+            start_tenor: None,
+            first_coupon_tenor: None,
             leg_id: None,
             start_date: None,
             end_date: None,
@@ -137,6 +144,7 @@ where
             notional: None,
             structure: None,
             redemptions: None,
+            redemptions_tenors: Vec::new(),
             end_of_month: None,
             calendar: None,
             business_day_convention: None,
@@ -148,6 +156,7 @@ where
             forward_index: None,
             rate: None,
             disbursements: None,
+            disbursements_tenors: Vec::new(),
             asset_class: AssetClass::InterestRate,
             floorlet_strike: None,
             caplet_strike: None,
@@ -160,6 +169,24 @@ impl<T> MakeLeg<T>
 where
     T: Scalar,
 {
+    /// Sets start date as a tenor from the resolution reference date.
+    /// Replaces an explicitly supplied start date. Resolve this maker with a context.
+    #[must_use]
+    pub const fn with_start_tenor(mut self, tenor: Period) -> Self {
+        self.start_tenor = Some(tenor);
+        self.start_date = None;
+        self
+    }
+
+    /// Sets first coupon date as a tenor from the resolved start date.
+    /// Replaces an explicitly supplied first coupon date. Resolve this maker with a context.
+    #[must_use]
+    pub const fn with_first_coupon_tenor(mut self, tenor: Period) -> Self {
+        self.first_coupon_tenor = Some(tenor);
+        self.first_coupon_date = None;
+        self
+    }
+
     /// Sets the asset class for the leg.
     #[must_use]
     pub const fn with_asset_class(mut self, asset_class: AssetClass) -> Self {
@@ -185,6 +212,7 @@ where
     #[must_use]
     pub const fn with_first_coupon_date(mut self, first_coupon_date: Option<Date>) -> Self {
         self.first_coupon_date = first_coupon_date;
+        self.first_coupon_tenor = None;
         self
     }
 
@@ -271,6 +299,7 @@ where
     #[must_use]
     pub const fn with_start_date(mut self, start_date: Date) -> Self {
         self.start_date = Some(start_date);
+        self.start_tenor = None;
         self
     }
 
@@ -278,6 +307,7 @@ where
     #[must_use]
     pub const fn with_end_date(mut self, end_date: Date) -> Self {
         self.end_date = Some(end_date);
+        self.tenor = None;
         self
     }
 
@@ -285,6 +315,7 @@ where
     #[must_use]
     pub fn with_disbursements(mut self, disbursements: HashMap<Date, f64>) -> Self {
         self.disbursements = Some(disbursements);
+        self.disbursements_tenors.clear();
         self
     }
 
@@ -292,6 +323,7 @@ where
     #[must_use]
     pub fn with_redemptions(mut self, redemptions: HashMap<Date, f64>) -> Self {
         self.redemptions = Some(redemptions);
+        self.redemptions_tenors.clear();
         self
     }
 
@@ -306,6 +338,7 @@ where
     #[must_use]
     pub const fn with_tenor(mut self, tenor: Period) -> Self {
         self.tenor = Some(tenor);
+        self.end_date = None;
         self
     }
 
@@ -313,6 +346,22 @@ where
     #[must_use]
     pub const fn with_payment_frequency(mut self, frequency: Frequency) -> Self {
         self.payment_frequency = Some(frequency);
+        self
+    }
+
+    /// Sets disbursements as amounts at tenors from the resolved start date.
+    #[must_use]
+    pub fn with_disbursements_tenors(mut self, values: Vec<(Period, f64)>) -> Self {
+        self.disbursements_tenors = values;
+        self.disbursements = None;
+        self
+    }
+
+    /// Sets redemptions as amounts at tenors from the resolved start date.
+    #[must_use]
+    pub fn with_redemptions_tenors(mut self, values: Vec<(Period, f64)>) -> Self {
+        self.redemptions_tenors = values;
+        self.redemptions = None;
         self
     }
 
@@ -426,6 +475,14 @@ where
     /// Returns an error if required builder fields are missing or inconsistent.
     #[allow(clippy::too_many_lines)]
     pub fn build(self) -> Result<Leg<T>> {
+        if !self.disbursements_tenors.is_empty()
+            || self.start_tenor.is_some()
+            || self.first_coupon_tenor.is_some()
+        {
+            return Err(QSError::InvalidValueErr(
+                "Relative dates require maker.resolve(&ResolutionContext)".into(),
+            ));
+        }
         let mut cashflows = Vec::new();
         let structure = self
             .structure
@@ -1278,6 +1335,90 @@ where
     }
 }
 
+impl<T: Scalar> Resolve for MakeLeg<T> {
+    type Resolved = Leg<T>;
+
+    fn resolve(&self, context: &ResolutionContext<'_>) -> Result<Self::Resolved> {
+        let mut resolved = self.clone();
+        let calendar = self
+            .calendar
+            .clone()
+            .unwrap_or_else(|| Calendar::NullCalendar(NullCalendar::new()));
+        let convention = self
+            .business_day_convention
+            .unwrap_or(BusinessDayConvention::Unadjusted);
+        let dates = context.with_date_conventions(
+            &calendar,
+            convention,
+            self.end_of_month.unwrap_or(false),
+        );
+        resolved.start_date = Some(dates.resolve_date(
+            self.start_date,
+            self.start_tenor,
+            context.reference_date(),
+            "start_date",
+        )?);
+        resolved.start_tenor = None;
+        resolved.end_date = Some(
+            dates.resolve_date(
+                self.end_date,
+                self.tenor,
+                resolved
+                    .start_date
+                    .ok_or_else(|| QSError::ValueNotSetErr("start_date".into()))?,
+                "end_date",
+            )?,
+        );
+        resolved.tenor = None;
+        if self.first_coupon_date.is_some() || self.first_coupon_tenor.is_some() {
+            resolved.first_coupon_date = Some(
+                dates.resolve_date(
+                    self.first_coupon_date,
+                    self.first_coupon_tenor,
+                    resolved
+                        .start_date
+                        .ok_or_else(|| QSError::ValueNotSetErr("start_date".into()))?,
+                    "first_coupon_date",
+                )?,
+            );
+        }
+        resolved.first_coupon_tenor = None;
+        if !self.disbursements_tenors.is_empty() {
+            let start = resolved
+                .start_date
+                .ok_or_else(|| QSError::ValueNotSetErr("Start date".into()))?;
+            let mut values = HashMap::new();
+            for (tenor, amount) in &self.disbursements_tenors {
+                let date = dates.advance_date(start, *tenor)?;
+                if values.insert(date, *amount).is_some() {
+                    return Err(QSError::InvalidValueErr(
+                        "Duplicate resolved disbursements date".into(),
+                    ));
+                }
+            }
+            resolved.disbursements = Some(values);
+            resolved.disbursements_tenors.clear();
+        }
+        if !self.redemptions_tenors.is_empty() {
+            let start = resolved
+                .start_date
+                .ok_or_else(|| QSError::ValueNotSetErr("Start date".into()))?;
+            let mut values = HashMap::new();
+            for (tenor, amount) in &self.redemptions_tenors {
+                let date = dates.advance_date(start, *tenor)?;
+                if values.insert(date, *amount).is_some() {
+                    return Err(QSError::InvalidValueErr(
+                        "Duplicate resolved redemptions date".into(),
+                    ));
+                }
+            }
+            resolved.redemptions = Some(values);
+            resolved.redemptions_tenors.clear();
+        }
+        resolved.build()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1513,5 +1654,54 @@ mod tests {
             result.is_err(),
             "Should fail when disbursements and redemptions are unequal"
         );
+    }
+}
+
+#[cfg(test)]
+mod resolution_tests {
+    use crate::instruments::cashflows::makeleg::RateType;
+    use crate::time::calendars::nullcalendar::NullCalendar;
+    use crate::{
+        core::resolution::test_support::{empty_market, p, reference},
+        prelude::*,
+    };
+
+    #[test]
+    fn leg_makers_resolve_custom_principal_dates() -> Result<()> {
+        let market = empty_market(reference());
+        let ctx = ResolutionContext::new(&market);
+        let maker = MakeLeg::<f64>::default()
+            .with_start_tenor(p("0D")?)
+            .with_tenor(p("1Y")?)
+            .with_currency(Currency::EUR)
+            .with_side(Side::LongReceive)
+            .with_payment_frequency(Frequency::Semiannual)
+            .with_rate_type(RateType::Fixed)
+            .with_rate(InterestRate::new(
+                0.04,
+                Compounding::Simple,
+                Frequency::Annual,
+                DayCounter::Actual365,
+            ))
+            .with_notional(100.0)
+            .other()
+            .with_disbursements_tenors(vec![(p("0D")?, 100.0)])
+            .with_redemptions_tenors(vec![(p("1Y")?, 100.0)]);
+        let leg = maker.resolve(&ctx)?;
+        assert!(!leg.cashflows().is_empty());
+        assert!(maker.build().is_err());
+        let duplicate = MakeLeg::<f64>::default()
+            .with_start_tenor(p("0D")?)
+            .with_tenor(p("1Y")?)
+            .with_redemptions_tenors(vec![(p("12M")?, 50.0), (p("1Y")?, 50.0)]);
+        assert!(duplicate.resolve(&ctx).is_err());
+        // The default context has no calendar adjustment.
+        let null = Calendar::NullCalendar(NullCalendar::new());
+        assert_eq!(
+            ctx.with_date_conventions(&null, BusinessDayConvention::Unadjusted, false)
+                .advance_date(reference(), p("1Y")?)?,
+            reference() + p("1Y")?
+        );
+        Ok(())
     }
 }

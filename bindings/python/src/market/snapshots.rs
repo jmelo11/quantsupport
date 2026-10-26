@@ -202,12 +202,13 @@ impl MarketSnapshotStore {
 
     /// Create an independent context at the selected market's business date.
     /// Fixings are supplied separately; no publication-vintage filtering occurs.
-    #[pyo3(signature = (selector, fixings = None, fixed_income_policy = None))]
+    #[pyo3(signature = (selector, fixings = None, fixed_income_policy = None, anchor_fixings = true))]
     fn pricing_context(
         &self,
         selector: &SnapshotSelector,
         fixings: Option<FixingStore>,
         fixed_income_policy: Option<FixedIncomeDiscountPolicy>,
+        anchor_fixings: bool,
     ) -> PyResult<PricingContext> {
         let context = self
             .inner
@@ -215,7 +216,8 @@ impl MarketSnapshotStore {
                 &selector.inner,
                 fixings.map(|store| store.inner).unwrap_or_default(),
             )
-            .map_err(qs_err)?;
+            .map_err(qs_err)?
+            .with_anchor_fixings(anchor_fixings);
         Ok(PricingContext::from_snapshot_context(
             context,
             fixed_income_policy,

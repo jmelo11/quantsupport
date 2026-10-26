@@ -46,12 +46,12 @@ class PythonApiTests(unittest.TestCase):
             rate=0.04, day_counter="Actual365", compounding="Compounded", frequency="Semiannual")))
         coupon = qs.FixedRateCoupon(rate)
         args = ("LOAN", "2026-02-24", "2028-02-24", 100_000, [coupon], "EUR",
-                qs.LoanRepaymentStructure.bullet(), "Quarterly", "Annual", "Actual365")
+                qs.LoanRepaymentStructure.bullet(), "Quarterly", "Annual")
         positional = qs.Loan(*args)
         keyword = qs.Loan(identifier="LOAN", start_date="2026-02-24", maturity_date="2028-02-24",
                           notional=100_000, coupons=[coupon], currency="EUR",
                           repayment=qs.LoanRepaymentStructure.bullet(), payment_frequency="Quarterly",
-                          fixing_frequency="Annual", day_counter="Actual365")
+                          fixing_frequency="Annual")
         self.assertEqual(dict(positional), dict(keyword))
         self.assertEqual(dict(qs.FloatingRateCoupon("EURIBOR12m", 0.01)),
                          dict(qs.FloatingRateCoupon(index="EURIBOR12m", spread=0.01)))

@@ -59,8 +59,9 @@ pub use crate::{
             HandleCashflows, HandleFairRate, HandleModifiedDuration, HandleSensitivities,
             HandleValue, HandleYieldToMaturity, LegsProvider, Request,
         },
+        resolution::{ResolutionContext, Resolve},
         snapshotselector::{SnapshotSelectionRule, SnapshotSelector},
-        trade::{Side, Trade},
+        trade::{Side, Trade, UnresolvedTrade},
         visitable::{Visitable, Visitor},
     },
     currencies::{currency::Currency, currencydetails::CurrencyDetails},
@@ -81,6 +82,7 @@ pub use crate::{
             makeleg::{MakeLeg, PaymentStructure, RateType},
         },
         credit::creditdefaultswap::{CdsTrade, CreditDefaultSwap},
+        credit::makecreditdefaultswap::MakeCreditDefaultSwap,
         equity::{
             equityeuropeanoption::{
                 EquityEuropeanOption, EquityEuropeanOptionTrade, EuroOptionType,
@@ -125,6 +127,7 @@ pub use crate::{
             },
             makebasisswap::MakeBasisSwap,
             makecapfloor::MakeCapFloor,
+            makecapletfloorlet::MakeCapletFloorlet,
             makeeuropeanswaption::MakeSwaption,
             makefixfloatcrosscurrencyswap::MakeFixFloatCrossCurrencySwap,
             makefloatfloatcrosscurrencyswap::MakeFloatFloatCrossCurrencySwap,
@@ -218,6 +221,7 @@ pub use crate::{
         },
     },
     scripting::{
+        makescriptedproduct::MakeScriptedProduct,
         nodes::event::{CodedEvent, Event, EventStream},
         product::ScriptedProduct,
         request::SimulationDataRequest,

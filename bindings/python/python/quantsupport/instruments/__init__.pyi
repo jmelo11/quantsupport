@@ -5,7 +5,7 @@ from typing_extensions import Self, disjoint_base
 from pandas import DataFrame
 from ..time import BusinessDayConvention, Calendar, Compounding, Date, DateGenerationRule, DayCounter, Frequency, _DateLike, _PeriodLike
 from ..market import Currency, MarketIndex, _CurrencyLike, _IndexLike
-__all__ = ['Instrument', 'Side', 'OptionType', 'SwaptionType', 'CapFloorType', 'CapletFloorletType', 'PaymentStructure', 'LoanRepaymentStructure', 'PrepaymentModelConfiguration', 'Loan', 'EquityForward', 'EuropeanSwaption', 'Swap', 'CrossCurrencySwap', 'BasisSwap', 'FixFloatCrossCurrencySwap', 'FixedRateBond', 'InterestRate', 'PayoffOps', 'FixedRateCoupon', 'FloatingRateCoupon', 'OptionEmbeddedCoupon', 'CallScheduleEntry', 'SteppedCouponBond', 'FloatingRateNote', 'FixedRateDeposit', 'FxForward', 'FxOption', 'EquityOption', 'CreditDefaultSwap', 'CapFloor', 'CapletFloorlet', 'RateFutures', 'ScriptedProduct']
+__all__ = ['Instrument', 'UnresolvedInstrument', 'Side', 'OptionType', 'SwaptionType', 'CapFloorType', 'CapletFloorletType', 'PaymentStructure', 'LoanRepaymentStructure', 'PrepaymentModelConfiguration', 'Loan', 'EquityForward', 'EuropeanSwaption', 'Swap', 'CrossCurrencySwap', 'BasisSwap', 'FixFloatCrossCurrencySwap', 'FixedRateBond', 'InterestRate', 'PayoffOps', 'FixedRateCoupon', 'FloatingRateCoupon', 'OptionEmbeddedCoupon', 'CallScheduleEntry', 'SteppedCouponBond', 'FloatingRateNote', 'FixedRateDeposit', 'FxForward', 'FxOption', 'EquityOption', 'CreditDefaultSwap', 'CapFloor', 'CapletFloorlet', 'RateFutures', 'ScriptedProduct']
 
 @final
 class Side:
@@ -208,7 +208,7 @@ Subclasses may add arbitrary Python attributes and may override
 
 @final
 class LoanRepaymentStructure:
-    """Contractual principal amortization, fixed at Loan construction."""
+    """Contractual principal amortization, fixed when the loan is resolved."""
 
     @staticmethod
     def french() -> LoanRepaymentStructure:
@@ -402,8 +402,8 @@ class PrepaymentModelConfiguration:
 class Loan(Instrument):
     """Contractual cashflows and principal; valuation applies market/default/prepayment effects."""
 
-    def __new__(cls, identifier: str, start_date: _DateLike, maturity_date: _DateLike, notional: float, coupons: Sequence[FixedRateCoupon | FloatingRateCoupon | OptionEmbeddedCoupon | Mapping[str, Any]], currency: _CurrencyLike, repayment: LoanRepaymentStructure | str | Mapping[str, Any] | None=..., payment_frequency: Frequency | str | None=..., fixing_frequency: Frequency | str | None=..., day_counter: DayCounter | str | None=..., prepayment: PrepaymentModelConfiguration | str | Mapping[str, Any] | None=..., credit_index: _IndexLike | None=..., recovery: float | None=..., fixing_lag: int | None=..., index_tenor: _PeriodLike | None=..., calendar: Calendar | str | None=..., business_day_convention: BusinessDayConvention | str | None=..., amortization_rate: float | None=...) -> Self:
-        """Build a loan; floating-first amortizing schedules require an initial amortization_rate.
+    def __new__(cls, identifier: str, start_date: _DateLike, maturity_date: _DateLike, notional: float, coupons: Sequence[FixedRateCoupon | FloatingRateCoupon | OptionEmbeddedCoupon | Mapping[str, Any]], currency: _CurrencyLike, repayment: LoanRepaymentStructure | str | Mapping[str, Any] | None=..., payment_frequency: Frequency | str | None=..., fixing_frequency: Frequency | str | None=..., prepayment: PrepaymentModelConfiguration | str | Mapping[str, Any] | None=..., credit_index: _IndexLike | None=..., recovery: float | None=..., fixing_lag: int | None=..., index_tenor: _PeriodLike | None=..., calendar: Calendar | str | None=..., business_day_convention: BusinessDayConvention | str | None=..., amortization_rate: float | None=...) -> Self:
+        """Build loan terms; evaluation resolves a missing floating initial amortization_rate.
 
         Parameters
         ----------
@@ -418,7 +418,9 @@ class Loan(Instrument):
         coupons : Sequence[FixedRateCoupon or FloatingRateCoupon or OptionEmbeddedCoupon or Mapping[str, Any]]
             Nonempty positional coupon templates, or tagged coupon dictionaries
             returned by their ``to_dict()`` methods. The last entry repeats to
-            maturity; builders supply balances and dates.
+            maturity; builders supply balances and dates. Each coupon owns its
+            accrual day counter; floating coupons default to the index convention.
+            Amortization uses the same accrual conventions as coupon interest.
         currency : Currency or str
             Payment currency enum or alphabetic code; pricing policy selects
             the discount curve.
@@ -430,8 +432,6 @@ class Loan(Instrument):
         fixing_frequency : Frequency or str, optional
             Coupon reset interval, which must align with accrual dates. Default
             None uses index metadata, or payment frequency for daily indices.
-        day_counter : DayCounter or str, optional
-            Coupon and amortization accrual basis. Default None uses Actual365.
         prepayment : PrepaymentModelConfiguration or str or Mapping[str, Any], optional
             Conditional prepayment terms applied during valuation after scheduled
             principal. Default None disables prepayment.
@@ -453,8 +453,22 @@ class Loan(Instrument):
             contractual accrual dates are not adjusted.
         amortization_rate : float, optional
             Initial annual all-in decimal rate used to build principal. Default
-            None uses the first fixed coupon; required for floating-first
-            French/balloon loans. Later coupons do not rebuild principal.
+            None uses the first fixed coupon, or resolves the initial floating
+            observation when evaluated. Later coupons do not rebuild a resolved
+            principal schedule.
+        """
+        ...
+
+    @classmethod
+    def from_tenors(cls, **parameters: Any) -> UnresolvedInstrument:
+        """Retain product terms with explicit start_tenor/tenor, expiry_tenor,
+        or delivery_tenor fields. Trade evaluation supplies actual dates.
+
+        Parameters
+        ----------
+        parameters : Any
+            Constructor keyword terms. Use separate tenor keywords in place of
+            dates, with all other fields following the product constructor.
         """
         ...
 
@@ -514,7 +528,7 @@ class Loan(Instrument):
         """Native payment currency."""
         ...
 
-    def coupon_fixing_requests(self) -> DataFrame:
+    def coupon_fixing_requests(self, context: Any | None = ...) -> DataFrame:
         """Return unique index/fixing-date rows with ISO fixing/start/end dates in a DataFrame.
 
         Returns
@@ -524,6 +538,11 @@ class Loan(Instrument):
             fixing date. Columns are market_index, fixing_date, start_date, and
             end_date; dates are ISO strings. Fixed-rate loans have no rows.
             The pricer decides which past fixings are needed at evaluation.
+        Parameters
+        ----------
+        context : PricingContext or None, optional
+            Required when the initial floating amortization rate is unresolved.
+            None uses an already concrete loan schedule.
         """
         ...
 
@@ -584,6 +603,19 @@ class EquityForward(Instrument):
     """
 
     def __new__(cls, identifier: str, market_index: _IndexLike, delivery_date: _DateLike, strike: float, currency: _CurrencyLike, day_counter: DayCounter | str | None=...) -> Self:
+        ...
+
+    @classmethod
+    def from_tenors(cls, **parameters: Any) -> UnresolvedInstrument:
+        """Retain product terms with explicit start_tenor/tenor, expiry_tenor,
+        or delivery_tenor fields. Trade evaluation supplies actual dates.
+
+        Parameters
+        ----------
+        parameters : Any
+            Constructor keyword terms. Use separate tenor keywords in place of
+            dates, with all other fields following the product constructor.
+        """
         ...
 
     @classmethod
@@ -704,6 +736,19 @@ class EuropeanSwaption(Instrument):
     """
 
     def __new__(cls, identifier: str, expiry_date: _DateLike, maturity_date: _DateLike, strike: float, notional: float, currency: _CurrencyLike, market_index: _IndexLike, swaption_type: SwaptionType | str | None=..., day_counter: DayCounter | str | None=..., compounding: Compounding | str | None=..., rate_frequency: Frequency | str | None=..., fixed_leg_frequency: Frequency | str | None=..., floating_leg_frequency: Frequency | str | None=..., calendar: Calendar | str | None=...) -> Self:
+        ...
+
+    @classmethod
+    def from_tenors(cls, **parameters: Any) -> UnresolvedInstrument:
+        """Retain product terms with explicit start_tenor/tenor, expiry_tenor,
+        or delivery_tenor fields. Trade evaluation supplies actual dates.
+
+        Parameters
+        ----------
+        parameters : Any
+            Constructor keyword terms. Use separate tenor keywords in place of
+            dates, with all other fields following the product constructor.
+        """
         ...
 
     @classmethod
@@ -867,6 +912,19 @@ class Swap(Instrument):
         ...
 
     @classmethod
+    def from_tenors(cls, **parameters: Any) -> UnresolvedInstrument:
+        """Retain product terms with explicit start_tenor/tenor, expiry_tenor,
+        or delivery_tenor fields. Trade evaluation supplies actual dates.
+
+        Parameters
+        ----------
+        parameters : Any
+            Constructor keyword terms. Use separate tenor keywords in place of
+            dates, with all other fields following the product constructor.
+        """
+        ...
+
+    @classmethod
     def from_dict(cls, obj: Mapping[str, Any]) -> Self:
         """Builds a product using the same fields and defaults as its constructor.
 
@@ -1016,6 +1074,19 @@ class CrossCurrencySwap(Instrument):
         ...
 
     def __repr__(self) -> str:
+        ...
+
+    @classmethod
+    def from_tenors(cls, **parameters: Any) -> UnresolvedInstrument:
+        """Retain product terms with explicit start_tenor/tenor, expiry_tenor,
+        or delivery_tenor fields. Trade evaluation supplies actual dates.
+
+        Parameters
+        ----------
+        parameters : Any
+            Constructor keyword terms. Use separate tenor keywords in place of
+            dates, with all other fields following the product constructor.
+        """
         ...
 
     @classmethod
@@ -1169,6 +1240,19 @@ class BasisSwap(Instrument):
         ...
 
     @classmethod
+    def from_tenors(cls, **parameters: Any) -> UnresolvedInstrument:
+        """Retain product terms with explicit start_tenor/tenor, expiry_tenor,
+        or delivery_tenor fields. Trade evaluation supplies actual dates.
+
+        Parameters
+        ----------
+        parameters : Any
+            Constructor keyword terms. Use separate tenor keywords in place of
+            dates, with all other fields following the product constructor.
+        """
+        ...
+
+    @classmethod
     def from_dict(cls, obj: Mapping[str, Any]) -> Self:
         """Builds a product using the same fields and defaults as its constructor.
 
@@ -1313,6 +1397,19 @@ class FixFloatCrossCurrencySwap(Instrument):
         ...
 
     def __repr__(self) -> str:
+        ...
+
+    @classmethod
+    def from_tenors(cls, **parameters: Any) -> UnresolvedInstrument:
+        """Retain product terms with explicit start_tenor/tenor, expiry_tenor,
+        or delivery_tenor fields. Trade evaluation supplies actual dates.
+
+        Parameters
+        ----------
+        parameters : Any
+            Constructor keyword terms. Use separate tenor keywords in place of
+            dates, with all other fields following the product constructor.
+        """
         ...
 
     @classmethod
@@ -1500,6 +1597,19 @@ class FixedRateBond(Instrument):
         dict[str, Any]
             JSON-compatible constructor fields with resolved rate/payment defaults
             and native optional schedule/index representations; excludes trade state.
+        """
+        ...
+
+    @classmethod
+    def from_tenors(cls, **parameters: Any) -> UnresolvedInstrument:
+        """Retain product terms with explicit start_tenor/tenor, expiry_tenor,
+        or delivery_tenor fields. Trade evaluation supplies actual dates.
+
+        Parameters
+        ----------
+        parameters : Any
+            Constructor keyword terms. Use separate tenor keywords in place of
+            dates, with all other fields following the product constructor.
         """
         ...
 
@@ -2490,6 +2600,19 @@ class SteppedCouponBond(Instrument):
         ...
 
     @classmethod
+    def from_tenors(cls, **parameters: Any) -> UnresolvedInstrument:
+        """Retain product terms with explicit start_tenor/tenor, expiry_tenor,
+        or delivery_tenor fields. Trade evaluation supplies actual dates.
+
+        Parameters
+        ----------
+        parameters : Any
+            Constructor keyword terms. Use separate tenor keywords in place of
+            dates, with all other fields following the product constructor.
+        """
+        ...
+
+    @classmethod
     def from_dict(cls, obj: Mapping[str, Any]) -> Self:
         """Builds a product using the same fields and defaults as its constructor.
 
@@ -2657,6 +2780,19 @@ class FloatingRateNote(Instrument):
         ...
 
     @classmethod
+    def from_tenors(cls, **parameters: Any) -> UnresolvedInstrument:
+        """Retain product terms with explicit start_tenor/tenor, expiry_tenor,
+        or delivery_tenor fields. Trade evaluation supplies actual dates.
+
+        Parameters
+        ----------
+        parameters : Any
+            Constructor keyword terms. Use separate tenor keywords in place of
+            dates, with all other fields following the product constructor.
+        """
+        ...
+
+    @classmethod
     def from_dict(cls, obj: Mapping[str, Any]) -> Self:
         """Builds a product using the same fields and defaults as its constructor.
 
@@ -2781,6 +2917,19 @@ class FixedRateDeposit(Instrument):
         ...
 
     def __repr__(self) -> str:
+        ...
+
+    @classmethod
+    def from_tenors(cls, **parameters: Any) -> UnresolvedInstrument:
+        """Retain product terms with explicit start_tenor/tenor, expiry_tenor,
+        or delivery_tenor fields. Trade evaluation supplies actual dates.
+
+        Parameters
+        ----------
+        parameters : Any
+            Constructor keyword terms. Use separate tenor keywords in place of
+            dates, with all other fields following the product constructor.
+        """
         ...
 
     @classmethod
@@ -2918,6 +3067,19 @@ class FxForward(Instrument):
         ...
 
     @classmethod
+    def from_tenors(cls, **parameters: Any) -> UnresolvedInstrument:
+        """Retain product terms with explicit start_tenor/tenor, expiry_tenor,
+        or delivery_tenor fields. Trade evaluation supplies actual dates.
+
+        Parameters
+        ----------
+        parameters : Any
+            Constructor keyword terms. Use separate tenor keywords in place of
+            dates, with all other fields following the product constructor.
+        """
+        ...
+
+    @classmethod
     def from_dict(cls, obj: Mapping[str, Any]) -> Self:
         """Builds a product using the same fields and defaults as its constructor.
 
@@ -3039,6 +3201,19 @@ class FxOption(Instrument):
         ...
 
     @classmethod
+    def from_tenors(cls, **parameters: Any) -> UnresolvedInstrument:
+        """Retain product terms with explicit start_tenor/tenor, expiry_tenor,
+        or delivery_tenor fields. Trade evaluation supplies actual dates.
+
+        Parameters
+        ----------
+        parameters : Any
+            Constructor keyword terms. Use separate tenor keywords in place of
+            dates, with all other fields following the product constructor.
+        """
+        ...
+
+    @classmethod
     def from_dict(cls, obj: Mapping[str, Any]) -> Self:
         """Builds a product using the same fields and defaults as its constructor.
 
@@ -3141,6 +3316,19 @@ class EquityOption(Instrument):
         ...
 
     def __repr__(self) -> str:
+        ...
+
+    @classmethod
+    def from_tenors(cls, **parameters: Any) -> UnresolvedInstrument:
+        """Retain product terms with explicit start_tenor/tenor, expiry_tenor,
+        or delivery_tenor fields. Trade evaluation supplies actual dates.
+
+        Parameters
+        ----------
+        parameters : Any
+            Constructor keyword terms. Use separate tenor keywords in place of
+            dates, with all other fields following the product constructor.
+        """
         ...
 
     @classmethod
@@ -3249,6 +3437,19 @@ class CreditDefaultSwap(Instrument):
         ...
 
     def __repr__(self) -> str:
+        ...
+
+    @classmethod
+    def from_tenors(cls, **parameters: Any) -> UnresolvedInstrument:
+        """Retain product terms with explicit start_tenor/tenor, expiry_tenor,
+        or delivery_tenor fields. Trade evaluation supplies actual dates.
+
+        Parameters
+        ----------
+        parameters : Any
+            Constructor keyword terms. Use separate tenor keywords in place of
+            dates, with all other fields following the product constructor.
+        """
         ...
 
     @classmethod
@@ -3384,6 +3585,19 @@ class CapFloor(Instrument):
         ...
 
     @classmethod
+    def from_tenors(cls, **parameters: Any) -> UnresolvedInstrument:
+        """Retain product terms with explicit start_tenor/tenor, expiry_tenor,
+        or delivery_tenor fields. Trade evaluation supplies actual dates.
+
+        Parameters
+        ----------
+        parameters : Any
+            Constructor keyword terms. Use separate tenor keywords in place of
+            dates, with all other fields following the product constructor.
+        """
+        ...
+
+    @classmethod
     def from_dict(cls, obj: Mapping[str, Any]) -> Self:
         """Builds a product using the same fields and defaults as its constructor.
 
@@ -3516,6 +3730,19 @@ class CapletFloorlet(Instrument):
         ...
 
     @classmethod
+    def from_tenors(cls, **parameters: Any) -> UnresolvedInstrument:
+        """Retain product terms with explicit start_tenor/tenor, expiry_tenor,
+        or delivery_tenor fields. Trade evaluation supplies actual dates.
+
+        Parameters
+        ----------
+        parameters : Any
+            Constructor keyword terms. Use separate tenor keywords in place of
+            dates, with all other fields following the product constructor.
+        """
+        ...
+
+    @classmethod
     def from_dict(cls, obj: Mapping[str, Any]) -> Self:
         """Builds a product using the same fields and defaults as its constructor.
 
@@ -3639,6 +3866,19 @@ class RateFutures(Instrument):
         ...
 
     @classmethod
+    def from_tenors(cls, **parameters: Any) -> UnresolvedInstrument:
+        """Retain product terms with explicit start_tenor/tenor, expiry_tenor,
+        or delivery_tenor fields. Trade evaluation supplies actual dates.
+
+        Parameters
+        ----------
+        parameters : Any
+            Constructor keyword terms. Use separate tenor keywords in place of
+            dates, with all other fields following the product constructor.
+        """
+        ...
+
+    @classmethod
     def from_dict(cls, obj: Mapping[str, Any]) -> Self:
         """Builds a product using the same fields and defaults as its constructor.
 
@@ -3726,6 +3966,19 @@ class ScriptedProduct:
     def __repr__(self) -> str:
         ...
 
+    @classmethod
+    def from_tenors(cls, **parameters: Any) -> UnresolvedInstrument:
+        """Retain product terms with explicit start_tenor/tenor, expiry_tenor,
+        or delivery_tenor fields. Trade evaluation supplies actual dates.
+
+        Parameters
+        ----------
+        parameters : Any
+            Constructor keyword terms. Use separate tenor keywords in place of
+            dates, with all other fields following the product constructor.
+        """
+        ...
+
     @staticmethod
     def from_dict(obj: Mapping[str, Any]) -> ScriptedProduct:
         """Builds a script from events [{date, code}], currency, and optional model assignments.
@@ -3795,3 +4048,29 @@ class ScriptedProduct:
         ...
 
     def __getitem__(self, key: str, /) -> Any: ...
+
+@final
+class UnresolvedInstrument(Instrument):
+    """Product terms created by from_tenors before a pricing context exists.
+
+    Put in Trade for automatic resolution, or call resolve_instrument(context)
+    once to retain a concrete contract across valuations.
+    """
+
+    def resolve_instrument(self, context: Any) -> Instrument:
+        """Resolve product terms once against an initialized pricing context.
+
+        Parameters
+        ----------
+        context : PricingContext
+            Initialized market supplying the evaluation date, curves and fixings.
+        """
+        ...
+    def to_dict(self) -> dict[str, Any]:
+        """Return an independent copy of the original product parameters."""
+        ...
+    def keys(self) -> list[str]:
+        """Return the pending specification keys; supports dict(obj)."""
+        ...
+    def __getitem__(self, key: str, /) -> Any: ...
+    def __repr__(self) -> str: ...

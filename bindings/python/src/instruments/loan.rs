@@ -5,13 +5,13 @@ use std::collections::HashSet;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyType};
 use quantsupport::prelude::{
-    DualFwd, Loan as QsLoan, LoanRepaymentStructure, LoanTrade, MakeLoan,
-    PrepaymentModelConfiguration,
+    DualFwd, Loan as QsLoan, LoanRepaymentStructure, LoanTrade, MakeLoan, MarketDataProvider,
+    PrepaymentModelConfiguration, QSError, ResolutionContext, Resolve,
 };
 
 use crate::common::conversion::{
     dataframe, extract_business_day_convention, extract_calendar, extract_currency, extract_date,
-    extract_day_counter, extract_frequency, extract_market_index, extract_period, from_py, qs_err,
+    extract_frequency, extract_market_index, extract_period, from_py, qs_err,
 };
 use crate::common::enums::Currency;
 use crate::instruments::coupons::CouponDefinition;
@@ -19,7 +19,8 @@ use crate::pricing::extension::{Instrument, Trade};
 
 /// A native loan contract; rates and CPRs are fractions, not percentages.
 ///
-/// Contractual principal and cashflows are fixed at construction. Market rates,
+/// Floating amortizing principal is resolved at evaluation when no initial
+/// amortization rate is supplied. Explicit rates build a concrete contract. Market rates,
 /// prepayment, and default are applied during valuation through ``Trade`` and
 /// ``PricingContext``. Dates and enums accept their typed values
 /// or string representations; coupons, repayment, and prepayment terms also accept
@@ -38,6 +39,9 @@ use crate::pricing::extension::{Instrument, Trade};
 /// coupons : list[FixedRateCoupon, FloatingRateCoupon, OptionEmbeddedCoupon, or dict]
 ///     Positional coupon definitions, as for SteppedCouponBond. The last entry
 ///     repeats through maturity; each entry uses a native coupon class.
+///     Accrual day counters belong to coupons. Floating coupons use their explicit
+///     day counter, or the index convention when omitted; amortization uses the
+///     same accrual conventions as interest.
 /// currency : enum or str
 ///     Payment currency; the pricing policy selects the discount curve.
 /// repayment : LoanRepaymentStructure, str or dict, optional
@@ -45,8 +49,6 @@ use crate::pricing::extension::{Instrument, Trade};
 /// payment_frequency, fixing_frequency : Frequency or str, optional
 ///     Payments default to monthly. Resets default to index metadata, or the
 ///     payment frequency for daily indices, and must align with accrual dates.
-/// day_counter : DayCounter or str, optional
-///     Coupon/amortization accrual basis; defaults to Actual365.
 /// prepayment : PrepaymentModelConfiguration, str or dict, optional
 ///     Conditional prepayment model; defaults to none. Applied by the pricer.
 /// credit_index : MarketIndex or str, optional
@@ -63,20 +65,22 @@ use crate::pricing::extension::{Instrument, Trade};
 /// business_day_convention : BusinessDayConvention or str, optional
 ///     Payment adjustment; defaults to Unadjusted. Accrual dates stay fixed.
 /// amortization_rate : float, optional
-///     Initial annual all-in decimal rate for principal construction. Required
-///     for floating-first French/balloon loans; otherwise defaults to the first
-///     fixed coupon. Coupon changes do not rebuild contractual principal.
+///     Optional initial annual all-in decimal rate for principal construction.
+///     Blank uses the first fixed coupon, or resolves the first floating
+///     observation when evaluated. Resolved principal stays fixed.
 ///
 /// Raises
 /// ------
 /// QuantSupportError
-///     If contractual terms are invalid, amortization inputs are missing, or
+///     If contractual terms are invalid, or
 ///     coupon lists are empty/oversized or resets do not align with accrual dates.
 #[pyclass(module = "quantsupport", extends = Instrument, subclass, dict, unsendable, from_py_object)]
 #[derive(Clone)]
 pub struct Loan {
     /// Native contractual cashflows and prepayment/credit terms used in valuation.
-    pub inner: QsLoan<DualFwd>,
+    pub inner: Option<QsLoan<DualFwd>>,
+    principal: f64,
+    payment_currency: quantsupport::prelude::Currency,
     builder: MakeLoan<DualFwd>,
     construction_parameters: serde_json::Value,
 }
@@ -89,17 +93,64 @@ impl Loan {
     ///
     /// # Errors
     /// Propagates invalid overridden principal or contractual construction terms.
-    pub fn build_native_loan_trade(&self, position: &Trade) -> PyResult<LoanTrade<DualFwd>> {
-        let loan = match position.notional() {
-            Some(notional) => self
-                .builder
-                .clone()
-                .with_notional(notional)
-                .build()
-                .map_err(qs_err)?,
-            None => self.inner.clone(),
+    pub fn build_native_loan_trade(
+        &self,
+        position: &Trade,
+        context: &ResolutionContext<'_>,
+    ) -> PyResult<LoanTrade<DualFwd>> {
+        let loan = match (position.notional(), &self.inner) {
+            (None, Some(loan)) => loan.clone(),
+            (notional, _) => {
+                let mut maker = self.builder.clone();
+                if let Some(amount) = notional {
+                    maker = maker.with_notional(amount);
+                }
+                maker.resolve(context).map_err(qs_err)?
+            }
         };
-        Ok(LoanTrade::new(loan, position.trade_date(), position.side()))
+        Ok(LoanTrade::new(
+            loan,
+            position.trade_date()?,
+            position.side(),
+        ))
+    }
+
+    pub fn freeze_resolved_contract(&mut self, market: &impl MarketDataProvider) -> PyResult<()> {
+        let context = ResolutionContext::new(market);
+        let loan = self.builder.resolve(&context).map_err(qs_err)?;
+        if self.inner.is_none() {
+            let observation = loan
+                .coupon_rate_observations()
+                .first()
+                .and_then(Option::as_ref)
+                .ok_or_else(|| {
+                    pyo3::exceptions::PyValueError::new_err("missing initial loan observation")
+                })?;
+            let fixing = context.resolve_index_rate(observation).map_err(qs_err)?;
+            let rate = match loan.contractual_leg().cashflows().iter().find(|flow| {
+                matches!(
+                    flow,
+                    quantsupport::prelude::CashflowType::FloatingRateCoupon(_)
+                        | quantsupport::prelude::CashflowType::OptionEmbeddedCoupon(_)
+                )
+            }) {
+                Some(quantsupport::prelude::CashflowType::FloatingRateCoupon(coupon)) => {
+                    fixing + coupon.spread().value()
+                }
+                Some(quantsupport::prelude::CashflowType::OptionEmbeddedCoupon(coupon)) => {
+                    coupon.payoff_ops().eval(fixing).map_err(qs_err)? + coupon.spread().value()
+                }
+                _ => {
+                    return Err(pyo3::exceptions::PyValueError::new_err(
+                        "missing initial loan coupon",
+                    ))
+                }
+            };
+            self.builder = self.builder.clone().with_initial_amortization_rate(rate);
+            self.construction_parameters["amortization_rate"] = serde_json::json!(rate);
+        }
+        self.inner = Some(loan);
+        Ok(())
     }
 }
 
@@ -110,7 +161,7 @@ impl Loan {
     #[allow(clippy::too_many_arguments)]
     #[pyo3(signature = (identifier, start_date, maturity_date, notional, coupons, currency,
         repayment = None, payment_frequency = None, fixing_frequency = None,
-        day_counter = None, prepayment = None, credit_index = None, recovery = None,
+        prepayment = None, credit_index = None, recovery = None,
         fixing_lag = None, index_tenor = None, calendar = None, business_day_convention = None,
         amortization_rate = None))]
     fn new(
@@ -123,7 +174,6 @@ impl Loan {
         repayment: Option<&Bound<'_, PyAny>>,
         payment_frequency: Option<&Bound<'_, PyAny>>,
         fixing_frequency: Option<&Bound<'_, PyAny>>,
-        day_counter: Option<&Bound<'_, PyAny>>,
         prepayment: Option<&Bound<'_, PyAny>>,
         credit_index: Option<&Bound<'_, PyAny>>,
         recovery: Option<f64>,
@@ -142,7 +192,6 @@ impl Loan {
             .transpose()?;
         let payment_frequency = payment_frequency.map(extract_frequency).transpose()?;
         let fixing_frequency = fixing_frequency.map(extract_frequency).transpose()?;
-        let day_counter = day_counter.map(extract_day_counter).transpose()?;
         let prepayment = prepayment
             .map(|value| from_py::<PrepaymentModelConfiguration>(value, "prepayment"))
             .transpose()?;
@@ -157,7 +206,7 @@ impl Loan {
             "notional": notional, "coupons": coupons.iter().map(CouponDefinition::specification).collect::<PyResult<Vec<_>>>()?,
             "currency": currency, "repayment": repayment,
             "payment_frequency": payment_frequency, "fixing_frequency": fixing_frequency,
-            "day_counter": day_counter, "prepayment": prepayment, "credit_index": credit_index,
+            "prepayment": prepayment, "credit_index": credit_index,
             "recovery": recovery, "fixing_lag": fixing_lag, "index_tenor": index_tenor,
             "calendar": calendar, "business_day_convention": business_day_convention,
             "amortization_rate": amortization_rate,
@@ -183,9 +232,6 @@ impl Loan {
         if let Some(value) = fixing_frequency {
             builder = builder.with_coupon_reset_frequency(value);
         }
-        if let Some(value) = day_counter {
-            builder = builder.with_day_counter(value);
-        }
         if let Some(value) = prepayment {
             builder = builder.with_prepayment_configuration(value);
         }
@@ -210,10 +256,16 @@ impl Loan {
         if let Some(value) = amortization_rate {
             builder = builder.with_initial_amortization_rate(value);
         }
-        let inner = builder.clone().build().map_err(qs_err)?;
+        let inner = match builder.clone().build() {
+            Ok(loan) => Some(loan),
+            Err(QSError::ValueNotSetErr(message)) if message.contains("amortization_rate") => None,
+            Err(error) => return Err(qs_err(error)),
+        };
         Ok(
             PyClassInitializer::from(Instrument::new(identifier)).add_subclass(Self {
                 inner,
+                principal: notional,
+                payment_currency: currency,
                 builder,
                 construction_parameters,
             }),
@@ -227,10 +279,30 @@ impl Loan {
     /// and are deduplicated by index/fixing date. A fixed loan has no rows.
     /// This lists contractual resets; the pricer determines which past fixings
     /// are required for unpaid coupons at a particular evaluation date.
-    fn coupon_fixing_requests<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+    #[pyo3(signature=(context=None))]
+    fn coupon_fixing_requests<'py>(
+        &self,
+        py: Python<'py>,
+        context: Option<PyRef<'_, crate::pricing::context::PricingContext>>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let resolved;
+        let loan = match &self.inner {
+            Some(loan) => loan,
+            None => {
+                let context = context.as_ref().ok_or_else(|| {
+                    pyo3::exceptions::PyValueError::new_err(
+                        "coupon_fixing_requests requires a context for an unresolved loan",
+                    )
+                })?;
+                resolved = self
+                    .builder
+                    .resolve(&ResolutionContext::new(&context.market_view()?))
+                    .map_err(qs_err)?;
+                &resolved
+            }
+        };
         let mut seen = HashSet::new();
-        let requests: Vec<_> = self
-            .inner
+        let requests: Vec<_> = loan
             .coupon_rate_observations()
             .iter()
             .flatten()
@@ -298,6 +370,17 @@ impl Loan {
         )
     }
 
+    /// Defines a loan with explicit tenor keywords; evaluation resolves dates and initial rates.
+    #[classmethod]
+    #[pyo3(signature=(**parameters))]
+    fn from_tenors<'py>(
+        cls: &Bound<'py, PyType>,
+        parameters: Option<&Bound<'py, PyDict>>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let empty = PyDict::new(cls.py());
+        crate::instruments::unresolved::from_tenors(cls, parameters.unwrap_or(&empty))
+    }
+
     /// Returns JSON-compatible construction parameters for ``from_dict()``.
     ///
     /// Includes optional settings as supplied, which may be ``None`` when a
@@ -310,13 +393,13 @@ impl Loan {
     /// Original principal advanced under the contract.
     #[getter]
     fn notional(&self) -> f64 {
-        self.inner.notional()
+        self.principal
     }
 
     /// Native payment currency.
     #[getter]
     fn currency(&self) -> Currency {
-        self.inner.currency().into()
+        self.payment_currency.into()
     }
 
     /// Reads a serialized construction parameter by name.
