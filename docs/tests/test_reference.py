@@ -22,7 +22,7 @@ sys.path.insert(0, str(ROOT / "docs/_ext"))
 from excel_api import function_page, result_type, worksheet_type
 from python_api import (
     class_declaration, construction_note, constructor_signature, declaration_source,
-    declarations, method_signature, own_constructor, public_annotation, public_signature,
+    declarations, method_signature, own_constructor, prepare_class_docstrings, public_annotation, public_signature,
 )
 from api_navigation import PYTHON_EXCEPTIONS, PYTHON_SECTIONS, excel_section
 from notebook_studies import STUDIES, publication_links
@@ -116,6 +116,15 @@ class Text(HTMLParser):
 
 
 class PythonReferenceTests(unittest.TestCase):
+    def test_autoapi_short_class_names_include_own_constructor_parameters(self):
+        for name in ("Loan", "quantsupport.instruments.Loan"):
+            lines = ["Existing summary"]
+            prepare_class_docstrings(None, "class", name, None, None, lines)
+            docs = documented_parameters("\n".join(lines))
+            self.assertIn("amortization_rate", docs)
+            self.assertIn("coupons", docs)
+            self.assertNotIn("day_counter", docs)
+
     def test_every_public_parameter_has_a_description(self):
         checked = 0
         for name, (cls, _) in declarations().items():
@@ -500,6 +509,14 @@ class RenderedReferenceTests(unittest.TestCase):
             self.assertNotIn("Subclass positional construction arguments", swap.text)
             self.assertNotIn("_DateLike", swap.text)
             self.assertIn("quantsupport.instruments.Swap.from_dict", swap.ids)
+            loan = Text((output / "autoapi/quantsupport/instruments/Loan.html").read_text())
+            for description in ("Nonempty contract identifier", "Initial annual all-in decimal rate",
+                                "Each coupon owns its", "Loan constructor keyword fields"):
+                self.assertIn(description, loan.text)
+            self.assertRegex(loan.text, r"Parameters\s*:")
+            floating = Text((output / "autoapi/quantsupport/instruments/FloatingRateCoupon.html").read_text())
+            self.assertRegex(floating.text, r"Parameters\s*:")
+            self.assertIn("day_counter", floating.text)
             for section in ("Methods", "Properties"):
                 self.assertIn(section, swap.text)
             calendars = Text((output / "python/sections/time/calendars.html").read_text())
