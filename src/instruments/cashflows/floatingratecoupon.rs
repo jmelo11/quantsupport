@@ -377,19 +377,19 @@ where
         let mut value_date =
             calendar.adjust(self.start_date, Some(BusinessDayConvention::Preceding));
         while value_date < self.end_date {
-            let next = calendar.advance(value_date, Period::new(1, TimeUnit::Days), None, false);
+            let next = calendar.advance(value_date, Period::new(1, TimeUnit::Days), None, false)?;
             let observation = calendar.advance(
                 value_date,
                 Period::new(-conventions.lookback_days(), TimeUnit::Days),
                 None,
                 false,
-            );
+            )?;
             let observation_end = calendar.advance(
                 next,
                 Period::new(-conventions.lookback_days(), TimeUnit::Days),
                 None,
                 false,
-            );
+            )?;
             let weight = if conventions.observation_shift() {
                 self.day_counter.year_fraction(observation, observation_end)
             } else {

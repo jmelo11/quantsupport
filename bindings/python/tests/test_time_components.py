@@ -17,6 +17,20 @@ class TimeComponentTests(unittest.TestCase):
             self.assertIn(name, qs.__all__)
             self.assertIn(name, time.__all__)
 
+    def test_advance_reports_empty_dates_and_out_of_range_offsets(self):
+        empty = qs.Date(-262143, 1, 1)
+        date = qs.Date(2026, 2, 24)
+        for units in ("Days", "Weeks", "Months", "Years"):
+            with self.subTest(units=units):
+                with self.assertRaisesRegex(qs.QuantSupportValueError, "empty date"):
+                    empty.advance(0, units)
+                with self.assertRaisesRegex(qs.QuantSupportValueError, "empty date"):
+                    qs.Calendar.TARGET.advance(empty, qs.Period(0, units))
+                with self.assertRaises(qs.QuantSupportValueError):
+                    date.advance(2**31 - 1, units)
+                with self.assertRaises(qs.QuantSupportValueError):
+                    qs.Calendar.TARGET.advance(date, qs.Period(2**31 - 1, units))
+
     def test_calendar_variants_and_markets(self):
         fixed = {
             "NullCalendar": "NullCalendar", "WeekendsOnly": "WeekendsOnly",

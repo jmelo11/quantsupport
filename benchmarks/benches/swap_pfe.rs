@@ -15,7 +15,9 @@ fn flat_curve(ref_date: Date, rate: f64, max_years: u32) -> DiscountTermStructur
     dfs.push(1.0);
 
     for i in 1..=n_points {
-        let d = ref_date.advance(3 * i as i32, TimeUnit::Months);
+        let d = ref_date
+            .advance(3 * i as i32, TimeUnit::Months)
+            .expect("valid date advancement");
         let t = dc.year_fraction(ref_date, d);
         dates.push(d);
         dfs.push((-rate * t).exp());
@@ -56,7 +58,11 @@ fn create_swaps(n: usize, ref_date: Date) -> Vec<SwapTrade<f64>> {
             let swap = MakeSwap::<f64>::default()
                 .with_identifier(format!("USD_IRS_{maturity}Y_{i}"))
                 .with_start_date(ref_date)
-                .with_maturity_date(ref_date.advance(maturity as i32, TimeUnit::Years))
+                .with_maturity_date(
+                    ref_date
+                        .advance(maturity as i32, TimeUnit::Years)
+                        .expect("valid date advancement"),
+                )
                 .with_fixed_rate(rate)
                 .with_notional(notional)
                 .with_rate_definition(RateDefinition::new(
@@ -126,7 +132,9 @@ fn run_pfe(
     model.add_curve_model(MarketIndex::SOFR, usd_rate);
 
     // 4. Evaluation dates (monthly out to 10Y)
-    let max_maturity = ref_date.advance(10, TimeUnit::Years);
+    let max_maturity = ref_date
+        .advance(10, TimeUnit::Years)
+        .expect("valid date advancement");
     let schedule = MakeSchedule::new(ref_date, max_maturity)
         .with_frequency(Frequency::Monthly)
         .build()

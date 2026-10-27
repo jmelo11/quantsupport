@@ -114,7 +114,10 @@ impl Date {
     /// Advances the date by `n` units (`TimeUnit` or string).
     fn advance(&self, n: i32, units: &Bound<'_, PyAny>) -> PyResult<Self> {
         Ok(Self {
-            inner: self.inner.advance(n, extract_time_unit(units)?),
+            inner: self
+                .inner
+                .advance(n, extract_time_unit(units)?)
+                .map_err(qs_err)?,
         })
     }
 
@@ -556,12 +559,15 @@ impl Calendar {
             .map(extract_business_day_convention)
             .transpose()?;
         Ok(Date {
-            inner: self.inner.advance(
-                extract_date(date)?,
-                extract_period(period)?,
-                conv,
-                end_of_month,
-            ),
+            inner: self
+                .inner
+                .advance(
+                    extract_date(date)?,
+                    extract_period(period)?,
+                    conv,
+                    end_of_month,
+                )
+                .map_err(qs_err)?,
         })
     }
 

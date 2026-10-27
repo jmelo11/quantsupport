@@ -886,7 +886,9 @@ mod tests {
         let mut dates = vec![ref_date];
         let mut dfs = vec![1.0_f64];
         for y in 1..=5 {
-            let d = ref_date.advance(y, TimeUnit::Years);
+            let d = ref_date
+                .advance(y, TimeUnit::Years)
+                .expect("valid date advancement");
             let t = dc.year_fraction(ref_date, d);
             dates.push(d);
             dfs.push((-rate * t).exp());
@@ -984,7 +986,11 @@ mod tests {
         let swap = MakeSwap::<f64>::default()
             .with_identifier("USD_IRS_5Y".to_string())
             .with_start_date(ref_date)
-            .with_maturity_date(ref_date.advance(5, TimeUnit::Years))
+            .with_maturity_date(
+                ref_date
+                    .advance(5, TimeUnit::Years)
+                    .expect("valid date advancement"),
+            )
             .with_fixed_rate(0.038)
             .with_notional(10_000_000.0)
             .with_rate_definition(RateDefinition::new(
@@ -1009,7 +1015,9 @@ mod tests {
         let requests = inspector.requests().to_vec();
         let claims = ns.into_claims();
 
-        let max_maturity = ref_date.advance(5, TimeUnit::Years);
+        let max_maturity = ref_date
+            .advance(5, TimeUnit::Years)
+            .expect("valid date advancement");
         let schedule = MakeSchedule::new(ref_date, max_maturity)
             .with_frequency(Frequency::Quarterly)
             .build()

@@ -208,7 +208,7 @@ impl<T: Scalar> MakeOvernightIndexSwap<T> {
             Period::new(conventions.settlement_days(), TimeUnit::Days),
             None,
             false,
-        );
+        )?;
         let forward_start = conventions
             .forward_start()
             .unwrap_or(Period::new(0, TimeUnit::Days));
@@ -328,7 +328,7 @@ impl<T: Scalar> MakeOvernightIndexSwap<T> {
                         Period::new(conventions.payment_lag(), TimeUnit::Days),
                         Some(conventions.payment_convention()),
                         false,
-                    ),
+                    )?,
                     Some(conventions.payment_convention()),
                 );
                 let mut coupon = template.for_period(
@@ -504,19 +504,23 @@ mod resolution_tests {
         let market = empty_market(reference());
         let ctx = ResolutionContext::new(&market);
         let calendar = Calendar::TARGET(TARGET::new());
-        let first = calendar.advance(
-            reference(),
-            p("3M")?,
-            Some(BusinessDayConvention::ModifiedFollowing),
-            false,
-        );
+        let first = calendar
+            .advance(
+                reference(),
+                p("3M")?,
+                Some(BusinessDayConvention::ModifiedFollowing),
+                false,
+            )
+            .expect("valid date advancement");
         let end = reference() + p("2Y")?;
-        let last = calendar.advance(
-            end,
-            Period::new(-3, TimeUnit::Months),
-            Some(BusinessDayConvention::ModifiedFollowing),
-            false,
-        );
+        let last = calendar
+            .advance(
+                end,
+                Period::new(-3, TimeUnit::Months),
+                Some(BusinessDayConvention::ModifiedFollowing),
+                false,
+            )
+            .expect("valid date advancement");
         let maker = MakeOvernightIndexSwap::<f64>::from_tenor(MarketIndex::ESTR, p("2Y")?, 0.03)
             .with_conventions(
                 OisConventions::new()

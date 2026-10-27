@@ -689,11 +689,11 @@ mod tests {
 
     fn sim_dates(ref_date: Date, months: &[i32]) -> Vec<Date> {
         std::iter::once(ref_date)
-            .chain(
-                months
-                    .iter()
-                    .map(|m| ref_date.advance(*m, TimeUnit::Months)),
-            )
+            .chain(months.iter().map(|m| {
+                ref_date
+                    .advance(*m, TimeUnit::Months)
+                    .expect("valid date advancement")
+            }))
             .collect()
     }
 
@@ -817,7 +817,11 @@ mod tests {
 
         let pillar_dates: Vec<Date> = [1, 3, 5]
             .iter()
-            .map(|y| ref_date.advance(*y, TimeUnit::Years))
+            .map(|y| {
+                ref_date
+                    .advance(*y, TimeUnit::Years)
+                    .expect("valid date advancement")
+            })
             .collect();
         let pillar_survivals: Vec<f64> = pillar_dates
             .iter()
@@ -872,7 +876,9 @@ mod tests {
         let dates = sim_dates(ref_date, &[6, 12, 36]); // 3Y is beyond the 1Y pillar
         let (lambda, recovery) = (0.05_f64, 0.4_f64);
 
-        let pillar_date = ref_date.advance(1, TimeUnit::Years);
+        let pillar_date = ref_date
+            .advance(1, TimeUnit::Years)
+            .expect("valid date advancement");
         let s1 = (-lambda * DC.year_fraction(ref_date, pillar_date)).exp();
         let factory = CreditCurveCvaFactory {
             pillar_dates: vec![pillar_date],
@@ -918,8 +924,12 @@ mod tests {
 
         let curve_factory = FundingCurveFvaFactory {
             pillar_dates: vec![
-                ref_date.advance(1, TimeUnit::Years),
-                ref_date.advance(3, TimeUnit::Years),
+                ref_date
+                    .advance(1, TimeUnit::Years)
+                    .expect("valid date advancement"),
+                ref_date
+                    .advance(3, TimeUnit::Years)
+                    .expect("valid date advancement"),
             ],
             pillar_spreads: vec![spread, spread],
             pillar_labels: vec!["1Y".into(), "3Y".into()],

@@ -2180,7 +2180,7 @@ impl Quote {
                         Period::new(-lookback, TimeUnit::Days),
                         None,
                         false,
-                    );
+                    )?;
                     latest = latest.max(observation_end).max(coupon.payment_date());
                 }
                 _ => {}
@@ -2280,7 +2280,7 @@ impl Quote {
                 Period::new(settlement_days, TimeUnit::Days),
                 None,
                 false,
-            ),
+            )?,
             Some(BusinessDayConvention::Following),
         );
         let maturity_date = details.maturity().unwrap_or(start_date + tenor);

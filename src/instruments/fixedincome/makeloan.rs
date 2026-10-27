@@ -421,7 +421,7 @@ impl<T: Scalar> MakeLoan<T> {
                     Period::new(-fixing_lag, TimeUnit::Days),
                     Some(BusinessDayConvention::Preceding),
                     false,
-                );
+                )?;
                 let index_start =
                     calendar.adjust(reset_date, Some(BusinessDayConvention::ModifiedFollowing));
                 let index_tenor = self
@@ -432,7 +432,7 @@ impl<T: Scalar> MakeLoan<T> {
                     index_tenor,
                     Some(BusinessDayConvention::ModifiedFollowing),
                     false,
-                );
+                )?;
                 Some(
                     ForwardRateRequest::new(index.clone(), fixing_date)
                         .with_start_date(index_start)
@@ -977,7 +977,11 @@ mod tests {
             let first = requests[0];
             assert_eq!(
                 first.end_date(),
-                Some(Date::new(2026, 1, 1).advance(period.length(), period.units()))
+                Some(
+                    Date::new(2026, 1, 1)
+                        .advance(period.length(), period.units())
+                        .expect("valid date advancement")
+                )
             );
             let distinct = requests
                 .iter()

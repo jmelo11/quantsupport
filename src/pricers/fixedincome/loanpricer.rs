@@ -44,7 +44,7 @@ use crate::{
     },
     models::prepaymentmodelstate::PrepaymentModelState,
     rates::interestrate::InterestRate,
-    time::{date::Date, daycounter::DayCounter, period::Period},
+    time::{date::Date, daycounter::DayCounter, enums::TimeUnit, period::Period},
     utils::errors::{QSError, Result},
 };
 use std::collections::{HashMap, HashSet};
@@ -293,7 +293,7 @@ impl LoanPricer {
             })?;
         let request = ForwardRateRequest::new(index.clone(), date)
             .with_start_date(date)
-            .with_end_date(date.advance(tenor.length(), tenor.units()));
+            .with_end_date(date.advance(tenor.length(), tenor.units())?);
         Self::resolve_index_rate_observation(state, &request)
     }
 
@@ -454,12 +454,11 @@ impl LoanPricer {
                         DualFwd::zero()
                     };
                 let prepayment_start = start.max(state.evaluation_date);
-                let period_fraction =
-                    if prepayment_start.advance(1, crate::time::enums::TimeUnit::Months) == end {
-                        1.0 / 12.0
-                    } else {
-                        DayCounter::Actual365.year_fraction(prepayment_start, end)
-                    };
+                let period_fraction = if prepayment_start.advance(1, TimeUnit::Months)? == end {
+                    1.0 / 12.0
+                } else {
+                    DayCounter::Actual365.year_fraction(prepayment_start, end)
+                };
                 loan.prepayment_model().conditional_prepayment_probability(
                     &PrepaymentModelState::new(
                         prepayment_start,
@@ -1655,7 +1654,8 @@ mod tests {
                     for segment in 1..=4 {
                         let end = provider
                             .date
-                            .advance(segment * 6, crate::time::enums::TimeUnit::Months);
+                            .advance(segment * 6, TimeUnit::Months)
+                            .expect("valid date advancement");
                         let mut prefix_value = 0.0;
                         let mut repaid = 0.0;
                         for ((date, amount), kind) in table

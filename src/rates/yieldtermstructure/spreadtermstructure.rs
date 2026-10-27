@@ -323,7 +323,11 @@ mod tests {
         let base = FlatForwardTermStructure::new(ref_date, 0.03, rate_def);
 
         let tenors: Vec<Date> = (1..=10)
-            .map(|y| ref_date.advance(y, TimeUnit::Years))
+            .map(|y| {
+                ref_date
+                    .advance(y, TimeUnit::Years)
+                    .expect("valid date advancement")
+            })
             .collect();
 
         let spread = SpreadTermStructure::<f64>::from_curves(
@@ -359,7 +363,11 @@ mod tests {
         let base = FlatForwardTermStructure::new(ref_date, 0.03, rate_def);
 
         let tenors: Vec<Date> = (1..=5)
-            .map(|y| ref_date.advance(y, TimeUnit::Years))
+            .map(|y| {
+                ref_date
+                    .advance(y, TimeUnit::Years)
+                    .expect("valid date advancement")
+            })
             .collect();
 
         let spread = SpreadTermStructure::<f64>::from_curves(

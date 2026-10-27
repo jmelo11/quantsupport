@@ -1,5 +1,3 @@
-use serde::Serialize;
-
 use super::calendars::{
     australia::Australia,
     brazil::Brazil,
@@ -26,6 +24,7 @@ use crate::{
     time::date::Date,
     utils::errors::{QSError, Result},
 };
+use serde::Serialize;
 use std::collections::HashSet;
 
 /// A calendar.
@@ -467,10 +466,63 @@ mod test {
     use crate::time::{
         calendar::Calendar,
         calendars::{
-            brazil::Brazil, chile::Chile, nullcalendar::NullCalendar, target::TARGET,
-            traits::ImplCalendar, unitedstates::UnitedStates, weekendsonly::WeekendsOnly,
+            brazil::Brazil,
+            chile::Chile,
+            nullcalendar::NullCalendar,
+            target::TARGET,
+            traits::{ImplCalendar, IsCalendar},
+            unitedstates::UnitedStates,
+            weekendsonly::WeekendsOnly,
         },
+        date::Date,
+        enums::{BusinessDayConvention, TimeUnit},
+        period::Period,
     };
+
+    #[test]
+    fn advance_rejects_empty_dates_and_preserves_calendar_conventions() {
+        let calendar = Calendar::TARGET(TARGET::new());
+        for units in [
+            TimeUnit::Days,
+            TimeUnit::Weeks,
+            TimeUnit::Months,
+            TimeUnit::Years,
+        ] {
+            assert!(calendar
+                .advance(Date::empty(), Period::new(0, units), None, false)
+                .is_err());
+            assert!(calendar
+                .advance(
+                    Date::new(2026, 2, 24),
+                    Period::new(i32::MAX, units),
+                    None,
+                    false
+                )
+                .is_err());
+        }
+        assert_eq!(
+            calendar
+                .advance(
+                    Date::new(2026, 2, 20),
+                    Period::new(2, TimeUnit::Days),
+                    None,
+                    false
+                )
+                .unwrap(),
+            Date::new(2026, 2, 24)
+        );
+        assert_eq!(
+            calendar
+                .advance(
+                    Date::new(2026, 1, 30),
+                    Period::new(1, TimeUnit::Months),
+                    Some(BusinessDayConvention::ModifiedFollowing),
+                    true
+                )
+                .unwrap(),
+            Date::new(2026, 2, 27)
+        );
+    }
 
     #[test]
     fn test_create_calendar() {

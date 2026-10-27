@@ -53,7 +53,7 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     let swap = MakeSwap::<f64>::default()
         .with_identifier("USD_IRS_5Y".to_string())
         .with_start_date(ref_date)
-        .with_maturity_date(ref_date.advance(5, TimeUnit::Years))
+        .with_maturity_date(ref_date.advance(5, TimeUnit::Years)?)
         .with_fixed_rate(0.0378)
         .with_notional(10_000_000.0)
         .with_rate_definition(RateDefinition::new(
@@ -76,7 +76,7 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     let xccy = MakeFloatFloatCrossCurrencySwap::<f64>::default()
         .with_identifier("CLPUSD_XCCY_5Y".to_string())
         .with_start_date(ref_date)
-        .with_maturity_date(ref_date.advance(5, TimeUnit::Years))
+        .with_maturity_date(ref_date.advance(5, TimeUnit::Years)?)
         .with_domestic_notional(10_000_000.0)
         .with_foreign_notional(10_000_000.0 * fx_clpusd)
         .with_domestic_spread(0.0)

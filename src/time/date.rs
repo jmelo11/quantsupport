@@ -1,10 +1,14 @@
-use super::enums::{TimeUnit, Weekday};
-use super::period::Period;
-use crate::utils::errors::Result;
-use chrono::{Datelike, Duration, Months, NaiveDate};
+use super::{
+    enums::{TimeUnit, Weekday},
+    period::Period,
+};
+use crate::utils::errors::{QSError, Result};
+use chrono::{Datelike, Days, Duration, Months, NaiveDate};
 use serde::{Deserialize, Serialize};
-use std::fmt::Display;
-use std::ops::{Add, AddAssign, Sub, SubAssign};
+use std::{
+    fmt::Display,
+    ops::{Add, AddAssign, Sub, SubAssign},
+};
 
 /// Extends the [`NaiveDate`] struct from the chrono library.
 /// # Examples
@@ -286,10 +290,46 @@ impl Date {
     }
 
     /// Advances this date by `n` units of the specified [`TimeUnit`].
-    #[must_use]
-    pub fn advance(&self, n: i32, units: TimeUnit) -> Self {
-        let base_date = self.base_date.advance(n, units);
-        Self::from(base_date)
+    ///
+    /// # Errors
+    /// Returns an error for an empty date or an offset outside the supported range.
+    pub fn advance(&self, n: i32, units: TimeUnit) -> Result<Self> {
+        if *self == Self::empty() {
+            return Err(QSError::InvalidValueErr(
+                "Cannot advance an empty date; supply a valid anchor date".into(),
+            ));
+        }
+        let outside_range = || {
+            QSError::InvalidValueErr("Date advancement is outside the supported date range".into())
+        };
+        let count = n.unsigned_abs();
+        let shifted = match units {
+            TimeUnit::Days | TimeUnit::Weeks => {
+                let days = u64::from(count) * if units == TimeUnit::Weeks { 7 } else { 1 };
+                if n >= 0 {
+                    self.base_date.checked_add_days(Days::new(days))
+                } else {
+                    self.base_date.checked_sub_days(Days::new(days))
+                }
+            }
+            TimeUnit::Months | TimeUnit::Years => {
+                let months = if units == TimeUnit::Years {
+                    count.checked_mul(12).ok_or_else(outside_range)?
+                } else {
+                    count
+                };
+                if n >= 0 {
+                    self.base_date.checked_add_months(Months::new(months))
+                } else {
+                    self.base_date.checked_sub_months(Months::new(months))
+                }
+            }
+        }
+        .ok_or_else(outside_range)?;
+        if shifted == NaiveDate::MIN {
+            return Err(outside_range());
+        }
+        Ok(Self::from(shifted))
     }
 
     /// Adds a [`Period`] to this date.
@@ -636,6 +676,30 @@ mod tests {
         assert_eq!(next_mon.day(), 6);
         assert_eq!(next_mon.month(), 3);
         assert_eq!(next_mon.year(), 2023);
+    }
+
+    #[test]
+    fn advance_rejects_empty_dates_and_out_of_range_offsets() {
+        for units in [
+            TimeUnit::Days,
+            TimeUnit::Weeks,
+            TimeUnit::Months,
+            TimeUnit::Years,
+        ] {
+            for count in [0, 1, -1] {
+                let error = Date::empty()
+                    .advance(count, units)
+                    .expect_err("empty anchor must fail");
+                assert!(error.to_string().contains("empty date"));
+            }
+            for count in [i32::MAX, i32::MIN] {
+                assert!(Date::new(2026, 2, 24).advance(count, units).is_err());
+            }
+        }
+        assert_eq!(
+            Date::new(2026, 1, 31).advance(1, TimeUnit::Months).unwrap(),
+            Date::new(2026, 2, 28)
+        );
     }
 
     #[test]

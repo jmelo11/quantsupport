@@ -378,7 +378,11 @@ mod tests {
     /// Term structure with `exp(-rate·t)` factors at monthly nodes.
     fn flat_exp_curve(ref_date: Date, rate: f64) -> Result<DiscountTermStructure<DualFwd>> {
         let dates: Vec<Date> = (0..=120)
-            .map(|i| ref_date.advance(i, TimeUnit::Months))
+            .map(|i| {
+                ref_date
+                    .advance(i, TimeUnit::Months)
+                    .expect("valid date advancement")
+            })
             .collect();
         let dfs: Vec<DualFwd> = dates
             .iter()
@@ -426,7 +430,9 @@ mod tests {
             MarketIndex::SOFR,
             Currency::USD,
             ref_date,
-            ref_date.advance(years, TimeUnit::Years),
+            ref_date
+                .advance(years, TimeUnit::Years)
+                .expect("valid date advancement"),
             spread,
             recovery,
             Frequency::Quarterly,
@@ -445,7 +451,12 @@ mod tests {
         let (r, lambda, recovery, notional) = (0.03, 0.05, 0.4, 1_000_000.0);
         let lgd = 1.0 - recovery;
         let years = 5;
-        let t = DC.year_fraction(ref_date, ref_date.advance(years, TimeUnit::Years));
+        let t = DC.year_fraction(
+            ref_date,
+            ref_date
+                .advance(years, TimeUnit::Years)
+                .expect("valid date advancement"),
+        );
 
         let provider = flat_provider(ref_date, r, lambda)?;
         let contract_spread = 0.02;
@@ -507,9 +518,14 @@ mod tests {
 
         // Riskless quarterly annuity, computed directly.
         let mut annuity = 0.0;
-        let schedule = MakeSchedule::new(ref_date, ref_date.advance(5, TimeUnit::Years))
-            .with_frequency(Frequency::Quarterly)
-            .build()?;
+        let schedule = MakeSchedule::new(
+            ref_date,
+            ref_date
+                .advance(5, TimeUnit::Years)
+                .expect("valid date advancement"),
+        )
+        .with_frequency(Frequency::Quarterly)
+        .build()?;
         for w in schedule.dates().windows(2) {
             let delta = DC.year_fraction(w[0], w[1]);
             annuity += delta * (-r * DC.year_fraction(ref_date, w[1])).exp();

@@ -1,9 +1,11 @@
 use crate::{
-    time::date::Date,
-    time::enums::{BusinessDayConvention, TimeUnit, Weekday},
-    time::period::Period,
+    time::{
+        date::Date,
+        enums::{BusinessDayConvention, TimeUnit, Weekday},
+        period::Period,
+    },
+    utils::errors::Result,
 };
-
 use std::{cmp::Ordering, collections::HashSet};
 
 /// Returns the day of year for Easter Monday for a given year.
@@ -319,55 +321,37 @@ pub trait IsCalendar: ImplCalendar {
 
     /// Advances a date by a given period, adjusting for business days.
     ///
-    /// Days count business days, unlike `Date` arithmetic; zero days leaves
-    /// the date unchanged. Other units advance calendar periods and then apply
-    /// the convention (`None` means Following), with optional month-end handling.
+    /// Days count business days; zero days leaves the date unchanged. Other
+    /// units advance calendar periods and apply the convention (Following by
+    /// default), with optional month-end handling.
     ///
-    /// # Panics
-    /// Panics for an empty date.
+    /// # Errors
+    /// Returns an error for an empty date or an offset outside the supported range.
     fn advance(
         &self,
         date: Date,
         period: Period,
         convention: Option<BusinessDayConvention>,
         end_of_month: bool,
-    ) -> Date {
-        assert!(date != Date::empty(), "null date");
-
-        let mut d1 = date;
-        match period.units() {
-            TimeUnit::Days => {
-                let mut n = period.length();
-                if n > 0 {
-                    while n > 0 {
-                        d1 += 1;
-                        while self.is_holiday(&d1) {
-                            d1 += 1;
-                        }
-                        n -= 1;
-                    }
-                } else {
-                    while n < 0 {
-                        d1 -= 1;
-                        while self.is_holiday(&d1) {
-                            d1 -= 1;
-                        }
-                        n += 1;
-                    }
+    ) -> Result<Date> {
+        // Validate the anchor and reject impossible offsets before walking holidays.
+        let shifted = date.advance(period.length(), period.units())?;
+        if period.units() == TimeUnit::Days {
+            let mut remaining = period.length();
+            let mut result = date;
+            let direction = remaining.signum();
+            while remaining != 0 {
+                result = result.advance(direction, TimeUnit::Days)?;
+                while self.is_holiday(&result) {
+                    result = result.advance(direction, TimeUnit::Days)?;
                 }
+                remaining -= direction;
             }
-            TimeUnit::Weeks => {
-                d1 = d1 + period;
-                d1 = self.adjust(d1, convention);
-            }
-            _ => {
-                d1 = d1 + period;
-                if end_of_month && self.is_end_of_month(&date) {
-                    return self.end_of_month(d1);
-                }
-                d1 = self.adjust(d1, convention);
-            }
+            return Ok(result);
         }
-        d1
+        if end_of_month && period.units() != TimeUnit::Weeks && self.is_end_of_month(&date) {
+            return Ok(self.end_of_month(shifted));
+        }
+        Ok(self.adjust(shifted, convention))
     }
 }

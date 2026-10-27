@@ -36,8 +36,8 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         .with_base_index(MarketIndex::SOFR);
     context.initialize()?;
 
-    let fixing = reference.advance(1, TimeUnit::Years);
-    let payment = fixing.advance(3, TimeUnit::Months);
+    let fixing = reference.advance(1, TimeUnit::Years)?;
+    let payment = fixing.advance(3, TimeUnit::Months)?;
     let caplet = CapletFloorlet::new(
         "USD-CAPLET-1Y".into(),
         MarketIndex::SOFR,
@@ -52,7 +52,7 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     let cap = MakeCapFloor::default()
         .with_identifier("USD-CAP-1Y-3Y".into())
         .with_start_date(fixing)
-        .with_maturity_date(reference.advance(3, TimeUnit::Years))
+        .with_maturity_date(reference.advance(3, TimeUnit::Years)?)
         .with_strike(0.045)
         .with_notional(1_000_000.0)
         .with_currency(Currency::USD)
