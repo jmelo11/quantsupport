@@ -18,6 +18,7 @@ use xll_rs::types::XllError;
 #[allow(clippy::too_many_arguments)]
 pub fn qs_trade_create(
     name: &str,
+    context: &str,
     instrument: &str,
     trade_date: &str,
     side: &str,
@@ -27,7 +28,9 @@ pub fn qs_trade_create(
     anchor_value: Option<f64>,
     settlement_date: Option<String>,
     spread_day_counter: Option<String>,
+    trade_tenor: Option<String>,
 ) -> Result<String, XllError> {
+    let (market, construction_revision) = construction_market(context)?;
     let key = input_key(&(
         instrument,
         trade_date,
@@ -38,6 +41,7 @@ pub fn qs_trade_create(
         anchor_value,
         settlement_date.as_deref(),
         spread_day_counter.as_deref(),
+        trade_tenor.as_deref(),
     ))?;
     let kind = with_registry(|registry| {
         registry.instrument(instrument).map(|value| {
@@ -49,6 +53,7 @@ pub fn qs_trade_create(
         })
     })
     .map_err(value_error)?;
+    let key = input_key(&(&key, context, &construction_revision))?;
     if let Some(handle) = cached_handle(name, &kind, &key)? {
         return Ok(handle);
     }
@@ -81,13 +86,36 @@ pub fn qs_trade_create(
             .map(parse_day_counter)
             .transpose()?,
     };
-    let date = parse_date(trade_date)?;
+    let date = if trade_date.trim().is_empty() {
+        None
+    } else {
+        Some(parse_date(trade_date)?)
+    };
+    let tenor = trade_tenor
+        .as_deref()
+        .filter(|s| !s.trim().is_empty())
+        .map(|s| quantsupport::prelude::Period::from_str(s).map_err(value_error))
+        .transpose()?;
+    if date.is_some() && tenor.is_some() {
+        return Err(value_error("supply trade_date or trade_tenor, not both"));
+    }
+
     let side = parse_side(side)?;
     let trade = with_registry(|registry| {
-        registry
+        let instrument = registry
             .instrument(instrument)
-            .map_err(|error| error.to_string())?
-            .trade(date, side, &terms)
+            .map_err(|error| error.to_string())?;
+        match date {
+            Some(date) => instrument.trade(date, side, &terms),
+            None => instrument.trade_from_tenor(
+                market.as_ref(),
+                tenor.unwrap_or_else(|| {
+                    quantsupport::prelude::Period::new(0, quantsupport::prelude::TimeUnit::Days)
+                }),
+                side,
+                &terms,
+            ),
+        }
     })
     .map_err(value_error)?;
     with_registry_mut(|registry| registry.upsert_if_changed(name, trade, key)).map_err(value_error)

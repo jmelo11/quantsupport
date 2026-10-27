@@ -37,4 +37,36 @@ from ..quantsupport import (
     ScriptedProduct as ScriptedProduct,
 )
 
-__all__ = ['Instrument', 'Side', 'OptionType', 'SwaptionType', 'CapFloorType', 'CapletFloorletType', 'PaymentStructure', 'LoanRepaymentStructure', 'PrepaymentModelConfiguration', 'Loan', 'EquityForward', 'EuropeanSwaption', 'Swap', 'CrossCurrencySwap', 'BasisSwap', 'FixFloatCrossCurrencySwap', 'FixedRateBond', 'InterestRate', 'PayoffOps', 'FixedRateCoupon', 'FloatingRateCoupon', 'OptionEmbeddedCoupon', 'CallScheduleEntry', 'SteppedCouponBond', 'FloatingRateNote', 'FixedRateDeposit', 'FxForward', 'FxOption', 'EquityOption', 'CreditDefaultSwap', 'CapFloor', 'CapletFloorlet', 'RateFutures', 'ScriptedProduct']
+__all__ = ['Instrument', 'Side', 'OptionType', 'SwaptionType', 'CapFloorType', 'CapletFloorletType', 'PaymentStructure', 'LoanRepaymentStructure', 'PrepaymentModelConfiguration', 'Loan', 'EquityForward', 'EuropeanSwaption', 'Swap', 'CrossCurrencySwap', 'BasisSwap', 'FixFloatCrossCurrencySwap', 'FixedRateBond', 'InterestRate', 'PayoffOps', 'FixedRateCoupon', 'FloatingRateCoupon', 'OptionEmbeddedCoupon', 'CallScheduleEntry', 'SteppedCouponBond', 'FloatingRateNote', 'FixedRateDeposit', 'FxForward', 'FxOption', 'EquityOption', 'CreditDefaultSwap', 'CapFloor', 'CapletFloorlet', 'RateFutures', 'ScriptedProduct', 'MakeInstrument', 'MakeSwap', 'MakeFloatFloatCrossCurrencySwap', 'MakeCrossCurrencySwap', 'MakeBasisSwap', 'MakeFixFloatCrossCurrencySwap', 'MakeFixedRateBond', 'MakeSteppedCouponBond', 'MakeFloatingRateNote', 'MakeFixedRateDeposit', 'MakeLoan', 'MakeFxForward', 'MakeFxEuropeanOption', 'MakeFxOption', 'MakeEquityEuropeanOption', 'MakeEquityOption', 'MakeCreditDefaultSwap', 'MakeCapFloor', 'MakeCapletFloorlet', 'MakeRateFutures', 'MakeSwaption', 'MakeEuropeanSwaption', 'MakeEquityForward', 'MakeScriptedProduct', 'MakeTrade']
+
+from ..quantsupport import (
+    MakeSwap as MakeSwap,
+    MakeFloatFloatCrossCurrencySwap as MakeFloatFloatCrossCurrencySwap,
+    MakeCrossCurrencySwap as MakeCrossCurrencySwap,
+    MakeBasisSwap as MakeBasisSwap,
+    MakeFixFloatCrossCurrencySwap as MakeFixFloatCrossCurrencySwap,
+    MakeFixedRateBond as MakeFixedRateBond,
+    MakeSteppedCouponBond as MakeSteppedCouponBond,
+    MakeFloatingRateNote as MakeFloatingRateNote,
+    MakeFixedRateDeposit as MakeFixedRateDeposit,
+    MakeLoan as MakeLoan,
+    MakeFxForward as MakeFxForward,
+    MakeFxEuropeanOption as MakeFxEuropeanOption,
+    MakeFxOption as MakeFxOption,
+    MakeEquityEuropeanOption as MakeEquityEuropeanOption,
+    MakeEquityOption as MakeEquityOption,
+    MakeCreditDefaultSwap as MakeCreditDefaultSwap,
+    MakeCapFloor as MakeCapFloor,
+    MakeCapletFloorlet as MakeCapletFloorlet,
+    MakeRateFutures as MakeRateFutures,
+    MakeSwaption as MakeSwaption,
+    MakeEuropeanSwaption as MakeEuropeanSwaption,
+    MakeEquityForward as MakeEquityForward,
+    MakeScriptedProduct as MakeScriptedProduct,
+    MakeTrade as MakeTrade,
+    MakeInstrument as MakeInstrument,
+)
+
+# Runtime counterpart of the generic maker type parameter in the public stubs.
+from typing import TypeVar as _TypeVar
+ProductT = _TypeVar("ProductT")

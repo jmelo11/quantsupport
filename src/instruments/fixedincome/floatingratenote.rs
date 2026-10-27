@@ -14,6 +14,7 @@ use crate::{
 
 /// A [`FloatingRateNote`] represents a bond that pays periodic floating-rate coupons
 /// (typically referencing an interest rate index plus a spread) and repays its principal at maturity.
+#[derive(Clone)]
 pub struct FloatingRateNote<T: Scalar> {
     identifier: String,
     units: f64,

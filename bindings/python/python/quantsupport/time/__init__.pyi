@@ -542,6 +542,11 @@ class Date:
         -------
         Date
             Shifted calendar date.
+
+        Raises
+        ------
+        QuantSupportValueError
+            If the date is empty or the offset exceeds the supported date range.
         """
         ...
 
@@ -1594,6 +1599,11 @@ class Calendar:
         -------
         Date
             Advanced, business-day-adjusted date.
+
+        Raises
+        ------
+        QuantSupportValueError
+            If the date is empty or the offset exceeds the supported date range.
         """
         ...
 

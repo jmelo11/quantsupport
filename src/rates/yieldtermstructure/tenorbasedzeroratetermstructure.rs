@@ -195,8 +195,12 @@ mod tests {
         ];
         let rates = vec![0.01, 0.02, 0.03];
         let labels = vec!["0D".into(), "1Y".into(), "2Y".into()];
-        let start = reference.advance(6, TimeUnit::Months);
-        let end = reference.advance(18, TimeUnit::Months);
+        let start = reference
+            .advance(6, TimeUnit::Months)
+            .expect("valid date advancement");
+        let end = reference
+            .advance(18, TimeUnit::Months)
+            .expect("valid date advancement");
         let make_curve = |rates| {
             TenorBasedZeroRateTermStructure::new(
                 reference,
@@ -246,7 +250,11 @@ mod tests {
             }
         }
         assert!(dual
-            .advance_to_date(reference.advance(-1, TimeUnit::Days))
+            .advance_to_date(
+                reference
+                    .advance(-1, TimeUnit::Days)
+                    .expect("valid date advancement")
+            )
             .is_err());
         assert_eq!(element.discount_factor(reference)?.value(), 1.0);
         assert_eq!(element.nodes().map(|nodes| nodes.len()), Some(rates.len()));

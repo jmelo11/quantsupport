@@ -5,6 +5,7 @@ market is the repository's illustrative 2026-02-24 Hull-White snapshot, not a
 live feed. This module is example code, not part of the installed binding.
 """
 
+import json
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -28,15 +29,13 @@ class MarketInputs:
 def load_market():
     """Load fresh typed inputs from the shared USD/SOFR example data."""
     return MarketInputs(
-        quotes=qs.QuoteStore.from_json(str(MARKET_DATA / "quotes.json")),
-        curves=qs.CurveConfiguration.from_json(str(MARKET_DATA / "curve_specs.json")),
-        volatility_surfaces=qs.VolatilitySurfaceConfiguration.from_json(
-            str(MARKET_DATA / "vol_specs.json")
-        ),
+        quotes=qs.QuoteStore.from_dict(json.loads(Path(MARKET_DATA / "quotes.json").read_text(encoding="utf-8"))),
+        curves=qs.CurveConfiguration.from_dict_list(json.loads(Path(MARKET_DATA / "curve_specs.json").read_text(encoding="utf-8"))),
+        volatility_surfaces=qs.VolatilitySurfaceConfiguration.from_dict_list(json.loads(Path(MARKET_DATA / "vol_specs.json").read_text(encoding="utf-8"))),
         csa_policy=qs.SingleCurveCSADiscountPolicy(qs.Currency.USD, qs.MarketIndex.SOFR),
     )
 
 
 def load_pricers(filename):
     """Load the selected bond engine and its calibrated rate-model assignment."""
-    return qs.PricerConfiguration.from_json(str(EXAMPLES / "valuation" / "bonds" / "data" / filename))
+    return qs.PricerConfiguration.from_dict_list(json.loads(Path(EXAMPLES / "valuation" / "bonds" / "data" / filename).read_text(encoding="utf-8")))

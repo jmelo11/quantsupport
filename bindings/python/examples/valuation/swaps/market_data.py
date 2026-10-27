@@ -6,6 +6,7 @@ snapshots, not live feeds. This module is example code, not part of the installe
 binding.
 """
 
+import json
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -29,8 +30,8 @@ class MarketInputs:
 def load_market():
     """Load fresh typed inputs from the shared USD/SOFR example data."""
     return MarketInputs(
-        quotes=qs.QuoteStore.from_json(str(MARKET_DATA / "quotes.json")),
-        curves=qs.CurveConfiguration.from_json(str(MARKET_DATA / "curve_specs.json")),
+        quotes=qs.QuoteStore.from_dict(json.loads(Path(MARKET_DATA / "quotes.json").read_text(encoding="utf-8"))),
+        curves=qs.CurveConfiguration.from_dict_list(json.loads(Path(MARKET_DATA / "curve_specs.json").read_text(encoding="utf-8"))),
         csa_policy=qs.SingleCurveCSADiscountPolicy(qs.Currency.USD, qs.MarketIndex.SOFR),
     )
 
@@ -40,15 +41,11 @@ def load_currency_market():
     indices = (
         "SOFR",
         "ICP",
-        {"Collateral": ("CLP", "USD")},
+        {"Collateral": ["CLP", "USD"]},
     )
-    curves = qs.CurveConfiguration.from_json(
-        str(MULTI_CURRENCY_MARKET_DATA / "curve_specs.json")
-    )
+    curves = qs.CurveConfiguration.from_dict_list(json.loads(Path(MULTI_CURRENCY_MARKET_DATA / "curve_specs.json").read_text(encoding="utf-8")))
     return MarketInputs(
-        quotes=qs.QuoteStore.from_json(
-            str(MULTI_CURRENCY_MARKET_DATA / "quotes.json")
-        ),
+        quotes=qs.QuoteStore.from_dict(json.loads(Path(MULTI_CURRENCY_MARKET_DATA / "quotes.json").read_text(encoding="utf-8"))),
         curves=[curve for curve in curves if curve.to_dict()["market_index"] in indices],
         csa_policy=qs.SingleCurveCSADiscountPolicy(qs.Currency.USD, qs.MarketIndex.SOFR),
     )

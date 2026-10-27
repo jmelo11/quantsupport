@@ -560,7 +560,6 @@ mod tests {
                     .collect(),
             )
             .with_payment_frequency(Frequency::Monthly)
-            .with_day_counter(DayCounter::Actual360)
             .build()
             .unwrap();
         let contract = InstrumentObject {

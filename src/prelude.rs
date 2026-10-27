@@ -29,6 +29,7 @@ pub use crate::{
         },
         evaluationresults::{CashflowKind, CashflowsTable, EvaluationResults, SensitivityMap},
         instrument::{AssetClass, Instrument},
+        makeinstrument::MakeInstrument,
         makeportfolioaccumulator::MakePortfolioAccumulator,
         marketdatahandling::{
             constructedelementrequest::ConstructedElementRequest,
@@ -81,6 +82,7 @@ pub use crate::{
             makeleg::{MakeLeg, PaymentStructure, RateType},
         },
         credit::creditdefaultswap::{CdsTrade, CreditDefaultSwap},
+        credit::makecreditdefaultswap::MakeCreditDefaultSwap,
         equity::{
             equityeuropeanoption::{
                 EquityEuropeanOption, EquityEuropeanOptionTrade, EuroOptionType,
@@ -125,6 +127,7 @@ pub use crate::{
             },
             makebasisswap::MakeBasisSwap,
             makecapfloor::MakeCapFloor,
+            makecapletfloorlet::MakeCapletFloorlet,
             makeeuropeanswaption::MakeSwaption,
             makefixfloatcrosscurrencyswap::MakeFixFloatCrossCurrencySwap,
             makefloatfloatcrosscurrencyswap::MakeFloatFloatCrossCurrencySwap,
@@ -218,6 +221,7 @@ pub use crate::{
         },
     },
     scripting::{
+        makescriptedproduct::MakeScriptedProduct,
         nodes::event::{CodedEvent, Event, EventStream},
         product::ScriptedProduct,
         request::SimulationDataRequest,

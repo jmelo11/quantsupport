@@ -46,7 +46,7 @@ class BookStructureTests(unittest.TestCase):
         ]
         self.assertEqual(len(links), len(set(links)))
         self.assertGreaterEqual(len(links), 26)
-        self.assertLessEqual(len(links), 30)
+        self.assertLessEqual(len(links), 31)
         self.assertEqual(
             set(links),
             {str(path.relative_to(SOURCE)) for path in SOURCE.rglob("*.md")

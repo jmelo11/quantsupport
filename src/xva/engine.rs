@@ -392,7 +392,7 @@ impl XvaEngine {
             .flat_map(|ns| ns.claims().iter())
             .map(ContingentClaim::payment_date)
             .max()
-            .unwrap_or_else(|| self.setup.reference_date.advance(1, TimeUnit::Years));
+            .map_or_else(|| self.setup.reference_date.advance(1, TimeUnit::Years), Ok)?;
 
         let schedule = MakeSchedule::new(self.setup.reference_date, max_maturity)
             .with_frequency(self.frequency)

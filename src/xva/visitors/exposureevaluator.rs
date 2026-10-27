@@ -8,10 +8,6 @@
 //! - `evaluate_with_xva` -- `DualFwd`-only free function, returns cubes
 //!   plus XVA values and sensitivities.
 
-use std::collections::HashMap;
-
-use rayon::iter::{IntoParallelIterator, ParallelIterator};
-
 use crate::{
     ad::{dual::DualFwd, scalar::Scalar, tape::Tape},
     math::solvers::solvertraits::Matrix,
@@ -24,6 +20,8 @@ use crate::{
         visitors::marketmodel::{MarketModel, PathScenario},
     },
 };
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
+use std::collections::HashMap;
 
 /// Per-trade NPV cube: `npvs[path][date]`.
 pub struct NpvCube {
@@ -636,12 +634,16 @@ fn reduce_chunk_results(
 impl crate::utils::plot::Plot for NpvCube {
     #[allow(clippy::too_many_lines)]
     fn plot(&self, path: &str) -> crate::utils::errors::Result<()> {
-        use crate::time::daycounter::DayCounter;
-        use crate::utils::errors::QSError;
-        use crate::utils::plot::plotting::{
-            AreaSeries, BitMapBackend, ChartBuilder, Color, IntoDrawingArea, IntoFont, LineSeries,
-            PathElement, SeriesLabelPosition, BG_COLOR, BLACK, EE_COLOR, ENE_COLOR, EPE_COLOR,
-            GRID_COLOR, ZERO_LINE_COLOR,
+        use crate::{
+            time::daycounter::DayCounter,
+            utils::{
+                errors::QSError,
+                plot::plotting::{
+                    AreaSeries, BitMapBackend, ChartBuilder, Color, IntoDrawingArea, IntoFont,
+                    LineSeries, PathElement, SeriesLabelPosition, BG_COLOR, BLACK, EE_COLOR,
+                    ENE_COLOR, EPE_COLOR, GRID_COLOR, ZERO_LINE_COLOR,
+                },
+            },
         };
 
         let dc = DayCounter::Actual365;
@@ -781,9 +783,11 @@ impl crate::utils::plot::Plot for NpvCube {
 mod tests {
     use super::*;
     use crate::{
-        ad::dual::DualFwd,
-        ad::scalar::Scalar,
-        core::{collateral::SingleCurveCSADiscountPolicy, pillars::Pillars, trade::Side},
+        ad::{dual::DualFwd, scalar::Scalar},
+        core::{
+            collateral::SingleCurveCSADiscountPolicy, makeinstrument::MakeInstrument,
+            pillars::Pillars, trade::Side,
+        },
         currencies::currency::Currency,
         indices::marketindex::MarketIndex,
         instruments::rates::{makeswap::MakeSwap, swap::SwapTrade},
@@ -886,7 +890,9 @@ mod tests {
         let mut dates = vec![ref_date];
         let mut dfs = vec![1.0_f64];
         for y in 1..=5 {
-            let d = ref_date.advance(y, TimeUnit::Years);
+            let d = ref_date
+                .advance(y, TimeUnit::Years)
+                .expect("valid date advancement");
             let t = dc.year_fraction(ref_date, d);
             dates.push(d);
             dfs.push((-rate * t).exp());
@@ -984,7 +990,11 @@ mod tests {
         let swap = MakeSwap::<f64>::default()
             .with_identifier("USD_IRS_5Y".to_string())
             .with_start_date(ref_date)
-            .with_maturity_date(ref_date.advance(5, TimeUnit::Years))
+            .with_maturity_date(
+                ref_date
+                    .advance(5, TimeUnit::Years)
+                    .expect("valid date advancement"),
+            )
             .with_fixed_rate(0.038)
             .with_notional(10_000_000.0)
             .with_rate_definition(RateDefinition::new(
@@ -1009,7 +1019,9 @@ mod tests {
         let requests = inspector.requests().to_vec();
         let claims = ns.into_claims();
 
-        let max_maturity = ref_date.advance(5, TimeUnit::Years);
+        let max_maturity = ref_date
+            .advance(5, TimeUnit::Years)
+            .expect("valid date advancement");
         let schedule = MakeSchedule::new(ref_date, max_maturity)
             .with_frequency(Frequency::Quarterly)
             .build()

@@ -2,7 +2,11 @@
 use crate::ad::dual::DualFwd;
 use crate::{
     ad::scalar::Scalar,
-    core::{instrument::AssetClass, trade::Side},
+    core::{
+        instrument::AssetClass,
+        makeinstrument::{resolve_date, MakeInstrument},
+        trade::Side,
+    },
     currencies::currency::Currency,
     indices::marketindex::MarketIndex,
     instruments::{
@@ -12,9 +16,11 @@ use crate::{
     rates::interestrate::{InterestRate, RateDefinition},
     time::{
         calendar::Calendar,
+        calendars::nullcalendar::NullCalendar,
         date::Date,
         daycounter::DayCounter,
         enums::{BusinessDayConvention, DateGenerationRule, Frequency},
+        period::Period,
     },
     utils::errors::{QSError, Result},
 };
@@ -53,8 +59,10 @@ use std::marker::PhantomData;
 /// assert_eq!(xccy.domestic_currency(), Currency::USD);
 /// assert_eq!(xccy.foreign_currency(), Currency::EUR);
 /// ```
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct MakeFixFloatCrossCurrencySwap<T: Scalar> {
+    start_tenor: Option<Period>,
+    maturity_tenor: Option<Period>,
     start_date: Option<Date>,
     maturity_date: Option<Date>,
     domestic_notional: Option<f64>,
@@ -81,6 +89,30 @@ impl<T> MakeFixFloatCrossCurrencySwap<T>
 where
     T: Scalar,
 {
+    /// Sets start date as a tenor from the context evaluation date.
+    /// Replaces an explicitly supplied start date. Use `build_using` when an external anchor is needed.
+    #[must_use]
+    pub const fn with_start_tenor(mut self, tenor: Period) -> Self {
+        self.start_tenor = Some(tenor);
+        self.start_date = None;
+        self
+    }
+
+    /// Sets maturity date as a tenor from the resolved start date.
+    /// Replaces an explicitly supplied maturity date. Use `build_using` when an external anchor is needed.
+    #[must_use]
+    pub const fn with_maturity_tenor(mut self, tenor: Period) -> Self {
+        self.maturity_tenor = Some(tenor);
+        self.maturity_date = None;
+        self
+    }
+
+    /// Sets maturity as a tenor from the resolved start date.
+    #[must_use]
+    pub const fn with_tenor(self, tenor: Period) -> Self {
+        self.with_maturity_tenor(tenor)
+    }
+
     /// Sets floating day counter for coupon accrual without changing index quoting.
     #[must_use]
     pub const fn with_floating_day_counter(mut self, dc: DayCounter) -> Self {
@@ -92,6 +124,7 @@ where
     #[must_use]
     pub const fn with_start_date(mut self, date: Date) -> Self {
         self.start_date = Some(date);
+        self.start_tenor = None;
         self
     }
 
@@ -99,6 +132,7 @@ where
     #[must_use]
     pub const fn with_maturity_date(mut self, date: Date) -> Self {
         self.maturity_date = Some(date);
+        self.maturity_tenor = None;
         self
     }
 
@@ -213,12 +247,30 @@ where
         self.end_of_month = Some(eom);
         self
     }
+}
+
+impl<T: Scalar> MakeInstrument for MakeFixFloatCrossCurrencySwap<T> {
+    type Instrument = FixFloatCrossCurrencySwap<T>;
+
+    fn is_resolved(&self) -> bool {
+        self.start_tenor.is_none() && self.maturity_tenor.is_none()
+    }
 
     /// Builds the [`FixFloatCrossCurrencySwap`] instance.
     ///
     /// # Errors
     /// Returns an error if any of the required fields are missing or invalid.
-    pub fn build(self) -> Result<FixFloatCrossCurrencySwap<T>> {
+    fn build(&self) -> Result<Self::Instrument> {
+        if !self.is_resolved() {
+            return Err(QSError::UnresolvedProductErr(
+                "MakeFixFloatCrossCurrencySwap has unresolved date tenors. Supply the corresponding absolute dates or call maker.build_using(&context)".into(),
+            ));
+        }
+        if [self.start_date, self.maturity_date].contains(&Some(Date::empty())) {
+            return Err(QSError::InvalidValueErr(
+                "MakeFixFloatCrossCurrencySwap dates must not be empty".into(),
+            ));
+        }
         let start_date = self
             .start_date
             .ok_or_else(|| QSError::ValueNotSetErr("Start date".into()))?;
@@ -245,9 +297,11 @@ where
             .ok_or_else(|| QSError::ValueNotSetErr("Foreign currency".into()))?;
         let floating_market_index = self
             .floating_market_index
+            .clone()
             .ok_or_else(|| QSError::ValueNotSetErr("Foreign market index".into()))?;
         let identifier = self
             .identifier
+            .clone()
             .ok_or_else(|| QSError::ValueNotSetErr("Identifier".into()))?;
 
         let side = self.side.unwrap_or(Side::LongReceive);
@@ -296,7 +350,7 @@ where
             .with_spread(spread)
             .with_payment_frequency(foreign_freq)
             .bullet()
-            .with_calendar(self.calendar)
+            .with_calendar(self.calendar.clone())
             .with_business_day_convention(self.business_day_convention)
             .with_date_generation_rule(self.date_generation_rule)
             .with_end_of_month(self.end_of_month)
@@ -314,6 +368,43 @@ where
             foreign_currency,
             floating_market_index,
         ))
+    }
+
+    fn resolve_dates(&self, reference_date: Date) -> Result<Self> {
+        let mut resolved = self.clone();
+        let calendar = self
+            .calendar
+            .clone()
+            .unwrap_or_else(|| Calendar::NullCalendar(NullCalendar::new()));
+        let convention = self
+            .business_day_convention
+            .unwrap_or(BusinessDayConvention::Unadjusted);
+        let date_calendar = &calendar;
+        let date_convention = convention;
+        let date_end_of_month = self.end_of_month.unwrap_or(false);
+        resolved.start_date = Some(resolve_date(
+            self.start_date,
+            self.start_tenor,
+            reference_date,
+            "start_date",
+            date_calendar,
+            date_convention,
+            date_end_of_month,
+        )?);
+        resolved.start_tenor = None;
+        resolved.maturity_date = Some(resolve_date(
+            self.maturity_date,
+            self.maturity_tenor,
+            resolved
+                .start_date
+                .ok_or_else(|| QSError::ValueNotSetErr("start_date".into()))?,
+            "maturity_date",
+            date_calendar,
+            date_convention,
+            date_end_of_month,
+        )?);
+        resolved.maturity_tenor = None;
+        Ok(resolved)
     }
 }
 
@@ -381,5 +472,43 @@ mod tests {
             result.is_err(),
             "expected missing domestic currency to fail"
         );
+    }
+}
+
+#[cfg(test)]
+mod resolution_tests {
+    use crate::{
+        core::makeinstrument::test_support::{assert_legs, empty_market, p, reference},
+        prelude::*,
+    };
+
+    #[test]
+    fn fix_float_cross_currency_swap_resolves_dates_before_building_legs() -> Result<()> {
+        let market = empty_market(reference());
+        let ctx = &market;
+        let end = reference() + p("2Y")?;
+        let fixed = MakeFixFloatCrossCurrencySwap::<f64>::default()
+            .with_identifier("fixed".into())
+            .with_start_tenor(p("0D")?)
+            .with_tenor(p("2Y")?)
+            .with_domestic_notional(100_000.0)
+            .with_foreign_notional(110_000.0)
+            .with_fixed_rate(0.03)
+            .with_domestic_currency(Currency::EUR)
+            .with_foreign_currency(Currency::USD)
+            .with_floating_index(MarketIndex::TermSOFR3m)
+            .with_rate_definition(RateDefinition::new(
+                DayCounter::Actual360,
+                Compounding::Simple,
+                Frequency::Semiannual,
+            ));
+        assert_legs(
+            &fixed.build_using(ctx)?,
+            &fixed
+                .with_start_date(reference())
+                .with_maturity_date(end)
+                .build()?,
+        )?;
+        Ok(())
     }
 }

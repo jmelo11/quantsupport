@@ -254,6 +254,17 @@ pub fn pricing_context(
     selector: &str,
     fixings: Option<&str>,
 ) -> Result<String, String> {
+    pricing_context_with_fixing_policy(registry, name, store, selector, fixings, true)
+}
+
+pub fn pricing_context_with_fixing_policy(
+    registry: &mut Registry,
+    name: &str,
+    store: &str,
+    selector: &str,
+    fixings: Option<&str>,
+    anchor_fixings: bool,
+) -> Result<String, String> {
     let _archive = registry
         .market_snapshot_store(store)
         .map_err(|error| error.to_string())?;
@@ -263,7 +274,7 @@ pub fn pricing_context(
     let _fixings_value = fixings
         .map(|handle| super::context::fixing_history(registry, handle))
         .transpose()?;
-    let definition = key(&(store, selector, fixings))?;
+    let definition = key(&(store, selector, fixings, anchor_fixings))?;
     if let Some(handle) = registry
         .handle_if_unchanged(name, "PricingContext", &definition)
         .map_err(|error| error.to_string())?
@@ -271,6 +282,11 @@ pub fn pricing_context(
         return Ok(handle);
     }
     let context = shared_context(registry, store, selector_value, fixings)?;
+    let context = if anchor_fixings {
+        context
+    } else {
+        std::rc::Rc::new(context.as_ref().clone().with_anchor_fixings(false))
+    };
     registry
         .upsert_if_changed(name, QsObject::PricingContext(context), definition)
         .map_err(|error| error.to_string())

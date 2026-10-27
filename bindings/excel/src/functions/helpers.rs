@@ -1,15 +1,20 @@
-use std::{fmt::Display, str::FromStr};
-
-use crate::runtime::registry::with_registry;
-use quantsupport::prelude::{
-    CapFloorType, CapletFloorletType, Compounding, Currency, Date, DayCounter, EuroOptionType,
-    Frequency, Interpolator, MarketIndex, Side,
+use crate::runtime::{context, registry::with_registry};
+use quantsupport::{
+    prelude::{
+        BusinessDayConvention, Calendar, CapFloorType, CapletFloorletType, Compounding, Currency,
+        Date, DayCounter, EuroOptionType, Frequency, Interpolator, MarketIndex, Period,
+        PricingContext, Side,
+    },
+    time::calendars::traits::IsCalendar,
 };
 use serde::Serialize;
-use xll_rs::convert::build_multi;
-use xll_rs::types::{
-    XLLError, XllError, XLOPER12, XLTYPE_BOOL, XLTYPE_INT, XLTYPE_MISSING, XLTYPE_MULTI,
-    XLTYPE_NIL, XLTYPE_NUM, XLTYPE_STR,
+use std::{fmt::Display, rc::Rc, str::FromStr};
+use xll_rs::{
+    convert::build_multi,
+    types::{
+        XLLError, XllError, XLOPER12, XLTYPE_BOOL, XLTYPE_INT, XLTYPE_MISSING, XLTYPE_MULTI,
+        XLTYPE_NIL, XLTYPE_NUM, XLTYPE_STR,
+    },
 };
 
 pub fn value_error(error: impl Display) -> XllError {
@@ -465,5 +470,36 @@ mod tests {
         let invalid = XLOPER12::from_str("sideways");
         assert!(optional_bool(&invalid, "transpose").is_err());
         xll_rs::memory::xlAutoFree12(Box::into_raw(Box::new(invalid)));
+    }
+}
+
+/// Captures the complete construction market and its input revision.
+pub fn construction_market(context: &str) -> Result<(Rc<PricingContext>, String), XllError> {
+    with_registry(|registry| -> Result<_, String> {
+        Ok((
+            context::resolve(registry, context)?,
+            context::revision_key(registry, context)?,
+        ))
+    })
+    .map_err(value_error)
+}
+
+pub fn construction_date(
+    date: Option<Date>,
+    tenor: Option<Period>,
+    anchor: Date,
+    label: &str,
+    calendar: Option<&Calendar>,
+    convention: BusinessDayConvention,
+) -> Result<Date, String> {
+    match (date, tenor) {
+        (Some(date), None) => Ok(date),
+        (None, Some(tenor)) => match calendar {
+            Some(calendar) => calendar.advance(anchor, tenor, Some(convention), false),
+            None => anchor.advance(tenor.length(), tenor.units()),
+        }
+        .map_err(|error| error.to_string()),
+        (Some(_), Some(_)) => Err(format!("supply {label} or its tenor, not both")),
+        (None, None) => Err(format!("{label} or its tenor is required")),
     }
 }

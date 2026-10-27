@@ -1,8 +1,9 @@
 //! Native loan construction and valuation shared by worksheet boundaries and tests.
 
 use quantsupport::prelude::{
-    BusinessDayConvention, Calendar, CashflowType, Currency, Date, DayCounter, DualFwd, Frequency,
-    LoanRepaymentStructure, MakeLoan, MakeSchedule, MarketIndex, Period,
+    BusinessDayConvention, Calendar, CashflowType, Compounding, Currency, Date, DayCounter,
+    DualFwd, FixedRateCoupon, Frequency, InterestRate, Loan, LoanRepaymentStructure,
+    MakeInstrument, MakeLoan, MakeSchedule, MarketDataProvider, MarketIndex, Period,
     PrepaymentModelConfiguration,
 };
 use serde::{Deserialize, Serialize};
@@ -39,7 +40,7 @@ pub struct CouponSegment {
 }
 
 /// Contractual inputs; rates are annual decimal coupon/spread values.
-#[derive(Serialize)]
+#[derive(Clone, Serialize)]
 pub struct LoanTerms {
     pub start_date: Date,
     pub maturity_date: Date,
@@ -49,15 +50,28 @@ pub struct LoanTerms {
     pub market_index: Option<MarketIndex>,
     pub repayment: String,
     pub payment_frequency: Frequency,
-    pub day_counter: DayCounter,
+    pub day_counter: Option<DayCounter>,
     pub options: LoanOptions,
 }
 
 impl LoanTerms {
-    pub fn build_instrument(
+    pub fn build_instrument(self, name: &str) -> Result<Loan<DualFwd>, String> {
+        self.build_maker(name)?
+            .build()
+            .map_err(|error| error.to_string())
+    }
+
+    pub fn build_instrument_with_context(
         self,
         name: &str,
-    ) -> Result<quantsupport::prelude::Loan<DualFwd>, String> {
+        context: &dyn MarketDataProvider,
+    ) -> Result<Loan<DualFwd>, String> {
+        self.build_maker(name)?
+            .build_using(context)
+            .map_err(|error| error.to_string())
+    }
+
+    fn build_maker(self, name: &str) -> Result<MakeLoan<DualFwd>, String> {
         let options = &self.options;
         let repayment = match self.repayment.trim().to_ascii_lowercase().as_str() {
             "french" => LoanRepaymentStructure::French,
@@ -151,6 +165,34 @@ impl LoanTerms {
                 ),
             }
         };
+        // The worksheet's optional day counter configures coupon templates.
+        // With no override, floating coupons retain their index conventions.
+        let coupons = coupons
+            .into_iter()
+            .map(|coupon| match (coupon, self.day_counter) {
+                (CashflowType::FixedRateCoupon(coupon), Some(basis)) => {
+                    CashflowType::FixedRateCoupon(FixedRateCoupon::new(
+                        coupon.notional(),
+                        Box::new(InterestRate::new(
+                            coupon.rate().rate(),
+                            Compounding::Simple,
+                            Frequency::Annual,
+                            basis,
+                        )),
+                        coupon.accrual_start_date(),
+                        coupon.accrual_end_date(),
+                        coupon.payment_date(),
+                    ))
+                }
+                (CashflowType::FloatingRateCoupon(coupon), Some(basis)) => {
+                    CashflowType::FloatingRateCoupon(coupon.with_day_counter(basis))
+                }
+                (CashflowType::OptionEmbeddedCoupon(coupon), Some(basis)) => {
+                    CashflowType::OptionEmbeddedCoupon(coupon.with_day_counter(basis))
+                }
+                (coupon, _) => coupon,
+            })
+            .collect();
         let mut builder = MakeLoan::default()
             .with_identifier(name.to_string())
             .with_start_date(self.start_date)
@@ -159,8 +201,7 @@ impl LoanTerms {
             .with_notional(self.notional)
             .with_coupons(coupons)
             .with_repayment_structure(repayment)
-            .with_payment_frequency(self.payment_frequency)
-            .with_day_counter(self.day_counter);
+            .with_payment_frequency(self.payment_frequency);
         if let Some(value) = &options.prepayment {
             builder = builder.with_prepayment_configuration(value.clone());
         }
@@ -188,7 +229,7 @@ impl LoanTerms {
         if let Some(value) = options.business_day_convention {
             builder = builder.with_business_day_convention(value);
         }
-        builder.build().map_err(|error| error.to_string())
+        Ok(builder)
     }
 }
 
@@ -271,12 +312,41 @@ mod tests {
                 market_index: None,
                 repayment: "French".into(),
                 payment_frequency: Frequency::Monthly,
-                day_counter: DayCounter::Actual360,
+                day_counter: Some(DayCounter::Actual360),
                 options: LoanOptions::default(),
             },
             side: Side::LongReceive,
             discount_index: None,
             rebuild: false,
+        }
+    }
+
+    #[test]
+    fn worksheet_day_counter_configures_coupons_or_uses_index_default() {
+        for basis in [
+            None,
+            Some(DayCounter::Actual365),
+            Some(DayCounter::Thirty360),
+        ] {
+            for bounded in [false, true] {
+                let mut terms = terms();
+                terms.market_index = Some(MarketIndex::EURIBOR12m);
+                terms.rate = 0.01;
+                terms.day_counter = basis;
+                terms.options.amortization_rate = Some(0.05);
+                if bounded {
+                    terms.options.floor = Some(0.02);
+                }
+                let loan = terms.contract.build_instrument("loan").unwrap();
+                for cashflow in loan.contractual_leg().cashflows() {
+                    let actual = match cashflow {
+                        CashflowType::FloatingRateCoupon(coupon) => coupon.day_counter(),
+                        CashflowType::OptionEmbeddedCoupon(coupon) => coupon.day_counter().unwrap(),
+                        _ => continue,
+                    };
+                    assert_eq!(actual, basis.unwrap_or(DayCounter::Actual360));
+                }
+            }
         }
     }
 

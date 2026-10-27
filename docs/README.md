@@ -124,3 +124,7 @@ explicit error; files from an older release are never substituted.
 For a manual redeployment, run **Documentation** on main using
 `workflow_dispatch`. Its optional `release_tag` selects a published version;
 blank selects the latest published release.
+
+Release-triggered deployments queue independently of push/PR validation, with
+`queue: max` preserving pending runs. The skipped Release triggered by a version
+commit must not replace the deployment triggered by the successful release.

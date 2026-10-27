@@ -1,8 +1,16 @@
 //! Python instrument specifications, built with explicit position metadata.
 
-use crate::pricing::extension::{Instrument, Trade};
-use pyo3::prelude::*;
-use pyo3::types::PyType;
+use crate::{
+    common::conversion::{
+        extract_business_day_convention, extract_calendar, extract_cap_floor_type,
+        extract_caplet_floorlet_type, extract_compounding, extract_currency, extract_date,
+        extract_date_generation_rule, extract_day_counter, extract_frequency, extract_market_index,
+        extract_option_type, extract_payment_structure, extract_strike, from_py, qs_err,
+    },
+    instruments::coupons::CouponDefinition,
+    pricing::extension::{Instrument, Trade},
+};
+use pyo3::{prelude::*, types::PyType};
 use quantsupport::prelude::{
     BasisSwap as QsBasisSwap, BasisSwapTrade, BusinessDayConvention, Calendar,
     CallScheduleEntry as QsCallScheduleEntry, CapFloor as QsCapFloor, CapFloorTrade, CapFloorType,
@@ -16,19 +24,10 @@ use quantsupport::prelude::{
     FloatingRateNoteTrade, Frequency, FxEuropeanOptionTrade, FxForwardTrade, IntoContingentClaims,
     LegsProvider, MakeBasisSwap, MakeCapFloor, MakeFixFloatCrossCurrencySwap, MakeFixedRateBond,
     MakeFixedRateDeposit, MakeFloatFloatCrossCurrencySwap, MakeFloatingRateNote,
-    MakeFxEuropeanOption, MakeFxForward, MakeRateFutures, MakeSteppedCouponBond, MakeSwap,
-    MarketIndex, PaymentStructure, RateDefinition, RateFutures as QsRateFutures, RateFuturesTrade,
-    SteppedCouponBondTrade, Strike, Swap as QsSwap, SwapTrade,
+    MakeFxEuropeanOption, MakeFxForward, MakeInstrument, MakeRateFutures, MakeSteppedCouponBond,
+    MakeSwap, MarketIndex, PaymentStructure, RateDefinition, RateFutures as QsRateFutures,
+    RateFuturesTrade, SteppedCouponBondTrade, Strike, Swap as QsSwap, SwapTrade,
 };
-
-use crate::common::conversion::{
-    extract_business_day_convention, extract_calendar, extract_cap_floor_type,
-    extract_caplet_floorlet_type, extract_compounding, extract_currency, extract_date,
-    extract_date_generation_rule, extract_day_counter, extract_frequency, extract_market_index,
-    extract_option_type, extract_payment_structure, extract_strike, from_py, qs_err,
-};
-
-use crate::instruments::coupons::CouponDefinition;
 
 macro_rules! product_dict_constructors {
     ($($name:ty),+ $(,)?) => {
@@ -44,16 +43,7 @@ macro_rules! product_dict_constructors {
                     cls.call((), Some(crate::common::conversion::expect_dict(obj, &format!("{}.from_dict", cls.name()?))?))
                 }
 
-                /// Loads constructor fields from a JSON file.
-                #[classmethod]
-                fn from_json<'py>(
-                    cls: &Bound<'py, PyType>,
-                    path: &str,
-                ) -> PyResult<Bound<'py, PyAny>> {
-                    let value: serde_json::Value = crate::common::conversion::from_json_file(path, "product")?;
-                    let obj = pythonize::pythonize(cls.py(), &value).map_err(qs_err)?;
-                    cls.call((), Some(crate::common::conversion::expect_dict(&obj, &format!("{} JSON construction parameters", cls.name()?))?))
-                }
+
             }
         )+
     };
@@ -129,7 +119,7 @@ impl Swap {
         let instrument: QsSwap<DualFwd> = build_swap_instrument!(self, position, DualFwd)?;
         Ok(SwapTrade::new(
             instrument,
-            position.trade_date(),
+            position.trade_date()?,
             position.notional().unwrap_or(self.notional),
             position.side(),
         ))
@@ -140,7 +130,7 @@ impl Swap {
         let instrument: QsSwap<f64> = build_swap_instrument!(self, position, f64)?;
         let trade = SwapTrade::new(
             instrument,
-            position.trade_date(),
+            position.trade_date()?,
             position.notional().unwrap_or(self.notional),
             position.side(),
         );
@@ -317,7 +307,7 @@ impl CrossCurrencySwap {
             build_xccy_instrument!(self, position, DualFwd)?;
         Ok(FloatFloatCrossCurrencySwapTrade::new(
             instrument,
-            position.trade_date(),
+            position.trade_date()?,
             position
                 .domestic_notional()
                 .unwrap_or(self.domestic_notional),
@@ -488,7 +478,7 @@ impl BasisSwap {
             build_basis_swap_instrument!(self, position, DualFwd)?;
         Ok(BasisSwapTrade::new(
             instrument,
-            position.trade_date(),
+            position.trade_date()?,
             position.notional().unwrap_or(self.notional),
             position.side(),
         ))
@@ -630,7 +620,7 @@ impl FixFloatCrossCurrencySwap {
             build_fix_float_xccy_instrument!(self, position, DualFwd)?;
         Ok(FixFloatCrossCurrencySwapTrade::new(
             instrument,
-            position.trade_date(),
+            position.trade_date()?,
             position
                 .domestic_notional()
                 .unwrap_or(self.domestic_notional),
@@ -895,7 +885,7 @@ impl FixedRateBond {
             build_fixed_rate_bond_instrument!(self, position, DualFwd)?;
         let mut trade = FixedRateBondTrade::new(
             instrument,
-            position.trade_date(),
+            position.trade_date()?,
             position.notional().unwrap_or(self.notional),
             position.side(),
             position.bond_anchor()?,
@@ -915,7 +905,7 @@ impl FixedRateBond {
             build_fixed_rate_bond_instrument!(self, position, f64)?;
         FixedRateBondTrade::new(
             instrument,
-            position.trade_date(),
+            position.trade_date()?,
             position.notional().unwrap_or(self.notional),
             position.side(),
             position.bond_anchor()?,
@@ -1096,7 +1086,7 @@ impl SteppedCouponBond {
         let instrument = builder.build().map_err(qs_err)?;
         let mut trade = SteppedCouponBondTrade::new(
             instrument,
-            position.trade_date(),
+            position.trade_date()?,
             position.notional().unwrap_or(self.notional),
             position.side(),
             position.bond_anchor()?,
@@ -1281,7 +1271,7 @@ impl FloatingRateNote {
             build_frn_instrument!(self, position, DualFwd)?;
         Ok(FloatingRateNoteTrade::new(
             instrument,
-            position.trade_date(),
+            position.trade_date()?,
             position.notional().unwrap_or(self.notional),
             position.side(),
         ))
@@ -1395,7 +1385,7 @@ impl FixedRateDeposit {
             build_deposit_instrument!(self, position, DualFwd)?;
         Ok(FixedRateDepositTrade::new(
             instrument,
-            position.trade_date(),
+            position.trade_date()?,
             position.notional().unwrap_or(self.notional),
             position.side(),
         ))
@@ -1511,7 +1501,7 @@ impl FxForwardPy {
         let instrument = mk.build().map_err(qs_err)?;
         Ok(FxForwardTrade::new(
             instrument,
-            position.trade_date(),
+            position.trade_date()?,
             position.notional().unwrap_or(1.0),
             position.side(),
         ))
@@ -1591,7 +1581,7 @@ impl FxOptionPy {
             .map_err(qs_err)?;
         Ok(FxEuropeanOptionTrade::new(
             instrument,
-            position.trade_date(),
+            position.trade_date()?,
             position.notional().unwrap_or(1.0),
             position.side(),
         ))
@@ -1660,7 +1650,7 @@ impl EquityOption {
         Ok(EquityEuropeanOptionTrade::new(
             instrument,
             position.notional().unwrap_or(1.0),
-            position.trade_date(),
+            position.trade_date()?,
             position.side(),
         ))
     }
@@ -1735,7 +1725,7 @@ impl CreditDefaultSwapPy {
         .map_err(qs_err)?;
         Ok(CdsTrade::new(
             instrument,
-            position.trade_date(),
+            position.trade_date()?,
             position.notional().unwrap_or(1.0),
             position.side(),
         ))
@@ -1838,7 +1828,7 @@ impl CapFloorPy {
             .map_err(qs_err)?;
         Ok(CapFloorTrade::new(
             instrument,
-            position.trade_date(),
+            position.trade_date()?,
             position.notional().unwrap_or(self.notional),
             position.side(),
         ))
@@ -1926,7 +1916,7 @@ impl CapletFloorletPy {
         );
         Ok(CapletFloorletTrade::new(
             instrument,
-            position.trade_date(),
+            position.trade_date()?,
             position.notional().unwrap_or(1.0),
             position.side(),
         ))
@@ -2008,7 +1998,7 @@ impl RateFuturesPy {
         let instrument: QsRateFutures = mk.build().map_err(qs_err)?;
         Ok(RateFuturesTrade::new(
             instrument,
-            position.trade_date(),
+            position.trade_date()?,
             position.num_contracts(),
             position.side(),
         ))
@@ -2080,7 +2070,7 @@ impl EquityForward {
             .map_err(qs_err)?;
         Ok(quantsupport::prelude::EquityForwardTrade::new(
             instrument,
-            position.trade_date(),
+            position.trade_date()?,
             position.notional().unwrap_or(1.0),
             position.side(),
         ))
@@ -2181,7 +2171,7 @@ impl EuropeanSwaption {
         let instrument = builder.build().map_err(qs_err)?;
         Ok(quantsupport::prelude::EuropeanSwaptionTrade::new(
             instrument,
-            position.trade_date(),
+            position.trade_date()?,
             amount,
             position.side(),
         ))

@@ -120,9 +120,18 @@ def declaration_source(obj):
 
 
 def prepare_class_docstrings(app, what, name, obj, options, lines):
-    if what not in ("class", "exception") or name not in declarations():
+    if what not in ("class", "exception"):
         return
-    node, _ = declarations()[name]
+    entry = declarations().get(name)
+    if entry is None:
+        # AutoAPI emits the unqualified name; autodoc emits the full name.
+        # Only merge when the declaration is unambiguous.
+        matches = [value for key, value in declarations().items()
+                   if key.rsplit(".", 1)[-1] == name]
+        if len(matches) != 1:
+            return
+        entry = matches[0]
+    node, _ = entry
     constructor = own_constructor(node)
     docs = [ast.get_docstring(node) or ""]
     if constructor is not None and ast.get_docstring(constructor):

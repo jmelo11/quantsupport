@@ -44,7 +44,7 @@ use crate::{
     },
     models::prepaymentmodelstate::PrepaymentModelState,
     rates::interestrate::InterestRate,
-    time::{date::Date, daycounter::DayCounter, period::Period},
+    time::{date::Date, daycounter::DayCounter, enums::TimeUnit, period::Period},
     utils::errors::{QSError, Result},
 };
 use std::collections::{HashMap, HashSet};
@@ -173,18 +173,17 @@ impl LoanPricer {
             .into_iter()
             .flatten()
             .filter(|request| {
-                request.date() <= ctx.evaluation_date()
+                ctx.anchor_fixings()
+                    && request.date() < ctx.evaluation_date()
                     && needed_observations
                         .contains(&(request.market_index().clone(), request.date()))
             })
-            .map(|request| {
-                let today = request.date() == ctx.evaluation_date();
-                FixingRequest::new(request.market_index().clone(), request.date())
-                    .with_missing_fixing_allowed(today)
-            })
+            .map(|request| FixingRequest::new(request.market_index().clone(), request.date()))
             .collect();
         let request = request.with_fixings_request(fixings);
-        let market_data = ctx.handle_request(&request)?;
+        let market_data = ctx
+            .handle_request(&request)?
+            .with_anchor_fixings(ctx.anchor_fixings());
         let state = LoanValuationState {
             market_data: Some(market_data),
             evaluation_date: ctx.evaluation_date(),
@@ -196,9 +195,9 @@ impl LoanPricer {
 
     /// Resolves an index observation with its own tenor and quote convention.
     ///
-    /// Historical dates use exact fixings. Today's fixing takes precedence over
-    /// a forecast; future observations use the index curve's discount-factor
-    /// ratio over the requested start/end dates. Stored fixings have no AD risk.
+    /// With anchoring enabled, historical dates require exact fixings. Otherwise
+    /// observations use the index curve's discount-factor ratio over the
+    /// requested start/end dates. Stored fixings have no AD risk.
     ///
     /// # Errors
     /// Propagates missing historical fixings, incomplete observation dates,
@@ -207,36 +206,15 @@ impl LoanPricer {
         state: &LoanValuationState,
         request: &ForwardRateRequest,
     ) -> Result<DualFwd> {
-        let index = request.market_index();
-        if request.fixing_date() < state.evaluation_date {
-            return state
-                .get_fixing(&index, request.fixing_date())
-                .map(DualFwd::scalar);
-        }
-        if request.fixing_date() == state.evaluation_date {
-            if let Ok(value) = state.get_fixing(&index, request.fixing_date()) {
-                return Ok(DualFwd::scalar(value));
-            }
-        }
-        let start = request
-            .start_date()
-            .ok_or_else(|| QSError::ValueNotSetErr("Index observation start".into()))?;
-        let end = request
-            .end_date()
-            .ok_or_else(|| QSError::ValueNotSetErr("Index observation end".into()))?;
-        let definition = index.rate_index_details()?.rate_definition();
-        let curve = state.get_discount_curve_element(&index)?.curve();
-        let growth = curve
-            .discount_factor(start)?
-            .div_val(curve.discount_factor(end)?);
-        Ok(InterestRate::<DualFwd>::implied_rate(
-            growth,
-            definition.day_counter(),
-            definition.compounding(),
-            definition.frequency(),
-            definition.day_counter().year_fraction(start, end),
-        )?
-        .rate())
+        request.resolve_index_rate(
+            state
+                .get_market_data_reponse()
+                .ok_or_else(|| QSError::ValueNotSetErr("Loan market data".into()))?,
+            state.evaluation_date,
+            state
+                .get_market_data_reponse()
+                .is_none_or(MarketData::anchor_fixings),
+        )
     }
 
     /// Clones the contractual cashflows and installs fixings on unpaid coupons.
@@ -315,7 +293,7 @@ impl LoanPricer {
             })?;
         let request = ForwardRateRequest::new(index.clone(), date)
             .with_start_date(date)
-            .with_end_date(date.advance(tenor.length(), tenor.units()));
+            .with_end_date(date.advance(tenor.length(), tenor.units())?);
         Self::resolve_index_rate_observation(state, &request)
     }
 
@@ -476,12 +454,11 @@ impl LoanPricer {
                         DualFwd::zero()
                     };
                 let prepayment_start = start.max(state.evaluation_date);
-                let period_fraction =
-                    if prepayment_start.advance(1, crate::time::enums::TimeUnit::Months) == end {
-                        1.0 / 12.0
-                    } else {
-                        DayCounter::Actual365.year_fraction(prepayment_start, end)
-                    };
+                let period_fraction = if prepayment_start.advance(1, TimeUnit::Months)? == end {
+                    1.0 / 12.0
+                } else {
+                    DayCounter::Actual365.year_fraction(prepayment_start, end)
+                };
                 loan.prepayment_model().conditional_prepayment_probability(
                     &PrepaymentModelState::new(
                         prepayment_start,
@@ -1423,8 +1400,18 @@ mod tests {
             .with_maturity_date(Date::new(2028, 1, 1))
             .with_notional(100_000.0)
             .with_currency(Currency::EUR)
-            .with_coupons(vec![CashflowType::fixed(0.06)])
-            .with_day_counter(DayCounter::Actual360)
+            .with_coupons(vec![CashflowType::FixedRateCoupon(FixedRateCoupon::new(
+                1.0,
+                Box::new(InterestRate::new(
+                    DualFwd::new(0.06),
+                    Compounding::Simple,
+                    Frequency::Annual,
+                    DayCounter::Actual360,
+                )),
+                Date::new(1970, 1, 1),
+                Date::new(1970, 1, 1),
+                Date::new(1970, 1, 1),
+            ))])
     }
     /// Evaluates the requested loan position and extracts its receipt PV.
     fn evaluate_loan_receipt_present_value(
@@ -1667,7 +1654,8 @@ mod tests {
                     for segment in 1..=4 {
                         let end = provider
                             .date
-                            .advance(segment * 6, crate::time::enums::TimeUnit::Months);
+                            .advance(segment * 6, TimeUnit::Months)
+                            .expect("valid date advancement");
                         let mut prefix_value = 0.0;
                         let mut repaid = 0.0;
                         for ((date, amount), kind) in table
@@ -2052,6 +2040,147 @@ mod tests {
                 "{label}: AD {derivative}, FD {fd}"
             );
         }
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod resolution_tests {
+    use crate::{
+        core::makeinstrument::test_support::{assert_legs, cashflows, loan, market, p, reference},
+        prelude::*,
+    };
+
+    #[test]
+    fn loan_resolution_forecasts_initial_coupon_and_matches_explicit_pricing_and_risk() -> Result<()>
+    {
+        let market = market(reference(), 0.04, FixingStore::default());
+        let ctx = &market;
+        let maker = loan()?;
+        let resolved = maker.build_using(ctx)?;
+        let explicit = maker
+            .clone()
+            .with_start_date(reference())
+            .with_maturity_date(reference() + p("2Y")?)
+            .with_initial_amortization_rate(0.05)
+            .build()?;
+        // Check individual principal balances with a tolerance for implied-rate roundoff.
+        let balances = |loan: &Loan<DualFwd>| {
+            loan.contractual_leg()
+                .cashflows()
+                .iter()
+                .filter_map(|c| match c {
+                    CashflowType::FloatingRateCoupon(c) => Some(c.notional()),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+        };
+        for (a, b) in balances(&resolved).iter().zip(balances(&explicit)) {
+            assert!((a - b).abs() < 1e-8);
+        }
+        let mut pricer = LoanPricer::new();
+        pricer.set_discount_policy(Box::new(
+            FixedIncomeDiscountPolicy::new(false)
+                .with_discount_curve_index(Currency::EUR, MarketIndex::ESTR),
+        ));
+        let requests = [Request::Value, Request::Sensitivities];
+        let auto = pricer.evaluate(
+            &LoanTrade::new(resolved, reference(), Side::LongReceive),
+            &requests,
+            &market,
+        )?;
+        let manual = pricer.evaluate(
+            &LoanTrade::new(explicit, reference(), Side::LongReceive),
+            &requests,
+            &market,
+        )?;
+        assert!(
+            (auto
+                .price()
+                .ok_or_else(|| QSError::ValueNotSetErr("PV".into()))?
+                - manual
+                    .price()
+                    .ok_or_else(|| QSError::ValueNotSetErr("PV".into()))?)
+            .abs()
+                < 1e-8
+        );
+        let auto_risk = auto
+            .sensitivities()
+            .ok_or_else(|| QSError::ValueNotSetErr("Risk".into()))?;
+        let manual_risk = manual
+            .sensitivities()
+            .ok_or_else(|| QSError::ValueNotSetErr("Risk".into()))?;
+        let auto_risk = auto_risk
+            .instrument_keys()
+            .iter()
+            .zip(auto_risk.exposure())
+            .collect::<std::collections::BTreeMap<_, _>>();
+        let manual_risk = manual_risk
+            .instrument_keys()
+            .iter()
+            .zip(manual_risk.exposure())
+            .collect::<std::collections::BTreeMap<_, _>>();
+        assert_eq!(
+            auto_risk.keys().collect::<Vec<_>>(),
+            manual_risk.keys().collect::<Vec<_>>()
+        );
+        for (key, value) in auto_risk {
+            assert!((value - manual_risk[key]).abs() < 1e-7);
+        }
+        assert!(maker.build().is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn fixing_policy_controls_historical_resolution_and_pricing() -> Result<()> {
+        let start = reference();
+        let evaluation = Date::new(2026, 3, 10);
+        let maker = loan()?.with_start_date(start);
+        let missing = market(start, 0.04, FixingStore::default())
+            .with_quote_store(QuoteStore::new(evaluation));
+        assert!(maker.build_using(&missing).is_err());
+        let projected = missing.with_anchor_fixings(false);
+        let auto = maker.build_using(&projected)?;
+        let explicit = maker
+            .clone()
+            .with_maturity_date(start + p("2Y")?)
+            .with_initial_amortization_rate(0.05)
+            .build()?;
+        assert_legs(&auto, &explicit)?;
+        let mut fixings = FixingStore::default();
+        fixings.add_fixing(&MarketIndex::EURIBOR12m, start, 0.10);
+        let stored = market(start, 0.04, fixings).with_quote_store(QuoteStore::new(evaluation));
+        let anchored = maker.build_using(&stored)?;
+        assert_ne!(
+            cashflows(auto.contractual_leg())?,
+            cashflows(anchored.contractual_leg())?
+        );
+        let projection_only = stored.clone().with_anchor_fixings(false);
+        let override_anchored = maker.build_using(&projection_only.with_anchor_fixings(true))?;
+        assert_eq!(
+            cashflows(anchored.contractual_leg())?,
+            cashflows(override_anchored.contractual_leg())?
+        );
+        let ignored = maker.build_using(&stored.clone().with_anchor_fixings(false))?;
+        assert_eq!(
+            cashflows(auto.contractual_leg())?,
+            cashflows(ignored.contractual_leg())?
+        );
+        let mut pricer = LoanPricer::new();
+        pricer.set_discount_policy(Box::new(
+            FixedIncomeDiscountPolicy::new(false)
+                .with_discount_curve_index(Currency::EUR, MarketIndex::ESTR),
+        ));
+        for market in [&stored, &projected] {
+            let trade = LoanTrade::new(maker.build_using(market)?, start, Side::LongReceive);
+            assert!(pricer.evaluate(&trade, &[Request::Value], market).is_ok());
+        }
+        let requests = MarketDataRequest::default()
+            .with_fixings_request(vec![FixingRequest::new(MarketIndex::EURIBOR12m, start)]);
+        assert!(projected.handle_request(&requests).is_err());
+        assert!(!projected
+            .handle_request(&MarketDataRequest::default())?
+            .anchor_fixings());
         Ok(())
     }
 }

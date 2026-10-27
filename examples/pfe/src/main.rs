@@ -61,11 +61,11 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
 
     // Trade 1 — 5Y USD IRS started 6 months ago (receive fixed @ 3.78%, pay SOFR)
     //           Some coupons are already in the past and need fixings.
-    let irs_start = ref_date.advance(-6, TimeUnit::Months);
+    let irs_start = ref_date.advance(-6, TimeUnit::Months)?;
     let swap = MakeSwap::<f64>::default()
         .with_identifier("USD_IRS_5Y".to_string())
         .with_start_date(irs_start)
-        .with_maturity_date(irs_start.advance(5, TimeUnit::Years))
+        .with_maturity_date(irs_start.advance(5, TimeUnit::Years)?)
         .with_fixed_rate(0.0378)
         .with_notional(10_000_000.0)
         .with_rate_definition(RateDefinition::new(
@@ -85,7 +85,7 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     // Trade 2 — 1Y EUR/USD FX Forward (buy EUR / sell USD at 1.10)
     let fx_fwd = MakeFxForward::default()
         .with_identifier("FX_FWD_EURUSD_1Y".to_string())
-        .with_delivery_date(ref_date.advance(1, TimeUnit::Years))
+        .with_delivery_date(ref_date.advance(1, TimeUnit::Years)?)
         .with_forward_price(1.10)
         .with_base_currency(Currency::EUR)
         .with_quote_currency(Currency::USD)
@@ -99,7 +99,7 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     let fx_spot_index: MarketIndex = MarketIndex::FxPair(fx_pair);
     let fx_opt = MakeFxEuropeanOption::default()
         .with_identifier("FX_OPT_EURUSD_1Y".to_string())
-        .with_expiry_date(ref_date.advance(1, TimeUnit::Years))
+        .with_expiry_date(ref_date.advance(1, TimeUnit::Years)?)
         .with_strike(1.12)
         .with_option_type(EuroOptionType::Call)
         .with_base_currency(Currency::EUR)
@@ -114,7 +114,7 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     let xccy = MakeFixFloatCrossCurrencySwap::<f64>::default()
         .with_identifier("XCCY_USDEUR_3Y".to_string())
         .with_start_date(ref_date)
-        .with_maturity_date(ref_date.advance(3, TimeUnit::Years))
+        .with_maturity_date(ref_date.advance(3, TimeUnit::Years)?)
         .with_domestic_notional(10_000_000.0)
         .with_foreign_notional(9_200_000.0)
         .with_fixed_rate(0.038)
@@ -247,7 +247,7 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     model.register_fx_spot_index(fx_spot_index, Currency::EUR);
 
     // ── 6. Set evaluation dates and requests ────────────────────
-    let max_maturity = ref_date.advance(5, TimeUnit::Years);
+    let max_maturity = ref_date.advance(5, TimeUnit::Years)?;
     let schedule = MakeSchedule::new(ref_date, max_maturity)
         .with_frequency(Frequency::Monthly)
         .build()

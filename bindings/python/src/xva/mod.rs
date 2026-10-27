@@ -8,19 +8,17 @@
 //! - [`XvaResult`] exposes per-netting-set XVA values and sensitivities as
 //!   pandas DataFrames.
 
-use crate::common::conversion::qs_err;
+use crate::{
+    common::conversion::{dataframe, extract_currency, extract_market_index, from_py, qs_err},
+    instruments::products::{
+        BasisSwap, CrossCurrencySwap, FixFloatCrossCurrencySwap, FixedRateBond, FixedRateDeposit,
+        FloatingRateNote, Swap,
+    },
+};
 use pyo3::prelude::*;
 use quantsupport::prelude::{
-    CsaTerms as QsCsaTerms, ExposureResult, NettingSet as QsNettingSet,
+    CsaTerms as QsCsaTerms, ExposureResult, MarketDataProvider, NettingSet as QsNettingSet,
     XvaEngineConfig as QsXvaEngineConfig,
-};
-
-use crate::common::conversion::{
-    dataframe, extract_currency, extract_market_index, from_json_file, from_py,
-};
-use crate::instruments::products::{
-    BasisSwap, CrossCurrencySwap, FixFloatCrossCurrencySwap, FixedRateBond, FixedRateDeposit,
-    FloatingRateNote, Swap,
 };
 
 /// XVA engine configuration (models, paths, seed, frequency).
@@ -40,14 +38,6 @@ impl XvaConfig {
     fn from_dict(obj: &Bound<'_, PyAny>) -> PyResult<Self> {
         Ok(Self {
             inner: from_py(obj, "xva config")?,
-        })
-    }
-
-    /// Loads the configuration from a JSON file.
-    #[staticmethod]
-    fn from_json(path: &str) -> PyResult<Self> {
-        Ok(Self {
-            inner: from_json_file(path, "xva config")?,
         })
     }
 
@@ -115,16 +105,6 @@ impl CsaTerms {
     fn from_dict(obj: &Bound<'_, PyAny>) -> PyResult<Self> {
         let terms = Self {
             inner: from_py(obj, "csa terms")?,
-        };
-        terms.inner.validate().map_err(qs_err)?;
-        Ok(terms)
-    }
-
-    /// Loads CSA terms from a JSON file.
-    #[staticmethod]
-    fn from_json(path: &str) -> PyResult<Self> {
-        let terms = Self {
-            inner: from_json_file(path, "csa terms")?,
         };
         terms.inner.validate().map_err(qs_err)?;
         Ok(terms)
@@ -232,7 +212,11 @@ pub struct NettingSet {
 
 impl NettingSet {
     /// Builds the library netting set (claims + CSA terms).
-    pub fn build(&self, py: Python<'_>) -> PyResult<QsNettingSet> {
+    pub fn build(
+        &self,
+        py: Python<'_>,
+        _market: &impl MarketDataProvider,
+    ) -> PyResult<QsNettingSet> {
         let mut claims = Vec::new();
         for position in &self.trades {
             claims.extend(Self::claims(&position.borrow(py), py)?);

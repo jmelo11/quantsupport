@@ -6,6 +6,7 @@ snapshots, not live feeds. This module is example code, not part of the installe
 binding.
 """
 
+import json
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -29,10 +30,8 @@ class MarketInputs:
 def load_market():
     """Load fresh typed inputs from the shared USD/SOFR example data."""
     return MarketInputs(
-        quotes=qs.QuoteStore.from_json(str(MARKET_DATA / "quotes.json")),
-        curves=qs.CurveConfiguration.from_json(str(MARKET_DATA / "curve_specs.json")),
-        volatility_surfaces=qs.VolatilitySurfaceConfiguration.from_json(
-            str(MARKET_DATA / "vol_specs.json")
-        ),
+        quotes=qs.QuoteStore.from_dict(json.loads(Path(MARKET_DATA / "quotes.json").read_text(encoding="utf-8"))),
+        curves=qs.CurveConfiguration.from_dict_list(json.loads(Path(MARKET_DATA / "curve_specs.json").read_text(encoding="utf-8"))),
+        volatility_surfaces=qs.VolatilitySurfaceConfiguration.from_dict_list(json.loads(Path(MARKET_DATA / "vol_specs.json").read_text(encoding="utf-8"))),
         csa_policy=qs.SingleCurveCSADiscountPolicy(qs.Currency.USD, qs.MarketIndex.SOFR),
     )

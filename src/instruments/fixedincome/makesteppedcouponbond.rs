@@ -1,10 +1,12 @@
 //! Builder for callable stepped-coupon bonds.
 
-use std::{collections::HashSet, marker::PhantomData};
-
 use crate::{
     ad::scalar::Scalar,
-    core::{instrument::AssetClass, trade::Side},
+    core::{
+        instrument::AssetClass,
+        makeinstrument::{resolve_date, MakeInstrument},
+        trade::Side,
+    },
     currencies::currency::Currency,
     instruments::{
         cashflows::{cashflow::SimpleCashflow, cashflowtype::CashflowType, leg::Leg},
@@ -13,22 +15,28 @@ use crate::{
     rates::{compounding::Compounding, interestrate::RateDefinition},
     time::{
         calendar::Calendar,
-        calendars::nullcalendar::NullCalendar,
+        calendars::{nullcalendar::NullCalendar, traits::IsCalendar},
         date::Date,
         daycounter::DayCounter,
         enums::{BusinessDayConvention, DateGenerationRule, Frequency},
+        period::Period,
         schedule::MakeSchedule,
     },
     utils::errors::{QSError, Result},
 };
+use std::{collections::HashSet, marker::PhantomData};
 
 /// Fluent builder for a bullet or amortizing [`SteppedCouponBond`].
 ///
 /// `coupons` and `notional_percentages` are positional schedules. If either
 /// list is shorter than the generated coupon schedule, its final value is
 /// repeated through maturity.
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct MakeSteppedCouponBond<T: Scalar> {
+    start_tenor: Option<Period>,
+    maturity_tenor: Option<Period>,
+    first_coupon_tenor: Option<Period>,
+    next_to_last_coupon_tenor: Option<Period>,
     start_date: Option<Date>,
     maturity_date: Option<Date>,
     units: Option<f64>,
@@ -47,14 +55,58 @@ pub struct MakeSteppedCouponBond<T: Scalar> {
     coupons: Vec<CashflowType<T>>,
     notional_percentages: Vec<f64>,
     call_schedule: Vec<CallScheduleEntry>,
+    call_tenors: Vec<(Period, Option<Period>, f64)>,
     _marker: PhantomData<T>,
 }
 
 impl<T: Scalar> MakeSteppedCouponBond<T> {
+    /// Sets start date as a tenor from the context evaluation date.
+    /// Replaces an explicitly supplied start date. Use `build_using` when an external anchor is needed.
+    #[must_use]
+    pub const fn with_start_tenor(mut self, tenor: Period) -> Self {
+        self.start_tenor = Some(tenor);
+        self.start_date = None;
+        self
+    }
+
+    /// Sets maturity date as a tenor from the resolved start date.
+    /// Replaces an explicitly supplied maturity date. Use `build_using` when an external anchor is needed.
+    #[must_use]
+    pub const fn with_maturity_tenor(mut self, tenor: Period) -> Self {
+        self.maturity_tenor = Some(tenor);
+        self.maturity_date = None;
+        self
+    }
+
+    /// Sets first coupon date as a tenor from the resolved start date.
+    /// Replaces an explicitly supplied first coupon date. Use `build_using` when an external anchor is needed.
+    #[must_use]
+    pub const fn with_first_coupon_tenor(mut self, tenor: Period) -> Self {
+        self.first_coupon_tenor = Some(tenor);
+        self.first_coupon_date = None;
+        self
+    }
+
+    /// Sets next to last coupon date as a tenor from the resolved maturity date.
+    /// Replaces an explicitly supplied next to last coupon date. Use `build_using` when an external anchor is needed.
+    #[must_use]
+    pub const fn with_next_to_last_coupon_tenor(mut self, tenor: Period) -> Self {
+        self.next_to_last_coupon_tenor = Some(tenor);
+        self.next_to_last_coupon_date = None;
+        self
+    }
+
+    /// Sets maturity as a tenor from the resolved start date.
+    #[must_use]
+    pub const fn with_tenor(self, tenor: Period) -> Self {
+        self.with_maturity_tenor(tenor)
+    }
+
     /// Sets the bond effective date.
     #[must_use]
     pub const fn with_start_date(mut self, date: Date) -> Self {
         self.start_date = Some(date);
+        self.start_tenor = None;
         self
     }
 
@@ -62,6 +114,7 @@ impl<T: Scalar> MakeSteppedCouponBond<T> {
     #[must_use]
     pub const fn with_maturity_date(mut self, date: Date) -> Self {
         self.maturity_date = Some(date);
+        self.maturity_tenor = None;
         self
     }
 
@@ -139,6 +192,7 @@ impl<T: Scalar> MakeSteppedCouponBond<T> {
     #[must_use]
     pub const fn with_first_coupon_date(mut self, date: Date) -> Self {
         self.first_coupon_date = Some(date);
+        self.first_coupon_tenor = None;
         self
     }
 
@@ -146,6 +200,7 @@ impl<T: Scalar> MakeSteppedCouponBond<T> {
     #[must_use]
     pub const fn with_next_to_last_coupon_date(mut self, date: Date) -> Self {
         self.next_to_last_coupon_date = Some(date);
+        self.next_to_last_coupon_tenor = None;
         self
     }
 
@@ -177,7 +232,57 @@ impl<T: Scalar> MakeSteppedCouponBond<T> {
     #[must_use]
     pub fn with_call_schedule(mut self, calls: Vec<CallScheduleEntry>) -> Self {
         self.call_schedule = calls;
+        self.call_tenors.clear();
         self
+    }
+
+    /// Sets discrete issuer calls as tenors from the resolved start date.
+    #[must_use]
+    pub fn with_call_schedule_tenors(mut self, calls: Vec<(Period, f64)>) -> Self {
+        self.call_tenors = calls
+            .into_iter()
+            .map(|(tenor, strike)| (tenor, None, strike))
+            .collect();
+        self.call_schedule.clear();
+        self
+    }
+
+    /// Sets inclusive issuer call windows as tenors from the resolved start date.
+    #[must_use]
+    pub fn with_call_window_tenors(mut self, calls: Vec<(Period, Period, f64)>) -> Self {
+        self.call_tenors = calls
+            .into_iter()
+            .map(|(start, end, strike)| (start, Some(end), strike))
+            .collect();
+        self.call_schedule.clear();
+        self
+    }
+}
+
+/// Extracts a required builder field with a domain-specific error label.
+fn required<T>(value: Option<T>, label: &str) -> Result<T> {
+    value.ok_or_else(|| QSError::ValueNotSetErr(label.into()))
+}
+
+/// Expands a positional schedule and carries its final entry through `count`.
+fn repeat_last<T: Clone>(values: &[T], count: usize) -> Result<Vec<T>> {
+    let last = values
+        .last()
+        .ok_or_else(|| QSError::InvalidValueErr("Schedule list cannot be empty".into()))?;
+    Ok((0..count)
+        .map(|index| values.get(index).unwrap_or(last).clone())
+        .collect())
+}
+
+impl<T: Scalar> MakeInstrument for MakeSteppedCouponBond<T> {
+    type Instrument = SteppedCouponBond<T>;
+
+    fn is_resolved(&self) -> bool {
+        self.start_tenor.is_none()
+            && self.maturity_tenor.is_none()
+            && self.first_coupon_tenor.is_none()
+            && self.next_to_last_coupon_tenor.is_none()
+            && self.call_tenors.is_empty()
     }
 
     /// Builds and validates the stepped-coupon bond.
@@ -186,11 +291,28 @@ impl<T: Scalar> MakeSteppedCouponBond<T> {
     /// Returns an error for missing fields, invalid schedule lists, or an
     /// invalid call schedule.
     #[allow(clippy::too_many_lines)]
-    pub fn build(self) -> Result<SteppedCouponBond<T>> {
+    fn build(&self) -> Result<Self::Instrument> {
+        if !self.is_resolved() {
+            return Err(QSError::UnresolvedProductErr(
+                "MakeSteppedCouponBond has unresolved date tenors. Supply the corresponding absolute dates or call maker.build_using(&context)".into(),
+            ));
+        }
+        if [
+            self.start_date,
+            self.maturity_date,
+            self.first_coupon_date,
+            self.next_to_last_coupon_date,
+        ]
+        .contains(&Some(Date::empty()))
+        {
+            return Err(QSError::InvalidValueErr(
+                "MakeSteppedCouponBond dates must not be empty".into(),
+            ));
+        }
         let start_date = required(self.start_date, "Start date")?;
         let maturity_date = required(self.maturity_date, "Maturity date")?;
         let notional = required(self.notional, "Notional")?;
-        let identifier = required(self.identifier, "Identifier")?;
+        let identifier = required(self.identifier.clone(), "Identifier")?;
         let currency = required(self.currency, "Currency")?;
         let units = self.units.unwrap_or(100.0);
         if !notional.is_finite() || notional <= 0.0 {
@@ -203,6 +325,7 @@ impl<T: Scalar> MakeSteppedCouponBond<T> {
             .with_frequency(self.payment_frequency.unwrap_or(Frequency::Semiannual))
             .with_calendar(
                 self.calendar
+                    .clone()
                     .unwrap_or_else(|| Calendar::NullCalendar(NullCalendar::new())),
             )
             .with_convention(
@@ -339,33 +462,116 @@ impl<T: Scalar> MakeSteppedCouponBond<T> {
             units,
             leg,
             currency,
-            self.coupons,
-            self.notional_percentages,
-            self.call_schedule,
+            self.coupons.clone(),
+            self.notional_percentages.clone(),
+            self.call_schedule.clone(),
         )
     }
-}
 
-/// Extracts a required builder field with a domain-specific error label.
-fn required<T>(value: Option<T>, label: &str) -> Result<T> {
-    value.ok_or_else(|| QSError::ValueNotSetErr(label.into()))
-}
-
-/// Expands a positional schedule and carries its final entry through `count`.
-fn repeat_last<T: Clone>(values: &[T], count: usize) -> Result<Vec<T>> {
-    let last = values
-        .last()
-        .ok_or_else(|| QSError::InvalidValueErr("Schedule list cannot be empty".into()))?;
-    Ok((0..count)
-        .map(|index| values.get(index).unwrap_or(last).clone())
-        .collect())
+    fn resolve_dates(&self, reference_date: Date) -> Result<Self> {
+        let mut resolved = self.clone();
+        let calendar = self
+            .calendar
+            .clone()
+            .unwrap_or_else(|| Calendar::NullCalendar(NullCalendar::new()));
+        let convention = self
+            .business_day_convention
+            .unwrap_or(BusinessDayConvention::Unadjusted);
+        let date_calendar = &calendar;
+        let date_convention = convention;
+        let date_end_of_month = self.end_of_month.unwrap_or(false);
+        resolved.start_date = Some(resolve_date(
+            self.start_date,
+            self.start_tenor,
+            reference_date,
+            "start_date",
+            date_calendar,
+            date_convention,
+            date_end_of_month,
+        )?);
+        resolved.start_tenor = None;
+        resolved.maturity_date = Some(resolve_date(
+            self.maturity_date,
+            self.maturity_tenor,
+            resolved
+                .start_date
+                .ok_or_else(|| QSError::ValueNotSetErr("start_date".into()))?,
+            "maturity_date",
+            date_calendar,
+            date_convention,
+            date_end_of_month,
+        )?);
+        resolved.maturity_tenor = None;
+        if self.first_coupon_date.is_some() || self.first_coupon_tenor.is_some() {
+            resolved.first_coupon_date = Some(resolve_date(
+                self.first_coupon_date,
+                self.first_coupon_tenor,
+                resolved
+                    .start_date
+                    .ok_or_else(|| QSError::ValueNotSetErr("start_date".into()))?,
+                "first_coupon_date",
+                date_calendar,
+                date_convention,
+                date_end_of_month,
+            )?);
+        }
+        resolved.first_coupon_tenor = None;
+        if self.next_to_last_coupon_date.is_some() || self.next_to_last_coupon_tenor.is_some() {
+            resolved.next_to_last_coupon_date = Some(resolve_date(
+                self.next_to_last_coupon_date,
+                self.next_to_last_coupon_tenor,
+                resolved
+                    .maturity_date
+                    .ok_or_else(|| QSError::ValueNotSetErr("maturity_date".into()))?,
+                "next_to_last_coupon_date",
+                date_calendar,
+                date_convention,
+                date_end_of_month,
+            )?);
+        }
+        resolved.next_to_last_coupon_tenor = None;
+        if !self.call_tenors.is_empty() {
+            let start = resolved
+                .start_date
+                .ok_or_else(|| QSError::ValueNotSetErr("Start date".into()))?;
+            resolved.call_schedule = self
+                .call_tenors
+                .iter()
+                .map(|(tenor, end, strike)| {
+                    let date = date_calendar.advance(
+                        start,
+                        *tenor,
+                        Some(date_convention),
+                        date_end_of_month,
+                    )?;
+                    Ok(match end {
+                        Some(end) => CallScheduleEntry::window(
+                            date,
+                            date_calendar.advance(
+                                start,
+                                *end,
+                                Some(date_convention),
+                                date_end_of_month,
+                            )?,
+                            *strike,
+                        ),
+                        None => CallScheduleEntry::new(date, *strike),
+                    })
+                })
+                .collect::<Result<Vec<_>>>()?;
+            resolved.call_tenors.clear();
+        }
+        Ok(resolved)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::indices::marketindex::MarketIndex;
-    use crate::{ad::dual::DualFwd, instruments::cashflows::cashflow::Cashflow};
+    use crate::{
+        ad::dual::DualFwd, indices::marketindex::MarketIndex,
+        instruments::cashflows::cashflow::Cashflow,
+    };
 
     #[test]
     fn repeats_last_coupon_and_notional_percentage() {
@@ -524,6 +730,46 @@ mod tests {
             .value();
         assert!((capped - 0.05).abs() < 1.0e-12);
         assert!((floored - 0.02).abs() < 1.0e-12);
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod resolution_tests {
+    use crate::{
+        core::makeinstrument::test_support::{assert_legs, empty_market, p, reference},
+        prelude::*,
+    };
+
+    #[test]
+    fn callable_bond_resolves_exercise_windows_and_both_stubs() -> Result<()> {
+        let market = empty_market(reference());
+        let ctx = &market;
+        let maker = MakeSteppedCouponBond::<f64>::default()
+            .with_identifier("callable".into())
+            .with_start_tenor(p("0D")?)
+            .with_tenor(p("2Y")?)
+            .with_first_coupon_tenor(p("3M")?)
+            .with_next_to_last_coupon_tenor(Period::new(-3, TimeUnit::Months))
+            .with_notional(100_000.0)
+            .with_currency(Currency::EUR)
+            .with_coupons(vec![CashflowType::fixed(0.04)])
+            .with_notional_percentages(vec![1.0])
+            .with_call_window_tenors(vec![(p("6M")?, p("18M")?, 100.0)]);
+        let resolved = maker.build_using(ctx)?;
+        let expected = maker
+            .with_start_date(reference())
+            .with_maturity_date(reference() + p("2Y")?)
+            .with_first_coupon_date(reference() + p("3M")?)
+            .with_next_to_last_coupon_date(reference() + p("21M")?)
+            .with_call_schedule(vec![CallScheduleEntry::window(
+                reference() + p("6M")?,
+                reference() + p("18M")?,
+                100.0,
+            )])
+            .build()?;
+        assert_legs(&resolved, &expected)?;
+        assert_eq!(resolved.call_schedule(), expected.call_schedule());
         Ok(())
     }
 }

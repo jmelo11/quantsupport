@@ -57,13 +57,28 @@ This numerical example assumes equal accrual fractions. Actual schedule
 fractions depend on the payment dates and day counter. At zero interest and
 with no balloon, the instalment is principal divided by the number of periods.
 
-French and balloon loans whose first coupon is floating require an explicit initial
-all-in `amortization_rate`. The builder uses it to fix the principal schedule.
+Rust makers built with `MakeInstrument::build_using` obtain the initial all-in rate from
+the first coupon's fixing or forecast, including spread and payoff rules. An
+explicit `with_initial_amortization_rate` overrides that observation. Direct
+`build()` construction requires an explicit initial all-in `amortization_rate`
+for floating-first French/balloon loans. Python makers use `build_using(context)` when that rate is omitted.
+Excel constructs the loan using its explicit construction context. The resolved rate fixes
+the principal schedule.
 Subsequent market moves or reset observations change floating interest without
 changing contractual coupon notionals or redemptions. Otherwise the first fixed
 coupon supplies the initial amortization rate for every principal period;
 later coupon steps do not automatically recast principal. Bullet loans repay
 principal at maturity.
+
+Accrual day counters belong to coupons. A floating coupon uses its explicit
+day counter, falling back to its index convention when omitted. Fixed coupons
+use their `InterestRate` day counter. The loan uses those same conventions for
+principal amortization and preserves them when generating each cashflow.
+`MakeLoan::with_day_counter` and Python `Loan(day_counter=...)` have been removed;
+move that setting into the coupon. With an initial amortization rate matching
+the first all-in floating fixing, French payments are level through the first
+reset, including months with different accrual lengths. Later resets can change
+payments because contractual principal remains fixed.
 
 The following Rust fragment builds a floating mortgage; its market and trade
 are supplied by the surrounding application.
@@ -81,7 +96,6 @@ let loan = MakeLoan::<DualFwd>::default()
     .with_coupons(vec![CashflowType::floating(MarketIndex::EURIBOR12m, 0.01, None, None)])
     .with_initial_amortization_rate(0.05)
     .with_payment_frequency(Frequency::Monthly)
-    .with_day_counter(DayCounter::Actual360)
     .with_calendar(Calendar::TARGET(TARGET::new()))
     .with_fixing_lag_business_days(2)
     .build()?;
@@ -119,9 +133,11 @@ leaving the instrument unchanged.
 
 ## Prepayment functions
 
-A loan carries a `PrepaymentModel<DualFwd>` function independently of its
+A `Loan<T>` carries a `PrepaymentModel<T>` function independently of its
 contractual cashflows. `PrepaymentModelConfiguration::Cpr`, `CprCurve`, and
-`Refinancing` implement that function. For a builder already containing the
+`Refinancing` implement that function for any supported scalar. Custom models
+passed to `MakeLoan<T>::with_custom_prepayment_model` use the same `T` as the
+coupon templates. For a `MakeLoan<DualFwd>` already containing the
 contract terms, a custom function can be
 attached as in this Rust fragment:
 
@@ -133,6 +149,14 @@ let loan = builder.with_custom_prepayment_model(
     },
 ).build()?;
 ```
+
+Changing a loan's scalar type requires an explicit target-scalar prepayment
+model. Use `loan.into_scalar::<DualFwd>(Arc::new(model))`, and the same method on
+`LoanTrade<T>` to preserve its date and side. For portable configurations, pass
+the same configuration again. For custom models, supply an equivalent
+implementation for the target scalar; converting an arbitrary model
+automatically could discard its AD dependencies. Implicit `From`/`Into`
+conversions between loan scalar types are therefore unavailable.
 
 The pricer evaluates the function after scheduled principal. A regular monthly
 interval converts annual CPR to `1 - (1 - CPR)^(1/12)`; partial or irregular
@@ -177,7 +201,7 @@ loan = qs.Loan(
     coupons=[qs.FloatingRateCoupon(index=qs.MarketIndex.EURIBOR12m, spread=0.01)],
     currency=qs.Currency.EUR,
     repayment=qs.LoanRepaymentStructure.french(), amortization_rate=0.05,
-    payment_frequency=qs.Frequency.Monthly, day_counter=qs.DayCounter.Actual360,
+    payment_frequency=qs.Frequency.Monthly,
     calendar=qs.Calendar.TARGET, fixing_lag=2,
     prepayment=qs.PrepaymentModelConfiguration.constant_annual_cpr(cpr=0.12),
 )
@@ -191,8 +215,8 @@ with qs.PricingContext(quotes=quotes, curves=curves, fixings=fixings, csa_policy
     risk = result.sensitivities
 ```
 
-The Python constructor delegates to the Rust builder. `to_dict`, `from_dict`,
-and `from_json` serialize construction parameters. Typed definitions and their
+The Python constructor delegates to the Rust builder. `to_dict` and `from_dict`
+serialize construction parameters; use Python's `json` module for files. Typed definitions and their
 plain serialized dictionaries are both accepted. `loan.coupon_fixing_requests()` lists
 unique coupon observations for loading fixings; valuation belongs to the pricer.
 

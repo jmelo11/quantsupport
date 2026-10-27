@@ -2,9 +2,16 @@
 
 use super::{loan::Loan, loanrepaymentstructure::LoanRepaymentStructure};
 use crate::{
-    ad::{dual::DualFwd, scalar::Scalar},
+    ad::scalar::Scalar,
     core::{
-        instrument::AssetClass, marketdatahandling::forwardraterequest::ForwardRateRequest,
+        instrument::AssetClass,
+        makeinstrument::{resolve_date, MakeInstrument},
+        marketdatahandling::{
+            constructedelementrequest::ConstructedElementRequest,
+            fixingrequest::FixingRequest,
+            forwardraterequest::ForwardRateRequest,
+            marketdata::{MarketDataProvider, MarketDataRequest},
+        },
         trade::Side,
     },
     currencies::currency::Currency,
@@ -14,12 +21,10 @@ use crate::{
         prepaymentmodel::PrepaymentModel,
         prepaymentmodelconfiguration::PrepaymentModelConfiguration,
     },
-    rates::{compounding::Compounding, interestrate::RateDefinition},
     time::{
         calendar::Calendar,
         calendars::{nullcalendar::NullCalendar, traits::IsCalendar},
         date::Date,
-        daycounter::DayCounter,
         enums::{BusinessDayConvention, Frequency, TimeUnit},
         period::Period,
         schedule::MakeSchedule,
@@ -31,18 +36,24 @@ use std::{collections::HashSet, sync::Arc};
 /// Builds contractual principal schedules.
 ///
 /// Defaults belong to this builder:
-/// monthly payments, French amortization, Actual/365, unadjusted dates, no
+/// monthly payments, French amortization, unadjusted dates, no
 /// prepayment or credit, and 40% recovery. Index tenor and reset frequency come
-/// from rate-index metadata. Floating amortization requires an explicit initial
-/// all-in rate; the resulting notionals stay fixed when market curves change.
+/// from rate-index metadata. Accrual conventions belong to each coupon; floating
+/// coupons default to the index day counter. Context-based resolution obtains the initial
+/// floating all-in rate; an explicit amortization rate overrides it. The resolved
+/// notionals stay fixed when market curves change.
 ///
 /// Set the identifier, origination and maturity dates, positive principal,
-/// currency, and coupon list before calling [`Self::build`].
+/// currency, and coupon list before resolving the maker. [`Self::build`] handles
+/// explicit dates and requires an amortization override for floating-first loans.
 /// Rates, spreads, recovery, and balloon fractions are decimal values.
+/// Coupon templates and custom prepayment models use the same scalar type `T`.
 /// Coupon templates are positional, as for the stepped-coupon bond: the final
 /// entry repeats through maturity. Floating-index changes start new reset grids.
 #[derive(Clone, Default)]
 pub struct MakeLoan<T: Scalar = f64> {
+    start_tenor: Option<Period>,
+    maturity_tenor: Option<Period>,
     identifier: Option<String>,
     start_date: Option<Date>,
     maturity_date: Option<Date>,
@@ -52,19 +63,37 @@ pub struct MakeLoan<T: Scalar = f64> {
     currency: Option<Currency>,
     payment_frequency: Option<Frequency>,
     fixing_frequency: Option<Frequency>,
-    day_counter: Option<DayCounter>,
     amortization_rate: Option<f64>,
     prepayment: Option<PrepaymentModelConfiguration>,
+    prepayment_tenors: Vec<(Period, f64)>,
     credit_index: Option<MarketIndex>,
     recovery: Option<f64>,
     fixing_lag: Option<i32>,
     index_tenor: Option<Period>,
     calendar: Option<Calendar>,
     business_day_convention: Option<BusinessDayConvention>,
-    prepayment_function: Option<Arc<dyn PrepaymentModel<DualFwd>>>,
+    prepayment_function: Option<Arc<dyn PrepaymentModel<T>>>,
 }
 
 impl<T: Scalar> MakeLoan<T> {
+    /// Sets start date as a tenor from the context evaluation date.
+    /// Replaces an explicitly supplied start date. Use `build_using` when an external anchor is needed.
+    #[must_use]
+    pub const fn with_start_tenor(mut self, tenor: Period) -> Self {
+        self.start_tenor = Some(tenor);
+        self.start_date = None;
+        self
+    }
+
+    /// Sets maturity date as a tenor from the resolved start date.
+    /// Replaces an explicitly supplied maturity date. Use `build_using` when an external anchor is needed.
+    #[must_use]
+    pub const fn with_maturity_tenor(mut self, tenor: Period) -> Self {
+        self.maturity_tenor = Some(tenor);
+        self.maturity_date = None;
+        self
+    }
+
     /// Sets the contract identifier.
     #[must_use]
     pub fn with_identifier(mut self, identifier: String) -> Self {
@@ -76,6 +105,7 @@ impl<T: Scalar> MakeLoan<T> {
     #[must_use]
     pub const fn with_start_date(mut self, start_date: Date) -> Self {
         self.start_date = Some(start_date);
+        self.start_tenor = None;
         self
     }
 
@@ -83,6 +113,7 @@ impl<T: Scalar> MakeLoan<T> {
     #[must_use]
     pub const fn with_maturity_date(mut self, maturity_date: Date) -> Self {
         self.maturity_date = Some(maturity_date);
+        self.maturity_tenor = None;
         self
     }
 
@@ -144,16 +175,6 @@ impl<T: Scalar> MakeLoan<T> {
         self
     }
 
-    /// Sets the interest accrual day counter.
-    ///
-    /// Defaults to Actual/365. Used for coupon interest and the initial contractual
-    /// amortization calculation; prepayment conversion uses its own interval rule.
-    #[must_use]
-    pub const fn with_day_counter(mut self, day_counter: DayCounter) -> Self {
-        self.day_counter = Some(day_counter);
-        self
-    }
-
     /// Attaches the conditional prepayment configuration, checked during build.
     ///
     /// Defaults to no prepayment. The pricer applies the function after scheduled
@@ -165,6 +186,16 @@ impl<T: Scalar> MakeLoan<T> {
         prepayment: PrepaymentModelConfiguration,
     ) -> Self {
         self.prepayment = Some(prepayment);
+        self.prepayment_tenors.clear();
+        self
+    }
+
+    /// Sets annual CPR observations at tenors from the resolved loan start.
+    /// The observations must resolve to strictly increasing dates.
+    #[must_use]
+    pub fn with_prepayment_tenors(mut self, points: Vec<(Period, f64)>) -> Self {
+        self.prepayment_tenors = points;
+        self.prepayment = None;
         self
     }
 
@@ -230,9 +261,10 @@ impl<T: Scalar> MakeLoan<T> {
 
     /// Initial all-in rate used only to generate contractual amortization.
     ///
-    /// An annual decimal rate. Required for floating-first French/balloon loans;
-    /// otherwise the first fixed coupon supplies the rate for all principal
-    /// periods, including later coupon steps. Market forecasts do not replace it.
+    /// An annual decimal override. Without it, resolution uses the first fixed
+    /// coupon or the first floating observation plus its spread and payoff rules.
+    /// [`Self::build`] requires this override for floating-first amortizing loans
+    /// because it has no market context. An explicit rate is never replaced.
     #[must_use]
     pub const fn with_initial_amortization_rate(mut self, rate: f64) -> Self {
         self.amortization_rate = Some(rate);
@@ -242,249 +274,81 @@ impl<T: Scalar> MakeLoan<T> {
     /// Attaches an arbitrary conditional prepayment function for the pricer.
     ///
     /// Overrides the portable configuration and is omitted from serialization.
+    /// The model's state and returned probability use the builder's scalar type `T`.
     /// The function must return a finite interval probability in [0, 1]. A custom
     /// model needing a refinancing observation must implement
     /// [`PrepaymentModel::requires_refinancing_benchmark`]; a closure uses the default `false`.
     #[must_use]
     pub fn with_custom_prepayment_model(
         mut self,
-        function: impl PrepaymentModel<DualFwd> + 'static,
+        function: impl PrepaymentModel<T> + 'static,
     ) -> Self {
         self.prepayment_function = Some(Arc::new(function));
         self
     }
+}
 
-    /// Builds contractual cashflows from positional coupon templates.
-    ///
-    /// The last coupon repeats through maturity. Each contiguous run of the
-    /// same floating index has its own reset grid; spread or cap/floor changes
-    /// keep that grid. Principal uses the explicit initial amortization rate,
-    /// or the first fixed coupon's rate when available, and stays contractual.
-    ///
-    /// # Errors
-    /// Rejects missing/invalid terms, empty or oversized coupon lists, non-coupon
-    /// entries, unaligned resets, and amortizing floating-first schedules without
-    /// an explicit initial amortization rate.
-    #[allow(clippy::too_many_lines)]
-    pub fn build(self) -> Result<Loan<T>> {
-        let identifier = require_loan_term(self.identifier, "Loan identifier")?;
-        let start = require_loan_term(self.start_date, "Loan start date")?;
-        let end = require_loan_term(self.maturity_date, "Loan maturity date")?;
-        let notional = require_loan_term(self.notional, "Loan notional")?;
-        let currency = require_loan_term(self.currency, "Loan currency")?;
-        let repayment = self.repayment.unwrap_or(LoanRepaymentStructure::French);
-        if identifier.trim().is_empty() || start >= end || !notional.is_finite() || notional <= 0.0
-        {
-            return Err(QSError::InvalidValueErr(
-                "Invalid loan dates or principal".into(),
-            ));
-        }
-        let payment_frequency = self.payment_frequency.unwrap_or(Frequency::Monthly);
-        let payment_period = require_positive_schedule_period(payment_frequency)?;
-        if let Some(frequency) = self.fixing_frequency {
-            require_positive_schedule_period(frequency)?;
-        }
-        if self.index_tenor.is_some_and(|tenor| tenor.length() <= 0) {
-            return Err(QSError::InvalidValueErr(
-                "Loan index tenor must be positive".into(),
-            ));
-        }
-        let calendar = self
-            .calendar
-            .unwrap_or_else(|| Calendar::NullCalendar(NullCalendar::new()));
-        let convention = self
-            .business_day_convention
-            .unwrap_or(BusinessDayConvention::Unadjusted);
-        let day_counter = self.day_counter.unwrap_or(DayCounter::Actual365);
-        let fixing_lag = self.fixing_lag.unwrap_or(0);
-        if fixing_lag < 0 {
-            return Err(QSError::InvalidValueErr(
-                "Loan fixing lag must be nonnegative".into(),
-            ));
-        }
-        let schedule = MakeSchedule::new(start, end)
-            .with_tenor(payment_period)
-            .with_convention(BusinessDayConvention::Unadjusted)
-            .with_termination_date_convention(BusinessDayConvention::Unadjusted)
-            .forwards()
-            .build()?;
-        let dates = schedule.dates();
-        let period_count = dates.len().saturating_sub(1);
-        let last_coupon = self.coupons.last().ok_or_else(|| {
-            QSError::InvalidValueErr("Loan requires at least one coupon definition".into())
-        })?;
-        if period_count == 0 || self.coupons.len() > period_count {
-            return Err(QSError::InvalidValueErr(format!(
-                "Loan coupon list has {} entries for {period_count} payment periods",
-                self.coupons.len()
-            )));
-        }
-        for coupon in &self.coupons {
-            coupon.validate_coupon()?;
-        }
-        let coupons = (0..period_count)
-            .map(|position| self.coupons.get(position).unwrap_or(last_coupon))
-            .collect::<Vec<_>>();
-        let amortization_rate = match (coupons[0], self.amortization_rate) {
-            (_, Some(rate)) => rate,
-            (CashflowType::FixedRateCoupon(coupon), None) => coupon.rate().rate().value(),
-            (_, None) if matches!(repayment, LoanRepaymentStructure::Bullet) => 0.0,
-            _ => {
-                return Err(QSError::ValueNotSetErr(
-                    "Floating-first French/balloon loans require an initial amortization_rate"
-                        .into(),
-                ))
-            }
-        };
-        let period_rates = dates
-            .windows(2)
-            .map(|period| amortization_rate * day_counter.year_fraction(period[0], period[1]))
-            .collect::<Vec<_>>();
-        let notionals =
-            calculate_contractual_opening_balances(notional, &period_rates, &repayment)?;
-        let fixed_definition = self
-            .day_counter
-            .map(|basis| RateDefinition::new(basis, Compounding::Simple, Frequency::Annual));
-        let mut cashflows = vec![CashflowType::Disbursement(SimpleCashflow::new(
-            notional, start,
-        ))];
-        let mut observations = Vec::with_capacity(period_count);
-        let mut previous_index = None;
-        let mut reset_dates = Vec::new();
-        for (position, period) in dates.windows(2).enumerate() {
-            let accrual_start = period[0];
-            let accrual_end = period[1];
-            let payment_date = calendar.adjust(accrual_end, Some(convention));
-            let index = coupon_projection_index(coupons[position]);
-            let observation = if let Some(index) = index {
-                let index_frequency = index.rate_index_details()?.frequency();
-                if previous_index.as_ref() != Some(index) {
-                    let segment_end_position = (position + 1..period_count)
-                        .find(|next| coupon_projection_index(coupons[*next]) != Some(index))
-                        .unwrap_or(period_count);
-                    let fixing_frequency =
-                        self.fixing_frequency
-                            .unwrap_or(if index_frequency == Frequency::Daily {
-                                payment_frequency
-                            } else {
-                                index_frequency
-                            });
-                    reset_dates.clone_from(
-                        MakeSchedule::new(accrual_start, dates[segment_end_position])
-                            .with_tenor(require_positive_schedule_period(fixing_frequency)?)
-                            .with_convention(BusinessDayConvention::Unadjusted)
-                            .with_termination_date_convention(BusinessDayConvention::Unadjusted)
-                            .forwards()
-                            .build()?
-                            .dates(),
-                    );
-                    if reset_dates
-                        .iter()
-                        .any(|date| dates.binary_search(date).is_err())
-                    {
-                        return Err(QSError::InvalidValueErr(
-                            "Loan resets must align with payment accrual boundaries".into(),
-                        ));
-                    }
-                }
-                let reset_date = reset_dates
-                    .iter()
-                    .copied()
-                    .take_while(|date| *date <= accrual_start)
-                    .last()
-                    .ok_or_else(|| QSError::ValueNotSetErr("Loan reset date".into()))?;
-                let fixing_date = calendar.advance(
-                    reset_date,
-                    Period::new(-fixing_lag, TimeUnit::Days),
-                    Some(BusinessDayConvention::Preceding),
-                    false,
-                );
-                let index_start =
-                    calendar.adjust(reset_date, Some(BusinessDayConvention::ModifiedFollowing));
-                let index_tenor = self
-                    .index_tenor
-                    .unwrap_or(require_positive_schedule_period(index_frequency)?);
-                let index_end = calendar.advance(
-                    index_start,
-                    index_tenor,
-                    Some(BusinessDayConvention::ModifiedFollowing),
-                    false,
-                );
-                Some(
-                    ForwardRateRequest::new(index.clone(), fixing_date)
-                        .with_start_date(index_start)
-                        .with_end_date(index_end),
-                )
-            } else {
-                None
-            };
-            observations.push(observation);
-            previous_index = index.cloned();
-            let coupon = coupons[position].for_period(
-                notionals[position],
-                accrual_start,
-                accrual_end,
-                payment_date,
-                fixed_definition,
-            )?;
-            cashflows.push(match coupon {
-                CashflowType::FloatingRateCoupon(coupon) => {
-                    CashflowType::FloatingRateCoupon(coupon.with_day_counter(day_counter))
-                }
-                CashflowType::OptionEmbeddedCoupon(coupon) => {
-                    CashflowType::OptionEmbeddedCoupon(coupon.with_day_counter(day_counter))
-                }
-                coupon => coupon,
-            });
-            let next = notionals.get(position + 1).copied().unwrap_or(0.0);
-            let principal = (notionals[position] - next).max(0.0);
-            if principal > 0.0 {
-                cashflows.push(CashflowType::Redemption(SimpleCashflow::new(
-                    principal,
-                    payment_date,
-                )));
-            }
-        }
-        let prepayment = self.prepayment.unwrap_or_default();
-        prepayment.validate_parameters()?;
-        let prepayment = self
-            .prepayment_function
-            .unwrap_or_else(|| Arc::new(prepayment));
-        let indices = coupons
-            .iter()
-            .filter_map(|coupon| coupon_projection_index(coupon).cloned())
-            .collect::<HashSet<_>>();
-        let forward_index = if indices.len() == 1 {
-            indices.into_iter().next()
-        } else {
-            None
-        };
-        let last_payment = calendar.adjust(end, Some(convention));
-        let leg = Leg::new(
-            0,
-            cashflows,
-            currency,
-            None,
-            forward_index,
-            None,
-            None,
-            Side::LongReceive,
-            true,
-            AssetClass::FixedIncome,
-            start,
-            last_payment,
-        );
-        Loan::new(
-            identifier,
-            notional,
-            leg,
-            observations,
-            prepayment,
-            Some(repayment),
-            self.credit_index,
-            self.recovery.unwrap_or(0.4),
-        )
+/// Builds the reset observation shared by cashflow construction and initial-rate resolution.
+fn loan_coupon_observation(
+    index: &MarketIndex,
+    reset_date: Date,
+    fixing_lag: i32,
+    index_tenor: Option<Period>,
+    calendar: &Calendar,
+) -> Result<ForwardRateRequest> {
+    if fixing_lag < 0 {
+        return Err(QSError::InvalidValueErr(
+            "Loan fixing lag must be nonnegative".into(),
+        ));
     }
+    if index_tenor.is_some_and(|tenor| tenor.length() <= 0) {
+        return Err(QSError::InvalidValueErr(
+            "Loan index tenor must be positive".into(),
+        ));
+    }
+    let fixing_date = calendar.advance(
+        reset_date,
+        Period::new(-fixing_lag, TimeUnit::Days),
+        Some(BusinessDayConvention::Preceding),
+        false,
+    )?;
+    let start = calendar.adjust(reset_date, Some(BusinessDayConvention::ModifiedFollowing));
+    let tenor = index_tenor.unwrap_or(require_positive_schedule_period(
+        index.rate_index_details()?.frequency(),
+    )?);
+    let end = calendar.advance(
+        start,
+        tenor,
+        Some(BusinessDayConvention::ModifiedFollowing),
+        false,
+    )?;
+    Ok(ForwardRateRequest::new(index.clone(), fixing_date)
+        .with_start_date(start)
+        .with_end_date(end))
+}
+
+/// Requests only the data needed to fix the initial contractual amortization rate.
+fn initial_index_rate(
+    market: &dyn MarketDataProvider,
+    observation: &ForwardRateRequest,
+) -> Result<f64> {
+    let request = if market.anchor_fixings() && observation.fixing_date() < market.evaluation_date()
+    {
+        MarketDataRequest::default().with_fixings_request(vec![FixingRequest::new(
+            observation.market_index(),
+            observation.fixing_date(),
+        )])
+    } else {
+        MarketDataRequest::default().with_constructed_elements_request(vec![
+            ConstructedElementRequest::DiscountCurve {
+                market_index: observation.market_index(),
+            },
+        ])
+    };
+    let data = market.handle_request(&request)?;
+    Ok(observation
+        .resolve_index_rate(&data, market.evaluation_date(), market.anchor_fixings())?
+        .value())
 }
 
 /// Returns the projection index for floating or bounded-floating coupon templates.
@@ -583,10 +447,413 @@ pub fn calculate_contractual_opening_balances(
     Ok(notionals)
 }
 
+impl<T: Scalar> MakeInstrument for MakeLoan<T> {
+    type Instrument = Loan<T>;
+
+    fn is_resolved(&self) -> bool {
+        self.start_tenor.is_none()
+            && self.maturity_tenor.is_none()
+            && self.prepayment_tenors.is_empty()
+            && (self.amortization_rate.is_some()
+                || matches!(self.repayment, Some(LoanRepaymentStructure::Bullet))
+                || self.coupons.first().is_none_or(|coupon| match coupon {
+                    CashflowType::FloatingRateCoupon(coupon) => coupon.fixing().is_some(),
+                    CashflowType::OptionEmbeddedCoupon(coupon) => coupon.fixing().is_some(),
+                    _ => true,
+                }))
+    }
+
+    /// Builds contractual cashflows from positional coupon templates.
+    ///
+    /// The last coupon repeats through maturity. Each contiguous run of the
+    /// same floating index has its own reset grid; spread or cap/floor changes
+    /// keep that grid. Principal uses the explicit initial amortization rate,
+    /// or the first fixed coupon's rate when available, and stays contractual.
+    ///
+    /// # Errors
+    /// Rejects missing/invalid terms, empty or oversized coupon lists, non-coupon
+    /// entries, unaligned resets, and amortizing floating-first schedules without
+    /// an explicit initial amortization rate.
+    #[allow(clippy::too_many_lines)]
+    fn build(&self) -> Result<Self::Instrument> {
+        if !self.is_resolved() {
+            let missing = if self.start_tenor.is_some()
+                || self.maturity_tenor.is_some()
+                || !self.prepayment_tenors.is_empty()
+            {
+                "MakeLoan has unresolved date tenors. Supply absolute start, maturity, and prepayment dates or call maker.build_using(&context)"
+            } else {
+                "MakeLoan needs an initial floating coupon observation for amortization. Set with_initial_amortization_rate(...), set the first coupon fixing, or call maker.build_using(&context)"
+            };
+            return Err(QSError::UnresolvedProductErr(missing.into()));
+        }
+        if [self.start_date, self.maturity_date].contains(&Some(Date::empty())) {
+            return Err(QSError::InvalidValueErr(
+                "MakeLoan dates must not be empty".into(),
+            ));
+        }
+        let identifier = require_loan_term(self.identifier.clone(), "Loan identifier")?;
+        let start = require_loan_term(self.start_date, "Loan start date")?;
+        let end = require_loan_term(self.maturity_date, "Loan maturity date")?;
+        let notional = require_loan_term(self.notional, "Loan notional")?;
+        let currency = require_loan_term(self.currency, "Loan currency")?;
+        let repayment = self
+            .repayment
+            .clone()
+            .unwrap_or(LoanRepaymentStructure::French);
+        if identifier.trim().is_empty() || start >= end || !notional.is_finite() || notional <= 0.0
+        {
+            return Err(QSError::InvalidValueErr(
+                "Invalid loan dates or principal".into(),
+            ));
+        }
+        let payment_frequency = self.payment_frequency.unwrap_or(Frequency::Monthly);
+        let payment_period = require_positive_schedule_period(payment_frequency)?;
+        if let Some(frequency) = self.fixing_frequency {
+            require_positive_schedule_period(frequency)?;
+        }
+        if self.index_tenor.is_some_and(|tenor| tenor.length() <= 0) {
+            return Err(QSError::InvalidValueErr(
+                "Loan index tenor must be positive".into(),
+            ));
+        }
+        let calendar = self
+            .calendar
+            .clone()
+            .unwrap_or_else(|| Calendar::NullCalendar(NullCalendar::new()));
+        let convention = self
+            .business_day_convention
+            .unwrap_or(BusinessDayConvention::Unadjusted);
+        let fixing_lag = self.fixing_lag.unwrap_or(0);
+        if fixing_lag < 0 {
+            return Err(QSError::InvalidValueErr(
+                "Loan fixing lag must be nonnegative".into(),
+            ));
+        }
+        let schedule = MakeSchedule::new(start, end)
+            .with_tenor(payment_period)
+            .with_convention(BusinessDayConvention::Unadjusted)
+            .with_termination_date_convention(BusinessDayConvention::Unadjusted)
+            .forwards()
+            .build()?;
+        let dates = schedule.dates();
+        let period_count = dates.len().saturating_sub(1);
+        let last_coupon = self.coupons.last().ok_or_else(|| {
+            QSError::InvalidValueErr("Loan requires at least one coupon definition".into())
+        })?;
+        if period_count == 0 || self.coupons.len() > period_count {
+            return Err(QSError::InvalidValueErr(format!(
+                "Loan coupon list has {} entries for {period_count} payment periods",
+                self.coupons.len()
+            )));
+        }
+        for coupon in &self.coupons {
+            coupon.validate_coupon()?;
+        }
+        let coupons = (0..period_count)
+            .map(|position| self.coupons.get(position).unwrap_or(last_coupon))
+            .collect::<Vec<_>>();
+        let mut observations = Vec::with_capacity(period_count);
+        let mut previous_index = None;
+        let mut reset_dates = Vec::new();
+        for (position, period) in dates.windows(2).enumerate() {
+            let accrual_start = period[0];
+            let index = coupon_projection_index(coupons[position]);
+            let observation = if let Some(index) = index {
+                let index_frequency = index.rate_index_details()?.frequency();
+                if previous_index.as_ref() != Some(index) {
+                    let segment_end_position = (position + 1..period_count)
+                        .find(|next| coupon_projection_index(coupons[*next]) != Some(index))
+                        .unwrap_or(period_count);
+                    let fixing_frequency =
+                        self.fixing_frequency
+                            .unwrap_or(if index_frequency == Frequency::Daily {
+                                payment_frequency
+                            } else {
+                                index_frequency
+                            });
+                    reset_dates.clone_from(
+                        MakeSchedule::new(accrual_start, dates[segment_end_position])
+                            .with_tenor(require_positive_schedule_period(fixing_frequency)?)
+                            .with_convention(BusinessDayConvention::Unadjusted)
+                            .with_termination_date_convention(BusinessDayConvention::Unadjusted)
+                            .forwards()
+                            .build()?
+                            .dates(),
+                    );
+                    if reset_dates
+                        .iter()
+                        .any(|date| dates.binary_search(date).is_err())
+                    {
+                        return Err(QSError::InvalidValueErr(
+                            "Loan resets must align with payment accrual boundaries".into(),
+                        ));
+                    }
+                }
+                let reset_date = reset_dates
+                    .iter()
+                    .copied()
+                    .take_while(|date| *date <= accrual_start)
+                    .last()
+                    .ok_or_else(|| QSError::ValueNotSetErr("Loan reset date".into()))?;
+                Some(loan_coupon_observation(
+                    index,
+                    reset_date,
+                    fixing_lag,
+                    self.index_tenor,
+                    &calendar,
+                )?)
+            } else {
+                None
+            };
+            observations.push(observation);
+            previous_index = index.cloned();
+        }
+        let missing_fixing = || {
+            QSError::UnresolvedProductErr(
+            "The initial coupon fixing is missing. Supply with_initial_amortization_rate(...) or call maker.build_using(&context)".into(),
+        )
+        };
+        let amortization_rate = match (coupons[0], self.amortization_rate) {
+            (_, Some(rate)) => rate,
+            (CashflowType::FixedRateCoupon(coupon), None) => coupon.rate().rate().value(),
+            (_, None) if matches!(repayment, LoanRepaymentStructure::Bullet) => 0.0,
+            (coupon, None) => match coupon {
+                CashflowType::FloatingRateCoupon(coupon) => {
+                    let fixing = coupon.fixing().ok_or_else(missing_fixing)?.value();
+                    fixing + coupon.spread().value()
+                }
+                CashflowType::OptionEmbeddedCoupon(coupon) => {
+                    let fixing = coupon.fixing().ok_or_else(missing_fixing)?.value();
+                    coupon.payoff_ops().eval(fixing)? + coupon.spread().value()
+                }
+                _ => {
+                    return Err(QSError::InvalidValueErr(
+                        "Invalid initial loan coupon".into(),
+                    ))
+                }
+            },
+        };
+        let period_rates = dates
+            .windows(2)
+            .zip(&coupons)
+            .map(|(period, coupon)| {
+                Ok(match coupon {
+                    CashflowType::FixedRateCoupon(coupon) => {
+                        amortization_rate
+                            * coupon
+                                .rate()
+                                .day_counter()
+                                .year_fraction(period[0], period[1])
+                    }
+                    CashflowType::FloatingRateCoupon(coupon) => {
+                        amortization_rate * coupon.day_counter().year_fraction(period[0], period[1])
+                    }
+                    CashflowType::OptionEmbeddedCoupon(coupon) => {
+                        amortization_rate
+                            * coupon.day_counter()?.year_fraction(period[0], period[1])
+                    }
+                    _ => return Err(QSError::InvalidValueErr("Expected a loan coupon".into())),
+                })
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let notionals =
+            calculate_contractual_opening_balances(notional, &period_rates, &repayment)?;
+        let mut cashflows = vec![CashflowType::Disbursement(SimpleCashflow::new(
+            notional, start,
+        ))];
+        for (position, period) in dates.windows(2).enumerate() {
+            let accrual_start = period[0];
+            let accrual_end = period[1];
+            let payment_date = calendar.adjust(accrual_end, Some(convention));
+            let coupon = coupons[position].for_period(
+                notionals[position],
+                accrual_start,
+                accrual_end,
+                payment_date,
+                None,
+            )?;
+            cashflows.push(coupon);
+            let next = notionals.get(position + 1).copied().unwrap_or(0.0);
+            let principal = (notionals[position] - next).max(0.0);
+            if principal > 0.0 {
+                cashflows.push(CashflowType::Redemption(SimpleCashflow::new(
+                    principal,
+                    payment_date,
+                )));
+            }
+        }
+        let prepayment = self.prepayment.clone().unwrap_or_default();
+        prepayment.validate_parameters()?;
+        let prepayment = self
+            .prepayment_function
+            .clone()
+            .unwrap_or_else(|| Arc::new(prepayment));
+        let indices = coupons
+            .iter()
+            .filter_map(|coupon| coupon_projection_index(coupon).cloned())
+            .collect::<HashSet<_>>();
+        let forward_index = if indices.len() == 1 {
+            indices.into_iter().next()
+        } else {
+            None
+        };
+        let last_payment = calendar.adjust(end, Some(convention));
+        let leg = Leg::new(
+            0,
+            cashflows,
+            currency,
+            None,
+            forward_index,
+            None,
+            None,
+            Side::LongReceive,
+            true,
+            AssetClass::FixedIncome,
+            start,
+            last_payment,
+        );
+        Loan::new(
+            identifier,
+            notional,
+            leg,
+            observations,
+            prepayment,
+            Some(repayment),
+            self.credit_index.clone(),
+            self.recovery.unwrap_or(0.4),
+        )
+        .map(|loan| loan.with_initial_amortization_rate(amortization_rate))
+    }
+
+    fn build_using(&self, market: &dyn MarketDataProvider) -> Result<Self::Instrument> {
+        let mut maker = self.resolve_dates(market.evaluation_date())?;
+        if !maker.is_resolved() {
+            let start = require_loan_term(maker.start_date, "Loan start date")?;
+            let coupon = maker
+                .coupons
+                .first()
+                .ok_or_else(|| QSError::ValueNotSetErr("Initial loan coupon".into()))?;
+            let index = coupon_projection_index(coupon)
+                .ok_or_else(|| QSError::InvalidValueErr("Invalid initial loan coupon".into()))?;
+            let calendar = maker
+                .calendar
+                .clone()
+                .unwrap_or_else(|| Calendar::NullCalendar(NullCalendar::new()));
+            let observation = loan_coupon_observation(
+                index,
+                start,
+                maker.fixing_lag.unwrap_or(0),
+                maker.index_tenor,
+                &calendar,
+            )?;
+            let fixing = initial_index_rate(market, &observation)?;
+            let rate = match coupon {
+                CashflowType::FloatingRateCoupon(coupon) => fixing + coupon.spread().value(),
+                CashflowType::OptionEmbeddedCoupon(coupon) => {
+                    coupon.payoff_ops().eval(fixing)? + coupon.spread().value()
+                }
+                _ => {
+                    return Err(QSError::InvalidValueErr(
+                        "Invalid initial loan coupon".into(),
+                    ))
+                }
+            };
+            maker.amortization_rate = Some(rate);
+        }
+        maker.build()
+    }
+
+    fn resolve_dates(&self, reference_date: Date) -> Result<Self> {
+        let mut resolved = self.clone();
+        let calendar = self
+            .calendar
+            .clone()
+            .unwrap_or_else(|| Calendar::NullCalendar(NullCalendar::new()));
+        let convention = self
+            .business_day_convention
+            .unwrap_or(BusinessDayConvention::Unadjusted);
+        let date_calendar = &calendar;
+        let date_convention = convention;
+        let date_end_of_month = false;
+        resolved.start_date = Some(resolve_date(
+            self.start_date,
+            self.start_tenor,
+            reference_date,
+            "start_date",
+            date_calendar,
+            date_convention,
+            date_end_of_month,
+        )?);
+        resolved.start_tenor = None;
+        resolved.maturity_date = Some(resolve_date(
+            self.maturity_date,
+            self.maturity_tenor,
+            resolved
+                .start_date
+                .ok_or_else(|| QSError::ValueNotSetErr("start_date".into()))?,
+            "maturity_date",
+            date_calendar,
+            date_convention,
+            date_end_of_month,
+        )?);
+        resolved.maturity_tenor = None;
+        if !self.prepayment_tenors.is_empty() {
+            let start = resolved
+                .start_date
+                .ok_or_else(|| QSError::ValueNotSetErr("Loan start date".into()))?;
+            resolved.prepayment = Some(PrepaymentModelConfiguration::CprCurve(
+                self.prepayment_tenors
+                    .iter()
+                    .map(|(tenor, rate)| {
+                        Ok((
+                            date_calendar.advance(
+                                start,
+                                *tenor,
+                                Some(date_convention),
+                                date_end_of_month,
+                            )?,
+                            *rate,
+                        ))
+                    })
+                    .collect::<Result<Vec<_>>>()?,
+            ));
+            resolved.prepayment_tenors.clear();
+        }
+        Ok(resolved)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::instruments::cashflows::cashflow::Cashflow;
+    use crate::{
+        ad::{dual::DualFwd, forward::ADForward},
+        core::{instrument::Instrument, makeinstrument::test_support::cashflows, trade::Trade},
+        instruments::{
+            cashflows::{cashflow::Cashflow, fixedratecoupon::FixedRateCoupon},
+            fixedincome::loan::LoanTrade,
+        },
+        models::prepaymentmodelstate::PrepaymentModelState,
+        rates::{compounding::Compounding, interestrate::InterestRate},
+        time::daycounter::DayCounter,
+    };
+
+    fn fixed_coupon(rate: f64, basis: DayCounter, compounding: Compounding) -> CashflowType<f64> {
+        let date = Date::new(1970, 1, 1);
+        CashflowType::FixedRateCoupon(FixedRateCoupon::new(
+            1.0,
+            Box::new(InterestRate::new(
+                rate,
+                compounding,
+                Frequency::Annual,
+                basis,
+            )),
+            date,
+            date,
+            date,
+        ))
+    }
 
     fn default_loan_builder() -> MakeLoan<f64> {
         MakeLoan::default()
@@ -688,10 +955,90 @@ mod tests {
         Ok(())
     }
     #[test]
+    fn french_floating_payments_use_coupon_basis_including_index_default() -> Result<()> {
+        use crate::instruments::cashflows::floatingratecoupon::FloatingRateCoupon;
+        for basis in [
+            None,
+            Some(DayCounter::Actual365),
+            Some(DayCounter::Thirty360),
+        ] {
+            let start = Date::new(2026, 1, 1);
+            let mut coupon =
+                FloatingRateCoupon::new(1.0, 0.01, MarketIndex::EURIBOR12m, start, start, start);
+            if let Some(basis) = basis {
+                coupon.set_day_counter(basis);
+            }
+            let expected_basis = basis.unwrap_or(DayCounter::Actual360);
+            let loan = default_loan_builder()
+                .with_coupons(vec![CashflowType::FloatingRateCoupon(coupon)])
+                .with_initial_amortization_rate(0.05)
+                .build()?;
+            let mut payments = std::collections::BTreeMap::new();
+            for cashflow in loan.contractual_leg().cashflows() {
+                let (date, amount) = match cashflow {
+                    CashflowType::FloatingRateCoupon(coupon) => {
+                        assert_eq!(coupon.day_counter(), expected_basis);
+                        coupon.set_fixing(0.04);
+                        (coupon.payment_date(), coupon.amount()?)
+                    }
+                    CashflowType::Redemption(principal) => {
+                        (principal.payment_date(), principal.amount()?)
+                    }
+                    _ => continue,
+                };
+                *payments.entry(date).or_insert(0.0) += amount;
+            }
+            let first = payments[&Date::new(2026, 2, 1)];
+            assert_eq!(payments.len(), 24);
+            assert!(payments
+                .values()
+                .all(|amount| (amount - first).abs() < 1e-7));
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn french_fixed_payments_preserve_coupon_compounding_and_basis() -> Result<()> {
+        for compounding in [
+            Compounding::Simple,
+            Compounding::Compounded,
+            Compounding::Continuous,
+        ] {
+            let loan = default_loan_builder()
+                .with_coupons(vec![fixed_coupon(0.06, DayCounter::Actual360, compounding)])
+                .build()?;
+            let mut payments = std::collections::BTreeMap::new();
+            for cashflow in loan.contractual_leg().cashflows() {
+                let (date, amount) = match cashflow {
+                    CashflowType::FixedRateCoupon(coupon) => {
+                        assert_eq!(coupon.rate().compounding(), compounding);
+                        assert_eq!(coupon.rate().day_counter(), DayCounter::Actual360);
+                        (coupon.payment_date(), coupon.amount()?)
+                    }
+                    CashflowType::Redemption(principal) => {
+                        (principal.payment_date(), principal.amount()?)
+                    }
+                    _ => continue,
+                };
+                *payments.entry(date).or_insert(0.0) += amount;
+            }
+            let first = payments[&Date::new(2026, 2, 1)];
+            assert!(payments
+                .values()
+                .all(|amount| (amount - first).abs() < 1e-7));
+        }
+        Ok(())
+    }
+
+    #[test]
     fn french_contract_uses_existing_cashflows_and_matches_annuity() -> Result<()> {
         let loan = default_loan_builder()
             .with_maturity_date(Date::new(2056, 1, 1))
-            .with_day_counter(DayCounter::Thirty360)
+            .with_coupons(vec![fixed_coupon(
+                0.06,
+                DayCounter::Thirty360,
+                Compounding::Simple,
+            )])
             .build()?;
         let amounts = loan
             .contractual_leg()
@@ -748,7 +1095,11 @@ mod tests {
             let first = requests[0];
             assert_eq!(
                 first.end_date(),
-                Some(Date::new(2026, 1, 1).advance(period.length(), period.units()))
+                Some(
+                    Date::new(2026, 1, 1)
+                        .advance(period.length(), period.units())
+                        .expect("valid date advancement")
+                )
             );
             let distinct = requests
                 .iter()
@@ -792,8 +1143,125 @@ mod tests {
                 .collect::<Vec<_>>()
         };
         assert_eq!(coupons(&plain), coupons(&prepaying));
-        let ad: Loan<DualFwd> = prepaying.into();
+        let ad: Loan<DualFwd> =
+            prepaying.into_scalar(Arc::new(PrepaymentModelConfiguration::Cpr(1.0)));
         assert_eq!(ad.notional(), 100_000.0);
+        Ok(())
+    }
+
+    #[test]
+    fn custom_prepayment_uses_plain_builder_scalars() -> Result<()> {
+        let builder = default_loan_builder()
+            .with_prepayment_configuration(PrepaymentModelConfiguration::Cpr(1.0))
+            .with_custom_prepayment_model(|state: &PrepaymentModelState<f64>| {
+                Ok(
+                    (state.contractual_coupon_rate() - state.refinancing_benchmark_rate()).max(0.0)
+                        * state.interval_year_fraction(),
+                )
+            });
+        let loan = builder.clone().build()?;
+        let state = PrepaymentModelState::new(
+            Date::new(2026, 1, 1),
+            Date::new(2026, 4, 1),
+            0.25,
+            100_000.0,
+            0.06,
+            0.04,
+        );
+        let probability = loan
+            .prepayment_model()
+            .conditional_prepayment_probability(&state)?;
+        assert!((probability - 0.005).abs() < 1e-12);
+        Ok(())
+    }
+
+    #[test]
+    fn custom_prepayment_preserves_forward_scalar_derivatives() -> Result<()> {
+        let loan = MakeLoan::<ADForward>::default()
+            .with_identifier("FORWARD-LOAN".into())
+            .with_start_date(Date::new(2026, 1, 1))
+            .with_maturity_date(Date::new(2028, 1, 1))
+            .with_notional(100_000.0)
+            .with_currency(Currency::EUR)
+            .with_coupons(vec![CashflowType::fixed(0.06)])
+            .with_custom_prepayment_model(|state: &PrepaymentModelState<ADForward>| {
+                Ok(
+                    (state.contractual_coupon_rate() - state.refinancing_benchmark_rate())
+                        .max_val(ADForward::zero())
+                        * ADForward::scalar(state.interval_year_fraction()),
+                )
+            })
+            .build()?;
+        let probability = loan.prepayment_model().conditional_prepayment_probability(
+            &PrepaymentModelState::new(
+                Date::new(2026, 1, 1),
+                Date::new(2026, 4, 1),
+                0.25,
+                ADForward::scalar(100_000.0),
+                ADForward::var(0.06),
+                ADForward::scalar(0.04),
+            ),
+        )?;
+        assert!((probability.value() - 0.005).abs() < 1e-12);
+        assert!((probability.first_derivative() - 0.25).abs() < 1e-12);
+        Ok(())
+    }
+
+    #[test]
+    fn explicit_scalar_conversion_preserves_contract_trade_and_model_risk() -> Result<()> {
+        let configuration = PrepaymentModelConfiguration::Refinancing {
+            base_cpr: 0.02,
+            incentive_multiplier: 4.0,
+            maximum_cpr: 0.4,
+        };
+        let loan = default_loan_builder()
+            .with_repayment_structure(LoanRepaymentStructure::Bullet)
+            .with_credit_curve_index(MarketIndex::Credit("BORROWER".into()))
+            .with_recovery_fraction(0.3)
+            .with_prepayment_configuration(configuration.clone())
+            .build()?;
+        let contractual_cashflows = cashflows(loan.contractual_leg())?;
+        let trade_date = Date::new(2026, 1, 15);
+        let trade = LoanTrade::new(loan, trade_date, Side::PayShort);
+        let converted = trade.into_scalar::<DualFwd>(Arc::new(configuration.clone()));
+        assert!(converted
+            .instrument()
+            .prepayment_model()
+            .requires_refinancing_benchmark());
+        let probability = converted
+            .instrument()
+            .prepayment_model()
+            .conditional_prepayment_probability(&PrepaymentModelState::new(
+                Date::new(2026, 1, 1),
+                Date::new(2026, 7, 1),
+                0.5,
+                DualFwd::scalar(100_000.0),
+                DualFwd::constant(ADForward::var(0.06)),
+                DualFwd::scalar(0.04),
+            ))?;
+        assert!((probability.value() - (1.0 - 0.9_f64.sqrt())).abs() < 1e-12);
+        assert!((probability.inner().first_derivative() - 2.0 / 0.9_f64.sqrt()).abs() < 1e-12);
+
+        let roundtrip = converted.into_scalar::<f64>(Arc::new(configuration));
+        assert_eq!(roundtrip.trade_date(), trade_date);
+        assert_eq!(roundtrip.side(), Side::PayShort);
+        let loan = roundtrip.instrument();
+        assert_eq!(loan.identifier(), "LOAN");
+        assert_eq!(loan.notional(), 100_000.0);
+        assert_eq!(loan.currency(), Currency::EUR);
+        assert_eq!(loan.start_date(), Date::new(2026, 1, 1));
+        assert_eq!(loan.maturity_date(), Date::new(2028, 1, 1));
+        assert_eq!(
+            loan.credit_curve_index(),
+            Some(&MarketIndex::Credit("BORROWER".into()))
+        );
+        assert!((loan.recovery_fraction() - 0.3).abs() < 1e-12);
+        assert!(matches!(
+            loan.repayment_structure(),
+            Some(LoanRepaymentStructure::Bullet)
+        ));
+        assert!(loan.prepayment_model().requires_refinancing_benchmark());
+        assert_eq!(contractual_cashflows, cashflows(loan.contractual_leg())?);
         Ok(())
     }
     #[test]
@@ -876,6 +1344,155 @@ mod tests {
             custom.contractual_leg().cashflows().len(),
             loan.contractual_leg().cashflows().len()
         );
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod resolution_tests {
+    use crate::{
+        core::makeinstrument::test_support::{cashflows, empty_market, loan, market, p, reference},
+        prelude::*,
+        time::calendars::target::TARGET,
+    };
+
+    #[test]
+    fn known_initial_fixing_takes_precedence_over_forecast_and_respects_fixing_lag() -> Result<()> {
+        let mut fixings = FixingStore::default();
+        fixings.add_fixing(&MarketIndex::EURIBOR12m, Date::new(2026, 2, 20), 0.025);
+        let market = market(reference(), 0.10, fixings);
+        let maker = loan()?
+            .with_calendar(Calendar::TARGET(TARGET::new()))
+            .with_fixing_lag_business_days(2);
+        let resolved = maker.build_using(&market)?;
+        let explicit = maker
+            .with_start_date(reference())
+            .with_maturity_date(reference() + p("2Y")?)
+            .with_initial_amortization_rate(0.035)
+            .build()?;
+        assert_eq!(
+            cashflows(resolved.contractual_leg())?,
+            cashflows(explicit.contractual_leg())?
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn missing_historical_initial_fixing_is_an_error_but_override_needs_no_market() -> Result<()> {
+        let market = empty_market(reference());
+        let ctx = &market;
+        let maker = loan()?.with_start_date(Date::new(2025, 2, 24));
+        assert!(maker.build_using(ctx).is_err());
+        assert!(maker
+            .with_initial_amortization_rate(0.05)
+            .build_using(ctx)
+            .is_ok());
+        Ok(())
+    }
+
+    #[test]
+    fn todays_observation_projects_even_when_a_fixing_is_stored() -> Result<()> {
+        let mut fixings = FixingStore::default();
+        fixings.add_fixing(&MarketIndex::EURIBOR12m, reference(), 0.10);
+        let market = market(reference(), 0.02, fixings);
+        let maker = loan()?.with_coupons(vec![CashflowType::floating(
+            MarketIndex::EURIBOR12m,
+            0.01,
+            Some(0.02),
+            Some(0.06),
+        )]);
+        let automatic = maker.build_using(&market)?;
+        let explicit = maker
+            .with_start_date(reference())
+            .with_maturity_date(reference() + p("2Y")?)
+            .with_initial_amortization_rate(0.03)
+            .build()?;
+        assert_eq!(
+            cashflows(automatic.contractual_leg())?,
+            cashflows(explicit.contractual_leg())?
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn resolved_loans_remain_fixed_when_the_definition_is_resolved_again() -> Result<()> {
+        let low = market(reference(), 0.02, FixingStore::default());
+        let high = market(reference(), 0.08, FixingStore::default());
+        let maker = loan()?;
+        let a = maker.build_using(&low)?;
+        let before = cashflows(a.contractual_leg())?;
+        let b = maker.build_using(&high)?;
+        assert_ne!(before, cashflows(b.contractual_leg())?);
+        assert_eq!(before, cashflows(a.contractual_leg())?);
+        let anchored = maker.with_start_date(Date::new(2025, 2, 24));
+        assert!(anchored.build_using(&high).is_err()); // Requires the original historical fixing.
+        Ok(())
+    }
+
+    #[test]
+    fn fixed_and_bullet_loans_resolve_without_forecast_dependencies() -> Result<()> {
+        let market = empty_market(reference());
+        let ctx = &market;
+        let fixed = loan()?
+            .with_coupons(vec![CashflowType::fixed(0.04)])
+            .build_using(ctx)?;
+        let bullet = loan()?
+            .with_repayment_structure(LoanRepaymentStructure::Bullet)
+            .build_using(ctx)?;
+        assert_eq!(fixed.notional(), bullet.notional());
+        let prepaid = loan()?
+            .with_coupons(vec![CashflowType::fixed(0.04)])
+            .with_prepayment_tenors(vec![(p("0D")?, 0.1), (p("1Y")?, 0.2)])
+            .build_using(ctx)?;
+        assert_eq!(prepaid.notional(), fixed.notional());
+        Ok(())
+    }
+
+    #[test]
+    fn historical_initial_observation_resolves_without_any_projection_curve() -> Result<()> {
+        let mut fixings = FixingStore::default();
+        fixings.add_fixing(&MarketIndex::EURIBOR12m, reference(), 0.035);
+        let later_market = empty_market(Date::new(2027, 3, 25)).with_fixing_store(fixings);
+        let maker = loan()?.with_start_date(reference());
+        let resolved = maker.build_using(&later_market)?;
+        let explicit = maker
+            .with_maturity_date(reference() + p("2Y")?)
+            .with_initial_amortization_rate(0.045)
+            .build()?;
+        assert_eq!(
+            cashflows(resolved.contractual_leg())?,
+            cashflows(explicit.contractual_leg())?
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn balloon_schedule_uses_the_resolved_initial_rate_and_preserves_its_residual() -> Result<()> {
+        let market = market(reference(), 0.04, FixingStore::default());
+        let maker = loan()?.with_repayment_structure(LoanRepaymentStructure::Balloon {
+            residual_fraction: 0.25,
+        });
+        let resolved = maker.build_using(&market)?;
+        let explicit = maker
+            .with_start_date(reference())
+            .with_maturity_date(reference() + p("2Y")?)
+            .with_initial_amortization_rate(0.05)
+            .build()?;
+        let principal = |loan: &Loan<DualFwd>| -> Result<Vec<f64>> {
+            loan.contractual_leg()
+                .cashflows()
+                .iter()
+                .filter_map(|flow| match flow {
+                    CashflowType::Redemption(c) => Some(c.amount()),
+                    _ => None,
+                })
+                .collect()
+        };
+        let amounts = principal(&resolved)?;
+        assert!((amounts.iter().sum::<f64>() - 100_000.0).abs() < 1e-8);
+        for (a, b) in amounts.iter().zip(principal(&explicit)?) {
+            assert!((a - b).abs() < 1e-8);
+        }
         Ok(())
     }
 }

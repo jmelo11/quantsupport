@@ -101,7 +101,7 @@ def create_portfolio(path):
                      "Pricer", "One pricer handle can be broadcast to every portfolio member.")
         for index, case in enumerate(PORTFOLIO_CASES, 1):
             key = f"C{index:02}_"
-            common = [text(f"Portfolio.C{index:02}.Instrument"), s.name("Start"), s.name(key + "Maturity"), s.name("Currency")]
+            common = [text(f"Portfolio.C{index:02}.Instrument"), s.name("Context"), s.name("Start"), s.name(key + "Maturity"), s.name("Currency")]
             if case[1] == "Deposit":
                 name = "QS.INSTRUMENT.FIXED.RATE.DEPOSIT"
                 args = [*common, s.name(key + "Index"), s.name(key + "Notional"), s.name(key + "Rate"), '"Actual360"', '"Simple"', '"Annual"']
@@ -111,7 +111,7 @@ def create_portfolio(path):
                         '"Actual360"', '"Simple"', '"Annual"', '"Annual"', '"Annual"']
             row = s.step(build, row, case[0] + " · contract", formula(name, *args), key + "Instrument", "Dates, principal and coupon terms are contract inputs.")
             row = s.step(build, row, case[0] + " · position",
-                         formula("QS.TRADE.CREATE", text(f"Portfolio.C{index:02}.Trade"), s.name(key + "Instrument"), s.name("ValuationDate"), s.name(key + "Side")),
+                         formula("QS.TRADE.CREATE", text(f"Portfolio.C{index:02}.Trade"), s.name("Context"), s.name(key + "Instrument"), s.name("ValuationDate"), s.name(key + "Side")),
                          key + "Trade", "Position direction is separate from the instrument.")
             row = s.step(build, row, case[0] + " · reference result",
                          formula('QS.EVALUATE.RESULTS', s.name('Context'), s.name(key + 'Trade'), s.name('Requests'), s.name('Pricer')),

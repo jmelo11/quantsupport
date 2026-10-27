@@ -424,7 +424,7 @@ impl MakeSchedule {
                         self.tenor * -periods,
                         Some(self.convention),
                         self.end_of_month,
-                    );
+                    )?;
                     self.is_regular.insert(0, temp == self.next_to_last_date);
                     seed = self.next_to_last_date;
                 }
@@ -441,7 +441,7 @@ impl MakeSchedule {
                         self.tenor * -periods,
                         Some(self.convention),
                         self.end_of_month,
-                    );
+                    )?;
                     if temp < exit_date {
                         if self.first_date != Date::empty()
                             && (self.calendar.adjust(self.dates[0], Some(self.convention))
@@ -519,7 +519,7 @@ impl MakeSchedule {
                         self.tenor * periods,
                         Some(self.convention),
                         self.end_of_month,
-                    );
+                    )?;
                     if temp == self.first_date {
                         self.is_regular.push(true);
                     } else {
@@ -563,7 +563,7 @@ impl MakeSchedule {
                         self.tenor * periods,
                         Some(self.convention),
                         self.end_of_month,
-                    );
+                    )?;
                     if temp > exit_date {
                         let last_date = *self.dates.last().ok_or_else(|| {
                             QSError::MakeScheduleErr("Schedule dates are empty".into())

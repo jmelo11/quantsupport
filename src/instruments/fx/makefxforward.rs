@@ -1,8 +1,17 @@
 use crate::{
-    core::trade::Side,
+    core::{
+        makeinstrument::{resolve_date, MakeInstrument},
+        trade::Side,
+    },
     currencies::currency::Currency,
     instruments::fx::fxforward::{FxForward, FxForwardSettlement},
-    time::{date::Date, daycounter::DayCounter},
+    time::{
+        calendars::{nullcalendar::NullCalendar, traits::IsCalendar},
+        date::Date,
+        daycounter::DayCounter,
+        enums::BusinessDayConvention,
+        period::Period,
+    },
     utils::errors::{QSError, Result},
 };
 
@@ -25,8 +34,9 @@ use crate::{
 /// assert_eq!(fx_fwd.forward_price(), Some(1.1025));
 /// assert!(fx_fwd.is_deliverable());
 /// ```
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct MakeFxForward {
+    delivery_tenor: Option<Period>,
     identifier: Option<String>,
     delivery_date: Option<Date>,
     forward_price: Option<f64>,
@@ -35,10 +45,21 @@ pub struct MakeFxForward {
     quote_currency: Option<Currency>,
     day_counter: Option<DayCounter>,
     settlement: Option<FxForwardSettlement>,
+    fixing_tenor: Option<Period>,
+    settlement_currency: Option<Currency>,
     side: Option<Side>,
 }
 
 impl MakeFxForward {
+    /// Sets delivery date as a tenor from the context evaluation date.
+    /// Replaces an explicitly supplied delivery date. Use `build_using` when an external anchor is needed.
+    #[must_use]
+    pub const fn with_delivery_tenor(mut self, tenor: Period) -> Self {
+        self.delivery_tenor = Some(tenor);
+        self.delivery_date = None;
+        self
+    }
+
     /// Sets the identifier.
     #[must_use]
     pub fn with_identifier(mut self, identifier: String) -> Self {
@@ -50,6 +71,7 @@ impl MakeFxForward {
     #[must_use]
     pub const fn with_delivery_date(mut self, date: Date) -> Self {
         self.delivery_date = Some(date);
+        self.delivery_tenor = None;
         self
     }
 
@@ -98,6 +120,8 @@ impl MakeFxForward {
     /// Sets the settlement convention explicitly.
     #[must_use]
     pub const fn with_settlement(mut self, settlement: FxForwardSettlement) -> Self {
+        self.fixing_tenor = None;
+        self.settlement_currency = None;
         self.settlement = Some(settlement);
         self
     }
@@ -105,6 +129,8 @@ impl MakeFxForward {
     /// Marks the contract as deliverable.
     #[must_use]
     pub const fn as_deliverable(mut self) -> Self {
+        self.fixing_tenor = None;
+        self.settlement_currency = None;
         self.settlement = Some(FxForwardSettlement::Deliverable);
         self
     }
@@ -112,10 +138,21 @@ impl MakeFxForward {
     /// Marks the contract as a non-deliverable forward.
     #[must_use]
     pub const fn as_ndf(mut self, fixing_date: Date, settlement_currency: Currency) -> Self {
+        self.fixing_tenor = None;
+        self.settlement_currency = None;
         self.settlement = Some(FxForwardSettlement::NonDeliverable {
             fixing_date,
             settlement_currency,
         });
+        self
+    }
+
+    /// Defines an NDF fixing as a tenor from the context evaluation date.
+    #[must_use]
+    pub const fn as_ndf_tenor(mut self, tenor: Period, currency: Currency) -> Self {
+        self.fixing_tenor = Some(tenor);
+        self.settlement_currency = Some(currency);
+        self.settlement = None;
         self
     }
 
@@ -127,14 +164,33 @@ impl MakeFxForward {
         self.side = Some(side);
         self
     }
+}
+
+impl MakeInstrument for MakeFxForward {
+    type Instrument = FxForward;
+
+    fn is_resolved(&self) -> bool {
+        self.delivery_tenor.is_none() && self.fixing_tenor.is_none()
+    }
 
     /// Builds the [`FxForward`] instance.
     ///
     /// # Errors
     /// Returns an error if any of the required fields are missing.
-    pub fn build(self) -> Result<FxForward> {
+    fn build(&self) -> Result<Self::Instrument> {
+        if !self.is_resolved() {
+            return Err(QSError::UnresolvedProductErr(
+                "MakeFxForward requires an evaluation date to resolve delivery_tenor or fixing_tenor. Supply the corresponding absolute dates or call maker.build_using(&context)".into(),
+            ));
+        }
+        if self.delivery_date == Some(Date::empty()) {
+            return Err(QSError::InvalidValueErr(
+                "MakeFxForward dates must not be empty".into(),
+            ));
+        }
         let identifier = self
             .identifier
+            .clone()
             .ok_or_else(|| QSError::ValueNotSetErr("Identifier".into()))?;
         let delivery_date = self
             .delivery_date
@@ -174,12 +230,46 @@ impl MakeFxForward {
             settlement,
         ))
     }
+
+    fn resolve_dates(&self, reference_date: Date) -> Result<Self> {
+        let mut resolved = self.clone();
+        let date_calendar = &NullCalendar::new();
+        let date_convention = BusinessDayConvention::Unadjusted;
+        let date_end_of_month = false;
+        resolved.delivery_date = Some(resolve_date(
+            self.delivery_date,
+            self.delivery_tenor,
+            reference_date,
+            "delivery_date",
+            date_calendar,
+            date_convention,
+            date_end_of_month,
+        )?);
+        resolved.delivery_tenor = None;
+        if let Some(tenor) = self.fixing_tenor {
+            resolved.settlement = Some(FxForwardSettlement::NonDeliverable {
+                fixing_date: date_calendar.advance(
+                    reference_date,
+                    tenor,
+                    Some(date_convention),
+                    date_end_of_month,
+                )?,
+                settlement_currency: self
+                    .settlement_currency
+                    .ok_or_else(|| QSError::ValueNotSetErr("NDF settlement currency".into()))?,
+            });
+            resolved.fixing_tenor = None;
+            resolved.settlement_currency = None;
+        }
+        Ok(resolved)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::MakeFxForward;
     use crate::{
+        core::makeinstrument::MakeInstrument,
         currencies::currency::Currency,
         instruments::fx::fxforward::FxForwardSettlement,
         time::{date::Date, daycounter::DayCounter},
@@ -263,5 +353,31 @@ mod tests {
         assert!(err
             .to_string()
             .contains("NDF fixing date cannot be after delivery date"));
+    }
+}
+
+#[cfg(test)]
+mod resolution_tests {
+    use crate::{
+        core::makeinstrument::test_support::{empty_market, p, reference},
+        prelude::*,
+    };
+
+    #[test]
+    fn ndf_resolves_relative_delivery_and_fixing_dates() -> Result<()> {
+        let market = empty_market(reference());
+        let ctx = &market;
+        let expiry = reference() + p("1Y")?;
+        let fx = MakeFxForward::default()
+            .with_identifier("ndf".into())
+            .with_delivery_tenor(p("1Y")?)
+            .as_ndf_tenor(p("6M")?, Currency::USD)
+            .with_base_currency(Currency::EUR)
+            .with_quote_currency(Currency::USD)
+            .with_forward_price(1.1)
+            .build_using(ctx)?;
+        assert_eq!(fx.delivery_date(), expiry);
+        assert_eq!(fx.fixing_date(), Some(reference() + p("6M")?));
+        Ok(())
     }
 }

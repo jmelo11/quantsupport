@@ -2,7 +2,10 @@
 use crate::ad::dual::DualFwd;
 use crate::{
     ad::scalar::Scalar,
-    core::trade::Side,
+    core::{
+        makeinstrument::{resolve_date, MakeInstrument},
+        trade::Side,
+    },
     currencies::currency::Currency,
     indices::marketindex::MarketIndex,
     instruments::{
@@ -54,8 +57,10 @@ use std::marker::PhantomData;
 /// assert!(!swap.fixed_leg().cashflows().is_empty());
 /// assert!(!swap.floating_leg().cashflows().is_empty());
 /// ```
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct MakeSwap<T: Scalar> {
+    start_tenor: Option<Period>,
+    maturity_tenor: Option<Period>,
     start_date: Option<Date>,
     maturity_date: Option<Date>,
     fixed_rate: Option<f64>,
@@ -81,6 +86,30 @@ impl<T> MakeSwap<T>
 where
     T: Scalar,
 {
+    /// Sets start date as a tenor from the context evaluation date.
+    /// Replaces an explicitly supplied start date. Use `build_using` when an external anchor is needed.
+    #[must_use]
+    pub const fn with_start_tenor(mut self, tenor: Period) -> Self {
+        self.start_tenor = Some(tenor);
+        self.start_date = None;
+        self
+    }
+
+    /// Sets maturity date as a tenor from the resolved start date.
+    /// Replaces an explicitly supplied maturity date. Use `build_using` when an external anchor is needed.
+    #[must_use]
+    pub const fn with_maturity_tenor(mut self, tenor: Period) -> Self {
+        self.maturity_tenor = Some(tenor);
+        self.maturity_date = None;
+        self
+    }
+
+    /// Sets maturity as a tenor from the resolved start date.
+    #[must_use]
+    pub const fn with_tenor(self, tenor: Period) -> Self {
+        self.with_maturity_tenor(tenor)
+    }
+
     /// Sets floating day counter for coupon accrual without changing index quoting.
     #[must_use]
     pub const fn with_floating_day_counter(mut self, dc: DayCounter) -> Self {
@@ -92,6 +121,7 @@ where
     #[must_use]
     pub const fn with_start_date(mut self, start_date: Date) -> Self {
         self.start_date = Some(start_date);
+        self.start_tenor = None;
         self
     }
 
@@ -99,6 +129,7 @@ where
     #[must_use]
     pub const fn with_maturity_date(mut self, maturity_date: Date) -> Self {
         self.maturity_date = Some(maturity_date);
+        self.maturity_tenor = None;
         self
     }
 
@@ -210,12 +241,31 @@ where
         self.end_of_month = Some(eom);
         self
     }
+}
+
+impl<T: Scalar> MakeInstrument for MakeSwap<T> {
+    type Instrument = Swap<T>;
+
+    fn is_resolved(&self) -> bool {
+        self.start_tenor.is_none() && self.maturity_tenor.is_none()
+    }
 
     /// Builds the [`Swap`] instance.
     ///
     /// # Errors
     /// Returns an error if any of the required fields are missing or invalid.
-    pub fn build(self) -> Result<Swap<T>> {
+    #[allow(clippy::too_many_lines)]
+    fn build(&self) -> Result<Self::Instrument> {
+        if !self.is_resolved() {
+            return Err(QSError::UnresolvedProductErr(
+                "MakeSwap has unresolved date tenors. Supply the corresponding absolute dates or call maker.build_using(&context)".into(),
+            ));
+        }
+        if [self.start_date, self.maturity_date].contains(&Some(Date::empty())) {
+            return Err(QSError::InvalidValueErr(
+                "MakeSwap dates must not be empty".into(),
+            ));
+        }
         let notional = self
             .notional
             .ok_or_else(|| QSError::ValueNotSetErr("Notional".into()))?;
@@ -233,9 +283,11 @@ where
             .ok_or_else(|| QSError::ValueNotSetErr("Currency".into()))?;
         let market_index = self
             .market_index
+            .clone()
             .ok_or_else(|| QSError::ValueNotSetErr("Market index".into()))?;
         let identifier = self
             .identifier
+            .clone()
             .ok_or_else(|| QSError::ValueNotSetErr("Identifier".into()))?;
 
         let side = self.side.unwrap_or(Side::LongReceive);
@@ -260,7 +312,11 @@ where
         let floating_day_counter = self
             .floating_day_counter
             .unwrap_or_else(|| conventions.floating_day_counter());
-        let calendar = Some(self.calendar.unwrap_or_else(|| index_details.calendar()));
+        let calendar = Some(
+            self.calendar
+                .clone()
+                .unwrap_or_else(|| index_details.calendar()),
+        );
         let business_day_convention = Some(
             self.business_day_convention
                 .unwrap_or_else(|| conventions.business_day_convention()),
@@ -324,6 +380,50 @@ where
             market_index,
             currency,
         ))
+    }
+
+    fn resolve_dates(&self, reference_date: Date) -> Result<Self> {
+        let mut resolved = self.clone();
+        let details = self
+            .market_index
+            .as_ref()
+            .ok_or_else(|| QSError::ValueNotSetErr("Market index".into()))?
+            .rate_index_details()?;
+        let calendar = self.calendar.clone().unwrap_or_else(|| details.calendar());
+        let convention_tenor = self
+            .maturity_tenor
+            .unwrap_or_else(|| Period::new(1, TimeUnit::Years));
+        let convention = self.business_day_convention.unwrap_or_else(|| {
+            details
+                .swap_conventions(convention_tenor)
+                .business_day_convention()
+        });
+        let date_calendar = &calendar;
+        let date_convention = convention;
+        let date_end_of_month = self.end_of_month.unwrap_or(false);
+        resolved.start_date = Some(resolve_date(
+            self.start_date,
+            self.start_tenor,
+            reference_date,
+            "start_date",
+            date_calendar,
+            date_convention,
+            date_end_of_month,
+        )?);
+        resolved.start_tenor = None;
+        resolved.maturity_date = Some(resolve_date(
+            self.maturity_date,
+            self.maturity_tenor,
+            resolved
+                .start_date
+                .ok_or_else(|| QSError::ValueNotSetErr("start_date".into()))?,
+            "maturity_date",
+            date_calendar,
+            date_convention,
+            date_end_of_month,
+        )?);
+        resolved.maturity_tenor = None;
+        Ok(resolved)
     }
 }
 
@@ -425,6 +525,42 @@ mod tests {
         for coupon in floating {
             assert_eq!(coupon.day_counter(), DayCounter::Actual360);
         }
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod resolution_tests {
+    use crate::{
+        core::makeinstrument::test_support::{assert_legs, cashflows, empty_market, p, reference},
+        prelude::*,
+    };
+
+    #[test]
+    fn swap_definitions_are_reusable_and_match_absolute_construction() -> Result<()> {
+        let first = empty_market(reference());
+        let second = empty_market(Date::new(2027, 3, 25));
+        let maker = MakeSwap::<f64>::default()
+            .with_identifier("swap".into())
+            .with_start_tenor(p("1Y")?)
+            .with_tenor(p("5Y")?)
+            .with_notional(100_000.0)
+            .with_fixed_rate(0.03)
+            .with_currency(Currency::EUR)
+            .with_market_index(MarketIndex::EURIBOR6m)
+            .with_business_day_convention(BusinessDayConvention::Unadjusted);
+        let a = maker.build_using(&first)?;
+        let b = maker.build_using(&second)?;
+        let again = maker.build_using(&first)?;
+        let explicit = maker
+            .clone()
+            .with_start_date(Date::new(2027, 2, 24))
+            .with_maturity_date(Date::new(2032, 2, 24))
+            .build()?;
+        assert_legs(&a, &explicit)?;
+        assert_legs(&a, &again)?;
+        assert_ne!(cashflows(a.fixed_leg())?, cashflows(b.fixed_leg())?);
+        assert!(maker.build().is_err());
         Ok(())
     }
 }

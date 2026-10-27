@@ -351,7 +351,11 @@ mod tests {
     fn flat_discount_element(ref_date: Date, rate: f64) -> Result<DiscountCurveElement> {
         let dc = DayCounter::Actual360;
         let dates: Vec<Date> = (0..=10)
-            .map(|i| ref_date.advance(i, TimeUnit::Years))
+            .map(|i| {
+                ref_date
+                    .advance(i, TimeUnit::Years)
+                    .expect("valid date advancement")
+            })
             .collect();
         let dfs: Vec<DualFwd> = dates
             .iter()
@@ -475,7 +479,9 @@ mod tests {
             MarketIndex::SOFR,
             Currency::USD,
             ref_date,
-            ref_date.advance(years, TimeUnit::Years),
+            ref_date
+                .advance(years, TimeUnit::Years)
+                .expect("valid date advancement"),
             contract_spread,
             recovery,
             Frequency::Quarterly,
@@ -537,7 +543,9 @@ mod tests {
             MarketIndex::SOFR,
             Currency::USD,
             ref_date,
-            ref_date.advance(5, TimeUnit::Years),
+            ref_date
+                .advance(5, TimeUnit::Years)
+                .expect("valid date advancement"),
             quoted_spread,
             0.4,
             Frequency::Quarterly,
@@ -616,7 +624,9 @@ mod tests {
                 MarketIndex::SOFR,
                 Currency::USD,
                 ref_date,
-                ref_date.advance(years, TimeUnit::Years),
+                ref_date
+                    .advance(years, TimeUnit::Years)
+                    .expect("valid date advancement"),
                 spread,
                 0.4,
                 Frequency::Quarterly,

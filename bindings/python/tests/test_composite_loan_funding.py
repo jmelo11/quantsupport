@@ -44,10 +44,10 @@ def loan(floating=False):
     return qs.Loan(
         identifier="FUNDING", start_date=REFERENCE, maturity_date="2028-02-24",
         notional=100_000, currency=qs.Currency.EUR,
-        coupons=[qs.FloatingRateCoupon(index="EURIBOR12m", spread=0.01) if floating else qs.FixedRateCoupon(rate=qs.InterestRate(rate=0.06))],
+        coupons=[qs.FloatingRateCoupon(index="EURIBOR12m", spread=0.01) if floating else qs.FixedRateCoupon(rate=qs.InterestRate(rate=0.06, day_counter="Actual360"))],
         amortization_rate=0.05 if floating else None,
         repayment=qs.LoanRepaymentStructure.french(), payment_frequency=qs.Frequency.Monthly,
-        day_counter=qs.DayCounter.Actual360, calendar="TARGET", fixing_lag=2,
+        calendar="TARGET", fixing_lag=2,
         business_day_convention=qs.BusinessDayConvention.Following,
     )
 

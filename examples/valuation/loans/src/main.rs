@@ -29,20 +29,30 @@ fn build_initialized_loan_market(fixings: FixingStore) -> ExampleResult<PricingC
 }
 /// Supplies common 30-year EUR mortgage terms: 250,000 principal, 6% fixed coupon,
 /// monthly French payments, Actual/360, TARGET, and a two-business-day fixing lag.
-fn default_loan_terms(reference: Date, identifier: &str) -> MakeLoan<DualFwd> {
-    MakeLoan::default()
+fn default_loan_terms(reference: Date, identifier: &str) -> Result<MakeLoan<DualFwd>> {
+    Ok(MakeLoan::default()
         .with_identifier(identifier.into())
         .with_start_date(reference)
-        .with_maturity_date(reference.advance(30, TimeUnit::Years))
+        .with_maturity_date(reference.advance(30, TimeUnit::Years)?)
         .with_notional(250_000.0)
         .with_currency(Currency::EUR)
-        .with_coupons(vec![CashflowType::fixed(0.06)])
+        .with_coupons(vec![CashflowType::FixedRateCoupon(FixedRateCoupon::new(
+            1.0,
+            Box::new(InterestRate::new(
+                DualFwd::new(0.06),
+                Compounding::Simple,
+                Frequency::Annual,
+                DayCounter::Actual360,
+            )),
+            reference,
+            reference,
+            reference,
+        ))])
         .with_repayment_structure(LoanRepaymentStructure::French)
         .with_payment_frequency(Frequency::Monthly)
-        .with_day_counter(DayCounter::Actual360)
         .with_calendar(Calendar::TARGET(TARGET::new()))
         .with_business_day_convention(BusinessDayConvention::Following)
-        .with_fixing_lag_business_days(2)
+        .with_fixing_lag_business_days(2))
 }
 /// Selects ESTR discounting for EUR loan valuations.
 fn estr_loan_pricer() -> LoanPricer {
@@ -103,8 +113,8 @@ fn assert_discounted_receipts_match_value(
 /// Panics if the example's principal, receipt PV, fair-rate, or risk checks fail.
 fn main() -> ExampleResult<()> {
     let reference = Date::new(2026, 2, 24);
-    let fixed_builder = default_loan_terms(reference, "FIXED");
-    let floating_builder = default_loan_terms(reference, "FLOATING")
+    let fixed_builder = default_loan_terms(reference, "FIXED")?;
+    let floating_builder = default_loan_terms(reference, "FLOATING")?
         .with_coupons(vec![CashflowType::floating(
             MarketIndex::EURIBOR12m,
             0.01,
@@ -114,7 +124,7 @@ fn main() -> ExampleResult<()> {
         .with_initial_amortization_rate(0.05); // Initial all-in rate sets a fixed principal schedule.
     let fixed = fixed_builder.clone().build()?;
     let floating = floating_builder.clone().build()?;
-    let mixed = default_loan_terms(reference, "MIXED")
+    let mixed = default_loan_terms(reference, "MIXED")?
         .with_coupons({
             let mut coupons = vec![CashflowType::fixed(0.04); 60];
             coupons.push(CashflowType::floating(

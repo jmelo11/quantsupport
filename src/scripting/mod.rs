@@ -30,6 +30,8 @@ This attribution and license notice must be preserved at the top of this file.
 
 /// Runtime market-data values supplied to scripts.
 pub mod data;
+/// Maker for context-resolved scripted event schedules.
+pub mod makescriptedproduct;
 /// Abstract syntax tree nodes and event streams.
 pub mod nodes;
 /// Lexer and parser for the scripting language.

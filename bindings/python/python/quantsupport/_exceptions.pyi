@@ -63,3 +63,7 @@ class QuantSupportIOError(QuantSupportError, OSError):
 class QuantSupportNotImplementedError(QuantSupportError, NotImplementedError):
     """Unsupported operation; catch as QuantSupportError or NotImplementedError."""
     ...
+
+class UnresolvedProductErr(QuantSupportStateError):
+    """Product construction requires an explicit reference date or market observation."""
+    ...

@@ -1,5 +1,3 @@
-use std::collections::HashSet;
-
 use crate::{
     ad::{dual::DualFwd, tape::Tape},
     core::{
@@ -21,6 +19,7 @@ use crate::{
     instruments::fx::fxforward::FxForwardTrade,
     utils::errors::{QSError, Result},
 };
+use std::collections::HashSet;
 
 /// Pricer for FX forward trades.
 ///
@@ -337,8 +336,6 @@ impl Pricer for FxForwardPricer {
 
 #[cfg(test)]
 mod tests {
-    use std::{cell::RefCell, collections::HashMap, rc::Rc};
-
     use super::FxForwardPricer;
     use crate::{
         ad::dual::DualFwd,
@@ -346,6 +343,7 @@ mod tests {
             collateral::DiscountPolicy,
             elements::curveelement::DiscountCurveElement,
             evaluationresults::EvaluationResults,
+            makeinstrument::MakeInstrument,
             marketdatahandling::{
                 constructedelementstore::ConstructedElementStore,
                 marketdata::{MarketData, MarketDataProvider, MarketDataRequest},
@@ -368,6 +366,7 @@ mod tests {
         time::{date::Date, enums::TimeUnit, period::Period},
         utils::errors::{QSError, Result},
     };
+    use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
     const BASE_CCY: Currency = Currency::EUR;
     const QUOTE_CCY: Currency = Currency::USD;

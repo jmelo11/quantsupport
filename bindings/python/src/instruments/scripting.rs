@@ -1,12 +1,11 @@
 //! In-memory scripted product specifications for the native script runtime.
 
+use crate::common::conversion::{from_py, qs_err};
 use pyo3::prelude::*;
 use quantsupport::prelude::{
     CodedEvent, Currency, Date, EventStream, MarketIndex, PricingModelConfiguration,
 };
 use serde::{Deserialize, Serialize};
-
-use crate::common::conversion::{from_json_file, from_py, qs_err};
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -92,18 +91,12 @@ impl ScriptedProduct {
 
 #[pymethods]
 impl ScriptedProduct {
+    /// Defines script event tenors before the pricing reference date is available.
+
     /// Builds a script from events [{date, code}], currency, and optional model assignments.
     #[staticmethod]
     pub fn from_dict(obj: &Bound<'_, PyAny>) -> PyResult<Self> {
         let product: Self = from_py(obj, "scripted product")?;
-        product.validate()?;
-        Ok(product)
-    }
-
-    /// Loads the same script schema from a JSON file.
-    #[staticmethod]
-    fn from_json(path: &str) -> PyResult<Self> {
-        let product: Self = from_json_file(path, "scripted product")?;
         product.validate()?;
         Ok(product)
     }

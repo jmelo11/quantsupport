@@ -285,7 +285,7 @@ macro_rules! impl_zero_curve {
                     .dates
                     .iter()
                     .map(|pillar| pillar.advance(days, TimeUnit::Days))
-                    .collect::<Vec<_>>();
+                    .collect::<Result<Vec<_>>>()?;
                 let rates = dates
                     .iter()
                     .map(|pillar| {
@@ -482,9 +482,19 @@ mod tests {
     #[test]
     fn zero_curve_ad_matches_finite_differences() -> Result<()> {
         let reference = Date::new(2026, 1, 1);
-        let start = reference.advance(6, TimeUnit::Months);
-        let end = reference.advance(18, TimeUnit::Months);
-        let dates = vec![reference, reference.advance(1, TimeUnit::Years), end];
+        let start = reference
+            .advance(6, TimeUnit::Months)
+            .expect("valid date advancement");
+        let end = reference
+            .advance(18, TimeUnit::Months)
+            .expect("valid date advancement");
+        let dates = vec![
+            reference,
+            reference
+                .advance(1, TimeUnit::Years)
+                .expect("valid date advancement"),
+            end,
+        ];
         let rates = vec![0.01, 0.025, 0.03];
         let labels = vec!["0D".into(), "1Y".into(), "18M".into()];
         let bump = 1e-6;
@@ -567,12 +577,20 @@ mod tests {
         let reference = Date::new(2026, 1, 1);
         let dates = vec![
             reference,
-            reference.advance(1, TimeUnit::Years),
-            reference.advance(2, TimeUnit::Years),
+            reference
+                .advance(1, TimeUnit::Years)
+                .expect("valid date advancement"),
+            reference
+                .advance(2, TimeUnit::Years)
+                .expect("valid date advancement"),
         ];
         let rates = vec![0.01, 0.02, 0.03];
-        let roll = reference.advance(6, TimeUnit::Months);
-        let payment = reference.advance(3, TimeUnit::Years);
+        let roll = reference
+            .advance(6, TimeUnit::Months)
+            .expect("valid date advancement");
+        let payment = reference
+            .advance(3, TimeUnit::Years)
+            .expect("valid date advancement");
         let make_curve = |rates| {
             ZeroRateTermStructure::new(
                 reference,
@@ -685,13 +703,20 @@ mod tests {
         let reference = Date::new(2026, 1, 1);
         let curve = ZeroRateTermStructure::new(
             reference,
-            vec![reference, reference.advance(2, TimeUnit::Years)],
+            vec![
+                reference,
+                reference
+                    .advance(2, TimeUnit::Years)
+                    .expect("valid date advancement"),
+            ],
             vec![0.002, 0.008],
             RateDefinition::default(),
             Interpolator::LogLinear,
             true,
         )?;
-        let date = reference.advance(1, TimeUnit::Years);
+        let date = reference
+            .advance(1, TimeUnit::Years)
+            .expect("valid date advancement");
         Tape::start_recording_fwd();
         let mut dual = curve.to_dual();
         dual.put_pillars_on_tape();

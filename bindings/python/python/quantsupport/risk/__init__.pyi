@@ -182,7 +182,7 @@ class XvaConfig:
     """XVA engine configuration (models, paths, seed, frequency).
 
 Credit, funding, and collateral parameters belong to each client's CsaTerms,
-not this configuration. Load this object through from_dict() or from_json().
+not this configuration. Load this object through from_dict().
 Model calibration and engine-level checks occur when PricingContext.run_xva()
 constructs and runs the engine, not in these deserializing factories.
 """
@@ -223,28 +223,6 @@ QuantSupportError
 """
         ...
 
-    @staticmethod
-    def from_json(path: str) -> XvaConfig:
-        """Load one exposure-engine configuration from a JSON file.
-
-Parameters
-----------
-path : str
-    Absolute filesystem path or path relative to the current working directory.
-    The UTF-8 file must contain one object in the from_dict() schema, not a list
-    or a wrapped configuration. The argument is a path, not inline JSON text.
-
-Returns
--------
-XvaConfig
-    Deserialized engine configuration; model calibration is deferred to run_xva().
-
-Raises
-------
-QuantSupportError
-    If the file cannot be read, contains invalid JSON, or fails schema decoding.
-"""
-        ...
 
 
 @final
@@ -339,29 +317,6 @@ QuantSupportError
 """
         ...
 
-    @staticmethod
-    def from_json(path: str) -> CsaTerms:
-        """Load and validate one client's CSA terms from a JSON file.
-
-Parameters
-----------
-path : str
-    Absolute filesystem path or path relative to the current working directory.
-    The UTF-8 file must contain a single object in the from_dict() schema, using
-    native serde values, not a list, display-only index strings, or inline JSON
-    passed as the path argument.
-
-Returns
--------
-CsaTerms
-    Decoded terms after margin parameter validation.
-
-Raises
-------
-QuantSupportError
-    If file reading, JSON decoding, CSA deserialization, or margin validation fails.
-"""
-        ...
 
     @property
     def own_threshold(self) -> Any:

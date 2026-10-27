@@ -119,7 +119,7 @@ impl MarketDataRequest {
 
 /// Market-data response containing only the curves, fixings, FX rates, and
 /// pricer configurations requested for one valuation.
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct MarketData {
     base_currency: Option<Currency>,
     fixings: HashMap<MarketIndex, BTreeMap<Date, f64>>,
@@ -128,6 +128,13 @@ pub struct MarketData {
     pricer_configurations: HashMap<InstrumentType, PricerConfiguration>,
     calibration_quotes: Option<QuoteStore>,
     quote_level: Level,
+    anchor_fixings: bool,
+}
+
+impl Default for MarketData {
+    fn default() -> Self {
+        Self::new(HashMap::new(), ConstructedElementStore::default())
+    }
 }
 
 impl MarketData {
@@ -145,7 +152,21 @@ impl MarketData {
             pricer_configurations: HashMap::new(),
             calibration_quotes: None,
             quote_level: Level::Mid,
+            anchor_fixings: true,
         }
+    }
+
+    /// Whether historical index observations use required fixing-store values.
+    #[must_use]
+    pub const fn anchor_fixings(&self) -> bool {
+        self.anchor_fixings
+    }
+
+    /// Selects historical fixing anchoring; false projects every index observation.
+    #[must_use]
+    pub const fn with_anchor_fixings(mut self, enabled: bool) -> Self {
+        self.anchor_fixings = enabled;
+        self
     }
 
     /// Returns the reporting currency supplied by the valuation context.
@@ -244,6 +265,12 @@ impl MarketData {
 
 /// Provider interface for market-data requests.
 pub trait MarketDataProvider {
+    /// Whether observations before evaluation require historical fixings.
+    /// Today and future observations are projected. False projects all dates.
+    fn anchor_fixings(&self) -> bool {
+        true
+    }
+
     /// Handles a market-data request.
     ///
     /// ## Errors
@@ -255,6 +282,10 @@ pub trait MarketDataProvider {
 }
 
 impl<P: MarketDataProvider + ?Sized> MarketDataProvider for &P {
+    fn anchor_fixings(&self) -> bool {
+        (**self).anchor_fixings()
+    }
+
     fn handle_request(&self, request: &MarketDataRequest) -> Result<MarketData> {
         (**self).handle_request(request)
     }

@@ -3,17 +3,20 @@
 //! JSON-compatible Python objects (dicts, lists, strings) are converted into
 //! Rust types through their serde implementations via `pythonize`.
 
-use pyo3::prelude::*;
-use pyo3::types::{PyDict, PyList, PyTuple};
-use quantsupport::prelude::{
-    BusinessDayConvention, Calendar, CapFloorType, CapletFloorletType, Compounding, Currency, Date,
-    DateGenerationRule, DayCounter, EuroOptionType, Frequency, Interpolator, Level, MarketIndex,
-    PaymentStructure, Period, Request, Side, Strike, TimeUnit,
+use crate::common::errors;
+use pyo3::{
+    prelude::*,
+    types::{PyDict, PyList, PyTuple},
+};
+use quantsupport::{
+    prelude::{
+        BusinessDayConvention, Calendar, CapFloorType, CapletFloorletType, Compounding, Currency,
+        Date, DateGenerationRule, DayCounter, EuroOptionType, Frequency, Interpolator, Level,
+        MarketIndex, PaymentStructure, Period, Request, Side, Strike, TimeUnit,
+    },
+    utils::errors::QSError,
 };
 use serde::de::DeserializeOwned;
-
-use crate::common::errors;
-use quantsupport::utils::errors::QSError;
 
 /// Maps any library error into the Python `QuantSupportError` exception.
 pub fn qs_err<E: std::fmt::Display + 'static>(e: E) -> PyErr {
@@ -178,52 +181,6 @@ fn serde_input<'py>(obj: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
         return PyList::new(obj.py(), values).map(Bound::into_any);
     }
     Ok(obj.clone())
-}
-
-/// Reads a JSON file and deserializes it into `T`.
-pub fn from_json_file<T: DeserializeOwned>(path: &str, what: &str) -> PyResult<T> {
-    let text = std::fs::read_to_string(path).map_err(|error| {
-        let error =
-            errors::native(&QSError::IoErr(error).context(format!("reading {what} file '{path}'")));
-        Python::attach(|py| {
-            let _ = error
-                .value(py)
-                .getattr("details")
-                .and_then(|d| d.set_item("file", path));
-        });
-        error
-    })?;
-    let json_error = |cause: serde_json::Error, field: Option<&str>| {
-        let error = errors::native(&QSError::DeserializationErr(format!(
-            "invalid {what} in '{path}': {cause}"
-        )));
-        Python::attach(|py| {
-            if let Ok(details) = error.value(py).getattr("details") {
-                let _ = details.set_item("file", path);
-                let _ = details.set_item("line", cause.line());
-                let _ = details.set_item("column", cause.column());
-            }
-            error.set_cause(
-                py,
-                Some(pyo3::exceptions::PyValueError::new_err(cause.to_string())),
-            );
-            errors::context(
-                py,
-                error,
-                None,
-                field.filter(|value| *value != "." && !value.is_empty()),
-            )
-        })
-    };
-    let mut deserializer = serde_json::Deserializer::from_str(&text);
-    let result = serde_path_to_error::deserialize(&mut deserializer).map_err(|error| {
-        let field = error.path().to_string();
-        json_error(error.into_inner(), Some(&field))
-    })?;
-    deserializer
-        .end()
-        .map_err(|error| json_error(error, None))?;
-    Ok(result)
 }
 
 /// Builds a `pandas.DataFrame` from named columns.

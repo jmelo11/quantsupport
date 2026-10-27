@@ -220,7 +220,7 @@ pub fn extract_f64_curve(
     dfs.push(1.0_f64);
 
     for i in 1..=n_points {
-        let d = ref_date.advance(3 * i as i32, TimeUnit::Months);
+        let d = ref_date.advance(3 * i as i32, TimeUnit::Months)?;
         let df = curve.discount_factor(d)?;
         dates.push(d);
         dfs.push(df.value());

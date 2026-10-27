@@ -1,5 +1,6 @@
 """Native pricing keeps contract terms separate from position metadata."""
 
+import json
 from pathlib import Path
 import unittest
 
@@ -189,16 +190,15 @@ class TradeInstrumentTests(unittest.TestCase):
         data = Path(__file__).resolve(
         ).parents[3] / "examples" / "hullwhite" / "data"
         return qs.PricingContext(
-            quotes=qs.QuoteStore.from_json(str(data / "quotes.json")),
-            curves=qs.CurveConfiguration.from_json(
-                str(data / "curve_specs.json")),
+            quotes=qs.QuoteStore.from_dict(json.loads(Path(data / "quotes.json").read_text(encoding="utf-8"))),
+            curves=qs.CurveConfiguration.from_dict_list(json.loads(Path(data / "curve_specs.json").read_text(encoding="utf-8"))),
             csa_policy=qs.SingleCurveCSADiscountPolicy("USD", "SOFR"),
         )
 
     def test_new_products_price_and_scale_positions(self):
         data = Path(__file__).resolve().parents[3] / "examples" / "hullwhite" / "data"
-        quotes = qs.QuoteStore.from_json(str(data / "quotes.json"))
-        curves = qs.CurveConfiguration.from_json(str(data / "curve_specs.json"))
+        quotes = qs.QuoteStore.from_dict(json.loads(Path(data / "quotes.json").read_text(encoding="utf-8")))
+        curves = qs.CurveConfiguration.from_dict_list(json.loads(Path(data / "curve_specs.json").read_text(encoding="utf-8")))
         date = quotes.reference_date
         fixings = qs.FixingStore()
         fixings.add("SOFR", date, 100.0)
@@ -376,9 +376,8 @@ class TradeInstrumentTests(unittest.TestCase):
     def test_native_trades_share_an_instrument_without_sharing_side(self):
         data = Path(__file__).resolve(
         ).parents[3] / "examples" / "hullwhite" / "data"
-        quotes = qs.QuoteStore.from_json(str(data / "quotes.json"))
-        curves = qs.CurveConfiguration.from_json(
-            str(data / "curve_specs.json"))
+        quotes = qs.QuoteStore.from_dict(json.loads(Path(data / "quotes.json").read_text(encoding="utf-8")))
+        curves = qs.CurveConfiguration.from_dict_list(json.loads(Path(data / "curve_specs.json").read_text(encoding="utf-8")))
         reference_date = quotes.reference_date
         instrument = qs.Swap(
             identifier="SHARED-SWAP",

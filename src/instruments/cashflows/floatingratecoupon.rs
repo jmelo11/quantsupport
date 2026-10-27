@@ -171,18 +171,19 @@ mod tests {
     }
 
     #[test]
-    fn overnight_today_fixing_is_used_when_present() {
+    fn overnight_today_projects_even_when_a_fixing_is_available() {
         let start = Date::new(2026, 1, 2);
         let end = Date::new(2026, 1, 5);
         let coupon = coupon(start, end, 0.0);
-        let realized = coupon
+        let projected = coupon
             .overnight_rate(
                 start,
-                |_| panic!("today fixing is known"),
+                |date| Ok((-0.04 * DayCounter::Actual360.year_fraction(start, date)).exp()),
                 |_| Ok(Some(0.03)),
             )
             .unwrap();
-        assert!((realized - 0.03).abs() < 1e-12);
+        let tau = DayCounter::Actual360.year_fraction(start, end);
+        assert!((projected - ((0.04 * tau).exp() - 1.0) / tau).abs() < 1e-12);
     }
 
     #[test]
@@ -336,7 +337,7 @@ where
         self.overnight_conventions.as_ref()
     }
 
-    /// Business-day observations required through the valuation date, including today.
+    /// Business-day observations required strictly before the valuation date.
     ///
     /// # Errors
     /// Rejects invalid overnight conventions or lockout lengths.
@@ -359,7 +360,7 @@ where
                 position
             };
             let date = periods[observation_position].0;
-            if date <= evaluation_date && dates.last() != Some(&date) {
+            if date < evaluation_date && dates.last() != Some(&date) {
                 dates.push(date);
             }
         }
@@ -376,19 +377,19 @@ where
         let mut value_date =
             calendar.adjust(self.start_date, Some(BusinessDayConvention::Preceding));
         while value_date < self.end_date {
-            let next = calendar.advance(value_date, Period::new(1, TimeUnit::Days), None, false);
+            let next = calendar.advance(value_date, Period::new(1, TimeUnit::Days), None, false)?;
             let observation = calendar.advance(
                 value_date,
                 Period::new(-conventions.lookback_days(), TimeUnit::Days),
                 None,
                 false,
-            );
+            )?;
             let observation_end = calendar.advance(
                 next,
                 Period::new(-conventions.lookback_days(), TimeUnit::Days),
                 None,
                 false,
-            );
+            )?;
             let weight = if conventions.observation_shift() {
                 self.day_counter.year_fraction(observation, observation_end)
             } else {
@@ -417,6 +418,21 @@ where
     pub fn overnight_rate(
         &self,
         evaluation_date: Date,
+        discount_factor: impl FnMut(Date) -> Result<T>,
+        fixing: impl FnMut(Date) -> Result<Option<f64>>,
+    ) -> Result<T> {
+        self.overnight_rate_with_fixing_policy(evaluation_date, true, discount_factor, fixing)
+    }
+
+    /// Resolves overnight accrual with an explicit historical fixing policy.
+    /// False projects every observation, including historical periods.
+    ///
+    /// # Errors
+    /// Rejects missing anchored observations and invalid overnight periods.
+    pub fn overnight_rate_with_fixing_policy(
+        &self,
+        evaluation_date: Date,
+        anchor_fixings: bool,
         mut discount_factor: impl FnMut(Date) -> Result<T>,
         mut fixing: impl FnMut(Date) -> Result<Option<f64>>,
     ) -> Result<T> {
@@ -433,9 +449,7 @@ where
                 "Invalid overnight accrual period or lookback".into(),
             ));
         }
-        let today_known = self.start_date == evaluation_date && fixing(self.start_date)?.is_some();
-        if self.start_date >= evaluation_date
-            && !today_known
+        if (self.start_date >= evaluation_date || !anchor_fixings)
             && conventions.lookback_days() == 0
             && conventions.lockout_days() == 0
             && conventions.averaging() == OvernightAveraging::Compound
@@ -465,7 +479,7 @@ where
                 position
             };
             let (observation, observation_end, _) = periods[observation_position];
-            let known = if observation <= evaluation_date {
+            let known = if anchor_fixings && observation < evaluation_date {
                 fixing(observation)?
             } else {
                 None
@@ -487,7 +501,7 @@ where
                         (factor - 1.0) / observation_tau
                     };
                 T::scalar(simple_rate)
-            } else if observation < evaluation_date {
+            } else if anchor_fixings && observation < evaluation_date {
                 return Err(QSError::NotFoundErr(format!(
                     "Missing {} overnight fixing for {observation}",
                     self.index

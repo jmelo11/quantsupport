@@ -1,5 +1,6 @@
 """Direct curve observations share quote sides, scenarios, and source risk."""
 
+import json
 import math
 import tempfile
 import unittest
@@ -138,7 +139,7 @@ class DirectCurveQuoteTests(unittest.TestCase):
             path = Path(directory) / "markets.json"
             store = qs.MarketSnapshotStore.from_dict([snapshot.to_dict()])
             store.to_json(str(path))
-            restored = qs.MarketSnapshotStore.from_json(str(path))
+            restored = qs.MarketSnapshotStore.from_dict(json.loads(Path(path).read_text(encoding="utf-8")))
         for level, rate in [(qs.Level.Mid, 0.04), (qs.Level.Ask, 0.05)]:
             with restored.pricing_context(qs.SnapshotSelector(snapshot.timestamp, level=level)) as historical:
                 self.assertAlmostEqual(historical.curve("ESTR").discount_factor("2027-02-24"),

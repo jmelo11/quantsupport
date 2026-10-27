@@ -1,16 +1,16 @@
 //! Reusable dated and tenor-based zero-rate term structures.
 
+use crate::common::{
+    conversion::{
+        extract_compounding, extract_date, extract_day_counter, extract_frequency,
+        extract_interpolator, extract_period, from_py, qs_err,
+    },
+    enums::Interpolator as PyInterpolator,
+};
 use pyo3::prelude::*;
 use quantsupport::prelude::{
     Compounding, DayCounter, Frequency, InterestRatesTermStructure, Interpolator, RateDefinition,
     TenorBasedZeroRateTermStructure as QsTenorCurve, ZeroRateTermStructure as QsZeroCurve,
-};
-
-use crate::common::enums::Interpolator as PyInterpolator;
-
-use crate::common::conversion::{
-    extract_compounding, extract_date, extract_day_counter, extract_frequency,
-    extract_interpolator, extract_period, from_json_file, from_py, qs_err,
 };
 
 fn rate_definition(
@@ -89,13 +89,6 @@ impl ZeroRateTermStructure {
     fn from_dict(obj: &Bound<'_, PyAny>) -> PyResult<Self> {
         Ok(Self {
             inner: from_py(obj, "zero-rate curve")?,
-        })
-    }
-
-    #[staticmethod]
-    fn from_json(path: &str) -> PyResult<Self> {
-        Ok(Self {
-            inner: from_json_file(path, "zero-rate curve")?,
         })
     }
 }

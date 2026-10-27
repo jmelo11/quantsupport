@@ -223,13 +223,24 @@ not an option-market volatility percentage.
 Native serialization
 --------------------
 
-Configuration ``from_dict`` returns one configuration; ``from_dict_list`` and
-``from_json(path)`` return lists and accept a native object, array, or single-key
+Configuration ``from_dict`` returns one configuration; ``from_dict_list``
+returns a list and accepts a native object, array, or single-key
 array wrapper where documented. Product ``from_dict`` instead calls the
 product constructor using keyword terms. Do not confuse these two schemas.
 
-Python ``from_json`` takes a filesystem path. Excel's similarly named functions
-take JSON text in worksheet cells. Parameterized native indices use tagged
+Read files with Python's ``json.load`` and pass the decoded data to the appropriate
+dictionary constructor:
+
+.. code-block:: python
+
+   import json
+
+   with open("quotes.json", encoding="utf-8") as stream:
+       quotes = qs.QuoteStore.from_dict(json.load(stream))
+   with open("curve_specs.json", encoding="utf-8") as stream:
+       curves = qs.CurveConfiguration.from_dict_list(json.load(stream))
+
+Excel's JSON functions take JSON text in worksheet cells. Parameterized native indices use tagged
 objects such as ``{"Equity": "SPX"}``, ``{"Credit": "ACME"}``, or
 ``{"FxPair": ["EUR", "USD"]}``; typed Python factories avoid reliance on
 display-label parsing.

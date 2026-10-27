@@ -67,7 +67,13 @@ closures require updates or explicit local overrides.
 
 ## Builders and positions
 
-`Make*` builders validate required terms and construct the instrument. Check
+`Make*` makers retain contractual inputs. Their `MakeInstrument::build` method
+uses supplied parameters; `build_using` supplies a reference date and
+market observations when needed. Both methods return concrete instruments for
+trades and pricers. Missing context dependencies raise `UnresolvedProductErr`.
+See [Building instruments explicitly](instrument-resolution.md).
+
+Makers validate required terms and construct the instrument. Check
 their defaults against the contract's market conventions. `MakeSwap` produces
 regular single-fixing coupons; `MakeOvernightIndexSwap` starts from index-specific
 overnight conventions. Bond and loan builders have distinct principal,

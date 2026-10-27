@@ -79,8 +79,8 @@ def generate(path, count=10000, baseline=False, layout="rows"):
         sheet.write(i + 1, 9, .035 + .0001 * (i % 50), input_rate)
         sheet.write_formula(i + 1, 2, f'=QS.CONTEXT.CREATE("market.{i}",A{row},"USD","SOFR")', handle, "")
         sheet.write_formula(i + 1, 3, f'=QS.CONTEXT.ADD.CURVE(C{row},"SOFR",$K$2:$K$7,$L$2:$L$7,,,"Actual360","LogLinear",TRUE)', handle, "")
-        sheet.write_formula(i + 1, 4, f'=QS.INSTRUMENT.SWAP("swap.{i}",H{row},B{row},"USD","SOFR",I{row},J{row},0,"Actual360","Simple","Annual","Annual","Annual")', handle, "")
-        sheet.write_formula(i + 1, 5, f'=QS.TRADE.CREATE("trade.{i}",E{row},A{row},"Receive")', handle, "")
+        sheet.write_formula(i + 1, 4, f'=QS.INSTRUMENT.SWAP("swap.{i}",C{row},H{row},B{row},"USD","SOFR",I{row},J{row},0,"Actual360","Simple","Annual","Annual","Annual")', handle, "")
+        sheet.write_formula(i + 1, 5, f'=QS.TRADE.CREATE("trade.{i}",C{row},E{row},A{row},"Receive")', handle, "")
         extra = f',"Value",D{row}' if baseline else ''
         if layout == "batch" and not baseline:
             sheet.write_blank(i + 1, 6, None, pv)

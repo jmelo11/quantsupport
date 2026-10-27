@@ -231,6 +231,7 @@ pub fn initialize(module: &Bound<'_, PyModule>) -> PyResult<()> {
     let base = module.py().get_type::<crate::QuantSupportError>();
     if let Ok(namespace) = base.getattr("_support_namespace") {
         for name in [
+            "UnresolvedProductErr",
             "QuantSupportTypeError",
             "QuantSupportValueError",
             "QuantSupportStateError",

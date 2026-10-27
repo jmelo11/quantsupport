@@ -127,24 +127,28 @@ mod tests {
     fn test_advance_date() {
         let date = Date::new(2013, 3, 28);
         let cal = TARGET::new();
-        let new_date = cal.advance(
-            date,
-            Period::new(1, TimeUnit::Years),
-            Some(BusinessDayConvention::Unadjusted),
-            true,
-        );
+        let new_date = cal
+            .advance(
+                date,
+                Period::new(1, TimeUnit::Years),
+                Some(BusinessDayConvention::Unadjusted),
+                true,
+            )
+            .expect("valid date advancement");
         let tmpd = date + 1;
         assert!(!cal.is_business_day(&tmpd));
         assert_eq!(cal.adjust(tmpd, None).month(), 4);
 
         assert_eq!(new_date, Date::new(2014, 3, 31));
 
-        let new_date = cal.advance(
-            date,
-            Period::new(1, TimeUnit::Years),
-            Some(BusinessDayConvention::Unadjusted),
-            false,
-        );
+        let new_date = cal
+            .advance(
+                date,
+                Period::new(1, TimeUnit::Years),
+                Some(BusinessDayConvention::Unadjusted),
+                false,
+            )
+            .expect("valid date advancement");
 
         assert_eq!(new_date, Date::new(2014, 3, 28));
     }

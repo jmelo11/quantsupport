@@ -19,6 +19,7 @@ class PythonApiTests(unittest.TestCase):
             cls = getattr(qs, name)
             if not isinstance(cls, type) or cls.__module__ != "quantsupport":
                 continue
+            self.assertFalse(hasattr(cls, "from_json"), name)
             methods = [(name, cls)]
             for method_name, method in vars(cls).items():
                 if method_name.startswith("_"):
@@ -46,12 +47,12 @@ class PythonApiTests(unittest.TestCase):
             rate=0.04, day_counter="Actual365", compounding="Compounded", frequency="Semiannual")))
         coupon = qs.FixedRateCoupon(rate)
         args = ("LOAN", "2026-02-24", "2028-02-24", 100_000, [coupon], "EUR",
-                qs.LoanRepaymentStructure.bullet(), "Quarterly", "Annual", "Actual365")
+                qs.LoanRepaymentStructure.bullet(), "Quarterly", "Annual")
         positional = qs.Loan(*args)
         keyword = qs.Loan(identifier="LOAN", start_date="2026-02-24", maturity_date="2028-02-24",
                           notional=100_000, coupons=[coupon], currency="EUR",
                           repayment=qs.LoanRepaymentStructure.bullet(), payment_frequency="Quarterly",
-                          fixing_frequency="Annual", day_counter="Actual365")
+                          fixing_frequency="Annual")
         self.assertEqual(dict(positional), dict(keyword))
         self.assertEqual(dict(qs.FloatingRateCoupon("EURIBOR12m", 0.01)),
                          dict(qs.FloatingRateCoupon(index="EURIBOR12m", spread=0.01)))
@@ -95,8 +96,8 @@ class PythonApiTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "loan.json"
             path.write_text(json.dumps([]))
-            with self.assertRaisesRegex(TypeError, r"Loan.from_json:.*expected dict, got list"):
-                qs.Loan.from_json(str(path))
+            with self.assertRaisesRegex(TypeError, r"Loan.from_dict:.*expected dict, got list"):
+                qs.Loan.from_dict(json.loads(Path(path).read_text(encoding="utf-8")))
 
     def test_class_reprs_and_dictionary_conversion_are_consistent(self):
         objects = [qs.InterestRate(0.04), qs.FixedRateCoupon(0.04), qs.FloatingRateCoupon("SOFR"),

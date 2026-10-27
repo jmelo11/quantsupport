@@ -1,9 +1,14 @@
 # Working in Rust
 
-A Rust valuation typically starts by building an instrument and wrapping it
-in a trade. A pricer evaluates that trade against a `MarketDataProvider` and
+A Rust valuation starts with a maker. Define dates or tenors, call `build()`
+or `build_using(&market)`, and wrap the resulting instrument in a trade.
+A pricer evaluates that trade against a `MarketDataProvider` and
 returns the requested results, such as value, cashflows and sensitivities.
 Import `quantsupport::prelude::*` to bring the common workflow types into scope.
+
+The [construction guide](../concepts/instrument-resolution.md) covers date anchors,
+floating loan amortization and reuse across contexts. Fully specified makers
+can also construct instruments directly with `build()`.
 
 The instrument, market provider and pricer have separate interfaces. This
 allows an application to reuse a contract with different markets or numerical

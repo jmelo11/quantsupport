@@ -123,5 +123,33 @@ from ._exceptions import (
     QuantSupportNotImplementedError as QuantSupportNotImplementedError,
 )
 
-__all__ = ['DateTime', 'SnapshotSelectionRule', 'SnapshotSelector', 'MarketSnapshot', 'MarketSnapshotStore', 'time', 'market', 'instruments', 'pricing', 'risk', 'Date', 'Period', 'Calendar', 'Schedule', 'IMM', 'UnitedStatesMarket', 'BrazilMarket', 'AustraliaMarket', 'CanadaMarket', 'NewZealandMarket', 'SouthKoreaMarket', 'ChinaMarket', 'JointCalendarRule', 'Compounding', 'Frequency', 'DayCounter', 'TimeUnit', 'BusinessDayConvention', 'DateGenerationRule', 'Currency', 'MarketIndex', 'Level', 'Interpolator', 'VolatilityType', 'SmileType', 'QuoteStore', 'FixingStore', 'FxStore', 'CurveConfiguration', 'CreditCurveConfiguration', 'VolatilitySurfaceConfiguration', 'VolatilityCubeConfiguration', 'SimulationConfiguration', 'ZeroRateTermStructure', 'TenorBasedZeroRateTermStructure', 'DiscountCurve', 'VolatilitySurface', 'VolatilityCube', 'Simulation', 'Instrument', 'Side', 'OptionType',
-           'SwaptionType', 'CapFloorType', 'CapletFloorletType', 'PaymentStructure', 'LoanRepaymentStructure', 'PrepaymentModelConfiguration', 'Loan', 'EquityForward', 'EuropeanSwaption', 'Swap', 'CrossCurrencySwap', 'BasisSwap', 'FixFloatCrossCurrencySwap', 'FixedRateBond', 'InterestRate', 'PayoffOps', 'FixedRateCoupon', 'FloatingRateCoupon', 'OptionEmbeddedCoupon', 'CallScheduleEntry', 'SteppedCouponBond', 'FloatingRateNote', 'FixedRateDeposit', 'FxForward', 'FxOption', 'EquityOption', 'CreditDefaultSwap', 'CapFloor', 'CapletFloorlet', 'RateFutures', 'ScriptedProduct', 'Request', 'PricerConfiguration', 'SingleCurveCSADiscountPolicy', 'FixedIncomeDiscountPolicy', 'BondPricingAnchor', 'PricingContext', 'Trade', 'Pricer', 'MarketDataProvider', 'Evaluator', 'Portfolio', 'EvaluationResults', 'ScenarioType', 'Shock', 'Scenario', 'XvaConfig', 'CsaTerms', 'NettingSet', 'XvaResult', 'ExposureProfile', 'QuantSupportError', 'QuantSupportTypeError', 'QuantSupportValueError', 'QuantSupportStateError', 'QuantSupportIOError', 'QuantSupportNotImplementedError']
+__all__ = ['DateTime', 'SnapshotSelectionRule', 'SnapshotSelector', 'MarketSnapshot', 'MarketSnapshotStore', 'time', 'market', 'instruments', 'pricing', 'risk', 'Date', 'Period', 'Calendar', 'Schedule', 'IMM', 'UnitedStatesMarket', 'BrazilMarket', 'AustraliaMarket', 'CanadaMarket', 'NewZealandMarket', 'SouthKoreaMarket', 'ChinaMarket', 'JointCalendarRule', 'Compounding', 'Frequency', 'DayCounter', 'TimeUnit', 'BusinessDayConvention', 'DateGenerationRule', 'Currency', 'MarketIndex', 'Level', 'Interpolator', 'VolatilityType', 'SmileType', 'QuoteStore', 'FixingStore', 'FxStore', 'CurveConfiguration', 'CreditCurveConfiguration', 'VolatilitySurfaceConfiguration', 'VolatilityCubeConfiguration', 'SimulationConfiguration', 'ZeroRateTermStructure', 'TenorBasedZeroRateTermStructure', 'DiscountCurve', 'VolatilitySurface', 'VolatilityCube', 'Simulation', 'Instrument', 'Side', 'OptionType', 'SwaptionType', 'CapFloorType', 'CapletFloorletType', 'PaymentStructure', 'LoanRepaymentStructure', 'PrepaymentModelConfiguration', 'Loan', 'EquityForward', 'EuropeanSwaption', 'Swap', 'CrossCurrencySwap', 'BasisSwap', 'FixFloatCrossCurrencySwap', 'FixedRateBond', 'InterestRate', 'PayoffOps', 'FixedRateCoupon', 'FloatingRateCoupon', 'OptionEmbeddedCoupon', 'CallScheduleEntry', 'SteppedCouponBond', 'FloatingRateNote', 'FixedRateDeposit', 'FxForward', 'FxOption', 'EquityOption', 'CreditDefaultSwap', 'CapFloor', 'CapletFloorlet', 'RateFutures', 'ScriptedProduct', 'Request', 'PricerConfiguration', 'SingleCurveCSADiscountPolicy', 'FixedIncomeDiscountPolicy', 'BondPricingAnchor', 'PricingContext', 'Trade', 'Pricer', 'MarketDataProvider', 'Evaluator', 'Portfolio', 'EvaluationResults', 'ScenarioType', 'Shock', 'Scenario', 'XvaConfig', 'CsaTerms', 'NettingSet', 'XvaResult', 'ExposureProfile', 'QuantSupportError', 'QuantSupportTypeError', 'QuantSupportValueError', 'QuantSupportStateError', 'QuantSupportIOError', 'QuantSupportNotImplementedError', 'MakeSwap', 'MakeFloatFloatCrossCurrencySwap', 'MakeCrossCurrencySwap', 'MakeBasisSwap', 'MakeFixFloatCrossCurrencySwap', 'MakeFixedRateBond', 'MakeSteppedCouponBond', 'MakeFloatingRateNote', 'MakeFixedRateDeposit', 'MakeLoan', 'MakeFxForward', 'MakeFxEuropeanOption', 'MakeFxOption', 'MakeEquityEuropeanOption', 'MakeEquityOption', 'MakeCreditDefaultSwap', 'MakeCapFloor', 'MakeCapletFloorlet', 'MakeRateFutures', 'MakeSwaption', 'MakeEuropeanSwaption', 'MakeEquityForward', 'MakeScriptedProduct', 'MakeTrade', 'MakeInstrument', 'UnresolvedProductErr']
+
+from .instruments import (
+    MakeSwap as MakeSwap,
+    MakeFloatFloatCrossCurrencySwap as MakeFloatFloatCrossCurrencySwap,
+    MakeCrossCurrencySwap as MakeCrossCurrencySwap,
+    MakeBasisSwap as MakeBasisSwap,
+    MakeFixFloatCrossCurrencySwap as MakeFixFloatCrossCurrencySwap,
+    MakeFixedRateBond as MakeFixedRateBond,
+    MakeSteppedCouponBond as MakeSteppedCouponBond,
+    MakeFloatingRateNote as MakeFloatingRateNote,
+    MakeFixedRateDeposit as MakeFixedRateDeposit,
+    MakeLoan as MakeLoan,
+    MakeFxForward as MakeFxForward,
+    MakeFxEuropeanOption as MakeFxEuropeanOption,
+    MakeFxOption as MakeFxOption,
+    MakeEquityEuropeanOption as MakeEquityEuropeanOption,
+    MakeEquityOption as MakeEquityOption,
+    MakeCreditDefaultSwap as MakeCreditDefaultSwap,
+    MakeCapFloor as MakeCapFloor,
+    MakeCapletFloorlet as MakeCapletFloorlet,
+    MakeRateFutures as MakeRateFutures,
+    MakeSwaption as MakeSwaption,
+    MakeEuropeanSwaption as MakeEuropeanSwaption,
+    MakeEquityForward as MakeEquityForward,
+    MakeScriptedProduct as MakeScriptedProduct,
+    MakeTrade as MakeTrade,
+    MakeInstrument as MakeInstrument,
+)
+from ._exceptions import UnresolvedProductErr as UnresolvedProductErr

@@ -1,5 +1,5 @@
 #[cfg(windows)]
-use quantsupport::prelude::{MakeSchedule, Period};
+use quantsupport::prelude::MakeSchedule;
 #[cfg(windows)]
 mod datetime;
 #[cfg(windows)]
@@ -20,7 +20,10 @@ use crate::functions::helpers::{
     help = "Advances an ISO date by a number of Days, Weeks, Months, or Years"
 )]
 pub fn qs_date_advance(date: &str, length: i32, unit: &str) -> Result<String, XllError> {
-    Ok((parse_date(date)? + Period::new(length, parse_time_unit(unit)?)).to_string())
+    Ok(parse_date(date)?
+        .advance(length, parse_time_unit(unit)?)
+        .map_err(value_error)?
+        .to_string())
 }
 
 #[cfg(windows)]

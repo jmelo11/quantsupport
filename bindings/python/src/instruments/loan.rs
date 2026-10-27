@@ -1,25 +1,33 @@
 //! Native contractual loans and position conversion.
 
-use std::collections::HashSet;
-
-use pyo3::prelude::*;
-use pyo3::types::{PyDict, PyType};
+use crate::{
+    common::{
+        conversion::{
+            dataframe, extract_business_day_convention, extract_calendar, extract_currency,
+            extract_date, extract_frequency, extract_market_index, extract_period, from_py, qs_err,
+        },
+        enums::Currency,
+    },
+    instruments::coupons::CouponDefinition,
+    pricing::{
+        context::PricingContext,
+        extension::{Instrument, Trade},
+    },
+};
+use pyo3::{
+    prelude::*,
+    types::{PyDict, PyType},
+};
 use quantsupport::prelude::{
-    DualFwd, Loan as QsLoan, LoanRepaymentStructure, LoanTrade, MakeLoan,
-    PrepaymentModelConfiguration,
+    Currency as QsCurrency, DualFwd, Loan as QsLoan, LoanRepaymentStructure, LoanTrade,
+    MakeInstrument, MakeLoan, PrepaymentModelConfiguration, QSError,
 };
-
-use crate::common::conversion::{
-    dataframe, extract_business_day_convention, extract_calendar, extract_currency, extract_date,
-    extract_day_counter, extract_frequency, extract_market_index, extract_period, from_py, qs_err,
-};
-use crate::common::enums::Currency;
-use crate::instruments::coupons::CouponDefinition;
-use crate::pricing::extension::{Instrument, Trade};
+use std::collections::HashSet;
 
 /// A native loan contract; rates and CPRs are fractions, not percentages.
 ///
-/// Contractual principal and cashflows are fixed at construction. Market rates,
+/// Floating amortizing principal needs an explicit initial amortization rate or
+/// construction context. The built principal schedule stays fixed. Market rates,
 /// prepayment, and default are applied during valuation through ``Trade`` and
 /// ``PricingContext``. Dates and enums accept their typed values
 /// or string representations; coupons, repayment, and prepayment terms also accept
@@ -38,6 +46,9 @@ use crate::pricing::extension::{Instrument, Trade};
 /// coupons : list[FixedRateCoupon, FloatingRateCoupon, OptionEmbeddedCoupon, or dict]
 ///     Positional coupon definitions, as for SteppedCouponBond. The last entry
 ///     repeats through maturity; each entry uses a native coupon class.
+///     Accrual day counters belong to coupons. Floating coupons use their explicit
+///     day counter, or the index convention when omitted; amortization uses the
+///     same accrual conventions as interest.
 /// currency : enum or str
 ///     Payment currency; the pricing policy selects the discount curve.
 /// repayment : LoanRepaymentStructure, str or dict, optional
@@ -45,8 +56,6 @@ use crate::pricing::extension::{Instrument, Trade};
 /// payment_frequency, fixing_frequency : Frequency or str, optional
 ///     Payments default to monthly. Resets default to index metadata, or the
 ///     payment frequency for daily indices, and must align with accrual dates.
-/// day_counter : DayCounter or str, optional
-///     Coupon/amortization accrual basis; defaults to Actual365.
 /// prepayment : PrepaymentModelConfiguration, str or dict, optional
 ///     Conditional prepayment model; defaults to none. Applied by the pricer.
 /// credit_index : MarketIndex or str, optional
@@ -63,20 +72,22 @@ use crate::pricing::extension::{Instrument, Trade};
 /// business_day_convention : BusinessDayConvention or str, optional
 ///     Payment adjustment; defaults to Unadjusted. Accrual dates stay fixed.
 /// amortization_rate : float, optional
-///     Initial annual all-in decimal rate for principal construction. Required
-///     for floating-first French/balloon loans; otherwise defaults to the first
-///     fixed coupon. Coupon changes do not rebuild contractual principal.
+///     Optional initial annual all-in decimal rate for principal construction.
+///     Blank uses the first fixed coupon, or resolves the first floating
+///     observation during build_using. Contractual principal stays fixed.
 ///
 /// Raises
 /// ------
 /// QuantSupportError
-///     If contractual terms are invalid, amortization inputs are missing, or
+///     If contractual terms are invalid, or
 ///     coupon lists are empty/oversized or resets do not align with accrual dates.
 #[pyclass(module = "quantsupport", extends = Instrument, subclass, dict, unsendable, from_py_object)]
 #[derive(Clone)]
 pub struct Loan {
     /// Native contractual cashflows and prepayment/credit terms used in valuation.
     pub inner: QsLoan<DualFwd>,
+    principal: f64,
+    payment_currency: QsCurrency,
     builder: MakeLoan<DualFwd>,
     construction_parameters: serde_json::Value,
 }
@@ -91,15 +102,19 @@ impl Loan {
     /// Propagates invalid overridden principal or contractual construction terms.
     pub fn build_native_loan_trade(&self, position: &Trade) -> PyResult<LoanTrade<DualFwd>> {
         let loan = match position.notional() {
-            Some(notional) => self
+            Some(notional) if notional != self.inner.notional() => self
                 .builder
                 .clone()
                 .with_notional(notional)
                 .build()
                 .map_err(qs_err)?,
-            None => self.inner.clone(),
+            _ => self.inner.clone(),
         };
-        Ok(LoanTrade::new(loan, position.trade_date(), position.side()))
+        Ok(LoanTrade::new(
+            loan,
+            position.trade_date()?,
+            position.side(),
+        ))
     }
 }
 
@@ -110,9 +125,9 @@ impl Loan {
     #[allow(clippy::too_many_arguments)]
     #[pyo3(signature = (identifier, start_date, maturity_date, notional, coupons, currency,
         repayment = None, payment_frequency = None, fixing_frequency = None,
-        day_counter = None, prepayment = None, credit_index = None, recovery = None,
+        prepayment = None, credit_index = None, recovery = None,
         fixing_lag = None, index_tenor = None, calendar = None, business_day_convention = None,
-        amortization_rate = None))]
+        amortization_rate = None, context = None))]
     fn new(
         identifier: String,
         start_date: &Bound<'_, PyAny>,
@@ -123,7 +138,6 @@ impl Loan {
         repayment: Option<&Bound<'_, PyAny>>,
         payment_frequency: Option<&Bound<'_, PyAny>>,
         fixing_frequency: Option<&Bound<'_, PyAny>>,
-        day_counter: Option<&Bound<'_, PyAny>>,
         prepayment: Option<&Bound<'_, PyAny>>,
         credit_index: Option<&Bound<'_, PyAny>>,
         recovery: Option<f64>,
@@ -132,6 +146,7 @@ impl Loan {
         calendar: Option<&Bound<'_, PyAny>>,
         business_day_convention: Option<&Bound<'_, PyAny>>,
         amortization_rate: Option<f64>,
+        context: Option<PyRef<'_, PricingContext>>,
     ) -> PyResult<PyClassInitializer<Self>> {
         let coupons = CouponDefinition::list_from_py(coupons, "Loan.coupons")?;
         let start_date = extract_date(start_date)?;
@@ -142,7 +157,6 @@ impl Loan {
             .transpose()?;
         let payment_frequency = payment_frequency.map(extract_frequency).transpose()?;
         let fixing_frequency = fixing_frequency.map(extract_frequency).transpose()?;
-        let day_counter = day_counter.map(extract_day_counter).transpose()?;
         let prepayment = prepayment
             .map(|value| from_py::<PrepaymentModelConfiguration>(value, "prepayment"))
             .transpose()?;
@@ -152,12 +166,12 @@ impl Loan {
         let business_day_convention = business_day_convention
             .map(extract_business_day_convention)
             .transpose()?;
-        let construction_parameters = serde_json::json!({
+        let mut construction_parameters = serde_json::json!({
             "identifier": identifier, "start_date": start_date, "maturity_date": maturity_date,
             "notional": notional, "coupons": coupons.iter().map(CouponDefinition::specification).collect::<PyResult<Vec<_>>>()?,
             "currency": currency, "repayment": repayment,
             "payment_frequency": payment_frequency, "fixing_frequency": fixing_frequency,
-            "day_counter": day_counter, "prepayment": prepayment, "credit_index": credit_index,
+            "prepayment": prepayment, "credit_index": credit_index,
             "recovery": recovery, "fixing_lag": fixing_lag, "index_tenor": index_tenor,
             "calendar": calendar, "business_day_convention": business_day_convention,
             "amortization_rate": amortization_rate,
@@ -183,9 +197,6 @@ impl Loan {
         if let Some(value) = fixing_frequency {
             builder = builder.with_coupon_reset_frequency(value);
         }
-        if let Some(value) = day_counter {
-            builder = builder.with_day_counter(value);
-        }
         if let Some(value) = prepayment {
             builder = builder.with_prepayment_configuration(value);
         }
@@ -210,10 +221,27 @@ impl Loan {
         if let Some(value) = amortization_rate {
             builder = builder.with_initial_amortization_rate(value);
         }
-        let inner = builder.clone().build().map_err(qs_err)?;
+        let inner = match context {
+            Some(context) => builder
+                .build_using(&context.market_view()?)
+                .map_err(qs_err)?,
+            None if !builder.is_resolved() => {
+                return Err(qs_err(QSError::UnresolvedProductErr(
+                    "Loan needs an initial floating coupon observation for amortization. Supply amortization_rate, set the first coupon fixing, or use MakeLoan(...).build_using(context) with an active PricingContext".into(),
+                )));
+            }
+            None => builder.build().map_err(qs_err)?,
+        };
+        construction_parameters["amortization_rate"] =
+            serde_json::json!(inner.initial_amortization_rate());
+        if let Some(rate) = inner.initial_amortization_rate() {
+            builder = builder.with_initial_amortization_rate(rate);
+        }
         Ok(
             PyClassInitializer::from(Instrument::new(identifier)).add_subclass(Self {
                 inner,
+                principal: notional,
+                payment_currency: currency,
                 builder,
                 construction_parameters,
             }),
@@ -228,9 +256,9 @@ impl Loan {
     /// This lists contractual resets; the pricer determines which past fixings
     /// are required for unpaid coupons at a particular evaluation date.
     fn coupon_fixing_requests<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let loan = &self.inner;
         let mut seen = HashSet::new();
-        let requests: Vec<_> = self
-            .inner
+        let requests: Vec<_> = loan
             .coupon_rate_observations()
             .iter()
             .flatten()
@@ -281,23 +309,6 @@ impl Loan {
         )
     }
 
-    /// Reads construction parameters from a JSON file and constructs a loan.
-    ///
-    /// Uses the same schema as ``from_dict()`` and preserves Python subclasses.
-    /// File, JSON, and contract-validation errors are reported as exceptions.
-    #[classmethod]
-    fn from_json<'py>(cls: &Bound<'py, PyType>, path: &str) -> PyResult<Bound<'py, PyAny>> {
-        let value: serde_json::Value = crate::common::conversion::from_json_file(path, "loan")?;
-        let obj = pythonize::pythonize(cls.py(), &value).map_err(qs_err)?;
-        cls.call(
-            (),
-            Some(crate::common::conversion::expect_dict(
-                &obj,
-                "Loan JSON construction parameters",
-            )?),
-        )
-    }
-
     /// Returns JSON-compatible construction parameters for ``from_dict()``.
     ///
     /// Includes optional settings as supplied, which may be ``None`` when a
@@ -310,13 +321,13 @@ impl Loan {
     /// Original principal advanced under the contract.
     #[getter]
     fn notional(&self) -> f64 {
-        self.inner.notional()
+        self.principal
     }
 
     /// Native payment currency.
     #[getter]
     fn currency(&self) -> Currency {
-        self.inner.currency().into()
+        self.payment_currency.into()
     }
 
     /// Reads a serialized construction parameter by name.

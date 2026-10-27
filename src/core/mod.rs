@@ -16,6 +16,8 @@ pub mod evaluationresults;
 pub mod evaluator;
 /// Instrument module.
 pub mod instrument;
+/// Explicit construction contract for instrument makers.
+pub mod makeinstrument;
 /// Builder for streaming portfolio accumulators.
 pub mod makeportfolioaccumulator;
 /// Market data handling module.

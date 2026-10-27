@@ -3,7 +3,7 @@ from datetime import date as PythonDate
 from typing import Any, ClassVar, Mapping, Sequence, final, overload
 from typing_extensions import Self, disjoint_base
 from pandas import DataFrame
-from ..time import Date, DateTime, _DateLike
+from ..time import Date, DateTime, Period, _DateLike, _PeriodLike
 from ..market import CreditCurveConfiguration, Currency, CurveConfiguration, DiscountCurve, FixingStore, FxStore, Level, MarketIndex, QuoteStore, Simulation, SimulationConfiguration, VolatilityCube, VolatilityCubeConfiguration, VolatilitySurface, VolatilitySurfaceConfiguration, _CurrencyLike, _IndexLike
 from ..instruments import Instrument, ScriptedProduct, Side
 from ..risk import XvaResult
@@ -124,7 +124,7 @@ class PricerConfiguration:
     """Select a native pricing implementation and its index-keyed models.
 
 Build loan configurations with loan(), or load serialized configurations
-through from_dict(), from_dict_list(), or from_json().
+through from_dict() or from_dict_list().
 They select an engine for an instrument family; they are not Python-pricer
 registrations. Native compatibility checks run when the context is validated.
 """
@@ -215,29 +215,6 @@ QuantSupportError
 """
         ...
 
-    @staticmethod
-    def from_json(path: str) -> list[PricerConfiguration]:
-        """Load instrument-level pricing configurations from a JSON file.
-
-Parameters
-----------
-path : str
-    Filesystem path, relative to the current working directory or absolute.
-    The UTF-8 file must contain one from_dict() configuration, a list of them,
-    or an object with exactly one key whose value is such a list. This is a
-    file path, not inline JSON text.
-
-Returns
--------
-list of PricerConfiguration
-    Configurations in file order; a single object still produces a list.
-
-Raises
-------
-QuantSupportError
-    If the file cannot be read or its JSON/configuration schema is invalid.
-"""
-        ...
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize the native pricing configuration.
@@ -508,7 +485,8 @@ Assign public properties to change inputs: curves, curve_configurations,
 credit_curve_configurations, fixings, quotes, fx, quote_level, csa_policy,
 fixed_income_policy, volatility_surface_configurations,
 volatility_cube_configurations, simulation_configurations, and
-pricer_configurations. Reassigning market inputs invalidates constructed data;
+pricer_configurations. Set anchor_fixings to select the historical fixing policy.
+Reassigning market inputs invalidates constructed data;
 construction follows subsequent market-data requests.
 Collection getters return copies; assign the updated collection back.
 Use ``with context, scenario:`` for temporary ``Scenario`` shocks;
@@ -550,6 +528,9 @@ quote_level : Level or str, optional
 credit_curves : sequence of CreditCurveConfiguration, optional
     Survival-curve construction inputs. None, the default, configures no credit
     curves.
+anchor_fixings : bool, optional
+    True, the default, requires stored index fixings strictly before evaluation;
+    today and future project. False projects all observations from curves.
 
 Notes
 -----
@@ -565,8 +546,11 @@ Examples
 
 .. code-block:: python
 
-   quotes = qs.QuoteStore.from_json("quotes.json")
-   curves = qs.CurveConfiguration.from_json("curve_specs.json")
+   import json
+   from pathlib import Path
+
+   quotes = qs.QuoteStore.from_dict(json.loads(Path("quotes.json").read_text(encoding="utf-8")))
+   curves = qs.CurveConfiguration.from_dict_list(json.loads(Path("curve_specs.json").read_text(encoding="utf-8")))
    policy = qs.SingleCurveCSADiscountPolicy("USD", "SOFR")
    trade = qs.Trade(swap, quotes.reference_date)
 
@@ -574,7 +558,23 @@ Examples
        results = ctx.evaluate(trade, requests=["Value", "Sensitivities"])
 """
 
-    def __new__(cls, quotes: QuoteStore, curves: Sequence[CurveConfiguration], fixings: FixingStore | None = ..., fx: FxStore | None = ..., volatility_surfaces: Sequence[VolatilitySurfaceConfiguration] | None = ..., volatility_cubes: Sequence[VolatilityCubeConfiguration] | None = ..., pricer_configurations: Sequence[PricerConfiguration] | None = ..., simulations: Sequence[SimulationConfiguration] | None = ..., csa_policy: SingleCurveCSADiscountPolicy | None = ..., fixed_income_policy: FixedIncomeDiscountPolicy | None = ..., quote_level: Level | str | None = ..., credit_curves: Sequence[CreditCurveConfiguration] | None = ...) -> Self:
+    @property
+    def anchor_fixings(self) -> bool:
+        """Require stored past index fixings when true; project all when false."""
+        ...
+
+    @anchor_fixings.setter
+    def anchor_fixings(self, enabled: bool) -> None:
+        """Set the historical index-fixing policy and invalidate market caches.
+
+        Parameters
+        ----------
+        enabled : bool
+            True requires stored historical observations. False projects all.
+        """
+        ...
+
+    def __new__(cls, quotes: QuoteStore, curves: Sequence[CurveConfiguration], fixings: FixingStore | None = ..., fx: FxStore | None = ..., volatility_surfaces: Sequence[VolatilitySurfaceConfiguration] | None = ..., volatility_cubes: Sequence[VolatilityCubeConfiguration] | None = ..., pricer_configurations: Sequence[PricerConfiguration] | None = ..., simulations: Sequence[SimulationConfiguration] | None = ..., csa_policy: SingleCurveCSADiscountPolicy | None = ..., fixed_income_policy: FixedIncomeDiscountPolicy | None = ..., quote_level: Level | str | None = ..., credit_curves: Sequence[CreditCurveConfiguration] | None = ..., anchor_fixings: bool = ...) -> Self:
         ...
 
     def initialize(self) -> None:
@@ -1263,7 +1263,8 @@ instrument : Instrument
     Contract held by the position. Python objects may also be carried for
     registered Python pricers; native evaluation requires a supported product.
 trade_date : Date, datetime.date, or str
-    Execution date; strings use ISO ``YYYY-MM-DD`` format.
+    Required execution date; strings use ISO ``YYYY-MM-DD`` format. Use
+    MakeTrade.build_using for a relative execution date.
 side : Side or str, optional
     Direction, defaulting to Side.LongReceive when None. Strings accept
     LongReceive, Long, Receive, PayShort, Pay, or Short, case-insensitively.
@@ -1372,9 +1373,11 @@ QuantSupportError
         ...
 
     @property
-    def trade_date(self) -> Date:
+    def trade_date(self) -> Date | None:
         """Execution date."""
         ...
+
+
 
     @property
     def domestic_notional(self) -> float | None:

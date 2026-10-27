@@ -126,6 +126,7 @@ fn quantsupport(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<xva::NettingSet>()?;
     m.add_class::<xva::XvaResult>()?;
     m.add_class::<xva::ExposureProfile>()?;
+    instruments::makers::register(m)?;
     common::errors::initialize(m)?;
     Ok(())
 }

@@ -62,10 +62,10 @@ class DictAndScriptTests(unittest.TestCase):
         self.assertEqual(str(joint.adjust("2019-04-27")), "2019-05-07")
         self.assertEqual(joint.name(), "JointCalendar(JoinHolidays,UnitedKingdom(Settlement),Japan)")
         data = Path(__file__).resolve().parents[3] / "examples" / "hullwhite" / "data"
-        quotes = qs.QuoteStore.from_json(str(data / "quotes.json"))
-        curves = qs.CurveConfiguration.from_json(str(data / "curve_specs.json"))
-        surfaces = qs.VolatilitySurfaceConfiguration.from_json(str(data / "vol_specs.json"))
-        simulations = qs.SimulationConfiguration.from_json(str(data / "simulation.json"))
+        quotes = qs.QuoteStore.from_dict(json.loads(Path(data / "quotes.json").read_text(encoding="utf-8")))
+        curves = qs.CurveConfiguration.from_dict_list(json.loads(Path(data / "curve_specs.json").read_text(encoding="utf-8")))
+        surfaces = qs.VolatilitySurfaceConfiguration.from_dict_list(json.loads(Path(data / "vol_specs.json").read_text(encoding="utf-8")))
+        simulations = qs.SimulationConfiguration.from_dict_list(json.loads(Path(data / "simulation.json").read_text(encoding="utf-8")))
         with qs.PricingContext(quotes, curves, volatility_surfaces=surfaces,
                               simulations=simulations) as context:
             report = context.simulation("SOFR").calibration_diagnostics()
@@ -370,7 +370,7 @@ class DictAndScriptTests(unittest.TestCase):
                     path = Path(directory) / "product.json"
                     path.write_text(json.dumps(spec))
                     self.assertEqual(
-                        repr(product_type.from_json(str(path))), repr(product))
+                        repr(product_type.from_dict(json.loads(Path(path).read_text(encoding="utf-8")))), repr(product))
 
     def test_from_dict_retains_subclass_constructor(self):
         class DeskBond(qs.FixedRateBond):

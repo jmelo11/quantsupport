@@ -1,19 +1,23 @@
-use quantsupport::prelude::{DayCounter, Frequency};
-use quantsupport_xll_macros::xll_bindgen;
-use xll_rs::types::{XllError, XLOPER12};
-
 use crate::{
     functions::helpers::{
-        cached_handle, input_key, parse_currency, parse_date, parse_day_counter, parse_frequency,
-        parse_index, value_error, worksheet_columns,
+        cached_handle, construction_date, construction_market, input_key, parse_currency,
+        parse_date, parse_day_counter, parse_frequency, parse_index, value_error,
+        worksheet_columns,
     },
     runtime::{
+        inputs::Cell,
         loan_inputs,
-        loans::LoanTerms,
+        loans::{LoanOptions, LoanTerms},
         products::{InstrumentObject, NativeInstrument},
         registry::{with_registry, with_registry_mut, QsObject},
     },
 };
+use quantsupport::{
+    prelude::{BusinessDayConvention, Calendar, Frequency, Period},
+    time::calendars::nullcalendar::NullCalendar,
+};
+use quantsupport_xll_macros::xll_bindgen;
+use xll_rs::types::{XllError, XLOPER12};
 
 fn optional_text(value: Option<String>) -> Option<String> {
     value
@@ -28,8 +32,7 @@ fn loan_options(
     coupon_indices: *const XLOPER12,
     prepayment_dates: *const XLOPER12,
     prepayment_cprs: *const XLOPER12,
-) -> Result<crate::runtime::loans::LoanOptions, XllError> {
-    use crate::runtime::inputs::Cell;
+) -> Result<LoanOptions, XllError> {
     let settings = optional_text(settings)
         .map(|handle| vec![vec![Cell::Text(handle)]])
         .unwrap_or_default();
@@ -77,7 +80,6 @@ pub fn qs_loan_settings(
     incentive_multiplier: Option<f64>,
     maximum_cpr: Option<f64>,
 ) -> Result<String, XllError> {
-    use crate::runtime::inputs::Cell;
     let number = |value: Option<f64>| value.map_or(Cell::Blank, Cell::Number);
     let text = |value: Option<String>| value.map_or(Cell::Blank, Cell::Text);
     let rows = vec![
@@ -121,6 +123,7 @@ pub fn qs_loan_settings(
 #[allow(clippy::too_many_arguments)]
 pub fn qs_instrument_loan(
     name: &str,
+    context: &str,
     start_date: &str,
     maturity_date: &str,
     currency: &str,
@@ -136,53 +139,119 @@ pub fn qs_instrument_loan(
     coupon_indices: *const XLOPER12,
     prepayment_dates: *const XLOPER12,
     prepayment_cprs: *const XLOPER12,
+    start_tenor: Option<String>,
+    tenor: Option<String>,
 ) -> Result<String, XllError> {
-    let terms = LoanTerms {
-        start_date: parse_date(start_date)?,
-        maturity_date: parse_date(maturity_date)?,
-        currency: parse_currency(currency)?,
+    let (market, construction_revision) = construction_market(context)?;
+    let start_date = if start_date.trim().is_empty() {
+        None
+    } else {
+        Some(parse_date(start_date)?)
+    };
+    let maturity_date = if maturity_date.trim().is_empty() {
+        None
+    } else {
+        Some(parse_date(maturity_date)?)
+    };
+    let start_tenor = optional_text(start_tenor)
+        .map(|value| Period::from_str(&value).map_err(value_error))
+        .transpose()?;
+    let tenor = optional_text(tenor)
+        .map(|value| Period::from_str(&value).map_err(value_error))
+        .transpose()?;
+    if start_date.is_some() == start_tenor.is_some() || maturity_date.is_some() == tenor.is_some() {
+        return Err(value_error(
+            "supply one date or tenor for each loan start and maturity",
+        ));
+    }
+    let currency = parse_currency(currency)?;
+    let market_index = optional_text(market_index)
+        .as_deref()
+        .map(parse_index)
+        .transpose()?;
+    let repayment = optional_text(repayment).unwrap_or_else(|| "French".into());
+    let payment_frequency = optional_text(payment_frequency)
+        .as_deref()
+        .map(parse_frequency)
+        .transpose()?
+        .unwrap_or(Frequency::Monthly);
+    let day_counter = optional_text(day_counter)
+        .as_deref()
+        .map(parse_day_counter)
+        .transpose()?;
+    let options = loan_options(
+        settings,
+        coupon_periods,
+        coupon_rates,
+        coupon_indices,
+        prepayment_dates,
+        prepayment_cprs,
+    )?;
+    let key = input_key(&(
+        start_date,
+        maturity_date,
+        start_tenor,
+        tenor,
+        currency,
         notional,
         rate,
-        market_index: optional_text(market_index)
-            .as_deref()
-            .map(parse_index)
-            .transpose()?,
-        repayment: optional_text(repayment).unwrap_or_else(|| "French".into()),
-        payment_frequency: optional_text(payment_frequency)
-            .as_deref()
-            .map(parse_frequency)
-            .transpose()?
-            .unwrap_or(Frequency::Monthly),
-        day_counter: optional_text(day_counter)
-            .as_deref()
-            .map(parse_day_counter)
-            .transpose()?
-            .unwrap_or(DayCounter::Actual365),
-        options: loan_options(
-            settings,
-            coupon_periods,
-            coupon_rates,
-            coupon_indices,
-            prepayment_dates,
-            prepayment_cprs,
-        )?,
-    };
-    let key = input_key(&terms)?;
+        &market_index,
+        &repayment,
+        payment_frequency,
+        day_counter,
+        &options,
+    ))?;
+    let key = input_key(&(&key, context, &construction_revision))?;
     if let Some(handle) = cached_handle(name, "Loan", &key)? {
         return Ok(handle);
     }
-    let notional = terms.notional;
-    let loan = terms.build_instrument(name).map_err(value_error)?;
+    let identifier = name.to_string();
+    let calendar = options
+        .calendar
+        .clone()
+        .unwrap_or_else(|| Calendar::NullCalendar(NullCalendar::new()));
+    let convention = options
+        .business_day_convention
+        .unwrap_or(BusinessDayConvention::Unadjusted);
+    let start = construction_date(
+        start_date,
+        start_tenor,
+        market.evaluation_date(),
+        "Loan start",
+        Some(&calendar),
+        convention,
+    )
+    .map_err(value_error)?;
+    let end = construction_date(
+        maturity_date,
+        tenor,
+        start,
+        "Loan maturity",
+        Some(&calendar),
+        convention,
+    )
+    .map_err(value_error)?;
+    let native = LoanTerms {
+        start_date: start,
+        maturity_date: end,
+        currency,
+        notional,
+        rate,
+        market_index,
+        repayment,
+        payment_frequency,
+        day_counter,
+        options,
+    }
+    .build_instrument_with_context(&identifier, market.as_ref())
+    .map_err(value_error)?;
+    let object = InstrumentObject {
+        native: NativeInstrument::Loan(native),
+        notional,
+        foreign_notional: None,
+    };
     with_registry_mut(|registry| {
-        registry.upsert_if_changed(
-            name,
-            QsObject::Instrument(Box::new(InstrumentObject {
-                native: NativeInstrument::Loan(loan),
-                notional,
-                foreign_notional: None,
-            })),
-            key,
-        )
+        registry.upsert_if_changed(name, QsObject::Instrument(Box::new(object)), key)
     })
     .map_err(value_error)
 }
@@ -190,6 +259,8 @@ pub fn qs_instrument_loan(
 #[cfg(test)]
 mod array_boundary_tests {
     use super::*;
+    use crate::runtime::context;
+    use quantsupport::prelude::{Currency, Date, Level, MarketIndex};
     use xll_rs::{convert::build_multi, memory::xlAutoFree12};
 
     struct Array(*mut XLOPER12);
@@ -231,8 +302,20 @@ mod array_boundary_tests {
         assert_eq!(segments[1].periods, None);
         assert_eq!(segments[1].rate, 0.04);
         assert!(options.prepayment.is_some());
+        let context = with_registry_mut(|registry| {
+            context::create(
+                registry,
+                "array.market",
+                Date::new(2026, 1, 15),
+                Currency::USD,
+                MarketIndex::SOFR,
+                Level::Mid,
+            )
+        })
+        .unwrap();
         let loan = qs_instrument_loan(
             "array.boundary.loan",
+            &context,
             "2026-01-15",
             "2027-01-15",
             "USD",
@@ -248,6 +331,8 @@ mod array_boundary_tests {
             omitted,
             dates.0,
             cprs.0,
+            None,
+            None,
         )
         .unwrap();
         assert_eq!(

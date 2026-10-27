@@ -110,7 +110,7 @@ pub enum QsObject {
 impl QsObject {
     /// Stable type tag embedded in object handles.
     #[must_use]
-    pub const fn kind(&self) -> &'static str {
+    pub fn kind(&self) -> &'static str {
         match self {
             Self::ContextInput(_) => "ContextInput",
             Self::LoanSettings(_) => "LoanSettings",

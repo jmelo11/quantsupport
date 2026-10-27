@@ -57,6 +57,10 @@ pub trait Pricer: Send + Sync {
 
 /// Type-erased valuation interface for runtime trade dispatch.
 pub trait ErasedPricer: Send + Sync {
+    /// Whether this pricer accepts the supplied concrete trade.
+    fn accepts_trade(&self, _trade: &dyn Any) -> bool {
+        false
+    }
     /// Evaluates a type-erased trade for the requested measures.
     ///
     /// # Errors
@@ -89,6 +93,10 @@ where
     P: Pricer,
     P::Item: Any,
 {
+    fn accepts_trade(&self, trade: &dyn Any) -> bool {
+        trade.is::<P::Item>()
+    }
+
     fn evaluate_erased(
         &self,
         trade: &dyn Any,

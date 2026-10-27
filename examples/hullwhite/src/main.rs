@@ -139,7 +139,7 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     let r0 = curve
         .forward_rate(
             ref_date,
-            ref_date.advance(1, TimeUnit::Days),
+            ref_date.advance(1, TimeUnit::Days)?,
             Compounding::Continuous,
             Frequency::Annual,
         )

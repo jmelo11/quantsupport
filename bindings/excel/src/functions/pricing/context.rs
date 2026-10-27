@@ -69,14 +69,16 @@ pub fn qs_context_from_snapshot(
     store: &str,
     selector: &str,
     fixings: Option<String>,
+    anchor_fixings: Option<bool>,
 ) -> Result<String, XllError> {
     with_registry_mut(|registry| {
-        crate::runtime::historical::pricing_context(
+        crate::runtime::historical::pricing_context_with_fixing_policy(
             registry,
             name,
             store,
             selector,
             fixings.as_deref(),
+            anchor_fixings.unwrap_or(true),
         )
     })
     .map_err(value_error)
@@ -160,7 +162,7 @@ mod tests {
             (store, selector, context)
         });
         let context =
-            qs_context_from_snapshot("getter_historical", &store, &selector, None).unwrap();
+            qs_context_from_snapshot("getter_historical", &store, &selector, None, None).unwrap();
         assert_eq!(qs_context_evaluation_date(&context).unwrap(), "2026-01-15");
         assert_eq!(
             qs_context_snapshot_timestamp(&context).unwrap(),
@@ -169,7 +171,7 @@ mod tests {
         assert_eq!(qs_context_quote_level(&context).unwrap(), "Ask");
         assert_eq!(qs_context_snapshot_timestamp(&base).unwrap(), "");
         assert_eq!(
-            qs_context_from_snapshot("getter_historical", &store, &selector, None).unwrap(),
+            qs_context_from_snapshot("getter_historical", &store, &selector, None, None).unwrap(),
             context
         );
     }

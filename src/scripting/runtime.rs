@@ -1454,8 +1454,12 @@ mod tests {
         Tape::start_recording_fwd();
 
         let reference_date = Date::new(2025, 1, 1);
-        let event_date = reference_date.advance(1, TimeUnit::Years);
-        let final_date = reference_date.advance(2, TimeUnit::Years);
+        let event_date = reference_date
+            .advance(1, TimeUnit::Years)
+            .expect("valid date advancement");
+        let final_date = reference_date
+            .advance(2, TimeUnit::Years)
+            .expect("valid date advancement");
         let day_counter = DayCounter::Actual365;
         let rate = 0.05_f64;
         let event_discount_value =
@@ -1510,8 +1514,12 @@ mod tests {
         Tape::start_recording_fwd();
 
         let reference_date = Date::new(2025, 1, 1);
-        let observation_date = reference_date.advance(1, TimeUnit::Years);
-        let payment_date = reference_date.advance(2, TimeUnit::Years);
+        let observation_date = reference_date
+            .advance(1, TimeUnit::Years)
+            .expect("valid date advancement");
+        let payment_date = reference_date
+            .advance(2, TimeUnit::Years)
+            .expect("valid date advancement");
         let day_counter = DayCounter::Actual365;
         let rate = 0.04_f64;
         let observation_df =
@@ -1576,7 +1584,9 @@ mod tests {
         Tape::start_recording_fwd();
 
         let reference_date = Date::new(2025, 1, 1);
-        let event_date = reference_date.advance(1, TimeUnit::Years);
+        let event_date = reference_date
+            .advance(1, TimeUnit::Years)
+            .expect("valid date advancement");
         let day_counter = DayCounter::Actual365;
         let rate = 0.05_f64;
         let tau = day_counter.year_fraction(reference_date, event_date);
@@ -1637,7 +1647,9 @@ mod tests {
     #[test]
     fn parallel_evaluation_builds_one_model_per_worker_and_preserves_paths() -> Result<()> {
         let reference_date = Date::new(2025, 1, 1);
-        let payment_date = reference_date.advance(1, TimeUnit::Years);
+        let payment_date = reference_date
+            .advance(1, TimeUnit::Years)
+            .expect("valid date advancement");
         let discount = (-0.05_f64).exp();
         let setup = ParallelFlatSetup {
             reference_date,

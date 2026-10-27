@@ -4,7 +4,7 @@
 use std::sync::Arc;
 
 use crate::{
-    ad::{dual::DualFwd, scalar::Scalar},
+    ad::scalar::Scalar,
     core::{
         collateral::Discountable,
         instrument::{AssetClass, Instrument},
@@ -26,6 +26,7 @@ use super::loanrepaymentstructure::LoanRepaymentStructure;
 ///
 /// Coupon notionals and redemptions are contractual `f64` amounts. Prepayment
 /// is a separate function evaluated by the pricer; it never modifies this leg.
+/// Both the leg and the prepayment model use the scalar type `T`.
 /// Schedule generation and repayment defaults belong to [`super::makeloan::MakeLoan`].
 #[derive(Clone)]
 pub struct Loan<T: Scalar = f64> {
@@ -33,10 +34,11 @@ pub struct Loan<T: Scalar = f64> {
     notional: f64,
     leg: Leg<T>,
     observations: Vec<Option<ForwardRateRequest>>,
-    prepayment: Arc<dyn PrepaymentModel<DualFwd>>,
+    prepayment: Arc<dyn PrepaymentModel<T>>,
     repayment: Option<LoanRepaymentStructure>,
     credit_index: Option<MarketIndex>,
     recovery: f64,
+    initial_amortization_rate: Option<f64>,
 }
 
 impl<T: Scalar> Loan<T> {
@@ -54,7 +56,7 @@ impl<T: Scalar> Loan<T> {
         notional: f64,
         leg: Leg<T>,
         observations: Vec<Option<ForwardRateRequest>>,
-        prepayment: Arc<dyn PrepaymentModel<DualFwd>>,
+        prepayment: Arc<dyn PrepaymentModel<T>>,
         repayment: Option<LoanRepaymentStructure>,
         credit_index: Option<MarketIndex>,
         recovery: f64,
@@ -218,7 +220,22 @@ impl<T: Scalar> Loan<T> {
             repayment,
             credit_index,
             recovery,
+            initial_amortization_rate: None,
         })
+    }
+
+    /// Initial annual rate used to freeze builder-generated amortization.
+    /// Directly assembled contracts may have no associated construction rate.
+    #[must_use]
+    pub const fn initial_amortization_rate(&self) -> Option<f64> {
+        self.initial_amortization_rate
+    }
+
+    /// Records the construction rate associated with the existing principal schedule.
+    #[must_use]
+    pub const fn with_initial_amortization_rate(mut self, rate: f64) -> Self {
+        self.initial_amortization_rate = Some(rate);
+        self
     }
 
     /// Original contractual principal.
@@ -238,8 +255,32 @@ impl<T: Scalar> Loan<T> {
     }
     /// Prepayment function evaluated on the pricer's market and balance state.
     #[must_use]
-    pub fn prepayment_model(&self) -> &dyn PrepaymentModel<DualFwd> {
+    pub fn prepayment_model(&self) -> &dyn PrepaymentModel<T> {
         self.prepayment.as_ref()
+    }
+
+    /// Converts contractual cashflow scalars and installs a target-scalar prepayment model.
+    ///
+    /// An arbitrary prepayment model cannot be converted between scalar types.
+    /// Supply an equivalent model for `U`, such as the same portable prepayment
+    /// configuration or a custom model that retains the required AD dependencies.
+    /// All other contract terms are preserved.
+    #[must_use]
+    pub fn into_scalar<U: Scalar>(self, prepayment: Arc<dyn PrepaymentModel<U>>) -> Loan<U>
+    where
+        Leg<U>: From<Leg<T>>,
+    {
+        Loan {
+            identifier: self.identifier,
+            notional: self.notional,
+            leg: self.leg.into(),
+            observations: self.observations,
+            prepayment,
+            repayment: self.repayment,
+            credit_index: self.credit_index,
+            recovery: self.recovery,
+            initial_amortization_rate: self.initial_amortization_rate,
+        }
     }
     /// Builder-provided structure for optional fair-rate schedule rebuilding.
     #[must_use]
@@ -340,6 +381,22 @@ impl<T: Scalar> LoanTrade<T> {
             side,
         }
     }
+
+    /// Converts the loan using an explicit target-scalar prepayment model.
+    ///
+    /// Preserves the trade date and side. See [`Loan::into_scalar`] for model
+    /// conversion requirements.
+    #[must_use]
+    pub fn into_scalar<U: Scalar>(self, prepayment: Arc<dyn PrepaymentModel<U>>) -> LoanTrade<U>
+    where
+        Leg<U>: From<Leg<T>>,
+    {
+        LoanTrade::new(
+            self.instrument.into_scalar(prepayment),
+            self.trade_date,
+            self.side,
+        )
+    }
 }
 impl<T: Scalar> Trade<Loan<T>> for LoanTrade<T> {
     /// Returns the underlying loan contract.
@@ -361,31 +418,3 @@ impl<T: Scalar> LegsProvider<T> for LoanTrade<T> {
         self.instrument.legs()
     }
 }
-
-macro_rules! convert_loan {
-    ($from:ty, $to:ty) => {
-        impl From<Loan<$from>> for Loan<$to> {
-            /// Converts coupon scalars while retaining principal and loan terms.
-            fn from(value: Loan<$from>) -> Self {
-                Self {
-                    identifier: value.identifier,
-                    notional: value.notional,
-                    leg: value.leg.into(),
-                    observations: value.observations,
-                    prepayment: value.prepayment,
-                    repayment: value.repayment,
-                    credit_index: value.credit_index,
-                    recovery: value.recovery,
-                }
-            }
-        }
-        impl From<LoanTrade<$from>> for LoanTrade<$to> {
-            /// Converts the loan's scalar representation, preserving date and side.
-            fn from(value: LoanTrade<$from>) -> Self {
-                Self::new(value.instrument.into(), value.trade_date, value.side)
-            }
-        }
-    };
-}
-convert_loan!(f64, DualFwd);
-convert_loan!(DualFwd, f64);

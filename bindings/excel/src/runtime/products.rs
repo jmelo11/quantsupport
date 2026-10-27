@@ -1,12 +1,15 @@
 //! Native contracts and position construction, kept separate from pricing policy.
 
 use super::registry::QsObject;
-use quantsupport::instruments::cashflows::{
-    cashflow::SimpleCashflow, optionembeddedcoupon::OptionEmbeddedCoupon,
+use quantsupport::{
+    instruments::cashflows::{
+        cashflow::SimpleCashflow, optionembeddedcoupon::OptionEmbeddedCoupon,
+    },
+    prelude::*,
 };
-use quantsupport::prelude::*;
 use std::result::Result;
 
+#[derive(Clone)]
 pub enum NativeInstrument {
     Loan(Loan<DualFwd>),
     Swap(Swap<DualFwd>),
@@ -33,7 +36,7 @@ pub struct InstrumentObject {
     pub foreign_notional: Option<f64>,
 }
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct PositionTerms {
     pub notional: Option<f64>,
     pub foreign_notional: Option<f64>,
@@ -43,8 +46,31 @@ pub struct PositionTerms {
 }
 
 impl InstrumentObject {
-    pub const fn kind(&self) -> &'static str {
-        match self.native {
+    pub fn from_maker<M, F>(
+        market: &dyn MarketDataProvider,
+        _kind: &'static str,
+        notional: f64,
+        foreign_notional: Option<f64>,
+        maker: M,
+        wrap: F,
+    ) -> Result<Self, String>
+    where
+        M: MakeInstrument,
+        F: FnOnce(M::Instrument) -> NativeInstrument,
+    {
+        Ok(Self {
+            native: wrap(
+                maker
+                    .build_using(market)
+                    .map_err(|error| error.to_string())?,
+            ),
+            notional,
+            foreign_notional,
+        })
+    }
+
+    pub fn kind(&self) -> &'static str {
+        match &self.native {
             NativeInstrument::Loan(_) => "Loan",
             NativeInstrument::Swap(_) => "Swap",
             NativeInstrument::BasisSwap(_) => "BasisSwap",
@@ -63,6 +89,20 @@ impl InstrumentObject {
             NativeInstrument::RateFutures(_) => "RateFutures",
             NativeInstrument::EuropeanSwaption(_) => "EuropeanSwaption",
         }
+    }
+
+    pub fn trade_from_tenor(
+        &self,
+        market: &dyn MarketDataProvider,
+        tenor: Period,
+        side: Side,
+        terms: &PositionTerms,
+    ) -> Result<QsObject, String> {
+        let date = market
+            .evaluation_date()
+            .advance(tenor.length(), tenor.units())
+            .map_err(|error| error.to_string())?;
+        self.trade(date, side, terms)
     }
 
     pub fn trade(&self, date: Date, side: Side, terms: &PositionTerms) -> Result<QsObject, String> {

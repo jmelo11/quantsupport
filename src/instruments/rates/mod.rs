@@ -14,6 +14,8 @@ pub mod floatfloatcrosscurrencyswap;
 pub mod makebasisswap;
 /// Cap/floor builder.
 pub mod makecapfloor;
+/// Context-resolved single-period caplet/floorlet maker.
+pub mod makecapletfloorlet;
 /// Swaption builder.
 pub mod makeeuropeanswaption;
 /// Cross-currency swap builder (fixed vs float).

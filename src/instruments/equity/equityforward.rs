@@ -1,12 +1,18 @@
 use crate::{
     core::{
-        collateral::Discountable, instrument::{AssetClass, Instrument}, trade::{Side, Trade},
-    }, currencies::currency::Currency, indices::marketindex::MarketIndex, time::{date::Date, daycounter::DayCounter},
+        collateral::Discountable,
+        instrument::{AssetClass, Instrument},
+        trade::{Side, Trade},
+    },
+    currencies::currency::Currency,
+    indices::marketindex::MarketIndex,
+    time::{date::Date, daycounter::DayCounter},
 };
 
 /// An [`EquityForward`] represents a forward contract on an equity underlying (stock or index).
 /// The holder agrees to buy (or sell) the underlying at a pre-agreed forward price on the
 /// delivery date.
+#[derive(Clone)]
 pub struct EquityForward {
     identifier: String,
     market_index: MarketIndex,

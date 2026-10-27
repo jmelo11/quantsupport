@@ -6,50 +6,58 @@
 //! [`SingleCurveCSADiscountPolicy`]. Entering the `with` block enables request-driven market construction;
 //! leaving it stops the tape and releases all constructed market data.
 
+use crate::{
+    common::conversion::{extract_level, extract_market_index, extract_requests, qs_err},
+    instruments::{
+        products::{
+            BasisSwap, CapFloorPy, CapletFloorletPy, CreditDefaultSwapPy, CrossCurrencySwap,
+            EquityOption, FixFloatCrossCurrencySwap, FixedRateBond, FixedRateDeposit,
+            FloatingRateNote, FxForwardPy, FxOptionPy, RateFuturesPy, SteppedCouponBond, Swap,
+        },
+        scripting::ScriptedProduct,
+    },
+    market::{
+        scenario::{enter_context, exit_context},
+        stores::{
+            CreditCurveConfiguration, CurveConfiguration, FixingStore, FxStore,
+            PricerConfiguration, QuoteStore, SimulationConfiguration, VolatilityCubeConfiguration,
+            VolatilitySurfaceConfiguration,
+        },
+        views::{DiscountCurve, Simulation, VolatilityCube, VolatilitySurface},
+    },
+    pricing::{
+        collateral::{
+            FixedIncomeDiscountPolicy as PyFixedIncomeDiscountPolicy, SingleCurveCSADiscountPolicy,
+        },
+        extension::{call_pricer, PricerRegistry, Trade},
+        portfolio::Portfolio,
+        results::EvaluationResults,
+    },
+    time::Date,
+    xva::{NettingSet, XvaConfig, XvaResult},
+};
+use pyo3::{prelude::*, types::PyType};
+use quantsupport::{
+    core::marketdatahandling::marketview::MarketView,
+    prelude::{
+        ADForward, BackwardFourierEvolutionBondPricer, BasisSwap as QsBasisSwap, BasisSwapTrade,
+        BlackEuropeanOptionPricer, BondPricer, CalibrationSource, CdsPricer,
+        ClosedFormBlackCapPricer, ClosedFormBlackCapletPricer, ConstructedElementRequest,
+        ConstructedElementStore, DayCounter, DiscountedCashflowPricer, DualFwd,
+        EvaluationResults as QsEvaluationResults, FixFloatCrossCurrencySwap as QsFixFloatXccy,
+        FixFloatCrossCurrencySwapTrade, FixedIncomeDiscountPolicy,
+        FixedRateDeposit as QsFixedRateDeposit, FixedRateDepositTrade, FloatFloatCrossCurrencySwap,
+        FloatFloatCrossCurrencySwapTrade, FloatingRateNote as QsFloatingRateNote,
+        FloatingRateNoteTrade, FxEuropeanOptionPricer, FxForwardPricer, InstrumentType, Level,
+        LgmMarketModel, LgmRateModel, LoanPricer, MarketData, MarketDataProvider,
+        MarketDataRequest, ModelConfiguration, ParameterSource, PortfolioPricer, Pricer,
+        PricerImplementation, PricingContext as QsPricingContext, QSError, QuoteSelector,
+        QuoteStore as QsQuoteStore, RateFuturesPricer, Request as QsRequest, Scalar, ScriptEngine,
+        Swap as QsSwap, SwapTrade, Tape, TreeBasedBondPricer, XvaEngine,
+    },
+    utils::errors::Result as QsResult,
+};
 use std::collections::HashMap;
-
-use pyo3::prelude::*;
-use pyo3::types::PyType;
-use quantsupport::core::marketdatahandling::marketview::MarketView;
-use quantsupport::prelude::{
-    ADForward, BackwardFourierEvolutionBondPricer, BasisSwap as QsBasisSwap, BasisSwapTrade,
-    BlackEuropeanOptionPricer, BondPricer, CalibrationSource, CdsPricer, ClosedFormBlackCapPricer,
-    ClosedFormBlackCapletPricer, ConstructedElementRequest, ConstructedElementStore, DayCounter,
-    DiscountedCashflowPricer, DualFwd, EvaluationResults as QsEvaluationResults,
-    FixFloatCrossCurrencySwap as QsFixFloatXccy, FixFloatCrossCurrencySwapTrade,
-    FixedIncomeDiscountPolicy, FixedRateDeposit as QsFixedRateDeposit, FixedRateDepositTrade,
-    FloatFloatCrossCurrencySwap, FloatFloatCrossCurrencySwapTrade,
-    FloatingRateNote as QsFloatingRateNote, FloatingRateNoteTrade, FxEuropeanOptionPricer,
-    FxForwardPricer, InstrumentType, Level, LgmMarketModel, LgmRateModel, LoanPricer, MarketData,
-    MarketDataProvider, MarketDataRequest, ModelConfiguration, ParameterSource, PortfolioPricer,
-    Pricer, PricerImplementation, PricingContext as QsPricingContext, QSError, QuoteSelector,
-    QuoteStore as QsQuoteStore, RateFuturesPricer, Request as QsRequest, Scalar, ScriptEngine,
-    Swap as QsSwap, SwapTrade, Tape, TreeBasedBondPricer, XvaEngine,
-};
-use quantsupport::utils::errors::Result as QsResult;
-
-use crate::common::conversion::{extract_level, extract_market_index, extract_requests, qs_err};
-use crate::instruments::products::{
-    BasisSwap, CapFloorPy, CapletFloorletPy, CreditDefaultSwapPy, CrossCurrencySwap, EquityOption,
-    FixFloatCrossCurrencySwap, FixedRateBond, FixedRateDeposit, FloatingRateNote, FxForwardPy,
-    FxOptionPy, RateFuturesPy, SteppedCouponBond, Swap,
-};
-use crate::instruments::scripting::ScriptedProduct;
-use crate::market::scenario::{enter_context, exit_context};
-use crate::market::stores::{
-    CreditCurveConfiguration, CurveConfiguration, FixingStore, FxStore, PricerConfiguration,
-    QuoteStore, SimulationConfiguration, VolatilityCubeConfiguration,
-    VolatilitySurfaceConfiguration,
-};
-use crate::market::views::{DiscountCurve, Simulation, VolatilityCube, VolatilitySurface};
-use crate::pricing::collateral::{
-    FixedIncomeDiscountPolicy as PyFixedIncomeDiscountPolicy, SingleCurveCSADiscountPolicy,
-};
-use crate::pricing::extension::{call_pricer, PricerRegistry, Trade};
-use crate::pricing::portfolio::Portfolio;
-use crate::pricing::results::EvaluationResults;
-use crate::time::Date;
-use crate::xva::{NettingSet, XvaConfig, XvaResult};
 
 /// Market inputs and policies used to value trades.
 ///
@@ -57,7 +65,8 @@ use crate::xva::{NettingSet, XvaConfig, XvaResult};
 /// credit_curve_configurations, fixings, quotes, fx, quote_level, csa_policy,
 /// fixed_income_policy, volatility_surface_configurations,
 /// volatility_cube_configurations, simulation_configurations, and
-/// pricer_configurations. Reassigning market inputs invalidates constructed data;
+/// pricer_configurations. Set anchor_fixings to select the historical fixing policy.
+/// Reassigning market inputs invalidates constructed data;
 /// construction follows subsequent market-data requests.
 /// Collection getters return copies; assign the updated collection back.
 /// Use ``with context, scenario:`` for temporary ``Scenario`` shocks;
@@ -66,36 +75,52 @@ use crate::xva::{NettingSet, XvaConfig, XvaResult};
 /// Parameters
 /// ----------
 /// quotes : QuoteStore
-///     Market observations and reference date.
+///     Typed market observations, copied into the context. The store's reference
+///     date determines the context evaluation date.
 /// curves : sequence of CurveConfiguration
-///     Quote-based calibration or direct interpolation, and composite curves.
+///     Typed quote-based or composite-curve configurations.
+///     These are construction inputs, not already constructed DiscountCurve views.
 /// fixings : FixingStore, optional
-///     Published historical index observations.
+///     Published historical index observations. Defaults to None, retaining the
+///     native context's empty fixing store.
 /// fx : FxStore, optional
-///     Spot exchange rates.
+///     Spot exchange rates. Defaults to None, retaining the native empty FX store.
 /// volatility_surfaces : sequence of VolatilitySurfaceConfiguration, optional
-///     Surface construction inputs.
+///     Surface construction inputs. None, the default, configures no surfaces.
 /// volatility_cubes : sequence of VolatilityCubeConfiguration, optional
-///     Cube construction inputs.
+///     Cube construction inputs. None, the default, configures no cubes.
 /// pricer_configurations : sequence of PricerConfiguration, optional
-///     Instrument pricing models and implementations.
+///     Instrument pricing models and implementations. None, the default, adds no
+///     instrument-specific configurations; pricers requiring one fail at evaluation.
 /// simulations : sequence of SimulationConfiguration, optional
-///     Simulation inputs.
+///     Simulation construction inputs. None, the default, configures no simulations.
 /// csa_policy : SingleCurveCSADiscountPolicy, optional
-///     Collateral currency and curve used for market construction.
+///     Collateral currency and remuneration curve used for market construction and
+///     derivative discounting. None, the default, keeps USD collateral with SOFR
+///     remuneration; it does not infer a policy from the supplied curve list.
 /// fixed_income_policy : FixedIncomeDiscountPolicy, optional
-///     Currency-to-curve discount policy. Defaults to the context base curve.
+///     Currency-to-curve discount policy. None, the default, maps the context base
+///     currency to its base curve. Straight bonds, notes, and deposits may prefer
+///     their instrument discount index; loans use the currency mapping.
 /// quote_level : Level or str, optional
-///     Quote level used for calibration. Defaults to Mid.
+///     Calibration quote level: Mid, Bid, or Ask, as an enum or case-insensitive
+///     variant name. None, the default, selects Level.Mid.
 /// credit_curves : sequence of CreditCurveConfiguration, optional
-///     Survival curve construction inputs.
+///     Survival-curve construction inputs. None, the default, configures no credit
+///     curves.
+/// anchor_fixings : bool, optional
+///     True, the default, requires stored index fixings strictly before evaluation;
+///     today and future project. False projects all observations from curves.
 ///
 /// Examples
 /// --------
 ///
 /// ```python
-/// quotes = qs.QuoteStore.from_json("quotes.json")
-/// curves = qs.CurveConfiguration.from_json("curve_specs.json")
+/// import json
+/// from pathlib import Path
+///
+/// quotes = qs.QuoteStore.from_dict(json.loads(Path("quotes.json").read_text(encoding="utf-8")))
+/// curves = qs.CurveConfiguration.from_dict_list(json.loads(Path("curve_specs.json").read_text(encoding="utf-8")))
 /// csa_policy = qs.SingleCurveCSADiscountPolicy(collateral_currency="USD", collateral_index="SOFR")
 /// trade = qs.Trade(swap, quotes.reference_date)
 ///
@@ -230,6 +255,7 @@ impl PricingContext {
         fixed_income_policy = None,
         quote_level = None,
         credit_curves = None,
+        anchor_fixings = true,
     ))]
     fn new(
         quotes: QuoteStore,
@@ -244,8 +270,10 @@ impl PricingContext {
         fixed_income_policy: Option<PyFixedIncomeDiscountPolicy>,
         quote_level: Option<&Bound<'_, PyAny>>,
         credit_curves: Option<Vec<CreditCurveConfiguration>>,
+        anchor_fixings: bool,
     ) -> PyResult<Self> {
         let mut ctx = QsPricingContext::new()
+            .with_anchor_fixings(anchor_fixings)
             .with_quote_level(
                 quote_level
                     .map(extract_level)
@@ -321,6 +349,19 @@ impl PricingContext {
         Date {
             inner: self.inner.quote_store().reference_date(),
         }
+    }
+
+    /// True requires historical fixings; false projects every observation from curves.
+    #[getter]
+    fn anchor_fixings(&self) -> bool {
+        self.inner.anchor_fixings()
+    }
+
+    #[setter]
+    fn set_anchor_fixings(&mut self, enabled: bool) {
+        self.inner = self.inner.clone().with_anchor_fixings(enabled);
+        self.generation += 1;
+        self.fully_constructed = false;
     }
 
     /// Alias for `reference_date`, matching the `MarketDataProvider` contract.
@@ -1048,7 +1089,7 @@ impl PricingContext {
                     ns.name()
                 )));
             }
-            sets.insert(ns.name().to_string(), ns.build(py)?);
+            sets.insert(ns.name().to_string(), ns.build(py, &self.market_view()?)?);
         }
 
         let mut engine =

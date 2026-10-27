@@ -77,7 +77,7 @@ fn reconcile(
             Period::new(lag, TimeUnit::Days),
             Some(BusinessDayConvention::Following),
             false,
-        );
+        )?;
     println!(
         "\nreference={reference} effective={effective} lag={lag} fixed={fixed_frequency}/{fixed_day_counter:?} single_curve={single_curve} start_df={start_df:.10}"
     );

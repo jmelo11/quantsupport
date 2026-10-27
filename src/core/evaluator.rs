@@ -39,14 +39,21 @@ impl Evaluator {
     ) -> Result<EvaluationResults> {
         Request::validate(requests)?;
         let trade_type_id = trade.type_id();
-        self.pricers.get(&trade_type_id).map_or_else(
-            || {
-                Err(QSError::NotFoundErr(format!(
-                    "No pricer registered for trade type: {trade_type_id:?}"
-                )))
-            },
-            |pricer| pricer.evaluate_erased(trade, requests, context),
-        )
+        self.pricers
+            .get(&trade_type_id)
+            .or_else(|| {
+                self.pricers
+                    .values()
+                    .find(|pricer| pricer.accepts_trade(trade))
+            })
+            .map_or_else(
+                || {
+                    Err(QSError::NotFoundErr(format!(
+                        "No pricer registered for trade type: {trade_type_id:?}"
+                    )))
+                },
+                |pricer| pricer.evaluate_erased(trade, requests, context),
+            )
     }
 }
 
@@ -137,5 +144,38 @@ mod tests {
             err.to_string().contains("DummyTrade"),
             "error should name the expected trade type, got: {err}"
         );
+    }
+}
+
+#[cfg(test)]
+mod resolution_tests {
+    use crate::{
+        core::makeinstrument::test_support::{loan, market, reference},
+        prelude::*,
+    };
+
+    #[test]
+    fn explicitly_built_trade_is_valued_without_rebuilding_contract_terms() -> Result<()> {
+        use crate::core::{evaluator::Evaluator, pricer::ErasedPricer};
+        use std::{any::TypeId, collections::HashMap};
+        let mut pricer = LoanPricer::new();
+        pricer.set_discount_policy(Box::new(
+            FixedIncomeDiscountPolicy::new(false)
+                .with_discount_curve_index(Currency::EUR, MarketIndex::ESTR),
+        ));
+        let mut registrations: HashMap<TypeId, Box<dyn ErasedPricer>> = HashMap::new();
+        registrations.insert(TypeId::of::<LoanTrade<DualFwd>>(), Box::new(pricer));
+        let evaluator = Evaluator::new(registrations);
+        let low = market(reference(), 0.02, FixingStore::default());
+        let high = market(reference(), 0.08, FixingStore::default());
+        let concrete = LoanTrade::new(loan()?.build_using(&low)?, reference(), Side::LongReceive);
+        let principal = concrete.instrument().notional();
+        let first = evaluator.evaluate(&concrete, &[Request::Value], &low)?;
+        let changed = evaluator.evaluate(&concrete, &[Request::Value], &high)?;
+        let repeated = evaluator.evaluate(&concrete, &[Request::Value], &low)?;
+        assert_ne!(first.price(), changed.price());
+        assert_eq!(first.price(), repeated.price());
+        assert_eq!(concrete.instrument().notional(), principal);
+        Ok(())
     }
 }
