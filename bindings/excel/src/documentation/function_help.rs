@@ -15,7 +15,7 @@ pub fn argument_help(function_name: &str, argument_names: &str) -> Vec<&'static 
 
 fn describe_argument(function_name: &str, argument_name: &str) -> &'static str {
     match (function_name, argument_name) {
-        (_, "anchor_fixings") => return "Optional TRUE/FALSE, default TRUE; TRUE requires stored index fixings strictly before evaluation and projects today/future; FALSE projects all index observations",
+        (_, "anchor_fixings") => return "Optional TRUE/FALSE; omitted or blank defaults to TRUE; TRUE requires stored index fixings strictly before evaluation and projects today/future; FALSE projects all index observations",
         (_, "start_tenor") => return "Optional start offset from the evaluation date, e.g. 0D or 1Y; leave start_date blank; resolved when evaluated",
         (_, "tenor") => return "Optional maturity/accrual tenor from resolved start, e.g. 5Y; for swaptions from expiry; leave the corresponding end/maturity date blank",
         (_, "delivery_tenor") => return "Optional delivery offset from evaluation, e.g. 1Y; leave delivery_date blank; resolved when evaluated",
