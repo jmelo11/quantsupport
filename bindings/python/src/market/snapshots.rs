@@ -1,16 +1,15 @@
 //! Timestamped market archive bindings.
 
+use crate::{
+    common::conversion::{extract_level, from_py, qs_err},
+    market::stores::{FixingStore, QuoteStore},
+    pricing::{collateral::FixedIncomeDiscountPolicy, context::PricingContext},
+    time::{datetime::extract_datetime, DateTime},
+};
 use pyo3::prelude::*;
 use quantsupport::prelude::{
     MarketSnapshot as QsMarketSnapshot, MarketSnapshotStore as QsMarketSnapshotStore,
     SnapshotSelectionRule as QsSnapshotSelectionRule, SnapshotSelector as QsSnapshotSelector,
-};
-
-use crate::{
-    common::conversion::{extract_level, from_json_file, from_py, qs_err},
-    market::stores::{FixingStore, QuoteStore},
-    pricing::{collateral::FixedIncomeDiscountPolicy, context::PricingContext},
-    time::{datetime::extract_datetime, DateTime},
 };
 
 /// Timestamp matching policy. Previous never selects a later observation.
@@ -222,14 +221,6 @@ impl MarketSnapshotStore {
             context,
             fixed_income_policy,
         ))
-    }
-
-    /// Load the timestamp-ordered JSON snapshot array.
-    #[staticmethod]
-    fn from_json(path: &str) -> PyResult<Self> {
-        Ok(Self {
-            inner: from_json_file(path, "market snapshot archive")?,
-        })
     }
 
     /// Save all market observations and configurations, excluding runtime AD data.

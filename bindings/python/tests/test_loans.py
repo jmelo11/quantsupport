@@ -225,7 +225,7 @@ class LoanWorkflowTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "loan.json"
             path.write_text(json.dumps(terms))
-            restored = CustomLoan.from_json(str(path))
+            restored = CustomLoan.from_dict(json.loads(Path(path).read_text(encoding="utf-8")))
             self.assertIsInstance(restored, CustomLoan)
             self.assertEqual(restored.to_dict(), terms)
 

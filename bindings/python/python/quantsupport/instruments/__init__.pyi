@@ -487,22 +487,6 @@ class Loan(Instrument):
         """
         ...
 
-    @classmethod
-    def from_json(cls, path: str) -> Self:
-        """Construct from a JSON file using the from_dict schema, preserving subclasses.
-
-        Parameters
-        ----------
-        path : str
-            Filesystem path to a JSON object of Loan constructor keywords,
-            using the same nested representations as ``from_dict()``.
-
-        Returns
-        -------
-        Self
-            Validated loan loaded from the file, preserving Python subclasses.
-        """
-        ...
 
     def to_dict(self) -> dict[str, Any]:
         """Return supplied construction terms, including omitted options as None, without market state.
@@ -616,23 +600,6 @@ class EquityForward(Instrument):
         """
         ...
 
-    @classmethod
-    def from_json(cls, path: str) -> Self:
-        """Loads constructor fields from a JSON file.
-
-        Parameters
-        ----------
-        path : str
-            Filesystem path to a JSON object of EquityForward constructor fields,
-            as described by ``from_dict()``; dates use ISO strings and indices
-            use native serde representations.
-
-        Returns
-        -------
-        Self
-            Equity forward loaded through cls with normal constructor defaults.
-        """
-        ...
 
     @property
     def delivery_date(self) -> Date:
@@ -738,23 +705,6 @@ class EuropeanSwaption(Instrument):
         """
         ...
 
-    @classmethod
-    def from_json(cls, path: str) -> Self:
-        """Loads constructor fields from a JSON file.
-
-        Parameters
-        ----------
-        path : str
-            Filesystem path to a JSON object of EuropeanSwaption constructor
-            keywords, using ``from_dict()`` fields, ISO dates, and native
-            serialized index/calendar representations.
-
-        Returns
-        -------
-        Self
-            European swaption loaded through cls with constructor validation.
-        """
-        ...
 
     @property
     def swaption_type(self) -> SwaptionType:
@@ -899,23 +849,6 @@ class Swap(Instrument):
         """
         ...
 
-    @classmethod
-    def from_json(cls, path: str) -> Self:
-        """Loads constructor fields from a JSON file.
-
-        Parameters
-        ----------
-        path : str
-            Filesystem path to a JSON object of Swap constructor keywords,
-            with ISO start/maturity dates and native index representation;
-            the schema and defaults are those of ``from_dict()``.
-
-        Returns
-        -------
-        Self
-            Fixed/floating swap loaded through cls, preserving subclasses.
-        """
-        ...
 
     @property
     def currency(self) -> Currency:
@@ -1052,23 +985,6 @@ class CrossCurrencySwap(Instrument):
         """
         ...
 
-    @classmethod
-    def from_json(cls, path: str) -> Self:
-        """Loads constructor fields from a JSON file.
-
-        Parameters
-        ----------
-        path : str
-            Filesystem path to a JSON object of CrossCurrencySwap constructor
-            fields, as in ``from_dict()``. Use ISO dates, currency codes, and
-            native serialized indices for both legs.
-
-        Returns
-        -------
-        Self
-            Cross-currency swap loaded through cls with constructor defaults.
-        """
-        ...
 
     @property
     def foreign_market_index(self) -> Any:
@@ -1203,23 +1119,6 @@ class BasisSwap(Instrument):
         """
         ...
 
-    @classmethod
-    def from_json(cls, path: str) -> Self:
-        """Loads constructor fields from a JSON file.
-
-        Parameters
-        ----------
-        path : str
-            Filesystem path to a JSON object of BasisSwap constructor keywords,
-            following ``from_dict()`` with ISO dates and native pay/receive
-            index representations.
-
-        Returns
-        -------
-        Self
-            Basis swap loaded through cls, preserving subclasses and defaults.
-        """
-        ...
 
     @property
     def identifier(self) -> str:
@@ -1351,23 +1250,6 @@ class FixFloatCrossCurrencySwap(Instrument):
         """
         ...
 
-    @classmethod
-    def from_json(cls, path: str) -> Self:
-        """Loads constructor fields from a JSON file.
-
-        Parameters
-        ----------
-        path : str
-            Filesystem path to a JSON object of FixFloatCrossCurrencySwap
-            constructor keywords, following ``from_dict()`` with ISO dates,
-            currency codes, and native floating-index serialization.
-
-        Returns
-        -------
-        Self
-            Fixed/floating cross-currency swap loaded through cls.
-        """
-        ...
 
     @property
     def identifier(self) -> str:
@@ -1540,23 +1422,6 @@ class FixedRateBond(Instrument):
         """
         ...
 
-    @classmethod
-    def from_json(cls, path: str) -> Self:
-        """Loads constructor fields from a JSON file.
-
-        Parameters
-        ----------
-        path : str
-            Filesystem path to a JSON object of FixedRateBond constructor fields,
-            following ``from_dict()`` or serialized ``to_dict()`` output. Dates
-            are ISO strings and nested values retain their native schemas.
-
-        Returns
-        -------
-        Self
-            Fixed-rate bond loaded through cls with constructor defaults.
-        """
-        ...
 
     @property
     def identifier(self) -> str:
@@ -2527,23 +2392,6 @@ class SteppedCouponBond(Instrument):
         """
         ...
 
-    @classmethod
-    def from_json(cls, path: str) -> Self:
-        """Loads constructor fields from a JSON file.
-
-        Parameters
-        ----------
-        path : str
-            Filesystem path to a JSON object of SteppedCouponBond constructor
-            fields, following ``from_dict()`` or ``to_dict()`` output. Preserve
-            native nested coupon/payoff/call schemas and ISO date strings.
-
-        Returns
-        -------
-        Self
-            Stepped-coupon bond loaded through cls with constructor checks.
-        """
-        ...
 
     @property
     def identifier(self) -> str:
@@ -2695,23 +2543,6 @@ class FloatingRateNote(Instrument):
         """
         ...
 
-    @classmethod
-    def from_json(cls, path: str) -> Self:
-        """Loads constructor fields from a JSON file.
-
-        Parameters
-        ----------
-        path : str
-            Filesystem path to a JSON object of FloatingRateNote constructor
-            keywords, following ``from_dict()`` with ISO dates, a currency code,
-            and the native forward-index representation.
-
-        Returns
-        -------
-        Self
-            Floating-rate note loaded through cls with constructor defaults.
-        """
-        ...
 
     @property
     def identifier(self) -> str:
@@ -2822,23 +2653,6 @@ class FixedRateDeposit(Instrument):
         """
         ...
 
-    @classmethod
-    def from_json(cls, path: str) -> Self:
-        """Loads constructor fields from a JSON file.
-
-        Parameters
-        ----------
-        path : str
-            Filesystem path to a JSON object of FixedRateDeposit constructor
-            keywords, as in ``from_dict()``. Dates are ISO strings and any
-            explicit discount index uses native serde representation.
-
-        Returns
-        -------
-        Self
-            Fixed-rate deposit loaded through cls, preserving subclasses.
-        """
-        ...
 
     @property
     def identifier(self) -> str:
@@ -2959,23 +2773,6 @@ class FxForward(Instrument):
         """
         ...
 
-    @classmethod
-    def from_json(cls, path: str) -> Self:
-        """Loads constructor fields from a JSON file.
-
-        Parameters
-        ----------
-        path : str
-            Filesystem path to a JSON object of FxForward constructor keywords,
-            following ``from_dict()`` with ISO delivery/fixing dates and
-            alphabetic base, quote, and optional settlement currency codes.
-
-        Returns
-        -------
-        Self
-            Deliverable/NDF forward specification loaded through cls.
-        """
-        ...
 
     @property
     def identifier(self) -> str:
@@ -3079,23 +2876,6 @@ class FxOption(Instrument):
         """
         ...
 
-    @classmethod
-    def from_json(cls, path: str) -> Self:
-        """Loads constructor fields from a JSON file.
-
-        Parameters
-        ----------
-        path : str
-            Filesystem path to a JSON object of FxOption constructor fields,
-            following ``from_dict()`` with an ISO expiry date, numeric strike,
-            Call/Put name, and alphabetic currency codes.
-
-        Returns
-        -------
-        Self
-            European FX option loaded through cls.
-        """
-        ...
 
     @property
     def identifier(self) -> str:
@@ -3186,23 +2966,6 @@ class EquityOption(Instrument):
         """
         ...
 
-    @classmethod
-    def from_json(cls, path: str) -> Self:
-        """Loads constructor fields from a JSON file.
-
-        Parameters
-        ----------
-        path : str
-            Filesystem path to a JSON object of EquityOption constructor fields,
-            as in ``from_dict()``. Use ISO expiry and native index/Strike
-            representations rather than display strings for tagged variants.
-
-        Returns
-        -------
-        Self
-            European equity option loaded through cls.
-        """
-        ...
 
     @property
     def identifier(self) -> str:
@@ -3296,23 +3059,6 @@ class CreditDefaultSwap(Instrument):
         """
         ...
 
-    @classmethod
-    def from_json(cls, path: str) -> Self:
-        """Loads constructor fields from a JSON file.
-
-        Parameters
-        ----------
-        path : str
-            Filesystem path to a JSON object of CreditDefaultSwap constructor
-            keywords, following ``from_dict()`` with ISO dates and native
-            serialized credit/discount indices.
-
-        Returns
-        -------
-        Self
-            CDS specification loaded through cls with constructor defaults.
-        """
-        ...
 
     @property
     def identifier(self) -> str:
@@ -3428,23 +3174,6 @@ class CapFloor(Instrument):
         """
         ...
 
-    @classmethod
-    def from_json(cls, path: str) -> Self:
-        """Loads constructor fields from a JSON file.
-
-        Parameters
-        ----------
-        path : str
-            Filesystem path to a JSON object of CapFloor constructor fields,
-            following ``from_dict()`` with ISO dates, numeric rate strike,
-            a Cap/Floor name, and native index serialization.
-
-        Returns
-        -------
-        Self
-            Cap/floor strip loaded through cls with constructor defaults.
-        """
-        ...
 
     @property
     def identifier(self) -> str:
@@ -3561,23 +3290,6 @@ class CapletFloorlet(Instrument):
         """
         ...
 
-    @classmethod
-    def from_json(cls, path: str) -> Self:
-        """Loads constructor fields from a JSON file.
-
-        Parameters
-        ----------
-        path : str
-            Filesystem path to a JSON object of CapletFloorlet constructor
-            keywords, following ``from_dict()`` with ISO dates, native index
-            and strike representations, and a Caplet/Floorlet name.
-
-        Returns
-        -------
-        Self
-            Caplet or floorlet specification loaded through cls.
-        """
-        ...
 
     @property
     def identifier(self) -> str:
@@ -3685,23 +3397,6 @@ class RateFutures(Instrument):
         """
         ...
 
-    @classmethod
-    def from_json(cls, path: str) -> Self:
-        """Loads constructor fields from a JSON file.
-
-        Parameters
-        ----------
-        path : str
-            Filesystem path to a JSON object of RateFutures constructor fields,
-            following ``from_dict()`` with ISO accrual dates, a numeric futures
-            price, and native rate-index serialization.
-
-        Returns
-        -------
-        Self
-            Rate future specification loaded through cls.
-        """
-        ...
 
     @property
     def identifier(self) -> str:
@@ -3779,23 +3474,6 @@ class ScriptedProduct:
         """
         ...
 
-    @staticmethod
-    def from_json(path: str) -> ScriptedProduct:
-        """Loads the same script schema from a JSON file.
-
-        Parameters
-        ----------
-        path : str
-            Filesystem path to a JSON object using the ``from_dict()`` script
-            schema, with ISO event dates and native serialized currency,
-            optional discount index, and pricing-model configurations.
-
-        Returns
-        -------
-        ScriptedProduct
-            Validated script specification loaded from the file.
-        """
-        ...
 
     def to_dict(self) -> dict[str, Any]:
         """Returns the script specification, including its native model schemas.

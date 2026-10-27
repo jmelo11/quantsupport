@@ -132,23 +132,13 @@ class StructuredErrorTests(unittest.TestCase):
         self.assertEqual((error.code, error.native_type), ("evaluation", "EvaluationErr"))
         self.assertEqual(error.operation, "PricingContext.curve")
 
-    def test_file_and_json_failures_keep_location_and_original_cause(self):
+    def test_snapshot_write_failures_keep_the_native_io_category(self):
         with tempfile.TemporaryDirectory() as directory:
-            missing = str(Path(directory) / "missing.json")
-            error = self.capture(lambda: qs.QuoteStore.from_json(missing))
+            missing = str(Path(directory) / "missing" / "snapshots.json")
+            error = self.capture(lambda: qs.MarketSnapshotStore().to_json(missing))
             self.assertIsInstance(error, OSError)
             self.assertEqual((error.code, error.native_type), ("io", "IoErr"))
-            self.assertEqual(error.details["file"], missing)
-            self.assertIsNotNone(error.__cause__)
-            path = Path(directory) / "quotes.json"
-            path.write_text('{"reference_date": "2026-02-24", "quotes": [}')
-            error = self.capture(lambda: qs.QuoteStore.from_json(str(path)))
-            self.assertEqual(error.code, "deserialization")
-            self.assertEqual(error.details["file"], str(path))
-            self.assertGreater(error.details["line"], 0)
-            self.assertGreater(error.details["column"], 0)
-            path.write_text('{"reference_date": "2026-02-24", "quotes": []} {}')
-            self.capture(lambda: qs.QuoteStore.from_json(str(path)))
+            self.assertEqual(error.operation, "MarketSnapshotStore.to_json")
 
     def test_python_callback_cause_is_preserved_without_reclassifying_its_message(self):
         class Provider:

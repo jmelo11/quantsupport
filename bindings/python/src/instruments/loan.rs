@@ -309,23 +309,6 @@ impl Loan {
         )
     }
 
-    /// Reads construction parameters from a JSON file and constructs a loan.
-    ///
-    /// Uses the same schema as ``from_dict()`` and preserves Python subclasses.
-    /// File, JSON, and contract-validation errors are reported as exceptions.
-    #[classmethod]
-    fn from_json<'py>(cls: &Bound<'py, PyType>, path: &str) -> PyResult<Bound<'py, PyAny>> {
-        let value: serde_json::Value = crate::common::conversion::from_json_file(path, "loan")?;
-        let obj = pythonize::pythonize(cls.py(), &value).map_err(qs_err)?;
-        cls.call(
-            (),
-            Some(crate::common::conversion::expect_dict(
-                &obj,
-                "Loan JSON construction parameters",
-            )?),
-        )
-    }
-
     /// Returns JSON-compatible construction parameters for ``from_dict()``.
     ///
     /// Includes optional settings as supplied, which may be ``None`` when a

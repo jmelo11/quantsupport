@@ -9,9 +9,7 @@
 //!   pandas DataFrames.
 
 use crate::{
-    common::conversion::{
-        dataframe, extract_currency, extract_market_index, from_json_file, from_py, qs_err,
-    },
+    common::conversion::{dataframe, extract_currency, extract_market_index, from_py, qs_err},
     instruments::products::{
         BasisSwap, CrossCurrencySwap, FixFloatCrossCurrencySwap, FixedRateBond, FixedRateDeposit,
         FloatingRateNote, Swap,
@@ -40,14 +38,6 @@ impl XvaConfig {
     fn from_dict(obj: &Bound<'_, PyAny>) -> PyResult<Self> {
         Ok(Self {
             inner: from_py(obj, "xva config")?,
-        })
-    }
-
-    /// Loads the configuration from a JSON file.
-    #[staticmethod]
-    fn from_json(path: &str) -> PyResult<Self> {
-        Ok(Self {
-            inner: from_json_file(path, "xva config")?,
         })
     }
 
@@ -115,16 +105,6 @@ impl CsaTerms {
     fn from_dict(obj: &Bound<'_, PyAny>) -> PyResult<Self> {
         let terms = Self {
             inner: from_py(obj, "csa terms")?,
-        };
-        terms.inner.validate().map_err(qs_err)?;
-        Ok(terms)
-    }
-
-    /// Loads CSA terms from a JSON file.
-    #[staticmethod]
-    fn from_json(path: &str) -> PyResult<Self> {
-        let terms = Self {
-            inner: from_json_file(path, "csa terms")?,
         };
         terms.inner.validate().map_err(qs_err)?;
         Ok(terms)

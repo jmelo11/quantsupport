@@ -215,8 +215,8 @@ with qs.PricingContext(quotes=quotes, curves=curves, fixings=fixings, csa_policy
     risk = result.sensitivities
 ```
 
-The Python constructor delegates to the Rust builder. `to_dict`, `from_dict`,
-and `from_json` serialize construction parameters. Typed definitions and their
+The Python constructor delegates to the Rust builder. `to_dict` and `from_dict`
+serialize construction parameters; use Python's `json` module for files. Typed definitions and their
 plain serialized dictionaries are both accepted. `loan.coupon_fixing_requests()` lists
 unique coupon observations for loading fixings; valuation belongs to the pricer.
 

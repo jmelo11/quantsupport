@@ -1,5 +1,6 @@
 """Native position risk must agree with rebuilding under quote bumps."""
 
+import json
 from pathlib import Path
 import unittest
 
@@ -10,9 +11,8 @@ class QuoteRiskTests(unittest.TestCase):
     def test_contract_terms_do_not_alias_market_pillars_on_a_fresh_tape(self):
         data = Path(__file__).resolve(
         ).parents[3] / "examples" / "hullwhite" / "data"
-        quotes = qs.QuoteStore.from_json(str(data / "quotes.json"))
-        curves = qs.CurveConfiguration.from_json(
-            str(data / "curve_specs.json"))
+        quotes = qs.QuoteStore.from_dict(json.loads(Path(data / "quotes.json").read_text(encoding="utf-8")))
+        curves = qs.CurveConfiguration.from_dict_list(json.loads(Path(data / "curve_specs.json").read_text(encoding="utf-8")))
         csa_policy = qs.SingleCurveCSADiscountPolicy(
             qs.Currency.USD, qs.MarketIndex.SOFR)
         ref = quotes.reference_date

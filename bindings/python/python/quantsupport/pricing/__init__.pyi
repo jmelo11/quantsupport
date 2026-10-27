@@ -124,7 +124,7 @@ class PricerConfiguration:
     """Select a native pricing implementation and its index-keyed models.
 
 Build loan configurations with loan(), or load serialized configurations
-through from_dict(), from_dict_list(), or from_json().
+through from_dict() or from_dict_list().
 They select an engine for an instrument family; they are not Python-pricer
 registrations. Native compatibility checks run when the context is validated.
 """
@@ -215,29 +215,6 @@ QuantSupportError
 """
         ...
 
-    @staticmethod
-    def from_json(path: str) -> list[PricerConfiguration]:
-        """Load instrument-level pricing configurations from a JSON file.
-
-Parameters
-----------
-path : str
-    Filesystem path, relative to the current working directory or absolute.
-    The UTF-8 file must contain one from_dict() configuration, a list of them,
-    or an object with exactly one key whose value is such a list. This is a
-    file path, not inline JSON text.
-
-Returns
--------
-list of PricerConfiguration
-    Configurations in file order; a single object still produces a list.
-
-Raises
-------
-QuantSupportError
-    If the file cannot be read or its JSON/configuration schema is invalid.
-"""
-        ...
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize the native pricing configuration.
@@ -569,8 +546,11 @@ Examples
 
 .. code-block:: python
 
-   quotes = qs.QuoteStore.from_json("quotes.json")
-   curves = qs.CurveConfiguration.from_json("curve_specs.json")
+   import json
+   from pathlib import Path
+
+   quotes = qs.QuoteStore.from_dict(json.loads(Path("quotes.json").read_text(encoding="utf-8")))
+   curves = qs.CurveConfiguration.from_dict_list(json.loads(Path("curve_specs.json").read_text(encoding="utf-8")))
    policy = qs.SingleCurveCSADiscountPolicy("USD", "SOFR")
    trade = qs.Trade(swap, quotes.reference_date)
 

@@ -159,9 +159,10 @@ request instead.
 - Many financial inputs accept enums or names, but typed shock/calendar/
   schedule parameters retain their documented restrictions. For equity use
   `qs.MarketIndex.equity("SPX")` or `{"Equity": "SPX"}`, not `"EQ:SPX"`.
-- Python `from_json(path)` reads a file. Configuration `from_dict` returns one
-  configuration; documented list loaders return lists. Product dictionaries
-  instead follow constructor keywords.
+- Read JSON files with Python's `json` module, then pass the parsed data to
+  `from_dict` or `from_dict_list`. Configuration `from_dict` returns one
+  configuration; `from_dict_list` returns a list. Product dictionaries follow
+  constructor keywords.
 - Bond trades require `pricing_anchor`: clean/dirty prices use quotation units;
   straight bonds use Z-spread, issuer-call bonds OAS. Discounting is a policy
   choice, not an automatic inference from currency.

@@ -1,5 +1,8 @@
 """Typed instants and reproducible historical market selection."""
 
+import json
+from pathlib import Path
+
 from datetime import datetime, timezone
 import os
 import tempfile
@@ -102,7 +105,7 @@ class MarketSnapshotTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = os.path.join(directory, "markets.json")
             self.store.to_json(path)
-            restored = qs.MarketSnapshotStore.from_json(path)
+            restored = qs.MarketSnapshotStore.from_dict(json.loads(Path(path).read_text(encoding="utf-8")))
         self.assertEqual(restored.timestamps, self.store.timestamps)
         payload = self.store.to_dict()
         self.assertIsInstance(payload, dict)

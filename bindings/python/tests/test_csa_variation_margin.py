@@ -31,7 +31,7 @@ class CsaVariationMarginTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "csa.json"
             path.write_text(json.dumps(specification))
-            loaded = qs.CsaTerms.from_json(str(path))
+            loaded = qs.CsaTerms.from_dict(json.loads(Path(path).read_text(encoding="utf-8")))
         for terms in [qs.CsaTerms(**specification),
                       qs.CsaTerms.from_dict(specification), loaded]:
             self.assertTrue(terms.variation_margin)

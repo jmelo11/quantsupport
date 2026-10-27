@@ -1,5 +1,6 @@
 """Load the loan example's shared Rust/Python market inputs."""
 
+import json
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -19,9 +20,9 @@ def load_loan_market() -> LoanMarketInputs:
     repository = Path(__file__).resolve().parents[5]
     directory = repository / "examples" / "valuation" / "loans" / "data"
     return LoanMarketInputs(
-        quotes=qs.QuoteStore.from_json(path=str(directory / "loan_quotes.json")),
-        curves=qs.CurveConfiguration.from_json(path=str(directory / "loan_curves.json")),
-        credit_curves=qs.CreditCurveConfiguration.from_json(path=str(directory / "loan_credit_curves.json")),
+        quotes=qs.QuoteStore.from_dict(json.loads(Path(directory / "loan_quotes.json").read_text(encoding="utf-8"))),
+        curves=qs.CurveConfiguration.from_dict_list(json.loads(Path(directory / "loan_curves.json").read_text(encoding="utf-8"))),
+        credit_curves=qs.CreditCurveConfiguration.from_dict_list(json.loads(Path(directory / "loan_credit_curves.json").read_text(encoding="utf-8"))),
         csa_policy=qs.SingleCurveCSADiscountPolicy(
             collateral_currency=qs.Currency.EUR, collateral_index=qs.MarketIndex.ESTR,
         ),

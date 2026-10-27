@@ -37,14 +37,9 @@ def load_market():
     quotes["quotes"].extend(credit_quotes["quotes"])
     return MarketInputs(
         quotes=qs.QuoteStore.from_dict(quotes),
-        curves=qs.CurveConfiguration.from_json(
-            str(MARKET_DATA / "curve_specs.json")),
-        credit_curves=qs.CreditCurveConfiguration.from_json(
-            str(EXAMPLES / "cva" / "data" / "credit_curves.json")
-        ),
-        volatility_surfaces=qs.VolatilitySurfaceConfiguration.from_json(
-            str(MARKET_DATA / "vol_specs.json")
-        ),
+        curves=qs.CurveConfiguration.from_dict_list(json.loads(Path(MARKET_DATA / "curve_specs.json").read_text(encoding="utf-8"))),
+        credit_curves=qs.CreditCurveConfiguration.from_dict_list(json.loads(Path(EXAMPLES / "cva" / "data" / "credit_curves.json").read_text(encoding="utf-8"))),
+        volatility_surfaces=qs.VolatilitySurfaceConfiguration.from_dict_list(json.loads(Path(MARKET_DATA / "vol_specs.json").read_text(encoding="utf-8"))),
         csa_policy=qs.SingleCurveCSADiscountPolicy(
             qs.Currency.USD, qs.MarketIndex.SOFR),
     )

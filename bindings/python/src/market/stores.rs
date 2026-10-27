@@ -1,25 +1,23 @@
 //! Market data and configuration wrappers.
 //!
 //! Typed Python constructors wrap the library's native market definitions.
-//! Serialized inputs remain available through `from_dict` and `from_json`.
+//! Serialized inputs remain available through `from_dict` and `from_dict_list`.
 
+use crate::common::conversion::{
+    extract_currency, extract_date, extract_day_counter, extract_interpolator,
+    extract_market_index, from_py, qs_err,
+};
 use pyo3::prelude::*;
 use quantsupport::prelude::{
     CreditCurveConfiguration as QsCreditCurveConfiguration,
     CurveConfiguration as QsCurveConfiguration, DayCounter, DualFwd, FixingStore as QsFixingStore,
     FxRateRecord, FxStore as QsFxStore, InstrumentType, Interpolator,
-    PricerConfiguration as QsPricerConfiguration, PricerImplementation,
-    QuoteStore as QsQuoteStore, QuoteStoreRecords,
-    SimulationConfiguration as QsSimulationConfiguration,
+    PricerConfiguration as QsPricerConfiguration, PricerImplementation, QuoteStore as QsQuoteStore,
+    QuoteStoreRecords, SimulationConfiguration as QsSimulationConfiguration,
     VolatilityCubeConfiguration as QsVolatilityCubeConfiguration,
     VolatilitySurfaceConfiguration as QsVolatilitySurfaceConfiguration,
 };
 use serde::de::DeserializeOwned;
-
-use crate::common::conversion::{
-    extract_currency, extract_date, extract_day_counter, extract_interpolator,
-    extract_market_index, from_json_file, from_py, qs_err,
-};
 
 /// Accepts a JSON value that is either a list of `T`, a single `T`, or an
 /// object wrapping a single list (e.g. `{"curve_specs": [...]}`).
@@ -45,7 +43,7 @@ fn list_from_value<T: DeserializeOwned>(value: serde_json::Value, what: &str) ->
 }
 
 /// Defines a Python wrapper class around a serde-deserializable library
-/// configuration struct, with `from_dict` (single) and `from_json` (list)
+/// configuration struct, with `from_dict` (single) and `from_dict_list` (list)
 /// constructors.
 macro_rules! config_wrapper {
     ($(#[$docs:meta])* $name:ident, $inner:ty, $pyname:literal, $what:literal) => {
@@ -77,17 +75,7 @@ macro_rules! config_wrapper {
                     .collect())
             }
 
-            /// Loads configurations from a JSON file. Accepts a list, a
-            /// single object, or an object wrapping a single list (e.g.
-            /// `{"curve_specs": [...]}`). Always returns a list.
-            #[staticmethod]
-            fn from_json(path: &str) -> PyResult<Vec<Self>> {
-                let value: serde_json::Value = from_json_file(path, $what)?;
-                Ok(list_from_value::<$inner>(value, $what)?
-                    .into_iter()
-                    .map(|inner| Self { inner })
-                    .collect())
-            }
+
 
             /// Returns the configuration as a dict.
             fn to_dict<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
@@ -271,15 +259,6 @@ impl QuoteStore {
         })
     }
 
-    /// Loads a quote store from a JSON file.
-    #[staticmethod]
-    fn from_json(path: &str) -> PyResult<Self> {
-        let records: QuoteStoreRecords = from_json_file(path, "quotes")?;
-        Ok(Self {
-            inner: QsQuoteStore::try_from(records).map_err(qs_err)?,
-        })
-    }
-
     /// Reference date.
     #[getter]
     fn reference_date(&self) -> crate::time::Date {
@@ -392,14 +371,6 @@ impl FixingStore {
         })
     }
 
-    /// Loads a fixing store from a JSON file.
-    #[staticmethod]
-    fn from_json(path: &str) -> PyResult<Self> {
-        Ok(Self {
-            inner: from_json_file(path, "fixings")?,
-        })
-    }
-
     /// Adds or replaces a fixing.
     fn add(
         &mut self,
@@ -463,15 +434,6 @@ impl FxStore {
     #[staticmethod]
     fn from_dict(obj: &Bound<'_, PyAny>) -> PyResult<Self> {
         let records: Vec<FxRateRecord> = from_py(obj, "fx rates")?;
-        Ok(Self {
-            inner: QsFxStore::from_records(records),
-        })
-    }
-
-    /// Loads FX rate records from a JSON file (a list of records).
-    #[staticmethod]
-    fn from_json(path: &str) -> PyResult<Self> {
-        let records: Vec<FxRateRecord> = from_json_file(path, "fx rates")?;
         Ok(Self {
             inner: QsFxStore::from_records(records),
         })

@@ -165,16 +165,6 @@ class MarketSnapshotStore:
         a different evaluation date. Runtime provenance is snapshot_timestamp.
         """
         ...
-    @staticmethod
-    def from_json(path: str) -> MarketSnapshotStore:
-        """Load a timestamp-ordered JSON array, rejecting duplicate instants.
-
-        Parameters
-        ----------
-        path : str
-            Path to an archive written by to_json.
-        """
-        ...
     def to_json(self, path: str) -> None:
         """Save observations and configurations, excluding runtime AD objects.
 
@@ -605,22 +595,6 @@ class QuoteStore:
         """
         ...
 
-    @staticmethod
-    def from_json(path: str) -> QuoteStore:
-        """Load native quote-store records from disk.
-
-        Parameters
-        ----------
-        path : str
-            JSON file path, not JSON text. The file contains ``reference_date``
-            and a ``quotes`` array in the native quote-store schema.
-
-        Returns
-        -------
-        QuoteStore
-            Loaded market quotes and their reference date.
-        """
-        ...
 
     def identifiers(self) -> list[str]:
         """List the available quote identifiers.
@@ -723,22 +697,6 @@ class FixingStore:
         """
         ...
 
-    @staticmethod
-    def from_json(path: str) -> FixingStore:
-        """Load historical fixings from disk.
-
-        Parameters
-        ----------
-        path : str
-            Path to a JSON file in the native ``FixingStore`` schema,
-            not an inline JSON document.
-
-        Returns
-        -------
-        FixingStore
-            Loaded historical observations.
-        """
-        ...
 
     def add(self, index: _IndexLike, date: _DateLike, value: float) -> None:
         """Insert or replace an index observation on a date.
@@ -825,22 +783,6 @@ meaning 1 base = rate quote."""
         """
         ...
 
-    @staticmethod
-    def from_json(path: str) -> FxStore:
-        """Load directed FX spot records from disk.
-
-        Parameters
-        ----------
-        path : str
-            JSON file path, not JSON text. The root is a list of records with
-            ``base``, ``quote``, and ``rate`` fields, not a wrapping object.
-
-        Returns
-        -------
-        FxStore
-            Loaded FX spots, quoted as quote units per base unit.
-        """
-        ...
 
     def add(self, base: Any, quote: Any, rate: float) -> None:
         """Insert a directed FX spot rate.
@@ -973,23 +915,6 @@ class CurveConfiguration:
         """
         ...
 
-    @staticmethod
-    def from_json(path: str) -> list[CurveConfiguration]:
-        """Load curve configurations from disk.
-
-        Parameters
-        ----------
-        path : str
-            JSON file path, not inline JSON. The root may be one native
-            configuration, an array, or an object with exactly one key
-            wrapping an array. Items use the schema described by ``from_dict``.
-
-        Returns
-        -------
-        list of CurveConfiguration
-            Loaded configurations; the result is always a list.
-        """
-        ...
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize the curve definition without building a curve.
@@ -1060,24 +985,6 @@ class CreditCurveConfiguration:
         """
         ...
 
-    @staticmethod
-    def from_json(path: str) -> list[CreditCurveConfiguration]:
-        """Load credit-curve definitions from disk.
-
-        Parameters
-        ----------
-        path : str
-            JSON file path. The root may be a native definition, an array,
-            or an object with exactly one key wrapping an array. Each item uses
-            the fields and defaults described by ``from_dict``; parameterized
-            indices use native tagged JSON, not display strings.
-
-        Returns
-        -------
-        list of CreditCurveConfiguration
-            Loaded definitions; always a list.
-        """
-        ...
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize the credit calibration inputs.
@@ -1142,23 +1049,6 @@ class VolatilitySurfaceConfiguration:
         """
         ...
 
-    @staticmethod
-    def from_json(path: str) -> list[VolatilitySurfaceConfiguration]:
-        """Load volatility-surface definitions from disk.
-
-        Parameters
-        ----------
-        path : str
-            JSON file path. The root may be one native definition, an array,
-            or an object with exactly one key wrapping an array. Items use
-            ``from_dict`` fields and native serialized enum/index formats.
-
-        Returns
-        -------
-        list of VolatilitySurfaceConfiguration
-            Loaded definitions; always a list, not a constructed surface.
-        """
-        ...
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize the surface's construction inputs.
@@ -1223,23 +1113,6 @@ class VolatilityCubeConfiguration:
         """
         ...
 
-    @staticmethod
-    def from_json(path: str) -> list[VolatilityCubeConfiguration]:
-        """Load volatility-cube definitions from disk.
-
-        Parameters
-        ----------
-        path : str
-            JSON file path. The root may be one native definition, an array,
-            or an object with exactly one key wrapping an array. Items use
-            ``from_dict`` fields and native serialized enum/index formats.
-
-        Returns
-        -------
-        list of VolatilityCubeConfiguration
-            Loaded definitions; always a list, not a constructed cube.
-        """
-        ...
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize the cube's construction inputs.
@@ -1307,23 +1180,6 @@ class SimulationConfiguration:
         """
         ...
 
-    @staticmethod
-    def from_json(path: str) -> list[SimulationConfiguration]:
-        """Load Monte Carlo simulation definitions from disk.
-
-        Parameters
-        ----------
-        path : str
-            JSON file path. The root may be one native definition, an array,
-            or an object with exactly one key wrapping an array. Each item uses
-            ``from_dict`` fields, including the native tagged model definition.
-
-        Returns
-        -------
-        list of SimulationConfiguration
-            Loaded definitions; always a list. No paths are generated here.
-        """
-        ...
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize the stochastic model and simulation-grid inputs.
@@ -1405,22 +1261,6 @@ class ZeroRateTermStructure:
         """
         ...
 
-    @staticmethod
-    def from_json(path: str) -> ZeroRateTermStructure:
-        """Load an explicitly dated zero-rate curve from disk.
-
-        Parameters
-        ----------
-        path : str
-            JSON file path, not JSON text. The root is one dated curve object
-            using the required native fields described by ``from_dict``.
-
-        Returns
-        -------
-        ZeroRateTermStructure
-            Validated curve loaded from the file.
-        """
-        ...
 
     def zero_rate(self, date: _DateLike) -> float:
         """Interpolate the zero rate at a calendar date.

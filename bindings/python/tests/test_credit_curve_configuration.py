@@ -77,7 +77,7 @@ class CreditCurveConfigurationTests(unittest.TestCase):
                     path.write_text(json.dumps(shape), encoding="utf-8")
                     for configurations in [
                         qs.CreditCurveConfiguration.from_dict_list(shape),
-                        qs.CreditCurveConfiguration.from_json(str(path)),
+                        qs.CreditCurveConfiguration.from_dict_list(json.loads(Path(path).read_text(encoding="utf-8"))),
                     ]:
                         self.assertEqual(len(configurations), 1)
                         self.assertEqual(configurations[0].to_dict(), expected)

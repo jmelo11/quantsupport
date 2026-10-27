@@ -6,50 +6,58 @@
 //! [`SingleCurveCSADiscountPolicy`]. Entering the `with` block enables request-driven market construction;
 //! leaving it stops the tape and releases all constructed market data.
 
+use crate::{
+    common::conversion::{extract_level, extract_market_index, extract_requests, qs_err},
+    instruments::{
+        products::{
+            BasisSwap, CapFloorPy, CapletFloorletPy, CreditDefaultSwapPy, CrossCurrencySwap,
+            EquityOption, FixFloatCrossCurrencySwap, FixedRateBond, FixedRateDeposit,
+            FloatingRateNote, FxForwardPy, FxOptionPy, RateFuturesPy, SteppedCouponBond, Swap,
+        },
+        scripting::ScriptedProduct,
+    },
+    market::{
+        scenario::{enter_context, exit_context},
+        stores::{
+            CreditCurveConfiguration, CurveConfiguration, FixingStore, FxStore,
+            PricerConfiguration, QuoteStore, SimulationConfiguration, VolatilityCubeConfiguration,
+            VolatilitySurfaceConfiguration,
+        },
+        views::{DiscountCurve, Simulation, VolatilityCube, VolatilitySurface},
+    },
+    pricing::{
+        collateral::{
+            FixedIncomeDiscountPolicy as PyFixedIncomeDiscountPolicy, SingleCurveCSADiscountPolicy,
+        },
+        extension::{call_pricer, PricerRegistry, Trade},
+        portfolio::Portfolio,
+        results::EvaluationResults,
+    },
+    time::Date,
+    xva::{NettingSet, XvaConfig, XvaResult},
+};
+use pyo3::{prelude::*, types::PyType};
+use quantsupport::{
+    core::marketdatahandling::marketview::MarketView,
+    prelude::{
+        ADForward, BackwardFourierEvolutionBondPricer, BasisSwap as QsBasisSwap, BasisSwapTrade,
+        BlackEuropeanOptionPricer, BondPricer, CalibrationSource, CdsPricer,
+        ClosedFormBlackCapPricer, ClosedFormBlackCapletPricer, ConstructedElementRequest,
+        ConstructedElementStore, DayCounter, DiscountedCashflowPricer, DualFwd,
+        EvaluationResults as QsEvaluationResults, FixFloatCrossCurrencySwap as QsFixFloatXccy,
+        FixFloatCrossCurrencySwapTrade, FixedIncomeDiscountPolicy,
+        FixedRateDeposit as QsFixedRateDeposit, FixedRateDepositTrade, FloatFloatCrossCurrencySwap,
+        FloatFloatCrossCurrencySwapTrade, FloatingRateNote as QsFloatingRateNote,
+        FloatingRateNoteTrade, FxEuropeanOptionPricer, FxForwardPricer, InstrumentType, Level,
+        LgmMarketModel, LgmRateModel, LoanPricer, MarketData, MarketDataProvider,
+        MarketDataRequest, ModelConfiguration, ParameterSource, PortfolioPricer, Pricer,
+        PricerImplementation, PricingContext as QsPricingContext, QSError, QuoteSelector,
+        QuoteStore as QsQuoteStore, RateFuturesPricer, Request as QsRequest, Scalar, ScriptEngine,
+        Swap as QsSwap, SwapTrade, Tape, TreeBasedBondPricer, XvaEngine,
+    },
+    utils::errors::Result as QsResult,
+};
 use std::collections::HashMap;
-
-use pyo3::prelude::*;
-use pyo3::types::PyType;
-use quantsupport::core::marketdatahandling::marketview::MarketView;
-use quantsupport::prelude::{
-    ADForward, BackwardFourierEvolutionBondPricer, BasisSwap as QsBasisSwap, BasisSwapTrade,
-    BlackEuropeanOptionPricer, BondPricer, CalibrationSource, CdsPricer, ClosedFormBlackCapPricer,
-    ClosedFormBlackCapletPricer, ConstructedElementRequest, ConstructedElementStore, DayCounter,
-    DiscountedCashflowPricer, DualFwd, EvaluationResults as QsEvaluationResults,
-    FixFloatCrossCurrencySwap as QsFixFloatXccy, FixFloatCrossCurrencySwapTrade,
-    FixedIncomeDiscountPolicy, FixedRateDeposit as QsFixedRateDeposit, FixedRateDepositTrade,
-    FloatFloatCrossCurrencySwap, FloatFloatCrossCurrencySwapTrade,
-    FloatingRateNote as QsFloatingRateNote, FloatingRateNoteTrade, FxEuropeanOptionPricer,
-    FxForwardPricer, InstrumentType, Level, LgmMarketModel, LgmRateModel, LoanPricer, MarketData,
-    MarketDataProvider, MarketDataRequest, ModelConfiguration, ParameterSource, PortfolioPricer,
-    Pricer, PricerImplementation, PricingContext as QsPricingContext, QSError, QuoteSelector,
-    QuoteStore as QsQuoteStore, RateFuturesPricer, Request as QsRequest, Scalar, ScriptEngine,
-    Swap as QsSwap, SwapTrade, Tape, TreeBasedBondPricer, XvaEngine,
-};
-use quantsupport::utils::errors::Result as QsResult;
-
-use crate::common::conversion::{extract_level, extract_market_index, extract_requests, qs_err};
-use crate::instruments::products::{
-    BasisSwap, CapFloorPy, CapletFloorletPy, CreditDefaultSwapPy, CrossCurrencySwap, EquityOption,
-    FixFloatCrossCurrencySwap, FixedRateBond, FixedRateDeposit, FloatingRateNote, FxForwardPy,
-    FxOptionPy, RateFuturesPy, SteppedCouponBond, Swap,
-};
-use crate::instruments::scripting::ScriptedProduct;
-use crate::market::scenario::{enter_context, exit_context};
-use crate::market::stores::{
-    CreditCurveConfiguration, CurveConfiguration, FixingStore, FxStore, PricerConfiguration,
-    QuoteStore, SimulationConfiguration, VolatilityCubeConfiguration,
-    VolatilitySurfaceConfiguration,
-};
-use crate::market::views::{DiscountCurve, Simulation, VolatilityCube, VolatilitySurface};
-use crate::pricing::collateral::{
-    FixedIncomeDiscountPolicy as PyFixedIncomeDiscountPolicy, SingleCurveCSADiscountPolicy,
-};
-use crate::pricing::extension::{call_pricer, PricerRegistry, Trade};
-use crate::pricing::portfolio::Portfolio;
-use crate::pricing::results::EvaluationResults;
-use crate::time::Date;
-use crate::xva::{NettingSet, XvaConfig, XvaResult};
 
 /// Market inputs and policies used to value trades.
 ///
@@ -108,8 +116,11 @@ use crate::xva::{NettingSet, XvaConfig, XvaResult};
 /// --------
 ///
 /// ```python
-/// quotes = qs.QuoteStore.from_json("quotes.json")
-/// curves = qs.CurveConfiguration.from_json("curve_specs.json")
+/// import json
+/// from pathlib import Path
+///
+/// quotes = qs.QuoteStore.from_dict(json.loads(Path("quotes.json").read_text(encoding="utf-8")))
+/// curves = qs.CurveConfiguration.from_dict_list(json.loads(Path("curve_specs.json").read_text(encoding="utf-8")))
 /// csa_policy = qs.SingleCurveCSADiscountPolicy(collateral_currency="USD", collateral_index="SOFR")
 /// trade = qs.Trade(swap, quotes.reference_date)
 ///

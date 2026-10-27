@@ -1,4 +1,6 @@
 """New conventions survive public exports and historical snapshot selection."""
+
+import json
 import ast
 from pathlib import Path
 import tempfile
@@ -76,7 +78,7 @@ class MarketConventionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = str(Path(directory) / "markets.json")
             store.to_json(path)
-            restored = qs.MarketSnapshotStore.from_json(path)
+            restored = qs.MarketSnapshotStore.from_dict(json.loads(Path(path).read_text(encoding="utf-8")))
         discounts = []
         for day in (15, 16):
             selector = qs.SnapshotSelector(qs.DateTime(2026, 1, day, 10), rule=qs.SnapshotSelectionRule.Exact)

@@ -1,4 +1,6 @@
 """Temporary quote shocks on reusable pricing contexts."""
+
+import json
 import unittest
 import math
 from pathlib import Path
@@ -183,11 +185,11 @@ class ScopedScenarioTests(unittest.TestCase):
         data = Path(__file__).resolve().parents[3] / "examples" / "valuation" / "loans" / "data"
         context = funding_context()
         funding_quotes = context.quotes
-        context.quotes = append_quotes(qs.QuoteStore.from_json(path=str(data / "loan_quotes.json")), [
+        context.quotes = append_quotes(qs.QuoteStore.from_dict(json.loads(Path(data / "loan_quotes.json").read_text(encoding="utf-8"))), [
             {"identifier": identifier, "mid": funding_quotes.value(identifier)}
             for identifier in funding_quotes.identifiers() if "FUNDINGSPREAD" in identifier
         ])
-        context.curves = qs.CurveConfiguration.from_json(path=str(data / "loan_curves.json")) + context.curves[-2:]
+        context.curves = qs.CurveConfiguration.from_dict_list(json.loads(Path(data / "loan_curves.json").read_text(encoding="utf-8"))) + context.curves[-2:]
         trade = qs.Trade(instrument=loan(floating=True), trade_date="2026-02-24")
         requests = [qs.Request.Value, qs.Request.Sensitivities]
         with context:

@@ -19,6 +19,7 @@ class PythonApiTests(unittest.TestCase):
             cls = getattr(qs, name)
             if not isinstance(cls, type) or cls.__module__ != "quantsupport":
                 continue
+            self.assertFalse(hasattr(cls, "from_json"), name)
             methods = [(name, cls)]
             for method_name, method in vars(cls).items():
                 if method_name.startswith("_"):
@@ -95,8 +96,8 @@ class PythonApiTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "loan.json"
             path.write_text(json.dumps([]))
-            with self.assertRaisesRegex(TypeError, r"Loan.from_json:.*expected dict, got list"):
-                qs.Loan.from_json(str(path))
+            with self.assertRaisesRegex(TypeError, r"Loan.from_dict:.*expected dict, got list"):
+                qs.Loan.from_dict(json.loads(Path(path).read_text(encoding="utf-8")))
 
     def test_class_reprs_and_dictionary_conversion_are_consistent(self):
         objects = [qs.InterestRate(0.04), qs.FixedRateCoupon(0.04), qs.FloatingRateCoupon("SOFR"),

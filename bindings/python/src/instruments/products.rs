@@ -43,16 +43,7 @@ macro_rules! product_dict_constructors {
                     cls.call((), Some(crate::common::conversion::expect_dict(obj, &format!("{}.from_dict", cls.name()?))?))
                 }
 
-                /// Loads constructor fields from a JSON file.
-                #[classmethod]
-                fn from_json<'py>(
-                    cls: &Bound<'py, PyType>,
-                    path: &str,
-                ) -> PyResult<Bound<'py, PyAny>> {
-                    let value: serde_json::Value = crate::common::conversion::from_json_file(path, "product")?;
-                    let obj = pythonize::pythonize(cls.py(), &value).map_err(qs_err)?;
-                    cls.call((), Some(crate::common::conversion::expect_dict(&obj, &format!("{} JSON construction parameters", cls.name()?))?))
-                }
+
             }
         )+
     };
