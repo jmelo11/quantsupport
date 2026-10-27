@@ -1,12 +1,12 @@
 use crate::{
-    core::resolution::{ResolutionContext, Resolve},
-    time::period::Period,
-};
-use crate::{
+    core::makeinstrument::{resolve_date, MakeInstrument},
     currencies::currency::Currency,
     indices::marketindex::MarketIndex,
     instruments::equity::equityeuropeanoption::{EquityEuropeanOption, EuroOptionType},
-    time::{date::Date, daycounter::DayCounter},
+    time::{
+        calendars::nullcalendar::NullCalendar, date::Date, daycounter::DayCounter,
+        enums::BusinessDayConvention, period::Period,
+    },
     utils::errors::{QSError, Result},
     volatility::volatilityindexing::Strike,
 };
@@ -25,8 +25,8 @@ pub struct MakeEquityEuropeanOption {
 }
 
 impl MakeEquityEuropeanOption {
-    /// Sets expiry date as a tenor from the resolution reference date.
-    /// Replaces an explicitly supplied expiry date. Resolve this maker with a context.
+    /// Sets expiry date as a tenor from the context evaluation date.
+    /// Replaces an explicitly supplied expiry date. Use `build_using` when an external anchor is needed.
     #[must_use]
     pub const fn with_expiry_tenor(mut self, tenor: Period) -> Self {
         self.expiry_tenor = Some(tenor);
@@ -90,22 +90,37 @@ impl MakeEquityEuropeanOption {
         self.day_counter = Some(day_counter);
         self
     }
+}
+
+impl MakeInstrument for MakeEquityEuropeanOption {
+    type Instrument = EquityEuropeanOption;
+
+    fn is_resolved(&self) -> bool {
+        self.expiry_tenor.is_none()
+    }
 
     /// Builds the [`EquityEuropeanOption`] instance.
     ///
     /// # Errors
     /// Returns an error if any required field is missing.
-    pub fn build(self) -> Result<EquityEuropeanOption> {
-        if self.expiry_tenor.is_some() {
+    fn build(&self) -> Result<Self::Instrument> {
+        if !self.is_resolved() {
+            return Err(QSError::UnresolvedProductErr(
+                "MakeEquityEuropeanOption has unresolved date tenors. Supply the corresponding absolute dates or call maker.build_using(&context)".into(),
+            ));
+        }
+        if self.expiry_date == Some(Date::empty()) {
             return Err(QSError::InvalidValueErr(
-                "Relative dates require maker.resolve(&ResolutionContext)".into(),
+                "MakeEquityEuropeanOption dates must not be empty".into(),
             ));
         }
         let identifier = self
             .identifier
+            .clone()
             .ok_or_else(|| QSError::ValueNotSetErr("Identifier".into()))?;
         let market_index = self
             .market_index
+            .clone()
             .ok_or_else(|| QSError::ValueNotSetErr("Market index".into()))?;
         let expiry_date = self
             .expiry_date
@@ -126,22 +141,23 @@ impl MakeEquityEuropeanOption {
                 .with_day_counter(self.day_counter.unwrap_or(DayCounter::Actual360)),
         )
     }
-}
 
-impl Resolve for MakeEquityEuropeanOption {
-    type Resolved = EquityEuropeanOption;
-
-    fn resolve(&self, context: &ResolutionContext<'_>) -> Result<Self::Resolved> {
+    fn resolve_dates(&self, reference_date: Date) -> Result<Self> {
         let mut resolved = self.clone();
-        let dates = *context;
-        resolved.expiry_date = Some(dates.resolve_date(
+        let date_calendar = &NullCalendar::new();
+        let date_convention = BusinessDayConvention::Unadjusted;
+        let date_end_of_month = false;
+        resolved.expiry_date = Some(resolve_date(
             self.expiry_date,
             self.expiry_tenor,
-            context.reference_date(),
+            reference_date,
             "expiry_date",
+            date_calendar,
+            date_convention,
+            date_end_of_month,
         )?);
         resolved.expiry_tenor = None;
-        resolved.build()
+        Ok(resolved)
     }
 }
 
@@ -149,7 +165,8 @@ impl Resolve for MakeEquityEuropeanOption {
 mod tests {
     use super::MakeEquityEuropeanOption;
     use crate::{
-        currencies::currency::Currency, indices::marketindex::MarketIndex,
+        core::makeinstrument::MakeInstrument, currencies::currency::Currency,
+        indices::marketindex::MarketIndex,
         instruments::equity::equityeuropeanoption::EuroOptionType, time::date::Date,
         volatility::volatilityindexing::Strike,
     };
@@ -174,14 +191,14 @@ mod tests {
 #[cfg(test)]
 mod resolution_tests {
     use crate::{
-        core::resolution::test_support::{empty_market, p, reference},
+        core::makeinstrument::test_support::{empty_market, p, reference},
         prelude::*,
     };
 
     #[test]
     fn equity_option_resolves_relative_expiry() -> Result<()> {
         let market = empty_market(reference());
-        let ctx = ResolutionContext::new(&market);
+        let ctx = &market;
         let expiry = reference() + p("1Y")?;
         let equity = MarketIndex::Other("ACME".into());
         let option = MakeEquityEuropeanOption::default()
@@ -191,7 +208,7 @@ mod resolution_tests {
             .with_currency(Currency::EUR)
             .with_strike(100.0)
             .with_option_type(EuroOptionType::Call)
-            .resolve(&ctx)?;
+            .build_using(ctx)?;
         assert_eq!(option.expiry_date(), expiry);
         Ok(())
     }

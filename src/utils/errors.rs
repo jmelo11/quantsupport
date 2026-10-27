@@ -79,6 +79,9 @@ pub enum QSError {
     /// Quote parsing error.
     #[error("Quote parsing error: {0}")]
     QuoteParsingErr(String),
+    /// Product parameters require a reference date or market observation.
+    #[error("Unresolved product: {0}")]
+    UnresolvedProductErr(String),
     /// Instrument resolution error.
     #[error("Instrument resolution error: {0}")]
     InstrumentResolutionErr(String),
@@ -130,6 +133,7 @@ impl QSError {
             Self::NodeNotIndexedInTapeErr => ("node_not_indexed", "NodeNotIndexedInTapeErr"),
             Self::UnexpectedErr(_) => ("unexpected", "UnexpectedErr"),
             Self::QuoteParsingErr(_) => ("quote_parsing", "QuoteParsingErr"),
+            Self::UnresolvedProductErr(_) => ("unresolved_product", "UnresolvedProductErr"),
             Self::InstrumentResolutionErr(_) => ("instrument_resolution", "InstrumentResolutionErr"),
         }
     }

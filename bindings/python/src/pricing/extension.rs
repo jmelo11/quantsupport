@@ -7,14 +7,25 @@
 //! base classes is convenient, but any Python type and any object with a callable
 //! `evaluate` method can be registered.
 
-use pyo3::prelude::*;
-use pyo3::types::PyType;
-use quantsupport::prelude::Request as QsRequest;
-
-use crate::common::conversion::extract_requests;
-use crate::pricing::context::PricingContext;
-use crate::pricing::results::EvaluationResults;
-use crate::time::Date;
+use crate::{
+    common::{
+        conversion::{
+            extract_date, extract_day_counter, extract_period, extract_requests, extract_side,
+            qs_err,
+        },
+        enums::{DayCounter as PyDayCounter, Request as PyRequest, Side as PySide},
+        errors::{invalid_value, native},
+    },
+    instruments::makers::MakeInstrument,
+    pricing::{
+        bond_anchor::BondPricingAnchorConfig, context::PricingContext, results::EvaluationResults,
+    },
+    time::Date,
+};
+use pyo3::{prelude::*, types::PyType};
+use quantsupport::prelude::{
+    BondPricingAnchor, Date as QsDate, DayCounter, QSError, Request as QsRequest, Side,
+};
 
 fn python_type_name(value: &Bound<'_, PyAny>) -> String {
     value
@@ -49,11 +60,9 @@ impl MarketDataProvider {
     /// Reference date supplied by a concrete provider.
     #[getter]
     fn evaluation_date(&self) -> PyResult<()> {
-        Err(crate::common::errors::native(
-            &quantsupport::utils::errors::QSError::NotImplementedErr(
-                "MarketDataProvider.evaluation_date must be implemented".into(),
-            ),
-        ))
+        Err(native(&QSError::NotImplementedErr(
+            "MarketDataProvider.evaluation_date must be implemented".into(),
+        )))
     }
 }
 
@@ -118,16 +127,15 @@ impl Instrument {
 #[pyclass(module = "quantsupport", name = "Trade", subclass, dict, unsendable)]
 pub struct Trade {
     instrument: Py<PyAny>,
-    trade_date: Option<quantsupport::prelude::Date>,
-    trade_tenor: Option<quantsupport::prelude::Period>,
-    side: quantsupport::prelude::Side,
+    trade_date: QsDate,
+    side: Side,
     notional: Option<f64>,
     domestic_notional: Option<f64>,
     foreign_notional: Option<f64>,
     num_contracts: f64,
-    pricing_anchor: Option<quantsupport::prelude::BondPricingAnchor>,
-    settlement_date: Option<quantsupport::prelude::Date>,
-    spread_day_counter: Option<quantsupport::prelude::DayCounter>,
+    pricing_anchor: Option<BondPricingAnchor>,
+    settlement_date: Option<QsDate>,
+    spread_day_counter: Option<DayCounter>,
 }
 
 impl Trade {
@@ -135,7 +143,6 @@ impl Trade {
         Self {
             instrument,
             trade_date: self.trade_date,
-            trade_tenor: self.trade_tenor,
             side: self.side,
             notional: self.notional,
             domestic_notional: self.domestic_notional,
@@ -147,63 +154,11 @@ impl Trade {
         }
     }
 
-    pub fn trade_date(&self) -> PyResult<quantsupport::prelude::Date> {
-        self.trade_date.ok_or_else(|| {
-            pyo3::exceptions::PyValueError::new_err("trade date requires a pricing context")
-        })
+    pub fn trade_date(&self) -> PyResult<QsDate> {
+        Ok(self.trade_date)
     }
 
-    pub fn needs_resolution(&self, py: Python<'_>) -> bool {
-        self.trade_tenor.is_some()
-            || self
-                .instrument_bound(py)
-                .is_instance_of::<crate::instruments::unresolved::UnresolvedInstrument>()
-    }
-
-    pub fn resolve_with_market(
-        &self,
-        py: Python<'_>,
-        market: &impl quantsupport::prelude::MarketDataProvider,
-    ) -> PyResult<Self> {
-        let instrument = if let Ok(pending) = self
-            .instrument_bound(py)
-            .extract::<PyRef<'_, crate::instruments::unresolved::UnresolvedInstrument>>()
-        {
-            pending.resolve_with_market(py, market)?.unbind()
-        } else if self
-            .instrument_bound(py)
-            .extract::<PyRef<'_, crate::instruments::loan::Loan>>()
-            .is_ok_and(|loan| loan.inner.is_none())
-        {
-            let terms = self.instrument_bound(py).call_method0("to_dict")?;
-            let resolved = self
-                .instrument_bound(py)
-                .get_type()
-                .call_method1("from_dict", (&terms,))?;
-            resolved
-                .extract::<PyRefMut<'_, crate::instruments::loan::Loan>>()?
-                .freeze_resolved_contract(market)?;
-            resolved.unbind()
-        } else {
-            self.instrument.clone_ref(py)
-        };
-        let mut resolved = self.with_instrument(instrument);
-        let context = quantsupport::prelude::ResolutionContext::new(market);
-        resolved.trade_date = Some(
-            context
-                .resolve_date(
-                    self.trade_date,
-                    self.trade_tenor,
-                    context.reference_date(),
-                    "trade date",
-                )
-                .map_err(crate::common::conversion::qs_err)?,
-        );
-        resolved.trade_tenor = None;
-        Ok(resolved)
-    }
-
-    pub const fn side(&self) -> quantsupport::prelude::Side {
+    pub const fn side(&self) -> Side {
         self.side
     }
 
@@ -223,15 +178,15 @@ impl Trade {
         self.num_contracts
     }
 
-    pub const fn pricing_anchor(&self) -> Option<quantsupport::prelude::BondPricingAnchor> {
+    pub const fn pricing_anchor(&self) -> Option<BondPricingAnchor> {
         self.pricing_anchor
     }
 
-    pub const fn settlement_date(&self) -> Option<quantsupport::prelude::Date> {
+    pub const fn settlement_date(&self) -> Option<QsDate> {
         self.settlement_date
     }
 
-    pub const fn spread_day_counter(&self) -> Option<quantsupport::prelude::DayCounter> {
+    pub const fn spread_day_counter(&self) -> Option<DayCounter> {
         self.spread_day_counter
     }
 
@@ -239,7 +194,7 @@ impl Trade {
         self.instrument.bind(py)
     }
 
-    pub fn bond_anchor(&self) -> PyResult<quantsupport::prelude::BondPricingAnchor> {
+    pub fn bond_anchor(&self) -> PyResult<BondPricingAnchor> {
         self.pricing_anchor().ok_or_else(|| {
             pyo3::exceptions::PyValueError::new_err("bond Trade requires pricing_anchor")
         })
@@ -283,43 +238,48 @@ impl Trade {
         }
         let trade_date = trade_date
             .filter(|v| !v.is_none())
-            .map(crate::common::conversion::extract_date)
+            .map(extract_date)
             .transpose()?;
-        let mut trade_tenor = trade_tenor
-            .map(crate::common::conversion::extract_period)
-            .transpose()?;
+        let trade_tenor = trade_tenor.map(extract_period).transpose()?;
         if trade_date.is_some() && trade_tenor.is_some() {
             return Err(pyo3::exceptions::PyValueError::new_err(
                 "supply trade_date or trade_tenor, not both",
             ));
         }
-        if trade_date.is_none() && trade_tenor.is_none() {
-            trade_tenor = Some(quantsupport::prelude::Period::new(
-                0,
-                quantsupport::prelude::TimeUnit::Days,
+        if trade_tenor.is_some() || trade_date.is_none() {
+            return Err(qs_err(
+                QSError::UnresolvedProductErr(
+                    "Trade requires an execution date. Supply trade_date or call MakeTrade(instrument=..., trade_tenor=...).build_using(context)".into(),
+                ),
             ));
         }
+        let trade_date = trade_date.ok_or_else(|| invalid_value("trade_date is required"))?;
+        Python::attach(|py| {
+            if instrument.bind(py).is_instance_of::<MakeInstrument>() {
+                return Err(qs_err(
+                    QSError::UnresolvedProductErr(
+                        "Build the instrument first with instrument_maker.build() or instrument_maker.build_using(context), then pass the concrete instrument to Trade".into(),
+                    ),
+                ));
+            }
+            Ok(())
+        })?;
         Ok(Self {
             instrument,
             trade_date,
-            trade_tenor,
             side: side
-                .map(crate::common::conversion::extract_side)
+                .map(extract_side)
                 .transpose()?
-                .unwrap_or(quantsupport::prelude::Side::LongReceive),
+                .unwrap_or(Side::LongReceive),
             notional,
             domestic_notional,
             foreign_notional,
             num_contracts,
             pricing_anchor: pricing_anchor
-                .map(crate::pricing::bond_anchor::BondPricingAnchorConfig::extract)
+                .map(BondPricingAnchorConfig::extract)
                 .transpose()?,
-            settlement_date: settlement_date
-                .map(crate::common::conversion::extract_date)
-                .transpose()?,
-            spread_day_counter: spread_day_counter
-                .map(crate::common::conversion::extract_day_counter)
-                .transpose()?,
+            settlement_date: settlement_date.map(extract_date).transpose()?,
+            spread_day_counter: spread_day_counter.map(extract_day_counter).transpose()?,
         })
     }
 
@@ -331,28 +291,15 @@ impl Trade {
 
     /// Execution date.
     #[getter(trade_date)]
-    fn trade_date_py(&self) -> Option<Date> {
-        self.trade_date.map(|inner| Date { inner })
-    }
-
-    /// Execution-date offset retained until this position is evaluated.
-    #[getter(trade_tenor)]
-    fn trade_tenor_py(&self) -> Option<crate::time::Period> {
-        self.trade_tenor.map(|inner| crate::time::Period { inner })
-    }
-
-    /// Resolves the instrument and execution date once, retaining a concrete position.
-    fn resolve_trade(
-        &self,
-        py: Python<'_>,
-        context: PyRef<'_, crate::pricing::context::PricingContext>,
-    ) -> PyResult<Self> {
-        self.resolve_with_market(py, &context.market_view()?)
+    fn trade_date_py(&self) -> Date {
+        Date {
+            inner: self.trade_date,
+        }
     }
 
     /// Pay/receive direction.
     #[getter(side)]
-    fn side_py(&self) -> crate::common::enums::Side {
+    fn side_py(&self) -> PySide {
         self.side.into()
     }
 
@@ -378,7 +325,7 @@ impl Trade {
     }
 
     #[getter(spread_day_counter)]
-    fn spread_day_counter_py(&self) -> Option<crate::common::enums::DayCounter> {
+    fn spread_day_counter_py(&self) -> Option<PyDayCounter> {
         self.spread_day_counter.map(Into::into)
     }
 
@@ -388,9 +335,8 @@ impl Trade {
     }
 
     #[getter(pricing_anchor)]
-    fn pricing_anchor_py(&self) -> Option<crate::pricing::bond_anchor::BondPricingAnchorConfig> {
-        self.pricing_anchor
-            .map(crate::pricing::bond_anchor::BondPricingAnchorConfig::from)
+    fn pricing_anchor_py(&self) -> Option<BondPricingAnchorConfig> {
+        self.pricing_anchor.map(BondPricingAnchorConfig::from)
     }
 
     /// Returns another position in the same instrument with a different bond anchor.
@@ -398,15 +344,12 @@ impl Trade {
         Ok(Self {
             instrument: self.instrument.clone_ref(py),
             trade_date: self.trade_date,
-            trade_tenor: self.trade_tenor,
             side: self.side,
             notional: self.notional,
             domestic_notional: self.domestic_notional,
             foreign_notional: self.foreign_notional,
             num_contracts: self.num_contracts,
-            pricing_anchor: Some(
-                crate::pricing::bond_anchor::BondPricingAnchorConfig::extract(anchor)?,
-            ),
+            pricing_anchor: Some(BondPricingAnchorConfig::extract(anchor)?),
             settlement_date: self.settlement_date,
             spread_day_counter: self.spread_day_counter,
         })
@@ -416,9 +359,7 @@ impl Trade {
         let instrument = self.instrument.bind(py).repr()?.extract::<String>()?;
         Ok(format!(
             "Trade(instrument={instrument}, trade_date='{}', side={:?})",
-            self.trade_date
-                .map(|date| date.to_string())
-                .unwrap_or_else(|| "unresolved".into()),
+            self.trade_date.to_string(),
             self.side
         ))
     }
@@ -452,11 +393,9 @@ impl Pricer {
         _requests: &Bound<'_, PyAny>,
         _context: &Bound<'_, PyAny>,
     ) -> PyResult<()> {
-        Err(crate::common::errors::native(
-            &quantsupport::utils::errors::QSError::NotImplementedErr(
-                "Pricer.evaluate(trade, requests, context) must be implemented".into(),
-            ),
-        ))
+        Err(native(&QSError::NotImplementedErr(
+            "Pricer.evaluate(trade, requests, context) must be implemented".into(),
+        )))
     }
 
     /// Describes required market data, if the implementation uses an explicit
@@ -497,15 +436,13 @@ impl PricerRegistry {
         pricer: &Bound<'_, PyAny>,
     ) -> PyResult<()> {
         let evaluate = pricer.getattr("evaluate").map_err(|_| {
-            crate::common::errors::invalid_value(format!(
+            invalid_value(format!(
                 "pricer of type '{}' must define evaluate(trade, requests, context)",
                 python_type_name(pricer)
             ))
         })?;
         if !evaluate.is_callable() {
-            return Err(crate::common::errors::invalid_value(
-                "pricer.evaluate must be callable",
-            ));
+            return Err(invalid_value("pricer.evaluate must be callable"));
         }
 
         if let Some(existing) = self
@@ -573,7 +510,7 @@ impl PricerRegistry {
     }
 }
 
-fn requests_for_python(requests: &[QsRequest]) -> Vec<crate::common::enums::Request> {
+fn requests_for_python(requests: &[QsRequest]) -> Vec<PyRequest> {
     requests.iter().copied().map(Into::into).collect()
 }
 
@@ -589,7 +526,7 @@ pub fn call_pricer(
         .bind(py)
         .call_method1("evaluate", (trade, requests_for_python(requests), context))?;
     result.extract::<Py<EvaluationResults>>().map_err(|_| {
-        crate::common::errors::invalid_value(format!(
+        invalid_value(format!(
             "{}.evaluate must return EvaluationResults, got {}",
             python_type_name(pricer.bind(py)),
             python_type_name(&result)
@@ -651,7 +588,7 @@ impl Evaluator {
             |objects| extract_requests(&objects),
         )?;
         let pricer = self.registry.resolve(py, trade)?.ok_or_else(|| {
-            crate::common::errors::invalid_value(format!(
+            invalid_value(format!(
                 "no pricer registered for trade type '{}'",
                 python_type_name(trade)
             ))

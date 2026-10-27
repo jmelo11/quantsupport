@@ -1,9 +1,8 @@
 //! Context-resolved single-period rate options.
 
 use super::capletfloorlet::{CapletFloorlet, CapletFloorletType};
-use crate::volatility::volatilityindexing::Strike;
 use crate::{
-    core::resolution::{ResolutionContext, Resolve},
+    core::makeinstrument::{resolve_date, MakeInstrument},
     currencies::currency::Currency,
     indices::marketindex::MarketIndex,
     time::{
@@ -11,6 +10,7 @@ use crate::{
         daycounter::DayCounter, enums::BusinessDayConvention, period::Period,
     },
     utils::errors::{QSError, Result},
+    volatility::volatilityindexing::Strike,
 };
 
 /// Defines a caplet/floorlet without requiring dates at construction.
@@ -100,7 +100,7 @@ impl MakeCapletFloorlet {
         self
     }
 
-    /// Sets start accrual date as a tenor from the resolution reference date.
+    /// Sets start accrual date as a tenor from the context evaluation date.
     #[must_use]
     pub const fn with_start_tenor(mut self, tenor: Period) -> Self {
         self.start_accrual_date = None;
@@ -173,19 +173,38 @@ impl MakeCapletFloorlet {
     pub const fn with_tenor(self, tenor: Period) -> Self {
         self.with_end_tenor(tenor)
     }
+}
+
+impl MakeInstrument for MakeCapletFloorlet {
+    type Instrument = CapletFloorlet;
+
+    fn is_resolved(&self) -> bool {
+        self.start_tenor.is_none()
+            && self.end_tenor.is_none()
+            && self.fixing_tenor.is_none()
+            && self.payment_tenor.is_none()
+    }
 
     /// Builds an explicitly dated caplet/floorlet.
     ///
     /// # Errors
     /// Rejects missing fields, unresolved tenors, and inconsistent date ordering.
-    pub fn build(self) -> Result<CapletFloorlet> {
-        if self.start_tenor.is_some()
-            || self.end_tenor.is_some()
-            || self.fixing_tenor.is_some()
-            || self.payment_tenor.is_some()
+    fn build(&self) -> Result<Self::Instrument> {
+        if !self.is_resolved() {
+            return Err(QSError::UnresolvedProductErr(
+                "MakeCapletFloorlet has unresolved date tenors. Supply the corresponding absolute dates or call maker.build_using(&context)".into(),
+            ));
+        }
+        if [
+            self.start_accrual_date,
+            self.end_accrual_date,
+            self.fixing_date,
+            self.payment_date,
+        ]
+        .contains(&Some(Date::empty()))
         {
             return Err(QSError::InvalidValueErr(
-                "Relative dates require maker.resolve(&ResolutionContext)".into(),
+                "MakeCapletFloorlet dates must not be empty".into(),
             ));
         }
         let start = required(self.start_accrual_date, "Accrual start")?;
@@ -198,8 +217,8 @@ impl MakeCapletFloorlet {
             ));
         }
         let mut product = CapletFloorlet::new(
-            required(self.identifier, "Identifier")?,
-            required(self.market_index, "Market index")?,
+            required(self.identifier.clone(), "Identifier")?,
+            required(self.market_index.clone(), "Market index")?,
             required(self.currency, "Currency")?,
             fixing,
             start,
@@ -213,46 +232,67 @@ impl MakeCapletFloorlet {
         }
         Ok(product)
     }
-}
 
-impl Resolve for MakeCapletFloorlet {
-    type Resolved = CapletFloorlet;
-
-    fn resolve(&self, context: &ResolutionContext<'_>) -> Result<Self::Resolved> {
+    fn resolve_dates(&self, reference_date: Date) -> Result<Self> {
         let calendar = self
             .calendar
             .clone()
             .unwrap_or_else(|| Calendar::NullCalendar(NullCalendar::new()));
-        let dates = context.with_date_conventions(
-            &calendar,
-            self.business_day_convention
-                .unwrap_or(BusinessDayConvention::Unadjusted),
-            false,
-        );
-        let start = dates.resolve_date(
+        let date_calendar = &calendar;
+        let date_convention = self
+            .business_day_convention
+            .unwrap_or(BusinessDayConvention::Unadjusted);
+        let date_end_of_month = false;
+        let start = resolve_date(
             self.start_accrual_date,
             self.start_tenor,
-            context.reference_date(),
+            reference_date,
             "Accrual start",
+            date_calendar,
+            date_convention,
+            date_end_of_month,
         )?;
-        let end =
-            dates.resolve_date(self.end_accrual_date, self.end_tenor, start, "Accrual end")?;
+        let end = resolve_date(
+            self.end_accrual_date,
+            self.end_tenor,
+            start,
+            "Accrual end",
+            date_calendar,
+            date_convention,
+            date_end_of_month,
+        )?;
         let fixing = if self.fixing_date.is_some() || self.fixing_tenor.is_some() {
-            dates.resolve_date(self.fixing_date, self.fixing_tenor, start, "Fixing date")?
+            resolve_date(
+                self.fixing_date,
+                self.fixing_tenor,
+                start,
+                "Fixing date",
+                date_calendar,
+                date_convention,
+                date_end_of_month,
+            )?
         } else {
             start
         };
         let payment = if self.payment_date.is_some() || self.payment_tenor.is_some() {
-            dates.resolve_date(self.payment_date, self.payment_tenor, end, "Payment date")?
+            resolve_date(
+                self.payment_date,
+                self.payment_tenor,
+                end,
+                "Payment date",
+                date_calendar,
+                date_convention,
+                date_end_of_month,
+            )?
         } else {
             end
         };
-        self.clone()
+        Ok(self
+            .clone()
             .with_start_date(start)
             .with_end_date(end)
             .with_fixing_date(fixing)
-            .with_payment_date(payment)
-            .build()
+            .with_payment_date(payment))
     }
 }
 
@@ -263,14 +303,14 @@ fn required<T>(value: Option<T>, label: &str) -> Result<T> {
 #[cfg(test)]
 mod tests {
     use crate::{
-        core::resolution::test_support::{empty_market, p, reference},
+        core::makeinstrument::test_support::{empty_market, p, reference},
         prelude::*,
     };
 
     #[test]
     fn caplet_resolves_relative_accrual_fixing_and_payment_dates() -> Result<()> {
         let market = empty_market(reference());
-        let ctx = ResolutionContext::new(&market);
+        let ctx = &market;
         let caplet = MakeCapletFloorlet::default()
             .with_identifier("caplet".into())
             .with_start_tenor(p("1Y")?)
@@ -281,7 +321,7 @@ mod tests {
             .with_market_index(MarketIndex::EURIBOR3m)
             .with_payoff_type(CapletFloorletType::Caplet)
             .with_strike(Strike::Absolute(0.04))
-            .resolve(&ctx)?;
+            .build_using(ctx)?;
         assert_eq!(caplet.start_accrual_date(), reference() + p("1Y")?);
         assert_eq!(caplet.fixing_date(), reference() + p("1Y")? - 2);
         assert_eq!(caplet.payment_date(), reference() + p("15M")? + 2);

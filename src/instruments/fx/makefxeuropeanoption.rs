@@ -1,14 +1,14 @@
 use crate::{
-    core::resolution::{ResolutionContext, Resolve},
-    time::period::Period,
-};
-use crate::{
+    core::makeinstrument::{resolve_date, MakeInstrument},
     currencies::currency::Currency,
     indices::{fxpair::FxPair, marketindex::MarketIndex},
     instruments::{
         equity::equityeuropeanoption::EuroOptionType, fx::fxeuropeanoption::FxEuropeanOption,
     },
-    time::{date::Date, daycounter::DayCounter},
+    time::{
+        calendars::nullcalendar::NullCalendar, date::Date, daycounter::DayCounter,
+        enums::BusinessDayConvention, period::Period,
+    },
     utils::errors::{QSError, Result},
     volatility::volatilityindexing::Strike,
 };
@@ -46,8 +46,8 @@ pub struct MakeFxEuropeanOption {
 }
 
 impl MakeFxEuropeanOption {
-    /// Sets expiry date as a tenor from the resolution reference date.
-    /// Replaces an explicitly supplied expiry date. Resolve this maker with a context.
+    /// Sets expiry date as a tenor from the context evaluation date.
+    /// Replaces an explicitly supplied expiry date. Use `build_using` when an external anchor is needed.
     #[must_use]
     pub const fn with_expiry_tenor(mut self, tenor: Period) -> Self {
         self.expiry_tenor = Some(tenor);
@@ -118,19 +118,33 @@ impl MakeFxEuropeanOption {
         self.pair = Some(pair);
         self
     }
+}
+
+impl MakeInstrument for MakeFxEuropeanOption {
+    type Instrument = FxEuropeanOption;
+
+    fn is_resolved(&self) -> bool {
+        self.expiry_tenor.is_none()
+    }
 
     /// Builds the [`FxEuropeanOption`] instance.
     ///
     /// # Errors
     /// Returns an error if any of the required fields are missing.
-    pub fn build(self) -> Result<FxEuropeanOption> {
-        if self.expiry_tenor.is_some() {
+    fn build(&self) -> Result<Self::Instrument> {
+        if !self.is_resolved() {
+            return Err(QSError::UnresolvedProductErr(
+                "MakeFxEuropeanOption has unresolved date tenors. Supply the corresponding absolute dates or call maker.build_using(&context)".into(),
+            ));
+        }
+        if self.expiry_date == Some(Date::empty()) {
             return Err(QSError::InvalidValueErr(
-                "Relative dates require maker.resolve(&ResolutionContext)".into(),
+                "MakeFxEuropeanOption dates must not be empty".into(),
             ));
         }
         let identifier = self
             .identifier
+            .clone()
             .ok_or_else(|| QSError::ValueNotSetErr("Identifier".into()))?;
         let expiry_date = self
             .expiry_date
@@ -165,22 +179,23 @@ impl MakeFxEuropeanOption {
             day_counter,
         ))
     }
-}
 
-impl Resolve for MakeFxEuropeanOption {
-    type Resolved = FxEuropeanOption;
-
-    fn resolve(&self, context: &ResolutionContext<'_>) -> Result<Self::Resolved> {
+    fn resolve_dates(&self, reference_date: Date) -> Result<Self> {
         let mut resolved = self.clone();
-        let dates = *context;
-        resolved.expiry_date = Some(dates.resolve_date(
+        let date_calendar = &NullCalendar::new();
+        let date_convention = BusinessDayConvention::Unadjusted;
+        let date_end_of_month = false;
+        resolved.expiry_date = Some(resolve_date(
             self.expiry_date,
             self.expiry_tenor,
-            context.reference_date(),
+            reference_date,
             "expiry_date",
+            date_calendar,
+            date_convention,
+            date_end_of_month,
         )?);
         resolved.expiry_tenor = None;
-        resolved.build()
+        Ok(resolved)
     }
 }
 
@@ -188,9 +203,9 @@ impl Resolve for MakeFxEuropeanOption {
 mod tests {
     use super::MakeFxEuropeanOption;
     use crate::{
-        currencies::currency::Currency, indices::fxpair::FxPair,
-        instruments::equity::equityeuropeanoption::EuroOptionType, time::date::Date,
-        volatility::volatilityindexing::Strike,
+        core::makeinstrument::MakeInstrument, currencies::currency::Currency,
+        indices::fxpair::FxPair, instruments::equity::equityeuropeanoption::EuroOptionType,
+        time::date::Date, volatility::volatilityindexing::Strike,
     };
 
     #[test]
@@ -262,14 +277,14 @@ mod tests {
 #[cfg(test)]
 mod resolution_tests {
     use crate::{
-        core::resolution::test_support::{empty_market, p, reference},
+        core::makeinstrument::test_support::{empty_market, p, reference},
         prelude::*,
     };
 
     #[test]
     fn fx_option_resolves_relative_expiry() -> Result<()> {
         let market = empty_market(reference());
-        let ctx = ResolutionContext::new(&market);
+        let ctx = &market;
         let expiry = reference() + p("1Y")?;
         let fx_option = MakeFxEuropeanOption::default()
             .with_identifier("fx-option".into())
@@ -279,7 +294,7 @@ mod resolution_tests {
             .with_pair(FxPair::new(Currency::EUR, Currency::USD)?)
             .with_strike(1.1)
             .with_option_type(EuroOptionType::Call)
-            .resolve(&ctx)?;
+            .build_using(ctx)?;
         assert_eq!(fx_option.expiry_date(), expiry);
         Ok(())
     }

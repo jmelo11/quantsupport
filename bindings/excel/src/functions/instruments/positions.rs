@@ -18,6 +18,7 @@ use xll_rs::types::XllError;
 #[allow(clippy::too_many_arguments)]
 pub fn qs_trade_create(
     name: &str,
+    context: &str,
     instrument: &str,
     trade_date: &str,
     side: &str,
@@ -29,6 +30,7 @@ pub fn qs_trade_create(
     spread_day_counter: Option<String>,
     trade_tenor: Option<String>,
 ) -> Result<String, XllError> {
+    let (market, construction_revision) = construction_market(context)?;
     let key = input_key(&(
         instrument,
         trade_date,
@@ -51,6 +53,7 @@ pub fn qs_trade_create(
         })
     })
     .map_err(value_error)?;
+    let key = input_key(&(&key, context, &construction_revision))?;
     if let Some(handle) = cached_handle(name, &kind, &key)? {
         return Ok(handle);
     }
@@ -105,6 +108,7 @@ pub fn qs_trade_create(
         match date {
             Some(date) => instrument.trade(date, side, &terms),
             None => instrument.trade_from_tenor(
+                market.as_ref(),
                 tenor.unwrap_or_else(|| {
                     quantsupport::prelude::Period::new(0, quantsupport::prelude::TimeUnit::Days)
                 }),

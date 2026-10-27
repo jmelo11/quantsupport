@@ -2,8 +2,9 @@
 
 use quantsupport::prelude::{
     BusinessDayConvention, Calendar, CashflowType, Compounding, Currency, Date, DayCounter,
-    DualFwd, FixedRateCoupon, Frequency, InterestRate, LoanRepaymentStructure, MakeLoan,
-    MakeSchedule, MarketIndex, Period, PrepaymentModelConfiguration,
+    DualFwd, FixedRateCoupon, Frequency, InterestRate, Loan, LoanRepaymentStructure,
+    MakeInstrument, MakeLoan, MakeSchedule, MarketDataProvider, MarketIndex, Period,
+    PrepaymentModelConfiguration,
 };
 use serde::{Deserialize, Serialize};
 use std::result::Result;
@@ -54,23 +55,19 @@ pub struct LoanTerms {
 }
 
 impl LoanTerms {
-    pub fn build_instrument(
-        self,
-        name: &str,
-    ) -> Result<quantsupport::prelude::Loan<DualFwd>, String> {
+    pub fn build_instrument(self, name: &str) -> Result<Loan<DualFwd>, String> {
         self.build_maker(name)?
             .build()
             .map_err(|error| error.to_string())
     }
 
-    pub fn resolve_instrument(
+    pub fn build_instrument_with_context(
         self,
         name: &str,
-        context: &quantsupport::prelude::ResolutionContext<'_>,
-    ) -> Result<quantsupport::prelude::Loan<DualFwd>, String> {
-        use quantsupport::prelude::Resolve;
+        context: &dyn MarketDataProvider,
+    ) -> Result<Loan<DualFwd>, String> {
         self.build_maker(name)?
-            .resolve(context)
+            .build_using(context)
             .map_err(|error| error.to_string())
     }
 

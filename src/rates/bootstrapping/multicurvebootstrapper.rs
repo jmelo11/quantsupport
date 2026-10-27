@@ -1,7 +1,3 @@
-use std::{borrow::Cow, cell::RefCell, collections::HashMap, rc::Rc};
-
-use nalgebra::{DMatrix, DVector};
-
 use crate::{
     ad::{dual::DualFwd, scalar::Scalar},
     calibration::{
@@ -40,6 +36,8 @@ use crate::{
     time::{date::Date, daycounter::DayCounter},
     utils::errors::{QSError, Result},
 };
+use nalgebra::{DMatrix, DVector};
+use std::{borrow::Cow, cell::RefCell, collections::HashMap, rc::Rc};
 
 /// Multi-curve bootstrapping engine.
 ///
@@ -725,10 +723,9 @@ impl VectorFunc<f64, f64> for BootstrapObjectiveFunc<'_> {}
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
-
     use crate::{
         ad::dual::DualFwd,
+        core::makeinstrument::MakeInstrument,
         currencies::currency::Currency,
         indices::marketindex::MarketIndex,
         math::interpolation::interpolator::Interpolator,
@@ -744,6 +741,7 @@ mod tests {
         time::{date::Date, daycounter::DayCounter},
         utils::errors::Result,
     };
+    use std::collections::HashMap;
 
     struct MapSelector {
         reference_date: Date,

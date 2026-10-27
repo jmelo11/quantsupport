@@ -8,10 +8,6 @@
 //! - `evaluate_with_xva` -- `DualFwd`-only free function, returns cubes
 //!   plus XVA values and sensitivities.
 
-use std::collections::HashMap;
-
-use rayon::iter::{IntoParallelIterator, ParallelIterator};
-
 use crate::{
     ad::{dual::DualFwd, scalar::Scalar, tape::Tape},
     math::solvers::solvertraits::Matrix,
@@ -24,6 +20,8 @@ use crate::{
         visitors::marketmodel::{MarketModel, PathScenario},
     },
 };
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
+use std::collections::HashMap;
 
 /// Per-trade NPV cube: `npvs[path][date]`.
 pub struct NpvCube {
@@ -636,12 +634,16 @@ fn reduce_chunk_results(
 impl crate::utils::plot::Plot for NpvCube {
     #[allow(clippy::too_many_lines)]
     fn plot(&self, path: &str) -> crate::utils::errors::Result<()> {
-        use crate::time::daycounter::DayCounter;
-        use crate::utils::errors::QSError;
-        use crate::utils::plot::plotting::{
-            AreaSeries, BitMapBackend, ChartBuilder, Color, IntoDrawingArea, IntoFont, LineSeries,
-            PathElement, SeriesLabelPosition, BG_COLOR, BLACK, EE_COLOR, ENE_COLOR, EPE_COLOR,
-            GRID_COLOR, ZERO_LINE_COLOR,
+        use crate::{
+            time::daycounter::DayCounter,
+            utils::{
+                errors::QSError,
+                plot::plotting::{
+                    AreaSeries, BitMapBackend, ChartBuilder, Color, IntoDrawingArea, IntoFont,
+                    LineSeries, PathElement, SeriesLabelPosition, BG_COLOR, BLACK, EE_COLOR,
+                    ENE_COLOR, EPE_COLOR, GRID_COLOR, ZERO_LINE_COLOR,
+                },
+            },
         };
 
         let dc = DayCounter::Actual365;
@@ -781,9 +783,11 @@ impl crate::utils::plot::Plot for NpvCube {
 mod tests {
     use super::*;
     use crate::{
-        ad::dual::DualFwd,
-        ad::scalar::Scalar,
-        core::{collateral::SingleCurveCSADiscountPolicy, pillars::Pillars, trade::Side},
+        ad::{dual::DualFwd, scalar::Scalar},
+        core::{
+            collateral::SingleCurveCSADiscountPolicy, makeinstrument::MakeInstrument,
+            pillars::Pillars, trade::Side,
+        },
         currencies::currency::Currency,
         indices::marketindex::MarketIndex,
         instruments::rates::{makeswap::MakeSwap, swap::SwapTrade},

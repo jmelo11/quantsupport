@@ -2,7 +2,7 @@
 
 use super::creditdefaultswap::CreditDefaultSwap;
 use crate::{
-    core::resolution::{ResolutionContext, Resolve},
+    core::makeinstrument::{resolve_date, MakeInstrument},
     currencies::currency::Currency,
     indices::marketindex::MarketIndex,
     time::{
@@ -114,7 +114,7 @@ impl MakeCreditDefaultSwap {
         self
     }
 
-    /// Sets start date as a tenor from the resolution reference date.
+    /// Sets start date as a tenor from the context evaluation date.
     #[must_use]
     pub const fn with_start_tenor(mut self, tenor: Period) -> Self {
         self.start_date = None;
@@ -143,21 +143,34 @@ impl MakeCreditDefaultSwap {
     pub const fn with_tenor(self, tenor: Period) -> Self {
         self.with_maturity_tenor(tenor)
     }
+}
+
+impl MakeInstrument for MakeCreditDefaultSwap {
+    type Instrument = CreditDefaultSwap;
+
+    fn is_resolved(&self) -> bool {
+        self.start_tenor.is_none() && self.maturity_tenor.is_none()
+    }
 
     /// Builds an explicitly dated CDS.
     ///
     /// # Errors
     /// Rejects missing terms, unresolved relative dates, or invalid CDS terms.
-    pub fn build(self) -> Result<CreditDefaultSwap> {
-        if self.start_tenor.is_some() || self.maturity_tenor.is_some() {
+    fn build(&self) -> Result<Self::Instrument> {
+        if !self.is_resolved() {
+            return Err(QSError::UnresolvedProductErr(
+                "MakeCreditDefaultSwap has unresolved date tenors. Supply the corresponding absolute dates or call maker.build_using(&context)".into(),
+            ));
+        }
+        if [self.start_date, self.maturity_date].contains(&Some(Date::empty())) {
             return Err(QSError::InvalidValueErr(
-                "Relative dates require maker.resolve(&ResolutionContext)".into(),
+                "MakeCreditDefaultSwap dates must not be empty".into(),
             ));
         }
         CreditDefaultSwap::new(
-            required(self.identifier, "Identifier")?,
-            required(self.credit_index, "Credit index")?,
-            required(self.discount_index, "Discount index")?,
+            required(self.identifier.clone(), "Identifier")?,
+            required(self.credit_index.clone(), "Credit index")?,
+            required(self.discount_index.clone(), "Discount index")?,
             required(self.currency, "Currency")?,
             required(self.start_date, "Start date")?,
             required(self.maturity_date, "Maturity date")?,
@@ -167,38 +180,39 @@ impl MakeCreditDefaultSwap {
             self.day_counter.unwrap_or(DayCounter::Actual360),
         )
     }
-}
 
-impl Resolve for MakeCreditDefaultSwap {
-    type Resolved = CreditDefaultSwap;
-
-    fn resolve(&self, context: &ResolutionContext<'_>) -> Result<Self::Resolved> {
+    fn resolve_dates(&self, reference_date: Date) -> Result<Self> {
         let calendar = self
             .calendar
             .clone()
             .unwrap_or_else(|| Calendar::NullCalendar(NullCalendar::new()));
-        let dates = context.with_date_conventions(
-            &calendar,
-            self.business_day_convention
-                .unwrap_or(BusinessDayConvention::Unadjusted),
-            false,
-        );
-        let start = dates.resolve_date(
+        let date_calendar = &calendar;
+        let date_convention = self
+            .business_day_convention
+            .unwrap_or(BusinessDayConvention::Unadjusted);
+        let date_end_of_month = false;
+        let start = resolve_date(
             self.start_date,
             self.start_tenor,
-            context.reference_date(),
+            reference_date,
             "Start date",
+            date_calendar,
+            date_convention,
+            date_end_of_month,
         )?;
-        let maturity = dates.resolve_date(
+        let maturity = resolve_date(
             self.maturity_date,
             self.maturity_tenor,
             start,
             "Maturity date",
+            date_calendar,
+            date_convention,
+            date_end_of_month,
         )?;
-        self.clone()
+        Ok(self
+            .clone()
             .with_start_date(start)
-            .with_maturity_date(maturity)
-            .build()
+            .with_maturity_date(maturity))
     }
 }
 
@@ -209,14 +223,14 @@ fn required<T>(value: Option<T>, label: &str) -> Result<T> {
 #[cfg(test)]
 mod tests {
     use crate::{
-        core::resolution::test_support::{empty_market, p, reference},
+        core::makeinstrument::test_support::{empty_market, p, reference},
         prelude::*,
     };
 
     #[test]
     fn cds_resolves_relative_start_and_maturity() -> Result<()> {
         let market = empty_market(reference());
-        let ctx = ResolutionContext::new(&market);
+        let ctx = &market;
         let cds = MakeCreditDefaultSwap::default()
             .with_identifier("cds".into())
             .with_start_tenor(p("0D")?)
@@ -225,7 +239,7 @@ mod tests {
             .with_discount_index(MarketIndex::ESTR)
             .with_currency(Currency::EUR)
             .with_spread(0.01)
-            .resolve(&ctx)?;
+            .build_using(ctx)?;
         assert_eq!(cds.start_date(), reference());
         assert_eq!(cds.maturity_date(), reference() + p("5Y")?);
         Ok(())

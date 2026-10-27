@@ -53,8 +53,8 @@ Evaluate a contract or trade
 
 .. code-block:: text
 
-   D2 =QS.INSTRUMENT.FIXED.RATE.DEPOSIT("deposit","2026-01-15","2026-07-15","USD",,1000,0.05,"Actual360","Simple","Annual")
-   D3 =QS.TRADE.CREATE("position",D2,"2026-01-15","Receive")
+   D2 =QS.INSTRUMENT.FIXED.RATE.DEPOSIT("deposit",B2,"2026-01-15","2026-07-15","USD",,1000,0.05,"Actual360","Simple","Annual")
+   D3 =QS.TRADE.CREATE("position",B2,D2,"2026-01-15","Receive")
    D4 =QS.EVALUATE(B2,D3,"Value")
    D5 =QS.EVALUATE(B5,D3,"Cashflows")
    D6 =QS.EVALUATE(B5,D3,"Sensitivities")

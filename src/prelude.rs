@@ -29,6 +29,7 @@ pub use crate::{
         },
         evaluationresults::{CashflowKind, CashflowsTable, EvaluationResults, SensitivityMap},
         instrument::{AssetClass, Instrument},
+        makeinstrument::MakeInstrument,
         makeportfolioaccumulator::MakePortfolioAccumulator,
         marketdatahandling::{
             constructedelementrequest::ConstructedElementRequest,
@@ -59,9 +60,8 @@ pub use crate::{
             HandleCashflows, HandleFairRate, HandleModifiedDuration, HandleSensitivities,
             HandleValue, HandleYieldToMaturity, LegsProvider, Request,
         },
-        resolution::{ResolutionContext, Resolve},
         snapshotselector::{SnapshotSelectionRule, SnapshotSelector},
-        trade::{Side, Trade, UnresolvedTrade},
+        trade::{Side, Trade},
         visitable::{Visitable, Visitor},
     },
     currencies::{currency::Currency, currencydetails::CurrencyDetails},

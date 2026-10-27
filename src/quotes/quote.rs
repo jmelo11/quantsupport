@@ -1,7 +1,6 @@
-use serde::{Deserialize, Serialize};
-
 use crate::{
     ad::scalar::Scalar,
+    core::makeinstrument::MakeInstrument,
     currencies::currency::Currency,
     indices::{fxpair::FxPair, marketindex::MarketIndex},
     instruments::{
@@ -50,6 +49,7 @@ use crate::{
     utils::errors::{QSError, Result},
     volatility::volatilityindexing::{Strike, VolatilityType},
 };
+use serde::{Deserialize, Serialize};
 
 /// Splits a 6-character FX pair string (e.g. `"EURUSD"`) into two currencies.
 fn parse_fx_pair(pair: &str) -> Result<(Currency, Currency)> {
@@ -2139,10 +2139,13 @@ impl Quote {
     /// # Errors
     /// Rejects custom nodes outside the instrument's relevant date range.
     pub fn calibration_pillar_date(&self, built: &CalibrationInstrumentType<f64>) -> Result<Date> {
-        use crate::instruments::cashflows::cashflowtype::CashflowType;
-        use crate::time::{
-            calendars::traits::IsCalendar, enums::BusinessDayConvention, enums::TimeUnit,
-            period::Period,
+        use crate::{
+            instruments::cashflows::cashflowtype::CashflowType,
+            time::{
+                calendars::traits::IsCalendar,
+                enums::{BusinessDayConvention, TimeUnit},
+                period::Period,
+            },
         };
         let mut latest = built.pillar_date()?;
         let CalibrationInstrumentType::OIS(swap) = built else {

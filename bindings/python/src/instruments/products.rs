@@ -1,8 +1,16 @@
 //! Python instrument specifications, built with explicit position metadata.
 
-use crate::pricing::extension::{Instrument, Trade};
-use pyo3::prelude::*;
-use pyo3::types::PyType;
+use crate::{
+    common::conversion::{
+        extract_business_day_convention, extract_calendar, extract_cap_floor_type,
+        extract_caplet_floorlet_type, extract_compounding, extract_currency, extract_date,
+        extract_date_generation_rule, extract_day_counter, extract_frequency, extract_market_index,
+        extract_option_type, extract_payment_structure, extract_strike, from_py, qs_err,
+    },
+    instruments::coupons::CouponDefinition,
+    pricing::extension::{Instrument, Trade},
+};
+use pyo3::{prelude::*, types::PyType};
 use quantsupport::prelude::{
     BasisSwap as QsBasisSwap, BasisSwapTrade, BusinessDayConvention, Calendar,
     CallScheduleEntry as QsCallScheduleEntry, CapFloor as QsCapFloor, CapFloorTrade, CapFloorType,
@@ -16,19 +24,10 @@ use quantsupport::prelude::{
     FloatingRateNoteTrade, Frequency, FxEuropeanOptionTrade, FxForwardTrade, IntoContingentClaims,
     LegsProvider, MakeBasisSwap, MakeCapFloor, MakeFixFloatCrossCurrencySwap, MakeFixedRateBond,
     MakeFixedRateDeposit, MakeFloatFloatCrossCurrencySwap, MakeFloatingRateNote,
-    MakeFxEuropeanOption, MakeFxForward, MakeRateFutures, MakeSteppedCouponBond, MakeSwap,
-    MarketIndex, PaymentStructure, RateDefinition, RateFutures as QsRateFutures, RateFuturesTrade,
-    SteppedCouponBondTrade, Strike, Swap as QsSwap, SwapTrade,
+    MakeFxEuropeanOption, MakeFxForward, MakeInstrument, MakeRateFutures, MakeSteppedCouponBond,
+    MakeSwap, MarketIndex, PaymentStructure, RateDefinition, RateFutures as QsRateFutures,
+    RateFuturesTrade, SteppedCouponBondTrade, Strike, Swap as QsSwap, SwapTrade,
 };
-
-use crate::common::conversion::{
-    extract_business_day_convention, extract_calendar, extract_cap_floor_type,
-    extract_caplet_floorlet_type, extract_compounding, extract_currency, extract_date,
-    extract_date_generation_rule, extract_day_counter, extract_frequency, extract_market_index,
-    extract_option_type, extract_payment_structure, extract_strike, from_py, qs_err,
-};
-
-use crate::instruments::coupons::CouponDefinition;
 
 macro_rules! product_dict_constructors {
     ($($name:ty),+ $(,)?) => {
@@ -42,14 +41,6 @@ macro_rules! product_dict_constructors {
                     obj: &Bound<'py, PyAny>,
                 ) -> PyResult<Bound<'py, PyAny>> {
                     cls.call((), Some(crate::common::conversion::expect_dict(obj, &format!("{}.from_dict", cls.name()?))?))
-                }
-
-                /// Defines a product using explicit tenor keywords; Trade evaluation resolves its dates.
-                #[classmethod]
-                #[pyo3(signature=(**parameters))]
-                fn from_tenors<'py>(cls: &Bound<'py, PyType>, parameters: Option<&Bound<'py, pyo3::types::PyDict>>) -> PyResult<Bound<'py, PyAny>> {
-                    let empty = pyo3::types::PyDict::new(cls.py());
-                    crate::instruments::unresolved::from_tenors(cls, parameters.unwrap_or(&empty))
                 }
 
                 /// Loads constructor fields from a JSON file.

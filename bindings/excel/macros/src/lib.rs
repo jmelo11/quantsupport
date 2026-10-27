@@ -33,7 +33,9 @@ pub fn xll_bindgen(args: TokenStream, input: TokenStream) -> TokenStream {
         .expect("worksheet functions have a registered name");
     let module = format_ident!("__{}_worksheet", name);
     let export = format_ident!("xl_{}", name);
-    let asynchronous = name.to_string().starts_with("qs_evaluate")
+    let asynchronous = name.to_string().starts_with("qs_instrument_")
+        || name == "qs_trade_create"
+        || name.to_string().starts_with("qs_evaluate")
         || name == "qs_portfolio_evaluate"
         || name.to_string().starts_with("qs_result_")
         || name == "qs_portfolio_result_cashflows"

@@ -69,8 +69,8 @@ class AsyncExcelTests(unittest.TestCase):
 
     def test_02_owned_market_and_unchanged_calculation(self):
         self.sheet.Range("G1").Formula2 = '=QS.CONTEXT.CREATE("market","2026-01-15","USD","SOFR")'
-        self.sheet.Range("G2").Formula2 = '=QS.INSTRUMENT.SWAP("swap","2026-01-15","2031-01-15","USD","SOFR",1000000,.04,0,"Actual360","Simple","Annual","Annual","Annual")'
-        self.sheet.Range("G3").Formula2 = '=QS.TRADE.CREATE("trade",G2,"2026-01-15","Receive")'
+        self.sheet.Range("G2").Formula2 = '=QS.INSTRUMENT.SWAP("swap",G1,"2026-01-15","2031-01-15","USD","SOFR",1000000,.04,0,"Actual360","Simple","Annual","Annual","Annual")'
+        self.sheet.Range("G3").Formula2 = '=QS.TRADE.CREATE("trade",G1,G2,"2026-01-15","Receive")'
         self.sheet.Range("J1").Value2 = .03
         # Evaluation is deliberately registered before the addition.
         self.sheet.Range("G4").Formula2 = '=QS.EVALUATE(G1,G3)'
@@ -196,8 +196,8 @@ class AsyncExcelTests(unittest.TestCase):
         for row, day in enumerate((15, 16, 19), 1):
             self.sheet.Range(f"AA{row}").Formula2 = f'=QS.CONTEXT.CREATE("batch.{row}","2026-01-{day}","USD","SOFR")'
             self.sheet.Range(f"AB{row}").Formula2 = f'=QS.CONTEXT.ADD.ZERO.CURVE(AA{row},"SOFR",{{"0D","10Y"}},{{.03,.03}},"Actual360","Continuous","Annual","Linear",TRUE)'
-            self.sheet.Range(f"AC{row}").Formula2 = f'=QS.INSTRUMENT.SWAP("batch.swap.{row}","2026-02-02","2031-02-03","USD","SOFR",1000000,.04,0,"Actual360","Simple","Annual","Annual","Annual")'
-            self.sheet.Range(f"AD{row}").Formula2 = f'=QS.TRADE.CREATE("batch.trade.{row}",AC{row},"2026-01-{day}","Receive")'
+            self.sheet.Range(f"AC{row}").Formula2 = f'=QS.INSTRUMENT.SWAP("batch.swap.{row}",AA{row},"2026-02-02","2031-02-03","USD","SOFR",1000000,.04,0,"Actual360","Simple","Annual","Annual","Annual")'
+            self.sheet.Range(f"AD{row}").Formula2 = f'=QS.TRADE.CREATE("batch.trade.{row}",AA{row},AC{row},"2026-01-{day}","Receive")'
             self.sheet.Range(f"AE{row}").Formula2 = f'=QS.EVALUATE(AA{row},AD{row})'
         self.sheet.Range("AG1").Formula2 = '=QS.EVALUATE.RANGE(AA1:AA3,AD1:AD3)'
         await_engine(self.app, self.book)
@@ -222,8 +222,8 @@ class AsyncExcelTests(unittest.TestCase):
     @unittest.skipUnless(os.environ.get("QS_PROBE_XLL"), "requires the optional live ribbon probe")
     def test_09_cashflow_paging_uses_the_real_pane(self):
         from async_excel import await_engine
-        self.sheet.Range("AH1").Formula2 = '=QS.INSTRUMENT.SWAP("paged.swap","2026-02-02","2046-02-02","USD","SOFR",1000000,.04,0,"Actual360","Simple","Monthly","Monthly","Annual")'
-        self.sheet.Range("AH2").Formula2 = '=QS.TRADE.CREATE("paged.trade",AH1,"2026-01-15","Receive")'
+        self.sheet.Range("AH1").Formula2 = '=QS.INSTRUMENT.SWAP("paged.swap",G1,"2026-02-02","2046-02-02","USD","SOFR",1000000,.04,0,"Actual360","Simple","Monthly","Monthly","Annual")'
+        self.sheet.Range("AH2").Formula2 = '=QS.TRADE.CREATE("paged.trade",G1,AH1,"2026-01-15","Receive")'
         await_engine(self.app, self.book)
         self.book.Names.Add("EnginePaged_Trade", "='" + self.sheet.Name + "'!$AH$2")
         path = Path(os.environ["QS_PROBE_XLL"]).resolve().parent

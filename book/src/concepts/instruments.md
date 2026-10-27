@@ -67,12 +67,11 @@ closures require updates or explicit local overrides.
 
 ## Builders and positions
 
-`Make*` makers retain contractual inputs and resolve them against a
-`ResolutionContext` when dates or observations depend on the market. Separate
-date and tenor methods retain their concrete `Date` and `Period` types.
-Resolution produces ordinary instruments for trades and pricers; `build()`
-handles terms that are already fully specified. See
-[Resolving reusable instrument definitions](instrument-resolution.md).
+`Make*` makers retain contractual inputs. Their `MakeInstrument::build` method
+uses supplied parameters; `build_using` supplies a reference date and
+market observations when needed. Both methods return concrete instruments for
+trades and pricers. Missing context dependencies raise `UnresolvedProductErr`.
+See [Building instruments explicitly](instrument-resolution.md).
 
 Makers validate required terms and construct the instrument. Check
 their defaults against the contract's market conventions. `MakeSwap` produces

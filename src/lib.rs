@@ -12,8 +12,8 @@
 //! requested measures.
 //!
 //! Makers can also retain relative tenors until a market context is available.
-//! [`Resolve`](core::resolution::Resolve) produces concrete instruments using a
-//! [`ResolutionContext`](core::resolution::ResolutionContext). The same maker
+//! [`MakeInstrument`](core::makeinstrument::MakeInstrument) builds concrete instruments
+//! with explicit parameters or a supplied pricing context. The same maker
 //! can be resolved for several reference dates; each resolved instrument retains
 //! its own contractual dates and principal schedule.
 //!
@@ -72,7 +72,7 @@
 //! let context = PricingContext::new()
 //!     .with_quote_store(QuoteStore::new(valuation_date))
 //!     .with_constructed_elements(elements);
-//! let swap = maker.resolve(&ResolutionContext::new(&context))?;
+//! let swap = maker.build_using(&context)?;
 //! let trade = SwapTrade::new(swap, valuation_date, notional, Side::LongReceive);
 //!
 //! let pricer = DiscountedCashflowPricer::<Swap<DualFwd>, SwapTrade<DualFwd>>::new();

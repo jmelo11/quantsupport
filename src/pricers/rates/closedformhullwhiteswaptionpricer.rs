@@ -1,5 +1,3 @@
-use std::collections::HashSet;
-
 use crate::{
     ad::{dual::DualFwd, expr::FloatExt, tape::Tape},
     core::{
@@ -33,6 +31,7 @@ use crate::{
     utils::errors::{QSError, Result},
     volatility::modelcalibration::CalibrationSource,
 };
+use std::collections::HashSet;
 
 /// Prices European payer and receiver swaptions in the one-factor Hull-White model.
 ///
@@ -601,13 +600,12 @@ impl Pricer for ClosedFormHullWhiteSwaptionPricer {
 
 #[cfg(test)]
 mod tests {
-    use std::{cell::RefCell, collections::HashMap, rc::Rc};
-
     use crate::{
         ad::dual::DualFwd,
         core::{
             collateral::SingleCurveCSADiscountPolicy,
             elements::curveelement::DiscountCurveElement,
+            makeinstrument::MakeInstrument,
             marketdatahandling::{
                 constructedelementstore::ConstructedElementStore,
                 marketdata::{MarketData, MarketDataProvider, MarketDataRequest},
@@ -642,6 +640,7 @@ mod tests {
         },
         utils::errors::Result,
     };
+    use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
     #[test]
     fn configuration_accepts_shared_fixed_and_calibrated_models() -> Result<()> {

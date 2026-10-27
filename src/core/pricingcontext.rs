@@ -74,13 +74,18 @@ pub struct PricingContext {
     pricer_configurations: Vec<PricerConfiguration>,
     /// Constructed market data elements, such as discount curves, volatility surfaces, among others.
     constructed_elements: ConstructedElementStore,
+    /// Market objects and construction snapshots cached by request-driven market views.
     request_cache: MarketCache,
+    /// Caller-supplied runtime objects retained when constructed caches are invalidated.
     supplied_elements: ConstructedElementStore,
+    /// Selected market observation instant, cleared when market inputs change.
     snapshot_timestamp: Option<DateTime>,
-    /// The base currency for pricing and reporting results.
+    /// Base collateral currency used for curve construction and default discounting; defaults to USD.
     base_currency: Currency,
-    /// Base remuneration index
+    /// Base collateral remuneration index used with the base currency; defaults to SOFR.
     base_index: MarketIndex,
+    /// Requires stored index fixings strictly before evaluation when true (the default).
+    /// Today and future observations are projected; false projects every observation.
     anchor_fixings: bool,
 }
 

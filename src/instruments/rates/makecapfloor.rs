@@ -1,9 +1,8 @@
 use crate::{
-    core::resolution::{ResolutionContext, Resolve},
-    time::period::Period,
-};
-use crate::{
-    core::trade::Side,
+    core::{
+        makeinstrument::{resolve_date, MakeInstrument},
+        trade::Side,
+    },
     currencies::currency::Currency,
     indices::marketindex::MarketIndex,
     instruments::rates::{
@@ -16,6 +15,7 @@ use crate::{
         calendars::nullcalendar::NullCalendar,
         date::Date,
         enums::{BusinessDayConvention, DateGenerationRule, Frequency},
+        period::Period,
         schedule::MakeSchedule,
     },
     utils::errors::{QSError, Result},
@@ -67,8 +67,8 @@ pub struct MakeCapFloor {
 }
 
 impl MakeCapFloor {
-    /// Sets start date as a tenor from the resolution reference date.
-    /// Replaces an explicitly supplied start date. Resolve this maker with a context.
+    /// Sets start date as a tenor from the context evaluation date.
+    /// Replaces an explicitly supplied start date. Use `build_using` when an external anchor is needed.
     #[must_use]
     pub const fn with_start_tenor(mut self, tenor: Period) -> Self {
         self.start_tenor = Some(tenor);
@@ -77,7 +77,7 @@ impl MakeCapFloor {
     }
 
     /// Sets maturity date as a tenor from the resolved start date.
-    /// Replaces an explicitly supplied maturity date. Resolve this maker with a context.
+    /// Replaces an explicitly supplied maturity date. Use `build_using` when an external anchor is needed.
     #[must_use]
     pub const fn with_maturity_tenor(mut self, tenor: Period) -> Self {
         self.maturity_tenor = Some(tenor);
@@ -199,15 +199,29 @@ impl MakeCapFloor {
         self.end_of_month = Some(eom);
         self
     }
+}
+
+impl MakeInstrument for MakeCapFloor {
+    type Instrument = CapFloor;
+
+    fn is_resolved(&self) -> bool {
+        self.start_tenor.is_none() && self.maturity_tenor.is_none()
+    }
 
     /// Builds the [`CapFloor`] instance.
     ///
     /// # Errors
     /// Returns an error when required fields are missing or the schedule build fails.
-    pub fn build(self) -> Result<CapFloor> {
-        if self.start_tenor.is_some() || self.maturity_tenor.is_some() {
+    #[allow(clippy::too_many_lines)]
+    fn build(&self) -> Result<Self::Instrument> {
+        if !self.is_resolved() {
+            return Err(QSError::UnresolvedProductErr(
+                "MakeCapFloor has unresolved date tenors. Supply the corresponding absolute dates or call maker.build_using(&context)".into(),
+            ));
+        }
+        if [self.start_date, self.maturity_date].contains(&Some(Date::empty())) {
             return Err(QSError::InvalidValueErr(
-                "Relative dates require maker.resolve(&ResolutionContext)".into(),
+                "MakeCapFloor dates must not be empty".into(),
             ));
         }
         let _notional = self
@@ -227,9 +241,11 @@ impl MakeCapFloor {
             .ok_or_else(|| QSError::ValueNotSetErr("Currency".into()))?;
         let market_index = self
             .market_index
+            .clone()
             .ok_or_else(|| QSError::ValueNotSetErr("Market index".into()))?;
         let identifier = self
             .identifier
+            .clone()
             .ok_or_else(|| QSError::ValueNotSetErr("Identifier".into()))?;
         let cap_floor_type = self
             .cap_floor_type
@@ -248,6 +264,7 @@ impl MakeCapFloor {
             .with_frequency(frequency)
             .with_calendar(
                 self.calendar
+                    .clone()
                     .unwrap_or(Calendar::NullCalendar(NullCalendar::new())),
             )
             .with_convention(
@@ -310,12 +327,8 @@ impl MakeCapFloor {
             Strike::Absolute(strike),
         ))
     }
-}
 
-impl Resolve for MakeCapFloor {
-    type Resolved = CapFloor;
-
-    fn resolve(&self, context: &ResolutionContext<'_>) -> Result<Self::Resolved> {
+    fn resolve_dates(&self, reference_date: Date) -> Result<Self> {
         let mut resolved = self.clone();
         let calendar = self
             .calendar
@@ -324,30 +337,32 @@ impl Resolve for MakeCapFloor {
         let convention = self
             .business_day_convention
             .unwrap_or(BusinessDayConvention::ModifiedFollowing);
-        let dates = context.with_date_conventions(
-            &calendar,
-            convention,
-            self.end_of_month.unwrap_or(false),
-        );
-        resolved.start_date = Some(dates.resolve_date(
+        let date_calendar = &calendar;
+        let date_convention = convention;
+        let date_end_of_month = self.end_of_month.unwrap_or(false);
+        resolved.start_date = Some(resolve_date(
             self.start_date,
             self.start_tenor,
-            context.reference_date(),
+            reference_date,
             "start_date",
+            date_calendar,
+            date_convention,
+            date_end_of_month,
         )?);
         resolved.start_tenor = None;
-        resolved.maturity_date = Some(
-            dates.resolve_date(
-                self.maturity_date,
-                self.maturity_tenor,
-                resolved
-                    .start_date
-                    .ok_or_else(|| QSError::ValueNotSetErr("start_date".into()))?,
-                "maturity_date",
-            )?,
-        );
+        resolved.maturity_date = Some(resolve_date(
+            self.maturity_date,
+            self.maturity_tenor,
+            resolved
+                .start_date
+                .ok_or_else(|| QSError::ValueNotSetErr("start_date".into()))?,
+            "maturity_date",
+            date_calendar,
+            date_convention,
+            date_end_of_month,
+        )?);
         resolved.maturity_tenor = None;
-        resolved.build()
+        Ok(resolved)
     }
 }
 
@@ -400,14 +415,14 @@ mod tests {
 #[cfg(test)]
 mod resolution_tests {
     use crate::{
-        core::resolution::test_support::{empty_market, p, reference},
+        core::makeinstrument::test_support::{empty_market, p, reference},
         prelude::*,
     };
 
     #[test]
     fn cap_resolves_relative_start_and_maturity() -> Result<()> {
         let market = empty_market(reference());
-        let ctx = ResolutionContext::new(&market);
+        let ctx = &market;
         let cap = MakeCapFloor::default()
             .with_identifier("cap".into())
             .with_start_tenor(p("0D")?)
@@ -417,7 +432,7 @@ mod resolution_tests {
             .with_currency(Currency::EUR)
             .with_market_index(MarketIndex::EURIBOR3m)
             .with_cap_floor_type(CapFloorType::Cap)
-            .resolve(&ctx)?;
+            .build_using(ctx)?;
         assert_eq!(cap.start_date(), reference());
         assert!(!cap.caplet_floorlets().is_empty());
         Ok(())

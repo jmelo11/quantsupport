@@ -41,14 +41,17 @@ fn apply_date_input<M>(
 #[allow(clippy::too_many_arguments)]
 pub fn qs_instrument_fx_forward(
     name: &str,
+    context: &str,
     delivery_date: &str,
     base_currency: &str,
     quote_currency: &str,
     forward_rate: f64,
     delivery_tenor: Option<String>,
 ) -> Result<String, XllError> {
+    let (market, construction_revision) = construction_market(context)?;
     let key = input_key(&(delivery_date, base_currency, quote_currency, forward_rate))?;
     let key = input_key(&(&key, (delivery_tenor.as_deref(),)))?;
+    let key = input_key(&(&key, context, &construction_revision))?;
     if let Some(handle) = cached_handle(name, "FxForward", &key)? {
         return Ok(handle);
     }
@@ -69,12 +72,14 @@ pub fn qs_instrument_fx_forward(
         |m, t| m.with_delivery_tenor(t),
     )?;
     let object = InstrumentObject::from_maker(
+        market.as_ref(),
         "FxForward",
         1.0,
         None,
         instrument,
         NativeInstrument::FxForward,
-    );
+    )
+    .map_err(value_error)?;
     with_registry_mut(|registry| {
         registry.upsert_if_changed(name, QsObject::Instrument(Box::new(object)), key)
     })
@@ -89,6 +94,7 @@ pub fn qs_instrument_fx_forward(
 #[allow(clippy::too_many_arguments)]
 pub fn qs_instrument_swap(
     name: &str,
+    context: &str,
     start_date: &str,
     maturity_date: &str,
     currency: &str,
@@ -104,6 +110,7 @@ pub fn qs_instrument_swap(
     start_tenor: Option<String>,
     tenor: Option<String>,
 ) -> Result<String, XllError> {
+    let (market, construction_revision) = construction_market(context)?;
     let key = input_key(&(
         start_date,
         maturity_date,
@@ -119,6 +126,7 @@ pub fn qs_instrument_swap(
         floating_leg_frequency,
     ))?;
     let key = input_key(&(&key, (start_tenor.as_deref(), tenor.as_deref())))?;
+    let key = input_key(&(&key, context, &construction_revision))?;
     if let Some(handle) = cached_handle(name, "Swap", &key)? {
         return Ok(handle);
     }
@@ -154,8 +162,15 @@ pub fn qs_instrument_swap(
         |m, d| m.with_maturity_date(d),
         |m, t| m.with_tenor(t),
     )?;
-    let object =
-        InstrumentObject::from_maker("Swap", notional, None, instrument, NativeInstrument::Swap);
+    let object = InstrumentObject::from_maker(
+        market.as_ref(),
+        "Swap",
+        notional,
+        None,
+        instrument,
+        NativeInstrument::Swap,
+    )
+    .map_err(value_error)?;
     with_registry_mut(|registry| {
         registry.upsert_if_changed(name, QsObject::Instrument(Box::new(object)), key)
     })
@@ -170,6 +185,7 @@ pub fn qs_instrument_swap(
 #[allow(clippy::too_many_arguments)]
 pub fn qs_instrument_basis_swap(
     name: &str,
+    context: &str,
     start_date: &str,
     maturity_date: &str,
     currency: &str,
@@ -183,6 +199,7 @@ pub fn qs_instrument_basis_swap(
     start_tenor: Option<String>,
     tenor: Option<String>,
 ) -> Result<String, XllError> {
+    let (market, construction_revision) = construction_market(context)?;
     let key = input_key(&(
         start_date,
         maturity_date,
@@ -196,6 +213,7 @@ pub fn qs_instrument_basis_swap(
         receive_frequency,
     ))?;
     let key = input_key(&(&key, (start_tenor.as_deref(), tenor.as_deref())))?;
+    let key = input_key(&(&key, context, &construction_revision))?;
     if let Some(handle) = cached_handle(name, "BasisSwap", &key)? {
         return Ok(handle);
     }
@@ -228,12 +246,14 @@ pub fn qs_instrument_basis_swap(
         |m, t| m.with_tenor(t),
     )?;
     let object = InstrumentObject::from_maker(
+        market.as_ref(),
         "BasisSwap",
         notional,
         None,
         instrument,
         NativeInstrument::BasisSwap,
-    );
+    )
+    .map_err(value_error)?;
     with_registry_mut(|registry| {
         registry.upsert_if_changed(name, QsObject::Instrument(Box::new(object)), key)
     })
@@ -248,6 +268,7 @@ pub fn qs_instrument_basis_swap(
 #[allow(clippy::too_many_arguments)]
 pub fn qs_instrument_xccy_float_float(
     name: &str,
+    context: &str,
     start_date: &str,
     maturity_date: &str,
     domestic_currency: &str,
@@ -263,6 +284,7 @@ pub fn qs_instrument_xccy_float_float(
     start_tenor: Option<String>,
     tenor: Option<String>,
 ) -> Result<String, XllError> {
+    let (market, construction_revision) = construction_market(context)?;
     let key = input_key(&(
         start_date,
         maturity_date,
@@ -278,6 +300,7 @@ pub fn qs_instrument_xccy_float_float(
         foreign_frequency,
     ))?;
     let key = input_key(&(&key, (start_tenor.as_deref(), tenor.as_deref())))?;
+    let key = input_key(&(&key, context, &construction_revision))?;
     if let Some(handle) = cached_handle(name, "FloatFloatCrossCurrencySwap", &key)? {
         return Ok(handle);
     }
@@ -312,12 +335,14 @@ pub fn qs_instrument_xccy_float_float(
         |m, t| m.with_tenor(t),
     )?;
     let object = InstrumentObject::from_maker(
+        market.as_ref(),
         "FloatFloatCrossCurrencySwap",
         domestic_notional,
         Some(foreign_notional),
         instrument,
         NativeInstrument::FloatFloatCrossCurrencySwap,
-    );
+    )
+    .map_err(value_error)?;
     with_registry_mut(|registry| {
         registry.upsert_if_changed(name, QsObject::Instrument(Box::new(object)), key)
     })
@@ -332,6 +357,7 @@ pub fn qs_instrument_xccy_float_float(
 #[allow(clippy::too_many_arguments)]
 pub fn qs_instrument_xccy_fix_float(
     name: &str,
+    context: &str,
     start_date: &str,
     maturity_date: &str,
     domestic_currency: &str,
@@ -349,6 +375,7 @@ pub fn qs_instrument_xccy_fix_float(
     start_tenor: Option<String>,
     tenor: Option<String>,
 ) -> Result<String, XllError> {
+    let (market, construction_revision) = construction_market(context)?;
     let key = input_key(&(
         start_date,
         maturity_date,
@@ -366,6 +393,7 @@ pub fn qs_instrument_xccy_fix_float(
         foreign_frequency,
     ))?;
     let key = input_key(&(&key, (start_tenor.as_deref(), tenor.as_deref())))?;
+    let key = input_key(&(&key, context, &construction_revision))?;
     if let Some(handle) = cached_handle(name, "FixFloatCrossCurrencySwap", &key)? {
         return Ok(handle);
     }
@@ -404,12 +432,14 @@ pub fn qs_instrument_xccy_fix_float(
         |m, t| m.with_tenor(t),
     )?;
     let object = InstrumentObject::from_maker(
+        market.as_ref(),
         "FixFloatCrossCurrencySwap",
         domestic_notional,
         Some(foreign_notional),
         instrument,
         NativeInstrument::FixFloatCrossCurrencySwap,
-    );
+    )
+    .map_err(value_error)?;
     with_registry_mut(|registry| {
         registry.upsert_if_changed(name, QsObject::Instrument(Box::new(object)), key)
     })
@@ -424,6 +454,7 @@ pub fn qs_instrument_xccy_fix_float(
 #[allow(clippy::too_many_arguments)]
 pub fn qs_instrument_fixed_bond(
     name: &str,
+    context: &str,
     start_date: &str,
     maturity_date: &str,
     currency: &str,
@@ -437,6 +468,7 @@ pub fn qs_instrument_fixed_bond(
     start_tenor: Option<String>,
     tenor: Option<String>,
 ) -> Result<String, XllError> {
+    let (market, construction_revision) = construction_market(context)?;
     let key = input_key(&(
         start_date,
         maturity_date,
@@ -450,6 +482,7 @@ pub fn qs_instrument_fixed_bond(
         payment_frequency,
     ))?;
     let key = input_key(&(&key, (start_tenor.as_deref(), tenor.as_deref())))?;
+    let key = input_key(&(&key, context, &construction_revision))?;
     if let Some(handle) = cached_handle(name, "FixedRateBond", &key)? {
         return Ok(handle);
     }
@@ -489,12 +522,14 @@ pub fn qs_instrument_fixed_bond(
         |m, t| m.with_tenor(t),
     )?;
     let object = InstrumentObject::from_maker(
+        market.as_ref(),
         "FixedRateBond",
         notional,
         None,
         instrument,
         NativeInstrument::FixedRateBond,
-    );
+    )
+    .map_err(value_error)?;
     with_registry_mut(|registry| {
         registry.upsert_if_changed(name, QsObject::Instrument(Box::new(object)), key)
     })
@@ -509,6 +544,7 @@ pub fn qs_instrument_fixed_bond(
 #[allow(clippy::too_many_arguments)]
 pub fn qs_instrument_fixed_deposit(
     name: &str,
+    context: &str,
     start_date: &str,
     maturity_date: &str,
     currency: &str,
@@ -521,6 +557,7 @@ pub fn qs_instrument_fixed_deposit(
     start_tenor: Option<String>,
     tenor: Option<String>,
 ) -> Result<String, XllError> {
+    let (market, construction_revision) = construction_market(context)?;
     let key = input_key(&(
         start_date,
         maturity_date,
@@ -533,6 +570,7 @@ pub fn qs_instrument_fixed_deposit(
         rate_frequency,
     ))?;
     let key = input_key(&(&key, (start_tenor.as_deref(), tenor.as_deref())))?;
+    let key = input_key(&(&key, context, &construction_revision))?;
     if let Some(handle) = cached_handle(name, "FixedRateDeposit", &key)? {
         return Ok(handle);
     }
@@ -572,12 +610,14 @@ pub fn qs_instrument_fixed_deposit(
         |m, t| m.with_tenor(t),
     )?;
     let object = InstrumentObject::from_maker(
+        market.as_ref(),
         "FixedRateDeposit",
         notional,
         None,
         instrument,
         NativeInstrument::FixedRateDeposit,
-    );
+    )
+    .map_err(value_error)?;
     with_registry_mut(|registry| {
         registry.upsert_if_changed(name, QsObject::Instrument(Box::new(object)), key)
     })
@@ -592,6 +632,7 @@ pub fn qs_instrument_fixed_deposit(
 #[allow(clippy::too_many_arguments)]
 pub fn qs_instrument_floating_note(
     name: &str,
+    context: &str,
     start_date: &str,
     maturity_date: &str,
     currency: &str,
@@ -602,6 +643,7 @@ pub fn qs_instrument_floating_note(
     start_tenor: Option<String>,
     tenor: Option<String>,
 ) -> Result<String, XllError> {
+    let (market, construction_revision) = construction_market(context)?;
     let key = input_key(&(
         start_date,
         maturity_date,
@@ -612,6 +654,7 @@ pub fn qs_instrument_floating_note(
         payment_frequency,
     ))?;
     let key = input_key(&(&key, (start_tenor.as_deref(), tenor.as_deref())))?;
+    let key = input_key(&(&key, context, &construction_revision))?;
     if let Some(handle) = cached_handle(name, "FloatingRateNote", &key)? {
         return Ok(handle);
     }
@@ -642,12 +685,14 @@ pub fn qs_instrument_floating_note(
         |m, t| m.with_tenor(t),
     )?;
     let object = InstrumentObject::from_maker(
+        market.as_ref(),
         "FloatingRateNote",
         notional,
         None,
         instrument,
         NativeInstrument::FloatingRateNote,
-    );
+    )
+    .map_err(value_error)?;
     with_registry_mut(|registry| {
         registry.upsert_if_changed(name, QsObject::Instrument(Box::new(object)), key)
     })
@@ -662,6 +707,7 @@ pub fn qs_instrument_floating_note(
 #[allow(clippy::too_many_arguments)]
 pub fn qs_instrument_fx_option(
     name: &str,
+    context: &str,
     expiry_date: &str,
     base_currency: &str,
     quote_currency: &str,
@@ -670,6 +716,7 @@ pub fn qs_instrument_fx_option(
     day_counter: &str,
     expiry_tenor: Option<String>,
 ) -> Result<String, XllError> {
+    let (market, construction_revision) = construction_market(context)?;
     let key = input_key(&(
         expiry_date,
         base_currency,
@@ -679,6 +726,7 @@ pub fn qs_instrument_fx_option(
         day_counter,
     ))?;
     let key = input_key(&(&key, (expiry_tenor.as_deref(),)))?;
+    let key = input_key(&(&key, context, &construction_revision))?;
     if let Some(handle) = cached_handle(name, "FxEuropeanOption", &key)? {
         return Ok(handle);
     }
@@ -701,12 +749,14 @@ pub fn qs_instrument_fx_option(
         |m, t| m.with_expiry_tenor(t),
     )?;
     let object = InstrumentObject::from_maker(
+        market.as_ref(),
         "FxEuropeanOption",
         1.0,
         None,
         instrument,
         NativeInstrument::FxEuropeanOption,
-    );
+    )
+    .map_err(value_error)?;
     with_registry_mut(|registry| {
         registry.upsert_if_changed(name, QsObject::Instrument(Box::new(object)), key)
     })
@@ -721,6 +771,7 @@ pub fn qs_instrument_fx_option(
 #[allow(clippy::too_many_arguments)]
 pub fn qs_instrument_equity_option(
     name: &str,
+    context: &str,
     expiry_date: &str,
     market_index: &str,
     currency: &str,
@@ -729,6 +780,7 @@ pub fn qs_instrument_equity_option(
     day_counter: &str,
     expiry_tenor: Option<String>,
 ) -> Result<String, XllError> {
+    let (market, construction_revision) = construction_market(context)?;
     let key = input_key(&(
         expiry_date,
         market_index,
@@ -738,6 +790,7 @@ pub fn qs_instrument_equity_option(
         day_counter,
     ))?;
     let key = input_key(&(&key, (expiry_tenor.as_deref(),)))?;
+    let key = input_key(&(&key, context, &construction_revision))?;
     if let Some(handle) = cached_handle(name, "EquityEuropeanOption", &key)? {
         return Ok(handle);
     }
@@ -757,12 +810,14 @@ pub fn qs_instrument_equity_option(
         |m, t| m.with_expiry_tenor(t),
     )?;
     let object = InstrumentObject::from_maker(
+        market.as_ref(),
         "EquityEuropeanOption",
         1.0,
         None,
         instrument,
         NativeInstrument::EquityEuropeanOption,
-    );
+    )
+    .map_err(value_error)?;
     with_registry_mut(|registry| {
         registry.upsert_if_changed(name, QsObject::Instrument(Box::new(object)), key)
     })
@@ -777,6 +832,7 @@ pub fn qs_instrument_equity_option(
 #[allow(clippy::too_many_arguments)]
 pub fn qs_instrument_cds(
     name: &str,
+    context: &str,
     start_date: &str,
     maturity_date: &str,
     credit_index: &str,
@@ -789,6 +845,7 @@ pub fn qs_instrument_cds(
     start_tenor: Option<String>,
     tenor: Option<String>,
 ) -> Result<String, XllError> {
+    let (market, construction_revision) = construction_market(context)?;
     let key = input_key(&(
         start_date,
         maturity_date,
@@ -801,6 +858,7 @@ pub fn qs_instrument_cds(
         day_counter,
     ))?;
     let key = input_key(&(&key, (start_tenor.as_deref(), tenor.as_deref())))?;
+    let key = input_key(&(&key, context, &construction_revision))?;
     if let Some(handle) = cached_handle(name, "CreditDefaultSwap", &key)? {
         return Ok(handle);
     }
@@ -830,12 +888,14 @@ pub fn qs_instrument_cds(
         |m, t| m.with_tenor(t),
     )?;
     let object = InstrumentObject::from_maker(
+        market.as_ref(),
         "CreditDefaultSwap",
         1.0,
         None,
         instrument,
         NativeInstrument::CreditDefaultSwap,
-    );
+    )
+    .map_err(value_error)?;
     with_registry_mut(|registry| {
         registry.upsert_if_changed(name, QsObject::Instrument(Box::new(object)), key)
     })
@@ -850,6 +910,7 @@ pub fn qs_instrument_cds(
 #[allow(clippy::too_many_arguments)]
 pub fn qs_instrument_cap_floor(
     name: &str,
+    context: &str,
     start_date: &str,
     maturity_date: &str,
     market_index: &str,
@@ -863,6 +924,7 @@ pub fn qs_instrument_cap_floor(
     start_tenor: Option<String>,
     tenor: Option<String>,
 ) -> Result<String, XllError> {
+    let (market, construction_revision) = construction_market(context)?;
     let key = input_key(&(
         start_date,
         maturity_date,
@@ -876,6 +938,7 @@ pub fn qs_instrument_cap_floor(
         rate_frequency,
     ))?;
     let key = input_key(&(&key, (start_tenor.as_deref(), tenor.as_deref())))?;
+    let key = input_key(&(&key, context, &construction_revision))?;
     if let Some(handle) = cached_handle(name, "CapFloor", &key)? {
         return Ok(handle);
     }
@@ -911,12 +974,14 @@ pub fn qs_instrument_cap_floor(
         |m, t| m.with_tenor(t),
     )?;
     let object = InstrumentObject::from_maker(
+        market.as_ref(),
         "CapFloor",
         1.0,
         None,
         instrument,
         NativeInstrument::CapFloor,
-    );
+    )
+    .map_err(value_error)?;
     with_registry_mut(|registry| {
         registry.upsert_if_changed(name, QsObject::Instrument(Box::new(object)), key)
     })
@@ -931,6 +996,7 @@ pub fn qs_instrument_cap_floor(
 #[allow(clippy::too_many_arguments)]
 pub fn qs_instrument_caplet_floorlet(
     name: &str,
+    context: &str,
     fixing_date: &str,
     accrual_start: &str,
     accrual_end: &str,
@@ -944,6 +1010,7 @@ pub fn qs_instrument_caplet_floorlet(
     fixing_tenor: Option<String>,
     payment_tenor: Option<String>,
 ) -> Result<String, XllError> {
+    let (market, construction_revision) = construction_market(context)?;
     let key = input_key(&(
         fixing_date,
         accrual_start,
@@ -963,6 +1030,7 @@ pub fn qs_instrument_caplet_floorlet(
             payment_tenor.as_deref(),
         ),
     ))?;
+    let key = input_key(&(&key, context, &construction_revision))?;
     if let Some(handle) = cached_handle(name, "CapletFloorlet", &key)? {
         return Ok(handle);
     }
@@ -1005,12 +1073,14 @@ pub fn qs_instrument_caplet_floorlet(
         |m, t| m.with_payment_tenor(t),
     )?;
     let object = InstrumentObject::from_maker(
+        market.as_ref(),
         "CapletFloorlet",
         1.0,
         None,
         instrument,
         NativeInstrument::CapletFloorlet,
-    );
+    )
+    .map_err(value_error)?;
     with_registry_mut(|registry| {
         registry.upsert_if_changed(name, QsObject::Instrument(Box::new(object)), key)
     })
@@ -1025,6 +1095,7 @@ pub fn qs_instrument_caplet_floorlet(
 #[allow(clippy::too_many_arguments)]
 pub fn qs_instrument_rate_future(
     name: &str,
+    context: &str,
     start_date: &str,
     end_date: &str,
     market_index: &str,
@@ -1033,6 +1104,7 @@ pub fn qs_instrument_rate_future(
     start_tenor: Option<String>,
     tenor: Option<String>,
 ) -> Result<String, XllError> {
+    let (market, construction_revision) = construction_market(context)?;
     let key = input_key(&(
         start_date,
         end_date,
@@ -1041,6 +1113,7 @@ pub fn qs_instrument_rate_future(
         contract_size,
     ))?;
     let key = input_key(&(&key, (start_tenor.as_deref(), tenor.as_deref())))?;
+    let key = input_key(&(&key, context, &construction_revision))?;
     if let Some(handle) = cached_handle(name, "RateFutures", &key)? {
         return Ok(handle);
     }
@@ -1068,12 +1141,14 @@ pub fn qs_instrument_rate_future(
         |m, t| m.with_end_tenor(t),
     )?;
     let object = InstrumentObject::from_maker(
+        market.as_ref(),
         "RateFutures",
         1.0,
         None,
         instrument,
         NativeInstrument::RateFutures,
-    );
+    )
+    .map_err(value_error)?;
     with_registry_mut(|registry| {
         registry.upsert_if_changed(name, QsObject::Instrument(Box::new(object)), key)
     })
@@ -1088,6 +1163,7 @@ pub fn qs_instrument_rate_future(
 #[allow(clippy::too_many_arguments)]
 pub fn qs_instrument_equity_forward(
     name: &str,
+    context: &str,
     delivery_date: &str,
     market_index: &str,
     currency: &str,
@@ -1095,8 +1171,10 @@ pub fn qs_instrument_equity_forward(
     day_counter: &str,
     delivery_tenor: Option<String>,
 ) -> Result<String, XllError> {
+    let (market, construction_revision) = construction_market(context)?;
     let key = input_key(&(delivery_date, market_index, currency, strike, day_counter))?;
     let key = input_key(&(&key, (delivery_tenor.as_deref(),)))?;
+    let key = input_key(&(&key, context, &construction_revision))?;
     if let Some(handle) = cached_handle(name, "EquityForward", &key)? {
         return Ok(handle);
     }
@@ -1115,12 +1193,14 @@ pub fn qs_instrument_equity_forward(
         |m, t| m.with_delivery_tenor(t),
     )?;
     let object = InstrumentObject::from_maker(
+        market.as_ref(),
         "EquityForward",
         1.0,
         None,
         instrument,
         NativeInstrument::EquityForward,
-    );
+    )
+    .map_err(value_error)?;
     with_registry_mut(|registry| {
         registry.upsert_if_changed(name, QsObject::Instrument(Box::new(object)), key)
     })
@@ -1135,6 +1215,7 @@ pub fn qs_instrument_equity_forward(
 #[allow(clippy::too_many_arguments)]
 pub fn qs_instrument_european_swaption(
     name: &str,
+    context: &str,
     expiry_date: &str,
     maturity_date: &str,
     currency: &str,
@@ -1150,6 +1231,7 @@ pub fn qs_instrument_european_swaption(
     tenor: Option<String>,
     expiry_tenor: Option<String>,
 ) -> Result<String, XllError> {
+    let (market, construction_revision) = construction_market(context)?;
     let key = input_key(&(
         expiry_date,
         maturity_date,
@@ -1165,6 +1247,7 @@ pub fn qs_instrument_european_swaption(
         calendar,
     ))?;
     let key = input_key(&(&key, (tenor.as_deref(), expiry_tenor.as_deref())))?;
+    let key = input_key(&(&key, context, &construction_revision))?;
     if let Some(handle) = cached_handle(name, "EuropeanSwaption", &key)? {
         return Ok(handle);
     }
@@ -1210,12 +1293,14 @@ pub fn qs_instrument_european_swaption(
         |m, t| m.with_expiry_tenor(t),
     )?;
     let object = InstrumentObject::from_maker(
+        market.as_ref(),
         "EuropeanSwaption",
         1.0,
         None,
         instrument,
         NativeInstrument::EuropeanSwaption,
-    );
+    )
+    .map_err(value_error)?;
     with_registry_mut(|registry| {
         registry.upsert_if_changed(name, QsObject::Instrument(Box::new(object)), key)
     })

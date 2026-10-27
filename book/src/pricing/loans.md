@@ -57,12 +57,12 @@ This numerical example assumes equal accrual fractions. Actual schedule
 fractions depend on the payment dates and day counter. At zero interest and
 with no balloon, the instalment is principal divided by the number of periods.
 
-Rust makers resolved with `Resolve::resolve` obtain the initial all-in rate from
+Rust makers built with `MakeInstrument::build_using` obtain the initial all-in rate from
 the first coupon's fixing or forecast, including spread and payoff rules. An
 explicit `with_initial_amortization_rate` overrides that observation. Direct
 `build()` construction requires an explicit initial all-in `amortization_rate`
-for floating-first French/balloon loans. Python and Excel retain pending terms
-and resolve that rate during evaluation when omitted. The resolved rate fixes
+for floating-first French/balloon loans. Python makers use `build_using(context)` when that rate is omitted.
+Excel constructs the loan using its explicit construction context. The resolved rate fixes
 the principal schedule.
 Subsequent market moves or reset observations change floating interest without
 changing contractual coupon notionals or redemptions. Otherwise the first fixed
@@ -133,9 +133,11 @@ leaving the instrument unchanged.
 
 ## Prepayment functions
 
-A loan carries a `PrepaymentModel<DualFwd>` function independently of its
+A `Loan<T>` carries a `PrepaymentModel<T>` function independently of its
 contractual cashflows. `PrepaymentModelConfiguration::Cpr`, `CprCurve`, and
-`Refinancing` implement that function. For a builder already containing the
+`Refinancing` implement that function for any supported scalar. Custom models
+passed to `MakeLoan<T>::with_custom_prepayment_model` use the same `T` as the
+coupon templates. For a `MakeLoan<DualFwd>` already containing the
 contract terms, a custom function can be
 attached as in this Rust fragment:
 
@@ -147,6 +149,14 @@ let loan = builder.with_custom_prepayment_model(
     },
 ).build()?;
 ```
+
+Changing a loan's scalar type requires an explicit target-scalar prepayment
+model. Use `loan.into_scalar::<DualFwd>(Arc::new(model))`, and the same method on
+`LoanTrade<T>` to preserve its date and side. For portable configurations, pass
+the same configuration again. For custom models, supply an equivalent
+implementation for the target scalar; converting an arbitrary model
+automatically could discard its AD dependencies. Implicit `From`/`Into`
+conversions between loan scalar types are therefore unavailable.
 
 The pricer evaluates the function after scheduled principal. A regular monthly
 interval converts annual CPR to `1 - (1 - CPR)^(1/12)`; partial or irregular

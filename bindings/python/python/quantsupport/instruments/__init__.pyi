@@ -1,11 +1,12 @@
 """Product specifications, coupons, loan terms, and payoff scripts."""
 from datetime import date as PythonDate
-from typing import Any, ClassVar, Mapping, Sequence, final, overload
+from typing import Generic, TypeVar, Any, ClassVar, Mapping, Sequence, final, overload
 from typing_extensions import Self, disjoint_base
 from pandas import DataFrame
 from ..time import BusinessDayConvention, Calendar, Compounding, Date, DateGenerationRule, DayCounter, Frequency, _DateLike, _PeriodLike
+from .. import pricing as _pricing
 from ..market import Currency, MarketIndex, _CurrencyLike, _IndexLike
-__all__ = ['Instrument', 'UnresolvedInstrument', 'Side', 'OptionType', 'SwaptionType', 'CapFloorType', 'CapletFloorletType', 'PaymentStructure', 'LoanRepaymentStructure', 'PrepaymentModelConfiguration', 'Loan', 'EquityForward', 'EuropeanSwaption', 'Swap', 'CrossCurrencySwap', 'BasisSwap', 'FixFloatCrossCurrencySwap', 'FixedRateBond', 'InterestRate', 'PayoffOps', 'FixedRateCoupon', 'FloatingRateCoupon', 'OptionEmbeddedCoupon', 'CallScheduleEntry', 'SteppedCouponBond', 'FloatingRateNote', 'FixedRateDeposit', 'FxForward', 'FxOption', 'EquityOption', 'CreditDefaultSwap', 'CapFloor', 'CapletFloorlet', 'RateFutures', 'ScriptedProduct']
+__all__ = ['Instrument', 'Side', 'OptionType', 'SwaptionType', 'CapFloorType', 'CapletFloorletType', 'PaymentStructure', 'LoanRepaymentStructure', 'PrepaymentModelConfiguration', 'Loan', 'EquityForward', 'EuropeanSwaption', 'Swap', 'CrossCurrencySwap', 'BasisSwap', 'FixFloatCrossCurrencySwap', 'FixedRateBond', 'InterestRate', 'PayoffOps', 'FixedRateCoupon', 'FloatingRateCoupon', 'OptionEmbeddedCoupon', 'CallScheduleEntry', 'SteppedCouponBond', 'FloatingRateNote', 'FixedRateDeposit', 'FxForward', 'FxOption', 'EquityOption', 'CreditDefaultSwap', 'CapFloor', 'CapletFloorlet', 'RateFutures', 'ScriptedProduct', 'MakeInstrument', 'MakeSwap', 'MakeFloatFloatCrossCurrencySwap', 'MakeCrossCurrencySwap', 'MakeBasisSwap', 'MakeFixFloatCrossCurrencySwap', 'MakeFixedRateBond', 'MakeSteppedCouponBond', 'MakeFloatingRateNote', 'MakeFixedRateDeposit', 'MakeLoan', 'MakeFxForward', 'MakeFxEuropeanOption', 'MakeFxOption', 'MakeEquityEuropeanOption', 'MakeEquityOption', 'MakeCreditDefaultSwap', 'MakeCapFloor', 'MakeCapletFloorlet', 'MakeRateFutures', 'MakeSwaption', 'MakeEuropeanSwaption', 'MakeEquityForward', 'MakeScriptedProduct', 'MakeTrade']
 
 @final
 class Side:
@@ -402,8 +403,8 @@ class PrepaymentModelConfiguration:
 class Loan(Instrument):
     """Contractual cashflows and principal; valuation applies market/default/prepayment effects."""
 
-    def __new__(cls, identifier: str, start_date: _DateLike, maturity_date: _DateLike, notional: float, coupons: Sequence[FixedRateCoupon | FloatingRateCoupon | OptionEmbeddedCoupon | Mapping[str, Any]], currency: _CurrencyLike, repayment: LoanRepaymentStructure | str | Mapping[str, Any] | None=..., payment_frequency: Frequency | str | None=..., fixing_frequency: Frequency | str | None=..., prepayment: PrepaymentModelConfiguration | str | Mapping[str, Any] | None=..., credit_index: _IndexLike | None=..., recovery: float | None=..., fixing_lag: int | None=..., index_tenor: _PeriodLike | None=..., calendar: Calendar | str | None=..., business_day_convention: BusinessDayConvention | str | None=..., amortization_rate: float | None=...) -> Self:
-        """Build loan terms; evaluation resolves a missing floating initial amortization_rate.
+    def __new__(cls, identifier: str, start_date: _DateLike, maturity_date: _DateLike, notional: float, coupons: Sequence[FixedRateCoupon | FloatingRateCoupon | OptionEmbeddedCoupon | Mapping[str, Any]], currency: _CurrencyLike, repayment: LoanRepaymentStructure | str | Mapping[str, Any] | None=..., payment_frequency: Frequency | str | None=..., fixing_frequency: Frequency | str | None=..., prepayment: PrepaymentModelConfiguration | str | Mapping[str, Any] | None=..., credit_index: _IndexLike | None=..., recovery: float | None=..., fixing_lag: int | None=..., index_tenor: _PeriodLike | None=..., calendar: Calendar | str | None=..., business_day_convention: BusinessDayConvention | str | None=..., amortization_rate: float | None=..., context: _pricing.PricingContext | None=...) -> Self:
+        """Build a concrete loan using supplied terms and an optional construction context.
 
         Parameters
         ----------
@@ -454,23 +455,19 @@ class Loan(Instrument):
         amortization_rate : float, optional
             Initial annual all-in decimal rate used to build principal. Default
             None uses the first fixed coupon, or resolves the initial floating
-            observation when evaluated. Later coupons do not rebuild a resolved
+            observation during build_using. Later coupons do not rebuild the
             principal schedule.
+        context : PricingContext, optional
+            Explicit context for an initial amortization observation. None raises
+            UnresolvedProductErr when the supplied terms need market data.
+
+        Raises
+        ------
+        UnresolvedProductErr
+            If a reference date or market observation is required without a context.
         """
         ...
 
-    @classmethod
-    def from_tenors(cls, **parameters: Any) -> UnresolvedInstrument:
-        """Retain product terms with explicit start_tenor/tenor, expiry_tenor,
-        or delivery_tenor fields. Trade evaluation supplies actual dates.
-
-        Parameters
-        ----------
-        parameters : Any
-            Constructor keyword terms. Use separate tenor keywords in place of
-            dates, with all other fields following the product constructor.
-        """
-        ...
 
     @classmethod
     def from_dict(cls, obj: Mapping[str, Any]) -> Self:
@@ -528,7 +525,7 @@ class Loan(Instrument):
         """Native payment currency."""
         ...
 
-    def coupon_fixing_requests(self, context: Any | None = ...) -> DataFrame:
+    def coupon_fixing_requests(self) -> DataFrame:
         """Return unique index/fixing-date rows with ISO fixing/start/end dates in a DataFrame.
 
         Returns
@@ -538,11 +535,6 @@ class Loan(Instrument):
             fixing date. Columns are market_index, fixing_date, start_date, and
             end_date; dates are ISO strings. Fixed-rate loans have no rows.
             The pricer decides which past fixings are needed at evaluation.
-        Parameters
-        ----------
-        context : PricingContext or None, optional
-            Required when the initial floating amortization rate is unresolved.
-            None uses an already concrete loan schedule.
         """
         ...
 
@@ -605,18 +597,6 @@ class EquityForward(Instrument):
     def __new__(cls, identifier: str, market_index: _IndexLike, delivery_date: _DateLike, strike: float, currency: _CurrencyLike, day_counter: DayCounter | str | None=...) -> Self:
         ...
 
-    @classmethod
-    def from_tenors(cls, **parameters: Any) -> UnresolvedInstrument:
-        """Retain product terms with explicit start_tenor/tenor, expiry_tenor,
-        or delivery_tenor fields. Trade evaluation supplies actual dates.
-
-        Parameters
-        ----------
-        parameters : Any
-            Constructor keyword terms. Use separate tenor keywords in place of
-            dates, with all other fields following the product constructor.
-        """
-        ...
 
     @classmethod
     def from_dict(cls, obj: Mapping[str, Any]) -> Self:
@@ -738,18 +718,6 @@ class EuropeanSwaption(Instrument):
     def __new__(cls, identifier: str, expiry_date: _DateLike, maturity_date: _DateLike, strike: float, notional: float, currency: _CurrencyLike, market_index: _IndexLike, swaption_type: SwaptionType | str | None=..., day_counter: DayCounter | str | None=..., compounding: Compounding | str | None=..., rate_frequency: Frequency | str | None=..., fixed_leg_frequency: Frequency | str | None=..., floating_leg_frequency: Frequency | str | None=..., calendar: Calendar | str | None=...) -> Self:
         ...
 
-    @classmethod
-    def from_tenors(cls, **parameters: Any) -> UnresolvedInstrument:
-        """Retain product terms with explicit start_tenor/tenor, expiry_tenor,
-        or delivery_tenor fields. Trade evaluation supplies actual dates.
-
-        Parameters
-        ----------
-        parameters : Any
-            Constructor keyword terms. Use separate tenor keywords in place of
-            dates, with all other fields following the product constructor.
-        """
-        ...
 
     @classmethod
     def from_dict(cls, obj: Mapping[str, Any]) -> Self:
@@ -911,18 +879,6 @@ class Swap(Instrument):
     def __repr__(self) -> str:
         ...
 
-    @classmethod
-    def from_tenors(cls, **parameters: Any) -> UnresolvedInstrument:
-        """Retain product terms with explicit start_tenor/tenor, expiry_tenor,
-        or delivery_tenor fields. Trade evaluation supplies actual dates.
-
-        Parameters
-        ----------
-        parameters : Any
-            Constructor keyword terms. Use separate tenor keywords in place of
-            dates, with all other fields following the product constructor.
-        """
-        ...
 
     @classmethod
     def from_dict(cls, obj: Mapping[str, Any]) -> Self:
@@ -1076,18 +1032,6 @@ class CrossCurrencySwap(Instrument):
     def __repr__(self) -> str:
         ...
 
-    @classmethod
-    def from_tenors(cls, **parameters: Any) -> UnresolvedInstrument:
-        """Retain product terms with explicit start_tenor/tenor, expiry_tenor,
-        or delivery_tenor fields. Trade evaluation supplies actual dates.
-
-        Parameters
-        ----------
-        parameters : Any
-            Constructor keyword terms. Use separate tenor keywords in place of
-            dates, with all other fields following the product constructor.
-        """
-        ...
 
     @classmethod
     def from_dict(cls, obj: Mapping[str, Any]) -> Self:
@@ -1239,18 +1183,6 @@ class BasisSwap(Instrument):
     def __repr__(self) -> str:
         ...
 
-    @classmethod
-    def from_tenors(cls, **parameters: Any) -> UnresolvedInstrument:
-        """Retain product terms with explicit start_tenor/tenor, expiry_tenor,
-        or delivery_tenor fields. Trade evaluation supplies actual dates.
-
-        Parameters
-        ----------
-        parameters : Any
-            Constructor keyword terms. Use separate tenor keywords in place of
-            dates, with all other fields following the product constructor.
-        """
-        ...
 
     @classmethod
     def from_dict(cls, obj: Mapping[str, Any]) -> Self:
@@ -1399,18 +1331,6 @@ class FixFloatCrossCurrencySwap(Instrument):
     def __repr__(self) -> str:
         ...
 
-    @classmethod
-    def from_tenors(cls, **parameters: Any) -> UnresolvedInstrument:
-        """Retain product terms with explicit start_tenor/tenor, expiry_tenor,
-        or delivery_tenor fields. Trade evaluation supplies actual dates.
-
-        Parameters
-        ----------
-        parameters : Any
-            Constructor keyword terms. Use separate tenor keywords in place of
-            dates, with all other fields following the product constructor.
-        """
-        ...
 
     @classmethod
     def from_dict(cls, obj: Mapping[str, Any]) -> Self:
@@ -1600,18 +1520,6 @@ class FixedRateBond(Instrument):
         """
         ...
 
-    @classmethod
-    def from_tenors(cls, **parameters: Any) -> UnresolvedInstrument:
-        """Retain product terms with explicit start_tenor/tenor, expiry_tenor,
-        or delivery_tenor fields. Trade evaluation supplies actual dates.
-
-        Parameters
-        ----------
-        parameters : Any
-            Constructor keyword terms. Use separate tenor keywords in place of
-            dates, with all other fields following the product constructor.
-        """
-        ...
 
     @classmethod
     def from_dict(cls, obj: Mapping[str, Any]) -> Self:
@@ -2599,18 +2507,6 @@ class SteppedCouponBond(Instrument):
         """
         ...
 
-    @classmethod
-    def from_tenors(cls, **parameters: Any) -> UnresolvedInstrument:
-        """Retain product terms with explicit start_tenor/tenor, expiry_tenor,
-        or delivery_tenor fields. Trade evaluation supplies actual dates.
-
-        Parameters
-        ----------
-        parameters : Any
-            Constructor keyword terms. Use separate tenor keywords in place of
-            dates, with all other fields following the product constructor.
-        """
-        ...
 
     @classmethod
     def from_dict(cls, obj: Mapping[str, Any]) -> Self:
@@ -2779,18 +2675,6 @@ class FloatingRateNote(Instrument):
     def __repr__(self) -> str:
         ...
 
-    @classmethod
-    def from_tenors(cls, **parameters: Any) -> UnresolvedInstrument:
-        """Retain product terms with explicit start_tenor/tenor, expiry_tenor,
-        or delivery_tenor fields. Trade evaluation supplies actual dates.
-
-        Parameters
-        ----------
-        parameters : Any
-            Constructor keyword terms. Use separate tenor keywords in place of
-            dates, with all other fields following the product constructor.
-        """
-        ...
 
     @classmethod
     def from_dict(cls, obj: Mapping[str, Any]) -> Self:
@@ -2919,18 +2803,6 @@ class FixedRateDeposit(Instrument):
     def __repr__(self) -> str:
         ...
 
-    @classmethod
-    def from_tenors(cls, **parameters: Any) -> UnresolvedInstrument:
-        """Retain product terms with explicit start_tenor/tenor, expiry_tenor,
-        or delivery_tenor fields. Trade evaluation supplies actual dates.
-
-        Parameters
-        ----------
-        parameters : Any
-            Constructor keyword terms. Use separate tenor keywords in place of
-            dates, with all other fields following the product constructor.
-        """
-        ...
 
     @classmethod
     def from_dict(cls, obj: Mapping[str, Any]) -> Self:
@@ -3066,18 +2938,6 @@ class FxForward(Instrument):
     def __repr__(self) -> str:
         ...
 
-    @classmethod
-    def from_tenors(cls, **parameters: Any) -> UnresolvedInstrument:
-        """Retain product terms with explicit start_tenor/tenor, expiry_tenor,
-        or delivery_tenor fields. Trade evaluation supplies actual dates.
-
-        Parameters
-        ----------
-        parameters : Any
-            Constructor keyword terms. Use separate tenor keywords in place of
-            dates, with all other fields following the product constructor.
-        """
-        ...
 
     @classmethod
     def from_dict(cls, obj: Mapping[str, Any]) -> Self:
@@ -3200,18 +3060,6 @@ class FxOption(Instrument):
     def __repr__(self) -> str:
         ...
 
-    @classmethod
-    def from_tenors(cls, **parameters: Any) -> UnresolvedInstrument:
-        """Retain product terms with explicit start_tenor/tenor, expiry_tenor,
-        or delivery_tenor fields. Trade evaluation supplies actual dates.
-
-        Parameters
-        ----------
-        parameters : Any
-            Constructor keyword terms. Use separate tenor keywords in place of
-            dates, with all other fields following the product constructor.
-        """
-        ...
 
     @classmethod
     def from_dict(cls, obj: Mapping[str, Any]) -> Self:
@@ -3318,18 +3166,6 @@ class EquityOption(Instrument):
     def __repr__(self) -> str:
         ...
 
-    @classmethod
-    def from_tenors(cls, **parameters: Any) -> UnresolvedInstrument:
-        """Retain product terms with explicit start_tenor/tenor, expiry_tenor,
-        or delivery_tenor fields. Trade evaluation supplies actual dates.
-
-        Parameters
-        ----------
-        parameters : Any
-            Constructor keyword terms. Use separate tenor keywords in place of
-            dates, with all other fields following the product constructor.
-        """
-        ...
 
     @classmethod
     def from_dict(cls, obj: Mapping[str, Any]) -> Self:
@@ -3439,18 +3275,6 @@ class CreditDefaultSwap(Instrument):
     def __repr__(self) -> str:
         ...
 
-    @classmethod
-    def from_tenors(cls, **parameters: Any) -> UnresolvedInstrument:
-        """Retain product terms with explicit start_tenor/tenor, expiry_tenor,
-        or delivery_tenor fields. Trade evaluation supplies actual dates.
-
-        Parameters
-        ----------
-        parameters : Any
-            Constructor keyword terms. Use separate tenor keywords in place of
-            dates, with all other fields following the product constructor.
-        """
-        ...
 
     @classmethod
     def from_dict(cls, obj: Mapping[str, Any]) -> Self:
@@ -3584,18 +3408,6 @@ class CapFloor(Instrument):
     def __repr__(self) -> str:
         ...
 
-    @classmethod
-    def from_tenors(cls, **parameters: Any) -> UnresolvedInstrument:
-        """Retain product terms with explicit start_tenor/tenor, expiry_tenor,
-        or delivery_tenor fields. Trade evaluation supplies actual dates.
-
-        Parameters
-        ----------
-        parameters : Any
-            Constructor keyword terms. Use separate tenor keywords in place of
-            dates, with all other fields following the product constructor.
-        """
-        ...
 
     @classmethod
     def from_dict(cls, obj: Mapping[str, Any]) -> Self:
@@ -3729,18 +3541,6 @@ class CapletFloorlet(Instrument):
     def __repr__(self) -> str:
         ...
 
-    @classmethod
-    def from_tenors(cls, **parameters: Any) -> UnresolvedInstrument:
-        """Retain product terms with explicit start_tenor/tenor, expiry_tenor,
-        or delivery_tenor fields. Trade evaluation supplies actual dates.
-
-        Parameters
-        ----------
-        parameters : Any
-            Constructor keyword terms. Use separate tenor keywords in place of
-            dates, with all other fields following the product constructor.
-        """
-        ...
 
     @classmethod
     def from_dict(cls, obj: Mapping[str, Any]) -> Self:
@@ -3865,18 +3665,6 @@ class RateFutures(Instrument):
     def __repr__(self) -> str:
         ...
 
-    @classmethod
-    def from_tenors(cls, **parameters: Any) -> UnresolvedInstrument:
-        """Retain product terms with explicit start_tenor/tenor, expiry_tenor,
-        or delivery_tenor fields. Trade evaluation supplies actual dates.
-
-        Parameters
-        ----------
-        parameters : Any
-            Constructor keyword terms. Use separate tenor keywords in place of
-            dates, with all other fields following the product constructor.
-        """
-        ...
 
     @classmethod
     def from_dict(cls, obj: Mapping[str, Any]) -> Self:
@@ -3966,18 +3754,6 @@ class ScriptedProduct:
     def __repr__(self) -> str:
         ...
 
-    @classmethod
-    def from_tenors(cls, **parameters: Any) -> UnresolvedInstrument:
-        """Retain product terms with explicit start_tenor/tenor, expiry_tenor,
-        or delivery_tenor fields. Trade evaluation supplies actual dates.
-
-        Parameters
-        ----------
-        parameters : Any
-            Constructor keyword terms. Use separate tenor keywords in place of
-            dates, with all other fields following the product constructor.
-        """
-        ...
 
     @staticmethod
     def from_dict(obj: Mapping[str, Any]) -> ScriptedProduct:
@@ -4049,28 +3825,1312 @@ class ScriptedProduct:
 
     def __getitem__(self, key: str, /) -> Any: ...
 
-@final
-class UnresolvedInstrument(Instrument):
-    """Product terms created by from_tenors before a pricing context exists.
 
-    Put in Trade for automatic resolution, or call resolve_instrument(context)
-    once to retain a concrete contract across valuations.
-    """
 
-    def resolve_instrument(self, context: Any) -> Instrument:
-        """Resolve product terms once against an initialized pricing context.
+ProductT = TypeVar("ProductT")
+
+@disjoint_base
+class MakeInstrument(Generic[ProductT]):
+    """Reusable construction parameters; build before creating a trade."""
+
+    def __new__(cls, product_type: type[ProductT], parameters: Mapping[str, Any]) -> Self:
+        """Creates a maker, including makers for Python product subclasses.
+
+        Parameters
+        ----------
+        product_type : type
+            Concrete product class to construct.
+        parameters : Mapping[str, Any]
+            Product constructor inputs and optional tenor fields; copied by value.
+        """
+        ...
+
+    def is_resolved(self) -> bool:
+        """Whether date inputs and required market observations are resolved.
+
+        Contractual validity is checked by build, even when this returns True.
+        """
+        ...
+
+    def build(self) -> ProductT:
+        """Builds a concrete product using the supplied parameters.
+
+        Raises
+        ------
+        UnresolvedProductErr
+            If date inputs or market observations need resolving; supply
+            concrete terms or call maker.build_using(context).
+        QuantSupportError
+            If required terms are absent or invalid.
+        """
+        ...
+
+    def build_using(self, context: _pricing.PricingContext) -> ProductT:
+        """Builds a concrete product using an explicit active context.
 
         Parameters
         ----------
         context : PricingContext
-            Initialized market supplying the evaluation date, curves and fixings.
+            Supplies the evaluation date, fixing policy, and market observations.
         """
         ...
+
     def to_dict(self) -> dict[str, Any]:
-        """Return an independent copy of the original product parameters."""
+        """Returns a copy of the construction parameters."""
         ...
+
     def keys(self) -> list[str]:
-        """Return the pending specification keys; supports dict(obj)."""
+        """Returns construction parameter names; supports dict(maker)."""
         ...
-    def __getitem__(self, key: str, /) -> Any: ...
-    def __repr__(self) -> str: ...
+
+    def __getitem__(self, key: str, /) -> Any:
+        """Returns a copied construction parameter.
+
+        Parameters
+        ----------
+        key : str
+            Name of the construction parameter to read.
+        """
+        ...
+
+
+
+class MakeSwap(MakeInstrument[Swap]):
+    """Reusable maker for Swap. Both build methods return a concrete product."""
+
+    def __new__(cls, *, identifier: str, start_date: _DateLike | None = ..., maturity_date: _DateLike | None = ..., notional: float, fixed_rate: float, currency: _CurrencyLike, market_index: _IndexLike, spread: float | None = ..., day_counter: DayCounter | str | None = ..., compounding: Compounding | str | None = ..., rate_frequency: Frequency | str | None = ..., fixed_leg_frequency: Frequency | str | None = ..., floating_leg_frequency: Frequency | str | None = ..., start_tenor: _PeriodLike | None = ..., tenor: _PeriodLike | None = ...) -> Self:
+        """Stores copied construction parameters.
+
+        Parameters
+        ----------
+        identifier : str
+            Product identifier for the fixed/floating contract.
+        start_date : _DateLike | None
+            First accrual date of both legs; ISO YYYY-MM-DD strings are accepted.
+        maturity_date : _DateLike | None
+            Contractual end date of the swap schedule.
+        notional : float
+            Principal of both legs in currency; Trade may override this amount.
+        fixed_rate : float
+            Annual decimal fixed coupon rate; 0.05 means 5%.
+        currency : _CurrencyLike
+            Payment currency enum or alphabetic currency code.
+        market_index : _IndexLike
+            Floating-leg reference index or native serialized index representation.
+        spread : float | None
+            Annual decimal margin added to the floating rate. Default None leaves
+            the spread unset in the native builder.
+        day_counter : DayCounter | str | None
+            Fixed-rate day-count convention; default None uses Actual360.
+        compounding : Compounding | str | None
+            Fixed-rate accumulation convention; default None uses Simple.
+        rate_frequency : Frequency | str | None
+            Fixed-rate compounding frequency; default None uses Semiannual.
+        fixed_leg_frequency : Frequency | str | None
+            Fixed-leg payment interval; default None uses Semiannual.
+        floating_leg_frequency : Frequency | str | None
+            Floating-leg payment interval; default None uses Semiannual.
+        start_tenor : _PeriodLike | None
+            Start offset from the context evaluation date. Omitted or None leaves this input unset.
+        tenor : _PeriodLike | None
+            Maturity offset from the explicit or constructed start date. Omitted or None leaves this input unset.
+        """
+        ...
+
+    @classmethod
+    def from_dict(cls, parameters: Mapping[str, Any]) -> Self:
+        """Creates a maker from copied construction parameters.
+
+        Parameters
+        ----------
+        parameters : Mapping[str, Any]
+            Product constructor fields and optional relative tenor fields.
+        """
+        ...
+
+
+class MakeFloatFloatCrossCurrencySwap(MakeInstrument[CrossCurrencySwap]):
+    """Reusable maker for CrossCurrencySwap. Both build methods return a concrete product."""
+
+    def __new__(cls, *, identifier: str, start_date: _DateLike | None = ..., maturity_date: _DateLike | None = ..., domestic_notional: float, foreign_notional: float, domestic_currency: _CurrencyLike, foreign_currency: _CurrencyLike, domestic_market_index: _IndexLike, foreign_market_index: _IndexLike, domestic_spread: float = ..., foreign_spread: float = ..., domestic_leg_frequency: Any | None = ..., foreign_leg_frequency: Any | None = ..., start_tenor: _PeriodLike | None = ..., tenor: _PeriodLike | None = ...) -> Self:
+        """Stores copied construction parameters.
+
+        Parameters
+        ----------
+        identifier : str
+            Product identifier for the two-currency floating-rate contract.
+        start_date : _DateLike | None
+            Initial exchange and accrual date; ISO date strings are accepted.
+        maturity_date : _DateLike | None
+            Final exchange and accrual date of both legs.
+        domestic_notional : float
+            Domestic-leg principal in domestic_currency; Trade can override it.
+        foreign_notional : float
+            Foreign-leg principal in foreign_currency; Trade can override it.
+        domestic_currency : _CurrencyLike
+            Currency enum or alphabetic code for the domestic floating leg.
+        foreign_currency : _CurrencyLike
+            Currency enum or alphabetic code for the foreign floating leg.
+        domestic_market_index : _IndexLike
+            Domestic floating-rate reference index or native index representation.
+        foreign_market_index : _IndexLike
+            Foreign floating-rate reference index or native index representation.
+        domestic_spread : float
+            Annual decimal margin on the domestic index; default 0.0.
+        foreign_spread : float
+            Annual decimal margin on the foreign index; default 0.0.
+        domestic_leg_frequency : Any | None
+            Domestic coupon payment interval; default None uses Semiannual.
+        foreign_leg_frequency : Any | None
+            Foreign coupon payment interval; default None uses Semiannual.
+        start_tenor : _PeriodLike | None
+            Start offset from the context evaluation date. Omitted or None leaves this input unset.
+        tenor : _PeriodLike | None
+            Maturity offset from the explicit or constructed start date. Omitted or None leaves this input unset.
+        """
+        ...
+
+    @classmethod
+    def from_dict(cls, parameters: Mapping[str, Any]) -> Self:
+        """Creates a maker from copied construction parameters.
+
+        Parameters
+        ----------
+        parameters : Mapping[str, Any]
+            Product constructor fields and optional relative tenor fields.
+        """
+        ...
+
+
+class MakeCrossCurrencySwap(MakeInstrument[CrossCurrencySwap]):
+    """Reusable maker for CrossCurrencySwap. Both build methods return a concrete product."""
+
+    def __new__(cls, *, identifier: str, start_date: _DateLike | None = ..., maturity_date: _DateLike | None = ..., domestic_notional: float, foreign_notional: float, domestic_currency: _CurrencyLike, foreign_currency: _CurrencyLike, domestic_market_index: _IndexLike, foreign_market_index: _IndexLike, domestic_spread: float = ..., foreign_spread: float = ..., domestic_leg_frequency: Any | None = ..., foreign_leg_frequency: Any | None = ..., start_tenor: _PeriodLike | None = ..., tenor: _PeriodLike | None = ...) -> Self:
+        """Stores copied construction parameters.
+
+        Parameters
+        ----------
+        identifier : str
+            Product identifier for the two-currency floating-rate contract.
+        start_date : _DateLike | None
+            Initial exchange and accrual date; ISO date strings are accepted.
+        maturity_date : _DateLike | None
+            Final exchange and accrual date of both legs.
+        domestic_notional : float
+            Domestic-leg principal in domestic_currency; Trade can override it.
+        foreign_notional : float
+            Foreign-leg principal in foreign_currency; Trade can override it.
+        domestic_currency : _CurrencyLike
+            Currency enum or alphabetic code for the domestic floating leg.
+        foreign_currency : _CurrencyLike
+            Currency enum or alphabetic code for the foreign floating leg.
+        domestic_market_index : _IndexLike
+            Domestic floating-rate reference index or native index representation.
+        foreign_market_index : _IndexLike
+            Foreign floating-rate reference index or native index representation.
+        domestic_spread : float
+            Annual decimal margin on the domestic index; default 0.0.
+        foreign_spread : float
+            Annual decimal margin on the foreign index; default 0.0.
+        domestic_leg_frequency : Any | None
+            Domestic coupon payment interval; default None uses Semiannual.
+        foreign_leg_frequency : Any | None
+            Foreign coupon payment interval; default None uses Semiannual.
+        start_tenor : _PeriodLike | None
+            Start offset from the context evaluation date. Omitted or None leaves this input unset.
+        tenor : _PeriodLike | None
+            Maturity offset from the explicit or constructed start date. Omitted or None leaves this input unset.
+        """
+        ...
+
+    @classmethod
+    def from_dict(cls, parameters: Mapping[str, Any]) -> Self:
+        """Creates a maker from copied construction parameters.
+
+        Parameters
+        ----------
+        parameters : Mapping[str, Any]
+            Product constructor fields and optional relative tenor fields.
+        """
+        ...
+
+
+class MakeBasisSwap(MakeInstrument[BasisSwap]):
+    """Reusable maker for BasisSwap. Both build methods return a concrete product."""
+
+    def __new__(cls, *, identifier: str, start_date: _DateLike | None = ..., maturity_date: _DateLike | None = ..., notional: float, currency: _CurrencyLike, pay_market_index: _IndexLike, receive_market_index: _IndexLike, pay_spread: Any | None = ..., receive_spread: Any | None = ..., pay_leg_frequency: Any | None = ..., receive_leg_frequency: Any | None = ..., start_tenor: _PeriodLike | None = ..., tenor: _PeriodLike | None = ...) -> Self:
+        """Stores copied construction parameters.
+
+        Parameters
+        ----------
+        identifier : str
+            Product identifier for the two-index basis contract.
+        start_date : _DateLike | None
+            First accrual date of both legs; ISO date strings are accepted.
+        maturity_date : _DateLike | None
+            Final accrual date of the basis swap.
+        notional : float
+            Principal shared by both legs, in currency; Trade may override it.
+        currency : _CurrencyLike
+            Single payment currency enum or alphabetic code.
+        pay_market_index : _IndexLike
+            Reference index for the named pay leg; Trade side sets position direction.
+        receive_market_index : _IndexLike
+            Reference index for the named receive leg; native index strings accepted.
+        pay_spread : Any | None
+            Annual decimal margin on the pay index. Default None leaves this
+            spread unset in the native builder.
+        receive_spread : Any | None
+            Annual decimal margin on the receive index. Default None leaves this
+            spread unset in the native builder.
+        pay_leg_frequency : Any | None
+            Pay-leg coupon payment interval; default None uses Quarterly.
+        receive_leg_frequency : Any | None
+            Receive-leg coupon payment interval; default None uses Quarterly.
+        start_tenor : _PeriodLike | None
+            Start offset from the context evaluation date. Omitted or None leaves this input unset.
+        tenor : _PeriodLike | None
+            Maturity offset from the explicit or constructed start date. Omitted or None leaves this input unset.
+        """
+        ...
+
+    @classmethod
+    def from_dict(cls, parameters: Mapping[str, Any]) -> Self:
+        """Creates a maker from copied construction parameters.
+
+        Parameters
+        ----------
+        parameters : Mapping[str, Any]
+            Product constructor fields and optional relative tenor fields.
+        """
+        ...
+
+
+class MakeFixFloatCrossCurrencySwap(MakeInstrument[FixFloatCrossCurrencySwap]):
+    """Reusable maker for FixFloatCrossCurrencySwap. Both build methods return a concrete product."""
+
+    def __new__(cls, *, identifier: str, start_date: _DateLike | None = ..., maturity_date: _DateLike | None = ..., domestic_notional: float, foreign_notional: float, fixed_rate: float, domestic_currency: _CurrencyLike, foreign_currency: _CurrencyLike, floating_index: _IndexLike, spread: float | None = ..., day_counter: DayCounter | str | None = ..., compounding: Compounding | str | None = ..., rate_frequency: Frequency | str | None = ..., domestic_leg_frequency: Any | None = ..., foreign_leg_frequency: Any | None = ..., start_tenor: _PeriodLike | None = ..., tenor: _PeriodLike | None = ...) -> Self:
+        """Stores copied construction parameters.
+
+        Parameters
+        ----------
+        identifier : str
+            Product identifier for the fixed/floating cross-currency contract.
+        start_date : _DateLike | None
+            Initial exchange and first accrual date; ISO strings are accepted.
+        maturity_date : _DateLike | None
+            Final exchange and last accrual date.
+        domestic_notional : float
+            Principal of the domestic fixed leg in domestic_currency.
+        foreign_notional : float
+            Principal of the foreign floating leg in foreign_currency.
+        fixed_rate : float
+            Annual decimal coupon rate on the domestic fixed leg.
+        domestic_currency : _CurrencyLike
+            Domestic fixed-leg currency enum or alphabetic code.
+        foreign_currency : _CurrencyLike
+            Foreign floating-leg currency enum or alphabetic code.
+        floating_index : _IndexLike
+            Foreign-leg floating reference index or native index representation.
+        spread : float | None
+            Annual decimal margin on the floating index. Default None leaves
+            the spread unset in the native builder.
+        day_counter : DayCounter | str | None
+            Fixed-rate accrual basis; default None uses Actual360.
+        compounding : Compounding | str | None
+            Fixed-rate compounding convention; default None uses Simple.
+        rate_frequency : Frequency | str | None
+            Fixed-rate compounding frequency; default None uses Semiannual.
+        domestic_leg_frequency : Any | None
+            Domestic fixed coupon payment interval; default None uses Semiannual.
+        foreign_leg_frequency : Any | None
+            Foreign floating coupon payment interval; default None uses Semiannual.
+        start_tenor : _PeriodLike | None
+            Start offset from the context evaluation date. Omitted or None leaves this input unset.
+        tenor : _PeriodLike | None
+            Maturity offset from the explicit or constructed start date. Omitted or None leaves this input unset.
+        """
+        ...
+
+    @classmethod
+    def from_dict(cls, parameters: Mapping[str, Any]) -> Self:
+        """Creates a maker from copied construction parameters.
+
+        Parameters
+        ----------
+        parameters : Mapping[str, Any]
+            Product constructor fields and optional relative tenor fields.
+        """
+        ...
+
+
+class MakeFixedRateBond(MakeInstrument[FixedRateBond]):
+    """Reusable maker for FixedRateBond. Both build methods return a concrete product."""
+
+    def __new__(cls, *, identifier: str, start_date: _DateLike | None = ..., maturity_date: _DateLike | None = ..., notional: float, rate: float, currency: _CurrencyLike, discount_index: _IndexLike | None = ..., day_counter: DayCounter | str | None = ..., compounding: Compounding | str | None = ..., rate_frequency: Frequency | str | None = ..., payment_frequency: Any | None = ..., payment_structure: PaymentStructure | str | None = ..., calendar: Calendar | str | None = ..., business_day_convention: BusinessDayConvention | str | None = ..., date_generation_rule: DateGenerationRule | str | None = ..., end_of_month: bool | None = ..., first_coupon_date: _DateLike | None = ..., start_tenor: _PeriodLike | None = ..., tenor: _PeriodLike | None = ..., first_coupon_tenor: _PeriodLike | None = ...) -> Self:
+        """Stores copied construction parameters.
+
+        Parameters
+        ----------
+        identifier : str
+            Product identifier used in bond pricing results.
+        start_date : _DateLike | None
+            Issue/effective date and first accrual date; ISO strings are accepted.
+        maturity_date : _DateLike | None
+            Final contractual coupon and principal repayment date.
+        notional : float
+            Original principal in currency; Trade may override the position amount.
+        rate : float
+            Annual decimal fixed coupon rate; 0.04 denotes 4%.
+        currency : _CurrencyLike
+            Payment currency enum or alphabetic currency code.
+        discount_index : _IndexLike | None
+            Explicit discount-curve index. Default None leaves it unset for native
+            builder/pricing-policy resolution.
+        day_counter : DayCounter | str | None
+            Coupon accrual day-count basis; default None resolves to Actual360.
+        compounding : Compounding | str | None
+            Fixed-rate accumulation rule; default None resolves to Simple.
+        rate_frequency : Frequency | str | None
+            Fixed-rate compounding frequency; default None uses Semiannual.
+        payment_frequency : Any | None
+            Coupon payment interval; default None uses Semiannual.
+        payment_structure : PaymentStructure | str | None
+            Principal schedule: Bullet, EqualPayments, EqualRedemptions, Zero, or
+            Other enum/name. Default None uses Bullet; native construction checks
+            whether the requested schedule is supported.
+        calendar : Calendar | str | None
+            Schedule holiday calendar or serialized name. Default None leaves the
+            native schedule builder's calendar unchanged.
+        business_day_convention : BusinessDayConvention | str | None
+            Schedule date-adjustment rule; default None defers to the native builder.
+        date_generation_rule : DateGenerationRule | str | None
+            Direction/rule for regular schedule generation, such as Backward or
+            Forward. Default None leaves the native builder's rule unchanged.
+        end_of_month : bool | None
+            Whether regular dates retain month-end alignment. Default None leaves
+            the native builder's month-end setting unchanged.
+        first_coupon_date : _DateLike | None
+            Explicit first coupon date for an initial stub. Default None generates
+            the first coupon from the regular schedule.
+        start_tenor : _PeriodLike | None
+            Start offset from the context evaluation date. Omitted or None leaves this input unset.
+        tenor : _PeriodLike | None
+            Maturity offset from the explicit or constructed start date. Omitted or None leaves this input unset.
+        first_coupon_tenor : _PeriodLike | None
+            First coupon offset from the constructed start date. Omitted or None leaves this input unset.
+        """
+        ...
+
+    @classmethod
+    def from_dict(cls, parameters: Mapping[str, Any]) -> Self:
+        """Creates a maker from copied construction parameters.
+
+        Parameters
+        ----------
+        parameters : Mapping[str, Any]
+            Product constructor fields and optional relative tenor fields.
+        """
+        ...
+
+
+class MakeSteppedCouponBond(MakeInstrument[SteppedCouponBond]):
+    """Reusable maker for SteppedCouponBond. Both build methods return a concrete product."""
+
+    def __new__(cls, *, identifier: str, start_date: _DateLike | None = ..., maturity_date: _DateLike | None = ..., notional: float, currency: _CurrencyLike, coupons: Sequence[FixedRateCoupon | FloatingRateCoupon | OptionEmbeddedCoupon | Mapping[str, Any]], notional_percentages: Any, call_schedule: Any | None = ..., units: float = ..., payment_frequency: Any | None = ..., coupon_day_counter: Any | None = ..., calendar: Calendar | str | None = ..., business_day_convention: BusinessDayConvention | str | None = ..., date_generation_rule: DateGenerationRule | str | None = ..., end_of_month: bool | None = ..., first_coupon_date: _DateLike | None = ..., next_to_last_coupon_date: _DateLike | None = ..., termination_date_convention: Any | None = ..., start_tenor: _PeriodLike | None = ..., tenor: _PeriodLike | None = ..., first_coupon_tenor: _PeriodLike | None = ..., next_to_last_coupon_tenor: _PeriodLike | None = ..., call_schedule_tenors: Sequence[Any] | None = ...) -> Self:
+        """Stores copied construction parameters.
+
+        Parameters
+        ----------
+        identifier : str
+            Product identifier for the stepped-coupon contract.
+        start_date : _DateLike | None
+            Effective date and start of the coupon schedule; ISO strings are accepted.
+        maturity_date : _DateLike | None
+            Final contractual accrual and remaining principal repayment date.
+        notional : float
+            Original principal in currency; Trade may override the position amount.
+        currency : _CurrencyLike
+            Coupon and principal currency enum or alphabetic code.
+        coupons : Sequence[FixedRateCoupon | FloatingRateCoupon | OptionEmbeddedCoupon | Mapping[str, Any]]
+            Nonempty positional coupon templates or native tagged coupon dictionaries.
+            The last entry repeats through maturity; no more entries than coupon
+            periods are allowed. Builders supply each period's balance and dates.
+        notional_percentages : Any
+            Nonempty outstanding fractions of original principal for successive
+            coupon periods, starting at 1.0 and non-increasing in (0, 1]. Values
+            are fractions, not percentages; 0.8 means 80%. The last entry repeats
+            to maturity, when remaining principal is repaid.
+        call_schedule : Any | None
+            Issuer call dates/windows as typed entries or native dictionaries.
+            Default None is an empty schedule, with no issuer calls.
+        units : float
+            Quote denomination for bond prices and call strikes; default 100.0.
+        payment_frequency : Any | None
+            Regular coupon interval; default None resolves to Semiannual.
+        coupon_day_counter : Any | None
+            Convention used to rebuild fixed coupons with Simple/Annual rate
+            conventions. Default None resolves to Actual365.
+        calendar : Calendar | str | None
+            Schedule holiday calendar or serialized name. Default None uses the
+            null calendar in the native builder.
+        business_day_convention : BusinessDayConvention | str | None
+            Regular schedule adjustment rule; default None resolves to Unadjusted.
+        date_generation_rule : DateGenerationRule | str | None
+            Rule/direction used to generate coupon dates. Default None uses Backward.
+        end_of_month : bool | None
+            Preserve month-end alignment when generating dates. Default None uses False.
+        first_coupon_date : _DateLike | None
+            Explicit first coupon boundary for an initial stub; default None uses
+            the regular generated boundary.
+        next_to_last_coupon_date : _DateLike | None
+            Explicit penultimate coupon boundary for a final stub; default None
+            uses the regular generated boundary.
+        termination_date_convention : Any | None
+            Separate final-date adjustment rule. Default None resolves to Unadjusted.
+        start_tenor : _PeriodLike | None
+            Start offset from the context evaluation date. Omitted or None leaves this input unset.
+        tenor : _PeriodLike | None
+            Maturity offset from the explicit or constructed start date. Omitted or None leaves this input unset.
+        first_coupon_tenor : _PeriodLike | None
+            First coupon offset from the constructed start date. Omitted or None leaves this input unset.
+        next_to_last_coupon_tenor : _PeriodLike | None
+            Penultimate coupon offset from maturity. Omitted or None leaves this input unset.
+        call_schedule_tenors : Sequence[Any] | None
+            Call tenor/strike tuples or start/end-tenor/strike tuples measured from start. Omitted or None leaves this input unset.
+        """
+        ...
+
+    @classmethod
+    def from_dict(cls, parameters: Mapping[str, Any]) -> Self:
+        """Creates a maker from copied construction parameters.
+
+        Parameters
+        ----------
+        parameters : Mapping[str, Any]
+            Product constructor fields and optional relative tenor fields.
+        """
+        ...
+
+
+class MakeFloatingRateNote(MakeInstrument[FloatingRateNote]):
+    """Reusable maker for FloatingRateNote. Both build methods return a concrete product."""
+
+    def __new__(cls, *, identifier: str, start_date: _DateLike | None = ..., maturity_date: _DateLike | None = ..., notional: float, spread: float, currency: _CurrencyLike, forward_index: _IndexLike, payment_frequency: Any | None = ..., payment_structure: PaymentStructure | str | None = ..., start_tenor: _PeriodLike | None = ..., tenor: _PeriodLike | None = ...) -> Self:
+        """Stores copied construction parameters.
+
+        Parameters
+        ----------
+        identifier : str
+            Product identifier for the floating-rate bond.
+        start_date : _DateLike | None
+            First coupon accrual date; ISO date strings are accepted.
+        maturity_date : _DateLike | None
+            Final contractual coupon and principal repayment date.
+        notional : float
+            Original principal in currency; Trade may override the amount.
+        spread : float
+            Annual decimal margin added to the forward index; 0.001 means 10 bp.
+        currency : _CurrencyLike
+            Payment currency enum or alphabetic currency code.
+        forward_index : _IndexLike
+            Reference index for projected floating coupons, or native index representation.
+        payment_frequency : Any | None
+            Coupon payment interval; default None resolves to Quarterly.
+        payment_structure : PaymentStructure | str | None
+            Principal repayment enum/name, such as Bullet, EqualPayments, or
+            EqualRedemptions. Default None uses Bullet; native construction checks
+            the requested structure.
+        start_tenor : _PeriodLike | None
+            Start offset from the context evaluation date. Omitted or None leaves this input unset.
+        tenor : _PeriodLike | None
+            Maturity offset from the explicit or constructed start date. Omitted or None leaves this input unset.
+        """
+        ...
+
+    @classmethod
+    def from_dict(cls, parameters: Mapping[str, Any]) -> Self:
+        """Creates a maker from copied construction parameters.
+
+        Parameters
+        ----------
+        parameters : Mapping[str, Any]
+            Product constructor fields and optional relative tenor fields.
+        """
+        ...
+
+
+class MakeFixedRateDeposit(MakeInstrument[FixedRateDeposit]):
+    """Reusable maker for FixedRateDeposit. Both build methods return a concrete product."""
+
+    def __new__(cls, *, identifier: str, start_date: _DateLike | None = ..., maturity_date: _DateLike | None = ..., notional: float, rate: float, currency: _CurrencyLike, discount_index: _IndexLike | None = ..., day_counter: DayCounter | str | None = ..., compounding: Compounding | str | None = ..., rate_frequency: Frequency | str | None = ..., start_tenor: _PeriodLike | None = ..., tenor: _PeriodLike | None = ...) -> Self:
+        """Stores copied construction parameters.
+
+        Parameters
+        ----------
+        identifier : str
+            Product identifier for the deposit contract.
+        start_date : _DateLike | None
+            Principal advance and accrual start date; ISO date strings are accepted.
+        maturity_date : _DateLike | None
+            Principal repayment and end-of-interest-accrual date.
+        notional : float
+            Deposit principal in currency; Trade may override this amount.
+        rate : float
+            Annual decimal deposit rate, for example 0.05 for 5%.
+        currency : _CurrencyLike
+            Principal/interest payment currency enum or alphabetic code.
+        discount_index : _IndexLike | None
+            Explicit discount-curve index. Default None leaves native builder/pricing
+            policy selection unchanged.
+        day_counter : DayCounter | str | None
+            Deposit accrual basis; default None resolves to Actual360.
+        compounding : Compounding | str | None
+            Interest accumulation convention; default None uses Simple.
+        rate_frequency : Frequency | str | None
+            Rate compounding frequency; default None resolves to Annual.
+        start_tenor : _PeriodLike | None
+            Start offset from the context evaluation date. Omitted or None leaves this input unset.
+        tenor : _PeriodLike | None
+            Maturity offset from the explicit or constructed start date. Omitted or None leaves this input unset.
+        """
+        ...
+
+    @classmethod
+    def from_dict(cls, parameters: Mapping[str, Any]) -> Self:
+        """Creates a maker from copied construction parameters.
+
+        Parameters
+        ----------
+        parameters : Mapping[str, Any]
+            Product constructor fields and optional relative tenor fields.
+        """
+        ...
+
+
+class MakeLoan(MakeInstrument[Loan]):
+    """Reusable maker for Loan. Both build methods return a concrete product."""
+
+    def __new__(cls, *, identifier: str, start_date: _DateLike | None = ..., maturity_date: _DateLike | None = ..., notional: float, coupons: Sequence[FixedRateCoupon | FloatingRateCoupon | OptionEmbeddedCoupon | Mapping[str, Any]], currency: _CurrencyLike, repayment: LoanRepaymentStructure | str | Mapping[str, Any] | None = ..., payment_frequency: Frequency | str | None = ..., fixing_frequency: Frequency | str | None = ..., prepayment: PrepaymentModelConfiguration | str | Mapping[str, Any] | None = ..., credit_index: _IndexLike | None = ..., recovery: float | None = ..., fixing_lag: int | None = ..., index_tenor: _PeriodLike | None = ..., calendar: Calendar | str | None = ..., business_day_convention: BusinessDayConvention | str | None = ..., amortization_rate: float | None = ..., start_tenor: _PeriodLike | None = ..., tenor: _PeriodLike | None = ..., prepayment_tenors: Sequence[Any] | None = ...) -> Self:
+        """Stores copied construction parameters.
+
+        Parameters
+        ----------
+        identifier : str
+            Nonempty contract identifier used in pricing results and diagnostics.
+        start_date : _DateLike | None
+            Origination and first accrual date, before maturity; strings are ISO dates.
+        maturity_date : _DateLike | None
+            Final contractual accrual and principal repayment date.
+        notional : float
+            Finite, strictly positive original principal in the payment currency.
+        coupons : Sequence[FixedRateCoupon | FloatingRateCoupon | OptionEmbeddedCoupon | Mapping[str, Any]]
+            Nonempty positional coupon templates, or tagged coupon dictionaries
+            returned by their ``to_dict()`` methods. The last entry repeats to
+            maturity; builders supply balances and dates. Each coupon owns its
+            accrual day counter; floating coupons default to the index convention.
+            Amortization uses the same accrual conventions as coupon interest.
+        currency : _CurrencyLike
+            Payment currency enum or alphabetic code; pricing policy selects
+            the discount curve.
+        repayment : LoanRepaymentStructure | str | Mapping[str, Any] | None
+            Principal amortization terms or their native serialized form.
+            Default None resolves to French amortization.
+        payment_frequency : Frequency | str | None
+            Contractual payment interval. Default None resolves to Monthly.
+        fixing_frequency : Frequency | str | None
+            Coupon reset interval, which must align with accrual dates. Default
+            None uses index metadata, or payment frequency for daily indices.
+        prepayment : PrepaymentModelConfiguration | str | Mapping[str, Any] | None
+            Conditional prepayment terms applied during valuation after scheduled
+            principal. Default None disables prepayment.
+        credit_index : _IndexLike | None
+            Borrower survival-curve index, which must be a Credit index. Default
+            None means no default model; serialized indices use native serde form.
+        recovery : float | None
+            Recovery fraction in [0, 1]. Default None resolves to 0.4.
+        fixing_lag : int | None
+            Nonnegative business days before coupon reset. Default None uses zero.
+        index_tenor : _PeriodLike | None
+            Positive observation tenor, independent of reset and payment frequency.
+            Default None uses the index metadata frequency.
+        calendar : Calendar | str | None
+            Payment/fixing calendar or serialized calendar name. Default None
+            uses the null calendar.
+        business_day_convention : BusinessDayConvention | str | None
+            Payment-date adjustment rule. Default None uses Unadjusted;
+            contractual accrual dates are not adjusted.
+        amortization_rate : float | None
+            Initial annual all-in decimal rate used to build principal. Default
+            None uses the first fixed coupon, or resolves the initial floating
+            observation during build_using. Later coupons do not rebuild the
+            principal schedule.
+        start_tenor : _PeriodLike | None
+            Start offset from the context evaluation date. Omitted or None leaves this input unset.
+        tenor : _PeriodLike | None
+            Maturity offset from the explicit or constructed start date. Omitted or None leaves this input unset.
+        prepayment_tenors : Sequence[Any] | None
+            CPR observations as tenor/rate pairs measured from the loan start. Omitted or None leaves this input unset.
+        """
+        ...
+
+    @classmethod
+    def from_dict(cls, parameters: Mapping[str, Any]) -> Self:
+        """Creates a maker from copied construction parameters.
+
+        Parameters
+        ----------
+        parameters : Mapping[str, Any]
+            Product constructor fields and optional relative tenor fields.
+        """
+        ...
+
+
+class MakeFxForward(MakeInstrument[FxForward]):
+    """Reusable maker for FxForward. Both build methods return a concrete product."""
+
+    def __new__(cls, *, identifier: str, delivery_date: _DateLike | None = ..., base_currency: _CurrencyLike, quote_currency: _CurrencyLike, forward_price: Any | None = ..., forward_points: Any | None = ..., day_counter: DayCounter | str | None = ..., fixing_date: _DateLike | None = ..., settlement_currency: Any | None = ..., delivery_tenor: _PeriodLike | None = ...) -> Self:
+        """Stores copied construction parameters.
+
+        Parameters
+        ----------
+        identifier : str
+            Product identifier for the currency forward.
+        delivery_date : _DateLike | None
+            Currency delivery/cash settlement date; ISO strings are accepted.
+        base_currency : _CurrencyLike
+            Base currency enum or alphabetic code; forward price is quoted per
+            unit of this currency. Trade carries the position notional and side.
+        quote_currency : _CurrencyLike
+            Quote currency enum or alphabetic code, the numerator of the FX price.
+        forward_price : Any | None
+            Agreed outright price in quote-currency units per base-currency unit.
+            Default None leaves it unset; native construction requires this or
+            forward_points to be supplied.
+        forward_points : Any | None
+            Agreed forward-minus-spot price difference in the pair's quoted price
+            units, not an annual rate. Default None leaves points unset.
+        day_counter : DayCounter | str | None
+            Forward time basis. Default None resolves to Actual360 in the native builder.
+        fixing_date : _DateLike | None
+            NDF observation date, no later than delivery_date. Default None;
+            the wrapper builds an NDF only when settlement_currency is also supplied.
+        settlement_currency : Any | None
+            NDF cash settlement currency enum or alphabetic code. Default None;
+            if either NDF field is absent, the wrapper builds a deliverable forward.
+        delivery_tenor : _PeriodLike | None
+            Delivery offset from the context evaluation date. Omitted or None leaves this input unset.
+        """
+        ...
+
+    @classmethod
+    def from_dict(cls, parameters: Mapping[str, Any]) -> Self:
+        """Creates a maker from copied construction parameters.
+
+        Parameters
+        ----------
+        parameters : Mapping[str, Any]
+            Product constructor fields and optional relative tenor fields.
+        """
+        ...
+
+
+class MakeFxEuropeanOption(MakeInstrument[FxOption]):
+    """Reusable maker for FxOption. Both build methods return a concrete product."""
+
+    def __new__(cls, *, identifier: str, expiry_date: _DateLike | None = ..., strike: float | Mapping[str, Any] | str, option_type: OptionType | str, base_currency: _CurrencyLike, quote_currency: _CurrencyLike, expiry_tenor: _PeriodLike | None = ...) -> Self:
+        """Stores copied construction parameters.
+
+        Parameters
+        ----------
+        identifier : str
+            Product identifier for the European currency option.
+        expiry_date : _DateLike | None
+            Single European exercise date; ISO date strings are accepted.
+        strike : float | Mapping[str, Any] | str
+            Numeric absolute exercise price in quote-currency units per base unit.
+            The runtime requires a number; ATM strings and tagged Strike objects
+            are not accepted by this wrapper.
+        option_type : OptionType | str
+            Call or Put on the base currency, as an enum or case-insensitive name.
+        base_currency : _CurrencyLike
+            Underlying/base currency enum or alphabetic code; Trade carries position size.
+        quote_currency : _CurrencyLike
+            Quote/payment currency enum or alphabetic code used for the strike.
+        expiry_tenor : _PeriodLike | None
+            Expiry offset from the context evaluation date. Omitted or None leaves this input unset.
+        """
+        ...
+
+    @classmethod
+    def from_dict(cls, parameters: Mapping[str, Any]) -> Self:
+        """Creates a maker from copied construction parameters.
+
+        Parameters
+        ----------
+        parameters : Mapping[str, Any]
+            Product constructor fields and optional relative tenor fields.
+        """
+        ...
+
+
+class MakeFxOption(MakeInstrument[FxOption]):
+    """Reusable maker for FxOption. Both build methods return a concrete product."""
+
+    def __new__(cls, *, identifier: str, expiry_date: _DateLike | None = ..., strike: float | Mapping[str, Any] | str, option_type: OptionType | str, base_currency: _CurrencyLike, quote_currency: _CurrencyLike, expiry_tenor: _PeriodLike | None = ...) -> Self:
+        """Stores copied construction parameters.
+
+        Parameters
+        ----------
+        identifier : str
+            Product identifier for the European currency option.
+        expiry_date : _DateLike | None
+            Single European exercise date; ISO date strings are accepted.
+        strike : float | Mapping[str, Any] | str
+            Numeric absolute exercise price in quote-currency units per base unit.
+            The runtime requires a number; ATM strings and tagged Strike objects
+            are not accepted by this wrapper.
+        option_type : OptionType | str
+            Call or Put on the base currency, as an enum or case-insensitive name.
+        base_currency : _CurrencyLike
+            Underlying/base currency enum or alphabetic code; Trade carries position size.
+        quote_currency : _CurrencyLike
+            Quote/payment currency enum or alphabetic code used for the strike.
+        expiry_tenor : _PeriodLike | None
+            Expiry offset from the context evaluation date. Omitted or None leaves this input unset.
+        """
+        ...
+
+    @classmethod
+    def from_dict(cls, parameters: Mapping[str, Any]) -> Self:
+        """Creates a maker from copied construction parameters.
+
+        Parameters
+        ----------
+        parameters : Mapping[str, Any]
+            Product constructor fields and optional relative tenor fields.
+        """
+        ...
+
+
+class MakeEquityEuropeanOption(MakeInstrument[EquityOption]):
+    """Reusable maker for EquityOption. Both build methods return a concrete product."""
+
+    def __new__(cls, *, identifier: str, market_index: _IndexLike, expiry_date: _DateLike | None = ..., strike: float | Mapping[str, Any] | str, option_type: OptionType | str, expiry_tenor: _PeriodLike | None = ...) -> Self:
+        """Stores copied construction parameters.
+
+        Parameters
+        ----------
+        identifier : str
+            Product identifier for the European equity option.
+        market_index : _IndexLike
+            Underlying equity index or its native serialized representation.
+        expiry_date : _DateLike | None
+            Single European exercise date; ISO date strings are accepted.
+        strike : float | Mapping[str, Any] | str
+            Numeric absolute exercise price per equity unit, case-insensitive
+            "ATM", or a native tagged Strike dictionary: {"Absolute": value} or
+            {"Relative": offset}. The equity pricer uses Strike.resolve: Relative
+            adds this offset to the forward equity price, not a percentage.
+            This helper convention is not universal across product pricers.
+        option_type : OptionType | str
+            Call or Put payoff direction, as an enum or case-insensitive name.
+            Trade supplies the equity position size and long/short direction.
+        expiry_tenor : _PeriodLike | None
+            Expiry offset from the context evaluation date. Omitted or None leaves this input unset.
+        """
+        ...
+
+    @classmethod
+    def from_dict(cls, parameters: Mapping[str, Any]) -> Self:
+        """Creates a maker from copied construction parameters.
+
+        Parameters
+        ----------
+        parameters : Mapping[str, Any]
+            Product constructor fields and optional relative tenor fields.
+        """
+        ...
+
+
+class MakeEquityOption(MakeInstrument[EquityOption]):
+    """Reusable maker for EquityOption. Both build methods return a concrete product."""
+
+    def __new__(cls, *, identifier: str, market_index: _IndexLike, expiry_date: _DateLike | None = ..., strike: float | Mapping[str, Any] | str, option_type: OptionType | str, expiry_tenor: _PeriodLike | None = ...) -> Self:
+        """Stores copied construction parameters.
+
+        Parameters
+        ----------
+        identifier : str
+            Product identifier for the European equity option.
+        market_index : _IndexLike
+            Underlying equity index or its native serialized representation.
+        expiry_date : _DateLike | None
+            Single European exercise date; ISO date strings are accepted.
+        strike : float | Mapping[str, Any] | str
+            Numeric absolute exercise price per equity unit, case-insensitive
+            "ATM", or a native tagged Strike dictionary: {"Absolute": value} or
+            {"Relative": offset}. The equity pricer uses Strike.resolve: Relative
+            adds this offset to the forward equity price, not a percentage.
+            This helper convention is not universal across product pricers.
+        option_type : OptionType | str
+            Call or Put payoff direction, as an enum or case-insensitive name.
+            Trade supplies the equity position size and long/short direction.
+        expiry_tenor : _PeriodLike | None
+            Expiry offset from the context evaluation date. Omitted or None leaves this input unset.
+        """
+        ...
+
+    @classmethod
+    def from_dict(cls, parameters: Mapping[str, Any]) -> Self:
+        """Creates a maker from copied construction parameters.
+
+        Parameters
+        ----------
+        parameters : Mapping[str, Any]
+            Product constructor fields and optional relative tenor fields.
+        """
+        ...
+
+
+class MakeCreditDefaultSwap(MakeInstrument[CreditDefaultSwap]):
+    """Reusable maker for CreditDefaultSwap. Both build methods return a concrete product."""
+
+    def __new__(cls, *, identifier: str, start_date: _DateLike | None = ..., maturity_date: _DateLike | None = ..., spread: float, currency: _CurrencyLike, credit_index: _IndexLike, discount_index: _IndexLike, recovery: float = ..., premium_frequency: Any | None = ..., day_counter: DayCounter | str | None = ..., start_tenor: _PeriodLike | None = ..., tenor: _PeriodLike | None = ...) -> Self:
+        """Stores copied construction parameters.
+
+        Parameters
+        ----------
+        identifier : str
+            Product identifier for the single-name protection contract.
+        start_date : _DateLike | None
+            Protection/premium accrual start; ISO date strings are accepted.
+        maturity_date : _DateLike | None
+            End of protection and final contractual premium period.
+        spread : float
+            Annual decimal running premium; 0.01 means 100 basis points, not 1 bp.
+        currency : _CurrencyLike
+            Premium/protection payment currency enum or alphabetic code.
+        credit_index : _IndexLike
+            Survival-curve index in native index representation. A parsed non-Credit
+            index is converted to a Credit index using its display name; arbitrary
+            bare borrower names are not parsed as index variants.
+        discount_index : _IndexLike
+            Discount-curve index for premium and protection cashflows.
+        recovery : float
+            Recovery fraction of protected principal in [0, 1]; default 0.4.
+        premium_frequency : Any | None
+            Premium payment interval; default None resolves to Quarterly.
+        day_counter : DayCounter | str | None
+            Running premium accrual basis; default None resolves to Actual360.
+        start_tenor : _PeriodLike | None
+            Start offset from the context evaluation date. Omitted or None leaves this input unset.
+        tenor : _PeriodLike | None
+            Maturity offset from the explicit or constructed start date. Omitted or None leaves this input unset.
+        """
+        ...
+
+    @classmethod
+    def from_dict(cls, parameters: Mapping[str, Any]) -> Self:
+        """Creates a maker from copied construction parameters.
+
+        Parameters
+        ----------
+        parameters : Mapping[str, Any]
+            Product constructor fields and optional relative tenor fields.
+        """
+        ...
+
+
+class MakeCapFloor(MakeInstrument[CapFloor]):
+    """Reusable maker for CapFloor. Both build methods return a concrete product."""
+
+    def __new__(cls, *, identifier: str, start_date: _DateLike | None = ..., maturity_date: _DateLike | None = ..., strike: float | Mapping[str, Any] | str, notional: float, currency: _CurrencyLike, market_index: _IndexLike, cap_floor_type: CapFloorType | str, frequency: Frequency | str | None = ..., start_tenor: _PeriodLike | None = ..., tenor: _PeriodLike | None = ...) -> Self:
+        """Stores copied construction parameters.
+
+        Parameters
+        ----------
+        identifier : str
+            Product identifier for the strip of interest-rate optionlets.
+        start_date : _DateLike | None
+            Start of the first covered accrual period; ISO strings are accepted.
+        maturity_date : _DateLike | None
+            End of the last covered accrual period.
+        strike : float | Mapping[str, Any] | str
+            Numeric annual decimal cap/floor rate, for example 0.04 for 4%.
+            This wrapper does not accept ATM strings or tagged Strike dictionaries.
+        notional : float
+            Covered principal in currency; Trade may override the amount.
+        currency : _CurrencyLike
+            Optionlet payment currency enum or alphabetic code.
+        market_index : _IndexLike
+            Floating reference index for the covered periods, or native index representation.
+        cap_floor_type : CapFloorType | str
+            Cap for upside rate protection or Floor for downside protection,
+            supplied as an enum or case-insensitive name.
+        frequency : Frequency | str | None
+            Optionlet/accrual interval; default None resolves to Quarterly.
+        start_tenor : _PeriodLike | None
+            Start offset from the context evaluation date. Omitted or None leaves this input unset.
+        tenor : _PeriodLike | None
+            Maturity offset from the explicit or constructed start date. Omitted or None leaves this input unset.
+        """
+        ...
+
+    @classmethod
+    def from_dict(cls, parameters: Mapping[str, Any]) -> Self:
+        """Creates a maker from copied construction parameters.
+
+        Parameters
+        ----------
+        parameters : Mapping[str, Any]
+            Product constructor fields and optional relative tenor fields.
+        """
+        ...
+
+
+class MakeCapletFloorlet(MakeInstrument[CapletFloorlet]):
+    """Reusable maker for CapletFloorlet. Both build methods return a concrete product."""
+
+    def __new__(cls, *, identifier: str, fixing_date: _DateLike | None = ..., start_accrual_date: _DateLike | None = ..., end_accrual_date: _DateLike | None = ..., payment_date: _DateLike | None = ..., strike: float | Mapping[str, Any] | str, currency: _CurrencyLike, market_index: _IndexLike, payoff_type: CapletFloorletType | str, start_tenor: _PeriodLike | None = ..., tenor: _PeriodLike | None = ..., fixing_tenor: _PeriodLike | None = ..., payment_tenor: _PeriodLike | None = ...) -> Self:
+        """Stores copied construction parameters.
+
+        Parameters
+        ----------
+        identifier : str
+            Product identifier for the single-period interest-rate option.
+        fixing_date : _DateLike | None
+            Reference-rate observation date; ISO date strings are accepted.
+        start_accrual_date : _DateLike | None
+            First day of the underlying interest accrual period.
+        end_accrual_date : _DateLike | None
+            Final day used to measure the underlying accrual fraction.
+        payment_date : _DateLike | None
+            Cash settlement date for the optionlet payoff.
+        strike : float | Mapping[str, Any] | str
+            Annual decimal absolute strike as a number, case-insensitive "ATM",
+            or native tagged Strike dictionary: {"Absolute": rate} or
+            {"Relative": pct}. The Black and Hull-White caplet pricers interpret
+            Relative multiplicatively as forward * (1 + pct), unlike the generic
+            Strike.resolve helper's additive forward + offset. For example,
+            pct=0.10 raises a 0.04 forward to a 0.044 strike, not 0.14.
+            Prefer an absolute numeric strike to avoid this consumer-specific
+            convention. Notional belongs to Trade.
+        currency : _CurrencyLike
+            Payoff currency enum or alphabetic currency code.
+        market_index : _IndexLike
+            Reference rate observed at fixing_date, or native index representation.
+        payoff_type : CapletFloorletType | str
+            Caplet (positive rate-minus-strike) or Floorlet (positive strike-minus-rate),
+            as an enum or case-insensitive name.
+        start_tenor : _PeriodLike | None
+            Start offset from the context evaluation date. Omitted or None leaves this input unset.
+        tenor : _PeriodLike | None
+            Maturity offset from the explicit or constructed start date. Omitted or None leaves this input unset.
+        fixing_tenor : _PeriodLike | None
+            Fixing offset from the constructed accrual start. Omitted or None leaves this input unset.
+        payment_tenor : _PeriodLike | None
+            Payment offset from the constructed accrual end. Omitted or None leaves this input unset.
+        """
+        ...
+
+    @classmethod
+    def from_dict(cls, parameters: Mapping[str, Any]) -> Self:
+        """Creates a maker from copied construction parameters.
+
+        Parameters
+        ----------
+        parameters : Mapping[str, Any]
+            Product constructor fields and optional relative tenor fields.
+        """
+        ...
+
+
+class MakeRateFutures(MakeInstrument[RateFutures]):
+    """Reusable maker for RateFutures. Both build methods return a concrete product."""
+
+    def __new__(cls, *, identifier: str, start_date: _DateLike | None = ..., end_date: _DateLike | None = ..., futures_price: Any, market_index: _IndexLike, contract_size: Any | None = ..., start_tenor: _PeriodLike | None = ..., tenor: _PeriodLike | None = ...) -> Self:
+        """Stores copied construction parameters.
+
+        Parameters
+        ----------
+        identifier : str
+            Product/contract identifier for the listed rate future.
+        start_date : _DateLike | None
+            Contract fixing/start date of the reference accrual period; ISO strings accepted.
+        end_date : _DateLike | None
+            Final date of the reference rate's accrual period.
+        futures_price : Any
+            Agreed futures index price, for example 95.25, corresponding to a 4.75%
+            implied rate under the 100-minus-percent-rate convention; not a decimal rate.
+        market_index : _IndexLike
+            Reference rate index, such as SOFR or TermSOFR3m. Its metadata supplies
+            day-count/rate conventions; native serialized index strings are accepted.
+        contract_size : Any | None
+            Monetary value per one futures price point for one contract. Default
+            None uses 2500.0 (25 per basis point). Contract count belongs to Trade.
+        start_tenor : _PeriodLike | None
+            Start offset from the context evaluation date. Omitted or None leaves this input unset.
+        tenor : _PeriodLike | None
+            Maturity offset from the explicit or constructed start date. Omitted or None leaves this input unset.
+        """
+        ...
+
+    @classmethod
+    def from_dict(cls, parameters: Mapping[str, Any]) -> Self:
+        """Creates a maker from copied construction parameters.
+
+        Parameters
+        ----------
+        parameters : Mapping[str, Any]
+            Product constructor fields and optional relative tenor fields.
+        """
+        ...
+
+
+class MakeSwaption(MakeInstrument[EuropeanSwaption]):
+    """Reusable maker for EuropeanSwaption. Both build methods return a concrete product."""
+
+    def __new__(cls, *, identifier: str, expiry_date: _DateLike | None = ..., maturity_date: _DateLike | None = ..., strike: float, notional: float, currency: _CurrencyLike, market_index: _IndexLike, swaption_type: SwaptionType | str | None = ..., day_counter: DayCounter | str | None = ..., compounding: Compounding | str | None = ..., rate_frequency: Frequency | str | None = ..., fixed_leg_frequency: Frequency | str | None = ..., floating_leg_frequency: Frequency | str | None = ..., calendar: Calendar | str | None = ..., expiry_tenor: _PeriodLike | None = ..., tenor: _PeriodLike | None = ...) -> Self:
+        """Stores copied construction parameters.
+
+        Parameters
+        ----------
+        identifier : str
+            Product identifier used in valuation results.
+        expiry_date : _DateLike | None
+            European exercise date and start of the underlying swap; ISO strings accepted.
+        maturity_date : _DateLike | None
+            Final maturity of the underlying fixed/floating swap, strictly after expiry.
+        strike : float
+            Finite underlying fixed annual decimal rate, for example 0.04 for 4%.
+        notional : float
+            Finite nonnegative underlying swap principal in currency; Trade may
+            override the amount.
+        currency : _CurrencyLike
+            Underlying payment currency enum or alphabetic code.
+        market_index : _IndexLike
+            Underlying floating-rate index or native serialized index representation.
+        swaption_type : SwaptionType | str | None
+            Payer pays fixed on exercise; Receiver receives fixed. Names are
+            case-insensitive. Default None resolves to Payer.
+        day_counter : DayCounter | str | None
+            Underlying rate accrual basis; default None resolves to Actual360.
+        compounding : Compounding | str | None
+            Underlying fixed-rate compounding rule; default None uses Simple.
+        rate_frequency : Frequency | str | None
+            Fixed-rate compounding frequency; default None uses Annual.
+        fixed_leg_frequency : Frequency | str | None
+            Underlying fixed-leg payment interval; default None uses Annual.
+        floating_leg_frequency : Frequency | str | None
+            Underlying floating-leg payment interval; default None uses Quarterly.
+        calendar : Calendar | str | None
+            Underlying schedule calendar or serialized calendar name. Default None
+            leaves calendar selection to the native swaption implementation.
+        expiry_tenor : _PeriodLike | None
+            Expiry offset from the context evaluation date. Omitted or None leaves this input unset.
+        tenor : _PeriodLike | None
+            Underlying maturity offset from expiry. Omitted or None leaves this input unset.
+        """
+        ...
+
+    @classmethod
+    def from_dict(cls, parameters: Mapping[str, Any]) -> Self:
+        """Creates a maker from copied construction parameters.
+
+        Parameters
+        ----------
+        parameters : Mapping[str, Any]
+            Product constructor fields and optional relative tenor fields.
+        """
+        ...
+
+
+class MakeEuropeanSwaption(MakeInstrument[EuropeanSwaption]):
+    """Reusable maker for EuropeanSwaption. Both build methods return a concrete product."""
+
+    def __new__(cls, *, identifier: str, expiry_date: _DateLike | None = ..., maturity_date: _DateLike | None = ..., strike: float, notional: float, currency: _CurrencyLike, market_index: _IndexLike, swaption_type: SwaptionType | str | None = ..., day_counter: DayCounter | str | None = ..., compounding: Compounding | str | None = ..., rate_frequency: Frequency | str | None = ..., fixed_leg_frequency: Frequency | str | None = ..., floating_leg_frequency: Frequency | str | None = ..., calendar: Calendar | str | None = ..., expiry_tenor: _PeriodLike | None = ..., tenor: _PeriodLike | None = ...) -> Self:
+        """Stores copied construction parameters.
+
+        Parameters
+        ----------
+        identifier : str
+            Product identifier used in valuation results.
+        expiry_date : _DateLike | None
+            European exercise date and start of the underlying swap; ISO strings accepted.
+        maturity_date : _DateLike | None
+            Final maturity of the underlying fixed/floating swap, strictly after expiry.
+        strike : float
+            Finite underlying fixed annual decimal rate, for example 0.04 for 4%.
+        notional : float
+            Finite nonnegative underlying swap principal in currency; Trade may
+            override the amount.
+        currency : _CurrencyLike
+            Underlying payment currency enum or alphabetic code.
+        market_index : _IndexLike
+            Underlying floating-rate index or native serialized index representation.
+        swaption_type : SwaptionType | str | None
+            Payer pays fixed on exercise; Receiver receives fixed. Names are
+            case-insensitive. Default None resolves to Payer.
+        day_counter : DayCounter | str | None
+            Underlying rate accrual basis; default None resolves to Actual360.
+        compounding : Compounding | str | None
+            Underlying fixed-rate compounding rule; default None uses Simple.
+        rate_frequency : Frequency | str | None
+            Fixed-rate compounding frequency; default None uses Annual.
+        fixed_leg_frequency : Frequency | str | None
+            Underlying fixed-leg payment interval; default None uses Annual.
+        floating_leg_frequency : Frequency | str | None
+            Underlying floating-leg payment interval; default None uses Quarterly.
+        calendar : Calendar | str | None
+            Underlying schedule calendar or serialized calendar name. Default None
+            leaves calendar selection to the native swaption implementation.
+        expiry_tenor : _PeriodLike | None
+            Expiry offset from the context evaluation date. Omitted or None leaves this input unset.
+        tenor : _PeriodLike | None
+            Underlying maturity offset from expiry. Omitted or None leaves this input unset.
+        """
+        ...
+
+    @classmethod
+    def from_dict(cls, parameters: Mapping[str, Any]) -> Self:
+        """Creates a maker from copied construction parameters.
+
+        Parameters
+        ----------
+        parameters : Mapping[str, Any]
+            Product constructor fields and optional relative tenor fields.
+        """
+        ...
+
+
+class MakeEquityForward(MakeInstrument[EquityForward]):
+    """Reusable maker for EquityForward. Both build methods return a concrete product."""
+
+    def __new__(cls, *, identifier: str, market_index: _IndexLike, delivery_date: _DateLike | None = ..., strike: float, currency: _CurrencyLike, day_counter: DayCounter | str | None = ..., delivery_tenor: _PeriodLike | None = ...) -> Self:
+        """Stores copied construction parameters.
+
+        Parameters
+        ----------
+        identifier : str
+            Product key used to identify the forward in pricing results.
+        market_index : _IndexLike
+            Underlying equity index or its native serialized index representation.
+        delivery_date : _DateLike | None
+            Contract settlement date; strings use ISO YYYY-MM-DD format.
+        strike : float
+            Finite contractual delivery price per equity unit in currency.
+        currency : _CurrencyLike
+            Payment currency enum or case-insensitive alphabetic currency code.
+        day_counter : DayCounter | str | None
+            Time basis for the forward; default None resolves to Actual360.
+        delivery_tenor : _PeriodLike | None
+            Delivery offset from the context evaluation date. Omitted or None leaves this input unset.
+        """
+        ...
+
+    @classmethod
+    def from_dict(cls, parameters: Mapping[str, Any]) -> Self:
+        """Creates a maker from copied construction parameters.
+
+        Parameters
+        ----------
+        parameters : Mapping[str, Any]
+            Product constructor fields and optional relative tenor fields.
+        """
+        ...
+
+
+class MakeScriptedProduct(MakeInstrument[ScriptedProduct]):
+    """Reusable maker for ScriptedProduct. Both build methods return a concrete product."""
+
+    def __new__(cls, *, name: str, currency: _CurrencyLike, events: Sequence[Mapping[str, Any]] | None = ..., discount_index: _IndexLike | None = ..., result_variable: str | None = ..., models: Sequence[Mapping[str, Any]] | None = ..., reference_date: _DateLike | None = ..., event_tenors: Sequence[Any] | None = ...) -> Self:
+        """Stores copied construction parameters.
+
+        Parameters
+        ----------
+        name : str
+            Input passed to the concrete ScriptedProduct constructor.
+        currency : _CurrencyLike
+            Input passed to the concrete ScriptedProduct constructor.
+        events : Sequence[Mapping[str, Any]] | None
+            Input passed to the concrete ScriptedProduct constructor.
+        discount_index : _IndexLike | None
+            Input passed to the concrete ScriptedProduct constructor.
+        result_variable : str | None
+            Input passed to the concrete ScriptedProduct constructor.
+        models : Sequence[Mapping[str, Any]] | None
+            Input passed to the concrete ScriptedProduct constructor.
+        reference_date : _DateLike | None
+            Input passed to the concrete ScriptedProduct constructor.
+        event_tenors : Sequence[Any] | None
+            Event tenor and source-code pairs measured from reference_date or the context date. Omitted or None leaves this input unset.
+        """
+        ...
+
+    @classmethod
+    def from_dict(cls, parameters: Mapping[str, Any]) -> Self:
+        """Creates a maker from copied construction parameters.
+
+        Parameters
+        ----------
+        parameters : Mapping[str, Any]
+            Product constructor fields and optional relative tenor fields.
+        """
+        ...
+
+
+class MakeTrade(MakeInstrument[_pricing.Trade]):
+    """Reusable maker for Trade. Both build methods return a concrete product."""
+
+    def __new__(cls, *, instrument: Instrument, trade_date: _DateLike | None = ..., side: Side | str | None = ..., notional: float | None = ..., domestic_notional: float | None = ..., foreign_notional: float | None = ..., num_contracts: float = ..., pricing_anchor: Any | None = ..., settlement_date: _DateLike | None = ..., spread_day_counter: Any | None = ..., trade_tenor: _PeriodLike | None = ...) -> Self:
+        """Stores copied construction parameters.
+
+        Parameters
+        ----------
+        instrument : Instrument
+            Contract held by the position. Python objects may also be carried for
+            registered Python pricers; native evaluation requires a supported product.
+        trade_date : _DateLike | None
+            Execution date; strings use ISO ``YYYY-MM-DD`` format. None defers to
+            trade_tenor, defaulting to 0D when both inputs are omitted.
+        side : Side | str | None
+            Direction, defaulting to Side.LongReceive when None. Strings accept
+            LongReceive, Long, Receive, PayShort, Pay, or Short, case-insensitively.
+            Use side, not a negative amount, to reverse a position.
+        notional : float | None
+            Finite non-negative position amount in the instrument's notional currency.
+            None, the default, leaves the contractual amount unchanged.
+        domestic_notional : float | None
+            Finite non-negative domestic-leg amount in domestic currency units. None,
+            the default, leaves the instrument's domestic amount unchanged.
+        foreign_notional : float | None
+            Finite non-negative foreign-leg amount in foreign currency units. None,
+            the default, leaves the instrument's foreign amount unchanged.
+        num_contracts : float
+            Finite non-negative futures position size in contracts. Defaults to 1.0.
+        pricing_anchor : Any | None
+            Bond price/spread anchor, as a typed anchor or its native externally tagged
+            mapping. None, the default, supplies no anchor; native bond pricing requires
+            one. Prices use the bond's units and spreads use decimal annual rates.
+        settlement_date : _DateLike | None
+            Bond settlement-date override; strings use ISO ``YYYY-MM-DD``. None, the
+            default, leaves settlement selection to the instrument's native pricer.
+        spread_day_counter : Any | None
+            Bond spread day-count override, as an enum or case-insensitive variant
+            name. None, the default, leaves the native spread convention unchanged.
+        trade_tenor : _PeriodLike | None
+            Execution-date offset from the context evaluation date; supply trade_date or trade_tenor. Omitted or None leaves this input unset.
+        """
+        ...
+
+    @classmethod
+    def from_dict(cls, parameters: Mapping[str, Any]) -> Self:
+        """Creates a maker from copied construction parameters.
+
+        Parameters
+        ----------
+        parameters : Mapping[str, Any]
+            Product constructor fields and optional relative tenor fields.
+        """
+        ...

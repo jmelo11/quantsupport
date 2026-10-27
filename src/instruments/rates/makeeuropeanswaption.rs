@@ -1,5 +1,6 @@
 use crate::{
     ad::scalar::Scalar,
+    core::makeinstrument::{resolve_date, MakeInstrument},
     currencies::currency::Currency,
     indices::marketindex::MarketIndex,
     instruments::rates::{
@@ -11,13 +12,10 @@ use crate::{
         calendar::Calendar,
         date::Date,
         daycounter::DayCounter,
-        enums::{BusinessDayConvention, DateGenerationRule, Frequency},
+        enums::{BusinessDayConvention, DateGenerationRule, Frequency, TimeUnit},
+        period::Period,
     },
     utils::errors::{QSError, Result},
-};
-use crate::{
-    core::resolution::{ResolutionContext, Resolve},
-    time::period::Period,
 };
 use std::marker::PhantomData;
 
@@ -97,7 +95,7 @@ where
         self
     }
 
-    /// Sets expiry as a tenor from the resolution reference date.
+    /// Sets expiry as a tenor from the context evaluation date.
     #[must_use]
     pub const fn with_expiry_tenor(mut self, tenor: Period) -> Self {
         self.expiry = None;
@@ -226,16 +224,29 @@ where
         self.end_of_month = Some(eom);
         self
     }
+}
+
+impl<T: Scalar> MakeInstrument for MakeSwaption<T> {
+    type Instrument = EuropeanSwaption<T>;
+
+    fn is_resolved(&self) -> bool {
+        self.start_tenor.is_none() && self.swap_tenor.is_none() && self.expiry_tenor.is_none()
+    }
 
     /// Builds the [`EuropeanSwaption`] instance.
     ///
     /// # Errors
     /// Returns an error when required fields are missing or the underlying
     /// swap builder fails.
-    pub fn build(self) -> Result<EuropeanSwaption<T>> {
-        if self.expiry_tenor.is_some() || self.start_tenor.is_some() || self.swap_tenor.is_some() {
+    fn build(&self) -> Result<Self::Instrument> {
+        if !self.is_resolved() {
+            return Err(QSError::UnresolvedProductErr(
+                "MakeSwaption has unresolved date tenors. Supply the corresponding absolute dates or call maker.build_using(&context)".into(),
+            ));
+        }
+        if [self.start_date, self.swap_tenor_date, self.expiry].contains(&Some(Date::empty())) {
             return Err(QSError::InvalidValueErr(
-                "Relative dates require maker.resolve(&ResolutionContext)".into(),
+                "MakeSwaption dates must not be empty".into(),
             ));
         }
         let strike = self
@@ -285,7 +296,7 @@ where
         if let Some(f) = self.floating_leg_frequency {
             swap_builder = swap_builder.with_floating_leg_frequency(f);
         }
-        if let Some(c) = self.calendar {
+        if let Some(c) = self.calendar.clone() {
             swap_builder = swap_builder.with_calendar(c);
         }
         if let Some(bdc) = self.business_day_convention {
@@ -313,12 +324,8 @@ where
             currency,
         ))
     }
-}
 
-impl<T: Scalar> Resolve for MakeSwaption<T> {
-    type Resolved = EuropeanSwaption<T>;
-
-    fn resolve(&self, context: &ResolutionContext<'_>) -> Result<Self::Resolved> {
+    fn resolve_dates(&self, reference_date: Date) -> Result<Self> {
         let mut resolved = self.clone();
         let details = self
             .market_index
@@ -330,36 +337,43 @@ impl<T: Scalar> Resolve for MakeSwaption<T> {
             details
                 .swap_conventions(
                     self.swap_tenor
-                        .unwrap_or_else(|| Period::new(1, crate::time::enums::TimeUnit::Years)),
+                        .unwrap_or_else(|| Period::new(1, TimeUnit::Years)),
                 )
                 .business_day_convention()
         });
-        let dates = context.with_date_conventions(
-            &calendar,
-            convention,
-            self.end_of_month.unwrap_or(false),
-        );
-        let expiry = dates.resolve_date(
+        let date_calendar = &calendar;
+        let date_convention = convention;
+        let date_end_of_month = self.end_of_month.unwrap_or(false);
+        let expiry = resolve_date(
             self.expiry,
             self.expiry_tenor,
-            context.reference_date(),
+            reference_date,
             "Expiry",
+            date_calendar,
+            date_convention,
+            date_end_of_month,
         )?;
         let start = if self.start_date.is_some() || self.start_tenor.is_some() {
-            dates.resolve_date(
+            resolve_date(
                 self.start_date,
                 self.start_tenor,
                 expiry,
                 "Underlying start",
+                date_calendar,
+                date_convention,
+                date_end_of_month,
             )?
         } else {
             expiry
         };
-        let maturity = dates.resolve_date(
+        let maturity = resolve_date(
             self.swap_tenor_date,
             self.swap_tenor,
             start,
             "Underlying maturity",
+            date_calendar,
+            date_convention,
+            date_end_of_month,
         )?;
         resolved.expiry = Some(expiry);
         resolved.start_date = Some(start);
@@ -367,7 +381,7 @@ impl<T: Scalar> Resolve for MakeSwaption<T> {
         resolved.expiry_tenor = None;
         resolved.start_tenor = None;
         resolved.swap_tenor = None;
-        resolved.build()
+        Ok(resolved)
     }
 }
 
@@ -433,14 +447,14 @@ mod tests {
 #[cfg(test)]
 mod resolution_tests {
     use crate::{
-        core::resolution::test_support::{empty_market, p, reference},
+        core::makeinstrument::test_support::{empty_market, p, reference},
         prelude::*,
     };
 
     #[test]
     fn swaption_resolves_expiry_and_underlying_tenor() -> Result<()> {
         let market = empty_market(reference());
-        let ctx = ResolutionContext::new(&market);
+        let ctx = &market;
         let swaption = MakeSwaption::<f64>::default()
             .with_identifier("swaption".into())
             .with_expiry_tenor(p("1Y")?)
@@ -450,7 +464,7 @@ mod resolution_tests {
             .with_currency(Currency::EUR)
             .with_market_index(MarketIndex::EURIBOR6m)
             .with_business_day_convention(BusinessDayConvention::Unadjusted)
-            .resolve(&ctx)?;
+            .build_using(ctx)?;
         assert_eq!(swaption.expiry_date(), reference() + p("1Y")?);
         assert_eq!(
             swaption.underlying().fixed_leg().last_payment_date(),

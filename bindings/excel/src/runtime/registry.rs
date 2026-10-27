@@ -40,8 +40,6 @@ pub enum QsObject {
     Portfolio(Box<quantsupport::prelude::Portfolio<String>>),
     /// Native instrument, without position or pricing settings.
     Instrument(Box<super::products::InstrumentObject>),
-    /// A position whose instrument is resolved against the evaluation context.
-    UnresolvedTrade(Box<super::products::PendingTrade>),
     /// An explicit native discount policy.
     DiscountPolicy(Box<super::pricing::PolicyObject>),
     /// Configured native pricer dispatch.
@@ -118,7 +116,6 @@ impl QsObject {
             Self::LoanSettings(_) => "LoanSettings",
             Self::Portfolio(_) => "Portfolio",
             Self::Instrument(value) => value.kind(),
-            Self::UnresolvedTrade(value) => value.kind(),
             Self::DiscountPolicy(value) => value.kind,
             Self::Pricer(_) => "Pricer",
             Self::EvaluationResults(_) => "EvaluationResults",

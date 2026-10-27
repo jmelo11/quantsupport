@@ -150,21 +150,14 @@ mod tests {
 #[cfg(test)]
 mod resolution_tests {
     use crate::{
-        core::resolution::test_support::{loan, market, reference},
+        core::makeinstrument::test_support::{loan, market, reference},
         prelude::*,
     };
 
     #[test]
-    fn unresolved_trade_is_dispatched_and_resolved_for_each_evaluation() -> Result<()> {
+    fn explicitly_built_trade_is_valued_without_rebuilding_contract_terms() -> Result<()> {
         use crate::core::{evaluator::Evaluator, pricer::ErasedPricer};
         use std::{any::TypeId, collections::HashMap};
-        let pending = UnresolvedTrade::from_maker(loan()?, |instrument, context| {
-            Ok(LoanTrade::new(
-                instrument,
-                context.reference_date(),
-                Side::LongReceive,
-            ))
-        });
         let mut pricer = LoanPricer::new();
         pricer.set_discount_policy(Box::new(
             FixedIncomeDiscountPolicy::new(false)
@@ -175,12 +168,14 @@ mod resolution_tests {
         let evaluator = Evaluator::new(registrations);
         let low = market(reference(), 0.02, FixingStore::default());
         let high = market(reference(), 0.08, FixingStore::default());
-        for context in [&low, &high, &low] {
-            let automatic = evaluator.evaluate(&pending, &[Request::Value], context)?;
-            let concrete = pending.resolve(&ResolutionContext::new(context))?;
-            let explicit = evaluator.evaluate(&concrete, &[Request::Value], context)?;
-            assert_eq!(automatic.price(), explicit.price());
-        }
+        let concrete = LoanTrade::new(loan()?.build_using(&low)?, reference(), Side::LongReceive);
+        let principal = concrete.instrument().notional();
+        let first = evaluator.evaluate(&concrete, &[Request::Value], &low)?;
+        let changed = evaluator.evaluate(&concrete, &[Request::Value], &high)?;
+        let repeated = evaluator.evaluate(&concrete, &[Request::Value], &low)?;
+        assert_ne!(first.price(), changed.price());
+        assert_eq!(first.price(), repeated.price());
+        assert_eq!(concrete.instrument().notional(), principal);
         Ok(())
     }
 }

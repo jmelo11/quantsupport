@@ -41,8 +41,8 @@ Define the contract, then its position
 
 .. code-block:: text
 
-   D2 =QS.INSTRUMENT.SWAP("swap","2026-01-15","2031-01-15","USD","SOFR",1000000,0.04,0,"Actual360","Simple","Annual","Semiannual","Quarterly")
-   D3 =QS.TRADE.CREATE("position",D2,B1,"Receive")
+   D2 =QS.INSTRUMENT.SWAP("swap",B2,"2026-01-15","2031-01-15","USD","SOFR",1000000,0.04,0,"Actual360","Simple","Annual","Semiannual","Quarterly")
+   D3 =QS.TRADE.CREATE("position",B2,D2,B1,"Receive")
    H2 =QS.DISCOUNT.POLICY.CSA("csa","USD","SOFR")
    H3 =QS.PRICER.CREATE("pricer","DiscountedCashflowPricer",H2)
    H4 =QS.EVALUATE(B5,D3,"Value",H3)

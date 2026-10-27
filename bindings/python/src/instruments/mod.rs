@@ -6,5 +6,5 @@ pub mod loan_terms;
 pub mod products;
 pub mod scripting;
 
-/// Product terms resolved automatically when a Trade is evaluated.
-pub mod unresolved;
+/// Explicit makers that build complete products.
+pub mod makers;

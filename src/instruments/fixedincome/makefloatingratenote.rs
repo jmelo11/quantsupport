@@ -1,6 +1,10 @@
 use crate::{
     ad::scalar::Scalar,
-    core::{instrument::AssetClass, trade::Side},
+    core::{
+        instrument::AssetClass,
+        makeinstrument::{resolve_date, MakeInstrument},
+        trade::Side,
+    },
     currencies::currency::Currency,
     indices::marketindex::MarketIndex,
     instruments::{
@@ -9,17 +13,13 @@ use crate::{
     },
     time::{
         calendar::Calendar,
+        calendars::nullcalendar::NullCalendar,
         date::Date,
         enums::{BusinessDayConvention, DateGenerationRule, Frequency},
+        period::Period,
     },
     utils::errors::{QSError, Result},
 };
-use crate::{
-    core::resolution::{ResolutionContext, Resolve},
-    time::calendars::nullcalendar::NullCalendar,
-    time::period::Period,
-};
-
 use std::marker::PhantomData;
 
 /// A builder for creating a [`FloatingRateNote`] instance, allowing for a flexible and stepwise construction process.
@@ -72,8 +72,8 @@ impl<T> MakeFloatingRateNote<T>
 where
     T: Scalar,
 {
-    /// Sets start date as a tenor from the resolution reference date.
-    /// Replaces an explicitly supplied start date. Resolve this maker with a context.
+    /// Sets start date as a tenor from the context evaluation date.
+    /// Replaces an explicitly supplied start date. Use `build_using` when an external anchor is needed.
     #[must_use]
     pub const fn with_start_tenor(mut self, tenor: Period) -> Self {
         self.start_tenor = Some(tenor);
@@ -82,7 +82,7 @@ where
     }
 
     /// Sets maturity date as a tenor from the resolved start date.
-    /// Replaces an explicitly supplied maturity date. Resolve this maker with a context.
+    /// Replaces an explicitly supplied maturity date. Use `build_using` when an external anchor is needed.
     #[must_use]
     pub const fn with_maturity_tenor(mut self, tenor: Period) -> Self {
         self.maturity_tenor = Some(tenor);
@@ -91,7 +91,7 @@ where
     }
 
     /// Sets first coupon date as a tenor from the resolved start date.
-    /// Replaces an explicitly supplied first coupon date. Resolve this maker with a context.
+    /// Replaces an explicitly supplied first coupon date. Use `build_using` when an external anchor is needed.
     #[must_use]
     pub const fn with_first_coupon_tenor(mut self, tenor: Period) -> Self {
         self.first_coupon_tenor = Some(tenor);
@@ -219,18 +219,32 @@ where
         self.first_coupon_tenor = None;
         self
     }
+}
+
+impl<T: Scalar> MakeInstrument for MakeFloatingRateNote<T> {
+    type Instrument = FloatingRateNote<T>;
+
+    fn is_resolved(&self) -> bool {
+        self.start_tenor.is_none()
+            && self.maturity_tenor.is_none()
+            && self.first_coupon_tenor.is_none()
+    }
 
     /// Builds the [`FloatingRateNote`] instance.
     ///
     /// # Errors
     /// Returns an error if any of the required fields are missing or invalid.
-    pub fn build(self) -> Result<FloatingRateNote<T>> {
-        if self.start_tenor.is_some()
-            || self.maturity_tenor.is_some()
-            || self.first_coupon_tenor.is_some()
+    fn build(&self) -> Result<Self::Instrument> {
+        if !self.is_resolved() {
+            return Err(QSError::UnresolvedProductErr(
+                "MakeFloatingRateNote has unresolved date tenors. Supply the corresponding absolute dates or call maker.build_using(&context)".into(),
+            ));
+        }
+        if [self.start_date, self.maturity_date, self.first_coupon_date]
+            .contains(&Some(Date::empty()))
         {
             return Err(QSError::InvalidValueErr(
-                "Relative dates require maker.resolve(&ResolutionContext)".into(),
+                "MakeFloatingRateNote dates must not be empty".into(),
             ));
         }
         let notional = self
@@ -248,9 +262,11 @@ where
             .ok_or_else(|| QSError::ValueNotSetErr("Currency".into()))?;
         let forward_index = self
             .forward_index
+            .clone()
             .ok_or_else(|| QSError::ValueNotSetErr("Forward index".into()))?;
         let identifier = self
             .identifier
+            .clone()
             .ok_or_else(|| QSError::ValueNotSetErr("Identifier".into()))?;
 
         let units = self.units.unwrap_or(100.0);
@@ -272,7 +288,7 @@ where
             .with_spread(spread)
             .with_payment_frequency(payment_frequency)
             .with_structure(structure)
-            .with_calendar(self.calendar)
+            .with_calendar(self.calendar.clone())
             .with_business_day_convention(self.business_day_convention)
             .with_date_generation_rule(self.date_generation_rule)
             .with_end_of_month(self.end_of_month)
@@ -283,17 +299,13 @@ where
             identifier,
             units,
             leg,
-            self.discount_index,
+            self.discount_index.clone(),
             Some(forward_index),
             currency,
         ))
     }
-}
 
-impl<T: Scalar> Resolve for MakeFloatingRateNote<T> {
-    type Resolved = FloatingRateNote<T>;
-
-    fn resolve(&self, context: &ResolutionContext<'_>) -> Result<Self::Resolved> {
+    fn resolve_dates(&self, reference_date: Date) -> Result<Self> {
         let mut resolved = self.clone();
         let calendar = self
             .calendar
@@ -302,57 +314,60 @@ impl<T: Scalar> Resolve for MakeFloatingRateNote<T> {
         let convention = self
             .business_day_convention
             .unwrap_or(BusinessDayConvention::Unadjusted);
-        let dates = context.with_date_conventions(
-            &calendar,
-            convention,
-            self.end_of_month.unwrap_or(false),
-        );
-        resolved.start_date = Some(dates.resolve_date(
+        let date_calendar = &calendar;
+        let date_convention = convention;
+        let date_end_of_month = self.end_of_month.unwrap_or(false);
+        resolved.start_date = Some(resolve_date(
             self.start_date,
             self.start_tenor,
-            context.reference_date(),
+            reference_date,
             "start_date",
+            date_calendar,
+            date_convention,
+            date_end_of_month,
         )?);
         resolved.start_tenor = None;
-        resolved.maturity_date = Some(
-            dates.resolve_date(
-                self.maturity_date,
-                self.maturity_tenor,
+        resolved.maturity_date = Some(resolve_date(
+            self.maturity_date,
+            self.maturity_tenor,
+            resolved
+                .start_date
+                .ok_or_else(|| QSError::ValueNotSetErr("start_date".into()))?,
+            "maturity_date",
+            date_calendar,
+            date_convention,
+            date_end_of_month,
+        )?);
+        resolved.maturity_tenor = None;
+        if self.first_coupon_date.is_some() || self.first_coupon_tenor.is_some() {
+            resolved.first_coupon_date = Some(resolve_date(
+                self.first_coupon_date,
+                self.first_coupon_tenor,
                 resolved
                     .start_date
                     .ok_or_else(|| QSError::ValueNotSetErr("start_date".into()))?,
-                "maturity_date",
-            )?,
-        );
-        resolved.maturity_tenor = None;
-        if self.first_coupon_date.is_some() || self.first_coupon_tenor.is_some() {
-            resolved.first_coupon_date = Some(
-                dates.resolve_date(
-                    self.first_coupon_date,
-                    self.first_coupon_tenor,
-                    resolved
-                        .start_date
-                        .ok_or_else(|| QSError::ValueNotSetErr("start_date".into()))?,
-                    "first_coupon_date",
-                )?,
-            );
+                "first_coupon_date",
+                date_calendar,
+                date_convention,
+                date_end_of_month,
+            )?);
         }
         resolved.first_coupon_tenor = None;
-        resolved.build()
+        Ok(resolved)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use crate::{
-        core::resolution::test_support::{assert_legs, empty_market, p, reference},
+        core::makeinstrument::test_support::{assert_legs, empty_market, p, reference},
         prelude::*,
     };
 
     #[test]
     fn note_resolves_relative_start_maturity_and_first_coupon() -> Result<()> {
         let market = empty_market(reference());
-        let ctx = ResolutionContext::new(&market);
+        let ctx = &market;
         let end = reference() + p("2Y")?;
         let first = reference() + p("3M")?;
         let note = MakeFloatingRateNote::<f64>::default()
@@ -366,7 +381,7 @@ mod tests {
             .with_forward_index(MarketIndex::EURIBOR6m)
             .with_payment_frequency(Frequency::Semiannual);
         assert_legs(
-            &note.resolve(&ctx)?,
+            &note.build_using(ctx)?,
             &note
                 .with_start_date(reference())
                 .with_maturity_date(end)

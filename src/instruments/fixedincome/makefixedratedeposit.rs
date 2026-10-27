@@ -1,6 +1,10 @@
 use crate::{
     ad::scalar::Scalar,
-    core::{instrument::AssetClass, trade::Side},
+    core::{
+        instrument::AssetClass,
+        makeinstrument::{resolve_date, MakeInstrument},
+        trade::Side,
+    },
     currencies::currency::Currency,
     indices::marketindex::MarketIndex,
     instruments::{
@@ -8,14 +12,14 @@ use crate::{
         fixedincome::fixedratedeposit::FixedRateDeposit,
     },
     rates::interestrate::{InterestRate, RateDefinition},
-    time::{date::Date, enums::Frequency},
+    time::{
+        calendars::nullcalendar::NullCalendar,
+        date::Date,
+        enums::{BusinessDayConvention, Frequency},
+        period::Period,
+    },
     utils::errors::{QSError, Result},
 };
-use crate::{
-    core::resolution::{ResolutionContext, Resolve},
-    time::period::Period,
-};
-
 use std::marker::PhantomData;
 
 /// A builder for creating a [`FixedRateDeposit`] instance, allowing for a flexible and stepwise construction process.
@@ -65,8 +69,8 @@ impl<T> MakeFixedRateDeposit<T>
 where
     T: Scalar,
 {
-    /// Sets start date as a tenor from the resolution reference date.
-    /// Replaces an explicitly supplied start date. Resolve this maker with a context.
+    /// Sets start date as a tenor from the context evaluation date.
+    /// Replaces an explicitly supplied start date. Use `build_using` when an external anchor is needed.
     #[must_use]
     pub const fn with_start_tenor(mut self, tenor: Period) -> Self {
         self.start_tenor = Some(tenor);
@@ -75,7 +79,7 @@ where
     }
 
     /// Sets maturity date as a tenor from the resolved start date.
-    /// Replaces an explicitly supplied maturity date. Resolve this maker with a context.
+    /// Replaces an explicitly supplied maturity date. Use `build_using` when an external anchor is needed.
     #[must_use]
     pub const fn with_maturity_tenor(mut self, tenor: Period) -> Self {
         self.maturity_tenor = Some(tenor);
@@ -161,15 +165,28 @@ where
         self.side = Some(side);
         self
     }
+}
+
+impl<T: Scalar> MakeInstrument for MakeFixedRateDeposit<T> {
+    type Instrument = FixedRateDeposit<T>;
+
+    fn is_resolved(&self) -> bool {
+        self.start_tenor.is_none() && self.maturity_tenor.is_none()
+    }
 
     /// Builds the [`FixedRateDeposit`] instance.
     ///
     /// # Errors
     /// Returns an error if any of the required fields are missing or invalid.
-    pub fn build(self) -> Result<FixedRateDeposit<T>> {
-        if self.start_tenor.is_some() || self.maturity_tenor.is_some() {
+    fn build(&self) -> Result<Self::Instrument> {
+        if !self.is_resolved() {
+            return Err(QSError::UnresolvedProductErr(
+                "MakeFixedRateDeposit has unresolved date tenors. Supply the corresponding absolute dates or call maker.build_using(&context)".into(),
+            ));
+        }
+        if [self.start_date, self.maturity_date].contains(&Some(Date::empty())) {
             return Err(QSError::InvalidValueErr(
-                "Relative dates require maker.resolve(&ResolutionContext)".into(),
+                "MakeFixedRateDeposit dates must not be empty".into(),
             ));
         }
         let notional = self
@@ -193,6 +210,7 @@ where
 
         let identifier = self
             .identifier
+            .clone()
             .ok_or_else(|| QSError::ValueNotSetErr("Identifier".into()))?;
 
         let units = self.units.unwrap_or(100.0);
@@ -219,53 +237,55 @@ where
             identifier,
             units,
             leg,
-            self.discount_index,
+            self.discount_index.clone(),
             start_date,
             maturity_date,
             currency,
         ))
     }
-}
 
-impl<T: Scalar> Resolve for MakeFixedRateDeposit<T> {
-    type Resolved = FixedRateDeposit<T>;
-
-    fn resolve(&self, context: &ResolutionContext<'_>) -> Result<Self::Resolved> {
+    fn resolve_dates(&self, reference_date: Date) -> Result<Self> {
         let mut resolved = self.clone();
-        let dates = *context;
-        resolved.start_date = Some(dates.resolve_date(
+        let date_calendar = &NullCalendar::new();
+        let date_convention = BusinessDayConvention::Unadjusted;
+        let date_end_of_month = false;
+        resolved.start_date = Some(resolve_date(
             self.start_date,
             self.start_tenor,
-            context.reference_date(),
+            reference_date,
             "start_date",
+            date_calendar,
+            date_convention,
+            date_end_of_month,
         )?);
         resolved.start_tenor = None;
-        resolved.maturity_date = Some(
-            dates.resolve_date(
-                self.maturity_date,
-                self.maturity_tenor,
-                resolved
-                    .start_date
-                    .ok_or_else(|| QSError::ValueNotSetErr("start_date".into()))?,
-                "maturity_date",
-            )?,
-        );
+        resolved.maturity_date = Some(resolve_date(
+            self.maturity_date,
+            self.maturity_tenor,
+            resolved
+                .start_date
+                .ok_or_else(|| QSError::ValueNotSetErr("start_date".into()))?,
+            "maturity_date",
+            date_calendar,
+            date_convention,
+            date_end_of_month,
+        )?);
         resolved.maturity_tenor = None;
-        resolved.build()
+        Ok(resolved)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use crate::{
-        core::resolution::test_support::{assert_legs, empty_market, p, reference},
+        core::makeinstrument::test_support::{assert_legs, empty_market, p, reference},
         prelude::*,
     };
 
     #[test]
     fn deposit_resolves_relative_start_and_maturity() -> Result<()> {
         let market = empty_market(reference());
-        let ctx = ResolutionContext::new(&market);
+        let ctx = &market;
         let end = reference() + p("2Y")?;
         let deposit = MakeFixedRateDeposit::<f64>::default()
             .with_identifier("deposit".into())
@@ -280,7 +300,7 @@ mod tests {
                 Frequency::Annual,
             ));
         assert_legs(
-            &deposit.resolve(&ctx)?,
+            &deposit.build_using(ctx)?,
             &deposit
                 .with_start_date(reference())
                 .with_maturity_date(end)

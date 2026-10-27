@@ -1,13 +1,15 @@
 use crate::{
-    core::resolution::{ResolutionContext, Resolve},
-    time::period::Period,
-};
-use crate::{
-    core::trade::Side,
+    core::{
+        makeinstrument::{resolve_date, MakeInstrument},
+        trade::Side,
+    },
     currencies::currency::Currency,
     indices::marketindex::MarketIndex,
     instruments::equity::equityforward::EquityForward,
-    time::{date::Date, daycounter::DayCounter},
+    time::{
+        calendars::nullcalendar::NullCalendar, date::Date, daycounter::DayCounter,
+        enums::BusinessDayConvention, period::Period,
+    },
     utils::errors::{QSError, Result},
 };
 
@@ -41,8 +43,8 @@ pub struct MakeEquityForward {
 }
 
 impl MakeEquityForward {
-    /// Sets delivery date as a tenor from the resolution reference date.
-    /// Replaces an explicitly supplied delivery date. Resolve this maker with a context.
+    /// Sets delivery date as a tenor from the context evaluation date.
+    /// Replaces an explicitly supplied delivery date. Use `build_using` when an external anchor is needed.
     #[must_use]
     pub const fn with_delivery_tenor(mut self, tenor: Period) -> Self {
         self.delivery_tenor = Some(tenor);
@@ -99,22 +101,37 @@ impl MakeEquityForward {
         self.side = Some(side);
         self
     }
+}
+
+impl MakeInstrument for MakeEquityForward {
+    type Instrument = EquityForward;
+
+    fn is_resolved(&self) -> bool {
+        self.delivery_tenor.is_none()
+    }
 
     /// Builds the [`EquityForward`] instance.
     ///
     /// # Errors
     /// Returns an error if any of the required fields are missing.
-    pub fn build(self) -> Result<EquityForward> {
-        if self.delivery_tenor.is_some() {
+    fn build(&self) -> Result<Self::Instrument> {
+        if !self.is_resolved() {
+            return Err(QSError::UnresolvedProductErr(
+                "MakeEquityForward has unresolved date tenors. Supply the corresponding absolute dates or call maker.build_using(&context)".into(),
+            ));
+        }
+        if self.delivery_date == Some(Date::empty()) {
             return Err(QSError::InvalidValueErr(
-                "Relative dates require maker.resolve(&ResolutionContext)".into(),
+                "MakeEquityForward dates must not be empty".into(),
             ));
         }
         let identifier = self
             .identifier
+            .clone()
             .ok_or_else(|| QSError::ValueNotSetErr("Identifier".into()))?;
         let market_index = self
             .market_index
+            .clone()
             .ok_or_else(|| QSError::ValueNotSetErr("Market index".into()))?;
         let delivery_date = self
             .delivery_date
@@ -137,36 +154,37 @@ impl MakeEquityForward {
             day_counter,
         ))
     }
-}
 
-impl Resolve for MakeEquityForward {
-    type Resolved = EquityForward;
-
-    fn resolve(&self, context: &ResolutionContext<'_>) -> Result<Self::Resolved> {
+    fn resolve_dates(&self, reference_date: Date) -> Result<Self> {
         let mut resolved = self.clone();
-        let dates = *context;
-        resolved.delivery_date = Some(dates.resolve_date(
+        let date_calendar = &NullCalendar::new();
+        let date_convention = BusinessDayConvention::Unadjusted;
+        let date_end_of_month = false;
+        resolved.delivery_date = Some(resolve_date(
             self.delivery_date,
             self.delivery_tenor,
-            context.reference_date(),
+            reference_date,
             "delivery_date",
+            date_calendar,
+            date_convention,
+            date_end_of_month,
         )?);
         resolved.delivery_tenor = None;
-        resolved.build()
+        Ok(resolved)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use crate::{
-        core::resolution::test_support::{empty_market, p, reference},
+        core::makeinstrument::test_support::{empty_market, p, reference},
         prelude::*,
     };
 
     #[test]
     fn equity_forward_resolves_relative_delivery() -> Result<()> {
         let market = empty_market(reference());
-        let ctx = ResolutionContext::new(&market);
+        let ctx = &market;
         let expiry = reference() + p("1Y")?;
         let equity = MarketIndex::Other("ACME".into());
         let forward = MakeEquityForward::default()
@@ -175,7 +193,7 @@ mod tests {
             .with_market_index(equity.clone())
             .with_currency(Currency::EUR)
             .with_strike(100.0)
-            .resolve(&ctx)?;
+            .build_using(ctx)?;
         assert_eq!(forward.delivery_date(), expiry);
         Ok(())
     }

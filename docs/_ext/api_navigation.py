@@ -8,7 +8,7 @@ from sphinx.errors import ExtensionError
 from python_api import declarations
 
 
-PYTHON_EXCEPTIONS = "QuantSupportError QuantSupportTypeError QuantSupportValueError QuantSupportStateError QuantSupportIOError QuantSupportNotImplementedError".split()
+PYTHON_EXCEPTIONS = "QuantSupportError QuantSupportTypeError QuantSupportValueError QuantSupportStateError QuantSupportIOError QuantSupportNotImplementedError UnresolvedProductErr".split()
 
 
 PYTHON_SECTIONS = {
@@ -28,7 +28,7 @@ PYTHON_SECTIONS = {
         "Simulation": "Simulation SimulationConfiguration",
     },
     "instruments": {
-        "Base Types and Direction": "Instrument UnresolvedInstrument Side",
+        "Base Types and Direction": "Instrument Side",
         "Interest Rates": "InterestRate Swap BasisSwap CrossCurrencySwap FixFloatCrossCurrencySwap RateFutures",
         "Rate Options": "EuropeanSwaption SwaptionType CapFloor CapFloorType CapletFloorlet CapletFloorletType",
         "Fixed Income": "FixedRateBond FloatingRateNote FixedRateDeposit SteppedCouponBond CallScheduleEntry PaymentStructure",
@@ -37,6 +37,7 @@ PYTHON_SECTIONS = {
         "Foreign Exchange": "FxForward FxOption",
         "Equity and Credit": "EquityForward EquityOption OptionType CreditDefaultSwap",
         "Scripting": "ScriptedProduct",
+        "Instrument Makers": "MakeInstrument MakeSwap MakeFloatFloatCrossCurrencySwap MakeCrossCurrencySwap MakeBasisSwap MakeFixFloatCrossCurrencySwap MakeFixedRateBond MakeSteppedCouponBond MakeFloatingRateNote MakeFixedRateDeposit MakeLoan MakeFxForward MakeFxEuropeanOption MakeFxOption MakeEquityEuropeanOption MakeEquityOption MakeCreditDefaultSwap MakeCapFloor MakeCapletFloorlet MakeRateFutures MakeSwaption MakeEuropeanSwaption MakeEquityForward MakeScriptedProduct MakeTrade",
     },
     "pricing": {
         "Positions and Requests": "Trade Portfolio Request BondPricingAnchor",

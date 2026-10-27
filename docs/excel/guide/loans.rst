@@ -25,6 +25,9 @@ press **Ctrl+A** to open Function Arguments, or enter
    * - ``name``
      - Required
      - Your object name, e.g. ``"mortgage"``; the function returns a loan handle.
+   * - ``context``
+     - Required
+     - Prepared market context used to construct dates and initial amortization.
    * - ``start_date``
      - Required
      - Advance/accrual start, as ISO text ``"2026-02-24"``; distinct from trade date.
@@ -100,7 +103,7 @@ cell references so the formula remains readable.
      - Residual fraction in [0,1] of original principal, e.g. ``0.25`` = 25%.
        Required for Balloon; invalid for French/Bullet.
    * - ``amortization_rate``
-     - Initial coupon resolved at evaluation
+     - Initial coupon built by the instrument constructor
      - Optional annual all-in rate used to build principal instalments, e.g. ``0.05``.
        Blank floating-first French/Balloon uses the initial fixing or forecast;
        not needed for Bullet.
@@ -189,8 +192,8 @@ Create fixed and floating contracts
 .. code-block:: text
 
    D2 =QS.LOAN.SETTINGS("balloon.options",0.25)
-   D3 =QS.INSTRUMENT.LOAN("balloon","2026-02-24","2031-02-24","EUR",10000,0.05,,"Balloon","Monthly","Actual365",D2)
-   D4 =QS.TRADE.CREATE("receipt",D3,"2026-02-24","Receive")
+   D3 =QS.INSTRUMENT.LOAN("balloon",B2,"2026-02-24","2031-02-24","EUR",10000,0.05,,"Balloon","Monthly","Actual365",D2)
+   D4 =QS.TRADE.CREATE("receipt",B2,D3,"2026-02-24","Receive")
    D5 =QS.LOAN.PRICER("loan.pricer","EUR","ESTR")
    D6 =QS.EVALUATE(H2,D4,"Value",D5)
    D7 =QS.EVALUATE(H2,D4,"FairRate(0)",D5)
@@ -208,16 +211,16 @@ for Receive at the context date, or wrapped in ``QS.TRADE.CREATE`` as above.
 
 .. code-block:: text
 
-   F2 =QS.INSTRUMENT.LOAN("fixed","2026-02-24","2031-02-24","EUR",10000,0.05)
+   F2 =QS.INSTRUMENT.LOAN("fixed",B2,"2026-02-24","2031-02-24","EUR",10000,0.05)
    F3 =QS.LOAN.SETTINGS("floating.options",,0.05)
-   F4 =QS.INSTRUMENT.LOAN("floating","2026-02-24","2031-02-24","EUR",10000,0.01,"EURIBOR12m","French","Monthly","Actual365",F3)
+   F4 =QS.INSTRUMENT.LOAN("floating",B2,"2026-02-24","2031-02-24","EUR",10000,0.01,"EURIBOR12m","French","Monthly","Actual365",F3)
 
 For a stepped fixed coupon, put ``12`` and a blank in A40:A41, and ``0.03`` and
 ``0.05`` in F40:F41. The first 12 monthly payments use 3%; the remainder use 5%:
 
 .. code-block:: text
 
-   F5 =QS.INSTRUMENT.LOAN("stepped","2026-02-24","2031-02-24","EUR",10000,0.03,,,,,,A40:A41,F40:F41)
+   F5 =QS.INSTRUMENT.LOAN("stepped",B2,"2026-02-24","2031-02-24","EUR",10000,0.03,,,,,,A40:A41,F40:F41)
 
 To make the second segment floating, put a blank and ``EURIBOR12m`` in J40:J41
 and pass that range as ``coupon_indices``. Its ``0.05`` would then mean a 500 bp

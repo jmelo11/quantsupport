@@ -281,15 +281,15 @@ class LoanWorkflowTests(unittest.TestCase):
             build_loan_contract(notional=-1)
         with self.assertRaises(TypeError):
             build_loan_contract(notinoal=50_000)
-        pending = build_loan_contract(coupons=[qs.FloatingRateCoupon(index="EURIBOR12m", spread=0.01)])
-        with self.assertRaisesRegex(qs.QuantSupportError, "context"):
-            pending.coupon_fixing_requests()
+        with self.assertRaises(qs.UnresolvedProductErr):
+            build_loan_contract(coupons=[qs.FloatingRateCoupon(index="EURIBOR12m", spread=0.01)])
         context = build_pricing_context()
         fixings = qs.FixingStore()
         fixings.add("EURIBOR12m", "2026-02-20", 0.04)
         context.fixings = fixings
         with context:
-            self.assertIsNotNone(context.evaluate(qs.Trade(pending)).price)
+            product = build_loan_contract(coupons=[qs.FloatingRateCoupon(index="EURIBOR12m", spread=0.01)], context=context)
+            self.assertIsNotNone(context.evaluate(qs.Trade(product, REFERENCE)).price)
         for model in [qs.PrepaymentModelConfiguration.constant_annual_cpr(1.1),
                       qs.PrepaymentModelConfiguration.refinancing_incentive(0.4, 2.0, 0.2),
                       qs.PrepaymentModelConfiguration.dated_annual_cpr([(REFERENCE, 0.1), (REFERENCE, 0.2)])]:

@@ -453,13 +453,6 @@ pub fn evaluate_requests(
     } else {
         object
     };
-    let resolved;
-    let trade = if let QsObject::UnresolvedTrade(pending) = trade {
-        resolved = pending.resolve_trade(context)?;
-        &resolved
-    } else {
-        trade
-    };
     let default;
     let pricer = if let Some(handle) = pricer {
         registry.pricer(handle).map_err(|e| e.to_string())?
@@ -601,7 +594,7 @@ mod tests {
     }
 
     #[test]
-    fn pending_instruments_and_trades_resolve_through_worksheet_dispatch() {
+    fn concrete_instruments_and_trades_are_built_before_worksheet_dispatch() {
         let mut registry = Registry::default();
         let root = root(&mut registry);
         let input = add_curve(&mut registry, &root, 0.04);
@@ -618,31 +611,34 @@ mod tests {
                 Compounding::Simple,
                 Frequency::Annual,
             ));
-        let pending = InstrumentObject::from_maker(
+        let context = prepare(&registry, &root, &[input]).unwrap();
+        let product = InstrumentObject::from_maker(
+            context.as_ref(),
             "FixedRateDeposit",
             1000.0,
             None,
             maker,
             NativeInstrument::FixedRateDeposit,
-        );
-        let position = pending
+        )
+        .unwrap();
+        let position = product
             .trade_from_tenor(
+                context.as_ref(),
                 Period::new(0, TimeUnit::Days),
                 Side::LongReceive,
                 &PositionTerms::default(),
             )
             .unwrap();
-        let pending = registry
-            .upsert_if_changed("pending", QsObject::Instrument(Box::new(pending)), "terms")
+        let product = registry
+            .upsert_if_changed("product", QsObject::Instrument(Box::new(product)), "terms")
             .unwrap();
         let position = registry
             .upsert_if_changed("position", position, "terms")
             .unwrap();
-        let context = prepare(&registry, &root, &[input]).unwrap();
         let expected = evaluate(&registry, &context, &concrete, &Request::Value, None)
             .unwrap()
             .price();
-        for handle in [&pending, &position, &position] {
+        for handle in [&product, &position, &position] {
             assert_eq!(
                 evaluate(&registry, &context, handle, &Request::Value, None)
                     .unwrap()
@@ -652,11 +648,11 @@ mod tests {
         }
         assert!(matches!(
             registry.object(&position).unwrap(),
-            QsObject::UnresolvedTrade(_)
+            QsObject::FixedRateDepositTrade(_)
         ));
         assert!(matches!(
-            registry.instrument(&pending).unwrap().native,
-            NativeInstrument::Pending(_)
+            registry.instrument(&product).unwrap().native,
+            NativeInstrument::FixedRateDeposit(_)
         ));
     }
 

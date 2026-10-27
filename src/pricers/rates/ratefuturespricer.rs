@@ -190,14 +190,13 @@ impl Pricer for RateFuturesPricer {
 
 #[cfg(test)]
 mod tests {
-    use std::{cell::RefCell, collections::HashMap, rc::Rc};
-
     use super::RateFuturesPricer;
     use crate::{
         ad::dual::DualFwd,
         core::{
             elements::curveelement::DiscountCurveElement,
             evaluationresults::EvaluationResults,
+            makeinstrument::MakeInstrument,
             marketdatahandling::{
                 constructedelementstore::ConstructedElementStore,
                 marketdata::{MarketData, MarketDataProvider, MarketDataRequest},
@@ -218,6 +217,7 @@ mod tests {
         time::date::Date,
         utils::errors::{QSError, Result},
     };
+    use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
     struct SimpleMarketDataProvider {
         evaluation_date: Date,

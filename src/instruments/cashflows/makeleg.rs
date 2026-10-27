@@ -1,23 +1,23 @@
-use crate::core::resolution::{ResolutionContext, Resolve};
-use std::collections::HashMap;
-
 #[cfg(test)]
 use crate::ad::dual::DualFwd;
 use crate::{
     ad::scalar::Scalar,
-    core::{instrument::AssetClass, trade::Side},
+    core::{
+        instrument::AssetClass,
+        makeinstrument::{resolve_date, MakeInstrument},
+        trade::Side,
+    },
     currencies::currency::Currency,
     indices::marketindex::MarketIndex,
     instruments::cashflows::{
         cashflow::SimpleCashflow,
-        cashflowtype::CashflowType,
-        cashflowtype::{fixed_cashflow, floating_cashflow},
+        cashflowtype::{fixed_cashflow, floating_cashflow, CashflowType},
         leg::Leg,
     },
     rates::{compounding::Compounding, interestrate::InterestRate},
     time::{
         calendar::Calendar,
-        calendars::nullcalendar::NullCalendar,
+        calendars::{nullcalendar::NullCalendar, traits::IsCalendar},
         date::Date,
         enums::{BusinessDayConvention, DateGenerationRule, Frequency},
         period::Period,
@@ -25,6 +25,7 @@ use crate::{
     },
     utils::errors::{QSError, Result},
 };
+use std::collections::HashMap;
 
 /// Enumeration for the type of rate used in the leg, either fixed or floating.
 #[derive(Clone, Copy)]
@@ -169,8 +170,8 @@ impl<T> MakeLeg<T>
 where
     T: Scalar,
 {
-    /// Sets start date as a tenor from the resolution reference date.
-    /// Replaces an explicitly supplied start date. Resolve this maker with a context.
+    /// Sets start date as a tenor from the context evaluation date.
+    /// Replaces an explicitly supplied start date. Use `build_using` when an external anchor is needed.
     #[must_use]
     pub const fn with_start_tenor(mut self, tenor: Period) -> Self {
         self.start_tenor = Some(tenor);
@@ -179,7 +180,7 @@ where
     }
 
     /// Sets first coupon date as a tenor from the resolved start date.
-    /// Replaces an explicitly supplied first coupon date. Resolve this maker with a context.
+    /// Replaces an explicitly supplied first coupon date. Use `build_using` when an external anchor is needed.
     #[must_use]
     pub const fn with_first_coupon_tenor(mut self, tenor: Period) -> Self {
         self.first_coupon_tenor = Some(tenor);
@@ -468,645 +469,6 @@ where
             None => Err(QSError::ValueNotSetErr("Rate type".into())),
         }
     }
-
-    /// Builds the leg from the configured [`MakeLeg`] builder.
-    ///
-    /// # Errors
-    /// Returns an error if required builder fields are missing or inconsistent.
-    #[allow(clippy::too_many_lines)]
-    pub fn build(self) -> Result<Leg<T>> {
-        if !self.disbursements_tenors.is_empty()
-            || self.start_tenor.is_some()
-            || self.first_coupon_tenor.is_some()
-        {
-            return Err(QSError::InvalidValueErr(
-                "Relative dates require maker.resolve(&ResolutionContext)".into(),
-            ));
-        }
-        let mut cashflows = Vec::new();
-        let structure = self
-            .structure
-            .ok_or_else(|| QSError::ValueNotSetErr("Structure".into()))?;
-
-        let payment_frequency = self
-            .payment_frequency
-            .ok_or_else(|| QSError::ValueNotSetErr("Payment frequency".into()))?;
-
-        let side = self
-            .side
-            .ok_or_else(|| QSError::ValueNotSetErr("Side".into()))?;
-        let currency = self
-            .currency
-            .ok_or_else(|| QSError::ValueNotSetErr("Currency".into()))?;
-
-        let leg_id = self.leg_id.unwrap_or(0);
-        match structure {
-            PaymentStructure::Bullet => {
-                let leg_type = self.check_leg_type()?;
-                let start_date = self
-                    .start_date
-                    .ok_or_else(|| QSError::ValueNotSetErr("Start date".into()))?;
-                let end_date = if let Some(date) = self.end_date {
-                    date
-                } else {
-                    let tenor = self
-                        .tenor
-                        .ok_or_else(|| QSError::ValueNotSetErr("Tenor".into()))?;
-                    start_date + tenor
-                };
-
-                let schedule_builder = MakeSchedule::new(start_date, end_date)
-                    .with_frequency(payment_frequency)
-                    .end_of_month(self.end_of_month.unwrap_or(false))
-                    .with_calendar(
-                        self.calendar
-                            .unwrap_or(Calendar::NullCalendar(NullCalendar::new())),
-                    )
-                    .with_convention(
-                        self.business_day_convention
-                            .unwrap_or(BusinessDayConvention::Unadjusted),
-                    )
-                    .with_termination_date_convention(
-                        self.termination_date_convention
-                            .unwrap_or(BusinessDayConvention::Unadjusted),
-                    )
-                    .with_rule(
-                        self.date_generation_rule
-                            .unwrap_or(DateGenerationRule::Forward),
-                    );
-
-                let schedule = if let Some(date) = self.first_coupon_date {
-                    if date > start_date {
-                        schedule_builder.with_first_date(date).build()?
-                    } else {
-                        Err(QSError::InvalidValueErr(
-                            "First coupon date must be after start date".into(),
-                        ))?
-                    }
-                } else {
-                    schedule_builder.build()?
-                };
-
-                let notional = self
-                    .notional
-                    .ok_or_else(|| QSError::ValueNotSetErr("Notional".into()))?;
-                let side = self
-                    .side
-                    .ok_or_else(|| QSError::ValueNotSetErr("Side".into()))?;
-
-                let first_date = vec![*schedule
-                    .dates()
-                    .first()
-                    .ok_or_else(|| QSError::ValueNotSetErr("Schedule dates".into()))?];
-                let last_date = vec![*schedule
-                    .dates()
-                    .last()
-                    .ok_or_else(|| QSError::ValueNotSetErr("Schedule dates".into()))?];
-                let notionals = notionals_vector(
-                    schedule.dates().len() - 1,
-                    notional,
-                    PaymentStructure::Bullet,
-                );
-
-                add_cashflows_to_vec(&mut cashflows, &first_date, &[notional], 1);
-                add_cashflows_to_vec(&mut cashflows, &last_date, &[notional], 0);
-
-                match leg_type {
-                    LegType::FixedRate => {
-                        // create coupon cashflows
-                        let rate = self
-                            .rate
-                            .ok_or_else(|| QSError::ValueNotSetErr("Rate".into()))?;
-
-                        build_fixed_rate_coupons_from_notionals(
-                            &mut cashflows,
-                            schedule.dates(),
-                            &notionals,
-                            rate,
-                        )?;
-
-                        let leg = Leg::new(
-                            leg_id,
-                            cashflows,
-                            currency,
-                            self.discount_index,
-                            None,
-                            None,
-                            self.rate,
-                            side,
-                            true,
-                            self.asset_class,
-                            schedule.dates()[1],
-                            last_date[0],
-                        );
-
-                        Ok(leg)
-                    }
-                    LegType::FloatingRate => {
-                        // create coupon cashflows
-                        let spread = self
-                            .spread
-                            .ok_or_else(|| QSError::ValueNotSetErr("Spread".into()))?;
-
-                        let forward_index = self.forward_index.ok_or_else(|| {
-                            QSError::ValueNotSetErr("Forward Market Index".into())
-                        })?;
-
-                        build_floating_rate_coupons_from_notionals(
-                            &mut cashflows,
-                            schedule.dates(),
-                            &notionals,
-                            T::scalar(spread),
-                            &forward_index,
-                        )?;
-
-                        let leg = Leg::new(
-                            leg_id,
-                            cashflows,
-                            currency,
-                            self.discount_index,
-                            Some(forward_index),
-                            Some(T::scalar(spread)),
-                            None,
-                            side,
-                            true,
-                            self.asset_class,
-                            schedule.dates()[1],
-                            last_date[0],
-                        );
-                        Ok(leg)
-                    }
-                    LegType::OptionEmbedded => {
-                        let spread = self
-                            .spread
-                            .ok_or_else(|| QSError::ValueNotSetErr("Spread".into()))?;
-
-                        let forward_index = self.forward_index.ok_or_else(|| {
-                            QSError::ValueNotSetErr("Forward Market Index".into())
-                        })?;
-
-                        build_embedded_option_coupons_from_notionals(
-                            &mut cashflows,
-                            schedule.dates(),
-                            &notionals,
-                            T::scalar(spread),
-                            &forward_index,
-                            self.floorlet_strike,
-                            self.caplet_strike,
-                        )?;
-
-                        let leg = Leg::new(
-                            leg_id,
-                            cashflows,
-                            currency,
-                            self.discount_index,
-                            Some(forward_index),
-                            Some(T::scalar(spread)),
-                            None,
-                            side,
-                            true,
-                            self.asset_class,
-                            schedule.dates()[1],
-                            last_date[0],
-                        );
-                        Ok(leg)
-                    }
-                }
-            }
-            PaymentStructure::Other => {
-                let disbursements = self
-                    .disbursements
-                    .ok_or_else(|| QSError::ValueNotSetErr("Disbursements".into()))?;
-                let redemptions = self
-                    .redemptions
-                    .ok_or_else(|| QSError::ValueNotSetErr("Redemptions".into()))?;
-                let notional = disbursements.values().fold(0.0, |acc, x| acc + x).abs();
-                let redemption = redemptions.values().fold(0.0, |acc, x| acc + x).abs();
-                if (notional - redemption).abs() > 0.000_001 {
-                    return Err(QSError::InvalidValueErr(
-                        "Notional and redemption must be equal".into(),
-                    ));
-                }
-
-                // Add disbursements as CashflowType::Disbursement
-                for (date, amount) in &disbursements {
-                    cashflows.push(CashflowType::Disbursement(SimpleCashflow::new(
-                        *amount, *date,
-                    )));
-                }
-
-                // Add redemptions as CashflowType::Redemption
-                for (date, amount) in &redemptions {
-                    cashflows.push(CashflowType::Redemption(SimpleCashflow::new(
-                        *amount, *date,
-                    )));
-                }
-
-                // Derive first/last payment dates from the user-supplied date maps.
-                let mut all_dates: Vec<Date> = disbursements
-                    .keys()
-                    .chain(redemptions.keys())
-                    .copied()
-                    .collect();
-                all_dates.sort();
-                let first_pay = all_dates
-                    .first()
-                    .copied()
-                    .unwrap_or_else(|| Date::new(1970, 1, 1));
-                let last_pay = all_dates
-                    .last()
-                    .copied()
-                    .unwrap_or_else(|| Date::new(1970, 1, 1));
-
-                let leg = Leg::new(
-                    leg_id,
-                    cashflows,
-                    currency,
-                    self.discount_index,
-                    None,
-                    None,
-                    None,
-                    side,
-                    true,
-                    self.asset_class,
-                    first_pay,
-                    last_pay,
-                );
-
-                Ok(leg)
-            }
-            PaymentStructure::EqualPayments => {
-                let leg_type = self.check_leg_type()?;
-                let start_date = self
-                    .start_date
-                    .ok_or_else(|| QSError::ValueNotSetErr("Start date".into()))?;
-                let end_date = if let Some(date) = self.end_date {
-                    date
-                } else {
-                    let tenor = self
-                        .tenor
-                        .ok_or_else(|| QSError::ValueNotSetErr("Tenor".into()))?;
-                    start_date + tenor
-                };
-                let schedule_builder = MakeSchedule::new(start_date, end_date)
-                    .with_frequency(payment_frequency)
-                    .end_of_month(self.end_of_month.unwrap_or(false))
-                    .with_calendar(
-                        self.calendar
-                            .unwrap_or(Calendar::NullCalendar(NullCalendar::new())),
-                    )
-                    .with_convention(
-                        self.business_day_convention
-                            .unwrap_or(BusinessDayConvention::Unadjusted),
-                    )
-                    .with_termination_date_convention(
-                        self.termination_date_convention
-                            .unwrap_or(BusinessDayConvention::Unadjusted),
-                    )
-                    .with_rule(
-                        self.date_generation_rule
-                            .unwrap_or(DateGenerationRule::Backward),
-                    );
-
-                let schedule = if let Some(date) = self.first_coupon_date {
-                    if date > start_date {
-                        schedule_builder.with_first_date(date).build()?
-                    } else {
-                        Err(QSError::InvalidValueErr(
-                            "First coupon date must be after start date".into(),
-                        ))?
-                    }
-                } else {
-                    schedule_builder.build()?
-                };
-
-                let notional = self
-                    .notional
-                    .ok_or_else(|| QSError::ValueNotSetErr("Notional".into()))?;
-
-                let first_date = vec![*schedule
-                    .dates()
-                    .first()
-                    .ok_or_else(|| QSError::ValueNotSetErr("Schedule dates".into()))?];
-
-                // Add initial disbursement
-                add_cashflows_to_vec(&mut cashflows, &first_date, &[notional], 1);
-
-                // Only FixedRate supports EqualPayments structure
-                match leg_type {
-                    LegType::FixedRate => {
-                        let rate = self
-                            .rate
-                            .ok_or_else(|| QSError::ValueNotSetErr("Rate".into()))?;
-
-                        let redemptions =
-                            calculate_equal_payment_redemptions(schedule.dates(), rate, notional);
-
-                        let mut notionals =
-                            redemptions.iter().try_fold(vec![notional], |mut acc, x| {
-                                let last = *acc.last().ok_or_else(|| {
-                                    QSError::InvalidValueErr(
-                                        "Notional schedule cannot be empty".into(),
-                                    )
-                                })?;
-                                acc.push(last - x);
-                                Ok::<_, QSError>(acc)
-                            })?;
-
-                        notionals.pop();
-
-                        build_fixed_rate_coupons_from_notionals(
-                            &mut cashflows,
-                            schedule.dates(),
-                            &notionals,
-                            rate,
-                        )?;
-
-                        let redemption_dates: Vec<Date> =
-                            schedule.dates().iter().skip(1).copied().collect();
-                        add_cashflows_to_vec(&mut cashflows, &redemption_dates, &redemptions, 0);
-
-                        let leg = Leg::new(
-                            leg_id,
-                            cashflows,
-                            currency,
-                            self.discount_index,
-                            None,
-                            None,
-                            self.rate,
-                            side,
-                            true,
-                            self.asset_class,
-                            schedule.dates()[1],
-                            *schedule
-                                .dates()
-                                .last()
-                                .ok_or_else(|| QSError::InvalidValueErr("Empty schedule".into()))?,
-                        );
-
-                        Ok(leg)
-                    }
-                    LegType::FloatingRate | LegType::OptionEmbedded => {
-                        Err(QSError::InvalidValueErr(
-                            "EqualPayments structure is only supported for fixed rate legs".into(),
-                        ))
-                    }
-                }
-            }
-            PaymentStructure::Zero => {
-                let start_date = self
-                    .start_date
-                    .ok_or_else(|| QSError::ValueNotSetErr("Start date".into()))?;
-                let end_date = if let Some(date) = self.end_date {
-                    date
-                } else {
-                    let tenor = self
-                        .tenor
-                        .ok_or_else(|| QSError::ValueNotSetErr("Tenor".into()))?;
-                    start_date + tenor
-                };
-                let schedule = MakeSchedule::new(start_date, end_date)
-                    .with_frequency(payment_frequency)
-                    .with_convention(
-                        self.business_day_convention
-                            .unwrap_or(BusinessDayConvention::Unadjusted),
-                    )
-                    .with_termination_date_convention(
-                        self.termination_date_convention
-                            .unwrap_or(BusinessDayConvention::Unadjusted),
-                    )
-                    .with_calendar(
-                        self.calendar
-                            .unwrap_or(Calendar::NullCalendar(NullCalendar::new())),
-                    )
-                    .with_rule(
-                        self.date_generation_rule
-                            .unwrap_or(DateGenerationRule::Backward),
-                    )
-                    .build()?;
-
-                let notional = self
-                    .notional
-                    .ok_or_else(|| QSError::ValueNotSetErr("Notional".into()))?;
-
-                let first_date = vec![*schedule
-                    .dates()
-                    .first()
-                    .ok_or_else(|| QSError::ValueNotSetErr("Schedule dates".into()))?];
-                let last_date = vec![*schedule
-                    .dates()
-                    .last()
-                    .ok_or_else(|| QSError::ValueNotSetErr("Schedule dates".into()))?];
-
-                // Add initial disbursement
-                add_cashflows_to_vec(&mut cashflows, &first_date, &[notional], 1);
-                // Add final redemption
-                add_cashflows_to_vec(&mut cashflows, &last_date, &[notional], 0);
-
-                let leg = Leg::new(
-                    leg_id,
-                    cashflows,
-                    currency,
-                    self.discount_index,
-                    None,
-                    None,
-                    None,
-                    side,
-                    true,
-                    self.asset_class,
-                    first_date[0],
-                    last_date[0],
-                );
-
-                Ok(leg)
-            }
-            PaymentStructure::EqualRedemptions => {
-                let leg_type = self.check_leg_type()?;
-                let start_date = self
-                    .start_date
-                    .ok_or_else(|| QSError::ValueNotSetErr("Start date".into()))?;
-                let end_date = if let Some(date) = self.end_date {
-                    date
-                } else {
-                    let tenor = self
-                        .tenor
-                        .ok_or_else(|| QSError::ValueNotSetErr("Tenor".into()))?;
-                    start_date + tenor
-                };
-                let schedule_builder = MakeSchedule::new(start_date, end_date)
-                    .with_frequency(payment_frequency)
-                    .end_of_month(self.end_of_month.unwrap_or(false))
-                    .with_convention(
-                        self.business_day_convention
-                            .unwrap_or(BusinessDayConvention::Unadjusted),
-                    )
-                    .with_termination_date_convention(
-                        self.termination_date_convention
-                            .unwrap_or(BusinessDayConvention::Unadjusted),
-                    )
-                    .with_calendar(
-                        self.calendar
-                            .unwrap_or(Calendar::NullCalendar(NullCalendar::new())),
-                    )
-                    .with_rule(
-                        self.date_generation_rule
-                            .unwrap_or(DateGenerationRule::Backward),
-                    );
-
-                let schedule = if let Some(date) = self.first_coupon_date {
-                    if date > start_date {
-                        schedule_builder.with_first_date(date).build()?
-                    } else {
-                        Err(QSError::InvalidValueErr(
-                            "First coupon date must be after start date".into(),
-                        ))?
-                    }
-                } else {
-                    schedule_builder.build()?
-                };
-
-                let notional = self
-                    .notional
-                    .ok_or_else(|| QSError::ValueNotSetErr("Notional".into()))?;
-
-                let first_date = vec![*schedule
-                    .dates()
-                    .first()
-                    .ok_or_else(|| QSError::ValueNotSetErr("Schedule dates".into()))?];
-
-                let n = schedule.dates().len() - 1;
-                let notionals = notionals_vector(n, notional, PaymentStructure::EqualRedemptions);
-                let n_f64 = f64::from(u32::try_from(n).map_err(|_| {
-                    QSError::InvalidValueErr("Redemption count exceeds u32".into())
-                })?);
-                let redemptions = vec![notional / n_f64; n];
-
-                // Add initial disbursement
-                add_cashflows_to_vec(&mut cashflows, &first_date, &[notional], 1);
-
-                match leg_type {
-                    LegType::FixedRate => {
-                        let rate = self
-                            .rate
-                            .ok_or_else(|| QSError::ValueNotSetErr("Rate".into()))?;
-
-                        build_fixed_rate_coupons_from_notionals(
-                            &mut cashflows,
-                            schedule.dates(),
-                            &notionals,
-                            rate,
-                        )?;
-
-                        let redemption_dates: Vec<Date> =
-                            schedule.dates().iter().skip(1).copied().collect();
-                        add_cashflows_to_vec(&mut cashflows, &redemption_dates, &redemptions, 0);
-
-                        let leg = Leg::new(
-                            leg_id,
-                            cashflows,
-                            currency,
-                            self.discount_index,
-                            None,
-                            None,
-                            self.rate,
-                            side,
-                            true,
-                            self.asset_class,
-                            schedule.dates()[1],
-                            *schedule
-                                .dates()
-                                .last()
-                                .ok_or_else(|| QSError::InvalidValueErr("Empty schedule".into()))?,
-                        );
-
-                        Ok(leg)
-                    }
-                    LegType::FloatingRate => {
-                        let spread = self
-                            .spread
-                            .ok_or_else(|| QSError::ValueNotSetErr("Spread".into()))?;
-
-                        let forward_index = self.forward_index.ok_or_else(|| {
-                            QSError::ValueNotSetErr("Forward Market Index".into())
-                        })?;
-
-                        build_floating_rate_coupons_from_notionals(
-                            &mut cashflows,
-                            schedule.dates(),
-                            &notionals,
-                            T::scalar(spread),
-                            &forward_index,
-                        )?;
-
-                        let redemption_dates: Vec<Date> =
-                            schedule.dates().iter().skip(1).copied().collect();
-                        add_cashflows_to_vec(&mut cashflows, &redemption_dates, &redemptions, 0);
-
-                        let leg = Leg::new(
-                            leg_id,
-                            cashflows,
-                            currency,
-                            self.discount_index,
-                            Some(forward_index),
-                            Some(T::scalar(spread)),
-                            None,
-                            side,
-                            true,
-                            self.asset_class,
-                            schedule.dates()[1],
-                            *schedule
-                                .dates()
-                                .last()
-                                .ok_or_else(|| QSError::InvalidValueErr("Empty schedule".into()))?,
-                        );
-                        Ok(leg)
-                    }
-                    LegType::OptionEmbedded => {
-                        let spread = self
-                            .spread
-                            .ok_or_else(|| QSError::ValueNotSetErr("Spread".into()))?;
-
-                        let forward_index = self.forward_index.ok_or_else(|| {
-                            QSError::ValueNotSetErr("Forward Market Index".into())
-                        })?;
-
-                        build_embedded_option_coupons_from_notionals(
-                            &mut cashflows,
-                            schedule.dates(),
-                            &notionals,
-                            T::scalar(spread),
-                            &forward_index,
-                            self.floorlet_strike,
-                            self.caplet_strike,
-                        )?;
-
-                        let redemption_dates: Vec<Date> =
-                            schedule.dates().iter().skip(1).copied().collect();
-                        add_cashflows_to_vec(&mut cashflows, &redemption_dates, &redemptions, 0);
-
-                        let leg = Leg::new(
-                            leg_id,
-                            cashflows,
-                            currency,
-                            self.discount_index,
-                            Some(forward_index),
-                            Some(T::scalar(spread)),
-                            None,
-                            side,
-                            true,
-                            self.asset_class,
-                            schedule.dates()[1],
-                            *schedule
-                                .dates()
-                                .last()
-                                .ok_or_else(|| QSError::InvalidValueErr("Empty schedule".into()))?,
-                        );
-                        Ok(leg)
-                    }
-                }
-            }
-        }
-    }
 }
 
 /// Helper function to build fixed rate coupons from a vector of notionals and schedule dates.
@@ -1335,10 +697,645 @@ where
     }
 }
 
-impl<T: Scalar> Resolve for MakeLeg<T> {
-    type Resolved = Leg<T>;
+impl<T: Scalar> MakeInstrument for MakeLeg<T> {
+    type Instrument = Leg<T>;
 
-    fn resolve(&self, context: &ResolutionContext<'_>) -> Result<Self::Resolved> {
+    fn is_resolved(&self) -> bool {
+        self.start_tenor.is_none()
+            && self.first_coupon_tenor.is_none()
+            && self.tenor.is_none()
+            && self.redemptions_tenors.is_empty()
+            && self.disbursements_tenors.is_empty()
+    }
+
+    /// Builds the leg from the configured [`MakeLeg`] builder.
+    ///
+    /// # Errors
+    /// Returns an error if required builder fields are missing or inconsistent.
+    #[allow(clippy::too_many_lines)]
+    fn build(&self) -> Result<Self::Instrument> {
+        if !self.is_resolved() {
+            return Err(QSError::UnresolvedProductErr(
+                "MakeLeg has unresolved date tenors. Supply the corresponding absolute dates or call maker.build_using(&context)".into(),
+            ));
+        }
+        if [self.start_date, self.end_date, self.first_coupon_date].contains(&Some(Date::empty())) {
+            return Err(QSError::InvalidValueErr(
+                "MakeLeg dates must not be empty".into(),
+            ));
+        }
+        let mut cashflows = Vec::new();
+        let structure = self
+            .structure
+            .ok_or_else(|| QSError::ValueNotSetErr("Structure".into()))?;
+
+        let payment_frequency = self
+            .payment_frequency
+            .ok_or_else(|| QSError::ValueNotSetErr("Payment frequency".into()))?;
+
+        let side = self
+            .side
+            .ok_or_else(|| QSError::ValueNotSetErr("Side".into()))?;
+        let currency = self
+            .currency
+            .ok_or_else(|| QSError::ValueNotSetErr("Currency".into()))?;
+
+        let leg_id = self.leg_id.unwrap_or(0);
+        match structure {
+            PaymentStructure::Bullet => {
+                let leg_type = self.check_leg_type()?;
+                let start_date = self
+                    .start_date
+                    .ok_or_else(|| QSError::ValueNotSetErr("Start date".into()))?;
+                let end_date = self
+                    .end_date
+                    .ok_or_else(|| QSError::ValueNotSetErr("End date".into()))?;
+
+                let schedule_builder = MakeSchedule::new(start_date, end_date)
+                    .with_frequency(payment_frequency)
+                    .end_of_month(self.end_of_month.unwrap_or(false))
+                    .with_calendar(
+                        self.calendar
+                            .clone()
+                            .unwrap_or(Calendar::NullCalendar(NullCalendar::new())),
+                    )
+                    .with_convention(
+                        self.business_day_convention
+                            .unwrap_or(BusinessDayConvention::Unadjusted),
+                    )
+                    .with_termination_date_convention(
+                        self.termination_date_convention
+                            .unwrap_or(BusinessDayConvention::Unadjusted),
+                    )
+                    .with_rule(
+                        self.date_generation_rule
+                            .unwrap_or(DateGenerationRule::Forward),
+                    );
+
+                let schedule = if let Some(date) = self.first_coupon_date {
+                    if date > start_date {
+                        schedule_builder.with_first_date(date).build()?
+                    } else {
+                        Err(QSError::InvalidValueErr(
+                            "First coupon date must be after start date".into(),
+                        ))?
+                    }
+                } else {
+                    schedule_builder.build()?
+                };
+
+                let notional = self
+                    .notional
+                    .ok_or_else(|| QSError::ValueNotSetErr("Notional".into()))?;
+                let side = self
+                    .side
+                    .ok_or_else(|| QSError::ValueNotSetErr("Side".into()))?;
+
+                let first_date = vec![*schedule
+                    .dates()
+                    .first()
+                    .ok_or_else(|| QSError::ValueNotSetErr("Schedule dates".into()))?];
+                let last_date = vec![*schedule
+                    .dates()
+                    .last()
+                    .ok_or_else(|| QSError::ValueNotSetErr("Schedule dates".into()))?];
+                let notionals = notionals_vector(
+                    schedule.dates().len() - 1,
+                    notional,
+                    PaymentStructure::Bullet,
+                );
+
+                add_cashflows_to_vec(&mut cashflows, &first_date, &[notional], 1);
+                add_cashflows_to_vec(&mut cashflows, &last_date, &[notional], 0);
+
+                match leg_type {
+                    LegType::FixedRate => {
+                        // create coupon cashflows
+                        let rate = self
+                            .rate
+                            .ok_or_else(|| QSError::ValueNotSetErr("Rate".into()))?;
+
+                        build_fixed_rate_coupons_from_notionals(
+                            &mut cashflows,
+                            schedule.dates(),
+                            &notionals,
+                            rate,
+                        )?;
+
+                        let leg = Leg::new(
+                            leg_id,
+                            cashflows,
+                            currency,
+                            self.discount_index.clone(),
+                            None,
+                            None,
+                            self.rate,
+                            side,
+                            true,
+                            self.asset_class,
+                            schedule.dates()[1],
+                            last_date[0],
+                        );
+
+                        Ok(leg)
+                    }
+                    LegType::FloatingRate => {
+                        // create coupon cashflows
+                        let spread = self
+                            .spread
+                            .ok_or_else(|| QSError::ValueNotSetErr("Spread".into()))?;
+
+                        let forward_index = self.forward_index.clone().ok_or_else(|| {
+                            QSError::ValueNotSetErr("Forward Market Index".into())
+                        })?;
+
+                        build_floating_rate_coupons_from_notionals(
+                            &mut cashflows,
+                            schedule.dates(),
+                            &notionals,
+                            T::scalar(spread),
+                            &forward_index,
+                        )?;
+
+                        let leg = Leg::new(
+                            leg_id,
+                            cashflows,
+                            currency,
+                            self.discount_index.clone(),
+                            Some(forward_index),
+                            Some(T::scalar(spread)),
+                            None,
+                            side,
+                            true,
+                            self.asset_class,
+                            schedule.dates()[1],
+                            last_date[0],
+                        );
+                        Ok(leg)
+                    }
+                    LegType::OptionEmbedded => {
+                        let spread = self
+                            .spread
+                            .ok_or_else(|| QSError::ValueNotSetErr("Spread".into()))?;
+
+                        let forward_index = self.forward_index.clone().ok_or_else(|| {
+                            QSError::ValueNotSetErr("Forward Market Index".into())
+                        })?;
+
+                        build_embedded_option_coupons_from_notionals(
+                            &mut cashflows,
+                            schedule.dates(),
+                            &notionals,
+                            T::scalar(spread),
+                            &forward_index,
+                            self.floorlet_strike,
+                            self.caplet_strike,
+                        )?;
+
+                        let leg = Leg::new(
+                            leg_id,
+                            cashflows,
+                            currency,
+                            self.discount_index.clone(),
+                            Some(forward_index),
+                            Some(T::scalar(spread)),
+                            None,
+                            side,
+                            true,
+                            self.asset_class,
+                            schedule.dates()[1],
+                            last_date[0],
+                        );
+                        Ok(leg)
+                    }
+                }
+            }
+            PaymentStructure::Other => {
+                let disbursements = self
+                    .disbursements
+                    .clone()
+                    .ok_or_else(|| QSError::ValueNotSetErr("Disbursements".into()))?;
+                let redemptions = self
+                    .redemptions
+                    .clone()
+                    .ok_or_else(|| QSError::ValueNotSetErr("Redemptions".into()))?;
+                let notional = disbursements.values().fold(0.0, |acc, x| acc + x).abs();
+                let redemption = redemptions.values().fold(0.0, |acc, x| acc + x).abs();
+                if (notional - redemption).abs() > 0.000_001 {
+                    return Err(QSError::InvalidValueErr(
+                        "Notional and redemption must be equal".into(),
+                    ));
+                }
+
+                // Add disbursements as CashflowType::Disbursement
+                for (date, amount) in &disbursements {
+                    cashflows.push(CashflowType::Disbursement(SimpleCashflow::new(
+                        *amount, *date,
+                    )));
+                }
+
+                // Add redemptions as CashflowType::Redemption
+                for (date, amount) in &redemptions {
+                    cashflows.push(CashflowType::Redemption(SimpleCashflow::new(
+                        *amount, *date,
+                    )));
+                }
+
+                // Derive first/last payment dates from the user-supplied date maps.
+                let mut all_dates: Vec<Date> = disbursements
+                    .keys()
+                    .chain(redemptions.keys())
+                    .copied()
+                    .collect();
+                all_dates.sort();
+                let first_pay = all_dates
+                    .first()
+                    .copied()
+                    .unwrap_or_else(|| Date::new(1970, 1, 1));
+                let last_pay = all_dates
+                    .last()
+                    .copied()
+                    .unwrap_or_else(|| Date::new(1970, 1, 1));
+
+                let leg = Leg::new(
+                    leg_id,
+                    cashflows,
+                    currency,
+                    self.discount_index.clone(),
+                    None,
+                    None,
+                    None,
+                    side,
+                    true,
+                    self.asset_class,
+                    first_pay,
+                    last_pay,
+                );
+
+                Ok(leg)
+            }
+            PaymentStructure::EqualPayments => {
+                let leg_type = self.check_leg_type()?;
+                let start_date = self
+                    .start_date
+                    .ok_or_else(|| QSError::ValueNotSetErr("Start date".into()))?;
+                let end_date = self
+                    .end_date
+                    .ok_or_else(|| QSError::ValueNotSetErr("End date".into()))?;
+                let schedule_builder = MakeSchedule::new(start_date, end_date)
+                    .with_frequency(payment_frequency)
+                    .end_of_month(self.end_of_month.unwrap_or(false))
+                    .with_calendar(
+                        self.calendar
+                            .clone()
+                            .unwrap_or(Calendar::NullCalendar(NullCalendar::new())),
+                    )
+                    .with_convention(
+                        self.business_day_convention
+                            .unwrap_or(BusinessDayConvention::Unadjusted),
+                    )
+                    .with_termination_date_convention(
+                        self.termination_date_convention
+                            .unwrap_or(BusinessDayConvention::Unadjusted),
+                    )
+                    .with_rule(
+                        self.date_generation_rule
+                            .unwrap_or(DateGenerationRule::Backward),
+                    );
+
+                let schedule = if let Some(date) = self.first_coupon_date {
+                    if date > start_date {
+                        schedule_builder.with_first_date(date).build()?
+                    } else {
+                        Err(QSError::InvalidValueErr(
+                            "First coupon date must be after start date".into(),
+                        ))?
+                    }
+                } else {
+                    schedule_builder.build()?
+                };
+
+                let notional = self
+                    .notional
+                    .ok_or_else(|| QSError::ValueNotSetErr("Notional".into()))?;
+
+                let first_date = vec![*schedule
+                    .dates()
+                    .first()
+                    .ok_or_else(|| QSError::ValueNotSetErr("Schedule dates".into()))?];
+
+                // Add initial disbursement
+                add_cashflows_to_vec(&mut cashflows, &first_date, &[notional], 1);
+
+                // Only FixedRate supports EqualPayments structure
+                match leg_type {
+                    LegType::FixedRate => {
+                        let rate = self
+                            .rate
+                            .ok_or_else(|| QSError::ValueNotSetErr("Rate".into()))?;
+
+                        let redemptions =
+                            calculate_equal_payment_redemptions(schedule.dates(), rate, notional);
+
+                        let mut notionals =
+                            redemptions.iter().try_fold(vec![notional], |mut acc, x| {
+                                let last = *acc.last().ok_or_else(|| {
+                                    QSError::InvalidValueErr(
+                                        "Notional schedule cannot be empty".into(),
+                                    )
+                                })?;
+                                acc.push(last - x);
+                                Ok::<_, QSError>(acc)
+                            })?;
+
+                        notionals.pop();
+
+                        build_fixed_rate_coupons_from_notionals(
+                            &mut cashflows,
+                            schedule.dates(),
+                            &notionals,
+                            rate,
+                        )?;
+
+                        let redemption_dates: Vec<Date> =
+                            schedule.dates().iter().skip(1).copied().collect();
+                        add_cashflows_to_vec(&mut cashflows, &redemption_dates, &redemptions, 0);
+
+                        let leg = Leg::new(
+                            leg_id,
+                            cashflows,
+                            currency,
+                            self.discount_index.clone(),
+                            None,
+                            None,
+                            self.rate,
+                            side,
+                            true,
+                            self.asset_class,
+                            schedule.dates()[1],
+                            *schedule
+                                .dates()
+                                .last()
+                                .ok_or_else(|| QSError::InvalidValueErr("Empty schedule".into()))?,
+                        );
+
+                        Ok(leg)
+                    }
+                    LegType::FloatingRate | LegType::OptionEmbedded => {
+                        Err(QSError::InvalidValueErr(
+                            "EqualPayments structure is only supported for fixed rate legs".into(),
+                        ))
+                    }
+                }
+            }
+            PaymentStructure::Zero => {
+                let start_date = self
+                    .start_date
+                    .ok_or_else(|| QSError::ValueNotSetErr("Start date".into()))?;
+                let end_date = self
+                    .end_date
+                    .ok_or_else(|| QSError::ValueNotSetErr("End date".into()))?;
+                let schedule = MakeSchedule::new(start_date, end_date)
+                    .with_frequency(payment_frequency)
+                    .with_convention(
+                        self.business_day_convention
+                            .unwrap_or(BusinessDayConvention::Unadjusted),
+                    )
+                    .with_termination_date_convention(
+                        self.termination_date_convention
+                            .unwrap_or(BusinessDayConvention::Unadjusted),
+                    )
+                    .with_calendar(
+                        self.calendar
+                            .clone()
+                            .unwrap_or(Calendar::NullCalendar(NullCalendar::new())),
+                    )
+                    .with_rule(
+                        self.date_generation_rule
+                            .unwrap_or(DateGenerationRule::Backward),
+                    )
+                    .build()?;
+
+                let notional = self
+                    .notional
+                    .ok_or_else(|| QSError::ValueNotSetErr("Notional".into()))?;
+
+                let first_date = vec![*schedule
+                    .dates()
+                    .first()
+                    .ok_or_else(|| QSError::ValueNotSetErr("Schedule dates".into()))?];
+                let last_date = vec![*schedule
+                    .dates()
+                    .last()
+                    .ok_or_else(|| QSError::ValueNotSetErr("Schedule dates".into()))?];
+
+                // Add initial disbursement
+                add_cashflows_to_vec(&mut cashflows, &first_date, &[notional], 1);
+                // Add final redemption
+                add_cashflows_to_vec(&mut cashflows, &last_date, &[notional], 0);
+
+                let leg = Leg::new(
+                    leg_id,
+                    cashflows,
+                    currency,
+                    self.discount_index.clone(),
+                    None,
+                    None,
+                    None,
+                    side,
+                    true,
+                    self.asset_class,
+                    first_date[0],
+                    last_date[0],
+                );
+
+                Ok(leg)
+            }
+            PaymentStructure::EqualRedemptions => {
+                let leg_type = self.check_leg_type()?;
+                let start_date = self
+                    .start_date
+                    .ok_or_else(|| QSError::ValueNotSetErr("Start date".into()))?;
+                let end_date = self
+                    .end_date
+                    .ok_or_else(|| QSError::ValueNotSetErr("End date".into()))?;
+                let schedule_builder = MakeSchedule::new(start_date, end_date)
+                    .with_frequency(payment_frequency)
+                    .end_of_month(self.end_of_month.unwrap_or(false))
+                    .with_convention(
+                        self.business_day_convention
+                            .unwrap_or(BusinessDayConvention::Unadjusted),
+                    )
+                    .with_termination_date_convention(
+                        self.termination_date_convention
+                            .unwrap_or(BusinessDayConvention::Unadjusted),
+                    )
+                    .with_calendar(
+                        self.calendar
+                            .clone()
+                            .unwrap_or(Calendar::NullCalendar(NullCalendar::new())),
+                    )
+                    .with_rule(
+                        self.date_generation_rule
+                            .unwrap_or(DateGenerationRule::Backward),
+                    );
+
+                let schedule = if let Some(date) = self.first_coupon_date {
+                    if date > start_date {
+                        schedule_builder.with_first_date(date).build()?
+                    } else {
+                        Err(QSError::InvalidValueErr(
+                            "First coupon date must be after start date".into(),
+                        ))?
+                    }
+                } else {
+                    schedule_builder.build()?
+                };
+
+                let notional = self
+                    .notional
+                    .ok_or_else(|| QSError::ValueNotSetErr("Notional".into()))?;
+
+                let first_date = vec![*schedule
+                    .dates()
+                    .first()
+                    .ok_or_else(|| QSError::ValueNotSetErr("Schedule dates".into()))?];
+
+                let n = schedule.dates().len() - 1;
+                let notionals = notionals_vector(n, notional, PaymentStructure::EqualRedemptions);
+                let n_f64 = f64::from(u32::try_from(n).map_err(|_| {
+                    QSError::InvalidValueErr("Redemption count exceeds u32".into())
+                })?);
+                let redemptions = vec![notional / n_f64; n];
+
+                // Add initial disbursement
+                add_cashflows_to_vec(&mut cashflows, &first_date, &[notional], 1);
+
+                match leg_type {
+                    LegType::FixedRate => {
+                        let rate = self
+                            .rate
+                            .ok_or_else(|| QSError::ValueNotSetErr("Rate".into()))?;
+
+                        build_fixed_rate_coupons_from_notionals(
+                            &mut cashflows,
+                            schedule.dates(),
+                            &notionals,
+                            rate,
+                        )?;
+
+                        let redemption_dates: Vec<Date> =
+                            schedule.dates().iter().skip(1).copied().collect();
+                        add_cashflows_to_vec(&mut cashflows, &redemption_dates, &redemptions, 0);
+
+                        let leg = Leg::new(
+                            leg_id,
+                            cashflows,
+                            currency,
+                            self.discount_index.clone(),
+                            None,
+                            None,
+                            self.rate,
+                            side,
+                            true,
+                            self.asset_class,
+                            schedule.dates()[1],
+                            *schedule
+                                .dates()
+                                .last()
+                                .ok_or_else(|| QSError::InvalidValueErr("Empty schedule".into()))?,
+                        );
+
+                        Ok(leg)
+                    }
+                    LegType::FloatingRate => {
+                        let spread = self
+                            .spread
+                            .ok_or_else(|| QSError::ValueNotSetErr("Spread".into()))?;
+
+                        let forward_index = self.forward_index.clone().ok_or_else(|| {
+                            QSError::ValueNotSetErr("Forward Market Index".into())
+                        })?;
+
+                        build_floating_rate_coupons_from_notionals(
+                            &mut cashflows,
+                            schedule.dates(),
+                            &notionals,
+                            T::scalar(spread),
+                            &forward_index,
+                        )?;
+
+                        let redemption_dates: Vec<Date> =
+                            schedule.dates().iter().skip(1).copied().collect();
+                        add_cashflows_to_vec(&mut cashflows, &redemption_dates, &redemptions, 0);
+
+                        let leg = Leg::new(
+                            leg_id,
+                            cashflows,
+                            currency,
+                            self.discount_index.clone(),
+                            Some(forward_index),
+                            Some(T::scalar(spread)),
+                            None,
+                            side,
+                            true,
+                            self.asset_class,
+                            schedule.dates()[1],
+                            *schedule
+                                .dates()
+                                .last()
+                                .ok_or_else(|| QSError::InvalidValueErr("Empty schedule".into()))?,
+                        );
+                        Ok(leg)
+                    }
+                    LegType::OptionEmbedded => {
+                        let spread = self
+                            .spread
+                            .ok_or_else(|| QSError::ValueNotSetErr("Spread".into()))?;
+
+                        let forward_index = self.forward_index.clone().ok_or_else(|| {
+                            QSError::ValueNotSetErr("Forward Market Index".into())
+                        })?;
+
+                        build_embedded_option_coupons_from_notionals(
+                            &mut cashflows,
+                            schedule.dates(),
+                            &notionals,
+                            T::scalar(spread),
+                            &forward_index,
+                            self.floorlet_strike,
+                            self.caplet_strike,
+                        )?;
+
+                        let redemption_dates: Vec<Date> =
+                            schedule.dates().iter().skip(1).copied().collect();
+                        add_cashflows_to_vec(&mut cashflows, &redemption_dates, &redemptions, 0);
+
+                        let leg = Leg::new(
+                            leg_id,
+                            cashflows,
+                            currency,
+                            self.discount_index.clone(),
+                            Some(forward_index),
+                            Some(T::scalar(spread)),
+                            None,
+                            side,
+                            true,
+                            self.asset_class,
+                            schedule.dates()[1],
+                            *schedule
+                                .dates()
+                                .last()
+                                .ok_or_else(|| QSError::InvalidValueErr("Empty schedule".into()))?,
+                        );
+                        Ok(leg)
+                    }
+                }
+            }
+        }
+    }
+
+    fn resolve_dates(&self, reference_date: Date) -> Result<Self> {
         let mut resolved = self.clone();
         let calendar = self
             .calendar
@@ -1347,40 +1344,43 @@ impl<T: Scalar> Resolve for MakeLeg<T> {
         let convention = self
             .business_day_convention
             .unwrap_or(BusinessDayConvention::Unadjusted);
-        let dates = context.with_date_conventions(
-            &calendar,
-            convention,
-            self.end_of_month.unwrap_or(false),
-        );
-        resolved.start_date = Some(dates.resolve_date(
+        let date_calendar = &calendar;
+        let date_convention = convention;
+        let date_end_of_month = self.end_of_month.unwrap_or(false);
+        resolved.start_date = Some(resolve_date(
             self.start_date,
             self.start_tenor,
-            context.reference_date(),
+            reference_date,
             "start_date",
+            date_calendar,
+            date_convention,
+            date_end_of_month,
         )?);
         resolved.start_tenor = None;
-        resolved.end_date = Some(
-            dates.resolve_date(
-                self.end_date,
-                self.tenor,
+        resolved.end_date = Some(resolve_date(
+            self.end_date,
+            self.tenor,
+            resolved
+                .start_date
+                .ok_or_else(|| QSError::ValueNotSetErr("start_date".into()))?,
+            "end_date",
+            date_calendar,
+            date_convention,
+            date_end_of_month,
+        )?);
+        resolved.tenor = None;
+        if self.first_coupon_date.is_some() || self.first_coupon_tenor.is_some() {
+            resolved.first_coupon_date = Some(resolve_date(
+                self.first_coupon_date,
+                self.first_coupon_tenor,
                 resolved
                     .start_date
                     .ok_or_else(|| QSError::ValueNotSetErr("start_date".into()))?,
-                "end_date",
-            )?,
-        );
-        resolved.tenor = None;
-        if self.first_coupon_date.is_some() || self.first_coupon_tenor.is_some() {
-            resolved.first_coupon_date = Some(
-                dates.resolve_date(
-                    self.first_coupon_date,
-                    self.first_coupon_tenor,
-                    resolved
-                        .start_date
-                        .ok_or_else(|| QSError::ValueNotSetErr("start_date".into()))?,
-                    "first_coupon_date",
-                )?,
-            );
+                "first_coupon_date",
+                date_calendar,
+                date_convention,
+                date_end_of_month,
+            )?);
         }
         resolved.first_coupon_tenor = None;
         if !self.disbursements_tenors.is_empty() {
@@ -1389,7 +1389,12 @@ impl<T: Scalar> Resolve for MakeLeg<T> {
                 .ok_or_else(|| QSError::ValueNotSetErr("Start date".into()))?;
             let mut values = HashMap::new();
             for (tenor, amount) in &self.disbursements_tenors {
-                let date = dates.advance_date(start, *tenor)?;
+                let date = date_calendar.advance(
+                    start,
+                    *tenor,
+                    Some(date_convention),
+                    date_end_of_month,
+                )?;
                 if values.insert(date, *amount).is_some() {
                     return Err(QSError::InvalidValueErr(
                         "Duplicate resolved disbursements date".into(),
@@ -1405,7 +1410,12 @@ impl<T: Scalar> Resolve for MakeLeg<T> {
                 .ok_or_else(|| QSError::ValueNotSetErr("Start date".into()))?;
             let mut values = HashMap::new();
             for (tenor, amount) in &self.redemptions_tenors {
-                let date = dates.advance_date(start, *tenor)?;
+                let date = date_calendar.advance(
+                    start,
+                    *tenor,
+                    Some(date_convention),
+                    date_end_of_month,
+                )?;
                 if values.insert(date, *amount).is_some() {
                     return Err(QSError::InvalidValueErr(
                         "Duplicate resolved redemptions date".into(),
@@ -1415,16 +1425,17 @@ impl<T: Scalar> Resolve for MakeLeg<T> {
             resolved.redemptions = Some(values);
             resolved.redemptions_tenors.clear();
         }
-        resolved.build()
+        Ok(resolved)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::rates::compounding::Compounding;
-    use crate::rates::interestrate::RateDefinition;
-    use crate::time::daycounter::DayCounter;
+    use crate::{
+        rates::{compounding::Compounding, interestrate::RateDefinition},
+        time::daycounter::DayCounter,
+    };
 
     #[test]
     fn leg_and_shared_definition_build_identical_bounded_coupons() -> Result<()> {
@@ -1659,17 +1670,17 @@ mod tests {
 
 #[cfg(test)]
 mod resolution_tests {
-    use crate::instruments::cashflows::makeleg::RateType;
-    use crate::time::calendars::nullcalendar::NullCalendar;
     use crate::{
-        core::resolution::test_support::{empty_market, p, reference},
+        core::makeinstrument::test_support::{empty_market, p, reference},
+        instruments::cashflows::makeleg::RateType,
         prelude::*,
+        time::calendars::nullcalendar::NullCalendar,
     };
 
     #[test]
     fn leg_makers_resolve_custom_principal_dates() -> Result<()> {
         let market = empty_market(reference());
-        let ctx = ResolutionContext::new(&market);
+        let ctx = &market;
         let maker = MakeLeg::<f64>::default()
             .with_start_tenor(p("0D")?)
             .with_tenor(p("1Y")?)
@@ -1687,19 +1698,23 @@ mod resolution_tests {
             .other()
             .with_disbursements_tenors(vec![(p("0D")?, 100.0)])
             .with_redemptions_tenors(vec![(p("1Y")?, 100.0)]);
-        let leg = maker.resolve(&ctx)?;
+        let leg = maker.build_using(ctx)?;
         assert!(!leg.cashflows().is_empty());
         assert!(maker.build().is_err());
         let duplicate = MakeLeg::<f64>::default()
             .with_start_tenor(p("0D")?)
             .with_tenor(p("1Y")?)
             .with_redemptions_tenors(vec![(p("12M")?, 50.0), (p("1Y")?, 50.0)]);
-        assert!(duplicate.resolve(&ctx).is_err());
+        assert!(duplicate.build_using(ctx).is_err());
         // The default context has no calendar adjustment.
         let null = Calendar::NullCalendar(NullCalendar::new());
         assert_eq!(
-            ctx.with_date_conventions(&null, BusinessDayConvention::Unadjusted, false)
-                .advance_date(reference(), p("1Y")?)?,
+            null.advance(
+                reference(),
+                p("1Y")?,
+                Some(BusinessDayConvention::Unadjusted),
+                false
+            )?,
             reference() + p("1Y")?
         );
         Ok(())

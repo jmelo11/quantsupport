@@ -700,15 +700,11 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::prelude::CashflowKind;
-    use std::cell::RefCell;
-    use std::collections::HashMap;
-    use std::rc::Rc;
-
     use crate::{
         core::{
             collateral::SingleCurveCSADiscountPolicy,
             elements::curveelement::DiscountCurveElement,
+            makeinstrument::MakeInstrument,
             marketdatahandling::{
                 constructedelementstore::ConstructedElementStore,
                 marketdata::{MarketData, MarketDataProvider, MarketDataRequest},
@@ -733,6 +729,7 @@ mod tests {
                 swap::{Swap, SwapTrade},
             },
         },
+        prelude::CashflowKind,
         quotes::fxstore::FxStore,
         rates::{
             compounding::Compounding, interestrate::RateDefinition,
@@ -740,6 +737,7 @@ mod tests {
         },
         time::{date::Date, daycounter::DayCounter, enums::Frequency},
     };
+    use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
     #[test]
     fn test_fixed_rate_deposit_pricing_with_discounting_pricer() {
@@ -1617,13 +1615,14 @@ mod tests {
 
 #[cfg(test)]
 mod reporting_tests {
-    use std::{any::TypeId, cell::RefCell, collections::HashMap, rc::Rc};
-
-    use crate::core::{
-        evaluator::Evaluator, marketdatahandling::fxrequest::FxRequest, pricer::ErasedPricer,
+    use crate::{
+        core::{
+            evaluator::Evaluator, marketdatahandling::fxrequest::FxRequest, pricer::ErasedPricer,
+        },
+        prelude::*,
+        utils::errors::{QSError, Result},
     };
-    use crate::prelude::*;
-    use crate::utils::errors::{QSError, Result};
+    use std::{any::TypeId, cell::RefCell, collections::HashMap, rc::Rc};
 
     /// Builds an ESTR deposit market with the selected base currency and original FX observations.
     fn context(base: Currency, fx: FxStore) -> PricingContext {
@@ -1889,7 +1888,7 @@ mod reporting_tests {
 #[cfg(test)]
 mod resolution_tests {
     use crate::{
-        core::resolution::test_support::{market, p, reference},
+        core::makeinstrument::test_support::{market, p, reference},
         prelude::*,
     };
 

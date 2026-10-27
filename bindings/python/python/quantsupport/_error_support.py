@@ -75,6 +75,11 @@ def _initialize(QuantSupportError):
         __module__ = "quantsupport"
 
 
+    class UnresolvedProductErr(QuantSupportStateError):
+        """Construction requires an explicit reference date or market observation."""
+        __module__ = "quantsupport"
+
+
     class QuantSupportIOError(QuantSupportError, OSError):
         """An I/O operation failed; also catchable as OSError."""
         __module__ = "quantsupport"
@@ -87,7 +92,9 @@ def _initialize(QuantSupportError):
 
     def _make_error(message, code="unexpected", operation=None, path=None,
                     expected=None, actual=None, contexts=(), details=None, native_type=None):
-        if code == "invalid_type":
+        if code == "unresolved_product":
+            cls = UnresolvedProductErr
+        elif code == "invalid_type":
             cls = QuantSupportTypeError
         elif code in ("invalid_value", "missing_value", "date_parsing", "period_parsing",
                       "parsing", "quote_parsing", "deserialization", "schedule"):
@@ -201,10 +208,11 @@ def _initialize(QuantSupportError):
                 elif _inspect.ismethoddescriptor(descriptor):
                     setattr(cls, name, _guard(descriptor, operation))
 
-    for cls in (QuantSupportTypeError, QuantSupportValueError, QuantSupportStateError,
+    for cls in (UnresolvedProductErr, QuantSupportTypeError, QuantSupportValueError, QuantSupportStateError,
                 QuantSupportIOError, QuantSupportNotImplementedError):
         cls.__qualname__ = cls.__name__
     return {
+        "UnresolvedProductErr": UnresolvedProductErr,
         "QuantSupportTypeError": QuantSupportTypeError,
         "QuantSupportValueError": QuantSupportValueError,
         "QuantSupportStateError": QuantSupportStateError,

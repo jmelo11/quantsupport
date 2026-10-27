@@ -2047,7 +2047,7 @@ mod tests {
 #[cfg(test)]
 mod resolution_tests {
     use crate::{
-        core::resolution::test_support::{assert_legs, cashflows, loan, market, p, reference},
+        core::makeinstrument::test_support::{assert_legs, cashflows, loan, market, p, reference},
         prelude::*,
     };
 
@@ -2055,9 +2055,9 @@ mod resolution_tests {
     fn loan_resolution_forecasts_initial_coupon_and_matches_explicit_pricing_and_risk() -> Result<()>
     {
         let market = market(reference(), 0.04, FixingStore::default());
-        let ctx = ResolutionContext::new(&market);
+        let ctx = &market;
         let maker = loan()?;
-        let resolved = maker.resolve(&ctx)?;
+        let resolved = maker.build_using(ctx)?;
         let explicit = maker
             .clone()
             .with_start_date(reference())
@@ -2138,9 +2138,9 @@ mod resolution_tests {
         let maker = loan()?.with_start_date(start);
         let missing = market(start, 0.04, FixingStore::default())
             .with_quote_store(QuoteStore::new(evaluation));
-        assert!(maker.resolve(&ResolutionContext::new(&missing)).is_err());
+        assert!(maker.build_using(&missing).is_err());
         let projected = missing.with_anchor_fixings(false);
-        let auto = maker.resolve(&ResolutionContext::new(&projected))?;
+        let auto = maker.build_using(&projected)?;
         let explicit = maker
             .clone()
             .with_maturity_date(start + p("2Y")?)
@@ -2150,19 +2150,18 @@ mod resolution_tests {
         let mut fixings = FixingStore::default();
         fixings.add_fixing(&MarketIndex::EURIBOR12m, start, 0.10);
         let stored = market(start, 0.04, fixings).with_quote_store(QuoteStore::new(evaluation));
-        let anchored = maker.resolve(&ResolutionContext::new(&stored))?;
+        let anchored = maker.build_using(&stored)?;
         assert_ne!(
             cashflows(auto.contractual_leg())?,
             cashflows(anchored.contractual_leg())?
         );
         let projection_only = stored.clone().with_anchor_fixings(false);
-        let override_anchored =
-            maker.resolve(&ResolutionContext::new(&projection_only).with_anchor_fixings(true))?;
+        let override_anchored = maker.build_using(&projection_only.with_anchor_fixings(true))?;
         assert_eq!(
             cashflows(anchored.contractual_leg())?,
             cashflows(override_anchored.contractual_leg())?
         );
-        let ignored = maker.resolve(&ResolutionContext::new(&stored).with_anchor_fixings(false))?;
+        let ignored = maker.build_using(&stored.clone().with_anchor_fixings(false))?;
         assert_eq!(
             cashflows(auto.contractual_leg())?,
             cashflows(ignored.contractual_leg())?
@@ -2172,15 +2171,10 @@ mod resolution_tests {
             FixedIncomeDiscountPolicy::new(false)
                 .with_discount_curve_index(Currency::EUR, MarketIndex::ESTR),
         ));
-        let pending = UnresolvedTrade::from_maker(maker, move |instrument, _| {
-            Ok(LoanTrade::new(instrument, start, Side::LongReceive))
-        });
-        assert!(pricer
-            .evaluate_unresolved(&pending, &[Request::Value], &stored)
-            .is_ok());
-        assert!(pricer
-            .evaluate_unresolved(&pending, &[Request::Value], &projected)
-            .is_ok());
+        for market in [&stored, &projected] {
+            let trade = LoanTrade::new(maker.build_using(market)?, start, Side::LongReceive);
+            assert!(pricer.evaluate(&trade, &[Request::Value], market).is_ok());
+        }
         let requests = MarketDataRequest::default()
             .with_fixings_request(vec![FixingRequest::new(MarketIndex::EURIBOR12m, start)]);
         assert!(projected.handle_request(&requests).is_err());

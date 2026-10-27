@@ -508,7 +508,8 @@ Assign public properties to change inputs: curves, curve_configurations,
 credit_curve_configurations, fixings, quotes, fx, quote_level, csa_policy,
 fixed_income_policy, volatility_surface_configurations,
 volatility_cube_configurations, simulation_configurations, and
-pricer_configurations. Reassigning market inputs invalidates constructed data;
+pricer_configurations. Set anchor_fixings to select the historical fixing policy.
+Reassigning market inputs invalidates constructed data;
 construction follows subsequent market-data requests.
 Collection getters return copies; assign the updated collection back.
 Use ``with context, scenario:`` for temporary ``Scenario`` shocks;
@@ -1282,8 +1283,8 @@ instrument : Instrument
     Contract held by the position. Python objects may also be carried for
     registered Python pricers; native evaluation requires a supported product.
 trade_date : Date, datetime.date, or str
-    Execution date; strings use ISO ``YYYY-MM-DD`` format. None defers to
-    trade_tenor, defaulting to 0D when both inputs are omitted.
+    Required execution date; strings use ISO ``YYYY-MM-DD`` format. Use
+    MakeTrade.build_using for a relative execution date.
 side : Side or str, optional
     Direction, defaulting to Side.LongReceive when None. Strings accept
     LongReceive, Long, Receive, PayShort, Pay, or Short, case-insensitively.
@@ -1309,9 +1310,6 @@ settlement_date : Date, datetime.date, or str, optional
 spread_day_counter : DayCounter or str, optional
     Bond spread day-count override, as an enum or case-insensitive variant
     name. None, the default, leaves the native spread convention unchanged.
-trade_tenor : Period or str, optional
-    Execution-date offset from evaluation. Mutually exclusive with trade_date;
-    omitted date and tenor default to 0D.
 
 Raises
 ------
@@ -1326,7 +1324,7 @@ Notes
 Positions retain a reference to the instrument and are thread-confined.
 """
 
-    def __new__(cls, instrument: Instrument, trade_date: _DateLike | None = ..., side: Side | str | None = ..., notional: float | None = ..., domestic_notional: float | None = ..., foreign_notional: float | None = ..., num_contracts: float = ..., pricing_anchor: Any | None = ..., settlement_date: _DateLike | None = ..., spread_day_counter: Any | None = ..., trade_tenor: _PeriodLike | None = ...) -> Self:
+    def __new__(cls, instrument: Instrument, trade_date: _DateLike, side: Side | str | None = ..., notional: float | None = ..., domestic_notional: float | None = ..., foreign_notional: float | None = ..., num_contracts: float = ..., pricing_anchor: Any | None = ..., settlement_date: _DateLike | None = ..., spread_day_counter: Any | None = ...) -> Self:
         ...
 
     def __repr__(self) -> str:
@@ -1399,20 +1397,7 @@ QuantSupportError
         """Execution date."""
         ...
 
-    @property
-    def trade_tenor(self) -> Period | None:
-        """Execution offset retained until evaluation, or None for a dated position."""
-        ...
 
-    def resolve_trade(self, context: PricingContext) -> Trade:
-        """Resolve once to retain concrete instrument and execution dates.
-
-        Parameters
-        ----------
-        context : PricingContext
-            Initialized market supplying the evaluation date, curves and fixings.
-        """
-        ...
 
     @property
     def domestic_notional(self) -> float | None:

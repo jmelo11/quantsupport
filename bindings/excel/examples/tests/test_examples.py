@@ -347,11 +347,12 @@ class WorkbookTests(unittest.TestCase):
         for _, _, expression, _ in book.formulas():
             if expression.startswith("_xll.QS.INSTRUMENT.LOAN("):
                 values = arguments(expression)
-                self.assertEqual(len(values), 14)
-                if values[11]:
-                    self.assertTrue(values[11].endswith("_CouponPeriods"))
-                    self.assertTrue(values[12].endswith("_CouponRates"))
-                    self.assertTrue(values[13].endswith("_CouponIndices"))
+                self.assertEqual(len(values), 15)
+                self.assertEqual(values[1], "Loan_Context")
+                if values[12]:
+                    self.assertTrue(values[12].endswith("_CouponPeriods"))
+                    self.assertTrue(values[13].endswith("_CouponRates"))
+                    self.assertTrue(values[14].endswith("_CouponIndices"))
                 self.assertFalse(any("_Coupons" in value or "_Settings" in value for value in values))
 
     def test_detail_sheets_share_the_same_result_and_have_room_to_spill(self):

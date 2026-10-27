@@ -1,78 +1,16 @@
 //! Native contracts and position construction, kept separate from pricing policy.
 
 use super::registry::QsObject;
-use quantsupport::instruments::cashflows::{
-    cashflow::SimpleCashflow, optionembeddedcoupon::OptionEmbeddedCoupon,
+use quantsupport::{
+    instruments::cashflows::{
+        cashflow::SimpleCashflow, optionembeddedcoupon::OptionEmbeddedCoupon,
+    },
+    prelude::*,
 };
-use quantsupport::prelude::*;
 use std::result::Result;
-
-type InstrumentResolver =
-    dyn Fn(&ResolutionContext<'_>) -> Result<NativeInstrument, String> + Send + Sync;
-
-#[derive(Clone)]
-pub struct PendingInstrument {
-    kind: &'static str,
-    resolver: std::sync::Arc<InstrumentResolver>,
-}
-
-pub struct PendingTrade {
-    instrument: PendingInstrument,
-    notional: f64,
-    foreign_notional: Option<f64>,
-    date: Option<Date>,
-    trade_tenor: Option<Period>,
-    side: Side,
-    terms: PositionTerms,
-}
-
-impl PendingTrade {
-    pub fn kind(&self) -> &'static str {
-        match self.instrument.kind {
-            "Loan" => "LoanTrade",
-            "Swap" => "SwapTrade",
-            "BasisSwap" => "BasisSwapTrade",
-            "FloatFloatCrossCurrencySwap" => "FloatFloatCrossCurrencySwapTrade",
-            "FixFloatCrossCurrencySwap" => "FixFloatCrossCurrencySwapTrade",
-            "FixedRateBond" => "FixedRateBondTrade",
-            "FixedRateDeposit" => "FixedRateDepositTrade",
-            "FloatingRateNote" => "FloatingRateNoteTrade",
-            "FxForward" => "FxForwardTrade",
-            "FxEuropeanOption" => "FxEuropeanOptionTrade",
-            "EquityEuropeanOption" => "EquityEuropeanOptionTrade",
-            "EquityForward" => "EquityForwardTrade",
-            "CreditDefaultSwap" => "CdsTrade",
-            "CapFloor" => "CapFloorTrade",
-            "CapletFloorlet" => "CapletFloorletTrade",
-            "RateFutures" => "RateFuturesTrade",
-            "EuropeanSwaption" => "EuropeanSwaptionTrade",
-            _ => "UnresolvedTrade",
-        }
-    }
-
-    pub fn resolve_trade(&self, market: &impl MarketDataProvider) -> Result<QsObject, String> {
-        let context = ResolutionContext::new(market);
-        let native = (self.instrument.resolver)(&context)?;
-        let date = context
-            .resolve_date(
-                self.date,
-                self.trade_tenor,
-                context.reference_date(),
-                "Trade date",
-            )
-            .map_err(|e| e.to_string())?;
-        InstrumentObject {
-            native,
-            notional: self.notional,
-            foreign_notional: self.foreign_notional,
-        }
-        .trade(date, self.side, &self.terms)
-    }
-}
 
 #[derive(Clone)]
 pub enum NativeInstrument {
-    Pending(PendingInstrument),
     Loan(Loan<DualFwd>),
     Swap(Swap<DualFwd>),
     BasisSwap(BasisSwap<DualFwd>),
@@ -109,46 +47,30 @@ pub struct PositionTerms {
 
 impl InstrumentObject {
     pub fn from_maker<M, F>(
-        kind: &'static str,
+        market: &dyn MarketDataProvider,
+        _kind: &'static str,
         notional: f64,
         foreign_notional: Option<f64>,
         maker: M,
         wrap: F,
-    ) -> Self
+    ) -> Result<Self, String>
     where
-        M: Resolve + Send + Sync + 'static,
-        F: Fn(M::Resolved) -> NativeInstrument + Send + Sync + 'static,
+        M: MakeInstrument,
+        F: FnOnce(M::Instrument) -> NativeInstrument,
     {
-        Self::from_resolver(kind, notional, foreign_notional, move |context| {
-            maker
-                .resolve(context)
-                .map(&wrap)
-                .map_err(|error| error.to_string())
-        })
-    }
-
-    pub fn from_resolver<F>(
-        kind: &'static str,
-        notional: f64,
-        foreign_notional: Option<f64>,
-        resolver: F,
-    ) -> Self
-    where
-        F: Fn(&ResolutionContext<'_>) -> Result<NativeInstrument, String> + Send + Sync + 'static,
-    {
-        Self {
-            native: NativeInstrument::Pending(PendingInstrument {
-                kind,
-                resolver: std::sync::Arc::new(resolver),
-            }),
+        Ok(Self {
+            native: wrap(
+                maker
+                    .build_using(market)
+                    .map_err(|error| error.to_string())?,
+            ),
             notional,
             foreign_notional,
-        }
+        })
     }
 
     pub fn kind(&self) -> &'static str {
         match &self.native {
-            NativeInstrument::Pending(pending) => pending.kind,
             NativeInstrument::Loan(_) => "Loan",
             NativeInstrument::Swap(_) => "Swap",
             NativeInstrument::BasisSwap(_) => "BasisSwap",
@@ -171,43 +93,19 @@ impl InstrumentObject {
 
     pub fn trade_from_tenor(
         &self,
+        market: &dyn MarketDataProvider,
         tenor: Period,
         side: Side,
         terms: &PositionTerms,
     ) -> Result<QsObject, String> {
-        let instrument = match &self.native {
-            NativeInstrument::Pending(pending) => pending.clone(),
-            native => {
-                let native = native.clone();
-                PendingInstrument {
-                    kind: self.kind(),
-                    resolver: std::sync::Arc::new(move |_| Ok(native.clone())),
-                }
-            }
-        };
-        Ok(QsObject::UnresolvedTrade(Box::new(PendingTrade {
-            instrument,
-            notional: self.notional,
-            foreign_notional: self.foreign_notional,
-            date: None,
-            trade_tenor: Some(tenor),
-            side,
-            terms: terms.clone(),
-        })))
+        let date = market
+            .evaluation_date()
+            .advance(tenor.length(), tenor.units())
+            .map_err(|error| error.to_string())?;
+        self.trade(date, side, terms)
     }
 
     pub fn trade(&self, date: Date, side: Side, terms: &PositionTerms) -> Result<QsObject, String> {
-        if let NativeInstrument::Pending(instrument) = &self.native {
-            return Ok(QsObject::UnresolvedTrade(Box::new(PendingTrade {
-                instrument: instrument.clone(),
-                notional: self.notional,
-                foreign_notional: self.foreign_notional,
-                date: Some(date),
-                trade_tenor: None,
-                side,
-                terms: terms.clone(),
-            })));
-        }
         let notional = terms.notional.unwrap_or(self.notional);
         if !notional.is_finite() || notional < 0.0 {
             return Err("position notional must be finite and nonnegative".into());
@@ -235,9 +133,6 @@ impl InstrumentObject {
             notional / self.notional
         };
         Ok(match &self.native {
-            NativeInstrument::Pending(_) => {
-                return Err("instrument must be resolved before positioning".into())
-            }
             NativeInstrument::Loan(loan) => {
                 if notional != loan.notional() {
                     return Err("Loan notional belongs to the instrument; create a loan with the desired principal".into());

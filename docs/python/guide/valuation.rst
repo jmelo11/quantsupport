@@ -10,43 +10,51 @@ The examples below reuse ``reference`` and ``context`` from
 :doc:`first-valuation`. Enter the context again for each calculation; its
 market objects are reconstructed as needed.
 
-Define trades before a market is available
----------------------------------------------
+Build products explicitly
+-------------------------
 
-Use a product's ``from_tenors`` factory to retain separate relative date inputs.
-The ordinary constructors continue to accept absolute dates. A trade can be
-created immediately; ``evaluate`` resolves its instrument and execution date
-against the supplied context on every call, including inside portfolios.
+Makers retain construction parameters and expose ``build()`` and
+``build_using(context)``. Both return the same concrete product type.
+
+``maker.is_resolved()`` reports whether date inputs and required market
+observations are already resolved. ``build()`` checks this first; an unresolved error identifies
+the missing input and explains how to supply it or call ``build_using(context)``.
+Contract validation still occurs when the maker is ready.
+``build()`` raises ``UnresolvedProductErr`` for unresolved dates or market
+observations. Use ``build_using(context)`` for date tenors, including maturity
+tenors paired with an explicit start date.
 
 .. code-block:: python
 
-   definition = qs.Swap.from_tenors(
+   maker = qs.MakeSwap(
        identifier="spot-5y", start_tenor="0D", tenor="5Y",
        notional=1_000_000, fixed_rate=0.03, currency="USD", market_index="SOFR",
    )
-   trade = qs.Trade(definition)  # execution defaults to a pending 0D offset
    with context:
+       instrument = maker.build_using(context)
+       trade = qs.Trade(instrument, context.evaluation_date)
        result = context.evaluate(trade)
-       booked = trade.resolve_trade(context)
 
-Retain ``booked`` to keep contractual dates and initial loan principal fixed
-across valuations and scenarios. Retaining ``trade`` instead creates a fresh
-contract from each evaluation's market. ``definition.resolve_instrument(context)``
-materializes just the product. Resolution leaves the original terms unchanged.
+The maker remains reusable. The built instrument retains its dates and
+contractual principal across valuations and scenarios. ``evaluate`` accepts
+concrete trades; it does not build products or supply execution dates.
+``MakeTrade(..., trade_tenor="0D").build_using(context)`` provides an
+explicit construction path for a relative execution date.
 
-Scheduled products use ``start_tenor`` and ``tenor``; options use
-``expiry_tenor`` and forwards use ``delivery_tenor``. Swaptions use
-``expiry_tenor`` and an underlying ``tenor``. Negative offsets such as ``-2D``
-are accepted for caplet ``fixing_tenor`` and bond stub dates. Date and tenor
-arguments for the same field are mutually exclusive.
+Scheduled makers use ``start_tenor`` and ``tenor``; options use ``expiry_tenor``
+and forwards use ``delivery_tenor``. Swaptions use ``expiry_tenor`` and an
+underlying ``tenor``. A date and tenor for the same field are mutually exclusive.
 
 ``PricingContext(anchor_fixings=True, ...)`` requires stored index fixings
-strictly before the evaluation date and raises an error when one is missing.
-Today and future observations project, even when today's fixing is stored.
-Set ``context.anchor_fixings = False`` to project every index observation;
-the curve must cover its observation interval. Floating amortizing loans can
-omit ``amortization_rate``; resolution applies the first index observation,
-spread and coupon payoff to construct the initial French/balloon schedule.
+strictly before evaluation. Today and future observations project, even when
+today's fixing is stored. Set ``context.anchor_fixings = False`` to project all
+observations; the curve must support the observation interval.
+
+Floating amortizing loans require an explicit ``amortization_rate`` or
+``MakeLoan(...).build_using(context)``. Construction obtains the initial
+index observation, spread, and payoff before fixing the principal schedule.
+Missing historical observations fail during construction. Python loan
+serialization retains the initial amortization rate for context-free reconstruction.
 
 Rates and direction
 -------------------

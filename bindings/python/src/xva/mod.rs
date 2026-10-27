@@ -8,19 +8,19 @@
 //! - [`XvaResult`] exposes per-netting-set XVA values and sensitivities as
 //!   pandas DataFrames.
 
-use crate::common::conversion::qs_err;
+use crate::{
+    common::conversion::{
+        dataframe, extract_currency, extract_market_index, from_json_file, from_py, qs_err,
+    },
+    instruments::products::{
+        BasisSwap, CrossCurrencySwap, FixFloatCrossCurrencySwap, FixedRateBond, FixedRateDeposit,
+        FloatingRateNote, Swap,
+    },
+};
 use pyo3::prelude::*;
 use quantsupport::prelude::{
-    CsaTerms as QsCsaTerms, ExposureResult, NettingSet as QsNettingSet,
+    CsaTerms as QsCsaTerms, ExposureResult, MarketDataProvider, NettingSet as QsNettingSet,
     XvaEngineConfig as QsXvaEngineConfig,
-};
-
-use crate::common::conversion::{
-    dataframe, extract_currency, extract_market_index, from_json_file, from_py,
-};
-use crate::instruments::products::{
-    BasisSwap, CrossCurrencySwap, FixFloatCrossCurrencySwap, FixedRateBond, FixedRateDeposit,
-    FloatingRateNote, Swap,
 };
 
 /// XVA engine configuration (models, paths, seed, frequency).
@@ -235,12 +235,11 @@ impl NettingSet {
     pub fn build(
         &self,
         py: Python<'_>,
-        market: &impl quantsupport::prelude::MarketDataProvider,
+        _market: &impl MarketDataProvider,
     ) -> PyResult<QsNettingSet> {
         let mut claims = Vec::new();
         for position in &self.trades {
-            let resolved = position.borrow(py).resolve_with_market(py, market)?;
-            claims.extend(Self::claims(&resolved, py)?);
+            claims.extend(Self::claims(&position.borrow(py), py)?);
         }
         Ok(QsNettingSet::with_csa_terms(claims, self.csa.clone()))
     }
@@ -290,9 +289,7 @@ impl NettingSet {
                         "NettingSet requires Trade objects, not bare instruments",
                     )
                 })?;
-            if !position.borrow(item.py()).needs_resolution(item.py()) {
-                Self::claims(&position.borrow(item.py()), item.py())?;
-            }
+            Self::claims(&position.borrow(item.py()), item.py())?;
             specs.push(position);
         }
         Ok(Self {

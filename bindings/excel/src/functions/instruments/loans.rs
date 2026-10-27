@@ -1,18 +1,23 @@
-use quantsupport_xll_macros::xll_bindgen;
-use xll_rs::types::{XllError, XLOPER12};
-
 use crate::{
     functions::helpers::{
-        cached_handle, input_key, parse_currency, parse_date, parse_day_counter, parse_frequency,
-        parse_index, value_error, worksheet_columns,
+        cached_handle, construction_date, construction_market, input_key, parse_currency,
+        parse_date, parse_day_counter, parse_frequency, parse_index, value_error,
+        worksheet_columns,
     },
     runtime::{
+        inputs::Cell,
         loan_inputs,
-        loans::LoanTerms,
+        loans::{LoanOptions, LoanTerms},
         products::{InstrumentObject, NativeInstrument},
         registry::{with_registry, with_registry_mut, QsObject},
     },
 };
+use quantsupport::{
+    prelude::{BusinessDayConvention, Calendar, Frequency, Period},
+    time::calendars::nullcalendar::NullCalendar,
+};
+use quantsupport_xll_macros::xll_bindgen;
+use xll_rs::types::{XllError, XLOPER12};
 
 fn optional_text(value: Option<String>) -> Option<String> {
     value
@@ -27,8 +32,7 @@ fn loan_options(
     coupon_indices: *const XLOPER12,
     prepayment_dates: *const XLOPER12,
     prepayment_cprs: *const XLOPER12,
-) -> Result<crate::runtime::loans::LoanOptions, XllError> {
-    use crate::runtime::inputs::Cell;
+) -> Result<LoanOptions, XllError> {
     let settings = optional_text(settings)
         .map(|handle| vec![vec![Cell::Text(handle)]])
         .unwrap_or_default();
@@ -76,7 +80,6 @@ pub fn qs_loan_settings(
     incentive_multiplier: Option<f64>,
     maximum_cpr: Option<f64>,
 ) -> Result<String, XllError> {
-    use crate::runtime::inputs::Cell;
     let number = |value: Option<f64>| value.map_or(Cell::Blank, Cell::Number);
     let text = |value: Option<String>| value.map_or(Cell::Blank, Cell::Text);
     let rows = vec![
@@ -120,6 +123,7 @@ pub fn qs_loan_settings(
 #[allow(clippy::too_many_arguments)]
 pub fn qs_instrument_loan(
     name: &str,
+    context: &str,
     start_date: &str,
     maturity_date: &str,
     currency: &str,
@@ -138,7 +142,7 @@ pub fn qs_instrument_loan(
     start_tenor: Option<String>,
     tenor: Option<String>,
 ) -> Result<String, XllError> {
-    use quantsupport::prelude::*;
+    let (market, construction_revision) = construction_market(context)?;
     let start_date = if start_date.trim().is_empty() {
         None
     } else {
@@ -197,47 +201,55 @@ pub fn qs_instrument_loan(
         day_counter,
         &options,
     ))?;
+    let key = input_key(&(&key, context, &construction_revision))?;
     if let Some(handle) = cached_handle(name, "Loan", &key)? {
         return Ok(handle);
     }
     let identifier = name.to_string();
-    let object = InstrumentObject::from_resolver("Loan", notional, None, move |context| {
-        let calendar = options.calendar.clone().unwrap_or_else(|| {
-            Calendar::NullCalendar(quantsupport::time::calendars::nullcalendar::NullCalendar::new())
-        });
-        let dates = context.with_date_conventions(
-            &calendar,
-            options
-                .business_day_convention
-                .unwrap_or(BusinessDayConvention::Unadjusted),
-            false,
-        );
-        let start = dates
-            .resolve_date(
-                start_date,
-                start_tenor,
-                context.reference_date(),
-                "Loan start",
-            )
-            .map_err(|error| error.to_string())?;
-        let end = dates
-            .resolve_date(maturity_date, tenor, start, "Loan maturity")
-            .map_err(|error| error.to_string())?;
-        LoanTerms {
-            start_date: start,
-            maturity_date: end,
-            currency,
-            notional,
-            rate,
-            market_index: market_index.clone(),
-            repayment: repayment.clone(),
-            payment_frequency,
-            day_counter,
-            options: options.clone(),
-        }
-        .resolve_instrument(&identifier, context)
-        .map(NativeInstrument::Loan)
-    });
+    let calendar = options
+        .calendar
+        .clone()
+        .unwrap_or_else(|| Calendar::NullCalendar(NullCalendar::new()));
+    let convention = options
+        .business_day_convention
+        .unwrap_or(BusinessDayConvention::Unadjusted);
+    let start = construction_date(
+        start_date,
+        start_tenor,
+        market.evaluation_date(),
+        "Loan start",
+        Some(&calendar),
+        convention,
+    )
+    .map_err(value_error)?;
+    let end = construction_date(
+        maturity_date,
+        tenor,
+        start,
+        "Loan maturity",
+        Some(&calendar),
+        convention,
+    )
+    .map_err(value_error)?;
+    let native = LoanTerms {
+        start_date: start,
+        maturity_date: end,
+        currency,
+        notional,
+        rate,
+        market_index,
+        repayment,
+        payment_frequency,
+        day_counter,
+        options,
+    }
+    .build_instrument_with_context(&identifier, market.as_ref())
+    .map_err(value_error)?;
+    let object = InstrumentObject {
+        native: NativeInstrument::Loan(native),
+        notional,
+        foreign_notional: None,
+    };
     with_registry_mut(|registry| {
         registry.upsert_if_changed(name, QsObject::Instrument(Box::new(object)), key)
     })
@@ -247,6 +259,8 @@ pub fn qs_instrument_loan(
 #[cfg(test)]
 mod array_boundary_tests {
     use super::*;
+    use crate::runtime::context;
+    use quantsupport::prelude::{Currency, Date, Level, MarketIndex};
     use xll_rs::{convert::build_multi, memory::xlAutoFree12};
 
     struct Array(*mut XLOPER12);
@@ -288,8 +302,20 @@ mod array_boundary_tests {
         assert_eq!(segments[1].periods, None);
         assert_eq!(segments[1].rate, 0.04);
         assert!(options.prepayment.is_some());
+        let context = with_registry_mut(|registry| {
+            context::create(
+                registry,
+                "array.market",
+                Date::new(2026, 1, 15),
+                Currency::USD,
+                MarketIndex::SOFR,
+                Level::Mid,
+            )
+        })
+        .unwrap();
         let loan = qs_instrument_loan(
             "array.boundary.loan",
+            &context,
             "2026-01-15",
             "2027-01-15",
             "USD",

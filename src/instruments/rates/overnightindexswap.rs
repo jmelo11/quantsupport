@@ -224,6 +224,7 @@ impl OvernightIndexSwapTrade<f64> {
 mod tests {
     use super::*;
     use crate::{
+        core::makeinstrument::MakeInstrument,
         instruments::{
             cashflows::floatingratecoupon::FloatingRateCoupon,
             rates::makeovernightindexswap::MakeOvernightIndexSwap,

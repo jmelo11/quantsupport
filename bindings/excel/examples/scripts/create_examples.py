@@ -57,6 +57,9 @@ def inputs(study, sheet, rows, purpose):
 
 
 def step(study, sheet, row, label, name, args, key, explanation):
+    if name.startswith("QS.INSTRUMENT.") or name == "QS.TRADE.CREATE":
+        market = {"Context": "Root", "History": "OriginalContext1"}.get(study.prefix, "Context")
+        args = [args[0], study.name(market), *args[1:]]
     return study.step(sheet, row, label, formula(name, *args), key, explanation)
 
 

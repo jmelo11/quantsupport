@@ -78,8 +78,8 @@ trade shortcuts have been removed.
 
 .. code-block:: text
 
-   D2 =QS.INSTRUMENT.FX.FORWARD("fx","2027-01-15","EUR","USD",1.10)
-   D3 =QS.TRADE.CREATE("position",D2,"2026-01-15","Receive",1000000)
+   D2 =QS.INSTRUMENT.FX.FORWARD("fx",B2,"2027-01-15","EUR","USD",1.10)
+   D3 =QS.TRADE.CREATE("position",B2,D2,"2026-01-15","Receive",1000000)
    D4 =QS.EVALUATE(B4,D3,"Value")
 
 The native FX carry convention depends on the selected pricer. FX outrights are
@@ -92,20 +92,20 @@ Relative dates and pending trades
 
 ``QS.INSTRUMENT.*`` functions have separate tenor arguments. Leave an absolute
 date blank when supplying its tenor alternative. Instrument and trade handles
-can be created before a pricing context exists. Evaluation resolves pending
-terms against that context without modifying the stored definition.
+take a required construction context immediately after the name. Construction
+calculates concrete dates before publishing a product handle.
 
 .. code-block:: text
 
-   D2 =QS.INSTRUMENT.FX.FORWARD("fx","","EUR","USD",1.10,"1Y")
-   D3 =QS.TRADE.CREATE("position",D2,"","Receive",1000000)
+   D2 =QS.INSTRUMENT.FX.FORWARD("fx",B2,"","EUR","USD",1.10,"1Y")
+   D3 =QS.TRADE.CREATE("position",B2,D2,"","Receive",1000000)
    D4 =QS.EVALUATE(B4,D3,"Value")
 
 Scheduled products use ``start_tenor`` and ``tenor``; options use
 ``expiry_tenor`` and forwards use ``delivery_tenor``. ``QS.TRADE.CREATE`` also
 accepts ``trade_tenor``. A blank execution date and blank tenor default to
-``0D``. Each valuation resolves a fresh contract; use absolute dates and an
-explicit initial loan amortization rate for fixed booked terms.
+``0D`` in the construction context. The resulting dates and initial principal
+remain fixed during valuation; constructor recalculation creates a new contract.
 
 ``QS.CONTEXT.CREATE`` appends ``anchor_fixings`` (TRUE by default). TRUE
 requires stored index fixings strictly before evaluation, raising an error

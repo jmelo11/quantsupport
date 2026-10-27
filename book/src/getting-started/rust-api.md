@@ -1,12 +1,12 @@
 # Working in Rust
 
-A Rust valuation starts with a maker. Define dates or tenors, resolve the maker
-against a `ResolutionContext`, and wrap the resulting instrument in a trade.
+A Rust valuation starts with a maker. Define dates or tenors, call `build()`
+or `build_using(&market)`, and wrap the resulting instrument in a trade.
 A pricer evaluates that trade against a `MarketDataProvider` and
 returns the requested results, such as value, cashflows and sensitivities.
 Import `quantsupport::prelude::*` to bring the common workflow types into scope.
 
-The [resolution guide](../concepts/instrument-resolution.md) covers date anchors,
+The [construction guide](../concepts/instrument-resolution.md) covers date anchors,
 floating loan amortization and reuse across contexts. Fully specified makers
 can also construct instruments directly with `build()`.
 
