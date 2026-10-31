@@ -1,6 +1,6 @@
 """Positions, valuation contexts, pricing policies, extension points, and results."""
 from datetime import date as PythonDate
-from typing import Any, ClassVar, Mapping, Sequence, final, overload
+from typing import Any, Final, Mapping, Sequence, final, overload
 from typing_extensions import Self, disjoint_base
 from pandas import DataFrame
 from ..time import Compounding, DayCounter, Frequency, Date, DateTime, Period, _DateLike, _PeriodLike
@@ -89,13 +89,13 @@ QuantSupportError
     If the name is not a recognized request.
 """
         ...
-    Value: ClassVar[Request]
-    YieldToMaturity: ClassVar[Request]
-    ModifiedDuration: ClassVar[Request]
-    Sensitivities: ClassVar[Request]
-    ZSpread: ClassVar[Request]
-    OAS: ClassVar[Request]
-    Cashflows: ClassVar[Request]
+    Value: Final[Request]
+    YieldToMaturity: Final[Request]
+    ModifiedDuration: Final[Request]
+    Sensitivities: Final[Request]
+    ZSpread: Final[Request]
+    OAS: Final[Request]
+    Cashflows: Final[Request]
 
     @staticmethod
     def FairRate(index: int = 0) -> Request:
