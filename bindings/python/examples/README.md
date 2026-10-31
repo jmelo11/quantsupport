@@ -207,7 +207,6 @@ The notebooks focus on native products and their existing Python entry points.
 | --- | --- |
 | `market_data.py` in each scope folder | Local loader imported directly by its notebooks; reads typed inputs/configurations without hidden pricing |
 | [stepped_cashflows.py](scripting/stepped_cashflows.py) | Translate this tutorial's six-year semiannual note into repetitive script events; no optimal issuer exercise |
-| [nii_forecast.py](nii_forecasting/nii_forecast.py) | Example classes for production rules, recursive rollover and accrued portfolio income |
 | [valuation/bonds/data/bond_tree.json](valuation/bonds/data/bond_tree.json), [valuation/bonds/data/bond_fourier.json](valuation/bonds/data/bond_fourier.json) | Native pricer/model schema and numerical grids |
 | [hullwhite/data/simulation.json](hullwhite/data/simulation.json) | Calibrated Hull–White simulation settings |
 | [cva/data/xva.json](cva/data/xva.json) | Calibrated LGM exposure-engine settings |

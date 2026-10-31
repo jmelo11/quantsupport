@@ -6,7 +6,7 @@ recursive principal replacement, and replacement plus planned growth under
 base, +100 bp and -100 bp rate scenarios. Editable illustrative curves and
 contracts are defined inline; no external market data is required.
 
-The companion [nii_forecast.py](nii_forecast.py) provides the example layer:
+The notebook defines and explains the forecast classes alongside their use:
 
 | Class | Responsibility |
 | --- | --- |
@@ -17,7 +17,7 @@ The companion [nii_forecast.py](nii_forecast.py) provides the example layer:
 | `IncomeForecaster` | Project cohorts once, process dated production recursively and allocate coupon accrual into months |
 | `ForecastResult` | Expose monthly NII, detailed interest, segment balances, production and full-life receipt tables |
 
-The helper uses native loan expected receipts, including their prepayment
+The forecast uses native loan expected receipts, including their prepayment
 reductions. Deposit interest uses native `FixedRateCoupon.amount()` so seasoned
 deposits do not require discounting their historical initial advance. It keeps
 principal out of income, includes accrual on coupons paid beyond the horizon,
@@ -30,10 +30,11 @@ repository root with the environment containing the checkout-built binding:
 
 ```bash
 python bindings/python/examples/run_notebooks.py nii_forecasting
-python -m unittest discover -s bindings/python/examples/nii_forecasting -p 'test_*.py'
+python -m unittest discover -s tools/tests -p 'test_nii_forecast.py' -v
 ```
 
-The focused tests check independent simple-interest calculations, CPR principal conservation,
+The focused tests execute the notebook's definition cells directly, then check
+independent simple-interest calculations, CPR principal conservation,
 recursive replacement, different replacement fractions, delayed renewal,
 planned lending/funding, position overrides, native portfolio reconciliation,
 partial periods and scenario isolation.
