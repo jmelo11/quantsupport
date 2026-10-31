@@ -45,7 +45,7 @@ resolves the latter before the pricer runs its valuation.
 `EvaluationResults` contains optional fields for the measures produced.
 Request support and cashflow reporting conventions depend on the selected
 pricer. Check its reference when choosing requests or reconciling reported
-amounts to PV; an unsupported request may raise an error or leave its field
+amounts to PV; an unsupported request leaves its result field
 unpopulated.
 
 Concrete pricers provide compile-time dispatch. For a heterogeneous portfolio,

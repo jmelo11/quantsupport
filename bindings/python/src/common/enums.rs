@@ -488,10 +488,18 @@ impl Request {
                         return Ok(Self::FairRate(index));
                     }
                 }
-                if let Some(window) = name.strip_prefix("accruedamount(").and_then(|v| v.strip_suffix(')')) {
+                if let Some(window) = name
+                    .strip_prefix("accruedamount(")
+                    .and_then(|v| v.strip_suffix(')'))
+                {
                     if let Some((start, end)) = window.split_once(',') {
-                        let parse = |value: &str| quantsupport::prelude::Date::from_str(
-                            value.trim().trim_matches(['\'', '"']), "%Y-%m-%d").map_err(qs_err);
+                        let parse = |value: &str| {
+                            quantsupport::prelude::Date::from_str(
+                                value.trim().trim_matches(['\'', '"']),
+                                "%Y-%m-%d",
+                            )
+                            .map_err(qs_err)
+                        };
                         let inner = QsRequest::AccruedAmount(parse(start)?, parse(end)?);
                         QsRequest::validate(&[inner]).map_err(qs_err)?;
                         return Ok(Self { inner });
@@ -512,7 +520,9 @@ impl Request {
     }
     fn __repr__(&self) -> String {
         match self.inner {
-            QsRequest::AccruedAmount(start, end) => format!("Request.AccruedAmount('{start}', '{end}')"),
+            QsRequest::AccruedAmount(start, end) => {
+                format!("Request.AccruedAmount('{start}', '{end}')")
+            }
             _ => format!("Request.{:?}", self.inner),
         }
     }

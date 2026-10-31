@@ -2,7 +2,10 @@
 
 use std::collections::HashSet;
 
-use quantsupport::prelude::{Date, FixingStore, Quote, QuoteDetails, QuoteLevels, QuoteStore};
+use quantsupport::{
+    prelude::{Date, FixingStore, QSError, Quote, QuoteDetails, QuoteLevels, QuoteStore},
+    quotes::fxstore::FxRateRecord,
+};
 
 use super::inputs::{self, Cell, Table};
 #[cfg(test)]
@@ -80,7 +83,7 @@ pub fn definition_quotes(date: Date, records: &Table) -> Result<(Vec<String>, Qu
     Ok((identifiers, quotes))
 }
 
-pub fn fx(records: &Table) -> Result<Vec<quantsupport::prelude::FxRateRecord>, String> {
+pub fn fx(records: &Table) -> Result<Vec<FxRateRecord>, String> {
     let mut result = Vec::new();
     let mut seen = HashSet::new();
     for row in inputs::rows(records, 3, "FX arrays")? {
@@ -88,12 +91,12 @@ pub fn fx(records: &Table) -> Result<Vec<quantsupport::prelude::FxRateRecord>, S
             .text("base currency")?
             .to_ascii_uppercase()
             .parse()
-            .map_err(|e: quantsupport::prelude::QSError| e.to_string())?;
+            .map_err(|e: QSError| e.to_string())?;
         let quote = row[1]
             .text("quote currency")?
             .to_ascii_uppercase()
             .parse()
-            .map_err(|e: quantsupport::prelude::QSError| e.to_string())?;
+            .map_err(|e: QSError| e.to_string())?;
         let rate = row[2].number("FX rate")?;
         if rate <= 0.0 {
             return Err("FX rate must be positive".into());
@@ -101,7 +104,7 @@ pub fn fx(records: &Table) -> Result<Vec<quantsupport::prelude::FxRateRecord>, S
         if !seen.insert((base, quote)) {
             return Err("duplicate FX pair".into());
         }
-        result.push(quantsupport::prelude::FxRateRecord { base, quote, rate });
+        result.push(FxRateRecord::new(base, quote, rate));
     }
     Ok(result)
 }

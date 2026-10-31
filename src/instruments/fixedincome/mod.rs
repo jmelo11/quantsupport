@@ -1,5 +1,7 @@
 /// Bond trade pricing anchors.
 pub mod bondpricinganchor;
+/// Shared bond contract and trade interface.
+pub mod bondterms;
 /// Issuer call schedule entries for callable bonds.
 pub mod callschedule;
 /// Fixed Rate Bond Module

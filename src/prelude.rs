@@ -95,6 +95,7 @@ pub use crate::{
         },
         fixedincome::{
             bondpricinganchor::BondPricingAnchor,
+            bondterms::BondTerms,
             callschedule::CallScheduleEntry,
             fixedratebond::{FixedRateBond, FixedRateBondTrade},
             fixedratedeposit::{FixedRateDeposit, FixedRateDepositTrade},

@@ -1,5 +1,5 @@
 //! Contractual cashflows and issuer-call obstacles on an evolution time grid.
-use super::bondanalytics::ResolvedCashflow;
+use super::bondpricer::ResolvedCashflow;
 use crate::{
     ad::{dual::DualFwd, scalar::Scalar},
     core::pricerconfiguration::TimeGridConfiguration,
@@ -152,9 +152,9 @@ pub fn bond_event_grid<T: Scalar>(
 
 #[cfg(test)]
 mod tests {
-    use super::super::bondanalytics::BondTerms;
     use super::super::{bondpricer::test_support::FACE, treebasedbondpricer::test_support::bond};
     use super::{bond_event_grid, ResolvedCashflow};
+    use crate::instruments::fixedincome::bondterms::BondTerms;
     use crate::prelude::*;
     use crate::{
         currencies::currency::Currency,

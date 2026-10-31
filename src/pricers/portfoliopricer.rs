@@ -76,12 +76,17 @@ where
         requests: &[Request],
         context: &impl MarketDataProvider,
     ) -> Result<EvaluationResults> {
-        Request::validate(requests)?;
         let mut accumulator = MakePortfolioAccumulator::default()
             .with_requests(requests)
             .with_cashflow_aggregator((self.cashflow_aggregator)())
             .build()?;
         let requests = accumulator.requests().to_vec();
+        if requests.is_empty() {
+            return Ok(EvaluationResults::new(
+                context.evaluation_date(),
+                portfolio.identifier().to_owned(),
+            ));
+        }
         for (index, trade) in portfolio.trades().iter().enumerate() {
             let result = self.evaluate_member(trade, &requests, context, index)?;
             accumulate_member_result(&mut accumulator, &result, index)?;

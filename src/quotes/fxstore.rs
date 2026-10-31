@@ -14,11 +14,37 @@ use crate::{
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct FxRateRecord {
     /// Base currency.
-    pub base: Currency,
+    base: Currency,
     /// Quote currency.
-    pub quote: Currency,
+    quote: Currency,
     /// 1 unit of base = `rate` units of quote.
-    pub rate: f64,
+    rate: f64,
+}
+
+impl FxRateRecord {
+    /// Creates a spot observation: one unit of base equals rate units of quote.
+    #[must_use]
+    pub const fn new(base: Currency, quote: Currency, rate: f64) -> Self {
+        Self { base, quote, rate }
+    }
+
+    /// Returns the base currency.
+    #[must_use]
+    pub const fn base(&self) -> Currency {
+        self.base
+    }
+
+    /// Returns the quote currency.
+    #[must_use]
+    pub const fn quote(&self) -> Currency {
+        self.quote
+    }
+
+    /// Returns units of quote currency per unit of base currency.
+    #[must_use]
+    pub const fn rate(&self) -> f64 {
+        self.rate
+    }
 }
 
 /// Stores FX spot rates as [`DualFwd`] values so that sensitivities to exchange

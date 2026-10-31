@@ -318,10 +318,19 @@ Coupon interest between two dates
 ----------------------------------
 
 We use ``Request.AccruedAmount(start, end)`` to calculate signed, undiscounted
-interest earned in a reporting window. The loan and linear cashflow pricers
+interest earned in a reporting window. The loan, bond and linear cashflow pricers
 resolve observations, clip the window to each coupon's accrual period, and
 exclude principal advances and repayments. Results use the context base
 currency; portfolios aggregate the member amounts.
+Accrual arithmetic uses plain ``f64`` values. An accrual request does not
+compute PV or start an AD tape; valuation and sensitivity requests use the
+differentiable pricing path.
+
+Bond accrual is contractual coupon interest in currency units, independent of
+clean/dirty quotes, settlement normalization and spread calibration. Callable
+bond accrual assumes the scheduled coupons continue; it does not weight future
+interest by issuer exercise probabilities. An accrual-only request requires no
+callable valuation model.
 
 .. code-block:: python
    :name: guide-python-accrual

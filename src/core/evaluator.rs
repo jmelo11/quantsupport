@@ -37,7 +37,6 @@ impl Evaluator {
         requests: &[Request],
         context: &dyn MarketDataProvider,
     ) -> Result<EvaluationResults> {
-        Request::validate(requests)?;
         let trade_type_id = trade.type_id();
         self.pricers
             .get(&trade_type_id)
@@ -101,6 +100,24 @@ mod tests {
         fn discount_policy(&self) -> Option<&Self::Policy> {
             None
         }
+    }
+
+    #[test]
+    fn unsupported_request_parameters_are_left_to_the_registered_pricer() -> Result<()> {
+        use crate::time::date::Date;
+        let mut pricers: HashMap<TypeId, Box<dyn ErasedPricer>> = HashMap::new();
+        pricers.insert(TypeId::of::<DummyTrade>(), Box::new(DummyPricer));
+        let result = Evaluator::new(pricers).evaluate(
+            &DummyTrade,
+            &[
+                Request::FairRate(0),
+                Request::FairRate(1),
+                Request::AccruedAmount(Date::new(2026, 4, 1), Date::new(2026, 3, 1)),
+            ],
+            &PricingContext::new(),
+        )?;
+        assert!(result.accrued_amount().is_none() && result.fair_rate().is_none());
+        Ok(())
     }
 
     #[test]
