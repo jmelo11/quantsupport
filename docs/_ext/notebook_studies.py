@@ -29,6 +29,9 @@ STUDIES = {
     "Short-rate simulation": [
         ("simulations", "bindings/python/examples/hullwhite/simulations.ipynb"),
     ],
+    "Net interest income": [
+        ("nii-forecast", "bindings/python/examples/forecasting/nii_forecast.ipynb"),
+    ],
     "Portfolio risk and benchmarking": [
         ("portfolio", "bindings/python/examples/sensitivity/portfolio.ipynb"),
         ("portfolio-aggregation", "bindings/python/examples/sensitivity/portfolio_aggregation.ipynb"),

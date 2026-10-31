@@ -80,7 +80,7 @@ Without `--write`, sources remain unchanged;
 use `--write` only when intentionally refreshing publication outputs. The
 optional legacy sensitivity benchmark has additional external dependencies
 and sits outside this runner's default directory. Install its declared optional
-requirements and select all sixteen with:
+requirements and select all seventeen with:
 
 ```sh
 python -m pip install "open-source-risk-engine==1.8.14.1" "curveengine @ git+https://github.com/jmelo11/curveengine.git@d7e000da626e08ff2be5d34561597065340b017e"
@@ -124,6 +124,15 @@ explicit error; files from an older release are never substituted.
 For a manual redeployment, run **Documentation** on main using
 `workflow_dispatch`. Its optional `release_tag` selects a published version;
 blank selects the latest published release.
+
+To publish documentation updates without a package release, include
+`[skip release]` in the documentation commit message and manually run
+**Documentation** with `documentation_ref` set to that commit's full SHA.
+The workflow first checks out the selected published release, then restores
+only `docs/` and `bindings/python/examples/` from the documentation revision.
+The library version, packaged binding declarations, Excel catalog, workbooks
+and release downloads continue to come from the selected release. A blank
+`documentation_ref` keeps the existing release-only redeployment behaviour.
 
 Release-triggered deployments queue independently of push/PR validation, with
 `queue: max` preserving pending runs. The skipped Release triggered by a version
