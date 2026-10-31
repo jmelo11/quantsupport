@@ -1,5 +1,8 @@
+use std::sync::Arc;
+
 use crate::{
     ad::dual::DualFwd,
+    core::elements::curveelement::ADCurveElement,
     indices::marketindex::MarketIndex,
     math::interpolation::interpolator::{Interpolate, Interpolator},
     rates::{
@@ -17,6 +20,7 @@ use crate::{
 enum CurveSource {
     ZeroRate(Box<ZeroRateTermStructure<f64>>),
     Composite(Box<BootstrappedCurve>, Box<BootstrappedCurve>),
+    Runtime(Arc<dyn ADCurveElement>),
 }
 
 /// Internally constructed curve representation used during bootstrapping.
@@ -36,6 +40,23 @@ pub struct BootstrappedCurve {
 }
 
 impl BootstrappedCurve {
+    /// Borrows the exact interpolation of an independently cloned runtime curve.
+    pub(crate) fn from_runtime_curve(
+        market_index: MarketIndex,
+        curve: Box<dyn ADCurveElement>,
+    ) -> Self {
+        let mut result = Self::new(
+            market_index,
+            curve.reference_date(),
+            vec![0.0],
+            vec![1.0],
+            curve.day_counter().unwrap_or(DayCounter::Actual365),
+            Interpolator::LogLinear,
+        );
+        result.source = Some(CurveSource::Runtime(Arc::from(curve)));
+        result
+    }
+
     /// Creates a new solved curve from raw data.
     #[must_use]
     pub const fn new(
@@ -147,6 +168,11 @@ impl BootstrappedCurve {
     pub fn bump_pillar(&mut self, index: usize, bump: f64) -> Result<()> {
         let bumped = self.pillar_values()?[index].value() + bump;
         match &mut self.source {
+            Some(CurveSource::Runtime(_)) => {
+                return Err(QSError::InvalidValueErr(
+                    "Read-only runtime calibration curves cannot be bumped".into(),
+                ));
+            }
             Some(CurveSource::ZeroRate(curve)) => {
                 let mut rates = curve.rates().clone();
                 rates[index] += bump;
@@ -278,6 +304,7 @@ impl BootstrappedCurve {
     /// Resolves a time discount factor through the explicit, composite or calibrated curve source.
     fn discount_factor_from_time(&self, time: f64) -> Result<f64> {
         match &self.source {
+            Some(CurveSource::Runtime(curve)) => Ok(curve.discount_factor_from_time(time)?.value()),
             Some(CurveSource::ZeroRate(curve)) => curve.discount_factor_from_time(time),
             Some(CurveSource::Composite(base, spread)) => Ok(base
                 .discount_factor_from_time(time)?

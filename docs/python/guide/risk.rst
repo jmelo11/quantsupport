@@ -81,6 +81,72 @@ unexpected matches, and verify each intended input changes once before
 interpreting a stress as a parallel market move. An aggregate NPV difference
 alone cannot reveal a duplicated or unintended input move.
 
+Changing the curve risk basis
+-----------------------------
+
+``PricingContext.reproject_risk(instruments)`` reports curve risk against the
+implied quotes of another calibration basket. ``with_zero_rate_risk(grids)``
+reports sensitivities to zero rates implied from constructed discount factors.
+Both return a ``RiskContext`` with the usual ``evaluate()``, portfolio and curve
+query methods. The original pricing curves and interpolation are retained.
+
+This example reuses ``context``, ``reference`` and ``trade`` from
+:doc:`first-valuation`. It supplies explicit zero dates to span both original
+zero-rate inputs, including the rate quoted at the curve origin.
+
+.. code-block:: python
+   :name: guide-python-risk-basis
+
+   requests = [qs.Request.Value, qs.Request.Sensitivities]
+   with context:
+       original = context.evaluate(trade, requests)
+       projected = context.reproject_risk([
+           "OIS_USD_SOFR_1Y", "OIS_USD_SOFR_10Y",
+       ])
+       zero_context = context.with_zero_rate_risk([qs.ZeroRateRisk(
+           "SOFR", dates=[reference + "1Y", reference + "10Y"],
+           day_counter="Actual365", compounding="Continuous", frequency="Annual",
+       )])
+
+   for view in [projected, zero_context]:
+       with view:
+           result = view.evaluate(trade, requests)
+           assert result.price == original.price
+           assert set(result.sensitivities["pillar"]) == set(view.target_labels)
+           print(list(zip(view.target_labels, view.target_values)))
+           print(result.sensitivities)
+
+Views own snapshots of their inputs and registered Python pricers, so they can
+outlive the original context scope. Market input assignment on a ``RiskContext``
+raises an error; change the original market and create a new view. Temporary
+``Scenario`` scopes on a transformed context reconstruct its risk basis for
+the shocked source market and restore it on exit. Creating a view inside a
+scenario captures that scenario's quote inputs.
+
+Target instrument identifiers need no observations in the quote store. Their
+quotes are solved against the original curves. Inspect ``source_labels``,
+``target_labels`` and ``target_values`` to see the transformation. Instrument
+baskets must span all native discount/forward curve risk; zero grids must span
+their selected curves and parent dependencies. Insufficient or singular bases
+raise an error. Redundant target factors receive minimum Euclidean-norm risk
+in the supplied quote units.
+
+``ZeroRateRisk`` defaults to Actual365, Continuous compounding, Annual frequency
+and the selected curve's future nodes. Its optional ``dates`` accept native
+``Date``, ``datetime.date`` or ISO date strings. Decimal zero-rate derivatives
+can be multiplied by ``1e-4`` to estimate +1 bp P&L. Other independent factors
+retain their original risk coordinates. The transformation is local and first
+order; it does not restore model or simulation dependencies absent in the
+original pricer.
+
+The complete standalone example is
+``bindings/python/examples/sensitivity/risk_reprojection.py``. Run it from the
+repository root with a binding built from this checkout:
+
+.. code-block:: sh
+
+   python bindings/python/examples/sensitivity/risk_reprojection.py
+
 Portfolio aggregation
 ---------------------
 

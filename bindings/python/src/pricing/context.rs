@@ -32,13 +32,13 @@ use crate::{
         extension::{call_pricer, PricerRegistry, Trade},
         portfolio::Portfolio,
         results::EvaluationResults,
+        riskcontext::{ContextMarketView, RiskBasis, RiskContext, ZeroRateRisk},
     },
     time::Date,
     xva::{NettingSet, XvaConfig, XvaResult},
 };
 use pyo3::{prelude::*, types::PyType};
 use quantsupport::{
-    core::marketdatahandling::marketview::MarketView,
     prelude::{
         ADForward, BackwardFourierEvolutionBondPricer, BasisSwap as QsBasisSwap, BasisSwapTrade,
         BlackEuropeanOptionPricer, BondPricer, CalibrationSource, CdsPricer,
@@ -52,12 +52,13 @@ use quantsupport::{
         LgmMarketModel, LgmRateModel, LoanPricer, MarketData, MarketDataProvider,
         MarketDataRequest, ModelConfiguration, ParameterSource, PortfolioPricer, Pricer,
         PricerImplementation, PricingContext as QsPricingContext, QSError, QuoteSelector,
-        QuoteStore as QsQuoteStore, RateFuturesPricer, Request as QsRequest, Scalar, ScriptEngine,
-        Swap as QsSwap, SwapTrade, Tape, TreeBasedBondPricer, XvaEngine,
+        QuoteStore as QsQuoteStore, RateFuturesPricer, Request as QsRequest,
+        RiskContext as QsRiskContext, Scalar, ScriptEngine, Swap as QsSwap, SwapTrade, Tape,
+        TreeBasedBondPricer, XvaEngine,
     },
     utils::errors::Result as QsResult,
 };
-use std::collections::HashMap;
+use std::{borrow::Cow, collections::HashMap};
 
 /// Market inputs and policies used to value trades.
 ///
@@ -141,6 +142,8 @@ pub struct PricingContext {
     generation: u64,
     python_pricers: PricerRegistry,
     fixed_income_policy: Option<PyFixedIncomeDiscountPolicy>,
+    risk_basis: Option<RiskBasis>,
+    risk_context: Option<QsRiskContext<'static>>,
 }
 
 impl PricingContext {
@@ -155,6 +158,8 @@ impl PricingContext {
             generation: 0,
             python_pricers: PricerRegistry::default(),
             fixed_income_policy,
+            risk_basis: None,
+            risk_context: None,
         }
     }
 
@@ -170,9 +175,61 @@ impl PricingContext {
         &self.inner
     }
 
-    pub fn market_view(&self) -> PyResult<MarketView<'_>> {
+    pub fn market_view(&self) -> PyResult<ContextMarketView<'_>> {
         self.require_initialized()?;
-        crate::market::scenario::market_view(self, self.generation, &self.inner)
+        let base = crate::market::scenario::market_view(self, self.generation, &self.inner)?;
+        let mut risk = self.risk_context.as_ref().map(Cow::Borrowed);
+        if let Some(basis) = &self.risk_basis {
+            let mut quotes = QsQuoteStore::new(self.inner.evaluation_date());
+            let mut changed = false;
+            for (identifier, original) in self.inner.quote_store().quotes() {
+                if let Some(quote) = base.select(identifier) {
+                    changed |= quote.levels().mid() != original.levels().mid()
+                        || quote.levels().bid() != original.levels().bid()
+                        || quote.levels().ask() != original.levels().ask();
+                    quotes.add_quote(quote);
+                }
+            }
+            if changed {
+                let shocked = self.inner.clone().with_quote_store(quotes);
+                risk = Some(Cow::Owned(basis.build(&shocked)?));
+            }
+        }
+        Ok(ContextMarketView { base, risk })
+    }
+
+    fn require_mutable_market(&self) -> PyResult<()> {
+        if self.risk_basis.is_some() {
+            return Err(crate::common::errors::state_error(
+                "RiskContext market inputs are read-only; change the original PricingContext and create a new risk view",
+            ));
+        }
+        Ok(())
+    }
+
+    fn risk_snapshot(&self, py: Python<'_>, basis: RiskBasis) -> PyResult<Py<RiskContext>> {
+        self.require_initialized()?;
+        // Input replacement creates an independent request cache. In particular,
+        // exiting the derived context must not clear the original context's cache.
+        let mut inner = self.inner.clone().with_quote_store(self.quotes()?.inner);
+        if let Some(timestamp) = self.inner.snapshot_timestamp() {
+            inner = inner.with_snapshot_timestamp(timestamp);
+        }
+        let risk_context = basis.build(&inner)?;
+        let snapshot = Self {
+            inner,
+            initialized: true,
+            fully_constructed: false,
+            generation: 0,
+            python_pricers: self.python_pricers.clone_ref(py),
+            fixed_income_policy: self.fixed_income_policy.clone(),
+            risk_basis: Some(basis),
+            risk_context: Some(risk_context),
+        };
+        Py::new(
+            py,
+            PyClassInitializer::from(snapshot).add_subclass(RiskContext),
+        )
     }
 
     fn request_elements(&self, elements: Vec<ConstructedElementRequest>) -> PyResult<MarketData> {
@@ -188,6 +245,7 @@ impl PricingContext {
         &mut self,
         update: impl FnOnce(QsPricingContext) -> QsPricingContext,
     ) -> PyResult<()> {
+        self.require_mutable_market()?;
         let rebuild = self.initialized;
         self.initialized = false;
         self.fully_constructed = false;
@@ -326,6 +384,8 @@ impl PricingContext {
             generation: 0,
             python_pricers: PricerRegistry::default(),
             fixed_income_policy,
+            risk_basis: None,
+            risk_context: None,
         })
     }
 
@@ -358,10 +418,12 @@ impl PricingContext {
     }
 
     #[setter]
-    fn set_anchor_fixings(&mut self, enabled: bool) {
+    fn set_anchor_fixings(&mut self, enabled: bool) -> PyResult<()> {
+        self.require_mutable_market()?;
         self.inner = self.inner.clone().with_anchor_fixings(enabled);
         self.generation += 1;
         self.fully_constructed = false;
+        Ok(())
     }
 
     /// Alias for `reference_date`, matching the `MarketDataProvider` contract.
@@ -1064,6 +1126,44 @@ impl PricingContext {
         };
 
         Self::evaluate_trade(slf, py, trade, &reqs)
+    }
+
+    /// Creates an owned context snapshot reporting risk against another instrument basket.
+    ///
+    /// Instrument identifiers define calibration contracts; no target observations
+    /// are needed. The basket must span all configured curve risk. Prices retain
+    /// the source curves and interpolation. The original context must be initialized.
+    /// The returned RiskContext supports evaluate(), portfolios, curve(), and
+    /// `with` scopes independently of the original. Market inputs are read-only.
+    #[pyo3(signature = (instruments))]
+    fn reproject_risk(
+        &self,
+        py: Python<'_>,
+        instruments: Vec<String>,
+    ) -> PyResult<Py<RiskContext>> {
+        let details = instruments
+            .iter()
+            .map(|identifier| identifier.parse())
+            .collect::<QsResult<Vec<_>>>()
+            .map_err(qs_err)?;
+        self.risk_snapshot(py, RiskBasis::Instruments(details))
+    }
+
+    /// Creates an owned context snapshot reporting post-bootstrap zero-rate risk.
+    ///
+    /// Supply ZeroRateRisk grids with explicit conventions and optional dates.
+    /// Grids must span the selected curves' native risk, including parent curves.
+    /// Prices and interpolation are retained; the original context is unchanged.
+    #[pyo3(signature = (grids))]
+    fn with_zero_rate_risk(
+        &self,
+        py: Python<'_>,
+        grids: Vec<ZeroRateRisk>,
+    ) -> PyResult<Py<RiskContext>> {
+        self.risk_snapshot(
+            py,
+            RiskBasis::ZeroRates(grids.iter().map(ZeroRateRisk::build).collect()),
+        )
     }
 
     /// Runs the XVA engine.

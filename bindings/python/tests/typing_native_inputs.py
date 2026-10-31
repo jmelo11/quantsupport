@@ -51,6 +51,23 @@ def reconfigure(context: qs.PricingContext, curves: list[qs.CurveConfiguration])
     assert_type(context.discount_curves(), list[qs.DiscountCurve])
 
 
+def transformed_risk(context: qs.PricingContext, trade: qs.Trade) -> None:
+    grid = qs.ZeroRateRisk(qs.MarketIndex.ESTR, dates=[start, "2028-02-24"],
+                          day_counter=qs.DayCounter.Actual365,
+                          compounding="Continuous", frequency=qs.Frequency.Annual)
+    assert_type(grid, qs.ZeroRateRisk)
+    assert_type(grid.dates, list[qs.Date] | None)
+    assert_type(context.with_zero_rate_risk([grid]), qs.RiskContext)
+    with context.reproject_risk(["OIS_EUR_ESTR_1Y", "OIS_EUR_ESTR_2Y"]) as view:
+        assert_type(view, qs.RiskContext)
+        assert_type(view.source_labels, list[str])
+        assert_type(view.target_labels, list[str])
+        assert_type(view.target_values, list[float])
+        assert_type(view.evaluate(trade, [qs.Request.Sensitivities]), qs.EvaluationResults)
+        assert_type(view.evaluate(qs.Portfolio("BOOK", [trade])), qs.EvaluationResults)
+
+
+
 def inspect_contract(loan: qs.Loan) -> None:
     assert_type(loan.notional, float)
     assert_type(loan.currency, qs.Currency)

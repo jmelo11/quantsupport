@@ -3,12 +3,12 @@ from datetime import date as PythonDate
 from typing import Any, ClassVar, Mapping, Sequence, final, overload
 from typing_extensions import Self, disjoint_base
 from pandas import DataFrame
-from ..time import Date, DateTime, Period, _DateLike, _PeriodLike
+from ..time import Compounding, DayCounter, Frequency, Date, DateTime, Period, _DateLike, _PeriodLike
 from ..market import CreditCurveConfiguration, Currency, CurveConfiguration, DiscountCurve, FixingStore, FxStore, Level, MarketIndex, QuoteStore, Simulation, SimulationConfiguration, VolatilityCube, VolatilityCubeConfiguration, VolatilitySurface, VolatilitySurfaceConfiguration, _CurrencyLike, _IndexLike
 from ..instruments import Instrument, ScriptedProduct, Side
 from ..risk import XvaResult
 __all__ = ['Request', 'PricerConfiguration', 'SingleCurveCSADiscountPolicy', 'FixedIncomeDiscountPolicy', 'BondPricingAnchor',
-           'PricingContext', 'Trade', 'Pricer', 'MarketDataProvider', 'Evaluator', 'Portfolio', 'EvaluationResults']
+           'PricingContext', 'RiskContext', 'ZeroRateRisk', 'Trade', 'Pricer', 'MarketDataProvider', 'Evaluator', 'Portfolio', 'EvaluationResults']
 
 
 @final
@@ -129,9 +129,10 @@ end : Date, datetime.date, or str
 Returns
 -------
 Request
-    Windowed coupon-accrual request. Supported by loan and linear cashflow
-    pricers; principal is excluded. Interest uses the context base currency.
-    Each evaluation accepts one accrual window.
+    Windowed coupon-accrual request. Supported by loan, bond and linear
+    cashflow pricers; principal is excluded. Interest uses the context base currency.
+    Each evaluation accepts one accrual window. Callable bonds report
+    contractual coupon interest without future exercise-probability weighting.
 
 Raises
 ------
@@ -942,6 +943,62 @@ QuantSupportError
 """
         ...
 
+    def reproject_risk(self, instruments: Sequence[str]) -> RiskContext:
+        """Snapshot this initialized market with an alternate instrument risk basis.
+
+        Identifiers define reporting contracts whose implied quotes are solved
+        from the source curves. The basket must span the native curve risk.
+        Prices and interpolation are retained. The returned context owns its
+        inputs, retains registered Python pricers and supports evaluate(),
+        portfolios, curve queries and independent with scopes. Input assignment
+        is rejected; construct a new view after changing the source market.
+        Scenarios on the view reconstruct the basis for their shocked quotes.
+
+        Parameters
+        ----------
+        instruments : sequence of str
+            Reporting calibration contract identifiers, such as OIS_USD_SOFR_1Y.
+            Supply enough independent contracts to span all source curve pillars.
+
+        Returns
+        -------
+        RiskContext
+            Owned market snapshot with implied reporting quotes and transformed risk.
+
+        Raises
+        ------
+        QuantSupportError
+            If uninitialized, contracts are unsupported, calibration fails, or the
+            target basket does not span the source risk.
+        """
+        ...
+
+    def with_zero_rate_risk(self, grids: Sequence[ZeroRateRisk]) -> RiskContext:
+        """Snapshot this initialized market with post-bootstrap zero-rate risk.
+
+        Supply grids spanning selected curve risk, including parent dependencies.
+        Curve values and interpolation are preserved. Other independent factors
+        retain their native coordinates. Returns an owned context with read-only
+        market inputs, the same evaluation API and independent with scopes.
+
+        Parameters
+        ----------
+        grids : sequence of ZeroRateRisk
+            Curves, conventions and optional zero dates defining the reporting basis.
+
+        Returns
+        -------
+        RiskContext
+            Owned market snapshot reporting derivatives per annual decimal zero rate.
+
+        Raises
+        ------
+        QuantSupportError
+            If uninitialized, curves or dates are unavailable, or the grids do not
+            span the selected curve risk.
+        """
+        ...
+
     def evaluate(self, trade: Trade | Portfolio, requests: Sequence[Request | str] | None = ...) -> EvaluationResults:
         """Evaluate a position or portfolio against the active base or scenario market.
 
@@ -965,6 +1022,7 @@ Returns
 -------
 EvaluationResults
     As-of-date results with optional scalar, sensitivity, and cashflow fields.
+    Unsupported native measures leave their result fields set to None.
     Native results are copied out of AD state. Sensitivities are raw derivatives
     per unit pillar change, not pre-scaled basis-point changes. Python pricers
     receive ``evaluate(trade, requests, context)`` with typed Request values and
@@ -983,7 +1041,7 @@ TypeError
 ValueError
     If a native bond position requires a pricing anchor but none was supplied.
 QuantSupportError
-    If the context is uninitialized, a request is invalid or unsupported,
+    If the context is uninitialized or a supported request has invalid parameters,
     market data or required model configuration are missing, no native pricer
     supports the instrument, valuation fails, or a Python pricer returns the
     wrong result type, an FX conversion is unavailable, or portfolio members have
@@ -1285,6 +1343,78 @@ valuations. Unlike market-input reassignment, this does not rebuild market data.
         value : FixedIncomeDiscountPolicy or None
             New fixed-income discount override; None restores the base-curve policy.
         """
+        ...
+
+
+@final
+class ZeroRateRisk:
+    """Zero-rate reporting grid used by PricingContext.with_zero_rate_risk().
+
+    Parameters
+    ----------
+    market_index : MarketIndex or str
+        Discount or forwarding curve whose implied zero rates receive risk.
+    dates : sequence of Date, datetime.date or str, optional
+        Future reporting dates. None uses the curve's future nodes. Curves without
+        exposed nodes require explicit dates. Span and date checks occur when the
+        context builds the view; repeated dates and insufficient grids are rejected.
+    day_counter : DayCounter or str, optional
+        Zero-rate year-fraction convention. None defaults to Actual365.
+    compounding : Compounding or str, optional
+        Zero-rate compounding convention. None defaults to Continuous.
+    frequency : Frequency or str, optional
+        Compounding frequency. None defaults to Annual.
+
+    Notes
+    -----
+    Immutable. Properties return copies of grid data. Zero rates are annual
+    decimals: scale their sensitivities by 1e-4 for a first-order +1 bp P&L.
+    """
+
+    def __new__(cls, market_index: _IndexLike, dates: Sequence[_DateLike] | None = None, day_counter: DayCounter | str | None = None, compounding: Compounding | str | None = None, frequency: Frequency | str | None = None) -> Self: ...
+
+    @property
+    def market_index(self) -> MarketIndex:
+        """Discount or forwarding curve whose implied zero rates receive risk."""
+        ...
+    @property
+    def dates(self) -> list[Date] | None:
+        """Explicit future reporting dates, or None for curve nodes; returns a copy."""
+        ...
+    @property
+    def day_counter(self) -> DayCounter:
+        """Year-fraction convention used to quote the zero rates."""
+        ...
+    @property
+    def compounding(self) -> Compounding:
+        """Zero-rate compounding convention."""
+        ...
+    @property
+    def frequency(self) -> Frequency:
+        """Zero-rate compounding frequency."""
+        ...
+    def __repr__(self) -> str: ...
+
+
+@final
+class RiskContext(PricingContext):
+    """Owned price-preserving risk view, created by PricingContext transformation methods."""
+
+    def __new__(cls) -> Self:
+        """Raises TypeError; use reproject_risk() or with_zero_rate_risk()."""
+        ...
+
+    @property
+    def source_labels(self) -> list[str]:
+        """Native curve-risk labels replaced by this view; returns a copy."""
+        ...
+    @property
+    def target_labels(self) -> list[str]:
+        """Reporting labels aligned with target_values; returns a copy."""
+        ...
+    @property
+    def target_values(self) -> list[float]:
+        """Implied instrument quotes or decimal zero rates; returns a copy."""
         ...
 
 

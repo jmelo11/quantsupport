@@ -1,5 +1,6 @@
 [package]
 name = "sensitivity"
+default-run = "sensitivity"
 version = "0.1.0"
 edition = "2021"
 description = "Swap pricing with full pillar-level sensitivities"

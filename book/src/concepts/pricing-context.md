@@ -85,3 +85,11 @@ view has its own cache and each valuation uses temporary differentiation
 state. These lifetimes determine when a curve can be reused and when it must
 be rebuilt. The [risk chapter](../risk/aad.md) explains how market inputs
 remain connected to the reported derivatives.
+
+`with_zero_rate_risk()` and `reproject_risk()` create `RiskContext` views for
+reporting sensitivities in another curve basis. They retain the pricing curves
+and change their AD connections to the reported pillars. Zero-rate views use
+rates implied from constructed discount factors; instrument views use the
+implied quotes of a supplied calibration basket. Both are accepted by existing
+Rust pricers through `MarketDataProvider`. See the
+[risk basis examples](../risk/aad.md#changing-the-curve-risk-basis).

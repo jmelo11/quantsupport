@@ -393,7 +393,7 @@ class GuideAndStudyTests(unittest.TestCase):
             for chapter in chapters:
                 self.assertIn(chapter, index)
                 self.assertGreater(len((ROOT / f"docs/{binding}/guide/{chapter}.rst").read_text()), 3000)
-        self.assertEqual(len(guide_snippets()), 11)
+        self.assertEqual(len(guide_snippets()), 12)
         for code in guide_snippets().values():
             ast.parse(code)
 

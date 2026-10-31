@@ -40,6 +40,8 @@ pub mod pricerstate;
 pub mod pricingcontext;
 /// Pricing request module.
 pub mod request;
+/// Price-preserving rate-curve risk coordinate transformations.
+pub mod riskcontext;
 /// Historical market timestamp and quote-side selection.
 pub mod snapshotselector;
 /// Trade module.
