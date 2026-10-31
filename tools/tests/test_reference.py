@@ -206,7 +206,7 @@ class PythonReferenceTests(unittest.TestCase):
     def test_day_count_and_missing_fixing_restrictions_are_explicit(self):
         day_counter, _ = declarations()["quantsupport.time.DayCounter"]
         doc = " ".join(ast.get_docstring(day_counter).split())
-        self.assertIn("endpoint years differ by at least two", doc)
+        self.assertIn("include every complete intervening year", doc)
         self.assertIn("US/NASD/BondBasis", doc)
         fixing_store, _ = declarations()["quantsupport.market.FixingStore"]
         self.assertIn("reversed interpolation coordinates", ast.get_docstring(fixing_store))
@@ -373,7 +373,7 @@ class ExcelReferenceTests(unittest.TestCase):
         self.assertIn("per one futures price point", size["help"])
         self.assertIn("positive for receipts and negative for payments", records["QS.RESULT.CASHFLOWS"]["returns"])
         self.assertIn("tenor text", records["QS.SIMULATION.CALIBRATION"]["returns"])
-        self.assertIn("omits one intervening year", records["QS.YEAR.FRACTION"]["returns"])
+        self.assertIn("includes every complete intervening year", records["QS.YEAR.FRACTION"]["returns"])
         self.assertIn("no unit conversion, interpolation", records["QS.CONTEXT.FIXING"]["returns"])
         calendar = function_page(records["QS.CALENDAR.HOLIDAYS"])
         self.assertIn("Thread-safe worksheet function", calendar)
@@ -393,7 +393,7 @@ class GuideAndStudyTests(unittest.TestCase):
             for chapter in chapters:
                 self.assertIn(chapter, index)
                 self.assertGreater(len((ROOT / f"docs/{binding}/guide/{chapter}.rst").read_text()), 3000)
-        self.assertEqual(len(guide_snippets()), 10)
+        self.assertEqual(len(guide_snippets()), 11)
         for code in guide_snippets().values():
             ast.parse(code)
 

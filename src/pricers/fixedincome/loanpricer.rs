@@ -10,7 +10,7 @@ use crate::{
         marketdatahandling::{
             constructedelementrequest::ConstructedElementRequest,
             fixingrequest::FixingRequest,
-            forwardraterequest::ForwardRateRequest,
+            forwardraterequest::{ForwardRateRequest, IndexRateScalar},
             fxrequest::FxRequest,
             marketdata::{MarketData, MarketDataProvider, MarketDataRequest},
         },
@@ -18,8 +18,8 @@ use crate::{
         pricerconfiguration::{InstrumentType, PricerConfiguration, PricerImplementation},
         pricerstate::PricerState,
         request::{
-            HandleCashflows, HandleFairRate, HandleSensitivities, HandleValue, LegsProvider,
-            Request,
+            accrued_amount, HandleAccruedAmount, HandleCashflows, HandleFairRate,
+            HandleSensitivities, HandleValue, LegsProvider, Request,
         },
         trade::Trade,
     },
@@ -28,6 +28,7 @@ use crate::{
         cashflows::{
             cashflow::{Cashflow, SimpleCashflow},
             cashflowtype::CashflowType,
+            coupons::NonLinearCoupon,
             fixedratecoupon::FixedRateCoupon,
             floatingratecoupon::FloatingRateCoupon,
             leg::Leg,
@@ -202,11 +203,11 @@ impl LoanPricer {
     /// # Errors
     /// Propagates missing historical fixings, incomplete observation dates,
     /// unavailable index curves/conventions, and implied-rate conversion errors.
-    fn resolve_index_rate_observation(
+    fn resolve_index_rate_observation<N: IndexRateScalar>(
         state: &LoanValuationState,
         request: &ForwardRateRequest,
-    ) -> Result<DualFwd> {
-        request.resolve_index_rate(
+    ) -> Result<N> {
+        request.resolve_index_rate_as(
             state
                 .get_market_data_reponse()
                 .ok_or_else(|| QSError::ValueNotSetErr("Loan market data".into()))?,
@@ -224,11 +225,20 @@ impl LoanPricer {
     ///
     /// # Errors
     /// Rejects missing floating observation entries and propagates forecast errors.
-    fn clone_cashflows_with_resolved_fixings(
+    fn clone_cashflows_with_resolved_fixings<N: IndexRateScalar>(
         loan: &Loan<DualFwd>,
         state: &LoanValuationState,
-    ) -> Result<Vec<CashflowType<DualFwd>>> {
-        let mut cashflows = loan.contractual_leg().cashflows().to_vec();
+    ) -> Result<Vec<CashflowType<N>>>
+    where
+        CashflowType<N>: From<CashflowType<DualFwd>>,
+    {
+        let mut cashflows: Vec<CashflowType<N>> = loan
+            .contractual_leg()
+            .cashflows()
+            .iter()
+            .cloned()
+            .map(Into::into)
+            .collect();
         let mut observations = loan.coupon_rate_observations().iter();
         let mut resolved = HashMap::new();
         for cashflow in &mut cashflows {
@@ -278,11 +288,11 @@ impl LoanPricer {
     /// # Errors
     /// Rejects an unset refinancing index or unsupported index frequency, and
     /// propagates observation-resolution errors.
-    fn observe_refinancing_benchmark_rate(
+    fn observe_refinancing_benchmark_rate<N: IndexRateScalar>(
         &self,
         state: &LoanValuationState,
         date: Date,
-    ) -> Result<DualFwd> {
+    ) -> Result<N> {
         let index = self
             .refinancing_benchmark_index
             .as_ref()
@@ -313,24 +323,61 @@ impl LoanPricer {
     /// # Errors
     /// Propagates unavailable rates/curves, rejects invalid survival or
     /// prepayment probabilities, and rejects a nonfinite projected value.
-    #[allow(clippy::too_many_lines)]
     fn calculate_expected_receipts_and_present_value(
         &self,
         trade: &LoanTrade<DualFwd>,
         state: &LoanValuationState,
         cashflows: &[CashflowType<DualFwd>],
     ) -> Result<(DualFwd, Vec<Leg<DualFwd>>)> {
+        self.project_expected_receipts(trade, state, cashflows, true, |interval| {
+            trade
+                .instrument()
+                .prepayment_model()
+                .conditional_prepayment_probability(interval)
+        })
+    }
+
+    /// Shares receipt projection between numeric accrual and differentiable PV.
+    #[allow(clippy::too_many_lines)]
+    fn project_expected_receipts<N: IndexRateScalar>(
+        &self,
+        trade: &LoanTrade<DualFwd>,
+        state: &LoanValuationState,
+        cashflows: &[CashflowType<N>],
+        discounted: bool,
+        prepayment_probability: impl Fn(&PrepaymentModelState<N>) -> Result<N>,
+    ) -> Result<(N, Vec<Leg<N>>)>
+    where
+        FixedRateCoupon<N>: Cashflow<N>,
+        FloatingRateCoupon<N>: Cashflow<N>,
+        OptionEmbeddedCoupon<N>: NonLinearCoupon<N>,
+    {
         let loan = trade.instrument();
-        let curve = state.get_discount_curve_element(&self.select_discount_curve_index(loan)?)?;
-        let anchor = curve.curve().discount_factor(state.evaluation_date)?;
+        let curve = discounted
+            .then(|| state.get_discount_curve_element(&self.select_discount_curve_index(loan)?))
+            .transpose()?;
+        let anchor = curve
+            .map(|element| {
+                element
+                    .curve()
+                    .discount_factor(state.evaluation_date)
+                    .map(N::from)
+            })
+            .transpose()?
+            .unwrap_or_else(N::one);
         let credit = loan
             .credit_curve_index()
             .map(|index| state.get_credit_curve_element(index))
             .transpose()?;
         let credit_anchor = credit
-            .map(|element| element.curve().discount_factor(state.evaluation_date))
+            .map(|element| {
+                element
+                    .curve()
+                    .discount_factor(state.evaluation_date)
+                    .map(N::from)
+            })
             .transpose()?
-            .unwrap_or_else(DualFwd::one);
+            .unwrap_or_else(N::one);
         if credit_anchor.value() <= 0.0 || !credit_anchor.value().is_finite() {
             return Err(QSError::InvalidValueErr(
                 "Invalid loan survival anchor".into(),
@@ -341,15 +388,16 @@ impl LoanPricer {
                 element
                     .curve()
                     .discount_factor(loan.start_date().max(state.evaluation_date))
+                    .map(N::from)
             })
             .transpose()?
-            .unwrap_or_else(DualFwd::one)
+            .unwrap_or_else(N::one)
             .div_val(credit_anchor);
         let mut scheduled = Vec::new();
         let mut prepaid = Vec::new();
         let mut recovered = Vec::new();
-        let mut factor = DualFwd::one();
-        let mut value = DualFwd::zero();
+        let mut factor = N::one();
+        let mut value = N::zero();
         let principal_by_date = cashflows
             .iter()
             .filter_map(|cashflow| {
@@ -418,7 +466,10 @@ impl LoanPricer {
                         coupon.notional(),
                         coupon.day_counter()?,
                         coupon.payoff_ops().eval(fixing)?.add_val(coupon.spread()),
-                        coupon.amount()?,
+                        coupon.accrued_amount(
+                            coupon.accrual_start_date(),
+                            coupon.accrual_end_date(),
+                        )?,
                     )
                 }
                 _ => continue,
@@ -429,9 +480,9 @@ impl LoanPricer {
             }
             let remaining = (opening - principal).max(0.0);
             let survival = credit
-                .map(|element| element.curve().discount_factor(payment))
+                .map(|element| element.curve().discount_factor(payment).map(N::from))
                 .transpose()?
-                .unwrap_or_else(DualFwd::one)
+                .unwrap_or_else(N::one)
                 .div_val(credit_anchor);
             if !survival.value().is_finite()
                 || survival.value() < 0.0
@@ -442,7 +493,7 @@ impl LoanPricer {
                 ));
             }
             let probability = if remaining == 0.0 || end <= state.evaluation_date {
-                DualFwd::zero()
+                N::zero()
             } else {
                 let refinancing_benchmark_rate =
                     if loan.prepayment_model().requires_refinancing_benchmark() {
@@ -451,7 +502,7 @@ impl LoanPricer {
                             start.max(state.evaluation_date),
                         )?
                     } else {
-                        DualFwd::zero()
+                        N::zero()
                     };
                 let prepayment_start = start.max(state.evaluation_date);
                 let period_fraction = if prepayment_start.advance(1, TimeUnit::Months)? == end {
@@ -459,16 +510,14 @@ impl LoanPricer {
                 } else {
                     DayCounter::Actual365.year_fraction(prepayment_start, end)
                 };
-                loan.prepayment_model().conditional_prepayment_probability(
-                    &PrepaymentModelState::new(
-                        prepayment_start,
-                        end,
-                        period_fraction,
-                        DualFwd::scalar(remaining).mul_val(factor),
-                        rate,
-                        refinancing_benchmark_rate,
-                    ),
-                )?
+                prepayment_probability(&PrepaymentModelState::new(
+                    prepayment_start,
+                    end,
+                    period_fraction,
+                    N::scalar(remaining).mul_val(factor),
+                    rate,
+                    refinancing_benchmark_rate,
+                ))?
             };
             if !probability.value().is_finite() || !(0.0..=1.0).contains(&probability.value()) {
                 return Err(QSError::InvalidValueErr(
@@ -477,22 +526,22 @@ impl LoanPricer {
             }
             let weighted = factor.mul_val(survival);
             let interest = amount.mul_val(weighted);
-            let redemption = DualFwd::scalar(principal).mul_val(weighted);
-            let prepayment = DualFwd::scalar(remaining)
-                .mul_val(probability)
-                .mul_val(weighted);
+            let redemption = N::scalar(principal).mul_val(weighted);
+            let prepayment = N::scalar(remaining).mul_val(probability).mul_val(weighted);
             let recovery = previous_survival
                 .sub_val(survival)
-                .mul_val(DualFwd::scalar(opening * loan.recovery_fraction()))
+                .mul_val(N::scalar(opening * loan.recovery_fraction()))
                 .mul_val(factor);
-            let discount = curve.curve().discount_factor(payment)?.div_val(anchor);
-            value = value.add_val(
-                interest
-                    .add_val(redemption)
-                    .add_val(prepayment)
-                    .add_val(recovery)
-                    .mul_val(discount),
-            );
+            if let Some(curve) = curve {
+                let discount = N::from(curve.curve().discount_factor(payment)?).div_val(anchor);
+                value = value.add_val(
+                    interest
+                        .add_val(redemption)
+                        .add_val(prepayment)
+                        .add_val(recovery)
+                        .mul_val(discount),
+                );
+            }
             // Reporting cashflows retain existing variants and f64 notionals.
             // The shared report handler applies the reporting legs' side once.
             // PV uses the AD weights above, including prepayment and credit risk.
@@ -563,7 +612,7 @@ impl LoanPricer {
                     payment,
                 )));
             }
-            factor = factor.mul_val(DualFwd::one().sub_val(probability));
+            factor = factor.mul_val(N::one().sub_val(probability));
             previous_survival = survival;
         }
         if !value.value().is_finite() {
@@ -589,7 +638,7 @@ impl LoanPricer {
                 )
             })
             .collect();
-        Ok((value.mul_val(DualFwd::scalar(trade.side().sign())), legs))
+        Ok((value.mul_val(N::scalar(trade.side().sign())), legs))
     }
 }
 
@@ -1169,6 +1218,27 @@ impl HandleFairRate<LoanTrade<DualFwd>, LoanValuationState> for LoanPricer {
     }
 }
 
+impl HandleAccruedAmount<LoanTrade<DualFwd>, LoanValuationState> for LoanPricer {
+    fn handle_accrued_amount(
+        &self,
+        trade: &LoanTrade<DualFwd>,
+        state: &mut LoanValuationState,
+        start: Date,
+        end: Date,
+    ) -> Result<f64> {
+        let cashflows =
+            Self::clone_cashflows_with_resolved_fixings::<f64>(trade.instrument(), state)?;
+        let (_, legs) =
+            self.project_expected_receipts(trade, state, &cashflows, false, |interval| {
+                trade
+                    .instrument()
+                    .prepayment_model()
+                    .conditional_prepayment_probability_f64(interval)
+            })?;
+        accrued_amount(&legs, state, start, end)
+    }
+}
+
 impl Pricer for LoanPricer {
     type Item = LoanTrade<DualFwd>;
     type Policy = dyn DiscountPolicy;
@@ -1198,6 +1268,16 @@ impl Pricer for LoanPricer {
                 }
                 Request::FairRate(target) => {
                     results.with_fair_rate(self.handle_fair_rate(trade, &mut state, *target)?)
+                }
+                Request::AccruedAmount(start, end) => {
+                    if *start < ctx.evaluation_date() {
+                        return Err(QSError::InvalidValueErr(
+                            "Loan accrual windows must start at or after evaluation".into(),
+                        ));
+                    }
+                    results.with_accrued_amount(
+                        self.handle_accrued_amount(trade, &mut state, *start, *end)?,
+                    )
                 }
                 Request::Cashflows => {
                     self.handle_value(trade, &mut state)?;
@@ -2039,6 +2119,114 @@ mod tests {
                 (fd - derivative).abs() < derivative.abs().mul_add(1e-5, 0.1),
                 "{label}: AD {derivative}, FD {fd}"
             );
+        }
+        Ok(())
+    }
+    #[test]
+    fn accrued_request_uses_projected_prepayment_notional_once() -> Result<()> {
+        let provider = build_test_market(0.03, 0.04, 0.0);
+        let loan = default_loan_builder()
+            .with_repayment_structure(LoanRepaymentStructure::Bullet)
+            .with_prepayment_configuration(PrepaymentModelConfiguration::Cpr(0.12))
+            .build()?;
+        let trade = LoanTrade::new(loan, provider.date, Side::PayShort);
+        let start = Date::new(2026, 2, 1);
+        let end = Date::new(2026, 3, 1);
+        let result = estr_loan_pricer().evaluate(
+            &trade,
+            &[Request::AccruedAmount(start, end)],
+            &provider,
+        )?;
+        let principal = 100_000.0 * 0.88_f64.powf(1.0 / 12.0);
+        let expected = -principal * 0.06 * 28.0 / 360.0;
+        assert!((result.accrued_amount().unwrap_or_default() - expected).abs() < 1e-8);
+        assert!(result.price().is_none() && result.cashflows().is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn numeric_accrual_preserves_the_tape_and_existing_custom_models() -> Result<()> {
+        use crate::ad::forward::TAPE_FWD;
+        let provider = build_test_market(0.03, 0.04, 0.0);
+        let loan = default_loan_builder()
+            .with_repayment_structure(LoanRepaymentStructure::Bullet)
+            .with_custom_prepayment_model(|_: &PrepaymentModelState<DualFwd>| {
+                assert!(!TAPE_FWD.with(|tape| tape.borrow().active));
+                Ok(DualFwd::scalar(0.01))
+            })
+            .build()?;
+        let trade = LoanTrade::new(loan, provider.date, Side::LongReceive);
+        Tape::start_recording_fwd();
+        let sentinel = DualFwd::scalar(1.0);
+        Tape::set_mark_fwd();
+        Tape::stop_recording_fwd();
+        let before = TAPE_FWD.with(|tape| {
+            let tape = tape.borrow();
+            (tape.book.len(), tape.mark, tape.active)
+        });
+        let result = estr_loan_pricer().evaluate(
+            &trade,
+            &[Request::AccruedAmount(
+                Date::new(2026, 2, 1),
+                Date::new(2026, 3, 1),
+            )],
+            &provider,
+        )?;
+        assert!(
+            (result.accrued_amount().unwrap_or_default() - 100_000.0 * 0.99 * 0.06 * 28.0 / 360.0)
+                .abs()
+                < 1e-8
+        );
+        let after = TAPE_FWD.with(|tape| {
+            let tape = tape.borrow();
+            (tape.book.len(), tape.mark, tape.active)
+        });
+        assert_eq!(before, after);
+        assert_eq!(sentinel.value(), 1.0);
+        Ok(())
+    }
+
+    #[test]
+    fn numeric_accrual_matches_projected_coupon_receipts_and_preserves_risk() -> Result<()> {
+        for coupon in [
+            CashflowType::fixed(0.06),
+            CashflowType::floating(MarketIndex::EURIBOR12m, 0.01, None, None),
+            CashflowType::floating(MarketIndex::EURIBOR12m, 0.01, Some(0.02), Some(0.045)),
+        ] {
+            let provider = build_test_market(0.03, 0.04, 0.01);
+            let loan = default_loan_builder()
+                .with_coupons(vec![coupon])
+                .with_repayment_structure(LoanRepaymentStructure::Bullet)
+                .with_credit_curve_index(MarketIndex::Credit("BORROWER".into()))
+                .with_prepayment_configuration(PrepaymentModelConfiguration::Refinancing {
+                    base_cpr: 0.02,
+                    incentive_multiplier: 4.0,
+                    maximum_cpr: 0.4,
+                })
+                .build()?;
+            let trade = LoanTrade::new(loan, provider.date, Side::PayShort);
+            let pricer =
+                estr_loan_pricer().with_refinancing_benchmark_index(MarketIndex::EURIBOR12m);
+            let request = Request::AccruedAmount(provider.date, Date::new(2028, 1, 1));
+            let numeric = pricer.evaluate(&trade, &[request], &provider)?;
+            for requests in [
+                [request, Request::Sensitivities, Request::Cashflows],
+                [Request::Sensitivities, request, Request::Cashflows],
+            ] {
+                let result = pricer.evaluate(&trade, &requests, &provider)?;
+                assert!(result.sensitivities().is_some());
+                let mut state = pricer.load_loan_valuation_state(&trade, &provider)?;
+                pricer.handle_value(&trade, &mut state)?;
+                let legs = state
+                    .legs
+                    .iter()
+                    .cloned()
+                    .map(Into::into)
+                    .collect::<Vec<_>>();
+                let expected = accrued_amount(&legs, &state, provider.date, Date::new(2028, 1, 1))?;
+                assert!((numeric.accrued_amount().unwrap_or_default() - expected).abs() < 1e-8);
+                assert_eq!(numeric.accrued_amount(), result.accrued_amount());
+            }
         }
         Ok(())
     }

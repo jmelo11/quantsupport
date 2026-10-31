@@ -1897,8 +1897,34 @@ payment_date : Date or datetime.date or str, optional
         Returns
         -------
         float
-            Interest in the same monetary units as notional, using the rate's
-            compounding conventions; excludes principal repayment.
+            Interest in the same units as notional: annual rate times principal
+            times contractual year fraction. Excludes principal repayment.
+        """
+        ...
+
+
+    def accrued_amount(self, start: _DateLike, end: _DateLike) -> float:
+        """Return earned interest within the contractual coupon period.
+
+        Parameters
+        ----------
+        start : Date, datetime.date, or str
+            Inclusive start of the requested window.
+        end : Date, datetime.date, or str
+            Exclusive end, at or after start.
+
+        Returns
+        -------
+        float
+            Difference in cumulative coupon accrual over the clipped overlap.
+            Empty overlaps return zero. Fixings must be resolved for floating
+            or option-embedded coupons with nonzero accrual.
+
+        Raises
+        ------
+        QuantSupportError
+            If dates are reversed, an in-window observation is unresolved, or
+            partial overnight accrual needs unavailable daily observations.
         """
         ...
 
@@ -2003,6 +2029,32 @@ fixing : float, optional
         float
             Interest in notional units: principal times accrual fraction times
             (fixing + spread). Raises an error if no fixing has been resolved.
+        """
+        ...
+
+
+    def accrued_amount(self, start: _DateLike, end: _DateLike) -> float:
+        """Return earned interest within the contractual coupon period.
+
+        Parameters
+        ----------
+        start : Date, datetime.date, or str
+            Inclusive start of the requested window.
+        end : Date, datetime.date, or str
+            Exclusive end, at or after start.
+
+        Returns
+        -------
+        float
+            Difference in cumulative coupon accrual over the clipped overlap.
+            Empty overlaps return zero. Fixings must be resolved for floating
+            or option-embedded coupons with nonzero accrual.
+
+        Raises
+        ------
+        QuantSupportError
+            If dates are reversed, an in-window observation is unresolved, or
+            partial overnight accrual needs unavailable daily observations.
         """
         ...
 
@@ -2126,6 +2178,32 @@ fixing : float, optional
         float
             Interest in notional units after evaluating the payoff and adding
             spread. Raises an error when the required fixing is unresolved.
+        """
+        ...
+
+
+    def accrued_amount(self, start: _DateLike, end: _DateLike) -> float:
+        """Return earned interest within the contractual coupon period.
+
+        Parameters
+        ----------
+        start : Date, datetime.date, or str
+            Inclusive start of the requested window.
+        end : Date, datetime.date, or str
+            Exclusive end, at or after start.
+
+        Returns
+        -------
+        float
+            Difference in cumulative coupon accrual over the clipped overlap.
+            Empty overlaps return zero. Fixings must be resolved for floating
+            or option-embedded coupons with nonzero accrual.
+
+        Raises
+        ------
+        QuantSupportError
+            If dates are reversed, an in-window observation is unresolved, or
+            partial overnight accrual needs unavailable daily observations.
         """
         ...
 

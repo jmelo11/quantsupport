@@ -73,7 +73,8 @@ Parameters
 ----------
 s : str
     One of ``Value``, ``YieldToMaturity``, ``ModifiedDuration``,
-    ``Sensitivities``, ``ZSpread``, ``OAS``, ``Cashflows``, or ``FairRate``.
+    ``Sensitivities``, ``ZSpread``, ``OAS``, ``Cashflows``, ``FairRate``, or
+    ``AccruedAmount(YYYY-MM-DD,YYYY-MM-DD)``.
     Variant names are case-insensitive. Additional exact aliases are ``npv``,
     ``ytm``, ``fair_rate``, ``modified_duration``, ``z_spread``, and ``zspread``.
 
@@ -111,6 +112,43 @@ Returns
 Request
     A targeted fair-rate request. The selected scalar is returned in fair_rate.
 """
+        ...
+
+    @staticmethod
+    def AccruedAmount(start: _DateLike, end: _DateLike) -> Request:
+        """Select signed, undiscounted coupon interest earned in a date window.
+
+Parameters
+----------
+start : Date, datetime.date, or str
+    Inclusive start of the requested accrual window. Loan windows must start
+    at or after the context evaluation date.
+end : Date, datetime.date, or str
+    Exclusive end. Must not precede start; equal dates select zero accrual.
+
+Returns
+-------
+Request
+    Windowed coupon-accrual request. Supported by loan and linear cashflow
+    pricers; principal is excluded. Interest uses the context base currency.
+    Each evaluation accepts one accrual window.
+
+Raises
+------
+QuantSupportError
+    If a date or its ordering is invalid. Partial overnight accrual is not
+    supported; it requires the underlying daily observation amounts.
+"""
+        ...
+
+    @property
+    def start_date(self) -> Date | None:
+        """Start of an AccruedAmount window, or None for other requests."""
+        ...
+
+    @property
+    def end_date(self) -> Date | None:
+        """End of an AccruedAmount window, or None for other requests."""
         ...
 
     @property
@@ -1625,6 +1663,9 @@ oas : float, optional
 fair_rate : float, optional
     Par coupon or spread in decimal annual rate units, as defined by the pricer.
     Defaults to None.
+accrued_amount : float, optional
+    Signed, undiscounted coupon interest for a requested date window in the
+    context base currency. Defaults to None.
 sensitivities : mapping or sequence of (str, float), optional
     Raw pillar labels and exposures, normally derivatives per unit input change.
     Pair sequences preserve order and duplicates; mappings are sorted by label.
@@ -1649,7 +1690,7 @@ Scalar fields are stored as supplied; no consistency checks or valuation are
 performed. Table properties construct new pandas DataFrames on access.
 """
 
-    def __new__(cls, evaluation_date: _DateLike, identifier: str, price: Any | None = ..., yield_to_maturity: Any | None = ..., modified_duration: Any | None = ..., z_spread: Any | None = ..., oas: Any | None = ..., fair_rate: Any | None = ..., sensitivities: Any | None = ..., cashflows: Any | None = ...) -> Self:
+    def __new__(cls, evaluation_date: _DateLike, identifier: str, price: Any | None = ..., yield_to_maturity: Any | None = ..., modified_duration: Any | None = ..., z_spread: Any | None = ..., oas: Any | None = ..., fair_rate: Any | None = ..., sensitivities: Any | None = ..., cashflows: Any | None = ..., accrued_amount: float | None = ...) -> Self:
         ...
 
     def __repr__(self) -> str:
@@ -1673,6 +1714,11 @@ performed. Table properties construct new pandas DataFrames on access.
     @property
     def yield_to_maturity(self) -> Any:
         """Yield to maturity, if requested and supported by the pricer."""
+        ...
+
+    @property
+    def accrued_amount(self) -> float | None:
+        """Signed coupon interest selected by Request.AccruedAmount(start, end)."""
         ...
 
     @property

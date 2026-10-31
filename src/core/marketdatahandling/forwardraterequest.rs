@@ -1,10 +1,45 @@
 use crate::{
     ad::{dual::DualFwd, scalar::Scalar},
     core::marketdatahandling::marketdata::MarketData,
-    rates::interestrate::InterestRate,
+    rates::interestrate::{InterestRate, RateDefinition},
     utils::errors::{QSError, Result},
 };
 use crate::{indices::marketindex::MarketIndex, time::date::Date};
+
+/// Selects the existing numeric or differentiable implied-rate implementation.
+pub trait IndexRateScalar: Scalar + From<DualFwd> {
+    /// Converts a growth factor to the index's rate convention.
+    ///
+    /// # Errors
+    /// Rejects invalid growth factors or observation times.
+    fn implied_index_rate(growth: Self, definition: RateDefinition, time: f64) -> Result<Self>;
+}
+
+impl IndexRateScalar for f64 {
+    fn implied_index_rate(growth: Self, definition: RateDefinition, time: f64) -> Result<Self> {
+        Ok(InterestRate::<Self>::implied_rate(
+            growth,
+            definition.day_counter(),
+            definition.compounding(),
+            definition.frequency(),
+            time,
+        )?
+        .rate())
+    }
+}
+
+impl IndexRateScalar for DualFwd {
+    fn implied_index_rate(growth: Self, definition: RateDefinition, time: f64) -> Result<Self> {
+        Ok(InterestRate::<Self>::implied_rate(
+            growth,
+            definition.day_counter(),
+            definition.compounding(),
+            definition.frequency(),
+            time,
+        )?
+        .rate())
+    }
+}
 
 /// Request for a forward rate between two dates for a given market index.
 #[derive(Clone)]
@@ -32,13 +67,26 @@ impl ForwardRateRequest {
         evaluation_date: Date,
         anchor_fixings: bool,
     ) -> Result<DualFwd> {
+        self.resolve_index_rate_as(data, evaluation_date, anchor_fixings)
+    }
+
+    /// Converts market observations before calculating an index rate.
+    ///
+    /// # Errors
+    /// Rejects invalid observation intervals and missing fixings or curves.
+    pub fn resolve_index_rate_as<T: IndexRateScalar>(
+        &self,
+        data: &MarketData,
+        evaluation_date: Date,
+        anchor_fixings: bool,
+    ) -> Result<T> {
         if anchor_fixings && self.fixing_date < evaluation_date {
             if let Some(fixing) = data
                 .fixings()
                 .get(&self.market_index)
                 .and_then(|dates| dates.get(&self.fixing_date))
             {
-                return Ok(DualFwd::scalar(*fixing));
+                return Ok(T::scalar(*fixing));
             }
             return Err(QSError::NotFoundErr(format!(
                 "Missing {} fixing for {}",
@@ -64,18 +112,14 @@ impl ForwardRateRequest {
                 QSError::NotFoundErr(format!("Projection curve for {}", self.market_index))
             })?;
         let curve = element.curve();
-        let growth = curve
-            .discount_factor(start)?
-            .div_val(curve.discount_factor(end)?);
+        let growth =
+            T::from(curve.discount_factor(start)?).div_val(T::from(curve.discount_factor(end)?));
         let definition = self.market_index.rate_index_details()?.rate_definition();
-        Ok(InterestRate::<DualFwd>::implied_rate(
+        T::implied_index_rate(
             growth,
-            definition.day_counter(),
-            definition.compounding(),
-            definition.frequency(),
+            definition,
             definition.day_counter().year_fraction(start, end),
-        )?
-        .rate())
+        )
     }
 
     /// Creates a new [`ForwardRateRequest`] with the specified market index and fixing date.

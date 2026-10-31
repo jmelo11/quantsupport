@@ -314,6 +314,48 @@ requires positive alpha. Assess its discretization by refining the grid and
 its sampling precision by comparing path counts and seeds. Direct LGM dynamics
 support a separate zero-lambda limit.
 
+Coupon interest between two dates
+----------------------------------
+
+We use ``Request.AccruedAmount(start, end)`` to calculate signed, undiscounted
+interest earned in a reporting window. The loan and linear cashflow pricers
+resolve observations, clip the window to each coupon's accrual period, and
+exclude principal advances and repayments. Results use the context base
+currency; portfolios aggregate the member amounts.
+Accrual arithmetic uses plain ``f64`` values. An accrual request does not
+compute PV or start an AD tape; valuation and sensitivity requests use the
+differentiable pricing path.
+
+.. code-block:: python
+   :name: guide-python-accrual
+
+   accrual_deposit = qs.FixedRateDeposit(
+       identifier="ACCRUAL", start_date=reference,
+       maturity_date=reference + qs.Period(1, "Years"),
+       notional=1_000_000, rate=0.04, currency="USD", discount_index="SOFR",
+       day_counter="Actual360", compounding="Simple",
+   )
+   accrual_portfolio = qs.Portfolio("ACCRUAL", [qs.Trade(accrual_deposit, reference)])
+   with context:
+       earned = context.evaluate(
+           accrual_portfolio,
+           [qs.Request.AccruedAmount(reference, reference + qs.Period(1, "Months"))],
+       ).accrued_amount
+
+Each evaluation accepts one accrual window. Equal start/end dates select zero;
+reversed dates are rejected. Loan windows start at or after the context
+evaluation date, because native loan projection does not reconstruct historical
+prepayments or already-paid coupons. Partial overnight accrual requires daily
+observation amounts and is rejected by this interface.
+
+At coupon level, ``coupon.accrued_amount(start, end)`` uses the same date-window
+semantics. Floating and option-embedded coupons require a resolved observation
+for nonzero accrual. Adjacent windows use differences in cumulative accrual
+measured from the contractual coupon start. This preserves reconciliation for
+30/360 conventions as well as Actual/360 and Actual/365. Cashflow and accrual
+requests resolve their inputs without requiring a discounted value of historical
+principal advances.
+
 FX, equity, and credit
 --------------------------
 

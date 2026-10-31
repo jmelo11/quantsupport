@@ -206,9 +206,8 @@ class DayCounter:
 
     Notes
     -----
-    ActualActual year fractions split same/adjacent calendar years, but omit
-    one complete intervening year when endpoint years differ by at least two.
-    Do not treat this as a general long-span ISDA Actual/Actual implementation.
+    ActualActual year fractions split at calendar-year boundaries, use each
+    year's 365/366-day denominator and include every complete intervening year.
 
     Thirty360US first adjusts a starting 31st to 30, then an ending 31st when
     the adjusted starting day is at least 30, then independently changes each
@@ -270,8 +269,8 @@ class DayCounter:
         Returns
         -------
         float
-            Native year fraction, subject to the ActualActual long-span and
-            Thirty360US February restrictions documented on DayCounter.
+            Native year fraction, subject to the Thirty360US February restrictions
+            documented on DayCounter.
         """
         ...
     Actual360: ClassVar[DayCounter]

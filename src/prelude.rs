@@ -57,8 +57,8 @@ pub use crate::{
         pricerstate::PricerState,
         pricingcontext::PricingContext,
         request::{
-            HandleCashflows, HandleFairRate, HandleModifiedDuration, HandleSensitivities,
-            HandleValue, HandleYieldToMaturity, LegsProvider, Request,
+            HandleAccruedAmount, HandleCashflows, HandleFairRate, HandleModifiedDuration,
+            HandleSensitivities, HandleValue, HandleYieldToMaturity, LegsProvider, Request,
         },
         snapshotselector::{SnapshotSelectionRule, SnapshotSelector},
         trade::{Side, Trade},

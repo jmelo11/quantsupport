@@ -19,7 +19,7 @@ All implementation and explanations are in the notebook:
 | `ProductionTemplate` / `ProductionQuote` | Solve native par coupons or spreads, add a commercial margin and record the quote audit |
 | `RolloverRule` / `NewProduction` | Separate scheduled/prepaid principal replacement from additional business |
 | `IncomeForecaster` | Project each cohort, process recursive production events and calculate earned interest |
-| `ForecastResult` | Return monthly NII, coupon-level accrual, segment balances, production quotes and receipts |
+| `ForecastResult` | Return monthly NII, cohort-level accrual, segment balances, production quotes and receipts |
 
 Follow the [shared setup](../README.md#install-and-run), then run from the
 repository root in an environment containing the checkout-built binding:
@@ -51,11 +51,18 @@ for the same template and origination date; scenarios have separate caches.
 
 ## Income and balances
 
-Interest is signed expected principal times the resolved annual coupon times the
-coupon's Actual/360 or Actual/365 year fraction for its overlap with the reporting
-month. Floating coupons use `fixing + spread`. Native loan receipt notionals
-already include projected prepayments and position signs. Accrual detail retains
-the inputs to each interest amount, including coupons paid beyond the horizon.
+Monthly interest comes from `Request.AccruedAmount(start, end)` and the returned
+`EvaluationResults.accrued_amount`. Rust clips each reporting window to the
+coupon period and computes the difference in cumulative coupon accrual, using
+native day-count conventions. Floating observations and projected prepayment
+notionals are resolved by the pricer. Signs and currency conversion are applied
+once; the forecast requires its reporting currency to match the context base.
+Accrual uses plain `f64` values and does not compute PV or record an AD tape.
+
+The income detail records each cohort's native monthly result. The separate
+cashflow table retains coupon dates, signed expected principal, fixed rates,
+fixings and spreads for inspection. Coupons paid beyond the reporting horizon
+still contribute the interest earned inside it.
 
 Principal never enters NII. Balance movements belong to `(period_start,
 period_end]`; interest uses `[period_start, period_end)`. Production on the forecast
@@ -71,7 +78,7 @@ past prepayments.
 ## Scope
 
 The example uses one currency, fixed/floating loans without default, simple-interest
-term deposits and Actual/360 or Actual/365 accrual. New contracts use unadjusted
+term deposits. The generated contracts use Actual/360 or Actual/365 accrual. New contracts use unadjusted
 dates and zero fixing lag. Native refinancing CPR compares coupons with its index
 benchmark, excluding replacement commercial margins, fees and transaction costs.
 
@@ -79,4 +86,6 @@ Residual principal cash is explicit and earns zero. Negative cumulative cash
 requires additional funding whose cost must be represented by treasury trades.
 The replacement and growth cases match lending with funding. Credit/default,
 effective-interest fee amortization, non-maturity deposits, early deposit
-withdrawal, overnight compounding and FX require additional models.
+withdrawal, partial overnight accrual and FX require additional models.
+Loan accrual requests start at or after the context evaluation date; they do
+not reconstruct historical prepayments or already-paid loan coupons.

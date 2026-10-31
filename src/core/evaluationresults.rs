@@ -350,6 +350,8 @@ pub struct EvaluationResults {
     cashflows: Option<CashflowsTable>,
     /// Fair (par / breakeven) rate.
     fair_rate: Option<f64>,
+    /// Signed, undiscounted coupon interest for the requested date window.
+    accrued_amount: Option<f64>,
 }
 
 impl EvaluationResults {
@@ -367,6 +369,7 @@ impl EvaluationResults {
             sensitivities: None,
             cashflows: None,
             fair_rate: None,
+            accrued_amount: None,
         }
     }
 
@@ -506,6 +509,19 @@ impl EvaluationResults {
     pub const fn with_fair_rate(mut self, fair_rate: f64) -> Self {
         self.fair_rate = Some(fair_rate);
         self
+    }
+
+    /// Sets earned coupon interest for `Request::AccruedAmount`.
+    #[must_use]
+    pub const fn with_accrued_amount(mut self, amount: f64) -> Self {
+        self.accrued_amount = Some(amount);
+        self
+    }
+
+    /// Returns signed, undiscounted interest for the requested accrual window.
+    #[must_use]
+    pub const fn accrued_amount(&self) -> Option<f64> {
+        self.accrued_amount
     }
 
     /// Returns the par or breakeven quote, if available.

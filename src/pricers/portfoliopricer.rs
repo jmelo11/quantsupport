@@ -19,7 +19,7 @@ use crate::{
 /// and differentiation. Completed numeric results are accumulated in trade order,
 /// releasing each member result before pricing the next member.
 ///
-/// Supports value, sensitivities and cashflows. Unsupported requests are ignored;
+/// Supports value, sensitivities, cashflows and accrued amount. Unsupported requests are ignored;
 /// a measure omitted by any member remains absent from the portfolio result.
 /// Monetary outputs share the member pricer's base currency; cashflows retain
 /// their original currencies and coupon terms.

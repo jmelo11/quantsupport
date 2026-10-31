@@ -1,7 +1,11 @@
 use crate::ad::{dual::DualFwd, scalar::Scalar};
 use crate::core::collateral::Discountable;
 use crate::core::{cashflowaggregation::CouponDetails, evaluationresults::CashflowKind};
+use crate::core::{marketdatahandling::marketdata::MarketData, pricerstate::PricerState};
+use crate::instruments::cashflows::coupons::{LinearCoupon, NonLinearCoupon};
+use crate::math::compensatedsum::CompensatedSum;
 use crate::rates::interestrate::InterestRate;
+use crate::time::date::Date;
 use crate::{
     core::evaluationresults::{CashflowsTable, SensitivityMap},
     instruments::cashflows::{cashflow::Cashflow, cashflowtype::CashflowType, leg::Leg},
@@ -38,13 +42,21 @@ pub enum Request {
     /// segments are solved first, repaying remaining capital at each prefix end.
     /// Products with a single quote accept only target zero.
     FairRate(usize),
+    /// Signed, undiscounted coupon interest earned in `[start, end)`.
+    ///
+    /// Coupon periods clip the requested window; principal is excluded. Resolved
+    /// fixings and projected expected notionals come from the selected pricer.
+    /// Monetary amounts use the context base currency when one is configured.
+    /// Loan forecasts require start at or after the evaluation date.
+    AccruedAmount(Date, Date),
 }
 
 impl Request {
-    /// Checks that one evaluation does not overwrite its scalar fair-rate result.
+    /// Validates date ordering and the scalar target/window selected by an evaluation.
     ///
     /// # Errors
-    /// Rejects more than one fair-rate request; evaluate each target separately.
+    /// Rejects reversed accrual dates or multiple fair-rate/accrual requests;
+    /// evaluate each target or window separately.
     pub fn validate(requests: &[Self]) -> Result<()> {
         if requests
             .iter()
@@ -55,6 +67,25 @@ impl Request {
             return Err(QSError::InvalidValueErr(
                 "Request one fair-rate target per evaluation".into(),
             ));
+        }
+        if requests
+            .iter()
+            .filter(|r| matches!(r, Self::AccruedAmount(_, _)))
+            .count()
+            > 1
+        {
+            return Err(QSError::InvalidValueErr(
+                "Request one accrual window per evaluation".into(),
+            ));
+        }
+        for request in requests {
+            if let Self::AccruedAmount(start, end) = request {
+                if end < start {
+                    return Err(QSError::InvalidValueErr(
+                        "Accrual end must not precede start".into(),
+                    ));
+                }
+            }
         }
         Ok(())
     }
@@ -71,6 +102,7 @@ impl Request {
             Self::OAS => 5,
             Self::Cashflows => 6,
             Self::FairRate(_) => 7,
+            Self::AccruedAmount(_, _) => 8,
         }
     }
 }
@@ -109,6 +141,72 @@ pub trait HandleSensitivities<T, S> {
     /// ## Errors
     /// Returns an error if the evaluation fails.
     fn handle_sensitivities(&self, trade: &T, state: &mut S) -> Result<SensitivityMap>;
+}
+
+/// Computes undiscounted coupon accrual using plain numeric observations.
+pub trait HandleAccruedAmount<T, S> {
+    /// Returns signed earned coupon interest in the requested window.
+    ///
+    /// # Errors
+    /// Rejects reversed dates, unresolved in-window fixings, unsupported partial
+    /// overnight accrual, nonfinite amounts and ambiguous currency aggregation.
+    fn handle_accrued_amount(
+        &self,
+        trade: &T,
+        state: &mut S,
+        start: Date,
+        end: Date,
+    ) -> Result<f64>;
+}
+
+/// Sums resolved numeric coupons, applying leg direction and spot conversion once.
+///
+/// # Errors
+/// Rejects invalid windows, unresolved coupons, nonfinite amounts or missing FX.
+pub fn accrued_amount(
+    legs: &[Leg<f64>],
+    state: &impl PricerState,
+    start: Date,
+    end: Date,
+) -> Result<f64> {
+    Request::validate(&[Request::AccruedAmount(start, end)])?;
+    let base = state
+        .get_market_data_reponse()
+        .and_then(MarketData::base_currency);
+    let mut currency = None;
+    let mut total = CompensatedSum::default();
+    for leg in legs {
+        let mut interest = CompensatedSum::default();
+        for cashflow in leg.cashflows() {
+            let amount = match cashflow {
+                CashflowType::FixedRateCoupon(c) => c.accrued_amount(start, end)?,
+                CashflowType::FloatingRateCoupon(c) => c.accrued_amount(start, end)?,
+                CashflowType::OptionEmbeddedCoupon(c) => c.accrued_amount(start, end)?,
+                _ => continue,
+            };
+            interest.add(amount)?;
+        }
+        let amount = interest.total() * leg.side().sign();
+        if amount == 0.0 {
+            continue;
+        }
+        let fx = if let Some(target) = base.filter(|target| *target != leg.currency()) {
+            state
+                .get_fx_store()
+                .ok_or_else(|| QSError::NotFoundErr("FxStore not available".into()))?
+                .get_fx_rate_as::<f64>(leg.currency(), target)?
+        } else {
+            if base.is_none() && currency.is_some_and(|value| value != leg.currency()) {
+                return Err(QSError::InvalidValueErr(
+                    "Set a base currency to aggregate cross-currency accrual".into(),
+                ));
+            }
+            1.0
+        };
+        currency = Some(leg.currency());
+        total.add(amount * fx)?;
+    }
+    Ok(total.total())
 }
 
 /// The [`HandleFairRate`] trait defines a method for computing the fair (par / breakeven) rate
@@ -846,5 +944,59 @@ mod tests {
         let table = result.unwrap();
         assert_eq!(table.currencies()[0], Currency::USD);
         assert_eq!(table.currencies()[1], Currency::GBP);
+    }
+    impl PricerState for MockState {
+        fn get_market_data_reponse(&self) -> Option<&MarketData> {
+            None
+        }
+        fn get_market_data_reponse_mut(&mut self) -> Option<&mut MarketData> {
+            None
+        }
+    }
+    #[test]
+    fn accrual_request_applies_side_once_and_excludes_principal() -> Result<()> {
+        let start = Date::new(2026, 1, 1);
+        let end = Date::new(2026, 2, 1);
+        let coupon = FixedRateCoupon::new(1_000.0, Box::new(create_test_rate()), start, end, end);
+        let leg = Leg::new(
+            0,
+            vec![
+                CashflowType::FixedRateCoupon(coupon),
+                CashflowType::Redemption(SimpleCashflow::new(1_000.0, end)),
+                CashflowType::Disbursement(SimpleCashflow::new(1_000.0, start)),
+            ],
+            Currency::EUR,
+            None,
+            None,
+            None,
+            None,
+            Side::PayShort,
+            true,
+            AssetClass::InterestRate,
+            start,
+            end,
+        );
+        let state = MockState { legs: vec![leg] };
+        let legs = state
+            .legs
+            .iter()
+            .cloned()
+            .map(Into::into)
+            .collect::<Vec<_>>();
+        let value = accrued_amount(&legs, &state, start, end)?;
+        assert!((value + 1_000.0 * 0.05 * 31.0 / 360.0).abs() < 1e-12);
+        Ok(())
+    }
+
+    #[test]
+    fn validates_one_ordered_accrual_window_per_result() {
+        let a = Date::new(2026, 1, 1);
+        let b = Date::new(2026, 2, 1);
+        assert!(Request::validate(&[Request::AccruedAmount(a, b)]).is_ok());
+        assert!(Request::validate(&[Request::AccruedAmount(b, a)]).is_err());
+        assert!(
+            Request::validate(&[Request::AccruedAmount(a, b), Request::AccruedAmount(a, a)])
+                .is_err()
+        );
     }
 }

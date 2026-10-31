@@ -409,11 +409,11 @@ class IncomeForecastTests(unittest.TestCase):
                 context, portfolio(qs.Trade(instrument, AS_OF)))
         self.assertAlmostEqual(result.monthly.nii.iloc[0], 4.34)
         detail = result.income_detail.iloc[0]
-        self.assertAlmostEqual(detail.expected_principal, 1200)
-        self.assertAlmostEqual(detail.annual_rate, 0.042)
-        self.assertEqual(detail.accrual_start, date(2026, 3, 1))
-        self.assertEqual(detail.accrual_end, date(2026, 4, 1))
-        self.assertAlmostEqual(detail.year_fraction, 31 / 360)
+        coupon = result.cashflows.query("type == 'FloatingRateCoupon'").iloc[0]
+        self.assertAlmostEqual(coupon.notional, 1200)
+        self.assertAlmostEqual(coupon.fixing + coupon.spread, 0.042)
+        self.assertEqual(detail.period_start, date(2026, 3, 1))
+        self.assertEqual(detail.period_end, date(2026, 4, 1))
 
     def test_accrual_preserves_zero_negative_rates_and_position_overrides(self):
         with make_context() as context:
@@ -422,7 +422,7 @@ class IncomeForecastTests(unittest.TestCase):
                     trade = qs.Trade(deposit(rate=rate).instrument, AS_OF, side, notional=250)
                     result = IncomeForecaster(AS_OF, "2026-04-01").forecast(context, portfolio(trade))
                     self.assertAlmostEqual(result.monthly.nii.iloc[0], sign * expected)
-                    self.assertAlmostEqual(result.income_detail.expected_principal.iloc[0], sign * 250)
+                    self.assertAlmostEqual(result.cashflows.query("type == 'FixedRateCoupon'").notional.iloc[0], sign * 250)
 
     def test_generated_portfolio_has_300_individual_positions_and_matched_current_funding(self):
         context = make_context()
@@ -464,6 +464,18 @@ class IncomeForecastTests(unittest.TestCase):
             self.assertAlmostEqual(row.asset_balance, row.liability_balance, delta=1e-7)
             self.assertAlmostEqual(row.net_principal_cashflow, 0, delta=1e-7)
         self.assertLess(result.productions.par_error_bp.abs().max(), 1e-5)
+
+    def test_native_accrual_handles_thirty_360_coupon_boundaries(self):
+        instrument = qs.FixedRateDeposit(
+            identifier="THIRTY360", start_date="2026-01-31", maturity_date="2026-03-31",
+            notional=1000, rate=0.06, currency="EUR", discount_index="ESTR",
+            day_counter="Thirty360", compounding="Simple",
+        )
+        with make_context() as context:
+            result = IncomeForecaster(AS_OF, "2026-04-01").forecast(
+                context, portfolio(qs.Trade(instrument, AS_OF)))
+        # Accrual to Mar 31 minus accrual to Mar 1 is 29/360 of the annual coupon.
+        self.assertAlmostEqual(result.monthly.nii.iloc[0], 1000 * 0.06 * 29 / 360)
 
     def test_invalid_scope_is_rejected(self):
         with self.assertRaises(ValueError):

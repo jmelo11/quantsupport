@@ -980,6 +980,11 @@ where
             Request::Cashflows => {
                 results = results.with_cashflows(engine.handle_cashflows(trade, &mut state)?);
             }
+            Request::AccruedAmount(_, _) => {
+                return Err(QSError::InvalidValueErr(
+                    "AccruedAmount is supported by the linear cashflow and loan pricers".into(),
+                ));
+            }
             Request::FairRate(_) => {}
         }
     }
