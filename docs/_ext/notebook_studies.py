@@ -30,7 +30,7 @@ STUDIES = {
         ("simulations", "bindings/python/examples/hullwhite/simulations.ipynb"),
     ],
     "Net interest income": [
-        ("nii-forecast", "bindings/python/examples/forecasting/nii_forecast.ipynb"),
+        ("nii-forecast", "bindings/python/examples/nii_forecasting/nii_forecast.ipynb"),
     ],
     "Portfolio risk and benchmarking": [
         ("portfolio", "bindings/python/examples/sensitivity/portfolio.ipynb"),

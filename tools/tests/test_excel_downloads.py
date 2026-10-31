@@ -4,10 +4,13 @@ import io
 import json
 from pathlib import Path
 import subprocess
+import sys
 from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
 from zipfile import ZipFile
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools/release"))
 
 import excel_downloads as downloads
 

@@ -76,8 +76,8 @@ Their formulas, not saved handle strings, are the reproducible workflow.
 self-contained Rust fences can be built and checked with:
 
 ```sh
-RUSTUP_TOOLCHAIN=stable python book/test_rust.py
-python -m unittest discover -s book/tests -v
+RUSTUP_TOOLCHAIN=stable python tools/book/check_rust.py
+python -m unittest discover -s tools/tests -p 'test_book.py' -v
 ```
 
 The runner builds the library and selects the artifacts reported by Cargo,

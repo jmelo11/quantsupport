@@ -33,7 +33,7 @@ html_baseurl = "https://jmelo11.github.io/quantsupport/api/"
 html_show_sourcelink = False
 html_static_path = ["_static"]
 html_css_files = ["notebook-tables.css"]
-exclude_patterns = ["_build", "_templates/**", "README.md", "requirements.txt", "tests/**"]
+exclude_patterns = ["_build", "_templates/**", "README.md", "requirements.txt"]
 nb_execution_mode = "off"
 myst_enable_extensions = ["dollarmath", "amsmath"]
 

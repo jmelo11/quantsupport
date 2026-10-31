@@ -11,7 +11,7 @@ From the repository root:
 ```sh
 python3 -m venv .venv-docs
 .venv-docs/bin/python -m pip install -r docs/requirements.txt
-.venv-docs/bin/python -m unittest discover -s docs/tests -v
+.venv-docs/bin/python -m unittest discover -s tools/tests -p 'test_reference.py' -v
 .venv-docs/bin/sphinx-build -W -b html docs docs/_build/html
 ```
 
@@ -124,15 +124,6 @@ explicit error; files from an older release are never substituted.
 For a manual redeployment, run **Documentation** on main using
 `workflow_dispatch`. Its optional `release_tag` selects a published version;
 blank selects the latest published release.
-
-To publish documentation updates without a package release, include
-`[skip release]` in the documentation commit message and manually run
-**Documentation** with `documentation_ref` set to that commit's full SHA.
-The workflow first checks out the selected published release, then restores
-only `docs/` and `bindings/python/examples/` from the documentation revision.
-The library version, packaged binding declarations, Excel catalog, workbooks
-and release downloads continue to come from the selected release. A blank
-`documentation_ref` keeps the existing release-only redeployment behaviour.
 
 Release-triggered deployments queue independently of push/PR validation, with
 `queue: max` preserving pending runs. The skipped Release triggered by a version

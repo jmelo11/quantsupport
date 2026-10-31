@@ -7,8 +7,10 @@ The [row-by-row version](workbooks/origination_10000_valuations.xlsx) keeps a se
 The folder is organized as follows:
 
 - `workbooks/`: ready-to-open Excel examples.
-- `scripts/`: workbook generators, API migration, automation helper and benchmark runner.
 - `tests/`: portable checks and optional desktop Excel integration tests.
+
+Workbook generators, API migration, the automation helper and benchmark runner
+live in [`tools/excel/examples/`](../../../tools/excel/examples/) at the repository root.
 
 Open a workbook's **Start Here** tab, then follow the linked, numbered tabs from left to right. Each study includes three changes to try and explains where to read their effects.
 
@@ -47,13 +49,13 @@ From the repository root:
 
 ```sh
 python -m pip install -r bindings/excel/examples/requirements.txt
-python bindings/excel/examples/scripts/create_examples.py
+python tools/excel/examples/create_examples.py
 python -m unittest discover -s bindings/excel/examples/tests -p 'test_*.py'
 ```
 
-Generators write to `workbooks/` by default. Regenerate the large workbook with `python bindings/excel/examples/scripts/create_origination_example.py`.
+Generators write to `workbooks/` by default. Regenerate the large workbook with `python tools/excel/examples/create_origination_example.py`.
 
-Generate the faster batch version with `python bindings/excel/examples/scripts/create_origination_example.py --layout batch --output bindings/excel/examples/workbooks/origination_10000_batch.xlsx`.
+Generate the faster batch version with `python tools/excel/examples/create_origination_example.py --layout batch --output bindings/excel/examples/workbooks/origination_10000_batch.xlsx`.
 
 Use `--example context`, `portfolio`, `swap`, `historical`, `loans`, `bonds`, or `interpolation` to generate one file, and `--output-dir PATH` to choose a destination.
 
@@ -76,7 +78,7 @@ On Windows, install `pywin32` and add `--xll-path bindings/excel/dist/quantsuppo
 Context and observation timestamp arrays feed `QS.SNAPSHOT.FROM.RANGE`;
 no store-constructor chain or input record table is required.
 
-Background pricing requires both matching XLLs. In Manual mode use **Refresh Pricing**; automation should call `async_excel.await_engine`, including dependent stored-result stages. The persistent RTD throttle is preserved. See [`scripts/benchmark_async.py`](scripts/benchmark_async.py) for the 10,000-instrument origination-date benchmark and [`tests/test_async_live.py`](tests/test_async_live.py) for desktop Excel delivery tests.
+Background pricing requires both matching XLLs. In Manual mode use **Refresh Pricing**; automation should call `async_excel.await_engine`, including dependent stored-result stages. The persistent RTD throttle is preserved. See [`tools/excel/examples/benchmark_async.py`](../../../tools/excel/examples/benchmark_async.py) for the 10,000-instrument origination-date benchmark and [`tests/test_async_live.py`](tests/test_async_live.py) for desktop Excel delivery tests.
 
 ## Benchmark 10,000 distinct dated contexts
 
@@ -84,7 +86,7 @@ From the repository root, with Windows Excel, `pywin32` and `psutil` installed:
 
 ```sh
 python -m pip install -r bindings/excel/examples/requirements-live.txt
-python bindings/excel/examples/scripts/benchmark_async.py --xll bindings/excel/dist/quantsupport.xll --count 10000 --layout batch --workers 8 --output target/excel-benchmarks/origination-10000.json
+python tools/excel/examples/benchmark_async.py --xll bindings/excel/dist/quantsupport.xll --count 10000 --layout batch --workers 8 --output target/excel-benchmarks/origination-10000.json
 ```
 
 The benchmark generates the same example beside its report and runs an isolated Excel instance. Use `--layout rows` to measure individual PV formulas. It checks that every price is numeric and that unchanged recalculation submits no new jobs. Add `--reference PATH.json` to compare all prices against a previous run. Inputs are synthetic; each swap starts seven days after its valuation date.

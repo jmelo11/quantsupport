@@ -160,14 +160,49 @@ table { border-collapse: collapse; width: 100%; margin-bottom: 2rem; }
 th, td { padding: .75rem; border-bottom: 1px solid #ddd; text-align: left; }
 caption { text-align: left; margin-bottom: .75rem; }
 a { color: #1763a6; }
+pre { padding: 1rem; background: #f5f5f5; overflow-x: auto; }
+nav { margin-bottom: 2rem; }
 </style>
 </head>
 <body><h1>QuantSupport Python packages</h1>
+<nav aria-label="Python documentation">
+<a href="../api/python/guide/first-valuation.html">Installation and first valuation</a> ·
+<a href="../api/autoapi/quantsupport/index.html">Classes and methods</a> ·
+<a href="#editor-support">Autocomplete and linting setup</a>
+</nav>
 <p>Choose your operating system, architecture and Python version below.
 Before using a folder ZIP, install runtime dependencies separately with
 <code>python -m pip install pandas</code>, extract the ZIP and add its
-<code>site-packages</code> directory to Python's search path.</p>
-""" + tables + "\n</body>\n</html>\n"
+<code>site-packages</code> directory to Python's search path.
+Both formats include the native extension, Python modules, method declarations
+(<code>.pyi</code>) and the <code>py.typed</code> marker. Keep the whole package together.</p>
+""" + tables + """
+<h2 id="editor-support">Autocomplete and linting for folder ZIPs</h2>
+<p>Adding a directory with <code>sys.path.insert</code> enables runtime imports.
+Editors and static checkers also need to locate that directory to show methods,
+parameter hints and type errors. Select the same Python interpreter in your
+editor that runs your code.</p>
+<p>For VS Code/Pylance, add the extracted directory to your workspace's
+<code>.vscode/settings.json</code> (merge with existing settings):</p>
+<pre><code>{
+  "python.analysis.extraPaths": ["/path/to/extracted-folder/site-packages"]
+}</code></pre>
+<p>For command-line Pyright, use the same directory in
+<code>pyrightconfig.json</code> under <code>extraPaths</code>.
+For mypy, add it to your project's <code>mypy.ini</code>:</p>
+<pre><code>[mypy]
+mypy_path = /path/to/extracted-folder/site-packages</code></pre>
+<p>Optional editor dependencies can be installed separately:</p>
+<pre><code>python -m pip install pandas-stubs "typing-extensions&gt;=4.15"</code></pre>
+<p>Check which package your application actually imports:</p>
+<pre><code>import quantsupport as qs
+print(qs.__file__)
+help(qs.PricingContext.evaluate)</code></pre>
+<p>Browse the <a href="../api/autoapi/quantsupport/index.html">API reference</a>
+for constructors, methods, properties and accepted parameters.</p>
+</body>
+</html>
+"""
     page.parent.mkdir(parents=True, exist_ok=True)
     page.write_text(source, encoding="utf-8")
 

@@ -18,7 +18,7 @@ Tools and .NET SDK 8 or later, then run:
 
 ```powershell
 rustup target add x86_64-pc-windows-msvc
-powershell -ExecutionPolicy Bypass -File bindings/excel/scripts/build.ps1
+powershell -ExecutionPolicy Bypass -File tools/excel/build.ps1
 ```
 
 The distribution is written to `bindings/excel/dist`. Use workbooks and XLLs
@@ -79,12 +79,12 @@ tapes stay on their owner worker.
 Automatic mode updates through Excel-DNA RTD. In Manual mode use the ribbon's
 **Refresh Pricing** action to await jobs and refresh dependent worksheet stages.
 F9 starts work but is not an asynchronous completion barrier. Automation can use
-`examples/scripts/async_excel.py`; `QS.ENGINE.STATUS()` reports `pending`, `pending_delivery`, `settled`, errors
+`tools/excel/examples/async_excel.py`; `QS.ENGINE.STATUS()` reports `pending`, `pending_delivery`, `settled`, errors
 and stage metrics. Excel's `CalculationState` alone does not indicate completion.
 The application-wide RTD throttle is preserved (typically 2,000 ms).
 
 This release removes the prepare function and the evaluation `inputs` argument.
-Use matching XLLs and workbooks. `examples/scripts/migrate_async_api.py` updates old
+Use matching XLLs and workbooks. `tools/excel/examples/migrate_async_api.py` updates old
 example formulas while preserving their workbook layout.
 
 The bounded pool defaults to at most eight workers; `QS_ENGINE_WORKERS` can set
@@ -187,14 +187,15 @@ loans, bonds, portfolio aggregation and interpolation. The
 [10,000-valuation example](examples/workbooks/origination_10000_batch.xlsx)
 prices a different swap at each of 10,000 origination dates using 10,000 dated
 contexts. Workbooks live in `examples/workbooks/`, generators and the benchmark
-in `examples/scripts/`, and checks in `examples/tests/`. Each workbook opens on Start Here.
+in the repository's `tools/excel/examples/`, and checks in `examples/tests/`.
+Each workbook opens on Start Here.
 [The guide](../../docs/excel/guide/index.rst) explains the financial conventions;
 the [generated reference](https://jmelo11.github.io/quantsupport/api/excel/functions/index.html)
 lists exact native signatures.
 
 ```sh
 python -m pip install -r bindings/excel/examples/requirements.txt
-python bindings/excel/examples/scripts/create_examples.py
+python tools/excel/examples/create_examples.py
 cargo test -p quantsupport-xll --lib --example function_catalog
 python -m unittest discover -s bindings/excel/examples/tests -p 'test_*.py'
 ```

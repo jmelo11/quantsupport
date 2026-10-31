@@ -29,12 +29,11 @@ Follow the [shared setup](../README.md#install-and-run), then run from the
 repository root with the environment containing the checkout-built binding:
 
 ```bash
-python bindings/python/examples/run_notebooks.py forecasting
-python -m unittest discover -s bindings/python/examples/forecasting -p 'test_*.py'
+python bindings/python/examples/run_notebooks.py nii_forecasting
+python -m unittest discover -s bindings/python/examples/nii_forecasting -p 'test_*.py'
 ```
 
-The notebook's final cell optionally exports five CSV tables. The focused tests
-check independent simple-interest calculations, CPR principal conservation,
+The focused tests check independent simple-interest calculations, CPR principal conservation,
 recursive replacement, different replacement fractions, delayed renewal,
 planned lending/funding, position overrides, native portfolio reconciliation,
 partial periods and scenario isolation.

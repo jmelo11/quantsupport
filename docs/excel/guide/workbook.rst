@@ -110,11 +110,11 @@ On Windows use stable Rust, Visual Studio Build Tools and .NET SDK 8 or later:
 
 .. code-block:: powershell
 
-   powershell -ExecutionPolicy Bypass -File bindings/excel/scripts/build.ps1
+   powershell -ExecutionPolicy Bypass -File tools/excel/build.ps1
 
 The distribution includes the native XLL, ribbon, pinned IntelliSense companion,
 XML metadata and licenses. On any platform regenerate examples with
-``python bindings/excel/examples/scripts/create_examples.py``. Portable tests validate
+``python tools/excel/examples/create_examples.py``. Portable tests validate
 native markets, ownership and workbook formulas; live loading and panel
 rendering require Windows Excel. See :doc:`risk-and-history` for historical
 snapshot selection and batch evaluation.

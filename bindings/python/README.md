@@ -36,10 +36,7 @@ python -m pip install quantsupport
 
 The [Python downloads page](https://jmelo11.github.io/quantsupport/python/downloads.html)
 also provides folder ZIPs containing only QuantSupport for each supported Python
-version, operating system and architecture. Install dependencies separately with
-`python -m pip install pandas`, extract the ZIP, and add its `site-packages`
-directory to `sys.path` before importing QuantSupport. The ZIP includes a
-`README.txt` with these instructions.
+version, operating system and architecture.
 
 Use `quantsupport[typing]` for optional editor typing dependencies. A wheel does
 not require Rust. For a development build from the repository root:

@@ -1,10 +1,5 @@
 # Working in Python
 
-[Download Python packages](https://jmelo11.github.io/quantsupport/python/downloads.html)
-as folder ZIPs or wheels. Choose the package for your operating system,
-architecture and Python version. Folder ZIPs contain only QuantSupport; install
-dependencies separately with `python -m pip install pandas`.
-
 The Python package provides access to QuantSupport's native instruments,
 market construction, valuation and risk calculations. Build a contract and
 trade, configure its market, then evaluate the position inside a pricing

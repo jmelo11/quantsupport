@@ -17,4 +17,6 @@ bindings/python/python/quantsupport/*.so
 bindings/python/python/quantsupport/*.pyd
 *.png
 *.ps1
+!/tools/excel/build.ps1
+!/tools/excel/package.ps1
 

@@ -353,6 +353,9 @@ cargo add quantsupport --features plot
 
 Contributions are welcome. For small fixes, feel free to open a pull request directly. For larger changes or design discussions, please open an issue first.
 
+Repository maintenance scripts live in [`tools/`](tools/README.md), with their
+Python tests in `tools/tests/`.
+
 ## License
 
 QuantSupport is released under the [MIT License](LICENSE).
