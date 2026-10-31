@@ -9,6 +9,8 @@ outstanding principal after contractual amortization.
 The notebook compares runoff, recursive replacement and replacement plus planned
 growth over two years. Scenarios shift interest rates or the funding premium.
 Market inputs and historical observations are illustrative and reproducible.
+We also size long and short deposits from the opening book's sensitivity
+report, reprice the residual PV01 and forecast the hedge coupons.
 
 All implementation and explanations are in the notebook:
 
@@ -20,6 +22,7 @@ All implementation and explanations are in the notebook:
 | `RolloverRule` / `NewProduction` | Separate scheduled/prepaid principal replacement from additional business |
 | `IncomeForecaster` | Project each cohort, process recursive production events and calculate earned interest |
 | `ForecastResult` | Return monthly NII, cohort-level accrual, segment balances, production quotes and receipts |
+| `DepositHedgingEngine` / `DepositHedgeResult` | Fit native quote PV01 with signed deposit notionals, create executable trades and reprice the combined book |
 
 Follow the [shared setup](../README.md#install-and-run), then run from the
 repository root in an environment containing the checkout-built binding:
@@ -32,7 +35,8 @@ python -m unittest discover -s tools/tests -p 'test_nii_forecast.py' -v
 The focused tests execute the notebook's definition cells directly. They check
 native par pricing, floating-index conventions, margins, accrual, principal
 conservation, reproducible generation, recursive replacement, delayed renewal,
-position overrides and independent scenario runs.
+position overrides, independent scenario runs and the hedge engine's risk,
+cash and income integration.
 
 ## Pricing new positions
 
@@ -57,6 +61,7 @@ coupon period and computes the difference in cumulative coupon accrual, using
 native day-count conventions. Floating observations and projected prepayment
 notionals are resolved by the pricer. Signs and currency conversion are applied
 once; the forecast requires its reporting currency to match the context base.
+Accrual uses plain `f64` values and does not compute PV or record an AD tape.
 
 The income detail records each cohort's native monthly result. The separate
 cashflow table retains coupon dates, signed expected principal, fixed rates,
@@ -73,6 +78,35 @@ aggregation. Supply contracts reflecting actual current terms and past principal
 reductions. The generated portfolio assumes no historical prepayments and derives
 current balances from remaining contractual principal; future CPR does not infer
 past prepayments.
+
+## Deposit hedging
+
+We supply a native `pillar`/`value` sensitivity report to
+`DepositHedgingEngine.hedge`. Each reference deposit has a native par coupon,
+fixed before evaluating its sensitivity. We align all source quote labels and
+solve the joint PV01 matrix with singular-value decomposition. Positive signed
+notionals create `LongReceive` deposits; negative amounts create `PayShort`
+deposits with positive absolute notionals. The default solution has zero net
+initial principal cash. Actual rounded trades are repriced to report residual
+risk, including risk outside the available hedge directions.
+
+The example uses ESTR, composite LOANFUNDING and EURIBOR3m deposits at 1, 3, 6,
+12, 24, 60 and 120 months. Funding deposits carry both base-curve and
+funding-premium risk; we fit their source sensitivities together. Both trading
+directions are assumed available at the model par rate.
+
+For seasoned deposits, we represent the remaining maturity payment with a
+spot-starting risk deposit. Its adjusted coupon preserves the full amount
+still due at maturity, including past accrual. Its initial advance has zero
+rate sensitivity, while the original advance is settled. The income forecast
+uses the original contractual accrual dates.
+
+This is a hedge of today's PV01 on the existing book. We keep the hedge coupons
+fixed across scenarios and show their NII and principal-cash effects separately.
+Fixed coupons do not automatically offset floating-rate income changes.
+Replacement, planned production, transaction costs and future hedge rebalancing
+are outside the sizing target. Hedge positions run off without replacement;
+later principal funding needs remain explicit in the cash ledger.
 
 ## Scope
 
