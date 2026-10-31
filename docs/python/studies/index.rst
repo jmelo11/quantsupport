@@ -76,6 +76,19 @@ calibration or volatility sensitivities.
 
    notebooks/simulations
 
+Net interest income
+-------------------
+
+Project accrued portfolio income as loans amortize and prepay, floating rates
+reset, deposits mature, and new production replaces runoff. Compare a running
+book with replacement and planned growth, including explicit funding and
+rate-scenario assumptions.
+
+.. toctree::
+   :maxdepth: 1
+
+   notebooks/nii-forecast
+
 Portfolio risk and benchmarking
 -----------------------------------
 
@@ -141,7 +154,7 @@ rejecting stale bindings. Saved ``execution_environment`` metadata records
 sanitized Python/package versions and whether the kernel matched its caller;
 inspect this provenance rather than inferring identity from a launch command.
 The legacy external benchmark lives outside that runner's directory
-but is available through its ``benchmark`` selector. To validate all sixteen,
+but is available through its ``benchmark`` selector. To validate all seventeen,
 install the benchmark's optional requirements and include it explicitly:
 
 .. code-block:: console

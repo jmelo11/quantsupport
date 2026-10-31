@@ -5,15 +5,16 @@ Each study introduces a contract or market problem, states its assumptions and
 uses Python calculations to interpret the native results. They assume
 familiarity with the products and introduce the library as it is used.
 
-Fifteen studies cover the Python binding. A separate historical benchmark
+Sixteen studies cover the Python binding. A separate historical benchmark
 compares ORE/CurveEngine with recorded Rust results. Run cells in order in a
 fresh kernel; saved outputs are retained for publication.
 
 ## Catalog by Rust example scope
 
-The folders mirror the repository's Rust example packages. Each contains its
-own catalog, notebooks, `market_data.py` loader, and any configuration specific
-to that scope.
+The market and valuation folders follow the repository's Rust example scopes.
+Each has its own catalog, notebooks and any scope-specific inputs. Most use an
+adjacent `market_data.py` loader; portfolio and forecasting studies define their
+small markets inline. The forecasting scope adds a Python orchestration layer.
 
 | Scope | Catalog | Coverage |
 | --- | --- | --- |
@@ -25,6 +26,7 @@ to that scope.
 | `volatilitysurface` | [Volatility markets](volatilitysurface/README.md) | Curves, surfaces, and independent rate/volatility valuation shocks |
 | `hullwhite` | [Rate simulations](hullwhite/README.md) | Calibrated model setup and retrieving simulation results |
 | `sensitivity` | [Portfolio and risk](sensitivity/README.md) | Portfolio basics, valuation requests, aggregation, quote risk, and scenarios |
+| `forecasting` | [Net interest income](forecasting/README.md) | Accrued NII, prepayment, recursive rollover, new business and funding |
 | `scripting` | [Payoff events](scripting/README.md) | Dated payoff scripts and representation checks |
 | `cva` | [Exposure and XVA](cva/README.md) | Netting sets, credit/funding inputs, exposure profiles, and XVA |
 | Historical external benchmark | [ORE/CurveEngine comparison](../../../examples/sensitivity/bechmark/sensitivity.ipynb) | Recorded 2025-11-11 Rust curves/PVs versus independently rebuilt markets and correctly scaled quote risk |
@@ -47,6 +49,7 @@ to that scope.
 | 12 | [Callable stepped-coupon bond](valuation/bonds/stepped_coupon_bond.ipynb) | Typed terms, calibrated tree/Fourier engines, OAS and risk |
 | 13 | [Scripted cashflows](scripting/scripted_cashflows.ipynb) | Dated observations/payments and the native-versus-scripted bond check |
 | 14 | [Exposure and XVA](cva/xva.ipynb) | Netting sets, client terms, exposure profiles and adjustment risk |
+| 15 | [Net interest income](forecasting/nii_forecast.ipynb) | Monthly accrued income, prepayment, replacement cohorts, planned growth and funding scenarios |
 
 Start with [How a portfolio works](sensitivity/portfolio.ipynb) for the
 `qs.Portfolio` workflow, position sizes, common currency and request rules.
@@ -100,7 +103,7 @@ root using the intended environment's Python:
 python bindings/python/examples/run_notebooks.py
 ```
 
-This runs the fifteen binding studies. The historical benchmark additionally
+This runs the sixteen binding studies. The historical benchmark additionally
 requires the optional `ORE` and `curveengine` packages; it uses its own adjacent
 configuration and recorded-results JSON files. The benchmark uses ORE
 1.8.14.1 and CurveEngine source revision
@@ -114,7 +117,7 @@ environment:
 python -m pip install "open-source-risk-engine==1.8.14.1" "curveengine @ git+https://github.com/jmelo11/curveengine.git@d7e000da626e08ff2be5d34561597065340b017e"
 ```
 
-To run all sixteen, or only that benchmark:
+To run all seventeen, or only that benchmark:
 
 ```bash
 python bindings/python/examples/run_notebooks.py --include-benchmark
@@ -204,6 +207,7 @@ The notebooks focus on native products and their existing Python entry points.
 | --- | --- |
 | `market_data.py` in each scope folder | Local loader imported directly by its notebooks; reads typed inputs/configurations without hidden pricing |
 | [stepped_cashflows.py](scripting/stepped_cashflows.py) | Translate this tutorial's six-year semiannual note into repetitive script events; no optimal issuer exercise |
+| [nii_forecast.py](forecasting/nii_forecast.py) | Example classes for production rules, recursive rollover and accrued portfolio income |
 | [valuation/bonds/data/bond_tree.json](valuation/bonds/data/bond_tree.json), [valuation/bonds/data/bond_fourier.json](valuation/bonds/data/bond_fourier.json) | Native pricer/model schema and numerical grids |
 | [hullwhite/data/simulation.json](hullwhite/data/simulation.json) | Calibrated Hull–White simulation settings |
 | [cva/data/xva.json](cva/data/xva.json) | Calibrated LGM exposure-engine settings |
@@ -259,6 +263,7 @@ model's absolute sigma are different quantities.
 | Portfolio risk | Rate/volatility AAD versus central differences; signed payment PVs |
 | Scripting | Deterministic native representation check; repeated-seed stochastic estimates |
 | Loans | Annuity payment, principal conservation, receipt PVs, par repricing, funding PV01 |
+| NII forecast | Hand-calculated interest, native portfolio reconciliation, prepayment principal conservation, recursive replacement, growth/funding and balance identities |
 | XVA | Signed profile identity, raw-exposure netting, margin/profile distinction |
 | Historical benchmark | Date/quote-label alignment, curve/PV/rate-risk tolerances, restored inputs, explicit FX-risk-definition discrepancy |
 

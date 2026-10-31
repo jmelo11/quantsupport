@@ -399,9 +399,9 @@ class GuideAndStudyTests(unittest.TestCase):
 
     def test_every_canonical_notebook_has_a_financial_topic_and_local_page(self):
         entries = [entry for group in STUDIES.values() for entry in group]
-        self.assertEqual(len(STUDIES), 8)
-        self.assertEqual(len(entries), 16)
-        self.assertEqual(len({slug for slug, _ in entries}), 16)
+        self.assertEqual(len(STUDIES), 9)
+        self.assertEqual(len(entries), 17)
+        self.assertEqual(len({slug for slug, _ in entries}), 17)
         source_paths = {path for _, path in entries}
         actual = {path.relative_to(ROOT).as_posix()
                   for directory in ("bindings/python/examples", "examples")
@@ -591,7 +591,7 @@ class RenderedReferenceTests(unittest.TestCase):
                         destination = parsed.setdefault(target, Text(target.read_text()))
                         self.assertIn(unquote(link.fragment), destination.ids)
         studies = list((output / "python/studies/notebooks").glob("*.html"))
-        self.assertEqual(len(studies), 16)
+        self.assertEqual(len(studies), 17)
         canonical = {slug: source for group in STUDIES.values() for slug, source in group}
         for path in studies:
             page = Text(path.read_text())
