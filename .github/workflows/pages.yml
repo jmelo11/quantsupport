@@ -15,6 +15,10 @@ on:
         description: Published release to deploy (blank selects latest)
         required: false
         type: string
+      documentation_ref:
+        description: Optional commit or ref supplying docs and Python examples
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -57,6 +61,11 @@ jobs:
         run: git checkout --detach "$RELEASE_REF"
         env:
           RELEASE_REF: ${{ steps.release.outputs.ref }}
+      - name: Restore requested documentation
+        if: steps.release.outputs.ref != '' && github.event_name == 'workflow_dispatch' && inputs.documentation_ref != ''
+        run: git restore --source="$DOCUMENTATION_REF" -- docs bindings/python/examples
+        env:
+          DOCUMENTATION_REF: ${{ inputs.documentation_ref }}
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
