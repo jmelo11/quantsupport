@@ -1,15 +1,35 @@
-"""Independent income/balance checks for the teaching forecast layer."""
+"""Independent income/balance checks against the notebook's forecast classes."""
 
 from datetime import date
+import json
+from pathlib import Path
+import sys
+from types import ModuleType
 import unittest
 
 import pandas as pd
 import quantsupport as qs
 
-from nii_forecast import (
-    ForecastPortfolio, ForecastPosition, IncomeForecaster, NewProduction,
-    ProductionTemplate, RolloverRule,
+NOTEBOOK = (
+    Path(__file__).resolve().parents[2]
+    / "bindings/python/examples/nii_forecasting/nii_forecast.ipynb"
 )
+notebook = json.loads(NOTEBOOK.read_text())
+definitions = "\n\n".join(
+    "".join(cell["source"]) for cell in notebook["cells"]
+    if cell["cell_type"] == "code"
+    and "nii-forecast-definitions" in cell.get("metadata", {}).get("tags", [])
+)
+example = ModuleType("nii_forecast_notebook")
+sys.modules[example.__name__] = example
+exec(compile(definitions, str(NOTEBOOK), "exec"), example.__dict__)
+
+ForecastPortfolio = example.ForecastPortfolio
+ForecastPosition = example.ForecastPosition
+IncomeForecaster = example.IncomeForecaster
+NewProduction = example.NewProduction
+ProductionTemplate = example.ProductionTemplate
+RolloverRule = example.RolloverRule
 
 
 AS_OF = "2026-03-01"
