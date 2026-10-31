@@ -66,6 +66,13 @@ impl PrepaymentModelConfiguration {
 }
 
 impl<T: Scalar> PrepaymentModel<T> for PrepaymentModelConfiguration {
+    fn conditional_prepayment_probability_f64(
+        &self,
+        state: &PrepaymentModelState<f64>,
+    ) -> Result<f64> {
+        <Self as PrepaymentModel<f64>>::conditional_prepayment_probability(self, state)
+    }
+
     /// Requests a market refinancing observation only for the incentive model.
     fn requires_refinancing_benchmark(&self) -> bool {
         matches!(self, Self::Refinancing { .. })

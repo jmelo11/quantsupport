@@ -57,6 +57,7 @@ coupon period and computes the difference in cumulative coupon accrual, using
 native day-count conventions. Floating observations and projected prepayment
 notionals are resolved by the pricer. Signs and currency conversion are applied
 once; the forecast requires its reporting currency to match the context base.
+Accrual uses plain `f64` values and does not compute PV or record an AD tape.
 
 The income detail records each cohort's native monthly result. The separate
 cashflow table retains coupon dates, signed expected principal, fixed rates,

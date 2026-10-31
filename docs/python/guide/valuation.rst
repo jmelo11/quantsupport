@@ -322,6 +322,9 @@ interest earned in a reporting window. The loan and linear cashflow pricers
 resolve observations, clip the window to each coupon's accrual period, and
 exclude principal advances and repayments. Results use the context base
 currency; portfolios aggregate the member amounts.
+Accrual arithmetic uses plain ``f64`` values. An accrual request does not
+compute PV or start an AD tape; valuation and sensitivity requests use the
+differentiable pricing path.
 
 .. code-block:: python
    :name: guide-python-accrual

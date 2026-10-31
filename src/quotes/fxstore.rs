@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    ad::dual::DualFwd,
+    ad::{dual::DualFwd, scalar::Scalar},
     core::pillars::Pillars,
     currencies::currency::Currency,
     utils::errors::{QSError, Result},
@@ -115,32 +115,41 @@ impl FxStore {
     /// # Errors
     /// Returns an error if no path between the two currencies can be found.
     pub fn get_fx_rate(&self, base: Currency, quote: Currency) -> Result<DualFwd> {
+        self.get_fx_rate_as(base, quote)
+    }
+
+    /// Composes spot observations using the requested arithmetic scalar.
+    pub fn get_fx_rate_as<T: Scalar + From<DualFwd>>(
+        &self,
+        base: Currency,
+        quote: Currency,
+    ) -> Result<T> {
         if base == quote {
-            return Ok(DualFwd::one());
+            return Ok(T::one());
         }
 
         // Direct lookup
         if let Some(&rate) = self.exchange_rate_map.get(&(base, quote)) {
-            return Ok(rate);
+            return Ok(T::from(rate));
         }
 
         // BFS triangulation
-        let mut queue: VecDeque<(Currency, DualFwd)> = VecDeque::new();
+        let mut queue: VecDeque<(Currency, T)> = VecDeque::new();
         let mut visited: HashSet<Currency> = HashSet::new();
-        queue.push_back((base, DualFwd::one()));
+        queue.push_back((base, T::one()));
         visited.insert(base);
 
         while let Some((current, accumulated)) = queue.pop_front() {
             for (&(src, dst), &map_rate) in &self.exchange_rate_map {
                 if src == current && !visited.contains(&dst) {
-                    let composed: DualFwd = (accumulated * map_rate).into();
+                    let composed = accumulated.mul_val(T::from(map_rate));
                     if dst == quote {
                         return Ok(composed);
                     }
                     visited.insert(dst);
                     queue.push_back((dst, composed));
                 } else if dst == current && !visited.contains(&src) {
-                    let composed: DualFwd = (accumulated / map_rate).into();
+                    let composed = accumulated.div_val(T::from(map_rate));
                     if src == quote {
                         return Ok(composed);
                     }

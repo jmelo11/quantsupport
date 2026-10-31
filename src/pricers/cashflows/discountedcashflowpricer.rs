@@ -7,14 +7,15 @@ use crate::{
         marketdatahandling::{
             constructedelementrequest::ConstructedElementRequest,
             fixingrequest::FixingRequest,
+            forwardraterequest::IndexRateScalar,
             fxrequest::FxRequest,
             marketdata::{MarketData, MarketDataProvider, MarketDataRequest},
         },
         pricer::Pricer,
         pricerstate::PricerState,
         request::{
-            HandleAccruedAmount, HandleCashflows, HandleFairRate, HandleSensitivities, HandleValue,
-            LegsProvider, Request,
+            accrued_amount, HandleAccruedAmount, HandleCashflows, HandleFairRate,
+            HandleSensitivities, HandleValue, LegsProvider, Request,
         },
         trade::Trade,
     },
@@ -317,17 +318,14 @@ impl<I, T> DiscountedCashflowPricer<I, T> {
     }
 }
 
-impl<I, T> DiscountedCashflowPricer<I, T>
-where
-    T: LegsProvider<DualFwd>,
-{
+impl<I, T> DiscountedCashflowPricer<I, T> {
     /// Resolve observations independently of discounting principal advances.
-    fn resolve_coupons(
-        trade: &T,
+    fn resolve_coupons<N: IndexRateScalar>(
+        legs: &[Leg<N>],
         state: &DCFState<'_>,
         window: Option<(Date, Date)>,
     ) -> Result<()> {
-        for leg in trade.legs() {
+        for leg in legs {
             if !leg.is_linear() {
                 return Err(QSError::InvalidValueErr(
                     "DiscountedCashflowPricer only supports linear payoffs".into(),
@@ -373,7 +371,7 @@ where
                     let rate = coupon.overnight_rate_with_fixing_policy(
                         state.eval_date,
                         response.anchor_fixings(),
-                        |date| curve.discount_factor(date),
+                        |date| curve.discount_factor(date).map(N::from),
                         |date| {
                             Ok(response.fixings().get(forward_index).and_then(|values| {
                                 (date < state.eval_date)
@@ -390,7 +388,7 @@ where
                 {
                     let realized = state
                         .get_fixing(forward_index, coupon.accrual_start_date())
-                        .map(DualFwd::new)?;
+                        .map(N::scalar)?;
                     coupon.set_fixing(realized);
                 } else {
                     let fwd_curve = state.get_discount_curve_element(forward_index)?.curve();
@@ -398,21 +396,14 @@ where
                         .market_index()
                         .rate_index_details()?
                         .rate_definition();
-                    let growth: DualFwd = (fwd_curve
-                        .discount_factor(coupon.accrual_start_date())?
-                        / fwd_curve.discount_factor(coupon.accrual_end_date())?)
-                    .into();
+                    let growth = N::from(fwd_curve.discount_factor(coupon.accrual_start_date())?)
+                        .div_val(N::from(
+                            fwd_curve.discount_factor(coupon.accrual_end_date())?,
+                        ));
                     let time = rd
                         .day_counter()
                         .year_fraction(coupon.accrual_start_date(), coupon.accrual_end_date());
-                    let fwd = crate::rates::interestrate::InterestRate::<DualFwd>::implied_rate(
-                        growth,
-                        rd.day_counter(),
-                        rd.compounding(),
-                        rd.frequency(),
-                        time,
-                    )?
-                    .rate();
+                    let fwd = N::implied_index_rate(growth, rd, time)?;
                     coupon.set_fixing(fwd);
                 }
             }
@@ -421,7 +412,22 @@ where
     }
 }
 
-impl<I, T> HandleAccruedAmount<T, DCFState<'_>> for DiscountedCashflowPricer<I, T> {}
+impl<I, T> HandleAccruedAmount<T, DCFState<'_>> for DiscountedCashflowPricer<I, T>
+where
+    T: LegsProvider<DualFwd>,
+{
+    fn handle_accrued_amount(
+        &self,
+        trade: &T,
+        state: &mut DCFState<'_>,
+        start: Date,
+        end: Date,
+    ) -> Result<f64> {
+        let legs: Vec<Leg<f64>> = trade.legs().iter().cloned().map(Into::into).collect();
+        Self::resolve_coupons(&legs, state, Some((start, end)))?;
+        accrued_amount(&legs, state, start, end)
+    }
+}
 
 impl<I, T> HandleValue<T, DCFState<'_>> for DiscountedCashflowPricer<I, T>
 where
@@ -447,7 +453,7 @@ where
 
         // Put pillars on tape for sensitivity calculation
         state.put_pillars_on_tape()?;
-        Self::resolve_coupons(trade, state, None)?;
+        Self::resolve_coupons(trade.legs(), state, None)?;
 
         // Iterate through all legs
         for leg in trade.legs() {
@@ -677,12 +683,8 @@ where
             }
         }
 
-        if !needs_value
-            && requests
-                .iter()
-                .any(|r| matches!(r, Request::Cashflows | Request::AccruedAmount(_, _)))
-        {
-            Self::resolve_coupons(trade, &state, accrual_only)?;
+        if !needs_value && requests.contains(&Request::Cashflows) {
+            Self::resolve_coupons(trade.legs(), &state, None)?;
         }
         for request in requests {
             match request {

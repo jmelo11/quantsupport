@@ -143,14 +143,8 @@ pub trait HandleSensitivities<T, S> {
     fn handle_sensitivities(&self, trade: &T, state: &mut S) -> Result<SensitivityMap>;
 }
 
-/// Computes undiscounted coupon accrual from resolved reporting legs.
-///
-/// Leg directions and optional spot conversion are applied once. Principal and
-/// non-coupon payoffs do not contribute to interest.
-pub trait HandleAccruedAmount<T, S>
-where
-    S: LegsProvider<DualFwd> + PricerState,
-{
+/// Computes undiscounted coupon accrual using plain numeric observations.
+pub trait HandleAccruedAmount<T, S> {
     /// Returns signed earned coupon interest in the requested window.
     ///
     /// # Errors
@@ -158,47 +152,61 @@ where
     /// overnight accrual, nonfinite amounts and ambiguous currency aggregation.
     fn handle_accrued_amount(
         &self,
-        _trade: &T,
+        trade: &T,
         state: &mut S,
         start: Date,
         end: Date,
-    ) -> Result<f64> {
-        Request::validate(&[Request::AccruedAmount(start, end)])?;
-        let base = state
-            .get_market_data_reponse()
-            .and_then(MarketData::base_currency);
-        let mut currency = None;
-        let mut total = CompensatedSum::default();
-        for leg in state.legs() {
-            let mut interest = CompensatedSum::default();
-            for cashflow in leg.cashflows() {
-                let amount = match cashflow {
-                    CashflowType::FixedRateCoupon(c) => c.accrued_amount(start, end)?.value(),
-                    CashflowType::FloatingRateCoupon(c) => c.accrued_amount(start, end)?.value(),
-                    CashflowType::OptionEmbeddedCoupon(c) => c.accrued_amount(start, end)?.value(),
-                    _ => continue,
-                };
-                interest.add(amount)?;
-            }
-            let amount = interest.total() * leg.side().sign();
-            if amount == 0.0 {
-                continue;
-            }
-            let fx = if let Some(target) = base.filter(|target| *target != leg.currency()) {
-                state.get_exchange_rate(leg.currency(), target)?.value()
-            } else {
-                if base.is_none() && currency.is_some_and(|value| value != leg.currency()) {
-                    return Err(QSError::InvalidValueErr(
-                        "Set a base currency to aggregate cross-currency accrual".into(),
-                    ));
-                }
-                1.0
+    ) -> Result<f64>;
+}
+
+/// Sums resolved numeric coupons, applying leg direction and spot conversion once.
+///
+/// # Errors
+/// Rejects invalid windows, unresolved coupons, nonfinite amounts or missing FX.
+pub fn accrued_amount(
+    legs: &[Leg<f64>],
+    state: &impl PricerState,
+    start: Date,
+    end: Date,
+) -> Result<f64> {
+    Request::validate(&[Request::AccruedAmount(start, end)])?;
+    let base = state
+        .get_market_data_reponse()
+        .and_then(MarketData::base_currency);
+    let mut currency = None;
+    let mut total = CompensatedSum::default();
+    for leg in legs {
+        let mut interest = CompensatedSum::default();
+        for cashflow in leg.cashflows() {
+            let amount = match cashflow {
+                CashflowType::FixedRateCoupon(c) => c.accrued_amount(start, end)?,
+                CashflowType::FloatingRateCoupon(c) => c.accrued_amount(start, end)?,
+                CashflowType::OptionEmbeddedCoupon(c) => c.accrued_amount(start, end)?,
+                _ => continue,
             };
-            currency = Some(leg.currency());
-            total.add(amount * fx)?;
+            interest.add(amount)?;
         }
-        Ok(total.total())
+        let amount = interest.total() * leg.side().sign();
+        if amount == 0.0 {
+            continue;
+        }
+        let fx = if let Some(target) = base.filter(|target| *target != leg.currency()) {
+            state
+                .get_fx_store()
+                .ok_or_else(|| QSError::NotFoundErr("FxStore not available".into()))?
+                .get_fx_rate_as::<f64>(leg.currency(), target)?
+        } else {
+            if base.is_none() && currency.is_some_and(|value| value != leg.currency()) {
+                return Err(QSError::InvalidValueErr(
+                    "Set a base currency to aggregate cross-currency accrual".into(),
+                ));
+            }
+            1.0
+        };
+        currency = Some(leg.currency());
+        total.add(amount * fx)?;
     }
+    Ok(total.total())
 }
 
 /// The [`HandleFairRate`] trait defines a method for computing the fair (par / breakeven) rate
@@ -945,8 +953,6 @@ mod tests {
             None
         }
     }
-    impl HandleAccruedAmount<MockTrade, MockState> for MockHandler {}
-
     #[test]
     fn accrual_request_applies_side_once_and_excludes_principal() -> Result<()> {
         let start = Date::new(2026, 1, 1);
@@ -970,8 +976,14 @@ mod tests {
             start,
             end,
         );
-        let mut state = MockState { legs: vec![leg] };
-        let value = MockHandler.handle_accrued_amount(&MockTrade, &mut state, start, end)?;
+        let state = MockState { legs: vec![leg] };
+        let legs = state
+            .legs
+            .iter()
+            .cloned()
+            .map(Into::into)
+            .collect::<Vec<_>>();
+        let value = accrued_amount(&legs, &state, start, end)?;
         assert!((value + 1_000.0 * 0.05 * 31.0 / 360.0).abs() < 1e-12);
         Ok(())
     }
