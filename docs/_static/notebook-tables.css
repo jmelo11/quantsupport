@@ -1,0 +1,46 @@
+/* Notebook HTML outputs bypass Sphinx's table wrappers and docutils classes. */
+.cell_output .output.text_html {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.cell_output .output.text_html table {
+  border: 1px solid var(--color-table-border);
+  border-collapse: collapse;
+  border-spacing: 0;
+  margin: 0.5rem 0 1rem;
+  background: var(--color-background-primary);
+  color: var(--color-foreground-primary);
+  font-size: 0.875rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.5;
+}
+
+.cell_output .output.text_html table th,
+.cell_output .output.text_html table td {
+  border: 0;
+  border-bottom: 1px solid var(--color-table-border);
+  padding: 0.5rem 0.75rem;
+  vertical-align: top;
+}
+
+.cell_output .output.text_html table thead th {
+  background: var(--color-table-header-background);
+  font-weight: 600;
+  text-align: right;
+}
+
+.cell_output .output.text_html table tbody th {
+  font-weight: 500;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.cell_output .output.text_html table tbody td {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.cell_output .output.text_html table tbody tr:nth-child(even) {
+  background: var(--color-background-secondary);
+}
